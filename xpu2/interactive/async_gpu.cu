@@ -51,8 +51,14 @@ static __device__ void atomicMaxFloat(float* a, float v) {
         old = seen;
     }
 }
+// A depth's bits in the order of the depths (negative ones reversed below the positive), for the closest filter's words.
+static __device__ U32 orderedDepth(float z) {
+    const U32 b = __float_as_uint(z);
+    return b & 0x80000000u ? ~b : b | 0x80000000u;
+}
 static __device__ void mergeAovs(const aov::Tables& t, U32 pixel, const float* values, const float* depths) {
     float* acc = params.aovs + size_t(pixel) * t.channels;
+    U32 closestAt = 0;  // the entry's first word among the pixel's closest channels
     for (U32 i = 0; i < t.count; ++i) {
         const aov::Entry& e = t.entries[i];
         float* d = acc + e.offset;
@@ -70,78 +76,82 @@ static __device__ void mergeAovs(const aov::Tables& t, U32 pixel, const float* v
             for (U32 c = 0; c < e.channels; ++c) atomicMaxFloat(d + c, v[c]);
             break;
         case aov::FilterClosest: {
-            volatile float* depth = params.aovDepths + size_t(pixel) * t.closestCount + e.closest;
-            if (!(depths[e.closest] < *depth)) break;
-            U32* lock = params.aovLocks + pixel;
-            for (bool done = false; !done;) {  // no thread spins on a lock its own warp holds
-                if (atomicCAS(lock, 0u, 1u) == 0u) {
-                    __threadfence();
-                    if (depths[e.closest] < *depth) {
-                        *depth = depths[e.closest];
-                        for (U32 c = 0; c < e.channels; ++c) reinterpret_cast<volatile float*>(d)[c] = v[c];
-                    }
-                    __threadfence();
-                    atomicExch(lock, 0u);
-                    done = true;
-                }
-            }
+            // Without a lock: each channel keeps the least of its words, the nearest sample's depth above its value
+            // (the least value's bits between samples at one depth); the host reads them apart (GpuLane::landClosest).
+            U64L* k = params.aovClosest + size_t(pixel) * params.aovClosestChannels + closestAt;
+            closestAt += e.channels;
+            const float z = depths[e.closest];
+            if (!(z < aov::infinity())) break;
+            const U64L high = U64L(orderedDepth(z)) << 32;
+            if (high > (*reinterpret_cast<volatile U64L*>(k) & 0xffffffff00000000ull)) break;
+            for (U32 c = 0; c < e.channels; ++c) atomicMin(k + c, high | __float_as_uint(v[c]));
             break;
         }
         default: break;
         }
     }
 }
-// A sample's Cryptomatte events into its pixel's fragment lists (CryptoBuffer::add), in every category.
+// A sample's Cryptomatte events into its pixel's fragment lists (CryptoBuffer::add), in every category. Without locks:
+// OptiX promises nothing to a thread waiting on another, and a pixel's lock hung the render. Nodes are never taken
+// out, so a fragment once found stays found; a new one goes in front by a compare-and-swap on the list's head, and
+// a thread that loses the swap looks only through the nodes put in front since, for its fragment. A node made for a
+// swap that lost to the same fragment is kept for this thread's next new fragment; the last one is left unlinked.
 static __device__ void mergeCrypto(U32 pixel, const aov::CryptoEvent* events, U32 count) {
+    const U32 words = params.cryptoNodeWords;
+    U32 spare = ~0u;
     for (U32 k = 0; k < count; ++k) {
         const aov::CryptoEvent& e = events[k];
         if (!e.used || !(e.increment || e.credit)) continue;
         for (U32 c = 0; c < params.cryptoCategories; ++c) {
             const float id = c == 0 ? e.id : c == 1 ? e.materialId : e.assetId;
             U32* head = params.cryptoHeads + size_t(pixel) * params.cryptoCategories + c;
-            U32* lock = params.cryptoLocks + pixel;
-            for (bool done = false; !done;) {  // no thread spins on a lock its own warp holds
-                if (atomicCAS(lock, 0u, 1u) != 0u) continue;
+            U32* node = nullptr;
+            bool made = false;
+            for (U32 from = *reinterpret_cast<volatile U32*>(head), stop = ~0u;;) {
                 __threadfence();
-                volatile U32* node = nullptr;
-                for (U32 n = *reinterpret_cast<volatile U32*>(head); n != ~0u;) {
-                    volatile U32* m = params.cryptoNodes + size_t(n) * params.cryptoNodeWords;
+                for (U32 n = from; n != stop && n != ~0u;) {
+                    volatile U32* m = params.cryptoNodes + size_t(n) * words;
                     if (__uint_as_float(m[1]) == id && (!params.cryptoMultiPresence || m[4] == e.presenceDepth)) {
-                        node = m;
+                        node = const_cast<U32*>(m);
                         break;
                     }
                     n = m[0];
                 }
-                if (!node) {
-                    const U32 n = atomicAdd(params.cryptoNodeCount, 1u);
-                    if (n < params.cryptoNodeCapacity) {
-                        node = params.cryptoNodes + size_t(n) * params.cryptoNodeWords;
-                        for (U32 w = 2; w < params.cryptoNodeWords; ++w) node[w] = 0u;
-                        node[0] = *reinterpret_cast<volatile U32*>(head);
-                        node[1] = __float_as_uint(id);
-                        node[3] = 1u;  // a new fragment counts one sample (Cryptomatte.cc's Fragment)
-                        node[4] = e.presenceDepth;
-                        __threadfence();
-                        *reinterpret_cast<volatile U32*>(head) = n;
-                    } else {
+                if (node) break;
+                if (spare == ~0u) {
+                    spare = atomicAdd(params.cryptoNodeCount, 1u);
+                    if (spare >= params.cryptoNodeCapacity) {
+                        spare = ~0u;
                         atomicAdd(&params.state->errors, 1u);
-                    }
-                } else if (e.increment) {
-                    node[3] = node[3] + 1u;
-                }
-                if (node) {
-                    node[2] = __float_as_uint(__uint_as_float(node[2]) + e.weight);
-                    if (params.cryptoExtras) {
-                        const float d[21] = {e.position.x, e.position.y, e.position.z, e.p0.x, e.p0.y, e.p0.z, e.normal.x, e.normal.y, e.normal.z,
-                                             e.beauty[0], e.beauty[1], e.beauty[2], e.beauty[3], e.refP.x, e.refP.y, e.refP.z,
-                                             e.refN.x, e.refN.y, e.refN.z, e.uv[0], e.uv[1]};
-                        for (U32 w = 0; w < 21; ++w)
-                            if (e.increment || (w >= 9 && w < 13)) node[5 + w] = __float_as_uint(__uint_as_float(node[5 + w]) + d[w]);
+                        break;
                     }
                 }
+                volatile U32* m = params.cryptoNodes + size_t(spare) * words;
+                for (U32 w = 2; w < words; ++w) m[w] = 0u;
+                m[0] = from;
+                m[1] = __float_as_uint(id);
+                m[3] = 1u;  // a new fragment counts one sample (Cryptomatte.cc's Fragment)
+                m[4] = e.presenceDepth;
                 __threadfence();
-                atomicExch(lock, 0u);
-                done = true;
+                const U32 was = atomicCAS(head, from, spare);
+                if (was == from) {
+                    node = const_cast<U32*>(m);
+                    made = true;
+                    spare = ~0u;
+                    break;
+                }
+                stop = from;
+                from = was;
+            }
+            if (!node) continue;
+            if (!made && e.increment) atomicAdd(node + 3, 1u);
+            atomicAdd(reinterpret_cast<float*>(node + 2), e.weight);
+            if (params.cryptoExtras) {
+                const float d[21] = {e.position.x, e.position.y, e.position.z, e.p0.x, e.p0.y, e.p0.z, e.normal.x, e.normal.y, e.normal.z,
+                                     e.beauty[0], e.beauty[1], e.beauty[2], e.beauty[3], e.refP.x, e.refP.y, e.refP.z,
+                                     e.refN.x, e.refN.y, e.refN.z, e.uv[0], e.uv[1]};
+                for (U32 w = 0; w < 21; ++w)
+                    if ((e.increment || (w >= 9 && w < 13)) && d[w] != 0.0f) atomicAdd(reinterpret_cast<float*>(node + 5 + w), d[w]);
             }
         }
     }
@@ -158,17 +168,40 @@ static __device__ void initAovs() {
         const float v = e.filter == aov::FilterMin ? aov::infinity() : e.filter == aov::FilterMax ? -aov::infinity() : 0.0f;
         for (U32 c = 0; c < e.channels; ++c) acc[e.offset + c] = v;
     }
-    for (U32 k = 0; k < t.closestCount; ++k) params.aovDepths[size_t(i) * t.closestCount + k] = aov::infinity();
-    if (params.aovLocks) params.aovLocks[i] = 0u;
+    for (U32 k = 0; k < params.aovClosestChannels; ++k) params.aovClosest[size_t(i) * params.aovClosestChannels + k] = ~0ull;  // none yet
     if (params.heat) params.heat[i] = 0.0;
     if (params.cryptoHeads) {
         for (U32 c = 0; c < params.cryptoCategories; ++c) params.cryptoHeads[size_t(i) * params.cryptoCategories + c] = ~0u;
-        params.cryptoLocks[i] = 0u;
         if (i == 0) *params.cryptoNodeCount = 0u;
     }
 }
 
-static __device__ __noinline__ void run(GpuBackend& backend, U32 pixel, U32 index, U32 tries, U32 pass, bool chain = false) {
+// Partial shading. A provisional sample's record for the host (async_render.h hands it to the CPU lane, or back to
+// the GPU once its tile has landed), its value as the provisional film holds it.
+static __device__ void refineRecord(U32 pixel, U32 index, U32 pass, U32 mark, const float* v) {
+    const U64L at = atomicAdd(&params.state->refineTail, 1ull);
+    params.refines[at % params.refineCapacity] = Refine{pixel, index, pass, mark == ~0u ? 0u : mark, {v[0], v[1], v[2], v[3]}};
+}
+// A sample that read a coarser level: its value into the provisional film (in place of its old one when it was
+// itself a provisional sample rendered again), and its record. Nothing else of it reaches the film.
+static __device__ void provisional(U32 pixel, U32 index, U32 pass, U32 mark, const Radiance& r, const Refine* old) {
+    const float v[4] = {float(r.rgb[0]), float(r.rgb[1]), float(r.rgb[2]), float(r.alpha)};
+    double* s = params.provSums + size_t(pixel) * 4;
+    for (int c = 0; c < 4; ++c) atomicAdd(s + c, double(v[c]) - (old ? double(old->rgba[c]) : 0.0));
+    if (!old) atomicAdd(params.provCounts + pixel, 1u);
+    refineRecord(pixel, index, pass, mark, v);
+}
+// A provisional sample rendered again in full (or deferred to the CPU lane, which renders it in full): its value
+// leaves the provisional film.
+static __device__ void settle(U32 pixel, const Refine& old) {
+    double* s = params.provSums + size_t(pixel) * 4;
+    for (int c = 0; c < 4; ++c) atomicAdd(s + c, -double(old.rgba[c]));
+    atomicSub(params.provCounts + pixel, 1u);
+}
+
+// One sample. old: a provisional sample rendered again in full (null: a sample of its own), which was not counted in
+// its pass and is now.
+static __device__ __noinline__ void run(GpuBackend& backend, U32 pixel, U32 index, U32 tries, U32 pass, bool chain, const Refine* old) {
     Radiance r;
     const aov::Tables& at = *params.aovTables;
     if (at.channels) {
@@ -181,7 +214,14 @@ static __device__ __noinline__ void run(GpuBackend& backend, U32 pixel, U32 inde
         r.cryptoCapacity = params.cryptoEvents;
     }
     const long long began = params.heat ? clock64() : 0;
+    U32* mark = params.partial ? params.lowFlags + optixGetLaunchIndex().x : nullptr;
+    if (mark) *mark = 0u;
     const SampleStatus status = integrate(*params.config, pixel, index, backend, r);
+    if (status == SampleStatus::Done && mark && *mark) {
+        provisional(pixel, index, pass, *mark, r, old);
+        return;
+    }
+    if (old && status != SampleStatus::Miss) settle(pixel, *old);
     if (status == SampleStatus::Done) {
         if (at.channels) mergeAovs(at, pixel, r.aov, r.aovDepth);
         if (params.cryptoHeads) mergeCrypto(pixel, r.crypto, r.cryptoCount);
@@ -205,6 +245,9 @@ static __device__ __noinline__ void run(GpuBackend& backend, U32 pixel, U32 inde
     } else if (status == SampleStatus::Skip) {
         // No camera ray: taken, nothing added.
         if (params.adaptive) atomicAdd(&params.state->passDone[pass], 1u);
+    } else if (status == SampleStatus::Miss && old) {
+        // A provisional sample that found no coarser level either: it stays provisional, as it was.
+        refineRecord(pixel, index, pass, 0u, old->rgba);
     } else if (status == SampleStatus::Miss) {
         // Park it; the host sized this launch so the queue cannot overflow.
         const U64L at = atomicAdd(&params.state->parkedTail, 1ull);
@@ -236,14 +279,31 @@ static __device__ void errors() {
 }
 
 // The samples a launch renders, from wherever they come, for one call of run(): OptiX inlines a program's whole call
-// graph into its entry, so each call of the path tracer would be a copy of it, its traces with it. The parked samples
-// first (they started before anything else here), then the launch's chunk items; or a pass the chain made on the
-// device (async_adaptive.cu, mode 3).
+// graph into its entry, so each call of the path tracer would be a copy of it, its traces with it. The provisional
+// samples rendered again in full and the parked samples first (they started before anything else here), then the
+// launch's chunk items; or a pass the chain made on the device (async_adaptive.cu, mode 3).
 struct Feed {
-    U32 phase = 0;  // 0 the parked samples, 1 the chunk items, 2 the chain's pass, 3 none left
-    __device__ bool next(U32& pixel, U32& index, U32& tries, U32& pass, bool& chain) {
+    U32 phase = 4;  // 4 the provisional samples, 0 the parked samples, 1 the chunk items, 2 the chain's pass, 3 none left
+    Refine refine;  // the provisional sample being rendered again
+    __device__ bool next(U32& pixel, U32& index, U32& tries, U32& pass, bool& chain, const Refine*& old) {
         const auto& c = *params.config;
+        old = nullptr;
         for (;;) {
+            if (phase == 4) {
+                const U32 k = params.refineInCount ? atomicAdd(&params.state->refineClaimed[params.slot], 1u) : 0u;
+                if (k >= params.refineInCount) {
+                    phase = 0;
+                    continue;
+                }
+                refine = params.refineIn[k];
+                pixel = refine.pixel;
+                index = refine.index;
+                tries = 0;
+                pass = refine.pass;
+                chain = false;
+                old = &refine;
+                return true;
+            }
             if (phase == 0) {
                 const U64L k = params.parkedBegin + atomicAdd(&params.state->unparked[params.slot], 1u);
                 if (k >= params.parkedEnd) {
@@ -311,6 +371,14 @@ struct Feed {
 };
 
 
+// A diagnostic build's exceptions (XPU2_OPTIX_EXCEPTIONS, async_gpu.h): the first one's code and launch index kept
+// for the host, which logs them; the launch counts an error, so the frame falls back.
+extern "C" __global__ void __exception__report() {
+    if (atomicCAS(&params.state->exceptionIndex, 0u, optixGetLaunchIndex().x + 1u) == 0u)
+        params.state->exceptionCode = U32(optixGetExceptionCode());
+    atomicAdd(&params.state->errors, 1u);
+}
+
 extern "C" __global__ void __raygen__async() {
     if (params.mode == 1) {
         commit();
@@ -334,5 +402,6 @@ extern "C" __global__ void __raygen__async() {
     GpuBackend backend;
     U32 pixel, index, tries, pass;
     bool chain;
-    while (feed.next(pixel, index, tries, pass, chain)) run(backend, pixel, index, tries, pass, chain);
+    const Refine* old;
+    while (feed.next(pixel, index, tries, pass, chain, old)) run(backend, pixel, index, tries, pass, chain, old);
 }

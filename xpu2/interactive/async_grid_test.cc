@@ -30,11 +30,16 @@ static void exactlyOnce(U32 width, U32 height, U32 spp, GridOptions options, uns
                 if (grid.claim(cell, 1, &c)) claimed[w].push_back(c);
             }
         });
-    // The broker claims in bulk from its own cells first, then steals.
+    // The GPU's cellular workers claim in bulk by the same rules.
     std::vector<Chunk> buffer(97);
+    std::vector<U32> gpuCells(8);
+    for (U32 w = 0; w < gpuCells.size(); ++w) gpuCells[w] = grid.seed(Device::Gpu, w, U32(gpuCells.size()));
     while (!grid.empty())
-        for (U32 cell : grid.brokerOrder(Device::Gpu)) {
-            const U32 n = grid.claim(cell, U32(buffer.size()), buffer.data());
+        for (U32 w = 0; w < gpuCells.size(); ++w) {
+            const U32 cell = grid.choose(Device::Gpu, gpuCells[w], w);
+            if (cell == ~0u) continue;
+            gpuCells[w] = cell;
+            const U32 n = grid.claim(cell, U32(buffer.size()), buffer.data(), Device::Gpu);
             claimed[workers].insert(claimed[workers].end(), buffer.begin(), buffer.begin() + n);
         }
     for (auto& t : threads) t.join();
@@ -127,16 +132,46 @@ int main() {
     grid.claim(start, U32(drain.size()), drain.data());
     const U32 next = grid.choose(Device::Cpu, start, 0);
     check(next != start && grid.owner(next) == Device::Cpu, "then a same-owner neighbour");
-    // Empty every CPU cell: the CPU then steals from a GPU neighbour.
-    for (U32 i = 0; i < grid.cellCount(); ++i)
-        if (grid.owner(i) == Device::Cpu) {
-            std::vector<Chunk> rest(grid.remaining(i) + 1);
-            grid.claim(i, U32(rest.size()), rest.data());
-        }
+    // Empty every CPU cell (range by range, as the frontier lets them go): the CPU then steals from a GPU neighbour.
+    for (bool left = true; left;) {
+        left = false;
+        for (U32 i = 0; i < grid.cellCount(); ++i)
+            if (grid.owner(i) == Device::Cpu && grid.remaining(i)) {
+                std::vector<Chunk> rest(grid.remaining(i));
+                grid.claim(i, U32(rest.size()), rest.data());
+                left = true;
+            }
+    }
     const U32 stolen = grid.choose(Device::Cpu, start, 0);
     check(stolen != ~0u && grid.owner(stolen) == Device::Gpu, "then steal from the other device");
-    const auto order = grid.brokerOrder(Device::Gpu);
-    check(!order.empty() && grid.owner(order.front()) == Device::Gpu, "broker takes its own cells first");
+    check(grid.owner(grid.choose(Device::Gpu, ~0u, 0)) == Device::Gpu, "the GPU takes its own cells first");
+
+    // Progressive ranges (1, 1, 2, then the chunk size) and the frontier: a device's cells hand out a range only once
+    // every cell it works has handed out the one before.
+    {
+        Grid g(128, 64, 16, {64, 4, 0});  // two CPU cells
+        check(g.ranges().size() == 6 && g.ranges()[2].first == 2 && g.ranges()[2].count == 2 && g.ranges()[3].count == 4,
+              "progressive ranges 1, 1, 2, 4");
+        std::vector<Chunk> buf(1000);
+        check(g.claim(0, 1000, buf.data()) == 64, "a cell hands out one range up to the frontier");
+        check(g.claimable(0) == 0 && g.claimable(1) == 64, "the frontier waits for the other cell");
+        check(g.claim(1, 1000, buf.data()) == 64 && g.frontier(Device::Cpu) == 1 && g.claimable(0) == 64,
+              "and moves on once every cell has handed out its range");
+    }
+    // Important parts first: the important cells stay their owner's and run a range ahead, the rest are anyone's; a
+    // right of passage only where the CPU would not hold the frame up.
+    {
+        Grid g(256, 64, 16, {64, 4, 2});  // four cells: GPU, CPU, GPU, CPU
+        g.setScores({1.0f, 0.0f, 0.0f, 0.0f});
+        check(g.important(0) && !g.important(2) && g.reserved(0) && !g.reserved(2), "above the mean is important");
+        check(g.claimable(0, Device::Gpu) == 128 && g.claimable(2, Device::Gpu) == 64, "an important cell runs a range ahead");
+        check(g.choose(Device::Cpu, 1, 0) == 1, "the open cells are anyone's");
+        g.setRates(1e9, 1e3, 1, 0.01);  // a far faster GPU: its reserved work ends before a CPU chunk would
+        g.gpuClaimed();
+        check(!g.passage(Device::Cpu, 0), "no right of passage where a CPU chunk would hold the frame up");
+        g.setRates(1e3, 1e9, 1, 0.01);  // a far slower GPU
+        check(g.passage(Device::Cpu, 0), "a right of passage where the GPU would get there last");
+    }
 
     // Ownership flips towards the device that rendered most of a cell (CA-10),
     // at most 8 a frame, never more than 10% of cells at once (CA-12).

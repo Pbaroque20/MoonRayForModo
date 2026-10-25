@@ -2541,7 +2541,7 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
  for(auto i=context.beginSceneObject();i!=context.endSceneObject();++i){auto* o=i->second;need(++objects<=limits.objects,"Object budget");sorted.emplace(o->getName(),o);
   if(o->getSceneClass().getName()=="RdlMeshGeometry"){
    auto& v=o->get<rdl::Vec3fVector>("vertex_list");auto& t=o->get<rdl::IntVector>("face_vertex_count");auto& ind=o->get<rdl::IntVector>("vertices_by_index");
-   size_t faces=0,corners=0;for(int n:t){faces+=n>=3?size_t(n-2):0;corners+=n>0?size_t(n):0;}need(corners==ind.size(),"Face vertex counts do not match the vertex indices");
+   size_t faces=0,corners=0;for(int n:t){faces+=n>=3?size_t(n-2):0;corners+=n>0?size_t(n):0;}need(corners==ind.size(),o->getName()+": face vertex counts ("+std::to_string(corners)+" corners in "+std::to_string(t.size())+" faces) do not match the vertex indices ("+std::to_string(ind.size())+")");
    need(v.size()<=limits.vertices-verts&&faces<=limits.triangles-tris,"Geometry count budget");verts+=v.size();tris+=faces;
   }
  }

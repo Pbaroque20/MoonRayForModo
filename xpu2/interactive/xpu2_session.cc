@@ -14,7 +14,8 @@
 // or the GPU fails, the session prints "@@MODO_XPU2 FALLBACK <reason>" and ends: the kit then starts MoonRay in its
 // place. The picture goes out through shared memory with its rows in MoonRay's film order, and the outlines of
 // the work as @@MODO_TILES, the work grid's cells being rendered (its cellular rules move the CPU's workers from cell
-// to cell), and @@MODO_WORKERS: each CPU worker's 8-pixel tile and the cells the GPU's queued launches hold.
+// to cell), @@MODO_WORKERS: each CPU worker's 8-pixel tile, and @@MODO_GPU_WORKERS: the cells the GPU's queued
+// launches hold (the private kit draws them in a colour of their own).
 #include "async_render.h"
 #include "../../native-port/modo_protocol_line.h"
 #include "../../native-port/modo_scene_memory.h"
@@ -96,6 +97,8 @@ fs::path shaderMark(const Programs& p) {
         const std::string l = level;
         mix(l.data(), l.size());
     }
+    // So is a diagnostic build's with OptiX's exceptions (XPU2_OPTIX_EXCEPTIONS).
+    if (std::getenv("XPU2_OPTIX_EXCEPTIONS")) mix("exceptions", 10);
     wchar_t system[MAX_PATH] = {};
     GetSystemDirectoryW(system, MAX_PATH);
     WIN32_FILE_ATTRIBUTE_DATA driver{};
@@ -327,11 +330,11 @@ private:
     Rect rect(U32 x0, U32 y0, U32 side) const { return {x0, y0, std::min(x0 + side, width_), std::min(y0 + side, height_)}; }
     void tell(const std::vector<U32>& tiles, const std::vector<U32>& cells, U32 cellSize, const std::vector<U32>& live) {
         const U32 tilesX = (width_ + TileSize - 1) / TileSize, cellsX = (width_ + cellSize - 1) / cellSize;
-        std::vector<Rect> workers;
+        std::vector<Rect> workers, gpuWorkers;
         for (U32 t : tiles) workers.push_back(rect(t % tilesX * TileSize, t / tilesX * TileSize, TileSize));
         for (U32 c : cells) {
-            if (workers.size() >= 512) break;
-            workers.push_back(rect(c % cellsX * cellSize, c / cellsX * cellSize, cellSize));
+            if (gpuWorkers.size() >= 512) break;
+            gpuWorkers.push_back(rect(c % cellsX * cellSize, c / cellsX * cellSize, cellSize));
         }
         // The buckets are the work grid's cells (the cellular rules move workers between them): those the CPU's
         // workers are in, and those the GPU's queued launches hold.
@@ -354,6 +357,7 @@ private:
             };
             line("@@MODO_TILES", buckets.begin(), buckets.end());
             line("@@MODO_WORKERS", workers.begin(), workers.end());
+            line("@@MODO_GPU_WORKERS", gpuWorkers.begin(), gpuWorkers.end());
             return;
         }
         for (U32 t : tiles) {
@@ -372,6 +376,7 @@ private:
         };
         line("@@MODO_TILES", buckets.begin(), buckets.end());
         line("@@MODO_WORKERS", workers.begin(), workers.end());
+        line("@@MODO_GPU_WORKERS", gpuWorkers.begin(), gpuWorkers.end());
     }
     bool on_;
     std::atomic<bool> stop_{false};
@@ -413,6 +418,8 @@ int session(const Args& args, const fs::path& directory) {
     // (the fastest, its tiles unknown to the host) and the progressive pictures' interval.
     const int mode = std::getenv("XPU2_SESSION_MODE") ? std::atoi(std::getenv("XPU2_SESSION_MODE")) : 2;
     const bool deviceChain = envOn("XPU2_SESSION_CHAIN", false);
+    // Partial shading (texture misses finished a level up, rendered again in full later; off: they wait for the tile).
+    const bool partial = envOn("XPU2_SESSION_PARTIAL", true);
     // Adaptive frames: cellular generations (the default), or MoonRay's error trees (XPU2_SESSION_ADAPTIVE=trees).
     const bool cellular = !(std::getenv("XPU2_SESSION_ADAPTIVE") && std::string(std::getenv("XPU2_SESSION_ADAPTIVE")) == "trees");
     const double previewSeconds = std::getenv("XPU2_SESSION_PREVIEW_MS") ? std::atof(std::getenv("XPU2_SESSION_PREVIEW_MS")) / 1000.0 : 0.1;
@@ -604,6 +611,7 @@ int session(const Args& args, const fs::path& directory) {
                 options.mode = gpu ? mode : 0;
                 options.deviceChain = deviceChain;
                 options.cellular = cellular;
+                options.partial = partial;
                 options.watch = &watch;
                 result = renderer->render(options);
                 if (renderer->deviceRatio() > 0) deviceRatio = renderer->deviceRatio();
@@ -611,6 +619,17 @@ int session(const Args& args, const fs::path& directory) {
                     std::printf("XPU2: cells by suitability: %u of %u the CPU's (%u the GPU would defer), GPU/CPU rate %.2f, probed in %.1f ms\n",
                                 result.seededCpuCells, result.seededCells, result.seededDeferCells, result.seededRatio, result.seedSeconds * 1e3);
                 if (result.deferred) std::printf("XPU2: %llu samples deferred to the CPU\n", (unsigned long long)result.deferred);
+                // Where a frame's time went: when the grid ran out of chunks, the GPU's launches and their rate, the parked
+                // samples it ran again, and the fine-detail cache's loads and evictions.
+                if (result.launches)
+                    std::printf("XPU2: grid empty at %.2f s of %.2f s; %llu GPU launches at %.0f samples a second; %llu parked samples run again; "
+                                "fine-detail tiles loaded %llu, evicted %llu\n",
+                                result.timeline.gridEmpty, result.seconds, (unsigned long long)result.launches, result.gpuItemsPerSecond,
+                                (unsigned long long)result.parkedRun, (unsigned long long)result.fineLoaded, (unsigned long long)result.fineEvicted);
+                if (result.provisional)
+                    std::printf("XPU2: %llu provisional samples (textures read a level up while their tiles landed), rendered again in full: "
+                                "%llu on the GPU, %llu on the CPU\n",
+                                (unsigned long long)result.provisional, (unsigned long long)result.refinedGpu, (unsigned long long)result.refinedCpu);
                 if (result.failed) {
                     outlines.watch(nullptr, id, 0, 0);
                     fallback(result.error);

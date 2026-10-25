@@ -41,6 +41,16 @@ struct RenderOptions {
     bool cellular = false;
     // A preview session's watch over the frame (none: the frame runs to its end).
     struct Watch* watch = nullptr;
+    // Partial shading: a GPU sample whose fine-detail tile is not resident finishes from the texture's next level up
+    // and stays provisional (shown in the pictures, kept out of the film) until it is rendered again in full, by the
+    // CPU lane or by the GPU once the tile has landed; false parks it until the tile lands, as before. Never in the
+    // pass chain, which runs on the device alone.
+    bool partial = true;
+    // Important parts first: the pictures so far score the cells, the important ones stay their owner's and may run a
+    // range ahead, the rest are anyone's (async_grid.h).
+    bool important = true;
+    // The GPU's cellular workers: shares of each launch, each in a cell of its own, moving by the cellular rules.
+    unsigned gpuWorkers = 32;
 };
 
 // What a preview session asks of a frame, on the feeder's thread: whether to stop it (its samples are dropped,
@@ -97,6 +107,9 @@ struct RenderResult {
     // Adaptive frames: passes generated, tree updates, and samples a pixel on average.
     U32 adaptivePasses = 0, treeUpdates = 0;
     U64 deferred = 0;  // samples the GPU deferred to the CPU lane (stand-ins)
+    // Partial shading: provisional samples the GPU made (one again each time one rendered again still read a coarser
+    // level), and those rendered again in full on the GPU and on the CPU.
+    U64 provisional = 0, refinedGpu = 0, refinedCpu = 0;
     // The cells by suitability of a grid's first frame on both devices (device_suit.h): cells, those the CPU took
     // (of them, those the GPU would mostly defer), the lanes' rate ratio used, the probe's time.
     U32 seededCells = 0, seededCpuCells = 0, seededDeferCells = 0;
@@ -251,12 +264,19 @@ public:
             }
         }
         Grid grid(plan_->width, plan_->height, plan_->spp, gridOptions, owners, adaptive, plan_->viewport);
+        // The indexer's probabilities, kept for the later frames of the same grid.
+        if (seeded.gpuProbability.size() == cells) suitability_ = seeded.gpuProbability;
+        grid.setSuitability(suitability_);
         HostFilm film(plan_->width, plan_->height);
         film.initAovs(cpuScene_.aovTables, plan_->aovs && plan_->aovs->heatMap);
         film.initCrypto(plan_->aovs.get());
         RetryQueue retries;
+        RefineQueue refines;
         const U32 itemsPerChunk = gridOptions.samplesPerChunk * TilePixels;
-        if (useGpu) gpu_->begin(gridOptions.samplesPerChunk, adaptive);
+        const bool chainFrame = adaptive && useGpu && o.deviceChain && !o.cellular && !standIns && gpu_->hasChain();
+        const bool partial = o.partial && useGpu && !chainFrame;
+        if (partial) film.initSettled();
+        if (useGpu) gpu_->begin(gridOptions.samplesPerChunk, adaptive, partial);
         Adaptive state(*plan_, gridOptions.samplesPerChunk, o.cellular);
         state.onGeneration = [this](const std::vector<U32>& tiles) {
             std::lock_guard<std::mutex> lock(activityMutex_);
@@ -266,7 +286,7 @@ public:
             const unsigned trees = o.treeThreads != ~0u ? o.treeThreads : std::max(1u, std::min(o.threads, 16u) - 1);
             if (!pool_ || pool_->size() != trees) pool_ = std::make_unique<Pool>(trees);
             state.start = Clock::now();
-            if (useGpu && o.deviceChain && !o.cellular && !standIns && gpu_->hasChain()) state.startChain(*gpu_, tileOrder(gridOptions.cellSize));
+            if (chainFrame) state.startChain(*gpu_, tileOrder(gridOptions.cellSize));
             else state.generateReady(grid, useGpu ? gpu_ : nullptr);
         }
 
@@ -303,7 +323,7 @@ public:
         CpuLane& cpuLane = *cpu_;
         const auto start = Clock::now();
         auto at = [&] { return std::chrono::duration<double>(Clock::now() - start).count(); };
-        cpuLane.begin(config, grid, film, retries, adaptive ? &state.tables : nullptr);
+        cpuLane.begin(config, grid, film, retries, adaptive ? &state.tables : nullptr, partial ? &refines : nullptr);
         {
             std::lock_guard<std::mutex> lock(activityMutex_);
             activeLane_ = &cpuLane;
@@ -338,13 +358,20 @@ public:
         bool cancelled = false, drained = false;
         // Progressive pictures: the GPU's film is copied behind its queued launches, then merged with the host's.
         enum { PreviewIdle, PreviewCopying } previewState = PreviewIdle;
-        double nextPreview = watch && watch->preview ? watch->previewSeconds : -1;
+        // A drain with provisional samples about: no chunk is handed out any more (the grid closes), the samples are
+        // rendered in full first, and then the frame ends with what it has.
+        bool draining = false;
+        // Without a watch they are made for important parts first alone.
+        const bool shown = watch && watch->preview;
+        double nextPreview = shown ? watch->previewSeconds : o.important && !adaptive ? 0.2 : -1;
         std::vector<float> previewRgb;
+        std::vector<unsigned char> covered;
+        double nextScore = 0;  // important parts first: the pictures score the cells at most once a second
         const double plannedSamples = double(plan_->width) * plan_->height * plan_->spp;
         bool previewOfAov = false;
         auto preview = [&] {
             if (nextPreview < 0 || (previewState == PreviewIdle && at() < nextPreview)) return;
-            if (previewState == PreviewIdle) previewOfAov = watch->previewAov && watch->previewResult && watch->previewAov();
+            if (previewState == PreviewIdle) previewOfAov = shown && watch->previewAov && watch->previewResult && watch->previewAov();
             if (previewState == PreviewIdle && useGpu) {
                 gpu_->downloadPreview(previewOfAov);
                 previewState = PreviewCopying;
@@ -360,20 +387,40 @@ public:
                 return;
             }
             previewRgb.resize(size_t(plan_->width) * plan_->height * 3);
-            const U64 seen = film.preview(previewRgb.data(), useGpu ? gpu_->sums() : nullptr, useGpu ? gpu_->counts() : nullptr);
+            covered.resize(size_t(plan_->width) * plan_->height);
+            const U64 seen = film.preview(previewRgb.data(), useGpu ? gpu_->sums() : nullptr, useGpu ? gpu_->counts() : nullptr,
+                                          partial ? gpu_->provSums() : nullptr, partial ? gpu_->provCounts() : nullptr, covered.data());
+            if (o.important && !adaptive && !draining && at() >= nextScore) {
+                grid.setScores(cellScores(previewRgb, covered, gridOptions.cellSize));
+                nextScore = at() + 1.0;
+            }
+            previewState = PreviewIdle;
+            if (!shown) {
+                nextPreview = at() + 1.0;
+                return;
+            }
             // An adaptive frame stops short of its most samples: its share is its passes done, where the host knows them.
             double fraction = std::min(1.0, double(seen) / plannedSamples);
             if (adaptive && !state.chain && !state.passes.empty())
                 fraction = std::max(fraction, double(state.retired) / double(state.passes.size()));
+            fillUncovered(previewRgb, covered, plan_->width, plan_->height);
             watch->preview(previewRgb, plan_->width, plan_->height, fraction);
-            previewState = PreviewIdle;
             nextPreview = at() + watch->previewSeconds;
         };
 
-        double gpuRate = 0;  // chunk items a second, timed on the device, smoothed
-        U64 queuedItems = 0, gpuItems = 0, stalls = 0, lastParked = 0;
+        double gpuRate = 0;  // samples a second, timed on the device, smoothed
+        U64 queuedSamples = 0, stalls = 0, lastParked = 0;
+        // The GPU's cellular workers, each in its cell (async_grid.h choose): a launch's share each.
+        std::vector<U32> gpuCells(useGpu ? std::max(1u, o.gpuWorkers) : 0u, ~0u);
+        for (U32 w = 0; w < gpuCells.size(); ++w) gpuCells[w] = grid.seed(Device::Gpu, w, U32(gpuCells.size()));
         std::vector<Chunk> claim;
         std::vector<U64> cellSamples(grid.cellCount(), 0);  // the GPU's claims, for the ownership accounting
+        // Partial shading: the provisional samples a launch renders again, and a guard against a cache too small for
+        // them (the queue no lower over many launches that took them whether or not their tiles had landed).
+        std::vector<Refine> refineBatch(partial ? GpuLane::RefineInCapacity : 0);
+        std::vector<Refine> made;
+        size_t refineLow = ~size_t(0);
+        U32 refineStalls = 0;
         std::string failure;
         while (failure.empty()) {
             if (watch) {
@@ -381,12 +428,16 @@ public:
                     cancelled = true;
                     break;
                 }
-                if (watch->drain && watch->drain()) {
-                    drained = true;
-                    break;
+                if (!draining && watch->drain && watch->drain()) {
+                    if (!partial) {
+                        drained = true;
+                        break;
+                    }
+                    draining = true;
+                    grid.close();
                 }
-                preview();
             }
+            preview();
             if (useGpu) {
                 Completion c;
                 while (gpu_->poll(c)) {
@@ -406,11 +457,18 @@ public:
                             result.deferred += deferred.size();
                         }
                     }
-                    queuedItems -= c.items;
-                    gpuItems += c.items;
+                    // The provisional samples it made: for the CPU lane, or the GPU once their tiles have landed.
+                    if (partial) {
+                        made.clear();
+                        gpu_->takeRefines(made);
+                        refines.push(made.data(), made.size());
+                        result.provisional += made.size();
+                        result.refinedGpu += c.refinesRun;
+                    }
+                    queuedSamples -= std::min(queuedSamples, c.samples);
                     // Launches too small to keep the GPU full understate its rate.
-                    if (c.deviceSeconds > 0 && c.items >= U64(o.firstChunks) * itemsPerChunk / 2) {
-                        const double rate = double(c.items + c.parkedRun) / c.deviceSeconds;
+                    if (c.deviceSeconds > 0 && c.samples >= U64(gpu_->launchThreads())) {
+                        const double rate = double(c.samples + c.parkedRun + c.refinesRun) / c.deviceSeconds;
                         gpuRate = gpuRate ? 0.7 * gpuRate + 0.3 * rate : rate;
                     }
                     if (c.errors) failure = "GPU sample failure; whole epoch must use fallback";
@@ -425,31 +483,62 @@ public:
                     result.parkedRun += c.parkedRun;
                 }
                 landed();
+                // The rights of passage weigh the lanes' rates (async_grid.h passage).
+                {
+                    const double elapsed = at();
+                    const unsigned workers = std::max(1u, cpuLane.threads());
+                    grid.setRates(gpuRate, elapsed > 0.05 && cpuLane.threads() ? double(cpuLane.counters.samples.load()) / elapsed / workers : 0.0,
+                                  workers, o.windowMs / 1000.0);
+                }
                 while (failure.empty() && gpu_->ready()) {
                     const double claimStart = at();
-                    const U32 want = launchSize(o, grid, gpuRate, cpuLane, itemsPerChunk, queuedItems, start);
+                    // Provisional samples whose tiles have landed go back to the GPU first; with no chunk left and
+                    // nothing in flight, any (their tiles are asked for again), so the frame never waits on the CPU.
+                    U32 refineCount = 0;
+                    if (partial && refines.size()) {
+                        gpu_->landTiles();
+                        const bool any = grid.empty() && !gpu_->inFlight();
+                        refineCount = U32(refines.take([&](U32 tile) { return any || gpu_->tileResident(tile); }, refineBatch.data(),
+                                                       refineBatch.size(), size_t(4) * refineBatch.size()));
+                        if (any && refineCount) {
+                            const size_t left = refines.size() + refineCount;
+                            if (left < refineLow) {
+                                refineLow = left;
+                                refineStalls = 0;
+                            } else if (++refineStalls > 512) {
+                                failure = "Fine-detail cache cannot hold the provisional samples' working set; use fallback";
+                            }
+                        }
+                    }
+                    const U32 want = std::min(launchSize(o, grid, gpuRate, cpuLane, queuedSamples, start), gpu_->chunkRoom(refineCount));
                     claim.resize(want);
                     U32 got = 0;
                     if (want) {
-                        const auto order = grid.brokerOrder(Device::Gpu);
-                        // Spread a launch over the hottest cells, so the image converges evenly.
-                        const U32 quota = std::max<U32>(1, want / std::max<size_t>(1, order.size()));
-                        for (int pass = 0; pass < 2 && got < want; ++pass)
-                            for (U32 cell : order) {
-                                if (got >= want) break;
-                                const U32 n = grid.claim(cell, pass ? want - got : std::min(quota, want - got), claim.data() + got);
+                        // The GPU's cellular workers take the launch's shares, each from its cell, moving by the cellular
+                        // rules where that cell has nothing more it may take now.
+                        const U32 share = (want + U32(gpuCells.size()) - 1) / U32(gpuCells.size());
+                        for (U32 w = 0; w < gpuCells.size() && got < want; ++w)
+                            for (U32 need = std::min(share, want - got), moves = 0; need && moves < 8; ++moves) {
+                                const U32 cell = grid.choose(Device::Gpu, gpuCells[w], w);
+                                if (cell == ~0u) break;
+                                gpuCells[w] = cell;
+                                const U32 n = grid.claim(cell, need, claim.data() + got, Device::Gpu);
                                 if (n && grid.owner(cell) != Device::Gpu) result.gpuStolenChunks += n;
                                 got += n;
+                                need -= n;
                             }
+                        if (got) grid.gpuClaimed();
                     }
                     const double accountStart = at();
                     // Each chunk's samples: its tile's pixels in the image (an adaptive
                     // pass's mask holds only those) times its sample count.
+                    U64 launchSamples = 0;
                     for (U32 i = 0; i < got; ++i) {
                         const Chunk& k = claim[i];
                         const U64 pixels = adaptive ? U64(__builtin_popcountll(state.tables.masks[chunkPass(k) % PassSlots][k.tile]))
                                                     : grid.tilePixels(k.tile);
                         cellSamples[k.cell] += pixels * k.count;
+                        launchSamples += pixels * k.count;
                     }
                     for (U32 c = 0; c < cellSamples.size(); ++c)
                         if (cellSamples[c]) {
@@ -457,22 +546,22 @@ public:
                             cellSamples[c] = 0;
                         }
                     const double launchStart = at();
-                    if (!gpu_->launch(claim.data(), got)) break;
+                    if (!gpu_->launch(claim.data(), got, refineBatch.data(), refineCount, launchSamples)) break;
                     flights(claim.data(), got);
                     if (result.timeline.firstLaunch < 0) result.timeline.firstLaunch = at();
                     result.launchTrace.push_back({at(), -1, 0, accountStart - claimStart, launchStart - accountStart,
                                                   at() - launchStart, got, 0});
                     if (adaptive && got && grid.empty()) state.trace[state.generated - 1].launched = state.at();
-                    queuedItems += U64(got) * itemsPerChunk;
+                    queuedSamples += launchSamples;
                     // A parked queue that does not shrink across many launches means
                     // the cache cannot hold what the samples need.
-                    if (!got && gpu_->parkedOutstanding() >= lastParked && ++stalls > 256)
+                    if (!got && !refineCount && gpu_->parkedOutstanding() >= lastParked && ++stalls > 256)
                         failure = "Fine-detail cache cannot hold the working set; use fallback";
                     lastParked = gpu_->parkedOutstanding();
                 }
             }
             if (cpuLane.counters.failures.load()) failure = "CPU sample failure; whole epoch must use fallback";
-            if (adaptive) {
+            if (adaptive && !draining) {
                 const U64 before = useGpu ? gpu_->launchCount() : 0;
                 state.advance(grid, film, useGpu ? gpu_ : nullptr, *pool_);
                 if (useGpu) landed();
@@ -481,12 +570,15 @@ public:
                     result.launchTrace.push_back({at(), -1, 0, 0, 0, 0, 0, 0});
                 }
             }
-            const bool empty = grid.empty() && (!adaptive || state.finished(useGpu ? gpu_ : nullptr));
+            const bool empty = grid.empty() && (draining || !adaptive || state.finished(useGpu ? gpu_ : nullptr));
             if (empty && result.timeline.gridEmpty < 0) result.timeline.gridEmpty = at();
-            const bool cpuQuiet = cpuLane.idle() == cpuLane.threads() && !retries.size();
+            const bool cpuQuiet = cpuLane.idle() == cpuLane.threads() && !retries.size() && !refines.size();
             if (empty && cpuQuiet && result.timeline.cpuDone < 0) result.timeline.cpuDone = at();
             const bool gpuQuiet = !useGpu || (gpu_->inFlight() == 0 && gpu_->parkedOutstanding() == 0);
-            if (empty && gpuQuiet && cpuQuiet) break;
+            if (empty && gpuQuiet && cpuQuiet) {
+                drained = draining;
+                break;
+            }
             // The feeder polls: on its own core it never sleeps; otherwise a short sleep.
             if (useGpu && (o.reserveFeederCore || !useCpu)) std::this_thread::yield();
             else Sleep(1);
@@ -519,8 +611,9 @@ public:
         }
         result.seconds = std::chrono::duration<double>(Clock::now() - start).count();
 
+        result.refinedCpu = cpuLane.counters.refined.load();
         // Merge and audit: every pixel has exactly the samples planned for it, spp
-        // in a uniform frame (ACC-07).
+        // in a uniform frame (ACC-07), and no provisional sample is left.
         const size_t pixels = size_t(plan_->width) * plan_->height;
         result.rgba.resize(pixels * 4);
         result.counts.resize(pixels);
@@ -535,7 +628,14 @@ public:
         const bool dropsRays = plan_->camera.type == surface::CameraFisheye || plan_->camera.type == surface::CameraBake;
         const int* view = plan_->viewport;
         for (size_t i = 0; i < pixels; ++i) {
-            const U32 gc = useGpu ? gpu_->counts()[i] : 0, count = hc[i] + gc;
+            double provisional[4] = {0, 0, 0, 0};
+            const U32 left = partial ? film.provisional(i, gpu_->provSums(), gpu_->provCounts(), provisional) : 0u;
+            if (left && !drained) {
+                result.failed = true;
+                result.error = "Provisional samples left at pixel " + std::to_string(i) + ": " + std::to_string(left);
+                return result;
+            }
+            const U32 gc = (useGpu ? gpu_->counts()[i] : 0) + left, count = hc[i] + gc;
             const int px = int(i % plan_->width), py = int(i / plan_->width);
             const bool inView = px >= view[0] && py >= view[1] && px < view[2] && py < view[3];
             const U32 expected = !inView ? 0u : !adaptive ? (plan_->pixelSamples.empty() ? plan_->spp : plan_->pixelSamples[i])
@@ -545,7 +645,7 @@ public:
             // A drained frame has what it got: the mean of its samples, black where none landed.
             if (drained) {
                 for (int c = 0; c < 4; ++c)
-                    result.rgba[i * 4 + c] = count ? float((hs[i * 4 + c] + (useGpu ? gpu_->sums()[i * 4 + c] : 0.0)) / count) : 0.0f;
+                    result.rgba[i * 4 + c] = count ? float((hs[i * 4 + c] + (useGpu ? gpu_->sums()[i * 4 + c] : 0.0) + provisional[c]) / count) : 0.0f;
                 result.cpuSamples += hc[i];
                 result.gpuSamples += gc;
                 continue;
@@ -910,6 +1010,81 @@ private:
         }
     };
 
+    // Important parts first (MoonRay's, tools/port_important.py): each cell's score from the picture so far, the mean
+    // difference of its sampled pixels' tones from their left and upper neighbours' (light / (1 + light): bright and
+    // dark weighed alike); -1 where none of its pixels has a sample yet.
+    std::vector<float> cellScores(const std::vector<float>& rgb, const std::vector<unsigned char>& covered, U32 cellSize) const {
+        const U32 w = plan_->width, h = plan_->height, cellsX = (w + cellSize - 1) / cellSize, cellsY = (h + cellSize - 1) / cellSize;
+        std::vector<double> sum(size_t(cellsX) * cellsY, 0.0);
+        std::vector<U32> n(sum.size(), 0);
+        auto tone = [&](size_t i) {
+            const float l = 0.2126f * rgb[i * 3] + 0.7152f * rgb[i * 3 + 1] + 0.0722f * rgb[i * 3 + 2];
+            return std::isfinite(l) && l > 0 ? l / (1 + l) : 0.0f;
+        };
+        for (U32 y = 0; y < h; ++y)
+            for (U32 x = 0; x < w; ++x) {
+                const size_t i = size_t(y) * w + x;
+                if (!covered[i]) continue;
+                const size_t c = size_t(y / cellSize) * cellsX + x / cellSize;
+                const float t = tone(i);
+                double d = 0;
+                if (x > 0 && covered[i - 1]) d += std::fabs(t - tone(i - 1));
+                if (y > 0 && covered[i - w]) d += std::fabs(t - tone(i - w));
+                sum[c] += d;
+                ++n[c];
+            }
+        std::vector<float> scores(sum.size(), -1.0f);
+        for (size_t c = 0; c < sum.size(); ++c)
+            if (n[c]) scores[c] = float(sum[c] / n[c]);
+        return scores;
+    }
+    // A picture's pixels no sample has reached yet, filled from the nearest ones that have samples (the finest level
+    // of a pyramid of averages that covers them), so the whole frame shows from its first samples on, as MoonRay's
+    // coarse passes show it. The picture alone: the film is untouched.
+    static void fillUncovered(std::vector<float>& rgb, const std::vector<unsigned char>& covered, U32 w, U32 h) {
+        bool any = false;
+        for (unsigned char c : covered)
+            if (!c) {
+                any = true;
+                break;
+            }
+        if (!any) return;
+        struct Level { U32 w, h; std::vector<float> sum; std::vector<float> n; };
+        std::vector<Level> levels;
+        levels.push_back({w, h, std::vector<float>(size_t(w) * h * 3), std::vector<float>(size_t(w) * h)});
+        for (size_t i = 0; i < covered.size(); ++i)
+            if (covered[i]) {
+                for (int c = 0; c < 3; ++c) levels[0].sum[i * 3 + c] = rgb[i * 3 + c];
+                levels[0].n[i] = 1;
+            }
+        while (levels.back().w > 1 || levels.back().h > 1) {
+            const Level& f = levels.back();
+            Level next{(f.w + 1) / 2, (f.h + 1) / 2, {}, {}};
+            next.sum.assign(size_t(next.w) * next.h * 3, 0.0f);
+            next.n.assign(size_t(next.w) * next.h, 0.0f);
+            for (U32 y = 0; y < f.h; ++y)
+                for (U32 x = 0; x < f.w; ++x) {
+                    const size_t from = size_t(y) * f.w + x, to = size_t(y / 2) * next.w + x / 2;
+                    for (int c = 0; c < 3; ++c) next.sum[to * 3 + c] += f.sum[from * 3 + c];
+                    next.n[to] += f.n[from];
+                }
+            levels.push_back(std::move(next));
+        }
+        for (U32 y = 0; y < h; ++y)
+            for (U32 x = 0; x < w; ++x) {
+                const size_t i = size_t(y) * w + x;
+                if (covered[i]) continue;
+                for (size_t l = 1; l < levels.size(); ++l) {
+                    const Level& L = levels[l];
+                    const size_t at = size_t(y >> l) * L.w + (x >> l);
+                    if (L.n[at] > 0) {
+                        for (int c = 0; c < 3; ++c) rgb[i * 3 + c] = L.sum[at * 3 + c] / L.n[at];
+                        break;
+                    }
+                }
+            }
+    }
+
     // The image's tiles cell by cell, each cell's row by row, as the work grid holds them.
     std::vector<U32> tileOrder(U32 cellSize) const {
         const U32 tilesX = (plan_->width + TileSize - 1) / TileSize, tilesY = (plan_->height + TileSize - 1) / TileSize;
@@ -925,24 +1100,37 @@ private:
 
     // How many chunks the next GPU launch takes: about one window of the GPU's
     // measured work; near the end, the share that lets both devices finish at
-    // the same moment, given what the GPU already has queued.
-    U32 launchSize(const RenderOptions& o, const Grid& grid, double gpuRate, const CpuLane& cpuLane, U32 itemsPerChunk,
-                   U64 queuedItems, std::chrono::steady_clock::time_point start) const {
+    // the same moment, given what the GPU already has queued. gpuRate and
+    // queuedSamples in samples; a chunk of the range at the frontier holds a
+    // tile's pixels times its samples.
+    U32 launchSize(const RenderOptions& o, const Grid& grid, double gpuRate, const CpuLane& cpuLane, U64 queuedSamples,
+                   std::chrono::steady_clock::time_point start) const {
         U64 remainingChunks = 0;
         for (U32 i = 0; i < grid.cellCount(); ++i) remainingChunks += grid.remaining(i);
         if (!remainingChunks) return 0;
+        const auto& ranges = grid.ranges();
+        const U32 front = grid.frontier(Device::Gpu);
+        const U32 itemsPerChunk = TilePixels * (ranges.empty() || front >= ranges.size() ? o.grid.samplesPerChunk : ranges[front].count);
         const U64 cap = gpu_->maxChunksPerLaunch();
-        // An adaptive pass is on the frame's critical path: it goes out whole.
-        if (plan_->adaptive) return U32(std::min<U64>(cap, remainingChunks));
-        if (!gpuRate) return U32(std::min<U64>({cap, remainingChunks, o.firstChunks}));
+        // An adaptive pass is on the frame's critical path, but goes out in launches of about windowMs (the first
+        // ones firstChunks) as a uniform frame's do: the progressive pictures are copied behind the queued launches,
+        // so a pass sent whole showed nothing until it ended (a whole first pass of a large frame takes many seconds).
+        // Never below two samples a launch thread: a launch with fewer leaves most of the GPU's threads idle, its time
+        // the slowest path's, and its rate (which sizes the next ones) far under the GPU's.
+        const U64 least = (U64(gpu_->launchThreads()) * 2 + itemsPerChunk - 1) / itemsPerChunk;
+        if (plan_->adaptive) {
+            const U64 want = gpuRate ? std::max<U64>(U64(gpuRate * o.windowMs / 1000.0 / itemsPerChunk), least) : U64(o.firstChunks);
+            return U32(std::min<U64>({want, cap, remainingChunks}));
+        }
+        if (!gpuRate) return U32(std::min<U64>({cap, remainingChunks, std::max<U64>(o.firstChunks, least)}));
         U64 want = U64(gpuRate * o.windowMs / 1000.0 / itemsPerChunk);
-        want = std::max<U64>(want, 16);
+        want = std::max<U64>(want, least);
         if (cpuLane.threads()) {
             const double elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
             const double cpuRate = elapsed > 0.01 ? double(cpuLane.counters.samples.load()) / elapsed : 0;
             const double remainingItems = double(remainingChunks) * itemsPerChunk;
             // GPU share L so that (queued + L) / gpuRate == (remaining - L) / cpuRate.
-            const double share = (remainingItems * gpuRate - double(queuedItems) * cpuRate) / (gpuRate + cpuRate);
+            const double share = (remainingItems * gpuRate - double(queuedSamples) * cpuRate) / (gpuRate + cpuRate);
             if (share <= 0) return 0;
             want = std::min<U64>(want, U64(share / itemsPerChunk) + 1);
         }
@@ -953,6 +1141,7 @@ private:
     const CpuScene& cpuScene_;
     GpuLane* gpu_;
     Ownership ownership_;
+    std::vector<float> suitability_;  // the indexer's probabilities of the grid's cells (device_suit.h), from its first frame
     double deviceRatio_ = 0;
     std::unique_ptr<CpuLane> cpu_;  // persistent workers (spec §4)
     DWORD_PTR cpuAffinity_ = 0;

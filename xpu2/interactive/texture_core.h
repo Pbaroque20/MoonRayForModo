@@ -13,7 +13,13 @@ enum Status:unsigned {Invalid=0,Ready=1,Miss=2};
 struct Mip {unsigned width=0,height=0;const V3* const* pages=nullptr;unsigned tileBase=0;};
 // A sink receives the scene-wide id of each missing tile, and of each tracked tile
 // that is read (for the fine-detail cache's eviction order). NoSink ignores both.
-struct NoSink {X2_HD void operator()(unsigned) const {} X2_HD void touch(unsigned) const {}};
+// Partial shading: where the sink takes coarse(), a texel whose tile is missing is read from its parent a level up
+// where that level is resident (the GPU's levels 1 and up always are: the half-resolution picture and smaller), by
+// the sink out of line (parent); the sample is then provisional and is rendered again in full (async_gpu.cu,
+// async_render.h).
+struct Image;
+struct NoSink {X2_HD void operator()(unsigned) const {} X2_HD void touch(unsigned) const {} X2_HD bool coarse() const {return false;}
+ X2_HD unsigned parent(const Image&,unsigned,unsigned,unsigned,V3&) const {return 2u;}};
 struct Image {unsigned count=0;Mip levels[MaxLevels]{};};
 // mode: 0 anisotropic (MoonRay's primary paths), 1 trilinear mips of the closest texels (glossy and mirror
 // paths), 2 one mip level's closest texel (diffuse paths).
@@ -30,21 +36,41 @@ X2_HD inline float atan(float y,float x){float a=fabsf(x),b=fabsf(y);float k=b==
 X2_HD inline float exp(float a){float x=clamp(a*1.4426950408889634f,-126,126);int m=int(x);x-=m;x=1.f-(1.f-x);float r=1.33336498402e-3f;
  r=x*r+9.810352697968e-3f;r=x*r+5.551834031939e-2f;r=x*r+0.2401793301105f;r=x*r+0.693144857883f;r=x*r+1.f;return ldexpf(r,m);}
 X2_HD inline int address(int x,int n,bool wrap){if(wrap){int v=x%n;return v<0?v+n:v;}return x<0?0:x>=n?n-1:x;}
-template<class Sink>X2_HD inline Status fetch(const Mip& m,int x,int y,bool wrap,V3& out,Sink& sink){
- if(!m.width||!m.height)return Invalid;if(!m.pages)return Miss;x=address(x,int(m.width),wrap);y=address(y,int(m.height),wrap);
- unsigned tx=unsigned(x)/Tile,ty=unsigned(y)/Tile,nx=(m.width+Tile-1)/Tile;const V3* page=m.pages[ty*nx+tx];if(!page){sink(m.tileBase+ty*nx+tx);return Miss;}if(m.tileBase)sink.touch(m.tileBase+ty*nx+tx);
- unsigned stride=m.width-tx*Tile;if(stride>Tile)stride=Tile;out=page[(unsigned(y)%Tile)*stride+unsigned(x)%Tile];return surface::finite(out)&&out.x>=0&&out.y>=0&&out.z>=0?Ready:Invalid;
+// A resident page's texel.
+X2_HD inline Status texel(const V3* page,unsigned width,unsigned tx,unsigned x,unsigned y,V3& out){
+ unsigned stride=width-tx*Tile;if(stride>Tile)stride=Tile;out=page[(y%Tile)*stride+x%Tile];return surface::finite(out)&&out.x>=0&&out.y>=0&&out.z>=0?Ready:Invalid;
 }
-template<class Sink>X2_HD inline Status bilinear(const Mip& m,float u,float v,bool wrap,V3& out,Sink& sink){
+// Partial shading: a texel's parent a level up (texel x, y of level - 1 halved), where that level's page is here.
+X2_HD inline Status parentTexel(const Image& image,unsigned level,unsigned x,unsigned y,V3& out){
+ const Mip& u=image.levels[level];if(!u.pages||!u.width||!u.height)return Miss;
+ const unsigned px=x<u.width?x:u.width-1,py=y<u.height?y:u.height-1,ux=px/Tile;
+ const V3* parent=u.pages[(py/Tile)*((u.width+Tile-1)/Tile)+ux];if(!parent)return Miss;
+ return texel(parent,u.width,ux,px,py,out);
+}
+template<class Sink>X2_HD inline Status fetch(const Image& image,unsigned level,int x,int y,bool wrap,V3& out,Sink& sink){
+ const Mip& m=image.levels[level];
+ if(!m.width||!m.height)return Invalid;if(!m.pages)return Miss;x=address(x,int(m.width),wrap);y=address(y,int(m.height),wrap);
+ unsigned tx=unsigned(x)/Tile,ty=unsigned(y)/Tile,nx=(m.width+Tile-1)/Tile;const V3* page=m.pages[ty*nx+tx];
+ if(!page){
+  sink(m.tileBase+ty*nx+tx);
+  // Partial shading: the texel's parent a level up, read by the sink out of line (it is rarely needed).
+  return sink.coarse()&&level+1<image.count?Status(sink.parent(image,level+1,unsigned(x)/2,unsigned(y)/2,out)):Miss;
+ }
+ if(m.tileBase)sink.touch(m.tileBase+ty*nx+tx);
+ return texel(page,m.width,tx,unsigned(x),unsigned(y),out);
+}
+template<class Sink>X2_HD inline Status bilinear(const Image& image,unsigned level,float u,float v,bool wrap,V3& out,Sink& sink){
+ const Mip& m=image.levels[level];
  float s=u*m.width-.5f,t=v*m.height-.5f;if(!surface::finite(s)||!surface::finite(t)||fabsf(s)>1.e8f||fabsf(t)>1.e8f)return Invalid;
  int x=int(floorf(s)),y=int(floorf(t));s-=x;t-=y;V3 a,b,c,d;Status q;
- if((q=fetch(m,x,y,wrap,a,sink))!=Ready||(q=fetch(m,x+1,y,wrap,b,sink))!=Ready||(q=fetch(m,x,y+1,wrap,c,sink))!=Ready||(q=fetch(m,x+1,y+1,wrap,d,sink))!=Ready)return q;
+ if((q=fetch(image,level,x,y,wrap,a,sink))!=Ready||(q=fetch(image,level,x+1,y,wrap,b,sink))!=Ready||(q=fetch(image,level,x,y+1,wrap,c,sink))!=Ready||(q=fetch(image,level,x+1,y+1,wrap,d,sink))!=Ready)return q;
  out=surface::add(surface::mul(surface::add(surface::mul(a,1-s),surface::mul(b,s)),1-t),surface::mul(surface::add(surface::mul(c,1-s),surface::mul(d,s)),t));return Ready;
 }
 // sample_closest: the texel nearest (s, t); an exact half-texel tie takes the lower one.
-template<class Sink>X2_HD inline Status closest(const Mip& m,float u,float v,bool wrap,V3& out,Sink& sink){
+template<class Sink>X2_HD inline Status closest(const Image& image,unsigned level,float u,float v,bool wrap,V3& out,Sink& sink){
+ const Mip& m=image.levels[level];
  float s=u*m.width-.5f,t=v*m.height-.5f;if(!surface::finite(s)||!surface::finite(t)||fabsf(s)>1.e8f||fabsf(t)>1.e8f)return Invalid;
- int x=int(floorf(s)),y=int(floorf(t));if(s-x>.5f)++x;if(t-y>.5f)++y;return fetch(m,x,y,wrap,out,sink);
+ int x=int(floorf(s)),y=int(floorf(t));if(s-x>.5f)++x;if(t-y>.5f)++y;return fetch(image,level,x,y,wrap,out,sink);
 }
 // texture_lookup_trilinear_mipmap with closest texels (bilinear ones in mode 3, MoonRay's TrilinearIsotropic for
 // displacement): adjust_width's clamp of degenerate derivatives, the
@@ -59,7 +85,7 @@ template<class Sink>X2_HD inline Status trilinear(const Binding& b,float s,float
  if(levels[1]<0){levels[0]=levels[1]=int(image.count)-1;lw[0]=1;lw[1]=0;}
  else if(levels[0]<0){levels[0]=levels[1]=0;lw[0]=1;lw[1]=0;}
  else if(b.mode==2){levels[0]=levels[1];lw[0]=1;lw[1]=0;}
- V3 result{};for(int k=0;k<2;++k){if(lw[k]==0)continue;V3 value;auto status=b.mode==3?bilinear(image.levels[levels[k]],s,t,b.wrap!=0,value,sink):closest(image.levels[levels[k]],s,t,b.wrap!=0,value,sink);if(status!=Ready)return status;result=surface::add(result,surface::mul(value,lw[k]));}
+ V3 result{};for(int k=0;k<2;++k){if(lw[k]==0)continue;V3 value;auto status=b.mode==3?bilinear(image,unsigned(levels[k]),s,t,b.wrap!=0,value,sink):closest(image,unsigned(levels[k]),s,t,b.wrap!=0,value,sink);if(status!=Ready)return status;result=surface::add(result,surface::mul(value,lw[k]));}
  if(b.gamma)result={powf(fmaxf(result.x,0),2.2f),powf(fmaxf(result.y,0),2.2f),powf(fmaxf(result.z,0),2.2f)};
  if(!surface::finite(result))return Invalid;out=result;return Ready;
 }
@@ -84,7 +110,7 @@ template<class Sink>X2_HD inline Status lookup(const Binding& b,Footprint f,V3& 
  int n=int(2*aspect-1);if(n<1)n=1;if(n>7)return Invalid;float weight[7],pos[7];
  float LL=2*(major-minor),sm=cosf(theta)*LL*.5f,tm=sinf(theta)*LL*.5f;
  if(n==1){weight[0]=1;pos[0]=0;}else if(n==2){weight[0]=weight[1]=.5f;pos[0]=-.5f;pos[1]=.5f;}else{float sum=0,scale=major/LL;for(int i=0;i<n;++i){pos[i]=2*(i+.5f)*(1.f/n)-1;float x=pos[i]*scale;weight[i]=exp(-2*x*x);sum+=weight[i];}for(int i=0;i<n;++i)weight[i]/=sum;}
- V3 result{};for(int k=0;k<2;++k){if(lw[k]==0)continue;V3 acc{};for(int i=0;i<n;++i){V3 value;auto status=bilinear(image.levels[levels[k]],s+pos[i]*sm,t+pos[i]*tm,b.wrap!=0,value,sink);if(status!=Ready)return status;acc=surface::add(acc,surface::mul(value,weight[i]));}result=surface::add(result,surface::mul(acc,lw[k]));}
+ V3 result{};for(int k=0;k<2;++k){if(lw[k]==0)continue;V3 acc{};for(int i=0;i<n;++i){V3 value;auto status=bilinear(image,unsigned(levels[k]),s+pos[i]*sm,t+pos[i]*tm,b.wrap!=0,value,sink);if(status!=Ready)return status;acc=surface::add(acc,surface::mul(value,weight[i]));}result=surface::add(result,surface::mul(acc,lw[k]));}
  if(b.gamma)result={powf(fmaxf(result.x,0),2.2f),powf(fmaxf(result.y,0),2.2f),powf(fmaxf(result.z,0),2.2f)};
  if(!surface::finite(result))return Invalid;out=result;return Ready;
 }

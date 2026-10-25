@@ -45,6 +45,12 @@ struct DeviceState {
     U32 treeUpdates;
     U64L chainClaimed;   // the chain render's claim counter
     U64L chainSamples;   // samples the chain planned
+    // Partial shading: provisional samples ever made (a monotonic ring position), and per-launch claim counters over
+    // the provisional samples a launch renders again first.
+    U64L refineTail;
+    U32 refineClaimed[Slots];
+    // A diagnostic build's first OptiX exception (XPU2_OPTIX_EXCEPTIONS): its code and its launch index, plus one.
+    U32 exceptionCode, exceptionIndex;
 };
 constexpr U32 NoPass = ~0u;
 
@@ -151,28 +157,39 @@ struct LaunchParams {
     U32 chainPass, chainSize;
 
     // The render outputs' AOVs (aov_core.h): the schema (always set; no channels: none), each mesh's geometry label,
-    // the film's accumulators a pixel (floats, as MoonRay's film keeps them), the closest filter's depths and a lock a
-    // pixel for it, and each pixel's render seconds (null: no heat map) at secondsPerTick a clock64 tick. A sample's
-    // values sit at aovOffset in its thread's scratch. mode 4 readies the accumulators for a frame.
+    // the film's accumulators a pixel (floats, as MoonRay's film keeps them), the closest filter's channels, and each
+    // pixel's render seconds (null: no heat map) at secondsPerTick a clock64 tick. A sample's values sit at aovOffset
+    // in its thread's scratch. mode 4 readies the accumulators for a frame.
     const aov::Tables* aovTables;
     const int* geomLabels;
     float* aovs;
-    float* aovDepths;
-    U32* aovLocks;
+    U64L* aovClosest;  // the closest filter's channels: the depth's ordered bits above the value's (mergeAovs)
+    U32 aovClosestChannels;
     double* heat;
     U64L aovOffset;
     double secondsPerTick;
 
     // Cryptomatte (aov_crypto.h): a sample's events at cryptoOffset in its thread's scratch (cryptoEvents of them),
-    // merged into a list of fragments a pixel and category (cryptoHeads, ~0u: empty) under the pixel's lock, the
+    // merged without locks into a list of fragments a pixel and category (cryptoHeads, ~0u: empty), the
     // nodes taken from a pool (cryptoNodes, cryptoNodeWords words each: next, ID, coverage, samples, presence depth,
     // and with extras position, P0, normal, beauty, ref_P, ref_N, UV); a pool run dry counts an error.
     U32* cryptoHeads;
     U32* cryptoNodes;
     U32* cryptoNodeCount;
-    U32* cryptoLocks;
     U64L cryptoOffset;
     U32 cryptoEvents, cryptoCategories, cryptoMultiPresence, cryptoExtras, cryptoNodeWords, cryptoNodeCapacity;
+
+    // Partial shading (on: partial): each launch thread's mark that its sample read a coarser level, the missing tile's
+    // id (~0u: none known; lowFlags), the provisional film (provSums, rgb and alpha a pixel; provCounts), the ring of
+    // provisional samples in pinned host memory (refines), and those this launch renders again in full first
+    // (refineIn, refineInCount of them, in pinned host memory).
+    U32 partial, refineCapacity;
+    U32* lowFlags;
+    double* provSums;
+    U32* provCounts;
+    Refine* refines;
+    const Refine* refineIn;
+    U32 refineInCount, pad2;
 };
 
 }  // namespace xpu2::interactive::async

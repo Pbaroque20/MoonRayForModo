@@ -895,6 +895,30 @@ public:
             for (const auto& pe : *cryptoEvents) addCrypto(pe.first, pe.second);
         lock.clear(std::memory_order_release);
     }
+    // Partial shading: the GPU's provisional samples rendered again in full here, whose values leave the GPU's
+    // provisional film (GpuLane::provSums, provCounts) when the two are put together.
+    void initSettled() {
+        settled_.assign(sums_.size(), 0.0);
+        settledCounts_.assign(counts_.size(), 0u);
+    }
+    void settle(U32 pixel, const float* rgba) {
+        const U32 tilesX = (width_ + TileSize - 1) / TileSize;
+        auto& lock = locks_[(pixel / width_ / TileSize) * tilesX + (pixel % width_) / TileSize].flag;
+        while (lock.test_and_set(std::memory_order_acquire)) std::this_thread::yield();
+        for (int c = 0; c < 4; ++c) settled_[size_t(pixel) * 4 + c] += rgba[c];
+        ++settledCounts_[pixel];
+        lock.clear(std::memory_order_release);
+    }
+    // A pixel's provisional samples still waiting, given the GPU's provisional film: their count, and their sums
+    // added to sum (none settled: the film as it is). A download older than a settling here can count fewer than
+    // were settled: none, then.
+    U32 provisional(size_t pixel, const double* provSums, const U32* provCounts, double* sum) const {
+        if (!provCounts) return 0;
+        const U32 settled = settledCounts_.empty() ? 0u : settledCounts_[pixel];
+        if (provCounts[pixel] <= settled) return 0;
+        for (int c = 0; c < 4; ++c) sum[c] += provSums[pixel * 4 + c] - (settled_.empty() ? 0.0 : settled_[pixel * 4 + c]);
+        return provCounts[pixel] - settled;
+    }
     void addOne(U32 pixel, U32 index, const Radiance& r, double seconds = 0.0) {
         const U32 tilesX = (width_ + TileSize - 1) / TileSize;
         const U32 tile = (pixel / width_ / TileSize) * tilesX + (pixel % width_) / TileSize;
@@ -934,9 +958,11 @@ public:
         }
     }
     // The picture so far, RGB: each pixel's mean over its samples here and in a copy of the GPU's film (gpuSums
-    // and gpuCounts, or none), black where none has landed. Consistent tile by tile, taken while workers keep
-    // adding. Returns the samples it saw.
-    U64 preview(float* rgb, const double* gpuSums, const U32* gpuCounts) {
+    // and gpuCounts, or none) and its provisional film (provSums and provCounts, or none), black where none has
+    // landed. Consistent tile by tile, taken while workers keep adding. Returns the samples it saw.
+    // covered (or none): whether each pixel has a sample.
+    U64 preview(float* rgb, const double* gpuSums, const U32* gpuCounts, const double* provSums = nullptr, const U32* provCounts = nullptr,
+                unsigned char* covered = nullptr) {
         U64 seen = 0;
         for (U32 tile = 0; tile < locks_.size(); ++tile) {
             auto& lock = locks_[tile].flag;
@@ -944,10 +970,13 @@ public:
             for (U32 p = 0; p < TilePixels; ++p) {
                 const U32 pixel = tilePixel(tile, p, width_, height_);
                 if (pixel == ~0u) continue;
-                const U32 count = counts_[pixel] + (gpuCounts ? gpuCounts[pixel] : 0u);
+                double extra[4] = {0, 0, 0, 0};
+                const U32 count = counts_[pixel] + (gpuCounts ? gpuCounts[pixel] : 0u) + provisional(pixel, provSums, provCounts, extra);
                 seen += count;
+                if (covered) covered[pixel] = count ? 1 : 0;
                 for (int c = 0; c < 3; ++c)
-                    rgb[size_t(pixel) * 3 + c] = count ? float((sums_[size_t(pixel) * 4 + c] + (gpuSums ? gpuSums[size_t(pixel) * 4 + c] : 0.0)) / count) : 0.0f;
+                    rgb[size_t(pixel) * 3 + c] =
+                        count ? float((sums_[size_t(pixel) * 4 + c] + (gpuSums ? gpuSums[size_t(pixel) * 4 + c] : 0.0) + extra[c]) / count) : 0.0f;
             }
             lock.clear(std::memory_order_release);
         }
@@ -1000,6 +1029,8 @@ private:
     std::vector<float> aovDepth_;
     std::vector<double> heat_;
     aov::CryptoBuffer crypto_;
+    std::vector<double> settled_;  // partial shading: provisional samples settled here (initSettled)
+    std::vector<U32> settledCounts_;
 };
 
 // An adaptive frame's pass tables, host side: for each pass slot, the active-pixel
@@ -1043,8 +1074,54 @@ private:
     std::atomic<size_t> size_{0};
 };
 
+// Partial shading's provisional samples waiting to be rendered again in full: the CPU lane takes them oldest first,
+// the GPU's feeder those whose fine-detail tile has landed (take), whichever comes to one first.
+class RefineQueue {
+public:
+    void push(const Refine* items, size_t n) {
+        if (!n) return;
+        std::lock_guard<std::mutex> lock(mutex_);
+        items_.insert(items_.end(), items, items + n);
+        size_.store(items_.size(), std::memory_order_release);
+    }
+    size_t pop(Refine* out, size_t n) {
+        if (!size_.load(std::memory_order_acquire)) return 0;
+        std::lock_guard<std::mutex> lock(mutex_);
+        const size_t got = std::min(n, items_.size());
+        std::copy_n(items_.begin(), got, out);
+        items_.erase(items_.begin(), items_.begin() + std::ptrdiff_t(got));
+        size_.store(items_.size(), std::memory_order_release);
+        return got;
+    }
+    // Up to n of the oldest `scan` for which ready(tile) holds, oldest first (ready null: any).
+    template <class F>
+    size_t take(F ready, Refine* out, size_t n, size_t scan) {
+        if (!size_.load(std::memory_order_acquire)) return 0;
+        std::lock_guard<std::mutex> lock(mutex_);
+        size_t got = 0, kept = 0, k = 0;
+        const size_t end = std::min(scan, items_.size());
+        for (; k < end && got < n; ++k) {
+            if (ready(items_[k].tile)) out[got++] = items_[k];
+            else items_[kept++] = items_[k];
+        }
+        // The ones passed over close up behind those not looked at.
+        if (got) {
+            std::move(items_.begin() + std::ptrdiff_t(k), items_.end(), items_.begin() + std::ptrdiff_t(kept));
+            items_.resize(items_.size() - got);
+        }
+        size_.store(items_.size(), std::memory_order_release);
+        return got;
+    }
+    size_t size() const { return size_.load(std::memory_order_acquire); }
+
+private:
+    std::mutex mutex_;
+    std::deque<Refine> items_;
+    std::atomic<size_t> size_{0};
+};
+
 struct CpuCounters {
-    std::atomic<U64> samples{0}, chunks{0}, retried{0}, steals{0}, moves{0}, idleSpins{0};
+    std::atomic<U64> samples{0}, chunks{0}, retried{0}, steals{0}, moves{0}, idleSpins{0}, refined{0};
     std::atomic<U32> failures{0};
     // Telemetry (TEL-01), microseconds from the lane's start.
     std::atomic<U64> busyMicros{0}, slowestChunkMicros{0}, firstClaimMicros{~0ull}, lastClaimMicros{0};
@@ -1167,9 +1244,11 @@ public:
     CpuLane(const CpuLane&) = delete;
 
     // Starts a frame. Workers from the last frame are parked first.
-    void begin(const mixed::Config& config, Grid& grid, HostFilm& film, RetryQueue& retries, PassTables* tables = nullptr) {
+    void begin(const mixed::Config& config, Grid& grid, HostFilm& film, RetryQueue& retries, PassTables* tables = nullptr,
+               RefineQueue* refines = nullptr) {
         while (parked_.load(std::memory_order_acquire) != workers_.size()) std::this_thread::yield();
         counters.samples = counters.chunks = counters.retried = counters.steals = counters.moves = counters.idleSpins = 0;
+        counters.refined = 0;
         counters.failures = 0;
         counters.busyMicros = counters.slowestChunkMicros = counters.lastClaimMicros = 0;
         counters.firstClaimMicros = ~0ull;
@@ -1179,6 +1258,7 @@ public:
             grid_ = &grid;
             film_ = &film;
             retries_ = &retries;
+            refines_ = refines;
             tables_ = tables;
             idle_.store(unsigned(workers_.size()), std::memory_order_release);
             closing_.store(false, std::memory_order_release);
@@ -1275,6 +1355,45 @@ private:
                 }
                 continue;
             }
+            if (refines_ && refines_->size()) {
+                // The GPU's provisional samples, rendered in full: into the film, their provisional values out of the
+                // GPU's (HostFilm::settle), counted in their passes now.
+                setIdle(false);
+                Refine refine[16];
+                if (size_t n = refines_->pop(refine, 16)) {
+                    CpuBackend backend{scene_};
+                    for (size_t i = 0; i < n; ++i) {
+                        if (tables_) tables_->cpuDone[refine[i].pass].fetch_add(1, std::memory_order_relaxed);
+                        Radiance r;
+                        thread_local std::vector<float> refineAov, refineDepth, refineBackup;
+                        thread_local std::vector<aov::CryptoEvent> refineCrypto;
+                        if (!film.crypto().empty()) {
+                            refineCrypto.resize(aov::CryptoMaxEvents);
+                            r.crypto = refineCrypto.data();
+                            r.cryptoCapacity = aov::CryptoMaxEvents;
+                        }
+                        if (film.aovTables().channels) {
+                            refineAov.resize(film.aovTables().channels);
+                            refineDepth.resize(film.aovTables().closestCount);
+                            refineBackup.resize(film.aovTables().channels);
+                            r.aov = refineAov.data();
+                            r.aovDepth = refineDepth.data();
+                            r.aovBackup = refineBackup.data();
+                        }
+                        const SampleStatus status = integrateCpu(config_, refine[i].pixel, refine[i].index, backend, r);
+                        film.settle(refine[i].pixel, refine[i].rgba);
+                        if (status == SampleStatus::Skip) continue;
+                        if (status != SampleStatus::Done) {
+                            counters.failures.fetch_add(1, std::memory_order_relaxed);
+                            continue;
+                        }
+                        film.addOne(refine[i].pixel, refine[i].index, r);
+                    }
+                    counters.samples.fetch_add(n, std::memory_order_relaxed);
+                    counters.refined.fetch_add(n, std::memory_order_relaxed);
+                }
+                continue;
+            }
             const U32 next = grid.choose(Device::Cpu, cell, w);
             if (next == ~0u) {
                 setIdle(true);
@@ -1283,7 +1402,7 @@ private:
                 counters.idleSpins.fetch_add(1, std::memory_order_relaxed);
                 std::unique_lock<std::mutex> lock(idleMutex_);
                 idleWake_.wait_for(lock, std::chrono::milliseconds(1), [&] {
-                    return closing_.load(std::memory_order_acquire) || retries.size();
+                    return closing_.load(std::memory_order_acquire) || retries.size() || (refines_ && refines_->size());
                 });
                 continue;
             }
@@ -1296,7 +1415,7 @@ private:
             // and every worker idle while a claimed chunk is still unrendered.
             setIdle(false);
             Chunk chunk;
-            if (!grid.claim(cell, 1, &chunk)) continue;
+            if (!grid.claim(cell, 1, &chunk, Device::Cpu)) continue;
             const auto begun = std::chrono::steady_clock::now();
             const U64 claimed = U64(std::chrono::duration_cast<std::chrono::microseconds>(begun - started_).count());
             for (U64 v = counters.firstClaimMicros.load(); claimed < v && !counters.firstClaimMicros.compare_exchange_weak(v, claimed);) {}
@@ -1323,6 +1442,7 @@ private:
     Grid* grid_ = nullptr;
     HostFilm* film_ = nullptr;
     RetryQueue* retries_ = nullptr;
+    RefineQueue* refines_ = nullptr;
     PassTables* tables_ = nullptr;
     std::chrono::steady_clock::time_point started_ = std::chrono::steady_clock::now();
     std::atomic<bool> closing_{false}, cancelled_{false};

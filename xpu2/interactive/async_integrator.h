@@ -401,6 +401,7 @@ X2_CALL V3 volumeTransmittance(const mixed::Config& c, Backend& backend, paths::
     volume::Crossing x[volume::MaxCrossings];
     U32 regions;
     const U32 n = paths::volumeIntervals(backend, org, dir, tnear, x, regions, 2u);  // SHADOW
+    if (backend.deferred()) return V3{1, 1, 1};  // a volume the GPU does not render: the CPU lane renders the sample (its data is not here)
     V3 tr{1, 1, 1};
     if (n == 0 && regions == 0) return tr;
     float tStart = tnear;
@@ -459,6 +460,7 @@ X2_CALL V3 emissiveVolumeIntegral(const mixed::Config& c, Backend& backend, path
     volume::Crossing x[volume::MaxCrossings];
     U32 regions;
     U32 n = paths::volumeIntervals(backend, org, dir, tnear, x, regions, 0xffu);
+    if (backend.deferred()) return V3{0, 0, 0};  // a volume the GPU does not render: the CPU lane renders the sample (its data is not here)
     bool visited = (regions >> emissive & 1u) != 0;
     for (U32 i = 0; i < n; ++i)
         if (x[i].volume == emissive) visited = true;
@@ -595,6 +597,7 @@ X2_CALL V3 volumeRadiance(const mixed::Config& c, const sample::Identity& root, 
     U32 regions;
     const U32 rayMask = paths::rayMask(pv.lobeType);
     const U32 n = volumeIntervals(backend, org, dir, tnear, x, regions, rayMask);
+    if (backend.deferred()) return radiance;  // a volume the GPU does not render: the CPU lane renders the sample (its data is not here)
     if (n == 0 && regions == 0) return radiance;
     const volume::Shader* shaders = backend.volumes();
     const U64 volumeBranch = childBranch(pv.branch, 0xfffc, pv.volumeDepth);
@@ -932,6 +935,7 @@ X2_CALL V3 volumeRadiance(const mixed::Config& c, const sample::Identity& root, 
                     volume::Crossing y[volume::MaxCrossings];
                     U32 here;
                     const U32 m = volumeIntervals(backend, scatterPoint, scatterDir, volume::Epsilon, y, here, rayMask);
+                    if (backend.deferred()) break;  // a volume the GPU does not render: the CPU lane renders the sample (its data is not here)
                     for (U32 j = 0; j < m && y[j].t <= tFreePath; ++j) volume::apply(here, y[j]);
                     const V3 rayDir = scatterDir;
                     scatterPoint = surface::add(scatterPoint, surface::mul(scatterDir, tFreePath));
@@ -1767,6 +1771,7 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
             volumeLight = volumeRadianceCall(c, root, backend, pv, ray.origin, ray.direction, ray.nearT, hit.geom == ~0u ? ray.farT : hit.t, &volumeAlphaT,
                                          &volumeMinT, cryptoVolumes ? &volumeShares : nullptr, lpeOn && pv.lpe >= 0 ? &volumeLpe : nullptr,
                                          pv.depth == 0 ? &volumeSurfaceT : nullptr);
+            if (backend.deferred()) return SampleStatus::Defer;
             radiance += volumeLight;
         }
         // MOONRAY_MODO_CRYPTO_VOLUMES: the volumes as samples of their IDs, each its share of the coverage at its depth,
@@ -2659,6 +2664,16 @@ struct Chunk {
     U32 cell;   // owning cell, for per-cell accounting
 };
 static_assert(sizeof(Chunk) == 16, "Chunks are 16 bytes");
+
+// A provisional sample (partial shading, texture_core.h coarse()): one the GPU finished from a texture's next level up
+// where a fine-detail tile was not yet resident. Its value stays apart from the film (the GPU's provisional film)
+// until the sample is rendered again in full, by the CPU lane or by the GPU once its tile has landed, which takes it
+// out. tile: the first missing tile (0: not known), for the host to know when the GPU may take it.
+struct Refine {
+    U32 pixel, index, pass, tile;
+    float rgba[4];
+};
+static_assert(sizeof(Refine) == 32, "Provisional samples are 32 bytes");
 
 constexpr U32 TileSize = 8, TilePixels = TileSize * TileSize;
 

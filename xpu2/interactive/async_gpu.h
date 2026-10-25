@@ -11,6 +11,9 @@
 // evicted least recently used. A sample that needs a tile that is not resident
 // parks in the GPU's bounded queue, its tile is requested once, and a later
 // launch runs it again on the GPU after the tile has landed (MEM-04, MEM-05).
+// With partial shading such a sample is finished from the texture's next level
+// up instead, kept apart in the provisional film, and rendered again in full by
+// the CPU lane or by a later launch once the tile has landed (async_render.h).
 #pragma once
 #include "async_adaptive.h"
 #include "async_gpu_abi.h"
@@ -49,7 +52,8 @@ struct GpuOptions {
 
 // What the host learns when a launch has finished.
 struct Completion {
-    U64 chunks = 0, items = 0, parkedRun = 0;
+    U64 chunks = 0, items = 0, parkedRun = 0, refinesRun = 0;
+    U64 samples = 0;  // the samples of its chunks, as the host counted them at launch
     U32 errors = 0;
     double deviceSeconds = 0;  // the launch's own duration, timed on the GPU
 };
@@ -112,6 +116,11 @@ public:
             parkedCapacity_ = U32(std::min<size_t>(4 * maxItems + 1024, 1u << 26));
             parked_ = device(size_t(parkedCapacity_) * sizeof(Parked));
             for (auto& s : staging_) s = pinned(size_t(options_.maxChunksPerLaunch) * sizeof(Chunk));
+            // Partial shading: each launch thread's mark, the provisional samples' ring (pinned: the host reads it
+            // after a launch) and each launch slot's provisional samples to render again (pinned: the device reads them).
+            lowFlags_ = device(size_t(options_.launchThreads) * sizeof(U32));
+            refines_ = pinned(size_t(refineCapacity_) * sizeof(Refine));
+            for (auto& r : refineIn_) r = pinned(size_t(RefineInCapacity) * sizeof(Refine));
             driver.drain();  // startup only
         } catch (...) {
             cleanup();
@@ -478,7 +487,8 @@ public:
             // The render outputs' AOVs (aov_core.h): the schema's tables on the device, each mesh's geometry label, and
             // a sample's values and closest depths in its thread's scratch.
             aov::Tables t;
-            aovChannels_ = aovClosest_ = 0;
+            aovChannels_ = aovClosest_ = aovClosestChannels_ = 0;
+            aovEntries_.clear();
             aovScratch_ = 0;
             if (plan->aovs) {
                 const aov::Plan& a = *plan->aovs;
@@ -506,6 +516,10 @@ public:
                 if (!labels.empty()) scene_.geomLabels = upload(labels.data(), labels.size() * sizeof(int));
                 aovChannels_ = t.channels;
                 aovClosest_ = t.closestCount;
+                aovClosestChannels_ = 0;
+                aovEntries_.assign(a.entries.begin(), a.entries.end());
+                for (const aov::Entry& e : aovEntries_)
+                    if (e.filter == aov::FilterClosest) aovClosestChannels_ += e.channels;
                 if (aovChannels_) aovScratch_ = (size_t(2 * aovChannels_ + aovClosest_) * sizeof(float) + 15) & ~size_t(15);
             }
             scene_.aovTables = upload(&t, sizeof(t));
@@ -556,14 +570,18 @@ public:
         scene_.sums = device(pixels * 4 * sizeof(double));
         scene_.odd = device(pixels * 4 * sizeof(double));
         scene_.counts = device(pixels * sizeof(U32));
-        // The AOV film (floats, as MoonRay's), the closest filter's depths and locks, and the heat map's seconds.
+        // The provisional film (partial shading): the provisional samples' sums and counts a pixel.
+        scene_.provSums = device(pixels * 4 * sizeof(double));
+        scene_.provCounts = device(pixels * sizeof(U32));
+        // The AOV film (floats, as MoonRay's), the closest filter's words and the depths read from them, and the heat
+        // map's seconds.
         if (aovChannels_) {
             scene_.aovs = device(pixels * aovChannels_ * sizeof(float));
             scene_.hostAovs = pinned(pixels * aovChannels_ * sizeof(float));
-            if (aovClosest_) {
-                scene_.aovDepths = device(pixels * aovClosest_ * sizeof(float));
+            if (aovClosestChannels_) {
+                scene_.aovClosest = device(pixels * aovClosestChannels_ * sizeof(U64L));
+                scene_.hostAovClosest = pinned(pixels * aovClosestChannels_ * sizeof(U64L));
                 scene_.hostAovDepths = pinned(pixels * aovClosest_ * sizeof(float));
-                scene_.aovLocks = device(pixels * sizeof(U32));
             }
         }
         if (plan->aovs && plan->aovs->heatMap) {
@@ -589,13 +607,14 @@ public:
             cryptoNodeWords_ = cryptoExtras_ ? 26u : 5u;
             cryptoNodeCapacity_ = U32(std::min<size_t>(pixels * cryptoCategories_ * 4 + (size_t(1) << 20), size_t(0x7fffffff) / cryptoNodeWords_));
             scene_.cryptoHeads = device(pixels * cryptoCategories_ * sizeof(U32));
-            scene_.cryptoLocks = device(pixels * sizeof(U32));
             scene_.cryptoNodes = device(size_t(cryptoNodeCapacity_) * cryptoNodeWords_ * sizeof(U32));
             scene_.cryptoNodeCount = device(sizeof(U32));
         }
         scene_.hostSums = pinned(pixels * 4 * sizeof(double));
         scene_.hostOdd = pinned(pixels * 4 * sizeof(double));
         scene_.hostCounts = pinned(pixels * sizeof(U32));
+        scene_.hostProvSums = pinned(pixels * 4 * sizeof(double));
+        scene_.hostProvCounts = pinned(pixels * sizeof(U32));
         scene_.filmDone = std::make_shared<gpu::Event>(driver);
         scene_.previewDone = std::make_shared<gpu::Event>(driver);
         const U32 tiles = ((plan->width + TileSize - 1) / TileSize) * ((plan->height + TileSize - 1) / TileSize);
@@ -614,8 +633,9 @@ public:
         uploads_.clear();
     }
 
-    // Starts a frame: an empty film and empty queues.
-    void begin(U32 samplesPerChunk, bool adaptive = false) {
+    // Starts a frame: an empty film and empty queues. partial: texture misses finish from a coarser level as
+    // provisional samples (never in the pass chain, which runs on the device alone).
+    void begin(U32 samplesPerChunk, bool adaptive = false, bool partial = false) {
         cpu::need(plan_ && inFlight_.empty(), "GPU frame overlap");
         cpu::need(!adaptive || single_ || programs_[1].pipeline, "No adaptive GPU program");
         program_ = &programs_[adaptive && !single_ ? 1 : 0];
@@ -626,6 +646,11 @@ public:
         memset32(scene_.odd->pointer, 0, pixels * 8);
         std::fill(passDone_.begin(), passDone_.end(), 0u);
         memset32(scene_.counts->pointer, 0, pixels);
+        memset32(scene_.provSums->pointer, 0, pixels * 8);
+        memset32(scene_.provCounts->pointer, 0, pixels);
+        partial_ = partial;
+        refineHead_ = 0;
+        refinesOut_.clear();
         memset32(state_->pointer, 0, sizeof(DeviceState) / 4);
         if (aovChannels_ || scene_.heat || cryptoEvents_) {  // mode 4: the AOV film readied
             LaunchParams p = baseParams();
@@ -651,15 +676,20 @@ public:
     U64 maxChunksPerLaunch() const { return options_.maxChunksPerLaunch; }
 
     // Publishes chunks through the mailbox ring and queues a launch that runs
-    // them, after any parked samples whose tiles have landed. Returns false when
-    // there is nothing to run.
-    bool launch(const Chunk* chunks, U32 count) {
+    // them, after any provisional samples to render again in full (refines,
+    // refineCount of them) and parked samples whose tiles have landed. Returns
+    // false when there is nothing to run.
+    bool launch(const Chunk* chunks, U32 count, const Refine* refines = nullptr, U32 refineCount = 0, U64 samples = 0) {
         cpu::need(ready() && count <= options_.maxChunksPerLaunch, "GPU launch backpressure");
+        cpu::need(refineCount <= RefineInCapacity, "Too many provisional samples for one launch");
         // Tiles asked for so far land first, so every sample parked up to the last
         // readback may run again; one whose tile is still waiting parks again.
         commitTiles();
         const U64 parkedBegin = parkedIssued_, parkedEnd = parkedTail_;
-        if (!count && parkedBegin == parkedEnd) return false;
+        if (!count && parkedBegin == parkedEnd && !refineCount) return false;
+        // Each sample this launch runs makes at most one provisional sample, on top of those the launches in flight may.
+        const U64 mayRefine = partial_ ? U64(count) * itemsPerChunk_ + (parkedEnd - parkedBegin) + refineCount : 0;
+        cpu::need(refineBound() + mayRefine <= refineCapacity_, "Provisional-sample ring would overflow");
         // The bounded queue: whatever this launch runs could park again, on top of
         // every launch still in flight (the host sizes launches, MEM-05).
         const U64 items = U64(count) * itemsPerChunk_ + (parkedEnd - parkedBegin);
@@ -679,9 +709,15 @@ public:
         }
         memset32(state_->pointer + offsetof(DeviceState, claimed) + s * sizeof(U32), 0, 1);
         memset32(state_->pointer + offsetof(DeviceState, unparked) + s * sizeof(U32), 0, 1);
+        memset32(state_->pointer + offsetof(DeviceState, refineClaimed) + s * sizeof(U32), 0, 1);
+        // The slot's provisional samples: read by the device from pinned memory, which the launch four later reuses
+        // (at most two are in flight).
+        if (refineCount) std::memcpy(refineIn_[s]->host(), refines, size_t(refineCount) * sizeof(Refine));
 
         LaunchParams p = baseParams();
         p.slot = s;
+        p.refineIn = reinterpret_cast<const Refine*>(refineIn_[s]->pointer);
+        p.refineInCount = refineCount;
         p.itemBegin = published_ * itemsPerChunk_;
         p.itemEnd = (published_ + count) * itemsPerChunk_;
         p.parkedBegin = parkedBegin;
@@ -700,7 +736,11 @@ public:
 
         readBack(r);
         slot.done = r.done;
-        inFlight_.push_back({launches_, published_, count, parkedEnd - parkedBegin, items, gpu::StartClock::now(), &r});
+        Flight flight{launches_, published_, count, parkedEnd - parkedBegin, items, gpu::StartClock::now(), &r};
+        flight.refines = refineCount;
+        flight.mayRefine = mayRefine;
+        flight.samples = samples;
+        inFlight_.push_back(flight);
         published_ += count;
         parkedIssued_ = parkedEnd;
         ++launches_;
@@ -716,7 +756,20 @@ public:
         out.chunks = f.chunks;
         out.items = U64(f.chunks) * itemsPerChunk_;
         out.parkedRun = f.parked;
+        out.refinesRun = f.refines;
+        out.samples = f.samples;
         out.errors = state.errors;
+        if (state.exceptionIndex && !exceptionLogged_) {
+            exceptionLogged_ = true;
+            std::fprintf(stderr, "XPU2: OptiX exception %d at launch index %u\n", int(state.exceptionCode), state.exceptionIndex - 1);
+        }
+        // The provisional samples this launch made (the ring is pinned: they are here once the launch is done).
+        if (state.refineTail > refineHead_) {
+            if (state.refineTail - refineHead_ > refineCapacity_) out.errors += 1;  // overflowed: the frame falls back
+            const Refine* ring = static_cast<const Refine*>(refines_->host());
+            for (U64 k = refineHead_; k < state.refineTail; ++k) refinesOut_.push_back(ring[k % refineCapacity_]);
+            refineHead_ = state.refineTail;
+        }
         // The samples this launch deferred to the CPU lane (the ring is pinned: they are here once the launch is done).
         if (deferred_ && state.deferredTail > deferredHead_) {
             if (state.deferredTail - deferredHead_ > deferredCapacity_) out.errors += 1;  // overflowed: the frame falls back
@@ -761,9 +814,11 @@ public:
         const size_t pixels = size_t(plan_->width) * plan_->height;
         copyOut(scene_.hostSums, scene_.sums, pixels * 4 * sizeof(double));
         copyOut(scene_.hostCounts, scene_.counts, pixels * sizeof(U32));
+        copyOut(scene_.hostProvSums, scene_.provSums, pixels * 4 * sizeof(double));
+        copyOut(scene_.hostProvCounts, scene_.provCounts, pixels * sizeof(U32));
         if (adaptive_) copyOut(scene_.hostOdd, scene_.odd, pixels * 4 * sizeof(double));
         if (aovChannels_) copyOut(scene_.hostAovs, scene_.aovs, pixels * aovChannels_ * sizeof(float));
-        if (aovClosest_) copyOut(scene_.hostAovDepths, scene_.aovDepths, pixels * aovClosest_ * sizeof(float));
+        downloadClosest();
         if (scene_.heat) copyOut(scene_.hostHeat, scene_.heat, pixels * sizeof(double));
         if (chainsLaunched_) copyOut(chain_.hostPlanned, chain_.planned, pixels * sizeof(U32));
         gpu::Driver::check(driver.cuEventRecord_p(scene_.filmDone->value, stream_));
@@ -776,20 +831,88 @@ public:
         const size_t pixels = size_t(plan_->width) * plan_->height;
         copyOut(scene_.hostSums, scene_.sums, pixels * 4 * sizeof(double));
         copyOut(scene_.hostCounts, scene_.counts, pixels * sizeof(U32));
+        copyOut(scene_.hostProvSums, scene_.provSums, pixels * 4 * sizeof(double));
+        copyOut(scene_.hostProvCounts, scene_.provCounts, pixels * sizeof(U32));
         if (aovs) {  // a preview of an AOV: its film too
             if (aovChannels_) copyOut(scene_.hostAovs, scene_.aovs, pixels * aovChannels_ * sizeof(float));
-            if (aovClosest_) copyOut(scene_.hostAovDepths, scene_.aovDepths, pixels * aovClosest_ * sizeof(float));
+            downloadClosest();
             if (scene_.heat) copyOut(scene_.hostHeat, scene_.heat, pixels * sizeof(double));
         }
         gpu::Driver::check(driver.cuEventRecord_p(scene_.previewDone->value, stream_));
     }
     bool previewReady() { return scene_.previewDone->ready(); }
+    // The closest filter's words downloaded with the AOV film; read apart into its values and depths when the film is
+    // next read (landClosest): a word's high half the depth's ordered bits (mergeAovs), its low half the value's.
+    void downloadClosest() {
+        if (!aovClosestChannels_) return;
+        const size_t pixels = size_t(plan_->width) * plan_->height;
+        copyOut(scene_.hostAovClosest, scene_.aovClosest, pixels * aovClosestChannels_ * sizeof(U64L));
+        closestLanded_ = false;
+    }
+    void landClosest() const {
+        if (closestLanded_ || !aovClosestChannels_) return;
+        closestLanded_ = true;
+        const size_t pixels = size_t(plan_->width) * plan_->height;
+        const U64L* words = static_cast<const U64L*>(scene_.hostAovClosest->host());
+        float* values = static_cast<float*>(scene_.hostAovs->host());
+        float* depths = static_cast<float*>(scene_.hostAovDepths->host());
+        auto f = [](U32 w) {
+            float v;
+            std::memcpy(&v, &w, sizeof v);
+            return v;
+        };
+        for (size_t p = 0; p < pixels; ++p) {
+            const U64L* k = words + p * aovClosestChannels_;
+            U32 at = 0;
+            for (const aov::Entry& e : aovEntries_) {
+                if (e.filter != aov::FilterClosest) continue;
+                float depth = aov::infinity();
+                for (U32 c = 0; c < e.channels; ++c) {
+                    const U64L w = k[at + c];
+                    if (w == ~0ull) continue;  // no sample set it: the film's own 0 and +inf
+                    const U32 o = U32(w >> 32);
+                    depth = f(o & 0x80000000u ? o & 0x7fffffffu : ~o);
+                    values[p * aovChannels_ + e.offset + c] = f(U32(w));
+                }
+                depths[p * aovClosest_ + e.closest] = depth;
+                at += e.channels;
+            }
+        }
+    }
     const double* sums() const { return static_cast<const double*>(scene_.hostSums->host()); }
     const double* odd() const { return static_cast<const double*>(scene_.hostOdd->host()); }
     const U32* counts() const { return static_cast<const U32*>(scene_.hostCounts->host()); }
+    // The downloaded provisional film (partial shading): its sums and counts a pixel, before the CPU lane's renders
+    // in full of its samples are taken out (HostFilm::settle).
+    const double* provSums() const { return static_cast<const double*>(scene_.hostProvSums->host()); }
+    const U32* provCounts() const { return static_cast<const U32*>(scene_.hostProvCounts->host()); }
+    // The provisional samples made since the last call, for the host's queue (async_render.h).
+    void takeRefines(std::vector<Refine>& out) {
+        out.insert(out.end(), refinesOut_.begin(), refinesOut_.end());
+        refinesOut_.clear();
+    }
+    // Whether a fine-detail tile is resident (0: not known, never), so a provisional sample needing it may go back
+    // to the GPU; landTiles() commits those asked for so far first.
+    bool tileResident(U32 tile) const { return tile && tile < fine_.tileSlot.size() && fine_.tileSlot[tile] != NoSlot; }
+    void landTiles() { commitTiles(); }
+    bool partial() const { return partial_; }
+    // The chunks a launch with refineCount provisional samples may take without overflowing their ring.
+    U32 chunkRoom(U32 refineCount) const {
+        if (!partial_) return options_.maxChunksPerLaunch;
+        const U64 used = refineBound() + refineCount + (parkedTail_ - parkedIssued_);
+        return used >= refineCapacity_ ? 0u : U32(std::min<U64>(options_.maxChunksPerLaunch, (refineCapacity_ - used) / itemsPerChunk_));
+    }
+    static constexpr U32 RefineInCapacity = 1u << 17;  // provisional samples one launch renders again
+    U32 launchThreads() const { return options_.launchThreads; }
     // The downloaded AOV film (null: none): the accumulators a pixel, the closest filter's depths, the seconds.
-    const float* aovs() const { return scene_.hostAovs ? static_cast<const float*>(scene_.hostAovs->host()) : nullptr; }
-    const float* aovDepths() const { return scene_.hostAovDepths ? static_cast<const float*>(scene_.hostAovDepths->host()) : nullptr; }
+    const float* aovs() const {
+        landClosest();
+        return scene_.hostAovs ? static_cast<const float*>(scene_.hostAovs->host()) : nullptr;
+    }
+    const float* aovDepths() const {
+        landClosest();
+        return scene_.hostAovDepths ? static_cast<const float*>(scene_.hostAovDepths->host()) : nullptr;
+    }
     const double* heat() const { return scene_.hostHeat ? static_cast<const double*>(scene_.hostHeat->host()) : nullptr; }
     // The device's Cryptomatte fragments into the host's buffer (after the film has landed; waits for the copies).
     void mergeCrypto(aov::CryptoBuffer& into) {
@@ -985,6 +1108,7 @@ public:
         for (size_t k = 0; k < steps.size(); ++k) {
             LaunchParams p = baseParams();
             p.mode = 3;
+            p.partial = 0;
             p.chainPass = steps[k].pass;
             p.chainSize = steps[k].size;
             p.activeTiles = reinterpret_cast<const U32*>(chain_.activeTiles->pointer);
@@ -1057,8 +1181,11 @@ private:
         po.numAttributeValues = 2;
         po.pipelineLaunchParamsVariableName = "params";
         po.usesPrimitiveTypeFlags = OPTIX_PRIMITIVE_TYPE_FLAGS_TRIANGLE | OPTIX_PRIMITIVE_TYPE_FLAGS_CUSTOM;
+        // A diagnostic: OptiX's own checks of the stacks and the trace depth, reported by the exception program.
+        if (exceptions()) po.exceptionFlags = OPTIX_EXCEPTION_FLAG_STACK_OVERFLOW | OPTIX_EXCEPTION_FLAG_TRACE_DEPTH;
         return po;
     }
+    static bool exceptions() { return std::getenv("XPU2_OPTIX_EXCEPTIONS") != nullptr; }
     // The program modules (the adaptive one if any), compiled together on a pool of threads through OptiX's
     // compile tasks: one thread compiling the shading library took minutes. OptiX's disk cache still serves
     // a module it has compiled before: it hands out tasks all the same, which then finish at once.
@@ -1173,7 +1300,7 @@ private:
     // One OptiX program: its modules, programs, pipeline and binding table.
     struct Program {
         OptixModule modules[ModuleCount]{};
-        OptixProgramGroup groups[16]{};
+        OptixProgramGroup groups[32]{};  // five, and the callables (async_gpu_device.h's MaterialCall)
         OptixPipeline pipeline = nullptr;
         B records;
         OptixShaderBindingTable sbt{};
@@ -1185,7 +1312,7 @@ private:
             const OptixPipelineCompileOptions po = pipelineOptions();
             char log[8192];
             size_t length = sizeof(log);
-            OptixProgramGroupDesc desc[16] = {};
+            OptixProgramGroupDesc desc[32] = {};
             desc[0].kind = OPTIX_PROGRAM_GROUP_KIND_RAYGEN;
             desc[0].raygen = {module, "__raygen__async"};
             desc[1].kind = OPTIX_PROGRAM_GROUP_KIND_MISS;
@@ -1213,8 +1340,11 @@ private:
                 {8, "__direct_callable__camera", false},     {8, "__direct_callable__aovLight", false},
                 {8, "__direct_callable__aovVisibility", false}, {8, "__direct_callable__materialAovs", false}};
             const bool split = modules[1] != nullptr;
-            for (int i = 2; i < ModuleCount; ++i) cpu::need(!split || modules[i], "The GPU program's modules are incomplete");
-            const unsigned callableCount = split ? unsigned(sizeof(callables) / sizeof(callables[0])) : 0u, count = 5u + callableCount;
+            for (int i = 2; i < ModuleCount; ++i)
+                cpu::need(!split || modules[i], "The GPU program's modules are incomplete: module " + std::to_string(i) + " is missing");
+            const unsigned callableCount = split ? unsigned(sizeof(callables) / sizeof(callables[0])) : 0u;
+            const unsigned count = 5u + callableCount + (exceptions() ? 1u : 0u);
+            static_assert(5 + sizeof(callables) / sizeof(callables[0]) <= sizeof(desc) / sizeof(desc[0]), "too many program groups");
             for (unsigned k = 0; k < callableCount; ++k) {
                 desc[5 + k].kind = OPTIX_PROGRAM_GROUP_KIND_CALLABLES;
                 if (callables[k].continuation) {
@@ -1224,6 +1354,10 @@ private:
                     desc[5 + k].callables.moduleDC = modules[callables[k].module];
                     desc[5 + k].callables.entryFunctionNameDC = callables[k].entry;
                 }
+            }
+            if (exceptions()) {  // the diagnostic's exception program, after the callables
+                desc[count - 1].kind = OPTIX_PROGRAM_GROUP_KIND_EXCEPTION;
+                desc[count - 1].exception = {module, "__exception__report"};
             }
             OptixProgramGroupOptions options{};
             length = sizeof(log);
@@ -1259,6 +1393,7 @@ private:
                 sbt.callablesRecordStrideInBytes = sizeof(Record);
                 sbt.callablesRecordCount = callableCount;
             }
+            if (exceptions()) sbt.exceptionRecord = records->pointer + (count - 1) * sizeof(Record);
         }
         void destroy() noexcept {
             if (pipeline) optixPipelineDestroy(pipeline);
@@ -1281,6 +1416,8 @@ private:
         gpu::StartClock::time_point started;
         Readback* readback;
         bool chain = false;
+        U64 refines = 0, mayRefine = 0;  // provisional samples it renders again; the most it may make
+        U64 samples = 0;                 // its chunks' samples
     };
     // The pass chain's kernels and buffers (beginChain).
     struct Chain {
@@ -1325,10 +1462,11 @@ private:
     struct Scene {
         std::vector<B> keep;
         U64 traversable = 0, volumeTraversable = 0, standInTraversable = 0;
+        B provSums, provCounts, hostProvSums, hostProvCounts;
         B geometry, materials, lights, meshLights, lightSetBits, lightTree, lightTreeRoots, volumes, meshVolumes, walkSequences, meshMaterials, meshAttributes, materialPool, scratch, config, maps, textures, sums, odd, counts,
             hostSums,
-            hostOdd, hostCounts, aovTables, geomLabels, aovs, hostAovs, aovDepths, hostAovDepths, aovLocks, heat, hostHeat, cryptoHeads,
-            cryptoNodes, cryptoNodeCount, cryptoLocks;
+            hostOdd, hostCounts, aovTables, geomLabels, aovs, hostAovs, aovClosest, hostAovClosest, hostAovDepths, heat, hostHeat, cryptoHeads,
+            cryptoNodes, cryptoNodeCount;
         B passMask[PassSlots], passBase[PassSlots], passStaging[PassSlots], errors, hostErrors;
         std::shared_ptr<gpu::Event> filmDone, errorsDone, previewDone, aovInitDone;
         size_t mipBytes = 0;
@@ -1589,8 +1727,8 @@ private:
         p.aovTables = reinterpret_cast<const aov::Tables*>(scene_.aovTables->pointer);
         p.geomLabels = scene_.geomLabels ? reinterpret_cast<const int*>(scene_.geomLabels->pointer) : nullptr;
         p.aovs = scene_.aovs ? reinterpret_cast<float*>(scene_.aovs->pointer) : nullptr;
-        p.aovDepths = scene_.aovDepths ? reinterpret_cast<float*>(scene_.aovDepths->pointer) : nullptr;
-        p.aovLocks = scene_.aovLocks ? reinterpret_cast<U32*>(scene_.aovLocks->pointer) : nullptr;
+        p.aovClosest = scene_.aovClosest ? reinterpret_cast<U64L*>(scene_.aovClosest->pointer) : nullptr;
+        p.aovClosestChannels = aovClosestChannels_;
         p.heat = scene_.heat ? reinterpret_cast<double*>(scene_.heat->pointer) : nullptr;
         p.secondsPerTick = secondsPerTick_;
         p.scratchStride += cryptoScratch_;
@@ -1600,7 +1738,6 @@ private:
             p.cryptoHeads = reinterpret_cast<U32*>(scene_.cryptoHeads->pointer);
             p.cryptoNodes = reinterpret_cast<U32*>(scene_.cryptoNodes->pointer);
             p.cryptoNodeCount = reinterpret_cast<U32*>(scene_.cryptoNodeCount->pointer);
-            p.cryptoLocks = reinterpret_cast<U32*>(scene_.cryptoLocks->pointer);
             p.cryptoCategories = cryptoCategories_;
             p.cryptoMultiPresence = cryptoMultiPresence_;
             p.cryptoExtras = cryptoExtras_;
@@ -1624,6 +1761,12 @@ private:
         p.deferred = deferred_ ? reinterpret_cast<Parked*>(deferred_->pointer) : nullptr;
         p.deferredCapacity = deferredCapacity_ ? deferredCapacity_ : 1u;
         p.state = reinterpret_cast<DeviceState*>(state_->pointer);
+        p.partial = partial_ ? 1u : 0u;
+        p.refineCapacity = refineCapacity_;
+        p.lowFlags = reinterpret_cast<U32*>(lowFlags_->pointer);
+        p.provSums = reinterpret_cast<double*>(scene_.provSums->pointer);
+        p.provCounts = reinterpret_cast<U32*>(scene_.provCounts->pointer);
+        p.refines = reinterpret_cast<Refine*>(refines_->pointer);
         p.sums = reinterpret_cast<double*>(scene_.sums->pointer);
         p.counts = reinterpret_cast<U32*>(scene_.counts->pointer);
         p.adaptive = adaptive_ ? 1u : 0u;
@@ -1668,6 +1811,12 @@ private:
         return bound;
     }
     U64 oldestChunk() const { return inFlight_.empty() ? published_ : inFlight_.front().firstChunk; }
+    // The most provisional samples the launches in flight may still make (the host reads the ring after each).
+    U64 refineBound() const {
+        U64 bound = 0;
+        for (auto& f : inFlight_) bound += f.mayRefine;
+        return bound;
+    }
 
     void cleanup() noexcept {
         try {
@@ -1685,6 +1834,9 @@ private:
         ring_.reset();
         state_.reset();
         parked_.reset();
+        lowFlags_.reset();
+        refines_.reset();
+        for (auto& r : refineIn_) r.reset();
         if (stream_) driver.cuStreamDestroy_v2_p(stream_);
         stream_ = nullptr;
         if (chain_.module) driver.cuModuleUnload_p(chain_.module);
@@ -1711,6 +1863,15 @@ private:
     U32 deferredCapacity_ = 0;
     U64 deferredHead_ = 0;
     std::vector<Parked> deferredOut_;
+    // Partial shading: on this frame; each launch thread's mark; the provisional samples' ring (pinned), the host's
+    // place in it and those read but not yet taken; each launch slot's provisional samples to render again.
+    bool partial_ = false;
+    bool exceptionLogged_ = false;  // the diagnostic's first exception logged
+    B lowFlags_, refines_;
+    U32 refineCapacity_ = 1u << 22;
+    U64 refineHead_ = 0;
+    std::vector<Refine> refinesOut_;
+    std::array<B, Slots> refineIn_;
     std::array<ParamSlot, 8> params_;
     std::array<Readback, 4> readbacks_;
     std::array<B, 4> staging_;
@@ -1723,7 +1884,9 @@ private:
     U32 itemsPerChunk_ = 0, parkedCapacity_ = 0;
     bool adaptive_ = false;
     // The AOV film's channels and closest depths a pixel, a sample's scratch for them, and the clock's seconds a tick.
-    U32 aovChannels_ = 0, aovClosest_ = 0;
+    U32 aovChannels_ = 0, aovClosest_ = 0, aovClosestChannels_ = 0;
+    std::vector<aov::Entry> aovEntries_;  // the tables' entries, for reading the closest filter's words
+    mutable bool closestLanded_ = true;   // the downloaded words read into the AOV film and its depths
     size_t aovScratch_ = 0;
     // Cryptomatte: events a thread and their scratch, categories, multi presence, extras, node size and pool.
     U32 cryptoEvents_ = 0, cryptoCategories_ = 1, cryptoMultiPresence_ = 0, cryptoExtras_ = 0, cryptoNodeWords_ = 5, cryptoNodeCapacity_ = 0;

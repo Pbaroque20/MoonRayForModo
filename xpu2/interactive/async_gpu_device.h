@@ -12,9 +12,13 @@ __constant__ LaunchParams params{};
 }
 
 // Records each missing fine-detail tile once (the first sample to miss it asks
-// for it), and marks tracked tiles that are read.
+// for it), and marks tracked tiles that are read. With partial shading the lookup
+// reads a coarser level instead, and the launch thread's mark keeps the tile.
 struct RequestSink {
+    U32* mark = nullptr;  // partial shading: the launch thread's mark (null: off)
+    mutable unsigned missed = 0;
     __device__ void operator()(unsigned tile) const {
+        missed = tile;
         if (!tile) return;
         if (atomicCAS(&params.tileState[tile], 0u, 1u) == 0u) {
             const U64L at = atomicAdd(&params.state->requestTail, 1ull);
@@ -24,17 +28,26 @@ struct RequestSink {
     __device__ void touch(unsigned tile) const {
         if (!params.touched[tile]) params.touched[tile] = 1;
     }
+    __device__ bool coarse() const { return mark != nullptr; }
+    // A texel's parent a level up (tex::parentTexel), out of line (each of the filter's fetches calls it on a miss).
+    // Read, it marks the launch thread's sample provisional with the tile it missed.
+    __device__ __noinline__ unsigned parent(const tex::Image& image, unsigned level, unsigned x, unsigned y, surface::V3& out) const {
+        const unsigned status = tex::parentTexel(image, level, x, y, out);
+        if (status == tex::Ready) *mark = missed ? missed : ~0u;
+        return status;
+    }
 };
 
 // The scene's textures for the maps (shade_mapnodes.h): a miss asks for the tile.
 struct DeviceTextures {
     const tex::Image* const* images;
     U32 count;
+    U32* mark;  // partial shading: the launch thread's mark (null: off), taken where the thread is known
     __device__ __noinline__ U32 lookup(U32 texture, tex::Binding b, const tex::Footprint& f, surface::V3& out) const {
         if (texture >= count || !images[texture]) return tex::Invalid;
         b.image = images[texture];
         b.swapCross = b.mode != 3 ? 1u : 0u;  // as XPU's vector shading looks up (displacement: in order)
-        RequestSink sink;
+        RequestSink sink{mark};
         return tex::lookup(b, f, out, sink);
     }
 };
@@ -102,6 +115,8 @@ struct GpuBackend {
         missed = false;
         deferFlag = false;
     }
+    // Partial shading: the launch thread's mark that its sample read a coarser texel (null: off).
+    __device__ U32* threadMark() const { return params.partial ? params.lowFlags + optixGetLaunchIndex().x : nullptr; }
     // The sample met a stand-in or a volume the GPU does not render: the CPU lane renders it instead.
     bool deferFlag = false;
     __device__ bool deferred() const { return deferFlag; }
@@ -167,7 +182,7 @@ struct GpuBackend {
         const auto maps = params.maps[h.geom];
         surface::V3* bases[2] = {&out.albedo, &out.emission};
         const tex::Binding bindings[2] = {maps.diffuse, maps.emission};
-        RequestSink sink;
+        RequestSink sink{threadMark()};
         for (int i = 0; i < 2; ++i) {
             const auto& b = bindings[i];
             auto& v = *bases[i];
@@ -230,7 +245,7 @@ struct GpuBackend {
         st.geom = h.geom;
         st.worldToRender = c.worldToRender;
         st.worldToObject = params.meshAttributes[h.geom].worldToObject;
-        const DeviceTextures textures{params.textures, params.textureCount};
+        const DeviceTextures textures{params.textures, params.textureCount, threadMark()};
         const unsigned status = materialPresence(params.meshMaterials[h.geom], st, textures, presence);
         if (status == tex::Miss) missed = true;
         return status;
@@ -246,7 +261,7 @@ struct GpuBackend {
             st.worldToRender = c.worldToRender;
             st.worldToObject = a.worldToObject;
             shade::curveDifferentials(a, ray, st.pixelSamples ? st.pixelSamples : c.spp, st);
-            const DeviceTextures textures{params.textures, params.textureCount};
+            const DeviceTextures textures{params.textures, params.textureCount, threadMark()};
             return shadeMaterial(params.meshMaterials[h.geom], st, textures, bsdf, presence);
         }
         const auto m = params.geometry[h.geom];
@@ -260,7 +275,7 @@ struct GpuBackend {
         const shade::MaterialRecord& record = params.meshMaterials[h.geom];
         shade::hitDifferentials(params.meshAttributes[h.geom], h.prim, t.a, t.b, t.c, m.vertices[t.a], m.vertices[t.b],
                                 m.vertices[t.c], ray, st.pixelSamples ? st.pixelSamples : c.spp, st);
-        const DeviceTextures textures{params.textures, params.textureCount};
+        const DeviceTextures textures{params.textures, params.textureCount, threadMark()};
         return shadeMaterial(record, st, textures, bsdf, presence);
     }
     // A material's Bsdf and its presence: the material module's callables (async_material.cu), or here when the

@@ -108,6 +108,60 @@ renderer. First steps: the GPU lane and the CPU scene keep each mesh's accelerat
 its MeshData (the plan builder hands an unchanged mesh's same shared object to the next plan), rebuilding only the
 instance structures; the renderer keeps its ownership and lane rate across an edit of the same image size.
 
+## 7. Scheduling: the whole picture first, important parts, rights of passage
+
+What a preview showed before (build 86, the Modo scene of 264 classes at 1280x720, 16 samples): every chunk 4
+samples, and a CPU worker finishing a cell before it moved on, so parts of the picture went to 16 samples while the
+rest was black, and the whole frame was seen only once a quarter of its samples were in. The grid now (session 90):
+
+- **Progressive order.** A uniform frame's sample ranges grow 1, 1, 2, then the chunk size, and no chunk is handed to
+  a device past the least-sampled range of the cells it works without a right of passage (its frontier: its reserved
+  cells and the open ones), so the faster device is never held back by the slower one's cells. The frontier moves
+  when a range is handed out, not when it is done. The pictures fill the pixels no sample has reached from the finest
+  level of a pyramid of averages that covers them (display only, as MoonRay's coarse passes).
+- **Important parts first** (MoonRay's, `tools/port_important.py`): the pictures score each cell by the mean difference
+  of its pixels' tones from their neighbours'; the cells above the mean stay their owner's (the indexer's choice,
+  section 2) and may run a range ahead of the frontier; the rest are open to either device, the most important first.
+  Scored at most once a second (without a watch, from pictures made for it alone).
+- **Rights of passage.** A device enters a cell the other has reserved when that cannot hold the frame up: the CPU
+  when one of its chunks ends well before the GPU would get through its reserved work, or when the GPU has not
+  claimed for four launch windows (a latency gap); the GPU when the CPU's reserved work outlasts four of its windows,
+  in a cell it would not mostly defer (the indexer's p of at least 0.2). Before the lanes' rates are measured, always.
+- **Launches that fill the GPU.** A launch is sized from the GPU's measured rate (about 10 ms of work), the rate
+  measured only on launches of 65,536 samples or more. A slow first launch (textures still landing, the Modo scene's
+  heavy materials) made the next ones small, small ones were never measured, and the size stuck at a few thousand
+  samples, a fraction of the launch's 65,536 threads: the Modo scene ran at 200,000 samples a second. Launches are now
+  never below two samples a thread (session 92): that scene 74 s to 20.9 s on the GPU alone, 62 s to 19.3 s on both.
+- **Cellular GPU workers.** The GPU's broker takes each launch as shares of 32 workers, each in a cell and moving by
+  the same rules as a CPU worker (finish, own reserved cells, open cells, passage; neighbours first). The launch
+  itself runs all at once; only where its work comes from is cellular. The outlines show them in their own colour.
+
+## 8. Partial shading
+
+A GPU sample that needs a fine-detail tile not yet resident is finished from the texture's next level up (levels 1
+and up are always resident: the half-resolution picture and smaller, as MoonLightIPR halves textures), its tile
+asked for as before. It is provisional: its value goes to the GPU's provisional film, not the film, and a record of
+it (pixel, index, pass, missing tile, value) to the host. Either lane renders it again in full: the CPU lane at once
+(it has every level in RAM), or the GPU once the tile has landed; its provisional value then leaves the provisional
+film, and the full sample enters the film and the AOVs. The pictures show the provisional samples; the frame's end
+has none left (audited), so the image stays MoonRay's. A provisional sample is not counted in its adaptive pass until
+it is done in full, so the error trees never judge a low-fidelity pixel. A drain (Stop) hands out no new chunks but
+renders the provisional samples in full first, then ends the frame. Never in the GPU's pass chain.
+
+Compile time: with partial shading the maps module's OptiX compile went from 10 s to 7, then 34 and 40 minutes, its
+PTX the same size each time, whether the coarser read was a retry loop, inline in each texel fetch, or a direct
+callable. What those builds shared: OptiX calls in the map callable (optixGetLaunchIndex for the thread's mark, then
+optixDirectCall). The textures now carry the thread's mark from where the raygen's thread is known, and the sink reads
+a parent texel as a plain function (session 94).
+
+## 9. Next: material-coherent shading on the GPU
+
+The Modo scene above, at 640x360 on the GPU alone: 1.1 s with no bounce, 6.4 s with one, 12.6 s with four; its
+subsurface makes no difference. Its 264 classes carry 489 map nodes, and a bounce ray meets any of them: a warp's
+threads then run their different materials' maps one after another. MoonRay XPU queues hits by material and shades a
+queue at a time (on the CPU); XPU2 is to do the same on the GPU: a bounce's hits written out, sorted by material, and
+shaded in order, with the path's state in memory between the stages (a wavefront), exactly as the megakernel shades.
+
 ## Order
 
 1. Classifier from the admission rules, with the GPU capability table; decisions shown in the session's log.
