@@ -241,7 +241,7 @@ X2_HD inline float imagePdf(const Image& im, float u, float v, float mipLevel, U
     default: return pdfNearest2D(im, im.levels[0], u, v);
     }
 }
-X2_HD inline void imageSample(const Image& im, float ru, float rv, float mipLevel, U32 filter, float& u, float& v) {
+X2_CALL void imageSample(const Image& im, float ru, float rv, float mipLevel, U32 filter, float& u, float& v) {
     switch (filter) {
     case FilterBilinear: sampleBilinear2D(im, im.levels[0], ru, rv, u, v, nullptr); break;
     case FilterNearestMipNearest: sampleNearest2D(im, im.levels[mipOf(im, mipLevel)], ru, rv, u, v, nullptr); break;

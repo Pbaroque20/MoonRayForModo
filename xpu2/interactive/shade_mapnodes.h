@@ -2369,6 +2369,8 @@ X2_HD inline bool mapRequirementsMet(const float* pool, U32 program, const State
         if (!primProvided(st, *reinterpret_cast<const U32*>(pool + program + 2 + count + i))) return false;
     return true;
 }
+// The map module's callable's place in the GPU program's binding table (async_gpu_device.h's MaterialCall).
+constexpr U32 MapsCallable = 2;
 // Runs a material's map program: each map in dependency order, its result in its register.
 template <class Tex>
 X2_CALL U32 runMapProgram(const float* pool, U32 program, const State& st, const Tex& tex, Color* regs) {
@@ -2408,5 +2410,15 @@ X2_CALL U32 runMapProgram(const float* pool, U32 program, const State& st, const
         regs[h.reg] = out;
     }
     return tex::Ready;
+}
+// The map interpreter as materials call it: on the GPU, in a program built in modules (XPU2_MAP_MODULE), the map
+// module's callable (async_maps.cu); elsewhere the interpreter itself.
+template <class Tex>
+X2_HD inline U32 runMaps(const float* pool, U32 program, const State& st, const Tex& tex, Color* regs) {
+#if defined(__CUDACC__) && defined(XPU2_MAP_MODULE)
+    return optixDirectCall<U32, const float*, U32, const State*, const Tex*, Color*>(MapsCallable, pool, program, &st, &tex, regs);
+#else
+    return runMapProgram(pool, program, st, tex, regs);
+#endif
 }
 }}}

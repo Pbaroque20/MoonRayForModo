@@ -147,6 +147,13 @@ public:
         cells_[index].queue.append(chunks, n);
         total_ += n;
     }
+    // A sample the GPU took and the CPU lane rendered (a deferral): the CPU's in its cell, for the ownership flips.
+    void deferredToCpu(U32 tile) {
+        Cell& c = cells_[cellOf(tile)];
+        U64 gpu = c.samples[1].load(std::memory_order_relaxed);
+        while (gpu && !c.samples[1].compare_exchange_weak(gpu, gpu - 1, std::memory_order_relaxed)) {}
+        c.samples[0].fetch_add(1, std::memory_order_relaxed);
+    }
     // The cell holding a tile.
     U32 cellOf(U32 tile) const {
         const U32 tilesX = (width_ + TileSize - 1) / TileSize, perCell = options_.cellSize / TileSize;

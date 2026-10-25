@@ -141,7 +141,7 @@ struct State {
     Color sigmaA{0, 0, 0}, absorptionTerm{1, 1, 1};
     bool usingCustomNormal = false;
 };
-X2_HD inline void calculateHairFrame(State& hs, V3 wo, V3 hairDir, float hairRotation, V3 hairNormal) {
+X2_CALL void calculateHairFrame(State& hs, V3 wo, V3 hairDir, float hairRotation, V3 hairNormal) {
     float UdotO = clampf(dot(wo, hairDir), -1.0f, 1.0f);
     hs.hairDir = hairDir;
     if (hs.usingCustomNormal) hs.hairNorm = rotateAbout(hairDir, hairRotation, hairNormal);
@@ -200,7 +200,7 @@ X2_HD inline void computeAngles(const State& hs, V3 direction, V3 hairDir, float
     if (hs.usingCustomNormal) outPhi = atan2f(clampf(dot(proj, hs.hairBiNorm), -1.0f, 1.0f), cosPhi);
     else outPhi = dwAcos(cosPhi);  // the azimuth's symmetry: half the range, for evaluation only
 }
-X2_HD inline void updateAngles(State& hs, V3 direction, float phiI, float thetaI) {
+X2_CALL void updateAngles(State& hs, V3 direction, float phiI, float thetaI) {
     (void)direction;
     hs.thetaI = thetaI;
     hs.phiI = phiI;
@@ -290,7 +290,7 @@ X2_HD inline float baseMTerm(const State& hs, float sinAlpha, float cosAlpha, fl
     return deonLongitudinalM(variance, sinThetaICone, cosThetaICone, hs.sinThetaO, hs.cosThetaO);
 }
 X2_HD inline float baseNTerm(const State& hs) { return fmaxf(0.0f, 0.25f * hs.cosPhiDOverTwo); }
-X2_HD inline float baseSampleTheta(float sinAlpha, float cosAlpha, float variance, float r, float thetaO, float& thetaI) {
+X2_CALL float baseSampleTheta(float sinAlpha, float cosAlpha, float variance, float r, float thetaO, float& thetaI) {
     float eps[2];
     demuxFloat(r, eps);
     const float sinThetaO = sinf(thetaO), cosThetaO = cosf(thetaO);
@@ -417,7 +417,7 @@ X2_HD inline float separatePhiPdf(const Lobe& l, const HairComponent& c, const S
     default: return baseNTerm(hs);
     }
 }
-X2_HD inline Color separateBsdf(const Bsdf& b, const Lobe& l, const HairRecord& r, const HairComponent& c, const State& hs) {
+X2_CALL Color separateBsdf(const Bsdf& b, const Lobe& l, const HairRecord& r, const HairComponent& c, const State& hs) {
     return separateFresnel(b, l, r, hs) * baseMTerm(hs, c.sinAlpha, c.cosAlpha, c.longVariance) * separateNTermWithAbsorption(l, r, c, hs) *
            c.tint;
 }
@@ -497,7 +497,7 @@ X2_HD inline float oneSamplerPdf(const HairRecord& r, const State& hs, const flo
                ttNTerm(hs, r.c[HairTT].azimVariance);
     return fmaxf(0.0f, pdf);
 }
-X2_HD inline Color oneSamplerBsdf(const Bsdf& b, const Lobe& l, const HairRecord& r, const State& hs) {
+X2_CALL Color oneSamplerBsdf(const Bsdf& b, const Lobe& l, const HairRecord& r, const State& hs) {
     Color bsdf = rgb(0);
     const Color fresnel = evalHairFresnel(b, l, r, hs, hs.cosThetaD);
     const Color oneMinusF = rgb(1) - fresnel;

@@ -524,6 +524,7 @@ struct CpuBackend {
         return shade::materialPresence(plan.materialRecords[mesh.material], plan.materialPool.data(), st, textures, presence);
     }
     bool textureMissed() const { return false; }
+    bool deferred() const { return false; }  // the CPU renders everything
     // The render outputs' AOV schema, and a mesh's geometry label among the material AOVs'.
     const aov::Tables& aovs() const { return s.aovTables; }
     int geomLabel(U32 geom) const { return s.plan->meshes[geom].geomLabel; }
@@ -1013,6 +1014,7 @@ struct PassTables {
 // One sample handed back by the GPU after a texture miss (spec MEM-05, M1).
 struct Retry {
     U32 pixel, index;
+    U32 pass = 0;  // an adaptive frame's pass, which counts it done
 };
 
 // Samples migrated to the CPU lane. They are rendered before new chunks, since
@@ -1242,6 +1244,8 @@ private:
                 if (size_t n = retries.pop(retry, 64)) {
                     CpuBackend backend{scene_};
                     for (size_t i = 0; i < n; ++i) {
+                        // An adaptive frame counts the sample in its pass, rendered or not (as the GPU counts its own).
+                        if (tables_) tables_->cpuDone[retry[i].pass].fetch_add(1, std::memory_order_relaxed);
                         Radiance r;
                         thread_local std::vector<float> retryAov, retryDepth, retryBackup;
                         thread_local std::vector<aov::CryptoEvent> retryCrypto;

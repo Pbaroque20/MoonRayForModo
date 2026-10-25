@@ -214,7 +214,7 @@ X2_HD inline V3 renderVector(const float* worldToRender, V3 v) { return worldToR
 X2_HD inline Color scaleAndFresnel1(const Bsdf& b, const Lobe& l) { return shade::scaleAndFresnel(b, l, 1.0f); }
 // BsdfLobe_getProperty: the lobe's own property, else (colour) its scale and Fresnel at normal incidence. False when
 // neither handles it (MoonRay then writes nothing).
-X2_HD inline bool lobeProperty(const Bsdf& b, const Lobe& l0, U32 property, float* d, const float* worldToRender) {
+X2_CALL bool lobeProperty(const Bsdf& b, const Lobe& l0, U32 property, float* d, const float* worldToRender) {
     const Lobe& l = propertyLobe(b, l0);
     auto put3 = [&](V3 v) {
         d[0] = v.x;
@@ -402,7 +402,7 @@ struct MaterialHit {
 };
 
 // The material AOVs at a hit, into the sample's array (aovSetMaterialAovs through MaterialAovs::computeVector).
-X2_HD inline void materialAovs(const Tables& t, float* aovs, float* depths, const MaterialHit& h, float depth) {
+X2_CALL void materialAovs(const Tables& t, float* aovs, float* depths, const MaterialHit& h, float depth) {
     const Bsdf& b = *h.bsdf;
     const int geomLabel = h.geomLabel;
     const int materialLabel = shade::labelMaterialAovId(b.materialLabels);

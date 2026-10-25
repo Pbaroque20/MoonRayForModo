@@ -11,6 +11,7 @@
 #include "async_adaptive.h"
 #include "async_cpu.h"
 #include "async_gpu.h"
+#include "device_suit.h"
 #include <functional>
 #include <limits>
 #include <map>
@@ -95,6 +96,11 @@ struct RenderResult {
     Timeline timeline;
     // Adaptive frames: passes generated, tree updates, and samples a pixel on average.
     U32 adaptivePasses = 0, treeUpdates = 0;
+    U64 deferred = 0;  // samples the GPU deferred to the CPU lane (stand-ins)
+    // The cells by suitability of a grid's first frame on both devices (device_suit.h): cells, those the CPU took
+    // (of them, those the GPU would mostly defer), the lanes' rate ratio used, the probe's time.
+    U32 seededCells = 0, seededCpuCells = 0, seededDeferCells = 0;
+    double seededRatio = 0, seedSeconds = 0;
     double meanSamples = 0;
     double treeSeconds = 0, errorSeconds = 0;  // rebuilding the trees; from asking for errors to having them
     U32 chainStalls = 0;  // times the GPU's pass chain waited for texture tiles
@@ -208,6 +214,10 @@ public:
         gpuCells.erase(std::unique(gpuCells.begin(), gpuCells.end()), gpuCells.end());
     }
     U32 cellSize() const { return cellSize_; }
+    // The GPU lane's samples a second over the CPU lane's, measured by the last frame on both (0: none yet); a new
+    // renderer of the session's next scene starts from its predecessor's.
+    double deviceRatio() const { return deviceRatio_; }
+    void deviceRatio(double r) { deviceRatio_ = r; }
 
     RenderResult render(const RenderOptions& o) {
         using Clock = std::chrono::steady_clock;
@@ -217,14 +227,30 @@ public:
         // In an adaptive frame with a GPU, the CPU rebuilds the error trees and the
         // GPU takes every sample: the chain of passes, each waiting on the trees,
         // bounds the frame, and a CPU chunk would sit on that chain.
-        const bool useGpu = o.mode != 0, useCpu = o.mode != 1 && !(adaptive && useGpu);
+        // A scene with GPU stand-ins needs the CPU lane for the samples the GPU defers, whatever the mode.
+        const bool standIns = o.mode != 0 && gpu_ && gpu_->standIns();
+        const bool useGpu = o.mode != 0, useCpu = standIns || (o.mode != 1 && !(adaptive && useGpu));
         cpu::need(!useGpu || gpu_, "GPU lane required");
         GridOptions gridOptions = o.grid;
         gridOptions.mode = useCpu ? (useGpu ? 2 : 0) : 1;
         // Ownership carried over from earlier frames of the same grid (GRD-03).
         const U32 cells = ((plan_->width + gridOptions.cellSize - 1) / gridOptions.cellSize) *
                           ((plan_->height + gridOptions.cellSize - 1) / gridOptions.cellSize);
-        Grid grid(plan_->width, plan_->height, plan_->spp, gridOptions, ownership_.owners(cells), adaptive, plan_->viewport);
+        // A grid's first frame on both devices: its cells start on the device suited to what they see (device_suit.h).
+        const std::vector<Device>* owners = ownership_.owners(cells);
+        suit::Seeded seeded;
+        if (!owners && gridOptions.mode == 2) {
+            seeded = suit::seed(config, *plan_, cpuScene_, gridOptions.cellSize, deviceRatio_);
+            if (seeded.owners.size() == cells) {
+                owners = &seeded.owners;
+                result.seededCells = seeded.cells;
+                result.seededCpuCells = seeded.cpuCells;
+                result.seededDeferCells = seeded.deferCells;
+                result.seededRatio = seeded.ratio;
+                result.seedSeconds = seeded.seconds;
+            }
+        }
+        Grid grid(plan_->width, plan_->height, plan_->spp, gridOptions, owners, adaptive, plan_->viewport);
         HostFilm film(plan_->width, plan_->height);
         film.initAovs(cpuScene_.aovTables, plan_->aovs && plan_->aovs->heatMap);
         film.initCrypto(plan_->aovs.get());
@@ -240,7 +266,7 @@ public:
             const unsigned trees = o.treeThreads != ~0u ? o.treeThreads : std::max(1u, std::min(o.threads, 16u) - 1);
             if (!pool_ || pool_->size() != trees) pool_ = std::make_unique<Pool>(trees);
             state.start = Clock::now();
-            if (useGpu && o.deviceChain && !o.cellular && gpu_->hasChain()) state.startChain(*gpu_, tileOrder(gridOptions.cellSize));
+            if (useGpu && o.deviceChain && !o.cellular && !standIns && gpu_->hasChain()) state.startChain(*gpu_, tileOrder(gridOptions.cellSize));
             else state.generateReady(grid, useGpu ? gpu_ : nullptr);
         }
 
@@ -364,6 +390,22 @@ public:
             if (useGpu) {
                 Completion c;
                 while (gpu_->poll(c)) {
+                    // The samples the launch deferred: the CPU lane renders them whole, before new chunks.
+                    {
+                        std::vector<Parked> deferred;
+                        gpu_->takeDeferred(deferred);
+                        if (!deferred.empty()) {
+                            std::vector<Retry> moved(deferred.size());
+                            const U32 tilesX = (plan_->width + TileSize - 1) / TileSize;
+                            for (size_t k = 0; k < deferred.size(); ++k) {
+                                moved[k] = Retry{deferred[k].pixel, deferred[k].index, deferred[k].pass};
+                                const U32 x = deferred[k].pixel % plan_->width, y = deferred[k].pixel / plan_->width;
+                                grid.deferredToCpu((y / TileSize) * tilesX + x / TileSize);
+                            }
+                            retries.push(moved.data(), moved.size());
+                            result.deferred += deferred.size();
+                        }
+                    }
                     queuedItems -= c.items;
                     gpuItems += c.items;
                     // Launches too small to keep the GPU full understate its rate.
@@ -531,6 +573,8 @@ public:
         result.cpuMoves = cpuLane.counters.moves.load();
         result.gpuItemsPerSecond = gpuRate;
         result.cpuSamplesPerSecond = result.seconds > 0 ? double(result.cpuSamples) / result.seconds : 0;
+        // The lanes' rate ratio for the next grid's seeding.
+        if (useGpu && useCpu && !drained && gpuRate > 0 && result.cpuSamplesPerSecond > 0) deviceRatio_ = gpuRate / result.cpuSamplesPerSecond;
         if (useGpu) {
             result.fineLoaded = gpu_->fineLoaded();
             result.fineEvicted = gpu_->fineEvicted();
@@ -909,6 +953,7 @@ private:
     const CpuScene& cpuScene_;
     GpuLane* gpu_;
     Ownership ownership_;
+    double deviceRatio_ = 0;
     std::unique_ptr<CpuLane> cpu_;  // persistent workers (spec §4)
     DWORD_PTR cpuAffinity_ = 0;
     std::unique_ptr<Pool> pool_;  // the adaptive error trees

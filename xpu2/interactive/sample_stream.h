@@ -6,6 +6,22 @@
 #else
 #define X2_HD
 #endif
+// A helper too big to copy into each of its callers: on the GPU one call (shade_math.h says why).
+#ifndef X2_CALL
+#if defined(__CUDACC__)
+#define X2_CALL __host__ __device__ __noinline__ inline
+#else
+#define X2_CALL inline
+#endif
+#endif
+// A helper too big to copy into each of its callers: on the GPU one call (shade_math.h says why).
+#ifndef X2_CALL
+#if defined(__CUDACC__)
+#define X2_CALL __host__ __device__ __noinline__ inline
+#else
+#define X2_CALL inline
+#endif
+#endif
 namespace xpu2 { namespace interactive { namespace sample {
 using U32=unsigned int;
 using U64=unsigned long long;

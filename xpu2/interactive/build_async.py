@@ -19,7 +19,8 @@ HEADERS = ('async_gpu_abi.h', 'async_adaptive_core.h', 'async_integrator.h', 'li
            'texture_core.h', 'surface_core.h', 'sample_stream.h', 'path_stage.h', 'shade_math.h', 'shade_tables.h',
            'shade_fresnel.h', 'shade_color.h', 'shade_lobes.h', 'shade_lobes_eval.h', 'shade_hair.h', 'shade_flakes.h', 'shade_glitter.h', 'shade_glitter_tables.h', 'shade_state.h', 'shade_builder.h',
            'shade_colorcorrect.h', 'shade_dwabase.h', 'shade_dwalayer.h', 'shade_maps.h', 'shade_noise.h', 'shade_bssrdf.h', 'shade_mapnodes.h', 'shade_mapnodes_more.h', 'curve_core.h', 'curve_embree.h', 'volume_core.h', 'shade_material.h',
-           'dwa_admission.h', 'map_admission.h', 'aov_core.h', 'aov_material.h', 'aov_state.h', 'aov_crypto.h', 'camera_core.h', 'light_filter_core.h', 'volume_grid.h', 'volume_emission.h')
+           'dwa_admission.h', 'map_admission.h', 'aov_core.h', 'aov_material.h', 'aov_state.h', 'aov_crypto.h', 'camera_core.h', 'light_filter_core.h', 'volume_grid.h', 'volume_emission.h',
+           'async_gpu_device.h')
 FAST_FLAGS = ['--std=c++17', '--gpu-architecture=compute_75', '--fmad=true', '--prec-div=true',
               '--prec-sqrt=true', '--ftz=false', '-DXPU2_PATHS_ONLY']
 
@@ -28,16 +29,30 @@ def build_all(source, runtime, out):
     source, runtime, out = (Path(p).resolve() for p in (source, runtime, out))
     out.mkdir(parents=True, exist_ok=False)
     verify(runtime, json.loads((HERE / 'reference-lock.json').read_text()))
-    files = list(HERE.glob('*.h')) + [HERE / n for n in ('async_probe.cc', 'async_gpu.cu', 'async_adaptive.cu', 'build_async.py',
+    files = list(HERE.glob('*.h')) + [HERE / n for n in ('async_probe.cc', 'async_gpu.cu', 'async_material.cu', 'async_maps.cu', 'async_lights.cu',
+                                                         'async_adaptive.cu', 'build_async.py',
                                                          'gpu_build.py', 'native_build.py')]
     held = {str(p): sha(p) for p in files}
     report = {'status': 'incomplete', 'source_hashes': held}
     try:
-        # One program for uniform frames, one for adaptive frames (async_gpu.cu).
-        ptx, report['cuda_build'] = compile_ptx(source, out, 'async_gpu.cu', HEADERS, FAST_FLAGS + ['-DXPU2_ADAPTIVE=0'])
+        # One program for uniform and adaptive frames (async_gpu.cu), its materials in a module of their own
+        # (async_material.cu): NVRTC compiles the two at once (each in its own folder, for its log).
         (out / 'adaptive').mkdir()
-        adaptive, report['cuda_build_adaptive'] = compile_ptx(source, out / 'adaptive', 'async_gpu.cu', HEADERS,
-                                                              FAST_FLAGS + ['-DXPU2_ADAPTIVE=1'])
+        (out / 'material').mkdir()
+        (out / 'maps').mkdir()
+        (out / 'lights').mkdir()
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(4) as pool:
+            main = pool.submit(compile_ptx, source, out, 'async_gpu.cu', HEADERS, FAST_FLAGS + ['-DXPU2_MATERIAL_MODULE=1', '-DXPU2_LIGHT_MODULE=1'])
+            # Relocatable: their callables are entry points no code in the module calls (NVRTC would drop them).
+            material = pool.submit(compile_ptx, source, out / 'material', 'async_material.cu', HEADERS,
+                                   FAST_FLAGS + ['--relocatable-device-code=true', '-DXPU2_MAP_MODULE=1'])
+            maps = pool.submit(compile_ptx, source, out / 'maps', 'async_maps.cu', HEADERS, FAST_FLAGS + ['--relocatable-device-code=true'])
+            lights = pool.submit(compile_ptx, source, out / 'lights', 'async_lights.cu', HEADERS, FAST_FLAGS + ['--relocatable-device-code=true'])
+            ptx, report['cuda_build'] = main.result()
+            materialPtx, report['cuda_build_material'] = material.result()
+            mapsPtx, report['cuda_build_maps'] = maps.result()
+            lightsPtx, report['cuda_build_lights'] = lights.result()
         # The adaptive pass chain's CUDA kernels, beside the adaptive program.
         chain, report['cuda_build_chain'] = compile_ptx(source, out / 'adaptive', 'async_adaptive.cu', HEADERS, FAST_FLAGS)
         # The probe shares the session's render outputs (aov_plan.h, aov_display.h): MoonRay's light path
@@ -57,8 +72,10 @@ def build_all(source, runtime, out):
             shutil.copyfile(sampler / name, out / name)
         if any(sha(Path(k)) != v for k, v in held.items()):
             raise RuntimeError('Build source drift')
-        report.update(status='passed', exe=str(exe), ptx=str(ptx), ptx_adaptive=str(adaptive), ptx_chain=str(chain),
-                      binary_hashes={'exe': sha(exe), 'ptx': sha(ptx), 'ptx_adaptive': sha(adaptive), 'ptx_chain': sha(chain)})
+        report.update(status='passed', exe=str(exe), ptx=str(ptx), ptx_material=str(materialPtx), ptx_maps=str(mapsPtx), ptx_lights=str(lightsPtx),
+                      ptx_chain=str(chain),
+                      binary_hashes={'exe': sha(exe), 'ptx': sha(ptx), 'ptx_material': sha(materialPtx), 'ptx_maps': sha(mapsPtx),
+                                     'ptx_lights': sha(lightsPtx), 'ptx_chain': sha(chain)})
     except Exception as error:
         report.update(status='failed', error=str(error))
     (out / 'build.json').write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')

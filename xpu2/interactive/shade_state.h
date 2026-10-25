@@ -114,7 +114,7 @@ X2_HD inline V3 renderToWorldVector(const float* m, V3 v) {
 // A curve's attribute at the hit (LineSegmentsInterpolator, CubicSplineInterpolator): a uniform value is its
 // curve's; vertex values are a linear span's ends or a cubic span's four points by its basis; varying values a
 // span's ends (on a linear curve, its vertices).
-X2_HD inline bool curvePrimValue(const State& st, const PrimAttr& a, float out[3]) {
+X2_CALL bool curvePrimValue(const State& st, const PrimAttr& a, float out[3]) {
     const U32 n = a.components;
     const float* d = st.primData + a.offset;
     const float u = st.u;
@@ -156,7 +156,7 @@ X2_HD inline bool curvePrimValue(const State& st, const PrimAttr& a, float out[3
 }
 // getd<T>Attributeds and getd<T>Attributedt (Mesh::computeDerivatives): an attribute's st derivatives over the hit
 // triangle; false when the mesh has no such attribute. Curves' attribute derivatives are not ported (false).
-X2_HD inline bool primPartials(const State& st, U32 key, float ds[3], float dt[3]) {
+X2_CALL bool primPartials(const State& st, U32 key, float ds[3], float dt[3]) {
     for (U32 i = 0; i < st.primCount; ++i) {
         const PrimAttr& a = st.prims[i];
         if (a.key != key) continue;
@@ -197,7 +197,7 @@ X2_HD inline bool primProvided(const State& st, U32 key) {
     return false;
 }
 // isProvided and get<T>Attribute: the attribute with this key at the hit, interpolated as its rate says.
-X2_HD inline bool primValue(const State& st, U32 key, float out[3]) {
+X2_CALL bool primValue(const State& st, U32 key, float out[3]) {
     for (U32 i = 0; i < st.primCount; ++i) {
         const PrimAttr& a = st.prims[i];
         if (a.key != key) continue;

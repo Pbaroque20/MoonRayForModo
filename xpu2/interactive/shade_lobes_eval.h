@@ -29,7 +29,7 @@ X2_HD inline float ctCompensationPdf(const CookTorranceParams& c, U32 type, floa
     return c.coupled ? energy::transmissionPdfR(cosNI, c.etaI, c.etaT, c.inputRoughness)
                      : energy::reflectionPdf(type, cosNI, c.inputRoughness);
 }
-X2_HD inline void ctCompensationSample(const CookTorranceParams& c, const Frame& f, U32 type, float r1, float r2, V3& wi) {
+X2_CALL void ctCompensationSample(const CookTorranceParams& c, const Frame& f, U32 type, float r1, float r2, V3& wi) {
     if (isBlack(c.favg)) return;
     if (c.coupled) energy::transmissionSampleR(f, r1, r2, wi, c.inputRoughness, c.etaI, c.etaT);
     else energy::reflectionSample(type, f, r1, r2, c.inputRoughness, wi);

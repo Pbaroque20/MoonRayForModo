@@ -56,19 +56,23 @@ std::string oneLine(std::string text) {
     return text.substr(0, 600);
 }
 
-// The renderer's files beside the executable (build_session.py lays them out).
+// The renderer's files beside the executable (build_session.py lays them out): the program for every frame, its
+// material module and the adaptive pass chain.
 struct Programs {
-    std::string uniform, adaptive, chain;
+    std::string uniform, material, chain, maps, lights;
 };
 Programs programs(const fs::path& folder) {
-    return {fileText(folder / "async_gpu.ptx"), fileText(folder / "adaptive" / "async_gpu.ptx"),
-            fileText(folder / "adaptive" / "async_adaptive.ptx")};
+    return {fileText(folder / "async_gpu.ptx"), fileText(folder / "material" / "async_material.ptx"),
+            fileText(folder / "adaptive" / "async_adaptive.ptx"), fileText(folder / "maps" / "async_maps.ptx"),
+            fileText(folder / "lights" / "async_lights.ptx")};
 }
 
 std::unique_ptr<async::GpuLane> gpuLane(const Programs& p, std::function<void(unsigned, unsigned)> progress = {}) {
     async::GpuOptions options;
     options.compileProgress = std::move(progress);
-    return std::make_unique<async::GpuLane>(p.uniform, p.adaptive, p.chain, options);
+    options.mapsPtx = p.maps;
+    options.lightsPtx = p.lights;
+    return std::make_unique<async::GpuLane>(p.uniform, p.material, p.chain, options);
 }
 
 // OptiX hands out compile tasks whether or not its disk cache holds a program, so whether it does is kept as a mark
@@ -79,7 +83,12 @@ fs::path shaderMark(const Programs& p) {
     auto mix = [&](const void* data, size_t n) {
         for (size_t i = 0; i < n; ++i) h = (h ^ static_cast<const unsigned char*>(data)[i]) * 1099511628211ull;
     };
-    for (const std::string* s : {&p.uniform, &p.adaptive, &p.chain}) mix(s->data(), s->size());
+    for (const std::string* s : {&p.uniform, &p.material, &p.chain, &p.maps, &p.lights}) mix(s->data(), s->size());
+    // A test build's lower OptiX optimization (XPU2_OPTIX_LEVEL, async_gpu.h) is another program in OptiX's cache.
+    if (const char* level = std::getenv("XPU2_OPTIX_LEVEL")) {
+        const std::string l = level;
+        mix(l.data(), l.size());
+    }
     wchar_t system[MAX_PATH] = {};
     GetSystemDirectoryW(system, MAX_PATH);
     WIN32_FILE_ATTRIBUTE_DATA driver{};
@@ -412,6 +421,7 @@ int session(const Args& args, const fs::path& directory) {
     cpu::sequenceDirectory() = folder;
     std::unique_ptr<async::GpuLane> gpu;
     std::unique_ptr<async::Renderer> renderer;
+    double deviceRatio = 0;  // the lanes' measured rate ratio, from one scene's renderer to the next
     cpu::PlanView gpuPlan;
     bool gpuUsable = true;  // the GPU lane renders the scene (cpuOnly empty)
     ModoSharedImage shared;
@@ -481,6 +491,7 @@ int session(const Args& args, const fs::path& directory) {
                         gpuPlan = scene.plan;
                     }
                     renderer = std::make_unique<async::Renderer>(scene.plan, *scene.cpuScene, gpuUsable ? gpu.get() : nullptr);
+                    renderer->deviceRatio(deviceRatio);
                     std::printf("XPU2: scene ready in %.2f s (%ux%u, %s %u)\n", std::chrono::duration<double>(Clock::now() - began).count(),
                                 scene.plan->width, scene.plan->height, scene.plan->adaptive ? "adaptive, at most" : "uniform,",
                                 scene.plan->spp);
@@ -588,6 +599,11 @@ int session(const Args& args, const fs::path& directory) {
                 options.cellular = cellular;
                 options.watch = &watch;
                 result = renderer->render(options);
+                if (renderer->deviceRatio() > 0) deviceRatio = renderer->deviceRatio();
+                if (result.seededCells)
+                    std::printf("XPU2: cells by suitability: %u of %u the CPU's (%u the GPU would defer), GPU/CPU rate %.2f, probed in %.1f ms\n",
+                                result.seededCpuCells, result.seededCells, result.seededDeferCells, result.seededRatio, result.seedSeconds * 1e3);
+                if (result.deferred) std::printf("XPU2: %llu samples deferred to the CPU\n", (unsigned long long)result.deferred);
                 if (result.failed) {
                     outlines.watch(nullptr, id, 0, 0);
                     fallback(result.error);

@@ -94,6 +94,9 @@ struct RenderItem {const rdl::SceneObject* geom;const rdl::SceneObject* instance
 // mask must share; singleSided: side_type single (a mesh bounding no volume), its back faces culled.
 struct Mesh {std::shared_ptr<const MeshData> data;unsigned material;int volume=-1;unsigned visibility=0xffu;bool singleSided=false;
  int geomLabel=-1;  // its geometry's label among the material AOVs' (shading::Geometry::getGeomLabelId)
+ // The scene indexer's families of its geometry and of its material's tree (entity_classes.h's Family bits; 0 where
+ // nothing classified them), for the cells by suitability (device_suit.h).
+ uint64_t families=0;
 };
 // A plan mesh's curve set (curve_core.h) over its own arrays (host memory).
 inline curves::Set curveSet(const MeshData& m){curves::Set c;if(!m.curveBasis)return c;
@@ -1593,6 +1596,21 @@ inline volume::Shader admitVolume(const rdl::SceneObject& o,unsigned lightSet,bo
   shade::rampInit(s.densityRamp,unsigned(p.size()),ip,out,it);}
  return s;
 }
+// The scene indexer's families of an object and of everything it shades with (its bound maps, the materials and
+// objects its attributes name), from the router's decisions; each object once.
+inline uint64_t indexedFamilies(const rdl::SceneObject& o,const CanonicalView& frame,std::map<const rdl::SceneObject*,uint64_t>& seen){
+ const auto found=seen.find(&o);if(found!=seen.end())return found->second;
+ seen[&o]=0;
+ const auto& decisions=frame->routing->decisions;const std::string id=ri::objectId(o.getName());
+ uint64_t f=decisions.count(id)?decisions.at(id).families:0;
+ for(auto i=o.getSceneClass().beginAttributes();i!=o.getSceneClass().endAttributes();++i){
+  const rdl::Attribute& a=**i;
+  if(a.isBindable())if(const rdl::SceneObject* b=o.getBinding(a))f|=indexedFamilies(*b,frame,seen);
+  if(a.getType()==rdl::TYPE_SCENE_OBJECT){if(const rdl::SceneObject* c=o.get<rdl::SceneObject*>(a.getName()))f|=indexedFamilies(*c,frame,seen);}
+  else if(a.getType()==rdl::TYPE_SCENE_OBJECT_VECTOR){for(const rdl::SceneObject* c:o.get<rdl::SceneObjectVector>(a.getName()))if(c)f|=indexedFamilies(*c,frame,seen);}
+ }
+ seen[&o]=f;return f;
+}
 inline std::vector<std::shared_ptr<const ix::Buffer>> signature(const rdl::SceneObject& o,const CanonicalView& frame){
  auto entity=frame->routing->scene->entities.at(ri::objectId(o.getName()));std::vector<std::shared_ptr<const ix::Buffer>> value;
  for(auto& id:entity->dependencies){auto attr=frame->routing->scene->entities.at(id);for(auto& pair:attr->buffers)value.push_back(pair.second);}return value;
@@ -2652,6 +2670,7 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
  cam.rasterToCamera.m[3][0]=-film/(2*focal);cam.rasterToCamera.m[3][1]=-film/(2*focal)*height/width;
  }
  std::map<std::string,unsigned> materialIds;std::set<const rdl::SceneObject*> allGeometry,setGeometry;const rdl::SceneObject* sky=nullptr;
+ std::map<const rdl::SceneObject*,uint64_t> familyCache;  // indexedFamilies' objects
  std::map<const rdl::SceneObject*,unsigned> lightIds;
  // The materials' lobe light sets, gathered as they are admitted (dwa_admission.h).
  std::vector<const rdl::SceneObject*> lobeLightSets;lobeLightSetTable=&lobeLightSets;
@@ -3266,6 +3285,7 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
    paths?(geometryVisibility(o)&(item.instancer?geometryVisibility(*item.instancer):0xffu)):0xffu,
    paths&&volumeIndex<0&&get<rdl::Int>(o,"side_type")==1,
    plan->aovs?plan->aovs->geomLabel(aov::attribute<rdl::String>(o,"label","")):-1});
+  plan->meshes.back().families=indexedFamilies(o,frame,familyCache)|(mat?indexedFamilies(*mat,frame,familyCache):0);
   if(displacementShader&&!subdGeometry&&!polyGeometry)displaced.push_back({plan->meshes.size()-1,edgeVertices,displacement});
   // An emissive mesh volume lights the scene (an emissive region over its mesh's box).
   if(volumeIndex>=0&&plan->volumes[size_t(volumeIndex)].kind==volume::KindVdb&&plan->volumes[size_t(volumeIndex)].mapped)

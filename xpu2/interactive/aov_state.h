@@ -22,6 +22,10 @@ struct StateContext {
     const surface::Camera* camera = nullptr;
     float time = 0.0f;
     U32 motionBlur = 0;
+    // The volume's surface along a camera ray (its distance, its world point): P and Wp take it where the hit lies
+    // behind it.
+    float volumeT = 3.402823466e38f;
+    V3 volumeP{0, 0, 0};
 };
 X2_HD inline V3 renderPointOf(const float* m, V3 p) {
     if (!m) return p;
@@ -31,7 +35,7 @@ X2_HD inline V3 renderPointOf(const float* m, V3 p) {
 X2_HD inline V3 renderVectorOf(const float* m, V3 v) { return m ? shade::xformVector(m, v) : v; }
 // Render space (the camera's at the first motion step) to the camera's space at a time (computeRender2Camera: render
 // to camera, then cameraOpen2CameraTime with motion blur); null camera: the identity.
-X2_HD inline surface::Matrix renderToCameraAt(const StateContext& c, float time) {
+X2_CALL surface::Matrix renderToCameraAt(const StateContext& c, float time) {
     if (c.camera) return c.motionBlur ? surface::matrixProduct(c.camera->render2Camera, surface::cameraOpenToTime(*c.camera, time)) : c.camera->render2Camera;
     surface::Matrix m{};
     m.m[0][0] = m.m[1][1] = m.m[2][2] = m.m[3][3] = 1.0f;
@@ -88,14 +92,14 @@ X2_HD inline float wireframe(const shade::State& st, V3 cameraPosition) {
 }
 
 // getStateVar: one state variable's value, scaled by the weight.
-X2_HD inline void stateValue(U32 schema, const shade::State& st, const StateContext& c, float w, float* d) {
+X2_CALL void stateValue(U32 schema, const shade::State& st, const StateContext& c, float w, float* d) {
     auto put3 = [&](V3 v) {
         d[0] = v.x * w;
         d[1] = v.y * w;
         d[2] = v.z * w;
     };
     switch (schema) {
-    case StateP: put3(renderPointOf(c.worldToRender, st.P)); break;
+    case StateP: put3(renderPointOf(c.worldToRender, c.tHit < c.volumeT ? st.P : c.volumeP)); break;
     case StateNg: put3(renderVectorOf(c.worldToRender, st.Ng)); break;
     case StateN: put3(renderVectorOf(c.worldToRender, st.N)); break;
     case StateSt:
@@ -109,7 +113,7 @@ X2_HD inline void stateValue(U32 schema, const shade::State& st, const StateCont
     case StateDtdx: d[0] = st.dtdx * w; break;
     case StateDtdy: d[0] = st.dtdy * w; break;
     case StateWireframe: d[0] = wireframe(st, c.cameraPosition) * w; break;
-    case StateWp: put3(st.P); break;
+    case StateWp: put3(c.tHit < c.volumeT ? st.P : c.volumeP); break;
     case StateDepth: d[0] = fminf(cameraDepth(c, st.P), c.volumeZ) * w; break;
     case StateMotion:
         motionVector(st, c, d);

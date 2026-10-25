@@ -56,6 +56,37 @@ renderer with the frame:
 - material, light and filter records are rewritten in place where their layout allows;
 - the RDLB file is written only for MoonRay's fallback, not on every edit.
 
+## 5 in detail: the GPU program in modules
+
+What the compile looks like now (build 74, OptiX 7.6, optimization level 3): two modules of about 10 MB of PTX each
+(uniform and adaptive frames, nearly the same code), compiled in parallel, each one task on one thread for over half
+an hour and about 13 GB. Marking the path tracer's big pieces `__noinline__` shrank NVRTC's work and the PTX's largest
+function (integratePaths 30.8k to 12k instructions), but not OptiX's: it compiles a module's call graph as a whole.
+
+1. **One program** for uniform and adaptive frames (the launch's adaptive flag): half the compile's CPU and memory,
+   the same wall time (done, build 76).
+2. **Test builds at a low optimization level** (`XPU2_OPTIX_LEVEL`, its own shader mark): GPU correctness tests
+   without the hour.
+3. **Families as callables in their own modules.** OptiX compiles each module on its own task, in parallel, and never
+   inlines a callable into its caller. A direct callable cannot trace rays (OptiX 7.6), so the split follows what
+   traces:
+   - direct callables (shading, no rays): the map interpreter (a callable per map family), the material's
+     parameters (resolveDwaTree, blendParameters, the hair and glitter blends), the BSDF's sample and eval per lobe
+     family (base, hair, glitter, toon), the camera's ray (cameraSampleAt), the material AOVs;
+   - continuation callables (they trace): subsurface (diffusion and random walk), volumes (their radiance and
+     transmittance);
+   - the raygen module keeps the path loop, light sampling and the traces.
+   On the CPU the same calls are plain calls. A scene's pipeline links only the modules its families use (the
+   indexer's families, step 1), each module compiled once and kept in OptiX's cache, so a new scene compiles at most
+   the modules it adds.
+
+   Done so far (GPU build 78), in PTX instructions: the path tracer's module 145k, the material module 85k (two
+   callables: a hit's Bsdf, a material's presence), the map module 57k (the map interpreter, called by the
+   material callables). Whole, build 76 was 238k. Two things learned on the way: a module of callables is compiled
+   relocatable (`-rdc`), or NVRTC drops its entry points; and with the materials gone NVRTC inlined 34 helpers it
+   had kept as single calls (the module grew to 292k), so the big helpers are marked out of line (X2_CALL, now
+   defined beside X2_HD in sample_stream.h).
+
 ## Order
 
 1. Classifier from the admission rules, with the GPU capability table; decisions shown in the session's log.

@@ -30,7 +30,8 @@ using surface::V3;
 
 // Skip: the camera made no ray (MoonRay's invalid ray, camera_core.h): the sample adds nothing to the pixel, not even
 // its weight, and counts as taken.
-enum class SampleStatus : U32 { Done = 0, Miss = 1, Error = 2, Skip = 3 };
+// Defer: the sample met what its device does not render (a GPU stand-in); the CPU lane renders it whole instead.
+enum class SampleStatus : U32 { Done = 0, Miss = 1, Error = 2, Skip = 3, Defer = 4 };
 
 // Radiance and alpha (primary-hit coverage) of one sample, and its AOV values (aov_core.h) where the caller asks for
 // them: aov the schema's channels, aovDepth the closest filter's depths.
@@ -385,7 +386,7 @@ X2_HD inline V3 visibleLightRadiance(const mixed::Config& c, const sample::Ident
 namespace paths {
 // collectVolumeIntervals: a ray's crossings past its start, in order, and the regions it starts in.
 template <class Backend>
-X2_HD inline U32 volumeIntervals(Backend& backend, V3 org, V3 dir, float tnear, volume::Crossing* x, U32& regions, U32 mask) {
+X2_CALL U32 volumeIntervals(Backend& backend, V3 org, V3 dir, float tnear, volume::Crossing* x, U32& regions, U32 mask) {
     U32 n = backend.volumeCrossings(org, dir, tnear, x, volume::MaxCrossings, mask);
     regions = volume::interiority(x, n);
     return n;
@@ -403,7 +404,7 @@ X2_CALL V3 volumeTransmittance(const mixed::Config& c, Backend& backend, paths::
     V3 tr{1, 1, 1};
     if (n == 0 && regions == 0) return tr;
     float tStart = tnear;
-    auto segment = [&](float t0, float t1) -> bool {
+    auto segment = [&](float t0, float t1) X2_OUT_OF_LINE -> bool {
         if (!regions) return true;
         if (t1 >= volume::FarLimit) return false;
         float minFeatureSize;
@@ -1731,6 +1732,7 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
                                fromCamera ? camera.nearT : pv.nearT, fromCamera ? camera.farT : pv.farT, rayMask(pv.lobeType),
                                fromCamera ? camera.ox : V3{0, 0, 0}, fromCamera ? camera.oy : V3{0, 0, 0}};
         const resume::Hit hit = backend.trace(ray);
+        if (backend.deferred()) return SampleStatus::Defer;
         // The volumes the ray passes on its way (computeRadianceVolume): their light, and the throughput through them.
         const U32 volumeDepthBefore = pv.volumeDepth;
         V3 volumeAlphaT{1, 1, 1}, volumeMinT{0, 0, 0};
@@ -1872,7 +1874,8 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
         // Camera::computeZDistance: a projective camera's camera space -z, any other's ray distance.
         const bool projective = c.camera.type == surface::CameraPerspective || c.camera.type == surface::CameraOrthographic;
         const aov::StateContext sc{c.worldToRender, cameraPosition, hit.t, projective,
-                                   -volumeSurfaceT * aov::renderVectorOf(c.worldToRender, ray.direction).z, &c.camera, time, c.motionBlur};
+                                   -volumeSurfaceT * aov::renderVectorOf(c.worldToRender, ray.direction).z, &c.camera, time, c.motionBlur,
+                                   volumeSurfaceT, surface::add(ray.origin, surface::mul(ray.direction, volumeSurfaceT))};
         const float hitDepth = aov::cameraDepth(sc, st.P);  // the closest filter's depth
         if (aovs && pv.depth == 0 && (at.types & (aov::TypeState | aov::TypePrim)))
             for (U32 ei = 0; ei < at.count; ++ei) {
@@ -2088,7 +2091,7 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
         // Emissive volumes (computeRadianceEmissiveRegionsBundled): per region, the lobes its geometry is visible to as
         // a BsdfOneSampler (picked by albedo), light samples (a place in its emission distribution) and BSDF samples,
         // MIS-weighted, each through the region's emissive volume integral.
-        {
+        [&]() X2_OUT_OF_LINE {
             const volume::Regions er = backend.emissiveRegions();
             const U32 nL = split ? c.lightSamples : 1, nB = split ? c.bsdfSamples : 1;
             for (U32 ri = 0; ri < er.count; ++ri) {
@@ -2214,7 +2217,7 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
                     add(contribution);
                 }
             }
-        }
+        }();
 #endif
         // Light samples (drawLightSamples, integrateLightSetSample): each light of the hit's set; with adaptive light
         // sampling, the lights outside the set's tree and those the tree picks (chooseLightsToSample), a sample's pdf
@@ -2385,6 +2388,9 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
         // BSDF samples (drawBsdfSamples, integrateBsdfSample, addIndirectAndDirectVisibleContributions).
         float albedo[3 * shade::MaxLobes];
         for (U32 k = 0; k < 3 * shade::MaxLobes; ++k) albedo[k] = 0.0f;
+        // The BSDF samples out of line (X2_OUT_OF_LINE); a full stack of pending paths ends the sample as before.
+        bool stackFull = false;
+        [&]() X2_OUT_OF_LINE {
         for (U32 k = 0; k < bsdf.topCount; ++k) {
             const U32 record = bsdf.top[k];
             const shade::Lobe& lobe = bsdf.records[record];
@@ -2545,7 +2551,10 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
                     opacity = pv.accumOpacity + (1 - transparency) * (1 - pv.accumOpacity);
                     if (opacity > c.transparencyThreshold) continue;
                 }
-                if (top >= MaxPending) return SampleStatus::Error;
+                if (top >= MaxPending) {
+                    stackFull = true;
+                    return;
+                }
                 Pending child;
                 child.pixelWeight = 0.0f;
                 child.aovPixelWeight = pv.pixelWeight;
@@ -2594,10 +2603,13 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
                 stack[top++] = child;
             }
         }
+        }();
+        if (stackFull) return SampleStatus::Error;
         materialAovs(albedo, ssAov);
     }
     cryptoCredit();
     if (backend.textureMissed()) return SampleStatus::Miss;
+    if (backend.deferred()) return SampleStatus::Defer;
     out.rgb[0] = radiance.x;
     out.rgb[1] = radiance.y;
     out.rgb[2] = radiance.z;

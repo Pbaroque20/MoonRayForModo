@@ -31,6 +31,7 @@ struct DeviceState {
     U32 unparked[Slots];      // per-launch claim counters over the parked samples it runs first
     U64L parkedTail;          // samples ever parked (a monotonic ring position)
     U64L requestTail;         // tile requests ever made (a monotonic ring position)
+    U64L deferredTail;        // samples ever deferred to the CPU lane (a monotonic ring position)
     U32 errors;
     U32 pad;
     U32 passDone[MaxPasses];  // adaptive frames: samples completed per pass
@@ -99,6 +100,7 @@ struct LaunchParams {
     U64L glitterOffset;  // the glitter scratch's place in a thread's scratch (0: the scene has no glitter)
     U64L traversable;  // OptixTraversableHandle
     U64L volumeTraversable;  // the volumes' bounds (0: none)
+    U64L standInTraversable; // the boxes of the meshes the GPU does not render (0: none); a ray meeting one defers its sample
     const mixed::Geometry* geometry;
     const tex::Maps* maps;
     // The scene's textures, as the maps index them (cpu::Plan::textures).
@@ -116,6 +118,9 @@ struct LaunchParams {
     Parked* parked;
     U32 parkedCapacity, pad0;
     U64L parkedBegin, parkedEnd;
+    // Samples deferred to the CPU lane: a ring in pinned host memory, read by the host once the launch is done.
+    Parked* deferred;
+    U32 deferredCapacity, pad1;
 
     DeviceState* state;
     double* sums;  // 4 per pixel: rgb and alpha

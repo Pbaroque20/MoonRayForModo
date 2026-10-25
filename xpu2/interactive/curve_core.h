@@ -306,7 +306,7 @@ X2_CURVE_CALL bool roundLinear(const Set& c, U32 span, const float4 cp[2], float
 }
 
 // A ray against one span, as MoonRay XPU's program for the set's type finds it.
-X2_HD inline bool intersectSpan(const Set& c, U32 span, V3 org, V3 dir, float tmin, float tmax, Hit& out) {
+X2_CALL bool intersectSpan(const Set& c, U32 span, V3 org, V3 dir, float tmin, float tmax, Hit& out) {
     if (span >= c.spanCount) return false;
     const float3 o = make_float3(org.x, org.y, org.z), d = make_float3(dir.x, dir.y, dir.z);
     const U32 first = spanVertex(c, span);

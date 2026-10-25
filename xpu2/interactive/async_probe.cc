@@ -39,10 +39,15 @@ int main(int argc, char** argv) {
         std::ifstream file(argv[3], std::ios::binary);
         cpu::need(bool(file), "PTX read");
         const std::string ptx((std::istreambuf_iterator<char>(file)), {});
-        // The adaptive program sits beside it, in adaptive/ (build_async.py).
-        std::string adaptivePtx, chainPtx;
-        if (std::ifstream a{fs::path(argv[3]).parent_path() / "adaptive" / fs::path(argv[3]).filename(), std::ios::binary})
-            adaptivePtx.assign(std::istreambuf_iterator<char>(a), {});
+        // Its material module sits beside it, in material/ (build_async.py).
+        std::string materialPtx, chainPtx;
+        if (std::ifstream a{fs::path(argv[3]).parent_path() / "material" / "async_material.ptx", std::ios::binary})
+            materialPtx.assign(std::istreambuf_iterator<char>(a), {});
+        std::string mapsPtx, lightsPtx;
+        if (std::ifstream a{fs::path(argv[3]).parent_path() / "maps" / "async_maps.ptx", std::ios::binary})
+            mapsPtx.assign(std::istreambuf_iterator<char>(a), {});
+        if (std::ifstream a{fs::path(argv[3]).parent_path() / "lights" / "async_lights.ptx", std::ios::binary})
+            lightsPtx.assign(std::istreambuf_iterator<char>(a), {});
         if (std::ifstream a{fs::path(argv[3]).parent_path() / "adaptive" / "async_adaptive.ptx", std::ios::binary})
             chainPtx.assign(std::istreambuf_iterator<char>(a), {});
 
@@ -80,7 +85,9 @@ int main(int argc, char** argv) {
         if (mode != 0) {
             async::GpuOptions gpuOptions;
             if (const char* v = std::getenv("XPU2_ASYNC_PROFILE_CHAIN")) gpuOptions.profileChain = std::string(v) == "1";
-            gpu = std::make_unique<async::GpuLane>(ptx, adaptivePtx, chainPtx, gpuOptions);
+            gpuOptions.mapsPtx = mapsPtx;
+            gpuOptions.lightsPtx = lightsPtx;
+            gpu = std::make_unique<async::GpuLane>(ptx, materialPtx, chainPtx, gpuOptions);
             gpu->prepare(plan);
         }
         const double gpuSeconds = since(stamp);

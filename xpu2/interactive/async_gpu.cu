@@ -8,22 +8,11 @@
 // Results accumulate in the device film in double precision (ACC-04, ACC-06).
 // Traversal and triangle intersection use the hardware; the shared integrator
 // reconstructs each hit with the same arithmetic as the CPU lane.
-#include <optix.h>
-#include <optix_device.h>
-#include "async_gpu_abi.h"
-// Two programs come from this file: XPU2_ADAPTIVE 0 for uniform frames, 1 for
-// adaptive ones. OptiX links a pipeline's programs into one kernel, so the
-// adaptive paths would otherwise cost every uniform frame registers.
-#ifndef XPU2_ADAPTIVE
-#define XPU2_ADAPTIVE 1
-#endif
-using namespace xpu2::interactive;
-using namespace xpu2::interactive::async;
-
-extern "C" {
-__constant__ LaunchParams params{};
-}
-
+#include "async_gpu_device.h"
+// One program renders uniform and adaptive frames: the launch's adaptive flag turns on the adaptive film (its odd
+// samples, the passes' counts), the error pass and the pass chain. The path tracer is out of line (X2_CALL), so
+// the adaptive parts cost a uniform frame no registers, and OptiX compiles one module instead of two of nearly the
+// same code.
 static __device__ float3 f3(surface::V3 v) { return make_float3(v.x, v.y, v.z); }
 
 extern "C" __global__ void __miss__radiance() { optixSetPayload_0(0xffffffffu); }
@@ -67,38 +56,25 @@ static __device__ bool curveHit(const curves::Set& c, const surface::Ray& ray, r
     return shade::finite3(out.point) && out.epsilon > 0.0f;
 }
 
-// Records each missing fine-detail tile once (the first sample to miss it asks
-// for it), and marks tracked tiles that are read.
-struct RequestSink {
-    __device__ void operator()(unsigned tile) const {
-        if (!tile) return;
-        if (atomicCAS(&params.tileState[tile], 0u, 1u) == 0u) {
-            const U64L at = atomicAdd(&params.state->requestTail, 1ull);
-            params.requests[at % params.requestCapacity] = tile;
-        }
-    }
-    __device__ void touch(unsigned tile) const {
-        if (!params.touched[tile]) params.touched[tile] = 1;
-    }
-};
-
-// The scene's textures for the maps (shade_mapnodes.h): a miss asks for the tile.
-struct DeviceTextures {
-    const tex::Image* const* images;
-    U32 count;
-    __device__ U32 lookup(U32 texture, tex::Binding b, const tex::Footprint& f, surface::V3& out) const {
-        if (texture >= count || !images[texture]) return tex::Invalid;
-        b.image = images[texture];
-        b.swapCross = b.mode != 3 ? 1u : 0u;  // as XPU's vector shading looks up (displacement: in order)
-        RequestSink sink;
-        return tex::lookup(b, f, out, sink);
-    }
-};
-
 struct GpuBackend {
     // The sample's time in the shutter (async_integrator.h sets it): every ray is traced at it.
     float time = 0.0f;
-    __device__ void setTime(float t) { time = t; }
+    // Each sample starts here (async_integrator.h): its time, and no texture miss or deferral yet.
+    __device__ void setTime(float t) {
+        time = t;
+        missed = false;
+        deferFlag = false;
+    }
+    // The sample met a stand-in or a volume the GPU does not render: the CPU lane renders it instead.
+    bool deferFlag = false;
+    __device__ bool deferred() const { return deferFlag; }
+    __device__ bool standInBetween(surface::V3 o, surface::V3 d, float near, float far) {
+        if (!(near < far)) return false;
+        unsigned instance = ~0u, primitive = 0;
+        optixTrace(params.standInTraversable, f3(o), f3(d), near, far, time, 0xffu,
+                   OPTIX_RAY_FLAG_DISABLE_ANYHIT | OPTIX_RAY_FLAG_TERMINATE_ON_FIRST_HIT, 0, 1, 0, instance, primitive);
+        return instance != ~0u;
+    }
     // Shadow linking is not on the GPU yet (async_gpu.h leaves a scene with it to the CPU).
     U32 shadowReceiver = ~0u;
     __device__ void shadowFor(U32, U32 receiver) { shadowReceiver = receiver; }
@@ -111,7 +87,15 @@ struct GpuBackend {
     __device__ surface::V3 filterMap(U32, U32, float, float) const { return surface::V3{1, 1, 1}; }
     __device__ float filterVdb(U32, U32, surface::V3) const { return 1.0f; }
     __device__ const lights::FilterList* filterList(U32, U32) const { return nullptr; }
-    __device__ resume::Hit trace(const surface::Ray& ray) {
+    __device__ __noinline__ resume::Hit trace(const surface::Ray& ray) {
+        const resume::Hit h = traceSurfaces(ray);
+        // A stand-in before the hit (or anywhere along a ray that hits nothing) defers the sample.
+        if (params.standInTraversable &&
+            standInBetween(ray.origin, ray.direction, ray.nearT, h.geom != ~0u && h.t > ray.nearT ? h.t : ray.farT))
+            deferFlag = true;
+        return h;
+    }
+    __device__ resume::Hit traceSurfaces(const surface::Ray& ray) {
         unsigned instance = ~0u, primitive = 0;
         optixTrace(params.traversable, f3(ray.origin), f3(ray.direction), ray.nearT, ray.farT, time, ray.mask & 0xffu,
                    OPTIX_RAY_FLAG_DISABLE_ANYHIT | OPTIX_RAY_FLAG_CULL_BACK_FACING_TRIANGLES, 0, 1, 0, instance, primitive);
@@ -210,7 +194,7 @@ struct GpuBackend {
         st.worldToRender = c.worldToRender;
         st.worldToObject = params.meshAttributes[h.geom].worldToObject;
         const DeviceTextures textures{params.textures, params.textureCount};
-        const unsigned status = shade::materialPresence(params.meshMaterials[h.geom], params.materialPool, st, textures, presence);
+        const unsigned status = materialPresence(params.meshMaterials[h.geom], st, textures, presence);
         if (status == tex::Miss) missed = true;
         return status;
     }
@@ -226,8 +210,7 @@ struct GpuBackend {
             st.worldToObject = a.worldToObject;
             shade::curveDifferentials(a, ray, st.pixelSamples ? st.pixelSamples : c.spp, st);
             const DeviceTextures textures{params.textures, params.textureCount};
-            return shade::shadeMaterial(params.meshMaterials[h.geom], params.materialPool, st, textures, bsdf, presence, dwaSlots(),
-                                        glitter());
+            return shadeMaterial(params.meshMaterials[h.geom], st, textures, bsdf, presence);
         }
         const auto m = params.geometry[h.geom];
         const auto t = m.triangles[h.prim];
@@ -241,7 +224,28 @@ struct GpuBackend {
         shade::hitDifferentials(params.meshAttributes[h.geom], h.prim, t.a, t.b, t.c, m.vertices[t.a], m.vertices[t.b],
                                 m.vertices[t.c], ray, st.pixelSamples ? st.pixelSamples : c.spp, st);
         const DeviceTextures textures{params.textures, params.textureCount};
-        return shade::shadeMaterial(record, params.materialPool, st, textures, bsdf, presence, dwaSlots(), glitter());
+        return shadeMaterial(record, st, textures, bsdf, presence);
+    }
+    // A material's Bsdf and its presence: the material module's callables (async_material.cu), or here when the
+    // program is built whole (no XPU2_MATERIAL_MODULE).
+    __device__ unsigned shadeMaterial(const shade::MaterialRecord& m, const shade::State& st, const DeviceTextures& textures,
+                                      shade::Bsdf& bsdf, float& presence) {
+#if XPU2_MATERIAL_MODULE
+        return optixDirectCall<unsigned, const shade::MaterialRecord*, const float*, const shade::State*, const DeviceTextures*,
+                               shade::Bsdf*, float*, shade::DwaParams*, shade::GlitterScratch*>(
+            CallShade, &m, params.materialPool, &st, &textures, &bsdf, &presence, dwaSlots(), glitter());
+#else
+        return shade::shadeMaterial(m, params.materialPool, st, textures, bsdf, presence, dwaSlots(), glitter());
+#endif
+    }
+    __device__ unsigned materialPresence(const shade::MaterialRecord& m, const shade::State& st, const DeviceTextures& textures,
+                                         float& presence) {
+#if XPU2_MATERIAL_MODULE
+        return optixDirectCall<unsigned, const shade::MaterialRecord*, const float*, const shade::State*, const DeviceTextures*, float*>(
+            CallPresence, &m, params.materialPool, &st, &textures, &presence);
+#else
+        return shade::materialPresence(m, params.materialPool, st, textures, presence);
+#endif
     }
     __device__ bool visible(surface::V3 o, surface::V3 d) { return visible(o, d, __int_as_float(0x7f800000)); }
     // Unoccluded up to distance (a shadow ray toward a light).
@@ -253,6 +257,8 @@ struct GpuBackend {
                    OPTIX_RAY_FLAG_DISABLE_ANYHIT | OPTIX_RAY_FLAG_DISABLE_CLOSESTHIT |
                        OPTIX_RAY_FLAG_TERMINATE_ON_FIRST_HIT | OPTIX_RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
                    0, 1, 1, occluded, unused);
+        // Unoccluded by what the GPU renders: a stand-in on the way could occlude it, so the CPU decides.
+        if (occluded == 0 && params.standInTraversable && standInBetween(o, d, near, distance)) deferFlag = true;
         return occluded == 0;
     }
     __device__ shade::Bsdf& bsdf() {
@@ -297,6 +303,11 @@ struct GpuBackend {
             if (!resume::geometryHit(h, ray, a, b, c)) break;
             const surface::V3 ng = surface::cross(surface::add(b, surface::mul(a, -1.0f)), surface::add(c, surface::mul(a, -1.0f)));
             const U32 v = U32(params.meshVolumes[instance]);
+            // A volume the GPU does not render (VDB, heterogeneous, emissive): the CPU lane renders the sample.
+            {
+                const volume::Shader& s = params.volumes[v];
+                if (s.kind != volume::KindBase || s.emission.x != 0.0f || s.emission.y != 0.0f || s.emission.z != 0.0f) deferFlag = true;
+            }
             const U32 flags = surface::dot(d, ng) < 0.0f ? volume::Entry : volume::Exit;
             if (!(n > 0 && x[n - 1].t == h.t && x[n - 1].volume == v && x[n - 1].flags == flags)) x[n++] = volume::Crossing{h.t, v, flags};
             t = h.t + fmaxf(1e-6f, h.t * 1e-6f);
@@ -447,7 +458,7 @@ static __device__ void initAovs() {
     }
 }
 
-static __device__ void run(GpuBackend& backend, U32 pixel, U32 index, U32 tries, U32 pass, bool chain = false) {
+static __device__ __noinline__ void run(GpuBackend& backend, U32 pixel, U32 index, U32 tries, U32 pass, bool chain = false) {
     Radiance r;
     const aov::Tables& at = *params.aovTables;
     if (at.channels) {
@@ -471,8 +482,7 @@ static __device__ void run(GpuBackend& backend, U32 pixel, U32 index, U32 tries,
         atomicAdd(s + 2, r.rgb[2]);
         atomicAdd(s + 3, r.alpha);
         atomicAdd(params.counts + pixel, 1u);
-#if XPU2_ADAPTIVE
-        {
+        if (params.adaptive) {
             if (index & 1) {  // MoonRay's Beauty Odd: the odd-index samples
                 double* o = params.odd + size_t(pixel) * 4;
                 atomicAdd(o + 0, r.rgb[0]);
@@ -482,17 +492,18 @@ static __device__ void run(GpuBackend& backend, U32 pixel, U32 index, U32 tries,
             }
             atomicAdd(&params.state->passDone[pass], 1u);
         }
-#endif
     } else if (status == SampleStatus::Skip) {
         // No camera ray: taken, nothing added.
-#if XPU2_ADAPTIVE
-        atomicAdd(&params.state->passDone[pass], 1u);
-#endif
+        if (params.adaptive) atomicAdd(&params.state->passDone[pass], 1u);
     } else if (status == SampleStatus::Miss) {
         // Park it; the host sized this launch so the queue cannot overflow.
         const U64L at = atomicAdd(&params.state->parkedTail, 1ull);
         params.parked[at % params.parkedCapacity] = {pixel, index, tries, pass};
         if (chain) params.state->chainStall = 1;  // the chain waits for the host to land its tile
+    } else if (status == SampleStatus::Defer) {
+        // For the CPU lane (async_render.h): nothing of the sample reaches the GPU's film.
+        const U64L at = atomicAdd(&params.state->deferredTail, 1ull);
+        params.deferred[at % params.deferredCapacity] = {pixel, index, 0u, pass};
     } else {
         atomicAdd(&params.state->errors, 1u);
     }
@@ -507,16 +518,13 @@ static __device__ void commit() {
     params.tileState[u.tile] = u.slot == NoSlot ? 0u : 2u;
 }
 
-#if XPU2_ADAPTIVE
 // The film's per-pixel adaptive errors, read by the host's error trees.
 static __device__ void errors() {
     const unsigned i = optixGetLaunchIndex().x;
     if (i >= params.pixels) return;
     params.errors[i] = pixelError(params.sums + size_t(i) * 4, params.odd + size_t(i) * 4, params.counts[i]);
 }
-#endif
 
-#if XPU2_ADAPTIVE
 // A pass the chain made on the device (async_adaptive.cu). It runs only if its
 // own compaction ran: after a stall or once the frame has converged, the chain's
 // later renders find another pass there and do nothing. Threads claim items one
@@ -536,7 +544,6 @@ static __device__ void chainRender(GpuBackend& backend) {
         run(backend, pixel, params.chainBase[pixel] + sample, 0, params.chainPass, true);
     }
 }
-#endif
 
 extern "C" __global__ void __raygen__async() {
     if (params.mode == 1) {
@@ -547,19 +554,15 @@ extern "C" __global__ void __raygen__async() {
         initAovs();
         return;
     }
-#if XPU2_ADAPTIVE
     if (params.mode == 2) {
         errors();
         return;
     }
-#endif
     GpuBackend backend;
-#if XPU2_ADAPTIVE
     if (params.mode == 3) {
         chainRender(backend);
         return;
     }
-#endif
     for (;;) {  // parked samples first: they started before anything else here
         const U64L k = params.parkedBegin + atomicAdd(&params.state->unparked[params.slot], 1u);
         if (k >= params.parkedEnd) break;
@@ -577,13 +580,14 @@ extern "C" __global__ void __raygen__async() {
         if (s >= chunk.count) continue;
         const U32 pixel = tilePixel(chunk.tile, position, c.width, c.height, c.viewport);
         if (pixel == ~0u) continue;
-#if XPU2_ADAPTIVE
-        // Only the tile's active pixels, each from its own sample-index base.
-        const U32 slot = chunkPass(chunk) % PassSlots;
-        if (!(params.passMask[slot][chunk.tile] >> position & 1)) continue;
-        run(backend, pixel, params.passBase[slot][pixel] + chunkOffset(chunk) + s, 0, chunkPass(chunk));
-#else
-        run(backend, pixel, chunk.first + s, 0, 0);
-#endif
+        U32 index = chunk.first + s, pass = 0;
+        if (params.adaptive) {
+            // Only the tile's active pixels, each from its own sample-index base.
+            const U32 slot = chunkPass(chunk) % PassSlots;
+            if (!(params.passMask[slot][chunk.tile] >> position & 1)) continue;
+            index = params.passBase[slot][pixel] + chunkOffset(chunk) + s;
+            pass = chunkPass(chunk);
+        }
+        run(backend, pixel, index, 0, pass);
     }
 }

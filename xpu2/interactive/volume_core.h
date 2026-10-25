@@ -146,7 +146,7 @@ X2_HD inline float rampT(float minDepth, float maxDepth, float depth) {
     const float t = fmaxf(depth - minDepth, 0.0f), interp = maxDepth - minDepth;
     return interp == 0.0f ? 0.0f : t / interp;
 }
-X2_HD inline V3 attenuationColorFrom(const Shader& s, V3 color, float depth) {
+X2_CALL V3 attenuationColorFrom(const Shader& s, V3 color, float depth) {
     const bool match = (s.flags & MatchAlbedo) != 0;
     const bool useRamp = (s.flags & (match ? UseAlbedoRamp : UseAttenuationRamp)) != 0;
     if (useRamp && depth >= 0.0f) {
@@ -173,7 +173,7 @@ X2_HD inline V3 extinction(const Shader& s, float depth) {
     const float d = density(s, depth);
     return cmax0(scaled(times(scaled(V3{d, d, d}, s.intensity), attenuationColor(s, depth)), s.factor));
 }
-X2_HD inline V3 albedo(const Shader& s, float depth) {
+X2_CALL V3 albedo(const Shader& s, float depth) {
     if (s.flags & DepthFixed) depth = -1.0f;
     const float d = density(s, depth);
     return cmax0(times(V3{d, d, d}, albedoColor(s, depth)));
@@ -245,7 +245,7 @@ struct Coefficients {
 };
 // At a point of a heterogeneous stretch (pointEval): each volume's extinction and albedo there; its emission into
 // emissions (SUM: each volume's; otherwise the chosen one's, weighted, in emissions[0]), and the chosen volume.
-X2_HD inline Coefficients evalShadersAt(const Shader* shaders, const Grids& grids, U32 regions, U32 mode, float rnd, V3 p, float depth,
+X2_CALL Coefficients evalShadersAt(const Shader* shaders, const Grids& grids, U32 regions, U32 mode, float rnd, V3 p, float depth,
                                         U32 interpolationOverride, V3* emissions, U32* chosenVolume, bool cutouts = false) {
     Coefficients c{{0, 0, 0}, {0, 0, 0}, 0.0f, 0, {0, 0, 0}, {0, 0, 0}, 1.0f};
     V3 anisotropy{0, 0, 0}, sigmaTSum{0, 0, 0};

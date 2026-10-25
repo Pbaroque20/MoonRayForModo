@@ -473,7 +473,7 @@ X2_HD inline void sphereUv(const Light& l, V3 normal, bool ispc, Hit& h) {
     h.u = phi * OneOverTwoPi + 0.5f;
     h.v = theta * 0.31830988618379067154f;
 }
-X2_HD inline bool sampleShape(const Light& l, V3 p, const V3* n, const float r[3], V3& wi, Hit& h, float footprint = NoFootprint) {
+X2_CALL bool sampleShapeHere(const Light& l, V3 p, const V3* n, const float r[3], V3& wi, Hit& h, float footprint = NoFootprint) {
     using namespace surface;
     switch (l.type) {
     case Env: {
@@ -737,7 +737,7 @@ X2_HD inline bool sampleShape(const Light& l, V3 p, const V3* n, const float r[3
 
 // The radiance arriving at p from the light along wi, and the solid-angle pdf of
 // sampling it (Light::eval).
-X2_HD inline V3 evalShape(const Light& l, V3 p, V3 wi, const Hit& h, float& pdf, float footprint = NoFootprint, bool fromCamera = false) {
+X2_CALL V3 evalShapeHere(const Light& l, V3 p, V3 wi, const Hit& h, float& pdf, float footprint = NoFootprint, bool fromCamera = false) {
     if (l.type == Env) {
         // EnvLight_eval: the texture at the hit's uv, its pdf over the sphere (2 pi^2 sin theta per unit uv).
         const float mip = footprint - l.log2TexelAngle;
@@ -810,7 +810,7 @@ X2_HD inline V3 evalShape(const Light& l, V3 p, V3 wi, const Hit& h, float& pdf,
 // (Light::intersect), for MIS of BSDF samples. n is the culling normal, as in sample().
 // fromCamera: a camera ray's (Scene::intersectVisibleLight, MoonRay's C++, acos) rather than a shading point's (the
 // ISPC light set, dw_acos).
-X2_HD inline bool intersectShape(const Light& l, V3 p, const V3* n, V3 wi, float maxDistance, Hit& h, bool fromCamera = false) {
+X2_CALL bool intersectShapeHere(const Light& l, V3 p, const V3* n, V3 wi, float maxDistance, Hit& h, bool fromCamera = false) {
     using namespace surface;
     switch (l.type) {
     case Env:
@@ -948,6 +948,36 @@ X2_HD inline bool intersectShape(const Light& l, V3 p, const V3* n, V3 wi, float
 // ---- PortalLight (PortalLight.ispc): its rect (the light as a RectLight), its reference's sample through it (an
 // environment) or its own (a distant light), the reference's radiance times the rect's. No light beyond the portal
 // (canIlluminate). The shapes' functions are called directly: no recursion on the GPU.
+// The light module's callables' places in the GPU program's binding table (async_gpu_device.h's MaterialCall).
+constexpr U32 LightSampleCallable = 3, LightIntersectCallable = 4, LightEvalCallable = 5;
+// The shapes as the path tracer calls them: on the GPU, in a program built in modules (XPU2_LIGHT_MODULE), the light
+// module's callables (async_lights.cu); elsewhere the functions themselves.
+X2_HD inline bool sampleShape(const Light& l, V3 p, const V3* n, const float r[3], V3& wi, Hit& h, float footprint = NoFootprint) {
+#if defined(__CUDACC__) && defined(XPU2_LIGHT_MODULE)
+    return optixDirectCall<bool, const Light*, V3, const V3*, const float*, V3*, Hit*, float>(LightSampleCallable, &l, p, n, r, &wi, &h,
+                                                                                             footprint);
+#else
+    return sampleShapeHere(l, p, n, r, wi, h, footprint);
+#endif
+}
+X2_HD inline bool intersectShape(const Light& l, V3 p, const V3* n, V3 wi, float maxDistance, Hit& h, bool fromCamera = false) {
+#if defined(__CUDACC__) && defined(XPU2_LIGHT_MODULE)
+    return optixDirectCall<bool, const Light*, V3, const V3*, V3, float, Hit*, bool>(LightIntersectCallable, &l, p, n, wi, maxDistance, &h,
+                                                                                     fromCamera);
+#else
+    return intersectShapeHere(l, p, n, wi, maxDistance, h, fromCamera);
+#endif
+}
+X2_HD inline V3 evalShape(const Light& l, V3 p, V3 wi, const Hit& h, float& pdf, float footprint = NoFootprint, bool fromCamera = false) {
+#if defined(__CUDACC__) && defined(XPU2_LIGHT_MODULE)
+    V3 out{0, 0, 0};
+    optixDirectCall<void, const Light*, V3, V3, const Hit*, float*, float, bool, V3*>(LightEvalCallable, &l, p, wi, &h, &pdf, footprint,
+                                                                                      fromCamera, &out);
+    return out;
+#else
+    return evalShapeHere(l, p, wi, h, pdf, footprint, fromCamera);
+#endif
+}
 X2_HD inline Light portalRect(const Light& l) {
     Light r = l;
     r.type = Rect;
@@ -991,7 +1021,7 @@ X2_HD inline V3 eval(const Light& l, V3 p, V3 wi, const Hit& h, float& pdf, floa
 // the point wholly behind a one-sided rect or disk, inside an outward sphere, or beyond a portal. An environment or
 // distant light a portal references lights no point itself. Cylinders and meshes cull nothing (their light filters
 // alone would).
-X2_HD inline bool canIlluminate(const Light& l, V3 p, const V3* n, float radius) {
+X2_CALL bool canIlluminate(const Light& l, V3 p, const V3* n, float radius) {
     using namespace surface;
     const float threshold = Epsilon - radius;
     auto corners = [&](float hx, float hy) {

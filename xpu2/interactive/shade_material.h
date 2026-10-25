@@ -479,7 +479,7 @@ X2_HD inline void scaleTexDerivatives(State& st) {
 // The hit's differentials: a camera ray's texture derivatives as the validated subset computes them, and
 // its auxiliary rays scaled for the samples per pixel (PathIntegrator::initPrimaryRay) as the incoming
 // differentials; any other ray's transferred (MoonRay's texture derivatives); then dNdx and dNdy.
-X2_HD inline void hitDifferentials(const MeshAttributes& m, U32 prim, U32 ia, U32 ib, U32 ic, V3 a, V3 b, V3 c,
+X2_CALL void hitDifferentials(const MeshAttributes& m, U32 prim, U32 ia, U32 ib, U32 ic, V3 a, V3 b, V3 c,
                                    const surface::Ray& ray, U32 spp, State& st) {
     if (!isExactlyZero(ray.dx) && !isExactlyZero(ray.dy) && spp) {
         if (!(m.dpds && m.dpdt)) hitTexDerivatives(m, prim, ia, ib, ic, a, b, c, ray, spp, st);
@@ -709,7 +709,7 @@ X2_CALL U32 extraAovValues(const MaterialRecord& m, const float* pool, const Sta
     const U32 program = w[0], count = w[1] < Bsdf::MaxExtraAovs ? w[1] : Bsdf::MaxExtraAovs;
     Color regs[MapMaxRegisters];
     if (program != NoMapProgram) {
-        const U32 status = runMapProgram(pool, program, st, tex, regs);
+        const U32 status = runMaps(pool, program, st, tex, regs);
         if (status != tex::Ready) return status;
     }
     const float* e = pool + m.extras + 2;
@@ -744,7 +744,7 @@ X2_CALL U32 materialPresence(const MaterialRecord& m0, const float* pool, const 
     Color regs[MapMaxRegisters];
     if (m->maps != NoMapProgram) {
         if (!mapRequirementsMet(pool, m->maps, st)) return tex::Ready;
-        const U32 status = runMapProgram(pool, m->maps, st, tex, regs);
+        const U32 status = runMaps(pool, m->maps, st, tex, regs);
         if (status != tex::Ready) return status;
     }
     if (m->kind == MatUsdPreviewSurface && m->count >= UsdPreviewSurfaceFloats) {
@@ -769,7 +769,7 @@ X2_CALL U32 shadeChosenMaterial(const MaterialRecord& m, const float* pool, cons
         return tex::Ready;
     }
     if (m.maps != NoMapProgram) {
-        const U32 status = runMapProgram(pool, m.maps, st, tex, regs);
+        const U32 status = runMaps(pool, m.maps, st, tex, regs);
         if (status != tex::Ready) return status;
     }
     Builder bb(bsdf, st);

@@ -14,7 +14,7 @@ struct Hit {U32 geom=~0u,prim=0;float t=0,u=0,v=0;surface::V3 normal{},origin{},
 // Interpolate the hit from resident triangle vertices. Offset by a conservative
 // float arithmetic bound along the facing geometric normal, then round outward.
 // This is a restricted triangle prototype, not a proof for displacement/curves.
-X2_HD inline bool geometryHit(Hit& h,const surface::Ray& ray,surface::V3 a,surface::V3 b,surface::V3 c){
+X2_CALL bool geometryHit(Hit& h,const surface::Ray& ray,surface::V3 a,surface::V3 b,surface::V3 c){
  using namespace surface;V3 e1=add(b,mul(a,-1)),e2=add(c,mul(a,-1));
  if(!normalize(cross(e1,e2),h.normal))return false;
  if(dot(h.normal,ray.direction)>0)h.normal=mul(h.normal,-1);

@@ -29,11 +29,17 @@ X2_HD inline V3& operator*=(V3& a, float b) { a = a * b; return a; }
 // The shading library's large functions are called from several places in the
 // path tracer; inlined at each, they multiply the GPU program (and OptiX's
 // compile time) many times over. On the GPU they stay single calls.
+#ifndef X2_CALL
+#ifndef X2_CALL
 #if defined(__CUDACC__)
 #define X2_CALL __host__ __device__ __noinline__ inline
 #else
 #define X2_CALL inline
 #endif
+#endif
+#endif
+// A lambda kept out of line: a large block of the path loop, which OptiX and GCC then optimize apart from the rest.
+#define X2_OUT_OF_LINE __attribute__((noinline))
 namespace xpu2 { namespace interactive { namespace shade {
 using surface::V3;
 using sample::U32;

@@ -46,7 +46,8 @@ for case in a.cases:
         if out.exists():
             out.unlink()
         # A MoonRay reference already rendered from the same scene, frame, mode and build is reused.
-        key = runq.reference_key(scene_text, out, frame, mode, exe) if name != 'xpu2' else None
+        # (XPU2's second frame keyed by its device mode too.)
+        key = runq.reference_key(scene_text, out, frame, mode + (':' + a.mode if name == 'xpu2f1' else ''), exe) if name != 'xpu2' else None
         if key and runq.cached(key, out):
             results.setdefault(case, {})[name + '_seconds'] = 'cached'
             continue
@@ -56,7 +57,7 @@ for case in a.cases:
             shutil.rmtree(log)
         args = [sys.executable, str(HARNESS), '--exe', str(exe), '--scene', str(scene), '--output', str(log), '--threads', str(a.threads or runq.threads()),
                 '--mode', mode, '--timeout', '1800']
-        if name == 'xpu2':
+        if name in ('xpu2', 'xpu2f1'):
             args += ['--env', 'XPU2_SESSION_MODE=' + a.mode]
         with runq.slot():
             r = subprocess.run(args, capture_output=True, text=True)
