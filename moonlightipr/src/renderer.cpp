@@ -1270,9 +1270,12 @@ void Renderer::setMaterials(const Material* materials, size_t count, const Layer
         out.octaves = layer.octaves;
         out.lacunarity = layer.lacunarity;
         out.persistence = layer.persistence;
+        out.pattern = layer.pattern;
+        std::copy(layer.settings, layer.settings + 8, out.settings);
+        std::copy(layer.rows, layer.rows + 12, out.rows);
         if (layer.gamma != 1.0f || layer.bias != 0.5f || layer.gainCurve != 0.5f) out.flags |= LAYER_CURVES;
         // Coordinates and channels are followed on the GPU without checks.
-        const unsigned sources = out.flags & (LAYER_RAMP | LAYER_CHECKER | LAYER_NOISE | LAYER_UDIM);
+        const unsigned sources = out.flags & (LAYER_RAMP | LAYER_CHECKER | LAYER_NOISE | LAYER_UDIM | LAYER_PROCEDURAL);
         if (sources & (sources - 1)) throw std::runtime_error("MoonLightIPR layer has more than one source");
         if (out.flags & LAYER_RAMP) {
             if (layer.uvSlot >= CHANNEL_COUNT) throw std::runtime_error("MoonLightIPR gradient layer refers to a missing channel");

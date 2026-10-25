@@ -155,11 +155,16 @@ def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, mat
                 if not locator:
                     raise ValueError('missing Texture Locator')
                 projection = channel(locator,'projType','uv')
+                solid_map = None
                 if projection=='none' and layer.type!='imageMap':
-                    # Solid, as Modo starts a procedural layer: the pattern runs through the object. The plugin's
-                    # patterns are flat, and are laid on from six sides in its place, which is the nearest to it.
+                    # Solid, as Modo starts a procedural layer: the pattern runs through the object. MoonRay works it
+                    # out so, at each point (procedurals.solid, ModoProceduralMap); MoonLightIPR, and a runtime
+                    # without that map, lay the pattern flat from six sides, which is the nearest to it.
+                    from .procedurals import solid
+                    from .host import world_matrix
+                    solid_map = solid(layer,channel,color,is_color,world_matrix(locator))
                     projection='cubic'
-                    warnings.append('Layer %s: a Solid projection is laid on as Cubic.'%layer.name)
+                    warnings.append('Layer %s: Solid projection%s laid on as Cubic.'%(layer.name,', drawn through the object by MoonRay; MoonLightIPR' if solid_map else ''))
                 if projection not in ('uv','planar','spherical','cylindrical','cubic'):
                     raise ValueError('unsupported projection '+projection)
                 node['projection'] = projection
@@ -215,19 +220,27 @@ def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, mat
                         use_alpha=source_channel=='use')
                 elif layer.type in ('grid','dots','cellular','wood','weave','ripples'):
                     from .procedurals import capture
-                    node['procedural']=capture(layer,channel,color,is_color)
-                    warnings.append('Procedural '+layer.name+': sampled 2D '+layer.type+' translation; Modo pattern equivalence is unverified.')
+                    if solid_map:node['solid_map']=solid_map
+                    try:node['procedural']=capture(layer,channel,color,is_color)
+                    except ValueError:
+                        # A pattern only the 3D map draws (Grid's and Dots' Cube): MoonLightIPR has none of it.
+                        if not solid_map:raise
+                        node['procedural']=None
+                    warnings.append('Procedural '+layer.name+': '+('drawn in 3D by MoonRay' if solid_map else 'sampled 2D '+layer.type+' translation')+'; Modo pattern equivalence is unverified.')
                 else:
                     node.update(color1=color(layer,'color1',(0,0,0)) if is_color else [float(channel(layer,'value1',0))]*3,
                                 color2=color(layer,'color2') if is_color else [float(channel(layer,'value2',1))]*3)
                     node.update(alpha1=float(channel(layer,'alpha1',1)),alpha2=float(channel(layer,'alpha2',1)))
                     node['bias'] = float(channel(layer,'bias',.5))
                     node['gain'] = float(channel(layer,'gain',.5))
-                    if layer.type=='checker' and (channel(layer,'type','square')!='square' or channel(layer,'variation',0)):
+                    if solid_map:node['solid_map']=solid_map
+                    if layer.type=='checker' and not solid_map and (channel(layer,'type','square')!='square' or channel(layer,'variation',0)):
                         raise ValueError('only unvaried square checkers are supported')
                     if layer.type=='noise':
-                        if channel(layer,'type','fractal')!='fractal' or any(channel(layer,k,0) for k in ('flowNoise','angle','smoothTops')):
+                        if not solid_map and (channel(layer,'type','fractal')!='fractal' or any(channel(layer,k,0) for k in ('flowNoise','angle','smoothTops'))):
                             raise ValueError('only static fractal noise is supported')
+                        if solid_map and any(channel(layer,k,0) for k in ('flowNoise','angle','smoothTops')):
+                            warnings.append('Noise %s: Flow Noise, Angle and Smooth Tops are not drawn.'%layer.name)
                         node.update(octaves=int(channel(layer,'freqs',4)),lacunarity=float(channel(layer,'freqRatio',2)),
                                     persistence=float(channel(layer,'ampRatio',.5)))
                         warnings.append('Noise uses a MoonRay UV fractal approximation, not the exact Modo pattern: '+layer.name)

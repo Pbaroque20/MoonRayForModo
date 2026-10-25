@@ -159,6 +159,11 @@ struct Layer {
     float color2[3] = {1, 1, 1};
     float alpha1 = 1.0f, alpha2 = 1.0f;
     float octaves = 4.0f, lacunarity = 2.0f, persistence = 0.5f;
+    // With the procedural flag: Modo's pattern and its Type, its six settings then its bias and gain, and rows that
+    // take a point of the world into the texture locator's space.
+    uint32_t pattern = 0;
+    float settings[8] = {0, 0, 0, 0, 0, 0, 0.5f, 0.5f};
+    float rows[12] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0};
     // With the gradient flag, texture is a 257 x 1 image of the gradient from 0 to 1 and uvSlot
     // the channel whose value looks it up. With the UDIM flag, texture is instead where this
     // row's run starts in the tile list given to setMaterials: a count, then that many textures
@@ -251,7 +256,9 @@ struct DistantLight {
 // DecayLightFilter and ColorRampLightFilter. Scale a light's radiance directly for a plain
 // intensity filter.
 struct LightFilter {
-    enum Kind : uint32_t { Decay = 0, Ramp = 1, Rod = 2, BarnDoor = 3, Cookie = 4, Vdb = 5 };
+    // Intensity: inside a Combine, its colour times its strength in more. Group: MoonRay's Combine; flags hold its mode and,
+    // from bit 8, how many of the filters after it it joins.
+    enum Kind : uint32_t { Decay = 0, Ramp = 1, Rod = 2, BarnDoor = 3, Cookie = 4, Vdb = 5, Intensity = 6, Group = 7 };
     Kind kind = Decay;
     // Decay: 1 falls off near, 2 falls off far. Ramp: 1 measures along the light's direction
     // rather than from it, 2 mirrors behind the light, 4 measures in the filter's own space.

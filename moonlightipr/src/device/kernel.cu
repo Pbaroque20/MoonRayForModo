@@ -4,6 +4,8 @@
 // One launch adds one sample per pixel to the running means in LaunchParams.
 #include <optix.h>
 #include "shared.h"
+// Modo's procedural textures, the same code MoonRay's ModoProceduralMap runs.
+#include "../../../native-port/maps/ModoProcedural/modo_patterns.h"
 #include "vec.h"
 #include "velvet_tables.h"
 
@@ -497,6 +499,129 @@ ML_INLINE float bellWarp(float r) {
     return u;
 }
 
+// What one light filter makes of the light reaching p, as a factor: index is its place among the light's filters,
+// for what is random about a blur.
+ML_INLINE float3 filterFactor(const DeviceFilter& filter, unsigned i, const DeviceLight& light, float3 p, float3 wi, float distance) {
+    if (filter.type == FILTER_INTENSITY) return vec(filter.b);
+    if (filter.type == FILTER_DECAY) {
+        // Fades in from near start to near end, and out from far start to far end.
+        float value = 1.0f;
+        if (((filter.flags & FILTER_NEAR) && distance < filter.a[0]) || ((filter.flags & FILTER_FAR) && distance > filter.a[3])) value = 0.0f;
+        else if ((filter.flags & FILTER_NEAR) && distance < filter.a[1]) value = (distance - filter.a[0]) / (filter.a[1] - filter.a[0]);
+        else if ((filter.flags & FILTER_FAR) && distance > filter.a[2]) value = (filter.a[3] - distance) / (filter.a[3] - filter.a[2]);
+        return vec(value);
+    }
+    if (filter.type == FILTER_ROD || filter.type == FILTER_BARN || filter.type == FILTER_COOKIE || filter.type == FILTER_VDB) {
+        float3 local = make_float3(dot(vec(filter.rows), p) + filter.rows[3], dot(vec(filter.rows + 4), p) + filter.rows[7],
+                                   dot(vec(filter.rows + 8), p) + filter.rows[11]);
+        // What is random about a blur: its own for each point, each sample and each filter.
+        unsigned blur = tea(__float_as_uint(p.x) ^ (__float_as_uint(p.y) * 0x9e3779b9u) ^ (__float_as_uint(p.z) * 0x85ebca6bu), params.sample * 16u + i);
+        if (filter.type == FILTER_ROD) {
+            // A box with rounded corners: inside it the light takes the rod's colour, and fades back over its edge.
+            const float3 q = make_float3(fabsf(local.x) - filter.a[0], fabsf(local.y) - filter.a[1], fabsf(local.z) - filter.a[2]);
+            const float r = length(make_float3(fmaxf(q.x, 0.0f), fmaxf(q.y, 0.0f), fmaxf(q.z, 0.0f))) + fminf(fmaxf(q.x, fmaxf(q.y, q.z)), 0.0f) - filter.a[3];
+            float scale = r <= 0.0f ? 0.0f : r < filter.b[0] ? r / filter.b[0] : 1.0f;
+            // The rod's own way of fading over its edge, where it has one.
+            if (filter.ramp && r > 0.0f && r < filter.b[0]) scale = tex2D<float4>(filter.ramp, (scale * 256.0f + 0.5f) / 257.0f, 0.5f).x;
+            if (filter.flags & FILTER_INVERT) scale = 1.0f - scale;
+            scale = 1.0f + (scale - 1.0f) * filter.b[1];
+            const float3 colour = vec(filter.b + 2);
+            return (colour + (vec(1.0f) - colour) * scale);
+        }
+        if (filter.type == FILTER_VDB) {
+            // A grid of densities: where it is full the light passes as it is; where it is empty it takes the tint.
+            if (filter.b[3] > 0.0f) {
+                // Blurred: looked up a little way off, by the bell or anywhere in a ball.
+                float3 off;
+                if (filter.flags & FILTER_ROUND) {
+                    const float z = 1.0f - 2.0f * rnd(blur), around = 2.0f * ML_PI * rnd(blur), flat = sqrtf(fmaxf(0.0f, 1.0f - z * z));
+                    off = make_float3(flat * cosf(around), flat * sinf(around), z) * powf(rnd(blur), 1.0f / 3.0f);
+                } else {
+                    off = make_float3(bellWarp(rnd(blur)), bellWarp(rnd(blur)), bellWarp(rnd(blur)));
+                }
+                local = local + make_float3(off.x * filter.b[4], off.y * filter.b[5], off.z * filter.b[6]) * filter.b[3];
+            }
+            float density = tex3D<float>(filter.texture, local.x, local.y, local.z);
+            if (filter.flags & FILTER_INVERT) density = 1.0f - density;
+            if (filter.ramp) density = tex2D<float4>(filter.ramp, (clamp((density - filter.a[0]) / (filter.a[1] - filter.a[0]), 0.0f, 1.0f) * 256.0f + 0.5f) / 257.0f, 0.5f).x;
+            density = fmaxf(density, 0.0f);
+            const float3 colour = vec(filter.b);
+            return (colour + (vec(1.0f) - colour) * density);
+        }
+        if (filter.type == FILTER_COOKIE) {
+            // A picture thrown from a projector: local is the point's place across it, up it, and what divides both.
+            const float outside = (filter.flags & FILTER_WHITE) ? 1.0f : 0.0f;
+            if (!(local.z > 0.0f)) {
+                return vec(outside);
+            }
+            float s = local.x / local.z, t = local.y / local.z;
+            if (filter.b[7] > 0.0f || filter.b[8] > 0.0f || filter.b[9] > 0.0f) {
+                // Blurred by how far the point is from the projector: one blur near, one at the middle, one far.
+                const float far = length(p - vec(filter.b + 1));
+                float wide = filter.b[9];
+                if (far <= filter.b[4]) wide = filter.b[7];
+                else if (far <= filter.b[5]) wide = filter.b[5] > filter.b[4] ? filter.b[7] + (filter.b[8] - filter.b[7]) * (far - filter.b[4]) / (filter.b[5] - filter.b[4]) : filter.b[8];
+                else if (far <= filter.b[6]) wide = filter.b[6] > filter.b[5] ? filter.b[8] + (filter.b[9] - filter.b[8]) * (far - filter.b[5]) / (filter.b[6] - filter.b[5]) : filter.b[9];
+                if (filter.flags & FILTER_ROUND) {
+                    const float out = sqrtf(rnd(blur)), around = 2.0f * ML_PI * rnd(blur);
+                    s += out * cosf(around) * wide;
+                    t += out * sinf(around) * wide;
+                } else {
+                    s += bellWarp(rnd(blur)) * wide;
+                    t += bellWarp(rnd(blur)) * wide;
+                }
+            }
+            if ((s < 0.0f || s > 1.0f || t < 0.0f || t > 1.0f) && !(filter.flags & FILTER_EDGELESS)) {
+                return vec(outside);
+            }
+            // MoonRay reads a cookie's picture from its top row down, as it does one laid round a sphere.
+            const float4 texel = tex2D<float4>(filter.texture, s, t);
+            float3 value = vec(1.0f - filter.b[0]) + make_float3(texel.x, texel.y, texel.z) * filter.b[0];
+            if (filter.flags & FILTER_INVERT) value = vec(1.0f) - value;
+            return value;
+        }
+        // Barn doors: an opening in front of a projector, seen from the point; the light is what comes through.
+        if (!(local.z > 0.0f)) {
+            return vec(0.0f);
+        }
+        float3 at = local;
+        if (filter.flags & FILTER_PHYSICAL) {
+            // Where the ray to the light crosses the plane the doors stand in.
+            const float3 way = make_float3(dot(vec(filter.rows), wi), dot(vec(filter.rows + 4), wi), dot(vec(filter.rows + 8), wi));
+            if (fabsf(way.z) > 1e-9f) at = at + way * ((filter.b[5] - at.z) / way.z);
+        }
+        const float over = (filter.flags & FILTER_ORTHO) ? 1.0f : 1.0f / at.z;
+        const float x = at.x * over, y = -at.y * over;
+        const float dx = x - clamp(x, filter.a[0], filter.a[2]), dy = y - clamp(y, filter.a[1], filter.a[3]);
+        const float sx = dx * filter.b[dx < 0.0f ? 1 : 3], sy = dy * filter.b[dy < 0.0f ? 2 : 4];
+        const float r = sqrtf(dx * dx + dy * dy), scaled = sqrtf(sx * sx + sy * sy);
+        const float r0 = filter.b[0], r1 = scaled > 0.0f ? r / scaled : 0.0f;
+        float scale = 0.0f;
+        if (r <= r0) scale = 1.0f;
+        else if (r < r1) {
+            // The edge falls off as a blurred step does: the bell curve's running total, stretched to reach 0 and 1.
+            const float low = 0.5f * (1.0f + erff(-1.0f / sqrtf(0.2f)));
+            const float value = 0.5f * (1.0f + erff((1.0f - 2.0f * (r - r0) / (r1 - r0)) / sqrtf(0.2f)));
+            scale = value * (1.0f + 2.0f * low) - low;
+        }
+        if (filter.flags & FILTER_INVERT) scale = 1.0f - scale;
+        return (vec(1.0f) + (vec(filter.b + 6) * scale - vec(1.0f)) * filter.b[9]);
+    }
+    // A colour by distance: from the light or the filter, or along the way either faces.
+    float along = distance;
+    if (filter.flags & FILTER_PLACED) {
+        const float3 local = make_float3(dot(vec(filter.rows), p) + filter.rows[3], dot(vec(filter.rows + 4), p) + filter.rows[7],
+                                         dot(vec(filter.rows + 8), p) + filter.rows[11]);
+        along = (filter.flags & FILTER_DIRECTIONAL) ? -local.z : length(local);
+    } else if (filter.flags & FILTER_DIRECTIONAL) {
+        along = dot(p - vec(light.position), vec(light.normal));
+    }
+    if (filter.flags & FILTER_DIRECTIONAL) along = (filter.flags & FILTER_MIRROR) ? fabsf(along) : fmaxf(along, 0.0f);
+    const float t = clamp((along - filter.a[0]) / (filter.a[1] - filter.a[0]), 0.0f, 1.0f);
+    const float4 texel = tex2D<float4>(filter.texture, (t * 256.0f + 0.5f) / 257.0f, 0.5f);
+    return vec(1.0f - filter.a[3]) + make_float3(texel.x, texel.y, texel.z) * (filter.a[2] * filter.a[3]);
+}
+
 // What a light's picture and its filters make of the light travelling from it to p: the point
 // on the light is distance along wi.
 ML_INLINE float3 lightTint(const DeviceLight& light, float3 p, float3 wi, float distance) {
@@ -537,131 +662,25 @@ ML_INLINE float3 lightTint(const DeviceLight& light, float3 p, float3 wi, float 
     const DeviceFilter* filters = reinterpret_cast<const DeviceFilter*>(params.lightFilters) + light.filterStart;
     for (unsigned i = 0; i < light.filterCount; ++i) {
         const DeviceFilter& filter = filters[i];
-        if (filter.type == FILTER_DECAY) {
-            // Fades in from near start to near end, and out from far start to far end.
-            float value = 1.0f;
-            if (((filter.flags & FILTER_NEAR) && distance < filter.a[0]) || ((filter.flags & FILTER_FAR) && distance > filter.a[3])) value = 0.0f;
-            else if ((filter.flags & FILTER_NEAR) && distance < filter.a[1]) value = (distance - filter.a[0]) / (filter.a[1] - filter.a[0]);
-            else if ((filter.flags & FILTER_FAR) && distance > filter.a[2]) value = (filter.a[3] - distance) / (filter.a[3] - filter.a[2]);
-            tint = tint * value;
+        if (filter.type != FILTER_GROUP) {
+            tint = tint * filterFactor(filter, i, light, p, wi, distance);
             continue;
         }
-        if (filter.type == FILTER_ROD || filter.type == FILTER_BARN || filter.type == FILTER_COOKIE || filter.type == FILTER_VDB) {
-            float3 local = make_float3(dot(vec(filter.rows), p) + filter.rows[3], dot(vec(filter.rows + 4), p) + filter.rows[7],
-                                       dot(vec(filter.rows + 8), p) + filter.rows[11]);
-            // What is random about a blur: its own for each point, each sample and each filter.
-            unsigned blur = tea(__float_as_uint(p.x) ^ (__float_as_uint(p.y) * 0x9e3779b9u) ^ (__float_as_uint(p.z) * 0x85ebca6bu), params.sample * 16u + i);
-            if (filter.type == FILTER_ROD) {
-                // A box with rounded corners: inside it the light takes the rod's colour, and fades back over its edge.
-                const float3 q = make_float3(fabsf(local.x) - filter.a[0], fabsf(local.y) - filter.a[1], fabsf(local.z) - filter.a[2]);
-                const float r = length(make_float3(fmaxf(q.x, 0.0f), fmaxf(q.y, 0.0f), fmaxf(q.z, 0.0f))) + fminf(fmaxf(q.x, fmaxf(q.y, q.z)), 0.0f) - filter.a[3];
-                float scale = r <= 0.0f ? 0.0f : r < filter.b[0] ? r / filter.b[0] : 1.0f;
-                // The rod's own way of fading over its edge, where it has one.
-                if (filter.ramp && r > 0.0f && r < filter.b[0]) scale = tex2D<float4>(filter.ramp, (scale * 256.0f + 0.5f) / 257.0f, 0.5f).x;
-                if (filter.flags & FILTER_INVERT) scale = 1.0f - scale;
-                scale = 1.0f + (scale - 1.0f) * filter.b[1];
-                const float3 colour = vec(filter.b + 2);
-                tint = tint * (colour + (vec(1.0f) - colour) * scale);
-                continue;
-            }
-            if (filter.type == FILTER_VDB) {
-                // A grid of densities: where it is full the light passes as it is; where it is empty it takes the tint.
-                if (filter.b[3] > 0.0f) {
-                    // Blurred: looked up a little way off, by the bell or anywhere in a ball.
-                    float3 off;
-                    if (filter.flags & FILTER_ROUND) {
-                        const float z = 1.0f - 2.0f * rnd(blur), around = 2.0f * ML_PI * rnd(blur), flat = sqrtf(fmaxf(0.0f, 1.0f - z * z));
-                        off = make_float3(flat * cosf(around), flat * sinf(around), z) * powf(rnd(blur), 1.0f / 3.0f);
-                    } else {
-                        off = make_float3(bellWarp(rnd(blur)), bellWarp(rnd(blur)), bellWarp(rnd(blur)));
-                    }
-                    local = local + make_float3(off.x * filter.b[4], off.y * filter.b[5], off.z * filter.b[6]) * filter.b[3];
-                }
-                float density = tex3D<float>(filter.texture, local.x, local.y, local.z);
-                if (filter.flags & FILTER_INVERT) density = 1.0f - density;
-                if (filter.ramp) density = tex2D<float4>(filter.ramp, (clamp((density - filter.a[0]) / (filter.a[1] - filter.a[0]), 0.0f, 1.0f) * 256.0f + 0.5f) / 257.0f, 0.5f).x;
-                density = fmaxf(density, 0.0f);
-                const float3 colour = vec(filter.b);
-                tint = tint * (colour + (vec(1.0f) - colour) * density);
-                continue;
-            }
-            if (filter.type == FILTER_COOKIE) {
-                // A picture thrown from a projector: local is the point's place across it, up it, and what divides both.
-                const float outside = (filter.flags & FILTER_WHITE) ? 1.0f : 0.0f;
-                if (!(local.z > 0.0f)) {
-                    tint = tint * outside;
-                    continue;
-                }
-                float s = local.x / local.z, t = local.y / local.z;
-                if (filter.b[7] > 0.0f || filter.b[8] > 0.0f || filter.b[9] > 0.0f) {
-                    // Blurred by how far the point is from the projector: one blur near, one at the middle, one far.
-                    const float far = length(p - vec(filter.b + 1));
-                    float wide = filter.b[9];
-                    if (far <= filter.b[4]) wide = filter.b[7];
-                    else if (far <= filter.b[5]) wide = filter.b[5] > filter.b[4] ? filter.b[7] + (filter.b[8] - filter.b[7]) * (far - filter.b[4]) / (filter.b[5] - filter.b[4]) : filter.b[8];
-                    else if (far <= filter.b[6]) wide = filter.b[6] > filter.b[5] ? filter.b[8] + (filter.b[9] - filter.b[8]) * (far - filter.b[5]) / (filter.b[6] - filter.b[5]) : filter.b[9];
-                    if (filter.flags & FILTER_ROUND) {
-                        const float out = sqrtf(rnd(blur)), around = 2.0f * ML_PI * rnd(blur);
-                        s += out * cosf(around) * wide;
-                        t += out * sinf(around) * wide;
-                    } else {
-                        s += bellWarp(rnd(blur)) * wide;
-                        t += bellWarp(rnd(blur)) * wide;
-                    }
-                }
-                if ((s < 0.0f || s > 1.0f || t < 0.0f || t > 1.0f) && !(filter.flags & FILTER_EDGELESS)) {
-                    tint = tint * outside;
-                    continue;
-                }
-                // MoonRay reads a cookie's picture from its top row down, as it does one laid round a sphere.
-                const float4 texel = tex2D<float4>(filter.texture, s, t);
-                float3 value = vec(1.0f - filter.b[0]) + make_float3(texel.x, texel.y, texel.z) * filter.b[0];
-                if (filter.flags & FILTER_INVERT) value = vec(1.0f) - value;
-                tint = tint * value;
-                continue;
-            }
-            // Barn doors: an opening in front of a projector, seen from the point; the light is what comes through.
-            if (!(local.z > 0.0f)) {
-                tint = vec(0.0f);
-                continue;
-            }
-            float3 at = local;
-            if (filter.flags & FILTER_PHYSICAL) {
-                // Where the ray to the light crosses the plane the doors stand in.
-                const float3 way = make_float3(dot(vec(filter.rows), wi), dot(vec(filter.rows + 4), wi), dot(vec(filter.rows + 8), wi));
-                if (fabsf(way.z) > 1e-9f) at = at + way * ((filter.b[5] - at.z) / way.z);
-            }
-            const float over = (filter.flags & FILTER_ORTHO) ? 1.0f : 1.0f / at.z;
-            const float x = at.x * over, y = -at.y * over;
-            const float dx = x - clamp(x, filter.a[0], filter.a[2]), dy = y - clamp(y, filter.a[1], filter.a[3]);
-            const float sx = dx * filter.b[dx < 0.0f ? 1 : 3], sy = dy * filter.b[dy < 0.0f ? 2 : 4];
-            const float r = sqrtf(dx * dx + dy * dy), scaled = sqrtf(sx * sx + sy * sy);
-            const float r0 = filter.b[0], r1 = scaled > 0.0f ? r / scaled : 0.0f;
-            float scale = 0.0f;
-            if (r <= r0) scale = 1.0f;
-            else if (r < r1) {
-                // The edge falls off as a blurred step does: the bell curve's running total, stretched to reach 0 and 1.
-                const float low = 0.5f * (1.0f + erff(-1.0f / sqrtf(0.2f)));
-                const float value = 0.5f * (1.0f + erff((1.0f - 2.0f * (r - r0) / (r1 - r0)) / sqrtf(0.2f)));
-                scale = value * (1.0f + 2.0f * low) - low;
-            }
-            if (filter.flags & FILTER_INVERT) scale = 1.0f - scale;
-            tint = tint * (vec(1.0f) + (vec(filter.b + 6) * scale - vec(1.0f)) * filter.b[9]);
-            continue;
+        // MoonRay's Combine light filter: the filters after it, as many as it holds, each worked out and joined by
+        // its mode (multiplied, the least, the most, added or the first less the rest), and that applied.
+        const unsigned mode = filter.flags & 7u, count = min(filter.flags >> 8, light.filterCount - i - 1);
+        float3 joined = vec(mode == FILTER_JOIN_MULTIPLY ? 1.0f : 0.0f);
+        for (unsigned j = 1; j <= count; ++j) {
+            const float3 value = filterFactor(filters[i + j], i + j, light, p, wi, distance);
+            if (j == 1 && mode != FILTER_JOIN_MULTIPLY) joined = value;
+            else if (mode == FILTER_JOIN_MULTIPLY) joined = joined * value;
+            else if (mode == FILTER_JOIN_MIN) joined = make_float3(fminf(joined.x, value.x), fminf(joined.y, value.y), fminf(joined.z, value.z));
+            else if (mode == FILTER_JOIN_MAX) joined = make_float3(fmaxf(joined.x, value.x), fmaxf(joined.y, value.y), fmaxf(joined.z, value.z));
+            else if (mode == FILTER_JOIN_ADD) joined = joined + value;
+            else joined = joined - value;
         }
-        // A colour by distance: from the light or the filter, or along the way either faces.
-        float along = distance;
-        if (filter.flags & FILTER_PLACED) {
-            const float3 local = make_float3(dot(vec(filter.rows), p) + filter.rows[3], dot(vec(filter.rows + 4), p) + filter.rows[7],
-                                             dot(vec(filter.rows + 8), p) + filter.rows[11]);
-            along = (filter.flags & FILTER_DIRECTIONAL) ? -local.z : length(local);
-        } else if (filter.flags & FILTER_DIRECTIONAL) {
-            along = dot(p - vec(light.position), vec(light.normal));
-        }
-        if (filter.flags & FILTER_DIRECTIONAL) along = (filter.flags & FILTER_MIRROR) ? fabsf(along) : fmaxf(along, 0.0f);
-        const float t = clamp((along - filter.a[0]) / (filter.a[1] - filter.a[0]), 0.0f, 1.0f);
-        const float4 texel = tex2D<float4>(filter.texture, (t * 256.0f + 0.5f) / 257.0f, 0.5f);
-        tint = tint * (vec(1.0f - filter.a[3]) + make_float3(texel.x, texel.y, texel.z) * (filter.a[2] * filter.a[3]));
+        tint = tint * make_float3(fmaxf(joined.x, 0.0f), fmaxf(joined.y, 0.0f), fmaxf(joined.z, 0.0f));
+        i += count;
     }
     return tint;
 }
@@ -2612,7 +2631,7 @@ ML_INLINE float modoRoughness(unsigned model, float roughness, float& strength) 
 }
 
 ML_INLINE MappedSlots evalLayers(const DeviceMaterial& material, const DeviceMesh& mesh, unsigned primitive,
-                                 float2 barycentrics, float3* channel, float2 shift) {
+                                 float2 barycentrics, float3* channel, float2 shift, float3 position) {
     channel[CHANNEL_COLOR] = vec(material.color);
     channel[CHANNEL_COLOR_AMOUNT] = vec(material.colorAmount);
     channel[CHANNEL_ROUGHNESS] = vec(material.roughness);
@@ -2679,7 +2698,17 @@ ML_INLINE MappedSlots evalLayers(const DeviceMaterial& material, const DeviceMes
         float3 value = vec(layer.value);
         float mask = masked;
         const bool patterned = (layer.flags & (LAYER_CHECKER | LAYER_NOISE)) != 0;
-        if (layer.flags & (LAYER_IMAGE | LAYER_UDIM | LAYER_CHECKER | LAYER_NOISE)) {
+        if (layer.flags & LAYER_PROCEDURAL) {
+            // Modo's pattern through the object at this point, in the texture locator's space (modo_patterns.h): how
+            // much of the first colour there is, with its bias and gain.
+            const float x = layer.rows[0] * position.x + layer.rows[1] * position.y + layer.rows[2] * position.z + layer.rows[3];
+            const float y = layer.rows[4] * position.x + layer.rows[5] * position.y + layer.rows[6] * position.z + layer.rows[7];
+            const float z = layer.rows[8] * position.x + layer.rows[9] * position.y + layer.rows[10] * position.z + layer.rows[11];
+            const float t = mp_pattern(int(layer.pattern & 255u), int((layer.pattern >> 8) & 255u), x, y, z, layer.settings[0], layer.settings[1],
+                                       layer.settings[2], layer.settings[3], layer.settings[4], layer.settings[5], layer.settings[6], layer.settings[7]);
+            value = lerp(vec(layer.color2), vec(layer.value), t);
+            mask *= layer.alpha2 + (layer.alpha1 - layer.alpha2) * t;
+        } else if (layer.flags & (LAYER_IMAGE | LAYER_UDIM | LAYER_CHECKER | LAYER_NOISE)) {
             Corners uv;
             if (!triangleUvs(mesh, layer.uvSlot, primitive, uv)) continue;     // nothing to look the row up with
             const float w = 1.0f - barycentrics.x - barycentrics.y;
@@ -2750,7 +2779,8 @@ ML_INLINE void absent(const DeviceMaterial& material, const DeviceMesh& mesh, un
     float3 channel[CHANNEL_COUNT];
     channel[CHANNEL_DISSOLVE] = vec(material.dissolve);
     channel[CHANNEL_STENCIL] = vec(0.0f);
-    if (material.layerCount) evalLayers(material, mesh, primitive, barycentrics, channel, make_float2(0.0f, 0.0f));
+    if (material.layerCount) evalLayers(material, mesh, primitive, barycentrics, channel, make_float2(0.0f, 0.0f),
+                                        optixGetWorldRayOrigin() + optixGetWorldRayDirection() * optixGetRayTmax());
     // What is there of the surface: what the dissolve leaves and the stencil leaves of that, as the plugin gives MoonRay
     // its presence (graph.py).
     const float kept = (1.0f - clamp(average(channel[CHANNEL_DISSOLVE]), 0.0f, 1.0f)) * (1.0f - clamp(average(channel[CHANNEL_STENCIL]), 0.0f, 1.0f));
@@ -2848,7 +2878,7 @@ ML_INLINE MappedSlots resolveMaterial(Hit* hit, const DeviceMaterial& material, 
     hit->absorptionDistance = material.absorptionDistance;
     slots.normal = slots.bump = UV_SLOTS;
     if (material.layerCount) {
-        slots = evalLayers(material, mesh, primitive, uv, channel, make_float2(0.0f, 0.0f));
+        slots = evalLayers(material, mesh, primitive, uv, channel, make_float2(0.0f, 0.0f), hit->p);
         // A stack's highlight: the lobe set for the most any of its rows reflects, weighted by this point's share.
         hit->specular = material.specular * clamp(average(channel[CHANNEL_SPECULAR]), 0.0f, 1.0f);
         // Scalars take the mean of a colour, as MoonRay does for a map bound to a float attribute.
@@ -2977,13 +3007,13 @@ extern "C" __global__ void __closesthit__radiance() {
             if (bumped) {
                 const float step = 0.001f;
                 float3 other[CHANNEL_COUNT];
-                evalLayers(material, mesh, primitive, uv, other, make_float2(step, 0.0f));
+                evalLayers(material, mesh, primitive, uv, other, make_float2(step, 0.0f), hit->p);
                 const float right = average(other[CHANNEL_BUMP]);
-                evalLayers(material, mesh, primitive, uv, other, make_float2(-step, 0.0f));
+                evalLayers(material, mesh, primitive, uv, other, make_float2(-step, 0.0f), hit->p);
                 const float left = average(other[CHANNEL_BUMP]);
-                evalLayers(material, mesh, primitive, uv, other, make_float2(0.0f, step));
+                evalLayers(material, mesh, primitive, uv, other, make_float2(0.0f, step), hit->p);
                 const float up = average(other[CHANNEL_BUMP]);
-                evalLayers(material, mesh, primitive, uv, other, make_float2(0.0f, -step));
+                evalLayers(material, mesh, primitive, uv, other, make_float2(0.0f, -step), hit->p);
                 const float down = average(other[CHANNEL_BUMP]);
                 const float dx = (right - left) / (2.0f * step * lengthT), dy = (up - down) / (2.0f * step);
                 const float crossT = dot(alongV, t), crossB = dot(alongV, b);
@@ -3091,8 +3121,14 @@ extern "C" __global__ void __raygen__displace() {
     float* found = reinterpret_cast<float*>(params.displaceHeights) + size_t(i) * DISPLACE_SLOTS * 3;
     float3 channel[CHANNEL_COUNT];
     for (unsigned slot = 0; slot < DISPLACE_SLOTS; ++slot) channel[CHANNEL_DISPLACE + slot] = vec(0.0f);
-    if (material.layerCount)
-        evalLayers(material, mesh, point.primitive, make_float2(point.b1, point.b2), channel, make_float2(0.0f, 0.0f));
+    if (material.layerCount) {
+        // The vertex where the mesh has it, which is where a procedural layer is looked up: its own space, as the
+        // mesh holds no place in the world here.
+        const uint3 triangle = reinterpret_cast<const uint3*>(mesh.indices)[point.primitive];
+        const float3* positions = reinterpret_cast<const float3*>(mesh.positions);
+        const float3 at = positions[triangle.x] * (1.0f - point.b1 - point.b2) + positions[triangle.y] * point.b1 + positions[triangle.z] * point.b2;
+        evalLayers(material, mesh, point.primitive, make_float2(point.b1, point.b2), channel, make_float2(0.0f, 0.0f), at);
+    }
     for (unsigned slot = 0; slot < DISPLACE_SLOTS; ++slot) {
         found[slot * 3] = channel[CHANNEL_DISPLACE + slot].x;
         found[slot * 3 + 1] = channel[CHANNEL_DISPLACE + slot].y;

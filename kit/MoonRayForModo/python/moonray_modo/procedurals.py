@@ -168,3 +168,49 @@ def bake(data,resolution=512):
             for p in temporary:
                 if p.exists():p.unlink()
     return paths
+
+
+# ---- In three dimensions, at render time (MoonRay's ModoProceduralMap) ----------------------------------------------
+# The patterns as native-port/maps/ModoProcedural/modo_patterns.h numbers them, the options of their Type, and the
+# settings each reads, in the order the map takes them (setting_a to setting_f), with what Modo starts them at.
+PATTERNS = {'noise': 0, 'cellular': 1, 'checker': 2, 'grid': 3, 'dots': 4, 'wood': 5, 'weave': 6, 'ripples': 7}
+TYPES = {'noise': ('simple', 'fractal', 'turbulence'), 'cellular': ('round', 'angular'), 'checker': ('square', 'cube'),
+         'grid': ('line', 'triangle', 'square', 'hexagon', 'cube'), 'dots': ('square', 'hexagon', 'cube')}
+MAP_SETTINGS = {'noise': (('freqs', 4), ('freqRatio', 2.0), ('ampRatio', .5)),
+                'cellular': (('cellWidth', .6), ('transWidth', .3), ('freqs', 1), ('freqRatio', 2.0), ('ampRatio', .5), ('variation', 0.0)),
+                'checker': (('transWidth', .1),), 'grid': (('lineWidth', .1), ('transWidth', .1)), 'dots': (('dotWidth', .8), ('transWidth', .1)),
+                'wood': (('ringScale', .25), ('wave', .5), ('waveScale', 1.0), ('grain', .5), ('grainScale', .1)),
+                'weave': (('yarnWidth', .6), ('roundness', .6)), 'ripples': (('sources', 8), ('wavelength', .2), ('phase', 0.0))}
+
+
+def solid(layer, channel, color, is_color, locator_matrix):
+    """A procedural layer as MoonRay's ModoProceduralMap works it out, through the object at each point (Modo's Solid
+    projection): its pattern, Type and settings, its colours, and rows that take a point of the world into the texture
+    locator's space. None for a layer of a kind it does not draw."""
+    kind = layer.type
+    if kind not in PATTERNS:
+        return None
+    from .coordinates import inverse
+    types = TYPES.get(kind, ())
+    chosen = str(channel(layer, 'type', types[0] if types else ''))
+    settings = [float(channel(layer, key, default)) for key, default in MAP_SETTINGS[kind]]
+    inv = inverse(locator_matrix)
+    data = {'pattern': PATTERNS[kind], 'type': types.index(chosen) if chosen in types else 0, 'settings': settings + [0.0] * (6 - len(settings)),
+            'bias': float(channel(layer, 'bias', .5)), 'gain': float(channel(layer, 'gain', .5)),
+            'color1': color(layer, 'color1', (0, 0, 0)) if is_color else [float(channel(layer, 'value1', 0))] * 3,
+            'color2': color(layer, 'color2', (1, 1, 1)) if is_color else [float(channel(layer, 'value2', 1))] * 3,
+            'alpha1': float(channel(layer, 'alpha1', 1)), 'alpha2': float(channel(layer, 'alpha2', 1)),
+            'rows': [[inv[0], inv[4], inv[8], inv[12]], [inv[1], inv[5], inv[9], inv[13]], [inv[2], inv[6], inv[10], inv[14]]]}
+    if not all(math.isfinite(v) for v in data['settings'] + [v for row in data['rows'] for v in row] + [data['bias'], data['gain']]):
+        raise ValueError('Nonfinite procedural parameter')
+    return data
+
+
+def map_available():
+    """Whether the MoonRay runtime has ModoProceduralMap; an older one is given the patterns baked as before."""
+    try:
+        from . import native
+        return (Path(native.default_runtime()) / 'ModoProceduralMap.so').is_file()
+    except Exception:
+        return False
+

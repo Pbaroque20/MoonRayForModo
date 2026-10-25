@@ -44,7 +44,9 @@ def bindings(material, index, lines, glass=False, absorption=False, separate_mas
         layers = [dict(value,effect=key,kind=value.get('kind','imageMap')) for key,value in material.get('textures',{}).items()]
     for layer in layers:
         layer=dict(layer)
-        if layer.get('procedural'):
+        from .procedurals import map_available
+        solid = layer.get('solid_map') if layer.get('solid_map') and map_available() else None
+        if layer.get('procedural') and solid is None:
             from .procedurals import bake
             path,alpha_path=bake(layer['procedural'])
             layer.update(kind='imageMap',path=str(path),procedural_alpha=str(alpha_path),image_channel='ignore',srgb=False,color_space='raw',bias=.5,gain=.5)
@@ -87,7 +89,16 @@ def bindings(material, index, lines, glass=False, absorption=False, separate_mas
             matrix,offset=affine(layer)
             normal_basis=matrix
             coordinates=node('ModoTextureMap',{'mode':'12','uv_affine':vector(matrix,'Vec4'),'uv_offset':vector(offset,'Vec2')})
-        if kind=='gradient':
+        if solid is not None:
+            # Worked out through the object at each point, as Modo's Solid projection has it (ModoProceduralMap).
+            held={'pattern':str(solid['pattern']),'type':str(solid['type']),'bias':number(solid['bias']),'gain':number(solid['gain']),
+                  'color1':rgb(solid['color1']),'color2':rgb(solid['color2']),'alpha1':number(solid['alpha1']),'alpha2':number(solid['alpha2']),
+                  **{'setting_'+key:number(value) for key,value in zip('abcdef',solid['settings'])},
+                  **{'row%d'%index:vector(row,'Vec4') for index,row in enumerate(solid['rows'])}}
+            foreground=node('ModoProceduralMap',dict(held,output='0'))
+            if solid['alpha1']!=1 or solid['alpha2']!=1:
+                mask=node('ModoProceduralMap',dict(held,output='1'))
+        elif kind=='gradient':
             from .gradients import emit as emit_gradient
             foreground=emit_gradient(layer['gradient'],current,node,rgb)
             if 'alpha' in layer['gradient']:

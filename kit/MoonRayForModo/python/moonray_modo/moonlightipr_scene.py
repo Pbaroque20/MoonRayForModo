@@ -152,7 +152,7 @@ def environment_section(scene, environment, warnings, runtime):
     return parts
 
 
-FILTER_DECAY, FILTER_RAMP, FILTER_ROD, FILTER_BARN, FILTER_COOKIE, FILTER_VDB = 0, 1, 2, 3, 4, 5
+FILTER_DECAY, FILTER_RAMP, FILTER_ROD, FILTER_BARN, FILTER_COOKIE, FILTER_VDB, FILTER_INTENSITY, FILTER_GROUP = 0, 1, 2, 3, 4, 5, 6, 7
 FILTER_NEAR, FILTER_FAR = 1, 2
 FILTER_DIRECTIONAL, FILTER_MIRROR, FILTER_PLACED = 1, 2, 4
 RAMP_SAMPLES = 256
@@ -209,11 +209,42 @@ def scalar_ramp(compiler, lists):
     return compiler.ramp({'positions': steps, 'colors': [[v, v, v] for v in values]}, exact=True), low, high
 
 
+def multiplied(records):
+    """The filters, a Combine that multiplies taken apart into those it holds: a light's filters multiply as it is."""
+    result = []
+    for record in records:
+        if record['kind'] == 'combine' and record['mode'] == 0:
+            result += multiplied(record['children'])
+        else:
+            result.append(record)
+    return result
+
+
 def packed_filters(records, compiler, light_matrix=None, warnings=None):
     """Decay and ramp filters as the session reads them; a ramp's colours go into a small image."""
+    parts = filter_parts(records, compiler, light_matrix, warnings)
+    return struct.pack('<I', len(parts)) + b''.join(parts)
+
+
+def filter_parts(records, compiler, light_matrix=None, warnings=None):
     from .entities import ramp_eval
     parts = []
     for record in records:
+        if record['kind'] == 'combine':
+            # MoonRay's Combine: a record saying how it joins the filters after it, and how many, then those filters.
+            inner = multiplied(record['children'])
+            nested = [r for r in inner if r['kind'] == 'combine']
+            if nested and warnings is not None:
+                warnings.append('MoonLightIPR leaves out a Combine light filter inside another that does not multiply.')
+            inner = filter_parts([r for r in inner if r['kind'] != 'combine'], compiler, light_matrix, warnings)
+            if inner:
+                parts.append(struct.pack('<2I4f12fi12fi', FILTER_GROUP, int(record['mode']) | (len(inner) << 8), *([0.0] * 16), -1, *([0.0] * 12), -1))
+                parts += inner
+            continue
+        if record['kind'] == 'intensity':
+            # Only inside a Combine that does not multiply: alone, a light takes its intensity filters in its colour.
+            parts.append(struct.pack('<2I4f12fi12fi', FILTER_INTENSITY, 0, *([0.0] * 16), -1, *(list(record['scale']) + [0.0] * 9), -1))
+            continue
         if record['kind'] == 'decay':
             parts.append(struct.pack('<2I4f12fi12fi', FILTER_DECAY, (FILTER_NEAR if record['near'] else 0) | (FILTER_FAR if record['far'] else 0),
                                      *record['distances'], *([0.0] * 12), -1, *([0.0] * 12), -1))
@@ -270,7 +301,7 @@ def packed_filters(records, compiler, light_matrix=None, warnings=None):
                      | (FILTER_PLACED if record['rows'] else 0))
             parts.append(struct.pack('<2I4f12fi12fi', FILTER_RAMP, flags, record['begin'], record['end'], record['intensity'], record['density'],
                                      *(v for row in rows for v in row), texture, *([0.0] * 12), -1))
-    return struct.pack('<I', len(parts)) + b''.join(parts)
+    return parts
 
 
 def scene_scale_of(scene):
@@ -306,7 +337,7 @@ def lights(scene, warnings, environment=0.0, compiler=None, closing=None, named=
         ending = finite(light.get('matrix_close') or matrix) if light_motion() else matrix
         color = [c * float(light['intensity']) for c in working_color(finite(light['color']))]
         # Filters from Lighting controls, and those a MoonRay light item names.
-        filters = control_filters(settings, light, scene, warnings) + list(light.get('filters', []))
+        filters = multiplied(control_filters(settings, light, scene, warnings) + list(light.get('filters', [])))
         for record in [r for r in filters if r['kind'] == 'intensity']:
             color = [c * s for c, s in zip(color, record['scale'])]
         filters = [r for r in filters if r['kind'] != 'intensity']
