@@ -36,9 +36,14 @@ struct GpuOptions {
     U32 ringChunks = 1u << 17;         // mailbox ring capacity, in chunks
     // Called as the programs compile: OptiX compile tasks done so far, and those known to remain.
     std::function<void(unsigned done, unsigned waiting)> compileProgress;
-    // The program's map module (async_maps.cu), called by the material module's callables, and its light module
-    // (async_lights.cu), called by the path tracer: a program built in modules has both.
-    std::string mapsPtx, lightsPtx;
+    // The program's map module (async_maps.cu), called by the material module's callables, and its light and lobe
+    // modules (async_lights.cu, async_lobes.cu) and volume module (async_volumes.cu), called by the path tracer: a
+    // program built in modules has them all.
+    std::string mapsPtx, lightsPtx, lobesPtx, volumesPtx;
+    // The DwaBase modules (async_dwa.cu, async_dwalobes.cu), called by the material module's callables.
+    std::string dwaPtx, dwaLobesPtx;
+    // The extras module (async_extras.cu): the camera's ray and the AOVs' accumulation, called by the path tracer.
+    std::string extrasPtx;
 };
 
 
@@ -62,8 +67,9 @@ struct TimingEvent {
 class GpuLane {
 public:
     gpu::Driver driver;
-    // The GPU program's modules: the path tracer's, then its callables' (material, maps, lights).
-    static constexpr int ModuleCount = 4;
+    // The GPU program's modules: the path tracer's, then its callables' (material, maps, lights, lobes, volumes, DwaBase
+    // resolve, DwaBase lobes, extras).
+    static constexpr int ModuleCount = 9;
 
     // ptx renders every frame (async_gpu.cu: one program for uniform and adaptive frames); materialPtx, its material
     // module (async_material.cu: the material callables; none: the program shades materials itself);
@@ -79,7 +85,8 @@ public:
             OptixDeviceContextOptions context{};
             ox(optixDeviceContextCreate(driver.context, &context, &optix_));
             OptixModule modules[ModuleCount]{};
-            const std::string* sources[ModuleCount] = {&ptx, &materialPtx, &options_.mapsPtx, &options_.lightsPtx};
+            const std::string* sources[ModuleCount] = {&ptx, &materialPtx, &options_.mapsPtx, &options_.lightsPtx, &options_.lobesPtx,
+                                                       &options_.volumesPtx, &options_.dwaPtx, &options_.dwaLobesPtx, &options_.extrasPtx};
             compileModules(sources, modules);
             programs_[0].create(*this, modules);
             program_ = &programs_[0];
@@ -159,6 +166,8 @@ public:
         std::vector<shade::MaterialRecord> meshMaterials;
         std::vector<shade::MeshAttributes> meshAttributes;
         std::vector<OptixInstance> standIns;
+        std::map<const cpu::MeshData*, MeshEntry> nextCache;
+        meshesReused_ = 0;
         for (unsigned i = 0; i < plan->meshes.size(); ++i) {
             const auto& m = *plan->meshes[i].data;
             if (standIn(plan->meshes[i])) {
@@ -273,6 +282,36 @@ public:
                 scene_.keep.insert(scene_.keep.end(), {aabbs, points, spans, counts, gas.first});
                 continue;
             }
+            const bool surface = plan->meshes[i].material != ~0u;
+            auto& inst = instances[i];
+            inst.transform[0] = inst.transform[5] = inst.transform[10] = 1;
+            inst.instanceId = i;
+            // Visibility: a surface's (rdl2 VisibilityType, a ray's mask must share it) in the surfaces' tree; a mesh with
+            // no material bounds a volume alone, so none there. Back faces are culled for a single-sided surface alone.
+            inst.visibilityMask = surface ? (plan->meshes[i].visibility & 0xffu) : 0u;
+            inst.flags = plan->meshes[i].singleSided ? OPTIX_INSTANCE_FLAG_NONE : OPTIX_INSTANCE_FLAG_DISABLE_TRIANGLE_FACE_CULLING;
+            materials.push_back(surface ? plan->materials.at(plan->meshes[i].material) : surface::Lambert{});
+            meshMaterials.push_back(surface ? plan->materialRecords.at(plan->meshes[i].material) : shade::MaterialRecord{});
+            // The same mesh as the last plan's, or as an earlier mesh of this one (an instance's): its buffers,
+            // structure and records again.
+            if (auto here = nextCache.find(&m); here != nextCache.end()) {
+                inst.traversableHandle = here->second.handle;
+                geometry.push_back(here->second.geometry);
+                meshAttributes.push_back(here->second.attributes);
+                continue;
+            }
+            if (auto found = meshCache_.find(&m); found != meshCache_.end()) {
+                MeshEntry entry = found->second;
+                inst.traversableHandle = entry.handle;
+                geometry.push_back(entry.geometry);
+                meshAttributes.push_back(entry.attributes);
+                scene_.keep.insert(scene_.keep.end(), entry.keep.begin(), entry.keep.end());
+                nextCache.emplace(&m, std::move(entry));
+                ++meshesReused_;
+                continue;
+            }
+            MeshEntry entry;
+            entry.data = plan->meshes[i].data;
             auto vertices = upload(m.positions.data(), m.positions.size() * sizeof(surface::V3));
             auto indices = upload(m.triangles.data(), m.triangles.size() * sizeof(cpu::Tri));
             OptixBuildInput input{};
@@ -290,20 +329,11 @@ public:
             tri.flags = &flag;
             tri.numSbtRecords = 1;
             auto gas = build(input);
-            auto& inst = instances[i];
-            inst.transform[0] = inst.transform[5] = inst.transform[10] = 1;
-            inst.instanceId = i;
-            // Visibility: a surface's (rdl2 VisibilityType, a ray's mask must share it) in the surfaces' tree; a mesh with
-            // no material bounds a volume alone, so none there. Back faces are culled for a single-sided surface alone.
-            const bool surface = plan->meshes[i].material != ~0u;
-            inst.visibilityMask = surface ? (plan->meshes[i].visibility & 0xffu) : 0u;
-            inst.flags = plan->meshes[i].singleSided ? OPTIX_INSTANCE_FLAG_NONE : OPTIX_INSTANCE_FLAG_DISABLE_TRIANGLE_FACE_CULLING;
             inst.traversableHandle = gas.second;
-            geometry.push_back({reinterpret_cast<const surface::V3*>(vertices->pointer),
-                                reinterpret_cast<const surface::Triangle*>(indices->pointer),
-                                unsigned(m.positions.size()), unsigned(m.triangles.size())});
-            materials.push_back(surface ? plan->materials.at(plan->meshes[i].material) : surface::Lambert{});
-            meshMaterials.push_back(surface ? plan->materialRecords.at(plan->meshes[i].material) : shade::MaterialRecord{});
+            entry.handle = gas.second;
+            entry.geometry = {reinterpret_cast<const surface::V3*>(vertices->pointer), reinterpret_cast<const surface::Triangle*>(indices->pointer),
+                              unsigned(m.positions.size()), unsigned(m.triangles.size())};
+            geometry.push_back(entry.geometry);
             shade::MeshAttributes attributes;
             for (int k = 0; k < 12; ++k) attributes.worldToObject[k] = m.worldToObject[k];
             if (!m.prims.empty()) {
@@ -312,32 +342,37 @@ public:
                 attributes.prims = reinterpret_cast<const shade::PrimAttr*>(prims->pointer);
                 attributes.primData = reinterpret_cast<const float*>(data->pointer);
                 attributes.primCount = U32(m.prims.size());
-                scene_.keep.push_back(prims);
-                scene_.keep.push_back(data);
+                entry.keep.push_back(prims);
+                entry.keep.push_back(data);
             }
             if (!m.normals.empty()) {
                 auto normals = upload(m.normals.data(), m.normals.size() * sizeof(surface::V3));
                 attributes.normals = reinterpret_cast<const surface::V3*>(normals->pointer);
                 attributes.normalRate = m.normalRate;
-                scene_.keep.push_back(normals);
+                entry.keep.push_back(normals);
             }
             if (!m.uvs.empty()) {
                 auto uvs = upload(m.uvs.data(), m.uvs.size() * sizeof(float));
                 attributes.uvs = reinterpret_cast<const float*>(uvs->pointer);
                 attributes.uvRate = m.uvRate;
-                scene_.keep.push_back(uvs);
+                entry.keep.push_back(uvs);
             }
             if (!m.dpds.empty() && !m.dpdt.empty()) {  // a subdivision surface's limit derivatives
                 auto dpds = upload(m.dpds.data(), m.dpds.size() * sizeof(surface::V3));
                 auto dpdt = upload(m.dpdt.data(), m.dpdt.size() * sizeof(surface::V3));
                 attributes.dpds = reinterpret_cast<const surface::V3*>(dpds->pointer);
                 attributes.dpdt = reinterpret_cast<const surface::V3*>(dpdt->pointer);
-                scene_.keep.push_back(dpds);
-                scene_.keep.push_back(dpdt);
+                entry.keep.push_back(dpds);
+                entry.keep.push_back(dpdt);
             }
             meshAttributes.push_back(attributes);
-            scene_.keep.insert(scene_.keep.end(), {vertices, indices, gas.first});
+            entry.attributes = attributes;
+            entry.keep.insert(entry.keep.end(), {vertices, indices, gas.first});
+            scene_.keep.insert(scene_.keep.end(), entry.keep.begin(), entry.keep.end());
+            nextCache.emplace(&m, std::move(entry));
         }
+        // Meshes the new plan no longer has leave the cache (their buffers with them once the scene lets go).
+        meshCache_ = std::move(nextCache);
         auto instanceBuffer = upload(instances.data(), instances.size() * sizeof(OptixInstance));
         OptixBuildInput input{};
         input.type = OPTIX_BUILD_INPUT_TYPE_INSTANCES;
@@ -1062,7 +1097,7 @@ private:
         OptixResult error = OPTIX_SUCCESS;
         // When each module completed (seconds from the start; negative: not yet).
         const auto began = std::chrono::steady_clock::now();
-        double completedAt[ModuleCount] = {-1, -1, -1, -1};
+        double completedAt[ModuleCount] = {-1, -1, -1, -1, -1, -1, -1, -1, -1};
         auto noteCompleted = [&] {
             for (int i = 0; i < ModuleCount; ++i) {
                 if (!modules[i] || completedAt[i] >= 0) continue;
@@ -1167,16 +1202,28 @@ private:
             desc[4].hitgroup.moduleIS = module;
             desc[4].hitgroup.entryFunctionNameIS = "__intersection__curve";
             // The callables, in async_gpu_device.h's MaterialCall order: all of them in a program built in modules.
-            static const struct { int module; const char* entry; } callables[] = {
-                {1, "__direct_callable__shade"},       {1, "__direct_callable__presence"},  {2, "__direct_callable__maps"},
-                {3, "__direct_callable__lightSample"}, {3, "__direct_callable__lightIntersect"}, {3, "__direct_callable__lightEval"}};
+            static const struct { int module; const char* entry; bool continuation; } callables[] = {
+                {1, "__direct_callable__shade", false},       {1, "__direct_callable__presence", false},
+                {2, "__direct_callable__maps", false},        {3, "__direct_callable__lightSample", false},
+                {3, "__direct_callable__lightIntersect", false}, {3, "__direct_callable__lightEval", false},
+                {4, "__direct_callable__lobeEval", false},    {4, "__direct_callable__lobeSample", false},
+                {4, "__direct_callable__lobeAlbedo", false},  {5, "__continuation_callable__volumeRadiance", true},
+                {5, "__continuation_callable__subsurfaceRadiance", true}, {5, "__continuation_callable__volumeTransmittance", true},
+                {6, "__direct_callable__dwaResolve", false}, {7, "__direct_callable__dwaLobes", false},
+                {8, "__direct_callable__camera", false},     {8, "__direct_callable__aovLight", false},
+                {8, "__direct_callable__aovVisibility", false}, {8, "__direct_callable__materialAovs", false}};
             const bool split = modules[1] != nullptr;
             for (int i = 2; i < ModuleCount; ++i) cpu::need(!split || modules[i], "The GPU program's modules are incomplete");
             const unsigned callableCount = split ? unsigned(sizeof(callables) / sizeof(callables[0])) : 0u, count = 5u + callableCount;
             for (unsigned k = 0; k < callableCount; ++k) {
                 desc[5 + k].kind = OPTIX_PROGRAM_GROUP_KIND_CALLABLES;
-                desc[5 + k].callables.moduleDC = modules[callables[k].module];
-                desc[5 + k].callables.entryFunctionNameDC = callables[k].entry;
+                if (callables[k].continuation) {
+                    desc[5 + k].callables.moduleCC = modules[callables[k].module];
+                    desc[5 + k].callables.entryFunctionNameCC = callables[k].entry;
+                } else {
+                    desc[5 + k].callables.moduleDC = modules[callables[k].module];
+                    desc[5 + k].callables.entryFunctionNameDC = callables[k].entry;
+                }
             }
             OptixProgramGroupOptions options{};
             length = sizeof(log);
@@ -1191,8 +1238,9 @@ private:
             if (std::getenv("XPU2_ASYNC_STACKS"))  // a diagnostic: the raygen's stack shows state spilled across traces
                 std::fprintf(stderr, "stacks: cssRG %u cssMS %u cssCH %u dssDC %u\n", stacks.cssRG, stacks.cssMS, stacks.cssCH, stacks.dssDC);
             unsigned a, b, c;
-            // The raygen calls the material and light callables, the material callables the map callable (two levels).
-            ox(optixUtilComputeStackSizes(&stacks, 1, 0, split ? 2 : 0, &a, &b, &c));
+            // The raygen calls the material, light and lobe callables (the material callables the map callable: two
+            // levels) and the volume module's continuation callables (one level), which call the direct ones.
+            ox(optixUtilComputeStackSizes(&stacks, 1, split ? 1 : 0, split ? 2 : 0, &a, &b, &c));
             ox(optixPipelineSetStackSize(pipeline, a, b, c, 2));
             auto host = lane.pinned(sizeof(Record) * count);
             for (unsigned i = 0; i < count; ++i) ox(optixSbtRecordPackHeader(groups[i], static_cast<Record*>(host->host()) + i));
@@ -1263,6 +1311,17 @@ private:
         if (!r.done) r.done = std::make_shared<gpu::Event>(driver);
         gpu::Driver::check(driver.cuEventRecord_p(r.done->value, stream_));
     }
+    // A triangle mesh as the GPU holds it (prepare): its buffers and acceleration structure, its geometry and attribute
+    // records; kept from one plan to the next while the plan's mesh is the same MeshData.
+    struct MeshEntry {
+        std::shared_ptr<const cpu::MeshData> data;  // held, so its address names no other mesh while cached
+        std::vector<B> keep;
+        OptixTraversableHandle handle = 0;
+        mixed::Geometry geometry{};
+        shade::MeshAttributes attributes{};
+    };
+    std::map<const cpu::MeshData*, MeshEntry> meshCache_;
+    size_t meshesReused_ = 0;
     struct Scene {
         std::vector<B> keep;
         U64 traversable = 0, volumeTraversable = 0, standInTraversable = 0;

@@ -756,6 +756,28 @@ X2_CALL U32 materialPresence(const MaterialRecord& m0, const float* pool, const 
     }
     return tex::Ready;
 }
+// The DwaBase module's callables' places in the GPU program's binding table (async_gpu_device.h's MaterialCall).
+// (An enumerator, not a constexpr: no global in every relocatable module.)
+enum : U32 { DwaResolveCallable = 12, DwaLobesCallable = 13 };
+// A DwaBase tree resolved and its lobes made as the material callables call them: on the GPU, in a program built in
+// modules (XPU2_DWA_MODULE), the DwaBase module's callables (async_dwa.cu); elsewhere the functions themselves.
+X2_HD inline bool resolveDwaTreeCall(const float* pool, const DwaTree& tree, const State& st, DwaParams* slots, const Color* regs) {
+#if defined(__CUDACC__) && defined(XPU2_DWA_MODULE)
+    return optixDirectCall<bool, const float*, const DwaTree*, const State*, DwaParams*, const Color*>(DwaResolveCallable, pool, &tree, &st, slots,
+                                                                                                        regs);
+#else
+    return resolveDwaTree(pool, tree, st, slots, regs);
+#endif
+}
+X2_HD inline bool createDwaLobesCall(const DwaParams& p, const DwaUniformParams& u, const State& st, Builder& bb, const float* pool,
+                                     GlitterScratch* glitter) {
+#if defined(__CUDACC__) && defined(XPU2_DWA_MODULE)
+    return optixDirectCall<bool, const DwaParams*, const DwaUniformParams*, const State*, Builder*, const float*, GlitterScratch*>(
+        DwaLobesCallable, &p, &u, &st, &bb, pool, glitter);
+#else
+    return createDwaLobes(p, u, st, bb, pool, glitter);
+#endif
+}
 template <class Tex>
 X2_CALL U32 shadeChosenMaterial(const MaterialRecord& m, const float* pool, const State& st, const Tex& tex, Bsdf& bsdf, float& presence,
                                 DwaParams* slots, GlitterScratch* glitter, bool cutout) {
@@ -811,7 +833,7 @@ X2_CALL U32 shadeChosenMaterial(const MaterialRecord& m, const float* pool, cons
         }
         initColorCorrectParameters(slots[0]);
         // A material whose resolve fails (a missing input) gives no lobes, as in MoonRay.
-        if (resolveDwaTree(pool, tree, st, slots, regs) && !createDwaLobes(slots[0], tree.up, st, bb, pool, glitter)) return tex::Invalid;
+        if (resolveDwaTreeCall(pool, tree, st, slots, regs) && !createDwaLobesCall(slots[0], tree.up, st, bb, pool, glitter)) return tex::Invalid;
         break;
     }
     default: return tex::Invalid;

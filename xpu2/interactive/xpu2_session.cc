@@ -59,12 +59,14 @@ std::string oneLine(std::string text) {
 // The renderer's files beside the executable (build_session.py lays them out): the program for every frame, its
 // material module and the adaptive pass chain.
 struct Programs {
-    std::string uniform, material, chain, maps, lights;
+    std::string uniform, material, chain, maps, lights, lobes, volumes, dwa, dwaLobes, extras;
 };
 Programs programs(const fs::path& folder) {
     return {fileText(folder / "async_gpu.ptx"), fileText(folder / "material" / "async_material.ptx"),
             fileText(folder / "adaptive" / "async_adaptive.ptx"), fileText(folder / "maps" / "async_maps.ptx"),
-            fileText(folder / "lights" / "async_lights.ptx")};
+            fileText(folder / "lights" / "async_lights.ptx"), fileText(folder / "lobes" / "async_lobes.ptx"),
+            fileText(folder / "volumes" / "async_volumes.ptx"), fileText(folder / "dwa" / "async_dwa.ptx"),
+            fileText(folder / "dwalobes" / "async_dwalobes.ptx"), fileText(folder / "extras" / "async_extras.ptx")};
 }
 
 std::unique_ptr<async::GpuLane> gpuLane(const Programs& p, std::function<void(unsigned, unsigned)> progress = {}) {
@@ -72,6 +74,11 @@ std::unique_ptr<async::GpuLane> gpuLane(const Programs& p, std::function<void(un
     options.compileProgress = std::move(progress);
     options.mapsPtx = p.maps;
     options.lightsPtx = p.lights;
+    options.lobesPtx = p.lobes;
+    options.volumesPtx = p.volumes;
+    options.dwaPtx = p.dwa;
+    options.dwaLobesPtx = p.dwaLobes;
+    options.extrasPtx = p.extras;
     return std::make_unique<async::GpuLane>(p.uniform, p.material, p.chain, options);
 }
 
@@ -83,7 +90,7 @@ fs::path shaderMark(const Programs& p) {
     auto mix = [&](const void* data, size_t n) {
         for (size_t i = 0; i < n; ++i) h = (h ^ static_cast<const unsigned char*>(data)[i]) * 1099511628211ull;
     };
-    for (const std::string* s : {&p.uniform, &p.material, &p.chain, &p.maps, &p.lights}) mix(s->data(), s->size());
+    for (const std::string* s : {&p.uniform, &p.material, &p.chain, &p.maps, &p.lights, &p.lobes, &p.volumes, &p.dwa, &p.dwaLobes, &p.extras}) mix(s->data(), s->size());
     // A test build's lower OptiX optimization (XPU2_OPTIX_LEVEL, async_gpu.h) is another program in OptiX's cache.
     if (const char* level = std::getenv("XPU2_OPTIX_LEVEL")) {
         const std::string l = level;

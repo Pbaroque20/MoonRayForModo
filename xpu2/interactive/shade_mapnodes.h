@@ -2370,7 +2370,8 @@ X2_HD inline bool mapRequirementsMet(const float* pool, U32 program, const State
     return true;
 }
 // The map module's callable's place in the GPU program's binding table (async_gpu_device.h's MaterialCall).
-constexpr U32 MapsCallable = 2;
+// (An enumerator, not a constexpr: no global in every relocatable module.)
+enum : U32 { MapsCallable = 2 };
 // Runs a material's map program: each map in dependency order, its result in its register.
 template <class Tex>
 X2_CALL U32 runMapProgram(const float* pool, U32 program, const State& st, const Tex& tex, Color* regs) {

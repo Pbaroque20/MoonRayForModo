@@ -21,7 +21,7 @@ from native_build import build, build_units
 from reference_runtime import sha, verify
 
 HERE = Path(__file__).resolve().parent
-PROGRAM_SOURCES = HEADERS + ('async_gpu.cu', 'async_material.cu', 'async_maps.cu', 'async_lights.cu', 'async_adaptive.cu')
+PROGRAM_SOURCES = HEADERS + ('async_gpu.cu', 'async_material.cu', 'async_maps.cu', 'async_lights.cu', 'async_lobes.cu', 'async_volumes.cu', 'async_dwa.cu', 'async_dwalobes.cu', 'async_extras.cu', 'async_adaptive.cu')
 
 
 def imports(objdump, path):
@@ -108,9 +108,14 @@ def build_session(source, runtime, async_build, out, cpu_test=False):
         (rt / 'material').mkdir(parents=True)
         (rt / 'maps').mkdir(parents=True)
         (rt / 'lights').mkdir(parents=True)
+        (rt / 'lobes').mkdir(parents=True)
+        (rt / 'volumes').mkdir(parents=True)
+        (rt / 'dwa').mkdir(parents=True)
+        (rt / 'dwalobes').mkdir(parents=True)
+        (rt / 'extras').mkdir(parents=True)
         shutil.copyfile(exe, rt / 'moonray_xpu2.exe')
         shutil.copyfile(out / 'geom' / 'xpu2_geom.dll', rt / 'xpu2_geom.dll')
-        for name in ('async_gpu.ptx', 'material/async_material.ptx', 'maps/async_maps.ptx', 'lights/async_lights.ptx', 'adaptive/async_adaptive.ptx',
+        for name in ('async_gpu.ptx', 'material/async_material.ptx', 'maps/async_maps.ptx', 'lights/async_lights.ptx', 'lobes/async_lobes.ptx', 'volumes/async_volumes.ptx', 'dwa/async_dwa.ptx', 'dwalobes/async_dwalobes.ptx', 'extras/async_extras.ptx', 'adaptive/async_adaptive.ptx',
                      'bc_1D_integrator_points_4096_sequences_of_1024.bin',
                      'ppd_2D_integrator_points_4096_sequences_of_1024.bin'):
             shutil.copyfile(async_build / name, rt / name)
@@ -133,7 +138,9 @@ def build_session(source, runtime, async_build, out, cpu_test=False):
             raise RuntimeError('Build source drift')
         manifest = {'executable_sha256': sha(rt / 'moonray_xpu2.exe'),
                     'programs': {n: sha(rt / n) for n in ('async_gpu.ptx', 'material/async_material.ptx', 'maps/async_maps.ptx',
-                                                          'lights/async_lights.ptx', 'adaptive/async_adaptive.ptx')},
+                                                          'lights/async_lights.ptx', 'lobes/async_lobes.ptx', 'volumes/async_volumes.ptx',
+                                                          'dwa/async_dwa.ptx', 'dwalobes/async_dwalobes.ptx', 'extras/async_extras.ptx',
+                                                          'adaptive/async_adaptive.ptx')},
                     'libraries': [p.name for p in libraries], 'proxies': len(proxies)}
         (rt / 'xpu2-runtime.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
         report.update(status='passed', runtime=str(rt), **manifest)

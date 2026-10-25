@@ -29,7 +29,7 @@ def build_all(source, runtime, out):
     source, runtime, out = (Path(p).resolve() for p in (source, runtime, out))
     out.mkdir(parents=True, exist_ok=False)
     verify(runtime, json.loads((HERE / 'reference-lock.json').read_text()))
-    files = list(HERE.glob('*.h')) + [HERE / n for n in ('async_probe.cc', 'async_gpu.cu', 'async_material.cu', 'async_maps.cu', 'async_lights.cu',
+    files = list(HERE.glob('*.h')) + [HERE / n for n in ('async_probe.cc', 'async_gpu.cu', 'async_material.cu', 'async_maps.cu', 'async_lights.cu', 'async_lobes.cu', 'async_volumes.cu', 'async_dwa.cu', 'async_dwalobes.cu', 'async_extras.cu',
                                                          'async_adaptive.cu', 'build_async.py',
                                                          'gpu_build.py', 'native_build.py')]
     held = {str(p): sha(p) for p in files}
@@ -41,18 +41,36 @@ def build_all(source, runtime, out):
         (out / 'material').mkdir()
         (out / 'maps').mkdir()
         (out / 'lights').mkdir()
+        (out / 'lobes').mkdir()
+        (out / 'volumes').mkdir()
+        (out / 'dwa').mkdir()
+        (out / 'dwalobes').mkdir()
+        (out / 'extras').mkdir()
+        # The modules the path tracer's callables reach (the volume module calls the others as the path tracer does).
+        calls = ['-DXPU2_MATERIAL_MODULE=1', '-DXPU2_LIGHT_MODULE=1', '-DXPU2_LOBE_MODULE=1', '-DXPU2_EXTRAS_MODULE=1']
         from concurrent.futures import ThreadPoolExecutor
-        with ThreadPoolExecutor(4) as pool:
-            main = pool.submit(compile_ptx, source, out, 'async_gpu.cu', HEADERS, FAST_FLAGS + ['-DXPU2_MATERIAL_MODULE=1', '-DXPU2_LIGHT_MODULE=1'])
+        with ThreadPoolExecutor(9) as pool:
+            main = pool.submit(compile_ptx, source, out, 'async_gpu.cu', HEADERS, FAST_FLAGS + calls + ['-DXPU2_VOLUME_MODULE=1'])
             # Relocatable: their callables are entry points no code in the module calls (NVRTC would drop them).
             material = pool.submit(compile_ptx, source, out / 'material', 'async_material.cu', HEADERS,
-                                   FAST_FLAGS + ['--relocatable-device-code=true', '-DXPU2_MAP_MODULE=1'])
+                                   FAST_FLAGS + ['--relocatable-device-code=true', '-DXPU2_MAP_MODULE=1', '-DXPU2_DWA_MODULE=1'])
+            dwa = pool.submit(compile_ptx, source, out / 'dwa', 'async_dwa.cu', HEADERS, FAST_FLAGS + ['--relocatable-device-code=true'])
+            dwaLobes = pool.submit(compile_ptx, source, out / 'dwalobes', 'async_dwalobes.cu', HEADERS, FAST_FLAGS + ['--relocatable-device-code=true'])
+            extras = pool.submit(compile_ptx, source, out / 'extras', 'async_extras.cu', HEADERS, FAST_FLAGS + ['--relocatable-device-code=true'])
             maps = pool.submit(compile_ptx, source, out / 'maps', 'async_maps.cu', HEADERS, FAST_FLAGS + ['--relocatable-device-code=true'])
             lights = pool.submit(compile_ptx, source, out / 'lights', 'async_lights.cu', HEADERS, FAST_FLAGS + ['--relocatable-device-code=true'])
+            lobes = pool.submit(compile_ptx, source, out / 'lobes', 'async_lobes.cu', HEADERS, FAST_FLAGS + ['--relocatable-device-code=true'])
+            volumes = pool.submit(compile_ptx, source, out / 'volumes', 'async_volumes.cu', HEADERS,
+                                  FAST_FLAGS + calls + ['--relocatable-device-code=true'])
             ptx, report['cuda_build'] = main.result()
             materialPtx, report['cuda_build_material'] = material.result()
             mapsPtx, report['cuda_build_maps'] = maps.result()
             lightsPtx, report['cuda_build_lights'] = lights.result()
+            lobesPtx, report['cuda_build_lobes'] = lobes.result()
+            volumesPtx, report['cuda_build_volumes'] = volumes.result()
+            dwaPtx, report['cuda_build_dwa'] = dwa.result()
+            dwaLobesPtx, report['cuda_build_dwalobes'] = dwaLobes.result()
+            extrasPtx, report['cuda_build_extras'] = extras.result()
         # The adaptive pass chain's CUDA kernels, beside the adaptive program.
         chain, report['cuda_build_chain'] = compile_ptx(source, out / 'adaptive', 'async_adaptive.cu', HEADERS, FAST_FLAGS)
         # The probe shares the session's render outputs (aov_plan.h, aov_display.h): MoonRay's light path
@@ -72,10 +90,10 @@ def build_all(source, runtime, out):
             shutil.copyfile(sampler / name, out / name)
         if any(sha(Path(k)) != v for k, v in held.items()):
             raise RuntimeError('Build source drift')
-        report.update(status='passed', exe=str(exe), ptx=str(ptx), ptx_material=str(materialPtx), ptx_maps=str(mapsPtx), ptx_lights=str(lightsPtx),
+        report.update(status='passed', exe=str(exe), ptx=str(ptx), ptx_material=str(materialPtx), ptx_maps=str(mapsPtx), ptx_lights=str(lightsPtx), ptx_lobes=str(lobesPtx), ptx_volumes=str(volumesPtx), ptx_dwa=str(dwaPtx), ptx_dwalobes=str(dwaLobesPtx), ptx_extras=str(extrasPtx),
                       ptx_chain=str(chain),
                       binary_hashes={'exe': sha(exe), 'ptx': sha(ptx), 'ptx_material': sha(materialPtx), 'ptx_maps': sha(mapsPtx),
-                                     'ptx_lights': sha(lightsPtx), 'ptx_chain': sha(chain)})
+                                     'ptx_lights': sha(lightsPtx), 'ptx_lobes': sha(lobesPtx), 'ptx_volumes': sha(volumesPtx), 'ptx_dwa': sha(dwaPtx), 'ptx_dwalobes': sha(dwaLobesPtx), 'ptx_extras': sha(extrasPtx), 'ptx_chain': sha(chain)})
     except Exception as error:
         report.update(status='failed', error=str(error))
     (out / 'build.json').write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')

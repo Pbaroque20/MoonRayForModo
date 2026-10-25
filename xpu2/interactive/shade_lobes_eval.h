@@ -922,7 +922,7 @@ struct Level {
 };
 
 // BsdfLobe_eval of a lobe record, wrappers and all.
-X2_CALL Color lobeEval(const Bsdf& b, U32 record, const Slice& s, V3 wi, float& pdf) {
+X2_CALL Color lobeEvalHere(const Bsdf& b, U32 record, const Slice& s, V3 wi, float& pdf) {
     pdf = 0.0f;
     Chain c;
     if (!chain(b, record, c)) return rgb(0);
@@ -1004,7 +1004,7 @@ X2_CALL Color lobeEval(const Bsdf& b, U32 record, const Slice& s, V3 wi, float& 
 }
 
 // BsdfLobe_sample of a lobe record, wrappers and all.
-X2_CALL Color lobeSample(const Bsdf& b, U32 record, const Slice& s, float r1, float r2, V3& wi, float& pdf) {
+X2_CALL Color lobeSampleHere(const Bsdf& b, U32 record, const Slice& s, float r1, float r2, V3& wi, float& pdf) {
     pdf = 0.0f;
     Chain c;
     if (!chain(b, record, c)) return rgb(0);
@@ -1082,10 +1082,43 @@ X2_CALL Color lobeSample(const Bsdf& b, U32 record, const Slice& s, float r1, fl
     }
     return result;
 }
-X2_HD inline Color lobeAlbedo(const Bsdf& b, U32 record, const Slice& s) {
+X2_CALL Color lobeAlbedoHere(const Bsdf& b, U32 record, const Slice& s) {
     Chain c;
     if (!chain(b, record, c)) return rgb(0);
     return chainAlbedo(b, c, 0, s);
+}
+// The lobe module's callables' places in the GPU program's binding table (async_gpu_device.h's MaterialCall).
+// (An enumerator, not a constexpr: no global in every relocatable module.)
+enum : U32 { LobeEvalCallable = 6, LobeSampleCallable = 7, LobeAlbedoCallable = 8 };
+// A Bsdf's lobes as the path tracer calls them: on the GPU, in a program built in modules (XPU2_LOBE_MODULE), the lobe
+// module's callables (async_lobes.cu); elsewhere the functions themselves.
+X2_HD inline Color lobeEval(const Bsdf& b, U32 record, const Slice& s, V3 wi, float& pdf) {
+#if defined(__CUDACC__) && defined(XPU2_LOBE_MODULE)
+    Color out = rgb(0);
+    optixDirectCall<void, const Bsdf*, U32, const Slice*, V3, float*, Color*>(LobeEvalCallable, &b, record, &s, wi, &pdf, &out);
+    return out;
+#else
+    return lobeEvalHere(b, record, s, wi, pdf);
+#endif
+}
+X2_HD inline Color lobeSample(const Bsdf& b, U32 record, const Slice& s, float r1, float r2, V3& wi, float& pdf) {
+#if defined(__CUDACC__) && defined(XPU2_LOBE_MODULE)
+    Color out = rgb(0);
+    optixDirectCall<void, const Bsdf*, U32, const Slice*, float, float, V3*, float*, Color*>(LobeSampleCallable, &b, record, &s, r1, r2, &wi,
+                                                                                            &pdf, &out);
+    return out;
+#else
+    return lobeSampleHere(b, record, s, r1, r2, wi, pdf);
+#endif
+}
+X2_HD inline Color lobeAlbedo(const Bsdf& b, U32 record, const Slice& s) {
+#if defined(__CUDACC__) && defined(XPU2_LOBE_MODULE)
+    Color out = rgb(0);
+    optixDirectCall<void, const Bsdf*, U32, const Slice*, Color*>(LobeAlbedoCallable, &b, record, &s, &out);
+    return out;
+#else
+    return lobeAlbedoHere(b, record, s);
+#endif
 }
 X2_HD inline const Lobe& baseLobe(const Bsdf& b, U32 record) {
     Chain c;

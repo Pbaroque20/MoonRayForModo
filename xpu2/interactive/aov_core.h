@@ -212,7 +212,7 @@ X2_HD inline int lpeSubsurface(const Tables& t, int state, int label) { return l
 // aovAccumLightAovs (aovAccumLpeAovs for light AOVs): matchValue to the light AOVs valid in this state whose prefix
 // flags include prefixFlags; nonMatch, when given, to the others valid in this state. Sum, min and max take the value
 // as it is (they are for extra AOVs only), the rest add it. True when one matched.
-X2_HD inline bool light(const Tables& t, float* aovs, float* depths, V3 match, const V3* nonMatch, U32 prefixFlags, int state) {
+X2_HD inline bool lightHere(const Tables& t, float* aovs, float* depths, V3 match, const V3* nonMatch, U32 prefixFlags, int state) {
     if (state < 0 || !(t.types & TypeLight)) return false;
     bool any = false;
     for (U32 i = 0; i < t.count; ++i) {
@@ -235,9 +235,21 @@ X2_HD inline bool light(const Tables& t, float* aovs, float* depths, V3 match, c
     }
     return any;
 }
+// The extras module's callables (async_extras.cu): enumerators, so no global in every relocatable module.
+enum : U32 { AovLightCallable = 15, AovVisibilityCallable = 16 };
+// A light AOV contribution as the path tracer adds it: on the GPU, in a program built in modules (XPU2_EXTRAS_MODULE),
+// the extras module's callable; elsewhere the function itself.
+X2_HD inline bool light(const Tables& t, float* aovs, float* depths, V3 match, const V3* nonMatch, U32 prefixFlags, int state) {
+#if defined(__CUDACC__) && defined(XPU2_EXTRAS_MODULE)
+    return optixDirectCall<bool, const Tables*, float*, float*, V3, const V3*, U32, int>(AovLightCallable, &t, aovs, depths, match, nonMatch,
+                                                                                        prefixFlags, state);
+#else
+    return lightHere(t, aovs, depths, match, nonMatch, prefixFlags, state);
+#endif
+}
 // aovAccumVisibilityAovs: (hits, attempts) to the visibility AOVs valid in this state; passthrough (lpe ignored) for
 // aovAccumVisibilityAttempts.
-X2_HD inline bool visibility(const Tables& t, float* aovs, float hits, float attempts, int state, bool passthrough = false) {
+X2_HD inline bool visibilityHere(const Tables& t, float* aovs, float hits, float attempts, int state, bool passthrough = false) {
     if (!(t.types & TypeVisibility)) return false;
     bool any = false;
     for (U32 i = 0; i < t.count; ++i) {
@@ -248,6 +260,16 @@ X2_HD inline bool visibility(const Tables& t, float* aovs, float hits, float att
         any = true;
     }
     return any;
+}
+// A visibility AOV's hits and attempts as the path tracer adds them: the extras module's callable in a program built
+// in modules, the function itself elsewhere.
+X2_HD inline bool visibility(const Tables& t, float* aovs, float hits, float attempts, int state, bool passthrough = false) {
+#if defined(__CUDACC__) && defined(XPU2_EXTRAS_MODULE)
+    return optixDirectCall<bool, const Tables*, float*, float, float, int, bool>(AovVisibilityCallable, &t, aovs, hits, attempts, state,
+                                                                                passthrough);
+#else
+    return visibilityHere(t, aovs, hits, attempts, state, passthrough);
+#endif
 }
 
 }  // namespace xpu2::interactive::aov

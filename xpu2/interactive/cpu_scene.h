@@ -1434,7 +1434,9 @@ inline volume::Shader admitVdbVolume(const rdl::SceneObject& g,const rdl::SceneO
                                      std::shared_ptr<MeshData>& box){
  {std::set<std::string> allowed{"model","interpolation","density_grid","emission_grid","velocity_grid","velocity_scale","velocity_sample_rate",
    "emission_sample_rate","node_xform","primitive_attributes"};
-  allowed.insert(geometryVisibilityAttributes().begin(),geometryVisibilityAttributes().end());attributes(g,allowed);}
+  // Its node transform may move over the shutter (s.moving: the world to grid lerped by the ray's time, as MoonRay's
+  // VdbVolume lerps its render to index transforms).
+  allowed.insert(geometryVisibilityAttributes().begin(),geometryVisibilityAttributes().end());attributes(g,allowed,{},{"node_xform"});}
  const std::string cls=o.getSceneClass().getName();
  need(cls=="VdbVolume",g.getName()+": a "+cls+" on a VDB geometry is not rendered yet");
  {std::set<std::string> all;for(auto i=o.getSceneClass().beginAttributes();i!=o.getSceneClass().endAttributes();++i)all.insert((*i)->getName());attributes(o,all,all);}

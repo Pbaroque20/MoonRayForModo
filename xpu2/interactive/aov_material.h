@@ -402,7 +402,7 @@ struct MaterialHit {
 };
 
 // The material AOVs at a hit, into the sample's array (aovSetMaterialAovs through MaterialAovs::computeVector).
-X2_CALL void materialAovs(const Tables& t, float* aovs, float* depths, const MaterialHit& h, float depth) {
+X2_CALL void materialAovsHere(const Tables& t, float* aovs, float* depths, const MaterialHit& h, float depth) {
     const Bsdf& b = *h.bsdf;
     const int geomLabel = h.geomLabel;
     const int materialLabel = shade::labelMaterialAovId(b.materialLabels);
@@ -707,6 +707,17 @@ X2_CALL void materialAovs(const Tables& t, float* aovs, float* depths, const Mat
         // The value as MoonRay queues it (only non-zero for the averages and sums, only finite for the rest).
         put(e, aovs, depths, v, depth);
     }
+}
+// The extras module's callable (async_extras.cu): an enumerator, so no global in every relocatable module.
+enum : U32 { MaterialAovsCallable = 17 };
+// A hit's material AOVs as the path tracer adds them: the extras module's callable in a program built in modules
+// (XPU2_EXTRAS_MODULE), the function itself elsewhere.
+X2_HD inline void materialAovs(const Tables& t, float* aovs, float* depths, const MaterialHit& h, float depth) {
+#if defined(__CUDACC__) && defined(XPU2_EXTRAS_MODULE)
+    optixDirectCall<void, const Tables*, float*, float*, const MaterialHit*, float>(MaterialAovsCallable, &t, aovs, depths, &h, depth);
+#else
+    materialAovsHere(t, aovs, depths, h, depth);
+#endif
 }
 
 }  // namespace xpu2::interactive::aov

@@ -43,11 +43,21 @@ int main(int argc, char** argv) {
         std::string materialPtx, chainPtx;
         if (std::ifstream a{fs::path(argv[3]).parent_path() / "material" / "async_material.ptx", std::ios::binary})
             materialPtx.assign(std::istreambuf_iterator<char>(a), {});
-        std::string mapsPtx, lightsPtx;
+        std::string mapsPtx, lightsPtx, lobesPtx, volumesPtx, dwaPtx, dwaLobesPtx, extrasPtx;
         if (std::ifstream a{fs::path(argv[3]).parent_path() / "maps" / "async_maps.ptx", std::ios::binary})
             mapsPtx.assign(std::istreambuf_iterator<char>(a), {});
         if (std::ifstream a{fs::path(argv[3]).parent_path() / "lights" / "async_lights.ptx", std::ios::binary})
             lightsPtx.assign(std::istreambuf_iterator<char>(a), {});
+        if (std::ifstream a{fs::path(argv[3]).parent_path() / "lobes" / "async_lobes.ptx", std::ios::binary})
+            lobesPtx.assign(std::istreambuf_iterator<char>(a), {});
+        if (std::ifstream a{fs::path(argv[3]).parent_path() / "volumes" / "async_volumes.ptx", std::ios::binary})
+            volumesPtx.assign(std::istreambuf_iterator<char>(a), {});
+        if (std::ifstream a{fs::path(argv[3]).parent_path() / "dwa" / "async_dwa.ptx", std::ios::binary})
+            dwaPtx.assign(std::istreambuf_iterator<char>(a), {});
+        if (std::ifstream a{fs::path(argv[3]).parent_path() / "dwalobes" / "async_dwalobes.ptx", std::ios::binary})
+            dwaLobesPtx.assign(std::istreambuf_iterator<char>(a), {});
+        if (std::ifstream a{fs::path(argv[3]).parent_path() / "extras" / "async_extras.ptx", std::ios::binary})
+            extrasPtx.assign(std::istreambuf_iterator<char>(a), {});
         if (std::ifstream a{fs::path(argv[3]).parent_path() / "adaptive" / "async_adaptive.ptx", std::ios::binary})
             chainPtx.assign(std::istreambuf_iterator<char>(a), {});
 
@@ -87,6 +97,11 @@ int main(int argc, char** argv) {
             if (const char* v = std::getenv("XPU2_ASYNC_PROFILE_CHAIN")) gpuOptions.profileChain = std::string(v) == "1";
             gpuOptions.mapsPtx = mapsPtx;
             gpuOptions.lightsPtx = lightsPtx;
+            gpuOptions.lobesPtx = lobesPtx;
+            gpuOptions.volumesPtx = volumesPtx;
+            gpuOptions.dwaPtx = dwaPtx;
+            gpuOptions.dwaLobesPtx = dwaLobesPtx;
+            gpuOptions.extrasPtx = extrasPtx;
             gpu = std::make_unique<async::GpuLane>(ptx, materialPtx, chainPtx, gpuOptions);
             gpu->prepare(plan);
         }

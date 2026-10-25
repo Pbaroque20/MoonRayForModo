@@ -80,12 +80,33 @@ function (integratePaths 30.8k to 12k instructions), but not OptiX's: it compile
    indexer's families, step 1), each module compiled once and kept in OptiX's cache, so a new scene compiles at most
    the modules it adds.
 
-   Done so far (GPU build 78), in PTX instructions: the path tracer's module 145k, the material module 85k (two
-   callables: a hit's Bsdf, a material's presence), the map module 57k (the map interpreter, called by the
-   material callables). Whole, build 76 was 238k. Two things learned on the way: a module of callables is compiled
+   Done so far, in PTX instructions (whole, build 76 was 238k in one module):
+
+   | Module | Callables | Build 78 | Build 81 | Next (written) |
+   |---|---|---|---|---|
+   | path tracer | (raygen, misses, hits) | 145k | 60k | 60k |
+   | material | a hit's Bsdf, a material's presence | 85k | 85k | 12k |
+   | maps | the map interpreter | 57k | 57k | 57k |
+   | lights | shapes sampled, intersected, evaluated | - | 12k | 12k |
+   | lobes | lobes evaluated, sampled, their albedo | - | 36k | 36k |
+   | volumes | volume radiance, subsurface, shadow transmittance (continuation callables) | - | 50k | 50k |
+   | DwaBase resolve | a tree's layers blended | - | - | 29k |
+   | DwaBase lobes | a resolved material's lobes, glitter | - | - | 51k |
+
+   OptiX at build 79 (four modules, the path tracer 134k): 17 of 19 compile tasks in 12 s, then the path tracer's
+   module alone on one thread, past 30 minutes and 25 GB, as the whole program did before: the cost is one large
+   module's, so the split continues until no module is large. Two things learned on the way: a module of callables is compiled
    relocatable (`-rdc`), or NVRTC drops its entry points; and with the materials gone NVRTC inlined 34 helpers it
    had kept as single calls (the module grew to 292k), so the big helpers are marked out of line (X2_CALL, now
    defined beside X2_HD in sample_stream.h).
+
+## 6 in detail: where an edit's time goes now
+
+An edit makes the plan again (meshes, grids, images and light tables reused by signature), then the CPU's Embree
+scene whole, the GPU's every acceleration structure (GpuLane::prepare builds a GAS per mesh, reusing none) and a new
+renderer. First steps: the GPU lane and the CPU scene keep each mesh's acceleration structure and uploaded buffers by
+its MeshData (the plan builder hands an unchanged mesh's same shared object to the next plan), rebuilding only the
+instance structures; the renderer keeps its ownership and lane rate across an edit of the same image size.
 
 ## Order
 

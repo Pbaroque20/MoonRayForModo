@@ -46,5 +46,350 @@ enum MaterialCall : unsigned {
     CallMaps = shade::MapsCallable,
     CallLightSample = lights::LightSampleCallable,
     CallLightIntersect = lights::LightIntersectCallable,
-    CallLightEval = lights::LightEvalCallable
+    CallLightEval = lights::LightEvalCallable,
+    CallLobeEval = shade::LobeEvalCallable,
+    CallLobeSample = shade::LobeSampleCallable,
+    CallLobeAlbedo = shade::LobeAlbedoCallable,
+    // The volume module's continuation callables (async_volumes.cu).
+    CallVolumeRadiance = 9,
+    CallSubsurfaceRadiance = 10,
+    CallVolumeTransmittance = 11,
+    // The DwaBase module's (async_dwa.cu), called by the material module.
+    CallDwaResolve = shade::DwaResolveCallable,
+    CallDwaLobes = shade::DwaLobesCallable,
+    // The extras module's (async_extras.cu), called by the path tracer.
+    CallCamera = surface::CameraCallable,
+    CallAovLight = aov::AovLightCallable,
+    CallAovVisibility = aov::AovVisibilityCallable,
+    CallMaterialAovs = aov::MaterialAovsCallable
 };
+
+// The path tracer's backend on the GPU: its rays, hits, materials, lights and volumes (async_integrator.h's Backend),
+// for every module that runs the integrators.
+static __device__ float3 f3(surface::V3 v) { return make_float3(v.x, v.y, v.z); }
+
+// A curve hit worked out again from its span (async_cpu.h's curveHit, the same arithmetic).
+static __device__ bool curveHit(const curves::Set& c, const surface::Ray& ray, resume::Hit& out) {
+    curves::Hit h;
+    if (!curves::intersectSpan(c, out.prim, ray.origin, ray.direction, ray.nearT, ray.farT, h)) return false;
+    out.t = h.t;
+    out.u = h.u;
+    out.v = h.v;
+    out.point = shade::V3{ray.origin.x + ray.direction.x * h.t, ray.origin.y + ray.direction.y * h.t, ray.origin.z + ray.direction.z * h.t};
+    out.origin = out.below = out.point;
+    const bool roundCubic = c.round && c.basis == curves::BasisBspline;
+    out.normal = roundCubic ? h.Ng : shade::normalize(-ray.direction);
+    const U32 first = curves::spanVertex(c, out.prim);
+    float radius;
+    if (c.basis == curves::BasisLinear) {
+        radius = curves::point(c, first).w * (1.0f - h.u) + curves::point(c, first + 1).w * h.u;
+    } else {
+        float w[4];
+        curves::cubicWeights(c.basis, h.u, w);
+        radius = w[0] * curves::point(c, first).w + w[1] * curves::point(c, first + 1).w + w[2] * curves::point(c, first + 2).w +
+                 w[3] * curves::point(c, first + 3).w;
+    }
+    out.epsilon = 1.5f * radius;
+    return shade::finite3(out.point) && out.epsilon > 0.0f;
+}
+
+struct GpuBackend {
+    // The sample's time in the shutter (async_integrator.h sets it): every ray is traced at it.
+    float time = 0.0f;
+    // Each sample starts here (async_integrator.h): its time, and no texture miss or deferral yet.
+    __device__ void setTime(float t) {
+        time = t;
+        missed = false;
+        deferFlag = false;
+    }
+    // The sample met a stand-in or a volume the GPU does not render: the CPU lane renders it instead.
+    bool deferFlag = false;
+    __device__ bool deferred() const { return deferFlag; }
+    __device__ bool standInBetween(surface::V3 o, surface::V3 d, float near, float far) {
+        if (!(near < far)) return false;
+        unsigned instance = ~0u, primitive = 0;
+        optixTrace(params.standInTraversable, f3(o), f3(d), near, far, time, 0xffu,
+                   OPTIX_RAY_FLAG_DISABLE_ANYHIT | OPTIX_RAY_FLAG_TERMINATE_ON_FIRST_HIT, 0, 1, 0, instance, primitive);
+        return instance != ~0u;
+    }
+    // Shadow linking is not on the GPU yet (async_gpu.h leaves a scene with it to the CPU).
+    U32 shadowReceiver = ~0u;
+    __device__ void shadowFor(U32, U32 receiver) { shadowReceiver = receiver; }
+    __device__ bool castsShadow(U32, bool) const { return true; }
+    // Lobe light sets are not on the GPU yet (async_gpu.h leaves a scene with them to the CPU).
+    U32 exitLightSet = ~0u;
+    __device__ bool inLobeSet(U32, U32) const { return true; }
+    // Light filters are not on the GPU yet (async_gpu.h leaves a scene with them to the CPU).
+    __device__ const lights::Filter* filters() const { return nullptr; }
+    __device__ surface::V3 filterMap(U32, U32, float, float) const { return surface::V3{1, 1, 1}; }
+    __device__ float filterVdb(U32, U32, surface::V3) const { return 1.0f; }
+    __device__ const lights::FilterList* filterList(U32, U32) const { return nullptr; }
+    __device__ __noinline__ resume::Hit trace(const surface::Ray& ray) {
+        const resume::Hit h = traceSurfaces(ray);
+        // A stand-in before the hit (or anywhere along a ray that hits nothing) defers the sample.
+        if (params.standInTraversable &&
+            standInBetween(ray.origin, ray.direction, ray.nearT, h.geom != ~0u && h.t > ray.nearT ? h.t : ray.farT))
+            deferFlag = true;
+        return h;
+    }
+    __device__ resume::Hit traceSurfaces(const surface::Ray& ray) {
+        unsigned instance = ~0u, primitive = 0;
+        optixTrace(params.traversable, f3(ray.origin), f3(ray.direction), ray.nearT, ray.farT, time, ray.mask & 0xffu,
+                   OPTIX_RAY_FLAG_DISABLE_ANYHIT | OPTIX_RAY_FLAG_CULL_BACK_FACING_TRIANGLES, 0, 1, 0, instance, primitive);
+        resume::Hit h;
+        if (instance == ~0u || instance >= params.config->meshes) return h;
+        h.geom = instance;
+        h.prim = primitive;
+        if (params.meshAttributes && params.meshAttributes[instance].curve.basis) {
+            if (!curveHit(params.meshAttributes[instance].curve, ray, h)) return resume::Hit{};
+            return h;
+        }
+        const auto m = params.geometry[instance];
+        if (primitive >= m.triangleCount) {
+            h.normal = {};
+            return h;
+        }
+        const auto t = m.triangles[primitive];
+        if (!resume::geometryHit(h, ray, m.vertices[t.a], m.vertices[t.b], m.vertices[t.c])) h.normal = {};
+        return h;
+    }
+    __device__ unsigned material(const resume::Hit& h, const surface::Ray& ray, surface::Lambert& out) {
+        const auto& c = *params.config;
+        if (h.geom >= c.meshes) return tex::Invalid;
+        out = params.materials[h.geom];
+        if (!c.textures) return tex::Ready;
+        if (!params.maps) return tex::Invalid;
+        const auto m = params.geometry[h.geom];
+        const auto t = m.triangles[h.prim];
+        tex::Footprint f;
+        if (!tex::footprint(m.vertices[t.a], m.vertices[t.b], m.vertices[t.c], ray, h.u, h.v, c.spp, f, c.spatial != 0))
+            return tex::Invalid;
+        const auto maps = params.maps[h.geom];
+        surface::V3* bases[2] = {&out.albedo, &out.emission};
+        const tex::Binding bindings[2] = {maps.diffuse, maps.emission};
+        RequestSink sink;
+        for (int i = 0; i < 2; ++i) {
+            const auto& b = bindings[i];
+            auto& v = *bases[i];
+            if (!b.image || (v.x == 0 && v.y == 0 && v.z == 0)) continue;
+            surface::V3 color;
+            const auto status = tex::lookup(b, f, color, sink);
+            if (status != tex::Ready) return status;
+            v = {v.x * color.x, v.y * color.y, v.z * color.z};
+        }
+        return tex::Ready;
+    }
+    __device__ U32 materialId(U32 geom) const { return params.meshMaterials[geom].offset; }
+    __device__ resume::Hit traceMaterial(surface::Ray ray, U32 material) {
+        for (int k = 0; k < 64; ++k) {
+            const resume::Hit h = trace(ray);
+            if (h.geom == ~0u || materialId(h.geom) == material) return h;
+            ray.nearT = h.t + fmaxf(1e-6f, h.t * 1e-6f);
+            if (!(ray.nearT < ray.farT)) break;
+        }
+        return resume::Hit{};
+    }
+    __device__ bool surfaceState(const resume::Hit& h, const surface::Ray& ray, shade::State& st) {
+        const auto& c = *params.config;
+        if (h.geom >= c.meshes) return false;
+        if (params.meshAttributes[h.geom].curve.basis) {
+            if (!shade::curveState(params.meshAttributes[h.geom], h.prim, h.u, h.v, h.normal, h.point, ray.direction, st)) return false;
+            st.geom = h.geom;
+            shade::curveDifferentials(params.meshAttributes[h.geom], ray, st.pixelSamples ? st.pixelSamples : c.spp, st);
+            return true;
+        }
+        const auto m = params.geometry[h.geom];
+        const auto t = m.triangles[h.prim];
+        if (!shade::hitState(params.meshAttributes[h.geom], h.prim, t.a, t.b, t.c, m.vertices[t.a], m.vertices[t.b],
+                             m.vertices[t.c], h.u, h.v, h.point, ray.direction, st))
+            return false;
+        st.geom = h.geom;
+        shade::hitDifferentials(params.meshAttributes[h.geom], h.prim, t.a, t.b, t.c, m.vertices[t.a], m.vertices[t.b],
+                                m.vertices[t.c], ray, st.pixelSamples ? st.pixelSamples : c.spp, st);
+        return true;
+    }
+    // A shadow ray's hit: its material's presence alone (presence shadows); a texture not yet resident marks the
+    // sample to be done again (textureMissed).
+    bool missed = false;
+    __device__ bool textureMissed() const { return missed; }
+    __device__ unsigned presenceAt(const resume::Hit& h, const surface::Ray& ray, float& presence) {
+        const auto& c = *params.config;
+        presence = 1.0f;
+        if (h.geom >= c.meshes) return tex::Ready;
+        shade::State st;
+        if (params.meshAttributes[h.geom].curve.basis) {
+            const shade::MeshAttributes& a = params.meshAttributes[h.geom];
+            if (!shade::curveState(a, h.prim, h.u, h.v, h.normal, h.point, ray.direction, st)) return tex::Ready;
+        } else {
+            const auto m = params.geometry[h.geom];
+            const auto t = m.triangles[h.prim];
+            if (!shade::hitState(params.meshAttributes[h.geom], h.prim, t.a, t.b, t.c, m.vertices[t.a], m.vertices[t.b],
+                                 m.vertices[t.c], h.u, h.v, h.point, ray.direction, st))
+                return tex::Ready;
+        }
+        st.geom = h.geom;
+        st.worldToRender = c.worldToRender;
+        st.worldToObject = params.meshAttributes[h.geom].worldToObject;
+        const DeviceTextures textures{params.textures, params.textureCount};
+        const unsigned status = materialPresence(params.meshMaterials[h.geom], st, textures, presence);
+        if (status == tex::Miss) missed = true;
+        return status;
+    }
+    // The path tracer's hit: its shading state, and its material's Bsdf (shade_material.h).
+    __device__ unsigned shade(const resume::Hit& h, const surface::Ray& ray, shade::State& st, shade::Bsdf& bsdf, float& presence) {
+        const auto& c = *params.config;
+        if (h.geom >= c.meshes) return tex::Invalid;
+        if (params.meshAttributes[h.geom].curve.basis) {
+            const shade::MeshAttributes& a = params.meshAttributes[h.geom];
+            if (!shade::curveState(a, h.prim, h.u, h.v, h.normal, h.point, ray.direction, st)) return tex::Invalid;
+            st.geom = h.geom;
+            st.worldToRender = c.worldToRender;
+            st.worldToObject = a.worldToObject;
+            shade::curveDifferentials(a, ray, st.pixelSamples ? st.pixelSamples : c.spp, st);
+            const DeviceTextures textures{params.textures, params.textureCount};
+            return shadeMaterial(params.meshMaterials[h.geom], st, textures, bsdf, presence);
+        }
+        const auto m = params.geometry[h.geom];
+        const auto t = m.triangles[h.prim];
+        if (!shade::hitState(params.meshAttributes[h.geom], h.prim, t.a, t.b, t.c, m.vertices[t.a], m.vertices[t.b],
+                             m.vertices[t.c], h.u, h.v, h.point, ray.direction, st))
+            return tex::Invalid;
+        st.geom = h.geom;
+        st.worldToRender = c.worldToRender;
+        st.worldToObject = params.meshAttributes[h.geom].worldToObject;
+        const shade::MaterialRecord& record = params.meshMaterials[h.geom];
+        shade::hitDifferentials(params.meshAttributes[h.geom], h.prim, t.a, t.b, t.c, m.vertices[t.a], m.vertices[t.b],
+                                m.vertices[t.c], ray, st.pixelSamples ? st.pixelSamples : c.spp, st);
+        const DeviceTextures textures{params.textures, params.textureCount};
+        return shadeMaterial(record, st, textures, bsdf, presence);
+    }
+    // A material's Bsdf and its presence: the material module's callables (async_material.cu), or here when the
+    // program is built whole (no XPU2_MATERIAL_MODULE).
+    __device__ unsigned shadeMaterial(const shade::MaterialRecord& m, const shade::State& st, const DeviceTextures& textures,
+                                      shade::Bsdf& bsdf, float& presence) {
+#if XPU2_MATERIAL_MODULE
+        return optixDirectCall<unsigned, const shade::MaterialRecord*, const float*, const shade::State*, const DeviceTextures*,
+                               shade::Bsdf*, float*, shade::DwaParams*, shade::GlitterScratch*>(
+            CallShade, &m, params.materialPool, &st, &textures, &bsdf, &presence, dwaSlots(), glitter());
+#else
+        return shade::shadeMaterial(m, params.materialPool, st, textures, bsdf, presence, dwaSlots(), glitter());
+#endif
+    }
+    __device__ unsigned materialPresence(const shade::MaterialRecord& m, const shade::State& st, const DeviceTextures& textures,
+                                         float& presence) {
+#if XPU2_MATERIAL_MODULE
+        return optixDirectCall<unsigned, const shade::MaterialRecord*, const float*, const shade::State*, const DeviceTextures*, float*>(
+            CallPresence, &m, params.materialPool, &st, &textures, &presence);
+#else
+        return shade::materialPresence(m, params.materialPool, st, textures, presence);
+#endif
+    }
+    __device__ bool visible(surface::V3 o, surface::V3 d) { return visible(o, d, __int_as_float(0x7f800000)); }
+    // Unoccluded up to distance (a shadow ray toward a light).
+    __device__ bool visible(surface::V3 o, surface::V3 d, float distance) { return visible(o, d, 0.0f, distance); }
+    // Unoccluded between near and far (a shadow ray from a curve skips its epsilon).
+    __device__ bool visible(surface::V3 o, surface::V3 d, float near, float distance) {
+        unsigned occluded = 1, unused = 0;
+        optixTrace(params.traversable, f3(o), f3(d), near, distance, time, 2u,  // SHADOW
+                   OPTIX_RAY_FLAG_DISABLE_ANYHIT | OPTIX_RAY_FLAG_DISABLE_CLOSESTHIT |
+                       OPTIX_RAY_FLAG_TERMINATE_ON_FIRST_HIT | OPTIX_RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
+                   0, 1, 1, occluded, unused);
+        // Unoccluded by what the GPU renders: a stand-in on the way could occlude it, so the CPU decides.
+        if (occluded == 0 && params.standInTraversable && standInBetween(o, d, near, distance)) deferFlag = true;
+        return occluded == 0;
+    }
+    __device__ shade::Bsdf& bsdf() {
+        return *reinterpret_cast<shade::Bsdf*>(params.scratch + U64L(optixGetLaunchIndex().x) * params.scratchStride);
+    }
+    __device__ paths::Pending* pending() {
+        return reinterpret_cast<paths::Pending*>(params.scratch + U64L(optixGetLaunchIndex().x) * params.scratchStride +
+                                                 ((sizeof(shade::Bsdf) + 15) & ~size_t(15)));
+    }
+    __device__ shade::DwaParams* dwaSlots() {
+        return reinterpret_cast<shade::DwaParams*>(params.scratch + U64L(optixGetLaunchIndex().x) * params.scratchStride +
+                                                   ((sizeof(shade::Bsdf) + 15) & ~size_t(15)) +
+                                                   ((sizeof(paths::Pending) * paths::MaxPending + 15) & ~size_t(15)));
+    }
+    __device__ shade::GlitterScratch* glitter() {
+        if (!params.glitterOffset) return nullptr;
+        return reinterpret_cast<shade::GlitterScratch*>(params.scratch + U64L(optixGetLaunchIndex().x) * params.scratchStride +
+                                                        params.glitterOffset);
+    }
+    __device__ const lights::Light& light(U32 i) const { return params.lights[i]; }
+    // The volumes, and a ray's crossings of their meshes past tnear, nearest first (the instances of visibility 2),
+    // each entering or leaving by the triangle's geometric normal; repeats at one distance dropped.
+    __device__ const volume::Shader* volumes() const { return params.volumes; }
+    __device__ volume::Grids volumeGrids() const { return volume::Grids{}; }  // VDB volumes are the CPU's
+    __device__ volume::Regions emissiveRegions() const { return volume::Regions{}; }  // so are emissive volumes
+    __device__ const float* walkSequences() const { return params.walkSequences; }
+    __device__ U32 volumeCrossings(surface::V3 o, surface::V3 d, float tnear, volume::Crossing* x, U32 max, U32 mask) {
+        if (!params.volumeTraversable) return 0;
+        U32 n = 0;
+        float t = tnear;
+        for (U32 k = 0; k < 4 * max && n < max; ++k) {
+            unsigned instance = ~0u, primitive = 0;
+            optixTrace(params.volumeTraversable, f3(o), f3(d), t, __int_as_float(0x7f800000), time, mask & 0xffu, OPTIX_RAY_FLAG_DISABLE_ANYHIT, 0, 1, 0,
+                       instance, primitive);
+            if (instance == ~0u || instance >= params.config->meshes) break;
+            const auto m = params.geometry[instance];
+            if (primitive >= m.triangleCount) break;
+            const auto tri = m.triangles[primitive];
+            const surface::V3 a = m.vertices[tri.a], b = m.vertices[tri.b], c = m.vertices[tri.c];
+            const surface::Ray ray{o, d, {}, {}, t, __int_as_float(0x7f800000)};
+            resume::Hit h;
+            if (!resume::geometryHit(h, ray, a, b, c)) break;
+            const surface::V3 ng = surface::cross(surface::add(b, surface::mul(a, -1.0f)), surface::add(c, surface::mul(a, -1.0f)));
+            const U32 v = U32(params.meshVolumes[instance]);
+            // A volume the GPU does not render (VDB, heterogeneous, emissive): the CPU lane renders the sample.
+            {
+                const volume::Shader& s = params.volumes[v];
+                if (s.kind != volume::KindBase || s.emission.x != 0.0f || s.emission.y != 0.0f || s.emission.z != 0.0f) deferFlag = true;
+            }
+            const U32 flags = surface::dot(d, ng) < 0.0f ? volume::Entry : volume::Exit;
+            if (!(n > 0 && x[n - 1].t == h.t && x[n - 1].volume == v && x[n - 1].flags == flags)) x[n++] = volume::Crossing{h.t, v, flags};
+            t = h.t + fmaxf(1e-6f, h.t * 1e-6f);
+        }
+        return n;
+    }
+    __device__ U32 lightSet(U32 geom) const { return params.meshLights[geom]; }
+    __device__ const lights::TreeNode* treeNodes() const { return params.lightTree; }
+    __device__ int treeRoot(U32 set) const { return params.lightTreeRoots ? params.lightTreeRoots[set] : -1; }
+    __device__ bool inSet(U32 set, U32 i) const { return (params.lightSetBits[size_t(set) * params.lightSetWords + (i >> 5)] >> (i & 31) & 1u) != 0; }
+    __device__ const aov::Tables& aovs() const { return *params.aovTables; }
+    __device__ int geomLabel(U32 geom) const { return params.geomLabels ? params.geomLabels[geom] : -1; }
+};
+
+#if XPU2_VOLUME_MODULE
+// The volumes' and subsurface's integrators in a program built in modules (INDEXER.md, 5): the volume module's
+// continuation callables (async_volumes.cu), found by argument-dependent lookup from the path tracer's calls
+// (async_integrator.h's volumeRadianceCall, subsurfaceRadianceCall, volumeTransmittanceCall).
+__device__ inline surface::V3 volumeRadianceCall(const mixed::Config& c, const sample::Identity& root, GpuBackend& backend, paths::Pending& pv,
+                                                 surface::V3 org, surface::V3 dir, float tnear, float tfar, surface::V3* alphaTransmittance,
+                                                 surface::V3* minTransmittance, VolumeCryptoShares* cryptoShares, const VolumeLpe* lpe,
+                                                 float* surfaceT) {
+    surface::V3 out{0, 0, 0};
+    optixContinuationCall<void, const mixed::Config*, const sample::Identity*, GpuBackend*, paths::Pending*, surface::V3, surface::V3, float,
+                          float, surface::V3*, surface::V3*, VolumeCryptoShares*, const VolumeLpe*, float*, surface::V3*>(
+        CallVolumeRadiance, &c, &root, &backend, &pv, org, dir, tnear, tfar, alphaTransmittance, minTransmittance, cryptoShares, lpe, surfaceT, &out);
+    return out;
+}
+__device__ inline surface::V3 subsurfaceRadianceCall(const mixed::Config& c, const sample::Identity& root, GpuBackend& backend, U32 lightSet,
+                                                     const paths::Pending& pv, U32 subsurfaceDepth, const shade::State& st, const resume::Hit& hit,
+                                                     surface::V3 rayDir, const shade::Bsdf& bsdf, bool doIndirect, paths::Pending* stack,
+                                                     U32& top, SampleStatus& status, const SubsurfaceLpe* lpe, shade::Color* ssAov) {
+    surface::V3 out{0, 0, 0};
+    optixContinuationCall<void, const mixed::Config*, const sample::Identity*, GpuBackend*, U32, const paths::Pending*, U32, const shade::State*,
+                          const resume::Hit*, surface::V3, const shade::Bsdf*, bool, paths::Pending*, U32*, SampleStatus*, const SubsurfaceLpe*,
+                          shade::Color*, surface::V3*>(CallSubsurfaceRadiance, &c, &root, &backend, lightSet, &pv, subsurfaceDepth, &st, &hit, rayDir,
+                                                       &bsdf, doIndirect, stack, &top, &status, lpe, ssAov, &out);
+    return out;
+}
+__device__ inline surface::V3 volumeTransmittanceCall(const mixed::Config& c, GpuBackend& backend, paths::Stream& s, surface::V3 org,
+                                                      surface::V3 dir, float tnear, float tfar, float scale, int depth) {
+    surface::V3 out{1, 1, 1};
+    optixContinuationCall<void, const mixed::Config*, GpuBackend*, paths::Stream*, surface::V3, surface::V3, float, float, float, int, surface::V3*>(
+        CallVolumeTransmittance, &c, &backend, &s, org, dir, tnear, tfar, scale, depth, &out);
+    return out;
+}
+#endif
+

@@ -35,7 +35,7 @@ GPU in the final build. A scene with anything not listed as done still renders, 
 | Quad meshes without UVs: MoonRay's per-quad default ST (getQuadST), st/uv primitive attributes | done, within noise |
 | Geometry outside the layer is not rendered (MoonRay renders the layer's geometry) | done |
 | A hit missing an attribute its shading requires: the fatal colour alone (no AOV, LPE or Cryptomatte) | done |
-| Normalized diffusion and dipole subsurface | done; 0.3-0.6% bright on a DwaBase ball (SS.albedo 1.0 x albedo, MoonRay 0.997 x), open |
+| Normalized diffusion and dipole subsurface | done; 0.3-0.6% bright on a DwaBase ball (SS.albedo 1.0 x albedo, MoonRay 0.997 x), open; the glass scene's dipole skin +0.55% against both MoonRay modes on two seeds, the rest of that scene exact |
 | Modo switches: USD specular | done |
 | Modo switches: opaque alpha, transmission roughness, toon terminator, fog alpha | todo |
 
@@ -64,7 +64,7 @@ GPU in the final build. A scene with anything not listed as done still renders, 
 | Quirk | XPU2 |
 |---|---|
 | Light-sample Russian roulette biases dim bounce light dark (0.1-4%, constant in spp) | not reproduced (tests use russian_roulette_threshold 0); XPU2 = scalar mode |
-| A BSDF ray meeting two lights picks one from a non-uniform sequence: 3% dark there (mirror reflecting a light in front of the environment) | not reproduced; XPU2 = scalar mode = exact |
+| A BSDF ray meeting two lights picks one from a non-uniform sequence: 3% dark there (mirror reflecting a light in front of the environment) | not reproduced; XPU2 = scalar mode = exact (gl1: the chrome's reflection of the key light +3.6% against vector mode, within noise against scalar) |
 | Visibility misses counted once per lobe (insert's result discarded in accumVisibilityAovsOccluded) | reproduced |
 | A camera ray seeing a light past every surface adds nothing to light AOVs (case 1 redeclares lpeStateId) | reproduced |
 | Subsurface light samples give unoccluded LPEs the attenuated value and count visibility at any depth | reproduced |

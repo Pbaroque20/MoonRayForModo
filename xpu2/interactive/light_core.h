@@ -949,7 +949,8 @@ X2_CALL bool intersectShapeHere(const Light& l, V3 p, const V3* n, V3 wi, float 
 // environment) or its own (a distant light), the reference's radiance times the rect's. No light beyond the portal
 // (canIlluminate). The shapes' functions are called directly: no recursion on the GPU.
 // The light module's callables' places in the GPU program's binding table (async_gpu_device.h's MaterialCall).
-constexpr U32 LightSampleCallable = 3, LightIntersectCallable = 4, LightEvalCallable = 5;
+// (An enumerator, not a constexpr: no global in every relocatable module.)
+enum : U32 { LightSampleCallable = 3, LightIntersectCallable = 4, LightEvalCallable = 5 };
 // The shapes as the path tracer calls them: on the GPU, in a program built in modules (XPU2_LIGHT_MODULE), the light
 // module's callables (async_lights.cu); elsewhere the functions themselves.
 X2_HD inline bool sampleShape(const Light& l, V3 p, const V3* n, const float r[3], V3& wi, Hit& h, float footprint = NoFootprint) {

@@ -1626,6 +1626,28 @@ X2_HD inline bool filterAllows(const Backend& backend, U32 geom, U32 light, cons
     return lights::filterListCanIlluminate(backend.filters(), *list, d);
 }
 
+// The volumes' and subsurface's integrators as the path tracer calls them (INDEXER.md, 5): these on the CPU and in a
+// GPU program built whole; in a program built in modules the GPU backend's overloads (async_gpu_device.h), found by
+// argument-dependent lookup, call the volume module's continuation callables.
+template <class Backend>
+X2_HD inline V3 volumeRadianceCall(const mixed::Config& c, const sample::Identity& root, Backend& backend, paths::Pending& pv, V3 org, V3 dir,
+                                   float tnear, float tfar, V3* alphaTransmittance, V3* minTransmittance, VolumeCryptoShares* cryptoShares,
+                                   const VolumeLpe* lpe, float* surfaceT) {
+    return volumeRadiance(c, root, backend, pv, org, dir, tnear, tfar, alphaTransmittance, minTransmittance, cryptoShares, lpe, surfaceT);
+}
+template <class Backend>
+X2_HD inline V3 subsurfaceRadianceCall(const mixed::Config& c, const sample::Identity& root, Backend& backend, U32 lightSet,
+                                       const paths::Pending& pv, U32 subsurfaceDepth, const shade::State& st, const resume::Hit& hit, V3 rayDir,
+                                       const shade::Bsdf& bsdf, bool doIndirect, paths::Pending* stack, U32& top, SampleStatus& status,
+                                       const SubsurfaceLpe* lpe, shade::Color* ssAov) {
+    return subsurfaceRadiance(c, root, backend, lightSet, pv, subsurfaceDepth, st, hit, rayDir, bsdf, doIndirect, stack, top, status, lpe, ssAov);
+}
+template <class Backend>
+X2_HD inline V3 volumeTransmittanceCall(const mixed::Config& c, Backend& backend, paths::Stream& s, V3 org, V3 dir, float tnear, float tfar,
+                                        float scale, int depth) {
+    return volumeTransmittance(c, backend, s, org, dir, tnear, tfar, scale, depth);
+}
+
 template <class Backend>
 X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 index, Backend& backend, Radiance& out) {
     using namespace paths;
@@ -1742,7 +1764,7 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
         float volumeSurfaceT = 3.402823466e38f;
         if (c.volumeCount) {
             const VolumeLpe volumeLpe{&at, aovs, aovDepths};
-            volumeLight = volumeRadiance(c, root, backend, pv, ray.origin, ray.direction, ray.nearT, hit.geom == ~0u ? ray.farT : hit.t, &volumeAlphaT,
+            volumeLight = volumeRadianceCall(c, root, backend, pv, ray.origin, ray.direction, ray.nearT, hit.geom == ~0u ? ray.farT : hit.t, &volumeAlphaT,
                                          &volumeMinT, cryptoVolumes ? &volumeShares : nullptr, lpeOn && pv.lpe >= 0 ? &volumeLpe : nullptr,
                                          pv.depth == 0 ? &volumeSurfaceT : nullptr);
             radiance += volumeLight;
@@ -2074,7 +2096,7 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
                 sl.backup = out.aovBackup;
                 sl.state = aov::lpeSubsurface(at, pv.lpe, shade::labelLpeId(bsdf.bssrdf.label));
             }
-            radiance += subsurfaceRadiance(c, root, backend, lightSet, pv, subsurfaceDepth, st, hit, ray.direction, bsdf, doIndirect,
+            radiance += subsurfaceRadianceCall(c, root, backend, lightSet, pv, subsurfaceDepth, st, hit, ray.direction, bsdf, doIndirect,
                                            stack, top, status, lpeOn ? &sl : nullptr, aovs ? &ssAov : nullptr);
             if (status != SampleStatus::Done) return status;
         }
@@ -2328,7 +2350,7 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
                         sample::Identity tid = lid;
                         tid.branch = childBranch(lightAddress, s, 0xfffb);
                         Stream vs(tid, pv.depth, 0);
-                        tr = volumeTransmittance(c, backend, vs, shadowOrigin, wi, shadowNear, shadowFar, 1.0f, int(pv.depth) + 1);
+                        tr = volumeTransmittanceCall(c, backend, vs, shadowOrigin, wi, shadowNear, shadowFar, 1.0f, int(pv.depth) + 1);
                         t = t * tr;
                     }
                     radiance += t;
@@ -2525,7 +2547,7 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
                         sample::Identity tid = bid;
                         tid.branch = childBranch(sampleBranch, 0xfffb, 0);
                         Stream vs(tid, pv.depth, 0);
-                        tr = volumeTransmittance(c, backend, vs, shadowFrom, wi, shadowNear, shadowFar, 1.0f, int(pv.depth) + 1);
+                        tr = volumeTransmittanceCall(c, backend, vs, shadowFrom, wi, shadowNear, shadowFar, 1.0f, int(pv.depth) + 1);
                         direct = direct * tr;
                     }
                     radiance += direct;

@@ -639,10 +639,22 @@ X2_HD inline CameraResult cameraSampleAt(const Camera& c, float x, float y, floa
     }
 }
 // Camera::createRay at the sample's time (shutter open 0, close 1): a still camera as it is, a moving one at that time.
-X2_HD inline CameraResult cameraSample(const Camera& c, float x, float y, float lensU, float lensV, float time, Ray& out) {
+X2_HD inline CameraResult cameraSampleHere(const Camera& c, float x, float y, float lensU, float lensV, float time, Ray& out) {
     if (!c.motion) return cameraSampleAt(c, x, y, lensU, lensV, out);
     const Camera m = cameraAtTime(c, time);
     return cameraSampleAt(m, x, y, lensU, lensV, out);
+}
+// The extras module's callable (async_extras.cu): an enumerator, so no global in every relocatable module.
+enum : unsigned { CameraCallable = 14 };
+// The camera's ray as the path tracer asks for it: on the GPU, in a program built in modules (XPU2_EXTRAS_MODULE), the
+// extras module's callable; elsewhere the function itself.
+X2_HD inline CameraResult cameraSample(const Camera& c, float x, float y, float lensU, float lensV, float time, Ray& out) {
+#if defined(__CUDACC__) && defined(XPU2_EXTRAS_MODULE)
+    return CameraResult(optixDirectCall<unsigned, const Camera*, float, float, float, float, float, Ray*>(CameraCallable, &c, x, y, lensU, lensV,
+                                                                                                         time, &out));
+#else
+    return cameraSampleHere(c, x, y, lensU, lensV, time, out);
+#endif
 }
 
 }  // namespace xpu2::interactive::surface
