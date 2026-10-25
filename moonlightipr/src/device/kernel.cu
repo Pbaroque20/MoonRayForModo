@@ -2698,7 +2698,7 @@ ML_INLINE MappedSlots evalLayers(const DeviceMaterial& material, const DeviceMes
         float3 value = vec(layer.value);
         float mask = masked;
         const bool patterned = (layer.flags & (LAYER_CHECKER | LAYER_NOISE)) != 0;
-        if (layer.flags & LAYER_PROCEDURAL) {
+        if (ML_HAS(FEATURE_PROCEDURAL) && (layer.flags & LAYER_PROCEDURAL)) {
             // Modo's pattern through the object at this point, in the texture locator's space (modo_patterns.h): how
             // much of the first colour there is, with its bias and gain.
             const float x = layer.rows[0] * position.x + layer.rows[1] * position.y + layer.rows[2] * position.z + layer.rows[3];
