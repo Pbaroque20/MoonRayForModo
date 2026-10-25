@@ -565,6 +565,9 @@ SceneSettings SceneLoader::apply(const std::string& path) {
         layer.octaves = in.value<float>();
         layer.lacunarity = in.value<float>();
         layer.persistence = in.value<float>();
+        layer.pattern = in.value<uint32_t>();
+        in.floats(layer.settings, 8);
+        in.floats(layer.rows, 12);
     }
     // Runs of a count and that many images, one per UDIM tile from 1001 on; -1 where one is missing.
     std::vector<int32_t> tiles = in.array<int32_t>(in.value<uint32_t>());
@@ -642,7 +645,7 @@ SceneSettings SceneLoader::apply(const std::string& path) {
         lightFilters[l].resize(in.value<uint32_t>());
         for (LightFilter& filter : lightFilters[l]) {
             const uint32_t filterKind = in.value<uint32_t>();
-            if (filterKind > LightFilter::Vdb) throw std::runtime_error("MoonLightIPR scene has an unknown light filter");
+            if (filterKind > LightFilter::Group) throw std::runtime_error("MoonLightIPR scene has an unknown light filter");
             filter.kind = LightFilter::Kind(filterKind);
             filter.flags = in.value<uint32_t>();
             in.floats(filter.values, 4);

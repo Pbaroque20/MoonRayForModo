@@ -160,6 +160,8 @@ def hair_toon(get, note):
 LAYER_INVERT, LAYER_FLIP_RED, LAYER_FLIP_GREEN, LAYER_FLIP_BLUE = 2, 4, 8, 16
 LAYER_ALPHA_MASK, LAYER_ALPHA_ONLY, LAYER_COVERAGE_U, LAYER_COVERAGE_V, LAYER_PICK_SHIFT = 32, 64, 128, 256, 9
 LAYER_RAMP, LAYER_CHECKER, LAYER_NOISE, LAYER_UDIM = 1 << 16, 1 << 17, 1 << 18, 1 << 19
+LAYER_PROCEDURAL = 1 << 21     # Modo's pattern through the object (modo_patterns.h, procedurals.solid)
+IDENTITY_ROWS = ((1.0, 0.0, 0.0, 0.0), (0.0, 1.0, 0.0, 0.0), (0.0, 0.0, 1.0, 0.0))
 BLEND_REORIENTED_NORMAL = 15
 WRAP = {'repeat': 0, 'edge': 1, 'mirror': 2, 'reset': 3}
 TEXTURE_FLOAT, TEXTURE_SRGB, TEXTURE_WRAP_U_SHIFT, TEXTURE_WRAP_V_SHIFT = 1, 2, 2, 4
@@ -913,15 +915,16 @@ class Compiler:
 
     def layer(self, channel, blend=0, flags=0, texture=-1, slot=0, value=(0, 0, 0), opacity=1.0, gain=1.0, offset=0.0,
               scale=(1, 1), gamma=1.0, bias=.5, gain_curve=.5, color2=(1, 1, 1), alpha1=1.0, alpha2=1.0,
-              octaves=4, lacunarity=2.0, persistence=.5):
+              octaves=4, lacunarity=2.0, persistence=.5, pattern=0, settings=(0, 0, 0, 0, 0, 0, .5, .5), rows=IDENTITY_ROWS):
         opacity = float(opacity)
         if not math.isfinite(opacity) or not 0 <= opacity <= 1:
             raise ValueError('Layer opacity must be between zero and one')
         numbers = triple(value) + [opacity, gain, offset, float(scale[0]), float(scale[1]), gamma, bias, gain_curve] + triple(color2) + [
             alpha1, alpha2, octaves, lacunarity, persistence]
-        if not all(math.isfinite(float(v)) for v in numbers):
+        shape = [float(v) for v in settings] + [float(v) for row in rows for v in row]
+        if len(shape) != 20 or not all(math.isfinite(float(v)) for v in numbers + shape):
             raise ValueError('Layer contains a non-finite number')
-        self.layers.append(struct.pack('<3Ii1I19f', channel, blend, flags, texture, slot, *numbers))
+        self.layers.append(struct.pack('<3Ii1I19fI20f', channel, blend, flags, texture, slot, *numbers, int(pattern), *shape))
 
     def material(self, material, name):
         """Append the material's layers; return its packed record."""
@@ -1037,7 +1040,8 @@ class Compiler:
         for layer in layers:
             layer = dict(layer)
             effect = textures.EFFECT_ALIASES.get(layer['effect'], layer['effect'])
-            if layer.get('procedural'):
+            solid = layer.get('solid_map')
+            if layer.get('procedural') and not solid:
                 # The plugin bakes these patterns to an image for MoonRay too.
                 try:
                     from .procedurals import bake
@@ -1095,7 +1099,14 @@ class Compiler:
                 if effect == 'layerMask':
                     pending.pop(layer.get('mask_target', ''), None)
 
-            if kind == 'constant':
+            if solid:
+                # Worked out on the GPU through the object at each point, as MoonRay's ModoProceduralMap does.
+                flags |= LAYER_PROCEDURAL
+                value = solid['color1']
+                extra = dict(color2=solid['color2'], alpha1=float(solid['alpha1']), alpha2=float(solid['alpha2']),
+                             pattern=int(solid['pattern']) | (int(solid['type']) << 8),
+                             settings=list(solid['settings'])[:6] + [float(solid['bias']), float(solid['gain'])], rows=solid['rows'])
+            elif kind == 'constant':
                 value = layer['value']
             elif kind == 'gradient':
                 data = layer['gradient']

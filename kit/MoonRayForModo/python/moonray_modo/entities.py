@@ -506,11 +506,14 @@ def inverse_rows(matrix):
     return [[inv[0 * 4 + i], inv[1 * 4 + i], inv[2 * 4 + i], inv[12 + i]] for i in range(3)]
 
 
-def filter_records(entities, names, owner, warnings):
+def filter_records(entities, names, owner, warnings, within=()):
     """The light filters named on a light, as MoonLightIPR applies them: an intensity scale, a
-    decay over distance, or a colour ramp. The kinds it cannot apply are named in warnings."""
+    decay over distance, or a colour ramp. The kinds it cannot apply are named in warnings. within holds the Combine
+    filters this list is inside, so that one holding itself is not followed round."""
     from .working_space import color as working_color
     records = []
+    if isinstance(names, str):
+        names = [part.strip() for part in names.split(',') if part.strip()]
     for name in names or ():
         found = [e for e in entities if name in (e['name'], e['identity']) and catalog()[e['class']]['category'] == 'lightfilter']
         if len(found) != 1:
@@ -520,7 +523,15 @@ def filter_records(entities, names, owner, warnings):
         kind = entity['class']
         if not value(entity, 'on'):
             continue
-        if kind == 'IntensityLightFilter':
+        if kind == 'CombineLightFilter':
+            # The filters it holds, joined by its mode: multiplied, the least, the most, added or the first less the rest.
+            if entity['identity'] in within:
+                warnings.append('%s holds itself; MoonLightIPR leaves it out.' % entity['name'])
+                continue
+            held = entity['parameters'].get('light_filters') or []
+            records.append({'kind': 'combine', 'mode': int(value(entity, 'mode')),
+                            'children': filter_records(entities, held, owner, warnings, tuple(within) + (entity['identity'],))})
+        elif kind == 'IntensityLightFilter':
             scale = [c * float(value(entity, 'intensity')) * 2 ** float(value(entity, 'exposure')) for c in working_color(value(entity, 'color'))]
             if value(entity, 'invert'):
                 scale = [1 / c if c else c for c in scale]
@@ -1048,6 +1059,15 @@ FILTER_INPUTS = {
 FILTER_NEEDS = {'ShadowDisplayFilter': (), 'RampDisplayFilter': (), 'ImageDisplayFilter': ()}
 
 
+def filter_inputs_completed():
+    """The MoonRay Source Override that gives a display filter the inputs MoonRay refuses it without."""
+    try:
+        from .preferences import Preferences
+        return bool(Preferences().get('filter_inputs'))
+    except Exception:
+        return True
+
+
 def toon_lines_apart():
     """The MoonRay Source Override that lets a Toon display filter give its lines apart from its shading."""
     try:
@@ -1061,12 +1081,13 @@ def completed_filters(entities, warnings):
     """The entities, each display filter with every input MoonRay needs: one left empty takes the output it starts
     on, said in a notice; a filter missing one with nothing to take is left out, said, rather than drawn pink."""
     result = []
+    complete = filter_inputs_completed()
     for entity in entities:
         if entity['class'] == 'ToonDisplayFilter' and entity['parameters'].get('output_mode') and not toon_lines_apart():
             # The MoonRay Source Override is off: the shading with its lines, as MoonRay itself gives it.
             entity = dict(entity, parameters={k: v for k, v in entity['parameters'].items() if k != 'output_mode'})
         inputs = FILTER_INPUTS.get(entity['class'])
-        if not inputs or catalog()[entity['class']]['category'] != 'displayfilter':
+        if not complete or not inputs or catalog()[entity['class']]['category'] != 'displayfilter':
             result.append(entity)
             continue
         parameters, missing = dict(entity['parameters']), []

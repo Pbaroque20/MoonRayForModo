@@ -55,7 +55,7 @@ const unsigned LAYER_IMAGE = 1, LAYER_INVERT = 2, LAYER_FLIP_RED = 4, LAYER_FLIP
                // Where the row's value comes from when it is not a constant or one image: a gradient
                // looked up by another channel, a checker or noise pattern, or one image per UDIM tile.
                LAYER_RAMP = 1 << 16, LAYER_CHECKER = 1 << 17, LAYER_NOISE = 1 << 18, LAYER_UDIM = 1 << 19,
-               LAYER_CURVES = 1 << 20;  // gamma, bias or gain differ from their neutral values
+               LAYER_CURVES = 1 << 20, LAYER_PROCEDURAL = 1 << 21;  // gamma, bias or gain differ from their neutral values
 const unsigned UV_SLOTS = 8;
 
 // One row of a material's layer stack: a constant or an image blended over what is below it.
@@ -79,6 +79,11 @@ struct DeviceLayer {
     float alpha1, alpha2;           // how much of the row a pattern's two colours cover
     float octaves, lacunarity, persistence;     // noise
     float pad;
+    // LAYER_PROCEDURAL: Modo's pattern (bits 0-7) and its Type (8-15), its six settings then its bias and gain, and
+    // rows that take a point of the world into the texture locator's space (modo_patterns.h, shared with MoonRay).
+    unsigned pattern;
+    float settings[8];
+    float rows[12];
 };
 
 // The fixed uber-shader: starting values for every channel, then the layers that modify them.
@@ -271,6 +276,10 @@ struct DeviceLight {
 // RodLightFilter, BarnDoorLightFilter and CookieLightFilter_v2. A plain intensity filter is folded into the light's
 // radiance instead.
 const unsigned FILTER_DECAY = 0, FILTER_RAMP = 1, FILTER_ROD = 2, FILTER_BARN = 3, FILTER_COOKIE = 4, FILTER_VDB = 5;
+// An intensity filter inside a Combine (b holds its colour times its strength; alone, a light takes it in its colour),
+// and a Combine: flags hold its mode below and, from bit 8, how many of the filters after it it joins.
+const unsigned FILTER_INTENSITY = 6, FILTER_GROUP = 7;
+const unsigned FILTER_JOIN_MULTIPLY = 0, FILTER_JOIN_MIN = 1, FILTER_JOIN_MAX = 2, FILTER_JOIN_ADD = 3, FILTER_JOIN_SUBTRACT = 4;
 const unsigned FILTER_INVERT = 1;       // rod, barn door, cookie
 const unsigned FILTER_ORTHO = 2, FILTER_PHYSICAL = 4;      // barn door: how it projects, and through the light's own ray
 const unsigned FILTER_WHITE = 2, FILTER_EDGELESS = 4;      // cookie: lit outside its picture; its picture read past its edge

@@ -8,6 +8,8 @@ The current release is [0.4.3.1](https://github.com/Pbaroque20/MoonRayForModo/re
 
 ## Coming next
 
+- **Modo's procedural textures through the object, at render time**: Noise (simple, fractal, turbulence), Cellular, Checker, Grid, Dots, Wood, Weave and Ripples with Modo's Solid projection are worked out at each point in MoonRay (a new MoonRay map, ModoProceduralMap) and in MoonLightIPR, from one shared piece of code: no baking, no UVs, no resolution. Grid's and Dots' Cube and every Noise and Checker type now draw. After Modo's patterns, not yet compared with Modo's renders.
+- **MoonLightIPR draws a Combine light filter**: the filters it holds, joined as it says (multiplied, the least, the most, added or the first less the rest), Intensity filters among them. MoonLightIPR already drew the Intensity, Decay, Color Ramp, Rod, Barn Door, VDB and Cookie (v2) filters.
 - **Light filters on MoonRay lights list at once**: a filter attached or detached shows in "attached light filters" straight away, not once the light is selected again; choosing one there says it detaches it, "(choose to detach)".
 - **Previews on texture nodes** in the graph editor: each texture node shows what it makes, rendered by MoonRay in the background and kept until something feeding it changes (View > Previews on Texture Nodes).
 - **Toon lines apart from the shading**: a Toon display filter's Output Mode gives its ink lines alone, white on black, or its shading without them; add one of each to composite the lines yourself. A MoonRay Source Override in Preferences, on by default.
@@ -21,7 +23,7 @@ The current release is [0.4.3.1](https://github.com/Pbaroque20/MoonRayForModo/re
 - **A colour correction on an image is sharp in MoonLightIPR**: it is baked over one repeat of the image at 2048 pixels and laid on as the image is, where it was 512 pixels over the whole of the UVs.
 - **Turning an environment image is followed at once**: the scene's meshes are no longer read again for it.
 - **A Modo package (.lpk)** can be made of a release, kit and runtime in one file to drop onto Modo (tools/package_lpk.py).
-- **Display filters no longer come out pink for want of an input.** Each starts on every picture MoonRay needs it to have (a Toon filter on Albedo, Camera depth, Direct diffuse, Direct glossy and Shading normal; Depth of Field on Camera depth; Over on Alpha). One left empty in a scene takes that picture, with a notice, and one that cannot be given what it needs is left out, said, rather than drawn pink.
+- **Display filters no longer come out pink for want of an input.** Each starts on every picture MoonRay needs it to have (a Toon filter on Albedo, Camera depth, Direct diffuse, Direct glossy and Shading normal; Depth of Field on Camera depth; Over on Alpha). One left empty in a scene takes that picture, with a notice, and one that cannot be given what it needs is left out, said, rather than drawn pink. A MoonRay Source Override in Preferences ("Display filters given the inputs they need"), on by default.
 - **Modo's light volumetrics and environment fog render**, in MoonRay and in MoonLightIPR. A point light with Volumetrics on lights a sphere of fog, a spot light its cone and a directional light a cylinder, sized by the light's volumetric Radius, Height and Base, and thick as its light material's Density, Scattering, Scattering Color, Attenuation and Shift say; only that light lights it. The Environment Material's fog is fog around the camera, lit by the environment: Exponential at its density, Linear from Fog Start and thick by Fog End, Layered up to its height. Not yet compared with Modo's own renders.
 
 ## New in 0.4.3.1
@@ -393,7 +395,7 @@ Comparison audit between Modo 16.1v9 and MoonLightIPR, the realtime preview: wha
 | Unreal, Unity, glTF and AxF materials | ![no](docs/images/feature-no.svg) |  |
 | **Shader Tree** |  |  |
 | Image maps: UV and projections, UDIMs, Low and High values | ![yes](docs/images/feature-yes.svg) | Up to 8 UV sets a scene; images at most 4096 pixels a side |
-| Procedural textures | ![partly](docs/images/feature-partly.svg) | The patterns the plugin bakes for MoonRay, without their alpha |
+| Procedural textures | ![partly](docs/images/feature-partly.svg) | Modo's eight built-in patterns with a Solid projection, through the object as MoonRay draws them; other projections baked flat; Enhance: Modo's patterns not yet |
 | Layer blend modes | ![yes](docs/images/feature-yes.svg) | All of them, with normal map blending |
 | Bump and normal maps | ![yes](docs/images/feature-yes.svg) |  |
 | Displacement and Stencil layers | ![yes](docs/images/feature-yes.svg) | Displacement layers, and a node graph's Normal, Vector, Combine and Switch displacement nodes, as MoonRay's, a displaced mesh split evenly up to 400,000 triangles; stencils cut the surface as MoonRay's do |
