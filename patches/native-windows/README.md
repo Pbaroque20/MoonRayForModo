@@ -147,6 +147,39 @@ it does a `DwaBaseMaterial` one (`test-results/issue-129/check_albedo.py`).
 
 *The render, then denoised with the switch off (as noisy as rendered: the albedo guide is full of specks) and on.*
 
+## `mcrt_denoise.patch`: the denoiser cleans its guides first (`MOONRAY_MODO_DENOISE_CLEAN_GUIDES`)
+
+Applied by `tools/port_denoise_overrides.py`, behind the preference "Denoiser cleans its guides first", on by default.
+The plugin starts `denoise.exe` with the same environment as MoonRay, so the switch reaches it.
+
+### What MoonRay does
+
+`OIDNDenoiserImpl` hands Open Image Denoise the albedo and normal guides as rendered, and leaves `cleanAux` off: the
+guides are taken to be noisy, and the denoiser trusts them less.
+
+### Why that fails
+
+At a preview's sample counts the guides are close to clean (a material's albedo and a surface's normal change little
+from sample to sample), but trusted less, they help less: on textured, bumpy and see-through surfaces the denoiser
+keeps more of the render's noise and blurs what the guides would have kept. Open Image Denoise's own documentation
+advises cleaning the guides with filters of their own and setting `cleanAux` for the best quality.
+
+### The change
+
+With the switch on, each guide is cleaned first by an `RT` filter of its own, in place, and the beauty's filter is
+told the guides are clean (`cleanAux`). Off, the guides are used as rendered. OptiX has no such mode: with it the switch
+changes nothing.
+
+### How it was checked
+
+MoonRay renders at 16 samples a pixel, denoised by `denoise.exe -mode oidn_cpu` as the plugin runs it, against the
+same scenes at 1,024 (8-bit RMS of the displayed picture): a translucent, scaled dragon on a floor 3.58 to 3.27 (4.77
+to 4.36 a stop brighter); a glass, a mirror and a skin ball 2.30 to 1.67 where their highlights show, level (2.17,
+2.21) at an exposure that clips them. Tried and left out on the same pictures: pulling fireflies down before
+denoising helped only by flattening bright highlights' edges, which would dim a thin rim light too; giving OptiX's HDR
+model the picture's brightness (`optixDenoiserComputeIntensity`), and OptiX's AOV model, each gave a picture identical to
+MoonRay's own (OptiX measures the brightness itself when it is not given one).
+
 ## `moonray.patch`: volumes in Cryptomatte (`MOONRAY_MODO_CRYPTO_VOLUMES`)
 
 Applied by `tools/port_crypto_volumes.py`, behind a switch of its own (the plugin's preference, on by default).

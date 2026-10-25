@@ -26,7 +26,7 @@
       "commit": "0050e726309a533e7964bd05380430e6b06cce7a",
       "origin": "https://github.com/OpenMoonRay/mcrt_denoise",
       "patch": "patches/native-windows/mcrt_denoise.patch",
-      "patch_sha256": "b118bc10fa628d8af8707fd93c95756ef7ac9fec9ddfaa6e2d835a872d133ed7"
+      "patch_sha256": "3d74b39edfc94052defc46a418513bb1ea9aa9c65ec38b7186f122abc5d8c3ba"
     },
     "moonshine": {
       "path": "upstream/openmoonray/moonray/moonshine",

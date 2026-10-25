@@ -30,6 +30,8 @@ def environment(directory):
     env['MOONRAY_MODO_TOON_TERMINATOR'] = '1' if toon_terminator() else '0'
     # And a clean albedo of toon materials for the denoiser's guide (toon_albedo).
     env['MOONRAY_MODO_TOON_ALBEDO'] = '1' if toon_albedo() else '0'
+    # The denoiser (denoise.exe, started with this environment too) cleans its guides first (denoise_clean_guides).
+    env['MOONRAY_MODO_DENOISE_CLEAN_GUIDES'] = '1' if denoise_clean_guides() else '0'
     # And fog in Cryptomatte, with what lies behind it covered only as much as shows through (crypto_volumes).
     env['MOONRAY_MODO_CRYPTO_VOLUMES'] = '1' if crypto_volumes() else '0'
     # The fog in front of a see-through surface in alpha (fog_alpha), and each Cryptomatte sample counted once
@@ -222,6 +224,13 @@ def toon_albedo():
     """Whether MoonRay's albedo output gives a toon material its own colour: the denoiser's guide, which is otherwise
     full of bright specks on toon surfaces, and the denoised picture as noisy as the render."""
     return _switch('toon_albedo', 'MOONRAY_MODO_TOON_ALBEDO')
+
+
+def denoise_clean_guides():
+    """Whether Open Image Denoise cleans the albedo and normal guides first and trusts them (cleanAux), in the
+    denoiser of MoonRay's runtime (tools/port_denoise_overrides.py). MoonRay's own uses them as rendered and trusts
+    them less, leaving more of the render's noise on textured, bumpy and see-through surfaces."""
+    return _switch('denoise_clean_guides', 'MOONRAY_MODO_DENOISE_CLEAN_GUIDES')
 
 
 def crypto_volumes():

@@ -23,6 +23,8 @@ KEYS = {
     # Toon materials denoise as other materials do: MoonRay's albedo output gives them their own colour
     # (native.toon_albedo).
     'toon_albedo': (True, bool),
+    # Open Image Denoise cleans the albedo and normal guides first and trusts them (native.denoise_clean_guides).
+    'denoise_clean_guides': (True, bool),
     # Moving lights blur: MoonRay's mb switch set on a light that moves during the shutter (native.light_motion).
     'light_motion': (True, bool),
     # Fog in Cryptomatte, with mattes of its own (native.crypto_volumes).
