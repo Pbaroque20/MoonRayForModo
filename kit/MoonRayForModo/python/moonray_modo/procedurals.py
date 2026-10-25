@@ -273,10 +273,190 @@ ENHANCE = {
 }
 
 
+def _tiles(*own):
+    """A Tiles pattern's settings: its own from the first, then the edge noise they all have from the seventeenth."""
+    return own + (None,) * (16 - len(own)) + ('NoiseSeed', 'Octaves', 'Magnitude', 'Scale', 'Detail')
+
+
+# The Tiles family, 160 on. They have no Lower and Upper; their Noise Type is their edge noise's.
+_TILE = ('Seed', 'Distrib', 'Grout', 'Bevel')
+ENHANCE.update({
+    'val.Tiles_Basket.RJJ': (160, 'NoiseType', _tiles('ThreadAWidth', 'ThreadBWidth', 'CThread', 'CWeave', 'CThread2', 'CWeave2', 'ThreadAFreq',
+                                                     'ThreadAAmp', 'ThreadBFreq', 'ThreadBAmp', 'ThreadA', 'ThreadB', 'PatternType')),
+    'val.Tiles_BathTile.RJJ': (161, 'NoiseType', _tiles('Seed', 'Stagger', 'Distrib', 'Grout', 'Bevel')),
+    'val.Tiles_Bricks.RJJ': (162, 'NoiseType', _tiles('Seed', 'Stagger', 'Distrib', 'Grout', 'Bevel', 'Height', 'Width')),
+    'val.Tiles_Checks.RJJ': (163, 'NoiseType', _tiles('Seed', 'Stagger', 'Distrib', 'Softness')),
+    'val.Tiles_Cornerless.RJJ': (164, 'NoiseType', _tiles(*_TILE)),
+    'val.Tiles_Cubes.RJJ': (165, 'NoiseType', _tiles('Seed')),
+    'val.Tiles_DashLine.RJJ': (166, 'NoiseType', _tiles('Seed', 'Pattern', 'Width', 'Smooth')),
+    'val.Tiles_DiamondDeck.RJJ': (167, 'NoiseType', _tiles(*_TILE)),
+    'val.Tiles_FishScales.RJJ': (168, 'NoiseType', _tiles('Seed', 'Distrib', 'Bevel')),
+    'val.Tiles_HexTile.RJJ': (169, 'NoiseType', _tiles(*_TILE)),
+    'val.Tiles_Lattice1.RJJ': (170, 'NoiseType', _tiles('Thickness')),
+    'val.Tiles_Lattice2.RJJ': (171, 'NoiseType', _tiles('Seed')),
+    'val.Tiles_Lattice3.RJJ': (172, 'NoiseType', _tiles()),
+    'val.Tiles_Mosaic.RJJ': (173, 'NoiseType', _tiles('Seed', 'Jitter', 'Distrib', 'Grout', 'Bevel', 'XShift', 'XScale', 'YShift', 'YScale')),
+    'val.Tiles_OctTile.RJJ': (174, 'NoiseType', _tiles('Seed', 'Stagger', 'Distrib', 'Grout', 'Bevel')),
+    'val.Tiles_Parquet.RJJ': (175, 'NoiseType', _tiles(*_TILE, 'Blocks')),
+    'val.Tiles_Paving.RJJ': (176, 'NoiseType', _tiles('Seed', 'Jitter', 'Distrib', 'Grout', 'Bevel', 'PavingShape', 'PavingStyle')),
+    'val.Tiles_Plaid.RJJ': (177, 'NoiseType', _tiles()),
+    'val.Tiles_Planks.RJJ': (178, 'NoiseType', _tiles(*_TILE, 'Length', 'Stagger')),
+    'val.Tiles_Ribs.RJJ': (179, 'NoiseType', _tiles(*_TILE, 'Ribs', 'Layout')),
+    'val.Tiles_RoundedTile.RJJ': (180, 'NoiseType', _tiles('Seed', 'Stagger', 'Distrib', 'Grout', 'Bevel', 'Round')),
+    'val.Tiles_Shingles.RJJ': (181, 'NoiseType', _tiles('Seed', 'Distrib', 'Bevel')),
+    'val.Tiles_Spots.RJJ': (182, 'NoiseType', _tiles('Seed', 'Stagger', 'Distrib', 'Bevel', 'Radius')),
+    'val.Tiles_Stamped.RJJ': (183, 'NoiseType', _tiles('Seed', 'Stagger', 'Distrib', 'Grout', 'Bevel', 'Stamps', 'StampType')),
+    'val.Tiles_Tacos.RJJ': (184, 'NoiseType', _tiles(*_TILE, 'Layout')),
+    'val.Tiles_TarTan.RJJ': (185, 'NoiseType', _tiles('Width', 'Height', 'Thick', 'Thread')),
+    'val.Tiles_Tiler.RJJ': (186, 'NoiseType', _tiles(*_TILE, 'Round', 'TileType')),
+    'val.Tiles_TriChecks.RJJ': (187, 'NoiseType', _tiles('Seed', 'Distrib', 'Softness')),
+    'val.Tiles_TriHexes.RJJ': (188, 'NoiseType', _tiles()),
+    'val.Tiles_TriTile.RJJ': (189, 'NoiseType', _tiles(*_TILE)),
+    'val.Tiles_Wall.RJJ': (190, 'NoiseType', _tiles('Seed', 'Stagger', 'Distrib', 'Grout', 'Bevel', 'Round', 'Levels')),
+})
+CHOICES.update({
+    'PatternType': ('Plain', 'EndSatin', 'Basket', 'BackForth', 'Blips', 'Plaid1', 'Steps', 'Spots', 'Plaid2', 'LockStep', 'Rows',
+                    'HerringBone', 'HalfBasket', 'Quad', 'Quad2', 'Stripes', 'ZigZag', 'ZigZag2', 'ZigZag3', 'ZigStep', 'Alternate',
+                    'Alternate2', 'Circles', 'Crosses', 'Speckles', 'Stripes'),
+    'PavingShape': ('Square', 'Hexagon', 'Octagon', 'Triangle', 'Wedges'),
+    'PavingStyle': ('Straight', 'Crazy', 'Ornate', 'Uneven'),
+    'StampType': ('Straight', 'Curved', 'Capsule'),
+    'TileType': ('Alternating', 'BasketWeave', 'Bathtile', 'HalfWeave', 'CorridorI', 'MorseCode', 'SlidingV', 'SlidingH', 'HerringBone',
+                 'Windmill', 'Trellis', 'Vectored', 'HopScotch', 'Cobbled', 'BricksI', 'BricksII', 'BricksIII', 'BricksIV', 'Splits',
+                 'HalfBasket', 'Horizontal', 'Vertical', 'CorridorII', 'CorridorIII', 'BasketV', 'BasketH'),
+    # Two patterns call different lists Layout.
+    ('val.Tiles_Ribs.RJJ', 'Layout'): ('All', 'Positive', 'Negative', 'Both'),
+    ('val.Tiles_Tacos.RJJ', 'Layout'): ('SquareAll', 'SquareAlternate', 'RoundAll', 'RoundAlternate'),
+})
+
+
+def _laid(own=(), noise=None, ranged=True, wave=False):
+    """The settings of the families from Geometric on, as modo_patterns.h reads them: the pattern's own from the
+    first (a Waveform's amplitude, frequency, phase and shift from the eleventh), its Lower and Upper fifteenth and
+    sixteenth, and its noise, where it has one, from the seventeenth."""
+    own = tuple(own)
+    if wave:
+        own = own + (None,) * (10 - len(own)) + ('Amplitude', 'Frequency', 'Phase', 'Shift')
+    return own + (None,) * (14 - len(own)) + (('Lower', 'Upper') if ranged else (None, None)) + (tuple(noise) if noise else ())
+
+
+_SEEDED = ('Seed', 'Octaves', 'Magnitude', 'Scale', 'Detail')
+_PANEL_NOISE = ('NoiseSeed', 'Octaves', 'Magnitude', 'Scale', 'Detail')
+_SPACE = ('NoiseSeed', 'Octaves', 'Frequency', 'Increment')
+ENHANCE.update({
+    # Geometric, 200 on: a shape in each unit cell.
+    'val.Geometric_Box.RJJ': (200, 'NoiseType', _laid(('RegionSeed', 'Smooth'), _SEEDED)),
+    'val.Geometric_Circular.RJJ': (201, 'NoiseType', _laid(('RegionSeed', 'Smooth'), _SEEDED)),
+    'val.Geometric_Corners.RJJ': (202, 'NoiseType', _laid(('RegionSeed', 'Smooth'), _SEEDED)),
+    'val.Geometric_Cubic.RJJ': (203, 'NoiseType', _laid(('RegionSeed', 'Low', 'High'), _SEEDED)),
+    'val.Geometric_Dimples.RJJ': (204, 'NoiseType', _laid(('RegionSeed',), _SEEDED)),
+    'val.Geometric_Grid.RJJ': (205, 'NoiseType', _laid(('RegionSeed',), _SEEDED)),
+    'val.Geometric_Iris.RJJ': (206, 'NoiseType', _laid(('RegionSeed', 'Rays', 'Smooth'), _SEEDED)),
+    'val.Geometric_Linear.RJJ': (207, 'NoiseType', _laid(('RegionSeed', 'Smooth'), _SEEDED)),
+    'val.Geometric_Polygon.RJJ': (208, 'NoiseType', _laid(('RegionSeed', 'Sides', 'Smooth'), _SEEDED)),
+    'val.Geometric_Radial.RJJ': (209, 'NoiseType', _laid(('RegionSeed', 'Rays', 'Smooth'), _SEEDED)),
+    'val.Geometric_Ring.RJJ': (210, 'NoiseType', _laid(('RegionSeed', 'Width', 'Smooth'), _SEEDED)),
+    'val.Geometric_RndLinear.RJJ': (211, 'NoiseType', _laid(('RegionSeed', 'RandomType'), _SEEDED)),
+    'val.Geometric_Spiral.RJJ': (212, 'NoiseType', _laid(('RegionSeed', 'Rays', 'Smooth'), _SEEDED)),
+    'val.Geometric_Star.RJJ': (213, 'NoiseType', _laid(('RegionSeed', 'Radius', 'Points', 'Length', 'Smooth'), _SEEDED)),
+    # Waveforms, 220 on: a wave along X.
+    'val.Waveforms_BiasGain.RJJ': (220, None, _laid(('Bias', 'Gain'), wave=True)),
+    'val.Waveforms_Fresnel.RJJ': (221, None, _laid(('IOR',), wave=True)),
+    'val.Waveforms_Gamma.RJJ': (222, None, _laid(('GammaAmount',), wave=True)),
+    'val.Waveforms_Gaussian.RJJ': (223, None, _laid(('Spread',), wave=True)),
+    'val.Waveforms_Impulse.RJJ': (224, None, _laid(('Start', 'End'), wave=True)),
+    'val.Waveforms_Noise.RJJ': (225, None, _laid(('NoiseSeed', 'Octaves', 'Scale', 'Increment'), wave=True)),
+    'val.Waveforms_Ramp.RJJ': (226, None, _laid(wave=True)),
+    'val.Waveforms_Rounded.RJJ': (227, None, _laid(wave=True)),
+    'val.Waveforms_SCurve.RJJ': (228, None, _laid(('Start', 'End'), wave=True)),
+    'val.Waveforms_SawTooth.RJJ': (229, None, _laid(('Falling',), wave=True)),
+    'val.Waveforms_Scallop.RJJ': (230, None, _laid(wave=True)),
+    'val.Waveforms_Sine.RJJ': (231, None, _laid(wave=True)),
+    'val.Waveforms_Smooth.RJJ': (232, None, _laid(('Rising', 'Falling'), wave=True)),
+    'val.Waveforms_SmoothImpulse.RJJ': (233, None, _laid(('Start', 'End', 'Smooth'), wave=True)),
+    'val.Waveforms_SmoothStep.RJJ': (234, None, _laid(('Start', 'Smooth'), wave=True)),
+    'val.Waveforms_Staircase.RJJ': (235, None, _laid(('Levels', 'Slant'), wave=True)),
+    # Skins, 240 on.
+    'val.Skins_Camo.RJJ': (240, 'NoiseType', _laid(('Seed', 'Clip', 'Levels'), _SEEDED)),
+    'val.Skins_Crumpled.RJJ': (241, 'NoiseType', _laid(('Seed', 'Dispersion', 'Clip', 'Levels'), _SEEDED)),
+    'val.Skins_DinoSkin.RJJ': (242, 'NoiseType', _laid(('Seed', 'Dispersion', 'Clip', 'Levels'), _SEEDED)),
+    'val.Skins_Disease.RJJ': (243, 'NoiseType', _laid(('Seed', 'Octaves', 'Frequency', 'Increment'))),
+    'val.Skins_FrogSkin.RJJ': (244, 'NoiseType', _laid(('Seed', 'Dispersion', 'Clip', 'Levels', 'SpotSize', 'Edge'), _SEEDED)),
+    'val.Skins_GrainyWood.RJJ': (245, 'NoiseType', _laid(('Seed', 'Ringiness', 'GrainFreq', 'Graininess'), _SEEDED)),
+    'val.Skins_Leather.RJJ': (246, 'NoiseType', _laid(('Seed', 'Low', 'High', 'Levels'), _SEEDED)),
+    'val.Skins_Monster.RJJ': (247, 'NoiseType', _laid(('Seed', 'Dispersion', 'Clip', 'SmallScales'), _SEEDED)),
+    'val.Skins_Pastella.RJJ': (248, 'NoiseType', _laid(('Seed', 'Clip', 'Levels'), _SEEDED)),
+    'val.Skins_Peened.RJJ': (249, 'NoiseType', _laid(('Seed', 'Dispersion', 'Clip', 'Levels'), _SEEDED)),
+    'val.Skins_Scratches.RJJ': (250, 'NoiseType', _laid(('Seed', 'Dispersion', 'Clip', 'Levels'), _SEEDED)),
+    # Space, 260 on.
+    'val.Space_Blast.RJJ': (260, 'NoiseType', _laid(_SPACE + ('Rays', 'Variance', 'Disturbance'))),
+    'val.Space_Coriolis.RJJ': (261, 'NoiseType', _laid(_SPACE + ('Twist',))),
+    'val.Space_Flare.RJJ': (262, 'NoiseType', _laid(_SPACE + ('Rays',))),
+    'val.Space_GasGiant.RJJ': (263, 'NoiseType', _laid(('NoiseSeed', 'Frequency'))),
+    'val.Space_Glint.RJJ': (264, 'NoiseType', _laid(('NoiseSeed', 'Rays', 'Glare', 'Falloff', 'Radius'))),
+    'val.Space_Hurricane.RJJ': (265, 'NoiseType', _laid(_SPACE + ('Twist', 'Storm', 'Eye'))),
+    'val.Space_Nurnies.RJJ': (266, 'CellOrder', _laid(_SPACE)),
+    'val.Space_Planet.RJJ': (267, 'NoiseType', _laid(_SPACE + ('Latitude',))),
+    'val.Space_PlanetClouds.RJJ': (268, 'NoiseType', _laid(_SPACE + ('GlobalScale', 'Circulation', 'Threshold'))),
+    'val.Space_Rings.RJJ': (269, 'NoiseType', _laid(_SPACE + ('Size', 'Intensity', 'InnerRad', 'OuterRad'))),
+    'val.Space_StarField.RJJ': (270, 'NoiseType', _laid(('NoiseSeed', 'Density'))),
+    'val.Space_Swirl.RJJ': (271, 'NoiseType', _laid(_SPACE + ('Scale', 'Magnitude'))),
+    'val.Space_Terra.RJJ': (272, 'NoiseType', _laid(_SPACE)),
+    'val.Space_Windows.RJJ': (273, None, _laid(('Seed', 'HMin', 'HMax', 'VMin', 'VMax', 'WindowsOn', 'Smooth'))),
+    # Panels, 280 on: no Lower and Upper; the Tiles' edge noise.
+    'val.Panels_Peel.RJJ': (280, 'NoiseType', _laid(('Seed', 'Disturb', 'Distrib', 'Grout', 'NoizSeed', 'PeelWidth', 'PeelMag', 'PeelScale'), _PANEL_NOISE, ranged=False)),
+    'val.Panels_Plates.RJJ': (281, 'NoiseType', _laid(('Seed', 'Disturb', 'Distrib', 'Grout', 'Bevel'), _PANEL_NOISE, ranged=False)),
+    'val.Panels_RivetRust.RJJ': (282, 'NoiseType', _laid(('Seed', 'Disturb', 'Distrib', 'Grout', 'RivetSeed', 'RivetRadius', 'RustRadius', 'RustScale',
+                                                        'RivetDistrib', 'Rivets'), _PANEL_NOISE, ranged=False)),
+    'val.Panels_Rivets.RJJ': (283, 'NoiseType', _laid(('Seed', 'Disturb', 'Distrib', 'Grout', 'RivetSeed', 'RivetRadius', 'RivetBevel', 'SlotWidth',
+                                                     'RivetDistrib', 'Rivets'), _PANEL_NOISE, ranged=False)),
+    'val.Panels_Rust.RJJ': (284, 'NoiseType', _laid(('Seed', 'Disturb', 'Distrib', 'Grout', 'NoizSeed', 'Intensity', 'RustScale'), _PANEL_NOISE, ranged=False)),
+    'val.Panels_Smear.RJJ': (285, 'NoiseType', _laid(('Seed', 'Disturb', 'Distrib', 'Grout', 'NoizSeed', 'Intensity', 'SmearScale', 'DirType'),
+                                                    _PANEL_NOISE, ranged=False)),
+    # Water, 290 on, on the locator's XZ plane.
+    'val.Water_DripDrop.RJJ': (290, None, _laid(('MinWave', 'MaxWave', 'MinRadius', 'MaxRadius', 'MinRipple', 'MaxRipple', 'Time'))),
+    'val.Water_Rain.RJJ': (291, None, _laid(('Seed', 'NDrops', 'Spread', 'MinWave', 'MaxWave', 'MinRadius', 'MaxRadius', 'MinRipple', 'MaxRipple',
+                                             'MinLife', 'MaxLife', 'Time'))),
+    'val.Water_Ripples.RJJ': (292, None, _laid(('Seed', 'Waves', 'Spread', 'Length', 'Time'))),
+    'val.Water_Surf.RJJ': (293, None, _laid(('Falloff', 'Spread', 'Length', 'Time'))),
+    'val.Water_Waves.RJJ': (294, None, _laid(('Seed', 'Length', 'Time'))),
+    'val.Water_WindyWaves.RJJ': (295, 'WaveNoiseType', _laid(('WaveNoiseSeed', 'WaveOctaves', 'WaveFrequency', 'WaveIncrement', 'WaveAmplitude',
+                                                             'WindNoiseType', 'WindNoiseSeed', 'WindOctaves', 'WindFrequency', 'WindIncrement',
+                                                             'WindAmplitude'))),
+    # Display, 300 on: the Counters read the scene's time and frame rate (@time, @fps).
+    'val.Display_Counter1.RJJ': (300, None, _laid(('Characters', 'CharacterGap', 'Scroll', 'SegThick', 'SegGap', 'LeadingZeros', 'DecimalPoint',
+                                                   'BaseType', 'FormatType', '@time', '@fps'), ranged=False)),
+    'val.Display_Counter2.RJJ': (301, None, _laid(('Characters', 'CharacterGap', 'Scroll', 'SegThick', 'SegGap', 'LeadingZeros', 'DecimalPoint',
+                                                   'BaseType', 'FormatType', '@time', '@fps'), ranged=False)),
+    'val.Display_UVLEDs.RJJ': (302, None, _laid(('Seed', 'Gap', 'Width', 'LEDsOn', 'Time', 'LEDs', 'ShapeType'), ranged=False)),
+})
+CHOICES.update({
+    'RandomType': NOISE_TYPES, 'WaveNoiseType': NOISE_TYPES, 'WindNoiseType': NOISE_TYPES,
+    'DirType': ('GoUp', 'GoDown', 'GoRight', 'GoLeft'),
+    'BaseType': ('Decimal', 'Hexadecimal', 'Octal', 'Binary'),
+    'FormatType': ('Count', 'Realtime', 'SMPTE24', 'SMPTE25', 'SMPTE30'),
+    'ShapeType': ('Round', 'Square'),
+})
+
+
+def _scene_time(name):
+    """The scene's time in seconds (@time) or its frame rate (@fps), for the Display Counters."""
+    try:
+        import modo
+        scene = modo.Scene()
+        return float(scene.time if name == '@time' else scene.fps)
+    except Exception:
+        return 0.0 if name == '@time' else 24.0
+
+
 def _setting(layer, channel, name):
+    if name is None:
+        return 0.0
+    if name.startswith('@'):
+        return _scene_time(name)
     value = channel(layer, name, 0)
     if isinstance(value, str):
-        options = CHOICES.get(name, ())
+        options = CHOICES.get((layer.type, name), CHOICES.get(name, ()))
         return float(options.index(value)) if value in options else 0.0
     return float(value)
 
@@ -304,10 +484,107 @@ def enhance(layer, channel, color, is_color, locator_matrix):
     back, back_alpha = side('Back')
     inv = inverse(locator_matrix)
     data = {'pattern': pattern, 'type': options.index(chosen) if chosen in options else 0,
-            'settings': settings + [0.0] * (22 - len(settings)) + [float(channel(layer, 'Bias', .5)), float(channel(layer, 'Gain', .5))],
+            # The BiasGain waveform's Bias and Gain are its own, shaping its wave: not again over the whole.
+            'settings': settings + [0.0] * (22 - len(settings)) + ([.5, .5] if pattern == 220 else
+                                                                    [float(channel(layer, 'Bias', .5)), float(channel(layer, 'Gain', .5))]),
             'color1': fore, 'color2': back, 'alpha1': fore_alpha, 'alpha2': back_alpha,
             'rows': [[inv[0], inv[4], inv[8], inv[12]], [inv[1], inv[5], inv[9], inv[13]], [inv[2], inv[6], inv[10], inv[14]]]}
     if not all(math.isfinite(v) for v in data['settings'] + [v for row in data['rows'] for v in row]):
         raise ValueError('Nonfinite procedural parameter')
     return data
 
+
+
+# ---- Modo's Gabor and Poisson noise, Enhance: Modo's Process textures, Curvature and Wireframe ----------------------
+PATTERNS.update({'val.noise.gabor': 8, 'val.noise.poisson': 9})
+TYPES.update({'val.noise.poisson': ('round', 'angular')})
+MAP_SETTINGS.update({
+    'val.noise.gabor': (('orientation', math.pi / 4), ('frequency', .0625), ('bandwidth', .05), ('offset', 1), ('brightness', 0.0), ('contrast', 0.0)),
+    'val.noise.poisson': (('level', 3), ('density', 1.0), ('cellWidth', .9), ('transWidth', .05), ('freqs', 1), ('freqRatio', 2.0), ('ampRatio', .5),
+                          ('valVariation', 0.0), ('brightness', 0.0), ('contrast', 0.0)),
+})
+# Read without a texture locator: they take what is beneath them, or the surface itself.
+SURFACE_KINDS = ('val.Process_EasyGrad.RJJ', 'val.Process_RegionalHSV.RJJ', 'val.RTCurvature', 'val.wireframe')
+IDENTITY_ROWS = [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0]]
+
+
+def _finite(values, what):
+    values = [float(v) for v in values]
+    if not all(math.isfinite(v) for v in values):
+        raise ValueError('Nonfinite ' + what)
+    return values
+
+
+def easygrad(layer, channel, color, is_color, effect):
+    """Enhance: Modo's EasyGrad as a gradient (gradients.emit and MoonLightIPR's ramps) looked up by the brightness of
+    its own channel beneath it: eight cusps, each with its colour (or value) and alpha, in the order of the cusps."""
+    stops = []
+    for i in range(1, 9):
+        position = min(1.0, max(0.0, float(channel(layer, 'Cusp%d' % i, (i - 1) / 7.0))))
+        if is_color:
+            value = list(color(layer, 'Color%d' % i, (0, 0, 0)))
+        else:
+            value = [float(channel(layer, 'Value%d' % i, position))] * 3
+        stops.append((position, _finite(value, 'EasyGrad colour'), min(1.0, max(0.0, float(channel(layer, 'Alpha%d' % i, 1))))))
+    stops.sort(key=lambda stop: stop[0])
+    data = {'input': effect, 'luminance': True, 'positions': [s[0] for s in stops], 'colors': [s[1] for s in stops]}
+    # Points sharing a place are moved apart a hair, which MoonRay's RampMap needs.
+    for i in range(1, len(data['positions'])):
+        data['positions'][i] = max(data['positions'][i], data['positions'][i - 1] + 1e-5)
+    if any(s[2] != 1.0 for s in stops):
+        data['alpha'] = [s[2] for s in stops]
+    return data
+
+
+def regional(layer, channel, color):
+    """Enhance: Modo's RegionalHSV for ModoProceduralMap and MoonLightIPR (pattern 400): each region of the colour
+    beneath given a colour at random between its hue, saturation and value limits."""
+    settings = _finite([channel(layer, 'Seed', 500)] + list(color(layer, 'HueMin', (1, 0, 0))) + list(color(layer, 'HueMax', (1, 0, .1)))
+                       + [channel(layer, name, default) for name, default in (('SatMin', 0), ('SatMax', 1), ('ValMin', 0), ('ValMax', 1))],
+                       'RegionalHSV setting')
+    return {'pattern': 400, 'type': 0, 'settings': settings + [0.0] * (22 - len(settings)) + [.5, .5],
+            'color1': [0.0, 0.0, 0.0], 'color2': [1.0, 1.0, 1.0], 'alpha1': 1.0, 'alpha2': 1.0, 'rows': IDENTITY_ROWS, 'process': True}
+
+
+def curvature(layer, channel, is_color):
+    """Modo's Curvature texture as a gradient looked up by how the surface curves (MoonRay's CurvatureMap, MoonLightIPR's
+    curvatureKey): 0.5 flat, towards 1 where it bulges. Its magnitude over its support size sets how strongly; the
+    gradient is Modo's own, read at 257 points over 0 to 1."""
+    import lx
+    names = ['gradientColor.' + axis for axis in 'RGB'] if is_color else ['gradientValue']
+    filters = []
+    for name in names + (['gradientColor.A'] if is_color else []):
+        value = layer.channel(name).get() if layer.channel(name) is not None else None
+        if value is None or isinstance(value, (int, float)):
+            filters.append(lambda x, v=float(value or 0.0): v)
+            continue
+        gradient = lx.object.GradientFilter(value)
+        if not gradient.test():
+            raise ValueError('Cannot read the Curvature gradient ' + name)
+        filters.append(gradient.Generate)
+    positions = [i / 256.0 for i in range(257)]
+    colors = []
+    alpha = []
+    for x in positions:
+        row = [float(f(x)) for f in filters[:len(names)]]
+        colors.append(_finite(row * 3 if len(row) == 1 else row, 'Curvature gradient'))
+        if is_color:
+            alpha.append(min(1.0, max(0.0, float(filters[-1](x)))))
+    data = {'input': '@curvature', 'positions': positions, 'colors': colors,
+            # Pushed out a unit, a patch bending at radius r grows by about 2 / r: scaled by the magnitude and the
+            # support size, a bend as tight as a few support sizes reaches the ends of the gradient, a gentle one stays
+            # near its middle.
+            'scale': max(0.0, float(channel(layer, 'curvMagnitude', .5))) * max(1e-4, float(channel(layer, 'fSupportSize', .01)))}
+    if alpha and any(a != 1.0 for a in alpha):
+        data['alpha'] = alpha
+    return data
+
+
+def wireframe(layer, channel, color, is_color):
+    """Modo's Wireframe: the first colour along the polygons' edges, width wide, softened over transWidth of it, the
+    second colour (by default not there at all) between them."""
+    first = list(color(layer, 'color1', (0, 0, 0))) if is_color else [float(channel(layer, 'value1', 1))] * 3
+    second = list(color(layer, 'color2', (0, 0, 0))) if is_color else [float(channel(layer, 'value2', 1))] * 3
+    return {'color1': _finite(first, 'Wireframe colour'), 'color2': _finite(second, 'Wireframe colour'),
+            'alpha1': float(channel(layer, 'alpha1', 1)), 'alpha2': float(channel(layer, 'alpha2', 0)),
+            'width': max(0.0, float(channel(layer, 'width', .01))), 'soft': min(1.0, max(0.0, float(channel(layer, 'transWidth', .5))))}

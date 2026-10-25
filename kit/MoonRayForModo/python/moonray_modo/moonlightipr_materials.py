@@ -161,6 +161,8 @@ LAYER_INVERT, LAYER_FLIP_RED, LAYER_FLIP_GREEN, LAYER_FLIP_BLUE = 2, 4, 8, 16
 LAYER_ALPHA_MASK, LAYER_ALPHA_ONLY, LAYER_COVERAGE_U, LAYER_COVERAGE_V, LAYER_PICK_SHIFT = 32, 64, 128, 256, 9
 LAYER_RAMP, LAYER_CHECKER, LAYER_NOISE, LAYER_UDIM = 1 << 16, 1 << 17, 1 << 18, 1 << 19
 LAYER_PROCEDURAL = 1 << 21     # Modo's pattern through the object (modo_patterns.h, procedurals.solid)
+LAYER_WIREFRAME = 1 << 22      # Modo's Wireframe: the first colour along the polygons' edges
+RAMP_CURVATURE = 255           # a gradient row's slot when the surface's curvature looks it up (Modo's Curvature)
 IDENTITY_ROWS = ((1.0, 0.0, 0.0, 0.0), (0.0, 1.0, 0.0, 0.0), (0.0, 0.0, 1.0, 0.0))
 BLEND_REORIENTED_NORMAL = 15
 WRAP = {'repeat': 0, 'edge': 1, 'mirror': 2, 'reset': 3}
@@ -1104,10 +1106,27 @@ class Compiler:
                 flags |= LAYER_PROCEDURAL
                 value = solid['color1']
                 extra = dict(color2=solid['color2'], alpha1=float(solid['alpha1']), alpha2=float(solid['alpha2']),
-                             pattern=int(solid['pattern']) | (int(solid['type']) << 8),
+                             pattern=int(solid['pattern']) | (int(solid['type']) << 16),
                              settings=list(solid['settings']), rows=solid['rows'])
             elif kind == 'constant':
                 value = layer['value']
+            elif kind == 'gradient' and layer['gradient'].get('input') == '@curvature':
+                # Modo's Curvature: looked up by how the surface bends over each triangle, settings[0] the scale.
+                try:
+                    texture = self.ramp(layer['gradient'])
+                except (OSError, ValueError, KeyError, TypeError, IndexError) as exc:
+                    self.note('a Curvature gradient that could not be read (%s)' % exc, name)
+                    abandon()
+                    continue
+                flags |= LAYER_RAMP
+                slot = RAMP_CURVATURE
+                extra = dict(settings=[float(layer['gradient'].get('scale', 1))] + [0.0] * 21 + [.5, .5])
+            elif kind == 'wireframe':
+                wire = layer['wireframe']
+                flags |= LAYER_WIREFRAME
+                value = wire['color1']
+                extra = dict(color2=wire['color2'], alpha1=float(wire['alpha1']), alpha2=float(wire['alpha2']),
+                             settings=[float(wire['width']), float(wire['soft'])] + [0.0] * 20 + [.5, .5])
             elif kind == 'gradient':
                 data = layer['gradient']
                 if data.get('input') not in CHANNELS:

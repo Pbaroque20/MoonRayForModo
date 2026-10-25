@@ -2584,6 +2584,24 @@ struct Corners {
 };
 
 // The three texture coordinates of a triangle in one scene-wide slot; false if the mesh has none.
+// How the surface curves over a triangle, as MoonRay's CurvatureMap measures it: how much larger the triangle grows
+// pushed out a unit along its corners' normals, times scale; 0.5 flat, towards 1 where it bulges, towards 0 where it
+// hollows.
+ML_INLINE float curvatureKey(const DeviceMesh& mesh, unsigned primitive, float scale) {
+    if (!mesh.normals || mesh.curves) return 0.5f;
+    const uint3 triangle = reinterpret_cast<const uint3*>(mesh.indices)[primitive];
+    const float3* corners = reinterpret_cast<const float3*>(mesh.positions);
+    const float3* normals = reinterpret_cast<const float3*>(mesh.normals);
+    const float3 p0 = corners[triangle.x], p1 = corners[triangle.y], p2 = corners[triangle.z];
+    const float3 facing = cross(p1 - p0, p2 - p0);
+    const float before = dot(facing, facing);
+    if (before <= 1e-20f) return 0.5f;
+    const float3 q0 = p0 + normalize(normals[triangle.x]), q1 = p1 + normalize(normals[triangle.y]), q2 = p2 + normalize(normals[triangle.z]);
+    const float ratio = dot(cross(q1 - q0, q2 - q0), facing) / before;
+    const float convex = clamp((ratio - 1.0f) * scale, 0.0f, 1.0f), concave = clamp((1.0f - ratio) * scale, 0.0f, 1.0f);
+    return 0.5f + 0.5f * (convex - concave);
+}
+
 ML_INLINE bool triangleUvs(const DeviceMesh& mesh, unsigned slot, unsigned primitive, Corners& uv) {
     if (!mesh.uvs || slot >= UV_SLOTS || mesh.uvSet[slot] < 0) return false;
     if (mesh.curves) {
@@ -2706,8 +2724,37 @@ ML_INLINE MappedSlots evalLayers(const DeviceMaterial& material, const DeviceMes
             const float z = layer.rows[8] * position.x + layer.rows[9] * position.y + layer.rows[10] * position.z + layer.rows[11];
             MP_Settings settings;
             for (int k = 0; k < 24; ++k) settings.v[k] = layer.settings[k];
-            const float t = mp_pattern(int(layer.pattern & 255u), int((layer.pattern >> 8) & 255u), x, y, z, settings);
-            value = lerp(vec(layer.color2), vec(layer.value), t);
+            const int pattern = int(layer.pattern & 65535u);
+            if (pattern >= 400) {
+                // A process (Enhance: Modo's RegionalHSV): its colour made from the colour beneath it.
+                const float3 beneath = layer.channel < CHANNEL_COUNT ? channel[layer.channel] : vec(1.0f);
+                const MP_Rgb made = mp_process(pattern, beneath.x, beneath.y, beneath.z, settings);
+                value = make_float3(made.r, made.g, made.b);
+            } else {
+                const float t = mp_pattern(pattern, int(layer.pattern >> 16), x, y, z, settings);
+                value = lerp(vec(layer.color2), vec(layer.value), t);
+                mask *= layer.alpha2 + (layer.alpha1 - layer.alpha2) * t;
+            }
+        } else if (layer.flags & LAYER_WIREFRAME) {
+            // Modo's Wireframe: the first colour along the polygons' edges. The plugin lays each polygon down as a fan
+            // of triangles, (0, 1, 2), (0, 2, 3) and so on, so a triangle's edge is inside its polygon where the
+            // triangle before or after it in the list shares it as a fan does.
+            if (mesh.curves) continue;
+            const uint3* triangles = reinterpret_cast<const uint3*>(mesh.indices);
+            const float3* corners = reinterpret_cast<const float3*>(mesh.positions);
+            const uint3 triangle = triangles[primitive];
+            const float3 p0 = corners[triangle.x], p1 = corners[triangle.y], p2 = corners[triangle.z];
+            const float twice = length(cross(p1 - p0, p2 - p0));
+            const float w = 1.0f - barycentrics.x - barycentrics.y;
+            float edge = w * twice / fmaxf(length(p2 - p1), 1e-12f);
+            const bool firstInside = primitive > 0 && triangles[primitive - 1].x == triangle.x && triangles[primitive - 1].z == triangle.y;
+            const bool lastInside = primitive + 1 < mesh.triangleCount && triangles[primitive + 1].x == triangle.x && triangles[primitive + 1].y == triangle.z;
+            if (!firstInside) edge = fminf(edge, barycentrics.y * twice / fmaxf(length(p1 - p0), 1e-12f));
+            if (!lastInside) edge = fminf(edge, barycentrics.x * twice / fmaxf(length(p0 - p2), 1e-12f));
+            const float halfWidth = 0.5f * fmaxf(layer.settings[0], 0.0f);
+            const float soft = fmaxf(halfWidth * clamp(layer.settings[1], 0.0f, 1.0f), 1e-7f);
+            const float t = 1.0f - clamp((edge - (halfWidth - soft)) / (2.0f * soft), 0.0f, 1.0f);
+            value = lerp(vec(layer.color2), value, t);
             mask *= layer.alpha2 + (layer.alpha1 - layer.alpha2) * t;
         } else if (layer.flags & (LAYER_IMAGE | LAYER_UDIM | LAYER_CHECKER | LAYER_NOISE)) {
             Corners uv;
@@ -2744,9 +2791,13 @@ ML_INLINE MappedSlots evalLayers(const DeviceMaterial& material, const DeviceMes
             if (layer.channel == CHANNEL_NORMAL) slots.normal = layer.uvSlot;
             if (layer.channel == CHANNEL_BUMP) slots.bump = layer.uvSlot;
         } else if (layer.flags & LAYER_RAMP) {
-            // A gradient: 257 colours from 0 to 1, looked up by the first component of another channel.
-            if (layer.uvSlot >= CHANNEL_COUNT) continue;
-            const float4 texel = tex2D<float4>(layer.texture, (clamp(channel[layer.uvSlot].x, 0.0f, 1.0f) * 256.0f + 0.5f) / 257.0f, 0.5f);
+            // A gradient: 257 colours from 0 to 1, looked up by the first component of another channel; by its own
+            // channel's brightness beneath it (Enhance: Modo's EasyGrad); or by the surface's curvature.
+            float key;
+            if (layer.uvSlot == RAMP_CURVATURE) key = curvatureKey(mesh, primitive, layer.settings[0]);
+            else if (layer.uvSlot >= CHANNEL_COUNT) continue;
+            else key = layer.uvSlot == layer.channel ? luminance(channel[layer.uvSlot]) : channel[layer.uvSlot].x;
+            const float4 texel = tex2D<float4>(layer.texture, (clamp(key, 0.0f, 1.0f) * 256.0f + 0.5f) / 257.0f, 0.5f);
             value = make_float3(texel.x, texel.y, texel.z);
             mask *= texel.w;
         }

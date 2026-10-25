@@ -66,8 +66,15 @@ def emit(data,current,node,rgb):
     # RampMap refuses more points than this and the layer would render blank.
     data=reduced(data)
     source=data['input']
-    if source not in current:raise ValueError('Missing gradient source '+source)
-    signal=node('ModoTextureMap',{'mode':'7','component':'0','foreground':current[source]})
+    if source=='@curvature':
+        # Modo's Curvature: MoonRay's CurvatureMap, 0.5 flat, turned so that a bulge reads towards 1.
+        measured=node('CurvatureMap',{'mode':'2','scale':number(data.get('scale',1)),'power':'1'})
+        signal=node('ModoTextureMap',{'background':rgb(1),'foreground':measured,'blend':'3'})
+    elif source not in current:raise ValueError('Missing gradient source '+source)
+    elif data.get('luminance'):
+        # Enhance: Modo's EasyGrad: looked up by the brightness of its own channel beneath it.
+        signal=node('OpMap',{'operation':'8','op1':current[source],'op2':rgb([0.2126,0.7152,0.0722])})
+    else:signal=node('ModoTextureMap',{'mode':'7','component':'0','foreground':current[source]})
     return node('RampMap',{'ramp_type':'8','wrap_type':'1','color_space':'0',
         'input':signal,
         'positions':array([number(x) for x in data['positions']]),

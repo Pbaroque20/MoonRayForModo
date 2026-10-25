@@ -1353,10 +1353,10 @@ void Renderer::setMaterials(const Material* materials, size_t count, const Layer
         std::copy(layer.rows, layer.rows + 12, out.rows);
         if (layer.gamma != 1.0f || layer.bias != 0.5f || layer.gainCurve != 0.5f) out.flags |= LAYER_CURVES;
         // Coordinates and channels are followed on the GPU without checks.
-        const unsigned sources = out.flags & (LAYER_RAMP | LAYER_CHECKER | LAYER_NOISE | LAYER_UDIM | LAYER_PROCEDURAL);
+        const unsigned sources = out.flags & (LAYER_RAMP | LAYER_CHECKER | LAYER_NOISE | LAYER_UDIM | LAYER_PROCEDURAL | LAYER_WIREFRAME);
         if (sources & (sources - 1)) throw std::runtime_error("MoonLightIPR layer has more than one source");
         if (out.flags & LAYER_RAMP) {
-            if (layer.uvSlot >= CHANNEL_COUNT) throw std::runtime_error("MoonLightIPR gradient layer refers to a missing channel");
+            if (layer.uvSlot >= CHANNEL_COUNT && layer.uvSlot != RAMP_CURVATURE) throw std::runtime_error("MoonLightIPR gradient layer refers to a missing channel");
             out.texture = object(layer.texture);
         } else if (out.flags & LAYER_UDIM) {
             if (layer.texture < 0 || size_t(layer.texture) >= tileCount || layer.uvSlot >= UV_SLOTS)
@@ -1364,6 +1364,7 @@ void Renderer::setMaterials(const Material* materials, size_t count, const Layer
             out.texture = impl->tileTable.ptr + size_t(layer.texture) * sizeof(unsigned long long);
         } else if (out.flags & (LAYER_CHECKER | LAYER_NOISE)) {
             if (layer.uvSlot >= UV_SLOTS) throw std::runtime_error("MoonLightIPR layer refers to a missing coordinate slot");
+        } else if (out.flags & LAYER_WIREFRAME) {
         } else if (layer.texture >= 0) {
             if (layer.uvSlot >= UV_SLOTS) throw std::runtime_error("MoonLightIPR layer refers to a missing coordinate slot");
             out.texture = object(layer.texture);

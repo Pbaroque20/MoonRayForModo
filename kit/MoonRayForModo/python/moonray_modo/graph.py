@@ -97,6 +97,9 @@ def bindings(material, index, lines, glass=False, absorption=False, separate_mas
             held={'pattern':str(solid['pattern']),'type':str(solid['type']),'settings':'{'+', '.join(number(v) for v in solid['settings'])+'}',
                   'color1':rgb(solid['color1']),'color2':rgb(solid['color2']),'alpha1':number(solid['alpha1']),'alpha2':number(solid['alpha2']),
                   **{'row%d'%index:vector(row,'Vec4') for index,row in enumerate(solid['rows'])}}
+            if solid.get('process'):
+                # A process (Enhance: Modo's RegionalHSV) makes its colour from what is beneath it.
+                held['input']=current[effect]
             foreground=node('ModoProceduralMap',dict(held,output='0'))
             if solid['alpha1']!=1 or solid['alpha2']!=1:
                 mask=node('ModoProceduralMap',dict(held,output='1'))
@@ -107,6 +110,13 @@ def bindings(material, index, lines, glass=False, absorption=False, separate_mas
                 mask=emit_gradient(dict(layer['gradient'],colors=[[v]*3 for v in layer['gradient']['alpha']]),current,node,rgb)
         elif kind=='constant':
             foreground = rgb(layer['value'])
+        elif kind=='wireframe':
+            # Modo's Wireframe: MoonRay's WireframeMap, its lines as wide as Modo's in the scene's units.
+            wire=layer['wireframe']
+            lines={'raster':'false','line_width':number(wire['width'])}
+            foreground=node('WireframeMap',dict(lines,line_color=rgb(wire['color1']),fill_color=rgb(wire['color2'])))
+            if wire['alpha1']!=1 or wire['alpha2']!=1:
+                mask=node('WireframeMap',dict(lines,line_color=rgb(wire['alpha1']),fill_color=rgb(wire['alpha2'])))
         elif kind in ('checker','noise'):
             foreground = node('ModoTextureMap', {'mode':str(2 if kind=='checker' else 3),
                 'background':rgb(0), 'foreground':rgb(1),
