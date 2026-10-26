@@ -27,6 +27,14 @@ class ShaderTreeDisplacement(unittest.TestCase):
     def test_no_distance_no_displacement(self):
         self.assertNotIn('NormalDisplacement', rdla.scene_text(scene('displace', displacement_distance=0.0)))
 
+    def test_black_height_no_displacement(self):
+        # Layers that blend black over black (a layer whose image is missing is black) move nothing in Modo: no
+        # NormalDisplacement, which would have MoonRay tessellate the material's meshes and make their normals anew.
+        black = scene('displace', displacement_distance=0.02)
+        black['materials']['skin']['layers'][0]['value'] = [0, 0, 0]
+        self.assertNotIn('NormalDisplacement', rdla.scene_text(black))
+        self.assertIn('NormalDisplacement', rdla.scene_text(scene('displace', displacement_distance=0.02)))
+
     def test_stencil_reaches_presence(self):
         text = rdla.scene_text(scene('stencil'))
         self.assertIn('["presence"] = bind(', text)

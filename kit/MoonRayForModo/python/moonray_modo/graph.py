@@ -295,6 +295,72 @@ BUMP_STEP = False
 DISPLACEMENT = None
 
 
+def zero_height(binding, lines):
+    """Whether a displacement's height (a binding written into lines) is zero everywhere: layers that only blend black
+    over black (a layer whose image is missing is black). Modo moves nothing then, and MoonRay would still tessellate
+    every mesh of the material at its mesh resolution and make its normals anew for it."""
+    import re
+    if binding.strip() in ('0', '0.0'):
+        return True
+    global _BODIES
+    if _BODIES is None or _BODIES[0] is not lines or _BODIES[1] != len(lines):
+        _BODIES = (lines, len(lines), _bodies(lines))
+    bodies = _BODIES[2]
+    seen = {}
+
+    def zero(node):
+        if node in seen:
+            return seen[node]
+        seen[node] = False
+        klass, attributes = bodies.get(node, (None, None))
+        if klass != 'ModoTextureMap':
+            return False
+        for attribute in attributes:
+            pair = re.match(r'\["(\w+)"\]\s*=\s*(.+?),?$', attribute)
+            if not pair:
+                return False
+            key, value = pair.groups()
+            if key in ('blend', 'opacity'):
+                continue
+            if key not in ('background', 'foreground'):
+                return False  # an image, a pattern or a setting of its own: not known to be black
+            bound = re.match(r'bind\(\w+\("([^"]+)"\)', value)
+            if bound:
+                if not zero(bound.group(1)):
+                    return False
+            elif value.strip() not in _ZERO:
+                return False
+        seen[node] = True
+        return True
+
+    bound = re.match(r'\s*bind\(\w+\("([^"]+)"\)', binding)
+    return bool(bound) and zero(bound.group(1))
+
+
+_ZERO = {'0', '0.0', 'Rgb(0, 0, 0)', 'Rgb(0.0, 0.0, 0.0)'}
+# The objects read from a scene's lines (zero_height), read again when more lines are written: the list, its length then,
+# the objects.
+_BODIES = None
+
+
+def _bodies(lines):
+    """Each object written in lines, by name: its class and its attribute lines."""
+    import re
+    bodies = {}
+    name = None
+    for line in '\n'.join(lines).splitlines():
+        start = re.match(r'\s*(?:\w+\[[^\]]*\]\s*=\s*)?(\w+)\("([^"]+)"\)\s*\{\s*$', line)
+        if start:
+            name = start.group(2)
+            bodies[name] = (start.group(1), [])
+        elif name is not None:
+            if line.strip() == '}':
+                name = None
+            else:
+                bodies[name][1].append(line.strip())
+    return bodies
+
+
 def defaults_for(material):
     defaults = {**{key:0 for key in textures.INTERNAL_EFFECTS}, 'diffCol':material.get('color',[.5,.5,.5]),
         # Modo's own roughness, where the material's has been turned into that of MoonRay's lobe: the layers over it are Modo's too.

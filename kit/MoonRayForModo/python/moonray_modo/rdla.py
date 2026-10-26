@@ -495,7 +495,7 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
             from .nodes import emit as emit_graph
             ref=emit_graph(source,'/modo/displacement/%d'%index,native_index,lines,native_library,output='displacement')
             lines.append('displacements[%s] = %s'%(string(tag),ref));displacement_tags.add(tag)
-        elif shader_displacement.get(tag) and shader_displacement[tag][1]:
+        elif shader_displacement.get(tag) and shader_displacement[tag][1] and not graph_module.zero_height(shader_displacement[tag][0], lines):
             # Displacement layers in the Shader Tree: the surface moved along its normal by their height times the
             # material's Displacement Distance, as Modo moves it.
             raised,distance=shader_displacement[tag]
