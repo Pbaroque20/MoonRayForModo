@@ -406,12 +406,29 @@ class Panel(Tools, QtWidgets.QWidget):
         middle.addWidget(self.render_timing,1)
         self.image_info=QtWidgets.QLabel('');self.image_info.setEnabled(False)
         right.addStretch(1)
+        # The memory the renderer, the machine and the graphics card have, beside the picture's details.
+        from .memory_meter import MemoryMeter
+        self.memory_meter=MemoryMeter(self._renderer_processes)
+        right.addWidget(self.memory_meter)
         right.addWidget(self.image_info)
         self.notice_toggle=QtWidgets.QToolButton();self.notice_toggle.setText('Notices (0)');self.notice_toggle.setCheckable(True);self.notice_toggle.setAutoRaise(True)
         self.notice_toggle.setToolTip('What the renderer could not carry over from the scene')
         self.notice_toggle.toggled.connect(lambda visible:self.warnings.setVisible(visible))
         right.addWidget(self.notice_toggle)
         return lines
+
+    def _renderer_processes(self):
+        """The ids of the renderer's processes running now (a final render, the preview session, MoonLightIPR's), for the
+        memory meter."""
+        renderer=getattr(self,'renderer',None)
+        if renderer is None:return []
+        found=[]
+        for holder in (renderer,getattr(renderer,'session',None),getattr(renderer,'moonlightipr',None)):
+            process=getattr(holder,'process',None) if holder is not None else None
+            try:
+                if process is not None and process.state()!=QtCore.QProcess.NotRunning:found.append(int(process.processId()))
+            except RuntimeError:pass  # its Qt object already gone
+        return found
 
     def _focus_armed(self,armed):
         if armed:
