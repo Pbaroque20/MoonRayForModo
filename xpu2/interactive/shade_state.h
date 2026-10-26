@@ -75,6 +75,10 @@ struct State {
     const PrimAttr* prims = nullptr;
     const float* primData = nullptr;
     U32 primCount = 0;
+    // A shared geometry's instance: its own primitive attributes (constant, its instancer's), after the reference's.
+    const PrimAttr* instancePrims = nullptr;
+    const float* instancePrimData = nullptr;
+    U32 instancePrimCount = 0;
     // computeStInverse: the hit triangle's st basis inverted, for its attributes' st derivatives (identity when degenerate).
     float stInv[4] = {1, 0, 0, 1};
     // A subdivision surface's hit (OpenSubdivMesh): MoonRay gives its attributes' values and not their st derivatives.
@@ -156,80 +160,92 @@ X2_CALL bool curvePrimValue(const State& st, const PrimAttr& a, float out[3]) {
     default: return false;
     }
 }
+// The hit's attribute with this key and the values its offset counts from: the geometry's own, else its instance's
+// (State::instancePrims); null when it has none.
+X2_HD inline const PrimAttr* findPrim(const State& st, U32 key, const float*& values) {
+    for (U32 i = 0; i < st.primCount; ++i)
+        if (st.prims[i].key == key) {
+            values = st.primData;
+            return &st.prims[i];
+        }
+    for (U32 i = 0; i < st.instancePrimCount; ++i)
+        if (st.instancePrims[i].key == key) {
+            values = st.instancePrimData;
+            return &st.instancePrims[i];
+        }
+    return nullptr;
+}
 // getd<T>Attributeds and getd<T>Attributedt (Mesh::computeDerivatives): an attribute's st derivatives over the hit
 // triangle; false when the mesh has no such attribute. Curves' attribute derivatives are not ported (false).
 X2_CALL bool primPartials(const State& st, U32 key, float ds[3], float dt[3]) {
-    for (U32 i = 0; i < st.primCount; ++i) {
-        const PrimAttr& a = st.prims[i];
-        if (a.key != key) continue;
-        if (st.curve) return false;
-        const U32 n = a.components;
-        const float* d = st.primData + a.offset;
-        U32 i1 = 0, i2 = 0, i3 = 0;
-        switch (a.rate) {
-        case PrimConstant: break;
-        case PrimUniform: i1 = i2 = i3 = st.prim; break;
-        case PrimVertex:
-        case PrimVarying:
-            i1 = st.ia;
-            i2 = st.ib;
-            i3 = st.ic;
-            break;
-        case PrimFaceVarying:
-            i1 = st.prim * 3;
-            i2 = i1 + 1;
-            i3 = i1 + 2;
-            break;
-        default: return false;
-        }
-        ds[0] = ds[1] = ds[2] = dt[0] = dt[1] = dt[2] = 0.0f;
-        for (U32 k = 0; k < n; ++k) {
-            const float df0 = d[i2 * n + k] - d[i1 * n + k], df1 = d[i3 * n + k] - d[i1 * n + k];
-            ds[k] = st.stInv[0] * df0 + st.stInv[1] * df1;
-            dt[k] = st.stInv[2] * df0 + st.stInv[3] * df1;
-        }
-        return true;
+    const float* values = nullptr;
+    const PrimAttr* found = findPrim(st, key, values);
+    if (!found) return false;
+    const PrimAttr& a = *found;
+    if (st.curve) return false;
+    const U32 n = a.components;
+    const float* d = values + a.offset;
+    U32 i1 = 0, i2 = 0, i3 = 0;
+    switch (a.rate) {
+    case PrimConstant: break;
+    case PrimUniform: i1 = i2 = i3 = st.prim; break;
+    case PrimVertex:
+    case PrimVarying:
+        i1 = st.ia;
+        i2 = st.ib;
+        i3 = st.ic;
+        break;
+    case PrimFaceVarying:
+        i1 = st.prim * 3;
+        i2 = i1 + 1;
+        i3 = i1 + 2;
+        break;
+    default: return false;
     }
-    return false;
+    ds[0] = ds[1] = ds[2] = dt[0] = dt[1] = dt[2] = 0.0f;
+    for (U32 k = 0; k < n; ++k) {
+        const float df0 = d[i2 * n + k] - d[i1 * n + k], df1 = d[i3 * n + k] - d[i1 * n + k];
+        ds[k] = st.stInv[0] * df0 + st.stInv[1] * df1;
+        dt[k] = st.stInv[2] * df0 + st.stInv[3] * df1;
+    }
+    return true;
 }
 // isProvided: whether the hit's geometry has the attribute.
 X2_HD inline bool primProvided(const State& st, U32 key) {
-    for (U32 i = 0; i < st.primCount; ++i)
-        if (st.prims[i].key == key) return true;
-    return false;
+    const float* values = nullptr;
+    return findPrim(st, key, values) != nullptr;
 }
 // isProvided and get<T>Attribute: the attribute with this key at the hit, interpolated as its rate says.
 X2_CALL bool primValue(const State& st, U32 key, float out[3]) {
-    for (U32 i = 0; i < st.primCount; ++i) {
-        const PrimAttr& a = st.prims[i];
-        if (a.key != key) continue;
-        const U32 n = a.components;
-        const float* d = st.primData + a.offset;
-        out[0] = out[1] = out[2] = 0.0f;
-        if (st.curve) return curvePrimValue(st, a, out);
-        switch (a.rate) {
-        case PrimConstant:
-            for (U32 k = 0; k < n; ++k) out[k] = d[k];
-            return true;
-        case PrimUniform:
-            for (U32 k = 0; k < n; ++k) out[k] = d[st.prim * n + k];
-            return true;
-        case PrimVertex:
-        case PrimVarying: {
-            const float w = 1.0f - st.u - st.v;
-            for (U32 k = 0; k < n; ++k) out[k] = w * d[st.ia * n + k] + st.u * d[st.ib * n + k] + st.v * d[st.ic * n + k];
-            return true;
-        }
-        case PrimFaceVarying: {
-            const float w = 1.0f - st.u - st.v;
-            const U32 b = st.prim * 3;
-            for (U32 k = 0; k < n; ++k) out[k] = w * d[b * n + k] + st.u * d[(b + 1) * n + k] + st.v * d[(b + 2) * n + k];
-            return true;
-        }
-        default: return false;
-        }
+    const float* values = nullptr;
+    const PrimAttr* found = findPrim(st, key, values);
+    if (!found) return false;
+    const PrimAttr& a = *found;
+    const U32 n = a.components;
+    const float* d = values + a.offset;
+    out[0] = out[1] = out[2] = 0.0f;
+    if (st.curve) return curvePrimValue(st, a, out);
+    switch (a.rate) {
+    case PrimConstant:
+        for (U32 k = 0; k < n; ++k) out[k] = d[k];
+        return true;
+    case PrimUniform:
+        for (U32 k = 0; k < n; ++k) out[k] = d[st.prim * n + k];
+        return true;
+    case PrimVertex:
+    case PrimVarying: {
+        const float w = 1.0f - st.u - st.v;
+        for (U32 k = 0; k < n; ++k) out[k] = w * d[st.ia * n + k] + st.u * d[st.ib * n + k] + st.v * d[st.ic * n + k];
+        return true;
     }
-    return false;
+    case PrimFaceVarying: {
+        const float w = 1.0f - st.u - st.v;
+        const U32 b = st.prim * 3;
+        for (U32 k = 0; k < n; ++k) out[k] = w * d[b * n + k] + st.u * d[(b + 1) * n + k] + st.v * d[(b + 2) * n + k];
+        return true;
+    }
+    default: return false;
+    }
 }
 X2_HD inline V3 xformPoint(const float* m, V3 p) {
     return V3{m[0] * p.x + m[1] * p.y + m[2] * p.z + m[3], m[4] * p.x + m[5] * p.y + m[6] * p.z + m[7],

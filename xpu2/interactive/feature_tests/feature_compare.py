@@ -5,6 +5,7 @@ Each case: XPU2 and MoonRay (frame 0); the noise floor XPU2 frame 1 against fram
 and of MoonRay frame 1 against MoonRay frame 0, and writes <case>-compare.png (XPU2 | MoonRay | difference x8)."""
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -14,7 +15,8 @@ import runq
 
 S = Path(__file__).resolve().parent
 HARNESS = Path(r'C:\Users\Raphael Tobar\MoonRayForModo-xpu2-async\xpu2\interactive\session_harness.py')
-RT = Path(r'C:\Users\Raphael Tobar\AppData\Roaming\Luxology\Kits\MoonRayForModo\runtime')
+# The reference MoonRay: the installed kit's, or XPU2_REFERENCE_RUNTIME's (a pinned reference runtime).
+RT = Path(os.environ.get('XPU2_REFERENCE_RUNTIME', r'C:\Users\Raphael Tobar\AppData\Roaming\Luxology\Kits\MoonRayForModo\runtime'))
 MOONRAY = RT / 'moonray.exe'
 TOOL = RT / 'oiiotool.exe'
 

@@ -103,6 +103,11 @@ struct RenderItem {const rdl::SceneObject* geom;const rdl::SceneObject* instance
 // mask must share; singleSided: side_type single (a mesh bounding no volume), its back faces culled.
 struct Mesh {std::shared_ptr<const MeshData> data;unsigned material;int volume=-1;unsigned visibility=0xffu;bool singleSided=false;
  int geomLabel=-1;  // its geometry's label among the material AOVs' (shading::Geometry::getGeomLabelId)
+ // A static instance sharing its reference's data (data in the reference's own space, shade::MeshAttributes::instance):
+ // 1 placed, 2 placed and reflected; its transform (four rows of three, row vectors), the inverse's transpose, its own
+ // worldToObject, and its instancer's primitive attributes for it. 0: the data is its own, in world space.
+ unsigned instance=0;float objectToWorld[12]={1,0,0,0,1,0,0,0,1,0,0,0},normalToWorld[9]={1,0,0,0,1,0,0,0,1};
+ float worldToObject[12]={1,0,0,0,0,1,0,0,0,0,1,0};std::vector<shade::PrimAttr> instancePrims;std::vector<float> instancePrimData;
  // The scene indexer's families of its geometry and of its material's tree (entity_classes.h's Family bits; 0 where
  // nothing classified them), for the cells by suitability (device_suit.h).
  uint64_t families=0;
@@ -2380,14 +2385,32 @@ inline void instanceSurface(MeshData& m,const RenderItem& item,const MotionParam
  m.stepShading=n>1;m.instanced=true;
  const auto w=instanceMatrix(item).inverse();const double rows[12]={w[0][0],w[1][0],w[2][0],w[3][0],w[0][1],w[1][1],w[2][1],w[3][1],w[0][2],w[1][2],w[2][2],w[3][2]};
  for(int i=0;i<12;++i)m.worldToObject[i]=float(rows[i]);}
-// The instancer's primitive attributes of one instance (its UserData of one value an instance), constant on its mesh.
-inline void instanceAttributes(const rdl::SceneObject& inst,int instance,size_t count,MeshData& m){
+// The instancer's primitive attributes of one instance (its UserData of one value an instance), constant on its mesh:
+// into a mesh's own (instanceAttributes), or a shared mesh's instance's (instanceValues).
+inline void instanceValues(const rdl::SceneObject& inst,int instance,size_t count,std::vector<shade::PrimAttr>& prims,std::vector<float>& primData);
+inline void instanceAttributes(const rdl::SceneObject& inst,int instance,size_t count,MeshData& m){instanceValues(inst,instance,count,m.prims,m.primData);}
+// An instance of shared data placed (Mesh::instance): its transform, the inverse's transpose, whether reflected, and its
+// worldToObject (the inverse's rows, as a mesh's own).
+inline void placeInstance(Mesh& e,const rdl::Mat4d& x){
+ for(int r=0;r<4;++r)for(int c=0;c<3;++c)e.objectToWorld[3*r+c]=float(x[r][c]);
+ double M[3][3];for(int i=0;i<3;++i)for(int j=0;j<3;++j)M[i][j]=x[i][j];
+ const double det=M[0][0]*(M[1][1]*M[2][2]-M[1][2]*M[2][1])-M[0][1]*(M[1][0]*M[2][2]-M[1][2]*M[2][0])+M[0][2]*(M[1][0]*M[2][1]-M[1][1]*M[2][0]);
+ need(std::isfinite(det)&&std::abs(det)>1e-12,"Singular instance transform");
+ // inv[i][j]: the inverse's; a normal (row vector) goes through its transpose, n' = n inverse^T.
+ double inv[3][3];for(int i=0;i<3;++i)for(int j=0;j<3;++j){const int a=(j+1)%3,b=(j+2)%3,cc=(i+1)%3,dd=(i+2)%3;inv[i][j]=(M[a][cc]*M[b][dd]-M[a][dd]*M[b][cc])/det;}
+ for(int i=0;i<3;++i)for(int j=0;j<3;++j)e.normalToWorld[3*i+j]=float(inv[j][i]);
+ e.instance=det<0?2u:1u;
+ const auto w=x.inverse();const double rows[12]={w[0][0],w[1][0],w[2][0],w[3][0],w[0][1],w[1][1],w[2][1],w[3][1],w[0][2],w[1][2],w[2][2],w[3][2]};
+ for(int i=0;i<12;++i)e.worldToObject[i]=float(rows[i]);}
+// Whether instances share their reference's data (XPU2_SESSION_SHARED_INSTANCES=0: each baked into a mesh of its own).
+inline bool sharedInstances(){const char* v=std::getenv("XPU2_SESSION_SHARED_INSTANCES");return !(v&&v[0]=='0');}
+inline void instanceValues(const rdl::SceneObject& inst,int instance,size_t count,std::vector<shade::PrimAttr>& prims,std::vector<float>& primData){
  for(auto* object:inst.get<rdl::SceneObjectVector>("primitive_attributes")){
   if(!object||object->getSceneClass().getName()!="UserData")continue;
   auto add=[&](const std::string& key,unsigned type,const std::vector<float>& values,unsigned components){
    if(key.empty()||values.size()!=count*components)return;
-   m.prims.push_back(shade::PrimAttr{shade::primKey(key.c_str(),type),components,1u,unsigned(m.primData.size())});
-   m.primData.insert(m.primData.end(),values.begin()+std::ptrdiff_t(size_t(instance)*components),values.begin()+std::ptrdiff_t((size_t(instance)+1)*components));};
+   prims.push_back(shade::PrimAttr{shade::primKey(key.c_str(),type),components,1u,unsigned(primData.size())});
+   primData.insert(primData.end(),values.begin()+std::ptrdiff_t(size_t(instance)*components),values.begin()+std::ptrdiff_t((size_t(instance)+1)*components));};
   {const auto& d=get<rdl::FloatVector>(*object,"float_values_0");add(get<rdl::String>(*object,"float_key"),shade::PrimFloat,std::vector<float>(d.begin(),d.end()),1);}
   {const auto& d=get<rdl::IntVector>(*object,"int_values");std::vector<float> f;for(int v:d)f.push_back(float(v));add(get<rdl::String>(*object,"int_key"),shade::PrimInt,f,1);}
   {const auto& d=get<rdl::RgbVector>(*object,"color_values_0");std::vector<float> f;for(auto c:d){f.push_back(c.r);f.push_back(c.g);f.push_back(c.b);}add(get<rdl::String>(*object,"color_key"),shade::PrimRgb,f,3);}
@@ -3065,6 +3088,8 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
  std::vector<const rdl::LightFilterSet*> meshFilterSets;
  // The render items: each geometry of the layer, and each instance of an instancer (instancerItems).
  std::vector<RenderItem> items;
+ // Shared instances' data, by reference and part (o's name and its piece's suffix): made for the first instance.
+ std::map<std::string,std::shared_ptr<const MeshData>> sharedMeshes;
  for(auto& pair:sorted){const rdl::SceneObject& g=*pair.second;if(!allGeometry.count(&g))continue;
   if(g.getSceneClass().getName()=="RdlInstancerGeometry")instancerItems(g,sv,plan->motion,items);else items.push_back(RenderItem{&g});}
  for(const RenderItem& item:items){auto& o=*item.geom;
@@ -3169,7 +3194,15 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
    // MoonRay tessellates a displaced mesh into quads: polygon maps would read four polyvertices.
    need(!mat||!(plan->materialRecords.at(materialIds.at(mat->getName())).flags&shade::MatPolyVertices),o.getName()+": polygon maps on a displaced mesh are not rendered yet");
   }
-  auto sig=signature(o,frame);std::shared_ptr<const MeshData> data;bool reusedData=false;
+  // A static instance of a polygon or subdivision mesh shares its reference's data: one copy in the reference's own
+  // space for every instance of it, placed by each instance's transform as MoonRay's instances are (its hits through
+  // IntersectionInit's transforms), with the instance's attributes its own. Baked into a mesh of its own as before: an
+  // instance that moves, bounds a volume, is single-sided, is the bake camera's mesh, or whose triangles XPU2 displaces.
+  const std::string sharedKey=o.getName()+piece.suffix;
+  const bool shareInstance=paths&&item.instancer&&!item.moves&&o.getSceneClass().getName()=="RdlMeshGeometry"&&volumeIndex<0&&mat&&
+   !meshHasMotion(o)&&&o!=bakeGeometry&&get<rdl::Int>(o,"side_type")!=1&&!(displacementShader&&!subdGeometry&&!polyGeometry)&&sharedInstances();
+  auto sig=signature(o,frame);std::shared_ptr<const MeshData> data;bool reusedData=false,sharedHit=false;
+  if(shareInstance){auto it=sharedMeshes.find(sharedKey);if(it!=sharedMeshes.end()){data=it->second;sharedHit=true;}}
   if(o.getSceneClass().getName()=="RdlMeshGeometry"&&get<rdl::Bool>(o,"is_subd")&&get<rdl::Float>(o,"adaptive_error")>0.0f)plan->cameraDependent=true;
   // A displaced mesh MoonRay tessellates (subdivision, PolyMesh) is kept while nothing that shapes it has changed: the
   // mesh, each part's displacement and its maps through and through (deepSignature), which displacement is whose, and
@@ -3243,7 +3276,8 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
     auto& surface=subdRefCache[&o];
     if(!surface){surface=tessellateSubdivision(o,layer,*plan,rdl::Mat4d(scene_rdl2::math::one),nullptr,displaceCall,true);subdDisplacement.check(o);}
     auto m=subdivisionMesh(*surface,faceMask,meshName,std::move(sig),rdl::Mat4d(scene_rdl2::math::one),polys);
-    instanceSurface(*m,item,plan->motion);instanceAttributes(*item.instancer,item.instance,item.count,*m);
+    if(shareInstance)m->instanced=true;  // in its own space, placed by each instance (placeInstance)
+    else{instanceSurface(*m,item,plan->motion);instanceAttributes(*item.instancer,item.instance,item.count,*m);}
     data=std::move(m);++plan->preparedMeshes;
    }else if(meshMotion){
     // Under motion blur (SubdivisionMesh::transformPrimitive's transformVertexBuffer on the control cage): the cage at
@@ -3286,14 +3320,16 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
    if(item.instancer){
     // An instance: the prototype tessellated and displaced once in its own space, moved by the instance's transform.
     auto m=polygonMesh(*surface,faceMask,meshName,std::move(sig),rdl::Mat4d(scene_rdl2::math::one),polys);
-    instanceSurface(*m,item,plan->motion);instanceAttributes(*item.instancer,item.instance,item.count,*m);data=std::move(m);}
+    if(shareInstance)m->instanced=true;  // in its own space, placed by each instance (placeInstance)
+    else{instanceSurface(*m,item,plan->motion);instanceAttributes(*item.instancer,item.instance,item.count,*m);}
+    data=std::move(m);}
    else{PrepPart t{"polygon mesh from the tessellation"};data=polygonMesh(*surface,faceMask,meshName,std::move(sig),transform,polys);}
    ++plan->preparedMeshes;
   }else{
   need(!get<rdl::Bool>(o,"is_subd"),o.getName()+": subdivision unsupported");
   // Supplied normals are the shading normals; on the path tracer a mesh without them smooths its own (PolyMeshCalcNv).
   if(spatial)need(!get<rdl::Bool>(o,"smooth_normal")||paths,"Spatial smooth normals unsupported");
-  auto transform=item.instancer?instanceMatrix(item):spatial?affine(o):translation(o);if(!spatial)need(transform[3][2]==0,o.getName()+": only coplanar geometry supported");
+  auto transform=shareInstance?rdl::Mat4d(scene_rdl2::math::one):item.instancer?instanceMatrix(item):spatial?affine(o):translation(o);if(!spatial)need(transform[3][2]==0,o.getName()+": only coplanar geometry supported");
    need(paths||!faceMask,o.getName()+": parts are rendered by the path tracer only");
    auto m=std::make_shared<MeshData>();m->name=meshName;m->signature=std::move(sig);
    {const auto w=transform.inverse();const double rows[12]={w[0][0],w[1][0],w[2][0],w[3][0],w[0][1],w[1][1],w[2][1],w[3][1],w[0][2],w[1][2],w[2][2],w[3][2]};
@@ -3381,7 +3417,7 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
      {const auto& d=get<rdl::Vec2fVector>(*object,"vec2f_values_0");std::vector<float> f;for(auto c:d){f.push_back(c.x);f.push_back(c.y);}add(get<rdl::String>(*object,"vec2f_key"),shade::PrimVec2f,2,f,d.size());}
      {const auto& d=get<rdl::Vec3fVector>(*object,"vec3f_values_0");std::vector<float> f;for(auto c:d){f.push_back(c.x);f.push_back(c.y);f.push_back(c.z);}add(get<rdl::String>(*object,"vec3f_key"),shade::PrimVec3f,3,f,d.size());}
     }
-    if(item.instancer){instanceAttributes(*item.instancer,item.instance,item.count,*m);m->instanced=true;}
+    if(item.instancer){if(!shareInstance)instanceAttributes(*item.instancer,item.instance,item.count,*m);m->instanced=true;}
     if(item.instancer&&item.moves&&!m->steps.empty()){m->stepShading=true;
      if(!m->normals1.empty())for(const auto& step:m->steps)m->stepNormals.push_back(split.quads?displace::smoothNormals(step,split.quadVertices,4):displace::smoothNormals(step,split.vertices,3));}
     if(reversed){for(auto& n:m->normals)n=surface::mul(n,-1.0f);for(auto& n:m->normals1)n=surface::mul(n,-1.0f);
@@ -3471,13 +3507,17 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
   }
   // A displaced mesh made now carries what shaped it (made here, it is this plan's alone).
   if(!displacementKey.empty()&&data->displacementKey!=displacementKey)const_cast<MeshData&>(*data).displacementKey=displacementKey;
-  plan->bytes+=data->positions.size()*sizeof(V3)+data->triangles.size()*sizeof(Tri)+data->curvePoints.size()*sizeof(float)+data->curveSpans.size()*sizeof(unsigned);
+  // A shared instance's data is counted once, with its first instance.
+  if(shareInstance&&!sharedHit)sharedMeshes.emplace(sharedKey,data);
+  if(!sharedHit)plan->bytes+=data->positions.size()*sizeof(V3)+data->triangles.size()*sizeof(Tri)+data->curvePoints.size()*sizeof(float)+data->curveSpans.size()*sizeof(unsigned);
   // Over the budget already: said now, not after the rest of the scene is prepared.
   need(plan->bytes<=limits.bytes,geometryBudgetText(plan->bytes,limits.bytes));plan->meshes.push_back({data,mat?materialIds.at(mat->getName()):~0u,volumeIndex,
    paths?(geometryVisibility(o)&(item.instancer?geometryVisibility(*item.instancer):0xffu)):0xffu,
    paths&&volumeIndex<0&&get<rdl::Int>(o,"side_type")==1,
    plan->aovs?plan->aovs->geomLabel(aov::attribute<rdl::String>(o,"label","")):-1});
   plan->meshes.back().families=indexedFamilies(o,frame,familyCache)|(mat?indexedFamilies(*mat,frame,familyCache):0);
+  if(shareInstance){auto& e=plan->meshes.back();placeInstance(e,instanceMatrix(item));
+   instanceValues(*item.instancer,item.instance,item.count,e.instancePrims,e.instancePrimData);}
   if(displacementShader&&!subdGeometry&&!polyGeometry&&!reusedData)displaced.push_back({plan->meshes.size()-1,edgeVertices,displacement});
   // An emissive mesh volume lights the scene (an emissive region over its mesh's box).
   if(volumeIndex>=0&&plan->volumes[size_t(volumeIndex)].kind==volume::KindVdb&&plan->volumes[size_t(volumeIndex)].mapped)

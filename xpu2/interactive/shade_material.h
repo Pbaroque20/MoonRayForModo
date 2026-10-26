@@ -49,7 +49,43 @@ struct MeshAttributes {
     // A toon material's mesh under MOONRAY_MODO_TOON_TERMINATOR (not an instance): its hits record the smooth surface's
     // offset (State::modoSmoothOffset).
     bool toonOffset = false;
+    // A static instance of shared geometry (MoonRay's instance hits: IntersectionInit takes the reference's normal,
+    // derivatives and shading normals through the instance's transform). Its arrays are the reference's, in the
+    // reference's own space, its vertices placed as they are fetched (placed). objectToWorld is the transform, four rows
+    // of three (row vectors, MoonRay's: x' = x r0 + y r1 + z r2 + r3), normalToWorld its inverse's transpose (three rows,
+    // n' = n.x r0 + n.y r1 + n.z r2). instance 0: not one; 1: placed; 2: placed and reflected (a negative determinant),
+    // whose geometric normal MoonRay keeps as the reference's faces have it, where the placed vertices' order turns it.
+    U32 instance = 0;
+    float objectToWorld[12] = {1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0};
+    float normalToWorld[9] = {1, 0, 0, 0, 1, 0, 0, 0, 1};
+    // The instance's own primitive attributes (its instancer's, one value an instance), looked up after the reference's.
+    const PrimAttr* instancePrims = nullptr;
+    const float* instancePrimData = nullptr;
+    U32 instancePrimCount = 0;
 };
+// An instance's point, vector and normal in world space (MeshAttributes::objectToWorld, normalToWorld).
+X2_HD inline V3 placedPoint(const MeshAttributes& m, V3 p) {
+    const float* x = m.objectToWorld;
+    return V3{p.x * x[0] + p.y * x[3] + p.z * x[6] + x[9], p.x * x[1] + p.y * x[4] + p.z * x[7] + x[10],
+              p.x * x[2] + p.y * x[5] + p.z * x[8] + x[11]};
+}
+X2_HD inline V3 placedVector(const MeshAttributes& m, V3 v) {
+    const float* x = m.objectToWorld;
+    return V3{v.x * x[0] + v.y * x[3] + v.z * x[6], v.x * x[1] + v.y * x[4] + v.z * x[7], v.x * x[2] + v.y * x[5] + v.z * x[8]};
+}
+X2_HD inline V3 placedNormal(const MeshAttributes& m, V3 n) {
+    const float* x = m.normalToWorld;
+    return V3{n.x * x[0] + n.y * x[3] + n.z * x[6], n.x * x[1] + n.y * x[4] + n.z * x[7], n.x * x[2] + n.y * x[5] + n.z * x[8]};
+}
+// A vertex of the mesh where it is: an instance's placed, any other's as it is.
+X2_HD inline V3 placed(const MeshAttributes& m, V3 p) { return m.instance ? placedPoint(m, p) : p; }
+// A shading normal, an st derivative or a polyvertex of the mesh in world space (an instance's placed).
+X2_HD inline V3 meshNormal(const MeshAttributes& m, const V3* normals, U32 i) {
+    return m.instance ? placedNormal(m, normals[i]) : normals[i];
+}
+X2_HD inline V3 meshVector(const MeshAttributes& m, const V3* vectors, U32 i) {
+    return m.instance ? placedVector(m, vectors[i]) : vectors[i];
+}
 // Intersection::setModoSmoothOffset's lift: P moved up to a corner's tangent plane, by the corner's weight.
 X2_HD inline void liftToSmooth(V3& offset, V3 P, V3 corner, V3 n, float weight) {
     const V3 unit = normalize(n);
@@ -86,6 +122,9 @@ X2_CALL bool hitState(const MeshAttributes& m, U32 prim, U32 ia, U32 ib, U32 ic,
                            V3 P, V3 rayDir, State& st) {
     const float w = 1.0f - u - v;
     V3 ng = cross(b - a, c - a);
+    // A reflected instance: its reference's face normal through the transform (transformNormal), which is the placed
+    // triangle's turned over.
+    if (m.instance == 2) ng = -ng;
     const float l = length(ng);
     if (!(l > 0)) return false;
     st.Ng = ng / l;
@@ -121,7 +160,7 @@ X2_CALL bool hitState(const MeshAttributes& m, U32 prim, U32 ia, U32 ib, U32 ic,
     if (m.normalRate != RateNone && m.normals) {
         const U32 i1 = m.normalRate == RateVertex ? ia : prim * 3, i2 = m.normalRate == RateVertex ? ib : prim * 3 + 1,
                   i3 = m.normalRate == RateVertex ? ic : prim * 3 + 2;
-        V3 n1 = m.normals[i1], n2 = m.normals[i2], n3 = m.normals[i3];
+        V3 n1 = meshNormal(m, m.normals, i1), n2 = meshNormal(m, m.normals, i2), n3 = meshNormal(m, m.normals, i3);
         if (m.normals1) {
             // Two time samples (motion blur): each vertex's normal at the ray's time.
             const float nt = m.sampleTime >= 0.0f ? m.sampleTime : m.time, s0 = 1.0f - nt;
@@ -162,11 +201,11 @@ X2_CALL bool hitState(const MeshAttributes& m, U32 prim, U32 ia, U32 ib, U32 ic,
     st.polyCount = 3;
     if (m.polyVertices && m.positions) {
         const U32* q = m.polyVertices + 4 * size_t(prim);
-        st.pa = m.positions[q[0]];
-        st.pb = m.positions[q[1]];
-        st.pc = m.positions[q[2]];
+        st.pa = placed(m, m.positions[q[0]]);
+        st.pb = placed(m, m.positions[q[1]]);
+        st.pc = placed(m, m.positions[q[2]]);
         if (q[3] != ~0u) {
-            st.pd = m.positions[q[3]];
+            st.pd = placed(m, m.positions[q[3]]);
             st.polyCount = 4;
         }
     }
@@ -174,8 +213,8 @@ X2_CALL bool hitState(const MeshAttributes& m, U32 prim, U32 ia, U32 ib, U32 ic,
     st.subdivision = m.dpds && m.dpdt;
     if (m.dpds && m.dpdt) {
         // OpenSubdivMesh::postIntersect: the limit surface's derivatives at the triangle's vertices.
-        st.dPds = w * m.dpds[ia] + u * m.dpds[ib] + v * m.dpds[ic];
-        st.dPdt = w * m.dpdt[ia] + u * m.dpdt[ib] + v * m.dpdt[ic];
+        st.dPds = w * meshVector(m, m.dpds, ia) + u * meshVector(m, m.dpds, ib) + v * meshVector(m, m.dpds, ic);
+        st.dPdt = w * meshVector(m, m.dpdt, ia) + u * meshVector(m, m.dpdt, ib) + v * meshVector(m, m.dpdt, ic);
         if (m.dpds1 && m.dpdt1) {
             // Under motion: each vertex's derivatives lerped between the time steps about the ray's time.
             const float nt = m.sampleTime >= 0.0f ? m.sampleTime : m.time, s0 = 1.0f - nt;
@@ -232,6 +271,9 @@ X2_CALL bool hitState(const MeshAttributes& m, U32 prim, U32 ia, U32 ib, U32 ic,
     st.prims = m.prims;
     st.primData = m.primData;
     st.primCount = m.primCount;
+    st.instancePrims = m.instancePrims;
+    st.instancePrimData = m.instancePrimData;
+    st.instancePrimCount = m.instancePrimCount;
     return finite3(st.N) && finite3(st.Ng);
 }
 
@@ -461,7 +503,9 @@ X2_HD inline void normalDifferentials(const MeshAttributes& m, U32 prim, U32 ia,
     const U32 n1 = m.normalRate == RateVertex ? ia : prim * 3, n2 = m.normalRate == RateVertex ? ib : prim * 3 + 1,
               n3 = m.normalRate == RateVertex ? ic : prim * 3 + 2;
     V3 dNds, dNdt;
-    if (!trianglePartials(m.normals[n1], m.normals[n2], m.normals[n3], st1, st2, st3, dNds, dNdt)) return;
+    if (!trianglePartials(meshNormal(m, m.normals, n1), meshNormal(m, m.normals, n2), meshNormal(m, m.normals, n3), st1, st2, st3, dNds,
+                          dNdt))
+        return;
     const float sign = st.entering ? 1.0f : -1.0f;
     const V3 auxX = normalize(st.N * sign + dNds * st.dsdx + dNdt * st.dtdx);
     const V3 auxY = normalize(st.N * sign + dNds * st.dsdy + dNdt * st.dtdy);
@@ -535,6 +579,9 @@ X2_CALL bool curveState(const MeshAttributes& m, U32 span, float u, float v, V3 
     st.prims = m.prims;
     st.primData = m.primData;
     st.primCount = m.primCount;
+    st.instancePrims = m.instancePrims;
+    st.instancePrimData = m.instancePrimData;
+    st.instancePrimCount = m.instancePrimCount;
     float uv[3];
     if (primValue(st, primKey("st", PrimVec2f), uv) || primValue(st, primKey("uv", PrimVec2f), uv)) {
         st.s = uv[0];

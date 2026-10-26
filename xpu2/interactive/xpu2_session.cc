@@ -27,6 +27,9 @@
 #include <scene_rdl2/scene/rdl2/RenderOutput.h>
 #include <scene_rdl2/scene/rdl2/rdl2.h>
 #include <condition_variable>
+#include <new>
+#include <psapi.h>
+#include <dxgi.h>
 #include <fstream>
 #include <iostream>
 #include <mutex>
@@ -53,12 +56,99 @@ std::string fileText(const fs::path& path) {
     return std::string((std::istreambuf_iterator<char>(file)), {});
 }
 
+// The session's memory ceiling (memoryCeiling), 0 before it is set.
+size_t ceilingBytes = 0;
+
+// A ceiling on the session's memory, its own job object's: past it Windows refuses an allocation, which the session
+// reports as a fallback (main), where without it a scene asking for too much took memory the machine could not page
+// out and froze it (his Lamborghini with its geometry budget raised to 16 GB). XPU2_SESSION_MEMORY_MB sets it; else the
+// RAM free as the session starts, less a reserve for Windows and Modo meanwhile: a tenth of the machine's, 4 GB at least.
+void memoryCeiling() {
+    MEMORYSTATUSEX status{};
+    status.dwLength = sizeof status;
+    if (!GlobalMemoryStatusEx(&status)) return;
+    const size_t reserve = std::max<size_t>(size_t(status.ullTotalPhys / 10), 4ull << 30);
+    size_t limit = status.ullAvailPhys > reserve + (2ull << 30) ? size_t(status.ullAvailPhys) - reserve : 2ull << 30;
+    if (const char* mb = std::getenv("XPU2_SESSION_MEMORY_MB"))
+        if (const long long n = std::atoll(mb); n > 0) limit = size_t(n) << 20;
+    HANDLE job = CreateJobObjectW(nullptr, nullptr);
+    if (!job) return;
+    JOBOBJECT_EXTENDED_LIMIT_INFORMATION info{};
+    info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_PROCESS_MEMORY;
+    info.ProcessMemoryLimit = limit;
+    if (SetInformationJobObject(job, JobObjectExtendedLimitInformation, &info, sizeof info) &&
+        AssignProcessToJobObject(job, GetCurrentProcess())) {
+        ceilingBytes = limit;
+        std::printf("XPU2: memory ceiling %zu MB (%.1f GB of the machine's %.1f GB free)\n", limit >> 20, double(status.ullAvailPhys) / (1 << 30),
+                    double(status.ullTotalPhys) / (1 << 30));
+    } else {
+        std::printf("XPU2: no memory ceiling (the job object was refused: %lu)\n", GetLastError());
+        CloseHandle(job);
+    }
+}
+
+// The session's committed memory now and at its peak, in MB.
+std::string memoryText() {
+    PROCESS_MEMORY_COUNTERS_EX counters{};
+    counters.cb = sizeof counters;
+    if (!K32GetProcessMemoryInfo(GetCurrentProcess(), reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&counters), sizeof counters)) return "unknown";
+    char text[160];
+    std::snprintf(text, sizeof text, "%zu MB committed, %zu MB at most so far%s", counters.PrivateUsage >> 20, counters.PeakPagefileUsage >> 20,
+                  ceilingBytes ? (", of a " + std::to_string(ceilingBytes >> 20) + " MB ceiling").c_str() : "");
+    return text;
+}
+
+// What a byte of prepared positions and triangles costs in all, in bytes of the session's memory: its tessellation's
+// buffers, normals, texture coordinates and the CPU's acceleration structure besides (5.7 GB committed for 576 MB on a
+// displaced, instanced test scene).
+constexpr size_t GeometryFootprint = 11;  // 10.4 measured, and a margin
+// The same on the card: its acceleration structures' build and buffers (a peak of 13 GB above the session's own for
+// 552 MB there).
+constexpr size_t GeometryVramFootprint = 24;
+
+// The largest graphics card's own memory (DXGI's dedicated video memory), 0 where it is not known.
+size_t cardMemory() {
+    static const size_t bytes = [] {
+        HMODULE dxgi = LoadLibraryW(L"dxgi.dll");
+        if (!dxgi) return size_t(0);
+        using Create = HRESULT(WINAPI*)(REFIID, void**);
+        const auto create = reinterpret_cast<Create>(GetProcAddress(dxgi, "CreateDXGIFactory1"));
+        IDXGIFactory1* factory = nullptr;
+        size_t most = 0;
+        if (create && SUCCEEDED(create(__uuidof(IDXGIFactory1), reinterpret_cast<void**>(&factory)))) {
+            IDXGIAdapter1* adapter = nullptr;
+            for (UINT i = 0; factory->EnumAdapters1(i, &adapter) != DXGI_ERROR_NOT_FOUND; ++i) {
+                DXGI_ADAPTER_DESC1 desc{};
+                if (SUCCEEDED(adapter->GetDesc1(&desc))) most = std::max<size_t>(most, desc.DedicatedVideoMemory);
+                adapter->Release();
+            }
+            factory->Release();
+        }
+        return most;
+    }();
+    return bytes;
+}
+
 // The prepared geometry a scene may have (cpu::Limits::bytes: its meshes' positions and triangles once tessellated and
-// displaced): XPU2_SESSION_GEOMETRY_MB when set (tests), else 1 GiB.
+// displaced, shared instances' once): XPU2_SESSION_GEOMETRY_MB when set (tests); else what the machine has room for,
+// measured as each scene is prepared: the RAM free then, less a reserve for Windows and Modo (a tenth of the machine's,
+// 4 GB at least) and for the GPU lane's pinned memory (an eighth, 2 to 8 GB), over GeometryFootprint, within the
+// session's memory ceiling (memoryCeiling) and the card's memory (cardMemory), between 256 MB and 64 GB. A scene asking more falls back to XPU as it is
+// prepared, where a fixed 1 GiB refused scenes the machine held easily, and more than the machine has froze it.
 size_t geometryBudget() {
     if (const char* mb = std::getenv("XPU2_SESSION_GEOMETRY_MB"))
         if (const long long n = std::atoll(mb); n > 0) return std::min<size_t>(size_t(n) << 20, cpu::HardGeometryBytes);
-    return size_t(1) << 30;
+    MEMORYSTATUSEX status{};
+    status.dwLength = sizeof status;
+    if (!GlobalMemoryStatusEx(&status)) return size_t(1) << 30;
+    const size_t total = size_t(status.ullTotalPhys), free = size_t(status.ullAvailPhys);
+    const size_t reserve = std::max<size_t>(total / 10, 4ull << 30) + std::clamp<size_t>(total / 8, 2ull << 30, 8ull << 30);
+    size_t budget = (free > reserve ? free - reserve : 0) / GeometryFootprint;
+    if (ceilingBytes) budget = std::min(budget, ceilingBytes / GeometryFootprint);
+    // And what the card holds, less a fifth for the rest of the frame and Modo's viewport: past it the GPU's build fails,
+    // only after the whole preparation.
+    if (const size_t card = cardMemory()) budget = std::min(budget, (card - card / 5) / GeometryVramFootprint);
+    return std::clamp<size_t>(budget, 256ull << 20, cpu::HardGeometryBytes);
 }
 
 // Where the preparation's time went (cpu::prepLaps): its stages and the parts within them, also when it stopped short.
@@ -82,6 +172,7 @@ void logPreparation(const char* how, double canonicalSeconds, double cpuSceneSec
         }
         std::printf("XPU2: within the plan: %s\n", parts.c_str());
     }
+    std::printf("XPU2: memory: %s\n", memoryText().c_str());
     std::fflush(stdout);
 }
 
@@ -334,6 +425,7 @@ struct Scene {
             cpuScene = std::make_unique<async::CpuScene>(plan);
         // Where the preparation's time went: the canonical copy, the plan by its stages (cpu::prepLaps), the CPU's scene.
         logPreparation("prepared", canonicalSeconds, seconds(planned));
+        std::printf("XPU2: geometry: %zu MB of positions and triangles, of a %zu MB budget\n", plan->bytes >> 20, geometryBudget() >> 20);
         const auto& subd = cpu::subdTimes();
         if (subd.meshes)
             std::printf("XPU2: tessellation: %lld meshes (MoonRay's subdivision and PolyMesh) in %.2f s; displacement %lld vertices, "
@@ -832,6 +924,7 @@ int session(const Args& args, const fs::path& directory) {
                     guard.join();
                     std::printf("XPU2: GPU programs loaded from the cache in %.2f s\n",
                                 std::chrono::duration<double>(Clock::now() - made).count());
+                    std::printf("XPU2: memory with the GPU lane made: %s\n", memoryText().c_str());
                 }
                 if (fresh) {
                     // A scene the GPU programs do not render yet (async::GpuLane::cpuOnly) renders on the CPU alone.
@@ -844,12 +937,13 @@ int session(const Args& args, const fs::path& directory) {
                         gpuUsable = why.empty();
                         const auto gpuBegan = Clock::now();
                         if (gpuUsable) gpu->prepare(scene.plan);
-                        if (gpuUsable) std::printf("XPU2: GPU scene prepared in %.2f s\n", std::chrono::duration<double>(Clock::now() - gpuBegan).count());
+                        if (gpuUsable) std::printf("XPU2: GPU scene prepared in %.2f s (memory: %s)\n", std::chrono::duration<double>(Clock::now() - gpuBegan).count(), memoryText().c_str());
                         else std::printf("XPU2: the GPU leaves %s to the CPU; rendering on the CPU alone\n", why.c_str());
                         gpuPlan = scene.plan;
                     }
                     renderer = std::make_unique<async::Renderer>(scene.plan, *scene.cpuScene, gpuUsable ? gpu.get() : nullptr);
                     renderer->deviceRatio(deviceRatio);
+                    std::printf("XPU2: memory with the renderer made: %s\n", memoryText().c_str());
                     // Sampling generations: uniform's samples spent where they show, or adaptive's to its target error.
                     std::printf("XPU2: scene ready in %.2f s (%ux%u, %s %u)\n", std::chrono::duration<double>(Clock::now() - began).count(),
                                 scene.plan->width, scene.plan->height,
@@ -1194,6 +1288,7 @@ int session(const Args& args, const fs::path& directory) {
                         complete = true;
                         std::printf("XPU2: %s in %.2f s (CPU %llu samples, GPU %llu)\n", result.drained ? "drained" : "finished",
                                     result.seconds, (unsigned long long)result.cpuSamples, (unsigned long long)result.gpuSamples);
+                        std::printf("XPU2: memory: %s; GPU lane %s\n", memoryText().c_str(), gpu ? gpu->memoryText().c_str() : "none");
                     }
                 }
                 outlines.watch(nullptr, id, 0, 0);
@@ -1251,8 +1346,13 @@ int main(int argc, char** argv) {
     if (argc == 2 && std::string(argv[1]) == "--shaders-compiled") return shadersCompiled(folder);
     const char* directory = std::getenv("MOONRAY_MODO_SESSION");
     if (!directory) return passThrough(argc, argv);
+    memoryCeiling();
     try {
         return session(parse(argc, argv), fs::u8path(directory));
+    } catch (const std::bad_alloc&) {
+        // Its memory ceiling (memoryCeiling) refused it more: the scene goes to XPU, the machine is left alone.
+        fallback("XPU2 ran out of the memory it may use (" + memoryText() + ")");
+        return 0;
     } catch (const std::exception& e) {
         fallback(e.what());
         return 0;

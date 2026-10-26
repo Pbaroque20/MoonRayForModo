@@ -90,12 +90,14 @@ public:
         }
         driver.pinnedCap = 2ull << 30;
         {
-            // Pinned (page-locked) host memory, the frame's readbacks and pictures: a quarter of the machine's, between
-            // 2 and 16 GB (a fixed 2 GB refused his Dose preview: 1600 x 2000 with 26 outputs).
+            // Pinned (page-locked) host memory, the frame's readbacks and pictures: an eighth of the machine's, between
+            // 2 and 8 GB (a fixed 2 GB refused his Dose preview: 1600 x 2000 with 26 outputs). Memory Windows cannot page
+            // out: much more of it leaves the machine nothing to page to (a quarter, 16 GB, was the cap when a heavy
+            // scene froze his machine).
             MEMORYSTATUSEX status{};
             status.dwLength = sizeof status;
             if (GlobalMemoryStatusEx(&status))
-                driver.pinnedCap = std::clamp<size_t>(size_t(status.ullTotalPhys / 4), 2ull << 30, 16ull << 30);
+                driver.pinnedCap = std::clamp<size_t>(size_t(status.ullTotalPhys / 8), 2ull << 30, 8ull << 30);
         }
         try {
             ox(optixInit());
@@ -231,6 +233,13 @@ public:
     }
     // The GPU's rate in samples a second, as its launches have found it across frames (realtime's launch sizes).
     double rateHint() const { return rateHint_; }
+    // The lane's pinned host and device memory now and at its peak, in MB (gpu::Driver's counts).
+    std::string memoryText() const {
+        char text[200];
+        std::snprintf(text, sizeof text, "pinned %zu MB (at most %zu, of %zu), device %zu MB (at most %zu)", driver.pinnedBytes >> 20, driver.peakPinned >> 20,
+                      driver.pinnedCap >> 20, driver.deviceBytes >> 20, driver.peakDevice >> 20);
+        return text;
+    }
     void noteRate(double rate) {
         if (rate > 0) rateHint_ = rateHint_ > 0 ? 0.8 * rateHint_ + 0.2 * rate : rate;
     }
@@ -642,6 +651,31 @@ public:
             entry.keep.insert(entry.keep.end(), {vertices, indices, gas.first});
             scene_.keep.insert(scene_.keep.end(), entry.keep.begin(), entry.keep.end());
             nextCache.emplace(&m, std::move(entry));
+        }
+        // Shared instances (cpu::Mesh::instance): their data's structure under the instance's transform (OptiX's three rows
+        // of four, for column vectors: the plan's rows vx, vy, vz and p are its columns), their records an instance's.
+        for (unsigned i = 0; i < plan->meshes.size(); ++i) {
+            const auto& e = plan->meshes[i];
+            if (!e.instance) continue;
+            for (int r = 0; r < 3; ++r) {
+                instances[i].transform[4 * r + 0] = e.objectToWorld[0 + r];
+                instances[i].transform[4 * r + 1] = e.objectToWorld[3 + r];
+                instances[i].transform[4 * r + 2] = e.objectToWorld[6 + r];
+                instances[i].transform[4 * r + 3] = e.objectToWorld[9 + r];
+            }
+            shade::MeshAttributes& a = meshAttributes[i];
+            a.instance = e.instance;
+            for (int k = 0; k < 12; ++k) a.objectToWorld[k] = e.objectToWorld[k];
+            for (int k = 0; k < 9; ++k) a.normalToWorld[k] = e.normalToWorld[k];
+            for (int k = 0; k < 12; ++k) a.worldToObject[k] = e.worldToObject[k];
+            if (!e.instancePrims.empty()) {
+                auto prims = upload(e.instancePrims.data(), e.instancePrims.size() * sizeof(shade::PrimAttr));
+                auto data = upload(e.instancePrimData.data(), std::max<size_t>(e.instancePrimData.size(), 1) * sizeof(float));
+                a.instancePrims = reinterpret_cast<const shade::PrimAttr*>(prims->pointer);
+                a.instancePrimData = reinterpret_cast<const float*>(data->pointer);
+                a.instancePrimCount = U32(e.instancePrims.size());
+                scene_.keep.insert(scene_.keep.end(), {prims, data});
+            }
         }
         // Meshes the new plan no longer has leave the cache (their buffers with them once the scene lets go).
         meshCache_ = std::move(nextCache);

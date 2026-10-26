@@ -159,6 +159,19 @@ struct GpuBackend {
         tock(ProfileTrace, from);
         return h;
     }
+    // Mesh geom's triangle's vertices where they are: a shared instance's placed by its transform (shade::placed).
+    __device__ void triangleAt(U32 geom, const mixed::Geometry& m, const surface::Triangle& t, surface::V3& a, surface::V3& b,
+                               surface::V3& c) const {
+        a = m.vertices[t.a];
+        b = m.vertices[t.b];
+        c = m.vertices[t.c];
+        if (params.meshAttributes && params.meshAttributes[geom].instance) {
+            const shade::MeshAttributes& x = params.meshAttributes[geom];
+            a = shade::placedPoint(x, a);
+            b = shade::placedPoint(x, b);
+            c = shade::placedPoint(x, c);
+        }
+    }
     __device__ resume::Hit traceSurfaces(const surface::Ray& ray) {
         unsigned instance = ~0u, primitive = 0;
         optixTrace(params.traversable, f3(ray.origin), f3(ray.direction), ray.nearT, ray.farT, time, ray.mask & 0xffu,
@@ -177,7 +190,9 @@ struct GpuBackend {
             return h;
         }
         const auto t = m.triangles[primitive];
-        if (!resume::geometryHit(h, ray, m.vertices[t.a], m.vertices[t.b], m.vertices[t.c])) h.normal = {};
+        surface::V3 a, b, c;
+        triangleAt(instance, m, t, a, b, c);
+        if (!resume::geometryHit(h, ray, a, b, c)) h.normal = {};
         return h;
     }
     __device__ unsigned material(const resume::Hit& h, const surface::Ray& ray, surface::Lambert& out) {
@@ -189,7 +204,9 @@ struct GpuBackend {
         const auto m = params.geometry[h.geom];
         const auto t = m.triangles[h.prim];
         tex::Footprint f;
-        if (!tex::footprint(m.vertices[t.a], m.vertices[t.b], m.vertices[t.c], ray, h.u, h.v, c.spp, f, c.spatial != 0))
+        surface::V3 a, b, cc;
+        triangleAt(h.geom, m, t, a, b, cc);
+        if (!tex::footprint(a, b, cc, ray, h.u, h.v, c.spp, f, c.spatial != 0))
             return tex::Invalid;
         const auto maps = params.maps[h.geom];
         surface::V3* bases[2] = {&out.albedo, &out.emission};
@@ -227,12 +244,13 @@ struct GpuBackend {
         }
         const auto m = params.geometry[h.geom];
         const auto t = m.triangles[h.prim];
-        if (!shade::hitState(params.meshAttributes[h.geom], h.prim, t.a, t.b, t.c, m.vertices[t.a], m.vertices[t.b],
-                             m.vertices[t.c], h.u, h.v, h.point, ray.direction, st))
+        surface::V3 a, b, cc;
+        triangleAt(h.geom, m, t, a, b, cc);
+        if (!shade::hitState(params.meshAttributes[h.geom], h.prim, t.a, t.b, t.c, a, b, cc, h.u, h.v, h.point, ray.direction, st))
             return false;
         st.geom = h.geom;
-        shade::hitDifferentials(params.meshAttributes[h.geom], h.prim, t.a, t.b, t.c, m.vertices[t.a], m.vertices[t.b],
-                                m.vertices[t.c], ray, st.pixelSamples ? st.pixelSamples : c.spp, st);
+        shade::hitDifferentials(params.meshAttributes[h.geom], h.prim, t.a, t.b, t.c, a, b, cc, ray, st.pixelSamples ? st.pixelSamples : c.spp,
+                                st);
         return true;
     }
     // A shadow ray's hit: its material's presence alone (presence shadows); a texture not yet resident marks the
@@ -250,8 +268,9 @@ struct GpuBackend {
         } else {
             const auto m = params.geometry[h.geom];
             const auto t = m.triangles[h.prim];
-            if (!shade::hitState(params.meshAttributes[h.geom], h.prim, t.a, t.b, t.c, m.vertices[t.a], m.vertices[t.b],
-                                 m.vertices[t.c], h.u, h.v, h.point, ray.direction, st))
+            surface::V3 a, b, cc;
+            triangleAt(h.geom, m, t, a, b, cc);
+            if (!shade::hitState(params.meshAttributes[h.geom], h.prim, t.a, t.b, t.c, a, b, cc, h.u, h.v, h.point, ray.direction, st))
                 return tex::Ready;
         }
         st.geom = h.geom;
@@ -278,15 +297,16 @@ struct GpuBackend {
         }
         const auto m = params.geometry[h.geom];
         const auto t = m.triangles[h.prim];
-        if (!shade::hitState(params.meshAttributes[h.geom], h.prim, t.a, t.b, t.c, m.vertices[t.a], m.vertices[t.b],
-                             m.vertices[t.c], h.u, h.v, h.point, ray.direction, st))
+        surface::V3 a, b, cc;
+        triangleAt(h.geom, m, t, a, b, cc);
+        if (!shade::hitState(params.meshAttributes[h.geom], h.prim, t.a, t.b, t.c, a, b, cc, h.u, h.v, h.point, ray.direction, st))
             return tex::Invalid;
         st.geom = h.geom;
         st.worldToRender = c.worldToRender;
         st.worldToObject = params.meshAttributes[h.geom].worldToObject;
         const shade::MaterialRecord& record = params.meshMaterials[h.geom];
-        shade::hitDifferentials(params.meshAttributes[h.geom], h.prim, t.a, t.b, t.c, m.vertices[t.a], m.vertices[t.b],
-                                m.vertices[t.c], ray, st.pixelSamples ? st.pixelSamples : c.spp, st);
+        shade::hitDifferentials(params.meshAttributes[h.geom], h.prim, t.a, t.b, t.c, a, b, cc, ray, st.pixelSamples ? st.pixelSamples : c.spp,
+                                st);
         const DeviceTextures textures{params.textures, params.textureCount, threadMark()};
         return shadeMaterial(record, st, textures, bsdf, presence);
     }

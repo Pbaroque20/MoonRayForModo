@@ -182,6 +182,8 @@ struct CpuScene {
     cpu::PlanView plan;
     std::vector<curves::Set> curveSets;  // a set a mesh (the user geometries' data)
     aov::Tables aovTables;               // the render outputs' AOV schema (aov_plan.h), none when they have none
+    // Shared instances' data (cpu::Mesh::instance): one Embree scene of each, which its instances' geometries instance.
+    std::map<const cpu::MeshData*, RTCScene> shared;
     explicit CpuScene(cpu::PlanView p) : device(std::make_shared<cpu::Device>()), plan(std::move(p)) {
         if (plan && plan->aovs) {
             aovTables = plan->aovs->tables();
@@ -196,6 +198,43 @@ struct CpuScene {
         curveSets.resize(plan->meshes.size());
         for (unsigned i = 0; i < plan->meshes.size(); ++i) {
             const auto& m = *plan->meshes[i].data;
+            if (plan->meshes[i].instance) {
+                // An instance of shared data: its data's scene (made with the first instance), placed by the
+                // instance's transform (rows vx, vy, vz, p: Embree's 3x4 column-major), masked by its visibility.
+                RTCScene& inner = shared[&m];
+                if (!inner) {
+                    inner = rtcNewScene(device->handle);
+                    cpu::need(inner, "Embree scene failure");
+                    rtcSetSceneFlags(inner, plan->shadowLinks.empty() ? RTC_SCENE_FLAG_ROBUST : RTC_SCENE_FLAG_ROBUST | RTC_SCENE_FLAG_FILTER_FUNCTION_IN_ARGUMENTS);
+                    rtcSetSceneBuildQuality(inner, RTC_BUILD_QUALITY_HIGH);
+                    RTCGeometry g = rtcNewGeometry(device->handle, RTC_GEOMETRY_TYPE_TRIANGLE);
+                    cpu::need(g, "Embree geometry failure");
+                    void* v = rtcSetNewGeometryBuffer(g, RTC_BUFFER_TYPE_VERTEX, 0, RTC_FORMAT_FLOAT3, sizeof(surface::V3), m.positions.size());
+                    auto* tr = rtcSetNewGeometryBuffer(g, RTC_BUFFER_TYPE_INDEX, 0, RTC_FORMAT_UINT3, sizeof(cpu::Tri), m.triangles.size());
+                    if (!v || !tr) {
+                        rtcReleaseGeometry(g);
+                        throw cpu::Unsupported("Embree allocation failure");
+                    }
+                    std::memcpy(v, m.positions.data(), m.positions.size() * sizeof(surface::V3));
+                    std::memcpy(tr, m.triangles.data(), m.triangles.size() * sizeof(cpu::Tri));
+                    rtcSetGeometryMask(g, 0xffffffffu);
+                    rtcSetGeometryBuildQuality(g, RTC_BUILD_QUALITY_HIGH);
+                    rtcCommitGeometry(g);
+                    rtcAttachGeometryByID(inner, g, 0);
+                    rtcReleaseGeometry(g);
+                    rtcCommitScene(inner);
+                }
+                RTCGeometry g = rtcNewGeometry(device->handle, RTC_GEOMETRY_TYPE_INSTANCE);
+                cpu::need(g, "Embree geometry failure");
+                rtcSetGeometryInstancedScene(g, inner);
+                rtcSetGeometryTimeStepCount(g, 1);
+                rtcSetGeometryTransform(g, 0, RTC_FORMAT_FLOAT3X4_COLUMN_MAJOR, plan->meshes[i].objectToWorld);
+                rtcSetGeometryMask(g, plan->meshes[i].visibility);
+                rtcCommitGeometry(g);
+                rtcAttachGeometryByID(scene, g, i);
+                rtcReleaseGeometry(g);
+                continue;
+            }
             if (m.points) {
                 RTCGeometry g = rtcNewGeometry(device->handle, RTC_GEOMETRY_TYPE_USER);
                 cpu::need(g, "Embree geometry failure");
@@ -283,6 +322,8 @@ struct CpuScene {
         : device(std::move(previous.device)), scene(previous.scene), volumes(previous.volumes), plan(std::move(p)),
           curveSets(std::move(previous.curveSets)) {
         previous.scene = previous.volumes = nullptr;
+        shared = std::move(previous.shared);
+        previous.shared.clear();
         if (plan && plan->aovs) {
             aovTables = plan->aovs->tables();
             aovTables.primKeys = plan->aovPrimKeys.data();
@@ -295,7 +336,8 @@ struct CpuScene {
         if (a.meshes.size() != b.meshes.size() || a.shadowLinks.empty() != b.shadowLinks.empty()) return false;
         for (size_t i = 0; i < a.meshes.size(); ++i) {
             const auto &x = a.meshes[i], &y = b.meshes[i];
-            if (x.data != y.data || x.visibility != y.visibility || x.volume != y.volume || x.singleSided != y.singleSided || x.material != y.material)
+            if (x.data != y.data || x.visibility != y.visibility || x.volume != y.volume || x.singleSided != y.singleSided || x.material != y.material ||
+                x.instance != y.instance || std::memcmp(x.objectToWorld, y.objectToWorld, sizeof x.objectToWorld) != 0)
                 return false;
         }
         return true;
@@ -303,6 +345,7 @@ struct CpuScene {
     ~CpuScene() {
         if (scene) rtcReleaseScene(scene);
         if (volumes) rtcReleaseScene(volumes);
+        for (auto& [data, inner] : shared) rtcReleaseScene(inner);
     }
     CpuScene(const CpuScene&) = delete;
 };
@@ -329,6 +372,27 @@ struct CpuBackend {
     }
     // A mesh's vertex at that time, and a moving mesh's time steps for its shading (shade::MeshAttributes).
     surface::V3 vertex(const cpu::MeshData& m, U32 i) const { return cpu::positionAt(m, i, time); }
+    // Plan mesh geom's vertex where it is: an instance's placed by its transform (shared data is in its own space).
+    surface::V3 vertexOf(U32 geom, const cpu::MeshData& m, U32 i) const {
+        const surface::V3 p = vertex(m, i);
+        const auto& e = s.plan->meshes[geom];
+        if (!e.instance) return p;
+        const float* x = e.objectToWorld;
+        return {p.x * x[0] + p.y * x[3] + p.z * x[6] + x[9], p.x * x[1] + p.y * x[4] + p.z * x[7] + x[10], p.x * x[2] + p.y * x[5] + p.z * x[8] + x[11]};
+    }
+    // An instance's shading attributes (shade::MeshAttributes::instance): its transforms and its own primitive attributes.
+    static void instanceInto(const cpu::Mesh& e, shade::MeshAttributes& a) {
+        if (!e.instance) return;
+        a.instance = e.instance;
+        for (int k = 0; k < 12; ++k) a.objectToWorld[k] = e.objectToWorld[k];
+        for (int k = 0; k < 9; ++k) a.normalToWorld[k] = e.normalToWorld[k];
+        for (int k = 0; k < 12; ++k) a.worldToObject[k] = e.worldToObject[k];
+        a.instancePrims = e.instancePrims.empty() ? nullptr : e.instancePrims.data();
+        a.instancePrimData = e.instancePrimData.empty() ? nullptr : e.instancePrimData.data();
+        a.instancePrimCount = unsigned(e.instancePrims.size());
+    }
+    // A plan mesh's object space: an instance's own, else its data's.
+    static const float* worldToObjectOf(const cpu::Mesh& e) { return e.instance ? e.worldToObject : e.data->worldToObject; }
     void motion(const cpu::MeshData& m, shade::MeshAttributes& a) const {
         if (m.steps.empty()) return;
         if (m.subdSteps) {
@@ -394,7 +458,7 @@ struct CpuBackend {
         rtcIntersect1(s.scene, &h, &args);
         resume::Hit out;
         if (h.hit.geomID == RTC_INVALID_GEOMETRY_ID) return out;
-        out.geom = h.hit.geomID;
+        out.geom = h.hit.instID[0] != RTC_INVALID_GEOMETRY_ID ? h.hit.instID[0] : h.hit.geomID;
         out.prim = h.hit.primID;
         const auto& mesh = *s.plan->meshes[out.geom].data;
         if (mesh.points) {
@@ -424,7 +488,7 @@ struct CpuBackend {
         }
         const auto t = mesh.triangles[out.prim];
         // Shared reconstruction of distance, coordinates and the offset origin.
-        if (!resume::geometryHit(out, ray, vertex(mesh, t.a), vertex(mesh, t.b), vertex(mesh, t.c)))
+        if (!resume::geometryHit(out, ray, vertexOf(out.geom, mesh, t.a), vertexOf(out.geom, mesh, t.b), vertexOf(out.geom, mesh, t.c)))
             out.normal = {};
         return out;
     }
@@ -489,12 +553,11 @@ struct CpuBackend {
         attributes.dpds = data.dpds.empty() ? nullptr : data.dpds.data();
         attributes.dpdt = data.dpdt.empty() ? nullptr : data.dpdt.data();
         motion(data, attributes);
-        if (!shade::hitState(attributes, h.prim, t.a, t.b, t.c, vertex(data, t.a), vertex(data, t.b), vertex(data, t.c), h.u,
-                             h.v, h.point, ray.direction, st))
-            return false;
+        instanceInto(plan.meshes[h.geom], attributes);
+        const surface::V3 a = vertexOf(h.geom, data, t.a), b = vertexOf(h.geom, data, t.b), c = vertexOf(h.geom, data, t.c);
+        if (!shade::hitState(attributes, h.prim, t.a, t.b, t.c, a, b, c, h.u, h.v, h.point, ray.direction, st)) return false;
         st.geom = h.geom;
-        shade::hitDifferentials(attributes, h.prim, t.a, t.b, t.c, vertex(data, t.a), vertex(data, t.b), vertex(data, t.c), ray,
-                                st.pixelSamples ? st.pixelSamples : plan.spp, st);
+        shade::hitDifferentials(attributes, h.prim, t.a, t.b, t.c, a, b, c, ray, st.pixelSamples ? st.pixelSamples : plan.spp, st);
         return true;
     }
     // The path tracer's hit: its shading state, and its material's Bsdf (shade_material.h).
@@ -537,13 +600,14 @@ struct CpuBackend {
             attributes.primData = data.primData.empty() ? nullptr : data.primData.data();
             attributes.primCount = unsigned(data.prims.size());
             motion(data, attributes);
-            if (!shade::hitState(attributes, h.prim, t.a, t.b, t.c, vertex(data, t.a), vertex(data, t.b), vertex(data, t.c), h.u,
-                                 h.v, h.point, ray.direction, st))
+            instanceInto(mesh, attributes);
+            if (!shade::hitState(attributes, h.prim, t.a, t.b, t.c, vertexOf(h.geom, data, t.a), vertexOf(h.geom, data, t.b),
+                                 vertexOf(h.geom, data, t.c), h.u, h.v, h.point, ray.direction, st))
                 return tex::Ready;
         }
         st.geom = h.geom;
         st.worldToRender = plan.worldToRender;
-        st.worldToObject = data.worldToObject;
+        st.worldToObject = worldToObjectOf(mesh);
         const HostTextures textures{plan.textureImages.data(), unsigned(plan.textureImages.size())};
         return shade::materialPresence(plan.materialRecords[mesh.material], plan.materialPool.data(), st, textures, presence);
     }
@@ -595,16 +659,15 @@ struct CpuBackend {
         attributes.toonOffset = !data.instanced && mesh.material < plan.materialRecords.size() &&
                                 (plan.materialRecords[mesh.material].flags & shade::MatModoToonMaterial) != 0;
         motion(data, attributes);
-        if (!shade::hitState(attributes, h.prim, t.a, t.b, t.c, vertex(data, t.a), vertex(data, t.b), vertex(data, t.c), h.u,
-                             h.v, h.point, ray.direction, st))
-            return tex::Invalid;
+        instanceInto(mesh, attributes);
+        const surface::V3 a = vertexOf(h.geom, data, t.a), b = vertexOf(h.geom, data, t.b), c = vertexOf(h.geom, data, t.c);
+        if (!shade::hitState(attributes, h.prim, t.a, t.b, t.c, a, b, c, h.u, h.v, h.point, ray.direction, st)) return tex::Invalid;
         st.geom = h.geom;
         st.worldToRender = plan.worldToRender;
-        st.worldToObject = data.worldToObject;
+        st.worldToObject = worldToObjectOf(mesh);
         if (mesh.material >= plan.materialRecords.size()) return tex::Invalid;
         const auto& record = plan.materialRecords[mesh.material];
-        shade::hitDifferentials(attributes, h.prim, t.a, t.b, t.c, vertex(data, t.a), vertex(data, t.b), vertex(data, t.c), ray,
-                                st.pixelSamples ? st.pixelSamples : plan.spp, st);
+        shade::hitDifferentials(attributes, h.prim, t.a, t.b, t.c, a, b, c, ray, st.pixelSamples ? st.pixelSamples : plan.spp, st);
         // Host RAM holds every level of every texture, so the CPU never misses.
         const HostTextures textures{plan.textureImages.data(), unsigned(plan.textureImages.size())};
         const unsigned shaded = shade::shadeMaterial(record, plan.materialPool.data(), st, textures, bsdf, presence, scratch().dwaSlots,
@@ -710,7 +773,9 @@ struct CpuBackend {
     static void linkFilter(const RTCFilterFunctionNArguments* args) {
         if (args->valid[0] == 0) return;
         const auto* ctx = reinterpret_cast<const LinkContext*>(args->context);
-        const U32 geom = RTCHitN_geomID(args->hit, args->N, 0);
+        // The caster: an instance's plan mesh where the hit is in an instanced scene.
+        const U32 inst = RTCHitN_instID(args->hit, args->N, 0, 0);
+        const U32 geom = inst != RTC_INVALID_GEOMETRY_ID ? inst : RTCHitN_geomID(args->hit, args->N, 0);
         if (!ctx->backend->castsShadow(geom, true)) args->valid[0] = 0;
     }
     // A lobe light set's lights (the plan's lobe light sets; ~0u: every light), and the subsurface exits' set (their

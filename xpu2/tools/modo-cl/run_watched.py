@@ -3,6 +3,7 @@
 second meanwhile (nvidia-smi) and the process's own peak working set; writes <scene folder>/<tag>/ (protocol.log,
 report.json) and prints the protocol's XPU2 lines with the memory peaks."""
 import argparse
+import ctypes
 import os
 import subprocess
 import sys
@@ -21,6 +22,8 @@ p.add_argument('tag')
 p.add_argument('--env', action='append', default=[])
 p.add_argument('--timeout', type=int, default=900)
 p.add_argument('--extra', default='', help='an overlay .rdla sent with the scene')
+p.add_argument('--min-free-ram-gb', type=float, default=8.0, help='stop the run when the machine has less RAM free')
+p.add_argument('--max-gpu-mb', type=int, default=21500, help='stop the run when the GPU holds more')
 a = p.parse_args()
 if 'modo.exe' in subprocess.run(['tasklist'], capture_output=True, text=True).stdout.lower():
     sys.exit('Modo is running: no GPU tests while the user tests in Modo')
@@ -33,7 +36,29 @@ args += ['--output', str(out), '--threads', '12', '--timeout', str(a.timeout)]
 for v in KIT_ENV + a.env:
     args += ['--env', v]
 samples = []
+ram = []
+stopped = []
 done = threading.Event()
+
+
+class MEMORYSTATUSEX(ctypes.Structure):
+    _fields_ = [('dwLength', ctypes.c_ulong), ('dwMemoryLoad', ctypes.c_ulong), ('ullTotalPhys', ctypes.c_ulonglong), ('ullAvailPhys', ctypes.c_ulonglong),
+                ('ullTotalPageFile', ctypes.c_ulonglong), ('ullAvailPageFile', ctypes.c_ulonglong), ('ullTotalVirtual', ctypes.c_ulonglong),
+                ('ullAvailVirtual', ctypes.c_ulonglong), ('ullAvailExtendedVirtual', ctypes.c_ulonglong)]
+
+
+def free_ram_gb():
+    s = MEMORYSTATUSEX()
+    s.dwLength = ctypes.sizeof(s)
+    ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(s))
+    return s.ullAvailPhys / 2**30
+
+
+def stop_session(why):
+    # Too much of the machine taken: the session is ended (the harness then reports it) before the machine slows.
+    if not stopped:
+        stopped.append(why)
+        subprocess.run(['taskkill', '/F', '/IM', 'moonray_xpu2.exe'], capture_output=True)
 
 
 def sample():
@@ -41,8 +66,13 @@ def sample():
         r = subprocess.run(['nvidia-smi', '--query-gpu=memory.used', '--format=csv,noheader,nounits'], capture_output=True, text=True)
         try:
             samples.append((time.time(), int(r.stdout.strip().splitlines()[0])))
+            if samples[-1][1] > a.max_gpu_mb:
+                stop_session('GPU memory %d MiB' % samples[-1][1])
         except (ValueError, IndexError):
             pass
+        ram.append((time.time(), free_ram_gb()))
+        if ram[-1][1] < a.min_free_ram_gb:
+            stop_session('free RAM %.1f GB' % ram[-1][1])
         done.wait(1.0)
 
 
@@ -50,7 +80,8 @@ base = subprocess.run(['nvidia-smi', '--query-gpu=memory.used', '--format=csv,no
 watcher = threading.Thread(target=sample, daemon=True)
 began = time.time()
 watcher.start()
-r = subprocess.run(args, capture_output=True, text=True)
+ram0 = free_ram_gb()
+r = subprocess.run(args, capture_output=True, text=True, creationflags=0x4000)  # BELOW_NORMAL, inherited by the session
 done.set()
 watcher.join()
 print('harness:', r.stdout.strip()[-400:], r.stderr.strip()[-400:], 'in %.1f s' % (time.time() - began))
@@ -62,3 +93,8 @@ for line in log:
 if samples:
     peak = max(samples, key=lambda x: x[1])
     print('GPU memory in use: %s MiB before, peak %d MiB at %.0f s' % (base, peak[1], peak[0] - began))
+if ram:
+    low = min(ram, key=lambda x: x[1])
+    print('free RAM: %.1f GB before, lowest %.1f GB at %.0f s (the session took up to %.1f GB)' % (ram0, low[1], low[0] - began, ram0 - low[1]))
+if stopped:
+    print('STOPPED by the watchdog:', stopped[0])

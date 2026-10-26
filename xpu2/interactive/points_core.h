@@ -42,6 +42,9 @@ X2_HD inline bool state(const shade::MeshAttributes& m, U32 prim, V3 Ng, V3 P, V
     st.prims = m.prims;
     st.primData = m.primData;
     st.primCount = m.primCount;
+    st.instancePrims = m.instancePrims;
+    st.instancePrimData = m.instancePrimData;
+    st.instancePrimCount = m.instancePrimCount;
     st.prim = prim;
     st.ia = st.ib = st.ic = prim;
     st.u = st.v = 0.0f;
