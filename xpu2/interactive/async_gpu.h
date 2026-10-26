@@ -33,7 +33,7 @@ namespace xpu2::interactive::async {
 
 struct GpuOptions {
     bool profileChain = false;         // time the pass chain's stages on the device (a diagnostic)
-    size_t fineBudget = 512ull << 20;  // VRAM for fine-detail tiles
+    size_t fineBudget = 0;  // VRAM for fine-detail tiles (0: from the card's free memory and the scene's needs)
     U32 launchThreads = 1u << 16;      // fixed grid size of every render launch
     U32 maxChunksPerLaunch = 16384;
     U32 ringChunks = 1u << 17;         // mailbox ring capacity, in chunks
@@ -83,7 +83,20 @@ public:
                      GpuOptions options = {})
         : options_(options) {
         driver.deviceCap = 20ull << 30;
+        {
+            // The allocation cap: the card's own memory where it has more than that.
+            size_t freeBytes = 0, totalBytes = 0;
+            if (memoryInfo(freeBytes, totalBytes) && totalBytes > driver.deviceCap) driver.deviceCap = totalBytes;
+        }
         driver.pinnedCap = 2ull << 30;
+        {
+            // Pinned (page-locked) host memory, the frame's readbacks and pictures: a quarter of the machine's, between
+            // 2 and 16 GB (a fixed 2 GB refused his Dose preview: 1600 x 2000 with 26 outputs).
+            MEMORYSTATUSEX status{};
+            status.dwLength = sizeof status;
+            if (GlobalMemoryStatusEx(&status))
+                driver.pinnedCap = std::clamp<size_t>(size_t(status.ullTotalPhys / 4), 2ull << 30, 16ull << 30);
+        }
         try {
             ox(optixInit());
             OptixDeviceContextOptions context{};
@@ -168,6 +181,251 @@ public:
         out.insert(out.end(), deferredOut_.begin(), deferredOut_.end());
         deferredOut_.clear();
     }
+    // The frame's configuration (mixed::config: the camera, render space, the integrator's settings) on the device, with
+    // the bokeh image, pixel sample map and bake camera maps it points to, held in a list of their own: made again alone
+    // for a camera-only edit (updateCamera).
+    std::vector<gpu::B> configKeep_;
+    void uploadConfig(const cpu::PlanView& plan) {
+        configKeep_.clear();
+        auto config = mixed::config(plan);
+        {
+            // The camera's bokeh image and bake camera maps (camera_core.h) with device pointers.
+            auto keep = [&](const void* host, size_t bytes) {
+                B b = upload(host, bytes);
+                configKeep_.push_back(b);
+                return b->pointer;
+            };
+            if (plan->bokehImage && config.camera.bokehImage) {
+                const lights::ImageData& data = *plan->bokehImage;
+                lights::Image view = data.view;
+                view.pixels = reinterpret_cast<const float*>(keep(data.pixels.data(), data.pixels.size() * sizeof(float)));
+                view.cdf = reinterpret_cast<const float*>(keep(data.cdf.data(), data.cdf.size() * sizeof(float)));
+                view.guide = reinterpret_cast<const U32*>(keep(data.guide.data(), data.guide.size() * sizeof(U32)));
+                view.dists = reinterpret_cast<const lights::Dist1D*>(keep(data.dists.data(), data.dists.size() * sizeof(lights::Dist1D)));
+                view.levels = reinterpret_cast<const lights::ImageLevel*>(keep(data.levels.data(), data.levels.size() * sizeof(lights::ImageLevel)));
+                config.camera.bokehImage = reinterpret_cast<const void*>(keep(&view, sizeof(view)));
+            }
+            if (!plan->pixelSamples.empty())
+                config.pixelSamples = reinterpret_cast<const U32*>(keep(plan->pixelSamples.data(), plan->pixelSamples.size() * sizeof(U32)));
+            if (plan->cameraMap && config.camera.map) {
+                const auto& data = *plan->cameraMap;
+                surface::CameraMap view = data.view;
+                auto floats = [&](const std::vector<float>& v) {
+                    return v.empty() ? nullptr : reinterpret_cast<const float*>(keep(v.data(), v.size() * sizeof(float)));
+                };
+                view.positions = floats(data.positions);
+                view.normals = floats(data.normals);
+                view.normalMap = floats(data.normalMap);
+                config.camera.map = reinterpret_cast<const void*>(keep(&view, sizeof(view)));
+            }
+        }
+        scene_.config = upload(&config, sizeof(config));
+    }
+
+public:
+    // A camera-only edit (the session's fast path, realtime): the plan is the one prepared, with only its camera, render
+    // space and render origin made again (cpu::updateCamera). Its configuration goes to the device; the rest stays.
+    void updateCamera(const cpu::PlanView& plan) {
+        plan_ = plan;
+        uploadConfig(plan);
+    }
+    // The GPU's rate in samples a second, as its launches have found it across frames (realtime's launch sizes).
+    double rateHint() const { return rateHint_; }
+    void noteRate(double rate) {
+        if (rate > 0) rateHint_ = rateHint_ > 0 ? 0.8 * rateHint_ + 0.2 * rate : rate;
+    }
+    double rateHint_ = 0;
+
+    // Realtime's denoised pictures (the session's RealtimeDenoiser): OptiX's denoiser, its HDR model with albedo and
+    // normal guides, on a stream of its own. It is called from the session's denoising thread, where the lane's context
+    // is made current, and holds buffers of its own (the lane's are its feeder's): host pictures in, three floats a
+    // pixel, and the denoised picture out. Made by the lane, and let go before it.
+    class Denoiser {
+    public:
+        // Its guides (XPU2_SESSION_RT_GUIDES): "clean", the albedo denoised on its own first, as the kit's "Denoiser
+        // cleans its guides first" has Open Image Denoise do (a material whose albedo differs from sample to sample,
+        // flakes or iridescence, gives a guide as noisy as the picture at realtime's few samples, and the denoiser
+        // keeps what its guide shows); "raw", the albedo as rendered; "normal", the normals alone; "none". Unset, as
+        // that MoonRay Source Override is set (MOONRAY_MODO_DENOISE_CLEAN_GUIDES, on by default): clean, or raw.
+        explicit Denoiser(GpuLane& lane) : lane_(lane) {
+            const char* guides = std::getenv("XPU2_SESSION_RT_GUIDES");
+            const char* cleaned = std::getenv("MOONRAY_MODO_DENOISE_CLEAN_GUIDES");
+            const std::string g = guides ? guides : cleaned && cleaned[0] == '0' ? "raw" : "clean";
+            mode_ = g == "raw" ? Raw : g == "normal" ? NormalOnly : g == "none" ? NoGuides : Clean;
+        }
+        ~Denoiser() { release(); }
+        Denoiser(const Denoiser&) = delete;
+        bool run(const float* color, const float* albedo, const float* normal, float* out, U32 w, U32 h, std::string& error) {
+            auto& d = lane_.driver;
+            try {
+                gpu::Driver::check(d.cuCtxSetCurrent_p(d.context));
+                if (!stream_) {
+                    // At the GPU's highest priority, so that its kernels go ahead of the path tracer's queued blocks (off:
+                    // XPU2_SESSION_RT_PRIORITY=0).
+                    using Create = CUresult(CUDAAPI*)(CUstream*, unsigned int, int);
+                    using Range = CUresult(CUDAAPI*)(int*, int*);
+                    const auto create = reinterpret_cast<Create>(GetProcAddress(d.library, "cuStreamCreateWithPriority"));
+                    const auto range = reinterpret_cast<Range>(GetProcAddress(d.library, "cuCtxGetStreamPriorityRange"));
+                    const char* priority = std::getenv("XPU2_SESSION_RT_PRIORITY");
+                    int least = 0, greatest = 0;
+                    if (create && range && !(priority && priority[0] == '0') && range(&least, &greatest) == CUDA_SUCCESS)
+                        gpu::Driver::check(create(&stream_, CU_STREAM_NON_BLOCKING, greatest));
+                    else
+                        gpu::Driver::check(d.cuStreamCreate_p(&stream_, CU_STREAM_NON_BLOCKING));
+                }
+                if (!done_) gpu::Driver::check(d.cuEventCreate_p(&done_, CU_EVENT_DISABLE_TIMING));
+                const bool withAlbedo = mode_ == Raw || mode_ == Clean, withNormal = mode_ != NoGuides;
+                if (!beauty_.handle) beauty_.create(lane_.optix_, withAlbedo, withNormal);
+                if (mode_ == Clean && !albedo_.handle) albedo_.create(lane_.optix_, false, false);
+                const size_t bytes = size_t(w) * h * 3 * sizeof(float);
+                if (w != width_ || h != height_) {
+                    buffers();
+                    beauty_.setup(d, stream_, w, h);
+                    if (albedo_.handle) albedo_.setup(d, stream_, w, h);
+                    for (auto& i : intensity_) gpu::Driver::check(d.cuMemAlloc_v2_p(&i, 16));
+                    for (auto& image : images_) gpu::Driver::check(d.cuMemAlloc_v2_p(&image, bytes));
+                    gpu::Driver::check(d.cuMemAllocHost_v2_p(&host_, bytes * 4 + 64));
+                    width_ = w;
+                    height_ = h;
+                }
+                float* host = static_cast<float*>(host_);
+                const size_t n = size_t(w) * h * 3;
+                std::copy(color, color + n, host);
+                std::copy(albedo, albedo + n, host + n);
+                std::copy(normal, normal + n, host + 2 * n);
+                for (int i = 0; i < 3; ++i)
+                    gpu::Driver::check(d.cuMemcpyHtoDAsync_v2_p(images_[i], host + i * n, bytes, stream_));
+                auto image = [&](CUdeviceptr data) {
+                    OptixImage2D v{};
+                    v.data = data;
+                    v.width = w;
+                    v.height = h;
+                    v.rowStrideInBytes = w * 3 * sizeof(float);
+                    v.pixelStrideInBytes = 3 * sizeof(float);
+                    v.format = OPTIX_PIXEL_FORMAT_FLOAT3;
+                    return v;
+                };
+                OptixDenoiserGuideLayer guide{};
+                if (withAlbedo) guide.albedo = image(images_[mode_ == Clean ? 4 : 1]);
+                if (withNormal) guide.normal = image(images_[2]);
+                if (mode_ == Clean) albedo_.invoke(stream_, image(images_[1]), image(images_[4]), OptixDenoiserGuideLayer{}, intensity_[1]);
+                beauty_.invoke(stream_, image(images_[0]), image(images_[3]), guide, intensity_[0]);
+                gpu::Driver::check(d.cuMemcpyDtoHAsync_v2_p(host + 3 * n, images_[3], bytes, stream_));
+                gpu::Driver::check(d.cuMemcpyDtoHAsync_v2_p(host + 4 * n, intensity_[0], sizeof(float), stream_));
+                gpu::Driver::check(d.cuEventRecord_p(done_, stream_));
+                // Waited for by polling, as the lane's own work is: the context is not synchronized.
+                for (;;) {
+                    const CUresult e = d.cuEventQuery_p(done_);
+                    if (e == CUDA_SUCCESS) break;
+                    if (e != CUDA_ERROR_NOT_READY) gpu::Driver::check(e);
+                    std::this_thread::sleep_for(std::chrono::microseconds(200));
+                }
+                std::copy(host + 3 * n, host + 4 * n, out);
+                if (std::getenv("XPU2_SESSION_RT_DEBUG")) {
+                    // A diagnostic: the inputs' values that are not finite, the intensity OptiX found, how much it changed.
+                    size_t bad[3] = {}, i = 0;
+                    double change = 0;
+                    for (const float* in : {color, albedo, normal}) {
+                        for (size_t k = 0; k < n; ++k) bad[i] += !std::isfinite(in[k]);
+                        ++i;
+                    }
+                    for (size_t k = 0; k < n; ++k) change += std::fabs(double(out[k]) - double(color[k]));
+                    std::printf("XPU2: realtime denoise: not finite %zu %zu %zu, intensity %g, mean change %g\n", bad[0], bad[1], bad[2],
+                                double(host[4 * n]), change / double(n));
+                    std::fflush(stdout);
+                }
+                return true;
+            } catch (const std::exception& e) {
+                error = std::string("OptiX's denoiser: ") + e.what();
+                return false;
+            }
+        }
+
+    private:
+        enum Mode { Clean, Raw, NormalOnly, NoGuides };
+        // One OptiX denoiser (HDR model) with its state and scratch.
+        struct Model {
+            OptixDenoiser handle = nullptr;
+            CUdeviceptr state = 0, scratch = 0;
+            size_t stateBytes = 0, scratchBytes = 0;
+            void create(OptixDeviceContext context, bool albedo, bool normal) {
+                OptixDenoiserOptions options{};
+                options.guideAlbedo = albedo ? 1u : 0u;
+                options.guideNormal = normal ? 1u : 0u;
+                gpu::ox(optixDenoiserCreate(context, OPTIX_DENOISER_MODEL_KIND_HDR, &options, &handle));
+            }
+            void setup(gpu::Driver& d, CUstream stream, U32 w, U32 h) {
+                OptixDenoiserSizes sizes{};
+                gpu::ox(optixDenoiserComputeMemoryResources(handle, w, h, &sizes));
+                stateBytes = sizes.stateSizeInBytes;
+                scratchBytes = std::max(sizes.withoutOverlapScratchSizeInBytes, sizes.computeIntensitySizeInBytes);
+                gpu::Driver::check(d.cuMemAlloc_v2_p(&state, std::max<size_t>(stateBytes, 16)));
+                gpu::Driver::check(d.cuMemAlloc_v2_p(&scratch, std::max<size_t>(scratchBytes, 16)));
+                gpu::ox(optixDenoiserSetup(handle, stream, w, h, state, stateBytes, scratch, scratchBytes));
+            }
+            void invoke(CUstream stream, const OptixImage2D& input, const OptixImage2D& output, const OptixDenoiserGuideLayer& guide,
+                        CUdeviceptr intensity) {
+                OptixDenoiserLayer layer{};
+                layer.input = input;
+                layer.output = output;
+                gpu::ox(optixDenoiserComputeIntensity(handle, stream, &layer.input, intensity, scratch, scratchBytes));
+                OptixDenoiserParams params{};
+                params.hdrIntensity = intensity;
+                gpu::ox(optixDenoiserInvoke(handle, stream, &params, state, stateBytes, &guide, &layer, 1, 0, 0, scratch, scratchBytes));
+            }
+            void free(gpu::Driver& d) {
+                for (CUdeviceptr* p : {&state, &scratch})
+                    if (*p) {
+                        d.cuMemFree_v2_p(*p);
+                        *p = 0;
+                    }
+            }
+            void destroy(gpu::Driver& d) {
+                free(d);
+                if (handle) optixDenoiserDestroy(handle);
+                handle = nullptr;
+            }
+        };
+        void buffers() {
+            auto& d = lane_.driver;
+            beauty_.free(d);
+            albedo_.free(d);
+            for (CUdeviceptr* p : {&intensity_[0], &intensity_[1], &images_[0], &images_[1], &images_[2], &images_[3], &images_[4]})
+                if (*p) {
+                    d.cuMemFree_v2_p(*p);
+                    *p = 0;
+                }
+            if (host_) d.cuMemFreeHost_p(host_);
+            host_ = nullptr;
+            width_ = height_ = 0;
+        }
+        void release() {
+            auto& d = lane_.driver;
+            if (d.context) d.cuCtxSetCurrent_p(d.context);
+            if (stream_ && done_) {
+                d.cuEventRecord_p(done_, stream_);
+                while (d.cuEventQuery_p(done_) == CUDA_ERROR_NOT_READY) std::this_thread::sleep_for(std::chrono::microseconds(200));
+            }
+            buffers();
+            beauty_.destroy(d);
+            albedo_.destroy(d);
+            if (done_) d.cuEventDestroy_v2_p(done_);
+            done_ = nullptr;
+            if (stream_) d.cuStreamDestroy_v2_p(stream_);
+            stream_ = nullptr;
+        }
+        GpuLane& lane_;
+        Mode mode_ = Clean;
+        CUstream stream_ = nullptr;
+        CUevent done_ = nullptr;
+        Model beauty_, albedo_;
+        CUdeviceptr intensity_[2] = {}, images_[5] = {};  // colour, albedo, normal, output, the albedo cleaned
+        void* host_ = nullptr;
+        U32 width_ = 0, height_ = 0;
+    };
+
+private:
+public:
     void prepare(const cpu::PlanView& plan) {
         cpu::need(plan && cpu::isSpatial(plan->domain), "Asynchronous GPU lane requires a spatial plan");
         cpu::need(plan->paths, "The GPU programs carry the path tracer only");
@@ -411,9 +669,12 @@ public:
             scene_.volumeTraversable = vtop.second;
             scene_.keep.insert(scene_.keep.end(), {boundsBuffer, vtop.first});
         }
-        // Volumes the GPU's programs do not render: their samples are deferred to the CPU lane too.
-        for (const auto& v : plan->volumes)
-            if (v.kind != volume::KindBase || v.emission.x != 0.0f || v.emission.y != 0.0f || v.emission.z != 0.0f) scene_.defersVolumes = true;
+        // Volumes the GPU's programs do not render (volume::gpuRenders): their samples are deferred to the CPU lane too.
+        {
+            const volume::Grids hostGrids{plan->volumeGridViews.data(), U32(plan->volumeGridViews.size()), nullptr, 0.0f};
+            for (const auto& v : plan->volumes)
+                if (!volume::gpuRenders(v, hostGrids)) scene_.defersVolumes = true;
+        }
         if (scene_.defersVolumes && !deferred_) {  // the ring the deferred samples go to (pinned: the host reads it after a launch)
             deferredCapacity_ = 1u << 22;
             deferred_ = pinned(size_t(deferredCapacity_) * sizeof(Parked));
@@ -486,6 +747,27 @@ public:
             }
             if (!plan->volumes.empty()) {
                 scene_.volumes = upload(plan->volumes.data(), plan->volumes.size() * sizeof(volume::Shader));
+                // The dense grids (mapped BaseVolumes' baked extinction) on the device, the NanoVDB ones left null.
+                scene_.gridData.clear();
+                scene_.volumeGrids = nullptr;
+                scene_.volumeGridCount = 0;
+                if (!plan->volumeGridViews.empty()) {
+                    std::vector<volume::Grid> views(plan->volumeGridViews.begin(), plan->volumeGridViews.end());
+                    for (auto& g : views) {
+                        g.data = nullptr;
+                        if (!g.dense) continue;
+                        const size_t floats = size_t(g.dims[0]) * size_t(g.dims[1]) * size_t(g.dims[2]) * 3;
+                        if (!floats) {
+                            g.dense = nullptr;
+                            continue;
+                        }
+                        B data = upload(g.dense, floats * sizeof(float));
+                        g.dense = reinterpret_cast<const float*>(data->pointer);
+                        scene_.gridData.push_back(data);
+                    }
+                    scene_.volumeGrids = upload(views.data(), views.size() * sizeof(volume::Grid));
+                    scene_.volumeGridCount = U32(views.size());
+                }
                 std::vector<int> meshVolumes;
                 for (const auto& mesh : plan->meshes) meshVolumes.push_back(mesh.volume);
                 scene_.meshVolumes = upload(meshVolumes.data(), meshVolumes.size() * sizeof(int));
@@ -544,39 +826,7 @@ public:
             }
             scene_.scratch = device(size_t(options_.launchThreads) * (scratchStride(plan->dwaSlots, plan->glitter) + aovScratch_ + cryptoScratch_));
         }
-        auto config = mixed::config(plan);
-        {
-            // The camera's bokeh image and bake camera maps (camera_core.h) with device pointers.
-            auto keep = [&](const void* host, size_t bytes) {
-                B b = upload(host, bytes);
-                scene_.keep.push_back(b);
-                return b->pointer;
-            };
-            if (plan->bokehImage && config.camera.bokehImage) {
-                const lights::ImageData& data = *plan->bokehImage;
-                lights::Image view = data.view;
-                view.pixels = reinterpret_cast<const float*>(keep(data.pixels.data(), data.pixels.size() * sizeof(float)));
-                view.cdf = reinterpret_cast<const float*>(keep(data.cdf.data(), data.cdf.size() * sizeof(float)));
-                view.guide = reinterpret_cast<const U32*>(keep(data.guide.data(), data.guide.size() * sizeof(U32)));
-                view.dists = reinterpret_cast<const lights::Dist1D*>(keep(data.dists.data(), data.dists.size() * sizeof(lights::Dist1D)));
-                view.levels = reinterpret_cast<const lights::ImageLevel*>(keep(data.levels.data(), data.levels.size() * sizeof(lights::ImageLevel)));
-                config.camera.bokehImage = reinterpret_cast<const void*>(keep(&view, sizeof(view)));
-            }
-            if (!plan->pixelSamples.empty())
-                config.pixelSamples = reinterpret_cast<const U32*>(keep(plan->pixelSamples.data(), plan->pixelSamples.size() * sizeof(U32)));
-            if (plan->cameraMap && config.camera.map) {
-                const auto& data = *plan->cameraMap;
-                surface::CameraMap view = data.view;
-                auto floats = [&](const std::vector<float>& v) {
-                    return v.empty() ? nullptr : reinterpret_cast<const float*>(keep(v.data(), v.size() * sizeof(float)));
-                };
-                view.positions = floats(data.positions);
-                view.normals = floats(data.normals);
-                view.normalMap = floats(data.normalMap);
-                config.camera.map = reinterpret_cast<const void*>(keep(&view, sizeof(view)));
-            }
-        }
-        scene_.config = upload(&config, sizeof(config));
+        uploadConfig(plan);
         if (cpu::gpuTextures(plan->domain)) prepareTextures(*plan);
         const size_t pixels = size_t(plan->width) * plan->height;
         scene_.sums = device(pixels * 4 * sizeof(double));
@@ -1183,6 +1433,40 @@ public:
     const std::vector<U32>& passDone() const { return passDone_; }
 
     size_t fineTiles() const { return fine_.tiles; }
+    // The card's free and total memory (cuMemGetInfo); false where the driver does not say.
+    bool memoryInfo(size_t& freeBytes, size_t& totalBytes) {
+        using Info = CUresult(CUDAAPI*)(size_t*, size_t*);
+        const auto info = reinterpret_cast<Info>(GetProcAddress(driver.library, "cuMemGetInfo_v2"));
+        return info && info(&freeBytes, &totalBytes) == CUDA_SUCCESS && totalBytes > 0;
+    }
+    // The fine-detail cache's VRAM: what the scene's level-0 tiles need, up to what the card has free less a reserve
+    // for the rest of the frame and for Modo's own viewport (a fifth of the card, a gigabyte and a half at least), and
+    // never below 256 MB. Measured at each scene's preparation, so it follows what else holds the card meanwhile.
+    // XPU2_SESSION_FINE_BUDGET_MB, or GpuOptions::fineBudget, fixes it.
+    size_t fineBudget(size_t need) {
+        if (const char* v = std::getenv("XPU2_SESSION_FINE_BUDGET_MB")) {
+            fineBudgetWhy_ = "set by XPU2_SESSION_FINE_BUDGET_MB";
+            return size_t(std::max(1.0, std::atof(v))) << 20;
+        }
+        if (options_.fineBudget) {
+            fineBudgetWhy_ = "fixed";
+            return options_.fineBudget;
+        }
+        size_t freeBytes = 0, totalBytes = 0;
+        if (!memoryInfo(freeBytes, totalBytes)) {
+            fineBudgetWhy_ = "the card's memory unknown";
+            return 512ull << 20;
+        }
+        const size_t reserve = std::max<size_t>(totalBytes / 5, 3ull << 29);
+        const size_t spare = freeBytes > reserve ? freeBytes - reserve : 0;
+        char why[160];
+        std::snprintf(why, sizeof why, "%.1f GB of the card's %.1f GB free, %.1f GB kept back", double(freeBytes) / (1 << 30),
+                      double(totalBytes) / (1 << 30), double(reserve) / (1 << 30));
+        fineBudgetWhy_ = why;
+        return std::max<size_t>(256ull << 20, std::min(need, spare));
+    }
+    size_t fineBudget_ = 0;
+    std::string fineBudgetWhy_;
     size_t fineLoaded() const { return fine_.loaded; }
     size_t fineEvicted() const { return fine_.evicted; }
     size_t residentMipBytes() const { return scene_.mipBytes; }
@@ -1479,6 +1763,9 @@ private:
         std::vector<B> keep;
         U64 traversable = 0, volumeTraversable = 0, standInTraversable = 0;
         bool defersVolumes = false;  // volumes the GPU defers to the CPU lane (standIns)
+        B volumeGrids;               // the volumes' grids as the device reads them, and the dense grids' data
+        std::vector<B> gridData;
+        U32 volumeGridCount = 0;
         B provSums, provCounts, hostProvSums, hostProvCounts;
         B geometry, materials, lights, meshLights, lightSetBits, lightTree, lightTreeRoots, volumes, meshVolumes, walkSequences, meshMaterials, meshAttributes, materialPool, scratch, config, maps, textures, sums, odd, counts,
             hostSums,
@@ -1603,7 +1890,12 @@ private:
         fine_.requestCapacity = fine_.tiles + 1;
         const size_t tileBytes = size_t(tex::Tile) * tex::Tile * sizeof(surface::V3);
         // A scene without textures keeps one unused slot, so the buffers below are never empty.
-        fine_.slots = U32(std::min<size_t>(options_.fineBudget / tileBytes, std::max<U32>(fine_.tiles, 1)));
+        const size_t need = size_t(std::max<U32>(fine_.tiles, 1)) * tileBytes;
+        fineBudget_ = fineBudget(need);
+        fine_.slots = U32(std::min<size_t>(fineBudget_ / tileBytes, std::max<U32>(fine_.tiles, 1)));
+        if (fine_.tiles)
+            std::printf("XPU2: fine-detail texture cache %.0f MB of the %.0f MB its tiles would take (%s)\n", double(size_t(fine_.slots) * tileBytes) / (1 << 20),
+                        double(need) / (1 << 20), fineBudgetWhy_.c_str());
         cpu::need(fine_.slots > 0, "Fine-detail cache budget");
         fine_.tileState = device((fine_.tiles + 1) * sizeof(U32));
         fine_.touched = device(fine_.tiles + 1);
@@ -1734,6 +2026,8 @@ private:
         p.lightTreeRoots = scene_.lightTreeRoots ? reinterpret_cast<const int*>(scene_.lightTreeRoots->pointer) : nullptr;
         p.volumes = scene_.volumes ? reinterpret_cast<const volume::Shader*>(scene_.volumes->pointer) : nullptr;
         p.meshVolumes = scene_.meshVolumes ? reinterpret_cast<const int*>(scene_.meshVolumes->pointer) : nullptr;
+        p.volumeGrids = scene_.volumeGrids ? reinterpret_cast<const volume::Grid*>(scene_.volumeGrids->pointer) : nullptr;
+        p.volumeGridCount = scene_.volumeGrids ? scene_.volumeGridCount : 0u;
         p.walkSequences = scene_.walkSequences ? reinterpret_cast<const float*>(scene_.walkSequences->pointer) : nullptr;
         p.meshMaterials = scene_.meshMaterials ? reinterpret_cast<const shade::MaterialRecord*>(scene_.meshMaterials->pointer) : nullptr;
         p.meshAttributes = scene_.meshAttributes ? reinterpret_cast<const shade::MeshAttributes*>(scene_.meshAttributes->pointer) : nullptr;

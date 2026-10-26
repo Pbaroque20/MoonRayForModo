@@ -47,7 +47,8 @@ struct Pyramid {
    for(unsigned y=0;y<ny;++y)for(unsigned x=0;x<nx;++x){unsigned tw=std::min(tex::Tile,w-x*tex::Tile),th=std::min(tex::Tile,h-y*tex::Tile);tiles.emplace_back(tw*th);auto& tile=tiles.back();
     for(unsigned j=0;j<th;++j)for(unsigned i=0;i<tw;++i){size_t idx=(size_t(y*tex::Tile+j)*w+x*tex::Tile+i)*spec.nchannels;surface::V3 c;float a;
      texelChannels(&decoded[idx],spec.nchannels,spec.alpha_channel,c,a);
-     if(alpha)c={a,a,a};need(surface::finite(c)&&c.x>=0&&c.y>=0&&c.z>=0,"Invalid TX sample");tile[j*tw+i]=c;}
+     // Negative values are kept, as MoonRay's texture sampler keeps them (a signed displacement or vector map).
+     if(alpha)c={a,a,a};need(surface::finite(c),"Invalid TX sample");tile[j*tw+i]=c;}
     page[y*nx+x]=tile.data();bytes+=tile.size()*sizeof(surface::V3);
    }image.levels[level]={w,h,page.data()};++image.count;
   }need(image.count&&image.levels[image.count-1].width==1&&image.levels[image.count-1].height==1,"Software mip level bound");

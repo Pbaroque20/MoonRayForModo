@@ -632,10 +632,7 @@ struct MapProgramBuilder {
             if (h.udim) h.gamma = (gamma != 0 && udimEightBit) ? 1 : 0;
             if (alphaOnly) h.gamma = 0;
         }
-        if (c->kind == shade::MapModoTexture) {
-            listed.insert("uv_name");
-            need(get<rdl::String>(m, "uv_name").empty(), m.getName() + ": named UV sets (primitive attributes) are not shaded yet");
-        }
+        if (c->kind == shade::MapModoTexture) listed.insert("uv_name");  // its keys after the attributes, below
         if (primvarReader) listed = {"varname", "warn_when_unavailable", "fallback"};
         if (c->kind == shade::MapUsdUVTexture) {
             for (const char* n : {"file", "wrapS", "wrapT", "sourceColorSpace"}) listed.insert(n);
@@ -779,6 +776,19 @@ struct MapProgramBuilder {
             need(get<rdl::Int>(m, "mode") == 1, m.getName() + ": feature-width LOD needs ray differentials (not shaded yet)");
             need(get<rdl::Float>(m, "start") > shade::Epsilon && get<rdl::Float>(m, "stop") - get<rdl::Float>(m, "start") > shade::Epsilon,
                  m.getName() + ": invalid LOD range");
+        }
+        if (c->kind == shade::MapModoTexture) {
+            // A named UV set (uv_name, modes 12 and 13): the keys of its primitive attribute and of modo_primary_uv
+            // after the attributes, and whether it is named (ModoTextureMap::update's optional attributes, which a
+            // mesh without them leaves the map's neutral result).
+            const std::string uv = get<rdl::String>(m, "uv_name");
+            const unsigned keys[2] = {uv.empty() ? 0u : shade::primKey(uv.c_str(), shade::PrimVec2f),
+                                      shade::primKey("modo_primary_uv", shade::PrimVec2f)};
+            float f[3];
+            std::memcpy(&f[0], &keys[0], sizeof f[0]);
+            std::memcpy(&f[1], &keys[1], sizeof f[1]);
+            f[2] = uv.empty() ? 0.0f : 1.0f;
+            params.insert(params.end(), f, f + 3);
         }
         if (c->kind == shade::MapAttribute) {
             const int type = get<rdl::Int>(m, "map_type"), primType = get<rdl::Int>(m, "primitive_attribute_type");

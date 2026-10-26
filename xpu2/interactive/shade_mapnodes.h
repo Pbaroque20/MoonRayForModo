@@ -624,13 +624,40 @@ X2_HD inline Color sampleModoTexture(const MapParams& P, const State& st, const 
         n = normalize(V3{sx, sy, 1});
         return n;
     }
-    // Modes 12 and 13 with a named UV set are refused at admission (primitive attributes).
+    // A named UV set (uv_name): its primitive attribute, moved by st's offset from modo_primary_uv along the set's st
+    // derivatives (where the geometry gives them; a subdivision surface does not, and the layer's placement, uv_affine,
+    // stands for them), and those derivatives as the set's jacobian. A hit without either attribute gives the neutral
+    // result (ModoTextureMap's missing-coordinates event).
+    const float* keys = P.p + sizeof(Q) / sizeof(float);
+    const bool named = (mode == 12 || mode == 13) && keys[2] != 0.0f;
+    float namedUv[2] = {0, 0}, jac[4] = {1, 0, 0, 1};
+    if (named) {
+        const U32 key = *reinterpret_cast<const U32*>(&keys[0]), baseKey = *reinterpret_cast<const U32*>(&keys[1]);
+        float value[3], base[3];
+        if (!primValue(st, key, value) || !primValue(st, baseKey, base)) return mode == 13 ? Color{.5f, .5f, 1} : Color{0, 0, 0};
+        float ds[3], dt[3];
+        if (st.subdivision || !primPartials(st, key, ds, dt)) {
+            ds[0] = q.uv_affine[0];
+            ds[1] = q.uv_affine[2];
+            dt[0] = q.uv_affine[1];
+            dt[1] = q.uv_affine[3];
+        }
+        const float dx = st.s - base[0], dy = st.t - base[1];
+        namedUv[0] = value[0] + ds[0] * dx + dt[0] * dy;
+        namedUv[1] = value[1] + ds[1] * dx + dt[1] * dy;
+        jac[0] = ds[0];
+        jac[1] = dt[0];
+        jac[2] = ds[1];
+        jac[3] = dt[1];
+    }
     if (mode == 12) {
+        if (named) return Color{namedUv[0], namedUv[1], 0};
         return Color{q.uv_affine[0] * st.s + q.uv_affine[1] * st.t + q.uv_offset[0],
                      q.uv_affine[2] * st.s + q.uv_affine[3] * st.t + q.uv_offset[1], 0};
     }
     if (mode == 13) {
-        const float ax = q.uv_affine[0], ay = q.uv_affine[1], az = q.uv_affine[2], aw = q.uv_affine[3];
+        const float ax = named ? jac[0] : q.uv_affine[0], ay = named ? jac[1] : q.uv_affine[1], az = named ? jac[2] : q.uv_affine[2],
+                    aw = named ? jac[3] : q.uv_affine[3];
         const float det = ax * aw - ay * az;
         const V3 N = st.N;
         V3 T = st.dPds - N * dot(N, st.dPds);
@@ -645,7 +672,7 @@ X2_HD inline Color sampleModoTexture(const MapParams& P, const State& st, const 
         const V3 derivativeV = (st.dPds * (-ay) + st.dPdt * ax) / det;
         if (dot(V, derivativeV) < 0) V = V * (-1.f);
         Color encoded = P.c(X2_OFF(Q, foreground));
-        const float u = ax * st.s + ay * st.t + q.uv_offset[0], v = az * st.s + aw * st.t + q.uv_offset[1];
+        const float u = named ? namedUv[0] : ax * st.s + ay * st.t + q.uv_offset[0], v = named ? namedUv[1] : az * st.s + aw * st.t + q.uv_offset[1];
         if (int(q.tile_u) == 2 && u - 2 * floorf(u / 2) > 1) encoded.x = 1 - encoded.x;
         if (int(q.tile_v) == 2 && v - 2 * floorf(v / 2) > 1) encoded.y = 1 - encoded.y;
         const V3 normal = U * (encoded.x * 2 - 1) + V * (encoded.y * 2 - 1) + N * (encoded.z * 2 - 1);

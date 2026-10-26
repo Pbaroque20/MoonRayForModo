@@ -21,6 +21,12 @@ typedef struct X2SubdAttribute {
     unsigned count;
     const float* values;
 } X2SubdAttribute;
+// displace with the control mesh's primitive attributes at the vertex as the displacement's state holds them (MoonRay's
+// fillDisplacementAttributes, the displacement asking for every one): attributes and attributeCount the input's,
+// values three floats each in their order, the first NaN where the vertex has none.
+typedef void (*X2SubdDisplaceAttrFn)(void* user, const void* displacement, const float* P, const float* N, const float* dPds,
+                                     const float* dPdt, const float* st, const float* footprint, const X2SubdAttribute* attributes,
+                                     unsigned attributeCount, const float* values, float* out);
 // The attribute over the tessellation, as OpenSubdivMesh interpolates it at a hit: kind 1 one value, 2 one a
 // tessellated quad (its control face's), 3 one a tessellated vertex, 4 four a quad (its corners').
 typedef struct X2SubdAttributeOut {
@@ -76,6 +82,8 @@ typedef struct X2SubdInput {
     // A shared primitive (an instancer's reference): its vertices in its own space, displaced as if it sat at the
     // origin (Primitive::setIsReference).
     int reference;
+    // In displace's place where given: displace with the primitive attributes (X2SubdDisplaceAttrFn).
+    X2SubdDisplaceAttrFn displaceWith;
 } X2SubdInput;
 
 // The tessellated mesh: quads (four indices each) over its vertices, each vertex's limit surface normal, texture

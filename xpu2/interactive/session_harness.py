@@ -82,6 +82,8 @@ def main():
     p.add_argument('--exe', type=Path, required=True)
     p.add_argument('--scene', type=Path, action='append', required=True)
     p.add_argument('--delta', type=Path, action='append', default=[])
+    p.add_argument('--reload', action='append', default=[], help="a whole scene sent after the deltas (the kit's 'full' command): "
+                   "its files joined by |, as the kit names a text and its binary geometry")
     p.add_argument('--output', type=Path, required=True)
     p.add_argument('--threads', type=int, default=0)
     p.add_argument('--mode', default='xpu')
@@ -90,10 +92,13 @@ def main():
     p.add_argument('--stop-after', type=float, default=0, help='send the next delta this many seconds into a frame')
     p.add_argument('--drain-after', type=float, default=0, help='ask the last frame to finish with what it has after this many seconds')
     p.add_argument('--keep-pictures', action='store_true', help='save every progressive picture, as frame-<id>-<seconds>.pfm')
+    p.add_argument('--view', default='', help="the buffer the kit shows (its view.txt), e.g. denoised_beauty for realtime's denoised pictures")
     a = p.parse_args()
     out = a.output.resolve()
     session = out / 'session'
     session.mkdir(parents=True, exist_ok=False)
+    if a.view:
+        (session / 'view.txt').write_text(a.view, encoding='ascii')
     extra = dict(v.split('=', 1) for v in a.env)
     env = environment(a.exe, extra)
     # MoonRay's two-stage EXR writer reads TMPDIR (as the kit sets it).
@@ -127,6 +132,8 @@ def main():
                         g, key, w, h, pixels = receive(line, proc.pid)
                         f = report['frames'].setdefault(str(g), {'pictures': 0, 'first_picture': t})
                         f['pictures'] += 1
+                        f.setdefault('keys', {}).setdefault(key, 0)
+                        f['keys'][key] += 1
                         f['last_picture'] = t
                         state['last'][g] = (w, h, pixels)
                         if a.keep_pictures:
@@ -177,6 +184,14 @@ def main():
             with lock:
                 state['done'] = None
             send(identity, 'delta', str(delta.resolve()).replace('\\', '/'), str(a.scene[0].resolve()).replace('\\', '/'))
+            wait(lambda: state['applied'] == identity, a.timeout)
+        for whole in a.reload:
+            wait(lambda: state['done'] and state['done'][1] == identity, a.timeout)
+            identity += 1
+            with lock:
+                state['done'] = None
+            files = '|'.join(str(Path(f).resolve()).replace('\\', '/') for f in whole.split('|'))
+            send(identity, 'full', files.split('|')[0], files)
             wait(lambda: state['applied'] == identity, a.timeout)
         if a.drain_after:
             time.sleep(a.drain_after)

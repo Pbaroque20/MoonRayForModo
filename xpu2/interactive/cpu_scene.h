@@ -6,6 +6,9 @@
 #include "shade_material.h"
 #include "curve_core.h"
 #include "volume_core.h"
+#include <atomic>
+#include <chrono>
+#include <thread>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
@@ -33,11 +36,17 @@ struct Unsupported:std::runtime_error{using std::runtime_error::runtime_error;};
 inline void need(bool ok,const std::string& why){if(!ok)throw Unsupported(why);}
 // Fixed diagnostic text needs no heap allocation on successful validation.
 inline void need(bool ok,const char* why){if(!ok)throw Unsupported(why);}
+// need, its message made only when the check fails: for checks in loops over a mesh's elements, where making the
+// message each time (o.getName()+...) cost seconds (33 million tessellated indices: 3.4 s).
+#define X2_NEED(ok,why) do{if(!(ok))need(false,(why));}while(0)
 using Tri=surface::Triangle;
 enum class Domain {Planar,DiffuseMesh,PlanarTextures,SurfaceTextures};
 inline bool isSpatial(Domain d){return d==Domain::DiffuseMesh||d==Domain::SurfaceTextures;}
 inline bool gpuTextures(Domain d){return d==Domain::PlanarTextures||d==Domain::SurfaceTextures;}
 struct MeshData {std::string name;std::vector<V3> positions;std::vector<Tri> triangles;std::vector<std::shared_ptr<const ix::Buffer>> signature;
+ // A displaced mesh MoonRay tessellated: which displacement is each part's, and whether polyvertices were made (the
+ // rest of what shaped it is in the signature, deepSignature): kept across edits while they stay the same.
+ std::string displacementKey;
  // A VDB volume's gate (VdbVolume's bounding mesh): its active voxels' box in index space and the world-to-index map
  // (rows); its leaf cells' crossings count only where a ray's half-line meets the box.
  bool gate=false;float gateToIndex[12]={};float gateLo[3]={},gateHi[3]={};
@@ -118,6 +127,18 @@ struct Plan {
     // MoonRay adaptive sampling (sampling_mode 2), admitted only where the caller
     // renders it (the asynchronous renderer); spp is then the maximum.
     bool adaptive=false;unsigned minSamples=0,maxSamples=0;float targetError=0;
+    // A uniform frame by sampling generations (the asynchronous renderer): uniform's samples, its budget, priced as
+    // uniform's time and spent where they show; adaptive is then set, minSamples is every pixel's seed, maxSamples
+    // its most, the target error is the budget's, and spp stays uniform's.
+    unsigned long long sampleBudget=0;
+    // The kit's settings for them: the budget spent exactly (not priced as uniform's time), the error no tile need go
+    // below (0: none), and whether the CPU lane's workers take part beside the GPU.
+    bool budgetBySamples=false;float noiseTarget=0;bool generationsCpu=true;
+    // Realtime (the kit's RT, following the scene): a generations frame's first pass is a pixel in each 2x2 of a tile,
+    // the second the rest (async_render.h Adaptive), and its pictures go out sooner.
+    bool realtime=false;
+    // Whether a mesh follows the camera (adaptive tessellation, by the dicing camera): no camera-only fast path then.
+    bool cameraDependent=false;
     // MoonRay's path tracer (PATH_TRACER.md), admitted only where the caller
     // renders it (the asynchronous renderer): its lights, each mesh's light set
     // as a mask over them, and the integrator's settings.
@@ -202,6 +223,12 @@ struct Plan {
 using PlanView=std::shared_ptr<const Plan>;
 // What a scene may hold: room for scenes from Modo (an RTX 3090 holds this much several times over).
 struct Limits {size_t vertices=16000000,triangles=16000000,bytes=1ull<<30,objects=1000000,pixels=8388608;};
+// The most prepared geometry (positions and triangles) a session may ask for: its own budget is the machine's
+// (geometryBudget in xpu2_session.cc), up to this.
+constexpr size_t HardGeometryBytes=64ull<<30;
+// The budget exceeded, with how much was asked and allowed.
+inline std::string geometryBudgetText(size_t bytes,size_t limit){
+ return "Prepared geometry budget: "+std::to_string(bytes>>20)+" MB of positions and triangles, of "+std::to_string(limit>>20)+" MB";}
 template<class T>inline T get(const rdl::SceneObject& o,const char* name){return o.get<T>(name);}
 template<class T>inline T get(const rdl::SceneObject& o,const std::string& name){return o.get<T>(name);}
 struct State {bool isDefault,stationary;};
@@ -247,7 +274,7 @@ inline rdl::Mat4d translation(const rdl::SceneObject& obj){
  for(int i=0;i<4;++i)for(int j=0;j<4;++j){need(std::isfinite(m[i][j]),obj.getName()+": nonfinite transform");if(i==3&&j<3)continue;need(m[i][j]==(i==j?1:0),obj.getName()+": only translations supported");}
  return m;
 }
-// Explicit spatial opt-in, bounded static positive-determinant affine transforms.
+// Explicit spatial opt-in, bounded static affine transforms (reflected ones in affine()).
 // A camera turned and moved but not scaled or sheared: the path tracer's camera (rotations are MoonRay's
 // node_xform as the camera-to-render transform).
 inline rdl::Mat4d rigid(const rdl::SceneObject& obj){
@@ -271,7 +298,11 @@ inline rdl::Mat4d affine(const rdl::SceneObject& obj){
  for(int i=0;i<4;++i)for(int j=0;j<4;++j)need(std::isfinite(m[i][j])&&std::abs(m[i][j])<=10000,"Spatial transform bound");
  need(m[0][3]==0&&m[1][3]==0&&m[2][3]==0&&m[3][3]==1,"Projective mesh transform unsupported");
  double det=m[0][0]*(m[1][1]*m[2][2]-m[1][2]*m[2][1])-m[0][1]*(m[1][0]*m[2][2]-m[1][2]*m[2][0])+m[0][2]*(m[1][0]*m[2][1]-m[1][1]*m[2][0]);
- need(std::isfinite(det)&&det>1.e-12,"Singular/reflected transform unsupported");return m;
+ // A reflected transform (a mirrored copy) as MoonRay renders it: its vertices are moved into render space with their
+ // faces in the order given (PolygonMesh::transformPrimitive before the tessellation), so the geometric normal, and the
+ // smooth normals PolyMesh makes from the faces, turn over with the mirror; supplied normals go through the inverse's
+ // transpose (Attributes::transformAttributes) and do not. XPU2 bakes its meshes so and keeps the faces' order.
+ need(std::isfinite(det)&&std::abs(det)>1.e-12,"Singular transform unsupported");return m;
 }
 // One of MoonRay's lights as the path tracer's record (light_core.h), or false
 // when it is off. Settings beyond these fall back. The arithmetic of each
@@ -606,7 +637,7 @@ inline void primitiveAttributes(const rdl::SceneObject& o,struct MeshData& m,siz
 inline V3 xformPointF(const float m[4][3],const rdl::Vec3f& p){
  V3 r;for(int c=0;c<3;++c){const float yz=p.y*m[1][c]+p.z*m[2][c];(&r.x)[c]=(p.x*m[0][c]+yz)+m[3][c];}return r;}
 // A displacement for the tessellation (SubdDisplacement): the DLL's callback and its user data.
-struct SubdDisplaceCall{X2SubdDisplaceFn fn=nullptr;void* user=nullptr;};
+struct SubdDisplaceCall{X2SubdDisplaceFn fn=nullptr;void* user=nullptr;X2SubdDisplaceAttrFn with=nullptr;};
 // A mesh as the DLL takes it (X2SubdInput, render space), handed to call with its primitive attributes (control, in
 // the input's order) and world to render.
 template<class Call> inline auto withMeshInput(const rdl::SceneObject& o,const rdl::Layer& layer,const Plan& plan,const rdl::Mat4d& objectToWorld,
@@ -624,7 +655,7 @@ template<class Call> inline auto withMeshInput(const rdl::SceneObject& o,const r
   need(worldVertices->size()==v.size(),o.getName()+": a time step's vertices do not match the mesh");
   float wr[4][3];for(int i=0;i<4;++i)for(int c=0;c<3;++c)wr[i][c]=float(w2r[i][c]);
   for(const auto& p:*worldVertices){const V3 r=xformPointF(wr,rdl::Vec3f(p.x,p.y,p.z));vertices.insert(vertices.end(),{r.x,r.y,r.z});}}
- else for(const auto& p:v){need(std::isfinite(p.x)&&std::isfinite(p.y)&&std::isfinite(p.z),o.getName()+": invalid vertex");const V3 r=xformPointF(xf,p);vertices.insert(vertices.end(),{r.x,r.y,r.z});}
+ else for(const auto& p:v){X2_NEED(std::isfinite(p.x)&&std::isfinite(p.y)&&std::isfinite(p.z),o.getName()+": invalid vertex");const V3 r=xformPointF(xf,p);vertices.insert(vertices.end(),{r.x,r.y,r.z});}
  // Normals as the tessellation's transformAttributes takes them (normals, the inverse transpose), uvs as they are.
  std::vector<float> normals,uvs;
  {const auto& nl=o.get<rdl::Vec3fVector>("normal_list");
@@ -681,7 +712,7 @@ template<class Call> inline auto withMeshInput(const rdl::SceneObject& o,const r
     const int vx=int(regionX),vy=int(regionY);dicingViewports.insert(dicingViewports.end(),{vx,vy,vx+int(rg.width()),vy+int(rg.height())});}
    const rdl::Mat4d dicingWorld2Render=dicingRender2World.inverse();for(int i=0;i<4;++i)for(int j=0;j<4;++j)in.world2render[4*i+j]=dicingWorld2Render[i][j];
    in.frustumCount=2;in.frustumC2S=dicingC2S.data();in.frustumPlanes=dicingPlanes.data();in.frustumViewports=dicingViewports.data();in.hasFishtum=0;}}
- in.enableDisplacement=displaceCall.fn?1:0;in.displace=displaceCall.fn;in.displaceUser=displaceCall.user;
+ in.enableDisplacement=displaceCall.fn||displaceCall.with?1:0;in.displace=displaceCall.fn;in.displaceUser=displaceCall.user;in.displaceWith=displaceCall.with;
  // Primitive attributes (UserData, processArbitraryData at the control mesh's rate counts: a face uniform, a vertex
  // varying or vertex, a face-vertex face varying), interpolated by MoonRay's tessellation.
  MeshData control;std::vector<std::pair<std::string,unsigned>> named;
@@ -696,13 +727,35 @@ template<class Call> inline auto withMeshInput(const rdl::SceneObject& o,const r
  in.reference=reference?1:0;
  return call(in,control,reference?identity:w2r);
 }
+// The subdivision's share of preparation (the session's log): the DLL's tessellations, and its displacement callback's
+// calls and their time summed over the threads that make them (more than the tessellations' own: they run in parallel).
+struct SubdTimes{std::atomic<long long> meshes{0},tessellateNs{0},displaceCalls{0},displaceNs{0},first{0},last{0},threads{0},round{1};
+ void reset(){meshes=0;tessellateNs=0;displaceCalls=0;displaceNs=0;first=0;last=0;threads=0;++round;}
+ // The displacements' span (the first call's start to the last one's end) and the threads that made them.
+ void seen(long long began,long long ended){long long f=first.load();while((f==0||began<f)&&!first.compare_exchange_weak(f,began)){}
+  long long l=last.load();while(ended>l&&!last.compare_exchange_weak(l,ended)){}
+  thread_local long long counted=0;if(counted!=round.load()){counted=round.load();threads++;}}};
+inline SubdTimes& subdTimes(){static SubdTimes t;return t;}
+inline long long nowNs(){return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();}
+// A loop over [0, n) in chunks on the machine's threads, each element independent (serial below 64K elements).
+template<class F> inline void parallelRange(size_t n,const F& f){
+ const unsigned threads=std::max(1u,std::min(32u,std::thread::hardware_concurrency()));
+ if(n<65536||threads<2){f(size_t(0),n);return;}
+ const size_t chunk=(n+threads-1)/threads;std::vector<std::thread> pool;
+ for(unsigned t=1;t<threads;++t){const size_t a=size_t(t)*chunk,b=std::min(n,a+chunk);if(a<b)pool.emplace_back([&f,a,b]{f(a,b);});}
+ f(size_t(0),std::min(n,chunk));for(auto& t:pool)t.join();}
+// A part of preparation timed while it is in scope (PrepLaps::parts).
+struct PrepPart{const char* what;long long began=nowNs();~PrepPart();};
 inline std::shared_ptr<const SubdSurface> tessellateSubdivision(const rdl::SceneObject& o,const rdl::Layer& layer,const Plan& plan,const rdl::Mat4d& objectToWorld,
                                                               const std::vector<V3>* worldVertices=nullptr,const SubdDisplaceCall& displaceCall={},bool reference=false){
  const auto& lib=subdLibrary();need(lib.tessellate&&lib.release,o.getName()+": MoonRay's subdivision (xpu2_geom.dll) did not load");
  return withMeshInput(o,layer,plan,objectToWorld,worldVertices,displaceCall,[&](X2SubdInput& in,const MeshData& control,const rdl::Mat4d& w2r){
  X2SubdOutput out{};char error[512]={0};
+ const long long began=nowNs();
  const int made=lib.tessellate(&in,&out,error,sizeof error);
+ subdTimes().meshes++;subdTimes().tessellateNs+=nowNs()-began;
  need(made!=0,o.getName()+": MoonRay's subdivision failed: "+std::string(error));
+ PrepPart converting{"tessellation's output read"};
  auto s=std::make_shared<SubdSurface>();
  // Back to world space: render to world is the camera's node transform (rigid: its vectors turn alone).
  const rdl::Mat4d r2w=w2r.inverse();
@@ -711,16 +764,16 @@ inline std::shared_ptr<const SubdSurface> tessellateSubdivision(const rdl::Scene
  auto vec=[&](const float* p){return V3{float(p[0]*r2w[0][0]+p[1]*r2w[1][0]+p[2]*r2w[2][0]),float(p[0]*r2w[0][1]+p[1]*r2w[1][1]+p[2]*r2w[2][1]),
                                         float(p[0]*r2w[0][2]+p[1]*r2w[1][2]+p[2]*r2w[2][2])};};
  try{
-  s->positions.reserve(out.vertexCount);s->normals.reserve(out.vertexCount);s->dpds.reserve(out.vertexCount);s->dpdt.reserve(out.vertexCount);
-  for(unsigned i=0;i<out.vertexCount;++i){s->positions.push_back(point(out.vertices+3*i));s->normals.push_back(vec(out.normals+3*i));
-   s->dpds.push_back(vec(out.dpds+3*i));s->dpdt.push_back(vec(out.dpdt+3*i));}
+  const size_t n=out.vertexCount;s->positions.resize(n);s->normals.resize(n);s->dpds.resize(n);s->dpdt.resize(n);
+  parallelRange(n,[&](size_t a,size_t b){for(size_t i=a;i<b;++i){s->positions[i]=point(out.vertices+3*i);s->normals[i]=vec(out.normals+3*i);
+   s->dpds[i]=vec(out.dpds+3*i);s->dpdt[i]=vec(out.dpdt+3*i);}});
   s->st.assign(out.st,out.st+2*size_t(out.vertexCount));s->quads.assign(out.indices,out.indices+4*size_t(out.quadCount));
   s->controlFace.assign(out.controlFace,out.controlFace+out.quadCount);
   for(unsigned k=0;k<out.attributeCount;++k){const auto& a=control.prims[k];const auto& r=out.attributes[k];
    SubdAttribute t;t.key=a.key;t.components=a.components;t.kind=r.kind;t.values.assign(r.values,r.values+size_t(r.count)*a.components);s->attributes.push_back(std::move(t));}
  }catch(...){lib.release(&out);throw;}
  lib.release(&out);
- for(unsigned q:s->quads)need(q<s->positions.size(),o.getName()+": a tessellated index out of bounds");
+ for(unsigned q:s->quads)X2_NEED(q<s->positions.size(),o.getName()+": a tessellated index out of bounds");
  return s;},reference);
 }
 // A displaced polygon mesh as MoonRay's PolyMesh tessellates and displaces it (xpu2_geom.dll's x2PolyTessellate, its
@@ -741,7 +794,11 @@ inline std::shared_ptr<const PolySurface> tessellatePolygons(const rdl::SceneObj
     for(const auto& p:(*worldSteps)[k]){const V3 r=xformPointF(wr,rdl::Vec3f(p.x,p.y,p.z));later.insert(later.end(),{r.x,r.y,r.z});}}
    pin.stepCount=unsigned(worldSteps->size());pin.stepVertices=later.data();}
   X2PolyOutput out{};char error[512]={0};
-  need(lib.polyTessellate(&pin,&out,error,sizeof error)!=0,o.getName()+": MoonRay's polygon tessellation failed: "+std::string(error));
+  const long long began=nowNs();
+  const int made=lib.polyTessellate(&pin,&out,error,sizeof error);
+  subdTimes().meshes++;subdTimes().tessellateNs+=nowNs()-began;
+  need(made!=0,o.getName()+": MoonRay's polygon tessellation failed: "+std::string(error));
+  PrepPart converting{"tessellation's output read"};
   auto s=std::make_shared<PolySurface>();
   // Back to world space: render to world is the camera's node transform (rigid: its vectors turn alone).
   const rdl::Mat4d r2w=w2r.inverse();
@@ -750,20 +807,23 @@ inline std::shared_ptr<const PolySurface> tessellatePolygons(const rdl::SceneObj
   auto vec=[&](const float* p){return V3{float(p[0]*r2w[0][0]+p[1]*r2w[1][0]+p[2]*r2w[2][0]),float(p[0]*r2w[0][1]+p[1]*r2w[1][1]+p[2]*r2w[2][1]),
                                          float(p[0]*r2w[0][2]+p[1]*r2w[1][2]+p[2]*r2w[2][2])};};
   try{
-   const size_t n=out.vertexCount;s->positions.reserve(n);
-   for(size_t i=0;i<n;++i)s->positions.push_back(point(out.vertices+3*i));
-   for(unsigned t=1;t<out.stepCount;++t){std::vector<V3> step;step.reserve(n);for(size_t i=0;i<n;++i)step.push_back(point(out.vertices+3*(size_t(t)*n+i)));s->steps.push_back(std::move(step));}
+   // Each element on its own (parallelRange): the same values as one after another.
+   const size_t n=out.vertexCount;s->positions.resize(n);
+   parallelRange(n,[&](size_t a,size_t b){for(size_t i=a;i<b;++i)s->positions[i]=point(out.vertices+3*i);});
+   for(unsigned t=1;t<out.stepCount;++t){std::vector<V3> step(n);
+    parallelRange(n,[&](size_t a,size_t b){for(size_t i=a;i<b;++i)step[i]=point(out.vertices+3*(size_t(t)*n+i));});s->steps.push_back(std::move(step));}
    s->normalKind=out.normalKind;
-   if(out.normalKind==3){for(size_t i=0;i<n;++i)s->normals.push_back(vec(out.normals+3*i));
-    if(out.normalSteps>1)for(size_t i=0;i<n;++i)s->normals1.push_back(vec(out.normals+3*(n+i)));}
-   else if(out.normalKind==4)for(size_t i=0;i<size_t(out.faceCount)*4;++i)s->normals.push_back(vec(out.normals+3*i));
+   if(out.normalKind==3){s->normals.resize(n);parallelRange(n,[&](size_t a,size_t b){for(size_t i=a;i<b;++i)s->normals[i]=vec(out.normals+3*i);});
+    if(out.normalSteps>1){s->normals1.resize(n);parallelRange(n,[&](size_t a,size_t b){for(size_t i=a;i<b;++i)s->normals1[i]=vec(out.normals+3*(n+i));});}}
+   else if(out.normalKind==4){const size_t c=size_t(out.faceCount)*4;s->normals.resize(c);
+    parallelRange(c,[&](size_t a,size_t b){for(size_t i=a;i<b;++i)s->normals[i]=vec(out.normals+3*i);});}
    s->faces.assign(out.indices,out.indices+4*size_t(out.faceCount));s->controlFace.assign(out.controlFace,out.controlFace+out.faceCount);
    s->st.assign(out.st,out.st+8*size_t(out.faceCount));s->fourCorners=out.tessellated||out.quadBase;
    for(unsigned k=0;k<out.attributeCount;++k){const auto& a=control.prims[k];const auto& r=out.attributes[k];
     SubdAttribute t;t.key=a.key;t.components=a.components;t.kind=r.kind;if(r.values)t.values.assign(r.values,r.values+size_t(r.count)*a.components);s->attributes.push_back(std::move(t));}
   }catch(...){lib.polyRelease(&out);throw;}
   lib.polyRelease(&out);
-  for(unsigned q:s->faces)need(q<s->positions.size(),o.getName()+": a tessellated index out of bounds");
+  for(unsigned q:s->faces)X2_NEED(q<s->positions.size(),o.getName()+": a tessellated index out of bounds");
   return s;},reference);
 }
 // An instance of a prototype tessellated in its own space (MoonRay's shared primitive): its vertices, shading normals
@@ -782,17 +842,27 @@ inline std::shared_ptr<MeshData> polygonMesh(const PolySurface& s,const std::vec
  if(s.normalKind==3){m->normals=s.normals;m->normals1=s.normals1;m->normalRate=shade::RateVertex;}
  static const unsigned corners[2][3]={{0,1,3},{2,3,1}};
  std::vector<std::pair<size_t,unsigned>> made;  // each triangle's face and half
- for(size_t f=0;f<s.controlFace.size();++f){
+ // Which halves of each face make a triangle (its face kept by the mask, a half of some area), each face on its own;
+ // then each face's triangles written where the ones before it end: the order one face after another gives.
+ const size_t faceCount=s.controlFace.size();std::vector<unsigned char> halves(faceCount,0);
+ parallelRange(faceCount,[&](size_t from,size_t to){for(size_t f=from;f<to;++f){
   const int cf=s.controlFace[f];if(faceMask&&(cf<0||size_t(cf)>=faceMask->size()||!(*faceMask)[size_t(cf)]))continue;
   const unsigned* c=s.faces.data()+4*f;
   for(unsigned half=0;half<2;++half){
    if(half==1&&c[2]==c[3])continue;
-   const unsigned t[3]={c[corners[half][0]],c[corners[half][1]],c[corners[half][2]]};
-   const V3 a=m->positions[t[0]],b=m->positions[t[1]],cc=m->positions[t[2]];V3 n;
-   if(!surface::normalize(surface::cross(surface::add(b,surface::mul(a,-1)),surface::add(cc,surface::mul(a,-1))),n))continue;
-   m->triangles.push_back({t[0],t[1],t[2]});made.emplace_back(f,half);
-   if(polyVertices){if(s.fourCorners)m->polyVertices.insert(m->polyVertices.end(),{c[0],c[1],c[2],c[3]});else m->polyVertices.insert(m->polyVertices.end(),{c[0],c[1],c[2],~0u});}
-   for(unsigned k:corners[half]){m->uvs.push_back(s.st[8*f+2*k]);m->uvs.push_back(s.st[8*f+2*k+1]);if(s.normalKind==4)m->normals.push_back(s.normals[4*f+k]);}}}
+   const V3 a=m->positions[c[corners[half][0]]],b=m->positions[c[corners[half][1]]],cc=m->positions[c[corners[half][2]]];V3 n;
+   if(surface::normalize(surface::cross(surface::add(b,surface::mul(a,-1)),surface::add(cc,surface::mul(a,-1))),n))halves[f]|=1u<<half;}}});
+ std::vector<size_t> first(faceCount+1,0);
+ for(size_t f=0;f<faceCount;++f)first[f+1]=first[f]+(halves[f]&1u)+(halves[f]>>1&1u);
+ const size_t count=first[faceCount];
+ m->triangles.resize(count);made.resize(count);m->uvs.resize(6*count);if(s.normalKind==4)m->normals.resize(3*count);if(polyVertices)m->polyVertices.resize(4*count);
+ parallelRange(faceCount,[&](size_t from,size_t to){for(size_t f=from;f<to;++f){size_t k=first[f];const unsigned* c=s.faces.data()+4*f;
+  for(unsigned half=0;half<2;++half){if(!(halves[f]>>half&1u))continue;
+   m->triangles[k]={c[corners[half][0]],c[corners[half][1]],c[corners[half][2]]};made[k]={f,half};
+   if(polyVertices){unsigned* p=m->polyVertices.data()+4*k;p[0]=c[0];p[1]=c[1];p[2]=c[2];p[3]=s.fourCorners?c[3]:~0u;}
+   for(unsigned j=0;j<3;++j){const unsigned corner=corners[half][j];m->uvs[6*k+2*j]=s.st[8*f+2*corner];m->uvs[6*k+2*j+1]=s.st[8*f+2*corner+1];
+    if(s.normalKind==4)m->normals[3*k+j]=s.normals[4*f+corner];}
+   ++k;}}});
  need(!m->triangles.empty(),name+": no triangle of any area");
  m->uvRate=shade::RateFaceVarying;if(s.normalKind==4)m->normalRate=shade::RateFaceVarying;
  for(const auto& a:s.attributes){if(a.kind==0)continue;const unsigned n=a.components;std::vector<float> values;unsigned rate=shade::PrimConstant;
@@ -1541,7 +1611,7 @@ inline volume::Shader admitVdbVolume(const rdl::SceneObject& g,const rdl::SceneO
    if(surface::dot(nrm,out)>=0.0f){cellTriangles.push_back({id[0],id[1],id[2]});cellTriangles.push_back({id[0],id[2],id[3]});}
    else{cellTriangles.push_back({id[0],id[2],id[1]});cellTriangles.push_back({id[0],id[3],id[2]});}}}
  else for(int i=0;i<8;++i)m->positions.push_back(corner(i,i2w));
- for(const V3& w:m->positions)need(surface::finite(w)&&std::abs(w.x)<=10000&&std::abs(w.y)<=10000&&std::abs(w.z)<=10000,g.getName()+": a VDB volume out of bounds");
+ for(const V3& w:m->positions)X2_NEED(surface::finite(w)&&std::abs(w.x)<=10000&&std::abs(w.y)<=10000&&std::abs(w.z)<=10000,g.getName()+": a VDB volume out of bounds");
  static const unsigned faces[12][3]={{0,4,6},{0,6,2},{1,3,7},{1,7,5},{0,1,5},{0,5,4},{2,6,7},{2,7,3},{0,2,3},{0,3,1},{4,5,7},{4,7,6}};
  if(!cellTriangles.empty()){
   m->triangles=std::move(cellTriangles);
@@ -1616,6 +1686,18 @@ inline uint64_t indexedFamilies(const rdl::SceneObject& o,const CanonicalView& f
 inline std::vector<std::shared_ptr<const ix::Buffer>> signature(const rdl::SceneObject& o,const CanonicalView& frame){
  auto entity=frame->routing->scene->entities.at(ri::objectId(o.getName()));std::vector<std::shared_ptr<const ix::Buffer>> value;
  for(auto& id:entity->dependencies){auto attr=frame->routing->scene->entities.at(id);for(auto& pair:attr->buffers)value.push_back(pair.second);}return value;
+}
+// An object's signature with every object its attributes bind or name, through and through (a displacement and its
+// maps, their maps): the same buffers while none of them has changed.
+inline std::vector<std::shared_ptr<const ix::Buffer>> deepSignature(const rdl::SceneObject& o,const CanonicalView& frame){
+ const auto& entities=frame->routing->scene->entities;std::vector<std::shared_ptr<const ix::Buffer>> value;
+ std::set<std::string> seen;std::vector<std::string> todo{ri::objectId(o.getName())};
+ while(!todo.empty()){const std::string id=todo.back();todo.pop_back();if(!seen.insert(id).second)continue;
+  const auto object=entities.find(id);if(object==entities.end())continue;
+  for(const auto& attribute:object->second->dependencies){const auto a=entities.find(attribute);if(a==entities.end())continue;
+   for(const auto& pair:a->second->buffers)value.push_back(pair.second);
+   for(const auto& bound:a->second->dependencies)todo.push_back(bound);}}
+ return value;
 }
 }
 #include "map_admission.h"
@@ -1850,7 +1932,25 @@ struct SubdDisplacement{
  rdl::Mat4d w2r,r2w;std::mutex lock;std::string failure;float worldToObject[12]={1,0,0,0,0,1,0,0,0,0,1,0};
  void check(const rdl::SceneObject& o){need(failure.empty(),o.getName()+": "+failure);}
 };
+inline void subdDisplaceAt(void* user,const void* object,const float* P,const float* N,const float* dPds,const float* dPdt,const float* st,const float* fp,
+                           const shade::PrimAttr* prims,const float* primData,unsigned primCount,float* out);
 inline void subdDisplace(void* user,const void* object,const float* P,const float* N,const float* dPds,const float* dPdt,const float* st,const float* fp,float* out){
+ subdDisplaceAt(user,object,P,N,dPds,dPdt,st,fp,nullptr,nullptr,0,out);}
+// The same with the control mesh's primitive attributes at the vertex (xpu2_geom.dll's displaceWith: MoonRay's
+// displacement state's, three floats each, the first NaN where the vertex has none): the hit's attributes for the
+// displacement's maps (a named UV set's AttributeMap or ModoTextureMap), constant at the vertex and without st
+// derivatives, as MoonRay's displacement state gives them (State::subdivision: ModoTextureMap's uv_affine stands for them).
+inline void subdDisplaceWith(void* user,const void* object,const float* P,const float* N,const float* dPds,const float* dPdt,const float* st,const float* fp,
+                             const X2SubdAttribute* attributes,unsigned attributeCount,const float* values,float* out){
+ shade::PrimAttr prims[32];unsigned n=0;
+ for(unsigned i=0;i<attributeCount&&n<32;++i){if(std::isnan(values[3*i]))continue;const int type=attributes[i].type;
+  const unsigned prim=type==1?shade::PrimVec2f:type==2?shade::PrimVec3f:type==3?shade::PrimRgb:type==4?shade::PrimInt:shade::PrimFloat;
+  const unsigned components=type==1?2u:type==2||type==3?3u:1u;
+  prims[n++]=shade::PrimAttr{shade::primKey(attributes[i].name,prim),components,shade::PrimConstant,3*i};}
+ subdDisplaceAt(user,object,P,N,dPds,dPdt,st,fp,prims,values,n,out);}
+inline void subdDisplaceAt(void* user,const void* object,const float* P,const float* N,const float* dPds,const float* dPdt,const float* st,const float* fp,
+                           const shade::PrimAttr* prims,const float* primData,unsigned primCount,float* out){
+ const long long began=nowNs();struct Done{long long began;~Done(){const long long ended=nowNs();subdTimes().displaceCalls++;subdTimes().displaceNs+=ended-began;subdTimes().seen(began,ended);}}done{began};
  auto& d=*static_cast<SubdDisplacement*>(user);out[0]=out[1]=out[2]=0.0f;
  static std::once_flag traced;std::call_once(traced,[&]{std::fprintf(stderr,"xpu2: subdivision displacement at %g %g %g, %zu shaders\n",P[0],P[1],P[2],d.shaders.size());std::fflush(stderr);});
  const auto it=d.shaders.find(object);if(it==d.shaders.end())return;
@@ -1861,6 +1961,7 @@ inline void subdDisplace(void* user,const void* object,const float* P,const floa
  try{
   shade::State s;s.P=point(P,d.r2w);s.N=s.Ng=vec(N,d.r2w);s.dPds=vec(dPds,d.r2w);s.dPdt=vec(dPdt,d.r2w);s.wo=V3{0,0,0};s.displacement=true;
   s.s=st[0];s.t=st[1];s.dsdx=fp[0];s.dsdy=fp[1];s.dtdx=fp[2];s.dtdy=fp[3];s.worldToRender=d.worldToRender;s.worldToObject=d.worldToObject;
+  s.prims=prims;s.primData=primData;s.primCount=primCount;s.subdivision=true;
   const displace::Textures textures{d.images.data(),unsigned(d.images.size())};
   const V3 w=displace::displacement(it->second,d.pool,s,textures);const float wf[3]={w.x,w.y,w.z};const V3 r=vec(wf,d.w2r);
   out[0]=r.x;out[1]=r.y;out[2]=r.z;
@@ -1879,7 +1980,7 @@ inline void primitiveAttributes(const rdl::SceneObject& o,MeshData& m,size_t uni
    if(n==0)return 0u;if(n==1)return 1u;if(faceVaryingCount&&n==faceVaryingCount)return 6u;if(n==uniformCount)return 3u;if(n==vertexCount)return 4u;if(n==varyingCount)return 5u;return 0u;};
   auto add=[&](const std::string& key,unsigned type,unsigned components,const std::vector<float>& values,size_t count){
    if(key.empty())return;const unsigned r=pick(count);need(r!=0,o.getName()+": primitive attribute "+key+" has an unsupported rate or size");
-   for(float f:values)need(std::isfinite(f),o.getName()+": invalid primitive attribute "+key);
+   for(float f:values)X2_NEED(std::isfinite(f),o.getName()+": invalid primitive attribute "+key);
    m.prims.push_back(shade::PrimAttr{shade::primKey(key.c_str(),type),components,r,unsigned(m.primData.size())});m.primData.insert(m.primData.end(),values.begin(),values.end());
    if(named)named->emplace_back(key,type);};
   {const auto& d=get<rdl::FloatVector>(*object,"float_values_0");add(get<rdl::String>(*object,"float_key"),shade::PrimFloat,1,std::vector<float>(d.begin(),d.end()),d.size());}
@@ -1924,7 +2025,7 @@ inline void admitCurves(const rdl::SceneObject& o,const rdl::Mat4d& transform,Me
    allowed.insert(geometryVisibilityAttributes().begin(),geometryVisibilityAttributes().end());attributes(o,allowed,{},{"node_xform"});}
   type=get<rdl::Int>(o,"curve_type");need(type>=0&&type<=2,o.getName()+": unknown curve type");
   const auto& c=o.get<rdl::IntVector>("curves_vertex_count");const auto& v=o.get<rdl::Vec3fVector>("vertex_list_0");
-  for(int n:c){need(n>0,o.getName()+": invalid curve vertex count");counts.push_back(unsigned(n));}
+  for(int n:c){X2_NEED(n>0,o.getName()+": invalid curve vertex count");counts.push_back(unsigned(n));}
   // The radii (RdlCurveGeometry::generate): constant, a curve, a vertex, or a span end (varying), else 0.5.
   const size_t vertCount=v.size(),curves=counts.size();
   const size_t varyingCount=type==0?vertCount:type==1?(vertCount-curves)/3+curves:vertCount-2*curves;
@@ -1978,13 +2079,13 @@ inline void admitCurves(const rdl::SceneObject& o,const rdl::Mat4d& transform,Me
   if(!ul.empty()&&!hasPrim(m,"st",shade::PrimVec2f)&&!hasPrim(m,"uv",shade::PrimVec2f)){
    const size_t un=ul.size();const unsigned r=un==1?1u:un==curves?3u:un==vertCount?4u:un==varyingCount?5u:0u;need(r!=0,o.getName()+": uv_list has an unsupported rate");
    m.prims.push_back(shade::PrimAttr{shade::primKey("uv",shade::PrimVec2f),2,r,unsigned(m.primData.size())});
-   for(auto u:ul){need(std::isfinite(u.x)&&std::isfinite(u.y),o.getName()+": invalid uv");m.primData.push_back(u.x);m.primData.push_back(u.y);}
+   for(auto u:ul){X2_NEED(std::isfinite(u.x)&&std::isfinite(u.y),o.getName()+": invalid uv");m.primData.push_back(u.x);m.primData.push_back(u.y);}
   }
  }
  const int subtype=get<rdl::Int>(o,"curves_subtype");need(subtype==0||subtype==1,o.getName()+": normal-oriented curves (MoonRay XPU draws them facing the ray)");
  const int rate=get<rdl::Int>(o,"tessellation_rate");need(rate>=1&&rate<=64,o.getName()+": tessellation rate out of range");
  // Curves::checkPrimitiveData: whole spans, as many points as the curves say.
- size_t vertices=0;for(auto c:counts){vertices+=c;need(type==0?c>=2:type==1?(c>=4&&(c-1)%3==0):c>=4,o.getName()+": a curve with an invalid number of points");}
+ size_t vertices=0;for(auto c:counts){vertices+=c;X2_NEED(type==0?c>=2:type==1?(c>=4&&(c-1)%3==0):c>=4,o.getName()+": a curve with an invalid number of points");}
  need(vertices*4==points.size()&&vertices>0,o.getName()+": curve points do not match the counts");
  m.curveBasis=type==0?curves::BasisLinear:type==1?curves::BasisBezier:curves::BasisBspline;m.curveRound=unsigned(subtype);m.curveSegments=unsigned(rate);
  // Render space: the points as the mesh's; the radii scaled by the transform's mean axis length.
@@ -2086,7 +2187,7 @@ inline bool inside(F3 N,F3 p,F3 a,F3 b,F3 c){
 inline PolygonSplit splitPolygons(const rdl::Vec3fVector& v,const rdl::IntVector& counts,const rdl::IntVector& ind,const std::string& name){
  using namespace polygon;
  PolygonSplit out;size_t tris=0,quads=0,total=0;int most=0;
- for(int n:counts){need(n>=3,name+": a face of fewer than three vertices");tris+=size_t(n-2);quads+=size_t((n-1)>>1);total+=size_t(n);most=std::max(most,n);}
+ for(int n:counts){X2_NEED(n>=3,name+": a face of fewer than three vertices");tris+=size_t(n-2);quads+=size_t((n-1)>>1);total+=size_t(n);most=std::max(most,n);}
  need(total==ind.size(),name+": face vertex counts do not match the vertex indices");
  for(int k:ind)need(k>=0&&size_t(k)<v.size(),"Vertex index out of bounds");
  auto tri=[&](size_t f,unsigned a,unsigned b,unsigned c){out.corners.insert(out.corners.end(),{a,b,c});out.vertices.insert(out.vertices.end(),{ind[a],ind[b],ind[c]});out.faceOf.push_back(unsigned(f));};
@@ -2138,7 +2239,7 @@ inline PolygonSplit splitPolygons(const rdl::Vec3fVector& v,const rdl::IntVector
   out.corners.insert(out.corners.end(),{remap[3*t],remap[3*t+1],remap[3*t+2]});
   out.vertices.insert(out.vertices.end(),{buf[3*t],buf[3*t+1],buf[3*t+2]});
   out.faceOf.push_back(faceOf[t]);}
- for(int k:out.vertices)need(k>=0&&size_t(k)<v.size(),name+": vertex index out of bounds");
+ for(int k:out.vertices)X2_NEED(k>=0&&size_t(k)<v.size(),name+": vertex index out of bounds");
  return out;
 }
 // reverse_normals (PolyMesh::tessellate's reverseOrientation, after the split): each face's corners reversed, a quad
@@ -2322,7 +2423,7 @@ inline void admitPoints(const rdl::SceneObject& o,const MotionParams& mp,MeshDat
  auto steps=item&&(item->moves||meshHasMotion(o))?instanceMotionSteps(o,mp,*item,false,&instanceScales):
             instance?meshMotionSteps(o,mp,*instance,*instance,false):
                      meshMotionSteps(o,mp,o.get<rdl::Mat4d>("node_xform",rdl::TIMESTEP_BEGIN),o.get<rdl::Mat4d>("node_xform",rdl::TIMESTEP_END),false);
- for(float s:instanceScales)need(std::abs(s-instanceScales[0])<=1e-6f*std::max(1.0f,instanceScales[0]),o.getName()+": an instance of points scaling over the shutter is not rendered yet");
+ for(float s:instanceScales)X2_NEED(std::abs(s-instanceScales[0])<=1e-6f*std::max(1.0f,instanceScales[0]),o.getName()+": an instance of points scaling over the shutter is not rendered yet");
  m.positions=std::move(steps[0]);for(size_t k=1;k<steps.size();++k)m.steps.push_back(std::move(steps[k]));
  if(instance){const rdl::Mat4d& x=*instance;const float s=(float(std::sqrt(x[0][0]*x[0][0]+x[0][1]*x[0][1]+x[0][2]*x[0][2]))+
    float(std::sqrt(x[1][0]*x[1][0]+x[1][1]*x[1][1]+x[1][2]*x[1][2]))+float(std::sqrt(x[2][0]*x[2][0]+x[2][1]*x[2][1]+x[2][2]*x[2][2])))/3.f;
@@ -2388,7 +2489,7 @@ inline std::vector<Piece> meshPieces(const rdl::SceneObject& o,const rdl::Geomet
  if(parts.size()!=counts.size()||expected!=indices.size())return {{whole,"",{}}};
  std::vector<int> faceId(faces,whole);size_t at=0;
  for(size_t i=0;i<parts.size();++i){const int id=layer.getAssignmentId(&geom,parts[i]);
-  for(int k=0;k<counts[i];++k,++at){const int f=indices[at];need(f>=0&&size_t(f)<faces,o.getName()+": part face index out of bounds");faceId[size_t(f)]=id;}}
+  for(int k=0;k<counts[i];++k,++at){const int f=indices[at];X2_NEED(f>=0&&size_t(f)<faces,o.getName()+": part face index out of bounds");faceId[size_t(f)]=id;}}
  std::vector<Piece> out;std::map<int,size_t> slot;
  for(size_t f=0;f<faces;++f){const int a=faceId[f];if(a<0)continue;auto it=slot.find(a);
   if(it==slot.end()){it=slot.emplace(a,out.size()).first;out.push_back({a,"#"+std::to_string(a),std::vector<unsigned char>(faces,0)});}
@@ -2464,7 +2565,7 @@ inline bool admitMeshLight(const rdl::SceneObject& o,float sceneScale,const rdl:
     size_t expected=0;for(int k:partCounts)expected+=size_t(std::max(k,0));
     if(names.size()==partCounts.size()&&expected==partFaces.size()){size_t at=0;
      for(size_t i=0;i<names.size();++i){const bool listed=std::find(parts.begin(),parts.end(),names[i])!=parts.end();
-      for(int k=0;k<partCounts[i];++k,++at){const int f=partFaces[at];need(f>=0&&size_t(f)<counts.size(),g->getName()+": part face index out of bounds");if(listed)keep[size_t(f)]=1;}}}}
+      for(int k=0;k<partCounts[i];++k,++at){const int f=partFaces[at];X2_NEED(f>=0&&size_t(f)<counts.size(),g->getName()+": part face index out of bounds");if(listed)keep[size_t(f)]=1;}}}}
    return keep;};
   if(subd){
    // MoonRay's OpenSubdiv tessellation of the geometry (its quads, world space), as MeshLight::setMesh takes them.
@@ -2474,7 +2575,7 @@ inline bool admitMeshLight(const rdl::SceneObject& o,float sceneScale,const rdl:
    for(size_t q=0;q*4<s->quads.size();++q){const int f=q<s->controlFace.size()?s->controlFace[q]:-1;
     if(f<0||size_t(f)>=keep.size()||!keep[size_t(f)])continue;
     prims.push_back(unsigned(q));for(int k=0;k<4;++k)corners.push_back(s->quads[4*q+size_t(k)]);}
-   for(const auto& p:s->positions)need(surface::finite(p),o.getName()+": invalid mesh light vertex");
+   for(const auto& p:s->positions)X2_NEED(surface::finite(p),o.getName()+": invalid mesh light vertex");
    data=lights::buildMeshLight(s->positions,corners,4u,prims);
    if(!data)return false;
   }else{
@@ -2489,12 +2590,12 @@ inline bool admitMeshLight(const rdl::SceneObject& o,float sceneScale,const rdl:
    size_t expected=0;for(int k:partCounts)expected+=size_t(std::max(k,0));
    if(names.size()==partCounts.size()&&expected==partFaces.size()){size_t at=0;
     for(size_t i=0;i<names.size();++i){const bool listed=std::find(parts.begin(),parts.end(),names[i])!=parts.end();
-     for(int k=0;k<partCounts[i];++k,++at){const int f=partFaces[at];need(f>=0&&size_t(f)<counts.size(),g->getName()+": part face index out of bounds");if(listed)keep[size_t(f)]=1;}}}
+     for(int k=0;k<partCounts[i];++k,++at){const int f=partFaces[at];X2_NEED(f>=0&&size_t(f)<counts.size(),g->getName()+": part face index out of bounds");if(listed)keep[size_t(f)]=1;}}}
   }
   std::vector<unsigned> raw,corners,prims;size_t tris=0,quads=0;int most=0;size_t o=0;
-  for(size_t f=0;f<counts.size();o+=size_t(counts[f]),++f){if(!keep[f])continue;const int n=counts[f];need(n>=3,g->getName()+": a face of fewer than three vertices");
+  for(size_t f=0;f<counts.size();o+=size_t(counts[f]),++f){if(!keep[f])continue;const int n=counts[f];X2_NEED(n>=3,g->getName()+": a face of fewer than three vertices");
    tris+=size_t(n-2);quads+=size_t((n-1)>>1);most=std::max(most,n);
-   for(int k=0;k<n;++k){const int i=indices[o+size_t(k)];need(i>=0&&size_t(i)<v.size(),g->getName()+": vertex index out of bounds");raw.push_back(unsigned(i));}}
+   for(int k=0;k<n;++k){const int i=indices[o+size_t(k)];X2_NEED(i>=0&&size_t(i)<v.size(),g->getName()+": vertex index out of bounds");raw.push_back(unsigned(i));}}
   const unsigned stride=most<=4&&quads*4<tris*3?4u:3u;
   for(size_t f=0;(f+1)*stride<=raw.size();++f){prims.push_back(unsigned(f));for(unsigned j=0;j<stride;++j)corners.push_back(raw[f*stride+j]);}
   data=lights::buildMeshLight(world,corners,stride,prims);
@@ -2516,14 +2617,42 @@ inline bool admitMeshLight(const rdl::SceneObject& o,float sceneScale,const rdl:
 #else
 #define X2_SPLIT_INLINE inline
 #endif
+// A camera-only edit (the session's fast path, realtime): the camera, render space and render origin made again from the
+// scene's camera as it stands, the rest of the plan as it was prepared (its meshes are in world space). False where
+// something else follows the camera and the scene must be prepared again: a bake camera, a pixel sample map, a shutter
+// that changed (geometry in motion is read over it), volumes and light filters (evaluated at the render origin),
+// adaptive tessellation (cameraDependent).
+inline void admitCamera(const rdl::SceneObject& camera,const rdl::SceneVariables& sv,Plan& plan,const Plan* previous);
+inline bool updateCamera(Plan& plan,const rdl::SceneContext& context){
+ const auto& sv=context.getSceneVariables();
+ auto* camera=get<rdl::SceneObject*>(sv,"camera");
+ if(!camera||!plan.paths||plan.camera.type==surface::CameraBake||plan.cameraDependent||!plan.volumes.empty()||!plan.filterLists.empty()||
+    !plan.pixelSamples.empty()||!get<rdl::String>(*camera,"pixel_sample_map").empty())return false;
+ if(!(motionParams(sv,camera)==plan.motion))return false;
+ if(plan.motion.on&&get<rdl::Float>(*camera,"mb_shutter_bias")!=plan.shutterBias)return false;
+ const auto cm=rigid(*camera);const auto w=cm.inverse();
+ {const double rows[12]={w[0][0],w[1][0],w[2][0],w[3][0],w[0][1],w[1][1],w[2][1],w[3][1],w[0][2],w[1][2],w[2][2],w[3][2]};
+  for(int i=0;i<12;++i)plan.worldToRender[i]=float(rows[i]);
+  for(int i=0;i<4;++i)for(int j=0;j<4;++j)plan.world2render[4*i+j]=w[i][j];}
+ admitCamera(*camera,sv,plan,nullptr);
+ plan.renderOrigin=V3{float(cm[3][0]),float(cm[3][1]),float(cm[3][2])};
+ return true;
+}
+// Where prepare's time goes (the session's log): laps between its stages, the latest prepare's.
+struct PrepLaps{std::vector<std::pair<std::string,double>> laps;std::chrono::steady_clock::time_point last=std::chrono::steady_clock::now();
+ std::map<std::string,double> parts;std::mutex lock;  // parts within the laps, summed (PrepPart)
+ void lap(const char* what){const auto now=std::chrono::steady_clock::now();laps.push_back({what,std::chrono::duration<double>(now-last).count()});last=now;}
+ void add(const char* what,double s){std::lock_guard<std::mutex> g(lock);parts[what]+=s;}};
+inline PrepLaps& prepLaps(){static PrepLaps l;return l;}
+inline PrepPart::~PrepPart(){prepLaps().add(what,double(nowNs()-began)*1e-9);}
 X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const CanonicalView& frame,PlanView previous={},Limits limits={},const fs::path& assetRoot={},Domain domain=Domain::Planar,bool allowAdaptive=false,bool paths=false);
 X2_SPLIT_INLINE PlanView prepare(CanonicalSession& session,const CanonicalView& frame,PlanView previous={},Limits limits={},const fs::path& assetRoot={},Domain domain=Domain::Planar,bool allowAdaptive=false,bool paths=false);
 #if !defined(XPU2_SPLIT_UNITS) || defined(XPU2_SCENE_UNIT)
 X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const CanonicalView& frame,PlanView previous,Limits limits,const fs::path& assetRoot,Domain domain,bool allowAdaptive,bool paths){
- need(bool(frame),"Missing canonical snapshot");
+ need(bool(frame),"Missing canonical snapshot");{auto& l=prepLaps();l.laps.clear();l.parts.clear();l.last=std::chrono::steady_clock::now();}subdTimes().reset();
  const Limits hard{};
  need(limits.vertices>0&&limits.vertices<=hard.vertices&&limits.triangles>0&&limits.triangles<=hard.triangles&&
-      limits.bytes>0&&limits.bytes<=hard.bytes&&limits.objects>0&&limits.objects<=hard.objects&&limits.pixels>0&&limits.pixels<=hard.pixels,"Invalid preparation limits");
+      limits.bytes>0&&limits.bytes<=HardGeometryBytes&&limits.objects>0&&limits.objects<=hard.objects&&limits.pixels>0&&limits.pixels<=hard.pixels,"Invalid preparation limits");
  auto plan=std::make_shared<Plan>();plan->source=frame;plan->domain=domain;need(domain==Domain::Planar||domain==Domain::DiffuseMesh||gpuTextures(domain),"Unknown scene domain");bool spatial=isSpatial(domain);
  const auto& sv=context.getSceneVariables();
  // The render outputs (RenderOutputDriver): the AOVs the samples gather, before the materials take their labels.
@@ -2545,7 +2674,7 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
    need(v.size()<=limits.vertices-verts&&faces<=limits.triangles-tris,"Geometry count budget");verts+=v.size();tris+=faces;
   }
  }
- need(verts*sizeof(V3)+tris*sizeof(Tri)<=limits.bytes,"Prepared geometry byte budget");
+ need(verts*sizeof(V3)+tris*sizeof(Tri)<=limits.bytes,geometryBudgetText(verts*sizeof(V3)+tris*sizeof(Tri),limits.bytes));
  attributes(sv,{"enable_displacement","dicing_camera","resumable_output","checkpoint_active","checkpoint_interval","checkpoint_bg_write","resume_render","exr_header_attributes","camera","layer","image_width","image_height","pixel_samples","sampling_mode","min_adaptive_samples","max_adaptive_samples","target_adaptive_error","frame","lock_frame_noise","pixel_filter","pixel_filter_width","bsdf_samples","light_samples","max_depth","max_diffuse_depth","enable_dof","enable_motion_blur","sample_clamping_value","shadow_terminator_fix","two_stage_output","russian_roulette_threshold","lights_visible_in_camera","light_sampling_mode","light_sampling_quality","max_glossy_depth","max_mirror_depth","sample_clamping_depth","scene_scale",
   "max_hair_depth","max_presence_depth","presence_threshold","presence_quality","enable_presence_shadows","roughness_clamping_factor","transparency_threshold","bssrdf_samples","max_subsurface_per_path",
   "enable_subsurface_scattering","max_volume_depth","volume_quality","volume_shadow_quality","volume_illumination_samples",
@@ -2658,7 +2787,46 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
     for(size_t i=0;i<values.size();++i){const unsigned n=unsigned(std::floor(float(original)*std::max(0.0f,values[i])));plan->pixelSamples[i]=n?n:1u;}
     // FrameState's samples a pixel: the original count times the map's largest value.
     plan->spp=unsigned(float(original)*most);
-    for(unsigned n:plan->pixelSamples)need(n<=plan->spp&&n<=16384,camera->getName()+": pixel sample map budget");}}
+    for(unsigned n:plan->pixelSamples)X2_NEED(n<=plan->spp&&n<=16384,camera->getName()+": pixel sample map budget");}}
+  // A uniform frame by sampling generations (XPU2_SESSION_UNIFORM_BUDGET, on unless 0): uniform's time, spent where
+  // it shows. Every pixel is seeded with an eighth of its samples (16 at least), whose rate prices uniform's samples
+  // as uniform's time; each generation after hands the next pass to the tiles whose error is above a target set so
+  // the samples the time left buys would just be spent (async_adaptive.h Cellular, async_render.h Adaptive), and
+  // the frame ends when the time is up (at most twice uniform's samples). Not with a pixel sample map, for a bake
+  // camera, nor at 16 samples a pixel or fewer (the seed would be all of them).
+  // The kit's render settings for them (XPU2 Sampling Generations): UserData "/modo/xpu2/generations", float_values_0
+  // = {1, on, samples a pixel on average (0: the scene's), spend (0: uniform's time, 1: exactly the samples), noise
+  // target (target_adaptive_error's units; 0: none, or an adaptive scene's own), first generation (0: an eighth, 16
+  // at least; adaptive: its minimum), most samples a pixel (0: 16 times the average; adaptive: its maximum), CPU
+  // workers}. Without it, the defaults. XPU2_SESSION_UNIFORM_BUDGET=0 turns generations off (MoonRay's uniform
+  // exactly, for the rounds against MoonRay's renders).
+  {struct{bool on=true;unsigned samples=0;bool bySamples=false;float noise=0;unsigned seed=0,most=0;bool cpu=true,realtime=false;}g;
+   const auto found=sorted.find("/modo/xpu2/generations");
+   if(found!=sorted.end()&&found->second->getSceneClass().getName()=="UserData"){
+    const auto& v=get<rdl::FloatVector>(*found->second,"float_values_0");
+    if(v.size()>=8&&v[0]==1.0f){g.on=v[1]!=0;g.samples=unsigned(std::clamp(v[2],0.0f,4096.0f));g.bySamples=v[3]!=0;
+     g.noise=std::isfinite(v[4])?std::max(0.0f,v[4]):0.0f;g.seed=unsigned(std::clamp(v[5],0.0f,16384.0f));
+     g.most=unsigned(std::clamp(v[6],0.0f,16384.0f));g.cpu=v[7]!=0;if(v.size()>=9)g.realtime=v[8]!=0;}}
+   const char* off=std::getenv("XPU2_SESSION_UNIFORM_BUDGET");if(off&&off[0]=='0')g.on=false;
+   plan->generationsCpu=g.cpu;plan->realtime=g.realtime;
+   const unsigned long long pixels=(unsigned long long)(plan->viewport[2]-plan->viewport[0])*(unsigned long long)(plan->viewport[3]-plan->viewport[1]);
+   if(allowAdaptive&&g.on&&plan->pixelSamples.empty()&&plan->camera.type!=surface::CameraBake){
+    if(!plan->adaptive){
+     const unsigned n=g.samples?g.samples:plan->spp;
+     if(n>16||g.samples){
+      plan->adaptive=true;plan->minSamples=std::min(n,g.seed?g.seed:std::max(16u,n/8));
+      plan->maxSamples=std::min(16384u,std::max(n,g.most?g.most:n*16));
+      plan->noiseTarget=g.noise/10000.0f;plan->targetError=plan->noiseTarget>0?plan->noiseTarget:1.0f;
+      // spp is the average: the ray differentials (texture footprints, curves) and the frame's progress are uniform's.
+      plan->spp=n;plan->sampleBudget=(unsigned long long)n*pixels;plan->budgetBySamples=g.bySamples;}
+    }else{
+     // An adaptive scene: its own target error, minimum and maximum unless the settings give theirs; with samples, a
+     // budget besides, the frame ending at whichever it reaches first.
+     if(g.noise>0)plan->targetError=g.noise/10000.0f;
+     if(g.seed)plan->minSamples=std::max(2u,std::min(16384u,g.seed));
+     if(g.most)plan->maxSamples=std::max(plan->minSamples,std::min(16384u,g.most));
+     plan->maxSamples=std::max(plan->maxSamples,plan->minSamples);plan->spp=plan->maxSamples;
+     if(g.samples){plan->sampleBudget=(unsigned long long)g.samples*pixels;plan->budgetBySamples=g.bySamples;plan->noiseTarget=plan->targetError;}}}}
   if(plan->camera.type==surface::CameraBake){
    bakeGeometry=get<rdl::SceneObject*>(*camera,"geometry");
    need(bakeGeometry&&bakeGeometry->getSceneClass().getName()=="RdlMeshGeometry",camera->getName()+": the bake camera bakes a mesh (RdlMeshGeometry)");
@@ -2730,6 +2898,7 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
  std::set<const rdl::SceneObject*> meshLightGeometry;
  if(paths)for(auto& pair:sorted)if(pair.second->getSceneClass().getName()=="MeshLight")
   if(const rdl::SceneObject* g=get<rdl::SceneObject*>(*pair.second,"geometry"))if(g->isA<rdl::Geometry>()&&!layer.contains(g->asA<rdl::Geometry>()))meshLightGeometry.insert(g);
+ prepLaps().lap("outputs, camera, sampling");
  for(auto& pair:sorted){auto& o=*pair.second;auto cls=o.getSceneClass().getName();
   if(cls=="SceneVariables"||&o==camera||maps.count(&o))continue;
   if(paths&&o.isA<rdl::Material>()&&!usedMaterials.count(&o))continue;
@@ -2891,6 +3060,7 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
  // a mesh of the layer in no set is not rendered.
  if(paths)for(auto it=allGeometry.begin();it!=allGeometry.end();)it=setGeometry.count(*it)?std::next(it):allGeometry.erase(it);
  need(!allGeometry.empty()&&(paths||allGeometry==setGeometry),"Geometry sets must contain exactly the rendered meshes");
+ prepLaps().lap("objects (lights, volumes, sets)");
  // Each mesh's LightFilterSet (none: every filter its lights name), for the light filter tables below.
  std::vector<const rdl::LightFilterSet*> meshFilterSets;
  // The render items: each geometry of the layer, and each instance of an instancer (instancerItems).
@@ -2931,7 +3101,9 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
     link.receiverCount=unsigned(plan->shadowReceivers.size())-link.receivers;
     plan->meshShadowLink.back()=unsigned(plan->shadowLinks.size());plan->shadowLinks.push_back(link);}}
   else need(ls.size()==1&&ls[0]==sky,"Per-object light linking unsupported");
-  const rdl::SceneObject* displacementShader=paths&&get<rdl::Bool>(sv,"enable_displacement")?layer.lookupDisplacement(id):nullptr;
+  // MoonRay displaces meshes alone (PolyMesh, OpenSubdivMesh): on curves and points a displacement is left out.
+  const bool undisplaced=isCurves(o.getSceneClass().getName())||isPoints(o.getSceneClass().getName());
+  const rdl::SceneObject* displacementShader=paths&&get<rdl::Bool>(sv,"enable_displacement")&&!undisplaced?layer.lookupDisplacement(id):nullptr;
   const bool subdGeometry=o.getSceneClass().getName()=="RdlMeshGeometry"&&get<rdl::Bool>(o,"is_subd");
   // Whether any part of the geometry is displaced: MoonRay then tessellates and displaces the mesh whole, each part
   // read from that one surface (its shared vertices moved by the displaced faces, its smooth normals over them all).
@@ -2990,7 +3162,6 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
   // tessellation needs the camera's frustum, not ported) and displaces it.
   int edgeVertices=0;displace::Shader displacement;
   if(displacementShader&&!polyGeometry){
-   need(!isCurves(o.getSceneClass().getName())&&!isPoints(o.getSceneClass().getName()),o.getName()+": a displacement on curves or points is not rendered");
    need(subdGeometry||get<rdl::Float>(o,"adaptive_error")<=0.0f,o.getName()+": adaptive tessellation is not rendered yet");
    const float resolution=get<rdl::Float>(o,"mesh_resolution");need(std::isfinite(resolution)&&resolution<=64.0f,o.getName()+": a mesh resolution above 64");
    edgeVertices=std::max(0,std::max(1,int(resolution))-1);
@@ -2998,12 +3169,26 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
    // MoonRay tessellates a displaced mesh into quads: polygon maps would read four polyvertices.
    need(!mat||!(plan->materialRecords.at(materialIds.at(mat->getName())).flags&shade::MatPolyVertices),o.getName()+": polygon maps on a displaced mesh are not rendered yet");
   }
-  auto sig=signature(o,frame);std::shared_ptr<const MeshData> data;
+  auto sig=signature(o,frame);std::shared_ptr<const MeshData> data;bool reusedData=false;
+  if(o.getSceneClass().getName()=="RdlMeshGeometry"&&get<rdl::Bool>(o,"is_subd")&&get<rdl::Float>(o,"adaptive_error")>0.0f)plan->cameraDependent=true;
+  // A displaced mesh MoonRay tessellates (subdivision, PolyMesh) is kept while nothing that shapes it has changed: the
+  // mesh, each part's displacement and its maps through and through (deepSignature), which displacement is whose, and
+  // whether polyvertices are made. A camera, a light or another material changed, it is not tessellated again (its
+  // vertices are kept in world space). Triangles XPU2 displaces itself (mesh_displacement.h) are kept the same way, by
+  // their tessellation's edge vertices besides.
+  std::string displacementKey;
+  if(objectDisplaced&&(subdGeometry||polyGeometry||displacementShader)){
+   for(const auto& p:pieces)if(const rdl::SceneObject* ds=layer.lookupDisplacement(p.id)){
+    displacementKey+=std::to_string(p.id)+":"+ds->getName()+";";
+    for(auto& b:deepSignature(*ds,frame))sig.push_back(b);}
+   const bool polys=(plan->aovs&&plan->aovs->wireframe)||(mat&&(plan->materialRecords.at(materialIds.at(mat->getName())).flags&shade::MatPolyVertices));
+   displacementKey+=polys?"polyvertices":"";
+   if(!subdGeometry&&!polyGeometry)displacementKey+="triangles:"+std::to_string(edgeVertices);}
   // The fur file can change under the same name: fur is read again each time.
   const bool curveGeometry=isCurves(o.getSceneClass().getName());
-  if(previous&&previous->domain==domain&&!item.instancer&&o.getSceneClass().getName()!="ModoFurGeometry"&&!objectDisplaced&&&o!=bakeGeometry&&
-   !(o.getSceneClass().getName()=="RdlMeshGeometry"&&get<rdl::Bool>(o,"is_subd")&&get<rdl::Float>(o,"adaptive_error")>0.0f))for(auto& old:previous->meshes)if(old.data->name==meshName&&old.data->signature==sig&&
-   old.data->polyVertices.empty()==!(plan->aovs&&plan->aovs->wireframe)&&((o.getSceneClass().getName()!="RdlMeshGeometry"&&o.getSceneClass().getName()!="RdlCurveGeometry"&&!isPoints(o.getSceneClass().getName()))||!meshHasMotion(o)||previous->motion==plan->motion)){data=old.data;++plan->reusedMeshes;break;}
+  if(previous&&previous->domain==domain&&!item.instancer&&o.getSceneClass().getName()!="ModoFurGeometry"&&(!objectDisplaced||!displacementKey.empty())&&&o!=bakeGeometry&&
+   !(o.getSceneClass().getName()=="RdlMeshGeometry"&&get<rdl::Bool>(o,"is_subd")&&get<rdl::Float>(o,"adaptive_error")>0.0f))for(auto& old:previous->meshes)if(old.data->name==meshName&&old.data->signature==sig&&old.data->displacementKey==displacementKey&&
+   old.data->polyVertices.empty()==!(plan->aovs&&plan->aovs->wireframe)&&((o.getSceneClass().getName()!="RdlMeshGeometry"&&o.getSceneClass().getName()!="RdlCurveGeometry"&&!isPoints(o.getSceneClass().getName()))||!meshHasMotion(o)||previous->motion==plan->motion)){data=old.data;++plan->reusedMeshes;reusedData=true;break;}
   if(!data&&vdbBox){
    // A VDB volume's boundary box (admitVdbVolume), named as the mesh.
    vdbBox->name=meshName;vdbBox->signature=std::move(sig);data=std::move(vdbBox);++plan->preparedMeshes;}
@@ -3050,7 +3235,7 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
     subdDisplacement.r2w=subdDisplacement.w2r.inverse();
     {const auto w=affine(o).inverse();const double rows[12]={w[0][0],w[1][0],w[2][0],w[3][0],w[0][1],w[1][1],w[2][1],w[3][1],w[0][2],w[1][2],w[2][2],w[3][2]};
      for(int i=0;i<12;++i)subdDisplacement.worldToObject[i]=float(rows[i]);}
-    displaceCall.fn=&subdDisplace;displaceCall.user=&subdDisplacement;}
+    displaceCall.fn=&subdDisplace;displaceCall.user=&subdDisplacement;displaceCall.with=&subdDisplaceWith;}
    const auto transform=affine(o);
    const bool polys=(plan->aovs&&plan->aovs->wireframe)||(mat&&(plan->materialRecords.at(materialIds.at(mat->getName())).flags&shade::MatPolyVertices));
    if(item.instancer){
@@ -3083,13 +3268,14 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
    SubdDisplacement polyDisplacement;SubdDisplaceCall displaceCall;
    for(const auto& p:meshPieces(o,*geom,layer)){const rdl::SceneObject* ds=layer.lookupDisplacement(p.id);
     if(ds&&!polyDisplacement.shaders.count(ds))polyDisplacement.shaders.emplace(ds,admitDisplacement(*ds,plan->materialPool,textureContext));}
-   for(auto& f:plan->textures){if(!f->pyramid)f->pyramid=std::make_shared<texture::Pyramid>(f->name.string(),f->alpha);polyDisplacement.images.push_back(&f->pyramid->image);}
+   {PrepPart t{"texture pyramids (for displacement)"};
+   for(auto& f:plan->textures){if(!f->pyramid)f->pyramid=std::make_shared<texture::Pyramid>(f->name.string(),f->alpha);polyDisplacement.images.push_back(&f->pyramid->image);}}
    polyDisplacement.pool=plan->materialPool.data();polyDisplacement.worldToRender=plan->worldToRender;
    for(int i=0;i<4;++i)for(int j=0;j<4;++j)polyDisplacement.w2r[i][j]=plan->world2render[4*i+j];
    polyDisplacement.r2w=polyDisplacement.w2r.inverse();
    {const auto w=affine(o).inverse();const double rows[12]={w[0][0],w[1][0],w[2][0],w[3][0],w[0][1],w[1][1],w[2][1],w[3][1],w[0][2],w[1][2],w[2][2],w[3][2]};
     for(int i=0;i<12;++i)polyDisplacement.worldToObject[i]=float(rows[i]);}
-   displaceCall.fn=&subdDisplace;displaceCall.user=&polyDisplacement;
+   displaceCall.fn=&subdDisplace;displaceCall.user=&polyDisplacement;displaceCall.with=&subdDisplaceWith;
    const auto transform=affine(o);
    const bool polys=(plan->aovs&&plan->aovs->wireframe)||(mat&&(plan->materialRecords.at(materialIds.at(mat->getName())).flags&shade::MatPolyVertices));
    auto& surface=item.instancer?polyRefCache[&o]:polyCache[&o];
@@ -3101,7 +3287,7 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
     // An instance: the prototype tessellated and displaced once in its own space, moved by the instance's transform.
     auto m=polygonMesh(*surface,faceMask,meshName,std::move(sig),rdl::Mat4d(scene_rdl2::math::one),polys);
     instanceSurface(*m,item,plan->motion);instanceAttributes(*item.instancer,item.instance,item.count,*m);data=std::move(m);}
-   else data=polygonMesh(*surface,faceMask,meshName,std::move(sig),transform,polys);
+   else{PrepPart t{"polygon mesh from the tessellation"};data=polygonMesh(*surface,faceMask,meshName,std::move(sig),transform,polys);}
    ++plan->preparedMeshes;
   }else{
   need(!get<rdl::Bool>(o,"is_subd"),o.getName()+": subdivision unsupported");
@@ -3186,7 +3372,7 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
       if(n==0)return 0u;if(n==1)return 1u;if(n==fv)return 6u;if(n==uni)return 3u;if(n==vert)return 4u;return 0u;};
      auto add=[&](const std::string& key,unsigned type,unsigned components,const std::vector<float>& values,size_t count){
       if(key.empty())return;const unsigned r=pick(count);need(r!=0,o.getName()+": primitive attribute "+key+" has an unsupported rate or size");
-      for(float f:values)need(std::isfinite(f),o.getName()+": invalid primitive attribute "+key);
+      for(float f:values)X2_NEED(std::isfinite(f),o.getName()+": invalid primitive attribute "+key);
       const std::vector<float> expanded=r==6?byCorner(values,components):r==3?byFace(values,components):values;
       m->prims.push_back(shade::PrimAttr{shade::primKey(key.c_str(),type),components,r,unsigned(m->primData.size())});m->primData.insert(m->primData.end(),expanded.begin(),expanded.end());};
      {const auto& d=get<rdl::FloatVector>(*object,"float_values_0");add(get<rdl::String>(*object,"float_key"),shade::PrimFloat,1,std::vector<float>(d.begin(),d.end()),d.size());}
@@ -3201,7 +3387,7 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
     if(reversed){for(auto& n:m->normals)n=surface::mul(n,-1.0f);for(auto& n:m->normals1)n=surface::mul(n,-1.0f);
      for(auto& s:m->stepNormals)for(auto& n:s)n=surface::mul(n,-1.0f);}
     const auto& ul=o.get<rdl::Vec2fVector>("uv_list");m->uvRate=rate(ul.size());
-    m->uvs.reserve(ul.size()*2);for(auto u:ul){need(std::isfinite(u.x)&&std::isfinite(u.y),o.getName()+": invalid uv");m->uvs.push_back(u.x);m->uvs.push_back(u.y);}
+    m->uvs.reserve(ul.size()*2);for(auto u:ul){X2_NEED(std::isfinite(u.x)&&std::isfinite(u.y),o.getName()+": invalid uv");m->uvs.push_back(u.x);m->uvs.push_back(u.y);}
     if(m->uvRate==shade::RateFaceVarying)m->uvs=byCorner(m->uvs,2);
     // No uv_list (its "surface_st"): the "st" or else the "uv" primitive attribute, or else the mesh's default, a
     // QuadMesh's each quad's corners (0, 0), (1, 0), (1, 1), (0, 1) (getQuadST), a TriMesh's (0, 0), (1, 0), (1, 1)
@@ -3283,12 +3469,16 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
    data=std::move(m);++plan->preparedMeshes;
   }
   }
-  plan->bytes+=data->positions.size()*sizeof(V3)+data->triangles.size()*sizeof(Tri)+data->curvePoints.size()*sizeof(float)+data->curveSpans.size()*sizeof(unsigned);plan->meshes.push_back({data,mat?materialIds.at(mat->getName()):~0u,volumeIndex,
+  // A displaced mesh made now carries what shaped it (made here, it is this plan's alone).
+  if(!displacementKey.empty()&&data->displacementKey!=displacementKey)const_cast<MeshData&>(*data).displacementKey=displacementKey;
+  plan->bytes+=data->positions.size()*sizeof(V3)+data->triangles.size()*sizeof(Tri)+data->curvePoints.size()*sizeof(float)+data->curveSpans.size()*sizeof(unsigned);
+  // Over the budget already: said now, not after the rest of the scene is prepared.
+  need(plan->bytes<=limits.bytes,geometryBudgetText(plan->bytes,limits.bytes));plan->meshes.push_back({data,mat?materialIds.at(mat->getName()):~0u,volumeIndex,
    paths?(geometryVisibility(o)&(item.instancer?geometryVisibility(*item.instancer):0xffu)):0xffu,
    paths&&volumeIndex<0&&get<rdl::Int>(o,"side_type")==1,
    plan->aovs?plan->aovs->geomLabel(aov::attribute<rdl::String>(o,"label","")):-1});
   plan->meshes.back().families=indexedFamilies(o,frame,familyCache)|(mat?indexedFamilies(*mat,frame,familyCache):0);
-  if(displacementShader&&!subdGeometry&&!polyGeometry)displaced.push_back({plan->meshes.size()-1,edgeVertices,displacement});
+  if(displacementShader&&!subdGeometry&&!polyGeometry&&!reusedData)displaced.push_back({plan->meshes.size()-1,edgeVertices,displacement});
   // An emissive mesh volume lights the scene (an emissive region over its mesh's box).
   if(volumeIndex>=0&&plan->volumes[size_t(volumeIndex)].kind==volume::KindVdb&&plan->volumes[size_t(volumeIndex)].mapped)
    mappedVolumes.push_back({unsigned(volumeIndex),plan->meshes.size()-1,volumeInner,affine(o),false,&o});
@@ -3298,10 +3488,12 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
    if(!(vs.emission.x==0&&vs.emission.y==0&&vs.emission.z==0)&&(vs.visibility&0x3fcu))meshEmissionRegion(*plan,*data,unsigned(volumeIndex),vs.visibility);}
   }
  }
+ prepLaps().lap("render items (meshes, tessellation, materials)");
  if(gpuTextures(domain)){uint64_t total=0;std::set<texture::File*> files;
   for(auto* set:{&plan->diffuseMaps,&plan->emissionMaps})for(auto& pair:*set){auto& file=*pair.second.file;if(!files.insert(&file).second)continue;total+=file.decodedBytes;need(total<=(4ull<<30),"Aggregate host texture budget");if(!file.pyramid)file.pyramid=std::make_shared<texture::Pyramid>(file.name.string());}
   for(auto& f:plan->textures){auto& file=*f;if(files.insert(&file).second){total+=file.decodedBytes;need(total<=(4ull<<30),"Aggregate host texture budget");}if(!file.pyramid)file.pyramid=std::make_shared<texture::Pyramid>(file.name.string(),file.alpha);plan->textureImages.push_back(&file.pyramid->image);}
  }
+ prepLaps().lap("texture pyramids");
  if(plan->paths&&plan->randomWalk)plan->walkSequences=walkSequences();
  // Extra AOVs (RenderContext's material extensions): a material's extra_aovs, a ListMap of ExtraAovMaps, each with a
  // label an expression reads ('U:' and its label); its colour, times its bound map's result, at each hit, before or after
@@ -3342,6 +3534,7 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
    const auto& vs=plan->volumes[mv.volume];
    const bool emits=(vs.mapped&((1u<<volume::MapEmissionColor)|(1u<<volume::MapEmissionIntensity)))!=0||!(vs.emission.x==0&&vs.emission.y==0&&vs.emission.z==0);
    if(emits&&(vs.visibility&0x3fcu))meshEmissionRegion(*plan,*plan->meshes[mv.mesh].data,mv.volume,vs.visibility,true);}}
+ prepLaps().lap("extra AOVs, volumes");
  // The displaced meshes (mesh_displacement.h), their maps' textures read.
  if(!displaced.empty()){const displace::Textures textures{plan->textureImages.data(),unsigned(plan->textureImages.size())};
   for(auto& d:displaced){auto& mesh=plan->meshes[d.mesh];const MeshData& base=*mesh.data;
@@ -3352,10 +3545,14 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
     if(k==0)out->normals1=moved->normals;
     out->steps.push_back(std::move(moved->positions));}
    need(out->positions.size()<=limits.vertices&&out->triangles.size()<=limits.triangles&&!out->triangles.empty(),base.name+": displaced mesh budget");
+   // Kept for the next plan under what shaped it (the mesh's signature and displacement key).
+   out->signature=base.signature;out->displacementKey=base.displacementKey;
    plan->bytes+=out->positions.size()*sizeof(V3)+out->triangles.size()*sizeof(Tri);plan->bytes-=base.positions.size()*sizeof(V3)+base.triangles.size()*sizeof(Tri);
+   need(plan->bytes<=limits.bytes,geometryBudgetText(plan->bytes,limits.bytes));
    mesh.data=std::move(out);}}
  // Textures at bounced hits need MoonRay's ray differentials through lobes (PATH_TRACER.md, phase 1b).
  if(plan->paths&&(!plan->diffuseMaps.empty()||!plan->emissionMaps.empty()))need(plan->maxDepth==0||plan->maxDiffuseDepth==0,"Textured bounces need secondary ray differentials");
+ prepLaps().lap("displacement");
  // The light sets' trees (Scene::updateLightList's LightAccelerator::buildSamplingTree), for adaptive light sampling.
  if(plan->paths&&plan->lightSamplingMode==1){const unsigned words=plan->lightSetWords;
   for(size_t k=0;k*words<plan->lightSetBits.size();++k){std::vector<unsigned> set;
@@ -3397,7 +3594,7 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
    if(it==tableIds.end()){it=tableIds.emplace(table,unsigned(plan->filterTables.size())).first;plan->filterTables.insert(plan->filterTables.end(),table.begin(),table.end());}
    plan->meshFilterTable[mi]=it->second;}
  }
- need(plan->bytes<=limits.bytes,"Prepared geometry budget");return plan;
+ need(plan->bytes<=limits.bytes,geometryBudgetText(plan->bytes,limits.bytes));prepLaps().lap("light trees, filters, the rest");return plan;
 }
 X2_SPLIT_INLINE PlanView prepare(CanonicalSession& session,const CanonicalView& frame,PlanView previous,Limits limits,const fs::path& assetRoot,Domain domain,bool allowAdaptive,bool paths){
  return session.inspectPrepared(frame,[&](const rdl::SceneContext& context,CanonicalView exact){return prepare(context,exact,previous,limits,assetRoot,domain,allowAdaptive,paths);});

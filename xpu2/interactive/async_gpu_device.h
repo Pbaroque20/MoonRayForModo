@@ -355,7 +355,8 @@ struct GpuBackend {
     // The volumes, and a ray's crossings of their meshes past tnear, nearest first (the instances of visibility 2),
     // each entering or leaving by the triangle's geometric normal; repeats at one distance dropped.
     __device__ const volume::Shader* volumes() const { return params.volumes; }
-    __device__ volume::Grids volumeGrids() const { return volume::Grids{}; }  // VDB volumes are the CPU's
+    // The dense grids (a mapped BaseVolume's baked extinction); VDB volumes are the CPU's.
+    __device__ volume::Grids volumeGrids() const { return volume::Grids{params.volumeGrids, params.volumeGridCount, nullptr, time}; }
     __device__ volume::Regions emissiveRegions() const { return volume::Regions{}; }  // so are emissive volumes
     __device__ const float* walkSequences() const { return params.walkSequences; }
     __device__ U32 volumeCrossings(surface::V3 o, surface::V3 d, float tnear, volume::Crossing* x, U32 max, U32 mask) {
@@ -377,11 +378,8 @@ struct GpuBackend {
             if (!resume::geometryHit(h, ray, a, b, c)) break;
             const surface::V3 ng = surface::cross(surface::add(b, surface::mul(a, -1.0f)), surface::add(c, surface::mul(a, -1.0f)));
             const U32 v = U32(params.meshVolumes[instance]);
-            // A volume the GPU does not render (VDB, heterogeneous, emissive): the CPU lane renders the sample.
-            {
-                const volume::Shader& s = params.volumes[v];
-                if (s.kind != volume::KindBase || s.emission.x != 0.0f || s.emission.y != 0.0f || s.emission.z != 0.0f) deferFlag = true;
-            }
+            // A volume the GPU does not render (VDB, mapped colour or emission, emissive): the CPU lane renders the sample.
+            if (!volume::gpuRenders(params.volumes[v], volumeGrids())) deferFlag = true;
             const U32 flags = surface::dot(d, ng) < 0.0f ? volume::Entry : volume::Exit;
             if (!(n > 0 && x[n - 1].t == h.t && x[n - 1].volume == v && x[n - 1].flags == flags)) x[n++] = volume::Crossing{h.t, v, flags};
             t = h.t + fmaxf(1e-6f, h.t * 1e-6f);

@@ -77,6 +77,8 @@ struct State {
     U32 primCount = 0;
     // computeStInverse: the hit triangle's st basis inverted, for its attributes' st derivatives (identity when degenerate).
     float stInv[4] = {1, 0, 0, 1};
+    // A subdivision surface's hit (OpenSubdivMesh): MoonRay gives its attributes' values and not their st derivatives.
+    bool subdivision = false;
 };
 X2_HD inline V3 xformVector(const float* m, V3 v) {
     return V3{m[0] * v.x + m[1] * v.y + m[2] * v.z, m[4] * v.x + m[5] * v.y + m[6] * v.z, m[8] * v.x + m[9] * v.y + m[10] * v.z};

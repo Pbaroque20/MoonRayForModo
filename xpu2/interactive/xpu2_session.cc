@@ -26,8 +26,10 @@
 #include "aov_display.h"
 #include <scene_rdl2/scene/rdl2/RenderOutput.h>
 #include <scene_rdl2/scene/rdl2/rdl2.h>
+#include <condition_variable>
 #include <fstream>
 #include <iostream>
+#include <mutex>
 #include <set>
 #include <sstream>
 using namespace xpu2::interactive;
@@ -49,6 +51,38 @@ std::string fileText(const fs::path& path) {
     std::ifstream file(path, std::ios::binary);
     cpu::need(bool(file), "Cannot read " + path.string());
     return std::string((std::istreambuf_iterator<char>(file)), {});
+}
+
+// The prepared geometry a scene may have (cpu::Limits::bytes: its meshes' positions and triangles once tessellated and
+// displaced): XPU2_SESSION_GEOMETRY_MB when set (tests), else 1 GiB.
+size_t geometryBudget() {
+    if (const char* mb = std::getenv("XPU2_SESSION_GEOMETRY_MB"))
+        if (const long long n = std::atoll(mb); n > 0) return std::min<size_t>(size_t(n) << 20, cpu::HardGeometryBytes);
+    return size_t(1) << 30;
+}
+
+// Where the preparation's time went (cpu::prepLaps): its stages and the parts within them, also when it stopped short.
+void logPreparation(const char* how, double canonicalSeconds, double cpuSceneSeconds) {
+    std::string laps;
+    for (const auto& [what, s] : cpu::prepLaps().laps) {
+        char text[160];
+        std::snprintf(text, sizeof text, "%s%s %.2f s", laps.empty() ? "" : ", ", what.c_str(), s);
+        laps += text;
+    }
+    if (cpuSceneSeconds >= 0)
+        std::printf("XPU2: %s: canonical %.2f s; plan: %s; CPU scene %.2f s\n", how, canonicalSeconds, laps.c_str(), cpuSceneSeconds);
+    else
+        std::printf("XPU2: %s: canonical %.2f s; plan: %s\n", how, canonicalSeconds, laps.c_str());
+    if (!cpu::prepLaps().parts.empty()) {
+        std::string parts;
+        for (const auto& [what, s] : cpu::prepLaps().parts) {
+            char text[160];
+            std::snprintf(text, sizeof text, "%s%s %.2f s", parts.empty() ? "" : ", ", what.c_str(), s);
+            parts += text;
+        }
+        std::printf("XPU2: within the plan: %s\n", parts.c_str());
+    }
+    std::fflush(stdout);
 }
 
 std::string oneLine(std::string text) {
@@ -204,6 +238,22 @@ struct Scene {
     std::unique_ptr<async::CpuScene> cpuScene;
     aov::DisplayFilters displayFilters;  // the scene's display filters, MoonRay's own (aov_display.h)
     bool changed = true;
+    // The camera-only fast path (realtime): whether the changes since the last preparation are the camera's alone, and
+    // the plan the last camera-only one was made from (the GPU's configuration alone goes again, GpuLane::updateCamera).
+    bool cameraOnly = false;
+    cpu::PlanView cameraFrom;
+    // Whether every object edited since the last full preparation is the camera the scene renders through (the source's
+    // objects stay dirty until a full preparation has taken them into the canonical copy and commits them).
+    bool onlyCameraDirty() const {
+        const rdl::SceneObject* camera = source->getSceneVariables().get(rdl::SceneVariables::sCamera);
+        bool cameraDirty = false;
+        for (auto it = source->beginSceneObject(); it != source->endSceneObject(); ++it) {
+            if (!it->second->isDirty()) continue;
+            if (it->second != camera) return false;
+            cameraDirty = true;
+        }
+        return cameraDirty;
+    }
 
     void load(const std::vector<std::string>& files) {
         cpuScene.reset();
@@ -229,25 +279,67 @@ struct Scene {
     void apply(const std::string& delta) {
         readInto(*source, delta);
         changed = true;
+        cameraOnly = plan && onlyCameraDirty();
     }
     // The plan for the scene as it stands; refusals throw cpu::Unsupported.
     void prepare() {
         if (!changed) return;
+        cameraFrom.reset();
+        // A camera-only edit: the plan as it was with its camera, render space and render origin made again
+        // (cpu::updateCamera), the CPU's Embree scenes taken over; no canonical copy, no plan, until a full preparation.
+        if (cameraOnly && plan && cpuScene) {
+            const auto began = std::chrono::steady_clock::now();
+            auto next = std::make_shared<cpu::Plan>(*plan);
+            if (cpu::updateCamera(*next, *source)) {
+                cameraFrom = plan;
+                plan = next;
+                cpuScene = std::make_unique<async::CpuScene>(plan, std::move(*cpuScene));
+                changed = cameraOnly = false;
+                std::printf("XPU2: the camera alone changed: prepared in %.1f ms\n",
+                            std::chrono::duration<double>(std::chrono::steady_clock::now() - began).count() * 1000.0);
+                return;
+            }
+        }
+        cameraOnly = false;
         ++epoch;
         const fs::path folder = staging / ("frame-" + std::to_string(++frames));
+        const auto began = std::chrono::steady_clock::now();
+        auto seconds = [](std::chrono::steady_clock::time_point from) {
+            return std::chrono::duration<double>(std::chrono::steady_clock::now() - from).count();
+        };
         auto frame = canonical->prepare(*source, folder, {3301, epoch, epoch, epoch});
+        const double canonicalSeconds = seconds(began);
         logClasses(*frame->routing);
         // The outputs in the order the scene declared them (the canonical copy holds them by name).
         aov::outputOrder().clear();
         for (const rdl::RenderOutput* ro : source->getAllRenderOutputs()) aov::outputOrder().push_back(ro->getName());
         try {
-            plan = cpu::prepare(*canonical, frame, plan, cpu::Limits{}, assetRoot(), cpu::Domain::SurfaceTextures, true, true);
+            cpu::Limits limits;
+            limits.bytes = geometryBudget();
+            plan = cpu::prepare(*canonical, frame, plan, limits, assetRoot(), cpu::Domain::SurfaceTextures, true, true);
         } catch (...) {
             canonical->reject(frame);
+            logPreparation("preparation stopped", canonicalSeconds, -1);
             throw;
         }
         cpu::need(canonical->acknowledge(frame) && canonical->publish(frame), "Canonical publish");
-        cpuScene = std::make_unique<async::CpuScene>(plan);
+        // The source's edits are in the canonical copy now: clean, so that the next preparation reads only what is
+        // edited after it (and a camera-only edit is told from the rest).
+        source->commitAllChanges();
+        const auto planned = std::chrono::steady_clock::now();
+        // The CPU's Embree scenes kept where no mesh changed (a camera, a light, a material edited).
+        if (cpuScene && cpuScene->plan && async::CpuScene::sameGeometry(*cpuScene->plan, *plan))
+            cpuScene = std::make_unique<async::CpuScene>(plan, std::move(*cpuScene));
+        else
+            cpuScene = std::make_unique<async::CpuScene>(plan);
+        // Where the preparation's time went: the canonical copy, the plan by its stages (cpu::prepLaps), the CPU's scene.
+        logPreparation("prepared", canonicalSeconds, seconds(planned));
+        const auto& subd = cpu::subdTimes();
+        if (subd.meshes)
+            std::printf("XPU2: tessellation: %lld meshes (MoonRay's subdivision and PolyMesh) in %.2f s; displacement %lld vertices, "
+                        "%.2f s over %lld threads, spanning %.2f s\n",
+                        (long long)subd.meshes, double(subd.tessellateNs) * 1e-9, (long long)subd.displaceCalls, double(subd.displaceNs) * 1e-9,
+                        (long long)subd.threads, double(subd.last - subd.first) * 1e-9);
         displayFilters = aov::DisplayFilters();
         if (plan->aovs && !plan->aovs->displayFilters.empty())
             displayFilters.prepare(canonical->replica(), *plan->aovs, dso.string(), plan->width, plan->height);
@@ -488,6 +580,151 @@ bool envOn(const char* name, bool otherwise) {
     return v ? std::string(v) == "1" : otherwise;
 }
 
+// Realtime's pictures denoised in the session, where the kit's Denoised Beauty is chosen with RT on: OptiX's denoiser
+// on the GPU (async::GpuLane::Denoiser), with the first hits' albedo and normal (the kit's denoiser guides), on a
+// thread of its own so that the GPU is fed meanwhile. The newest picture wins: one asked for while another is being
+// denoised takes the place of any waiting. (Open Image Denoise on the CPU took 0.24 s for a 640 by 360 picture at its
+// fast quality on a six-core machine, and as long again for each guide it cleans: too slow for realtime.)
+class RealtimeDenoiser {
+public:
+    struct Picture {
+        std::string id;  // the frame it is of
+        U32 width = 0, height = 0;
+        std::vector<float> color, albedo, normal;  // three floats a pixel each, in the film's order
+        // A picture some of whose pixels no sample has reached yet is denoised at half its size (each two by two
+        // pixels one) and shown at its own: filled from their neighbours, those pixels read to the denoiser as
+        // detail, and it left such a picture all but as it was (a mean change of 0.0001 against 0.03 once every
+        // pixel had a sample).
+        U32 shownWidth = 0, shownHeight = 0;  // its size shown, where it is denoised at half
+    };
+    using Publish = std::function<void(const Picture&, const std::vector<float>&)>;
+    RealtimeDenoiser(async::GpuLane& lane, Publish publish) : engine_(lane), half_(lane), publish_(std::move(publish)) {
+        thread_ = std::thread([this] { loop(); });
+    }
+    ~RealtimeDenoiser() {
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            quit_ = true;
+        }
+        wake_.notify_all();
+        thread_.join();
+    }
+    void submit(Picture&& picture) {
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            waiting_ = std::move(picture);
+            hasWaiting_ = true;
+        }
+        wake_.notify_all();
+    }
+    // The picture waiting let go (its frame is over); the one in hand finishes, and goes out only if its frame is
+    // still the one rendering.
+    void drop() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        hasWaiting_ = false;
+    }
+    // The picture waiting let go, and the one in hand finished.
+    void flush() {
+        std::unique_lock<std::mutex> lock(mutex_);
+        hasWaiting_ = false;
+        idle_.wait(lock, [&] { return !busy_; });
+    }
+    // A picture denoised on the caller's thread (a frame's last, after flush).
+    bool denoise(const Picture& picture, std::vector<float>& out) {
+        std::lock_guard<std::mutex> lock(deviceMutex_);
+        return run(picture, out);
+    }
+    std::string error() {
+        std::lock_guard<std::mutex> lock(deviceMutex_);
+        return error_;
+    }
+    // The last picture's time, and the pictures denoised since asked.
+    double milliseconds() const { return ms_.load(); }
+    unsigned taken() { return count_.exchange(0); }
+
+private:
+    void loop() {
+        for (;;) {
+            Picture picture;
+            {
+                std::unique_lock<std::mutex> lock(mutex_);
+                wake_.wait(lock, [&] { return quit_ || hasWaiting_; });
+                if (quit_) return;
+                picture = std::move(waiting_);
+                hasWaiting_ = false;
+                busy_ = true;
+            }
+            std::vector<float> out;
+            bool ok;
+            {
+                std::lock_guard<std::mutex> lock(deviceMutex_);
+                ok = run(picture, out);
+            }
+            if (ok) publish_(picture, out);
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                busy_ = false;
+            }
+            idle_.notify_all();
+        }
+    }
+    bool run(const Picture& p, std::vector<float>& out) {
+        if (!error_.empty()) return false;
+        const size_t n = size_t(p.width) * p.height * 3;
+        if (!n || p.color.size() != n || p.albedo.size() != n || p.normal.size() != n) return false;
+        const auto began = Clock::now();
+        out.resize(n);
+        // A diagnostic (XPU2_SESSION_RT_SHOW=color, albedo or normal): the denoiser's input shown in its place.
+        if (const char* show = std::getenv("XPU2_SESSION_RT_SHOW")) {
+            const std::string which(show);
+            out = which == "albedo" ? p.albedo : which == "normal" ? p.normal : p.color;
+            if (which == "normal")
+                for (float& v : out) v = 0.5f * v + 0.5f;
+            if (p.shownWidth) out = upscale(out, p.width, p.height, p.shownWidth, p.shownHeight);
+            ++count_;
+            return true;
+        }
+        auto& engine = p.shownWidth ? half_ : engine_;
+        if (!engine.run(p.color.data(), p.albedo.data(), p.normal.data(), out.data(), p.width, p.height, error_)) return false;
+        if (p.shownWidth) out = upscale(out, p.width, p.height, p.shownWidth, p.shownHeight);
+        ms_.store(std::chrono::duration<double, std::milli>(Clock::now() - began).count());
+        ++count_;
+        return true;
+    }
+    // A half-size picture back at its own size, bilinearly.
+    static std::vector<float> upscale(const std::vector<float>& half, U32 w, U32 h, U32 width, U32 height) {
+        std::vector<float> out(size_t(width) * height * 3);
+        for (U32 y = 0; y < height; ++y) {
+            const float fy = std::clamp((y + 0.5f) * 0.5f - 0.5f, 0.0f, float(h - 1));
+            const U32 y0 = U32(fy), y1 = std::min(y0 + 1, h - 1);
+            const float ty = fy - float(y0);
+            for (U32 x = 0; x < width; ++x) {
+                const float fx = std::clamp((x + 0.5f) * 0.5f - 0.5f, 0.0f, float(w - 1));
+                const U32 x0 = U32(fx), x1 = std::min(x0 + 1, w - 1);
+                const float tx = fx - float(x0);
+                for (int c = 0; c < 3; ++c) {
+                    auto at = [&](U32 xx, U32 yy) { return half[(size_t(yy) * w + xx) * 3 + c]; };
+                    const float top = at(x0, y0) + (at(x1, y0) - at(x0, y0)) * tx;
+                    const float bottom = at(x0, y1) + (at(x1, y1) - at(x0, y1)) * tx;
+                    out[(size_t(y) * width + x) * 3 + c] = top + (bottom - top) * ty;
+                }
+            }
+        }
+        return out;
+    }
+
+    async::GpuLane::Denoiser engine_, half_;
+    Publish publish_;
+    std::thread thread_;
+    std::mutex mutex_, deviceMutex_;
+    std::condition_variable wake_, idle_;
+    Picture waiting_;
+    bool hasWaiting_ = false, busy_ = false, quit_ = false;
+    std::string error_;
+    std::atomic<double> ms_{0.0};
+    std::atomic<unsigned> count_{0};
+};
+
 int session(const Args& args, const fs::path& directory) {
     // The host may end without telling the renderer to: the renderer then ends itself.
     if (const char* host = std::getenv("MOONRAY_MODO_HOST")) {
@@ -513,6 +750,8 @@ int session(const Args& args, const fs::path& directory) {
     const bool partial = envOn("XPU2_SESSION_PARTIAL", true);
     // Adaptive frames: cellular generations (the default), or MoonRay's error trees (XPU2_SESSION_ADAPTIVE=trees).
     const bool cellular = !(std::getenv("XPU2_SESSION_ADAPTIVE") && std::string(std::getenv("XPU2_SESSION_ADAPTIVE")) == "trees");
+    // Frames by sampling generations with a GPU: the CPU lane's workers take chunks too (off: the GPU takes them all).
+    const bool generationsCpu = envOn("XPU2_SESSION_ADAPTIVE_CPU", true);
     const double previewSeconds = std::getenv("XPU2_SESSION_PREVIEW_MS") ? std::atof(std::getenv("XPU2_SESSION_PREVIEW_MS")) / 1000.0 : 0.1;
     std::cout << "XPU2 preview session (private test build): " << (mode == 0 ? "CPU only" : mode == 1 ? "GPU only" : "CPU and GPU")
               << ", adaptive passes " << (deviceChain ? "on the GPU" : "on the host") << std::endl;
@@ -532,6 +771,13 @@ int session(const Args& args, const fs::path& directory) {
     ModoSharedImage shared;
     Outlines outlines(envOn("MOONRAY_MODO_BUCKETS", false));
     Checkpoints checkpoints;  // Safe Denoising's saves
+    // Realtime's denoised pictures (RealtimeDenoiser), made once one is asked for. The shared picture is the session's
+    // and the denoiser's both, one at a time; the denoiser's goes out only while its frame is the one rendering.
+    std::mutex sharedMutex;
+    std::string liveId;
+    const bool realtimeDenoise = envOn("XPU2_SESSION_RT_DENOISE", true);
+    std::unique_ptr<RealtimeDenoiser> denoiser;
+    std::string denoiserError;
     try {
         scene.load(args.scenes);
     } catch (const std::exception& e) {
@@ -589,18 +835,39 @@ int session(const Args& args, const fs::path& directory) {
                 }
                 if (fresh) {
                     // A scene the GPU programs do not render yet (async::GpuLane::cpuOnly) renders on the CPU alone.
-                    if (gpu && gpuPlan != scene.plan) {
+                    if (gpu && gpuPlan != scene.plan && scene.cameraFrom && gpuPlan == scene.cameraFrom) {
+                        // A camera-only edit: the GPU's scene stays, its configuration (the camera) goes again.
+                        if (gpuUsable) gpu->updateCamera(scene.plan);
+                        gpuPlan = scene.plan;
+                    } else if (gpu && gpuPlan != scene.plan) {
                         const std::string why = async::GpuLane::cpuOnly(scene.plan);
                         gpuUsable = why.empty();
+                        const auto gpuBegan = Clock::now();
                         if (gpuUsable) gpu->prepare(scene.plan);
+                        if (gpuUsable) std::printf("XPU2: GPU scene prepared in %.2f s\n", std::chrono::duration<double>(Clock::now() - gpuBegan).count());
                         else std::printf("XPU2: the GPU leaves %s to the CPU; rendering on the CPU alone\n", why.c_str());
                         gpuPlan = scene.plan;
                     }
                     renderer = std::make_unique<async::Renderer>(scene.plan, *scene.cpuScene, gpuUsable ? gpu.get() : nullptr);
                     renderer->deviceRatio(deviceRatio);
+                    // Sampling generations: uniform's samples spent where they show, or adaptive's to its target error.
                     std::printf("XPU2: scene ready in %.2f s (%ux%u, %s %u)\n", std::chrono::duration<double>(Clock::now() - began).count(),
-                                scene.plan->width, scene.plan->height, scene.plan->adaptive ? "adaptive, at most" : "uniform,",
-                                scene.plan->spp);
+                                scene.plan->width, scene.plan->height,
+                                scene.plan->sampleBudget ? "uniform by sampling generations, on average"
+                                : scene.plan->adaptive   ? "adaptive by sampling generations, at most"
+                                                         : "uniform,",
+                                scene.plan->sampleBudget || !scene.plan->adaptive ? scene.plan->spp : scene.plan->maxSamples);
+                    // The kit's low-latency rendering (async::lowLatency): threads at the process's priority, one left free.
+                    std::printf("XPU2: low-latency rendering %s\n", async::lowLatency() ? "on (threads at the renderer's priority, one free for Modo)" : "off");
+                    // The sampling generations' settings (the kit's render settings, cpu_scene.h).
+                    if (scene.plan->adaptive)
+                        std::printf("XPU2: generations: first %u, most %u a pixel; %s; noise target %g; CPU workers %s\n",
+                                    scene.plan->minSamples, scene.plan->maxSamples,
+                                    !scene.plan->sampleBudget       ? "no budget (the target error ends it)"
+                                    : scene.plan->budgetBySamples   ? "exactly the samples"
+                                                                    : "as long as uniform would take",
+                                    double(scene.plan->sampleBudget ? scene.plan->noiseTarget : scene.plan->targetError) * 10000.0,
+                                    scene.plan->generationsCpu ? "on" : "off");
                 }
                 const U32 width = scene.plan->width, height = scene.plan->height;
                 outlines.watch(renderer.get(), id, width, height);
@@ -626,11 +893,21 @@ int session(const Args& args, const fs::path& directory) {
                     if (asked("hold.txt", &holdKeys)) return held = true;
                     return false;
                 };
-                watch.previewSeconds = previewSeconds;
+                // Realtime: pictures as they come (the first, a quarter of the pixels, after its pass).
+                watch.previewSeconds = scene.plan->realtime ? std::min(previewSeconds, 0.033) : previewSeconds;
                 double lastStatus = 0;
                 const auto frameStart = Clock::now();
                 // The film's rows are in MoonRay's order.
+                {
+                    std::lock_guard<std::mutex> lock(sharedMutex);
+                    liveId = id;
+                }
+                auto sharedReady = [&] {
+                    std::lock_guard<std::mutex> lock(sharedMutex);
+                    return shared.ready();
+                };
                 auto publish = [&](const std::vector<float>& rgb, U32 w, U32 h) {
+                    std::lock_guard<std::mutex> lock(sharedMutex);
                     return useShared && shared.publish(id, "beauty", w, h, [&](size_t i, float* out) {
                         out[0] = rgb[i * 3];
                         out[1] = rgb[i * 3 + 1];
@@ -665,6 +942,7 @@ int session(const Args& args, const fs::path& directory) {
                     }
                     const size_t n = out.channels.size();
                     std::vector<float> v(std::max<size_t>(n, 3) + 8);
+                    std::lock_guard<std::mutex> lock(sharedMutex);
                     return useShared && shared.publish(id, key, width, height, [&](size_t i, float* px) {
                         aov::outputValues(*scene.plan->aovs, out, r, i, v.data());
                         px[0] = v[0];
@@ -672,13 +950,111 @@ int session(const Args& args, const fs::path& directory) {
                         px[2] = n > 2 ? v[2] : n == 1 ? v[0] : 0.0f;
                     });
                 };
+                // Realtime with the kit's Denoised Beauty chosen: its pictures are denoised here (RealtimeDenoiser), with
+                // the kit's denoiser guides, a preview's outputs, for the first hits' albedo and normal.
+                auto guide = [&](const char* key) -> const aov::Output* {
+                    if (!scene.plan->aovs) return nullptr;
+                    for (const aov::Output* out : scene.plan->aovs->all)
+                        if (out->name == std::string("/modo/preview/denoise_") + key && out->channels.size() == 3) return out;
+                    return nullptr;
+                };
+                const aov::Output* rtAlbedo = scene.plan->realtime && realtimeDenoise ? guide("albedo") : nullptr;
+                const aov::Output* rtNormal = scene.plan->realtime && realtimeDenoise ? guide("normal") : nullptr;
+                auto denoising = [&](const std::string& view) {
+                    return rtAlbedo && rtNormal && denoiserError.empty() && view == "denoised_beauty";
+                };
+                // A picture for the denoiser: the beauty and its guides, the pixels no sample has reached yet filled from
+                // the nearest that have (as the progressive pictures are).
+                auto realtimePicture = [&](const async::RenderResult& r) {
+                    RealtimeDenoiser::Picture p;
+                    p.id = id;
+                    p.width = width;
+                    p.height = height;
+                    const size_t pixels = size_t(width) * height;
+                    p.color.assign(pixels * 3, 0.0f);
+                    p.albedo.assign(pixels * 3, 0.0f);
+                    p.normal.assign(pixels * 3, 0.0f);
+                    std::vector<unsigned char> covered(pixels, 0);
+                    bool gaps = false;
+                    // The normals in camera space, as OptiX's denoiser takes them: render space's (the state variable N)
+                    // onto the camera's axes, the rows of its camera-to-render matrix.
+                    const auto& toRender = scene.plan->camera.cameraToRender.m;
+                    float axes[3][3];
+                    for (int a = 0; a < 3; ++a) {
+                        const float length = std::sqrt(toRender[a][0] * toRender[a][0] + toRender[a][1] * toRender[a][1] + toRender[a][2] * toRender[a][2]);
+                        for (int c = 0; c < 3; ++c) axes[a][c] = length > 0 ? toRender[a][c] / length : float(a == c);
+                    }
+                    cpu::parallelRange(pixels, [&](size_t begin, size_t end) {
+                        std::vector<float> v(16);
+                        for (size_t i = begin; i < end; ++i) {
+                            if (i >= r.counts.size() || !r.counts[i]) continue;
+                            covered[i] = 1;
+                            for (int c = 0; c < 3; ++c) {
+                                const float x = r.rgba[i * 4 + c];
+                                p.color[i * 3 + c] = std::isfinite(x) ? std::max(0.0f, x) : 0.0f;
+                            }
+                            aov::outputValues(*scene.plan->aovs, *rtAlbedo, r, i, v.data());
+                            for (int c = 0; c < 3; ++c) p.albedo[i * 3 + c] = std::isfinite(v[c]) ? std::clamp(v[c], 0.0f, 1.0f) : 0.0f;
+                            aov::outputValues(*scene.plan->aovs, *rtNormal, r, i, v.data());
+                            for (int c = 0; c < 3; ++c) v[c] = std::isfinite(v[c]) ? v[c] : 0.0f;
+                            for (int a = 0; a < 3; ++a)
+                                p.normal[i * 3 + a] = std::clamp(v[0] * axes[a][0] + v[1] * axes[a][1] + v[2] * axes[a][2], -1.0f, 1.0f);
+                        }
+                    });
+                    for (unsigned char c : covered)
+                        if (!c) {
+                            gaps = true;
+                            break;
+                        }
+                    if (gaps) {
+                        async::Renderer::fillGaps(p.color, covered, width, height);
+                        async::Renderer::fillGaps(p.albedo, covered, width, height);
+                        async::Renderer::fillGaps(p.normal, covered, width, height);
+                        // Denoised at half its size (RealtimeDenoiser::Picture), each two by two pixels averaged.
+                        const U32 hw = (width + 1) / 2, hh = (height + 1) / 2;
+                        auto halve = [&](std::vector<float>& v) {
+                            std::vector<float> half(size_t(hw) * hh * 3, 0.0f);
+                            for (U32 y = 0; y < hh; ++y)
+                                for (U32 x = 0; x < hw; ++x) {
+                                    float sum[3] = {};
+                                    int n = 0;
+                                    for (U32 yy = 2 * y; yy < std::min(2 * y + 2, height); ++yy)
+                                        for (U32 xx = 2 * x; xx < std::min(2 * x + 2, width); ++xx, ++n)
+                                            for (int c = 0; c < 3; ++c) sum[c] += v[(size_t(yy) * width + xx) * 3 + c];
+                                    for (int c = 0; c < 3; ++c) half[(size_t(y) * hw + x) * 3 + c] = sum[c] / float(std::max(n, 1));
+                                }
+                            v.swap(half);
+                        };
+                        halve(p.color);
+                        halve(p.albedo);
+                        halve(p.normal);
+                        p.shownWidth = width;
+                        p.shownHeight = height;
+                        p.width = hw;
+                        p.height = hh;
+                    }
+                    return p;
+                };
+                if (rtAlbedo && rtNormal && gpu && gpuUsable && !denoiser)
+                    denoiser = std::make_unique<RealtimeDenoiser>(*gpu, [&](const RealtimeDenoiser::Picture& p, const std::vector<float>& out) {
+                        std::lock_guard<std::mutex> lock(sharedMutex);
+                        if (p.id != liveId || !useShared) return;
+                        shared.publish(p.id, "denoised_beauty", p.shownWidth ? p.shownWidth : p.width, p.shownWidth ? p.shownHeight : p.height,
+                                       [&](size_t i, float* px) {
+                            px[0] = out[i * 3];
+                            px[1] = out[i * 3 + 1];
+                            px[2] = out[i * 3 + 2];
+                        });
+                    });
                 std::string currentView = "beauty";
                 watch.previewAov = [&] {
                     currentView = viewKey();
-                    return previewOutput(currentView) != nullptr;
+                    if (denoiser && denoiserError.empty()) denoiserError = denoiser->error();
+                    return previewOutput(currentView) != nullptr || denoising(currentView);
                 };
                 watch.previewResult = [&](const async::RenderResult& sofar, double fraction) {
-                    if (const aov::Output* out = previewOutput(currentView)) {
+                    if (denoising(currentView) && denoiser) denoiser->submit(realtimePicture(sofar));
+                    else if (const aov::Output* out = previewOutput(currentView)) {
                         async::RenderResult r = sofar;
                         publishOutput(currentView, *out, r);
                     }
@@ -703,6 +1079,7 @@ int session(const Args& args, const fs::path& directory) {
                 options.mode = gpu && gpuUsable ? mode : 0;  // a scene the GPU leaves to the CPU (cpuOnly): the CPU alone
                 options.deviceChain = deviceChain;
                 options.cellular = cellular;
+                options.generationsCpu = generationsCpu;
                 options.partial = partial;
                 options.watch = &watch;
                 // Safe Denoising's checkpoints: the frame so far saved every checkpoint_interval minutes.
@@ -757,26 +1134,49 @@ int session(const Args& args, const fs::path& directory) {
                     fallback(result.error);
                     return 0;
                 }
+                // Realtime's denoised pictures: the one waiting is of this frame, which is over; the frame's last is
+                // denoised below, once the one in hand is out.
+                if (denoiser) {
+                    if (result.cancelled) denoiser->drop();
+                    else denoiser->flush();
+                    if (const unsigned n = denoiser->taken())
+                        std::printf("XPU2: realtime: %u pictures denoised, the last in %.1f ms (OptiX)\n", n,
+                                    denoiser->milliseconds());
+                    const std::string error = denoiser->error();
+                    if (!error.empty() && denoiserError.empty()) {
+                        denoiserError = error;
+                        std::printf("XPU2: realtime pictures are not denoised: %s\n", error.c_str());
+                    }
+                }
                 if (!result.cancelled) {
                     std::vector<float> rgb(size_t(width) * height * 3);
                     for (size_t i = 0; i < size_t(width) * height; ++i)
                         for (int c = 0; c < 3; ++c) rgb[i * 3 + c] = result.rgba[i * 4 + c];
                     // The last picture waits a moment for the host to have taken the one before it.
                     const auto until = Clock::now() + std::chrono::milliseconds(held ? 3000 : 300);
-                    while (useShared && !shared.ready() && Clock::now() < until) std::this_thread::sleep_for(std::chrono::milliseconds(5));
+                    while (useShared && !sharedReady() && Clock::now() < until) std::this_thread::sleep_for(std::chrono::milliseconds(5));
                     if (held) {
                         // The keys asked for at a stop, each when the host has taken the one before.
                         for (const auto& key : holdKeys) {
                             const auto wait = Clock::now() + std::chrono::milliseconds(3000);
-                            while (useShared && !shared.ready() && Clock::now() < wait) std::this_thread::sleep_for(std::chrono::milliseconds(5));
+                            while (useShared && !sharedReady() && Clock::now() < wait) std::this_thread::sleep_for(std::chrono::milliseconds(5));
                             if (key == "beauty") publish(rgb, width, height);
                             else if (const aov::Output* out = previewOutput(key)) publishOutput(key, *out, result);
                         }
                         fs::remove(directory / "hold.txt", ignored);
                     } else {
                         const std::string view = viewKey();
+                        std::vector<float> clean;
                         if (const aov::Output* out = previewOutput(view)) publishOutput(view, *out, result);
-                        else publish(rgb, width, height);
+                        else if (denoising(view) && denoiser && denoiser->denoise(realtimePicture(result), clean)) {
+                            std::lock_guard<std::mutex> lock(sharedMutex);
+                            if (useShared)
+                                shared.publish(id, "denoised_beauty", width, height, [&](size_t i, float* px) {
+                                    px[0] = clean[i * 3];
+                                    px[1] = clean[i * 3 + 1];
+                                    px[2] = clean[i * 3 + 2];
+                                });
+                        } else publish(rgb, width, height);
                         if (scene.plan->aovs) {
                             std::vector<std::string> warnings;
                             if (!scene.displayFilters.empty()) {

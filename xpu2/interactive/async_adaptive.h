@@ -151,6 +151,19 @@ private:
 // BirthNeighbours are (it takes more to come back than to stay, so tiles do not flicker). A tile with a pixel still
 // missing one of its halves stays alive. The rules decide only where samples go: every sample is MoonRay's estimator,
 // so the image converges to MoonRay's.
+//
+// A uniform frame by sampling generations (cpu::Plan::sampleBudget) has no target of its own: each generation's is
+// the error every tile would come down to if the samples still to spend (what the frame's time left buys,
+// async_render.h Adaptive::samplesLeft) were all spent, a tile's error falling as the square root of its samples
+// (MoonRay's error is the difference of two half-images) and no pixel going past the most it may have. Tiles above it
+// live; the evenest error the frame's time can buy.
+struct Budget {
+    const std::vector<U32>* samples;  // each pixel's samples so far (its passes generated, all completed)
+    double remaining;                 // the frame's samples still to spend
+    U32 most;                         // the most samples a pixel may have
+    float floor;                      // the error no tile need go below (the kit's noise target; 0: none)
+};
+
 class Cellular {
 public:
     static constexpr float Survive = 0.5f, Birth = 0.75f;
@@ -158,7 +171,8 @@ public:
 
     Cellular(int width, int height, float target)
         : width_(width), height_(height), tilesX_((width + 7) / 8), tilesY_((height + 7) / 8), target_(target),
-          alive_(size_t(tilesX_) * tilesY_, 1), next_(alive_.size(), 0), ratio_(alive_.size(), 0.0f) {}
+          alive_(size_t(tilesX_) * tilesY_, 1), next_(alive_.size(), 0), ratio_(alive_.size(), 0.0f),
+          error_(alive_.size(), 0.0f), pixels_(alive_.size(), 0.0), samples_(alive_.size(), 0.0) {}
 
     // Tiles outside the render region never live (inImage: each tile's pixels in the image).
     void deadForever(const std::vector<std::uint64_t>& inImage) {
@@ -166,22 +180,34 @@ public:
         for (size_t t = 0; t < alive_.size() && t < inImage.size(); ++t)
             if (!inImage[t]) dead_[t] = 1, alive_[t] = 0;
     }
-    // The next generation from the image's per-pixel errors (pixelError, width a row); the live tiles' count.
-    size_t update(const float* errors) {
+    // The next generation from the image's per-pixel errors (pixelError, width a row); the live tiles' count. With a
+    // budget, the target is the budget's (budgetTarget).
+    size_t update(const float* errors, const Budget* budget = nullptr) {
         for (int ty = 0; ty < tilesY_; ++ty)
             for (int tx = 0; tx < tilesX_; ++tx) {
-                double sum = 0;
+                const size_t t = size_t(ty) * tilesX_ + tx;
+                double sum = 0, most = 0, rendered = 0;
                 int n = 0;
                 bool unknown = false;
                 for (int y = ty * 8; y < std::min(height_, ty * 8 + 8); ++y)
                     for (int x = tx * 8; x < std::min(width_, tx * 8 + 8); ++x) {
-                        const float e = errors[size_t(y) * size_t(width_) + size_t(x)];
+                        const size_t i = size_t(y) * size_t(width_) + size_t(x);
+                        const float e = errors[i];
                         if (e < 0) unknown = true;
                         else sum += e;
                         ++n;
+                        if (budget) {
+                            const double s = (*budget->samples)[i];
+                            most = std::max(most, s);
+                            rendered += s > 0 ? 1 : 0;
+                        }
                     }
-                ratio_[size_t(ty) * tilesX_ + tx] = unknown ? 3.4e38f : areaError(float(sum), float(n)) / target_;
+                error_[t] = unknown ? -1.0f : areaError(float(sum), float(n));
+                pixels_[t] = rendered;
+                samples_[t] = most;
             }
+        const float target = budget ? std::max(budgetTarget(*budget), budget->floor) : target_;
+        for (size_t t = 0; t < ratio_.size(); ++t) ratio_[t] = error_[t] < 0 ? 3.4e38f : error_[t] / target;
         size_t live = 0;
         for (int ty = 0; ty < tilesY_; ++ty)
             for (int tx = 0; tx < tilesX_; ++tx) {
@@ -203,13 +229,44 @@ public:
         return live;
     }
     bool alive(size_t tile) const { return alive_[tile] != 0; }
+    // A tile's error over the last generation's target.
+    float ratio(size_t tile) const { return ratio_[tile]; }
     U32 generation() const { return generation_; }
+    float lastTarget() const { return lastTarget_; }
 
 private:
+    // The error the samples still to spend would bring every tile to (Budget): the target whose cost, each tile's
+    // pixels times the samples that take its error down to it, n (error / target)^2 less the n it has, at most the
+    // most a pixel may have, is the samples left. Halving the interval in log space: the cost falls as the target rises.
+    float budgetTarget(const Budget& b) {
+        double lo = 3.4e38, hi = 0;
+        for (size_t t = 0; t < error_.size(); ++t)
+            if ((dead_.empty() || !dead_[t]) && error_[t] > 0 && samples_[t] > 0)
+                lo = std::min(lo, double(error_[t])), hi = std::max(hi, double(error_[t]));
+        if (b.remaining <= 0 || hi <= 0) return lastTarget_ = 3.4e38f;  // nothing to spend, or nothing left to refine
+        auto cost = [&](double target) {
+            double c = 0;
+            for (size_t t = 0; t < error_.size(); ++t) {
+                if ((!dead_.empty() && dead_[t]) || error_[t] <= 0 || samples_[t] <= 0) continue;
+                const double n = samples_[t], r = double(error_[t]) / target;
+                c += pixels_[t] * (std::min(std::max(n * r * r, n), double(b.most)) - std::min(n, double(b.most)));
+            }
+            return c;
+        };
+        double low = lo * 1e-3, high = hi;  // cost(high) is 0
+        if (cost(low) <= b.remaining) return lastTarget_ = float(low);  // every tile to the most it may have
+        for (int i = 0; i < 48; ++i) {
+            const double middle = std::sqrt(low * high);
+            (cost(middle) > b.remaining ? low : high) = middle;
+        }
+        return lastTarget_ = float(high);
+    }
+
     int width_, height_, tilesX_, tilesY_;
-    float target_;
+    float target_, lastTarget_ = 0;
     std::vector<char> alive_, next_, dead_;
-    std::vector<float> ratio_;
+    std::vector<float> ratio_, error_;
+    std::vector<double> pixels_, samples_;  // with a budget: each tile's rendered pixels and its samples a pixel
     U32 generation_ = 0;
 };
 

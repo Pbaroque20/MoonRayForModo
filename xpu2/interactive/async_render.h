@@ -39,6 +39,9 @@ struct RenderOptions {
     // Adaptive frames: cellular generations decide which tiles sample each pass (adaptive::Cellular; the passes are
     // made on the host), or, false, MoonRay's error trees.
     bool cellular = false;
+    // Frames by sampling generations (cellular, uniform or adaptive) with a GPU: the CPU lane takes chunks too, by the
+    // grid's rights of passage, and its samples join the GPU's errors (Adaptive::merged); false, the GPU takes them all.
+    bool generationsCpu = true;
     // A preview session's watch over the frame (none: the frame runs to its end).
     struct Watch* watch = nullptr;
     // Partial shading: a GPU sample whose fine-detail tile is not resident finishes from the texture's next level up
@@ -133,6 +136,17 @@ struct RenderResult {
     std::string error;
 };
 
+// The kit's low-latency rendering (MoonRay Source Overrides, on by default): it starts the renderer below Modo's
+// priority and gives it one processor thread fewer than the machine has. XPU2's threads then keep to their process's
+// priority, none raised above it (the GPU's feeder and the error trees' pool give way to Modo, the GPU fed a little less
+// promptly), and the CPU lane leaves a thread free besides the feeder's whatever thread count it is given. Known from
+// the process's priority class, which the kit lowers as the renderer starts; XPU2_SESSION_LOW_LATENCY=0 or 1 says so.
+inline bool lowLatency() {
+    if (const char* v = std::getenv("XPU2_SESSION_LOW_LATENCY")) return v[0] == '1';
+    const DWORD c = GetPriorityClass(GetCurrentProcess());
+    return c == BELOW_NORMAL_PRIORITY_CLASS || c == IDLE_PRIORITY_CLASS;
+}
+
 // Persistent threads for the adaptive error trees: run(n, f) calls f(0) .. f(n - 1)
 // across them and the calling thread, and returns once every call has.
 class Pool {
@@ -176,7 +190,7 @@ private:
         left_.notify_all();
     }
     void loop() {
-        SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
+        SetThreadPriority(GetCurrentThread(), lowLatency() ? THREAD_PRIORITY_NORMAL : THREAD_PRIORITY_ABOVE_NORMAL);
         unsigned seen = 0;
         for (;;) {
             const std::function<void(unsigned)>* task;
@@ -248,7 +262,13 @@ public:
         // bounds the frame, and a CPU chunk would sit on that chain.
         // A scene with GPU stand-ins needs the CPU lane for the samples the GPU defers, whatever the mode.
         const bool standIns = o.mode != 0 && gpu_ && gpu_->standIns();
-        const bool useGpu = o.mode != 0, useCpu = standIns || (o.mode != 1 && !(adaptive && useGpu));
+        // Sampling generations (cellular rules) make each pass on the host: the CPU lane takes chunks the grid's rights of
+        // passage let it finish before the GPU would, and its samples join the GPU's errors (Adaptive::merged).
+        // (The kit's render settings may leave the CPU out: plan_->generationsCpu.)
+        // Realtime leaves the CPU lane to what the GPU defers: cells the CPU owned filled seconds after the rest.
+        const bool cpuInGenerations = adaptive && (o.cellular || plan_->sampleBudget != 0) && plan_->generationsCpu && o.generationsCpu &&
+                                      !plan_->realtime;
+        const bool useGpu = o.mode != 0, useCpu = standIns || (o.mode != 1 && !(adaptive && useGpu && !cpuInGenerations));
         cpu::need(!useGpu || gpu_, "GPU lane required");
         GridOptions gridOptions = o.grid;
         gridOptions.mode = useCpu ? (useGpu ? 2 : 0) : 1;
@@ -279,11 +299,12 @@ public:
         RetryQueue retries;
         RefineQueue refines;
         const U32 itemsPerChunk = gridOptions.samplesPerChunk * TilePixels;
-        const bool chainFrame = adaptive && useGpu && o.deviceChain && !o.cellular && !standIns && gpu_->hasChain();
+        const bool chainFrame = adaptive && useGpu && o.deviceChain && !o.cellular && !plan_->sampleBudget && !standIns && gpu_->hasChain();
         const bool partial = o.partial && useGpu && !chainFrame;
         if (partial) film.initSettled();
         if (useGpu) gpu_->begin(gridOptions.samplesPerChunk, adaptive, partial);
         Adaptive state(*plan_, gridOptions.samplesPerChunk, o.cellular);
+        state.cpuSamples = adaptive && useGpu && useCpu;
         state.onGeneration = [this](const std::vector<U32>& tiles) {
             std::lock_guard<std::mutex> lock(activityMutex_);
             live_ = tiles;
@@ -297,12 +318,13 @@ public:
         }
 
         // The feeder runs above the CPU lane's workers, so a busy CPU never starves
-        // the GPU of work (spec §4: the GPU feeder runs at high priority).
+        // the GPU of work (spec §4: the GPU feeder runs at high priority); with low latency, at its process's own.
+        const bool modest = lowLatency();
         struct Priority {
             int old = GetThreadPriority(GetCurrentThread());
-            Priority() { SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST); }
+            explicit Priority(bool modest) { if (!modest) SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST); }
             ~Priority() { SetThreadPriority(GetCurrentThread(), old); }
-        } priority;
+        } priority(modest);
         // With a reserved core the feeder is pinned to the last logical processor
         // and the workers to the others (spec §4, CPU-01): a spinning high-priority
         // feeder must never sit on a worker's core.
@@ -312,7 +334,9 @@ public:
             void to(DWORD_PTR mask) { old = SetThreadAffinityMask(GetCurrentThread(), mask); }
             ~Pin() { if (old) SetThreadAffinityMask(GetCurrentThread(), old); }
         } pin;
-        const unsigned workers = !useCpu ? 0 : (useGpu && o.reserveFeederCore && o.threads > 1 ? o.threads - 1 : o.threads);
+        unsigned workers = !useCpu ? 0 : (useGpu && o.reserveFeederCore && o.threads > 1 ? o.threads - 1 : o.threads);
+        // Low latency: a processor thread left free for Modo besides the feeder's.
+        if (workers && modest) workers = std::min(workers, std::max(1u, std::thread::hardware_concurrency() - (useGpu ? 2u : 1u)));
         result.cpuWorkers = workers;
         if (useGpu && useCpu && o.reserveFeederCore && GetProcessAffinityMask(GetCurrentProcess(), &process, &system) &&
             process && (process & (process - 1))) {
@@ -402,7 +426,8 @@ public:
                 }
                 if (previewOfAov) {
                     previewState = PreviewIdle;
-                    nextPreview = at() + std::max(watch->previewSeconds, 0.5);
+                    // An output's pictures are slower to make: at most two a second, but realtime's (denoised) as they come.
+                    nextPreview = at() + (plan_->realtime ? watch->previewSeconds : std::max(watch->previewSeconds, 0.5));
                     return;
                 }
             }
@@ -423,6 +448,9 @@ public:
             double fraction = std::min(1.0, double(seen) / plannedSamples);
             if (adaptive && !state.chain && !state.passes.empty())
                 fraction = std::max(fraction, double(state.retired) / double(state.passes.size()));
+            // A frame by sampling generations runs for uniform's time: its share of it, once the seed has priced it.
+            if (plan_->sampleBudget && plan_->budgetBySamples) fraction = std::min(1.0, double(seen) / double(plan_->sampleBudget));
+            else if (plan_->sampleBudget && state.budgetSeconds > 0) fraction = std::min(1.0, state.at() / state.budgetSeconds);
             fillUncovered(previewRgb, covered, plan_->width, plan_->height);
             watch->preview(previewRgb, plan_->width, plan_->height, fraction);
             nextPreview = at() + watch->previewSeconds;
@@ -486,6 +514,8 @@ public:
                         result.refinedGpu += c.refinesRun;
                     }
                     queuedSamples -= std::min(queuedSamples, c.samples);
+                    // Every launch's rate, kept across frames for realtime's launch sizes (launchSize).
+                    if (c.deviceSeconds > 0 && c.samples > 0) gpu_->noteRate(double(c.samples + c.parkedRun + c.refinesRun) / c.deviceSeconds);
                     // Launches too small to keep the GPU full understate its rate.
                     if (c.deviceSeconds > 0 && c.samples >= U64(gpu_->launchThreads())) {
                         const double rate = double(c.samples + c.parkedRun + c.refinesRun) / c.deviceSeconds;
@@ -530,7 +560,10 @@ public:
                             }
                         }
                     }
-                    const U32 want = std::min(launchSize(o, grid, gpuRate, cpuLane, queuedSamples, start), gpu_->chunkRoom(refineCount));
+                    // Realtime's sparse passes (a pixel in each 2x2, then the other three): a chunk holds 16 or 48 of a tile's
+                    // 64 pixel samples, which the launch is sized by.
+                    const double realtimeItems = plan_->realtime && adaptive && state.retired < 2 ? (state.retired == 0 ? 16.0 : 48.0) : 0.0;
+                    const U32 want = std::min(launchSize(o, grid, gpuRate, cpuLane, queuedSamples, start, realtimeItems), gpu_->chunkRoom(refineCount));
                     claim.resize(want);
                     U32 got = 0;
                     if (want) {
@@ -717,6 +750,9 @@ public:
         if (!drained) ownership_.finished(grid);
         return result;
     }
+    // A picture's pixels no sample has reached filled from the nearest that have (fillUncovered), for the session's
+    // own pictures: realtime's, denoised.
+    static void fillGaps(std::vector<float>& rgb, const std::vector<unsigned char>& covered, U32 w, U32 h) { fillUncovered(rgb, covered, w, h); }
 
 private:
     // The frame so far, as its end would make it: the mean of each pixel's samples, the host's and the GPU's films
@@ -838,6 +874,9 @@ private:
         bool asked = false;  // errors asked of the GPU for every pass generated
         U64 askedLaunch = 0;  // the GPU's launch count when they were
         bool stop = false;   // the trees have converged: no more adaptive passes
+        double spent = 0;    // a frame by sampling generations: the samples of the passes generated
+        double budgetSeconds = 0;  // and the time it has: uniform's, priced at the seed's rate (0: the seed not done)
+        bool cpuSamples = false;  // the CPU lane renders samples beside the GPU: its samples join the GPU's errors
         Clock::time_point start, askedAt;
         double treeSeconds = 0, errorSeconds = 0;
         std::vector<PassTrace> trace;
@@ -850,10 +889,13 @@ private:
             : plan(p), samplesPerChunk(spc), tiles(((p.width + 7) / 8) * ((p.height + 7) / 8)), tilesX((p.width + 7) / 8),
               passes(p.adaptive ? adaptive::schedule(p.maxSamples) : std::vector<adaptive::Pass>{}),
               regions(int(p.width), int(p.height), p.adaptive ? p.targetError : 1.f),
-              cellular(cellularRules && p.adaptive),
+              cellular((cellularRules || p.sampleBudget) && p.adaptive),
               cells(p.adaptive ? int(p.width) : 1, p.adaptive ? int(p.height) : 1, p.adaptive ? p.targetError : 1.f),
               planned(p.adaptive ? size_t(p.width) * p.height : 0, 0u) {
             if (!p.adaptive) return;
+            // Realtime: the first sample in two passes, a pixel in each 2x2 of every tile, then the other three, so that a
+            // quarter of the picture's samples shows the whole of it (filled between, fillUncovered).
+            if (p.realtime && !passes.empty() && passes[0].start == 0 && passes[0].end == 1) passes.insert(passes.begin(), adaptive::Pass{0, 1});
             cpu::need(passes.size() <= MaxPasses, "Adaptive pass budget");
             inImage.assign(tiles, 0);
             for (U32 tile = 0; tile < tiles; ++tile)
@@ -871,10 +913,52 @@ private:
         bool complete(U32 pass, GpuLane* gpu) const { return done(pass, gpu) == expected[pass]; }
 
         bool uniformStage(U32 j) const { return passes[j].start < plan.minSamples; }
+        // A frame by sampling generations ends once uniform's time is up (at most twice uniform's samples).
+        bool budgetSpent() const {
+            if (!plan.sampleBudget) return false;
+            if (plan.budgetBySamples) return spent >= double(plan.sampleBudget);  // the kit's "exactly the samples"
+            return spent >= 2.0 * double(plan.sampleBudget) || (budgetSeconds > 0 && at() >= budgetSeconds);
+        }
+        // The time a frame by sampling generations has: the seed samples every pixel alike, so its rate is uniform's,
+        // and uniform's samples at that rate are uniform's time. Known once the seed's passes have all completed.
+        void priceBudget() {
+            if (!plan.sampleBudget || plan.budgetBySamples || budgetSeconds > 0) return;
+            U32 seed = 0;
+            while (seed < passes.size() && uniformStage(seed)) ++seed;
+            if (!seed || retired < seed) return;
+            double samples = 0;
+            for (U32 j = 0; j < seed; ++j) samples += double(expected[j]);
+            const double seconds = trace[seed - 1].completed;
+            if (samples <= 0 || seconds <= 0) return;
+            // Uniform would go on at the seed's steady rate: its passes after the first (whose launches, the first,
+            // are slower), which go out together, over the time from the first's end to the seed's end; then the time
+            // so far, and the rest of uniform's samples at that rate.
+            double rate = samples / seconds;
+            if (seed >= 2 && trace[seed - 1].completed > trace[0].completed)
+                rate = (samples - double(expected[0])) / (trace[seed - 1].completed - trace[0].completed);
+            budgetSeconds = seconds + std::max(0.0, double(plan.sampleBudget) - samples) / rate;
+        }
+        // The samples the time left buys, at the rate the last generation ran (its samples over the time since the
+        // one before it completed): dear samples, the dragon's, buy fewer than the walls'.
+        double samplesLeft() const {
+            if (plan.budgetBySamples) return std::max(0.0, double(plan.sampleBudget) - spent);
+            double left = 2.0 * double(plan.sampleBudget) - spent;
+            if (budgetSeconds > 0) {
+                const U32 g = generated - 1;
+                double rate = double(plan.sampleBudget) / budgetSeconds;  // uniform's
+                if (g > 0 && trace[g].completed > trace[g - 1].completed)
+                    rate = double(expected[g]) / (trace[g].completed - trace[g - 1].completed);
+                left = std::min(left, (budgetSeconds - at()) * rate);
+            }
+            return std::max(0.0, left);
+        }
         // Whether pass j may go out: a free table slot, and either the uniform stage
         // or trees that have seen every pass before it.
         bool ready(U32 j) const {
-            return j < passes.size() && j < retired + PassSlots && (uniformStage(j) || (!stop && evaluated == j));
+            // Realtime: the seed's passes one at a time, each over the whole picture before the next (gone out together,
+            // a GPU worker finished its cell's four passes while the next cells waited).
+            if (plan.realtime && uniformStage(j) && j > retired) return false;
+            return j < passes.size() && j < retired + PassSlots && (uniformStage(j) || (!stop && !budgetSpent() && evaluated == j));
         }
         // One pass at a time, so the feeder launches each as soon as it exists.
         void generateReady(Grid& grid, GpuLane* gpu) {
@@ -885,13 +969,43 @@ private:
             const bool uniform = uniformStage(j);
             auto& masks = tables.masks[slot];
             auto& bases = tables.bases[slot];
-            if (!gpu) bases = planned;  // the CPU lane's; the GPU makes its own
+            if (!gpu || cpuSamples) bases = planned;  // the CPU lane's; the GPU makes its own
             U64 samples = 0;
             std::vector<std::vector<Chunk>> perCell(grid.cellCount());
+            // A frame by sampling generations: a pass no larger than the time left buys, the tiles furthest above the
+            // target first, so that the last one does not run on past uniform's time.
+            std::vector<char> dropped;
+            if (!uniform && cellular && plan.sampleBudget && (budgetSeconds > 0 || plan.budgetBySamples)) {
+                std::vector<std::pair<float, U32>> live;
+                double wanted = 0;
+                for (U32 tile = 0; tile < tiles; ++tile)
+                    if (inImage[tile] && cells.alive(tile)) {
+                        live.push_back({cells.ratio(tile), tile});
+                        wanted += double(__builtin_popcountll(inImage[tile])) * size;
+                    }
+                const double left = samplesLeft();
+                if (wanted > left) {
+                    std::sort(live.begin(), live.end(), [](const auto& x, const auto& y) { return x.first > y.first; });
+                    dropped.assign(tiles, 1);
+                    double taken = 0;
+                    for (const auto& [r, tile] : live) {
+                        const double cost = double(__builtin_popcountll(inImage[tile])) * size;
+                        if (taken + cost > left) break;
+                        taken += cost;
+                        dropped[tile] = 0;
+                    }
+                }
+            }
             for (U32 tile = 0; tile < tiles; ++tile) {
                 std::uint64_t active = inImage[tile];
+                // Realtime's first two passes (above): a pixel in each 2x2, then the rest.
+                if (plan.realtime && j < 2) {
+                    constexpr std::uint64_t sparse = 0x0055005500550055ull;  // even rows' even columns
+                    active &= j == 0 ? sparse : ~sparse;
+                }
                 if (!uniform && passes[j].start < plan.maxSamples)
-                    active &= cellular ? (cells.alive(tile) ? ~std::uint64_t(0) : 0) : regions.sampleArea(int(tile % tilesX) * 8, int(tile / tilesX) * 8);
+                    active &= cellular ? (cells.alive(tile) && (dropped.empty() || !dropped[tile]) ? ~std::uint64_t(0) : 0)
+                                       : regions.sampleArea(int(tile % tilesX) * 8, int(tile / tilesX) * 8);
                 else if (!uniform)
                     active = 0;
                 masks[tile] = active;
@@ -906,6 +1020,7 @@ private:
                     list.push_back({tile, (j << PassShift) | off, std::min(samplesPerChunk, size - off), grid.cellOf(tile)});
             }
             expected.push_back(samples);
+            spent += double(samples);
             if (onGeneration) {
                 std::vector<U32> live;
                 for (U32 tile = 0; tile < tiles; ++tile)
@@ -986,6 +1101,7 @@ private:
                 return;
             }
             while (retired < generated && complete(retired, gpu)) trace[retired++].completed = at();
+            priceBudget();
             const bool needTrees = !stop && generated < passes.size() && !uniformStage(generated) && evaluated < generated;
             if (needTrees && gpu) {
                 if (!asked && grid.empty() && !gpu->parkedOutstanding()) {
@@ -1001,7 +1117,7 @@ private:
                         errorSeconds += std::chrono::duration<double>(Clock::now() - askedAt).count();
                         trace[generated - 1].errors = at();
                         asked = false;
-                        rebuild(gpu->errors(), pool);
+                        rebuild(cpuSamples ? merged(gpu->errors(), film, pool) : gpu->errors(), pool);
                     }
                 }
             } else if (needTrees && retired == generated) {  // no GPU: the host film
@@ -1016,10 +1132,35 @@ private:
             }
             generateReady(grid, gpu);
         }
+        // The GPU's errors with the CPU lane's samples in them. A pixel both lanes sampled has two of MoonRay's errors,
+        // each over its own samples: the CPU's from the host film, the GPU's over the rest of the pixel's planned
+        // samples. An error is the pixel's spread over the square root of its samples (the two half-images'
+        // difference), so the two pool by their counts, sqrt(nG^2 eG^2 + nC^2 eC^2) / n; where one lane has too few
+        // samples for an error, the other's stands for the pixel, scaled to all of its samples.
+        const float* merged(const float* gpuErrors, HostFilm& film, Pool& pool) {
+            film.snapshot(sums, odd, counts);
+            errors.assign(gpuErrors, gpuErrors + counts.size());
+            const unsigned parts = pool.size() + 1;
+            pool.run(parts, [&](unsigned part) {
+                for (size_t i = part; i < counts.size(); i += parts) {
+                    const U32 nc = counts[i], n = std::max(planned[i], nc);
+                    if (!nc || !n) continue;
+                    const double ng = double(n - nc), c = double(nc);
+                    const float ec = pixelError(&sums[i * 4], &odd[i * 4], nc), eg = ng > 0 ? errors[i] : ErrorNotReady;
+                    if (ec < 0 && eg < 0) errors[i] = ErrorNotReady;
+                    else if (eg < 0) errors[i] = float(double(ec) * std::sqrt(c / n));
+                    else if (ec < 0) errors[i] = float(double(eg) * std::sqrt(ng / n));
+                    else errors[i] = float(std::sqrt(ng * ng * double(eg) * eg + c * c * double(ec) * ec) / n);
+                }
+            });
+            return errors.data();
+        }
         void rebuild(const float* e, Pool& pool) {
             const auto began = Clock::now();
             if (cellular) {
-                stop = cells.update(e) == 0;
+                // A frame by sampling generations: the target the samples still to spend would bring every tile to.
+                const adaptive::Budget budget{&planned, samplesLeft(), plan.maxSamples, plan.noiseTarget};
+                stop = cells.update(e, plan.sampleBudget ? &budget : nullptr) == 0;
             } else {
                 pool.run(unsigned(regions.count()), [&](unsigned i) { regions.update(i, e); });
                 stop = regions.done();
@@ -1034,7 +1175,7 @@ private:
             if (chain) return chainDone;
             for (U32 j = retired; j < generated; ++j)
                 if (!complete(j, gpu)) return false;
-            return generated == passes.size() || (!uniformStage(generated) && stop);
+            return generated == passes.size() || (!uniformStage(generated) && (stop || budgetSpent()));
         }
     };
 
@@ -1132,7 +1273,7 @@ private:
     // queuedSamples in samples; a chunk of the range at the frontier holds a
     // tile's pixels times its samples.
     U32 launchSize(const RenderOptions& o, const Grid& grid, double gpuRate, const CpuLane& cpuLane, U64 queuedSamples,
-                   std::chrono::steady_clock::time_point start) const {
+                   std::chrono::steady_clock::time_point start, double realtimeItems = 0) const {
         U64 remainingChunks = 0;
         for (U32 i = 0; i < grid.cellCount(); ++i) remainingChunks += grid.remaining(i);
         if (!remainingChunks) return 0;
@@ -1146,6 +1287,15 @@ private:
         // Never below two samples a launch thread: a launch with fewer leaves most of the GPU's threads idle, its time
         // the slowest path's, and its rate (which sizes the next ones) far under the GPU's.
         const U64 least = (U64(gpu_->launchThreads()) * 2 + itemsPerChunk - 1) / itemsPerChunk;
+        // Realtime: launches of about 15 ms at the GPU's rate (this frame's, else as earlier frames found it), so that an
+        // edit cancels the frame within a launch or two and pictures go out between them: the GPU less full, the
+        // answer sooner. Between 8K and 128K samples.
+        if (plan_->realtime) {
+            const double rate = gpuRate ? gpuRate : gpu_->rateHint();
+            const double samples = std::clamp(rate > 0 ? rate * 0.015 : 32768.0, 8192.0, 131072.0);
+            const U64 chunks = std::max<U64>(1, U64(samples / (realtimeItems > 0 ? realtimeItems : double(itemsPerChunk))));
+            return U32(std::min<U64>({chunks, cap, remainingChunks}));
+        }
         if (plan_->adaptive) {
             const U64 want = gpuRate ? std::max<U64>(U64(gpuRate * o.windowMs / 1000.0 / itemsPerChunk), least) : U64(o.firstChunks);
             return U32(std::min<U64>({want, cap, remainingChunks}));

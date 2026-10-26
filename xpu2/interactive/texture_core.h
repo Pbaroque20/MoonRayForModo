@@ -38,7 +38,7 @@ X2_HD inline float exp(float a){float x=clamp(a*1.4426950408889634f,-126,126);in
 X2_HD inline int address(int x,int n,bool wrap){if(wrap){int v=x%n;return v<0?v+n:v;}return x<0?0:x>=n?n-1:x;}
 // A resident page's texel.
 X2_HD inline Status texel(const V3* page,unsigned width,unsigned tx,unsigned x,unsigned y,V3& out){
- unsigned stride=width-tx*Tile;if(stride>Tile)stride=Tile;out=page[(y%Tile)*stride+x%Tile];return surface::finite(out)&&out.x>=0&&out.y>=0&&out.z>=0?Ready:Invalid;
+ unsigned stride=width-tx*Tile;if(stride>Tile)stride=Tile;out=page[(y%Tile)*stride+x%Tile];return surface::finite(out)?Ready:Invalid;  // negative values as MoonRay keeps them
 }
 // Partial shading: a texel's parent a level up (texel x, y of level - 1 halved), where that level's page is here.
 X2_HD inline Status parentTexel(const Image& image,unsigned level,unsigned x,unsigned y,V3& out){
@@ -96,7 +96,10 @@ template<class Sink>X2_HD inline Status lookup(const Binding& b,Footprint f,V3& 
  float s=b.sx*f.u+b.ox,t=1-(b.sy*f.v+b.oy),bias=1+b.bias;
  float dx=f.dudx*b.sx*bias,tx=-f.dvdx*b.sx*bias,dy=f.dudy*b.sy*bias,ty=-f.dvdy*b.sy*bias;
  if(b.swapCross){const float c=tx;tx=dy;dy=c;}
- if(!surface::finite(s)||!surface::finite(t)||fabsf(s)>1024||fabsf(t)>1024||!surface::finite(dx)||!surface::finite(tx)||!surface::finite(dy)||!surface::finite(ty))return Invalid;
+ if(!surface::finite(s)||!surface::finite(t)||!surface::finite(dx)||!surface::finite(tx)||!surface::finite(dy)||!surface::finite(ty))return Invalid;
+ // Far coordinates (a UV set tiled a thousand times and more): into the first repeat where the texture repeats, else
+ // near its edge, which its clamped addressing reads all the same (MoonRay's OIIO takes any); nearer ones as they are.
+ if(fabsf(s)>1024)s=b.wrap?s-floorf(s):clamp(s,-1,2);if(fabsf(t)>1024)t=b.wrap?t-floorf(t):clamp(t,-1,2);
  if(b.mode)return trilinear(b,s,t,dx,tx,dy,ty,out,sink);
  double A=tx*tx+ty*ty,B=-2.0*(dx*tx+dy*ty),C=dx*dx+dy*dy,root=hypot(A-C,B);
  float major=fminf(sqrtf(fmaxf(float((A+C+root)*.5),0.f)),1000.f),minor=fminf(sqrtf(fmaxf(float((A+C-root)*.5),0.f)),1000.f);

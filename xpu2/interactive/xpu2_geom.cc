@@ -26,6 +26,7 @@
 #include <moonray/rendering/geom/prim/GeomTLState.h>
 #include <moonray/rendering/shading/AttributeKey.h>
 #include <moonray/rendering/shading/AttributeTable.h>
+#include <moonray/rendering/shading/RootShader.h>
 #include <moonray/rendering/shading/Intersection.h>
 #include <moonray/rendering/shading/ShadingTLState.h>
 #include <moonray/rendering/shading/State.h>
@@ -33,8 +34,13 @@
 #include <moonray/rendering/shading/Xform.h>
 #include <scene_rdl2/scene/rdl2/rdl2.h>
 
+#include <tbb/blocked_range.h>
+#include <tbb/parallel_for.h>
+
 #include <algorithm>
+#include <limits>
 #include <array>
+#include <chrono>
 #include <set>
 #include <cstdio>
 #include <cstring>
@@ -75,7 +81,12 @@ using scene_rdl2::math::Vec3fa;
 // displace function (the scene's displacements are proxies, without MoonRay's code), one tessellation at a time.
 std::mutex displaceMutex;
 X2SubdDisplaceFn displaceFn = nullptr;
+X2SubdDisplaceAttrFn displaceWithFn = nullptr;
 void* displaceUser = nullptr;
+// The control mesh's primitive attributes this tessellation's displacements ask for (each its key and type).
+const X2SubdAttribute* displaceAttributes = nullptr;
+unsigned displaceAttributeCount = 0;
+std::vector<shading::AttributeKey> displaceKeys;
 void __cdecl displaceThroughCaller(const scene_rdl2::rdl2::Displacement* self, shading::TLState*, const shading::State& state,
                                    Vec3f* result) {
     const Vec3f P = state.getP(), N = state.getN(), dPds = state.getdPds(), dPdt = state.getdPdt();
@@ -87,8 +98,79 @@ void __cdecl displaceThroughCaller(const scene_rdl2::rdl2::Displacement* self, s
         std::fprintf(stderr, "xpu2_geom: displacing through the caller, P %g %g %g\n", P.x, P.y, P.z);
         std::fflush(stderr);
     });
-    if (displaceFn) displaceFn(displaceUser, self, &P.x, &N.x, &dPds.x, &dPdt.x, &st.x, footprint, out);
+    if (displaceWithFn) {
+        // The attributes as the displacement's state holds them (fillDisplacementAttributes, which its table asks for).
+        thread_local std::vector<float> values;
+        values.assign(size_t(displaceAttributeCount) * 3, 0.0f);
+        for (unsigned i = 0; i < displaceAttributeCount && i < displaceKeys.size(); ++i) {
+            float* v = values.data() + 3 * i;
+            const shading::AttributeKey key = displaceKeys[i];
+            const int type = displaceAttributes[i].type;
+            if (!state.isProvided(key)) {
+                v[0] = std::numeric_limits<float>::quiet_NaN();
+                continue;
+            }
+            if (type == 1) {
+                const Vec2f x = state.getAttribute(shading::TypedAttributeKey<Vec2f>(key));
+                v[0] = x.x;
+                v[1] = x.y;
+            } else if (type == 2) {
+                const Vec3f x = state.getAttribute(shading::TypedAttributeKey<Vec3f>(key));
+                v[0] = x.x;
+                v[1] = x.y;
+                v[2] = x.z;
+            } else if (type == 3) {
+                const scene_rdl2::math::Color x = state.getAttribute(shading::TypedAttributeKey<scene_rdl2::math::Color>(key));
+                v[0] = x.r;
+                v[1] = x.g;
+                v[2] = x.b;
+            } else if (type == 4) {
+                v[0] = float(state.getAttribute(shading::TypedAttributeKey<int>(key)));
+            } else {
+                v[0] = state.getAttribute(shading::TypedAttributeKey<float>(key));
+            }
+        }
+        displaceWithFn(displaceUser, self, &P.x, &N.x, &dPds.x, &dPdt.x, &st.x, footprint, displaceAttributes, displaceAttributeCount,
+                       values.data(), out);
+    } else if (displaceFn) displaceFn(displaceUser, self, &P.x, &N.x, &dPds.x, &dPdt.x, &st.x, footprint, out);
     *result = Vec3f(out[0], out[1], out[2]);
+}
+// A tessellation's displacement setup: the caller's function, and each Displacement its assignments have displacing
+// through it, its table asking for every primitive attribute of the control mesh (the proxies have no table, and
+// MoonRay fills a displacement's state with the attributes its table asks for).
+void displaceThrough(const X2SubdInput* in, const scene_rdl2::rdl2::Layer* layer) {
+    displaceFn = in->displace;
+    displaceWithFn = in->displaceWith;
+    displaceUser = in->displaceUser;
+    displaceAttributes = in->attributes;
+    displaceAttributeCount = in->attributes ? in->attributeCount : 0;
+    displaceKeys.clear();
+    shading::AttributeKeySet keys;
+    for (unsigned i = 0; i < displaceAttributeCount; ++i) {
+        const X2SubdAttribute& a = in->attributes[i];
+        shading::AttributeKey key = a.type == 1   ? shading::AttributeKey(shading::TypedAttributeKey<Vec2f>(a.name))
+                                    : a.type == 2 ? shading::AttributeKey(shading::TypedAttributeKey<Vec3f>(a.name))
+                                    : a.type == 3 ? shading::AttributeKey(shading::TypedAttributeKey<scene_rdl2::math::Color>(a.name))
+                                    : a.type == 4 ? shading::AttributeKey(shading::TypedAttributeKey<int>(a.name))
+                                                  : shading::AttributeKey(shading::TypedAttributeKey<float>(a.name));
+        displaceKeys.push_back(key);
+        keys.insert(key);
+    }
+    for (unsigned f = 0; f < in->faceCount; ++f) {
+        const int id = in->assignmentIds[f];
+        if (id < 0) continue;
+        if (const scene_rdl2::rdl2::Displacement* d = layer->lookupDisplacement(id)) {
+            auto* displacement = const_cast<scene_rdl2::rdl2::Displacement*>(d);
+            displacement->mDisplaceFunc = &displaceThroughCaller;
+            // shading::displace times each call in the shader's thread local states (RenderContext's create callback
+            // gives every shader them; the proxies here have none).
+            if (!displacement->getThreadLocalObjectState())
+                displacement->setThreadLocalObjectState(shading::ThreadLocalObjectState::alignedAlloc(int(mcrt_common::getMaxNumTLS())));
+            if (displaceWithFn)
+                displacement->getOrCreate<shading::RootShader>().setAttributeTable(
+                    std::unique_ptr<shading::AttributeTable>(new shading::AttributeTable(keys, shading::AttributeKeySet())));
+        }
+    }
 }
 
 // OpenSubdivMesh.cc's FaceVaryingAttributes, which no header declares: its members in their order (its tessellated
@@ -325,24 +407,11 @@ extern "C" __declspec(dllexport) int x2SubdTessellate(const X2SubdInput* in, X2S
         scene_rdl2::math::Mat4d world2render;
         for (int i = 0; i < 4; ++i)
             for (int j = 0; j < 4; ++j) world2render[i][j] = in->world2render[4 * i + j];
-        const bool displacing = in->enableDisplacement != 0 && in->displace != nullptr;
+        const bool displacing = in->enableDisplacement != 0 && (in->displace != nullptr || in->displaceWith != nullptr);
         std::unique_lock<std::mutex> displaceLock(displaceMutex, std::defer_lock);
         if (displacing) {
             displaceLock.lock();
-            displaceFn = in->displace;
-            displaceUser = in->displaceUser;
-            for (unsigned f = 0; f < in->faceCount; ++f) {
-                const int id = in->assignmentIds[f];
-                if (id < 0) continue;
-                if (const scene_rdl2::rdl2::Displacement* d = layer->lookupDisplacement(id)) {
-                    auto* displacement = const_cast<scene_rdl2::rdl2::Displacement*>(d);
-                    displacement->mDisplaceFunc = &displaceThroughCaller;
-                    // shading::displace times each call in the shader's thread local states (RenderContext's
-                    // create callback gives every shader them; the proxies here have none).
-                    if (!displacement->getThreadLocalObjectState())
-                        displacement->setThreadLocalObjectState(shading::ThreadLocalObjectState::alignedAlloc(int(mcrt_common::getMaxNumTLS())));
-                }
-            }
+            displaceThrough(in, layer);
         }
         if (displacing) {
             std::fprintf(stderr, "xpu2_geom: displacement on, shading state %p\n",
@@ -980,28 +1049,33 @@ extern "C" __declspec(dllexport) int x2PolyTessellate(const X2PolyInput* pin, X2
         scene_rdl2::math::Mat4d world2render;
         for (int i = 0; i < 4; ++i)
             for (int j = 0; j < 4; ++j) world2render[i][j] = in->world2render[4 * i + j];
-        const bool displacing = in->enableDisplacement != 0 && in->displace != nullptr;
+        const bool displacing = in->enableDisplacement != 0 && (in->displace != nullptr || in->displaceWith != nullptr);
         std::unique_lock<std::mutex> displaceLock(displaceMutex, std::defer_lock);
         if (displacing) {
             displaceLock.lock();
-            displaceFn = in->displace;
-            displaceUser = in->displaceUser;
-            for (unsigned f = 0; f < in->faceCount; ++f) {
-                const int id = in->assignmentIds[f];
-                if (id < 0) continue;
-                if (const scene_rdl2::rdl2::Displacement* dd = layer->lookupDisplacement(id)) {
-                    auto* displacement = const_cast<scene_rdl2::rdl2::Displacement*>(dd);
-                    displacement->mDisplaceFunc = &displaceThroughCaller;
-                    if (!displacement->getThreadLocalObjectState())
-                        displacement->setThreadLocalObjectState(shading::ThreadLocalObjectState::alignedAlloc(int(mcrt_common::getMaxNumTLS())));
-                }
-            }
+            displaceThrough(in, layer);
         }
         const geom::internal::TessellationParams params(layer, frustums, fishtums, world2render, displacing,
                                                         /* fastGeomUpdate */ false, /* isBaking */ false, nullptr);
         geom::internal::TessellationStats stats;
         stage = "tessellate";
+        const auto tessellating = std::chrono::steady_clock::now();
         impl->tessellate(params, stats);
+        const auto packing = std::chrono::steady_clock::now();
+        // The buffers below, element by element and each independent: over TBB's threads.
+        auto forEach = [](size_t n, const auto& f) {
+            tbb::parallel_for(tbb::blocked_range<size_t>(0, n, 4096), [&](const tbb::blocked_range<size_t>& r) {
+                for (size_t i = r.begin(); i < r.end(); ++i) f(i);
+            });
+        };
+        struct Timing {
+            std::chrono::steady_clock::time_point tessellating, packing;
+            ~Timing() {
+                const auto now = std::chrono::steady_clock::now();
+                std::fprintf(stderr, "xpu2_geom: polygon tessellation %.2f s (MoonRay's), its buffers %.2f s\n",
+                             std::chrono::duration<double>(packing - tessellating).count(), std::chrono::duration<double>(now - packing).count());
+            }
+        } timing{tessellating, packing};
 
         stage = "the tessellated buffers";
         const bool quadBase = impl->getBaseFaceType() == geom::internal::MeshIndexType::QUAD;
@@ -1030,17 +1104,17 @@ extern "C" __declspec(dllexport) int x2PolyTessellate(const X2PolyInput* pin, X2
         out->tessellated = tessellated ? 1 : 0;
         out->vertices = new float[3 * vertexCount * vsteps];
         for (unsigned t = 0; t < vsteps; ++t)
-            for (size_t i = 0; i < vertexCount; ++i) {
+            forEach(vertexCount, [&](size_t i) {
                 const Vec3fa p = impl->mVertices(i, t);
                 float* o = out->vertices + 3 * (size_t(t) * vertexCount + i);
                 o[0] = p.x, o[1] = p.y, o[2] = p.z;
-            }
+            });
         out->indices = new unsigned[4 * faces];
         out->controlFace = new int[faces];
-        for (size_t f = 0; f < faces; ++f) {
+        forEach(faces, [&](size_t f) {
             for (size_t c = 0; c < 4; ++c) out->indices[4 * f + c] = impl->mIndices[nt * f + (c < nt ? c : nt - 1)];
             out->controlFace[f] = baseToInput[size_t(baseOf[f])];
-        }
+        });
         const PolyCorners pc{*impl, quadBase, tessellated, nb, nt};
         const shading::Attributes* attributes = impl->getAttributes();
         // getQuadST and getTriangleST: surface_st, else st, else uv, else the face's default corners.
@@ -1052,7 +1126,7 @@ extern "C" __declspec(dllexport) int x2PolyTessellate(const X2PolyInput* pin, X2
             }
         static const float quadCorners[8] = {0, 0, 1, 0, 1, 1, 0, 1}, triangleCorners[8] = {0, 0, 1, 0, 1, 1, 1, 1};
         out->st = new float[8 * faces];
-        for (size_t f = 0; f < faces; ++f)
+        forEach(faces, [&](size_t f) {
             for (int c = 0; c < 4; ++c) {
                 float* o = out->st + 8 * f + 2 * size_t(c);
                 if (stKey) {
@@ -1063,6 +1137,7 @@ extern "C" __declspec(dllexport) int x2PolyTessellate(const X2PolyInput* pin, X2
                     o[0] = dflt[2 * c], o[1] = dflt[2 * c + 1];
                 }
             }
+        });
         // The shading normals: a vertex's (displacement's smooth normals, at up to two time steps), else a corner's.
         const auto& normalKey = shading::StandardAttributes::sNormal;
         if (attributes->isSupported(normalKey)) {
@@ -1071,21 +1146,22 @@ extern "C" __declspec(dllexport) int x2PolyTessellate(const X2PolyInput* pin, X2
                 out->normalSteps = unsigned(std::max<size_t>(1, std::min<size_t>(attributes->getTimeSampleCount(normalKey), 2)));
                 out->normals = new float[3 * vertexCount * out->normalSteps];
                 for (unsigned t = 0; t < out->normalSteps; ++t)
-                    for (size_t i = 0; i < vertexCount; ++i) {
+                    forEach(vertexCount, [&](size_t i) {
                         const Vec3f n = attributes->getVertex(normalKey, i, int(t));
                         float* o = out->normals + 3 * (size_t(t) * vertexCount + i);
                         o[0] = n.x, o[1] = n.y, o[2] = n.z;
-                    }
+                    });
             } else {
                 out->normalKind = 4;
                 out->normalSteps = 1;
                 out->normals = new float[12 * faces];
-                for (size_t f = 0; f < faces; ++f)
+                forEach(faces, [&](size_t f) {
                     for (int c = 0; c < 4; ++c) {
                         const Vec3f n = pc.at(normalKey, baseOf[f], int(f), c < int(nt) ? c : int(nt) - 1);
                         float* o = out->normals + 12 * f + 3 * size_t(c);
                         o[0] = n.x, o[1] = n.y, o[2] = n.z;
                     }
+                });
             }
         }
         stage = "the tessellated attributes";

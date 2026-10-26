@@ -8,6 +8,10 @@
 // Copyright 2023-2024 DreamWorks Animation LLC. See MOONRAY_LICENSE.txt.
 #pragma once
 #include <array>
+#include <atomic>
+#include <exception>
+#include <mutex>
+#include <thread>
 #include <memory>
 #include <cstdint>
 #include <unordered_map>
@@ -403,7 +407,7 @@ inline void attributeAt(const float* d, unsigned n, bool faceVarying, const Tri&
 inline std::shared_ptr<MeshData> displaceMesh(const MeshData& base, int edgeVertexCount, const Shader& shader, const float* pool,
                                               const Textures& textures, const float* worldToRender) {
     auto out = std::make_shared<MeshData>();
-    out->name = base.name;  // no signature: the next frame never reuses a displaced mesh
+    out->name = base.name;  // its signature and displacement key are the plan's to give (cpu_scene.h: kept across edits)
     for (int i = 0; i < 12; ++i) out->worldToObject[i] = base.worldToObject[i];
     const bool tessellated = edgeVertexCount > 0;
     const bool hasUv = base.uvRate != shade::RateNone && !base.uvs.empty();
@@ -470,7 +474,17 @@ inline std::shared_ptr<MeshData> displaceMesh(const MeshData& base, int edgeVert
             if (first[vid] < 0) first[vid] = int64_t(f) * 4 + v;
         }
     std::vector<V3> moved(p.size(), V3{0, 0, 0});
-    for (size_t vid = 0; vid < p.size(); ++vid) {
+    // Each vertex on its own (its first face's state): over the machine's threads, in blocks.
+    std::atomic<size_t> nextBlock{0};
+    std::mutex failedLock;
+    std::exception_ptr failed;
+    auto displaceVertices = [&] {
+        try {
+            for (;;) {
+                const size_t begin = nextBlock.fetch_add(4096);
+                if (begin >= p.size()) return;
+                const size_t end = std::min(p.size(), begin + 4096);
+                for (size_t vid = begin; vid < end; ++vid) {
         if (first[vid] < 0) continue;
         const size_t f = size_t(first[vid] / 4);
         const int vIndex = int(first[vid] % 4);
@@ -518,7 +532,21 @@ inline std::shared_ptr<MeshData> displaceMesh(const MeshData& base, int edgeVert
         s.primData = base.primData.data();
         s.primCount = unsigned(base.prims.size());
         moved[vid] = displacement(shader, pool, s, textures);
+                }
+            }
+        } catch (...) {
+            std::lock_guard<std::mutex> lock(failedLock);
+            if (!failed) failed = std::current_exception();
+        }
+    };
+    {
+        const unsigned helpers = p.size() < 8192 ? 0u : std::min(31u, std::max(1u, std::thread::hardware_concurrency()) - 1u);
+        std::vector<std::thread> pool;
+        for (unsigned i = 0; i < helpers; ++i) pool.emplace_back(displaceVertices);
+        displaceVertices();
+        for (auto& thread : pool) thread.join();
     }
+    if (failed) std::rethrow_exception(failed);
     for (size_t vid = 0; vid < p.size(); ++vid) {
         p[vid] = p[vid] + moved[vid];
         need(surface::finite(p[vid]) && std::abs(p[vid].x) <= 10000 && std::abs(p[vid].y) <= 10000 && std::abs(p[vid].z) <= 10000,

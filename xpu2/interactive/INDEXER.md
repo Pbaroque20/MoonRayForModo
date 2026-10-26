@@ -198,6 +198,158 @@ error 0.0033 to 0.0116, mean ratio 1.0007). The light is settled at the first su
 shadow ray would have stopped (presence shadows off: a shadow ray sees no presence), and the ray going on through it
 holds nothing (session 99).
 
+## 11. Sampling generations: one sampler for uniform and adaptive
+
+Asked 2026-10-25: in uniform renders the plain background got as many samples as the dragon, where they could have
+gone; and one generational sampler in place of uniform and adaptive. Every XPU2 frame now runs by the cellular
+generations (async_adaptive.h Cellular); the scene's sampling mode picks only when it ends.
+
+- Uniform (cpu::Plan::sampleBudget, cpu_scene.h): every pixel is seeded with an eighth of its samples (16 at least);
+  the seed's steady rate (its passes after the first, which go out together) prices uniform's samples as uniform's
+  time. Each generation after, the target is the error every tile would come down to if the samples that time left
+  buys, at the last generation's rate, were spent (a tile's error falls as the square root of its samples); tiles above
+  it sample the next pass, the furthest above first if the pass would buy more than the time left. The frame ends when
+  the time is up, at most twice uniform's samples and 16 times its samples a pixel. spp stays uniform's (ray
+  differentials, progress). Not with a pixel sample map, a bake camera, or at 16 samples a pixel or fewer.
+- Adaptive: as before, its target error, its min samples the seed and its max the most.
+- Both, with a GPU: the CPU lane takes chunks too (open cells, 4 samples of a tile: milliseconds, so no generation waits
+  on it), and its samples join the GPU's errors on the host (Adaptive::merged: the two lanes' errors pooled by their
+  counts, sqrt(nG^2 eG^2 + nC^2 eC^2) / n).
+- Test switches: XPU2_SESSION_UNIFORM_BUDGET=0 (exact uniform, for the rounds against MoonRay's uniform renders),
+  XPU2_SESSION_ADAPTIVE_CPU=0 (the GPU takes every adaptive chunk), XPU2_SESSION_ADAPTIVE=trees (MoonRay's trees).
+- The kit's render settings (Sampling, after Target Error; the private kit's build_xpu2_kit.py generations()): XPU2
+  Sampling Generations (on), XPU2 Samples (a pixel on average; 0: Pixel Samples'), XPU2 Spend (as long as uniform would
+  take, or exactly the samples), XPU2 Noise Target (target_adaptive_error's units; 0: none, or an adaptive scene's
+  own), XPU2 First Generation and XPU2 Most Samples (0: an eighth, 16 at least, and 16 times the average; adaptive:
+  its minimum and maximum), XPU2 CPU Workers. A preview's scene carries them as UserData("/modo/xpu2/generations")
+  {1, on, samples, spend exactly, noise, first, most, CPU} (MoonRay leaves it alone; never in a final render's), which
+  prepare reads (cpu_scene.h); an adaptive scene given samples has a budget besides its target, ending at whichever
+  comes first. The session's log says what a frame got ("XPU2: generations: first ..., most ...").
+
+His dragon scene at 640x360, display error (8-bit RMS) against 1,024 samples a pixel:
+
+| | time | picture | noisiest quarter | calmest half |
+|---|---|---|---|---|
+| uniform, 64 a pixel | 17.5 s | 3.96 | 7.20 | 0.20 |
+| generations, 64 | 18.5 s | 3.45 | 6.20 | 0.46 |
+| uniform, 256 | 68.6 s | 1.80 | 3.28 | 0.07 |
+| generations, 256 | 72.5 s | 1.47 | 2.60 | 0.29 |
+
+At equal samples (the first build) generations took 67% longer: the dragon's samples (subsurface, rough transmission)
+cost several times the walls'; uniform's distribution run through generation passes costs only 5% more than uniform
+(the waits between generations), hence the time budget. The CPU lane rendered 5.4% of the samples (uniform: 2.4%).
+Against MoonRay's uniform references (gl-base, sw-textures, cut-front, pt-static) every block error is within the noise
+floor and the mean ratios are as before. A scene whose samples get cheaper as it goes (sw-textures, its textures
+loading) ends earlier than uniform would (11.2 s for 14.9 s).
+
+## 12. Scene preparation
+
+His dragon scene (a displaced PolyMesh, 8.4 million vertices after MoonRay's tessellation) took 14.3 s from the scene's
+arrival to "scene ready", and every edit (a camera moved) as long again. The session's log now says where it goes
+("XPU2: prepared: ...", "within the plan", "tessellation: ...", "GPU scene prepared"):
+
+- 3.4 s were need()'s messages, made for every one of 33 million tessellated indices (o.getName()+...) though used only
+  on failure: X2_NEED makes them on failure alone, in the twenty loops over a mesh's elements.
+- Reading the tessellation (3.8 s with the checks) and the polygon mesh (1.2 s) one element after another: in parallel
+  (parallelRange; the mesh in two passes, which halves of each face make a triangle, then each face's triangles where
+  the ones before it end, the same order). xpu2_geom.dll's buffers after MoonRay's tessellation over TBB (0.6 s to
+  0.13 s). The rendered picture is the same to the bit (session 105 against 115).
+- MoonRay's own tessellation is 5.2 s of what is left (its displacement about half, over 12 threads at about two busy).
+- A displaced mesh MoonRay tessellates was never kept across edits (!objectDisplaced): now kept while the mesh, each
+  part's displacement and its maps through and through (deepSignature), which displacement is whose and polyvertices
+  stay the same; the CPU's Embree scenes are taken over where no mesh changed (CpuScene::sameGeometry).
+
+First preparation 14.3 s to 9.6 s; a camera moved 9.7 s to 0.21 s; a displacement edited (its mesh alone tessellated,
+the CPU scene built again) 1.7 s. A frame after a camera move on kept geometry against a fresh one: block error 0.0006,
+mean ratio 1.0000 (MoonRay tessellated in the first camera's render space).
+
+## 13. Realtime
+
+The private kit's preview window has an RT switch beside the engine (MoonLightIPR, or MoonRay where XPU2 renders the
+preview); Render renders once. With RT on the preview follows the scene at the realtime preview size, and the
+generations' UserData carries realtime (its ninth value, cpu_scene.h):
+
+- A camera moved alone (Scene::onlyCameraDirty) keeps the plan, the CPU scene and the GPU's scene: cpu::updateCamera
+  makes the camera and render space again and the GPU gets its configuration (GpuLane::updateCamera): 0.1 ms, where
+  preparing took 0.21 s. A scene whose view depends on the camera (adaptive subdivision, volumes, filters, a pixel
+  sample map, motion) prepares as before.
+- A realtime frame is the GPU's alone; its first two passes are sparse (a quarter of the pixels, then the rest, one
+  sample each), each before the next, with launches sized to about 15 ms of the GPU's rate across frames (rateHint), and
+  its pictures every 33 ms.
+- Pictures with Denoised Beauty chosen are denoised in the session (RealtimeDenoiser, on a thread of its own): OptiX's
+  denoiser (GpuLane::Denoiser, its HDR model on a stream of its own at the highest priority) with the kit's guides, the
+  albedo denoised on its own first (as the kit's "Denoiser cleans its guides first"; this dragon's albedo differs from
+  sample to sample) and the normals in camera space. A picture some of whose pixels have no sample yet is denoised at
+  half its size and shown at its own: filled from their neighbours, those pixels read to OptiX as detail, and it left
+  such a picture all but as it was (a mean change of 0.0001 against 0.03 once every pixel had a sample). The frame's
+  last picture is denoised too, and the kit keeps it as the frame's until its own denoiser makes one from the files.
+  Open Image Denoise on the CPU was tried first: 0.24 s for a 640 by 360 picture at its fast quality on six cores, and
+  as long again for each guide it cleans.
+
+His dragon at 640 by 360: a camera move's first picture 125-160 ms after it arrives, raw; denoised 195-300 ms, OptiX
+taking 65-70 ms while the path tracer has the GPU (5.5 ms on its own), the half-size pictures included. Diagnostics:
+XPU2_SESSION_RT_GUIDES (clean, raw, normal, none), XPU2_SESSION_RT_SHOW (color, albedo, normal: the denoiser's input
+shown), XPU2_SESSION_RT_DEBUG (each picture's intensity and change), XPU2_SESSION_RT_DENOISE=0, XPU2_SESSION_RT_PRIORITY=0.
+
+## 14. His Modo scenes (9 Spheres, Dose, Interior) and the Source Overrides
+
+Exported headless with the installed private kit (modo_cl, test-results/xpu2-cl), each was refused before drawing:
+
+- A displacement on fur (9 Spheres): MoonRay displaces meshes alone (PolyMesh, OpenSubdivMesh); on curves and points it
+  is now left out as there, not refused.
+- A signed texture (−1 to 0.74, a displacement map): texels below zero are kept (host_texture.h, texture_core.h's
+  texel), as MoonRay's sampler keeps them; non-finite ones are still refused.
+- Named UV sets (Dose, Interior): ModoTextureMap's modes 12 and 13 read uv_name's primitive attribute and
+  modo_primary_uv, moved by st's offset along the set's st derivatives (primPartials), or uv_affine where the geometry
+  gives none (a subdivision surface, State::subdivision), as ModoTextureMap.cc does; a hit without them gives the
+  neutral result. The keys follow the map's attributes (map_admission.h).
+- Far coordinates (Interior: u −1068, a set tiled a thousand times): beyond ±1024 repeats they are wrapped into the
+  first (clamped near the edge for a clamped texture) rather than refused; nearer ones as before.
+- Interior's displaced triangle meshes (XPU2's own displacement, mesh_displacement.h): each vertex over the machine's
+  threads (12.3 s to 3.7 s), and kept across edits as MoonRay-tessellated ones are (displacementKey "triangles:N").
+
+Against MoonRay's vector renders at reduced size, 64 samples a pixel, uniform: Dose (400 x 500) mean ratio 1.0006,
+9.1 s against 46 s; Interior (512 x 340) 1.0003, 51 s against 193 s; 9 Spheres (640 x 480) 0.9993, 183 s against 177 s
+with ball8's displacement off in both. MoonRay renders 9 Spheres black: ball8's displacement (a subdivision sphere
+displaced through a named UV set's AttributeMap) engulfs the camera; XPU2 draws the sphere in place. 9 Spheres is slow
+in XPU2 because ball6's absorption volume is textured (FamilyVolumesMapped, not in GpuFamilies): 3.6 million of its
+19.7 million samples go to the CPU.
+
+Source Overrides: XPU2 follows the toon terminator and albedo, Cryptomatte volumes, fog alpha, opaque alpha,
+transmission roughness and USD specular; counts each Cryptomatte sample once by construction (no shared flag to race);
+the scene-level ones (display filter inputs, toon lines apart, light motion) arrive in the scene. Low-latency rendering
+(async::lowLatency, from the process's priority class the kit lowers, or XPU2_SESSION_LOW_LATENCY): no thread raised
+above the process's priority (the GPU feeder and the trees' pool give way to Modo) and a CPU thread left free besides
+the feeder's. Realtime's guide cleaning follows "Denoiser cleans its guides first" (MOONRAY_MODO_DENOISE_CLEAN_GUIDES).
+Diagnostic: XPU2_SESSION_DEBUG_FAILURES names the CPU lane's first failed shadings and texture lookups.
+
+## 15. Textured volumes on the GPU, the texture cache's budget, displacements' attributes
+
+- **Textured volumes.** A mapped BaseVolume whose maps give its attenuation alone (9 Spheres' absorbing ball6) has its
+  extinction baked into a dense grid; the GPU now holds those grids (LaunchParams::volumeGrids, the NanoVDB ones left
+  null) and samples them as the host does (the nearest voxel, volume_grid.h), and volume::gpuRenders is the one rule
+  for what the GPU renders and what it defers (VDB, mapped colour, emission or anisotropy still go to the CPU lane).
+  FamilyVolumesMapped joins GpuFamilies. His live 9 Spheres preview (1280 x 960, 16 samples): unfinished after 400 s
+  with 5.2 million samples deferred and the GPU idle from 90 s on, now 104 s with none deferred.
+- **The fine-detail cache's budget** (GpuLane::fineBudget): what the scene's level-0 tiles need, up to the card's free
+  memory less a fifth of the card (1.5 GB at least) for the frame and Modo's viewport, never below 256 MB, measured at
+  each preparation (XPU2_SESSION_FINE_BUDGET_MB fixes it); was 512 MB. The allocation cap is the card's own memory
+  where it exceeds 20 GB.
+- **Displacements read the mesh's primitive attributes.** MoonRay fills a displacement's state with what its
+  displacement's attribute table asks for; the proxies XPU2 displaces through had none, so a named UV set read in a
+  displacement read nothing and 9 Spheres' ball8 moved evenly. xpu2_geom.dll now gives each displacement a table of
+  the control mesh's attributes and hands their values to displaceWith (X2SubdDisplaceAttrFn), whose state holds them
+  as the hit's, without st derivatives as MoonRay's displacement state (subdivision and PolyMesh both).
+- **Test with the kit's Source Overrides.** Run without its environment, an image without alpha reads alpha 0 (not
+  MOONRAY_MODO_OPAQUE_ALPHA's one): ball8's displacement divides by that alpha and engulfs the camera, and MoonRay and
+  XPU2 both render 9 Spheres black. compare.py takes --env for both renderers. With the kit's overrides, at 640 x 480
+  and 64 samples a pixel: 9 Spheres 64 s against MoonRay's 176 s (mean ratio 0.9997), Dose 9.5 s against 43 s (1.0006).
+- **Pinned host memory follows the machine.** His Dose preview (1600 x 2000, 26 outputs, adaptive) fell back with
+  "GPU staging/residency budget": the frame's pinned readbacks outgrew a fixed 2 GB, and MoonRay XPU, rendering in
+  XPU2's place, left the can out (MoonRay XPU's own doing). The pinned cap is now a quarter of the machine's memory,
+  between 2 and 16 GB (GlobalMemoryStatusEx), and the refusal names the memory and its use. Reproduced from his live
+  preview scene (its text, with a binary file of identical fingerprints written headless), it renders whole.
+
 ## Order
 
 1. Classifier from the admission rules, with the GPU capability table; decisions shown in the session's log.

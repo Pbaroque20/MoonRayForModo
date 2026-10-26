@@ -103,6 +103,8 @@ struct LaunchParams {
     const int* lightTreeRoots;
     const volume::Shader* volumes;  // the volumes bound to meshes (volume_core.h), and each mesh's (-1: none)
     const int* meshVolumes;
+    const volume::Grid* volumeGrids;  // the volumes' grids, the dense ones on the device (volume_grid.h; NanoVDB ones null)
+    U32 volumeGridCount, volumeGridPad;
     const float* walkSequences;  // MoonRay's integrator sequences for the random walk (cpu_scene.h), or null
     // The path tracer's materials: each mesh's material record and shading attributes, and the
     // records' parameter pool (shade_material.h).

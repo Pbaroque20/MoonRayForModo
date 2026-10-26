@@ -276,6 +276,30 @@ struct CpuScene {
         if (volumes) rtcCommitScene(volumes);
         device->check();
     }
+    // The previous frame's Embree scenes taken over, where every mesh is the one they hold (sameGeometry): a camera, a
+    // light or a material edited, they are not built again. The previous scene is spent (the session's renderer, which
+    // held it, is gone): its curve sets move with the scenes, whose user geometries point into them.
+    CpuScene(cpu::PlanView p, CpuScene&& previous)
+        : device(std::move(previous.device)), scene(previous.scene), volumes(previous.volumes), plan(std::move(p)),
+          curveSets(std::move(previous.curveSets)) {
+        previous.scene = previous.volumes = nullptr;
+        if (plan && plan->aovs) {
+            aovTables = plan->aovs->tables();
+            aovTables.primKeys = plan->aovPrimKeys.data();
+            aovTables.primCount = unsigned(plan->aovPrimKeys.size());
+        }
+    }
+    // Whether two plans' Embree scenes are the same: each mesh the same prepared data (a mesh kept across an edit), with
+    // the same visibility, volume, sidedness and material, and shadow linking (the scene's flags) as it was.
+    static bool sameGeometry(const cpu::Plan& a, const cpu::Plan& b) {
+        if (a.meshes.size() != b.meshes.size() || a.shadowLinks.empty() != b.shadowLinks.empty()) return false;
+        for (size_t i = 0; i < a.meshes.size(); ++i) {
+            const auto &x = a.meshes[i], &y = b.meshes[i];
+            if (x.data != y.data || x.visibility != y.visibility || x.volume != y.volume || x.singleSided != y.singleSided || x.material != y.material)
+                return false;
+        }
+        return true;
+    }
     ~CpuScene() {
         if (scene) rtcReleaseScene(scene);
         if (volumes) rtcReleaseScene(volumes);
@@ -583,8 +607,19 @@ struct CpuBackend {
                                 st.pixelSamples ? st.pixelSamples : plan.spp, st);
         // Host RAM holds every level of every texture, so the CPU never misses.
         const HostTextures textures{plan.textureImages.data(), unsigned(plan.textureImages.size())};
-        return shade::shadeMaterial(record, plan.materialPool.data(), st, textures, bsdf, presence, scratch().dwaSlots,
-                                    &scratch().glitter);
+        const unsigned shaded = shade::shadeMaterial(record, plan.materialPool.data(), st, textures, bsdf, presence, scratch().dwaSlots,
+                                                     &scratch().glitter);
+        if (shaded != tex::Ready && debugFailures()) {
+            static std::atomic<int> told{0};
+            if (told.fetch_add(1) < 6)
+                std::printf("XPU2 debug: shading %s (material %u) gave %u at st %g %g\n", data.name.c_str(), mesh.material, shaded, st.s, st.t);
+        }
+        return shaded;
+    }
+    // A diagnostic (XPU2_SESSION_DEBUG_FAILURES): the first failed shadings and texture lookups on the CPU, said.
+    static bool debugFailures() {
+        static const bool on = std::getenv("XPU2_SESSION_DEBUG_FAILURES") != nullptr;
+        return on;
     }
     // The scene's textures for the maps (shade_mapnodes.h).
     struct HostTextures {
@@ -594,7 +629,14 @@ struct CpuBackend {
             if (texture >= count || !images[texture]) return tex::Invalid;
             b.image = images[texture];
             b.swapCross = b.mode != 3 ? 1u : 0u;  // as XPU's vector shading looks up (displacement: in order)
-            return tex::lookup(b, f, out);
+            const unsigned looked = tex::lookup(b, f, out);
+            if (looked != tex::Ready && debugFailures()) {
+                static std::atomic<int> told{0};
+                if (told.fetch_add(1) < 6)
+                    std::printf("XPU2 debug: texture %u lookup gave %u at u %g v %g (dudx %g dvdx %g dudy %g dvdy %g), mode %u\n", texture,
+                                looked, f.u, f.v, f.dudx, f.dvdx, f.dudy, f.dvdy, b.mode);
+            }
+            return looked;
         }
     };
     bool visible(surface::V3 o, surface::V3 d) const { return visible(o, d, INFINITY); }

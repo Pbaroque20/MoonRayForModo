@@ -51,7 +51,8 @@ enum Family : uint64_t {
 constexpr uint64_t GpuFamilies = FamilyStructure | FamilyCamera | FamilyTriangles | FamilySubdivision | FamilyDisplacement | FamilyCurves |
                                  FamilyInstances | FamilyDwaBase | FamilyLayers | FamilyHair | FamilyGlitter | FamilyToon |
                                  FamilySubsurface | FamilyUsd | FamilySwitch | FamilyMapsProcedural | FamilyMapsImage | FamilyMapsNormal |
-                                 FamilyMapsProjection | FamilyLights | FamilyLightTextures | FamilyMeshLights | FamilyVolumes;
+                                 FamilyMapsProjection | FamilyLights | FamilyLightTextures | FamilyMeshLights | FamilyVolumes |
+                                 FamilyVolumesMapped;  // their attenuation baked; mapped colour or emission still deferred
 
 struct Class {
     Support support = Support::Fallback;

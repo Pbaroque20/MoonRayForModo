@@ -109,6 +109,19 @@ struct Step {
     float surfaceThreshold;    // its surface opacity threshold (1 with no volume)
 };
 X2_HD inline bool homogeneous(const Shader& s) { return s.kind == KindBase; }
+// Whether the GPU's programs render a volume (async_gpu.h, async_gpu_device.h): a homogeneous BaseVolume, or a mapped
+// one whose maps give its attenuation alone (baked into a dense grid the GPU holds, or taken at the render origin
+// unbaked), neither emitting. VDB volumes, and mapped ones whose maps give their colour, emission or anisotropy (the
+// host's map programs at each point), are the CPU lane's: their samples are deferred to it.
+X2_HD inline bool gpuRenders(const Shader& s, const Grids& grids) {
+    if (s.emission.x != 0.0f || s.emission.y != 0.0f || s.emission.z != 0.0f) return false;
+    if (s.kind == KindBase) return true;
+    if (s.kind != KindBaseMapped) return false;
+    const U32 attenuation = (1u << MapAttenuationColor) | (1u << MapAttenuationIntensity) | (1u << MapAttenuationFactor);
+    if (s.mapped & ~attenuation) return false;
+    if (s.emissionIntensity != 0.0f && (s.emissionColor.x != 0.0f || s.emissionColor.y != 0.0f || s.emissionColor.z != 0.0f)) return false;
+    return s.densityGrid == NoGrid || (s.densityGrid < grids.count && grids.grids[s.densityGrid].dense);
+}
 // A point in the volume's grid world (its geometry's own space).
 X2_HD inline V3 gridPoint(const Shader& s, V3 p) {
     const float* m = s.worldToGrid;

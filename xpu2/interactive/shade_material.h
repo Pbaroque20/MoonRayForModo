@@ -171,6 +171,7 @@ X2_CALL bool hitState(const MeshAttributes& m, U32 prim, U32 ia, U32 ib, U32 ic,
         }
     }
     st.motion = V3{0, 0, 0};
+    st.subdivision = m.dpds && m.dpdt;
     if (m.dpds && m.dpdt) {
         // OpenSubdivMesh::postIntersect: the limit surface's derivatives at the triangle's vertices.
         st.dPds = w * m.dpds[ia] + u * m.dpds[ib] + v * m.dpds[ic];

@@ -3,7 +3,8 @@
 // OpenVDB's GridSampler over PointSampler (the nearest voxel, rounded half away from zero), BoxSampler (trilinear,
 // its lerps in OpenVDB's order and precision) and QuadraticSampler (a parabola through the voxels about the floor
 // voxel, along z, then y, then x), at a point in the grid's own world space through its linear transform. The host
-// lane alone reads grids (the CUDA lane leaves VDB volumes to the CPU, async_gpu.h). Derived from MoonRay and OpenVDB,
+// lane alone reads NanoVDB grids (the CUDA lane leaves VDB volumes to the CPU, async_gpu.h); both read the dense grids
+// a mapped BaseVolume's extinction is baked into. Derived from MoonRay and OpenVDB,
 // Apache-2.0 (MOONRAY_LICENSE.txt; OpenVDB Copyright Contributors to the OpenVDB Project).
 #pragma once
 #include "surface_core.h"
@@ -131,7 +132,19 @@ inline V3 sampleVec3(const Grids& gs, U32 grid, V3 p, U32 mode) {
 }
 #else
 X2_HD inline float sampleFloat(const Grids&, U32, V3, U32) { return 0.0f; }
-X2_HD inline V3 sampleVec3(const Grids&, U32, V3, U32) { return V3{0, 0, 0}; }
+// The GPU reads the dense grids alone (a mapped BaseVolume's baked extinction): the nearest voxel, as the host does
+// (OpenVDB's worldToIndex in doubles, rounded half away from zero); zero outside, or for a NanoVDB grid.
+X2_HD inline V3 sampleVec3(const Grids& gs, U32 grid, V3 p, U32) {
+    if (grid >= gs.count || !gs.grids[grid].dense) return V3{0, 0, 0};
+    const Grid& g = gs.grids[grid];
+    const double* m = g.worldToIndex;
+    double ip[3];
+    for (int c = 0; c < 3; ++c) ip[c] = double(p.x) * m[0 * 4 + c] + double(p.y) * m[1 * 4 + c] + double(p.z) * m[2 * 4 + c] + m[3 * 4 + c];
+    const int i = int(round(ip[0])) - g.denseMin[0], j = int(round(ip[1])) - g.denseMin[1], k = int(round(ip[2])) - g.denseMin[2];
+    if (i < 0 || j < 0 || k < 0 || i >= g.dims[0] || j >= g.dims[1] || k >= g.dims[2]) return V3{0, 0, 0};
+    const float* v = g.dense + 3 * ((size_t(k) * size_t(g.dims[1]) + size_t(j)) * size_t(g.dims[0]) + size_t(i));
+    return V3{v[0], v[1], v[2]};
+}
 #endif
 
 }  // namespace xpu2::interactive::volume
