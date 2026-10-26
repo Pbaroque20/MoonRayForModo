@@ -9,6 +9,8 @@ _Cellular Automata Tiling_
 claims its own work, neither waits for the other, and any sample can be rendered on either device with the same
 result.
 
+XPU2 is designed by Raphael Tobar, with AI-assistance.
+
 The mantra for XPU2 is: "Use your silicon!"
 
 ![XPU2 architecture](/xpu2/manual/xpu2_architecture.svg)
