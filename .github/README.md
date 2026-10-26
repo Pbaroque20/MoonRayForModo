@@ -24,6 +24,8 @@ result.
 - **Audited results.** Each device keeps its own film. When a frame ends the films merge and every pixel's sample
   count is checked.
 
+  The mantra for XPU2 is: "Use your Silicon!"
+
 ## Reference renderer: MoonRay
 
 XPU2 currently implements [MoonRay](https://openmoonray.org/). MoonRay's path tracer and shader library (lights,
