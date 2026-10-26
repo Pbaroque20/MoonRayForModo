@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 1336" width="1280" height="1336" font-family="Segoe UI, system-ui, -apple-system, Helvetica, Arial, sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 1296" width="1280" height="1296" font-family="Segoe UI, system-ui, -apple-system, Helvetica, Arial, sans-serif">
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
       <path d="M0,0 L10,5 L0,10 z" fill="#444"/>
@@ -17,181 +17,179 @@
       .h { font-size: 13px; font-weight: 700; fill: #1d1d1f; }
     </style>
   </defs>
-  <rect width="1280" height="1336" fill="#ffffff"/>
+  <rect width="1280" height="1296" fill="#ffffff"/>
 
-  <text x="40" y="32" style="font-size:20px;font-weight:700;fill:#1d1d1f">XPU2: an asynchronous CPU + GPU path tracer for MoonRay previews</text>
-  <text x="40" y="52" class="m">Private test build, as of session 99 (25 October 2026). One work grid; each device takes its own work; what the GPU cannot render goes to the CPU sample by sample.</text>
+  <text x="40" y="32" style="font-size:20px;font-weight:700;fill:#1d1d1f">XPU2: an asynchronous CPU + GPU path tracer</text>
+  <text x="40" y="52" class="m">Core architecture, 25 October 2026. One work grid; each device takes its own work; any sample can be rendered by either device, from its identity.</text>
 
-  <!-- Row 1: Modo, the session, the fallback -->
-  <rect x="40" y="70" width="380" height="118" rx="8" fill="#eef2f7" stroke="#6b7a90" stroke-width="1.5"/>
-  <text x="56" y="92" class="t">Modo + private MoonRay kit</text>
-  <text x="56" y="111" class="s">Preferences &gt; XPU2 picks the GPU renderer</text>
-  <text x="56" y="127" class="s">preview session, persistent protocol v1</text>
-  <text x="56" y="143" class="s">Denoiser, Smart Render, Safe Denoising</text>
-  <text x="56" y="159" class="s">outlines: CPU workers blue, GPU workers violet</text>
-  <text x="56" y="175" class="s">final renders, LS, MoonLightIPR: MoonRay as before</text>
+  <!-- The host and the reference renderer, around the core -->
+  <rect x="40" y="70" width="800" height="66" rx="8" fill="#eef2f7" stroke="#6b7a90" stroke-width="1.5" stroke-dasharray="6 4"/>
+  <text x="56" y="92" class="t">Host application · showcase: MoonRay for Modo (xpu2_session.cc)</text>
+  <text x="56" y="111" class="s">sends the scene and each edit; takes pictures, outputs and progress back; can stop, drain or hold a frame</text>
+  <text x="56" y="127" class="m">XPU2 talks to its host through one session program; nothing else in the core knows the host</text>
 
-  <rect x="460" y="70" width="380" height="118" rx="8" fill="#e8f0fe" stroke="#4a6fa5" stroke-width="1.5"/>
-  <text x="476" y="92" class="t">moonray_xpu2.exe (preview session)</text>
-  <text x="476" y="111" class="s">RDL scene and deltas (RDLB mesh arrays)</text>
-  <text x="476" y="127" class="s">frames, drain, hold, cancel; pictures via shared memory</text>
-  <text x="476" y="143" class="s">checkpoints: .safe.exr saves, "Wrote:" lines</text>
-  <text x="476" y="159" class="s">a frame's timeline; GPU profile by stage</text>
-  <text x="476" y="175" class="s">tile and worker outlines (@@MODO_GPU_WORKERS)</text>
+  <rect x="880" y="70" width="360" height="66" rx="8" fill="#f6f6f6" stroke="#999" stroke-width="1.5" stroke-dasharray="6 4"/>
+  <text x="896" y="92" class="t">Reference renderer · MoonRay XPU</text>
+  <text x="896" y="111" class="s">the image XPU2 converges to</text>
+  <text x="896" y="127" class="s">renders, whole, any scene XPU2 refuses</text>
 
-  <rect x="880" y="70" width="360" height="118" rx="8" fill="#f6f6f6" stroke="#999" stroke-width="1.5" stroke-dasharray="6 4"/>
-  <text x="896" y="92" class="t">MoonRay XPU (fallback)</text>
-  <text x="896" y="111" class="s">a scene with an entity XPU2 does not render</text>
-  <text x="896" y="127" class="s">(deep output, a camera medium, ...)</text>
-  <text x="896" y="143" class="s">@@MODO_XPU2 FALLBACK &lt;reason&gt;</text>
-  <text x="896" y="159" class="s">the Render Log says why</text>
-  <text x="896" y="175" class="m">XPU2 takes the scene back once it can</text>
+  <path d="M330,136 L330,172" stroke="#444" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+  <text x="338" y="159" class="l">scene and edits</text>
+  <path d="M1060,140 L1060,172" stroke="#888" stroke-width="1.5" stroke-dasharray="5 4" fill="none" marker-start="url(#arrow)"/>
+  <text x="1068" y="160" class="m">refused: the whole scene</text>
 
-  <line x1="420" y1="129" x2="456" y2="129" stroke="#444" stroke-width="1.5" marker-end="url(#arrow)"/>
-  <line x1="840" y1="129" x2="876" y2="129" stroke="#888" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#arrow)"/>
+  <!-- Scene layer -->
+  <rect x="40" y="176" width="580" height="140" rx="8" fill="#f3ecfb" stroke="#7b52ab" stroke-width="1.5"/>
+  <text x="56" y="198" class="t">Scene indexer (entity_classes.h, routing_index.h)</text>
+  <text x="56" y="218" class="s">every scene object and attribute, kept incrementally</text>
+  <text x="56" y="235" class="s">classifier: each object is Both, CPU only or Fallback,</text>
+  <text x="70" y="251" class="s">with the GPU feature families it needs</text>
+  <text x="56" y="268" class="s">router: one decision per object, redone only for what</text>
+  <text x="70" y="284" class="s">an edit touched</text>
+  <text x="56" y="301" class="s">scene mode: both devices · CPU only · fallback</text>
 
-  <!-- Row 2: scene indexer, plan builder -->
-  <rect x="40" y="226" width="580" height="150" rx="8" fill="#f3ecfb" stroke="#7b52ab" stroke-width="1.5"/>
-  <text x="56" y="248" class="t">Scene indexer</text>
-  <text x="56" y="268" class="s">canonical session: every RDL object and attribute, kept incrementally</text>
-  <text x="56" y="286" class="s">classifier (entity_classes.h): each object is Both, CPU only or Fallback,</text>
-  <text x="70" y="302" class="s">with the GPU feature families it needs (DwaBase, layers, hair, glitter,</text>
-  <text x="70" y="318" class="s">toon, subsurface, maps, curves, points, motion, volumes, VDB ...)</text>
-  <text x="56" y="336" class="s">router: a decision per entity, redone only for what an edit touched</text>
-  <text x="70" y="352" class="s">→ the scene's mode: fallback · CPU only (light filters, shadow links,</text>
-  <text x="70" y="368" class="s">emissive volumes) · both devices</text>
+  <rect x="660" y="176" width="580" height="140" rx="8" fill="#eaf6ef" stroke="#3c8d5c" stroke-width="1.5"/>
+  <text x="676" y="198" class="t">Plan (cpu_scene.h)</text>
+  <text x="676" y="218" class="s">flat records both devices read: geometry, materials and</text>
+  <text x="690" y="234" class="s">their map programs, lights and light tree, volumes,</text>
+  <text x="690" y="250" class="s">textures as mip pyramids, the camera, the outputs</text>
+  <text x="676" y="267" class="s">unchanged parts reused across edits by signature;</text>
+  <text x="690" y="283" class="s">a camera-only edit changes only the camera</text>
+  <text x="676" y="302" class="m">built from the reference renderer's scene (today MoonRay's RDL)</text>
 
-  <rect x="660" y="226" width="580" height="150" rx="8" fill="#eaf6ef" stroke="#3c8d5c" stroke-width="1.5"/>
-  <text x="676" y="248" class="t">Plan builder (cpu::prepare)</text>
-  <text x="676" y="268" class="s">meshes reused by signature; each carries the indexer's families</text>
-  <text x="676" y="286" class="s">xpu2_geom.dll: MoonRay's PolyMesh / OpenSubdiv tessellation, displacement</text>
-  <text x="676" y="304" class="s">materials → records and map programs (DwaBase trees, 70 map types)</text>
-  <text x="676" y="322" class="s">lights, light tree, light filters · volumes, NanoVDB grids</text>
-  <text x="676" y="340" class="s">textures: host mip pyramids · AOV plan: LPEs, material and state</text>
-  <text x="676" y="356" class="s">AOVs, Cryptomatte, checkpoint and resume names</text>
-  <text x="676" y="372" class="s">bounce-ray reuse: which ray types meet the shadow rays' occluders</text>
+  <line x1="620" y1="246" x2="656" y2="246" stroke="#444" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M950,316 L950,352" stroke="#444" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+  <text x="958" y="339" class="l">the plan</text>
 
-  <path d="M560,188 L560,222" stroke="#444" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
-  <line x1="620" y1="301" x2="656" y2="301" stroke="#444" stroke-width="1.5" marker-end="url(#arrow)"/>
-  <path d="M1060,188 L1060,222" stroke="#888" stroke-width="1.5" stroke-dasharray="5 4" fill="none" marker-start="url(#arrow)"/>
-  <text x="1068" y="210" class="m">refused: mode fallback</text>
+  <!-- Scheduler -->
+  <rect x="40" y="356" width="1200" height="220" rx="8" fill="#fff6e5" stroke="#c58a1c" stroke-width="1.5"/>
+  <text x="56" y="378" class="t">Scheduler: the cellular work grid (async_grid.h, device_suit.h, async_adaptive.h)</text>
 
-  <!-- Row 3: the renderer -->
-  <rect x="40" y="416" width="1200" height="214" rx="8" fill="#fff6e5" stroke="#c58a1c" stroke-width="1.5"/>
-  <text x="56" y="438" class="t">Renderer (async_render.h)</text>
+  <text x="60" y="404" class="h">Work grid</text>
+  <text x="60" y="423" class="s">8 px tiles in 64 px cells</text>
+  <text x="60" y="440" class="s">a chunk: one tile and a range of</text>
+  <text x="74" y="456" class="s">sample indices</text>
+  <text x="60" y="473" class="s">each chunk claimed once, by one</text>
+  <text x="74" y="489" class="s">atomic in host memory</text>
+  <text x="60" y="506" class="s">ranges of 1, 1, 2, then 4 samples:</text>
+  <text x="74" y="522" class="s">the whole picture first</text>
 
-  <text x="60" y="462" class="h">Cells by suitability (device_suit.h)</text>
-  <text x="60" y="481" class="s">a first-hit probe, four camera rays a tile</text>
-  <text x="60" y="497" class="s">each cell: the GPU's probability of being its</text>
-  <text x="60" y="513" class="s">efficient owner (families, deferrals, lane rates)</text>
-  <text x="60" y="529" class="s">owners by comparative advantage</text>
-  <text x="60" y="553" class="h">Important parts first</text>
-  <text x="60" y="572" class="s">the pictures score each cell (MoonRay's tile score)</text>
-  <text x="60" y="588" class="s">above the mean: kept by its owner, a range ahead</text>
-  <text x="60" y="604" class="s">the rest: open to either device, most important first</text>
+  <text x="360" y="404" class="h">Ownership</text>
+  <text x="360" y="423" class="s">cells start on the suited device:</text>
+  <text x="374" y="439" class="s">a first-hit probe, comparative</text>
+  <text x="374" y="455" class="s">advantage; else a checkerboard</text>
+  <text x="360" y="472" class="s">flips follow the measured shares</text>
+  <text x="374" y="488" class="s">(at most 8 a frame, cooldown, freeze)</text>
+  <text x="360" y="505" class="s">important parts first: busy cells</text>
+  <text x="374" y="521" class="s">stay with their owner, a range ahead</text>
 
-  <text x="460" y="462" class="h">Work grid (async_grid.h)</text>
-  <text x="460" y="481" class="s">8 px tiles in 64 px cells, chunks of samples</text>
-  <text x="460" y="497" class="s">progressive ranges 1, 1, 2, then 4 samples</text>
-  <text x="460" y="513" class="s">a frontier per device: nothing past its least-</text>
-  <text x="460" y="529" class="s">sampled range (the whole picture first)</text>
-  <text x="460" y="553" class="h">Cellular workers on both devices</text>
-  <text x="460" y="572" class="s">CPU threads and 32 GPU workers (a launch's shares)</text>
-  <text x="460" y="588" class="s">finish the cell · own reserved · open · by passage</text>
-  <text x="460" y="604" class="s">ownership flips follow the measured shares</text>
+  <text x="660" y="404" class="h">Cellular workers</text>
+  <text x="660" y="423" class="s">CPU threads and 32 GPU workers</text>
+  <text x="674" y="439" class="s">(shares of each GPU launch)</text>
+  <text x="660" y="456" class="s">finish the cell · own reserved · open ·</text>
+  <text x="674" y="472" class="s">by passage; neighbours first</text>
+  <text x="660" y="489" class="s">rights of passage: enter the other</text>
+  <text x="674" y="505" class="s">device's cells only where that can't</text>
+  <text x="674" y="521" class="s">hold the frame up</text>
 
-  <text x="860" y="462" class="h">Rights of passage</text>
-  <text x="860" y="481" class="s">CPU into GPU cells: its chunk ends before the GPU</text>
-  <text x="860" y="497" class="s">would get there, or the GPU has not claimed lately</text>
-  <text x="860" y="513" class="s">GPU into CPU cells: the CPU's backlog outlasts four</text>
-  <text x="860" y="529" class="s">launches, where it would not mostly defer</text>
-  <text x="860" y="553" class="h">Launches and adaptive sampling</text>
-  <text x="860" y="572" class="s">launches of at least 2 samples a thread</text>
-  <text x="860" y="588" class="s">cellular generations (default) or MoonRay's trees</text>
-  <text x="860" y="604" class="s">checkpoints: the frame so far, every interval</text>
+  <text x="960" y="404" class="h">Sampling generations</text>
+  <text x="960" y="423" class="s">every pass is a generation: tiles</text>
+  <text x="974" y="439" class="s">above their target error sample again</text>
+  <text x="960" y="456" class="s">uniform: samples go where the error</text>
+  <text x="974" y="472" class="s">is, in uniform sampling's time</text>
+  <text x="960" y="489" class="s">adaptive: until the target error</text>
+  <text x="960" y="506" class="s">both lanes' errors pooled by count</text>
 
-  <line x1="440" y1="450" x2="440" y2="616" stroke="#e2c58a" stroke-width="1"/>
-  <line x1="840" y1="450" x2="840" y2="616" stroke="#e2c58a" stroke-width="1"/>
-  <path d="M950,376 L950,412" stroke="#444" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
-  <text x="958" y="400" class="l">the plan</text>
+  <line x1="340" y1="392" x2="340" y2="560" stroke="#e2c58a" stroke-width="1"/>
+  <line x1="640" y1="392" x2="640" y2="560" stroke="#e2c58a" stroke-width="1"/>
+  <line x1="940" y1="392" x2="940" y2="560" stroke="#e2c58a" stroke-width="1"/>
 
-  <!-- Row 4: the two lanes -->
-  <rect x="40" y="670" width="500" height="296" rx="8" fill="#e7f1fb" stroke="#2f6db3" stroke-width="1.5"/>
-  <text x="56" y="692" class="t">CPU lane (async_cpu.h)</text>
-  <text x="56" y="712" class="s">persistent workers move by the cellular rules</text>
-  <text x="56" y="730" class="s">Embree: surfaces, and volume bounds (VDB leaf cells</text>
-  <text x="70" y="746" class="s">gated by the active-voxel box)</text>
-  <text x="56" y="764" class="s">renders every feature XPU2 has, including what the GPU</text>
-  <text x="70" y="780" class="s">defers: points, geometry in motion, VDB, heterogeneous</text>
-  <text x="70" y="796" class="s">and emissive volumes</text>
-  <text x="56" y="814" class="s">retry queue: samples the GPU deferred, each rendered</text>
-  <text x="70" y="830" class="s">whole from its identity (no path state crosses devices)</text>
-  <text x="56" y="848" class="s">provisional samples rendered again in full (every texture</text>
-  <text x="70" y="864" class="s">level is in RAM), their values settled out of the GPU's</text>
-  <text x="70" y="880" class="s">provisional film</text>
-  <text x="56" y="898" class="s">textures read from host RAM</text>
-  <text x="56" y="916" class="m">light filters, shadow linking, lobe light sets, lights in</text>
-  <text x="56" y="932" class="m">motion and emissive volumes keep a whole scene on the CPU</text>
-  <text x="56" y="950" class="m">(Embree's occlusion and intersection agree, as on the GPU)</text>
+  <!-- Memory tiers and the GPU broker -->
+  <rect x="40" y="616" width="480" height="115" rx="8" fill="#e6f4f4" stroke="#2a8a8a" stroke-width="1.5"/>
+  <text x="56" y="638" class="t">Memory tiers (textures)</text>
+  <text x="56" y="658" class="s">host RAM: every level of every texture, the system of</text>
+  <text x="70" y="674" class="s">record; the CPU lane reads it directly and never misses</text>
+  <text x="56" y="691" class="s">VRAM: levels 1 and up for the session, plus a cache of</text>
+  <text x="70" y="707" class="s">fine (level 0) tiles, least recently used, sized from</text>
+  <text x="70" y="723" class="s">the card's free memory</text>
 
-  <rect x="740" y="670" width="500" height="296" rx="8" fill="#e9f7ec" stroke="#2e8b57" stroke-width="1.5"/>
-  <text x="756" y="692" class="t">GPU lane (async_gpu.h, OptiX 7.6)</text>
-  <text x="756" y="712" class="s">a mailbox ring of chunks, two launches in flight</text>
-  <text x="756" y="730" class="s">surfaces IAS, a GAS per mesh (kept while unchanged)</text>
-  <text x="756" y="748" class="s">stand-ins and VDB / emissive volumes defer samples</text>
-  <text x="770" y="764" class="s">to the CPU lane through the deferred ring</text>
-  <text x="756" y="782" class="s">textures: VRAM holds mip levels 1+ and a 512 MB LRU</text>
-  <text x="770" y="798" class="s">cache of level-0 tiles from RAM</text>
-  <text x="756" y="816" class="s">partial shading: a missing tile's texel read from its</text>
-  <text x="770" y="832" class="s">parent a level up; the sample is provisional (its own</text>
-  <text x="770" y="848" class="s">film, a record to the host), rendered again in full</text>
-  <text x="756" y="866" class="s">Cryptomatte and the closest filter merged without locks</text>
-  <text x="756" y="884" class="s">the program in 9 modules, compiled by OptiX in parallel:</text>
-  <text x="770" y="900" class="s">path tracer · material · maps · lights · lobes · volumes</text>
-  <text x="770" y="916" class="s">(continuation callables) · DwaBase resolve · DwaBase</text>
-  <text x="770" y="932" class="s">lobes · extras (camera, AOVs) · 3.5 minutes cold</text>
-  <text x="756" y="950" class="m">no OptiX call inside the map callable (compile time)</text>
+  <rect x="760" y="616" width="480" height="115" rx="8" fill="#e8f0fe" stroke="#4a6fa5" stroke-width="1.5"/>
+  <text x="776" y="638" class="t">GPU broker (async_render.h)</text>
+  <text x="776" y="658" class="s">one pinned host thread claims chunks for the GPU</text>
+  <text x="776" y="675" class="s">two launches always queued, each about 10 ms of work</text>
+  <text x="790" y="691" class="s">at the GPU's measured rate</text>
+  <text x="776" y="708" class="s">polls events: the host never waits for the GPU</text>
+  <text x="776" y="724" class="s">near the end, splits the rest so both finish together</text>
 
-  <path d="M290,630 L290,666" stroke="#444" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
-  <path d="M990,630 L990,666" stroke="#444" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
-  <text x="298" y="654" class="l">chunks its workers claim</text>
-  <text x="998" y="654" class="l">chunks its cellular workers claim</text>
+  <path d="M560,576 L560,800 L524,800" stroke="#444" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+  <text x="568" y="680" class="l">workers claim</text>
+  <text x="568" y="694" class="l">their own chunks</text>
+  <path d="M1000,576 L1000,612" stroke="#444" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+  <text x="1008" y="599" class="l">claims for the GPU</text>
+  <path d="M1000,731 L1000,767" stroke="#444" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+  <text x="1008" y="754" class="l">mailbox ring of chunks</text>
 
-  <line x1="740" y1="770" x2="544" y2="770" stroke="#b8452a" stroke-width="2" marker-end="url(#arrowRed)"/>
-  <text x="574" y="760" style="font-size:12.5px;font-weight:700;fill:#b8452a">deferred samples</text>
-  <text x="572" y="786" class="l">(pixel, index, pass)</text>
+  <!-- The two lanes -->
+  <rect x="40" y="771" width="480" height="205" rx="8" fill="#e7f1fb" stroke="#2f6db3" stroke-width="1.5"/>
+  <text x="56" y="793" class="t">CPU lane (async_cpu.h)</text>
+  <text x="56" y="813" class="s">persistent, pinned workers; Embree traversal</text>
+  <text x="56" y="830" class="s">renders every feature XPU2 has</text>
+  <text x="56" y="847" class="s">takes the samples the GPU defers and renders each</text>
+  <text x="70" y="863" class="s">whole from its identity: no path state crosses devices</text>
+  <text x="56" y="880" class="s">renders provisional samples again in full</text>
+  <text x="56" y="897" class="s">reads every texture level from host RAM; its own film</text>
+  <text x="56" y="922" class="m">light filters, shadow linking, lights in motion and</text>
+  <text x="56" y="938" class="m">emissive volumes keep a whole scene on the CPU lane today</text>
 
-  <line x1="740" y1="846" x2="544" y2="846" stroke="#7a5bc4" stroke-width="2" marker-end="url(#arrowViolet)"/>
-  <text x="560" y="836" style="font-size:12.5px;font-weight:700;fill:#7a5bc4">provisional samples</text>
-  <text x="556" y="862" class="l">(pixel, index, tile, value)</text>
-  <path d="M560,880 C600,905 680,905 736,882" stroke="#7a5bc4" stroke-width="1.5" stroke-dasharray="5 4" fill="none" marker-end="url(#arrowViolet)"/>
-  <text x="572" y="918" class="l">back to the GPU once</text>
-  <text x="572" y="932" class="l">their tile has landed</text>
+  <rect x="760" y="771" width="480" height="205" rx="8" fill="#e9f7ec" stroke="#2e8b57" stroke-width="1.5"/>
+  <text x="776" y="793" class="t">GPU lane (async_gpu.h, OptiX)</text>
+  <text x="776" y="813" class="s">fixed launches of 65,536 threads; each thread claims one</text>
+  <text x="790" y="829" class="s">sample at a time, neighbours in neighbouring pixels</text>
+  <text x="776" y="846" class="s">acceleration structures kept while a mesh is unchanged</text>
+  <text x="776" y="863" class="s">stand-ins for what only the CPU renders: a sample</text>
+  <text x="790" y="879" class="s">that meets one is deferred to the CPU lane</text>
+  <text x="776" y="896" class="s">a fine texture tile not resident: finished a level up,</text>
+  <text x="790" y="912" class="s">provisional, rendered again in full later</text>
+  <text x="776" y="929" class="s">its own film, in double precision; the program in</text>
+  <text x="790" y="945" class="s">modules, compiled in parallel</text>
 
-  <!-- Row 5: the shared integrator -->
-  <rect x="40" y="1006" width="1200" height="90" rx="8" fill="#fdeee6" stroke="#c4622d" stroke-width="1.5"/>
-  <text x="56" y="1028" class="t">Shared integrator (async_integrator.h)</text>
-  <text x="56" y="1047" class="s">MoonRay's path tracer and shader library, ported: one source compiled for both devices (X2_HD), with MoonRay's vector-mode quirks reproduced where they show</text>
-  <text x="56" y="1064" class="s">every sample's random numbers come from its identity (pixel, sample index, seed), so either device makes the same sample</text>
-  <text x="56" y="1081" class="s">bounce-ray reuse: a BSDF sample that reaches a light and goes on needs no shadow ray: its bounce's nearest hit decides</text>
-  <path d="M290,966 L290,1002" stroke="#444" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
-  <path d="M990,966 L990,1002" stroke="#444" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+  <line x1="760" y1="852" x2="524" y2="852" stroke="#b8452a" stroke-width="2" marker-end="url(#arrowRed)"/>
+  <text x="584" y="842" style="font-size:12.5px;font-weight:700;fill:#b8452a">deferred samples</text>
+  <text x="586" y="868" class="l">(pixel, index, pass)</text>
 
-  <!-- Row 6: the film -->
-  <rect x="40" y="1136" width="1200" height="86" rx="8" fill="#f2f2f2" stroke="#666" stroke-width="1.5"/>
-  <text x="56" y="1158" class="t">Film</text>
-  <text x="56" y="1177" class="s">both lanes' samples merged: beauty, alpha, AOVs, light path expressions, Cryptomatte, display filters (MoonRay's own DSOs)</text>
-  <text x="56" y="1194" class="s">provisional samples shown in the pictures, kept out of the film, none left at the frame's end (audited)</text>
-  <text x="56" y="1211" class="s">pictures: pixels no sample has reached filled from their neighbours (display only)</text>
-  <path d="M640,1096 L640,1132" stroke="#444" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+  <line x1="760" y1="910" x2="524" y2="910" stroke="#7a5bc4" stroke-width="2" marker-end="url(#arrowViolet)"/>
+  <text x="572" y="900" style="font-size:12.5px;font-weight:700;fill:#7a5bc4">provisional samples</text>
+  <text x="566" y="926" class="l">(pixel, index, tile, value)</text>
+  <path d="M560,940 C600,962 690,962 756,942" stroke="#7a5bc4" stroke-width="1.5" stroke-dasharray="5 4" fill="none" marker-end="url(#arrowViolet)"/>
+  <text x="586" y="980" class="l">or back to the GPU once</text>
+  <text x="586" y="994" class="l">their tile has landed</text>
 
-  <!-- Row 7: back to the kit -->
-  <rect x="40" y="1252" width="1200" height="64" rx="8" fill="#eef2f7" stroke="#6b7a90" stroke-width="1.5"/>
-  <text x="56" y="1274" class="t">Outputs to the kit</text>
-  <text x="56" y="1293" class="s">beauty and the denoiser's guides (albedo, normal) → the kit's denoiser (OptiX or Open Image Denoise)</text>
-  <text x="56" y="1309" class="s">Smart Render stops by a drain · Safe Denoising keeps the last save · Continue starts XPU2 again (no resume yet)</text>
-  <path d="M640,1222 L640,1248" stroke="#444" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+  <!-- The shared integrator -->
+  <path d="M280,976 L280,1012" stroke="#444" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+  <path d="M1000,976 L1000,1012" stroke="#444" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+  <text x="288" y="999" class="l">every sample</text>
+  <text x="1008" y="999" class="l">every sample</text>
+  <rect x="40" y="1016" width="1200" height="110" rx="8" fill="#fdeee6" stroke="#c4622d" stroke-width="1.5"/>
+  <text x="56" y="1038" class="t">Shared integrator (async_integrator.h)</text>
+  <text x="56" y="1058" class="s">one source compiled for both devices (X2_HD), run through each lane's own backend for traversal and textures</text>
+  <text x="56" y="1075" class="s">a sample's random numbers come from its identity (pixel, sample index, seed), so any device makes the same sample</text>
+  <text x="56" y="1092" class="s">implements the reference renderer's estimator and shading: today MoonRay's path tracer and shader library, ported</text>
+  <text x="56" y="1109" class="s">bounce-ray reuse: a BSDF sample that reaches a light and goes on as a bounce needs no shadow ray of its own</text>
 
-  <!-- Back to Modo -->
-  <path d="M40,1282 L20,1282 L20,129 L36,129" stroke="#6b7a90" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+  <!-- Films and the frame's end -->
+  <path d="M640,1126 L640,1162" stroke="#444" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+  <rect x="40" y="1166" width="1200" height="106" rx="8" fill="#f2f2f2" stroke="#666" stroke-width="1.5"/>
+  <text x="56" y="1188" class="t">Films and the frame's end</text>
+  <text x="56" y="1208" class="s">one film per lane, merged when the frame ends; every pixel's sample count audited: no sample lost or counted twice</text>
+  <text x="56" y="1225" class="s">provisional samples are shown in the pictures but kept out of the film; none are left when the frame ends</text>
+  <text x="56" y="1242" class="s">outputs as the reference renderer writes them: beauty, AOVs, light path expressions, Cryptomatte, display filters</text>
+  <text x="56" y="1259" class="s">an image is XPU2's or the reference renderer's, whole: never a mix of the two</text>
+
+  <!-- Back to the host: pictures and outputs -->
+  <path d="M40,1219 L20,1219 L20,103 L36,103" stroke="#6b7a90" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+  <text x="14" y="660" class="l" text-anchor="middle" transform="rotate(-90 14 660)">pictures, outputs and progress to the host</text>
+
+  <!-- Each pass's errors steer the next generation -->
+  <path d="M1240,1200 L1262,1200 L1262,466 L1244,466" stroke="#c58a1c" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+  <text x="1274" y="830" class="l" text-anchor="middle" transform="rotate(-90 1274 830)">each pass's errors steer the next generation</text>
 </svg>
