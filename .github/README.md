@@ -1,4 +1,4 @@
-# XPU2-foundation
+# xpu2-foundation
 
 **XPU2** is an asynchronous CPU + GPU path tracer. The CPU and GPU render the same image at once, as peers: each
 claims its own work, neither waits for the other, and any sample can be rendered on either device with the same
