@@ -26,6 +26,11 @@ The mantra for XPU2 is: "Use your silicon!"
 - **Audited results.** Each device keeps its own film. When a frame ends the films merge and every pixel's sample
   count is checked.
 
+https://github.com/user-attachments/assets/2b8bfbaa-f844-470f-adb8-1dbfac4ae75d
+_Cellular Automata Tiling_
+
+
+
 ## Reference renderer: MoonRay
 
 XPU2 currently implements [MoonRay](https://openmoonray.org/). MoonRay's path tracer and shader library (lights,
