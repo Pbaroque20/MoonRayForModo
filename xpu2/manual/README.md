@@ -10,12 +10,11 @@ All paths are relative to `xpu2/interactive/` unless they start with `xpu2/` or 
 
 The manual has four parts:
 
-- **Part I, the core:** XPU2's own architecture, which doesn't depend on the renderer it implements or the host it
-  runs in.
-- **Part II, the renderer it implements:** MoonRay. XPU2 ports MoonRay's path tracer and shader library, and
-  MoonRay's image is the one XPU2 must converge to.
-- **Part III, the host:** MoonRay for Modo. It's where XPU2 is shown working on real production scenes.
-- **Part IV, working on XPU2:** building, testing, porting a feature, switches, the file map.
+- **Part I, the core:** XPU2's own architecture, independent of the renderer it implements and the host it runs in.
+- **Part II, the reference renderer:** MoonRay, whose path tracer and shader library XPU2 ports and whose images XPU2
+  must match.
+- **Part III, the host:** MoonRay for Modo, where XPU2 runs on real production scenes.
+- **Part IV, working on XPU2:** building, testing, porting features, switches and the file map.
 
 ## Contents
 
@@ -32,7 +31,7 @@ The manual has four parts:
 10. [Memory tiers and partial shading](#10-memory-tiers-and-partial-shading)
 11. [Films and the frame's end](#11-films-and-the-frames-end)
 
-**Part II. The renderer it implements: MoonRay**
+**Part II. The reference renderer: MoonRay**
 
 12. [The MoonRay port](#12-the-moonray-port)
 
@@ -56,16 +55,15 @@ The manual has four parts:
 
 ## 1. What XPU2 is
 
-XPU2 is a rendering architecture in which a CPU and a GPU render the same image at the same time, as peers. Neither
-waits for the other. Work moves between them sample by sample: towards whichever device is suited to it, and away
-from a device that can't render it. The result is the image either device would have made alone.
+XPU2 is an asynchronous CPU + GPU path tracer. The CPU and GPU render the same image at once, as peers: each claims
+its own work and neither waits for the other. Work goes to the device best suited to it, and away from a device that
+can't render it. Because a sample is defined by its identity, it gives the same result on either device.
 
-It follows the Interactive xPU Renderer Spec (21 October 2026). Spec requirement IDs (ARC-01, CA-08, ACC-07, ...)
+XPU2 follows the Interactive xPU Renderer Spec (21 October 2026). Spec requirement IDs (ARC-01, CA-08, ACC-07, ...)
 appear in code comments; section 20 explains the prefixes.
 
-XPU2 renders what a **reference renderer** renders and must converge to its image. Today that renderer is MoonRay
-(Part II). XPU2 is driven by a **host** application that sends scenes and takes pictures. Today the host is MoonRay
-for Modo (Part III).
+XPU2 reproduces a **reference renderer**, currently MoonRay (Part II): its images must converge to the reference's.
+A **host** application sends XPU2 scenes and receives its images, currently MoonRay for Modo (Part III).
 
 ## 2. The rules everything rests on
 
@@ -75,7 +73,7 @@ These hold everywhere. A change that breaks one is a bug, even when the picture 
    Its random numbers come from that identity alone (`sample_stream.h`), so either device computes the same sample,
    and a sample can move between devices at any point before it starts.
 2. **One integrator for both devices.** The path tracer is written once, as `X2_HD` code (host and device), and
-   compiled for the CPU lane and for the GPU program. There is no separate GPU version of anything to keep in step.
+   compiled for both the CPU lane and the GPU program. There is no separate GPU version to keep in sync.
 3. **Neither device waits for the other.** The host never blocks on the GPU (it polls events), and the GPU always has
    a launch queued (spec ARC-01).
 4. **A chunk of work is claimed exactly once**, by one atomic on a cursor in host memory (CA-06). Nothing is shared
@@ -89,7 +87,7 @@ These hold everywhere. A change that breaks one is a bug, even when the picture 
 
 ## 3. A frame from start to finish
 
-1. **The scene arrives** from the host, then edits as they happen.
+1. **The scene arrives** from the host, followed by edits as they happen.
 2. **Indexing.** Every object is classified by which device can render it, and the scene gets a mode: both devices,
    CPU only, or fallback to the reference renderer (section 4).
 3. **The plan.** The scene becomes flat records both devices read. Unchanged parts are reused (section 4).
@@ -101,8 +99,8 @@ These hold everywhere. A change that breaks one is a bug, even when the picture 
    the GPU and keeps two launches queued (section 6). Every sample runs the shared integrator start to finish and adds
    its result to its lane's film.
 7. **Samples hand off.** A GPU sample that meets something only the CPU renders is deferred to the CPU. A GPU sample
-   whose fine texture tile isn't resident finishes from a coarser level, is provisional, and is rendered again in full
-   later (section 10).
+   whose fine texture tile isn't resident finishes from a coarser level as a provisional sample, and is re-rendered in
+   full later (section 10).
 8. **Sampling generations decide when to stop.** After each pass, tiles whose error is still above the target sample
    again (section 9).
 9. **The frame ends.** The films merge, sample counts are audited, and outputs go to the host (section 11).
@@ -144,9 +142,9 @@ Design: `ASYNC.md` ("How a frame runs"), `INDEXER.md` section 7.
   16-byte chunks: one 8×8 tile and a range of sample indices, ordered by sample range so a cell converges evenly.
   Claims are atomics on host cursors.
 - **Cells by suitability** (`device_suit.h`). A first-hit probe (four camera rays per tile, on the CPU) finds what
-  each tile sees. From the classifier's families, the likelihood of deferral and the lanes' measured rates, each cell
-  gets the probability that the GPU is its efficient owner. Cells start by comparative advantage, before any stealing.
-  Without a probe they start as a CPU/GPU checkerboard.
+  each tile sees. From the classifier's families, the chance of deferral and the lanes' measured rates, each cell gets
+  a probability that the GPU should own it. Cells start on the device with the comparative advantage, before any
+  stealing. Without a probe they start as a CPU/GPU checkerboard.
 - **Ownership flips** towards the device that rendered most of a cell: at most 8 flips a frame, a 16-frame cooldown,
   and a 64-frame freeze after thrashing. Deferred samples count as the CPU's.
 - **Progressive order.** A uniform frame's sample ranges grow 1, 1, 2, then the chunk size. No device gets a chunk past
@@ -180,8 +178,8 @@ Design: `ASYNC.md` ("How a frame runs"), `INDEXER.md` section 7.
 - **Launches** are fixed grids of 65,536 threads (`launchThreads`). Each thread claims one sample at a time with an
   atomic: first parked samples, then its range of chunk items. Neighbouring claims are neighbouring pixels of the same
   sample, so warps trace coherent rays. The device film accumulates in double precision.
-- **Acceleration structures.** One GAS per mesh, kept while the mesh is unchanged, under an IAS. Non-triangle
-  primitives are custom primitives.
+- **Acceleration structures.** One GAS per mesh, kept while the mesh is unchanged, under an IAS. Curves and points
+  are OptiX custom primitives.
 - **Stand-ins.** Objects classified `Cpu` are in the GPU scene as bounding stand-ins (a moving mesh's motion bounds,
   a VDB's box, points' bounds). A sample that meets one is deferred to the CPU lane through the deferred-samples ring.
 - **The program in modules.** OptiX compiles each module separately and in parallel, but a module's call graph
@@ -200,8 +198,8 @@ traverses triangles, and user geometry handles curves and points. The CPU lane:
 
 - renders every feature XPU2 has, including those the GPU defers (today: points, geometry in motion, VDB volumes, and
   heterogeneous and emissive volumes);
-- takes the retry queue: deferred GPU samples, each rendered whole from its identity;
-- renders provisional samples again in full, since every texture level is in RAM and the CPU never misses;
+- works through the retry queue: deferred GPU samples, each re-rendered whole from its identity;
+- re-renders provisional samples in full: every texture level is in RAM, so the CPU never misses;
 - keeps its own film, merged with the GPU's when the frame ends.
 
 Some features keep a whole scene on the CPU lane because the GPU programs lack them and they affect every sample
@@ -263,8 +261,8 @@ differ: presence shadows, shadow linking, volumes, a minimum shadow distance and
   in a scene-wide tile space.
 - **Partial shading** (on by default). A GPU sample whose level-0 tile isn't resident finishes from the parent texel a
   level up and is provisional: shown in the pictures, kept out of the film. The CPU, or the GPU once the tile lands,
-  renders it again in full. A provisional sample isn't counted in its pass until it's done in full, so the error
-  estimate never judges a low-fidelity pixel. With `XPU2_SESSION_PARTIAL=0`, such samples park in a bounded GPU queue
+  re-renders it in full. A provisional sample isn't counted in its pass until it's done in full, so the error estimate
+  never sees a low-fidelity sample. With `XPU2_SESSION_PARTIAL=0`, such samples park in a bounded GPU queue
   until their tile lands instead.
 - **Pinned host memory** for readbacks is capped at a quarter of the machine's memory, between 2 and 16 GB.
 
@@ -276,7 +274,7 @@ differ: presence shadows, shadow linking, volumes, a minimum shadow distance and
 - The pictures fill pixels no sample has reached yet from their neighbours, for display only.
 - Outputs are written as the reference renderer writes them (section 12).
 
-# Part II. The renderer it implements: MoonRay
+# Part II. The reference renderer: MoonRay
 
 ## 12. The MoonRay port
 
@@ -359,7 +357,7 @@ module.
 
 ## 13. XPU2 in MoonRay for Modo
 
-MoonRay for Modo is XPU2's showcase: XPU2 renders its previews, on real Modo scenes.
+XPU2 renders MoonRay for Modo's previews, which makes Modo the showcase for XPU2 on real production scenes.
 
 ```
 Modo ── MoonRay for Modo kit (XPU2 build) ──► moonray_xpu2.exe  (XPU2 session)
