@@ -4,6 +4,8 @@
 claims its own work, neither waits for the other, and any sample can be rendered on either device with the same
 result.
 
+The mantra for XPU2 is: "Use your silicon!"
+
 ![XPU2 architecture](/xpu2/manual/xpu2_architecture.svg)
 
 ## Core ideas
@@ -23,8 +25,6 @@ result.
   is highest.
 - **Audited results.** Each device keeps its own film. When a frame ends the films merge and every pixel's sample
   count is checked.
-
-  The mantra for XPU2 is: "Use your Silicon!"
 
 ## Reference renderer: MoonRay
 
