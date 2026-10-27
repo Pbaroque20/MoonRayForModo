@@ -4,6 +4,7 @@ machine or the card runs short, before a render can take more than there is (a h
 import ctypes
 import ctypes.wintypes as w
 import os
+import threading
 from PySide2 import QtCore, QtWidgets
 
 GB = 1024.0 ** 3
@@ -110,32 +111,64 @@ def _level(short):
 COLOURS = {0: '', 1: '#d9a13b', 2: '#e0533d'}
 
 
+def readings(pids):
+    """What the meter shows, read: the processes' memory, the machine's RAM and the card's memory."""
+    return [m for m in (process(p) for p in pids) if m], machine(), card().memory()
+
+
+class _Reader(threading.Thread):
+    """The readings taken once a second on a thread of their own: the driver's answer can wait while the card is busy (a
+    realtime render's launches), and Modo's own thread waited with it, the preview hesitating once a second."""
+
+    def __init__(self):
+        super().__init__(name='MoonRay memory meter', daemon=True)
+        # active: whether to read at all (a meter switched off reads nothing).
+        self.pids, self.latest, self.wake, self.stopped, self.active = [], None, threading.Event(), False, True
+
+    def run(self):
+        while not self.stopped:
+            try:
+                if self.active:
+                    self.latest = readings(list(self.pids))
+            except Exception:
+                pass
+            self.wake.wait(1.0)
+            self.wake.clear()
+
+
 class MemoryMeter(QtWidgets.QLabel):
     """The meter: renderer, RAM free and GPU, its colour the worst of them. processes() gives the renderer's processes'
-    ids (none running: the renderer is left out)."""
+    ids (none running: the renderer is left out). The readings are taken on a thread of their own (_Reader); Modo's
+    thread only shows them, and sets the text again only when it reads otherwise."""
 
     def __init__(self, processes, parent=None):
         super().__init__(parent)
         self.processes = processes
+        self.shown = None
         self.setEnabled(False)
         self.setTextFormat(QtCore.Qt.RichText)
+        self.reader = _Reader()
         self.timer = QtCore.QTimer(self)
         self.timer.setInterval(1000)
         self.timer.timeout.connect(self.refresh)
         self.timer.start()
+        # The first reading at once, then the reader's.
+        self.reader.latest = readings([p for p in (self.processes() or []) if p])
         self.refresh()
+        self.reader.start()
 
     def refresh(self):
+        self.reader.pids = [p for p in (self.processes() or []) if p]
+        if self.reader.latest is None:
+            return
+        held, ram, gpu = self.reader.latest
         parts, notes, worst = [], [], 0
-        pids = [p for p in (self.processes() or []) if p]
-        held = [m for m in (process(p) for p in pids) if m]
         if held:
             resident = sum(m[0] for m in held)
             committed = sum(m[1] for m in held)
             parts.append('Renderer %.1f GB' % (resident / GB))
             notes.append('The renderer holds %.1f GB of RAM (%.1f GB committed: what it has asked Windows for, including what the graphics driver '
                          'keeps in reserve for the card).' % (resident / GB, committed / GB))
-        ram = machine()
         if ram:
             total, free = ram
             share = free / total if total else 1.0
@@ -144,7 +177,6 @@ class MemoryMeter(QtWidgets.QLabel):
             text = 'RAM %.0f GB free' % (free / GB)
             parts.append('<span style="color:%s">%s</span>' % (COLOURS[level], text) if level else text)
             notes.append('The machine has %.1f GB of its %.0f GB of RAM free.' % (free / GB, total / GB))
-        gpu = card().memory()
         if gpu:
             total, used = gpu
             share = used / total if total else 0.0
@@ -156,7 +188,12 @@ class MemoryMeter(QtWidgets.QLabel):
                 ' (' + card().name + ')' if card().name else '', used / GB, total / GB))
         if worst:
             notes.append('Memory is running short: a render that needs more may slow the machine or fall back.')
-        self.setText(' \u00b7 '.join(parts))
-        self.setToolTip('\n'.join(notes))
+        # Set again only when it reads otherwise: a label set anew lays the window's row out again.
+        shown = (' \u00b7 '.join(parts), '\n'.join(notes), bool(worst))
+        if shown == self.shown:
+            return
+        self.shown = shown
+        self.setText(shown[0])
+        self.setToolTip(shown[1])
         # Shown in full colour when short, dimmed like the picture's details otherwise.
-        self.setEnabled(bool(worst))
+        self.setEnabled(shown[2])

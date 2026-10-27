@@ -8,6 +8,7 @@ The current release is [0.4.3.1](https://github.com/Pbaroque20/MoonRayForModo/re
 
 ## Coming next
 
+- **The memory meter no longer makes the preview hesitate**: it reads the machine and the graphics card on a thread of its own, once a second, where Modo's own thread waited for the card's driver while a render kept the card busy.
 - **MoonLightIPR's textures at most 1280 pixels a side** (they were up to 4096): sharp enough at the preview's sizes, with far less for the graphics card to hold and read. Textures are converted again the first time a scene opens.
 - **MoonLightIPR follows an edit at once**: moving an object, the camera or a light, or changing a material, no longer holds Modo while the scene is read three times for motion blur when nothing in it moves and nothing moved has keys (a fur scene: 0.6 s to 0.2 s from letting go to the new picture, Modo held 0.4 s to a hundredth). With keys, motion blur is read as before.
 - **Heavy scenes start much sooner**: Modo's geometry is handed to MoonRay as it comes, without a step of Python for every point and face. A car scene's reading before a render went from about three minutes to a little over one, most of what is left being Modo's own work. MoonRay is handed the very same scene.

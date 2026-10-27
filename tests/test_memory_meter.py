@@ -83,6 +83,8 @@ class MemoryMeter(unittest.TestCase):
         real = memory_meter.machine
         memory_meter.machine = lambda: (64 * (1 << 30), 6 * (1 << 30))
         try:
+            # As the meter's reader takes it, on its own thread.
+            meter.reader.latest = memory_meter.readings([os.getpid()])
             meter.refresh()
         finally:
             memory_meter.machine = real
@@ -91,7 +93,13 @@ class MemoryMeter(unittest.TestCase):
         self.assertIn('running short', meter.tip)
         # Nothing running: the renderer left out.
         meter.processes = lambda: []
+        meter.reader.latest = memory_meter.readings([])
         meter.refresh()
+        # The same reading again leaves the label as it is.
+        meter.text = 'unchanged'
+        meter.refresh()
+        self.assertEqual(meter.text, 'unchanged')
+        meter.reader.stopped = True
         self.assertNotIn('Renderer', meter.text)
 
 
