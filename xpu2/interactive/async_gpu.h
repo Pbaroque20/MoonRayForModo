@@ -1954,7 +1954,8 @@ private:
         std::vector<std::pair<B, std::vector<U32>>> levelZeroPages;  // per file: page array and its tile ids
         for (auto& file : files) {
             cpu::need(bool(file->pyramid), "Missing host mip pyramid");
-            const auto& host = file->pyramid->image;
+            // A realtime plan's from its first level of 1280 pixels or less (Pyramid::view).
+            const auto& host = file->pyramid->view(plan.realtime);
             tex::Image descriptor{};
             descriptor.count = host.count;
             // Levels 1 and up are resident for the whole session, in their format (tex::Mip::format), each tile at a

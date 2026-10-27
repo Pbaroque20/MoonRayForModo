@@ -108,7 +108,19 @@ struct Pyramid {
     page[y*nx+x]=tile.data();bytes+=tile.size()*sizeof(surface::V3);
    }image.levels[level]={w,h,page.data(),0,eight?1u:0u};++image.count;
   }need(image.count&&image.levels[image.count-1].width==1&&image.levels[image.count-1].height==1,"Software mip level bound");
+  // Realtime's view: the pyramid from its first level no wider or taller than realtimeSide() on.
+  const unsigned side=realtimeSide();
+  while(side&&realtimeFrom+1<image.count&&std::max(image.levels[realtimeFrom].width,image.levels[realtimeFrom].height)>side)++realtimeFrom;
+  realtimeImage.count=image.count-realtimeFrom;
+  for(unsigned k=0;k<realtimeImage.count;++k)realtimeImage.levels[k]=image.levels[realtimeFrom+k];
  }
+ // The largest side a texture has in realtime's frames (XPU2_SESSION_RT_TEXTURE_SIDE, default 1280; 0: as rendered).
+ // Perceptually enough at realtime's sizes, and its finer levels are then never decoded nor sent to the card.
+ static unsigned realtimeSide(){static const unsigned side=[]{const char* v=std::getenv("XPU2_SESSION_RT_TEXTURE_SIDE");
+   return v?unsigned(std::max(0,std::atoi(v))):1280u;}();return side;}
+ tex::Image realtimeImage;unsigned realtimeFrom=0;
+ // The pyramid a plan reads: realtime's from its first level of realtimeSide() or less, else the whole.
+ const tex::Image& view(bool realtime)const{return realtime&&realtimeFrom?realtimeImage:image;}
 };
 struct File {
  std::shared_ptr<OIIO::TextureSystem> system;OIIO::ustring name;HANDLE lock=INVALID_HANDLE_VALUE;bool eightBit=false;unsigned levels=0;uint64_t decodedBytes=0;std::shared_ptr<const Pyramid> pyramid;
@@ -133,7 +145,7 @@ struct File {
 };
 struct Binding {
  std::shared_ptr<File> file;float sx=1,sy=1,ox=0,oy=0,mipBias=0;bool wrap=true,gamma=false;
- tex::Binding descriptor()const{return {file->pyramid?&file->pyramid->image:nullptr,sx,sy,ox,oy,mipBias,wrap?1u:0u,gamma&&file->eightBit?1u:0u};}
+ tex::Binding descriptor(bool realtime=false)const{return {file->pyramid?&file->pyramid->view(realtime):nullptr,sx,sy,ox,oy,mipBias,wrap?1u:0u,gamma&&file->eightBit?1u:0u};}
  surface::V3 lookup(float u,float v,float dudx,float dvdx,float dudy,float dvdy)const{
   OIIO::TextureOpt options;options.anisotropic=4;options.mipmode=OIIO::TextureOpt::MipModeAniso;options.interpmode=OIIO::TextureOpt::InterpBilinear;
   options.swrap=options.twrap=wrap?OIIO::TextureOpt::WrapPeriodic:OIIO::TextureOpt::WrapClamp;

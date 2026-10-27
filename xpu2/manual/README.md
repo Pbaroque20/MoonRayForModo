@@ -524,6 +524,7 @@ Environment variables read by the session or the renderer. The defaults are the 
 | `XPU2_SESSION_EMBREE_COMPACT=0` | The CPU lane's Embree scenes without the compact flag (added 2026-10-26) |
 | `XPU2_SESSION_FLOAT_TEXTURES=1` | 8-bit textures kept as floats (added 2026-10-26) |
 | `XPU2_SESSION_EAGER_TEXTURES=1` | Every texture level decoded as the scene is prepared (added 2026-10-26) |
+| `XPU2_SESSION_RT_TEXTURE_SIDE` | Realtime's largest texture side (default 1280; 0: whole) (added 2026-10-27) |
 | `XPU2_SESSION_CANONICAL_FILE=1` | The canonical replica also written as an RDLB file, to inspect (added 2026-10-26) |
 | `XPU2_SESSION_RT_DENOISE=0`, `_RT_GUIDES`, `_RT_SHOW`, `_RT_DEBUG`, `_RT_PRIORITY=0` | Realtime denoiser diagnostics (`INDEXER.md` section 13) |
 | `XPU2_SESSION_DEBUG_FAILURES` | Names the CPU lane's first failed shadings and texture lookups |

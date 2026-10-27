@@ -492,6 +492,12 @@ def realtime(kit):
             self.start.setEnabled(False);self.start.setText('Render')
             self.start.setToolTip('Realtime is on. Switch RT off to render once.')
             return
+        if self._engine()=='moonlightipr' and not self._rendering:
+            # MoonLightIPR renders in realtime alone: RT turns it on, and this button is greyed.
+            self.start.setChecked(False);self.start.setCheckable(False)
+            self.start.setEnabled(False);self.start.setText('Render')
+            self.start.setToolTip('MoonLightIPR renders in realtime: switch RT on.')
+            return
         if False:
             # (The private test build: realtime has its switch, RT, left of the engine; this button renders once.)
             # A realtime engine is switched on and off, not started and stopped.""")
@@ -827,6 +833,108 @@ def binary_memory(kit):
     p.save()
 
 
+def xpu2_smart_render(kit):
+    """Smart Render is MoonRay's: while XPU2 renders the preview (Preferences > MoonRay > XPU2) it is greyed in the render
+    settings and in the picture's menu, and no XPU2 render is stopped by it. And MoonLightIPR's images at most 1280 a
+    side, as the main kit has them since 2026-10-27 (realtime's textures)."""
+    p = Patch(kit / 'python' / 'moonray_modo' / 'moonlightipr_materials.py')
+    p.rep("MAX_TEXTURE_SIDE = 4096", "# At most 1280 a side: perceptually enough at realtime's sizes (it was 4096).\nMAX_TEXTURE_SIDE = 1280")
+    p.save()
+    p = Patch(kit / 'lxserv' / 'moonray_render_settings.py')
+    p.rep("""                if entry['key'] in NEEDS_DENOISER:
+                    try:return scene_settings.complete(properties.scene_settings())['denoising'].get('engine','off')!='off'""",
+          """                # Smart Render is MoonRay's: greyed while XPU2 renders the preview (the private test build).
+                if entry['key']=='smart_render':
+                    try:
+                        from moonray_modo import native
+                        if native.xpu2():return False
+                    except Exception:pass
+                if entry['key'] in NEEDS_DENOISER:
+                    try:return scene_settings.complete(properties.scene_settings())['denoising'].get('engine','off')!='off'""")
+    p.save()
+    p = Patch(kit / 'python' / 'moonray_modo' / 'render.py')
+    p.rep("""            if level!='off' and not self.active['output'] and not self.active['moonlightipr'] and not self.active.get('linear_preview') and not self.active['snapshot'].get('_ipr'):""",
+          """            # Not while XPU2 renders the preview (the private test build): Smart Render is MoonRay's.
+            if level!='off' and not self.active['output'] and not self.active['moonlightipr'] and not self.active.get('linear_preview') and not self.active['snapshot'].get('_ipr') and not native.xpu2():""")
+    p.save()
+    p = Patch(kit / 'python' / 'moonray_modo' / 'panel.py')
+    p.rep("""        menu.addMenu(smart);self._smart_menu=smart""",
+          """        # Smart Render is MoonRay's: greyed while XPU2 renders the preview (the private test build).
+        try:
+            from . import native
+            if native.xpu2():smart.setEnabled(False);smart.setToolTip("Smart Render is MoonRay's; XPU2 renders the preview.")
+        except Exception:pass
+        menu.addMenu(smart);self._smart_menu=smart""")
+    p.rep("""        from . import denoising
+        try:return denoising.settings(self._settings_values()['denoising'])['smart']!='off'""",
+          """        from . import denoising, native
+        try:
+            if native.xpu2():return False
+            return denoising.settings(self._settings_values()['denoising'])['smart']!='off'""")
+    p.save()
+
+
+def meter_switch(kit):
+    """A preference for the preview window's memory meter (Preferences > MoonRay, on): off, the meter is hidden and reads
+    nothing, to tell whether its once-a-second reading is what makes the preview hesitate (asked 2026-10-27)."""
+    py = kit / 'python' / 'moonray_modo'
+    p = Patch(py / 'preferences.py')
+    p.rep("""    'low_latency': (True, bool),""", """    'low_latency': (True, bool),
+    # The preview window's memory meter (memory_meter.py).
+    'memory_meter': (True, bool),""")
+    p.save()
+    p = Patch(kit / 'lxserv' / 'moonray_preferences.py')
+    p.rep("""lx.bless(switch('low_latency'),'moonray.pref.lowLatency')""", """lx.bless(switch('low_latency'),'moonray.pref.lowLatency')
+lx.bless(switch('memory_meter'),'moonray.pref.memoryMeter')""")
+    p.save()
+    p = Patch(kit / 'preferences.cfg')
+    p.rep("""      <list type="Control" val="cmd moonray.pref.binaryGeometry ?">""", """      <list type="Control" val="cmd moonray.pref.memoryMeter ?">
+        <atom type="Label">Memory meter</atom>
+        <atom type="Tooltip">The preview window shows the renderer's RAM, the machine's free RAM and the graphics card's memory beside the picture's details, read once a second. Off, it is hidden and reads nothing</atom>
+      </list>
+      <list type="Control" val="cmd moonray.pref.binaryGeometry ?">""")
+    p.save()
+    p = Patch(py / 'memory_meter.py')
+    p.rep("""    def refresh(self):
+        self.reader.pids = [p for p in (self.processes() or []) if p]""", """    def refresh(self):
+        # Off in Preferences > MoonRay (Memory meter): hidden, and nothing read.
+        try:
+            from . import native
+            on = native._switch('memory_meter', 'MOONRAY_MODO_MEMORY_METER')
+        except Exception:
+            on = True
+        self.reader.active = on
+        if not on:
+            self.hide()
+            return
+        self.show()
+        self.reader.pids = [p for p in (self.processes() or []) if p]""")
+    p.save()
+
+
+def motion_skip(kit):
+    """MoonLightIPR's motion-blurred readings left out where they cannot change the picture (the main kit, 2026-10-27):
+    a move of items none of whose channels is animated, in a scene last found to hold nothing that moves, is read once
+    (a fur scene held Modo 0.8 s at each release for three readings); a scene so found keeps its meshes for the next
+    move; clip folders (imageFolder) count as steady items. The block is taken from the repo's panel.py as it is."""
+    py = kit / 'python' / 'moonray_modo'
+    source = (REPO_KIT / 'panel.py').read_text(encoding='utf-8').replace('\r\n', '\n')
+    start = source.index('            # MoonLightIPR with motion blur: once an edit is let go')
+    end = source.index('            if not blurred:', start)
+    p = Patch(py / 'panel.py')
+    begin = p.text.index('            # MoonLightIPR with motion blur: once an edit is let go')
+    finish = p.text.index('            if not blurred:', begin)
+    p.text = p.text[:begin] + source[start:end] + p.text[finish:]
+    p.save()
+    inc = (REPO_KIT / 'incremental.py').read_text(encoding='utf-8').replace('\r\n', '\n')
+    a = inc.index('def animated(scene,identities):')
+    b = inc.index('def item_matrices(scene,snapshot):')
+    p = Patch(py / 'incremental.py')
+    p.rep("""'scene','videoStill'}|LIGHTS|MATERIALS""", """'scene','videoStill','imageFolder'}|LIGHTS|MATERIALS""")
+    p.rep("""def item_matrices(scene,snapshot):""", inc[a:b] + """def item_matrices(scene,snapshot):""")
+    p.save()
+
+
 def build(session, base):
     base, session = Path(base).resolve(), Path(session).resolve()
     if any((base / m).exists() for m in MARKERS):
@@ -847,6 +955,9 @@ def build(session, base):
     repo_fixes(KIT)
     displacement_choice(KIT)
     geometry_rows(KIT)
+    xpu2_smart_render(KIT)
+    meter_switch(KIT)
+    motion_skip(KIT)
 
     p = Patch(py / 'preferences.py')
     p.rep("""    'auto_xpu': (True, bool),""", """    'auto_xpu': (True, bool),

@@ -3830,6 +3830,11 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
  }
  need(plan->bytes<=limits.bytes,geometryBudgetText(plan->bytes,limits.bytes));
  if(paths)routeMeshes(*plan,limits.gpuBytes);
+ // A realtime plan's shading reads each texture from its first level of 1280 pixels or less (Pyramid::view); what the
+ // plan worked out from the textures (displacement above) read them whole.
+ if(plan->realtime){size_t capped=0;
+  for(size_t i=0;i<plan->textureImages.size();++i){const auto& view=plan->textures[i]->pyramid->view(true);capped+=&view!=plan->textureImages[i];plan->textureImages[i]=&view;}
+  if(capped)std::printf("XPU2: realtime textures at most %u pixels a side (%zu of %zu made smaller)\n",texture::Pyramid::realtimeSide(),capped,plan->textureImages.size());}
  prepLaps().lap("light trees, filters, the rest");return plan;
 }
 X2_SPLIT_INLINE PlanView prepare(CanonicalSession& session,const CanonicalView& frame,PlanView previous,Limits limits,const fs::path& assetRoot,Domain domain,bool allowAdaptive,bool paths){

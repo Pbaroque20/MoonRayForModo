@@ -291,6 +291,13 @@ taking 65-70 ms while the path tracer has the GPU (5.5 ms on its own), the half-
 XPU2_SESSION_RT_GUIDES (clean, raw, normal, none), XPU2_SESSION_RT_SHOW (color, albedo, normal: the denoiser's input
 shown), XPU2_SESSION_RT_DEBUG (each picture's intensity and change), XPU2_SESSION_RT_DENOISE=0, XPU2_SESSION_RT_PRIORITY=0.
 
+Added 2026-10-27: **realtime's textures at most 1280 pixels a side.** A realtime plan reads each texture from its first
+mip level no wider or taller than 1280 (`texture::Pyramid::view`, `XPU2_SESSION_RT_TEXTURE_SIDE`, 0 = whole); what the
+plan works out from textures (displacement) still reads them whole, and other plans are unchanged. On the car at
+960x540: fine-detail tiles sent up 137,404 to 8,368 (2.8 GB to 206 MB of the card), the card's peak 17.9 to 14.6 GB,
+the session 11.3 to 10.0 GB. The frame took as long (about 59 s): realtime's GPU is underused (570 launches of about
+15 ms, the CPU a third of the samples), which is what to work on next.
+
 ## 14. His Modo scenes (9 Spheres, Dose, Interior) and the Source Overrides
 
 Exported headless with the installed private kit (modo_cl, test-results/xpu2-cl), each was refused before drawing:

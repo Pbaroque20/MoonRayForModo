@@ -33,7 +33,7 @@ inline surface::Lambert material(const cpu::PlanView& plan,const RTCRayHit& hit,
  if(!plan->diffuseMaps.count(mesh.material)&&!plan->emissionMaps.count(mesh.material))return value;
  if(cpu::gpuTextures(plan->domain)){const auto& t=mesh.data->triangles.at(hit.hit.primID);tex::Footprint f;
   cpu::need(tex::footprint(mesh.data->positions.at(t.a),mesh.data->positions.at(t.b),mesh.data->positions.at(t.c),ray,hit.hit.u,hit.hit.v,plan->spp,f,cpu::isSpatial(plan->domain)),"Shared texture derivatives");
-  auto apply=[&](surface::V3& base,const auto& maps){auto it=maps.find(mesh.material);if(it==maps.end()||(base.x==0&&base.y==0&&base.z==0))return;surface::V3 color;cpu::need(tex::lookup(it->second.descriptor(),f,color)==tex::Ready,"CPU software texture unavailable");base={base.x*color.x,base.y*color.y,base.z*color.z};};apply(value.albedo,plan->diffuseMaps);apply(value.emission,plan->emissionMaps);return value;
+  auto apply=[&](surface::V3& base,const auto& maps){auto it=maps.find(mesh.material);if(it==maps.end()||(base.x==0&&base.y==0&&base.z==0))return;surface::V3 color;cpu::need(tex::lookup(it->second.descriptor(plan->realtime),f,color)==tex::Ready,"CPU software texture unavailable");base={base.x*color.x,base.y*color.y,base.z*color.z};};apply(value.albedo,plan->diffuseMaps);apply(value.emission,plan->emissionMaps);return value;
  }
  const auto& tri=mesh.data->triangles.at(hit.hit.primID);
  auto a=mesh.data->positions.at(tri.a),b=mesh.data->positions.at(tri.b),c=mesh.data->positions.at(tri.c);
