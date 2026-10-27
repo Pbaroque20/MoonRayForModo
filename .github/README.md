@@ -2,7 +2,7 @@
 
 <img width="800" height="450" alt="xpu2" src="https://github.com/user-attachments/assets/a8a8aae2-c499-450c-8113-390237a0cbe7" />
 
-_Cellular Automata Tiling_
+_Cellular Automata Scheduling_
 
 
 **XPU2** is an asynchronous CPU + GPU Monte Carlo path tracer. The CPU and GPU render collaborate on same image at once: each
