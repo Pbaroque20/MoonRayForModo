@@ -1,8 +1,17 @@
 # xpu2-foundation
 
-**XPU2** is an asynchronous CPU + GPU path tracer. The CPU and GPU render the same image at once, as peers: each
+<img width="800" height="450" alt="xpu2" src="https://github.com/user-attachments/assets/a8a8aae2-c499-450c-8113-390237a0cbe7" />
+
+_Cellular Automata Scheduling_
+
+
+**XPU2** is an asynchronous CPU + GPU Monte Carlo path tracer. The CPU and GPU render collaborate on same image at once: each
 claims its own work, neither waits for the other, and any sample can be rendered on either device with the same
 result.
+
+XPU2 is designed by Raphael Tobar, implemented with AI-assistance.
+
+The mantra for XPU2 is: "Use your silicon!"
 
 ![XPU2 architecture](/xpu2/manual/xpu2_architecture.svg)
 
@@ -23,8 +32,6 @@ result.
   is highest.
 - **Audited results.** Each device keeps its own film. When a frame ends the films merge and every pixel's sample
   count is checked.
-
-  The mantra for XPU2 is: "Use your Silicon!"
 
 ## Reference renderer: MoonRay
 
