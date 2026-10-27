@@ -22,6 +22,7 @@ p.add_argument('tag')
 p.add_argument('--env', action='append', default=[])
 p.add_argument('--timeout', type=int, default=900)
 p.add_argument('--extra', default='', help='an overlay .rdla sent with the scene')
+p.add_argument('--memory-binary', action='store_true', help='the .rdlb handed over in shared memory (session_harness.py)')
 p.add_argument('--min-free-ram-gb', type=float, default=8.0, help='stop the run when the machine has less RAM free')
 p.add_argument('--max-gpu-mb', type=int, default=21500, help='stop the run when the GPU holds more')
 a = p.parse_args()
@@ -32,7 +33,7 @@ exe = TR / ('xpu2-session-%s' % a.session) / 'runtime-xpu2' / 'moonray_xpu2.exe'
 args = [sys.executable, str(HARNESS), '--exe', str(exe), '--scene', str(a.folder / 'preview.rdla'), '--scene', str(a.folder / 'preview.rdlb')]
 if a.extra:
     args += ['--scene', a.extra]
-args += ['--output', str(out), '--threads', '12', '--timeout', str(a.timeout)]
+args += ['--output', str(out), '--threads', '12', '--timeout', str(a.timeout)] + (['--memory-binary'] if a.memory_binary else [])
 for v in KIT_ENV + a.env:
     args += ['--env', v]
 samples = []

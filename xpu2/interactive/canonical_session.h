@@ -6,6 +6,9 @@
 #include "../rdl_replica.h"
 #include <filesystem>
 #include <optional>
+#include <chrono>
+#include <cstdio>
+#include <cstdlib>
 
 namespace xpu2::interactive {
 namespace ri=xpu2::rdlindex;
@@ -27,7 +30,6 @@ class CanonicalSession {
     const ri::rdl::SceneContext *source_=nullptr,*pendingSource_=nullptr;
     // The classification of an RDL object (entity_classes.h through the session); none: every object falls back.
     std::function<Decision(const ri::rdl::SceneObject&)> classify_;
-    static ix::Bytes retain(ix::Kind,ix::Field,const ix::Bytes& bytes){return bytes;}
     bool current(const CanonicalView& frame) const {
         // Router's thread check also protects these coordinator-owned fields.
         router_.acquire();return frame && frame==pendingFrame_ && pending_.has_value();
@@ -51,9 +53,12 @@ public:
         if(pending_)throw std::logic_error("Reject or publish pending scene first");
         if(!folder.is_absolute())throw std::invalid_argument("Absolute staging directory required");
         const auto base=index_.acquire();
+        // Where its time goes (the session's log): capture, index, replica, file.
+        using clock=std::chrono::steady_clock;auto lap=clock::now();double laps[4]={0,0,0,0};
+        auto took=[&](int k){const auto now=clock::now();laps[k]+=std::chrono::duration<double>(now-lap).count();lap=now;};
         // A replacement canonical context may have clean dirty flags. Recapture
         // all attributes on that boundary; normal edits remain incremental.
-        auto captured=ri::capture(source,base,source_!=&source);
+        auto captured=ri::capture(source,base,source_!=&source);took(0);
         std::set<std::string> present,removed;
         std::map<std::string,const ri::rdl::SceneObject*> objects;
         for(auto i=source.beginSceneObject();i!=source.endSceneObject();++i){
@@ -66,7 +71,8 @@ public:
                 const auto& attributes=base->entities.at(id)->dependencies;
                 removed.insert(attributes.begin(),attributes.end());
             }
-        auto candidate=index_.prepare(base,captured.edits,removed,retain);
+        // The attributes kept as captured, moved in and held once (SceneIndex::same).
+        auto candidate=index_.prepare(base,std::move(captured.edits),removed,ix::Prepare(&ix::SceneIndex::same));took(1);
         // Each changed object classified (unknown ones fall back); without a classifier everything falls back.
         Classify classify;
         if(classify_)classify=[&](const std::string& id,const ix::View&){
@@ -78,12 +84,21 @@ public:
         budget_.admit(candidate.view());
         if(!fs::create_directory(folder))throw std::invalid_argument("Fresh staging directory required");
         try {
+            took(1);
             if(removed.empty())replica_.applyCandidate(candidate);
             else replica_.rebuild(candidate.view());
-            const auto temporary=folder/"scene.rdlb.pending";
+            took(2);
+            // The replica as an RDLB file: nothing in the session reads it (the kit's MoonRay fallback starts from the kit's
+            // own scene files), and writing it took 10 s on a 1 GB scene each preparation; XPU2_SESSION_CANONICAL_FILE=1
+            // writes it (to inspect what XPU2 prepared).
             const auto ready=folder/"scene.rdlb";
-            ri::rdl::BinaryWriter(replica_.context()).toFile(temporary.string());
-            fs::rename(temporary,ready);
+            static const bool writeFile=[]{const char* v=std::getenv("XPU2_SESSION_CANONICAL_FILE");return v&&v[0]=='1';}();
+            if(writeFile){const auto temporary=folder/"scene.rdlb.pending";
+                ri::rdl::BinaryWriter(replica_.context()).toFile(temporary.string());
+                fs::rename(temporary,ready);}
+            took(3);
+            std::printf("XPU2: canonical: capture %.2f s (%zu attributes, %zu MB), index %.2f s, replica %.2f s, file %.2f s\n",laps[0],
+                        size_t(captured.attributes),size_t(captured.bytes)>>20,laps[1],laps[2],laps[3]);
             auto frame=std::make_shared<const CanonicalFrame>(CanonicalFrame{
                 routed.view(),ready,captured.attributes,captured.bytes});
             pending_.emplace(std::move(routed));

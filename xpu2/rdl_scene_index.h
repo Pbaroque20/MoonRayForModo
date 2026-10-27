@@ -69,13 +69,33 @@ XPU2_VECTOR(Vec2f,2) XPU2_VECTOR(Vec2d,2) XPU2_VECTOR(Vec3f,3) XPU2_VECTOR(Vec3d
  static rdl::T get(Reader& r){rdl::T v;for(int i=0;i<N;++i)for(int j=0;j<N;++j)v[i][j]=Codec<std::decay_t<decltype(v[i][j])>>::get(r);return v;} };
 XPU2_MATRIX(Mat3f,3) XPU2_MATRIX(Mat3d,3) XPU2_MATRIX(Mat4f,4) XPU2_MATRIX(Mat4d,4)
 #undef XPU2_MATRIX
+// Whether a vector's values lie in memory exactly as their codec writes them one by one: whole numbers and floats
+// (not bool), and RDL's vectors and colours of N of them with no padding. Such a vector is written and read as one
+// block, the same bytes (a heavy scene's gigabyte of geometry went value by value: 12 s of 32 s preparing a car).
+template<class T,class=void> struct Packed : std::integral_constant<bool,std::is_arithmetic<T>::value&&!std::is_same<T,bool>::value> {};
+template<class T> struct PackedOf : std::false_type {};
+#define XPU2_PACKED(T,C,N) template<> struct PackedOf<rdl::T> : std::integral_constant<bool,sizeof(rdl::T)==N*sizeof(C)&&  std::is_trivially_copyable<rdl::T>::value> {};
+XPU2_PACKED(Rgb,float,3) XPU2_PACKED(Rgba,float,4)
+XPU2_PACKED(Vec2f,float,2) XPU2_PACKED(Vec2d,double,2) XPU2_PACKED(Vec3f,float,3) XPU2_PACKED(Vec3d,double,3) XPU2_PACKED(Vec4f,float,4) XPU2_PACKED(Vec4d,double,4)
+#undef XPU2_PACKED
 template<class Container> struct SequenceCodec {
     using T=typename Container::value_type;
-    static void put(Writer& w,const Container& values){Codec<uint64_t>::put(w,values.size());for(const auto& v:values)Codec<T>::put(w,v);}
+    static constexpr bool block=(Packed<T>::value||PackedOf<T>::value)&&
+        std::is_same<Container,std::vector<T,typename Container::allocator_type>>::value;
+    static void put(Writer& w,const Container& values){
+        Codec<uint64_t>::put(w,values.size());
+        if constexpr(block){w.append(values.data(),values.size()*sizeof(T));}
+        else for(const auto& v:values)Codec<T>::put(w,v);
+    }
     static Container get(Reader& r){
         auto count=Codec<uint64_t>::get(r);
         if(count>r.remaining())throw std::invalid_argument("Invalid indexed vector length");
-        Container values;for(uint64_t i=0;i<count;++i)values.push_back(Codec<T>::get(r));return values;
+        Container values;
+        if constexpr(block){
+            if(count>r.remaining()/sizeof(T))throw std::invalid_argument("Truncated indexed RDL attribute");
+            values.resize(size_t(count));r.take(values.data(),size_t(count)*sizeof(T));
+        }else for(uint64_t i=0;i<count;++i)values.push_back(Codec<T>::get(r));
+        return values;
     }
 };
 template<class T,class A> struct Codec<std::vector<T,A>> : SequenceCodec<std::vector<T,A>> {};
@@ -190,14 +210,14 @@ inline void apply(const View& scene,rdl::SceneContext& target,bool full=false) {
     else for(const auto& id:ids)collect(scene->entities.at(id));
     // Construct all objects before resolving attribute references/cycles.
     for(const auto* entity:objects) {
-        Reader r{entity->buffers.at(Field::Parameters)->prepared};
+        Reader r{entity->buffers.at(Field::Parameters)->ready()};
         auto name=Codec<std::string>::get(r),cls=Codec<std::string>::get(r);r.finish();
         target.createSceneObject(cls,name);
     }
     // Validate all changed values before any attribute is applied.
     for(bool validation:{true,false})for(const auto* entity:attributes) {
         if(entity->buffers.size()!=1)throw std::invalid_argument("Invalid attribute record");
-        applyAttribute(entity->buffers.begin()->second->prepared,target,validation);
+        applyAttribute(entity->buffers.begin()->second->ready(),target,validation);
     }
 }
 } // namespace xpu2::rdlindex

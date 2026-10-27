@@ -26,6 +26,7 @@
 #include "aov_display.h"
 #include <scene_rdl2/scene/rdl2/RenderOutput.h>
 #include <scene_rdl2/scene/rdl2/rdl2.h>
+#include <scene_rdl2/scene/rdl2/BinaryReader.h>
 #include <condition_variable>
 #include <new>
 #include <psapi.h>
@@ -102,9 +103,12 @@ std::string memoryText() {
 // buffers, normals, texture coordinates and the CPU's acceleration structure besides (5.7 GB committed for 576 MB on a
 // displaced, instanced test scene).
 constexpr size_t GeometryFootprint = 11;  // 10.4 measured, and a margin
-// The same on the card: its acceleration structures' build and buffers (a peak of 13 GB above the session's own for
-// 552 MB there).
-constexpr size_t GeometryVramFootprint = 24;
+// The same on the card, compacted acceleration structures and their buffers: 6 measured (3.3 GB for 552 MB), and a margin;
+// besides what the card holds whatever the geometry (GpuFixedBytes).
+constexpr size_t GeometryVramFootprint = 7;
+// What the card holds whatever the geometry: OptiX's stacks for every thread the card runs at once (about 45 KB each),
+// the driver's own. About 8 GB on his RTX 3090.
+constexpr size_t GpuFixedBytes = 8ull << 30;
 
 // The largest graphics card's own memory (DXGI's dedicated video memory), 0 where it is not known.
 size_t cardMemory() {
@@ -133,7 +137,7 @@ size_t cardMemory() {
 // displaced, shared instances' once): XPU2_SESSION_GEOMETRY_MB when set (tests); else what the machine has room for,
 // measured as each scene is prepared: the RAM free then, less a reserve for Windows and Modo (a tenth of the machine's,
 // 4 GB at least) and for the GPU lane's pinned memory (an eighth, 2 to 8 GB), over GeometryFootprint, within the
-// session's memory ceiling (memoryCeiling) and the card's memory (cardMemory), between 256 MB and 64 GB. A scene asking more falls back to XPU as it is
+// session's memory ceiling (memoryCeiling), between 256 MB and 64 GB. The card's share is routed, not refused (gpuGeometryBudget). A scene asking more falls back to XPU as it is
 // prepared, where a fixed 1 GiB refused scenes the machine held easily, and more than the machine has froze it.
 size_t geometryBudget() {
     if (const char* mb = std::getenv("XPU2_SESSION_GEOMETRY_MB"))
@@ -145,10 +149,19 @@ size_t geometryBudget() {
     const size_t reserve = std::max<size_t>(total / 10, 4ull << 30) + std::clamp<size_t>(total / 8, 2ull << 30, 8ull << 30);
     size_t budget = (free > reserve ? free - reserve : 0) / GeometryFootprint;
     if (ceilingBytes) budget = std::min(budget, ceilingBytes / GeometryFootprint);
-    // And what the card holds, less a fifth for the rest of the frame and Modo's viewport: past it the GPU's build fails,
-    // only after the whole preparation.
-    if (const size_t card = cardMemory()) budget = std::min(budget, (card - card / 5) / GeometryVramFootprint);
     return std::clamp<size_t>(budget, 256ull << 20, cpu::HardGeometryBytes);
+}
+
+// The geometry the card holds (cpu::Limits::gpuBytes): its memory less a fifth for the rest of the frame and Modo's
+// viewport, over GeometryVramFootprint. Past it the largest meshes are left to the CPU lane (cpu::routeMeshes), where
+// before the scene fell back whole. XPU2_SESSION_GPU_GEOMETRY_MB sets it (tests).
+size_t gpuGeometryBudget() {
+    if (const char* mb = std::getenv("XPU2_SESSION_GPU_GEOMETRY_MB"))
+        if (const long long n = std::atoll(mb); n > 0) return size_t(n) << 20;
+    const size_t card = cardMemory();
+    if (!card) return ~size_t(0);
+    const size_t spare = card - card / 5;
+    return std::max<size_t>(256ull << 20, (spare > GpuFixedBytes ? spare - GpuFixedBytes : 0) / GeometryVramFootprint);
 }
 
 // Where the preparation's time went (cpu::prepLaps): its stages and the parts within them, also when it stopped short.
@@ -311,9 +324,45 @@ Args parse(int argc, char** argv) {
     return a;
 }
 
-// One file the kit names: a path, or "modo-memory:<length>:<name>", text it holds in shared memory.
+// The geometry's binary scene (RDLB) as the kit hands it over in shared memory, "modo-memory-rdlb:<length>:<name>":
+// read as MoonRay reads the file (BinaryReader), without the gigabyte or so of a heavy scene's geometry going to the
+// disk and back.
+bool modoBinaryMemory(const std::string& ref) { return ref.rfind("modo-memory-rdlb:", 0) == 0; }
+void readBinaryMemory(rdl::SceneContext& context, const std::string& ref) {
+    const size_t start = 17, split = ref.find(':', start);
+    if (split == std::string::npos) throw std::runtime_error("Invalid shared binary scene reference");
+    const std::string count = ref.substr(start, split - start), name = ref.substr(split + 1);
+    if (count.empty() || count.size() > 15 || count.find_first_not_of("0123456789") != std::string::npos ||
+        name.rfind("Local\\MoonRayForModoScene_", 0) != 0 ||
+        name.find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_\\") != std::string::npos)
+        throw std::runtime_error("Invalid shared binary scene name");
+    const auto size = std::stoull(count);
+    if (size < 16 || size > (64ull << 30)) throw std::runtime_error("Shared binary scene of an invalid size");
+    HANDLE mapping = OpenFileMappingA(FILE_MAP_READ, FALSE, name.c_str());
+    if (!mapping) throw std::runtime_error("Shared binary scene unavailable");
+    const auto* data = static_cast<const unsigned char*>(MapViewOfFile(mapping, FILE_MAP_READ, 0, 0, size_t(size)));
+    if (!data) {
+        CloseHandle(mapping);
+        throw std::runtime_error("Cannot map shared binary scene");
+    }
+    struct Held {
+        HANDLE mapping;
+        const void* data;
+        ~Held() { UnmapViewOfFile(data); CloseHandle(mapping); }
+    } held{mapping, data};
+    // Two big-endian lengths, the manifest's and the payload's, then each (rdlb.py; BinaryReader::fromStream).
+    auto length = [&](size_t at) { std::uint64_t v = 0; for (int k = 0; k < 8; ++k) v = (v << 8) | data[at + k]; return v; };
+    const std::uint64_t manifest = length(0), payload = length(8);
+    if (manifest > size - 16 || payload > size - 16 - manifest) throw std::runtime_error("Shared binary scene is truncated");
+    rdl::BinaryReader(context).fromBytes(std::string(reinterpret_cast<const char*>(data) + 16, size_t(manifest)),
+                                         std::string(reinterpret_cast<const char*>(data) + 16 + manifest, size_t(payload)));
+}
+
+// One file the kit names: a path, "modo-memory:<length>:<name>", text it holds in shared memory, or
+// "modo-memory-rdlb:<length>:<name>", the geometry's binary scene held the same way.
 void readInto(rdl::SceneContext& context, const std::string& name) {
-    if (modoSceneMemory(name)) rdl::AsciiReader(context).fromString(modoReadSceneMemory(name), "@modo-memory");
+    if (modoBinaryMemory(name)) readBinaryMemory(context, name);
+    else if (modoSceneMemory(name)) rdl::AsciiReader(context).fromString(modoReadSceneMemory(name), "@modo-memory");
     else rdl::readSceneFromFile(name, context);
 }
 
@@ -407,6 +456,7 @@ struct Scene {
         try {
             cpu::Limits limits;
             limits.bytes = geometryBudget();
+            limits.gpuBytes = gpuGeometryBudget();
             plan = cpu::prepare(*canonical, frame, plan, limits, assetRoot(), cpu::Domain::SurfaceTextures, true, true);
         } catch (...) {
             canonical->reject(frame);
@@ -425,7 +475,11 @@ struct Scene {
             cpuScene = std::make_unique<async::CpuScene>(plan);
         // Where the preparation's time went: the canonical copy, the plan by its stages (cpu::prepLaps), the CPU's scene.
         logPreparation("prepared", canonicalSeconds, seconds(planned));
-        std::printf("XPU2: geometry: %zu MB of positions and triangles, of a %zu MB budget\n", plan->bytes >> 20, geometryBudget() >> 20);
+        {const auto& c = cpu::geometryCacheCounts();
+            if (c.reused || c.saved)
+                std::printf("XPU2: tessellation cache: %u meshes reused (%zu MB read), %u saved\n", c.reused.load(), c.reusedBytes.load() >> 20, c.saved.load());}
+        std::printf("XPU2: geometry: %zu MB of positions and triangles, of a %zu MB budget; the GPU holds %zu MB of a %zu MB budget, %u meshes left to the CPU\n",
+                    plan->bytes >> 20, geometryBudget() >> 20, plan->gpuBytes >> 20, gpuGeometryBudget() == ~size_t(0) ? size_t(0) : gpuGeometryBudget() >> 20, plan->cpuOnlyMeshes);
         const auto& subd = cpu::subdTimes();
         if (subd.meshes)
             std::printf("XPU2: tessellation: %lld meshes (MoonRay's subdivision and PolyMesh) in %.2f s; displacement %lld vertices, "
@@ -1348,7 +1402,9 @@ int main(int argc, char** argv) {
     if (!directory) return passThrough(argc, argv);
     memoryCeiling();
     try {
-        return session(parse(argc, argv), fs::u8path(directory));
+        const int code = session(parse(argc, argv), fs::u8path(directory));
+        cpu::finishGeometryCache();  // the tessellations being written to the cache, whole
+        return code;
     } catch (const std::bad_alloc&) {
         // Its memory ceiling (memoryCeiling) refused it more: the scene goes to XPU, the machine is left alone.
         fallback("XPU2 ran out of the memory it may use (" + memoryText() + ")");

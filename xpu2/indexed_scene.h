@@ -26,6 +26,9 @@ inline bool valid(Field f) { return f >= Field::Topology && f <= Field::Paramete
 struct Buffer {
     uint64_t revision;
     Bytes source, prepared;
+    // Prepared as it came (SceneIndex::same): the source is what is prepared, held once.
+    bool same = false;
+    const Bytes& ready() const { return same ? source : prepared; }
 };
 struct Entity {
     Kind kind;
@@ -81,14 +84,23 @@ public:
     View acquire() const { checkThread(); return active_; }
     bool current(const View& view) const { checkThread(); return view && view == active_; }
 
+    // The preparer that keeps a resource as it came: its buffer holds it once (Buffer::ready), not twice.
+    static Bytes same(Kind, Field, const Bytes&) { return {}; }
     // Two-phase publication: the native adapter must acknowledge candidate.view()
     // before commit. On rejection, discard candidate; active scene stays unchanged.
     // Prepare can encode owned CPU bytes. CUDA uploads/fences need a separate adapter.
     Candidate prepare(const View& base, const std::vector<Edit>& edits,
                       const std::set<std::string>& removed, const Prepare& encode) const {
+        return prepare(base, std::vector<Edit>(edits), removed, encode);
+    }
+    // As above, the edits' bytes moved into the index rather than copied (a heavy scene's gigabyte of geometry).
+    Candidate prepare(const View& base, std::vector<Edit>&& edits,
+                      const std::set<std::string>& removed, const Prepare& encode) const {
         checkThread();
         if (!base || base != active_) throw std::invalid_argument("Stale scene base");
         if (!encode) throw std::invalid_argument("Missing resource preparer");
+        const auto* target = encode.target<Bytes (*)(Kind, Field, const Bytes&)>();
+        const bool identity = target && *target == &SceneIndex::same;
         if (base->revision == std::numeric_limits<uint64_t>::max())
             throw std::overflow_error("Scene revision exhausted");
         // Do not copy the previous transaction's potentially scene-sized change sets.
@@ -127,7 +139,7 @@ public:
         // Build metadata and raw changes first. Encoding happens after graph validation.
         std::map<std::string, std::shared_ptr<Entity>> changed;
         std::map<std::string, std::set<Field>> dirty;
-        for (const auto& edit : edits) {
+        for (auto& edit : edits) {
             auto old = base->entities.find(edit.id);
             bool created = old == base->entities.end();
             auto entity = created ? std::make_shared<Entity>(Entity{edit.kind, next->revision, {}, {}})
@@ -138,10 +150,10 @@ public:
                 different = true;
             }
             for (auto field : edit.erase) different = entity->buffers.erase(field) != 0 || different;
-            for (const auto& [field, bytes] : edit.fields) {
+            for (auto& [field, bytes] : edit.fields) {
                 auto before = entity->buffers.find(field);
                 if (before != entity->buffers.end() && before->second->source == bytes) continue;
-                entity->buffers[field] = std::make_shared<const Buffer>(Buffer{next->revision, bytes, {}});
+                entity->buffers[field] = std::make_shared<const Buffer>(Buffer{next->revision, std::move(bytes), {}, identity});
                 dirty[edit.id].insert(field);
                 different = true;
             }
@@ -226,6 +238,10 @@ public:
                 addBudget(bytes, pair.second->prepared.size(), limits_.bytes);
             }
         for (const auto& [id, fields] : dirty) {
+            if (identity) {
+                next->changes.preparedBuffers += fields.size();
+                continue;
+            }
             auto& entity = changed.at(id);
             for (auto field : fields) {
                 const auto& source = entity->buffers.at(field)->source;

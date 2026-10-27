@@ -10,7 +10,15 @@ constexpr unsigned Tile=32,MaxLevels=16;
 enum Status:unsigned {Invalid=0,Ready=1,Miss=2};
 // tileBase numbers this level's tiles in a scene-wide tile space, so a miss can
 // name the tile it needs (async_gpu.h); zero where nothing listens for misses.
-struct Mip {unsigned width=0,height=0;const V3* const* pages=nullptr;unsigned tileBase=0;};
+// format: 0, three floats a texel; 1, three bytes, an 8-bit file's values (texel decodes each as OpenImageIO does, v
+// times 1/255: host_texture.h checks it is so before it stores bytes), a quarter of the memory.
+// load, loader: on the host, a level whose tiles are decoded when first read (host_texture.h's Pyramid, level 0): a page
+// not there yet is loaded by load(loader, level, page) and read then. Never on the device (its own descriptors leave it
+// null; the GPU's misses go to its tile cache).
+struct Mip {unsigned width=0,height=0;const V3* const* pages=nullptr;unsigned tileBase=0;unsigned format=0;
+ void (*load)(const void*,unsigned,unsigned)=nullptr;const void* loader=nullptr;};
+// Bytes a texel of a level of this format.
+X2_HD inline unsigned texelBytes(unsigned format){return format==1?3u:unsigned(sizeof(V3));}
 // A sink receives the scene-wide id of each missing tile, and of each tracked tile
 // that is read (for the fine-detail cache's eviction order). NoSink ignores both.
 // Partial shading: where the sink takes coarse(), a texel whose tile is missing is read from its parent a level up
@@ -37,27 +45,34 @@ X2_HD inline float exp(float a){float x=clamp(a*1.4426950408889634f,-126,126);in
  r=x*r+9.810352697968e-3f;r=x*r+5.551834031939e-2f;r=x*r+0.2401793301105f;r=x*r+0.693144857883f;r=x*r+1.f;return ldexpf(r,m);}
 X2_HD inline int address(int x,int n,bool wrap){if(wrap){int v=x%n;return v<0?v+n:v;}return x<0?0:x>=n?n-1:x;}
 // A resident page's texel.
-X2_HD inline Status texel(const V3* page,unsigned width,unsigned tx,unsigned x,unsigned y,V3& out){
- unsigned stride=width-tx*Tile;if(stride>Tile)stride=Tile;out=page[(y%Tile)*stride+x%Tile];return surface::finite(out)?Ready:Invalid;  // negative values as MoonRay keeps them
+X2_HD inline Status texel(const V3* page,unsigned width,unsigned tx,unsigned x,unsigned y,V3& out,unsigned format=0){
+ unsigned stride=width-tx*Tile;if(stride>Tile)stride=Tile;const unsigned i=(y%Tile)*stride+x%Tile;
+ if(format==1){const unsigned char* b=reinterpret_cast<const unsigned char*>(page)+3u*i;const float k=1.0f/255.0f;
+  out=V3{float(b[0])*k,float(b[1])*k,float(b[2])*k};return Ready;}
+ out=page[i];return surface::finite(out)?Ready:Invalid;  // negative values as MoonRay keeps them
 }
 // Partial shading: a texel's parent a level up (texel x, y of level - 1 halved), where that level's page is here.
 X2_HD inline Status parentTexel(const Image& image,unsigned level,unsigned x,unsigned y,V3& out){
  const Mip& u=image.levels[level];if(!u.pages||!u.width||!u.height)return Miss;
  const unsigned px=x<u.width?x:u.width-1,py=y<u.height?y:u.height-1,ux=px/Tile;
  const V3* parent=u.pages[(py/Tile)*((u.width+Tile-1)/Tile)+ux];if(!parent)return Miss;
- return texel(parent,u.width,ux,px,py,out);
+ return texel(parent,u.width,ux,px,py,out,u.format);
 }
 template<class Sink>X2_HD inline Status fetch(const Image& image,unsigned level,int x,int y,bool wrap,V3& out,Sink& sink){
  const Mip& m=image.levels[level];
  if(!m.width||!m.height)return Invalid;if(!m.pages)return Miss;x=address(x,int(m.width),wrap);y=address(y,int(m.height),wrap);
  unsigned tx=unsigned(x)/Tile,ty=unsigned(y)/Tile,nx=(m.width+Tile-1)/Tile;const V3* page=m.pages[ty*nx+tx];
+#if !defined(__CUDA_ARCH__)
+ // A host level loaded on demand: its page decoded now, then read as any other.
+ if(!page&&m.load){m.load(m.loader,level,ty*nx+tx);page=m.pages[ty*nx+tx];}
+#endif
  if(!page){
   sink(m.tileBase+ty*nx+tx);
   // Partial shading: the texel's parent a level up, read by the sink out of line (it is rarely needed).
   return sink.coarse()&&level+1<image.count?Status(sink.parent(image,level+1,unsigned(x)/2,unsigned(y)/2,out)):Miss;
  }
  if(m.tileBase)sink.touch(m.tileBase+ty*nx+tx);
- return texel(page,m.width,tx,unsigned(x),unsigned(y),out);
+ return texel(page,m.width,tx,unsigned(x),unsigned(y),out,m.format);
 }
 template<class Sink>X2_HD inline Status bilinear(const Image& image,unsigned level,float u,float v,bool wrap,V3& out,Sink& sink){
  const Mip& m=image.levels[level];

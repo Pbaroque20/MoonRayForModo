@@ -350,6 +350,80 @@ Diagnostic: XPU2_SESSION_DEBUG_FAILURES names the CPU lane's first failed shadin
   between 2 and 16 GB (GlobalMemoryStatusEx), and the refusal names the memory and its use. Reproduced from his live
   preview scene (its text, with a binary file of identical fingerprints written headless), it renders whole.
 
+## 16. The tessellation handler: geometry by device, levels and their cache
+
+Added 2026-10-26 (sessions 143-151).
+
+Memory had a failsafe (the session's job-object ceiling, a geometry budget from free RAM and the card) but no answer
+for a scene whose geometry is honestly large. Textures are streamed by level; geometry cannot be, the same way: a
+coarser level changes what a ray hits (silhouettes, contact, displaced detail), not only how sharp a lookup is, and a
+ray finds only what its acceleration structure already holds. So the handler distributes whole meshes and keeps
+MoonRay's own levels, and the image stays MoonRay's.
+
+1. **Estimate before tessellating** (done, session 144). A displaced mesh MoonRay tessellates uniformly is sized from
+   its faces and mesh resolution (about r x r times its triangles, 18 bytes a triangle with its share of vertices)
+   before its tessellation runs: one the machine cannot hold is refused at once (a 4.5 M-triangle tyre at resolution 8:
+   2.8 s, where the budget check after tessellating took 30 s).
+2. **Route by device** (done, session 144). Two budgets: RAM's refuses the scene (geometryBudget), the card's routes it
+   (gpuGeometryBudget, cpu::routeMeshes). Past the card's, the largest meshes' data (a shared instance's once) is left
+   to the CPU lane alone (Mesh::cpuOnly): on the GPU a stand-in box, a sample that meets it rendered by the CPU from its
+   identity. Forced on the displaced-tyre test scene (every tyre the CPU's): display error 1.16 against MoonRay, as
+   before; the 1.24 GB scene the card refused now renders.
+3. **MoonRay's adaptive tessellation.** MoonRay dices by the dicing camera where adaptive_error > 0 (OpenSubdivMesh,
+   PolyMesh); XPU2 tessellates through MoonRay's code, so it has the same rule and the same image. The kit can map
+   Modo's displacement rate to adaptive_error, so both renderers make far less geometry where the mesh is small on
+   screen. Done (session 145, kit render setting Adaptive Displacement, pixels, 0 = uniform as before; an object's own
+   Subdivision Screen Error wins; instances stay uniform, MoonRay tessellating a shared reference once): a displaced
+   polygon mesh is camera-dependent in XPU2 as a subdivision surface was (a camera move tessellates it again). Four
+   displaced tyres at resolution 8: 351 MB of geometry uniform, 7 MB at 2 pixels; XPU2 24.1 s to 14.9 s, MoonRay 13.1 s to
+   7.8 s; the same display error against MoonRay either way.
+4. **A cache of levels.** Tessellations kept on disk by mesh signature, displacement key and level (a mesh resolution,
+   or an adaptive dicing camera's bucket), so a scene opened again, a session restarted or a camera returned to reuses
+   them instead of tessellating again. The routing sees whichever level the scene uses. Done (sessions 145-146:
+   geometryKey, loadGeometry, saveGeometry; %LOCALAPPDATA%/MoonRayForModo/xpu2-geometry, 20 GB, written on threads the
+   session joins before it ends): the 32 M-triangle displaced tyre's second session read 1.46 GB in place of tessellating,
+   meshes and tessellation 11.2 s to 0.83 s, the scene ready at 4.3 s in place of 16.2 s, the picture the same (oiiotool
+   diff PASS). The key holds the tessellation DLL's size and time: a new build makes its own.
+5. **Tighter stand-ins.** Done as boxes round runs of 128 of the mesh's own triangles (session 145), not an inflated
+   coarse level: an offset shell is hard to make enclose a displaced surface everywhere (open edges, negative heights,
+   subdivision bulging past its cage), and a ray slipping through would lose a hit; every triangle is inside its box.
+   Forced routing on the displaced tyres: 56.9 s to 48.4 s, the same picture. Superseded plan:
+   **Coarse levels as stand-ins.** A cached coarse level, pushed out along its normals by the displacement's largest
+   height so that it encloses the fine surface, in place of the box: far fewer GPU samples handed to the CPU for a
+   mesh left to it, the CPU still rendering each on the full mesh.
+
+Checked: the card's 11 GB peak on the routed scene was not the deferred samples' queue (a fixed ring of 4 M entries in
+pinned host memory); the lane's own device memory was 2.2 GB, the rest the driver's around launches and builds.
+## 17. Scene preparation, second round: textures on demand, the canonical copy held once, geometry in memory
+
+Added 2026-10-26 (sessions 152-156). On the car scene (Lamborghini, small overlay, 1 GB of geometry) a preview took
+32 s from the scene's arrival to "scene ready". Most of it was the same gigabyte copied again and again, and every
+texture decoded whole before the first sample. The image is unchanged by all of it: CPU-only and GPU-only renders
+against the build before are 0.00 display error, and a live edit (200 texture opacities changed during a render)
+gives the same two frames as the build before.
+
+1. **Textures' finest level on demand** (`host_texture.h` `Pyramid::loadTile`, `texture_core.h` `Mip::load`). Levels 1
+   and up are still decoded as the scene is prepared; level 0 starts with no pages, and a page is decoded, through a
+   shared OpenImageIO ImageCache, the first time a lookup or the GPU's tile cache asks for it, with the same values
+   the whole level gave. The GPU's tile cache decodes the tiles it is asked for side by side before it sends them up
+   (`async_gpu.h`, `commitTiles`). Texture pyramids 18.4 s to 5.0 s; the session's RAM 12.3 to 10.1 GB; the first
+   frame's render a little longer (2.8 s to 4.3 s) as tiles are decoded while it runs; the finished picture 54.2 s to
+   38.9 s. `XPU2_SESSION_EAGER_TEXTURES=1` decodes every level at once, as before.
+2. **The canonical copy held once** (`../rdl_scene_index.h`, `../indexed_scene.h`, `canonical_session.h`). Vectors whose
+   values lie in memory as their codec writes them (whole numbers, floats, RDL's vectors and colours with no padding)
+   are encoded and decoded as one block, the same bytes. The index keeps an attribute as captured, once
+   (`SceneIndex::same`, `Buffer::ready`), with the capture's bytes moved in rather than copied (three copies of each
+   byte before). The replica as an RDLB file, which nothing read, is no longer written (`XPU2_SESSION_CANONICAL_FILE=1`
+   writes it). Capture 4.2 s to 0.8 s, index 3.5 s to 1.9 s, replica 4.2 s to 1.3 s, the file's 10 s gone; the session
+   1.4 GB smaller.
+3. **The geometry's binary scene in shared memory** (`xpu2_session.cc`, `readBinaryMemory`). The host may name the RDLB
+   it hands over `modo-memory-rdlb:<length>:<name>`, a mapping it holds, which XPU2 reads as MoonRay reads the file
+   (`BinaryReader::fromBytes`). The gigabyte no longer goes to the disk and back; XPU2's own load was only about 2 s,
+   so what it saves is the host's write. The reference renderer is still handed the file.
+
+The car's "scene ready" went from 32 s to 19.2 s. What is left: the plan's meshes and materials (about 7.5 s), its
+objects (3 s) and texture pyramids (5 s).
+
 ## Order
 
 1. Classifier from the admission rules, with the GPU capability table; decisions shown in the session's log.

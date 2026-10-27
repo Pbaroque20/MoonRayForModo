@@ -174,6 +174,14 @@ inline void pointOccluded(const RTCOccludedFunctionNArguments* args) {
         ray->tfar = -INFINITY;
 }
 
+// The CPU's Embree scenes' flags: robust, compact (its trees in less memory, about a third, for a few percent of the
+// tracing's speed; XPU2_SESSION_EMBREE_COMPACT=0: as before), and with shadow linking the occlusion tests' filter.
+inline RTCSceneFlags cpuSceneFlags(const cpu::Plan& plan) {
+    static const bool compact = [] { const char* v = std::getenv("XPU2_SESSION_EMBREE_COMPACT"); return !(v && v[0] == '0'); }();
+    int f = RTC_SCENE_FLAG_ROBUST | (compact ? RTC_SCENE_FLAG_COMPACT : 0);
+    if (!plan.shadowLinks.empty()) f |= RTC_SCENE_FLAG_FILTER_FUNCTION_IN_ARGUMENTS;
+    return RTCSceneFlags(f);
+}
 // Embree scene for the fast lanes. Mesh i is geometry i, as in the plan. Each geometry's mask is its visibility.
 struct CpuScene {
     std::shared_ptr<cpu::Device> device;
@@ -193,7 +201,7 @@ struct CpuScene {
         cpu::need(plan && cpu::isSpatial(plan->domain), "Asynchronous renderer requires a spatial plan");
         scene = rtcNewScene(device->handle);
         cpu::need(scene, "Embree scene failure");
-        rtcSetSceneFlags(scene, plan->shadowLinks.empty() ? RTC_SCENE_FLAG_ROBUST : RTC_SCENE_FLAG_ROBUST | RTC_SCENE_FLAG_FILTER_FUNCTION_IN_ARGUMENTS);
+        rtcSetSceneFlags(scene, cpuSceneFlags(*plan));
         rtcSetSceneBuildQuality(scene, RTC_BUILD_QUALITY_HIGH);
         curveSets.resize(plan->meshes.size());
         for (unsigned i = 0; i < plan->meshes.size(); ++i) {
@@ -205,7 +213,7 @@ struct CpuScene {
                 if (!inner) {
                     inner = rtcNewScene(device->handle);
                     cpu::need(inner, "Embree scene failure");
-                    rtcSetSceneFlags(inner, plan->shadowLinks.empty() ? RTC_SCENE_FLAG_ROBUST : RTC_SCENE_FLAG_ROBUST | RTC_SCENE_FLAG_FILTER_FUNCTION_IN_ARGUMENTS);
+                    rtcSetSceneFlags(inner, cpuSceneFlags(*plan));
                     rtcSetSceneBuildQuality(inner, RTC_BUILD_QUALITY_HIGH);
                     RTCGeometry g = rtcNewGeometry(device->handle, RTC_GEOMETRY_TYPE_TRIANGLE);
                     cpu::need(g, "Embree geometry failure");
@@ -275,7 +283,7 @@ struct CpuScene {
                 if (pass == 1 && !volumes) {
                     volumes = rtcNewScene(device->handle);
                     cpu::need(volumes, "Embree scene failure");
-                    rtcSetSceneFlags(volumes, RTC_SCENE_FLAG_ROBUST);
+                    rtcSetSceneFlags(volumes, RTC_SCENE_FLAG_ROBUST | RTC_SCENE_FLAG_COMPACT);
                 }
                 RTCGeometry g = rtcNewGeometry(device->handle, RTC_GEOMETRY_TYPE_TRIANGLE);
                 cpu::need(g, "Embree geometry failure");

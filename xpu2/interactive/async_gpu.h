@@ -170,10 +170,11 @@ public:
         // samples are deferred to the CPU lane.
         return {};
     }
-    // A mesh the GPU programs do not render: its samples go to the CPU lane.
+    // A mesh the GPU programs do not render, or one the card's budget left to the CPU lane (cpu::routeMeshes): its samples
+    // go to the CPU lane.
     static bool standIn(const cpu::Mesh& mesh) {
         const auto& m = *mesh.data;
-        return m.points || !m.steps.empty() || !m.curveSteps.empty();
+        return mesh.cpuOnly || m.points || !m.steps.empty() || !m.curveSteps.empty();
     }
     // Whether the GPU hands samples to the CPU lane: stand-in meshes, or volumes its programs do not render (VDB,
     // heterogeneous, emissive: volumeCrossings defers them), which need the CPU lane and the deferred samples' ring.
@@ -235,9 +236,10 @@ public:
     double rateHint() const { return rateHint_; }
     // The lane's pinned host and device memory now and at its peak, in MB (gpu::Driver's counts).
     std::string memoryText() const {
-        char text[200];
-        std::snprintf(text, sizeof text, "pinned %zu MB (at most %zu, of %zu), device %zu MB (at most %zu)", driver.pinnedBytes >> 20, driver.peakPinned >> 20,
-                      driver.pinnedCap >> 20, driver.deviceBytes >> 20, driver.peakDevice >> 20);
+        char text[260];
+        std::snprintf(text, sizeof text, "pinned %zu MB (at most %zu, of %zu), device %zu MB (at most %zu); structures %zu MB compacted from %zu",
+                      driver.pinnedBytes >> 20, driver.peakPinned >> 20, driver.pinnedCap >> 20, driver.deviceBytes >> 20, driver.peakDevice >> 20,
+                      compactedBytes_ >> 20, builtBytes_ >> 20);
         return text;
     }
     void noteRate(double rate) {
@@ -462,8 +464,18 @@ public:
                         hi[a] = std::max(hi[a], p[a] + r);
                     }
                 };
+                // A shared instance's data is in its reference's space: its box is made of the placed vertices.
+                const cpu::Mesh& entry = plan->meshes[i];
                 auto points = [&](const std::vector<surface::V3>& ps) {
-                    for (size_t k = 0; k < ps.size(); ++k) grow(ps[k].x, ps[k].y, ps[k].z, k < m.pointRadius.size() ? m.pointRadius[k] : 0.0f);
+                    for (size_t k = 0; k < ps.size(); ++k) {
+                        surface::V3 q = ps[k];
+                        if (entry.instance) {
+                            const float* x = entry.objectToWorld;
+                            q = {ps[k].x * x[0] + ps[k].y * x[3] + ps[k].z * x[6] + x[9], ps[k].x * x[1] + ps[k].y * x[4] + ps[k].z * x[7] + x[10],
+                                 ps[k].x * x[2] + ps[k].y * x[5] + ps[k].z * x[8] + x[11]};
+                        }
+                        grow(q.x, q.y, q.z, k < m.pointRadius.size() ? m.pointRadius[k] : 0.0f);
+                    }
                 };
                 points(m.positions);
                 for (const auto& s : m.steps) points(s);
@@ -473,22 +485,60 @@ public:
                 curvePoints(m.curvePoints.data(), m.curvePoints.size());
                 for (const auto& s : m.curveSteps) curvePoints(s.data(), s.size());
                 if (lo[0] > hi[0]) lo[0] = lo[1] = lo[2] = hi[0] = hi[1] = hi[2] = 0.0f;
-                std::vector<surface::V3> box(8);
-                for (int k = 0; k < 8; ++k) box[k] = {k & 1 ? hi[0] : lo[0], k & 2 ? hi[1] : lo[1], k & 4 ? hi[2] : lo[2]};
                 static const cpu::Tri faces[12] = {{0, 4, 6}, {0, 6, 2}, {1, 3, 7}, {1, 7, 5}, {0, 1, 5}, {0, 5, 4},
                                                    {2, 6, 7}, {2, 7, 3}, {0, 2, 3}, {0, 3, 1}, {4, 5, 7}, {4, 7, 6}};
+                std::vector<surface::V3> box;
+                std::vector<cpu::Tri> boxFaces;
+                auto addBox = [&](const float* l, const float* h) {
+                    const unsigned first = unsigned(box.size());
+                    for (int k = 0; k < 8; ++k) box.push_back({k & 1 ? h[0] : l[0], k & 2 ? h[1] : l[1], k & 4 ? h[2] : l[2]});
+                    for (const auto& f : faces) boxFaces.push_back({first + f.a, first + f.b, first + f.c});
+                };
+                if (entry.cpuOnly && !m.points && m.steps.empty() && !m.curveBasis && !m.triangles.empty()) {
+                    // A still mesh the card's budget left to the CPU lane (cpu::routeMeshes): a box round each run of
+                    // ClusterTriangles of its triangles, in their order (a tessellation's come face by face, so a run
+                    // is a patch of the surface), in place of one box round the whole: a ray deferred only where it
+                    // passes near the mesh. Every triangle is inside its box, so no hit is lost.
+                    constexpr size_t ClusterTriangles = 128;
+                    auto placedAt = [&](U32 v) {
+                        const surface::V3 p = m.positions[v];
+                        if (!entry.instance) return p;
+                        const float* x = entry.objectToWorld;
+                        return surface::V3{p.x * x[0] + p.y * x[3] + p.z * x[6] + x[9], p.x * x[1] + p.y * x[4] + p.z * x[7] + x[10],
+                                           p.x * x[2] + p.y * x[5] + p.z * x[8] + x[11]};
+                    };
+                    box.reserve((m.triangles.size() / ClusterTriangles + 1) * 8);
+                    boxFaces.reserve((m.triangles.size() / ClusterTriangles + 1) * 12);
+                    for (size_t first = 0; first < m.triangles.size(); first += ClusterTriangles) {
+                        float l[3] = {3.4e38f, 3.4e38f, 3.4e38f}, h[3] = {-3.4e38f, -3.4e38f, -3.4e38f};
+                        for (size_t k = first; k < std::min(m.triangles.size(), first + ClusterTriangles); ++k) {
+                            const cpu::Tri& tr = m.triangles[k];
+                            for (const U32 v : {tr.a, tr.b, tr.c}) {
+                                const surface::V3 q = placedAt(v);
+                                const float c[3] = {q.x, q.y, q.z};
+                                for (int a = 0; a < 3; ++a) {
+                                    l[a] = std::min(l[a], c[a]);
+                                    h[a] = std::max(h[a], c[a]);
+                                }
+                            }
+                        }
+                        addBox(l, h);
+                    }
+                } else {
+                    addBox(lo, hi);
+                }
                 auto vertices = upload(box.data(), box.size() * sizeof(surface::V3));
-                auto indices = upload(faces, sizeof(faces));
+                auto indices = upload(boxFaces.data(), boxFaces.size() * sizeof(cpu::Tri));
                 OptixBuildInput input{};
                 unsigned flag = OPTIX_GEOMETRY_FLAG_DISABLE_ANYHIT;
                 input.type = OPTIX_BUILD_INPUT_TYPE_TRIANGLES;
                 auto& tri = input.triangleArray;
                 tri.vertexBuffers = &vertices->pointer;
-                tri.numVertices = 8;
+                tri.numVertices = unsigned(box.size());
                 tri.vertexFormat = OPTIX_VERTEX_FORMAT_FLOAT3;
                 tri.vertexStrideInBytes = sizeof(surface::V3);
                 tri.indexBuffer = indices->pointer;
-                tri.numIndexTriplets = 12;
+                tri.numIndexTriplets = unsigned(boxFaces.size());
                 tri.indexFormat = OPTIX_INDICES_FORMAT_UNSIGNED_INT3;
                 tri.indexStrideInBytes = sizeof(cpu::Tri);
                 tri.flags = &flag;
@@ -504,7 +554,7 @@ public:
                 stand.visibilityMask = 0xffu;
                 standIns.push_back(stand);
                 geometry.push_back({reinterpret_cast<const surface::V3*>(vertices->pointer), reinterpret_cast<const surface::Triangle*>(indices->pointer),
-                                    8u, 12u});
+                                    unsigned(box.size()), unsigned(boxFaces.size())});
                 materials.push_back(surface::Lambert{});
                 meshMaterials.push_back(shade::MaterialRecord{});
                 meshAttributes.push_back(shade::MeshAttributes{});
@@ -656,7 +706,7 @@ public:
         // of four, for column vectors: the plan's rows vx, vy, vz and p are its columns), their records an instance's.
         for (unsigned i = 0; i < plan->meshes.size(); ++i) {
             const auto& e = plan->meshes[i];
-            if (!e.instance) continue;
+            if (!e.instance || standIn(e)) continue;  // a stand-in's box is in world space already
             for (int r = 0; r < 3; ++r) {
                 instances[i].transform[4 * r + 0] = e.objectToWorld[0 + r];
                 instances[i].transform[4 * r + 1] = e.objectToWorld[3 + r];
@@ -1816,8 +1866,12 @@ private:
         U64 requestHead = 0;
         size_t loaded = 0, evicted = 0;
         B tileState, requests, touched, pageEntry, slab;
-        struct Source { const surface::V3* texels; U32 count; };
+        // A level-0 tile's host level, its page there and its size: its texels decoded on the host when first sent up
+        // (tex::Mip::load) where the level is read on demand.
+        struct Source { const tex::Mip* mip; U32 page; U32 bytes; };
         std::vector<Source> sources;      // host texels of each tile id
+        bool floatTiles = false;          // a level-0 tile in floats: the slots are a float tile's size
+        size_t tileBytes = 0;             // a slot's bytes
         std::vector<U32> slotTile, tileSlot;
         std::vector<U64> lastUse;
         std::vector<U32> freeSlots, pending;
@@ -1846,20 +1900,45 @@ private:
         uploads_.push_back(h);
         return d;
     }
+    // An acceleration structure, compacted (OptiX's compaction), its temporary memory and the uploads it read let go as
+    // soon as it is made. Before, every build's temporary memory and every upload's pinned copy were held until the whole
+    // scene was ready, so the card's peak was their sum (about 23 bytes of the card a byte of geometry).
     std::pair<B, OptixTraversableHandle> build(const OptixBuildInput& input) {
         OptixAccelBuildOptions options{};
-        options.buildFlags = OPTIX_BUILD_FLAG_PREFER_FAST_TRACE;
+        options.buildFlags = OPTIX_BUILD_FLAG_PREFER_FAST_TRACE | OPTIX_BUILD_FLAG_ALLOW_COMPACTION;
         options.operation = OPTIX_BUILD_OPERATION_BUILD;
         OptixAccelBufferSizes sizes{};
         ox(optixAccelComputeMemoryUsage(optix_, &options, &input, 1, &sizes));
         auto temporary = device(std::max<size_t>(sizes.tempSizeInBytes, 16));
         auto output = device(std::max<size_t>(sizes.outputSizeInBytes, 16));
-        uploads_.push_back(temporary);
+        auto compactedSize = device(8);
+        auto sizeHost = pinned(8);
+        OptixAccelEmitDesc emit{};
+        emit.type = OPTIX_PROPERTY_TYPE_COMPACTED_SIZE;
+        emit.result = compactedSize->pointer;
         OptixTraversableHandle handle = 0;
         ox(optixAccelBuild(optix_, stream_, &options, &input, 1, temporary->pointer, temporary->bytes, output->pointer,
-                           output->bytes, &handle, nullptr, 0));
+                           output->bytes, &handle, &emit, 1));
+        copyOut(sizeHost, compactedSize, 8);
+        gpu::Driver::check(driver.cuCtxSynchronize_p());
+        temporary.reset();
+        uploads_.clear();  // every copy so far is done: their pinned staging goes
+        uint64_t compacted = 0;
+        std::memcpy(&compacted, sizeHost->host(), 8);
+        builtBytes_ += output->bytes;
+        if (compacted && compacted < output->bytes - output->bytes / 8) {
+            auto small = device(size_t(compacted));
+            OptixTraversableHandle smallHandle = 0;
+            ox(optixAccelCompact(optix_, stream_, handle, small->pointer, small->bytes, &smallHandle));
+            gpu::Driver::check(driver.cuCtxSynchronize_p());
+            compactedBytes_ += small->bytes;
+            return {small, smallHandle};
+        }
+        compactedBytes_ += output->bytes;
         return {output, handle};
     }
+    // The acceleration structures' memory as built and as kept (the lane's memory line).
+    size_t builtBytes_ = 0, compactedBytes_ = 0;
 
     void prepareTextures(const cpu::Plan& plan) {
         std::vector<std::shared_ptr<texture::File>> files;
@@ -1870,6 +1949,7 @@ private:
             if (std::find(files.begin(), files.end(), file) == files.end()) files.push_back(file);
         fine_ = {};
         fine_.sources.push_back({nullptr, 0});  // id 0 is untracked
+        fine_.floatTiles = false;
         std::vector<std::pair<std::shared_ptr<texture::File>, B>> images;
         std::vector<std::pair<B, std::vector<U32>>> levelZeroPages;  // per file: page array and its tile ids
         for (auto& file : files) {
@@ -1877,8 +1957,9 @@ private:
             const auto& host = file->pyramid->image;
             tex::Image descriptor{};
             descriptor.count = host.count;
-            // Levels 1 and up are resident for the whole session.
-            std::vector<surface::V3> packed;
+            // Levels 1 and up are resident for the whole session, in their format (tex::Mip::format), each tile at a
+            // 16-byte boundary so that a float level's texels are aligned whatever came before.
+            std::vector<unsigned char> packed;
             std::vector<std::vector<size_t>> offsets(host.count);
             for (unsigned level = 1; level < host.count; ++level) {
                 const auto m = host.levels[level];
@@ -1887,18 +1968,20 @@ private:
                     const unsigned tx = i % nx, ty = i / nx;
                     const size_t count = size_t(std::min(tex::Tile, m.width - tx * tex::Tile)) *
                                          std::min(tex::Tile, m.height - ty * tex::Tile);
+                    packed.resize((packed.size() + 15) / 16 * 16);
                     offsets[level].push_back(packed.size());
-                    packed.insert(packed.end(), m.pages[i], m.pages[i] + count);
+                    const auto* from = reinterpret_cast<const unsigned char*>(m.pages[i]);
+                    packed.insert(packed.end(), from, from + count * tex::texelBytes(m.format));
                 }
             }
-            B pixels = packed.empty() ? B() : upload(packed.data(), packed.size() * sizeof(surface::V3));
-            scene_.mipBytes += packed.size() * sizeof(surface::V3);
+            B pixels = packed.empty() ? B() : upload(packed.data(), packed.size());
+            scene_.mipBytes += packed.size();
             for (unsigned level = 1; level < host.count; ++level) {
                 std::vector<const surface::V3*> pages;
-                for (size_t o : offsets[level]) pages.push_back(reinterpret_cast<const surface::V3*>(pixels->pointer) + o);
+                for (size_t o : offsets[level]) pages.push_back(reinterpret_cast<const surface::V3*>(pixels->pointer + o));
                 auto table = upload(pages.data(), pages.size() * sizeof(pages[0]));
                 descriptor.levels[level] = {host.levels[level].width, host.levels[level].height,
-                                            reinterpret_cast<const surface::V3* const*>(table->pointer), 0};
+                                            reinterpret_cast<const surface::V3* const*>(table->pointer), 0, host.levels[level].format};
                 scene_.keep.push_back(table);
             }
             // Level 0 starts empty; its tiles are numbered for the cache.
@@ -1911,10 +1994,11 @@ private:
             for (unsigned i = 0; i < nx * ny; ++i) {
                 const unsigned tx = i % nx, ty = i / nx;
                 const U32 count = std::min(tex::Tile, m.width - tx * tex::Tile) * std::min(tex::Tile, m.height - ty * tex::Tile);
-                fine_.sources.push_back({m.pages[i], count});
+                fine_.sources.push_back({&host.levels[0], i, count * tex::texelBytes(m.format)});
+                if (m.format == 0) fine_.floatTiles = true;
                 ids.push_back(base + i);
             }
-            descriptor.levels[0] = {m.width, m.height, reinterpret_cast<const surface::V3* const*>(table->pointer), base};
+            descriptor.levels[0] = {m.width, m.height, reinterpret_cast<const surface::V3* const*>(table->pointer), base, m.format};
             levelZeroPages.push_back({table, ids});
             scene_.keep.push_back(table);
             if (pixels) scene_.keep.push_back(pixels);
@@ -1922,7 +2006,10 @@ private:
         }
         fine_.tiles = U32(fine_.sources.size() - 1);
         fine_.requestCapacity = fine_.tiles + 1;
-        const size_t tileBytes = size_t(tex::Tile) * tex::Tile * sizeof(surface::V3);
+        // A slot holds a tile of the largest format the scene has: an 8-bit scene's slots are a quarter the size, so the
+        // same budget holds four times its tiles.
+        fine_.tileBytes = size_t(tex::Tile) * tex::Tile * (fine_.floatTiles ? sizeof(surface::V3) : 3u);
+        const size_t tileBytes = fine_.tileBytes;
         // A scene without textures keeps one unused slot, so the buffers below are never empty.
         const size_t need = size_t(std::max<U32>(fine_.tiles, 1)) * tileBytes;
         fineBudget_ = fineBudget(need);
@@ -2004,10 +2091,30 @@ private:
             updates.push_back({tile, NoSlot});
             ++fine_.evicted;
         }
-        const size_t tileBytes = size_t(tex::Tile) * tex::Tile * sizeof(surface::V3);
+        const size_t tileBytes = fine_.tileBytes;
         auto staging = pinned(std::max<size_t>(fine_.pending.size(), 1) * tileBytes);
         size_t n = 0;
         std::vector<U32> deferred;
+        // Tiles not yet decoded on the host (a level read on demand) decoded first, on several threads at once.
+        {
+            std::vector<U32> missing;
+            for (size_t k = 0; k < fine_.pending.size() && k < fine_.freeSlots.size(); ++k) {
+                const auto& source = fine_.sources[fine_.pending[k]];
+                if (source.mip && source.mip->load && !source.mip->pages[source.page]) missing.push_back(fine_.pending[k]);
+            }
+            const unsigned threads = unsigned(std::min<size_t>(missing.size(), std::max(1u, std::thread::hardware_concurrency() / 2)));
+            std::atomic<size_t> next{0};
+            auto work = [&] {
+                for (size_t k; (k = next++) < missing.size();) {
+                    const auto& source = fine_.sources[missing[k]];
+                    source.mip->load(source.mip->loader, 0, source.page);
+                }
+            };
+            std::vector<std::thread> pool;
+            for (unsigned k = 1; k < threads; ++k) pool.emplace_back(work);
+            if (threads) work();
+            for (auto& t : pool) t.join();
+        }
         for (U32 tile : fine_.pending) {
             if (fine_.freeSlots.empty()) {  // more asked for than the cache holds: next time
                 deferred.push_back(tile);
@@ -2017,9 +2124,14 @@ private:
             fine_.freeSlots.pop_back();
             const auto& source = fine_.sources[tile];
             char* at = static_cast<char*>(staging->host()) + n * tileBytes;
-            std::memcpy(at, source.texels, size_t(source.count) * sizeof(surface::V3));
-            gpu::Driver::check(driver.cuMemcpyHtoDAsync_v2_p(fine_.slab->pointer + size_t(s) * tileBytes, at,
-                                                             size_t(source.count) * sizeof(surface::V3), stream_));
+            const surface::V3* texels = source.mip->pages[source.page];
+            if (!texels && source.mip->load) {
+                source.mip->load(source.mip->loader, 0, source.page);
+                texels = source.mip->pages[source.page];
+            }
+            cpu::need(texels != nullptr, "A fine-detail tile with no texels");
+            std::memcpy(at, texels, size_t(source.bytes));
+            gpu::Driver::check(driver.cuMemcpyHtoDAsync_v2_p(fine_.slab->pointer + size_t(s) * tileBytes, at, size_t(source.bytes), stream_));
             fine_.tileSlot[tile] = s;
             fine_.slotTile[s] = tile;
             fine_.lastUse[tile] = launches_ + 1;
@@ -2130,7 +2242,8 @@ private:
             p.touched = reinterpret_cast<unsigned char*>(fine_.touched->pointer);
             p.pageEntry = reinterpret_cast<const U64L*>(fine_.pageEntry->pointer);
             p.slab = reinterpret_cast<const surface::V3*>(fine_.slab->pointer);
-            p.slabTileTexels = tex::Tile * tex::Tile;
+            // A slot's stride in three-float units (a byte tile's slot, 32 x 32 x 3 bytes, is 256 of them).
+        p.slabTileTexels = U32(fine_.tileBytes / sizeof(surface::V3));
         }
         return p;
     }

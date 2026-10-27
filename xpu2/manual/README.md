@@ -1,7 +1,8 @@
 # XPU2 engineer manual
 
 How XPU2 works, part by part, with the files behind each part. Written 2026-10-25 against commit 242eb5c on
-`xpu2-async`. The design notes it points to go deeper. Where this manual and the code disagree, the code wins: fix
+`xpu2-async`; updated 2026-10-26 for the tessellation handler and the second round of scene preparation (`INDEXER.md`
+sections 16 and 17). The design notes it points to go deeper. Where this manual and the code disagree, the code wins: fix
 the manual.
 
 All paths are relative to `xpu2/interactive/` unless they start with `xpu2/` or another top-level folder.
@@ -107,7 +108,7 @@ These hold everywhere. A change that breaks one is a bug, even when the picture 
 
 ## 4. The scene indexer and the plan
 
-Design: `INDEXER.md` sections 1 to 6, and 12.
+Design: `INDEXER.md` sections 1 to 6, 12, 16 and 17.
 
 **The indexer** keeps every scene object and attribute, updated incrementally as edits arrive.
 
@@ -130,6 +131,12 @@ refused here, with a reason.
 - A camera-only edit (`Scene::onlyCameraDirty`) keeps the plan and both lanes' scenes. `cpu::updateCamera` and
   `GpuLane::updateCamera` take about 0.1 ms. Scenes whose geometry depends on the camera (adaptive subdivision,
   volumes, filters, motion) prepare again.
+
+**The canonical copy** (`canonical_session.h`, added 2026-10-26 in its present form). The plan is made from a replica of
+the received scene, not from the scene itself: the renderers keep reading the replica's objects (materials, maps)
+while new edits land in the received scene. Each attribute is captured into the index as bytes and decoded into the
+replica. Packed vectors (numbers, RDL's vectors and colours) go as one block, and the index holds each attribute once,
+moved in from the capture (`SceneIndex::same`). On a scene with 1 GB of geometry the copy takes about 4 s.
 
 The plan builder reads the reference renderer's scene format, so it belongs to the MoonRay port as much as to the core
 (section 12).
@@ -250,8 +257,10 @@ differ: presence shadows, shadow linking, volumes, a minimum shadow distance and
 
 ## 10. Memory tiers and partial shading
 
-- **Host RAM** holds every mip level of every texture and is the system of record (`host_texture.h`). The CPU lane
-  reads it directly.
+- **Host RAM** holds every texture's mip levels and is the system of record (`host_texture.h`). The CPU lane reads it
+  directly. Since 2026-10-26 the finest level (level 0) is decoded tile by tile the first time it is read
+  (`Pyramid::loadTile`, through an OpenImageIO ImageCache), the coarser levels as the scene is prepared;
+  `XPU2_SESSION_EAGER_TEXTURES=1` decodes them all at once. 8-bit files are kept as bytes (`tex::Mip::format`).
 - **VRAM** holds every texture's levels 1 and up for the whole session, plus a cache of level-0 (fine-detail) tiles,
   loaded on demand and evicted least recently used.
 - **The cache's budget** (`GpuLane::fineBudget`) is measured at each preparation: what the scene's level-0 tiles need,
@@ -378,6 +387,9 @@ Modo ── MoonRay for Modo kit (XPU2 build) ──► moonray_xpu2.exe  (XPU2 
   session prints `@@MODO_XPU2 FALLBACK <reason>` and exits. The kit starts MoonRay XPU on the same scene, and the
   Render Log shows the reason. The same happens if XPU2 crashes. When an edit makes the scene renderable again, XPU2
   takes it back.
+- **Scenes in memory.** The scene's text may come as `modo-memory:<length>:<name>` and, since 2026-10-26, the
+  geometry's binary scene as `modo-memory-rdlb:<length>:<name>` (`readBinaryMemory`): mappings the kit holds, so a
+  heavy scene's gigabyte of geometry doesn't go through the disk. MoonRay, on fallback, is handed files.
 - **Without `MOONRAY_MODO_SESSION`**, `moonray_xpu2.exe` passes its arguments to the kit's own `moonray.exe`
   (`MOONRAY_XPU2_MOONRAY` names it).
 
@@ -504,6 +516,15 @@ Environment variables read by the session or the renderer. The defaults are the 
 | `XPU2_SESSION_LOW_LATENCY` | `0` or `1`: overrides the host's low-latency setting |
 | `XPU2_SESSION_FINE_BUDGET_MB` | Fixes the level-0 texture cache's budget |
 | `XPU2_SESSION_GEOMETRY_MB` | Prepared-geometry budget (default 1 GiB) |
+| `XPU2_SESSION_GPU_GEOMETRY_MB` | The card's geometry budget, past which the largest meshes go to the CPU lane alone (added 2026-10-26) |
+| `XPU2_SESSION_MEMORY_MB` | The session's memory ceiling (added 2026-10-26) |
+| `XPU2_SESSION_GEOMETRY_CACHE=0`, `_GEOMETRY_CACHE_GB` | No tessellation cache on disk; its size (default 20 GB) (added 2026-10-26) |
+| `XPU2_SESSION_TESSELLATION_JOBS` | Meshes tessellated at once (default 1) (added 2026-10-26) |
+| `XPU2_SESSION_SHARED_INSTANCES=0` | Each instance baked into a mesh of its own (added 2026-10-26) |
+| `XPU2_SESSION_EMBREE_COMPACT=0` | The CPU lane's Embree scenes without the compact flag (added 2026-10-26) |
+| `XPU2_SESSION_FLOAT_TEXTURES=1` | 8-bit textures kept as floats (added 2026-10-26) |
+| `XPU2_SESSION_EAGER_TEXTURES=1` | Every texture level decoded as the scene is prepared (added 2026-10-26) |
+| `XPU2_SESSION_CANONICAL_FILE=1` | The canonical replica also written as an RDLB file, to inspect (added 2026-10-26) |
 | `XPU2_SESSION_RT_DENOISE=0`, `_RT_GUIDES`, `_RT_SHOW`, `_RT_DEBUG`, `_RT_PRIORITY=0` | Realtime denoiser diagnostics (`INDEXER.md` section 13) |
 | `XPU2_SESSION_DEBUG_FAILURES` | Names the CPU lane's first failed shadings and texture lookups |
 | `XPU2_PROFILE` | GPU profile by stage, printed per frame |

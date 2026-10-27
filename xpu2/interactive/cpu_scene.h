@@ -29,6 +29,7 @@
 #include <functional>
 #include <set>
 #include <mutex>
+#include <future>
 namespace xpu2::interactive::cpu {
 namespace rdl=scene_rdl2::rdl2;
 using surface::V3;
@@ -111,6 +112,9 @@ struct Mesh {std::shared_ptr<const MeshData> data;unsigned material;int volume=-
  // The scene indexer's families of its geometry and of its material's tree (entity_classes.h's Family bits; 0 where
  // nothing classified them), for the cells by suitability (device_suit.h).
  uint64_t families=0;
+ // Left to the CPU lane by the card's budget (routeMeshes): a stand-in on the GPU, its samples deferred to the CPU. Last:
+ // the plan builds a Mesh from its first fields in order ({data, material, volume, visibility, singleSided, geomLabel}).
+ bool cpuOnly=false;
 };
 // A plan mesh's curve set (curve_core.h) over its own arrays (host memory).
 inline curves::Set curveSet(const MeshData& m){curves::Set c;if(!m.curveBasis)return c;
@@ -127,6 +131,8 @@ struct Plan {
     Domain domain=Domain::Planar;unsigned surfaceLimit=1;
     std::vector<surface::Lambert> materials;std::map<unsigned,texture::Binding> diffuseMaps,emissionMaps;std::vector<Mesh> meshes;V3 sky{};
     size_t bytes=0,reusedMeshes=0,preparedMeshes=0;
+ // The tessellation handler's routing (routeMeshes): the geometry the GPU holds, and the meshes left to the CPU lane.
+ size_t gpuBytes=0;unsigned cpuOnlyMeshes=0;
     // No production route changes merely because preparation succeeds.
     bool qualified=false;
     // MoonRay adaptive sampling (sampling_mode 2), admitted only where the caller
@@ -227,7 +233,9 @@ struct Plan {
 };
 using PlanView=std::shared_ptr<const Plan>;
 // What a scene may hold: room for scenes from Modo (an RTX 3090 holds this much several times over).
-struct Limits {size_t vertices=16000000,triangles=16000000,bytes=1ull<<30,objects=1000000,pixels=8388608;};
+// bytes: the prepared geometry the machine's RAM holds (past it the scene falls back); gpuBytes: what the card holds (past
+// it the largest meshes are left to the CPU lane, Mesh::cpuOnly).
+struct Limits {size_t vertices=16000000,triangles=16000000,bytes=1ull<<30,objects=1000000,pixels=8388608,gpuBytes=~size_t(0);};
 // The most prepared geometry (positions and triangles) a session may ask for: its own budget is the machine's
 // (geometryBudget in xpu2_session.cc), up to this.
 constexpr size_t HardGeometryBytes=64ull<<30;
@@ -1936,7 +1944,13 @@ struct SubdDisplacement{
  std::map<const void*,displace::Shader> shaders;std::vector<const tex::Image*> images;const float* pool=nullptr;const float* worldToRender=nullptr;
  rdl::Mat4d w2r,r2w;std::mutex lock;std::string failure;float worldToObject[12]={1,0,0,0,0,1,0,0,0,0,1,0};
  void check(const rdl::SceneObject& o){need(failure.empty(),o.getName()+": "+failure);}
+ // A worker's own copy of the material pool (TessellationJob): the plan's grows, and moves, as the loop goes on.
+ std::vector<float> ownPool;
 };
+// A displacement for a worker (TessellationJob): the same shaders, images and transforms, a lock and failure of its own.
+inline std::shared_ptr<SubdDisplacement> copyDisplacement(const SubdDisplacement& d){auto c=std::make_shared<SubdDisplacement>();
+ c->shaders=d.shaders;c->images=d.images;c->pool=d.pool;c->worldToRender=d.worldToRender;c->w2r=d.w2r;c->r2w=d.r2w;
+ std::memcpy(c->worldToObject,d.worldToObject,sizeof c->worldToObject);return c;}
 inline void subdDisplaceAt(void* user,const void* object,const float* P,const float* N,const float* dPds,const float* dPdt,const float* st,const float* fp,
                            const shade::PrimAttr* prims,const float* primData,unsigned primCount,float* out);
 inline void subdDisplace(void* user,const void* object,const float* P,const float* N,const float* dPds,const float* dPdt,const float* st,const float* fp,float* out){
@@ -2667,12 +2681,123 @@ struct PrepLaps{std::vector<std::pair<std::string,double>> laps;std::chrono::ste
  void lap(const char* what){const auto now=std::chrono::steady_clock::now();laps.push_back({what,std::chrono::duration<double>(now-last).count()});last=now;}
  void add(const char* what,double s){std::lock_guard<std::mutex> g(lock);parts[what]+=s;}};
 inline PrepLaps& prepLaps(){static PrepLaps l;return l;}
+// The tessellation handler's cache (INDEXER.md section 16): a displaced mesh MoonRay tessellates (subdivision or
+// PolyMesh) kept on disk as its prepared data, by a hash of what shaped it (the mesh's and its displacement's
+// signatures, their textures' files, the level and, for adaptive tessellation, the camera's frustums), so a scene opened
+// again or a session started again reuses it. %LOCALAPPDATA%/MoonRayForModo/xpu2-geometry, 20 GB at most
+// (XPU2_SESSION_GEOMETRY_CACHE_GB), the oldest let go; XPU2_SESSION_GEOMETRY_CACHE=0: none.
+struct GeometryKey{uint64_t a=0x9E3779B97F4A7C15ull,b=0xC2B2AE3D27D4EB4Full;
+ void add(const void* data,size_t n){const unsigned char* p=static_cast<const unsigned char*>(data);size_t i=0;
+  for(;i+8<=n;i+=8){uint64_t w;std::memcpy(&w,p+i,8);a=(a^w)*0x100000001B3ull;a^=a>>29;b=(b+w)*0x9E3779B97F4A7C15ull;b^=b>>31;}
+  uint64_t w=0;std::memcpy(&w,p+i,n-i);a=(a^w^n)*0x100000001B3ull;b=(b+w+n)*0x9E3779B97F4A7C15ull;a^=b>>17;b^=a>>23;}
+ void add(const std::string& s){add(s.data(),s.size());}
+ std::string hex()const{char t[40];std::snprintf(t,sizeof t,"%016llx%016llx",(unsigned long long)a,(unsigned long long)b);return t;}};
+inline bool geometryCacheOn(){const char* v=std::getenv("XPU2_SESSION_GEOMETRY_CACHE");return !(v&&v[0]=='0');}
+inline std::filesystem::path geometryCacheFolder(){const char* l=std::getenv("LOCALAPPDATA");
+ return std::filesystem::path(l?l:".")/"MoonRayForModo"/"xpu2-geometry";}
+// What the cache did in this preparation (the session's log).
+struct GeometryCacheCounts{std::atomic<unsigned> reused{0},saved{0};std::atomic<size_t> reusedBytes{0};};
+inline GeometryCacheCounts& geometryCacheCounts(){static GeometryCacheCounts c;return c;}
+constexpr uint32_t GeometryCacheMagic=0x58324743u,GeometryCacheVersion=1u;  // "X2GC"
+template<class T>inline void writeVector(std::ofstream& f,const std::vector<T>& v){const uint64_t n=v.size();f.write(reinterpret_cast<const char*>(&n),8);
+ if(n)f.write(reinterpret_cast<const char*>(v.data()),std::streamsize(n*sizeof(T)));}
+template<class T>inline bool readVector(std::ifstream& f,std::vector<T>& v,uint64_t limit){uint64_t n=0;f.read(reinterpret_cast<char*>(&n),8);
+ if(!f||n>limit/sizeof(T))return false;v.resize(size_t(n));if(n)f.read(reinterpret_cast<char*>(v.data()),std::streamsize(n*sizeof(T)));return bool(f);}
+// A mesh's prepared data from the cache, or null.
+inline std::shared_ptr<MeshData> loadGeometry(const std::string& key){
+ namespace sf=std::filesystem;const sf::path path=geometryCacheFolder()/(key+".x2g");std::error_code ec;
+ if(!sf::exists(path,ec))return nullptr;const uint64_t size=uint64_t(sf::file_size(path,ec));if(ec)return nullptr;
+ std::ifstream f(path,std::ios::binary);uint32_t head[2]={0,0};f.read(reinterpret_cast<char*>(head),8);
+ if(!f||head[0]!=GeometryCacheMagic||head[1]!=GeometryCacheVersion)return nullptr;
+ auto m=std::make_shared<MeshData>();uint32_t rates[3]={0,0,0};f.read(reinterpret_cast<char*>(rates),12);f.read(reinterpret_cast<char*>(m->worldToObject),sizeof m->worldToObject);
+ m->normalRate=rates[0];m->uvRate=rates[1];m->instanced=rates[2]!=0;std::vector<char> dk;
+ if(!readVector(f,m->positions,size)||!readVector(f,m->triangles,size)||!readVector(f,m->normals,size)||!readVector(f,m->uvs,size)||
+    !readVector(f,m->prims,size)||!readVector(f,m->primData,size)||!readVector(f,m->polyVertices,size)||!readVector(f,m->dpds,size)||
+    !readVector(f,m->dpdt,size)||!readVector(f,dk,size))return nullptr;
+ for(const auto& tr:m->triangles)if(tr.a>=m->positions.size()||tr.b>=m->positions.size()||tr.c>=m->positions.size())return nullptr;
+ m->displacementKey.assign(dk.begin(),dk.end());
+ sf::last_write_time(path,sf::file_time_type::clock::now(),ec);  // the most recently used, last to be let go
+ geometryCacheCounts().reused++;geometryCacheCounts().reusedBytes+=size_t(size);
+ return m;}
+// The cache's writers, joined before the session ends (finishGeometryCache): a session that exited while one wrote left
+// the file unfinished, and the next session tessellated again.
+inline std::mutex& cacheWritersLock(){static std::mutex m;return m;}
+inline std::vector<std::thread>& cacheWriters(){static std::vector<std::thread> w;return w;}
+inline void finishGeometryCache(){std::vector<std::thread> w;{std::lock_guard<std::mutex> g(cacheWritersLock());w.swap(cacheWriters());}for(auto& t:w)if(t.joinable())t.join();}
+// A mesh's prepared data into the cache, on a thread of its own (written under another name, then renamed, so that a
+// file the cache holds is whole), the oldest files let go past the cache's size.
+inline void saveGeometry(const std::string& key,std::shared_ptr<const MeshData> m){
+ if(!m->steps.empty()||m->points||m->curveBasis||m->gate)return;
+ geometryCacheCounts().saved++;
+ std::thread writer([key,m]{namespace sf=std::filesystem;std::error_code ec;const sf::path folder=geometryCacheFolder();sf::create_directories(folder,ec);
+  const sf::path path=folder/(key+".x2g"),part=folder/(key+".part");
+  {std::ofstream f(part,std::ios::binary|std::ios::trunc);if(!f)return;const uint32_t head[2]={GeometryCacheMagic,GeometryCacheVersion};f.write(reinterpret_cast<const char*>(head),8);
+   const uint32_t rates[3]={m->normalRate,m->uvRate,m->instanced?1u:0u};f.write(reinterpret_cast<const char*>(rates),12);f.write(reinterpret_cast<const char*>(m->worldToObject),sizeof m->worldToObject);
+   writeVector(f,m->positions);writeVector(f,m->triangles);writeVector(f,m->normals);writeVector(f,m->uvs);writeVector(f,m->prims);writeVector(f,m->primData);
+   writeVector(f,m->polyVertices);writeVector(f,m->dpds);writeVector(f,m->dpdt);writeVector(f,std::vector<char>(m->displacementKey.begin(),m->displacementKey.end()));
+   if(!f){f.close();sf::remove(part,ec);return;}}
+  sf::rename(part,path,ec);if(ec){sf::remove(part,ec);return;}
+  double gb=20;if(const char* v=std::getenv("XPU2_SESSION_GEOMETRY_CACHE_GB"))gb=std::max(0.1,std::atof(v));
+  std::vector<std::pair<sf::file_time_type,sf::path>> files;uint64_t total=0;
+  for(const auto& e:sf::directory_iterator(folder,ec))if(e.path().extension()==".x2g"){total+=uint64_t(e.file_size(ec));files.push_back({e.last_write_time(ec),e.path()});}
+  std::sort(files.begin(),files.end());
+  for(const auto& [when,file]:files){if(double(total)<=gb*double(1ull<<30)||file==path)break;total-=uint64_t(sf::file_size(file,ec));sf::remove(file,ec);}
+ });
+ std::lock_guard<std::mutex> g(cacheWritersLock());cacheWriters().push_back(std::move(writer));}
+// A mesh's key: what shaped its tessellation.
+inline std::string geometryKey(const rdl::SceneObject& o,const std::vector<std::shared_ptr<const ix::Buffer>>& sig,const std::string& displacementKey,
+                               const Plan& plan,bool shared,const rdl::SceneVariables& sv){
+ GeometryKey k;const uint32_t version=GeometryCacheVersion;k.add(&version,4);k.add(displacementKey);k.add(&shared,1);
+ for(const auto& b:sig)if(b){k.add(b->source.data(),b->source.size());}
+ const unsigned char displace=get<rdl::Bool>(sv,"enable_displacement")?1:0;k.add(&displace,1);
+ // The kit's MoonRay Source Overrides (their switches can change what a displacement's maps give).
+ for(const char* name:{"MOONRAY_MODO_TOON_TERMINATOR","MOONRAY_MODO_TOON_ALBEDO","MOONRAY_MODO_USD_SPECULAR","MOONRAY_MODO_OPAQUE_ALPHA",
+                       "MOONRAY_MODO_TRANSMISSION_ROUGHNESS"}){const char* v=std::getenv(name);k.add(std::string(name)+"="+(v?v:""));}
+ // The textures' files as they are now (a file changed under the same name is another tessellation).
+ for(const auto& f:plan.textures){std::error_code ec;const std::string n=f->name.string();k.add(n);
+  const auto size=std::filesystem::file_size(n,ec);const auto when=std::filesystem::last_write_time(n,ec).time_since_epoch().count();k.add(&size,sizeof size);k.add(&when,sizeof when);}
+ // MoonRay's tessellation itself (xpu2_geom.dll beside the session).
+ {wchar_t self[32768];const DWORD n=GetModuleFileNameW(nullptr,self,32768);std::error_code ec;
+  const auto dll=std::filesystem::path(std::wstring(self,n)).parent_path()/"xpu2_geom.dll";const auto size=std::filesystem::file_size(dll,ec);
+  const auto when=std::filesystem::last_write_time(dll,ec).time_since_epoch().count();k.add(&size,sizeof size);k.add(&when,sizeof when);}
+ // Adaptive tessellation follows the camera: its frustums and render space.
+ if(get<rdl::Float>(o,"adaptive_error")>0.0f){k.add(plan.frustumC2S.data(),plan.frustumC2S.size()*sizeof(float));k.add(plan.frustumPlanes.data(),plan.frustumPlanes.size()*sizeof(float));
+  k.add(plan.frustumViewports.data(),plan.frustumViewports.size()*sizeof(int));k.add(plan.world2render,sizeof plan.world2render);}
+ return k.hex();}
+// A mesh MoonRay tessellates on a worker of its own (the tessellation handler, INDEXER.md section 16): the scene's other
+// meshes are prepared meanwhile, and its plan mesh (index mesh) takes the result after the loop, with its budget and
+// cache. Its displacement is its own (SubdDisplacement, a copy of the material pool: the plan's grows as the loop goes).
+struct TessellationJob{size_t mesh=0;size_t estimate=0;std::string cacheKey,displacementKey;std::shared_ptr<SubdDisplacement> displacement;
+ std::future<std::shared_ptr<const MeshData>> result;};
+// How many tessellations run at once: one unless XPU2_SESSION_TESSELLATION_JOBS says more (experimental). MoonRay's
+// tessellation of displaced meshes goes through one displacement hook at a time (xpu2_geom's displaceMutex: the scene's
+// displacement objects are shared and configured per tessellation), and MoonRay keeps thread-local state for at most four
+// threads it did not start (ThreadLocalState's MAX_OVERFLOW_POOL_SIZE): four workers of std::async ran one after another
+// and then failed that assertion. Running meshes at once needs the hook per mesh and a fixed pool of workers first.
+inline size_t tessellationJobs(){if(const char* v=std::getenv("XPU2_SESSION_TESSELLATION_JOBS")){const long n=std::atol(v);if(n>0)return size_t(n);}
+ return 1;}
+// The tessellation handler's routing by device (INDEXER.md section 16): the triangle meshes' data the GPU would hold
+// (each shared data once), and past the card's budget the largest left to the CPU lane alone, every plan mesh of that
+// data with it (Mesh::cpuOnly: a stand-in on the GPU, a sample that meets it rendered by the CPU from its identity, the
+// image unchanged). Volume bounds, curves and points stay as they are.
+inline void routeMeshes(Plan& plan,size_t gpuBytes){
+ std::map<const MeshData*,size_t> held;
+ for(const auto& m:plan.meshes){const MeshData& d=*m.data;if(m.volume>=0||d.points||d.curveBasis||!d.steps.empty())continue;
+  held[&d]=d.positions.size()*sizeof(V3)+d.triangles.size()*sizeof(Tri);}
+ size_t total=0;for(const auto& [d,b]:held)total+=b;
+ std::vector<std::pair<size_t,const MeshData*>> largest;for(const auto& [d,b]:held)largest.push_back({b,d});
+ std::sort(largest.begin(),largest.end(),[](const auto& a,const auto& b){return a.first>b.first;});
+ std::set<const MeshData*> left;
+ for(const auto& [b,d]:largest){if(total<=gpuBytes)break;left.insert(d);total-=b;}
+ plan.gpuBytes=total;plan.cpuOnlyMeshes=0;
+ for(auto& m:plan.meshes)if(left.count(m.data.get())){m.cpuOnly=true;++plan.cpuOnlyMeshes;}}
 inline PrepPart::~PrepPart(){prepLaps().add(what,double(nowNs()-began)*1e-9);}
 X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const CanonicalView& frame,PlanView previous={},Limits limits={},const fs::path& assetRoot={},Domain domain=Domain::Planar,bool allowAdaptive=false,bool paths=false);
 X2_SPLIT_INLINE PlanView prepare(CanonicalSession& session,const CanonicalView& frame,PlanView previous={},Limits limits={},const fs::path& assetRoot={},Domain domain=Domain::Planar,bool allowAdaptive=false,bool paths=false);
 #if !defined(XPU2_SPLIT_UNITS) || defined(XPU2_SCENE_UNIT)
 X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const CanonicalView& frame,PlanView previous,Limits limits,const fs::path& assetRoot,Domain domain,bool allowAdaptive,bool paths){
  need(bool(frame),"Missing canonical snapshot");{auto& l=prepLaps();l.laps.clear();l.parts.clear();l.last=std::chrono::steady_clock::now();}subdTimes().reset();
+ {auto& c=geometryCacheCounts();c.reused=0;c.saved=0;c.reusedBytes=0;}
  const Limits hard{};
  need(limits.vertices>0&&limits.vertices<=hard.vertices&&limits.triangles>0&&limits.triangles<=hard.triangles&&
       limits.bytes>0&&limits.bytes<=HardGeometryBytes&&limits.objects>0&&limits.objects<=hard.objects&&limits.pixels>0&&limits.pixels<=hard.pixels,"Invalid preparation limits");
@@ -3090,6 +3215,13 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
  std::vector<RenderItem> items;
  // Shared instances' data, by reference and part (o's name and its piece's suffix): made for the first instance.
  std::map<std::string,std::shared_ptr<const MeshData>> sharedMeshes;
+ // Tessellations on workers (TessellationJob), their geometry estimated while they run (at most half the budget at once).
+ std::vector<std::shared_ptr<TessellationJob>> tessellations;std::shared_ptr<TessellationJob> launched;
+ auto waitForRoom=[&](size_t estimate){
+  for(;;){size_t running=0,bytes=0;std::shared_ptr<TessellationJob> oldest;
+   for(auto& k:tessellations)if(k->result.valid()&&k->result.wait_for(std::chrono::seconds(0))!=std::future_status::ready){++running;bytes+=k->estimate;if(!oldest)oldest=k;}
+   if(!oldest||(running<tessellationJobs()&&bytes+estimate<=limits.bytes/2))return;
+   oldest->result.wait();}};
  for(auto& pair:sorted){const rdl::SceneObject& g=*pair.second;if(!allGeometry.count(&g))continue;
   if(g.getSceneClass().getName()=="RdlInstancerGeometry")instancerItems(g,sv,plan->motion,items);else items.push_back(RenderItem{&g});}
  for(const RenderItem& item:items){auto& o=*item.geom;
@@ -3201,9 +3333,14 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
   const std::string sharedKey=o.getName()+piece.suffix;
   const bool shareInstance=paths&&item.instancer&&!item.moves&&o.getSceneClass().getName()=="RdlMeshGeometry"&&volumeIndex<0&&mat&&
    !meshHasMotion(o)&&&o!=bakeGeometry&&get<rdl::Int>(o,"side_type")!=1&&!(displacementShader&&!subdGeometry&&!polyGeometry)&&sharedInstances();
-  auto sig=signature(o,frame);std::shared_ptr<const MeshData> data;bool reusedData=false,sharedHit=false;
+  auto sig=signature(o,frame);std::shared_ptr<const MeshData> data;bool reusedData=false,sharedHit=false;launched.reset();
+  // On a worker (TessellationJob): a still, single-part mesh of its own, no volume's bound nor the bake camera's.
+  const bool onWorker=paths&&!item.instancer&&!item.moves&&!meshHasMotion(o)&&pieces.size()==1&&volumeIndex<0&&&o!=bakeGeometry&&
+   o.getSceneClass().getName()=="RdlMeshGeometry"&&tessellationJobs()>1;
   if(shareInstance){auto it=sharedMeshes.find(sharedKey);if(it!=sharedMeshes.end()){data=it->second;sharedHit=true;}}
-  if(o.getSceneClass().getName()=="RdlMeshGeometry"&&get<rdl::Bool>(o,"is_subd")&&get<rdl::Float>(o,"adaptive_error")>0.0f)plan->cameraDependent=true;
+  // Adaptive tessellation (a subdivision surface, or a displaced polygon mesh MoonRay's PolyMesh tessellates) follows the
+  // dicing camera: a camera move tessellates it again.
+  if(o.getSceneClass().getName()=="RdlMeshGeometry"&&(get<rdl::Bool>(o,"is_subd")||polyGeometry)&&get<rdl::Float>(o,"adaptive_error")>0.0f)plan->cameraDependent=true;
   // A displaced mesh MoonRay tessellates (subdivision, PolyMesh) is kept while nothing that shapes it has changed: the
   // mesh, each part's displacement and its maps through and through (deepSignature), which displacement is whose, and
   // whether polyvertices are made. A camera, a light or another material changed, it is not tessellated again (its
@@ -3220,7 +3357,7 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
   // The fur file can change under the same name: fur is read again each time.
   const bool curveGeometry=isCurves(o.getSceneClass().getName());
   if(previous&&previous->domain==domain&&!item.instancer&&o.getSceneClass().getName()!="ModoFurGeometry"&&(!objectDisplaced||!displacementKey.empty())&&&o!=bakeGeometry&&
-   !(o.getSceneClass().getName()=="RdlMeshGeometry"&&get<rdl::Bool>(o,"is_subd")&&get<rdl::Float>(o,"adaptive_error")>0.0f))for(auto& old:previous->meshes)if(old.data->name==meshName&&old.data->signature==sig&&old.data->displacementKey==displacementKey&&
+   !(o.getSceneClass().getName()=="RdlMeshGeometry"&&(get<rdl::Bool>(o,"is_subd")||polyGeometry)&&get<rdl::Float>(o,"adaptive_error")>0.0f))for(auto& old:previous->meshes)if(old.data->name==meshName&&old.data->signature==sig&&old.data->displacementKey==displacementKey&&
    old.data->polyVertices.empty()==!(plan->aovs&&plan->aovs->wireframe)&&((o.getSceneClass().getName()!="RdlMeshGeometry"&&o.getSceneClass().getName()!="RdlCurveGeometry"&&!isPoints(o.getSceneClass().getName()))||!meshHasMotion(o)||previous->motion==plan->motion)){data=old.data;++plan->reusedMeshes;reusedData=true;break;}
   if(!data&&vdbBox){
    // A VDB volume's boundary box (admitVdbVolume), named as the mesh.
@@ -3240,6 +3377,16 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
    admitCurves(o,transform,*m,&plan->motion,item.instancer?&item:nullptr);
    if(item.instancer){instanceAttributes(*item.instancer,item.instance,item.count,*m);m->instanced=true;}
    data=std::move(m);++plan->preparedMeshes;}
+  // The tessellation cache (geometryKey): a displaced mesh MoonRay tessellates, as it was prepared before (another
+  // session, the scene opened again). Not one that moves, an instance with data of its own, the bake camera's mesh, a
+  // volume's bound or one with a dicing camera of its own.
+  std::string cacheKey;bool cacheHit=false;
+  if(!data&&paths&&geometryCacheOn()&&objectDisplaced&&(subdGeometry||polyGeometry)&&o.getSceneClass().getName()=="RdlMeshGeometry"&&
+     (!item.instancer||shareInstance)&&!item.moves&&!meshHasMotion(o)&&&o!=bakeGeometry&&volumeIndex<0&&
+     !get<rdl::SceneObject*>(sv,"dicing_camera")&&!get<rdl::SceneObject*>(o,"dicing_camera")){
+   cacheKey=geometryKey(o,sig,displacementKey,*plan,shareInstance,sv);
+   if(auto m=loadGeometry(cacheKey)){m->name=meshName;m->signature=sig;m->displacementKey=displacementKey;if(shareInstance)m->instanced=true;
+    data=std::move(m);cacheHit=true;++plan->preparedMeshes;}}
   // All geometry attribute/binding identities match before validation is reused.
   // Material/light assignments are checked above for EVERY epoch.
   if(!data){
@@ -3254,6 +3401,14 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
   need(paths||!item.instancer||!displacementShader||!get<rdl::Bool>(sv,"enable_displacement"),o.getName()+": a displaced instance is not rendered yet");
   need(!item.instancer||!(subdGeometry||polyGeometry)||!meshHasMotion(o),o.getName()+": an instanced tessellated mesh of its own motion is not rendered yet");
   need(!meshMotion||&o!=bakeGeometry,o.getName()+": a baked mesh in motion is not rendered yet");
+  // A displaced mesh MoonRay is about to tessellate uniformly (subdivision or PolyMesh): its size told from its faces and
+  // mesh resolution first (about r x r times its triangles, 18 bytes a triangle with its share of vertices), so one the
+  // machine cannot hold is refused now, not after its tessellation (an 8 M-triangle tyre took 30 s to be refused).
+  if(paths&&objectDisplaced&&(subdGeometry||polyGeometry)&&get<rdl::Float>(o,"adaptive_error")<=0.0f){
+   const auto& fc=o.get<rdl::IntVector>("face_vertex_count");size_t control=0;for(int n:fc)control+=n>=3?size_t(n-2):0;
+   const double r=std::max(1.0,double(get<rdl::Float>(o,"mesh_resolution")));
+   const size_t estimate=size_t(double(control)*r*r*18.0);
+   need(plan->bytes+estimate<=limits.bytes+limits.bytes/4,geometryBudgetText(plan->bytes+estimate,limits.bytes)+" (estimated before tessellating "+o.getName()+")");}
   if(paths&&get<rdl::Bool>(o,"is_subd")){
    // A subdivision surface: MoonRay's own tessellation (tessellateSubdivision), once for all its parts.
    // A displaced subdivision surface: MoonRay's displaceMesh in the tessellation, each vertex's value from its
@@ -3293,6 +3448,20 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
      m->stepDpds.push_back(surfaces[k]->dpds);m->stepDpdt.push_back(surfaces[k]->dpdt);}
     m->subdSteps=surfaces.size()>1;
     data=std::move(m);++plan->preparedMeshes;
+   }else if(onWorker&&!subdCache.count(&o)){
+    // On a worker: its own displacement (the material pool copied), the mesh made there too.
+    auto job=std::make_shared<TessellationJob>();job->displacement=copyDisplacement(subdDisplacement);
+    if(objectDisplaced){job->displacement->ownPool.assign(plan->materialPool.begin(),plan->materialPool.end());job->displacement->pool=job->displacement->ownPool.data();
+     displaceCall.user=job->displacement.get();}
+    {const auto& fc=o.get<rdl::IntVector>("face_vertex_count");size_t control=0;for(int n:fc)control+=n>=3?size_t(n-2):0;
+     const double r=std::max(1.0,double(get<rdl::Float>(o,"mesh_resolution")));job->estimate=size_t(double(control)*r*r*18.0);}
+    waitForRoom(job->estimate);
+    const rdl::SceneObject* object=&o;const rdl::Layer* layerOf=&layer;const Plan* planOf=plan.get();auto keep=job->displacement;
+    const std::vector<unsigned char> mask=faceMask?*faceMask:std::vector<unsigned char>();const bool masked=faceMask!=nullptr;
+    job->result=std::async(std::launch::async,[object,layerOf,planOf,keep,displaceCall,transform,mask,masked,meshName,sig,polys]()->std::shared_ptr<const MeshData>{
+     auto surface=tessellateSubdivision(*object,*layerOf,*planOf,transform,nullptr,displaceCall);keep->check(*object);
+     return subdivisionMesh(*surface,masked?&mask:nullptr,meshName,sig,transform,polys);});
+    data=std::make_shared<MeshData>();launched=job;++plan->preparedMeshes;
    }else{
    auto& surface=subdCache[&o];if(!surface){surface=tessellateSubdivision(o,layer,*plan,transform,nullptr,displaceCall);subdDisplacement.check(o);}
    data=subdivisionMesh(*surface,faceMask,meshName,std::move(sig),transform,polys);++plan->preparedMeshes;}
@@ -3312,6 +3481,21 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
    displaceCall.fn=&subdDisplace;displaceCall.user=&polyDisplacement;displaceCall.with=&subdDisplaceWith;
    const auto transform=affine(o);
    const bool polys=(plan->aovs&&plan->aovs->wireframe)||(mat&&(plan->materialRecords.at(materialIds.at(mat->getName())).flags&shade::MatPolyVertices));
+   if(onWorker&&!meshMotion&&!polyCache.count(&o)){
+    // On a worker: its own displacement (the material pool copied), the mesh made there too.
+    auto job=std::make_shared<TessellationJob>();job->displacement=copyDisplacement(polyDisplacement);
+    job->displacement->ownPool.assign(plan->materialPool.begin(),plan->materialPool.end());job->displacement->pool=job->displacement->ownPool.data();
+    displaceCall.user=job->displacement.get();
+    {const auto& fc=o.get<rdl::IntVector>("face_vertex_count");size_t control=0;for(int n:fc)control+=n>=3?size_t(n-2):0;
+     const double r=std::max(1.0,double(get<rdl::Float>(o,"mesh_resolution")));job->estimate=size_t(double(control)*r*r*18.0);}
+    waitForRoom(job->estimate);
+    const rdl::SceneObject* object=&o;const rdl::Layer* layerOf=&layer;const Plan* planOf=plan.get();auto keep=job->displacement;
+    const std::vector<unsigned char> mask=faceMask?*faceMask:std::vector<unsigned char>();const bool masked=faceMask!=nullptr;
+    job->result=std::async(std::launch::async,[object,layerOf,planOf,keep,displaceCall,transform,mask,masked,meshName,sig,polys]()->std::shared_ptr<const MeshData>{
+     auto surface=tessellatePolygons(*object,*layerOf,*planOf,transform,nullptr,displaceCall);keep->check(*object);
+     return polygonMesh(*surface,masked?&mask:nullptr,meshName,sig,transform,polys);});
+    data=std::make_shared<MeshData>();launched=job;++plan->preparedMeshes;
+   }else{
    auto& surface=item.instancer?polyRefCache[&o]:polyCache[&o];
    if(!surface&&item.instancer){surface=tessellatePolygons(o,layer,*plan,rdl::Mat4d(scene_rdl2::math::one),nullptr,displaceCall,true);polyDisplacement.check(o);}
    if(!surface){std::vector<std::vector<V3>> steps;
@@ -3324,7 +3508,7 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
     else{instanceSurface(*m,item,plan->motion);instanceAttributes(*item.instancer,item.instance,item.count,*m);}
     data=std::move(m);}
    else{PrepPart t{"polygon mesh from the tessellation"};data=polygonMesh(*surface,faceMask,meshName,std::move(sig),transform,polys);}
-   ++plan->preparedMeshes;
+   ++plan->preparedMeshes;}
   }else{
   need(!get<rdl::Bool>(o,"is_subd"),o.getName()+": subdivision unsupported");
   // Supplied normals are the shading normals; on the path tracer a mesh without them smooths its own (PolyMeshCalcNv).
@@ -3507,6 +3691,9 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
   }
   // A displaced mesh made now carries what shaped it (made here, it is this plan's alone).
   if(!displacementKey.empty()&&data->displacementKey!=displacementKey)const_cast<MeshData&>(*data).displacementKey=displacementKey;
+  // A tessellation made now goes to the cache (on a thread of its own); a worker's when it is taken in.
+  if(launched){launched->cacheKey=cacheHit?std::string():cacheKey;launched->displacementKey=displacementKey;launched->mesh=plan->meshes.size();tessellations.push_back(launched);}
+  else if(!cacheKey.empty()&&!cacheHit)saveGeometry(cacheKey,data);
   // A shared instance's data is counted once, with its first instance.
   if(shareInstance&&!sharedHit)sharedMeshes.emplace(sharedKey,data);
   if(!sharedHit)plan->bytes+=data->positions.size()*sizeof(V3)+data->triangles.size()*sizeof(Tri)+data->curvePoints.size()*sizeof(float)+data->curveSpans.size()*sizeof(unsigned);
@@ -3528,6 +3715,13 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
    if(!(vs.emission.x==0&&vs.emission.y==0&&vs.emission.z==0)&&(vs.visibility&0x3fcu))meshEmissionRegion(*plan,*data,unsigned(volumeIndex),vs.visibility);}
   }
  }
+ // The workers' tessellations taken in, in the meshes' order: their plan meshes, budget and cache.
+ for(auto& job:tessellations){std::shared_ptr<const MeshData> made=job->result.get();
+  if(!job->displacementKey.empty()&&made->displacementKey!=job->displacementKey)const_cast<MeshData&>(*made).displacementKey=job->displacementKey;
+  plan->bytes+=made->positions.size()*sizeof(V3)+made->triangles.size()*sizeof(Tri);
+  need(plan->bytes<=limits.bytes,geometryBudgetText(plan->bytes,limits.bytes));
+  plan->meshes[job->mesh].data=made;if(!job->cacheKey.empty())saveGeometry(job->cacheKey,made);}
+ tessellations.clear();
  prepLaps().lap("render items (meshes, tessellation, materials)");
  if(gpuTextures(domain)){uint64_t total=0;std::set<texture::File*> files;
   for(auto* set:{&plan->diffuseMaps,&plan->emissionMaps})for(auto& pair:*set){auto& file=*pair.second.file;if(!files.insert(&file).second)continue;total+=file.decodedBytes;need(total<=(4ull<<30),"Aggregate host texture budget");if(!file.pyramid)file.pyramid=std::make_shared<texture::Pyramid>(file.name.string());}
@@ -3634,7 +3828,9 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
    if(it==tableIds.end()){it=tableIds.emplace(table,unsigned(plan->filterTables.size())).first;plan->filterTables.insert(plan->filterTables.end(),table.begin(),table.end());}
    plan->meshFilterTable[mi]=it->second;}
  }
- need(plan->bytes<=limits.bytes,geometryBudgetText(plan->bytes,limits.bytes));prepLaps().lap("light trees, filters, the rest");return plan;
+ need(plan->bytes<=limits.bytes,geometryBudgetText(plan->bytes,limits.bytes));
+ if(paths)routeMeshes(*plan,limits.gpuBytes);
+ prepLaps().lap("light trees, filters, the rest");return plan;
 }
 X2_SPLIT_INLINE PlanView prepare(CanonicalSession& session,const CanonicalView& frame,PlanView previous,Limits limits,const fs::path& assetRoot,Domain domain,bool allowAdaptive,bool paths){
  return session.inspectPrepared(frame,[&](const rdl::SceneContext& context,CanonicalView exact){return prepare(context,exact,previous,limits,assetRoot,domain,allowAdaptive,paths);});

@@ -8,6 +8,9 @@
 #include <OpenImageIO/imageio.h>
 #include <filesystem>
 #include <memory>
+#include <atomic>
+#include <mutex>
+#include <OpenImageIO/imagecache.h>
 #include <stdexcept>
 #include "surface_core.h"
 #include "texture_core.h"
@@ -37,20 +40,73 @@ inline void texelChannels(const float* d,int n,int alphaChannel,surface::V3& c,f
  else{c={d[0],d[1],d[2]};a=n>3?d[3]:fill;}}
 // alpha: the texture's alpha as each texel's three channels (ImageMap's alpha_only; texelChannels' where the file has
 // none).
+// Whether an 8-bit value can be kept as its byte: OpenImageIO's conversion of each of the 256 to float is the byte times
+// 1/255 (tex::texel's decoding), and 0 and 1 (a missing channel's fill) are bytes 0 and 255. Checked once.
+inline bool bytesExact(){static const bool exact=[]{unsigned char in[256];float out[256];for(int i=0;i<256;++i)in[i]=(unsigned char)i;
+  if(!OIIO::convert_pixel_values(OIIO::TypeDesc::UINT8,in,OIIO::TypeDesc::FLOAT,out,256))return false;
+  for(int i=0;i<256;++i)if(out[i]!=float(i)*(1.0f/255.0f))return false;return 255.0f*(1.0f/255.0f)==1.0f;}();return exact;}
+// The image cache the finest levels' tiles are read through (thread-safe; half a gigabyte of the files' own tiles).
+inline std::shared_ptr<OIIO::ImageCache> lazyCache(){static std::shared_ptr<OIIO::ImageCache> c=[]{auto s=OIIO::ImageCache::create(true);
+  s->attribute("max_memory_MB",512.0f);return s;}();return c;}
+// Whether the finest level is read when first used (XPU2_SESSION_EAGER_TEXTURES=1: every level decoded at once).
+inline bool lazyTextures(){static const bool on=[]{const char* v=std::getenv("XPU2_SESSION_EAGER_TEXTURES");return !(v&&v[0]=='1');}();return on;}
 struct Pyramid {
  tex::Image image;std::vector<std::vector<surface::V3>> tiles;
- std::vector<std::vector<const surface::V3*>> pages;uint64_t bytes=0;
- explicit Pyramid(const std::string& name,bool alpha=false){auto in=OIIO::ImageInput::open(name);need(bool(in),"Pyramid read");pages.reserve(tex::MaxLevels);
+ // An 8-bit file's tiles as bytes (tex::Mip::format 1); XPU2_SESSION_FLOAT_TEXTURES=1 keeps every file in floats.
+ std::vector<std::vector<unsigned char>> byteTiles;
+ std::vector<std::vector<const surface::V3*>> pages;std::atomic<uint64_t> bytes{0};
+ // The finest level on demand (lazyTextures): its tiles decoded when first read (loadTile), each into a block of its own.
+ std::string file;int channels=0,alphaChannel=-1;bool alphaOnly=false,lazyEight=false;std::mutex lazyLock;
+ std::vector<std::unique_ptr<unsigned char[]>> lazyTiles;std::atomic<unsigned> lazyLoaded{0};
+ // One texel of the file as kept (channels mapped, alpha as colour), into a float tile or three bytes.
+ void keep(const float* d,surface::V3* toFloat,unsigned char* toBytes){surface::V3 c;float a;texelChannels(d,channels,alphaChannel,c,a);if(alphaOnly)c={a,a,a};
+  if(toBytes){const float v[3]={c.x,c.y,c.z};for(int k=0;k<3;++k){const long b=std::lround(v[k]*255.0f);need(b>=0&&b<=255&&float(b)*(1.0f/255.0f)==v[k],"8-bit texel not its byte");toBytes[k]=(unsigned char)b;}}
+  else{need(surface::finite(c),"Invalid TX sample");*toFloat=c;}}
+ // A finest-level tile decoded now (tex::Mip::load): the same values the whole level gave, through OIIO's conversion.
+ static void loadTile(const void* self,unsigned level,unsigned tile){auto* p=const_cast<Pyramid*>(static_cast<const Pyramid*>(self));
+  // Decoded outside the lock (tiles of one texture decode side by side); the first to finish publishes its page.
+  auto& page=p->pages[level][tile];if(page)return;
+  const tex::Mip& m=p->image.levels[level];const unsigned nx=(m.width+tex::Tile-1)/tex::Tile,tx=tile%nx,ty=tile/nx;
+  const unsigned tw=std::min(tex::Tile,m.width-tx*tex::Tile),th=std::min(tex::Tile,m.height-ty*tex::Tile);
+  std::vector<float> decoded(size_t(tw)*th*p->channels);
+  need(lazyCache()->get_pixels(OIIO::ustring(p->file),0,int(level),int(tx*tex::Tile),int(tx*tex::Tile+tw),int(ty*tex::Tile),int(ty*tex::Tile+th),0,1,
+                               OIIO::TypeDesc::FLOAT,decoded.data()),"Texture tile read");
+  const size_t size=size_t(tw)*th*(p->lazyEight?3u:unsigned(sizeof(surface::V3)));
+  std::unique_ptr<unsigned char[]> block(new unsigned char[size]);
+  for(unsigned j=0;j<th;++j)for(unsigned i=0;i<tw;++i){const size_t at=size_t(j)*tw+i;
+   p->keep(&decoded[at*p->channels],p->lazyEight?nullptr:reinterpret_cast<surface::V3*>(block.get())+at,p->lazyEight?block.get()+3*at:nullptr);}
+  std::lock_guard<std::mutex> g(p->lazyLock);if(page)return;
+  std::atomic_thread_fence(std::memory_order_release);
+  page=reinterpret_cast<const surface::V3*>(block.get());p->lazyTiles.push_back(std::move(block));p->bytes+=size;p->lazyLoaded++;}
+ Pyramid(const Pyramid&)=delete;
+ explicit Pyramid(const std::string& name,bool alpha=false):file(name),alphaOnly(alpha){auto in=OIIO::ImageInput::open(name);need(bool(in),"Pyramid read");pages.reserve(tex::MaxLevels);
   for(unsigned level=0;level<tex::MaxLevels&&in->seek_subimage(0,level);++level){auto spec=in->spec();need(spec.get_int_attribute("sampleborder",0)==0&&spec.get_int_attribute("oiio:sampleborder",0)==0,"Border-sampled TX unsupported");
-   unsigned w=spec.width,h=spec.height,nx=(w+tex::Tile-1)/tex::Tile,ny=(h+tex::Tile-1)/tex::Tile;std::vector<float> decoded(size_t(w)*h*spec.nchannels);
+   unsigned w=spec.width,h=spec.height,nx=(w+tex::Tile-1)/tex::Tile,ny=(h+tex::Tile-1)/tex::Tile;
+   static const bool floats=[]{const char* v=std::getenv("XPU2_SESSION_FLOAT_TEXTURES");return v&&v[0]=='1';}();
+   const bool eight=spec.format==OIIO::TypeDesc::UINT8&&bytesExact()&&!floats;
+   channels=spec.nchannels;alphaChannel=spec.alpha_channel;
+   if(level==0&&lazyTextures()&&spec.tile_width>0){
+    // The finest level read when first used (loadTile): its pages empty for now.
+    lazyEight=eight;pages.emplace_back(size_t(nx)*ny,nullptr);
+    image.levels[level]={w,h,pages.back().data(),0,eight?1u:0u,&Pyramid::loadTile,this};++image.count;continue;}
+   std::vector<float> decoded(size_t(w)*h*spec.nchannels);
    need(in->read_image(0,int(level),0,spec.nchannels,OIIO::TypeDesc::FLOAT,decoded.data()),"Stored mip decode");pages.emplace_back(nx*ny,nullptr);auto& page=pages.back();
-   for(unsigned y=0;y<ny;++y)for(unsigned x=0;x<nx;++x){unsigned tw=std::min(tex::Tile,w-x*tex::Tile),th=std::min(tex::Tile,h-y*tex::Tile);tiles.emplace_back(tw*th);auto& tile=tiles.back();
+   for(unsigned y=0;y<ny;++y)for(unsigned x=0;x<nx;++x){unsigned tw=std::min(tex::Tile,w-x*tex::Tile),th=std::min(tex::Tile,h-y*tex::Tile);
+    if(eight){
+     // Three bytes a texel: each value's byte again (an 8-bit file's values are its bytes times 1/255, its fill 0 or 1).
+     byteTiles.emplace_back(size_t(tw)*th*3);auto& tile=byteTiles.back();
+     for(unsigned j=0;j<th;++j)for(unsigned i=0;i<tw;++i){size_t idx=(size_t(y*tex::Tile+j)*w+x*tex::Tile+i)*spec.nchannels;surface::V3 c;float a;
+      texelChannels(&decoded[idx],spec.nchannels,spec.alpha_channel,c,a);if(alpha)c={a,a,a};
+      unsigned char* to=&tile[size_t(j*tw+i)*3];const float v[3]={c.x,c.y,c.z};
+      for(int k=0;k<3;++k){const long b=std::lround(v[k]*255.0f);need(b>=0&&b<=255&&float(b)*(1.0f/255.0f)==v[k],"8-bit texel not its byte");to[k]=(unsigned char)b;}}
+     page[y*nx+x]=reinterpret_cast<const surface::V3*>(tile.data());bytes+=tile.size();continue;}
+    tiles.emplace_back(tw*th);auto& tile=tiles.back();
     for(unsigned j=0;j<th;++j)for(unsigned i=0;i<tw;++i){size_t idx=(size_t(y*tex::Tile+j)*w+x*tex::Tile+i)*spec.nchannels;surface::V3 c;float a;
      texelChannels(&decoded[idx],spec.nchannels,spec.alpha_channel,c,a);
      // Negative values are kept, as MoonRay's texture sampler keeps them (a signed displacement or vector map).
      if(alpha)c={a,a,a};need(surface::finite(c),"Invalid TX sample");tile[j*tw+i]=c;}
     page[y*nx+x]=tile.data();bytes+=tile.size()*sizeof(surface::V3);
-   }image.levels[level]={w,h,page.data()};++image.count;
+   }image.levels[level]={w,h,page.data(),0,eight?1u:0u};++image.count;
   }need(image.count&&image.levels[image.count-1].width==1&&image.levels[image.count-1].height==1,"Software mip level bound");
  }
 };

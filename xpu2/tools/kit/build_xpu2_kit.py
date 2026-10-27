@@ -294,19 +294,20 @@ GENERATION_FIELDS = [
     ('xpu2_generations', 'on', 'bool', 'XPU2 Sampling Generations',
      'XPU2 previews sample in generations: each pass goes where the picture is still noisy, and simple areas stop early. '
      'Off: XPU2 samples as MoonRay does, uniform or adaptive. MoonRay renders are unchanged', None, None, None),
-    ('xpu2_samples', 'samples', 'int', 'XPU2 Samples',
-     'Samples a pixel on average, spent where they show. 0: as Pixel Samples gives (an adaptive scene: no budget, '
-     'its Target Error ends it)', 0, 4096, None),
-    ('xpu2_spend', 'spend', 'choice', 'XPU2 Spend',
-     'As long as uniform would take: the render takes about the time uniform sampling would, spent where the noise is. '
-     'Exactly the samples: the samples above, however long they take', None, None,
-     [('As long as uniform would take', 'time'), ('Exactly the samples', 'samples')]),
-    ('xpu2_noise', 'noise', 'float', 'XPU2 Noise Target',
-     'Stop early once every part of the picture is this clean, in Target Error\'s units (lower is cleaner). 0: a uniform '
-     'scene spends all its samples; an adaptive scene uses its Target Error', 0.0, 1000.0, None),
-    ('xpu2_seed', 'seed', 'int', 'XPU2 First Generation',
-     'Samples every pixel gets before the generations choose. 0: an eighth of the samples, 16 at least (an adaptive '
-     'scene: its Minimum Samples)', 0, 16384, None),
+    ('xpu2_samples', 'samples', 'int', 'Generation Samples',
+     'What the render is worth, in samples a pixel on average: the generations share them out where the picture is '
+     'still noisy. 0: as Pixel Samples gives (an adaptive scene: no budget, its Target Error ends it)', 0, 4096, None),
+    ('xpu2_spend', 'spend', 'choice', 'Halting Rule',
+     'Time = Gen. Samples: the render stops after about the time a plain render of Generation Samples would take, that '
+     'time spent where the noise is. Exact = Gen. Samples: every pixel gets exactly Generation Samples, however long '
+     'that takes', None, None,
+     [('Time = Gen. Samples', 'time'), ('Exact = Gen. Samples', 'samples')]),
+    ('xpu2_noise', 'noise', 'float', 'Halt at Noise',
+     'A part of the picture stops early once it is this clean, in Target Error\'s units (lower is cleaner, and slower). '
+     '0: a uniform scene spends all its samples; an adaptive scene uses its Target Error', 0.0, 1000.0, None),
+    ('xpu2_seed', 'seed', 'int', 'First Look',
+     'Samples every pixel gets first, before the generations choose where the rest go. 0: an eighth of Generation '
+     'Samples, 16 at least (an adaptive scene: its Minimum Samples)', 0, 16384, None),
     ('xpu2_most', 'most', 'int', 'XPU2 Most Samples',
      'The most samples one pixel may get. 0: 16 times the average (an adaptive scene: its Maximum Samples)', 0, 16384, None),
     ('xpu2_cpu', 'cpu', 'bool', 'XPU2 CPU Workers',
@@ -322,7 +323,7 @@ def generations(kit):
           """    'denoising': {'engine': 'off', 'preview': True, 'final': True, 'safe': False, 'smart': 'off', 'detail': 'some'},
     # XPU2's sampling generations (the private test build): 16 samples a pixel on average and a noise target of 10 by
     # default; the rest are what XPU2 does without them.
-    'xpu2_generations': {'on': True, 'samples': 16, 'spend': 'time', 'noise': 10.0, 'seed': 0, 'most': 0, 'cpu': True},""")
+    'xpu2_generations': {'on': True, 'samples': 16, 'spend': 'time', 'noise': 10.0, 'seed': 4, 'most': 0, 'cpu': True},""")
     p.rep("""key in ('recovery', 'denoising', 'deep', 'exr')""", """key in ('recovery', 'denoising', 'deep', 'exr', 'xpu2_generations')""")
     fields = ''.join("""        field(%r, ('xpu2_generations', %r), %r, %r, %r%s),
 """ % (key, member, kind, label, tip,
@@ -367,10 +368,10 @@ def generations(kit):
                         if scene_settings.complete(properties.scene_settings())['xpu2_generations'].get('on',True):return False
                     except Exception:pass
 """)
-    # XPU2 Samples left at 0 shows what XPU2 takes then: a uniform scene's Pixel Samples, squared.
+    # Generation Samples left at 0 shows what XPU2 takes then: a uniform scene's Pixel Samples, squared.
     p.rep("""                value=scene_settings.get(scene_settings.complete(properties.scene_settings()),entry)
 """, """                value=scene_settings.get(scene_settings.complete(properties.scene_settings()),entry)
-                # XPU2 Samples left at 0 (the private test build): what XPU2 takes then, a uniform scene's Pixel Samples
+                # Generation Samples left at 0 (the private test build): what XPU2 takes then, a uniform scene's Pixel Samples
                 # squared, Pixel Samples itself being greyed while generations are on.
                 if entry['key']=='xpu2_samples' and not value:
                     try:
@@ -636,6 +637,196 @@ def engines(kit):
     p.save()
 
 
+REPO_KIT = Path(r'C:\Users\Raphael Tobar\MoonRayForModo\kit\MoonRayForModo\python\moonray_modo')
+
+
+def repo_fixes(kit):
+    """Two of the MoonLightIPR branch's kit commits, taken from the repo: a Shader Tree displacement whose height is black
+    everywhere is left out (8f1ae7f, graph.zero_height), and the preview window's memory meter (a998b25)."""
+    py = kit / 'python' / 'moonray_modo'
+    source = (REPO_KIT / 'graph.py').read_text(encoding='utf-8').replace('\r\n', '\n')
+    start = source.index('def zero_height(binding, lines):')
+    end = source.index('    return bodies\n', start) + len('    return bodies\n')
+    p = Patch(py / 'graph.py')
+    p.rep('DISPLACEMENT = None\n', 'DISPLACEMENT = None\n\n\n' + source[start:end])
+    p.save()
+    p = Patch(py / 'rdla.py')
+    p.rep("        elif shader_displacement.get(tag) and shader_displacement[tag][1]:",
+          "        elif shader_displacement.get(tag) and shader_displacement[tag][1] and not graph_module.zero_height(shader_displacement[tag][0], lines):")
+    p.save()
+    shutil.copy2(REPO_KIT / 'memory_meter.py', py / 'memory_meter.py')
+    p = Patch(py / 'panel.py')
+    p.rep("""        self.image_info=QtWidgets.QLabel('');self.image_info.setEnabled(False)
+        right.addStretch(1)
+        right.addWidget(self.image_info)""", """        self.image_info=QtWidgets.QLabel('');self.image_info.setEnabled(False)
+        right.addStretch(1)
+        # The memory the renderer, the machine and the graphics card have, beside the picture's details.
+        from .memory_meter import MemoryMeter
+        self.memory_meter=MemoryMeter(self._renderer_processes)
+        right.addWidget(self.memory_meter)
+        right.addWidget(self.image_info)""")
+    p.rep("""    def _focus_armed(self,armed):""", """    def _renderer_processes(self):
+        \"\"\"The ids of the renderer's processes running now (a final render, the preview session, MoonLightIPR's), for the
+        memory meter.\"\"\"
+        renderer=getattr(self,'renderer',None)
+        if renderer is None:return []
+        found=[]
+        for holder in (renderer,getattr(renderer,'session',None),getattr(renderer,'moonlightipr',None)):
+            process=getattr(holder,'process',None) if holder is not None else None
+            try:
+                if process is not None and process.state()!=QtCore.QProcess.NotRunning:found.append(int(process.processId()))
+            except RuntimeError:pass  # its Qt object already gone
+        return found
+
+    def _focus_armed(self,armed):""")
+    p.save()
+
+
+def displacement_choice(kit):
+    """The main kit's displacement tessellation choice (MoonLightIPR branch, uncommitted 2026-10-26): Follow Modo (the
+    render item's Displacement Rate as adaptive_error), a fixed dicing camera held at the Dicing Frame, or uniform."""
+    py = kit / 'python' / 'moonray_modo'
+    p = Patch(py / 'options.py')
+    p.rep("""    'enable_displacement': (1, 0, 1, 'Displacement'),""", """    'enable_displacement': (1, 0, 1, 'Displacement'),
+    # How a displaced polygon mesh is tessellated where the object says nothing (the kit's own, OWN): 1 follows Modo's
+    # Displacement Rate from the render camera; 2 the same from a dicing camera held at the Dicing Frame; 0 uniformly.
+    'displacement_tessellation': (1, 0, 2, 'Displacement tessellation'),
+    'displacement_adaptive_error': (0.0, 0.0, 64.0, 'Adaptive error override (pixels; 0 = Modo\\'s Displacement Rate)'),
+    'dicing_frame': (-1.0, -1000000.0, 1000000.0, 'Dicing frame (-1 = the first frame)'),""")
+    p.rep("""OWN = ('batch_tile_order', 'bucket_size', 'important_first')""",
+          """OWN = ('batch_tile_order', 'bucket_size', 'important_first', 'displacement_adaptive_error', 'displacement_tessellation', 'dicing_frame')""")
+    p.rep("""ENUMS['bucket_size'] = """, """ENUMS['displacement_tessellation'] = [('Uniform (mesh resolution)',0),('Follow Modo (Displacement Rate)',1),('Fixed dicing camera',2)]
+ENUMS['bucket_size'] = """)
+    p.save()
+    p = Patch(py / 'scene_settings.py')
+    line = next(l for l in p.text.split('\n') if l.startswith("        render_field('enable_displacement', 'Displacement',"))
+    p.rep(line + '\n', line + '\n' + """        render_field('displacement_tessellation', 'Displacement Tessellation', 'How displaced polygon meshes are cut into triangles. Follow Modo: finely where they are large on screen and coarsely where small, to Modo''s Displacement Rate (Render item), as Modo does: far less geometry and a quicker start. Fixed dicing camera: the same, worked out from the Dicing Camera (or the render camera) held at the Dicing Frame, so the triangles stay put while the camera moves (no shimmer in an animation). Uniform: by each mesh''s resolution, the same whatever the camera. An object''s own Subdivision Screen Error wins; instances stay uniform'),
+        render_field('displacement_adaptive_error', 'Adaptive Error Override', 'Pixels of screen error in place of Modo''s Displacement Rate (lower is finer). 0: Modo''s'),
+        render_field('dicing_frame', 'Dicing Frame', 'The frame the fixed dicing camera is held at. -1: the scene''s first frame'),
+""")
+    p.save()
+    p = Patch(py / 'rdla.py')
+    p.rep("""            mesh=dict(mesh,adaptive_error=settings['adaptive_error'])""",
+          """            # The object's own screen error; else, as the scene's Displacement Tessellation says, Modo's Displacement Rate
+            # (or the Adaptive Error Override) or none (uniform); an instancer's reference stays uniform.
+            if settings['adaptive_error']:error=settings['adaptive_error']
+            elif 'instances' in mesh or held_render['displacement_tessellation']==0:error=0.0
+            else:error=held_render['displacement_adaptive_error'] or float(scene.get('displacement_rate',1.0))
+            mesh=dict(mesh,adaptive_error=error)""")
+    p.save()
+    p = Patch(py / 'host.py')
+    p.rep("""def world_matrix(item):
+    rows = lx.object.Matrix(item.channel('worldMatrix').get()).Get4()""", """def world_matrix(item, time=None):
+    rows = lx.object.Matrix(item.channel('worldMatrix').get() if time is None else item.channel('worldMatrix').get(time)).Get4()""")
+    p.rep("""def dicing_view(scene, identity, width, height, pixel_aspect, warnings):""",
+          """def dicing_view(scene, identity, width, height, pixel_aspect, warnings, time=None):""")
+    p.rep("""    if item.id == scene.renderCamera.id:
+        return None""", """    if item.id == scene.renderCamera.id and time is None:
+        return None""")
+    p.rep("""    return {'matrix': world_matrix(item), 'identity': item.id""", """    return {'matrix': world_matrix(item, time), 'identity': item.id""")
+    start = p.text.index("    # Another camera for MoonRay's adaptive tessellation, where one is chosen.")
+    end = p.text.index("            result['dicing_camera'] = view", start) + len("            result['dicing_camera'] = view")
+    p.text = p.text[:start] + """    # Modo's Displacement Rate (pixels), which displaced meshes are tessellated to where the scene follows Modo.
+    result['displacement_rate'] = float(channel(render, 'dispRate', 1.0))
+    # Another camera for MoonRay's adaptive tessellation: the one chosen; with a fixed dicing camera, it (or the render
+    # camera) held at the Dicing Frame.
+    stored = properties.scene_settings()
+    chosen = stored.get('dicing_camera') or ''
+    rendering = stored.get('render', {}) if isinstance(stored.get('render'), dict) else {}
+    if int(rendering.get('displacement_tessellation', 1)) == 2:
+        frame = float(rendering.get('dicing_frame', -1.0))
+        if frame < 0:
+            frame = float(channel(render, 'first', 0))
+        fps = float(scene.fps) if getattr(scene, 'fps', 0) else 24.0
+        view = dicing_view(scene, chosen or scene.renderCamera.id, width, height, pixel_aspect, warnings, time=frame / fps)
+        if view:
+            result['dicing_camera'] = view
+    elif chosen:
+        view = dicing_view(scene, chosen, width, height, pixel_aspect, warnings)
+        if view:
+            result['dicing_camera'] = view""" + p.text[end:]
+    p.save()
+
+
+def geometry_rows(kit):
+    """The main kit's geometry kept as Modo hands it over (MoonLightIPR branch, uncommitted 2026-10-26): rows.py, the
+    adapter's rows read as the lists they stand for and written to the binary scene as they came, and the adapter's
+    arithmetic on them (MR_uv_transform, MR_zigzag4). evaluated, scene_digest, coordinates and rdlb are the base kit's
+    files as they are in the repo, taken whole; rdla's few lines patched; the adapter built by tools/build_modo_bridge.py
+    into build/modo-bridge-rows."""
+    py = kit / 'python' / 'moonray_modo'
+    for name in ('rows.py', 'evaluated.py', 'scene_digest.py', 'coordinates.py', 'rdlb.py'):
+        shutil.copy2(REPO_KIT / name, py / name)
+    shutil.copy2(REPO_KIT.parents[3] / 'build' / 'modo-bridge-rows' / 'MoonRayGeometry.lx', kit / 'bin' / 'MoonRayGeometry.lx')
+    p = Patch(py / 'rdla.py')
+    p.rep("from . import rdlb, primitive_attributes\n", "from . import rdlb, primitive_attributes, rows\n")
+    p.rep("""    if kind == 'vec3' or kind == 'vec2':
+        size = 3 if kind == 'vec3' else 2
+        encode, value_type = (lambda: rdlb.float_list(source, size)), (rdlb.VEC3F_VECTOR if size == 3 else rdlb.VEC2F_VECTOR)
+    elif kind == 'indices':
+        encode, value_type = (lambda: rdlb.int_list(numbers('l', chain.from_iterable(source)))), rdlb.INT_VECTOR
+    elif kind == 'counts':
+        encode, value_type = (lambda: rdlb.int_list(numbers('l', map(len, source)))), rdlb.INT_VECTOR
+    elif kind == 'rgb':
+        encode, value_type = (lambda: rdlb.float_list(source, 3)), rdlb.RGB_VECTOR""", """    # Lists as Modo handed them over (rows.Rows, rows.Faces) go as the numbers they came in: the same bytes.
+    if kind == 'vec3' or kind == 'vec2':
+        size = 3 if kind == 'vec3' else 2
+        held = rows.numbers(source, size)
+        encode, value_type = (lambda: rdlb.float_list(source if held is None else held, size)), (rdlb.VEC3F_VECTOR if size == 3 else rdlb.VEC2F_VECTOR)
+    elif kind == 'indices':
+        held = rows.corners(source)
+        encode, value_type = (lambda: rdlb.int_list(numbers('l', chain.from_iterable(source)) if held is None else held)), rdlb.INT_VECTOR
+    elif kind == 'counts':
+        held = rows.counts(source)
+        encode, value_type = (lambda: rdlb.int_list(numbers('l', map(len, source)) if held is None else held)), rdlb.INT_VECTOR
+    elif kind == 'rgb':
+        held = rows.numbers(source, 3)
+        encode, value_type = (lambda: rdlb.float_list(source if held is None else held, 3)), rdlb.RGB_VECTOR""")
+    p.rep("""            # face by face, which says which mesh is wrong.
+            if min(map(len, faces)) >= 3:""", """            # face by face, which says which mesh is wrong. Faces as Modo handed them over (rows.Faces) are whole
+            # numbers by their kind, their corners and counts looked over as they came.
+            held = rows.corners(faces)
+            if held is not None and min(rows.counts(faces)) >= 3 and (not len(held) or (min(held) >= 0 and max(held) < len(vertices))):
+                return ''
+            if min(map(len, faces)) >= 3:""")
+    p.rep("""            if len(values) != sum(map(len, faces)):
+                raise ValueError('Named UV set must match polygon corners: '+uv_name)""", """            if len(values) != rows.corner_count(faces):
+                raise ValueError('Named UV set must match polygon corners: '+uv_name)""")
+    p.rep("""('corner_attributes', 6, sum(map(len, faces)))""", """('corner_attributes', 6, rows.corner_count(faces))""")
+    p.rep("""                if len(values) != sum(map(len, faces)):
+                    raise ValueError('Face-varying %s must match the corner count' % source)""", """                if len(values) != rows.corner_count(faces):
+                    raise ValueError('Face-varying %s must match the corner count' % source)""")
+    p.save()
+
+
+def binary_memory(kit):
+    """XPU2 is handed the geometry's binary scene in shared memory (modo-memory-rdlb, xpu2_session.cc's readInto), not as a
+    file: a heavy scene's gigabyte of geometry no longer goes to the disk and back. MoonRay is still handed the file."""
+    p = Patch(kit / 'python' / 'moonray_modo' / 'persistent.py')
+    p.rep("""    def _release_mappings(self):""", """    def _write_binary(self,request,payload,memory):
+        \"\"\"The geometry's binary scene (rdlb.py): in shared memory where XPU2 is to read it (modo-memory-rdlb), else a
+        file beside the text.\"\"\"
+        if memory and payload:
+            name='Local\\\\MoonRayForModoScene_%d_%s'%(os.getpid(),uuid.uuid4().hex)
+            mapping=mmap.mmap(-1,len(payload),tagname=name,access=mmap.ACCESS_WRITE)
+            mapping.write(payload)
+            self.mappings.setdefault(request['id'],[]).append(mapping)
+            return 'modo-memory-rdlb:%d:%s'%(len(payload),name)
+        binary=self.root/('%d.full.rdlb'%request['id']);binary.write_bytes(payload)
+        return binary
+
+    def _release_mappings(self):""")
+    p.rep("""            scene=self._write_scene(request,'full',None,split[0])
+            binary=self.root/('%d.full.rdlb'%request['id']);binary.write_bytes(split[1])""", """            scene=self._write_scene(request,'full',None,split[0])
+            # Whether XPU2 takes it (as below), which reads the binary scene from shared memory.
+            xpu2=bool(native.xpu2() and request['mode'] in ('xpu','auto') and not getattr(self,'xpu2_refused',None))
+            binary=self._write_binary(request,split[1],xpu2)""")
+    p.rep("""            binary=self.root/('%d.full.rdlb'%request['id']);binary.write_bytes(prepared['binary'])
+            full='%s|%s'%(full,binary)""", """            binary=self._write_binary(request,prepared['binary'],getattr(self,'xpu2_active',False))
+            full='%s|%s'%(full,binary)""")
+    p.save()
+
+
 def build(session, base):
     base, session = Path(base).resolve(), Path(session).resolve()
     if any((base / m).exists() for m in MARKERS):
@@ -653,6 +844,9 @@ def build(session, base):
     realtime(KIT)
     denoised_buffer(KIT)
     engines(KIT)
+    repo_fixes(KIT)
+    displacement_choice(KIT)
+    geometry_rows(KIT)
 
     p = Patch(py / 'preferences.py')
     p.rep("""    'auto_xpu': (True, bool),""", """    'auto_xpu': (True, bool),
@@ -714,6 +908,7 @@ def build(session, base):
         self.idle.cancel()
         self.xpu2_refused=None""")
     p.save()
+    binary_memory(KIT)
 
     # Where XPU2 renders the preview: the snapshot says so.
     p = Patch(py / 'render.py')

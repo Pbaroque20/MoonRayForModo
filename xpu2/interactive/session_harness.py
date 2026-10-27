@@ -92,6 +92,8 @@ def main():
     p.add_argument('--stop-after', type=float, default=0, help='send the next delta this many seconds into a frame')
     p.add_argument('--drain-after', type=float, default=0, help='ask the last frame to finish with what it has after this many seconds')
     p.add_argument('--keep-pictures', action='store_true', help='save every progressive picture, as frame-<id>-<seconds>.pfm')
+    p.add_argument('--memory-binary', action='store_true', help="hand a .rdlb scene over in shared memory, as the kit does for XPU2 "
+                   "(modo-memory-rdlb:<length>:<name>)")
     p.add_argument('--view', default='', help="the buffer the kit shows (its view.txt), e.g. denoised_beauty for realtime's denoised pictures")
     a = p.parse_args()
     out = a.output.resolve()
@@ -105,8 +107,19 @@ def main():
     env.update(TMPDIR=str(session), MOONRAY_MODO_SESSION=str(session), MOONRAY_MODO_GENERATION='1', MOONRAY_MODO_HOST=str(os.getpid()),
                MOONRAY_MODO_SHARED='1', MOONRAY_MODO_BUCKETS='1', MOONRAY_MODO_BUCKET_SIZE=extra.get('MOONRAY_MODO_BUCKET_SIZE', '32'))
     args = [str(a.exe.resolve())]
+    held = []
     for s in a.scene:
-        args += ['-in', str(s.resolve())]
+        if a.memory_binary and s.suffix == '.rdlb':
+            import mmap
+            import uuid
+            data = s.read_bytes()
+            name = 'Local\\MoonRayForModoScene_%d_%s' % (os.getpid(), uuid.uuid4().hex)
+            mapping = mmap.mmap(-1, len(data), tagname=name, access=mmap.ACCESS_WRITE)
+            mapping.write(data)
+            held.append(mapping)
+            args += ['-in', 'modo-memory-rdlb:%d:%s' % (len(data), name)]
+        else:
+            args += ['-in', str(s.resolve())]
     args += ['-out', str(session / 'main.exr'), '-exec_mode', a.mode, '-info']
     if a.threads:
         args += ['-threads', str(a.threads)]
