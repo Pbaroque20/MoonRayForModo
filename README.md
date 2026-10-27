@@ -8,6 +8,7 @@ The current release is [0.4.3.1](https://github.com/Pbaroque20/MoonRayForModo/re
 
 ## Coming next
 
+- **MoonLightIPR follows an edit at once**: moving an object, the camera or a light, or changing a material, no longer holds Modo while the scene is read three times for motion blur when nothing in it moves and nothing moved has keys (a fur scene: 0.6 s to 0.2 s from letting go to the new picture, Modo held 0.4 s to a hundredth). With keys, motion blur is read as before.
 - **Heavy scenes start much sooner**: Modo's geometry is handed to MoonRay as it comes, without a step of Python for every point and face. A car scene's reading before a render went from about three minutes to a little over one, most of what is left being Modo's own work. MoonRay is handed the very same scene.
 - **Displacement follows Modo's Displacement Rate**: Displacement Tessellation in the render settings cuts displaced meshes finely where they are large on screen and coarsely where small, as Modo does, with far less geometry and a quicker start. Fixed dicing camera holds the cut at the Dicing Frame so it stays put while the camera moves (no shimmer in an animation); Uniform cuts by each mesh's resolution, as before. Adaptive Error Override sets the pixels in place of Modo's rate. Scenes with displacement render with less geometry where it is small on screen.
 - **A memory meter in the preview window**, beside the picture's details: the renderer's RAM, the machine's free RAM and the graphics card's memory, amber then red as they run short.

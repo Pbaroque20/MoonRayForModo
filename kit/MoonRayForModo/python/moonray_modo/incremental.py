@@ -120,7 +120,7 @@ def transform_targets(scene,identities):
 # Items that neither bend a mesh nor make one come and go as time passes: meshes, lights, the camera, locators and
 # their transforms, groups, the Shader Tree and MoonRay's own items and materials (read again at each moment in any case).
 STEADY={'mesh','locator','groupLocator','translation','rotation','scale','transform','txtrLocator','mask','shaderFolder',
-        'defaultShader','renderOutput','polyRender','render','actionclip','group','scene','videoStill'}|LIGHTS|MATERIALS
+        'defaultShader','renderOutput','polyRender','render','actionclip','group','scene','videoStill','imageFolder'}|LIGHTS|MATERIALS
 
 
 def stands_with_items(scene,snapshot):
@@ -164,6 +164,17 @@ def rigid(scene,snapshot):
         if any(d.get('projection','uv')!='uv' for d in descriptors(snapshot.get('materials') or {}).values()):return False
         return stands_with_items(scene,snapshot)
     except Exception:return False
+
+
+def animated(scene,identities):
+    """Whether any channel of these items is animated (keyed, or driven by an envelope): a move of items none of whose
+    channels is cannot make anything move during the shutter. Where Modo cannot be asked, they are taken to be."""
+    try:
+        for identity in identities or ():
+            item=scene.item(identity)
+            if any(channel.isAnimated for channel in item.channels()):return True
+        return False
+    except Exception:return True
 
 
 def item_matrices(scene,snapshot):

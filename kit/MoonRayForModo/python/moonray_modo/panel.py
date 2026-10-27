@@ -1652,17 +1652,27 @@ class Panel(Tools, QtWidgets.QWidget):
                 self.changes.full=self.changes.full or full;self.changes.items.update(items)
                 self.release_timer.start();return
             # MoonLightIPR with motion blur: once an edit is let go, the scene is read at both ends of the shutter as well
-            # (three readings in all). Only a material edit to a scene last found to hold nothing that moves skips that:
-            # any other edit may have keyed something to move. While dragging, it is followed sharp, as fast as it can be.
+            # (three readings in all). A material edit, or a move of items (the camera among them) none of whose channels is animated, to a scene
+            # last found to hold nothing that moves skips that: any other edit may have keyed something to move. While
+            # dragging, it is followed sharp, as fast as it can be.
             blurred=False
             if not held and self._engine()=='moonlightipr' and self.preferences.get('preview_motion'):
                 still=(time,modo.Scene().renderItem.id,repr(sorted(settings.items(),key=lambda entry:entry[0])))
-                if full or changed or reuse!='materials' or getattr(self,'_live_still',None)!=still:
+                # A move cannot make anything move during the shutter without a key (a fur scene's three readings held
+                # Modo 0.8 s for each move).
+                from .incremental import animated
+                # (reuse True: only the camera or lights were moved, the meshes kept.)
+                unkeyed=(reuse is True or reuse in ('materials','transforms')) and (reuse=='materials' or not animated(modo.Scene(),items))
+                if full or changed or not unkeyed or getattr(self,'_live_still',None)!=still:
                     from .motion import moves
                     scene=self._capture_preview();blurred=True
-                    # The meshes are read whole again on the next edit: a reading at the shutter's ends leaves none to reuse.
-                    self._geometry_cache=None
-                    self._live_still=None if moves(scene) else still
+                    if moves(scene):
+                        # The meshes are read whole again on the next edit: a reading at the shutter's ends leaves none to reuse.
+                        self._geometry_cache=None;self._live_still=None
+                    else:
+                        # Nothing moves: the scene as read once, the same picture, its meshes kept for the next move.
+                        self._live_still=still
+                        scene=self._capture()
             if not blurred:
                 scene = self._capture(reuse,items if reuse=='transforms' else None)
             if held:
