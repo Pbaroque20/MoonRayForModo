@@ -615,7 +615,13 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
         displaced=bool(({tag}|set(parts)) & displacement_tags)
         if displaced and not mesh.get('subdivision'):
             settings=options.object_values(mesh.get('geometry_settings',{}))
-            mesh=dict(mesh,adaptive_error=settings['adaptive_error'])
+            # The object's own screen error; else, as the scene's Displacement Tessellation says, Modo's Displacement Rate
+            # (or the Adaptive Error Override) or none (uniform). An instancer's reference is tessellated once for all its
+            # instances, so it stays uniform.
+            if settings['adaptive_error']:error=settings['adaptive_error']
+            elif 'instances' in mesh or held_render['displacement_tessellation']==0:error=0.0
+            else:error=held_render['displacement_adaptive_error'] or float(scene.get('displacement_rate',1.0))
+            mesh=dict(mesh,adaptive_error=error)
         level = mesh.get('subdivision_level', 3)
         if type(level) is not int or not 1 <= level <= 5:
             raise ValueError('Subdivision level must be an integer between 1 and 5')

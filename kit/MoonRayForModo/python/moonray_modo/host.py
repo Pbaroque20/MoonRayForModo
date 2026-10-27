@@ -16,8 +16,9 @@ def color(item, prefix, default=(1, 1, 1)):
     return [float(channel(item, prefix + '.' + axis, default[i])) for i, axis in enumerate('RGB')]
 
 
-def world_matrix(item):
-    rows = lx.object.Matrix(item.channel('worldMatrix').get()).Get4()
+def world_matrix(item, time=None):
+    """The item's world matrix now, or at time (seconds) where given."""
+    rows = lx.object.Matrix(item.channel('worldMatrix').get() if time is None else item.channel('worldMatrix').get(time)).Get4()
     return [float(value) for row in rows for value in row]
 
 
@@ -102,7 +103,7 @@ def corner_values(polygons, map_id, count, dimension):
     return values
 
 
-def dicing_view(scene, identity, width, height, pixel_aspect, warnings):
+def dicing_view(scene, identity, width, height, pixel_aspect, warnings, time=None):
     """The camera chosen to work adaptive tessellation out for: {'entity': id} for a MoonRay camera item, a Modo
     camera's view framed as the render camera's is, or None for the render camera itself or one that is gone."""
     try:
@@ -113,7 +114,7 @@ def dicing_view(scene, identity, width, height, pixel_aspect, warnings):
     from .entities import class_of
     if item.type != 'camera' or class_of(item) is not None:
         return {'entity': item.id}
-    if item.id == scene.renderCamera.id:
+    if item.id == scene.renderCamera.id and time is None:
         return None
     projection = channel(item, 'projType', 'persp')
     if projection not in ('persp', 'ortho'):
@@ -123,7 +124,7 @@ def dicing_view(scene, identity, width, height, pixel_aspect, warnings):
     aperture_x, moonray_pixel_aspect = framing(width, height, float(channel(item, 'apertureX', .036)), float(channel(item, 'apertureY', .024)),
                                                pixel_aspect, channel(item, 'filmFit', 'fill'))
     ortho_width = float(properties.read(item).get('ortho_width', aperture_x * float(channel(item, 'target', 1)) / max(1e-9, float(channel(item, 'focalLen', .05)))))
-    return {'matrix': world_matrix(item), 'identity': item.id, 'projection': projection, 'ortho_width': ortho_width,
+    return {'matrix': world_matrix(item, time), 'identity': item.id, 'projection': projection, 'ortho_width': ortho_width,
             'film_offset': offsets(float(channel(item, 'offsetX', 0)), float(channel(item, 'offsetY', 0)), projection, aperture_x, ortho_width, pixel_aspect),
             'pixel_aspect': moonray_pixel_aspect, 'focal_mm': float(channel(item, 'focalLen', .05)) * 1000, 'film_mm': aperture_x * 1000}
 
@@ -396,9 +397,22 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
     overscan = float(channel(camera, 'overscan', 1.0))
     if overscan > 1.0:
         result['camera']['overscan'] = overscan
-    # Another camera for MoonRay's adaptive tessellation, where one is chosen.
-    chosen = properties.scene_settings().get('dicing_camera') or ''
-    if chosen:
+    # Modo's Displacement Rate (pixels), which displaced meshes are tessellated to where the scene follows Modo.
+    result['displacement_rate'] = float(channel(render, 'dispRate', 1.0))
+    # Another camera for MoonRay's adaptive tessellation: the one chosen; with a fixed dicing camera, it (or the render
+    # camera) held at the Dicing Frame, so that a moving camera does not move the triangles.
+    stored = properties.scene_settings()
+    chosen = stored.get('dicing_camera') or ''
+    rendering = stored.get('render', {}) if isinstance(stored.get('render'), dict) else {}
+    if int(rendering.get('displacement_tessellation', 1)) == 2:
+        frame = float(rendering.get('dicing_frame', -1.0))
+        if frame < 0:
+            frame = float(channel(render, 'first', 0))
+        fps = float(scene.fps) if getattr(scene, 'fps', 0) else 24.0
+        view = dicing_view(scene, chosen or scene.renderCamera.id, width, height, pixel_aspect, warnings, time=frame / fps)
+        if view:
+            result['dicing_camera'] = view
+    elif chosen:
         view = dicing_view(scene, chosen, width, height, pixel_aspect, warnings)
         if view:
             result['dicing_camera'] = view

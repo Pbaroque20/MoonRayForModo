@@ -152,6 +152,9 @@ GROUPS = [
     # MoonRay's switches over the whole render, as it has them.
     ('Global Switches', True, [
         render_field('enable_displacement', 'Displacement', 'Off renders every displaced surface flat, as it is before its displacement'),
+        render_field('displacement_tessellation', 'Displacement Tessellation', 'How displaced polygon meshes are cut into triangles. Follow Modo: finely where they are large on screen and coarsely where small, to Modo''s Displacement Rate (Render item), as Modo does: far less geometry and a quicker start. Fixed dicing camera: the same, worked out from the Dicing Camera (or the render camera) held at the Dicing Frame, so the triangles stay put while the camera moves (no shimmer in an animation). Uniform: by each mesh''s resolution, the same whatever the camera. An object''s own Subdivision Screen Error wins; instances stay uniform'),
+        render_field('displacement_adaptive_error', 'Adaptive Error Override', 'Pixels of screen error in place of Modo''s Displacement Rate (lower is finer). 0: Modo''s'),
+        render_field('dicing_frame', 'Dicing Frame', 'The frame the fixed dicing camera is held at. -1: the scene''s first frame'),
         render_field('enable_subsurface_scattering', 'Subsurface Scattering', 'Off renders subsurface materials with plain diffuse light, which is quicker'),
         render_field('enable_shadowing', 'Shadows', 'Off casts no shadows anywhere: lights reach everything they face'),
         render_field('lights_visible_in_camera', 'Lights Seen by the Camera', 'On shows lights to the camera as glowing shapes. Each MoonRay light can say otherwise for itself'),
