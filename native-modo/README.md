@@ -1,7 +1,10 @@
 # Native Modo adapters
 
-`geometry_bridge.cpp`, `render_cache.cpp` and `mesh_reader.cpp` build `MoonRayGeometry.lx`, the
-adapter the kit ships. `render_cache.cpp` reads evaluated geometry from Modo's render cache.
+`geometry_bridge.cpp`, `render_cache.cpp`, `mesh_reader.cpp` and `rows_math.cpp` build `MoonRayGeometry.lx`, the
+adapter the kit ships. `rows_math.cpp` (added 2026-10-26) works on the rows of numbers the adapter hands over, which
+the plugin keeps as they came (`rows.py`): a texture layer's UV transform and the binary scene's four-byte numbers, in
+the same order of operations as the plugin's own Python (built with `-ffp-contract=off`), so the scene is the same
+byte for byte. `render_cache.cpp` reads evaluated geometry from Modo's render cache.
 `mesh_reader.cpp`, added in 0.3.50.1, hands a whole mesh to the plugin in one call
 (`MR_mesh_file`), which is how meshes of 5,000 polygons or more are read; the plugin falls back
 to reading a polygon at a time where the adapter is missing or older. Build it with

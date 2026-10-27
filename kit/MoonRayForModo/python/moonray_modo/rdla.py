@@ -3,7 +3,7 @@ import math
 import re
 from functools import lru_cache
 from . import options, textures, outputs, __version__
-from . import rdlb, primitive_attributes
+from . import rdlb, primitive_attributes, rows
 from .serialization import array as _kept
 from array import array as numbers
 from itertools import chain
@@ -98,15 +98,20 @@ def vector_array(values,kind='Vec3'):
 def _heavy_line(name, attribute, kind, source, written, klass='RdlMeshGeometry', indent='    '):
     """One heavy list of a mesh (or of its UserData): as text in the scene, or (while rdlb.collecting) in its binary
     file instead."""
+    # Lists as Modo handed them over (rows.Rows, rows.Faces) go as the numbers they came in: the same bytes.
     if kind == 'vec3' or kind == 'vec2':
         size = 3 if kind == 'vec3' else 2
-        encode, value_type = (lambda: rdlb.float_list(source, size)), (rdlb.VEC3F_VECTOR if size == 3 else rdlb.VEC2F_VECTOR)
+        held = rows.numbers(source, size)
+        encode, value_type = (lambda: rdlb.float_list(source if held is None else held, size)), (rdlb.VEC3F_VECTOR if size == 3 else rdlb.VEC2F_VECTOR)
     elif kind == 'indices':
-        encode, value_type = (lambda: rdlb.int_list(numbers('l', chain.from_iterable(source)))), rdlb.INT_VECTOR
+        held = rows.corners(source)
+        encode, value_type = (lambda: rdlb.int_list(numbers('l', chain.from_iterable(source)) if held is None else held)), rdlb.INT_VECTOR
     elif kind == 'counts':
-        encode, value_type = (lambda: rdlb.int_list(numbers('l', map(len, source)))), rdlb.INT_VECTOR
+        held = rows.counts(source)
+        encode, value_type = (lambda: rdlb.int_list(numbers('l', map(len, source)) if held is None else held)), rdlb.INT_VECTOR
     elif kind == 'rgb':
-        encode, value_type = (lambda: rdlb.float_list(source, 3)), rdlb.RGB_VECTOR
+        held = rows.numbers(source, 3)
+        encode, value_type = (lambda: rdlb.float_list(source if held is None else held, 3)), rdlb.RGB_VECTOR
     elif kind == 'float':
         encode, value_type = (lambda: rdlb.float_list(numbers('f', (v[0] for v in source)))), rdlb.FLOAT_VECTOR
     elif kind == 'string':
@@ -589,7 +594,11 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
             continue
         def checked(faces=faces, vertices=vertices, mesh=mesh):
             # All the corners at once where they are all whole numbers within the points: the usual case. Otherwise
-            # face by face, which says which mesh is wrong.
+            # face by face, which says which mesh is wrong. Faces as Modo handed them over (rows.Faces) are whole
+            # numbers by their kind, their corners and counts looked over as they came.
+            held = rows.corners(faces)
+            if held is not None and min(rows.counts(faces)) >= 3 and (not len(held) or (min(held) >= 0 and max(held) < len(vertices))):
+                return ''
             if min(map(len, faces)) >= 3:
                 corners = list(chain.from_iterable(faces))
                 if set(map(type, corners)) == {int} and min(corners) >= 0 and max(corners) < len(vertices):
@@ -633,7 +642,7 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
                 mesh=dict(mesh,uvs=fallback_uvs(faces))
             named_uvs['modo_primary_uv']=mesh['uvs']
         for uv_index, (uv_name, values) in enumerate(sorted(named_uvs.items())):
-            if len(values) != sum(map(len, faces)):
+            if len(values) != rows.corner_count(faces):
                 raise ValueError('Named UV set must match polygon corners: '+uv_name)
             name = '/modo/mesh/%d/uv/%d' % (index,uv_index)
             lines += ['UserData(%s) {' % string(name),
@@ -644,7 +653,7 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
             user_data.append('UserData(%s)' % string(name))
         # The mesh's weight and colour maps (vertex_maps), for its materials to read by their names: MoonRay's rate 4
         # for a value at each point, 6 for one at each corner of each face.
-        for source, rate, count in (('point_attributes', 4, len(vertices)), ('corner_attributes', 6, sum(map(len, faces)))):
+        for source, rate, count in (('point_attributes', 4, len(vertices)), ('corner_attributes', 6, rows.corner_count(faces))):
             for map_index, (map_name, held) in enumerate(sorted((mesh.get(source) or {}).items())):
                 values = held['values']
                 if len(values) != count:
@@ -728,7 +737,7 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
             if source == 'normals' and (subdivision or not mesh.get('smooth', True)):
                 continue
             if values:
-                if len(values) != sum(map(len, faces)):
+                if len(values) != rows.corner_count(faces):
                     raise ValueError('Face-varying %s must match the corner count' % source)
                 lines += _heavy_line('/modo/mesh/%s' % index, attribute, kind.lower(), values,
                                      lambda: vector_array(values, kind))

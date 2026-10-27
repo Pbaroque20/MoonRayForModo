@@ -1,11 +1,11 @@
 """Translate Modo Render Cache surfaces without modifying the current scene."""
 from array import array
 import ctypes
-from itertools import islice
 from hashlib import blake2b
 import json
 import tempfile
 from pathlib import Path
+from .rows import Rows, Faces
 
 _bridge = None
 
@@ -91,26 +91,18 @@ def _coordinates():
 # (serialization.array keeps that by the lists it came from), is used again. Kept for one reading back.
 _ROWS_BEFORE, _ROWS_NOW = {}, {}
 _DERIVED_BEFORE, _DERIVED_NOW = {}, {}
-# Each list made from a row, with the row as it came (an array) and a digest of its bytes: what MoonLightIPR packs
-# and how a list is known (scene_digest.flat) without walking its numbers again.
-_FLAT_BEFORE, _FLAT_NOW = {}, {}
 
 
 def _new_reading():
-    global _ROWS_BEFORE, _ROWS_NOW, _DERIVED_BEFORE, _DERIVED_NOW, _FLAT_BEFORE, _FLAT_NOW
+    global _ROWS_BEFORE, _ROWS_NOW, _DERIVED_BEFORE, _DERIVED_NOW
     _ROWS_BEFORE, _ROWS_NOW = _ROWS_NOW, {}
     _DERIVED_BEFORE, _DERIVED_NOW = _DERIVED_NOW, {}
-    _FLAT_BEFORE, _FLAT_NOW = _FLAT_NOW, {}
 
 
 def flat(rows):
-    """The numbers of a list made from a row handed over, flat, as an array, and a digest of them; None for others."""
-    held = _FLAT_NOW.get(id(rows)) or _FLAT_BEFORE.get(id(rows))
-    return held[1:] if held is not None and held[0] is rows else None
-
-
-def _held_flat(rows, numbers, digest):
-    _FLAT_NOW[id(rows)] = (rows, numbers, digest)
+    """The numbers of a list made from a row handed over (rows.Rows), flat, as an array, and a digest of them: what
+    MoonLightIPR packs and how a list is known (scene_digest.flat) without walking its numbers again. None for others."""
+    return (rows.data, rows.digest) if isinstance(rows, Rows) else None
 
 
 from . import scene_digest as _scene_digest
@@ -174,42 +166,30 @@ def _merged_segments(segments):
 
 def _row(entry,held):
     """One row of numbers out of the file they were handed over in: 32-bit floats or whole numbers, `count` entries
-    of `width` each, as the lists the rest of the plugin works with."""
+    of `width` each, read as the lists the rest of the plugin works with (rows.Rows: the numbers as they came, made
+    into lists only where something walks them)."""
     count,width=int(entry['count']),int(entry['width'])
     whole=bool(entry.get('whole'))
-    values=array('i' if whole else 'f')
     if not count*width:return []
     at=int(entry['at'])
     data=held[at:at+count*width*4]   # held is a memoryview: no copy of the bytes first
     key=(whole,width,blake2b(data,digest_size=16).digest())
-    held=_ROWS_NOW.get(key) or _ROWS_BEFORE.get(key)
-    if held is None:
+    rows=_ROWS_NOW.get(key) or _ROWS_BEFORE.get(key)
+    if rows is None:
+        values=array('i' if whole else 'f')
         values.frombytes(data)
-        flat=values.tolist()
-        # The same lists as slicing it into rows, about three times as fast: zip takes width numbers at a time.
-        pick=iter(flat)
-        held=(flat if width==1 else list(map(list,zip(*[pick]*width))),values,'row:%d:%d:%s'%(whole,width,key[2].hex()))
-    _ROWS_NOW[key]=held
-    _held_flat(*held)
-    return held[0]
+        rows=Rows(values,width,'row:%d:%d:%s'%(whole,width,key[2].hex()))
+    _ROWS_NOW[key]=rows
+    return rows
 
 
 def _faces(corners,sizes,held):
     """A joined segment's faces: its row of corners cut by its row of corner counts. Kept by the bytes of both."""
     row,counts=_row(corners,held),_row(sizes,held)
-
-    def cut():
-        if counts and min(counts)==max(counts):
-            pick=iter(row)
-            return list(map(list,zip(*[pick]*counts[0])))
-        pick=iter(row)
-        return [list(islice(pick,n)) for n in counts]
-    faces=_derived('faces',(row,counts),cut)
-    # The faces' corners flat are the row of corners as it came.
-    whole,cuts=flat(row),flat(counts)
-    if whole is not None and cuts is not None:
-        _held_flat(faces,whole[0],'faces:%s:%s'%(whole[1],cuts[1]))
-    return faces
+    if not row or not counts:
+        return []
+    # The faces' corners flat are the row of corners as it came (rows.Faces).
+    return _derived('faces',(row,counts),lambda:Faces(row.data,counts.data,'faces:%s:%s'%(row.digest,counts.digest)))
 
 
 def _unpack(data,held):
@@ -234,6 +214,8 @@ def capture(time, path=None, displaced=True):
         bridge.MR_geometry_snapshot_file.argtypes = [ctypes.c_double,ctypes.c_int,ctypes.c_char_p]
         bridge.MR_geometry_snapshot_file.restype = ctypes.c_char_p
         _bridge = bridge
+        from . import rows
+        rows.adapter(bridge)
     with tempfile.TemporaryDirectory(prefix='MoonRay-geometry-') as folder:
         output=Path(folder)/'geometry.json'
         # Each surface's segments joined by the adapter where it can (MR_geometry_snapshot_merged), else one by one.
@@ -337,12 +319,14 @@ def meshes(data, materials, warnings, scene=None):
         surfaces.sort(key=lambda s:(s['source_item'],s.get('instance_index',0)))
         for segment_index,segment in enumerate(_merged_segments(prototype['segments'])):
             if not segment['faces'] or len(segment['faces'][0])<3: continue
-            indices = _derived('indices', (segment['faces'],), lambda: [i for face in segment['faces'] for i in face])
+            # The corners flat: the run they came in where they did (rows.Faces).
+            indices = _derived('indices', (segment['faces'],), lambda: segment['faces'].data if isinstance(segment['faces'], Faces)
+                               else [i for face in segment['faces'] for i in face])
             uv_sets = segment['uv_sets']
             if uv_name and uv_index >= len(uv_sets):
                 raise ValueError('Modo did not supply UV values for ' + uv_name)
             vertices = segment['vertices']
-            if not _derived('within', (indices, vertices), lambda: not any(i < 0 or i >= len(vertices) for i in indices)):
+            if not _derived('within', (indices, vertices), lambda: not len(indices) or (min(indices) >= 0 and max(indices) < len(vertices))):
                 raise ValueError('Invalid evaluated geometry index')
             attribute_indices = range(len(indices)) if segment.get('face_varying') else indices
             mesh = dict(name=surfaces[0]['source_item'], identity=surfaces[0]['source_item']+'|'+tag+'|'+str(segment_index), vertices=vertices,

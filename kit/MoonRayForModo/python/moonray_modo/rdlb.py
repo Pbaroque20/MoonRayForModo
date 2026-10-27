@@ -16,6 +16,7 @@ from contextlib import contextmanager
 from itertools import chain
 import struct
 import sys
+from . import rows
 
 # scene_rdl2's ValueContainerUtil::ValueType
 BOOL, INT, INT_VECTOR, FLOAT, FLOAT_VECTOR, STRING, STRING_VECTOR = 1, 3, 4, 7, 8, 11, 12
@@ -64,6 +65,9 @@ def int_list(values):
         return vl(0)
     if min(held) < 0 or max(held) >= FIXED_LIMIT:
         return vl(count) + b''.join(zigzag(int(v)) for v in held)
+    native = rows.zigzag4(held)
+    if native is not None:
+        return vl(count) + native
     lanes = array('I', held)
     if not _LITTLE:
         lanes.byteswap()
