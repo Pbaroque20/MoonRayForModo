@@ -114,10 +114,10 @@ struct Pyramid {
   realtimeImage.count=image.count-realtimeFrom;
   for(unsigned k=0;k<realtimeImage.count;++k)realtimeImage.levels[k]=image.levels[realtimeFrom+k];
  }
- // The largest side a texture has in realtime's frames (XPU2_SESSION_RT_TEXTURE_SIDE, default 1280; 0: as rendered).
+ // The largest side a texture has in realtime's frames (XPU2_SESSION_RT_TEXTURE_SIDE, default 1024, was 1280; 0: as rendered).
  // Perceptually enough at realtime's sizes, and its finer levels are then never decoded nor sent to the card.
  static unsigned realtimeSide(){static const unsigned side=[]{const char* v=std::getenv("XPU2_SESSION_RT_TEXTURE_SIDE");
-   return v?unsigned(std::max(0,std::atoi(v))):1280u;}();return side;}
+   return v?unsigned(std::max(0,std::atoi(v))):1024u;}();return side;}
  tex::Image realtimeImage;unsigned realtimeFrom=0;
  // The pyramid a plan reads: realtime's from its first level of realtimeSide() or less, else the whole.
  const tex::Image& view(bool realtime)const{return realtime&&realtimeFrom?realtimeImage:image;}

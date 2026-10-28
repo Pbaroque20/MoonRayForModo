@@ -27,7 +27,9 @@
 #include <scene_rdl2/scene/rdl2/RenderOutput.h>
 #include <scene_rdl2/scene/rdl2/rdl2.h>
 #include <scene_rdl2/scene/rdl2/BinaryReader.h>
+#include <algorithm>
 #include <condition_variable>
+#include <cstring>
 #include <new>
 #include <psapi.h>
 #include <dxgi.h>
@@ -382,18 +384,122 @@ struct Scene {
     // the plan the last camera-only one was made from (the GPU's configuration alone goes again, GpuLane::updateCamera).
     bool cameraOnly = false;
     cpu::PlanView cameraFrom;
+    // The coarse first pass (coarse_geometry.h; XPU2_SESSION_COARSE_FIRST=0 leaves it out): a full preparation is made
+    // coarse first, where that makes any mesh lighter (coarse), and the full plan from the same canonical frame
+    // (frameHeld) by refine() while the coarse one renders. Not for realtime, whose geometry the kit cuts already.
+    bool coarseFirst = true, coarse = false;
+    CanonicalView frameHeld;
+    // Whether the scene's tessellation is heavy enough for a coarse first pass to bring its first picture on: its
+    // subdivision surfaces' and displaced meshes' faces times their resolution squared (an adaptive mesh's as 4), two
+    // triangles a quad, over two million. A scene whose preparation is its materials, textures and the reading of its
+    // meshes would only prepare twice (a car: first picture 28.6 s to 31.0 s, the frame 30.8 s to 43.8 s).
+    bool heavyTessellation() const {
+        const rdl::SceneVariables& sv = source->getSceneVariables();
+        const rdl::SceneObject* held = sv.get<rdl::SceneObject*>("layer");
+        const rdl::Layer* layer = held ? held->asA<rdl::Layer>() : nullptr;
+        const bool displacement = sv.get<rdl::Bool>("enable_displacement");
+        auto displaced = [&](const rdl::Geometry* g, const std::string& part) {
+            try {
+                const int id = layer->getAssignmentId(g, part);
+                return id >= 0 && layer->lookupDisplacement(id) != nullptr;
+            } catch (...) {
+                return false;
+            }
+        };
+        double triangles = 0;
+        for (auto it = source->beginSceneObject(); it != source->endSceneObject(); ++it) {
+            const rdl::SceneObject& o = *it->second;
+            if (o.getSceneClass().getName() != "RdlMeshGeometry") continue;
+            bool heavy = o.get<rdl::Bool>("is_subd");
+            if (!heavy && displacement && layer) {
+                const rdl::Geometry* g = o.asA<rdl::Geometry>();
+                heavy = displaced(g, "");
+                for (const auto& part : o.get<rdl::StringVector>("part_list"))
+                    if (!heavy) heavy = displaced(g, part);
+            }
+            if (!heavy) continue;
+            const double r = o.get<rdl::Float>("adaptive_error") > 0.0f ? 4.0 : std::max(1.0, double(o.get<rdl::Float>("mesh_resolution")));
+            triangles += double(o.get<rdl::IntVector>("face_vertex_count").size()) * r * r * 2.0;
+            if (triangles > 2e6) return true;
+        }
+        return false;
+    }
+    // Whether the kit asks for realtime (the generations' UserData, its ninth value), read before the plan is made.
+    bool realtimeAsked() const {
+        if (!source || !source->sceneObjectExists("/modo/xpu2/generations")) return false;
+        try {
+            const rdl::SceneObject* o = source->getSceneObject("/modo/xpu2/generations");
+            const auto& v = o->get<rdl::FloatVector>("float_values_0");
+            return v.size() >= 9 && v[8] != 0.0f;
+        } catch (...) {
+            return false;
+        }
+    }
     // Whether every object edited since the last full preparation is the camera the scene renders through (the source's
     // objects stay dirty until a full preparation has taken them into the canonical copy and commits them).
-    bool onlyCameraDirty() const {
+    // Render outputs may be edited too (outputsRenamed): the kit names each preview's files anew, so every edit of a
+    // realtime preview moved the camera and renamed its outputs, none was the camera's alone, and each prepared the whole
+    // scene again. Whether only their files changed is told by their plan made again (sameButFiles), not by what rdl
+    // says changed: that is since its last update(), which nothing here calls, so every attribute ever set.
+    bool onlyCameraDirty() {
         const rdl::SceneObject* camera = source->getSceneVariables().get(rdl::SceneVariables::sCamera);
         bool cameraDirty = false;
+        outputsRenamed = false;
         for (auto it = source->beginSceneObject(); it != source->endSceneObject(); ++it) {
             if (!it->second->isDirty()) continue;
-            if (it->second != camera) return false;
-            cameraDirty = true;
+            if (it->second == camera) {
+                cameraDirty = true;
+                continue;
+            }
+            if (!it->second->isA<rdl::RenderOutput>()) {
+                std::printf("XPU2: not the camera alone: %s changed\n", it->second->getName().c_str());
+                return false;
+            }
+            outputsRenamed = true;
         }
-        return cameraDirty;
+        // Outputs renamed alone (a preview sent again as it was) are taken the same way.
+        return cameraDirty || outputsRenamed;
     }
+    // Two outputs the same but for the files they go to and the scene objects they came from.
+    static bool sameOutput(const aov::Output& a, const aov::Output& b) {
+        return a.name == b.name && a.result == b.result && a.channels == b.channels && a.schema == b.schema && a.entry == b.entry &&
+               a.displayFilter == b.displayFilter && a.lpePrefixFlags == b.lpePrefixFlags && a.stateAov == b.stateAov && a.filter == b.filter &&
+               a.half == b.half && a.compression == b.compression && a.compressionLevel == b.compressionLevel && a.part == b.part &&
+               a.cryptoCategory == b.cryptoCategory && a.cryptoLayers == b.cryptoLayers &&
+               std::equal(std::begin(a.cryptoExtra), std::end(a.cryptoExtra), std::begin(b.cryptoExtra)) &&
+               a.cryptoReflected == b.cryptoReflected && a.cryptoRefracted == b.cryptoRefracted && a.metadata == b.metadata &&
+               a.metadataName == b.metadataName && a.metadataNames == b.metadataNames && a.metadataTypes == b.metadataTypes &&
+               a.metadataValues == b.metadataValues;
+    }
+    // Two plans of the outputs the same but for their files' names: the same files, images, entries, channels, labels
+    // and expressions, so that what the scene's plan took of the one holds for the other.
+    static bool sameButFiles(const aov::Plan& a, const aov::Plan& b) {
+        if (a.files.size() != b.files.size() || a.all.size() != b.all.size() || a.entries.size() != b.entries.size() ||
+            a.channels != b.channels || a.closestCount != b.closestCount || a.types != b.types || a.materials.size() != b.materials.size() ||
+            a.materialSchemas != b.materialSchemas || a.materialExpressions != b.materialExpressions || a.labelLists != b.labelLists ||
+            a.lobeLabels != b.lobeLabels || a.materialLabels != b.materialLabels || a.geomLabels != b.geomLabels || a.prims != b.prims ||
+            a.lpeLabelNames != b.lpeLabelNames || a.lpe != b.lpe || a.lpeValid != b.lpeValid || a.lpeStates != b.lpeStates ||
+            a.lpeLabels != b.lpeLabels || a.lpeStride != b.lpeStride || a.lpeWords != b.lpeWords || a.lpeCamera != b.lpeCamera ||
+            a.wireframe != b.wireframe || a.motion != b.motion || a.weight != b.weight || a.heatMap != b.heatMap || a.beautyAux != b.beautyAux ||
+            a.alphaAux != b.alphaAux || a.cryptomatte != b.cryptomatte || a.deep != b.deep || a.resumable != b.resumable ||
+            a.checkpoint != b.checkpoint || a.resume != b.resume || a.displayFilters != b.displayFilters ||
+            !std::equal(std::begin(a.aperture), std::end(a.aperture), std::begin(b.aperture)) ||
+            !std::equal(std::begin(a.region), std::end(a.region), std::begin(b.region)))
+            return false;
+        for (size_t i = 0; i < a.entries.size(); ++i)
+            if (std::memcmp(&a.entries[i], &b.entries[i], sizeof a.entries[i]) != 0) return false;
+        for (size_t i = 0; i < a.files.size(); ++i) {
+            if (a.files[i].images.size() != b.files[i].images.size()) return false;
+            for (size_t j = 0; j < a.files[i].images.size(); ++j) {
+                const auto &x = a.files[i].images[j], &y = b.files[i].images[j];
+                if (x.part != y.part || x.outputs.size() != y.outputs.size()) return false;
+                for (size_t k = 0; k < x.outputs.size(); ++k)
+                    if (!sameOutput(x.outputs[k], y.outputs[k])) return false;
+            }
+        }
+        return true;
+    }
+    bool outputsRenamed = false;
 
     void load(const std::vector<std::string>& files) {
         cpuScene.reset();
@@ -430,7 +536,21 @@ struct Scene {
         if (cameraOnly && plan && cpuScene) {
             const auto began = std::chrono::steady_clock::now();
             auto next = std::make_shared<cpu::Plan>(*plan);
-            if (cpu::updateCamera(*next, *source)) {
+            bool renamed = true;
+            if (outputsRenamed && next->aovs) {
+                // The outputs' plan made again for their files' new names, taken where it is the same in all else.
+                try {
+                    auto outputs = aov::buildPlan(*source);
+                    renamed = sameButFiles(*outputs, *next->aovs);
+                    if (renamed) next->aovs = outputs;
+                } catch (...) {
+                    renamed = false;
+                }
+            }
+            const bool moved = renamed && cpu::updateCamera(*next, *source);
+            if (!moved)
+                std::printf("XPU2: not the camera alone: %s\n", renamed ? "the plan cannot take a camera alone" : "the outputs changed besides their files");
+            if (moved) {
                 cameraFrom = plan;
                 plan = next;
                 cpuScene = std::make_unique<async::CpuScene>(plan, std::move(*cpuScene));
@@ -457,7 +577,10 @@ struct Scene {
             cpu::Limits limits;
             limits.bytes = geometryBudget();
             limits.gpuBytes = gpuGeometryBudget();
+            limits.coarse = coarseFirst && !realtimeAsked() && heavyTessellation();
             plan = cpu::prepare(*canonical, frame, plan, limits, assetRoot(), cpu::Domain::SurfaceTextures, true, true);
+            coarse = limits.coarse && plan->coarsened > 0;
+            frameHeld = frame;
         } catch (...) {
             canonical->reject(frame);
             logPreparation("preparation stopped", canonicalSeconds, -1);
@@ -493,6 +616,18 @@ struct Scene {
         if (!lastFolder.empty()) fs::remove_all(lastFolder, ignored);
         lastFolder = folder;
         changed = false;
+    }
+    // The full plan after a coarse one (the coarse first pass): from the same canonical frame, the coarse plan's
+    // materials, textures and lights taken over (its coarse meshes never are), and its CPU scene. On a thread of its own,
+    // from the canonical replica (replica, taken on this thread, the canonical copy's own), while the coarse plan renders
+    // on this one, where the GPU lane's context is.
+    static std::pair<cpu::PlanView, std::unique_ptr<async::CpuScene>> refine(const rdl::SceneContext& replica, CanonicalView frame,
+                                                                             cpu::PlanView coarsePlan) {
+        cpu::Limits limits;
+        limits.bytes = geometryBudget();
+        limits.gpuBytes = gpuGeometryBudget();
+        auto full = cpu::prepare(replica, frame, coarsePlan, limits, assetRoot(), cpu::Domain::SurfaceTextures, true, true);
+        return {full, std::make_unique<async::CpuScene>(full)};
     }
     // The classification's summary for the log: objects by class, the GPU families the scene's objects need on
     // each side, the objects that send the scene to MoonRay.
@@ -903,6 +1038,7 @@ int session(const Args& args, const fs::path& directory) {
               << ", adaptive passes " << (deviceChain ? "on the GPU" : "on the host") << std::endl;
 
     Scene scene;
+    scene.coarseFirst = envOn("XPU2_SESSION_COARSE_FIRST", true);
     scene.dso = folder;
     scene.staging = directory / "xpu2";
     std::error_code ignored;
@@ -1044,6 +1180,8 @@ int session(const Args& args, const fs::path& directory) {
                 // Realtime: pictures as they come (the first, a quarter of the pixels, after its pass).
                 watch.previewSeconds = scene.plan->realtime ? std::min(previewSeconds, 0.033) : previewSeconds;
                 double lastStatus = 0;
+                // After a coarse first pass, this frame's pictures are shown from where that pass had come to.
+                double hideBelow = 0;
                 const auto frameStart = Clock::now();
                 // The film's rows are in MoonRay's order.
                 {
@@ -1201,6 +1339,7 @@ int session(const Args& args, const fs::path& directory) {
                     return previewOutput(currentView) != nullptr || denoising(currentView);
                 };
                 watch.previewResult = [&](const async::RenderResult& sofar, double fraction) {
+                    if (fraction < hideBelow) return;
                     if (denoising(currentView) && denoiser) denoiser->submit(realtimePicture(sofar));
                     else if (const aov::Output* out = previewOutput(currentView)) {
                         async::RenderResult r = sofar;
@@ -1211,6 +1350,8 @@ int session(const Args& args, const fs::path& directory) {
                     modoProtocolLine(progress.str());
                 };
                 watch.preview = [&](const std::vector<float>& rgb, U32 w, U32 h, double fraction) {
+                    // After a coarse first pass: its pictures stay until this frame's are as far on.
+                    if (fraction < hideBelow) return;
                     publish(rgb, w, h);
                     std::ostringstream progress;
                     progress << "@@MODO_PROGRESS " << id << " " << fraction;
@@ -1236,7 +1377,71 @@ int session(const Args& args, const fs::path& directory) {
                     watch.checkpointSeconds = std::max(1.0, scene.plan->aovs->checkpointMinutes * 60.0);
                     watch.checkpoint = [&](async::RenderResult&& sofar) { checkpoints.save(std::move(sofar)); };
                 }
+                // The coarse first pass (coarse_geometry.h): the frame's first samples on lighter geometry, in its pictures
+                // and never in its film, while the full geometry is prepared on this thread; then the full plan renders the
+                // frame from its start, its pictures shown once they are as far on as the coarse pass's were.
+                if (scene.coarse && !waiting()) {
+                    const auto coarseBegan = Clock::now();
+                    std::atomic<bool> fullReady{false};
+                    double reached = 0;
+                    async::Watch first = watch;
+                    const auto shown = watch.preview;
+                    first.preview = [&reached, shown](const std::vector<float>& rgb, U32 w, U32 h, double fraction) {
+                        reached = std::max(reached, fraction);
+                        shown(rgb, w, h, fraction);
+                    };
+                    first.stop = [&] { return fullReady.load() || waiting(); };
+                    first.drain = [] { return false; };
+                    first.checkpoint = nullptr;
+                    first.checkpointSeconds = 0;
+                    async::RenderOptions firstOptions = options;
+                    firstOptions.watch = &first;
+                    std::pair<cpu::PlanView, std::unique_ptr<async::CpuScene>> full;
+                    std::exception_ptr failed;
+                    const rdl::SceneContext& replica = scene.canonical->replica();
+                    std::thread fullThread([&, frame = scene.frameHeld, coarsePlan = scene.plan] {
+                        try {
+                            full = Scene::refine(replica, frame, coarsePlan);
+                        } catch (...) {
+                            failed = std::current_exception();
+                        }
+                        fullReady = true;
+                    });
+                    try {
+                        renderer->render(firstOptions);
+                    } catch (const std::exception& e) {
+                        // The coarse pass is only pictures: the full frame follows whatever became of it.
+                        std::printf("XPU2: coarse first pass stopped: %s\n", e.what());
+                    }
+                    // The coarse frame done before the full geometry: its last picture stays meanwhile.
+                    fullThread.join();
+                    const unsigned lighter = scene.plan->coarsened;
+                    scene.coarse = false;
+                    if (failed) std::rethrow_exception(failed);
+                    // The coarse renderer holds the coarse CPU scene: let go first, the outlines' watch on it before it.
+                    outlines.watch(nullptr, id, 0, 0);
+                    renderer.reset();
+                    scene.plan = full.first;
+                    scene.cpuScene = std::move(full.second);
+                    if (gpu) {
+                        const std::string why = async::GpuLane::cpuOnly(scene.plan);
+                        gpuUsable = why.empty();
+                        if (gpuUsable) gpu->prepare(scene.plan);
+                        gpuPlan = scene.plan;
+                    }
+                    renderer = std::make_unique<async::Renderer>(scene.plan, *scene.cpuScene, gpuUsable ? gpu.get() : nullptr);
+                    renderer->deviceRatio(deviceRatio);
+                    outlines.watch(renderer.get(), id, width, height);
+                    options.mode = gpu && gpuUsable ? mode : 0;
+                    // The full frame's pictures from where the coarse pass came to, but no later than a quarter of the way: a
+                    // coarse frame done before the full geometry was ready would otherwise stand for the whole render.
+                    hideBelow = std::min(reached, 0.25);
+                    std::printf("XPU2: coarse first pass: %u meshes lighter, rendered to %.0f%%; the full geometry ready in %.2f s\n", lighter,
+                                reached * 100.0, std::chrono::duration<double>(Clock::now() - coarseBegan).count());
+                    std::fflush(stdout);
+                }
                 result = renderer->render(options);
+                hideBelow = 0;
                 checkpoints.wait();  // a save under way is whole before the frame's own files, or another scene
                 if (renderer->deviceRatio() > 0) deviceRatio = renderer->deviceRatio();
                 if (result.seededCells)

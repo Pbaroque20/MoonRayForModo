@@ -73,7 +73,9 @@ def xpu2_environment(runtime):
     root = xpu2_runtime()
     return {'PATH': str(root) + os.pathsep + environment(runtime)['PATH'], 'RDL2_DSO_PATH': str(root),
             'REZ_MOONRAY_ROOT': str(root), 'MOONRAY_XPU2_MOONRAY': str(Path(runtime) / 'moonray.exe'),
-            'XPU2_SESSION_CHAIN': '1' if xpu2_chain() else '0'}
+            'XPU2_SESSION_CHAIN': '1' if xpu2_chain() else '0',
+            # XPU2's tessellations kept in the cache folder as the Scene cache says (cache_folder).
+            'XPU2_SESSION_GEOMETRY_CACHE': '1' if __import__('moonray_modo.cache_folder', fromlist=['scene_cache']).scene_cache() else '0'}
 
 
 def xpu2_shaders_log():
@@ -706,7 +708,7 @@ ENUMS['bucket_size'] = """)
     p.save()
     p = Patch(py / 'scene_settings.py')
     line = next(l for l in p.text.split('\n') if l.startswith("        render_field('enable_displacement', 'Displacement',"))
-    p.rep(line + '\n', line + '\n' + """        render_field('displacement_tessellation', 'Displacement Tessellation', 'How displaced polygon meshes are cut into triangles. Follow Modo: finely where they are large on screen and coarsely where small, to Modo''s Displacement Rate (Render item), as Modo does: far less geometry and a quicker start. Fixed dicing camera: the same, worked out from the Dicing Camera (or the render camera) held at the Dicing Frame, so the triangles stay put while the camera moves (no shimmer in an animation). Uniform: by each mesh''s resolution, the same whatever the camera. An object''s own Subdivision Screen Error wins; instances stay uniform'),
+    p.rep(line + '\n', line + '\n' + """        render_field('displacement_tessellation', 'Displacement Tessellation', 'How subdivision surfaces and displaced polygon meshes are cut into triangles. Follow Modo: finely where they are large on screen and coarsely where small, to Modo''s Displacement Rate (Render item), as Modo does: far less geometry and a quicker start. Fixed dicing camera: the same, worked out from the Dicing Camera (or the render camera) held at the Dicing Frame, so the triangles stay put while the camera moves (no shimmer in an animation). Uniform: by each mesh''s resolution (a subdivision surface''s level), the same whatever the camera. An object''s own Subdivision Screen Error wins; instances stay uniform'),
         render_field('displacement_adaptive_error', 'Adaptive Error Override', 'Pixels of screen error in place of Modo''s Displacement Rate (lower is finer). 0: Modo''s'),
         render_field('dicing_frame', 'Dicing Frame', 'The frame the fixed dicing camera is held at. -1: the scene''s first frame'),
 """)
@@ -835,10 +837,10 @@ def binary_memory(kit):
 
 def xpu2_smart_render(kit):
     """Smart Render is MoonRay's: while XPU2 renders the preview (Preferences > MoonRay > XPU2) it is greyed in the render
-    settings and in the picture's menu, and no XPU2 render is stopped by it. And MoonLightIPR's images at most 1280 a
+    settings and in the picture's menu, and no XPU2 render is stopped by it. And MoonLightIPR's images at most 1024 a
     side, as the main kit has them since 2026-10-27 (realtime's textures)."""
     p = Patch(kit / 'python' / 'moonray_modo' / 'moonlightipr_materials.py')
-    p.rep("MAX_TEXTURE_SIDE = 4096", "# At most 1280 a side: perceptually enough at realtime's sizes (it was 4096).\nMAX_TEXTURE_SIDE = 1280")
+    p.rep("MAX_TEXTURE_SIDE = 4096", "# At most 1024 a side: perceptually enough at realtime's sizes (it was 4096, then 1280).\nMAX_TEXTURE_SIDE = 1024")
     p.save()
     p = Patch(kit / 'lxserv' / 'moonray_render_settings.py')
     p.rep("""                if entry['key'] in NEEDS_DENOISER:
@@ -935,6 +937,582 @@ def motion_skip(kit):
     p.save()
 
 
+def shutter_reading(kit):
+    """A MoonLightIPR edit with motion blur reads the scene once and asks the shutter's ends of where the items stand
+    (animation.shutter_moves, from the main repo as it is; panel's block comes with motion_skip): the interior's mesh
+    edit held Modo 5.7 s for two readings of its evaluated geometry (2026-10-27)."""
+    source = (REPO_KIT / 'animation.py').read_text(encoding='utf-8').replace('\r\n', '\n')
+    a = source.index('def shutter_moves(snapshot, evaluated=False):')
+    b = source.index('\nclass Sequence(QtCore.QObject):')
+    p = Patch(kit / 'python' / 'moonray_modo' / 'animation.py')
+    p.rep("""from .motion import apply_motion
+""", """from .motion import apply_motion
+
+
+""" + source[a:b].rstrip('\n') + """
+""")
+    p.save()
+
+
+def edited_surfaces(kit):
+    """A mesh edit to a scene of Modo's evaluated geometry reads again only the edited meshes' surfaces from its render
+    cache, the others' kept (main repo, uncommitted 2026-10-27; the adapter's MR_geometry_snapshot_some, in the one
+    geometry_detail copies; evaluated.py is copied whole by geometry_rows): an interior's edit read 25 surfaces, 2.5 s.
+    incremental.steady and rigid, and the classify rule, are taken from the repo as it is; host.py patched."""
+    py = kit / 'python' / 'moonray_modo'
+    inc = (REPO_KIT / 'incremental.py').read_text(encoding='utf-8').replace('\r\n', '\n')
+    p = Patch(py / 'incremental.py')
+    a, b = p.text.index('def rigid(scene,snapshot):'), p.text.index('def animated(scene,identities):')
+    p.text = p.text[:a] + inc[inc.index('def steady(scene):'):inc.index('def animated(scene,identities):')] + p.text[b:]
+    # The rule for an edited mesh, whole as the repo has it (Modo's evaluated geometry where each mesh's geometry is its
+    # own, own_geometry, 2026-10-28), in place of the kit's.
+    start = "        # Modo's evaluated geometry too, where each mesh's geometry is its own (own_geometry)"
+    rule = inc[inc.index(start):inc.index('        return False\n', inc.index(start)) + len('        return False\n')]
+    a = p.text.index("        if cache.get('_evaluated_data') is None and not cache.get('extra_geometry'):\n")
+    b = p.text.index('        return False\n', a) + len('        return False\n')
+    p.text = p.text[:a] + rule + p.text[b:]
+    p.save()
+    p = Patch(py / 'host.py')
+    p.rep("""            cached=reuse_geometry.get('_evaluated_data') if reuse_geometry else None
+            data=dict(cached,surfaces=[dict(v) for v in cached['surfaces']]) if cached else evaluated.capture(lx.service.Selection().GetTime())""",
+          """            cached=reuse_geometry.get('_evaluated_data') if reuse_geometry else None
+            if cached and dirty_meshes:
+                # Edited meshes: their surfaces read again, the others' as they were (incremental.classify).
+                data=evaluated.capture(lx.service.Selection().GetTime(),only=dirty_meshes,before=cached)
+            else:
+                data=dict(cached,surfaces=[dict(v) for v in cached['surfaces']]) if cached else evaluated.capture(lx.service.Selection().GetTime())""")
+    p.save()
+
+
+def xpu2_sampling_words(kit):
+    """While XPU2 renders the preview its sampling generations are on (their switch greyed), MoonRay's own sampling
+    fields are greyed and show what XPU2 takes, and the picture's sampling label says how XPU2 samples it: all worked
+    out as XPU2's plan does (xpu2_sampling.py beside this builder, copied into the kit; cpu_scene.h). Asked 2026-10-28."""
+    py = kit / 'python' / 'moonray_modo'
+    shutil.copyfile(Path(__file__).resolve().parent / 'xpu2_sampling.py', py / 'xpu2_sampling.py')
+    p = Patch(py / 'panel.py')
+    p.rep("""        settings=render_values(settings or {})
+        return ('LS ' if engine=='ls' else '')+""", """        settings=render_values(settings or {})
+        # XPU2 renders the preview: how it samples it (xpu2_sampling), not MoonRay's Uniform or Adaptive.
+        from . import xpu2_sampling
+        if engine=='moonray' and xpu2_sampling.active():
+            try:return xpu2_sampling.words(self._settings_values())
+            except Exception:pass
+        return ('LS ' if engine=='ls' else '')+""")
+    p.save()
+    p = Patch(py / 'rdla.py')
+    p.rep("""        values=[1,1 if generation.get('on',True) else 0,""", """        # On: they are whenever XPU2 renders the preview, and only XPU2 reads them (xpu2_sampling).
+        values=[1,1,""")
+    p.save()
+    p = Patch(kit / 'lxserv' / 'moonray_render_settings.py')
+    p.rep("""                    try:return bool(scene_settings.complete(properties.scene_settings())['xpu2_generations'].get('on',True))
+                    except Exception:return True""", """                    return True""")
+    p.rep("""                # XPU2's sampling generations (the private test build): on, MoonRay's own sampling settings are greyed
+                # (XPU2 previews use the XPU2 ones; final renders, MoonRay's, still use them).
+                if entry['key'] in ('sampling_mode','samples','min_adaptive_samples','max_adaptive_samples','target_adaptive_error'):
+                    try:
+                        if scene_settings.complete(properties.scene_settings())['xpu2_generations'].get('on',True):return False
+                    except Exception:pass
+""", """                # XPU2 renders the preview (the private test build): its sampling generations are on, their switch is
+                # greyed, and so are MoonRay's own sampling settings, which show what XPU2 takes (xpu2_sampling); final
+                # renders, MoonRay's, still use them.
+                if entry['key'] in ('xpu2_generations','sampling_mode','samples','min_adaptive_samples','max_adaptive_samples','target_adaptive_error'):
+                    from moonray_modo import xpu2_sampling
+                    if xpu2_sampling.active():return False
+""")
+    p.rep("""                if kind in ('bool','member','int','choice'):values.AddInt(int(value))""", """                # XPU2 renders the preview: the generations on, MoonRay's sampling fields showing what XPU2 takes.
+                from moonray_modo import xpu2_sampling
+                if xpu2_sampling.active():
+                    try:value=xpu2_sampling.shown(scene_settings.complete(properties.scene_settings()),entry['key'],value)
+                    except Exception:pass
+                if kind in ('bool','member','int','choice'):values.AddInt(int(value))""")
+    p.save()
+
+
+def lock_free_pack(kit):
+    """MoonLightIPR's pack lets Python's lock go where it walked a heavy mesh's numbers in one call (main repo,
+    uncommitted 2026-10-28): each corner's point gathered, and the finite checks, by the adapter (MR_gather, MR_finite;
+    rows.py and simplify.py are copied whole). Joined in Python, a car's pack held Modo's own thread 11 to 29 s."""
+    source = (REPO_KIT / 'moonlightipr_scene.py').read_text(encoding='utf-8').replace('\r\n', '\n')
+    p = Patch(kit / 'python' / 'moonray_modo' / 'moonlightipr_scene.py')
+    a, b = p.text.index('def _by_corner(rows, corners):'), source.index('def _finite(values):')
+    end = p.text.index('\n\n\n', a) + 3
+    p.text = p.text[:a] + source[b:source.index('\n\n\n', source.index('def _by_corner(rows, corners):')) + 3] + p.text[end:]
+    p.rep("""    if not math.isfinite(sum(positions)) or not math.isfinite(sum(shading)) or not math.isfinite(sum(moved)):""",
+          """    if not all(_finite(values) for values in (positions, shading, moved)):""")
+    p.rep("""    positions = array('f', chain.from_iterable(vertices))
+    if not math.isfinite(sum(positions)):""", """    positions = _numbers(vertices, 3)
+    if not _finite(positions):""")
+    p.save()
+
+
+def xpu2_rt_no_denoise(kit):
+    """MoonRay's realtime under XPU2 has no Denoised Beauty (asked 2026-10-28: its denoised pictures looked bad): the
+    buffer is hidden from the list while it follows the scene, Beauty shown where it was chosen, and the denoiser's guides
+    are not rendered for it (two of its three outputs at every edit)."""
+    py = kit / 'python' / 'moonray_modo'
+    p = Patch(py / 'denoising.py')
+    p.rep("""def guides_required(snapshot,final=False,linear=False):
+    if snapshot.get('_ipr') and not final:return False
+""", """def guides_required(snapshot,final=False,linear=False):
+    if snapshot.get('_ipr') and not final:return False
+    # MoonRay's realtime under XPU2 has no denoised beauty (panel), so no guides for it.
+    if snapshot.get('_realtime') and not final:
+        try:
+            from . import native
+            if native.xpu2():return False
+        except Exception:pass
+""")
+    p.save()
+    p = Patch(py / 'panel.py')
+    p.rep("""        if engine=='moonray' and self._following and not output:scene=dict(scene,_realtime=True)
+""", """        if engine=='moonray' and self._following and not output:scene=dict(scene,_realtime=True)
+        if not output:
+            from . import native
+            self._offer_denoised(not (engine=='moonray' and self._following and native.xpu2()))
+""")
+    p.rep("""    def _show_planned(self):""", """    def _offer_denoised(self,offered):
+        \"\"\"Denoised Beauty in the buffer list, or not: MoonRay's realtime under XPU2 has none (its denoised pictures
+        looked bad), and shows Beauty where it was chosen.\"\"\"
+        index=self.buffer.findData('denoised_beauty')
+        if index<0:return
+        view=self.buffer.view()
+        if hasattr(view,'setRowHidden'):view.setRowHidden(index,not offered)
+        if not offered and self.buffer.currentData()=='denoised_beauty':self.buffer.setCurrentIndex(self.buffer.findData('beauty'))
+
+    def _show_planned(self):""")
+    p.save()
+
+
+def third_party(kit):
+    """The kit's third-party notices as the main repo's kit has them: THIRD_PARTY.txt (meshoptimizer cited, 2026-10-28)
+    and licenses/, meshoptimizer's MIT notice among them (the adapter and XPU2's session compile it in)."""
+    shutil.copyfile(REPO_KIT.parents[1] / 'THIRD_PARTY.txt', kit / 'THIRD_PARTY.txt')
+    (kit / 'licenses').mkdir(exist_ok=True)
+    for license in (REPO_KIT.parents[1] / 'licenses').glob('*'):
+        shutil.copyfile(license, kit / 'licenses' / license.name)
+
+
+def scene_cache(kit):
+    """The Scene cache (main repo, uncommitted 2026-10-28): cache_folder.py copied again (cache_folder copied it before
+    it held the Scene cache, and copies it still); MoonLightIPR's heavy packed meshes and MoonRay's realtime simplified
+    ones kept in the cache folder (moonlightipr_scene.py and simplify.py, copied whole by geometry_detail); the Scene
+    cache switch in the preferences; a preparation said as Caching scene... while it is on; and XPU2's tessellation
+    cache following the switch (XPU2_SESSION_GEOMETRY_CACHE)."""
+    py = kit / 'python' / 'moonray_modo'
+    shutil.copyfile(REPO_KIT / 'cache_folder.py', py / 'cache_folder.py')
+    source = (REPO_KIT / 'preferences.py').read_text(encoding='utf-8').replace('\r\n', '\n')
+    p = Patch(py / 'preferences.py')
+    p.rep("""'cache_folder': ('', str),""", """'cache_folder': ('', str), 'scene_cache': (True, bool),""")
+    p.rep("""        form.addRow('Cache folder', cache_row)
+""", source[source.index("        form.addRow('Cache folder', cache_row)\n"):source.index("        form.addRow(check('scene_cache'")] +
+          source[source.index("        form.addRow(check('scene_cache'"):source.index("Caching scene...'))\n") + len("Caching scene...'))\n")])
+    p.save()
+    source = (REPO_KIT / 'moonlightipr_session.py').read_text(encoding='utf-8').replace('\r\n', '\n')
+    p = Patch(py / 'moonlightipr_session.py')
+    p.rep("""class Packer(QtCore.QThread):""", source[source.index('# What the preview says while a scene is made ready'):source.index('class Packer(QtCore.QThread):')] + 'class Packer(QtCore.QThread):')
+    p.rep("""        self.packer.finished.connect(self._packed)
+        self.packer.start()
+""", source[source.index("        self.packer.finished.connect(self._packed)\n"):source.index("cache_folder.missed() > missed else None)\n") + len("cache_folder.missed() > missed else None)\n")])
+    p.save()
+    source = (REPO_KIT / 'panel.py').read_text(encoding='utf-8').replace('\r\n', '\n')
+    p = Patch(py / 'panel.py')
+    p.rep("""STOP_TIP = 'Stop the render in progress and stop following scene changes.'
+""", source[source.index("STOP_TIP = 'Stop the render in progress and stop following scene changes.'\n"):source.index("'Preparing the MoonLightIPR scene')\n") + len("'Preparing the MoonLightIPR scene')\n")])
+    p.rep("""        if getattr(self,'_draft_quiet',False):return
+        self.status.setText(text)""", """        if getattr(self,'_draft_quiet',False):return
+        # A scene made ready, with the Scene cache on: said as that (its prepared meshes are kept as they are made).
+        from . import cache_folder
+        if text in PREPARATIONS and cache_folder.scene_cache():text=cache_folder.CACHING
+        self.status.setText(text)""")
+    p.save()
+    source = (REPO_KIT / 'moonlightipr_scene.py').read_text(encoding='utf-8').replace('\r\n', '\n')
+    p = Patch(py / 'moonlightipr_scene.py')
+    p.rep("""_packed = {}
+""", source[source.index('_packed = {}\n'):source.index('PACKED_FORM = 1\n') + len('PACKED_FORM = 1\n')])
+    start = source.index("    # A heavy mesh, or one made lighter, as the Scene cache kept it (cache_folder)")
+    p.rep("""                 (simplified['triangles'], round(simplified['error'], 6)) if simplified else None)
+    cached = _packed.get(signature)
+    if cached:
+        return cached
+""", """                 (simplified['triangles'], round(simplified['error'], 6)) if simplified else None)
+    cached = _packed.get(signature)
+    if cached:
+        return cached
+""" + source[start:source.index('            return held\n', start) + len('            return held\n')])
+    tail = """    key = hashlib.blake2b(struct.pack('<I', flags) + payload, digest_size=8).digest()
+    _packed[signature] = (key, flags, payload, struct.pack('<%di' % UV_SLOTS, *slot_map))
+    return _packed[signature]"""
+    at = p.text.rindex(tail)
+    p.text = p.text[:at] + """    key = hashlib.blake2b(struct.pack('<I', flags) + payload, digest_size=8).digest()
+    _packed[signature] = (key, flags, payload, struct.pack('<%di' % UV_SLOTS, *slot_map))
+    if lasting:
+        from . import cache_folder
+        cache_folder.keep('MoonLightIPR/meshes', ('mesh', PACKED_FORM, signature), _packed[signature])
+    return _packed[signature]""" + p.text[at + len(tail):]
+    p.save()
+    # XPU2's tessellation cache follows the switch: its environment (the native.py text at the top of this builder).
+
+
+def first_tick(kit):
+    """A preview's first reading notes the moment and settings it was read at (main repo, uncommitted 2026-10-28):
+    following, the first tick found none, took the time for changed, and read the whole scene again with nothing edited
+    (the car's 41 s on Modo's thread just after its first picture, MoonLightIPR and MoonRay's realtime alike)."""
+    p = Patch(kit / 'python' / 'moonray_modo' / 'panel.py')
+    p.rep("""                # What Modo has told of up to now is in this reading of the scene.
+                self.changes.consume()
+            self._submit(scene)""", """                # What Modo has told of up to now is in this reading of the scene.
+                self.changes.consume()
+                # And the moment and settings it was read at: following, the first tick found none, took the time for
+                # changed, and read the whole scene again with nothing edited (a car scene's 41 s on Modo's thread, just
+                # after its first picture; MoonRay's realtime the same).
+                self._last_time=lx.service.Selection().GetTime();self._settled()
+            self._submit(scene)""")
+    p.save()
+
+
+def cache_folder(kit):
+    """The Cache folder in the preview's preferences (main repo, uncommitted 2026-10-28): the kit's caches under it
+    (cache_folder.py copied from the repo; each cache's place rewritten by cache_sites.py beside this builder), and the
+    renderers told of it (MOONRAY_MODO_CACHE; XPU2 keeps its tessellations there, cpu_scene.h geometryCacheFolder)."""
+    py = kit / 'python' / 'moonray_modo'
+    shutil.copyfile(REPO_KIT / 'cache_folder.py', py / 'cache_folder.py')
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import cache_sites
+    cache_sites.apply(py)
+    source = (REPO_KIT / 'native.py').read_text(encoding='utf-8').replace('\r\n', '\n')
+    p = Patch(py / 'native.py')
+    p.rep("""    env['TMPDIR'] = tempfile.gettempdir()
+""", source[source.index("    env['TMPDIR'] = tempfile.gettempdir()\n"):source.index("    env['MOONRAY_MODO_CACHE'] = str(cache_root())\n") + len("    env['MOONRAY_MODO_CACHE'] = str(cache_root())\n")])
+    p.save()
+    source = (REPO_KIT / 'preferences.py').read_text(encoding='utf-8').replace('\r\n', '\n')
+    p = Patch(py / 'preferences.py')
+    p.rep("""    'runtime': ('', str), 'preview_engine'""", """    'runtime': ('', str), 'cache_folder': ('', str), 'preview_engine'""")
+    p.rep("""        form.addRow('MoonRay folder', row)
+""", source[source.index("        form.addRow('MoonRay folder', row)\n"):source.index("        form.addRow('Cache folder', cache_row)\n") + len("        form.addRow('Cache folder', cache_row)\n")])
+    p.rep("""    def accept(self):
+        self.preferences.set('runtime', self.runtime.text().strip())
+""", source[source.index("    def _browse_cache(self):\n"):source.index("        forget()\n") + len("        forget()\n")])
+    p.save()
+
+
+def withdrawn_frames(kit):
+    """A frame the renderer has already taken back (shared_image.Withdrawn: unread for five seconds while Modo's thread
+    was busy, a fast drag of the car) is passed over without a word, not said as "frame skipped" (main repo,
+    uncommitted 2026-10-28). shared_image.py is copied from the repo whole."""
+    py = kit / 'python' / 'moonray_modo'
+    shutil.copyfile(REPO_KIT / 'shared_image.py', py / 'shared_image.py')
+    p = Patch(py / 'moonlightipr_session.py')
+    p.rep("""                except (ValueError, OSError) as exc: self.status.emit('MoonLightIPR frame skipped: ' + str(exc))""",
+          """                except (ValueError, OSError) as exc:
+                    # A frame already taken back (shared_image.Withdrawn) is passed over without a word: newer ones follow.
+                    from .shared_image import Withdrawn
+                    if not isinstance(exc, Withdrawn): self.status.emit('MoonLightIPR frame skipped: ' + str(exc))""")
+    p.save()
+    p = Patch(py / 'persistent.py')
+    p.rep("""                except (ValueError,OSError) as exc:self.status.emit('Progressive image skipped: '+str(exc))""",
+          """                except (ValueError,OSError) as exc:
+                    # A frame already taken back (shared_image.Withdrawn) is passed over without a word: newer ones follow.
+                    from .shared_image import Withdrawn
+                    if not isinstance(exc,Withdrawn):self.status.emit('Progressive image skipped: '+str(exc))""")
+    p.save()
+
+
+def realtime_outputs(kit):
+    """MoonRay's realtime renders the beauty and the buffer looked at, not every buffer (outputs.preview), another
+    buffer chosen meanwhile rendered from the scene as last read; and a delta made against a scene since replaced is made
+    again against the one applied where the text is small, not sent as a full reload (persistent._dispatch). Main repo,
+    uncommitted 2026-10-28: every camera move of XPU2 realtime renamed every output, and prepared the scene again."""
+    py = kit / 'python' / 'moonray_modo'
+    p = Patch(py / 'outputs.py')
+    p.rep("""    for entity in entities.display_filters(scene):result[entities.filter_key(entity)]=entities.filter_output(entity)
+    return result""", """    for entity in entities.display_filters(scene):result[entities.filter_key(entity)]=entities.filter_output(entity)
+    # MoonRay's realtime (a preview following the scene, _geometry_detail): the beauty, and the buffer looked at where it
+    # is another, not every buffer at every edit (each was rendered, and each edit renamed their files, so that none was
+    # the camera's alone). The composite is made of the others, which it keeps.
+    chosen=scene.get('preview_buffer','beauty')
+    if scene.get('_geometry_detail') and chosen!='composite':
+        return {key:value for key,value in result.items() if key in ('beauty',chosen)}
+    return result""")
+    p.save()
+    p = Patch(py / 'panel.py')
+    p.rep("""            self.renderer.buffers.select(key,values(stored['display']))
+""", """            self.renderer.buffers.select(key,values(stored['display']))
+            if self._following and self._engine()=='moonray' and key not in ('beauty','denoised_beauty') and self._ipr_refine_scene is not None:
+                # MoonRay's realtime renders the beauty and the buffer looked at (outputs.preview): another is rendered
+                # from the scene as last read, not read again.
+                self._submit(dict(self._ipr_refine_scene,preview_buffer=key))
+""")
+    p.save()
+    source = (REPO_KIT / 'persistent.py').read_text(encoding='utf-8').replace('\r\n', '\n')
+    p = Patch(py / 'persistent.py')
+    p.rep("""SHARED_LIMIT=256*1024*1024
+""", source[source.index('SHARED_LIMIT=256*1024*1024\n'):source.index('DIFF_HERE=4*1024*1024\n') + len('DIFF_HERE=4*1024*1024\n')])
+    p.rep("""        if prepared is not None:
+            # APPLIED may advance while the writer runs. A stale delta is unsafe; use its full scene.
+            delta=prepared['delta'] if prepared['base'] is self.applied else None
+        else:delta=difference(self.applied['text'],request['text']) if self.applied else None
+""", source[source.index("        delta_bytes=(prepared or {}).get('delta_bytes')\n"):source.index("        full=self._write_scene(request,'full',request['text']")])
+    p.rep("""        path=self._write_scene(request,'delta',delta,(prepared or {}).get('delta_bytes')) if delta is not None else full""",
+          """        path=self._write_scene(request,'delta',delta,delta_bytes) if delta is not None else full""")
+    p.save()
+
+
+def motion_default(kit):
+    """MoonLightIPR's motion blur off by default, a choice stored before 2026-10-27 let go once, and Motion Blur said at
+    the foot of the picture while it is on (main repo preferences.py and panel.py, uncommitted)."""
+    py = kit / 'python' / 'moonray_modo'
+    p = Patch(py / 'preferences.py')
+    p.rep("""'preview_motion': (True, bool),""", """'preview_motion': (False, bool),""")
+    p.rep("""                          'Render reads the scene at shutter open and close; IPR updates stay sharp'))""",
+          """                          'Off by default: each update then also reads the scene at shutter open and close, which adds to its wait. '
+                          'While dragging, updates stay sharp. Said as Motion Blur at the foot of the picture while on'))""")
+    p.rep("""            self.store.setValue('runtime_installation', installation)
+""", """            self.store.setValue('runtime_installation', installation)
+        # Motion blur in MoonLightIPR is off by default since 2026-10-27 (it adds to each update's wait): a choice stored
+        # before then is let go once, and one made since is kept.
+        if self.store.value('preview_motion_default') != 'off':
+            self.store.remove('preview_motion')
+            self.store.setValue('preview_motion_default', 'off')
+""")
+    p.save()
+    p = Patch(py / 'panel.py')
+    p.rep("""            values=self._settings_values()
+            if self.preview_engine.currentData()=='moonray' and values['denoising'].get('safe')""",
+          """            values=self._settings_values()
+            # MoonLightIPR's motion blur, off by default: each update then reads the shutter's ends too.
+            if self.preview_engine.currentData()=='moonlightipr' and self.preferences.get('preview_motion'):words.append('Motion Blur')
+            if self.preview_engine.currentData()=='moonray' and values['denoising'].get('safe')""")
+    p.save()
+
+
+def render_reading(kit):
+    """The Render button greyed, with "Reading Modo's scene graph..." in the status line, while the scene is read and
+    until the render is on its way (main repo panel.py, start_render, uncommitted 2026-10-27)."""
+    p = Patch(kit / 'python' / 'moonray_modo' / 'panel.py')
+    p.rep("""        self._clear_first=True
+        self.render_once()
+""", """        self._clear_first=True
+        # Reading the scene holds Modo's thread, for a minute on a heavy scene: it is said before it begins, and the
+        # button is greyed until the render is on its way and Stop can stop it.
+        reading=not self._live()
+        if reading:
+            self.status.setText("Reading Modo's scene graph...");self.status.setToolTip('')
+            self.start.setEnabled(False)
+            self.status.repaint();self.start.repaint()
+        try:self.render_once()
+        finally:
+            # A render on its way has set the button already; one that never began gives it back.
+            if reading and not self._rendering:self.start.setEnabled(True)
+""")
+    p.save()
+
+
+def geometry_detail(kit):
+    """Realtime previews' geometry by size on screen (the main kit, 2026-10-27; moonlightipr_detail.py, simplify.py):
+    MoonLightIPR cuts its subdivided and displaced meshes and simplifies dense ones; MoonRay's realtime (XPU2's here)
+    has MoonRay tessellate subdivided and displaced meshes to the cut's pixels from a held dicing camera, and is given
+    dense meshes simplified; coarser after an edit, finer once the scene is left alone a second. The modules are taken
+    from the repo whole; moonlightipr_scene.py, rdla.py and panel.py patched as the repo has them; the adapter with
+    MR_simplify (meshoptimizer) built by tools/build_modo_bridge.py into build/modo-bridge-detail."""
+    py = kit / 'python' / 'moonray_modo'
+    for name in ('moonlightipr_detail.py', 'simplify.py'):
+        shutil.copy2(REPO_KIT / name, py / name)
+    shutil.copy2(REPO_KIT.parents[3] / 'build' / 'modo-bridge-detail' / 'MoonRayGeometry.lx', kit / 'bin' / 'MoonRayGeometry.lx')
+    p = Patch(py / 'moonlightipr_scene.py')
+    p.rep("""def mesh_payload(mesh, material_index, slots):""", """def mesh_payload(mesh, material_index, slots, simplified=None):""")
+    p.rep("""                 tuple((slot, content(values)) for slot, values in sets), content(closing) if closing is not None else '')
+    cached = _packed.get(signature)""", """                 tuple((slot, content(values)) for slot, values in sets), content(closing) if closing is not None else '',
+                 (simplified['triangles'], round(simplified['error'], 6)) if simplified else None)
+    cached = _packed.get(signature)""")
+    p.rep("""    flags = ((MESH_HAS_NORMALS if normals else MESH_SMOOTH if smooth else 0) | (MESH_HAS_MATERIAL_IDS if face_materials is not None else 0)""",
+          """    if simplified:
+        # Lighter, as far as it is small on screen: its normals the full mesh's (simplify.py).
+        from . import simplify
+        made = simplify.arrays(positions, indices, shading if normals else None, moved if moved else None, uvs,
+                               material_ids if face_materials is not None else None, smooth, simplified['triangles'], simplified['error'])
+        if made is not None:
+            positions, given, moved, indices, uvs, material_ids, _ = made
+            if len(given):
+                shading, normals = given, True
+    flags = ((MESH_HAS_NORMALS if normals else MESH_SMOOTH if smooth else 0) | (MESH_HAS_MATERIAL_IDS if face_materials is not None else 0)""")
+    p.rep("""            key, flags, payload, slot_map = mesh_payload(mesh, material_index, compiler.slots)""",
+          """            key, flags, payload, slot_map = mesh_payload(mesh, material_index, compiler.slots, cut.get('simplify') if cut else None)""")
+    p.rep("""DISPLACED_TRIANGLES = 400000
+""", """DISPLACED_TRIANGLES = 400000
+# Whether the last scene packed with coarse detail had a mesh cut coarser than at rest (moonlightipr_detail).
+LAST_REFINABLE = False
+""")
+    p.rep("""def displaced(mesh, key, flags, payload, materials, material_index, warnings):""",
+          """def displaced(mesh, key, flags, payload, materials, material_index, warnings, limit=None):""")
+    p.rep("""    while levels < 8 and triangles * 4 ** (levels + 1) <= DISPLACED_TRIANGLES:
+        levels += 1""", """    # As many times as its budget allows, and no more than its size on screen needs (limit, moonlightipr_detail).
+    while levels < 8 and triangles * 4 ** (levels + 1) <= DISPLACED_TRIANGLES and (limit is None or levels < limit):
+        levels += 1""")
+    p.rep("""    used, meshes, instances, order = set(), [], [], {}
+    for mesh in list(geometry.render_meshes(scene.get('meshes', []))) + [fog for fog, _, _ in fogs]:
+        if not mesh['faces']:
+            continue""", """    used, meshes, instances, order = set(), [], [], {}
+    drawn = list(geometry.render_meshes(scene.get('meshes', []))) + [fog for fog, _, _ in fogs]
+    # How finely each subdivided and displaced mesh is cut: by its size on screen (moonlightipr_detail).
+    from . import moonlightipr_detail
+    from .moonlightipr_materials import displacement as displacement_program
+
+    def displaces(mesh):
+        for tag in set(mesh.get('face_materials') or [mesh.get('material', '')]):
+            held = materials.get(tag if tag in materials else '')
+            if held and displacement_program(held):
+                return True
+        return False
+    global LAST_REFINABLE
+    # Following the scene, its meshes are cut from a camera held through its edits (_detail_keep, the preview window):
+    # cut from the camera itself, a move of it simplified and packed dense meshes anew (a car's 26 s, Modo held meanwhile).
+    cutting = moonlightipr_detail.held_dicing(camera, drawn, bool(scene.get('_detail_keep'))) if scene.get('_geometry_detail') else camera
+    cuts, LAST_REFINABLE = moonlightipr_detail.plan(drawn, cutting, width, scene.get('_geometry_detail', 'fine'), displaces)
+    # The dense meshes made lighter side by side first; the loop below then finds them packed.
+    dense = [(mesh, cuts[id(mesh)]['simplify']) for mesh in drawn
+             if mesh['faces'] and not mesh.get('subdivision') and (cuts.get(id(mesh)) or {}).get('simplify')]
+    if len(dense) > 1:
+        import os
+        from concurrent.futures import ThreadPoolExecutor
+
+        def ahead(pair):
+            try:
+                mesh_payload(pair[0], material_index, compiler.slots, pair[1])
+            except Exception:
+                pass
+        with ThreadPoolExecutor(max_workers=min(len(dense), os.cpu_count() or 4)) as pool:
+            list(pool.map(ahead, dense))
+    for mesh in drawn:
+        if not mesh['faces']:
+            continue
+        cut = cuts.get(id(mesh))
+        if cut is not None and mesh.get('subdivision'):
+            mesh = dict(mesh, subdivision_level=cut['subdivision'])""")
+    p.rep("""        key, flags, payload = displaced(mesh, key, flags, payload, materials, material_index, warnings)""",
+          """        key, flags, payload = displaced(mesh, key, flags, payload, materials, material_index, warnings, cut['splits'] if cut else None)""")
+    p.save()
+    p = Patch(py / 'rdla.py')
+    p.rep("""from array import array as numbers
+""", """from array import array as numbers
+
+# Whether the last realtime preview's scene had a mesh cut coarser than at rest (moonlightipr_detail).
+LAST_REFINABLE = False
+""")
+    p.rep("""    scene = entities.mesh_lights(scene)
+""", """    scene = entities.mesh_lights(scene)
+    # A realtime preview cuts its meshes by their size on screen, from a held dicing camera (moonlightipr_detail).
+    detail = scene.get('_geometry_detail')
+    if detail and not scene.get('dicing_camera') and scene.get('camera'):
+        from .moonlightipr_detail import held_dicing
+        scene = dict(scene, dicing_camera=held_dicing(scene['camera'], scene.get('meshes', []), bool(scene.get('_detail_keep'))))
+""")
+    p.rep("""    resolution_cap = held_render['max_geometry_resolution'] if held_render['enable_max_geometry_resolution'] else None
+    for index, mesh in enumerate(render_meshes):
+        vertices = mesh['vertices']
+        faces = mesh['faces']""", """    resolution_cap = held_render['max_geometry_resolution'] if held_render['enable_max_geometry_resolution'] else None
+    # A realtime preview's cut of each mesh (moonlightipr_detail, simplify.py).
+    cuts = {}
+    if detail:
+        from . import moonlightipr_detail
+        global LAST_REFINABLE
+        cuts, LAST_REFINABLE = moonlightipr_detail.plan(render_meshes, scene.get('dicing_camera') or scene['camera'], width, detail,
+            lambda held: bool(({held.get('material', '')} | set(held.get('face_materials') or [])) & displacement_tags))
+    for index, mesh in enumerate(render_meshes):
+        cut = cuts.get(id(mesh))
+        if cut and cut.get('simplify'):
+            from . import simplify
+            lighter = simplify.polygon_mesh(mesh, cut['simplify']['triangles'], cut['simplify']['error'])
+            if lighter is not None:
+                mesh = lighter
+        if cut and mesh.get('subdivision') and not mesh.get('adaptive_error') and 'instances' not in mesh:
+            mesh = dict(mesh, adaptive_error=cut['pixels'])
+        elif mesh.get('subdivision') and not mesh.get('adaptive_error') and 'instances' not in mesh and held_render['displacement_tessellation']:
+            # A subdivision surface with no screen error of its own follows the scene's Displacement Tessellation too:
+            # Modo's Displacement Rate (or the Adaptive Error Override), as for a displaced polygon mesh.
+            mesh = dict(mesh, adaptive_error=held_render['displacement_adaptive_error'] or float(scene.get('displacement_rate', 1.0)))
+        vertices = mesh['vertices']
+        faces = mesh['faces']""")
+    p.rep("""            if settings['adaptive_error']:error=settings['adaptive_error']
+            elif 'instances' in mesh or held_render['displacement_tessellation']==0:error=0.0""", """            if settings['adaptive_error']:error=settings['adaptive_error']
+            elif cut and 'instances' not in mesh:error=cut['pixels']
+            elif 'instances' in mesh or held_render['displacement_tessellation']==0:error=0.0""")
+    p.save()
+    p = Patch(py / 'panel.py')
+    p.rep("""        self.refine_timer.timeout.connect(self._refine_ipr)
+""", """        self.refine_timer.timeout.connect(self._refine_ipr)
+        # MoonLightIPR's meshes cut finer once the scene has been left alone this long (moonlightipr_detail).
+        self.detail_timer=QtCore.QTimer(self);self.detail_timer.setSingleShot(True);self.detail_timer.setInterval(1000)
+        self.detail_timer.timeout.connect(self._refine_detail)
+""")
+    p.rep("""        if not output:scene=dict(scene,_clay_preview=self._clay())
+""", """        if not output:scene=dict(scene,_clay_preview=self._clay())
+        # A preview following the scene (MoonLightIPR, or MoonRay's realtime) cuts its meshes coarser after an edit and
+        # finer once left alone. An edit that leaves the meshes as they were (the camera, a light, a material or where
+        # items stand) and a refinement keep the cut as it stands: cut anew, every mesh would be built again twice for
+        # each move.
+        fine,self._detail_fine=getattr(self,'_detail_fine',False),False
+        kept,self._detail_kept=getattr(self,'_detail_kept',False) or refining,False
+        # The camera the meshes are cut from is held through every edit, and taken anew only at rest where the view came
+        # far enough (_refine_detail: _detail_recut).
+        recut,self._detail_recut=getattr(self,'_detail_recut',False),False
+        if not output and self._following and self._engine()=='moonray':
+            # MoonRay's realtime: the fine cut from the first, no coarse one before it (a cut of other meshes is a reload
+            # of the scene: the coarse pass cost a second preparation of a heavy scene); through a move of the camera
+            # its dicing camera is held whatever the view (_detail_keep), and looked at again once the view rests
+            # (_refine_detail), the meshes cut anew only where it came far enough.
+            self._detail_now='fine'
+            scene=dict(scene,_geometry_detail='fine',_detail_keep=not recut)
+            self.detail_timer.start()
+        elif not output and self._following:
+            now=getattr(self,'_detail_now',None)
+            detail=now if kept and now else 'fine' if fine else 'coarse'
+            self._detail_now=detail
+            scene=dict(scene,_geometry_detail=detail,_detail_keep=not recut)
+            if not (kept and self.detail_timer.isActive()):self.detail_timer.start()
+        else:self.detail_timer.stop()
+""")
+    p.rep("""            if not blurred:
+                scene = self._capture(reuse,items if reuse=='transforms' else None)
+""", """            if not blurred:
+                scene = self._capture(reuse,items if reuse=='transforms' else None)
+            # The meshes as they were: their cut is kept (_submit).
+            self._detail_kept=not full and not changed and (reuse is True or reuse in ('materials','transforms'))
+""")
+    p.rep("""    def _refine_ipr(self):""", """    def _refine_detail(self):
+        \"\"\"The scene left alone: its meshes cut finer, where the coarse cut left any coarser.\"\"\"
+        if self.disposed or not self._following or self.preview_lock.isChecked() or self._output_busy():return
+        from .interaction import dragging
+        if dragging() or self.release_timer.isActive():self.detail_timer.start();return
+        from . import moonlightipr_scene
+        from .moonlightipr_detail import rested
+        scene=self._ipr_refine_scene
+        if scene is None:return
+        # A scene still being made ready is waited for: what its cut left coarser is known once it is (LAST_REFINABLE),
+        # and before, the refinement was missed until the next edit, then made in the middle of it.
+        if getattr(getattr(self.renderer,'moonlightipr',None),'packer',None) is not None:self.detail_timer.start();return
+        # At rest: the meshes cut anew, once, where the view came far enough from the camera held through its moves
+        # (moonlightipr_detail.rested); MoonLightIPR's coarse cut made fine besides.
+        moved=not scene.get('dicing_camera') and rested(scene.get('camera') or {},scene.get('meshes',[]),60.0 if self._engine()=='moonray' else None)
+        refinable=self._engine()=='moonlightipr' and moonlightipr_scene.LAST_REFINABLE
+        if not (moved or refinable):return
+        self._detail_fine=True;self._detail_recut=moved
+        try:self._submit(scene)
+        except Exception as exc:self._failed(str(exc))
+
+    def _refine_ipr(self):""")
+    p.rep("""    def stop(self):
+        self._draft_quiet=False
+        self.refine_timer.stop()
+""", """    def stop(self):
+        self._draft_quiet=False
+        self.refine_timer.stop()
+        self.detail_timer.stop();self._detail_fine=False;self._detail_now=None
+""")
+    p.save()
+
+
 def build(session, base):
     base, session = Path(base).resolve(), Path(session).resolve()
     if any((base / m).exists() for m in MARKERS):
@@ -958,6 +1536,20 @@ def build(session, base):
     xpu2_smart_render(KIT)
     meter_switch(KIT)
     motion_skip(KIT)
+    geometry_detail(KIT)
+    render_reading(KIT)
+    shutter_reading(KIT)
+    edited_surfaces(KIT)
+    motion_default(KIT)
+    realtime_outputs(KIT)
+    xpu2_sampling_words(KIT)
+    withdrawn_frames(KIT)
+    cache_folder(KIT)
+    first_tick(KIT)
+    scene_cache(KIT)
+    third_party(KIT)
+    xpu2_rt_no_denoise(KIT)
+    lock_free_pack(KIT)
 
     p = Patch(py / 'preferences.py')
     p.rep("""    'auto_xpu': (True, bool),""", """    'auto_xpu': (True, bool),

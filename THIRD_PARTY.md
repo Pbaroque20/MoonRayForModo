@@ -62,3 +62,12 @@ readiness or compatibility with a clean Windows installation.
 MoonLightIPR, the GPU preview engine, is not third-party software: it was created by Raphael Tobar and is
 released under this project's MIT License. It is not a DreamWorks Animation product and is not affiliated
 with or endorsed by DreamWorks Animation. It runs on NVIDIA OptiX and CUDA, whose notices are above.
+
+## meshoptimizer
+
+XPU2's coarse first pass simplifies dense meshes with meshoptimizer by Arseny Kapoulkine (zeux), version 0.22, under
+the MIT License: https://github.com/zeux/meshoptimizer. `xpu2/interactive/xpu2_meshopt.cc` compiles its simplifier,
+index generator and allocator unchanged into the session (`coarse_geometry.h` calls them), from the main repo's
+`upstream/meshoptimizer` (the v0.22 release, not committed). The kit's geometry adapter uses it too. Its copyright and
+license notice ship with the kit in `licenses/meshoptimizer-LICENSE.md`: Copyright (c) 2016-2024 Arseny Kapoulkine.
+Thanks to zeux for it.

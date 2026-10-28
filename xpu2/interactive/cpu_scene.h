@@ -82,7 +82,9 @@ struct MeshData {std::string name;std::vector<V3> positions;std::vector<Tri> tri
  // spans (first control point, curve, place along the curve) and each curve's span count.
  unsigned curveBasis=0,curveRound=0,curveSegments=4;std::vector<float> curvePoints;std::vector<unsigned> curveSpans,curveSpanCounts;
  // Curves under motion blur: the control points at the later time steps, and pointers to them (curves::Set).
- std::vector<std::vector<float>> curveSteps;std::vector<const float*> curveStepPointers;};
+ std::vector<std::vector<float>> curveSteps;std::vector<const float*> curveStepPointers;
+ // Made for the coarse first pass (coarse_geometry.h): rendered for pictures only, never taken over by a later plan.
+ bool coarse=false;};
 // A vertex at a time in the shutter: between the two time steps about it, as Embree interpolates them.
 inline V3 positionAt(const MeshData& m,unsigned i,float time){
  if(m.steps.empty())return m.positions[i];
@@ -133,6 +135,8 @@ struct Plan {
     size_t bytes=0,reusedMeshes=0,preparedMeshes=0;
  // The tessellation handler's routing (routeMeshes): the geometry the GPU holds, and the meshes left to the CPU lane.
  size_t gpuBytes=0;unsigned cpuOnlyMeshes=0;
+ // The coarse first pass's meshes made lighter than the full plan's (0: the coarse plan is the full one).
+ unsigned coarsened=0;
     // No production route changes merely because preparation succeeds.
     bool qualified=false;
     // MoonRay adaptive sampling (sampling_mode 2), admitted only where the caller
@@ -235,7 +239,13 @@ using PlanView=std::shared_ptr<const Plan>;
 // What a scene may hold: room for scenes from Modo (an RTX 3090 holds this much several times over).
 // bytes: the prepared geometry the machine's RAM holds (past it the scene falls back); gpuBytes: what the card holds (past
 // it the largest meshes are left to the CPU lane, Mesh::cpuOnly).
-struct Limits {size_t vertices=16000000,triangles=16000000,bytes=1ull<<30,objects=1000000,pixels=8388608,gpuBytes=~size_t(0);};
+// coarse: the coarse first pass's plan (coarse_geometry.h): lighter tessellation and dense meshes simplified.
+struct Limits {size_t vertices=16000000,triangles=16000000,bytes=1ull<<30,objects=1000000,pixels=8388608,gpuBytes=~size_t(0);bool coarse=false;};
+// Whether the plan being prepared is the coarse first pass's (cpu::prepare sets it about the preparation; coarse_geometry.h).
+inline std::atomic<bool>& coarseTessellation(){static std::atomic<bool> on{false};return on;}
+// MoonRay's tessellation for the coarse pass: a quarter of the resolution, four times the screen error.
+inline int coarseResolution(int resolution){return coarseTessellation()?std::max(1,resolution/4):resolution;}
+inline float coarseError(float error){return coarseTessellation()&&error>0.0f?error*4.0f:error;}
 // The most prepared geometry (positions and triangles) a session may ask for: its own budget is the machine's
 // (geometryBudget in xpu2_session.cc), up to this.
 constexpr size_t HardGeometryBytes=64ull<<30;
@@ -696,6 +706,8 @@ template<class Call> inline auto withMeshInput(const rdl::SceneObject& o,const r
  in.scheme=get<rdl::Int>(o,"subd_scheme");in.boundary=get<rdl::Int>(o,"subd_boundary");in.fvarLinear=get<rdl::Int>(o,"subd_fvar_linear");
  in.meshResolution=int(get<rdl::Float>(o,"mesh_resolution"));  // RdlMeshGeometry: int meshResolution = its float
  in.adaptiveError=get<rdl::Float>(o,"adaptive_error");
+ // The coarse first pass: a quarter of the resolution, four times the screen error (coarse_geometry.h).
+ in.meshResolution=coarseResolution(in.meshResolution);in.adaptiveError=coarseError(in.adaptiveError);
  in.singleSided=get<rdl::Int>(o,"side_type")==1?1:0;in.reverseNormals=get<rdl::Bool>(o,"reverse_normals")?1:0;in.leftHanded=0;
  in.layer=&layer;in.geometry=geom;
  in.frustumCount=unsigned(plan.frustumViewports.size()/4);in.frustumC2S=plan.frustumC2S.data();in.frustumPlanes=plan.frustumPlanes.data();in.frustumViewports=plan.frustumViewports.data();
@@ -1716,6 +1728,7 @@ inline std::vector<std::shared_ptr<const ix::Buffer>> deepSignature(const rdl::S
 #include "map_admission.h"
 #include "dwa_admission.h"
 #include "mesh_displacement.h"
+#include "coarse_geometry.h"
 namespace xpu2::interactive::cpu {
 // A BaseVolume with bound attributes (KindBaseMapped): its attenuation colour, intensity and factor, diffuse colour,
 // emission colour and intensity and anisotropy, each bound one a register of one map program, the rest as admitVolume
@@ -2684,8 +2697,9 @@ inline PrepLaps& prepLaps(){static PrepLaps l;return l;}
 // The tessellation handler's cache (INDEXER.md section 16): a displaced mesh MoonRay tessellates (subdivision or
 // PolyMesh) kept on disk as its prepared data, by a hash of what shaped it (the mesh's and its displacement's
 // signatures, their textures' files, the level and, for adaptive tessellation, the camera's frustums), so a scene opened
-// again or a session started again reuses it. %LOCALAPPDATA%/MoonRayForModo/xpu2-geometry, 20 GB at most
-// (XPU2_SESSION_GEOMETRY_CACHE_GB), the oldest let go; XPU2_SESSION_GEOMETRY_CACHE=0: none.
+// again or a session started again reuses it. xpu2-geometry in the kit's Cache folder (MOONRAY_MODO_CACHE, its preview
+// preferences; else %LOCALAPPDATA%/MoonRayForModo), 20 GB at most (XPU2_SESSION_GEOMETRY_CACHE_GB), the oldest let go;
+// XPU2_SESSION_GEOMETRY_CACHE=0: none.
 struct GeometryKey{uint64_t a=0x9E3779B97F4A7C15ull,b=0xC2B2AE3D27D4EB4Full;
  void add(const void* data,size_t n){const unsigned char* p=static_cast<const unsigned char*>(data);size_t i=0;
   for(;i+8<=n;i+=8){uint64_t w;std::memcpy(&w,p+i,8);a=(a^w)*0x100000001B3ull;a^=a>>29;b=(b+w)*0x9E3779B97F4A7C15ull;b^=b>>31;}
@@ -2693,7 +2707,9 @@ struct GeometryKey{uint64_t a=0x9E3779B97F4A7C15ull,b=0xC2B2AE3D27D4EB4Full;
  void add(const std::string& s){add(s.data(),s.size());}
  std::string hex()const{char t[40];std::snprintf(t,sizeof t,"%016llx%016llx",(unsigned long long)a,(unsigned long long)b);return t;}};
 inline bool geometryCacheOn(){const char* v=std::getenv("XPU2_SESSION_GEOMETRY_CACHE");return !(v&&v[0]=='0');}
-inline std::filesystem::path geometryCacheFolder(){const char* l=std::getenv("LOCALAPPDATA");
+inline std::filesystem::path geometryCacheFolder(){
+ if(const char* chosen=std::getenv("MOONRAY_MODO_CACHE");chosen&&*chosen)return std::filesystem::u8path(chosen)/"xpu2-geometry";
+ const char* l=std::getenv("LOCALAPPDATA");
  return std::filesystem::path(l?l:".")/"MoonRayForModo"/"xpu2-geometry";}
 // What the cache did in this preparation (the session's log).
 struct GeometryCacheCounts{std::atomic<unsigned> reused{0},saved{0};std::atomic<size_t> reusedBytes{0};};
@@ -2796,6 +2812,8 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
 X2_SPLIT_INLINE PlanView prepare(CanonicalSession& session,const CanonicalView& frame,PlanView previous={},Limits limits={},const fs::path& assetRoot={},Domain domain=Domain::Planar,bool allowAdaptive=false,bool paths=false);
 #if !defined(XPU2_SPLIT_UNITS) || defined(XPU2_SCENE_UNIT)
 X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const CanonicalView& frame,PlanView previous,Limits limits,const fs::path& assetRoot,Domain domain,bool allowAdaptive,bool paths){
+ // The coarse first pass's tessellation for as long as this plan is prepared (coarse_geometry.h).
+ struct CoarseFor{explicit CoarseFor(bool on){coarseTessellation()=on;}~CoarseFor(){coarseTessellation()=false;}} coarseFor(limits.coarse);
  need(bool(frame),"Missing canonical snapshot");{auto& l=prepLaps();l.laps.clear();l.parts.clear();l.last=std::chrono::steady_clock::now();}subdTimes().reset();
  {auto& c=geometryCacheCounts();c.reused=0;c.saved=0;c.reusedBytes=0;}
  const Limits hard{};
@@ -3339,8 +3357,13 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
    o.getSceneClass().getName()=="RdlMeshGeometry"&&tessellationJobs()>1;
   if(shareInstance){auto it=sharedMeshes.find(sharedKey);if(it!=sharedMeshes.end()){data=it->second;sharedHit=true;}}
   // Adaptive tessellation (a subdivision surface, or a displaced polygon mesh MoonRay's PolyMesh tessellates) follows the
-  // dicing camera: a camera move tessellates it again.
-  if(o.getSceneClass().getName()=="RdlMeshGeometry"&&(get<rdl::Bool>(o,"is_subd")||polyGeometry)&&get<rdl::Float>(o,"adaptive_error")>0.0f)plan->cameraDependent=true;
+  // dicing camera: the render camera's move tessellates it again. A dicing camera of its own (the scene's, or the mesh's;
+  // a realtime preview holds one while the view moves little) is a part of what shapes it instead: the render camera
+  // moves with the camera-only fast path, and the mesh is kept while that dicing camera is the same (its signature).
+  const bool adaptiveMesh=o.getSceneClass().getName()=="RdlMeshGeometry"&&(get<rdl::Bool>(o,"is_subd")||polyGeometry)&&get<rdl::Float>(o,"adaptive_error")>0.0f;
+  const rdl::SceneObject* dicingCamera=get<rdl::SceneObject*>(sv,"dicing_camera");if(!dicingCamera)dicingCamera=get<rdl::SceneObject*>(o,"dicing_camera");
+  if(adaptiveMesh&&!dicingCamera)plan->cameraDependent=true;
+  if(adaptiveMesh&&dicingCamera)for(auto& b:deepSignature(*dicingCamera,frame))sig.push_back(b);
   // A displaced mesh MoonRay tessellates (subdivision, PolyMesh) is kept while nothing that shapes it has changed: the
   // mesh, each part's displacement and its maps through and through (deepSignature), which displacement is whose, and
   // whether polyvertices are made. A camera, a light or another material changed, it is not tessellated again (its
@@ -3357,8 +3380,8 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
   // The fur file can change under the same name: fur is read again each time.
   const bool curveGeometry=isCurves(o.getSceneClass().getName());
   if(previous&&previous->domain==domain&&!item.instancer&&o.getSceneClass().getName()!="ModoFurGeometry"&&(!objectDisplaced||!displacementKey.empty())&&&o!=bakeGeometry&&
-   !(o.getSceneClass().getName()=="RdlMeshGeometry"&&(get<rdl::Bool>(o,"is_subd")||polyGeometry)&&get<rdl::Float>(o,"adaptive_error")>0.0f))for(auto& old:previous->meshes)if(old.data->name==meshName&&old.data->signature==sig&&old.data->displacementKey==displacementKey&&
-   old.data->polyVertices.empty()==!(plan->aovs&&plan->aovs->wireframe)&&((o.getSceneClass().getName()!="RdlMeshGeometry"&&o.getSceneClass().getName()!="RdlCurveGeometry"&&!isPoints(o.getSceneClass().getName()))||!meshHasMotion(o)||previous->motion==plan->motion)){data=old.data;++plan->reusedMeshes;reusedData=true;break;}
+   !(adaptiveMesh&&!dicingCamera))for(auto& old:previous->meshes)if(old.data->name==meshName&&old.data->signature==sig&&old.data->displacementKey==displacementKey&&
+   !old.data->coarse&&old.data->polyVertices.empty()==!(plan->aovs&&plan->aovs->wireframe)&&((o.getSceneClass().getName()!="RdlMeshGeometry"&&o.getSceneClass().getName()!="RdlCurveGeometry"&&!isPoints(o.getSceneClass().getName()))||!meshHasMotion(o)||previous->motion==plan->motion)){data=old.data;++plan->reusedMeshes;reusedData=true;break;}
   if(!data&&vdbBox){
    // A VDB volume's boundary box (admitVdbVolume), named as the mesh.
    vdbBox->name=meshName;vdbBox->signature=std::move(sig);data=std::move(vdbBox);++plan->preparedMeshes;}
@@ -3381,7 +3404,7 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
   // session, the scene opened again). Not one that moves, an instance with data of its own, the bake camera's mesh, a
   // volume's bound or one with a dicing camera of its own.
   std::string cacheKey;bool cacheHit=false;
-  if(!data&&paths&&geometryCacheOn()&&objectDisplaced&&(subdGeometry||polyGeometry)&&o.getSceneClass().getName()=="RdlMeshGeometry"&&
+  if(!data&&paths&&geometryCacheOn()&&!coarseTessellation()&&objectDisplaced&&(subdGeometry||polyGeometry)&&o.getSceneClass().getName()=="RdlMeshGeometry"&&
      (!item.instancer||shareInstance)&&!item.moves&&!meshHasMotion(o)&&&o!=bakeGeometry&&volumeIndex<0&&
      !get<rdl::SceneObject*>(sv,"dicing_camera")&&!get<rdl::SceneObject*>(o,"dicing_camera")){
    cacheKey=geometryKey(o,sig,displacementKey,*plan,shareInstance,sv);
@@ -3698,6 +3721,8 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
   if(shareInstance&&!sharedHit)sharedMeshes.emplace(sharedKey,data);
   if(!sharedHit)plan->bytes+=data->positions.size()*sizeof(V3)+data->triangles.size()*sizeof(Tri)+data->curvePoints.size()*sizeof(float)+data->curveSpans.size()*sizeof(unsigned);
   // Over the budget already: said now, not after the rest of the scene is prepared.
+  // Tessellated for the coarse first pass: marked, so that no later plan takes it over.
+  if(coarseTessellation()&&data&&!reusedData&&(subdGeometry||polyGeometry))const_cast<MeshData&>(*data).coarse=true;
   need(plan->bytes<=limits.bytes,geometryBudgetText(plan->bytes,limits.bytes));plan->meshes.push_back({data,mat?materialIds.at(mat->getName()):~0u,volumeIndex,
    paths?(geometryVisibility(o)&(item.instancer?geometryVisibility(*item.instancer):0xffu)):0xffu,
    paths&&volumeIndex<0&&get<rdl::Int>(o,"side_type")==1,
@@ -3830,7 +3855,16 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
  }
  need(plan->bytes<=limits.bytes,geometryBudgetText(plan->bytes,limits.bytes));
  if(paths)routeMeshes(*plan,limits.gpuBytes);
- // A realtime plan's shading reads each texture from its first level of 1280 pixels or less (Pyramid::view); what the
+ // The coarse first pass: dense meshes simplified (coarse_geometry.h), and how many of its meshes are lighter than the full
+ // plan's (the session renders a coarse pass only where some are).
+ if(limits.coarse){const float angle=pixelAngle(plan->camera,plan->width,plan->height);
+  const V3 eye=surface::transformPoint(plan->camera.cameraToRender,plan->camera.focalPoint);
+  std::map<const MeshData*,std::shared_ptr<const MeshData>> lighter;
+  for(auto& mesh:plan->meshes){if(!mesh.data)continue;auto it=lighter.find(mesh.data.get());
+   if(it==lighter.end())it=lighter.emplace(mesh.data.get(),coarseMesh(*mesh.data,eye,angle)).first;
+   if(it->second)mesh.data=it->second;}
+  for(const auto& mesh:plan->meshes)if(mesh.data&&mesh.data->coarse)++plan->coarsened;}
+ // A realtime plan's shading reads each texture from its first level of 1024 pixels or less (Pyramid::view); what the
  // plan worked out from the textures (displacement above) read them whole.
  if(plan->realtime){size_t capped=0;
   for(size_t i=0;i<plan->textureImages.size();++i){const auto& view=plan->textures[i]->pyramid->view(true);capped+=&view!=plan->textureImages[i];plan->textureImages[i]=&view;}

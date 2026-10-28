@@ -1289,10 +1289,13 @@ private:
         const U64 least = (U64(gpu_->launchThreads()) * 2 + itemsPerChunk - 1) / itemsPerChunk;
         // Realtime: launches of about 15 ms at the GPU's rate (this frame's, else as earlier frames found it), so that an
         // edit cancels the frame within a launch or two and pictures go out between them: the GPU less full, the
-        // answer sooner. Between 8K and 128K samples.
+        // answer sooner. Between one sample a launch thread and 128K samples (or the threads, where more): a launch with
+        // fewer leaves most of the GPU idle, and its rate, which sizes the next ones, is never the GPU's (a heavy scene's
+        // launches stayed at 8K samples, the GPU at a third of its rate, 570 launches for a frame).
         if (plan_->realtime) {
             const double rate = gpuRate ? gpuRate : gpu_->rateHint();
-            const double samples = std::clamp(rate > 0 ? rate * 0.015 : 32768.0, 8192.0, 131072.0);
+            const double threads = double(gpu_->launchThreads());
+            const double samples = std::clamp(rate > 0 ? rate * 0.015 : 32768.0, threads, std::max(131072.0, threads));
             const U64 chunks = std::max<U64>(1, U64(samples / (realtimeItems > 0 ? realtimeItems : double(itemsPerChunk))));
             return U32(std::min<U64>({chunks, cap, remainingChunks}));
         }
