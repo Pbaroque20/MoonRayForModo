@@ -139,10 +139,15 @@ def polygon_mesh(mesh, triangles, error):
         fan = array('I', range(len(corner_list)))
         indices = array('I', corner_list)
     else:
+        # An n-gon ear-clipped as MoonRay does it (polygons.corners), the rest fanned.
+        from .polygons import corners as face_corners
         fan, start = array('I'), 0
-        for n in size_list:
-            for k in range(1, n - 1):
-                fan.extend((start, start + k, start + k + 1))
+        for index, n in enumerate(size_list):
+            if n > 4:
+                fan.extend(start + k for k in face_corners(faces[index], vertices))
+            else:
+                for k in range(1, n - 1):
+                    fan.extend((start, start + k, start + k + 1))
             start += n
         indices = array('I', (corner_list[c] for c in fan))
     whole = len(fan) == len(corner_list)

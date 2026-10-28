@@ -562,12 +562,7 @@ def displaced(mesh, key, flags, payload, materials, material_index, warnings, li
     return hashlib.blake2b(key + trailer, digest_size=8).digest(), flags | MESH_DISPLACE, payload + trailer
 
 
-def _fan(size, _held={}):
-    """A polygon of size corners as a fan of triangles, each corner as its place in the polygon: (0, 1, 2, 0, 2, 3, ...)."""
-    held = _held.get(size)
-    if held is None:
-        held = _held[size] = tuple(v for i in range(1, size - 1) for v in (0, i, i + 1))
-    return held
+from .polygons import fan as _fan, corners as _corners
 
 
 def _numbers(rows, width):
@@ -679,7 +674,8 @@ def mesh_payload(mesh, material_index, slots, simplified=None):
         else:
             # The same triangles as polygon by polygon, in one pass: each polygon's fan, moved to where its corners start.
             sizes = list(map(len, faces))
-            fan = array('I', [start + k for start, size in zip(accumulate([0] + sizes[:-1]), sizes) for k in _fan(size)])
+            # An n-gon ear-clipped as MoonRay does it (polygons.corners), the rest fanned.
+            fan = array('I', [start + k for start, face in zip(accumulate([0] + sizes[:-1]), faces) for k in _corners(face, vertices)])
     if closing is not None and len(closing) != len(vertices):
         raise ValueError('Motion samples of %s must have equal vertex counts' % mesh['name'])
     moved = array('f')
@@ -698,7 +694,7 @@ def mesh_payload(mesh, material_index, slots, simplified=None):
         elif quads:
             indices = array('I', [face[k] for face in faces for k in (0, 1, 2, 0, 2, 3)])
         else:
-            indices = array('I', [face[k] for face in faces for k in _fan(len(face))])
+            indices = array('I', [face[k] for face in faces for k in _corners(face, vertices)])
         positions, shading = _numbers(vertices, 3), array('f')
     # A sum is finite only if every term is.
     if not all(_finite(values) for values in (positions, shading, moved)):

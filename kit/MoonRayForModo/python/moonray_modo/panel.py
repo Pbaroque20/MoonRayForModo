@@ -15,6 +15,8 @@ from .panel_tools import Tools
 
 RENDER_TIP = 'Render the current scene. The previous image stays until its replacement is ready.'
 STOP_TIP = 'Stop the render in progress and stop following scene changes.'
+# What the status says while Modo's thread reads the whole scene, Modo held meanwhile (Render, and realtime alike).
+READING = "Reading Modo's scene graph..."
 # What the renderers say while they make a scene ready: with the Scene cache on, the status says Caching scene... instead.
 PREPARATIONS = ('Starting persistent MoonRay session', 'Reloading scene structure in persistent session',
                 'Preparing the MoonLightIPR scene')
@@ -1117,11 +1119,28 @@ class Panel(Tools, QtWidgets.QWidget):
         if blast is not None:width=min(scene_w,blast.width)
         return width, max(16, round(width * scene_h / max(1, scene_w)))
 
+    def _reading(self):
+        """Said before the whole scene is read: Modo's own thread reads it, and holds still meanwhile (a car's minute).
+        Left as it is while a draft redraws by itself."""
+        if getattr(self,'_draft_quiet',False):return
+        self.status.setText(READING);self.status.setToolTip('');self.status.repaint()
+
     def _capture(self,reuse=False,transform_items=None):
         import modo
         if modo.Scene().renderItem.id != self._scene_id:
             self._scene_id=modo.Scene().renderItem.id;self._geometry_cache=None
-        scene = host.snapshot(evaluated_geometry=self._settings_values()['surface'] == 2,reuse_geometry=self._geometry_cache if reuse else None,refresh_materials=reuse=='materials' or isinstance(reuse,dict),dirty_meshes=reuse.get('dirty_meshes') if isinstance(reuse,dict) else None)
+        # The whole scene read (realtime starting, or an edit that is not one mesh, a move or a material), with RT on as
+        # with Render: what the wait is said first. A move or a material reads little, and says nothing.
+        if not reuse or self._geometry_cache is None:self._reading()
+        # A whole reading of a scene with no unsaved changes, as the Scene cache kept it at the last cold start, where
+        # one was (scene_reading); else read from Modo, and kept for the next.
+        from . import scene_reading
+        evaluated=self._settings_values()['surface'] == 2
+        held_key=scene_reading.key(evaluated) if not reuse else None
+        scene=scene_reading.load(held_key)
+        if scene is None:
+            scene = host.snapshot(evaluated_geometry=evaluated,reuse_geometry=self._geometry_cache if reuse else None,refresh_materials=reuse=='materials' or isinstance(reuse,dict),dirty_meshes=reuse.get('dirty_meshes') if isinstance(reuse,dict) else None)
+            if held_key is not None:scene_reading.keep(held_key,scene_reading.freeze(scene),scene)
         if reuse=='transforms':
             from .incremental import refresh_transforms
             refresh_transforms(modo.Scene(),scene,transform_items)
@@ -1161,6 +1180,7 @@ class Panel(Tools, QtWidgets.QWidget):
     def _capture_preview(self):
         if self._engine()!='moonlightipr' or not self.preferences.get('preview_motion'):return self._capture()
         from .animation import capture_current
+        self._reading()
         scene=self._configure_snapshot(capture_current(self._settings_values()['surface']==2))
         # Stepping through the shutter is not an edit for IPR to follow.
         self.changes.consume()
@@ -1193,7 +1213,7 @@ class Panel(Tools, QtWidgets.QWidget):
         # button is greyed until the render is on its way and Stop can stop it.
         reading=not self._live()
         if reading:
-            self.status.setText("Reading Modo's scene graph...");self.status.setToolTip('')
+            self.status.setText(READING);self.status.setToolTip('')
             self.start.setEnabled(False)
             self.status.repaint();self.start.repaint()
         try:self.render_once()
