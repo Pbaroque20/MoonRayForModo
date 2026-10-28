@@ -191,7 +191,43 @@ def begin():
     except Exception:
         result['error'] = traceback.format_exc()
     save()
-    QtCore.QTimer.singleShot(int(os.environ.get('MOONRAY_PROBE_SETTLE', '90')) * 1000, lambda: burst(0, 0))
+    # MOONRAY_PROBE_POSES: the camera set to these poses in turn ("x y z rx ry rz;..."), each picture kept, in place
+    # of the bursts of moves; MoonLightIPR's own lines written down.
+    try:
+        session = panel.renderer.moonlightipr
+        session.output.connect(lambda text: result.setdefault('session', []).extend(
+            line[:200] for line in text.splitlines() if line.strip() and not line.startswith('@@')))
+    except Exception:
+        result.setdefault('errors', []).append(traceback.format_exc())
+    first = (lambda: pose(0)) if os.environ.get('MOONRAY_PROBE_POSES') else (lambda: burst(0, 0))
+    QtCore.QTimer.singleShot(int(os.environ.get('MOONRAY_PROBE_SETTLE', '90')) * 1000, first)
+
+
+def pose(step):
+    """The render camera set to the next of MOONRAY_PROBE_POSES, its picture kept 25 s later with its brightness."""
+    poses = [p.split() for p in os.environ['MOONRAY_PROBE_POSES'].split(';') if p.strip()]
+    if step >= len(poses):
+        finish()
+        return
+    try:
+        x, y, z, rx, ry, rz = poses[step]
+        lx.eval('select.item {%s} set' % held['camera'])
+        for channel, value in (('pos.X', x), ('pos.Y', y), ('pos.Z', z), ('rot.X', rx), ('rot.Y', ry), ('rot.Z', rz)):
+            lx.eval('transform.channel %s %s' % (channel, value))
+        note('pose %d' % step, 0.0, poses[step])
+    except Exception:
+        result.setdefault('errors', []).append(traceback.format_exc())
+
+    def look():
+        try:
+            bright = picture_brightness()
+            panel_widget().preview.image.save(str(out / ('pose-%02d.png' % step)))
+            result.setdefault('poses', []).append((step, poses[step], bright))
+        except Exception:
+            result.setdefault('errors', []).append(traceback.format_exc())
+        save()
+        pose(step + 1)
+    QtCore.QTimer.singleShot(25000, look)
 
 
 def burst(number, step):
