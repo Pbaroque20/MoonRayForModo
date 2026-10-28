@@ -1117,6 +1117,19 @@ def xpu2_rt_no_denoise(kit):
             if native.xpu2():return False
         except Exception:pass
 """)
+    # Nor is it denoised: with Denoise Preview on, the denoiser asked for the guides it no longer has
+    # ("Render unavailable: '_denoise_guides'").
+    p.rep("""def enabled(snapshot,final=False,linear=False):
+    if snapshot.get('_ipr') and not final:return False
+""", """def enabled(snapshot,final=False,linear=False):
+    if snapshot.get('_ipr') and not final:return False
+    # MoonRay's realtime under XPU2 is not denoised (its denoised pictures looked bad), and has no guides for it.
+    if snapshot.get('_realtime') and not final:
+        try:
+            from . import native
+            if native.xpu2():return False
+        except Exception:pass
+""")
     p.save()
     p = Patch(py / 'panel.py')
     p.rep("""        if engine=='moonray' and self._following and not output:scene=dict(scene,_realtime=True)
