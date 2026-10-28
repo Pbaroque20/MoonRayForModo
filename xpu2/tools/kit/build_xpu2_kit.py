@@ -1029,6 +1029,18 @@ def xpu2_sampling_words(kit):
     p.save()
 
 
+def kit_version(kit):
+    """The kit's version as the main repo has it (0.5 from 2026-10-28, the next release): __init__.py copied, and
+    index.cfg's version attribute set to the same."""
+    import re
+    py = kit / 'python' / 'moonray_modo'
+    shutil.copyfile(REPO_KIT / '__init__.py', py / '__init__.py')
+    held = re.search(r'__version__ = "([^"]+)"', (REPO_KIT / '__init__.py').read_text(encoding='utf-8')).group(1)
+    p = Patch(kit / 'index.cfg')
+    p.text = re.sub(r'(<configuration kit="MoonRayForModo" version=")[^"]*(")', r'\g<1>' + held + r'\g<2>', p.text, count=1)
+    p.save()
+
+
 def ear_clipping(kit):
     """MoonLightIPR's n-gons ear-clipped as MoonRay's TriMesh::splitNGons does (polygons.py, copied from the repo,
     2026-10-28): fanned, a concave n-gon was drawn over its own notch. simplify.py comes whole with geometry_detail."""
@@ -1620,6 +1632,7 @@ def build(session, base):
     reading_status(KIT)
     scene_read_cache(KIT)
     ear_clipping(KIT)
+    kit_version(KIT)
 
     p = Patch(py / 'preferences.py')
     p.rep("""    'auto_xpu': (True, bool),""", """    'auto_xpu': (True, bool),
