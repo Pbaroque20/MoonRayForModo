@@ -1029,6 +1029,60 @@ def xpu2_sampling_words(kit):
     p.save()
 
 
+def ear_clipping(kit):
+    """MoonLightIPR's n-gons ear-clipped as MoonRay's TriMesh::splitNGons does (polygons.py, copied from the repo,
+    2026-10-28): fanned, a concave n-gon was drawn over its own notch. simplify.py comes whole with geometry_detail."""
+    py = kit / 'python' / 'moonray_modo'
+    shutil.copyfile(REPO_KIT / 'polygons.py', py / 'polygons.py')
+    p = Patch(py / 'moonlightipr_scene.py')
+    a = p.text.index('def _fan(size, _held={}):')
+    b = p.text.index('\n\n\n', a) + 1
+    p.text = p.text[:a] + 'from .polygons import fan as _fan, corners as _corners\n' + p.text[b:]
+    p.rep("""            fan = array('I', [start + k for start, size in zip(accumulate([0] + sizes[:-1]), sizes) for k in _fan(size)])""",
+          """            # An n-gon ear-clipped as MoonRay does it (polygons.corners), the rest fanned.
+            fan = array('I', [start + k for start, face in zip(accumulate([0] + sizes[:-1]), faces) for k in _corners(face, vertices)])""")
+    p.rep("""            indices = array('I', [face[k] for face in faces for k in _fan(len(face))])""",
+          """            indices = array('I', [face[k] for face in faces for k in _corners(face, vertices)])""")
+    p.save()
+
+
+def scene_read_cache(kit):
+    """A whole reading of a scene with no unsaved changes kept by the Scene cache for the next cold start, under a hash
+    of the scene file and what else it was read with (scene_reading.py, copied from the repo; panel._capture patched as
+    the repo has it, 2026-10-28): the car's 30.7 s reading from Modo loaded back in 1.5 s, the same 334 meshes."""
+    py = kit / 'python' / 'moonray_modo'
+    shutil.copyfile(REPO_KIT / 'scene_reading.py', py / 'scene_reading.py')
+    source = (REPO_KIT / 'panel.py').read_text(encoding='utf-8').replace('\r\n', '\n')
+    p = Patch(py / 'panel.py')
+    line = """        scene = host.snapshot(evaluated_geometry=self._settings_values()['surface'] == 2,reuse_geometry=self._geometry_cache if reuse else None,refresh_materials=reuse=='materials' or isinstance(reuse,dict),dirty_meshes=reuse.get('dirty_meshes') if isinstance(reuse,dict) else None)
+"""
+    start = source.index('        # A whole reading of a scene with no unsaved changes, as the Scene cache kept it')
+    end = source.index('            if held_key is not None:scene_reading.keep(held_key,scene_reading.freeze(scene),scene)\n', start)
+    p.rep(line, source[start:end] + '            if held_key is not None:scene_reading.keep(held_key,scene_reading.freeze(scene),scene)\n')
+    p.save()
+
+
+def reading_status(kit):
+    """Reading Modo's scene graph... said before every whole reading of the scene, realtime (RT on) as Render (main
+    repo, 2026-10-28): Modo's thread reads it, and holds still meanwhile. The methods and constant from the repo."""
+    source = (REPO_KIT / 'panel.py').read_text(encoding='utf-8').replace('\r\n', '\n')
+    p = Patch(kit / 'python' / 'moonray_modo' / 'panel.py')
+    # READING comes with scene_cache, which takes the repo's lines from STOP_TIP to PREPARATIONS.
+    head = """    def _capture(self,reuse=False,transform_items=None):
+        import modo
+        if modo.Scene().renderItem.id != self._scene_id:
+            self._scene_id=modo.Scene().renderItem.id;self._geometry_cache=None
+"""
+    a = source.index('    def _reading(self):')
+    b = source.index('        if not reuse or self._geometry_cache is None:self._reading()\n') + len('        if not reuse or self._geometry_cache is None:self._reading()\n')
+    p.rep(head, source[a:b])
+    p.rep("""        scene=self._configure_snapshot(capture_current(self._settings_values()['surface']==2))
+        # Stepping through the shutter""", """        self._reading()
+        scene=self._configure_snapshot(capture_current(self._settings_values()['surface']==2))
+        # Stepping through the shutter""")
+    p.save()
+
+
 def lock_free_pack(kit):
     """MoonLightIPR's pack lets Python's lock go where it walked a heavy mesh's numbers in one call (main repo,
     uncommitted 2026-10-28): each corner's point gathered, and the finite checks, by the adapter (MR_gather, MR_finite;
@@ -1550,6 +1604,9 @@ def build(session, base):
     third_party(KIT)
     xpu2_rt_no_denoise(KIT)
     lock_free_pack(KIT)
+    reading_status(KIT)
+    scene_read_cache(KIT)
+    ear_clipping(KIT)
 
     p = Patch(py / 'preferences.py')
     p.rep("""    'auto_xpu': (True, bool),""", """    'auto_xpu': (True, bool),
