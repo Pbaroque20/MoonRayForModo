@@ -21,6 +21,9 @@ def environment(directory):
     env = dict(os.environ)
     # MoonRay's two-stage EXR writer consults TMPDIR (not Windows TEMP).
     env['TMPDIR'] = tempfile.gettempdir()
+    # Where a renderer keeps what it makes once and uses again: the Cache folder of the preferences (cache_folder).
+    from .cache_folder import root as cache_root
+    env['MOONRAY_MODO_CACHE'] = str(cache_root())
     env['REZ_MOONRAY_ROOT'] = str(directory.resolve())
     env['PATH'] = str(directory) + os.pathsep + env.get('PATH', '')
     dsos = [directory / 'rdl2dso', directory.parent / 'rdl2dso', directory.parent / 'lib' / 'rdl2dso', directory]

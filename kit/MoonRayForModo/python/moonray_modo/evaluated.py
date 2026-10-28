@@ -204,7 +204,10 @@ def _unpack(data,held):
             segment['uv_sets']=[_row(entry,held) if isinstance(entry,dict) else entry for entry in segment.get('uv_sets',[])]
 
 
-def capture(time, path=None, displaced=True):
+def capture(time, path=None, displaced=True, only=None, before=None):
+    """Modo's render cache read: every surface, and each surface's segments. only (item identifiers) and before (the
+    reading before): the segments of those items' surfaces alone, the others' taken from before by their item, material
+    and part; read whole where any is not there to take, or the adapter cannot."""
     global _bridge
     if _bridge is None:
         path = Path(path) if path else Path(__file__).resolve().parents[2] / 'bin/MoonRayGeometry.lx'
@@ -221,6 +224,14 @@ def capture(time, path=None, displaced=True):
         # Each surface's segments joined by the adapter where it can (MR_geometry_snapshot_merged), else one by one.
         try:rows=_bridge.MR_geometry_snapshot_merged
         except AttributeError:rows=None
+        some=None
+        if only and before and before.get('prototypes') and all('item' in held for held in before['prototypes'].values()):
+            try:some=_bridge.MR_geometry_snapshot_some
+            except AttributeError:some=None
+        if some is not None:
+            some.argtypes=[ctypes.c_double,ctypes.c_int,ctypes.c_char_p,ctypes.c_char_p,ctypes.c_char_p];some.restype=ctypes.c_char_p
+            listed='\n'.join(sorted(only)).encode('utf-8')
+            rows=lambda moment,flag,out,held:some(moment,flag,out,held,listed)
         if rows is None:
             try:rows=_bridge.MR_geometry_snapshot_binary
             except AttributeError:rows=None
@@ -239,6 +250,14 @@ def capture(time, path=None, displaced=True):
         if rows is not None:_unpack(data,memoryview(held.read_bytes()))
     if 'error' in data:
         raise ValueError('Modo evaluated geometry: ' + data['error'])
+    if some is not None:
+        earlier={(held.get('item'),held.get('material'),held.get('part')):held for held in before['prototypes'].values()}
+        for key,held in list(data.get('prototypes',{}).items()):
+            if held.get('kept'):
+                taken=earlier.get((held.get('item'),held.get('material'),held.get('part')))
+                if taken is None or taken.get('kept'):
+                    return capture(time,path,displaced)
+                data['prototypes'][key]=taken
     return data
 
 def casts_shadow(scene, layers, known):

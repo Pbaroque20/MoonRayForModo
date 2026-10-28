@@ -25,7 +25,74 @@ def adapter(library):
         library.MR_zigzag4.restype = ctypes.c_int
     except AttributeError:
         return
+    # Gathering and the finite check (MR_gather, MR_finite), where the adapter has them: done there, Python's lock is
+    # let go meanwhile, and Modo's thread goes on.
+    try:
+        library.MR_gather.argtypes = [ctypes.c_void_p, ctypes.c_longlong, ctypes.c_longlong, ctypes.c_void_p, ctypes.c_longlong, ctypes.c_void_p]
+        library.MR_gather.restype = ctypes.c_int
+        library.MR_finite.argtypes = [ctypes.c_void_p, ctypes.c_longlong]
+        library.MR_finite.restype = ctypes.c_int
+        library.MR_most.argtypes = [ctypes.c_void_p, ctypes.c_longlong]
+        library.MR_most.restype = ctypes.c_longlong
+        library.MR_iota.argtypes = [ctypes.c_void_p, ctypes.c_longlong]
+        library.MR_iota.restype = ctypes.c_int
+    except AttributeError:
+        pass
     NATIVE = library
+
+
+def _native():
+    """The adapter where it can be had: the one evaluated loaded, else the kit's own, as simplify loads it (the same
+    file as Modo's plugin)."""
+    if NATIVE is None:
+        try:
+            from .simplify import library
+            held = library()
+            if held is not None:
+                adapter(held)
+        except Exception:
+            pass
+    return NATIVE if NATIVE is not None and hasattr(NATIVE, 'MR_gather') and hasattr(NATIVE, 'MR_iota') else None
+
+
+def gather(values, width, places):
+    """The items of values (an array, width bytes each) at places (whole numbers), one after another, as an array of
+    the same kind, by the adapter, away from Python's lock; None where it cannot (no adapter, a place beyond them)."""
+    native = _native()
+    if native is None or not isinstance(values, array) or width <= 0 or len(values) * values.itemsize % width:
+        return None
+    places = places if isinstance(places, array) and places.typecode in ('I', 'L') and places.itemsize == 4 else array('I', places)
+    rows = len(values) * values.itemsize // width
+    out = array(values.typecode, bytes(width * len(places)))
+    if len(places) and native.MR_gather(_address(values), rows, width, _address(places), len(places), _address(out)):
+        return None
+    return out
+
+
+def most(values):
+    """The largest of an array of 32-bit whole numbers (0 where empty), by the adapter where it can, else Python's."""
+    native = _native()
+    if native is None or not isinstance(values, array) or values.itemsize != 4 or values.typecode not in ('I', 'L'):
+        return max(values) if len(values) else 0
+    return int(native.MR_most(_address(values), len(values))) if len(values) else 0
+
+
+def iota(count):
+    """0, 1, 2 ... count - 1 as an array of 32-bit whole numbers, by the adapter where it can."""
+    native = _native()
+    if native is None or count <= 0:
+        return array('I', range(max(0, count)))
+    out = array('I', bytes(4 * count))
+    native.MR_iota(_address(out), count)
+    return out
+
+
+def finite(values):
+    """Whether every number of a 32-bit float array is finite, by the adapter; None where it cannot be asked."""
+    native = _native()
+    if native is None or not isinstance(values, array) or values.typecode != 'f':
+        return None
+    return not len(values) or bool(native.MR_finite(_address(values), len(values)))
 
 
 def _address(held):

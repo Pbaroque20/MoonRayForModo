@@ -40,6 +40,11 @@ def rejected(reason):
     return 'MoonLightIPR rejected the scene' + (': ' + reason if reason else '') + '. Open Render Log for details.'
 
 
+# What the preview says while a scene is made ready for longer than a second (panel: Caching scene... with the Scene
+# cache on).
+PREPARING = 'Preparing the MoonLightIPR scene'
+
+
 class Packer(QtCore.QThread):
     """A snapshot made into what the session reads, away from Modo's own thread: the snapshot is plain data, and
     making it into bytes asks Modo nothing. Modo is then free to move its view while a followed edit is on its way."""
@@ -149,6 +154,12 @@ class Session(QtCore.QObject):
         self.packer = Packer(request, self.known, self.root / ('%d.mls' % request['id']), self)
         self.packer.finished.connect(self._packed)
         self.packer.start()
+        # A scene made ready for longer than a second, with meshes the Scene cache did not hold, is said to be
+        # (PREPARING: Caching scene...): a heavy scene's first load, or new meshes. One taken from the cache is not.
+        from . import cache_folder
+        worker, missed = self.packer, cache_folder.missed()
+        QtCore.QTimer.singleShot(1000, lambda: self.status.emit(PREPARING)
+                                 if self.packer is worker and not self.closed and cache_folder.missed() > missed else None)
 
     def _packed(self):
         worker = self.packer
@@ -189,7 +200,10 @@ class Session(QtCore.QObject):
                     packet = receive(line, self.process.processId())
                     # A frame of a scene that has since been replaced is acknowledged but not shown.
                     if not self.stopping and not self.closed and not self.latest and packet[0] == self.current: self.memory_image.emit(packet)
-                except (ValueError, OSError) as exc: self.status.emit('MoonLightIPR frame skipped: ' + str(exc))
+                except (ValueError, OSError) as exc:
+                    # A frame already taken back (shared_image.Withdrawn) is passed over without a word: newer ones follow.
+                    from .shared_image import Withdrawn
+                    if not isinstance(exc, Withdrawn): self.status.emit('MoonLightIPR frame skipped: ' + str(exc))
                 continue
             # What the session says of a scene: its textures made smaller to fit the card, or why it was rejected.
             if line.startswith('MoonLightIPR textures: '):

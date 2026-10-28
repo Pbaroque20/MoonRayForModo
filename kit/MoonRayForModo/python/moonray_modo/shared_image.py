@@ -3,6 +3,10 @@ import ctypes,re
 from ctypes import wintypes
 MAX_BYTES=64*1024*1024
 
+class Withdrawn(OSError):
+ """A frame the renderer has already taken back: it waits five seconds for a frame to be read, and Modo's thread was
+ busy for longer (a fast drag of a heavy scene). Newer frames follow; nothing is wrong with the render."""
+
 def receive(line,pid):
  parts=line.split()
  if len(parts)!=6 or parts[0]!='@@MODO_SHARED':raise ValueError('Malformed image publication')
@@ -18,9 +22,9 @@ def receive(line,pid):
  try:
   size=width*height*12
   if generation<0 or not 0<width<=16384 or not 0<height<=16384 or not 0<size<=MAX_BYTES or not re.fullmatch('[A-Za-z0-9_]{1,64}',key):raise ValueError('Invalid image dimensions or buffer key')
-  if not ack:raise OSError('Image acknowledgment event unavailable')
+  if not ack:raise Withdrawn('Image acknowledgment event unavailable')
   mapping=api.OpenFileMappingW(4,False,name)
-  if not mapping:raise OSError('Image mapping unavailable')
+  if not mapping:raise Withdrawn('Image mapping unavailable')
   view=api.MapViewOfFile(mapping,4,0,0,size)
   if not view:raise OSError('Cannot map image pixels')
   return generation,key,width,height,ctypes.string_at(view,size)

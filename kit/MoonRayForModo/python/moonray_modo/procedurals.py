@@ -1,6 +1,7 @@
 """Deterministic 2D procedural textures (Grid, Dots, Cellular, Wood, Weave, Ripples), sampled into an image that
 repeats without a seam and rendered as an image map. Each is after Modo's pattern and its settings, in two
 dimensions: it is not Modo's own evaluation, and a pattern Modo works out through a solid is laid on by UV here."""
+from .cache_folder import root as cache_root
 import functools
 import hashlib
 import json
@@ -152,7 +153,7 @@ def bake(data,resolution=512):
     # The later patterns take longer to work out and are sampled a little coarser.
     if data.get('kind') in EXTRA:resolution=min(resolution,256)
     key=hashlib.sha256(json.dumps(['procedural-v1',resolution,data],sort_keys=True).encode()).hexdigest()
-    root=Path(os.environ.get('LOCALAPPDATA',tempfile.gettempdir()))/'MoonRayForModo/Procedurals';root.mkdir(parents=True,exist_ok=True)
+    root=cache_root() / 'Procedurals';root.mkdir(parents=True,exist_ok=True)
     paths=[root/(key+suffix+'.pfm') for suffix in ('','-alpha')]
     if not all(p.is_file() for p in paths):
         temporary=[p.with_name(p.name+'.'+uuid.uuid4().hex+'.tmp') for p in paths]

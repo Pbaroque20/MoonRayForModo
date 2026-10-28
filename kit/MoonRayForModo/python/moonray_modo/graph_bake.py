@@ -12,6 +12,7 @@ and the plugin projects it back onto the surface. MoonRay's default for those tw
 space, is the camera's own space and is not followed. A node that looks at the normal, the camera
 or anything else (a projection, a curvature map) has no single picture, and is named instead.
 """
+from .cache_folder import root as cache_root
 import copy
 import hashlib
 import json
@@ -119,7 +120,7 @@ def files(graph, identity):
 
 
 def folder():
-    root = Path(os.environ.get('LOCALAPPDATA', tempfile.gettempdir())) / 'MoonRayForModo/GraphBakes'
+    root = cache_root() / 'GraphBakes'
     root.mkdir(parents=True, exist_ok=True)
     return root
 

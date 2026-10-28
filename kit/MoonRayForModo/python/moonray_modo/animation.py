@@ -60,6 +60,49 @@ def capture_frame(time, evaluated=False, motion=False, fps=24, preview=False):
 from .motion import apply_motion
 
 
+def shutter_moves(snapshot, evaluated=False):
+    """Whether anything moves during the shutter around now, for a snapshot just read with its meshes (the preview's
+    reading, its evaluated data kept): the shutter's ends asked of where the items stand, as capture_frame does in a
+    rigid scene, without reading the meshes again. None where that cannot be told so (a scene whose meshes may bend),
+    for the motion-blurred reading to tell. A mesh edit to an interior of evaluated geometry had its meshes read twice,
+    5.7 s, where once and the shutter's ends take 2.6 s."""
+    import copy
+    import modo
+    from . import properties
+    from .extra_geometry import attach
+    from .incremental import rigid, item_matrices, follow_items
+    from .motion import moves
+    camera = snapshot['camera']
+    length = max(0, float(camera.get('shutter_length', .5)))
+    if not length:
+        return False
+    document = modo.Scene()
+    if not rigid(document, snapshot):
+        return None
+    offset = float(camera.get('shutter_offset', 0))
+    endpoints = [offset - length / 2, offset + length / 2]
+    fps = float(document.fps)
+    selection = lx.service.Selection()
+    original = selection.GetTime()
+    asset_controls = copy.deepcopy(properties.scene_settings().get('production', {}))
+    standing = item_matrices(document, snapshot)
+    samples = []
+    try:
+        for endpoint in endpoints:
+            selection.SetTime(float(original) + endpoint / fps)
+            sample = host.snapshot(evaluated_geometry=evaluated, reuse_geometry=snapshot)
+            sample.pop('_full_capture', None)
+            follow_items(document, sample, standing)
+            attach(sample, asset_controls)
+            samples.append(sample)
+    finally:
+        selection.SetTime(original)
+    trial = dict(snapshot)
+    attach(trial, asset_controls)
+    apply_motion(trial, samples[0], samples[1], endpoints, preview=True)
+    return moves(trial)
+
+
 class Sequence(QtCore.QObject):
     def __init__(self, panel, directory, first, last, fps, motion=False, step=1, prefix="frame", missing=False, export_as=None):
         super().__init__(panel)

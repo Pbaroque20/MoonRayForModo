@@ -8,6 +8,10 @@ from .serialization import array as _kept
 from array import array as numbers
 from itertools import chain
 
+# Whether the last realtime preview's scene had a mesh cut coarser than at rest (moonlightipr_detail): the preview
+# window then sends it again with fine detail once it is left alone.
+LAST_REFINABLE = False
+
 IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
 
 
@@ -338,6 +342,12 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
     from . import entities
     # A MeshLight item makes the mesh it names emit, through the same settings as Object controls.
     scene = entities.mesh_lights(scene)
+    # A realtime preview (its _geometry_detail, from the preview window) cuts its meshes by their size on screen, from a
+    # dicing camera held while the view moves little, unless the scene names one of its own (moonlightipr_detail).
+    detail = scene.get('_geometry_detail')
+    if detail and not scene.get('dicing_camera') and scene.get('camera'):
+        from .moonlightipr_detail import held_dicing
+        scene = dict(scene, dicing_camera=held_dicing(scene['camera'], scene.get('meshes', []), bool(scene.get('_detail_keep'))))
     if entities.replaces_environment(scene):
         # A MoonRay environment light set to replace Modo's: neither the Modo environments nor
         # the preview environment light are written.
@@ -587,7 +597,27 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
     # resolution it tessellates subdivision surfaces and displacement at.
     held_render = options.render_values(scene.get('render_settings', {}))
     resolution_cap = held_render['max_geometry_resolution'] if held_render['enable_max_geometry_resolution'] else None
+    # A realtime preview's cut of each mesh (moonlightipr_detail): subdivided and displaced ones tessellated by MoonRay to
+    # the pixels it says, dense ones made lighter (simplify.py).
+    cuts = {}
+    if detail:
+        from . import moonlightipr_detail
+        global LAST_REFINABLE
+        cuts, LAST_REFINABLE = moonlightipr_detail.plan(render_meshes, scene.get('dicing_camera') or scene['camera'], width, detail,
+            lambda held: bool(({held.get('material', '')} | set(held.get('face_materials') or [])) & displacement_tags))
     for index, mesh in enumerate(render_meshes):
+        cut = cuts.get(id(mesh))
+        if cut and cut.get('simplify'):
+            from . import simplify
+            lighter = simplify.polygon_mesh(mesh, cut['simplify']['triangles'], cut['simplify']['error'])
+            if lighter is not None:
+                mesh = lighter
+        if cut and mesh.get('subdivision') and not mesh.get('adaptive_error') and 'instances' not in mesh:
+            mesh = dict(mesh, adaptive_error=cut['pixels'])
+        elif mesh.get('subdivision') and not mesh.get('adaptive_error') and 'instances' not in mesh and held_render['displacement_tessellation']:
+            # A subdivision surface with no screen error of its own follows the scene's Displacement Tessellation too:
+            # Modo's Displacement Rate (or the Adaptive Error Override), as for a displaced polygon mesh.
+            mesh = dict(mesh, adaptive_error=held_render['displacement_adaptive_error'] or float(scene.get('displacement_rate', 1.0)))
         vertices = mesh['vertices']
         faces = mesh['faces']
         if not faces:
@@ -628,6 +658,7 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
             # (or the Adaptive Error Override) or none (uniform). An instancer's reference is tessellated once for all its
             # instances, so it stays uniform.
             if settings['adaptive_error']:error=settings['adaptive_error']
+            elif cut and 'instances' not in mesh:error=cut['pixels']
             elif 'instances' in mesh or held_render['displacement_tessellation']==0:error=0.0
             else:error=held_render['displacement_adaptive_error'] or float(scene.get('displacement_rate',1.0))
             mesh=dict(mesh,adaptive_error=error)

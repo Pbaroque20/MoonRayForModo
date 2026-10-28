@@ -1,4 +1,5 @@
 """Keep a per-process Python stack log for native material-preview failures."""
+from .cache_folder import root as cache_root
 import faulthandler,os,tempfile,time
 from pathlib import Path
 _stream=None
@@ -7,7 +8,7 @@ def record(event):
     global _stream
     try:
         if _stream is None:
-            folder=Path(os.environ.get('LOCALAPPDATA',tempfile.gettempdir()))/'MoonRayForModo/Diagnostics'
+            folder=cache_root() / 'Diagnostics'
             folder.mkdir(parents=True,exist_ok=True)
             _stream=(folder/('material-preview-%d.log'%os.getpid())).open('a',encoding='utf-8',buffering=1)
             # Preserve a handler already installed by Modo or another plugin.

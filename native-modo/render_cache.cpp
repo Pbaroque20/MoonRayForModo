@@ -11,6 +11,7 @@
 #include <filesystem>
 #include <locale>
 #include <map>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -134,12 +135,15 @@ void transform(std::ostream& out,CLxLoc_GeoCacheSurface& surface,int endpoint) {
 // writing it out.
 static double spentLoading=0,spentFetching=0,spentWriting=0;
 static double clockNow(){return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();}
-void prototype(std::ostream& out,CLxLoc_GeoCacheSurface& surface) {
+void prototype(std::ostream& out,CLxLoc_GeoCacheSurface& surface,const std::string& owner) {
     double mark=clockNow();
     check(surface.LoadSegments(),"Load geometry segments");
     spentLoading+=clockNow()-mark;
     // The short-lived cache owns its segments; retain borrowed interface refs.
-    out<<"{\"features\":[";
+    // Which surface it is, for a later reading that keeps it (only).
+    out<<"{\"item\":";text(out,owner.c_str());
+    out<<",\"material\":";text(out,surface.MaterialPTag());out<<",\"part\":";text(out,surface.PartPTag());
+    out<<",\"features\":[";
     CLxLoc_TableauVertex descriptor;descriptor.set(surface.GetVertexDesc());
     if(descriptor.test()) for(unsigned i=0;i<descriptor.Count();++i) {
         LXtID4 type; const char* name=nullptr; unsigned offset;
@@ -258,6 +262,10 @@ void prototype(std::ostream& out,CLxLoc_GeoCacheSurface& surface) {
 // The cache is made anew and evaluated whole for every reading, which takes Modo a few thousandths of a second. One
 // kept between readings and left for Modo to keep up to date was tried: it was a moment behind each edit, and
 // failed to give its segments just after a mesh had changed shape.
+// only, where given: the items whose surfaces' segments are loaded; any other surface's prototype says only which it
+// is ("kept": its item, material and part), for the plugin to take from the reading before (evaluated.capture). Loading
+// every surface's segments was most of a reading after one mesh was edited (1.24 s of 2.15 for an interior's 25).
+static const std::set<std::string>* onlyItems=nullptr;
 static void write_snapshot(std::ostream& out,double time,int displaced) {
         blobAt=0;skippedSegments=0;skippedWhere.str("");skippedWhere.clear();
         const auto began=std::chrono::steady_clock::now();
@@ -274,6 +282,7 @@ static void write_snapshot(std::ostream& out,double time,int displaced) {
         const double evaluated=since();
         int count=0;check(cache.GeoSurfaceCount(&count),"Surface count");
         std::map<int,CLxLoc_GeoCacheSurface> sources;
+        std::map<int,std::string> sourceItems;
         out<<"{\"surfaces\":[";
         for(int i=0;i<count;++i) {
             object=nullptr;check(cache.GeoSurfaceAt(i,&object),"Render surface");
@@ -287,7 +296,11 @@ static void write_snapshot(std::ostream& out,double time,int displaced) {
             else source.set(surface);
             // Keep the cache's original prototype. Instance reference wrappers
             // may expose the same ID without owning populated segments.
-            sources.emplace(source.ID(),source);
+            if(sources.emplace(source.ID(),source).second) {
+                object=nullptr;check(source.SourceItem(&object),"Source surface item");
+                CLxLoc_Item owner;owner.set(object);const char* ident=nullptr;check(owner.Ident(&ident),"Source item identifier");
+                sourceItems[source.ID()]=ident?ident:"";
+            }
             object=nullptr;check(surface.SourceItem(&object),"Surface source item");
             CLxLoc_Item item;item.set(object);
             const char* name=nullptr;check(item.Ident(&name),"Item identifier");
@@ -314,7 +327,14 @@ static void write_snapshot(std::ostream& out,double time,int displaced) {
         const double listed=since();
         out<<"],\"prototypes\":{";bool first=true;
         for(auto& entry:sources) {
-            if(!first)out<<',';first=false;text(out,std::to_string(entry.first).c_str());out<<':';prototype(out,entry.second);
+            if(!first)out<<',';first=false;text(out,std::to_string(entry.first).c_str());out<<':';
+            const std::string& owner=sourceItems[entry.first];
+            if(onlyItems && !onlyItems->count(owner)) {
+                out<<"{\"kept\":1,\"item\":";text(out,owner.c_str());
+                out<<",\"material\":";text(out,entry.second.MaterialPTag());out<<",\"part\":";text(out,entry.second.PartPTag());out<<'}';
+                continue;
+            }
+            prototype(out,entry.second,owner);
         }
 
         out<<"},\"timing\":["<<evaluated<<','<<listed-evaluated<<','<<since()-listed<<"],\"handing\":["<<spentLoading<<','<<spentFetching<<','<<spentWriting<<"],\"skipped\":"<<skippedSegments<<",\"skipped_where\":["<<skippedWhere.str()<<"]}";
@@ -372,4 +392,17 @@ extern "C" __declspec(dllexport) const char* MR_geometry_snapshot_binary(double 
 extern "C" __declspec(dllexport) const char* MR_geometry_snapshot_merged(double time,int displaced,const char* path,const char* rows) {
     struct Join { Join(){merging=true;} ~Join(){merging=false;} } join;
     return MR_geometry_snapshot_binary(time,displaced,path,rows);
+}
+
+// As MR_geometry_snapshot_merged, loading only the surfaces of the items named in only (one identifier a line); the
+// others' prototypes are marked kept, to be taken from the reading before. Empty only: every surface, as merged.
+extern "C" __declspec(dllexport) const char* MR_geometry_snapshot_some(double time,int displaced,const char* path,const char* rows,const char* only) {
+    std::set<std::string> items;
+    for(const char* p=only?only:"";*p;) {
+        const char* end=p;while(*end && *end!='\n') ++end;
+        if(end>p) items.emplace(p,end);
+        p=*end?end+1:end;
+    }
+    struct Only { Only(const std::set<std::string>* to){onlyItems=to;} ~Only(){onlyItems=nullptr;} } use(items.empty()?nullptr:&items);
+    return MR_geometry_snapshot_merged(time,displaced,path,rows);
 }

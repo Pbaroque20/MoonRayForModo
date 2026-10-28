@@ -4,6 +4,7 @@ Modo texture/channel graphs retain their authored Rec.709 math. Their color
 outputs, lights and environment maps convert before entering MoonRay shading.
 Coordinates, normals, masks, IORs and identification buffers are never transformed.
 """
+from .cache_folder import root as cache_root
 import hashlib,os,subprocess,tempfile,uuid
 from pathlib import Path
 from contextvars import ContextVar
@@ -64,7 +65,7 @@ def texture(source):
     from . import native,textures
     source=Path(source);signature=[str(source),source.stat().st_mtime_ns,source.stat().st_size,TO_AP1]
     digest=hashlib.sha256(repr(signature).encode()).hexdigest()
-    folder=Path(os.environ.get('LOCALAPPDATA',tempfile.gettempdir()))/'MoonRayForModo/Textures';folder.mkdir(parents=True,exist_ok=True)
+    folder=cache_root() / 'Textures';folder.mkdir(parents=True,exist_ok=True)
     target=folder/(digest+'.tx')
     if target.is_file():return textures.register(target)
     runtime=Path(native.default_runtime());staged=folder/(digest+'.'+uuid.uuid4().hex+'.tx')

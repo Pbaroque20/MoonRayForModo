@@ -29,3 +29,42 @@ extern "C" __declspec(dllexport) int MR_zigzag4(const int32_t* in, unsigned char
     }
     return 0;
 }
+
+// moonlightipr_scene._by_corner and simplify._gather: each of count items (width bytes each) picked from rows by
+// place, written one after another. Done here, Python's lock is let go meanwhile: joined in Python, a car's meshes held
+// Modo's own thread for seconds at a time. -1 where a place is beyond the rows (rows: how many there are).
+extern "C" __declspec(dllexport) int MR_gather(const unsigned char* in, long long rows, long long width, const uint32_t* places,
+                                               long long count, unsigned char* out) {
+    for(long long i=0;i<count;++i) {
+        const uint32_t at=places[i];
+        if((long long)at>=rows) return -1;
+        const unsigned char* from=in+(long long)at*width;
+        unsigned char* to=out+i*width;
+        for(long long k=0;k<width;++k) to[k]=from[k];
+    }
+    return 0;
+}
+
+// Whether every one of count 32-bit floats is finite (1) or not (0): the sums Python made to tell, over a car's meshes'
+// numbers, held Modo's thread as long.
+extern "C" __declspec(dllexport) int MR_finite(const float* in, long long count) {
+    for(long long i=0;i<count;++i) {
+        const uint32_t bits=*reinterpret_cast<const uint32_t*>(in+i);
+        if((bits&0x7f800000u)==0x7f800000u) return 0;
+    }
+    return 1;
+}
+
+// The largest of count whole numbers (0 where there are none): the corners' check against the points, which Python's
+// max over a car's mesh made in one call, its lock held.
+extern "C" __declspec(dllexport) long long MR_most(const uint32_t* in, long long count) {
+    uint32_t most=0;
+    for(long long i=0;i<count;++i) if(in[i]>most) most=in[i];
+    return (long long)most;
+}
+
+// 0, 1, 2 ... count - 1: a triangle mesh's corners as its triangles' corners, made by Python one number at a time.
+extern "C" __declspec(dllexport) int MR_iota(uint32_t* out, long long count) {
+    for(long long i=0;i<count;++i) out[i]=uint32_t(i);
+    return 0;
+}

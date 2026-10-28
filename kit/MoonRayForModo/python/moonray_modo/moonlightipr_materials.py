@@ -4,6 +4,7 @@ A material becomes starting values for each channel plus an ordered list of laye
 constant, an image, a gradient or a pattern blended over the rows below it, as graph.py builds
 for MoonRay. What has no counterpart is collected by name so the caller can report it.
 """
+from .cache_folder import root as cache_root
 import hashlib
 import math
 import os
@@ -168,10 +169,10 @@ BLEND_REORIENTED_NORMAL = 15
 WRAP = {'repeat': 0, 'edge': 1, 'mirror': 2, 'reset': 3}
 TEXTURE_FLOAT, TEXTURE_SRGB, TEXTURE_WRAP_U_SHIFT, TEXTURE_WRAP_V_SHIFT = 1, 2, 2, 4
 UV_SLOTS = 8
-# The largest side of an image MoonLightIPR is given (larger ones are fitted within it as they are converted): 1280,
-# perceptually enough at realtime's sizes, with far less for the card to hold and read (it was 4096). The
+# The largest side of an image MoonLightIPR is given (larger ones are fitted within it as they are converted): 1024,
+# perceptually enough at realtime's sizes, with far less for the card to hold and read (it was 4096, then 1280). The
 # environment's image is sized on its own (moonlightipr_scene).
-MAX_TEXTURE_SIDE = 1280
+MAX_TEXTURE_SIDE = 1024
 RAMP_STEPS = 257
 HDR_SUFFIXES = ('.exr', '.hdr', '.tx')
 SPACE_ALIASES = {'(default)': '', '(none)': 'raw', 'Linear': 'linear', 'lin_rec709': 'linear', 'srgb_texture': 'sRGB'}
@@ -185,7 +186,7 @@ def triple(value):
 
 
 def cache_folder():
-    return Path(os.environ.get('LOCALAPPDATA', tempfile.gettempdir())) / 'MoonRayForModo/MoonLightIPR'
+    return cache_root() / 'MoonLightIPR'
 
 
 def color_space(source, authored, srgb):

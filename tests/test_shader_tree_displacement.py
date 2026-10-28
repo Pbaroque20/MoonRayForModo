@@ -53,6 +53,25 @@ class ShaderTreeDisplacement(unittest.TestCase):
             self.assertNotIn(key, text)
         override['meshes'][0]['instances'] = [rdla.IDENTITY]
         self.assertIn('["adaptive_error"] = 0', rdla.scene_text(override))
+
+    def test_subdivision_follows_modo(self):
+        # A subdivision surface with no screen error of its own follows Displacement Tessellation as a displaced mesh does;
+        # its own Subdivision Screen Error wins, Uniform and an instancer's reference leave it by its level.
+        subd = scene('displace', displacement_distance=0.0)
+        subd['meshes'][0]['subdivision'] = True
+        subd['displacement_rate'] = 2.5
+        self.assertIn('["adaptive_error"] = 2.5', rdla.scene_text(subd))
+        subd['render_settings'] = {'displacement_adaptive_error': 3.0}
+        self.assertIn('["adaptive_error"] = 3', rdla.scene_text(subd))
+        subd['render_settings'] = {'displacement_tessellation': 0}
+        self.assertNotIn('["adaptive_error"]', rdla.scene_text(subd))
+        subd['render_settings'] = {}
+        subd['meshes'][0]['adaptive_error'] = 4.0
+        self.assertIn('["adaptive_error"] = 4', rdla.scene_text(subd))
+        del subd['meshes'][0]['adaptive_error']
+        subd['meshes'][0]['instances'] = [rdla.IDENTITY]
+        self.assertNotIn('["adaptive_error"] = 2.5', rdla.scene_text(subd))
+
     def test_stencil_reaches_presence(self):
         text = rdla.scene_text(scene('stencil'))
         self.assertIn('["presence"] = bind(', text)

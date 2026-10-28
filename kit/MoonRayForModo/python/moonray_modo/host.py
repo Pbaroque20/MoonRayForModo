@@ -495,7 +495,11 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
         if evaluated_geometry:
             from . import evaluated
             cached=reuse_geometry.get('_evaluated_data') if reuse_geometry else None
-            data=dict(cached,surfaces=[dict(v) for v in cached['surfaces']]) if cached else evaluated.capture(lx.service.Selection().GetTime())
+            if cached and dirty_meshes:
+                # Edited meshes: their surfaces read again, the others' as they were (incremental.classify).
+                data=evaluated.capture(lx.service.Selection().GetTime(),only=dirty_meshes,before=cached)
+            else:
+                data=dict(cached,surfaces=[dict(v) for v in cached['surfaces']]) if cached else evaluated.capture(lx.service.Selection().GetTime())
             result['_evaluated_data']=data
             native_shape_materials = result['materials']
             result['materials'] = evaluated.assign_materials(data, scene, warnings)

@@ -1,4 +1,5 @@
 """Bake environment layers in linear light to a cached latitude/longitude map."""
+from .cache_folder import root as cache_root
 import hashlib
 import json
 import math
@@ -154,7 +155,7 @@ def texture(environment, width=512, height=256):
     if any(layer['kind']=='physical' for layer in environment['layers']):
         width,height = 256,128
     digest = hashlib.sha256(('stack-v10-daylight|%dx%d|'%(width,height)+json.dumps([environment,textures._policy.get()],sort_keys=True)).encode()).hexdigest()
-    folder = Path(os.environ.get('LOCALAPPDATA',tempfile.gettempdir()))/'MoonRayForModo/Environments'
+    folder = cache_root() / 'Environments'
     folder.mkdir(parents=True,exist_ok=True)
     target = folder/(digest+'.pfm')
     if not target.exists():

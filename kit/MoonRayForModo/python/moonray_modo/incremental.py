@@ -32,9 +32,14 @@ def classify(scene, identities, cache):
     # A native material added from Add Layer has a type of its own; it is a material like the rest.
     types={'advancedMaterial' if kind.startswith('material.dw.') or kind=='material.mtlx' else kind for kind in (scene.item(identity).type for identity in identities)}
     if 'mesh' in types and types<=LIGHTS|{'mesh'}:
-        if cache.get('_evaluated_data') is None and not cache.get('extra_geometry'):
+        # Modo's evaluated geometry too, where each mesh's geometry is its own (own_geometry): the surfaces of the meshes
+        # edited are read again from its render cache, the others kept (evaluated.capture); every surface's placement,
+        # an instance's or a replica's among them, is read anew all the same. An interior's edit: 2.5 s to read; a car
+        # with channel modifiers and instances read whole at each edit, 28 s.
+        evaluated=cache.get('_evaluated_data') is not None
+        if not cache.get('extra_geometry') and (own_geometry(scene) if evaluated else True):
             try:
-                if not deformers(scene) and not scene.items('meshInst',superType=False) and not scene.items('replicator',superType=False):
+                if evaluated or (not deformers(scene) and not scene.items('meshInst',superType=False) and not scene.items('replicator',superType=False)):
                     return {'dirty_meshes':{identity for identity in identities if scene.item(identity).type=='mesh'}}
             except (RuntimeError,LookupError,AttributeError):pass
         return False
@@ -145,12 +150,10 @@ def stands_with_items(scene,snapshot):
     except Exception:return False
 
 
-def rigid(scene,snapshot):
-    """Whether the meshes of a snapshot hold at any other moment, only moved with their items: nothing in the scene
-    deforms a mesh, simulates, generates or copies one, or drives a channel (every item is of a STEADY kind), no
-    texture is projected from where a mesh stands, and each mesh stands where its item does. A reading at another
-    moment, for the ends of the shutter, is then a matter of asking where the items stand (refresh_transforms), as when
-    an item is moved: not of reading every mesh again. Where Modo cannot be asked, it is taken not to be so."""
+def steady(scene):
+    """Whether nothing in the scene deforms a mesh, simulates, generates or copies one, or drives a channel: every item
+    is of a STEADY kind. A mesh's geometry is then its own, and no other's depends on it. Where Modo cannot be asked, it
+    is taken not to be so."""
     try:
         import lx
         service=lx.service.Scene()
@@ -160,6 +163,40 @@ def rigid(scene,snapshot):
             kind=item.type
             if kind in STEADY or kind.startswith(('material.','moonray.')) or any(item.TestType(each) for each in kinds):continue
             return False
+        return True
+    except Exception:return False
+
+
+# Kinds of item that make no mesh's geometry, beside the steady ones: in a scene read as Modo's evaluated geometry,
+# what they do is where things stand, read anew at every reading (own_geometry). Channel modifiers (cm...) drive channels.
+NEUTRAL={'assembly','schmNode','shear','CameraMatch','meshInst','replicator','camera','targetLocator'}
+
+
+def own_geometry(scene):
+    """Whether, in a scene read as Modo's evaluated geometry, each mesh's geometry is its own: nothing deforms one, and
+    every item is of a kind that makes none (steady kinds, channel modifiers, instances, replicators). A kind not known
+    to make none is taken to make some, and the scene is read whole. Where Modo cannot be asked, it is taken not to be so."""
+    try:
+        import lx
+        service=lx.service.Scene()
+        kinds=[service.ItemTypeLookup(name) for name in ('light','textureLayer')]
+        if deformers(scene):return False
+        for item in scene.iterItems():
+            kind=item.type
+            if kind in STEADY or kind in NEUTRAL or kind.startswith(('material.','moonray.','cm')) or any(item.TestType(each) for each in kinds):continue
+            return False
+        return True
+    except Exception:return False
+
+
+def rigid(scene,snapshot):
+    """Whether the meshes of a snapshot hold at any other moment, only moved with their items: nothing in the scene
+    deforms a mesh, simulates, generates or copies one, or drives a channel (every item is of a STEADY kind), no
+    texture is projected from where a mesh stands, and each mesh stands where its item does. A reading at another
+    moment, for the ends of the shutter, is then a matter of asking where the items stand (refresh_transforms), as when
+    an item is moved: not of reading every mesh again. Where Modo cannot be asked, it is taken not to be so."""
+    try:
+        if not steady(scene):return False
         from .coordinates import descriptors
         if any(d.get('projection','uv')!='uv' for d in descriptors(snapshot.get('materials') or {}).values()):return False
         return stands_with_items(scene,snapshot)

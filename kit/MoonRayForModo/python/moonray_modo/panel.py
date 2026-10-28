@@ -15,6 +15,9 @@ from .panel_tools import Tools
 
 RENDER_TIP = 'Render the current scene. The previous image stays until its replacement is ready.'
 STOP_TIP = 'Stop the render in progress and stop following scene changes.'
+# What the renderers say while they make a scene ready: with the Scene cache on, the status says Caching scene... instead.
+PREPARATIONS = ('Starting persistent MoonRay session', 'Reloading scene structure in persistent session',
+                'Preparing the MoonLightIPR scene')
 # Always offered in the buffer list; choosing one adds the output to the scene if it lacks it.
 # Modo's own style draws menu entries hard against the edge.
 MENU_STYLE = 'QMenu::item { padding: 5px 24px 5px 24px; } QMenu::separator { height: 1px; margin: 4px 10px; }'
@@ -76,6 +79,9 @@ class Panel(Tools, QtWidgets.QWidget):
         self.timer.timeout.connect(self._live_tick)
         self.refine_timer=QtCore.QTimer(self);self.refine_timer.setSingleShot(True);self.refine_timer.setInterval(750)
         self.refine_timer.timeout.connect(self._refine_ipr)
+        # MoonLightIPR's meshes cut finer once the scene has been left alone this long (moonlightipr_detail).
+        self.detail_timer=QtCore.QTimer(self);self.detail_timer.setSingleShot(True);self.detail_timer.setInterval(1000)
+        self.detail_timer.timeout.connect(self._refine_detail)
         self.display_timer=QtCore.QTimer(self);self.display_timer.setSingleShot(True);self.display_timer.setInterval(200)
         self.display_timer.timeout.connect(self._commit_exposure)
         self.preview_timer=QtCore.QTimer(self);self.preview_timer.setSingleShot(True);self.preview_timer.setInterval(150)
@@ -840,6 +846,8 @@ class Panel(Tools, QtWidgets.QWidget):
         words=[]
         try:
             values=self._settings_values()
+            # MoonLightIPR's motion blur, off by default: each update then reads the shutter's ends too.
+            if self.preview_engine.currentData()=='moonlightipr' and self.preferences.get('preview_motion'):words.append('Motion Blur')
             if self.preview_engine.currentData()=='moonray' and values['denoising'].get('safe') and values['denoising'].get('engine','off')!='off':
                 words.append('Safe Denoiser')
             level=values['denoising'].get('smart','off')
@@ -1181,7 +1189,17 @@ class Panel(Tools, QtWidgets.QWidget):
         self._failure=None
         # A render begun by hand begins from an empty view, unless it turns out to be one continued.
         self._clear_first=True
-        self.render_once()
+        # Reading the scene holds Modo's thread, for a minute on a heavy scene: it is said before it begins, and the
+        # button is greyed until the render is on its way and Stop can stop it.
+        reading=not self._live()
+        if reading:
+            self.status.setText("Reading Modo's scene graph...");self.status.setToolTip('')
+            self.start.setEnabled(False)
+            self.status.repaint();self.start.repaint()
+        try:self.render_once()
+        finally:
+            # A render on its way has set the button already; one that never began gives it back.
+            if reading and not self._rendering:self.start.setEnabled(True)
 
     def _set_rendering(self,rendering):
         """Keep the Render button saying what pressing it will do."""
@@ -1260,6 +1278,31 @@ class Panel(Tools, QtWidgets.QWidget):
         width, height = self._dimensions(scene, bool(output))
         original_digest=digest or self._digest(scene,timeless=not output and self._engine()=='moonlightipr')
         if not output:scene=dict(scene,_clay_preview=self._clay())
+        # A preview following the scene (MoonLightIPR, or MoonRay's realtime) cuts its subdivided, displaced and dense
+        # meshes by their size on screen, coarser after an edit and finer once the scene is left alone
+        # (moonlightipr_detail): the detail timer sends it again then.
+        # An edit that leaves the meshes as they were (the camera, a light, a material or where items stand) and a
+        # refinement keep the cut as it stands: cut anew, every mesh would be built again twice for each move.
+        fine,self._detail_fine=getattr(self,'_detail_fine',False),False
+        kept,self._detail_kept=getattr(self,'_detail_kept',False) or refining,False
+        # The camera the meshes are cut from is held through every edit, and taken anew only at rest where the view came
+        # far enough (_refine_detail: _detail_recut).
+        recut,self._detail_recut=getattr(self,'_detail_recut',False),False
+        if not output and self._following and self._engine()=='moonray':
+            # MoonRay's realtime: the fine cut from the first, no coarse one before it (a cut of other meshes is a reload
+            # of the scene: the coarse pass cost a second preparation of a heavy scene); through a move of the camera
+            # its dicing camera is held whatever the view (_detail_keep), and looked at again once the view rests
+            # (_refine_detail), the meshes cut anew only where it came far enough.
+            self._detail_now='fine'
+            scene=dict(scene,_geometry_detail='fine',_detail_keep=not recut)
+            self.detail_timer.start()
+        elif not output and self._following:
+            now=getattr(self,'_detail_now',None)
+            detail=now if kept and now else 'fine' if fine else 'coarse'
+            self._detail_now=detail
+            scene=dict(scene,_geometry_detail=detail,_detail_keep=not recut)
+            if not (kept and self.detail_timer.isActive()):self.detail_timer.start()
+        else:self.detail_timer.stop()
         if self._draft_engine:scene=dict(scene,_draft=2,_draft_samples=3 if (getattr(self,'_draft_hasty',False) and not self._following) else 12)
         if not output and self.draft.isChecked():
             # The picture is spoken of at the size the camera renders it, however finely its lines are drawn.
@@ -1509,6 +1552,10 @@ class Panel(Tools, QtWidgets.QWidget):
                 engine=self._preview_denoiser()
                 if engine=='auto':self.renderer.buffers.denoiser.request(engine)
             self.renderer.buffers.select(key,values(stored['display']))
+            if self._following and self._engine()=='moonray' and key not in ('beauty','denoised_beauty') and self._ipr_refine_scene is not None:
+                # MoonRay's realtime renders the beauty and the buffer looked at (outputs.preview): another is rendered
+                # from the scene as last read, not read again.
+                self._submit(dict(self._ipr_refine_scene,preview_buffer=key))
             if key=='denoised_beauty' and self._engine()=='moonlightipr' and not getattr(self.renderer,'moonlightipr_denoises',False):
                 # MoonLightIPR has not been denoising: it renders again, denoising this time.
                 if self._following or self._rendering or not self.preview.image.isNull():self.render_once()
@@ -1567,6 +1614,10 @@ class Panel(Tools, QtWidgets.QWidget):
                 scene=self._capture_preview()
                 # What Modo has told of up to now is in this reading of the scene.
                 self.changes.consume()
+                # And the moment and settings it was read at: following, the first tick found none, took the time for
+                # changed, and read the whole scene again with nothing edited (a car scene's 41 s on Modo's thread, just
+                # after its first picture; MoonRay's realtime the same).
+                self._last_time=lx.service.Selection().GetTime();self._settled()
             self._submit(scene)
         except Exception as exc:
             self._failed(str(exc))
@@ -1655,7 +1706,7 @@ class Panel(Tools, QtWidgets.QWidget):
             # (three readings in all). A material edit, or a move of items (the camera among them) none of whose channels is animated, to a scene
             # last found to hold nothing that moves skips that: any other edit may have keyed something to move. While
             # dragging, it is followed sharp, as fast as it can be.
-            blurred=False
+            blurred=False;moving=False;first=None
             if not held and self._engine()=='moonlightipr' and self.preferences.get('preview_motion'):
                 still=(time,modo.Scene().renderItem.id,repr(sorted(settings.items(),key=lambda entry:entry[0])))
                 # A move cannot make anything move during the shutter without a key (a fur scene's three readings held
@@ -1664,17 +1715,28 @@ class Panel(Tools, QtWidgets.QWidget):
                 # (reuse True: only the camera or lights were moved, the meshes kept.)
                 unkeyed=(reuse is True or reuse in ('materials','transforms')) and (reuse=='materials' or not animated(modo.Scene(),items))
                 if full or changed or not unkeyed or getattr(self,'_live_still',None)!=still:
+                    # Read once, and the shutter's ends asked of where the items stand: where nothing moves, that
+                    # reading is the picture (its meshes not read a second time); else the scene is read with its motion.
+                    from .animation import shutter_moves
+                    scene=first=self._capture(reuse,items if reuse=='transforms' else None);blurred=True
+                    try:moving=shutter_moves(self._geometry_cache,self._settings_values()['surface']==2) if self._geometry_cache is not None else None
+                    except Exception:moving=None
+                    self.changes.consume()
+                    if moving is False:self._live_still=still
+                if blurred and moving is not False:
                     from .motion import moves
-                    scene=self._capture_preview();blurred=True
+                    scene=self._capture_preview()
                     if moves(scene):
                         # The meshes are read whole again on the next edit: a reading at the shutter's ends leaves none to reuse.
                         self._geometry_cache=None;self._live_still=None
                     else:
                         # Nothing moves: the scene as read once, the same picture, its meshes kept for the next move.
                         self._live_still=still
-                        scene=self._capture()
+                        scene=first if first is not None else self._capture()
             if not blurred:
                 scene = self._capture(reuse,items if reuse=='transforms' else None)
+            # The meshes as they were: their cut is kept (_submit).
+            self._detail_kept=not full and not changed and (reuse is True or reuse in ('materials','transforms'))
             if held:
                 # Whatever was dragged, if it changed what lights the scene from all around (an environment, one of
                 # its layers or where that sits, a sky's sun, a MoonRay environment light), it is shown on release.
@@ -1702,6 +1764,7 @@ class Panel(Tools, QtWidgets.QWidget):
     def stop(self):
         self._draft_quiet=False
         self.refine_timer.stop()
+        self.detail_timer.stop();self._detail_fine=False;self._detail_now=None
         self._pending_preview=False;self.release_timer.stop()
         self.preview_timer.stop()
         if self.sequence is not None:
@@ -1856,6 +1919,9 @@ class Panel(Tools, QtWidgets.QWidget):
     def _renderer_status(self,text):
         # Left as it is while a draft redraws by itself.
         if getattr(self,'_draft_quiet',False):return
+        # A scene made ready, with the Scene cache on: said as that (its prepared meshes are kept as they are made).
+        from . import cache_folder
+        if text in PREPARATIONS and cache_folder.scene_cache():text=cache_folder.CACHING
         self.status.setText(text)
 
     def _render_progress(self,value,label):
@@ -1940,6 +2006,27 @@ class Panel(Tools, QtWidgets.QWidget):
             if self._following and self.preferences.get('ipr/refine') and snapshot.get('_ipr') and not snapshot.get('_ipr_refined') and snapshot.get('render_settings',{}).get('max_adaptive_samples',1)<16:
                 self.refine_timer.start()
 
+    def _refine_detail(self):
+        """The scene left alone: its meshes cut finer, where the coarse cut left any coarser."""
+        if self.disposed or not self._following or self.preview_lock.isChecked() or self._output_busy():return
+        from .interaction import dragging
+        if dragging() or self.release_timer.isActive():self.detail_timer.start();return
+        from . import moonlightipr_scene
+        from .moonlightipr_detail import rested
+        scene=self._ipr_refine_scene
+        if scene is None:return
+        # A scene still being made ready is waited for: what its cut left coarser is known once it is (LAST_REFINABLE),
+        # and before, the refinement was missed until the next edit, then made in the middle of it.
+        if getattr(getattr(self.renderer,'moonlightipr',None),'packer',None) is not None:self.detail_timer.start();return
+        # At rest: the meshes cut anew, once, where the view came far enough from the camera held through its moves
+        # (moonlightipr_detail.rested); MoonLightIPR's coarse cut made fine besides.
+        moved=not scene.get('dicing_camera') and rested(scene.get('camera') or {},scene.get('meshes',[]),60.0 if self._engine()=='moonray' else None)
+        refinable=self._engine()=='moonlightipr' and moonlightipr_scene.LAST_REFINABLE
+        if not (moved or refinable):return
+        self._detail_fine=True;self._detail_recut=moved
+        try:self._submit(scene)
+        except Exception as exc:self._failed(str(exc))
+
     def _refine_ipr(self):
         if self.disposed or not self._following or not self.preferences.get('ipr/refine') or self.preview_lock.isChecked() or self._output_busy():return
         from .interaction import dragging
@@ -1955,6 +2042,7 @@ class Panel(Tools, QtWidgets.QWidget):
         if not self.disposed:
             self.disposed = True
             self.refine_timer.stop()
+            self.detail_timer.stop()
             self.changes.close()
             self.release_timer.stop()
             self.display_timer.stop()

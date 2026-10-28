@@ -18,6 +18,9 @@ MESH_HAS_DATA, MESH_HAS_NORMALS, MESH_HAS_MATERIAL_IDS, MESH_SMOOTH, MESH_HAS_UV
 MESH_DISPLACE = 1024
 # The most triangles a displaced mesh is split into, to keep the preview quick.
 DISPLACED_TRIANGLES = 400000
+# Whether the last scene packed with coarse detail had a mesh cut coarser than at rest (moonlightipr_detail): the
+# preview window then sends the scene again with fine detail once it is left alone.
+LAST_REFINABLE = False
 # A subdivision surface is refined in the session, up to this many quads; MoonRay's own limit is finer.
 SUBDIVISION_QUADS = 3000000
 SCENE_DENOISE, SCENE_WORKING_SPACE, SCENE_MOTION, SCENE_PRESENCE_SHADOWS = 1, 2, 4, 8
@@ -31,6 +34,10 @@ LOCAL_LIGHTS = {'SphereLight': 0, 'RectLight': 1, 'DiskLight': 2, 'SpotLight': 3
 MESH_LIGHT = 6
 MESH_LIGHT_TRIANGLES = 50000
 _packed = {}
+# A mesh of this many faces or more is kept by the Scene cache once packed (cache_folder); and the form of a packed mesh,
+# so that one kept in another form is not taken.
+LASTING_FACES = 20000
+PACKED_FORM = 1
 _emitters = {}
 
 
@@ -491,8 +498,8 @@ def cage_payload(mesh, material_index, slots, warnings):
         raise ValueError('Invalid face in ' + mesh['name'])
     if min(map(len, faces)) < 3 or max(corners) >= len(vertices):
         raise ValueError('Invalid face in ' + mesh['name'])
-    positions = array('f', chain.from_iterable(vertices))
-    if not math.isfinite(sum(positions)):
+    positions = _numbers(vertices, 3)
+    if not _finite(positions):
         raise ValueError('Mesh %s contains a non-finite number' % mesh['name'])
     sizes = array('I', map(len, faces))
     material_ids = array('I')
@@ -524,7 +531,7 @@ def cage_payload(mesh, material_index, slots, warnings):
     return _packed[signature]
 
 
-def displaced(mesh, key, flags, payload, materials, material_index, warnings):
+def displaced(mesh, key, flags, payload, materials, material_index, warnings, limit=None):
     """A mesh as the session displaces it, where one of its materials displaces it (form 'L'): after its data, how many
     times to split each triangle into four, the material its instances give it, and each displacing material's
     program (moonlightipr_materials.displacement_tree), as its count and its operations. The key then names the
@@ -546,7 +553,8 @@ def displaced(mesh, key, flags, payload, materials, material_index, warnings):
     else:
         triangles = sum(len(f) - 2 for f in faces)
     levels = 0
-    while levels < 8 and triangles * 4 ** (levels + 1) <= DISPLACED_TRIANGLES:
+    # As many times as its budget allows, and no more than its size on screen needs (limit, moonlightipr_detail).
+    while levels < 8 and triangles * 4 ** (levels + 1) <= DISPLACED_TRIANGLES and (limit is None or levels < limit):
         levels += 1
     trailer = struct.pack('<3I', levels, material_index.get(mesh.get('material', ''), material_index['']), len(distances))
     for index, program in distances:
@@ -570,11 +578,24 @@ def _numbers(rows, width):
     return array('f', chain.from_iterable(rows))
 
 
+def _finite(values):
+    """Whether every number of a float array is finite: by the adapter, away from Python's lock, where it can; else a
+    sum, which is finite only if every term is."""
+    from .rows import finite
+    held = finite(values)
+    return held if held is not None else math.isfinite(sum(values))
+
+
 def _by_corner(rows, corners):
     """Points (three numbers each) at each corner, flat. From the bytes they came in where they did: each point's
     twelve bytes joined, twice as fast as gathering the lists' numbers."""
     held = flat(rows)
     if held is not None and held[0].typecode == 'f' and len(held[0]) == 3 * len(rows):
+        # By the adapter where it can: away from Python's lock (joined here, a car's meshes held Modo for seconds).
+        from .rows import gather
+        gathered = gather(held[0], 12, corners)
+        if gathered is not None:
+            return gathered
         data = held[0].tobytes()
         pieces = [data[i:i + 12] for i in range(0, len(data), 12)]
         result = array('f')
@@ -583,8 +604,9 @@ def _by_corner(rows, corners):
     return array('f', chain.from_iterable(map(rows.__getitem__, corners)))
 
 
-def mesh_payload(mesh, material_index, slots):
-    """Triangulate one mesh; return (key, flags, payload, slot map), cached by the content of its lists.
+def mesh_payload(mesh, material_index, slots, simplified=None):
+    """Triangulate one mesh; return (key, flags, payload, slot map), cached by the content of its lists. simplified,
+    where given (moonlightipr_detail), makes it lighter first: about its triangles, within its error (simplify.py).
 
     slots maps coordinate keys to scene-wide slots; the mesh carries the sets it has, and the
     slot map says which of them serves each slot.
@@ -609,10 +631,20 @@ def mesh_payload(mesh, material_index, slots):
     signature = (content(vertices), content(faces), content(normals) if normals else '',
                  content(face_materials) if face_materials is not None else '', smooth,
                  tuple(sorted(material_index.items())) if face_materials is not None else (),
-                 tuple((slot, content(values)) for slot, values in sets), content(closing) if closing is not None else '')
+                 tuple((slot, content(values)) for slot, values in sets), content(closing) if closing is not None else '',
+                 (simplified['triangles'], round(simplified['error'], 6)) if simplified else None)
     cached = _packed.get(signature)
     if cached:
         return cached
+    # A heavy mesh, or one made lighter, as the Scene cache kept it (cache_folder): simplifying and packing a car's 29
+    # dense meshes took 35 s; a small one is packed sooner than read.
+    lasting = bool(simplified) or len(faces) >= LASTING_FACES
+    if lasting:
+        from . import cache_folder
+        held = cache_folder.kept('MoonLightIPR/meshes', ('mesh', PACKED_FORM, signature))
+        if held is not None:
+            _packed[signature] = held
+            return held
     if face_materials is not None and len(face_materials) != len(faces):
         raise ValueError('Face materials must match the face count')
     held = flat(faces)
@@ -625,18 +657,23 @@ def mesh_payload(mesh, material_index, slots):
             corners = array('I', chain.from_iterable(faces))
         except (TypeError, OverflowError):
             raise ValueError('Invalid face in ' + mesh['name'])
-    widest = max(map(len, faces))
-    if min(map(len, faces)) < 3 or max(corners) >= len(vertices):
+    # The faces' sizes from their counts where Modo handed them over (each face walked, they were made lists one by one,
+    # Python's lock held), and the largest corner by the adapter.
+    from .rows import counts as face_counts, most, iota
+    sizes_held = face_counts(faces)
+    widest = max(sizes_held) if sizes_held is not None and len(sizes_held) else max(map(len, faces))
+    least = min(sizes_held) if sizes_held is not None and len(sizes_held) else min(map(len, faces))
+    if least < 3 or most(corners) >= len(vertices):
         raise ValueError('Invalid face in ' + mesh['name'])
     # Modo's render cache gives triangles: then each corner is a triangle corner, as it is.
     triangles = widest == 3
     if normals and len(normals) != len(corners):
         raise ValueError('Face-varying normals must match the corner count')
-    quads = not triangles and all(len(face) == 4 for face in faces)
+    quads = not triangles and least == widest == 4
     fan = None      # each triangle corner as an index into the polygon corners
     if normals or sets:
         if triangles:
-            fan = array('I', range(len(corners)))
+            fan = iota(len(corners))
         elif quads:
             fan = array('I', [o + k for o in range(0, len(corners), 4) for k in (0, 1, 2, 0, 2, 3)])
         else:
@@ -664,7 +701,7 @@ def mesh_payload(mesh, material_index, slots):
             indices = array('I', [face[k] for face in faces for k in _fan(len(face))])
         positions, shading = _numbers(vertices, 3), array('f')
     # A sum is finite only if every term is.
-    if not math.isfinite(sum(positions)) or not math.isfinite(sum(shading)) or not math.isfinite(sum(moved)):
+    if not all(_finite(values) for values in (positions, shading, moved)):
         raise ValueError('Mesh %s contains a non-finite number' % mesh['name'])
     material_ids = array('I')
     if face_materials is not None:
@@ -678,8 +715,17 @@ def mesh_payload(mesh, material_index, slots):
             raise ValueError('Texture coordinates of %s must match its polygon corners' % mesh['name'])
         slot_map[slot] = len(uvs)
         uvs.append(_numbers(values, 2) if triangles else array('f', chain.from_iterable(map(values.__getitem__, fan))))
-        if len(uvs[-1]) != len(fan) * 2 or not math.isfinite(sum(uvs[-1])):
+        if len(uvs[-1]) != len(fan) * 2 or not _finite(uvs[-1]):
             raise ValueError('Mesh %s has invalid texture coordinates' % mesh['name'])
+    if simplified:
+        # Lighter, as far as it is small on screen: its normals the full mesh's (given where it had none and is smooth).
+        from . import simplify
+        made = simplify.arrays(positions, indices, shading if normals else None, moved if moved else None, uvs,
+                               material_ids if face_materials is not None else None, smooth, simplified['triangles'], simplified['error'])
+        if made is not None:
+            positions, given, moved, indices, uvs, material_ids, _ = made
+            if len(given):
+                shading, normals = given, True
     flags = ((MESH_HAS_NORMALS if normals else MESH_SMOOTH if smooth else 0) | (MESH_HAS_MATERIAL_IDS if face_materials is not None else 0)
              | (MESH_HAS_UVS if uvs else 0) | (MESH_MOVES if moved else 0))
     payload = struct.pack('<2I', len(positions) // 3, len(indices) // 3) + positions.tobytes() + shading.tobytes() + indices.tobytes() + material_ids.tobytes()
@@ -688,6 +734,9 @@ def mesh_payload(mesh, material_index, slots):
     payload += moved.tobytes()
     key = hashlib.blake2b(struct.pack('<I', flags) + payload, digest_size=8).digest()
     _packed[signature] = (key, flags, payload, struct.pack('<%di' % UV_SLOTS, *slot_map))
+    if lasting:
+        from . import cache_folder
+        cache_folder.keep('MoonLightIPR/meshes', ('mesh', PACKED_FORM, signature), _packed[signature])
     return _packed[signature]
 
 
@@ -914,9 +963,44 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     objects = scene.get('production', {}).get('objects', {})
 
     used, meshes, instances, order = set(), [], [], {}
-    for mesh in list(geometry.render_meshes(scene.get('meshes', []))) + [fog for fog, _, _ in fogs]:
+    drawn = list(geometry.render_meshes(scene.get('meshes', []))) + [fog for fog, _, _ in fogs]
+    # How finely each subdivided and displaced mesh is cut: by its size on screen, coarser while the scene is being
+    # edited (its _geometry_detail, from the preview window), never finer than Modo's level or the budget.
+    from . import moonlightipr_detail
+    from .moonlightipr_materials import displacement as displacement_program
+
+    def displaces(mesh):
+        for tag in set(mesh.get('face_materials') or [mesh.get('material', '')]):
+            held = materials.get(tag if tag in materials else '')
+            if held and displacement_program(held):
+                return True
+        return False
+    global LAST_REFINABLE
+    # Following the scene, its meshes are cut from a camera held through its edits (_detail_keep, the preview window):
+    # cut from the camera itself, a move of it simplified and packed dense meshes anew (a car's 26 s, Modo held meanwhile).
+    cutting = moonlightipr_detail.held_dicing(camera, drawn, bool(scene.get('_detail_keep'))) if scene.get('_geometry_detail') else camera
+    cuts, LAST_REFINABLE = moonlightipr_detail.plan(drawn, cutting, width, scene.get('_geometry_detail', 'fine'), displaces)
+    # The dense meshes made lighter side by side first (the adapter lets Python go meanwhile): the loop below then finds
+    # them packed (a car's 30 dense meshes, 22 s one after another).
+    dense = [(mesh, cuts[id(mesh)]['simplify']) for mesh in drawn
+             if mesh['faces'] and not mesh.get('subdivision') and (cuts.get(id(mesh)) or {}).get('simplify')]
+    if len(dense) > 1:
+        import os
+        from concurrent.futures import ThreadPoolExecutor
+
+        def ahead(pair):
+            try:
+                mesh_payload(pair[0], material_index, compiler.slots, pair[1])
+            except Exception:
+                pass    # Said again, and stopped on, when the loop comes to it.
+        with ThreadPoolExecutor(max_workers=min(len(dense), os.cpu_count() or 4)) as pool:
+            list(pool.map(ahead, dense))
+    for mesh in drawn:
         if not mesh['faces']:
             continue
+        cut = cuts.get(id(mesh))
+        if cut is not None and mesh.get('subdivision'):
+            mesh = dict(mesh, subdivision_level=cut['subdivision'])
         if set(mesh.get('face_materials') or [mesh.get('material', '')]) <= alone:
             # A fog that is not even all through (a VDB's, or one with ramps), which MoonLightIPR draws in VDB items only.
             warnings.append('MoonLightIPR leaves out %s, whose fog is not even all through; MoonRay renders it.' % mesh['name'])
@@ -926,8 +1010,8 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
                 warnings.append('MoonLightIPR shows subdivision mesh %s without its change of shape during the shutter.' % mesh['name'])
             key, flags, payload, slot_map = cage_payload(mesh, material_index, compiler.slots, warnings)
         else:
-            key, flags, payload, slot_map = mesh_payload(mesh, material_index, compiler.slots)
-        key, flags, payload = displaced(mesh, key, flags, payload, materials, material_index, warnings)
+            key, flags, payload, slot_map = mesh_payload(mesh, material_index, compiler.slots, cut.get('simplify') if cut else None)
+        key, flags, payload = displaced(mesh, key, flags, payload, materials, material_index, warnings, cut['splits'] if cut else None)
         if key not in order:
             order[key] = len(meshes)
             # Send the data once per session; later scenes refer to it by key.

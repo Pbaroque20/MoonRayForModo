@@ -19,6 +19,9 @@ def supported(runtime):
 
 # The most MoonRay takes of a scene through shared memory: the loaded renderer refuses more.
 SHARED_LIMIT=256*1024*1024
+# The most scene text a delta is made from on Modo's own thread (_dispatch), where the one the writer made is against
+# a scene since replaced: a few thousandths of a second where the meshes are in the binary file.
+DIFF_HERE=4*1024*1024
 # For trying the other way with a small scene: MOONRAY_MODO_SHARED_LIMIT, in bytes, lowers it.
 try:SHARED_LIMIT=max(0,min(SHARED_LIMIT,int(os.environ.get('MOONRAY_MODO_SHARED_LIMIT',SHARED_LIMIT))))
 except ValueError:pass
@@ -179,16 +182,22 @@ class Session(QtCore.QObject):
         request=self.latest
         if not request or (self.applied and request['id']==self.applied['id']):return
         prepared=request.get('prepared')
-        if prepared is not None:
-            # APPLIED may advance while the writer runs. A stale delta is unsafe; use its full scene.
-            delta=prepared['delta'] if prepared['base'] is self.applied else None
-        else:delta=difference(self.applied['text'],request['text']) if self.applied else None
+        delta_bytes=(prepared or {}).get('delta_bytes')
+        if prepared is not None and prepared['base'] is self.applied:delta=prepared['delta']
+        else:
+            # APPLIED may advance while the writer runs, as it does through a drag of the camera: a delta made against
+            # another scene is unsafe. It is made again against the one applied where the scene's text is small (its
+            # meshes in the binary file), as it is on Modo's thread; else, or where it cannot be made, the full scene
+            # goes (a reload).
+            small=self.applied and len(request['text'])<=DIFF_HERE and len(self.applied['text'])<=DIFF_HERE
+            delta=difference(self.applied['text'],request['text']) if small else None
+            delta_bytes=None
         full=self._write_scene(request,'full',request['text'],(prepared or {}).get('full_bytes'))
         if (prepared or {}).get('binary'):
             # Its geometry's binary file, read after the text when MoonRay reloads (rdlb.py).
             binary=self.root/('%d.full.rdlb'%request['id']);binary.write_bytes(prepared['binary'])
             full='%s|%s'%(full,binary)
-        path=self._write_scene(request,'delta',delta,(prepared or {}).get('delta_bytes')) if delta is not None else full
+        path=self._write_scene(request,'delta',delta,delta_bytes) if delta is not None else full
         mode='delta' if delta is not None else 'full'
         staged=self.root/'command.tmp'
         command='%d\n%s\n%s\n%s\n'%(request['id'],mode,str(path).replace('\\','/') if not self.scene_memory else str(path),str(full).replace('\\','/') if not self.scene_memory else str(full))
@@ -209,7 +218,10 @@ class Session(QtCore.QObject):
                     from .shared_image import receive
                     packet=receive(line,self.process.processId())
                     if not self.stopping and not self.closed and self.latest and packet[0]==self.latest['id']:self.memory_image.emit(packet)
-                except (ValueError,OSError) as exc:self.status.emit('Progressive image skipped: '+str(exc))
+                except (ValueError,OSError) as exc:
+                    # A frame already taken back (shared_image.Withdrawn) is passed over without a word: newer ones follow.
+                    from .shared_image import Withdrawn
+                    if not isinstance(exc,Withdrawn):self.status.emit('Progressive image skipped: '+str(exc))
                 continue
             if not line.startswith('@@MODO_SESSION '):continue
             parts=line.strip().split()
