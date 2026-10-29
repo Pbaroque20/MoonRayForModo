@@ -366,14 +366,14 @@ XPU2 is an experimental renderer for MoonRay previews: MoonRay's path tracer and
 asynchronous design, where the processor and the graphics card each take their own work from one grid. It is not
 affiliated with or endorsed by DreamWorks Animation.
 
-Turn it on in Modo: System > Preferences > MoonRay > XPU2 (experimental) > GPU renderer > XPU2.
+It is the GPU renderer by default: System > Preferences > MoonRay > XPU2 > GPU renderer (MoonRay XPU or XPU2).
 It renders the preview when the render's execution mode is XPU or Auto. Final renders, MoonRay LS and MoonLightIPR
 are MoonRay's as before. XPU2 previews render the buffers the preview asks for (beauty, alpha and the AOVs) and are
 denoised as MoonRay's are: the Denoiser, Smart Render and Safe Denoising work with it. Continue after a Safe
 Denoising stop is MoonRay's still.
 
-First, once: Compile XPU2 Shaders on the same page (a few minutes, in the background; Modo stays usable). Until the
-shaders are compiled, previews are rendered by MoonRay XPU.
+First, once: Compile XPU2 Shaders on the same page (in the background; Modo stays usable, and the page shows how far
+it has come and about how long is left). Until the shaders are compiled, XPU2 does not render: the preview says so.
 
 A scene XPU2 does not render yet is rendered by MoonRay XPU instead; the Render Log says why ("MoonRay XPU2: ..."). Not
 rendered yet, among others: deep output, continuing a saved render, a camera medium, normal-oriented curves, volumes bound to curves
@@ -383,6 +383,29 @@ or points, and scenes over 8 million pixels or 16 million triangles. What the gr
 The preview shows the outlines of the work for uniform and adaptive sampling: each processor thread's 8-pixel tile,
 and the grid cells the graphics card's queued work holds. With "Adaptive passes on the graphics card" on, adaptive
 renders are quicker and show no outlines.
+
+How XPU2 samples
+
+XPU2 renders a preview in generations. Every pixel first gets a few samples, a first look. Then each generation
+looks at where the picture is still noisy and sends the next samples there, and parts that are already clean stop.
+Plain areas such as a wall or the sky finish quickly; hard ones such as glossy reflections, soft shadows and glass get
+more. Only where the samples go changes, not how each one is worked out, so the picture settles to MoonRay's.
+
+The settings are in Render Settings, under XPU2 Sampling Generations:
+
+- Generation Samples: What the render is worth, in samples a pixel on average (default: 16).
+- Halting Rule: Time: stop after about the time a plain render of that many samples takes, spent where the noise is. Exact: every pixel gets exactly that many (default: Time).
+- Halt at Noise: A part of the picture stops once it is this clean (lower is cleaner, and slower) (default: 10).
+- First Look: Samples every pixel gets before the generations choose (default: 4).
+- XPU2 Most Samples: The most one pixel may get (default: 16 times the average).
+- XPU2 CPU Workers: The processor works beside the graphics card (default: On).
+
+A scene set to adaptive sampling uses its own Minimum Samples, Maximum Samples and Target Error. While XPU2 renders
+the preview, MoonRay's own sampling fields are greyed and show what XPU2 takes; final renders use them as always.
+
+The line under the picture says how it samples: XPU2 Gen. 16 ps avg (4-256), noise 10 is 16 samples a pixel on
+average, 4 to 256 in any one pixel, each part stopping at noise 10. The MoonRay Terminal shows each generation as it
+goes, with how much of the picture is still sampling.
 
 runtime-xpu2/ is XPU2's own runtime (its preview session and the libraries it was built with); runtime/ is the
 kit's, with the MoonLightIPR branch's denoiser (denoise.exe, libdenoiser.dll): Keep Fine Detail only over fur, hair and
