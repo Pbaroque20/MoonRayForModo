@@ -33,14 +33,24 @@ def camera_kind(entity):
     return 'map' if (entity.get('parameters') or {}).get('pixel_sample_map') else ''
 
 
-def plan(held, camera=None):
+def budget(generations, grid, realtime=False):
+    """Generation Samples as XPU2 is given them (rdla.py): while realtime follows the scene, the share of them its
+    Realtime Samples says (Pixel Samples squared where Generation Samples is 0), one at least."""
+    samples = int(generations.get('samples', 0))
+    share = int(generations.get('realtime', 100))
+    if not realtime or share >= 100:
+        return samples
+    return max(1, int(round((samples or int(grid) ** 2) * share / 100.0)))
+
+
+def plan(held, camera=None, realtime=False):
     """What XPU2 makes of a scene's complete settings (scene_settings.complete): a dict of generations (whether they
     choose where samples go), average (samples a pixel on average), low and high (the fewest and most a pixel), noise
     (where a part of the picture halts, in Target Error's units; 0: none), exact (every pixel gets the average) and
-    camera (camera_kind, the last preview's unless given)."""
+    camera (camera_kind, the last preview's unless given). realtime: as realtime following the scene has it (budget)."""
     camera = CAMERA[0] if camera is None else camera
     g = held.get('xpu2_generations') or {}
-    samples, seed, most = int(g.get('samples', 0)), int(g.get('seed', 0)), int(g.get('most', 0))
+    samples, seed, most = budget(g, held.get('samples', 4), realtime), int(g.get('seed', 0)), int(g.get('most', 0))
     noise, exact = float(g.get('noise', 0.0)), g.get('spend') == 'samples'
     grid = int(held.get('samples', 4)) ** 2
     n = samples or grid
@@ -70,9 +80,9 @@ def shown(held, key, value):
     return p['noise'] if p['noise'] else value
 
 
-def words(held):
-    """The picture's sampling label while XPU2 renders the preview."""
-    p = plan(held)
+def words(held, realtime=False):
+    """The picture's sampling label while XPU2 renders the preview (realtime: following the scene)."""
+    p = plan(held, realtime=realtime)
     if not p['generations']:
         return 'XPU2 Uniform %d ps%s' % (p['average'], {'map': ', sample map', 'bake': ', bake'}.get(p['camera'], ''))
     text = 'XPU2 Gen. %d ps avg%s (%d-%d)' % (p['average'], ' exact' if p['exact'] else '', p['low'], p['high'])

@@ -26,6 +26,7 @@ The settings are in **Render Settings**, in their own group, XPU2 Sampling:
 | First Look | Samples every pixel gets before the generations choose | 4 |
 | Most Samples | The most one pixel may get | 16 times the average |
 | CPU Workers | The processor works beside the graphics card | On |
+| Realtime Samples | While RT follows the scene, the share of Generation Samples it takes: lower settles sooner, noisier | 100% |
 
 These settings always decide how XPU2 samples a preview. MoonRay's Sampling Mode and its adaptive settings are for
 MoonRay renders: while XPU2 renders the preview they are greyed and show what XPU2 takes, and final renders use them as

@@ -384,6 +384,85 @@ struct Scene {
     // the plan the last camera-only one was made from (the GPU's configuration alone goes again, GpuLane::updateCamera).
     bool cameraOnly = false;
     cpu::PlanView cameraFrom;
+    // The placement-only fast path (realtime): the plan of the last full preparation (basePlan), the render space its
+    // meshes were prepared in (baseW2R), and where each of its geometries stood then (basePlaced); whether the changes
+    // since are moves of geometries alone (placementOnly; the camera and the outputs' files besides, placementCamera,
+    // outputsRenamed), and those moves (moved: node_xform then and now). The change flags stay up until the next full
+    // preparation, as for the camera alone: each placement-only plan is made from the base, with every move since.
+    cpu::PlanView basePlan;
+    double baseW2R[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    std::map<std::string, rdl::Mat4d> basePlaced;
+    // The geometries an instancer copies: moving one may move its copies (use_reference_xforms), read again whole.
+    std::set<std::string> baseReferenced;
+    bool placementOnly = false, placementCamera = false;
+    std::map<std::string, std::pair<rdl::Mat4d, rdl::Mat4d>> moved;
+    // And the lights edited since the base plan (any of their settings), admitted again (cpu::updateLights).
+    std::vector<const rdl::SceneObject*> editedLights;
+    // A full plan the placement-only fast path starts from (after a full preparation, or the full plan after a coarse
+    // one): its render space, and where its meshes' geometries stand.
+    void keepBase(const cpu::PlanView& full) {
+        basePlan = full;
+        std::memcpy(baseW2R, full->world2render, sizeof baseW2R);
+        basePlaced.clear();
+        baseReferenced.clear();
+        for (auto it = source->beginSceneObject(); it != source->endSceneObject(); ++it) {
+            if (it->second->getSceneClass().getName() != "InstanceGeometry") continue;
+            for (const rdl::SceneObject* r : it->second->get<rdl::SceneObjectVector>("references"))
+                if (r) baseReferenced.insert(r->getName());
+        }
+        for (const auto& e : full->meshes) {
+            if (e.owner.empty() || basePlaced.count(e.owner)) continue;
+            if (!source->sceneObjectExists(e.owner)) continue;
+            const rdl::SceneObject* o = source->getSceneObject(e.owner);
+            basePlaced[e.owner] = o->get<rdl::Mat4d>("node_xform", rdl::TIMESTEP_BEGIN);
+        }
+    }
+    // Whether every change since the base plan is a geometry's node_xform alone or a light's (and the camera's, or
+    // outputs' files), each geometry one of the base plan's, still at the shutter's open and close alike.
+    bool onlyPlacementsDirty() {
+        moved.clear();
+        editedLights.clear();
+        placementCamera = outputsRenamed = false;
+        const rdl::SceneObject* camera = source->getSceneVariables().get(rdl::SceneVariables::sCamera);
+        for (auto it = source->beginSceneObject(); it != source->endSceneObject(); ++it) {
+            const rdl::SceneObject* o = it->second;
+            if (!o->isDirty()) continue;
+            if (o == camera) {
+                placementCamera = true;
+                continue;
+            }
+            if (o->isA<rdl::RenderOutput>()) {
+                outputsRenamed = true;
+                continue;
+            }
+            if (o->isA<rdl::Light>()) {
+                editedLights.push_back(o);
+                continue;
+            }
+            if (baseReferenced.count(o->getName())) {
+                std::printf("MoonRay XPU2: not placements alone: %s is an instancer's reference\n", o->getName().c_str());
+                return false;
+            }
+            const auto held = basePlaced.find(o->getName());
+            if (held == basePlaced.end()) {
+                std::printf("MoonRay XPU2: not placements alone: %s changed\n", o->getName().c_str());
+                return false;
+            }
+            const auto& cls = o->getSceneClass();
+            for (auto a = cls.beginAttributes(); a != cls.endAttributes(); ++a) {
+                if ((*a)->getName() == "node_xform" || !o->isAttributeSet(*a)) continue;
+                std::printf("MoonRay XPU2: not placements alone: %s's %s changed\n", o->getName().c_str(), (*a)->getName().c_str());
+                return false;
+            }
+            const rdl::Mat4d now = o->get<rdl::Mat4d>("node_xform", rdl::TIMESTEP_BEGIN);
+            if (!(o->get<rdl::Mat4d>("node_xform", rdl::TIMESTEP_END) == now)) {
+                std::printf("MoonRay XPU2: not placements alone: %s moves during the shutter\n", o->getName().c_str());
+                return false;
+            }
+            moved[o->getName()] = {held->second, now};
+        }
+        return !moved.empty() || !editedLights.empty();
+    }
     // The coarse first pass (coarse_geometry.h; XPU2_SESSION_COARSE_FIRST=0 leaves it out): a full preparation is made
     // coarse first, where that makes any mesh lighter (coarse), and the full plan from the same canonical frame
     // (frameHeld) by refine() while the coarse one renders. Not for realtime, whose geometry the kit cuts already.
@@ -526,6 +605,7 @@ struct Scene {
         readInto(*source, delta);
         changed = true;
         cameraOnly = plan && onlyCameraDirty();
+        placementOnly = !cameraOnly && basePlan && !coarse && onlyPlacementsDirty();
     }
     // The plan for the scene as it stands; refusals throw cpu::Unsupported.
     void prepare() {
@@ -560,6 +640,43 @@ struct Scene {
                 return;
             }
         }
+        // A placement-only edit: the base plan with each moved geometry's meshes placed anew (cpu::placeMoved), and the
+        // camera and outputs' files as they now are; its CPU scene made again, the card's meshes kept (GpuLane::prepare
+        // takes over each mesh's structure by its data).
+        if (placementOnly && basePlan && !coarse) {
+            const auto began = std::chrono::steady_clock::now();
+            auto next = std::make_shared<cpu::Plan>(*basePlan);
+            std::string why;
+            bool ok = !placementCamera || cpu::updateCamera(*next, *source);
+            if (!ok) why = "the plan cannot take the camera";
+            if (ok && outputsRenamed && next->aovs) {
+                try {
+                    auto outputs = aov::buildPlan(*source);
+                    ok = sameButFiles(*outputs, *next->aovs);
+                    if (ok) next->aovs = outputs;
+                } catch (...) {
+                    ok = false;
+                }
+                if (!ok) why = "the outputs changed besides their files";
+            }
+            if (ok) ok = cpu::placeMoved(*next, moved, baseW2R, why);
+            if (ok) ok = cpu::updateLights(*next, *source, editedLights, why);
+            if (ok) {
+                plan = next;
+                // The CPU's Embree scenes taken over where no mesh is placed otherwise (lights alone, or the moves undone).
+                if (cpuScene && cpuScene->plan && async::CpuScene::sameGeometry(*cpuScene->plan, *plan))
+                    cpuScene = std::make_unique<async::CpuScene>(plan, std::move(*cpuScene));
+                else
+                    cpuScene = std::make_unique<async::CpuScene>(plan);
+                changed = placementOnly = cameraOnly = false;
+                std::printf("MoonRay XPU2: placements and lights alone changed (%zu geometries, %zu lights): prepared in %.1f ms\n",
+                            moved.size(), editedLights.size(),
+                            std::chrono::duration<double>(std::chrono::steady_clock::now() - began).count() * 1000.0);
+                return;
+            }
+            std::printf("MoonRay XPU2: not placements alone: %s\n", why.c_str());
+        }
+        placementOnly = false;
         cameraOnly = false;
         ++epoch;
         const fs::path folder = staging / ("frame-" + std::to_string(++frames));
@@ -616,6 +733,8 @@ struct Scene {
         if (!lastFolder.empty()) fs::remove_all(lastFolder, ignored);
         lastFolder = folder;
         changed = false;
+        if (!coarse) keepBase(plan);
+        else basePlan.reset();
     }
     // The full plan after a coarse one (the coarse first pass): from the same canonical frame, the coarse plan's
     // materials, textures and lights taken over (its coarse meshes never are), and its CPU scene. On a thread of its own,
@@ -1473,6 +1592,7 @@ int session(const Args& args, const fs::path& directory) {
                     outlines.watch(nullptr, id, 0, 0);
                     renderer.reset();
                     scene.plan = full.first;
+                    scene.keepBase(scene.plan);
                     scene.cpuScene = std::move(full.second);
                     if (gpu) {
                         const std::string why = async::GpuLane::cpuOnly(scene.plan);

@@ -117,6 +117,10 @@ struct Mesh {std::shared_ptr<const MeshData> data;unsigned material;int volume=-
  // Left to the CPU lane by the card's budget (routeMeshes): a stand-in on the GPU, its samples deferred to the CPU. Last:
  // the plan builds a Mesh from its first fields in order ({data, material, volume, visibility, singleSided, geomLabel}).
  bool cpuOnly=false;
+ // The geometry that places this mesh, for a placement-only edit (placeMoved): its own where it has no instancer, else
+ // its instancer (ownerInstancer) where its instances share their reference's data. Empty for an instancer's instances
+ // baked each into a mesh of its own, which a move reads again whole.
+ std::string owner;bool ownerInstancer=false;
 };
 // A plan mesh's curve set (curve_core.h) over its own arrays (host memory).
 inline curves::Set curveSet(const MeshData& m){curves::Set c;if(!m.curveBasis)return c;
@@ -216,6 +220,8 @@ struct Plan {
     // The lights moving under motion blur (light_core.h's LightMotion, by light index), and each light's record at the
     // shutter's close (none: still), which bounds it in the light trees.
     std::vector<lights::LightMotion> lightMotion;std::vector<std::shared_ptr<const lights::Light>> lightClose;
+    // Each light's scene object by name, in the lights' order: a light-only edit (updateLights) finds its light by it.
+    std::vector<std::string> lightNames;
     // Light filters (light_filter_core.h): the filters, the distinct filter lists, and each mesh's table of a list a
     // light (filterTables from meshFilterTable's offset, lights entries, ~0u: no filters; ~0u offset: none at all),
     // and the cookies' textures.
@@ -2688,6 +2694,77 @@ inline bool updateCamera(Plan& plan,const rdl::SceneContext& context){
  plan.renderOrigin=V3{float(cm[3][0]),float(cm[3][1]),float(cm[3][2])};
  return true;
 }
+// A placement-only edit (the session's fast path, realtime): geometries moved and nothing else of them changed. Each of
+// their meshes is made an instance of the data prepared for it at the last full preparation (the plan given, that
+// preparation's), placed from where its geometry stood then to where it stands now: its data in that preparation's render
+// space (meshW2R, its world2render), the instance's transform that space's from then to now (render to world, the old
+// node_xform's inverse, the new one, world to render), its worldToObject the new node_xform's inverse as a full
+// preparation makes it. moves: each moved geometry's node_xform then and now. The meshes and their structures on the
+// card are taken over as they are; only where they are placed is new. false, with why, where a full preparation is
+// needed: a moving or volume-bounding mesh, points or curves, an instance already, one left to the CPU lane.
+inline bool placeMoved(Plan& plan,const std::map<std::string,std::pair<rdl::Mat4d,rdl::Mat4d>>& moves,const double meshW2R[16],std::string& why){
+ rdl::Mat4d w2r;for(int i=0;i<4;++i)for(int j=0;j<4;++j)w2r[i][j]=meshW2R[4*i+j];
+ const rdl::Mat4d r2w=w2r.inverse();
+ size_t placed=0;
+ for(auto& e:plan.meshes){
+  if(e.owner.empty())continue;
+  const auto f=moves.find(e.owner);if(f==moves.end())continue;
+  const MeshData& d=*e.data;
+  const rdl::Mat4d move=r2w*f->second.first.inverse()*f->second.second*w2r;
+  if(e.ownerInstancer){
+   // An instance of shared data its instancer places: its transform (render space) moved as the instancer is.
+   if(!e.instance){why=e.owner+"'s instance is not placed by a transform";return false;}
+   rdl::Mat4d x(e.objectToWorld[0],e.objectToWorld[1],e.objectToWorld[2],0,e.objectToWorld[3],e.objectToWorld[4],e.objectToWorld[5],0,
+                e.objectToWorld[6],e.objectToWorld[7],e.objectToWorld[8],0,e.objectToWorld[9],e.objectToWorld[10],e.objectToWorld[11],1);
+   placeInstance(e,x*move);
+   ++placed;continue;}
+  if(e.instance){why=e.owner+" is an instance already";return false;}
+  if(e.volume>=0){why=e.owner+" bounds a volume";return false;}
+  if(!d.steps.empty()){why=e.owner+" moves during the shutter";return false;}
+  if(d.points||d.curveBasis){why=e.owner+" is points or curves";return false;}
+  if(e.cpuOnly){why=e.owner+" is left to the CPU lane";return false;}
+  placeInstance(e,move);
+  const auto w=f->second.second.inverse();const double rows[12]={w[0][0],w[1][0],w[2][0],w[3][0],w[0][1],w[1][1],w[2][1],w[3][1],w[0][2],w[1][2],w[2][2],w[3][2]};
+  for(int i=0;i<12;++i)e.worldToObject[i]=float(rows[i]);
+  ++placed;}
+ // A moved geometry with no mesh of its own here (an instancer's, or one the plan left out): read again whole.
+ for(const auto& m:moves){bool found=false;for(const auto& e:plan.meshes)if(e.owner==m.first){found=true;break;}
+  if(!found){why=m.first+" has no mesh of its own in the plan";return false;}}
+ return placed>0||moves.empty();}
+// The light sets' trees (Scene::updateLightList's LightAccelerator::buildSamplingTree), for adaptive light sampling: made
+// again from the plan's lights (none kept).
+inline void buildLightTrees(Plan& p){
+ p.lightTree.clear();p.lightTreeRoots.clear();
+ if(!(p.paths&&p.lightSamplingMode==1))return;
+ const unsigned words=p.lightSetWords;
+ for(size_t k=0;k*words<p.lightSetBits.size();++k){std::vector<unsigned> set;
+  for(unsigned i=0;i<p.lights.size();++i)if(p.lightSetBits[k*words+(i>>5)]>>(i&31)&1u)set.push_back(i);
+  std::vector<const lights::Light*> close(p.lightClose.size());for(size_t q=0;q<close.size();++q)close[q]=p.lightClose[q].get();
+  p.lightTreeRoots.push_back(lights::buildLightTree(p.lights,set,p.lightTree,&close));}}
+// A light-only edit (the session's fast path, realtime): each edited light admitted again from the scene as a full
+// preparation admits it (admitLight), in its place among the plan's lights, and the light trees made again; meshes,
+// materials and the rest as they are. false, with why, where a full preparation is needed: a mesh light or portal, a
+// light turned off or new, motion blur, light filters.
+inline bool updateLights(Plan& plan,const rdl::SceneContext& context,const std::vector<const rdl::SceneObject*>& edited,std::string& why){
+ if(edited.empty())return true;
+ if(!plan.paths){why="not the path tracer";return false;}
+ if(plan.motion.on){why="motion blur";return false;}
+ if(!plan.filterLists.empty()){why="light filters";return false;}
+ if(plan.lightNames.size()!=plan.lights.size()){why="lights the plan cannot name";return false;}
+ const auto& sv=context.getSceneVariables();
+ const std::vector<std::shared_ptr<lights::ImageData>> earlier=plan.lightImages;
+ for(const rdl::SceneObject* o:edited){
+  const std::string cls=o->getSceneClass().getName();
+  if(cls=="MeshLight"||cls=="PortalLight"||!isLight(cls)){why=o->getName()+" is a "+cls;return false;}
+  const auto at=std::find(plan.lightNames.begin(),plan.lightNames.end(),o->getName());
+  if(at==plan.lightNames.end()){why=o->getName()+" is not among the plan's lights";return false;}
+  const size_t i=size_t(at-plan.lightNames.begin());
+  lights::Light l;
+  if(!admitLight(*o,get<rdl::Float>(sv,"scene_scale"),l,sv,plan.lightImages,&earlier)){why=o->getName()+" is off";return false;}
+  l.lpeLabel=plan.lights[i].lpeLabel;
+  plan.lights[i]=l;}
+ buildLightTrees(plan);
+ return true;}
 // Where prepare's time goes (the session's log): laps between its stages, the latest prepare's.
 struct PrepLaps{std::vector<std::pair<std::string,double>> laps;std::chrono::steady_clock::time_point last=std::chrono::steady_clock::now();
  std::map<std::string,double> parts;std::mutex lock;  // parts within the laps, summed (PrepPart)
@@ -3121,10 +3198,10 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
   }else if(paths&&cls=="MeshLight"){
    lights::Light l;if(layerLights.count(&o)&&admitMeshLight(o,get<rdl::Float>(sv,"scene_scale"),layer,sv,frame,l,plan->meshLightTables,previous?&previous->meshLightTables:nullptr,plan.get())){
     l.rayTerminator=get<rdl::Bool>(o,"ray_termination")?1u:0u;
-    if(plan->aovs)l.lpeLabel=plan->aovs->lpeLabel(aov::attribute<rdl::String>(o,"label",""));need(plan->lights.size()<65536,"At most 65536 lights");lightIds[&o]=unsigned(plan->lights.size());plan->lights.push_back(l);}
+    if(plan->aovs)l.lpeLabel=plan->aovs->lpeLabel(aov::attribute<rdl::String>(o,"label",""));need(plan->lights.size()<65536,"At most 65536 lights");lightIds[&o]=unsigned(plan->lights.size());plan->lights.push_back(l);plan->lightNames.push_back(o.getName());}
   }else if(paths&&isLight(cls)){
    lights::Light l;if(layerLights.count(&o)&&admitLight(o,get<rdl::Float>(sv,"scene_scale"),l,sv,plan->lightImages,previous?&previous->lightImages:nullptr)){
-    if(plan->aovs)l.lpeLabel=plan->aovs->lpeLabel(aov::attribute<rdl::String>(o,"label",""));need(plan->lights.size()<65536,"At most 65536 lights");lightIds[&o]=unsigned(plan->lights.size());plan->lights.push_back(l);
+    if(plan->aovs)l.lpeLabel=plan->aovs->lpeLabel(aov::attribute<rdl::String>(o,"label",""));need(plan->lights.size()<65536,"At most 65536 lights");lightIds[&o]=unsigned(plan->lights.size());plan->lights.push_back(l);plan->lightNames.push_back(o.getName());
     if(plan->motion.on&&get<rdl::Bool>(o,"mb")){
      // LocalParamLight::updateParamAndTransforms: the light at the shutter's close; moving where its transform differs.
      need(cls!="PortalLight",o.getName()+": a portal in motion is not rendered yet");
@@ -3734,6 +3811,8 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
    paths&&volumeIndex<0&&get<rdl::Int>(o,"side_type")==1,
    plan->aovs?plan->aovs->geomLabel(aov::attribute<rdl::String>(o,"label","")):-1});
   plan->meshes.back().families=indexedFamilies(o,frame,familyCache)|(mat?indexedFamilies(*mat,frame,familyCache):0);
+  if(!item.instancer)plan->meshes.back().owner=o.getName();
+  else if(shareInstance){plan->meshes.back().owner=item.instancer->getName();plan->meshes.back().ownerInstancer=true;}
   if(shareInstance){auto& e=plan->meshes.back();placeInstance(e,instanceMatrix(item));
    instanceValues(*item.instancer,item.instance,item.count,e.instancePrims,e.instancePrimData);}
   if(displacementShader&&!subdGeometry&&!polyGeometry&&!reusedData)displaced.push_back({plan->meshes.size()-1,edgeVertices,displacement});
@@ -3819,11 +3898,7 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
  if(plan->paths&&(!plan->diffuseMaps.empty()||!plan->emissionMaps.empty()))need(plan->maxDepth==0||plan->maxDiffuseDepth==0,"Textured bounces need secondary ray differentials");
  prepLaps().lap("displacement");
  // The light sets' trees (Scene::updateLightList's LightAccelerator::buildSamplingTree), for adaptive light sampling.
- if(plan->paths&&plan->lightSamplingMode==1){const unsigned words=plan->lightSetWords;
-  for(size_t k=0;k*words<plan->lightSetBits.size();++k){std::vector<unsigned> set;
-   for(unsigned i=0;i<plan->lights.size();++i)if(plan->lightSetBits[k*words+(i>>5)]>>(i&31)&1u)set.push_back(i);
-   std::vector<const lights::Light*> close(plan->lightClose.size());for(size_t q=0;q<close.size();++q)close[q]=plan->lightClose[q].get();
-   plan->lightTreeRoots.push_back(lights::buildLightTree(plan->lights,set,plan->lightTree,&close));}}
+ buildLightTrees(*plan);
  // Light filter tables (Scene::buildLightFilterTables): for each mesh, each light's filters, those of the mesh's
  // LightFilterSet where it has one, the filters on; lists and tables shared where they are the same.
  if(plan->paths){

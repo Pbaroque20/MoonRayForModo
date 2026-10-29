@@ -411,6 +411,7 @@ The settings are in Render Settings, in their own group, XPU2 Sampling:
 - First Look: Samples every pixel gets before the generations choose (default: 4).
 - Most Samples: The most one pixel may get (default: 16 times the average).
 - CPU Workers: The processor works beside the graphics card (default: On).
+- Realtime Samples: While RT follows the scene, the share of Generation Samples it takes: lower settles sooner, noisier (default: 100%).
 
 These settings always decide how XPU2 samples a preview. MoonRay's Sampling Mode and its adaptive settings are for
 MoonRay renders: while XPU2 renders the preview they are greyed and show what XPU2 takes, and final renders use them as
@@ -497,6 +498,9 @@ GENERATION_FIELDS = [
     ('xpu2_cpu', 'cpu', 'bool', 'CPU Workers',
      'The processor\'s workers take part in the generations beside the graphics card. Off: the graphics card takes '
      'every sample. Which devices XPU2 uses at all: Preferences > MoonRay > XPU2 > Devices', None, None, None),
+    ('xpu2_realtime', 'realtime', 'int', 'Realtime Samples',
+     'While realtime follows the scene (RT), the share of Generation Samples XPU2 takes, in percent: lower settles '
+     'sooner and noisier. Previews started with Render and final renders take them all', 1, 100, None),
 ]
 
 
@@ -507,7 +511,7 @@ def generations(kit):
           """    'denoising': {'engine': 'off', 'preview': True, 'final': True, 'safe': False, 'smart': 'off', 'detail': 'some'},
     # XPU2's sampling generations (the private test build): 16 samples a pixel on average and a noise target of 10 by
     # default; the rest are what XPU2 does without them.
-    'xpu2_generations': {'on': True, 'samples': 16, 'spend': 'time', 'noise': 10.0, 'seed': 4, 'most': 0, 'cpu': True},""")
+    'xpu2_generations': {'on': True, 'samples': 16, 'spend': 'time', 'noise': 10.0, 'seed': 4, 'most': 0, 'cpu': True, 'realtime': 100},""")
     p.rep("""key in ('recovery', 'denoising', 'deep', 'exr')""", """key in ('recovery', 'denoising', 'deep', 'exr', 'xpu2_generations')""")
     fields = ''.join("""        field(%r, ('xpu2_generations', %r), %r, %r, %r%s),
 """ % (key, member, kind, label, tip,
@@ -2331,6 +2335,8 @@ lx.bless(choice('xpu2/devices',(('both','Processor and graphics card'),('gpu','G
     details_line(KIT)
     engine_names(KIT)
     about_xpu2(KIT)
+    partial_moves(KIT)
+    xpu2_status_words(KIT)
 
     version = 'unknown'
     for line in (KIT / 'index.cfg').read_text(encoding='utf-8').splitlines():
@@ -2341,6 +2347,70 @@ lx.bless(choice('xpu2/devices',(('both','Processor and graphics card'),('gpu','G
                 'runtime_xpu2': json.loads((KIT / 'runtime-xpu2' / 'xpu2-runtime.json').read_text(encoding='utf-8'))}
     (HERE / 'kit-build.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
     print('XPU2 kit made in', KIT)
+
+
+def partial_moves(kit):
+    """A move after the scene was read is never a whole reading again (main repo, 2026-10-29): any item moved has every
+    mesh that stands with its item asked where it now is, instances among them; only a replicator's copies, meshes a
+    deformer bends and meshes textured by a projection are read again (incremental.classify, standing). A car with
+    instances read whole at every move of a part, 28 s. incremental.py from the repo whole (the kit's had nothing of
+    its own left), and panel._capture as the repo has it."""
+    py = kit / 'python' / 'moonray_modo'
+    shutil.copyfile(REPO_KIT / 'incremental.py', py / 'incremental.py')
+    source = (REPO_KIT / 'panel.py').read_text(encoding='utf-8').replace('\r\n', '\n')
+    start, end = source.index('    def _capture(self,reuse=False'), source.index('    def _capture_output(self):')
+    p = Patch(py / 'panel.py')
+    begin, finish = p.text.index('    def _capture(self,reuse=False'), p.text.index('    def _capture_output(self):')
+    p.text = p.text[:begin] + source[start:end] + p.text[finish:]
+    p.save()
+    # A mesh edit reads its meshes from the live render cache where it heard the edit (the adapter's MR_geometry_live_*,
+    # built into build/modo-geometry-live with the Shader Tree's stacks, MR_shader_stacks), the stacks' materials kept
+    # while the Shader Tree is as it was (host.snapshot shading_kept); the live cache let go when the preview stops.
+    shutil.copy2(REPO_KIT.parents[3] / 'build' / 'modo-geometry-live' / 'MoonRayGeometry.lx', kit / 'bin' / 'MoonRayGeometry.lx')
+    p = Patch(py / 'host.py')
+    p.rep("def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=False,dirty_meshes=None):",
+          "def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=False,dirty_meshes=None,shading_kept=False):")
+    p.rep("            result['materials'] = evaluated.assign_materials(data, scene, warnings)",
+          "            result['materials'] = evaluated.assign_materials(data, scene, warnings, shading_kept=shading_kept)")
+    p.save()
+    # The scene writer after a move (2026-10-29): its encoded lists kept by a limit from the machine's memory, and what
+    # is small of them (fingerprints, rdlb.py; the corners' check, rdla.py) kept apart: 6.5 s for a car's write, 0.85 s.
+    shutil.copyfile(REPO_KIT / 'serialization.py', py / 'serialization.py')
+    p = Patch(py / 'rdla.py')
+    p.rep("        _kept('checked:%d' % len(vertices), faces, checked)",
+          "        from .serialization import small\n        small('checked:%d' % len(vertices), faces, checked)")
+    p.save()
+    p = Patch(py / 'panel.py')
+    p.rep("""        self._following=False;self.timer.stop()
+        # A draft's region is not gone on to once its lines have been stopped.""", """        self._following=False;self.timer.stop()
+        # The live render cache let go: Modo no longer keeps it up to date for a preview that does not follow the scene.
+        try:
+            from . import evaluated
+            evaluated.stop_live()
+        except Exception:pass
+        # A draft's region is not gone on to once its lines have been stopped.""")
+    p.save()
+
+
+def xpu2_status_words(kit):
+    """While XPU2 renders a preview, the status says how XPU2 samples it, in the words of the picture's line
+    (xpu2_sampling.words): it said MoonRay's "Adaptive rendering, 4-4096 SPP, error 15", which XPU2 does not follow
+    (asked 2026-10-29). Final renders, MoonRay's, say MoonRay's as before."""
+    p = Patch(kit / 'python' / 'moonray_modo' / 'render.py')
+    p.rep("""            if snapshot.get('_ipr'):label='LS · '+label""", """            if snapshot.get('_ipr'):label='LS · '+label
+            # XPU2 renders the preview: how XPU2 samples it, as the picture's line says it.
+            from . import xpu2_sampling
+            if not request.get('output') and mode in ('xpu','auto') and xpu2_sampling.active():
+                try:label='Rendering · '+xpu2_sampling.words({'samples':self.sample_grid,'render':sampling,'xpu2_generations':snapshot.get('xpu2_generations') or {}},realtime=bool(snapshot.get('_realtime')))
+                except Exception:pass""")
+    p.save()
+    # Realtime Samples (2026-10-29): XPU2 is given realtime's share of Generation Samples while RT follows the scene.
+    p = Patch(kit / 'python' / 'moonray_modo' / 'rdla.py')
+    p.rep("values=[2,1,int(generation.get('samples',0)),", "values=[2,1,xpu2_sampling.budget(generation,samples,bool(scene.get('_realtime'))),")
+    p.save()
+    p = Patch(kit / 'python' / 'moonray_modo' / 'panel.py')
+    p.rep("try:return xpu2_sampling.words(self._settings_values())", "try:return xpu2_sampling.words(self._settings_values(),realtime=bool(getattr(self,'_following',False)))")
+    p.save()
 
 
 if __name__ == '__main__':
