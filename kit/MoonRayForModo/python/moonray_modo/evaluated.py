@@ -8,23 +8,80 @@ from pathlib import Path
 from .rows import Rows, Faces
 
 _bridge = None
+# Each Shader Tree stack's material as the last reading made it (assign_materials), with its tag: taken again while an
+# edit leaves the Shader Tree as it was (shading_kept), so that only stacks not seen before are made.
+_kept_stacks = {}
 
-def assign_materials(data, scene, warnings):
-    """Use host-resolved Shader Tree membership for each evaluated surface."""
+
+def _adapter():
+    """The geometry adapter (_load), or None where it is not there."""
+    try:
+        return _load()
+    except (ValueError, OSError):
+        return None
+
+
+def native_stacks(scene, surfaces):
+    """The layers that apply to each surface (as matches in assign_materials decides), all asked of the adapter in one
+    call (MR_shader_stacks): Python's rule asked Modo for 30,000 channels, 1.6 s of a car's every reading. None where
+    the adapter cannot say (an older one, or a failure), and Python's rule is used."""
+    try:
+        bridge = _adapter()
+        call = bridge.MR_shader_stacks if bridge is not None else None
+        import lx
+        held = scene.scene if hasattr(scene, 'scene') else scene
+        address = held.__peekobj__()
+    except (AttributeError, OSError, ImportError):
+        return None
+    call.argtypes = [ctypes.c_void_p, ctypes.c_double, ctypes.c_char_p]
+    call.restype = ctypes.c_char_p
+    request = '\n'.join('\t'.join((surface['source_item'], surface['source_material'] or '', surface.get('part') or '',
+                                   ';'.join(surface['source_layers']))) for surface in surfaces)
+    answer = call(ctypes.c_void_p(address), float(lx.service.Selection().GetTime()), request.encode('utf-8'))
+    answer = (answer or b'').decode('utf-8', errors='replace')
+    if answer.startswith('!'):
+        return None
+    lines = answer.split('\n')
+    if len(lines) < len(surfaces):
+        return None
+    return [[layer for layer in line.split(';') if layer] for line in lines[:len(surfaces)]]
+
+
+def assign_materials(data, scene, warnings, shading_kept=False):
+    """Use host-resolved Shader Tree membership for each evaluated surface. shading_kept: the Shader Tree is as it was at
+    the last reading (an edit of meshes alone), and each stack's material as it was made then is taken again."""
     from .host import material_values, channel
     from .materials import active as material_active
     from .layers import ordered_items, collect
     from .mask_types import tag_kind
+    global _kept_stacks
     items=list(ordered_items(scene.renderItem))
     order={item.id:index for index,item in enumerate(items)}
     by_id={item.id:item for item in items}
     materials={}
     tags={}
+    kept=_kept_stacks if shading_kept else {}
+    made={}
+    import copy
     for surface in data['surfaces']:
         surface.setdefault('source_material',surface['material'])
-        surface['material']=surface['source_material']
         surface.setdefault('source_layers',list(surface['layers']))
+    applying=native_stacks(scene,data['surfaces'])
+    numbered=[int(tag.rsplit('_',1)[1]) for tag,_ in kept.values() if tag.rsplit('_',1)[1].isdigit()]
+    following=max(numbered)+1 if numbered else 0
+    for index,surface in enumerate(data['surfaces']):
+        surface['material']=surface['source_material']
         surface['layers']=list(surface['source_layers'])
+        if applying is not None:
+            stack=tuple(identity for identity in applying[index] if identity in by_id)
+            surface['layers']=list(stack)
+            if stack not in tags and stack in kept and kept[stack][0]:
+                # As the last reading made it: the same tag, the same material.
+                tag,material=kept[stack]
+                tags[stack]=tag;materials[tag]=copy.deepcopy(material);made[stack]=kept[stack]
+            if stack in tags:
+                surface['material']=tags[stack]
+                continue
         source_ids={surface['source_item']}
         source=scene.item(surface['source_item'])
         while source.type=='meshInst':
@@ -54,18 +111,23 @@ def assign_materials(data, scene, warnings):
             return True
         # In 16.1 the returned stack may include item masks that still need to
         # be evaluated against the particular instance (not just its prototype).
-        stack=tuple(identity for identity in surface['layers'] if identity in by_id and matches(by_id[identity]))
-        surface['layers']=list(stack)
+        if applying is None:
+            stack=tuple(identity for identity in surface['layers'] if identity in by_id and matches(by_id[identity]))
+            surface['layers']=list(stack)
+            if stack not in tags and stack in kept and kept[stack][0]:
+                tag,material=kept[stack]
+                tags[stack]=tag;materials[tag]=copy.deepcopy(material);made[stack]=kept[stack]
         if stack not in tags:
             from . import properties
             candidates=[by_id[identity] for identity in stack if identity in by_id
                         and properties.is_material(by_id[identity]) and material_active(by_id[identity]) and channel(by_id[identity],'enable',1)]
             if not candidates:
-                tags[stack]=''
+                tags[stack]='';made[stack]=('',None);following+=1
                 warnings.append('Evaluated surface has no supported material: '+surface['source_item'])
                 continue
             base=min(candidates,key=lambda item:order[item.id])
-            tag='evaluated_material_%d' % len(tags)
+            # Numbered on from the stacks kept, which keep theirs (as the count of stacks, where none are kept).
+            tag='evaluated_material_%d' % following;following+=1
             tags[stack]=tag
             materials[tag]=material_values(base)
             if channel(base,'subsAmt',0) or channel(base,'aniso',0):
@@ -75,7 +137,9 @@ def assign_materials(data, scene, warnings):
             if candidates:
                 from .layers import material_stack
                 materials[tag]['material_stack']=material_stack(scene,candidates,warnings,tag,set(stack))
+            made[stack]=(tag,copy.deepcopy(materials[tag]))
         surface['material']=tags[stack]
+    _kept_stacks=made
     return materials
 
 def _coordinates():
@@ -208,23 +272,13 @@ def capture(time, path=None, displaced=True, only=None, before=None):
     """Modo's render cache read: every surface, and each surface's segments. only (item identifiers) and before (the
     reading before): the segments of those items' surfaces alone, the others' taken from before by their item, material
     and part; read whole where any is not there to take, or the adapter cannot."""
-    global _bridge
-    if _bridge is None:
-        path = Path(path) if path else Path(__file__).resolve().parents[2] / 'bin/MoonRayGeometry.lx'
-        if not path.is_file():
-            raise ValueError('Modo evaluated geometry requires MoonRayGeometry.lx. Build/install the geometry adapter and restart Modo.')
-        bridge = ctypes.CDLL(str(path))
-        bridge.MR_geometry_snapshot_file.argtypes = [ctypes.c_double,ctypes.c_int,ctypes.c_char_p]
-        bridge.MR_geometry_snapshot_file.restype = ctypes.c_char_p
-        _bridge = bridge
-        from . import rows
-        rows.adapter(bridge)
+    _load(path)
     with tempfile.TemporaryDirectory(prefix='MoonRay-geometry-') as folder:
         output=Path(folder)/'geometry.json'
         # Each surface's segments joined by the adapter where it can (MR_geometry_snapshot_merged), else one by one.
         try:rows=_bridge.MR_geometry_snapshot_merged
         except AttributeError:rows=None
-        some=None
+        some=None;live=None
         if only and before and before.get('prototypes') and all('item' in held for held in before['prototypes'].values()):
             try:some=_bridge.MR_geometry_snapshot_some
             except AttributeError:some=None
@@ -232,16 +286,29 @@ def capture(time, path=None, displaced=True, only=None, before=None):
             some.argtypes=[ctypes.c_double,ctypes.c_int,ctypes.c_char_p,ctypes.c_char_p,ctypes.c_char_p];some.restype=ctypes.c_char_p
             listed='\n'.join(sorted(only)).encode('utf-8')
             rows=lambda moment,flag,out,held:some(moment,flag,out,held,listed)
+            # From the live cache, where it has said that every item asked for changed since the last reading.
+            live=_live_reading(only,displaced)
         if rows is None:
             try:rows=_bridge.MR_geometry_snapshot_binary
             except AttributeError:rows=None
-        if rows is not None:
+        held=Path(folder)/'geometry.rows'
+        error=None
+        if live is not None:
+            error=live(float(time),int(displaced),str(output).encode('utf-8'),str(held).encode('utf-8'),listed)
+            if error:
+                # Not to be read now (Modo updating it, another time, gone, a surface's segments not given) or failed:
+                # a cache made anew, as before. A render never fails on the live cache's account.
+                LIVE['last_error']=error.decode('utf-8',errors='replace')[:200]
+                live=None;error=None
+                _note_live(False)
+            else:
+                _note_live(not error)
+        if live is None and rows is not None:
             # The meshes' long rows of numbers come as they are, in a file of their own: written out as text and
             # read back, they were most of what a reading took.
             rows.argtypes=[ctypes.c_double,ctypes.c_int,ctypes.c_char_p,ctypes.c_char_p];rows.restype=ctypes.c_char_p
-            held=Path(folder)/'geometry.rows'
             error=rows(float(time),int(displaced),str(output).encode('utf-8'),str(held).encode('utf-8'))
-        else:
+        elif live is None:
             error=_bridge.MR_geometry_snapshot_file(float(time),int(displaced),str(output).encode('utf-8'))
         if error:
             raise ValueError('Modo evaluated geometry: '+error.decode('utf-8',errors='replace'))
@@ -258,7 +325,102 @@ def capture(time, path=None, displaced=True, only=None, before=None):
                 if taken is None or taken.get('kept'):
                     return capture(time,path,displaced)
                 data['prototypes'][key]=taken
+    _after_reading(some is None,displaced)
     return data
+
+
+def _load(path=None):
+    """The geometry adapter, loaded and set up once, for capture and native_stacks alike."""
+    global _bridge
+    if _bridge is None:
+        path = Path(path) if path else Path(__file__).resolve().parents[2] / 'bin/MoonRayGeometry.lx'
+        if not path.is_file():
+            raise ValueError('Modo evaluated geometry requires MoonRayGeometry.lx. Build/install the geometry adapter and restart Modo.')
+        bridge = ctypes.CDLL(str(path))
+        bridge.MR_geometry_snapshot_file.argtypes = [ctypes.c_double,ctypes.c_int,ctypes.c_char_p]
+        bridge.MR_geometry_snapshot_file.restype = ctypes.c_char_p
+        _bridge = bridge
+        from . import rows
+        rows.adapter(bridge)
+    return _bridge
+
+
+# The live render cache (the adapter's MR_geometry_live_*): started by a whole reading, read in place of a cache made
+# anew where it has said that every item asked for changed since the last reading (_heard), stopped with the preview.
+# LIVE counts the readings it served and those it could not, for probes.
+_heard = set()
+LIVE = {'served': 0, 'refused': 0, 'started': False}
+
+
+def _changes():
+    try:
+        call = _bridge.MR_geometry_live_changes
+    except AttributeError:
+        return {}
+    call.restype = ctypes.c_char_p
+    try:
+        return json.loads((call() or b'{}').decode('utf-8', errors='replace'))
+    except ValueError:
+        return {}
+
+
+def _live_reading(only, displaced):
+    """The adapter's live reading where it can serve this one (every item of only heard to change since the last
+    reading, nothing lost, Modo not updating it), else None."""
+    global _heard
+    if not LIVE['started']:
+        return None
+    try:
+        call = _bridge.MR_geometry_snapshot_live
+    except AttributeError:
+        return None
+    heard = _changes()
+    if not heard.get('live') or heard.get('lost') or heard.get('updating'):
+        return None
+    for kind in ('shaped', 'placed', 'shaded', 'added', 'removed'):
+        _heard.update(heard.get(kind) or ())
+    if not set(only) <= _heard:
+        LIVE['refused'] += 1
+        return None
+    call.argtypes = [ctypes.c_double, ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p]
+    call.restype = ctypes.c_char_p
+    return call
+
+
+def _note_live(served):
+    LIVE['served' if served else 'refused'] += 1
+
+
+def _after_reading(whole, displaced):
+    """After a reading: what the live cache heard before it is spent; a whole reading starts the live cache, for Modo
+    to keep up to date from then on (where the adapter has one)."""
+    global _heard
+    # Off unless MOONRAY_MODO_LIVE_CACHE=1: Modo has not given an edited mesh's segments from it yet (2026-10-29), so
+    # every edit fell back to a cache made anew, while Modo kept the live one up to date besides.
+    import os
+    if whole and not LIVE['started'] and os.environ.get('MOONRAY_MODO_LIVE_CACHE') == '1':
+        try:
+            start = _bridge.MR_geometry_live_start
+            start.argtypes = [ctypes.c_int]
+            start.restype = ctypes.c_char_p
+            LIVE['started'] = not start(int(displaced))
+        except AttributeError:
+            pass
+    if LIVE['started']:
+        _changes()
+    _heard = set()
+
+
+def stop_live():
+    """The live render cache let go (the preview stopped following the scene): Modo no longer keeps it up to date."""
+    global _heard
+    if LIVE['started'] and _bridge is not None:
+        try:
+            _bridge.MR_geometry_live_stop()
+        except AttributeError:
+            pass
+    LIVE['started'] = False
+    _heard = set()
 
 def casts_shadow(scene, layers, known):
     """Whether the Shader over a surface has Cast Shadows on. Modo's own six switches for a surface have none for

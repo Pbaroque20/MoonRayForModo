@@ -168,6 +168,37 @@ def cut_mesh(mesh):
     engines draw one set of triangles: MoonRay's own cut, even taught MoonLightIPR's rules, left a triangle wrong on a
     tester's CAD profile."""
     from .rows import counts as face_counts
+    # The same lists cut before (by their identity, wherever the mesh now stands): the very lists made then, which the
+    # scene text keeps written (serialization.array). Cut anew at every write, a car's 291 meshes with n-gons had every
+    # list checked, fingerprinted and encoded again for each move, 6.7 s of the writer's time.
+    held = []
+    for name in _READS:
+        value = mesh.get(name)
+        if isinstance(value, dict):
+            held.extend((name + ':' + str(part), inner.get('values') if isinstance(inner, dict) else inner) for part, inner in sorted(value.items()))
+        elif value is not None:
+            held.append((name, value))
+    key = (tuple((name, id(value)) for name, value in held), tuple(sorted(_RULES.items())))
+    made = _CUT.get(key)
+    if made is not None and all(a is b for (_, a), b in zip(held, made[0])):
+        _CUT.move_to_end(key)
+        return dict(mesh, **made[1]) if made[1] is not None else mesh
+    out = _cut_mesh(mesh, face_counts)
+    _CUT[key] = ([value for _, value in held], None if out is mesh else {name: value for name, value in out.items() if value is not mesh.get(name)})
+    while len(_CUT) > CUT_KEPT:
+        _CUT.popitem(last=False)
+    return out
+
+
+# cut_mesh's results by the lists they were made from (holding those, so that no other list takes their identity); the
+# newest CUT_KEPT, the oldest let go first. Keyed by what the cut reads alone: where a mesh stands is not of it.
+from collections import OrderedDict
+_CUT = OrderedDict()
+CUT_KEPT = 4096
+_READS = ('faces', 'vertices', 'normals', 'uvs', 'uv_sets', 'corner_attributes', 'face_materials')
+
+
+def _cut_mesh(mesh, face_counts):
     faces = mesh['faces']
     sizes = face_counts(faces)
     sizes = list(sizes) if sizes is not None else [len(face) for face in faces]

@@ -183,7 +183,9 @@ def heavy(klass, name, attribute, kind, source, label, encode, owner=None, writt
         return ''
     if owner is not None and written is not None:
         _SINK.texts[(owner, attribute)] = written
-    return _cached('rdlb-fingerprint-' + label, source, lambda: _blake2b(encoded, digest_size=12).hexdigest())
+    # Kept apart from the encodings, which a heavy scene's fill their cache with (serialization.small).
+    from .serialization import small
+    return small('rdlb-fingerprint-' + label, source, lambda: _blake2b(encoded, digest_size=12).hexdigest())
 
 
 from hashlib import blake2b as _blake2b

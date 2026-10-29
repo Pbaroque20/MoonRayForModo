@@ -645,7 +645,8 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
                     raise ValueError('Invalid face in ' + mesh['name'])
             return ''
         # Looked over once for as long as the mesh's lists stay the same ones, as their text is written once.
-        _kept('checked:%d' % len(vertices), faces, checked)
+        from .serialization import small
+        small('checked:%d' % len(vertices), faces, checked)
         tag = mesh.get('material', '')
         if tag not in materials:
             tag = ''

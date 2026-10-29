@@ -10,8 +10,23 @@ _active=ContextVar('moonray_serialization_revision',default=None)
 _revision=None
 _cache=OrderedDict()
 _bytes=0
-# Enough for a heavy scene's geometry as binary (rdlb.py), so that a render of it again finds it all kept.
-LIMIT=512*1024*1024
+# Enough for a heavy scene's geometry as binary (rdlb.py), so that a render of it again finds it all kept: a sixteenth
+# of the machine's memory, 512 MB at least and 4 GB at most. 512 MB alone held most of a car's 763 MB, and each write of
+# its text after a move found little of it kept: 6.5 s, where with all of it kept it took 0.85 s.
+def _limit():
+    try:
+        import ctypes
+        class Status(ctypes.Structure):
+            _fields_=[('length',ctypes.c_ulong),('load',ctypes.c_ulong),('total',ctypes.c_ulonglong),('free',ctypes.c_ulonglong),
+                      ('page_total',ctypes.c_ulonglong),('page_free',ctypes.c_ulonglong),('virtual_total',ctypes.c_ulonglong),
+                      ('virtual_free',ctypes.c_ulonglong),('extended',ctypes.c_ulonglong)]
+        status=Status();status.length=ctypes.sizeof(Status)
+        if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+            return max(512*1024*1024,min(4*1024*1024*1024,status.total//16))
+    except Exception:
+        pass
+    return 512*1024*1024
+LIMIT=_limit()
 
 @contextmanager
 def revision(value):
@@ -35,3 +50,19 @@ def array(kind,source,encode):
             _,old=_cache.popitem(last=False);_bytes-=old[2]
         _cache[key]=(source,text,size);_bytes+=size
     return text
+
+
+# What is small about a list (its fingerprint, whether its corners are within its points), kept by the list apart from
+# the encoded lists: with those, a heavy scene's encodings filled the cache and pushed these out, and every write of a
+# car's text after a move fingerprinted and looked over every list again. The newest SMALL_KEPT, the oldest let go first.
+_small=OrderedDict()
+SMALL_KEPT=200000
+
+def small(kind,source,make):
+    if _active.get() is None:return make()
+    key=(kind,id(source));entry=_small.get(key)
+    if entry is not None and entry[0] is source:_small.move_to_end(key);return entry[1]
+    value=make()
+    _small[key]=(source,value)
+    while len(_small)>SMALL_KEPT:_small.popitem(last=False)
+    return value

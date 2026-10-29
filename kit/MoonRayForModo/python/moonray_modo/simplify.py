@@ -13,6 +13,10 @@ from pathlib import Path
 _LIBRARY = False
 # Simplified meshes kept by what they were made from and how far: a mesh read again unchanged is not simplified again.
 _KEPT = {}
+# And polygon_mesh's whole result, its lists, by the same: the newest MESHES_KEPT, the oldest let go first.
+from collections import OrderedDict
+_MESHES = OrderedDict()
+MESHES_KEPT = 256
 
 
 def library():
@@ -129,6 +133,22 @@ def polygon_mesh(mesh, triangles, error):
     if any(mesh.get(key) for key in ('point_attributes', 'corner_attributes', 'attributes', 'creases', 'corners', 'vertices_close')):
         return None
     vertices, faces = mesh['vertices'], mesh['faces']
+    named = sorted((mesh.get('uv_sets') or {}).items())
+    sets = ([('', mesh['uvs'])] if mesh.get('uvs') else []) + named
+    normals = mesh.get('normals') or []
+    tags = mesh.get('face_materials')
+    key = ('polygons', content(vertices), content(faces), content(normals) if normals else '',
+           tuple(content(values) for _, values in sets), content(tags) if tags is not None else '', int(triangles), round(float(error), 6),
+           polygon_rules())
+    # The same mesh in the same cut as made before, its very lists: moving a car made each of its dense meshes' arrays
+    # again before the cut was found kept (3 s for one), and new lists had the scene text written out anew.
+    made = _MESHES.get(key)
+    if made is not None:
+        _MESHES.move_to_end(key)
+        result = dict(mesh, **made)
+        if 'normals' not in made:
+            result.pop('normals', None)
+        return result
     held = flat_corners(faces)
     sizes = flat_counts(faces)
     corner_list = held if held is not None else array('I', chain.from_iterable(faces))
@@ -155,14 +175,11 @@ def polygon_mesh(mesh, triangles, error):
         indices = array('I', (corner_list[c] for c in fan))
     whole = len(fan) == len(corner_list)
     positions = numbers(vertices, 3) or array('f', chain.from_iterable(vertices))
-    named = sorted((mesh.get('uv_sets') or {}).items())
-    sets = ([('', mesh['uvs'])] if mesh.get('uvs') else []) + named
     uvs = []
     for _, values in sets:
         flat = numbers(values, 2) or array('f', chain.from_iterable(values))
         uvs.append(flat if whole else _gather(flat, 2, fan))
     # Face-varying normals: each triangle corner a vertex of its own, with its normal.
-    normals = mesh.get('normals') or []
     if normals:
         flat_normals = numbers(normals, 3) or array('f', chain.from_iterable(normals))
         positions = _gather(positions, 3, indices)
@@ -170,15 +187,11 @@ def polygon_mesh(mesh, triangles, error):
         indices = array('I', range(len(fan)))
     else:
         normal_values = None
-    tags = mesh.get('face_materials')
     names, materials = [], None
     if tags is not None:
         names = sorted(set(tags))
         place = {tag: i for i, tag in enumerate(names)}
         materials = array('I', (place[tag] for tag, n in zip(tags, size_list) for _ in range(n - 2)))
-    key = ('polygons', content(vertices), content(faces), content(normals) if normals else '',
-           tuple(content(values) for _, values in sets), content(tags) if tags is not None else '', int(triangles), round(float(error), 6),
-           polygon_rules())
     made = arrays(positions, indices, normal_values, None, uvs, materials, bool(mesh.get('smooth', True)), triangles, error, key)
     if made is None:
         return None
@@ -199,4 +212,7 @@ def polygon_mesh(mesh, triangles, error):
         result['uv_sets'] = {name: Rows(out_uvs[at + i], 2, 'simplified-u%d:%x' % (i, hash(key))) for i, (name, _) in enumerate(named)}
     if tags is not None:
         result['face_materials'] = [names[m] for m in out_materials]
+    _MESHES[key] = {name: result[name] for name in ('vertices', 'faces', 'normals', 'uvs', 'uv_sets', 'face_materials') if name in result}
+    while len(_MESHES) > MESHES_KEPT:
+        _MESHES.popitem(last=False)
     return result

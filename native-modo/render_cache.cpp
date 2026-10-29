@@ -2,6 +2,9 @@
 #include <lx_item.hpp>
 #include <lx_rendercache.hpp>
 #include <lx_vertex.hpp>
+#include <lx_listener.hpp>
+#include <lxw_rendercache.hpp>
+#include <lx_wrap.hpp>
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -135,9 +138,16 @@ void transform(std::ostream& out,CLxLoc_GeoCacheSurface& surface,int endpoint) {
 // writing it out.
 static double spentLoading=0,spentFetching=0,spentWriting=0;
 static double clockNow(){return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();}
+// Whether this reading is of the live cache (MR_geometry_snapshot_live).
+bool readLive=false;
 void prototype(std::ostream& out,CLxLoc_GeoCacheSurface& surface,const std::string& owner) {
     double mark=clockNow();
-    check(surface.LoadSegments(),"Load geometry segments");
+    if(readLive && LXx_FAIL(surface.LoadSegments())) {
+        // A surface the live cache has just made again can refuse its segments: let go of what it held and ask again,
+        // and failing that, read a cache made anew (the plugin does so on "live:").
+        surface.UnloadSegments();
+        if(!surface.IsValid() || LXx_FAIL(surface.LoadSegments())) throw std::runtime_error("live: segments not given");
+    } else if(!readLive) check(surface.LoadSegments(),"Load geometry segments");
     spentLoading+=clockNow()-mark;
     // The short-lived cache owns its segments; retain borrowed interface refs.
     // Which surface it is, for a later reading that keeps it (only).
@@ -259,9 +269,57 @@ void prototype(std::ostream& out,CLxLoc_GeoCacheSurface& surface,const std::stri
 }
 }
 
-// The cache is made anew and evaluated whole for every reading, which takes Modo a few thousandths of a second. One
-// kept between readings and left for Modo to keep up to date was tried: it was a moment behind each edit, and
-// failed to give its segments just after a mesh had changed shape.
+// The live cache (MR_geometry_live_*): a render cache kept while a preview follows the scene, which Modo keeps up to
+// date itself, updating only what an edit changed, and which says what it changed (Listener: each surface's item,
+// by what changed of it). A reading of it lists the surfaces and loads only those asked for: a cache made anew is
+// evaluated whole first, 2.8 s of every reading of a car of 334 surfaces. One kept without a listener was tried
+// before: it was a moment behind each edit, and failed to give its segments just after a mesh had changed shape.
+// So the plugin reads it only when the listener has said every item it asks for changed since the last reading,
+// never while Modo is updating it, and on any failure reads a cache made anew (evaluated.capture).
+class Listener : public CLxImpl_RenderCacheListener {
+public:
+    std::set<std::string> shaped,placed,shaded,added,removed;
+    bool updating=false,cleared=false,destroyed=false;
+    static std::string owner(ILxUnknownID object) {
+        CLxLoc_GeoCacheSurface surface;
+        if(!object || !surface.set(object)) return {};
+        void* found=nullptr;
+        if(LXx_FAIL(surface.SourceItem(&found)) || !found) return {};
+        CLxLoc_Item item;item.set(found);
+        const char* name=nullptr;
+        return LXx_OK(item.Ident(&name)) && name?name:"";
+    }
+    void rli_RenderCacheDestroy() override {destroyed=true;}
+    void rli_RenderCacheClear() override {cleared=true;}
+    void rli_UpdateBegin() override {updating=true;}
+    void rli_UpdateEnd() override {updating=false;}
+    void rli_GeoCacheSurfaceAdd(ILxUnknownID surface) override {added.insert(owner(surface));}
+    void rli_GeoCacheSurfaceRemove(ILxUnknownID surface) override {removed.insert(owner(surface));}
+    void rli_GeoCacheSurfaceGeoUpdate(ILxUnknownID surface) override {shaped.insert(owner(surface));}
+    void rli_GeoCacheSurfaceXformUpdate(ILxUnknownID surface) override {placed.insert(owner(surface));}
+    void rli_GeoCacheSurfaceShaderUpdate(ILxUnknownID surface) override {shaded.insert(owner(surface));}
+};
+struct Live {
+    CLxUser_RenderCache cache;
+    ILxUnknownID listening=nullptr;
+    Listener* listener=nullptr;
+    int displaced=-1;
+    bool usable() const {return listener && cache.test() && !listener->destroyed && !listener->cleared;}
+};
+static Live live;
+static CLxPolymorph<Listener>* listeners=nullptr;
+
+static void stopLive() {
+    if(live.cache.test() && live.listening) {
+        CLxUser_ListenerPort port(live.cache);
+        if(port.test()) port.RemoveListener(live.listening);
+    }
+    if(live.cache.test()) live.cache.clear();
+    if(live.listening) lx::ObjRelease(live.listening);
+    live.listening=nullptr;live.listener=nullptr;live.displaced=-1;
+}
+
+// The cache is made anew and evaluated whole for every reading but the live cache's (above).
 // only, where given: the items whose surfaces' segments are loaded; any other surface's prototype says only which it
 // is ("kept": its item, material and part), for the plugin to take from the reading before (evaluated.capture). Loading
 // every surface's segments was most of a reading after one mesh was edited (1.24 s of 2.15 for an interior's 25).
@@ -273,12 +331,25 @@ static void write_snapshot(std::ostream& out,double time,int displaced) {
         auto since=[&](){return std::chrono::duration<double>(std::chrono::steady_clock::now()-began).count();};
         CLxLoc_RenderCacheService service;
         void* object=nullptr;
-        unsigned flags=LXfRENDERCACHE_TRACK_CURRENT_SCENE|LXfRENDERCACHE_TURN_OFF_AUTO_UPDATES|
-                       LXfRENDERCACHE_FORCE_FULL_UPDATE;
-        if(displaced) flags|=LXfRENDERCACHE_GEOCACHE_DISPLACE;
-        check(service.CreateRenderCache(&object,flags),"Create render cache");
-        CLxLoc_RenderCache cache;cache.take(object);
-        check(cache.Update(time,1),"Evaluate render cache");
+        CLxLoc_RenderCache made;
+        CLxLoc_RenderCache* chosen=&made;
+        if(readLive) {
+            // The live cache as Modo keeps it: nothing to evaluate. Refused, for a cache made anew, where it cannot
+            // be read now (the plugin reads one made anew on "live:").
+            if(!live.usable() || live.displaced!=displaced) throw std::runtime_error("live: no live cache");
+            if(live.listener->updating) throw std::runtime_error("live: Modo is updating it");
+            double at=0,offsets[2]={0,0};live.cache.Time(&at,offsets);
+            if(std::fabs(at-time)>1e-6) throw std::runtime_error("live: another time");
+            chosen=&live.cache;
+        } else {
+            unsigned flags=LXfRENDERCACHE_TRACK_CURRENT_SCENE|LXfRENDERCACHE_TURN_OFF_AUTO_UPDATES|
+                           LXfRENDERCACHE_FORCE_FULL_UPDATE;
+            if(displaced) flags|=LXfRENDERCACHE_GEOCACHE_DISPLACE;
+            check(service.CreateRenderCache(&object,flags),"Create render cache");
+            made.take(object);
+            check(made.Update(time,1),"Evaluate render cache");
+        }
+        CLxLoc_RenderCache& cache=*chosen;
         const double evaluated=since();
         int count=0;check(cache.GeoSurfaceCount(&count),"Surface count");
         std::map<int,CLxLoc_GeoCacheSurface> sources;
@@ -405,4 +476,61 @@ extern "C" __declspec(dllexport) const char* MR_geometry_snapshot_some(double ti
     }
     struct Only { Only(const std::set<std::string>* to){onlyItems=to;} ~Only(){onlyItems=nullptr;} } use(items.empty()?nullptr:&items);
     return MR_geometry_snapshot_merged(time,displaced,path,rows);
+}
+
+// The live cache started (or kept, where it already follows the scene so), for Modo to keep up to date from now on.
+extern "C" __declspec(dllexport) const char* MR_geometry_live_start(int displaced) {
+    static thread_local std::string error;
+    try {
+        if(live.usable() && live.displaced==displaced) return nullptr;
+        stopLive();
+        CLxLoc_RenderCacheService service;
+        void* object=nullptr;
+        unsigned flags=LXfRENDERCACHE_TRACK_CURRENT_SCENE;
+        if(displaced) flags|=LXfRENDERCACHE_GEOCACHE_DISPLACE;
+        check(service.CreateRenderCache(&object,flags),"Create live render cache");
+        live.cache.take(object);
+        if(!listeners) {
+            listeners=new CLxPolymorph<Listener>;
+            listeners->AddInterface(new CLxIfc_RenderCacheListener<Listener>);
+        }
+        live.listening=listeners->Spawn();
+        live.listener=LXCWxOBJ(live.listening,Listener);
+        CLxUser_ListenerPort port(live.cache);
+        if(!port.test() || LXx_FAIL(port.AddListener(live.listening))) throw std::runtime_error("Listen to live render cache");
+        live.displaced=displaced;
+        return nullptr;
+    } catch(const std::exception& failure) {error=failure.what();}
+      catch(...) {error="Unknown live render cache error";}
+    stopLive();
+    return error.c_str();
+}
+
+extern "C" __declspec(dllexport) void MR_geometry_live_stop() {stopLive();}
+
+// What the live cache changed since this was last asked, by item: {"live":1,"updating":0,"lost":0,"shaped":[...],
+// "placed":[...],"shaded":[...],"added":[...],"removed":[...]}; {"live":0} where there is none. Asking clears them.
+extern "C" __declspec(dllexport) const char* MR_geometry_live_changes() {
+    static thread_local std::string result;
+    std::ostringstream out;
+    if(!live.listener || !live.cache.test()) out<<"{\"live\":0}";
+    else {
+        Listener& heard=*live.listener;
+        out<<"{\"live\":1,\"updating\":"<<int(heard.updating)<<",\"lost\":"<<int(heard.destroyed||heard.cleared);
+        for(auto& entry:{std::make_pair("shaped",&heard.shaped),std::make_pair("placed",&heard.placed),std::make_pair("shaded",&heard.shaded),
+                         std::make_pair("added",&heard.added),std::make_pair("removed",&heard.removed)}) {
+            out<<",\""<<entry.first<<"\":[";bool first=true;
+            for(const auto& name:*entry.second){if(!first)out<<',';first=false;text(out,name.c_str());}
+            out<<']';entry.second->clear();
+        }
+        out<<'}';
+    }
+    result=out.str();
+    return result.c_str();
+}
+
+// As MR_geometry_snapshot_some, from the live cache; an error beginning "live:" where it cannot be read now.
+extern "C" __declspec(dllexport) const char* MR_geometry_snapshot_live(double time,int displaced,const char* path,const char* rows,const char* only) {
+    struct Live { Live(){readLive=true;} ~Live(){readLive=false;} } use;
+    return MR_geometry_snapshot_some(time,displaced,path,rows,only);
 }

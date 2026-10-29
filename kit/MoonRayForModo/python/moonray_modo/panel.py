@@ -1245,23 +1245,29 @@ class Panel(Tools, QtWidgets.QWidget):
             self.status.setText(cache_folder.LOADING);self.status.repaint()
         scene=scene_reading.load(held_key)
         if scene is None:
-            scene = host.snapshot(evaluated_geometry=evaluated,reuse_geometry=self._geometry_cache if reuse else None,refresh_materials=reuse=='materials' or isinstance(reuse,dict),dirty_meshes=reuse.get('dirty_meshes') if isinstance(reuse,dict) else None)
+            scene = host.snapshot(evaluated_geometry=evaluated,reuse_geometry=self._geometry_cache if reuse else None,refresh_materials=reuse=='materials' or isinstance(reuse,dict),dirty_meshes=reuse.get('dirty_meshes') if isinstance(reuse,dict) else None,shading_kept=isinstance(reuse,dict) and bool(reuse.get('shading_kept')))
             if held_key is not None:scene_reading.keep(held_key,scene_reading.freeze(scene),scene)
-        if reuse=='transforms':
+        # A move: every mesh where its item now stands, but the copies read again with it (incremental.classify).
+        if reuse=='transforms' or (isinstance(reuse,dict) and reuse.get('placements')):
             from .incremental import refresh_transforms
-            refresh_transforms(modo.Scene(),scene,transform_items)
+            loose=(self._geometry_cache or {}).get('_loose_items') or ()
+            refresh_transforms(modo.Scene(),scene,transform_items if reuse=='transforms' else None,loose=loose)
         import copy,time
         full_capture=scene.pop('_full_capture',not reuse)
         if not reuse or reuse in ('materials','transforms') or isinstance(reuse,dict):
             # What was found of the meshes when they were last read whole holds while they are only moved or shaded anew.
-            stand=self._geometry_cache.get('_item_transforms') if self._geometry_cache is not None and reuse in ('materials','transforms') else None
+            held=self._geometry_cache if self._geometry_cache is not None and reuse in ('materials','transforms') else {}
             self._geometry_cache=dict(scene,meshes=[dict(m) for m in scene['meshes']],materials=copy.deepcopy(scene['materials']),native_materials=copy.deepcopy(scene.get('native_materials',{})))
-            if stand:self._geometry_cache['_item_transforms']=True
+            for key in ('_item_transforms','_loose_items'):
+                if key in held:self._geometry_cache[key]=held[key]
         if full_capture or isinstance(reuse,dict):self._last_full_capture=time.monotonic()
-        if full_capture and self._geometry_cache is not None and scene.get('_evaluated_data') is not None:
+        if (full_capture or isinstance(reuse,dict)) and self._geometry_cache is not None and scene.get('_evaluated_data') is not None:
             # Whether each evaluated mesh stands where its item does, which lets a later move of an item be followed
-            # without evaluating every mesh again. Not so for copies Modo generates, which are no item's.
-            self._geometry_cache['_item_transforms']=self._stand_with_items(modo.Scene(),scene)
+            # without evaluating every mesh again, and which copies (a replicator's, no item's) are read again with it.
+            # Found again after a mesh is read again as well: kept only from a whole reading, a car's one edited mesh
+            # had every move after it read the whole car again.
+            followed,loose=self._standing(modo.Scene(),scene)
+            self._geometry_cache['_item_transforms']=followed;self._geometry_cache['_loose_items']=loose
         scene.pop('_evaluated_data',None)
         scene['_geometry_revision']=str(id(self))+':'+str(self._last_full_capture)
         configured=self._configure_snapshot(scene)
@@ -1273,9 +1279,9 @@ class Panel(Tools, QtWidgets.QWidget):
             self._asset_signature=signature(configured)
         return configured
 
-    def _stand_with_items(self,document,scene):
-        from .incremental import stands_with_items
-        return stands_with_items(document,scene)
+    def _standing(self,document,scene):
+        from .incremental import standing
+        return standing(document,scene)
 
     def _capture_output(self):
         values=self._settings_values()
@@ -1896,6 +1902,11 @@ class Panel(Tools, QtWidgets.QWidget):
         if self.sequence is not None:
             self.sequence.stop()
         self._following=False;self.timer.stop()
+        # The live render cache let go: Modo no longer keeps it up to date for a preview that does not follow the scene.
+        try:
+            from . import evaluated
+            evaluated.stop_live()
+        except Exception:pass
         # A draft's region is not gone on to once its lines have been stopped.
         self._draft_then=None;self._draft_pass=False
         self.preview.set_show_buckets(self.show_buckets.isChecked())

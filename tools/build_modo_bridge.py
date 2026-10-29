@@ -23,7 +23,7 @@ binary='MoonRayGeometry.lx'
 env=os.environ.copy(); env['PATH']=str(compiler.parent)+os.pathsep+env.get('PATH','')
 command=[str(compiler),'-std=c++17','-shared','-O2','-ffp-contract=off','-D_WIN32','-D_WIN64','-DWIN32',
     '-static','-static-libgcc','-static-libstdc++','-I'+str(sdk/'include'),'-I'+str(meshopt),
-    str(root/'native-modo/geometry_bridge.cpp'),str(root/'native-modo/render_cache.cpp'),str(root/'native-modo/mesh_reader.cpp'),str(root/'native-modo/rows_math.cpp'),str(root/'native-modo/simplify.cpp'),
+    str(root/'native-modo/geometry_bridge.cpp'),str(root/'native-modo/render_cache.cpp'),str(root/'native-modo/mesh_reader.cpp'),str(root/'native-modo/rows_math.cpp'),str(root/'native-modo/simplify.cpp'),str(root/'native-modo/shader_stacks.cpp'),
     # meshoptimizer's simplifier (MIT, upstream/meshoptimizer, v0.22), for simplify.cpp.
     *[str(meshopt/name) for name in ('allocator.cpp','indexgenerator.cpp','simplifier.cpp')],
     str(sdk/'common/cwrap.cpp'),str(sdk/'common/util.cpp'),

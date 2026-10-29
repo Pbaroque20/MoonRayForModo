@@ -326,7 +326,7 @@ def picture_size(scene, camera=None):
     return width, height
 
 
-def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=False,dirty_meshes=None):
+def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=False,dirty_meshes=None,shading_kept=False):
     scene = modo.Scene()
     try:
         from . import modo_color
@@ -502,7 +502,8 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
                 data=dict(cached,surfaces=[dict(v) for v in cached['surfaces']]) if cached else evaluated.capture(lx.service.Selection().GetTime())
             result['_evaluated_data']=data
             native_shape_materials = result['materials']
-            result['materials'] = evaluated.assign_materials(data, scene, warnings)
+            # An edit of meshes alone: each Shader Tree stack's material as the last reading made it (shading_kept).
+            result['materials'] = evaluated.assign_materials(data, scene, warnings, shading_kept=shading_kept)
             result['materials'], _ = shader_library.mend(result['materials'], library, warnings, names)
             shader_library.attach_dependencies(result['materials'],library)
             result['meshes'] = evaluated.meshes(data, result['materials'], warnings, scene)

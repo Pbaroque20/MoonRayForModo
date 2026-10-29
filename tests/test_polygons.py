@@ -164,5 +164,27 @@ class CutForMoonRay(unittest.TestCase):
         self.assertIn('["face_vertex_count"] = {6, 4}', subd.replace('\n', ''))
 
 
+class CutKept(unittest.TestCase):
+    """A mesh cut again with the same lists, wherever it now stands, gives back the very lists cut before: the scene
+    text keeps them written, and a move of a car with n-gons wrote every mesh's lists anew (6.7 s)."""
+    HEX = [(0, 0, 0), (1, 0, 0), (1.5, 1, 0), (1, 2, 0), (0, 2, 0), (-.5, 1, 0)]
+
+    def test_a_moved_mesh_gets_the_same_lists(self):
+        mesh = {'vertices': self.HEX, 'faces': [[0, 1, 2, 3, 4, 5]], 'uvs': [(0, 0)] * 6, 'matrix': [1.0] * 16}
+        first = polygons.cut_mesh(mesh)
+        moved = polygons.cut_mesh(dict(mesh, matrix=[2.0] * 16))
+        self.assertEqual(len(first['faces']), 4)
+        self.assertIs(moved['faces'], first['faces'])
+        self.assertIs(moved['uvs'], first['uvs'])
+        self.assertEqual(moved['matrix'], [2.0] * 16)
+
+    def test_new_lists_are_cut_again(self):
+        mesh = {'vertices': self.HEX, 'faces': [[0, 1, 2, 3, 4, 5]]}
+        first = polygons.cut_mesh(mesh)
+        again = polygons.cut_mesh(dict(mesh, faces=[[0, 1, 2, 3, 4, 5]]))
+        self.assertIsNot(again['faces'], first['faces'])
+        self.assertEqual(again['faces'], first['faces'])
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -72,6 +72,51 @@ def begin():
             panel.ipr_mode.setChecked(True)
         wrap(panel, '_capture', 'read scene')
         wrap(panel, '_capture_preview', 'read scene (motion)')
+        # Why each reading was asked for: what it reuses, from where, and whether the time or settings had changed.
+        captured = panel._capture
+
+        def asked(reuse=False, transform_items=None):
+            try:
+                import traceback as trace
+                where = [frame.name + ':' + str(frame.lineno) for frame in trace.extract_stack()[-6:-1]]
+                current = {k: v for k, v in panel._settings_values().items() if k not in ('display', 'preview_buffer', 'aovs', 'recovery', 'denoising', 'compositor')}
+                before = panel._live_settings or {}
+                differ = sorted(k for k in set(current) | set(before) if current.get(k) != before.get(k))[:8]
+                note('asked', 0.0, {'reuse': reuse if not isinstance(reuse, dict) else 'dirty', 'where': where, 'settings': differ,
+                                    'time': (panel._last_time, lx.service.Selection().GetTime())})
+            except Exception as exc:
+                note('asked', 0.0, {'error': str(exc)[:120]})
+            return captured(reuse, transform_items)
+        panel._capture = asked
+        # A failure's traceback, as the panel only says its message.
+        failed = panel._failed
+
+        def failing(message):
+            import traceback as trace
+            note('failed', 0.0, {'message': str(message)[:200], 'trace': trace.format_exc()[-3000:]})
+            save()
+            return failed(message)
+        panel._failed = failing
+        # And what Modo's notices said each time they were taken (full: read whole).
+        def consumed_notices(_consume=panel.changes.consume):
+            value = _consume()
+            if value[0] or value[1]:
+                note('notices', 0.0, {'full': value[0], 'items': sorted(value[1])[:6]})
+            return value
+        panel.changes.consume = consumed_notices
+        # Which notice set full, on the listener's own class (Modo calls it through the class: methods set on the
+        # instance cut it off from the notices).
+        kind = type(panel.changes)
+        for name in [n for n in vars(kind) if n.startswith('sil_')]:
+            method = vars(kind)[name]
+
+            def told(self, *a, _name=name, _method=method):
+                before = self.full
+                value = _method(self, *a)
+                if self.full and not before:
+                    note('full by', 0.0, _name)
+                return value
+            setattr(kind, name, told)
         wrap(panel, '_digest', 'digest')
         wrap(panel, '_submit', 'submit')
         wrap(moonlightipr_scene, 'pack', 'pack')
@@ -184,7 +229,8 @@ def begin():
         timer.start(20)
         held['timer'] = timer
         note('start', 0.0)
-        if hasattr(panel, 'rt') and ENGINE == 'moonlightipr':
+        # MoonRay's realtime has an RT switch of its own where the preview has one (MOONRAY_PROBE_RT).
+        if hasattr(panel, 'rt') and (ENGINE == 'moonlightipr' or os.environ.get('MOONRAY_PROBE_RT')):
             panel.rt.click()
         else:
             panel.start.click()
@@ -193,13 +239,27 @@ def begin():
     save()
     # MOONRAY_PROBE_POSES: the camera set to these poses in turn ("x y z rx ry rz;..."), each picture kept, in place
     # of the bursts of moves; MoonLightIPR's own lines written down.
-    try:
-        session = panel.renderer.moonlightipr
-        session.output.connect(lambda text: result.setdefault('session', []).extend(
-            line[:200] for line in text.splitlines() if line.strip() and not line.startswith('@@')))
-    except Exception:
-        result.setdefault('errors', []).append(traceback.format_exc())
+    for name in ('moonlightipr', 'session'):
+        # MoonLightIPR's own lines, or the MoonRay session's.
+        try:
+            session = getattr(panel.renderer, name)
+            session.output.connect(lambda text: result.setdefault('session', []).extend(
+                (now(), line[:200]) for line in text.splitlines() if line.strip() and not line.startswith('@@')))
+        except Exception:
+            result.setdefault('errors', []).append(traceback.format_exc())
     first = (lambda: pose(0)) if os.environ.get('MOONRAY_PROBE_POSES') else (lambda: burst(0, 0))
+    # MOONRAY_PROBE_START=orbit: the turns of the scene's root alone (and the reading whole after, with VERIFY).
+    if os.environ.get('MOONRAY_PROBE_START') == 'orbit':
+        first = lambda: (panel_widget().preview.image.save(str(out / 'before.png')), orbit(0))
+    # MOONRAY_PROBE_START=part: the edited mesh chosen as edit() would, then the moves of parts, the turns and the rest.
+    if os.environ.get('MOONRAY_PROBE_START') == 'part':
+        def moves():
+            meshes = sorted(((len(modo.Mesh(m).geometry.vertices), m) for m in modo.Scene().items('mesh')), key=lambda entry: entry[0])
+            sized = [m for n, m in meshes if n >= 2000]
+            held['mesh'] = (sized[len(sized) // 2] if sized else meshes[-1][1]).id
+            panel_widget().preview.image.save(str(out / 'before.png'))
+            part(0)
+        first = moves
     QtCore.QTimer.singleShot(int(os.environ.get('MOONRAY_PROBE_SETTLE', '90')) * 1000, first)
 
 
@@ -234,6 +294,12 @@ def burst(number, step):
     try:
         if step == 0:
             note('burst %d' % number, 0.0)
+            if number == 0:
+                # From where the camera stands: set from 0, the camera left the car behind.
+                try:
+                    held['x'] = float(modo.LocatorSuperType(modo.Scene().item(held['camera'])).position.x.get())
+                except Exception:
+                    result.setdefault('errors', []).append(traceback.format_exc())
         lx.eval('select.item {%s} set' % held['camera'])
         held['x'] += 0.02
         lx.eval('transform.channel pos.X %s' % held['x'])
@@ -274,7 +340,36 @@ def edit(count):
     if count < 1:
         QtCore.QTimer.singleShot(25000, lambda: edit(count + 1))
     else:
-        QtCore.QTimer.singleShot(25000, lambda: orbit(0))
+        QtCore.QTimer.singleShot(25000, lambda: part(0))
+
+
+def part(step):
+    """Parts of the scene moved by their items, as a drag lets go (MOONRAY_PROBE_PARTS steps, 8 s apart): first an item
+    with meshes under it that is not the root (a wheel with its hub), then the edited mesh's own item, alternately."""
+    if step >= int(os.environ.get('MOONRAY_PROBE_PARTS', '4')):
+        orbit(0)
+        return
+    try:
+        if 'part' not in held:
+            scene = modo.Scene()
+            meshes = scene.items('mesh')
+            under = []
+            for item in scene.iterItems():
+                if item.parent is None or item.type == 'mesh':
+                    continue
+                count = sum(1 for child in item.children(recursive=True) if child.type == 'mesh')
+                if 0 < count < len(meshes) // 2:
+                    under.append((count, item))
+            held['part'] = max(under, key=lambda entry: entry[0])[1].id if under else held['mesh']
+            result['part'] = {'name': scene.item(held['part']).name, 'type': scene.item(held['part']).type}
+        target = held['part'] if step % 2 == 0 else held['mesh']
+        lx.eval('select.item {%s} set' % target)
+        lx.eval('transform.channel pos.X %s' % (0.05 * (step + 1)))
+        note('part %d' % step, 0.0, {'item': modo.Scene().item(target).name})
+    except Exception:
+        result.setdefault('errors', []).append(traceback.format_exc())
+    save()
+    QtCore.QTimer.singleShot(8000, lambda: part(step + 1))
 
 
 def picture_brightness():
@@ -297,7 +392,11 @@ def orbit(step):
     import math
     steps = int(os.environ.get('MOONRAY_PROBE_ORBIT', '0'))
     if step >= steps:
-        finish()
+        # The picture of the last move kept once the renderer has had time to take it (MOONRAY_PROBE_SETTLE_LAST s).
+        if os.environ.get('MOONRAY_PROBE_VERIFY'):
+            QtCore.QTimer.singleShot(int(os.environ.get('MOONRAY_PROBE_SETTLE_LAST', '0')) * 1000, lambda: verify(0))
+        else:
+            finish()
         return
     try:
         if step == 0:
@@ -330,8 +429,41 @@ def orbit(step):
     QtCore.QTimer.singleShot(6000, look)
 
 
+def verify(step=0):
+    """The picture the moves left, beside one of the same scene read whole (the cached reading dropped): where they
+    differ, a partial reading put something elsewhere. Mean difference over a grid of pixels, 0-255, both kept."""
+    try:
+        panel = panel_widget()
+        if step == 0:
+            held['partial'] = panel.preview.image.copy()
+            held['partial'].save(str(out / 'verify-partial.png'))
+            panel._geometry_cache = None
+            panel.changes.full = True
+            note('verify read whole', 0.0)
+            QtCore.QTimer.singleShot(int(os.environ.get('MOONRAY_PROBE_VERIFY', '90')) * 1000, lambda: verify(1))
+            return
+        whole = panel.preview.image.copy()
+        whole.save(str(out / 'verify-whole.png'))
+        a, total, n = held['partial'], 0.0, 0
+        for y in range(0, min(a.height(), whole.height()), max(1, a.height() // 36)):
+            for x in range(0, min(a.width(), whole.width()), max(1, a.width() // 48)):
+                p, q = QtGui.QColor(a.pixel(x, y)), QtGui.QColor(whole.pixel(x, y))
+                total += (abs(p.red() - q.red()) + abs(p.green() - q.green()) + abs(p.blue() - q.blue())) / 3.0
+                n += 1
+        result['verify'] = {'mean_difference': round(total / max(n, 1), 2), 'pixels': n}
+    except Exception:
+        result.setdefault('errors', []).append(traceback.format_exc())
+    finish()
+
+
 def finish():
     note('end', 0.0)
+    try:
+        # How many readings the live render cache served, and how many it could not (evaluated.LIVE).
+        from moonray_modo import evaluated
+        result['live'] = dict(getattr(evaluated, 'LIVE', {}))
+    except Exception:
+        pass
     try:
         panel = panel_widget()
         if hasattr(panel, 'rt') and panel.rt.isChecked():
