@@ -120,7 +120,7 @@ struct Mesh {std::shared_ptr<const MeshData> data;unsigned material;int volume=-
  // The geometry that places this mesh, for a placement-only edit (placeMoved): its own where it has no instancer, else
  // its instancer (ownerInstancer) where its instances share their reference's data. Empty for an instancer's instances
  // baked each into a mesh of its own, which a move reads again whole.
- std::string owner;bool ownerInstancer=false;
+ std::string owner;bool ownerInstancer=false;int ownerIndex=-1;  // ownerIndex: an instancer's instance, its place
 };
 // A plan mesh's curve set (curve_core.h) over its own arrays (host memory).
 inline curves::Set curveSet(const MeshData& m){curves::Set c;if(!m.curveBasis)return c;
@@ -2679,19 +2679,30 @@ inline bool admitMeshLight(const rdl::SceneObject& o,float sceneScale,const rdl:
 // that changed (geometry in motion is read over it), volumes and light filters (evaluated at the render origin),
 // adaptive tessellation (cameraDependent).
 inline void admitCamera(const rdl::SceneObject& camera,const rdl::SceneVariables& sv,Plan& plan,const Plan* previous);
-inline bool updateCamera(Plan& plan,const rdl::SceneContext& context){
+// why, where given: what kept the camera from being taken alone (the session's log).
+inline bool updateCamera(Plan& plan,const rdl::SceneContext& context,std::string* why=nullptr){
  const auto& sv=context.getSceneVariables();
  auto* camera=get<rdl::SceneObject*>(sv,"camera");
- if(!camera||!plan.paths||plan.camera.type==surface::CameraBake||plan.cameraDependent||!plan.volumes.empty()||!plan.filterLists.empty()||
-    !plan.pixelSamples.empty()||!get<rdl::String>(*camera,"pixel_sample_map").empty())return false;
- if(!(motionParams(sv,camera)==plan.motion))return false;
- if(plan.motion.on&&get<rdl::Float>(*camera,"mb_shutter_bias")!=plan.shutterBias)return false;
+ auto refuse=[&](const char* reason){if(why)*why=reason;return false;};
+ if(!camera||!plan.paths)return refuse("no camera, or not the path tracer");
+ if(plan.camera.type==surface::CameraBake)return refuse("a bake camera");
+ if(plan.cameraDependent)return refuse("geometry tessellated for the camera (adaptive tessellation)");
+ if(!plan.filterLists.empty())return refuse("light filters");
+ if(!plan.pixelSamples.empty()||!get<rdl::String>(*camera,"pixel_sample_map").empty())return refuse("a pixel sample map");
+ if(!(motionParams(sv,camera)==plan.motion))return refuse("the camera's motion blur changed");
+ if(plan.motion.on&&get<rdl::Float>(*camera,"mb_shutter_bias")!=plan.shutterBias)return refuse("the shutter bias changed");
  const auto cm=rigid(*camera);const auto w=cm.inverse();
  {const double rows[12]={w[0][0],w[1][0],w[2][0],w[3][0],w[0][1],w[1][1],w[2][1],w[3][1],w[0][2],w[1][2],w[2][2],w[3][2]};
   for(int i=0;i<12;++i)plan.worldToRender[i]=float(rows[i]);
   for(int i=0;i<4;++i)for(int j=0;j<4;++j)plan.world2render[4*i+j]=w[i][j];}
  admitCamera(*camera,sv,plan,nullptr);
  plan.renderOrigin=V3{float(cm[3][0]),float(cm[3][1]),float(cm[3][2])};
+ // A volume whose settings are mapped (a texture, a map) holds them as at the render origin, the camera's place
+ // (originAttenuation, mappedAt): made again where the camera now is (the card's copy goes again, GpuLane::updateCamera).
+ // An unmapped one's are its constants. A car's mapped glass had every move of the camera prepare the whole scene.
+ for(auto& s:plan.volumes)if(s.mapped){
+  const volume::Mapped m=mappedAt(plan,s,plan.renderOrigin);
+  s.originAttenuation=(s.flags&volume::MatchAlbedo)?m.albedoColor:m.attenuationColor;s.originIntensity=m.attenuationIntensity;s.originFactor=m.attenuationFactor;}
  return true;
 }
 // A placement-only edit (the session's fast path, realtime): geometries moved and nothing else of them changed. Each of
@@ -2702,7 +2713,10 @@ inline bool updateCamera(Plan& plan,const rdl::SceneContext& context){
 // preparation makes it. moves: each moved geometry's node_xform then and now. The meshes and their structures on the
 // card are taken over as they are; only where they are placed is new. false, with why, where a full preparation is
 // needed: a moving or volume-bounding mesh, points or curves, an instance already, one left to the CPU lane.
-inline bool placeMoved(Plan& plan,const std::map<std::string,std::pair<rdl::Mat4d,rdl::Mat4d>>& moves,const double meshW2R[16],std::string& why){
+// instancePlaces: a moved instancer's instances' transforms now, by instance (as prepare makes them, InstanceGeometry's
+// xform_list entry by its reference's and its own node_xform), which its shared instances are placed by.
+inline bool placeMoved(Plan& plan,const std::map<std::string,std::pair<rdl::Mat4d,rdl::Mat4d>>& moves,
+                       const std::map<std::string,std::vector<rdl::Mat4d>>& instancePlaces,const double meshW2R[16],std::string& why){
  rdl::Mat4d w2r;for(int i=0;i<4;++i)for(int j=0;j<4;++j)w2r[i][j]=meshW2R[4*i+j];
  const rdl::Mat4d r2w=w2r.inverse();
  size_t placed=0;
@@ -2712,11 +2726,11 @@ inline bool placeMoved(Plan& plan,const std::map<std::string,std::pair<rdl::Mat4
   const MeshData& d=*e.data;
   const rdl::Mat4d move=r2w*f->second.first.inverse()*f->second.second*w2r;
   if(e.ownerInstancer){
-   // An instance of shared data its instancer places: its transform (render space) moved as the instancer is.
-   if(!e.instance){why=e.owner+"'s instance is not placed by a transform";return false;}
-   rdl::Mat4d x(e.objectToWorld[0],e.objectToWorld[1],e.objectToWorld[2],0,e.objectToWorld[3],e.objectToWorld[4],e.objectToWorld[5],0,
-                e.objectToWorld[6],e.objectToWorld[7],e.objectToWorld[8],0,e.objectToWorld[9],e.objectToWorld[10],e.objectToWorld[11],1);
-   placeInstance(e,x*move);
+   // An instance of shared data its instancer places: where the instancer now puts it.
+   const auto p=instancePlaces.find(e.owner);
+   if(!e.instance||p==instancePlaces.end()){why=e.owner+"'s instances are not placed by their transforms";return false;}
+   if(e.ownerIndex<0||size_t(e.ownerIndex)>=p->second.size()){why=e.owner+" has another count of instances";return false;}
+   placeInstance(e,p->second[size_t(e.ownerIndex)]);
    ++placed;continue;}
   if(e.instance){why=e.owner+" is an instance already";return false;}
   if(e.volume>=0){why=e.owner+" bounds a volume";return false;}
@@ -3812,7 +3826,8 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
    plan->aovs?plan->aovs->geomLabel(aov::attribute<rdl::String>(o,"label","")):-1});
   plan->meshes.back().families=indexedFamilies(o,frame,familyCache)|(mat?indexedFamilies(*mat,frame,familyCache):0);
   if(!item.instancer)plan->meshes.back().owner=o.getName();
-  else if(shareInstance){plan->meshes.back().owner=item.instancer->getName();plan->meshes.back().ownerInstancer=true;}
+  else if(shareInstance){plan->meshes.back().owner=item.instancer->getName();plan->meshes.back().ownerInstancer=true;
+   plan->meshes.back().ownerIndex=item.instance;}
   if(shareInstance){auto& e=plan->meshes.back();placeInstance(e,instanceMatrix(item));
    instanceValues(*item.instancer,item.instance,item.count,e.instancePrims,e.instancePrimData);}
   if(displacementShader&&!subdGeometry&&!polyGeometry&&!reusedData)displaced.push_back({plan->meshes.size()-1,edgeVertices,displacement});

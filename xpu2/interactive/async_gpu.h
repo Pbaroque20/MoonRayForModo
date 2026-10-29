@@ -230,6 +230,8 @@ public:
     // space and render origin made again (cpu::updateCamera). Its configuration goes to the device; the rest stays.
     void updateCamera(const cpu::PlanView& plan) {
         plan_ = plan;
+        // The volumes' records again: a mapped one's settings at the render origin, where the camera now is.
+        if (scene_.volumes && !plan->volumes.empty()) scene_.volumes = upload(plan->volumes.data(), plan->volumes.size() * sizeof(volume::Shader));
         uploadConfig(plan);
     }
     // The GPU's rate in samples a second, as its launches have found it across frames (realtime's launch sizes).
@@ -258,7 +260,13 @@ public:
         // flakes or iridescence, gives a guide as noisy as the picture at realtime's few samples, and the denoiser
         // keeps what its guide shows); "raw", the albedo as rendered; "normal", the normals alone; "none". Unset, as
         // that MoonRay Source Override is set (MOONRAY_MODO_DENOISE_CLEAN_GUIDES, on by default): clean, or raw.
-        explicit Denoiser(GpuLane& lane) : lane_(lane) {
+        // upscale: OptiX's model that denoises a picture and makes it twice its size each way (UPSCALE2X), for the pictures
+        // realtime shows from a quarter of their pixels (a pixel in each two by two) while the view or the scene moves;
+        // off (XPU2_SESSION_RT_UPSCALE=0, the kit's Lower Resolution While Moving off), the HDR model at that size,
+        // enlarged after as it is (RealtimeDenoiser::upscale).
+        explicit Denoiser(GpuLane& lane, bool upscale = false) : lane_(lane) {
+            const char* up = std::getenv("XPU2_SESSION_RT_UPSCALE");
+            upscale_ = upscale && !(up && up[0] == '0');
             const char* guides = std::getenv("XPU2_SESSION_RT_GUIDES");
             const char* cleaned = std::getenv("MOONRAY_MODO_DENOISE_CLEAN_GUIDES");
             const std::string g = guides ? guides : cleaned && cleaned[0] == '0' ? "raw" : "clean";
@@ -266,6 +274,8 @@ public:
         }
         ~Denoiser() { release(); }
         Denoiser(const Denoiser&) = delete;
+        // Whether it makes its pictures twice their size each way: out then holds (2w x 2h) pixels.
+        bool upscales() const { return upscale_; }
         bool run(const float* color, const float* albedo, const float* normal, float* out, U32 w, U32 h, std::string& error) {
             auto& d = lane_.driver;
             try {
@@ -286,16 +296,19 @@ public:
                 }
                 if (!done_) gpu::Driver::check(d.cuEventCreate_p(&done_, CU_EVENT_DISABLE_TIMING));
                 const bool withAlbedo = mode_ == Raw || mode_ == Clean, withNormal = mode_ != NoGuides;
-                if (!beauty_.handle) beauty_.create(lane_.optix_, withAlbedo, withNormal);
-                if (mode_ == Clean && !albedo_.handle) albedo_.create(lane_.optix_, false, false);
+                if (!beauty_.handle) beauty_.create(lane_.optix_, withAlbedo, withNormal, upscale_);
+                if (mode_ == Clean && !albedo_.handle) albedo_.create(lane_.optix_, false, false, false);
                 const size_t bytes = size_t(w) * h * 3 * sizeof(float);
+                // The picture out: twice the size each way where it upscales.
+                const U32 ow = upscale_ ? 2 * w : w, oh = upscale_ ? 2 * h : h;
+                const size_t outBytes = size_t(ow) * oh * 3 * sizeof(float);
                 if (w != width_ || h != height_) {
                     buffers();
-                    beauty_.setup(d, stream_, w, h);
-                    if (albedo_.handle) albedo_.setup(d, stream_, w, h);
+                    beauty_.setup(d, stream_, w, h, ow, oh);
+                    if (albedo_.handle) albedo_.setup(d, stream_, w, h, w, h);
                     for (auto& i : intensity_) gpu::Driver::check(d.cuMemAlloc_v2_p(&i, 16));
-                    for (auto& image : images_) gpu::Driver::check(d.cuMemAlloc_v2_p(&image, bytes));
-                    gpu::Driver::check(d.cuMemAllocHost_v2_p(&host_, bytes * 4 + 64));
+                    for (size_t k = 0; k < 5; ++k) gpu::Driver::check(d.cuMemAlloc_v2_p(&images_[k], k == 3 ? outBytes : bytes));
+                    gpu::Driver::check(d.cuMemAllocHost_v2_p(&host_, bytes * 3 + outBytes + 64));
                     width_ = w;
                     height_ = h;
                 }
@@ -306,12 +319,13 @@ public:
                 std::copy(normal, normal + n, host + 2 * n);
                 for (int i = 0; i < 3; ++i)
                     gpu::Driver::check(d.cuMemcpyHtoDAsync_v2_p(images_[i], host + i * n, bytes, stream_));
-                auto image = [&](CUdeviceptr data) {
+                auto image = [&](CUdeviceptr data, U32 iw = 0, U32 ih = 0) {
+                    if (!iw) iw = w, ih = h;
                     OptixImage2D v{};
                     v.data = data;
-                    v.width = w;
-                    v.height = h;
-                    v.rowStrideInBytes = w * 3 * sizeof(float);
+                    v.width = iw;
+                    v.height = ih;
+                    v.rowStrideInBytes = iw * 3 * sizeof(float);
                     v.pixelStrideInBytes = 3 * sizeof(float);
                     v.format = OPTIX_PIXEL_FORMAT_FLOAT3;
                     return v;
@@ -320,9 +334,10 @@ public:
                 if (withAlbedo) guide.albedo = image(images_[mode_ == Clean ? 4 : 1]);
                 if (withNormal) guide.normal = image(images_[2]);
                 if (mode_ == Clean) albedo_.invoke(stream_, image(images_[1]), image(images_[4]), OptixDenoiserGuideLayer{}, intensity_[1]);
-                beauty_.invoke(stream_, image(images_[0]), image(images_[3]), guide, intensity_[0]);
-                gpu::Driver::check(d.cuMemcpyDtoHAsync_v2_p(host + 3 * n, images_[3], bytes, stream_));
-                gpu::Driver::check(d.cuMemcpyDtoHAsync_v2_p(host + 4 * n, intensity_[0], sizeof(float), stream_));
+                beauty_.invoke(stream_, image(images_[0]), image(images_[3], ow, oh), guide, intensity_[0]);
+                const size_t outN = size_t(ow) * oh * 3;
+                gpu::Driver::check(d.cuMemcpyDtoHAsync_v2_p(host + 3 * n, images_[3], outBytes, stream_));
+                gpu::Driver::check(d.cuMemcpyDtoHAsync_v2_p(host + 3 * n + outN, intensity_[0], sizeof(float), stream_));
                 gpu::Driver::check(d.cuEventRecord_p(done_, stream_));
                 // Waited for by polling, as the lane's own work is: the context is not synchronized.
                 for (;;) {
@@ -331,8 +346,8 @@ public:
                     if (e != CUDA_ERROR_NOT_READY) gpu::Driver::check(e);
                     std::this_thread::sleep_for(std::chrono::microseconds(200));
                 }
-                std::copy(host + 3 * n, host + 4 * n, out);
-                if (std::getenv("XPU2_SESSION_RT_DEBUG")) {
+                std::copy(host + 3 * n, host + 3 * n + outN, out);
+                if (std::getenv("XPU2_SESSION_RT_DEBUG") && !upscale_) {
                     // A diagnostic: the inputs' values that are not finite, the intensity OptiX found, how much it changed.
                     size_t bad[3] = {}, i = 0;
                     double change = 0;
@@ -359,17 +374,20 @@ public:
             OptixDenoiser handle = nullptr;
             CUdeviceptr state = 0, scratch = 0;
             size_t stateBytes = 0, scratchBytes = 0;
-            void create(OptixDeviceContext context, bool albedo, bool normal) {
+            bool upscale = false;  // OptiX's UPSCALE2X (an AOV model): its picture out twice the size each way
+            void create(OptixDeviceContext context, bool albedo, bool normal, bool twice) {
                 OptixDenoiserOptions options{};
                 options.guideAlbedo = albedo ? 1u : 0u;
                 options.guideNormal = normal ? 1u : 0u;
-                gpu::ox(optixDenoiserCreate(context, OPTIX_DENOISER_MODEL_KIND_HDR, &options, &handle));
+                upscale = twice;
+                gpu::ox(optixDenoiserCreate(context, twice ? OPTIX_DENOISER_MODEL_KIND_UPSCALE2X : OPTIX_DENOISER_MODEL_KIND_HDR, &options, &handle));
             }
-            void setup(gpu::Driver& d, CUstream stream, U32 w, U32 h) {
+            // w, h: the picture in; ow, oh: out (OptiX's memory sized by what it denoises into, set up by what comes in).
+            void setup(gpu::Driver& d, CUstream stream, U32 w, U32 h, U32 ow, U32 oh) {
                 OptixDenoiserSizes sizes{};
-                gpu::ox(optixDenoiserComputeMemoryResources(handle, w, h, &sizes));
+                gpu::ox(optixDenoiserComputeMemoryResources(handle, ow, oh, &sizes));
                 stateBytes = sizes.stateSizeInBytes;
-                scratchBytes = std::max(sizes.withoutOverlapScratchSizeInBytes, sizes.computeIntensitySizeInBytes);
+                scratchBytes = std::max({sizes.withoutOverlapScratchSizeInBytes, sizes.computeIntensitySizeInBytes, sizes.computeAverageColorSizeInBytes});
                 gpu::Driver::check(d.cuMemAlloc_v2_p(&state, std::max<size_t>(stateBytes, 16)));
                 gpu::Driver::check(d.cuMemAlloc_v2_p(&scratch, std::max<size_t>(scratchBytes, 16)));
                 gpu::ox(optixDenoiserSetup(handle, stream, w, h, state, stateBytes, scratch, scratchBytes));
@@ -379,9 +397,16 @@ public:
                 OptixDenoiserLayer layer{};
                 layer.input = input;
                 layer.output = output;
-                gpu::ox(optixDenoiserComputeIntensity(handle, stream, &layer.input, intensity, scratch, scratchBytes));
                 OptixDenoiserParams params{};
-                params.hdrIntensity = intensity;
+                if (upscale) {
+                    // An AOV model goes by the picture's average colour (three floats) where the HDR one goes by its
+                    // intensity.
+                    gpu::ox(optixDenoiserComputeAverageColor(handle, stream, &layer.input, intensity, scratch, scratchBytes));
+                    params.hdrAverageColor = intensity;
+                } else {
+                    gpu::ox(optixDenoiserComputeIntensity(handle, stream, &layer.input, intensity, scratch, scratchBytes));
+                    params.hdrIntensity = intensity;
+                }
                 gpu::ox(optixDenoiserInvoke(handle, stream, &params, state, stateBytes, &guide, &layer, 1, 0, 0, scratch, scratchBytes));
             }
             void free(gpu::Driver& d) {
@@ -430,6 +455,7 @@ public:
         CUstream stream_ = nullptr;
         CUevent done_ = nullptr;
         Model beauty_, albedo_;
+        bool upscale_ = false;
         CUdeviceptr intensity_[2] = {}, images_[5] = {};  // colour, albedo, normal, output, the albedo cleaned
         void* host_ = nullptr;
         U32 width_ = 0, height_ = 0;

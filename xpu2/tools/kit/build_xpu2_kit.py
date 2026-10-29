@@ -74,6 +74,12 @@ def xpu2_devices():
     return value if value in ('both', 'gpu', 'cpu') else 'both'
 
 
+def xpu2_upscale():
+    """Whether realtime's pictures shown from a quarter of their pixels while things move are made full size by OptiX's
+    upscaling denoiser (Lower Resolution While Moving, on by default), or enlarged as they are."""
+    return str(_setting('xpu2/upscale', 'true')).lower() in ('true', '1')
+
+
 def xpu2_environment(runtime):
     """What XPU2's session starts with over environment(runtime): its own libraries and scene classes first, and the
     kit's MoonRay named for what XPU2 leaves to it."""
@@ -83,6 +89,8 @@ def xpu2_environment(runtime):
             'XPU2_SESSION_CHAIN': '1' if xpu2_chain() else '0',
             # Its devices (Preferences > MoonRay > XPU2 > Devices): 2 both, 1 the graphics card, 0 the processor.
             'XPU2_SESSION_MODE': {'both': '2', 'gpu': '1', 'cpu': '0'}[xpu2_devices()],
+            # Lower Resolution While Moving (Preferences > MoonRay > XPU2): OptiX's upscaling denoiser for those pictures.
+            'XPU2_SESSION_RT_UPSCALE': '1' if xpu2_upscale() else '0',
             # XPU2's tessellations kept in the cache folder as the Scene cache says (cache_folder).
             'XPU2_SESSION_GEOMETRY_CACHE': '1' if __import__('moonray_modo.cache_folder', fromlist=['scene_cache']).scene_cache() else '0'}
 
@@ -357,6 +365,10 @@ SHEET = '''    <!-- XPU2, the private test build: an asynchronous CPU and GPU re
       <list type="Control" val="cmd moonray.pref.xpu2Devices ?">
         <atom type="Label">Devices</atom>
         <atom type="Tooltip">What XPU2 renders with: the processor and the graphics card together (the default), the graphics card only, or the processor only (no shaders to compile). A running preview restarts with the change</atom>
+      </list>
+      <list type="Control" val="cmd moonray.pref.xpu2Upscale ?">
+        <atom type="Label">Lower resolution while moving</atom>
+        <atom type="Tooltip">While the view or the scene moves, realtime shows each new picture from a quarter of its pixels at first. On, OptiX's upscaling denoiser makes those pictures full size, sharper; off, they are enlarged as they are. A running preview restarts with the change</atom>
       </list>
       <list type="Control" val="cmd moonray.pref.xpu2Chain ?">
         <atom type="Label">Adaptive passes on the graphics card</atom>
@@ -1678,11 +1690,12 @@ def xpu2_rt_no_denoise(kit):
     if snapshot.get('_ipr') and not final:return False
 """, """def guides_required(snapshot,final=False,linear=False):
     if snapshot.get('_ipr') and not final:return False
-    # MoonRay's realtime under XPU2 has no denoised beauty (panel), so no guides for it.
+    # MoonRay's realtime under XPU2 has no denoised beauty (panel): its guides only for Lower Resolution While Moving,
+    # whose pictures from a quarter of their pixels XPU2 denoises and upscales while the view or the scene moves.
     if snapshot.get('_realtime') and not final:
         try:
             from . import native
-            if native.xpu2():return False
+            if native.xpu2():return bool(native.xpu2_upscale())
         except Exception:pass
 """)
     # Nor is it denoised: with Denoise Preview on, the denoiser asked for the guides it no longer has
@@ -2193,12 +2206,12 @@ def build(session, base):
     p = Patch(py / 'preferences.py')
     p.rep("""    'auto_xpu': (True, bool),""", """    'auto_xpu': (True, bool),
     # XPU2, the private test build: what renders on the graphics card, and where its adaptive passes are made.
-    'xpu2/renderer': ('xpu2', str), 'xpu2/adaptive_chain': (False, bool), 'xpu2/devices': ('both', str),""")
+    'xpu2/renderer': ('xpu2', str), 'xpu2/adaptive_chain': (False, bool), 'xpu2/devices': ('both', str), 'xpu2/upscale': (True, bool),""")
     p.save()
 
     p = Patch(py / 'native.py')
     p.rep("""        globals()[key]() for key in ('usd_specular', 'opaque_alpha', 'transmission_roughness', 'auto_xpu'))""",
-          """        globals()[key]() for key in ('usd_specular', 'opaque_alpha', 'transmission_roughness', 'auto_xpu')) + (xpu2(), xpu2_chain(), xpu2_devices())""")
+          """        globals()[key]() for key in ('usd_specular', 'opaque_alpha', 'transmission_roughness', 'auto_xpu')) + (xpu2(), xpu2_chain(), xpu2_devices(), xpu2_upscale())""")
     p.rep("""        if 'falling back to cpu' in line: result='Vector active (CPU fallback — see Render Log)'""",
           """        if 'falling back to cpu' in line: result='Vector active (CPU fallback — see Render Log)'
         if 'xpu2 preview session' in line: result='XPU2 active (%s + %s)'%(_gpu() or 'NVIDIA GPU',_cpu() or 'CPU')""")
@@ -2314,7 +2327,8 @@ def build(session, base):
           """lx.bless(switch('auto_xpu'),'moonray.pref.autoXpu')
 lx.bless(choice('xpu2/renderer',(('xpu','MoonRay XPU'),('xpu2','XPU2 (experimental)'))),'moonray.pref.xpu2')
 lx.bless(switch('xpu2/adaptive_chain'),'moonray.pref.xpu2Chain')
-lx.bless(choice('xpu2/devices',(('both','Processor and graphics card'),('gpu','Graphics card only'),('cpu','Processor only'))),'moonray.pref.xpu2Devices')""")
+lx.bless(choice('xpu2/devices',(('both','Processor and graphics card'),('gpu','Graphics card only'),('cpu','Processor only'))),'moonray.pref.xpu2Devices')
+lx.bless(switch('xpu2/upscale'),'moonray.pref.xpu2Upscale')""")
     p.save()
     (KIT / 'lxserv' / 'moonray_xpu2.py').write_text(COMMANDS, encoding='utf-8')
 

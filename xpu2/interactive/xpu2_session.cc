@@ -396,6 +396,9 @@ struct Scene {
     std::set<std::string> baseReferenced;
     bool placementOnly = false, placementCamera = false;
     std::map<std::string, std::pair<rdl::Mat4d, rdl::Mat4d>> moved;
+    // A moved instancer's instances' transforms now (cpu::placeMoved's instancePlaces), and how many it had at the base.
+    std::map<std::string, std::vector<rdl::Mat4d>> instancePlaces;
+    std::map<std::string, size_t> baseInstances;
     // And the lights edited since the base plan (any of their settings), admitted again (cpu::updateLights).
     std::vector<const rdl::SceneObject*> editedLights;
     // A full plan the placement-only fast path starts from (after a full preparation, or the full plan after a coarse
@@ -405,6 +408,7 @@ struct Scene {
         std::memcpy(baseW2R, full->world2render, sizeof baseW2R);
         basePlaced.clear();
         baseReferenced.clear();
+        baseInstances.clear();
         for (auto it = source->beginSceneObject(); it != source->endSceneObject(); ++it) {
             if (it->second->getSceneClass().getName() != "InstanceGeometry") continue;
             for (const rdl::SceneObject* r : it->second->get<rdl::SceneObjectVector>("references"))
@@ -415,13 +419,42 @@ struct Scene {
             if (!source->sceneObjectExists(e.owner)) continue;
             const rdl::SceneObject* o = source->getSceneObject(e.owner);
             basePlaced[e.owner] = o->get<rdl::Mat4d>("node_xform", rdl::TIMESTEP_BEGIN);
+            if (e.ownerInstancer) baseInstances[e.owner] = o->get<rdl::Mat4dVector>("xform_list").size();
         }
+    }
+    // A moved instancer's instances' transforms as prepare makes them (InstanceGeometry by its xform_list, its reference's
+    // node_xform first where use_reference_xforms, its own after), into instancePlaces; false where that is not how it
+    // places them (another method, shutter transforms, velocities) or its count of instances is not the base's.
+    bool instancesNow(const rdl::SceneObject& o, const rdl::Mat4d& now) {
+        const auto& list = o.get<rdl::Mat4dVector>("xform_list");
+        if (o.get<rdl::Int>("method") != 2 || !o.get<rdl::Mat4dVector>("xform_list_close").empty() ||
+            !o.get<rdl::Vec3fVector>("velocities").empty() || list.size() != baseInstances[o.getName()]) {
+            std::printf("MoonRay XPU2: not placements alone: %s places its instances otherwise\n", o.getName().c_str());
+            return false;
+        }
+        const auto& refs = o.get<rdl::SceneObjectVector>("references");
+        const auto& indices = o.get<rdl::IntVector>("ref_indices");
+        const bool byReference = o.get<rdl::Bool>("use_reference_xforms");
+        auto& places = instancePlaces[o.getName()];
+        places.resize(list.size());
+        for (size_t i = 0; i < list.size(); ++i) {
+            rdl::Mat4d x = list[i];
+            if (byReference) {
+                int index = indices.size() == list.size() ? indices[i] : 0;
+                if (index < 0 || index >= int(refs.size())) index = 0;
+                if (refs.empty() || !refs[size_t(index)]) return false;
+                x = refs[size_t(index)]->get<rdl::Mat4d>("node_xform", rdl::TIMESTEP_BEGIN) * x;
+            }
+            places[i] = x * now;
+        }
+        return true;
     }
     // Whether every change since the base plan is a geometry's node_xform alone or a light's (and the camera's, or
     // outputs' files), each geometry one of the base plan's, still at the shutter's open and close alike.
     bool onlyPlacementsDirty() {
         moved.clear();
         editedLights.clear();
+        instancePlaces.clear();
         placementCamera = outputsRenamed = false;
         const rdl::SceneObject* camera = source->getSceneVariables().get(rdl::SceneVariables::sCamera);
         for (auto it = source->beginSceneObject(); it != source->endSceneObject(); ++it) {
@@ -449,8 +482,10 @@ struct Scene {
                 return false;
             }
             const auto& cls = o->getSceneClass();
+            // An instancer of the base plan's (its shared instances') may have its instances' transforms changed too.
+            const bool instancer = baseInstances.count(o->getName()) > 0;
             for (auto a = cls.beginAttributes(); a != cls.endAttributes(); ++a) {
-                if ((*a)->getName() == "node_xform" || !o->isAttributeSet(*a)) continue;
+                if ((*a)->getName() == "node_xform" || (instancer && (*a)->getName() == "xform_list") || !o->isAttributeSet(*a)) continue;
                 std::printf("MoonRay XPU2: not placements alone: %s's %s changed\n", o->getName().c_str(), (*a)->getName().c_str());
                 return false;
             }
@@ -460,6 +495,7 @@ struct Scene {
                 return false;
             }
             moved[o->getName()] = {held->second, now};
+            if (instancer && !instancesNow(*o, now)) return false;
         }
         return !moved.empty() || !editedLights.empty();
     }
@@ -627,9 +663,11 @@ struct Scene {
                     renamed = false;
                 }
             }
-            const bool moved = renamed && cpu::updateCamera(*next, *source);
+            std::string refused;
+            const bool moved = renamed && cpu::updateCamera(*next, *source, &refused);
             if (!moved)
-                std::printf("MoonRay XPU2: not the camera alone: %s\n", renamed ? "the plan cannot take a camera alone" : "the outputs changed besides their files");
+                std::printf("MoonRay XPU2: not the camera alone: %s\n",
+                            renamed ? ("the plan cannot take a camera alone: " + refused).c_str() : "the outputs changed besides their files");
             if (moved) {
                 cameraFrom = plan;
                 plan = next;
@@ -659,7 +697,7 @@ struct Scene {
                 }
                 if (!ok) why = "the outputs changed besides their files";
             }
-            if (ok) ok = cpu::placeMoved(*next, moved, baseW2R, why);
+            if (ok) ok = cpu::placeMoved(*next, moved, instancePlaces, baseW2R, why);
             if (ok) ok = cpu::updateLights(*next, *source, editedLights, why);
             if (ok) {
                 plan = next;
@@ -1038,9 +1076,13 @@ public:
         // detail, and it left such a picture all but as it was (a mean change of 0.0001 against 0.03 once every
         // pixel had a sample).
         U32 shownWidth = 0, shownHeight = 0;  // its size shown, where it is denoised at half
+        // The view it is published as: the denoised beauty chosen, or the beauty itself while the view or the scene moves
+        // (Lower Resolution While Moving: a picture from a quarter of its pixels, denoised and upscaled by OptiX).
+        std::string view = "denoised_beauty";
     };
     using Publish = std::function<void(const Picture&, const std::vector<float>&)>;
-    RealtimeDenoiser(async::GpuLane& lane, Publish publish) : engine_(lane), half_(lane), publish_(std::move(publish)) {
+    // The half-size pictures denoised by OptiX's upscaling model, made at their own size (Denoiser upscale).
+    RealtimeDenoiser(async::GpuLane& lane, Publish publish) : engine_(lane), half_(lane, true), publish_(std::move(publish)) {
         thread_ = std::thread([this] { loop(); });
     }
     ~RealtimeDenoiser() {
@@ -1127,11 +1169,29 @@ private:
             return true;
         }
         auto& engine = p.shownWidth ? half_ : engine_;
+        // Upscaled by the denoiser itself: twice the half size each way, cut to the size shown (an odd side's pixel over).
+        const bool twice = p.shownWidth && half_.upscales();
+        if (twice) out.resize(size_t(p.width) * p.height * 12);
         if (!engine.run(p.color.data(), p.albedo.data(), p.normal.data(), out.data(), p.width, p.height, error_)) return false;
-        if (p.shownWidth) out = upscale(out, p.width, p.height, p.shownWidth, p.shownHeight);
+        if (twice) out = cut(out, 2 * p.width, p.shownWidth, p.shownHeight);
+        if (p.shownWidth && !said_) {
+            // Once a session: how realtime's pictures from a quarter of their pixels are made full size.
+            said_ = true;
+            std::printf("MoonRay XPU2: realtime pictures while moving: %ux%u denoised %s to %ux%u\n", p.width, p.height,
+                        twice ? "and upscaled by OptiX" : "and enlarged", p.shownWidth, p.shownHeight);
+            std::fflush(stdout);
+        }
+        else if (p.shownWidth) out = upscale(out, p.width, p.height, p.shownWidth, p.shownHeight);
         ms_.store(std::chrono::duration<double, std::milli>(Clock::now() - began).count());
         ++count_;
         return true;
+    }
+    // A picture's top left width x height (it is wide pixels a row).
+    static std::vector<float> cut(const std::vector<float>& in, U32 wide, U32 width, U32 height) {
+        std::vector<float> out(size_t(width) * height * 3);
+        for (U32 y = 0; y < height; ++y)
+            std::copy(in.begin() + (size_t(y) * wide) * 3, in.begin() + (size_t(y) * wide + width) * 3, out.begin() + size_t(y) * width * 3);
+        return out;
     }
     // A half-size picture back at its own size, bilinearly.
     static std::vector<float> upscale(const std::vector<float>& half, U32 w, U32 h, U32 width, U32 height) {
@@ -1156,6 +1216,7 @@ private:
     }
 
     async::GpuLane::Denoiser engine_, half_;
+    bool said_ = false;
     Publish publish_;
     std::thread thread_;
     std::mutex mutex_, deviceMutex_;
@@ -1410,6 +1471,14 @@ int session(const Args& args, const fs::path& directory) {
                 auto denoising = [&](const std::string& view) {
                     return rtAlbedo && rtNormal && denoiserError.empty() && view == "denoised_beauty";
                 };
+                // Lower Resolution While Moving (XPU2_SESSION_RT_UPSCALE, the kit's preference; the kit writes the guides
+                // for it): with the beauty shown, a picture made from a quarter of its pixels (the first pass after each
+                // edit, a pixel in each two by two) is shown denoised and made full size by OptiX's upscaling model; once
+                // every pixel has a sample, the beauty as it is.
+                const bool upscaleMoving = envOn("XPU2_SESSION_RT_UPSCALE", true);
+                auto moving = [&](const std::string& view) {
+                    return upscaleMoving && rtAlbedo && rtNormal && denoiserError.empty() && view == "beauty";
+                };
                 // A picture for the denoiser: the beauty and its guides, the pixels no sample has reached yet filled from
                 // the nearest that have (as the progressive pictures are).
                 auto realtimePicture = [&](const async::RenderResult& r) {
@@ -1486,7 +1555,7 @@ int session(const Args& args, const fs::path& directory) {
                     denoiser = std::make_unique<RealtimeDenoiser>(*gpu, [&](const RealtimeDenoiser::Picture& p, const std::vector<float>& out) {
                         std::lock_guard<std::mutex> lock(sharedMutex);
                         if (p.id != liveId || !useShared) return;
-                        shared.publish(p.id, "denoised_beauty", p.shownWidth ? p.shownWidth : p.width, p.shownWidth ? p.shownHeight : p.height,
+                        shared.publish(p.id, p.view, p.shownWidth ? p.shownWidth : p.width, p.shownWidth ? p.shownHeight : p.height,
                                        [&](size_t i, float* px) {
                             px[0] = out[i * 3];
                             px[1] = out[i * 3 + 1];
@@ -1497,11 +1566,30 @@ int session(const Args& args, const fs::path& directory) {
                 watch.previewAov = [&] {
                     currentView = viewKey();
                     if (denoiser && denoiserError.empty()) denoiserError = denoiser->error();
-                    return previewOutput(currentView) != nullptr || denoising(currentView);
+                    return previewOutput(currentView) != nullptr || denoising(currentView) || (moving(currentView) && denoiser);
                 };
                 watch.previewResult = [&](const async::RenderResult& sofar, double fraction) {
                     if (fraction < hideBelow) return;
-                    if (denoising(currentView) && denoiser) denoiser->submit(realtimePicture(sofar));
+                    if (moving(currentView) && denoiser) {
+                        const U32 w = scene.plan->width, h = scene.plan->height;
+                        const size_t pixels = size_t(w) * h;
+                        bool gaps = sofar.counts.size() < pixels;
+                        for (size_t i = 0; !gaps && i < pixels; ++i) gaps = !sofar.counts[i];
+                        if (gaps) {
+                            auto p = realtimePicture(sofar);
+                            p.view = "beauty";
+                            denoiser->submit(std::move(p));
+                        } else {
+                            // Every pixel reached: the beauty as it is.
+                            std::vector<float> rgb(pixels * 3, 0.0f);
+                            for (size_t i = 0; i < pixels; ++i)
+                                for (int c = 0; c < 3; ++c) {
+                                    const float x = sofar.rgba[i * 4 + c];
+                                    rgb[i * 3 + c] = std::isfinite(x) ? x : 0.0f;
+                                }
+                            publish(rgb, w, h);
+                        }
+                    } else if (denoising(currentView) && denoiser) denoiser->submit(realtimePicture(sofar));
                     else if (const aov::Output* out = previewOutput(currentView)) {
                         async::RenderResult r = sofar;
                         publishOutput(currentView, *out, r);
