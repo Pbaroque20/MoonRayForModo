@@ -2856,7 +2856,13 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
  int width=int(sv.getRezedRegionWindow().width()),height=int(sv.getRezedRegionWindow().height()),grid=get<rdl::Int>(sv,"pixel_samples");
  if(!paths)need(resolution==1&&width==get<rdl::Int>(sv,"image_width")&&height==get<rdl::Int>(sv,"image_height"),"Windows unsupported");
  need(width>0&&height>0&&size_t(width)*height<=limits.pixels,"Image budget");need(grid>0&&grid<=64,"Sample budget");plan->width=width;plan->height=height;plan->spp=unsigned(grid*grid);
- int samplingMode=get<rdl::Int>(sv,"sampling_mode");need(samplingMode==0||(samplingMode==2&&allowAdaptive),"Adaptive sampling unsupported");
+ int samplingMode=get<rdl::Int>(sv,"sampling_mode");
+ // The kit's XPU2 sampling controls rule its previews (its UserData "/modo/xpu2/generations" of form 2): a scene's
+ // adaptive sampling is then MoonRay's alone, and XPU2 samples from Pixel Samples and the kit's controls.
+ {const auto k=sorted.find("/modo/xpu2/generations");
+  if(samplingMode==2&&k!=sorted.end()&&k->second->getSceneClass().getName()=="UserData"){
+   const auto& v=get<rdl::FloatVector>(*k->second,"float_values_0");if(v.size()>=8&&v[0]==2.0f)samplingMode=0;}}
+ need(samplingMode==0||(samplingMode==2&&allowAdaptive),"Adaptive sampling unsupported");
  if(samplingMode==2){
   // The same clamping as MoonRay's RenderContext: at least 2 samples, a maximum no
   // lower than the minimum, and the target error divided by 10,000.
@@ -2961,7 +2967,7 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
   // the frame ends when the time is up (at most twice uniform's samples). Not with a pixel sample map, for a bake
   // camera, nor at 16 samples a pixel or fewer (the seed would be all of them).
   // The kit's render settings for them (XPU2 Sampling Generations): UserData "/modo/xpu2/generations", float_values_0
-  // = {1, on, samples a pixel on average (0: the scene's), spend (0: uniform's time, 1: exactly the samples), noise
+  // = {form (1; 2: they rule, a scene's adaptive sampling left to MoonRay, above), on, samples a pixel on average (0: the scene's), spend (0: uniform's time, 1: exactly the samples), noise
   // target (target_adaptive_error's units; 0: none, or an adaptive scene's own), first generation (0: an eighth, 16
   // at least; adaptive: its minimum), most samples a pixel (0: 16 times the average; adaptive: its maximum), CPU
   // workers}. Without it, the defaults. XPU2_SESSION_UNIFORM_BUDGET=0 turns generations off (MoonRay's uniform
@@ -2970,7 +2976,7 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
    const auto found=sorted.find("/modo/xpu2/generations");
    if(found!=sorted.end()&&found->second->getSceneClass().getName()=="UserData"){
     const auto& v=get<rdl::FloatVector>(*found->second,"float_values_0");
-    if(v.size()>=8&&v[0]==1.0f){g.on=v[1]!=0;g.samples=unsigned(std::clamp(v[2],0.0f,4096.0f));g.bySamples=v[3]!=0;
+    if(v.size()>=8&&(v[0]==1.0f||v[0]==2.0f)){g.on=v[1]!=0;g.samples=unsigned(std::clamp(v[2],0.0f,4096.0f));g.bySamples=v[3]!=0;
      g.noise=std::isfinite(v[4])?std::max(0.0f,v[4]):0.0f;g.seed=unsigned(std::clamp(v[5],0.0f,16384.0f));
      g.most=unsigned(std::clamp(v[6],0.0f,16384.0f));g.cpu=v[7]!=0;if(v.size()>=9)g.realtime=v[8]!=0;}}
    const char* off=std::getenv("XPU2_SESSION_UNIFORM_BUDGET");if(off&&off[0]=='0')g.on=false;

@@ -410,9 +410,11 @@ What the session does besides rendering:
   size. A realtime frame is the GPU's alone: its first two passes are sparse (a quarter of the pixels, then the rest),
   launches are sized to about 15 ms and a picture goes out every 33 ms. With Denoised Beauty chosen,
   `RealtimeDenoiser` runs OptiX's HDR denoiser on its own high-priority stream with the kit's guides.
-- **Settings from Modo.** The kit's render settings for sampling generations (XPU2 Sampling Generations, Samples,
-  Spend, Noise Target, First Generation, Most Samples, CPU Workers) reach the scene as UserData
-  `/modo/xpu2/generations`. The kit's Source Overrides (`MOONRAY_MODO_*`) apply to XPU2 as to MoonRay.
+- **Settings from Modo.** The kit's render settings for sampling generations (Generation Samples, Halting Rule,
+  Halt at Noise, First Look, Most Samples, CPU Workers) reach the scene as UserData `/modo/xpu2/generations`. Its
+  form 2 says they rule: a scene's adaptive sampling is then MoonRay's alone, and XPU2 samples from Pixel Samples and
+  these settings (form 1 left an adaptive scene its own minimum, maximum and target error). The kit's Devices
+  preference sets `XPU2_SESSION_MODE`. The kit's Source Overrides (`MOONRAY_MODO_*`) apply to XPU2 as to MoonRay.
 - **Limits.** 1 GiB of prepared geometry unless `XPU2_SESSION_GEOMETRY_MB` is set, and a memory ceiling.
 - **The frame report** in the log: when the grid ran out of chunks, the GPU's launches and rate, parked samples,
   texture cache loads and evictions, and the GPU profile when `XPU2_PROFILE` is set.

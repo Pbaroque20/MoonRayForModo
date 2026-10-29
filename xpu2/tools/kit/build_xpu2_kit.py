@@ -68,6 +68,12 @@ def xpu2_chain():
     return str(_setting('xpu2/adaptive_chain', 'false')).lower() in ('true', '1')
 
 
+def xpu2_devices():
+    """Which devices XPU2 renders with: 'both' (the processor and the graphics card, the default), 'gpu' or 'cpu'."""
+    value = str(_setting('xpu2/devices', 'both'))
+    return value if value in ('both', 'gpu', 'cpu') else 'both'
+
+
 def xpu2_environment(runtime):
     """What XPU2's session starts with over environment(runtime): its own libraries and scene classes first, and the
     kit's MoonRay named for what XPU2 leaves to it."""
@@ -75,6 +81,8 @@ def xpu2_environment(runtime):
     return {'PATH': str(root) + os.pathsep + environment(runtime)['PATH'], 'RDL2_DSO_PATH': str(root),
             'REZ_MOONRAY_ROOT': str(root), 'MOONRAY_XPU2_MOONRAY': str(Path(runtime) / 'moonray.exe'),
             'XPU2_SESSION_CHAIN': '1' if xpu2_chain() else '0',
+            # Its devices (Preferences > MoonRay > XPU2 > Devices): 2 both, 1 the graphics card, 0 the processor.
+            'XPU2_SESSION_MODE': {'both': '2', 'gpu': '1', 'cpu': '0'}[xpu2_devices()],
             # XPU2's tessellations kept in the cache folder as the Scene cache says (cache_folder).
             'XPU2_SESSION_GEOMETRY_CACHE': '1' if __import__('moonray_modo.cache_folder', fromlist=['scene_cache']).scene_cache() else '0'}
 
@@ -346,13 +354,17 @@ SHEET = '''    <!-- XPU2, the private test build: an asynchronous CPU and GPU re
         <atom type="Label">GPU renderer</atom>
         <atom type="Tooltip">What renders the preview when its execution mode is XPU or Auto. MoonRay XPU, as before; or XPU2, the experimental asynchronous renderer: the processor and the graphics card each take their own work from one grid. A scene XPU2 does not render yet (see the Render Log) is rendered by MoonRay XPU instead. A running preview restarts with the change</atom>
       </list>
+      <list type="Control" val="cmd moonray.pref.xpu2Devices ?">
+        <atom type="Label">Devices</atom>
+        <atom type="Tooltip">What XPU2 renders with: the processor and the graphics card together (the default), the graphics card only, or the processor only (no shaders to compile). A running preview restarts with the change</atom>
+      </list>
       <list type="Control" val="cmd moonray.pref.xpu2Chain ?">
         <atom type="Label">Adaptive passes on the graphics card</atom>
         <atom type="Tooltip">XPU2 makes each pass of an adaptive render on the graphics card: quicker, but the outlines of the work are not shown, since only the card knows them. Off, the passes are made on the processor between the card's work and the outlines show, for uniform and adaptive sampling alike</atom>
       </list>
       <list type="Control" val="cmd moonray.xpu2.shaderState ?">
         <atom type="Label">Shaders</atom>
-        <atom type="Tooltip">Whether XPU2's GPU programs are compiled. Until they are, XPU2 previews are rendered by MoonRay</atom>
+        <atom type="Tooltip">Whether XPU2's GPU programs are compiled. Until they are, XPU2 renders nothing on the graphics card: the preview says so</atom>
       </list>
       <list type="Control" val="cmd moonray.xpu2.compileShaders">
         <atom type="Tooltip">Compiles XPU2's GPU programs into the graphics driver's shader cache, in the background, once; the state beside it shows how far it has come and about how long it has left. Every XPU2 preview after starts in seconds. Again after a graphics driver update</atom>
@@ -391,17 +403,21 @@ looks at where the picture is still noisy and sends the next samples there, and 
 Plain areas such as a wall or the sky finish quickly; hard ones such as glossy reflections, soft shadows and glass get
 more. Only where the samples go changes, not how each one is worked out, so the picture settles to MoonRay's.
 
-The settings are in Render Settings, under XPU2 Sampling Generations:
+The settings are in Render Settings, in their own group, XPU2 Sampling:
 
 - Generation Samples: What the render is worth, in samples a pixel on average (default: 16).
 - Halting Rule: Time: stop after about the time a plain render of that many samples takes, spent where the noise is. Exact: every pixel gets exactly that many (default: Time).
 - Halt at Noise: A part of the picture stops once it is this clean (lower is cleaner, and slower) (default: 10).
 - First Look: Samples every pixel gets before the generations choose (default: 4).
-- XPU2 Most Samples: The most one pixel may get (default: 16 times the average).
-- XPU2 CPU Workers: The processor works beside the graphics card (default: On).
+- Most Samples: The most one pixel may get (default: 16 times the average).
+- CPU Workers: The processor works beside the graphics card (default: On).
 
-A scene set to adaptive sampling uses its own Minimum Samples, Maximum Samples and Target Error. While XPU2 renders
-the preview, MoonRay's own sampling fields are greyed and show what XPU2 takes; final renders use them as always.
+These settings always decide how XPU2 samples a preview. MoonRay's Sampling Mode and its adaptive settings are for
+MoonRay renders: while XPU2 renders the preview they are greyed and show what XPU2 takes, and final renders use them as
+always. A bake camera, or a camera with a pixel sample map, is sampled evenly with Pixel Samples, as MoonRay does.
+
+Which devices XPU2 uses is in System > Preferences > MoonRay > XPU2 > Devices: the processor and the graphics card
+together (the default), the graphics card only, or the processor only, which needs no shaders compiled.
 
 The line under the picture says how it samples: XPU2 Gen. 16 ps avg (4-256), noise 10 is 16 samples a pixel on
 average, 4 to 256 in any one pixel, each part stopping at noise 10. The MoonRay Terminal shows each generation as it
@@ -463,7 +479,8 @@ GENERATION_FIELDS = [
      'Off: XPU2 samples as MoonRay does, uniform or adaptive. MoonRay renders are unchanged', None, None, None),
     ('xpu2_samples', 'samples', 'int', 'Generation Samples',
      'What the render is worth, in samples a pixel on average: the generations share them out where the picture is '
-     'still noisy. 0: as Pixel Samples gives (an adaptive scene: no budget, its Target Error ends it)', 0, 4096, None),
+     'still noisy. 0: Pixel Samples squared. XPU2 previews always sample this way: MoonRay\'s Sampling Mode and adaptive '
+     'settings are for MoonRay renders', 0, 4096, None),
     ('xpu2_spend', 'spend', 'choice', 'Halting Rule',
      'Time = Gen. Samples: the render stops after about the time a plain render of Generation Samples would take, that '
      'time spent where the noise is. Exact = Gen. Samples: every pixel gets exactly Generation Samples, however long '
@@ -471,15 +488,15 @@ GENERATION_FIELDS = [
      [('Time = Gen. Samples', 'time'), ('Exact = Gen. Samples', 'samples')]),
     ('xpu2_noise', 'noise', 'float', 'Halt at Noise',
      'A part of the picture stops early once it is this clean, in Target Error\'s units (lower is cleaner, and slower). '
-     '0: a uniform scene spends all its samples; an adaptive scene uses its Target Error', 0.0, 1000.0, None),
+     '0: none, every pixel gets its share. MoonRay\'s Target Error is for MoonRay renders', 0.0, 1000.0, None),
     ('xpu2_seed', 'seed', 'int', 'First Look',
      'Samples every pixel gets first, before the generations choose where the rest go. 0: an eighth of Generation '
-     'Samples, 16 at least (an adaptive scene: its Minimum Samples)', 0, 16384, None),
-    ('xpu2_most', 'most', 'int', 'XPU2 Most Samples',
-     'The most samples one pixel may get. 0: 16 times the average (an adaptive scene: its Maximum Samples)', 0, 16384, None),
-    ('xpu2_cpu', 'cpu', 'bool', 'XPU2 CPU Workers',
+     'Samples, 16 at least', 0, 16384, None),
+    ('xpu2_most', 'most', 'int', 'Most Samples',
+     'The most samples one pixel may get. 0: 16 times the average', 0, 16384, None),
+    ('xpu2_cpu', 'cpu', 'bool', 'CPU Workers',
      'The processor\'s workers take part in the generations beside the graphics card. Off: the graphics card takes '
-     'every sample', None, None, None),
+     'every sample. Which devices XPU2 uses at all: Preferences > MoonRay > XPU2 > Devices', None, None, None),
 ]
 
 
@@ -495,10 +512,13 @@ def generations(kit):
     fields = ''.join("""        field(%r, ('xpu2_generations', %r), %r, %r, %r%s),
 """ % (key, member, kind, label, tip,
        (', %r, %r' % (low, high) if low is not None else '') + (', choices=%r' % (choices,) if choices else ''))
-                     for key, member, kind, label, tip, low, high, choices in GENERATION_FIELDS)
-    p.rep("""        render_field('target_adaptive_error', 'Target Error', 'Adaptive sampling: lower is cleaner and slower'),
-""", """        render_field('target_adaptive_error', 'Target Error', 'Adaptive sampling: lower is cleaner and slower'),
-""" + fields)
+                     for key, member, kind, label, tip, low, high, choices in GENERATION_FIELDS if member != 'on')
+    # A group of their own, XPU2 Sampling, after MoonRay's Sampling (asked 2026-10-28).
+    p.rep("""    ('Bounces', False, [
+""", """    ('XPU2 Sampling', False, [
+""" + fields + """    ]),
+    ('Bounces', False, [
+""")
     p.save()
     p = Patch(py / 'scene_setup.py')
     p.rep("""    scene['execution_mode'] = values['execution_mode']""", """    scene['execution_mode'] = values['execution_mode']
@@ -543,7 +563,7 @@ def generations(kit):
                 if entry['key']=='xpu2_samples' and not value:
                     try:
                         held=scene_settings.complete(properties.scene_settings())
-                        if held['render'].get('sampling_mode')!=ADAPTIVE:value=int(held.get('samples',0))**2
+                        value=int(held.get('samples',0))**2
                     except Exception:pass
 """)
     p.save()
@@ -552,17 +572,24 @@ def generations(kit):
         <atom type="Label">%s</atom>
         <atom type="Tooltip">%s</atom>
       </list>
-""" % (key, escape(label), escape(tip)) for key, _, _, label, tip, _, _, _ in GENERATION_FIELDS)
+""" % (key, escape(label), escape(tip)) for key, member, _, label, tip, _, _, _ in GENERATION_FIELDS if member != 'on')
     p = Patch(kit / 'render_settings.cfg')
-    p.rep("""      <list type="Control" val="cmd moonray.render.target_adaptive_error ?">
-        <atom type="Label">Target Error</atom>
-        <atom type="Tooltip">Adaptive sampling: lower is cleaner and slower</atom>
+    p.rep("""        <atom type="Hash">MoonRayRender_1:sheet</atom>
       </list>
-""", """      <list type="Control" val="cmd moonray.render.target_adaptive_error ?">
-        <atom type="Label">Target Error</atom>
-        <atom type="Tooltip">Adaptive sampling: lower is cleaner and slower</atom>
+""", """        <atom type="Hash">MoonRayRender_1:sheet</atom>
       </list>
-""" + controls)
+      <list type="Control" val="sub MoonRayRenderXPU2:sheet">
+        <atom type="Label">XPU2 Sampling</atom>
+        <atom type="ShowLabel">1</atom>
+        <atom type="StartCollapsed">0</atom>
+        <atom type="Hash">MoonRayRenderXPU2:sheet</atom>
+      </list>
+""")
+    p.rep("""    <hash type="Sheet" key="MoonRayRender_2:sheet">""", """    <hash type="Sheet" key="MoonRayRenderXPU2:sheet">
+      <atom type="Label">XPU2 Sampling</atom>
+      <atom type="Layout">properties</atom>
+""" + controls + """    </hash>
+    <hash type="Sheet" key="MoonRayRender_2:sheet">""")
     p.save()
 
 
@@ -1166,8 +1193,11 @@ def xpu2_sampling_words(kit):
         return ('LS ' if engine=='ls' else '')+""")
     p.save()
     p = Patch(py / 'rdla.py')
-    p.rep("""        values=[1,1 if generation.get('on',True) else 0,""", """        # On: they are whenever XPU2 renders the preview, and only XPU2 reads them (xpu2_sampling).
-        values=[1,1,""")
+    p.rep("""        values=[1,1 if generation.get('on',True) else 0,""", """        # On: they are whenever XPU2 renders the preview, and only XPU2 reads them (xpu2_sampling). Form 2: they
+        # rule, a scene's adaptive sampling being MoonRay's alone (cpu_scene.h).
+        from . import xpu2_sampling
+        xpu2_sampling.CAMERA[0]=xpu2_sampling.camera_kind(entity_camera)
+        values=[2,1,""")
     p.save()
     p = Patch(kit / 'lxserv' / 'moonray_render_settings.py')
     p.rep("""                    try:return bool(scene_settings.complete(properties.scene_settings())['xpu2_generations'].get('on',True))
@@ -2159,12 +2189,12 @@ def build(session, base):
     p = Patch(py / 'preferences.py')
     p.rep("""    'auto_xpu': (True, bool),""", """    'auto_xpu': (True, bool),
     # XPU2, the private test build: what renders on the graphics card, and where its adaptive passes are made.
-    'xpu2/renderer': ('xpu2', str), 'xpu2/adaptive_chain': (False, bool),""")
+    'xpu2/renderer': ('xpu2', str), 'xpu2/adaptive_chain': (False, bool), 'xpu2/devices': ('both', str),""")
     p.save()
 
     p = Patch(py / 'native.py')
     p.rep("""        globals()[key]() for key in ('usd_specular', 'opaque_alpha', 'transmission_roughness', 'auto_xpu'))""",
-          """        globals()[key]() for key in ('usd_specular', 'opaque_alpha', 'transmission_roughness', 'auto_xpu')) + (xpu2(), xpu2_chain())""")
+          """        globals()[key]() for key in ('usd_specular', 'opaque_alpha', 'transmission_roughness', 'auto_xpu')) + (xpu2(), xpu2_chain(), xpu2_devices())""")
     p.rep("""        if 'falling back to cpu' in line: result='Vector active (CPU fallback — see Render Log)'""",
           """        if 'falling back to cpu' in line: result='Vector active (CPU fallback — see Render Log)'
         if 'xpu2 preview session' in line: result='XPU2 active (%s + %s)'%(_gpu() or 'NVIDIA GPU',_cpu() or 'CPU')""")
@@ -2178,7 +2208,7 @@ def build(session, base):
         # XPU or Auto, and XPU2 has not left this scene to MoonRay (@@MODO_XPU2 FALLBACK).
         program=request['runtime']/'moonray.exe'
         self.xpu2_active=bool(native.xpu2() and request['mode'] in ('xpu','auto') and not getattr(self,'xpu2_refused',None))
-        if self.xpu2_active and not native.xpu2_shaders_compiled():
+        if self.xpu2_active and native.xpu2_devices()!='cpu' and not native.xpu2_shaders_compiled():
             # XPU2 chosen, its shaders not compiled: nothing is rendered (MoonRay XPU in its place hid that it was not XPU2),
             # and the preview says where to compile them.
             self.sent=None;self.failed.emit(native.XPU2_NOT_COMPILED);return
@@ -2279,7 +2309,8 @@ def build(session, base):
     p.rep("""lx.bless(switch('auto_xpu'),'moonray.pref.autoXpu')""",
           """lx.bless(switch('auto_xpu'),'moonray.pref.autoXpu')
 lx.bless(choice('xpu2/renderer',(('xpu','MoonRay XPU'),('xpu2','XPU2 (experimental)'))),'moonray.pref.xpu2')
-lx.bless(switch('xpu2/adaptive_chain'),'moonray.pref.xpu2Chain')""")
+lx.bless(switch('xpu2/adaptive_chain'),'moonray.pref.xpu2Chain')
+lx.bless(choice('xpu2/devices',(('both','Processor and graphics card'),('gpu','Graphics card only'),('cpu','Processor only'))),'moonray.pref.xpu2Devices')""")
     p.save()
     (KIT / 'lxserv' / 'moonray_xpu2.py').write_text(COMMANDS, encoding='utf-8')
 

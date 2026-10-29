@@ -16,7 +16,7 @@ looks at where the picture is still noisy and sends the next samples there, and 
 Plain areas such as a wall or the sky finish quickly; hard ones such as glossy reflections, soft shadows and glass get
 more. Only where the samples go changes, not how each one is worked out, so the picture settles to MoonRay's.
 
-The settings are in **Render Settings**, under XPU2 Sampling Generations:
+The settings are in **Render Settings**, in their own group, XPU2 Sampling:
 
 | Setting | What it does | Default |
 |---|---|---|
@@ -24,11 +24,15 @@ The settings are in **Render Settings**, under XPU2 Sampling Generations:
 | Halting Rule | **Time**: stop after about the time a plain render of that many samples takes, spent where the noise is. **Exact**: every pixel gets exactly that many | Time |
 | Halt at Noise | A part of the picture stops once it is this clean (lower is cleaner, and slower) | 10 |
 | First Look | Samples every pixel gets before the generations choose | 4 |
-| XPU2 Most Samples | The most one pixel may get | 16 times the average |
-| XPU2 CPU Workers | The processor works beside the graphics card | On |
+| Most Samples | The most one pixel may get | 16 times the average |
+| CPU Workers | The processor works beside the graphics card | On |
 
-A scene set to adaptive sampling uses its own Minimum Samples, Maximum Samples and Target Error. While XPU2 renders
-the preview, MoonRay's own sampling fields are greyed and show what XPU2 takes; final renders use them as always.
+These settings always decide how XPU2 samples a preview. MoonRay's Sampling Mode and its adaptive settings are for
+MoonRay renders: while XPU2 renders the preview they are greyed and show what XPU2 takes, and final renders use them as
+always. A bake camera, or a camera with a pixel sample map, is sampled evenly with Pixel Samples, as MoonRay does.
+
+Which devices XPU2 uses is in System > Preferences > MoonRay > XPU2 > Devices: the processor and the graphics card
+together (the default), the graphics card only, or the processor only, which needs no shaders compiled.
 
 The line under the picture says how it samples: **XPU2 Gen. 16 ps avg (4-256), noise 10** is 16 samples a pixel on
 average, 4 to 256 in any one pixel, each part stopping at noise 10. The MoonRay Terminal shows each generation as it
