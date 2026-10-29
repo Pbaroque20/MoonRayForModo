@@ -66,7 +66,20 @@ def begin():
     try:
         panel = panel_widget()
         from moonray_modo import moonlightipr_scene, moonlightipr_detail, simplify
+        # MOONRAY_PROBE_PREFS ("key=value;..."): the test profile's preferences set first (true/false as switches).
+        if os.environ.get('MOONRAY_PROBE_PREFS'):
+            from moonray_modo.native import settings_name
+            store = QtCore.QSettings('MoonRayForModo', settings_name())
+            for pair in os.environ['MOONRAY_PROBE_PREFS'].split(';'):
+                if '=' in pair:
+                    key, value = pair.split('=', 1)
+                    store.setValue(key.strip(), {'true': True, 'false': False}.get(value.strip().lower(), value.strip()))
+            store.sync()
+            result['prefs'] = os.environ['MOONRAY_PROBE_PREFS']
         panel.preview_engine.setCurrentIndex(panel.preview_engine.findData(ENGINE))
+        # MOONRAY_PROBE_BUFFER: the picture shown (denoised_beauty, ...).
+        if os.environ.get('MOONRAY_PROBE_BUFFER'):
+            held['buffer'] = os.environ['MOONRAY_PROBE_BUFFER']
         QtWidgets.QApplication.processEvents()
         if ENGINE != 'moonlightipr' and not panel.ipr_mode.isChecked():
             panel.ipr_mode.setChecked(True)
@@ -300,9 +313,19 @@ def burst(number, step):
                     held['x'] = float(modo.LocatorSuperType(modo.Scene().item(held['camera'])).position.x.get())
                 except Exception:
                     result.setdefault('errors', []).append(traceback.format_exc())
+            if number == 0 and held.get('buffer'):
+                # The picture to show while moving (MOONRAY_PROBE_BUFFER), now that realtime offers it.
+                buffer = panel_widget().buffer
+                at = buffer.findData(held['buffer'])
+                result['buffer'] = held['buffer'] if at >= 0 else 'not offered'
+                if at >= 0:
+                    buffer.setCurrentIndex(at)
         lx.eval('select.item {%s} set' % held['camera'])
         held['x'] += 0.02
         lx.eval('transform.channel pos.X %s' % held['x'])
+        if step in (5, 10) and number == 0:
+            # Pictures in the middle of the moves: what realtime shows while the view moves.
+            panel_widget().preview.image.save(str(out / ('moving-%02d.png' % step)))
     except Exception:
         result.setdefault('errors', []).append(traceback.format_exc())
     if step < 14:
@@ -310,6 +333,10 @@ def burst(number, step):
     elif number + 1 < int(os.environ.get('MOONRAY_PROBE_BURSTS', '2')):
         save()
         QtCore.QTimer.singleShot(20000, lambda: burst(number + 1, 0))
+    elif os.environ.get('MOONRAY_PROBE_ONLY_BURSTS'):
+        # The bursts alone (pictures while moving), then done.
+        save()
+        QtCore.QTimer.singleShot(5000, finish)
     else:
         save()
         QtCore.QTimer.singleShot(20000, lambda: edit(0))
@@ -456,6 +483,24 @@ def verify(step=0):
     finish()
 
 
+def skip_unknown(left=180):
+    """Modo's question when a scene holds items of a plugin the test profile has not (the car's Octane meshes): skipped,
+    "Yes to All", as a user without the plugin answers it. The answer the profile kept was lost with it, and every test
+    after waited on the question. Looked for each second while the scene opens (a modal question runs Qt's loop)."""
+    try:
+        for widget in QtWidgets.QApplication.topLevelWidgets():
+            if widget.isVisible() and widget.windowTitle().startswith('Load Error'):
+                for button in widget.findChildren(QtWidgets.QAbstractButton):
+                    if button.text().replace('&', '').startswith('Yes to All'):
+                        result.setdefault('skipped', []).append(widget.windowTitle())
+                        button.click()
+                        break
+    except Exception:
+        result.setdefault('errors', []).append(traceback.format_exc())
+    if left > 0:
+        QtCore.QTimer.singleShot(1000, lambda: skip_unknown(left - 1))
+
+
 def finish():
     note('end', 0.0)
     try:
@@ -476,8 +521,12 @@ def finish():
 
 
 try:
+    skip_unknown()
     lx.eval('scene.open {%s} normal' % os.environ['MOONRAY_PROBE_SCENE'])
-    lx.eval('moonray.render.denoiser 0')
+    # The denoiser off, or OptiX's where the denoised pictures are what is looked at (MOONRAY_PROBE_KEEP_DENOISER).
+    # MOONRAY_PROBE_UNTOUCHED: the scene as saved (no setting changed), so that a kept reading of it may be taken.
+    if not os.environ.get('MOONRAY_PROBE_UNTOUCHED'):
+        lx.eval('moonray.render.denoiser %d' % (1 if os.environ.get('MOONRAY_PROBE_KEEP_DENOISER') else 0))
     lx.eval('moonray.open')
 except Exception:
     result['error_open'] = traceback.format_exc()

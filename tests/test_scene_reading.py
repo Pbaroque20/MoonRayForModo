@@ -70,5 +70,34 @@ print(content(held['meshes'][0]['vertices']))
             self.assertIsNone(scene_reading.load(('scene', 1, 'x')))
 
 
+class ReadingCode(unittest.TestCase):
+    """A reading is kept by the code that makes it (host.py and what it imports), not the kit's installation: a kit
+    installed again, or changed elsewhere, finds what it kept; one whose reading changed reads anew."""
+
+    def digest(self, files):
+        import shutil
+        with tempfile.TemporaryDirectory() as folder:
+            package = pathlib.Path(folder) / 'moonray_modo'
+            package.mkdir()
+            for name, text in files.items():
+                (package / name).write_text(text, encoding='utf-8')
+            shutil.copyfile(scene_reading.__file__, package / 'scene_reading.py')
+            namespace = {'__file__': str(package / 'scene_reading.py'), '__name__': 'scene_reading_copy'}
+            exec(compile((package / 'scene_reading.py').read_text(encoding='utf-8'), str(package / 'scene_reading.py'), 'exec'), namespace)
+            return namespace['reading_code']()
+
+    def test_the_same_code_keeps_its_key(self):
+        files = {'host.py': 'from .layers import x\n', 'layers.py': 'x = 1\n', 'panel.py': 'p = 1\n'}
+        self.assertEqual(self.digest(files), self.digest(dict(files)))
+
+    def test_a_change_outside_reading_keeps_it(self):
+        files = {'host.py': 'from .layers import x\n', 'layers.py': 'x = 1\n', 'panel.py': 'p = 1\n'}
+        self.assertEqual(self.digest(files), self.digest(dict(files, **{'panel.py': 'p = 2\n'})))
+
+    def test_a_change_to_reading_changes_it(self):
+        files = {'host.py': 'from . import layers, rows\n', 'layers.py': 'x = 1\n', 'rows.py': 'r = 1\n', 'panel.py': 'p = 1\n'}
+        self.assertNotEqual(self.digest(files), self.digest(dict(files, **{'rows.py': 'r = 2\n'})))
+
+
 if __name__ == '__main__':
     unittest.main()

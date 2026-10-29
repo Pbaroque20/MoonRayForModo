@@ -2,7 +2,7 @@
 car's reading held Modo for most of a minute, to give the same lists as last time when nothing had changed.
 
 A reading is kept under a hash of what it was made from: the scene file's content and path, the frame, whether
-Modo's evaluated geometry was read, Modo's version and the kit's installation. It is taken again only while the open
+Modo's evaluated geometry was read, Modo's version and the kit's code that makes a reading (reading_code). It is taken again only while the open
 scene has no unsaved changes (Modo's scene.changed), and only where the files the scene names (its images among them)
 stand as they did when it was read (assets.signature); otherwise the scene is read from Modo as before."""
 import hashlib
@@ -41,11 +41,44 @@ def key(evaluated):
         platform = lx.service.Platform()
         version = (platform.AppVersion(), platform.AppBuild())
         moment = float(lx.service.Selection().GetTime())
-        from .native import installation_id
         return ('scene', FORM, os.path.normcase(os.path.abspath(path)), _file_digest(path), moment, bool(evaluated), version,
-                installation_id())
+                reading_code())
     except Exception:
         return None
+
+
+_READING_CODE = []
+
+
+def reading_code():
+    """What makes a reading, as a digest: the kit's modules host.py reaches through its imports (host.snapshot and
+    what it calls), as their files hold them. Kept by it in place of the kit's installation, which every install
+    changed: a kit installed again, or one whose reading is the same (the preview window, the engines, the preferences
+    changed), finds the readings it kept; one whose reading changed reads anew."""
+    if _READING_CODE:
+        return _READING_CODE[0]
+    import re
+    here = os.path.dirname(os.path.abspath(__file__))
+    pattern = re.compile(r'from \.(\w+) import|from \. import ([\w, ]+)')
+    seen, todo = set(), ['host']
+    while todo:
+        name = todo.pop()
+        if name in seen:
+            continue
+        path = os.path.join(here, name + '.py')
+        if not os.path.isfile(path):
+            continue
+        seen.add(name)
+        with open(path, 'r', encoding='utf-8', errors='replace') as stream:
+            text = stream.read()
+        for one, many in pattern.findall(text):
+            todo.extend([one] if one else [part.strip() for part in many.split(',') if part.strip()])
+    digest = hashlib.blake2b(digest_size=16)
+    for name in sorted(seen):
+        with open(os.path.join(here, name + '.py'), 'rb') as stream:
+            digest.update(name.encode('utf-8') + b'\0' + stream.read())
+    _READING_CODE.append(digest.hexdigest())
+    return _READING_CODE[0]
 
 
 def files(scene):
