@@ -82,10 +82,10 @@ void memoryCeiling() {
     if (SetInformationJobObject(job, JobObjectExtendedLimitInformation, &info, sizeof info) &&
         AssignProcessToJobObject(job, GetCurrentProcess())) {
         ceilingBytes = limit;
-        std::printf("XPU2: memory ceiling %zu MB (%.1f GB of the machine's %.1f GB free)\n", limit >> 20, double(status.ullAvailPhys) / (1 << 30),
+        std::printf("MoonRay XPU2: memory ceiling %zu MB (%.1f GB of the machine's %.1f GB free)\n", limit >> 20, double(status.ullAvailPhys) / (1 << 30),
                     double(status.ullTotalPhys) / (1 << 30));
     } else {
-        std::printf("XPU2: no memory ceiling (the job object was refused: %lu)\n", GetLastError());
+        std::printf("MoonRay XPU2: no memory ceiling (the job object was refused: %lu)\n", GetLastError());
         CloseHandle(job);
     }
 }
@@ -175,9 +175,9 @@ void logPreparation(const char* how, double canonicalSeconds, double cpuSceneSec
         laps += text;
     }
     if (cpuSceneSeconds >= 0)
-        std::printf("XPU2: %s: canonical %.2f s; plan: %s; CPU scene %.2f s\n", how, canonicalSeconds, laps.c_str(), cpuSceneSeconds);
+        std::printf("MoonRay XPU2: %s: canonical %.2f s; plan: %s; CPU scene %.2f s\n", how, canonicalSeconds, laps.c_str(), cpuSceneSeconds);
     else
-        std::printf("XPU2: %s: canonical %.2f s; plan: %s\n", how, canonicalSeconds, laps.c_str());
+        std::printf("MoonRay XPU2: %s: canonical %.2f s; plan: %s\n", how, canonicalSeconds, laps.c_str());
     if (!cpu::prepLaps().parts.empty()) {
         std::string parts;
         for (const auto& [what, s] : cpu::prepLaps().parts) {
@@ -185,9 +185,9 @@ void logPreparation(const char* how, double canonicalSeconds, double cpuSceneSec
             std::snprintf(text, sizeof text, "%s%s %.2f s", parts.empty() ? "" : ", ", what.c_str(), s);
             parts += text;
         }
-        std::printf("XPU2: within the plan: %s\n", parts.c_str());
+        std::printf("MoonRay XPU2: within the plan: %s\n", parts.c_str());
     }
-    std::printf("XPU2: memory: %s\n", memoryText().c_str());
+    std::printf("MoonRay XPU2: memory: %s\n", memoryText().c_str());
     std::fflush(stdout);
 }
 
@@ -261,20 +261,20 @@ int compileShaders(const fs::path& folder) {
     auto seconds = [&] { return std::chrono::duration<double>(Clock::now() - began).count(); };
     try {
         const Programs p = programs(folder);
-        std::cout << "XPU2 shaders: compiling (about an hour the first time; at once when OptiX's cache has them)"
+        std::cout << "MoonRay XPU2 shaders: compiling (about an hour the first time; at once when OptiX's cache has them)"
                   << std::endl;
         double last = 0;
         gpuLane(p, [&](unsigned done, unsigned waiting) {
             if (seconds() - last < 10) return;
             last = seconds();
-            std::printf("XPU2 shaders: %u compile tasks done, %u waiting, %.0f s\n", done, waiting, last);
+            std::printf("MoonRay XPU2 shaders: %u compile tasks done, %u waiting, %.0f s\n", done, waiting, last);
             std::fflush(stdout);
         });
         markCompiled(p);
-        std::printf("XPU2 shaders: compiled in %.0f s\n", seconds());
+        std::printf("MoonRay XPU2 shaders: compiled in %.0f s\n", seconds());
         return 0;
     } catch (const std::exception& e) {
-        std::cerr << "XPU2 shaders: " << e.what() << std::endl;
+        std::cerr << "MoonRay XPU2 shaders: " << e.what() << std::endl;
         return 1;
     }
 }
@@ -282,10 +282,10 @@ int compileShaders(const fs::path& folder) {
 int shadersCompiled(const fs::path& folder) {
     try {
         const bool compiled = fs::exists(shaderMark(programs(folder)));
-        std::cout << (compiled ? "XPU2 shaders: compiled" : "XPU2 shaders: not compiled") << std::endl;
+        std::cout << (compiled ? "MoonRay XPU2 shaders: compiled" : "MoonRay XPU2 shaders: not compiled") << std::endl;
         return compiled ? 0 : 3;
     } catch (const std::exception& e) {
-        std::cerr << "XPU2 shaders: " << e.what() << std::endl;
+        std::cerr << "MoonRay XPU2 shaders: " << e.what() << std::endl;
         return 1;
     }
 }
@@ -294,7 +294,7 @@ int shadersCompiled(const fs::path& folder) {
 int passThrough(int argc, char** argv) {
     const char* moonray = std::getenv("MOONRAY_XPU2_MOONRAY");
     if (!moonray) {
-        std::cerr << "XPU2 renders previews only; MOONRAY_XPU2_MOONRAY names the MoonRay for the rest" << std::endl;
+        std::cerr << "MoonRay XPU2 renders previews only; MOONRAY_XPU2_MOONRAY names the MoonRay for the rest" << std::endl;
         return 2;
     }
     std::wstring command = L"\"" + fs::u8path(moonray).wstring() + L"\"";
@@ -452,7 +452,7 @@ struct Scene {
                 continue;
             }
             if (!it->second->isA<rdl::RenderOutput>()) {
-                std::printf("XPU2: not the camera alone: %s changed\n", it->second->getName().c_str());
+                std::printf("MoonRay XPU2: not the camera alone: %s changed\n", it->second->getName().c_str());
                 return false;
             }
             outputsRenamed = true;
@@ -549,13 +549,13 @@ struct Scene {
             }
             const bool moved = renamed && cpu::updateCamera(*next, *source);
             if (!moved)
-                std::printf("XPU2: not the camera alone: %s\n", renamed ? "the plan cannot take a camera alone" : "the outputs changed besides their files");
+                std::printf("MoonRay XPU2: not the camera alone: %s\n", renamed ? "the plan cannot take a camera alone" : "the outputs changed besides their files");
             if (moved) {
                 cameraFrom = plan;
                 plan = next;
                 cpuScene = std::make_unique<async::CpuScene>(plan, std::move(*cpuScene));
                 changed = cameraOnly = false;
-                std::printf("XPU2: the camera alone changed: prepared in %.1f ms\n",
+                std::printf("MoonRay XPU2: the camera alone changed: prepared in %.1f ms\n",
                             std::chrono::duration<double>(std::chrono::steady_clock::now() - began).count() * 1000.0);
                 return;
             }
@@ -600,12 +600,12 @@ struct Scene {
         logPreparation("prepared", canonicalSeconds, seconds(planned));
         {const auto& c = cpu::geometryCacheCounts();
             if (c.reused || c.saved)
-                std::printf("XPU2: tessellation cache: %u meshes reused (%zu MB read), %u saved\n", c.reused.load(), c.reusedBytes.load() >> 20, c.saved.load());}
-        std::printf("XPU2: geometry: %zu MB of positions and triangles, of a %zu MB budget; the GPU holds %zu MB of a %zu MB budget, %u meshes left to the CPU\n",
+                std::printf("MoonRay XPU2: tessellation cache: %u meshes reused (%zu MB read), %u saved\n", c.reused.load(), c.reusedBytes.load() >> 20, c.saved.load());}
+        std::printf("MoonRay XPU2: geometry: %zu MB of positions and triangles, of a %zu MB budget; the GPU holds %zu MB of a %zu MB budget, %u meshes left to the CPU\n",
                     plan->bytes >> 20, geometryBudget() >> 20, plan->gpuBytes >> 20, gpuGeometryBudget() == ~size_t(0) ? size_t(0) : gpuGeometryBudget() >> 20, plan->cpuOnlyMeshes);
         const auto& subd = cpu::subdTimes();
         if (subd.meshes)
-            std::printf("XPU2: tessellation: %lld meshes (MoonRay's subdivision and PolyMesh) in %.2f s; displacement %lld vertices, "
+            std::printf("MoonRay XPU2: tessellation: %lld meshes (MoonRay's subdivision and PolyMesh) in %.2f s; displacement %lld vertices, "
                         "%.2f s over %lld threads, spanning %.2f s\n",
                         (long long)subd.meshes, double(subd.tessellateNs) * 1e-9, (long long)subd.displaceCalls, double(subd.displaceNs) * 1e-9,
                         (long long)subd.threads, double(subd.last - subd.first) * 1e-9);
@@ -631,7 +631,48 @@ struct Scene {
     }
     // The classification's summary for the log: objects by class, the GPU families the scene's objects need on
     // each side, the objects that send the scene to MoonRay.
+    static std::string familyNames(uint64_t families) {
+        static const std::pair<uint64_t, const char*> names[] = {
+            {classes::FamilyStructure, "structure"}, {classes::FamilyCamera, "camera"}, {classes::FamilyTriangles, "triangles"},
+            {classes::FamilySubdivision, "subdivision"}, {classes::FamilyDisplacement, "displacement"}, {classes::FamilyCurves, "curves"},
+            {classes::FamilyPoints, "points"}, {classes::FamilyInstances, "instances"}, {classes::FamilyMotion, "motion"},
+            {classes::FamilyDwaBase, "DwaBase"}, {classes::FamilyLayers, "layers"}, {classes::FamilyHair, "hair"},
+            {classes::FamilyGlitter, "glitter"}, {classes::FamilyToon, "toon"}, {classes::FamilySubsurface, "subsurface"},
+            {classes::FamilyUsd, "USD"}, {classes::FamilySwitch, "switch"}, {classes::FamilyMapsProcedural, "procedural maps"},
+            {classes::FamilyMapsImage, "image maps"}, {classes::FamilyMapsNormal, "normal maps"}, {classes::FamilyMapsProjection, "projections"},
+            {classes::FamilyLights, "lights"}, {classes::FamilyLightTextures, "light textures"}, {classes::FamilyMeshLights, "mesh lights"},
+            {classes::FamilyLightFilters, "light filters"}, {classes::FamilyVolumes, "volumes"}, {classes::FamilyVolumesMapped, "mapped volumes"},
+            {classes::FamilyVdb, "VDB"}, {classes::FamilyVolumeEmission, "volume emission"}, {classes::FamilyCutouts, "cutouts"}};
+        std::string out;
+        for (const auto& [bit, name] : names)
+            if (families & bit) out += (out.empty() ? "" : ", ") + std::string(name);
+        return out.empty() ? "none" : out;
+    }
+    // The scene index and its routing for the log (the MoonRay Terminal): the objects it holds by kind, its
+    // dependencies and memory, what the last edit touched; then each object's device, the GPU families the scene's
+    // objects need on each side, and the objects that send the scene to MoonRay.
     static void logClasses(const Snapshot& s) {
+        if (s.scene) {
+            static const std::pair<ix::Kind, const char*> kinds[] = {
+                {ix::Kind::Geometry, "geometry"}, {ix::Kind::Instance, "instances"}, {ix::Kind::Material, "materials"},
+                {ix::Kind::Texture, "textures"}, {ix::Kind::Light, "lights"}, {ix::Kind::Environment, "environments"},
+                {ix::Kind::Camera, "cameras"}, {ix::Kind::Volume, "volumes"}, {ix::Kind::Attribute, "attributes"},
+                {ix::Kind::Auxiliary, "other"}};
+            std::string held;
+            size_t objects = 0;
+            for (const auto& [kind, name] : kinds) {
+                const size_t n = s.scene->kinds.count(kind) ? s.scene->kinds.at(kind).size() : 0;
+                objects += n;
+                if (n) held += (held.empty() ? "" : ", ") + std::to_string(n) + " " + name;
+            }
+            std::printf("MoonRay XPU2 scene index: revision %llu, %zu objects (%s), %zu dependencies, %.1f MB held\n",
+                        (unsigned long long)s.scene->revision, objects, held.empty() ? "none" : held.c_str(), s.scene->edgeCount,
+                        double(s.scene->residentBytes) / (1 << 20));
+            const auto& c = s.scene->changes;
+            if (!c.direct.empty() || !c.removed.empty())
+                std::printf("MoonRay XPU2 scene index: this edit: %zu objects changed, %zu more affected through them, %zu removed; %zu buffers (%.1f MB) prepared\n",
+                            c.direct.size(), c.affected.size(), c.removed.size(), c.preparedBuffers, double(c.preparedBytes) / (1 << 20));
+        }
         size_t counts[3] = {0, 0, 0};
         uint64_t gpu = 0, cpuOnly = 0;
         std::vector<std::string> fallbacks;
@@ -642,11 +683,12 @@ struct Scene {
             if (d.support == Support::Cpu) cpuOnly |= d.families & ~classes::GpuFamilies;
             if (d.support == Support::Fallback && fallbacks.size() < 4) fallbacks.push_back(d.evidence);
         }
-        std::fprintf(stderr, "XPU2 classes: %zu both, %zu CPU only, %zu fall back; mode %s; GPU families %llx, CPU-only families %llx%s%s\n",
-                     counts[2], counts[1], counts[0], s.mode == Mode::Fallback ? "fallback" : s.mode == Mode::NativeCpu ? "cpu" : "mixed",
-                     (unsigned long long)gpu, (unsigned long long)cpuOnly, fallbacks.empty() ? "" : "; first: ",
-                     fallbacks.empty() ? "" : fallbacks[0].c_str());
-        std::fflush(stderr);
+        std::printf("MoonRay XPU2 routing: %zu objects on either device, %zu on the CPU alone, %zu MoonRay's; %s\n", counts[2], counts[1], counts[0],
+                    s.mode == Mode::Fallback ? "the scene goes to MoonRay" : s.mode == Mode::NativeCpu ? "rendered on the CPU" : "rendered on the CPU and GPU");
+        std::printf("MoonRay XPU2 routing: the GPU runs %s\n", familyNames(gpu).c_str());
+        if (cpuOnly) std::printf("MoonRay XPU2 routing: the CPU alone runs %s\n", familyNames(cpuOnly).c_str());
+        for (const auto& f : fallbacks) std::printf("MoonRay XPU2 routing: MoonRay's: %s\n", f.c_str());
+        std::fflush(stdout);
     }
     // Textures anywhere on the system drive (the asset root bounds what a texture path may be).
     static fs::path assetRoot() {
@@ -662,7 +704,7 @@ void checkOutputs(const aov::Plan& plan, bool gpu) {
     // Checkpoints are saved (Safe Denoising). A render to be continued from a saved one starts again: MoonRay could not
     // take up XPU2's saves (they carry no progressCheckpointTileSamples), and XPU2 does not yet know which samples a
     // save holds (a pixel's may not be its first ones yet).
-    if (plan.resume) std::printf("XPU2: Continue starts this render again (XPU2 does not take up a saved render yet)\n");
+    if (plan.resume) std::printf("MoonRay XPU2: Continue starts this render again (XPU2 does not take up a saved render yet)\n");
 }
 
 // A checkpoint render's saves (Safe Denoising), on a thread of their own so that the render goes on meanwhile: each the
@@ -731,9 +773,9 @@ private:
                     std::printf("Wrote: %s\n", name.c_str());
                     std::fflush(stdout);
                 });
-                if (!error.empty()) std::printf("XPU2: checkpoint not saved: %s\n", error.c_str());
+                if (!error.empty()) std::printf("MoonRay XPU2: checkpoint not saved: %s\n", error.c_str());
             } catch (const std::exception& e) {
-                std::printf("XPU2: checkpoint not saved: %s\n", e.what());
+                std::printf("MoonRay XPU2: checkpoint not saved: %s\n", e.what());
             }
             std::fflush(stdout);
             {
@@ -852,7 +894,7 @@ private:
 };
 
 void fallback(const std::string& reason) {
-    std::cerr << "XPU2: " << reason << std::endl;
+    std::cerr << "MoonRay XPU2: " << reason << std::endl;
     modoProtocolLine("@@MODO_XPU2 FALLBACK " + oneLine(reason));
 }
 
@@ -1034,7 +1076,7 @@ int session(const Args& args, const fs::path& directory) {
     // Frames by sampling generations with a GPU: the CPU lane's workers take chunks too (off: the GPU takes them all).
     const bool generationsCpu = envOn("XPU2_SESSION_ADAPTIVE_CPU", true);
     const double previewSeconds = std::getenv("XPU2_SESSION_PREVIEW_MS") ? std::atof(std::getenv("XPU2_SESSION_PREVIEW_MS")) / 1000.0 : 0.1;
-    std::cout << "XPU2 preview session (private test build): " << (mode == 0 ? "CPU only" : mode == 1 ? "GPU only" : "CPU and GPU")
+    std::cout << "MoonRay XPU2 preview session: " << (mode == 0 ? "CPU only" : mode == 1 ? "GPU only" : "CPU and GPU")
               << ", adaptive passes " << (deviceChain ? "on the GPU" : "on the host") << std::endl;
 
     Scene scene;
@@ -1112,9 +1154,9 @@ int session(const Args& args, const fs::path& directory) {
                     }
                     loaded.store(true);
                     guard.join();
-                    std::printf("XPU2: GPU programs loaded from the cache in %.2f s\n",
+                    std::printf("MoonRay XPU2: GPU programs loaded from the cache in %.2f s\n",
                                 std::chrono::duration<double>(Clock::now() - made).count());
-                    std::printf("XPU2: memory with the GPU lane made: %s\n", memoryText().c_str());
+                    std::printf("MoonRay XPU2: memory with the GPU lane made: %s\n", memoryText().c_str());
                 }
                 if (fresh) {
                     // A scene the GPU programs do not render yet (async::GpuLane::cpuOnly) renders on the CPU alone.
@@ -1127,25 +1169,25 @@ int session(const Args& args, const fs::path& directory) {
                         gpuUsable = why.empty();
                         const auto gpuBegan = Clock::now();
                         if (gpuUsable) gpu->prepare(scene.plan);
-                        if (gpuUsable) std::printf("XPU2: GPU scene prepared in %.2f s (memory: %s)\n", std::chrono::duration<double>(Clock::now() - gpuBegan).count(), memoryText().c_str());
-                        else std::printf("XPU2: the GPU leaves %s to the CPU; rendering on the CPU alone\n", why.c_str());
+                        if (gpuUsable) std::printf("MoonRay XPU2: GPU scene prepared in %.2f s (memory: %s)\n", std::chrono::duration<double>(Clock::now() - gpuBegan).count(), memoryText().c_str());
+                        else std::printf("MoonRay XPU2: the GPU leaves %s to the CPU; rendering on the CPU alone\n", why.c_str());
                         gpuPlan = scene.plan;
                     }
                     renderer = std::make_unique<async::Renderer>(scene.plan, *scene.cpuScene, gpuUsable ? gpu.get() : nullptr);
                     renderer->deviceRatio(deviceRatio);
-                    std::printf("XPU2: memory with the renderer made: %s\n", memoryText().c_str());
+                    std::printf("MoonRay XPU2: memory with the renderer made: %s\n", memoryText().c_str());
                     // Sampling generations: uniform's samples spent where they show, or adaptive's to its target error.
-                    std::printf("XPU2: scene ready in %.2f s (%ux%u, %s %u)\n", std::chrono::duration<double>(Clock::now() - began).count(),
+                    std::printf("MoonRay XPU2: scene ready in %.2f s (%ux%u, %s %u)\n", std::chrono::duration<double>(Clock::now() - began).count(),
                                 scene.plan->width, scene.plan->height,
                                 scene.plan->sampleBudget ? "uniform by sampling generations, on average"
                                 : scene.plan->adaptive   ? "adaptive by sampling generations, at most"
                                                          : "uniform,",
                                 scene.plan->sampleBudget || !scene.plan->adaptive ? scene.plan->spp : scene.plan->maxSamples);
                     // The kit's low-latency rendering (async::lowLatency): threads at the process's priority, one left free.
-                    std::printf("XPU2: low-latency rendering %s\n", async::lowLatency() ? "on (threads at the renderer's priority, one free for Modo)" : "off");
+                    std::printf("MoonRay XPU2: low-latency rendering %s\n", async::lowLatency() ? "on (threads at the renderer's priority, one free for Modo)" : "off");
                     // The sampling generations' settings (the kit's render settings, cpu_scene.h).
                     if (scene.plan->adaptive)
-                        std::printf("XPU2: generations: first %u, most %u a pixel; %s; noise target %g; CPU workers %s\n",
+                        std::printf("MoonRay XPU2: generations: first %u, most %u a pixel; %s; noise target %g; CPU workers %s\n",
                                     scene.plan->minSamples, scene.plan->maxSamples,
                                     !scene.plan->sampleBudget       ? "no budget (the target error ends it)"
                                     : scene.plan->budgetBySamples   ? "exactly the samples"
@@ -1359,7 +1401,7 @@ int session(const Args& args, const fs::path& directory) {
                     const double t = std::chrono::duration<double>(Clock::now() - frameStart).count();
                     if (t - lastStatus >= 1.0) {
                         lastStatus = t;
-                        std::printf("XPU2: %.0f%% in %.1f s\n", fraction * 100.0, t);
+                        std::printf("MoonRay XPU2: %.0f%% in %.1f s\n", fraction * 100.0, t);
                         std::fflush(stdout);
                     }
                 };
@@ -1369,6 +1411,15 @@ int session(const Args& args, const fs::path& directory) {
                 options.deviceChain = deviceChain;
                 options.cellular = cellular;
                 options.generationsCpu = generationsCpu;
+                // Each sampling generation in the MoonRay Terminal: its samples, how much of the picture still samples,
+                // and the samples a pixel on average so far.
+                watch.generationLog = [](unsigned generation, unsigned long long samples, size_t live, size_t tiles, double perPixel,
+                                           double seconds) {
+                    std::printf("MoonRay XPU2: generation %u: %llu samples over %zu of %zu tiles (%.0f%% of the picture still sampling); "
+                                "%.1f samples a pixel on average; %.2f s\n",
+                                generation, samples, live, tiles, tiles ? 100.0 * double(live) / double(tiles) : 0.0, perPixel, seconds);
+                    std::fflush(stdout);
+                };
                 options.partial = partial;
                 options.watch = &watch;
                 // Safe Denoising's checkpoints: the frame so far saved every checkpoint_interval minutes.
@@ -1411,7 +1462,7 @@ int session(const Args& args, const fs::path& directory) {
                         renderer->render(firstOptions);
                     } catch (const std::exception& e) {
                         // The coarse pass is only pictures: the full frame follows whatever became of it.
-                        std::printf("XPU2: coarse first pass stopped: %s\n", e.what());
+                        std::printf("MoonRay XPU2: coarse first pass stopped: %s\n", e.what());
                     }
                     // The coarse frame done before the full geometry: its last picture stays meanwhile.
                     fullThread.join();
@@ -1436,7 +1487,7 @@ int session(const Args& args, const fs::path& directory) {
                     // The full frame's pictures from where the coarse pass came to, but no later than a quarter of the way: a
                     // coarse frame done before the full geometry was ready would otherwise stand for the whole render.
                     hideBelow = std::min(reached, 0.25);
-                    std::printf("XPU2: coarse first pass: %u meshes lighter, rendered to %.0f%%; the full geometry ready in %.2f s\n", lighter,
+                    std::printf("MoonRay XPU2: coarse first pass: %u meshes lighter, rendered to %.0f%%; the full geometry ready in %.2f s\n", lighter,
                                 reached * 100.0, std::chrono::duration<double>(Clock::now() - coarseBegan).count());
                     std::fflush(stdout);
                 }
@@ -1445,13 +1496,13 @@ int session(const Args& args, const fs::path& directory) {
                 checkpoints.wait();  // a save under way is whole before the frame's own files, or another scene
                 if (renderer->deviceRatio() > 0) deviceRatio = renderer->deviceRatio();
                 if (result.seededCells)
-                    std::printf("XPU2: cells by suitability: %u of %u the CPU's (%u the GPU would defer), GPU/CPU rate %.2f, probed in %.1f ms\n",
+                    std::printf("MoonRay XPU2: cells by suitability: %u of %u the CPU's (%u the GPU would defer), GPU/CPU rate %.2f, probed in %.1f ms\n",
                                 result.seededCpuCells, result.seededCells, result.seededDeferCells, result.seededRatio, result.seedSeconds * 1e3);
-                if (result.deferred) std::printf("XPU2: %llu samples deferred to the CPU\n", (unsigned long long)result.deferred);
+                if (result.deferred) std::printf("MoonRay XPU2: %llu samples deferred to the CPU\n", (unsigned long long)result.deferred);
                 // Where a frame's time went: when the grid ran out of chunks, the GPU's launches and their rate, the parked
                 // samples it ran again, and the fine-detail cache's loads and evictions.
                 if (result.launches)
-                    std::printf("XPU2: grid empty at %.2f s of %.2f s; %llu GPU launches at %.0f samples a second; %llu parked samples run again; "
+                    std::printf("MoonRay XPU2: grid empty at %.2f s of %.2f s; %llu GPU launches at %.0f samples a second; %llu parked samples run again; "
                                 "fine-detail tiles loaded %llu, evicted %llu\n",
                                 result.timeline.gridEmpty, result.seconds, (unsigned long long)result.launches, result.gpuItemsPerSecond,
                                 (unsigned long long)result.parkedRun, (unsigned long long)result.fineLoaded, (unsigned long long)result.fineEvicted);
@@ -1461,7 +1512,7 @@ int session(const Args& args, const fs::path& directory) {
                     const unsigned long long inStages = result.gpuProfile[async::ProfileTrace] + result.gpuProfile[async::ProfileShadow] +
                                          result.gpuProfile[async::ProfileShade] + result.gpuProfile[async::ProfilePresence] +
                                          result.gpuProfile[async::ProfileVolumes];
-                    std::printf("XPU2 profile: rays %.1f%%, shadow rays %.1f%%, materials %.1f%%, presence %.1f%%, volume crossings %.1f%%, "
+                    std::printf("MoonRay XPU2 profile: rays %.1f%%, shadow rays %.1f%%, materials %.1f%%, presence %.1f%%, volume crossings %.1f%%, "
                                 "the rest (lights, lobes, AOVs, the path tracer) %.1f%%\n",
                                 100 * result.gpuProfile[async::ProfileTrace] / all, 100 * result.gpuProfile[async::ProfileShadow] / all,
                                 100 * result.gpuProfile[async::ProfileShade] / all, 100 * result.gpuProfile[async::ProfilePresence] / all,
@@ -1472,14 +1523,14 @@ int session(const Args& args, const fs::path& directory) {
                     // volumes), those a bounce stood for, and rays traced for hits.
                     const double n = double(result.gpuSamples);
                     const auto& g = result.gpuProfile;
-                    std::printf("XPU2 profile: a sample's rays: %.2f shadow (%.2f light samples', %.2f BSDF samples', %.2f others), %.2f stood for "
+                    std::printf("MoonRay XPU2 profile: a sample's rays: %.2f shadow (%.2f light samples', %.2f BSDF samples', %.2f others), %.2f stood for "
                                 "by bounces, %.2f for hits\n",
                                 g[async::ProfileCountShadow] / n, g[async::ProfileCountNee] / n, g[async::ProfileCountBsdf] / n,
                                 (double(g[async::ProfileCountShadow]) - g[async::ProfileCountNee] - g[async::ProfileCountBsdf]) / n,
                                 g[async::ProfileCountHeld] / n, g[async::ProfileCountTrace] / n);
                 }
                 if (result.provisional)
-                    std::printf("XPU2: %llu provisional samples (textures read a level up while their tiles landed), rendered again in full: "
+                    std::printf("MoonRay XPU2: %llu provisional samples (textures read a level up while their tiles landed), rendered again in full: "
                                 "%llu on the GPU, %llu on the CPU\n",
                                 (unsigned long long)result.provisional, (unsigned long long)result.refinedGpu, (unsigned long long)result.refinedCpu);
                 if (result.failed) {
@@ -1493,12 +1544,12 @@ int session(const Args& args, const fs::path& directory) {
                     if (result.cancelled) denoiser->drop();
                     else denoiser->flush();
                     if (const unsigned n = denoiser->taken())
-                        std::printf("XPU2: realtime: %u pictures denoised, the last in %.1f ms (OptiX)\n", n,
+                        std::printf("MoonRay XPU2: realtime: %u pictures denoised, the last in %.1f ms (OptiX)\n", n,
                                     denoiser->milliseconds());
                     const std::string error = denoiser->error();
                     if (!error.empty() && denoiserError.empty()) {
                         denoiserError = error;
-                        std::printf("XPU2: realtime pictures are not denoised: %s\n", error.c_str());
+                        std::printf("MoonRay XPU2: realtime pictures are not denoised: %s\n", error.c_str());
                     }
                 }
                 if (!result.cancelled) {
@@ -1541,13 +1592,13 @@ int session(const Args& args, const fs::path& directory) {
                                         result.displayFilters[out->name] = std::move(filtered[k++]);
                             }
                             const std::string error = aov::writeOutputs(*scene.plan->aovs, result, width, height, warnings);
-                            for (const auto& w : warnings) std::puts(("XPU2: " + w).c_str());
+                            for (const auto& w : warnings) std::puts(("MoonRay XPU2: " + w).c_str());
                             cpu::need(error.empty(), error);
                         }
                         complete = true;
-                        std::printf("XPU2: %s in %.2f s (CPU %llu samples, GPU %llu)\n", result.drained ? "drained" : "finished",
+                        std::printf("MoonRay XPU2: %s in %.2f s (CPU %llu samples, GPU %llu)\n", result.drained ? "drained" : "finished",
                                     result.seconds, (unsigned long long)result.cpuSamples, (unsigned long long)result.gpuSamples);
-                        std::printf("XPU2: memory: %s; GPU lane %s\n", memoryText().c_str(), gpu ? gpu->memoryText().c_str() : "none");
+                        std::printf("MoonRay XPU2: memory: %s; GPU lane %s\n", memoryText().c_str(), gpu ? gpu->memoryText().c_str() : "none");
                     }
                 }
                 outlines.watch(nullptr, id, 0, 0);
@@ -1612,7 +1663,7 @@ int main(int argc, char** argv) {
         return code;
     } catch (const std::bad_alloc&) {
         // Its memory ceiling (memoryCeiling) refused it more: the scene goes to XPU, the machine is left alone.
-        fallback("XPU2 ran out of the memory it may use (" + memoryText() + ")");
+        fallback("MoonRay XPU2 ran out of the memory it may use (" + memoryText() + ")");
         return 0;
     } catch (const std::exception& e) {
         fallback(e.what());

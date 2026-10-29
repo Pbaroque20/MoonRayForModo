@@ -72,6 +72,9 @@ struct Watch {
     // checkpointSeconds (0 or no checkpoint: none).
     double checkpointSeconds = 0;
     std::function<void(struct RenderResult&& sofar)> checkpoint;
+    // Each sampling generation as it goes out (the MoonRay Terminal): its number, its samples, the tiles still
+    // sampling and all the image's tiles, the samples a pixel on average once it is done, and the seconds into the frame.
+    std::function<void(unsigned generation, unsigned long long samples, size_t liveTiles, size_t tiles, double perPixel, double seconds)> generationLog;
 };
 
 // When things happened in a frame, in seconds from its start (TEL-01).
@@ -309,6 +312,15 @@ public:
             std::lock_guard<std::mutex> lock(activityMutex_);
             live_ = tiles;
         };
+        if (o.watch && o.watch->generationLog) {
+            const double pixels = double(plan_->width) * plan_->height;
+            const auto began = Clock::now();
+            Watch* const told = o.watch;
+            state.onGenerationLog = [told, pixels, began, &state](U32 generation, U64 samples, size_t live, double spent) {
+                told->generationLog(generation + 1, samples, live, state.tiles, pixels > 0 ? spent / pixels : 0.0,
+                                    std::chrono::duration<double>(Clock::now() - began).count());
+            };
+        }
         if (adaptive) {
             const unsigned trees = o.treeThreads != ~0u ? o.treeThreads : std::max(1u, std::min(o.threads, 16u) - 1);
             if (!pool_ || pool_->size() != trees) pool_ = std::make_unique<Pool>(trees);
@@ -864,6 +876,9 @@ private:
         adaptive::Cellular cells;
         // Each generated pass's live tiles (cellular frames: the cells; trees: the tiles with samples).
         std::function<void(const std::vector<U32>&)> onGeneration;
+        // The same pass in numbers, for the log (Watch::generationLog): its index, its samples, its live tiles and
+        // the samples generated in all, so far.
+        std::function<void(U32 generation, U64 samples, size_t live, double spent)> onGenerationLog;
         PassTables tables;
         std::vector<U32> planned;    // samples each pixel will have once generated passes finish
         std::vector<U64> expected;   // samples of each generated pass
@@ -1021,11 +1036,12 @@ private:
             }
             expected.push_back(samples);
             spent += double(samples);
-            if (onGeneration) {
+            if (onGeneration || onGenerationLog) {
                 std::vector<U32> live;
                 for (U32 tile = 0; tile < tiles; ++tile)
                     if (masks[tile]) live.push_back(tile);
-                onGeneration(live);
+                if (onGenerationLog) onGenerationLog(generated, samples, live.size(), spent);
+                if (onGeneration) onGeneration(live);
             }
             tables.cpuDone[j].store(0, std::memory_order_relaxed);
             trace.push_back({samples, at()});

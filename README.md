@@ -1,5 +1,7 @@
 # Experimental XPU2 prototype
 
+*XPU2: Asynchronous Monte Carlo Path Tracer designed by Raphael Tobar. Not affiliated with or endorsed by DreamWorks Animation; MoonRay and OpenMoonRay are DreamWorks Animation's.*
+
 This `codex/xpu2-foundation` branch publishes an **experimental standalone Windows CPU/GPU renderer**, developed by Raphael Tobar with AI assistance. It is not the production Modo plugin and does not replace original MoonRay XPU.
 
 The prototype combines supported GPU traversal and shading with CPU rendering, resident scene data, progressive updates, resumable paths and pinned-reference fallback. In two synthetic textured direct-lighting scenes, fresh 12-thread comparisons measured about **33% shorter warm render times than XPU**, with the stated quality gates passing. That excludes startup/loading and is not a general performance promise.

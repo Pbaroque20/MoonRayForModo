@@ -1,5 +1,7 @@
 # XPU2 engineer manual
 
+*XPU2: Asynchronous Monte Carlo Path Tracer designed by Raphael Tobar. Not affiliated with or endorsed by DreamWorks Animation; MoonRay and OpenMoonRay are DreamWorks Animation's.*
+
 How XPU2 works, part by part, with the files behind each part. Written 2026-10-25 against commit 242eb5c on
 `xpu2-async`; updated 2026-10-26 for the tessellation handler and the second round of scene preparation (`INDEXER.md`
 sections 16 and 17). The design notes it points to go deeper. Where this manual and the code disagree, the code wins: fix

@@ -57,8 +57,9 @@ def _setting(key, default):
 
 
 def xpu2():
-    """Whether XPU2 renders the preview where MoonRay would render on the graphics card: off by default."""
-    return str(_setting('xpu2/renderer', 'xpu')) == 'xpu2' and (xpu2_runtime() / 'moonray_xpu2.exe').is_file()
+    """Whether XPU2 renders the preview where MoonRay would render on the graphics card: on by default (release 0.5,
+    asked 2026-10-28); a choice of MoonRay XPU in the preferences is kept."""
+    return str(_setting('xpu2/renderer', 'xpu2')) == 'xpu2' and (xpu2_runtime() / 'moonray_xpu2.exe').is_file()
 
 
 def xpu2_chain():
@@ -81,6 +82,35 @@ def xpu2_environment(runtime):
 def xpu2_shaders_log():
     """Where Compile XPU2 Shaders writes how it is going."""
     return Path(os.environ.get('LOCALAPPDATA', tempfile.gettempdir())) / 'MoonRayForModo' / 'xpu2-shaders.log'
+
+
+_shaders_asked = [0.0, None]
+
+
+def xpu2_shaders_compiled():
+    """Whether XPU2's runtime finds its mark of compiled shaders (moonray_xpu2 --shaders-compiled), asked at most every
+    few seconds: without them XPU2 does not render (persistent), and says where to compile them."""
+    import subprocess, time
+    if time.monotonic() - _shaders_asked[0] < 5 and _shaders_asked[1] is not None:
+        return _shaders_asked[1]
+    exe = xpu2_runtime() / 'moonray_xpu2.exe'
+    env = dict(os.environ)
+    env.update(xpu2_environment(default_runtime()))
+    for key in ('PYTHONHOME', 'PYTHONPATH', 'QT_PLUGIN_PATH', 'QT_QPA_PLATFORM_PLUGIN_PATH'):
+        env.pop(key, None)
+    try:
+        result = subprocess.run([str(exe), '--shaders-compiled'], cwd=str(exe.parent), env=env, capture_output=True,
+                                timeout=30, creationflags=0x08000000).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        result = False
+    _shaders_asked[0], _shaders_asked[1] = time.monotonic(), result
+    return result
+
+
+# What a preview says when XPU2 is chosen and its shaders are not compiled: nothing is rendered.
+XPU2_NOT_COMPILED = ("MoonRay XPU2's shaders are not compiled, so nothing was rendered. Compile them once in System > "
+                     "Preferences > MoonRay > XPU2 > Compile XPU2 Shaders (once; it shows how long it has left), or choose MoonRay XPU as the GPU "
+                     "renderer there.")
 '''
 
 COMMANDS = '''"""XPU2, the private test build: compiling its GPU programs into OptiX's cache, and what state they are in."""
@@ -102,28 +132,70 @@ def _running(pid):
     return code.value == 259
 
 
-_asked = [0.0, None]
 
 
 def compiled():
-    """Whether XPU2's runtime finds its mark of compiled shaders (moonray_xpu2 --shaders-compiled), asked at most
-    every few seconds."""
-    import subprocess, time
+    """Whether XPU2's runtime finds its mark of compiled shaders (native.xpu2_shaders_compiled)."""
     from moonray_modo import native
-    if time.monotonic() - _asked[0] < 5 and _asked[1] is not None: return _asked[1]
-    exe = native.xpu2_runtime() / 'moonray_xpu2.exe'
-    env = dict(os.environ)
-    env.update(native.xpu2_environment(native.default_runtime()))
-    for key in ('PYTHONHOME', 'PYTHONPATH', 'QT_PLUGIN_PATH', 'QT_QPA_PLATFORM_PLUGIN_PATH'): env.pop(key, None)
-    try: result = subprocess.run([str(exe), '--shaders-compiled'], cwd=str(exe.parent), env=env, capture_output=True,
-                                 timeout=30, creationflags=0x08000000).returncode == 0
-    except (OSError, subprocess.SubprocessError): result = False
-    _asked[0], _asked[1] = time.monotonic(), result
-    return result
+    return native.xpu2_shaders_compiled()
+
+
+def _counts(lines):
+    """The log's last count of tasks ("N compile tasks done, M waiting, T s", every ten seconds): (done, waiting,
+    seconds), or None before the first."""
+    for line in reversed(lines):
+        words = line.replace(',', ' ').split()
+        if 'tasks' in words and 'done' in words and 'waiting' in words:
+            try:
+                return (int(words[words.index('tasks') - 2]), int(words[words.index('waiting') - 1]),
+                        float(words[words.index('waiting') + 1]) if len(words) > words.index('waiting') + 1 else 0.0)
+            except (ValueError, IndexError):
+                return None
+    return None
+
+
+def _progress(lines):
+    """How far a compile has come, in percent; None before the first count."""
+    counts = _counts(lines)
+    if counts is None or not counts[0] + counts[1]:
+        return None
+    return int(100 * counts[0] / (counts[0] + counts[1]))
+
+
+def _minutes(seconds):
+    return '%d min' % max(1, round(seconds / 60.0)) if seconds >= 60 else '%d s' % max(1, round(seconds))
+
+
+def last_compile():
+    """How long the last whole compile took on this machine, in seconds (kept beside the log as it ends), or None."""
+    from moonray_modo import native
+    try:
+        return float(native.xpu2_shaders_log().with_suffix('.took').read_text().strip())
+    except (OSError, ValueError):
+        return None
+
+
+def how_long():
+    """What a message says of how long a compile takes: the last one here, or that the state shows it as it goes."""
+    took = last_compile()
+    return 'it took %s here last time' % _minutes(took) if took else 'how long it has left shows as it goes'
+
+
+def _keep_took(lines):
+    """A finished compile's time ("compiled in T s") kept beside the log, for the next messages."""
+    from moonray_modo import native
+    for line in reversed(lines):
+        if 'compiled in' in line:
+            try:
+                seconds = float(line.split('compiled in', 1)[1].split()[0])
+                native.xpu2_shaders_log().with_suffix('.took').write_text('%.0f' % seconds)
+            except (OSError, ValueError, IndexError):
+                pass
+            return
 
 
 def state():
-    """The shaders' state in a few words: compiling (from the compile's log), compiled, or not."""
+    """The shaders' state in a few words: compiling (how far, from the compile's log), compiled, or not."""
     from moonray_modo import native
     log = native.xpu2_shaders_log()
     pid = log.with_suffix('.pid')
@@ -132,25 +204,88 @@ def state():
     try: compiling = _running(pid.read_text().strip())
     except (OSError, ValueError): compiling = False
     last = lines[-1] if lines else ''
-    if compiling: return 'Compiling: ' + (last.replace('XPU2 shaders: ', '') or 'starting')
+    if compiling:
+        counts = _counts(lines)
+        if counts is None or not counts[0] + counts[1]:
+            return 'Compiling: starting'
+        done, waiting, seconds = counts
+        percent = int(100 * done / (done + waiting))
+        # About as long again for what is left as for what is done, at the rate so far (a watchdog on the hour it was
+        # said to take: how long it really is, here).
+        left = seconds * waiting / done if done else None
+        return 'Compiling: %d%% · %s so far%s' % (percent, _minutes(seconds), ', about %s left' % _minutes(left) if left else '')
+    _keep_took(lines)
     if compiled(): return 'Compiled'
-    if last and 'compiled in' not in last: return 'Not compiled: ' + last.replace('XPU2 shaders: ', '')
+    if last and 'compiled in' not in last: return 'Not compiled: ' + last.replace('MoonRay XPU2 shaders: ', '').replace('XPU2 shaders: ', '')
     return 'Not compiled yet: XPU2 previews are rendered by MoonRay until they are'
 
 
+import lxifc
+
+# The form's own notifier: told while the shaders compile, it asks the form to look again at the button and the
+# shaders' state (how far along, then Compiled and Re-compile).
+NOTIFIER = 'moonray.xpu2.shaders'
+
+
+class ShadersNotifier(lxifc.Notifier):
+    clients = {}
+    def noti_Name(self): return NOTIFIER
+    def noti_SetArgs(self, args): pass
+    def noti_Args(self): return ''
+    def noti_AddClient(self, event): self.clients[event.__peekobj__()] = event
+    def noti_RemoveClient(self, event): self.clients.pop(event.__peekobj__(), None)
+
+
+def _notify():
+    for event in list(ShadersNotifier.clients.values()):
+        try: lx.object.CommandEvent(event).Event(lx.symbol.fCMDNOTIFY_CHANGE_ALL)
+        except (RuntimeError, LookupError): pass
+
+
+_ticking = []
+
+
+def _tick():
+    """While the shaders compile, the form told every two seconds; once more as they are done, and the watch ended."""
+    if not state().startswith('Compiling'):
+        for timer in _ticking: timer.stop()
+        del _ticking[:]
+        from moonray_modo import native
+        native._shaders_asked[1] = None    # whether they are compiled, asked again at once
+    _notify()
+
+
+def _watch():
+    """Follow a compile under way (started here, or still running from before Modo was opened)."""
+    if _ticking: return
+    try:
+        from PySide2 import QtCore
+    except ImportError:
+        return
+    timer = QtCore.QTimer()
+    timer.setInterval(2000)
+    timer.timeout.connect(_tick)
+    timer.start()
+    _ticking.append(timer)
+
+
 class CompileShaders(lxu.command.BasicCommand):
-    """Compile XPU2's GPU programs into OptiX's disk cache in the background: about an hour the first time, after which
-    every XPU2 preview starts in seconds. Modo stays usable meanwhile."""
+    """Compile XPU2's GPU programs into OptiX's disk cache in the background, once (the state says how long it has left),
+    after which every XPU2 preview starts in seconds. Modo stays usable meanwhile."""
     def cmd_Flags(self): return lx.symbol.fCMD_UI
-    def basic_Enable(self, msg): return True
+    # Greyed while a compile is under way: pressed again, it would only start another.
+    def basic_Enable(self, msg): return not state().startswith('Compiling')
+    # Named for what it does now: compiled, the shaders can only be compiled again (after a driver update).
+    def basic_ButtonName(self): return 'Re-compile XPU2 Shaders' if state() == 'Compiled' else 'Compile XPU2 Shaders'
+    def basic_Notifier(self, index): return (NOTIFIER, '') if index == 0 else None
     def basic_Execute(self, msg, flags):
         import subprocess
         from moonray_modo import native
         exe = native.xpu2_runtime() / 'moonray_xpu2.exe'
         if not exe.is_file():
-            lx.out('XPU2: no runtime-xpu2 in this kit'); return
+            lx.out('MoonRay XPU2: no runtime-xpu2 in this kit'); return
         if state().startswith('Compiling'):
-            lx.out('XPU2: the shaders are compiling already'); return
+            lx.out('MoonRay XPU2: the shaders are compiling already'); return
         log = native.xpu2_shaders_log(); log.parent.mkdir(parents=True, exist_ok=True)
         env = dict(os.environ)
         env.update(native.xpu2_environment(native.default_runtime()))
@@ -160,13 +295,15 @@ class CompileShaders(lxu.command.BasicCommand):
                                        stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
                                        creationflags=0x00000008 | 0x08000000 | 0x00004000)  # detached, no window, below normal
         log.with_suffix('.pid').write_text(str(process.pid))
-        _asked[1] = None
-        lx.out('XPU2: compiling the shaders in the background (about an hour the first time); see ' + str(log))
+        native._shaders_asked[1] = None
+        _watch()
+        _notify()
+        lx.out('MoonRay XPU2: compiling the shaders in the background (%s); see %s' % (how_long(), log))
         try:
             import modo
-            modo.dialogs.alert('XPU2 shaders', 'XPU2 is compiling its shaders in the background: about an hour the first '
-                               'time, once. Modo stays usable; previews are rendered by MoonRay until it is done. The state '
-                               'shows in Preferences > MoonRay > XPU2 (experimental).')
+            modo.dialogs.alert('XPU2 shaders', 'MoonRay XPU2 is compiling its shaders in the background, once (%s). Modo '
+                               'stays usable; XPU2 previews wait until it is done. How far it has come, and about how long '
+                               'it has left, shows in Preferences > MoonRay > XPU2.' % how_long())
         except Exception:
             pass
 
@@ -179,10 +316,16 @@ class ShaderState(lxu.command.BasicCommand):
         self.basic_SetFlags(0, lx.symbol.fCMDARG_QUERY)
     def cmd_Flags(self): return lx.symbol.fCMD_UI
     def basic_Enable(self, msg): return True
-    def cmd_Query(self, index, query): lx.object.ValueArray(query).AddString(state())
+    def basic_Notifier(self, index): return (NOTIFIER, '') if index == 0 else None
+    def cmd_Query(self, index, query):
+        held = state()
+        # A compile found under way (one still running from before Modo was opened) is followed from here.
+        if held.startswith('Compiling'): _watch()
+        lx.object.ValueArray(query).AddString(held)
     def basic_Execute(self, msg, flags): pass
 
 
+lx.bless(ShadersNotifier, NOTIFIER)
 lx.bless(CompileShaders, 'moonray.xpu2.compileShaders')
 lx.bless(ShaderState, 'moonray.xpu2.shaderState')
 '''
@@ -212,8 +355,7 @@ SHEET = '''    <!-- XPU2, the private test build: an asynchronous CPU and GPU re
         <atom type="Tooltip">Whether XPU2's GPU programs are compiled. Until they are, XPU2 previews are rendered by MoonRay</atom>
       </list>
       <list type="Control" val="cmd moonray.xpu2.compileShaders">
-        <atom type="Label">Compile XPU2 Shaders</atom>
-        <atom type="Tooltip">Compiles XPU2's GPU programs into the graphics driver's shader cache, in the background: about an hour the first time, once; every XPU2 preview after starts in seconds. Again after a graphics driver update</atom>
+        <atom type="Tooltip">Compiles XPU2's GPU programs into the graphics driver's shader cache, in the background, once; the state beside it shows how far it has come and about how long it has left. Every XPU2 preview after starts in seconds. Again after a graphics driver update</atom>
       </list>
     </hash>
 '''
@@ -233,7 +375,7 @@ Denoising stop is MoonRay's still.
 First, once: Compile XPU2 Shaders on the same page (a few minutes, in the background; Modo stays usable). Until the
 shaders are compiled, previews are rendered by MoonRay XPU.
 
-A scene XPU2 does not render yet is rendered by MoonRay XPU instead; the Render Log says why ("XPU2: ..."). Not
+A scene XPU2 does not render yet is rendered by MoonRay XPU instead; the Render Log says why ("MoonRay XPU2: ..."). Not
 rendered yet, among others: deep output, continuing a saved render, a camera medium, normal-oriented curves, volumes bound to curves
 or points, and scenes over 8 million pixels or 16 million triangles. What the graphics card's programs do not run yet
 (points, geometry in motion, VDB, heterogeneous and emissive volumes) the processor renders in the same picture.
@@ -1014,9 +1156,11 @@ def xpu2_sampling_words(kit):
                         if scene_settings.complete(properties.scene_settings())['xpu2_generations'].get('on',True):return False
                     except Exception:pass
 """, """                # XPU2 renders the preview (the private test build): its sampling generations are on, their switch is
-                # greyed, and so are MoonRay's own sampling settings, which show what XPU2 takes (xpu2_sampling); final
-                # renders, MoonRay's, still use them.
-                if entry['key'] in ('xpu2_generations','sampling_mode','samples','min_adaptive_samples','max_adaptive_samples','target_adaptive_error'):
+                # greyed, and so are MoonRay's own sampling settings, which show what XPU2 takes (xpu2_sampling), and
+                # what XPU2 does not read at all (cpu_scene.h): MoonRay's buckets and their order, and two sampling
+                # switches of MoonRay's own. Final renders, MoonRay's, still use them all.
+                if entry['key'] in ('xpu2_generations','sampling_mode','samples','min_adaptive_samples','max_adaptive_samples','target_adaptive_error',
+                                    'bucket_size','batch_tile_order','important_first','volume_indirect_samples','disable_optimized_hair_sampling'):
                     from moonray_modo import xpu2_sampling
                     if xpu2_sampling.active():return False
 """)
@@ -1038,6 +1182,361 @@ def kit_version(kit):
     held = re.search(r'__version__ = "([^"]+)"', (REPO_KIT / '__init__.py').read_text(encoding='utf-8')).group(1)
     p = Patch(kit / 'index.cfg')
     p.text = re.sub(r'(<configuration kit="MoonRayForModo" version=")[^"]*(")', r'\g<1>' + held + r'\g<2>', p.text, count=1)
+    p.save()
+
+
+def hdri_and_texture_shape(kit):
+    """MoonLightIPR as the main repo has it since 2026-10-28 (Dose): a plain HDRI turned half a turn about the
+    vertical in its own space, as MoonRay is given it (environments.emit), where it faced the other way; and a texture
+    over the size limit resized with its shape kept (moonlightipr_materials.fitted), where --fit padded it to a
+    square and a label filled only the middle of its UVs."""
+    py = kit / 'python' / 'moonray_modo'
+    p = Patch(py / 'moonlightipr_scene.py')
+    p.rep("""                        baked, matrix = held[0], finite(held[1])
+                # The image's own axes in world space, which the session turns directions into.
+""", """                        baked, matrix = held[0], finite(held[1])
+                if item['kind'] == 'image':
+                    # Half a turn about the vertical in its own space, as Modo shows a plain image and as MoonRay is given
+                    # it (environments.emit): Dose's HDRI faced the other way, the can lit by the room's bright side.
+                    matrix = [-v for v in matrix[0:4]] + matrix[4:8] + [-v for v in matrix[8:12]] + matrix[12:16]
+                # The image's own axes in world space, which the session turns directions into.
+""")
+    p.save()
+    p = Patch(py / 'moonlightipr_materials.py')
+    p.rep("""MAX_TEXTURE_SIDE = 1024
+RAMP_STEPS = 257
+""", """MAX_TEXTURE_SIDE = 1024
+
+
+def fitted(width, height, side=MAX_TEXTURE_SIDE):
+    \"\"\"An image's size made no larger than side on either axis, its shape kept.\"\"\"
+    scale = side / max(width, height)
+    return max(1, round(width * scale)), max(1, round(height * scale))
+
+
+RAMP_STEPS = 257
+""")
+    p.rep("MAX_TEXTURE_SIDE, 'moonlightipr-v2', ocio and (space, ocio)", "MAX_TEXTURE_SIDE, 'moonlightipr-v3', ocio and (space, ocio)")
+    p.rep("""            args += ['--fit', '%dx%d' % (MAX_TEXTURE_SIDE, MAX_TEXTURE_SIDE)]
+""", """            # Its own shape, its longer side at the limit: --fit pads to the square, and Dose's 2103x1673 label filled
+            # only the middle of its UVs, the can dark above and below it.
+            args += ['--resize', '%dx%d' % fitted(width, height)]
+""")
+    p.save()
+
+
+def lights_seen_by_camera(kit):
+    """Lights the camera sees, as the main repo has it since 2026-10-28: Modo's Visible to Camera (visCam) and a
+    MoonRay light's visible_in_camera forced on reach both engines, and MoonLightIPR shows the light where it stands,
+    its picture on it. The repo's MoonLightIPR writes that as its form N, but its layer and filter records have grown
+    since the base kit's form L without a form of their own; so the base kit's session (the repo at aba69c9) is
+    rebuilt with only this change, as scene mark 'l' (test-results/moonlightipr-form-l, the change put in by
+    backport_seen.py there), and the packer here writes the one number more."""
+    py = kit / 'python' / 'moonray_modo'
+    p = Patch(py / 'host.py')
+    p.rep("""                 'width': float(channel(item, 'width', 1)), 'height': float(channel(item, 'height', 1))}""",
+          """                 'width': float(channel(item, 'width', 1)), 'height': float(channel(item, 'height', 1)),
+                 # Visible to Camera: the light seen shining where it stands (MoonRay's visible_in_camera).
+                 'camera_visible': bool(channel(item, 'visCam', 0))}""")
+    p.save()
+    p = Patch(py / 'entities.py')
+    p.rep("""            if name != 'PortalLight' and value(entity, 'texture'):""",
+          """            # Visible in Camera forced on (1): the camera sees it shining. Left to the scene's default, MoonRay hides it.
+            if name != 'PortalLight' and 'visible_in_camera' in catalog()[name]['attributes']:
+                light['camera_visible'] = int(value(entity, 'visible_in_camera')) == 1
+            if name != 'PortalLight' and value(entity, 'texture'):""")
+    p.save()
+    p = Patch(py / 'moonlightipr_scene.py')
+    p.rep("""        local.append(struct.pack('<I20fi', LOCAL_LIGHTS[kind], *(matrix[12:15] + unit(matrix[0:3]) + unit(matrix[4:7])""",
+          """        # Seen by the camera where it stands, as MoonRay shows a light whose Visible in Camera is on (a portal never).
+        seen = 1 if light.get('camera_visible') and kind != 'PortalLight' else 0
+        local.append(struct.pack('<I20fiI', LOCAL_LIGHTS[kind], *(matrix[12:15] + unit(matrix[0:3]) + unit(matrix[4:7])""")
+    p.rep("""            + [cone, max(0.0, cone - 2 * float(light.get('soft_edge', 0)))]), texture)""",
+          """            + [cone, max(0.0, cone - 2 * float(light.get('soft_edge', 0)))]), texture, seen)""")
+    p.rep("""    seen = 1.0 if settings.get('light_seen', True) else 0.0
+    return (struct.pack('<I20fiI', MESH_LIGHT, *([0.0] * 12 + [1.0, 1.0, 1.0] + [c / (math.pi * cached[1]) for c in color] + [seen, 0.0]), -1, 0)""",
+          """    seen = 1 if settings.get('light_seen', True) else 0
+    return (struct.pack('<I20fiII', MESH_LIGHT, *([0.0] * 12 + [1.0, 1.0, 1.0] + [c / (math.pi * cached[1]) for c in color] + [0.0, 0.0]), -1, seen, 0)""")
+    p.rep("b'MLSL'", "b'MLSl'")
+    p.save()
+    built = Path(__file__).resolve().parent.parent / 'moonlightipr-form-l' / 'build' / 'moonlightipr'
+    held = kit / 'runtime' / 'moonlightipr'
+    shutil.copy2(built / 'bin' / 'moonlightipr_session.exe', held / 'moonlightipr_session.exe')
+    for ptx in (built / 'shaders').glob('MoonLightIPRKernel*.ptx'):
+        shutil.copy2(ptx, held / ptx.name)
+
+
+def flowing_toolbar(kit):
+    """The preview window's top row as the main repo has it since 2026-10-28: its groups go on to a new line where
+    the window is too narrow (flow_layout.py, copied), each control as wide as Modo's style needs for its longest word,
+    in place of fixed widths every button was squeezed below and its word cut. The end of panel._toolbar, from its
+    sizing on, is the repo's."""
+    py = kit / 'python' / 'moonray_modo'
+    shutil.copyfile(REPO_KIT / 'flow_layout.py', py / 'flow_layout.py')
+    source = (REPO_KIT / 'panel.py').read_text(encoding='utf-8').replace('\r\n', '\n')
+    start = source.index('        # One height for everything in the row, and as wide as each needs')
+    end = source.index('    def _options_menu(self):', start)
+    p = Patch(py / 'panel.py')
+    old_start = p.text.index('        # One height for everything in the row, and no more width than each needs')
+    old_end = p.text.index('    def _options_menu(self):', old_start)
+    if p.text[old_start:old_end].count('        return row\n') != 1:
+        raise RuntimeError('panel.py: the end of _toolbar is not as expected')
+    p.text = p.text[:old_start] + source[start:end] + p.text[old_end:]
+    # Gamma and alpha as their signs, square as the channels' letters; R, G and B in their colours.
+    p.rep("            button.setStyleSheet('QToolButton:checked { background-color: %s; color: %s; border: 1px solid %s; border-radius: 3px; }'%(lit,ink,lit))",
+          "            # R, G and B written in their own colours, lighter than when lit so that they read on Modo's grey; alpha as\n            # the other buttons are.\n            letter={'r':'#ff6b5e','g':'#5fd27c','b':'#6f9dff'}.get(key)\n            button.setStyleSheet(('QToolButton:!checked { color: %s; font-weight: bold; } '%letter if letter else '')\n                                 +'QToolButton:checked { background-color: %s; color: %s; border: 1px solid %s; border-radius: 3px; }'%(lit,ink,lit))")
+    # EV and \u03b3 as the repo has them: each toggles between its plain value and the one set, and is lit while the one
+    # set is shown (_mark_display). The kit's block, from the EV button to the gamma field, made the repo's.
+    start = p.text.index("        reset=QtWidgets.QToolButton();reset.setText('EV');reset.setToolTip('Exposure, in stops. Click to put it back to 0.')")
+    end = p.text.index("        row.addWidget(self.gamma)\n", start) + len("        row.addWidget(self.gamma)\n")
+    block = source[source.index("        reset=self.exposure_reset=QtWidgets.QToolButton();reset.setText('EV')"):]
+    block = block[:block.index("        self._mark_display()\n") + len("        self._mark_display()\n")]
+    p.text = p.text[:start] + block + p.text[end:]
+    methods = source[source.index('    def _mark_display(self):'):source.index('    def _gamma_changed(self,value):')]
+    p.rep('    def _gamma_changed(self,value):', methods + '    def _gamma_changed(self,value):')
+    p.rep("            blocker=QtCore.QSignalBlocker(self.exposure);self.exposure.setValue(values['display']['exposure']);del blocker\n",
+          "            blocker=QtCore.QSignalBlocker(self.exposure);self.exposure.setValue(values['display']['exposure']);del blocker\n"
+          "            # Set quietly: lit by hand, as its signal is held.\n            self._mark_display()\n")
+    p.rep("                                      ('a','A','#e8e8e8','#101010','Show the alpha channel. Click again for the whole picture.')):",
+          "                                      ('a','\u03b1','#e8e8e8','#101010','Show the alpha (\u03b1) channel. Click again for the whole picture.')):")
+    p.save()
+
+
+def tools_ngons_clear_cache(kit):
+    """The main repo's round of 2026-10-28, late: a runtime's maketx and oiiotool found in the runtime chosen as well as
+    the kit's, its bin and the folder above (native.tool; a tester was told to reinstall while maketx was there); n-gons
+    cut by MoonLightIPR's rules and handed to MoonRay so cut (polygons.cut_mesh in rdla, behind the MoonRay Source
+    Override "N-gons triangulated cleanly"; polygons.py is copied whole by ear_clipping); and Clear Cache beside the
+    Cache folder (cache_folder.clear; cache_folder.py is copied whole by scene_cache). Each piece of code is taken from
+    the repo's files."""
+    py = kit / 'python' / 'moonray_modo'
+
+    def between(name, start, end):
+        source = (REPO_KIT / name).read_text(encoding='utf-8').replace('\r\n', '\n')
+        a = source.index(start)
+        return source[a:source.index(end, a)]
+    p = Patch(py / 'native.py')
+    p.rep("def installation_id():", between('native.py', 'def tool(name, first=None):', 'def installation_id():') + 'def installation_id():')
+    p.rep("def source_switches():", between('native.py', 'def ngon_ears():', 'def source_switches():') + 'def source_switches():')
+    p.save()
+    p = Patch(py / 'textures.py')
+    p.rep("""    runtime = Path(native.default_runtime())
+    converter = runtime / 'maketx.exe'
+    if not converter.is_file():
+        raise ValueError('Texture conversion needs maketx.exe in the MoonRay runtime. Reinstall the kit.')
+""", """    # Where the runtime's maketx is (native.tool: the chosen runtime, then the kit's), its folder the runtime it runs in.
+    converter = native.tool('maketx.exe')
+    runtime = converter.parent
+""")
+    p.save()
+    p = Patch(py / 'moonlightipr_materials.py')
+    p.rep("""        runtime = Path(self.runtime or native.default_runtime())
+        tool = runtime / 'oiiotool.exe'
+        if not tool.is_file():
+            raise ValueError('Texture conversion needs oiiotool.exe in the MoonRay runtime')
+""", """        tool = native.tool('oiiotool.exe', self.runtime)
+        runtime = tool.parent
+""")
+    p.save()
+    p = Patch(py / 'environment_layers.py')
+    p.rep("""    runtime=Path(native.default_runtime());converter=runtime/'oiiotool.exe'
+    if not converter.is_file():raise ValueError('Layered environments require oiiotool.exe')
+""", """    converter=native.tool('oiiotool.exe');runtime=converter.parent
+""")
+    p.rep("""            runtime = Path(native.default_runtime())
+            result = subprocess.run([str(runtime / 'oiiotool.exe'), '--info:format=xml', '-v', str(path)], env=native.environment(runtime),""",
+          """            tool = native.tool('oiiotool.exe')
+            result = subprocess.run([str(tool), '--info:format=xml', '-v', str(path)], env=native.environment(tool.parent),""")
+    p.save()
+    p = Patch(py / 'rdla.py')
+    p.rep("""        vertices = mesh['vertices']
+""", between('rdla.py', "        if not mesh.get('subdivision') and mesh.get('faces'):\n", "        vertices = mesh['vertices']\n") + """        vertices = mesh['vertices']
+""")
+    p.save()
+    p = Patch(py / 'preferences.py')
+    p.rep("    'transmission_roughness': (True, bool),\n", "    'transmission_roughness': (True, bool),\n    # N-gons ear-clipped whatever their size and winding (native.ngon_ears).\n    'ngon_ears': (True, bool),\n")
+    # The button itself comes with the Cache folder's row, which cache_folder takes from the repo whole.
+    p.rep("    def _browse_cache(self):", between('preferences.py', '    def _clear_cache(self):', '    def _browse_cache(self):') + '    def _browse_cache(self):')
+    p.save()
+    p = Patch(kit / 'lxserv' / 'moonray_preferences.py')
+    p.rep("lx.bless(switch('auto_xpu'),'moonray.pref.autoXpu')\n", "lx.bless(switch('auto_xpu'),'moonray.pref.autoXpu')\nlx.bless(switch('ngon_ears'),'moonray.pref.ngonEars')\n")
+    p.save()
+    source = (REPO_KIT.parents[1] / 'preferences.cfg').read_text(encoding='utf-8').replace('\r\n', '\n')
+    a = source.index('      <list type="Control" val="cmd moonray.pref.ngonEars ?">')
+    block = source[a:source.index('      <list type="Control" val="cmd moonray.pref.lightMotion ?">', a)]
+    p = Patch(kit / 'preferences.cfg')
+    p.rep('      <list type="Control" val="cmd moonray.pref.lightMotion ?">', block + '      <list type="Control" val="cmd moonray.pref.lightMotion ?">')
+    p.save()
+
+
+def about_xpu2(kit):
+    """XPU2 credited in the About box beside MoonLightIPR (asked 2026-10-28; XPU2 is to be public with 0.5, and is not
+    named in the main repo before then)."""
+    p = Patch(kit / 'python' / 'moonray_modo' / 'about.py')
+    p.rep(r"MoonLightIPR GPU preview: created by Raphael Tobar · MIT License · not affiliated with DreamWorks Animation\n",
+          r"MoonLightIPR GPU preview: created by Raphael Tobar · MIT License · not affiliated with DreamWorks Animation\n"
+          r"XPU2: Asynchronous Monte Carlo Path Tracer designed by Raphael Tobar · not affiliated with or endorsed by DreamWorks Animation\n")
+    p.save()
+
+
+def engine_names(kit):
+    """MoonRay named by its execution mode in the MoonRay Terminal (main repo, 2026-10-28): MoonRay Vector, Scalar, XPU
+    or Auto, and here MoonRay XPU2 where XPU2 renders the preview (asked: "MoonRay XPU2", not "XPU2"). The repo's
+    native.engine_name, persistent.Session.engine_name and render.py's naming."""
+    py = kit / 'python' / 'moonray_modo'
+    # And the popup descriptions kept for good (hint_cache.py, copied): freed past 512, likely a crash opening a
+    # viewport's menu.
+    shutil.copyfile(REPO_KIT / 'hint_cache.py', py / 'hint_cache.py')
+    source = (REPO_KIT / 'native.py').read_text(encoding='utf-8').replace('\r\n', '\n')
+    a = source.index('# What MoonRay is called in the MoonRay Terminal')
+    p = Patch(py / 'native.py')
+    p.rep('def source_switches():', source[a:source.index('def source_switches():', a)] + 'def source_switches():')
+    p.save()
+    p = Patch(py / 'persistent.py')
+    p.rep("        terminal.watch(self.process,'MoonRay session',resident=True)",
+          "        # Named in the MoonRay Terminal by the mode it starts in (native.engine_name), or MoonRay XPU2 where XPU2 runs.\n"
+          "        terminal.watch(self.process,self.engine_name,resident=True)")
+    p.rep("    def select_view(self,key):", '''    def engine_name(self):
+        """What the Terminal calls this MoonRay: MoonRay XPU2 where XPU2 renders, else by the execution mode it starts in."""
+        if getattr(self,'xpu2_active',False):return 'MoonRay XPU2'
+        return native.engine_name((self.sent or self.latest or {}).get('mode'))
+
+    def select_view(self,key):''')
+    p.save()
+    p = Patch(py / 'render.py')
+    p.rep("        terminal.watch(self.process, lambda: 'Denoiser' if self.phase == 'denoise' else 'MoonRay')",
+          "        # MoonRay named by the mode it renders in (native.engine_name): MoonRay Vector, Scalar, XPU or Auto.\n"
+          "        terminal.watch(self.process, lambda: 'Denoiser' if self.phase == 'denoise' else native.engine_name(getattr(self, 'engine_mode', None)))")
+    p.rep("            args=native.arguments(scene, self.image_path, request['threads'],mode)",
+          "            args=native.arguments(scene, self.image_path, request['threads'],mode)\n            self.engine_mode=mode")
+    p.save()
+
+
+def details_line(kit):
+    """The picture's details (resolution, sampling, noise) as wide as their words at the bottom right, cut short with an
+    ellipsis only where the window is too narrow (main repo, 2026-10-28): a third of the row cut them off. The repo's
+    ElidedLabel and cells."""
+    source = (REPO_KIT / 'panel.py').read_text(encoding='utf-8').replace('\r\n', '\n')
+
+    def between(start, end):
+        a = source.index(start)
+        return source[a:source.index(end, a)]
+    p = Patch(kit / 'python' / 'moonray_modo' / 'panel.py')
+    p.rep("""        cells=[]
+        for _ in range(3):
+            cell=QtWidgets.QWidget();cell.setSizePolicy(QtWidgets.QSizePolicy.Ignored,QtWidgets.QSizePolicy.Preferred)
+            inside=QtWidgets.QHBoxLayout(cell);inside.setContentsMargins(0,0,0,0);inside.setSpacing(8)
+            row.addWidget(cell,1);cells.append(inside)
+""", between('        cells=[]\n        for index in range(3):\n', '        left,middle,right=cells\n'))
+    p.rep("        self.image_info=QtWidgets.QLabel('');self.image_info.setEnabled(False)",
+          "        self.image_info=ElidedLabel('');self.image_info.setEnabled(False)")
+    p.rep("\nclass Panel(", '\n' + between('class ElidedLabel(QtWidgets.QLabel):', 'class Panel(') + 'class Panel(')
+    p.save()
+
+
+def memory_in_picture(kit):
+    """The memory meter at the bottom right of the picture, as the HUD's lines are, while Preview Preferences says
+    (Memory in the picture; main repo, 2026-10-28): it was beside the picture's details in the status row, switched in
+    Preferences > MoonRay (meter_switch, no longer run). memory_meter.py is the repo's (repo_fixes copies it); the
+    panel's and the preferences' lines are taken from the repo. Run after the HUD is in the panel."""
+    py = kit / 'python' / 'moonray_modo'
+    source = (REPO_KIT / 'panel.py').read_text(encoding='utf-8').replace('\r\n', '\n')
+
+    def between(start, end):
+        a = source.index(start)
+        return source[a:source.index(end, a)]
+    p = Patch(py / 'panel.py')
+    p.rep("""        # The memory the renderer, the machine and the graphics card have, beside the picture's details.
+        from .memory_meter import MemoryMeter
+        self.memory_meter=MemoryMeter(self._renderer_processes)
+        right.addWidget(self.memory_meter)
+""", '')
+    p.rep("""        self.hud.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents);self.hud.hide()
+""", """        self.hud.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents);self.hud.hide()
+""" + between("        # The memory the renderer, the machine and the graphics card have, at the bottom right", "        self.preview.setContextMenuPolicy("))
+    p.rep("""and hasattr(self,'hud') and self.hud.isVisible():self._hud_place()
+""", """and hasattr(self,'hud') and self.hud.isVisible():self._hud_place()
+        if watched is self.preview and event.type()==QtCore.QEvent.Resize and hasattr(self,'memory_meter'):self._meter_place()
+""")
+    p.rep("""        if words:self._hud_place();self.hud.raise_()
+""", """        if words:self._hud_place();self.hud.raise_()
+        self._meter_place()
+""")
+    p.rep("    def _hud_place(self):", between('    def _meter_place(self):', '    def _hud_place(self):') + '    def _hud_place(self):')
+    p.save()
+    source = (REPO_KIT / 'preferences.py').read_text(encoding='utf-8').replace('\r\n', '\n')
+    p = Patch(py / 'preferences.py')
+    p.rep("'preview_motion': (False, bool),", "'preview_motion': (False, bool), 'memory_hud': (True, bool),")
+    p.rep("        heading = QtWidgets.QLabel('MoonLightIPR quality')", between("        form.addRow(check('memory_hud'", "        heading = QtWidgets.QLabel('MoonLightIPR quality')") +
+          "        heading = QtWidgets.QLabel('MoonLightIPR quality')")
+    p.save()
+
+
+def preference_pages(kit):
+    """MoonRay's preferences as pages of their own in Modo's Preferences list (main repo, 2026-10-28): General (the
+    preview window, lighting, Assign Material), Renderer, XPU (Auto on the graphics card first, from the overrides) and
+    Source Overrides, as the repo's preferences.cfg has them; and XPU2 a page of its own, where it was a section of the
+    General page. Run after XPU2's section is added (build)."""
+    p = Patch(kit / 'preferences.cfg')
+    # XPU2 no longer a section of the General page.
+    p.rep(SHEET_ENTRY, '')
+    pages = (('renderer', 'Renderer', 'MoonRayRendererPage:sheet', 'MoonRayRenderer:sheet', 'Renderer', '80.61'),
+             ('xpu', 'XPU', 'MoonRayXPUPage:sheet', 'MoonRayXPU:sheet', 'XPU (graphics card)', '80.62'),
+             ('overrides', 'Source Overrides', 'MoonRaySourceOverridesPage:sheet', 'MoonRaySourceOverrides:sheet', 'MoonRay Source Overrides', '80.63'),
+             ('xpu2', 'XPU2', 'MoonRayXPU2Page:sheet', 'MoonRayXPU2:sheet', 'XPU2 (experimental)', '80.64'))
+    for hash_key in ('MoonRayRenderer:sheet', 'MoonRaySourceOverrides:sheet'):
+        start = p.text.index('      <list type="Control" val="sub %s">' % hash_key)
+        end = p.text.index('      </list>\n', start) + len('      </list>\n')
+        p.text = p.text[:start] + p.text[end:]
+    # The Auto XPU control moved to the XPU page's own sheet.
+    start = p.text.index('      <list type="Control" val="cmd moonray.pref.autoXpu ?">\n        <atom type="Label">')
+    end = p.text.index('      </list>\n', start) + len('      </list>\n')
+    auto, p.text = p.text[start:end], p.text[:start] + p.text[end:]
+    sheets = ['''    <!-- MoonRay on the graphics card. -->
+    <hash type="Sheet" key="MoonRayXPU:sheet">
+      <atom type="Label">XPU (graphics card)</atom>
+      <atom type="Layout">properties</atom>
+''' + auto + '''    </hash>
+''']
+    for key, name, page, inner, label, ordinal in pages:
+        sheets.append('''    <hash type="Sheet" key="%s">
+      <atom type="Label">%s</atom>
+      <atom type="Layout">properties</atom>
+      <list type="Control" val="sub %s">
+        <atom type="Label">%s</atom>
+        <atom type="ShowLabel">1</atom>
+        <atom type="StartCollapsed">0</atom>
+        <atom type="Hash">%s</atom>
+      </list>
+      <atom type="Filter">prefs/moonray/%s:filterPreset</atom>
+      <hash type="InCategory" key="prefs:general#head">
+        <atom type="Ordinal">%s</atom>
+      </hash>
+      <atom type="Group">prefs/moonray</atom>
+    </hash>
+''' % (page, name, inner, label, inner, key, ordinal))
+        p.rep('''  <atom type="Filters">
+''', '''  <atom type="Filters">
+    <hash type="Preset" key="prefs/moonray/%s:filterPreset">
+      <atom type="Name">%s</atom>
+      <atom type="Category">20385740002:filterCat</atom>
+      <atom type="Enable">1</atom>
+      <list type="Node">1 .group 0 &quot;&quot;</list>
+      <list type="Node">1 prefType moonray/%s</list>
+      <list type="Node">-1 .endgroup </list>
+    </hash>
+''' % (key, name, key))
+    p.rep('''    <hash type="PrefCat" key="moonray/general"></hash>
+''', '''    <hash type="PrefCat" key="moonray/general"></hash>
+''' + ''.join('    <hash type="PrefCat" key="moonray/%s"></hash>\n' % page[0] for page in pages))
+    p.rep('''      <hash type="T" key="moonray/general">General</hash>
+''', '''      <hash type="T" key="moonray/general">General</hash>
+''' + ''.join('      <hash type="T" key="moonray/%s">%s</hash>\n' % page[:2] for page in pages))
+    p.rep('''    </hash>
+  </atom>
+  <atom type="Filters">''', '''    </hash>
+''' + ''.join(sheets) + '''  </atom>
+  <atom type="Filters">''')
     p.save()
 
 
@@ -1185,25 +1684,21 @@ def scene_cache(kit):
     p.rep("""'cache_folder': ('', str),""", """'cache_folder': ('', str), 'scene_cache': (True, bool),""")
     p.rep("""        form.addRow('Cache folder', cache_row)
 """, source[source.index("        form.addRow('Cache folder', cache_row)\n"):source.index("        form.addRow(check('scene_cache'")] +
-          source[source.index("        form.addRow(check('scene_cache'"):source.index("Caching scene...'))\n") + len("Caching scene...'))\n")])
+          source[source.index("        form.addRow(check('scene_cache'"):source.index("what it kept.'))\n") + len("what it kept.'))\n")])
     p.save()
     source = (REPO_KIT / 'moonlightipr_session.py').read_text(encoding='utf-8').replace('\r\n', '\n')
     p = Patch(py / 'moonlightipr_session.py')
     p.rep("""class Packer(QtCore.QThread):""", source[source.index('# What the preview says while a scene is made ready'):source.index('class Packer(QtCore.QThread):')] + 'class Packer(QtCore.QThread):')
     p.rep("""        self.packer.finished.connect(self._packed)
         self.packer.start()
-""", source[source.index("        self.packer.finished.connect(self._packed)\n"):source.index("cache_folder.missed() > missed else None)\n") + len("cache_folder.missed() > missed else None)\n")])
+""", source[source.index("        self.packer.finished.connect(self._packed)\n"):source.index("        QtCore.QTimer.singleShot(1000, said)\n") + len("        QtCore.QTimer.singleShot(1000, said)\n")])
     p.save()
     source = (REPO_KIT / 'panel.py').read_text(encoding='utf-8').replace('\r\n', '\n')
     p = Patch(py / 'panel.py')
+    # Caching scene... only while the cache keeps what it makes, Loading scene from cache... while it reads back (the
+    # session says which, 2026-10-28): the panel no longer names every preparation Caching.
     p.rep("""STOP_TIP = 'Stop the render in progress and stop following scene changes.'
-""", source[source.index("STOP_TIP = 'Stop the render in progress and stop following scene changes.'\n"):source.index("'Preparing the MoonLightIPR scene')\n") + len("'Preparing the MoonLightIPR scene')\n")])
-    p.rep("""        if getattr(self,'_draft_quiet',False):return
-        self.status.setText(text)""", """        if getattr(self,'_draft_quiet',False):return
-        # A scene made ready, with the Scene cache on: said as that (its prepared meshes are kept as they are made).
-        from . import cache_folder
-        if text in PREPARATIONS and cache_folder.scene_cache():text=cache_folder.CACHING
-        self.status.setText(text)""")
+""", source[source.index("STOP_TIP = 'Stop the render in progress and stop following scene changes.'\n"):source.index('READING = "Reading Modo\'s scene graph..."\n') + len('READING = "Reading Modo\'s scene graph..."\n')])
     p.save()
     source = (REPO_KIT / 'moonlightipr_scene.py').read_text(encoding='utf-8').replace('\r\n', '\n')
     p = Patch(py / 'moonlightipr_scene.py')
@@ -1613,7 +2108,7 @@ def build(session, base):
     displacement_choice(KIT)
     geometry_rows(KIT)
     xpu2_smart_render(KIT)
-    meter_switch(KIT)
+    # meter_switch(KIT): no longer; the meter is switched in Preview Preferences now (memory_in_picture).
     motion_skip(KIT)
     geometry_detail(KIT)
     render_reading(KIT)
@@ -1633,11 +2128,15 @@ def build(session, base):
     scene_read_cache(KIT)
     ear_clipping(KIT)
     kit_version(KIT)
+    hdri_and_texture_shape(KIT)
+    lights_seen_by_camera(KIT)
+    flowing_toolbar(KIT)
+    tools_ngons_clear_cache(KIT)
 
     p = Patch(py / 'preferences.py')
     p.rep("""    'auto_xpu': (True, bool),""", """    'auto_xpu': (True, bool),
     # XPU2, the private test build: what renders on the graphics card, and where its adaptive passes are made.
-    'xpu2/renderer': ('xpu', str), 'xpu2/adaptive_chain': (False, bool),""")
+    'xpu2/renderer': ('xpu2', str), 'xpu2/adaptive_chain': (False, bool),""")
     p.save()
 
     p = Patch(py / 'native.py')
@@ -1656,6 +2155,10 @@ def build(session, base):
         # XPU or Auto, and XPU2 has not left this scene to MoonRay (@@MODO_XPU2 FALLBACK).
         program=request['runtime']/'moonray.exe'
         self.xpu2_active=bool(native.xpu2() and request['mode'] in ('xpu','auto') and not getattr(self,'xpu2_refused',None))
+        if self.xpu2_active and not native.xpu2_shaders_compiled():
+            # XPU2 chosen, its shaders not compiled: nothing is rendered (MoonRay XPU in its place hid that it was not XPU2),
+            # and the preview says where to compile them.
+            self.sent=None;self.failed.emit(native.XPU2_NOT_COMPILED);return
         # The view again, now that it is known whose: Denoised Beauty is XPU2's own (realtime), the beauty MoonRay's.
         self.select_view(self.view)
         if self.xpu2_active:
@@ -1667,7 +2170,7 @@ def build(session, base):
           """            if line.startswith('@@MODO_XPU2 FALLBACK'):
                 # XPU2 does not render this scene: MoonRay is started in its place with the scene, as after a restart.
                 self.xpu2_refused=line[len('@@MODO_XPU2 FALLBACK'):].strip() or 'it does not render this scene'
-                self.status.emit('XPU2: %s. MoonRay renders this preview instead.'%self.xpu2_refused)
+                self.status.emit('MoonRay XPU2: %s. MoonRay XPU renders this preview instead.'%self.xpu2_refused)
                 if not self.closed:self.stopping=True
                 continue
             if not line.startswith('@@MODO_SESSION '):continue""")
@@ -1686,7 +2189,7 @@ def build(session, base):
         if getattr(self,'xpu2_active',False) and not self.stopping and not self.closed:
             # XPU2 ended without saying why: MoonRay takes the preview over.
             self.xpu2_refused='ended unexpectedly (0x%08X; see Render Log)'%(code&0xffffffff)
-            self.status.emit('XPU2 %s. MoonRay renders this preview instead.'%self.xpu2_refused)
+            self.status.emit('MoonRay XPU2 %s. MoonRay XPU renders this preview instead.'%self.xpu2_refused)
             self.stopping=True""")
     p.rep("""    def stop(self):
         self.idle.cancel()""",
@@ -1769,6 +2272,11 @@ lx.bless(switch('xpu2/adaptive_chain'),'moonray.pref.xpu2Chain')""")
 """ + SHEET + """  </atom>
   <atom type="Filters">""")
     p.save()
+    preference_pages(KIT)
+    memory_in_picture(KIT)
+    details_line(KIT)
+    engine_names(KIT)
+    about_xpu2(KIT)
 
     version = 'unknown'
     for line in (KIT / 'index.cfg').read_text(encoding='utf-8').splitlines():
