@@ -59,8 +59,8 @@ def has_alpha(path):
         stat = path.stat()
         key = (str(path.resolve()), stat.st_size, stat.st_mtime_ns)
         if key not in _ALPHA:
-            runtime = Path(native.default_runtime())
-            result = subprocess.run([str(runtime / 'oiiotool.exe'), '--info:format=xml', '-v', str(path)], env=native.environment(runtime),
+            tool = native.tool('oiiotool.exe')
+            result = subprocess.run([str(tool), '--info:format=xml', '-v', str(path)], env=native.environment(tool.parent),
                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=60,
                                     creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
             _ALPHA[key] = alpha_index(result.stdout.decode(errors='replace')) >= 0
@@ -70,8 +70,7 @@ def has_alpha(path):
 
 
 def image_pixels(layer, folder, width, height):
-    runtime=Path(native.default_runtime());converter=runtime/'oiiotool.exe'
-    if not converter.is_file():raise ValueError('Layered environments require oiiotool.exe')
+    converter=native.tool('oiiotool.exe');runtime=converter.parent
     source=textures.prepare(layer['path'],layer.get('srgb',False),mipmaps=False,color_space=layer.get('color_space',''))
     def run(args):
         result=subprocess.run([str(converter)]+args,env=native.environment(runtime),stdout=subprocess.PIPE,

@@ -294,6 +294,7 @@ struct Light {
     const float* triangles = nullptr;   // mesh: three world-space corners, 9 floats per triangle
     size_t triangleCount = 0;
     int32_t texture = -1;               // a picture across the light, from addTexture; not for a portal or a mesh
+    bool visibleInCamera = false;       // whether the camera sees it shining where it stands; never a portal
     const LightFilter* filters = nullptr;
     size_t filterCount = 0;
 };

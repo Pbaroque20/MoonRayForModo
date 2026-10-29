@@ -125,6 +125,7 @@ def polygon_mesh(mesh, triangles, error):
     (curves, a mesh with other lists of its own, or no adapter)."""
     from .rows import Rows, Faces, numbers, corners as flat_corners, counts as flat_counts
     from .scene_digest import content
+    from .polygons import rules as polygon_rules
     if any(mesh.get(key) for key in ('point_attributes', 'corner_attributes', 'attributes', 'creases', 'corners', 'vertices_close')):
         return None
     vertices, faces = mesh['vertices'], mesh['faces']
@@ -139,8 +140,10 @@ def polygon_mesh(mesh, triangles, error):
         fan = array('I', range(len(corner_list)))
         indices = array('I', corner_list)
     else:
-        # An n-gon ear-clipped as MoonRay does it (polygons.corners), the rest fanned.
-        from .polygons import corners as face_corners
+        # An n-gon ear-clipped as MoonRay does it (polygons.corners, by the n-gon override as it stands), the rest fanned.
+        from .polygons import corners as face_corners, follow
+        from .native import ngon_ears
+        follow(ngon_ears())
         fan, start = array('I'), 0
         for index, n in enumerate(size_list):
             if n > 4:
@@ -174,7 +177,8 @@ def polygon_mesh(mesh, triangles, error):
         place = {tag: i for i, tag in enumerate(names)}
         materials = array('I', (place[tag] for tag, n in zip(tags, size_list) for _ in range(n - 2)))
     key = ('polygons', content(vertices), content(faces), content(normals) if normals else '',
-           tuple(content(values) for _, values in sets), content(tags) if tags is not None else '', int(triangles), round(float(error), 6))
+           tuple(content(values) for _, values in sets), content(tags) if tags is not None else '', int(triangles), round(float(error), 6),
+           polygon_rules())
     made = arrays(positions, indices, normal_values, None, uvs, materials, bool(mesh.get('smooth', True)), triangles, error, key)
     if made is None:
         return None

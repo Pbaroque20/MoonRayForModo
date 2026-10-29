@@ -17,9 +17,6 @@ RENDER_TIP = 'Render the current scene. The previous image stays until its repla
 STOP_TIP = 'Stop the render in progress and stop following scene changes.'
 # What the status says while Modo's thread reads the whole scene, Modo held meanwhile (Render, and realtime alike).
 READING = "Reading Modo's scene graph..."
-# What the renderers say while they make a scene ready: with the Scene cache on, the status says Caching scene... instead.
-PREPARATIONS = ('Starting persistent MoonRay session', 'Reloading scene structure in persistent session',
-                'Preparing the MoonLightIPR scene')
 # Always offered in the buffer list; choosing one adds the output to the scene if it lacks it.
 # Modo's own style draws menu entries hard against the edge.
 MENU_STYLE = 'QMenu::item { padding: 5px 24px 5px 24px; } QMenu::separator { height: 1px; margin: 4px 10px; }'
@@ -52,6 +49,24 @@ PLAYBACK_REST=0.35
 DRAFT_MOST=4500000
 # How long Modo's thread is left alone after an update of a followed scene, in lengths of that update.
 LIVE_REST=2.0
+
+
+class ElidedLabel(QtWidgets.QLabel):
+    """A line of words as wide as they are where there is room, and cut short with an ellipsis where there is not: the
+    window may be narrower than the picture's details."""
+
+    def minimumSizeHint(self):
+        return QtCore.QSize(min(60, super().minimumSizeHint().width()), super().minimumSizeHint().height())
+
+    def paintEvent(self, event):
+        text = self.text()
+        shown = self.fontMetrics().elidedText(text, QtCore.Qt.ElideRight, self.contentsRect().width())
+        if shown == text:
+            return super().paintEvent(event)
+        painter = QtGui.QPainter(self)
+        painter.setPen(self.palette().color(QtGui.QPalette.Disabled if not self.isEnabled() else QtGui.QPalette.Active,
+                                            QtGui.QPalette.WindowText))
+        painter.drawText(self.contentsRect(), int(self.alignment()) | QtCore.Qt.AlignVCenter, shown)
 
 
 class Panel(Tools, QtWidgets.QWidget):
@@ -104,6 +119,13 @@ class Panel(Tools, QtWidgets.QWidget):
         self.hud=QtWidgets.QLabel(self.preview)
         self.hud.setStyleSheet('QLabel{color:#f2e3c4;background-color:rgba(20,22,26,170);border-radius:3px;padding:3px 7px;font-weight:bold;}')
         self.hud.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents);self.hud.hide()
+        # The memory the renderer, the machine and the graphics card have, at the bottom right of the picture as the
+        # HUD's lines are, while Preview Preferences says (Memory in the picture). Its tip says it in full.
+        from .memory_meter import MemoryMeter
+        self.memory_meter=MemoryMeter(self._renderer_processes,self.preview,on=lambda:bool(self.preferences.get('memory_hud')),
+                                      placed=self._meter_place)
+        self.memory_meter.setStyleSheet('QLabel{color:#d8d2c4;background-color:rgba(20,22,26,150);border-radius:3px;padding:2px 6px;}'
+                                        'QLabel:disabled{color:#a8a397;}')
         self.preview.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         self.preview.customContextMenuRequested.connect(lambda point:self._image_menu(point).exec_(self.preview.mapToGlobal(point)))
         self.preview.installEventFilter(self)
@@ -209,20 +231,24 @@ class Panel(Tools, QtWidgets.QWidget):
         row.addWidget(self.buffer)
         row.addSpacing(5)
         # Exposure and gamma: each a button that puts it back as it was, and its value beside it.
-        reset=QtWidgets.QToolButton();reset.setText('EV');reset.setToolTip('Exposure, in stops. Click to put it back to 0.')
-        reset.clicked.connect(lambda:self.exposure.setValue(0.0));row.addWidget(reset)
+        reset=self.exposure_reset=QtWidgets.QToolButton();reset.setText('EV');reset.setToolTip('Exposure, in stops. Click for 0, and again for the exposure you had set.')
+        reset.clicked.connect(self._exposure_toggle);row.addWidget(reset)
         self.exposure=QtWidgets.QDoubleSpinBox();self.exposure.setRange(-20,20);self.exposure.setSingleStep(.25)
         self.exposure.setKeyboardTracking(False)
         self.exposure.setToolTip('Display exposure in stops. The rendered values are not changed.')
         self.exposure.valueChanged.connect(lambda value:self.display_timer.start())
+        self.exposure.valueChanged.connect(lambda value:self._mark_display())
         row.addWidget(self.exposure)
-        reset=QtWidgets.QToolButton();reset.setText('Gamma');reset.setToolTip('Viewing gamma. Click to put it back to 1.')
-        reset.clicked.connect(lambda:self.gamma.setValue(1.0));row.addWidget(reset)
+        reset=self.gamma_reset=QtWidgets.QToolButton();reset.setText('γ')
+        reset.setToolTip('Gamma (γ): the viewing gamma. Click for 1, and again for the gamma you had set.')
+        reset.clicked.connect(self._gamma_toggle);row.addWidget(reset)
         self.gamma=QtWidgets.QDoubleSpinBox();self.gamma.setRange(.1,5.0);self.gamma.setSingleStep(.05);self.gamma.setDecimals(2)
         self.gamma.setValue(self.preferences.get('display_gamma'))
         self.gamma.setToolTip('A gamma for looking at the picture, after its view transform: above 1 lifts the shadows, below 1 deepens them.\nIt is kept with this window, not with the scene, and changes neither the render nor a saved EXR.')
         self.gamma.valueChanged.connect(self._gamma_changed)
+        self.gamma.valueChanged.connect(lambda value:self._mark_display())
         row.addWidget(self.gamma)
+        self._mark_display()
         row.addSpacing(5)
         # One channel of the picture at a time: its red, green or blue as greys, or its alpha. A button pressed is
         # lit in its own colour; pressed again it goes out and the whole picture is back.
@@ -230,9 +256,13 @@ class Panel(Tools, QtWidgets.QWidget):
         for key,label,lit,ink,tip in (('r','R','#c0392b','#ffffff','Show the red channel alone, as greys. Click again for the whole picture.'),
                                       ('g','G','#2e9e4f','#ffffff','Show the green channel alone, as greys. Click again for the whole picture.'),
                                       ('b','B','#2f6fd0','#ffffff','Show the blue channel alone, as greys. Click again for the whole picture.'),
-                                      ('a','A','#e8e8e8','#101010','Show the alpha channel. Click again for the whole picture.')):
+                                      ('a','α','#e8e8e8','#101010','Show the alpha (α) channel. Click again for the whole picture.')):
             button=QtWidgets.QToolButton();button.setText(label);button.setCheckable(True);button.setToolTip(tip)
-            button.setStyleSheet('QToolButton:checked { background-color: %s; color: %s; border: 1px solid %s; border-radius: 3px; }'%(lit,ink,lit))
+            # R, G and B written in their own colours, lighter than when lit so that they read on Modo's grey; alpha as
+            # the other buttons are.
+            letter={'r':'#ff6b5e','g':'#5fd27c','b':'#6f9dff'}.get(key)
+            button.setStyleSheet(('QToolButton:!checked { color: %s; font-weight: bold; } '%letter if letter else '')
+                                 +'QToolButton:checked { background-color: %s; color: %s; border: 1px solid %s; border-radius: 3px; }'%(lit,ink,lit))
             button.clicked.connect(functools.partial(self._channel_clicked,key))
             self.channels[key]=button;row.addWidget(button)
         self._before_alpha=None
@@ -263,29 +293,59 @@ class Panel(Tools, QtWidgets.QWidget):
         row.addSpacing(5)
         row.addWidget(gear)
         row.addStretch(1)
-        # One height for everything in the row, and no more width than each needs: a button is as wide as its word,
-        # a channel's is square, and the lists give way first when the window is narrow.
+        # One height for everything in the row, and as wide as each needs as Modo's own style draws it (its padding
+        # and a list's arrow as its size hint has them): a button as wide as the longest thing it says, a channel's
+        # square. Set from the font alone, words were cut short.
         high=24
-        def wide(widget,text,room=14):return widget.fontMetrics().horizontalAdvance(text)+room
+        def room(widget):
+            text=widget.currentText() if isinstance(widget,QtWidgets.QComboBox) else widget.text()
+            return max(8,widget.sizeHint().width()-widget.fontMetrics().horizontalAdvance(text))
+        def wide(widget,*texts):return max(widget.fontMetrics().horizontalAdvance(t) for t in texts)+room(widget)
         for i in range(row.count()):
             widget=row.itemAt(i).widget()
             if widget is None:continue
             widget.setFixedHeight(high)
             if isinstance(widget,QtWidgets.QToolButton):
-                widget.setFixedWidth(high if len(widget.text())==1 else wide(widget,widget.text()))
+                # A menu's arrow, which the style leaves out of the size it gives, beside the word and not over it.
+                widget.setFixedWidth(high if len(widget.text())==1 else wide(widget,widget.text())+(16 if widget.menu() else 0))
+            elif isinstance(widget,QtWidgets.QPushButton):
+                widget.setFixedWidth(wide(widget,widget.text(),'Render','Continue','Stop','RT On','RT Off'))
             elif isinstance(widget,QtWidgets.QDoubleSpinBox):widget.setFixedWidth(62)
-        # Wide enough for the longest thing it says.
-        self.start.setFixedWidth(wide(self.start,'Continue',28))
-        # Room for the menu arrow beside the word, which it otherwise covers.
-        gear.setFixedWidth(wide(gear,'Options',34))
-        for combo,least,most in ((self.camera,96,170),(self.buffer,96,150)):
+        # The engines are known now: as wide as the longest. The cameras and buffers are filled later and change, so
+        # those lists follow what they hold, within a bound (a long camera name is in the tip).
+        self.preview_engine.setFixedWidth(wide(self.preview_engine,*[self.preview_engine.itemText(i) for i in range(self.preview_engine.count())]))
+        for combo in (self.camera,self.buffer):
             combo.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToContents)
-            combo.setMinimumWidth(least);combo.setMaximumWidth(most)
-        # The engines are few and their names short: the list is as wide as the longest, with room for its arrow, and
-        # never gives way, so that no name is cut off.
-        engine=self.preview_engine
-        engine.setFixedWidth(max(wide(engine,engine.itemText(i),40) for i in range(engine.count())))
-        return row
+            combo.setMinimumWidth(110);combo.setMaximumWidth(200)
+        return self._flowing(row)
+
+    def _flowing(self,row):
+        """The row's groups (as its spacings part them) side by side, a group going on to a new line where the window
+        is too narrow for it, in place of every button squeezed and its word cut."""
+        from .flow_layout import FlowLayout
+        bar=QtWidgets.QWidget(self)
+        flow=FlowLayout(bar,spacing=10)
+        group=None
+        while row.count():
+            item=row.takeAt(0)
+            widget=item.widget()
+            if widget is None:
+                # A spacing or the stretch: the group so far is done.
+                group=None
+                continue
+            # The camera and buffer lists apart from the buttons and engine before them, so that in a narrow window
+            # they go on to the next line together rather than past its edge.
+            if widget is self.camera:group=None
+            if group is None:
+                group=QtWidgets.QWidget(bar)
+                inside=QtWidgets.QHBoxLayout(group);inside.setContentsMargins(0,0,0,0);inside.setSpacing(row.spacing())
+                flow.addWidget(group)
+            group.layout().addWidget(widget)
+        # As tall as its lines are at the width it is given.
+        policy=QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Preferred,QtWidgets.QSizePolicy.Preferred);policy.setHeightForWidth(True)
+        bar.setSizePolicy(policy)
+        holder=QtWidgets.QHBoxLayout();holder.setContentsMargins(0,0,0,0);holder.addWidget(bar)
+        return holder
 
     def _options_menu(self):
         menu=self.options_menu=QtWidgets.QMenu(self);menu.setStyleSheet(MENU_STYLE)
@@ -385,10 +445,16 @@ class Panel(Tools, QtWidgets.QWidget):
         lines=QtWidgets.QVBoxLayout();lines.setSpacing(2);lines.setContentsMargins(0,0,0,0)
         row=QtWidgets.QHBoxLayout();row.setSpacing(10)
         cells=[]
-        for _ in range(3):
-            cell=QtWidgets.QWidget();cell.setSizePolicy(QtWidgets.QSizePolicy.Ignored,QtWidgets.QSizePolicy.Preferred)
+        for index in range(3):
+            cell=QtWidgets.QWidget()
             inside=QtWidgets.QHBoxLayout(cell);inside.setContentsMargins(0,0,0,0);inside.setSpacing(8)
-            row.addWidget(cell,1);cells.append(inside)
+            # The picture's details (the last cell) as wide as their words, the other two sharing what is left: as a
+            # third, a resolution, sampling and noise line was cut off.
+            if index==2:
+                cell.setSizePolicy(QtWidgets.QSizePolicy.Preferred,QtWidgets.QSizePolicy.Preferred);row.addWidget(cell,0)
+            else:
+                cell.setSizePolicy(QtWidgets.QSizePolicy.Ignored,QtWidgets.QSizePolicy.Preferred);row.addWidget(cell,1)
+            cells.append(inside)
         left,middle,right=cells
         self.status = QtWidgets.QLabel('Ready')
         # Each thing it says is noted in the MoonRay Terminal too.
@@ -412,12 +478,8 @@ class Panel(Tools, QtWidgets.QWidget):
         self.render_timing.setAlignment(QtCore.Qt.AlignCenter)
         self.render_timing.setSizePolicy(QtWidgets.QSizePolicy.Ignored,QtWidgets.QSizePolicy.Preferred)
         middle.addWidget(self.render_timing,1)
-        self.image_info=QtWidgets.QLabel('');self.image_info.setEnabled(False)
+        self.image_info=ElidedLabel('');self.image_info.setEnabled(False)
         right.addStretch(1)
-        # The memory the renderer, the machine and the graphics card have, beside the picture's details.
-        from .memory_meter import MemoryMeter
-        self.memory_meter=MemoryMeter(self._renderer_processes)
-        right.addWidget(self.memory_meter)
         right.addWidget(self.image_info)
         self.notice_toggle=QtWidgets.QToolButton();self.notice_toggle.setText('Notices (0)');self.notice_toggle.setCheckable(True);self.notice_toggle.setAutoRaise(True)
         self.notice_toggle.setToolTip('What the renderer could not carry over from the scene')
@@ -447,6 +509,7 @@ class Panel(Tools, QtWidgets.QWidget):
     def eventFilter(self,watched,event):
         # The mode's line keeps its place at the foot of the picture as the picture is made larger or smaller.
         if watched is self.preview and event.type()==QtCore.QEvent.Resize and hasattr(self,'hud') and self.hud.isVisible():self._hud_place()
+        if watched is self.preview and event.type()==QtCore.QEvent.Resize and hasattr(self,'memory_meter'):self._meter_place()
         # While Focus is armed, the next click in the image picks instead of panning.
         if watched is self.preview and self.focus_pick.isChecked() and event.type()==QtCore.QEvent.MouseButtonPress and event.button()==QtCore.Qt.LeftButton:
             point=event.pos()
@@ -494,6 +557,33 @@ class Panel(Tools, QtWidgets.QWidget):
         self.status.setText('Preview preferences saved.')
         self.refine_timer.stop()
         if self._following:self.preview_timer.start()
+
+    def _mark_display(self):
+        """EV and γ lit, as Render is while on, while their value is one of the user's (not 0, not 1): the picture is
+        then not shown as rendered."""
+        lit='QToolButton{background-color:#f49c1c;color:#1a1a1a;border:1px solid #ffb84d;border-radius:3px;font-weight:bold;}'
+        for button,box,plain in ((getattr(self,'exposure_reset',None),getattr(self,'exposure',None),0.0),
+                                 (getattr(self,'gamma_reset',None),getattr(self,'gamma',None),1.0)):
+            if button is None or box is None:continue
+            changed=abs(box.value()-plain)>1e-9
+            if button.property('changed')!=changed:
+                button.setProperty('changed',changed);button.setStyleSheet(lit if changed else '')
+
+    def _exposure_toggle(self):
+        """EV pressed: the exposure set back to 0, the one it had kept; pressed again while it is 0, that one back."""
+        now=self.exposure.value()
+        if abs(now)>1e-9:
+            self._exposure_kept=now;self.exposure.setValue(0.0)
+        elif getattr(self,'_exposure_kept',None) is not None:
+            self.exposure.setValue(self._exposure_kept)
+
+    def _gamma_toggle(self):
+        """γ pressed: the gamma set back to 1, the one it had kept; pressed again while it is 1, that one back."""
+        now=self.gamma.value()
+        if abs(now-1.0)>1e-9:
+            self._gamma_kept=now;self.gamma.setValue(1.0)
+        elif getattr(self,'_gamma_kept',None) is not None:
+            self.gamma.setValue(self._gamma_kept)
 
     def _gamma_changed(self,value):
         self.preferences.set('display_gamma',float(value))
@@ -806,6 +896,8 @@ class Panel(Tools, QtWidgets.QWidget):
         self.renderer.buffers.compositor.request(values['compositor'])
         if not self.display_timer.isActive():
             blocker=QtCore.QSignalBlocker(self.exposure);self.exposure.setValue(values['display']['exposure']);del blocker
+            # Set quietly: lit by hand, as its signal is held.
+            self._mark_display()
         # The button is lit by a region being rendered, or by its being ready for one to be drawn.
         armed=values['region_enabled'] or getattr(self,'_region_armed',False)
         blocker=QtCore.QSignalBlocker(self.region_enabled);self.region_enabled.setChecked(armed);del blocker
@@ -872,6 +964,16 @@ class Panel(Tools, QtWidgets.QWidget):
         if text!=self.hud.text():self.hud.setText(text);self.hud.adjustSize()
         self.hud.setVisible(bool(words))
         if words:self._hud_place();self.hud.raise_()
+        self._meter_place()
+
+    def _meter_place(self):
+        """The memory meter at the bottom right of the picture, above the HUD's own line where they would meet."""
+        meter=getattr(self,'memory_meter',None)
+        if meter is None or not meter.isVisible():return
+        x=max(0,self.preview.width()-meter.width()-10);y=max(0,self.preview.height()-meter.height()-12)
+        if self.hud.isVisible() and self.hud.geometry().intersects(QtCore.QRect(x,y,meter.width(),meter.height())):
+            y=max(0,self.hud.y()-meter.height()-6)
+        meter.move(x,y);meter.raise_()
 
     def _hud_place(self):
         """At the foot of the picture, in the middle."""
@@ -1137,6 +1239,10 @@ class Panel(Tools, QtWidgets.QWidget):
         from . import scene_reading
         evaluated=self._settings_values()['surface'] == 2
         held_key=scene_reading.key(evaluated) if not reuse else None
+        if scene_reading.held(held_key) and not getattr(self,'_draft_quiet',False):
+            # A kept reading taken back: the cache's work, said as that, not Modo's scene graph read.
+            from . import cache_folder
+            self.status.setText(cache_folder.LOADING);self.status.repaint()
         scene=scene_reading.load(held_key)
         if scene is None:
             scene = host.snapshot(evaluated_geometry=evaluated,reuse_geometry=self._geometry_cache if reuse else None,refresh_materials=reuse=='materials' or isinstance(reuse,dict),dirty_meshes=reuse.get('dirty_meshes') if isinstance(reuse,dict) else None)
@@ -1939,9 +2045,8 @@ class Panel(Tools, QtWidgets.QWidget):
     def _renderer_status(self,text):
         # Left as it is while a draft redraws by itself.
         if getattr(self,'_draft_quiet',False):return
-        # A scene made ready, with the Scene cache on: said as that (its prepared meshes are kept as they are made).
-        from . import cache_folder
-        if text in PREPARATIONS and cache_folder.scene_cache():text=cache_folder.CACHING
+        # Said as each renderer says it: Caching scene... only while the Scene cache keeps what it makes
+        # (moonlightipr_session), not for every scene made ready.
         self.status.setText(text)
 
     def _render_progress(self,value,label):

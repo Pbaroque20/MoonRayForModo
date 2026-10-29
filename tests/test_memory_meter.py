@@ -19,6 +19,10 @@ class _Label:
     def setTextFormat(self, _): pass
     def setText(self, text): self.text = text
     def setToolTip(self, tip): self.tip = tip
+    def adjustSize(self): pass
+    def setVisible(self, on): self.visible = on
+    def isVisible(self): return getattr(self, 'visible', False)
+    def hide(self): self.visible = False
 
 
 class _Timer:

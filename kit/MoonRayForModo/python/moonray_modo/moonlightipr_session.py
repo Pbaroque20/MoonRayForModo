@@ -40,8 +40,8 @@ def rejected(reason):
     return 'MoonLightIPR rejected the scene' + (': ' + reason if reason else '') + '. Open Render Log for details.'
 
 
-# What the preview says while a scene is made ready for longer than a second (panel: Caching scene... with the Scene
-# cache on).
+# What the preview says while a scene is made ready for longer than a second, where the Scene cache is not what it is
+# doing (cache_folder.CACHING and LOADING say when it is).
 PREPARING = 'Preparing the MoonLightIPR scene'
 
 
@@ -154,12 +154,18 @@ class Session(QtCore.QObject):
         self.packer = Packer(request, self.known, self.root / ('%d.mls' % request['id']), self)
         self.packer.finished.connect(self._packed)
         self.packer.start()
-        # A scene made ready for longer than a second, with meshes the Scene cache did not hold, is said to be
-        # (PREPARING: Caching scene...): a heavy scene's first load, or new meshes. One taken from the cache is not.
+        # A scene made ready for longer than a second says what it is doing: caching, where the Scene cache did not
+        # hold its meshes (a heavy scene's first load, or new meshes); loading from the cache, where all it asked for
+        # was kept; else preparing it.
         from . import cache_folder
-        worker, missed = self.packer, cache_folder.missed()
-        QtCore.QTimer.singleShot(1000, lambda: self.status.emit(PREPARING)
-                                 if self.packer is worker and not self.closed and cache_folder.missed() > missed else None)
+        worker, missed, found = self.packer, cache_folder.missed(), cache_folder.found()
+
+        def said():
+            if self.packer is not worker or self.closed:
+                return
+            self.status.emit(cache_folder.CACHING if cache_folder.missed() > missed
+                             else cache_folder.LOADING if cache_folder.found() > found else PREPARING)
+        QtCore.QTimer.singleShot(1000, said)
 
     def _packed(self):
         worker = self.packer

@@ -19,7 +19,7 @@ def scene():
 class PackTests(unittest.TestCase):
     def test_known_meshes_are_sent_once(self):
         first,keys,warnings=moonlightipr_scene.pack(scene(),320,180,.2)
-        self.assertEqual(first[:4],b'MLSM')
+        self.assertEqual(first[:4],b'MLSN')
         self.assertEqual(struct.unpack_from('<2I',first,4),(320,180))
         self.assertEqual(len(keys),1)
         self.assertFalse(any('CylinderLight' in w for w in warnings))
@@ -81,7 +81,8 @@ class PackTests(unittest.TestCase):
         lit['production']={'objects':{'quad':{'mesh_light':True,'light_intensity':5.0}}}
         still=scene();still['meshes'][0].pop('instances');still['meshes'][0].pop('instance_ids')
         emitting,_,warnings=moonlightipr_scene.pack(lit,320,180)
-        self.assertEqual(len(emitting)-len(moonlightipr_scene.pack(still,320,180)[0]),4+80+4+4+4+2*36)
+        # Kind, 20 floats, texture, whether the camera sees it, filter count, triangle count, two triangles.
+        self.assertEqual(len(emitting)-len(moonlightipr_scene.pack(still,320,180)[0]),4+80+4+4+4+4+2*36)
         self.assertFalse(any('mesh light' in w for w in warnings))
 
 class EntityTests(unittest.TestCase):

@@ -1475,6 +1475,9 @@ def preview(scene, warnings):
                      'filters': filters}
             if entity.get('matrix_close'):
                 light['matrix_close'] = entity['matrix_close']
+            # Visible in Camera forced on (1): the camera sees it shining. Left to the scene's default, MoonRay hides it.
+            if name != 'PortalLight' and 'visible_in_camera' in catalog()[name]['attributes']:
+                light['camera_visible'] = int(value(entity, 'visible_in_camera')) == 1
             if name != 'PortalLight' and value(entity, 'texture'):
                 light['texture'] = value(entity, 'texture')
             if filters and name == 'DistantLight':

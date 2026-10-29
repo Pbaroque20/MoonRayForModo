@@ -1,6 +1,7 @@
 """The Scene cache: a heavy mesh simplified and packed for MoonLightIPR, or simplified for MoonRay's realtime, kept in the
 cache folder and taken from it the next time, the same mesh in the same cut; nothing kept with it off; the folder kept
-within its size; a preparation said as Caching scene... while it is on."""
+within its size; what it did counted apart, so that the status says Caching scene... only while it keeps, and Loading
+scene from cache... while it reads back."""
 import pathlib
 import sys
 import tempfile
@@ -28,6 +29,41 @@ class SceneCache(unittest.TestCase):
         cache_folder.keep('Things', ('a', 1), b'value')
         self.assertEqual(cache_folder.kept('Things', ('a', 1)), b'value')
         self.assertIsNone(cache_folder.kept('Things', ('a', 2)))
+
+    def test_clear_empties_what_the_kit_keeps_alone(self):
+        # Clear Cache: the kit's own folders emptied; a file of the user's in a cache folder they chose is not touched.
+        base = pathlib.Path(self.folder.name)
+        cache_folder.keep('Scenes', ('k',), (b'reading', []))
+        (base / 'Textures').mkdir()
+        (base / 'Textures' / 'a.tx').write_bytes(b'x' * 100)
+        (base / 'MoonLightIPR' / 'meshes').mkdir(parents=True)
+        (base / 'MoonLightIPR' / 'meshes' / 'b.bin').write_bytes(b'y' * 10)
+        (base / 'notes.txt').write_text('mine')
+        (base / 'Diagnostics').mkdir()
+        (base / 'Diagnostics' / 'log.txt').write_text('log')
+        removed, freed, left = cache_folder.clear()
+        self.assertEqual((removed, left), (3, 0))
+        self.assertGreaterEqual(freed, 110)
+        self.assertFalse(any((base / kind).exists() for kind in cache_folder.CLEARED))
+        self.assertEqual((base / 'notes.txt').read_text(), 'mine')
+        self.assertTrue((base / 'Diagnostics' / 'log.txt').is_file())
+        self.assertIsNone(cache_folder.kept('Scenes', ('k',)))
+
+    def test_what_it_did_is_counted_apart(self):
+        # Caching scene... where something was not kept and is made now; Loading scene from cache... where it was.
+        cache_folder.keep('Things', ('a', 1), b'value')
+        missed, found = cache_folder.missed(), cache_folder.found()
+        cache_folder.kept('Things', ('a', 1))
+        self.assertEqual((cache_folder.missed(), cache_folder.found()), (missed, found + 1))
+        cache_folder.kept('Things', ('b', 1))
+        self.assertEqual((cache_folder.missed(), cache_folder.found()), (missed + 1, found + 1))
+
+    def test_a_kept_reading_is_told_before_it_is_taken(self):
+        from moonray_modo import scene_reading
+        self.assertFalse(scene_reading.held(('k',)))
+        self.assertFalse(scene_reading.held(None))
+        cache_folder.keep('Scenes', ('k',), (b'', []))
+        self.assertTrue(scene_reading.held(('k',)))
 
     def test_off_keeps_nothing(self):
         cache_folder._HELD['scene'] = False

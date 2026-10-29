@@ -57,6 +57,17 @@ def files(scene):
         return None
 
 
+def held(held_key):
+    """Whether a reading is kept under held_key (said before it is taken back; load still checks it)."""
+    if held_key is None:
+        return False
+    from . import cache_folder
+    try:
+        return cache_folder.scene_cache() and cache_folder._file('Scenes', held_key).is_file()
+    except OSError:
+        return False
+
+
 def load(held_key):
     """The reading kept under held_key, where the files it names stand as they did; else None."""
     if held_key is None:
@@ -66,6 +77,9 @@ def load(held_key):
     if not isinstance(held, tuple) or len(held) != 2:
         return None
     try:
+        # The rows Modo handed over are known to the scene's digest by evaluated's hook (scene_digest.FLAT), set as it
+        # loads: a reading taken from here never read Modo, and hashing its rows failed ("unmarshallable object").
+        from . import evaluated  # noqa: F401
         scene = pickle.loads(held[0])
     except Exception:
         return None

@@ -173,6 +173,14 @@ UV_SLOTS = 8
 # perceptually enough at realtime's sizes, with far less for the card to hold and read (it was 4096, then 1280). The
 # environment's image is sized on its own (moonlightipr_scene).
 MAX_TEXTURE_SIDE = 1024
+
+
+def fitted(width, height, side=MAX_TEXTURE_SIDE):
+    """An image's size made no larger than side on either axis, its shape kept."""
+    scale = side / max(width, height)
+    return max(1, round(width * scale)), max(1, round(height * scale))
+
+
 RAMP_STEPS = 257
 HDR_SUFFIXES = ('.exr', '.hdr', '.tx')
 SPACE_ALIASES = {'(default)': '', '(none)': 'raw', 'Linear': 'linear', 'lin_rec709': 'linear', 'srgb_texture': 'sRGB'}
@@ -805,7 +813,7 @@ class Compiler:
         stat = source.stat()
         hdr = source.suffix.lower() in HDR_SUFFIXES
         space, ocio = color_space(source, layer.get('color_space', ''), layer.get('srgb'))
-        digest = hashlib.sha256(repr((str(source.resolve()), stat.st_size, stat.st_mtime_ns, MAX_TEXTURE_SIDE, 'moonlightipr-v2', ocio and (space, ocio))).encode()).hexdigest()
+        digest = hashlib.sha256(repr((str(source.resolve()), stat.st_size, stat.st_mtime_ns, MAX_TEXTURE_SIDE, 'moonlightipr-v3', ocio and (space, ocio))).encode()).hexdigest()
         target = cache_folder() / (digest + ('.pfm' if hdr else '.tga'))
         if not target.is_file() or not target.stat().st_size:
             # Alongside the scene's other textures, while the scene is packed (moonlightipr_scene.pack).
@@ -825,10 +833,8 @@ class Compiler:
 
     def run(self, args, name):
         from . import native
-        runtime = Path(self.runtime or native.default_runtime())
-        tool = runtime / 'oiiotool.exe'
-        if not tool.is_file():
-            raise ValueError('Texture conversion needs oiiotool.exe in the MoonRay runtime')
+        tool = native.tool('oiiotool.exe', self.runtime)
+        runtime = tool.parent
         result = subprocess.run([str(tool)] + args, env=native.environment(runtime), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                 text=True, timeout=120, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
         if result.returncode:
@@ -855,7 +861,9 @@ class Compiler:
         if resample is not None:
             args += list(resample)
         elif max(width, height) > MAX_TEXTURE_SIDE:
-            args += ['--fit', '%dx%d' % (MAX_TEXTURE_SIDE, MAX_TEXTURE_SIDE)]
+            # Its own shape, its longer side at the limit: --fit pads to the square, and Dose's 2103x1673 label filled
+            # only the middle of its UVs, the can dark above and below it.
+            args += ['--resize', '%dx%d' % fitted(width, height)]
         target.parent.mkdir(parents=True, exist_ok=True)
         staged = target.with_name(target.stem + '-' + uuid.uuid4().hex + target.suffix)
         try:

@@ -146,10 +146,9 @@ def _prepare(source, srgb=False, mipmaps=True, color_space=""):
     target = cache / (key + '.tx')
     if target.is_file() and target.stat().st_size:
         return str(target)
-    runtime = Path(native.default_runtime())
-    converter = runtime / 'maketx.exe'
-    if not converter.is_file():
-        raise ValueError('Texture conversion needs maketx.exe in the MoonRay runtime. Reinstall the kit.')
+    # Where the runtime's maketx is (native.tool: the chosen runtime, then the kit's), its folder the runtime it runs in.
+    converter = native.tool('maketx.exe')
+    runtime = converter.parent
     def convert():
         staged = cache / (key + '-' + uuid.uuid4().hex + '.tx')
         _convert(args + ['-o', str(staged), str(source)], staged, target, source, runtime)

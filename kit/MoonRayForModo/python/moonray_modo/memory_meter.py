@@ -141,9 +141,12 @@ class MemoryMeter(QtWidgets.QLabel):
     ids (none running: the renderer is left out). The readings are taken on a thread of their own (_Reader); Modo's
     thread only shows them, and sets the text again only when it reads otherwise."""
 
-    def __init__(self, processes, parent=None):
+    def __init__(self, processes, parent=None, on=None, placed=None):
         super().__init__(parent)
         self.processes = processes
+        # on(): whether it is shown and read at all (a preference); placed(): told when its words change, to be set in
+        # its place again (the preview's HUD).
+        self.on, self.placed = on or (lambda: True), placed
         self.shown = None
         self.setEnabled(False)
         self.setTextFormat(QtCore.Qt.RichText)
@@ -158,6 +161,12 @@ class MemoryMeter(QtWidgets.QLabel):
         self.reader.start()
 
     def refresh(self):
+        on = self.on()
+        self.reader.active = on
+        if not on:
+            if self.isVisible():
+                self.hide()
+            return
         self.reader.pids = [p for p in (self.processes() or []) if p]
         if self.reader.latest is None:
             return
@@ -197,3 +206,7 @@ class MemoryMeter(QtWidgets.QLabel):
         self.setToolTip(shown[1])
         # Shown in full colour when short, dimmed like the picture's details otherwise.
         self.setEnabled(shown[2])
+        self.adjustSize()
+        self.setVisible(bool(shown[0]))
+        if self.placed is not None:
+            self.placed()

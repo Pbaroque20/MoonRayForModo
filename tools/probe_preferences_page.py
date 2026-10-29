@@ -4,6 +4,7 @@
 The Preferences window is opened on the MoonRay page, and the window alone, not the screen, is saved, once with its
 sections as they open and once with every section unfolded where Modo allows it."""
 import json
+import os
 import pathlib
 import traceback
 import lx
@@ -13,6 +14,8 @@ root = pathlib.Path(r'C:\Users\Raphael Tobar\MoonRayForModo')
 out = root / 'test-results/preferences-page'
 out.mkdir(parents=True, exist_ok=True)
 result = {}
+# Which MoonRay page (MOONRAY_PROBE_PAGE: general, renderer, xpu, overrides...), its picture named after it.
+PAGE = os.environ.get('MOONRAY_PROBE_PAGE', 'general')
 
 
 def save():
@@ -24,7 +27,7 @@ def shoot():
         shown = [w for w in QtWidgets.QApplication.topLevelWidgets() if w.isVisible() and w.width() > 200]
         result['windows'] = [(w.windowTitle(), w.width(), w.height()) for w in shown]
         page = [w for w in shown if 'Preferences' in w.windowTitle()] or [min(shown, key=lambda w: w.width() * w.height())]
-        page[0].grab().save(str(out / 'preferences.png'))
+        page[0].grab().save(str(out / ('preferences_%s.png' % PAGE)))
     except Exception:
         result['shot_error'] = traceback.format_exc()
     save()
@@ -33,7 +36,7 @@ def shoot():
 
 try:
     lx.eval('layout.window Preferences')
-    lx.eval('pref.select moonray/general set')
+    lx.eval('pref.select moonray/%s set' % PAGE)
 except Exception:
     result['error'] = traceback.format_exc()
 save()

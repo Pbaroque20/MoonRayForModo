@@ -168,11 +168,11 @@ def bake(graph, identity, runtime, tile=None):
     return target
 
 
-def prepared(graph, identity, runtime, tile=None, size=None):
-    """(the EXR's path, None) where the bake is already made; else (the path it will have, a call that makes it). The
-    scene is written here, where Modo may be asked about textures; the call only runs MoonRay, and may be made on
-    another thread (the graph editor's node previews). size, where given, is the picture's side in pixels."""
-    from . import native, rdla
+def written(graph, identity, tile=None, size=None):
+    """(the EXR's path, the scene's text that makes it), the text None where the EXR is made already: what prepared
+    renders in a MoonRay of its own, and what the graph editor's node previews hand to one kept loaded (node_previews).
+    size, where given, is the picture's side in pixels."""
+    from . import rdla
     made = scene(graph, identity, tile)
     if size is not None:
         made['width'] = made['height'] = int(size)
@@ -182,9 +182,19 @@ def prepared(graph, identity, runtime, tile=None, size=None):
     target = folder() / (signature + '.exr')
     if target.is_file() and target.stat().st_size:
         return target, None
+    return target, rdla.scene_text(made, size, size, 2, 0.0, str(target))
+
+
+def prepared(graph, identity, runtime, tile=None, size=None):
+    """(the EXR's path, None) where the bake is already made; else (the path it will have, a call that makes it). The
+    scene is written here, where Modo may be asked about textures; the call only runs MoonRay, and may be made on
+    another thread (the graph editor's node previews). size, where given, is the picture's side in pixels."""
+    from . import native
+    target, text = written(graph, identity, tile, size)
+    if text is None:
+        return target, None
     runtime = native.find_runtime(runtime)
-    text = rdla.scene_text(made, size, size, 2, 0.0, str(target))
-    source = folder() / (signature + '.rdla')
+    source = target.with_suffix('.rdla')
     source.write_text(text, encoding='utf-8')
     environment = native.environment(runtime)
     arguments = [str(Path(runtime) / 'moonray.exe')] + native.arguments(source, target, 0, 'vectorized')

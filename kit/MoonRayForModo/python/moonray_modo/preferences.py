@@ -11,7 +11,7 @@ KEYS = {
     # Illumination on in the Render item, as Modo's own renderer has it ('modo').
     'environment_lighting': ('moonray', str),
     'idle_release_minutes': (5, int),
-    'persistent_preview': (True, bool), 'preview_motion': (False, bool),
+    'persistent_preview': (True, bool), 'preview_motion': (False, bool), 'memory_hud': (True, bool),
     'ipr': (False, bool), 'show_buckets': (True, bool), 'worker_tiles': (True, bool), 'clay': ('materials', str),
     'display_gamma': (1.0, float),
     # Set on the MoonRay page of Modo's Preferences: what Assign Material starts with, the ink of a draft, whether a
@@ -43,6 +43,8 @@ KEYS = {
     'usd_specular': (True, bool),
     'opaque_alpha': (True, bool),
     'transmission_roughness': (True, bool),
+    # N-gons ear-clipped whatever their size and winding (native.ngon_ears).
+    'ngon_ears': (True, bool),
     'auto_xpu': (True, bool),
     'draft/ink': ('tan', str), 'draft/width': (640.0, float), 'render_on_open': (False, bool), 'light_intensity': (10.0, float), 'working_space': ('rec709', str), 'notices_open': (False, bool),
     'ipr/width': (640, int), 'ipr/sampling': ('adaptive', str), 'ipr/samples': (32, int), 'ipr/error': (100.0, float), 'ipr/refine': (False, bool),
@@ -146,14 +148,22 @@ class Dialog(QtWidgets.QDialog):
                               'there; the new one fills as things are made again. Applies to renders started after saving')
         browse_cache = QtWidgets.QPushButton('Browse...')
         browse_cache.clicked.connect(self._browse_cache)
+        clear_cache = QtWidgets.QPushButton('Clear Cache')
+        clear_cache.setToolTip('Removes what the kit keeps in the cache folder: kept scenes and meshes, converted textures and '
+                               "environments, MoonLightIPR's images and baked patterns. Each is made again when next needed, so the "
+                               "next render of a scene takes longer. Nothing else in the folder is touched, nor MoonLightIPR's "
+                               'compiled programs.')
+        clear_cache.clicked.connect(self._clear_cache)
         cache_row = QtWidgets.QHBoxLayout()
         cache_row.addWidget(self.cache, 1)
         cache_row.addWidget(browse_cache)
+        cache_row.addWidget(clear_cache)
         form.addRow('Cache folder', cache_row)
         form.addRow(check('scene_cache', 'Scene cache',
                           "Keeps a scene's prepared meshes in the cache folder (simplified and packed for the realtime previews, "
                           'tessellated), so that a scene opened again, or the same meshes in another, is ready sooner. At most '
-                          '10 GB, the least lately used let go. While it is on, a scene being made ready says Caching scene...'))
+                          '10 GB, the least lately used let go. The status says Caching scene... while it keeps what it makes, and Loading scene '
+                          'from cache... while it reads back what it kept.'))
         form.addRow('Realtime preview size', combo('preview_size', SIZES))
         form.addRow(check('persistent_preview', 'Keep MoonRay loaded between previews',
                           'Faster updates; structural edits still reload the scene'))
@@ -163,6 +173,9 @@ class Dialog(QtWidgets.QDialog):
         form.addRow(check('preview_motion', 'Motion blur in MoonLightIPR renders',
                           'Off by default: each update then also reads the scene at shutter open and close, which adds to its wait. '
                           'While dragging, updates stay sharp. Said as Motion Blur at the foot of the picture while on'))
+        form.addRow(check('memory_hud', 'Memory in the picture',
+                          "What the renderer holds, the machine's free RAM and the graphics card's memory, read once a second "
+                          'and shown at the bottom right of the picture, in colour when it runs short. Off, it is hidden and nothing is read'))
         heading = QtWidgets.QLabel('MoonLightIPR quality')
         heading.setStyleSheet('font-weight: bold; margin-top: 8px')
         form.addRow(heading)
@@ -199,6 +212,27 @@ class Dialog(QtWidgets.QDialog):
         path = QtWidgets.QFileDialog.getExistingDirectory(self, 'Choose the MoonRay folder', self.runtime.text())
         if path:
             self.runtime.setText(path)
+
+    def _clear_cache(self):
+        """Clear Cache: asked first, then what the kit keeps in the folder removed (cache_folder.clear) and said."""
+        from . import cache_folder
+        where = cache_folder.root()
+        asked = QtWidgets.QMessageBox.question(self, 'Clear Cache',
+            'Remove what the kit keeps in %s?\n\nKept scenes and meshes, converted textures and environments are made again '
+            'when next needed, so the next render of each scene takes longer.' % where,
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No, QtWidgets.QMessageBox.No)
+        if asked != QtWidgets.QMessageBox.Yes:
+            return
+        QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
+        try:
+            removed, freed, left = cache_folder.clear()
+        finally:
+            QtWidgets.QApplication.restoreOverrideCursor()
+        said = ('%d files removed, %.1f GB freed.' % (removed, freed / 1024 ** 3) if freed >= 1024 ** 3
+                else '%d files removed, %.0f MB freed.' % (removed, freed / 1024 ** 2))
+        if left:
+            said += '\n%d files in use by a render were left; clear again once it is done.' % left
+        QtWidgets.QMessageBox.information(self, 'Clear Cache', said)
 
     def _browse_cache(self):
         path = QtWidgets.QFileDialog.getExistingDirectory(self, 'Choose the cache folder', self.cache.text())

@@ -139,7 +139,9 @@ ML_INLINE float3 shadow(float3 origin, float3 direction, unsigned& seed, float d
 
 // Moves a ray origin off the surface, towards the side the ray leaves from.
 ML_INLINE float3 offsetOrigin(float3 p, float3 ng, float3 direction) {
-    const float scale = 1e-4f * (1.0f + fmaxf(fabsf(p.x), fmaxf(fabsf(p.y), fabsf(p.z))));
+    // A few float steps off the surface, by how far from the origin it is: at 1e-4 a ray leaving a water drop through its
+    // underside, which lies on a can's label within hundredths of a millimetre, started past the label, inside the can.
+    const float scale = 1e-6f * (1.0f + fmaxf(fabsf(p.x), fmaxf(fabsf(p.y), fabsf(p.z))));
     return p + ng * (dot(ng, direction) > 0.0f ? scale : -scale);
 }
 
@@ -1951,6 +1953,29 @@ extern "C" __global__ void __raygen__moonlightipr() {
             if ((blocker.valid != 0) != (hit.valid != 0) || (blocker.valid && blocker.instance != hit.instance)) {
                 lightBlocked = blocker.valid != 0;
                 lightReach = blocker.valid ? blocker.t : 1e30f;
+            }
+        }
+        if (camera) {
+            // A light whose Visible in Camera is on is seen where it stands, its picture on it, as MoonRay shows it:
+            // in front of what is behind it, which it hides. The nearest one before the surface hit is what is seen.
+            float nearest = lightReach;
+            float3 shining = vec(0.0f);
+            bool seenLight = false;
+            for (unsigned i = 0; i < params.lightCount; ++i) {
+                if (!lights[i].pad || lights[i].type == LIGHT_MESH) continue;
+                float pdf, reached = 0.0f;
+                float3 emitted;
+                if (!hitLightShape(lights[i], origin, direction, nearest, pdf, emitted, reached)) continue;
+                if (lights[i].texture || lights[i].filterCount) emitted = emitted * lightTint(lights[i], origin, direction, reached);
+                nearest = reached;
+                shining = emitted;
+                seenLight = true;
+            }
+            if (seenLight) {
+                radiance += throughput * shining;
+                guideAlbedo = make_float3(fminf(shining.x, 1.0f), fminf(shining.y, 1.0f), fminf(shining.z, 1.0f));
+                guideNormal = -direction;
+                break;
             }
         }
         for (unsigned i = 0; !camera && !emerged && i < params.lightCount; ++i) {

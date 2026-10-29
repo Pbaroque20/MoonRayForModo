@@ -1586,6 +1586,8 @@ void Renderer::setLights(const Light* lights, size_t count) {
             }
             filters.push_back(filter);
         }
+        // Whether the camera sees the light itself, as MoonRay shows a light whose Visible in Camera is on.
+        out.pad = light.visibleInCamera && light.kind != Light::Portal ? 1u : 0u;
         if (light.kind == Light::Mesh) {
             // A corner, two edges and the running share of the area, which picks a triangle.
             if (!light.triangles || !light.triangleCount || light.triangleCount > 0xffffffffu)
@@ -1607,8 +1609,6 @@ void Renderer::setLights(const Light* lights, size_t count) {
             if (!(total > 0.0) || !std::isfinite(total)) throw std::runtime_error("MoonLightIPR mesh light has no area");
             for (size_t t = 0; t < light.triangleCount; ++t) triangles[triangleStart[i] + t * 10 + 9] /= float(total);
             triangles.back() = 1.0f;
-            // A mesh light has no cone; the number says instead whether the camera sees the surface shining.
-            out.pad = light.outerConeDegrees > 0.5f ? 1u : 0u;
             out.area = float(total);
             out.triangleCount = uint32_t(light.triangleCount);
             continue;

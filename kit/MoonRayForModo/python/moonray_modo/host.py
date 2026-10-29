@@ -801,7 +801,9 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
                  'radius': max(.001, float(channel(item, 'radius', .05))),
                  'cone': min(179.0, max(.01, math.degrees(float(channel(item, 'cone', math.pi / 4))))),
                  'soft_edge': max(0.0, math.degrees(float(channel(item, 'edge', 0)))),
-                 'width': float(channel(item, 'width', 1)), 'height': float(channel(item, 'height', 1))}
+                 'width': float(channel(item, 'width', 1)), 'height': float(channel(item, 'height', 1)),
+                 # Visible to Camera: the light seen shining where it stands (MoonRay's visible_in_camera).
+                 'camera_visible': bool(channel(item, 'visCam', 0))}
         if item.type == 'sunLight' and channel(item,'sunPos',False):
             from .sun import matrix as sun_matrix, physical as physical_sun
             light['matrix']=sun_matrix(item)

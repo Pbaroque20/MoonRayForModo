@@ -618,6 +618,13 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
             # A subdivision surface with no screen error of its own follows the scene's Displacement Tessellation too:
             # Modo's Displacement Rate (or the Adaptive Error Override), as for a displaced polygon mesh.
             mesh = dict(mesh, adaptive_error=held_render['displacement_adaptive_error'] or float(scene.get('displacement_rate', 1.0)))
+        if not mesh.get('subdivision') and mesh.get('faces'):
+            # N-gons cut here, as MoonLightIPR cuts them (polygons.cut_mesh), with "N-gons triangulated cleanly" on:
+            # MoonRay is handed the same triangles. A subdivision surface keeps its n-gons, which its limit surface needs.
+            from . import native, polygons
+            if native.ngon_ears():
+                polygons.follow(True)
+                mesh = polygons.cut_mesh(mesh)
         vertices = mesh['vertices']
         faces = mesh['faces']
         if not faces:

@@ -126,6 +126,10 @@ def environment_section(scene, environment, warnings, runtime):
                     held = held_placement(item)
                     if held:
                         baked, matrix = held[0], finite(held[1])
+                if item['kind'] == 'image':
+                    # Half a turn about the vertical in its own space, as Modo shows a plain image and as MoonRay is given
+                    # it (environments.emit): Dose's HDRI faced the other way, the can lit by the room's bright side.
+                    matrix = [-v for v in matrix[0:4]] + matrix[4:8] + [-v for v in matrix[8:12]] + matrix[12:16]
                 # The image's own axes in world space, which the session turns directions into.
                 record = (environment_image(baked, runtime), intensity, unit(matrix[0:3]) + unit(matrix[4:7]) + unit(matrix[8:11]))
             except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as exc:
@@ -404,9 +408,11 @@ def lights(scene, warnings, environment=0.0, compiler=None, closing=None, named=
             closing.setdefault('local', []).append(ending[12:15] + unit(ending[0:3]) + unit(ending[4:7]) + [-v for v in unit(ending[8:11])])
         if named is not None:
             named.setdefault('local', []).append(light.get('identity', str(index)))
-        local.append(struct.pack('<I20fi', LOCAL_LIGHTS[kind], *(matrix[12:15] + unit(matrix[0:3]) + unit(matrix[4:7])
+        # Seen by the camera where it stands, as MoonRay shows a light whose Visible in Camera is on (a portal never).
+        seen = 1 if light.get('camera_visible') and kind != 'PortalLight' else 0
+        local.append(struct.pack('<I20fiI', LOCAL_LIGHTS[kind], *(matrix[12:15] + unit(matrix[0:3]) + unit(matrix[4:7])
             + [-v for v in unit(matrix[8:11])] + [width, height, radius] + [c * normalization for c in color]
-            + [cone, max(0.0, cone - 2 * float(light.get('soft_edge', 0)))]), texture)
+            + [cone, max(0.0, cone - 2 * float(light.get('soft_edge', 0)))]), texture, seen)
             + (packed_filters(filters, compiler, matrix, warnings) if compiler is not None else struct.pack('<I', 0)))
     return distant, local
 
@@ -445,9 +451,9 @@ def emitter(mesh, settings, warnings):
             _emitters.clear()
         cached = _emitters[signature] = (struct.pack('<I', triangles) + corners.tobytes(), area)
     # MoonRay divides by the area, so the light gives the same power at any size.
-    # A mesh light has no cone: the number says instead whether the camera sees the surface shining.
-    seen = 1.0 if settings.get('light_seen', True) else 0.0
-    return (struct.pack('<I20fiI', MESH_LIGHT, *([0.0] * 12 + [1.0, 1.0, 1.0] + [c / (math.pi * cached[1]) for c in color] + [seen, 0.0]), -1, 0)
+    # Whether the camera sees the surface shining, as for any light; a mesh light has no cone.
+    seen = 1 if settings.get('light_seen', True) else 0
+    return (struct.pack('<I20fiII', MESH_LIGHT, *([0.0] * 12 + [1.0, 1.0, 1.0] + [c / (math.pi * cached[1]) for c in color] + [0.0, 0.0]), -1, seen, 0)
             + cached[0])
 
 
@@ -562,7 +568,7 @@ def displaced(mesh, key, flags, payload, materials, material_index, warnings, li
     return hashlib.blake2b(key + trailer, digest_size=8).digest(), flags | MESH_DISPLACE, payload + trailer
 
 
-from .polygons import fan as _fan, corners as _corners
+from .polygons import fan as _fan, corners as _corners, rules as _polygon_rules
 
 
 def _numbers(rows, width):
@@ -627,7 +633,9 @@ def mesh_payload(mesh, material_index, slots, simplified=None):
                  content(face_materials) if face_materials is not None else '', smooth,
                  tuple(sorted(material_index.items())) if face_materials is not None else (),
                  tuple((slot, content(values)) for slot, values in sets), content(closing) if closing is not None else '',
-                 (simplified['triangles'], round(simplified['error'], 6)) if simplified else None)
+                 (simplified['triangles'], round(simplified['error'], 6)) if simplified else None,
+                 # How its n-gons are cut (polygons.rules, the MoonRay Source Override "N-gons triangulated cleanly").
+                 _polygon_rules())
     cached = _packed.get(signature)
     if cached:
         return cached
@@ -813,6 +821,9 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
         raise ValueError('Image dimensions must be between 16 and 16384')
     if samples < 1:
         raise ValueError('MoonLightIPR needs at least one sample')
+    # N-gons cut by the MoonRay Source Override's rules or MoonRay's own (native.ngon_ears), read once for the pack.
+    from . import native, polygons
+    polygons.follow(native.ngon_ears())
     warnings = []
     # Which lights light an object is drawn (light_sets); whose shadows fall where is still MoonRay's to work out.
     if any(held.get('shadow_exclude') or held.get('shadow_receivers')
@@ -887,7 +898,7 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     # Material colours are worked out in Rec.709; the session takes them to the working space.
     working = working_enabled()
     # The letter after MLS says which form of scene this is; the session refuses any other than its own.
-    parts = [b'MLSM', struct.pack('<8I', width, height, *depths, samples, (SCENE_DENOISE if denoise else 0)
+    parts = [b'MLSN', struct.pack('<8I', width, height, *depths, samples, (SCENE_DENOISE if denoise else 0)
                                   | (SCENE_WORKING_SPACE if working else 0) | (SCENE_MOTION if motion else 0)
                                   # See-through surfaces cast whole shadows unless the scene asks for lighter ones, as in MoonRay.
                                   | (SCENE_PRESENCE_SHADOWS if settings.get('enable_presence_shadows') else 0)),

@@ -65,7 +65,8 @@ class Session(QtCore.QObject):
         super().__init__(parent)
         self.process=QtCore.QProcess(self)
         self.process.started.connect(lambda:native.lower_priority(self.process.processId()))
-        terminal.watch(self.process,'MoonRay session',resident=True)
+        # Named in the MoonRay Terminal by the mode it starts in (native.engine_name), as each start may be another.
+        terminal.watch(self.process,self.engine_name,resident=True)
         self.process.setProcessChannelMode(QtCore.QProcess.MergedChannels)
         self.process.readyReadStandardOutput.connect(self._read)
         self.process.finished.connect(self._exit)
@@ -77,6 +78,10 @@ class Session(QtCore.QObject):
         self.partial='';self.stopping=False;self.closed=False;self.view='beauty'
         from .idle_release import IdleRelease
         self.idle=IdleRelease(self,self._release_idle,lambda:self.running() and not self.stopping and self.sent is None)
+
+    def engine_name(self):
+        """What the Terminal calls this MoonRay: by the execution mode of the scene it starts with."""
+        return native.engine_name((self.sent or self.latest or {}).get('mode'))
 
     def select_view(self,key):
         if not key or not key.isascii() or len(key)>64 or not all(c.isalnum() or c=='_' for c in key):return

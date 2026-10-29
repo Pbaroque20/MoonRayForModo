@@ -87,6 +87,9 @@ class ToonTerminator(unittest.TestCase):
         page = (KIT / 'preferences.cfg').read_text(encoding='utf-8')
         section = page[page.index('<hash type="Sheet" key="MoonRaySourceOverrides:sheet">'):]
         section = section[:section.index('</hash>')]
+        # Auto on the graphics card first stands on the XPU page since 2026-10-28.
+        xpu = page[page.index('<hash type="Sheet" key="MoonRayXPU:sheet">'):]
+        section += xpu[:xpu.index('</hash>')]
         commands = (KIT / 'lxserv/moonray_preferences.py').read_text(encoding='utf-8')
         defaults = (KIT / 'python/moonray_modo/preferences.py').read_text(encoding='utf-8')
         for key, command, variable in (('usd_specular', 'usdSpecular', 'MOONRAY_MODO_USD_SPECULAR'),

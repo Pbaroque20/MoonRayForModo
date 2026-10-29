@@ -8,12 +8,28 @@ The current release is [0.4.3.1](https://github.com/Pbaroque20/MoonRayForModo/re
 
 ## Coming next
 
+The next version is 0.5.
+
+- **Realtime that keeps up**: camera moves no longer reload the scene, editing one object updates only that object, and heavy scenes are cut by their size on screen.
+- **A Scene cache** (Preferences): prepared scenes and meshes are kept in a cache folder of your choice, so a scene opens faster the next time. The status says Caching scene... while it keeps, and Loading scene from cache... while it reads back. **Clear Cache** empties it.
+- **N-gons triangulated cleanly**: flat polygons of any size, CAD outlines and outlines with holes among them, are cut along their outline, the same in MoonRay and MoonLightIPR. A MoonRay Source Override, on by default.
+- **Area lights seen by the camera**: Modo's Visible to Camera, and a MoonRay light's visible in camera set to Force on, show the light (with its texture) in MoonRay and MoonLightIPR.
+- **HDRIs the right way round in MoonLightIPR**, and at full sharpness when the image is the whole environment.
+- **Textures keep their shape in MoonLightIPR**: a non-square image is no longer squeezed into a square.
+- **Water drops and other thin glass on a surface** come out clear in MoonLightIPR, as in MoonRay.
+- **Motion blur in MoonLightIPR is off by default** (Preview Preferences); Motion Blur shows at the foot of the picture while it is on.
+- **The preview window**: its buttons wrap onto a second line in a narrow window instead of being cut; R, G and B in their colours, γ and α for gamma and alpha; EV and γ toggle between the plain value and yours, and are lit while yours is shown; the picture's details are never cut off.
+- **Memory in the picture**: the renderer's, the machine's and the graphics card's memory at the bottom right of the picture, in colour when it runs short (Preview Preferences).
+- **Previews on texture nodes appear, and quickly**: the graph editor keeps one MoonRay loaded for them.
+- **MoonRay's preferences in pages**: General, Renderer, XPU and Source Overrides, each in Modo's Preferences list.
+- **The Terminal names MoonRay by its mode**: MoonRay Vector, Scalar, XPU or Auto.
+- **Fixes**: Modo crashing when the Render layout's view was changed (likely fixed); "Texture conversion needs maketx.exe" with maketx in place.
 - **The memory meter no longer makes the preview hesitate**: it reads the machine and the graphics card on a thread of its own, once a second, where Modo's own thread waited for the card's driver while a render kept the card busy.
-- **MoonLightIPR's textures at most 1280 pixels a side** (they were up to 4096): sharp enough at the preview's sizes, with far less for the graphics card to hold and read. Textures are converted again the first time a scene opens.
+- **MoonLightIPR's textures at most 1024 pixels a side** (they were up to 4096): sharp enough at the preview's sizes, with far less for the graphics card to hold and read. Textures are converted again the first time a scene opens.
 - **MoonLightIPR follows an edit at once**: moving an object, the camera or a light, or changing a material, no longer holds Modo while the scene is read three times for motion blur when nothing in it moves and nothing moved has keys (a fur scene: 0.6 s to 0.2 s from letting go to the new picture, Modo held 0.4 s to a hundredth). With keys, motion blur is read as before.
 - **Heavy scenes start much sooner**: Modo's geometry is handed to MoonRay as it comes, without a step of Python for every point and face. A car scene's reading before a render went from about three minutes to a little over one, most of what is left being Modo's own work. MoonRay is handed the very same scene.
 - **Displacement follows Modo's Displacement Rate**: Displacement Tessellation in the render settings cuts displaced meshes finely where they are large on screen and coarsely where small, as Modo does, with far less geometry and a quicker start. Fixed dicing camera holds the cut at the Dicing Frame so it stays put while the camera moves (no shimmer in an animation); Uniform cuts by each mesh's resolution, as before. Adaptive Error Override sets the pixels in place of Modo's rate. Scenes with displacement render with less geometry where it is small on screen.
-- **A memory meter in the preview window**, beside the picture's details: the renderer's RAM, the machine's free RAM and the graphics card's memory, amber then red as they run short.
+- **A memory meter in the preview window**: the renderer's RAM, the machine's free RAM and the graphics card's memory, amber then red as they run short.
 - **A Shader Tree displacement that is black everywhere is left out**, where MoonRay still tessellated every mesh of its material for nothing (a car scene's 24 materials all had one).
 - **Cleaner denoising**: Keep Fine Detail lets the render through only over fur, hair and curves, where it used to bring the render's noise back over every textured or bumpy surface; and Open Image Denoise cleans its albedo and normal guides first and trusts them, leaving less noise on textured, bumpy and see-through surfaces (a MoonRay Source Override in Preferences, on by default).
 - **Smart Render or Safe Denoising, plainly**: in the render settings, Safe Denoising is greyed while Smart Render is Draft, Medium or Fine, and Smart Render while Safe Denoising is on.
@@ -389,12 +405,12 @@ Comparison audit between Modo 16.1v9 and MoonLightIPR, the realtime preview: wha
 |---|:---:|---|
 | **Lights** |  |  |
 | Directional light, with the physical sun | ![yes](docs/images/feature-yes.svg) | The sun's disc in Modo's colour |
-| Point, spot and area lights | ![yes](docs/images/feature-yes.svg) | Within about 1% of MoonRay's brightness |
+| Point, spot and area lights | ![yes](docs/images/feature-yes.svg) | Within about 1% of MoonRay's brightness; Visible to Camera shows the light |
 | Cylinder, dome and photometric (IES) lights | ![no](docs/images/feature-no.svg) | Left out by the plugin for MoonRay too; MoonRay's own cylinder and environment lights are drawn |
 | Light linking (Modo's groups, include or exclude) | ![partly](docs/images/feature-partly.svg) | Which lights reach each object, from Object controls, a material's links or Modo's groups, compared with MoonRay at 0.96 to 1.01 of its brightness. Objects set not to cast some shadows, or not onto some objects, cast them all; said in Notices |
 | Light volumetrics, and fog | ![partly](docs/images/feature-partly.svg) | Point, spot and directional lights' volumetrics as fog lit by that light alone; the Environment Material's fog (Linear and Layered approximated); not yet compared with Modo's renders. Area, cylinder and dome lights' volumetrics and the Shader's fog are named in Notices |
 | **Environment** |  |  |
-| Gradients, constant colours and HDRI image layers | ![yes](docs/images/feature-yes.svg) | Layered environments and physical skies at 256 x 128; a third environment image shows as grey |
+| Gradients, constant colours and HDRI image layers | ![yes](docs/images/feature-yes.svg) | An HDRI that is the whole environment at full detail; layered environments and physical skies at 256 x 128; a third environment image shows as grey |
 | **Cameras** |  |  |
 | Perspective and orthographic cameras | ![yes](docs/images/feature-yes.svg) | With depth of field, motion blur and stereo (a camera set to both eyes shows the left) |
 | Other camera projections | ![no](docs/images/feature-no.svg) | MoonRay's fisheye, spherical and dome cameras are drawn in their place |
@@ -407,7 +423,7 @@ Comparison audit between Modo 16.1v9 and MoonLightIPR, the realtime preview: wha
 | Specular Tint, Flatness, and a reflection amount apart from specular | ![no](docs/images/feature-no.svg) | As for MoonRay; named in a notice |
 | Unreal, Unity, glTF and AxF materials | ![no](docs/images/feature-no.svg) |  |
 | **Shader Tree** |  |  |
-| Image maps: UV and projections, UDIMs, Low and High values | ![yes](docs/images/feature-yes.svg) | Up to 8 UV sets a scene; images at most 4096 pixels a side |
+| Image maps: UV and projections, UDIMs, Low and High values | ![yes](docs/images/feature-yes.svg) | Up to 8 UV sets a scene; images at most 1024 pixels a side, their shape kept |
 | Procedural textures | ![partly](docs/images/feature-partly.svg) | Modo's eight built-in patterns with a Solid projection, through the object as MoonRay draws them; other projections baked flat; Enhance: Modo's patterns not yet |
 | Layer blend modes | ![yes](docs/images/feature-yes.svg) | All of them, with normal map blending |
 | Bump and normal maps | ![yes](docs/images/feature-yes.svg) |  |
@@ -416,7 +432,7 @@ Comparison audit between Modo 16.1v9 and MoonLightIPR, the realtime preview: wha
 | Group masks by material, Part and Selection Set | ![yes](docs/images/feature-yes.svg) | As MoonRay draws them |
 | Group masks by item | ![yes](docs/images/feature-yes.svg) | As MoonRay draws them |
 | **Geometry** |  |  |
-| Meshes, subdivision and creases | ![yes](docs/images/feature-yes.svg) | UVs carried straight across subdivided faces; up to 3,000,000 quads |
+| Meshes, subdivision and creases | ![yes](docs/images/feature-yes.svg) | UVs carried straight across subdivided faces; up to 3,000,000 quads; n-gons cut along their outline |
 | Instances and replicators | ![yes](docs/images/feature-yes.svg) |  |
 | Deformed and animated meshes | ![yes](docs/images/feature-yes.svg) | With motion blur |
 | Curves, hair and Modo's Fur material | ![partly](docs/images/feature-partly.svg) | Hair close to MoonRay's but not exact; fur guides and the fur vector and width maps are not read |

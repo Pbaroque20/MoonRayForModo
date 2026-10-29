@@ -22,8 +22,12 @@ KEPT_BYTES = 10 * 1024 ** 3
 _WRITTEN = [0]
 # How many were asked for and not kept yet (missed): each is made, and kept, now.
 _MISSED = [0]
-# The status a preparation says while the Scene cache is on (panel).
+# How many were asked for and found kept (found): each is read back from the folder.
+_FOUND = [0]
+# What a preparation says (moonlightipr_session, panel): while it makes and keeps what was not kept yet, and while it
+# reads back what was, the Scene cache's own work.
 CACHING = 'Caching scene...'
+LOADING = 'Loading scene from cache...'
 
 
 def _setting(key, default, unread=None):
@@ -59,6 +63,50 @@ def missed():
     return _MISSED[0]
 
 
+# What the kit makes in the folder, each a folder of its own: what Clear Cache empties (clear). Not Diagnostics (logs), and
+# not MoonLightIPR's compiled programs (OptixCache), which take minutes to make again and do not go stale.
+CLEARED = ('Scenes', 'MoonLightIPR', 'Simplified', 'Textures', 'Environments', 'Procedurals', 'GraphBakes', 'Fur')
+
+
+def clear():
+    """Empty what the kit keeps in the folder (CLEARED), and what this Modo holds of it in memory: everything is made
+    anew as it is next needed. Only those folders: the cache folder may be one the user chose, with things of their
+    own in it. A file a render has open is left. Returns (files removed, bytes freed, files left)."""
+    removed = freed = left = 0
+    base = root()
+    for kind in CLEARED:
+        folder = base / kind
+        if not folder.is_dir():
+            continue
+        for path in sorted(folder.rglob('*'), key=lambda p: len(p.parts), reverse=True):
+            try:
+                if path.is_dir():
+                    path.rmdir()
+                    continue
+                size = path.stat().st_size
+                path.unlink()
+                removed, freed = removed + 1, freed + size
+            except OSError:
+                left += 1
+        try:
+            folder.rmdir()
+        except OSError:
+            pass
+    # Prepared meshes this Modo still holds would otherwise be used without the folder.
+    try:
+        from . import moonlightipr_scene
+        moonlightipr_scene._packed.clear()
+    except Exception:
+        pass
+    return removed, freed, left
+
+
+def found():
+    """How many prepared meshes were asked for and found kept, since the kit was loaded: more than before, and none
+    missed, says a scene is being read back from the cache (moonlightipr_session)."""
+    return _FOUND[0]
+
+
 def forget():
     """The preferences saved: the folder and the Scene cache are read again."""
     _HELD.clear()
@@ -89,6 +137,8 @@ def kept(kind, signature):
         os.utime(path)  # the newest used is the last let go
     except OSError:
         pass
+    with _LOCK:
+        _FOUND[0] += 1
     return held[1]
 
 
