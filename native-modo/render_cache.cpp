@@ -319,11 +319,49 @@ static void stopLive() {
     live.listening=nullptr;live.listener=nullptr;live.displaced=-1;
 }
 
+// What a render cache's evaluation costs, by how it is asked (a probe's question, tools/probe_cl_cache_timing.py): made
+// with these flags, updated at time (forced or not), listed (each surface's item), and each surface's bounding box asked
+// (which may evaluate its geometry). A JSON line of seconds. Reads nothing else.
+extern "C" __declspec(dllexport) const char* MR_geometry_cache_timing(double time,unsigned flags,int force,int boxes) {
+    static thread_local std::string result;
+    std::ostringstream out;
+    try {
+        const auto began=std::chrono::steady_clock::now();
+        auto since=[&](){return std::chrono::duration<double>(std::chrono::steady_clock::now()-began).count();};
+        CLxLoc_RenderCacheService service;
+        void* object=nullptr;
+        check(service.CreateRenderCache(&object,flags),"Create render cache");
+        CLxLoc_RenderCache cache;cache.take(object);
+        const double made=since();
+        const LxResult updated=cache.Update(time,force);
+        const double evaluated=since();
+        int count=0;cache.GeoSurfaceCount(&count);
+        for(int i=0;i<count;++i){
+            object=nullptr;if(LXx_FAIL(cache.GeoSurfaceAt(i,&object)))continue;
+            CLxLoc_GeoCacheSurface surface;surface.set(object);
+            void* item=nullptr;surface.SourceItem(&item);
+        }
+        const double listed=since();
+        if(boxes)
+            for(int i=0;i<count;++i){
+                object=nullptr;if(LXx_FAIL(cache.GeoSurfaceAt(i,&object)))continue;
+                CLxLoc_GeoCacheSurface surface;surface.set(object);
+                LXtBBox box;surface.GetBBox(&box);
+            }
+        out<<"{\"made\":"<<made<<",\"update\":"<<evaluated-made<<",\"update_result\":"<<updated<<",\"surfaces\":"<<count
+           <<",\"listed\":"<<listed-evaluated<<",\"boxes\":"<<since()-listed<<"}";
+    } catch(const std::exception& error) {out.str("");out<<"{\"error\":";text(out,error.what());out<<"}";}
+    result=out.str();
+    return result.c_str();
+}
+
 // The cache is made anew and evaluated whole for every reading but the live cache's (above).
 // only, where given: the items whose surfaces' segments are loaded; any other surface's prototype says only which it
 // is ("kept": its item, material and part), for the plugin to take from the reading before (evaluated.capture). Loading
 // every surface's segments was most of a reading after one mesh was edited (1.24 s of 2.15 for an interior's 25).
 static const std::set<std::string>* onlyItems=nullptr;
+static bool forcedEvaluation=false;
+extern "C" __declspec(dllexport) void MR_geometry_forced(int on) {forcedEvaluation=on!=0;}
 static void write_snapshot(std::ostream& out,double time,int displaced) {
         blobAt=0;skippedSegments=0;skippedWhere.str("");skippedWhere.clear();
         const auto began=std::chrono::steady_clock::now();
@@ -342,12 +380,16 @@ static void write_snapshot(std::ostream& out,double time,int displaced) {
             if(std::fabs(at-time)>1e-6) throw std::runtime_error("live: another time");
             chosen=&live.cache;
         } else {
+            // Made with a full update, the cache evaluates the scene at its current time (a car's 1.4 s); updated forced
+            // as well, it evaluated it all again, as long again. Updated unforced, it evaluates only where time is another
+            // (a motion blur's shutter end). Made without the full update it crashed now and then (2 of 5 readings of a
+            // fur scene). MR_geometry_forced(1): the old way, forced, for a probe's comparison.
             unsigned flags=LXfRENDERCACHE_TRACK_CURRENT_SCENE|LXfRENDERCACHE_TURN_OFF_AUTO_UPDATES|
                            LXfRENDERCACHE_FORCE_FULL_UPDATE;
             if(displaced) flags|=LXfRENDERCACHE_GEOCACHE_DISPLACE;
             check(service.CreateRenderCache(&object,flags),"Create render cache");
             made.take(object);
-            check(made.Update(time,1),"Evaluate render cache");
+            check(made.Update(time,forcedEvaluation?1:0),"Evaluate render cache");
         }
         CLxLoc_RenderCache& cache=*chosen;
         const double evaluated=since();

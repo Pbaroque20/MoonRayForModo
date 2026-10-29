@@ -60,7 +60,7 @@ try:
     result['whole_adapter'] = {'timing': whole.get('_evaluated_data', {}).get('timing'), 'handing': whole.get('_evaluated_data', {}).get('handing'),
                                'prototypes': len(whole.get('_evaluated_data', {}).get('prototypes', {})),
                                'with_item': sum(1 for held in whole.get('_evaluated_data', {}).get('prototypes', {}).values() if 'item' in held)}
-    profiled('one_mesh', lambda: host.snapshot(evaluated_geometry=True, reuse_geometry=cache, refresh_materials=True, dirty_meshes={chosen}))
+    profiled('one_mesh', lambda: host.snapshot(evaluated_geometry=True, reuse_geometry=cache, refresh_materials=True, dirty_meshes={chosen}, shading_kept=True))
     result['one_mesh_readings'] = readings
     from moonray_modo.host import world_matrix
     scene = modo.Scene()
