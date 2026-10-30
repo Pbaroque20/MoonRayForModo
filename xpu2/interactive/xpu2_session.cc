@@ -1978,6 +1978,7 @@ int main(int argc, char** argv) {
     const char* directory = std::getenv("MOONRAY_MODO_SESSION");
     if (!directory) return passThrough(argc, argv);
     memoryCeiling();
+    texture::watchPressure(ceilingBytes);
     try {
         const int code = session(parse(argc, argv), fs::u8path(directory));
         cpu::finishGeometryCache();  // the tessellations being written to the cache, whole

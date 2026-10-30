@@ -10,6 +10,11 @@
 #include <memory>
 #include <atomic>
 #include <mutex>
+#include <deque>
+#include <thread>
+#include <chrono>
+#include <cstdio>
+#include <psapi.h>
 #include <OpenImageIO/imagecache.h>
 #include <stdexcept>
 #include "surface_core.h"
@@ -50,6 +55,10 @@ inline std::shared_ptr<OIIO::ImageCache> lazyCache(){static std::shared_ptr<OIIO
   s->attribute("max_memory_MB",512.0f);return s;}();return c;}
 // Whether the finest level is read when first used (XPU2_SESSION_EAGER_TEXTURES=1: every level decoded at once).
 inline bool lazyTextures(){static const bool on=[]{const char* v=std::getenv("XPU2_SESSION_EAGER_TEXTURES");return !(v&&v[0]=='1');}();return on;}
+struct Pyramid;
+// Every texture whose tiles can be let go; a list never freed, as the pressure watch outlives what ends at exit.
+inline std::mutex& spillLock(){static auto* m=new std::mutex;return *m;}
+inline std::vector<Pyramid*>& spillList(){static auto* l=new std::vector<Pyramid*>;return *l;}
 struct Pyramid {
  tex::Image image;std::vector<std::vector<surface::V3>> tiles;
  // An 8-bit file's tiles as bytes (tex::Mip::format 1); XPU2_SESSION_FLOAT_TEXTURES=1 keeps every file in floats.
@@ -57,7 +66,9 @@ struct Pyramid {
  std::vector<std::vector<const surface::V3*>> pages;std::atomic<uint64_t> bytes{0};
  // The finest level on demand (lazyTextures): its tiles decoded when first read (loadTile), each into a block of its own.
  std::string file;int channels=0,alphaChannel=-1;bool alphaOnly=false,lazyEight=false;std::mutex lazyLock;
- std::vector<std::unique_ptr<unsigned char[]>> lazyTiles;std::atomic<unsigned> lazyLoaded{0};
+ // Loaded tiles, oldest first: under memory pressure the oldest are let go (letGo), and read again if asked for again.
+ struct LazyTile {std::unique_ptr<unsigned char[]> block;unsigned level,tile;size_t size;};
+ std::deque<LazyTile> lazyTiles;size_t lazyBytes=0;std::atomic<unsigned> lazyLoaded{0};
  // One texel of the file as kept (channels mapped, alpha as colour), into a float tile or three bytes.
  void keep(const float* d,surface::V3* toFloat,unsigned char* toBytes){surface::V3 c;float a;texelChannels(d,channels,alphaChannel,c,a);if(alphaOnly)c={a,a,a};
   if(toBytes){const float v[3]={c.x,c.y,c.z};for(int k=0;k<3;++k){const long b=std::lround(v[k]*255.0f);need(b>=0&&b<=255&&float(b)*(1.0f/255.0f)==v[k],"8-bit texel not its byte");toBytes[k]=(unsigned char)b;}}
@@ -77,7 +88,14 @@ struct Pyramid {
    p->keep(&decoded[at*p->channels],p->lazyEight?nullptr:reinterpret_cast<surface::V3*>(block.get())+at,p->lazyEight?block.get()+3*at:nullptr);}
   std::lock_guard<std::mutex> g(p->lazyLock);if(page)return;
   std::atomic_thread_fence(std::memory_order_release);
-  page=reinterpret_cast<const surface::V3*>(block.get());p->lazyTiles.push_back(std::move(block));p->bytes+=size;p->lazyLoaded++;}
+  page=reinterpret_cast<const surface::V3*>(block.get());p->lazyTiles.push_back({std::move(block),level,tile,size});p->lazyBytes+=size;p->bytes+=size;p->lazyLoaded++;}
+ size_t lazyHeld(){std::lock_guard<std::mutex> g(lazyLock);return lazyBytes;}
+ // The oldest tiles, up to want bytes: their pages cleared, their blocks handed over to free once no reader has them.
+ size_t letGo(size_t want,std::vector<std::unique_ptr<unsigned char[]>>& out){
+  std::lock_guard<std::mutex> g(lazyLock);size_t freed=0;
+  while(freed<want&&!lazyTiles.empty()){auto& t=lazyTiles.front();pages[t.level][t.tile]=nullptr;freed+=t.size;out.push_back(std::move(t.block));lazyTiles.pop_front();lazyLoaded--;}
+  lazyBytes-=freed;bytes-=freed;return freed;}
+ ~Pyramid();
  Pyramid(const Pyramid&)=delete;
  explicit Pyramid(const std::string& name,bool alpha=false):file(name),alphaOnly(alpha){auto in=OIIO::ImageInput::open(name);need(bool(in),"Pyramid read");pages.reserve(tex::MaxLevels);
   for(unsigned level=0;level<tex::MaxLevels&&in->seek_subimage(0,level);++level){auto spec=in->spec();need(spec.get_int_attribute("sampleborder",0)==0&&spec.get_int_attribute("oiio:sampleborder",0)==0,"Border-sampled TX unsupported");
@@ -113,6 +131,7 @@ struct Pyramid {
   while(side&&realtimeFrom+1<image.count&&std::max(image.levels[realtimeFrom].width,image.levels[realtimeFrom].height)>side)++realtimeFrom;
   realtimeImage.count=image.count-realtimeFrom;
   for(unsigned k=0;k<realtimeImage.count;++k)realtimeImage.levels[k]=image.levels[realtimeFrom+k];
+  std::lock_guard<std::mutex> listed(spillLock());spillList().push_back(this);
  }
  // The largest side a texture has in realtime's frames (XPU2_SESSION_RT_TEXTURE_SIDE, default 1024, was 1280; 0: as rendered).
  // Perceptually enough at realtime's sizes, and its finer levels are then never decoded nor sent to the card.
@@ -122,6 +141,46 @@ struct Pyramid {
  // The pyramid a plan reads: realtime's from its first level of realtimeSide() or less, else the whole.
  const tex::Image& view(bool realtime)const{return realtime&&realtimeFrom?realtimeImage:image;}
 };
+inline Pyramid::~Pyramid(){std::lock_guard<std::mutex> listed(spillLock());auto& l=spillList();l.erase(std::remove(l.begin(),l.end(),this),l.end());}
+// The decoded tiles held now, in bytes.
+inline size_t tilesHeld(){std::lock_guard<std::mutex> listed(spillLock());size_t n=0;for(auto* p:spillList())n+=p->lazyHeld();return n;}
+// Lets go of up to want bytes of decoded tiles, each texture's oldest, in proportion to what it holds, and returns what
+// went. A tile asked for again is decoded again from its file (the disk is its record; the card's copy, where it has
+// one, stays). Freed once every reader that may have seen one has left it (tex::spill).
+inline size_t relieve(size_t want){
+ std::vector<std::unique_ptr<unsigned char[]>> grave;size_t freed=0;
+ {std::lock_guard<std::mutex> listed(spillLock());size_t held=0;for(auto* p:spillList())held+=p->lazyHeld();if(!held)return 0;
+  for(auto* p:spillList()){const size_t mine=p->lazyHeld();if(mine)freed+=p->letGo(size_t(double(want)*double(mine)/double(held))+1,grave);}}
+ if(grave.empty())return 0;
+ std::atomic_thread_fence(std::memory_order_seq_cst);
+ const unsigned long long stamp=tex::spill::epoch.fetch_add(1,std::memory_order_seq_cst);
+ for(auto& r:tex::spill::readers){for(;;std::this_thread::yield()){const auto in=r.in.load(std::memory_order_seq_cst);if(!in||in>stamp)break;}}
+ grave.clear();HeapCompact(GetProcessHeap(),0);return freed;
+}
+// What memory pressure asks to be let go now, in bytes: the machine's free RAM below its reserve (a tenth of it, 2 GB at
+// least), or the session's committed memory past 85% of its ceiling (ceiling 0: none); XPU2_SESSION_SPILL_MB holds the
+// tiles to that many MB whatever the machine has.
+inline size_t pressure(size_t ceiling){
+ if(const char* v=std::getenv("XPU2_SESSION_SPILL_MB")){const size_t cap=size_t(std::max(0,std::atoi(v)))<<20,held=tilesHeld();return held>cap?held-cap:0;}
+ size_t want=0;MEMORYSTATUSEX status{};status.dwLength=sizeof status;
+ if(GlobalMemoryStatusEx(&status)){const size_t reserve=std::max<size_t>(size_t(status.ullTotalPhys/10),2ull<<30);
+  if(status.ullAvailPhys<reserve)want=reserve-size_t(status.ullAvailPhys);}
+ PROCESS_MEMORY_COUNTERS_EX c{};c.cb=sizeof c;
+ if(ceiling&&K32GetProcessMemoryInfo(GetCurrentProcess(),reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&c),sizeof c)&&c.PrivateUsage>ceiling/100*85)
+  want=std::max(want,size_t(c.PrivateUsage)-ceiling/100*80);
+ return want;
+}
+// Watches for memory pressure for the rest of the process, four times a second, and says when it lets tiles go. A session
+// past its ceiling used to go back to MoonRay XPU, and a machine out of RAM stalled, with tiles on hand it could read again.
+inline void watchPressure(size_t ceiling){
+ std::thread([ceiling]{
+  auto said=std::chrono::steady_clock::now()-std::chrono::seconds(60);size_t since=0;
+  for(;;std::this_thread::sleep_for(std::chrono::milliseconds(250))){
+   const size_t want=pressure(ceiling);if(!want)continue;
+   since+=relieve(want);const auto now=std::chrono::steady_clock::now();
+   if(since&&now-said>std::chrono::seconds(5)){std::printf("MoonRay XPU2: memory pressure: %zu MB of decoded texture tiles let go, %zu MB kept\n",since>>20,tilesHeld()>>20);std::fflush(stdout);said=now;since=0;}
+  }}).detach();
+}
 struct File {
  std::shared_ptr<OIIO::TextureSystem> system;OIIO::ustring name;HANDLE lock=INVALID_HANDLE_VALUE;bool eightBit=false;unsigned levels=0;uint64_t decodedBytes=0;std::shared_ptr<const Pyramid> pyramid;
  bool alpha=false;  // its alpha as its colour (ImageMap's alpha_only), a texture of its own beside the file's colour
