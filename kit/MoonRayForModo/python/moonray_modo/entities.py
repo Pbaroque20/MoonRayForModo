@@ -1489,7 +1489,12 @@ def preview(scene, warnings):
             # MoonLightIPR draws each kind of light the usual way for its kind: its brightness spread over its size, except
             # for a portal. A light set the other way is given the brightness that comes to the same thing.
             usual = name != 'PortalLight'
-            if bool(value(entity, 'normalized')) != usual:
+            if bool(value(entity, 'normalized')) != usual and usual and name != 'DistantLight':
+                # Not normalized, MoonRay takes its colour and intensity as the light's radiance, whatever its size and
+                # whether it applies the scene scale (LightUtil.h); MoonLightIPR is told to do the same. Scaling it by pi
+                # times its size made it pi times too bright where it does not apply the scene scale.
+                light['radiance'] = True
+            elif bool(value(entity, 'normalized')) != usual:
                 size = emitting_area(name, light)
                 if size is None:
                     warnings.append('MoonLightIPR shows %s with the usual normalization for its kind.' % label)
