@@ -1,0 +1,2307 @@
+{
+  "status": "passed",
+  "report": "test-results\\xpu2-attribution-timing\\report.json",
+  "report_sha256": "fcfb97777790e9b601e7ec23ae7d8bf1e46a527c681afdde42a6208190912cbb",
+  "threads": 1,
+  "gpu": "NVIDIA GeForce RTX 3090, 591.74, GPU-041d589b-450b-0916-2503-c453af2389e3",
+  "timings": {
+    "reference": {
+      "wall_median": 9.227073600050062,
+      "wall_min": 9.158675900078379,
+      "wall_max": 9.622664600028656,
+      "render_median": 7.812,
+      "render_min": 7.789,
+      "render_max": 8.234
+    },
+    "disabled": {
+      "wall_median": 9.79186750005465,
+      "wall_min": 9.739108000067063,
+      "wall_max": 9.934797000023536,
+      "render_median": 8.409,
+      "render_min": 8.31,
+      "render_max": 8.41
+    },
+    "native_chunk": {
+      "wall_median": 9.495026700082235,
+      "wall_min": 9.157030800008215,
+      "wall_max": 9.6107711000368,
+      "render_median": 8.052,
+      "render_min": 7.778,
+      "render_max": 8.179
+    },
+    "capacity0": {
+      "wall_median": 10.762335899984464,
+      "wall_min": 10.494426299934275,
+      "wall_max": 11.051749699981883,
+      "render_median": 9.269,
+      "render_min": 9.084,
+      "render_max": 9.645
+    },
+    "control": {
+      "wall_median": 11.498425099998713,
+      "wall_min": 11.256271800026298,
+      "wall_max": 11.502021300024353,
+      "render_median": 10.01,
+      "render_min": 9.871,
+      "render_max": 10.066
+    }
+  },
+  "runs": [
+    {
+      "round": 0,
+      "label": "reference",
+      "stats_sha256": "e520d53be880e7b8ee42eaea072edd7c76b522e26795eff422f50f2ee7b923e9",
+      "stats": {
+        "Integration": 2.52115,
+        "MISSING TIME": 0.68159,
+        "Shade handler (excl. isect+shading)": 0.6471,
+        "Ray handler (excl. embree)": 0.64222,
+        "Post integration (SOA->AOS/queuing)": 0.46324,
+        "Queuing logic (incl. sorting)": 0.438,
+        "Init Intersection": 0.38535,
+        "Shading (excl. OIIO)": 0.34615,
+        "GPU intersection rays": 0.31069,
+        "TLS allocs (excl. RayStates)": 0.26015,
+        "GPU occlusion rays": 0.23677,
+        "Occl query handler (excl. embree)": 0.22738,
+        "RayState allocs": 0.18266,
+        "Volume integration": 0.15285,
+        "Compute ray derivatives": 0.10697,
+        "Render driver overhead": 0.06165,
+        "AOVs": 0.05631,
+        "Add sample handler": 0.04831,
+        "Primary ray generation": 0.04453,
+        "Render driver serial time": 0.00402,
+        "Embree occlusion rays": 2e-05,
+        "Add heat map handler": 0.0,
+        "Defer shade entries (WARNING SIGN!)": 0.0,
+        "Embree intersection rays": 0.0,
+        "Embree presence rays": 0.0,
+        "Embree volume rays": 0.0,
+        "Texturing (OIIO)": 0.0,
+        "Presence query handler (excl. embree)": 0.0,
+        "Ray sortkey gen": 0.0,
+        "Subsurface integration": 0.0,
+        "Unrecorded": 0.0,
+        "Adaptive tree rebuild": 0.0,
+        "Adaptive tree query": 0.0,
+        "Adaptive tree exclusive lock": 0.0,
+        "Misc A": 0.0,
+        "Misc B": 0.0,
+        "Misc C": 0.0,
+        "Misc D": 0.0,
+        "Misc E": 0.0,
+        "Misc F": 0.0,
+        "__ Render driver __": 0.0
+      },
+      "comparison": {
+        "status": "passed",
+        "dimensions": [
+          384,
+          216
+        ],
+        "channels": {
+          "R": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          },
+          "G": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          },
+          "B": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          },
+          "A": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          }
+        },
+        "exactly_different_pixels": 0,
+        "first_difference": null,
+        "largest_differences": [],
+        "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+        "metadata": {
+          "colorInteropID": "\"lin_rec709_scene\"",
+          "oiio:ColorSpace": "\"lin_rec709_scene\"",
+          "PixelAspectRatio": "1"
+        }
+      },
+      "mcrt": 7.817,
+      "integration": 2.52115
+    },
+    {
+      "round": 0,
+      "label": "disabled",
+      "stats_sha256": "d222b3de22e8114836cf6753cd0d552082265ca8c58ba2c9d7c7b8f8f07508b6",
+      "stats": {
+        "Integration": 2.85076,
+        "Ray handler (excl. embree)": 0.72864,
+        "Shade handler (excl. isect+shading)": 0.72633,
+        "MISSING TIME": 0.71761,
+        "Post integration (SOA->AOS/queuing)": 0.49775,
+        "Queuing logic (incl. sorting)": 0.47074,
+        "Init Intersection": 0.42147,
+        "Shading (excl. OIIO)": 0.37424,
+        "GPU intersection rays": 0.2908,
+        "TLS allocs (excl. RayStates)": 0.26418,
+        "Occl query handler (excl. embree)": 0.24657,
+        "GPU occlusion rays": 0.20626,
+        "RayState allocs": 0.19541,
+        "Volume integration": 0.15274,
+        "Compute ray derivatives": 0.12027,
+        "Render driver overhead": 0.07155,
+        "AOVs": 0.06099,
+        "Add sample handler": 0.05617,
+        "Primary ray generation": 0.04891,
+        "Render driver serial time": 0.00416,
+        "Embree occlusion rays": 2e-05,
+        "Add heat map handler": 0.0,
+        "Defer shade entries (WARNING SIGN!)": 0.0,
+        "Embree intersection rays": 0.0,
+        "Embree presence rays": 0.0,
+        "Embree volume rays": 0.0,
+        "Texturing (OIIO)": 0.0,
+        "Presence query handler (excl. embree)": 0.0,
+        "Ray sortkey gen": 0.0,
+        "Subsurface integration": 0.0,
+        "Unrecorded": 0.0,
+        "Adaptive tree rebuild": 0.0,
+        "Adaptive tree query": 0.0,
+        "Adaptive tree exclusive lock": 0.0,
+        "Misc A": 0.0,
+        "Misc B": 0.0,
+        "Misc C": 0.0,
+        "Misc D": 0.0,
+        "Misc E": 0.0,
+        "Misc F": 0.0,
+        "__ Render driver __": 0.0
+      },
+      "comparison": {
+        "status": "passed",
+        "dimensions": [
+          384,
+          216
+        ],
+        "channels": {
+          "R": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          },
+          "G": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          },
+          "B": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          },
+          "A": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          }
+        },
+        "exactly_different_pixels": 0,
+        "first_difference": null,
+        "largest_differences": [],
+        "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+        "metadata": {
+          "colorInteropID": "\"lin_rec709_scene\"",
+          "oiio:ColorSpace": "\"lin_rec709_scene\"",
+          "PixelAspectRatio": "1"
+        }
+      },
+      "mcrt": 8.505,
+      "integration": 2.85076
+    },
+    {
+      "round": 0,
+      "label": "native_chunk",
+      "stats_sha256": "72e6b6ea3192bfc80276fca1ccd76fa71bcbb165c4c12151bc12bf049a431c33",
+      "stats": {
+        "Integration": 2.6264,
+        "Ray handler (excl. embree)": 0.68193,
+        "MISSING TIME": 0.68156,
+        "Shade handler (excl. isect+shading)": 0.60534,
+        "Post integration (SOA->AOS/queuing)": 0.47705,
+        "Queuing logic (incl. sorting)": 0.44663,
+        "Init Intersection": 0.37464,
+        "GPU intersection rays": 0.29887,
+        "Shading (excl. OIIO)": 0.28499,
+        "TLS allocs (excl. RayStates)": 0.2559,
+        "Occl query handler (excl. embree)": 0.22792,
+        "GPU occlusion rays": 0.20626,
+        "RayState allocs": 0.18288,
+        "Volume integration": 0.14898,
+        "Compute ray derivatives": 0.11051,
+        "Render driver overhead": 0.06484,
+        "AOVs": 0.05697,
+        "Add sample handler": 0.04918,
+        "Primary ray generation": 0.04633,
+        "Render driver serial time": 0.00387,
+        "Embree occlusion rays": 2e-05,
+        "Add heat map handler": 0.0,
+        "Defer shade entries (WARNING SIGN!)": 0.0,
+        "Embree intersection rays": 0.0,
+        "Embree presence rays": 0.0,
+        "Embree volume rays": 0.0,
+        "Texturing (OIIO)": 0.0,
+        "Presence query handler (excl. embree)": 0.0,
+        "Ray sortkey gen": 0.0,
+        "Subsurface integration": 0.0,
+        "Unrecorded": 0.0,
+        "Adaptive tree rebuild": 0.0,
+        "Adaptive tree query": 0.0,
+        "Adaptive tree exclusive lock": 0.0,
+        "Misc A": 0.0,
+        "Misc B": 0.0,
+        "Misc C": 0.0,
+        "Misc D": 0.0,
+        "Misc E": 0.0,
+        "Misc F": 0.0,
+        "__ Render driver __": 0.0
+      },
+      "comparison": {
+        "status": "passed",
+        "dimensions": [
+          384,
+          216
+        ],
+        "channels": {
+          "R": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          },
+          "G": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          },
+          "B": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          },
+          "A": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          }
+        },
+        "exactly_different_pixels": 0,
+        "first_difference": null,
+        "largest_differences": [],
+        "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+        "metadata": {
+          "colorInteropID": "\"lin_rec709_scene\"",
+          "oiio:ColorSpace": "\"lin_rec709_scene\"",
+          "PixelAspectRatio": "1"
+        }
+      },
+      "mcrt": 7.831,
+      "integration": 2.6264
+    },
+    {
+      "round": 0,
+      "label": "capacity0",
+      "stats_sha256": "36347a6e59ab1aef18c7efec7df23e577e90c40d1d2c859a9f1b34fb929907c9",
+      "stats": {
+        "Integration": 3.85394,
+        "Ray handler (excl. embree)": 0.70832,
+        "MISSING TIME": 0.68614,
+        "Shade handler (excl. isect+shading)": 0.66267,
+        "Post integration (SOA->AOS/queuing)": 0.51008,
+        "Queuing logic (incl. sorting)": 0.4557,
+        "Init Intersection": 0.39691,
+        "GPU intersection rays": 0.33437,
+        "Shading (excl. OIIO)": 0.29653,
+        "TLS allocs (excl. RayStates)": 0.26167,
+        "Occl query handler (excl. embree)": 0.23835,
+        "GPU occlusion rays": 0.22449,
+        "RayState allocs": 0.19041,
+        "Volume integration": 0.1681,
+        "Compute ray derivatives": 0.11571,
+        "Render driver overhead": 0.0769,
+        "AOVs": 0.06024,
+        "Add sample handler": 0.04979,
+        "Primary ray generation": 0.04829,
+        "Render driver serial time": 0.00395,
+        "Embree occlusion rays": 2e-05,
+        "Add heat map handler": 0.0,
+        "Defer shade entries (WARNING SIGN!)": 0.0,
+        "Embree intersection rays": 0.0,
+        "Embree presence rays": 0.0,
+        "Embree volume rays": 0.0,
+        "Texturing (OIIO)": 0.0,
+        "Presence query handler (excl. embree)": 0.0,
+        "Ray sortkey gen": 0.0,
+        "Subsurface integration": 0.0,
+        "Unrecorded": 0.0,
+        "Adaptive tree rebuild": 0.0,
+        "Adaptive tree query": 0.0,
+        "Adaptive tree exclusive lock": 0.0,
+        "Misc A": 0.0,
+        "Misc B": 0.0,
+        "Misc C": 0.0,
+        "Misc D": 0.0,
+        "Misc E": 0.0,
+        "Misc F": 0.0,
+        "__ Render driver __": 0.0
+      },
+      "comparison": {
+        "status": "passed",
+        "dimensions": [
+          384,
+          216
+        ],
+        "channels": {
+          "R": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          },
+          "G": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          },
+          "B": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          },
+          "A": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          }
+        },
+        "exactly_different_pixels": 0,
+        "first_difference": null,
+        "largest_differences": [],
+        "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+        "metadata": {
+          "colorInteropID": "\"lin_rec709_scene\"",
+          "oiio:ColorSpace": "\"lin_rec709_scene\"",
+          "PixelAspectRatio": "1"
+        }
+      },
+      "mcrt": 9.342,
+      "integration": 3.85394
+    },
+    {
+      "round": 0,
+      "label": "control",
+      "stats_sha256": "9b5292bf9d67b28eff1a45fa022216f34ed593ef4957fa36ea3a5226d33350a7",
+      "stats": {
+        "Integration": 4.38313,
+        "MISSING TIME": 0.68926,
+        "Ray handler (excl. embree)": 0.67837,
+        "Shade handler (excl. isect+shading)": 0.62837,
+        "Post integration (SOA->AOS/queuing)": 0.52718,
+        "Queuing logic (incl. sorting)": 0.44917,
+        "GPU intersection rays": 0.3656,
+        "Init Intersection": 0.35995,
+        "Shading (excl. OIIO)": 0.29128,
+        "TLS allocs (excl. RayStates)": 0.25856,
+        "GPU occlusion rays": 0.25066,
+        "Occl query handler (excl. embree)": 0.22077,
+        "RayState allocs": 0.18825,
+        "Volume integration": 0.15531,
+        "Compute ray derivatives": 0.10911,
+        "Render driver overhead": 0.07644,
+        "AOVs": 0.05662,
+        "Add sample handler": 0.04859,
+        "Primary ray generation": 0.04632,
+        "Render driver serial time": 0.00382,
+        "Embree occlusion rays": 2e-05,
+        "Add heat map handler": 0.0,
+        "Defer shade entries (WARNING SIGN!)": 0.0,
+        "Embree intersection rays": 0.0,
+        "Embree presence rays": 0.0,
+        "Embree volume rays": 0.0,
+        "Texturing (OIIO)": 0.0,
+        "Presence query handler (excl. embree)": 0.0,
+        "Ray sortkey gen": 0.0,
+        "Subsurface integration": 0.0,
+        "Unrecorded": 0.0,
+        "Adaptive tree rebuild": 0.0,
+        "Adaptive tree query": 0.0,
+        "Adaptive tree exclusive lock": 0.0,
+        "Misc A": 0.0,
+        "Misc B": 0.0,
+        "Misc C": 0.0,
+        "Misc D": 0.0,
+        "Misc E": 0.0,
+        "Misc F": 0.0,
+        "__ Render driver __": 0.0
+      },
+      "comparison": {
+        "status": "passed",
+        "dimensions": [
+          384,
+          216
+        ],
+        "channels": {
+          "R": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          },
+          "G": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          },
+          "B": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          },
+          "A": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          }
+        },
+        "exactly_different_pixels": 0,
+        "first_difference": null,
+        "largest_differences": [],
+        "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+        "metadata": {
+          "colorInteropID": "\"lin_rec709_scene\"",
+          "oiio:ColorSpace": "\"lin_rec709_scene\"",
+          "PixelAspectRatio": "1"
+        }
+      },
+      "mcrt": 9.786,
+      "integration": 4.38313
+    },
+    {
+      "round": 1,
+      "label": "reference",
+      "stats_sha256": "3da7152f6f30f13137c40326eb0fc7e64d3b9f10e4867049f4c70033d95619ea",
+      "stats": {
+        "Integration": 2.64519,
+        "Ray handler (excl. embree)": 0.70018,
+        "Shade handler (excl. isect+shading)": 0.69701,
+        "MISSING TIME": 0.6952,
+        "Post integration (SOA->AOS/queuing)": 0.48492,
+        "Queuing logic (incl. sorting)": 0.46737,
+        "Init Intersection": 0.39032,
+        "Shading (excl. OIIO)": 0.36354,
+        "GPU intersection rays": 0.33059,
+        "TLS allocs (excl. RayStates)": 0.26855,
+        "GPU occlusion rays": 0.2539,
+        "Occl query handler (excl. embree)": 0.2382,
+        "RayState allocs": 0.19146,
+        "Volume integration": 0.16084,
+        "Compute ray derivatives": 0.11545,
+        "Render driver overhead": 0.06551,
+        "AOVs": 0.05951,
+        "Add sample handler": 0.05664,
+        "Primary ray generation": 0.04634,
+        "Render driver serial time": 0.00387,
+        "Embree occlusion rays": 2e-05,
+        "Add heat map handler": 0.0,
+        "Defer shade entries (WARNING SIGN!)": 0.0,
+        "Embree intersection rays": 0.0,
+        "Embree presence rays": 0.0,
+        "Embree volume rays": 0.0,
+        "Texturing (OIIO)": 0.0,
+        "Presence query handler (excl. embree)": 0.0,
+        "Ray sortkey gen": 0.0,
+        "Subsurface integration": 0.0,
+        "Unrecorded": 0.0,
+        "Adaptive tree rebuild": 0.0,
+        "Adaptive tree query": 0.0,
+        "Adaptive tree exclusive lock": 0.0,
+        "Misc A": 0.0,
+        "Misc B": 0.0,
+        "Misc C": 0.0,
+        "Misc D": 0.0,
+        "Misc E": 0.0,
+        "Misc F": 0.0,
+        "__ Render driver __": 0.0
+      },
+      "comparison": {
+        "status": "passed",
+        "dimensions": [
+          384,
+          216
+        ],
+        "channels": {
+          "R": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          },
+          "G": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          },
+          "B": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          },
+          "A": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          }
+        },
+        "exactly_different_pixels": 0,
+        "first_difference": null,
+        "largest_differences": [],
+        "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+        "metadata": {
+          "colorInteropID": "\"lin_rec709_scene\"",
+          "oiio:ColorSpace": "\"lin_rec709_scene\"",
+          "PixelAspectRatio": "1"
+        }
+      },
+      "mcrt": 8.234,
+      "integration": 2.64519
+    },
+    {
+      "round": 1,
+      "label": "disabled",
+      "stats_sha256": "976e6d3b3f25086e8361384549f629796b43c26ce3cae256f99c46f90528873a",
+      "stats": {
+        "Integration": 2.80079,
+        "Ray handler (excl. embree)": 0.7203,
+        "Shade handler (excl. isect+shading)": 0.70786,
+        "MISSING TIME": 0.70366,
+        "Post integration (SOA->AOS/queuing)": 0.49252,
+        "Queuing logic (incl. sorting)": 0.46332,
+        "Init Intersection": 0.40114,
+        "Shading (excl. OIIO)": 0.37046,
+        "GPU intersection rays": 0.31459,
+        "TLS allocs (excl. RayStates)": 0.26388,
+        "Occl query handler (excl. embree)": 0.24472,
+        "GPU occlusion rays": 0.22743,
+        "RayState allocs": 0.19115,
+        "Volume integration": 0.15479,
+        "Compute ray derivatives": 0.11646,
+        "Render driver overhead": 0.06807,
+        "AOVs": 0.06202,
+        "Add sample handler": 0.05458,
+        "Primary ray generation": 0.04763,
+        "Render driver serial time": 0.00439,
+        "Embree occlusion rays": 2e-05,
+        "Add heat map handler": 0.0,
+        "Defer shade entries (WARNING SIGN!)": 0.0,
+        "Embree intersection rays": 0.0,
+        "Embree presence rays": 0.0,
+        "Embree volume rays": 0.0,
+        "Texturing (OIIO)": 0.0,
+        "Presence query handler (excl. embree)": 0.0,
+        "Ray sortkey gen": 0.0,
+        "Subsurface integration": 0.0,
+        "Unrecorded": 0.0,
+        "Adaptive tree rebuild": 0.0,
+        "Adaptive tree query": 0.0,
+        "Adaptive tree exclusive lock": 0.0,
+        "Misc A": 0.0,
+        "Misc B": 0.0,
+        "Misc C": 0.0,
+        "Misc D": 0.0,
+        "Misc E": 0.0,
+        "Misc F": 0.0,
+        "__ Render driver __": 0.0
+      },
+      "comparison": {
+        "status": "passed",
+        "dimensions": [
+          384,
+          216
+        ],
+        "channels": {
+          "R": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          },
+          "G": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          },
+          "B": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          },
+          "A": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          }
+        },
+        "exactly_different_pixels": 0,
+        "first_difference": null,
+        "largest_differences": [],
+        "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+        "metadata": {
+          "colorInteropID": "\"lin_rec709_scene\"",
+          "oiio:ColorSpace": "\"lin_rec709_scene\"",
+          "PixelAspectRatio": "1"
+        }
+      },
+      "mcrt": 8.409,
+      "integration": 2.80079
+    },
+    {
+      "round": 1,
+      "label": "native_chunk",
+      "stats_sha256": "d009722b4ea2ec569b585d7ddd308cdbda8bf42c460a19de5ed653283ede78a6",
+      "stats": {
+        "Integration": 2.71053,
+        "Ray handler (excl. embree)": 0.70526,
+        "MISSING TIME": 0.70216,
+        "Shade handler (excl. isect+shading)": 0.63282,
+        "Post integration (SOA->AOS/queuing)": 0.49099,
+        "Queuing logic (incl. sorting)": 0.46008,
+        "Init Intersection": 0.38678,
+        "Shading (excl. OIIO)": 0.29936,
+        "GPU intersection rays": 0.28609,
+        "TLS allocs (excl. RayStates)": 0.26003,
+        "Occl query handler (excl. embree)": 0.23043,
+        "GPU occlusion rays": 0.20099,
+        "RayState allocs": 0.19087,
+        "Volume integration": 0.14951,
+        "Compute ray derivatives": 0.11351,
+        "Render driver overhead": 0.06827,
+        "AOVs": 0.05908,
+        "Add sample handler": 0.05375,
+        "Primary ray generation": 0.0483,
+        "Render driver serial time": 0.00391,
+        "Embree occlusion rays": 2e-05,
+        "Add heat map handler": 0.0,
+        "Defer shade entries (WARNING SIGN!)": 0.0,
+        "Embree intersection rays": 0.0,
+        "Embree presence rays": 0.0,
+        "Embree volume rays": 0.0,
+        "Texturing (OIIO)": 0.0,
+        "Presence query handler (excl. embree)": 0.0,
+        "Ray sortkey gen": 0.0,
+        "Subsurface integration": 0.0,
+        "Unrecorded": 0.0,
+        "Adaptive tree rebuild": 0.0,
+        "Adaptive tree query": 0.0,
+        "Adaptive tree exclusive lock": 0.0,
+        "Misc A": 0.0,
+        "Misc B": 0.0,
+        "Misc C": 0.0,
+        "Misc D": 0.0,
+        "Misc E": 0.0,
+        "Misc F": 0.0,
+        "__ Render driver __": 0.0
+      },
+      "comparison": {
+        "status": "passed",
+        "dimensions": [
+          384,
+          216
+        ],
+        "channels": {
+          "R": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          },
+          "G": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          },
+          "B": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          },
+          "A": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          }
+        },
+        "exactly_different_pixels": 0,
+        "first_difference": null,
+        "largest_differences": [],
+        "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+        "metadata": {
+          "colorInteropID": "\"lin_rec709_scene\"",
+          "oiio:ColorSpace": "\"lin_rec709_scene\"",
+          "PixelAspectRatio": "1"
+        }
+      },
+      "mcrt": 8.052,
+      "integration": 2.71053
+    },
+    {
+      "round": 1,
+      "label": "capacity0",
+      "stats_sha256": "eb0f57c43b329f658c283f879b38e830f7e06e5740641e6c73821415ae5c59d3",
+      "stats": {
+        "Integration": 3.93545,
+        "Ray handler (excl. embree)": 0.70986,
+        "MISSING TIME": 0.68622,
+        "Shade handler (excl. isect+shading)": 0.67676,
+        "Post integration (SOA->AOS/queuing)": 0.52398,
+        "Queuing logic (incl. sorting)": 0.46468,
+        "GPU intersection rays": 0.41903,
+        "Init Intersection": 0.39052,
+        "Shading (excl. OIIO)": 0.31547,
+        "GPU occlusion rays": 0.28864,
+        "TLS allocs (excl. RayStates)": 0.26439,
+        "Occl query handler (excl. embree)": 0.24832,
+        "RayState allocs": 0.19364,
+        "Volume integration": 0.16528,
+        "Compute ray derivatives": 0.11575,
+        "Render driver overhead": 0.07828,
+        "AOVs": 0.05972,
+        "Add sample handler": 0.05733,
+        "Primary ray generation": 0.04859,
+        "Render driver serial time": 0.00402,
+        "Embree occlusion rays": 4e-05,
+        "Add heat map handler": 0.0,
+        "Defer shade entries (WARNING SIGN!)": 0.0,
+        "Embree intersection rays": 0.0,
+        "Embree presence rays": 0.0,
+        "Embree volume rays": 0.0,
+        "Texturing (OIIO)": 0.0,
+        "Presence query handler (excl. embree)": 0.0,
+        "Ray sortkey gen": 0.0,
+        "Subsurface integration": 0.0,
+        "Unrecorded": 0.0,
+        "Adaptive tree rebuild": 0.0,
+        "Adaptive tree query": 0.0,
+        "Adaptive tree exclusive lock": 0.0,
+        "Misc A": 0.0,
+        "Misc B": 0.0,
+        "Misc C": 0.0,
+        "Misc D": 0.0,
+        "Misc E": 0.0,
+        "Misc F": 0.0,
+        "__ Render driver __": 0.0
+      },
+      "comparison": {
+        "status": "passed",
+        "dimensions": [
+          384,
+          216
+        ],
+        "channels": {
+          "R": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          },
+          "G": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          },
+          "B": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          },
+          "A": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          }
+        },
+        "exactly_different_pixels": 0,
+        "first_difference": null,
+        "largest_differences": [],
+        "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+        "metadata": {
+          "colorInteropID": "\"lin_rec709_scene\"",
+          "oiio:ColorSpace": "\"lin_rec709_scene\"",
+          "PixelAspectRatio": "1"
+        }
+      },
+      "mcrt": 9.645,
+      "integration": 3.93545
+    },
+    {
+      "round": 1,
+      "label": "control",
+      "stats_sha256": "deecae0fa59843e82d2cfb5096366fffc106b6a2b5e52114ce1cdc525cac17ac",
+      "stats": {
+        "Integration": 4.45002,
+        "Ray handler (excl. embree)": 0.72428,
+        "MISSING TIME": 0.69134,
+        "Shade handler (excl. isect+shading)": 0.67995,
+        "Post integration (SOA->AOS/queuing)": 0.54696,
+        "Queuing logic (incl. sorting)": 0.47616,
+        "Init Intersection": 0.38673,
+        "Shading (excl. OIIO)": 0.30673,
+        "GPU intersection rays": 0.29944,
+        "TLS allocs (excl. RayStates)": 0.27034,
+        "Occl query handler (excl. embree)": 0.23964,
+        "GPU occlusion rays": 0.22355,
+        "RayState allocs": 0.19467,
+        "Volume integration": 0.16516,
+        "Compute ray derivatives": 0.1147,
+        "Render driver overhead": 0.07551,
+        "AOVs": 0.06105,
+        "Add sample handler": 0.05313,
+        "Primary ray generation": 0.04716,
+        "Render driver serial time": 0.00393,
+        "Embree occlusion rays": 2e-05,
+        "Add heat map handler": 0.0,
+        "Defer shade entries (WARNING SIGN!)": 0.0,
+        "Embree intersection rays": 0.0,
+        "Embree presence rays": 0.0,
+        "Embree volume rays": 0.0,
+        "Texturing (OIIO)": 0.0,
+        "Presence query handler (excl. embree)": 0.0,
+        "Ray sortkey gen": 0.0,
+        "Subsurface integration": 0.0,
+        "Unrecorded": 0.0,
+        "Adaptive tree rebuild": 0.0,
+        "Adaptive tree query": 0.0,
+        "Adaptive tree exclusive lock": 0.0,
+        "Misc A": 0.0,
+        "Misc B": 0.0,
+        "Misc C": 0.0,
+        "Misc D": 0.0,
+        "Misc E": 0.0,
+        "Misc F": 0.0,
+        "__ Render driver __": 0.0
+      },
+      "comparison": {
+        "status": "passed",
+        "dimensions": [
+          384,
+          216
+        ],
+        "channels": {
+          "R": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          },
+          "G": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          },
+          "B": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          },
+          "A": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          }
+        },
+        "exactly_different_pixels": 0,
+        "first_difference": null,
+        "largest_differences": [],
+        "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+        "metadata": {
+          "colorInteropID": "\"lin_rec709_scene\"",
+          "oiio:ColorSpace": "\"lin_rec709_scene\"",
+          "PixelAspectRatio": "1"
+        }
+      },
+      "mcrt": 10.01,
+      "integration": 4.45002
+    },
+    {
+      "round": 2,
+      "label": "disabled",
+      "stats_sha256": "7597c3627b360c8e40f60c62ebd5fd7e6edd263bb2ff027ebe4afd9d61706098",
+      "stats": {
+        "Integration": 2.79046,
+        "Ray handler (excl. embree)": 0.70695,
+        "MISSING TIME": 0.69597,
+        "Shade handler (excl. isect+shading)": 0.6907,
+        "Post integration (SOA->AOS/queuing)": 0.48939,
+        "Queuing logic (incl. sorting)": 0.46018,
+        "Init Intersection": 0.39017,
+        "Shading (excl. OIIO)": 0.36475,
+        "GPU intersection rays": 0.29506,
+        "TLS allocs (excl. RayStates)": 0.2848,
+        "Occl query handler (excl. embree)": 0.24386,
+        "GPU occlusion rays": 0.19862,
+        "RayState allocs": 0.19259,
+        "Volume integration": 0.15566,
+        "Compute ray derivatives": 0.11409,
+        "Render driver overhead": 0.06844,
+        "AOVs": 0.06236,
+        "Add sample handler": 0.05455,
+        "Primary ray generation": 0.0477,
+        "Render driver serial time": 0.00396,
+        "Embree occlusion rays": 2e-05,
+        "Add heat map handler": 0.0,
+        "Defer shade entries (WARNING SIGN!)": 0.0,
+        "Embree intersection rays": 0.0,
+        "Embree presence rays": 0.0,
+        "Embree volume rays": 0.0,
+        "Texturing (OIIO)": 0.0,
+        "Presence query handler (excl. embree)": 0.0,
+        "Ray sortkey gen": 0.0,
+        "Subsurface integration": 0.0,
+        "Unrecorded": 0.0,
+        "Adaptive tree rebuild": 0.0,
+        "Adaptive tree query": 0.0,
+        "Adaptive tree exclusive lock": 0.0,
+        "Misc A": 0.0,
+        "Misc B": 0.0,
+        "Misc C": 0.0,
+        "Misc D": 0.0,
+        "Misc E": 0.0,
+        "Misc F": 0.0,
+        "__ Render driver __": 0.0
+      },
+      "comparison": {
+        "status": "passed",
+        "dimensions": [
+          384,
+          216
+        ],
+        "channels": {
+          "R": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          },
+          "G": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          },
+          "B": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          },
+          "A": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          }
+        },
+        "exactly_different_pixels": 0,
+        "first_difference": null,
+        "largest_differences": [],
+        "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+        "metadata": {
+          "colorInteropID": "\"lin_rec709_scene\"",
+          "oiio:ColorSpace": "\"lin_rec709_scene\"",
+          "PixelAspectRatio": "1"
+        }
+      },
+      "mcrt": 8.31,
+      "integration": 2.79046
+    },
+    {
+      "round": 2,
+      "label": "native_chunk",
+      "stats_sha256": "e913374d93b61bf22e7cae7b50b7390d67c22b41c1e09edf0249c81f66ae2aa1",
+      "stats": {
+        "Integration": 2.78472,
+        "Ray handler (excl. embree)": 0.72402,
+        "MISSING TIME": 0.69603,
+        "Shade handler (excl. isect+shading)": 0.64898,
+        "Post integration (SOA->AOS/queuing)": 0.49573,
+        "Queuing logic (incl. sorting)": 0.46992,
+        "Init Intersection": 0.39566,
+        "Shading (excl. OIIO)": 0.30293,
+        "GPU intersection rays": 0.26524,
+        "TLS allocs (excl. RayStates)": 0.26123,
+        "Occl query handler (excl. embree)": 0.23841,
+        "RayState allocs": 0.19557,
+        "GPU occlusion rays": 0.18822,
+        "Volume integration": 0.15569,
+        "Compute ray derivatives": 0.11645,
+        "Render driver overhead": 0.06904,
+        "AOVs": 0.0614,
+        "Add sample handler": 0.05755,
+        "Primary ray generation": 0.04919,
+        "Render driver serial time": 0.00397,
+        "Embree occlusion rays": 2e-05,
+        "Add heat map handler": 0.0,
+        "Defer shade entries (WARNING SIGN!)": 0.0,
+        "Embree intersection rays": 0.0,
+        "Embree presence rays": 0.0,
+        "Embree volume rays": 0.0,
+        "Texturing (OIIO)": 0.0,
+        "Presence query handler (excl. embree)": 0.0,
+        "Ray sortkey gen": 0.0,
+        "Subsurface integration": 0.0,
+        "Unrecorded": 0.0,
+        "Adaptive tree rebuild": 0.0,
+        "Adaptive tree query": 0.0,
+        "Adaptive tree exclusive lock": 0.0,
+        "Misc A": 0.0,
+        "Misc B": 0.0,
+        "Misc C": 0.0,
+        "Misc D": 0.0,
+        "Misc E": 0.0,
+        "Misc F": 0.0,
+        "__ Render driver __": 0.0
+      },
+      "comparison": {
+        "status": "passed",
+        "dimensions": [
+          384,
+          216
+        ],
+        "channels": {
+          "R": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          },
+          "G": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          },
+          "B": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          },
+          "A": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          }
+        },
+        "exactly_different_pixels": 0,
+        "first_difference": null,
+        "largest_differences": [],
+        "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+        "metadata": {
+          "colorInteropID": "\"lin_rec709_scene\"",
+          "oiio:ColorSpace": "\"lin_rec709_scene\"",
+          "PixelAspectRatio": "1"
+        }
+      },
+      "mcrt": 8.179,
+      "integration": 2.78472
+    },
+    {
+      "round": 2,
+      "label": "capacity0",
+      "stats_sha256": "348f6912d1465bbd035343fcb988eb08c53b9716fde4c3c5a1d1f83b4fd6905e",
+      "stats": {
+        "Integration": 3.80318,
+        "MISSING TIME": 0.69997,
+        "Ray handler (excl. embree)": 0.6865,
+        "Shade handler (excl. isect+shading)": 0.63971,
+        "Post integration (SOA->AOS/queuing)": 0.50905,
+        "Queuing logic (incl. sorting)": 0.44866,
+        "GPU intersection rays": 0.39476,
+        "Init Intersection": 0.37436,
+        "Shading (excl. OIIO)": 0.28673,
+        "GPU occlusion rays": 0.26592,
+        "TLS allocs (excl. RayStates)": 0.25637,
+        "Occl query handler (excl. embree)": 0.21968,
+        "RayState allocs": 0.18625,
+        "Volume integration": 0.15382,
+        "Compute ray derivatives": 0.11233,
+        "Render driver overhead": 0.07531,
+        "AOVs": 0.0562,
+        "Add sample handler": 0.04904,
+        "Primary ray generation": 0.04766,
+        "Render driver serial time": 0.00411,
+        "Embree occlusion rays": 2e-05,
+        "Add heat map handler": 0.0,
+        "Defer shade entries (WARNING SIGN!)": 0.0,
+        "Embree intersection rays": 0.0,
+        "Embree presence rays": 0.0,
+        "Embree volume rays": 0.0,
+        "Texturing (OIIO)": 0.0,
+        "Presence query handler (excl. embree)": 0.0,
+        "Ray sortkey gen": 0.0,
+        "Subsurface integration": 0.0,
+        "Unrecorded": 0.0,
+        "Adaptive tree rebuild": 0.0,
+        "Adaptive tree query": 0.0,
+        "Adaptive tree exclusive lock": 0.0,
+        "Misc A": 0.0,
+        "Misc B": 0.0,
+        "Misc C": 0.0,
+        "Misc D": 0.0,
+        "Misc E": 0.0,
+        "Misc F": 0.0,
+        "__ Render driver __": 0.0
+      },
+      "comparison": {
+        "status": "passed",
+        "dimensions": [
+          384,
+          216
+        ],
+        "channels": {
+          "R": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          },
+          "G": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          },
+          "B": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          },
+          "A": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          }
+        },
+        "exactly_different_pixels": 0,
+        "first_difference": null,
+        "largest_differences": [],
+        "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+        "metadata": {
+          "colorInteropID": "\"lin_rec709_scene\"",
+          "oiio:ColorSpace": "\"lin_rec709_scene\"",
+          "PixelAspectRatio": "1"
+        }
+      },
+      "mcrt": 9.269,
+      "integration": 3.80318
+    },
+    {
+      "round": 2,
+      "label": "control",
+      "stats_sha256": "2c5fc2a47ac19c4ec04f27b67cadb1107556572b26d4befc40eec2fcb4760036",
+      "stats": {
+        "Integration": 4.44754,
+        "MISSING TIME": 0.71626,
+        "Ray handler (excl. embree)": 0.71019,
+        "Shade handler (excl. isect+shading)": 0.66357,
+        "Post integration (SOA->AOS/queuing)": 0.53905,
+        "Queuing logic (incl. sorting)": 0.46453,
+        "Init Intersection": 0.38013,
+        "GPU intersection rays": 0.36954,
+        "Shading (excl. OIIO)": 0.30162,
+        "GPU occlusion rays": 0.26846,
+        "TLS allocs (excl. RayStates)": 0.26511,
+        "Occl query handler (excl. embree)": 0.23665,
+        "RayState allocs": 0.1941,
+        "Volume integration": 0.15747,
+        "Compute ray derivatives": 0.1143,
+        "Render driver overhead": 0.07522,
+        "AOVs": 0.05974,
+        "Add sample handler": 0.05209,
+        "Primary ray generation": 0.04701,
+        "Render driver serial time": 0.00401,
+        "Embree occlusion rays": 2e-05,
+        "Add heat map handler": 0.0,
+        "Defer shade entries (WARNING SIGN!)": 0.0,
+        "Embree intersection rays": 0.0,
+        "Embree presence rays": 0.0,
+        "Embree volume rays": 0.0,
+        "Texturing (OIIO)": 0.0,
+        "Presence query handler (excl. embree)": 0.0,
+        "Ray sortkey gen": 0.0,
+        "Subsurface integration": 0.0,
+        "Unrecorded": 0.0,
+        "Adaptive tree rebuild": 0.0,
+        "Adaptive tree query": 0.0,
+        "Adaptive tree exclusive lock": 0.0,
+        "Misc A": 0.0,
+        "Misc B": 0.0,
+        "Misc C": 0.0,
+        "Misc D": 0.0,
+        "Misc E": 0.0,
+        "Misc F": 0.0,
+        "__ Render driver __": 0.0
+      },
+      "comparison": {
+        "status": "passed",
+        "dimensions": [
+          384,
+          216
+        ],
+        "channels": {
+          "R": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          },
+          "G": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          },
+          "B": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          },
+          "A": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          }
+        },
+        "exactly_different_pixels": 0,
+        "first_difference": null,
+        "largest_differences": [],
+        "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+        "metadata": {
+          "colorInteropID": "\"lin_rec709_scene\"",
+          "oiio:ColorSpace": "\"lin_rec709_scene\"",
+          "PixelAspectRatio": "1"
+        }
+      },
+      "mcrt": 10.066,
+      "integration": 4.44754
+    },
+    {
+      "round": 2,
+      "label": "reference",
+      "stats_sha256": "c31da8bd0463c68f73e73868ac2c63831473c70230a2e87d8fcf28888f92c523",
+      "stats": {
+        "Integration": 2.54632,
+        "MISSING TIME": 0.69586,
+        "Shade handler (excl. isect+shading)": 0.66212,
+        "Ray handler (excl. embree)": 0.6561,
+        "Post integration (SOA->AOS/queuing)": 0.46684,
+        "Queuing logic (incl. sorting)": 0.44048,
+        "Init Intersection": 0.36491,
+        "Shading (excl. OIIO)": 0.35818,
+        "GPU intersection rays": 0.27612,
+        "TLS allocs (excl. RayStates)": 0.25912,
+        "Occl query handler (excl. embree)": 0.22198,
+        "GPU occlusion rays": 0.19847,
+        "RayState allocs": 0.18289,
+        "Volume integration": 0.15487,
+        "Compute ray derivatives": 0.11085,
+        "Render driver overhead": 0.06513,
+        "AOVs": 0.05482,
+        "Add sample handler": 0.0479,
+        "Primary ray generation": 0.04525,
+        "Render driver serial time": 0.00397,
+        "Embree occlusion rays": 2e-05,
+        "Add heat map handler": 0.0,
+        "Defer shade entries (WARNING SIGN!)": 0.0,
+        "Embree intersection rays": 0.0,
+        "Embree presence rays": 0.0,
+        "Embree volume rays": 0.0,
+        "Texturing (OIIO)": 0.0,
+        "Presence query handler (excl. embree)": 0.0,
+        "Ray sortkey gen": 0.0,
+        "Subsurface integration": 0.0,
+        "Unrecorded": 0.0,
+        "Adaptive tree rebuild": 0.0,
+        "Adaptive tree query": 0.0,
+        "Adaptive tree exclusive lock": 0.0,
+        "Misc A": 0.0,
+        "Misc B": 0.0,
+        "Misc C": 0.0,
+        "Misc D": 0.0,
+        "Misc E": 0.0,
+        "Misc F": 0.0,
+        "__ Render driver __": 0.0
+      },
+      "comparison": {
+        "status": "passed",
+        "dimensions": [
+          384,
+          216
+        ],
+        "channels": {
+          "R": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          },
+          "G": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          },
+          "B": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          },
+          "A": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          }
+        },
+        "exactly_different_pixels": 0,
+        "first_difference": null,
+        "largest_differences": [],
+        "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+        "metadata": {
+          "colorInteropID": "\"lin_rec709_scene\"",
+          "oiio:ColorSpace": "\"lin_rec709_scene\"",
+          "PixelAspectRatio": "1"
+        }
+      },
+      "mcrt": 7.812,
+      "integration": 2.54632
+    },
+    {
+      "round": 3,
+      "label": "native_chunk",
+      "stats_sha256": "52b15abf9caa8630b24463c986aab330343976f689ad425b35781169f3ca84db",
+      "stats": {
+        "Integration": 2.60553,
+        "MISSING TIME": 0.68581,
+        "Ray handler (excl. embree)": 0.67515,
+        "Shade handler (excl. isect+shading)": 0.604,
+        "Post integration (SOA->AOS/queuing)": 0.47214,
+        "Queuing logic (incl. sorting)": 0.43747,
+        "Init Intersection": 0.37694,
+        "GPU intersection rays": 0.28722,
+        "Shading (excl. OIIO)": 0.28329,
+        "TLS allocs (excl. RayStates)": 0.25086,
+        "Occl query handler (excl. embree)": 0.22652,
+        "GPU occlusion rays": 0.2019,
+        "RayState allocs": 0.18367,
+        "Volume integration": 0.15066,
+        "Compute ray derivatives": 0.11111,
+        "Render driver overhead": 0.06468,
+        "AOVs": 0.0569,
+        "Primary ray generation": 0.05203,
+        "Add sample handler": 0.04853,
+        "Render driver serial time": 0.00393,
+        "Embree occlusion rays": 2e-05,
+        "Add heat map handler": 0.0,
+        "Defer shade entries (WARNING SIGN!)": 0.0,
+        "Embree intersection rays": 0.0,
+        "Embree presence rays": 0.0,
+        "Embree volume rays": 0.0,
+        "Texturing (OIIO)": 0.0,
+        "Presence query handler (excl. embree)": 0.0,
+        "Ray sortkey gen": 0.0,
+        "Subsurface integration": 0.0,
+        "Unrecorded": 0.0,
+        "Adaptive tree rebuild": 0.0,
+        "Adaptive tree query": 0.0,
+        "Adaptive tree exclusive lock": 0.0,
+        "Misc A": 0.0,
+        "Misc B": 0.0,
+        "Misc C": 0.0,
+        "Misc D": 0.0,
+        "Misc E": 0.0,
+        "Misc F": 0.0,
+        "__ Render driver __": 0.0
+      },
+      "comparison": {
+        "status": "passed",
+        "dimensions": [
+          384,
+          216
+        ],
+        "channels": {
+          "R": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          },
+          "G": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          },
+          "B": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          },
+          "A": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          }
+        },
+        "exactly_different_pixels": 0,
+        "first_difference": null,
+        "largest_differences": [],
+        "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+        "metadata": {
+          "colorInteropID": "\"lin_rec709_scene\"",
+          "oiio:ColorSpace": "\"lin_rec709_scene\"",
+          "PixelAspectRatio": "1"
+        }
+      },
+      "mcrt": 7.778,
+      "integration": 2.60553
+    },
+    {
+      "round": 3,
+      "label": "capacity0",
+      "stats_sha256": "79e9b2cd4703fc59d53371342fc568c1f4b23e50fed4429ebf73f98c2aeeabb2",
+      "stats": {
+        "Integration": 3.78175,
+        "MISSING TIME": 0.68111,
+        "Ray handler (excl. embree)": 0.67639,
+        "Shade handler (excl. isect+shading)": 0.63923,
+        "Post integration (SOA->AOS/queuing)": 0.50139,
+        "Queuing logic (incl. sorting)": 0.44781,
+        "Init Intersection": 0.37037,
+        "GPU intersection rays": 0.31123,
+        "Shading (excl. OIIO)": 0.29077,
+        "TLS allocs (excl. RayStates)": 0.25485,
+        "Occl query handler (excl. embree)": 0.23281,
+        "GPU occlusion rays": 0.21734,
+        "RayState allocs": 0.18579,
+        "Volume integration": 0.15215,
+        "Compute ray derivatives": 0.1103,
+        "Render driver overhead": 0.07344,
+        "AOVs": 0.05879,
+        "Add sample handler": 0.04894,
+        "Primary ray generation": 0.04614,
+        "Render driver serial time": 0.00391,
+        "Embree occlusion rays": 2e-05,
+        "Add heat map handler": 0.0,
+        "Defer shade entries (WARNING SIGN!)": 0.0,
+        "Embree intersection rays": 0.0,
+        "Embree presence rays": 0.0,
+        "Embree volume rays": 0.0,
+        "Texturing (OIIO)": 0.0,
+        "Presence query handler (excl. embree)": 0.0,
+        "Ray sortkey gen": 0.0,
+        "Subsurface integration": 0.0,
+        "Unrecorded": 0.0,
+        "Adaptive tree rebuild": 0.0,
+        "Adaptive tree query": 0.0,
+        "Adaptive tree exclusive lock": 0.0,
+        "Misc A": 0.0,
+        "Misc B": 0.0,
+        "Misc C": 0.0,
+        "Misc D": 0.0,
+        "Misc E": 0.0,
+        "Misc F": 0.0,
+        "__ Render driver __": 0.0
+      },
+      "comparison": {
+        "status": "passed",
+        "dimensions": [
+          384,
+          216
+        ],
+        "channels": {
+          "R": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          },
+          "G": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          },
+          "B": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          },
+          "A": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          }
+        },
+        "exactly_different_pixels": 0,
+        "first_difference": null,
+        "largest_differences": [],
+        "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+        "metadata": {
+          "colorInteropID": "\"lin_rec709_scene\"",
+          "oiio:ColorSpace": "\"lin_rec709_scene\"",
+          "PixelAspectRatio": "1"
+        }
+      },
+      "mcrt": 9.084,
+      "integration": 3.78175
+    },
+    {
+      "round": 3,
+      "label": "control",
+      "stats_sha256": "cac8f4a80c86b67dd154ae3cd982ef51c4958ea84ab5787bee3e52e94081e8a1",
+      "stats": {
+        "Integration": 4.39125,
+        "MISSING TIME": 0.70512,
+        "Ray handler (excl. embree)": 0.69143,
+        "Shade handler (excl. isect+shading)": 0.63897,
+        "Post integration (SOA->AOS/queuing)": 0.52965,
+        "Queuing logic (incl. sorting)": 0.46129,
+        "Init Intersection": 0.3657,
+        "GPU intersection rays": 0.34517,
+        "Shading (excl. OIIO)": 0.29502,
+        "TLS allocs (excl. RayStates)": 0.26432,
+        "GPU occlusion rays": 0.25735,
+        "Occl query handler (excl. embree)": 0.22925,
+        "RayState allocs": 0.18976,
+        "Volume integration": 0.15348,
+        "Compute ray derivatives": 0.11028,
+        "Render driver overhead": 0.078,
+        "AOVs": 0.06054,
+        "Add sample handler": 0.05061,
+        "Primary ray generation": 0.05048,
+        "Render driver serial time": 0.00398,
+        "Embree occlusion rays": 2e-05,
+        "Add heat map handler": 0.0,
+        "Defer shade entries (WARNING SIGN!)": 0.0,
+        "Embree intersection rays": 0.0,
+        "Embree presence rays": 0.0,
+        "Embree volume rays": 0.0,
+        "Texturing (OIIO)": 0.0,
+        "Presence query handler (excl. embree)": 0.0,
+        "Ray sortkey gen": 0.0,
+        "Subsurface integration": 0.0,
+        "Unrecorded": 0.0,
+        "Adaptive tree rebuild": 0.0,
+        "Adaptive tree query": 0.0,
+        "Adaptive tree exclusive lock": 0.0,
+        "Misc A": 0.0,
+        "Misc B": 0.0,
+        "Misc C": 0.0,
+        "Misc D": 0.0,
+        "Misc E": 0.0,
+        "Misc F": 0.0,
+        "__ Render driver __": 0.0
+      },
+      "comparison": {
+        "status": "passed",
+        "dimensions": [
+          384,
+          216
+        ],
+        "channels": {
+          "R": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          },
+          "G": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          },
+          "B": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          },
+          "A": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          }
+        },
+        "exactly_different_pixels": 0,
+        "first_difference": null,
+        "largest_differences": [],
+        "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+        "metadata": {
+          "colorInteropID": "\"lin_rec709_scene\"",
+          "oiio:ColorSpace": "\"lin_rec709_scene\"",
+          "PixelAspectRatio": "1"
+        }
+      },
+      "mcrt": 9.871,
+      "integration": 4.39125
+    },
+    {
+      "round": 3,
+      "label": "reference",
+      "stats_sha256": "23e1002c084ca01a7b5fbf6129a64a4606a1ac22ea516500976df566827d1031",
+      "stats": {
+        "Integration": 2.5515,
+        "MISSING TIME": 0.70095,
+        "Ray handler (excl. embree)": 0.66163,
+        "Shade handler (excl. isect+shading)": 0.65773,
+        "Post integration (SOA->AOS/queuing)": 0.4675,
+        "Queuing logic (incl. sorting)": 0.44375,
+        "Init Intersection": 0.37061,
+        "Shading (excl. OIIO)": 0.35464,
+        "TLS allocs (excl. RayStates)": 0.25881,
+        "GPU intersection rays": 0.25441,
+        "Occl query handler (excl. embree)": 0.22541,
+        "RayState allocs": 0.183,
+        "GPU occlusion rays": 0.17752,
+        "Volume integration": 0.15159,
+        "Compute ray derivatives": 0.11044,
+        "Render driver overhead": 0.06359,
+        "AOVs": 0.05666,
+        "Add sample handler": 0.05011,
+        "Primary ray generation": 0.04604,
+        "Render driver serial time": 0.00395,
+        "Embree occlusion rays": 2e-05,
+        "Add heat map handler": 0.0,
+        "Defer shade entries (WARNING SIGN!)": 0.0,
+        "Embree intersection rays": 0.0,
+        "Embree presence rays": 0.0,
+        "Embree volume rays": 0.0,
+        "Texturing (OIIO)": 0.0,
+        "Presence query handler (excl. embree)": 0.0,
+        "Ray sortkey gen": 0.0,
+        "Subsurface integration": 0.0,
+        "Unrecorded": 0.0,
+        "Adaptive tree rebuild": 0.0,
+        "Adaptive tree query": 0.0,
+        "Adaptive tree exclusive lock": 0.0,
+        "Misc A": 0.0,
+        "Misc B": 0.0,
+        "Misc C": 0.0,
+        "Misc D": 0.0,
+        "Misc E": 0.0,
+        "Misc F": 0.0,
+        "__ Render driver __": 0.0
+      },
+      "comparison": {
+        "status": "passed",
+        "dimensions": [
+          384,
+          216
+        ],
+        "channels": {
+          "R": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          },
+          "G": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          },
+          "B": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          },
+          "A": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          }
+        },
+        "exactly_different_pixels": 0,
+        "first_difference": null,
+        "largest_differences": [],
+        "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+        "metadata": {
+          "colorInteropID": "\"lin_rec709_scene\"",
+          "oiio:ColorSpace": "\"lin_rec709_scene\"",
+          "PixelAspectRatio": "1"
+        }
+      },
+      "mcrt": 7.789,
+      "integration": 2.5515
+    },
+    {
+      "round": 3,
+      "label": "disabled",
+      "stats_sha256": "366675445ac2ca13ab18ad6a0e76cf2a13531189ce3cdb3d1d0d4c5d389658a8",
+      "stats": {
+        "Integration": 2.7799,
+        "Ray handler (excl. embree)": 0.70313,
+        "Shade handler (excl. isect+shading)": 0.69733,
+        "MISSING TIME": 0.69661,
+        "Post integration (SOA->AOS/queuing)": 0.48704,
+        "Queuing logic (incl. sorting)": 0.4549,
+        "Init Intersection": 0.39926,
+        "Shading (excl. OIIO)": 0.36529,
+        "GPU intersection rays": 0.338,
+        "GPU occlusion rays": 0.30928,
+        "TLS allocs (excl. RayStates)": 0.25765,
+        "Occl query handler (excl. embree)": 0.23871,
+        "RayState allocs": 0.19003,
+        "Volume integration": 0.15142,
+        "Compute ray derivatives": 0.11561,
+        "Render driver overhead": 0.06414,
+        "AOVs": 0.06003,
+        "Add sample handler": 0.051,
+        "Primary ray generation": 0.04682,
+        "Render driver serial time": 0.00418,
+        "Embree occlusion rays": 2e-05,
+        "Add heat map handler": 0.0,
+        "Defer shade entries (WARNING SIGN!)": 0.0,
+        "Embree intersection rays": 0.0,
+        "Embree presence rays": 0.0,
+        "Embree volume rays": 0.0,
+        "Texturing (OIIO)": 0.0,
+        "Presence query handler (excl. embree)": 0.0,
+        "Ray sortkey gen": 0.0,
+        "Subsurface integration": 0.0,
+        "Unrecorded": 0.0,
+        "Adaptive tree rebuild": 0.0,
+        "Adaptive tree query": 0.0,
+        "Adaptive tree exclusive lock": 0.0,
+        "Misc A": 0.0,
+        "Misc B": 0.0,
+        "Misc C": 0.0,
+        "Misc D": 0.0,
+        "Misc E": 0.0,
+        "Misc F": 0.0,
+        "__ Render driver __": 0.0
+      },
+      "comparison": {
+        "status": "passed",
+        "dimensions": [
+          384,
+          216
+        ],
+        "channels": {
+          "R": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          },
+          "G": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          },
+          "B": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          },
+          "A": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 82944
+          }
+        },
+        "exactly_different_pixels": 0,
+        "first_difference": null,
+        "largest_differences": [],
+        "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+        "metadata": {
+          "colorInteropID": "\"lin_rec709_scene\"",
+          "oiio:ColorSpace": "\"lin_rec709_scene\"",
+          "PixelAspectRatio": "1"
+        }
+      },
+      "mcrt": 8.41,
+      "integration": 2.7799
+    }
+  ],
+  "stage_medians": {
+    "reference": {
+      "Integration": 2.5515,
+      "Ray handler (excl. embree)": 0.66163,
+      "Shade handler (excl. isect+shading)": 0.66212,
+      "MISSING TIME": 0.69586,
+      "Post integration (SOA->AOS/queuing)": 0.4675,
+      "Queuing logic (incl. sorting)": 0.44375,
+      "Init Intersection": 0.37061,
+      "Shading (excl. OIIO)": 0.35818,
+      "GPU intersection rays": 0.27612,
+      "TLS allocs (excl. RayStates)": 0.25912,
+      "GPU occlusion rays": 0.19847,
+      "Occl query handler (excl. embree)": 0.22541,
+      "RayState allocs": 0.183,
+      "Volume integration": 0.15487,
+      "Compute ray derivatives": 0.11085,
+      "Render driver overhead": 0.06513,
+      "AOVs": 0.05666,
+      "Add sample handler": 0.05011,
+      "Primary ray generation": 0.04604,
+      "Render driver serial time": 0.00395,
+      "Embree occlusion rays": 2e-05,
+      "Add heat map handler": 0.0,
+      "Defer shade entries (WARNING SIGN!)": 0.0,
+      "Embree intersection rays": 0.0,
+      "Embree presence rays": 0.0,
+      "Embree volume rays": 0.0,
+      "Texturing (OIIO)": 0.0,
+      "Presence query handler (excl. embree)": 0.0,
+      "Ray sortkey gen": 0.0,
+      "Subsurface integration": 0.0,
+      "Unrecorded": 0.0,
+      "Adaptive tree rebuild": 0.0,
+      "Adaptive tree query": 0.0,
+      "Adaptive tree exclusive lock": 0.0,
+      "Misc A": 0.0,
+      "Misc B": 0.0,
+      "Misc C": 0.0,
+      "Misc D": 0.0,
+      "Misc E": 0.0,
+      "Misc F": 0.0,
+      "__ Render driver __": 0.0
+    },
+    "disabled": {
+      "Integration": 2.79046,
+      "Ray handler (excl. embree)": 0.70695,
+      "Shade handler (excl. isect+shading)": 0.69733,
+      "MISSING TIME": 0.69661,
+      "Post integration (SOA->AOS/queuing)": 0.48939,
+      "Queuing logic (incl. sorting)": 0.46018,
+      "Init Intersection": 0.39926,
+      "Shading (excl. OIIO)": 0.36529,
+      "GPU intersection rays": 0.31459,
+      "TLS allocs (excl. RayStates)": 0.26388,
+      "Occl query handler (excl. embree)": 0.24386,
+      "GPU occlusion rays": 0.22743,
+      "RayState allocs": 0.19115,
+      "Volume integration": 0.15479,
+      "Compute ray derivatives": 0.11561,
+      "Render driver overhead": 0.06807,
+      "AOVs": 0.06202,
+      "Add sample handler": 0.05455,
+      "Primary ray generation": 0.04763,
+      "Render driver serial time": 0.00418,
+      "Embree occlusion rays": 2e-05,
+      "Add heat map handler": 0.0,
+      "Defer shade entries (WARNING SIGN!)": 0.0,
+      "Embree intersection rays": 0.0,
+      "Embree presence rays": 0.0,
+      "Embree volume rays": 0.0,
+      "Texturing (OIIO)": 0.0,
+      "Presence query handler (excl. embree)": 0.0,
+      "Ray sortkey gen": 0.0,
+      "Subsurface integration": 0.0,
+      "Unrecorded": 0.0,
+      "Adaptive tree rebuild": 0.0,
+      "Adaptive tree query": 0.0,
+      "Adaptive tree exclusive lock": 0.0,
+      "Misc A": 0.0,
+      "Misc B": 0.0,
+      "Misc C": 0.0,
+      "Misc D": 0.0,
+      "Misc E": 0.0,
+      "Misc F": 0.0,
+      "__ Render driver __": 0.0
+    },
+    "native_chunk": {
+      "Integration": 2.71053,
+      "Ray handler (excl. embree)": 0.70526,
+      "MISSING TIME": 0.69603,
+      "Shade handler (excl. isect+shading)": 0.63282,
+      "Post integration (SOA->AOS/queuing)": 0.49099,
+      "Queuing logic (incl. sorting)": 0.46008,
+      "Init Intersection": 0.38678,
+      "Shading (excl. OIIO)": 0.29936,
+      "GPU intersection rays": 0.28609,
+      "TLS allocs (excl. RayStates)": 0.26003,
+      "Occl query handler (excl. embree)": 0.23043,
+      "GPU occlusion rays": 0.20099,
+      "RayState allocs": 0.19087,
+      "Volume integration": 0.15066,
+      "Compute ray derivatives": 0.11351,
+      "Render driver overhead": 0.06827,
+      "AOVs": 0.05908,
+      "Add sample handler": 0.05375,
+      "Primary ray generation": 0.04919,
+      "Render driver serial time": 0.00393,
+      "Embree occlusion rays": 2e-05,
+      "Add heat map handler": 0.0,
+      "Defer shade entries (WARNING SIGN!)": 0.0,
+      "Embree intersection rays": 0.0,
+      "Embree presence rays": 0.0,
+      "Embree volume rays": 0.0,
+      "Texturing (OIIO)": 0.0,
+      "Presence query handler (excl. embree)": 0.0,
+      "Ray sortkey gen": 0.0,
+      "Subsurface integration": 0.0,
+      "Unrecorded": 0.0,
+      "Adaptive tree rebuild": 0.0,
+      "Adaptive tree query": 0.0,
+      "Adaptive tree exclusive lock": 0.0,
+      "Misc A": 0.0,
+      "Misc B": 0.0,
+      "Misc C": 0.0,
+      "Misc D": 0.0,
+      "Misc E": 0.0,
+      "Misc F": 0.0,
+      "__ Render driver __": 0.0
+    },
+    "capacity0": {
+      "Integration": 3.80318,
+      "Ray handler (excl. embree)": 0.6865,
+      "MISSING TIME": 0.68622,
+      "Shade handler (excl. isect+shading)": 0.63971,
+      "Post integration (SOA->AOS/queuing)": 0.50905,
+      "Queuing logic (incl. sorting)": 0.44866,
+      "GPU intersection rays": 0.39476,
+      "Init Intersection": 0.37436,
+      "Shading (excl. OIIO)": 0.29077,
+      "GPU occlusion rays": 0.26592,
+      "TLS allocs (excl. RayStates)": 0.25637,
+      "Occl query handler (excl. embree)": 0.23281,
+      "RayState allocs": 0.18625,
+      "Volume integration": 0.15382,
+      "Compute ray derivatives": 0.11233,
+      "Render driver overhead": 0.07531,
+      "AOVs": 0.05879,
+      "Add sample handler": 0.04904,
+      "Primary ray generation": 0.04766,
+      "Render driver serial time": 0.00402,
+      "Embree occlusion rays": 2e-05,
+      "Add heat map handler": 0.0,
+      "Defer shade entries (WARNING SIGN!)": 0.0,
+      "Embree intersection rays": 0.0,
+      "Embree presence rays": 0.0,
+      "Embree volume rays": 0.0,
+      "Texturing (OIIO)": 0.0,
+      "Presence query handler (excl. embree)": 0.0,
+      "Ray sortkey gen": 0.0,
+      "Subsurface integration": 0.0,
+      "Unrecorded": 0.0,
+      "Adaptive tree rebuild": 0.0,
+      "Adaptive tree query": 0.0,
+      "Adaptive tree exclusive lock": 0.0,
+      "Misc A": 0.0,
+      "Misc B": 0.0,
+      "Misc C": 0.0,
+      "Misc D": 0.0,
+      "Misc E": 0.0,
+      "Misc F": 0.0,
+      "__ Render driver __": 0.0
+    },
+    "control": {
+      "Integration": 4.44754,
+      "Ray handler (excl. embree)": 0.71019,
+      "MISSING TIME": 0.70512,
+      "Shade handler (excl. isect+shading)": 0.66357,
+      "Post integration (SOA->AOS/queuing)": 0.53905,
+      "Queuing logic (incl. sorting)": 0.46453,
+      "Init Intersection": 0.38013,
+      "Shading (excl. OIIO)": 0.30162,
+      "GPU intersection rays": 0.34517,
+      "TLS allocs (excl. RayStates)": 0.26511,
+      "Occl query handler (excl. embree)": 0.23665,
+      "GPU occlusion rays": 0.25735,
+      "RayState allocs": 0.1941,
+      "Volume integration": 0.15747,
+      "Compute ray derivatives": 0.1143,
+      "Render driver overhead": 0.07551,
+      "AOVs": 0.06054,
+      "Add sample handler": 0.05209,
+      "Primary ray generation": 0.04716,
+      "Render driver serial time": 0.00398,
+      "Embree occlusion rays": 2e-05,
+      "Add heat map handler": 0.0,
+      "Defer shade entries (WARNING SIGN!)": 0.0,
+      "Embree intersection rays": 0.0,
+      "Embree presence rays": 0.0,
+      "Embree volume rays": 0.0,
+      "Texturing (OIIO)": 0.0,
+      "Presence query handler (excl. embree)": 0.0,
+      "Ray sortkey gen": 0.0,
+      "Subsurface integration": 0.0,
+      "Unrecorded": 0.0,
+      "Adaptive tree rebuild": 0.0,
+      "Adaptive tree query": 0.0,
+      "Adaptive tree exclusive lock": 0.0,
+      "Misc A": 0.0,
+      "Misc B": 0.0,
+      "Misc C": 0.0,
+      "Misc D": 0.0,
+      "Misc E": 0.0,
+      "Misc F": 0.0,
+      "__ Render driver __": 0.0
+    }
+  },
+  "paired_comparisons": {
+    "disabled_minus_reference": {
+      "mcrt": {
+        "per_round_seconds": [
+          0.1750000000000007,
+          0.4980000000000002,
+          0.6210000000000004
+        ],
+        "median_seconds": 0.4980000000000002
+      },
+      "integration": {
+        "per_round_seconds": [
+          0.15560000000000018,
+          0.2441399999999998,
+          0.22840000000000016
+        ],
+        "median_seconds": 0.22840000000000016
+      }
+    },
+    "native_chunk_minus_disabled": {
+      "mcrt": {
+        "per_round_seconds": [
+          -0.3570000000000011,
+          -0.13100000000000023,
+          -0.6320000000000006
+        ],
+        "median_seconds": -0.3570000000000011
+      },
+      "integration": {
+        "per_round_seconds": [
+          -0.09026000000000023,
+          -0.005739999999999856,
+          -0.17437000000000014
+        ],
+        "median_seconds": -0.09026000000000023
+      }
+    },
+    "native_chunk_minus_reference": {
+      "mcrt": {
+        "per_round_seconds": [
+          -0.18200000000000038,
+          0.367,
+          -0.01100000000000012
+        ],
+        "median_seconds": -0.01100000000000012
+      },
+      "integration": {
+        "per_round_seconds": [
+          0.06533999999999995,
+          0.23839999999999995,
+          0.05403000000000002
+        ],
+        "median_seconds": 0.06533999999999995
+      }
+    },
+    "capacity0_minus_native_chunk": {
+      "mcrt": {
+        "per_round_seconds": [
+          1.593,
+          1.0899999999999999,
+          1.306
+        ],
+        "median_seconds": 1.306
+      },
+      "integration": {
+        "per_round_seconds": [
+          1.22492,
+          1.0184599999999997,
+          1.1762200000000003
+        ],
+        "median_seconds": 1.1762200000000003
+      }
+    },
+    "control_minus_capacity0": {
+      "mcrt": {
+        "per_round_seconds": [
+          0.3650000000000002,
+          0.7970000000000006,
+          0.7870000000000008
+        ],
+        "median_seconds": 0.7870000000000008
+      },
+      "integration": {
+        "per_round_seconds": [
+          0.5145700000000004,
+          0.6443600000000003,
+          0.6095000000000002
+        ],
+        "median_seconds": 0.6095000000000002
+      }
+    },
+    "control_minus_native_chunk": {
+      "mcrt": {
+        "per_round_seconds": [
+          1.9580000000000002,
+          1.8870000000000005,
+          2.093000000000001
+        ],
+        "median_seconds": 1.9580000000000002
+      },
+      "integration": {
+        "per_round_seconds": [
+          1.7394900000000004,
+          1.66282,
+          1.7857200000000004
+        ],
+        "median_seconds": 1.7394900000000004
+      }
+    }
+  },
+  "exact_images": 20,
+  "limitations": [
+    "One native worker and one reflection/transmission fixture; not production scaling.",
+    "No runtime change: same qualified timeline-v3 binary, tracing disabled.",
+    "Disabled32 versus original includes compiled adapter scaffolding and prior native patch differences.",
+    "Capacity-zero retains preparation/replay and adds CPU fallback; it is not pure dispatch or transfer cost.",
+    "Differences are configuration comparisons, not additive nonoverlapping phase costs.",
+    "Process checks before/after renders cannot exclude brief intervening activity."
+  ]
+}

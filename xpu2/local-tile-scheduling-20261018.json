@@ -1,0 +1,634 @@
+{
+  "status": "passed",
+  "native_render_test": false,
+  "gpu_execution_test": false,
+  "scope": "Coordinator model, invented work costs, Python claim overhead; no rendering speed claim",
+  "source_hashes": {
+    "tools\\xpu2_local_tile_probe.py": "465d580cae1ff0f450e275b09c3e5941a757d6ba9904495b12356813dcfb877d",
+    "xpu2\\local_tile_schedule.py": "ef0274a5df1bab9db82040c26bf0da62fecdee405e75d5b0299c6d071b8077ea",
+    "tests\\test_xpu2_local_tile_schedule.py": "280125c6b14757d7216619fd9fff977b6518d6c24528290266ddfb6934c5fbcf"
+  },
+  "runs": [
+    {
+      "policy": "shared",
+      "workload": "uniform",
+      "batches": 2048,
+      "synthetic_completion_cost_units": 1368.0,
+      "worker_batches": {
+        "cpu0": 342,
+        "cpu1": 342,
+        "gpu0": 1364
+      },
+      "synthetic_worker_busy_fraction": {
+        "cpu0": 1.0,
+        "cpu1": 1.0,
+        "gpu0": 0.9970760233918129
+      },
+      "tile_switches": 765,
+      "candidate_checks": 4096,
+      "tile_probes": 0,
+      "local_claims": 0,
+      "python_claim_nanoseconds": 7120700,
+      "keyed_payload_sha256": "93b6d67e5070fa6181bb10dadc92d4486c0f946330214d777dd59bc4b1f5eae2"
+    },
+    {
+      "policy": "neighbor",
+      "workload": "uniform",
+      "batches": 2048,
+      "synthetic_completion_cost_units": 1368.0,
+      "worker_batches": {
+        "cpu0": 342,
+        "cpu1": 342,
+        "gpu0": 1364
+      },
+      "synthetic_worker_busy_fraction": {
+        "cpu0": 1.0,
+        "cpu1": 1.0,
+        "gpu0": 0.9970760233918129
+      },
+      "tile_switches": 765,
+      "candidate_checks": 8192,
+      "tile_probes": 3332,
+      "local_claims": 2045,
+      "python_claim_nanoseconds": 10440900,
+      "keyed_payload_sha256": "93b6d67e5070fa6181bb10dadc92d4486c0f946330214d777dd59bc4b1f5eae2"
+    },
+    {
+      "policy": "shared_reserved",
+      "workload": "uniform",
+      "batches": 2048,
+      "synthetic_completion_cost_units": 1368.0,
+      "worker_batches": {
+        "cpu0": 342,
+        "cpu1": 342,
+        "gpu0": 1364
+      },
+      "synthetic_worker_busy_fraction": {
+        "cpu0": 1.0,
+        "cpu1": 1.0,
+        "gpu0": 0.9970760233918129
+      },
+      "tile_switches": 765,
+      "candidate_checks": 4096,
+      "tile_probes": 0,
+      "local_claims": 0,
+      "python_claim_nanoseconds": 8845600,
+      "keyed_payload_sha256": "93b6d67e5070fa6181bb10dadc92d4486c0f946330214d777dd59bc4b1f5eae2"
+    },
+    {
+      "policy": "neighbor_reserved",
+      "workload": "uniform",
+      "batches": 2048,
+      "synthetic_completion_cost_units": 1368.0,
+      "worker_batches": {
+        "cpu0": 342,
+        "cpu1": 342,
+        "gpu0": 1364
+      },
+      "synthetic_worker_busy_fraction": {
+        "cpu0": 1.0,
+        "cpu1": 1.0,
+        "gpu0": 0.9970760233918129
+      },
+      "tile_switches": 765,
+      "candidate_checks": 8192,
+      "tile_probes": 3332,
+      "local_claims": 2045,
+      "python_claim_nanoseconds": 9247300,
+      "keyed_payload_sha256": "93b6d67e5070fa6181bb10dadc92d4486c0f946330214d777dd59bc4b1f5eae2"
+    },
+    {
+      "policy": "shared",
+      "workload": "mixed",
+      "batches": 2048,
+      "synthetic_completion_cost_units": 1372.0,
+      "worker_batches": {
+        "cpu0": 343,
+        "cpu1": 343,
+        "gpu0": 1362
+      },
+      "synthetic_worker_busy_fraction": {
+        "cpu0": 1.0,
+        "cpu1": 1.0,
+        "gpu0": 0.9927113702623906
+      },
+      "tile_switches": 447,
+      "candidate_checks": 3584,
+      "tile_probes": 0,
+      "local_claims": 0,
+      "python_claim_nanoseconds": 6292000,
+      "keyed_payload_sha256": "93b6d67e5070fa6181bb10dadc92d4486c0f946330214d777dd59bc4b1f5eae2"
+    },
+    {
+      "policy": "neighbor",
+      "workload": "mixed",
+      "batches": 2048,
+      "synthetic_completion_cost_units": 1632.0,
+      "worker_batches": {
+        "cpu0": 408,
+        "cpu1": 408,
+        "gpu0": 1232
+      },
+      "synthetic_worker_busy_fraction": {
+        "cpu0": 1.0,
+        "cpu1": 1.0,
+        "gpu0": 0.7549019607843137
+      },
+      "tile_switches": 378,
+      "candidate_checks": 7064,
+      "tile_probes": 3551,
+      "local_claims": 1991,
+      "python_claim_nanoseconds": 10549800,
+      "keyed_payload_sha256": "93b6d67e5070fa6181bb10dadc92d4486c0f946330214d777dd59bc4b1f5eae2"
+    },
+    {
+      "policy": "shared_reserved",
+      "workload": "mixed",
+      "batches": 2048,
+      "synthetic_completion_cost_units": 1368.0,
+      "worker_batches": {
+        "cpu0": 342,
+        "cpu1": 342,
+        "gpu0": 1364
+      },
+      "synthetic_worker_busy_fraction": {
+        "cpu0": 1.0,
+        "cpu1": 1.0,
+        "gpu0": 0.9970760233918129
+      },
+      "tile_switches": 445,
+      "candidate_checks": 4096,
+      "tile_probes": 0,
+      "local_claims": 0,
+      "python_claim_nanoseconds": 6875300,
+      "keyed_payload_sha256": "93b6d67e5070fa6181bb10dadc92d4486c0f946330214d777dd59bc4b1f5eae2"
+    },
+    {
+      "policy": "neighbor_reserved",
+      "workload": "mixed",
+      "batches": 2048,
+      "synthetic_completion_cost_units": 1368.0,
+      "worker_batches": {
+        "cpu0": 342,
+        "cpu1": 342,
+        "gpu0": 1364
+      },
+      "synthetic_worker_busy_fraction": {
+        "cpu0": 1.0,
+        "cpu1": 1.0,
+        "gpu0": 0.9970760233918129
+      },
+      "tile_switches": 390,
+      "candidate_checks": 6352,
+      "tile_probes": 2639,
+      "local_claims": 1498,
+      "python_claim_nanoseconds": 9559300,
+      "keyed_payload_sha256": "93b6d67e5070fa6181bb10dadc92d4486c0f946330214d777dd59bc4b1f5eae2"
+    },
+    {
+      "policy": "shared",
+      "workload": "irregular",
+      "batches": 2048,
+      "synthetic_completion_cost_units": 27260.0,
+      "worker_batches": {
+        "cpu0": 337,
+        "cpu1": 359,
+        "gpu0": 1352
+      },
+      "synthetic_worker_busy_fraction": {
+        "cpu0": 1.0,
+        "cpu1": 0.9998532648569333,
+        "gpu0": 0.9999266324284666
+      },
+      "tile_switches": 723,
+      "candidate_checks": 4096,
+      "tile_probes": 0,
+      "local_claims": 0,
+      "python_claim_nanoseconds": 6087900,
+      "keyed_payload_sha256": "93b6d67e5070fa6181bb10dadc92d4486c0f946330214d777dd59bc4b1f5eae2"
+    },
+    {
+      "policy": "neighbor",
+      "workload": "irregular",
+      "batches": 2048,
+      "synthetic_completion_cost_units": 27276.0,
+      "worker_batches": {
+        "cpu0": 347,
+        "cpu1": 343,
+        "gpu0": 1358
+      },
+      "synthetic_worker_busy_fraction": {
+        "cpu0": 1.0,
+        "cpu1": 0.9995600527936648,
+        "gpu0": 0.9991201055873296
+      },
+      "tile_switches": 495,
+      "candidate_checks": 7928,
+      "tile_probes": 3067,
+      "local_claims": 2033,
+      "python_claim_nanoseconds": 8320900,
+      "keyed_payload_sha256": "93b6d67e5070fa6181bb10dadc92d4486c0f946330214d777dd59bc4b1f5eae2"
+    },
+    {
+      "policy": "shared_reserved",
+      "workload": "irregular",
+      "batches": 2048,
+      "synthetic_completion_cost_units": 27260.0,
+      "worker_batches": {
+        "cpu0": 337,
+        "cpu1": 359,
+        "gpu0": 1352
+      },
+      "synthetic_worker_busy_fraction": {
+        "cpu0": 1.0,
+        "cpu1": 0.9998532648569333,
+        "gpu0": 0.9999266324284666
+      },
+      "tile_switches": 723,
+      "candidate_checks": 4096,
+      "tile_probes": 0,
+      "local_claims": 0,
+      "python_claim_nanoseconds": 10205500,
+      "keyed_payload_sha256": "93b6d67e5070fa6181bb10dadc92d4486c0f946330214d777dd59bc4b1f5eae2"
+    },
+    {
+      "policy": "neighbor_reserved",
+      "workload": "irregular",
+      "batches": 2048,
+      "synthetic_completion_cost_units": 27276.0,
+      "worker_batches": {
+        "cpu0": 347,
+        "cpu1": 343,
+        "gpu0": 1358
+      },
+      "synthetic_worker_busy_fraction": {
+        "cpu0": 1.0,
+        "cpu1": 0.9995600527936648,
+        "gpu0": 0.9991201055873296
+      },
+      "tile_switches": 495,
+      "candidate_checks": 7928,
+      "tile_probes": 3067,
+      "local_claims": 2033,
+      "python_claim_nanoseconds": 10071300,
+      "keyed_payload_sha256": "93b6d67e5070fa6181bb10dadc92d4486c0f946330214d777dd59bc4b1f5eae2"
+    },
+    {
+      "policy": "shared",
+      "workload": "hotspot",
+      "batches": 2048,
+      "synthetic_completion_cost_units": 8108.0,
+      "worker_batches": {
+        "cpu0": 289,
+        "cpu1": 289,
+        "gpu0": 1470
+      },
+      "synthetic_worker_busy_fraction": {
+        "cpu0": 1.0,
+        "cpu1": 1.0,
+        "gpu0": 0.9997533300444006
+      },
+      "tile_switches": 685,
+      "candidate_checks": 4096,
+      "tile_probes": 0,
+      "local_claims": 0,
+      "python_claim_nanoseconds": 6044200,
+      "keyed_payload_sha256": "93b6d67e5070fa6181bb10dadc92d4486c0f946330214d777dd59bc4b1f5eae2"
+    },
+    {
+      "policy": "neighbor",
+      "workload": "hotspot",
+      "batches": 2048,
+      "synthetic_completion_cost_units": 8108.0,
+      "worker_batches": {
+        "cpu0": 289,
+        "cpu1": 289,
+        "gpu0": 1470
+      },
+      "synthetic_worker_busy_fraction": {
+        "cpu0": 1.0,
+        "cpu1": 1.0,
+        "gpu0": 0.9997533300444006
+      },
+      "tile_switches": 620,
+      "candidate_checks": 7664,
+      "tile_probes": 3144,
+      "local_claims": 2041,
+      "python_claim_nanoseconds": 9102500,
+      "keyed_payload_sha256": "93b6d67e5070fa6181bb10dadc92d4486c0f946330214d777dd59bc4b1f5eae2"
+    },
+    {
+      "policy": "shared_reserved",
+      "workload": "hotspot",
+      "batches": 2048,
+      "synthetic_completion_cost_units": 8108.0,
+      "worker_batches": {
+        "cpu0": 289,
+        "cpu1": 289,
+        "gpu0": 1470
+      },
+      "synthetic_worker_busy_fraction": {
+        "cpu0": 1.0,
+        "cpu1": 1.0,
+        "gpu0": 0.9997533300444006
+      },
+      "tile_switches": 685,
+      "candidate_checks": 4096,
+      "tile_probes": 0,
+      "local_claims": 0,
+      "python_claim_nanoseconds": 6316100,
+      "keyed_payload_sha256": "93b6d67e5070fa6181bb10dadc92d4486c0f946330214d777dd59bc4b1f5eae2"
+    },
+    {
+      "policy": "neighbor_reserved",
+      "workload": "hotspot",
+      "batches": 2048,
+      "synthetic_completion_cost_units": 8108.0,
+      "worker_batches": {
+        "cpu0": 289,
+        "cpu1": 289,
+        "gpu0": 1470
+      },
+      "synthetic_worker_busy_fraction": {
+        "cpu0": 1.0,
+        "cpu1": 1.0,
+        "gpu0": 0.9997533300444006
+      },
+      "tile_switches": 620,
+      "candidate_checks": 7664,
+      "tile_probes": 3144,
+      "local_claims": 2041,
+      "python_claim_nanoseconds": 10414300,
+      "keyed_payload_sha256": "93b6d67e5070fa6181bb10dadc92d4486c0f946330214d777dd59bc4b1f5eae2"
+    },
+    {
+      "policy": "shared",
+      "workload": "locality",
+      "batches": 2048,
+      "synthetic_completion_cost_units": 3408.0,
+      "worker_batches": {
+        "cpu0": 342,
+        "cpu1": 342,
+        "gpu0": 1364
+      },
+      "synthetic_worker_busy_fraction": {
+        "cpu0": 1.0,
+        "cpu1": 1.0,
+        "gpu0": 0.9988262910798122
+      },
+      "tile_switches": 765,
+      "candidate_checks": 4096,
+      "tile_probes": 0,
+      "local_claims": 0,
+      "python_claim_nanoseconds": 6926900,
+      "keyed_payload_sha256": "93b6d67e5070fa6181bb10dadc92d4486c0f946330214d777dd59bc4b1f5eae2"
+    },
+    {
+      "policy": "neighbor",
+      "workload": "locality",
+      "batches": 2048,
+      "synthetic_completion_cost_units": 3408.0,
+      "worker_batches": {
+        "cpu0": 342,
+        "cpu1": 342,
+        "gpu0": 1364
+      },
+      "synthetic_worker_busy_fraction": {
+        "cpu0": 1.0,
+        "cpu1": 1.0,
+        "gpu0": 0.9988262910798122
+      },
+      "tile_switches": 765,
+      "candidate_checks": 8192,
+      "tile_probes": 3332,
+      "local_claims": 2045,
+      "python_claim_nanoseconds": 9829300,
+      "keyed_payload_sha256": "93b6d67e5070fa6181bb10dadc92d4486c0f946330214d777dd59bc4b1f5eae2"
+    },
+    {
+      "policy": "shared_reserved",
+      "workload": "locality",
+      "batches": 2048,
+      "synthetic_completion_cost_units": 3408.0,
+      "worker_batches": {
+        "cpu0": 342,
+        "cpu1": 342,
+        "gpu0": 1364
+      },
+      "synthetic_worker_busy_fraction": {
+        "cpu0": 1.0,
+        "cpu1": 1.0,
+        "gpu0": 0.9988262910798122
+      },
+      "tile_switches": 765,
+      "candidate_checks": 4096,
+      "tile_probes": 0,
+      "local_claims": 0,
+      "python_claim_nanoseconds": 7068800,
+      "keyed_payload_sha256": "93b6d67e5070fa6181bb10dadc92d4486c0f946330214d777dd59bc4b1f5eae2"
+    },
+    {
+      "policy": "neighbor_reserved",
+      "workload": "locality",
+      "batches": 2048,
+      "synthetic_completion_cost_units": 3408.0,
+      "worker_batches": {
+        "cpu0": 342,
+        "cpu1": 342,
+        "gpu0": 1364
+      },
+      "synthetic_worker_busy_fraction": {
+        "cpu0": 1.0,
+        "cpu1": 1.0,
+        "gpu0": 0.9988262910798122
+      },
+      "tile_switches": 765,
+      "candidate_checks": 8192,
+      "tile_probes": 3332,
+      "local_claims": 2045,
+      "python_claim_nanoseconds": 9247300,
+      "keyed_payload_sha256": "93b6d67e5070fa6181bb10dadc92d4486c0f946330214d777dd59bc4b1f5eae2"
+    },
+    {
+      "policy": "shared",
+      "workload": "irregular_locality",
+      "batches": 2048,
+      "synthetic_completion_cost_units": 29261.0,
+      "worker_batches": {
+        "cpu0": 356,
+        "cpu1": 355,
+        "gpu0": 1337
+      },
+      "synthetic_worker_busy_fraction": {
+        "cpu0": 0.999555722634223,
+        "cpu1": 0.9998291240900857,
+        "gpu0": 1.0
+      },
+      "tile_switches": 735,
+      "candidate_checks": 4096,
+      "tile_probes": 0,
+      "local_claims": 0,
+      "python_claim_nanoseconds": 7093000,
+      "keyed_payload_sha256": "93b6d67e5070fa6181bb10dadc92d4486c0f946330214d777dd59bc4b1f5eae2"
+    },
+    {
+      "policy": "neighbor",
+      "workload": "irregular_locality",
+      "batches": 2048,
+      "synthetic_completion_cost_units": 28816.0,
+      "worker_batches": {
+        "cpu0": 340,
+        "cpu1": 347,
+        "gpu0": 1361
+      },
+      "synthetic_worker_busy_fraction": {
+        "cpu0": 1.0,
+        "cpu1": 0.999305941143809,
+        "gpu0": 0.9997223764575236
+      },
+      "tile_switches": 502,
+      "candidate_checks": 7904,
+      "tile_probes": 3053,
+      "local_claims": 2033,
+      "python_claim_nanoseconds": 10500800,
+      "keyed_payload_sha256": "93b6d67e5070fa6181bb10dadc92d4486c0f946330214d777dd59bc4b1f5eae2"
+    },
+    {
+      "policy": "shared_reserved",
+      "workload": "irregular_locality",
+      "batches": 2048,
+      "synthetic_completion_cost_units": 29261.0,
+      "worker_batches": {
+        "cpu0": 356,
+        "cpu1": 355,
+        "gpu0": 1337
+      },
+      "synthetic_worker_busy_fraction": {
+        "cpu0": 0.999555722634223,
+        "cpu1": 0.9998291240900857,
+        "gpu0": 1.0
+      },
+      "tile_switches": 735,
+      "candidate_checks": 4096,
+      "tile_probes": 0,
+      "local_claims": 0,
+      "python_claim_nanoseconds": 6901700,
+      "keyed_payload_sha256": "93b6d67e5070fa6181bb10dadc92d4486c0f946330214d777dd59bc4b1f5eae2"
+    },
+    {
+      "policy": "neighbor_reserved",
+      "workload": "irregular_locality",
+      "batches": 2048,
+      "synthetic_completion_cost_units": 28816.0,
+      "worker_batches": {
+        "cpu0": 340,
+        "cpu1": 347,
+        "gpu0": 1361
+      },
+      "synthetic_worker_busy_fraction": {
+        "cpu0": 1.0,
+        "cpu1": 0.999305941143809,
+        "gpu0": 0.9997223764575236
+      },
+      "tile_switches": 502,
+      "candidate_checks": 7904,
+      "tile_probes": 3053,
+      "local_claims": 2033,
+      "python_claim_nanoseconds": 9794500,
+      "keyed_payload_sha256": "93b6d67e5070fa6181bb10dadc92d4486c0f946330214d777dd59bc4b1f5eae2"
+    },
+    {
+      "policy": "shared",
+      "workload": "cpu_only",
+      "batches": 2048,
+      "synthetic_completion_cost_units": 4096.0,
+      "worker_batches": {
+        "cpu0": 1024,
+        "cpu1": 1024,
+        "gpu0": 0
+      },
+      "synthetic_worker_busy_fraction": {
+        "cpu0": 1.0,
+        "cpu1": 1.0,
+        "gpu0": 0.0
+      },
+      "tile_switches": 510,
+      "candidate_checks": 2048,
+      "tile_probes": 0,
+      "local_claims": 0,
+      "python_claim_nanoseconds": 5904800,
+      "keyed_payload_sha256": "93b6d67e5070fa6181bb10dadc92d4486c0f946330214d777dd59bc4b1f5eae2"
+    },
+    {
+      "policy": "neighbor",
+      "workload": "cpu_only",
+      "batches": 2048,
+      "synthetic_completion_cost_units": 4096.0,
+      "worker_batches": {
+        "cpu0": 1024,
+        "cpu1": 1024,
+        "gpu0": 0
+      },
+      "synthetic_worker_busy_fraction": {
+        "cpu0": 1.0,
+        "cpu1": 1.0,
+        "gpu0": 0.0
+      },
+      "tile_switches": 510,
+      "candidate_checks": 4096,
+      "tile_probes": 2904,
+      "local_claims": 2046,
+      "python_claim_nanoseconds": 8870900,
+      "keyed_payload_sha256": "93b6d67e5070fa6181bb10dadc92d4486c0f946330214d777dd59bc4b1f5eae2"
+    },
+    {
+      "policy": "shared_reserved",
+      "workload": "cpu_only",
+      "batches": 2048,
+      "synthetic_completion_cost_units": 4096.0,
+      "worker_batches": {
+        "cpu0": 1024,
+        "cpu1": 1024,
+        "gpu0": 0
+      },
+      "synthetic_worker_busy_fraction": {
+        "cpu0": 1.0,
+        "cpu1": 1.0,
+        "gpu0": 0.0
+      },
+      "tile_switches": 510,
+      "candidate_checks": 4096,
+      "tile_probes": 0,
+      "local_claims": 0,
+      "python_claim_nanoseconds": 6233700,
+      "keyed_payload_sha256": "93b6d67e5070fa6181bb10dadc92d4486c0f946330214d777dd59bc4b1f5eae2"
+    },
+    {
+      "policy": "neighbor_reserved",
+      "workload": "cpu_only",
+      "batches": 2048,
+      "synthetic_completion_cost_units": 4096.0,
+      "worker_batches": {
+        "cpu0": 1024,
+        "cpu1": 1024,
+        "gpu0": 0
+      },
+      "synthetic_worker_busy_fraction": {
+        "cpu0": 1.0,
+        "cpu1": 1.0,
+        "gpu0": 0.0
+      },
+      "tile_switches": 510,
+      "candidate_checks": 4128,
+      "tile_probes": 18,
+      "local_claims": 0,
+      "python_claim_nanoseconds": 6241200,
+      "keyed_payload_sha256": "93b6d67e5070fa6181bb10dadc92d4486c0f946330214d777dd59bc4b1f5eae2"
+    }
+  ],
+  "unit_tests": {
+    "count": 9,
+    "status": "passed",
+    "concurrency": "Eight host threads; device names are simulated CPU/GPU roles"
+  }
+}

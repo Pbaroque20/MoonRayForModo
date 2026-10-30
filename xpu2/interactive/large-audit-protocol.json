@@ -1,0 +1,12 @@
+{
+  "purpose": "If the unchanged 120 s renderer watchdog prevents a 1024spp convergence comparison, use a separately built diagnostic driver capped at 600 s; preserve original failure",
+  "code_policy": "No renderer/header/installed/default changes; copy renderWindows driver into test translation unit, change only watchdog, expose final counters",
+  "gates": {
+    "max_channel": 0.08,
+    "max_8x8_block_mean": 0.015,
+    "alpha": 0.015
+  },
+  "parity_check": "At 64spp and 12 workers, extended-watchdog diagnostic must reproduce every raw byte of the original native probe before high-spp results count",
+  "timings": "Original fixed-64 benchmark unchanged; extended-watchdog high-spp results are conformance evidence only",
+  "private": true
+}

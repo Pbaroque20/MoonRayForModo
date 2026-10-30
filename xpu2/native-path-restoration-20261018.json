@@ -1,0 +1,1504 @@
+{
+  "status": "partial_native_restoration_validated",
+  "scope": "Owned numerical first diffuse child paths restored after native shading; short ordered deferral only; no GPU shading dispatcher connection or acceleration claim",
+  "gpu": "NVIDIA GeForce RTX 3090, driver 591.74",
+  "math_profile": "Native AVX1, fast-math; frozen retained objects plus five recompiled native objects, not a clean rebuild",
+  "build_report_sha256": "e16e3216220d497d40297bb8818953aba75a4a40880effcc4a45b44537e8db85",
+  "dll_sha256": "bf5de045f6c3d6ec98c2614e29522fd8efd0fca47e6e084ea595cf9c06fd7777",
+  "base_sha256": "50d5d92097183f8a2a9544ca5763ae60e32296d60e3dde499fe418af2c3956d6",
+  "objects": {
+    "PathIntegratorUtil": "a451661f236486c69edc54d5f8aa9ec63493684e726db3b415c9e29a40a6bb7e",
+    "PbrTLState": "104946dc38c2e57ae80ad8dbedd4cff45fb98dbaaae56ac156c5286edcb9aef4",
+    "RenderFrame": "72dbb33fd74361db251c30ae19378a529ad31b961aadf2777792962f2ce57989",
+    "RenderFramePasses": "9f77e927934cf970aae99049ce8ae6717847068acb98cd9ab7279a9a6414fe90",
+    "RenderContext": "faaacdfe77d84090ff2740caeb42b194fdcac2141fb9912211d322b463a07b66"
+  },
+  "preprocessed": {
+    "PathIntegratorUtil": "744dffd9ea67dfa21438bc1686c6ddd9c982ce3120e809d2b8b235d4eaef0716",
+    "PbrTLState": "7cf6f4057382a0348c325312d8dfb195e5d1c633b5522b7081c468684eb482a0",
+    "RenderFrame": "b329f4af49cb57203a4ff6ddfdb065040fd99d5da3d33e44453aeb6e220b5d72",
+    "RenderFramePasses": "ebb6c9aecfc83905dffe4ae9d63dcd7551677a17ef4aba2b0fc6313c61b2e0ac",
+    "RenderContext": "26e87cf49a03de69c68212574b05e42e1292a07a8978c72a0a013d2b673d0e25"
+  },
+  "sources": {
+    "xpu2/native_path_restore.h": "91b8921860c390c8c7be34d964eaed3044929f1b23f8ee8b656b33c8ea18f3c3",
+    "xpu2/native_path_restore.inc": "19269be7b090b2c67558f83c5866e3b2f8fd2b66aa7e89f280df30e4a02b68dc",
+    "tools/xpu2_native_path_build.py": "b62b593b92a841efad58250dd2a4626fc4d59d1dcdab697f817ee0739fc6565e"
+  },
+  "native_sources": {
+    "lib/rendering/pbr/integrator/PathIntegratorUtil.cc": "c90d46360d337be55a46ec35a5ea4c7322712980d898be7093e3affffe525d35",
+    "lib/rendering/pbr/core/PbrTLState.cc": "41f76f9fae0286c7851082438bc2c2e96d038b150f3c568079a0323ed86b985d",
+    "lib/rendering/rndr/RenderFrame.cc": "b8d6c8293559ab9fc69efe68f89213a33ac11e87fbd03039a256039a78f4f72b",
+    "lib/rendering/rndr/RenderFramePasses.cc": "975ec15c6190ff88102ad9adfd9bf669b291df8abff4a0faa16a6abf3744bcb8",
+    "lib/rendering/rndr/RenderContext.cc": "6fd7e369dadb53a02eb2bba4c8d7c9437c3a6820a29bb9410ff24d50eb73402d"
+  },
+  "results": {
+    "single_worker": {
+      "status": "passed",
+      "threads": 1,
+      "adaptive": false,
+      "scene_sha256": "237fe0db21104b0cf3a74133b5aed6ea6ff7867dbfc1b74bd226fe1aeed40f49",
+      "probe_sha256": "28312dc35474f414587ab2faef8fd8d07f6e41229282ebc821e0f0ebe29621b4",
+      "build_sha256": "e16e3216220d497d40297bb8818953aba75a4a40880effcc4a45b44537e8db85",
+      "image_mismatches": [],
+      "fixture_inputs": {
+        "xpu2\\reference\\scene.rdla": "a592125eef4d36f7dc4075f49750797bd9a383e46c85b6809e9a157d998d0680",
+        "xpu2\\film_showcase.py": "0902c017adeab836a9664ae2e476d3e81532261fc8d6d0fe209c1ac01bd8ac2b"
+      },
+      "report_sha256": "7b78b48ee771f324d438eb970db7d9df8a8255fe54ab2bfb84d55298e360dd0e",
+      "runs": [
+        {
+          "label": "reference",
+          "exit_code": 0,
+          "log_sha256": "698b106a7737ef678f95fb52797d2f0b5cc1a905b6ee9729de38a29c75799521",
+          "execution_passed": true,
+          "comparison": {
+            "status": "passed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 0,
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          }
+        },
+        {
+          "label": "disabled",
+          "exit_code": 0,
+          "log_sha256": "24eee2532a0c42f595d5a54a55c9a031df2c21ab59b6d38c763294d79f7d0ad8",
+          "execution_passed": true,
+          "comparison": {
+            "status": "passed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 0,
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          }
+        },
+        {
+          "label": "immediate",
+          "exit_code": 0,
+          "paths": [
+            {
+              "epoch": 1,
+              "captured": 1632493,
+              "restored": 1632493,
+              "cancelled": 0,
+              "batches": 22796,
+              "fallback_batches": 37918,
+              "peak_owner_paths": 72,
+              "poisoned": 0,
+              "outstanding": 0
+            }
+          ],
+          "log_sha256": "36701efef5be6d66be2e3f1b62fd27ef1f5f9aedce6f497d1f388f85c5ffd76b",
+          "execution_passed": true,
+          "comparison": {
+            "status": "passed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 0,
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          }
+        },
+        {
+          "label": "deferred",
+          "exit_code": 0,
+          "paths": [
+            {
+              "epoch": 1,
+              "captured": 1632493,
+              "restored": 1632493,
+              "cancelled": 0,
+              "batches": 22796,
+              "fallback_batches": 37918,
+              "peak_owner_paths": 72,
+              "poisoned": 0,
+              "outstanding": 0
+            }
+          ],
+          "log_sha256": "42d11a6baea58235a18f743759fb4a99723d6cff3772145215187cf4a273b83c",
+          "execution_passed": true,
+          "comparison": {
+            "status": "passed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 0,
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          }
+        },
+        {
+          "label": "poison",
+          "exit_code": 0,
+          "paths": [
+            {
+              "epoch": 1,
+              "captured": 1632493,
+              "restored": 1632493,
+              "cancelled": 0,
+              "batches": 22796,
+              "fallback_batches": 37918,
+              "peak_owner_paths": 72,
+              "poisoned": 1632493,
+              "outstanding": 0
+            }
+          ],
+          "log_sha256": "40b76cd2e196f8d4149ba405ff4ce9cb424db65d5eb5546e9bd64843251ca68a",
+          "execution_passed": true,
+          "comparison": {
+            "status": "passed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 0,
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          }
+        },
+        {
+          "label": "sentinel",
+          "exit_code": 0,
+          "paths": [
+            {
+              "epoch": 1,
+              "captured": 1633006,
+              "restored": 1633006,
+              "cancelled": 0,
+              "batches": 22780,
+              "fallback_batches": 27448,
+              "peak_owner_paths": 72,
+              "poisoned": 0,
+              "outstanding": 0
+            }
+          ],
+          "log_sha256": "0d089415b390b5338f4f638fe0c725cd99b2f4ffca0be25bc58796e384b4a2ef",
+          "execution_passed": true,
+          "comparison": {
+            "status": "failed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": false,
+                "failed_values": 21879,
+                "maximum_absolute_error": 0.3182738423347473,
+                "rms_error": 0.031111091276279083,
+                "values": 82944
+              },
+              "G": {
+                "passed": false,
+                "failed_values": 21877,
+                "maximum_absolute_error": 0.01466332795098424,
+                "rms_error": 0.0014243944304354905,
+                "values": 82944
+              },
+              "B": {
+                "passed": false,
+                "failed_values": 21876,
+                "maximum_absolute_error": 0.010912247002124786,
+                "rms_error": 0.0010682374104129002,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 31080,
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          },
+          "sentinel_comparison": {
+            "status": "failed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": false,
+                "failed_values": 21879,
+                "maximum_absolute_error": 0.3182738423347473,
+                "rms_error": 0.031111091276279083,
+                "values": 82944
+              },
+              "G": {
+                "passed": false,
+                "failed_values": 21877,
+                "maximum_absolute_error": 0.01466332795098424,
+                "rms_error": 0.0014243944304354905,
+                "values": 82944
+              },
+              "B": {
+                "passed": false,
+                "failed_values": 21876,
+                "maximum_absolute_error": 0.010912247002124786,
+                "rms_error": 0.0010682374104129002,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 31080,
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          }
+        }
+      ]
+    },
+    "four_workers": {
+      "status": "image_differences",
+      "threads": 4,
+      "adaptive": false,
+      "scene_sha256": "237fe0db21104b0cf3a74133b5aed6ea6ff7867dbfc1b74bd226fe1aeed40f49",
+      "probe_sha256": "28312dc35474f414587ab2faef8fd8d07f6e41229282ebc821e0f0ebe29621b4",
+      "build_sha256": "e16e3216220d497d40297bb8818953aba75a4a40880effcc4a45b44537e8db85",
+      "image_mismatches": [
+        "reference_repeat",
+        "disabled",
+        "immediate",
+        "deferred",
+        "poison"
+      ],
+      "fixture_inputs": {
+        "xpu2\\reference\\scene.rdla": "a592125eef4d36f7dc4075f49750797bd9a383e46c85b6809e9a157d998d0680",
+        "xpu2\\film_showcase.py": "0902c017adeab836a9664ae2e476d3e81532261fc8d6d0fe209c1ac01bd8ac2b"
+      },
+      "report_sha256": "6c7cbe191fb2dc6b8ab6ef48b972c2fc74b416e8d7a3de3376d56ce256abf069",
+      "runs": [
+        {
+          "label": "reference",
+          "exit_code": 0,
+          "log_sha256": "8b6844ea7c848a0868c73e2038e51f207282f2d02b4b27d9e98b4e51db4a82ad",
+          "execution_passed": true,
+          "comparison": {
+            "status": "passed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 0,
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          }
+        },
+        {
+          "label": "reference_repeat",
+          "exit_code": 0,
+          "log_sha256": "68acdd3e46c87bc279b89bd1ab919fa457fe31d15e4a7372b57532baeef474b8",
+          "execution_passed": true,
+          "comparison": {
+            "status": "failed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": false,
+                "failed_values": 261,
+                "maximum_absolute_error": 0.056346505880355835,
+                "rms_error": 0.0016244453756224452,
+                "values": 82944
+              },
+              "G": {
+                "passed": false,
+                "failed_values": 261,
+                "maximum_absolute_error": 0.0027906596660614014,
+                "rms_error": 6.998496082614707e-05,
+                "values": 82944
+              },
+              "B": {
+                "passed": false,
+                "failed_values": 261,
+                "maximum_absolute_error": 0.002318263053894043,
+                "rms_error": 5.598344160557495e-05,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 23854,
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          }
+        },
+        {
+          "label": "disabled",
+          "exit_code": 0,
+          "log_sha256": "317a63b3f7ce0221c734f1d7d599a5d6b38b8122083e1911ffb284b1da3c2f24",
+          "execution_passed": true,
+          "comparison": {
+            "status": "failed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": false,
+                "failed_values": 267,
+                "maximum_absolute_error": 0.062443703413009644,
+                "rms_error": 0.0016703311694811786,
+                "values": 82944
+              },
+              "G": {
+                "passed": false,
+                "failed_values": 267,
+                "maximum_absolute_error": 0.002790689468383789,
+                "rms_error": 7.17417624773496e-05,
+                "values": 82944
+              },
+              "B": {
+                "passed": false,
+                "failed_values": 267,
+                "maximum_absolute_error": 0.002318263053894043,
+                "rms_error": 5.70053915671707e-05,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 21888,
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          }
+        },
+        {
+          "label": "immediate",
+          "exit_code": 0,
+          "paths": [
+            {
+              "epoch": 1,
+              "captured": 1632817,
+              "restored": 1632817,
+              "cancelled": 0,
+              "batches": 22772,
+              "fallback_batches": 37874,
+              "peak_owner_paths": 72,
+              "poisoned": 0,
+              "outstanding": 0
+            }
+          ],
+          "log_sha256": "48db6944e1977e1fe8c1616ca40875133dff8f069ee8b6338c35f2b6c15e4b9f",
+          "execution_passed": true,
+          "comparison": {
+            "status": "failed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": false,
+                "failed_values": 313,
+                "maximum_absolute_error": 0.062443673610687256,
+                "rms_error": 0.0018115716944745867,
+                "values": 82944
+              },
+              "G": {
+                "passed": false,
+                "failed_values": 313,
+                "maximum_absolute_error": 0.002790689468383789,
+                "rms_error": 7.761636579959879e-05,
+                "values": 82944
+              },
+              "B": {
+                "passed": false,
+                "failed_values": 313,
+                "maximum_absolute_error": 0.002318263053894043,
+                "rms_error": 6.19467777508856e-05,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 23125,
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          }
+        },
+        {
+          "label": "deferred",
+          "exit_code": 0,
+          "paths": [
+            {
+              "epoch": 1,
+              "captured": 1629105,
+              "restored": 1629105,
+              "cancelled": 0,
+              "batches": 22722,
+              "fallback_batches": 37717,
+              "peak_owner_paths": 72,
+              "poisoned": 0,
+              "outstanding": 0
+            }
+          ],
+          "log_sha256": "91473619e2d5d678c7b24ff8421de184be3369fd1dbd87b5d9599b82420433ab",
+          "execution_passed": true,
+          "comparison": {
+            "status": "failed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": false,
+                "failed_values": 217,
+                "maximum_absolute_error": 0.05682635307312012,
+                "rms_error": 0.0014834516167324908,
+                "values": 82944
+              },
+              "G": {
+                "passed": false,
+                "failed_values": 217,
+                "maximum_absolute_error": 0.002618071623146534,
+                "rms_error": 6.361504121366415e-05,
+                "values": 82944
+              },
+              "B": {
+                "passed": false,
+                "failed_values": 217,
+                "maximum_absolute_error": 0.0019483324140310287,
+                "rms_error": 5.0412245952121955e-05,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 23104,
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          }
+        },
+        {
+          "label": "poison",
+          "exit_code": 0,
+          "paths": [
+            {
+              "epoch": 1,
+              "captured": 1632844,
+              "restored": 1632844,
+              "cancelled": 0,
+              "batches": 22738,
+              "fallback_batches": 37830,
+              "peak_owner_paths": 72,
+              "poisoned": 1632844,
+              "outstanding": 0
+            }
+          ],
+          "log_sha256": "d2b751058b5ad637fc1364ead7cf925033f86b5f928014547d7e337eb3623510",
+          "execution_passed": true,
+          "comparison": {
+            "status": "failed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": false,
+                "failed_values": 275,
+                "maximum_absolute_error": 0.056346505880355835,
+                "rms_error": 0.0016630557422826575,
+                "values": 82944
+              },
+              "G": {
+                "passed": false,
+                "failed_values": 275,
+                "maximum_absolute_error": 0.002790689468383789,
+                "rms_error": 7.254645536556891e-05,
+                "values": 82944
+              },
+              "B": {
+                "passed": false,
+                "failed_values": 275,
+                "maximum_absolute_error": 0.002318263053894043,
+                "rms_error": 5.728882853468895e-05,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 22819,
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          }
+        },
+        {
+          "label": "sentinel",
+          "exit_code": 0,
+          "paths": [
+            {
+              "epoch": 1,
+              "captured": 1633456,
+              "restored": 1633456,
+              "cancelled": 0,
+              "batches": 22759,
+              "fallback_batches": 27365,
+              "peak_owner_paths": 72,
+              "poisoned": 0,
+              "outstanding": 0
+            }
+          ],
+          "log_sha256": "f562c83c012748670b649598b17d617656b95288f4b7c1d7bf3da36bc652dc37",
+          "execution_passed": true,
+          "comparison": {
+            "status": "failed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": false,
+                "failed_values": 21885,
+                "maximum_absolute_error": 0.3182738870382309,
+                "rms_error": 0.031139603942619606,
+                "values": 82944
+              },
+              "G": {
+                "passed": false,
+                "failed_values": 21883,
+                "maximum_absolute_error": 0.014663329813629389,
+                "rms_error": 0.0014262984927652484,
+                "values": 82944
+              },
+              "B": {
+                "passed": false,
+                "failed_values": 21882,
+                "maximum_absolute_error": 0.010912247002124786,
+                "rms_error": 0.0010697455287592824,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 31503,
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          },
+          "sentinel_comparison": {
+            "status": "failed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": false,
+                "failed_values": 21894,
+                "maximum_absolute_error": 0.3182738274335861,
+                "rms_error": 0.03114318892360112,
+                "values": 82944
+              },
+              "G": {
+                "passed": false,
+                "failed_values": 21892,
+                "maximum_absolute_error": 0.01466332795098424,
+                "rms_error": 0.001425876035304576,
+                "values": 82944
+              },
+              "B": {
+                "passed": false,
+                "failed_values": 21891,
+                "maximum_absolute_error": 0.010912247002124786,
+                "rms_error": 0.0010694462882220525,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 31472,
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          }
+        }
+      ]
+    },
+    "adaptive_bypass": {
+      "status": "passed",
+      "threads": 1,
+      "adaptive": true,
+      "scene_sha256": "8f609b7d07ff132894ab807f5ff3a881fff430cb62dfb9b41a217432e3d10f34",
+      "probe_sha256": "28312dc35474f414587ab2faef8fd8d07f6e41229282ebc821e0f0ebe29621b4",
+      "build_sha256": "e16e3216220d497d40297bb8818953aba75a4a40880effcc4a45b44537e8db85",
+      "image_mismatches": [],
+      "fixture_inputs": {
+        "xpu2\\reference\\scene.rdla": "a592125eef4d36f7dc4075f49750797bd9a383e46c85b6809e9a157d998d0680",
+        "xpu2\\film_showcase.py": "0902c017adeab836a9664ae2e476d3e81532261fc8d6d0fe209c1ac01bd8ac2b"
+      },
+      "report_sha256": "6fe724d8d7d2baf99174951e05de21fb8eeedae4ffe347baa54506727a70e110",
+      "runs": [
+        {
+          "label": "reference",
+          "exit_code": 0,
+          "log_sha256": "cf9691de4097b22e613c9c580071761aff5971bda54c9051db194628ff3bfb3a",
+          "execution_passed": true,
+          "comparison": {
+            "status": "passed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 0,
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          }
+        },
+        {
+          "label": "disabled",
+          "exit_code": 0,
+          "log_sha256": "71102e2de4a06625fd3dd205bbf426a989a7a9cfdf146d0e4bd964426c4a869b",
+          "execution_passed": true,
+          "comparison": {
+            "status": "passed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 0,
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          }
+        },
+        {
+          "label": "immediate",
+          "exit_code": 0,
+          "paths": [
+            {
+              "epoch": 1,
+              "captured": 0,
+              "restored": 0,
+              "cancelled": 0,
+              "batches": 0,
+              "fallback_batches": 97861,
+              "peak_owner_paths": 0,
+              "poisoned": 0,
+              "outstanding": 0
+            }
+          ],
+          "log_sha256": "8791cb2e3a11245d3dfa3d3f20473835573e2211d5cbd2c4615a89602078f58d",
+          "execution_passed": true,
+          "comparison": {
+            "status": "passed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 0,
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          }
+        },
+        {
+          "label": "deferred",
+          "exit_code": 0,
+          "paths": [
+            {
+              "epoch": 1,
+              "captured": 0,
+              "restored": 0,
+              "cancelled": 0,
+              "batches": 0,
+              "fallback_batches": 97861,
+              "peak_owner_paths": 0,
+              "poisoned": 0,
+              "outstanding": 0
+            }
+          ],
+          "log_sha256": "cf1afc27150e4c2fd06bf7fcf9ded5f5c27f18deec0d2a49d108611c49ef6eb5",
+          "execution_passed": true,
+          "comparison": {
+            "status": "passed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 0,
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          }
+        },
+        {
+          "label": "poison",
+          "exit_code": 0,
+          "paths": [
+            {
+              "epoch": 1,
+              "captured": 0,
+              "restored": 0,
+              "cancelled": 0,
+              "batches": 0,
+              "fallback_batches": 97861,
+              "peak_owner_paths": 0,
+              "poisoned": 0,
+              "outstanding": 0
+            }
+          ],
+          "log_sha256": "d41fff0a9f32b41eeae3a76501be99399ea44b9b2a1ae9e9e1db5169239c2dec",
+          "execution_passed": true,
+          "comparison": {
+            "status": "passed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 0,
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          }
+        },
+        {
+          "label": "sentinel",
+          "exit_code": 0,
+          "paths": [
+            {
+              "epoch": 1,
+              "captured": 0,
+              "restored": 0,
+              "cancelled": 0,
+              "batches": 0,
+              "fallback_batches": 97861,
+              "peak_owner_paths": 0,
+              "poisoned": 0,
+              "outstanding": 0
+            }
+          ],
+          "log_sha256": "abbe5f7b5fb74b69a30de75a01945248d5f0fff3c9651e1a73f43df653dd63be",
+          "execution_passed": true,
+          "comparison": {
+            "status": "passed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 0,
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          }
+        }
+      ]
+    },
+    "persistent_cancel_reload": {
+      "status": "passed",
+      "probe_sha256": "08bd9c7a21f08940c249c683d674535e8a06aaadeaaeb086c8b4bc68d5f8a794",
+      "build_sha256": "e16e3216220d497d40297bb8818953aba75a4a40880effcc4a45b44537e8db85",
+      "image_mismatches": [],
+      "report_sha256": "11d3a94a8b6abb4aba3f2f44a14e564f8c97462cc4923a1217723693616909f3",
+      "runs": [
+        {
+          "label": "reference",
+          "log_sha256": "a350c2955152ff1fad8b869614a5fca8cb809fe25208d74d863c45473b053e75",
+          "execution_passed": true,
+          "comparison": {
+            "status": "passed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 0,
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          }
+        },
+        {
+          "label": "fresh",
+          "frames": [
+            {
+              "epoch": 1,
+              "captured": 6470,
+              "restored": 6470,
+              "cancelled": 0,
+              "batches": 90,
+              "fallback_batches": 60758,
+              "peak_owner_paths": 72,
+              "poisoned": 6470,
+              "outstanding": 0
+            }
+          ],
+          "log_sha256": "af48e35b0a1287a4e6b699873d899d44b3fa050ed5734bd20a27f0ba3d3e5b43",
+          "execution_passed": true,
+          "comparison": {
+            "status": "passed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 0,
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          }
+        },
+        {
+          "label": "restart",
+          "frames": [
+            {
+              "epoch": 1,
+              "captured": 6470,
+              "restored": 6470,
+              "cancelled": 0,
+              "batches": 90,
+              "fallback_batches": 150,
+              "peak_owner_paths": 72,
+              "poisoned": 6470,
+              "outstanding": 0
+            },
+            {
+              "epoch": 2,
+              "captured": 6470,
+              "restored": 6470,
+              "cancelled": 0,
+              "batches": 90,
+              "fallback_batches": 60758,
+              "peak_owner_paths": 72,
+              "poisoned": 6470,
+              "outstanding": 0
+            }
+          ],
+          "log_sha256": "256aba14a1a926a6dc8914d5632d8302fd502bb175143ef203a5fccae27111e1",
+          "execution_passed": true,
+          "comparison": {
+            "status": "passed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 0,
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          },
+          "versus_fresh": {
+            "status": "passed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 0,
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "limitations": [
+    "Four-worker reference itself is not repeatable within 1e-6; candidate multiworker image parity is unresolved, not passed.",
+    "Progressive native phases change physical worker ownership. Foreign owners use original native submission; only 6470 child paths restored per completed persistent fixture.",
+    "Cancellation drained all captured paths before teardown in this run; discard of a deliberately held pending path is not established.",
+    "No arbitrary shading/BSDF stack, material, deep, volume, Cryptomatte, AOV, worker migration or long GPU-delay coverage.",
+    "No installed kit, shared source, or user-scene changes. XPU2 remains experimental and PR remains draft."
+  ]
+}

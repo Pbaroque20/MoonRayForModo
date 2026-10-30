@@ -1,0 +1,656 @@
+{
+  "status": "passed",
+  "scope": "Native AVX8 C++/ISPC integrator sampler; not CUDA or rendered image parity",
+  "scope_build": "Current frozen headers with retained native objects; not a clean runtime build",
+  "cases": 648,
+  "executions": 3,
+  "workers": [
+    1,
+    1,
+    4
+  ],
+  "components_per_mode": 47304,
+  "all_execution_records_identical": true,
+  "different_components": {
+    "chunked": 0,
+    "reordered": 0,
+    "naive_resume": 2916
+  },
+  "affected_cases": {
+    "chunked": [],
+    "reordered": [],
+    "naive_resume": [
+      {
+        "id": 225,
+        "dims": 2,
+        "depth": 0,
+        "pseudo": false,
+        "total": 1,
+        "seed": 0,
+        "purpose": 0,
+        "different_components": 2
+      },
+      {
+        "id": 226,
+        "dims": 2,
+        "depth": 0,
+        "pseudo": false,
+        "total": 1,
+        "seed": 0,
+        "purpose": 1,
+        "different_components": 2
+      },
+      {
+        "id": 227,
+        "dims": 2,
+        "depth": 0,
+        "pseudo": false,
+        "total": 1,
+        "seed": 0,
+        "purpose": 2,
+        "different_components": 2
+      },
+      {
+        "id": 228,
+        "dims": 2,
+        "depth": 0,
+        "pseudo": false,
+        "total": 1,
+        "seed": 19,
+        "purpose": 0,
+        "different_components": 2
+      },
+      {
+        "id": 229,
+        "dims": 2,
+        "depth": 0,
+        "pseudo": false,
+        "total": 1,
+        "seed": 19,
+        "purpose": 1,
+        "different_components": 2
+      },
+      {
+        "id": 230,
+        "dims": 2,
+        "depth": 0,
+        "pseudo": false,
+        "total": 1,
+        "seed": 19,
+        "purpose": 2,
+        "different_components": 2
+      },
+      {
+        "id": 231,
+        "dims": 2,
+        "depth": 0,
+        "pseudo": false,
+        "total": 1,
+        "seed": 4294967295,
+        "purpose": 0,
+        "different_components": 2
+      },
+      {
+        "id": 232,
+        "dims": 2,
+        "depth": 0,
+        "pseudo": false,
+        "total": 1,
+        "seed": 4294967295,
+        "purpose": 1,
+        "different_components": 2
+      },
+      {
+        "id": 233,
+        "dims": 2,
+        "depth": 0,
+        "pseudo": false,
+        "total": 1,
+        "seed": 4294967295,
+        "purpose": 2,
+        "different_components": 2
+      },
+      {
+        "id": 234,
+        "dims": 2,
+        "depth": 0,
+        "pseudo": false,
+        "total": 16,
+        "seed": 0,
+        "purpose": 0,
+        "different_components": 32
+      },
+      {
+        "id": 235,
+        "dims": 2,
+        "depth": 0,
+        "pseudo": false,
+        "total": 16,
+        "seed": 0,
+        "purpose": 1,
+        "different_components": 32
+      },
+      {
+        "id": 236,
+        "dims": 2,
+        "depth": 0,
+        "pseudo": false,
+        "total": 16,
+        "seed": 0,
+        "purpose": 2,
+        "different_components": 32
+      },
+      {
+        "id": 237,
+        "dims": 2,
+        "depth": 0,
+        "pseudo": false,
+        "total": 16,
+        "seed": 19,
+        "purpose": 0,
+        "different_components": 32
+      },
+      {
+        "id": 238,
+        "dims": 2,
+        "depth": 0,
+        "pseudo": false,
+        "total": 16,
+        "seed": 19,
+        "purpose": 1,
+        "different_components": 32
+      },
+      {
+        "id": 239,
+        "dims": 2,
+        "depth": 0,
+        "pseudo": false,
+        "total": 16,
+        "seed": 19,
+        "purpose": 2,
+        "different_components": 32
+      },
+      {
+        "id": 240,
+        "dims": 2,
+        "depth": 0,
+        "pseudo": false,
+        "total": 16,
+        "seed": 4294967295,
+        "purpose": 0,
+        "different_components": 32
+      },
+      {
+        "id": 241,
+        "dims": 2,
+        "depth": 0,
+        "pseudo": false,
+        "total": 16,
+        "seed": 4294967295,
+        "purpose": 1,
+        "different_components": 32
+      },
+      {
+        "id": 242,
+        "dims": 2,
+        "depth": 0,
+        "pseudo": false,
+        "total": 16,
+        "seed": 4294967295,
+        "purpose": 2,
+        "different_components": 32
+      },
+      {
+        "id": 243,
+        "dims": 2,
+        "depth": 0,
+        "pseudo": false,
+        "total": 64,
+        "seed": 0,
+        "purpose": 0,
+        "different_components": 128
+      },
+      {
+        "id": 244,
+        "dims": 2,
+        "depth": 0,
+        "pseudo": false,
+        "total": 64,
+        "seed": 0,
+        "purpose": 1,
+        "different_components": 128
+      },
+      {
+        "id": 245,
+        "dims": 2,
+        "depth": 0,
+        "pseudo": false,
+        "total": 64,
+        "seed": 0,
+        "purpose": 2,
+        "different_components": 128
+      },
+      {
+        "id": 246,
+        "dims": 2,
+        "depth": 0,
+        "pseudo": false,
+        "total": 64,
+        "seed": 19,
+        "purpose": 0,
+        "different_components": 128
+      },
+      {
+        "id": 247,
+        "dims": 2,
+        "depth": 0,
+        "pseudo": false,
+        "total": 64,
+        "seed": 19,
+        "purpose": 1,
+        "different_components": 128
+      },
+      {
+        "id": 248,
+        "dims": 2,
+        "depth": 0,
+        "pseudo": false,
+        "total": 64,
+        "seed": 19,
+        "purpose": 2,
+        "different_components": 128
+      },
+      {
+        "id": 249,
+        "dims": 2,
+        "depth": 0,
+        "pseudo": false,
+        "total": 64,
+        "seed": 4294967295,
+        "purpose": 0,
+        "different_components": 128
+      },
+      {
+        "id": 250,
+        "dims": 2,
+        "depth": 0,
+        "pseudo": false,
+        "total": 64,
+        "seed": 4294967295,
+        "purpose": 1,
+        "different_components": 128
+      },
+      {
+        "id": 251,
+        "dims": 2,
+        "depth": 0,
+        "pseudo": false,
+        "total": 64,
+        "seed": 4294967295,
+        "purpose": 2,
+        "different_components": 128
+      },
+      {
+        "id": 297,
+        "dims": 2,
+        "depth": 2,
+        "pseudo": false,
+        "total": 1,
+        "seed": 0,
+        "purpose": 0,
+        "different_components": 2
+      },
+      {
+        "id": 298,
+        "dims": 2,
+        "depth": 2,
+        "pseudo": false,
+        "total": 1,
+        "seed": 0,
+        "purpose": 1,
+        "different_components": 2
+      },
+      {
+        "id": 299,
+        "dims": 2,
+        "depth": 2,
+        "pseudo": false,
+        "total": 1,
+        "seed": 0,
+        "purpose": 2,
+        "different_components": 2
+      },
+      {
+        "id": 300,
+        "dims": 2,
+        "depth": 2,
+        "pseudo": false,
+        "total": 1,
+        "seed": 19,
+        "purpose": 0,
+        "different_components": 2
+      },
+      {
+        "id": 301,
+        "dims": 2,
+        "depth": 2,
+        "pseudo": false,
+        "total": 1,
+        "seed": 19,
+        "purpose": 1,
+        "different_components": 2
+      },
+      {
+        "id": 302,
+        "dims": 2,
+        "depth": 2,
+        "pseudo": false,
+        "total": 1,
+        "seed": 19,
+        "purpose": 2,
+        "different_components": 2
+      },
+      {
+        "id": 303,
+        "dims": 2,
+        "depth": 2,
+        "pseudo": false,
+        "total": 1,
+        "seed": 4294967295,
+        "purpose": 0,
+        "different_components": 2
+      },
+      {
+        "id": 304,
+        "dims": 2,
+        "depth": 2,
+        "pseudo": false,
+        "total": 1,
+        "seed": 4294967295,
+        "purpose": 1,
+        "different_components": 2
+      },
+      {
+        "id": 305,
+        "dims": 2,
+        "depth": 2,
+        "pseudo": false,
+        "total": 1,
+        "seed": 4294967295,
+        "purpose": 2,
+        "different_components": 2
+      },
+      {
+        "id": 306,
+        "dims": 2,
+        "depth": 2,
+        "pseudo": false,
+        "total": 16,
+        "seed": 0,
+        "purpose": 0,
+        "different_components": 32
+      },
+      {
+        "id": 307,
+        "dims": 2,
+        "depth": 2,
+        "pseudo": false,
+        "total": 16,
+        "seed": 0,
+        "purpose": 1,
+        "different_components": 32
+      },
+      {
+        "id": 308,
+        "dims": 2,
+        "depth": 2,
+        "pseudo": false,
+        "total": 16,
+        "seed": 0,
+        "purpose": 2,
+        "different_components": 32
+      },
+      {
+        "id": 309,
+        "dims": 2,
+        "depth": 2,
+        "pseudo": false,
+        "total": 16,
+        "seed": 19,
+        "purpose": 0,
+        "different_components": 32
+      },
+      {
+        "id": 310,
+        "dims": 2,
+        "depth": 2,
+        "pseudo": false,
+        "total": 16,
+        "seed": 19,
+        "purpose": 1,
+        "different_components": 32
+      },
+      {
+        "id": 311,
+        "dims": 2,
+        "depth": 2,
+        "pseudo": false,
+        "total": 16,
+        "seed": 19,
+        "purpose": 2,
+        "different_components": 32
+      },
+      {
+        "id": 312,
+        "dims": 2,
+        "depth": 2,
+        "pseudo": false,
+        "total": 16,
+        "seed": 4294967295,
+        "purpose": 0,
+        "different_components": 32
+      },
+      {
+        "id": 313,
+        "dims": 2,
+        "depth": 2,
+        "pseudo": false,
+        "total": 16,
+        "seed": 4294967295,
+        "purpose": 1,
+        "different_components": 32
+      },
+      {
+        "id": 314,
+        "dims": 2,
+        "depth": 2,
+        "pseudo": false,
+        "total": 16,
+        "seed": 4294967295,
+        "purpose": 2,
+        "different_components": 32
+      },
+      {
+        "id": 315,
+        "dims": 2,
+        "depth": 2,
+        "pseudo": false,
+        "total": 64,
+        "seed": 0,
+        "purpose": 0,
+        "different_components": 128
+      },
+      {
+        "id": 316,
+        "dims": 2,
+        "depth": 2,
+        "pseudo": false,
+        "total": 64,
+        "seed": 0,
+        "purpose": 1,
+        "different_components": 128
+      },
+      {
+        "id": 317,
+        "dims": 2,
+        "depth": 2,
+        "pseudo": false,
+        "total": 64,
+        "seed": 0,
+        "purpose": 2,
+        "different_components": 128
+      },
+      {
+        "id": 318,
+        "dims": 2,
+        "depth": 2,
+        "pseudo": false,
+        "total": 64,
+        "seed": 19,
+        "purpose": 0,
+        "different_components": 128
+      },
+      {
+        "id": 319,
+        "dims": 2,
+        "depth": 2,
+        "pseudo": false,
+        "total": 64,
+        "seed": 19,
+        "purpose": 1,
+        "different_components": 128
+      },
+      {
+        "id": 320,
+        "dims": 2,
+        "depth": 2,
+        "pseudo": false,
+        "total": 64,
+        "seed": 19,
+        "purpose": 2,
+        "different_components": 128
+      },
+      {
+        "id": 321,
+        "dims": 2,
+        "depth": 2,
+        "pseudo": false,
+        "total": 64,
+        "seed": 4294967295,
+        "purpose": 0,
+        "different_components": 128
+      },
+      {
+        "id": 322,
+        "dims": 2,
+        "depth": 2,
+        "pseudo": false,
+        "total": 64,
+        "seed": 4294967295,
+        "purpose": 1,
+        "different_components": 128
+      },
+      {
+        "id": 323,
+        "dims": 2,
+        "depth": 2,
+        "pseudo": false,
+        "total": 64,
+        "seed": 4294967295,
+        "purpose": 2,
+        "different_components": 128
+      }
+    ]
+  },
+  "build_manifest_sha256": "50d5d92097183f8a2a9544ca5763ae60e32296d60e3dde499fe418af2c3956d6",
+  "cpp_sha256": "a6e4c8d329842d36f69683f844298527c56ad5d587176a868ebf7b7cb004f198",
+  "preprocessed_sha256": "ef1b5e21f356cc9e6c44e66ae9e74ee697fea810e95bba065459db25ed8c4143",
+  "executable_sha256": "465d27bc8f39f859d523381bae0fd22156d0fd3e1bef35dde1abf72e8b983be9",
+  "corpus_sha256": [
+    "15ae36807c627e851026fd3a91cad610537617a254a3850f025d22c2acc6bad4",
+    "15ae36807c627e851026fd3a91cad610537617a254a3850f025d22c2acc6bad4",
+    "15ae36807c627e851026fd3a91cad610537617a254a3850f025d22c2acc6bad4"
+  ],
+  "runtime_inventory_identity": "bba4bcff0d82e5011d04d168c5aa869ea7f44fa76b5e02981672de564e37e332",
+  "reference_gzip_sha256": "7769adf01ef3210591f5dd1628b9bf6d055b77a8a696d502c4000e90858d1a2a",
+  "reference_raw_sha256": "15ae36807c627e851026fd3a91cad610537617a254a3850f025d22c2acc6bad4",
+  "retained_sampler_objects": [
+    {
+      "name": "BsdfOneSampler.ispc.obj",
+      "sha256": "e10af3ab37ab09fceb0958dc4f96d4d51a44b23c2c636bfc6b143c3aae55bb39"
+    },
+    {
+      "name": "BsdfSampler.ispc.obj",
+      "sha256": "a4cf19b78483f1c0c60341fd3639bc31cfb1cde47e17d39096049d5f83354cf1"
+    },
+    {
+      "name": "LightSetSampler.ispc.obj",
+      "sha256": "e04af97f232de68ee7a4d3b5539f44746231720d20b1ee88d93727b1a8993e3c"
+    },
+    {
+      "name": "PathIntegratorMultiSampler.ispc.obj",
+      "sha256": "bab346eb656a02b25095d070fa4cbf0d6c05444c7b123c4c4a9ea371e366adf6"
+    },
+    {
+      "name": "Sampling.ispc.obj",
+      "sha256": "958d351114331e8069810cf666705c6eb59f0c367179ed133e58abf364c917aa"
+    },
+    {
+      "name": "pmj02_best_candidate_4096.o",
+      "sha256": "076cac4bffd9b81345713c7a09dfb6c0d46281a9137175b97e6b238345467c3c"
+    },
+    {
+      "name": "ppd_2D_integrator_points_4096_sequences_of_1024.o",
+      "sha256": "0be5b35217843dcc935e67b0da97495f1f15ec95e6801ea3828f397853f0ce54"
+    },
+    {
+      "name": "ppd_lens_points_961_sequences_of_1024.o",
+      "sha256": "26f2871410e2d4fe123347ce4ebfe0eaa83c83f1a9fd6e6c4aa0cc353a310f5d"
+    },
+    {
+      "name": "bc_1D_integrator_points_4096_sequences_of_1024.o",
+      "sha256": "9468e3ecda05e903578546558f30516645ddd509872be8733323f973312a94fb"
+    },
+    {
+      "name": "bc_time_points_841_sequences_of_1024.o",
+      "sha256": "0798ac0f366904dd266dcd8bf27c72f55db7a8cb138f734b34f917dfe4d3966b"
+    },
+    {
+      "name": "BsdfOneSampler.cc.obj",
+      "sha256": "a684653c8715ed950c1d53732c2677f910d6b4416ccb57e744d4ac24edc863f2"
+    },
+    {
+      "name": "BsdfSampler.cc.obj",
+      "sha256": "7bd8d01b1742c94e9c184765dc403a4f8e1cb6ca0b6310c38f206afa6c0e4d29"
+    },
+    {
+      "name": "LightSetSampler.cc.obj",
+      "sha256": "156abd33fc968b3201bc54d7852026f144ac1ba75ee04b539b7e590bd2f3baa4"
+    },
+    {
+      "name": "PathIntegratorMultiSampler.cc.obj",
+      "sha256": "34e010d7e987d0692aad4da25dd21fb248b3e71833d331250abc73e70e235ea7"
+    },
+    {
+      "name": "Moebius.cc.obj",
+      "sha256": "0dca62139f0b8fc2fd2cc1c14d035e617a696568e05b545703f7ed803cdc8202"
+    },
+    {
+      "name": "PixelScramble.cc.obj",
+      "sha256": "65a0407c7c36328c633c34c40252dc4dab3ebe8cdd8b5d78462e4e43d41268a5"
+    },
+    {
+      "name": "Sampler.cc.obj",
+      "sha256": "984d1a7688035649f615670d554b2592e13789f7d22459efea3cc8a3ba65422b"
+    },
+    {
+      "name": "PixSampleRuntimeVerify.cc.obj",
+      "sha256": "4adf8811ece0b12f50456543eff417898a11b22e988fa0d61cf6a2e60257aae5"
+    },
+    {
+      "name": "libtexturing_sampler.dll.a",
+      "sha256": "2c6f3e768a6e2623a54d779710ef22b07ffc96bcca8281a070315f7afa7b7e80"
+    }
+  ],
+  "compiler_flags_note": "Retained native flags: -O3, -march=ivybridge, -mavx, -mno-avx2, -mno-fma, -ffp-contract=off"
+}

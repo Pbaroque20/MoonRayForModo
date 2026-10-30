@@ -1,0 +1,764 @@
+{
+  "scope": "Persistent native index bridge; standalone single-worker XPU, not installed or selectable XPU2",
+  "completed_frames": 54,
+  "exact_cross_runtime_comparisons": 36,
+  "checks": {
+    "small": {
+      "status": "passed",
+      "report_sha256": "045795ad320c2f5050ad7db1c504d1f4e8cfbf4a16a7b85984bc4f5e16649bc2",
+      "build_manifest_sha256": "1a4f06b3f09a362935334fb45ec7a21a423572866fc9db1459a7510752e1f21d",
+      "deltas": {
+        "transform": {
+          "changed_attributes": 1,
+          "created_objects": 0,
+          "sha256": "888e289641d6d5f32e36f61ab5c707b1e948d25dccb58a3cf7e69100f8f93133",
+          "bytes": 339
+        },
+        "material": {
+          "changed_attributes": 1,
+          "created_objects": 0,
+          "sha256": "0bd127e02dbda90e38f9f27ac6174117182a1155fd0ecb01030bda83ddbbab1e",
+          "bytes": 118
+        },
+        "deformation": {
+          "changed_attributes": 1,
+          "created_objects": 0,
+          "sha256": "2626dd3d4c4dd9e2a02ce24eab20c8a63ed8b8e218ccf15a21f0a7c52fb5ad8b",
+          "bytes": 25432
+        },
+        "binding": {
+          "changed_attributes": 2,
+          "created_objects": 1,
+          "sha256": "2f2a38df85de37cf630ab541c917f26b6ae5683d6b5f878f9193fb704a7024fe",
+          "bytes": 203
+        },
+        "unbinding": {
+          "changed_attributes": 1,
+          "created_objects": 0,
+          "sha256": "d770ba81568ae65f03faa961c23dcaf2d0f0f6a18f049a239e58d93a54b366ed",
+          "bytes": 89
+        }
+      },
+      "sessions": [
+        {
+          "label": "reference",
+          "execution": {
+            "renderer_timings_seconds": {
+              "Loading scene": 0.004,
+              "Initialize renderer": 0.404,
+              "Generating procedurals": 0.0,
+              "Tessellation": 0.002,
+              "Building BVH": 0.004,
+              "Building GPU BVH": 0.404,
+              "Total render prep": 0.422,
+              "Mcrt time": 0.366,
+              "Total time": 0.822
+            },
+            "xpu_selected": true,
+            "gpu_setup_complete": true,
+            "cpu_fallback": false,
+            "gpu_intersection_percent": 99.77,
+            "gpu_error": false,
+            "actual_threads": 1,
+            "passed": true
+          },
+          "frame_seconds": [
+            1.6868807999417186,
+            0.6862058999249712,
+            0.6869794999947771,
+            0.7379825999960303,
+            0.6536765999626368,
+            0.6932492000050843,
+            0.6477265999419615,
+            0.7534539999905974,
+            0.6658042999915779
+          ],
+          "log_sha256": "b4a18ab735301bd31fb98bb0c87272033af3c9f3447e1dbc8c3492f300d67e8d"
+        },
+        {
+          "label": "control",
+          "execution": {
+            "renderer_timings_seconds": {
+              "Loading scene": 0.004,
+              "Initialize renderer": 0.385,
+              "Generating procedurals": 0.0,
+              "Tessellation": 0.001,
+              "Building BVH": 0.004,
+              "Building GPU BVH": 0.385,
+              "Total render prep": 0.419,
+              "Mcrt time": 0.36,
+              "Total time": 0.817
+            },
+            "xpu_selected": true,
+            "gpu_setup_complete": true,
+            "cpu_fallback": false,
+            "gpu_intersection_percent": 99.77,
+            "gpu_error": false,
+            "actual_threads": 1,
+            "passed": true
+          },
+          "frame_seconds": [
+            2.290289699914865,
+            0.6667852998943999,
+            0.6565760000376031,
+            0.6368093999335542,
+            0.6048443000763655,
+            0.6026760999811813,
+            0.6263822999317199,
+            0.6682432000525296,
+            0.616069299983792
+          ],
+          "log_sha256": "3755a09524a7893bb2201aa080af3f3bc926ef8e169249ca5d39f976c01bb598"
+        },
+        {
+          "label": "indexed",
+          "execution": {
+            "renderer_timings_seconds": {
+              "Loading scene": 0.004,
+              "Initialize renderer": 0.364,
+              "Generating procedurals": 0.0,
+              "Tessellation": 0.001,
+              "Building BVH": 0.004,
+              "Building GPU BVH": 0.364,
+              "Total render prep": 0.382,
+              "Mcrt time": 0.389,
+              "Total time": 0.815
+            },
+            "xpu_selected": true,
+            "gpu_setup_complete": true,
+            "cpu_fallback": false,
+            "gpu_intersection_percent": 99.77,
+            "gpu_error": false,
+            "actual_threads": 1,
+            "passed": true
+          },
+          "frame_seconds": [
+            1.6580849000019953,
+            0.8926831999560818,
+            0.7025165000231937,
+            0.6745783000951633,
+            0.6624279000097886,
+            0.6288832999998704,
+            0.49780699994880706,
+            0.7883956000441685,
+            0.7033945000730455
+          ],
+          "log_sha256": "b3e83af89210f3b5d7126c1322b16f158fc56feb8cc61b10c4a7d03cf3d4e574",
+          "updates": [
+            {
+              "event": "indexed_update",
+              "update": 1,
+              "revision": 2,
+              "initialized": true,
+              "noop": false,
+              "objects_scanned": 16,
+              "attributes_encoded": 1,
+              "bytes_encoded": 304,
+              "initialization_us": 49292,
+              "read_us": 151,
+              "capture_us": 84,
+              "prepare_us": 110,
+              "apply_us": 4
+            },
+            {
+              "event": "indexed_update",
+              "update": 2,
+              "revision": 3,
+              "initialized": false,
+              "noop": false,
+              "objects_scanned": 16,
+              "attributes_encoded": 1,
+              "bytes_encoded": 67,
+              "initialization_us": 0,
+              "read_us": 158,
+              "capture_us": 84,
+              "prepare_us": 126,
+              "apply_us": 7
+            },
+            {
+              "event": "indexed_update",
+              "update": 3,
+              "revision": 4,
+              "initialized": false,
+              "noop": false,
+              "objects_scanned": 16,
+              "attributes_encoded": 1,
+              "bytes_encoded": 25403,
+              "initialization_us": 0,
+              "read_us": 147,
+              "capture_us": 196,
+              "prepare_us": 115,
+              "apply_us": 89
+            },
+            {
+              "event": "indexed_update",
+              "update": 4,
+              "revision": 5,
+              "initialized": false,
+              "noop": false,
+              "objects_scanned": 17,
+              "attributes_encoded": 2,
+              "bytes_encoded": 164,
+              "initialization_us": 0,
+              "read_us": 872,
+              "capture_us": 66,
+              "prepare_us": 408,
+              "apply_us": 646
+            },
+            {
+              "event": "indexed_update",
+              "update": 5,
+              "revision": 6,
+              "initialized": false,
+              "noop": false,
+              "objects_scanned": 17,
+              "attributes_encoded": 1,
+              "bytes_encoded": 67,
+              "initialization_us": 0,
+              "read_us": 117,
+              "capture_us": 64,
+              "prepare_us": 87,
+              "apply_us": 6
+            },
+            {
+              "event": "indexed_update",
+              "update": 6,
+              "revision": 6,
+              "initialized": false,
+              "noop": true,
+              "objects_scanned": 17,
+              "attributes_encoded": 0,
+              "bytes_encoded": 0,
+              "initialization_us": 0,
+              "read_us": 113,
+              "capture_us": 59,
+              "prepare_us": 12,
+              "apply_us": 0
+            },
+            {
+              "event": "indexed_update",
+              "update": 1,
+              "revision": 2,
+              "initialized": true,
+              "noop": false,
+              "objects_scanned": 16,
+              "attributes_encoded": 1,
+              "bytes_encoded": 304,
+              "initialization_us": 49980,
+              "read_us": 153,
+              "capture_us": 121,
+              "prepare_us": 131,
+              "apply_us": 4
+            }
+          ]
+        }
+      ],
+      "comparisons": {
+        "control": [
+          {
+            "stage": "initial",
+            "status": "passed",
+            "exactly_different_pixels": 0,
+            "maximum_absolute_error": 0.0
+          },
+          {
+            "stage": "transform",
+            "status": "passed",
+            "exactly_different_pixels": 0,
+            "maximum_absolute_error": 0.0
+          },
+          {
+            "stage": "material",
+            "status": "passed",
+            "exactly_different_pixels": 0,
+            "maximum_absolute_error": 0.0
+          },
+          {
+            "stage": "deformation",
+            "status": "passed",
+            "exactly_different_pixels": 0,
+            "maximum_absolute_error": 0.0
+          },
+          {
+            "stage": "binding",
+            "status": "passed",
+            "exactly_different_pixels": 0,
+            "maximum_absolute_error": 0.0
+          },
+          {
+            "stage": "unbinding",
+            "status": "passed",
+            "exactly_different_pixels": 0,
+            "maximum_absolute_error": 0.0
+          },
+          {
+            "stage": "noop",
+            "status": "passed",
+            "exactly_different_pixels": 0,
+            "maximum_absolute_error": 0.0
+          },
+          {
+            "stage": "reload",
+            "status": "passed",
+            "exactly_different_pixels": 0,
+            "maximum_absolute_error": 0.0
+          },
+          {
+            "stage": "transform-again",
+            "status": "passed",
+            "exactly_different_pixels": 0,
+            "maximum_absolute_error": 0.0
+          }
+        ],
+        "indexed": [
+          {
+            "stage": "initial",
+            "status": "passed",
+            "exactly_different_pixels": 0,
+            "maximum_absolute_error": 0.0
+          },
+          {
+            "stage": "transform",
+            "status": "passed",
+            "exactly_different_pixels": 0,
+            "maximum_absolute_error": 0.0
+          },
+          {
+            "stage": "material",
+            "status": "passed",
+            "exactly_different_pixels": 0,
+            "maximum_absolute_error": 0.0
+          },
+          {
+            "stage": "deformation",
+            "status": "passed",
+            "exactly_different_pixels": 0,
+            "maximum_absolute_error": 0.0
+          },
+          {
+            "stage": "binding",
+            "status": "passed",
+            "exactly_different_pixels": 0,
+            "maximum_absolute_error": 0.0
+          },
+          {
+            "stage": "unbinding",
+            "status": "passed",
+            "exactly_different_pixels": 0,
+            "maximum_absolute_error": 0.0
+          },
+          {
+            "stage": "noop",
+            "status": "passed",
+            "exactly_different_pixels": 0,
+            "maximum_absolute_error": 0.0
+          },
+          {
+            "stage": "reload",
+            "status": "passed",
+            "exactly_different_pixels": 0,
+            "maximum_absolute_error": 0.0
+          },
+          {
+            "stage": "transform-again",
+            "status": "passed",
+            "exactly_different_pixels": 0,
+            "maximum_absolute_error": 0.0
+          }
+        ]
+      }
+    },
+    "dense": {
+      "status": "passed",
+      "report_sha256": "5387dfaad8c04c8cb39eebd06534e112d5330212c275f3eeca5358c169c4d2d4",
+      "build_manifest_sha256": "1a4f06b3f09a362935334fb45ec7a21a423572866fc9db1459a7510752e1f21d",
+      "deltas": {
+        "transform": {
+          "changed_attributes": 1,
+          "created_objects": 0,
+          "sha256": "888e289641d6d5f32e36f61ab5c707b1e948d25dccb58a3cf7e69100f8f93133",
+          "bytes": 339
+        },
+        "material": {
+          "changed_attributes": 1,
+          "created_objects": 0,
+          "sha256": "0bd127e02dbda90e38f9f27ac6174117182a1155fd0ecb01030bda83ddbbab1e",
+          "bytes": 118
+        },
+        "deformation": {
+          "changed_attributes": 1,
+          "created_objects": 0,
+          "sha256": "a45b7d441c68c86f4276a95bae7d183e059de275125841ec118288afc50880e6",
+          "bytes": 1579097
+        },
+        "binding": {
+          "changed_attributes": 2,
+          "created_objects": 1,
+          "sha256": "2f2a38df85de37cf630ab541c917f26b6ae5683d6b5f878f9193fb704a7024fe",
+          "bytes": 203
+        },
+        "unbinding": {
+          "changed_attributes": 1,
+          "created_objects": 0,
+          "sha256": "d770ba81568ae65f03faa961c23dcaf2d0f0f6a18f049a239e58d93a54b366ed",
+          "bytes": 89
+        }
+      },
+      "sessions": [
+        {
+          "label": "reference",
+          "execution": {
+            "renderer_timings_seconds": {
+              "Loading scene": 0.01,
+              "Initialize renderer": 0.366,
+              "Generating procedurals": 0.004,
+              "Tessellation": 0.102,
+              "Building BVH": 0.296,
+              "Building GPU BVH": 0.366,
+              "Total render prep": 0.735,
+              "Mcrt time": 4.802,
+              "Total time": 5.547
+            },
+            "xpu_selected": true,
+            "gpu_setup_complete": true,
+            "cpu_fallback": false,
+            "gpu_intersection_percent": 99.98,
+            "gpu_error": false,
+            "actual_threads": 1,
+            "passed": true
+          },
+          "frame_seconds": [
+            6.329035999951884,
+            5.94368799997028,
+            6.076074099983089,
+            5.598397299996577,
+            5.6810088999336585,
+            5.632360200048424,
+            5.820231900084764,
+            6.2365782000124454,
+            6.255159500055015
+          ],
+          "log_sha256": "524caef2c0d254e961cb8c3026e60087201b3bfbc622790ebba96a205d0b307d"
+        },
+        {
+          "label": "control",
+          "execution": {
+            "renderer_timings_seconds": {
+              "Loading scene": 0.01,
+              "Initialize renderer": 0.377,
+              "Generating procedurals": 0.004,
+              "Tessellation": 0.092,
+              "Building BVH": 0.261,
+              "Building GPU BVH": 0.376,
+              "Total render prep": 0.705,
+              "Mcrt time": 4.776,
+              "Total time": 5.52
+            },
+            "xpu_selected": true,
+            "gpu_setup_complete": true,
+            "cpu_fallback": false,
+            "gpu_intersection_percent": 99.98,
+            "gpu_error": false,
+            "actual_threads": 1,
+            "passed": true
+          },
+          "frame_seconds": [
+            6.285088500007987,
+            5.968036100035533,
+            6.217291999957524,
+            5.615201500011608,
+            5.711539900046773,
+            5.689901700010523,
+            5.663804700016044,
+            6.1071111999917775,
+            6.013668100000359
+          ],
+          "log_sha256": "bc0df5a66d87aa119bc09685e1ee88b7d2b52ec1f3e846aff9a707c8d456e245"
+        },
+        {
+          "label": "indexed",
+          "execution": {
+            "renderer_timings_seconds": {
+              "Loading scene": 0.01,
+              "Initialize renderer": 0.369,
+              "Generating procedurals": 0.004,
+              "Tessellation": 0.114,
+              "Building BVH": 0.275,
+              "Building GPU BVH": 0.369,
+              "Total render prep": 0.723,
+              "Mcrt time": 4.811,
+              "Total time": 5.563
+            },
+            "xpu_selected": true,
+            "gpu_setup_complete": true,
+            "cpu_fallback": false,
+            "gpu_intersection_percent": 99.98,
+            "gpu_error": false,
+            "actual_threads": 1,
+            "passed": true
+          },
+          "frame_seconds": [
+            6.326154500013217,
+            6.072484500007704,
+            6.0804907999699935,
+            5.731529499986209,
+            5.632664000033401,
+            5.600143799907528,
+            5.1048574000597,
+            6.227364199934527,
+            6.397058200091124
+          ],
+          "log_sha256": "ec276bf4f016f8d379ea2968c328460c7ce7eec6269a3581fd7552045b481d2d",
+          "updates": [
+            {
+              "event": "indexed_update",
+              "update": 1,
+              "revision": 2,
+              "initialized": true,
+              "noop": false,
+              "objects_scanned": 11,
+              "attributes_encoded": 1,
+              "bytes_encoded": 304,
+              "initialization_us": 71215,
+              "read_us": 234,
+              "capture_us": 88,
+              "prepare_us": 101,
+              "apply_us": 4
+            },
+            {
+              "event": "indexed_update",
+              "update": 2,
+              "revision": 3,
+              "initialized": false,
+              "noop": false,
+              "objects_scanned": 11,
+              "attributes_encoded": 1,
+              "bytes_encoded": 67,
+              "initialization_us": 0,
+              "read_us": 119,
+              "capture_us": 57,
+              "prepare_us": 79,
+              "apply_us": 5
+            },
+            {
+              "event": "indexed_update",
+              "update": 3,
+              "revision": 4,
+              "initialized": false,
+              "noop": false,
+              "objects_scanned": 11,
+              "attributes_encoded": 1,
+              "bytes_encoded": 1579067,
+              "initialization_us": 0,
+              "read_us": 1969,
+              "capture_us": 5303,
+              "prepare_us": 1335,
+              "apply_us": 6939
+            },
+            {
+              "event": "indexed_update",
+              "update": 4,
+              "revision": 5,
+              "initialized": false,
+              "noop": false,
+              "objects_scanned": 12,
+              "attributes_encoded": 2,
+              "bytes_encoded": 164,
+              "initialization_us": 0,
+              "read_us": 892,
+              "capture_us": 65,
+              "prepare_us": 306,
+              "apply_us": 638
+            },
+            {
+              "event": "indexed_update",
+              "update": 5,
+              "revision": 6,
+              "initialized": false,
+              "noop": false,
+              "objects_scanned": 12,
+              "attributes_encoded": 1,
+              "bytes_encoded": 67,
+              "initialization_us": 0,
+              "read_us": 115,
+              "capture_us": 62,
+              "prepare_us": 99,
+              "apply_us": 5
+            },
+            {
+              "event": "indexed_update",
+              "update": 6,
+              "revision": 6,
+              "initialized": false,
+              "noop": true,
+              "objects_scanned": 12,
+              "attributes_encoded": 0,
+              "bytes_encoded": 0,
+              "initialization_us": 0,
+              "read_us": 115,
+              "capture_us": 56,
+              "prepare_us": 16,
+              "apply_us": 0
+            },
+            {
+              "event": "indexed_update",
+              "update": 1,
+              "revision": 2,
+              "initialized": true,
+              "noop": false,
+              "objects_scanned": 11,
+              "attributes_encoded": 1,
+              "bytes_encoded": 304,
+              "initialization_us": 79741,
+              "read_us": 210,
+              "capture_us": 159,
+              "prepare_us": 185,
+              "apply_us": 5
+            }
+          ]
+        }
+      ],
+      "comparisons": {
+        "control": [
+          {
+            "stage": "initial",
+            "status": "passed",
+            "exactly_different_pixels": 0,
+            "maximum_absolute_error": 0.0
+          },
+          {
+            "stage": "transform",
+            "status": "passed",
+            "exactly_different_pixels": 0,
+            "maximum_absolute_error": 0.0
+          },
+          {
+            "stage": "material",
+            "status": "passed",
+            "exactly_different_pixels": 0,
+            "maximum_absolute_error": 0.0
+          },
+          {
+            "stage": "deformation",
+            "status": "passed",
+            "exactly_different_pixels": 0,
+            "maximum_absolute_error": 0.0
+          },
+          {
+            "stage": "binding",
+            "status": "passed",
+            "exactly_different_pixels": 0,
+            "maximum_absolute_error": 0.0
+          },
+          {
+            "stage": "unbinding",
+            "status": "passed",
+            "exactly_different_pixels": 0,
+            "maximum_absolute_error": 0.0
+          },
+          {
+            "stage": "noop",
+            "status": "passed",
+            "exactly_different_pixels": 0,
+            "maximum_absolute_error": 0.0
+          },
+          {
+            "stage": "reload",
+            "status": "passed",
+            "exactly_different_pixels": 0,
+            "maximum_absolute_error": 0.0
+          },
+          {
+            "stage": "transform-again",
+            "status": "passed",
+            "exactly_different_pixels": 0,
+            "maximum_absolute_error": 0.0
+          }
+        ],
+        "indexed": [
+          {
+            "stage": "initial",
+            "status": "passed",
+            "exactly_different_pixels": 0,
+            "maximum_absolute_error": 0.0
+          },
+          {
+            "stage": "transform",
+            "status": "passed",
+            "exactly_different_pixels": 0,
+            "maximum_absolute_error": 0.0
+          },
+          {
+            "stage": "material",
+            "status": "passed",
+            "exactly_different_pixels": 0,
+            "maximum_absolute_error": 0.0
+          },
+          {
+            "stage": "deformation",
+            "status": "passed",
+            "exactly_different_pixels": 0,
+            "maximum_absolute_error": 0.0
+          },
+          {
+            "stage": "binding",
+            "status": "passed",
+            "exactly_different_pixels": 0,
+            "maximum_absolute_error": 0.0
+          },
+          {
+            "stage": "unbinding",
+            "status": "passed",
+            "exactly_different_pixels": 0,
+            "maximum_absolute_error": 0.0
+          },
+          {
+            "stage": "noop",
+            "status": "passed",
+            "exactly_different_pixels": 0,
+            "maximum_absolute_error": 0.0
+          },
+          {
+            "stage": "reload",
+            "status": "passed",
+            "exactly_different_pixels": 0,
+            "maximum_absolute_error": 0.0
+          },
+          {
+            "stage": "transform-again",
+            "status": "passed",
+            "exactly_different_pixels": 0,
+            "maximum_absolute_error": 0.0
+          }
+        ]
+      }
+    },
+    "contract": {
+      "status": "passed",
+      "checks": {
+        "passed": true,
+        "active_render_rejected": true,
+        "dirty_flags_preserved": true,
+        "noop_shared": true,
+        "partial_read_rejected": true,
+        "invalid_start_rejected": true,
+        "invalid_update_rejected": true,
+        "teardown_released": true,
+        "rebuild_exact": true
+      },
+      "report_sha256": "443ffae872dd92daec78bbe1f4f477fca27394f6155e645bfd2a91b594a5055a"
+    }
+  },
+  "unresolved_observation": {
+    "description": "One disabled-bridge run stalled at GPU accelerator creation after full reload; complete rerun and dense run passed. Cause not established.",
+    "log_sha256": "11a20ccbd8ce1c9a7f0a0b7fa2366916abc0f8b4a83d6d60fbb0605f00a0dbcb"
+  },
+  "source_hashes": {
+    "xpu2/rdl_live_bridge.h": "863100e68977aa65082647d7371194f09951bfc7d4c08d9f5144c21e68bd08c0",
+    "xpu2/rdl_live_contract.cc": "252155e5b20cf68e6eae4df063d1dae9f994a15ffc4711d19cfc99815b1f81cd",
+    "xpu2/rdl_delta_fixture.cc": "4573e88beb4a5d4dfc17b13cf39b37ac2f9c026e4d426eb4c6603afb83490203",
+    "tools/xpu2_rdl_live_build.py": "d4cd769c4cae3179c958568b31a36b54117d1070474cdac239a9d0a1eba7d5d6",
+    "tools/xpu2_rdl_live_probe.py": "bff7e52fd0e4c037301128c789c9ce48ec74f50825d4a155c34e95e9f9ab93c0",
+    "tools/xpu2_rdl_live_contract.py": "9544b07216ecc07ff83f1834aadc5283bcc8dc0381934c5e69b0d1839c0fe5ea"
+  }
+}

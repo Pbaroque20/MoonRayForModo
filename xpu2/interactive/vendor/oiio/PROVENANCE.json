@@ -1,0 +1,23 @@
+{
+  "upstream": "AcademySoftwareFoundation/OpenImageIO",
+  "version": "v3.1.17.0",
+  "license": "Apache-2.0",
+  "files": {
+    "texturesys.cpp": {
+      "source": "https://raw.githubusercontent.com/AcademySoftwareFoundation/OpenImageIO/v3.1.17.0/src/libtexture/texturesys.cpp",
+      "sha256": "2acfbc4fb064902fabc7386074ca30a5abd0c47f1205bbab94e952d24072cae3"
+    },
+    "texture_pvt.h": {
+      "source": "https://raw.githubusercontent.com/AcademySoftwareFoundation/OpenImageIO/v3.1.17.0/src/libtexture/texture_pvt.h",
+      "sha256": "e1b33036d98b7f091af8555b1e157bf4a0983768563130dccb862362c43b48f8"
+    },
+    "texture.h": {
+      "source": "https://raw.githubusercontent.com/AcademySoftwareFoundation/OpenImageIO/v3.1.17.0/src/include/OpenImageIO/texture.h",
+      "sha256": "cd9b8646d9e95a7ccaee195ac4d9c8848138036b912967422479f5b402eb05ab"
+    },
+    "LICENSE.md": {
+      "source": "https://raw.githubusercontent.com/AcademySoftwareFoundation/OpenImageIO/v3.1.17.0/LICENSE.md",
+      "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+    }
+  }
+}

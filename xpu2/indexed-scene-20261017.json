@@ -1,0 +1,69 @@
+{
+  "status": "passed",
+  "scope": "Native owned scene index; optional real CUDA with synthetic indexed resources",
+  "runs": [
+    {
+      "case": "index",
+      "checks": {
+        "transform_prepare_microseconds": 6744,
+        "passed": true,
+        "checks": 49,
+        "reader_accesses": 80000,
+        "large_entities": 10001,
+        "transform_prepared_buffers": 1,
+        "transform_prepared_bytes": 1
+      },
+      "executable_sha256": "20fb055d2f801f495d66d681da091bbebd1793fca8062dcd1ff5fd4396e5959b",
+      "preprocessed_sha256": "b031133a4e1cf8b4c1587f6931eebd195da984acc04a03134fe2bf602b431615"
+    },
+    {
+      "case": "gpu",
+      "checks": {
+        "passed": true,
+        "gpu_jobs": 2,
+        "samples": 16,
+        "prepared_buffers": 4,
+        "material_update_buffers": 1,
+        "geometry_reused": true,
+        "stale_rejected": true
+      },
+      "executable_sha256": "99785514e2060acc95a8a08b95907d0ac13a91b82de25c70c9a23dcb38f5da4e",
+      "preprocessed_sha256": "8a6e0c90ad149e91429005b7fb6740a6f818e9736e029c6309d13d268fe5e35d",
+      "shading": {
+        "batches": 2,
+        "samples": 16,
+        "accepted": 16,
+        "replaced": 16,
+        "unsupported": 0,
+        "invalid": 0,
+        "mismatch": 0,
+        "errors": 0
+      }
+    }
+  ],
+  "source_hashes": {
+    "xpu2/indexed_scene.h": "07fe320d132edf54daebb23590dae7dbef33cf0390eead0e3faa0d8d9958eef4",
+    "xpu2/indexed_scene_test.cc": "32466bd438754b554ec0991e7bca4ba948f9a9a2b6d88866345a143eaefed116",
+    "tools/xpu2_index_probe.py": "f2cacedf892e7f193e0dee331b14316aa3a4d82d8e80c333670c55ab8d1f0a44",
+    "xpu2/indexed_scene_gpu_probe.cc": "108f610130d034689717bfa70632746d210745e56deec950b1f8a18d3692000f",
+    "xpu2/native_lambert_queue.cc": "cf6943f5724059ddec9eadde37b85bfb97057cd49539798246057cc711d6cf7a",
+    "test-results/xpu2-ray-image-final/sampler.ptx": "9f57b9013da070197087710e0c05afdbca05e9203c730f364ca16962fbb81bc2"
+  },
+  "compiler_sha256": "58efe82fa3ce35005f89d46fe439d7ee54e6889cb7db894019202da691a529a5",
+  "regression": {
+    "tests": 355,
+    "status": "passed",
+    "log_sha256": "66437d364988ef09a5571dacff7034bb25b3c519b0a4144b1da780ce2ee0f562"
+  },
+  "scheduler_source_hashes": {
+    "xpu2/morton_schedule.py": "bb3920f89b05b75fb826952515a155bf4be0e954012e277543c4b55534721935",
+    "tests/test_xpu2_morton.py": "0c547934ead05146a053444edd196c79d30e82b30246703f3c400d6105a93f07"
+  },
+  "limits": [
+    "Synthetic owned resource data; no native MoonRay scene import or image rendering in this milestone",
+    "Morton convergence decisions supplied by a scripted external estimator in tests, not native adaptive statistics",
+    "Metadata snapshots still copy maps; resource buffers are shared",
+    "No global retained-memory/VRAM budget, BVH refits, mip pager or JIT geometry integration",
+    "No scene-load or rendering acceleration claimed; existing XPU and installed kit unchanged"
+  ]
+}

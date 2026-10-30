@@ -1,0 +1,3213 @@
+{
+  "status": "passed",
+  "scope": "Single-worker grouped native direct-light packets; same native owner lifetime and accumulation order.",
+  "reports": {
+    "controls": {
+      "path": "test-results\\xpu2-light-group-v2-first\\report.json",
+      "sha256": "c2c1e523f7629bf66cb8115c827f34b0d533ffc4743e3c124302429a92219630",
+      "runs": [
+        {
+          "round": 0,
+          "label": "reference",
+          "comparison": {
+            "status": "passed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 0,
+            "first_difference": null,
+            "largest_differences": [],
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          },
+          "seconds": 9.311015899991617
+        },
+        {
+          "round": 0,
+          "label": "control",
+          "comparison": {
+            "status": "passed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 0,
+            "first_difference": null,
+            "largest_differences": [],
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          },
+          "sample_reuse": {
+            "mode": 1,
+            "cpu_lanes": 1625067,
+            "gpu_lanes": 1625067,
+            "checked": 0,
+            "mismatch": 0
+          },
+          "light_queue": {
+            "mode": 1,
+            "submitted": 180680,
+            "collected": 180680,
+            "canceled": 0,
+            "refused": 0,
+            "retired": 180680,
+            "batches": 47525,
+            "peak_flights": 2,
+            "waits": 45453,
+            "errors": 0,
+            "abandoned": 0,
+            "gpu_used": 1438792,
+            "cpu_used": 0,
+            "verified": 0,
+            "mismatch": 0,
+            "credits": 0
+          },
+          "light_group": false,
+          "seconds": 28.32914719998371
+        },
+        {
+          "round": 0,
+          "label": "profile_four",
+          "comparison": {
+            "status": "passed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 0,
+            "first_difference": null,
+            "largest_differences": [],
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          },
+          "sample_reuse": {
+            "mode": 1,
+            "cpu_lanes": 1625067,
+            "gpu_lanes": 1625067,
+            "checked": 0,
+            "mismatch": 0
+          },
+          "light_queue": {
+            "mode": 2,
+            "submitted": 45170,
+            "collected": 45170,
+            "canceled": 0,
+            "refused": 0,
+            "retired": 45170,
+            "batches": 45170,
+            "peak_flights": 1,
+            "waits": 45170,
+            "errors": 0,
+            "abandoned": 0,
+            "gpu_used": 1438792,
+            "cpu_used": 0,
+            "verified": 1438792,
+            "mismatch": 0,
+            "credits": 0
+          },
+          "light_group": true,
+          "seconds": 29.06193440000061
+        },
+        {
+          "round": 0,
+          "label": "four",
+          "comparison": {
+            "status": "passed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 0,
+            "first_difference": null,
+            "largest_differences": [],
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          },
+          "sample_reuse": {
+            "mode": 1,
+            "cpu_lanes": 1625067,
+            "gpu_lanes": 1625067,
+            "checked": 0,
+            "mismatch": 0
+          },
+          "light_queue": {
+            "mode": 1,
+            "submitted": 45170,
+            "collected": 45170,
+            "canceled": 0,
+            "refused": 0,
+            "retired": 45170,
+            "batches": 45170,
+            "peak_flights": 1,
+            "waits": 45170,
+            "errors": 0,
+            "abandoned": 0,
+            "gpu_used": 1438792,
+            "cpu_used": 0,
+            "verified": 0,
+            "mismatch": 0,
+            "credits": 0
+          },
+          "light_group": true,
+          "seconds": 28.0158166999463
+        },
+        {
+          "round": 0,
+          "label": "sentinel",
+          "comparison": {
+            "status": "failed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": false,
+                "failed_values": 45504,
+                "maximum_absolute_error": 0.08448433876037598,
+                "rms_error": 0.04543510229040325,
+                "values": 82944
+              },
+              "G": {
+                "passed": false,
+                "failed_values": 45504,
+                "maximum_absolute_error": 0.0528026819229126,
+                "rms_error": 0.02829940094891791,
+                "values": 82944
+              },
+              "B": {
+                "passed": false,
+                "failed_values": 45504,
+                "maximum_absolute_error": 0.137286975979805,
+                "rms_error": 0.07226568160483897,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 45504,
+            "first_difference": {
+              "x": 0,
+              "y_from_bottom": 0,
+              "reference": [
+                0.2443668246269226,
+                0.14324291050434113,
+                0.2984258234500885,
+                1.0
+              ],
+              "actual": [
+                0.1728128343820572,
+                0.0987292230129242,
+                0.18549521267414093,
+                1.0
+              ],
+              "max_absolute_error": 0.11293061077594757
+            },
+            "largest_differences": [
+              {
+                "x": 162,
+                "y_from_bottom": 164,
+                "reference": [
+                  0.4232352375984192,
+                  0.18051445484161377,
+                  0.31302210688591003,
+                  1.0
+                ],
+                "actual": [
+                  0.3387508988380432,
+                  0.12771177291870117,
+                  0.17573513090610504,
+                  1.0
+                ],
+                "max_absolute_error": 0.137286975979805
+              },
+              {
+                "x": 163,
+                "y_from_bottom": 163,
+                "reference": [
+                  0.39095988869667053,
+                  0.17117299139499664,
+                  0.3125520646572113,
+                  1.0
+                ],
+                "actual": [
+                  0.3065362572669983,
+                  0.11840823292732239,
+                  0.1753636598587036,
+                  1.0
+                ],
+                "max_absolute_error": 0.1371884047985077
+              },
+              {
+                "x": 160,
+                "y_from_bottom": 162,
+                "reference": [
+                  0.3397314250469208,
+                  0.15872542560100555,
+                  0.3078886866569519,
+                  1.0
+                ],
+                "actual": [
+                  0.2553170621395111,
+                  0.1059664636850357,
+                  0.17071537673473358,
+                  1.0
+                ],
+                "max_absolute_error": 0.13717330992221832
+              },
+              {
+                "x": 159,
+                "y_from_bottom": 163,
+                "reference": [
+                  0.3787124454975128,
+                  0.1685343086719513,
+                  0.31057000160217285,
+                  1.0
+                ],
+                "actual": [
+                  0.294327974319458,
+                  0.11579400300979614,
+                  0.1734452247619629,
+                  1.0
+                ],
+                "max_absolute_error": 0.13712477684020996
+              },
+              {
+                "x": 161,
+                "y_from_bottom": 163,
+                "reference": [
+                  0.40220746397972107,
+                  0.17631018161773682,
+                  0.3099714517593384,
+                  1.0
+                ],
+                "actual": [
+                  0.31782326102256775,
+                  0.12357011437416077,
+                  0.17284728586673737,
+                  1.0
+                ],
+                "max_absolute_error": 0.137124165892601
+              },
+              {
+                "x": 164,
+                "y_from_bottom": 165,
+                "reference": [
+                  0.4061617851257324,
+                  0.1762094795703888,
+                  0.31146928668022156,
+                  1.0
+                ],
+                "actual": [
+                  0.3217785358428955,
+                  0.12346995621919632,
+                  0.17434656620025635,
+                  1.0
+                ],
+                "max_absolute_error": 0.1371227204799652
+              },
+              {
+                "x": 165,
+                "y_from_bottom": 164,
+                "reference": [
+                  0.4084474742412567,
+                  0.17452149093151093,
+                  0.3102971315383911,
+                  1.0
+                ],
+                "actual": [
+                  0.32406529784202576,
+                  0.12178263068199158,
+                  0.17317607998847961,
+                  1.0
+                ],
+                "max_absolute_error": 0.1371210515499115
+              },
+              {
+                "x": 163,
+                "y_from_bottom": 164,
+                "reference": [
+                  0.498619019985199,
+                  0.20360593497753143,
+                  0.3160395622253418,
+                  1.0
+                ],
+                "actual": [
+                  0.4142380654811859,
+                  0.15086783468723297,
+                  0.17892047762870789,
+                  1.0
+                ],
+                "max_absolute_error": 0.1371190845966339
+              }
+            ],
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          },
+          "sample_reuse": {
+            "mode": 1,
+            "cpu_lanes": 1625067,
+            "gpu_lanes": 1625067,
+            "checked": 0,
+            "mismatch": 0
+          },
+          "light_queue": {
+            "mode": 3,
+            "submitted": 45170,
+            "collected": 45170,
+            "canceled": 0,
+            "refused": 0,
+            "retired": 45170,
+            "batches": 45170,
+            "peak_flights": 1,
+            "waits": 45170,
+            "errors": 0,
+            "abandoned": 0,
+            "gpu_used": 1438792,
+            "cpu_used": 0,
+            "verified": 0,
+            "mismatch": 0,
+            "credits": 0
+          },
+          "light_group": true,
+          "sentinel_comparison": {
+            "status": "failed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": false,
+                "failed_values": 45504,
+                "maximum_absolute_error": 0.08448433876037598,
+                "rms_error": 0.04543510229040325,
+                "values": 82944
+              },
+              "G": {
+                "passed": false,
+                "failed_values": 45504,
+                "maximum_absolute_error": 0.0528026819229126,
+                "rms_error": 0.02829940094891791,
+                "values": 82944
+              },
+              "B": {
+                "passed": false,
+                "failed_values": 45504,
+                "maximum_absolute_error": 0.137286975979805,
+                "rms_error": 0.07226568160483897,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 45504,
+            "first_difference": {
+              "x": 0,
+              "y_from_bottom": 0,
+              "reference": [
+                0.2443668246269226,
+                0.14324291050434113,
+                0.2984258234500885,
+                1.0
+              ],
+              "actual": [
+                0.1728128343820572,
+                0.0987292230129242,
+                0.18549521267414093,
+                1.0
+              ],
+              "max_absolute_error": 0.11293061077594757
+            },
+            "largest_differences": [
+              {
+                "x": 162,
+                "y_from_bottom": 164,
+                "reference": [
+                  0.4232352375984192,
+                  0.18051445484161377,
+                  0.31302210688591003,
+                  1.0
+                ],
+                "actual": [
+                  0.3387508988380432,
+                  0.12771177291870117,
+                  0.17573513090610504,
+                  1.0
+                ],
+                "max_absolute_error": 0.137286975979805
+              },
+              {
+                "x": 163,
+                "y_from_bottom": 163,
+                "reference": [
+                  0.39095988869667053,
+                  0.17117299139499664,
+                  0.3125520646572113,
+                  1.0
+                ],
+                "actual": [
+                  0.3065362572669983,
+                  0.11840823292732239,
+                  0.1753636598587036,
+                  1.0
+                ],
+                "max_absolute_error": 0.1371884047985077
+              },
+              {
+                "x": 160,
+                "y_from_bottom": 162,
+                "reference": [
+                  0.3397314250469208,
+                  0.15872542560100555,
+                  0.3078886866569519,
+                  1.0
+                ],
+                "actual": [
+                  0.2553170621395111,
+                  0.1059664636850357,
+                  0.17071537673473358,
+                  1.0
+                ],
+                "max_absolute_error": 0.13717330992221832
+              },
+              {
+                "x": 159,
+                "y_from_bottom": 163,
+                "reference": [
+                  0.3787124454975128,
+                  0.1685343086719513,
+                  0.31057000160217285,
+                  1.0
+                ],
+                "actual": [
+                  0.294327974319458,
+                  0.11579400300979614,
+                  0.1734452247619629,
+                  1.0
+                ],
+                "max_absolute_error": 0.13712477684020996
+              },
+              {
+                "x": 161,
+                "y_from_bottom": 163,
+                "reference": [
+                  0.40220746397972107,
+                  0.17631018161773682,
+                  0.3099714517593384,
+                  1.0
+                ],
+                "actual": [
+                  0.31782326102256775,
+                  0.12357011437416077,
+                  0.17284728586673737,
+                  1.0
+                ],
+                "max_absolute_error": 0.137124165892601
+              },
+              {
+                "x": 164,
+                "y_from_bottom": 165,
+                "reference": [
+                  0.4061617851257324,
+                  0.1762094795703888,
+                  0.31146928668022156,
+                  1.0
+                ],
+                "actual": [
+                  0.3217785358428955,
+                  0.12346995621919632,
+                  0.17434656620025635,
+                  1.0
+                ],
+                "max_absolute_error": 0.1371227204799652
+              },
+              {
+                "x": 165,
+                "y_from_bottom": 164,
+                "reference": [
+                  0.4084474742412567,
+                  0.17452149093151093,
+                  0.3102971315383911,
+                  1.0
+                ],
+                "actual": [
+                  0.32406529784202576,
+                  0.12178263068199158,
+                  0.17317607998847961,
+                  1.0
+                ],
+                "max_absolute_error": 0.1371210515499115
+              },
+              {
+                "x": 163,
+                "y_from_bottom": 164,
+                "reference": [
+                  0.498619019985199,
+                  0.20360593497753143,
+                  0.3160395622253418,
+                  1.0
+                ],
+                "actual": [
+                  0.4142380654811859,
+                  0.15086783468723297,
+                  0.17892047762870789,
+                  1.0
+                ],
+                "max_absolute_error": 0.1371190845966339
+              }
+            ],
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          },
+          "seconds": 27.18529789999593
+        },
+        {
+          "round": 0,
+          "label": "light_missing",
+          "comparison": {
+            "status": "passed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 0,
+            "first_difference": null,
+            "largest_differences": [],
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          },
+          "sample_reuse": {
+            "mode": 1,
+            "cpu_lanes": 1625067,
+            "gpu_lanes": 1625067,
+            "checked": 0,
+            "mismatch": 0
+          },
+          "light_queue": {
+            "mode": 1,
+            "submitted": 1,
+            "collected": 1,
+            "canceled": 0,
+            "refused": 45169,
+            "retired": 1,
+            "batches": 0,
+            "peak_flights": 0,
+            "waits": 1,
+            "errors": 1,
+            "abandoned": 0,
+            "gpu_used": 0,
+            "cpu_used": 1438792,
+            "verified": 0,
+            "mismatch": 0,
+            "credits": 0
+          },
+          "light_group": true,
+          "seconds": 12.390892799943686
+        },
+        {
+          "round": 0,
+          "label": "light_zero",
+          "comparison": {
+            "status": "passed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 0,
+            "first_difference": null,
+            "largest_differences": [],
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          },
+          "sample_reuse": {
+            "mode": 1,
+            "cpu_lanes": 1625067,
+            "gpu_lanes": 1625067,
+            "checked": 0,
+            "mismatch": 0
+          },
+          "light_queue": {
+            "mode": 1,
+            "submitted": 0,
+            "collected": 0,
+            "canceled": 0,
+            "refused": 45170,
+            "retired": 0,
+            "batches": 0,
+            "peak_flights": 0,
+            "waits": 0,
+            "errors": 0,
+            "abandoned": 0,
+            "gpu_used": 0,
+            "cpu_used": 1438792,
+            "verified": 0,
+            "mismatch": 0,
+            "credits": 0
+          },
+          "light_group": true,
+          "seconds": 12.267796900006942
+        },
+        {
+          "round": 0,
+          "label": "light_upload",
+          "comparison": {
+            "status": "passed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 0,
+            "first_difference": null,
+            "largest_differences": [],
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          },
+          "sample_reuse": {
+            "mode": 1,
+            "cpu_lanes": 1625067,
+            "gpu_lanes": 1625067,
+            "checked": 0,
+            "mismatch": 0
+          },
+          "light_queue": {
+            "mode": 1,
+            "submitted": 1,
+            "collected": 1,
+            "canceled": 0,
+            "refused": 45169,
+            "retired": 1,
+            "batches": 0,
+            "peak_flights": 0,
+            "waits": 1,
+            "errors": 1,
+            "abandoned": 0,
+            "gpu_used": 0,
+            "cpu_used": 1438792,
+            "verified": 0,
+            "mismatch": 0,
+            "credits": 0
+          },
+          "light_group": true,
+          "seconds": 11.714529899996705
+        }
+      ]
+    },
+    "timing": {
+      "path": "test-results\\xpu2-light-group-v2-timing\\report.json",
+      "sha256": "ead8faccd1e8cf2ff5f4a436c1db35f444b3d088471e8a811ec2fab3745d37fa",
+      "runs": [
+        {
+          "round": 0,
+          "label": "reference",
+          "comparison": {
+            "status": "passed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 0,
+            "first_difference": null,
+            "largest_differences": [],
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          },
+          "seconds": 9.470610699965619,
+          "mcrt": 8.158,
+          "stages": {
+            "Integration": 2.62314,
+            "Shade handler (excl. isect+shading)": 0.69556,
+            "MISSING TIME": 0.69487,
+            "Ray handler (excl. embree)": 0.68716,
+            "Post integration (SOA->AOS/queuing)": 0.47557,
+            "Queuing logic (incl. sorting)": 0.4611,
+            "Init Intersection": 0.40071,
+            "Shading (excl. OIIO)": 0.35818,
+            "GPU intersection rays": 0.31827,
+            "TLS allocs (excl. RayStates)": 0.26963,
+            "Occl query handler (excl. embree)": 0.25008,
+            "GPU occlusion rays": 0.22278,
+            "RayState allocs": 0.1932,
+            "Volume integration": 0.16557,
+            "Compute ray derivatives": 0.11507,
+            "Render driver overhead": 0.0634,
+            "AOVs": 0.06095,
+            "Add sample handler": 0.05439,
+            "Primary ray generation": 0.04488,
+            "Render driver serial time": 0.00402,
+            "Embree occlusion rays": 2e-05,
+            "Add heat map handler": 0.0,
+            "Defer shade entries (WARNING SIGN!)": 0.0,
+            "Embree intersection rays": 0.0,
+            "Embree presence rays": 0.0,
+            "Embree volume rays": 0.0,
+            "Texturing (OIIO)": 0.0,
+            "Presence query handler (excl. embree)": 0.0,
+            "Ray sortkey gen": 0.0,
+            "Subsurface integration": 0.0,
+            "Unrecorded": 0.0,
+            "Adaptive tree rebuild": 0.0,
+            "Adaptive tree query": 0.0,
+            "Adaptive tree exclusive lock": 0.0,
+            "Misc A": 0.0,
+            "Misc B": 0.0,
+            "Misc C": 0.0,
+            "Misc D": 0.0,
+            "Misc E": 0.0,
+            "Misc F": 0.0,
+            "__ Render driver __": 0.0
+          },
+          "stats_sha256": "6cedda1bd5d90d50a43abf125a54f72dc4087e75bec906d08564620accae6d95"
+        },
+        {
+          "round": 0,
+          "label": "control",
+          "comparison": {
+            "status": "passed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 0,
+            "first_difference": null,
+            "largest_differences": [],
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          },
+          "sample_reuse": {
+            "mode": 1,
+            "cpu_lanes": 1625067,
+            "gpu_lanes": 1625067,
+            "checked": 0,
+            "mismatch": 0
+          },
+          "light_queue": {
+            "mode": 1,
+            "submitted": 180680,
+            "collected": 180680,
+            "canceled": 0,
+            "refused": 0,
+            "retired": 180680,
+            "batches": 47067,
+            "peak_flights": 2,
+            "waits": 45478,
+            "errors": 0,
+            "abandoned": 0,
+            "gpu_used": 1438792,
+            "cpu_used": 0,
+            "verified": 0,
+            "mismatch": 0,
+            "credits": 0
+          },
+          "light_group": false,
+          "seconds": 28.107213099952787,
+          "mcrt": 26.653,
+          "stages": {
+            "Integration": 20.99794,
+            "MISSING TIME": 0.69784,
+            "Ray handler (excl. embree)": 0.68939,
+            "Shade handler (excl. isect+shading)": 0.66489,
+            "Post integration (SOA->AOS/queuing)": 0.52968,
+            "Queuing logic (incl. sorting)": 0.46204,
+            "GPU intersection rays": 0.44348,
+            "Init Intersection": 0.38029,
+            "Shading (excl. OIIO)": 0.29893,
+            "GPU occlusion rays": 0.29773,
+            "TLS allocs (excl. RayStates)": 0.26829,
+            "Occl query handler (excl. embree)": 0.2277,
+            "RayState allocs": 0.19322,
+            "Volume integration": 0.15678,
+            "Compute ray derivatives": 0.11245,
+            "Render driver overhead": 0.07485,
+            "AOVs": 0.05749,
+            "Add sample handler": 0.05056,
+            "Primary ray generation": 0.04571,
+            "Render driver serial time": 0.00426,
+            "Embree occlusion rays": 2e-05,
+            "Add heat map handler": 0.0,
+            "Defer shade entries (WARNING SIGN!)": 0.0,
+            "Embree intersection rays": 0.0,
+            "Embree presence rays": 0.0,
+            "Embree volume rays": 0.0,
+            "Texturing (OIIO)": 0.0,
+            "Presence query handler (excl. embree)": 0.0,
+            "Ray sortkey gen": 0.0,
+            "Subsurface integration": 0.0,
+            "Unrecorded": 0.0,
+            "Adaptive tree rebuild": 0.0,
+            "Adaptive tree query": 0.0,
+            "Adaptive tree exclusive lock": 0.0,
+            "Misc A": 0.0,
+            "Misc B": 0.0,
+            "Misc C": 0.0,
+            "Misc D": 0.0,
+            "Misc E": 0.0,
+            "Misc F": 0.0,
+            "__ Render driver __": 0.0
+          },
+          "stats_sha256": "aa068e91ef53a581a71b99d935dc067981f1f2a1809693db260c7e7faafc54cf"
+        },
+        {
+          "round": 0,
+          "label": "four",
+          "comparison": {
+            "status": "passed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 0,
+            "first_difference": null,
+            "largest_differences": [],
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          },
+          "sample_reuse": {
+            "mode": 1,
+            "cpu_lanes": 1625067,
+            "gpu_lanes": 1625067,
+            "checked": 0,
+            "mismatch": 0
+          },
+          "light_queue": {
+            "mode": 1,
+            "submitted": 45170,
+            "collected": 45170,
+            "canceled": 0,
+            "refused": 0,
+            "retired": 45170,
+            "batches": 45170,
+            "peak_flights": 1,
+            "waits": 45170,
+            "errors": 0,
+            "abandoned": 0,
+            "gpu_used": 1438792,
+            "cpu_used": 0,
+            "verified": 0,
+            "mismatch": 0,
+            "credits": 0
+          },
+          "light_group": true,
+          "seconds": 28.14333470002748,
+          "mcrt": 26.695,
+          "stages": {
+            "Integration": 21.00159,
+            "Ray handler (excl. embree)": 0.70699,
+            "MISSING TIME": 0.70151,
+            "Shade handler (excl. isect+shading)": 0.66863,
+            "Post integration (SOA->AOS/queuing)": 0.52955,
+            "Queuing logic (incl. sorting)": 0.46396,
+            "GPU intersection rays": 0.45357,
+            "Init Intersection": 0.37821,
+            "GPU occlusion rays": 0.30883,
+            "Shading (excl. OIIO)": 0.29362,
+            "TLS allocs (excl. RayStates)": 0.2656,
+            "Occl query handler (excl. embree)": 0.22445,
+            "RayState allocs": 0.19375,
+            "Volume integration": 0.15205,
+            "Compute ray derivatives": 0.11327,
+            "Render driver overhead": 0.08218,
+            "AOVs": 0.05671,
+            "Add sample handler": 0.0505,
+            "Primary ray generation": 0.04615,
+            "Render driver serial time": 0.00419,
+            "Embree occlusion rays": 2e-05,
+            "Add heat map handler": 0.0,
+            "Defer shade entries (WARNING SIGN!)": 0.0,
+            "Embree intersection rays": 0.0,
+            "Embree presence rays": 0.0,
+            "Embree volume rays": 0.0,
+            "Texturing (OIIO)": 0.0,
+            "Presence query handler (excl. embree)": 0.0,
+            "Ray sortkey gen": 0.0,
+            "Subsurface integration": 0.0,
+            "Unrecorded": 0.0,
+            "Adaptive tree rebuild": 0.0,
+            "Adaptive tree query": 0.0,
+            "Adaptive tree exclusive lock": 0.0,
+            "Misc A": 0.0,
+            "Misc B": 0.0,
+            "Misc C": 0.0,
+            "Misc D": 0.0,
+            "Misc E": 0.0,
+            "Misc F": 0.0,
+            "__ Render driver __": 0.0
+          },
+          "stats_sha256": "24a0c55cadea036de659c9b9fbe2102ad6c53eb92f7cf0eeaf3bee2e0b2b9166"
+        },
+        {
+          "round": 1,
+          "label": "reference",
+          "comparison": {
+            "status": "passed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 0,
+            "first_difference": null,
+            "largest_differences": [],
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          },
+          "seconds": 9.458228999981657,
+          "mcrt": 8.074,
+          "stages": {
+            "Integration": 2.61423,
+            "MISSING TIME": 0.68991,
+            "Ray handler (excl. embree)": 0.68502,
+            "Shade handler (excl. isect+shading)": 0.68347,
+            "Post integration (SOA->AOS/queuing)": 0.4783,
+            "Queuing logic (incl. sorting)": 0.45931,
+            "Init Intersection": 0.38367,
+            "Shading (excl. OIIO)": 0.35561,
+            "GPU intersection rays": 0.28436,
+            "TLS allocs (excl. RayStates)": 0.27267,
+            "Occl query handler (excl. embree)": 0.26064,
+            "GPU occlusion rays": 0.19907,
+            "RayState allocs": 0.18996,
+            "Volume integration": 0.1662,
+            "Compute ray derivatives": 0.11294,
+            "Render driver overhead": 0.06924,
+            "AOVs": 0.06297,
+            "Add sample handler": 0.05605,
+            "Primary ray generation": 0.04729,
+            "Render driver serial time": 0.00396,
+            "Embree occlusion rays": 2e-05,
+            "Add heat map handler": 0.0,
+            "Defer shade entries (WARNING SIGN!)": 0.0,
+            "Embree intersection rays": 0.0,
+            "Embree presence rays": 0.0,
+            "Embree volume rays": 0.0,
+            "Texturing (OIIO)": 0.0,
+            "Presence query handler (excl. embree)": 0.0,
+            "Ray sortkey gen": 0.0,
+            "Subsurface integration": 0.0,
+            "Unrecorded": 0.0,
+            "Adaptive tree rebuild": 0.0,
+            "Adaptive tree query": 0.0,
+            "Adaptive tree exclusive lock": 0.0,
+            "Misc A": 0.0,
+            "Misc B": 0.0,
+            "Misc C": 0.0,
+            "Misc D": 0.0,
+            "Misc E": 0.0,
+            "Misc F": 0.0,
+            "__ Render driver __": 0.0
+          },
+          "stats_sha256": "954e398730b93d3ba0443da7ec898a493438e8459a444949d5d4d3104db5fa9a"
+        },
+        {
+          "round": 1,
+          "label": "control",
+          "comparison": {
+            "status": "passed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 0,
+            "first_difference": null,
+            "largest_differences": [],
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          },
+          "sample_reuse": {
+            "mode": 1,
+            "cpu_lanes": 1625067,
+            "gpu_lanes": 1625067,
+            "checked": 0,
+            "mismatch": 0
+          },
+          "light_queue": {
+            "mode": 1,
+            "submitted": 180680,
+            "collected": 180680,
+            "canceled": 0,
+            "refused": 0,
+            "retired": 180680,
+            "batches": 47695,
+            "peak_flights": 2,
+            "waits": 45466,
+            "errors": 0,
+            "abandoned": 0,
+            "gpu_used": 1438792,
+            "cpu_used": 0,
+            "verified": 0,
+            "mismatch": 0,
+            "credits": 0
+          },
+          "light_group": false,
+          "seconds": 28.257487599970773,
+          "mcrt": 26.71,
+          "stages": {
+            "Integration": 21.00259,
+            "Ray handler (excl. embree)": 0.71107,
+            "MISSING TIME": 0.70878,
+            "Shade handler (excl. isect+shading)": 0.67075,
+            "Post integration (SOA->AOS/queuing)": 0.53294,
+            "Queuing logic (incl. sorting)": 0.47307,
+            "GPU intersection rays": 0.38426,
+            "Init Intersection": 0.37978,
+            "Shading (excl. OIIO)": 0.29783,
+            "GPU occlusion rays": 0.27957,
+            "Occl query handler (excl. embree)": 0.26843,
+            "TLS allocs (excl. RayStates)": 0.2675,
+            "RayState allocs": 0.1989,
+            "Volume integration": 0.16335,
+            "Compute ray derivatives": 0.11298,
+            "Render driver overhead": 0.08766,
+            "AOVs": 0.06036,
+            "Add sample handler": 0.05716,
+            "Primary ray generation": 0.04911,
+            "Render driver serial time": 0.00459,
+            "Embree occlusion rays": 2e-05,
+            "Add heat map handler": 0.0,
+            "Defer shade entries (WARNING SIGN!)": 0.0,
+            "Embree intersection rays": 0.0,
+            "Embree presence rays": 0.0,
+            "Embree volume rays": 0.0,
+            "Texturing (OIIO)": 0.0,
+            "Presence query handler (excl. embree)": 0.0,
+            "Ray sortkey gen": 0.0,
+            "Subsurface integration": 0.0,
+            "Unrecorded": 0.0,
+            "Adaptive tree rebuild": 0.0,
+            "Adaptive tree query": 0.0,
+            "Adaptive tree exclusive lock": 0.0,
+            "Misc A": 0.0,
+            "Misc B": 0.0,
+            "Misc C": 0.0,
+            "Misc D": 0.0,
+            "Misc E": 0.0,
+            "Misc F": 0.0,
+            "__ Render driver __": 0.0
+          },
+          "stats_sha256": "354b27e979de494b18ec873e8e97c3eee73e534f6cb5e39c1fc8684363f38bb1"
+        },
+        {
+          "round": 1,
+          "label": "four",
+          "comparison": {
+            "status": "passed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 0,
+            "first_difference": null,
+            "largest_differences": [],
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          },
+          "sample_reuse": {
+            "mode": 1,
+            "cpu_lanes": 1625067,
+            "gpu_lanes": 1625067,
+            "checked": 0,
+            "mismatch": 0
+          },
+          "light_queue": {
+            "mode": 1,
+            "submitted": 45170,
+            "collected": 45170,
+            "canceled": 0,
+            "refused": 0,
+            "retired": 45170,
+            "batches": 45170,
+            "peak_flights": 1,
+            "waits": 45170,
+            "errors": 0,
+            "abandoned": 0,
+            "gpu_used": 1438792,
+            "cpu_used": 0,
+            "verified": 0,
+            "mismatch": 0,
+            "credits": 0
+          },
+          "light_group": true,
+          "seconds": 28.197770299972035,
+          "mcrt": 26.771,
+          "stages": {
+            "Integration": 21.17192,
+            "MISSING TIME": 0.68627,
+            "Ray handler (excl. embree)": 0.68564,
+            "Shade handler (excl. isect+shading)": 0.65623,
+            "Post integration (SOA->AOS/queuing)": 0.52621,
+            "Queuing logic (incl. sorting)": 0.45855,
+            "GPU intersection rays": 0.43384,
+            "Init Intersection": 0.36611,
+            "GPU occlusion rays": 0.31168,
+            "Shading (excl. OIIO)": 0.29556,
+            "TLS allocs (excl. RayStates)": 0.267,
+            "Occl query handler (excl. embree)": 0.22281,
+            "RayState allocs": 0.19251,
+            "Volume integration": 0.15517,
+            "Compute ray derivatives": 0.11048,
+            "Render driver overhead": 0.07487,
+            "AOVs": 0.05661,
+            "Add sample handler": 0.05049,
+            "Primary ray generation": 0.04476,
+            "Render driver serial time": 0.0044,
+            "Embree occlusion rays": 2e-05,
+            "Add heat map handler": 0.0,
+            "Defer shade entries (WARNING SIGN!)": 0.0,
+            "Embree intersection rays": 0.0,
+            "Embree presence rays": 0.0,
+            "Embree volume rays": 0.0,
+            "Texturing (OIIO)": 0.0,
+            "Presence query handler (excl. embree)": 0.0,
+            "Ray sortkey gen": 0.0,
+            "Subsurface integration": 0.0,
+            "Unrecorded": 0.0,
+            "Adaptive tree rebuild": 0.0,
+            "Adaptive tree query": 0.0,
+            "Adaptive tree exclusive lock": 0.0,
+            "Misc A": 0.0,
+            "Misc B": 0.0,
+            "Misc C": 0.0,
+            "Misc D": 0.0,
+            "Misc E": 0.0,
+            "Misc F": 0.0,
+            "__ Render driver __": 0.0
+          },
+          "stats_sha256": "566f1aa65eca5b719dfe24118b1a82056fff825bef0a2534d91b06c4774cec0b"
+        },
+        {
+          "round": 2,
+          "label": "control",
+          "comparison": {
+            "status": "passed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 0,
+            "first_difference": null,
+            "largest_differences": [],
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          },
+          "sample_reuse": {
+            "mode": 1,
+            "cpu_lanes": 1625067,
+            "gpu_lanes": 1625067,
+            "checked": 0,
+            "mismatch": 0
+          },
+          "light_queue": {
+            "mode": 1,
+            "submitted": 180680,
+            "collected": 180680,
+            "canceled": 0,
+            "refused": 0,
+            "retired": 180680,
+            "batches": 46878,
+            "peak_flights": 2,
+            "waits": 45464,
+            "errors": 0,
+            "abandoned": 0,
+            "gpu_used": 1438792,
+            "cpu_used": 0,
+            "verified": 0,
+            "mismatch": 0,
+            "credits": 0
+          },
+          "light_group": false,
+          "seconds": 28.161644299980253,
+          "mcrt": 26.756,
+          "stages": {
+            "Integration": 21.14257,
+            "MISSING TIME": 0.69296,
+            "Ray handler (excl. embree)": 0.6876,
+            "Shade handler (excl. isect+shading)": 0.64824,
+            "Post integration (SOA->AOS/queuing)": 0.53037,
+            "Queuing logic (incl. sorting)": 0.46141,
+            "GPU intersection rays": 0.43983,
+            "Init Intersection": 0.37742,
+            "Shading (excl. OIIO)": 0.29511,
+            "GPU occlusion rays": 0.29268,
+            "TLS allocs (excl. RayStates)": 0.26153,
+            "Occl query handler (excl. embree)": 0.22228,
+            "RayState allocs": 0.19228,
+            "Volume integration": 0.1556,
+            "Compute ray derivatives": 0.11041,
+            "Render driver overhead": 0.08738,
+            "AOVs": 0.05697,
+            "Add sample handler": 0.05077,
+            "Primary ray generation": 0.04691,
+            "Render driver serial time": 0.00427,
+            "Embree occlusion rays": 2e-05,
+            "Add heat map handler": 0.0,
+            "Defer shade entries (WARNING SIGN!)": 0.0,
+            "Embree intersection rays": 0.0,
+            "Embree presence rays": 0.0,
+            "Embree volume rays": 0.0,
+            "Texturing (OIIO)": 0.0,
+            "Presence query handler (excl. embree)": 0.0,
+            "Ray sortkey gen": 0.0,
+            "Subsurface integration": 0.0,
+            "Unrecorded": 0.0,
+            "Adaptive tree rebuild": 0.0,
+            "Adaptive tree query": 0.0,
+            "Adaptive tree exclusive lock": 0.0,
+            "Misc A": 0.0,
+            "Misc B": 0.0,
+            "Misc C": 0.0,
+            "Misc D": 0.0,
+            "Misc E": 0.0,
+            "Misc F": 0.0,
+            "__ Render driver __": 0.0
+          },
+          "stats_sha256": "23f79de5d4b383b67bc9c2ed155f0e275e856e793ea749fc96d6c4797e2e6891"
+        },
+        {
+          "round": 2,
+          "label": "four",
+          "comparison": {
+            "status": "passed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 0,
+            "first_difference": null,
+            "largest_differences": [],
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          },
+          "sample_reuse": {
+            "mode": 1,
+            "cpu_lanes": 1625067,
+            "gpu_lanes": 1625067,
+            "checked": 0,
+            "mismatch": 0
+          },
+          "light_queue": {
+            "mode": 1,
+            "submitted": 45170,
+            "collected": 45170,
+            "canceled": 0,
+            "refused": 0,
+            "retired": 45170,
+            "batches": 45170,
+            "peak_flights": 1,
+            "waits": 45170,
+            "errors": 0,
+            "abandoned": 0,
+            "gpu_used": 1438792,
+            "cpu_used": 0,
+            "verified": 0,
+            "mismatch": 0,
+            "credits": 0
+          },
+          "light_group": true,
+          "seconds": 27.90498310001567,
+          "mcrt": 26.466,
+          "stages": {
+            "Integration": 20.80846,
+            "Ray handler (excl. embree)": 0.71123,
+            "MISSING TIME": 0.70297,
+            "Shade handler (excl. isect+shading)": 0.67423,
+            "Post integration (SOA->AOS/queuing)": 0.53045,
+            "Queuing logic (incl. sorting)": 0.47124,
+            "Init Intersection": 0.39062,
+            "GPU intersection rays": 0.37886,
+            "Shading (excl. OIIO)": 0.30036,
+            "GPU occlusion rays": 0.27682,
+            "TLS allocs (excl. RayStates)": 0.27502,
+            "Occl query handler (excl. embree)": 0.23152,
+            "RayState allocs": 0.19839,
+            "Volume integration": 0.16085,
+            "Compute ray derivatives": 0.11308,
+            "Render driver overhead": 0.08019,
+            "AOVs": 0.0575,
+            "Add sample handler": 0.053,
+            "Primary ray generation": 0.04725,
+            "Render driver serial time": 0.00447,
+            "Embree occlusion rays": 3e-05,
+            "Add heat map handler": 0.0,
+            "Defer shade entries (WARNING SIGN!)": 0.0,
+            "Embree intersection rays": 0.0,
+            "Embree presence rays": 0.0,
+            "Embree volume rays": 0.0,
+            "Texturing (OIIO)": 0.0,
+            "Presence query handler (excl. embree)": 0.0,
+            "Ray sortkey gen": 0.0,
+            "Subsurface integration": 0.0,
+            "Unrecorded": 0.0,
+            "Adaptive tree rebuild": 0.0,
+            "Adaptive tree query": 0.0,
+            "Adaptive tree exclusive lock": 0.0,
+            "Misc A": 0.0,
+            "Misc B": 0.0,
+            "Misc C": 0.0,
+            "Misc D": 0.0,
+            "Misc E": 0.0,
+            "Misc F": 0.0,
+            "__ Render driver __": 0.0
+          },
+          "stats_sha256": "97639699a8bd308f7770963d04e0d5a43717adf20463c5cca0154eb933f9e132"
+        },
+        {
+          "round": 2,
+          "label": "reference",
+          "comparison": {
+            "status": "passed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 0,
+            "first_difference": null,
+            "largest_differences": [],
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          },
+          "seconds": 10.313529300037771,
+          "mcrt": 8.59,
+          "stages": {
+            "Integration": 2.7518,
+            "Shade handler (excl. isect+shading)": 0.75073,
+            "Ray handler (excl. embree)": 0.74092,
+            "MISSING TIME": 0.70508,
+            "Post integration (SOA->AOS/queuing)": 0.49551,
+            "Queuing logic (incl. sorting)": 0.48298,
+            "Init Intersection": 0.43375,
+            "Shading (excl. OIIO)": 0.37897,
+            "GPU intersection rays": 0.34853,
+            "TLS allocs (excl. RayStates)": 0.27642,
+            "Occl query handler (excl. embree)": 0.25264,
+            "GPU occlusion rays": 0.2318,
+            "RayState allocs": 0.20077,
+            "Volume integration": 0.17174,
+            "Compute ray derivatives": 0.12254,
+            "Render driver overhead": 0.07008,
+            "AOVs": 0.06291,
+            "Add sample handler": 0.06009,
+            "Primary ray generation": 0.04858,
+            "Render driver serial time": 0.00462,
+            "Embree occlusion rays": 2e-05,
+            "Add heat map handler": 0.0,
+            "Defer shade entries (WARNING SIGN!)": 0.0,
+            "Embree intersection rays": 0.0,
+            "Embree presence rays": 0.0,
+            "Embree volume rays": 0.0,
+            "Texturing (OIIO)": 0.0,
+            "Presence query handler (excl. embree)": 0.0,
+            "Ray sortkey gen": 0.0,
+            "Subsurface integration": 0.0,
+            "Unrecorded": 0.0,
+            "Adaptive tree rebuild": 0.0,
+            "Adaptive tree query": 0.0,
+            "Adaptive tree exclusive lock": 0.0,
+            "Misc A": 0.0,
+            "Misc B": 0.0,
+            "Misc C": 0.0,
+            "Misc D": 0.0,
+            "Misc E": 0.0,
+            "Misc F": 0.0,
+            "__ Render driver __": 0.0
+          },
+          "stats_sha256": "3de60721e4b9c7614bf6671d8aafd79fa4eb04db4a0ae82b6b992d8a6417cf9d"
+        },
+        {
+          "round": 3,
+          "label": "four",
+          "comparison": {
+            "status": "passed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 0,
+            "first_difference": null,
+            "largest_differences": [],
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          },
+          "sample_reuse": {
+            "mode": 1,
+            "cpu_lanes": 1625067,
+            "gpu_lanes": 1625067,
+            "checked": 0,
+            "mismatch": 0
+          },
+          "light_queue": {
+            "mode": 1,
+            "submitted": 45170,
+            "collected": 45170,
+            "canceled": 0,
+            "refused": 0,
+            "retired": 45170,
+            "batches": 45170,
+            "peak_flights": 1,
+            "waits": 45170,
+            "errors": 0,
+            "abandoned": 0,
+            "gpu_used": 1438792,
+            "cpu_used": 0,
+            "verified": 0,
+            "mismatch": 0,
+            "credits": 0
+          },
+          "light_group": true,
+          "seconds": 28.953782299999148,
+          "mcrt": 27.048,
+          "stages": {
+            "Integration": 21.04722,
+            "Ray handler (excl. embree)": 0.78113,
+            "Shade handler (excl. isect+shading)": 0.7263,
+            "MISSING TIME": 0.70045,
+            "Post integration (SOA->AOS/queuing)": 0.56403,
+            "Queuing logic (incl. sorting)": 0.5119,
+            "Init Intersection": 0.41788,
+            "GPU intersection rays": 0.34152,
+            "Shading (excl. OIIO)": 0.32248,
+            "TLS allocs (excl. RayStates)": 0.29603,
+            "GPU occlusion rays": 0.27272,
+            "Occl query handler (excl. embree)": 0.26907,
+            "RayState allocs": 0.21827,
+            "Volume integration": 0.17853,
+            "Compute ray derivatives": 0.12099,
+            "Render driver overhead": 0.09057,
+            "Add sample handler": 0.06775,
+            "AOVs": 0.06494,
+            "Primary ray generation": 0.0515,
+            "Render driver serial time": 0.0048,
+            "Embree occlusion rays": 2e-05,
+            "Add heat map handler": 0.0,
+            "Defer shade entries (WARNING SIGN!)": 0.0,
+            "Embree intersection rays": 0.0,
+            "Embree presence rays": 0.0,
+            "Embree volume rays": 0.0,
+            "Texturing (OIIO)": 0.0,
+            "Presence query handler (excl. embree)": 0.0,
+            "Ray sortkey gen": 0.0,
+            "Subsurface integration": 0.0,
+            "Unrecorded": 0.0,
+            "Adaptive tree rebuild": 0.0,
+            "Adaptive tree query": 0.0,
+            "Adaptive tree exclusive lock": 0.0,
+            "Misc A": 0.0,
+            "Misc B": 0.0,
+            "Misc C": 0.0,
+            "Misc D": 0.0,
+            "Misc E": 0.0,
+            "Misc F": 0.0,
+            "__ Render driver __": 0.0
+          },
+          "stats_sha256": "405b87ca1ca211ff692e41aac57efc52c9787985f9f4773967628c9af760b5c7"
+        },
+        {
+          "round": 3,
+          "label": "reference",
+          "comparison": {
+            "status": "passed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 0,
+            "first_difference": null,
+            "largest_differences": [],
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          },
+          "seconds": 10.303106000064872,
+          "mcrt": 8.769,
+          "stages": {
+            "Integration": 2.77929,
+            "Shade handler (excl. isect+shading)": 0.76619,
+            "Ray handler (excl. embree)": 0.72848,
+            "MISSING TIME": 0.69457,
+            "Post integration (SOA->AOS/queuing)": 0.49405,
+            "Queuing logic (incl. sorting)": 0.47125,
+            "Init Intersection": 0.43284,
+            "GPU occlusion rays": 0.39547,
+            "Shading (excl. OIIO)": 0.38667,
+            "GPU intersection rays": 0.32952,
+            "TLS allocs (excl. RayStates)": 0.28268,
+            "Occl query handler (excl. embree)": 0.26979,
+            "RayState allocs": 0.19793,
+            "Volume integration": 0.17807,
+            "Compute ray derivatives": 0.11943,
+            "Render driver overhead": 0.07029,
+            "AOVs": 0.06298,
+            "Add sample handler": 0.05697,
+            "Primary ray generation": 0.04923,
+            "Render driver serial time": 0.00415,
+            "Embree occlusion rays": 2e-05,
+            "Add heat map handler": 0.0,
+            "Defer shade entries (WARNING SIGN!)": 0.0,
+            "Embree intersection rays": 0.0,
+            "Embree presence rays": 0.0,
+            "Embree volume rays": 0.0,
+            "Texturing (OIIO)": 0.0,
+            "Presence query handler (excl. embree)": 0.0,
+            "Ray sortkey gen": 0.0,
+            "Subsurface integration": 0.0,
+            "Unrecorded": 0.0,
+            "Adaptive tree rebuild": 0.0,
+            "Adaptive tree query": 0.0,
+            "Adaptive tree exclusive lock": 0.0,
+            "Misc A": 0.0,
+            "Misc B": 0.0,
+            "Misc C": 0.0,
+            "Misc D": 0.0,
+            "Misc E": 0.0,
+            "Misc F": 0.0,
+            "__ Render driver __": 0.0
+          },
+          "stats_sha256": "f3794cefe44de4e06384d62be4d9f3290a97fcf1fd4e5e3d19dede18ffa68d0d"
+        },
+        {
+          "round": 3,
+          "label": "control",
+          "comparison": {
+            "status": "passed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 0,
+            "first_difference": null,
+            "largest_differences": [],
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          },
+          "sample_reuse": {
+            "mode": 1,
+            "cpu_lanes": 1625067,
+            "gpu_lanes": 1625067,
+            "checked": 0,
+            "mismatch": 0
+          },
+          "light_queue": {
+            "mode": 1,
+            "submitted": 180680,
+            "collected": 180680,
+            "canceled": 0,
+            "refused": 0,
+            "retired": 180680,
+            "batches": 47006,
+            "peak_flights": 2,
+            "waits": 45384,
+            "errors": 0,
+            "abandoned": 0,
+            "gpu_used": 1438792,
+            "cpu_used": 0,
+            "verified": 0,
+            "mismatch": 0,
+            "credits": 0
+          },
+          "light_group": false,
+          "seconds": 27.097319700056687,
+          "mcrt": 25.592,
+          "stages": {
+            "Integration": 19.96475,
+            "Ray handler (excl. embree)": 0.69941,
+            "MISSING TIME": 0.68814,
+            "Shade handler (excl. isect+shading)": 0.6684,
+            "Post integration (SOA->AOS/queuing)": 0.52641,
+            "Queuing logic (incl. sorting)": 0.46709,
+            "GPU occlusion rays": 0.38847,
+            "Init Intersection": 0.38366,
+            "Shading (excl. OIIO)": 0.30054,
+            "GPU intersection rays": 0.29172,
+            "TLS allocs (excl. RayStates)": 0.26861,
+            "Occl query handler (excl. embree)": 0.23135,
+            "RayState allocs": 0.19879,
+            "Volume integration": 0.16283,
+            "Compute ray derivatives": 0.11242,
+            "Render driver overhead": 0.07742,
+            "AOVs": 0.05827,
+            "Add sample handler": 0.05356,
+            "Primary ray generation": 0.04637,
+            "Render driver serial time": 0.00422,
+            "Embree occlusion rays": 2e-05,
+            "Add heat map handler": 0.0,
+            "Defer shade entries (WARNING SIGN!)": 0.0,
+            "Embree intersection rays": 0.0,
+            "Embree presence rays": 0.0,
+            "Embree volume rays": 0.0,
+            "Texturing (OIIO)": 0.0,
+            "Presence query handler (excl. embree)": 0.0,
+            "Ray sortkey gen": 0.0,
+            "Subsurface integration": 0.0,
+            "Unrecorded": 0.0,
+            "Adaptive tree rebuild": 0.0,
+            "Adaptive tree query": 0.0,
+            "Adaptive tree exclusive lock": 0.0,
+            "Misc A": 0.0,
+            "Misc B": 0.0,
+            "Misc C": 0.0,
+            "Misc D": 0.0,
+            "Misc E": 0.0,
+            "Misc F": 0.0,
+            "__ Render driver __": 0.0
+          },
+          "stats_sha256": "8ea941dcdd3e35035f07466a09f8b711743e2824cf05781188c4b8f8ca49feb5"
+        }
+      ]
+    },
+    "recovery": {
+      "path": "test-results\\xpu2-light-group-v2-cancel\\report.json",
+      "sha256": "c0002592aec4bd04185f779073a5ca344e73eb0e67321e66c3d7ba66d697f3d5",
+      "runs": [
+        {
+          "label": "reference",
+          "comparison": {
+            "status": "passed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 0,
+            "first_difference": null,
+            "largest_differences": [],
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          }
+        },
+        {
+          "label": "fresh",
+          "comparison": {
+            "status": "passed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 0,
+            "first_difference": null,
+            "largest_differences": [],
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          },
+          "sample_reuse": [
+            {
+              "mode": 1,
+              "cpu_lanes": 1617147,
+              "gpu_lanes": 1617147,
+              "checked": 0,
+              "mismatch": 0
+            }
+          ],
+          "light_queue": [
+            {
+              "mode": 1,
+              "submitted": 44958,
+              "collected": 44958,
+              "canceled": 0,
+              "refused": 0,
+              "retired": 44958,
+              "batches": 44958,
+              "peak_flights": 1,
+              "waits": 44958,
+              "errors": 0,
+              "abandoned": 0,
+              "gpu_used": 1431905,
+              "cpu_used": 0,
+              "verified": 0,
+              "mismatch": 0,
+              "credits": 0
+            }
+          ]
+        },
+        {
+          "label": "restart",
+          "comparison": {
+            "status": "passed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 0,
+            "first_difference": null,
+            "largest_differences": [],
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          },
+          "sample_reuse": [
+            {
+              "mode": 1,
+              "cpu_lanes": 359595,
+              "gpu_lanes": 359523,
+              "checked": 0,
+              "mismatch": 0
+            },
+            {
+              "mode": 1,
+              "cpu_lanes": 1617147,
+              "gpu_lanes": 1617147,
+              "checked": 0,
+              "mismatch": 0
+            }
+          ],
+          "light_queue": [
+            {
+              "mode": 1,
+              "submitted": 10000,
+              "collected": 9999,
+              "canceled": 1,
+              "refused": 0,
+              "retired": 10000,
+              "batches": 10000,
+              "peak_flights": 1,
+              "waits": 10000,
+              "errors": 0,
+              "abandoned": 0,
+              "gpu_used": 318110,
+              "cpu_used": 32,
+              "verified": 0,
+              "mismatch": 0,
+              "credits": 0
+            },
+            {
+              "mode": 1,
+              "submitted": 44958,
+              "collected": 44958,
+              "canceled": 0,
+              "refused": 0,
+              "retired": 44958,
+              "batches": 44958,
+              "peak_flights": 1,
+              "waits": 44958,
+              "errors": 0,
+              "abandoned": 0,
+              "gpu_used": 1431905,
+              "cpu_used": 0,
+              "verified": 0,
+              "mismatch": 0,
+              "credits": 0
+            }
+          ],
+          "versus_fresh": {
+            "status": "passed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 0,
+            "first_difference": null,
+            "largest_differences": [],
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "timings": {
+    "reference": {
+      "wall_median": 10.303106000064872,
+      "wall_min": 9.458228999981657,
+      "wall_max": 10.313529300037771,
+      "render_median": 8.59,
+      "render_min": 8.074,
+      "render_max": 8.769
+    },
+    "control": {
+      "wall_median": 28.161644299980253,
+      "wall_min": 27.097319700056687,
+      "wall_max": 28.257487599970773,
+      "render_median": 26.71,
+      "render_min": 25.592,
+      "render_max": 26.756
+    },
+    "four": {
+      "wall_median": 28.197770299972035,
+      "wall_min": 27.90498310001567,
+      "wall_max": 28.953782299999148,
+      "render_median": 26.771,
+      "render_min": 26.466,
+      "render_max": 27.048
+    }
+  },
+  "paired": {
+    "four_minus_control": {
+      "mcrt": {
+        "per_round_seconds": [
+          0.06099999999999994,
+          -0.28999999999999915,
+          1.4559999999999995
+        ],
+        "median_seconds": 0.06099999999999994
+      },
+      "integration": {
+        "per_round_seconds": [
+          0.16932999999999865,
+          -0.334109999999999,
+          1.0824700000000007
+        ],
+        "median_seconds": 0.16932999999999865
+      },
+      "seconds": {
+        "per_round_seconds": [
+          -0.05971729999873787,
+          -0.2566611999645829,
+          1.8564625999424607
+        ],
+        "median_seconds": -0.05971729999873787
+      }
+    },
+    "four_minus_reference": {
+      "mcrt": {
+        "per_round_seconds": [
+          18.697000000000003,
+          17.876,
+          18.278999999999996
+        ],
+        "median_seconds": 18.278999999999996
+      },
+      "integration": {
+        "per_round_seconds": [
+          18.55769,
+          18.05666,
+          18.26793
+        ],
+        "median_seconds": 18.26793
+      },
+      "seconds": {
+        "per_round_seconds": [
+          18.73954129999038,
+          17.5914537999779,
+          18.650676299934275
+        ],
+        "median_seconds": 18.650676299934275
+      }
+    }
+  },
+  "limitations": [
+    "No installation or default change.",
+    "One native worker; not multiworker/production qualification.",
+    "Process checks cannot exclude brief intervening render activity.",
+    "Only supported primary fixed-sample, empty-AOV diffuse direct-light calculations are offloaded; native shadows and film remain unchanged.",
+    "Cancellation check also exercises bounded neighbor selection; timings use FIFO."
+  ],
+  "supplemental": [
+    {
+      "path": "test-results\\xpu2-light-group-v2-rough\\report.json",
+      "sha256": "ddebba4e857705a5ba9500ada50f27ed4b3ee22a24198e1bd406304d0043ce0f",
+      "runs": [
+        {
+          "label": "reference",
+          "comparison": {
+            "status": "passed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 0,
+            "first_difference": null,
+            "largest_differences": [],
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          }
+        },
+        {
+          "label": "four",
+          "comparison": {
+            "status": "passed",
+            "dimensions": [
+              384,
+              216
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 82944
+              }
+            },
+            "exactly_different_pixels": 0,
+            "first_difference": null,
+            "largest_differences": [],
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          },
+          "sample_reuse": {
+            "mode": 1,
+            "cpu_lanes": 1625067,
+            "gpu_lanes": 1625067,
+            "checked": 0,
+            "mismatch": 0
+          },
+          "light_queue": {
+            "mode": 1,
+            "submitted": 45170,
+            "collected": 45170,
+            "canceled": 0,
+            "refused": 0,
+            "retired": 45170,
+            "batches": 45170,
+            "peak_flights": 1,
+            "waits": 45170,
+            "errors": 0,
+            "abandoned": 0,
+            "gpu_used": 1438792,
+            "cpu_used": 0,
+            "verified": 0,
+            "mismatch": 0,
+            "credits": 0
+          }
+        }
+      ]
+    },
+    {
+      "path": "test-results\\xpu2-light-group-v2-adaptive\\report.json",
+      "sha256": "b4b44a51e74e44846b0950d533d3c967616fcfff37c6f1a19b0ef3fe59a15e07",
+      "runs": [
+        {
+          "label": "reference",
+          "comparison": {
+            "status": "passed",
+            "dimensions": [
+              128,
+              72
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 9216
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 9216
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 9216
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 9216
+              }
+            },
+            "exactly_different_pixels": 0,
+            "first_difference": null,
+            "largest_differences": [],
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          }
+        },
+        {
+          "label": "four",
+          "comparison": {
+            "status": "passed",
+            "dimensions": [
+              128,
+              72
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 9216
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 9216
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 9216
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 9216
+              }
+            },
+            "exactly_different_pixels": 0,
+            "first_difference": null,
+            "largest_differences": [],
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          },
+          "sample_reuse": {
+            "mode": 1,
+            "cpu_lanes": 0,
+            "gpu_lanes": 0,
+            "checked": 0,
+            "mismatch": 0
+          },
+          "light_queue": {
+            "mode": 1,
+            "submitted": 0,
+            "collected": 0,
+            "canceled": 0,
+            "refused": 0,
+            "retired": 0,
+            "batches": 0,
+            "peak_flights": 0,
+            "waits": 0,
+            "errors": 0,
+            "abandoned": 0,
+            "gpu_used": 0,
+            "cpu_used": 0,
+            "verified": 0,
+            "mismatch": 0,
+            "credits": 0
+          }
+        }
+      ]
+    },
+    {
+      "path": "test-results\\xpu2-light-group-v2-samples1\\report.json",
+      "sha256": "1dc1174d510c5b684ac4325780cbb84cee1c07930bdb75a9d65897baedfefbb4",
+      "runs": [
+        {
+          "label": "reference",
+          "comparison": {
+            "status": "passed",
+            "dimensions": [
+              96,
+              54
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 5184
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 5184
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 5184
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 5184
+              }
+            },
+            "exactly_different_pixels": 0,
+            "first_difference": null,
+            "largest_differences": [],
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          }
+        },
+        {
+          "label": "four",
+          "comparison": {
+            "status": "passed",
+            "dimensions": [
+              96,
+              54
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 5184
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 5184
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 5184
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 5184
+              }
+            },
+            "exactly_different_pixels": 0,
+            "first_difference": null,
+            "largest_differences": [],
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          },
+          "sample_reuse": {
+            "mode": 1,
+            "cpu_lanes": 25488,
+            "gpu_lanes": 25488,
+            "checked": 0,
+            "mismatch": 0
+          },
+          "light_queue": {
+            "mode": 1,
+            "submitted": 710,
+            "collected": 710,
+            "canceled": 0,
+            "refused": 0,
+            "retired": 710,
+            "batches": 710,
+            "peak_flights": 1,
+            "waits": 710,
+            "errors": 0,
+            "abandoned": 0,
+            "gpu_used": 5644,
+            "cpu_used": 0,
+            "verified": 0,
+            "mismatch": 0,
+            "credits": 0
+          }
+        }
+      ]
+    },
+    {
+      "path": "test-results\\xpu2-light-group-v2-samples4\\report.json",
+      "sha256": "f8cc62d008b5a01c00fb01ef39a6fd4015359ce1651fc630d7a85e17648162af",
+      "runs": [
+        {
+          "label": "reference",
+          "comparison": {
+            "status": "passed",
+            "dimensions": [
+              96,
+              54
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 5184
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 5184
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 5184
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 5184
+              }
+            },
+            "exactly_different_pixels": 0,
+            "first_difference": null,
+            "largest_differences": [],
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          }
+        },
+        {
+          "label": "four",
+          "comparison": {
+            "status": "passed",
+            "dimensions": [
+              96,
+              54
+            ],
+            "channels": {
+              "R": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 5184
+              },
+              "G": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 5184
+              },
+              "B": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 5184
+              },
+              "A": {
+                "passed": true,
+                "failed_values": 0,
+                "maximum_absolute_error": 0.0,
+                "rms_error": 0.0,
+                "values": 5184
+              }
+            },
+            "exactly_different_pixels": 0,
+            "first_difference": null,
+            "largest_differences": [],
+            "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+            "metadata": {
+              "colorInteropID": "\"lin_rec709_scene\"",
+              "oiio:ColorSpace": "\"lin_rec709_scene\"",
+              "PixelAspectRatio": "1"
+            }
+          },
+          "sample_reuse": {
+            "mode": 1,
+            "cpu_lanes": 25488,
+            "gpu_lanes": 25488,
+            "checked": 0,
+            "mismatch": 0
+          },
+          "light_queue": {
+            "mode": 1,
+            "submitted": 710,
+            "collected": 710,
+            "canceled": 0,
+            "refused": 0,
+            "retired": 710,
+            "batches": 710,
+            "peak_flights": 1,
+            "waits": 710,
+            "errors": 0,
+            "abandoned": 0,
+            "gpu_used": 90287,
+            "cpu_used": 0,
+            "verified": 0,
+            "mismatch": 0,
+            "credits": 0
+          }
+        }
+      ]
+    }
+  ],
+  "build_report_sha256": "5c4ca5340c6dba4b112ed7e53b32b8122d7754648f570f3f5fb09ecb311bf7ee",
+  "configuration_notes": [
+    "control and four both enable sample reuse and direct-light offload; only four groups the light samples.",
+    "previous is the frozen async runtime with sample reuse and direct-light offload at their default off settings.",
+    "profile_four performs native numerical verification; timing four skips the replaced CPU calculation."
+  ]
+}

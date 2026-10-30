@@ -1,0 +1,166 @@
+{
+  "status": "passed",
+  "gpu": "NVIDIA GeForce RTX 3090, 591.74, GPU-041d589b-450b-0916-2503-c453af2389e3",
+  "build_manifest_sha256": "47a197d4ba250c8c68d8279eb636bcdd9384314ad31fedbdd325745be4cf7b6a",
+  "delta_image_change": 26087,
+  "scope": "Isolated persistent native XPU rendering with delayed OptiX replay and bounded drains; no worker-produced film contribution or speed claim",
+  "sessions": [
+    {
+      "label": "reference",
+      "exit_code": 0,
+      "log_sha256": "3dbf1495ea4ec396ff7a721b8452a663b0f11cc5815b8b9d0d9678ac452cb972"
+    },
+    {
+      "label": "control",
+      "exit_code": 0,
+      "log_sha256": "e455dacbc8301fe78bbdd252ff5b4f63c8ce9a9b585f2a84ffeab607e32df7ce"
+    },
+    {
+      "label": "probe",
+      "exit_code": 0,
+      "log_sha256": "f881c9e055ea29bdc48438539fc5734390d01267f48c95709138a3b789803129",
+      "lifetime": {
+        "status": "passed",
+        "frames": 3,
+        "queries": 10805,
+        "blocked": 2,
+        "boundaries": {
+          "accelerator_rebuild": 3,
+          "context_teardown": 2,
+          "update_scene": 1
+        }
+      },
+      "trace_sha256": "1d2fed8de5aff410fac1a8037790fc6c30897f8b574628414f5e16dbf9ec360a"
+    },
+    {
+      "label": "cancel",
+      "exit_code": 0,
+      "log_sha256": "5c948367d868d08528d2d3fdce7007b126505efb3bf58f8ba4fe957f2e201902",
+      "lifetime": {
+        "status": "passed",
+        "frames": 1,
+        "queries": 3607,
+        "blocked": 1,
+        "boundaries": {
+          "accelerator_rebuild": 1,
+          "context_teardown": 1,
+          "update_scene": 0
+        }
+      },
+      "trace_sha256": "d033b4567725bf02839b9d70e7ecec631acf3685428a1116b8826382df74a0f5"
+    }
+  ],
+  "images": {
+    "control": [
+      {
+        "status": "passed",
+        "dimensions": [
+          256,
+          144
+        ],
+        "exactly_different_pixels": 0
+      },
+      {
+        "status": "passed",
+        "dimensions": [
+          256,
+          144
+        ],
+        "exactly_different_pixels": 0
+      },
+      {
+        "status": "passed",
+        "dimensions": [
+          256,
+          144
+        ],
+        "exactly_different_pixels": 0
+      }
+    ],
+    "probe": [
+      {
+        "status": "passed",
+        "dimensions": [
+          256,
+          144
+        ],
+        "exactly_different_pixels": 0
+      },
+      {
+        "status": "passed",
+        "dimensions": [
+          256,
+          144
+        ],
+        "exactly_different_pixels": 0
+      },
+      {
+        "status": "passed",
+        "dimensions": [
+          256,
+          144
+        ],
+        "exactly_different_pixels": 0
+      }
+    ]
+  },
+  "frame_hashes": {
+    "reference": [
+      "cb2a3ff025965873a6d0cc2fb32b0fff617da72b9e068acf80835331c68505db",
+      "e7102a85786076b9a732a65a261546abde135153961cc4840b01ee2355eabf3c",
+      "9b3cf8c43c2cd97e8564239dffc4ec523b03cd7ccc32804c6a77d4e9feb9966b"
+    ],
+    "control": [
+      "7dc919ea68885b6c9576054538beff51e367e8f94af030e3f731915ab48e1d19",
+      "77770bf9db90ef5492a4c328b22a15dedabb3afbc3ebb87be6f0413ce569472f",
+      "a500e96c983e3bb61f6b3a59eee2c179a642f133dfdf9f7ccf1aa8cf6098f161"
+    ],
+    "probe": [
+      "f77eb3fc0b0d2606da8f7571939b06f594ad0fe66f83c7e3ffad771bfd06f714",
+      "2d4afa3d4e6c453ef57c0b3b957cc82f5f9fe5f808e0378b70b9e0dd424c6e0b",
+      "478ca739d1db4d0735edf2c2c9b4fb9fc54f18ba062cd2ef2dd775d2b0411b1c"
+    ]
+  },
+  "implementation_sha256": {
+    "xpu2/native_scene_drain.h": "59f967d031658adda33fdb7460e37c2bb739db063fd7d768d6e41e8dd2af38fb",
+    "xpu2/native_scene_drain.py": "f551bca3ebc7f3a47be071afd3ba9e3aa2bd83470018b5eceebfc7188cae8e91",
+    "tools/xpu2_native_drain_build.py": "4ad5a6f90a16bc5638b8fed16b34f109104bb8b9c320d1c100329e15559f684e",
+    "tools/xpu2_native_drain_probe.py": "6b3eca440a67a0d71a72a8f8037d1c8a2cca5d26792390860869932e323fd0f0"
+  },
+  "native_build": {
+    "dll_sha256": "2afe9a87abc668d5d545f2c76000fa3b424d6ecde4455cc04e405d09c8895f65",
+    "header_sha256": "59f967d031658adda33fdb7460e37c2bb739db063fd7d768d6e41e8dd2af38fb",
+    "sources": [
+      {
+        "name": "XPURayHandlers",
+        "sha256": "b26a1cbf53e0c26ead70b3860f3511c8fb16221c490bfbadb4a442f18f185638",
+        "preprocessed_sha256": "df132eef213e962549350f8ceb71d4d8e21be12254eb8f2d7685dd7887bba69e",
+        "object_sha256": "aad502652f5f6c455f2a5454aada77b8f2c693d640937eee390a59fa54f38784"
+      },
+      {
+        "name": "RenderContext",
+        "sha256": "7e209e76440e6c23461b0bac4bf84162df4366597285a042b1448740cf35e39e",
+        "preprocessed_sha256": "4845d2882455768db26dd0ef4b95c4c1767fb956d2438241fc8e27afb3b3c840",
+        "object_sha256": "609d31fc0341bf3eeb0e6f4edbf2cd52891bf7967a84887f93eeabc7d9c96c19"
+      },
+      {
+        "name": "GeometryManager",
+        "sha256": "a188bd90dff7cc8197d71e471e4d6f30ead82ad5bdda8a9e87fec8c2b2cbaf36",
+        "preprocessed_sha256": "a3336d5d8cb3ca8033565be33a130924bb16db75757d5cfa970c27e981537d2e",
+        "object_sha256": "70c6c347bbc1a0156500a665381569e8831d90e3d9dba70acf2d29d081b04fe5"
+      }
+    ]
+  },
+  "limitations": [
+    "One native renderer thread, one GPU and one pending diagnostic batch per frame",
+    "Worker uses a native queue slot only after existing renderer workers stop",
+    "Only tested session update/reload/cancel/teardown entry points; no complete native lifetime certification",
+    "Ten-second failure timeout aborts this disposable diagnostic process; it is not production timeout recovery",
+    "Frozen native link inputs, not a clean distributable runtime build"
+  ],
+  "regressions": {
+    "tests": 295,
+    "status": "passed",
+    "log_sha256": "d6943e332bdae71a85456916767496a9238652b223e73eb730f9cf0e2e6bf816"
+  }
+}

@@ -1,0 +1,1153 @@
+{
+  "schema": 1,
+  "date": "2026-10-22",
+  "scope": "Experimental standalone prototype, not private branch history or other ongoing work",
+  "render_source_changes": "Line-ending normalization only; historical Python paths use an explicit environment variable",
+  "files": {
+    "asset_scene.cc": {
+      "validated_local_sha256": "dc1a0e09f80dd35ab279a7f9c182c6fc68d9fa1d9661164e9debf0e847cfae82",
+      "published_sha256": "df29cf8878c5727a5bc88b88987da7d4a71672c5459bdefb9b32160f08f11d28",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "asset_snapshot.py": {
+      "validated_local_sha256": "a0b21839373d7293e9396e7c3a18fb57f6afbdd2c2455063f21d0a2da202f4f2",
+      "published_sha256": "c8b27a14297054ca937c6b7411b8f127148e9878ad218e838e81d432eb10d807",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "build_large_audit_probe.py": {
+      "validated_local_sha256": "a5147218fc0db97dabea94635e28c5b47d5c86522460476286d801b2d0cf5651",
+      "published_sha256": "6b8fe47b9657ef2e04d4ee13f835d68bac6125b32f5a624a1eb79ec34133564a",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "build_prototype.py": {
+      "validated_local_sha256": "4cec9fb113aa7c5b4d3dbd0aacba56ea96884c8abeae956d79b031e37035a820",
+      "published_sha256": "f990f7d29a187fad53e8146a50a69f4ed310c6577d9c3cc3a470e6abfb7b4459",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "build_ray_hit_probe.py": {
+      "validated_local_sha256": "aecad878c4ceae22ad93dd2d98237b47146359e3f8f2a52b1ba664dc672256bc",
+      "published_sha256": "f71b5bd90867db825041fbda5efa3dc0316bec211c545e00b9d9641e95a9760f",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "build_residency_probe.py": {
+      "validated_local_sha256": "ec748912db819ef517578041bb019e11571c46a9ef608f889a444183da0b3327",
+      "published_sha256": "1a70751b17eb91fae89e0855a629c65118be4343046730fd52ad9ad1e5cb218a",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "build_speed_probe.py": {
+      "validated_local_sha256": "7af3a893e3f0153d8fe3ce0445f721f6fa39e3354b0054a63e051ab20414b0d8",
+      "published_sha256": "e1fb28c04e8902938fcc354327a8dca5bb5bef9ef275e9d3aed04c1e4ee4ad66",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "build_startup_probe.py": {
+      "validated_local_sha256": "2e5eba382eb4008cc5a01dd88ca363924a4e9df89de129e92680373dbfe56833",
+      "published_sha256": "2a089dc9db7380b5b1f0b7c89e324274427c89e0dc97bbd150651c1f8c97a28f",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "canonical_budget_test.cc": {
+      "validated_local_sha256": "62aeadb2ea291a3bbd579908eaf35dbda69df8360cf7f31117ee0bdce93919bb",
+      "published_sha256": "3189d6ae736c79940f1522e76ca83d969fd301bb965d955554dc894f32135701",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "canonical_session.h": {
+      "validated_local_sha256": "39e564278ee2214a26a86bbe6e9de70ac9e498cfc2ffba2f1da48d79785b6007",
+      "published_sha256": "47c1e1e2ea38490bf8e78a7cc31fe1a3435dee2f7532dc10a37b8b820c70d4da",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "canonical_session_test.cc": {
+      "validated_local_sha256": "0a31a27459c55247dc39008941ab9bfa432022ccc47cb82dbb6907b1e3b1f8f3",
+      "published_sha256": "72516d3121fa11ddb3db6f445928c29f6233d0701985240cefc97446c12db304",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "check_startup_failure.py": {
+      "validated_local_sha256": "d5aad07c5c732964ec40bbb869b28012e0b1564d72867b8c5d0fb9fe5f0b6577",
+      "published_sha256": "06532da55a27eb5c5148eb381a6aa77b8c511a18e0256f02369a8188427df1d5",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "check_startup_ownership.py": {
+      "validated_local_sha256": "803a3f29567e30864eed3269a26221112ad42b126a9b3917ecae742e5fb199f1",
+      "published_sha256": "fb2980895bf15a3f7a37da11ac6fbd8da16a92dd6d87182e907dcb87a845a872",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "cpu_image_fixture.cc": {
+      "validated_local_sha256": "112a9d77aec25d6ec8f0ec8e5a8534eecf63b3d527d4e9f59690b4bbe71c36f5",
+      "published_sha256": "f6ccb8ded69e4276c4a5413169694fa49efaabebd9abf842c2a594810fd96047",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "cpu_jobs.h": {
+      "validated_local_sha256": "51b2448b759c3bfb28acdc48ff5fd94d7a6f28f826f7a86effd6d62c8efb6b56",
+      "published_sha256": "26784751f41ed94f47fbb98daf4ee8e7e6e2e0159324e01f4353ef34f7563975",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "cpu_lane.h": {
+      "validated_local_sha256": "534e1e57c630fe6573237f9604f32e5438704bc742ef9fb9ba1a963fab7128ce",
+      "published_sha256": "2374ca4e671580c79d86e0ae857974acd4bd88fe99c1b86e60fb1c46265c4b7a",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "cpu_pool.h": {
+      "validated_local_sha256": "fc14077f2bba5cb7227e42d6a5b353d6477f9e61805c0eadf5112b7ea921e9e1",
+      "published_sha256": "21f38a80c15a67719987724dfddc2b91201b00c0c40bc650e75eb8c3f5fc8a8e",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "cpu_pool_probe.cc": {
+      "validated_local_sha256": "54acdd2cf483d41b271bb3a18e4d7b438d25b2e50451b464f8fc1e1fc2ad07ab",
+      "published_sha256": "92ce7a2708ccffa387c4d44fc4f64432a062e78221f044aaca97b9bf4acdd759",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "cpu_scene.h": {
+      "validated_local_sha256": "cd9b90debea454d8d3221f797c91c8ad7dd7e598d8234a615a081fc2dde9849f",
+      "published_sha256": "8eeb7b1400b4a4d31721ff6c909d259cbde0daad5bd158579cf4108f6f1ea3e4",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "cpu_scene_probe.cc": {
+      "validated_local_sha256": "02681b38e5bc5b8c58d1c237605b9afab469251253d984c9e51d66c3c5dc71d2",
+      "published_sha256": "cca7820d03af08df30de0022ad1acfaf0d3a51824d528c51d86e9e7c8b308926",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "cpu_service.h": {
+      "validated_local_sha256": "9ee6351406c5a244fa5c6b70644809243c793670b069911716b7442520ae6374",
+      "published_sha256": "2323c3a9a7a6c1db35422f8049fc28f1c53f0f67b85d8d5117465f0a819b492f",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "cpu_service_probe.cc": {
+      "validated_local_sha256": "cb07f352b90099d134148eace6fdbc8eab5ff8a7c1c1f8fe99848cf9bbc06c6c",
+      "published_sha256": "4e77dadb813e42e744793cb81b4adf5943711fb4b369d503ddd4c6087205b1d5",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "deadline_pipeline.h": {
+      "validated_local_sha256": "540b0a18be9222623296b0323a4aa0cb0c145dc8ef9efcfc6de79e89a89ebc96",
+      "published_sha256": "97cd6d0593cc113c04b498ff18f799754d5221f6f42d745a8a2d6511b0c7ae02",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "deadline_probe.cc": {
+      "validated_local_sha256": "6f8779df9866fbead9c7f3e4893fd62746f432a808cd9475bacba9db8023c679",
+      "published_sha256": "7e85237812a40fb19bbea9efa608d9f1516cdd2ccb210f4d5e6c49e84ba5217e",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "deadline_service_probe.cc": {
+      "validated_local_sha256": "3a5e41df1a6e2692f0655a5d6b74d3108e8fc6c03e9ede4868966af8816737a5",
+      "published_sha256": "b11f8acd7a51ee8473d20206d68021f38e02d559bdf1fc6e426a9524271a70fc",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "estimator_ablation.cc": {
+      "validated_local_sha256": "40042fddc1703e8f2e8c8fe49a9f202d155676fd6a98297594d2a2f9fd4a9be5",
+      "published_sha256": "a10c36c868a04f6b0b4659e66e3eb4e21e95397afeae20e6e9d5cc925c19bcb4",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "experiment_shader_boundaries.py": {
+      "validated_local_sha256": "0d936d6207083fada9b519a07821507f4b97b38c95ca040230999428d47aac11",
+      "published_sha256": "b4a69342db7e0a45562124f023bce8141a85cec34735c86c5b299fae92b3582f",
+      "changes": [
+        "Historical experiment toolchain path now uses XPU2_TOOLCHAIN_ROOT."
+      ]
+    },
+    "experiment_shader_combined.py": {
+      "validated_local_sha256": "3ef05aa1e6212ff42ce7c3c98e5a6bf9753bd0d9fe98c31ea1961f112981ab0d",
+      "published_sha256": "a037e08d19022d800e3ef083528e412db502df0f7717b9abc7a297cdb21f0b19",
+      "changes": [
+        "Historical experiment toolchain path now uses XPU2_TOOLCHAIN_ROOT."
+      ]
+    },
+    "experiment_shader_constants.py": {
+      "validated_local_sha256": "d736ccbf0fe626ba5d94f7d824f24a1347cf7169458b3c1326d66fe71cf7263d",
+      "published_sha256": "b47185028f0ae54efd0d26c40f9b11ad951563a6c0b13b0170dbbfe55c0ab4b6",
+      "changes": [
+        "Historical experiment toolchain path now uses XPU2_TOOLCHAIN_ROOT."
+      ]
+    },
+    "extend_reference_controls.py": {
+      "validated_local_sha256": "aa48b266efddc1f5bdd01200696bfb06c585da3c9eea8ee3bb1a53c2beb27273",
+      "published_sha256": "3db36c901c29581bc802c3177f01926b7727cf93af2f88bc42435b8883a3e37f",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "fallback.py": {
+      "validated_local_sha256": "3682d08485ac0e80545902b4a4f5b33a9a648a32bc74638293cf68b2eb027b14",
+      "published_sha256": "9a187504f1024d9bf2e81344978b04f8453324fd9ed9b3dce715c39fbe99cd60",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "fallback_service.py": {
+      "validated_local_sha256": "0ac715f59d35a76a467e577993bc48706a251a2eaf2b842e578229c066c3b371",
+      "published_sha256": "54156348f9fb8f406d5e6cf23173ac44af3af7969beff9d7de8732b69da09bae",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "gpu_build.py": {
+      "validated_local_sha256": "f2391a963d1185af35a3d975b8cea7eebbf1daee7a803036324a6b611cea4ab2",
+      "published_sha256": "e5a51e18fe55e79fa89bc010846b533df70c6e6327e38523805d78129472dbe3",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "gpu_jobs.h": {
+      "validated_local_sha256": "3589a2873b80c366989eb0dc33a2c290f798541c4600ef1aed3e19fc23c5862a",
+      "published_sha256": "6aaea44b84144bd6b73ec0d3d0d4894b6dd6bbfc499f133afe2b76fec477a163",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "gpu_lane.h": {
+      "validated_local_sha256": "dd0f7ffdb85f007780628051656a998ee724db9b671171b48bf094811b8980ad",
+      "published_sha256": "4e327941557912fa9f948f7210e02c2d5b3361bd0cfb91223a6000edad5e8d1e",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "gpu_trace.cu": {
+      "validated_local_sha256": "6b9ef61752d70b3b5dbda5a475ad0fb10b1ce5794ea7b5c3e881dc2c16adb6d0",
+      "published_sha256": "fb8c165c112c5bb14838344cf45fec03fdd956dfc1c4dfc57871f67cb0ac930e",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "host_texture.h": {
+      "validated_local_sha256": "e703bc14c08a2d32d16652d57a9711aa97f04725e37ba4c2c9f9d74f439ce71e",
+      "published_sha256": "a3d3fae857d9930563ccecb9d977145fdff93d52f72afcd10ea90e9e3a520cc5",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "large_audit_probe.cc": {
+      "validated_local_sha256": "d7711f0b8867ba7f8e0c0eb8d59499308572637238147c12f0f3759f0cad99ff",
+      "published_sha256": "e1b92201e4af5bf8d4f9aa9441cd80505035a06db457b77e5c26713f1fe1a583",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "make_ray_hit_images.py": {
+      "validated_local_sha256": "947f81cd09b53dc5cb857e78ddf0ed9890442d96f6835e3d51d2ba98fc93a382",
+      "published_sha256": "c5f9e248367567471fae70c315012c8e5a1c5dc886f6678baef65027b8f0d59b",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "material_progressive_probe.cc": {
+      "validated_local_sha256": "9204c46c9a3996bc8ba77f5e2b22464818caea2d2e2875bda68928f7cc22d1b7",
+      "published_sha256": "19e27cca84d1ce01d2f12e19043157a407a8ae895c0cf80085cf60e61b36e31f",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "mixed_pipeline.h": {
+      "validated_local_sha256": "11944e7f4dd219f0a6b80716856d1f1171739f6098e31b9d50bc62be0a1c7d1e",
+      "published_sha256": "d9bf19467ca87e8ae8b584801464ad0d10e45f62131dcd8ebfef077835ee5319",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "mixed_probe.cc": {
+      "validated_local_sha256": "f4b7c18ca0ebe33121322d59b7e909e6df078b37627c1ebd6fecbc8eb546c305",
+      "published_sha256": "cb034ba6acf3a895dfc9911d88138e6d5183a52169a67396ea14f9a8b54a7fc2",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "mixed_service.h": {
+      "validated_local_sha256": "aca32adfc6b749f90903ff0a72f0f726c2ded4093d2c14bb8a7c59e8ee45160f",
+      "published_sha256": "d66016d9cf8217bcfac1a800c24825b651678f8ff8f73878a8e24b44033998d5",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "mixed_service_probe.cc": {
+      "validated_local_sha256": "48513b0889a3014b46259d823c4bcef350551eb4255d9358523c5218a4cfa3bc",
+      "published_sha256": "cae22789569764c7ba966fca7586978b381fa20417b16b3cc19af98a439bdd78",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "native_build.py": {
+      "validated_local_sha256": "f90368d1a81b2dc7f09fd739d6c68ba3e3379ebf34d06d84466921bc55f89cfa",
+      "published_sha256": "377eff4b98cb7f6415e5de2f668da28235d0804ca79b19c61d79e1238ba7ab34",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "ownership_probe.cc": {
+      "validated_local_sha256": "c3f9efda0385911e09deb9617ea6b5432acd599e8c1ab7855515b64ef1e07285",
+      "published_sha256": "96d4f1898486a8b59b0a85bbd1acbc0eca6eb57f81cf7ad4874f25797ef9de84",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "ownership_robust_probe.cc": {
+      "validated_local_sha256": "ac5b9f7791dd6aa46c78d74145a77173f8f9628acd0fa66842b45853f0e9805d",
+      "published_sha256": "45f51f2e6564a93a5884aa688bfbfc86f14e38a8832ad1c1040e51a276097d7c",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "path_stage.h": {
+      "validated_local_sha256": "117d77569563c45712456ed28978b3944bb455b732b8dcf4bb55c61f0daa7b77",
+      "published_sha256": "6737e54b68de9772aafd7b69f7db2e5524e950636ccb913b843576b16c7dfe97",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "prepare_large_sampling.py": {
+      "validated_local_sha256": "b44ca8e4db0879a64008561637168eea47f38e61ab871383bef44ac29ea6cb3e",
+      "published_sha256": "247917d91c2e11ef9aeebc846bb9bb3231a0b11fe5449d5b5909ffd8012b3d37",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "prepare_prototype_scene.py": {
+      "validated_local_sha256": "f02bf3e76dd99e2fe258e784d97358b175b5339306ffbed53bbff7cea0e6496e",
+      "published_sha256": "d98ea7ac6825c1d61f43a2dc6164e53ec648a6a3bd2d4f754cc3c2b9cd5cde71",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "profile_startup.py": {
+      "validated_local_sha256": "56d853c61dc161900f388f19db5a02752ebcf69fa92bc33004ffd38abd37fa68",
+      "published_sha256": "d207375620163d63c4af7e718497a30a920ede0b86fe8d4b9951ae627450839e",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "progressive.h": {
+      "validated_local_sha256": "861fc729f0d911f353dc6cea3e59b200b81b76d573e53c1e50d5e638b7f6d80e",
+      "published_sha256": "d897fa6870923b47890e3b1ee9a35602cea850ed3a69c09a16048524a86242e8",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "protocol_model.py": {
+      "validated_local_sha256": "a83d5084218168b5656a642ffe36cba746e9c76629973fb176bca08a5e842fc0",
+      "published_sha256": "a83d5084218168b5656a642ffe36cba746e9c76629973fb176bca08a5e842fc0",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "prototype_preview.py": {
+      "validated_local_sha256": "8704f7db697136ca1f701f2d70d922109174f54480cdd24f3132ea720da5547f",
+      "published_sha256": "d61cba5446149ba1fe78dd4a31fcdd98b504b6878c6e86e93b3408b0d0e466b0",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "prototype_service.py": {
+      "validated_local_sha256": "c9a09a851cd2e6015e20f734ba5d09ba2a0d573a3927e90b00b0eaf0fcfbd4ff",
+      "published_sha256": "1ab277510783d917ae8a75c96d9bd48166fb6c12a1b7f3918b722895de395dff",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "prototype_wire.py": {
+      "validated_local_sha256": "2b177ddd6d32b6f9348e109c73ab10c66753c425c7c8f44c0a36c97755419214",
+      "published_sha256": "fb2e3bdd02c3427cbc882f77bd448a58186b85b3dd72a7cf8f828aff4040e0bd",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "prototype_worker.cc": {
+      "validated_local_sha256": "766844120d5a56f56d789f2d4ee678297c0090a2215059947c09a09443aff2bb",
+      "published_sha256": "fc97cdd95da1e9097ed30d4dd5e75d157ed05eb54313b218d77a032c92001fd4",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "qmc_cpu.cc": {
+      "validated_local_sha256": "855833430b656fbf686827f50e2744307fce04a0da9df92b05e825816959a9e7",
+      "published_sha256": "b2bceab74a494ac1b384afc7d041afdfe53fb5e6f3a04008eb0f6542650c8405",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "qmc_fixture.h": {
+      "validated_local_sha256": "8a93520e458e72ef1ab0d4801e5877a56fc3617acfebeb456249a82ab541865b",
+      "published_sha256": "47fc181e549acf8576d084d36324d6b2b03a185c31122b3b98f8c7ced91599af",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "qmc_gpu.cu": {
+      "validated_local_sha256": "b311d70ad36eafdb28cbbe90dee8a154960ab24dcae20dc59da37f91c3f8d086",
+      "published_sha256": "df87b123a3128c750265b437ab79e66070d24d2176318a487ee1ba44bc7dc9ce",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "qualify_shader_recovery.py": {
+      "validated_local_sha256": "4d5b515177e0236d8c8ec84960511872a1b316657faa77b3e1dbafa65f293a0b",
+      "published_sha256": "8268fa5cb60c2d568c2829334db1b2ade56344d6373b9883f53e64d9e9782efb",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "qualify_shader_startup.py": {
+      "validated_local_sha256": "e7b2e540eae348c02a8193ba5008d6b3b1eb860274be76527f9110ecbc7e8fc4",
+      "published_sha256": "81b4490ae93b787fc3939094d3f90b5977c741d17962dd0cc91a43aafa8e7a3e",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "ray_hit_image_probe.cc": {
+      "validated_local_sha256": "ef54ca2a11aa9f736b696a557150d2a195a7ecc445b383e59b38a575d3e345cc",
+      "published_sha256": "0b50c9e885451f37d10046cc70ea786e1cc433178148d7cf31f2e7be8869a195",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "ray_hit_probe.cc": {
+      "validated_local_sha256": "d3320dfc037211841c09f1db7c70b65f1550c82319478cbe3cdbd90a9f6acf8b",
+      "published_sha256": "d104ed96fd80f67505eef9ba2605ca7780caea4384eb44dbfe08bd0137421a20",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "ray_hit_robust_probe.cc": {
+      "validated_local_sha256": "1d1c5b9a1f16b1b6a0a7aa7bdb5abdee41d5007ec8159904f5b395f07284f265",
+      "published_sha256": "817829b87fe586c1457e76aa8ed62968a2e15ca4bc227621f281d380b9e528ff",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "ray_shadow_probe.cc": {
+      "validated_local_sha256": "f38c069c85efd6a370397e7a6bf398201250fd9022ae359acc51e41eccc4149b",
+      "published_sha256": "77d97c782fa98e26822aab6b32ca3411cb7b2a277433788cce659f421c6061a6",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "reference_repeatability.py": {
+      "validated_local_sha256": "ba5acdd4f5c6e0c0be5ef281852c9e64b2a79022f26114429447ed95378716c8",
+      "published_sha256": "ed015c4c0633eff39bdf75b0178c1ce5e70b40e883bc9354dabaab7bab15fbaa",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "reference_runtime.py": {
+      "validated_local_sha256": "9807d37a5694ff14f42fdfdc0fd87a97f558080b075b1388cbb11ba4925ecf9a",
+      "published_sha256": "5116552be37a638d9c165248bdf2942c0f537bf9d96a5a75d26ea099e83e2806",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "refine_speed_comparison.py": {
+      "validated_local_sha256": "004ce0660780a7b25dba4312787d5ef42a118333542ef0e40610ffeadb81e13b",
+      "published_sha256": "420eef2a7148d28f2f992a0ca43723f7c1e9ee9756e095b1a2691e49fda8cabc",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "render_comparison_images.py": {
+      "validated_local_sha256": "c2eff0f953a4465400316e0adee1bb0e17122c9491d86691e95240182925e10a",
+      "published_sha256": "101513c2a514f633508ff70bdd7d93c219436899fff376291b6d8cfe7441f65a",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "residency_probe.cc": {
+      "validated_local_sha256": "68ce4506e3507435665f570ea7b337bbe49c0f24bc80655e28d1f3867da74472",
+      "published_sha256": "93e8a6c75d72e0fb3a27f6b41a5751913f58d2c97be07a9625c249da36bcc94c",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "residency_recovery_probe.cc": {
+      "validated_local_sha256": "088cf387f52d5cfe29b02cdc9b353c30a73a06a8d8e514080496b2537e919201",
+      "published_sha256": "69ca42a7d8df91ec4871852f1063a4e5723982f76fffd00642747af75058664b",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "resume_core.h": {
+      "validated_local_sha256": "ae2b12d3acc5918e026672a9d0a4600bc63f95699f229ab71f0afe6a4f6925d4",
+      "published_sha256": "3869825838639f63fa91bb4485dfbc4b899360e1a4e13e7f4a3e7ced07c30fad",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "routing_index.h": {
+      "validated_local_sha256": "4ede676f233acaba06b938149c01017cdc1507bbc5575affe680ce421e7110dc",
+      "published_sha256": "873cd4876b4d7c7b8ba5c06dd473cc0ed2dd2877e13572b4ad87881421357409",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "routing_index_test.cc": {
+      "validated_local_sha256": "a61e1465cf1890e482f382127fc0b5f91ddbe36a4393683a38f9fd3f07a89958",
+      "published_sha256": "e4b31a02185a96b69163b9dbd4cf4c16bb3a1863fff20425aecc841b6a45cd16",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "run_asset_service.py": {
+      "validated_local_sha256": "a5b7867b9f6a6f7d991d9f4dbb686cb9a9842da9cf0d5101ff683acfe539234c",
+      "published_sha256": "4b53d32a4ba72b87f8752eab785cb2466d2090a0b6814084921207be3180a519",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "run_assets.py": {
+      "validated_local_sha256": "cae9ad53acb5eaaabda21477b9dd06f502fd2caf5ffb47246e747ec2feeae112",
+      "published_sha256": "7c7d5b827d26726b2f0a742da7ec25c2ff1496bcf65b67b850163201fd194c56",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "run_cpu_image.py": {
+      "validated_local_sha256": "606329b27bd06d8b03729bd13fbfa3432368ae3e4cb088e602750c1f305a739c",
+      "published_sha256": "762b557b0e550fce228e89096608036671d0f2f8ae933dbc692e6705c4d32fff",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "run_cpu_pool.py": {
+      "validated_local_sha256": "37c2a87eb0f554859cf9e56613fb01631d2590f2bc9f7d25da08427109cf8ef7",
+      "published_sha256": "990a5c4d80f66c883e3d32b7dc71a3a0d426105bdc0c1fbb353f4fefbac24ecb",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "run_cpu_scene.py": {
+      "validated_local_sha256": "4cf96b2f4c756e9447bb78bf28fdcb5440683134351838286fd71f42e7a9d531",
+      "published_sha256": "8fa3ae250adb30aae7c13060d14686119fdb385139dd935c4ffc18e2ebe7bd0f",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "run_cpu_service.py": {
+      "validated_local_sha256": "4468b731ea563f7a642f31eb435f01cb3f336cbf1cb4b34787aa3260c9d8ecbf",
+      "published_sha256": "b64ca60904b37e5452129ddbb09c5a88cd100e5ae77f1300aabd2860e36ea0db",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "run_deadline_service.py": {
+      "validated_local_sha256": "a38627d2b3f9762357f9c8dade8817746ce1ab02a4dce1f0ce370f5bf7667ed4",
+      "published_sha256": "ec67d166897dd010bf10049e0d5149ce7707695663e07563efe64ed4168a9fff",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "run_deadlines.py": {
+      "validated_local_sha256": "3127673d7c8f20216b0c1d00db4c359b4f025c4a1bb5d3810d71852e9c5eea7a",
+      "published_sha256": "a6aa0a9e76cfab557becca4150513ae122b3fa018e2b88b8839c32a50484f367",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "run_estimator_ablation.py": {
+      "validated_local_sha256": "488751ef95dfb1cc809b0e2512c7f59d146892ad514dea07ed9b997673123bce",
+      "published_sha256": "5b149ccd30923c0cbe3ab418825a794a7e583bf127e8bfc4638aca4344ad03ad",
+      "changes": [
+        "Historical experiment toolchain path now uses XPU2_TOOLCHAIN_ROOT."
+      ]
+    },
+    "run_large_audit.py": {
+      "validated_local_sha256": "5de44ad29bf88089480eee6f9fec25d80c993fddff75f64e8535d796293ae752",
+      "published_sha256": "2b0d1cb9153881adda36f14fcd18698f2ed984eefbfd60737725319d0ce2aa1e",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "run_large_sampling.py": {
+      "validated_local_sha256": "890e8dfa9a4782e117a2badc169363a6dc5c3bfccfcb196a62e53dc1f857445d",
+      "published_sha256": "2b41d715175ab90bfd479211eb169270f1046ae55eca80886518fd8f57ea19b9",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "run_m0.py": {
+      "validated_local_sha256": "e01636491a13f3cbf97c2857cf54047b06765d4f553da8a09029a97ecdeae0bc",
+      "published_sha256": "2c1251e2890488b4cdac5c71811e3e144f3dacc757627d32d3b56b15b37e05d3",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "run_material_progressive.py": {
+      "validated_local_sha256": "591ae5ba213e1536a39d0aa0c796d0c8698c2c956e3bba0e9787c347a1a2238b",
+      "published_sha256": "7b5defc734fa3393d4606d3ab17d0bc90e11706293efac881cbbb7d546c2742c",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "run_mixed.py": {
+      "validated_local_sha256": "7b094fc3795b7057ad93dde69f1de024b4e247d539012975af9337d85271dcea",
+      "published_sha256": "b9c6d9942383d11a3a5c9499d5d1a06006c7849df251ff82de21a9bb7a127779",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "run_mixed_service.py": {
+      "validated_local_sha256": "66f6788da679e5a888a90ed7688c24a21ad35983baa49606e8d1b8b4c08e47fb",
+      "published_sha256": "4ab2cef46d624cc4799aa3824d7421e0c20cb223b8e919a3305797b295cae47b",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "run_ownership_audit.py": {
+      "validated_local_sha256": "844ca1af5f60c0b81a07dc1a6867ebff547027715a0dbb1b34a6be0777848914",
+      "published_sha256": "7d85f3ee1fae3ba68b049d1f772d8b2ecf4a50a77c931e8c3e3a1425d1798997",
+      "changes": [
+        "Historical experiment toolchain path now uses XPU2_TOOLCHAIN_ROOT."
+      ]
+    },
+    "run_ownership_robust.py": {
+      "validated_local_sha256": "791018d6541137b4cdbaa2424f38d7e24d8d9b37ddcce31e94beb47c823cc74e",
+      "published_sha256": "438b98be8035170f52bc4a62420c1f0ac6ee1df19fd2d05df2f83d9654bf53f0",
+      "changes": [
+        "Historical experiment toolchain path now uses XPU2_TOOLCHAIN_ROOT."
+      ]
+    },
+    "run_padded_reference.py": {
+      "validated_local_sha256": "ec4436d6acd1e0d374e6dd939d8d0022508799e9a51841edb3048f47cda9a838",
+      "published_sha256": "9bbbf0cb1a6a45128decaf2e455b163790c8a7cc7a65904c348edf821fb5a1bf",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "run_prototype.py": {
+      "validated_local_sha256": "899b8291230e3d3cf595f9ec9f5e3ba3cdc4411cfe7fe43f3357fb75ad78cb04",
+      "published_sha256": "af95b1ff08794d127c3549077eed8985235dcbd316847da9e76166b24f283e7f",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "run_prototype_smoke.py": {
+      "validated_local_sha256": "ad8ad02c8af4c35606233b12f9fa4260fe6f3397dd976508df6a90820b07e478",
+      "published_sha256": "a67fdc64020f1cda85f06bbc7c1dafc4beba302b1fb1d6be4509cd7acb92126d",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "run_ray_hit_benchmark.py": {
+      "validated_local_sha256": "7ae4c2e58e76c49541b5cd9bda926a0019093a3f0b808fea617aa6dce4109f9f",
+      "published_sha256": "22b422065f14e0e2e87099b42788d004c146aff9a1e982f97a659ed0e1c4916e",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "run_ray_hit_candidate.py": {
+      "validated_local_sha256": "46b35846bedf0f8b8691d852de189cdcea6327a7934e90f699d0965d957c4bf8",
+      "published_sha256": "362782067d7ec3a6d53023311c2561b92a810baa91377c1fc38a8e99038bfd0b",
+      "changes": [
+        "Historical experiment toolchain path now uses XPU2_TOOLCHAIN_ROOT."
+      ]
+    },
+    "run_ray_hit_diagnostic.py": {
+      "validated_local_sha256": "d69ee06e85dcc81fe10868a8fab891e82e31942f3cff529617e5164677a0c99c",
+      "published_sha256": "0231e490e6129336dff3e7e8c027a307c4d4f87c315d58004867569eeb260a59",
+      "changes": [
+        "Historical experiment toolchain path now uses XPU2_TOOLCHAIN_ROOT."
+      ]
+    },
+    "run_ray_hit_final_images.py": {
+      "validated_local_sha256": "13570ccbcf09dfa91a54c3200334d312d214cbb7c35ae80c6c5410a653ed8835",
+      "published_sha256": "db0baea0dff6cd533b24eac0ba658e9e35354ad3bb0d86a71a2526d69a9e0d06",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "run_ray_hit_images.py": {
+      "validated_local_sha256": "6f4992fba5679601d45406aac9862f8a4b884afb741ac3b33ac95c2990bd413b",
+      "published_sha256": "f1f4699053e58c055024915479d90fa597e923a122b3a85e3489d13acea24c44",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "run_ray_hit_precise_images.py": {
+      "validated_local_sha256": "6b10f59fa6500a3d498dae90d92b7e37b55bafb505b11c48acda3dbb2b702cd2",
+      "published_sha256": "f3c3de36a0bc89024bd6ab5f2d769172bcd9070fb13a7eba0198d25503d9817a",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "run_ray_hit_recovery.py": {
+      "validated_local_sha256": "ab2ae3c8d250f8bffb0513c3ab4f9ba6397935824739a3df299636d460cddea0",
+      "published_sha256": "350e187cee70185a851a8a4f60b8b2b329730c0c7fa6fec21bf193721d9aefa4",
+      "changes": [
+        "Historical experiment toolchain path now uses XPU2_TOOLCHAIN_ROOT."
+      ]
+    },
+    "run_ray_hit_recovery_final.py": {
+      "validated_local_sha256": "5cffee0344cde8dd8a59f078ca98a25af4d62284721fca78242687c8be787195",
+      "published_sha256": "e0c49f874c9f3dad09fc4ebc3b3f17a9f51c9ec38fe88ca6b93ce15d2ae7a351",
+      "changes": [
+        "Historical experiment toolchain path now uses XPU2_TOOLCHAIN_ROOT."
+      ]
+    },
+    "run_ray_hit_robust.py": {
+      "validated_local_sha256": "708c351dcf741b8d221e7da84185cb323d8b67b95ed1de5ebf2dfd281b35632f",
+      "published_sha256": "a4cba626a99589c13d10320b8288796af696d3a6270e76ff26aa576e2c4e783f",
+      "changes": [
+        "Historical experiment toolchain path now uses XPU2_TOOLCHAIN_ROOT."
+      ]
+    },
+    "run_ray_hit_shared_images.py": {
+      "validated_local_sha256": "28665347c5972e21bbf65554d10243efbe7d603227a2ab8f871e7b78e9732618",
+      "published_sha256": "19992ffe1eed34bf0d1a6614c542099c1d8a8ceaac8752c5c9bfb559ce832913",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "run_ray_shadow_diagnostic.py": {
+      "validated_local_sha256": "1d4ac8bd479e823ad7879a7c9ed24f7ab186c204ee967e151124b08546393fb5",
+      "published_sha256": "b813541b62db4a05357b36deadc84ccb28165b03d76275528cbc71288ab753f2",
+      "changes": [
+        "Historical experiment toolchain path now uses XPU2_TOOLCHAIN_ROOT."
+      ]
+    },
+    "run_ray_shadow_precise.py": {
+      "validated_local_sha256": "ee0021bdb6eadf334a9cbedba00b765a538396493275cc5550945aa0094d286b",
+      "published_sha256": "20dbdcf4ee17177500c0506bb10f2b788b5523781e53db232c973bfbef452d9e",
+      "changes": [
+        "Historical experiment toolchain path now uses XPU2_TOOLCHAIN_ROOT."
+      ]
+    },
+    "run_residency_benchmark.py": {
+      "validated_local_sha256": "72015a21525710d01c2efbdc907a7c1d793b183e4ab31f5e41f078ce9528d99d",
+      "published_sha256": "d9fa4e88bf6eda6f92cb53039d81a3996b01732aa54f3318785b04eb8a8ac93d",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "run_residency_controller.py": {
+      "validated_local_sha256": "183528f22269fdead71286e5b8d4fb5d3b7e2629cb7bf5e88891c52c656e6138",
+      "published_sha256": "4e7666fc6f6878468f9b391718cb43916c02ea0982fe7026b0d86311765956f6",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "run_residency_recovery.py": {
+      "validated_local_sha256": "344d6d85c093cad4c9793742d92e4b07a56f2216f8db2ac120a58dc2d5509b4d",
+      "published_sha256": "00c76aee06bb91845d58a5fac95b0a494ed55cc2e232b566a3ad2866a66d4dfd",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "run_retained_budget.py": {
+      "validated_local_sha256": "9eaf67746f1b5d6afcf03bdd88d4801dfb674c5be7d25784eb64a8fb63f7fb2d",
+      "published_sha256": "d0178df3c8ff8953c51762d2e832bb1114b801ca1352ca1f9b9f4b71cf69615f",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "run_sample_core.py": {
+      "validated_local_sha256": "02a491e006943423937e74ec0093092deea13f9d56dd85bb3cfe6fdd939b2b9f",
+      "published_sha256": "e386c1f5583285eb4e1c2f4e0222a947582482115977736d15daf80b383b8a44",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "run_sampling_efficiency.py": {
+      "validated_local_sha256": "124f8ad5ca83d048031a52f3a4e822630c57e30083f1e08d3abec392f9dbb1a6",
+      "published_sha256": "2db7ddab619b78629db4b054dc4081e8351017830c41f058726099d62720cfe5",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "run_sampling_recovery.py": {
+      "validated_local_sha256": "bb36efac70786e0ba5b622585c7866cdef1d250900a1eb149ad30125c1b87b4a",
+      "published_sha256": "197fcb2b2a7419139e5472511192fe8905a07e5730e60d0145621279c42ab81a",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "run_scene_index.py": {
+      "validated_local_sha256": "82d73135138af18ddb1a663fc727ca6fb108369f07eb0352070032f2b404aa32",
+      "published_sha256": "000973f9505222b7ec3b72100aa37bbba54b6afa5d043f609b7b33f1b099503a",
+      "changes": [
+        "UTF-8/LF text normalization only.",
+        "Trailing whitespace cleanup only."
+      ]
+    },
+    "run_service.py": {
+      "validated_local_sha256": "c7ca8ca1cfaa65123cd0c745aa2573703df25968eba0c91436c38186e60e309b",
+      "published_sha256": "cc4bdab9851c6ae0f44c69ca4b2ab9d3e0ecd21dd0438ca5605e3d47174b656d",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "run_spatial.py": {
+      "validated_local_sha256": "d3cd6d03794c2792ffeffa39e4b38690738739f1ec1b108dac8d69a925b94b27",
+      "published_sha256": "515f735f3b61200af1ce96f7936474fbf6b6104b29d60b7f0ebc1c6acc976766",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "run_spatial_service.py": {
+      "validated_local_sha256": "29f5ba5e2b0e4f8d142a301577539e3b02880b1e4edc9f2b75ef4942eb4fabc9",
+      "published_sha256": "03ecdffbe5eceb4c36174dc116f664b49655cd3307d5c2e4524049682488b646",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "run_spatial_textures.py": {
+      "validated_local_sha256": "db550d94e0a7b56964df267be2b40c3d3c0bd81214d898a6b027bcde560ca614",
+      "published_sha256": "fc3eda3d9c3453a88cd8c4d24a5503fd44e253b83b77b1a38f4ebc52e5992235",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "run_speed_comparison.py": {
+      "validated_local_sha256": "8a87547847761427628da94c0010f6a845c95fab12d2b070aecdae61db179597",
+      "published_sha256": "e4192d636119466d71262e671e8726b2c0aef2f7e4868db5bc64fb7e89185f97",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "run_startup_comparison.py": {
+      "validated_local_sha256": "8eb32d6a4e7a3663b19437aaa140f859c79f83b2c46ae1e61566635d1a4a7bd7",
+      "published_sha256": "037666716e97ea7b99aa043801c3566c8cd27b56a8ee9f9d2edbea24a3f30a50",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "run_startup_controller.py": {
+      "validated_local_sha256": "4498046331e354f8c9671eaff6f1b0b697545cb8287607fae62e893034b58011",
+      "published_sha256": "327322e6d6c2abc80c9105af9807493b492eeea82612df9175f610da8584bf44",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "run_startup_recovery.py": {
+      "validated_local_sha256": "c2b284508e24c1be674c72cba001aaff184b103400bbbba750df52882f912622",
+      "published_sha256": "9bb3012f9097b01d4237a402fb51f7c97b29c8fd812886f6898d49191f691573",
+      "changes": [
+        "Historical experiment toolchain path now uses XPU2_TOOLCHAIN_ROOT."
+      ]
+    },
+    "run_surface.py": {
+      "validated_local_sha256": "c4bd948d94f7dcdaa63cbc306a12e9a66cd59fcfe08cb4398e0c21c14c1e9313",
+      "published_sha256": "01e29c6d3a2995cb968a18252b87cb5ab626533eae7e78e3ef6af64d1ef71206",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "run_surface_gpu.py": {
+      "validated_local_sha256": "cb2a2551033da3dd67f3621858cc95ce802af515127fb3ef02484b91a03f6b9d",
+      "published_sha256": "fdcfb85a50882d069973b2df01cd5719e541775e57fb60bd64fedb781595ab83",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "run_texture_admission.py": {
+      "validated_local_sha256": "82f6e6c9464814475e86e22e19f46da93f3ca1bf88cd7ec07508722d862f90fd",
+      "published_sha256": "feb1e883f347e1d824a8ba9bb06cf55a64b7feff0d4842857c1afda193adecbb",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "run_texture_migration.py": {
+      "validated_local_sha256": "7b5d439eb2eab1eec0a1e730ba203e8ceeaa76fa19b4a347726454c84a90839a",
+      "published_sha256": "5733869752c557def550cb0803c969b89322b4c3a1424285c14e05716d155806",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "run_texture_service.py": {
+      "validated_local_sha256": "3a9a4052bae01167d405ef357a0a582e34b8b53af7c54764b5777f3714d82c65",
+      "published_sha256": "1cad3b7cf7e4fd61d0bb703fd0e3f7a78b8c006a906e0b14c2dca7bdff310039",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "sample_cpu.cc": {
+      "validated_local_sha256": "5c0ad406a6583489ee7027478ae79f498dd239c30664e8b41ccd36b3432ca9d3",
+      "published_sha256": "d9d88942a1aaede0eea1b03830f44882139b7e363213eede4f4c159c02c60dea",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "sample_fixture.h": {
+      "validated_local_sha256": "496f59e9c8ef631d56e8bb87a90bcdf15c0c0ff06b37bdef8825beea120a21e9",
+      "published_sha256": "7c3b449c507a7712e42ae6ee97f06e52dab3fee5c396857864383443932c2322",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "sample_gpu.cu": {
+      "validated_local_sha256": "6289496337a7284dc66ef957e5ed12518b96b6021cd4ea2c8a00dd8d12f5f6a5",
+      "published_sha256": "fc169290e2bca54ba568ecad3273d1a4136c9d3a256c67649fd3cd1f057717d9",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "sample_stream.h": {
+      "validated_local_sha256": "6498dbd6c20cd08b48f28b097a5eec39b9f293daff4369877860daaa82df8b24",
+      "published_sha256": "7f39f1a18add580cda9dd828c1a480309b51df296adcad4a11c2e6b46920b364",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "sample_tree.h": {
+      "validated_local_sha256": "0987b268b8b314d85180134116aad804c452c4d9d7e802de79f3a1902af4fb92",
+      "published_sha256": "cc6023622ddc140e4bcea2eb0a0c2e39e5ca24ac68fa8f94663ed2ccb1771447",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "scene_index_probe.cc": {
+      "validated_local_sha256": "da883387f6eadae918490fd8e02d90aad563f6ffee37eaa936037958018cc5bb",
+      "published_sha256": "405cbcc263b1a6a102ed00181a9cdeb23c07b8cb36066d50e22d6ba1b02a8676",
+      "changes": [
+        "UTF-8/LF text normalization only.",
+        "Trailing whitespace cleanup only."
+      ]
+    },
+    "snapshot_budget.h": {
+      "validated_local_sha256": "3e71d3f311e27bd5055441b25ec1403a0089074eeaf6f1f028215a6b6fac4889",
+      "published_sha256": "7838db64c229ab59e279fcd3eda209ba79e8a287a4ab5695cb458d3bb81677a0",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "spatial_probe.cc": {
+      "validated_local_sha256": "f5884ae473bdc2cd38d8179f57f1a4f55b746b0d688f08058401270146a6e2bd",
+      "published_sha256": "3f7d198ba3761e5b8cb1c2959f34fb6428e573d94f95c07e7f0798d2a95886c9",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "spatial_service_probe.cc": {
+      "validated_local_sha256": "5ecac17945ff9e63aeb5202c6981ddeb9658cf83edf980e5954a9a438b5623b1",
+      "published_sha256": "03b31bac77b78d8465cda6e27ac9e113bac7905c5cc1fa8675dac1d025c5f291",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "spatial_texture_probe.cc": {
+      "validated_local_sha256": "a668880f9d90abe835178759bb78049c95910e0b85369a0ed016d86f4ce7a8fa",
+      "published_sha256": "22bea2e159894b22c5d1bbf7d15e2f1d66ac24e83943cc26fbce92a8ff0ae525",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "speed_probe.cc": {
+      "validated_local_sha256": "ed7dc4aa4ec5f959a14395c0fe6f3bb492f17738066dad4c5f5b83294428dd7c",
+      "published_sha256": "004013a2a5b3668c2b8ff5da88d015d967f8af6a014f32db0d1dae44f79939f3",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "spsc_ring.h": {
+      "validated_local_sha256": "0134391df4780286a34ba94b478342264531297c2c8c1dfec92ecd7b65d18ee4",
+      "published_sha256": "7ea1354234e05e063cbd9dfbf8916a7b9ebbc916d0996c277def068a140186ea",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "startup_controller_probe.py": {
+      "validated_local_sha256": "77634f65a3f45509f2e2db186868086a20482a0b1674c8fd5547003652c91d25",
+      "published_sha256": "a90742b90e9aa8b0827528ef8329ed8a8cf3475f0f7969cd5abc3303e94d337c",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "startup_probe.cc": {
+      "validated_local_sha256": "e1e37a328501bcfa3d3380e8d68c681edad901ba30adddf5899a6c742da55c38",
+      "published_sha256": "38c9173b3186cb21e0ff104cfd443c556a7751f841724a9f35a0dbdec8535da5",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "summarize_residency.py": {
+      "validated_local_sha256": "933c9b2cd533ad37f9e25529ffb067ccecce463d9187aaff7501bdbbc81f02e6",
+      "published_sha256": "cf136462676852d6df5d63baaa25f9ba34eda5b1a9cd8bb38bf080b7435c1173",
+      "changes": [
+        "UTF-8/LF text normalization only.",
+        "Trailing whitespace cleanup only.",
+        "Corrected mojibake in generated report punctuation; no calculation changes."
+      ]
+    },
+    "surface_core.h": {
+      "validated_local_sha256": "51c437dbd482716edc9d49cb7c6ec36e27613b0632b2801bcada2484d25fcdc9",
+      "published_sha256": "bb98795ef53f4cc14ca762ae7bcc9ed4a3a421972a93daae4f8dcf0816329712",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "surface_cpu.cc": {
+      "validated_local_sha256": "ee07bfd51e8ab4ea0a24d64f3bce89db880c5f7e5a774740ceff973401e27684",
+      "published_sha256": "93c9441e69c72354dc4e9a60f5eeb1d95925e9b9017c31cb2956299c4ca0639c",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "surface_fixture.h": {
+      "validated_local_sha256": "2cc6a9f2874ea2f605164b100dd9a33acfe918d8df698e34c35746f299a5ce69",
+      "published_sha256": "3f4cd6b5509d572d968f213629e6ee15492db6dfd14c46b2ae86432b0776eab2",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "surface_gpu.cu": {
+      "validated_local_sha256": "e5189d6d48085562863a88979968f03bd713a54113ca57cc5abf7e1bb7bd5148",
+      "published_sha256": "962c83350b818269a9663f18d0272cf2028793df0e4183b3f75f72f9639e0099",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "surface_probe.cc": {
+      "validated_local_sha256": "25f25bb6ee72bfdc24859e31b98e042b18b7ad1770267d6c8ba95f9f7c7fc5a3",
+      "published_sha256": "e80bbf2739abb4df8e2d4d440ff587d4502b911db198d07c06ae22bb45e00fe3",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "test_assets.py": {
+      "validated_local_sha256": "573221c9c79a8fa076e2e237c47c5931023406994c8889b9ca10140b79d5c3c9",
+      "published_sha256": "31953b5a37e927aae3e87bd1577f9b65c597090941c6aead1dd8d876c1a6a562",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "test_benchmark_gates.py": {
+      "validated_local_sha256": "ad4e4ed1e863491834d2ce097295ef3fcf285d42f4ec3a6349df4301ffe1ec5d",
+      "published_sha256": "7605372f6d4853a99d6d45829dd3487323bef8fe2859e2113cfd638fd6749733",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "test_cpu_image_metrics.py": {
+      "validated_local_sha256": "400c9f1810f23c77b20e48bc3e7a72f19846655fbff03ebacc3ceeeb43c5e044",
+      "published_sha256": "7e9a8f185d26ff97b14b05acd06d522ef5fac5976c5ef3e608447e011b3a031f",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "test_fallback.py": {
+      "validated_local_sha256": "e3d5d18c875b670d72d085c6eb59ed82c9f0baccd2c7e4ee2ec7da24dad984fe",
+      "published_sha256": "e73848e3ca724e2102451422bdf62feb46cd15546edd2365f22bdbac81f62326",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "test_protocol_model.py": {
+      "validated_local_sha256": "95ac0a88ae3e9c9e3e9348fea257320e37466989f6bef3946858480be5a28c75",
+      "published_sha256": "95ac0a88ae3e9c9e3e9348fea257320e37466989f6bef3946858480be5a28c75",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "test_prototype_display.py": {
+      "validated_local_sha256": "c4d37b654b378b8649796f6864d1b69774b31bf373f3cf7360cbbc3fd073da56",
+      "published_sha256": "f64cf466f9eeb0f5cd4393b1fefb7a890025374323054b91604b2cd1ffa7f326",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "test_prototype_guards.py": {
+      "validated_local_sha256": "7b7669bec8a25b6b7ca1cf3bc22e321809073491ecb25d63c4d9007eac1d8386",
+      "published_sha256": "c253a9c8aaab9f26a7b7a7dadfebdd5b059b703b8fb0cbf7ab6b0a4e45aa42bc",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "test_residency_options.py": {
+      "validated_local_sha256": "cccc306d1adb75637a8b9a9a05c5cf9cad919ce10f927731775ffb8efdd8b2a0",
+      "published_sha256": "d9ca6ea1a27825e6bcf194db9abe293ac912f7dd873e046206a644f2105ace6f",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "test_service.py": {
+      "validated_local_sha256": "5e6298cdab16e8c67b5cb1b167e45965381d4047e25c439997fc079e001739a9",
+      "published_sha256": "e9921be57505106a66ecbd147f735013539efd546eb66624f17e587eebfbcf04",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "texture_admission_probe.cc": {
+      "validated_local_sha256": "bb054c05ad62c7f1b84327475efac9628bb5aff67d16ee7f516db7372359037f",
+      "published_sha256": "6ace7c7cbcbc96924460a1c03c821add94a2965d17d31d786cfc6603e29c8252",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "texture_core.h": {
+      "validated_local_sha256": "e43b1856c74fd7640d138cba79685db4c615dd6dd0d9dd307f10980d6f6a3771",
+      "published_sha256": "07d959b12c56cb4413a46bdb95fcb2ef930bc334af90cdbe7fe30ec81320c130",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "texture_migration_probe.cc": {
+      "validated_local_sha256": "e8d0889e41b3b6c35fd2228fb72079cc88926b6459b8de9f7947910f6b3a7718",
+      "published_sha256": "c1a1f822fed7188f83d8c9fee63117396b2dca88bdb69152cf25386222a29e08",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "texture_service_probe.cc": {
+      "validated_local_sha256": "aa48f02b0b470fea2dd7829d0db5cdbf58589c4c5720db749ada70fb4b79da9f",
+      "published_sha256": "f0acbcde6fcf4999861bd4fd197479c2e151b7414b18471d3c4354621b6396eb",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "triangle_contract_probe.cc": {
+      "validated_local_sha256": "1598173525355aad56bf6892266ebf463ea9c8b5839ca8e40461ad78b1575f5b",
+      "published_sha256": "ab723cd8fe9cbdc5e43228ab90dbbe1e5e430cb982a1fd1f7c307dd5b6f25f4a",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    },
+    "triangle_hit.h": {
+      "validated_local_sha256": "03bdee7d6eb9b8cac5c0d038de1502753cee1f76d30fac57e6ec27027a66a5e1",
+      "published_sha256": "4969231eba403becbaa25272ef03e54cd79955938e7cde804022107e9d1d4b4e",
+      "changes": [
+        "UTF-8/LF text normalization only."
+      ]
+    }
+  }
+}

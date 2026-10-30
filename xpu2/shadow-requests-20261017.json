@@ -1,0 +1,257 @@
+{
+  "status": "passed",
+  "backend_parity": "failed",
+  "scope": "Synchronous borrowed native scene, standard surface shadow requests, frozen native link objects",
+  "native_contract": "passed",
+  "gpu_driver_identity": "NVIDIA GeForce RTX 3090, 591.74, GPU-041d589b-450b-0916-2503-c453af2389e3",
+  "build": {
+    "source_sha256": "b26a1cbf53e0c26ead70b3860f3511c8fb16221c490bfbadb4a442f18f185638",
+    "preprocessed_sha256": "659d4511325f921aaa92739459428a523b9cb81a1431eff5de0f96282ee64c59",
+    "dll_sha256": "43f70b130ef8eea437e676d9278e3f2c01fa89816950d32f6867f5ad40ce27e3",
+    "frozen_manifest_sha256": "50d5d92097183f8a2a9544ca5763ae60e32296d60e3dde499fe418af2c3956d6"
+  },
+  "implementation_sha256": {
+    "xpu2\\shadow_request.h": "100e1f37f7370f17e2eed35defe963bde1c1763c123b7383b9ab58fc43eeb175",
+    "xpu2\\shadow_request_probe.inc": "5d637a9b82ded0add5ce526fba8c4d8859b8bec542f4df8482400e81dbceab95",
+    "xpu2\\shadow_requests.py": "6917dc1daf04d897c3b9fef098a829fa2d4d2cf72925ae4f2ee2b5488623fb7a",
+    "xpu2\\shadow_request_test.cc": "00430ac816fce65cbba1b8821aa9acfa009f5ddb8295812d38bd7b68dc2837fe",
+    "tools\\xpu2_shadow_request_probe.py": "27163b00065e299d623b24a06842e55bf8d7938da57df31f1ada8f7238be0bda"
+  },
+  "post_capture_evidence_validation": {
+    "status": "passed",
+    "validator_sha256": "6917dc1daf04d897c3b9fef098a829fa2d4d2cf72925ae4f2ee2b5488623fb7a"
+  },
+  "cases": [
+    {
+      "name": "unit",
+      "scene_sha256": "ba3aba5d8171f8bcaa84c599f819b693f4f346f01e96cd96353de2d1729afcd3",
+      "shadow_requests": {
+        "requests": 230052,
+        "rejected": 0,
+        "stale_rejected": 230052,
+        "field_mismatches": 0,
+        "gpu_mismatches": 0,
+        "cpu_mismatches": 1,
+        "cpu_reference_mismatches": 0,
+        "blocked": 67,
+        "lights": 8,
+        "batches": 8,
+        "visible": 229985,
+        "status": "passed",
+        "backend_parity": "failed"
+      },
+      "trace_sha256": "d4712377812b68afecf7d0bb81da69e7e59e5574b852d1a59509cba2a834b6ce",
+      "trace_off_image": {
+        "status": "passed",
+        "dimensions": [
+          256,
+          144
+        ],
+        "channels": {
+          "R": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 36864
+          },
+          "G": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 36864
+          },
+          "B": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 36864
+          },
+          "A": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 36864
+          }
+        },
+        "exactly_different_pixels": 0,
+        "first_difference": null,
+        "largest_differences": [],
+        "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+        "metadata": {
+          "colorInteropID": null,
+          "oiio:ColorSpace": null,
+          "PixelAspectRatio": "1"
+        }
+      },
+      "trace_on_image": {
+        "status": "passed",
+        "dimensions": [
+          256,
+          144
+        ],
+        "channels": {
+          "R": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 36864
+          },
+          "G": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 36864
+          },
+          "B": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 36864
+          },
+          "A": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 36864
+          }
+        },
+        "exactly_different_pixels": 0,
+        "first_difference": null,
+        "largest_differences": [],
+        "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+        "metadata": {
+          "colorInteropID": null,
+          "oiio:ColorSpace": null,
+          "PixelAspectRatio": "1"
+        }
+      }
+    },
+    {
+      "name": "blocker",
+      "scene_sha256": "17fc23537fea887d8a144ae9575ab98086ec66281068a4fe52860b50b99bce4a",
+      "shadow_requests": {
+        "requests": 230243,
+        "rejected": 0,
+        "stale_rejected": 230243,
+        "field_mismatches": 0,
+        "gpu_mismatches": 0,
+        "cpu_mismatches": 1,
+        "cpu_reference_mismatches": 0,
+        "blocked": 427,
+        "lights": 8,
+        "batches": 8,
+        "visible": 229816,
+        "status": "passed",
+        "backend_parity": "failed"
+      },
+      "trace_sha256": "a829a3f641d0f616b74ef11ed01a272a3b3116d606f8d3c56e654deff5c9bf9d",
+      "trace_off_image": {
+        "status": "passed",
+        "dimensions": [
+          256,
+          144
+        ],
+        "channels": {
+          "R": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 36864
+          },
+          "G": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 36864
+          },
+          "B": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 36864
+          },
+          "A": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 36864
+          }
+        },
+        "exactly_different_pixels": 0,
+        "first_difference": null,
+        "largest_differences": [],
+        "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+        "metadata": {
+          "colorInteropID": null,
+          "oiio:ColorSpace": null,
+          "PixelAspectRatio": "1"
+        }
+      },
+      "trace_on_image": {
+        "status": "passed",
+        "dimensions": [
+          256,
+          144
+        ],
+        "channels": {
+          "R": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 36864
+          },
+          "G": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 36864
+          },
+          "B": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 36864
+          },
+          "A": {
+            "passed": true,
+            "failed_values": 0,
+            "maximum_absolute_error": 0.0,
+            "rms_error": 0.0,
+            "values": 36864
+          }
+        },
+        "exactly_different_pixels": 0,
+        "first_difference": null,
+        "largest_differences": [],
+        "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+        "metadata": {
+          "colorInteropID": null,
+          "oiio:ColorSpace": null,
+          "PixelAspectRatio": "1"
+        }
+      }
+    }
+  ],
+  "limitations": [
+    "Synchronous borrowed scene; no asynchronous native scene lifetime ownership",
+    "Only standard surface visibility; no volume transmittance or AOV continuation",
+    "One native light binding per batch, receiver zero; multiple light linking/exclusion behavior unvalidated",
+    "Native CPU/GPU visibility differs on one ray in each fixture; backend interchangeability is not approved",
+    "No acceleration measurement; no installed renderer change"
+  ]
+}

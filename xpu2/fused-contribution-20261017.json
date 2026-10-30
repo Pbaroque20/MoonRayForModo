@@ -1,0 +1,578 @@
+{
+  "status": "passed",
+  "scope": "Captured nonmirror Lambert + pre-shadow contribution CUDA replay, not live lighting or path tracing.",
+  "matched": 8,
+  "unmatched_identities": [
+    [
+      5046368,
+      0,
+      0,
+      0,
+      0,
+      4,
+      3,
+      4
+    ],
+    [
+      5046368,
+      0,
+      0,
+      0,
+      0,
+      5,
+      3,
+      5
+    ],
+    [
+      5046368,
+      0,
+      0,
+      0,
+      0,
+      6,
+      3,
+      6
+    ],
+    [
+      5046368,
+      0,
+      0,
+      0,
+      0,
+      7,
+      3,
+      7
+    ],
+    [
+      5046368,
+      0,
+      0,
+      0,
+      0,
+      8,
+      3,
+      8
+    ],
+    [
+      6291588,
+      0,
+      0,
+      0,
+      0,
+      4,
+      1,
+      4
+    ],
+    [
+      6291588,
+      0,
+      0,
+      0,
+      0,
+      5,
+      1,
+      5
+    ],
+    [
+      6291588,
+      0,
+      0,
+      0,
+      0,
+      6,
+      1,
+      6
+    ],
+    [
+      6291588,
+      0,
+      0,
+      0,
+      0,
+      7,
+      1,
+      7
+    ],
+    [
+      6291588,
+      0,
+      0,
+      0,
+      0,
+      8,
+      1,
+      8
+    ]
+  ],
+  "gpu": "NVIDIA GeForce RTX 3090, 591.74, GPU-041d589b-450b-0916-2503-c453af2389e3",
+  "checks": [
+    {
+      "mode": "split",
+      "count": 8,
+      "wall_ns": 490600,
+      "sample_mismatches": 0,
+      "contribution_mismatches": 0,
+      "max_absolute": 0,
+      "first_differences": [],
+      "reverse": false
+    },
+    {
+      "mode": "fused",
+      "count": 8,
+      "wall_ns": 274500,
+      "sample_mismatches": 0,
+      "contribution_mismatches": 0,
+      "max_absolute": 0,
+      "first_differences": [],
+      "reverse": false
+    },
+    {
+      "mode": "split",
+      "count": 8,
+      "wall_ns": 272700,
+      "sample_mismatches": 0,
+      "contribution_mismatches": 0,
+      "max_absolute": 0,
+      "first_differences": [],
+      "reverse": true
+    },
+    {
+      "mode": "fused",
+      "count": 8,
+      "wall_ns": 246100,
+      "sample_mismatches": 0,
+      "contribution_mismatches": 0,
+      "max_absolute": 0,
+      "first_differences": [],
+      "reverse": true
+    },
+    {
+      "mode": "split",
+      "count": 8,
+      "wall_ns": 504300,
+      "sample_mismatches": 24,
+      "contribution_mismatches": 48,
+      "max_absolute": 0.03888889029622078,
+      "first_differences": [
+        [
+          1,
+          1010361192,
+          1018749800
+        ],
+        [
+          2,
+          972918691,
+          981307299
+        ],
+        [
+          3,
+          967379566,
+          975768174
+        ],
+        [
+          4,
+          1025460725,
+          1033849333
+        ],
+        [
+          5,
+          987395084,
+          995783692
+        ],
+        [
+          6,
+          982622900,
+          991011508
+        ],
+        [
+          9,
+          1010613077,
+          1019001685
+        ],
+        [
+          10,
+          973171330,
+          981559938
+        ]
+      ],
+      "perturbed": true
+    },
+    {
+      "mode": "fused",
+      "count": 8,
+      "wall_ns": 252900,
+      "sample_mismatches": 24,
+      "contribution_mismatches": 48,
+      "max_absolute": 0.03888889029622078,
+      "first_differences": [
+        [
+          1,
+          1010361192,
+          1018749800
+        ],
+        [
+          2,
+          972918691,
+          981307299
+        ],
+        [
+          3,
+          967379566,
+          975768174
+        ],
+        [
+          4,
+          1025460725,
+          1033849333
+        ],
+        [
+          5,
+          987395084,
+          995783692
+        ],
+        [
+          6,
+          982622900,
+          991011508
+        ],
+        [
+          9,
+          1010613077,
+          1019001685
+        ],
+        [
+          10,
+          973171330,
+          981559938
+        ]
+      ],
+      "perturbed": true
+    }
+  ],
+  "timings": [
+    {
+      "mode": "split",
+      "count": 128,
+      "wall_ns": 331000,
+      "sample_mismatches": 0,
+      "contribution_mismatches": 0,
+      "max_absolute": 0,
+      "first_differences": [],
+      "repeat": 0
+    },
+    {
+      "mode": "fused",
+      "count": 128,
+      "wall_ns": 302700,
+      "sample_mismatches": 0,
+      "contribution_mismatches": 0,
+      "max_absolute": 0,
+      "first_differences": [],
+      "repeat": 0
+    },
+    {
+      "mode": "fused",
+      "count": 128,
+      "wall_ns": 300600,
+      "sample_mismatches": 0,
+      "contribution_mismatches": 0,
+      "max_absolute": 0,
+      "first_differences": [],
+      "repeat": 1
+    },
+    {
+      "mode": "split",
+      "count": 128,
+      "wall_ns": 363900,
+      "sample_mismatches": 0,
+      "contribution_mismatches": 0,
+      "max_absolute": 0,
+      "first_differences": [],
+      "repeat": 1
+    },
+    {
+      "mode": "split",
+      "count": 128,
+      "wall_ns": 342400,
+      "sample_mismatches": 0,
+      "contribution_mismatches": 0,
+      "max_absolute": 0,
+      "first_differences": [],
+      "repeat": 2
+    },
+    {
+      "mode": "fused",
+      "count": 128,
+      "wall_ns": 522000,
+      "sample_mismatches": 0,
+      "contribution_mismatches": 0,
+      "max_absolute": 0,
+      "first_differences": [],
+      "repeat": 2
+    },
+    {
+      "mode": "fused",
+      "count": 128,
+      "wall_ns": 383600,
+      "sample_mismatches": 0,
+      "contribution_mismatches": 0,
+      "max_absolute": 0,
+      "first_differences": [],
+      "repeat": 3
+    },
+    {
+      "mode": "split",
+      "count": 128,
+      "wall_ns": 322600,
+      "sample_mismatches": 0,
+      "contribution_mismatches": 0,
+      "max_absolute": 0,
+      "first_differences": [],
+      "repeat": 3
+    },
+    {
+      "mode": "split",
+      "count": 128,
+      "wall_ns": 319900,
+      "sample_mismatches": 0,
+      "contribution_mismatches": 0,
+      "max_absolute": 0,
+      "first_differences": [],
+      "repeat": 4
+    },
+    {
+      "mode": "fused",
+      "count": 128,
+      "wall_ns": 299000,
+      "sample_mismatches": 0,
+      "contribution_mismatches": 0,
+      "max_absolute": 0,
+      "first_differences": [],
+      "repeat": 4
+    },
+    {
+      "mode": "split",
+      "count": 2048,
+      "wall_ns": 564100,
+      "sample_mismatches": 0,
+      "contribution_mismatches": 0,
+      "max_absolute": 0,
+      "first_differences": [],
+      "repeat": 0
+    },
+    {
+      "mode": "fused",
+      "count": 2048,
+      "wall_ns": 687100,
+      "sample_mismatches": 0,
+      "contribution_mismatches": 0,
+      "max_absolute": 0,
+      "first_differences": [],
+      "repeat": 0
+    },
+    {
+      "mode": "fused",
+      "count": 2048,
+      "wall_ns": 680600,
+      "sample_mismatches": 0,
+      "contribution_mismatches": 0,
+      "max_absolute": 0,
+      "first_differences": [],
+      "repeat": 1
+    },
+    {
+      "mode": "split",
+      "count": 2048,
+      "wall_ns": 597000,
+      "sample_mismatches": 0,
+      "contribution_mismatches": 0,
+      "max_absolute": 0,
+      "first_differences": [],
+      "repeat": 1
+    },
+    {
+      "mode": "split",
+      "count": 2048,
+      "wall_ns": 696900,
+      "sample_mismatches": 0,
+      "contribution_mismatches": 0,
+      "max_absolute": 0,
+      "first_differences": [],
+      "repeat": 2
+    },
+    {
+      "mode": "fused",
+      "count": 2048,
+      "wall_ns": 885100,
+      "sample_mismatches": 0,
+      "contribution_mismatches": 0,
+      "max_absolute": 0,
+      "first_differences": [],
+      "repeat": 2
+    },
+    {
+      "mode": "fused",
+      "count": 2048,
+      "wall_ns": 1100200,
+      "sample_mismatches": 0,
+      "contribution_mismatches": 0,
+      "max_absolute": 0,
+      "first_differences": [],
+      "repeat": 3
+    },
+    {
+      "mode": "split",
+      "count": 2048,
+      "wall_ns": 931700,
+      "sample_mismatches": 0,
+      "contribution_mismatches": 0,
+      "max_absolute": 0,
+      "first_differences": [],
+      "repeat": 3
+    },
+    {
+      "mode": "split",
+      "count": 2048,
+      "wall_ns": 799700,
+      "sample_mismatches": 0,
+      "contribution_mismatches": 0,
+      "max_absolute": 0,
+      "first_differences": [],
+      "repeat": 4
+    },
+    {
+      "mode": "fused",
+      "count": 2048,
+      "wall_ns": 708600,
+      "sample_mismatches": 0,
+      "contribution_mismatches": 0,
+      "max_absolute": 0,
+      "first_differences": [],
+      "repeat": 4
+    },
+    {
+      "mode": "split",
+      "count": 8192,
+      "wall_ns": 1515300,
+      "sample_mismatches": 0,
+      "contribution_mismatches": 0,
+      "max_absolute": 0,
+      "first_differences": [],
+      "repeat": 0
+    },
+    {
+      "mode": "fused",
+      "count": 8192,
+      "wall_ns": 1359600,
+      "sample_mismatches": 0,
+      "contribution_mismatches": 0,
+      "max_absolute": 0,
+      "first_differences": [],
+      "repeat": 0
+    },
+    {
+      "mode": "fused",
+      "count": 8192,
+      "wall_ns": 1319600,
+      "sample_mismatches": 0,
+      "contribution_mismatches": 0,
+      "max_absolute": 0,
+      "first_differences": [],
+      "repeat": 1
+    },
+    {
+      "mode": "split",
+      "count": 8192,
+      "wall_ns": 1374100,
+      "sample_mismatches": 0,
+      "contribution_mismatches": 0,
+      "max_absolute": 0,
+      "first_differences": [],
+      "repeat": 1
+    },
+    {
+      "mode": "split",
+      "count": 8192,
+      "wall_ns": 1385100,
+      "sample_mismatches": 0,
+      "contribution_mismatches": 0,
+      "max_absolute": 0,
+      "first_differences": [],
+      "repeat": 2
+    },
+    {
+      "mode": "fused",
+      "count": 8192,
+      "wall_ns": 1413400,
+      "sample_mismatches": 0,
+      "contribution_mismatches": 0,
+      "max_absolute": 0,
+      "first_differences": [],
+      "repeat": 2
+    },
+    {
+      "mode": "fused",
+      "count": 8192,
+      "wall_ns": 1323700,
+      "sample_mismatches": 0,
+      "contribution_mismatches": 0,
+      "max_absolute": 0,
+      "first_differences": [],
+      "repeat": 3
+    },
+    {
+      "mode": "split",
+      "count": 8192,
+      "wall_ns": 1350200,
+      "sample_mismatches": 0,
+      "contribution_mismatches": 0,
+      "max_absolute": 0,
+      "first_differences": [],
+      "repeat": 3
+    },
+    {
+      "mode": "split",
+      "count": 8192,
+      "wall_ns": 1366000,
+      "sample_mismatches": 0,
+      "contribution_mismatches": 0,
+      "max_absolute": 0,
+      "first_differences": [],
+      "repeat": 4
+    },
+    {
+      "mode": "fused",
+      "count": 8192,
+      "wall_ns": 1328500,
+      "sample_mismatches": 0,
+      "contribution_mismatches": 0,
+      "max_absolute": 0,
+      "first_differences": [],
+      "repeat": 4
+    }
+  ],
+  "source_hashes": {
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\sampler_cuda.cu": "d6fa181f664e4912bf0f99aa126659bb29567123d441a3817eed7d271c413e96",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\lambert_cuda.cu": "0b48936ea62593212e60282d76d09b600fa56bcc637d25cd8778c1b2ab0f4e57",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\ispc_math_cuda.cuh": "d0235c32c6459830419e6bd099997876984fe6435dd1be85ee38695ccdb4e306",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\lambert_sample_cuda.cu": "acc3f3d2540a42879dfb5cdc66f71b8f0480dc9b51d6ad5b391e1751760f560d",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\fused_contribution_cuda.cu": "cd5bedd8d0c2e6f34b63f5933541d0095b48894dc4b3db3de15a33d3bc1f4df7",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\fused_contribution.py": "7f5e2632104c435ecf5ef3f7f973d71a25818e12860a043ad49a65c7030c5abb",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\tools\\xpu2_fused_contribution_probe.py": "cc73029b705cbb5e34370464fc674ad09e40d2399589747464e4a31b6a8201e9",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-correlated-capture-final\\capture\\correlated.bin": "e1969334e40a7e6537f4074c7c4789f20c405cd4c5a910e48df307cf900cd5d0",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-owned-contribution-validation\\capture\\contributions.bin": "272ced9a82b82945f6359e4a0bb38fee2013b074e9c4c80be9a4f44342a275f9",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo\\toolchain\\xpu\\cuda_nvrtc-windows-x86_64-12.8.93-archive\\bin\\nvrtc64_120_0.dll": "02d2d7ef4690bf1a55dda1d3ac94c86ce8d16920071c87bcd3e70e94ef346e93",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo\\toolchain\\xpu\\cuda_nvrtc-windows-x86_64-12.8.93-archive\\bin\\nvrtc-builtins64_128.dll": "a7afa2a40cbd3f922a33d8bf71c13cb26ca707c7016a9bc5fcde36759ba668f5"
+  },
+  "compile_flags": [
+    "--std=c++14",
+    "--gpu-architecture=compute_86",
+    "--fmad=false",
+    "--ftz=false",
+    "--prec-div=true",
+    "--prec-sqrt=true"
+  ],
+  "ptx_sha256": "68a1d0e46973361088f379fb17c4e0ea749635c502925d2abc9f10cfc9eb607c",
+  "cleanup_errors": [],
+  "evidence_note": "Aggregate results only; existing capture binaries remain local. Separate capture runs joined only where numeric boundaries agree."
+}

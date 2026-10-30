@@ -1,0 +1,373 @@
+{
+  "status": "passed",
+  "unit_tests_passed": 238,
+  "coverage": {
+    "records": 18,
+    "sample_counts": {
+      "9.0": 18
+    },
+    "light_counts": {
+      "4.0": 18
+    },
+    "indirect_enabled": {
+      "1.0": 18
+    },
+    "mirror": {
+      "0.0": 18
+    },
+    "invalid_light": {
+      "0.0": 18
+    },
+    "nonzero_direct": 18,
+    "nonzero_indirect": 18,
+    "lanes": {
+      "3": 9,
+      "1": 9
+    },
+    "depths": {
+      "0": 18
+    }
+  },
+  "validation": {
+    "status": "passed",
+    "scope": "Owned native pre-clamp contribution arithmetic on CPU workers. No whole-path resumption, GPU/CPU path split or acceleration claim.",
+    "renders": [
+      {
+        "label": "control",
+        "render": {
+          "renderer_timings_seconds": {
+            "Loading scene": 0.025,
+            "Initialize renderer": 0.437,
+            "Generating procedurals": 0.0,
+            "Tessellation": 0.001,
+            "Building BVH": 0.004,
+            "Building GPU BVH": 0.436,
+            "Total render prep": 0.477,
+            "Mcrt time": 0.459,
+            "Total time": 1.031
+          },
+          "xpu_selected": true,
+          "gpu_setup_complete": true,
+          "cpu_fallback": false,
+          "gpu_intersection_percent": 99.65,
+          "gpu_error": false,
+          "actual_threads": 1,
+          "passed": true
+        },
+        "scene_sha256": "99dda44920c684ef9a367ec3820d671ec7c7e7f9b7a245122e3d7deebbfc247e",
+        "rgba_bitwise_equal": true
+      },
+      {
+        "label": "disabled",
+        "render": {
+          "renderer_timings_seconds": {
+            "Loading scene": 0.025,
+            "Initialize renderer": 0.384,
+            "Generating procedurals": 0.0,
+            "Tessellation": 0.001,
+            "Building BVH": 0.004,
+            "Building GPU BVH": 0.383,
+            "Total render prep": 0.424,
+            "Mcrt time": 0.485,
+            "Total time": 0.991
+          },
+          "xpu_selected": true,
+          "gpu_setup_complete": true,
+          "cpu_fallback": false,
+          "gpu_intersection_percent": 99.65,
+          "gpu_error": false,
+          "actual_threads": 1,
+          "passed": true
+        },
+        "scene_sha256": "99dda44920c684ef9a367ec3820d671ec7c7e7f9b7a245122e3d7deebbfc247e",
+        "rgba_bitwise_equal": true
+      },
+      {
+        "label": "capture",
+        "render": {
+          "renderer_timings_seconds": {
+            "Loading scene": 0.024,
+            "Initialize renderer": 0.376,
+            "Generating procedurals": 0.0,
+            "Tessellation": 0.001,
+            "Building BVH": 0.004,
+            "Building GPU BVH": 0.375,
+            "Total render prep": 0.413,
+            "Mcrt time": 1.424,
+            "Total time": 1.853
+          },
+          "xpu_selected": true,
+          "gpu_setup_complete": true,
+          "cpu_fallback": false,
+          "gpu_intersection_percent": 99.65,
+          "gpu_error": false,
+          "actual_threads": 1,
+          "passed": true
+        },
+        "scene_sha256": "99dda44920c684ef9a367ec3820d671ec7c7e7f9b7a245122e3d7deebbfc247e",
+        "rgba_bitwise_equal": true,
+        "profile": {
+          "quiet": true,
+          "device_total_ns": 805160000,
+          "initialization_ns": 149792900,
+          "htod_ns": 28586500,
+          "launch_ns": 33978700,
+          "device_wait_ns": 264176200,
+          "dtoh_ns": 302623300,
+          "validation_ns": 10054900,
+          "diagnostic_io_ns": 4575500,
+          "worker_pack_ns": 6425700,
+          "queue_residence_ns": 637933600,
+          "collect_ns": 806073000,
+          "collect_wait_ns": 775247400,
+          "cpu_light_ns": 11917000,
+          "kernel_gpu_ns": 224739511,
+          "submitted": 26271,
+          "collected": 26271,
+          "batches": 2919,
+          "samples": 210114,
+          "accepted": 210114,
+          "replaced": 210114,
+          "unsupported": 0,
+          "invalid": 0,
+          "mismatch": 0,
+          "errors": 0,
+          "async_batches": 2919,
+          "async_completions": 2919,
+          "staging_ns": 3782400,
+          "readback_calls": 2919,
+          "readback_bytes": 27735048,
+          "echo_checks": 210114,
+          "audit_samples": 210114,
+          "performance_samples": 0,
+          "routing_checks": 0,
+          "native_overlap_windows": 2919,
+          "native_light_pending_checks": 26271,
+          "native_light_pending_observations": 26271
+        },
+        "capture_sha256": "272ced9a82b82945f6359e4a0bb38fee2013b074e9c4c80be9a4f44342a275f9",
+        "records": 18
+      },
+      {
+        "label": "repeat",
+        "render": {
+          "renderer_timings_seconds": {
+            "Loading scene": 0.023,
+            "Initialize renderer": 0.409,
+            "Generating procedurals": 0.0,
+            "Tessellation": 0.001,
+            "Building BVH": 0.004,
+            "Building GPU BVH": 0.409,
+            "Total render prep": 0.446,
+            "Mcrt time": 1.365,
+            "Total time": 1.848
+          },
+          "xpu_selected": true,
+          "gpu_setup_complete": true,
+          "cpu_fallback": false,
+          "gpu_intersection_percent": 99.65,
+          "gpu_error": false,
+          "actual_threads": 1,
+          "passed": true
+        },
+        "scene_sha256": "99dda44920c684ef9a367ec3820d671ec7c7e7f9b7a245122e3d7deebbfc247e",
+        "rgba_bitwise_equal": true,
+        "profile": {
+          "quiet": true,
+          "device_total_ns": 758309600,
+          "initialization_ns": 118363100,
+          "htod_ns": 28544500,
+          "launch_ns": 34275000,
+          "device_wait_ns": 247909900,
+          "dtoh_ns": 302735800,
+          "validation_ns": 10739100,
+          "diagnostic_io_ns": 4565900,
+          "worker_pack_ns": 6166000,
+          "queue_residence_ns": 636979500,
+          "collect_ns": 761900200,
+          "collect_wait_ns": 730675000,
+          "cpu_light_ns": 12166500,
+          "kernel_gpu_ns": 210540655,
+          "submitted": 26271,
+          "collected": 26271,
+          "batches": 2919,
+          "samples": 210114,
+          "accepted": 210114,
+          "replaced": 210114,
+          "unsupported": 0,
+          "invalid": 0,
+          "mismatch": 0,
+          "errors": 0,
+          "async_batches": 2919,
+          "async_completions": 2919,
+          "staging_ns": 3562800,
+          "readback_calls": 2919,
+          "readback_bytes": 27735048,
+          "echo_checks": 210114,
+          "audit_samples": 210114,
+          "performance_samples": 0,
+          "routing_checks": 0,
+          "native_overlap_windows": 2919,
+          "native_light_pending_checks": 26271,
+          "native_light_pending_observations": 26271
+        },
+        "capture_sha256": "272ced9a82b82945f6359e4a0bb38fee2013b074e9c4c80be9a4f44342a275f9",
+        "records": 18
+      }
+    ],
+    "replays": [
+      {
+        "passed": true,
+        "records": 18,
+        "jobs": 1152,
+        "workers": 1,
+        "reverse": false,
+        "sentinel": false,
+        "changed": 0,
+        "label": "normal-1-forward",
+        "result_sha256": "a389483470cad9554f812f50b7423c4a3fbb803541abcc4cf4029427db616bcb"
+      },
+      {
+        "passed": true,
+        "records": 18,
+        "jobs": 1152,
+        "workers": 1,
+        "reverse": true,
+        "sentinel": false,
+        "changed": 0,
+        "label": "normal-1-reverse",
+        "result_sha256": "a389483470cad9554f812f50b7423c4a3fbb803541abcc4cf4029427db616bcb"
+      },
+      {
+        "passed": true,
+        "records": 18,
+        "jobs": 1152,
+        "workers": 4,
+        "reverse": false,
+        "sentinel": false,
+        "changed": 0,
+        "label": "normal-4-forward",
+        "result_sha256": "a389483470cad9554f812f50b7423c4a3fbb803541abcc4cf4029427db616bcb"
+      },
+      {
+        "passed": true,
+        "records": 18,
+        "jobs": 1152,
+        "workers": 4,
+        "reverse": true,
+        "sentinel": false,
+        "changed": 0,
+        "label": "normal-4-reverse",
+        "result_sha256": "a389483470cad9554f812f50b7423c4a3fbb803541abcc4cf4029427db616bcb"
+      },
+      {
+        "passed": true,
+        "records": 18,
+        "jobs": 1152,
+        "workers": 1,
+        "reverse": false,
+        "sentinel": true,
+        "changed": 1152,
+        "label": "sentinel-1-forward",
+        "result_sha256": "83e1da3da1f958572bde0f4ab91a96e208e744ec4bd3b6174e162859301069b1"
+      },
+      {
+        "passed": true,
+        "records": 18,
+        "jobs": 1152,
+        "workers": 1,
+        "reverse": true,
+        "sentinel": true,
+        "changed": 1152,
+        "label": "sentinel-1-reverse",
+        "result_sha256": "83e1da3da1f958572bde0f4ab91a96e208e744ec4bd3b6174e162859301069b1"
+      },
+      {
+        "passed": true,
+        "records": 18,
+        "jobs": 1152,
+        "workers": 4,
+        "reverse": false,
+        "sentinel": true,
+        "changed": 1152,
+        "label": "sentinel-4-forward",
+        "result_sha256": "83e1da3da1f958572bde0f4ab91a96e208e744ec4bd3b6174e162859301069b1"
+      },
+      {
+        "passed": true,
+        "records": 18,
+        "jobs": 1152,
+        "workers": 4,
+        "reverse": true,
+        "sentinel": true,
+        "changed": 1152,
+        "label": "sentinel-4-reverse",
+        "result_sha256": "83e1da3da1f958572bde0f4ab91a96e208e744ec4bd3b6174e162859301069b1"
+      }
+    ],
+    "source_hashes": {
+      "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\batched_collect.ispc.inc": "0e96e6acf8b138cdd35ae9bd0b9d9b43cb465cc568845e674573061d8b8938cc",
+      "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\batched_bridge.cc": "4e0b6c931ec59c22f7f586affc679e7727d9bf751e578714316d51ee86de8d8b",
+      "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\native_lambert_hook.ispc.inc": "35cbcbd29dd0017f05d3cd6fdcb55f400aca2b97438f1fe6ee20db4fe32c7bc4",
+      "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\native_lambert_queue.cc": "ecc7fddfb4e06b265daa0c05ac48053b627a82d2f6c0722128ae5535317939c6",
+      "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\batched_patch.py": "e7ba8e92a64aa058c0459006089bbdf2146263cdad24842e739057db65341d1b",
+      "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\deferred_patch.py": "32b9b9f404984a71a083f8cff6980e7ad86b02ee19e62e7d03dd62cf245dfb6f",
+      "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\tools\\xpu2_build_batched_shading.py": "4f547be74bb92e1fad3ce758051f5586edd40eb81bbf2ba3d6bdc7e1c110c210",
+      "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\profile_patch.py": "5a2e8eeb3729cc848a68ae701fb0ed99e468df68cde0c4f5db00fd247ef0834a",
+      "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\profile_metrics.h": "84c08e310ce74cfe1d07038f5287b114d91328750fa2c87f263826085174c9f8",
+      "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\window_dispatch_patch.py": "99261f4066e57ca4c1e5be9ef437ad13acbe970bf2b752b2f53cb6893f183a09",
+      "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\async_transfer_patch.py": "281c4a18c62cc6afa4534c8b31a7855d79ed816b18425da561ce578fe37b242b",
+      "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\packed_readback_patch.py": "648cc04759fbc54ba53817ee04fdcbb72452de215cf7bbde66e37e5644b2e13d",
+      "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\native_overlap_patch.py": "6aef84f0cea6140f63439c5e342a7345db35434c0c78ac921db81ad7a3de3361",
+      "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\contribution_capture.py": "f56bbd8ede46111715214a902679038e5d1ae5d4b15cbbdc466e28869635bf7a",
+      "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\contribution_capture.h": "e97638093d0b1855ef5e4c8a23707e0d1cd2f5f6798fda788aed8de52c295078",
+      "C:\\Users\\Raphael Tobar\\MoonRayForModo\\upstream\\openmoonray\\moonray\\moonray\\lib\\rendering\\pbr\\integrator\\PathIntegratorUtil.ispc": "8636ea7dd91238599c5dd33da3b629ad4fff8fe4019bce320f63c765f4a58c0a",
+      "C:\\Users\\Raphael Tobar\\MoonRayForModo\\upstream\\openmoonray\\moonray\\moonray\\lib\\rendering\\shading\\ispc\\bsdf\\BsdfLambert.ispc": "8730b71e144d820a1d6c1b6efd21244569e28ce9e8ac70e861e966e078e1ecd7",
+      "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\tools\\xpu2_owned_contribution_probe.py": "c0562a89cc1076d3697673478351efa9af5a495b7c8446fe71a48cc4b6e804aa",
+      "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\contribution_replay.cc": "0cffb3ed3d697e1fb82fbfb273e25d9da8d30a6b616bfeeecfb93a705105f179",
+      "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\tools\\xpu2_profile_probe.py": "fcf3c70b98891bbeb08540d0cc6dc1f6c52bb9d5eed2aed6121010aa0e6d3c40",
+      "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\images.py": "85cddd6352847ba050f315863b278121f73e7a0af7e7688da23988dd9a57de81",
+      "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\tools\\xpu2_baseline.py": "031296df55bfe8ada251ed1a61d4a4047ebaa9f7fa526c549a2b27f8afcceb63",
+      "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\tools\\xpu2_repeatability.py": "40542dbfcd6ed9961aca3e6490a82b3d956cb73961ce2d75f6b79b353ea5c531"
+    },
+    "gpu": "NVIDIA GeForce RTX 3090, 591.74, GPU-041d589b-450b-0916-2503-c453af2389e3",
+    "build_manifest_sha256": "61408a2f2a41101238e2a9f72214f0a9a10fac0d8424c3b00340f376c22a3e52",
+    "replay_build": {
+      "g++.exe": "58efe82fa3ce35005f89d46fe439d7ee54e6889cb7db894019202da691a529a5",
+      "ispc.exe": "23c5e333bfd22c241dee4aaaa09b9126c11762f598dd550ca0135b927ba5d9dc",
+      "replay.exe": "305b60e78c272d014590257700dc4da4ecfb64275088135f7ecc655e36428369",
+      "resume.ispc": "a3cc690bcdc43a326012a0a5b189513450fae2622b11cd78c34d87b79c79be4d",
+      "resume.obj": "a361c0cf5647ffcf6d8f8d869d8e300f7535ccf2495de696828ff505cccd3e95",
+      "resume-preprocess.log": "678d8e61d5074ca8639b9a68cb19aab700ca6d77837a0528eabf85c1cc5e4c6a"
+    },
+    "ptx_sha256": "9f57b9013da070197087710e0c05afdbca05e9203c730f364ca16962fbb81bc2",
+    "rejected_payloads": [
+      {
+        "case": "bad_header",
+        "diagnostic": "Invalid contribution capture"
+      },
+      {
+        "case": "truncated",
+        "diagnostic": "Invalid contribution capture"
+      },
+      {
+        "case": "nonfinite",
+        "diagnostic": "Nonfinite input"
+      },
+      {
+        "case": "zero_pdf",
+        "diagnostic": "Invalid numeric stage"
+      },
+      {
+        "case": "unknown_flag",
+        "diagnostic": "Invalid native flags"
+      },
+      {
+        "case": "reserved",
+        "diagnostic": "Unknown payload version"
+      }
+    ],
+    "capture_repeat_bitwise": true,
+    "speedup_established": false
+  }
+}

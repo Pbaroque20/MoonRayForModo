@@ -1,0 +1,152 @@
+{
+  "status": "passed",
+  "scope": "Native tile placement policy and real CUDA filtering under a fixed texture budget; not native scene scheduling or a speed benchmark",
+  "contracts": [
+    {
+      "case": "contract",
+      "checks": {
+        "passed": true,
+        "checks": 29532,
+        "random_operations": 20000,
+        "clean_eviction_d2h_bytes": 0
+      },
+      "executable_sha256": "8f0b482dd18d279d5e7d34bebbf42de8f93d5d146d519bd49534b6e0bb46dd00",
+      "preprocessed_sha256": "6d8f70af1a09c948d8a293162b9705cc13ca7634f8670030ead70856956fec8f"
+    },
+    {
+      "case": "residency",
+      "checks": {
+        "passed": true,
+        "checks": 74689,
+        "randomized_plans": 5000
+      },
+      "executable_sha256": "350e67853878afe577ffde7e6171518ea8b37032a149e68a1e61f7d94e4368ae",
+      "preprocessed_sha256": "8faa3c24b9e2fff3b56f7efba41d544a1375ea63ce9ee6b14c5e3b6ab8a62169"
+    },
+    {
+      "case": "cuda",
+      "checks": {
+        "passed": true,
+        "cuda_consumers": 4,
+        "loads": 3,
+        "h2d_bytes": 212992,
+        "eviction_d2h_bytes": 0,
+        "verification_d2h_bytes": 212992,
+        "gpu_evictions": 3,
+        "peak_ram": 131072,
+        "peak_vram": 65536,
+        "peak_staging": 65536,
+        "upload_milliseconds": 0.0752,
+        "cpu_hits": 0,
+        "gpu_hits": 4,
+        "blocked_admissions": 2,
+        "pending_upload_polls": 0,
+        "device_allocation_reuses": 1,
+        "pinned_allocation_reuses": 1,
+        "peak_reserved_device": 65536,
+        "peak_reserved_pinned": 65536,
+        "cleanup_errors": 0
+      },
+      "executable_sha256": "90a05d1f2c8b3c25df34b8fa29c44301461a7d2c47790623c200c771e904c233",
+      "preprocessed_sha256": "b32dbab84a5a534fc2ee8122bd9f03877e10a1ceabb3a400e9284e2627bb9d01"
+    }
+  ],
+  "filter": {
+    "passed": true,
+    "cases": 32,
+    "queries": 234976,
+    "components": 587776,
+    "exact_components": 587776,
+    "point_max_abs": 0,
+    "bilinear_max_abs": 0,
+    "rms": 0,
+    "fallback_checks": 32,
+    "policy_gpu_evictions": 2,
+    "texture_vram_budget": 32768,
+    "reserved_device_bytes": 32768,
+    "point_tolerance": 0,
+    "bilinear_tolerance": 2e-06,
+    "cleanup_errors": 0
+  },
+  "texture_image": {
+    "status": "passed",
+    "dimensions": [
+      96,
+      64
+    ],
+    "channels": {
+      "R": {
+        "passed": true,
+        "failed_values": 0,
+        "maximum_absolute_error": 0.0,
+        "rms_error": 0.0,
+        "values": 6144
+      },
+      "G": {
+        "passed": true,
+        "failed_values": 0,
+        "maximum_absolute_error": 0.0,
+        "rms_error": 0.0,
+        "values": 6144
+      },
+      "B": {
+        "passed": true,
+        "failed_values": 0,
+        "maximum_absolute_error": 0.0,
+        "rms_error": 0.0,
+        "values": 6144
+      },
+      "A": {
+        "passed": true,
+        "failed_values": 0,
+        "maximum_absolute_error": 0.0,
+        "rms_error": 0.0,
+        "values": 6144
+      }
+    },
+    "exactly_different_pixels": 0,
+    "first_difference": null,
+    "largest_differences": [],
+    "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+    "metadata": {
+      "colorInteropID": null,
+      "oiio:ColorSpace": null,
+      "PixelAspectRatio": "1"
+    }
+  },
+  "gpu": "NVIDIA GeForce RTX 3090, 591.74",
+  "contract_source_sha256": {
+    "texture_cache.h": "51fd61fd68fed4f8138d32e858f4a00e62436ecec9f4fdd75f0b041d56670330",
+    "texture_cache_test.cc": "8098703afe10ec5996af9f21debcfda205abf5a0c547f7859d117ab48b2d0f3d",
+    "texture_residency.h": "8f368a5a52be95c4e8cae47b1453de422a26d10b14a9da06f270a7f15753648e",
+    "texture_residency_test.cc": "34e4ed2cbe2082a0977c9b0d54b39d65cf784d7f4a0eae5274d1778a8e7ab305",
+    "xpu2_texture_cache_probe.py": "6dc9320c906dbb3955fdb0b224ad26ea1c4cad84bea51114980d6a400b8b5e6a",
+    "texture_cuda_backend.h": "1b934ac19dec58b8c3b576bdcb2ab313248a0e08355519b204bb2b1997ff8f09",
+    "texture_cache_gpu_probe.cc": "e52a14ae6fe5eacf795be4b5fc77ffa90148e6e8a0dc2f67567cc8b09cc8a8c0"
+  },
+  "filter_source_sha256": {
+    "texture_filter_cuda.cu": "f7442ef24159c53a3ab671ffca650b2c13837301abcfd15680c2a8942600aae1",
+    "texture_filter_probe.cc": "c1cf8f13a6a5953678a5286f69cf6728f98471a3716cab4810d45c20bbfe5655",
+    "texture_cache.h": "51fd61fd68fed4f8138d32e858f4a00e62436ecec9f4fdd75f0b041d56670330",
+    "texture_cuda_backend.h": "1b934ac19dec58b8c3b576bdcb2ab313248a0e08355519b204bb2b1997ff8f09",
+    "texture_oiio_loader.h": "e43adba167769d42cd3cbefbc09e64871ee8b03d36a50b8f5d22903ef1dd70d5",
+    "texture_residency.h": "8f368a5a52be95c4e8cae47b1453de422a26d10b14a9da06f270a7f15753648e",
+    "images.py": "85cddd6352847ba050f315863b278121f73e7a0af7e7688da23988dd9a57de81",
+    "validate_reference_images.py": "6cf001301014c9afe44460f1cd869ad52ef4131a00ff18e3538317e0d4aacd1e",
+    "xpu2_texture_filter_probe.py": "af1ee31989e940985291a99f1b6386d338680bb3c5757dbcd60086a299f8d35c",
+    "xpu2_cuda_sampler_probe.py": "4d808ecbb2e29e506fb10a476b8b57bf68995f442af685942a09a4001b5a36f1",
+    "g++.exe": "58efe82fa3ce35005f89d46fe439d7ee54e6889cb7db894019202da691a529a5",
+    "libOpenImageIO.dll.a": "524f45334b3ee5569ac53b87cce10165f58ee74b3ef272b1a07c0ce1604cbbcd",
+    "libOpenImageIO_Util.dll.a": "7fed56c6f3d95c9d4bfce70a29be96e1534bfc91ac4b1bcc3e2678b9f0afb974",
+    "report.json": "0be97c4201afc451f0a383d0f44992d90955e8d1ab8f75d7ca369cd9733be184",
+    "nvrtc64_120_0.dll": "02d2d7ef4690bf1a55dda1d3ac94c86ce8d16920071c87bcd3e70e94ef346e93",
+    "nvrtc-builtins64_128.dll": "a7afa2a40cbd3f922a33d8bf71c13cb26ca707c7016a9bc5fcde36759ba668f5"
+  },
+  "filter_executable_sha256": "2c5213a69de9a229cb6ac0d681325d8a565be3656dad0055ea977076837aa009",
+  "filter_preprocessed_sha256": "27bb3dcde08e69af9ff9a4439308bfd0f921925d01f880cd68754ac8e5accb06",
+  "ptx_sha256": "041f2c174c209f28116cac9460718d3b9332047233bca90583ce8c260249ebd6",
+  "local_reports": [
+    "test-results/xpu2-residency-contract-publish/report.json",
+    "test-results/xpu2-residency-filter-first/report.json"
+  ]
+}

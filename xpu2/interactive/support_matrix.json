@@ -1,0 +1,7 @@
+{
+  "schema": 1,
+  "default": "FALLBACK_ONLY",
+  "reference_runtime": "c88338c6c81d05851e97f2381c2c089a73c726060e763f784352966124a48e47",
+  "rules": [],
+  "note": "No native feature is qualified by importing this specification."
+}

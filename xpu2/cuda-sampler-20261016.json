@@ -1,0 +1,70 @@
+{
+  "status": "passed",
+  "scope": "Real CUDA transport and pseudo-random sampling subset; no shading/rendered parity",
+  "device": "NVIDIA GeForce RTX 3090",
+  "compute_capability": [
+    8,
+    6
+  ],
+  "cuda_driver_api": 13010,
+  "compile_flags": [
+    "--std=c++14",
+    "--gpu-architecture=compute_86",
+    "--fmad=false",
+    "--ftz=false",
+    "--prec-div=true",
+    "--prec-sqrt=true"
+  ],
+  "inputs_sha256": {
+    "sampler_cuda.cu": "5525997d09acd22f545b4d9e7ee78f6d536584fdc80026e771f0ec8acd3c30eb",
+    "sampler-avx8-20261016.jsonl.gz": "7769adf01ef3210591f5dd1628b9bf6d055b77a8a696d502c4000e90858d1a2a",
+    "nvrtc64_120_0.dll": "02d2d7ef4690bf1a55dda1d3ac94c86ce8d16920071c87bcd3e70e94ef346e93",
+    "nvrtc-builtins64_128.dll": "a7afa2a40cbd3f922a33d8bf71c13cb26ca707c7016a9bc5fcde36759ba668f5"
+  },
+  "ptx_sha256": "dbb9d4ee1849d71b415dc578e13db4ab94bcfe6a9852f8f221763911447995e7",
+  "runs": [
+    {
+      "passed": true,
+      "records": 23663,
+      "supported_records": 15768,
+      "unsupported_records": 7884,
+      "invalid_records": 11,
+      "compared_sample_components": 31536,
+      "state_mismatch_records": 0,
+      "sample_or_status_mismatch_records": 0,
+      "block_size": 64,
+      "streams": 2,
+      "state_output_sha256": "a3e31b5a0857f015b29aa3146527359824a9295b4c9d39a79fc82a3d691ffcba",
+      "result_output_sha256": "10c70fbdefa2ecf9304e5746d4a6fa0ccba458ed0935422da81a3a529f8d6e8d"
+    },
+    {
+      "passed": true,
+      "records": 23663,
+      "supported_records": 15768,
+      "unsupported_records": 7884,
+      "invalid_records": 11,
+      "compared_sample_components": 31536,
+      "state_mismatch_records": 0,
+      "sample_or_status_mismatch_records": 0,
+      "block_size": 128,
+      "streams": 2,
+      "state_output_sha256": "7e7a3798002099ef0e50d737f6db926876fe41b2c32c8af17d6797d930be5ed9",
+      "result_output_sha256": "0077a69c9314e9e8c4aa4025f8b5cd79526502fd23150ab5f7c5a4d6155a71a2"
+    },
+    {
+      "passed": true,
+      "records": 23663,
+      "supported_records": 15768,
+      "unsupported_records": 7884,
+      "invalid_records": 11,
+      "compared_sample_components": 31536,
+      "state_mismatch_records": 0,
+      "sample_or_status_mismatch_records": 0,
+      "block_size": 256,
+      "streams": 2,
+      "state_output_sha256": "36103ae1ca218d6efde09d56361f7d77c2a4daa7e2bfd6bfcbbe49f9e26423d5",
+      "result_output_sha256": "c7843c1eddc19a5427a9d7003530b04448d774725aceb17384a7e486143b61e0"
+    }
+  ],
+  "python_checks": 122
+}

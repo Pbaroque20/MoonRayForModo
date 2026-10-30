@@ -1,0 +1,146 @@
+{
+  "status": "passed",
+  "scope": "Standalone real queue and CUDA shader stress; not a native render or reusable renderer lifecycle test",
+  "source_hashes": {
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\native_queue_stress.cc": "02dad7c587d0c08193bc039512f3d4076b13a74a7bd15650cd37ea4e3b680aed",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\native_lambert_queue.cc": "8df75ced1e877d5ec949ed60c66605830deac1241544ea7467b5a94ba99d3065",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\tools\\xpu2_queue_stress.py": "e24f938018e4ff42cc31025e14a64eccc9e6bb791135fc1ea368687536ee2338",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-ray-image-final\\sampler.ptx": "9f57b9013da070197087710e0c05afdbca05e9203c730f364ca16962fbb81bc2"
+  },
+  "gpu": "NVIDIA GeForce RTX 3090, 591.74, GPU-041d589b-450b-0916-2503-c453af2389e3",
+  "runs": [
+    {
+      "case": "pending_timeout-0",
+      "checks": {
+        "case": "pending_timeout",
+        "waited_ms": 10045,
+        "pending_timeouts": 63,
+        "inflight_timeouts": 1,
+        "caller_buffers_preserved": 64,
+        "fresh_request_in_cancelled_batch": true,
+        "passed": true
+      },
+      "queue": {
+        "calls": 65,
+        "submitted": 65,
+        "delivered": 1,
+        "cpu_batches": 0,
+        "queue_full": 0,
+        "timeouts": 64,
+        "late_discarded": 64,
+        "worker_failures": 0,
+        "worker_batches": 2,
+        "max_batch_samples": 512,
+        "max_queue": 64,
+        "cpu_completed_while_gpu_pending": 0,
+        "kernel_window_cpu_observations": 0,
+        "kernel_microseconds": 23
+      },
+      "delivery_ids": [
+        64
+      ],
+      "shading": {
+        "batches": 2,
+        "samples": 520,
+        "accepted": 520,
+        "replaced": 520,
+        "unsupported": 0,
+        "invalid": 0,
+        "mismatch": 0,
+        "errors": 0
+      },
+      "observations": {
+        "records": 520,
+        "accepted": 520,
+        "unsupported": 0,
+        "invalid": 0,
+        "mismatch": 0,
+        "nonfinite": 0,
+        "direction_mismatches": 0,
+        "rgb_mismatches": 0,
+        "pdf_mismatches": 0,
+        "validity_mismatches": 0,
+        "first_mismatches": [],
+        "sha256": "47f19dcbd05fe0b1545f32be769341875a28e3cd4f224214c6155e27c4fb2bb1"
+      },
+      "log_hashes": {
+        "process.log": "b8df425ee96f28b085f68520de6a20cbe67e7330a1467ecbf7db9ccd010629db",
+        "queue.log": "cf5e5920658f872c32d9e605ed3e15f1d7dd953c944192e3335cb4daf4159984",
+        "shading.bin": "47f19dcbd05fe0b1545f32be769341875a28e3cd4f224214c6155e27c4fb2bb1",
+        "shading.log": "a71c2ea647f03b55eea162fdbae71dd891cb657c44a28a41344cd853c261cc58"
+      }
+    },
+    {
+      "case": "pending_timeout-1",
+      "checks": {
+        "case": "pending_timeout",
+        "waited_ms": 10024,
+        "pending_timeouts": 63,
+        "inflight_timeouts": 1,
+        "caller_buffers_preserved": 64,
+        "fresh_request_in_cancelled_batch": true,
+        "passed": true
+      },
+      "queue": {
+        "calls": 65,
+        "submitted": 65,
+        "delivered": 1,
+        "cpu_batches": 0,
+        "queue_full": 0,
+        "timeouts": 64,
+        "late_discarded": 64,
+        "worker_failures": 0,
+        "worker_batches": 2,
+        "max_batch_samples": 512,
+        "max_queue": 64,
+        "cpu_completed_while_gpu_pending": 0,
+        "kernel_window_cpu_observations": 0,
+        "kernel_microseconds": 22
+      },
+      "delivery_ids": [
+        64
+      ],
+      "shading": {
+        "batches": 2,
+        "samples": 520,
+        "accepted": 520,
+        "replaced": 520,
+        "unsupported": 0,
+        "invalid": 0,
+        "mismatch": 0,
+        "errors": 0
+      },
+      "observations": {
+        "records": 520,
+        "accepted": 520,
+        "unsupported": 0,
+        "invalid": 0,
+        "mismatch": 0,
+        "nonfinite": 0,
+        "direction_mismatches": 0,
+        "rgb_mismatches": 0,
+        "pdf_mismatches": 0,
+        "validity_mismatches": 0,
+        "first_mismatches": [],
+        "sha256": "ff85700736c2f684c416a1fd27898a7e96053232150f665abcec7227ce09e7b3"
+      },
+      "log_hashes": {
+        "process.log": "f988a9c81ac7403429360398db8d305c9f691e215292a869664f2d74c1c93d66",
+        "queue.log": "8fb5be0ff9d3bca153dd482daee0c908c34dcab53e60447161780b881576f626",
+        "shading.bin": "ff85700736c2f684c416a1fd27898a7e96053232150f665abcec7227ce09e7b3",
+        "shading.log": "a71c2ea647f03b55eea162fdbae71dd891cb657c44a28a41344cd853c261cc58"
+      }
+    }
+  ],
+  "compiler_sha256": "58efe82fa3ce35005f89d46fe439d7ee54e6889cb7db894019202da691a529a5",
+  "preprocessed_sha256": "37a92e04ec07012e1dde12f9929fa1d9e8a77584210bf7e31cda8dab7e343879",
+  "executable_sha256": "140fef13e44ef8a7cbc4d40a04eb8a5d0b41a2979204047eef36de8b40dcd123",
+  "raw_report_sha256": "7443c129c8d0a7d0961cc5f382dfb4721fb5b8d1120ac98c8e5ef67457b77246",
+  "limitations": [
+    "Standalone actual queue and CUDA shader; not a new renderer image-parity measurement.",
+    "The worker device mutex is held deliberately to trigger actual ten-second timeouts; no device-loss behavior is established.",
+    "Cancelled queued work is still computed before late-result suppression; cancellation pruning is not implemented.",
+    "Renderer shutdown, DLL unloading, integrator continuations and production cancellation remain unvalidated.",
+    "Prior four-worker bitwise image differences remain unresolved."
+  ]
+}
