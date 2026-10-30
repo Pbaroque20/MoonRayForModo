@@ -1455,6 +1455,9 @@ class Panel(Tools, QtWidgets.QWidget):
             self.status.setText('Output render is running. Press Stop before starting a preview.');return
         # Render, or realtime switched on, is asking for the picture itself: Draft, where it is on, goes off first.
         if self.draft.isChecked():self.draft.setChecked(False)
+        # A render started by hand gives XPU2 another try where it left the session to MoonRay XPU.
+        session=getattr(self.renderer,'session',None)
+        if session is not None and hasattr(session,'retry_xpu2'):session.retry_xpu2()
         if self.ipr_mode.isChecked():self._follow(True)
         # What failed before is no longer the news.
         self._failure=None

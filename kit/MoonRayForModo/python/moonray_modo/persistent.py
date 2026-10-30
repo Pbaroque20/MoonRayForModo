@@ -119,6 +119,12 @@ class Session(QtCore.QObject):
 
     def running(self):return self.process.state()!=QtCore.QProcess.NotRunning
 
+    def retry_xpu2(self):
+        """A render started by hand (Render, or RT switched on) gives XPU2 another try: where it left this session to
+        MoonRay XPU (@@MODO_XPU2 FALLBACK, or it ended), the next submit starts the session again, with XPU2. A refusal
+        held for the whole session, its cause passed or not, until a preference changed."""
+        if getattr(self,'xpu2_refused',None):self._retry_xpu2=True
+
     def submit(self,text,runtime,threads,mode,generation,bucket_size=0,prepared=None,important=False):
         self.idle.cancel()
         # Whether the render takes the tiles with the most in them first: read by MoonRay as each render begins.
@@ -129,8 +135,9 @@ class Session(QtCore.QObject):
         # A change of the toon preference is read by MoonRay only as it starts: it starts again.
         signature=(str(runtime),threads,mode,bucket_size)+native.source_switches()
         self.latest=request
-        if self.running() and signature!=self.signature:
-            # A preference changed (XPU2's among them): XPU2 may try again.
+        retry=getattr(self,'_retry_xpu2',False);self._retry_xpu2=False
+        if self.running() and (signature!=self.signature or (retry and getattr(self,'xpu2_refused',None))):
+            # A preference changed (XPU2's among them), or a render started by hand (retry_xpu2): XPU2 may try again.
             self.xpu2_refused=None
             self.stopping=True;self.process.kill();return
         if self.stopping:return
