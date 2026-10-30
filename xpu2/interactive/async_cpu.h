@@ -178,7 +178,12 @@ inline void pointOccluded(const RTCOccludedFunctionNArguments* args) {
 // tracing's speed; XPU2_SESSION_EMBREE_COMPACT=0: as before), and with shadow linking the occlusion tests' filter.
 inline RTCSceneFlags cpuSceneFlags(const cpu::Plan& plan) {
     static const bool compact = [] { const char* v = std::getenv("XPU2_SESSION_EMBREE_COMPACT"); return !(v && v[0] == '0'); }();
+    // Realtime: dynamic, which Embree builds in two levels (a tree for each geometry, and one over them), so that a
+    // move remakes only the moved meshes' trees and the top (CpuScene's replacing constructor). XPU2_SESSION_EMBREE_DYNAMIC
+    // =0: never, =1: always.
+    static const int dynamic = [] { const char* v = std::getenv("XPU2_SESSION_EMBREE_DYNAMIC"); return v ? (v[0] == '1' ? 1 : 0) : -1; }();
     int f = RTC_SCENE_FLAG_ROBUST | (compact ? RTC_SCENE_FLAG_COMPACT : 0);
+    if (dynamic == 1 || (dynamic < 0 && plan.realtime)) f |= RTC_SCENE_FLAG_DYNAMIC;
     if (!plan.shadowLinks.empty()) f |= RTC_SCENE_FLAG_FILTER_FUNCTION_IN_ARGUMENTS;
     return RTCSceneFlags(f);
 }
@@ -204,124 +209,126 @@ struct CpuScene {
         rtcSetSceneFlags(scene, cpuSceneFlags(*plan));
         rtcSetSceneBuildQuality(scene, RTC_BUILD_QUALITY_HIGH);
         curveSets.resize(plan->meshes.size());
-        for (unsigned i = 0; i < plan->meshes.size(); ++i) {
-            const auto& m = *plan->meshes[i].data;
-            if (plan->meshes[i].instance) {
-                // An instance of shared data: its data's scene (made with the first instance), placed by the
-                // instance's transform (rows vx, vy, vz, p: Embree's 3x4 column-major), masked by its visibility.
-                RTCScene& inner = shared[&m];
-                if (!inner) {
-                    inner = rtcNewScene(device->handle);
-                    cpu::need(inner, "Embree scene failure");
-                    rtcSetSceneFlags(inner, cpuSceneFlags(*plan));
-                    rtcSetSceneBuildQuality(inner, RTC_BUILD_QUALITY_HIGH);
-                    RTCGeometry g = rtcNewGeometry(device->handle, RTC_GEOMETRY_TYPE_TRIANGLE);
-                    cpu::need(g, "Embree geometry failure");
-                    void* v = rtcSetNewGeometryBuffer(g, RTC_BUFFER_TYPE_VERTEX, 0, RTC_FORMAT_FLOAT3, sizeof(surface::V3), m.positions.size());
-                    auto* tr = rtcSetNewGeometryBuffer(g, RTC_BUFFER_TYPE_INDEX, 0, RTC_FORMAT_UINT3, sizeof(cpu::Tri), m.triangles.size());
-                    if (!v || !tr) {
-                        rtcReleaseGeometry(g);
-                        throw cpu::Unsupported("Embree allocation failure");
-                    }
-                    std::memcpy(v, m.positions.data(), m.positions.size() * sizeof(surface::V3));
-                    std::memcpy(tr, m.triangles.data(), m.triangles.size() * sizeof(cpu::Tri));
-                    rtcSetGeometryMask(g, 0xffffffffu);
-                    rtcSetGeometryBuildQuality(g, RTC_BUILD_QUALITY_HIGH);
-                    rtcCommitGeometry(g);
-                    rtcAttachGeometryByID(inner, g, 0);
-                    rtcReleaseGeometry(g);
-                    rtcCommitScene(inner);
-                }
-                RTCGeometry g = rtcNewGeometry(device->handle, RTC_GEOMETRY_TYPE_INSTANCE);
-                cpu::need(g, "Embree geometry failure");
-                rtcSetGeometryInstancedScene(g, inner);
-                rtcSetGeometryTimeStepCount(g, 1);
-                rtcSetGeometryTransform(g, 0, RTC_FORMAT_FLOAT3X4_COLUMN_MAJOR, plan->meshes[i].objectToWorld);
-                rtcSetGeometryMask(g, plan->meshes[i].visibility);
-                rtcCommitGeometry(g);
-                rtcAttachGeometryByID(scene, g, i);
-                rtcReleaseGeometry(g);
-                continue;
-            }
-            if (m.points) {
-                RTCGeometry g = rtcNewGeometry(device->handle, RTC_GEOMETRY_TYPE_USER);
-                cpu::need(g, "Embree geometry failure");
-                if (!m.steps.empty()) rtcSetGeometryTimeStepCount(g, unsigned(m.steps.size()) + 1);
-                rtcSetGeometryUserPrimitiveCount(g, m.points);
-                rtcSetGeometryUserData(g, const_cast<cpu::MeshData*>(&m));
-                rtcSetGeometryBoundsFunction(g, pointBounds, nullptr);
-                rtcSetGeometryIntersectFunction(g, pointIntersect);
-                rtcSetGeometryOccludedFunction(g, pointOccluded);
-                rtcSetGeometryMask(g, plan->meshes[i].visibility);
-                rtcSetGeometryBuildQuality(g, RTC_BUILD_QUALITY_HIGH);
-                rtcCommitGeometry(g);
-                rtcAttachGeometryByID(scene, g, i);
-                rtcReleaseGeometry(g);
-                continue;
-            }
-            if (m.curveBasis) {
-                curveSets[i] = cpu::curveSet(m);
-                RTCGeometry g = rtcNewGeometry(device->handle, RTC_GEOMETRY_TYPE_USER);
-                cpu::need(g, "Embree geometry failure");
-                if (curveSets[i].stepCount > 1) rtcSetGeometryTimeStepCount(g, curveSets[i].stepCount);
-                rtcSetGeometryUserPrimitiveCount(g, curveSets[i].spanCount);
-                rtcSetGeometryUserData(g, &curveSets[i]);
-                rtcSetGeometryBoundsFunction(g, curveBounds, nullptr);
-                rtcSetGeometryIntersectFunction(g, curveIntersect);
-                rtcSetGeometryOccludedFunction(g, curveOccluded);
-                rtcSetGeometryMask(g, plan->meshes[i].visibility);
-                rtcSetGeometryBuildQuality(g, RTC_BUILD_QUALITY_HIGH);
-                rtcCommitGeometry(g);
-                rtcAttachGeometryByID(scene, g, i);
-                rtcReleaseGeometry(g);
-                continue;
-            }
-            // A mesh with no material bounds a volume only: it is in the volumes' scene, not the surfaces'.
-            const bool surface = plan->meshes[i].material != ~0u, bounds = plan->meshes[i].volume >= 0;
-            for (int pass = 0; pass < 2; ++pass) {
-                if (pass == 0 ? !surface : !bounds) continue;
-                if (pass == 1 && !volumes) {
-                    volumes = rtcNewScene(device->handle);
-                    cpu::need(volumes, "Embree scene failure");
-                    rtcSetSceneFlags(volumes, RTC_SCENE_FLAG_ROBUST | RTC_SCENE_FLAG_COMPACT);
-                }
-                RTCGeometry g = rtcNewGeometry(device->handle, RTC_GEOMETRY_TYPE_TRIANGLE);
-                cpu::need(g, "Embree geometry failure");
-                // A moving mesh's time steps over the shutter (MeshData::steps), linear between them as MoonRay's.
-                const unsigned steps = unsigned(m.steps.size()) + 1;
-                if (steps > 1) rtcSetGeometryTimeStepCount(g, steps);
-                void* v = nullptr;
-                for (unsigned k = 0; k < steps; ++k) {
-                    const std::vector<surface::V3>& src = k ? m.steps[k - 1] : m.positions;
-                    void* slot = rtcSetNewGeometryBuffer(g, RTC_BUFFER_TYPE_VERTEX, k, RTC_FORMAT_FLOAT3, sizeof(surface::V3), src.size());
-                    if (!slot) {
-                        rtcReleaseGeometry(g);
-                        throw cpu::Unsupported("Embree allocation failure");
-                    }
-                    std::memcpy(slot, src.data(), src.size() * sizeof(surface::V3));
-                    if (!k) v = slot;
-                }
-                auto* t = rtcSetNewGeometryBuffer(g, RTC_BUFFER_TYPE_INDEX, 0, RTC_FORMAT_UINT3, sizeof(cpu::Tri),
-                                                  m.triangles.size());
-                if (!v || !t) {
-                    rtcReleaseGeometry(g);
-                    throw cpu::Unsupported("Embree allocation failure");
-                }
-                std::memcpy(t, m.triangles.data(), m.triangles.size() * sizeof(cpu::Tri));
-                rtcSetGeometryMask(g, plan->meshes[i].visibility);
-                if (pass == 0 && plan->meshes[i].singleSided) {
-                    rtcSetGeometryIntersectFilterFunction(g, backFaceCullingFilter);
-                    rtcSetGeometryOccludedFilterFunction(g, backFaceCullingFilter);
-                }
-                rtcSetGeometryBuildQuality(g, RTC_BUILD_QUALITY_HIGH);
-                rtcCommitGeometry(g);
-                rtcAttachGeometryByID(pass == 0 ? scene : volumes, g, i);
-                rtcReleaseGeometry(g);
-            }
-        }
+        for (unsigned i = 0; i < plan->meshes.size(); ++i) add(i);
         rtcCommitScene(scene);
         if (volumes) rtcCommitScene(volumes);
         device->check();
+    }
+    // Mesh i's geometry, as geometry i of the scene (or of the volumes' scene, where it bounds a volume).
+    void add(unsigned i) {
+        const auto& m = *plan->meshes[i].data;
+        if (plan->meshes[i].instance) {
+            // An instance of shared data: its data's scene (made with the first instance), placed by the
+            // instance's transform (rows vx, vy, vz, p: Embree's 3x4 column-major), masked by its visibility.
+            RTCScene& inner = shared[&m];
+            if (!inner) {
+                inner = rtcNewScene(device->handle);
+                cpu::need(inner, "Embree scene failure");
+                rtcSetSceneFlags(inner, cpuSceneFlags(*plan));
+                rtcSetSceneBuildQuality(inner, RTC_BUILD_QUALITY_HIGH);
+                RTCGeometry g = rtcNewGeometry(device->handle, RTC_GEOMETRY_TYPE_TRIANGLE);
+                cpu::need(g, "Embree geometry failure");
+                void* v = rtcSetNewGeometryBuffer(g, RTC_BUFFER_TYPE_VERTEX, 0, RTC_FORMAT_FLOAT3, sizeof(surface::V3), m.positions.size());
+                auto* tr = rtcSetNewGeometryBuffer(g, RTC_BUFFER_TYPE_INDEX, 0, RTC_FORMAT_UINT3, sizeof(cpu::Tri), m.triangles.size());
+                if (!v || !tr) {
+                    rtcReleaseGeometry(g);
+                    throw cpu::Unsupported("Embree allocation failure");
+                }
+                std::memcpy(v, m.positions.data(), m.positions.size() * sizeof(surface::V3));
+                std::memcpy(tr, m.triangles.data(), m.triangles.size() * sizeof(cpu::Tri));
+                rtcSetGeometryMask(g, 0xffffffffu);
+                rtcSetGeometryBuildQuality(g, RTC_BUILD_QUALITY_HIGH);
+                rtcCommitGeometry(g);
+                rtcAttachGeometryByID(inner, g, 0);
+                rtcReleaseGeometry(g);
+                rtcCommitScene(inner);
+            }
+            RTCGeometry g = rtcNewGeometry(device->handle, RTC_GEOMETRY_TYPE_INSTANCE);
+            cpu::need(g, "Embree geometry failure");
+            rtcSetGeometryInstancedScene(g, inner);
+            rtcSetGeometryTimeStepCount(g, 1);
+            rtcSetGeometryTransform(g, 0, RTC_FORMAT_FLOAT3X4_COLUMN_MAJOR, plan->meshes[i].objectToWorld);
+            rtcSetGeometryMask(g, plan->meshes[i].visibility);
+            rtcCommitGeometry(g);
+            rtcAttachGeometryByID(scene, g, i);
+            rtcReleaseGeometry(g);
+            return;
+        }
+        if (m.points) {
+            RTCGeometry g = rtcNewGeometry(device->handle, RTC_GEOMETRY_TYPE_USER);
+            cpu::need(g, "Embree geometry failure");
+            if (!m.steps.empty()) rtcSetGeometryTimeStepCount(g, unsigned(m.steps.size()) + 1);
+            rtcSetGeometryUserPrimitiveCount(g, m.points);
+            rtcSetGeometryUserData(g, const_cast<cpu::MeshData*>(&m));
+            rtcSetGeometryBoundsFunction(g, pointBounds, nullptr);
+            rtcSetGeometryIntersectFunction(g, pointIntersect);
+            rtcSetGeometryOccludedFunction(g, pointOccluded);
+            rtcSetGeometryMask(g, plan->meshes[i].visibility);
+            rtcSetGeometryBuildQuality(g, RTC_BUILD_QUALITY_HIGH);
+            rtcCommitGeometry(g);
+            rtcAttachGeometryByID(scene, g, i);
+            rtcReleaseGeometry(g);
+            return;
+        }
+        if (m.curveBasis) {
+            curveSets[i] = cpu::curveSet(m);
+            RTCGeometry g = rtcNewGeometry(device->handle, RTC_GEOMETRY_TYPE_USER);
+            cpu::need(g, "Embree geometry failure");
+            if (curveSets[i].stepCount > 1) rtcSetGeometryTimeStepCount(g, curveSets[i].stepCount);
+            rtcSetGeometryUserPrimitiveCount(g, curveSets[i].spanCount);
+            rtcSetGeometryUserData(g, &curveSets[i]);
+            rtcSetGeometryBoundsFunction(g, curveBounds, nullptr);
+            rtcSetGeometryIntersectFunction(g, curveIntersect);
+            rtcSetGeometryOccludedFunction(g, curveOccluded);
+            rtcSetGeometryMask(g, plan->meshes[i].visibility);
+            rtcSetGeometryBuildQuality(g, RTC_BUILD_QUALITY_HIGH);
+            rtcCommitGeometry(g);
+            rtcAttachGeometryByID(scene, g, i);
+            rtcReleaseGeometry(g);
+            return;
+        }
+        // A mesh with no material bounds a volume only: it is in the volumes' scene, not the surfaces'.
+        const bool surface = plan->meshes[i].material != ~0u, bounds = plan->meshes[i].volume >= 0;
+        for (int pass = 0; pass < 2; ++pass) {
+            if (pass == 0 ? !surface : !bounds) return;
+            if (pass == 1 && !volumes) {
+                volumes = rtcNewScene(device->handle);
+                cpu::need(volumes, "Embree scene failure");
+                rtcSetSceneFlags(volumes, RTC_SCENE_FLAG_ROBUST | RTC_SCENE_FLAG_COMPACT);
+            }
+            RTCGeometry g = rtcNewGeometry(device->handle, RTC_GEOMETRY_TYPE_TRIANGLE);
+            cpu::need(g, "Embree geometry failure");
+            // A moving mesh's time steps over the shutter (MeshData::steps), linear between them as MoonRay's.
+            const unsigned steps = unsigned(m.steps.size()) + 1;
+            if (steps > 1) rtcSetGeometryTimeStepCount(g, steps);
+            void* v = nullptr;
+            for (unsigned k = 0; k < steps; ++k) {
+                const std::vector<surface::V3>& src = k ? m.steps[k - 1] : m.positions;
+                void* slot = rtcSetNewGeometryBuffer(g, RTC_BUFFER_TYPE_VERTEX, k, RTC_FORMAT_FLOAT3, sizeof(surface::V3), src.size());
+                if (!slot) {
+                    rtcReleaseGeometry(g);
+                    throw cpu::Unsupported("Embree allocation failure");
+                }
+                std::memcpy(slot, src.data(), src.size() * sizeof(surface::V3));
+                if (!k) v = slot;
+            }
+            auto* t = rtcSetNewGeometryBuffer(g, RTC_BUFFER_TYPE_INDEX, 0, RTC_FORMAT_UINT3, sizeof(cpu::Tri),
+                                              m.triangles.size());
+            if (!v || !t) {
+                rtcReleaseGeometry(g);
+                throw cpu::Unsupported("Embree allocation failure");
+            }
+            std::memcpy(t, m.triangles.data(), m.triangles.size() * sizeof(cpu::Tri));
+            rtcSetGeometryMask(g, plan->meshes[i].visibility);
+            if (pass == 0 && plan->meshes[i].singleSided) {
+                rtcSetGeometryIntersectFilterFunction(g, backFaceCullingFilter);
+                rtcSetGeometryOccludedFilterFunction(g, backFaceCullingFilter);
+            }
+            rtcSetGeometryBuildQuality(g, RTC_BUILD_QUALITY_HIGH);
+            rtcCommitGeometry(g);
+            rtcAttachGeometryByID(pass == 0 ? scene : volumes, g, i);
+            rtcReleaseGeometry(g);
+        }
     }
     // The previous frame's Embree scenes taken over, where every mesh is the one they hold (sameGeometry): a camera, a
     // light or a material edited, they are not built again. The previous scene is spent (the session's renderer, which
@@ -337,6 +344,30 @@ struct CpuScene {
             aovTables.primKeys = plan->aovPrimKeys.data();
             aovTables.primCount = unsigned(plan->aovPrimKeys.size());
         }
+    }
+    // The previous frame's Embree scenes taken over and the meshes replaced alone made again (replacedMeshes: moved).
+    CpuScene(cpu::PlanView p, CpuScene&& previous, const std::vector<unsigned>& replaced) : CpuScene(std::move(p), std::move(previous)) {
+        for (unsigned i : replaced) {
+            rtcDetachGeometry(scene, i);
+            add(i);
+        }
+        rtcCommitScene(scene);
+        device->check();
+    }
+    // The meshes whose geometries differ between two plans' Embree scenes, where nothing else does (the scenes' flags,
+    // their count) and none of them bounds a volume (the volumes' scene is made whole): false otherwise.
+    static bool replacedMeshes(const cpu::Plan& a, const cpu::Plan& b, std::vector<unsigned>& replaced) {
+        replaced.clear();
+        if (a.meshes.size() != b.meshes.size() || cpuSceneFlags(a) != cpuSceneFlags(b)) return false;
+        for (unsigned i = 0; i < a.meshes.size(); ++i) {
+            const auto &x = a.meshes[i], &y = b.meshes[i];
+            if (x.data == y.data && x.visibility == y.visibility && x.volume == y.volume && x.singleSided == y.singleSided &&
+                x.material == y.material && x.instance == y.instance && std::memcmp(x.objectToWorld, y.objectToWorld, sizeof x.objectToWorld) == 0)
+                continue;
+            if (x.volume >= 0 || y.volume >= 0) return false;
+            replaced.push_back(i);
+        }
+        return true;
     }
     // Whether two plans' Embree scenes are the same: each mesh the same prepared data (a mesh kept across an edit), with
     // the same visibility, volume, sidedness and material, and shadow linking (the scene's flags) as it was.

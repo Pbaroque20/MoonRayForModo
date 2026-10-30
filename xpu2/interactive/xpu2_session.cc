@@ -701,11 +701,21 @@ struct Scene {
             if (ok) ok = cpu::updateLights(*next, *source, editedLights, why);
             if (ok) {
                 plan = next;
-                // The CPU's Embree scenes taken over where no mesh is placed otherwise (lights alone, or the moves undone).
-                if (cpuScene && cpuScene->plan && async::CpuScene::sameGeometry(*cpuScene->plan, *plan))
+                // The CPU's Embree scenes taken over where no mesh is placed otherwise (lights alone, or the moves undone),
+                // or with the moved meshes' geometries alone made again.
+                const auto planned = std::chrono::steady_clock::now();
+                std::vector<unsigned> replaced;
+                const char* embree = "made whole";
+                if (cpuScene && cpuScene->plan && async::CpuScene::sameGeometry(*cpuScene->plan, *plan)) {
                     cpuScene = std::make_unique<async::CpuScene>(plan, std::move(*cpuScene));
-                else
+                    embree = "kept";
+                } else if (cpuScene && cpuScene->plan && async::CpuScene::replacedMeshes(*cpuScene->plan, *plan, replaced)) {
+                    cpuScene = std::make_unique<async::CpuScene>(plan, std::move(*cpuScene), replaced);
+                    embree = "moved meshes made again";
+                } else
                     cpuScene = std::make_unique<async::CpuScene>(plan);
+                std::printf("MoonRay XPU2: the CPU's scene %s (%zu geometries) in %.1f ms\n", embree, replaced.size(),
+                            std::chrono::duration<double>(std::chrono::steady_clock::now() - planned).count() * 1000.0);
                 changed = placementOnly = cameraOnly = false;
                 std::printf("MoonRay XPU2: placements and lights alone changed (%zu geometries, %zu lights): prepared in %.1f ms\n",
                             moved.size(), editedLights.size(),
