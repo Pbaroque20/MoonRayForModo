@@ -1,6 +1,6 @@
-# Experimental XPU2 prototype
+# XPU2
 
-XPU2 is an experimental standalone Windows CPU/GPU renderer developed by Raphael Tobar with AI assistance. It explores indexed immutable scenes, resident GPU data and asynchronous path continuation alongside a pinned MoonRay XPU fallback. **It is not a production renderer, a replacement for MoonRay XPU, or an installed Modo feature.**
+XPU2 is a Windows CPU/GPU renderer developed by Raphael Tobar with AI assistance. It explores indexed immutable scenes, resident GPU data and asynchronous path continuation alongside a pinned MoonRay XPU fallback. **In MoonRay for Modo 0.5, a pre-production release, it is the default GPU renderer for MoonRay previews; final renders come from MoonRay, and a scene XPU2 does not render yet goes to MoonRay XPU.**
 
 ## What works
 

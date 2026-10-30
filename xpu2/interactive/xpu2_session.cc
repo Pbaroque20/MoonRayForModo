@@ -1,4 +1,4 @@
-// XPU2's preview session for MoonRay for Modo, a private test build: the kit's persistent preview protocol v1
+// XPU2's preview session for MoonRay for Modo: the kit's persistent preview protocol v1
 // (native-port/persistent_session.inc) rendered by the asynchronous renderer. No Modo API.
 //
 //   moonray_xpu2 -in <scene> [-in <scene> ...] -out <image> -exec_mode <mode> [-info] [-threads <n>]
@@ -1343,7 +1343,7 @@ int session(const Args& args, const fs::path& directory) {
                     const Programs p = programs(folder);
                     if (!fs::exists(shaderMark(p))) {
                         outlines.watch(nullptr, id, 0, 0);
-                        fallback("XPU2's GPU programs are not compiled yet: System > Preferences > MoonRay > XPU2 (experimental) > "
+                        fallback("XPU2's GPU programs are not compiled yet: System > Preferences > MoonRay > XPU2 > "
                                  "Compile XPU2 Shaders (about an hour, once)");
                         return 0;
                     }

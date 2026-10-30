@@ -5,7 +5,7 @@
 > **xpu2-foundation:** XPU2 is now the asynchronous renderer on `xpu2-async`. Start with the
 > [engineer manual](manual/README.md). The page below describes the 22 October prototype it grew from.
 
-**Start with the [current experimental prototype](interactive/README.md).** This branch contains two distinct efforts. The October 16 tests began the **first attempt**, which is now historical. The newer standalone prototype lives in `interactive/` and has its own implementation, validation and limitations.
+**Start with [XPU2 as it is now](interactive/README.md).** This branch contains two distinct efforts. The October 16 tests began the **first attempt**, which is now historical. The newer standalone prototype lives in `interactive/` and has its own implementation, validation and limitations.
 
 ## Current work: standalone CPU/GPU prototype
 
