@@ -23,6 +23,15 @@
 
 namespace xpu2::interactive::async {
 
+// Realtime's first sample in two passes, a pixel in each 2x2 of every tile and then the other three, so that a quarter of
+// the samples showed the whole picture (filled between, then denoised at half size and enlarged by OptiX). Off since
+// 2026-10-30 (asked): the filled picture flashed as scanlines before it settled, for little gain; each picture is the
+// whole first pass. XPU2_SESSION_RT_SPARSE=1 brings it back.
+inline bool sparseStart(const cpu::Plan& p) {
+    static const bool on = [] { const char* v = std::getenv("XPU2_SESSION_RT_SPARSE"); return v && v[0] == '1'; }();
+    return on && p.realtime;
+}
+
 struct RenderOptions {
     unsigned threads = 12;  // CPU lane workers
     int mode = 2;           // 0 CPU only, 1 GPU only, 2 both
@@ -574,7 +583,7 @@ public:
                     }
                     // Realtime's sparse passes (a pixel in each 2x2, then the other three): a chunk holds 16 or 48 of a tile's
                     // 64 pixel samples, which the launch is sized by.
-                    const double realtimeItems = plan_->realtime && adaptive && state.retired < 2 ? (state.retired == 0 ? 16.0 : 48.0) : 0.0;
+                    const double realtimeItems = sparseStart(*plan_) && adaptive && state.retired < 2 ? (state.retired == 0 ? 16.0 : 48.0) : 0.0;
                     const U32 want = std::min(launchSize(o, grid, gpuRate, cpuLane, queuedSamples, start, realtimeItems), gpu_->chunkRoom(refineCount));
                     claim.resize(want);
                     U32 got = 0;
@@ -910,7 +919,7 @@ private:
             if (!p.adaptive) return;
             // Realtime: the first sample in two passes, a pixel in each 2x2 of every tile, then the other three, so that a
             // quarter of the picture's samples shows the whole of it (filled between, fillUncovered).
-            if (p.realtime && !passes.empty() && passes[0].start == 0 && passes[0].end == 1) passes.insert(passes.begin(), adaptive::Pass{0, 1});
+            if (sparseStart(p) && !passes.empty() && passes[0].start == 0 && passes[0].end == 1) passes.insert(passes.begin(), adaptive::Pass{0, 1});
             cpu::need(passes.size() <= MaxPasses, "Adaptive pass budget");
             inImage.assign(tiles, 0);
             for (U32 tile = 0; tile < tiles; ++tile)
@@ -1014,7 +1023,7 @@ private:
             for (U32 tile = 0; tile < tiles; ++tile) {
                 std::uint64_t active = inImage[tile];
                 // Realtime's first two passes (above): a pixel in each 2x2, then the rest.
-                if (plan.realtime && j < 2) {
+                if (sparseStart(plan) && j < 2) {
                     constexpr std::uint64_t sparse = 0x0055005500550055ull;  // even rows' even columns
                     active &= j == 0 ? sparse : ~sparse;
                 }

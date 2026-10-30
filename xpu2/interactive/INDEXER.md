@@ -273,8 +273,8 @@ generations' UserData carries realtime (its ninth value, cpu_scene.h):
   makes the camera and render space again and the GPU gets its configuration (GpuLane::updateCamera): 0.1 ms, where
   preparing took 0.21 s. A scene whose view depends on the camera (adaptive subdivision, volumes, filters, a pixel
   sample map, motion) prepares as before.
-- A realtime frame is the GPU's alone; its first two passes are sparse (a quarter of the pixels, then the rest, one
-  sample each), each before the next, with launches sized to about 15 ms of the GPU's rate across frames (rateHint), and
+- A realtime frame is the GPU's alone; its first pass covers every pixel (sparse first passes, a quarter of the pixels
+  then the rest, flashed as scanlines before they settled and are off since 2026-10-30; XPU2_SESSION_RT_SPARSE=1), with launches sized to about 15 ms of the GPU's rate across frames (rateHint), and
   its pictures every 33 ms.
 - Pictures with Denoised Beauty chosen are denoised in the session (RealtimeDenoiser, on a thread of its own): OptiX's
   denoiser (GpuLane::Denoiser, its HDR model on a stream of its own at the highest priority) with the kit's guides, the

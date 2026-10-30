@@ -37,12 +37,12 @@ def enabled(snapshot,final=False,linear=False):
 
 def guides_required(snapshot,final=False,linear=False):
     if snapshot.get('_ipr') and not final:return False
-    # MoonRay's realtime under XPU2 has no denoised beauty (panel): its guides only for Lower Resolution While Moving,
-    # whose pictures from a quarter of their pixels XPU2 denoises and upscales while the view or the scene moves.
+    # MoonRay's realtime under XPU2 has no denoised beauty (panel), and no longer a picture from a quarter of its pixels
+    # to denoise and upscale while things move (Lower Resolution While Moving, removed 2026-10-30): no guides.
     if snapshot.get('_realtime') and not final:
         try:
             from . import native
-            if native.xpu2():return bool(native.xpu2_upscale())
+            if native.xpu2():return False
         except Exception:pass
     return enabled(snapshot,final,linear) or (not final and not linear)
 

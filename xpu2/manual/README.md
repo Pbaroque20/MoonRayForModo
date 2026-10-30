@@ -407,8 +407,8 @@ What the session does besides rendering:
   minutes, with MoonRay's "Wrote:" lines. Continue starts the render again; resuming from a save isn't done yet.
 - **Denoiser guides.** Albedo and normal at the first hit, for the kit's denoiser and for Smart Render's drains.
 - **Realtime** (`INDEXER.md` section 13). With the kit's RT switch on, the preview follows the scene at the realtime
-  size. A realtime frame is the GPU's alone: its first two passes are sparse (a quarter of the pixels, then the rest),
-  launches are sized to about 15 ms and a picture goes out every 33 ms. With Denoised Beauty chosen,
+  size. A realtime frame is the GPU's alone: its first pass covers every pixel (sparse first passes, a quarter of
+  the pixels then the rest, are off: XPU2_SESSION_RT_SPARSE=1), launches are sized to about 15 ms and a picture goes out every 33 ms. With Denoised Beauty chosen,
   `RealtimeDenoiser` runs OptiX's HDR denoiser on its own high-priority stream with the kit's guides.
 - **Settings from Modo.** The kit's render settings for sampling generations (Generation Samples, Halting Rule,
   Halt at Noise, First Look, Most Samples, CPU Workers) reach the scene as UserData `/modo/xpu2/generations`. Its

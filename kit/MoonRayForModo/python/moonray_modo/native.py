@@ -338,7 +338,7 @@ def engine_name(mode):
 def source_switches():
     """The MoonRay Source Overrides MoonRay reads as it starts: a session started with others is started again."""
     return (toon_terminator(), toon_albedo(), crypto_volumes(), fog_alpha(), crypto_once()) + tuple(
-        globals()[key]() for key in ('usd_specular', 'opaque_alpha', 'transmission_roughness', 'auto_xpu')) + (xpu2(), xpu2_chain(), xpu2_devices(), xpu2_upscale())
+        globals()[key]() for key in ('usd_specular', 'opaque_alpha', 'transmission_roughness', 'auto_xpu')) + (xpu2(), xpu2_chain(), xpu2_devices())
 
 
 def binary_geometry():
@@ -433,12 +433,6 @@ def xpu2_rt_cap():
     return int(value) if value in ('30', '60') else 0
 
 
-def xpu2_upscale():
-    """Whether realtime's pictures shown from a quarter of their pixels while things move are made full size by OptiX's
-    upscaling denoiser (Lower Resolution While Moving, on by default), or enlarged as they are."""
-    return str(_setting('xpu2/upscale', 'true')).lower() in ('true', '1')
-
-
 def xpu2_environment(runtime):
     """What XPU2's session starts with over environment(runtime): its own libraries and scene classes first, and the
     kit's MoonRay named for what XPU2 leaves to it."""
@@ -448,8 +442,6 @@ def xpu2_environment(runtime):
             'XPU2_SESSION_CHAIN': '1' if xpu2_chain() else '0',
             # Its devices (Preferences > MoonRay > XPU2 > Devices): 2 both, 1 the graphics card, 0 the processor.
             'XPU2_SESSION_MODE': {'both': '2', 'gpu': '1', 'cpu': '0'}[xpu2_devices()],
-            # Lower Resolution While Moving (Preferences > MoonRay > XPU2): OptiX's upscaling denoiser for those pictures.
-            'XPU2_SESSION_RT_UPSCALE': '1' if xpu2_upscale() else '0',
             # XPU2's tessellations kept in the cache folder as the Scene cache says (cache_folder).
             'XPU2_SESSION_GEOMETRY_CACHE': '1' if __import__('moonray_modo.cache_folder', fromlist=['scene_cache']).scene_cache() else '0'}
 
