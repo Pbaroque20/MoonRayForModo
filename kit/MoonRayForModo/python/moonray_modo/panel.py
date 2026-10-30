@@ -658,10 +658,13 @@ class Panel(Tools, QtWidgets.QWidget):
         else:self.draft_timer.stop()
         if enabled:
             # Draft and realtime are one or the other: Draft switched on takes realtime off, as realtime switched
-            # on takes Draft off.
+            # on takes Draft off (_rt_toggled). Realtime's switch goes off with it, and the RT button says so: left on,
+            # the button said RT On over the draft and the next render followed the scene again.
             if self._following:
                 self.stop()
                 if self._following:self._follow(False)
+            if self.ipr_mode.isChecked():self.ipr_mode.setChecked(False)
+            self._sync_rt()
             self.render_once()
             return
         self._draft_image=self._draft_render=None;self._draft_engine=False;self.preview.nominal=None
@@ -1088,6 +1091,17 @@ class Panel(Tools, QtWidgets.QWidget):
         """The RT switch: realtime on, the preview follows the scene from now; off, realtime ends, its picture kept, and
         the Render button is free again. Not while a render runs or stops: Stop it first."""
         if getattr(self,'_rt_syncing',False):return
+        if on and self.draft.isChecked():
+            # Realtime switched on takes Draft off (as Draft switched on takes realtime off, _draft_toggled). Where the
+            # draft's render is under way it is stopped first, and realtime comes on once it has (_set_rendering): a
+            # stop may take a moment to keep what it rendered, and realtime does not start over a render.
+            self.draft.setChecked(False)
+            if self._rendering or getattr(self,'_stopping',False):
+                self._rt_after_stop=True
+                if not getattr(self,'_stopping',False):self.stop()
+                if self._rendering or getattr(self,'_stopping',False):
+                    self.status.setText('Draft off: realtime comes on as the draft stops.');self._sync_rt();return
+                self._rt_after_stop=False
         if on and (not self._rt_capable() or self._output_busy() or self._rt_blocked()):
             if not self._rt_capable():
                 self.status.setText('Realtime is MoonLightIPR\'s, or MoonRay\'s with XPU2 chosen in Preferences > MoonRay > XPU2.')
@@ -1103,7 +1117,9 @@ class Panel(Tools, QtWidgets.QWidget):
         self._set_rendering(self._rendering)
 
     def _rt_blocked(self):
-        """Whether a render other than realtime's runs, or one stops: RT is greyed until it is done."""
+        """Whether a render other than realtime's runs, or one stops: RT is greyed until it is done. A draft's lines are
+        not such a render: RT stays pressable over them, and takes Draft off (_rt_toggled)."""
+        if self.draft.isChecked():return False
         return bool((self._rendering and not self.ipr_mode.isChecked()) or getattr(self,'_stopping',False))
 
     def _sync_rt(self):
@@ -1462,6 +1478,10 @@ class Panel(Tools, QtWidgets.QWidget):
         self._rendering=bool(rendering)
         # A stop is over once nothing renders any more: the button can be pressed again.
         if not self._rendering:self._stopping=False
+        # Realtime asked for over a draft that was rendering (_rt_toggled): on now that the draft's render has stopped.
+        if not self._rendering and getattr(self,'_rt_after_stop',False):
+            self._rt_after_stop=False
+            QtCore.QTimer.singleShot(0,lambda:None if self.disposed else self.rt.setChecked(True))
         self.start.setEnabled(not getattr(self,'_stopping',False))
         # The mattes picked are of the picture there was: a new render takes them away, and they are laid over the new
         # picture when it is finished, where they are still in it.
