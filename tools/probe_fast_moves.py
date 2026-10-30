@@ -488,6 +488,9 @@ def skip_unknown(left=180):
     "Yes to All", as a user without the plugin answers it. The answer the profile kept was lost with it, and every test
     after waited on the question. Looked for each second while the scene opens (a modal question runs Qt's loop)."""
     try:
+        # The windows up, each second: what a scene that never opened waited on.
+        shown = sorted({w.windowTitle() for w in QtWidgets.QApplication.topLevelWidgets() if w.isVisible() and w.windowTitle()})
+        (out / 'windows.txt').write_text('%d s left: %s\n' % (left, shown), encoding='utf-8')
         for widget in QtWidgets.QApplication.topLevelWidgets():
             if widget.isVisible() and widget.windowTitle().startswith('Load Error'):
                 for button in widget.findChildren(QtWidgets.QAbstractButton):
