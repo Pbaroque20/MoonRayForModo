@@ -1,0 +1,606 @@
+{
+  "status": "passed",
+  "scope": "Real diagnostic CUDA shading queue with synthetic owned scenes; not native accelerator/SceneContext lifetime integration",
+  "runs": [
+    {
+      "case": "replace",
+      "repeat": 0,
+      "result": {
+        "status": "passed",
+        "scene_checks": {
+          "case": "replace",
+          "denied": 2,
+          "accepted": 1,
+          "destroyed": 3,
+          "job_retention": true,
+          "wrong_thread_destroy": 0,
+          "passed": true
+        },
+        "gpu_drain": {
+          "submitted": 1,
+          "delivered": 1,
+          "cancelled_requests": 0,
+          "late_discarded": 0,
+          "cancelled_before_dispatch": 0,
+          "retained_async": 0,
+          "worker_failures": 0,
+          "worker_batches": 1,
+          "max_batch_samples": 8
+        }
+      },
+      "shading": {
+        "batches": 1,
+        "samples": 8,
+        "accepted": 8,
+        "replaced": 8,
+        "unsupported": 0,
+        "invalid": 0,
+        "mismatch": 0,
+        "errors": 0
+      },
+      "log_hashes": {
+        "process.log": "b6478c85e3153a77e2190d1e8ef775a32464959589b23fbedffd30dac5ffc78a",
+        "queue.log": "3f1b6ba480f2a198278fe55d3eb1b593d0a8aa8c8ac7f9995e4c17f743b98675",
+        "shading.bin": "1d120143fa89f8f3502fbee82d1cda3e04467a8892f766e6036f24d7c14784bc",
+        "shading.log": "363990a041e4f249400b3ab7bafd4d08cfc87cdfa52eb3e5aca103642c4cb1d4"
+      }
+    },
+    {
+      "case": "restart",
+      "repeat": 0,
+      "result": {
+        "status": "passed",
+        "scene_checks": {
+          "case": "restart",
+          "denied": 2,
+          "accepted": 1,
+          "destroyed": 1,
+          "job_retention": true,
+          "wrong_thread_destroy": 0,
+          "passed": true
+        },
+        "gpu_drain": {
+          "submitted": 1,
+          "delivered": 1,
+          "cancelled_requests": 0,
+          "late_discarded": 0,
+          "cancelled_before_dispatch": 0,
+          "retained_async": 0,
+          "worker_failures": 0,
+          "worker_batches": 1,
+          "max_batch_samples": 8
+        }
+      },
+      "shading": {
+        "batches": 1,
+        "samples": 8,
+        "accepted": 8,
+        "replaced": 8,
+        "unsupported": 0,
+        "invalid": 0,
+        "mismatch": 0,
+        "errors": 0
+      },
+      "log_hashes": {
+        "process.log": "b59ca14364fdb2275c0e2915bc9c2a0cbb7f1e360c4f8895a2025a50f06f8899",
+        "queue.log": "3f1b6ba480f2a198278fe55d3eb1b593d0a8aa8c8ac7f9995e4c17f743b98675",
+        "shading.bin": "1d120143fa89f8f3502fbee82d1cda3e04467a8892f766e6036f24d7c14784bc",
+        "shading.log": "363990a041e4f249400b3ab7bafd4d08cfc87cdfa52eb3e5aca103642c4cb1d4"
+      }
+    },
+    {
+      "case": "cancel",
+      "repeat": 0,
+      "result": {
+        "status": "passed",
+        "scene_checks": {
+          "case": "cancel",
+          "denied": 1,
+          "accepted": 0,
+          "destroyed": 1,
+          "job_retention": true,
+          "wrong_thread_destroy": 0,
+          "passed": true
+        },
+        "gpu_drain": {
+          "submitted": 1,
+          "delivered": 0,
+          "cancelled_requests": 1,
+          "late_discarded": 1,
+          "cancelled_before_dispatch": 0,
+          "retained_async": 0,
+          "worker_failures": 0,
+          "worker_batches": 1,
+          "max_batch_samples": 8
+        }
+      },
+      "shading": {
+        "batches": 1,
+        "samples": 8,
+        "accepted": 8,
+        "replaced": 8,
+        "unsupported": 0,
+        "invalid": 0,
+        "mismatch": 0,
+        "errors": 0
+      },
+      "log_hashes": {
+        "process.log": "78bdb2bf949a344b57a7482ed29dba944d347ab86be52651d72dd8cdb46b6215",
+        "queue.log": "ce0c5c5e4fea9dc9ca72b670098123b2dcb96f8def55253d48fc280cbb3e9a2e",
+        "shading.bin": "1d120143fa89f8f3502fbee82d1cda3e04467a8892f766e6036f24d7c14784bc",
+        "shading.log": "363990a041e4f249400b3ab7bafd4d08cfc87cdfa52eb3e5aca103642c4cb1d4"
+      }
+    },
+    {
+      "case": "readers",
+      "repeat": 0,
+      "result": {
+        "status": "passed",
+        "scene_checks": {
+          "case": "readers",
+          "denied": 2,
+          "accepted": 0,
+          "destroyed": 1,
+          "job_retention": true,
+          "wrong_thread_destroy": 0,
+          "passed": true
+        },
+        "gpu_drain": {
+          "submitted": 1,
+          "delivered": 1,
+          "cancelled_requests": 0,
+          "late_discarded": 0,
+          "cancelled_before_dispatch": 0,
+          "retained_async": 0,
+          "worker_failures": 0,
+          "worker_batches": 1,
+          "max_batch_samples": 8
+        }
+      },
+      "shading": {
+        "batches": 1,
+        "samples": 8,
+        "accepted": 8,
+        "replaced": 8,
+        "unsupported": 0,
+        "invalid": 0,
+        "mismatch": 0,
+        "errors": 0
+      },
+      "log_hashes": {
+        "process.log": "192a22a61fe086b769d896cb9a198c296ffe95ba3af71ca7a531690b62fe2d82",
+        "queue.log": "3f1b6ba480f2a198278fe55d3eb1b593d0a8aa8c8ac7f9995e4c17f743b98675",
+        "shading.bin": "1d120143fa89f8f3502fbee82d1cda3e04467a8892f766e6036f24d7c14784bc",
+        "shading.log": "363990a041e4f249400b3ab7bafd4d08cfc87cdfa52eb3e5aca103642c4cb1d4"
+      }
+    },
+    {
+      "case": "replace",
+      "repeat": 1,
+      "result": {
+        "status": "passed",
+        "scene_checks": {
+          "case": "replace",
+          "denied": 2,
+          "accepted": 1,
+          "destroyed": 3,
+          "job_retention": true,
+          "wrong_thread_destroy": 0,
+          "passed": true
+        },
+        "gpu_drain": {
+          "submitted": 1,
+          "delivered": 1,
+          "cancelled_requests": 0,
+          "late_discarded": 0,
+          "cancelled_before_dispatch": 0,
+          "retained_async": 0,
+          "worker_failures": 0,
+          "worker_batches": 1,
+          "max_batch_samples": 8
+        }
+      },
+      "shading": {
+        "batches": 1,
+        "samples": 8,
+        "accepted": 8,
+        "replaced": 8,
+        "unsupported": 0,
+        "invalid": 0,
+        "mismatch": 0,
+        "errors": 0
+      },
+      "log_hashes": {
+        "process.log": "b6478c85e3153a77e2190d1e8ef775a32464959589b23fbedffd30dac5ffc78a",
+        "queue.log": "3f1b6ba480f2a198278fe55d3eb1b593d0a8aa8c8ac7f9995e4c17f743b98675",
+        "shading.bin": "1d120143fa89f8f3502fbee82d1cda3e04467a8892f766e6036f24d7c14784bc",
+        "shading.log": "363990a041e4f249400b3ab7bafd4d08cfc87cdfa52eb3e5aca103642c4cb1d4"
+      }
+    },
+    {
+      "case": "restart",
+      "repeat": 1,
+      "result": {
+        "status": "passed",
+        "scene_checks": {
+          "case": "restart",
+          "denied": 2,
+          "accepted": 1,
+          "destroyed": 1,
+          "job_retention": true,
+          "wrong_thread_destroy": 0,
+          "passed": true
+        },
+        "gpu_drain": {
+          "submitted": 1,
+          "delivered": 1,
+          "cancelled_requests": 0,
+          "late_discarded": 0,
+          "cancelled_before_dispatch": 0,
+          "retained_async": 0,
+          "worker_failures": 0,
+          "worker_batches": 1,
+          "max_batch_samples": 8
+        }
+      },
+      "shading": {
+        "batches": 1,
+        "samples": 8,
+        "accepted": 8,
+        "replaced": 8,
+        "unsupported": 0,
+        "invalid": 0,
+        "mismatch": 0,
+        "errors": 0
+      },
+      "log_hashes": {
+        "process.log": "b59ca14364fdb2275c0e2915bc9c2a0cbb7f1e360c4f8895a2025a50f06f8899",
+        "queue.log": "3f1b6ba480f2a198278fe55d3eb1b593d0a8aa8c8ac7f9995e4c17f743b98675",
+        "shading.bin": "1d120143fa89f8f3502fbee82d1cda3e04467a8892f766e6036f24d7c14784bc",
+        "shading.log": "363990a041e4f249400b3ab7bafd4d08cfc87cdfa52eb3e5aca103642c4cb1d4"
+      }
+    },
+    {
+      "case": "cancel",
+      "repeat": 1,
+      "result": {
+        "status": "passed",
+        "scene_checks": {
+          "case": "cancel",
+          "denied": 1,
+          "accepted": 0,
+          "destroyed": 1,
+          "job_retention": true,
+          "wrong_thread_destroy": 0,
+          "passed": true
+        },
+        "gpu_drain": {
+          "submitted": 1,
+          "delivered": 0,
+          "cancelled_requests": 1,
+          "late_discarded": 1,
+          "cancelled_before_dispatch": 0,
+          "retained_async": 0,
+          "worker_failures": 0,
+          "worker_batches": 1,
+          "max_batch_samples": 8
+        }
+      },
+      "shading": {
+        "batches": 1,
+        "samples": 8,
+        "accepted": 8,
+        "replaced": 8,
+        "unsupported": 0,
+        "invalid": 0,
+        "mismatch": 0,
+        "errors": 0
+      },
+      "log_hashes": {
+        "process.log": "78bdb2bf949a344b57a7482ed29dba944d347ab86be52651d72dd8cdb46b6215",
+        "queue.log": "ce0c5c5e4fea9dc9ca72b670098123b2dcb96f8def55253d48fc280cbb3e9a2e",
+        "shading.bin": "1d120143fa89f8f3502fbee82d1cda3e04467a8892f766e6036f24d7c14784bc",
+        "shading.log": "363990a041e4f249400b3ab7bafd4d08cfc87cdfa52eb3e5aca103642c4cb1d4"
+      }
+    },
+    {
+      "case": "readers",
+      "repeat": 1,
+      "result": {
+        "status": "passed",
+        "scene_checks": {
+          "case": "readers",
+          "denied": 2,
+          "accepted": 0,
+          "destroyed": 1,
+          "job_retention": true,
+          "wrong_thread_destroy": 0,
+          "passed": true
+        },
+        "gpu_drain": {
+          "submitted": 1,
+          "delivered": 1,
+          "cancelled_requests": 0,
+          "late_discarded": 0,
+          "cancelled_before_dispatch": 0,
+          "retained_async": 0,
+          "worker_failures": 0,
+          "worker_batches": 1,
+          "max_batch_samples": 8
+        }
+      },
+      "shading": {
+        "batches": 1,
+        "samples": 8,
+        "accepted": 8,
+        "replaced": 8,
+        "unsupported": 0,
+        "invalid": 0,
+        "mismatch": 0,
+        "errors": 0
+      },
+      "log_hashes": {
+        "process.log": "192a22a61fe086b769d896cb9a198c296ffe95ba3af71ca7a531690b62fe2d82",
+        "queue.log": "3f1b6ba480f2a198278fe55d3eb1b593d0a8aa8c8ac7f9995e4c17f743b98675",
+        "shading.bin": "1d120143fa89f8f3502fbee82d1cda3e04467a8892f766e6036f24d7c14784bc",
+        "shading.log": "363990a041e4f249400b3ab7bafd4d08cfc87cdfa52eb3e5aca103642c4cb1d4"
+      }
+    },
+    {
+      "case": "replace",
+      "repeat": 2,
+      "result": {
+        "status": "passed",
+        "scene_checks": {
+          "case": "replace",
+          "denied": 2,
+          "accepted": 1,
+          "destroyed": 3,
+          "job_retention": true,
+          "wrong_thread_destroy": 0,
+          "passed": true
+        },
+        "gpu_drain": {
+          "submitted": 1,
+          "delivered": 1,
+          "cancelled_requests": 0,
+          "late_discarded": 0,
+          "cancelled_before_dispatch": 0,
+          "retained_async": 0,
+          "worker_failures": 0,
+          "worker_batches": 1,
+          "max_batch_samples": 8
+        }
+      },
+      "shading": {
+        "batches": 1,
+        "samples": 8,
+        "accepted": 8,
+        "replaced": 8,
+        "unsupported": 0,
+        "invalid": 0,
+        "mismatch": 0,
+        "errors": 0
+      },
+      "log_hashes": {
+        "process.log": "b6478c85e3153a77e2190d1e8ef775a32464959589b23fbedffd30dac5ffc78a",
+        "queue.log": "3f1b6ba480f2a198278fe55d3eb1b593d0a8aa8c8ac7f9995e4c17f743b98675",
+        "shading.bin": "1d120143fa89f8f3502fbee82d1cda3e04467a8892f766e6036f24d7c14784bc",
+        "shading.log": "363990a041e4f249400b3ab7bafd4d08cfc87cdfa52eb3e5aca103642c4cb1d4"
+      }
+    },
+    {
+      "case": "restart",
+      "repeat": 2,
+      "result": {
+        "status": "passed",
+        "scene_checks": {
+          "case": "restart",
+          "denied": 2,
+          "accepted": 1,
+          "destroyed": 1,
+          "job_retention": true,
+          "wrong_thread_destroy": 0,
+          "passed": true
+        },
+        "gpu_drain": {
+          "submitted": 1,
+          "delivered": 1,
+          "cancelled_requests": 0,
+          "late_discarded": 0,
+          "cancelled_before_dispatch": 0,
+          "retained_async": 0,
+          "worker_failures": 0,
+          "worker_batches": 1,
+          "max_batch_samples": 8
+        }
+      },
+      "shading": {
+        "batches": 1,
+        "samples": 8,
+        "accepted": 8,
+        "replaced": 8,
+        "unsupported": 0,
+        "invalid": 0,
+        "mismatch": 0,
+        "errors": 0
+      },
+      "log_hashes": {
+        "process.log": "b59ca14364fdb2275c0e2915bc9c2a0cbb7f1e360c4f8895a2025a50f06f8899",
+        "queue.log": "3f1b6ba480f2a198278fe55d3eb1b593d0a8aa8c8ac7f9995e4c17f743b98675",
+        "shading.bin": "1d120143fa89f8f3502fbee82d1cda3e04467a8892f766e6036f24d7c14784bc",
+        "shading.log": "363990a041e4f249400b3ab7bafd4d08cfc87cdfa52eb3e5aca103642c4cb1d4"
+      }
+    },
+    {
+      "case": "cancel",
+      "repeat": 2,
+      "result": {
+        "status": "passed",
+        "scene_checks": {
+          "case": "cancel",
+          "denied": 1,
+          "accepted": 0,
+          "destroyed": 1,
+          "job_retention": true,
+          "wrong_thread_destroy": 0,
+          "passed": true
+        },
+        "gpu_drain": {
+          "submitted": 1,
+          "delivered": 0,
+          "cancelled_requests": 1,
+          "late_discarded": 1,
+          "cancelled_before_dispatch": 0,
+          "retained_async": 0,
+          "worker_failures": 0,
+          "worker_batches": 1,
+          "max_batch_samples": 8
+        }
+      },
+      "shading": {
+        "batches": 1,
+        "samples": 8,
+        "accepted": 8,
+        "replaced": 8,
+        "unsupported": 0,
+        "invalid": 0,
+        "mismatch": 0,
+        "errors": 0
+      },
+      "log_hashes": {
+        "process.log": "78bdb2bf949a344b57a7482ed29dba944d347ab86be52651d72dd8cdb46b6215",
+        "queue.log": "d38645b709ea04605a7ebd6164966dc620b449a4b348e5bb288b1f9dd4fa6970",
+        "shading.bin": "1d120143fa89f8f3502fbee82d1cda3e04467a8892f766e6036f24d7c14784bc",
+        "shading.log": "363990a041e4f249400b3ab7bafd4d08cfc87cdfa52eb3e5aca103642c4cb1d4"
+      }
+    },
+    {
+      "case": "readers",
+      "repeat": 2,
+      "result": {
+        "status": "passed",
+        "scene_checks": {
+          "case": "readers",
+          "denied": 2,
+          "accepted": 0,
+          "destroyed": 1,
+          "job_retention": true,
+          "wrong_thread_destroy": 0,
+          "passed": true
+        },
+        "gpu_drain": {
+          "submitted": 1,
+          "delivered": 1,
+          "cancelled_requests": 0,
+          "late_discarded": 0,
+          "cancelled_before_dispatch": 0,
+          "retained_async": 0,
+          "worker_failures": 0,
+          "worker_batches": 1,
+          "max_batch_samples": 8
+        }
+      },
+      "shading": {
+        "batches": 1,
+        "samples": 8,
+        "accepted": 8,
+        "replaced": 8,
+        "unsupported": 0,
+        "invalid": 0,
+        "mismatch": 0,
+        "errors": 0
+      },
+      "log_hashes": {
+        "process.log": "192a22a61fe086b769d896cb9a198c296ffe95ba3af71ca7a531690b62fe2d82",
+        "queue.log": "3f1b6ba480f2a198278fe55d3eb1b593d0a8aa8c8ac7f9995e4c17f743b98675",
+        "shading.bin": "1d120143fa89f8f3502fbee82d1cda3e04467a8892f766e6036f24d7c14784bc",
+        "shading.log": "363990a041e4f249400b3ab7bafd4d08cfc87cdfa52eb3e5aca103642c4cb1d4"
+      }
+    }
+  ],
+  "gpu": "NVIDIA GeForce RTX 3090, 591.74, GPU-041d589b-450b-0916-2503-c453af2389e3",
+  "compiler_sha256": "58efe82fa3ce35005f89d46fe439d7ee54e6889cb7db894019202da691a529a5",
+  "preprocessed_sha256": "4a64cb5bdc39b0bd1a5ecc6525d1940b46b5cb98048b363c4127efebbff90376",
+  "executable_sha256": "9935694c30c17fe82d653e3630b62f3260a4c79672590234fefa532d08e2f1e5",
+  "source_hashes": {
+    "xpu2\\scene_lease_probe.cc": "ea9a86596d0b2c2718dc46045b97cd5d44e02a9414a15e5bb82517a003e94062",
+    "xpu2\\scene_lease.h": "f994c9d2ae78b608901c909ced33a01cff11ed16f3642ffc9a6604a2f8912a17",
+    "xpu2\\shadow_request.h": "100e1f37f7370f17e2eed35defe963bde1c1763c123b7383b9ab58fc43eeb175",
+    "xpu2\\native_lambert_queue.cc": "cf6943f5724059ddec9eadde37b85bfb97057cd49539798246057cc711d6cf7a",
+    "xpu2\\scene_lifecycle.py": "de4a45d68ce8a4e6ee2c768154b505bcc9aae15ee9dc7c0e74fc21d3a87d89c8",
+    "xpu2\\native_integration.py": "9c4f27ae581de9ccee61ebfcf63fa4c02e78f027717a7d19771b3c2f45d36de2",
+    "tools\\xpu2_scene_lease_probe.py": "00d27f43c8049e42e722f900c9d74b91c43ff6c77d66d4a1bb0bddb74491dc19",
+    "test-results\\xpu2-ray-image-final\\sampler.ptx": "9f57b9013da070197087710e0c05afdbca05e9203c730f364ca16962fbb81bc2"
+  },
+  "regression": {
+    "python_tests": 287,
+    "python_log_sha256": "c315e32fcc5c4c75d2742ced953a42b15e1b5032cc5e7c0f4dcd9fa054465829",
+    "continuation": {
+      "status": "passed",
+      "cases": [
+        "pressure",
+        "missing_ptx",
+        "restart",
+        "leased_restart",
+        "ready_restart",
+        "admission_fallback"
+      ],
+      "report_sha256": "366b2db9e749ca9331fd8285f2928378b8cca110316914b153fc842d3f95f152"
+    },
+    "dispatch": {
+      "status": "passed",
+      "cases": [
+        "positive",
+        "transformed",
+        "mask",
+        "multiple",
+        "nested",
+        "window",
+        "publication",
+        "async_reuse",
+        "async_pinned_2",
+        "async_uploaded",
+        "async_launched",
+        "async_readback",
+        "packed_reuse_perf",
+        "packed_nan",
+        "packed_rgb_audit",
+        "packed_rgb_perf",
+        "packed_unsupported",
+        "packed_pdf",
+        "native_early_publish"
+      ],
+      "report_sha256": "3df94717109c9db7dd85b51d5edc75f32330bb75f0c7a9e8c836094d3f0f06de",
+      "patch_sha256": "1463c51ae0d7fcc21feb7e609100a543424fc9fd16bc9f8f3b78873564bad4ca"
+    }
+  },
+  "native_lifetime_inspection": [
+    {
+      "file": "upstream\\openmoonray\\moonray\\moonray\\lib\\rendering\\pbr\\Types.hh",
+      "sha256": "9efb12b195ba5a50515dfd1b6225f15e018d68eb9098373138e1567d8aa77fde",
+      "finding": "FrameState mGPUAccel is a borrowed const pointer"
+    },
+    {
+      "file": "upstream\\openmoonray\\moonray\\moonray\\lib\\rendering\\rt\\GeometryManager.h",
+      "sha256": "1c55d7291dddfb287e11ed26498bd0d518b3a49202ec67c5fdb5eba8ed208de1",
+      "finding": "GeometryManager holds unique_ptr<GPUAccelerator>"
+    },
+    {
+      "file": "upstream\\openmoonray\\moonray\\moonray\\lib\\rendering\\rt\\GeometryManager.cc",
+      "sha256": "a188bd90dff7cc8197d71e471e4d6f30ead82ad5bdda8a9e87fec8c2b2cbaf36",
+      "finding": "updateGPUAccelerator resets the existing accelerator before constructing another"
+    },
+    {
+      "file": "upstream\\openmoonray\\moonray\\moonray\\lib\\rendering\\rndr\\RenderContext.cc",
+      "sha256": "7e209e76440e6c23461b0bac4bf84162df4366597285a042b1448740cf35e39e",
+      "finding": "stopFrame halts the render driver; updateGeometry requires rendering stopped"
+    }
+  ],
+  "limitations": [
+    "Scene resources and light IDs are synthetic owned values; no native scene retention claim",
+    "GPU shader packets use the established native capture, with a checked sentinel output",
+    "Scene lease is batch-scoped; publication also requires the existing request/continuation acceptance gate",
+    "No native rendered-image or performance validation in this milestone"
+  ]
+}

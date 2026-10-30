@@ -1,0 +1,625 @@
+{
+  "status": "passed_for_restricted_terminal_film_scope",
+  "scope": "Owned completed beauty contributions; not suspended shading, GPU shading acceleration or selectable XPU2",
+  "build_manifest_sha256": "8af317e7ae460b42893224b6fb8500781a33951466c6ae3773a611dc6e3a68e0",
+  "dll_sha256": "1cf34d30c7f705f04dbcb302b33dcb82213f163371209e9a3f6e7be3b323829a",
+  "source_hashes": {
+    "deferred_film.h": "f5f7aac44b79ec771dabf6fb94ce51dff6ceede9e47c797c52cf62e4fe6b5c9d",
+    "native_deferred_film.h": "4434876ed07fc9c49f8162816108e6b4ccbe9616564061e664ec1ea727b227ec",
+    "native_deferred_film.inc": "b5d9a29b339941fb33054fc8c9e6b4c35a96c47e032439fad3614fa398f64583",
+    "xpu2_deferred_film_build.py": "eae29031a60841c7c9af6c82c564da5271d4db0afe8ea5b3c754e82d9f22cd9d"
+  },
+  "native_source_hashes": {
+    "Film.cc": "9dc7a3062d33f3300f071c643482f2028bd94bb75d55a3dac597f9be800cc436",
+    "RenderFrame.cc": "b8d6c8293559ab9fc69efe68f89213a33ac11e87fbd03039a256039a78f4f72b",
+    "RenderFramePasses.cc": "975ec15c6190ff88102ad9adfd9bf669b291df8abff4a0faa16a6abf3744bcb8",
+    "RenderContext.cc": "6fd7e369dadb53a02eb2bba4c8d7c9437c3a6820a29bb9410ff24d50eb73402d"
+  },
+  "preprocessed": {
+    "Film": "07126071165e03b218da5fec87342203f9860d8da61896c2e04ebda034410769",
+    "RenderFrame": "c25551d7f0a3eff6699177e6b00218dd051a184c7a55152730e243654d1d1ac5",
+    "RenderFramePasses": "9f885069608f241a6e7c142c6516802f9f24ebd2412bf2764b921235316037c0",
+    "RenderContext": "f96c47604395fa85dc10d7a35bb09f53bfcc737b3358e938ec10cdc60a153d79"
+  },
+  "contract": {
+    "status": "passed",
+    "checks": {
+      "status": "passed",
+      "assertions": 61,
+      "concurrent_jobs": 1000
+    },
+    "flags": [
+      "-std=c++17",
+      "-O2",
+      "-ffast-math",
+      "-mavx",
+      "-mno-avx2",
+      "-mno-fma",
+      "-ffp-contract=off"
+    ],
+    "source_hashes": {
+      "xpu2\\deferred_film.h": "f5f7aac44b79ec771dabf6fb94ce51dff6ceede9e47c797c52cf62e4fe6b5c9d",
+      "xpu2\\deferred_film_test.cc": "1b37b0acd8be49eae8de44e888a8a9ca394502e6b42c13486843f9e9111e9636",
+      "tools\\xpu2_deferred_film_contract.py": "0bc837b1127914fdf087d4f59768fc7c23ac4e676ac6abf48e56a2e8110bf973"
+    },
+    "compiler_sha256": "58efe82fa3ce35005f89d46fe439d7ee54e6889cb7db894019202da691a529a5",
+    "preprocessed_sha256": "6e5df8e0c10875f33c97e512dede656a7a5fcfba7653c15475cf6797f66cac43",
+    "executable_sha256": "8e6bbfbaa2dd8afcbb9a7a111bde9b916e52a43db19920eea938691bbbebd881"
+  },
+  "regression": {
+    "passed": 368,
+    "log_sha256": "3f737a868b70de6fd0fc58c546129d6db9f7fa7c17ac247ca5deca27ee25f706"
+  },
+  "matrices": {
+    "one": {
+      "report_sha256": "71d3809e7d6feb1475b922d7fb8ff9f1f96d2c8cb02ca6761e8676b00cd65da5",
+      "threads": 1,
+      "scene_sha256": "99dda44920c684ef9a367ec3820d671ec7c7e7f9b7a245122e3d7deebbfc247e",
+      "runs": [
+        {
+          "label": "reference",
+          "comparisons": [
+            {
+              "status": "passed",
+              "different_pixels": 0,
+              "max_absolute_error": 0
+            }
+          ],
+          "continuations": [],
+          "log_sha256": "356ae36e373e1ee87fc930323442938b5d9fc94f8da037e979506fb4c44a92c2"
+        },
+        {
+          "label": "disabled",
+          "comparisons": [
+            {
+              "status": "passed",
+              "different_pixels": 0,
+              "max_absolute_error": 0
+            }
+          ],
+          "continuations": [],
+          "log_sha256": "fcb38ff7062b31216505f6e8ec6fe25707b49fb971db8b792359ba150eefea09"
+        },
+        {
+          "label": "deferred",
+          "comparisons": [
+            {
+              "status": "passed",
+              "different_pixels": 0,
+              "max_absolute_error": 0
+            }
+          ],
+          "continuations": [
+            {
+              "epoch": 1,
+              "jobs": 62,
+              "resumed_jobs": 62,
+              "failed_jobs": 0,
+              "revoked_jobs": 0,
+              "declined": 0,
+              "peak_jobs": 1,
+              "peak_bytes": 2125312,
+              "suspended_samples": 503074,
+              "resumed_samples": 503074,
+              "fallback_batches": 0,
+              "outstanding": 0
+            }
+          ],
+          "log_sha256": "470e6b1d1c9b289ad8287c14232c2230af1a27c5272561f17d9eefd27c1c8c9f"
+        },
+        {
+          "label": "failure",
+          "comparisons": [
+            {
+              "status": "passed",
+              "different_pixels": 0,
+              "max_absolute_error": 0
+            }
+          ],
+          "continuations": [
+            {
+              "epoch": 1,
+              "jobs": 62,
+              "resumed_jobs": 62,
+              "failed_jobs": 62,
+              "revoked_jobs": 0,
+              "declined": 0,
+              "peak_jobs": 2,
+              "peak_bytes": 2125312,
+              "suspended_samples": 503074,
+              "resumed_samples": 503074,
+              "fallback_batches": 0,
+              "outstanding": 0
+            }
+          ],
+          "log_sha256": "7e265a2fe2c48d918f2207919353f53145140f0e6eb2bb2c72d3a3050efe2a70"
+        },
+        {
+          "label": "invalid",
+          "comparisons": [
+            {
+              "status": "passed",
+              "different_pixels": 0,
+              "max_absolute_error": 0
+            }
+          ],
+          "continuations": [
+            {
+              "epoch": 1,
+              "jobs": 62,
+              "resumed_jobs": 62,
+              "failed_jobs": 62,
+              "revoked_jobs": 0,
+              "declined": 0,
+              "peak_jobs": 2,
+              "peak_bytes": 2125312,
+              "suspended_samples": 503074,
+              "resumed_samples": 503074,
+              "fallback_batches": 0,
+              "outstanding": 0
+            }
+          ],
+          "log_sha256": "c4769c2cdf713449803ca394bc42887aed6b817caaa97f620bb285fc02207a28"
+        },
+        {
+          "label": "sentinel",
+          "comparisons": [
+            {
+              "status": "failed",
+              "different_pixels": 23346,
+              "max_absolute_error": 0.12249717116355896
+            }
+          ],
+          "continuations": [
+            {
+              "epoch": 1,
+              "jobs": 62,
+              "resumed_jobs": 62,
+              "failed_jobs": 0,
+              "revoked_jobs": 0,
+              "declined": 0,
+              "peak_jobs": 1,
+              "peak_bytes": 2125312,
+              "suspended_samples": 503074,
+              "resumed_samples": 503074,
+              "fallback_batches": 0,
+              "outstanding": 0
+            }
+          ],
+          "log_sha256": "9f217018cbe4d847c03d966f7da385239299922fd8b565976af3ebcafbd58c9b"
+        }
+      ]
+    },
+    "adaptive": {
+      "report_sha256": "19483b116331db89efbfb8ab607b6accab3e0d355a8fd710a908c835350781ba",
+      "threads": 1,
+      "scene_sha256": "61ddd8697b5870629fb483d9272709a9a6759b3d06441b925483ef126d4420c9",
+      "runs": [
+        {
+          "label": "reference",
+          "comparisons": [
+            {
+              "status": "passed",
+              "different_pixels": 0,
+              "max_absolute_error": 0
+            }
+          ],
+          "continuations": [],
+          "log_sha256": "c4d4b7212a51ed458eb59a5a1d914fb3460cb9a418d2724175a157faad0c8e70"
+        },
+        {
+          "label": "disabled",
+          "comparisons": [
+            {
+              "status": "passed",
+              "different_pixels": 0,
+              "max_absolute_error": 0
+            }
+          ],
+          "continuations": [],
+          "log_sha256": "27a3f923314e1063fcd2945a9b3f8dd8def87a99ebf23c24832b94cd64f35d98"
+        },
+        {
+          "label": "deferred",
+          "comparisons": [
+            {
+              "status": "passed",
+              "different_pixels": 0,
+              "max_absolute_error": 0
+            }
+          ],
+          "continuations": [
+            {
+              "epoch": 1,
+              "jobs": 0,
+              "resumed_jobs": 0,
+              "failed_jobs": 0,
+              "revoked_jobs": 0,
+              "declined": 0,
+              "peak_jobs": 0,
+              "peak_bytes": 0,
+              "suspended_samples": 0,
+              "resumed_samples": 0,
+              "fallback_batches": 2099,
+              "outstanding": 0
+            }
+          ],
+          "log_sha256": "6641ff4fdea0c3f51caf2210e8046d5eafbb716a1e98385a5056aab0a9dd0e9b"
+        },
+        {
+          "label": "failure",
+          "comparisons": [
+            {
+              "status": "passed",
+              "different_pixels": 0,
+              "max_absolute_error": 0
+            }
+          ],
+          "continuations": [
+            {
+              "epoch": 1,
+              "jobs": 0,
+              "resumed_jobs": 0,
+              "failed_jobs": 0,
+              "revoked_jobs": 0,
+              "declined": 0,
+              "peak_jobs": 0,
+              "peak_bytes": 0,
+              "suspended_samples": 0,
+              "resumed_samples": 0,
+              "fallback_batches": 2099,
+              "outstanding": 0
+            }
+          ],
+          "log_sha256": "14f7fd775af240356c06492f37917428df8f1be2cd1d1d3f4b55c2fd1b46b5d8"
+        },
+        {
+          "label": "invalid",
+          "comparisons": [
+            {
+              "status": "passed",
+              "different_pixels": 0,
+              "max_absolute_error": 0
+            }
+          ],
+          "continuations": [
+            {
+              "epoch": 1,
+              "jobs": 0,
+              "resumed_jobs": 0,
+              "failed_jobs": 0,
+              "revoked_jobs": 0,
+              "declined": 0,
+              "peak_jobs": 0,
+              "peak_bytes": 0,
+              "suspended_samples": 0,
+              "resumed_samples": 0,
+              "fallback_batches": 2099,
+              "outstanding": 0
+            }
+          ],
+          "log_sha256": "9a228d59c56e9ccfcfa8773116d4f8fc82d3008ecfae38d34c6c61777c8b3510"
+        },
+        {
+          "label": "sentinel",
+          "comparisons": [
+            {
+              "status": "passed",
+              "different_pixels": 0,
+              "max_absolute_error": 0
+            }
+          ],
+          "continuations": [
+            {
+              "epoch": 1,
+              "jobs": 0,
+              "resumed_jobs": 0,
+              "failed_jobs": 0,
+              "revoked_jobs": 0,
+              "declined": 0,
+              "peak_jobs": 0,
+              "peak_bytes": 0,
+              "suspended_samples": 0,
+              "resumed_samples": 0,
+              "fallback_batches": 2099,
+              "outstanding": 0
+            }
+          ],
+          "log_sha256": "e271abc690221775c313a6bc732c890ba5b58e2e811cffba65725969cd1c936b"
+        }
+      ]
+    },
+    "persistent": {
+      "report_sha256": "a94583b0937a481116e53a3e8bffe88f6f36c62ef09aacda946b3c304834fe22",
+      "threads": 1,
+      "scene_sha256": "99dda44920c684ef9a367ec3820d671ec7c7e7f9b7a245122e3d7deebbfc247e",
+      "runs": [
+        {
+          "label": "reference",
+          "comparisons": [
+            {
+              "status": "passed",
+              "different_pixels": 0,
+              "max_absolute_error": 0
+            },
+            {
+              "status": "passed",
+              "different_pixels": 0,
+              "max_absolute_error": 0
+            },
+            {
+              "status": "passed",
+              "different_pixels": 0,
+              "max_absolute_error": 0
+            }
+          ],
+          "continuations": [],
+          "log_sha256": "59b1cc2e6b918be2dc216ab614490f303ccf595ee6bccebc8b25dd4a171e9acb"
+        },
+        {
+          "label": "deferred",
+          "comparisons": [
+            {
+              "status": "passed",
+              "different_pixels": 0,
+              "max_absolute_error": 0
+            },
+            {
+              "status": "passed",
+              "different_pixels": 0,
+              "max_absolute_error": 0
+            },
+            {
+              "status": "passed",
+              "different_pixels": 0,
+              "max_absolute_error": 0
+            }
+          ],
+          "continuations": [
+            {
+              "epoch": 1,
+              "jobs": 411,
+              "resumed_jobs": 411,
+              "failed_jobs": 0,
+              "revoked_jobs": 0,
+              "declined": 0,
+              "peak_jobs": 2,
+              "peak_bytes": 2121216,
+              "suspended_samples": 503073,
+              "resumed_samples": 503073,
+              "fallback_batches": 0,
+              "outstanding": 0
+            },
+            {
+              "epoch": 2,
+              "jobs": 411,
+              "resumed_jobs": 411,
+              "failed_jobs": 0,
+              "revoked_jobs": 0,
+              "declined": 0,
+              "peak_jobs": 2,
+              "peak_bytes": 2121216,
+              "suspended_samples": 503073,
+              "resumed_samples": 503073,
+              "fallback_batches": 0,
+              "outstanding": 0
+            },
+            {
+              "epoch": 3,
+              "jobs": 411,
+              "resumed_jobs": 411,
+              "failed_jobs": 0,
+              "revoked_jobs": 0,
+              "declined": 0,
+              "peak_jobs": 2,
+              "peak_bytes": 2121216,
+              "suspended_samples": 503073,
+              "resumed_samples": 503073,
+              "fallback_batches": 0,
+              "outstanding": 0
+            }
+          ],
+          "log_sha256": "1848e7e1f74557f5782685f913d0920a05318a1185d88bbe83a96311ec345901"
+        }
+      ]
+    },
+    "four": {
+      "report_sha256": "4f208ff5211c8ac175633c36b7297337441e1cee5d7c91dfaa1cec49122b3485",
+      "threads": 4,
+      "scene_sha256": "99dda44920c684ef9a367ec3820d671ec7c7e7f9b7a245122e3d7deebbfc247e",
+      "runs": [
+        {
+          "label": "reference",
+          "comparisons": [
+            {
+              "status": "passed",
+              "different_pixels": 0,
+              "max_absolute_error": 0
+            }
+          ],
+          "continuations": [],
+          "log_sha256": "0d14335546fcfa6d06aa481f3b7389c688f75ae7792d6ebc224321b549f13e84"
+        },
+        {
+          "label": "disabled",
+          "comparisons": [
+            {
+              "status": "passed",
+              "different_pixels": 8,
+              "max_absolute_error": 1.4901161193847656e-08
+            }
+          ],
+          "continuations": [],
+          "log_sha256": "b83e979caaf8d36a9b2c79468e5f062a9fb1291a202fe8d3a400486d08c737a5"
+        },
+        {
+          "label": "deferred",
+          "comparisons": [
+            {
+              "status": "passed",
+              "different_pixels": 8,
+              "max_absolute_error": 1.4901161193847656e-08
+            }
+          ],
+          "continuations": [
+            {
+              "epoch": 1,
+              "jobs": 73,
+              "resumed_jobs": 73,
+              "failed_jobs": 0,
+              "revoked_jobs": 0,
+              "declined": 0,
+              "peak_jobs": 4,
+              "peak_bytes": 4777472,
+              "suspended_samples": 503074,
+              "resumed_samples": 503074,
+              "fallback_batches": 0,
+              "outstanding": 0
+            }
+          ],
+          "log_sha256": "b732c2c148da039f5ce4443e9623cec5ecfb5f602c0f61b5dd62593e0736de79"
+        },
+        {
+          "label": "failure",
+          "comparisons": [
+            {
+              "status": "passed",
+              "different_pixels": 9,
+              "max_absolute_error": 1.4901161193847656e-08
+            }
+          ],
+          "continuations": [
+            {
+              "epoch": 1,
+              "jobs": 74,
+              "resumed_jobs": 74,
+              "failed_jobs": 74,
+              "revoked_jobs": 0,
+              "declined": 0,
+              "peak_jobs": 4,
+              "peak_bytes": 6345728,
+              "suspended_samples": 503074,
+              "resumed_samples": 503074,
+              "fallback_batches": 0,
+              "outstanding": 0
+            }
+          ],
+          "log_sha256": "41731e265b57abf981ab1475db808edce3bb8ef99af18222cb8d57a019bf6e86"
+        },
+        {
+          "label": "invalid",
+          "comparisons": [
+            {
+              "status": "passed",
+              "different_pixels": 7,
+              "max_absolute_error": 1.4901161193847656e-08
+            }
+          ],
+          "continuations": [
+            {
+              "epoch": 1,
+              "jobs": 70,
+              "resumed_jobs": 70,
+              "failed_jobs": 70,
+              "revoked_jobs": 0,
+              "declined": 0,
+              "peak_jobs": 5,
+              "peak_bytes": 6348800,
+              "suspended_samples": 503074,
+              "resumed_samples": 503074,
+              "fallback_batches": 0,
+              "outstanding": 0
+            }
+          ],
+          "log_sha256": "fa7d8e9da9b452d7c58a29fee52d3931bf31a43b4d535738fb3a7dd19e348631"
+        },
+        {
+          "label": "sentinel",
+          "comparisons": [
+            {
+              "status": "failed",
+              "different_pixels": 20370,
+              "max_absolute_error": 0.12249717116355896
+            }
+          ],
+          "continuations": [
+            {
+              "epoch": 1,
+              "jobs": 73,
+              "resumed_jobs": 73,
+              "failed_jobs": 0,
+              "revoked_jobs": 0,
+              "declined": 2,
+              "peak_jobs": 4,
+              "peak_bytes": 6320128,
+              "suspended_samples": 470162,
+              "resumed_samples": 470162,
+              "fallback_batches": 1,
+              "outstanding": 0
+            }
+          ],
+          "log_sha256": "b3849e53eaf6fed5da12b9fcbbc01dc38722de0f800141441f932f781afe3b1c"
+        }
+      ]
+    }
+  },
+  "cancellation_restart": {
+    "report_sha256": "af7d0ef2a2d58775bd4fb3f477dee2c95f3a96b5bb68c9a66f3a835103de72e7",
+    "frames": [
+      {
+        "epoch": 1,
+        "jobs": 16,
+        "resumed_jobs": 16,
+        "failed_jobs": 0,
+        "revoked_jobs": 0,
+        "declined": 0,
+        "peak_jobs": 16,
+        "peak_bytes": 504640,
+        "suspended_samples": 7885,
+        "resumed_samples": 7885,
+        "fallback_batches": 0,
+        "outstanding": 0
+      },
+      {
+        "epoch": 2,
+        "jobs": 411,
+        "resumed_jobs": 411,
+        "failed_jobs": 0,
+        "revoked_jobs": 0,
+        "declined": 12,
+        "peak_jobs": 32,
+        "peak_bytes": 7749632,
+        "suspended_samples": 503073,
+        "resumed_samples": 503073,
+        "fallback_batches": 0,
+        "outstanding": 0
+      }
+    ],
+    "image": {
+      "status": "passed",
+      "different_pixels": 0,
+      "max_absolute_error": 0
+    },
+    "log_sha256": "86feef4befa1565b95cb2c620a8827cad7138d58fa513685c77a3caf2526ce7d"
+  },
+  "unvalidated": {
+    "cryptomatte": {
+      "reason": "Unchanged reference exited during rendering before an image was produced; candidate handle fallback remains unvalidated",
+      "report_sha256": "0bb9c14a573e5d5cebdfd61d0c8b2d01710b844862cc23d94f2714e8d780c439",
+      "log_sha256": "346785f3f45ce142e50d624057a65ad3dc2d0c3fa090faa85a31a58a827b9341"
+    },
+    "deep": "Synchronous handle bypass present, no deep rendered validation",
+    "adaptive_suspension": "Disabled after a convergence-ordering failure; synchronous native fallback validated",
+    "arbitrary_paths": "Native shading/texture/traversal continuations not implemented"
+  },
+  "earlier_failures": [
+    {
+      "kind": "fixture",
+      "detail": "Adaptive enum 1 invalid; source defines adaptive as 2. Corrected fixture."
+    },
+    {
+      "kind": "candidate",
+      "detail": "Deferring adaptive film writes changed 4897 pixels; fixed by retaining native synchronous adaptive path."
+    }
+  ]
+}

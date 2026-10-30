@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "scope": "M0 batch fallback operational identity, not native equivalence",
+  "source_format": "RDLB",
+  "channels": "float32 RGBA; no display conversion",
+  "width": 192,
+  "height": 128,
+  "pixel_sample_grid": 2,
+  "threads": [
+    1,
+    12
+  ],
+  "training_reference_repeats": 5,
+  "held_out_reference_repeats": 2,
+  "fallback_repeats": 2,
+  "one_worker": "Exact float32 RGBA words including signed zero",
+  "twelve_workers": "Freeze max over each reference/reference pair for every channel and metric. Each held-out original and fallback must pass against all five originals. No refit.",
+  "metrics": [
+    "max_abs",
+    "rms",
+    "mean_abs",
+    "abs_signed_mean",
+    "different_words_fraction"
+  ],
+  "mode": "Actual XPU, positive GPU intersection utilization, exact requested threads, no fallback/errors",
+  "cancellation": "Cancelled child yields no output; fresh job recovers; settings-stale result rejected",
+  "nonfinite": "reject",
+  "performance_claim": false,
+  "limitations": "Finite observed envelope is not a population confidence interval. A failing held-out original invalidates the envelope for qualification; retain failures."
+}

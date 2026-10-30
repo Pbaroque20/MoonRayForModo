@@ -1,0 +1,101 @@
+{
+  "schema": 1,
+  "status": "prospective; fixed before new frame-ceiling timings",
+  "scope": "Experimental pre-shadev material queue; original XPU retained; no install, defaults or merge",
+  "fixtures": [
+    "diffuse",
+    "layered",
+    "textured",
+    "many_adaptive"
+  ],
+  "exactness": {
+    "one_worker": "All finite float32 RGBA words identical, including signed zero; metadata and dimensions identical",
+    "kernel": "Same CPU/ISPC arithmetic and order; no FMA/fast-math shortcut; no hardware texture filtering",
+    "failure_cases": [
+      "never-submit",
+      "always-late",
+      "forced-delay",
+      "injected-upload-failure",
+      "stale-residency",
+      "cancellation-and-recovery",
+      "CPU/GPU-checkerboard"
+    ],
+    "twelve_workers": {
+      "reference_repeats": 5,
+      "candidate_repeats": 5,
+      "definition": "Per fixture and channel, freeze maxima over all reference/reference pairs. Each candidate/reference pair must meet every metric; no margin or refit after candidate results.",
+      "metrics": [
+        "max_abs",
+        "rms",
+        "mean_abs",
+        "abs_signed_mean",
+        "different_words_fraction"
+      ],
+      "nonfinite": "always fail",
+      "zero_envelope": "requires exact float32 words"
+    }
+  },
+  "speed": {
+    "threads": [
+      1,
+      12
+    ],
+    "variants": [
+      "original",
+      "disabled",
+      "never-submit",
+      "always-late",
+      "normal"
+    ],
+    "warmups_per_variant": 1,
+    "measured_repeats": 5,
+    "order": "rotate variant order by repetition",
+    "profiling": "off",
+    "report": [
+      "process_wall",
+      "MCRT",
+      "scene_load",
+      "render_prep",
+      "queue_used",
+      "queue_late",
+      "queue_refused",
+      "queue_canceled"
+    ],
+    "disabled_regression_limit": "median MCRT overhead <= max(3% original, 0.1 s); report spread and no speedup if ranges overlap",
+    "speedup": "normal must be faster than original and image-qualified; 30-40% remains a target, not permission to change quality"
+  },
+  "cpu_ceiling": {
+    "threads": [
+      1,
+      12
+    ],
+    "original_repeats": {
+      "1": 1,
+      "12": 5
+    },
+    "candidate_profile_rates": [
+      64,
+      16
+    ],
+    "seeds": [
+      173,
+      761
+    ],
+    "off_controls": "before and after sampled runs",
+    "estimator": "exclusive sampled elapsed seconds * inclusion rate (Horvitz-Thompson); also retain lane-weighted diagnostic",
+    "caveat": "At 12 workers the sum is worker elapsed seconds, not removable wall time; includes preemption and internal waits. Two sampling rates show sensitivity, not a confidence interval."
+  },
+  "queue": {
+    "max_parked_points_per_worker": 1024,
+    "max_parked_points_total": 12288,
+    "max_parked_bytes_total": 67108864,
+    "claim": "exactly one terminal publish per generation/sample; no CPU graph evaluation before ownership rejection or spot check",
+    "spot_check_modulus": 1000,
+    "spot_check_identity": "stable scene generation, pixel, sample, depth and material revision; never queue arrival order",
+    "full_check": "explicit debug only",
+    "lighting": "GPU light queue disabled until actually consumed and qualified",
+    "residency": "commit only after upload completion; retain immutable revisions for flights; generation mismatch rejects without black-success"
+  },
+  "material_selection": "Inspect actual Modo exporter; do not assume the eight-layer cost fixture is the common export",
+  "acceptance": "No gate may be relaxed after seeing timings; incomplete and failed evidence remain visible"
+}

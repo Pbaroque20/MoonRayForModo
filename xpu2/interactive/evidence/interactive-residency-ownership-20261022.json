@@ -1,0 +1,812 @@
+{
+  "status": "measured",
+  "frozen_internal_abs_bound": 0.002,
+  "scope": "separate strict ownership gate; overall statistical quality gates remain distinct",
+  "cases": {
+    "gallery-dense": {
+      "outlier_pixels": [
+        27148,
+        37193,
+        49848,
+        73008,
+        92082,
+        94716,
+        105144,
+        106619
+      ],
+      "max_channel_delta": 0.00418563187122345,
+      "strict_gate_passed": false,
+      "display_cadence_byte_identical": true,
+      "worker_count_byte_identical": true,
+      "stage_diagnostic": {
+        "differences": [
+          {
+            "cpu_direction": [
+              -0.8626416921615601,
+              0.2408267855644226,
+              -0.44480520486831665
+            ],
+            "cpu_geom": 28,
+            "cpu_gpu_sample_delta": 0.2159850173169371,
+            "cpu_origin": [
+              3.1113553047180176,
+              -0.36588364839553833,
+              0.21456250548362732
+            ],
+            "cpu_pdf": 0.14679193496704102,
+            "cpu_prim": 2117,
+            "cpu_rgb": [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ],
+            "gpu_direction": [
+              -0.22797805070877075,
+              0.3730003237724304,
+              0.8993868827819824
+            ],
+            "gpu_geom": 28,
+            "gpu_origin": [
+              3.009943962097168,
+              -0.3539545238018036,
+              0.6639246940612793
+            ],
+            "gpu_pdf": 0.1467919498682022,
+            "gpu_prim": 342,
+            "gpu_rgb": [
+              0.14597219446260024,
+              0.2159850173169371,
+              0.12239065060578369,
+              1.0
+            ],
+            "gpu_state_cpu_visibility_rgb": [
+              0.14597219446260024,
+              0.2159850173169371,
+              0.12239065060578369,
+              1.0
+            ],
+            "pixel": 49848,
+            "same_gpu_state_different_traversal": false,
+            "sample": 29
+          },
+          {
+            "cpu_direction": [
+              0.9353753328323364,
+              -0.35155943036079407,
+              -0.03845715522766113
+            ],
+            "cpu_geom": 20,
+            "cpu_gpu_sample_delta": 0.2279973540901743,
+            "cpu_origin": [
+              3.693657159805298,
+              -1.2870935201644897,
+              -0.35964521765708923
+            ],
+            "cpu_pdf": 0.20037592947483063,
+            "cpu_prim": 3446,
+            "cpu_rgb": [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ],
+            "gpu_direction": [
+              -0.5450227856636047,
+              0.024839535355567932,
+              0.838053286075592
+            ],
+            "gpu_geom": 20,
+            "gpu_origin": [
+              3.619710922241211,
+              -1.261326789855957,
+              -0.07221335172653198
+            ],
+            "gpu_pdf": 0.20037595927715302,
+            "gpu_prim": 2426,
+            "gpu_rgb": [
+              0.2279973540901743,
+              0.1075982135091813,
+              0.06627592558765105,
+              1.0
+            ],
+            "gpu_state_cpu_visibility_rgb": [
+              0.2279973540901743,
+              0.1075982135091813,
+              0.06627592558765105,
+              1.0
+            ],
+            "pixel": 37193,
+            "same_gpu_state_different_traversal": false,
+            "sample": 44
+          },
+          {
+            "cpu_direction": [
+              -0.20083889365196228,
+              -0.7980079650878906,
+              0.5681962370872498
+            ],
+            "cpu_geom": 54,
+            "cpu_gpu_sample_delta": 0.1800730018943888,
+            "cpu_origin": [
+              3.00746750831604,
+              2.4892823696136475,
+              0.0450609065592289
+            ],
+            "cpu_pdf": 0.26505401730537415,
+            "cpu_prim": 2121,
+            "cpu_rgb": [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ],
+            "gpu_direction": [
+              0.08511768281459808,
+              -0.4937891662120819,
+              0.8654059171676636
+            ],
+            "gpu_geom": 54,
+            "gpu_origin": [
+              2.847025156021118,
+              2.3564846515655518,
+              0.7895357012748718
+            ],
+            "gpu_pdf": 0.2650540769100189,
+            "gpu_prim": 1148,
+            "gpu_rgb": [
+              0.12169251623291544,
+              0.1800730018943888,
+              0.1020370285525729,
+              1.0
+            ],
+            "gpu_state_cpu_visibility_rgb": [
+              0.12169251623291544,
+              0.1800730018943888,
+              0.1020370285525729,
+              1.0
+            ],
+            "pixel": 92082,
+            "same_gpu_state_different_traversal": false,
+            "sample": 45
+          },
+          {
+            "cpu_direction": [
+              0.6763801574707031,
+              -0.6632512807846069,
+              -0.3203241229057312
+            ],
+            "cpu_geom": 53,
+            "cpu_gpu_sample_delta": 0.21182272749875075,
+            "cpu_origin": [
+              1.5884226560592651,
+              2.7153162956237793,
+              -0.09072458744049072
+            ],
+            "cpu_pdf": 0.16510868072509766,
+            "cpu_prim": 2780,
+            "cpu_rgb": [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ],
+            "gpu_direction": [
+              0.21077480912208557,
+              -0.1722414642572403,
+              0.9622405767440796
+            ],
+            "gpu_geom": 53,
+            "gpu_origin": [
+              1.5396196842193604,
+              2.631903886795044,
+              0.342163622379303
+            ],
+            "gpu_pdf": 0.16510874032974243,
+            "gpu_prim": 1776,
+            "gpu_rgb": [
+              0.21182272749875075,
+              0.19110068651436585,
+              0.17192227331488397,
+              1.0
+            ],
+            "gpu_state_cpu_visibility_rgb": [
+              0.21182272749875075,
+              0.19110068651436585,
+              0.17192227331488397,
+              1.0
+            ],
+            "pixel": 94716,
+            "same_gpu_state_different_traversal": false,
+            "sample": 48
+          },
+          {
+            "cpu_direction": [
+              0.542016863822937,
+              0.06363744288682938,
+              0.8379546403884888
+            ],
+            "cpu_geom": 0,
+            "cpu_gpu_sample_delta": 0.17277630825007417,
+            "cpu_origin": [
+              2.2135963439941406,
+              -2.128141164779663,
+              -1.4999703168869019
+            ],
+            "cpu_pdf": 0.2667292356491089,
+            "cpu_prim": 0,
+            "cpu_rgb": [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ],
+            "gpu_direction": [
+              0.542016863822937,
+              0.06363744288682938,
+              0.8379546403884888
+            ],
+            "gpu_geom": 0,
+            "gpu_origin": [
+              2.2135982513427734,
+              -2.128140449523926,
+              -1.4999703168869019
+            ],
+            "gpu_pdf": 0.2667292356491089,
+            "gpu_prim": 0,
+            "gpu_rgb": [
+              0.17277630825007417,
+              0.10717574473490465,
+              0.0583016821067206,
+              1.0
+            ],
+            "gpu_state_cpu_visibility_rgb": [
+              0.17277630825007417,
+              0.10717574473490465,
+              0.0583016821067206,
+              1.0
+            ],
+            "pixel": 27148,
+            "same_gpu_state_different_traversal": false,
+            "sample": 50
+          },
+          {
+            "cpu_direction": [
+              -0.31921201944351196,
+              -0.947518527507782,
+              -0.017674684524536133
+            ],
+            "cpu_geom": 62,
+            "cpu_gpu_sample_delta": 0.2176868232739988,
+            "cpu_origin": [
+              1.5834656953811646,
+              3.565171241760254,
+              -0.22417901456356049
+            ],
+            "cpu_pdf": 0.17150920629501343,
+            "cpu_prim": 2777,
+            "cpu_rgb": [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ],
+            "gpu_direction": [
+              -0.6912887692451477,
+              -0.55060875415802,
+              0.46792083978652954
+            ],
+            "gpu_geom": 62,
+            "gpu_origin": [
+              1.5310810804367065,
+              3.447242021560669,
+              0.2463536560535431
+            ],
+            "gpu_pdf": 0.17150919139385223,
+            "gpu_prim": 1908,
+            "gpu_rgb": [
+              0.2176868232739988,
+              0.19636718296379385,
+              0.17663648830399836,
+              1.0
+            ],
+            "gpu_state_cpu_visibility_rgb": [
+              0.2176868232739988,
+              0.19636718296379385,
+              0.17663648830399836,
+              1.0
+            ],
+            "pixel": 106619,
+            "same_gpu_state_different_traversal": false,
+            "sample": 50
+          },
+          {
+            "cpu_direction": [
+              -0.6514898538589478,
+              -0.04340448975563049,
+              0.7574147582054138
+            ],
+            "cpu_geom": 39,
+            "cpu_gpu_sample_delta": 0.26788101595462877,
+            "cpu_origin": [
+              -3.757399797439575,
+              1.2100671529769897,
+              0.07507313787937164
+            ],
+            "cpu_pdf": 0.29347947239875793,
+            "cpu_prim": 2104,
+            "cpu_rgb": [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ],
+            "gpu_direction": [
+              0.4159107208251953,
+              -0.7892191410064697,
+              0.45183128118515015
+            ],
+            "gpu_geom": 39,
+            "gpu_origin": [
+              -3.633924722671509,
+              1.1702996492385864,
+              0.5326442718505859
+            ],
+            "gpu_pdf": 0.29347947239875793,
+            "gpu_prim": 680,
+            "gpu_rgb": [
+              0.26788101595462877,
+              0.15908377644702743,
+              0.07911273257385609,
+              1.0
+            ],
+            "gpu_state_cpu_visibility_rgb": [
+              0.26788101595462877,
+              0.15908377644702743,
+              0.07911273257385609,
+              1.0
+            ],
+            "pixel": 73008,
+            "same_gpu_state_different_traversal": false,
+            "sample": 56
+          },
+          {
+            "cpu_direction": [
+              -0.9884624481201172,
+              0.1473473608493805,
+              -0.035084113478660583
+            ],
+            "cpu_geom": 63,
+            "cpu_gpu_sample_delta": 0.18654822091463252,
+            "cpu_origin": [
+              3.206105947494507,
+              3.445554733276367,
+              -0.17709125578403473
+            ],
+            "cpu_pdf": 0.24416501820087433,
+            "cpu_prim": 972,
+            "cpu_rgb": [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ],
+            "gpu_direction": [
+              0.07909500598907471,
+              0.7150453329086304,
+              0.6945893168449402
+            ],
+            "gpu_geom": 63,
+            "gpu_origin": [
+              3.1103830337524414,
+              3.3426766395568848,
+              0.24624080955982208
+            ],
+            "gpu_pdf": 0.24416504800319672,
+            "gpu_prim": 630,
+            "gpu_rgb": [
+              0.12607588955873084,
+              0.18654822091463252,
+              0.10570929470496537,
+              1.0
+            ],
+            "gpu_state_cpu_visibility_rgb": [
+              0.12607588955873084,
+              0.18654822091463252,
+              0.10570929470496537,
+              1.0
+            ],
+            "pixel": 105144,
+            "same_gpu_state_different_traversal": false,
+            "sample": 63
+          }
+        ],
+        "max_single_sample_delta": 0.26788101595462877,
+        "other_disagreements": 8,
+        "same_state_visibility_disagreements": 0,
+        "samples_examined": 512,
+        "scope": "selected outlier pixels only; same GPU shading state continued with CPU visibility isolates traversal sensitivity",
+        "significant_samples": 8,
+        "status": "measured"
+      }
+    },
+    "workshop-detail": {
+      "outlier_pixels": [
+        22391,
+        32640,
+        58095,
+        66441,
+        79488,
+        99166
+      ],
+      "max_channel_delta": 0.007358819246292114,
+      "strict_gate_passed": false,
+      "display_cadence_byte_identical": true,
+      "worker_count_byte_identical": true,
+      "stage_diagnostic": {
+        "differences": [
+          {
+            "cpu_direction": [
+              -0.21679696440696716,
+              0.28811877965927124,
+              0.9327307343482971
+            ],
+            "cpu_geom": 0,
+            "cpu_gpu_sample_delta": 0.47097254501242247,
+            "cpu_origin": [
+              2.0540904998779297,
+              0.024248600006103516,
+              -1.4999703168869019
+            ],
+            "cpu_pdf": 0.29689741134643555,
+            "cpu_prim": 0,
+            "cpu_rgb": [
+              0.47097254501242247,
+              0.27334706019764177,
+              0.12899172818627846,
+              1.0
+            ],
+            "gpu_direction": [
+              -0.21679696440696716,
+              0.28811877965927124,
+              0.9327307343482971
+            ],
+            "gpu_geom": 0,
+            "gpu_origin": [
+              2.0540924072265625,
+              0.02424907684326172,
+              -1.4999703168869019
+            ],
+            "gpu_pdf": 0.29689741134643555,
+            "gpu_prim": 0,
+            "gpu_rgb": [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ],
+            "gpu_state_cpu_visibility_rgb": [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ],
+            "pixel": 99166,
+            "same_gpu_state_different_traversal": false,
+            "sample": 29
+          },
+          {
+            "cpu_direction": [
+              0.6881017088890076,
+              -0.3750935196876526,
+              0.6211448311805725
+            ],
+            "cpu_geom": 0,
+            "cpu_gpu_sample_delta": 0.37766717043023057,
+            "cpu_origin": [
+              -2.7758331298828125,
+              -0.7864184379577637,
+              -1.4999703168869019
+            ],
+            "cpu_pdf": 0.19771653413772583,
+            "cpu_prim": 1,
+            "cpu_rgb": [
+              0.37766717043023057,
+              0.22135219197014067,
+              0.106872863843952,
+              1.0
+            ],
+            "gpu_direction": [
+              0.6881017088890076,
+              -0.3750935196876526,
+              0.6211448311805725
+            ],
+            "gpu_geom": 0,
+            "gpu_origin": [
+              -2.7758331298828125,
+              -0.7864179611206055,
+              -1.4999703168869019
+            ],
+            "gpu_pdf": 0.19771653413772583,
+            "gpu_prim": 1,
+            "gpu_rgb": [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ],
+            "gpu_state_cpu_visibility_rgb": [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ],
+            "pixel": 79488,
+            "same_gpu_state_different_traversal": false,
+            "sample": 31
+          },
+          {
+            "cpu_direction": [
+              -0.3995049297809601,
+              0.18125802278518677,
+              0.8986331224441528
+            ],
+            "cpu_geom": 77,
+            "cpu_gpu_sample_delta": 0.19985263901348382,
+            "cpu_origin": [
+              2.6675302982330322,
+              -1.2161989212036133,
+              0.17075464129447937
+            ],
+            "cpu_pdf": 0.25373589992523193,
+            "cpu_prim": 614,
+            "cpu_rgb": [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ],
+            "gpu_direction": [
+              0.2279726266860962,
+              0.9197418093681335,
+              0.31953638792037964
+            ],
+            "gpu_geom": 77,
+            "gpu_origin": [
+              2.6134278774261475,
+              -1.191527247428894,
+              0.4512517750263214
+            ],
+            "gpu_pdf": 0.25373587012290955,
+            "gpu_prim": 177,
+            "gpu_rgb": [
+              0.13504566155442088,
+              0.19985263901348382,
+              0.11323923024492366,
+              1.0
+            ],
+            "gpu_state_cpu_visibility_rgb": [
+              0.13504566155442088,
+              0.19985263901348382,
+              0.11323923024492366,
+              1.0
+            ],
+            "pixel": 66441,
+            "same_gpu_state_different_traversal": false,
+            "sample": 35
+          },
+          {
+            "cpu_direction": [
+              -0.3915303647518158,
+              0.8734093308448792,
+              0.2895858883857727
+            ],
+            "cpu_geom": 0,
+            "cpu_gpu_sample_delta": 0.408840471637852,
+            "cpu_origin": [
+              2.6109628677368164,
+              -3.235013484954834,
+              -1.4999703168869019
+            ],
+            "cpu_pdf": 0.09217804670333862,
+            "cpu_prim": 0,
+            "cpu_rgb": [
+              0.408840471637852,
+              0.2387236465092446,
+              0.1142627701863752,
+              1.0
+            ],
+            "gpu_direction": [
+              -0.3915303647518158,
+              0.8734093308448792,
+              0.2895858883857727
+            ],
+            "gpu_geom": 0,
+            "gpu_origin": [
+              2.610963821411133,
+              -3.235013008117676,
+              -1.4999703168869019
+            ],
+            "gpu_pdf": 0.09217804670333862,
+            "gpu_prim": 0,
+            "gpu_rgb": [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ],
+            "gpu_state_cpu_visibility_rgb": [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ],
+            "pixel": 22391,
+            "same_gpu_state_different_traversal": false,
+            "sample": 41
+          },
+          {
+            "cpu_direction": [
+              0.5036808252334595,
+              0.5481746196746826,
+              -0.6676902174949646
+            ],
+            "cpu_geom": 60,
+            "cpu_gpu_sample_delta": 0.25423438927880504,
+            "cpu_origin": [
+              2.5452003479003906,
+              -2.5533576011657715,
+              -0.10568506270647049
+            ],
+            "cpu_pdf": 0.16891853511333466,
+            "cpu_prim": 527,
+            "cpu_rgb": [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ],
+            "gpu_direction": [
+              0.34775909781455994,
+              -0.2526741027832031,
+              0.9028950929641724
+            ],
+            "gpu_geom": 60,
+            "gpu_origin": [
+              2.532127857208252,
+              -2.5402567386627197,
+              -0.033249832689762115
+            ],
+            "gpu_pdf": 0.16891859471797943,
+            "gpu_prim": 399,
+            "gpu_rgb": [
+              0.25423438927880504,
+              0.15098879825236455,
+              0.0750972241201886,
+              1.0
+            ],
+            "gpu_state_cpu_visibility_rgb": [
+              0.25423438927880504,
+              0.15098879825236455,
+              0.0750972241201886,
+              1.0
+            ],
+            "pixel": 32640,
+            "same_gpu_state_different_traversal": false,
+            "sample": 55
+          },
+          {
+            "cpu_direction": [
+              0.1376088559627533,
+              0.9178221821784973,
+              0.3723794221878052
+            ],
+            "cpu_geom": 72,
+            "cpu_gpu_sample_delta": 0.24206838018629995,
+            "cpu_origin": [
+              -0.319914847612381,
+              -1.5401625633239746,
+              0.10918165743350983
+            ],
+            "cpu_pdf": 0.29619690775871277,
+            "cpu_prim": 724,
+            "cpu_rgb": [
+              0.008461358025670052,
+              0.0024440705310553312,
+              0.0009455363033339381,
+              1.0
+            ],
+            "gpu_direction": [
+              -0.2009895294904709,
+              -0.30361464619636536,
+              0.9313545227050781
+            ],
+            "gpu_geom": 72,
+            "gpu_origin": [
+              -0.3124486804008484,
+              -1.504217267036438,
+              0.4334089457988739
+            ],
+            "gpu_pdf": 0.2961967885494232,
+            "gpu_prim": 327,
+            "gpu_rgb": [
+              0.25052973821197,
+              0.1167685905091922,
+              0.0713996559090333,
+              1.0
+            ],
+            "gpu_state_cpu_visibility_rgb": [
+              0.25052973821197,
+              0.1167685905091922,
+              0.0713996559090333,
+              1.0
+            ],
+            "pixel": 58095,
+            "same_gpu_state_different_traversal": false,
+            "sample": 61
+          }
+        ],
+        "max_single_sample_delta": 0.47097254501242247,
+        "other_disagreements": 6,
+        "same_state_visibility_disagreements": 0,
+        "samples_examined": 384,
+        "scope": "selected outlier pixels only; same GPU shading state continued with CPU visibility isolates traversal sensitivity",
+        "significant_samples": 6,
+        "status": "measured"
+      }
+    }
+  },
+  "build": {
+    "libraries": {
+      "<LOCAL_TOOLCHAIN>\\build\\native-avx\\scene-rdl2\\lib\\scene\\rdl2\\libscene_rdl2.dll.a": "2f39cffbdca3bfee7685264a8e2f0d57c5d84e18a6bce0da8706402de79caca2",
+      "<LOCAL_TOOLCHAIN>\\build\\native-avx\\scene-rdl2\\lib\\common\\fb_util\\libcommon_fb_util.dll.a": "e6eb72278ccc11588b16f8d5473936938937daf57bcf32ff79647cef2a4f4cfc",
+      "<LOCAL_TOOLCHAIN>\\build\\native-avx\\scene-rdl2\\lib\\common\\fb_util\\ispc\\libfb_util_ispc.dll.a": "0fd39989f537c5a58bf9925af1c16adf1fbf58b3e6d8459b6b464a65f74f5454",
+      "<LOCAL_TOOLCHAIN>\\build\\native-avx\\scene-rdl2\\lib\\render\\util\\librender_util.dll.a": "4b5d01f9c418ca20261dd15993c8a29dca7b6997381b7a32d5fdb9f401f598d1",
+      "<LOCAL_TOOLCHAIN>\\toolchain\\msys64\\ucrt64\\lib\\libjsoncpp.a": "4fdb57167763eb5a596021db17b765d6c19802757b19f112025682160554be5a",
+      "<LOCAL_TOOLCHAIN>\\toolchain\\msys64\\ucrt64\\lib\\liblua.dll.a": "d9923aa6d352cfc91c9af6337f3f8c0a4246b0bba7c8bb5649a8ce9fabd75803",
+      "<LOCAL_TOOLCHAIN>\\build\\native-avx\\scene-rdl2\\lib\\common\\math\\libcommon_math.dll.a": "5b27a78473888fbd3b81da724f053cb55cb67d7a9ff2e8d3823c9c6569a8baff",
+      "<LOCAL_TOOLCHAIN>\\build\\native-avx\\scene-rdl2\\lib\\common\\math\\ispc\\libmath_ispc.dll.a": "7c0afdb5d8a885ca7b8a82025603c898f06df5a124aae2288839e4747adfc4cd",
+      "<LOCAL_TOOLCHAIN>\\build\\native-avx\\scene-rdl2\\lib\\common\\platform\\libcommon_platform.dll.a": "2a2bfeebc19110fdbd89e1c596254e287346271121e1bbebf2550037d86d321f",
+      "<LOCAL_TOOLCHAIN>\\build\\native-avx\\scene-rdl2\\lib\\render\\logging\\librender_logging.dll.a": "9c45c6afdb5b6403445ecf2bd625db4736d7bfdf445bff8beeb2b041f3bab453",
+      "<LOCAL_TOOLCHAIN>\\build\\native-avx\\log4cplus\\src\\liblog4cplus.dll.a": "2fa657408c53a14b503aacf9c846d20db7cfcde097b6142eb08c7f06c755fe4f",
+      "<LOCAL_TOOLCHAIN>\\toolchain\\msys64\\ucrt64\\lib\\libtbb12.dll.a": "b00a2ea2915875e434bd1dcf8419bb75dda4a2cade4c1f893f78d335a91d2ee1",
+      "<LOCAL_TOOLCHAIN>\\toolchain\\msys64\\ucrt64\\lib\\libOpenImageIO.dll.a": "524f45334b3ee5569ac53b87cce10165f58ee74b3ef272b1a07c0ce1604cbbcd",
+      "<LOCAL_TOOLCHAIN>\\toolchain\\msys64\\ucrt64\\lib\\libOpenImageIO_Util.dll.a": "7fed56c6f3d95c9d4bfce70a29be96e1534bfc91ac4b1bcc3e2678b9f0afb974",
+      "<LOCAL_WORKTREE>\\test-results\\interactive-reference-042\\libembree4.dll": "62f9b4b0c5f97a7189333008776124aab6f0e8ca861c36bdcc27c9f395ee5f29"
+    },
+    "compiler_sha256": "58efe82fa3ce35005f89d46fe439d7ee54e6889cb7db894019202da691a529a5",
+    "preprocessed_sha256": "0c71833036885d130418d9782b6dab50faf01ade62831ca5c9ad1bd5bbde64fa",
+    "executable_sha256": "688c19db10a5fb84381de01b40a194b4d331670ed50d76a42ae75643a44b74bf"
+  },
+  "source_hashes": {
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\canonical_session.h": "39e564278ee2214a26a86bbe6e9de70ac9e498cfc2ffba2f1da48d79785b6007",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\cpu_jobs.h": "5f87b896b6cd36674395bc2063a4adadc671ae2938f6e08ee5bfdd82705706aa",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\cpu_lane.h": "e4008e64b0c751882de9fefe0c7dac44acc9ec41683a80c3af939ab865e4f9ce",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\cpu_pool.h": "fc14077f2bba5cb7227e42d6a5b353d6477f9e61805c0eadf5112b7ea921e9e1",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\cpu_scene.h": "bac0595285b7069dfffccde9ea0b58a119cd9c9900740c7ce702e4da3d56302f",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\cpu_service.h": "9ee6351406c5a244fa5c6b70644809243c793670b069911716b7442520ae6374",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\deadline_pipeline.h": "540b0a18be9222623296b0323a4aa0cb0c145dc8ef9efcfc6de79e89a89ebc96",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\gpu_jobs.h": "3589a2873b80c366989eb0dc33a2c290f798541c4600ef1aed3e19fc23c5862a",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\gpu_lane.h": "32f177b2170f19b893598e6223dc56d6e1e37f9e7e4da84f36d86bbce6f98f92",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\host_texture.h": "e703bc14c08a2d32d16652d57a9711aa97f04725e37ba4c2c9f9d74f439ce71e",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\mixed_pipeline.h": "11944e7f4dd219f0a6b80716856d1f1171739f6098e31b9d50bc62be0a1c7d1e",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\mixed_service.h": "aae68c088be11aa550dda74d94f7c77fd14acc05fa4fa3cabe510c7f68913fcd",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\path_stage.h": "117d77569563c45712456ed28978b3944bb455b732b8dcf4bb55c61f0daa7b77",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\progressive.h": "861fc729f0d911f353dc6cea3e59b200b81b76d573e53c1e50d5e638b7f6d80e",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\qmc_fixture.h": "8a93520e458e72ef1ab0d4801e5877a56fc3617acfebeb456249a82ab541865b",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\resume_core.h": "6e109d6421ba7b420fd32c1080207177d9130d050eeab1193f05a9efe6d89497",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\routing_index.h": "4ede676f233acaba06b938149c01017cdc1507bbc5575affe680ce421e7110dc",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\sample_fixture.h": "496f59e9c8ef631d56e8bb87a90bcdf15c0c0ff06b37bdef8825beea120a21e9",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\sample_stream.h": "e6559995c09ad4ace2a672f8d1002d475e13a7f8ce33c2ba5ee997cc13f37ab9",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\sample_tree.h": "0987b268b8b314d85180134116aad804c452c4d9d7e802de79f3a1902af4fb92",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\snapshot_budget.h": "3e71d3f311e27bd5055441b25ec1403a0089074eeaf6f1f028215a6b6fac4889",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\spsc_ring.h": "0134391df4780286a34ba94b478342264531297c2c8c1dfec92ecd7b65d18ee4",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\surface_core.h": "51c437dbd482716edc9d49cb7c6ec36e27613b0632b2801bcada2484d25fcdc9",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\surface_fixture.h": "2cc6a9f2874ea2f605164b100dd9a33acfe918d8df698e34c35746f299a5ce69",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\texture_core.h": "e43b1856c74fd7640d138cba79685db4c615dd6dd0d9dd307f10980d6f6a3771",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\ownership_probe.cc": "c3f9efda0385911e09deb9617ea6b5432acd599e8c1ab7855515b64ef1e07285",
+    "<LOCAL_WORKTREE>\\xpu2\\interactive\\run_ownership_audit.py": "844ca1af5f60c0b81a07dc1a6867ebff547027715a0dbb1b34a6be0777848914"
+  },
+  "strict_gate_passed": false,
+  "all_qualification_gates_passed": false
+}

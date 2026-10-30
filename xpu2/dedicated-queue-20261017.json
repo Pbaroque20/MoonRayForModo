@@ -1,0 +1,231 @@
+{
+  "status": "passed",
+  "dedicated": true,
+  "gpu": "NVIDIA GeForce RTX 3090, 591.74, GPU-041d589b-450b-0916-2503-c453af2389e3",
+  "build_manifest_sha256": "2d16a69197b845dd18925e7b22b7834e94376f82f4493bf3b4cf68e8555b4349",
+  "delta_image_change": 26371,
+  "scope": "Isolated native dedicated OptiX queue stress, active-render host-service overlap and exact control images; no new film contributions or speed claim",
+  "sessions": [
+    {
+      "label": "reference",
+      "exit_code": 0,
+      "log_sha256": "f9d786a5fcce75af4c5dfed7faeae199ac9c9fb16aa91ce46ad2252cb0033f94"
+    },
+    {
+      "label": "control",
+      "exit_code": 0,
+      "log_sha256": "5ada71fb0b2bc6c87afd5f4bfddc84c3257b4f68c45439ea7446efed4515f543"
+    },
+    {
+      "label": "probe",
+      "exit_code": 0,
+      "log_sha256": "ac8041890b20fbc823607a5d112c741a4f6788973d82de2b92c4b8e25f499f58",
+      "lifetime": {
+        "status": "passed",
+        "dedicated": true,
+        "native_progress": 77,
+        "frames": 3,
+        "queries": 44257280,
+        "blocked": 8192,
+        "boundaries": {
+          "accelerator_rebuild": 3,
+          "context_teardown": 2,
+          "update_scene": 1
+        }
+      },
+      "trace_sha256": "aeb31ace7741a6d581cabfeea6ee727d1708793448c6511c931f38acafda8399",
+      "completed_batches": [
+        {
+          "event": "worker_done",
+          "generation": 1,
+          "count": 14774272,
+          "mismatches": 0,
+          "blocked": 4096,
+          "error": 0,
+          "dedicated": 1,
+          "native_slots": 1,
+          "source_queue": 0,
+          "worker_queue": 1,
+          "native_progress": 18,
+          "iterations": 4096
+        },
+        {
+          "event": "worker_done",
+          "generation": 2,
+          "count": 14708736,
+          "mismatches": 0,
+          "blocked": 0,
+          "error": 0,
+          "dedicated": 1,
+          "native_slots": 1,
+          "source_queue": 0,
+          "worker_queue": 1,
+          "native_progress": 25,
+          "iterations": 4096
+        },
+        {
+          "event": "worker_done",
+          "generation": 3,
+          "count": 14774272,
+          "mismatches": 0,
+          "blocked": 4096,
+          "error": 0,
+          "dedicated": 1,
+          "native_slots": 1,
+          "source_queue": 0,
+          "worker_queue": 1,
+          "native_progress": 34,
+          "iterations": 4096
+        }
+      ],
+      "worker_pending_at_stop": [
+        false,
+        false,
+        false
+      ]
+    },
+    {
+      "label": "cancel",
+      "exit_code": 0,
+      "log_sha256": "9d9a57a3a10ced08cad6931ab3e08149d1e120df0077285f0c38951924d2c6ac",
+      "lifetime": {
+        "status": "passed",
+        "dedicated": true,
+        "native_progress": 0,
+        "frames": 1,
+        "queries": 14774272,
+        "blocked": 4096,
+        "boundaries": {
+          "accelerator_rebuild": 1,
+          "context_teardown": 1,
+          "update_scene": 0
+        }
+      },
+      "trace_sha256": "976095abbc04cc923eeae214fdd8ab31653438f2bc88e4c0fa767d400bbb2254",
+      "completed_batches": [
+        {
+          "event": "worker_done",
+          "generation": 1,
+          "count": 14774272,
+          "mismatches": 0,
+          "blocked": 4096,
+          "error": 0,
+          "dedicated": 1,
+          "native_slots": 1,
+          "source_queue": 0,
+          "worker_queue": 1,
+          "native_progress": 0,
+          "iterations": 4096
+        }
+      ],
+      "worker_pending_at_stop": [
+        true
+      ]
+    }
+  ],
+  "images": {
+    "control": [
+      {
+        "status": "passed",
+        "dimensions": [
+          256,
+          144
+        ],
+        "exactly_different_pixels": 0
+      },
+      {
+        "status": "passed",
+        "dimensions": [
+          256,
+          144
+        ],
+        "exactly_different_pixels": 0
+      },
+      {
+        "status": "passed",
+        "dimensions": [
+          256,
+          144
+        ],
+        "exactly_different_pixels": 0
+      }
+    ],
+    "probe": [
+      {
+        "status": "passed",
+        "dimensions": [
+          256,
+          144
+        ],
+        "exactly_different_pixels": 0
+      },
+      {
+        "status": "passed",
+        "dimensions": [
+          256,
+          144
+        ],
+        "exactly_different_pixels": 0
+      },
+      {
+        "status": "passed",
+        "dimensions": [
+          256,
+          144
+        ],
+        "exactly_different_pixels": 0
+      }
+    ]
+  },
+  "implementation_sha256": {
+    "xpu2/native_scene_drain.h": "9833a0d880f7a96a0cadde2bc1f3df6e7526aefab4ab96fd458d57ef785b4753",
+    "xpu2/native_scene_drain.py": "04f3a45253ef86a85860f0654ee83222e3e49f8907f3063982efb07a3532fa2b",
+    "tools/xpu2_native_drain_build.py": "ac47b7b1e84bec369a55fccaf1fbea7614302860e7aeb1223c0e5f26d6e1a2b7",
+    "tools/xpu2_native_drain_probe.py": "a3afe1f18e3d5cae579a6bbe03dfecfc139172dc576b7c699c39d966e49f671e",
+    "tests/test_xpu2_native_scene_drain.py": "9dacd36e3cc2705f8dddf8489568e8aa4ef8f43e031e42ce5f1c43e3f8739223"
+  },
+  "native_build": {
+    "dll_sha256": "631b3b9757d7ba5c0ba5a531fca3c08a1e79540c213bba5c13d5017e7fe67f04",
+    "header_sha256": "9833a0d880f7a96a0cadde2bc1f3df6e7526aefab4ab96fd458d57ef785b4753",
+    "frozen_manifest_sha256": "50d5d92097183f8a2a9544ca5763ae60e32296d60e3dde499fe418af2c3956d6",
+    "sources": [
+      {
+        "name": "XPURayHandlers",
+        "sha256": "b26a1cbf53e0c26ead70b3860f3511c8fb16221c490bfbadb4a442f18f185638",
+        "preprocessed_sha256": "939ce4c35104b51c7dc4a7c59b3e654b7e6dffa95d15a0912dde9b66b93625dc",
+        "object_sha256": "829dc3ed45fa2c0de7ca53f3a4f62c084ad7c8ff578d1dc9e645601ba25e8462"
+      },
+      {
+        "name": "RenderContext",
+        "sha256": "7e209e76440e6c23461b0bac4bf84162df4366597285a042b1448740cf35e39e",
+        "preprocessed_sha256": "b80b16061b06781be9279a0db27b2ec2508c1a5b7850acf5a2133d2eeaf54e44",
+        "object_sha256": "8e54414ba222727cb59b015d451638d84bdfafd1219983e02ae3085445ae9634"
+      },
+      {
+        "name": "GeometryManager",
+        "sha256": "a188bd90dff7cc8197d71e471e4d6f30ead82ad5bdda8a9e87fec8c2b2cbaf36",
+        "preprocessed_sha256": "a9a05a4bcb241d3d8d2307ebbdb4c6aeff1ad21298dde745f77b758f222d1d37",
+        "object_sha256": "87b1e19dedbff9ed2398d79b51cfe9b0fde7a34727f94b2362bbe9b409144b3c"
+      }
+    ]
+  },
+  "regressions": {
+    "tests": 306,
+    "status": "passed",
+    "log_sha256": "8cbb9f8dd0bc9f1f3880263cdeb9dec5a48e8ffe7a947b08710cb32054b4327f"
+  },
+  "initial_short_burst": {
+    "replays": 64,
+    "status": "rejected",
+    "reason": "No active native rendering overlapped service",
+    "report_sha256": "c6199d598d54367244ad76545977de2debd2c6697032b11e5bf60b200d9f6e41"
+  },
+  "limitations": [
+    "Single native renderer thread, one RTX 3090 and one copied diagnostic batch per frame",
+    "4096 repeated queries per batch deliberately stress overlap; not distinct production samples or throughput measurements",
+    "Host event interleaving does not establish simultaneous GPU kernel execution",
+    "Shared scene remains borrowed and drained before tested mutation and teardown entry points",
+    "Multiple contexts, full shader/film integration, native multiworker determinism and production timeout recovery remain unvalidated",
+    "Retained native link inputs, not a clean-source distributable runtime"
+  ]
+}

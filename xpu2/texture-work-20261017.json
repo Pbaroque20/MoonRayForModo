@@ -1,0 +1,233 @@
+{
+  "status": "passed",
+  "scope": "Owned texture-ready dispatch, native RDL metadata and CUDA texture-space images; not native MoonRay path suspension or full-scene performance",
+  "contracts": [
+    {
+      "case": "contract",
+      "checks": {
+        "passed": true,
+        "checks": 29532,
+        "random_operations": 20000,
+        "clean_eviction_d2h_bytes": 0
+      },
+      "executable_sha256": "359448fa086996189e1e83f18f0e93747d1af5c7b34f452ce4b188d89b0a04eb",
+      "preprocessed_sha256": "30857f733aa40ef12cf39c4860170591063e42aaa21c3d7e99a9c60ff35c0bc9"
+    },
+    {
+      "case": "residency",
+      "checks": {
+        "passed": true,
+        "checks": 74689,
+        "randomized_plans": 5000
+      },
+      "executable_sha256": "806c3601c01e6f79f803d692b8ac8d3134d557243847d3597b7318b1d4b5abe3",
+      "preprocessed_sha256": "174ba906bd7e1cde17a50b6e70e9f0e1977651a12c5f008495402b8070b485aa"
+    },
+    {
+      "case": "async",
+      "checks": {
+        "passed": true,
+        "checks": 1292,
+        "lifecycle_jobs": 1000,
+        "background_decode": true,
+        "cancelled_results_discarded": true
+      },
+      "executable_sha256": "860285ffac22e5ef314a526ff7b5cb1103ca4ba006c20acaf18147aaed4f13e0",
+      "preprocessed_sha256": "0e8b6ad96585aa6db38c99e7d10bfccf52fa17fb287467cd943f5ab074ebcbb1"
+    },
+    {
+      "case": "dependencies",
+      "checks": {
+        "passed": true,
+        "checks": 4030,
+        "revision_updates": 1000
+      },
+      "executable_sha256": "6957ea8bab45df2e79ad1801b732ef268f7e82d00b96eabf9c881402bef27a68",
+      "preprocessed_sha256": "664586fa1ddcc6227009be36901864926da1480c3ad9376bd1247654129b6d08"
+    },
+    {
+      "case": "work",
+      "checks": {
+        "passed": true,
+        "checks": 50,
+        "blocked_decode_bypass": true,
+        "revision_cancel": true,
+        "completion_fenced": true
+      },
+      "executable_sha256": "2f09bb6d36e30b02daf0f35bf289945566ad923186726b5098f1a92b2a29cba9",
+      "preprocessed_sha256": "19dc024b12a47b95342d28d5cdce64372cff0589c437151ca1f12c0b4376dddb"
+    }
+  ],
+  "rdl": {
+    "passed": true,
+    "checks": 39,
+    "native_stages": 8,
+    "background_tiles": 3,
+    "scheduled_accepted": 2,
+    "scheduled_revoked": 1,
+    "native_metadata_only": true,
+    "rendered_validation": false
+  },
+  "cuda": {
+    "passed": true,
+    "cases": 32,
+    "queries": 234976,
+    "components": 587776,
+    "exact_components": 587776,
+    "point_max_abs": 0,
+    "bilinear_max_abs": 0,
+    "rms": 0,
+    "fallback_checks": 32,
+    "policy_gpu_evictions": 2,
+    "scheduled_jobs": 49,
+    "ready_gpu_jobs_during_blocked_decode": 1,
+    "background_decoded_tiles": 15,
+    "decode_queue_peak_bytes": 4096,
+    "decode_queue_peak_records": 1,
+    "texture_vram_budget": 32768,
+    "reserved_device_bytes": 32768,
+    "point_tolerance": 0,
+    "bilinear_tolerance": 2e-06,
+    "cleanup_errors": 0
+  },
+  "texture_image": {
+    "status": "passed",
+    "dimensions": [
+      96,
+      64
+    ],
+    "channels": {
+      "R": {
+        "passed": true,
+        "failed_values": 0,
+        "maximum_absolute_error": 0.0,
+        "rms_error": 0.0,
+        "values": 6144
+      },
+      "G": {
+        "passed": true,
+        "failed_values": 0,
+        "maximum_absolute_error": 0.0,
+        "rms_error": 0.0,
+        "values": 6144
+      },
+      "B": {
+        "passed": true,
+        "failed_values": 0,
+        "maximum_absolute_error": 0.0,
+        "rms_error": 0.0,
+        "values": 6144
+      },
+      "A": {
+        "passed": true,
+        "failed_values": 0,
+        "maximum_absolute_error": 0.0,
+        "rms_error": 0.0,
+        "values": 6144
+      }
+    },
+    "exactly_different_pixels": 0,
+    "first_difference": null,
+    "largest_differences": [],
+    "coordinate_convention": "PFM rows, bottom first; zero-based pixel coordinates",
+    "metadata": {
+      "colorInteropID": null,
+      "oiio:ColorSpace": null,
+      "PixelAspectRatio": "1"
+    }
+  },
+  "gpu": "NVIDIA GeForce RTX 3090, 591.74",
+  "local_reports": [
+    "test-results/xpu2-texture-work-first/report.json",
+    "test-results/xpu2-texture-work-native-first/report.json",
+    "test-results/xpu2-texture-work-filter-first/report.json"
+  ],
+  "contract_source_sha256": {
+    "texture_cache.h": "c0924b5b0c1be87de826af23af453dcdaa3a64597dcd0ea61b3255e844988229",
+    "texture_cache_test.cc": "8098703afe10ec5996af9f21debcfda205abf5a0c547f7859d117ab48b2d0f3d",
+    "texture_residency.h": "8f368a5a52be95c4e8cae47b1453de422a26d10b14a9da06f270a7f15753648e",
+    "texture_residency_test.cc": "34e4ed2cbe2082a0977c9b0d54b39d65cf784d7f4a0eae5274d1778a8e7ab305",
+    "texture_async.h": "ee332be031f9eeb6cd03033fb8aed06e57bf4d0dd6c861ab7e970ca5f87ec7ff",
+    "texture_async_test.cc": "669607e8a4d7cb25de9d2e01a3a509b1b6dd419396e5c9b09ca4639e03f37805",
+    "texture_dependencies.h": "613c8cdf694e732900e41420d0b132037dda43b4b0f4104357a5d7d9bd81c452",
+    "texture_dependencies_test.cc": "2baca3b889d5dce5469a9e97e4e77f03107f22219fb6eb4da9a675ed31bc8d63",
+    "indexed_scene.h": "6c5a83c3e3bae7489b56d10957ff323f1b0b02bf62aec5609982aeb1e87110d0",
+    "persistent_map.h": "563ac27f115b6dd93385a2f0f30a757508f85b047ad5499a09405b518086ad57",
+    "texture_work.h": "f91107968e713b310fdd26fb392f7bc29094113edd3735d94ba69fb1cf2928e9",
+    "texture_work_test.cc": "1bac8c1a50f3f68eb13df0592c38f0b1a870bb3dedab1964312989c44d8c709e",
+    "xpu2_texture_cache_probe.py": "60096601846328845751a60d15de8adbb5a548abcab903a7ee4ac04e7726d952"
+  },
+  "contract_fixture_hashes": {
+    "r1m0.tile": "c57c469b499dbe1bcda342892dc4c98f0159e5bc11ee5375f223e5f7a8eaaa31",
+    "r1m1.tile": "54692bcfc359fd3fd7cf27fda6290e2723c43005bd0465f7026f531d6380cfd4",
+    "r2m0.tile": "1666cd89ec1322eba7fc4f0eaaec4804ca7491a908f1a0d1c7d3f05d3e493292"
+  },
+  "rdl_source_sha256": {
+    "indexed_scene.h": "6c5a83c3e3bae7489b56d10957ff323f1b0b02bf62aec5609982aeb1e87110d0",
+    "persistent_map.h": "563ac27f115b6dd93385a2f0f30a757508f85b047ad5499a09405b518086ad57",
+    "rdl_scene_index.h": "9d55d339a757c1adbf3e37d27071e95691c0eb5c4ac7f1f7b3c456d9f0ad1756",
+    "texture_cache.h": "c0924b5b0c1be87de826af23af453dcdaa3a64597dcd0ea61b3255e844988229",
+    "texture_residency.h": "8f368a5a52be95c4e8cae47b1453de422a26d10b14a9da06f270a7f15753648e",
+    "texture_dependencies.h": "613c8cdf694e732900e41420d0b132037dda43b4b0f4104357a5d7d9bd81c452",
+    "rdl_texture_dependencies.h": "603cbb7bae84bb29e866175eb5c667c5c76d07a8177a7534b8de8f46ff17186a",
+    "rdl_texture_dependencies_probe.cc": "e664c9c8541993a50fcf6ed3db415de7ddbb6f2f7c2647e1f9e7821140a291d7",
+    "texture_async.h": "ee332be031f9eeb6cd03033fb8aed06e57bf4d0dd6c861ab7e970ca5f87ec7ff",
+    "texture_oiio_loader.h": "e43adba167769d42cd3cbefbc09e64871ee8b03d36a50b8f5d22903ef1dd70d5",
+    "texture_work.h": "f91107968e713b310fdd26fb392f7bc29094113edd3735d94ba69fb1cf2928e9",
+    "xpu2_texture_dependencies_probe.py": "50d5a58fc4770d9d5e2345a595172579261aa01f7da1b06914a1669b5fb29a49",
+    "xpu2_rdl_index_probe.py": "6325e03744064b981010db5ba8ff7b124cae9bc834593a2e56f1f4f22b2cd8b4",
+    "g++.exe": "58efe82fa3ce35005f89d46fe439d7ee54e6889cb7db894019202da691a529a5",
+    "libscene_rdl2.dll.a": "2f39cffbdca3bfee7685264a8e2f0d57c5d84e18a6bce0da8706402de79caca2",
+    "libcommon_fb_util.dll.a": "e6eb72278ccc11588b16f8d5473936938937daf57bcf32ff79647cef2a4f4cfc",
+    "libfb_util_ispc.dll.a": "0fd39989f537c5a58bf9925af1c16adf1fbf58b3e6d8459b6b464a65f74f5454",
+    "librender_util.dll.a": "4b5d01f9c418ca20261dd15993c8a29dca7b6997381b7a32d5fdb9f401f598d1",
+    "libjsoncpp.a": "4fdb57167763eb5a596021db17b765d6c19802757b19f112025682160554be5a",
+    "liblua.dll.a": "d9923aa6d352cfc91c9af6337f3f8c0a4246b0bba7c8bb5649a8ce9fabd75803",
+    "libcommon_math.dll.a": "5b27a78473888fbd3b81da724f053cb55cb67d7a9ff2e8d3823c9c6569a8baff",
+    "libmath_ispc.dll.a": "7c0afdb5d8a885ca7b8a82025603c898f06df5a124aae2288839e4747adfc4cd",
+    "libcommon_platform.dll.a": "2a2bfeebc19110fdbd89e1c596254e287346271121e1bbebf2550037d86d321f",
+    "librender_logging.dll.a": "9c45c6afdb5b6403445ecf2bd625db4736d7bfdf445bff8beeb2b041f3bab453",
+    "liblog4cplus.dll.a": "2fa657408c53a14b503aacf9c846d20db7cfcde097b6142eb08c7f06c755fe4f",
+    "libtbb12.dll.a": "b00a2ea2915875e434bd1dcf8419bb75dda4a2cade4c1f893f78d335a91d2ee1",
+    "libOpenImageIO.dll.a": "524f45334b3ee5569ac53b87cce10165f58ee74b3ef272b1a07c0ce1604cbbcd",
+    "libOpenImageIO_Util.dll.a": "7fed56c6f3d95c9d4bfce70a29be96e1534bfc91ac4b1bcc3e2678b9f0afb974"
+  },
+  "rdl_executable_sha256": "c5a3316866702a631ff76840cfdd14c78669d2c1d974a83589928b09e4a2900c",
+  "rdl_preprocessed_sha256": "f07b3b20b591717a23986964130dc59818c81e065544da9d549ed6f4ecfde140",
+  "rdl_fixture_hashes": {
+    "rgba.tx": "7658bb27011badc00908cbdaafb9281176058b09cb51448b8d1648e60113961f",
+    "gray.tx": "3fc11ea58217339d453794a5fa6f4583691840ccb9166dd940cbc553319e3076"
+  },
+  "cuda_source_sha256": {
+    "texture_filter_cuda.cu": "f7442ef24159c53a3ab671ffca650b2c13837301abcfd15680c2a8942600aae1",
+    "texture_filter_probe.cc": "b89bc5c2fc93aa04cf9be271ac50e93213f7215e9f5ba6c91f845cb43403725a",
+    "texture_cache.h": "c0924b5b0c1be87de826af23af453dcdaa3a64597dcd0ea61b3255e844988229",
+    "texture_cuda_backend.h": "1b934ac19dec58b8c3b576bdcb2ab313248a0e08355519b204bb2b1997ff8f09",
+    "texture_oiio_loader.h": "e43adba167769d42cd3cbefbc09e64871ee8b03d36a50b8f5d22903ef1dd70d5",
+    "texture_residency.h": "8f368a5a52be95c4e8cae47b1453de422a26d10b14a9da06f270a7f15753648e",
+    "texture_async.h": "ee332be031f9eeb6cd03033fb8aed06e57bf4d0dd6c861ab7e970ca5f87ec7ff",
+    "texture_work.h": "f91107968e713b310fdd26fb392f7bc29094113edd3735d94ba69fb1cf2928e9",
+    "texture_dependencies.h": "613c8cdf694e732900e41420d0b132037dda43b4b0f4104357a5d7d9bd81c452",
+    "indexed_scene.h": "6c5a83c3e3bae7489b56d10957ff323f1b0b02bf62aec5609982aeb1e87110d0",
+    "persistent_map.h": "563ac27f115b6dd93385a2f0f30a757508f85b047ad5499a09405b518086ad57",
+    "images.py": "85cddd6352847ba050f315863b278121f73e7a0af7e7688da23988dd9a57de81",
+    "validate_reference_images.py": "6cf001301014c9afe44460f1cd869ad52ef4131a00ff18e3538317e0d4aacd1e",
+    "xpu2_texture_filter_probe.py": "56b3e402873fadb13f428550f4a6bfac9afcb1658bbe5224f4a8f22de2c54800",
+    "xpu2_cuda_sampler_probe.py": "4d808ecbb2e29e506fb10a476b8b57bf68995f442af685942a09a4001b5a36f1",
+    "g++.exe": "58efe82fa3ce35005f89d46fe439d7ee54e6889cb7db894019202da691a529a5",
+    "libOpenImageIO.dll.a": "524f45334b3ee5569ac53b87cce10165f58ee74b3ef272b1a07c0ce1604cbbcd",
+    "libOpenImageIO_Util.dll.a": "7fed56c6f3d95c9d4bfce70a29be96e1534bfc91ac4b1bcc3e2678b9f0afb974",
+    "report.json": "0be97c4201afc451f0a383d0f44992d90955e8d1ab8f75d7ca369cd9733be184",
+    "nvrtc64_120_0.dll": "02d2d7ef4690bf1a55dda1d3ac94c86ce8d16920071c87bcd3e70e94ef346e93",
+    "nvrtc-builtins64_128.dll": "a7afa2a40cbd3f922a33d8bf71c13cb26ca707c7016a9bc5fcde36759ba668f5"
+  },
+  "cuda_executable_sha256": "35a26e4149404a0eaaba117ed5cad6ba4ac762841ac03936b45296da9d8fceea",
+  "cuda_preprocessed_sha256": "0c4fcdcfe5bef8b969acc9e430ee45d767dab74557e56df3f14309ad8036557a",
+  "cuda_ptx_sha256": "041f2c174c209f28116cac9460718d3b9332047233bca90583ce8c260249ebd6",
+  "cuda_fixture_hashes": {
+    "rgba.tx": "7658bb27011badc00908cbdaafb9281176058b09cb51448b8d1648e60113961f",
+    "rgb.tx": "d36d58990ced16e7d4e86b0d6ae9259e310401f0486e7820a035bf47ce1eae42",
+    "gray.tx": "3fc11ea58217339d453794a5fa6f4583691840ccb9166dd940cbc553319e3076",
+    "rg.tx": "65693a96be48a5f79c1a897dabeb589b2a26b02373814a809a9093f3dc2d02da"
+  }
+}

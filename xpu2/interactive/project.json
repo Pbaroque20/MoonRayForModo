@@ -1,0 +1,28 @@
+{
+  "name": "XPU2",
+  "status": "experimental standalone prototype",
+  "visibility": "public-source",
+  "native_fidelity": "statistical-equivalence; not original-XPU bitwise equivalence",
+  "platform": "Windows; future Modo 16.1v9 integration",
+  "production_qualified": false,
+  "default_reference": true,
+  "license_original_code": "MIT",
+  "upstream_licenses": "THIRD_PARTY_NOTICES.md",
+  "published_evidence": "evidence/manifest.json",
+  "reference_identity": "c88338c6c81d05851e97f2381c2c089a73c726060e763f784352966124a48e47",
+  "decisions": {
+    "platform": "native-windows",
+    "host": "Modo 16.1v9 (future integration)",
+    "native_fidelity": "statistical-equivalence",
+    "fallback_reference": "pinned-windows-reference-with-documented-port-patches; no-XPU2-changes"
+  },
+  "qualification": {
+    "renderer_implemented": false,
+    "speed_measurement_allowed": false,
+    "diagnostic_speed_measurement_allowed": true,
+    "qualified_native_features": [],
+    "experimental_standalone_subset_implemented": true,
+    "note": "Legacy renderer_implemented and speed_measurement_allowed flags refer to full-spec/production qualification. Restricted diagnostic measurements are published separately.",
+    "diagnostic_evidence": "VALIDATION.md"
+  }
+}

@@ -26,11 +26,24 @@ def settings(value):
 
 def enabled(snapshot,final=False,linear=False):
     if snapshot.get('_ipr') and not final:return False
+    # MoonRay's realtime under XPU2 is not denoised (its denoised pictures looked bad), and has no guides for it.
+    if snapshot.get('_realtime') and not final:
+        try:
+            from . import native
+            if native.xpu2():return False
+        except Exception:pass
     value=settings(snapshot.get('denoising',{}))
     return value['engine']!='off' and value['final' if final else 'preview'] and not linear and (final or snapshot.get('preview_buffer','beauty')=='beauty')
 
 def guides_required(snapshot,final=False,linear=False):
     if snapshot.get('_ipr') and not final:return False
+    # MoonRay's realtime under XPU2 has no denoised beauty (panel), and no longer a picture from a quarter of its pixels
+    # to denoise and upscale while things move (Lower Resolution While Moving, removed 2026-10-30): no guides.
+    if snapshot.get('_realtime') and not final:
+        try:
+            from . import native
+            if native.xpu2():return False
+        except Exception:pass
     return enabled(snapshot,final,linear) or (not final and not linear)
 
 # How often a safe render saves its picture, in minutes, and what a saved picture is called beside the file it is of.

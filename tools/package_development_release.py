@@ -19,8 +19,16 @@ def main():
     parser.add_argument('--kit-only',action='store_true',help='Repackage the kit while retaining the already packaged runtime archive')
     parser.add_argument('--runtime',type=Path,required=True)
     parser.add_argument('--geometry',type=Path,required=True)
+    parser.add_argument('--xpu2-runtime',type=Path,required=True,help="XPU2's runtime folder (an XPU2 session build's runtime-xpu2), packaged beside the runtime as runtime-xpu2")
     args=parser.parse_args()
-    runtime=args.runtime.resolve();geometry=args.geometry.resolve()
+    runtime=args.runtime.resolve();geometry=args.geometry.resolve();xpu2_runtime=args.xpu2_runtime.resolve()
+    # XPU2's runtime as its build left it: its preview session, every GPU program and library its manifest names.
+    xpu2_manifest=json.loads((xpu2_runtime/'xpu2-runtime.json').read_text(encoding='utf-8'))
+    if digest(xpu2_runtime/'moonray_xpu2.exe')!=xpu2_manifest['executable_sha256']:raise ValueError('XPU2 runtime checksum mismatch: moonray_xpu2.exe')
+    for name,sha in xpu2_manifest['programs'].items():
+        if digest(xpu2_runtime/name)!=sha:raise ValueError('XPU2 runtime checksum mismatch: '+name)
+    missing=[name for name in xpu2_manifest['libraries'] if not (xpu2_runtime/name).is_file()]
+    if missing:raise ValueError('XPU2 runtime lacks: '+', '.join(missing))
     version=ET.parse(ROOT/'kit/MoonRayForModo/index.cfg').getroot().attrib['version']
     destination=ROOT/'dist'/('release-'+version);destination.mkdir(parents=True,exist_ok=True)
     revision=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip()
@@ -38,7 +46,7 @@ def main():
                 archive.write(path,name);hashes[name]={'sha256':digest(path),'bytes':path.stat().st_size}
             for name,data in sorted(generated.items()):
                 archive.writestr(name,data);hashes[name]={'sha256':hashlib.sha256(data).hexdigest(),'bytes':len(data)}
-            archive.writestr('MoonRayForModo/'+filename.replace('.zip','-manifest.json'),json.dumps({'version':version,'revision':revision,'status':'experimental development','new_tests_run':False,'files':hashes},indent=2))
+            archive.writestr('MoonRayForModo/'+filename.replace('.zip','-manifest.json'),json.dumps({'version':version,'revision':revision,'status':'pre-production','new_tests_run':False,'files':hashes},indent=2))
         temporary.replace(target)
         print(str(target),target.stat().st_size,flush=True)
         return target
@@ -49,6 +57,8 @@ def main():
     kit_file=package('MoonRayForModo-'+version+'-kit.zip',kit,{})
     rprefix=prefix+'runtime/'
     entries={rprefix+p.relative_to(runtime).as_posix():p for p in runtime.rglob('*') if p.is_file() and p.name!='build-manifest.json'}
+    # XPU2's runtime beside it, where the kit looks for it (native.xpu2_runtime).
+    entries.update({prefix+'runtime-xpu2/'+p.relative_to(xpu2_runtime).as_posix():p for p in xpu2_runtime.rglob('*') if p.is_file() and '__pycache__' not in p.parts})
     # Include dependency notices as installed by their original package providers.
     for base,label in [(ROOT/'toolchain/msys64/ucrt64/share/licenses','msys2-ucrt64'),(ROOT/'toolchain/msys64/usr/share/licenses','msys2')]:
         if base.exists():

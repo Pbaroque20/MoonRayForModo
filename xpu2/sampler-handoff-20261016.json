@@ -1,0 +1,72 @@
+{
+  "status": "passed",
+  "scope": "Serialized native AVX8 CPU-thread handoffs; resource waits/retries simulated; no CUDA",
+  "scope_build": "Current frozen headers with retained native objects; not a clean runtime build",
+  "cases": 648,
+  "executions": 3,
+  "workers": [
+    1,
+    1,
+    4
+  ],
+  "components_per_mode": 47304,
+  "all_execution_records_identical": true,
+  "different_components": {
+    "transport_vs_pinned": 0
+  },
+  "reference_match": true,
+  "handoff_evidence": [
+    {
+      "schema": 2,
+      "simd_width": 8,
+      "cases": 648,
+      "guards": 11,
+      "waits": 3888,
+      "retries": 778,
+      "transfers": 0,
+      "work": [
+        3888
+      ]
+    },
+    {
+      "schema": 2,
+      "simd_width": 8,
+      "cases": 648,
+      "guards": 11,
+      "waits": 3888,
+      "retries": 778,
+      "transfers": 0,
+      "work": [
+        3888
+      ]
+    },
+    {
+      "schema": 2,
+      "simd_width": 8,
+      "cases": 648,
+      "guards": 11,
+      "waits": 3888,
+      "retries": 778,
+      "transfers": 2395,
+      "work": [
+        1138,
+        727,
+        1172,
+        851
+      ]
+    }
+  ],
+  "state_header_sha256": "d7e2895495c3f0c7bc12fbcc6c573e9f2029d4d229b5583bfa5dd0a447321973",
+  "build_manifest_sha256": "50d5d92097183f8a2a9544ca5763ae60e32296d60e3dde499fe418af2c3956d6",
+  "cpp_sha256": "3146d6a3389b5ea69f1a83275589bf70e1ceaaab7f2009cc10da84ed192430ce",
+  "preprocessed_sha256": "5a82256070c6d3f3c9bff161775bbfe519383d5bea5b3c799f743c526147b5fa",
+  "executable_sha256": "a65881c863e35434e0c0a4c229006cded6e0420305be53a74f51c69827637e1f",
+  "corpus_sha256": [
+    "dc7ea6149ca395bd3c03acd6af7cf71f4b131fcb43617402d3fbd96e118f7233",
+    "dc7ea6149ca395bd3c03acd6af7cf71f4b131fcb43617402d3fbd96e118f7233",
+    "27d86e97bfdf8ac6402aaccdd65bb5d5d28b09bd61358ec9a9955a7b81edf4df"
+  ],
+  "reference_sha256": "7769adf01ef3210591f5dd1628b9bf6d055b77a8a696d502c4000e90858d1a2a",
+  "runtime_inventory_identity": "bba4bcff0d82e5011d04d168c5aa869ea7f44fa76b5e02981672de564e37e332",
+  "python_checks": 115
+}

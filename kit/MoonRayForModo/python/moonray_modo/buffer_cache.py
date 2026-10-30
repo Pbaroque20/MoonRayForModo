@@ -125,6 +125,9 @@ class BufferCache(QtCore.QObject):
             self.progressive_scene=snapshot;self.progressive=frame
             for key in copied:self.progressive_frames[key]=frame
         else:
+            carried=self.progressive_frames.get('denoised_beauty')
+            if carried is not None and self.progressive_scene is snapshot and 'denoised_beauty' not in copied and 'denoised_beauty' in carried.get('linear',{}):
+                frame['linear']={'denoised_beauty':carried['linear']['denoised_beauty']}
             self.frame=frame;self.progressive=None;self.progressive_frames.clear();self.progressive_scene=None
         self.serial+=1;self._request();self._prune()
         if not partial:self.compositor.again()

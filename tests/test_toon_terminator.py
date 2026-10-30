@@ -110,8 +110,9 @@ class ToonTerminator(unittest.TestCase):
             with mock.patch.object(native, 'transmission_roughness', return_value=on):
                 made = moonlightipr_materials.native_surface('DwaBaseMaterial', dict(glass), lambda what: None)
                 self.assertAlmostEqual(made['refraction_roughness'], expected)
-        # A session started with other switches is started again.
-        self.assertEqual(len(native.source_switches()), 9)
+        # A session started with other switches is started again: the nine above and XPU2's four (renderer, adaptive
+        # passes, devices, lower resolution while moving).
+        self.assertEqual(len(native.source_switches()), 12)
 
     def test_on_the_preferences_page(self):
         page = (KIT / 'preferences.cfg').read_text(encoding='utf-8')

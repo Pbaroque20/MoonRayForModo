@@ -1,0 +1,842 @@
+{
+  "status": "passed",
+  "scope": "Scheduling feasibility with native captured Lambert packets and synthetic AVX CPU work. No native path resumption, film, scene load or renderer speedup claim.",
+  "source_hashes": {
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\scheduling_probe.cc": "942d9a1e8f63070c63433862021be525f7967a39ea3c16c83139c1d7505c49d9",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\continuation_mailbox.h": "1476194e07c22ea8dc75e720afbbab60d1f868c946887a7606f294b3cf9faacf",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\native_lambert_queue.cc": "ecc7fddfb4e06b265daa0c05ac48053b627a82d2f6c0722128ae5535317939c6",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\batched_bridge.cc": "4e0b6c931ec59c22f7f586affc679e7727d9bf751e578714316d51ee86de8d8b",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\profile_metrics.h": "84c08e310ce74cfe1d07038f5287b114d91328750fa2c87f263826085174c9f8",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\profile_patch.py": "5a2e8eeb3729cc848a68ae701fb0ed99e468df68cde0c4f5db00fd247ef0834a",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\window_dispatch_patch.py": "99261f4066e57ca4c1e5be9ef437ad13acbe970bf2b752b2f53cb6893f183a09",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\async_transfer_patch.py": "281c4a18c62cc6afa4534c8b31a7855d79ed816b18425da561ce578fe37b242b",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\packed_readback_patch.py": "648cc04759fbc54ba53817ee04fdcbb72452de215cf7bbde66e37e5644b2e13d",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\correlated_state.py": "0c4d3d75a60ed56d820a654963cd1300e6a71ce96446549d6c683aed210487bd",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\reference.py": "0b44a4c4fb20c247c77455f1b87d5a1e6dbe97ee816670bca3be3d5ee00ef909",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\tools\\xpu2_scheduling_probe.py": "2f67a5f2ca69afa9c6bccf1ee1bda33b9775f232cb7703f353af7489235bdc39",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-correlated-capture-final\\capture\\correlated.bin": "e1969334e40a7e6537f4074c7c4789f20c405cd4c5a910e48df307cf900cd5d0",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-ray-image-final\\sampler.ptx": "9f57b9013da070197087710e0c05afdbca05e9203c730f364ca16962fbb81bc2",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\tools\\xpu2_baseline.py": "031296df55bfe8ada251ed1a61d4a4047ebaa9f7fa526c549a2b27f8afcceb63",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\tools\\xpu2_repeatability.py": "40542dbfcd6ed9961aca3e6490a82b3d956cb73961ce2d75f6b79b353ea5c531"
+  },
+  "gpu": "NVIDIA GeForce RTX 3090, 591.74, GPU-041d589b-450b-0916-2503-c453af2389e3",
+  "runs": [
+    {
+      "runs": [
+        {
+          "schedule": "serial",
+          "steps": 0,
+          "repeat": 0,
+          "rounds": 512,
+          "wall_ns": 119351800,
+          "cpu_ns": 52900,
+          "collect_ns": 109127100,
+          "cpu_started_pending": 0,
+          "cpu_finished_pending": 0,
+          "digest": "6976435844382861130"
+        },
+        {
+          "schedule": "overlap",
+          "steps": 0,
+          "repeat": 0,
+          "rounds": 512,
+          "wall_ns": 114532400,
+          "cpu_ns": 58500,
+          "collect_ns": 103451200,
+          "cpu_started_pending": 512,
+          "cpu_finished_pending": 512,
+          "digest": "6976435844382861130"
+        },
+        {
+          "schedule": "overlap",
+          "steps": 0,
+          "repeat": 1,
+          "rounds": 512,
+          "wall_ns": 113395500,
+          "cpu_ns": 59500,
+          "collect_ns": 102360100,
+          "cpu_started_pending": 512,
+          "cpu_finished_pending": 512,
+          "digest": "6976435844382861130"
+        },
+        {
+          "schedule": "serial",
+          "steps": 0,
+          "repeat": 1,
+          "rounds": 512,
+          "wall_ns": 114559000,
+          "cpu_ns": 52800,
+          "collect_ns": 105145700,
+          "cpu_started_pending": 0,
+          "cpu_finished_pending": 0,
+          "digest": "6976435844382861130"
+        },
+        {
+          "schedule": "serial",
+          "steps": 0,
+          "repeat": 2,
+          "rounds": 512,
+          "wall_ns": 121942400,
+          "cpu_ns": 54400,
+          "collect_ns": 111746400,
+          "cpu_started_pending": 0,
+          "cpu_finished_pending": 0,
+          "digest": "6976435844382861130"
+        },
+        {
+          "schedule": "overlap",
+          "steps": 0,
+          "repeat": 2,
+          "rounds": 512,
+          "wall_ns": 123530000,
+          "cpu_ns": 58200,
+          "collect_ns": 112864500,
+          "cpu_started_pending": 512,
+          "cpu_finished_pending": 512,
+          "digest": "6976435844382861130"
+        },
+        {
+          "schedule": "overlap",
+          "steps": 0,
+          "repeat": 3,
+          "rounds": 512,
+          "wall_ns": 113392500,
+          "cpu_ns": 56400,
+          "collect_ns": 103016000,
+          "cpu_started_pending": 512,
+          "cpu_finished_pending": 512,
+          "digest": "6976435844382861130"
+        },
+        {
+          "schedule": "serial",
+          "steps": 0,
+          "repeat": 3,
+          "rounds": 512,
+          "wall_ns": 115889700,
+          "cpu_ns": 53300,
+          "collect_ns": 107166200,
+          "cpu_started_pending": 0,
+          "cpu_finished_pending": 0,
+          "digest": "6976435844382861130"
+        },
+        {
+          "schedule": "serial",
+          "steps": 0,
+          "repeat": 4,
+          "rounds": 512,
+          "wall_ns": 129426200,
+          "cpu_ns": 59100,
+          "collect_ns": 119016000,
+          "cpu_started_pending": 0,
+          "cpu_finished_pending": 0,
+          "digest": "6976435844382861130"
+        },
+        {
+          "schedule": "overlap",
+          "steps": 0,
+          "repeat": 4,
+          "rounds": 512,
+          "wall_ns": 116095200,
+          "cpu_ns": 60500,
+          "collect_ns": 104886400,
+          "cpu_started_pending": 512,
+          "cpu_finished_pending": 512,
+          "digest": "6976435844382861130"
+        },
+        {
+          "schedule": "serial",
+          "steps": 128,
+          "repeat": 0,
+          "rounds": 512,
+          "wall_ns": 123454800,
+          "cpu_ns": 1247800,
+          "collect_ns": 112303200,
+          "cpu_started_pending": 0,
+          "cpu_finished_pending": 0,
+          "digest": "13199678115003716885"
+        },
+        {
+          "schedule": "overlap",
+          "steps": 128,
+          "repeat": 0,
+          "rounds": 512,
+          "wall_ns": 122361000,
+          "cpu_ns": 1221000,
+          "collect_ns": 109970900,
+          "cpu_started_pending": 512,
+          "cpu_finished_pending": 512,
+          "digest": "13199678115003716885"
+        },
+        {
+          "schedule": "overlap",
+          "steps": 128,
+          "repeat": 1,
+          "rounds": 512,
+          "wall_ns": 119542100,
+          "cpu_ns": 1242800,
+          "collect_ns": 107372700,
+          "cpu_started_pending": 512,
+          "cpu_finished_pending": 512,
+          "digest": "13199678115003716885"
+        },
+        {
+          "schedule": "serial",
+          "steps": 128,
+          "repeat": 1,
+          "rounds": 512,
+          "wall_ns": 118810300,
+          "cpu_ns": 1193200,
+          "collect_ns": 108087300,
+          "cpu_started_pending": 0,
+          "cpu_finished_pending": 0,
+          "digest": "13199678115003716885"
+        },
+        {
+          "schedule": "serial",
+          "steps": 128,
+          "repeat": 2,
+          "rounds": 512,
+          "wall_ns": 113966000,
+          "cpu_ns": 1203600,
+          "collect_ns": 103328300,
+          "cpu_started_pending": 0,
+          "cpu_finished_pending": 0,
+          "digest": "13199678115003716885"
+        },
+        {
+          "schedule": "overlap",
+          "steps": 128,
+          "repeat": 2,
+          "rounds": 512,
+          "wall_ns": 118720300,
+          "cpu_ns": 1210700,
+          "collect_ns": 106382700,
+          "cpu_started_pending": 512,
+          "cpu_finished_pending": 512,
+          "digest": "13199678115003716885"
+        },
+        {
+          "schedule": "overlap",
+          "steps": 128,
+          "repeat": 3,
+          "rounds": 512,
+          "wall_ns": 126342100,
+          "cpu_ns": 1280500,
+          "collect_ns": 113609800,
+          "cpu_started_pending": 512,
+          "cpu_finished_pending": 512,
+          "digest": "13199678115003716885"
+        },
+        {
+          "schedule": "serial",
+          "steps": 128,
+          "repeat": 3,
+          "rounds": 512,
+          "wall_ns": 117162600,
+          "cpu_ns": 1215400,
+          "collect_ns": 106537600,
+          "cpu_started_pending": 0,
+          "cpu_finished_pending": 0,
+          "digest": "13199678115003716885"
+        },
+        {
+          "schedule": "serial",
+          "steps": 128,
+          "repeat": 4,
+          "rounds": 512,
+          "wall_ns": 124795100,
+          "cpu_ns": 1272800,
+          "collect_ns": 113611300,
+          "cpu_started_pending": 0,
+          "cpu_finished_pending": 0,
+          "digest": "13199678115003716885"
+        },
+        {
+          "schedule": "overlap",
+          "steps": 128,
+          "repeat": 4,
+          "rounds": 512,
+          "wall_ns": 120724200,
+          "cpu_ns": 1224500,
+          "collect_ns": 108266200,
+          "cpu_started_pending": 512,
+          "cpu_finished_pending": 512,
+          "digest": "13199678115003716885"
+        },
+        {
+          "schedule": "serial",
+          "steps": 1024,
+          "repeat": 0,
+          "rounds": 512,
+          "wall_ns": 135591600,
+          "cpu_ns": 10648500,
+          "collect_ns": 115413400,
+          "cpu_started_pending": 0,
+          "cpu_finished_pending": 0,
+          "digest": "480850389942106558"
+        },
+        {
+          "schedule": "overlap",
+          "steps": 1024,
+          "repeat": 0,
+          "rounds": 512,
+          "wall_ns": 137198400,
+          "cpu_ns": 10693900,
+          "collect_ns": 114567700,
+          "cpu_started_pending": 512,
+          "cpu_finished_pending": 512,
+          "digest": "480850389942106558"
+        },
+        {
+          "schedule": "overlap",
+          "steps": 1024,
+          "repeat": 1,
+          "rounds": 512,
+          "wall_ns": 118624900,
+          "cpu_ns": 10398300,
+          "collect_ns": 98017100,
+          "cpu_started_pending": 512,
+          "cpu_finished_pending": 512,
+          "digest": "480850389942106558"
+        },
+        {
+          "schedule": "serial",
+          "steps": 1024,
+          "repeat": 1,
+          "rounds": 512,
+          "wall_ns": 146088500,
+          "cpu_ns": 10986500,
+          "collect_ns": 124560400,
+          "cpu_started_pending": 0,
+          "cpu_finished_pending": 0,
+          "digest": "480850389942106558"
+        },
+        {
+          "schedule": "serial",
+          "steps": 1024,
+          "repeat": 2,
+          "rounds": 512,
+          "wall_ns": 232417400,
+          "cpu_ns": 13688500,
+          "collect_ns": 198608900,
+          "cpu_started_pending": 0,
+          "cpu_finished_pending": 0,
+          "digest": "480850389942106558"
+        },
+        {
+          "schedule": "overlap",
+          "steps": 1024,
+          "repeat": 2,
+          "rounds": 512,
+          "wall_ns": 136724900,
+          "cpu_ns": 10709900,
+          "collect_ns": 113794000,
+          "cpu_started_pending": 512,
+          "cpu_finished_pending": 512,
+          "digest": "480850389942106558"
+        },
+        {
+          "schedule": "overlap",
+          "steps": 1024,
+          "repeat": 3,
+          "rounds": 512,
+          "wall_ns": 114026100,
+          "cpu_ns": 10314300,
+          "collect_ns": 94731800,
+          "cpu_started_pending": 512,
+          "cpu_finished_pending": 512,
+          "digest": "480850389942106558"
+        },
+        {
+          "schedule": "serial",
+          "steps": 1024,
+          "repeat": 3,
+          "rounds": 512,
+          "wall_ns": 132873900,
+          "cpu_ns": 10604700,
+          "collect_ns": 112941600,
+          "cpu_started_pending": 0,
+          "cpu_finished_pending": 0,
+          "digest": "480850389942106558"
+        },
+        {
+          "schedule": "serial",
+          "steps": 1024,
+          "repeat": 4,
+          "rounds": 512,
+          "wall_ns": 143723400,
+          "cpu_ns": 10649100,
+          "collect_ns": 122234400,
+          "cpu_started_pending": 0,
+          "cpu_finished_pending": 0,
+          "digest": "480850389942106558"
+        },
+        {
+          "schedule": "overlap",
+          "steps": 1024,
+          "repeat": 4,
+          "rounds": 512,
+          "wall_ns": 114567100,
+          "cpu_ns": 10429400,
+          "collect_ns": 94923300,
+          "cpu_started_pending": 512,
+          "cpu_finished_pending": 512,
+          "digest": "480850389942106558"
+        },
+        {
+          "schedule": "serial",
+          "steps": 8192,
+          "repeat": 0,
+          "rounds": 512,
+          "wall_ns": 232034700,
+          "cpu_ns": 83962700,
+          "collect_ns": 138987300,
+          "cpu_started_pending": 0,
+          "cpu_finished_pending": 0,
+          "digest": "7951863467145076988"
+        },
+        {
+          "schedule": "overlap",
+          "steps": 8192,
+          "repeat": 0,
+          "rounds": 512,
+          "wall_ns": 120734400,
+          "cpu_ns": 84220300,
+          "collect_ns": 27713500,
+          "cpu_started_pending": 512,
+          "cpu_finished_pending": 511,
+          "digest": "7951863467145076988"
+        },
+        {
+          "schedule": "overlap",
+          "steps": 8192,
+          "repeat": 1,
+          "rounds": 512,
+          "wall_ns": 119068100,
+          "cpu_ns": 84723500,
+          "collect_ns": 24861500,
+          "cpu_started_pending": 512,
+          "cpu_finished_pending": 508,
+          "digest": "7951863467145076988"
+        },
+        {
+          "schedule": "serial",
+          "steps": 8192,
+          "repeat": 1,
+          "rounds": 512,
+          "wall_ns": 233916900,
+          "cpu_ns": 84896500,
+          "collect_ns": 137880500,
+          "cpu_started_pending": 0,
+          "cpu_finished_pending": 0,
+          "digest": "7951863467145076988"
+        },
+        {
+          "schedule": "serial",
+          "steps": 8192,
+          "repeat": 2,
+          "rounds": 512,
+          "wall_ns": 228838200,
+          "cpu_ns": 85470300,
+          "collect_ns": 132144100,
+          "cpu_started_pending": 0,
+          "cpu_finished_pending": 0,
+          "digest": "7951863467145076988"
+        },
+        {
+          "schedule": "overlap",
+          "steps": 8192,
+          "repeat": 2,
+          "rounds": 512,
+          "wall_ns": 119530400,
+          "cpu_ns": 84390200,
+          "collect_ns": 25657800,
+          "cpu_started_pending": 512,
+          "cpu_finished_pending": 509,
+          "digest": "7951863467145076988"
+        },
+        {
+          "schedule": "overlap",
+          "steps": 8192,
+          "repeat": 3,
+          "rounds": 512,
+          "wall_ns": 131833700,
+          "cpu_ns": 85094700,
+          "collect_ns": 36844600,
+          "cpu_started_pending": 512,
+          "cpu_finished_pending": 508,
+          "digest": "7951863467145076988"
+        },
+        {
+          "schedule": "serial",
+          "steps": 8192,
+          "repeat": 3,
+          "rounds": 512,
+          "wall_ns": 253748700,
+          "cpu_ns": 86825800,
+          "collect_ns": 151550500,
+          "cpu_started_pending": 0,
+          "cpu_finished_pending": 0,
+          "digest": "7951863467145076988"
+        },
+        {
+          "schedule": "serial",
+          "steps": 8192,
+          "repeat": 4,
+          "rounds": 512,
+          "wall_ns": 234406000,
+          "cpu_ns": 85532300,
+          "collect_ns": 136324900,
+          "cpu_started_pending": 0,
+          "cpu_finished_pending": 0,
+          "digest": "7951863467145076988"
+        },
+        {
+          "schedule": "overlap",
+          "steps": 8192,
+          "repeat": 4,
+          "rounds": 512,
+          "wall_ns": 123013200,
+          "cpu_ns": 91064500,
+          "collect_ns": 22352900,
+          "cpu_started_pending": 512,
+          "cpu_finished_pending": 453,
+          "digest": "7951863467145076988"
+        }
+      ],
+      "passed": true,
+      "cleanup": true,
+      "gpu_samples": 1476864,
+      "gpu_batches": 20512,
+      "mode": "replace",
+      "summary": [
+        {
+          "steps": 0,
+          "serial_ms": 119.3518,
+          "overlap_ms": 114.5324,
+          "speedup": 1.0420789226454699,
+          "serial_range_ms": [
+            114.559,
+            129.4262
+          ],
+          "overlap_range_ms": [
+            113.3925,
+            123.53
+          ],
+          "overlap_cpu_started_pending": 2560,
+          "overlap_cpu_finished_pending": 2560,
+          "rounds_per_schedule": 2560
+        },
+        {
+          "steps": 128,
+          "serial_ms": 118.8103,
+          "overlap_ms": 120.7242,
+          "speedup": 0.9841465091506094,
+          "serial_range_ms": [
+            113.966,
+            124.7951
+          ],
+          "overlap_range_ms": [
+            118.7203,
+            126.3421
+          ],
+          "overlap_cpu_started_pending": 2560,
+          "overlap_cpu_finished_pending": 2560,
+          "rounds_per_schedule": 2560
+        },
+        {
+          "steps": 1024,
+          "serial_ms": 143.7234,
+          "overlap_ms": 118.6249,
+          "speedup": 1.211578682047361,
+          "serial_range_ms": [
+            132.8739,
+            232.4174
+          ],
+          "overlap_range_ms": [
+            114.0261,
+            137.1984
+          ],
+          "overlap_cpu_started_pending": 2560,
+          "overlap_cpu_finished_pending": 2560,
+          "rounds_per_schedule": 2560
+        },
+        {
+          "steps": 8192,
+          "serial_ms": 233.9169,
+          "overlap_ms": 120.7344,
+          "speedup": 1.9374503041386713,
+          "serial_range_ms": [
+            228.8382,
+            253.7487
+          ],
+          "overlap_range_ms": [
+            119.0681,
+            131.8337
+          ],
+          "overlap_cpu_started_pending": 2560,
+          "overlap_cpu_finished_pending": 2489,
+          "rounds_per_schedule": 2560
+        }
+      ],
+      "profile": {
+        "quiet": true,
+        "device_total_ns": 4375746700,
+        "initialization_ns": 187216800,
+        "htod_ns": 195138900,
+        "launch_ns": 227748500,
+        "device_wait_ns": 2184131900,
+        "dtoh_ns": 1393857900,
+        "validation_ns": 75824100,
+        "diagnostic_io_ns": 24004900,
+        "worker_pack_ns": 36913800,
+        "queue_residence_ns": 2719845000,
+        "collect_ns": 0,
+        "collect_wait_ns": 0,
+        "cpu_light_ns": 0,
+        "kernel_gpu_ns": 1322008792,
+        "submitted": 184608,
+        "collected": 184608,
+        "batches": 20512,
+        "samples": 1476864,
+        "accepted": 1476864,
+        "replaced": 1476864,
+        "unsupported": 0,
+        "invalid": 0,
+        "mismatch": 0,
+        "errors": 0,
+        "async_batches": 20512,
+        "async_completions": 20512,
+        "staging_ns": 25167800,
+        "readback_calls": 20512,
+        "readback_bytes": 194946048,
+        "echo_checks": 1476864,
+        "audit_samples": 1476864,
+        "performance_samples": 0,
+        "routing_checks": 0
+      },
+      "log_hashes": {
+        "process.log": "8d8841a7630b311c9e75bac7b849b4f069800c73688cef795409465a76966b1f",
+        "profile.json": "6818af9900e1d7e53e551a8e105f7505817d145f6db6dd1bc3c57dff98cdba80"
+      }
+    },
+    {
+      "runs": [
+        {
+          "schedule": "serial",
+          "steps": 0,
+          "repeat": 0,
+          "rounds": 32,
+          "wall_ns": 7094300,
+          "cpu_ns": 3500,
+          "collect_ns": 6423800,
+          "cpu_started_pending": 0,
+          "cpu_finished_pending": 0,
+          "digest": "9823268375933722464"
+        },
+        {
+          "schedule": "overlap",
+          "steps": 0,
+          "repeat": 0,
+          "rounds": 32,
+          "wall_ns": 8003600,
+          "cpu_ns": 3600,
+          "collect_ns": 7268400,
+          "cpu_started_pending": 32,
+          "cpu_finished_pending": 32,
+          "digest": "9823268375933722464"
+        },
+        {
+          "schedule": "serial",
+          "steps": 128,
+          "repeat": 0,
+          "rounds": 32,
+          "wall_ns": 7176800,
+          "cpu_ns": 75800,
+          "collect_ns": 6442200,
+          "cpu_started_pending": 0,
+          "cpu_finished_pending": 0,
+          "digest": "7998049030851260654"
+        },
+        {
+          "schedule": "overlap",
+          "steps": 128,
+          "repeat": 0,
+          "rounds": 32,
+          "wall_ns": 7622700,
+          "cpu_ns": 74000,
+          "collect_ns": 6804700,
+          "cpu_started_pending": 32,
+          "cpu_finished_pending": 32,
+          "digest": "7998049030851260654"
+        },
+        {
+          "schedule": "serial",
+          "steps": 1024,
+          "repeat": 0,
+          "rounds": 32,
+          "wall_ns": 7607800,
+          "cpu_ns": 632300,
+          "collect_ns": 6314200,
+          "cpu_started_pending": 0,
+          "cpu_finished_pending": 0,
+          "digest": "1766259434660296419"
+        },
+        {
+          "schedule": "overlap",
+          "steps": 1024,
+          "repeat": 0,
+          "rounds": 32,
+          "wall_ns": 7371100,
+          "cpu_ns": 640600,
+          "collect_ns": 5985000,
+          "cpu_started_pending": 32,
+          "cpu_finished_pending": 32,
+          "digest": "1766259434660296419"
+        },
+        {
+          "schedule": "serial",
+          "steps": 8192,
+          "repeat": 0,
+          "rounds": 32,
+          "wall_ns": 15574500,
+          "cpu_ns": 5238400,
+          "collect_ns": 9574200,
+          "cpu_started_pending": 0,
+          "cpu_finished_pending": 0,
+          "digest": "15061268965755779858"
+        },
+        {
+          "schedule": "overlap",
+          "steps": 8192,
+          "repeat": 0,
+          "rounds": 32,
+          "wall_ns": 7236300,
+          "cpu_ns": 5264700,
+          "collect_ns": 1410800,
+          "cpu_started_pending": 32,
+          "cpu_finished_pending": 32,
+          "digest": "15061268965755779858"
+        }
+      ],
+      "passed": true,
+      "cleanup": true,
+      "gpu_samples": 20736,
+      "gpu_batches": 288,
+      "mode": "sentinel",
+      "summary": [
+        {
+          "steps": 0,
+          "serial_ms": 7.0943,
+          "overlap_ms": 8.0036,
+          "speedup": 0.8863886251186965,
+          "serial_range_ms": [
+            7.0943,
+            7.0943
+          ],
+          "overlap_range_ms": [
+            8.0036,
+            8.0036
+          ],
+          "overlap_cpu_started_pending": 32,
+          "overlap_cpu_finished_pending": 32,
+          "rounds_per_schedule": 32
+        },
+        {
+          "steps": 128,
+          "serial_ms": 7.1768,
+          "overlap_ms": 7.6227,
+          "speedup": 0.9415036666797854,
+          "serial_range_ms": [
+            7.1768,
+            7.1768
+          ],
+          "overlap_range_ms": [
+            7.6227,
+            7.6227
+          ],
+          "overlap_cpu_started_pending": 32,
+          "overlap_cpu_finished_pending": 32,
+          "rounds_per_schedule": 32
+        },
+        {
+          "steps": 1024,
+          "serial_ms": 7.6078,
+          "overlap_ms": 7.3711,
+          "speedup": 1.0321118964605012,
+          "serial_range_ms": [
+            7.6078,
+            7.6078
+          ],
+          "overlap_range_ms": [
+            7.3711,
+            7.3711
+          ],
+          "overlap_cpu_started_pending": 32,
+          "overlap_cpu_finished_pending": 32,
+          "rounds_per_schedule": 32
+        },
+        {
+          "steps": 8192,
+          "serial_ms": 15.5745,
+          "overlap_ms": 7.2363,
+          "speedup": 2.152273952157871,
+          "serial_range_ms": [
+            15.5745,
+            15.5745
+          ],
+          "overlap_range_ms": [
+            7.2363,
+            7.2363
+          ],
+          "overlap_cpu_started_pending": 32,
+          "overlap_cpu_finished_pending": 32,
+          "rounds_per_schedule": 32
+        }
+      ],
+      "profile": {
+        "quiet": true,
+        "device_total_ns": 214337800,
+        "initialization_ns": 158649800,
+        "htod_ns": 2616200,
+        "launch_ns": 3041500,
+        "device_wait_ns": 31141300,
+        "dtoh_ns": 16225300,
+        "validation_ns": 1155400,
+        "diagnostic_io_ns": 326100,
+        "worker_pack_ns": 704900,
+        "queue_residence_ns": 42783400,
+        "collect_ns": 0,
+        "collect_wait_ns": 0,
+        "cpu_light_ns": 0,
+        "kernel_gpu_ns": 17520832,
+        "submitted": 2592,
+        "collected": 2592,
+        "batches": 288,
+        "samples": 20736,
+        "accepted": 20736,
+        "replaced": 20736,
+        "unsupported": 0,
+        "invalid": 0,
+        "mismatch": 0,
+        "errors": 0,
+        "async_batches": 288,
+        "async_completions": 288,
+        "staging_ns": 322000,
+        "readback_calls": 288,
+        "readback_bytes": 2737152,
+        "echo_checks": 20736,
+        "audit_samples": 20736,
+        "performance_samples": 0,
+        "routing_checks": 0
+      },
+      "log_hashes": {
+        "process.log": "b8d1c374a779f9c2f1bd806fd2328724439406ad9f0c3789aa1e34c24ccd9dab",
+        "profile.json": "0bf6f3fa95e7028093441f457c1326c4556a74b15127ddd1d7793c40390d031d"
+      }
+    }
+  ],
+  "compiler_sha256": "58efe82fa3ce35005f89d46fe439d7ee54e6889cb7db894019202da691a529a5",
+  "executable_sha256": "7659398489eb2ef50c1d840113307c63d93a2956fe01d828af81bcc17d50a453",
+  "preprocessed_sha256": "5119bffd72d59bc5c7c29e9be4a34efe5c2ae2356af4ed0b5bb2f5634db4fabf"
+}

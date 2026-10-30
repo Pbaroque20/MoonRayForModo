@@ -1,0 +1,21 @@
+{
+  "uniform": "async-benchmark-9",
+  "adaptive": "async-adaptive-benchmark-3",
+  "difference_scale": 20,
+  "cases": {
+    "gallery-dense": {
+      "samples_range": [
+        19,
+        1024
+      ],
+      "adaptive_target": 8.0
+    },
+    "workshop-detail": {
+      "samples_range": [
+        19,
+        1024
+      ],
+      "adaptive_target": 8.0
+    }
+  }
+}

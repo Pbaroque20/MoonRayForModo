@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="280" viewBox="0 0 760 280" font-family="sans-serif" font-size="13">
+<rect width="100%" height="100%" fill="white"/>
+<text x="10" y="22" font-weight="bold">Render time, 12 threads (bar length relative to XPU in each row)</text>
+<text x="10" y="62">gallery-dense, 64 samples</text>
+<rect x="230" y="40" width="380" height="18" fill="#8c8c8c"/>
+<text x="616" y="53">XPU 4.38 s</text>
+<rect x="230" y="62" width="1.9" height="18" fill="#2a7ab9"/>
+<text x="237" y="77">XPU2 0.022 s (201× faster)</text>
+<text x="10" y="122">gallery-dense, adaptive</text>
+<rect x="230" y="100" width="380" height="18" fill="#8c8c8c"/>
+<text x="616" y="113">XPU 2.87 s</text>
+<rect x="230" y="122" width="3.0" height="18" fill="#2a7ab9"/>
+<text x="239" y="137">XPU2 0.023 s (125× faster)</text>
+<text x="10" y="182">workshop-detail, 64 samples</text>
+<rect x="230" y="160" width="380" height="18" fill="#8c8c8c"/>
+<text x="616" y="173">XPU 7.06 s</text>
+<rect x="230" y="182" width="1.6" height="18" fill="#2a7ab9"/>
+<text x="237" y="197">XPU2 0.029 s (242× faster)</text>
+<text x="10" y="242">workshop-detail, adaptive</text>
+<rect x="230" y="220" width="380" height="18" fill="#8c8c8c"/>
+<text x="616" y="233">XPU 4.09 s</text>
+<rect x="230" y="242" width="3.1" height="18" fill="#2a7ab9"/>
+<text x="239" y="257">XPU2 0.033 s (123× faster)</text>
+</svg>

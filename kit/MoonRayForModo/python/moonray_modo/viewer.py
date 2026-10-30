@@ -12,6 +12,7 @@ class _PreviewBody:
         self.image = QtGui.QImage()
         self.buckets=None
         self.workers=None
+        self.gpu_workers=None  # XPU2: the cells the GPU's launches hold
         self.show_workers=True
         self.show_buckets=True
         self.bucket_timeout=QtCore.QTimer(self)
@@ -266,16 +267,17 @@ class _PreviewBody:
         """The outlines now being told of: the workers' own where there are any, else the tiles'."""
         return self.workers if self.show_workers and self.workers is not None else self.buckets
 
-    def _note_outlines(self):
-        """Take in what MoonRay last told of: each outline is new, or has been seen again just now."""
-        told=self._outlines()
+    def _note_outlines(self,told=None,kind='cpu'):
+        """Take in what MoonRay last told of: each outline is new, or has been seen again just now. XPU2's GPU cells
+        (kind 'gpu') are told of apart from the rest."""
+        told=told if told is not None else self._outlines()
         if not told or not self.show_buckets:return
         _,width,height,rectangles=told
         now=self._fade_clock.elapsed()/1000.
         # Whether these are the workers' squares: they are let go of sooner than a tile is.
-        hold=self.HOLD_WORKER if told is self.workers else self.HOLD
+        hold=self.HOLD_WORKER if told is self.workers or kind=='gpu' else self.HOLD
         for rectangle in rectangles:
-            key=(width,height,rectangle)
+            key=(width,height,rectangle,kind)
             seen=self._fading.get(key)
             # One that had begun to fade and is come back to comes up again from where it had got to.
             if seen is None or now-seen[1]>seen[2]+self.FADE:self._fading[key]=[now,now,hold]
@@ -296,13 +298,18 @@ class _PreviewBody:
     @QtCore.Slot(object)
     def set_buckets(self,packet):
         self.buckets=packet
-        if packet is None:self.workers=None
+        if packet is None:self.workers=self.gpu_workers=None
         if packet:self.bucket_timeout.start(1500)
         else:self.bucket_timeout.stop()
         # Only what is new is taken in: while the workers' squares are shown, that is not the tiles.
         if self._outlines() is self.buckets:self._note_outlines()
 
     def set_workers(self,packet):
+        if packet and packet[0]=='gpu':
+            # XPU2: the GPU's cells, beside the CPU's workers.
+            self.gpu_workers=packet[1:]
+            if self.show_workers:self._note_outlines(self.gpu_workers,'gpu')
+            return
         self.workers=packet
         if self._outlines() is self.workers:self._note_outlines()
 
@@ -398,15 +405,15 @@ class _PreviewBody:
             if self.show_buckets and self._fading:
                 now=self._fade_clock.elapsed()/1000.
                 # Coming up, standing, or fading: each by how long since it was first and last told of.
-                drawn=[(width,height,rectangle,min(1.0,(now-first)/self.APPEAR)*(1.0-max(0.0,now-last-hold)/self.FADE))
-                       for (width,height,rectangle),(first,last,hold) in self._fading.items()]
+                drawn=[(width,height,rectangle,kind,min(1.0,(now-first)/self.APPEAR)*(1.0-max(0.0,now-last-hold)/self.FADE))
+                       for (width,height,rectangle,kind),(first,last,hold) in self._fading.items()]
             painter.setBrush(QtCore.Qt.NoBrush)
-            for width,height,(x0,y0,x1,y1),strength in drawn:
+            for width,height,(x0,y0,x1,y1),kind,strength in drawn:
                 if strength<=0 or not (self.image.isNull() or (self.image.width(),self.image.height())==(width,height)):continue
                 scale=min(self.width()/width,self.height()/height)*self.zoom
                 left=(self.width()-width*scale)/2+self.pan.x()
                 top=(self.height()-height*scale)/2+self.pan.y()
-                colour=QtGui.QColor('#a9cdf2');colour.setAlphaF(min(1.0,strength))
+                colour=QtGui.QColor('#bfaef5' if kind=='gpu' else '#a9cdf2');colour.setAlphaF(min(1.0,strength))
                 pen=QtGui.QPen(colour);pen.setWidthF(1.0)
                 painter.setPen(pen)
                 painter.drawRect(QtCore.QRectF(left+x0*scale,top+(height-y1)*scale,(x1-x0)*scale,(y1-y0)*scale))

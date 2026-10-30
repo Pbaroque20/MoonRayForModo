@@ -55,6 +55,14 @@ def register():
                 self.basic_SetFlags(0,lx.symbol.fCMDARG_QUERY)
             def cmd_Flags(self):return lx.symbol.fCMD_MODEL|lx.symbol.fCMD_UNDO
             def basic_Enable(self,msg):
+                # XPU2 renders the preview: its sampling generations are on, their switch is
+                # greyed, and so are MoonRay's own sampling settings, which show what XPU2 takes (xpu2_sampling), and
+                # what XPU2 does not read at all (cpu_scene.h): MoonRay's buckets and their order, and two sampling
+                # switches of MoonRay's own. Final renders, MoonRay's, still use them all.
+                if entry['key'] in ('xpu2_generations','sampling_mode','samples','min_adaptive_samples','max_adaptive_samples','target_adaptive_error',
+                                    'bucket_size','batch_tile_order','important_first','volume_indirect_samples','disable_optimized_hair_sampling'):
+                    from moonray_modo import xpu2_sampling
+                    if xpu2_sampling.active():return False
                 # Pixel Samples is uniform sampling's: under adaptive sampling MoonRay does not use it, so it is greyed.
                 if entry['key']=='samples':
                     try:return scene_settings.complete(properties.scene_settings())['render'].get('sampling_mode')!=ADAPTIVE
@@ -69,6 +77,16 @@ def register():
                     try:return scene_settings.complete(properties.scene_settings())['render'].get('light_sampling_mode')==ADAPTIVE_LIGHTS
                     except Exception:return True
                 # What a denoiser does is greyed while the Denoiser is Off: it is off everywhere then.
+                # XPU2's sampling generations' own settings, greyed with generations off.
+                if entry['key'] in ('xpu2_samples', 'xpu2_spend', 'xpu2_noise', 'xpu2_seed', 'xpu2_most', 'xpu2_cpu', 'xpu2_realtime'):
+                    return True
+                # Smart Render and Safe Denoising are MoonRay's: greyed while XPU2 renders the preview, which is quick
+                # enough to need neither.
+                if entry['key'] in ('smart_render','denoise_safe'):
+                    try:
+                        from moonray_modo import native
+                        if native.xpu2():return False
+                    except Exception:pass
                 if entry['key'] in NEEDS_DENOISER:
                     try:
                         denoising=scene_settings.complete(properties.scene_settings())['denoising']
@@ -84,6 +102,18 @@ def register():
             def cmd_Query(self,index,query):
                 values=lx.object.ValueArray(query)
                 value=scene_settings.get(scene_settings.complete(properties.scene_settings()),entry)
+                # Generation Samples left at 0: what XPU2 takes then, a uniform scene's Pixel Samples
+                # squared, Pixel Samples itself being greyed while generations are on.
+                if entry['key']=='xpu2_samples' and not value:
+                    try:
+                        held=scene_settings.complete(properties.scene_settings())
+                        value=int(held.get('samples',0))**2
+                    except Exception:pass
+                # XPU2 renders the preview: the generations on, MoonRay's sampling fields showing what XPU2 takes.
+                from moonray_modo import xpu2_sampling
+                if xpu2_sampling.active():
+                    try:value=xpu2_sampling.shown(scene_settings.complete(properties.scene_settings()),entry['key'],value)
+                    except Exception:pass
                 if kind in ('bool','member','int','choice'):values.AddInt(int(value))
                 elif kind=='float':values.AddFloat(float(value))
                 elif kind=='hex':lx.object.Value(values.AddEmptyValue()).SetString(' '.join('%.9g'%v for v in value))

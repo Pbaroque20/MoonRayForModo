@@ -1,0 +1,338 @@
+{
+  "status": "passed",
+  "scope": "Standalone real queue and CUDA shader stress; not a native render or reusable renderer lifecycle test",
+  "source_hashes": {
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\native_queue_stress.cc": "605d41b3a8dcb80567c48b744ce4253c62ee0df46a11f191d4e262af5c97e70f",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\native_lambert_queue.cc": "c16e82b0905db32afee7f74a068f345b4e00a09730b8d63ce02955e87d1c1604",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\tools\\xpu2_queue_stress.py": "e209d13ae421d624f998fe34046e20d77a68206d78d7519d111d8176fac12d67",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\test-results\\xpu2-ray-image-final\\sampler.ptx": "9f57b9013da070197087710e0c05afdbca05e9203c730f364ca16962fbb81bc2"
+  },
+  "gpu": "NVIDIA GeForce RTX 3090, 591.74, GPU-041d589b-450b-0916-2503-c453af2389e3",
+  "runs": [
+    {
+      "case": "capacity-0",
+      "checks": {
+        "case": "capacity",
+        "owned_results_checked": 65,
+        "fallbacks_checked": 8,
+        "max_batch_samples": 512,
+        "passed": true
+      },
+      "queue": {
+        "calls": 73,
+        "submitted": 65,
+        "delivered": 65,
+        "cpu_batches": 0,
+        "queue_full": 8,
+        "timeouts": 0,
+        "late_discarded": 0,
+        "cancelled_before_dispatch": 0,
+        "worker_failures": 0,
+        "worker_batches": 2,
+        "max_batch_samples": 512,
+        "max_queue": 64,
+        "cpu_completed_while_gpu_pending": 0,
+        "kernel_window_cpu_observations": 0,
+        "kernel_microseconds": 23
+      },
+      "delivery_ids": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        10,
+        9,
+        12,
+        11,
+        14,
+        15,
+        16,
+        17,
+        18,
+        13,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        28,
+        27,
+        29,
+        30,
+        31,
+        32,
+        34,
+        33,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52,
+        53,
+        55,
+        56,
+        54,
+        57,
+        58,
+        59,
+        60,
+        61,
+        62,
+        63,
+        64
+      ],
+      "shading": {
+        "batches": 2,
+        "samples": 520,
+        "accepted": 520,
+        "replaced": 520,
+        "unsupported": 0,
+        "invalid": 0,
+        "mismatch": 0,
+        "errors": 0
+      },
+      "observations": {
+        "records": 520,
+        "accepted": 520,
+        "unsupported": 0,
+        "invalid": 0,
+        "mismatch": 0,
+        "nonfinite": 0,
+        "direction_mismatches": 0,
+        "rgb_mismatches": 0,
+        "pdf_mismatches": 0,
+        "validity_mismatches": 0,
+        "first_mismatches": [],
+        "sha256": "2eacbb1ddec347cfadd4abb66ab9bf8d1d7a96fd200bf8fe418f9202d79d201d"
+      },
+      "log_hashes": {
+        "process.log": "3337fe58c2d7177d4e57f5c6b2380ac446e7fa0c4c1bbd4bca836cce92259f53",
+        "queue.log": "768de662b314bcc5a8fc53cfb2d21011939e4aef7d2c65434db8f6c69e9283ac",
+        "shading.bin": "2eacbb1ddec347cfadd4abb66ab9bf8d1d7a96fd200bf8fe418f9202d79d201d",
+        "shading.log": "a71c2ea647f03b55eea162fdbae71dd891cb657c44a28a41344cd853c261cc58"
+      }
+    },
+    {
+      "case": "timeout-1",
+      "checks": {
+        "case": "timeout",
+        "waited_ms": 10005,
+        "caller_buffers_preserved": true,
+        "recovery_delivered": true,
+        "passed": true
+      },
+      "queue": {
+        "calls": 2,
+        "submitted": 2,
+        "delivered": 1,
+        "cpu_batches": 0,
+        "queue_full": 0,
+        "timeouts": 1,
+        "late_discarded": 1,
+        "cancelled_before_dispatch": 0,
+        "worker_failures": 0,
+        "worker_batches": 2,
+        "max_batch_samples": 8,
+        "max_queue": 1,
+        "cpu_completed_while_gpu_pending": 0,
+        "kernel_window_cpu_observations": 0,
+        "kernel_microseconds": 17
+      },
+      "delivery_ids": [
+        1
+      ],
+      "shading": {
+        "batches": 2,
+        "samples": 16,
+        "accepted": 16,
+        "replaced": 16,
+        "unsupported": 0,
+        "invalid": 0,
+        "mismatch": 0,
+        "errors": 0
+      },
+      "observations": {
+        "records": 16,
+        "accepted": 16,
+        "unsupported": 0,
+        "invalid": 0,
+        "mismatch": 0,
+        "nonfinite": 0,
+        "direction_mismatches": 0,
+        "rgb_mismatches": 0,
+        "pdf_mismatches": 0,
+        "validity_mismatches": 0,
+        "first_mismatches": [],
+        "sha256": "b7fdf2131b0baa525a812df347945a6bbace5edb24698f9bdf8b4dc14ee42983"
+      },
+      "log_hashes": {
+        "process.log": "527e272513bf305686fac58beeb0effd8595f97418447221dcf64f8b9d32802d",
+        "queue.log": "ae35f4f727d3d0e4f774a2e853515275dde7c446037061b4603632598931b645",
+        "shading.bin": "b7fdf2131b0baa525a812df347945a6bbace5edb24698f9bdf8b4dc14ee42983",
+        "shading.log": "a1177659aa103a9b2388db1adec4aee77d0b5c0cadd704b2a633232a4df9377c"
+      }
+    },
+    {
+      "case": "pending_timeout-2",
+      "checks": {
+        "case": "pending_timeout",
+        "waited_ms": 10035,
+        "pending_timeouts": 63,
+        "inflight_timeouts": 1,
+        "caller_buffers_preserved": 64,
+        "pending_cancelled_before_dispatch": 63,
+        "fresh_request_after_pruning": true,
+        "passed": true
+      },
+      "queue": {
+        "calls": 65,
+        "submitted": 65,
+        "delivered": 1,
+        "cpu_batches": 0,
+        "queue_full": 0,
+        "timeouts": 64,
+        "late_discarded": 1,
+        "cancelled_before_dispatch": 63,
+        "worker_failures": 0,
+        "worker_batches": 2,
+        "max_batch_samples": 8,
+        "max_queue": 63,
+        "cpu_completed_while_gpu_pending": 0,
+        "kernel_window_cpu_observations": 0,
+        "kernel_microseconds": 17
+      },
+      "delivery_ids": [
+        64
+      ],
+      "shading": {
+        "batches": 2,
+        "samples": 16,
+        "accepted": 16,
+        "replaced": 16,
+        "unsupported": 0,
+        "invalid": 0,
+        "mismatch": 0,
+        "errors": 0
+      },
+      "observations": {
+        "records": 16,
+        "accepted": 16,
+        "unsupported": 0,
+        "invalid": 0,
+        "mismatch": 0,
+        "nonfinite": 0,
+        "direction_mismatches": 0,
+        "rgb_mismatches": 0,
+        "pdf_mismatches": 0,
+        "validity_mismatches": 0,
+        "first_mismatches": [],
+        "sha256": "7a31a1068d733ae82cc78fea52c9450e5f33297f737b0c2b383d0e341938a462"
+      },
+      "log_hashes": {
+        "process.log": "8507790e31651981411e82be43ebc4b81ab59fab0fffada88a6f3422abb79ce0",
+        "queue.log": "632371fdb577d6e5b93bc1da49086d5cd04b43911ba4f5c36744dfd954ba95ad",
+        "shading.bin": "7a31a1068d733ae82cc78fea52c9450e5f33297f737b0c2b383d0e341938a462",
+        "shading.log": "a1177659aa103a9b2388db1adec4aee77d0b5c0cadd704b2a633232a4df9377c"
+      }
+    },
+    {
+      "case": "pending_timeout-3",
+      "checks": {
+        "case": "pending_timeout",
+        "waited_ms": 10030,
+        "pending_timeouts": 63,
+        "inflight_timeouts": 1,
+        "caller_buffers_preserved": 64,
+        "pending_cancelled_before_dispatch": 63,
+        "fresh_request_after_pruning": true,
+        "passed": true
+      },
+      "queue": {
+        "calls": 65,
+        "submitted": 65,
+        "delivered": 1,
+        "cpu_batches": 0,
+        "queue_full": 0,
+        "timeouts": 64,
+        "late_discarded": 1,
+        "cancelled_before_dispatch": 63,
+        "worker_failures": 0,
+        "worker_batches": 2,
+        "max_batch_samples": 8,
+        "max_queue": 63,
+        "cpu_completed_while_gpu_pending": 0,
+        "kernel_window_cpu_observations": 0,
+        "kernel_microseconds": 17
+      },
+      "delivery_ids": [
+        64
+      ],
+      "shading": {
+        "batches": 2,
+        "samples": 16,
+        "accepted": 16,
+        "replaced": 16,
+        "unsupported": 0,
+        "invalid": 0,
+        "mismatch": 0,
+        "errors": 0
+      },
+      "observations": {
+        "records": 16,
+        "accepted": 16,
+        "unsupported": 0,
+        "invalid": 0,
+        "mismatch": 0,
+        "nonfinite": 0,
+        "direction_mismatches": 0,
+        "rgb_mismatches": 0,
+        "pdf_mismatches": 0,
+        "validity_mismatches": 0,
+        "first_mismatches": [],
+        "sha256": "7a31a1068d733ae82cc78fea52c9450e5f33297f737b0c2b383d0e341938a462"
+      },
+      "log_hashes": {
+        "process.log": "62ca28e7da7a6a14a19cf11b1c072f1f0889cee19361bcecc1032aaf94d94cb1",
+        "queue.log": "632371fdb577d6e5b93bc1da49086d5cd04b43911ba4f5c36744dfd954ba95ad",
+        "shading.bin": "7a31a1068d733ae82cc78fea52c9450e5f33297f737b0c2b383d0e341938a462",
+        "shading.log": "a1177659aa103a9b2388db1adec4aee77d0b5c0cadd704b2a633232a4df9377c"
+      }
+    }
+  ],
+  "compiler_sha256": "58efe82fa3ce35005f89d46fe439d7ee54e6889cb7db894019202da691a529a5",
+  "preprocessed_sha256": "efaf9b8512a1558275986db4afcf2e41ac27fad50d44e2a8b3a80219c5fcda76",
+  "executable_sha256": "e3e3f59d58ed4754c4b67cf1aec1ea13613535e9afe86416493c6f340f8b34af",
+  "raw_report_sha256": "dff89603758549387c2becead631a9a82e056ab54992610104f2f8b11947a563",
+  "unit_tests": {
+    "passed": 208,
+    "elapsed_seconds": 44.924,
+    "command": "python -m unittest discover -s tests -p test_xpu2*.py -q"
+  },
+  "limitations": [
+    "Standalone stress and deliberate mutex-delay injection; not device-loss or renderer shutdown validation.",
+    "In-flight requests still finish and suppress late publication; only requests still in the pending deque are pruned.",
+    "The empty-coalesced-batch guard was code-reviewed but not forced by a deterministic race injection.",
+    "Reduced shader work in this synthetic cancellation fixture is not a render-speed benchmark."
+  ]
+}

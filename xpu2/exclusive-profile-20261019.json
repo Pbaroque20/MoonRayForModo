@@ -1,0 +1,324 @@
+{
+  "scope": "Exclusive bridge-stage timings for one fixed-sample 384x216 diffuse/transmission frame, one native worker plus two host dispatch workers. Diagnostic only; instrumentation changes timing and device ownership.",
+  "validation": {
+    "images_exact": true,
+    "accounting": "passed",
+    "clock_check": {
+      "clock": "invariant_tsc",
+      "ns_per_tick": "0.294129950166",
+      "frame_ns": "12303304388",
+      "steady_frame_ns": "12302456500",
+      "relative_drift": 6.89202193073779e-05
+    },
+    "host_contract": "normal and O3 native/fast-math passed",
+    "evidence_tests": 7,
+    "timing_qualification": "not established: 14.7% timing perturbation and altered light ownership"
+  },
+  "gpu": "NVIDIA GeForce RTX 3090, 591.74, GPU-041d589b-450b-0916-2503-c453af2389e3",
+  "timing_diagnostics": {
+    "mcrt_seconds": {
+      "reference": 7.658,
+      "previous": 10.632,
+      "unprofiled_before": 10.604,
+      "profiled": 12.219,
+      "unprofiled_after": 10.694
+    },
+    "profile_overhead_seconds_vs_bracket_mean": 1.5699999999999985,
+    "profile_overhead_fraction_vs_bracket_mean": 0.14743168372617133,
+    "compiled_hook_delta_vs_previous": 0.017000000000001236,
+    "unprofiled_bridge_gap_seconds_vs_reference": 2.9910000000000005,
+    "unprofiled_mean_gpu_trips": 7672.0,
+    "additional_net_saving_us_per_trip_to_equal_reference": 389.85922836287807,
+    "scope": "One profiled frame, two bracketing same-binary controls; diagnostic, not a speed qualification. Additional savings/trip is elapsed gap amortization assuming unchanged trip count, not causal attribution or total CPU replacement cost."
+  },
+  "runs": [
+    {
+      "label": "reference",
+      "wall_seconds": 8.937939999974333,
+      "mcrt_seconds": 7.658,
+      "different_pixels": 0
+    },
+    {
+      "label": "previous",
+      "wall_seconds": 12.008997300057672,
+      "mcrt_seconds": 10.632,
+      "different_pixels": 0,
+      "sampler_trips": 7110,
+      "light_trips": 368,
+      "gpu_light_lanes": 6751
+    },
+    {
+      "label": "unprofiled_before",
+      "wall_seconds": 12.183220700011589,
+      "mcrt_seconds": 10.604,
+      "different_pixels": 0,
+      "sampler_trips": 7113,
+      "light_trips": 486,
+      "gpu_light_lanes": 9871
+    },
+    {
+      "label": "profiled",
+      "wall_seconds": 13.655129600083455,
+      "mcrt_seconds": 12.219,
+      "different_pixels": 0,
+      "sampler_trips": 7108,
+      "light_trips": 3106,
+      "gpu_light_lanes": 43665
+    },
+    {
+      "label": "unprofiled_after",
+      "wall_seconds": 12.049945599981584,
+      "mcrt_seconds": 10.694,
+      "different_pixels": 0,
+      "sampler_trips": 7106,
+      "light_trips": 639,
+      "gpu_light_lanes": 12568
+    }
+  ],
+  "observer_effect": {
+    "profiled_total_trips": 10214,
+    "unprofiled_mean_total_trips": 7672.0,
+    "profiled_light_trips": 3106,
+    "unprofiled_mean_light_trips": 562.5,
+    "profiled_gpu_light_lanes": 43665,
+    "unprofiled_mean_gpu_light_lanes": 11219.5
+  },
+  "exclusive": {
+    "status": "passed",
+    "clock_check": {
+      "clock": "invariant_tsc",
+      "ns_per_tick": "0.294129950166",
+      "frame_ns": "12303304388",
+      "steady_frame_ns": "12302456500",
+      "relative_drift": 6.89202193073779e-05
+    },
+    "host_threads": {
+      "0": {
+        "covered_seconds": 12.297415522,
+        "stages": {
+          "packing": 0.101497501,
+          "upload_api": 0.051502683,
+          "launch_api": 0.062614867,
+          "completion_api": 0.112297121,
+          "readback_api": 0.268681634,
+          "replay_validation": 0.083185948,
+          "rejected_fallback": 0.0,
+          "native_shading": 0.0,
+          "coordination": 0.679026898,
+          "cuda_context": 0.415381734,
+          "wait": 10.394905587,
+          "setup_cleanup": 0.124518914,
+          "profiler_gpu_queries": 0.003802635
+        },
+        "calls": {
+          "packing": 14216,
+          "upload_api": 7110,
+          "launch_api": 7108,
+          "completion_api": 214032,
+          "readback_api": 7108,
+          "replay_validation": 7108,
+          "rejected_fallback": 0,
+          "native_shading": 0,
+          "coordination": 1,
+          "cuda_context": 294248,
+          "wait": 1374435,
+          "setup_cleanup": 3,
+          "profiler_gpu_queries": 7108
+        },
+        "frame_scope_seconds": 12.303304388,
+        "role": "sampler_queue"
+      },
+      "1": {
+        "covered_seconds": 12.246033983,
+        "stages": {
+          "packing": 0.022200042,
+          "upload_api": 0.049769201,
+          "launch_api": 0.06350407,
+          "completion_api": 0.305325303,
+          "readback_api": 0.153457961,
+          "replay_validation": 0.005615353,
+          "rejected_fallback": 0.0,
+          "native_shading": 0.0,
+          "coordination": 0.660696075,
+          "cuda_context": 0.0,
+          "wait": 10.833172321,
+          "setup_cleanup": 0.146525697,
+          "profiler_gpu_queries": 0.005767959
+        },
+        "calls": {
+          "packing": 64846,
+          "upload_api": 3106,
+          "launch_api": 3106,
+          "completion_api": 147936,
+          "readback_api": 3106,
+          "replay_validation": 3106,
+          "rejected_fallback": 0,
+          "native_shading": 0,
+          "coordination": 1,
+          "cuda_context": 0,
+          "wait": 97846,
+          "setup_cleanup": 2,
+          "profiler_gpu_queries": 3106
+        },
+        "frame_scope_seconds": 12.303304388,
+        "role": "light_queue"
+      },
+      "2": {
+        "covered_seconds": 4.873566109,
+        "stages": {
+          "packing": 0.229719303,
+          "upload_api": 0.0,
+          "launch_api": 0.0,
+          "completion_api": 0.0,
+          "readback_api": 0.0,
+          "replay_validation": 0.33798688,
+          "rejected_fallback": 0.000156328,
+          "native_shading": 1.919236704,
+          "coordination": 0.380678993,
+          "cuda_context": 0.0,
+          "wait": 2.005787901,
+          "setup_cleanup": 0.0,
+          "profiler_gpu_queries": 0.0
+        },
+        "calls": {
+          "packing": 715544,
+          "upload_api": 0,
+          "launch_api": 0,
+          "completion_api": 0,
+          "readback_api": 0,
+          "replay_validation": 869176,
+          "rejected_fallback": 330,
+          "native_shading": 509702,
+          "coordination": 347835,
+          "cuda_context": 0,
+          "wait": 41593,
+          "setup_cleanup": 0,
+          "profiler_gpu_queries": 0
+        },
+        "frame_scope_seconds": 12.303304388,
+        "role": "native_worker"
+      }
+    },
+    "host_exclusive_seconds_summed_across_threads": {
+      "packing": 0.353416846,
+      "upload_api": 0.101271884,
+      "launch_api": 0.126118937,
+      "completion_api": 0.417622424,
+      "readback_api": 0.422139595,
+      "replay_validation": 0.426788181,
+      "rejected_fallback": 0.000156328,
+      "native_shading": 1.919236704,
+      "coordination": 1.7204019660000003,
+      "cuda_context": 0.415381734,
+      "wait": 23.233865809,
+      "setup_cleanup": 0.271044611,
+      "profiler_gpu_queries": 0.009570594
+    },
+    "host_stage_calls": {
+      "packing": 794606,
+      "upload_api": 10216,
+      "launch_api": 10214,
+      "completion_api": 361968,
+      "readback_api": 10214,
+      "replay_validation": 879390,
+      "rejected_fallback": 330,
+      "native_shading": 509702,
+      "coordination": 347837,
+      "cuda_context": 294248,
+      "wait": 1513874,
+      "setup_cleanup": 5,
+      "profiler_gpu_queries": 10214
+    },
+    "gpu_service_seconds_summed_across_streams": {
+      "upload": 0.715086432196,
+      "kernel": 1.585056255865,
+      "readback": 0.57128179208
+    },
+    "gpu_streams": {
+      "0": {
+        "thread": 0,
+        "trips": 4261,
+        "upload": 0.304162080179,
+        "kernel": 0.7820735681390001,
+        "readback": 0.242884192009
+      },
+      "1": {
+        "thread": 0,
+        "trips": 2847,
+        "upload": 0.167717376024,
+        "kernel": 0.34778604812499997,
+        "readback": 0.157888704199
+      },
+      "2": {
+        "thread": 1,
+        "trips": 1874,
+        "upload": 0.155834239934,
+        "kernel": 0.319710655693,
+        "readback": 0.10800195187100001
+      },
+      "3": {
+        "thread": 1,
+        "trips": 1232,
+        "upload": 0.087372736059,
+        "kernel": 0.135485983908,
+        "readback": 0.062506944001
+      }
+    },
+    "pipelines": {
+      "sampler_queue": {
+        "trips": 7108,
+        "exclusive_host_plumbing_seconds": 1.774188386,
+        "gpu_service_seconds": 2.002511968675,
+        "host_plumbing_us_per_trip": 249.60444372537987,
+        "gpu_service_us_per_trip": 281.7265009390827
+      },
+      "light_queue": {
+        "trips": 3106,
+        "exclusive_host_plumbing_seconds": 1.260568005,
+        "gpu_service_seconds": 0.868912511466,
+        "host_plumbing_us_per_trip": 405.8493254990342,
+        "gpu_service_us_per_trip": 279.7529013090792
+      }
+    },
+    "sampler_trips": 7108,
+    "light_trips": 3106,
+    "amortized_costs": {
+      "total_trips": 10214,
+      "host_plumbing_wall_us_per_trip": 389.9688238691992,
+      "setup_cleanup_seconds": 0.271044611,
+      "serialized_host_plus_gpu_us_per_trip": 671.0951681164089
+    },
+    "limitations": [
+      "Host times are exclusive wall time per thread, including mutex blocking/preemption; they are not CPU-cycle measurements.",
+      "Do not add host threads, CPU waits or GPU streams to reconstruct frame elapsed time.",
+      "GPU event stages exclude each other within a trip, but can overlap other streams and include device scheduling delay.",
+      "Serialized cost per trip is a non-overlapped cost model, not the observed critical path or a guaranteed break-even threshold.",
+      "Native work outside marked functions remains unattributed; original OptiX intersection activity is not GPU shading work."
+    ]
+  },
+  "gpu_work": {
+    "sampler_accepted_lanes": 3250134,
+    "light_accepted_lanes": 43665,
+    "sample_math_audits": 0,
+    "light_math_audits": 0,
+    "gpu_errors": 0,
+    "light_errors": 0
+  },
+  "artifacts": {
+    "test-results\\xpu2-exclusive-frame-v4\\report.json": "0d32bbe63b7733f160ade05866506488bcf1929d417b414d6a2fabf171414aa2",
+    "test-results\\xpu2-exclusive-frame-v4\\profiled\\exclusive.csv": "248e7105a0e5e9d1a4b28d0c813b7c8d9183b20cac88649e7a1178fd866892a4",
+    "test-results\\xpu2-exclusive-frame-v4\\profiled\\exclusive.csv.gpu.csv": "1836ae9312cbe8d735e50f367e623b82455b13558466d563679a19af09a566be",
+    "test-results\\xpu2-exclusive-frame-v4\\profiled\\exclusive.csv.clock.csv": "9617b27d2f1b57531f3137edf938e89c5c9f71d9f88f3130034250e8b3f40a9b",
+    "test-results\\xpu2-exclusive-frame-v4\\analyzer_at_capture.py": "75d83e686a4ce8b7f862aafdee981f31322e157e982ac24a1e94901c75805a88",
+    "test-results\\xpu2-exclusive-build-v4\\report.json": "4cbe180a19b8584a72f5cc6a19f3e31a99c6c007710d44eb2abcf44b6cf36e76",
+    "tools\\xpu2_exclusive_analyze.py": "35761216faa53d97c800f899dd0a803ccdf82f6c33e5ad57c778a2241bb4d7e8",
+    "tools\\xpu2_exclusive_contract.py": "bc142d4ab9f3921655edb2b82de9d986c60e6b1c71eb711adeed4a0c4dc9b33b",
+    "xpu2\\native_exclusive_test.cc": "acb88f05c57e8931ee7588cbddae534445ab44d3a0ea9e7b0c78f9700d4d38cb"
+  },
+  "notes": [
+    "The CSV resource-handle cleanup was applied after capture and reproduced the stored analysis exactly; it changes no runtime or measured values.",
+    "Earlier v2 completed its profiled image but stopped at an inapplicable positive-reuse gate. The profiling probe permits zero rare cross-batch reuse while preserving all lifetime/GPU acceptance checks. Ordinary resident regression still requires reuse.",
+    "The v3 full steady-clock profile passed accounting and image checks but added 16.5% overhead. The v4 invariant clock reduced this to 14.7%, still too high to claim a precise critical-path decomposition.",
+    "The disabled-route optimization and multiworker harness were paused before this measurement; neither is part of this profiler build."
+  ]
+}

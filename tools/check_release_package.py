@@ -18,7 +18,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 NEED = ['index.cfg', 'layout.cfg', 'bin/MoonRayGeometry.lx', 'runtime/moonray.exe', 'runtime/modo_rdl_import.exe', 'runtime/modo_vdb_grid.exe', 'runtime/modo_hair_grow.exe', 'runtime/denoise.exe', 'runtime/oiiotool.exe', 'runtime/modo_fur_grow.exe', 'runtime/ModoFurGeometry.dll', 'runtime/ModoFurGeometry.so.proxy', 'runtime/ModoTextureMap.so',
-        'runtime/moonlightipr/moonlightipr_session.exe', 'runtime/moonlightipr/MoonLightIPRKernel.ptx', 'runtime/moonlightipr/cudart64_12.dll', 'runtime/shaders/OptixGPUPrograms.ptx',
+        'runtime/moonlightipr/moonlightipr_session.exe', 'runtime-xpu2/moonray_xpu2.exe', 'runtime-xpu2/xpu2-runtime.json', 'lxserv/moonray_xpu2.py', 'python/moonray_modo/xpu2_sampling.py', 'runtime/moonlightipr/MoonLightIPRKernel.ptx', 'runtime/moonlightipr/cudart64_12.dll', 'runtime/shaders/OptixGPUPrograms.ptx',
         'python/moonray_modo/mesh_reader.py', 'python/moonray_modo/primitive_attributes.py', 'python/moonray_modo/rdl_import.py', 'INSTALLATION.md', 'LICENSE.txt']
 VOLUME = '''
 import subprocess, sys

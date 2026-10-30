@@ -1,0 +1,1058 @@
+{
+  "status": "validated_single_worker_diffuse_subset",
+  "date": "2026-10-18",
+  "production_enabled": false,
+  "full_arbitrary_gpu_shading": false,
+  "speedup_claim": false,
+  "multiworker_image_gate": "unresolved; not revalidated by this single-worker material matrix",
+  "held_inflight_shader_cancellation_validated": false,
+  "scope": "First-scatter fixed-sample beauty; Lambert reflection/transmission and non-toon DwaBase FlatDiffuse; CPU texture/material setup, lighting and film retained",
+  "cases": {
+    "xpu2-broader-rough-half-v2": {
+      "report_sha256": "dd7b9925074224e0e870132be19fbedde76c8aace9aa30740e56f58f670ee1ea",
+      "probe_sha256": "9ca23fe397e46434429220e1d8f7fc040eabbb45da6fdc382c587ae00b0409fb",
+      "status": "passed",
+      "runs": [
+        {
+          "label": "reference",
+          "seconds": 7.155552399926819,
+          "comparison": {
+            "status": "passed",
+            "exactly_different_pixels": 0,
+            "maximum_absolute_error": 0.0
+          }
+        },
+        {
+          "label": "disabled",
+          "seconds": 7.357480600010604,
+          "comparison": {
+            "status": "passed",
+            "exactly_different_pixels": 0,
+            "maximum_absolute_error": 0.0
+          }
+        },
+        {
+          "label": "replace",
+          "seconds": 39.36692810000386,
+          "families": [
+            {
+              "lambert": 0,
+              "transmission": 0,
+              "rough_diffuse": 1625058
+            }
+          ],
+          "gpu": [
+            {
+              "epoch": 1,
+              "queued_lanes": 0,
+              "admission_fallback_lanes": 0,
+              "guard_fallback_lanes": 0,
+              "wait_barriers": 0,
+              "ready_at_barrier": 0,
+              "timeouts": 0,
+              "deferred_returns": 0,
+              "gpu_accepted": 1625058,
+              "gpu_replaced": 1625058,
+              "gpu_mismatch": 0,
+              "gpu_errors": 0,
+              "retained": 0,
+              "cleanup_errors": 0,
+              "kernel_cpu_observations": 119
+            }
+          ],
+          "early": [
+            {
+              "submitted_packets": 203256,
+              "gpu_lanes": 1625058,
+              "fallback_lanes": 990,
+              "waits": 29417,
+              "timeouts": 0
+            }
+          ],
+          "comparison": {
+            "status": "passed",
+            "exactly_different_pixels": 0,
+            "maximum_absolute_error": 0.0
+          }
+        },
+        {
+          "label": "sentinel",
+          "seconds": 12.280479800072499,
+          "families": [
+            {
+              "lambert": 0,
+              "transmission": 0,
+              "rough_diffuse": 1629387
+            }
+          ],
+          "gpu": [
+            {
+              "epoch": 1,
+              "queued_lanes": 0,
+              "admission_fallback_lanes": 0,
+              "guard_fallback_lanes": 0,
+              "wait_barriers": 0,
+              "ready_at_barrier": 0,
+              "timeouts": 0,
+              "deferred_returns": 0,
+              "gpu_accepted": 1629387,
+              "gpu_replaced": 1629387,
+              "gpu_mismatch": 0,
+              "gpu_errors": 0,
+              "retained": 0,
+              "cleanup_errors": 0,
+              "kernel_cpu_observations": 36
+            }
+          ],
+          "early": [
+            {
+              "submitted_packets": 203823,
+              "gpu_lanes": 1629387,
+              "fallback_lanes": 1197,
+              "waits": 25772,
+              "timeouts": 0
+            }
+          ],
+          "comparison": {
+            "status": "failed",
+            "exactly_different_pixels": 45621,
+            "maximum_absolute_error": 0.3200937584042549
+          },
+          "sentinel_comparison": {
+            "status": "failed",
+            "exactly_different_pixels": 45621,
+            "maximum_absolute_error": 0.3200937584042549
+          }
+        },
+        {
+          "label": "missing",
+          "seconds": 7.2192236999981105,
+          "families": [
+            {
+              "lambert": 0,
+              "transmission": 0,
+              "rough_diffuse": 0
+            }
+          ],
+          "gpu": [
+            {
+              "epoch": 1,
+              "queued_lanes": 0,
+              "admission_fallback_lanes": 0,
+              "guard_fallback_lanes": 0,
+              "wait_barriers": 0,
+              "ready_at_barrier": 0,
+              "timeouts": 0,
+              "deferred_returns": 0,
+              "gpu_accepted": 0,
+              "gpu_replaced": 0,
+              "gpu_mismatch": 0,
+              "gpu_errors": 26015,
+              "retained": 0,
+              "cleanup_errors": 0,
+              "kernel_cpu_observations": 0
+            }
+          ],
+          "early": [
+            {
+              "submitted_packets": 203256,
+              "gpu_lanes": 0,
+              "fallback_lanes": 1626048,
+              "waits": 22737,
+              "timeouts": 0
+            }
+          ],
+          "comparison": {
+            "status": "passed",
+            "exactly_different_pixels": 0,
+            "maximum_absolute_error": 0.0
+          }
+        },
+        {
+          "label": "capacity0",
+          "seconds": 6.673530400032178,
+          "families": [
+            {
+              "lambert": 0,
+              "transmission": 0,
+              "rough_diffuse": 0
+            }
+          ],
+          "gpu": [
+            {
+              "epoch": 1,
+              "queued_lanes": 0,
+              "admission_fallback_lanes": 0,
+              "guard_fallback_lanes": 0,
+              "wait_barriers": 0,
+              "ready_at_barrier": 0,
+              "timeouts": 0,
+              "deferred_returns": 0,
+              "gpu_accepted": 0,
+              "gpu_replaced": 0,
+              "gpu_mismatch": 0,
+              "gpu_errors": 0,
+              "retained": 0,
+              "cleanup_errors": 0,
+              "kernel_cpu_observations": 0
+            }
+          ],
+          "early": [
+            {
+              "submitted_packets": 0,
+              "gpu_lanes": 0,
+              "fallback_lanes": 1626048,
+              "waits": 0,
+              "timeouts": 0
+            }
+          ],
+          "comparison": {
+            "status": "passed",
+            "exactly_different_pixels": 0,
+            "maximum_absolute_error": 0.0
+          }
+        }
+      ],
+      "build_sha256": "70ef83f49669baf6356d98c8672125946b4e41c7c1e3fa98067f64feaec83b84",
+      "ptx_sha256": "bd9fea9cf358f66193ad269af7c2e56f57af4b958c2dd8d13ebab70b9982ba57",
+      "scene_sha256": "738085612a7266e4b2ef211eb5530f9c4788c13dc76eb582f7bda388d69cbc98",
+      "gpu": "NVIDIA GeForce RTX 3090, 591.74",
+      "material": "rough",
+      "roughness": 0.5,
+      "adaptive": false,
+      "unsupported": false,
+      "threads": 1
+    },
+    "xpu2-broader-transmission": {
+      "report_sha256": "6077d686c501d2c4b2d2ddceac95a8a64a323982fe025ff602a55c4cac0ac162",
+      "probe_sha256": "9ca23fe397e46434429220e1d8f7fc040eabbb45da6fdc382c587ae00b0409fb",
+      "status": "passed",
+      "runs": [
+        {
+          "label": "reference",
+          "seconds": 9.318202399997972,
+          "comparison": {
+            "status": "passed",
+            "exactly_different_pixels": 0,
+            "maximum_absolute_error": 0.0
+          }
+        },
+        {
+          "label": "disabled",
+          "seconds": 9.240926699945703,
+          "comparison": {
+            "status": "passed",
+            "exactly_different_pixels": 0,
+            "maximum_absolute_error": 0.0
+          }
+        },
+        {
+          "label": "replace",
+          "seconds": 27.684331999975257,
+          "families": [
+            {
+              "lambert": 0,
+              "transmission": 1625067,
+              "rough_diffuse": 1625067
+            }
+          ],
+          "gpu": [
+            {
+              "epoch": 1,
+              "queued_lanes": 0,
+              "admission_fallback_lanes": 0,
+              "guard_fallback_lanes": 0,
+              "wait_barriers": 0,
+              "ready_at_barrier": 0,
+              "timeouts": 0,
+              "deferred_returns": 0,
+              "gpu_accepted": 3250134,
+              "gpu_replaced": 3250134,
+              "gpu_mismatch": 0,
+              "gpu_errors": 0,
+              "retained": 0,
+              "cleanup_errors": 0,
+              "kernel_cpu_observations": 51
+            }
+          ],
+          "early": [
+            {
+              "submitted_packets": 406530,
+              "gpu_lanes": 3250134,
+              "fallback_lanes": 2106,
+              "waits": 50409,
+              "timeouts": 0
+            }
+          ],
+          "comparison": {
+            "status": "passed",
+            "exactly_different_pixels": 0,
+            "maximum_absolute_error": 0.0
+          }
+        },
+        {
+          "label": "sentinel",
+          "seconds": 179.87028789997566,
+          "families": [
+            {
+              "lambert": 0,
+              "transmission": 1624941,
+              "rough_diffuse": 1624941
+            }
+          ],
+          "gpu": [
+            {
+              "epoch": 1,
+              "queued_lanes": 0,
+              "admission_fallback_lanes": 0,
+              "guard_fallback_lanes": 0,
+              "wait_barriers": 0,
+              "ready_at_barrier": 0,
+              "timeouts": 0,
+              "deferred_returns": 0,
+              "gpu_accepted": 3249882,
+              "gpu_replaced": 3249882,
+              "gpu_mismatch": 0,
+              "gpu_errors": 0,
+              "retained": 0,
+              "cleanup_errors": 0,
+              "kernel_cpu_observations": 44
+            }
+          ],
+          "early": [
+            {
+              "submitted_packets": 406566,
+              "gpu_lanes": 3249882,
+              "fallback_lanes": 2646,
+              "waits": 59625,
+              "timeouts": 0
+            }
+          ],
+          "comparison": {
+            "status": "failed",
+            "exactly_different_pixels": 45629,
+            "maximum_absolute_error": 0.2906464636325836
+          },
+          "sentinel_comparison": {
+            "status": "failed",
+            "exactly_different_pixels": 45629,
+            "maximum_absolute_error": 0.2906464636325836
+          }
+        },
+        {
+          "label": "missing",
+          "seconds": 14.811273199971765,
+          "families": [
+            {
+              "lambert": 0,
+              "transmission": 0,
+              "rough_diffuse": 0
+            }
+          ],
+          "gpu": [
+            {
+              "epoch": 1,
+              "queued_lanes": 0,
+              "admission_fallback_lanes": 0,
+              "guard_fallback_lanes": 0,
+              "wait_barriers": 0,
+              "ready_at_barrier": 0,
+              "timeouts": 0,
+              "deferred_returns": 0,
+              "gpu_accepted": 0,
+              "gpu_replaced": 0,
+              "gpu_mismatch": 0,
+              "gpu_errors": 68413,
+              "retained": 0,
+              "cleanup_errors": 0,
+              "kernel_cpu_observations": 0
+            }
+          ],
+          "early": [
+            {
+              "submitted_packets": 406530,
+              "gpu_lanes": 0,
+              "fallback_lanes": 3252240,
+              "waits": 46780,
+              "timeouts": 0
+            }
+          ],
+          "comparison": {
+            "status": "passed",
+            "exactly_different_pixels": 0,
+            "maximum_absolute_error": 0.0
+          }
+        },
+        {
+          "label": "capacity0",
+          "seconds": 22.786212699953467,
+          "families": [
+            {
+              "lambert": 0,
+              "transmission": 0,
+              "rough_diffuse": 0
+            }
+          ],
+          "gpu": [
+            {
+              "epoch": 1,
+              "queued_lanes": 0,
+              "admission_fallback_lanes": 0,
+              "guard_fallback_lanes": 0,
+              "wait_barriers": 0,
+              "ready_at_barrier": 0,
+              "timeouts": 0,
+              "deferred_returns": 0,
+              "gpu_accepted": 0,
+              "gpu_replaced": 0,
+              "gpu_mismatch": 0,
+              "gpu_errors": 0,
+              "retained": 0,
+              "cleanup_errors": 0,
+              "kernel_cpu_observations": 0
+            }
+          ],
+          "early": [
+            {
+              "submitted_packets": 0,
+              "gpu_lanes": 0,
+              "fallback_lanes": 3252240,
+              "waits": 0,
+              "timeouts": 0
+            }
+          ],
+          "comparison": {
+            "status": "passed",
+            "exactly_different_pixels": 0,
+            "maximum_absolute_error": 0.0
+          }
+        }
+      ],
+      "build_sha256": "70ef83f49669baf6356d98c8672125946b4e41c7c1e3fa98067f64feaec83b84",
+      "ptx_sha256": "bd9fea9cf358f66193ad269af7c2e56f57af4b958c2dd8d13ebab70b9982ba57",
+      "scene_sha256": "501ac841271ba2c1da9f4d5c388aad751ce7c212024f79bc07cf9ba07845a426",
+      "gpu": "NVIDIA GeForce RTX 3090, 591.74",
+      "material": "transmission",
+      "roughness": 0.5,
+      "adaptive": false,
+      "unsupported": false,
+      "threads": 1
+    },
+    "xpu2-broader-rough-0": {
+      "report_sha256": "b6da704cf6d53e660674a29f108054e0f3f5e9b3d118f2e503cd6efb1a4006b9",
+      "probe_sha256": "66c6ac39c28523423c18a7af85a8ff018878aceea4948c5d4f207f3d7fddb293",
+      "status": "passed",
+      "runs": [
+        {
+          "label": "reference",
+          "seconds": 26.321450400049798,
+          "comparison": {
+            "status": "passed",
+            "exactly_different_pixels": 0,
+            "maximum_absolute_error": 0.0
+          }
+        },
+        {
+          "label": "replace",
+          "seconds": 55.871234200079925,
+          "families": [
+            {
+              "lambert": 0,
+              "transmission": 0,
+              "rough_diffuse": 1625058
+            }
+          ],
+          "gpu": [
+            {
+              "epoch": 1,
+              "queued_lanes": 0,
+              "admission_fallback_lanes": 0,
+              "guard_fallback_lanes": 0,
+              "wait_barriers": 0,
+              "ready_at_barrier": 0,
+              "timeouts": 0,
+              "deferred_returns": 0,
+              "gpu_accepted": 1625058,
+              "gpu_replaced": 1625058,
+              "gpu_mismatch": 0,
+              "gpu_errors": 0,
+              "retained": 0,
+              "cleanup_errors": 0,
+              "kernel_cpu_observations": 7
+            }
+          ],
+          "early": [
+            {
+              "submitted_packets": 203256,
+              "gpu_lanes": 1625058,
+              "fallback_lanes": 990,
+              "waits": 26640,
+              "timeouts": 0
+            }
+          ],
+          "comparison": {
+            "status": "passed",
+            "exactly_different_pixels": 0,
+            "maximum_absolute_error": 0.0
+          }
+        }
+      ],
+      "build_sha256": "70ef83f49669baf6356d98c8672125946b4e41c7c1e3fa98067f64feaec83b84",
+      "ptx_sha256": "bd9fea9cf358f66193ad269af7c2e56f57af4b958c2dd8d13ebab70b9982ba57",
+      "scene_sha256": "cc7aacc64d4bd14af1fc1fb7ddc3360965b0f347c5f01ce1d17cc8221af06e9d",
+      "gpu": "NVIDIA GeForce RTX 3090, 591.74",
+      "material": "rough",
+      "roughness": 0.0,
+      "adaptive": false,
+      "unsupported": false,
+      "threads": 1
+    },
+    "xpu2-broader-rough-1-bounded": {
+      "report_sha256": "432a4bd651a076ae44e7610574c7c60e8c688d306a631fb170fefa0c0548cf4e",
+      "probe_sha256": "45fcde55a48f252d36757ed27ef4922b2cdd5b05cfdbd7c465125c0573bc4453",
+      "status": "passed",
+      "runs": [
+        {
+          "label": "reference",
+          "seconds": 5.3752270000986755,
+          "comparison": {
+            "status": "passed",
+            "exactly_different_pixels": 0,
+            "maximum_absolute_error": 0.0
+          }
+        },
+        {
+          "label": "replace",
+          "seconds": 14.464794100029394,
+          "families": [
+            {
+              "lambert": 0,
+              "transmission": 0,
+              "rough_diffuse": 1625058
+            }
+          ],
+          "gpu": [
+            {
+              "epoch": 1,
+              "queued_lanes": 0,
+              "admission_fallback_lanes": 0,
+              "guard_fallback_lanes": 0,
+              "wait_barriers": 0,
+              "ready_at_barrier": 0,
+              "timeouts": 0,
+              "deferred_returns": 0,
+              "gpu_accepted": 1625058,
+              "gpu_replaced": 1625058,
+              "gpu_mismatch": 0,
+              "gpu_errors": 0,
+              "retained": 0,
+              "cleanup_errors": 0,
+              "kernel_cpu_observations": 180
+            }
+          ],
+          "early": [
+            {
+              "submitted_packets": 203256,
+              "gpu_lanes": 1625058,
+              "fallback_lanes": 990,
+              "waits": 32949,
+              "timeouts": 0
+            }
+          ],
+          "comparison": {
+            "status": "passed",
+            "exactly_different_pixels": 0,
+            "maximum_absolute_error": 0.0
+          }
+        }
+      ],
+      "build_sha256": "70ef83f49669baf6356d98c8672125946b4e41c7c1e3fa98067f64feaec83b84",
+      "ptx_sha256": "bd9fea9cf358f66193ad269af7c2e56f57af4b958c2dd8d13ebab70b9982ba57",
+      "scene_sha256": "d4f0f4ca9a48ca58dd1130790c90edbbb4e05969c4d0205601509309edd8fae9",
+      "gpu": "NVIDIA GeForce RTX 3090, 591.74",
+      "material": "rough",
+      "roughness": 1.0,
+      "adaptive": false,
+      "unsupported": false,
+      "threads": 1,
+      "render_timeout": 600
+    },
+    "xpu2-broader-mixed-0.5-bounded": {
+      "report_sha256": "607e1b78e15a264b8e77439007bdaa196de3d49df934ff16d7cdfc8c6f4a79fe",
+      "probe_sha256": "45fcde55a48f252d36757ed27ef4922b2cdd5b05cfdbd7c465125c0573bc4453",
+      "status": "passed",
+      "runs": [
+        {
+          "label": "reference",
+          "seconds": 10.622801600024104,
+          "comparison": {
+            "status": "passed",
+            "exactly_different_pixels": 0,
+            "maximum_absolute_error": 0.0
+          }
+        },
+        {
+          "label": "replace",
+          "seconds": 97.92615559999831,
+          "families": [
+            {
+              "lambert": 523872,
+              "transmission": 0,
+              "rough_diffuse": 1097496
+            }
+          ],
+          "gpu": [
+            {
+              "epoch": 1,
+              "queued_lanes": 0,
+              "admission_fallback_lanes": 0,
+              "guard_fallback_lanes": 0,
+              "wait_barriers": 0,
+              "ready_at_barrier": 0,
+              "timeouts": 0,
+              "deferred_returns": 0,
+              "gpu_accepted": 1621368,
+              "gpu_replaced": 1621368,
+              "gpu_mismatch": 0,
+              "gpu_errors": 0,
+              "retained": 0,
+              "cleanup_errors": 0,
+              "kernel_cpu_observations": 0
+            }
+          ],
+          "early": [
+            {
+              "submitted_packets": 202671,
+              "gpu_lanes": 1621368,
+              "fallback_lanes": 0,
+              "waits": 26781,
+              "timeouts": 0
+            }
+          ],
+          "comparison": {
+            "status": "passed",
+            "exactly_different_pixels": 0,
+            "maximum_absolute_error": 0.0
+          }
+        }
+      ],
+      "build_sha256": "70ef83f49669baf6356d98c8672125946b4e41c7c1e3fa98067f64feaec83b84",
+      "ptx_sha256": "bd9fea9cf358f66193ad269af7c2e56f57af4b958c2dd8d13ebab70b9982ba57",
+      "scene_sha256": "c753d2cf187f1d56ed68b787fd42f35b2f4fd7e358a36bed8b71d056df7501e3",
+      "gpu": "NVIDIA GeForce RTX 3090, 591.74",
+      "material": "mixed",
+      "roughness": 0.5,
+      "adaptive": false,
+      "unsupported": false,
+      "threads": 1,
+      "render_timeout": 600
+    },
+    "xpu2-broader-lambert-0.5-bounded": {
+      "report_sha256": "3860b67bc35bac209d889c5940139dff41226aceba70971f5fa3316df34b82ad",
+      "probe_sha256": "45fcde55a48f252d36757ed27ef4922b2cdd5b05cfdbd7c465125c0573bc4453",
+      "status": "passed",
+      "runs": [
+        {
+          "label": "reference",
+          "seconds": 7.085336200078018,
+          "comparison": {
+            "status": "passed",
+            "exactly_different_pixels": 0,
+            "maximum_absolute_error": 0.0
+          }
+        },
+        {
+          "label": "replace",
+          "seconds": 103.1266754999524,
+          "families": [
+            {
+              "lambert": 1619280,
+              "transmission": 0,
+              "rough_diffuse": 0
+            }
+          ],
+          "gpu": [
+            {
+              "epoch": 1,
+              "queued_lanes": 0,
+              "admission_fallback_lanes": 0,
+              "guard_fallback_lanes": 0,
+              "wait_barriers": 0,
+              "ready_at_barrier": 0,
+              "timeouts": 0,
+              "deferred_returns": 0,
+              "gpu_accepted": 1619280,
+              "gpu_replaced": 1619280,
+              "gpu_mismatch": 0,
+              "gpu_errors": 0,
+              "retained": 0,
+              "cleanup_errors": 0,
+              "kernel_cpu_observations": 13
+            }
+          ],
+          "early": [
+            {
+              "submitted_packets": 202410,
+              "gpu_lanes": 1619280,
+              "fallback_lanes": 0,
+              "waits": 37643,
+              "timeouts": 0
+            }
+          ],
+          "comparison": {
+            "status": "passed",
+            "exactly_different_pixels": 0,
+            "maximum_absolute_error": 0.0
+          }
+        }
+      ],
+      "build_sha256": "70ef83f49669baf6356d98c8672125946b4e41c7c1e3fa98067f64feaec83b84",
+      "ptx_sha256": "bd9fea9cf358f66193ad269af7c2e56f57af4b958c2dd8d13ebab70b9982ba57",
+      "scene_sha256": "237fe0db21104b0cf3a74133b5aed6ea6ff7867dbfc1b74bd226fe1aeed40f49",
+      "gpu": "NVIDIA GeForce RTX 3090, 591.74",
+      "material": "lambert",
+      "roughness": 0.5,
+      "adaptive": false,
+      "unsupported": false,
+      "threads": 1,
+      "render_timeout": 600
+    },
+    "xpu2-broader-adaptive": {
+      "report_sha256": "df0dd7680652d9d20e339cb77de37883abda97d08d3307c0b72f755e49fa3db5",
+      "probe_sha256": "45fcde55a48f252d36757ed27ef4922b2cdd5b05cfdbd7c465125c0573bc4453",
+      "status": "passed",
+      "runs": [
+        {
+          "label": "reference",
+          "seconds": 9.994569499976933,
+          "comparison": {
+            "status": "passed",
+            "exactly_different_pixels": 0,
+            "maximum_absolute_error": 0.0
+          }
+        },
+        {
+          "label": "replace",
+          "seconds": 65.80093929998111,
+          "families": [
+            {
+              "lambert": 0,
+              "transmission": 0,
+              "rough_diffuse": 0
+            }
+          ],
+          "gpu": [
+            {
+              "epoch": 1,
+              "queued_lanes": 0,
+              "admission_fallback_lanes": 0,
+              "guard_fallback_lanes": 0,
+              "wait_barriers": 0,
+              "ready_at_barrier": 0,
+              "timeouts": 0,
+              "deferred_returns": 0,
+              "gpu_accepted": 0,
+              "gpu_replaced": 0,
+              "gpu_mismatch": 0,
+              "gpu_errors": 0,
+              "retained": 0,
+              "cleanup_errors": 0,
+              "kernel_cpu_observations": 0
+            }
+          ],
+          "early": [
+            {
+              "submitted_packets": 0,
+              "gpu_lanes": 0,
+              "fallback_lanes": 0,
+              "waits": 0,
+              "timeouts": 0
+            }
+          ],
+          "comparison": {
+            "status": "passed",
+            "exactly_different_pixels": 0,
+            "maximum_absolute_error": 0.0
+          }
+        }
+      ],
+      "build_sha256": "70ef83f49669baf6356d98c8672125946b4e41c7c1e3fa98067f64feaec83b84",
+      "ptx_sha256": "bd9fea9cf358f66193ad269af7c2e56f57af4b958c2dd8d13ebab70b9982ba57",
+      "scene_sha256": "714dff5eb3e13812edb6c8511e01a70f0718183b9dc86c387a85395143d32288",
+      "gpu": "NVIDIA GeForce RTX 3090, 591.74",
+      "material": "rough",
+      "roughness": 0.5,
+      "adaptive": true,
+      "unsupported": false,
+      "threads": 1,
+      "render_timeout": 600
+    },
+    "xpu2-broader-unsupported": {
+      "report_sha256": "208e7bf1b2a8d727fa199daa7334f210b8b952a191350f1bc58db369e6b2830e",
+      "probe_sha256": "45fcde55a48f252d36757ed27ef4922b2cdd5b05cfdbd7c465125c0573bc4453",
+      "status": "passed",
+      "runs": [
+        {
+          "label": "reference",
+          "seconds": 8.13458479999099,
+          "comparison": {
+            "status": "passed",
+            "exactly_different_pixels": 0,
+            "maximum_absolute_error": 0.0
+          }
+        },
+        {
+          "label": "replace",
+          "seconds": 68.97048470005393,
+          "families": [
+            {
+              "lambert": 0,
+              "transmission": 0,
+              "rough_diffuse": 0
+            }
+          ],
+          "gpu": [
+            {
+              "epoch": 1,
+              "queued_lanes": 0,
+              "admission_fallback_lanes": 0,
+              "guard_fallback_lanes": 0,
+              "wait_barriers": 0,
+              "ready_at_barrier": 0,
+              "timeouts": 0,
+              "deferred_returns": 0,
+              "gpu_accepted": 0,
+              "gpu_replaced": 0,
+              "gpu_mismatch": 0,
+              "gpu_errors": 0,
+              "retained": 0,
+              "cleanup_errors": 0,
+              "kernel_cpu_observations": 35
+            }
+          ],
+          "early": [
+            {
+              "submitted_packets": 203409,
+              "gpu_lanes": 0,
+              "fallback_lanes": 1627272,
+              "waits": 27344,
+              "timeouts": 0
+            }
+          ],
+          "comparison": {
+            "status": "passed",
+            "exactly_different_pixels": 0,
+            "maximum_absolute_error": 0.0
+          }
+        }
+      ],
+      "build_sha256": "70ef83f49669baf6356d98c8672125946b4e41c7c1e3fa98067f64feaec83b84",
+      "ptx_sha256": "bd9fea9cf358f66193ad269af7c2e56f57af4b958c2dd8d13ebab70b9982ba57",
+      "scene_sha256": "275117c759cb80dee967d1538d4276a78bd8950d9749c51a868e3624a4123f13",
+      "gpu": "NVIDIA GeForce RTX 3090, 591.74",
+      "material": "rough",
+      "roughness": 0.5,
+      "adaptive": false,
+      "unsupported": true,
+      "threads": 1,
+      "render_timeout": 600
+    },
+    "xpu2-broader-persistent-bounded": {
+      "report_sha256": "e684a92aa89678ec5a83e95f5a150f32913cdb245638ab6e3179f149df4b808b",
+      "probe_sha256": "6f49bc7817ef932dc40be3b63ff0882eecb7f1579f3fa35417be9141c109fb5f",
+      "status": "passed",
+      "runs": [
+        {
+          "label": "reference",
+          "comparison": {
+            "status": "passed",
+            "exactly_different_pixels": 0,
+            "maximum_absolute_error": 0.0
+          }
+        },
+        {
+          "label": "fresh",
+          "gpu": [
+            {
+              "epoch": 1,
+              "queued_lanes": 0,
+              "admission_fallback_lanes": 0,
+              "guard_fallback_lanes": 0,
+              "wait_barriers": 0,
+              "ready_at_barrier": 0,
+              "timeouts": 0,
+              "deferred_returns": 0,
+              "gpu_accepted": 1622736,
+              "gpu_replaced": 1622736,
+              "gpu_mismatch": 0,
+              "gpu_errors": 0,
+              "retained": 0,
+              "cleanup_errors": 0,
+              "kernel_cpu_observations": 6
+            }
+          ],
+          "early": [
+            {
+              "submitted_packets": 202995,
+              "gpu_lanes": 1622736,
+              "fallback_lanes": 1224,
+              "waits": 22635,
+              "timeouts": 0
+            }
+          ],
+          "comparison": {
+            "status": "passed",
+            "exactly_different_pixels": 0,
+            "maximum_absolute_error": 0.0
+          }
+        },
+        {
+          "label": "restart",
+          "gpu": [
+            {
+              "epoch": 1,
+              "queued_lanes": 0,
+              "admission_fallback_lanes": 0,
+              "guard_fallback_lanes": 0,
+              "wait_barriers": 0,
+              "ready_at_barrier": 0,
+              "timeouts": 0,
+              "deferred_returns": 0,
+              "gpu_accepted": 6480,
+              "gpu_replaced": 6480,
+              "gpu_mismatch": 0,
+              "gpu_errors": 0,
+              "retained": 0,
+              "cleanup_errors": 0,
+              "kernel_cpu_observations": 0
+            },
+            {
+              "epoch": 2,
+              "queued_lanes": 0,
+              "admission_fallback_lanes": 0,
+              "guard_fallback_lanes": 0,
+              "wait_barriers": 0,
+              "ready_at_barrier": 0,
+              "timeouts": 0,
+              "deferred_returns": 0,
+              "gpu_accepted": 1622736,
+              "gpu_replaced": 1622736,
+              "gpu_mismatch": 0,
+              "gpu_errors": 0,
+              "retained": 0,
+              "cleanup_errors": 0,
+              "kernel_cpu_observations": 11
+            }
+          ],
+          "early": [
+            {
+              "submitted_packets": 819,
+              "gpu_lanes": 6480,
+              "fallback_lanes": 72,
+              "waits": 95,
+              "timeouts": 0
+            },
+            {
+              "submitted_packets": 202995,
+              "gpu_lanes": 1622736,
+              "fallback_lanes": 1224,
+              "waits": 22650,
+              "timeouts": 0
+            }
+          ],
+          "comparison": {
+            "status": "passed",
+            "exactly_different_pixels": 0,
+            "maximum_absolute_error": 0.0
+          },
+          "versus_fresh": {
+            "status": "passed",
+            "exactly_different_pixels": 0,
+            "maximum_absolute_error": 0.0
+          }
+        }
+      ],
+      "build_sha256": "70ef83f49669baf6356d98c8672125946b4e41c7c1e3fa98067f64feaec83b84",
+      "ptx_sha256": "bd9fea9cf358f66193ad269af7c2e56f57af4b958c2dd8d13ebab70b9982ba57",
+      "baseline_report_sha256": "dd7b9925074224e0e870132be19fbedde76c8aace9aa30740e56f58f670ee1ea",
+      "gpu": "NVIDIA GeForce RTX 3090, 591.74"
+    }
+  },
+  "xpu2-broader-diffuse-build-v2": {
+    "report_sha256": "70ef83f49669baf6356d98c8672125946b4e41c7c1e3fa98067f64feaec83b84",
+    "status": "built",
+    "source_hashes": {
+      "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\native_path_restore.h": "91b8921860c390c8c7be34d964eaed3044929f1b23f8ee8b656b33c8ea18f3c3",
+      "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\native_path_restore.inc": "19269be7b090b2c67558f83c5866e3b2f8fd2b66aa7e89f280df30e4a02b68dc",
+      "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\native_gpu_shading.h": "949e63a28f54bf503c26c4430342307623c6a5f570178396975718f7bab71e38",
+      "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\native_gpu_pack.ispc.inc": "4753e07742fc7fc4679016c5bc22ca7edd3dd8470ccf3cc3624820e918247180",
+      "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\native_gpu_paths.py": "a1bc4319f43a874a93677a4c9fcb228ed3e024452c06c4940338d30f6b2235f7",
+      "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\native_lambert_queue.cc": "cf6943f5724059ddec9eadde37b85bfb97057cd49539798246057cc711d6cf7a",
+      "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\native_gpu_early.h": "5d941c89e35002368e244de9b1858d5fb024a6159f94d428a63a018d689f2fba",
+      "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\native_gpu_early.py": "e9fbbcbbfb4aa7a63077b6d67632299f04c9657b3d233716b93a693ddd388f53",
+      "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\native_gpu_early_pack.ispc.inc": "fc75c0411359fbbe449122fe809683b25f68620921c5861d9ecd12c0a106d790",
+      "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\tools\\xpu2_native_gpu_early_build.py": "5939fdf4d8842b58942014e4dd37e4781fa5ae880890e9c23bd6064a69f731ac",
+      "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\tools\\xpu2_native_path_build.py": "b62b593b92a841efad58250dd2a4626fc4d59d1dcdab697f817ee0739fc6565e"
+    },
+    "native_hashes": {
+      "C:\\Users\\Raphael Tobar\\MoonRayForModo\\upstream\\openmoonray\\moonray\\moonray\\lib\\rendering\\pbr\\integrator\\PathIntegratorUtil.cc": "c90d46360d337be55a46ec35a5ea4c7322712980d898be7093e3affffe525d35",
+      "C:\\Users\\Raphael Tobar\\MoonRayForModo\\upstream\\openmoonray\\moonray\\moonray\\lib\\rendering\\pbr\\core\\PbrTLState.cc": "41f76f9fae0286c7851082438bc2c2e96d038b150f3c568079a0323ed86b985d",
+      "C:\\Users\\Raphael Tobar\\MoonRayForModo\\upstream\\openmoonray\\moonray\\moonray\\lib\\rendering\\rndr\\RenderFrame.cc": "b8d6c8293559ab9fc69efe68f89213a33ac11e87fbd03039a256039a78f4f72b",
+      "C:\\Users\\Raphael Tobar\\MoonRayForModo\\upstream\\openmoonray\\moonray\\moonray\\lib\\rendering\\rndr\\RenderFramePasses.cc": "975ec15c6190ff88102ad9adfd9bf669b291df8abff4a0faa16a6abf3744bcb8",
+      "C:\\Users\\Raphael Tobar\\MoonRayForModo\\upstream\\openmoonray\\moonray\\moonray\\lib\\rendering\\rndr\\RenderContext.cc": "6fd7e369dadb53a02eb2bba4c8d7c9437c3a6820a29bb9410ff24d50eb73402d",
+      "C:\\Users\\Raphael Tobar\\MoonRayForModo\\upstream\\openmoonray\\moonray\\moonray\\lib\\rendering\\pbr\\integrator\\PathIntegratorUtil.ispc": "8636ea7dd91238599c5dd33da3b629ad4fff8fe4019bce320f63c765f4a58c0a",
+      "C:\\Users\\Raphael Tobar\\MoonRayForModo\\upstream\\openmoonray\\moonray\\moonray\\lib\\rendering\\pbr\\integrator\\BsdfSampler.isph": "e4f50b810608ea50a8f7c8ba3c41b6caaf645cf9c215859d3dc4f699d08e2bcb"
+    },
+    "objects": {
+      "PathIntegratorUtil": "eb5a98b8a3e3faad31bda880fa3f4a0615a4bf264e3278968267c163ebec0856",
+      "PbrTLState": "d5eae6c9201f0e179d0794ad79e2865c944da0d635b603b32537fb423c2b2734",
+      "RenderFrame": "d6e10a1dc9b74decd0fc0e37372770ef6b30cff1fb8c34b9a5d8f7a4f6ed8c57",
+      "RenderFramePasses": "9f77e927934cf970aae99049ce8ae6717847068acb98cd9ab7279a9a6414fe90",
+      "RenderContext": "e758e21076309bcf4c0dd9fb63044029a57ae9ec7678aa4e2da8991e395ea3b3",
+      "PathIntegratorUtil-ispc": "abc228d451d1753134a6004844db88b07774689c2fab30e956f0c9acfeb107bd"
+    },
+    "preprocessed": {
+      "PathIntegratorUtil": "70ee6319249380d7cf610f489693a01a5e4fef9c2bd3b2eff775f66673f610ee",
+      "PbrTLState": "47381296d0302782d2ebbdefae19c921b568c80c67e75d5810ed62c8a3d4b430",
+      "RenderFrame": "2c42aa567a9e987b9926b64addfaf8afa0fff535c0cc9331ba00c584a2f96fad",
+      "RenderFramePasses": "f91583868c15d1d9f29ae562331d57d6a7df95488791dbf36b5cdd1465ffba24",
+      "RenderContext": "145f9bce35ab670bdab53dce6950e8ffb233709f0f24f9a4f53b9d5120f00559",
+      "PathIntegratorUtil-ispc": "f0767d5da080bb601cf82668c6fd49ea49b16e465736d25c554f4af7e3a8f842"
+    },
+    "dll_sha256": "2d5acbbddb899667fc801699e8c9358fbbc31dcdfd4c4e9d0bf441a9311a15d4",
+    "base_sha256": "50d5d92097183f8a2a9544ca5763ae60e32296d60e3dde499fe418af2c3956d6"
+  },
+  "xpu2-broader-diffuse-ptx-v3": {
+    "report_sha256": "6bf724b6c0159ef3a9bccf9c737992d59b986585fd3e1113d7e692d2f1dff7ec",
+    "status": "built",
+    "sources": {
+      "sampler_cuda.cu": "d6fa181f664e4912bf0f99aa126659bb29567123d441a3817eed7d271c413e96",
+      "lambert_cuda.cu": "0b48936ea62593212e60282d76d09b600fa56bcc637d25cd8778c1b2ab0f4e57",
+      "ispc_math_cuda.cuh": "d0235c32c6459830419e6bd099997876984fe6435dd1be85ee38695ccdb4e306",
+      "diffuse_sample_cuda.cu": "9f9dff6e7ec1d95e1082c61c52ede3cebd03fb8d49e34d64e22334e43c00f887"
+    },
+    "flags": [
+      "--std=c++14",
+      "--gpu-architecture=compute_86",
+      "--fmad=false",
+      "--ftz=false",
+      "--prec-div=true",
+      "--prec-sqrt=true"
+    ],
+    "ptx_sha256": "bd9fea9cf358f66193ad269af7c2e56f57af4b958c2dd8d13ebab70b9982ba57"
+  },
+  "earlier_diagnostics": [
+    {
+      "case": "xpu2-broader-persistent",
+      "result": "Restart frame still progressing at the 180-second marker deadline. Preserved as incomplete; bounded 600-second retry uses unchanged image gates."
+    },
+    {
+      "case": "xpu2-broader-rough-half",
+      "result": "Family gate rejected initial Oren-Nayar routing: DwaBase actually uses FlatDiffuse. No GPU-family validation was claimed."
+    },
+    {
+      "case": "xpu2-broader-rough-1",
+      "result": "180-second render timeout; preserved as incomplete. Rerun used a bounded 600-second limit without changing image tolerances."
+    }
+  ]
+}

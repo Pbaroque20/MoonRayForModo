@@ -1,0 +1,734 @@
+{
+  "status": "passed",
+  "scope": "Custom host reference traversal and film; real native AVX8/CUDA sampler and Lambert shading; not MoonRay image parity or a performance benchmark",
+  "lambert": false,
+  "lambert_sample": false,
+  "native_tables": true,
+  "cache_window": true,
+  "device": "NVIDIA GeForce RTX 3090",
+  "compute_capability": [
+    8,
+    6
+  ],
+  "cuda_driver_api": 13010,
+  "compile_flags": [
+    "--std=c++14",
+    "--gpu-architecture=compute_86",
+    "--fmad=false",
+    "--ftz=false",
+    "--prec-div=true",
+    "--prec-sqrt=true"
+  ],
+  "continuation": {
+    "passed": true,
+    "steps": 48,
+    "cases": 324,
+    "samples": 13554,
+    "components": 27108,
+    "state_output_sha256": "cd5586e2dfcc32c53d4a3d8bfe525fad54b4ea4381450e15996d49d00fb8ff13",
+    "result_output_sha256": "5b77dd0fb7f9c6a1edcac8d34988713e29eda33e5e0b7df6f64443964631a5e5",
+    "rounds": [
+      {
+        "passed": true,
+        "records": 324,
+        "supported_records": 324,
+        "unsupported_records": 0,
+        "invalid_records": 0,
+        "compared_sample_components": 648,
+        "state_mismatch_records": 0,
+        "sample_or_status_mismatch_records": 0
+      },
+      {
+        "passed": true,
+        "records": 324,
+        "supported_records": 324,
+        "unsupported_records": 0,
+        "invalid_records": 0,
+        "compared_sample_components": 648,
+        "state_mismatch_records": 0,
+        "sample_or_status_mismatch_records": 0
+      },
+      {
+        "passed": true,
+        "records": 324,
+        "supported_records": 324,
+        "unsupported_records": 0,
+        "invalid_records": 0,
+        "compared_sample_components": 648,
+        "state_mismatch_records": 0,
+        "sample_or_status_mismatch_records": 0
+      },
+      {
+        "passed": true,
+        "records": 324,
+        "supported_records": 324,
+        "unsupported_records": 0,
+        "invalid_records": 0,
+        "compared_sample_components": 648,
+        "state_mismatch_records": 0,
+        "sample_or_status_mismatch_records": 0
+      },
+      {
+        "passed": true,
+        "records": 324,
+        "supported_records": 324,
+        "unsupported_records": 0,
+        "invalid_records": 0,
+        "compared_sample_components": 648,
+        "state_mismatch_records": 0,
+        "sample_or_status_mismatch_records": 0
+      },
+      {
+        "passed": true,
+        "records": 324,
+        "supported_records": 324,
+        "unsupported_records": 0,
+        "invalid_records": 0,
+        "compared_sample_components": 648,
+        "state_mismatch_records": 0,
+        "sample_or_status_mismatch_records": 0
+      },
+      {
+        "passed": true,
+        "records": 324,
+        "supported_records": 324,
+        "unsupported_records": 0,
+        "invalid_records": 0,
+        "compared_sample_components": 648,
+        "state_mismatch_records": 0,
+        "sample_or_status_mismatch_records": 0
+      },
+      {
+        "passed": true,
+        "records": 324,
+        "supported_records": 324,
+        "unsupported_records": 0,
+        "invalid_records": 0,
+        "compared_sample_components": 648,
+        "state_mismatch_records": 0,
+        "sample_or_status_mismatch_records": 0
+      },
+      {
+        "passed": true,
+        "records": 324,
+        "supported_records": 324,
+        "unsupported_records": 0,
+        "invalid_records": 0,
+        "compared_sample_components": 648,
+        "state_mismatch_records": 0,
+        "sample_or_status_mismatch_records": 0
+      },
+      {
+        "passed": true,
+        "records": 324,
+        "supported_records": 324,
+        "unsupported_records": 0,
+        "invalid_records": 0,
+        "compared_sample_components": 648,
+        "state_mismatch_records": 0,
+        "sample_or_status_mismatch_records": 0
+      },
+      {
+        "passed": true,
+        "records": 324,
+        "supported_records": 324,
+        "unsupported_records": 0,
+        "invalid_records": 0,
+        "compared_sample_components": 648,
+        "state_mismatch_records": 0,
+        "sample_or_status_mismatch_records": 0
+      },
+      {
+        "passed": true,
+        "records": 324,
+        "supported_records": 324,
+        "unsupported_records": 0,
+        "invalid_records": 0,
+        "compared_sample_components": 648,
+        "state_mismatch_records": 0,
+        "sample_or_status_mismatch_records": 0
+      },
+      {
+        "passed": true,
+        "records": 324,
+        "supported_records": 324,
+        "unsupported_records": 0,
+        "invalid_records": 0,
+        "compared_sample_components": 648,
+        "state_mismatch_records": 0,
+        "sample_or_status_mismatch_records": 0
+      },
+      {
+        "passed": true,
+        "records": 324,
+        "supported_records": 324,
+        "unsupported_records": 0,
+        "invalid_records": 0,
+        "compared_sample_components": 648,
+        "state_mismatch_records": 0,
+        "sample_or_status_mismatch_records": 0
+      },
+      {
+        "passed": true,
+        "records": 324,
+        "supported_records": 324,
+        "unsupported_records": 0,
+        "invalid_records": 0,
+        "compared_sample_components": 648,
+        "state_mismatch_records": 0,
+        "sample_or_status_mismatch_records": 0
+      },
+      {
+        "passed": true,
+        "records": 324,
+        "supported_records": 324,
+        "unsupported_records": 0,
+        "invalid_records": 0,
+        "compared_sample_components": 648,
+        "state_mismatch_records": 0,
+        "sample_or_status_mismatch_records": 0
+      },
+      {
+        "passed": true,
+        "records": 324,
+        "supported_records": 324,
+        "unsupported_records": 0,
+        "invalid_records": 0,
+        "compared_sample_components": 648,
+        "state_mismatch_records": 0,
+        "sample_or_status_mismatch_records": 0
+      },
+      {
+        "passed": true,
+        "records": 324,
+        "supported_records": 324,
+        "unsupported_records": 0,
+        "invalid_records": 0,
+        "compared_sample_components": 648,
+        "state_mismatch_records": 0,
+        "sample_or_status_mismatch_records": 0
+      },
+      {
+        "passed": true,
+        "records": 324,
+        "supported_records": 324,
+        "unsupported_records": 0,
+        "invalid_records": 0,
+        "compared_sample_components": 648,
+        "state_mismatch_records": 0,
+        "sample_or_status_mismatch_records": 0
+      },
+      {
+        "passed": true,
+        "records": 324,
+        "supported_records": 324,
+        "unsupported_records": 0,
+        "invalid_records": 0,
+        "compared_sample_components": 648,
+        "state_mismatch_records": 0,
+        "sample_or_status_mismatch_records": 0
+      },
+      {
+        "passed": true,
+        "records": 324,
+        "supported_records": 324,
+        "unsupported_records": 0,
+        "invalid_records": 0,
+        "compared_sample_components": 648,
+        "state_mismatch_records": 0,
+        "sample_or_status_mismatch_records": 0
+      },
+      {
+        "passed": true,
+        "records": 324,
+        "supported_records": 324,
+        "unsupported_records": 0,
+        "invalid_records": 0,
+        "compared_sample_components": 648,
+        "state_mismatch_records": 0,
+        "sample_or_status_mismatch_records": 0
+      },
+      {
+        "passed": true,
+        "records": 324,
+        "supported_records": 324,
+        "unsupported_records": 0,
+        "invalid_records": 0,
+        "compared_sample_components": 648,
+        "state_mismatch_records": 0,
+        "sample_or_status_mismatch_records": 0
+      },
+      {
+        "passed": true,
+        "records": 324,
+        "supported_records": 324,
+        "unsupported_records": 0,
+        "invalid_records": 0,
+        "compared_sample_components": 648,
+        "state_mismatch_records": 0,
+        "sample_or_status_mismatch_records": 0
+      },
+      {
+        "passed": true,
+        "records": 324,
+        "supported_records": 324,
+        "unsupported_records": 0,
+        "invalid_records": 0,
+        "compared_sample_components": 648,
+        "state_mismatch_records": 0,
+        "sample_or_status_mismatch_records": 0
+      },
+      {
+        "passed": true,
+        "records": 324,
+        "supported_records": 324,
+        "unsupported_records": 0,
+        "invalid_records": 0,
+        "compared_sample_components": 648,
+        "state_mismatch_records": 0,
+        "sample_or_status_mismatch_records": 0
+      },
+      {
+        "passed": true,
+        "records": 324,
+        "supported_records": 324,
+        "unsupported_records": 0,
+        "invalid_records": 0,
+        "compared_sample_components": 648,
+        "state_mismatch_records": 0,
+        "sample_or_status_mismatch_records": 0
+      },
+      {
+        "passed": true,
+        "records": 324,
+        "supported_records": 324,
+        "unsupported_records": 0,
+        "invalid_records": 0,
+        "compared_sample_components": 648,
+        "state_mismatch_records": 0,
+        "sample_or_status_mismatch_records": 0
+      },
+      {
+        "passed": true,
+        "records": 324,
+        "supported_records": 324,
+        "unsupported_records": 0,
+        "invalid_records": 0,
+        "compared_sample_components": 648,
+        "state_mismatch_records": 0,
+        "sample_or_status_mismatch_records": 0
+      },
+      {
+        "passed": true,
+        "records": 324,
+        "supported_records": 324,
+        "unsupported_records": 0,
+        "invalid_records": 0,
+        "compared_sample_components": 648,
+        "state_mismatch_records": 0,
+        "sample_or_status_mismatch_records": 0
+      },
+      {
+        "passed": true,
+        "records": 324,
+        "supported_records": 324,
+        "unsupported_records": 0,
+        "invalid_records": 0,
+        "compared_sample_components": 648,
+        "state_mismatch_records": 0,
+        "sample_or_status_mismatch_records": 0
+      },
+      {
+        "passed": true,
+        "records": 324,
+        "supported_records": 324,
+        "unsupported_records": 0,
+        "invalid_records": 0,
+        "compared_sample_components": 648,
+        "state_mismatch_records": 0,
+        "sample_or_status_mismatch_records": 0
+      },
+      {
+        "passed": true,
+        "records": 324,
+        "supported_records": 324,
+        "unsupported_records": 0,
+        "invalid_records": 0,
+        "compared_sample_components": 648,
+        "state_mismatch_records": 0,
+        "sample_or_status_mismatch_records": 0
+      },
+      {
+        "passed": true,
+        "records": 270,
+        "supported_records": 270,
+        "unsupported_records": 0,
+        "invalid_records": 0,
+        "compared_sample_components": 540,
+        "state_mismatch_records": 0,
+        "sample_or_status_mismatch_records": 0
+      },
+      {
+        "passed": true,
+        "records": 270,
+        "supported_records": 270,
+        "unsupported_records": 0,
+        "invalid_records": 0,
+        "compared_sample_components": 540,
+        "state_mismatch_records": 0,
+        "sample_or_status_mismatch_records": 0
+      },
+      {
+        "passed": true,
+        "records": 216,
+        "supported_records": 216,
+        "unsupported_records": 0,
+        "invalid_records": 0,
+        "compared_sample_components": 432,
+        "state_mismatch_records": 0,
+        "sample_or_status_mismatch_records": 0
+      },
+      {
+        "passed": true,
+        "records": 216,
+        "supported_records": 216,
+        "unsupported_records": 0,
+        "invalid_records": 0,
+        "compared_sample_components": 432,
+        "state_mismatch_records": 0,
+        "sample_or_status_mismatch_records": 0
+      },
+      {
+        "passed": true,
+        "records": 216,
+        "supported_records": 216,
+        "unsupported_records": 0,
+        "invalid_records": 0,
+        "compared_sample_components": 432,
+        "state_mismatch_records": 0,
+        "sample_or_status_mismatch_records": 0
+      },
+      {
+        "passed": true,
+        "records": 216,
+        "supported_records": 216,
+        "unsupported_records": 0,
+        "invalid_records": 0,
+        "compared_sample_components": 432,
+        "state_mismatch_records": 0,
+        "sample_or_status_mismatch_records": 0
+      },
+      {
+        "passed": true,
+        "records": 162,
+        "supported_records": 162,
+        "unsupported_records": 0,
+        "invalid_records": 0,
+        "compared_sample_components": 324,
+        "state_mismatch_records": 0,
+        "sample_or_status_mismatch_records": 0
+      },
+      {
+        "passed": true,
+        "records": 162,
+        "supported_records": 162,
+        "unsupported_records": 0,
+        "invalid_records": 0,
+        "compared_sample_components": 324,
+        "state_mismatch_records": 0,
+        "sample_or_status_mismatch_records": 0
+      },
+      {
+        "passed": true,
+        "records": 162,
+        "supported_records": 162,
+        "unsupported_records": 0,
+        "invalid_records": 0,
+        "compared_sample_components": 324,
+        "state_mismatch_records": 0,
+        "sample_or_status_mismatch_records": 0
+      },
+      {
+        "passed": true,
+        "records": 162,
+        "supported_records": 162,
+        "unsupported_records": 0,
+        "invalid_records": 0,
+        "compared_sample_components": 324,
+        "state_mismatch_records": 0,
+        "sample_or_status_mismatch_records": 0
+      },
+      {
+        "passed": true,
+        "records": 162,
+        "supported_records": 162,
+        "unsupported_records": 0,
+        "invalid_records": 0,
+        "compared_sample_components": 324,
+        "state_mismatch_records": 0,
+        "sample_or_status_mismatch_records": 0
+      },
+      {
+        "passed": true,
+        "records": 162,
+        "supported_records": 162,
+        "unsupported_records": 0,
+        "invalid_records": 0,
+        "compared_sample_components": 324,
+        "state_mismatch_records": 0,
+        "sample_or_status_mismatch_records": 0
+      },
+      {
+        "passed": true,
+        "records": 162,
+        "supported_records": 162,
+        "unsupported_records": 0,
+        "invalid_records": 0,
+        "compared_sample_components": 324,
+        "state_mismatch_records": 0,
+        "sample_or_status_mismatch_records": 0
+      },
+      {
+        "passed": true,
+        "records": 162,
+        "supported_records": 162,
+        "unsupported_records": 0,
+        "invalid_records": 0,
+        "compared_sample_components": 324,
+        "state_mismatch_records": 0,
+        "sample_or_status_mismatch_records": 0
+      },
+      {
+        "passed": true,
+        "records": 162,
+        "supported_records": 162,
+        "unsupported_records": 0,
+        "invalid_records": 0,
+        "compared_sample_components": 324,
+        "state_mismatch_records": 0,
+        "sample_or_status_mismatch_records": 0
+      }
+    ]
+  },
+  "handoff": null,
+  "shading_handoff": null,
+  "shading_image": {
+    "passed": true,
+    "scope": "Custom host reference traversal and film; real native AVX8/CUDA sampler and Lambert shading; not MoonRay image parity or a performance benchmark",
+    "dimensions": [
+      32,
+      24
+    ],
+    "spp": 4,
+    "max_scattering_bounces": 4,
+    "coverage": {
+      "emitter": 1021,
+      "sky": 1540,
+      "invalid": 0,
+      "zero_pdf": 0,
+      "bounce_limit": 511,
+      "secondary_sphere_hits": 730,
+      "surface_hits": {
+        "5": 1170,
+        "4": 2328,
+        "6": 1042,
+        "0": 962,
+        "1": 466,
+        "2": 1431
+      }
+    },
+    "path_events": 9960,
+    "plans": [
+      {
+        "plan": "native_workers4",
+        "passed": true,
+        "different_rgb_components": 0,
+        "max_rgb_error": 0.0,
+        "different_path_events": 0,
+        "missing_path_events": 0,
+        "film_sha256": "93e7e9be2b946d7c273ef6566ad06b377cca8530efd099573d81f1c7b0cb1f73",
+        "trajectory_sha256": "f00186d5dabd690033b4b35cb88094f4615f77e172ff58d6d7bb718c81732aab",
+        "cpu": 6888,
+        "gpu": 0,
+        "cpu_to_gpu": 0,
+        "gpu_to_cpu": 0,
+        "fallback": 0
+      },
+      {
+        "plan": "gpu",
+        "passed": true,
+        "different_rgb_components": 0,
+        "max_rgb_error": 0.0,
+        "different_path_events": 0,
+        "missing_path_events": 0,
+        "film_sha256": "93e7e9be2b946d7c273ef6566ad06b377cca8530efd099573d81f1c7b0cb1f73",
+        "trajectory_sha256": "f00186d5dabd690033b4b35cb88094f4615f77e172ff58d6d7bb718c81732aab",
+        "cpu": 0,
+        "gpu": 6888,
+        "cpu_to_gpu": 0,
+        "gpu_to_cpu": 0,
+        "fallback": 0
+      },
+      {
+        "plan": "gpu_fallback",
+        "passed": true,
+        "different_rgb_components": 0,
+        "max_rgb_error": 0.0,
+        "different_path_events": 0,
+        "missing_path_events": 0,
+        "film_sha256": "93e7e9be2b946d7c273ef6566ad06b377cca8530efd099573d81f1c7b0cb1f73",
+        "trajectory_sha256": "f00186d5dabd690033b4b35cb88094f4615f77e172ff58d6d7bb718c81732aab",
+        "cpu": 286,
+        "gpu": 6602,
+        "cpu_to_gpu": 75,
+        "gpu_to_cpu": 179,
+        "fallback": 286
+      },
+      {
+        "plan": "alternating",
+        "passed": true,
+        "different_rgb_components": 0,
+        "max_rgb_error": 0.0,
+        "different_path_events": 0,
+        "missing_path_events": 0,
+        "film_sha256": "93e7e9be2b946d7c273ef6566ad06b377cca8530efd099573d81f1c7b0cb1f73",
+        "trajectory_sha256": "f00186d5dabd690033b4b35cb88094f4615f77e172ff58d6d7bb718c81732aab",
+        "cpu": 3603,
+        "gpu": 3285,
+        "cpu_to_gpu": 1776,
+        "gpu_to_cpu": 1868,
+        "fallback": 137
+      },
+      {
+        "plan": "shuffled",
+        "passed": true,
+        "different_rgb_components": 0,
+        "max_rgb_error": 0.0,
+        "different_path_events": 0,
+        "missing_path_events": 0,
+        "film_sha256": "93e7e9be2b946d7c273ef6566ad06b377cca8530efd099573d81f1c7b0cb1f73",
+        "trajectory_sha256": "f00186d5dabd690033b4b35cb88094f4615f77e172ff58d6d7bb718c81732aab",
+        "cpu": 3603,
+        "gpu": 3285,
+        "cpu_to_gpu": 1776,
+        "gpu_to_cpu": 1868,
+        "fallback": 137
+      }
+    ],
+    "secondary_visibility_negative_control": {
+      "passed": false,
+      "different_rgb_components": 1066,
+      "max_rgb_error": 1.904000163078308,
+      "different_path_events": 1232,
+      "missing_path_events": 516,
+      "film_sha256": "22ab085b5dd3a829adec3726bbfd3c840d9178577ac86a71f3bb4b8021eb5ad3",
+      "trajectory_sha256": "ef19d484682c41d177be0c542ac49c13facd9bdc3fa97db7ccfa20432c2c0133"
+    },
+    "baseline_trajectory_sha256": "f00186d5dabd690033b4b35cb88094f4615f77e172ff58d6d7bb718c81732aab",
+    "renderer_migration_enabled": false,
+    "native_batches": 26
+  },
+  "inputs_sha256": {
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\sampler_cuda.cu": "d6fa181f664e4912bf0f99aa126659bb29567123d441a3817eed7d271c413e96",
+    "xpu2\\reference\\sampler-window-avx8-20261017.jsonl.gz": "4aa3e8699e670e511a484af3ca487596bf26d78d65ec18fd755902d74fcc7142",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo\\toolchain\\xpu\\cuda_nvrtc-windows-x86_64-12.8.93-archive\\bin\\nvrtc64_120_0.dll": "02d2d7ef4690bf1a55dda1d3ac94c86ce8d16920071c87bcd3e70e94ef346e93",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo\\toolchain\\xpu\\cuda_nvrtc-windows-x86_64-12.8.93-archive\\bin\\nvrtc-builtins64_128.dll": "a7afa2a40cbd3f922a33d8bf71c13cb26ca707c7016a9bc5fcde36759ba668f5",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\tools\\xpu2_cuda_sampler_probe.py": "4d808ecbb2e29e506fb10a476b8b57bf68995f442af685942a09a4001b5a36f1",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\cuda_samples.py": "d6e0527a152f5b10d8f60cb7f80b2c4b80be542637a8780da3ef00d84f022cf4",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\lambert_sample_cuda.cu": "acc3f3d2540a42879dfb5cdc66f71b8f0480dc9b51d6ad5b391e1751760f560d",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\ispc_math_cuda.cuh": "d0235c32c6459830419e6bd099997876984fe6435dd1be85ee38695ccdb4e306",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\lambert_sample.py": "250f52cd50691d597632533e3c78d0585df257a5b0ce9299e36c9fda0b7597b3",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\lambert_cuda.cu": "0b48936ea62593212e60282d76d09b600fa56bcc637d25cd8778c1b2ab0f4e57",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\lambert.py": "5ffb06a3966ef7e8000f37caeb171debc07903085a4567400df6e339a847e9d2",
+    "test-results\\xpu2-native-tables\\samples1d.bin": "95df27fdaf810bf54c84744f0b97214ae0366220154d387b94080d9192041acb",
+    "test-results\\xpu2-native-tables\\samples2d.bin": "fcfc81e6b0a6c55827572b58548be1f74cd22b0f1de7070e1e50d87c21da18de",
+    "test-results\\xpu2-native-tables\\report.json": "e32b6239bd2893a625c38e63f8f031c4dd699584fea5a6fd6325f06710296b4b",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\sampler_window_cuda.cu": "a9d30cd223ccb1bf25c8eeb8ec6673db96df7e3fb7ec31c0c0569427fa885dbf",
+    "test-results\\xpu2-native-window-tables\\moebius.bin": "2e1d020d82bdc8ec865f5943a85e73f4f20f37ad0c26ea2c2f1f86e2d4e8e79e",
+    "test-results\\xpu2-native-window-tables\\report.json": "6e8de88f8861565b0cb9da15699be9042072d4893683e9966576756d0b608afb",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\cuda_window_samples.py": "b290378f39178dac7678347b4004d95fb79ada79209a4bb09a6f47cacae245f2",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\window_samples.py": "a77bfa674dbe29f607f004e7589c1cd21312f05829a697d239a2585650982044",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\ray_image.py": "b53d1215e957ce22027310bcb6558d936d839e71ec7864e10f5d6543edecd0ac",
+    "test-results\\xpu2-native-shading-exchange-fixed\\report.json": "76bfebe9d768038b113907635db3c457a69259977cf21dbe9a76fbeab27a0773",
+    "test-results\\xpu2-native-shading-exchange-fixed\\sampler.exe": "5d3c7edb4d2674447d489c431a2b3355589701ce844d172c51b123b2723c7d16",
+    "xpu2\\reference\\lambert-stress-avx8-20261017.jsonl.gz": "a6f446b805c464a377cc0bb140acce2eb15b9abd550b37249b112467a096b131",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\shading_exchange.py": "e49b48e311ae80a405ae163ff0cf67ea24e4e7f698151d7ac8574d1987b39074",
+    "C:\\Users\\Raphael Tobar\\MoonRayForModo-xpu2\\xpu2\\exchange.py": "0f83f1b920045fc86a60d5ad967d95a2b114efa27900407d9d1e3f17ea397773"
+  },
+  "ptx_sha256": "9f57b9013da070197087710e0c05afdbca05e9203c730f364ca16962fbb81bc2",
+  "runs": [
+    {
+      "passed": true,
+      "records": 27125,
+      "supported_records": 27108,
+      "unsupported_records": 5,
+      "invalid_records": 12,
+      "compared_sample_components": 54216,
+      "state_mismatch_records": 0,
+      "sample_or_status_mismatch_records": 0,
+      "block_size": 64,
+      "streams": 2,
+      "state_output_sha256": "9577d796cffdcad3ed7a5270c540edb8bdf642845551cfb236c8732568472284",
+      "result_output_sha256": "784dfc231641816263d5283aa5fd2b2d96fdba9756651e6867e184f8a39103ae"
+    },
+    {
+      "passed": true,
+      "records": 27125,
+      "supported_records": 27108,
+      "unsupported_records": 5,
+      "invalid_records": 12,
+      "compared_sample_components": 54216,
+      "state_mismatch_records": 0,
+      "sample_or_status_mismatch_records": 0,
+      "block_size": 128,
+      "streams": 2,
+      "state_output_sha256": "2f79cd29c405605d4ce0cf715ba9e9e777fb6359e9356b0065a770703b40506e",
+      "result_output_sha256": "6c4953dad109dd1996320d34682eb7de35f9a1f80274dcbc413c6176f0fd4b1e"
+    },
+    {
+      "passed": true,
+      "records": 27125,
+      "supported_records": 27108,
+      "unsupported_records": 5,
+      "invalid_records": 12,
+      "compared_sample_components": 54216,
+      "state_mismatch_records": 0,
+      "sample_or_status_mismatch_records": 0,
+      "block_size": 256,
+      "streams": 2,
+      "state_output_sha256": "28fb9f55b76a3b2acf7fc0fbba36b0c8e462c6d5ceb633f39167cfae4194650d",
+      "result_output_sha256": "23b203602513e209fa633a96d00f13ae66d68118730f82a6a55137ffc899aec2"
+    },
+    {
+      "passed": true,
+      "records": 27125,
+      "supported_records": 0,
+      "unsupported_records": 27113,
+      "invalid_records": 12,
+      "compared_sample_components": 0,
+      "state_mismatch_records": 0,
+      "sample_or_status_mismatch_records": 0,
+      "kind": "missing_table_fallback",
+      "block_size": 128,
+      "streams": 2,
+      "state_output_sha256": "b110ea5de75c35590c311e372fc8ca7b004f05a8f616d2f49a513fe01d942a26",
+      "result_output_sha256": "adeddd4e087adc631d0bb2a562ea5c65922dfa735bcddc61a14c5bfc51c47231"
+    }
+  ],
+  "validation": {
+    "full_suite_before_final_schedule_split": {
+      "tests": 194,
+      "passed": true
+    },
+    "final_ray_image_unit_checks": {
+      "tests": 9,
+      "passed": true
+    },
+    "distinct_unit_checks_passed": 195
+  },
+  "python_version": "3.14.8 (tags/v3.14.8:8e6e75d, Sep 30 2026, 18:19:33) [MSC v.1944 64 bit (AMD64)]",
+  "pinned_artifacts": {
+    "ray-image-avx8-20261017.json.gz": "d0db1ee3d6eb5de4c95a558602f0d9c49b635da07f3a6a22756dd13c135c41da",
+    "ray-image-avx8-20261017.rgb32f": "93e7e9be2b946d7c273ef6566ad06b377cca8530efd099573d81f1c7b0cb1f73"
+  }
+}

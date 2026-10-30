@@ -1,0 +1,37 @@
+{
+  "date": "2026-10-22",
+  "unit_tests": {
+    "passed": 54,
+    "failed": 0
+  },
+  "native_build": "passed",
+  "gpu_ptx_matches_validated_private_build": true,
+  "gpu_ptx_sha256": "b2cdb0f753838c7a3a78738c07f9b824fb9e9ffd0db12a784a66f08111251d9a",
+  "source_inventory": "verified",
+  "vendor_source_and_license_hashes": "verified",
+  "python_syntax": "passed",
+  "controller": {
+    "status": "passed",
+    "scope": "current controller startup, preview, failure fallback, raw decode and unqualified tags; not reference-repeatability or speed qualification",
+    "earlier_full_sequence_review": "partial",
+    "progressive_native": {
+      "partials_seen": 44,
+      "windows": 133,
+      "raw_sha256": "9bf3c38d068481bece6cb3e310b7a570115ac6caa91080bb841b4b712672f2b3",
+      "qualified": false,
+      "gpu_samples": 393216,
+      "cpu_samples": 393216,
+      "fine_refills": 1,
+      "migrated_paths": 0
+    },
+    "second_request_fine_cache_preserved": true,
+    "option_off_legacy_migration": true,
+    "fallback": {
+      "reason": "Invalid native completion; entire epoch requires reference fallback",
+      "tier": "F",
+      "qualified": false,
+      "exact_owned_reference_pixels": true
+    }
+  },
+  "scope": "Publication-copy checks only. No production qualification, universal speed claim or clean-machine rebuild claim."
+}

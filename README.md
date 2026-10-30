@@ -5,13 +5,13 @@
 
 MoonRay for Modo integrates DreamWorks’ open-source MoonRay renderer with **Modo 16.1v9 on Windows**, running natively without WSL. Developed by Raphael Tobar w/ AI-Assistance.
 
-The plugin includes CPU and XPU rendering, a dockable live preview with a second GPU preview engine, native MoonRay materials with a graph editor, Shader Tree translation, MoonRay's own lights and other items, MaterialX and RDL scene import, AOVs, and denoising.
+The plugin includes CPU, XPU and XPU2 rendering, a dockable live preview with a second GPU preview engine, native MoonRay materials with a graph editor, Shader Tree translation, MoonRay's own lights and other items, MaterialX and RDL scene import, AOVs, and denoising.
 
 **Built on MoonRay [2026.29.1](https://github.com/dreamworksanimation/openmoonray/releases/tag/v2026.29.1)** (OpenMoonRay's latest release; MoonRay 18.4), with the plugin's own patches for Windows and the preview.
 
-**Current version: 0.4.3.1 — experimental development build.** It is 0.4.3 with MoonLightIPR mended for geometry added while it follows the scene, Modo's fur in evaluated geometry, and large scenes read faster. 0.4.3 is a critical performance update: scenes load far faster before a render starts, MoonRay leaves Modo quick to use while it renders, and MoonLightIPR draws displacement, stencils and light links for less power. Install the new runtime with it. 0.4.2 brought MoonRay's display filters and pixel filters, a compositor built from passes and light groups, Cryptomatte picking, MoonRay cameras that are Modo cameras, Export as MoonRay Scene, MoonLightIPR with velvet and motion blur, and eleven MoonRay Source Overrides.
+**Current version: 0.5 — pre-production release.** The plugin is no longer experimental. 0.5 brings **MoonRay XPU2**, a new GPU renderer for previews in which the processor and the graphics card work on the same picture at once, now the default; realtime that keeps up with heavy scenes and a Scene cache; Modo's procedural textures worked out through the object, 145 of Modo's Enhance textures among them; Modo's light volumetrics and fog; and MoonLightIPR starting in seconds. Install the new runtime with it.
 
-[Download 0.4.3.1: the kit, the Windows runtime and the MoonRay content](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.4.3.1) · [Installation instructions](docs/INSTALLATION.md) · [What's new in 0.4 to 0.4.3.1](docs/WHATS_NEW_04.md) · [MoonRay's features in the plugin](#moonrays-features-in-the-plugin) · [Modo's features in the plugin](#modos-features-in-the-plugin) · [Engineers' notes: where the plugin changes MoonRay](patches/native-windows/README.md)
+[Download 0.5: the kit, the Windows runtime and the MoonRay content](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.5) · [Installation instructions](docs/INSTALLATION.md) · [What's new in 0.5](docs/WHATS_NEW_05.md) · [What's new in 0.4 to 0.4.3.1](docs/WHATS_NEW_04.md) · [MoonRay's features in the plugin](#moonrays-features-in-the-plugin) · [Modo's features in the plugin](#modos-features-in-the-plugin) · [Engineers' notes: where the plugin changes MoonRay](patches/native-windows/README.md)
 
 Work on the next version goes on in the [MoonLightIPR branch](https://github.com/Pbaroque20/MoonRayForModo/tree/MoonLightIPR).
 
@@ -21,6 +21,7 @@ Work on the next version goes on in the [MoonLightIPR branch](https://github.com
 
 ## Major features
 
+- **MoonRay XPU2**: a new GPU renderer for previews. The processor and the graphics card work on the same picture at once, samples go where the picture is still noisy, and its pictures settle to MoonRay's own. Final renders come from MoonRay. *XPU2: Asynchronous Monte Carlo Path Tracer designed by Raphael Tobar. Not affiliated with or endorsed by DreamWorks Animation.*
 - **MoonLightIPR**: the plugin's own GPU preview engine (NVIDIA), which shows an approximation of MoonRay's picture moments after each edit. Final renders always come from MoonRay.
 - **Smart Render**: MoonRay stops by itself once the picture is clean enough for the denoiser, and denoises it.
 - **Safe Denoising**: stop a MoonRay render at any time and keep it, denoised. **Continue** takes it up where it stood.
@@ -42,6 +43,20 @@ Work on the next version goes on in the [MoonLightIPR branch](https://github.com
 | **The graph editor**, with a MoonRay material | **Modo's Fur material** rendered by MoonRay |
 | ![The compositor](docs/images/compositor-editor.png) | ![Modern Hall, imported from MoonRay's scene files](docs/images/rdl-modern_hall.jpg) |
 | **The compositor**: the beauty graded, vignetted and sharpened | **An imported MoonRay scene**: its own render (left), after the trip through Modo (right). Modern Hall by NewSee2l035, CC BY |
+
+## New in 0.5
+
+A pre-production release, with a new runtime ZIP: install both. The full list is in [What's new in 0.5](docs/WHATS_NEW_05.md).
+
+- **MoonRay XPU2**, the default GPU renderer for previews (MoonRay XPU is still a choice in Preferences > MoonRay > XPU2). Compile its shaders once on that page; its settings are in Render Settings > XPU2 Sampling, and realtime takes up camera, object and light changes at once.
+- **Realtime that keeps up**: after the first reading the scene is never read whole again, and heavy scenes start much sooner.
+- **A Scene cache** (Preferences): a prepared scene opens faster the next time.
+- **Modo's procedural textures through the object**, with no baking and no UVs: Noise, Cellular, Checker, Grid, Dots, Wood, Weave, Ripples, Gabor and Poisson, and 145 of Modo's Enhance textures, in MoonRay and MoonLightIPR. Curvature and Wireframe too.
+- **Modo's light volumetrics and environment fog** render.
+- **Displacement follows Modo's Displacement Rate**, with far less geometry where a mesh is small on screen.
+- **MoonLightIPR starts in seconds**, follows an edit at once, and matches MoonRay's brightness for lights that are not normalized.
+- **MoonRay lights take the Scale tool**: width, height and radius follow the scale.
+- **Cleaner denoising**, Toon lines apart from the shading, area lights seen by the camera, shadow rays in Light Links, and N-gons triangulated cleanly.
 
 ## New in 0.4.3.1
 
@@ -263,7 +278,7 @@ In each pair, MoonRay's render of the scene from its own files is on the left; o
 - Render outputs: configurable AOVs, Cryptomatte surface categories, buffer switching, deep EXR, texture baking, a compositor over the finished buffers, and denoising (OptiX or Open Image Denoise) that survives a stopped render.
 - Workflow tools: ACES/sRGB/OCIO view transforms and LUTs, animation output and recovery controls, an asset library with MoonRay's example scenes, and RDL scene import.
 
-## Known issues in 0.4.3.1
+## Known issues in 0.5
 
 The ones you are most likely to meet:
 
@@ -274,15 +289,16 @@ The ones you are most likely to meet:
 - Hair in MoonLightIPR is close to MoonRay's but not exact.
 - A glowing VDB volume, or a light with a cookie filter, renders in MoonRay's slower scalar mode; the plugin switches for you and says so.
 - Smart Render and Important Parts First work on MoonRay renders in the preview window, not on Render EXR or animations.
+- XPU2 renders previews only after its shaders are compiled once (Preferences > MoonRay > XPU2 > Compile XPU2 Shaders); until then the preview says so. A scene XPU2 cannot render yet goes to MoonRay XPU.
 - Now and then, a preview with glitter in the GPU (XPU) mode fails on the graphics card; it is rendered on the CPU instead, with a notice.
 
 Every open issue is in the [issue tracker](https://github.com/Pbaroque20/MoonRayForModo/issues). Found something else? Please report it there.
 
 ## This Version's Current Limitations
 
-- **Windows and Modo 16.1v9 only.** XPU and MoonLightIPR need an NVIDIA GPU; they have been exercised on an RTX 3090 only.
+- **Windows and Modo 16.1v9 only.** XPU, XPU2 and MoonLightIPR need an NVIDIA GPU; they have been exercised on an RTX 3090 only.
 - **MoonLightIPR is an approximation.** It matches MoonRay closely on many scenes but not all; [moonlightipr/README.md](moonlightipr/README.md) says how closely, scene by scene, and what it leaves out.
-- **Modo parity is partial.** Only Modo's own lights and standard/Principled materials are matched. Blinn and Ashikhmin highlights are matched to Modo's by measurement (the lobe, roughness and strength that came closest to Modo's own renders), closely once the roughness is 0.2 or more and loosely below that; a roughness driven by an image is not remapped. A Modo material's smoothing angle is followed, except on a mesh of more than 300,000 faces, which is smoothed all over and named in a notice. Under Principled, Modo's diffuse brightens with roughness and MoonRay's does not. Anisotropy runs along the material's UV map, with its strength fitted to Modo's renders. Rough environment reflections come out dimmer in MoonRay. Specular Tint, Flatness and a reflection amount apart from specular have nothing like them in MoonRay's material and are named in a notice. Modo's cylinder, dome and photometric lights, light volumetrics and fog are left out, with a notice; MoonRay's own lights and volume items stand in. Modo's own group light linking is translated but experimental; check it against Modo.
+- **Modo parity is partial.** Only Modo's own lights and standard/Principled materials are matched. Blinn and Ashikhmin highlights are matched to Modo's by measurement (the lobe, roughness and strength that came closest to Modo's own renders), closely once the roughness is 0.2 or more and loosely below that; a roughness driven by an image is not remapped. A Modo material's smoothing angle is followed, except on a mesh of more than 300,000 faces, which is smoothed all over and named in a notice. Under Principled, Modo's diffuse brightens with roughness and MoonRay's does not. Anisotropy runs along the material's UV map, with its strength fitted to Modo's renders. Rough environment reflections come out dimmer in MoonRay. Specular Tint, Flatness and a reflection amount apart from specular have nothing like them in MoonRay's material and are named in a notice. Modo's cylinder, dome and photometric lights are left out, with a notice; MoonRay's own lights and volume items stand in. Modo's own group light linking is translated but experimental; check it against Modo.
 - **MaterialX is a supported subset**: Standard Surface, OpenPBR and glTF surfaces made of images, arithmetic and UV transforms. Nodes outside that subset are not read.
 - **RDL import leaves a few things out**, and names each in its report. This comes with the format: an RDL file is MoonRay's own description of a scene, and it can hold things Modo has nothing to turn them into. MoonRay item kinds with no Modo counterpart, ways of instancing Modo cannot express (instances read from a point file, some instancing methods), words that change from point to point (a Modo vertex map holds only numbers), and render outputs Modo's settings have no place for are left out and named, rather than turned into something that would render differently. Motion, values that differ face by face or point by point, subdivision creases and meshes filled with fog do come in.
 - **Geometry**: some instancing, motion, subdivision, UV-projection and normal-map cases differ from Modo. A mesh that mixes polygon kinds or needs per-polygon projection is read the slower way. A shadow a coarse mesh casts on itself, as a torus's on the inside of its hole, follows its faces, in MoonRay and MoonLightIPR alike; subdivision smooths it.
@@ -296,7 +312,7 @@ Comparison audit between MoonRay 2026.29.1's source and the current plugin.
 | MoonRay feature | Plugin | Notes |
 |---|:---:|---|
 | CPU rendering (scalar and vector) | ![yes](docs/images/feature-yes.svg) | AVX build |
-| XPU rendering on the graphics card | ![yes](docs/images/feature-yes.svg) | NVIDIA only |
+| XPU rendering on the graphics card | ![yes](docs/images/feature-yes.svg) | NVIDIA only. Previews can also use XPU2, the plugin's own GPU renderer (new in 0.5) |
 | Progressive rendering, and region rendering | ![yes](docs/images/feature-yes.svg) | The preview window, and the graph editor's MoonRay Widget. The widget renders under MoonRay LS, which is quicker |
 | Cameras: perspective, orthographic, fisheye, spherical, dome | ![yes](docs/images/feature-yes.svg) | MoonRay camera items, or Modo's camera. A Modo camera converted to any of them in its place (animation kept), and changed back to a Modo camera; a Camera Sequence keying cameras to ranges of frames, and MoonRay cameras that are Modo cameras, looked through in the viewport by their lens with Modo's resolution gate |
 | Stereo cameras | ![yes](docs/images/feature-yes.svg) | Modo's camera Stereo: one eye, or both with a red/cyan picture in Render EXR; MoonLightIPR shows each eye |
@@ -350,7 +366,7 @@ Comparison audit between Modo 16.1v9 and the current plugin: what of a Modo scen
 | Point, spot and area lights | ![yes](docs/images/feature-yes.svg) | Their intensity measured against Modo per kind |
 | Cylinder, dome and photometric (IES) lights | ![no](docs/images/feature-no.svg) | Skipped, with a notice; MoonRay's own cylinder and environment lights stand in |
 | Light linking (Modo's groups, include or exclude) | ![yes](docs/images/feature-yes.svg) |  |
-| Light volumetrics, and fog | ![no](docs/images/feature-no.svg) | MoonRay volume items in their place |
+| Light volumetrics, and fog | ![yes](docs/images/feature-yes.svg) | Point, spot and directional light volumetrics, and the environment's fog (new in 0.5); not yet compared with Modo's renders |
 | **Environment** | | |
 | Gradients, constant colours and HDRI image layers | ![yes](docs/images/feature-yes.svg) | An HDRI turns as in Modo, and quickly |
 | **Cameras** | | |
@@ -366,7 +382,7 @@ Comparison audit between Modo 16.1v9 and the current plugin: what of a Modo scen
 | Unreal, Unity, glTF and AxF materials | ![no](docs/images/feature-no.svg) |  |
 | **Shader Tree** | | |
 | Image maps: UV and projections, UDIMs, Low and High values | ![yes](docs/images/feature-yes.svg) | A locator projection is worked out at the polygons' corners |
-| Procedural textures | ![partly](docs/images/feature-partly.svg) | Constant, checker, noise, grid, dots, gradient, cellular, wood, weave and ripples, each with limits; the others not |
+| Procedural textures | ![partly](docs/images/feature-partly.svg) | Constant, checker, noise, grid, dots, gradient, cellular, wood, weave, ripples, Gabor and Poisson noise, Curvature and Wireframe, and 145 Enhance textures, worked out through the object (new in 0.5); not yet compared with Modo's renders; Surface Probe not |
 | Layer blend modes | ![yes](docs/images/feature-yes.svg) | All fourteen |
 | Bump and normal maps | ![yes](docs/images/feature-yes.svg) |  |
 | Displacement and Stencil layers | ![yes](docs/images/feature-yes.svg) | Checked against Modo's renders |

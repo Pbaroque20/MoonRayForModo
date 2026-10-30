@@ -228,7 +228,7 @@ class Renderer(QtCore.QObject):
                        # A safe render is rendered by the MoonRay kept loaded where that one can save as it renders,
                        # and so is shown as it comes on; else by a MoonRay of its own, shown at each save.
                        persistent=bool(persistent_preview and not moonlightipr and not output and not linear_preview and persistent_supported(runtime)
-                                       and (not denoising.settings(snapshot.get('denoising',{}))['safe'] or persistent_saves(runtime))))
+                                       and (not denoising.settings(snapshot.get('denoising',{}))['safe'] or persistent_saves(runtime) or native.xpu2())))
         # New edits replace queued work; stale images never reach the panel.
         self.pending = request
         # A stop that was still waiting for MoonRay to save is over: this render is not one being stopped.
@@ -411,7 +411,8 @@ class Renderer(QtCore.QObject):
         self.smart=None
         try:
             level=denoising.settings(self.active['snapshot'].get('denoising',{}))['smart']
-            if level!='off' and not self.active['output'] and not self.active['moonlightipr'] and not self.active.get('linear_preview') and not self.active['snapshot'].get('_ipr'):
+            # Not while XPU2 renders the preview: Smart Render is MoonRay's.
+            if level!='off' and not self.active['output'] and not self.active['moonlightipr'] and not self.active.get('linear_preview') and not self.active['snapshot'].get('_ipr') and not native.xpu2():
                 from .smart_render import Watch
                 self.smart=Watch(level,time.monotonic)
         except (ValueError,KeyError):pass
@@ -506,6 +507,9 @@ class Renderer(QtCore.QObject):
         self.buffer_key = 'beauty'
         self.buffer_path = self.current_base.with_suffix('.buffer.exr')
         snapshot = dict(request['snapshot'],preview_buffer=self.buffer_key)
+        # XPU2 renders it where it is chosen, the mode is XPU or Auto and it has not left this
+        # session to MoonRay.
+        snapshot['_xpu2']=bool(request.get('persistent') and mode in ('xpu','auto') and native.xpu2() and not getattr(self.session,'xpu2_refused',None))
         snapshot['_crypto_categories']=native.supports_crypto_categories(request['runtime'])
         snapshot['_bump_step']=native.supports_bump_step(request['runtime'])
         snapshot['_pixel_filters']=native.supports_pixel_filters(request['runtime'])
@@ -546,7 +550,9 @@ class Renderer(QtCore.QObject):
                 snapshot['_recovery']=prepare_recovery(snapshot,request['output'],request['width'],request['height'],self.sample_grid,request['environment'],request['runtime'])
             # Safe denoising: MoonRay saves each file it is writing every few seconds, to be finished with on Stop.
             self.safe_files=[];snapshot.pop('_safe',None)
-            if denoising.settings(snapshot.get('denoising',{}))['safe'] and not snapshot.get('_ipr') and not snapshot.get('_recovery') and not request.get('linear_preview'):
+            # Not while XPU2 renders the preview: it is quick enough to need no saves.
+            if denoising.settings(snapshot.get('denoising',{}))['safe'] and not snapshot.get('_ipr') and not snapshot.get('_recovery') and not request.get('linear_preview') \
+                    and not snapshot.get('_xpu2'):
                 data=self.current_base.with_suffix('.resume-data.exr')
                 snapshot['_safe']={'data':str(data)}
                 self.safe_written=set();self.safe_whole=False;self.safe_tail='';self.saved_at=None;self.kept_behind=None
@@ -628,6 +634,7 @@ class Renderer(QtCore.QObject):
             self.process.setProgram(str(request['runtime'] / 'moonray.exe'))
             args=native.arguments(scene, self.image_path, request['threads'],mode)
             self.engine_mode=mode
+            self.engine_mode=mode
             if not self.using_session and Path(scene).with_suffix('.rdlb').is_file():
                 args[2:2]=['-in', str(Path(scene).with_suffix('.rdlb').resolve())]
             sampling=options.render_values(snapshot.get('render_settings',{}))
@@ -635,6 +642,11 @@ class Renderer(QtCore.QObject):
             self.process.setArguments(args)
             label=('Adaptive rendering, %d–%d SPP, error %g' % (sampling['min_adaptive_samples'],sampling['max_adaptive_samples'],sampling['target_adaptive_error'])) if sampling['sampling_mode']==2 else ('Rendering %d samples/pixel' % (self.sample_grid**2))
             if snapshot.get('_ipr'):label='LS · '+label
+            # XPU2 renders the preview: how XPU2 samples it, as the picture's line says it.
+            from . import xpu2_sampling
+            if not request.get('output') and mode in ('xpu','auto') and xpu2_sampling.active():
+                try:label='Rendering · '+xpu2_sampling.words({'samples':self.sample_grid,'render':sampling,'xpu2_generations':snapshot.get('xpu2_generations') or {}},realtime=bool(snapshot.get('_realtime')))
+                except Exception:pass
             self.status.emit(label+' · '+self.backend_status)
             if self.using_session:
                 self.session_serial+=1
@@ -693,7 +705,8 @@ class Renderer(QtCore.QObject):
             if packet and not self.closed and not self.canceled and self.phase=='render':
                 expected=self.session_serial if self.using_session else 0
                 if packet[0]==expected:
-                    (self.workers if line.startswith('@@MODO_WORKERS ') else self.buckets).emit(packet)
+                    if line.startswith('@@MODO_GPU_WORKERS '):self.workers.emit(('gpu',)+tuple(packet))
+                    else:(self.workers if line.startswith('@@MODO_WORKERS ') else self.buckets).emit(packet)
         self.bucket_partial=self.bucket_partial[-65536:]
 
         self.log = (self.log + text)[-65536:]
@@ -751,7 +764,7 @@ class Renderer(QtCore.QObject):
         if getattr(self,'using_moonlightipr',False):
             # MoonLightIPR has its beauty and its denoised picture both: it sends the one now chosen.
             self.moonlightipr.view(key!='beauty');return
-        if key=='denoised_beauty':return # Post-process result, not a native render output.
+        if key=='denoised_beauty' and not native.xpu2():return # Post-process result, not a native render output.
         snapshot=self.active['snapshot'] if getattr(self,'active',None) else {}
         if outputs.display_kind(snapshot,key)=='cryptomatte':
             self.status.emit('Cryptomatte ID colors become available when the current pass completes.')

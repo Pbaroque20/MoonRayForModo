@@ -1,0 +1,2348 @@
+{
+  "schema": 1,
+  "identity": "1c1d08be170ddb1e3edced935a476e74e403bf875e646c01529394a178e6dcf9",
+  "contract": {
+    "runtime": {
+      "AttributeMap.so": {
+        "size": 182251,
+        "sha256": "38a5ecac61aa2ca447a322bb0d4ee9349eb9e0d36fd0dc4972a6add9ea12253a"
+      },
+      "AttributeMap.so.proxy": {
+        "size": 110311,
+        "sha256": "651548b7cc2d8d7123e045233c778d5eafb485ba174f8b71bac819908ebd2502"
+      },
+      "avcodec-63.dll": {
+        "size": 20616581,
+        "sha256": "073ad5f013f15c0cc6e06ba3cd5e25dd308b9de940e9797d33e9535eb49f6dcb"
+      },
+      "avdevice-63.dll": {
+        "size": 173849,
+        "sha256": "b9dfc4aa507a81f71b2fe65be259ff34dba0732ce9377996d10dc63e730c48de"
+      },
+      "avfilter-12.dll": {
+        "size": 6797539,
+        "sha256": "64b896b74b67e6a51e1023a5b78e6dc0cb2b9c920e2a2cba22e95943e2dc6b5e"
+      },
+      "avformat-63.dll": {
+        "size": 2990582,
+        "sha256": "d878d8b3aa12368e7810b74512e49f7f8495394d5521ef821cf4dcac36b18638"
+      },
+      "avutil-61.dll": {
+        "size": 1287359,
+        "sha256": "333840039d2b927423f3036ef506cacd875c7f7935596332de7be09f0955a090"
+      },
+      "AxisAngleMap.so": {
+        "size": 117344,
+        "sha256": "7e58bc6259c8bf672dfca5d0a9c878eb8c23179878e18d5689210df57fd32372"
+      },
+      "AxisAngleMap.so.proxy": {
+        "size": 94926,
+        "sha256": "33517a8f1363a00df7168e428608ebbd4c26b8f3fe5eae2c242a0b7a5048e349"
+      },
+      "BakeCamera.dll": {
+        "size": 130546,
+        "sha256": "551ed42455e4590f31899ec6342f0ac345f8b2a92afa35f4f5938aafb29b4e05"
+      },
+      "BakeCamera.so.proxy": {
+        "size": 121806,
+        "sha256": "6737774694e51d0452fa4bd57521595c5a603a0dad769630ff0fd5054cda4047"
+      },
+      "BarnDoorLightFilter.dll": {
+        "size": 142096,
+        "sha256": "4c876238b5d2d64158883a7519016cf820f32ccc568d94be0e2c39eb1bc0bf34"
+      },
+      "BarnDoorLightFilter.so.proxy": {
+        "size": 137248,
+        "sha256": "65576ff4a39b0d305fdfcc091c9b11660cbcc98f278a6edcf2a150e357294a19"
+      },
+      "BaseVolume.dll": {
+        "size": 170054,
+        "sha256": "1ac0fa9337862a0036b79adcc5e581571498b9569783f5d3805dd8b71615d4cf"
+      },
+      "BaseVolume.so.proxy": {
+        "size": 154909,
+        "sha256": "5f81c86f3fad82c6f2de89a08951fe4e925233f180ae49cbe7b48e62d345901f"
+      },
+      "BlendDisplayFilter.so": {
+        "size": 132911,
+        "sha256": "dc39880ee2d8a123b62755735ff043876a9d7775f3da591aaf1adc653bb8aa6c"
+      },
+      "BlendDisplayFilter.so.proxy": {
+        "size": 105016,
+        "sha256": "fd2835a07279752a84d30f5ea493fdb34b196a5ace7946fe4929f2938687b7bd"
+      },
+      "BlendMap.so": {
+        "size": 125303,
+        "sha256": "acd93eb84a96239fa90eb605e2fa36a61855d71ecbbc71c648bd7d4958a18256"
+      },
+      "BlendMap.so.proxy": {
+        "size": 94364,
+        "sha256": "261e202079abde83dac97079bf63d4c249b0fe6d9b90b055ae501a89046060bd"
+      },
+      "BoxGeometry.dll": {
+        "size": 95777,
+        "sha256": "2bace67b741d765cfb4b43e96a60d378ba75fe086037a62d994a3f7dcaf33334"
+      },
+      "BoxGeometry.so.proxy": {
+        "size": 70960,
+        "sha256": "e44e70a06909225d8e626affb181e6f860407170ea37d4f88447a732a8f5115b"
+      },
+      "build-manifest.json": {
+        "size": 84572,
+        "sha256": "1b5e8642b86a684e347c6617294018fb7118b3f41e71666d439d2f252267be65"
+      },
+      "CheckerboardMap.so": {
+        "size": 111278,
+        "sha256": "bb4c95a8237aec15a962a8ec1b01f3a60091ee258eaf835dbbdb001a74d76676"
+      },
+      "CheckerboardMap.so.proxy": {
+        "size": 94038,
+        "sha256": "21398652b8575398d7ec0649d34f514c718582c859a35fae6b4633e849bcd83d"
+      },
+      "ClampDisplayFilter.so": {
+        "size": 130300,
+        "sha256": "2dc3a3fbcc5c203a524254c0e6a7b44b4e01cd56ec4331e0b198343a5ab10ff9"
+      },
+      "ClampDisplayFilter.so.proxy": {
+        "size": 103651,
+        "sha256": "aaab251ea5f9261b3287218ed193d71dad3014529a2d9e264e8b36ddabcf4519"
+      },
+      "ClampMap.so": {
+        "size": 103807,
+        "sha256": "0d276ec2ecf8da76f3203c29f674bbb38316f106a6a1cf9f9c9aa85493b93e13"
+      },
+      "ClampMap.so.proxy": {
+        "size": 91300,
+        "sha256": "5f31e9e4b17f12ed5d271923cc9c1460397183f0018955c43307c7451775c6c8"
+      },
+      "ColorCorrectContrastMap.so": {
+        "size": 122786,
+        "sha256": "10b9185d8c98c099684bb886b2bc399bf4784dbb6b251750f0c9fb0c2d6ced25"
+      },
+      "ColorCorrectContrastMap.so.proxy": {
+        "size": 97904,
+        "sha256": "1b17ff87e4cdc0a008262e6f4a55659d74ef5cb8ded6eb9fe1b170716618ed58"
+      },
+      "ColorCorrectDisplayFilter.so": {
+        "size": 156719,
+        "sha256": "f9df7d1695d740305cfb2cf0104933477c775da32a060ae83c972d14704179f4"
+      },
+      "ColorCorrectDisplayFilter.so.proxy": {
+        "size": 106544,
+        "sha256": "c4e0fae160698cf77cd94a35655a90f578888cd5b995d1e49a4c264cde33eac1"
+      },
+      "ColorCorrectGainOffsetMap.so": {
+        "size": 128315,
+        "sha256": "5c37766c0e28d1066f33c90ebef6606edaae503c7b6113bfea9b4dc9fa480976"
+      },
+      "ColorCorrectGainOffsetMap.so.proxy": {
+        "size": 102271,
+        "sha256": "be7b6ff6a395f3f50f8e7a1d560d49382f64cdfb4bec278ab4f7c2b926194c5d"
+      },
+      "ColorCorrectGammaMap.so": {
+        "size": 136194,
+        "sha256": "3341ce7494dba0f39c95ccea326a9146f8b6b7267112cc02f4315455976d5e10"
+      },
+      "ColorCorrectGammaMap.so.proxy": {
+        "size": 97349,
+        "sha256": "f1ce95c644af655424dabe1af003f21b4f934f43c1b6732ca8f3ed8935ad75c9"
+      },
+      "ColorCorrectHsvMap.so": {
+        "size": 129560,
+        "sha256": "6bf20e4c6c7afc5939c1ee51b17c2d1d7e7ac8d51aa155e03d41f2094c2f3b9e"
+      },
+      "ColorCorrectHsvMap.so.proxy": {
+        "size": 97382,
+        "sha256": "d6ffa62445bd900da1060ea336d0f0a94ddfebab2e559a8134a482fc82c4422c"
+      },
+      "ColorCorrectHueShiftMap.so": {
+        "size": 119143,
+        "sha256": "a2f56c61acde9c27e4025ab83c326eb2031ec83cd4d4197632af110fd0d2f342"
+      },
+      "ColorCorrectHueShiftMap.so.proxy": {
+        "size": 91878,
+        "sha256": "2df86de1be15c275a77c16980af656fb2647cf50c23dafa89f35218052a0fa8f"
+      },
+      "ColorCorrectLegacyMap.so": {
+        "size": 132245,
+        "sha256": "6cdea5c6e35aca817e0092d9969db00df05f5fce157fc254269b5037dc1da7c2"
+      },
+      "ColorCorrectLegacyMap.so.proxy": {
+        "size": 100520,
+        "sha256": "7ece2ff52f3ad66f6a0e141d6130b35011bd48bbede7acdc3a2fbdce4c89bbc3"
+      },
+      "ColorCorrectMap.so": {
+        "size": 219016,
+        "sha256": "9f0c64c9a43376841a7b350bb9a3368dc1b4130d971793dbb27f2b5cf477cf11"
+      },
+      "ColorCorrectMap.so.proxy": {
+        "size": 144321,
+        "sha256": "1f74d6136067ea94017ed94c4d3697038a71cbc1e38a3d6e289b627252c7b0fa"
+      },
+      "ColorCorrectSaturationMap.so": {
+        "size": 120169,
+        "sha256": "fb3b0f76bd6b29f4214fc6bdb14c0c4e4eddd1f5b2cf5961de77ad6e38e4b2a7"
+      },
+      "ColorCorrectSaturationMap.so.proxy": {
+        "size": 97932,
+        "sha256": "c2c15e03e0d7f2a5a8b08b08b17ecebc04d4e88c986fbaeebd3a0e39004f38a5"
+      },
+      "ColorCorrectTMIMap.so": {
+        "size": 115223,
+        "sha256": "39f016efd0c5d5807414e3766c5ce8b6f074acb77acc2cc9160457746f25f56b"
+      },
+      "ColorCorrectTMIMap.so.proxy": {
+        "size": 91847,
+        "sha256": "a41d421b24d005322503b8bcf6eecb7fb2a177850a548a002920ee8936621bc9"
+      },
+      "ColorRampLightFilter.dll": {
+        "size": 148881,
+        "sha256": "4f35f7d25d145b6b48740089db15608df6334085c65a285f218f1516b0264d15"
+      },
+      "ColorRampLightFilter.so.proxy": {
+        "size": 143514,
+        "sha256": "49085fbf69a8991cde99b67303420abc4d174126986eee504f2403ce770f56ba"
+      },
+      "CombineDisplacement.so": {
+        "size": 109220,
+        "sha256": "5544d0738054bc49b1a9d1c4b3cacd312c8ab1bc87b201fb713f2369914b9c73"
+      },
+      "CombineDisplacement.so.proxy": {
+        "size": 92812,
+        "sha256": "ab8ea2ad9bb2fa0f7b32ec706c32d11ecf7d4cd21d17c0de2cc1b26d6ab7a352"
+      },
+      "CombineLightFilter.dll": {
+        "size": 91194,
+        "sha256": "ab3391e305bf77497e6ce840d3ae5020fcc30c829f47f9a5bccecbc927a70b6e"
+      },
+      "CombineLightFilter.so.proxy": {
+        "size": 80918,
+        "sha256": "0ec0b722c822cdd0d8ca16d3c86c0c89a1bf5eaecb0ad9a7ba6240dc663e088a"
+      },
+      "CombineNormalMap.so": {
+        "size": 119113,
+        "sha256": "50f52d0c94985c087bf398035877963ad61e68fad926d838ffa2ea11b9570fd2"
+      },
+      "CombineNormalMap.so.proxy": {
+        "size": 86954,
+        "sha256": "23c72917a0718ec348e7e0baade3a80ee508fc9d5174fcf2fde91d044000a691"
+      },
+      "ConstantColorMap.so": {
+        "size": 77541,
+        "sha256": "e4c439faef8fae0a0652c1f2d259ccc1ab20e0f5bb67c62d9cb188b106b7f32d"
+      },
+      "ConstantColorMap.so.proxy": {
+        "size": 68068,
+        "sha256": "40f59643e98cfe5dbd44f7a77c4bf95356c576b0e5d8acb8f208a5e7d9123852"
+      },
+      "ConstantDisplayFilter.so": {
+        "size": 125299,
+        "sha256": "8ff75fb009f18fd3439bdcdf6ec1972c1f79b0b74b3ccc41601ffb91313d53f8"
+      },
+      "ConstantDisplayFilter.so.proxy": {
+        "size": 102530,
+        "sha256": "0ad14d1d7f856b6b58fa764e1a9a6f801c6afbdbe3ae7e9245260798a3f3f9be"
+      },
+      "ConstantScalarMap.so": {
+        "size": 77442,
+        "sha256": "3240c636f8b3eb6944c3b7293a0e97b3a625d67350e75482cc945829e2e38f60"
+      },
+      "ConstantScalarMap.so.proxy": {
+        "size": 67952,
+        "sha256": "6a01445b0561f764ebf1f0a8fb6d100ec07a7b857343a3ed68d4d314939e19e2"
+      },
+      "ConvolutionDisplayFilter.so": {
+        "size": 148067,
+        "sha256": "c56b682fba295e7b8104f8e842b931718f848a780bd3ab7a23bb374b123b975d"
+      },
+      "ConvolutionDisplayFilter.so.proxy": {
+        "size": 114315,
+        "sha256": "88afd1c186154018821fe1cfb5d50344ddd1be6d28cebf8aeed98527efc2d9cc"
+      },
+      "CookieLightFilter.dll": {
+        "size": 130561,
+        "sha256": "ffb7d4689ea71a7608f2ab4cf62fd2310432e7b8b5a18f9992d7faaac39e11bf"
+      },
+      "CookieLightFilter.so.proxy": {
+        "size": 125727,
+        "sha256": "54c5a7dbabf09b65552ff575058b24cef66af827f27fab183cbb6103ad7f2148"
+      },
+      "CookieLightFilter_v2.dll": {
+        "size": 150265,
+        "sha256": "d471d10e58e2f01156025341f20d41bf4e3ad729730713d927c864d68545ea73"
+      },
+      "CookieLightFilter_v2.so.proxy": {
+        "size": 144898,
+        "sha256": "f4c47663212d77762f94a151f9fcd0acdd4cdb71c11c0b5954a831642b0e6180"
+      },
+      "cudart64_12.dll": {
+        "size": 573952,
+        "sha256": "c2c9a9c22a9bcba90e261825968836787b331038047a26770cffb7a583c28344"
+      },
+      "CurvatureMap.so": {
+        "size": 131528,
+        "sha256": "e492689136fb2914e82eb331510940bf7e0de93d0aa407d07182fe6a9918218a"
+      },
+      "CurvatureMap.so.proxy": {
+        "size": 91065,
+        "sha256": "e393adbdc2182fceac16e4000f0221aebf0ced1f12e264476e6d0d08075a746d"
+      },
+      "CutoutVolume.dll": {
+        "size": 76833,
+        "sha256": "203c5c7e9b083993293914102cccc03cb2c6f9e106ee68044ac3c40a3faafb41"
+      },
+      "CutoutVolume.so.proxy": {
+        "size": 68015,
+        "sha256": "04c1897d455a9f36f056a2cf1070ee3e47a4cb9b0ada62bc2d7ceb0045151007"
+      },
+      "CylinderLight.dll": {
+        "size": 107097,
+        "sha256": "869049a203d280bd154e1df7d1370754f7d8fea25e476b56d405fd55984a61a7"
+      },
+      "CylinderLight.so.proxy": {
+        "size": 101378,
+        "sha256": "cf87aae28897444e182524973a305784af9674696b2fa929f21a0552dd51c3a8"
+      },
+      "DebugMap.so": {
+        "size": 182311,
+        "sha256": "8bf44432fce7bfdd9f84ea1c15925fa012bd3b75c60d9c3d33513e15eda1415f"
+      },
+      "DebugMap.so.proxy": {
+        "size": 124878,
+        "sha256": "32fce197b321cbdf1e87c2262e81524db7fed151bb55414a6048ffbeef8e1e83"
+      },
+      "DecayLightFilter.dll": {
+        "size": 95311,
+        "sha256": "78f217c5d40590c79392a4d8fae67ed222910499a6559f8389b1f3315af280df"
+      },
+      "DecayLightFilter.so.proxy": {
+        "size": 88948,
+        "sha256": "c1f12c766de9e69cbf1968c63a46100d2c020fb70ced0a716bbbe5446ab7c9b4"
+      },
+      "DeformationMap.so": {
+        "size": 130648,
+        "sha256": "ada3a2d97aec98cc66a2fe92513f8a830c7e33c60577e5d00fdeed78986377a6"
+      },
+      "DeformationMap.so.proxy": {
+        "size": 91169,
+        "sha256": "0b5f2fed798fd8c6956b5dd5623f2beb252ba3ad3e58f65e20d2116d04a10b29"
+      },
+      "denoise.exe": {
+        "size": 101993,
+        "sha256": "d5d11eab56f4e72eacd7dec8238811d2fd3501443154c9aad1369e79ec19baaa"
+      },
+      "DirectionalMap.so": {
+        "size": 213549,
+        "sha256": "5e814da15d4aa9e5f632bc374c08d896ce8b0d0754b02cf42bf9646edafe4bff"
+      },
+      "DirectionalMap.so.proxy": {
+        "size": 138392,
+        "sha256": "c7d4a1047f0b60355447f631f016f1c919724f8a185324a3f327df958e853db5"
+      },
+      "DiscretizeDisplayFilter.so": {
+        "size": 129151,
+        "sha256": "8d4406fa3ea33f76ffe6faa6b701d399ee5b640ed5bb902fef1d0a49627466fe"
+      },
+      "DiscretizeDisplayFilter.so.proxy": {
+        "size": 102486,
+        "sha256": "8d6ff6a0c7604004778285df89be2674d1b5604a601f538d1359f8600c004273"
+      },
+      "DiskLight.dll": {
+        "size": 106555,
+        "sha256": "2aad34b57c71dde82312c6064c27aa453f8aaf9fbf898e9e50e612042d14c117"
+      },
+      "DiskLight.so.proxy": {
+        "size": 101378,
+        "sha256": "ddbd5a3b92d298d7b3e4c0707c7132eda9632a6089309119a4a744dcc0408206"
+      },
+      "DistantLight.dll": {
+        "size": 89002,
+        "sha256": "cc2d8fff6c4b7b4a6db235ffaa794ba8dc90e786e0d5cd31bc3dc1f75bcb2aa0"
+      },
+      "DistantLight.so.proxy": {
+        "size": 84313,
+        "sha256": "392b063d1121b3c5bb180b3092bbdc2065630caa7c46e7b269c2d0d4366794ee"
+      },
+      "DistortNormalMap.so": {
+        "size": 172533,
+        "sha256": "782ad49e5a60c4fb336244b3f7b66fb4ead55af264894112c8263a63ccabb415"
+      },
+      "DistortNormalMap.so.proxy": {
+        "size": 129087,
+        "sha256": "befa9c6ce5e5aa26520532d9d00fc2b37712c9a6f2a701b9f2f3c56db013326f"
+      },
+      "DofDisplayFilter.so": {
+        "size": 142859,
+        "sha256": "b52c1b8b421628a71878ab8a81240489fedc52cb45c2883ce070941ba75b10bd"
+      },
+      "DofDisplayFilter.so.proxy": {
+        "size": 98642,
+        "sha256": "4d425f4b1d7d3f5d071f219e6d9238f7541d5ef56afbe86094d6226685d1a24e"
+      },
+      "DomeMaster3DCamera.dll": {
+        "size": 118795,
+        "sha256": "83ac14cc661d38bbd7d38f13f16e08b9460c696174bea24b9a274507d5fe0b1a"
+      },
+      "DomeMaster3DCamera.so.proxy": {
+        "size": 109985,
+        "sha256": "6584e8691c9b8389568a00245bd55ddfa9deac9ed173cbd50652d9b9db60ca7a"
+      },
+      "DwaAdjustMaterial.so": {
+        "size": 233306,
+        "sha256": "a437a78f2ec40809b2f684ca811f75aad55c359f7413ed16711704d1f70cf2ca"
+      },
+      "DwaAdjustMaterial.so.proxy": {
+        "size": 127457,
+        "sha256": "69f59429430140c33d7af982d4eb6f84b7a06ee6b5525237a9a8102b59ddd8ce"
+      },
+      "DwaBaseMaterial.so": {
+        "size": 368684,
+        "sha256": "9cb4cb5ff8803ccbaba66dadc62f83ffe95de6498798686971f4e1f06b3f27ea"
+      },
+      "DwaBaseMaterial.so.proxy": {
+        "size": 290769,
+        "sha256": "d39077ef8dbb8800cbfb903289fc3763b5bdf1a4ce95ba0971910d337af8dcb2"
+      },
+      "DwaColorCorrectMaterial.so": {
+        "size": 161229,
+        "sha256": "04a66e09ec22542cedf6f0e79d5112b7e910928ba37632c8866ca6219abc0ffa"
+      },
+      "DwaColorCorrectMaterial.so.proxy": {
+        "size": 114779,
+        "sha256": "a28757ab87fdcd9b3741e723c1f45d75729408381f6f22ba6c2c726496a324c4"
+      },
+      "DwaEmissiveMaterial.so": {
+        "size": 134575,
+        "sha256": "0fe7cf4b28e8b242327d3d4259e63bf776ffefb1909e58df7c245afbedac596f"
+      },
+      "DwaEmissiveMaterial.so.proxy": {
+        "size": 98790,
+        "sha256": "3db2709fa50f0bbe61f98e996ca1d26cdd6584f94018aa5ff3d920e6e81ab481"
+      },
+      "DwaFabricMaterial.so": {
+        "size": 267324,
+        "sha256": "3cac7f5ae6c086e2b45ec07d447c39374ebcf8961ed93d6b66c28ef01ee4d33b"
+      },
+      "DwaFabricMaterial.so.proxy": {
+        "size": 209124,
+        "sha256": "7d6989b78f262ea75a5da0d94be8e3b1c6557061bc865c9b83ed18e377e4e2ea"
+      },
+      "DwaLayerMaterial.so": {
+        "size": 196111,
+        "sha256": "fbc5665abf33644ce95d686db6e1577c1b99e7ca69fe63f01d5af7e681fe9bb4"
+      },
+      "DwaLayerMaterial.so.proxy": {
+        "size": 145288,
+        "sha256": "4d061e493ad3c634df73cf7cab9936cbae127f282f809f44722b6985e18e1e01"
+      },
+      "DwaMetalMaterial.so": {
+        "size": 317536,
+        "sha256": "1e6d17351725b8922e1e384a4161ad5003fcd6eea33fdf66099acc7320e6d1ad"
+      },
+      "DwaMetalMaterial.so.proxy": {
+        "size": 252854,
+        "sha256": "d9e0b58bbd26f931972ca57cbea72bb76f28a7cfc6c7364640ac14b63cf9cee1"
+      },
+      "DwaMixMaterial.so": {
+        "size": 251402,
+        "sha256": "9e98567b3eb098202e5e5c76a45b389ea39701a91ec308ee2b52d28390c3a868"
+      },
+      "DwaMixMaterial.so.proxy": {
+        "size": 187955,
+        "sha256": "c2bdcd68302520ce62133ca92d334d084538db5cb16582f05fc02a7fa8bd3a7d"
+      },
+      "DwaRefractiveMaterial.so": {
+        "size": 272976,
+        "sha256": "acd2de50c5aba2233cb48ad3f0804d04872769c14a54a69956382a66bc8e7bf4"
+      },
+      "DwaRefractiveMaterial.so.proxy": {
+        "size": 215118,
+        "sha256": "abd4c64d7889b4baaa1d3168471d04c58383b949e30ad440d06a2311ce5ffcc9"
+      },
+      "DwaSkinMaterial.so": {
+        "size": 338588,
+        "sha256": "6694e9aa1b4d54c4b1840cbc95b9a37a711209b61b533d1aad444d8e07e25a7e"
+      },
+      "DwaSkinMaterial.so.proxy": {
+        "size": 267660,
+        "sha256": "314938fcfa72659e69bfc1a524d0f0c04349b83299daf07189f0d94212285b5c"
+      },
+      "DwaSolidDielectricMaterial.so": {
+        "size": 343342,
+        "sha256": "6212adb32b699986837ff120cc6a65fd2e90bacc8d60d3887f9d73e92f289621"
+      },
+      "DwaSolidDielectricMaterial.so.proxy": {
+        "size": 272298,
+        "sha256": "bf9e0f4be154809a44206cbe5d3871656a55558171b2b1ad6b27fa73d5971baf"
+      },
+      "DwaSwitchMaterial.so": {
+        "size": 187295,
+        "sha256": "c36c45543ee6083796b73cfa90920f21e6629a3f46669050006be14cd962268a"
+      },
+      "DwaSwitchMaterial.so.proxy": {
+        "size": 147263,
+        "sha256": "56f335904bbb562897b48b2cbbd0282961950dbb1273f984eeb3ec1a58a630cb"
+      },
+      "DwaToonMaterial.so": {
+        "size": 542014,
+        "sha256": "880f922651b3236e6636294c74635e4cfbad498e77eaaae48d59137e4c88abf1"
+      },
+      "DwaToonMaterial.so.proxy": {
+        "size": 420247,
+        "sha256": "38f0d67a0dde7ab973eaa8a02de1f000b1aef3fa28dfa3d78015c900c943d5de"
+      },
+      "DwaTwoSidedMaterial.so": {
+        "size": 148352,
+        "sha256": "bb16281a6242dfdedf5b26045ec898c4c2a9a27041df728af57f25eb1141725a"
+      },
+      "DwaTwoSidedMaterial.so.proxy": {
+        "size": 107643,
+        "sha256": "f52388d3ffd55e19abdceb72115408b0a690c9dca0b93fe66cc44119ae9e8003"
+      },
+      "DwaVelvetMaterial_v2.so": {
+        "size": 232674,
+        "sha256": "2152715742c34db86cf919fbbdbb48004ff34051d84041012f09b2373de67424"
+      },
+      "DwaVelvetMaterial_v2.so.proxy": {
+        "size": 179714,
+        "sha256": "f2bca168bd7b6a07b27d8174bff1bc67e43d448318929ae382b45fb323964eda"
+      },
+      "EnvLight.dll": {
+        "size": 76536,
+        "sha256": "9d3aeb3d5d7bf22a49c37c5749fd9627b9ffdd3cc8a252dca31da738e0efed95"
+      },
+      "EnvLight.so.proxy": {
+        "size": 71877,
+        "sha256": "010c1e746c17cade81f2b8cb31897ce80e7603e10422cb51fabcbb0164cbe336"
+      },
+      "ExtraAovMap.so": {
+        "size": 102529,
+        "sha256": "b340873e13e29580ee6bd155316bf8eccf837ec49ac950c22b4b1b3614acbf8e"
+      },
+      "ExtraAovMap.so.proxy": {
+        "size": 90330,
+        "sha256": "5f94ded649ecaa680c193092a7d011cb86fb285f13c7d2b2acb19f1910600a3b"
+      },
+      "FisheyeCamera.dll": {
+        "size": 92674,
+        "sha256": "fd762c74132b9d69e1f9ad48e699494e9324aaf06f939561fb9f0a96840a126c"
+      },
+      "FisheyeCamera.so.proxy": {
+        "size": 83404,
+        "sha256": "66906d505cdabdf116ff054f736b59205e74dac6798e25649d7cee4e07d67137"
+      },
+      "FloatToRgbMap.so": {
+        "size": 83102,
+        "sha256": "5ae7f6eabedf9fae0060ce972513327e2c49bc7fb6fa028bcabdad9cf5be3fcb"
+      },
+      "FloatToRgbMap.so.proxy": {
+        "size": 69008,
+        "sha256": "63b26f60ce91676e09f3e9bcf9d4a293d9020d64071c2ae36e6598fd624fd15d"
+      },
+      "ggml-0.dll": {
+        "size": 55948,
+        "sha256": "6f5f4a2842cc680ebcc96bdefc7b1e9f82249074039e80de427a04db52717580"
+      },
+      "ggml-base-0.dll": {
+        "size": 906139,
+        "sha256": "a831400c16dd40be5568272bd9d28fbed6dfa20784b3017c37ef349bca1fd5f9"
+      },
+      "GradientMap.so": {
+        "size": 210162,
+        "sha256": "65ba471614cf16bfb344ea915d3d909bee3db4e1c735bfabb037856e2a5dff51"
+      },
+      "GradientMap.so.proxy": {
+        "size": 136751,
+        "sha256": "370f58a72d6591bfa0504cbd8b3d0b48db2e8f09ef6a35eb7dbd4a7e767e7fe8"
+      },
+      "HairColorCorrectMaterial.so": {
+        "size": 175491,
+        "sha256": "700b92b9f71e7cf5b3a08bc4b79e59ccd27c90844d2141d45bbc234bc87f1389"
+      },
+      "HairColorCorrectMaterial.so.proxy": {
+        "size": 114276,
+        "sha256": "c04d3ad829a4d385309b0bfa90b7effc4ccad18cef39590f888825f884241bdc"
+      },
+      "HairColorPresetsMap.so": {
+        "size": 94068,
+        "sha256": "f06f153cf3a267b523ee18654b3909e8f72f03d9a85684e0464c420b7e2b603b"
+      },
+      "HairColorPresetsMap.so.proxy": {
+        "size": 69826,
+        "sha256": "05d9dba629e029ff7412a453d6c49223ac756513a46137315e76917457bb8753"
+      },
+      "HairColumnMap.so": {
+        "size": 51480,
+        "sha256": "d6f536b8a2e9b12e7874a6ede69e3d514ed76fb6612f76ad4b58912b0f1d3aa5"
+      },
+      "HairColumnMap.so.proxy": {
+        "size": 25905,
+        "sha256": "2193b4d4f1933d2090611ca657630bba17ac55535f9d8b498512dbbcef72ec2b"
+      },
+      "HairDiffuseMaterial.so": {
+        "size": 177603,
+        "sha256": "0da16da3dd41e65e84201652382d2333c8d06ea834578ecb0907014d3c3b75b4"
+      },
+      "HairDiffuseMaterial.so.proxy": {
+        "size": 134709,
+        "sha256": "407e8b414261bb04bf118e1ab03ebbef2db3bc0aebd41aef8e780e547b17f2e9"
+      },
+      "HairLayerMaterial.so": {
+        "size": 154137,
+        "sha256": "e19cab179bf3143ca0fd4d194a500143116c053902b7a6ab6c66229bddcae365"
+      },
+      "HairLayerMaterial.so.proxy": {
+        "size": 100449,
+        "sha256": "64e572680fb4f2b3194881e6eb982bca0a26b58351fccc0407edd1bc26fbbdf8"
+      },
+      "HairMap.so": {
+        "size": 122596,
+        "sha256": "e96a453f177e010c8632daae503071a8958df90c35186f13ab646130c39438a8"
+      },
+      "HairMap.so.proxy": {
+        "size": 83239,
+        "sha256": "aca31c916c67ee497fab2ca169dc9f05fe4308d10ea1cd77a5a856427a4b2eb2"
+      },
+      "HairMaterial_v3.so": {
+        "size": 211752,
+        "sha256": "af9f3e2f61cc1395de18c6c7b3041dd2e6e141eeaca3a61b4f2d913f78285745"
+      },
+      "HairMaterial_v3.so.proxy": {
+        "size": 164331,
+        "sha256": "b4d5e0d9be02cada683e929e690b6021d09fe0b1a745e69c80f011df64176214"
+      },
+      "HairToonMaterial.so": {
+        "size": 457078,
+        "sha256": "24b44970ef0f5dfbbe0f8832b0341e644ab8bcc6ef985ffcfc4d25d352245846"
+      },
+      "HairToonMaterial.so.proxy": {
+        "size": 329113,
+        "sha256": "8a52bb6dddae16604ffaf542b8b95a52360b80834ac374fd08dbe4858e887c6c"
+      },
+      "HalftoneDisplayFilter.so": {
+        "size": 139867,
+        "sha256": "17c351ac22ec230b15a40fb5cd3bb5be3bf28ef6b809b1da2d8178666a7a5951"
+      },
+      "HalftoneDisplayFilter.so.proxy": {
+        "size": 104715,
+        "sha256": "0df3d1b3fa9e6a8237d8f9e646d5ebea23494b1404ec9d3c14a19c56e8e7525a"
+      },
+      "HsvToRgbMap.so": {
+        "size": 86093,
+        "sha256": "e4e25ba58575a4e8861b75fb0556611d485cb441af24912a0ea8d463a43e8f1a"
+      },
+      "HsvToRgbMap.so.proxy": {
+        "size": 67534,
+        "sha256": "142d1de49d39957b309f7625461a3a3ce38413187ac603f129f0208b4b0d2448"
+      },
+      "ImageDisplayFilter.so": {
+        "size": 171503,
+        "sha256": "f3f8971e8f1818dc4bd5e37fbdd130ec65c2b89308bd4198ed48cdcb58d7eff9"
+      },
+      "ImageDisplayFilter.so.proxy": {
+        "size": 112704,
+        "sha256": "7066beb9982dce4ec9eb2bc86de949dd523b74c612ba628457668ffe9888a7fb"
+      },
+      "ImageMap.so": {
+        "size": 245016,
+        "sha256": "2d5872fee432c041ab6bca10ca97695ffc49962be5381465180ee0569812f360"
+      },
+      "ImageMap.so.proxy": {
+        "size": 154214,
+        "sha256": "e03d4d9217b8246305155f0e3d2ccb5b01d2a9265c888f14bd782953813c0670"
+      },
+      "ImageNormalMap.so": {
+        "size": 181083,
+        "sha256": "36d9052bca9ffe7845ec0489f3a379081b97d452533ce9aba2dd68f43434b8d8"
+      },
+      "ImageNormalMap.so.proxy": {
+        "size": 132873,
+        "sha256": "5fb70af95bef77308c886d86e613fb0632c2b714f0c0afd19ee8700506eae046"
+      },
+      "IntensityLightFilter.dll": {
+        "size": 112444,
+        "sha256": "6103af30864172d617c5a4e9964d47e3c6e5c820dbe9a64de3bceef464a1d403"
+      },
+      "IntensityLightFilter.so.proxy": {
+        "size": 106565,
+        "sha256": "20e39372c3d75359460cc353461b680f4f9583575cef86b0892504b3f21aafb0"
+      },
+      "LayerMap.so": {
+        "size": 126634,
+        "sha256": "02366c5c07a45ec914b2df7f7531288f9f7688c74ccbca0065d28c221b4ec441"
+      },
+      "LayerMap.so.proxy": {
+        "size": 92684,
+        "sha256": "8a4b41e9aa86519993c393f21c578529e5157ca4fa6dd55c408734c4da3cf4d8"
+      },
+      "LayerMap_v2.so": {
+        "size": 127211,
+        "sha256": "afa5bb2eec8e21b2ee4457f77ec7695ec66df5943187c24fba7bc03b71b9c548"
+      },
+      "LayerMap_v2.so.proxy": {
+        "size": 92699,
+        "sha256": "81b5a29298f8f131968e546229c80615e976a497d3b5687cc052e05dd85ae7e1"
+      },
+      "libaom.dll": {
+        "size": 9679990,
+        "sha256": "13e651628932728e53ed927d49fba57fa9168ec9df7f87f56c89db602bf5f37f"
+      },
+      "libapplication.dll": {
+        "size": 156859,
+        "sha256": "756186cffe8c302eda8f5078cee661ec72a9e6502f60202d451639588dfad8c0"
+      },
+      "libass-9.dll": {
+        "size": 345174,
+        "sha256": "cb2b46133b3bd9630384148bd7229e987af9703208d4329fc2215f4170b8dc6b"
+      },
+      "libatomic-1.dll": {
+        "size": 35541,
+        "sha256": "7a3797b3b1b243b9ca884026861ce8c996e7f06d606286089d010b662cc4617d"
+      },
+      "libavif-16.dll": {
+        "size": 326513,
+        "sha256": "9986e8a1d6735c938dad0a7062cb9dbcf0cd65d32eb9347c705205fb6da070ad"
+      },
+      "libblosc.dll": {
+        "size": 120173,
+        "sha256": "5dd4c9cdd51b7794ddb640ee884f44f8745895c9803f20b5f82065afb224b64f"
+      },
+      "libbluray-4.dll": {
+        "size": 373421,
+        "sha256": "24870a1b32ff8b36cfa94479d802dfabc55a12e7bbde8584606f7e2d44d3c6dd"
+      },
+      "libbrotlicommon.dll": {
+        "size": 144565,
+        "sha256": "c62c08223e450dfc2fff33c752cc228505ffd9d755201958ba800d5d30481a2c"
+      },
+      "libbrotlidec.dll": {
+        "size": 62619,
+        "sha256": "e270b6e576594ee8ee6e33ccc54e34a54304616dd6225652e11e49d6f17ef896"
+      },
+      "libbrotlienc.dll": {
+        "size": 789189,
+        "sha256": "82573820fe9cc3f57004b6603428e2fa1bfc9d2048707bfcead3cfc5ef3ab284"
+      },
+      "libbz2-1.dll": {
+        "size": 107741,
+        "sha256": "1790bf6473c9d48db14c1f0ee8124142327556d281299ea2a72ee361118ee01a"
+      },
+      "libcaca-0.dll": {
+        "size": 859225,
+        "sha256": "4ab7b69e156b77a76776237ad37054dc9558f18dc2cd4a9c2a4287a8811002b2"
+      },
+      "libcairo-2.dll": {
+        "size": 1244446,
+        "sha256": "be391428fd305983f888becae10ebab9d8009637e7805383e822740043e95849"
+      },
+      "libcairo-gobject-2.dll": {
+        "size": 31536,
+        "sha256": "060e586a23bc07d81cf9c9c2a3927dc2d61168fcc89b13601e98afdffffbfeb6"
+      },
+      "libcommon_fb_util.dll": {
+        "size": 772209,
+        "sha256": "54a82fe60b3af6c2ec8456185bd57ef55cc4d0b8d3916a6c77f85c711ffdb81b"
+      },
+      "libcommon_file_resource.dll": {
+        "size": 48255,
+        "sha256": "b45a8ea83ffb90672ff986511b96ae648298528c8d27126753e6c1b0d1c127d3"
+      },
+      "libcommon_grid_util.dll": {
+        "size": 2554720,
+        "sha256": "c553881aaf7fb8462c639e85e16aa7d69c759f3b2d9a33c22fc2c79d748acb8e"
+      },
+      "libcommon_interpolation.dll": {
+        "size": 33388,
+        "sha256": "815da86e596ec836e58cb5f63be32adc5c4b66de699c9a12f155c1f65f0fd0bf"
+      },
+      "libcommon_math.dll": {
+        "size": 31634,
+        "sha256": "fd763e1a59189fcaf13fec90bf8e70b65ecdb2af41ed5adc347f085fb9bde29c"
+      },
+      "libcommon_mcrt_util.dll": {
+        "size": 39389,
+        "sha256": "3dfbc405a70c58a0d07180dedb31137d1612b9df74c803b150d422416d1106bd"
+      },
+      "libcommon_noise.dll": {
+        "size": 471160,
+        "sha256": "20d6dd6b19ef066b4e3ee9fcfb0711469bca613c2fc61ef766b915ce76a986ec"
+      },
+      "libcommon_platform.dll": {
+        "size": 32409,
+        "sha256": "ab998186f23d1ad6bc38ae63e53bfd26ac939c8e6125470094d1814896f7bc54"
+      },
+      "libcommon_rec_time.dll": {
+        "size": 53157,
+        "sha256": "31f64a84cfb98031ed416274468ff5a969728043b3ffade5c5853752d3476306"
+      },
+      "libcrypto-3-x64.dll": {
+        "size": 5495100,
+        "sha256": "7d25614b72d98b1a280d50de253f395f4062058af8e22d2dc1ec44fb648f0028"
+      },
+      "libcryptopp.dll": {
+        "size": 4593589,
+        "sha256": "ca63c3b48b96f7fda821472723e261664869655845cd451972ec5a1246330642"
+      },
+      "libdatrie-1.dll": {
+        "size": 35223,
+        "sha256": "40aee3ae9a62a77454dfe8419fe21b54c54d969e0471c9e817b65d4502a9949f"
+      },
+      "libdav1d-7.dll": {
+        "size": 1929830,
+        "sha256": "bbe67862f77c22f6f509684207b5363542e5b52c1a1faa354e12a11d072ad766"
+      },
+      "libdcmdata.dll": {
+        "size": 2596316,
+        "sha256": "1b875bbf5f5cb4765d0149750d423ff9a0cb5195043d57ec370884a0309f82fe"
+      },
+      "libdcmimage.dll": {
+        "size": 926579,
+        "sha256": "6d1ca60d80edc9e435d4739198643be5c22ed9935bdec050a03686c21a590fe6"
+      },
+      "libdcmimgle.dll": {
+        "size": 2802156,
+        "sha256": "c10e64b801ece82d4b88f95618d58c8ebed7a7c17b9307b4445e7cc5403d6360"
+      },
+      "libde265-0.dll": {
+        "size": 964082,
+        "sha256": "2f68bea90a116aec63c6d5c5db6ef483166fdc2a09156986f23c90964c33a5d8"
+      },
+      "libdeepfile.dll": {
+        "size": 472203,
+        "sha256": "a932bb34f31ab7f6e6a59cb6812b1db425473383869a4f6dcd86eac9f13e4df2"
+      },
+      "libdeflate.dll": {
+        "size": 97053,
+        "sha256": "61a60665da9fd15a0e8668c47424f325e1d74479c3f896fa7ae48ffcee4ca300"
+      },
+      "libdenoiser.dll": {
+        "size": 139257,
+        "sha256": "63d8af873a3f13059ecacd4dc5f393ffd4f0f41876f599802fdb0f912da271c6"
+      },
+      "libdl.dll": {
+        "size": 21810,
+        "sha256": "a364701c61370b49f0bed3e62928a92a8d94dcb7d1e5d41520dc8e8ac7c772f3"
+      },
+      "libdovi.dll": {
+        "size": 1370861,
+        "sha256": "75988509f0d2166e2060ed548913bd7b34556bc16b3f9a02469de1dd2347a7fb"
+      },
+      "libEGL.dll": {
+        "size": 252928,
+        "sha256": "625af4e343a115422c906ecee1cc1c7cb9d9f1a5b3827620f80f30e6577f8a4a"
+      },
+      "libembree4.dll": {
+        "size": 40321396,
+        "sha256": "62f9b4b0c5f97a7189333008776124aab6f0e8ca861c36bdcc27c9f395ee5f29"
+      },
+      "libexpat-1.dll": {
+        "size": 237172,
+        "sha256": "228d7458da0d55a060a982ae809503f2ea9bdfc6f88b9fa756abb98ffe04afa8"
+      },
+      "libfb_util_ispc.dll": {
+        "size": 80740,
+        "sha256": "b6515ed5929bcf22986759d1d33b004e9f36e3994339e3a06510f95b4e669db8"
+      },
+      "libffi-8.dll": {
+        "size": 39826,
+        "sha256": "f96cf79b75f33a10023d001673b564538023395c94b3c58e1db53114976a7c25"
+      },
+      "libfmt-12.dll": {
+        "size": 195587,
+        "sha256": "1a5dafb217a1922ec1b286dce11da5a4cabb7b3ba30570e052c6756fb44d2b3c"
+      },
+      "libfontconfig-1.dll": {
+        "size": 505833,
+        "sha256": "be30a200fa4000d0a7a1d3911391969627440148f01d0028a319bcb9fa112202"
+      },
+      "libfreetype-6.dll": {
+        "size": 791593,
+        "sha256": "a3271784f8366b3c6412e0c35474884fa12899c392bacb08bc8eac00f4be7e64"
+      },
+      "libfribidi-0.dll": {
+        "size": 152541,
+        "sha256": "14bd0ed4c24d0068434bc23cd4f39e8dc0edcf56f2c9996b6fe39b39ffc54673"
+      },
+      "libgcc_s_seh-1.dll": {
+        "size": 150537,
+        "sha256": "68ca4574b331402879dec403ba4f14491c9b8fc4aa3f4a41432008714b9bc5df"
+      },
+      "libgdk_pixbuf-2.0-0.dll": {
+        "size": 359253,
+        "sha256": "ed9ab5fce358af212fbde9dac122b6f4b68ca45449a38444da61b0c3a11e328f"
+      },
+      "libgif-7.dll": {
+        "size": 46093,
+        "sha256": "547f069546e3233430d3cbf106b403fbdc9c5cf1518e525c462533d58843b31e"
+      },
+      "libgio-2.0-0.dll": {
+        "size": 1919044,
+        "sha256": "6457697b77638c9cc20baa3c19228dcecc15aeea886e72815b2079cdb0b8d941"
+      },
+      "libGLESv2.dll": {
+        "size": 11592704,
+        "sha256": "710e246f405a6f63005c0d91f385a1b7e62fb1cfc566fd0fbde01b7319a0d6a4"
+      },
+      "libglib-2.0-0.dll": {
+        "size": 1568604,
+        "sha256": "642d4da7a378374a84b1edc30100b9e9c7b798e53347853aadd1c86691a81468"
+      },
+      "libgme.dll": {
+        "size": 372192,
+        "sha256": "98e306bc1443f4f5a0744baf0477d2f856594bb3f8036440ad7cb1f30a1f5a72"
+      },
+      "libgmodule-2.0-0.dll": {
+        "size": 23440,
+        "sha256": "4a3e1bf8b17425c58be37d0a2bda2340364e19d18320f414a6537a3069867ad4"
+      },
+      "libgmp-10.dll": {
+        "size": 681231,
+        "sha256": "c2567ccf3f410c3411ba7cd4b7ba14f393a0e70a1d0c0593297df6706b5fba96"
+      },
+      "libgnutls-30.dll": {
+        "size": 2315149,
+        "sha256": "f7f05c96572506c81f2ffa89b518234afa4af2603aad8903db257a4f1e97e9e6"
+      },
+      "libgobject-2.0-0.dll": {
+        "size": 358171,
+        "sha256": "516bef266569d691924097224502e45ea04f6cd423bdfa23251f609007b9fb0e"
+      },
+      "libgomp-1.dll": {
+        "size": 327456,
+        "sha256": "37d23888447afabf47b0d5c6a1ea79852c3d522315040230c4ed3e1705e90b61"
+      },
+      "libgraphite2.dll": {
+        "size": 167857,
+        "sha256": "93953e4744bcfce9a7bc439b956544bc213095cb1349c3602a58370f32b25c18"
+      },
+      "libgsm.dll": {
+        "size": 56666,
+        "sha256": "b3446b547f8894bcabf0aa98a78146c60b1cf6dba7ab55e6a726fb3739276bf4"
+      },
+      "libgstapp-1.0-0.dll": {
+        "size": 98514,
+        "sha256": "d2b4cb10ea62112fa69ba9057973d5974c91da51beb828e6e36d4bdddfb7159b"
+      },
+      "libgstaudio-1.0-0.dll": {
+        "size": 599450,
+        "sha256": "e5d2e7087846dc5a4fc56f04485a48f14564dd8656f602a4ef1db115cb950547"
+      },
+      "libgstbase-1.0-0.dll": {
+        "size": 546120,
+        "sha256": "32ee68a1dd186e2a4c16ad34ca657871f157d4f49ff0c9e3aedecd238a3b0fe0"
+      },
+      "libgstpbutils-1.0-0.dll": {
+        "size": 320089,
+        "sha256": "4068ee62898c066a8761d216e9b5bfccd6e300ede5af9c99ed452245a30e507e"
+      },
+      "libgstreamer-1.0-0.dll": {
+        "size": 1475464,
+        "sha256": "d15f3aa1430a09ac20a9c0b0377f2633753bce7dd8fdca7be01ad99b9f33cc09"
+      },
+      "libgstriff-1.0-0.dll": {
+        "size": 66485,
+        "sha256": "09c2951438ea278006ff366a856483a7432b3f8b378ecdcd2a3221a22530d2fe"
+      },
+      "libgsttag-1.0-0.dll": {
+        "size": 311459,
+        "sha256": "d56b4428ead3f73858ada6754f19bdb3c3eae91d70e4e24f99ec866cc8b9beb2"
+      },
+      "libgstvideo-1.0-0.dll": {
+        "size": 922234,
+        "sha256": "b1136531cf1dc894a0ede15b003cdc34680df6ad92f09de5b67b230886c81e9f"
+      },
+      "libharfbuzz-0.dll": {
+        "size": 1593498,
+        "sha256": "255b36d87925a4fb59f4c906ca116cb48ac336c3cefcea8612c179dd56169eab"
+      },
+      "libheif.dll": {
+        "size": 2419851,
+        "sha256": "3dbbdb66b2f9be0bc49f9f343d5b39d57f9257a79135166cdaa79a1c26f61950"
+      },
+      "libhogweed-7.dll": {
+        "size": 276571,
+        "sha256": "b48e33181b78d715ba310581f4c72376c959854638bf635e1703e5fc1b783498"
+      },
+      "libhwy.dll": {
+        "size": 87628,
+        "sha256": "9ba0ac7bad82c4c88e9bb8d6ca8c6a83877adc1f71cc48590c65b8d26108a41c"
+      },
+      "libiconv-2.dll": {
+        "size": 1141951,
+        "sha256": "94ec68fb8d342b6c91b6b48a8d95092819cdcd006a7166e0b68062f946afd08a"
+      },
+      "libidn2-0.dll": {
+        "size": 246525,
+        "sha256": "a054a6bb69aaf4666157f968740412e9697085cbc1e48a78f8dd9622169c5aaf"
+      },
+      "libIex-3_4.dll": {
+        "size": 363116,
+        "sha256": "bd029151020703140364b4e097dcd0f9cf202af54d18e8d39b94c8d82dd4c476"
+      },
+      "libIlmThread-3_4.dll": {
+        "size": 37293,
+        "sha256": "b9bde2aabd48849fa33e99b23c46abee073a49e85bbcbcf8325a8171710639eb"
+      },
+      "libImath-3_2.dll": {
+        "size": 344102,
+        "sha256": "9e0cab959b32bebbeaab9bf1dffb0b35ac771d9246090a7fbd2b3d0eb3dd62bd"
+      },
+      "libintl-8.dll": {
+        "size": 298164,
+        "sha256": "0e5a178731e6be6d115442a6ade3df7f03265cd1fc4338f8b6f86a8001cbf582"
+      },
+      "libjbig-0.dll": {
+        "size": 61598,
+        "sha256": "36b6155be36d24a19154a48177a09978ff6c26f48665d8c7bb5057aaace6b91c"
+      },
+      "libjpeg-8.dll": {
+        "size": 967184,
+        "sha256": "c63acd5a3231725aa96aa35444b74cd8d607a6fbdab1dd18b0e0ada7e39476d4"
+      },
+      "libjxl.dll": {
+        "size": 6209591,
+        "sha256": "53bd8cfdf5138cb8f9d96d6459c480b9256d17036f840e59ff2ac2ac03f37685"
+      },
+      "libjxl_cms.dll": {
+        "size": 140878,
+        "sha256": "cab882e05bda645fc5b87f2093960a8d6608d40917204b30b173ab132d13c73a"
+      },
+      "libjxl_threads.dll": {
+        "size": 26420,
+        "sha256": "a5891f300a1733fe361ce708bee8841eee21b2bd3b7fc1f43510174c54e8bc6a"
+      },
+      "libkvazaar-7.dll": {
+        "size": 558971,
+        "sha256": "642f969e7118ae8e8068c30182fbda3cd6100c5f291f404d9f37d6fd00982c30"
+      },
+      "liblc3-1.dll": {
+        "size": 165946,
+        "sha256": "970f6d805e215cc17df962c64e21449af3da97e09cb4a14a5f943bbd0e9c0329"
+      },
+      "liblcms2-2.dll": {
+        "size": 448202,
+        "sha256": "03314471fadd04cdd63c108472ff85d058903d236a0356c14eda363f0e1ccb65"
+      },
+      "libLerc.dll": {
+        "size": 803103,
+        "sha256": "1ffee78579c25b073267bcac8d0a6045d9bd446e010c7953b569b2629ca8a58a"
+      },
+      "liblog4cplus.dll": {
+        "size": 908596,
+        "sha256": "baa715afd09aedca5368dcdea4219af289dd34ed29b660dd644448c43c5b32dd"
+      },
+      "liblz4.dll": {
+        "size": 161286,
+        "sha256": "5e83fd34144fa033c12e22718317ec2123f8a3460903932b0bfddb8aad379cfd"
+      },
+      "liblzma-5.dll": {
+        "size": 190872,
+        "sha256": "d97a260b8bb4f6affc34ec47249429240068b94bb6f7dc30c4d64daaafb3ac69"
+      },
+      "libmap_primvar.dll": {
+        "size": 63628,
+        "sha256": "c13b4ec2ad5e7cd65364fd959c1c51a9d8658c10c5572d051a988779a8073504"
+      },
+      "libmap_projection.dll": {
+        "size": 193558,
+        "sha256": "bf5bea602e606649d683c7f595f79d79cdeb8e6ebbe7baf2442a0239d32a5b20"
+      },
+      "libmaterial_dwabase.dll": {
+        "size": 827211,
+        "sha256": "982d4a3f7fd32ece30aae6458a0edc59aee4358d190f95d7cabebd3ce09e8c00"
+      },
+      "libmaterial_glitter.dll": {
+        "size": 297633,
+        "sha256": "eaf24a39bd719994f23ac31aec79bb1d55a2a483f33bcc3054237ab71c984816"
+      },
+      "libmath_ispc.dll": {
+        "size": 59365,
+        "sha256": "4cbe674cdca639dc504c2fb8a688449dd99de3780438e3602efd94a4616339f4"
+      },
+      "libminizip-ng-1.dll": {
+        "size": 1150824,
+        "sha256": "89b0e64416d7bbc7a37fc12bade45c0f9c4beae425414ad533fe74ec1b143391"
+      },
+      "libmodplug-1.dll": {
+        "size": 397610,
+        "sha256": "d1425827ff8c5cc81dfc66d7d5660e9ea9bfda8ada71255a0c4847d0889ea62b"
+      },
+      "libmp3lame-0.dll": {
+        "size": 329487,
+        "sha256": "7ae709bf841478222fc468d6aa08cdb47a683feb40ff13fe9fb36359333d4559"
+      },
+      "libnettle-9.dll": {
+        "size": 359138,
+        "sha256": "9b9f8bffca94d3cca7d1afb77d9deb0fa34427eaa05f1832037f46bc9e3dc134"
+      },
+      "liboficonv.dll": {
+        "size": 4534402,
+        "sha256": "a8b218cb5df9c49133b38f4e1b2de497aac2321334718b1be2fe19e4b70c6142"
+      },
+      "liboflog.dll": {
+        "size": 518942,
+        "sha256": "8f14bc216a21c6296a226950291dcc1af2443f7e862953ddf3d73958ab8e2f46"
+      },
+      "libofstd.dll": {
+        "size": 363439,
+        "sha256": "1520c0dd5f281c92472cc3be6827a3458ebe1b70319973dcbb96f1c8957fb9ff"
+      },
+      "libogg-0.dll": {
+        "size": 41748,
+        "sha256": "2f102fba6f2a49516be85cb2643f6a9ba394dc5657aedb3ea235b6603c12d3d2"
+      },
+      "libopenal-1.dll": {
+        "size": 2719658,
+        "sha256": "cb33f3a9505f38b4a82510bf303547e5e66c525eff591085c752e3d81dfc51cb"
+      },
+      "libOpenColorIO_2_5.dll": {
+        "size": 7565178,
+        "sha256": "8059fff07ff3ff6759e29f605d4ebeccdefbde9e45b0f94ea9fbbaf4a1a50a52"
+      },
+      "libopencore-amrnb-0.dll": {
+        "size": 178308,
+        "sha256": "9d36d5661fd002f8889d90e0a53f2c5d693c641c075ef55c26ade85d958d1369"
+      },
+      "libopencore-amrwb-0.dll": {
+        "size": 95876,
+        "sha256": "54341e49eab692d77e0ff8534a40a3cce6d0d58b9cd157ed69c817c4b852bbdb"
+      },
+      "libopencv_core-500.dll": {
+        "size": 7072892,
+        "sha256": "328a7cb78ef13e5caa636663dd856cce44009792be001144bfcd117d012a64d5"
+      },
+      "libopencv_flann-500.dll": {
+        "size": 630885,
+        "sha256": "847dfbb4aa9271ec6702fc8bc23aa852f9e0f133e3a084329fc29036a5baada7"
+      },
+      "libopencv_geometry-500.dll": {
+        "size": 2265084,
+        "sha256": "0566382cf754058f4fce68d0083d07c9de5a7d197c40ae4477161eb26d9a9678"
+      },
+      "libopencv_imgcodecs-500.dll": {
+        "size": 868214,
+        "sha256": "f49718c24081c555087d530c3e773978e0c1c52a019ee189b2f803dd1baf3b95"
+      },
+      "libopencv_imgproc-500.dll": {
+        "size": 12563453,
+        "sha256": "cc73b839a3906fadf131b95a5c053772a8fe23624aa16cf576253175866543dd"
+      },
+      "libopencv_videoio-500.dll": {
+        "size": 818263,
+        "sha256": "1eddf390d48e829104dc6383dd5614ebeebc85c903ec89fa1093289abf1135c1"
+      },
+      "libOpenEXR-3_4.dll": {
+        "size": 1227003,
+        "sha256": "61a595958174f5bf8e377acc600b0c87a8b5824a43379c28bb4540a1f5ee0aa4"
+      },
+      "libOpenEXRCore-3_4.dll": {
+        "size": 456326,
+        "sha256": "9ef08478ecb1f084a4039dc7e730c076da300f76227fb62442b8a1cff927ba57"
+      },
+      "libopenh264-7.dll": {
+        "size": 904393,
+        "sha256": "6722d93cb98a1d804c5469b9f21a46e2a7acc4aa134c932b339cbd59fbe03ca2"
+      },
+      "libOpenImageDenoise-2.dll": {
+        "size": 108441,
+        "sha256": "df2687017d77991874860c12790fb5467ee2e8068d19992eb91c2aa4b4263fd0"
+      },
+      "libOpenImageDenoise_core.dll": {
+        "size": 50533515,
+        "sha256": "912fe1d6c1401146a464d6acb9166444af8a6e246fa0089a42ebceb73a45eecd"
+      },
+      "libOpenImageDenoise_device_cpu.dll": {
+        "size": 480736,
+        "sha256": "30e4e28e0e57d045e86a9b67fb87d393b8e1201b947655f5edac7677d1d906b7"
+      },
+      "libOpenImageIO-3.1.dll": {
+        "size": 8082931,
+        "sha256": "b0513b01b970bf1a182a3c0a6ca293fc3188c9a5ee047565bb262093436a1711"
+      },
+      "libOpenImageIO_Util-3.1.dll": {
+        "size": 881217,
+        "sha256": "5648c061c34e268efcb6105e1abacdd3dcf837ebbfcd690cd516bf88b0e94f9f"
+      },
+      "libopenjp2-7.dll": {
+        "size": 517286,
+        "sha256": "94f9507828d391cf96d700d34918114f1c1e03f91dd1243a19275e0435690925"
+      },
+      "libopenjph-0.32.dll": {
+        "size": 647479,
+        "sha256": "df855ffad9c18824e64ba220be0d9f9101c6e73f21d418c34ee187a97b65ae1a"
+      },
+      "libopenvdb-13.0.dll": {
+        "size": 4786733,
+        "sha256": "eec036f5ea7af62dbbd5ce3c77e72f8b887a9aa0e43f7e58ec12de42d1bdb6f5"
+      },
+      "libopus-0.dll": {
+        "size": 492271,
+        "sha256": "c12f9a671a106c649a5517d28061670aa57c805d242b80764853a7551099498d"
+      },
+      "liborc-0.4-0.dll": {
+        "size": 590497,
+        "sha256": "c61ef2525f47cdddd0c4191cabe08287afaf3f32b1275587aed6c65783561a5d"
+      },
+      "libosdCPU.dll": {
+        "size": 1053002,
+        "sha256": "6ac1aabb0507fb0d0d41053e0fa9b13722ba7e4565aab5506a05ae2858b9723f"
+      },
+      "libp11-kit-0.dll": {
+        "size": 1590616,
+        "sha256": "c24fcbd4d67f6f837a1cc29bd37a2980670febfa64b1a424720e5768ff91cfa8"
+      },
+      "libpango-1.0-0.dll": {
+        "size": 435180,
+        "sha256": "fd92503a3fcab12fcf555cf8a47610f23b203cf888b48b5628629987d68215b8"
+      },
+      "libpangocairo-1.0-0.dll": {
+        "size": 82317,
+        "sha256": "0af768e57c0aaf8f1dbafdff21b95a21d9cff7ae5be2e3e5ffa366c9dbf4f5c8"
+      },
+      "libpangoft2-1.0-0.dll": {
+        "size": 111100,
+        "sha256": "27620f9c842109690616393b3616c29d5dfda8f8a0a980c0a5e869d4f75be925"
+      },
+      "libpangowin32-1.0-0.dll": {
+        "size": 109864,
+        "sha256": "152832e8add3031293fca8152ac8450db9122ee5b20561160e025a078954162d"
+      },
+      "libpcre2-8-0.dll": {
+        "size": 706534,
+        "sha256": "752f04bb7a60d2a049788ffaec14b45602c4dec4c29534001dfcf434d26da19c"
+      },
+      "libpixman-1-0.dll": {
+        "size": 737775,
+        "sha256": "12e693d94829f013e0bd7c042b30998b20e91ece7b6f4d5f075ddbb58b373c92"
+      },
+      "libplacebo-360.dll": {
+        "size": 1235613,
+        "sha256": "8eb2c3fe24a124d9dbf0383d60ac7dde6c0dd5607b2451cad0d924271e46d5b8"
+      },
+      "libpng16-16.dll": {
+        "size": 258972,
+        "sha256": "5c1dd5410af563f4a3c4aee10d1f749aa71e0d7fb3b4fac240eb9e96cadebd26"
+      },
+      "libPtex.dll": {
+        "size": 563462,
+        "sha256": "1c3a47723e5dd519fcabb948b654451f68aabea27f9bee5f9adb4d8acc3aba75"
+      },
+      "libpugixml.dll": {
+        "size": 278323,
+        "sha256": "0e21b769f88b76c1f2382dd3a83eb89221153a40d536ed6abbbc6229e25ee770"
+      },
+      "librav1e.dll": {
+        "size": 3522560,
+        "sha256": "bc549e2178589f371469d1bd23544859ff118e48218eae2bfca7126654988779"
+      },
+      "libraw-25.dll": {
+        "size": 1236913,
+        "sha256": "9281cda9c49f83d68a1fd82c7bac06ab876b40cd9fbbd62c9622113735fc7a53"
+      },
+      "librender_cache.dll": {
+        "size": 112223,
+        "sha256": "a3c833844ad06872f853669166e62b353a06638ce747f650ef59637c649b986d"
+      },
+      "librender_logging.dll": {
+        "size": 642631,
+        "sha256": "a79bc2c472914d6e4c491e4ed10d1d1dd8fcba2500f984f9d5d7fcdea2d7a72e"
+      },
+      "librender_util.dll": {
+        "size": 684843,
+        "sha256": "c25c4e6cd3c0ec898f2f818c232d0effb820175f0fd8f0751437f94375eabbf4"
+      },
+      "librendering_displayfilter.dll": {
+        "size": 70334,
+        "sha256": "4a9f7ec34867aa6d16492c39a1d64d579e2524e5e7944d0a717e9a8199dc7e75"
+      },
+      "librendering_geom.dll": {
+        "size": 11270884,
+        "sha256": "47cc471ea872a4dbb946d6acf6e99a2bed64a2bfc826798113b2b6508bf4959e"
+      },
+      "librendering_lpe.dll": {
+        "size": 200601,
+        "sha256": "7a4940be272863b369c98c89cda0b0ee8fcb170a21e1e7c2197da70604e63861"
+      },
+      "librendering_mcrt_common.dll": {
+        "size": 380373,
+        "sha256": "df4fe1e4c3c6d17a6f1130e32742926cc6a43c8cb260a84ee07491bdfe7df542"
+      },
+      "librendering_rndr.dll": {
+        "size": 205020803,
+        "sha256": "8d0bbebee6f997e00af06f83ff9cb4a4e920a480eaf41334548c27385f2dc7d2"
+      },
+      "librendering_shading.dll": {
+        "size": 5992932,
+        "sha256": "0bb0eb11e6022d36dba2fb186aeb06c72dfcedd62eb4fc4817af5552953c4d62"
+      },
+      "librsvg-2-2.dll": {
+        "size": 11769390,
+        "sha256": "278bfe70d237c5e49fdde37e2b6e7fba1edf641c054798ec10dc79ccb97fab61"
+      },
+      "librtmp-1.dll": {
+        "size": 117122,
+        "sha256": "f9fecc5ce88e647cdc5960f125a91d9ed2e66f1ff812ee4160da69b0d416e5e2"
+      },
+      "libscene_rdl2.dll": {
+        "size": 3147855,
+        "sha256": "296f8ff1167dfcd2cdf938cd7ec2b444d9093c35b676cc54988cc2a675fcd964"
+      },
+      "libshaderc_shared.dll": {
+        "size": 10588655,
+        "sha256": "31a24d149f9c3f716eda4277abf6fff8023e2fe1c0f8dfa3ce9f83231fbe4bbe"
+      },
+      "libsharpyuv-0.dll": {
+        "size": 48938,
+        "sha256": "d29380c7056383f3e7a80bf9e150f0b8c425c1cf2568d1336e88979ddc2307af"
+      },
+      "libsnappy.dll": {
+        "size": 55907,
+        "sha256": "3c802a3e189bc8cd6cf2d16216e4afbacc2a0e3cef82f1a5d469b7fdd8b665d5"
+      },
+      "libsoxr.dll": {
+        "size": 307200,
+        "sha256": "ac03eccb5567b2fabf6d58a7fb249316e688bdaa718763964d437b8fc887ee4e"
+      },
+      "libspeex-1.dll": {
+        "size": 139325,
+        "sha256": "70517dd82e962c0956f0e8d3bb700cd7ecc62b8c08741b35d71f2e95d601621d"
+      },
+      "libspirv-cross-c-shared.dll": {
+        "size": 3415384,
+        "sha256": "9c833af0fe70795d3635739fc3c279d1969b6c00dccd51161f48cea055db1bcc"
+      },
+      "libsrt.dll": {
+        "size": 852770,
+        "sha256": "6ad77ab5b1a9dc3d2d0bb929bfe9c6a46eb119c5f81d32014176ab873abeebdc"
+      },
+      "libssh.dll": {
+        "size": 622845,
+        "sha256": "dbaf4b60ccbcef6aa5d6385d8d1965d4f483999b9ced1d5a2afbf719028b3d1e"
+      },
+      "libstatistics.dll": {
+        "size": 45017,
+        "sha256": "76f975d4866192f1f048162436d08bde956e20dfccd23479e5f908c8095ea358"
+      },
+      "libstdc++-6.dll": {
+        "size": 2659194,
+        "sha256": "b30dbd914d903992acb28b38455947153886656beafbd91c465c31aa258f9c45"
+      },
+      "libSvtAv1Enc-4.dll": {
+        "size": 7566075,
+        "sha256": "34f015c70ac283ba90bf5bbe0fec6e6af0fcbd50762566826405c8ccfade6e75"
+      },
+      "libtasn1-6.dll": {
+        "size": 111487,
+        "sha256": "9793128fa5028fe8d8b49407a6ed900a2315444f9f7444a146f0b62f08c1c5bb"
+      },
+      "libtbb12.dll": {
+        "size": 290199,
+        "sha256": "38c5b0e88ebd3164c48e6bba7bb9c309132d243d1014057c10a9c4b0c128fe6e"
+      },
+      "libtexturing_sampler.dll": {
+        "size": 343331,
+        "sha256": "e1cad7b8a57caa144d343ac06b663a84a1172ff34b96fe8159bee478ad51e10d"
+      },
+      "libthai-0.dll": {
+        "size": 71780,
+        "sha256": "d8d8b87e9089a811e088f6a01da57c19ed54d2b6613bb85697f1958473f63666"
+      },
+      "libtheoradec-2.dll": {
+        "size": 97913,
+        "sha256": "0b9877e581421abe4090abacf2cd8c04df6de00520d7a34b9f41b46a11a02a80"
+      },
+      "libtheoraenc-2.dll": {
+        "size": 247882,
+        "sha256": "ed0fb82d04220070d2f53832a9cb653546ddce2c704a53bfacae7597666db4d7"
+      },
+      "libtiff-6.dll": {
+        "size": 618616,
+        "sha256": "ce0eb686a9b03a8586d7d1f833fadcbe67ad2f6ff8538c3f431d4edb072f935d"
+      },
+      "libuhdr-1.dll": {
+        "size": 655240,
+        "sha256": "09758c12d708bbf2da0fcc5bdf300d459efdf7ae4d0a9466f73cfb2647aff6bf"
+      },
+      "libunibreak-7.dll": {
+        "size": 141442,
+        "sha256": "f1f4bb5b5bb3dbf8d142df3012f13e4b5b0246565496d43718a6f33321e96283"
+      },
+      "libunistring-5.dll": {
+        "size": 2256134,
+        "sha256": "ee39258fa1086269674a8179d3cfaf7c4e380ada14441b5dd9ed53d82d15c4e3"
+      },
+      "libva.dll": {
+        "size": 285777,
+        "sha256": "20591e45edfcbf7f4b5735f9096b19be9796b0f61d1ab041f39d2732357593ae"
+      },
+      "libva_win32.dll": {
+        "size": 17779,
+        "sha256": "2721e9c28099699b6d723d3d56671ca46db21a5bdb9e2c41df516da17d6539b7"
+      },
+      "libvidstab.dll": {
+        "size": 150415,
+        "sha256": "6980084b957f32cf13248d8b0160a698d75e1148f6b35af85f57f559242fb623"
+      },
+      "libvorbis-0.dll": {
+        "size": 179630,
+        "sha256": "d1b40d7f33171ccb8cd2a238bea36c01176c54de5bf22afae332fb33f26a008f"
+      },
+      "libvorbisenc-2.dll": {
+        "size": 577914,
+        "sha256": "971cfa7c8866653aae9760a317dc3838e821f3911d9c6a8a8ef90f4a13de798f"
+      },
+      "libvpl-2.dll": {
+        "size": 480527,
+        "sha256": "88bd6fece68ebad05d3e78581455bb902cc1d3930018931d0830616097e74d73"
+      },
+      "libvpx-1.dll": {
+        "size": 4405542,
+        "sha256": "759bb95b0cd6c75bfce910f003b26a2d95ed3c94ef1a20dcfd4c89a0569f2016"
+      },
+      "libwebp-7.dll": {
+        "size": 746378,
+        "sha256": "8dfe40c4e0abc90ddf18f080898987e01253d099b2b2d6daf7db521e55c00446"
+      },
+      "libwebpdemux-2.dll": {
+        "size": 26908,
+        "sha256": "d9ac8b88387cea7ac943c38c7610314d7a41e7d6d86a8a22582ff8b8a6b99c72"
+      },
+      "libwebpmux-3.dll": {
+        "size": 78875,
+        "sha256": "9bd85116a22923d648d6b0ad09f21d08df7bd3d8860b24a5b4a6d4ac788b7340"
+      },
+      "libwhisper-1.dll": {
+        "size": 500171,
+        "sha256": "d0e7392ad2ac759c1aa703f65773b4729d54e42e65a9137ab39ed9e1735c7498"
+      },
+      "libwinpthread-1.dll": {
+        "size": 64574,
+        "sha256": "76cc52adfcdb8c800813b2ae8da42a908934eb1ee54ce8e9744fc8d703c76ee1"
+      },
+      "libx264-165.dll": {
+        "size": 2017572,
+        "sha256": "a58995b5af6d0fcf5d17f354bfa54bb05d99056ed167eec9c8e86a3a63478ec1"
+      },
+      "libx265-217.dll": {
+        "size": 22658774,
+        "sha256": "48a6c942cab3196d740d7af3cfc8359dc7bd833c87c1ca24b8d231b70daa9e18"
+      },
+      "libxml2-16.dll": {
+        "size": 1247552,
+        "sha256": "5cf84e4be1d9da56a6269b1bd18c8ab5fcce11087aa24002dfce57e46238455b"
+      },
+      "libyaml-cpp.dll": {
+        "size": 535702,
+        "sha256": "83577bafa592def578b385a95a4160b4a3c739473d5a7fafa2e02c5894d28ca5"
+      },
+      "libyuv.dll": {
+        "size": 1007634,
+        "sha256": "ecba917cb08e6208bb9c28156f0f5106d5cb2aa91801c5bd868c242c41625ebd"
+      },
+      "libzimg-2.dll": {
+        "size": 631148,
+        "sha256": "99625f39de8de654a90077362aafaa4e565c97908b39c0e9614562f9dfb57200"
+      },
+      "libzstd.dll": {
+        "size": 1217412,
+        "sha256": "48368ab0ca622d0ec12f41ce85d91f22866bf5da92c77a69a06483564c93816c"
+      },
+      "libzvbi-0.dll": {
+        "size": 444296,
+        "sha256": "e8193ad6853c223f30cda1fa5a6d5e956b809f5fc09197954b49e20f65824fe1"
+      },
+      "ListMap.so": {
+        "size": 96401,
+        "sha256": "924c4814158fef14e9e77b9c0fc30bd31c5b47854c10ee92d3e803935f782b14"
+      },
+      "ListMap.so.proxy": {
+        "size": 83295,
+        "sha256": "a9088caa3c6b147bf4a59722db1314626b87c3ae8a78469d9cb33d80a94b03b7"
+      },
+      "LODMap.so": {
+        "size": 113510,
+        "sha256": "760a7e882e0efb4684e7913e8f27348ca68b8fb3511ebe54d73ade4afab866fe"
+      },
+      "LODMap.so.proxy": {
+        "size": 92748,
+        "sha256": "e21e32215565a23b3bdff1a48c360f89d7c8280fb612763dd03780efa9a1fd25"
+      },
+      "lua55.dll": {
+        "size": 299188,
+        "sha256": "8e8e048636b8c385113e65a4ee52c6605bf7491d698a4ca13a13bf02449b9d3e"
+      },
+      "maketx.exe": {
+        "size": 69061,
+        "sha256": "2d2a08959fdae4ffbaf9a7118d84224f9a490dbe38cb415f918574de3970f65b"
+      },
+      "MeshLight.dll": {
+        "size": 124689,
+        "sha256": "e8043e41f9dcd77fb6dc17f53d5b5e403c32441ccedf418f9964c73927600897"
+      },
+      "MeshLight.so.proxy": {
+        "size": 119512,
+        "sha256": "5a6c2697bd8f47a325077b464ae2a3d07743c9f1477bc9ac21ae55841f9c74ad"
+      },
+      "modo-crypto-categories.json": {
+        "size": 457,
+        "sha256": "22b0cb5c6ee42b344b6e43e1aa2a09b3ef62bb6eedbc215b74f0b34382bbb6bb"
+      },
+      "modo-instance-motion.json": {
+        "size": 239,
+        "sha256": "820525ba54f570d3905321063bbf4d170ea2fffb9a77cdc93fe3d539142dff57"
+      },
+      "modo-session.json": {
+        "size": 322,
+        "sha256": "7b4ad3e35dc91b1662f302077816b9bfeb6653200147ab97544b79bdcf21d4f5"
+      },
+      "modo_display.dll": {
+        "size": 27901,
+        "sha256": "88f54a0b19d400dc23bae09f9c9de5c7619f3c806d3e1b2d808dc6a303958be6"
+      },
+      "modo_display_stream.exe": {
+        "size": 124897,
+        "sha256": "73a84c1d5e3efee6243cebf71710cb0a52df452a3b2adad227998d908a5ed0ae"
+      },
+      "modo_fur_grow.exe": {
+        "size": 2745729,
+        "sha256": "b9134590a3accf554b3d65fc7ed6d9fff78f7f7cff9146d00a1f8016dd5788c4"
+      },
+      "modo_hair_grow.exe": {
+        "size": 2757323,
+        "sha256": "a60863a3319d469ca35e6a3b2deafddb7b1ad33a9b4947032387dee0c4bb74fc"
+      },
+      "modo_rdl_import.exe": {
+        "size": 173929,
+        "sha256": "0b5cab0dc64e48b808b82618d4e85c09f405e24cdaba343118aaf346e97ab703"
+      },
+      "modo_vdb_grid.exe": {
+        "size": 4775140,
+        "sha256": "f97817a8cbfba9bfc3789b4f1859f6b01364ad97b857f9406b0ce543d01bdc05"
+      },
+      "ModoFurGeometry.dll": {
+        "size": 157369,
+        "sha256": "4aa1b4234963cb73506dd3b51df19c2b25449641bcb6c7286e4b8854a87f2245"
+      },
+      "ModoFurGeometry.so.proxy": {
+        "size": 80485,
+        "sha256": "6da7ad049e28b37542cbf050de2dab57491afc08cae88ea08afbf752ec4725c5"
+      },
+      "ModoGlassMaterial.so": {
+        "size": 143353,
+        "sha256": "8eb934cd71be8b34ec55aafe6a0eefdcb651dbb69e399b4cc6356d43eed6bc53"
+      },
+      "ModoGlassMaterial.so.proxy": {
+        "size": 94004,
+        "sha256": "68d0b85dc1ceea6319a39f083496e6cb172eba149ea4a5ec06a7750bc799d566"
+      },
+      "ModoNormalMap.so": {
+        "size": 80247,
+        "sha256": "5f5a0c7a17348934939e1eeb621e6e6f5d5ee3926fb44020ff26accd19f7c903"
+      },
+      "ModoNormalMap.so.proxy": {
+        "size": 67230,
+        "sha256": "724811358ddb2e953b115d1e72c951ec25765dcc8fa2404d32daab78cb2fca6c"
+      },
+      "ModoTextureMap.so": {
+        "size": 256072,
+        "sha256": "8dd18c3bdbb989b8401e96c90fd5bf83824cd931122598290cffe1651fe7c0c5"
+      },
+      "ModoTextureMap.so.proxy": {
+        "size": 131888,
+        "sha256": "430e852718da20bf5ae2a55961612e38c2a5517fc7523959cc8b28f47c474b5b"
+      },
+      "moonlightipr/cudart64_12.dll": {
+        "size": 573952,
+        "sha256": "c2c9a9c22a9bcba90e261825968836787b331038047a26770cffb7a583c28344"
+      },
+      "moonlightipr/moonlightipr_session.exe": {
+        "size": 3138676,
+        "sha256": "1bcdd7b03b5489b190a0116e0e51a3f5768abb7cdc660fde814c0e195118dffe"
+      },
+      "moonlightipr/MoonLightIPRKernel.ptx": {
+        "size": 2762856,
+        "sha256": "40a62246a861be9493c4e5991dce929cfe03ee5e1442a8bca3c1dc25bc12c693"
+      },
+      "moonray.exe": {
+        "size": 257093,
+        "sha256": "ec905e513c2e149c218a6569e589e69b486fef9a4fa6e50851f2382f30bcd077"
+      },
+      "MultiChannelToFloatMap.so": {
+        "size": 120891,
+        "sha256": "df1a585f75dfed4136ce5f75ef1d3f8e2c4d10a55c80cc08cbbf815039732d60"
+      },
+      "MultiChannelToFloatMap.so.proxy": {
+        "size": 91174,
+        "sha256": "a0207815c4c35012f728912cc46b547ae4b52a6cf80914a78a0bbc0ffd745c82"
+      },
+      "NoiseMap_v2.so": {
+        "size": 282858,
+        "sha256": "9b3109ad274d81960da7d890160a0d903ed137a56580bc82db136e9e36b1b4f1"
+      },
+      "NoiseMap_v2.so.proxy": {
+        "size": 164534,
+        "sha256": "5754a181615e27b66e5f1abcaed4b3da81fa9beeb8c17ece055201d0e45f1080"
+      },
+      "NoiseWorleyMap_v2.so": {
+        "size": 250859,
+        "sha256": "cc1264c8e3c5b7794523c2ca001904e73911d5b67f5b318212f93b6fbd793bfd"
+      },
+      "NoiseWorleyMap_v2.so.proxy": {
+        "size": 165639,
+        "sha256": "c9611fb1e1441d5b3c28f0991ee10bf6d9de391d6d5339838c4482b7e936698c"
+      },
+      "NoiseWorleyMap_v3.so": {
+        "size": 250859,
+        "sha256": "72112714f44a937eb6d77aa957a3176093d8b2a23cd3ef9195a362215764eb28"
+      },
+      "NoiseWorleyMap_v3.so.proxy": {
+        "size": 165639,
+        "sha256": "33afffc3327fcb8f2f8ac6d9d2e4aac313db3714ce18376c59b6db7e66d10e98"
+      },
+      "NormalDisplacement.so": {
+        "size": 84727,
+        "sha256": "6232dcfde85ed1bfe23b3e13f66d0d0b455e8eda7d44cc311ee257b2f939d2ad"
+      },
+      "NormalDisplacement.so.proxy": {
+        "size": 71133,
+        "sha256": "89b51fcd3827aa2517fe778c4b9c853e27ceebe8a03fcd9b646d55b514f673ca"
+      },
+      "NormalToRgbMap.so": {
+        "size": 80619,
+        "sha256": "3b8c348c98c7b13cad456e579ea5e7d12ba5d6eaa91594e30b7358d168be3d80"
+      },
+      "NormalToRgbMap.so.proxy": {
+        "size": 67502,
+        "sha256": "353b191d71b671988df62a5a150736c48f8149aafa47febcb5402e1412098ea6"
+      },
+      "oiiotool.exe": {
+        "size": 1298141,
+        "sha256": "366b2a3cca8b1029baf7f2107d897bf3d612676ffc65c5b08cb56138f1c3974a"
+      },
+      "OpDisplayFilter.so": {
+        "size": 169382,
+        "sha256": "f4527a5cf05dd99f7d2155fb8acfec65d20ea23f5f61da736ea40a534509b1a0"
+      },
+      "OpDisplayFilter.so.proxy": {
+        "size": 108006,
+        "sha256": "60dff701c1a97a6ad41b1b42e25f3d8a42c1ed1fca4c5a98626f726aeac525d1"
+      },
+      "OpenImageDenoise_device_cpu.dll": {
+        "size": 480736,
+        "sha256": "30e4e28e0e57d045e86a9b67fb87d393b8e1201b947655f5edac7677d1d906b7"
+      },
+      "OpenVdbMap.so": {
+        "size": 163615,
+        "sha256": "3e488ea49c34f0a71bc4f4754b821db4dfc247b40de52a4d45b9b2366e7895af"
+      },
+      "OpenVdbMap.so.proxy": {
+        "size": 136949,
+        "sha256": "6524d76e641f200df0485d95fcd4efbb356119dc1936174bafbf8e700d0fb9b1"
+      },
+      "OpenVdbMap_v2.so": {
+        "size": 171752,
+        "sha256": "76a737682d712d6518a7ffa3811ea31dedc1794dc20994070119ed15d93d37ce"
+      },
+      "OpenVdbMap_v2.so.proxy": {
+        "size": 137033,
+        "sha256": "86dca1c70fefd0c6b9182cfceb569a5a910167b7df7f7bdc4bcf782d71a060fe"
+      },
+      "OpMap.so": {
+        "size": 169455,
+        "sha256": "83ecfb907a7e2a609a0e733d1aaa7a69134a9a9515a62c168586fd7c2dc64823"
+      },
+      "OpMap.so.proxy": {
+        "size": 106192,
+        "sha256": "a8874fa5c9361fef7df9b12a690eb867dbab5c514b46bac203fbff0a3b8b4459"
+      },
+      "OpSqrtMap.so": {
+        "size": 79107,
+        "sha256": "6b45749f637f1e2e6be0dfd6b6e260b94cbacb477acd4a2ec34c1cef59c4bb2c"
+      },
+      "OpSqrtMap.so.proxy": {
+        "size": 67194,
+        "sha256": "8afc1d3d92b615574b9f30d2d778b9b3e34c7f91c235b80e5a4aa8b41b5e1896"
+      },
+      "OrthographicCamera.dll": {
+        "size": 121237,
+        "sha256": "78e93b9753167ce27705c2e485b140239b52cc0ac4f71e1572a49606a4df3e73"
+      },
+      "OrthographicCamera.so.proxy": {
+        "size": 114099,
+        "sha256": "93b31e3e961fcade8906f6d36d6cf99fa84f816571a54fe82e61cc3fca9b54de"
+      },
+      "OverDisplayFilter.so": {
+        "size": 121807,
+        "sha256": "96722254876bacda0c2b66247fc8df92ab290666ef242a2f207efa78643658ab"
+      },
+      "OverDisplayFilter.so.proxy": {
+        "size": 91910,
+        "sha256": "7054f150aaca30fc21922de0338c7131679095f9aa87db6ce99ad1b50001b74f"
+      },
+      "PerspectiveCamera.dll": {
+        "size": 126406,
+        "sha256": "6b501440185a40ad38a2edf5270a114327b16048865fdc364027a36f14e5fcdc"
+      },
+      "PerspectiveCamera.so.proxy": {
+        "size": 118476,
+        "sha256": "0f0d2f0377f67693fe185fc548be262929731dce6d60b15c5d8ef4e56f5005ed"
+      },
+      "PortalLight.dll": {
+        "size": 116856,
+        "sha256": "d35cc9d4680c08afef387e1b1e67d5e910426580168561982ce166f1ce16b96c"
+      },
+      "PortalLight.so.proxy": {
+        "size": 111661,
+        "sha256": "cdd56833dde0f50d85acecaa4b83881069c2ad7b6917d9021e2c92162ca80022"
+      },
+      "ProjectCameraMap.so": {
+        "size": 120139,
+        "sha256": "2476812959fafee342d9a1dce3f9c4ba094cf0ae9118a783bc3b3b7be62522fd"
+      },
+      "ProjectCameraMap.so.proxy": {
+        "size": 96795,
+        "sha256": "845a8ea0e7a33da3948301c6e18ff7d831dc11cc37bb5c14e6a07fba6022cda3"
+      },
+      "ProjectCameraMap_v2.so": {
+        "size": 147721,
+        "sha256": "0910c39ac7f9b9c262ec6dc220edbf12b9c69513761307aeb7cb425e134f98fb"
+      },
+      "ProjectCameraMap_v2.so.proxy": {
+        "size": 114704,
+        "sha256": "8d3af321bc17c0989195deff59d61de499a93b38a19c799581202b3ef955882b"
+      },
+      "ProjectCameraNormalMap.so": {
+        "size": 150519,
+        "sha256": "1ee13fe5044e1c144e2479dfea3ac01053a641cc05cc60b59282cfb02e6fdd60"
+      },
+      "ProjectCameraNormalMap.so.proxy": {
+        "size": 111469,
+        "sha256": "5d360d139387440956004bb6d09353535fe633fcaef9131d98fcbc5b91d8be02"
+      },
+      "ProjectCylindricalMap.so": {
+        "size": 148046,
+        "sha256": "14bfac85413b35798b93400addf390c77c6293dbdc901e2100e8657f6078a497"
+      },
+      "ProjectCylindricalMap.so.proxy": {
+        "size": 119840,
+        "sha256": "cc1a5baedd0be7d2c2b51a039edc2a254bdaf1cf7f6075abd1118ad45b8408b7"
+      },
+      "ProjectPlanarMap.so": {
+        "size": 142838,
+        "sha256": "b278d8edd12148bb433994e629a5a6ae43467f7159f7eedfa088732940054630"
+      },
+      "ProjectPlanarMap.so.proxy": {
+        "size": 118691,
+        "sha256": "8f820c3601c99cb86422cc6a8a927e8deeb7a34b2a9cabb4f08af6a89c5c47cc"
+      },
+      "ProjectPlanarNormalMap.so": {
+        "size": 181862,
+        "sha256": "140cbbb804dc0faf6aa4506acf0fa35276845c20a1cd326d6b9d8614ee1886e6"
+      },
+      "ProjectPlanarNormalMap.so.proxy": {
+        "size": 128110,
+        "sha256": "828db39b893a100478432e41fb71f13064bb2915b21920f94b2086c19558512f"
+      },
+      "ProjectSphericalMap.so": {
+        "size": 138836,
+        "sha256": "15f6a7e254e9b4261bf88d984c9204484cda9eb5b5710f0e20455b6ba23034d2"
+      },
+      "ProjectSphericalMap.so.proxy": {
+        "size": 117040,
+        "sha256": "6ed945ac7e4efae87667ded72a5f081c1a648c8b9c6508cef6dc2088d95777d0"
+      },
+      "ProjectTriplanarMap.so": {
+        "size": 254952,
+        "sha256": "cef9eb410ca3034ba8e3c71fe2b07f90cdebfcb611471a64bd955ef43e0950d2"
+      },
+      "ProjectTriplanarMap.so.proxy": {
+        "size": 213644,
+        "sha256": "490e3b37ce494547a3a70f0859ed7226e396224cd0a2db8407071319acb2d323"
+      },
+      "ProjectTriplanarMap_v2.so": {
+        "size": 263985,
+        "sha256": "35a2b12280059bdf02ba64614d5220b7eaf5a958562ff275f47a772279749a04"
+      },
+      "ProjectTriplanarMap_v2.so.proxy": {
+        "size": 220326,
+        "sha256": "e0d65e60dcb559151ae2da76e57ee1b69fb78fa040aedaed7ba42a26d5c911b9"
+      },
+      "ProjectTriplanarNormalMap.so": {
+        "size": 253029,
+        "sha256": "7f49721d26a35a406a4ac4e0ed46b4c42e7c9fb2e3e47d6eab1745f46983d564"
+      },
+      "ProjectTriplanarNormalMap.so.proxy": {
+        "size": 213552,
+        "sha256": "90a153b166a8f100ddbdb1e06b3ef12f27ad59972bded0a471c5be80bef6ef48"
+      },
+      "ProjectTriplanarNormalMap_v2.so": {
+        "size": 273156,
+        "sha256": "08418e974f01ec0cda11e33e994facc154255b45d85ea02639bc1a9edb27c743"
+      },
+      "ProjectTriplanarNormalMap_v2.so.proxy": {
+        "size": 221344,
+        "sha256": "11d8663c571708ff4950ba3563ac7c2392a343826a4ebfa26b8b2a7cb77d76ca"
+      },
+      "ProjectTriplanarUdimMap.so": {
+        "size": 180496,
+        "sha256": "10556a0c60c2cf1fee18b41dd68bf391b7e148847ffd291a683f41a3ec421c4a"
+      },
+      "ProjectTriplanarUdimMap.so.proxy": {
+        "size": 144649,
+        "sha256": "f0199862c46fb67ffd862a312a534af9e79812720fb830c2353cc09ea85d1fc7"
+      },
+      "provenance/sources.json": {
+        "size": 3157,
+        "sha256": "8328de0040d04bb6bb3e05bc1556f2d475ce5d8730e069c60f6f4c33ef91e4d2"
+      },
+      "provenance/xpu-sources.json": {
+        "size": 1148,
+        "sha256": "e564ddaa2a19c2f088273356e94c6a9d6c96c564ff93f13556de8cd3f4722366"
+      },
+      "RampDisplayFilter.so": {
+        "size": 176003,
+        "sha256": "7a21f10a8877322b4d3e92eb3c9cbb10b422e40cba61d891a022c756d0b932de"
+      },
+      "RampDisplayFilter.so.proxy": {
+        "size": 139978,
+        "sha256": "c5c9b28e3d37bcbdeb8349fb04413451e3761efac2bad9445efeb6632c00c2c4"
+      },
+      "RampMap.so": {
+        "size": 206913,
+        "sha256": "39013a751b7828408092a279d4d4b64eecffcf7bbd4915ba362af6ab764ced93"
+      },
+      "RampMap.so.proxy": {
+        "size": 158907,
+        "sha256": "2fa2036e77233a5c69a95350aa1cc37b3f22c06339440bd451d32b8ddfc21731"
+      },
+      "RandomMap.so": {
+        "size": 128943,
+        "sha256": "6d266b62efc6a88ce82fab0fc6d922119f385a4ff63d50a7c9fe9bcd7a0a1536"
+      },
+      "RandomMap.so.proxy": {
+        "size": 98997,
+        "sha256": "6a99be0e41745418bd640cdcdc4805ce406125bb289bd88b0e583f8e6d915277"
+      },
+      "RandomNormalMap.so": {
+        "size": 114905,
+        "sha256": "b7bc07ec479686d54451a8fcfc4c17b97dd4b95833f0062a722eb3c074a0a269"
+      },
+      "RandomNormalMap.so.proxy": {
+        "size": 80002,
+        "sha256": "551670dac44c0b6dae0adcad80ee5b5b6681ab8fef6c111618220944fca1aba1"
+      },
+      "RaySwitchMaterial.so": {
+        "size": 99832,
+        "sha256": "e5db35df0e557a0c64aa436e1da0bc8f1e4cb3791570f689a06e427b931ddf9b"
+      },
+      "RaySwitchMaterial.so.proxy": {
+        "size": 85940,
+        "sha256": "d091ae6217492dbfe35b524d812a5c070563cda8efabf2cdb22abdb4d833d24e"
+      },
+      "RdlCurveGeometry.dll": {
+        "size": 286897,
+        "sha256": "3ca419a6f8b11f46f8b9082b817c58818977e5eab2292862f9ddc0d28e888e7f"
+      },
+      "RdlCurveGeometry.so.proxy": {
+        "size": 189385,
+        "sha256": "3e869fc3f877c72eacf0039bda6b262bc94481b2b729257f2d5b93458eb148bf"
+      },
+      "RdlInstancerGeometry.dll": {
+        "size": 184411,
+        "sha256": "43ebca13da64ec49e972377989c55339b75a53e3c9b217a0ca2aae5cedc001d1"
+      },
+      "RdlInstancerGeometry.so.proxy": {
+        "size": 158040,
+        "sha256": "200ce8a1d95e277e7f1a97b906c6cdceab0ed5239c0b14040dc42aadb5853f4e"
+      },
+      "RdlMeshGeometry.dll": {
+        "size": 314169,
+        "sha256": "d5829dfc4d9cc1f65d4b9b4bdf6daa314c49149cd909343c907ace7fbd8bd7b4"
+      },
+      "RdlMeshGeometry.so.proxy": {
+        "size": 196913,
+        "sha256": "c907d76df5caa5ad6a5dc7ebf97a850e2f3380bb5909ab400b1cfd81be4dd384"
+      },
+      "RdlPointGeometry.dll": {
+        "size": 261267,
+        "sha256": "23e778e91e643a84739585d24c9759eb67ac1565caca5c5f27b036d3c3866fb4"
+      },
+      "RdlPointGeometry.so.proxy": {
+        "size": 183426,
+        "sha256": "1bff97fecbc166b65022f93bffb3a5e2a38415c80dfe07cb74a761b3efd0364e"
+      },
+      "RectLight.dll": {
+        "size": 107460,
+        "sha256": "ffc19f8a60b369851b0ec10a08521ea13a41276fb5f15853e4be05f311da9175"
+      },
+      "RectLight.so.proxy": {
+        "size": 102283,
+        "sha256": "93df9e36342e4a47e1468ff7269edf4b4ee5b4d03b8d4c132312816daad28240"
+      },
+      "RemapDisplayFilter.so": {
+        "size": 231985,
+        "sha256": "56c07a644f9d965420c438e46e179f269b2159c5dc4f93fd80af4ede9754d729"
+      },
+      "RemapDisplayFilter.so.proxy": {
+        "size": 131311,
+        "sha256": "b62653fa06c9a783f3c7aaba26bfd6ed179ad60c7dc33bd7eefb289e75e7f84c"
+      },
+      "RemapMap.so": {
+        "size": 246569,
+        "sha256": "cca653029f018182f56bbd6e8e45aab0bed0dc94c349693b47bc9a6cfccb73c8"
+      },
+      "RemapMap.so.proxy": {
+        "size": 118106,
+        "sha256": "c195fec4f65d569eaac04e300bd8144ca7309620a577c3db22c0ab4fa87e13bb"
+      },
+      "RgbToFloatDisplayFilter.so": {
+        "size": 136360,
+        "sha256": "593a30046f43e74a6571257770ca4ae241cf28e38d171e1f52054637fa928db2"
+      },
+      "RgbToFloatDisplayFilter.so.proxy": {
+        "size": 104400,
+        "sha256": "51bb1bde3cac70c0cdffb832582d471195531b1085e7c032e8a9792ab829e778"
+      },
+      "RgbToFloatMap.so": {
+        "size": 95739,
+        "sha256": "ece8797009bf18d5d65bb737efebae35dec4fbc24721b289e1b1f09e2ca7c942"
+      },
+      "RgbToFloatMap.so.proxy": {
+        "size": 80366,
+        "sha256": "b6abea984b31af487cc913feab250a17b6f29790d1da58bb4051905746183dce"
+      },
+      "RgbToHsvDisplayFilter.so": {
+        "size": 135001,
+        "sha256": "557fbc5ceafa2d1e883e6f58d62fb6d0100a1ad11756c55d3fe597bf0e4962bf"
+      },
+      "RgbToHsvDisplayFilter.so.proxy": {
+        "size": 103364,
+        "sha256": "a8663c24797f0c8c2fb81f0ec23609e3be8cc86ac704a29323f1ec2b4caf442e"
+      },
+      "RgbToHsvMap.so": {
+        "size": 84853,
+        "sha256": "e7a481c7853089004e358e63a02c7ca35be730f459297441c4a061210dce2c4c"
+      },
+      "RgbToHsvMap.so.proxy": {
+        "size": 67534,
+        "sha256": "b37f4ed368197a4055a65c2199c5635d283aa472e491285db95f884a9b36a0ca"
+      },
+      "RgbToLabMap.so": {
+        "size": 104290,
+        "sha256": "460d0f1a6e3306bcb6865c384f5037e33a7521a7461b6b33f28e07f804414bdd"
+      },
+      "RgbToLabMap.so.proxy": {
+        "size": 68058,
+        "sha256": "4bbb03c184f6e212adea2ab50ab7daa88b415869135e36009518a87623a66918"
+      },
+      "RgbToNormalMap.so": {
+        "size": 79611,
+        "sha256": "9d8b2727636b422c9b1798ce6ecd0846bcf3520596d2f8ffcb0eaa890fe53072"
+      },
+      "RgbToNormalMap.so.proxy": {
+        "size": 67552,
+        "sha256": "a3f7d70c14959b51eb94c1ca5b53afe3dda4b04a80f9ca8ea976136b8a93239f"
+      },
+      "RodLightFilter.dll": {
+        "size": 139761,
+        "sha256": "4004c57a2efeb5019b61fdf882bed91502977e4245e8b8364d96a2fc6abd297c"
+      },
+      "RodLightFilter.so.proxy": {
+        "size": 134966,
+        "sha256": "5ac60754b443f7df36c990be7e91365845d1f1dac063554330d5a70e2adf7276"
+      },
+      "shaders/OptixGPUPrograms.ptx": {
+        "size": 174975,
+        "sha256": "b3bcaf8d46870fcaa908e2fd4ad3e1fd07ddd27037fdb5d69418aa0888d8a061"
+      },
+      "ShadowDisplayFilter.so": {
+        "size": 116720,
+        "sha256": "2953caf15d89bff1d74414a69ffc893d2bc48b9f36d83f12315ce9b56451d009"
+      },
+      "ShadowDisplayFilter.so.proxy": {
+        "size": 90963,
+        "sha256": "0cb6a91ccd2600e64a13f3fbe99d378bde698755625e9f6443000327d9abe971"
+      },
+      "SphereGeometry.dll": {
+        "size": 99821,
+        "sha256": "14582fabe6ae1c73ba18c06bed5830f0db1bf5011c25c6f9def20a9c1182055f"
+      },
+      "SphereGeometry.so.proxy": {
+        "size": 74686,
+        "sha256": "67978afb5ebed7ce10191cdc21c94656e9b617f3dffc34057b1932b02ce97a01"
+      },
+      "SphereLight.dll": {
+        "size": 105844,
+        "sha256": "822f4bbd14bd4d1cfb4f811321604442b63968f508918e2b76b3815b63ffb896"
+      },
+      "SphereLight.so.proxy": {
+        "size": 100649,
+        "sha256": "765ccc463d15149402419f403e3f910848412e307da14730cb1def4fcca62df6"
+      },
+      "SphericalCamera.dll": {
+        "size": 96714,
+        "sha256": "9c3527f3a24b20b734afe5d425d8a8668e2e194cf9d8fde86c0718d8a5c3ee95"
+      },
+      "SphericalCamera.so.proxy": {
+        "size": 87432,
+        "sha256": "14830c35380051354b8aca2adb190c7d8bb8871398ef2b32e8c27f4b0a7d542a"
+      },
+      "SpotLight.dll": {
+        "size": 113060,
+        "sha256": "f4d64c23d41a996789bcf197a4a47aadf074e4e7c3ecf862840118be0611c3a8"
+      },
+      "SpotLight.so.proxy": {
+        "size": 107371,
+        "sha256": "2f319e0ccf85c7c5936419696eda6e30b581b4a2e036aedf94909be0efb39043"
+      },
+      "SwitchColorMap.so": {
+        "size": 238151,
+        "sha256": "a440bb1ef1dbdb998786a9828c5947cd0e3338a05806a769d4229fa3c4c33dbb"
+      },
+      "SwitchColorMap.so.proxy": {
+        "size": 108265,
+        "sha256": "31b7a1a993a2357f984c212dcccd60b8b420b7b1749dae5966e911d2e9b1e79f"
+      },
+      "SwitchDisplacement.so": {
+        "size": 144131,
+        "sha256": "0a0f80a206a4221277d2b054b272c34b172a9f20ac88dce44fa00ba503f95f52"
+      },
+      "SwitchDisplacement.so.proxy": {
+        "size": 126367,
+        "sha256": "45ae5cc2373225f407f1dbb2b9ba69a17185ab6f73b5414c1118228a7de5fdbb"
+      },
+      "SwitchFloatMap.so": {
+        "size": 212330,
+        "sha256": "d80f1698fe0c6e06e0151292a4b182dc57a02e6bf511d4f1f1ea4c8399e6b03c"
+      },
+      "SwitchFloatMap.so.proxy": {
+        "size": 107285,
+        "sha256": "864d85629dd4f9d9caf874e3570d6e17bbad9c31d00527c5e11632d9a7e310a2"
+      },
+      "SwitchMaterial.so": {
+        "size": 155365,
+        "sha256": "209f4995c60eb0b4f369de19bee8ad6e2597d1e3145654259af7e3061d811ee5"
+      },
+      "SwitchMaterial.so.proxy": {
+        "size": 136589,
+        "sha256": "626a9aee2b28a886a4a31926fc70fb88e34895554ec89a4d64ff4b87335a90df"
+      },
+      "SwitchNormalMap.so": {
+        "size": 125710,
+        "sha256": "bedefd9816b933131f80f68a488f6a5d07f13ccf6361f8f48c13035f1104675e"
+      },
+      "SwitchNormalMap.so.proxy": {
+        "size": 106257,
+        "sha256": "93058ce0fa6939f3edf3c7970ae4b9d7cb7ba142235a597024b6881bbedbf04b"
+      },
+      "swresample-7.dll": {
+        "size": 183853,
+        "sha256": "293a1a9786b8e037e29b88677f2eac8785cffec48ef9509ad451f59015b766fd"
+      },
+      "swscale-10.dll": {
+        "size": 2205462,
+        "sha256": "fb120b345443d59df93203f900aadac9f077c32a55b11401196c521fe2be1594"
+      },
+      "TangentSpaceDisplayFilter.so": {
+        "size": 129830,
+        "sha256": "5ae4ab524f72bd945d9335b519fa5c3386dff0538c2c17410581b1067e7a1f38"
+      },
+      "TangentSpaceDisplayFilter.so.proxy": {
+        "size": 97054,
+        "sha256": "81ba1fc784b291271dd099dc249b00407629431c12831515b675963a4c9790d9"
+      },
+      "TestBoolOutputMap.so": {
+        "size": 81031,
+        "sha256": "3757c40ca8bb4ae6455be8c426a0e9d52b59d15586580643dc9e9b1b9740d0ff"
+      },
+      "TestBoolOutputMap.so.proxy": {
+        "size": 67204,
+        "sha256": "b1ee93f9825f45bbbcaea4c9699bb6b131f0991ec7f7e0caa473573142fd1e97"
+      },
+      "TestColorOutputMap.so": {
+        "size": 80362,
+        "sha256": "dbd2561ad638449aeeaffb224749f7640f6e211ec6ea48001bdc79d052a4f115"
+      },
+      "TestColorOutputMap.so.proxy": {
+        "size": 67206,
+        "sha256": "cc401466d43fe9e66dd976366aa8affaa481c6bc250834a9dd2cc298257e88c3"
+      },
+      "TestDisplacement2Map.so": {
+        "size": 79821,
+        "sha256": "addc31650214112d664767517051da2a0d3c8313d7f5d29e06311f809bb1b6b8"
+      },
+      "TestDisplacement2Map.so.proxy": {
+        "size": 67226,
+        "sha256": "c6a6babf74e5296ecc0197360dc2479c9ef3c11a304e73b7835025b3fc34318a"
+      },
+      "TestInputsDisplacement.so": {
+        "size": 252485,
+        "sha256": "792d0e0950040888d1e16867aa74ba5b02bb01cb2149b35c94efaed2ed3360c0"
+      },
+      "TestInputsDisplacement.so.proxy": {
+        "size": 202469,
+        "sha256": "7045e5abec81863ea512ff6709066234ecebd36ed5e8e4421ab436dd1579ec6f"
+      },
+      "TestInputsMap.so": {
+        "size": 254421,
+        "sha256": "07e1e85dc1b01893f5039785d2f7e54ad0bce0e5c23177eda55e57ecb1a5c6af"
+      },
+      "TestInputsMap.so.proxy": {
+        "size": 201721,
+        "sha256": "737a073a5756a7c8f53c65515efacb67b89dedbb4311e64f24739a48f712f00e"
+      },
+      "TestInputsMaterial.so": {
+        "size": 254327,
+        "sha256": "cd37bccb816c52a15aa6594123e632d9969aa00e8f45256ab19b3326526f8aa2"
+      },
+      "TestInputsMaterial.so.proxy": {
+        "size": 201851,
+        "sha256": "7e390135f11965ff67e5868a46ff7f6cee2bfc83f80def3bb1c1c0d2031b59ce"
+      },
+      "TestInputsNormalMap.so": {
+        "size": 252202,
+        "sha256": "36c2221d1daee78e1a51e5987abdb51552f8a7d42cadbf0722f331ef9f637012"
+      },
+      "TestInputsNormalMap.so.proxy": {
+        "size": 201877,
+        "sha256": "3a2f94e9d5d79983cd43787d58dce4d20c90b820a5caab93a7e8b6ca576cdb45"
+      },
+      "TestIntOutputMap.so": {
+        "size": 81542,
+        "sha256": "eaac9f14091ade62cd4e80ea6c9db73942c9252e5789db2fc5a646e0bf3c9db2"
+      },
+      "TestIntOutputMap.so.proxy": {
+        "size": 67202,
+        "sha256": "5a6b85bc6a27c67445b7c12f06072066aab14c2e5938a9d0d88efbe460177d7d"
+      },
+      "TestMat3fOutputMap.so": {
+        "size": 80888,
+        "sha256": "f48ca2623dfb81b059c5ca859352a60481180f30d096fb470cbb1156423a504d"
+      },
+      "TestMat3fOutputMap.so.proxy": {
+        "size": 67206,
+        "sha256": "5407ead711a0d9e33cae99bf4700def4ca873fc0e89bb91c8401b33e8cb6336b"
+      },
+      "TestMat4fOutputMap.so": {
+        "size": 81525,
+        "sha256": "2e6c14f49e2fe8ede026b6a44158da7217eccbdb4f84352a0c4cec927e46baa1"
+      },
+      "TestMat4fOutputMap.so.proxy": {
+        "size": 67206,
+        "sha256": "7bbe7d38487bdb28c3495e17ac8ec969ba0c4ae6ecf04b18769dcdd4465a973d"
+      },
+      "TestNormalMap2Map.so": {
+        "size": 79762,
+        "sha256": "d4df2894d1ca814bd19c2843672eda7707584e557f0deec65d4a9125331d0e05"
+      },
+      "TestNormalMap2Map.so.proxy": {
+        "size": 67220,
+        "sha256": "4de54719ca6b4fd1e586a112f4eef5fa61e256b0f53f6611cef504ebccd8f592"
+      },
+      "TestRgbaOutputMap.so": {
+        "size": 79831,
+        "sha256": "09449f180d5294fa2e9943e93afa349cab48d0f6fecc2f40e1435a936a4ee558"
+      },
+      "TestRgbaOutputMap.so.proxy": {
+        "size": 67204,
+        "sha256": "4cfd1c7ab309892b0fb2ced9e45a85ee816c120a16d5898d245426fd3cd71e52"
+      },
+      "TestVec4fOutputMap.so": {
+        "size": 80364,
+        "sha256": "f58896f9866b9e72881eade3b829502a129a5cc3d57f9072f01d4347de85ecfd"
+      },
+      "TestVec4fOutputMap.so.proxy": {
+        "size": 67206,
+        "sha256": "049b64c5dba6433bdc8fb8cef7ad96fe29aacc15bbff075c27283599a3da29b1"
+      },
+      "ToonDisplayFilter.so": {
+        "size": 159580,
+        "sha256": "8ea56fb0d41111a80e38bdc2a5879700e7f11ee05942e52d814464fa5de9cb1d"
+      },
+      "ToonDisplayFilter.so.proxy": {
+        "size": 107638,
+        "sha256": "dd75005b0d99c8615abfdacb321da6a2cf4da683c2063fc2c99f5fe394b82013"
+      },
+      "ToonMap.so": {
+        "size": 155331,
+        "sha256": "ad9e985f21c832e33d156c587ca2dda8d9ba4b7536e18b2622746a5c8d5156cd"
+      },
+      "ToonMap.so.proxy": {
+        "size": 96521,
+        "sha256": "d8e98956d69f72f07f97b7da28bb022b98cfcd94fd7e171375f8911e6f64f267"
+      },
+      "TransformNormalMap.so": {
+        "size": 108832,
+        "sha256": "b613ee720590012c05c3b23aa071db913ad136c22edb4d4b16538c52c05d36d3"
+      },
+      "TransformNormalMap.so.proxy": {
+        "size": 94114,
+        "sha256": "8341f985192c7729a7ec47469a24c37e1039dbd430c340ccb01c09ec7858f5f8"
+      },
+      "TransformSpaceMap.so": {
+        "size": 198461,
+        "sha256": "71725aa0a76e47b1d1b46235dad2f641119c855fc61f414fcb72b016176b9773"
+      },
+      "TransformSpaceMap.so.proxy": {
+        "size": 117478,
+        "sha256": "d030b3da83fc2c7b8acc68f3c508bf5bae5cb6e63debe93566a6b9ade0d59c16"
+      },
+      "TwoSidedMap.so": {
+        "size": 84841,
+        "sha256": "a69db1a5adc920347d9c7c3281c43698ba2c51a396cc418e7cb5f4d6e75e09f1"
+      },
+      "TwoSidedMap.so.proxy": {
+        "size": 69614,
+        "sha256": "f3c9eda12aeb52c093cf8ecd56d0bb9e80d8b09b4f99a20f8bff7c0d9ec000a5"
+      },
+      "UsdPreviewSurface.so": {
+        "size": 193778,
+        "sha256": "978210846f19d72e86091491f7b2111df347310c19fbd6c02d63e6c5fcac035f"
+      },
+      "UsdPreviewSurface.so.proxy": {
+        "size": 113442,
+        "sha256": "f0be9c2b84ab4ed8c5188439264815fa10e4c8b91dd0d02f50d59eb57af6c62c"
+      },
+      "UsdPrimvarReader_float.so": {
+        "size": 125642,
+        "sha256": "2bed87555dc692ed3d0a386aef6081c217792ee687f322089d92bd0373ce9281"
+      },
+      "UsdPrimvarReader_float.so.proxy": {
+        "size": 89799,
+        "sha256": "d35069d5d4ca77d1f4f620d30d94b01b7cec5fda7012d8e3fa49934a29de8983"
+      },
+      "UsdPrimvarReader_float2.so": {
+        "size": 128372,
+        "sha256": "8c990822a68b1ff622ed44d9ec5a394c0e12e361ef863b03b6a421bbc2da0bad"
+      },
+      "UsdPrimvarReader_float2.so.proxy": {
+        "size": 89939,
+        "sha256": "c0b438a0a4ab36f92e251e81abe8e6d06a10569993b27a1d92b976d1daee55ee"
+      },
+      "UsdPrimvarReader_float3.so": {
+        "size": 139413,
+        "sha256": "16cec33cd1ab51cc07b791f75b04af6cb0c1f30c833ae7771c9a5f2e16111be3"
+      },
+      "UsdPrimvarReader_float3.so.proxy": {
+        "size": 89939,
+        "sha256": "f17da503ebb9c8e2062f0b718ad86a18f60ea8e9d6fb6ab32d84e44ac9ab1c05"
+      },
+      "UsdPrimvarReader_int.so": {
+        "size": 123063,
+        "sha256": "ff1d76857659019df7e4a7749761bd34b89dd9741d47d63279c6688e64cec67b"
+      },
+      "UsdPrimvarReader_int.so.proxy": {
+        "size": 89791,
+        "sha256": "d9d42706d1964b7549eacb9eae55cb5136a3a45569d6d9e64a46fcd331e2fd8e"
+      },
+      "UsdPrimvarReader_normal.so": {
+        "size": 129434,
+        "sha256": "0e5a3a7ee8811a8bef10d2fb82b47669fdc64256cf754e2780d3e86ac52ab285"
+      },
+      "UsdPrimvarReader_normal.so.proxy": {
+        "size": 89951,
+        "sha256": "b26965b94f8a4a7675d49937f5595b6090275246d1b80f91b0ff401865b178dc"
+      },
+      "UsdPrimvarReader_point.so": {
+        "size": 125971,
+        "sha256": "015dd05bde10ea9200b660eb99904b8372c25f6a12fdeb953833288ee8035276"
+      },
+      "UsdPrimvarReader_point.so.proxy": {
+        "size": 89935,
+        "sha256": "856b31c4ba2017c05ce0b2e43d298749bddee3497d446f7d9c0fbad0e6228531"
+      },
+      "UsdPrimvarReader_vector.so": {
+        "size": 129763,
+        "sha256": "6e63f66f56db888190bd83f6a7bc4c2f386d974c60bacb76ca43677eb4c9fa5e"
+      },
+      "UsdPrimvarReader_vector.so.proxy": {
+        "size": 89939,
+        "sha256": "1522d319345fa181162cff2ebc34b84a70f3a718a246c7474b851e0e01715542"
+      },
+      "UsdTransform2d.so": {
+        "size": 109909,
+        "sha256": "44045fd939bf1e0f3d8aec0d8bcd626f18802b33b6d373f28bbd7392e6b407f7"
+      },
+      "UsdTransform2d.so.proxy": {
+        "size": 90951,
+        "sha256": "0f1d9bf2a208b30f4369fa1e4d76f683b1508cd3078963be596464fe0c4a799a"
+      },
+      "UsdUVTexture.so": {
+        "size": 150840,
+        "sha256": "15a8299b3665d2e725e1386d503f2c73d0e78e62e755eb17ad9bed3ba4159f9e"
+      },
+      "UsdUVTexture.so.proxy": {
+        "size": 107127,
+        "sha256": "bc7b492f5a0478d3775a0b4fab94f55e76489e6dbafc230ddb3fe40b32e2ef6c"
+      },
+      "UVTransformMap.so": {
+        "size": 134236,
+        "sha256": "638be061b906edeca238b0e24ea91f031f48c4eacd0763dfb4d6dc5abb48f211"
+      },
+      "UVTransformMap.so.proxy": {
+        "size": 102195,
+        "sha256": "efb2a5d06cbde4613d588b75611115b89f944c513ff81b50f8d3cc380c701b9e"
+      },
+      "VdbGeometry.dll": {
+        "size": 164709,
+        "sha256": "07f748656a630326cb59c43729586cda5ed7441e4c814c72dd5cfa8a8aa77961"
+      },
+      "VdbGeometry.so.proxy": {
+        "size": 103370,
+        "sha256": "66b920b78b0a2d8967c6a43a7a4969821596b7bfebed565e8bdbeeb22f9a2829"
+      },
+      "VdbLightFilter.dll": {
+        "size": 164552,
+        "sha256": "f2e01f2c654df8f57276a689faa24ffad0e7a77b80937e489ac8a014bd8f6731"
+      },
+      "VdbLightFilter.so.proxy": {
+        "size": 158733,
+        "sha256": "fcd7bf812324d2fd279b9840f67e5bbf4216fe04c39aa0abf0bf2f5fafbc2c1e"
+      },
+      "VdbVolume.dll": {
+        "size": 101080,
+        "sha256": "4b5c1a63a27591c312c1b2abb90f45a5a2fd9cad86b77eecca9abe9a4bbe0f44"
+      },
+      "VdbVolume.so.proxy": {
+        "size": 86270,
+        "sha256": "ccf9f8809d1747c8d9fe0094caa438ed3206bf462c040ef4936a50b6805588e9"
+      },
+      "VectorDisplacement.so": {
+        "size": 108345,
+        "sha256": "ad5d1dd6373a58d3bdda9499b5563143b883116ba66e01be3b75b470ac13ff25"
+      },
+      "VectorDisplacement.so.proxy": {
+        "size": 92298,
+        "sha256": "bf09e13c648e8524b655ef01cb345e60068c89583002688d12dfd9169629e8d9"
+      },
+      "vulkan-1.dll": {
+        "size": 696636,
+        "sha256": "2286e6152a76b1f3283b3d274b7602b739cfeb41a8af670754b7688a198fca46"
+      },
+      "WireframeMap.so": {
+        "size": 116528,
+        "sha256": "06fbabfa4fdfaa69130b788d48e34c886370fa3dedd703e35a04ed6826f003f3"
+      },
+      "WireframeMap.so.proxy": {
+        "size": 89286,
+        "sha256": "acf7adadc63c1baee3ad65de64386781c66fc80ce1a67644b77dc5a2e5b630ca"
+      },
+      "xvidcore.dll": {
+        "size": 779670,
+        "sha256": "5107ab029f4f06a5a360ac769c20a150d4bd1a1922575517b9054768ff219611"
+      },
+      "zlib1.dll": {
+        "size": 127291,
+        "sha256": "11cd91171765cd65f1c3362e3df67e5f5a618a6b88c8cdec899b802eaf1c7b0d"
+      }
+    },
+    "scene_sha256": "a592125eef4d36f7dc4075f49750797bd9a383e46c85b6809e9a157d998d0680",
+    "source_manifest_sha256": "197b254d675cba142d3d04f98d4165d7a5473fcd9a8cd349cfa4075bf89011dc",
+    "threads": 0,
+    "execution_mode": "xpu",
+    "width": 256,
+    "height": 144,
+    "pixel_sample_grid": 4,
+    "source_overrides": "unset; upstream behavior for opt-in patches"
+  }
+}

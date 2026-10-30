@@ -212,8 +212,17 @@ class Panel(Tools, QtWidgets.QWidget):
                                        'MoonRay LS (low sample): a quick MoonRay render, once, at fewer samples and a smaller size.\n'
                                        'MoonLightIPR: a fast GPU preview that follows the scene and approximates materials and lighting; Notices lists what it leaves out.\n'
                                        'Output renders always use MoonRay.')
+        self._sync_engines()
         self.ipr_mode=QtWidgets.QCheckBox('Live',self);self.ipr_mode.hide()
-        self.ipr_mode.setChecked(self._live())
+        # Realtime is off as the window opens: its switch, RT, turns it on.
+        self.ipr_mode.setChecked(False)
+        # Realtime: a switch of its own left of the engine, the Render button rendering once.
+        # On, the preview follows the scene as it is edited: MoonLightIPR, or MoonRay where XPU2 renders the preview.
+        # Each is greyed while the other is in use: Render while RT is on, RT while a render runs or stops.
+        self.rt=QtWidgets.QPushButton('RT Off');self.rt.setCheckable(True)
+        self.rt.setStyleSheet('QPushButton:checked{background-color:#f49c1c;color:#1a1a1a;border:1px solid #ffb84d;border-radius:3px;font-weight:bold;}')
+        self.rt.toggled.connect(self._rt_toggled)
+        row.addWidget(self.rt)
         row.addWidget(self.preview_engine)
         # The camera rendered through: Modo's, or a MoonRay camera item such as a fisheye.
         self.camera=QtWidgets.QComboBox()
@@ -409,6 +418,11 @@ class Panel(Tools, QtWidgets.QWidget):
             action=QtWidgets.QAction(words,smart);action.setCheckable(True);action.setChecked(key==level)
             action.setToolTip('MoonRay renders to the end.' if key=='off' else 'The render is stopped once its picture is clean enough for the denoiser, and denoised.')
             action.triggered.connect(lambda checked=False,key=key:self._smart_chosen(key));smart.addAction(action)
+        # Smart Render is MoonRay's: greyed while XPU2 renders the preview.
+        try:
+            from . import native
+            if native.xpu2():smart.setEnabled(False);smart.setToolTip("Smart Render is MoonRay's; XPU2 renders the preview.")
+        except Exception:pass
         menu.addMenu(smart);self._smart_menu=smart
         # Safe Denoising itself, chosen here as in the scene's render settings: off, or on with one denoiser or the
         # other. The foot of the picture says when it is on. (The menu and its actions are made first and then added:
@@ -422,6 +436,11 @@ class Panel(Tools, QtWidgets.QWidget):
                                  ('Open Image Denoise','oidn_cpu','The same, denoised on the processor.')):
             action=QtWidgets.QAction(words,safe);action.setCheckable(True);action.setChecked(engine==now);action.setToolTip(tip)
             action.triggered.connect(lambda checked=False,engine=engine:self._safe_chosen(engine));safe.addAction(action)
+        # MoonRay's: greyed while XPU2 renders the preview, which is quick enough to need it no more.
+        try:
+            from . import native
+            if native.xpu2():safe.setEnabled(False);safe.setToolTip("Safe Denoising is MoonRay's; XPU2 renders the preview.")
+        except Exception:pass
         menu.addMenu(safe);self._safe_menu=safe
         menu.addSeparator()
         menu.addAction('Copy Image',self.copy_image)
@@ -623,7 +642,7 @@ class Panel(Tools, QtWidgets.QWidget):
         self.preview.set_region(region,True)
         self.status.setText('Region set: %d%% to %d%% across, %d%% to %d%% down.'%(region[0]*100,region[2]*100,region[1]*100,region[3]*100))
         # It is only marked, its outline moving round it: Render, or RT, is what renders it.
-        self.status.setText('Region marked. Press %s to render it.'%('RT Off' if self._live() else 'Render'))
+        self.status.setText('Region marked. Press %s to render it.'%'Render')
 
     def _draft_toggled(self,enabled):
         """Draft on: lines in place of a render, and the whole frame kept in view. Off: the render again."""
@@ -639,10 +658,13 @@ class Panel(Tools, QtWidgets.QWidget):
         else:self.draft_timer.stop()
         if enabled:
             # Draft and realtime are one or the other: Draft switched on takes realtime off, as realtime switched
-            # on takes Draft off.
+            # on takes Draft off (_rt_toggled). Realtime's switch goes off with it, and the RT button says so: left on,
+            # the button said RT On over the draft and the next render followed the scene again.
             if self._following:
                 self.stop()
                 if self._following:self._follow(False)
+            if self.ipr_mode.isChecked():self.ipr_mode.setChecked(False)
+            self._sync_rt()
             self.render_once()
             return
         self._draft_image=self._draft_render=None;self._draft_engine=False;self.preview.nominal=None
@@ -846,8 +868,10 @@ class Panel(Tools, QtWidgets.QWidget):
 
     def _smart_on(self):
         """Whether Smart Render is on for the scene."""
-        from . import denoising
-        try:return denoising.settings(self._settings_values()['denoising'])['smart']!='off'
+        from . import denoising, native
+        try:
+            if native.xpu2():return False
+            return denoising.settings(self._settings_values()['denoising'])['smart']!='off'
         except Exception:return False
 
     def _settings_values_stored(self):
@@ -870,6 +894,8 @@ class Panel(Tools, QtWidgets.QWidget):
     def _poll(self):
         """Follow the scene's settings, which are edited in Modo's properties, not here."""
         if self.disposed:return
+        # And the engines Preferences > MoonRay > XPU2 allows.
+        self._sync_engines()
         closed,created=self.changes.closed,self.changes.created
         self.changes.closed=self.changes.created=False
         # Closed, the scene rendered is told by another being open in its place, or by a new one made for it when it
@@ -942,7 +968,9 @@ class Panel(Tools, QtWidgets.QWidget):
             values=self._settings_values()
             # MoonLightIPR's motion blur, off by default: each update then reads the shutter's ends too.
             if self.preview_engine.currentData()=='moonlightipr' and self.preferences.get('preview_motion'):words.append('Motion Blur')
-            if self.preview_engine.currentData()=='moonray' and values['denoising'].get('safe') and values['denoising'].get('engine','off')!='off':
+            from . import native
+            if self.preview_engine.currentData()=='moonray' and values['denoising'].get('safe') and values['denoising'].get('engine','off')!='off' \
+                    and not native.xpu2():
                 words.append('Safe Denoiser')
             level=values['denoising'].get('smart','off')
             if self.preview_engine.currentData()=='moonray' and level!='off':
@@ -1023,6 +1051,92 @@ class Panel(Tools, QtWidgets.QWidget):
         chosen=self.preview_engine.currentData()
         return 'moonray' if chosen=='moonray_ls' else chosen
 
+    def _sync_engines(self):
+        """The engines in the list, as Preferences > MoonRay > XPU2 has it: with XPU2, MoonRay and
+        MoonLightIPR; with XPU, MoonRay LS between them. MoonRay LS chosen as XPU2 comes on becomes MoonRay, an engine
+        changed as any other; the list otherwise changes without changing the engine chosen."""
+        try:
+            from . import native
+            xpu2=bool(native.xpu2())
+        except Exception:xpu2=False
+        if xpu2==getattr(self,'_engines_xpu2',None):return
+        self._engines_xpu2=xpu2
+        if not hasattr(self,'_engine_tip'):self._engine_tip=self.preview_engine.toolTip()
+        row=self.preview_engine.findData('moonray_ls')
+        if xpu2 and row>=0:
+            if self.preview_engine.currentData()=='moonray_ls':self.preview_engine.setCurrentIndex(self.preview_engine.findData('moonray'))
+            blocker=QtCore.QSignalBlocker(self.preview_engine)
+            self.preview_engine.removeItem(self.preview_engine.findData('moonray_ls'))
+            del blocker
+        elif not xpu2 and row<0:
+            blocker=QtCore.QSignalBlocker(self.preview_engine)
+            self.preview_engine.insertItem(self.preview_engine.findData('moonray')+1,'MoonRay LS','moonray_ls')
+            del blocker
+        self.preview_engine.setToolTip('\n'.join(line for line in self._engine_tip.split('\n') if not (xpu2 and line.startswith('MoonRay LS'))))
+        # RT is MoonRay's with XPU2 alone.
+        if hasattr(self,'_sync_rt'):self._sync_rt()
+
+    def _rt_capable(self):
+        """Whether the engine chosen can follow the scene in realtime: MoonLightIPR, or MoonRay
+        where XPU2 renders the preview (Preferences > MoonRay > XPU2)."""
+        engine=self.preview_engine.currentData()
+        if engine=='moonlightipr':return True
+        if engine!='moonray':return False
+        try:
+            from . import native
+            return bool(native.xpu2())
+        except Exception:return False
+
+    def _rt_toggled(self,on):
+        """The RT switch: realtime on, the preview follows the scene from now; off, realtime ends, its picture kept, and
+        the Render button is free again. Not while a render runs or stops: Stop it first."""
+        if getattr(self,'_rt_syncing',False):return
+        if on and self.draft.isChecked():
+            # Realtime switched on takes Draft off (as Draft switched on takes realtime off, _draft_toggled). Where the
+            # draft's render is under way it is stopped first, and realtime comes on once it has (_set_rendering): a
+            # stop may take a moment to keep what it rendered, and realtime does not start over a render.
+            self.draft.setChecked(False)
+            if self._rendering or getattr(self,'_stopping',False):
+                self._rt_after_stop=True
+                if not getattr(self,'_stopping',False):self.stop()
+                if self._rendering or getattr(self,'_stopping',False):
+                    self.status.setText('Draft off: realtime comes on as the draft stops.');self._sync_rt();return
+                self._rt_after_stop=False
+        if on and (not self._rt_capable() or self._output_busy() or self._rt_blocked()):
+            if not self._rt_capable():
+                self.status.setText('Realtime is MoonLightIPR\'s, or MoonRay\'s with XPU2 chosen in Preferences > MoonRay > XPU2.')
+            self._sync_rt();return
+        if on:
+            self.ipr_mode.setChecked(True)
+            self.start_render()
+        else:
+            self.ipr_mode.setChecked(False)
+            # As MoonLightIPR rests when realtime goes off: the render stops where it stands, its picture kept.
+            if self._rendering and not getattr(self,'_stopping',False) and not self._output_busy():self.stop()
+        self._sync_rt()
+        self._set_rendering(self._rendering)
+
+    def _rt_blocked(self):
+        """Whether a render other than realtime's runs, or one stops: RT is greyed until it is done. A draft's lines are
+        not such a render: RT stays pressable over them, and takes Draft off (_rt_toggled)."""
+        if self.draft.isChecked():return False
+        return bool((self._rendering and not self.ipr_mode.isChecked()) or getattr(self,'_stopping',False))
+
+    def _sync_rt(self):
+        """Keep the RT switch saying whether realtime is on, and whether it can be with the engine chosen."""
+        if not hasattr(self,'rt') or not hasattr(self,'renderer'):return
+        self._rt_syncing=True
+        try:
+            on=bool(self.ipr_mode.isChecked())
+            self.rt.setChecked(on);self.rt.setText('RT On' if on else 'RT Off')
+            self.rt.setEnabled(self._rt_capable() and not self._output_busy() and not self._rt_blocked())
+            self.rt.setToolTip('Realtime is on: the preview follows the scene as you edit it. Press to switch it off.' if on else
+                               'A render is under way. Stop it, or let it finish, to switch realtime on.' if self._rt_blocked() else
+                               'Realtime is off. Press to have the preview follow the scene as you edit it (MoonLightIPR, or '
+                               'MoonRay with XPU2).' if self._rt_capable() else
+                               'Realtime is MoonLightIPR\'s, or MoonRay\'s with XPU2 chosen in Preferences > MoonRay > XPU2.')
+        finally:self._rt_syncing=False
+
     def _live(self):
         """Whether the engine chosen is the realtime one, which follows the scene as it is edited."""
         return self.preview_engine.currentData()=='moonlightipr'
@@ -1041,7 +1155,7 @@ class Panel(Tools, QtWidgets.QWidget):
         # one to carry on from, and came on with Draft still on.
         self._choosing_engine=True
         try:
-            if self.ipr_mode.isChecked()!=live:self.ipr_mode.setChecked(live)
+            if self.ipr_mode.isChecked():self.ipr_mode.setChecked(False)
         finally:self._choosing_engine=False
         if self._following and not self.disposed:self._follow(False)
         if live and not self.disposed:self.status.setText('Realtime is off. Press RT Off to switch it on.')
@@ -1051,7 +1165,7 @@ class Panel(Tools, QtWidgets.QWidget):
             QtCore.QTimer.singleShot(0,lambda:None if self.disposed or not self.draft.isChecked() else self.render_once())
         self._set_rendering(self._rendering)
         # MoonLightIPR follows edits as they happen, so look for them more often.
-        self.timer.setInterval(60 if self._engine()=='moonlightipr' else 150)
+        self.timer.setInterval(60 if self._engine()=='moonlightipr' or self._rt_capable() else 150)
         self._limit_buffers()
         self._show_planned()
 
@@ -1062,8 +1176,22 @@ class Panel(Tools, QtWidgets.QWidget):
             return '%d ps'%(gathering or self.preferences.get('moonlightipr/samples'))
         from .options import render_values
         settings=render_values(settings or {})
+        # XPU2 renders the preview: how it samples it (xpu2_sampling), not MoonRay's Uniform or Adaptive.
+        from . import xpu2_sampling
+        if engine=='moonray' and xpu2_sampling.active():
+            try:return xpu2_sampling.words(self._settings_values(),realtime=bool(getattr(self,'_following',False)))
+            except Exception:pass
         return ('LS ' if engine=='ls' else '')+('Adaptive %d-%d ps'%(settings['min_adaptive_samples'],settings['max_adaptive_samples'])
                                                if settings['sampling_mode']==2 else 'Uniform %d ps'%pixel_samples)
+
+    def _offer_denoised(self,offered):
+        """Denoised Beauty in the buffer list, or not: MoonRay's realtime under XPU2 has none (its denoised pictures
+        looked bad), and shows Beauty where it was chosen."""
+        index=self.buffer.findData('denoised_beauty')
+        if index<0:return
+        view=self.buffer.view()
+        if hasattr(view,'setRowHidden'):view.setRowHidden(index,not offered)
+        if not offered and self.buffer.currentData()=='denoised_beauty':self.buffer.setCurrentIndex(self.buffer.findData('beauty'))
 
     def _show_planned(self):
         """The size and samples the engine chosen renders at, said beside the picture as soon as it is chosen, before
@@ -1103,8 +1231,12 @@ class Panel(Tools, QtWidgets.QWidget):
         self.buffer.setItemText(0,'Beauty')
         # MoonRay LS is a quick look: the beauty alone.
         low=self._low()
+        # The Denoiser set to Off in Render Settings is off everywhere: the denoised beauty is not in the list.
+        on=self._denoiser_on()
         for row in range(1,self.buffer.count()):
-            self.buffer.view().setRowHidden(row,low or (only and not (denoises and self.buffer.itemData(row)=='denoised_beauty')))
+            denoised=self.buffer.itemData(row)=='denoised_beauty'
+            self.buffer.view().setRowHidden(row,low or (denoised and not on) or (only and not (denoises and denoised)))
+        if not on and self.buffer.currentData()=='denoised_beauty':self.buffer.setCurrentIndex(self.buffer.findData('beauty'))
         if low:
             if self.buffer.currentData()!='beauty':self.buffer.setCurrentIndex(self.buffer.findData('beauty'))
             return
@@ -1115,10 +1247,15 @@ class Panel(Tools, QtWidgets.QWidget):
         wanted='denoised_beauty' if denoises and shown=='denoised_beauty' and self._buffer_picked=='denoised_beauty' else 'beauty'
         if shown!=wanted:self.buffer.setCurrentIndex(self.buffer.findData(wanted))
 
+    def _denoiser_on(self):
+        """Whether Render Settings > Denoiser names a denoiser. Off is off everywhere: no denoised beauty in the list."""
+        try:return scene_settings.complete(self._settings_values_stored())['denoising']['engine']!='off'
+        except Exception:return True
+
     def _moonlightipr_denoises(self):
-        """Whether MoonLightIPR's list has the denoised beauty in it: always. It denoises with the graphics card's own
-        denoiser, whatever the scene's denoiser is set to, when that buffer is the one chosen."""
-        return True
+        """Whether MoonLightIPR's list has the denoised beauty in it: whenever the scene's Denoiser is not Off. It
+        denoises with the graphics card's own denoiser, whichever the scene names, when that buffer is the one chosen."""
+        return self._denoiser_on()
 
     def _engine_notices(self,messages):
         """Add what the preview engine left out to the notices of the scene it is showing."""
@@ -1176,7 +1313,7 @@ class Panel(Tools, QtWidgets.QWidget):
         self.preview.set_show_buckets(self.show_buckets.isChecked() and not self._following)
         if self._following:
             self.renderer.buffers.denoiser.close()
-            if self.buffer.currentData()=='denoised_beauty' and self._engine()!='moonlightipr':
+            if self.buffer.currentData()=='denoised_beauty' and self._engine()!='moonlightipr' and not (self.ipr_mode.isChecked() and self._rt_capable()):
                 self.buffer.setCurrentIndex(self.buffer.findData('beauty'))
             if not self.preview_lock.isChecked():self.timer.start()
         self._set_rendering(self._rendering)
@@ -1215,7 +1352,7 @@ class Panel(Tools, QtWidgets.QWidget):
         scene_w, scene_h = scene['width'], scene['height']
         size=self.preferences.get('preview_size')
         if size<=0:size=640
-        width = scene_w if final or not (self._live() or self._low()) else min(scene_w,size)
+        width = scene_w if final or not (self._live() or self._low() or (self.ipr_mode.isChecked() and self._rt_capable())) else min(scene_w,size)
         # A playblast has a width of its own, whichever engine is chosen.
         blast=None if final else self._playblasting()
         if blast is not None:width=min(scene_w,blast.width)
@@ -1307,7 +1444,9 @@ class Panel(Tools, QtWidgets.QWidget):
     # Rendering
 
     def _render_or_stop(self):
-        if self._rendering or self._following:self.stop()
+        if self._rendering or self._following:
+            if self.ipr_mode.isChecked():self.ipr_mode.setChecked(False)
+            self.stop();self._sync_rt()
         else:self.start_render()
 
     def start_render(self):
@@ -1316,6 +1455,9 @@ class Panel(Tools, QtWidgets.QWidget):
             self.status.setText('Output render is running. Press Stop before starting a preview.');return
         # Render, or realtime switched on, is asking for the picture itself: Draft, where it is on, goes off first.
         if self.draft.isChecked():self.draft.setChecked(False)
+        # A render started by hand gives XPU2 another try where it left the session to MoonRay XPU.
+        session=getattr(self.renderer,'session',None)
+        if session is not None and hasattr(session,'retry_xpu2'):session.retry_xpu2()
         if self.ipr_mode.isChecked():self._follow(True)
         # What failed before is no longer the news.
         self._failure=None
@@ -1339,6 +1481,10 @@ class Panel(Tools, QtWidgets.QWidget):
         self._rendering=bool(rendering)
         # A stop is over once nothing renders any more: the button can be pressed again.
         if not self._rendering:self._stopping=False
+        # Realtime asked for over a draft that was rendering (_rt_toggled): on now that the draft's render has stopped.
+        if not self._rendering and getattr(self,'_rt_after_stop',False):
+            self._rt_after_stop=False
+            QtCore.QTimer.singleShot(0,lambda:None if self.disposed else self.rt.setChecked(True))
         self.start.setEnabled(not getattr(self,'_stopping',False))
         # The mattes picked are of the picture there was: a new render takes them away, and they are laid over the new
         # picture when it is finished, where they are still in it.
@@ -1352,7 +1498,21 @@ class Panel(Tools, QtWidgets.QWidget):
         if getattr(self,'_draft_quiet',False):return
         active=self._rendering or self._following
         again=not active and getattr(self,'_continuable',None) is not None
-        if self._live():
+        self._sync_rt()
+        if self.ipr_mode.isChecked():
+            # Realtime is on: this button is greyed, and RT Off gives it back.
+            self.start.setChecked(False);self.start.setCheckable(False)
+            self.start.setEnabled(False);self.start.setText('Render')
+            self.start.setToolTip('Realtime is on. Switch RT off to render once.')
+            return
+        if self._engine()=='moonlightipr' and not self._rendering:
+            # MoonLightIPR renders in realtime alone: RT turns it on, and this button is greyed.
+            self.start.setChecked(False);self.start.setCheckable(False)
+            self.start.setEnabled(False);self.start.setText('Render')
+            self.start.setToolTip('MoonLightIPR renders in realtime: switch RT on.')
+            return
+        if False:
+            # (Realtime has its switch, RT, left of the engine; this button renders once.)
             # A realtime engine is switched on and off, not started and stopped.
             # RT for realtime. While it is on the button stays pressed in, as a switch that is on does.
             # A draft's lines, or its region, being rendered is not realtime being on: with Draft on the button
@@ -1481,6 +1641,10 @@ class Panel(Tools, QtWidgets.QWidget):
         grid=(4 if refining else scene.get('_uniform_grid',1)) if scene.get('_ipr') and not output else values['samples']
         # Kept with the picture, for its sampling to be said beside its size.
         if engine=='moonray':scene=dict(scene,_pixel_samples=int(grid)**2)
+        if engine=='moonray' and self._following and not output:scene=dict(scene,_realtime=True)
+        if not output:
+            from . import native
+            self._offer_denoised(not (engine=='moonray' and self._following and native.xpu2()))
         self.renderer.submit(scene, self.runtime_path(), width, height, grid,
                              values['environment'], values['threads'], output, persistent_preview=get('persistent_preview'), engine=engine, resume=resume)
         if resume:self.status.setText('Continuing the stopped render.')
@@ -1537,12 +1701,15 @@ class Panel(Tools, QtWidgets.QWidget):
         if self.disposed:return
         engine=self._preview_denoiser()
         self._buffer_picked=None
+        # Denoised Beauty is in the list while a denoiser is chosen.
+        self._limit_buffers()
         if self._engine()=='moonlightipr':
             # MoonLightIPR denoises for itself, when its denoised picture is chosen: the scene's setting is MoonRay's.
             self._limit_buffers()
             return
         self.renderer.buffers.denoiser.request(engine)
-        self.buffer.setCurrentIndex(self.buffer.findData('beauty' if engine=='off' else 'denoised_beauty'))
+        realtime=self.ipr_mode.isChecked() and self._rt_capable() and self._denoiser_on()
+        self.buffer.setCurrentIndex(self.buffer.findData('beauty' if engine=='off' and not realtime else 'denoised_beauty'))
 
     # ---- Cryptomatte in the preview ----
     def _crypto_buffer(self):
@@ -1668,8 +1835,9 @@ class Panel(Tools, QtWidgets.QWidget):
 
     def _buffer_changed(self,index):
         if self.disposed:return
-        # MoonRay LS is a quick look and is not denoised. MoonLightIPR denoises as it goes.
-        if self._low() and self.buffer.currentData()=='denoised_beauty':
+        # MoonRay LS is a quick look and is not denoised. MoonLightIPR denoises as it goes. With the Denoiser Off
+        # there is no denoised beauty.
+        if (self._low() or not self._denoiser_on()) and self.buffer.currentData()=='denoised_beauty':
             self.buffer.setCurrentIndex(self.buffer.findData('beauty'));return
         try:
             from .display import values
@@ -1948,7 +2116,8 @@ class Panel(Tools, QtWidgets.QWidget):
         self._settle_token=token=object()
         # The button is greyed while the render stops, and says so; _set_rendering gives it back.
         self._stopping=True
-        if not self._live():
+        self._sync_rt()
+        if True:
             self.start.setEnabled(False);self.start.setText('Stopping')
             self.start.setToolTip('The render is stopping, keeping what is rendered.')
         def late():
@@ -2124,7 +2293,7 @@ class Panel(Tools, QtWidgets.QWidget):
         self.status.setToolTip('')
         self.status.setText(('Saved ' + output) if output else ('Following the scene' if self._following else self._kept_status() if self._continuable
                              else 'Draft: press Region and drag in the picture to mark a part of it.' if self.draft.isChecked() and self._draft_region() is None
-                             else 'Draft: region marked. Press %s to render it.'%('RT Off' if self._live() else 'Render') if self.draft.isChecked() else 'Done'))
+                             else 'Draft: region marked. Press %s to render it.'%'Render' if self.draft.isChecked() else 'Done'))
         if not output and getattr(self.renderer,'draining',False):
             # Stopped by hand, or by Smart Render: MoonRay finished the tiles it had in hand and ended the render
             # there, so the picture is whole and has all its buffers.

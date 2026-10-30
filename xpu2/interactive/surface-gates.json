@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "scope": "component conformance and restricted plane estimator only; no general native qualification",
+  "frozen_before_execution": true,
+  "filter_max_absolute_error": 0.000003,
+  "lambert_max_absolute_error": 0.000003,
+  "camera_max_absolute_error": 0.000003,
+  "cpu_gpu_max_absolute_error": 0,
+  "image_max_block_mean_error": 0.01,
+  "image_max_pixel_error": 0.06,
+  "image_alpha_error": 0,
+  "image_block_width": 8,
+  "image_spp": 256,
+  "seeds": [0, 17, 59],
+  "speed_measurement_allowed": false
+}

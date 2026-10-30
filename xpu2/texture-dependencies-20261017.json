@@ -1,0 +1,109 @@
+{
+  "status": "passed",
+  "scope": "Native RDL metadata dependency and background decoded-byte validation; no rendered scene or speed measurement",
+  "contracts": [
+    {
+      "case": "contract",
+      "checks": {
+        "passed": true,
+        "checks": 29532,
+        "random_operations": 20000,
+        "clean_eviction_d2h_bytes": 0
+      },
+      "executable_sha256": "c282d4250df9db563956235268243b18cadac70717319d5bd8a8229fc5fe5118",
+      "preprocessed_sha256": "c1b81f3a30b345bfb07b8c6f2dfe4ed4f6869839e8612665bc384511f6f584ca"
+    },
+    {
+      "case": "residency",
+      "checks": {
+        "passed": true,
+        "checks": 74689,
+        "randomized_plans": 5000
+      },
+      "executable_sha256": "c9016248b0c96d90549f0c2c6b1f57b1d3729d9fc5a2033717959ae39db1217b",
+      "preprocessed_sha256": "81d8cf7425cccf892382366075f8fdff1be4ed704c5e3fd886d8e2e47abfd578"
+    },
+    {
+      "case": "async",
+      "checks": {
+        "passed": true,
+        "checks": 1292,
+        "lifecycle_jobs": 1000,
+        "background_decode": true,
+        "cancelled_results_discarded": true
+      },
+      "executable_sha256": "8e541916ad7b58ae6b4d9d2ce98945f53ad4441fd23fb10130e94c015cc0b199",
+      "preprocessed_sha256": "da0a8995dbb618c01a854144c7274521ff7b25164a4bbc91c6afc7e2f9709934"
+    },
+    {
+      "case": "dependencies",
+      "checks": {
+        "passed": true,
+        "checks": 4030,
+        "revision_updates": 1000
+      },
+      "executable_sha256": "ec2079eaaaf073f2ac430fb00ecad28d28342b1156e1a680be9407e433868d9d",
+      "preprocessed_sha256": "bd0ab3fb6c82a07f946f62e157f5f498670b36b15f1f6720c723593a395b15f6"
+    }
+  ],
+  "native": {
+    "passed": true,
+    "checks": 32,
+    "native_stages": 8,
+    "background_tiles": 3,
+    "native_metadata_only": true,
+    "rendered_validation": false
+  },
+  "contract_source_sha256": {
+    "texture_cache.h": "2dd4b292ad490bf237a4b247608ad7100f91c748291bb49696047aefe6c40c04",
+    "texture_cache_test.cc": "8098703afe10ec5996af9f21debcfda205abf5a0c547f7859d117ab48b2d0f3d",
+    "texture_residency.h": "8f368a5a52be95c4e8cae47b1453de422a26d10b14a9da06f270a7f15753648e",
+    "texture_residency_test.cc": "34e4ed2cbe2082a0977c9b0d54b39d65cf784d7f4a0eae5274d1778a8e7ab305",
+    "texture_async.h": "ee332be031f9eeb6cd03033fb8aed06e57bf4d0dd6c861ab7e970ca5f87ec7ff",
+    "texture_async_test.cc": "669607e8a4d7cb25de9d2e01a3a509b1b6dd419396e5c9b09ca4639e03f37805",
+    "texture_dependencies.h": "613c8cdf694e732900e41420d0b132037dda43b4b0f4104357a5d7d9bd81c452",
+    "texture_dependencies_test.cc": "2baca3b889d5dce5469a9e97e4e77f03107f22219fb6eb4da9a675ed31bc8d63",
+    "indexed_scene.h": "6c5a83c3e3bae7489b56d10957ff323f1b0b02bf62aec5609982aeb1e87110d0",
+    "persistent_map.h": "563ac27f115b6dd93385a2f0f30a757508f85b047ad5499a09405b518086ad57",
+    "xpu2_texture_cache_probe.py": "d1267211c6f32363d5acdce0b7596094a634305300d4b45d6689334c478d45cd"
+  },
+  "native_source_sha256": {
+    "indexed_scene.h": "6c5a83c3e3bae7489b56d10957ff323f1b0b02bf62aec5609982aeb1e87110d0",
+    "persistent_map.h": "563ac27f115b6dd93385a2f0f30a757508f85b047ad5499a09405b518086ad57",
+    "rdl_scene_index.h": "9d55d339a757c1adbf3e37d27071e95691c0eb5c4ac7f1f7b3c456d9f0ad1756",
+    "texture_cache.h": "2dd4b292ad490bf237a4b247608ad7100f91c748291bb49696047aefe6c40c04",
+    "texture_residency.h": "8f368a5a52be95c4e8cae47b1453de422a26d10b14a9da06f270a7f15753648e",
+    "texture_dependencies.h": "613c8cdf694e732900e41420d0b132037dda43b4b0f4104357a5d7d9bd81c452",
+    "rdl_texture_dependencies.h": "603cbb7bae84bb29e866175eb5c667c5c76d07a8177a7534b8de8f46ff17186a",
+    "rdl_texture_dependencies_probe.cc": "7387a810c951e5567e349a3befa5076b9b288adff0679fdd09860060a64712ff",
+    "texture_async.h": "ee332be031f9eeb6cd03033fb8aed06e57bf4d0dd6c861ab7e970ca5f87ec7ff",
+    "texture_oiio_loader.h": "e43adba167769d42cd3cbefbc09e64871ee8b03d36a50b8f5d22903ef1dd70d5",
+    "xpu2_texture_dependencies_probe.py": "15b117c5901220bf82d90cd7918bd03f3f5cc8e1eb5492b4a8dfe187d361c12c",
+    "xpu2_rdl_index_probe.py": "6325e03744064b981010db5ba8ff7b124cae9bc834593a2e56f1f4f22b2cd8b4",
+    "g++.exe": "58efe82fa3ce35005f89d46fe439d7ee54e6889cb7db894019202da691a529a5",
+    "libscene_rdl2.dll.a": "2f39cffbdca3bfee7685264a8e2f0d57c5d84e18a6bce0da8706402de79caca2",
+    "libcommon_fb_util.dll.a": "e6eb72278ccc11588b16f8d5473936938937daf57bcf32ff79647cef2a4f4cfc",
+    "libfb_util_ispc.dll.a": "0fd39989f537c5a58bf9925af1c16adf1fbf58b3e6d8459b6b464a65f74f5454",
+    "librender_util.dll.a": "4b5d01f9c418ca20261dd15993c8a29dca7b6997381b7a32d5fdb9f401f598d1",
+    "libjsoncpp.a": "4fdb57167763eb5a596021db17b765d6c19802757b19f112025682160554be5a",
+    "liblua.dll.a": "d9923aa6d352cfc91c9af6337f3f8c0a4246b0bba7c8bb5649a8ce9fabd75803",
+    "libcommon_math.dll.a": "5b27a78473888fbd3b81da724f053cb55cb67d7a9ff2e8d3823c9c6569a8baff",
+    "libmath_ispc.dll.a": "7c0afdb5d8a885ca7b8a82025603c898f06df5a124aae2288839e4747adfc4cd",
+    "libcommon_platform.dll.a": "2a2bfeebc19110fdbd89e1c596254e287346271121e1bbebf2550037d86d321f",
+    "librender_logging.dll.a": "9c45c6afdb5b6403445ecf2bd625db4736d7bfdf445bff8beeb2b041f3bab453",
+    "liblog4cplus.dll.a": "2fa657408c53a14b503aacf9c846d20db7cfcde097b6142eb08c7f06c755fe4f",
+    "libtbb12.dll.a": "b00a2ea2915875e434bd1dcf8419bb75dda4a2cade4c1f893f78d335a91d2ee1",
+    "libOpenImageIO.dll.a": "524f45334b3ee5569ac53b87cce10165f58ee74b3ef272b1a07c0ce1604cbbcd",
+    "libOpenImageIO_Util.dll.a": "7fed56c6f3d95c9d4bfce70a29be96e1534bfc91ac4b1bcc3e2678b9f0afb974"
+  },
+  "fixture_hashes": {
+    "rgba.tx": "7658bb27011badc00908cbdaafb9281176058b09cb51448b8d1648e60113961f",
+    "gray.tx": "3fc11ea58217339d453794a5fa6f4583691840ccb9166dd940cbc553319e3076"
+  },
+  "native_executable_sha256": "69bc6f350f698640149489d7464497e2f8e9292cbee15ab16c779d3220878585",
+  "native_preprocessed_sha256": "54fe62ee29488abdfb6ede0fe8e54b07f2ca349f75c9b3fbd9b87a83ab7a02a2",
+  "local_reports": [
+    "test-results/xpu2-dependencies-contract-publish/report.json",
+    "test-results/xpu2-dependencies-native-publish/report.json"
+  ]
+}
