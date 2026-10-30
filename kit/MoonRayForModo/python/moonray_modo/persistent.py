@@ -28,7 +28,8 @@ class _Rediff(QtCore.QThread):
         super().__init__(parent)
         self.applied,self.request,self.delta,self.why,self.report=applied,request,None,[],report
     def run(self):
-        try:self.delta=difference(self.applied['text'],self.request['text'],why=self.why)
+        heavy=(self.request.get('prepared') or {}).get('heavy')
+        try:self.delta=difference(self.applied['text'],self.request['text'],heavy,why=self.why)
         except Exception as error:self.delta=None;self.why.append(str(error) or type(error).__name__)
 
 
@@ -250,7 +251,7 @@ class Session(QtCore.QObject):
                     rediff.start()
                     return
                 delta=rediff.delta
-            else:delta=difference(self.applied['text'],request['text']) if small else None
+            else:delta=difference(self.applied['text'],request['text'],(prepared or {}).get('heavy')) if small else None
             delta_bytes=None
         if delta is None and self.applied:
             # The whole scene goes: why, in the Render Log, found on a thread of its own (a drag of the camera should

@@ -66,11 +66,15 @@ class SceneWriter(QtCore.QThread):
                     text = rdla.scene_text(*self.arguments)
                 delta = difference(self.applied['text'], text, sink.text_of) if self.applied else None
                 binary = sink.payload() if sink.objects else None
+                # The lists as text (the binary file's), kept with the delta: a delta made again against a newer scene
+                # (persistent._dispatch) carries a changed list as this one does, rather than loading the scene again.
+                heavy = sink.text_of
             else:
                 text = rdla.scene_text(*self.arguments)
                 delta = difference(self.applied['text'], text) if self.applied else None
                 binary = None
-            self.prepared = dict(base=self.applied, delta=delta, full_bytes=text.encode('utf-8'),
+                heavy = None
+            self.prepared = dict(base=self.applied, delta=delta, full_bytes=text.encode('utf-8'), heavy=heavy,
                                  delta_bytes=delta.encode('utf-8') if delta is not None else None, binary=binary)
             if binary is None and not self.applied and native.binary_geometry():
                 # A MoonRay that reloads from text alone still starts with the geometry as binary; later changes

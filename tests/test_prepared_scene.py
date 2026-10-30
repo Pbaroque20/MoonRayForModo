@@ -39,7 +39,8 @@ class PreparedSceneTests(unittest.TestCase):
         # delta once made, not as a reload; nothing is sent meanwhile.
         Session = persistent_session()
         applied = {'id': 2, 'text': 'other'}
-        request = {'id': 3, 'text': 'full', 'prepared': {'base': {'id': 1, 'text': 'old'}, 'delta': 'edit', 'full_bytes': b'full', 'delta_bytes': b'edit'}}
+        lists = object()  # the writer's binary lists, as text (render.SceneWriter): passed on to the diff
+        request = {'id': 3, 'text': 'full', 'prepared': {'base': {'id': 1, 'text': 'old'}, 'delta': 'edit', 'full_bytes': b'full', 'delta_bytes': b'edit', 'heavy': lists}}
         writes = []
         def write(request, suffix, text, payload=None):
             writes.append((suffix, text, payload))
@@ -51,7 +52,7 @@ class PreparedSceneTests(unittest.TestCase):
         with patch.dict(Session._dispatch.__globals__, difference=Mock(return_value='again'), DIFF_HERE=2) as held:
             Session._dispatch(state)
             self.assertEqual(held['difference'].call_count, 1)
-            self.assertEqual(held['difference'].call_args[0], ('other', 'full'))
+            self.assertEqual(held['difference'].call_args[0], ('other', 'full', lists))
         self.assertIs(state.sent, request)
         self.assertEqual(writes[1], ('delta', 'again', None))
         self.assertEqual(state.command_channel.send.call_count, 1)
@@ -84,7 +85,8 @@ class PreparedSceneTests(unittest.TestCase):
         # again on Modo's thread, the text being small, and goes as a delta, not a reload.
         Session = persistent_session()
         applied = {'id': 2, 'text': 'other'}
-        request = {'id': 3, 'text': 'full', 'prepared': {'base': {'id': 1, 'text': 'old'}, 'delta': 'edit', 'full_bytes': b'full', 'delta_bytes': b'edit'}}
+        lists = object()  # the writer's binary lists, as text (render.SceneWriter): passed on to the diff
+        request = {'id': 3, 'text': 'full', 'prepared': {'base': {'id': 1, 'text': 'old'}, 'delta': 'edit', 'full_bytes': b'full', 'delta_bytes': b'edit', 'heavy': lists}}
         writes = []
         def write(request, suffix, text, payload=None):
             writes.append((suffix, text, payload))
@@ -94,7 +96,7 @@ class PreparedSceneTests(unittest.TestCase):
                                 command_channel=Mock(), status=Mock())
         with patch.dict(Session._dispatch.__globals__, difference=Mock(return_value='again')) as held:
             Session._dispatch(state)
-            held['difference'].assert_called_once_with('other', 'full')
+            held['difference'].assert_called_once_with('other', 'full', lists)
         self.assertEqual(writes[1], ('delta', 'again', None))
         self.assertIn('\ndelta\n', state.command_channel.send.call_args[0][0])
 
