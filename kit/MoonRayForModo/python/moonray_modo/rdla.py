@@ -988,6 +988,20 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
                   '  ["file_name"] = %s,' % string(path), *kept(path), '  ["channel_format"] = 0,', '  ["compression"] = 1,']
         for attr,value in attributes.items(): lines.append('  [%s] = %s,' % (string(attr),(value if isinstance(value,outputs.Raw) else string(value)) if isinstance(value,str) else ('true' if value else 'false') if isinstance(value,bool) else number(value)))
         lines.append('}')
+    # XPU2's sampling generations: its render settings in a preview, as a UserData that XPU2
+    # reads (cpu_scene.h: 1, on, samples, spend exactly, noise target, first generation, most samples, CPU workers,
+    # realtime: the preview following the scene with RT on, panel.py) and MoonRay leaves alone.
+    generation=scene.get('xpu2_generations')
+    if generation and not output_file:
+        # On: they are whenever XPU2 renders the preview, and only XPU2 reads them (xpu2_sampling). Form 2: they
+        # rule, a scene's adaptive sampling being MoonRay's alone (cpu_scene.h).
+        from . import xpu2_sampling
+        xpu2_sampling.CAMERA[0]=xpu2_sampling.camera_kind(entity_camera)
+        values=[2,1,xpu2_sampling.budget(generation,samples,bool(scene.get('_realtime'))),1 if generation.get('spend')=='samples' else 0,
+                float(generation.get('noise',0.0)),int(generation.get('seed',0)),xpu2_sampling.most_samples(generation,samples,bool(scene.get('_realtime'))),1 if generation.get('cpu',True) else 0,
+                1 if scene.get('_realtime') else 0]
+        lines += ['UserData("/modo/xpu2/generations") {','  ["float_key"] = "xpu2_generations",',
+                  '  ["float_values_0"] = {%s},' % ', '.join('%g' % v for v in values),'}']
     if safe and safe.get('data'):
         # What MoonRay needs beside the pictures themselves to take a render up again: how much each pixel has had,
         # the halves of the beauty and the alpha it compares, and the alpha. Kept in a file of their own, so that

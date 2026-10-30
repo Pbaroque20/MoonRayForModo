@@ -52,6 +52,8 @@ def configure(scene, values):
     if values['exr']!={'compression':1,'dwa_level':85.0}:scene['exr']=values['exr']
     scene['preview_buffer'] = values['preview_buffer']
     scene['execution_mode'] = values['execution_mode']
+    # XPU2's sampling generations, written into a preview's scene for XPU2 (rdla.py).
+    scene['xpu2_generations'] = values['xpu2_generations']
     scene['denoising'] = values['denoising']
     from .display import values as display_values
     scene['display'] = display_values(dict(values['display'],working_space=values['asset_settings'].get('working_space','rec709')))

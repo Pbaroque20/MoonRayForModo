@@ -50,7 +50,8 @@ class PreparedSceneTests(unittest.TestCase):
         state._dispatch = lambda: Session._dispatch(state)
         with patch.dict(Session._dispatch.__globals__, difference=Mock(return_value='again'), DIFF_HERE=2) as held:
             Session._dispatch(state)
-            held['difference'].assert_called_once_with('other', 'full')
+            self.assertEqual(held['difference'].call_count, 1)
+            self.assertEqual(held['difference'].call_args[0], ('other', 'full'))
         self.assertIs(state.sent, request)
         self.assertEqual(writes[1], ('delta', 'again', None))
         self.assertEqual(state.command_channel.send.call_count, 1)
@@ -66,12 +67,17 @@ class PreparedSceneTests(unittest.TestCase):
             return 'modo-memory:' + suffix
         from pathlib import Path
         state = SimpleNamespace(latest=request, applied={'id': 2, 'text': 'other'}, _write_scene=write, root=Path('.'), scene_memory=True,
-                                command_channel=Mock(), status=Mock(), closed=False)
+                                command_channel=Mock(), status=Mock(), closed=False, output=Mock())
         state._dispatch = lambda: Session._dispatch(state)
-        with patch.dict(Session._dispatch.__globals__, difference=Mock(return_value=None), DIFF_HERE=2):
+        def nothing(previous, current, heavy=None, why=None):
+            if why is not None: why.append('its text has 2 lines, the one before 1')
+            return None
+        with patch.dict(Session._dispatch.__globals__, difference=nothing, DIFF_HERE=2):
             Session._dispatch(state)
         self.assertEqual(len(writes), 1)
         self.assertIn('\nfull\n', state.command_channel.send.call_args[0][0])
+        # Why, in the Render Log.
+        self.assertIn('its text has 2 lines', state.output.emit.call_args[0][0])
 
     def test_stale_base_with_a_small_scene_makes_the_delta_again(self):
         # A drag of the camera: the writer's delta was made against a scene since replaced; the one applied is diffed

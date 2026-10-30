@@ -192,6 +192,7 @@ def execution_status(log):
         # With what it is running on, where the machine says: the first NVIDIA card and the processor.
         if 'gpu: setup complete' in line: result='XPU active (%s + %s)'%(_gpu() or 'NVIDIA GPU',_cpu() or 'CPU')
         if 'falling back to cpu' in line: result='Vector active (CPU fallback — see Render Log)'
+        if 'xpu2 preview session' in line: result='XPU2 active (%s + %s)'%(_gpu() or 'NVIDIA GPU',_cpu() or 'CPU')
     return result
 
 
@@ -324,10 +325,20 @@ def engine_name(mode):
     return ENGINE_NAMES.get(str(mode or '').lower(), 'MoonRay')
 
 
+# What MoonRay is called in the MoonRay Terminal, by the execution mode it was started in.
+ENGINE_NAMES = {'vectorized': 'MoonRay Vector', 'vector': 'MoonRay Vector', 'scalar': 'MoonRay Scalar', 'xpu': 'MoonRay XPU',
+                'auto': 'MoonRay Auto'}
+
+
+def engine_name(mode):
+    """MoonRay named by its execution mode (ENGINE_NAMES): MoonRay Vector, MoonRay Scalar, MoonRay XPU or MoonRay Auto."""
+    return ENGINE_NAMES.get(str(mode or '').lower(), 'MoonRay')
+
+
 def source_switches():
     """The MoonRay Source Overrides MoonRay reads as it starts: a session started with others is started again."""
     return (toon_terminator(), toon_albedo(), crypto_volumes(), fog_alpha(), crypto_once()) + tuple(
-        globals()[key]() for key in ('usd_specular', 'opaque_alpha', 'transmission_roughness', 'auto_xpu'))
+        globals()[key]() for key in ('usd_specular', 'opaque_alpha', 'transmission_roughness', 'auto_xpu')) + (xpu2(), xpu2_chain(), xpu2_devices(), xpu2_upscale())
 
 
 def binary_geometry():
@@ -381,3 +392,96 @@ def _crypto_capability(directory,signature):
         data=json.loads((root/'modo-crypto-categories.json').read_text(encoding='utf-8'))
         return data.get('version')==1 and all(hashlib.sha256((root/n).read_bytes()).hexdigest()==data['sha256'][n] for n in _CRYPTO_LIBS)
     except (OSError,ValueError,KeyError,TypeError):return False
+
+
+# XPU2: its own runtime beside the kit's, chosen in Preferences > MoonRay > XPU2.
+def xpu2_runtime():
+    """XPU2's runtime: its preview session (moonray_xpu2.exe), GPU programs and the libraries it was built with."""
+    return Path(__file__).resolve().parents[2] / 'runtime-xpu2'
+
+
+def _setting(key, default):
+    try:
+        from PySide2 import QtCore
+    except ImportError:
+        return default
+    return QtCore.QSettings('MoonRayForModo', settings_name()).value(key, default)
+
+
+def xpu2():
+    """Whether XPU2 renders the preview where MoonRay would render on the graphics card: on by default (release 0.5,
+    asked 2026-10-28); a choice of MoonRay XPU in the preferences is kept."""
+    return str(_setting('xpu2/renderer', 'xpu2')) == 'xpu2' and (xpu2_runtime() / 'moonray_xpu2.exe').is_file()
+
+
+def xpu2_chain():
+    """Whether XPU2 makes an adaptive render's passes on the graphics card: quicker, without the outlines of the work,
+    which are known only where the passes are made on the processor."""
+    return str(_setting('xpu2/adaptive_chain', 'false')).lower() in ('true', '1')
+
+
+def xpu2_devices():
+    """Which devices XPU2 renders with: 'both' (the processor and the graphics card, the default), 'gpu' or 'cpu'."""
+    value = str(_setting('xpu2/devices', 'both'))
+    return value if value in ('both', 'gpu', 'cpu') else 'both'
+
+
+def xpu2_rt_cap():
+    """Realtime Adaptive Sampling Cap (Preferences > MoonRay > Preview Window): the most samples a pixel realtime takes
+    under XPU2, 0 for none (the default)."""
+    value = str(_setting('xpu2/rt_cap', 'none'))
+    return int(value) if value in ('30', '60') else 0
+
+
+def xpu2_upscale():
+    """Whether realtime's pictures shown from a quarter of their pixels while things move are made full size by OptiX's
+    upscaling denoiser (Lower Resolution While Moving, on by default), or enlarged as they are."""
+    return str(_setting('xpu2/upscale', 'true')).lower() in ('true', '1')
+
+
+def xpu2_environment(runtime):
+    """What XPU2's session starts with over environment(runtime): its own libraries and scene classes first, and the
+    kit's MoonRay named for what XPU2 leaves to it."""
+    root = xpu2_runtime()
+    return {'PATH': str(root) + os.pathsep + environment(runtime)['PATH'], 'RDL2_DSO_PATH': str(root),
+            'REZ_MOONRAY_ROOT': str(root), 'MOONRAY_XPU2_MOONRAY': str(Path(runtime) / 'moonray.exe'),
+            'XPU2_SESSION_CHAIN': '1' if xpu2_chain() else '0',
+            # Its devices (Preferences > MoonRay > XPU2 > Devices): 2 both, 1 the graphics card, 0 the processor.
+            'XPU2_SESSION_MODE': {'both': '2', 'gpu': '1', 'cpu': '0'}[xpu2_devices()],
+            # Lower Resolution While Moving (Preferences > MoonRay > XPU2): OptiX's upscaling denoiser for those pictures.
+            'XPU2_SESSION_RT_UPSCALE': '1' if xpu2_upscale() else '0',
+            # XPU2's tessellations kept in the cache folder as the Scene cache says (cache_folder).
+            'XPU2_SESSION_GEOMETRY_CACHE': '1' if __import__('moonray_modo.cache_folder', fromlist=['scene_cache']).scene_cache() else '0'}
+
+
+def xpu2_shaders_log():
+    """Where Compile XPU2 Shaders writes how it is going."""
+    return Path(os.environ.get('LOCALAPPDATA', tempfile.gettempdir())) / 'MoonRayForModo' / 'xpu2-shaders.log'
+
+
+_shaders_asked = [0.0, None]
+
+
+def xpu2_shaders_compiled():
+    """Whether XPU2's runtime finds its mark of compiled shaders (moonray_xpu2 --shaders-compiled), asked at most every
+    few seconds: without them XPU2 does not render (persistent), and says where to compile them."""
+    import subprocess, time
+    if time.monotonic() - _shaders_asked[0] < 5 and _shaders_asked[1] is not None:
+        return _shaders_asked[1]
+    exe = xpu2_runtime() / 'moonray_xpu2.exe'
+    env = dict(os.environ)
+    env.update(xpu2_environment(default_runtime()))
+    for key in ('PYTHONHOME', 'PYTHONPATH', 'QT_PLUGIN_PATH', 'QT_QPA_PLATFORM_PLUGIN_PATH'):
+        env.pop(key, None)
+    try:
+        result = subprocess.run([str(exe), '--shaders-compiled'], cwd=str(exe.parent), env=env, capture_output=True,
+                                timeout=30, creationflags=0x08000000).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        result = False
+    _shaders_asked[0], _shaders_asked[1] = time.monotonic(), result
+    return result
+
+
+# What a preview says when XPU2 is chosen and its shaders are not compiled: nothing is rendered.
+XPU2_NOT_COMPILED = ("Render unavailable: MoonRay XPU2's shaders not compiled. "
+                     "System > Preferences > MoonRay > XPU2 > Compile XPU2 Shaders.")

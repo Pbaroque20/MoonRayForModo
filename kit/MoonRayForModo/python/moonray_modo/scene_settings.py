@@ -22,6 +22,9 @@ DEFAULTS = {
     # How the final EXR is compressed, by MoonRay's numbers (options.EXR_COMPRESSIONS), and the level of its DWA ones.
     'exr': {'compression': 1, 'dwa_level': 85.0},
     'denoising': {'engine': 'off', 'preview': True, 'final': True, 'safe': False, 'smart': 'off', 'detail': 'some'},
+    # XPU2's sampling generations: 16 samples a pixel on average and a noise target of 10 by
+    # default; the rest are what XPU2 does without them.
+    'xpu2_generations': {'on': True, 'samples': 16, 'spend': 'time', 'noise': 10.0, 'seed': 4, 'most': 0, 'cpu': True, 'realtime': 100},
     'execution_mode': 'auto', 'preview_buffer': 'beauty',
     # The camera MoonRay tessellates adaptive geometry for, by its item's identity; '' for the render camera.
     'dicing_camera': '',
@@ -40,7 +43,7 @@ def complete(stored):
     for key in DEFAULTS:
         if key in stored:
             held = copy.deepcopy(stored[key])
-            if isinstance(DEFAULTS[key], dict) and key in ('recovery', 'denoising', 'deep', 'exr'):
+            if isinstance(DEFAULTS[key], dict) and key in ('recovery', 'denoising', 'deep', 'exr', 'xpu2_generations'):
                 result[key].update(held if isinstance(held, dict) else {})
             else:
                 result[key] = held
@@ -110,6 +113,15 @@ GROUPS = [
         render_field('light_samples', 'Light Samples', '2 means 2 x 2 samples per light'),
         render_field('bsdf_samples', 'Material Samples', '2 means 2 x 2 samples per material'),
         render_field('bssrdf_samples', 'Subsurface Samples', '2 means 2 x 2 subsurface samples'),
+    ]),
+    ('XPU2 Sampling', False, [
+        field('xpu2_samples', ('xpu2_generations', 'samples'), 'int', 'Generation Samples', "What the render is worth, in samples a pixel on average: the generations share them out where the picture is still noisy. 0: Pixel Samples squared. XPU2 previews always sample this way: MoonRay's Sampling Mode and adaptive settings are for MoonRay renders", 0, 4096),
+        field('xpu2_spend', ('xpu2_generations', 'spend'), 'choice', 'Halting Rule', 'Time = Gen. Samples: the render stops after about the time a plain render of Generation Samples would take, that time spent where the noise is. Exact = Gen. Samples: every pixel gets exactly Generation Samples, however long that takes', choices=[('Time = Gen. Samples', 'time'), ('Exact = Gen. Samples', 'samples')]),
+        field('xpu2_noise', ('xpu2_generations', 'noise'), 'float', 'Halt at Noise', "A part of the picture stops early once it is this clean, in Target Error's units (lower is cleaner, and slower). 0: none, every pixel gets its share. MoonRay's Target Error is for MoonRay renders", 0.0, 1000.0),
+        field('xpu2_seed', ('xpu2_generations', 'seed'), 'int', 'First Look', 'Samples every pixel gets first, before the generations choose where the rest go. 0: an eighth of Generation Samples, 16 at least', 0, 16384),
+        field('xpu2_most', ('xpu2_generations', 'most'), 'int', 'Most Samples', 'The most samples one pixel may get. 0: 16 times the average', 0, 16384),
+        field('xpu2_cpu', ('xpu2_generations', 'cpu'), 'bool', 'CPU Workers', "The processor's workers take part in the generations beside the graphics card. Off: the graphics card takes every sample. Which devices XPU2 uses at all: Preferences > MoonRay > XPU2 > Devices"),
+        field('xpu2_realtime', ('xpu2_generations', 'realtime'), 'int', 'Realtime Samples', 'While realtime follows the scene (RT), the share of Generation Samples XPU2 takes, in percent: lower settles sooner and noisier. Previews started with Render and final renders take them all', 1, 100),
     ]),
     ('Bounces', False, [
         render_field('max_depth', 'Total'),
