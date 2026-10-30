@@ -45,6 +45,10 @@ enum class Domain {Planar,DiffuseMesh,PlanarTextures,SurfaceTextures};
 inline bool isSpatial(Domain d){return d==Domain::DiffuseMesh||d==Domain::SurfaceTextures;}
 inline bool gpuTextures(Domain d){return d==Domain::PlanarTextures||d==Domain::SurfaceTextures;}
 struct MeshData {std::string name;std::vector<V3> positions;std::vector<Tri> triangles;std::vector<std::shared_ptr<const ix::Buffer>> signature;
+ // A plain polygon mesh (its own, still, not displaced): its signature without its node_xform (shape) and the node_xform
+ // it was made at (placedBy, row vectors): a later preparation where only its node_xform changed takes it over, placed
+ // anew as an instance (prepare), and a placement-only edit moves it on from there (placeMoved).
+ bool placeable=false;std::vector<std::shared_ptr<const ix::Buffer>> shape;double placedBy[16]={1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};
  // A displaced mesh MoonRay tessellated: which displacement is each part's, and whether polyvertices were made (the
  // rest of what shaped it is in the signature, deepSignature): kept across edits while they stay the same.
  std::string displacementKey;
@@ -1718,6 +1722,12 @@ inline std::vector<std::shared_ptr<const ix::Buffer>> signature(const rdl::Scene
  auto entity=frame->routing->scene->entities.at(ri::objectId(o.getName()));std::vector<std::shared_ptr<const ix::Buffer>> value;
  for(auto& id:entity->dependencies){auto attr=frame->routing->scene->entities.at(id);for(auto& pair:attr->buffers)value.push_back(pair.second);}return value;
 }
+// An object's signature without its node_xform (MeshData::shape): the same buffers while nothing but where it is changed.
+inline std::vector<std::shared_ptr<const ix::Buffer>> shapeSignature(const rdl::SceneObject& o,const CanonicalView& frame){
+ auto entity=frame->routing->scene->entities.at(ri::objectId(o.getName()));const std::string placement=ri::attributeId(o.getName(),"node_xform");
+ std::vector<std::shared_ptr<const ix::Buffer>> value;
+ for(auto& id:entity->dependencies){if(id==placement)continue;auto attr=frame->routing->scene->entities.at(id);for(auto& pair:attr->buffers)value.push_back(pair.second);}return value;
+}
 // An object's signature with every object its attributes bind or name, through and through (a displacement and its
 // maps, their maps): the same buffers while none of them has changed.
 inline std::vector<std::shared_ptr<const ix::Buffer>> deepSignature(const rdl::SceneObject& o,const CanonicalView& frame){
@@ -2785,12 +2795,16 @@ inline bool placeMoved(Plan& plan,const std::map<std::string,std::pair<rdl::Mat4
    if(e.ownerIndex<0||size_t(e.ownerIndex)>=p->second.size()){why=e.owner+" has another count of instances";return false;}
    placeInstance(e,p->second[size_t(e.ownerIndex)]);
    ++placed;continue;}
-  if(e.instance){why=e.owner+" is an instance already";return false;}
+  // An instance of its own data (placed anew by a preparation, MeshData::placeable): moved on from where it is placed.
+  rdl::Mat4d placedNow(scene_rdl2::math::one);
+  if(e.instance){
+   if(!d.placeable){why=e.owner+" is an instance already";return false;}
+   for(int r=0;r<4;++r)for(int c=0;c<3;++c)placedNow[r][c]=e.objectToWorld[3*r+c];}
   if(e.volume>=0&&placedVolumes.insert(e.volume).second&&!placeVolume(plan,e.volume,f->second.first,f->second.second,why)){why=e.owner+": "+why;return false;}
   if(!d.steps.empty()){why=e.owner+" moves during the shutter";return false;}
   if(d.points||d.curveBasis){why=e.owner+" is points or curves";return false;}
   if(e.cpuOnly){why=e.owner+" is left to the CPU lane";return false;}
-  placeInstance(e,move);
+  placeInstance(e,placedNow*move);
   const auto w=f->second.second.inverse();const double rows[12]={w[0][0],w[1][0],w[2][0],w[3][0],w[0][1],w[1][1],w[2][1],w[3][1],w[0][2],w[1][2],w[2][2],w[3][2]};
   for(int i=0;i<12;++i)e.worldToObject[i]=float(rows[i]);
   ++placed;}
@@ -3535,6 +3549,17 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
   if(previous&&previous->domain==domain&&!item.instancer&&o.getSceneClass().getName()!="ModoFurGeometry"&&(!objectDisplaced||!displacementKey.empty())&&&o!=bakeGeometry&&
    !(adaptiveMesh&&!dicingCamera))for(auto& old:previous->meshes)if(old.data->name==meshName&&old.data->signature==sig&&old.data->displacementKey==displacementKey&&
    !old.data->coarse&&old.data->polyVertices.empty()==!(plan->aovs&&plan->aovs->wireframe)&&((o.getSceneClass().getName()!="RdlMeshGeometry"&&o.getSceneClass().getName()!="RdlCurveGeometry"&&!isPoints(o.getSceneClass().getName()))||!meshHasMotion(o)||previous->motion==plan->motion)){data=old.data;++plan->reusedMeshes;reusedData=true;break;}
+  // A plain mesh whose node_xform alone changed since it was made (MeshData::shape): its data taken over, placed anew as
+  // an instance from where it was made to where it is (below, once its plan entry is made). A car turned whole, then a
+  // mesh edited, made every mesh again (2.2 s).
+  bool placedAnew=false;rdl::Mat4d placedFrom(scene_rdl2::math::one);
+  if(!data&&previous&&previous->domain==domain&&paths&&!item.instancer&&!objectDisplaced&&!volumeShader&&&o!=bakeGeometry&&
+     o.getSceneClass().getName()=="RdlMeshGeometry"&&!get<rdl::Bool>(o,"is_subd")&&!meshHasMotion(o)){
+   const auto shape=shapeSignature(o,frame);
+   for(auto& old:previous->meshes)if(old.data->placeable&&old.data->name==meshName&&old.data->shape==shape&&old.data->steps.empty()&&!old.data->coarse&&
+    old.data->displacementKey==displacementKey&&old.data->polyVertices.empty()==!(plan->aovs&&plan->aovs->wireframe)){
+    data=old.data;++plan->reusedMeshes;reusedData=true;placedAnew=true;
+    for(int i=0;i<4;++i)for(int j=0;j<4;++j)placedFrom[i][j]=old.data->placedBy[4*i+j];break;}}
   prepLaps().add("meshes' signatures and lookups",double(nowNs()-lookupBegan)*1e-9);
   if(!data&&vdbBox){
    // A VDB volume's boundary box (admitVdbVolume), named as the mesh.
@@ -3695,6 +3720,9 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
    auto m=std::make_shared<MeshData>();m->name=meshName;m->signature=std::move(sig);
    {const auto w=transform.inverse();const double rows[12]={w[0][0],w[1][0],w[2][0],w[3][0],w[0][1],w[1][1],w[2][1],w[3][1],w[0][2],w[1][2],w[2][2],w[3][2]};
     for(int i=0;i<12;++i)m->worldToObject[i]=float(rows[i]);}
+   // Where it is made (MeshData::placeable): a plain spatial mesh of its own, still and not displaced.
+   if(paths&&spatial&&!shareInstance&&!item.instancer&&!objectDisplaced&&!volumeShader&&!meshHasMotion(o)){
+    m->placeable=true;m->shape=shapeSignature(o,frame);for(int i=0;i<4;++i)for(int j=0;j<4;++j)m->placedBy[4*i+j]=transform[i][j];}
    const auto& v=o.get<rdl::Vec3fVector>("vertex_list");const auto& counts=o.get<rdl::IntVector>("face_vertex_count");const auto& indices=o.get<rdl::IntVector>("vertices_by_index");need(!v.empty()&&!counts.empty(),"Empty mesh unsupported");
    m->positions.reserve(v.size());m->triangles.reserve(counts.size());
    for(auto p:v){need(std::isfinite(p.x)&&std::isfinite(p.y)&&std::isfinite(p.z)&&(spatial||p.z==0),"Invalid spatial/planar vertex");
@@ -3887,6 +3915,9 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
    plan->meshes.back().ownerIndex=item.instance;}
   if(shareInstance){auto& e=plan->meshes.back();placeInstance(e,instanceMatrix(item));
    instanceValues(*item.instancer,item.instance,item.count,e.instancePrims,e.instancePrimData);}
+  if(placedAnew){auto& e=plan->meshes.back();const rdl::Mat4d now=affine(o);placeInstance(e,placedFrom.inverse()*now);
+   const auto w=now.inverse();const double rows[12]={w[0][0],w[1][0],w[2][0],w[3][0],w[0][1],w[1][1],w[2][1],w[3][1],w[0][2],w[1][2],w[2][2],w[3][2]};
+   for(int i=0;i<12;++i)e.worldToObject[i]=float(rows[i]);}
   if(displacementShader&&!subdGeometry&&!polyGeometry&&!reusedData)displaced.push_back({plan->meshes.size()-1,edgeVertices,displacement});
   // An emissive mesh volume lights the scene (an emissive region over its mesh's box).
   if(volumeIndex>=0&&plan->volumes[size_t(volumeIndex)].kind==volume::KindVdb&&plan->volumes[size_t(volumeIndex)].mapped)

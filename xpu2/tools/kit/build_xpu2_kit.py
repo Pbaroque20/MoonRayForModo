@@ -220,19 +220,17 @@ def state():
     except (OSError, ValueError): compiling = False
     last = lines[-1] if lines else ''
     if compiling:
+        # How far, in percent of its compile tasks: 0% from the moment it starts (asked 2026-10-30: the state changes at
+        # once, no message box).
         counts = _counts(lines)
         if counts is None or not counts[0] + counts[1]:
-            return 'Compiling: starting'
+            return 'Compiling 0%'
         done, waiting, seconds = counts
-        percent = int(100 * done / (done + waiting))
-        # About as long again for what is left as for what is done, at the rate so far (a watchdog on the hour it was
-        # said to take: how long it really is, here).
-        left = seconds * waiting / done if done else None
-        return 'Compiling: %d%% · %s so far%s' % (percent, _minutes(seconds), ', about %s left' % _minutes(left) if left else '')
+        return 'Compiling %d%%' % int(100 * done / (done + waiting))
     _keep_took(lines)
     if compiled(): return 'Compiled'
-    if last and 'compiled in' not in last: return 'Not compiled: ' + last.replace('MoonRay XPU2 shaders: ', '').replace('XPU2 shaders: ', '')
-    return 'Not compiled yet: XPU2 previews are rendered by MoonRay until they are'
+    # Just that (asked 2026-10-30); why a compile failed is in its log and the Render Log.
+    return 'Not compiled'
 
 
 import lxifc
@@ -314,13 +312,6 @@ class CompileShaders(lxu.command.BasicCommand):
         _watch()
         _notify()
         lx.out('MoonRay XPU2: compiling the shaders in the background (%s); see %s' % (how_long(), log))
-        try:
-            import modo
-            modo.dialogs.alert('XPU2 shaders', 'MoonRay XPU2 is compiling its shaders in the background, once (%s). Modo '
-                               'stays usable; XPU2 previews wait until it is done. How far it has come, and about how long '
-                               'it has left, shows in Preferences > MoonRay > XPU2.' % how_long())
-        except Exception:
-            pass
 
 
 class ShaderState(lxu.command.BasicCommand):

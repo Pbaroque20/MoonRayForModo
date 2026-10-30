@@ -91,7 +91,7 @@ def render(session, text, generation, seconds=150):
         time.sleep(0.01)
     for signal, slot in hooks:
         signal.disconnect(slot)
-    lines = [l for l in record['log'].splitlines() if 'XPU2' in l and ('alone' in l or 'prepared' in l or 'GPU scene' in l or 'changed' in l or 'debug' in l)]
+    lines = [l for l in record['log'].splitlines() if 'XPU2' in l and ('alone' in l or 'prepared' in l or 'GPU scene' in l or 'changed' in l or 'debug' in l or 'within' in l or "CPU's scene" in l)]
     return record, lines
 
 
@@ -115,6 +115,11 @@ moved = with_ball_at(multiline(SOURCE), 0.6, ANGLE)
 lit = with_key(moved, 0.12)
 # Moved again after the light, from the same base: the moves and the light since the last full preparation together.
 again = with_key(with_ball_at(multiline(SOURCE), -0.9, -ANGLE), 0.12)
+# Another ball edited after the moves (its label: a full preparation): the moved ball, its node_xform alone changed, is
+# taken over and placed anew (MeshData::shape); then moved again, from where it was placed anew (placeMoved).
+edited = re.sub(r'(RdlMeshGeometry\("/ball2"\) \{\n)', r'\1  ["label"] = "edited",\n', again, count=1)
+edited_moved = with_key(re.sub(r'(RdlMeshGeometry\("/ball2"\) \{\n)', r'\1  ["label"] = "edited",\n',
+                               with_ball_at(multiline(SOURCE), 0.45, 0.5 * ANGLE), count=1), 0.12)
 (OUT / 'base.rdla').write_text(base, encoding='utf-8')
 (OUT / 'moved.rdla').write_text(moved, encoding='utf-8')
 (OUT / 'lit.rdla').write_text(lit, encoding='utf-8')
@@ -132,9 +137,16 @@ try:
     r, lines = render(live, again, 4)
     result['again_update'] = {'ready': r['ready'], 'failed': r['failed'], 'lines': lines[-4:]}
     again_update = kept(live, 'again-update')
+    r, lines = render(live, edited, 5)
+    result['edited_update'] = {'ready': r['ready'], 'failed': r['failed'], 'lines': lines[-6:]}
+    edited_update = kept(live, 'edited-update')
+    r, lines = render(live, edited_moved, 6)
+    result['edited_moved_update'] = {'ready': r['ready'], 'failed': r['failed'], 'lines': lines[-4:]}
+    edited_moved_update = kept(live, 'edited-moved-update')
     live.close()
     pictures = {}
-    for name, text in (('moved-whole', moved), ('moved-whole-2', moved), ('lit-whole', lit), ('lit-whole-2', lit), ('again-whole', again)):
+    for name, text in (('moved-whole', moved), ('moved-whole-2', moved), ('lit-whole', lit), ('lit-whole-2', lit), ('again-whole', again),
+                       ('edited-whole', edited), ('edited-moved-whole', edited_moved)):
         fresh = Session()
         r, lines = render(fresh, text, 1)
         result[name] = {'ready': r['ready'], 'failed': r['failed']}
@@ -147,6 +159,8 @@ try:
     result['moved vs lit (a real change)'] = diff(pictures['moved-whole'], pictures['lit-whole'])
     result['again: update vs whole'] = diff(again_update, pictures['again-whole'])
     result['again vs lit (a real move)'] = diff(pictures['again-whole'], pictures['lit-whole'])
+    result['edited: update vs whole'] = diff(edited_update, pictures['edited-whole'])
+    result['edited, moved: update vs whole'] = diff(edited_moved_update, pictures['edited-moved-whole'])
 except Exception:
     import traceback
     result['error'] = traceback.format_exc()
