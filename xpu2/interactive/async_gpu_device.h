@@ -392,7 +392,9 @@ struct GpuBackend {
             const auto m = params.geometry[instance];
             if (primitive >= m.triangleCount) break;
             const auto tri = m.triangles[primitive];
-            const surface::V3 a = m.vertices[tri.a], b = m.vertices[tri.b], c = m.vertices[tri.c];
+            // A placed mesh's triangle (an instance: a moved one, or shared data) where it is, as a surface's (triangleAt).
+            surface::V3 a, b, c;
+            triangleAt(instance, m, tri, a, b, c);
             const surface::Ray ray{o, d, {}, {}, t, __int_as_float(0x7f800000)};
             resume::Hit h;
             if (!resume::geometryHit(h, ray, a, b, c)) break;

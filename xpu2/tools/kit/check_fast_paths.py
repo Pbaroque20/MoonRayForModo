@@ -62,9 +62,16 @@ def multiline(text):
     return '\n'.join(out) + '\n'
 
 
-def with_ball_at(text, x):
-    """/ball1 placed x along X (its node_xform), the rest as it is."""
-    return re.sub(r'(RdlMeshGeometry\("/ball1"\) \{\n)', r'\1  ["node_xform"] = Mat4(1,0,0,0, 0,1,0,0, 0,0,1,0, %g,0,0,1),\n' % x, text, count=1)
+def with_ball_at(text, x, degrees=0.0):
+    """/ball1 placed x along X, then turned by degrees about Y through the origin (its node_xform, row vectors), the rest
+    as it is. XPU2_CHECK_ANGLE: the moves turn it as well (a placement's rotation, not its translation alone)."""
+    import math
+    c, s = math.cos(math.radians(degrees)), math.sin(math.radians(degrees))
+    xform = 'Mat4(%g,0,%g,0, 0,1,0,0, %g,0,%g,0, %g,0,%g,1)' % (c, -s, s, c, x * c, -x * s)
+    return re.sub(r'(RdlMeshGeometry\("/ball1"\) \{\n)', r'\1  ["node_xform"] = ' + xform + r',\n', text, count=1)
+
+
+ANGLE = float(os.environ.get('XPU2_CHECK_ANGLE', '0'))
 
 
 def with_key(text, intensity):
@@ -84,7 +91,7 @@ def render(session, text, generation, seconds=150):
         time.sleep(0.01)
     for signal, slot in hooks:
         signal.disconnect(slot)
-    lines = [l for l in record['log'].splitlines() if 'XPU2' in l and ('alone' in l or 'prepared' in l or 'GPU scene' in l or 'changed' in l)]
+    lines = [l for l in record['log'].splitlines() if 'XPU2' in l and ('alone' in l or 'prepared' in l or 'GPU scene' in l or 'changed' in l or 'debug' in l)]
     return record, lines
 
 
@@ -103,11 +110,11 @@ def diff(a, b):
 
 
 base = multiline(SOURCE)
-base = with_ball_at(base, 0.0)
-moved = with_ball_at(multiline(SOURCE), 0.6)
+base = with_ball_at(base, 0.3 if ANGLE else 0.0, 0.4 * ANGLE)
+moved = with_ball_at(multiline(SOURCE), 0.6, ANGLE)
 lit = with_key(moved, 0.12)
 # Moved again after the light, from the same base: the moves and the light since the last full preparation together.
-again = with_key(with_ball_at(multiline(SOURCE), -0.9), 0.12)
+again = with_key(with_ball_at(multiline(SOURCE), -0.9, -ANGLE), 0.12)
 (OUT / 'base.rdla').write_text(base, encoding='utf-8')
 (OUT / 'moved.rdla').write_text(moved, encoding='utf-8')
 (OUT / 'lit.rdla').write_text(lit, encoding='utf-8')

@@ -33,14 +33,38 @@ def camera_kind(entity):
     return 'map' if (entity.get('parameters') or {}).get('pixel_sample_map') else ''
 
 
+def realtime_cap():
+    """Realtime Adaptive Sampling Cap (Preferences > MoonRay > Preview Window): the most samples a pixel realtime takes
+    under XPU2, 0 for none."""
+    try:
+        from . import native
+        return int(native.xpu2_rt_cap())
+    except Exception:
+        return 0
+
+
 def budget(generations, grid, realtime=False):
     """Generation Samples as XPU2 is given them (rdla.py): while realtime follows the scene, the share of them its
-    Realtime Samples says (Pixel Samples squared where Generation Samples is 0), one at least."""
+    Realtime Samples says (Pixel Samples squared where Generation Samples is 0), one at least, and no more than the
+    Realtime Adaptive Sampling Cap."""
     samples = int(generations.get('samples', 0))
     share = int(generations.get('realtime', 100))
-    if not realtime or share >= 100:
-        return samples
-    return max(1, int(round((samples or int(grid) ** 2) * share / 100.0)))
+    if realtime and share < 100:
+        samples = max(1, int(round((samples or int(grid) ** 2) * share / 100.0)))
+    cap = realtime_cap() if realtime else 0
+    if cap:
+        samples = min(samples or int(grid) ** 2, cap)
+    return samples
+
+
+def most_samples(generations, grid, realtime=False):
+    """The most samples a pixel XPU2 is given (0: sixteen times the average, its plan's): while realtime follows the
+    scene, no more than the Realtime Adaptive Sampling Cap."""
+    most = int(generations.get('most', 0))
+    cap = realtime_cap() if realtime else 0
+    if not cap:
+        return most
+    return min(most or 16 * (budget(generations, grid, realtime) or int(grid) ** 2), cap)
 
 
 def plan(held, camera=None, realtime=False):
@@ -50,7 +74,8 @@ def plan(held, camera=None, realtime=False):
     camera (camera_kind, the last preview's unless given). realtime: as realtime following the scene has it (budget)."""
     camera = CAMERA[0] if camera is None else camera
     g = held.get('xpu2_generations') or {}
-    samples, seed, most = budget(g, held.get('samples', 4), realtime), int(g.get('seed', 0)), int(g.get('most', 0))
+    samples, seed = budget(g, held.get('samples', 4), realtime), int(g.get('seed', 0))
+    most = most_samples(g, held.get('samples', 4), realtime)
     noise, exact = float(g.get('noise', 0.0)), g.get('spend') == 'samples'
     grid = int(held.get('samples', 4)) ** 2
     n = samples or grid

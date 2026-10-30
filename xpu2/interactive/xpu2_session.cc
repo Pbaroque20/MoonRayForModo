@@ -384,6 +384,9 @@ struct Scene {
     // the plan the last camera-only one was made from (the GPU's configuration alone goes again, GpuLane::updateCamera).
     bool cameraOnly = false;
     cpu::PlanView cameraFrom;
+    // The plan the last placement-only one was made from (the card's instances, mesh records and lights go again,
+    // GpuLane::updatePlacements).
+    cpu::PlanView placedFrom;
     // The placement-only fast path (realtime): the plan of the last full preparation (basePlan), the render space its
     // meshes were prepared in (baseW2R), and where each of its geometries stood then (basePlaced); whether the changes
     // since are moves of geometries alone (placementOnly; the camera and the outputs' files besides, placementCamera,
@@ -647,6 +650,7 @@ struct Scene {
     void prepare() {
         if (!changed) return;
         cameraFrom.reset();
+        placedFrom.reset();
         // A camera-only edit: the plan as it was with its camera, render space and render origin made again
         // (cpu::updateCamera), the CPU's Embree scenes taken over; no canonical copy, no plan, until a full preparation.
         if (cameraOnly && plan && cpuScene) {
@@ -700,22 +704,26 @@ struct Scene {
             if (ok) ok = cpu::placeMoved(*next, moved, instancePlaces, baseW2R, why);
             if (ok) ok = cpu::updateLights(*next, *source, editedLights, why);
             if (ok) {
+                placedFrom = plan;
                 plan = next;
                 // The CPU's Embree scenes taken over where no mesh is placed otherwise (lights alone, or the moves undone),
-                // or with the moved meshes' geometries alone made again.
+                // or with the moved meshes' transforms set (two levels) or their geometries made again.
                 const auto planned = std::chrono::steady_clock::now();
                 std::vector<unsigned> replaced;
                 const char* embree = "made whole";
+                unsigned movedAlone = 0, remade = 0;
                 if (cpuScene && cpuScene->plan && async::CpuScene::sameGeometry(*cpuScene->plan, *plan)) {
                     cpuScene = std::make_unique<async::CpuScene>(plan, std::move(*cpuScene));
                     embree = "kept";
                 } else if (cpuScene && cpuScene->plan && async::CpuScene::replacedMeshes(*cpuScene->plan, *plan, replaced)) {
                     cpuScene = std::make_unique<async::CpuScene>(plan, std::move(*cpuScene), replaced);
-                    embree = "moved meshes made again";
+                    movedAlone = cpuScene->moved;
+                    remade = cpuScene->remade;
+                    embree = "taken over";
                 } else
                     cpuScene = std::make_unique<async::CpuScene>(plan);
-                std::printf("MoonRay XPU2: the CPU's scene %s (%zu geometries) in %.1f ms\n", embree, replaced.size(),
-                            std::chrono::duration<double>(std::chrono::steady_clock::now() - planned).count() * 1000.0);
+                std::printf("MoonRay XPU2: the CPU's scene %s (%u geometries moved by their transforms, %u made again) in %.1f ms\n", embree,
+                            movedAlone, remade, std::chrono::duration<double>(std::chrono::steady_clock::now() - planned).count() * 1000.0);
                 changed = placementOnly = cameraOnly = false;
                 std::printf("MoonRay XPU2: placements and lights alone changed (%zu geometries, %zu lights): prepared in %.1f ms\n",
                             moved.size(), editedLights.size(),
@@ -756,11 +764,25 @@ struct Scene {
         // edited after it (and a camera-only edit is told from the rest).
         source->commitAllChanges();
         const auto planned = std::chrono::steady_clock::now();
-        // The CPU's Embree scenes kept where no mesh changed (a camera, a light, a material edited).
-        if (cpuScene && cpuScene->plan && async::CpuScene::sameGeometry(*cpuScene->plan, *plan))
-            cpuScene = std::make_unique<async::CpuScene>(plan, std::move(*cpuScene));
-        else
-            cpuScene = std::make_unique<async::CpuScene>(plan);
+        // The CPU's Embree scenes kept where no mesh changed (a camera, a light, a material edited), or taken over with
+        // the changed meshes alone made again (a mesh edited: in two levels, its own tree alone is built).
+        {
+            const auto cpuBegan = std::chrono::steady_clock::now();
+            std::vector<unsigned> replaced;
+            if (cpuScene && cpuScene->plan && async::CpuScene::sameGeometry(*cpuScene->plan, *plan))
+                cpuScene = std::make_unique<async::CpuScene>(plan, std::move(*cpuScene));
+            else if (cpuScene && cpuScene->plan && async::CpuScene::replacedMeshes(*cpuScene->plan, *plan, replaced)) {
+                cpuScene = std::make_unique<async::CpuScene>(plan, std::move(*cpuScene), replaced);
+                cpuScene->prune();
+                std::printf("MoonRay XPU2: the CPU's scene taken over (%u geometries moved by their transforms, %u made again) in %.1f ms\n",
+                            cpuScene->moved, cpuScene->remade,
+                            std::chrono::duration<double>(std::chrono::steady_clock::now() - cpuBegan).count() * 1000.0);
+            } else {
+                cpuScene = std::make_unique<async::CpuScene>(plan);
+                std::printf("MoonRay XPU2: the CPU's scene made whole in %.2f s\n",
+                            std::chrono::duration<double>(std::chrono::steady_clock::now() - cpuBegan).count());
+            }
+        }
         // Where the preparation's time went: the canonical copy, the plan by its stages (cpu::prepLaps), the CPU's scene.
         logPreparation("prepared", canonicalSeconds, seconds(planned));
         {const auto& c = cpu::geometryCacheCounts();
@@ -1354,12 +1376,31 @@ int session(const Args& args, const fs::path& directory) {
                         // A camera-only edit: the GPU's scene stays, its configuration (the camera) goes again.
                         if (gpuUsable) gpu->updateCamera(scene.plan);
                         gpuPlan = scene.plan;
+                    } else if (gpu && gpuUsable && gpuPlan != scene.plan && scene.placedFrom && gpuPlan == scene.placedFrom &&
+                               [&] {
+                                   const auto placedBegan = Clock::now();
+                                   if (!gpu->updatePlacements(scene.plan)) return false;
+                                   std::printf("MoonRay XPU2: GPU scene: %zu instances placed anew in %.1f ms\n", gpu->placementsMoved_,
+                                               std::chrono::duration<double>(Clock::now() - placedBegan).count() * 1000.0);
+                                   return true;
+                               }()) {
+                        // A placement-only edit: the card's meshes, buffers and textures stay; the instances and lights go.
+                        gpuPlan = scene.plan;
                     } else if (gpu && gpuPlan != scene.plan) {
                         const std::string why = async::GpuLane::cpuOnly(scene.plan);
                         gpuUsable = why.empty();
                         const auto gpuBegan = Clock::now();
                         if (gpuUsable) gpu->prepare(scene.plan);
-                        if (gpuUsable) std::printf("MoonRay XPU2: GPU scene prepared in %.2f s (memory: %s)\n", std::chrono::duration<double>(Clock::now() - gpuBegan).count(), memoryText().c_str());
+                        if (gpuUsable) {
+                            std::string laps;
+                            for (const auto& [what, s] : gpu->prepareLaps_) {
+                                char text[120];
+                                std::snprintf(text, sizeof text, "%s%s %.2f s", laps.empty() ? "" : ", ", what, s);
+                                laps += text;
+                            }
+                            std::printf("MoonRay XPU2: GPU scene prepared in %.2f s (%s; memory: %s)\n", std::chrono::duration<double>(Clock::now() - gpuBegan).count(),
+                                        laps.c_str(), memoryText().c_str());
+                        }
                         else std::printf("MoonRay XPU2: the GPU leaves %s to the CPU; rendering on the CPU alone\n", why.c_str());
                         gpuPlan = scene.plan;
                     }

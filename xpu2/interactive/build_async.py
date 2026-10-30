@@ -11,7 +11,7 @@ import shutil
 from pathlib import Path
 
 from gpu_build import compile_ptx
-from native_build import build
+from native_build import build_units
 from reference_runtime import sha, verify
 
 HERE = Path(__file__).resolve().parent
@@ -80,10 +80,11 @@ def build_all(source, runtime, out):
                    source / 'upstream/openmoonray/moonray/moonray/lib/rendering/lpe',
                    source / 'upstream/openmoonray/moonray/moonray/lib/rendering/displayfilter',
                    source / 'build/native-renderer-avx/moonray/lib/rendering/displayfilter']
-        exe, report['native_build'] = build(source, HERE / 'async_probe.cc', out / 'native',
-                                            [runtime / 'libembree4.dll', runtime / 'librendering_lpe.dll', runtime / 'librendering_displayfilter.dll',
-                                             '-lcfgmgr32', '-lwinmm'],
-                                            ['-I' + str(v) for v in include])
+        # With meshoptimizer's simplifier (the coarse first pass, coarse_geometry.h), a unit of its own as the session's.
+        exe, report['native_build'] = build_units(source, [HERE / 'async_probe.cc', HERE / 'xpu2_meshopt.cc'], out / 'native',
+                                                  [runtime / 'libembree4.dll', runtime / 'librendering_lpe.dll', runtime / 'librendering_displayfilter.dll',
+                                                   '-lcfgmgr32', '-lwinmm'],
+                                                  ['-I' + str(v) for v in include] + ['-I' + str(source / 'upstream/meshoptimizer/src')])
         # MoonRay's sampler tables (a random walk's sequences) beside the GPU program.
         sampler = source / 'upstream/openmoonray/moonray/moonray/lib/rendering/pbr/sampler'
         for name in ('bc_1D_integrator_points_4096_sequences_of_1024.bin', 'ppd_2D_integrator_points_4096_sequences_of_1024.bin'):

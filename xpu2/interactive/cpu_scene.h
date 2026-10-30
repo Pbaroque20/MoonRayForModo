@@ -2707,24 +2707,77 @@ inline bool updateCamera(Plan& plan,const rdl::SceneContext& context,std::string
 }
 // A placement-only edit (the session's fast path, realtime): geometries moved and nothing else of them changed. Each of
 // their meshes is made an instance of the data prepared for it at the last full preparation (the plan given, that
-// preparation's), placed from where its geometry stood then to where it stands now: its data in that preparation's render
-// space (meshW2R, its world2render), the instance's transform that space's from then to now (render to world, the old
-// node_xform's inverse, the new one, world to render), its worldToObject the new node_xform's inverse as a full
-// preparation makes it. moves: each moved geometry's node_xform then and now. The meshes and their structures on the
+// preparation's), placed from where its geometry stood then to where it stands now: its data in world space, as every
+// mesh's in a plan (a tessellation's is taken back from render space), the instance's transform the old node_xform's
+// inverse then the new one (row vectors); its worldToObject the new node_xform's inverse as a full preparation makes it.
+// meshW2R: the preparation's world to render, not used for the meshes (a render space turned or moved with the camera
+// put every moved mesh elsewhere). moves: each moved geometry's node_xform then and now. The meshes and their structures on the
 // card are taken over as they are; only where they are placed is new. false, with why, where a full preparation is
 // needed: a moving or volume-bounding mesh, points or curves, an instance already, one left to the CPU lane.
 // instancePlaces: a moved instancer's instances' transforms now, by instance (as prepare makes them, InstanceGeometry's
 // xform_list entry by its reference's and its own node_xform), which its shared instances are placed by.
+// A moved geometry's volume (the one a mesh of it bounds), placed with it (placeMoved): its grids' world to grid and grid
+// to world, its emissive regions' maps, and what its maps give where they are read (world points): a mapped volume's
+// settings at the render origin made again, and a BaseVolume's baked extinction (bakeVolume's grid, in the mesh's own
+// space) made again at the same voxels from where they now are, into a grid of its own (the base plan keeps its grid).
+// was, now: the geometry's node_xform then and now. false, with why, for what is not placed so: a volume moving during
+// the shutter, a VDB's baked opacity map, a mapped emission's region.
+inline bool placeVolume(Plan& plan,int volumeIndex,const rdl::Mat4d& was,const rdl::Mat4d& now,std::string& why){
+ volume::Shader& s=plan.volumes.at(size_t(volumeIndex));
+ if(s.moving){why="a volume moves during the shutter";return false;}
+ if(s.bakedGrid!=volume::NoGrid){why="a VDB volume's opacity is baked from its maps";return false;}
+ for(const auto& r:plan.emissiveRegions)if(int(r.volume)==volumeIndex&&(s.mapped&(1u<<volume::MapEmissionColor))){why="a mapped volume's emission is a light";return false;}
+ const rdl::Mat4d d=was.inverse()*now,di=d.inverse();
+ // The rows of an affine transform (column vectors, as worldToGrid's) and the row-vector matrix they are made from.
+ auto fromRows=[](const float* r){rdl::Mat4d m(1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1);for(int i=0;i<3;++i){for(int c=0;c<3;++c)m[c][i]=r[4*i+c];m[3][i]=r[4*i+3];}return m;};
+ auto toRows=[](const rdl::Mat4d& m,float* r){for(int i=0;i<3;++i){for(int c=0;c<3;++c)r[4*i+c]=float(m[c][i]);r[4*i+3]=float(m[3][i]);}};
+ toRows(di*fromRows(s.worldToGrid),s.worldToGrid);toRows(di*fromRows(s.worldToGrid1),s.worldToGrid1);
+ toRows(fromRows(s.gridToWorld)*d,s.gridToWorld);toRows(fromRows(s.gridToWorld1)*d,s.gridToWorld1);
+ // An emissive region's maps (four rows of three, row vectors).
+ auto from43=[](const float* r){rdl::Mat4d m(1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1);for(int i=0;i<4;++i)for(int j=0;j<3;++j)m[i][j]=r[3*i+j];return m;};
+ auto to43=[](const rdl::Mat4d& m,float* r){for(int i=0;i<4;++i)for(int j=0;j<3;++j)r[3*i+j]=float(m[i][j]);};
+ for(auto& r:plan.emissiveRegions)if(int(r.volume)==volumeIndex){to43(from43(r.distToWorld)*d,r.distToWorld);to43(di*from43(r.worldToDist),r.worldToDist);}
+ if(!s.mapped)return true;
+ const unsigned k=s.densityGrid;
+ const bool baked=k!=volume::NoGrid&&k<plan.volumeGrids.size()&&plan.volumeGrids[k]->key.rfind("baked|",0)==0;
+ if(!baked){
+  const volume::Mapped m=mappedAt(plan,s,plan.renderOrigin);
+  s.originAttenuation=(s.flags&volume::MatchAlbedo)?m.albedoColor:m.attenuationColor;s.originIntensity=m.attenuationIntensity;s.originFactor=m.attenuationFactor;
+  return true;}
+ // The baked grid again: each voxel's object point (object to index's inverse) where the mesh now puts it (the new world
+ // to grid's inverse), its extinction there as bakeVolume makes it.
+ const volume::Grid was0=plan.volumeGridViews[k];
+ rdl::Mat4d objectToIndex;for(int i=0;i<4;++i)for(int j=0;j<4;++j)objectToIndex[i][j]=was0.worldToIndex[4*i+j];
+ const rdl::Mat4d indexToWorld=objectToIndex.inverse()*fromRows(s.worldToGrid).inverse();
+ const int dims[3]={was0.dims[0],was0.dims[1],was0.dims[2]};
+ auto g=std::make_shared<VdbGridData>();g->key=plan.volumeGrids[k]->key;g->dense.assign(size_t(dims[0])*size_t(dims[1])*size_t(dims[2])*3,0.0f);
+ const unsigned threads=std::max(1u,std::min(16u,std::thread::hardware_concurrency()));
+ std::vector<std::thread> pool;std::atomic<int> nextSlice{0};std::mutex failLock;std::string failure;
+ for(unsigned t=0;t<threads;++t)pool.emplace_back([&]{
+  try{for(int kk=nextSlice++;kk<dims[2];kk=nextSlice++)for(int j=0;j<dims[1];++j)for(int i=0;i<dims[0];++i){
+   const V3 pw{float(i*indexToWorld[0][0]+j*indexToWorld[1][0]+kk*indexToWorld[2][0]+indexToWorld[3][0]),
+               float(i*indexToWorld[0][1]+j*indexToWorld[1][1]+kk*indexToWorld[2][1]+indexToWorld[3][1]),
+               float(i*indexToWorld[0][2]+j*indexToWorld[1][2]+kk*indexToWorld[2][2]+indexToWorld[3][2])};
+   const volume::Mapped m=mappedAt(plan,s,pw);
+   const V3 color=volume::attenuationColorFrom(s,(s.flags&volume::MatchAlbedo)?m.albedoColor:m.attenuationColor,-1.0f);
+   const V3 e=volume::cmax0(volume::scaled(volume::times(volume::scaled(V3{1,1,1},m.attenuationIntensity),color),m.attenuationFactor));
+   float* out=g->dense.data()+3*((size_t(kk)*size_t(dims[1])+size_t(j))*size_t(dims[0])+size_t(i));out[0]=e.x;out[1]=e.y;out[2]=e.z;}}
+  catch(const std::exception& e){std::lock_guard<std::mutex> l(failLock);if(failure.empty())failure=e.what();}});
+ for(auto& t:pool)t.join();
+ if(!failure.empty()){why="a baked volume: "+failure;return false;}
+ volume::Grid view=was0;view.dense=g->dense.data();
+ plan.volumeGrids[k]=std::move(g);plan.volumeGridViews[k]=view;
+ return true;}
 inline bool placeMoved(Plan& plan,const std::map<std::string,std::pair<rdl::Mat4d,rdl::Mat4d>>& moves,
                        const std::map<std::string,std::vector<rdl::Mat4d>>& instancePlaces,const double meshW2R[16],std::string& why){
- rdl::Mat4d w2r;for(int i=0;i<4;++i)for(int j=0;j<4;++j)w2r[i][j]=meshW2R[4*i+j];
- const rdl::Mat4d r2w=w2r.inverse();
+ (void)meshW2R;
  size_t placed=0;
+ std::set<int> placedVolumes;  // a volume once, however many of the geometry's meshes bound it
  for(auto& e:plan.meshes){
   if(e.owner.empty())continue;
   const auto f=moves.find(e.owner);if(f==moves.end())continue;
   const MeshData& d=*e.data;
-  const rdl::Mat4d move=r2w*f->second.first.inverse()*f->second.second*w2r;
+  const rdl::Mat4d move=f->second.first.inverse()*f->second.second;
   if(e.ownerInstancer){
    // An instance of shared data its instancer places: where the instancer now puts it.
    const auto p=instancePlaces.find(e.owner);
@@ -2733,7 +2786,7 @@ inline bool placeMoved(Plan& plan,const std::map<std::string,std::pair<rdl::Mat4
    placeInstance(e,p->second[size_t(e.ownerIndex)]);
    ++placed;continue;}
   if(e.instance){why=e.owner+" is an instance already";return false;}
-  if(e.volume>=0){why=e.owner+" bounds a volume";return false;}
+  if(e.volume>=0&&placedVolumes.insert(e.volume).second&&!placeVolume(plan,e.volume,f->second.first,f->second.second,why)){why=e.owner+": "+why;return false;}
   if(!d.steps.empty()){why=e.owner+" moves during the shutter";return false;}
   if(d.points||d.curveBasis){why=e.owner+" is points or curves";return false;}
   if(e.cpuOnly){why=e.owner+" is left to the CPU lane";return false;}
@@ -3341,8 +3394,10 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
   if(g.getSceneClass().getName()=="RdlInstancerGeometry")instancerItems(g,sv,plan->motion,items);else items.push_back(RenderItem{&g});}
  for(const RenderItem& item:items){auto& o=*item.geom;
   auto* geom=o.asA<rdl::Geometry>();
-  const auto pieces=meshPieces(o,*geom,layer);need(!pieces.empty(),o.getName()+": no assignment in the layer");
+  const auto pieces=[&]{PrepPart t{"geometries' pieces"};return meshPieces(o,*geom,layer);}();need(!pieces.empty(),o.getName()+": no assignment in the layer");
   for(const auto& piece:pieces){const int id=piece.id;need(id>=0,o.getName()+": no assignment in the layer");
+  // Where a render item's time goes (the plan's parts): a kept mesh's and a made one's, and their lookups.
+  const long long pieceBegan=nowNs();
   const std::vector<unsigned char>* faceMask=piece.faces.empty()?nullptr:&piece.faces;const std::string meshName=o.getName()+piece.suffix+item.suffix;
   auto* mat=layer.lookupMaterial(id);auto* lights=layer.lookupLightSet(id);
   // A volume shader: the mesh bounds a volume (with or without a surface of its own).
@@ -3448,6 +3503,7 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
   const std::string sharedKey=o.getName()+piece.suffix;
   const bool shareInstance=paths&&item.instancer&&!item.moves&&o.getSceneClass().getName()=="RdlMeshGeometry"&&volumeIndex<0&&mat&&
    !meshHasMotion(o)&&&o!=bakeGeometry&&get<rdl::Int>(o,"side_type")!=1&&!(displacementShader&&!subdGeometry&&!polyGeometry)&&sharedInstances();
+  const long long lookupBegan=nowNs();
   auto sig=signature(o,frame);std::shared_ptr<const MeshData> data;bool reusedData=false,sharedHit=false;launched.reset();
   // On a worker (TessellationJob): a still, single-part mesh of its own, no volume's bound nor the bake camera's.
   const bool onWorker=paths&&!item.instancer&&!item.moves&&!meshHasMotion(o)&&pieces.size()==1&&volumeIndex<0&&&o!=bakeGeometry&&
@@ -3479,6 +3535,7 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
   if(previous&&previous->domain==domain&&!item.instancer&&o.getSceneClass().getName()!="ModoFurGeometry"&&(!objectDisplaced||!displacementKey.empty())&&&o!=bakeGeometry&&
    !(adaptiveMesh&&!dicingCamera))for(auto& old:previous->meshes)if(old.data->name==meshName&&old.data->signature==sig&&old.data->displacementKey==displacementKey&&
    !old.data->coarse&&old.data->polyVertices.empty()==!(plan->aovs&&plan->aovs->wireframe)&&((o.getSceneClass().getName()!="RdlMeshGeometry"&&o.getSceneClass().getName()!="RdlCurveGeometry"&&!isPoints(o.getSceneClass().getName()))||!meshHasMotion(o)||previous->motion==plan->motion)){data=old.data;++plan->reusedMeshes;reusedData=true;break;}
+  prepLaps().add("meshes' signatures and lookups",double(nowNs()-lookupBegan)*1e-9);
   if(!data&&vdbBox){
    // A VDB volume's boundary box (admitVdbVolume), named as the mesh.
    vdbBox->name=meshName;vdbBox->signature=std::move(sig);data=std::move(vdbBox);++plan->preparedMeshes;}
@@ -3838,6 +3895,7 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
    mappedVolumes.push_back({unsigned(volumeIndex),plan->meshes.size()-1,volumeInner,affine(o),o.getSceneClass().getName()=="RdlMeshGeometry"&&!get<rdl::Bool>(o,"is_subd")});
   if(volumeIndex>=0&&plan->volumes[size_t(volumeIndex)].kind==volume::KindBase){const auto& vs=plan->volumes[size_t(volumeIndex)];
    if(!(vs.emission.x==0&&vs.emission.y==0&&vs.emission.z==0)&&(vs.visibility&0x3fcu))meshEmissionRegion(*plan,*data,unsigned(volumeIndex),vs.visibility);}
+  prepLaps().add(reusedData?"kept meshes' items":"made meshes' items",double(nowNs()-pieceBegan)*1e-9);
   }
  }
  // The workers' tessellations taken in, in the meshes' order: their plan meshes, budget and cache.

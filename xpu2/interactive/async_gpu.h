@@ -234,6 +234,85 @@ public:
         if (scene_.volumes && !plan->volumes.empty()) scene_.volumes = upload(plan->volumes.data(), plan->volumes.size() * sizeof(volume::Shader));
         uploadConfig(plan);
     }
+    // A placement-only edit (the session's fast path, realtime): the plan is the one prepared with some meshes placed
+    // anew (cpu::placeMoved), its lights and camera as they now are (cpu::updateLights, cpu::updateCamera). Each mesh's
+    // structure, buffers and textures stay; the moved meshes' instances and records, the top trees over the instances
+    // and the lights' records go again. False where it cannot (a moved stand-in or curve, a light whose tables are not
+    // on the card), and the lane is as it was: prepare the plan then.
+    bool updatePlacements(const cpu::PlanView& plan) {
+        if (!plan_ || !scene_.traversable || plan->meshes.size() != plan_->meshes.size() || instances_.size() != plan->meshes.size() ||
+            meshAttributesHost_.size() != plan->meshes.size())
+            return false;
+        std::vector<unsigned> moved;
+        for (unsigned i = 0; i < plan->meshes.size(); ++i) {
+            const auto &x = plan_->meshes[i], &y = plan->meshes[i];
+            if (x.data != y.data || x.visibility != y.visibility || x.volume != y.volume || x.singleSided != y.singleSided ||
+                x.material != y.material || x.cpuOnly != y.cpuOnly)
+                return false;
+            if (x.instance == y.instance && std::memcmp(x.objectToWorld, y.objectToWorld, sizeof x.objectToWorld) == 0) continue;
+            if (standIn(y) || y.data->curveBasis || standIn(x)) return false;
+            if (meshCache_.find(y.data.get()) == meshCache_.end()) return false;
+            moved.push_back(i);
+        }
+        std::vector<lights::Light> deviceLights = plan->lights;
+        for (auto& l : deviceLights) {
+            if (l.mesh) {
+                const auto found = lightTables_.find(l.mesh);
+                if (found == lightTables_.end()) return false;
+                l.mesh = static_cast<const lights::MeshLightData*>(found->second);
+            }
+            if (l.image) {
+                const auto found = lightTables_.find(l.image);
+                if (found == lightTables_.end()) return false;
+                l.image = static_cast<const lights::Image*>(found->second);
+            }
+        }
+        plan_ = plan;
+        for (unsigned i : moved) {
+            const auto& e = plan->meshes[i];
+            OptixInstance& inst = instances_[i];
+            std::memset(inst.transform, 0, sizeof inst.transform);
+            inst.transform[0] = inst.transform[5] = inst.transform[10] = 1;
+            shade::MeshAttributes& a = meshAttributesHost_[i];
+            a = meshCache_.at(e.data.get()).attributes;
+            if (!e.instance) continue;
+            for (int r = 0; r < 3; ++r) {
+                inst.transform[4 * r + 0] = e.objectToWorld[0 + r];
+                inst.transform[4 * r + 1] = e.objectToWorld[3 + r];
+                inst.transform[4 * r + 2] = e.objectToWorld[6 + r];
+                inst.transform[4 * r + 3] = e.objectToWorld[9 + r];
+            }
+            a.instance = e.instance;
+            for (int k = 0; k < 12; ++k) a.objectToWorld[k] = e.objectToWorld[k];
+            for (int k = 0; k < 9; ++k) a.normalToWorld[k] = e.normalToWorld[k];
+            for (int k = 0; k < 12; ++k) a.worldToObject[k] = e.worldToObject[k];
+            if (!e.instancePrims.empty()) {
+                auto prims = upload(e.instancePrims.data(), e.instancePrims.size() * sizeof(shade::PrimAttr));
+                auto data = upload(e.instancePrimData.data(), std::max<size_t>(e.instancePrimData.size(), 1) * sizeof(float));
+                a.instancePrims = reinterpret_cast<const shade::PrimAttr*>(prims->pointer);
+                a.instancePrimData = reinterpret_cast<const float*>(data->pointer);
+                a.instancePrimCount = U32(e.instancePrims.size());
+                placedKeep_[i] = {prims, data};
+            }
+        }
+        if (!moved.empty()) {
+            buildTops(*plan);
+            scene_.meshAttributes = upload(meshAttributesHost_.data(), meshAttributesHost_.size() * sizeof(shade::MeshAttributes));
+        }
+        uploadLights(*plan, deviceLights);
+        if (scene_.volumes && !plan->volumes.empty()) {
+            // A moved volume's record (its grids' transforms, its settings at the render origin), and its baked grid
+            // where it was made again.
+            scene_.volumes = upload(plan->volumes.data(), plan->volumes.size() * sizeof(volume::Shader));
+            bool regrid = plan->volumeGridViews.size() != gridsSent_.size();
+            for (size_t k = 0; !regrid && k < gridsSent_.size(); ++k) regrid = plan->volumeGridViews[k].dense != gridsSent_[k];
+            if (regrid) uploadGrids(*plan);
+        }
+        uploadConfig(plan);
+        placementsMoved_ = moved.size();
+        return true;
+    }
+    size_t placementsMoved_ = 0;
     // The GPU's rate in samples a second, as its launches have found it across frames (realtime's launch sizes).
     double rateHint() const { return rateHint_; }
     // The lane's pinned host and device memory now and at its peak, in MB (gpu::Driver's counts).
@@ -469,6 +548,17 @@ public:
         {const std::string why = cpuOnly(plan); if (!why.empty()) throw cpu::Unsupported("the GPU leaves " + why + " to the CPU");}
         plan_ = plan;
         scene_ = {};
+        placedKeep_.clear();
+        tops_.clear();
+        // Where the prepare's time goes (prepareLaps_, the session prints them): meshes, the rest of the records,
+        // textures, films.
+        prepareLaps_.clear();
+        auto prepareBegan = std::chrono::steady_clock::now();
+        auto lap = [&](const char* what) {
+            const auto now = std::chrono::steady_clock::now();
+            prepareLaps_.push_back({what, std::chrono::duration<double>(now - prepareBegan).count()});
+            prepareBegan = now;
+        };
         std::vector<OptixInstance> instances(plan->meshes.size());
         std::vector<mixed::Geometry> geometry;
         std::vector<surface::Lambert> materials;
@@ -755,30 +845,11 @@ public:
         }
         // Meshes the new plan no longer has leave the cache (their buffers with them once the scene lets go).
         meshCache_ = std::move(nextCache);
-        auto instanceBuffer = upload(instances.data(), instances.size() * sizeof(OptixInstance));
-        OptixBuildInput input{};
-        input.type = OPTIX_BUILD_INPUT_TYPE_INSTANCES;
-        input.instanceArray.instances = instanceBuffer->pointer;
-        input.instanceArray.numInstances = unsigned(instances.size());
-        auto top = build(input);
-        scene_.traversable = top.second;
-        scene_.keep.insert(scene_.keep.end(), {instanceBuffer, top.first});
-        // The volumes' bounds: the same geometry in a tree of its own, each bounding mesh with its visibility, both sides.
-        if (!plan->volumes.empty()) {
-            std::vector<OptixInstance> bounds = instances;
-            for (unsigned i = 0; i < bounds.size(); ++i) {
-                bounds[i].visibilityMask = plan->meshes[i].volume >= 0 ? (plan->meshes[i].visibility & 0xffu) : 0u;
-                bounds[i].flags = OPTIX_INSTANCE_FLAG_DISABLE_TRIANGLE_FACE_CULLING;
-            }
-            auto boundsBuffer = upload(bounds.data(), bounds.size() * sizeof(OptixInstance));
-            OptixBuildInput vinput{};
-            vinput.type = OPTIX_BUILD_INPUT_TYPE_INSTANCES;
-            vinput.instanceArray.instances = boundsBuffer->pointer;
-            vinput.instanceArray.numInstances = unsigned(bounds.size());
-            auto vtop = build(vinput);
-            scene_.volumeTraversable = vtop.second;
-            scene_.keep.insert(scene_.keep.end(), {boundsBuffer, vtop.first});
-        }
+        instances_ = instances;
+        meshAttributesHost_ = meshAttributes;
+        lap("meshes");
+        buildTops(*plan);
+        lap("top trees");
         // Volumes the GPU's programs do not render (volume::gpuRenders): their samples are deferred to the CPU lane too.
         {
             const volume::Grids hostGrids{plan->volumeGridViews.data(), U32(plan->volumeGridViews.size()), nullptr, 0.0f};
@@ -810,6 +881,7 @@ public:
             // The lights with their textures' tables on the device: each Image's arrays, then the Image itself with
             // device pointers, which the light then points to.
             std::vector<lights::Light> deviceLights = plan->lights;
+            lightTables_.clear();
             for (auto& l : deviceLights) {
                 auto keep = [&](const void* host, size_t bytes) {
                     B b = upload(host, bytes);
@@ -826,7 +898,9 @@ public:
                     view.nodes = reinterpret_cast<const lights::MeshNode*>(keep(tables->nodes.data(), tables->nodes.size() * sizeof(lights::MeshNode)));
                     view.faces = reinterpret_cast<const lights::MeshFace*>(keep(tables->faces.data(), tables->faces.size() * sizeof(lights::MeshFace)));
                     view.vertices = reinterpret_cast<const surface::V3*>(keep(tables->vertices.data(), tables->vertices.size() * sizeof(surface::V3)));
+                    const void* host = l.mesh;
                     l.mesh = reinterpret_cast<const lights::MeshLightData*>(keep(&view, sizeof(view)));
+                    lightTables_[host] = l.mesh;
                 }
                 if (!l.image) continue;
                 const lights::ImageData* data = nullptr;
@@ -839,45 +913,14 @@ public:
                 view.guide = reinterpret_cast<const U32*>(keep(data->guide.data(), data->guide.size() * sizeof(U32)));
                 view.dists = reinterpret_cast<const lights::Dist1D*>(keep(data->dists.data(), data->dists.size() * sizeof(lights::Dist1D)));
                 view.levels = reinterpret_cast<const lights::ImageLevel*>(keep(data->levels.data(), data->levels.size() * sizeof(lights::ImageLevel)));
+                const void* host = l.image;
                 l.image = reinterpret_cast<const lights::Image*>(keep(&view, sizeof(view)));
+                lightTables_[host] = l.image;
             }
-            // A portal's reference: a copy of that light as the device has it.
-            for (auto& l : deviceLights) {
-                if (l.type != lights::Portal) continue;
-                B b = upload(&deviceLights[l.refIndex], sizeof(lights::Light));
-                scene_.keep.push_back(b);
-                l.ref = reinterpret_cast<const lights::Light*>(b->pointer);
-            }
-            scene_.lights = upload(deviceLights.data(), deviceLights.size() * sizeof(lights::Light));
-            scene_.meshLights = upload(plan->meshLights.data(), plan->meshLights.size() * sizeof(U32));
-            if (!plan->lightSetBits.empty()) scene_.lightSetBits = upload(plan->lightSetBits.data(), plan->lightSetBits.size() * sizeof(U32));
-            if (!plan->lightTree.empty()) {
-                scene_.lightTree = upload(plan->lightTree.data(), plan->lightTree.size() * sizeof(lights::TreeNode));
-                scene_.lightTreeRoots = upload(plan->lightTreeRoots.data(), plan->lightTreeRoots.size() * sizeof(int));
-            }
+            uploadLights(*plan, deviceLights);
             if (!plan->volumes.empty()) {
                 scene_.volumes = upload(plan->volumes.data(), plan->volumes.size() * sizeof(volume::Shader));
-                // The dense grids (mapped BaseVolumes' baked extinction) on the device, the NanoVDB ones left null.
-                scene_.gridData.clear();
-                scene_.volumeGrids = nullptr;
-                scene_.volumeGridCount = 0;
-                if (!plan->volumeGridViews.empty()) {
-                    std::vector<volume::Grid> views(plan->volumeGridViews.begin(), plan->volumeGridViews.end());
-                    for (auto& g : views) {
-                        g.data = nullptr;
-                        if (!g.dense) continue;
-                        const size_t floats = size_t(g.dims[0]) * size_t(g.dims[1]) * size_t(g.dims[2]) * 3;
-                        if (!floats) {
-                            g.dense = nullptr;
-                            continue;
-                        }
-                        B data = upload(g.dense, floats * sizeof(float));
-                        g.dense = reinterpret_cast<const float*>(data->pointer);
-                        scene_.gridData.push_back(data);
-                    }
-                    scene_.volumeGrids = upload(views.data(), views.size() * sizeof(volume::Grid));
-                    scene_.volumeGridCount = U32(views.size());
-                }
+                uploadGrids(*plan);
                 std::vector<int> meshVolumes;
                 for (const auto& mesh : plan->meshes) meshVolumes.push_back(mesh.volume);
                 scene_.meshVolumes = upload(meshVolumes.data(), meshVolumes.size() * sizeof(int));
@@ -936,8 +979,10 @@ public:
             }
             scene_.scratch = device(size_t(options_.launchThreads) * (scratchStride(plan->dwaSlots, plan->glitter) + aovScratch_ + cryptoScratch_));
         }
+        lap("lights, volumes, materials, outputs");
         uploadConfig(plan);
         if (cpu::gpuTextures(plan->domain)) prepareTextures(*plan);
+        lap("textures");
         const size_t pixels = size_t(plan->width) * plan->height;
         scene_.sums = device(pixels * 4 * sizeof(double));
         scene_.odd = device(pixels * 4 * sizeof(double));
@@ -1003,7 +1048,9 @@ public:
         passDone_.assign(MaxPasses, 0u);
         driver.drain();  // startup only: everything above has landed
         uploads_.clear();
+        lap("films, and everything landed");
     }
+    std::vector<std::pair<const char*, double>> prepareLaps_;
 
     // Starts a frame: an empty film and empty queues. partial: texture misses finish from a coarser level as
     // provisional samples (never in the pass chain, which runs on the device alone).
@@ -1869,6 +1916,89 @@ private:
     };
     std::map<const cpu::MeshData*, MeshEntry> meshCache_;
     size_t meshesReused_ = 0;
+    // What a placement-only edit changes (updatePlacements): every mesh's instance and attribute record as the card has
+    // them, the top trees' buffers (replaced, not kept), each light's tables on the card by their host view, and a moved
+    // instance's primitive attributes.
+    std::vector<OptixInstance> instances_;
+    std::vector<shade::MeshAttributes> meshAttributesHost_;
+    std::vector<B> tops_;
+    std::map<const void*, const void*> lightTables_;
+    std::map<unsigned, std::vector<B>> placedKeep_;
+    // The surfaces' tree over the instances, and the volumes' bounds' (the same geometry, each bounding mesh with its
+    // visibility, both sides).
+    void buildTops(const cpu::Plan& plan) {
+        std::vector<B> made;
+        auto instanceBuffer = upload(instances_.data(), instances_.size() * sizeof(OptixInstance));
+        OptixBuildInput input{};
+        input.type = OPTIX_BUILD_INPUT_TYPE_INSTANCES;
+        input.instanceArray.instances = instanceBuffer->pointer;
+        input.instanceArray.numInstances = unsigned(instances_.size());
+        auto top = build(input);
+        scene_.traversable = top.second;
+        made.insert(made.end(), {instanceBuffer, top.first});
+        if (!plan.volumes.empty()) {
+            std::vector<OptixInstance> bounds = instances_;
+            for (unsigned i = 0; i < bounds.size(); ++i) {
+                bounds[i].visibilityMask = plan.meshes[i].volume >= 0 ? (plan.meshes[i].visibility & 0xffu) : 0u;
+                bounds[i].flags = OPTIX_INSTANCE_FLAG_DISABLE_TRIANGLE_FACE_CULLING;
+            }
+            auto boundsBuffer = upload(bounds.data(), bounds.size() * sizeof(OptixInstance));
+            OptixBuildInput vinput{};
+            vinput.type = OPTIX_BUILD_INPUT_TYPE_INSTANCES;
+            vinput.instanceArray.instances = boundsBuffer->pointer;
+            vinput.instanceArray.numInstances = unsigned(bounds.size());
+            auto vtop = build(vinput);
+            scene_.volumeTraversable = vtop.second;
+            made.insert(made.end(), {boundsBuffer, vtop.first});
+        }
+        tops_ = std::move(made);
+    }
+    // The lights' records (their tables already on the card: deviceLights point to them), a portal's reference copied as
+    // the card has it, the mesh lights, light sets and the lights' trees.
+    void uploadLights(const cpu::Plan& plan, std::vector<lights::Light>& deviceLights) {
+        lightKeep_.clear();
+        for (auto& l : deviceLights) {
+            if (l.type != lights::Portal) continue;
+            B b = upload(&deviceLights[l.refIndex], sizeof(lights::Light));
+            lightKeep_.push_back(b);
+            l.ref = reinterpret_cast<const lights::Light*>(b->pointer);
+        }
+        scene_.lights = upload(deviceLights.data(), deviceLights.size() * sizeof(lights::Light));
+        scene_.meshLights = upload(plan.meshLights.data(), plan.meshLights.size() * sizeof(U32));
+        scene_.lightSetBits = plan.lightSetBits.empty() ? nullptr : upload(plan.lightSetBits.data(), plan.lightSetBits.size() * sizeof(U32));
+        scene_.lightTree = scene_.lightTreeRoots = nullptr;
+        if (!plan.lightTree.empty()) {
+            scene_.lightTree = upload(plan.lightTree.data(), plan.lightTree.size() * sizeof(lights::TreeNode));
+            scene_.lightTreeRoots = upload(plan.lightTreeRoots.data(), plan.lightTreeRoots.size() * sizeof(int));
+        }
+    }
+    std::vector<B> lightKeep_;
+    // The dense grids (mapped BaseVolumes' baked extinction) on the device, the NanoVDB ones left null; each grid's
+    // host data as sent (a moved volume's baked grid made again is another, updatePlacements).
+    std::vector<const float*> gridsSent_;
+    void uploadGrids(const cpu::Plan& plan) {
+        scene_.gridData.clear();
+        scene_.volumeGrids = nullptr;
+        scene_.volumeGridCount = 0;
+        gridsSent_.clear();
+        if (plan.volumeGridViews.empty()) return;
+        std::vector<volume::Grid> views(plan.volumeGridViews.begin(), plan.volumeGridViews.end());
+        for (auto& g : views) {
+            gridsSent_.push_back(g.dense);
+            g.data = nullptr;
+            if (!g.dense) continue;
+            const size_t floats = size_t(g.dims[0]) * size_t(g.dims[1]) * size_t(g.dims[2]) * 3;
+            if (!floats) {
+                g.dense = nullptr;
+                continue;
+            }
+            B data = upload(g.dense, floats * sizeof(float));
+            g.dense = reinterpret_cast<const float*>(data->pointer);
+            scene_.gridData.push_back(data);
+        }
+        scene_.volumeGrids = upload(views.data(), views.size() * sizeof(volume::Grid));
+        scene_.volumeGridCount = U32(views.size());
+    }
     struct Scene {
         std::vector<B> keep;
         U64 traversable = 0, volumeTraversable = 0, standInTraversable = 0;
@@ -2313,6 +2443,9 @@ private:
         retire_.clear();
         uploads_.clear();
         scene_ = {};
+        tops_.clear();
+        lightKeep_.clear();
+        placedKeep_.clear();
         fine_ = {};
         for (auto& p : params_) p = {};
         for (auto& r : readbacks_) r = {};

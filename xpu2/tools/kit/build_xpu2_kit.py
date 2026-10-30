@@ -124,9 +124,8 @@ def xpu2_shaders_compiled():
 
 
 # What a preview says when XPU2 is chosen and its shaders are not compiled: nothing is rendered.
-XPU2_NOT_COMPILED = ("MoonRay XPU2's shaders are not compiled, so nothing was rendered. Compile them once in System > "
-                     "Preferences > MoonRay > XPU2 > Compile XPU2 Shaders (once; it shows how long it has left), or choose MoonRay XPU as the GPU "
-                     "renderer there.")
+XPU2_NOT_COMPILED = ("Render unavailable: MoonRay XPU2's shaders not compiled. "
+                     "System > Preferences > MoonRay > XPU2 > Compile XPU2 Shaders.")
 '''
 
 COMMANDS = '''"""XPU2, the private test build: compiling its GPU programs into OptiX's cache, and what state they are in."""
@@ -2351,6 +2350,7 @@ lx.bless(switch('xpu2/upscale'),'moonray.pref.xpu2Upscale')""")
     about_xpu2(KIT)
     partial_moves(KIT)
     xpu2_status_words(KIT)
+    realtime_cap(KIT)
 
     version = 'unknown'
     for line in (KIT / 'index.cfg').read_text(encoding='utf-8').splitlines():
@@ -2403,6 +2403,46 @@ def partial_moves(kit):
             evaluated.stop_live()
         except Exception:pass
         # A draft's region is not gone on to once its lines have been stopped.""")
+    p.save()
+
+
+def realtime_cap(kit):
+    """Realtime Adaptive Sampling Cap (MoonRay XPU2 only), Preferences > MoonRay > Preview Window: None, 30 or 60 samples
+    a pixel at most while realtime follows the scene under XPU2, its average and its most a pixel alike, beside the
+    scene's own Realtime Samples (the fewer of the two). Read when the scene is written (xpu2_sampling.realtime_cap).
+    Asked 2026-10-30."""
+    py = kit / 'python' / 'moonray_modo'
+    p = Patch(py / 'preferences.py')
+    p.rep("""'xpu2/upscale': (True, bool),""", """'xpu2/upscale': (True, bool), 'xpu2/rt_cap': ('none', str),""")
+    p.save()
+    p = Patch(py / 'native.py')
+    p.rep("""def xpu2_upscale():""", '''def xpu2_rt_cap():
+    """Realtime Adaptive Sampling Cap (Preferences > MoonRay > Preview Window): the most samples a pixel realtime takes
+    under XPU2, 0 for none (the default)."""
+    value = str(_setting('xpu2/rt_cap', 'none'))
+    return int(value) if value in ('30', '60') else 0
+
+
+def xpu2_upscale():''')
+    p.save()
+    p = Patch(kit / 'lxserv' / 'moonray_preferences.py')
+    p.rep("""lx.bless(switch('xpu2/upscale'),'moonray.pref.xpu2Upscale')""", """lx.bless(switch('xpu2/upscale'),'moonray.pref.xpu2Upscale')
+lx.bless(choice('xpu2/rt_cap',(('none','None'),('30','30'),('60','60'))),'moonray.pref.xpu2RealtimeCap')""")
+    p.save()
+    p = Patch(kit / 'preferences.cfg')
+    p.rep("""        <atom type="Tooltip">How many pixels wide a draft's first, quick picture is. The fine picture that follows it is as fine as the view</atom>
+      </list>
+""", """        <atom type="Tooltip">How many pixels wide a draft's first, quick picture is. The fine picture that follows it is as fine as the view</atom>
+      </list>
+      <list type="Control" val="cmd moonray.pref.xpu2RealtimeCap ?">
+        <atom type="Label">Realtime Adaptive Sampling Cap (MoonRay XPU2 only)</atom>
+        <atom type="Tooltip">The most samples a pixel MoonRay realtime takes under XPU2, on average and at most, so that it settles sooner: None, 30 or 60. A scene's Realtime Samples still applies; the fewer of the two is taken. It shows with the next update of the preview</atom>
+      </list>
+""")
+    p.save()
+    p = Patch(py / 'rdla.py')
+    p.rep("int(generation.get('most',0)),1 if generation.get('cpu',True) else 0,",
+          "xpu2_sampling.most_samples(generation,samples,bool(scene.get('_realtime'))),1 if generation.get('cpu',True) else 0,")
     p.save()
 
 
