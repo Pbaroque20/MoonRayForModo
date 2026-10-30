@@ -82,6 +82,8 @@ The core and the MoonRay port currently share a folder. The manual's file map as
 ## Branches
 
 - `xpu2-async`: the main research branch.
+- `xpu-plus`: XPU+, the earlier synchronous approach (19–20 October 2026). It speeds up MoonRay XPU's own pipeline with
+  exact savings that keep images identical, rather than replacing it. Kept for its measurements and techniques.
 
 ## Merging from MoonRay for Modo
 
