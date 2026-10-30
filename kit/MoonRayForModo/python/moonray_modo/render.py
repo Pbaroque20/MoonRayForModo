@@ -224,7 +224,7 @@ class Renderer(QtCore.QObject):
                        # A safe render is rendered by the MoonRay kept loaded where that one can save as it renders,
                        # and so is shown as it comes on; else by a MoonRay of its own, shown at each save.
                        persistent=bool(persistent_preview and not moonlightipr and not output and not linear_preview and persistent_supported(runtime)
-                                       and (not denoising.settings(snapshot.get('denoising',{}))['safe'] or persistent_saves(runtime))))
+                                       and (not denoising.settings(snapshot.get('denoising',{}))['safe'] or persistent_saves(runtime) or native.xpu2())))
         # New edits replace queued work; stale images never reach the panel.
         self.pending = request
         # A stop that was still waiting for MoonRay to save is over: this render is not one being stopped.
@@ -546,7 +546,9 @@ class Renderer(QtCore.QObject):
                 snapshot['_recovery']=prepare_recovery(snapshot,request['output'],request['width'],request['height'],self.sample_grid,request['environment'],request['runtime'])
             # Safe denoising: MoonRay saves each file it is writing every few seconds, to be finished with on Stop.
             self.safe_files=[];snapshot.pop('_safe',None)
-            if denoising.settings(snapshot.get('denoising',{}))['safe'] and not snapshot.get('_ipr') and not snapshot.get('_recovery') and not request.get('linear_preview'):
+            # Not while XPU2 renders the preview: it is quick enough to need no saves.
+            if denoising.settings(snapshot.get('denoising',{}))['safe'] and not snapshot.get('_ipr') and not snapshot.get('_recovery') and not request.get('linear_preview') \
+                    and not snapshot.get('_xpu2'):
                 data=self.current_base.with_suffix('.resume-data.exr')
                 snapshot['_safe']={'data':str(data)}
                 self.safe_written=set();self.safe_whole=False;self.safe_tail='';self.saved_at=None;self.kept_behind=None

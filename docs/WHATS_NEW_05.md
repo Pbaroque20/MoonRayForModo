@@ -26,8 +26,8 @@ Animation.*
 - **Realtime**: camera moves, object moves and light changes are taken up at once, without preparing the scene again.
   While things move, a quick picture at lower resolution is shown, made sharp by OptiX's denoiser.
   **Realtime Samples** sets how much of the render realtime makes (100% by default).
-- **Denoising**: the Denoiser and Safe Denoising work with XPU2 previews, and a stopped render can be continued.
-  Smart Render is MoonRay's own, and is greyed while XPU2 renders the preview.
+- **Denoising**: the Denoiser works with XPU2 previews. Smart Render and Safe Denoising are MoonRay's own, and are
+  greyed while XPU2 renders the preview: it is quick enough to need neither.
 - **Final renders come from MoonRay**, as before. A scene XPU2 cannot render yet goes to MoonRay XPU.
 - **The MoonRay Terminal** names the renderer (MoonRay XPU2, Vector, Scalar, XPU) and shows XPU2's generations as they go.
 

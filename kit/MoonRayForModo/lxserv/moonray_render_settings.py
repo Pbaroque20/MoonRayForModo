@@ -80,8 +80,9 @@ def register():
                 # XPU2's sampling generations' own settings, greyed with generations off.
                 if entry['key'] in ('xpu2_samples', 'xpu2_spend', 'xpu2_noise', 'xpu2_seed', 'xpu2_most', 'xpu2_cpu', 'xpu2_realtime'):
                     return True
-                # Smart Render is MoonRay's: greyed while XPU2 renders the preview.
-                if entry['key']=='smart_render':
+                # Smart Render and Safe Denoising are MoonRay's: greyed while XPU2 renders the preview, which is quick
+                # enough to need neither.
+                if entry['key'] in ('smart_render','denoise_safe'):
                     try:
                         from moonray_modo import native
                         if native.xpu2():return False

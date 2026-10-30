@@ -436,6 +436,11 @@ class Panel(Tools, QtWidgets.QWidget):
                                  ('Open Image Denoise','oidn_cpu','The same, denoised on the processor.')):
             action=QtWidgets.QAction(words,safe);action.setCheckable(True);action.setChecked(engine==now);action.setToolTip(tip)
             action.triggered.connect(lambda checked=False,engine=engine:self._safe_chosen(engine));safe.addAction(action)
+        # MoonRay's: greyed while XPU2 renders the preview, which is quick enough to need it no more.
+        try:
+            from . import native
+            if native.xpu2():safe.setEnabled(False);safe.setToolTip("Safe Denoising is MoonRay's; XPU2 renders the preview.")
+        except Exception:pass
         menu.addMenu(safe);self._safe_menu=safe
         menu.addSeparator()
         menu.addAction('Copy Image',self.copy_image)
@@ -960,7 +965,9 @@ class Panel(Tools, QtWidgets.QWidget):
             values=self._settings_values()
             # MoonLightIPR's motion blur, off by default: each update then reads the shutter's ends too.
             if self.preview_engine.currentData()=='moonlightipr' and self.preferences.get('preview_motion'):words.append('Motion Blur')
-            if self.preview_engine.currentData()=='moonray' and values['denoising'].get('safe') and values['denoising'].get('engine','off')!='off':
+            from . import native
+            if self.preview_engine.currentData()=='moonray' and values['denoising'].get('safe') and values['denoising'].get('engine','off')!='off' \
+                    and not native.xpu2():
                 words.append('Safe Denoiser')
             level=values['denoising'].get('smart','off')
             if self.preview_engine.currentData()=='moonray' and level!='off':
