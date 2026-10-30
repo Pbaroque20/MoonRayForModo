@@ -8,7 +8,25 @@ The current release is [0.4.3.1](https://github.com/Pbaroque20/MoonRayForModo/re
 
 ## Coming next
 
-The next version is 0.5.
+The next version is 0.5, a **pre-production release**. In short: [What's new in 0.5](docs/WHATS_NEW_05.md).
+
+### MoonRay XPU2
+
+**XPU2** renders MoonRay previews with the processor and the graphics card on the same picture at once, neither
+waiting for the other. Its pictures settle to MoonRay's own.
+
+*XPU2: Asynchronous Monte Carlo Path Tracer designed by Raphael Tobar. Not affiliated with or endorsed by DreamWorks
+Animation.*
+
+- **The default GPU renderer**; MoonRay XPU is still a choice (Preferences > MoonRay > XPU2 > GPU renderer).
+- **Compile XPU2 Shaders once** on the same page, in the background. Until then XPU2 does not render, and the preview says so.
+- **Samples go where the picture is still noisy**, in generations; clean parts stop early. Settings in Render
+  Settings > XPU2 Sampling; the line under the picture shows how it samples.
+- **Realtime** takes up camera, object and light changes at once, with a quick denoised picture while things move.
+- **Devices**: processor and graphics card together, or either alone.
+- **The Denoiser and Safe Denoising** work with XPU2 previews. Final renders come from MoonRay, as before.
+
+### Everything else
 
 - **Realtime that keeps up**: camera moves no longer reload the scene, editing one object updates only that object, and heavy scenes are cut by their size on screen.
 - **A Scene cache** (Preferences): prepared scenes and meshes are kept in a cache folder of your choice, so a scene opens faster the next time. The status says Caching scene... while it keeps, and Loading scene from cache... while it reads back. **Clear Cache** empties it.
