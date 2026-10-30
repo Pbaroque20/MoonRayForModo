@@ -33,15 +33,60 @@ class PreparedSceneTests(unittest.TestCase):
     def test_matching_base_uses_worker_delta(self):
         self.check_dispatch(True)
 
-    def test_stale_base_with_a_large_scene_uses_full_scene_without_main_thread_diff(self):
-        self.check_dispatch(False, limit=2)
+    def test_stale_base_with_a_large_scene_makes_the_delta_on_a_thread(self):
+        # A fast drag of the camera on a large scene: the writer's delta was made against a scene since replaced, and the
+        # text is too large to compare on Modo's thread. It is compared on a thread of its own (_Rediff) and goes as a
+        # delta once made, not as a reload; nothing is sent meanwhile.
+        Session = persistent_session()
+        applied = {'id': 2, 'text': 'other'}
+        lists = object()  # the writer's binary lists, as text (render.SceneWriter): passed on to the diff
+        request = {'id': 3, 'text': 'full', 'prepared': {'base': {'id': 1, 'text': 'old'}, 'delta': 'edit', 'full_bytes': b'full', 'delta_bytes': b'edit', 'heavy': lists}}
+        writes = []
+        def write(request, suffix, text, payload=None):
+            writes.append((suffix, text, payload))
+            return 'modo-memory:' + suffix
+        from pathlib import Path
+        state = SimpleNamespace(latest=request, applied=applied, _write_scene=write, root=Path('.'), scene_memory=True,
+                                command_channel=Mock(), status=Mock(), closed=False)
+        state._dispatch = lambda: Session._dispatch(state)
+        with patch.dict(Session._dispatch.__globals__, difference=Mock(return_value='again'), DIFF_HERE=2) as held:
+            Session._dispatch(state)
+            self.assertEqual(held['difference'].call_count, 1)
+            self.assertEqual(held['difference'].call_args[0], ('other', 'full', lists))
+        self.assertIs(state.sent, request)
+        self.assertEqual(writes[1], ('delta', 'again', None))
+        self.assertEqual(state.command_channel.send.call_count, 1)
+        self.assertIn('\ndelta\n', state.command_channel.send.call_args[0][0])
+
+    def test_stale_base_where_no_delta_can_be_made_reloads(self):
+        # The structure changed: no delta against the scene applied, so the full scene goes.
+        Session = persistent_session()
+        request = {'id': 3, 'text': 'full', 'prepared': {'base': {'id': 1, 'text': 'old'}, 'delta': 'edit', 'full_bytes': b'full', 'delta_bytes': b'edit'}}
+        writes = []
+        def write(request, suffix, text, payload=None):
+            writes.append((suffix, text, payload))
+            return 'modo-memory:' + suffix
+        from pathlib import Path
+        state = SimpleNamespace(latest=request, applied={'id': 2, 'text': 'other'}, _write_scene=write, root=Path('.'), scene_memory=True,
+                                command_channel=Mock(), status=Mock(), closed=False, output=Mock())
+        state._dispatch = lambda: Session._dispatch(state)
+        def nothing(previous, current, heavy=None, why=None):
+            if why is not None: why.append('its text has 2 lines, the one before 1')
+            return None
+        with patch.dict(Session._dispatch.__globals__, difference=nothing, DIFF_HERE=2):
+            Session._dispatch(state)
+        self.assertEqual(len(writes), 1)
+        self.assertIn('\nfull\n', state.command_channel.send.call_args[0][0])
+        # Why, in the Render Log.
+        self.assertIn('its text has 2 lines', state.output.emit.call_args[0][0])
 
     def test_stale_base_with_a_small_scene_makes_the_delta_again(self):
         # A drag of the camera: the writer's delta was made against a scene since replaced; the one applied is diffed
         # again on Modo's thread, the text being small, and goes as a delta, not a reload.
         Session = persistent_session()
         applied = {'id': 2, 'text': 'other'}
-        request = {'id': 3, 'text': 'full', 'prepared': {'base': {'id': 1, 'text': 'old'}, 'delta': 'edit', 'full_bytes': b'full', 'delta_bytes': b'edit'}}
+        lists = object()  # the writer's binary lists, as text (render.SceneWriter): passed on to the diff
+        request = {'id': 3, 'text': 'full', 'prepared': {'base': {'id': 1, 'text': 'old'}, 'delta': 'edit', 'full_bytes': b'full', 'delta_bytes': b'edit', 'heavy': lists}}
         writes = []
         def write(request, suffix, text, payload=None):
             writes.append((suffix, text, payload))
@@ -51,7 +96,7 @@ class PreparedSceneTests(unittest.TestCase):
                                 command_channel=Mock(), status=Mock())
         with patch.dict(Session._dispatch.__globals__, difference=Mock(return_value='again')) as held:
             Session._dispatch(state)
-            held['difference'].assert_called_once_with('other', 'full')
+            held['difference'].assert_called_once_with('other', 'full', lists)
         self.assertEqual(writes[1], ('delta', 'again', None))
         self.assertIn('\ndelta\n', state.command_channel.send.call_args[0][0])
 

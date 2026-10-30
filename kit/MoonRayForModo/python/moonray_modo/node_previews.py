@@ -119,6 +119,81 @@ class Kept(QtCore.QObject):
             pass
 
 
+# A plain image node needs no render: its picture is its file, made small. The node's type and where it keeps the file.
+IMAGE_NODES = {'image': 'file', 'ImageMap': 'texture'}
+# What Qt reads itself, at the size wanted and in this process; the rest goes through the runtime's oiiotool.
+QT_READS = {'.png', '.jpg', '.jpeg', '.bmp', '.tif', '.tiff'}
+
+
+def image_source(graph, identity):
+    """(file, linear, invert) for a node that is an image and nothing more, its file on this machine; else None.
+    linear: the file holds linear values (a float image, or a .tx not marked sRGB), brought to the screen's sRGB."""
+    node = graph['nodes'].get(identity) or {}
+    key = IMAGE_NODES.get(node.get('type'))
+    if key is None:
+        return None
+    parameters = node.get('parameters', {})
+    name = str(parameters.get(key) or '').replace('<UDIM>', '1001')
+    if not name or not Path(name).is_file():
+        return None
+    suffix = Path(name).suffix.lower()
+    srgb = bool(parameters.get('srgb', True)) and str(parameters.get('color_space', '')).lower() not in ('linear', 'raw', 'data')
+    linear = suffix in ('.exr', '.hdr', '.pfm') or (suffix == '.tx' and not srgb)
+    return Path(name), linear, bool(parameters.get('invert', False))
+
+
+def thumbnail_path(source, linear, invert):
+    """Where the picture of an image file is kept: named by the file as it stands, so a changed file is drawn again."""
+    import hashlib
+    held = source.stat()
+    digest = hashlib.sha256(repr((str(source.resolve()), held.st_mtime_ns, held.st_size, linear, invert, SIZE)).encode()).hexdigest()[:24]
+    folder = graph_bake.folder() / 'Thumbnails'
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder / (digest + '.png')
+
+
+class Thumbnail(QtCore.QRunnable):
+    """An image node's picture: its file made small, by Qt where it reads the file and else by oiiotool."""
+    def __init__(self, key, source, linear, invert, png, runtime, signals):
+        super().__init__()
+        self.key, self.source, self.linear, self.invert, self.png = key, source, linear, invert, png
+        self.runtime, self.signals = runtime, signals
+
+    def run(self):
+        try:
+            staged = self.png.with_name(self.png.stem + '.tmp.png')
+            if self.source.suffix.lower() in QT_READS and not self.linear:
+                reader = QtGui.QImageReader(str(self.source))
+                size = reader.size()
+                if size.isValid():
+                    reader.setScaledSize(size.scaled(SIZE, SIZE, QtCore.Qt.KeepAspectRatio))
+                image = reader.read()
+                if image.isNull():
+                    raise ValueError(reader.errorString())
+                image = image.convertToFormat(QtGui.QImage.Format_RGB888)
+                if self.invert:
+                    image.invertPixels()
+                if not image.save(str(staged), 'PNG'):
+                    raise ValueError('Cannot write the picture')
+            else:
+                from . import native
+                tail = (['--colorconvert', 'linear', 'sRGB'] if self.linear else []) + (['--invert'] if self.invert else []) + [
+                    '-d', 'uint8', '-o', str(staged)]
+                base = [str(Path(self.runtime) / 'oiiotool.exe'), '--no-autopremult', str(self.source)]
+                fit = ['--fit', '%dx%d' % (SIZE, SIZE)]
+                for channels in (['--ch', 'R,G,B'], []):     # a grey image has no G and B
+                    done = subprocess.run(base + channels + fit + tail, env=native.environment(self.runtime), stdout=subprocess.PIPE,
+                                          stderr=subprocess.STDOUT, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0), timeout=60)
+                    if done.returncode == 0:
+                        break
+                else:
+                    raise ValueError(done.stdout.decode(errors='replace')[-300:])
+            staged.replace(self.png)
+            self.signals.ready.emit(self.key, str(self.png))
+        except Exception:
+            self.signals.ready.emit(self.key, '')
+
+
 class Previews(QtCore.QObject):
     def __init__(self, editor):
         super().__init__(editor)
@@ -147,7 +222,9 @@ class Previews(QtCore.QObject):
         try:
             graph = nodes.effective(self.editor.graph)
             node = graph['nodes'].get(identity)
-            return node is not None and nodes.category(node['type']) == 'map' and graph_bake.reason(graph, identity) is None
+            # Image nodes only, shown as their file (IMAGE_NODES): nodes worked out by MoonRay are not rendered for a
+            # picture of their own for now (0.5); the material widget's render shows what they make.
+            return node is not None and node['type'] in IMAGE_NODES and nodes.category(node['type']) == 'map'
         except Exception:
             return False
 
@@ -170,6 +247,22 @@ class Previews(QtCore.QObject):
         graph = nodes.effective(self.editor.graph)
         for identity, item in list(self.editor.items.items()):
             if not getattr(item, 'previewed', False):
+                continue
+            # An image node is shown as its file, made small: no MoonRay, a fraction of a second.
+            try:
+                image = image_source(graph, identity)
+            except Exception:
+                image = None
+            if image is not None:
+                png = thumbnail_path(*image)
+                if png.is_file():
+                    item.show_preview(str(png))
+                    continue
+                key = str(png)
+                self.waiting.setdefault(key, set()).add(identity)
+                if key not in self.pending:
+                    self.pending.add(key)
+                    self.pool.start(Thumbnail(key, image[0], image[1], image[2], png, runtime, self.signals))
                 continue
             try:
                 exr, text = graph_bake.written(graph, identity, size=SIZE)

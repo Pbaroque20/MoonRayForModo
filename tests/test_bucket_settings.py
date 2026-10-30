@@ -21,6 +21,17 @@ def persistent_session():
     core.Slot=lambda *args,**kwargs:(lambda function:function)
     core.QProcess=type('QProcess',(),{'MergedChannels':0,'NotRunning':0,'FailedToStart':0})
     core.QProcessEnvironment=type('QProcessEnvironment',(),{})
+    # A thread that runs at once where it is started, then says it has finished (persistent._Rediff).
+    class Finished:
+        def __init__(self):self.slots=[]
+        def connect(self,slot):self.slots.append(slot)
+    class QThread:
+        def __init__(self,*args,**kwargs):self.finished=Finished()
+        def isRunning(self):return False
+        def start(self):
+            self.run()
+            for slot in self.finished.slots:slot()
+    core.QThread=QThread
     package=types.ModuleType('PySide2');package.QtCore=core
     with patch.dict(sys.modules,{'PySide2':package,'PySide2.QtCore':core}):
         from moonray_modo.persistent import Session

@@ -634,6 +634,81 @@ def register():
     register.watcher=Watcher()
     lx.service.Listener().AddListener(register.watcher)
 
+    # ---- Scaling a MoonRay light (or a sized MoonRay item) with Modo's scale tool -----------------------------------
+    # The renderers follow an item's scale, but its Width and Height (or Radius) kept the numbers typed. Once a scale
+    # is let go of, it is put into the item's size (entities.scaled_size) and the scale set back to 1: the item stays as
+    # big as it was scaled to, and its properties say how big that is.
+    sized_types={entities.item_type(name):name for name in entities.SCALED_SIZES}
+    # Each item's scale and size as they were just before their scale was put into the size: an undo that brings them
+    # back is left alone, or the scale tool's own step could never be undone.
+    applied={}
+
+    def scale_item(item):
+        """The item's scale transform, or None where it has none (never scaled)."""
+        import modo
+        try:
+            found=lx.object.Locator(item.internalItem).GetTransformItem(lx.symbol.iXFRM_SCALE)
+            return modo.Item(found) if found else None
+        except Exception:return None
+
+    def apply_scale(item):
+        """Put the item's scale into its size: True where it changed anything."""
+        name=sized_types.get(item.type)
+        transform=scale_item(item)
+        if name is None or transform is None:return False
+        scale=tuple(float(transform.channel('scl.'+axis).get()) for axis in 'XYZ')
+        if all(abs(v-1.0)<1e-6 for v in scale):return False
+        keys=list(entities.SCALED_SIZES[name])
+        values={key:float(item.channel(entities.CHANNEL_PREFIX+key).get()) for key in keys}
+        if applied.get(item.id)==(scale,values):return False     # an undo brought this back: leave it
+        made=entities.scaled_size(name,values,scale)
+        if made is None:return False
+        for key,value in made.items():item.channel(entities.CHANNEL_PREFIX+key).set(value)
+        for axis in 'XYZ':transform.channel('scl.'+axis).set(1.0)
+        applied[item.id]=(scale,values)
+        return True
+
+    class ApplyScale(lxu.command.BasicCommand):
+        """The selected MoonRay lights' (and sized MoonRay items') scale put into their size, the scale set back to 1:
+        what the scale tool did, said in their Width, Height or Radius. Run by itself once a scale is let go of."""
+        def cmd_Flags(self):return lx.symbol.fCMD_MODEL|lx.symbol.fCMD_UNDO
+        def basic_Execute(self,msg,flags):
+            import modo
+            for item in modo.Scene().selected:
+                try:apply_scale(item)
+                except Exception:pass
+    lx.bless(ApplyScale,'moonray.entity.applyScale')
+
+    def settled():
+        """Once the scale has stopped changing and the mouse is let go of: put it into the size."""
+        try:
+            import modo
+            from PySide2 import QtCore,QtWidgets
+            if QtWidgets.QApplication.mouseButtons()!=QtCore.Qt.NoButton:
+                register.scaling.start();return
+            if any(item.type in sized_types for item in modo.Scene().selected):lx.eval('moonray.entity.applyScale')
+        except Exception:pass
+
+    class ScaleWatcher(lxifc.SceneItemListener):
+        """Sees a scale change and has it put into the size once the scaling has stopped."""
+        def sil_ChannelValue(self,action,item,index):
+            try:
+                made=lx.object.Item(item)
+                if made.Type()!=register.scale_type:return
+                if not made.ChannelName(index).startswith('scl'):return
+                if getattr(register,'scaling',None) is None:
+                    from PySide2 import QtCore
+                    register.scaling=QtCore.QTimer();register.scaling.setSingleShot(True);register.scaling.setInterval(300)
+                    register.scaling.timeout.connect(settled)
+                register.scaling.start()
+            except Exception:pass
+    try:
+        register.scale_type=lx.service.Scene().ItemTypeLookup(lx.symbol.sITYPE_SCALE)
+        register.scale_watcher=ScaleWatcher()
+        lx.service.Listener().AddListener(register.scale_watcher)
+    except Exception as exc:
+        lx.out('MoonRay lights will not take their scale into their size: %s'%exc)
+
     # The first, generic item kept its class and values in a tag. It stays registered so that
     # scenes holding one still load and render; new items use the types above.
     class Entity(lxu.package.BasicPackage, lxu.package.BasicItemBehaviors):

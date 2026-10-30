@@ -177,7 +177,8 @@ def written(graph, identity, tile=None, size=None):
     if size is not None:
         made['width'] = made['height'] = int(size)
     size = made['width']
-    signature = hashlib.sha256(json.dumps(['graph-bake-v2', size, made['materials']['bake']['node_graph'],
+    # v3 (2026-10-30): previews kept before then made again once, among them flat ones that were kept as made.
+    signature = hashlib.sha256(json.dumps(['graph-bake-v3', size, made['materials']['bake']['node_graph'],
                                            files(graph, identity)], sort_keys=True, default=str).encode()).hexdigest()
     target = folder() / (signature + '.exr')
     if target.is_file() and target.stat().st_size:
