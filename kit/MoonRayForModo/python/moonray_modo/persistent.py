@@ -22,13 +22,15 @@ SHARED_LIMIT=256*1024*1024
 class _Rediff(QtCore.QThread):
     """A delta made again off Modo's thread (_dispatch): a request's text against the scene the session has applied,
     where the writer made it against an earlier one and the text is too large to compare on Modo's thread. delta: the
-    difference, or None where there is none to make (the structure changed: a reload)."""
-    def __init__(self,applied,request,parent=None):
+    difference, or None where there is none to make (the structure changed: a reload), and why there is none.
+    report: made only for why (the Render Log's line when the whole scene goes)."""
+    def __init__(self,applied,request,parent=None,report=False):
         super().__init__(parent)
-        self.applied,self.request,self.delta=applied,request,None
+        self.applied,self.request,self.delta,self.why,self.report=applied,request,None,[],report
     def run(self):
-        try:self.delta=difference(self.applied['text'],self.request['text'])
-        except Exception:self.delta=None
+        heavy=(self.request.get('prepared') or {}).get('heavy')
+        try:self.delta=difference(self.applied['text'],self.request['text'],heavy,why=self.why)
+        except Exception as error:self.delta=None;self.why.append(str(error) or type(error).__name__)
 
 
 # The most scene text a delta is made from on Modo's own thread (_dispatch), where the one the writer made is against
@@ -217,8 +219,15 @@ class Session(QtCore.QObject):
                     rediff.start()
                     return
                 delta=rediff.delta
-            else:delta=difference(self.applied['text'],request['text']) if small else None
+            else:delta=difference(self.applied['text'],request['text'],(prepared or {}).get('heavy')) if small else None
             delta_bytes=None
+        if delta is None and self.applied:
+            # The whole scene goes: why, in the Render Log, found on a thread of its own (a drag of the camera should
+            # only ever update the scene; one that reloads says what changed besides).
+            told=_Rediff(self.applied,request,self,report=True)
+            told.finished.connect(lambda told=told:None if self.closed else self.output.emit(
+                'MoonRay session: the whole scene is loaded again: %s\n'%(told.why[0] if told.why else 'its text is the one loaded')))
+            self._told=told;told.start()
         full=self._write_scene(request,'full',request['text'],(prepared or {}).get('full_bytes'))
         if (prepared or {}).get('binary'):
             # Its geometry's binary file, read after the text when MoonRay reloads (rdlb.py).
