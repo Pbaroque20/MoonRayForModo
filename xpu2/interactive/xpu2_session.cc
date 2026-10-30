@@ -387,6 +387,9 @@ struct Scene {
     // The plan the last placement-only one was made from (the card's instances, mesh records and lights go again,
     // GpuLane::updatePlacements).
     cpu::PlanView placedFrom;
+    // A placement-only edit's moved volumes whose baked grids are to be made again (cpu::placeVolume, deferred): made on
+    // a worker while the frame renders with the old grids moved along, then swapped in (the render loop).
+    std::vector<unsigned> pendingBakes;
     // The placement-only fast path (realtime): the plan of the last full preparation (basePlan), the render space its
     // meshes were prepared in (baseW2R), and where each of its geometries stood then (basePlaced); whether the changes
     // since are moves of geometries alone (placementOnly; the camera and the outputs' files besides, placementCamera,
@@ -651,6 +654,7 @@ struct Scene {
         if (!changed) return;
         cameraFrom.reset();
         placedFrom.reset();
+        pendingBakes.clear();
         // A camera-only edit: the plan as it was with its camera, render space and render origin made again
         // (cpu::updateCamera), the CPU's Embree scenes taken over; no canonical copy, no plan, until a full preparation.
         if (cameraOnly && plan && cpuScene) {
@@ -701,7 +705,7 @@ struct Scene {
                 }
                 if (!ok) why = "the outputs changed besides their files";
             }
-            if (ok) ok = cpu::placeMoved(*next, moved, instancePlaces, baseW2R, why);
+            if (ok) ok = cpu::placeMoved(*next, moved, instancePlaces, baseW2R, why, &pendingBakes);
             if (ok) ok = cpu::updateLights(*next, *source, editedLights, why);
             if (ok) {
                 placedFrom = plan;
@@ -1749,6 +1753,64 @@ int session(const Args& args, const fs::path& directory) {
                     std::printf("MoonRay XPU2: coarse first pass: %u meshes lighter, rendered to %.0f%%; the full geometry ready in %.2f s\n", lighter,
                                 reached * 100.0, std::chrono::duration<double>(Clock::now() - coarseBegan).count());
                     std::fflush(stdout);
+                }
+                // A moved volume's baked grid made again on a worker (cpu::rebakeVolume) while the frame renders with the old
+                // one moved along with it; once made, and nothing newer asked for, it is swapped into a copy of the plan (the
+                // CPU's scenes and the card's meshes taken over, the grids sent again) and the frame renders anew, its
+                // pictures from where they came to. A car turned whole waited 0.6 s on it before its first picture.
+                if (!scene.pendingBakes.empty() && !waiting()) {
+                    const auto bakeBegan = Clock::now();
+                    std::atomic<bool> bakeReady{false}, bakeCancel{false};
+                    double reached = 0;
+                    async::Watch first = watch;
+                    const auto shown = watch.preview;
+                    first.preview = [&reached, shown](const std::vector<float>& rgb, U32 w, U32 h, double fraction) {
+                        reached = std::max(reached, fraction);
+                        shown(rgb, w, h, fraction);
+                    };
+                    first.stop = [&] { return bakeReady.load() || waiting(); };
+                    first.drain = [] { return false; };
+                    first.checkpoint = nullptr;
+                    first.checkpointSeconds = 0;
+                    async::RenderOptions firstOptions = options;
+                    firstOptions.watch = &first;
+                    const std::vector<unsigned> baking = scene.pendingBakes;
+                    scene.pendingBakes.clear();
+                    std::vector<std::pair<std::shared_ptr<cpu::VdbGridData>, volume::Grid>> made;
+                    std::thread bakeThread([&, bakedFor = scene.plan] {
+                        for (unsigned v : baking) made.push_back(cpu::rebakeVolume(*bakedFor, v, &bakeCancel));
+                        bakeReady = true;
+                    });
+                    try {
+                        renderer->render(firstOptions);
+                    } catch (const std::exception& e) {
+                        std::printf("MoonRay XPU2: the frame before the volume's grid stopped: %s\n", e.what());
+                    }
+                    if (waiting()) bakeCancel = true;
+                    bakeThread.join();
+                    bool whole = !waiting() && made.size() == baking.size();
+                    for (const auto& m : made) whole = whole && m.first != nullptr;
+                    if (whole) {
+                        auto next = std::make_shared<cpu::Plan>(*scene.plan);
+                        for (size_t q = 0; q < baking.size(); ++q) {
+                            const unsigned k = next->volumes[baking[q]].densityGrid;
+                            next->volumeGrids[k] = made[q].first;
+                            next->volumeGridViews[k] = made[q].second;
+                        }
+                        outlines.watch(nullptr, id, 0, 0);
+                        renderer.reset();
+                        scene.plan = next;
+                        scene.cpuScene = std::make_unique<async::CpuScene>(scene.plan, std::move(*scene.cpuScene));
+                        if (gpu && gpuUsable && !gpu->updatePlacements(scene.plan)) gpu->prepare(scene.plan);
+                        gpuPlan = scene.plan;
+                        renderer = std::make_unique<async::Renderer>(scene.plan, *scene.cpuScene, gpuUsable ? gpu.get() : nullptr);
+                        renderer->deviceRatio(deviceRatio);
+                        outlines.watch(renderer.get(), id, width, height);
+                        hideBelow = std::min(reached, 0.25);
+                        std::printf("MoonRay XPU2: %zu moved volumes' grids made again in %.2f s on a worker; the frame rendered to %.0f%% meanwhile\n",
+                                    baking.size(), std::chrono::duration<double>(Clock::now() - bakeBegan).count(), reached * 100.0);
+                        std::fflush(stdout);
+                    }
                 }
                 result = renderer->render(options);
                 hideBelow = 0;

@@ -2726,13 +2726,45 @@ inline bool updateCamera(Plan& plan,const rdl::SceneContext& context,std::string
 // needed: a moving or volume-bounding mesh, points or curves, an instance already, one left to the CPU lane.
 // instancePlaces: a moved instancer's instances' transforms now, by instance (as prepare makes them, InstanceGeometry's
 // xform_list entry by its reference's and its own node_xform), which its shared instances are placed by.
+// A BaseVolume's baked extinction (bakeVolume's grid, in its mesh's own space) made again where its volume now is: each
+// voxel's object point (object to index's inverse) where the mesh puts it (the volume's world to grid's inverse), its
+// extinction there as bakeVolume makes it, into a grid of its own (the plan's grid left as it is). cancel: stops it
+// early (a newer move), the grid then none. The grid and its view, or none where it cannot be made.
+inline std::pair<std::shared_ptr<VdbGridData>,volume::Grid> rebakeVolume(const Plan& plan,unsigned volumeIndex,const std::atomic<bool>* cancel){
+ const volume::Shader& s=plan.volumes.at(volumeIndex);
+ const unsigned k=s.densityGrid;
+ if(k==volume::NoGrid||k>=plan.volumeGrids.size())return {};
+ auto fromRows=[](const float* r){rdl::Mat4d m(1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1);for(int i=0;i<3;++i){for(int c=0;c<3;++c)m[c][i]=r[4*i+c];m[3][i]=r[4*i+3];}return m;};
+ const volume::Grid was0=plan.volumeGridViews[k];
+ rdl::Mat4d objectToIndex;for(int i=0;i<4;++i)for(int j=0;j<4;++j)objectToIndex[i][j]=was0.worldToIndex[4*i+j];
+ const rdl::Mat4d indexToWorld=objectToIndex.inverse()*fromRows(s.worldToGrid).inverse();
+ const int dims[3]={was0.dims[0],was0.dims[1],was0.dims[2]};
+ auto g=std::make_shared<VdbGridData>();g->key=plan.volumeGrids[k]->key;g->dense.assign(size_t(dims[0])*size_t(dims[1])*size_t(dims[2])*3,0.0f);
+ const unsigned threads=std::max(1u,std::min(16u,std::thread::hardware_concurrency()));
+ std::vector<std::thread> pool;std::atomic<int> nextSlice{0};std::atomic<bool> failed{false};
+ for(unsigned t=0;t<threads;++t)pool.emplace_back([&]{
+  try{for(int kk=nextSlice++;kk<dims[2]&&!(cancel&&cancel->load());kk=nextSlice++)for(int j=0;j<dims[1];++j)for(int i=0;i<dims[0];++i){
+   const V3 pw{float(i*indexToWorld[0][0]+j*indexToWorld[1][0]+kk*indexToWorld[2][0]+indexToWorld[3][0]),
+               float(i*indexToWorld[0][1]+j*indexToWorld[1][1]+kk*indexToWorld[2][1]+indexToWorld[3][1]),
+               float(i*indexToWorld[0][2]+j*indexToWorld[1][2]+kk*indexToWorld[2][2]+indexToWorld[3][2])};
+   const volume::Mapped m=mappedAt(plan,s,pw);
+   const V3 color=volume::attenuationColorFrom(s,(s.flags&volume::MatchAlbedo)?m.albedoColor:m.attenuationColor,-1.0f);
+   const V3 e=volume::cmax0(volume::scaled(volume::times(volume::scaled(V3{1,1,1},m.attenuationIntensity),color),m.attenuationFactor));
+   float* out=g->dense.data()+3*((size_t(kk)*size_t(dims[1])+size_t(j))*size_t(dims[0])+size_t(i));out[0]=e.x;out[1]=e.y;out[2]=e.z;}}
+  catch(...){failed=true;}});
+ for(auto& t:pool)t.join();
+ if(failed||(cancel&&cancel->load()))return {};
+ volume::Grid view=was0;view.dense=g->dense.data();
+ return {std::move(g),view};}
 // A moved geometry's volume (the one a mesh of it bounds), placed with it (placeMoved): its grids' world to grid and grid
 // to world, its emissive regions' maps, and what its maps give where they are read (world points): a mapped volume's
 // settings at the render origin made again, and a BaseVolume's baked extinction (bakeVolume's grid, in the mesh's own
 // space) made again at the same voxels from where they now are, into a grid of its own (the base plan keeps its grid).
 // was, now: the geometry's node_xform then and now. false, with why, for what is not placed so: a volume moving during
-// the shutter, a VDB's baked opacity map, a mapped emission's region.
-inline bool placeVolume(Plan& plan,int volumeIndex,const rdl::Mat4d& was,const rdl::Mat4d& now,std::string& why){
+// the shutter, a VDB's baked opacity map, a mapped emission's region. deferred: where given, a baked grid is not made
+// again here but its volume listed, for a worker (rebakeVolume; the session's).
+inline bool placeVolume(Plan& plan,int volumeIndex,const rdl::Mat4d& was,const rdl::Mat4d& now,std::string& why,
+                        std::vector<unsigned>* deferred=nullptr){
  volume::Shader& s=plan.volumes.at(size_t(volumeIndex));
  if(s.moving){why="a volume moves during the shutter";return false;}
  if(s.bakedGrid!=volume::NoGrid){why="a VDB volume's opacity is baked from its maps";return false;}
@@ -2754,32 +2786,16 @@ inline bool placeVolume(Plan& plan,int volumeIndex,const rdl::Mat4d& was,const r
   const volume::Mapped m=mappedAt(plan,s,plan.renderOrigin);
   s.originAttenuation=(s.flags&volume::MatchAlbedo)?m.albedoColor:m.attenuationColor;s.originIntensity=m.attenuationIntensity;s.originFactor=m.attenuationFactor;
   return true;}
- // The baked grid again: each voxel's object point (object to index's inverse) where the mesh now puts it (the new world
- // to grid's inverse), its extinction there as bakeVolume makes it.
- const volume::Grid was0=plan.volumeGridViews[k];
- rdl::Mat4d objectToIndex;for(int i=0;i<4;++i)for(int j=0;j<4;++j)objectToIndex[i][j]=was0.worldToIndex[4*i+j];
- const rdl::Mat4d indexToWorld=objectToIndex.inverse()*fromRows(s.worldToGrid).inverse();
- const int dims[3]={was0.dims[0],was0.dims[1],was0.dims[2]};
- auto g=std::make_shared<VdbGridData>();g->key=plan.volumeGrids[k]->key;g->dense.assign(size_t(dims[0])*size_t(dims[1])*size_t(dims[2])*3,0.0f);
- const unsigned threads=std::max(1u,std::min(16u,std::thread::hardware_concurrency()));
- std::vector<std::thread> pool;std::atomic<int> nextSlice{0};std::mutex failLock;std::string failure;
- for(unsigned t=0;t<threads;++t)pool.emplace_back([&]{
-  try{for(int kk=nextSlice++;kk<dims[2];kk=nextSlice++)for(int j=0;j<dims[1];++j)for(int i=0;i<dims[0];++i){
-   const V3 pw{float(i*indexToWorld[0][0]+j*indexToWorld[1][0]+kk*indexToWorld[2][0]+indexToWorld[3][0]),
-               float(i*indexToWorld[0][1]+j*indexToWorld[1][1]+kk*indexToWorld[2][1]+indexToWorld[3][1]),
-               float(i*indexToWorld[0][2]+j*indexToWorld[1][2]+kk*indexToWorld[2][2]+indexToWorld[3][2])};
-   const volume::Mapped m=mappedAt(plan,s,pw);
-   const V3 color=volume::attenuationColorFrom(s,(s.flags&volume::MatchAlbedo)?m.albedoColor:m.attenuationColor,-1.0f);
-   const V3 e=volume::cmax0(volume::scaled(volume::times(volume::scaled(V3{1,1,1},m.attenuationIntensity),color),m.attenuationFactor));
-   float* out=g->dense.data()+3*((size_t(kk)*size_t(dims[1])+size_t(j))*size_t(dims[0])+size_t(i));out[0]=e.x;out[1]=e.y;out[2]=e.z;}}
-  catch(const std::exception& e){std::lock_guard<std::mutex> l(failLock);if(failure.empty())failure=e.what();}});
- for(auto& t:pool)t.join();
- if(!failure.empty()){why="a baked volume: "+failure;return false;}
- volume::Grid view=was0;view.dense=g->dense.data();
- plan.volumeGrids[k]=std::move(g);plan.volumeGridViews[k]=view;
+ // The baked grid again (rebakeVolume): here, or on a worker while the old grid, moved with it, stands in (deferred: the
+ // session swaps the new one in once it is made, the move itself not waiting on it).
+ if(deferred){deferred->push_back(unsigned(volumeIndex));return true;}
+ auto made=rebakeVolume(plan,unsigned(volumeIndex),nullptr);
+ if(!made.first){why="a baked volume could not be made again";return false;}
+ plan.volumeGrids[k]=std::move(made.first);plan.volumeGridViews[k]=made.second;
  return true;}
 inline bool placeMoved(Plan& plan,const std::map<std::string,std::pair<rdl::Mat4d,rdl::Mat4d>>& moves,
-                       const std::map<std::string,std::vector<rdl::Mat4d>>& instancePlaces,const double meshW2R[16],std::string& why){
+                       const std::map<std::string,std::vector<rdl::Mat4d>>& instancePlaces,const double meshW2R[16],std::string& why,
+                       std::vector<unsigned>* deferredBakes=nullptr){
  (void)meshW2R;
  size_t placed=0;
  std::set<int> placedVolumes;  // a volume once, however many of the geometry's meshes bound it
@@ -2800,7 +2816,7 @@ inline bool placeMoved(Plan& plan,const std::map<std::string,std::pair<rdl::Mat4
   if(e.instance){
    if(!d.placeable){why=e.owner+" is an instance already";return false;}
    for(int r=0;r<4;++r)for(int c=0;c<3;++c)placedNow[r][c]=e.objectToWorld[3*r+c];}
-  if(e.volume>=0&&placedVolumes.insert(e.volume).second&&!placeVolume(plan,e.volume,f->second.first,f->second.second,why)){why=e.owner+": "+why;return false;}
+  if(e.volume>=0&&placedVolumes.insert(e.volume).second&&!placeVolume(plan,e.volume,f->second.first,f->second.second,why,deferredBakes)){why=e.owner+": "+why;return false;}
   if(!d.steps.empty()){why=e.owner+" moves during the shutter";return false;}
   if(d.points||d.curveBasis){why=e.owner+" is points or curves";return false;}
   if(e.cpuOnly){why=e.owner+" is left to the CPU lane";return false;}
