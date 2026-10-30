@@ -1,18 +1,18 @@
 # Installing MoonRay for Modo
 
-These instructions are for **0.3.51**, **Modo 16.1v9**, and **Windows x64**. This is an experimental development release, not a production-certified build.
+These instructions are for **0.5**, **Modo 16.1v9**, and **Windows x64**. This is a pre-production release, not a production-certified build.
 
 ## Requirements
 
 - An installed copy of Modo 16.1v9. The supported executable is `C:\Program Files\Modo16.1v9\modo\modo.exe`.
 - An AVX-capable x64 CPU for the bundled CPU runtime.
-- Optional: a compatible NVIDIA GPU and installed NVIDIA driver for XPU/OptiX. The runtime includes CUDA runtime libraries; a CUDA development toolkit is not required. XPU has been exercised on an RTX 3090; compatibility with every GPU/driver combination is not established.
+- Optional: a compatible NVIDIA GPU and installed NVIDIA driver for XPU2 and XPU/OptiX. The runtime includes CUDA runtime libraries; a CUDA development toolkit is not required. XPU has been exercised on an RTX 3090; compatibility with every GPU/driver combination is not established.
 
 ## Download and install
 
-1. Open the [0.3.51 release](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.3.51). Download **MoonRayForModo-0.3.51-kit.zip** and **MoonRayForModo-0.3.51-windows-runtime.zip** from Assets. GitHub's automatic Source code ZIP does not include the runtime.
+1. Open the [0.5 release](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.5). Download **MoonRayForModo-0.5-kit.zip** and **MoonRayForModo-0.5-windows-runtime.zip** from Assets. GitHub's automatic Source code ZIP does not include the runtime.
 2. Save your scene and close all Modo instances.
-3. Extract both ZIPs into the **same temporary folder**. Merge their `MoonRayForModo` folders. The resulting folder must contain `index.cfg`, `bin/MoonRayGeometry.lx`, and `runtime/moonray.exe`.
+3. Extract both ZIPs into the **same temporary folder**. Merge their `MoonRayForModo` folders. The resulting folder must contain `index.cfg`, `bin/MoonRayGeometry.lx`, `runtime/moonray.exe`, and `runtime-xpu2/moonray_xpu2.exe` (XPU2).
 4. In Windows Explorer, enter `%APPDATA%\Luxology\Kits`. Create the `Kits` folder if needed. If a `MoonRayForModo` folder already exists, move it to a backup location **outside Kits**; do not merge a new release into the old installation.
 5. Copy the combined `MoonRayForModo` folder into `Kits`. Avoid an extra nested folder: `index.cfg` should be directly inside `Kits\MoonRayForModo`.
 6. Start **Modo 16.1v9**. Open **MoonRay > Render Setup** (or enter `moonray.open`). The plugin discovers its bundled `runtime` folder automatically.
@@ -24,13 +24,13 @@ Do not install the runtime ZIP alone: the kit ZIP contains the Modo integration 
 
 ![The MoonRay Preview window](images/preview-window.png)
 
-- Open **MoonRay > Render Setup**. **Render** starts a preview; with **IPR** ticked it keeps following the scene until Stop. The preview can dock as a Modo custom viewport; it does not populate Modo's built-in Render View slots.
-- Choose the preview engine beside IPR: **MoonRay**, or **MoonLightIPR** for an approximate GPU preview that follows edits as they are made (NVIDIA GPU required). Output renders always use MoonRay.
+- Open **MoonRay > Render Setup**. **Render** renders the preview once; **RT** beside it keeps the preview following the scene until it is turned off. The preview can dock as a Modo custom viewport; it does not populate Modo's built-in Render View slots.
+- Choose the preview engine beside RT: **MoonRay**, or **MoonLightIPR** for an approximate GPU preview that follows edits as they are made (NVIDIA GPU required). On the graphics card, MoonRay previews render with XPU2 by default: run **Compile XPU2 Shaders** once, under **Preferences > MoonRay > XPU2**, where MoonRay XPU is the other choice. Output renders always use MoonRay.
 - Render settings are on the Render item's **MoonRay** tab and under **MoonRay > Render Settings**: sampling, depths, denoising, view transform (ACES by default) and outputs.
 - To give a mesh a MoonRay material, select it and choose **MoonRay > Assign MoonShine Material to Mesh**, or add one from the Shader Tree's **Add Layer** list. Its form has **Open Graph**.
 - **MoonRay > Import MaterialX Material...** and **MoonRay > Import MoonRay Scene (RDL)...** bring in materials and whole MoonRay scenes. For a scene kept as `scene.rdlb` and `scene.rdla`, choose either file.
 - **MoonRay > Add MoonRay Item** adds MoonRay's own lights, light filters, cameras, shapes and volumes.
-- With a **Beauty denoiser** chosen and **Denoise Preview** on, a finished preview shows **Denoised Beauty**; choose **Beauty** in the buffer list to compare. The denoised view is off while IPR is following the scene.
+- With a **Beauty denoiser** chosen and **Denoise Preview** on, a finished preview shows **Denoised Beauty**; choose **Beauty** in the buffer list to compare. The denoised view is off while RT is following the scene.
 
 ## Checksums and troubleshooting
 

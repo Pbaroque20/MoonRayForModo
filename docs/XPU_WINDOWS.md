@@ -1,6 +1,8 @@
 # Native Windows XPU (0.2.1 development)
 
 > **Added in 0.3.50.1.** A GPU render with many outputs has four times the room it had for what each ray owes them (`MOONRAY_MODO_CL1_POOL_SCALE`, 1 to 8, default 4; `patches/native-windows/cl1-pool-scale.patch`), and if that still fills, the preview begins the render again on the CPU and says so. The rest of this page is the record of the XPU port as it was made.
+>
+> **Since 0.5** previews that would render on the GPU go to XPU2 by default. MoonRay XPU, which this page describes, stays selectable in **Preferences > MoonRay > XPU2 > GPU renderer**.
 
 MoonRay XPU runs ray intersections on an NVIDIA CUDA/OptiX GPU and shading on the
 CPU. It is a hybrid mode; CPU AVX compatibility remains relevant. This integration

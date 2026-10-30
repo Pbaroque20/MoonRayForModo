@@ -22,7 +22,7 @@ Animation.*
 - **Compile XPU2 Shaders once** on the same page, in the background. Until then XPU2 does not render, and the preview says so.
 - **Samples go where the picture is still noisy**, in generations; clean parts stop early. Settings in Render
   Settings > XPU2 Sampling; the line under the picture shows how it samples.
-- **Realtime** takes up camera, object and light changes at once, with a quick denoised picture while things move.
+- **Realtime** takes up camera, object and light changes at once, with a quick picture while things move.
 - **Devices**: processor and graphics card together, or either alone.
 - **The Denoiser** works with XPU2 previews; Smart Render and Safe Denoising, which XPU2 is quick enough not to need, are greyed under it. Final renders come from MoonRay, as before.
 

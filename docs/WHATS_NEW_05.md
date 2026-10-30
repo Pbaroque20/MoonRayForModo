@@ -24,7 +24,7 @@ Animation.*
   on average, 4 to 256 in any one pixel, each part stopping at noise 10.
 - **Devices** (Preferences > MoonRay > XPU2): the processor and the graphics card together, or either one alone.
 - **Realtime**: camera moves, object moves and light changes are taken up at once, without preparing the scene again.
-  While things move, a quick picture at lower resolution is shown, made sharp by OptiX's denoiser.
+  While things move, the picture comes at the Realtime preview size, every pixel from the start, and is not denoised.
   **Realtime Samples** sets how much of the render realtime makes (100% by default).
 - **Denoising**: the Denoiser works with XPU2 previews. Smart Render and Safe Denoising are MoonRay's own, and are
   greyed while XPU2 renders the preview: it is quick enough to need neither.
