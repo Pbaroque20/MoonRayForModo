@@ -403,7 +403,8 @@ def lights(scene, warnings, environment=0.0, compiler=None, closing=None, named=
         # to apply the scene scale is flux alone, without the pi. A portal is not normalized; its colour and intensity
         # multiply what shows through it.
         scaled = light.get('scene_scaled', True)
-        normalization = 1.0 if kind == 'PortalLight' else (1 / (math.pi * area * scene_scale ** 2) if scaled else 1 / area)
+        # A light that is not normalized (radiance) is its colour and intensity as they stand, as MoonRay has it.
+        normalization = 1.0 if kind == 'PortalLight' or light.get('radiance') else (1 / (math.pi * area * scene_scale ** 2) if scaled else 1 / area)
         if closing is not None:
             closing.setdefault('local', []).append(ending[12:15] + unit(ending[0:3]) + unit(ending[4:7]) + [-v for v in unit(ending[8:11])])
         if named is not None:
