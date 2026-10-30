@@ -222,7 +222,9 @@ class Previews(QtCore.QObject):
         try:
             graph = nodes.effective(self.editor.graph)
             node = graph['nodes'].get(identity)
-            return node is not None and nodes.category(node['type']) == 'map' and graph_bake.reason(graph, identity) is None
+            # Image nodes only, shown as their file (IMAGE_NODES): nodes worked out by MoonRay are not rendered for a
+            # picture of their own for now (0.5); the material widget's render shows what they make.
+            return node is not None and node['type'] in IMAGE_NODES and nodes.category(node['type']) == 'map'
         except Exception:
             return False
 
