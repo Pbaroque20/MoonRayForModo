@@ -198,6 +198,10 @@ class Panel(QtWidgets.QWidget):
             from .ipr import prepare
             scene,width,height=prepare(scene,size,size,1,640,samples,error)
             scene['_pixel_samples']=samples
+            # Rendered by MoonRay on the processor where XPU2 would take it: XPU2 reads a texture at a coarser level,
+            # and on the widget's small ball an image came out as its average colour. The ball is small enough for
+            # MoonRay to render quickly.
+            if native.xpu2():scene['execution_mode']='vectorized'
             # The runtime the preview window renders with, chosen in Preferences (the kit's own where none is).
             from .preferences import Preferences
             runtime=Preferences().get('runtime') or native.default_runtime()
