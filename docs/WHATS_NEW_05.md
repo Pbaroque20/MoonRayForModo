@@ -66,11 +66,14 @@ Animation.*
   end at a distance.
 - **Area lights seen by the camera**, with their texture, as Modo's Visible to Camera has them.
 - **Light filters**: attaching or detaching shows at once, and MoonLightIPR draws a Combine filter.
+- **MoonRay lights take the Scale tool**: a RectLight's width and height, a disk or sphere light's radius, follow the
+  scale and keep it, in one undoable step.
+- **MoonLightIPR matches MoonRay's brightness** for lights that are not normalized.
 
 ## Materials, graph editor and compositor
 
 - **Clearcoat Bump Strength** is followed: at 0 the coat stays smooth over a bumpy surface.
-- **Previews on texture nodes** in the graph editor, rendered by MoonRay in the background.
+- **Image nodes show their picture** in the graph editor, at once and without rendering.
 - **Images in the scene are a click away** when choosing a texture file; the Image node has **Invert**.
 - **Drag a wire off its input** to disconnect it, or onto another input to move it; **Tab** moves between fields.
 - **A render working space for every new scene** in MoonRay's Preferences.

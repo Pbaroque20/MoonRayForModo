@@ -4,11 +4,11 @@ This is the development branch of [MoonRay for Modo](https://github.com/Pbaroque
 
 **MoonLightIPR** (echoing DreamWorks' earlier rasterizer MoonLight) is the plugin's fast GPU preview. It shows an approximation of what MoonRay will render and updates quickly after each edit. Final renders always come from MoonRay. What of a Modo scene it draws is in [its audit table](#modos-features-in-moonlightipr).
 
-The current release is [0.4.3.1](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.4.3.1). **Built on MoonRay [2026.29.1](https://github.com/dreamworksanimation/openmoonray/releases/tag/v2026.29.1)** (OpenMoonRay's latest release; MoonRay 18.4), with the plugin's own patches for Windows and the preview.
+The current release is [0.5](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.5). **Built on MoonRay [2026.29.1](https://github.com/dreamworksanimation/openmoonray/releases/tag/v2026.29.1)** (OpenMoonRay's latest release; MoonRay 18.4), with the plugin's own patches for Windows and the preview.
 
-## Coming next
+## New in 0.5
 
-The next version is 0.5, a **pre-production release**. In short: [What's new in 0.5](docs/WHATS_NEW_05.md).
+0.5 is a **pre-production release**: the plugin is no longer experimental. In short: [What's new in 0.5](docs/WHATS_NEW_05.md).
 
 ### MoonRay XPU2
 
@@ -38,7 +38,6 @@ Animation.*
 - **Motion blur in MoonLightIPR is off by default** (Preview Preferences); Motion Blur shows at the foot of the picture while it is on.
 - **The preview window**: its buttons wrap onto a second line in a narrow window instead of being cut; R, G and B in their colours, γ and α for gamma and alpha; EV and γ toggle between the plain value and yours, and are lit while yours is shown; the picture's details are never cut off.
 - **Memory in the picture**: the renderer's, the machine's and the graphics card's memory at the bottom right of the picture, in colour when it runs short (Preview Preferences).
-- **Previews on texture nodes appear, and quickly**: the graph editor keeps one MoonRay loaded for them.
 - **MoonRay's preferences in pages**: General, Renderer, XPU and Source Overrides, each in Modo's Preferences list.
 - **The Terminal names MoonRay by its mode**: MoonRay Vector, Scalar, XPU or Auto.
 - **Fixes**: Modo crashing when the Render layout's view was changed (likely fixed); "Texture conversion needs maketx.exe" with maketx in place.
@@ -57,8 +56,10 @@ Animation.*
 - **Shadow rays in Light Links, Emitters and Volumes**: an object can be set to cast no shadow, and given its own shadow ray and secondary ray offsets against shadow acne; a light can have shadows begin only some way from it or end beyond a distance, and say whether its shadows respect dissolved and cut-out surfaces.
 - **Modo's procedural textures through the object, at render time**: Noise (simple, fractal, turbulence), Cellular, Checker, Grid, Dots, Wood, Weave and Ripples with Modo's Solid projection are worked out at each point in MoonRay (a new MoonRay map, ModoProceduralMap) and in MoonLightIPR, from one shared piece of code: no baking, no UVs, no resolution. Grid's and Dots' Cube and every Noise and Checker type now draw. After Modo's patterns, not yet compared with Modo's renders.
 - **MoonLightIPR draws a Combine light filter**: the filters it holds, joined as it says (multiplied, the least, the most, added or the first less the rest), Intensity filters among them. MoonLightIPR already drew the Intensity, Decay, Color Ramp, Rod, Barn Door, VDB and Cookie (v2) filters.
+- **MoonRay lights take the Scale tool**: a RectLight's width and height, a disk, spot or sphere light's radius, follow the scale once it is let go of, the scale going back to 1, in one undoable step.
+- **MoonLightIPR matches MoonRay's brightness for lights that are not normalized**: their colour and intensity are their radiance, as in MoonRay, where they came out about three times too bright.
 - **Light filters on MoonRay lights list at once**: a filter attached or detached shows in "attached light filters" straight away, not once the light is selected again; choosing one there says it detaches it, "(choose to detach)".
-- **Previews on texture nodes** in the graph editor: each texture node shows what it makes, rendered by MoonRay in the background and kept until something feeding it changes (View > Previews on Texture Nodes).
+- **Image nodes show their picture** in the graph editor: the image file itself, made small, at once and without rendering (View > Previews on Texture Nodes).
 - **Toon lines apart from the shading**: a Toon display filter's Output Mode gives its ink lines alone, white on black, or its shading without them; add one of each to composite the lines yourself. A MoonRay Source Override in Preferences, on by default.
 - **Clearcoat Bump Strength** is followed, in MoonRay and in MoonLightIPR: at 0 the coat stays smooth over a bumpy or normal-mapped surface.
 - **The graph editor's Image node has Invert**, as a Shader Tree image layer does.
