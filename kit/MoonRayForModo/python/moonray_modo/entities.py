@@ -909,6 +909,33 @@ def modo_lens(name, number, target=1.0):
     return lens
 
 
+# The items whose size Modo's scale tool is put into (scaled_size): each size channel and the scale it takes, by the
+# item's own axes. A light keeps its own way of facing: a disk, rect or spot lies across X and Y, a cylinder stands
+# along Y.
+SCALED_SIZES = {'RectLight': {'width': 'x', 'height': 'y'}, 'PortalLight': {'width': 'x', 'height': 'y'},
+                'DiskLight': {'radius': 'xy'}, 'SpotLight': {'lens_radius': 'xy'}, 'SphereLight': {'radius': 'xyz'},
+                'CylinderLight': {'radius': 'xz', 'height': 'y'}, 'SphereGeometry': {'radius': 'xyz'},
+                'RodLightFilter': {'width': 'x', 'height': 'y', 'depth': 'z'},
+                'BoxGeometry': {'size.X': 'x', 'size.Y': 'y', 'size.Z': 'z'}}
+
+
+def scaled_size(name, values, scale):
+    """The size channels of a MoonRay item of class name with its scale (sx, sy, sz) put into them: each multiplied by
+    the scale along its axis, or by the mean (geometric) of the scales across a round one. None where the item has no
+    such size, or the scale mirrors it, which turns a light the other way and is left as a scale."""
+    axes = SCALED_SIZES.get(name)
+    if not axes or min(scale) <= 0:
+        return None
+    by = dict(zip('xyz', (float(v) for v in scale)))
+    result = {}
+    for key, along in axes.items():
+        factor = 1.0
+        for axis in along:
+            factor *= by[axis]
+        result[key] = float(values[key]) * factor ** (1.0 / len(along))
+    return result
+
+
 def proxy_inputs(name):
     """The numeric attributes proxy() asks for, as (asked name, channel name)."""
     wanted = {'SphereLight': ['radius'], 'RectLight': ['width', 'height'], 'PortalLight': ['width', 'height'], 'DiskLight': ['radius'],
