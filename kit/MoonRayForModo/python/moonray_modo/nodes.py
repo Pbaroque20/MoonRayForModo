@@ -290,8 +290,15 @@ def normal_descriptor(node,graph):
     if coord:
         from .graph_coordinates import descriptor
         return descriptor(coord,graph)
-    if 'texcoord' in source.get('parameters',{}):return None
+    if authored_texcoord(source.get('parameters',{})):return None
     return image_descriptor(source)
+
+
+def authored_texcoord(params):
+    """An image's own texcoord where one was typed in: its default, 0 0 0 (written with the node's other values by
+    the graph editor), leaves the image on its UV map."""
+    value=params.get('texcoord')
+    return value if value is not None and any(float(v) for v in value) else None
 
 
 def emit_map(graph,name,lines,library=None):
@@ -336,7 +343,7 @@ def emit(material,name,index,lines,library,output="root",validated=True):
             elif kind=='image':
                 descriptor=image_descriptor(item)
                 uv=refs.get('texcoord')
-                if uv is None and 'texcoord' in params:uv=definition('ConstantColorMap',path+'/authored_uv',{'color_value':vector(params['texcoord'],'Rgb')})
+                if uv is None and authored_texcoord(params):uv=definition('ConstantColorMap',path+'/authored_uv',{'color_value':vector(params['texcoord'],'Rgb')})
                 if uv is None:uv=definition('AttributeMap',path+'/uv',{'primitive_attribute_name':string(descriptor['coordinate_key']),'primitive_attribute_type':'1','warn_when_unavailable':'true'})
                 address={'periodic':0,'clamp':1,'mirror':2,'constant':3}
                 u,v=params.get('uaddressmode','periodic'),params.get('vaddressmode','periodic')
