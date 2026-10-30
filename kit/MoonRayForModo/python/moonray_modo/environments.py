@@ -1,4 +1,5 @@
 """Modo environment collection and CPU EnvLight translation."""
+from .cache_folder import root as cache_root
 import hashlib
 import json
 import math
@@ -183,7 +184,7 @@ def gradient_color(environment, height):
 def gradient_texture(environment):
     values={k:environment[k] for k in ('kind','zenith','sky','ground','nadir','sky_exponent','ground_exponent')}
     digest=hashlib.sha256(('gradient-v1|'+json.dumps(values,sort_keys=True)).encode()).hexdigest()
-    folder=Path(os.environ.get('LOCALAPPDATA',tempfile.gettempdir()))/'MoonRayForModo/Environments'
+    folder=cache_root() / 'Environments'
     folder.mkdir(parents=True,exist_ok=True)
     target=folder/(digest+'.pfm')
     if not target.is_file():

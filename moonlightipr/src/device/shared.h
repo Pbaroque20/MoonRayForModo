@@ -57,7 +57,13 @@ const unsigned LAYER_IMAGE = 1, LAYER_INVERT = 2, LAYER_FLIP_RED = 4, LAYER_FLIP
                // Where the row's value comes from when it is not a constant or one image: a gradient
                // looked up by another channel, a checker or noise pattern, or one image per UDIM tile.
                LAYER_RAMP = 1 << 16, LAYER_CHECKER = 1 << 17, LAYER_NOISE = 1 << 18, LAYER_UDIM = 1 << 19,
-               LAYER_CURVES = 1 << 20, LAYER_PROCEDURAL = 1 << 21;  // gamma, bias or gain differ from their neutral values
+               LAYER_CURVES = 1 << 20, LAYER_PROCEDURAL = 1 << 21,  // gamma, bias or gain differ from their neutral values
+               // Modo's Wireframe: the row's two colours, the first along the polygons' edges, settings[0] wide,
+               // softened over settings[1] of that.
+               LAYER_WIREFRAME = 1 << 22;
+// A LAYER_RAMP row's uvSlot for a gradient looked up by the surface's curvature (Modo's Curvature texture), settings[0]
+// the scale: 0.5 flat, more where the surface bulges, less where it hollows.
+const unsigned RAMP_CURVATURE = 255;
 const unsigned UV_SLOTS = 8;
 
 // One row of a material's layer stack: a constant or an image blended over what is below it.
@@ -81,7 +87,7 @@ struct DeviceLayer {
     float alpha1, alpha2;           // how much of the row a pattern's two colours cover
     float octaves, lacunarity, persistence;     // noise
     float pad;
-    // LAYER_PROCEDURAL: Modo's pattern (bits 0-7) and its Type (8-15), its six settings then its bias and gain, and
+    // LAYER_PROCEDURAL: Modo's pattern (bits 0-15) and its Type (16-31), its six settings then its bias and gain, and
     // rows that take a point of the world into the texture locator's space (modo_patterns.h, shared with MoonRay).
     unsigned pattern;
     float settings[24];         // up to 22 of the pattern's own, then its bias and gain

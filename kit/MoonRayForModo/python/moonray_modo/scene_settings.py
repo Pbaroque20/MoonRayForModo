@@ -152,6 +152,9 @@ GROUPS = [
     # MoonRay's switches over the whole render, as it has them.
     ('Global Switches', True, [
         render_field('enable_displacement', 'Displacement', 'Off renders every displaced surface flat, as it is before its displacement'),
+        render_field('displacement_tessellation', 'Displacement Tessellation', 'How subdivision surfaces and displaced polygon meshes are cut into triangles. Follow Modo: finely where they are large on screen and coarsely where small, to Modo''s Displacement Rate (Render item), as Modo does: far less geometry and a quicker start. Fixed dicing camera: the same, worked out from the Dicing Camera (or the render camera) held at the Dicing Frame, so the triangles stay put while the camera moves (no shimmer in an animation). Uniform: by each mesh''s resolution (a subdivision surface''s level), the same whatever the camera. An object''s own Subdivision Screen Error wins; instances stay uniform'),
+        render_field('displacement_adaptive_error', 'Adaptive Error Override', 'Pixels of screen error in place of Modo''s Displacement Rate (lower is finer). 0: Modo''s'),
+        render_field('dicing_frame', 'Dicing Frame', 'The frame the fixed dicing camera is held at. -1: the scene''s first frame'),
         render_field('enable_subsurface_scattering', 'Subsurface Scattering', 'Off renders subsurface materials with plain diffuse light, which is quicker'),
         render_field('enable_shadowing', 'Shadows', 'Off casts no shadows anywhere: lights reach everything they face'),
         render_field('lights_visible_in_camera', 'Lights Seen by the Camera', 'On shows lights to the camera as glowing shapes. Each MoonRay light can say otherwise for itself'),
@@ -163,7 +166,7 @@ GROUPS = [
         field('denoiser', ('denoising', 'engine'), 'choice', 'Denoiser', '', choices=DENOISERS),
         field('denoise_preview', ('denoising', 'preview'), 'bool', 'Denoise Preview'),
         field('denoise_final', ('denoising', 'final'), 'bool', 'Save Denoised EXR', 'Written beside the original EXR, which is kept'),
-        field('denoise_detail', ('denoising', 'detail'), 'choice', 'Keep Fine Detail', 'Hair, fur and other things a pixel or so wide, which a denoiser smooths away, are let through from the render as it was. More keeps more of them and more of their grain; Off is the denoiser alone', choices=DETAILS),
+        field('denoise_detail', ('denoising', 'detail'), 'choice', 'Keep Fine Detail', 'Fur, hair and curves, which a denoiser smooths away, are let through from the render as it was, where the render has them; elsewhere the picture is the denoiser\'s. More keeps more of them and more of their grain; Off is the denoiser alone', choices=DETAILS),
         field('smart_render', ('denoising', 'smart'), 'choice', 'Smart Render', 'A MoonRay render in the preview window is stopped once its picture is clean enough for the denoiser, and denoised: no need to wait for every sample. Draft stops soonest and leaves the denoiser the most to do; Fine stops latest. With no denoiser chosen, OptiX is used, or Open Image Denoise where OptiX will not run. A picture full of fine texture may never read as clean, and renders to its end. Greyed while Safe Denoising is on: switch that off first', choices=SMART),
         field('denoise_safe', ('denoising', 'safe'), 'bool', 'Safe Denoising', 'Keep every buffer of a MoonRay render stopped by hand, and let Continue take it up again: the picture so far is saved as it renders, every few seconds where that is quick and less often for a large picture with many buffers. With this off, Stop still keeps the beauty and denoises it. Greyed while Smart Render is Draft, Medium or Fine: set that to Off first'),
     ]),

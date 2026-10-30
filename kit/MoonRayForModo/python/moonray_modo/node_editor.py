@@ -296,6 +296,8 @@ class Editor(QtWidgets.QDialog):
         self.show_previews.toggled.connect(self.rebuild)
         from .node_previews import Previews
         self.previews=Previews(self)
+        # The MoonRay kept loaded for the previews goes with the editor.
+        self.finished.connect(lambda *_:self.previews.close())
         # Every material with a graph, named with the object it belongs to; choosing one moves
         # the editor to it.
         self.material_picker=QtWidgets.QComboBox();self.material_picker.setMinimumWidth(260)

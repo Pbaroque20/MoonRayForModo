@@ -21,6 +21,9 @@ def environment(directory):
     env = dict(os.environ)
     # MoonRay's two-stage EXR writer consults TMPDIR (not Windows TEMP).
     env['TMPDIR'] = tempfile.gettempdir()
+    # Where a renderer keeps what it makes once and uses again: the Cache folder of the preferences (cache_folder).
+    from .cache_folder import root as cache_root
+    env['MOONRAY_MODO_CACHE'] = str(cache_root())
     env['REZ_MOONRAY_ROOT'] = str(directory.resolve())
     env['PATH'] = str(directory) + os.pathsep + env.get('PATH', '')
     dsos = [directory / 'rdl2dso', directory.parent / 'rdl2dso', directory.parent / 'lib' / 'rdl2dso', directory]
@@ -30,6 +33,8 @@ def environment(directory):
     env['MOONRAY_MODO_TOON_TERMINATOR'] = '1' if toon_terminator() else '0'
     # And a clean albedo of toon materials for the denoiser's guide (toon_albedo).
     env['MOONRAY_MODO_TOON_ALBEDO'] = '1' if toon_albedo() else '0'
+    # The denoiser (denoise.exe, started with this environment too) cleans its guides first (denoise_clean_guides).
+    env['MOONRAY_MODO_DENOISE_CLEAN_GUIDES'] = '1' if denoise_clean_guides() else '0'
     # And fog in Cryptomatte, with what lies behind it covered only as much as shows through (crypto_volumes).
     env['MOONRAY_MODO_CRYPTO_VOLUMES'] = '1' if crypto_volumes() else '0'
     # The fog in front of a see-through surface in alpha (fog_alpha), and each Cryptomatte sample counted once
@@ -114,6 +119,35 @@ def default_runtime():
             except ValueError:
                 pass
     return ''
+
+
+def tool(name, first=None):
+    """A program of MoonRay's runtime (maketx.exe, oiiotool.exe) where it is: in first, where given, then the runtime
+    chosen in Preview Preferences, then the kit's own (default_runtime), each folder with the folder above it and its
+    bin, as releases lay them out. A tester whose kit named a folder that had moved was told to reinstall while the
+    program stood in the runtime they had chosen. Raises ValueError naming the folders looked in."""
+    roots = [first] if first else []
+    try:
+        from PySide2 import QtCore
+        roots.append(QtCore.QSettings('MoonRayForModo', settings_name()).value('runtime', ''))
+    except Exception:
+        pass
+    roots.append(default_runtime())
+    looked = []
+    for root in roots:
+        if not root:
+            continue
+        root = Path(str(root)).expanduser()
+        if root.name.lower() == 'moonray.exe':
+            root = root.parent
+        for folder in (root, root / 'bin', root.parent):
+            if str(folder) in looked:
+                continue
+            looked.append(str(folder))
+            if (folder / name).is_file():
+                return folder / name
+    raise ValueError('%s was not found in the MoonRay runtime (looked in %s). Choose the MoonRay folder in Preview '
+                     'Preferences, or reinstall the kit.' % (name, '; '.join(looked) or 'no runtime is set'))
 
 
 def installation_id():
@@ -224,6 +258,13 @@ def toon_albedo():
     return _switch('toon_albedo', 'MOONRAY_MODO_TOON_ALBEDO')
 
 
+def denoise_clean_guides():
+    """Whether Open Image Denoise cleans the albedo and normal guides first and trusts them (cleanAux), in the
+    denoiser of MoonRay's runtime (tools/port_denoise_overrides.py). MoonRay's own uses them as rendered and trusts
+    them less, leaving more of the render's noise on textured, bumpy and see-through surfaces."""
+    return _switch('denoise_clean_guides', 'MOONRAY_MODO_DENOISE_CLEAN_GUIDES')
+
+
 def crypto_volumes():
     """Whether fog has mattes of its own in MoonRay's Cryptomatte, and what lies behind it is covered only as much
     as shows through. MoonRay's own leaves fog out, and covers what lies behind it whole."""
@@ -263,6 +304,24 @@ def auto_xpu():
     """Whether MoonRay's Auto execution mode starts with XPU, falling back where the scene needs what XPU lacks;
     MoonRay's own starts Auto in vector mode."""
     return _switch('auto_xpu', 'MOONRAY_MODO_AUTO_XPU')
+
+
+def ngon_ears():
+    """Whether a flat polygon of more than four corners is ear-clipped whatever its size and whichever way its first
+    corners turn (polygons.py), and handed to MoonRay so cut (polygons.cut_mesh), as MoonLightIPR draws it. MoonRay's
+    own cut fans one whose first three corners turn against it, or whose area is under a millionth of a square unit, as
+    CAD outlines often are: the fan's triangles then lie over each other and the face shows torn."""
+    return _switch('ngon_ears', 'MOONRAY_MODO_NGON_EARS')
+
+
+# What MoonRay is called in the MoonRay Terminal, by the execution mode it was started in.
+ENGINE_NAMES = {'vectorized': 'MoonRay Vector', 'vector': 'MoonRay Vector', 'scalar': 'MoonRay Scalar', 'xpu': 'MoonRay XPU',
+                'auto': 'MoonRay Auto'}
+
+
+def engine_name(mode):
+    """MoonRay named by its execution mode (ENGINE_NAMES): MoonRay Vector, MoonRay Scalar, MoonRay XPU or MoonRay Auto."""
+    return ENGINE_NAMES.get(str(mode or '').lower(), 'MoonRay')
 
 
 def source_switches():

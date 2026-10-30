@@ -43,7 +43,8 @@ class PackageStore(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'changed while packaging'):
                     package_store.copy(source, target)
             self.assertEqual(target.read_bytes(), b'previous output')
-            self.assertEqual(set(root.iterdir()), {source, target})
+            # By name: some Pythons list the folder with another separator than the one it was named with.
+            self.assertEqual({entry.name for entry in root.iterdir()}, {source.name, target.name})
 
     def test_copy_fallback_and_failed_publish(self):
         with tempfile.TemporaryDirectory() as folder:

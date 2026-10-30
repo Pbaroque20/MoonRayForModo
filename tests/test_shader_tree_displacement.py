@@ -27,6 +27,51 @@ class ShaderTreeDisplacement(unittest.TestCase):
     def test_no_distance_no_displacement(self):
         self.assertNotIn('NormalDisplacement', rdla.scene_text(scene('displace', displacement_distance=0.0)))
 
+    def test_black_height_no_displacement(self):
+        # Layers that blend black over black (a layer whose image is missing is black) move nothing in Modo: no
+        # NormalDisplacement, which would have MoonRay tessellate the material's meshes and make their normals anew.
+        black = scene('displace', displacement_distance=0.02)
+        black['materials']['skin']['layers'][0]['value'] = [0, 0, 0]
+        self.assertNotIn('NormalDisplacement', rdla.scene_text(black))
+        self.assertIn('NormalDisplacement', rdla.scene_text(scene('displace', displacement_distance=0.02)))
+
+    def test_displacement_tessellation(self):
+        # Displacement Tessellation: Follow Modo by default (its Displacement Rate as adaptive_error), Uniform (0), the
+        # Adaptive Error Override in place of Modo's rate; an instancer's reference uniform; none of them scene variables.
+        self.assertIn('["adaptive_error"] = 1', rdla.scene_text(scene('displace', displacement_distance=0.02)))
+        modo = scene('displace', displacement_distance=0.02)
+        modo['displacement_rate'] = 2.5
+        self.assertIn('["adaptive_error"] = 2.5', rdla.scene_text(modo))
+        uniform = scene('displace', displacement_distance=0.02)
+        uniform['render_settings'] = {'displacement_tessellation': 0}
+        self.assertIn('["adaptive_error"] = 0', rdla.scene_text(uniform))
+        override = scene('displace', displacement_distance=0.02)
+        override['render_settings'] = {'displacement_adaptive_error': 3.0}
+        text = rdla.scene_text(override)
+        self.assertIn('["adaptive_error"] = 3', text)
+        for key in ('displacement_adaptive_error', 'displacement_tessellation', 'dicing_frame'):
+            self.assertNotIn(key, text)
+        override['meshes'][0]['instances'] = [rdla.IDENTITY]
+        self.assertIn('["adaptive_error"] = 0', rdla.scene_text(override))
+
+    def test_subdivision_follows_modo(self):
+        # A subdivision surface with no screen error of its own follows Displacement Tessellation as a displaced mesh does;
+        # its own Subdivision Screen Error wins, Uniform and an instancer's reference leave it by its level.
+        subd = scene('displace', displacement_distance=0.0)
+        subd['meshes'][0]['subdivision'] = True
+        subd['displacement_rate'] = 2.5
+        self.assertIn('["adaptive_error"] = 2.5', rdla.scene_text(subd))
+        subd['render_settings'] = {'displacement_adaptive_error': 3.0}
+        self.assertIn('["adaptive_error"] = 3', rdla.scene_text(subd))
+        subd['render_settings'] = {'displacement_tessellation': 0}
+        self.assertNotIn('["adaptive_error"]', rdla.scene_text(subd))
+        subd['render_settings'] = {}
+        subd['meshes'][0]['adaptive_error'] = 4.0
+        self.assertIn('["adaptive_error"] = 4', rdla.scene_text(subd))
+        del subd['meshes'][0]['adaptive_error']
+        subd['meshes'][0]['instances'] = [rdla.IDENTITY]
+        self.assertNotIn('["adaptive_error"] = 2.5', rdla.scene_text(subd))
+
     def test_stencil_reaches_presence(self):
         text = rdla.scene_text(scene('stencil'))
         self.assertIn('["presence"] = bind(', text)

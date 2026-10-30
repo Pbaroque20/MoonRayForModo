@@ -371,17 +371,28 @@ def furs(scene,warnings,meshes):
     coloured."""
     import lx,modo
     from .host import render_visible
+    # No Fur material in the scene, no fur: not a mesh of it need be asked for its polygons.
+    try:
+        if not list(scene.items('furMaterial')):return []
+    except (LookupError,RuntimeError,TypeError):return []
     worn={}
     for mesh in meshes:worn.setdefault(mesh.get('source_item') or str(mesh.get('identity','')).split('|')[0],set()).add(mesh.get('material',''))
+    # How many items wear each material, counted once: each item's union of all the others' was 335 x 335 identities
+    # asked of Modo for a car's every reading (0.35 s), for a fur it did not have.
+    wearers={}
+    for used in worn.values():
+        for material in used:wearers[material]=wearers.get(material,0)+1
     made=[]
     for item in scene.items('mesh',superType=False):
         if not render_visible(item):continue
         mesh=modo.meshgeometry.MeshProvider.meshFromMeshChannel(item._item,'deformed')
         polygons=lx.object.Polygon(mesh.PolygonAccessor());points=lx.object.Point(mesh.PointAccessor())
+        entries=fur_entries(scene,item,mesh,polygons,points,warnings)
+        if not entries:continue
         # Its own: the materials no other item is in. Modo names them itself here, not after the polygons' tags.
         own=worn.get(item.id,set())
-        alone=own-set().union(*[used for other,used in worn.items() if other!=item.id]) or own
-        for entry in fur_entries(scene,item,mesh,polygons,points,warnings):
+        alone={material for material in own if wearers.get(material,0)==1} or own
+        for entry in entries:
             if len(alone)==1:entry['material']=next(iter(alone))
             made.append(entry)
     return made

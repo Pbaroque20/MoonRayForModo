@@ -1,8 +1,9 @@
 """Inspect and trim completed texture-cache entries without touching source assets."""
+from .cache_folder import root as cache_root
 import os,tempfile,time
 from pathlib import Path
 
-def root():return (Path(os.environ.get('LOCALAPPDATA',tempfile.gettempdir()))/'MoonRayForModo/Textures').resolve()
+def root():return (cache_root() / 'Textures').resolve()
 
 def entries():
     folder=root()

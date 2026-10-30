@@ -120,6 +120,12 @@ def preview(scene):
     # Each display filter is a buffer of its own.
     from . import entities
     for entity in entities.display_filters(scene):result[entities.filter_key(entity)]=entities.filter_output(entity)
+    # MoonRay's realtime (a preview following the scene, _geometry_detail): the beauty, and the buffer looked at where it
+    # is another, not every buffer at every edit (each was rendered, and each edit renamed their files, so that none was
+    # the camera's alone). The composite is made of the others, which it keeps.
+    chosen=scene.get('preview_buffer','beauty')
+    if scene.get('_geometry_detail') and chosen!='composite':
+        return {key:value for key,value in result.items() if key in ('beauty',chosen)}
     return result
 
 def display_kind(scene,key):

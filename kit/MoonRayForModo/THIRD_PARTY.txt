@@ -54,3 +54,12 @@ with or endorsed by DreamWorks Animation. It runs on NVIDIA OptiX and CUDA, whos
 
 MoonLightIPR's velvet lobe reads two tables taken unchanged from OpenMoonRay, Copyright 2023-2024
 DreamWorks Animation LLC, under the Apache License 2.0; they keep that notice and are not relicensed under MIT.
+
+## meshoptimizer
+
+The realtime previews' mesh simplification uses meshoptimizer by Arseny Kapoulkine (zeux), version 0.22, under the MIT
+License: https://github.com/zeux/meshoptimizer. Its simplifier, index generator and allocator (`allocator.cpp`,
+`indexgenerator.cpp`, `simplifier.cpp`, with `meshoptimizer.h`) are compiled unchanged into the geometry adapter,
+`bin/MoonRayGeometry.lx`, which `native-modo/simplify.cpp` (`MR_simplify`) calls. Its sources are not committed here
+(`upstream/meshoptimizer`, from the v0.22 release, is ignored by Git). Its copyright and license notice ship with the kit
+in `licenses/meshoptimizer-LICENSE.md`: Copyright (c) 2016-2024 Arseny Kapoulkine. Thanks to zeux for it.

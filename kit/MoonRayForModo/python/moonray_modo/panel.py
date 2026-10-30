@@ -15,6 +15,8 @@ from .panel_tools import Tools
 
 RENDER_TIP = 'Render the current scene. The previous image stays until its replacement is ready.'
 STOP_TIP = 'Stop the render in progress and stop following scene changes.'
+# What the status says while Modo's thread reads the whole scene, Modo held meanwhile (Render, and realtime alike).
+READING = "Reading Modo's scene graph..."
 # Always offered in the buffer list; choosing one adds the output to the scene if it lacks it.
 # Modo's own style draws menu entries hard against the edge.
 MENU_STYLE = 'QMenu::item { padding: 5px 24px 5px 24px; } QMenu::separator { height: 1px; margin: 4px 10px; }'
@@ -49,6 +51,24 @@ DRAFT_MOST=4500000
 LIVE_REST=2.0
 
 
+class ElidedLabel(QtWidgets.QLabel):
+    """A line of words as wide as they are where there is room, and cut short with an ellipsis where there is not: the
+    window may be narrower than the picture's details."""
+
+    def minimumSizeHint(self):
+        return QtCore.QSize(min(60, super().minimumSizeHint().width()), super().minimumSizeHint().height())
+
+    def paintEvent(self, event):
+        text = self.text()
+        shown = self.fontMetrics().elidedText(text, QtCore.Qt.ElideRight, self.contentsRect().width())
+        if shown == text:
+            return super().paintEvent(event)
+        painter = QtGui.QPainter(self)
+        painter.setPen(self.palette().color(QtGui.QPalette.Disabled if not self.isEnabled() else QtGui.QPalette.Active,
+                                            QtGui.QPalette.WindowText))
+        painter.drawText(self.contentsRect(), int(self.alignment()) | QtCore.Qt.AlignVCenter, shown)
+
+
 class Panel(Tools, QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -76,6 +96,9 @@ class Panel(Tools, QtWidgets.QWidget):
         self.timer.timeout.connect(self._live_tick)
         self.refine_timer=QtCore.QTimer(self);self.refine_timer.setSingleShot(True);self.refine_timer.setInterval(750)
         self.refine_timer.timeout.connect(self._refine_ipr)
+        # MoonLightIPR's meshes cut finer once the scene has been left alone this long (moonlightipr_detail).
+        self.detail_timer=QtCore.QTimer(self);self.detail_timer.setSingleShot(True);self.detail_timer.setInterval(1000)
+        self.detail_timer.timeout.connect(self._refine_detail)
         self.display_timer=QtCore.QTimer(self);self.display_timer.setSingleShot(True);self.display_timer.setInterval(200)
         self.display_timer.timeout.connect(self._commit_exposure)
         self.preview_timer=QtCore.QTimer(self);self.preview_timer.setSingleShot(True);self.preview_timer.setInterval(150)
@@ -96,6 +119,13 @@ class Panel(Tools, QtWidgets.QWidget):
         self.hud=QtWidgets.QLabel(self.preview)
         self.hud.setStyleSheet('QLabel{color:#f2e3c4;background-color:rgba(20,22,26,170);border-radius:3px;padding:3px 7px;font-weight:bold;}')
         self.hud.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents);self.hud.hide()
+        # The memory the renderer, the machine and the graphics card have, at the bottom right of the picture as the
+        # HUD's lines are, while Preview Preferences says (Memory in the picture). Its tip says it in full.
+        from .memory_meter import MemoryMeter
+        self.memory_meter=MemoryMeter(self._renderer_processes,self.preview,on=lambda:bool(self.preferences.get('memory_hud')),
+                                      placed=self._meter_place)
+        self.memory_meter.setStyleSheet('QLabel{color:#d8d2c4;background-color:rgba(20,22,26,150);border-radius:3px;padding:2px 6px;}'
+                                        'QLabel:disabled{color:#a8a397;}')
         self.preview.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         self.preview.customContextMenuRequested.connect(lambda point:self._image_menu(point).exec_(self.preview.mapToGlobal(point)))
         self.preview.installEventFilter(self)
@@ -201,20 +231,24 @@ class Panel(Tools, QtWidgets.QWidget):
         row.addWidget(self.buffer)
         row.addSpacing(5)
         # Exposure and gamma: each a button that puts it back as it was, and its value beside it.
-        reset=QtWidgets.QToolButton();reset.setText('EV');reset.setToolTip('Exposure, in stops. Click to put it back to 0.')
-        reset.clicked.connect(lambda:self.exposure.setValue(0.0));row.addWidget(reset)
+        reset=self.exposure_reset=QtWidgets.QToolButton();reset.setText('EV');reset.setToolTip('Exposure, in stops. Click for 0, and again for the exposure you had set.')
+        reset.clicked.connect(self._exposure_toggle);row.addWidget(reset)
         self.exposure=QtWidgets.QDoubleSpinBox();self.exposure.setRange(-20,20);self.exposure.setSingleStep(.25)
         self.exposure.setKeyboardTracking(False)
         self.exposure.setToolTip('Display exposure in stops. The rendered values are not changed.')
         self.exposure.valueChanged.connect(lambda value:self.display_timer.start())
+        self.exposure.valueChanged.connect(lambda value:self._mark_display())
         row.addWidget(self.exposure)
-        reset=QtWidgets.QToolButton();reset.setText('Gamma');reset.setToolTip('Viewing gamma. Click to put it back to 1.')
-        reset.clicked.connect(lambda:self.gamma.setValue(1.0));row.addWidget(reset)
+        reset=self.gamma_reset=QtWidgets.QToolButton();reset.setText('γ')
+        reset.setToolTip('Gamma (γ): the viewing gamma. Click for 1, and again for the gamma you had set.')
+        reset.clicked.connect(self._gamma_toggle);row.addWidget(reset)
         self.gamma=QtWidgets.QDoubleSpinBox();self.gamma.setRange(.1,5.0);self.gamma.setSingleStep(.05);self.gamma.setDecimals(2)
         self.gamma.setValue(self.preferences.get('display_gamma'))
         self.gamma.setToolTip('A gamma for looking at the picture, after its view transform: above 1 lifts the shadows, below 1 deepens them.\nIt is kept with this window, not with the scene, and changes neither the render nor a saved EXR.')
         self.gamma.valueChanged.connect(self._gamma_changed)
+        self.gamma.valueChanged.connect(lambda value:self._mark_display())
         row.addWidget(self.gamma)
+        self._mark_display()
         row.addSpacing(5)
         # One channel of the picture at a time: its red, green or blue as greys, or its alpha. A button pressed is
         # lit in its own colour; pressed again it goes out and the whole picture is back.
@@ -222,9 +256,13 @@ class Panel(Tools, QtWidgets.QWidget):
         for key,label,lit,ink,tip in (('r','R','#c0392b','#ffffff','Show the red channel alone, as greys. Click again for the whole picture.'),
                                       ('g','G','#2e9e4f','#ffffff','Show the green channel alone, as greys. Click again for the whole picture.'),
                                       ('b','B','#2f6fd0','#ffffff','Show the blue channel alone, as greys. Click again for the whole picture.'),
-                                      ('a','A','#e8e8e8','#101010','Show the alpha channel. Click again for the whole picture.')):
+                                      ('a','α','#e8e8e8','#101010','Show the alpha (α) channel. Click again for the whole picture.')):
             button=QtWidgets.QToolButton();button.setText(label);button.setCheckable(True);button.setToolTip(tip)
-            button.setStyleSheet('QToolButton:checked { background-color: %s; color: %s; border: 1px solid %s; border-radius: 3px; }'%(lit,ink,lit))
+            # R, G and B written in their own colours, lighter than when lit so that they read on Modo's grey; alpha as
+            # the other buttons are.
+            letter={'r':'#ff6b5e','g':'#5fd27c','b':'#6f9dff'}.get(key)
+            button.setStyleSheet(('QToolButton:!checked { color: %s; font-weight: bold; } '%letter if letter else '')
+                                 +'QToolButton:checked { background-color: %s; color: %s; border: 1px solid %s; border-radius: 3px; }'%(lit,ink,lit))
             button.clicked.connect(functools.partial(self._channel_clicked,key))
             self.channels[key]=button;row.addWidget(button)
         self._before_alpha=None
@@ -255,29 +293,59 @@ class Panel(Tools, QtWidgets.QWidget):
         row.addSpacing(5)
         row.addWidget(gear)
         row.addStretch(1)
-        # One height for everything in the row, and no more width than each needs: a button is as wide as its word,
-        # a channel's is square, and the lists give way first when the window is narrow.
+        # One height for everything in the row, and as wide as each needs as Modo's own style draws it (its padding
+        # and a list's arrow as its size hint has them): a button as wide as the longest thing it says, a channel's
+        # square. Set from the font alone, words were cut short.
         high=24
-        def wide(widget,text,room=14):return widget.fontMetrics().horizontalAdvance(text)+room
+        def room(widget):
+            text=widget.currentText() if isinstance(widget,QtWidgets.QComboBox) else widget.text()
+            return max(8,widget.sizeHint().width()-widget.fontMetrics().horizontalAdvance(text))
+        def wide(widget,*texts):return max(widget.fontMetrics().horizontalAdvance(t) for t in texts)+room(widget)
         for i in range(row.count()):
             widget=row.itemAt(i).widget()
             if widget is None:continue
             widget.setFixedHeight(high)
             if isinstance(widget,QtWidgets.QToolButton):
-                widget.setFixedWidth(high if len(widget.text())==1 else wide(widget,widget.text()))
+                # A menu's arrow, which the style leaves out of the size it gives, beside the word and not over it.
+                widget.setFixedWidth(high if len(widget.text())==1 else wide(widget,widget.text())+(16 if widget.menu() else 0))
+            elif isinstance(widget,QtWidgets.QPushButton):
+                widget.setFixedWidth(wide(widget,widget.text(),'Render','Continue','Stop','RT On','RT Off'))
             elif isinstance(widget,QtWidgets.QDoubleSpinBox):widget.setFixedWidth(62)
-        # Wide enough for the longest thing it says.
-        self.start.setFixedWidth(wide(self.start,'Continue',28))
-        # Room for the menu arrow beside the word, which it otherwise covers.
-        gear.setFixedWidth(wide(gear,'Options',34))
-        for combo,least,most in ((self.camera,96,170),(self.buffer,96,150)):
+        # The engines are known now: as wide as the longest. The cameras and buffers are filled later and change, so
+        # those lists follow what they hold, within a bound (a long camera name is in the tip).
+        self.preview_engine.setFixedWidth(wide(self.preview_engine,*[self.preview_engine.itemText(i) for i in range(self.preview_engine.count())]))
+        for combo in (self.camera,self.buffer):
             combo.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToContents)
-            combo.setMinimumWidth(least);combo.setMaximumWidth(most)
-        # The engines are few and their names short: the list is as wide as the longest, with room for its arrow, and
-        # never gives way, so that no name is cut off.
-        engine=self.preview_engine
-        engine.setFixedWidth(max(wide(engine,engine.itemText(i),40) for i in range(engine.count())))
-        return row
+            combo.setMinimumWidth(110);combo.setMaximumWidth(200)
+        return self._flowing(row)
+
+    def _flowing(self,row):
+        """The row's groups (as its spacings part them) side by side, a group going on to a new line where the window
+        is too narrow for it, in place of every button squeezed and its word cut."""
+        from .flow_layout import FlowLayout
+        bar=QtWidgets.QWidget(self)
+        flow=FlowLayout(bar,spacing=10)
+        group=None
+        while row.count():
+            item=row.takeAt(0)
+            widget=item.widget()
+            if widget is None:
+                # A spacing or the stretch: the group so far is done.
+                group=None
+                continue
+            # The camera and buffer lists apart from the buttons and engine before them, so that in a narrow window
+            # they go on to the next line together rather than past its edge.
+            if widget is self.camera:group=None
+            if group is None:
+                group=QtWidgets.QWidget(bar)
+                inside=QtWidgets.QHBoxLayout(group);inside.setContentsMargins(0,0,0,0);inside.setSpacing(row.spacing())
+                flow.addWidget(group)
+            group.layout().addWidget(widget)
+        # As tall as its lines are at the width it is given.
+        policy=QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Preferred,QtWidgets.QSizePolicy.Preferred);policy.setHeightForWidth(True)
+        bar.setSizePolicy(policy)
+        holder=QtWidgets.QHBoxLayout();holder.setContentsMargins(0,0,0,0);holder.addWidget(bar)
+        return holder
 
     def _options_menu(self):
         menu=self.options_menu=QtWidgets.QMenu(self);menu.setStyleSheet(MENU_STYLE)
@@ -377,10 +445,16 @@ class Panel(Tools, QtWidgets.QWidget):
         lines=QtWidgets.QVBoxLayout();lines.setSpacing(2);lines.setContentsMargins(0,0,0,0)
         row=QtWidgets.QHBoxLayout();row.setSpacing(10)
         cells=[]
-        for _ in range(3):
-            cell=QtWidgets.QWidget();cell.setSizePolicy(QtWidgets.QSizePolicy.Ignored,QtWidgets.QSizePolicy.Preferred)
+        for index in range(3):
+            cell=QtWidgets.QWidget()
             inside=QtWidgets.QHBoxLayout(cell);inside.setContentsMargins(0,0,0,0);inside.setSpacing(8)
-            row.addWidget(cell,1);cells.append(inside)
+            # The picture's details (the last cell) as wide as their words, the other two sharing what is left: as a
+            # third, a resolution, sampling and noise line was cut off.
+            if index==2:
+                cell.setSizePolicy(QtWidgets.QSizePolicy.Preferred,QtWidgets.QSizePolicy.Preferred);row.addWidget(cell,0)
+            else:
+                cell.setSizePolicy(QtWidgets.QSizePolicy.Ignored,QtWidgets.QSizePolicy.Preferred);row.addWidget(cell,1)
+            cells.append(inside)
         left,middle,right=cells
         self.status = QtWidgets.QLabel('Ready')
         # Each thing it says is noted in the MoonRay Terminal too.
@@ -404,7 +478,7 @@ class Panel(Tools, QtWidgets.QWidget):
         self.render_timing.setAlignment(QtCore.Qt.AlignCenter)
         self.render_timing.setSizePolicy(QtWidgets.QSizePolicy.Ignored,QtWidgets.QSizePolicy.Preferred)
         middle.addWidget(self.render_timing,1)
-        self.image_info=QtWidgets.QLabel('');self.image_info.setEnabled(False)
+        self.image_info=ElidedLabel('');self.image_info.setEnabled(False)
         right.addStretch(1)
         right.addWidget(self.image_info)
         self.notice_toggle=QtWidgets.QToolButton();self.notice_toggle.setText('Notices (0)');self.notice_toggle.setCheckable(True);self.notice_toggle.setAutoRaise(True)
@@ -412,6 +486,19 @@ class Panel(Tools, QtWidgets.QWidget):
         self.notice_toggle.toggled.connect(lambda visible:self.warnings.setVisible(visible))
         right.addWidget(self.notice_toggle)
         return lines
+
+    def _renderer_processes(self):
+        """The ids of the renderer's processes running now (a final render, the preview session, MoonLightIPR's), for the
+        memory meter."""
+        renderer=getattr(self,'renderer',None)
+        if renderer is None:return []
+        found=[]
+        for holder in (renderer,getattr(renderer,'session',None),getattr(renderer,'moonlightipr',None)):
+            process=getattr(holder,'process',None) if holder is not None else None
+            try:
+                if process is not None and process.state()!=QtCore.QProcess.NotRunning:found.append(int(process.processId()))
+            except RuntimeError:pass  # its Qt object already gone
+        return found
 
     def _focus_armed(self,armed):
         if armed:
@@ -422,6 +509,7 @@ class Panel(Tools, QtWidgets.QWidget):
     def eventFilter(self,watched,event):
         # The mode's line keeps its place at the foot of the picture as the picture is made larger or smaller.
         if watched is self.preview and event.type()==QtCore.QEvent.Resize and hasattr(self,'hud') and self.hud.isVisible():self._hud_place()
+        if watched is self.preview and event.type()==QtCore.QEvent.Resize and hasattr(self,'memory_meter'):self._meter_place()
         # While Focus is armed, the next click in the image picks instead of panning.
         if watched is self.preview and self.focus_pick.isChecked() and event.type()==QtCore.QEvent.MouseButtonPress and event.button()==QtCore.Qt.LeftButton:
             point=event.pos()
@@ -469,6 +557,33 @@ class Panel(Tools, QtWidgets.QWidget):
         self.status.setText('Preview preferences saved.')
         self.refine_timer.stop()
         if self._following:self.preview_timer.start()
+
+    def _mark_display(self):
+        """EV and γ lit, as Render is while on, while their value is one of the user's (not 0, not 1): the picture is
+        then not shown as rendered."""
+        lit='QToolButton{background-color:#f49c1c;color:#1a1a1a;border:1px solid #ffb84d;border-radius:3px;font-weight:bold;}'
+        for button,box,plain in ((getattr(self,'exposure_reset',None),getattr(self,'exposure',None),0.0),
+                                 (getattr(self,'gamma_reset',None),getattr(self,'gamma',None),1.0)):
+            if button is None or box is None:continue
+            changed=abs(box.value()-plain)>1e-9
+            if button.property('changed')!=changed:
+                button.setProperty('changed',changed);button.setStyleSheet(lit if changed else '')
+
+    def _exposure_toggle(self):
+        """EV pressed: the exposure set back to 0, the one it had kept; pressed again while it is 0, that one back."""
+        now=self.exposure.value()
+        if abs(now)>1e-9:
+            self._exposure_kept=now;self.exposure.setValue(0.0)
+        elif getattr(self,'_exposure_kept',None) is not None:
+            self.exposure.setValue(self._exposure_kept)
+
+    def _gamma_toggle(self):
+        """γ pressed: the gamma set back to 1, the one it had kept; pressed again while it is 1, that one back."""
+        now=self.gamma.value()
+        if abs(now-1.0)>1e-9:
+            self._gamma_kept=now;self.gamma.setValue(1.0)
+        elif getattr(self,'_gamma_kept',None) is not None:
+            self.gamma.setValue(self._gamma_kept)
 
     def _gamma_changed(self,value):
         self.preferences.set('display_gamma',float(value))
@@ -781,6 +896,8 @@ class Panel(Tools, QtWidgets.QWidget):
         self.renderer.buffers.compositor.request(values['compositor'])
         if not self.display_timer.isActive():
             blocker=QtCore.QSignalBlocker(self.exposure);self.exposure.setValue(values['display']['exposure']);del blocker
+            # Set quietly: lit by hand, as its signal is held.
+            self._mark_display()
         # The button is lit by a region being rendered, or by its being ready for one to be drawn.
         armed=values['region_enabled'] or getattr(self,'_region_armed',False)
         blocker=QtCore.QSignalBlocker(self.region_enabled);self.region_enabled.setChecked(armed);del blocker
@@ -823,6 +940,8 @@ class Panel(Tools, QtWidgets.QWidget):
         words=[]
         try:
             values=self._settings_values()
+            # MoonLightIPR's motion blur, off by default: each update then reads the shutter's ends too.
+            if self.preview_engine.currentData()=='moonlightipr' and self.preferences.get('preview_motion'):words.append('Motion Blur')
             if self.preview_engine.currentData()=='moonray' and values['denoising'].get('safe') and values['denoising'].get('engine','off')!='off':
                 words.append('Safe Denoiser')
             level=values['denoising'].get('smart','off')
@@ -845,6 +964,16 @@ class Panel(Tools, QtWidgets.QWidget):
         if text!=self.hud.text():self.hud.setText(text);self.hud.adjustSize()
         self.hud.setVisible(bool(words))
         if words:self._hud_place();self.hud.raise_()
+        self._meter_place()
+
+    def _meter_place(self):
+        """The memory meter at the bottom right of the picture, above the HUD's own line where they would meet."""
+        meter=getattr(self,'memory_meter',None)
+        if meter is None or not meter.isVisible():return
+        x=max(0,self.preview.width()-meter.width()-10);y=max(0,self.preview.height()-meter.height()-12)
+        if self.hud.isVisible() and self.hud.geometry().intersects(QtCore.QRect(x,y,meter.width(),meter.height())):
+            y=max(0,self.hud.y()-meter.height()-6)
+        meter.move(x,y);meter.raise_()
 
     def _hud_place(self):
         """At the foot of the picture, in the middle."""
@@ -1092,26 +1221,53 @@ class Panel(Tools, QtWidgets.QWidget):
         if blast is not None:width=min(scene_w,blast.width)
         return width, max(16, round(width * scene_h / max(1, scene_w)))
 
+    def _reading(self):
+        """Said before the whole scene is read: Modo's own thread reads it, and holds still meanwhile (a car's minute).
+        Left as it is while a draft redraws by itself."""
+        if getattr(self,'_draft_quiet',False):return
+        self.status.setText(READING);self.status.setToolTip('');self.status.repaint()
+
     def _capture(self,reuse=False,transform_items=None):
         import modo
         if modo.Scene().renderItem.id != self._scene_id:
             self._scene_id=modo.Scene().renderItem.id;self._geometry_cache=None
-        scene = host.snapshot(evaluated_geometry=self._settings_values()['surface'] == 2,reuse_geometry=self._geometry_cache if reuse else None,refresh_materials=reuse=='materials' or isinstance(reuse,dict),dirty_meshes=reuse.get('dirty_meshes') if isinstance(reuse,dict) else None)
-        if reuse=='transforms':
+        # The whole scene read (realtime starting, or an edit that is not one mesh, a move or a material), with RT on as
+        # with Render: what the wait is said first. A move or a material reads little, and says nothing.
+        if not reuse or self._geometry_cache is None:self._reading()
+        # A whole reading of a scene with no unsaved changes, as the Scene cache kept it at the last cold start, where
+        # one was (scene_reading); else read from Modo, and kept for the next.
+        from . import scene_reading
+        evaluated=self._settings_values()['surface'] == 2
+        held_key=scene_reading.key(evaluated) if not reuse else None
+        if scene_reading.held(held_key) and not getattr(self,'_draft_quiet',False):
+            # A kept reading taken back: the cache's work, said as that, not Modo's scene graph read.
+            from . import cache_folder
+            self.status.setText(cache_folder.LOADING);self.status.repaint()
+        scene=scene_reading.load(held_key)
+        if scene is None:
+            scene = host.snapshot(evaluated_geometry=evaluated,reuse_geometry=self._geometry_cache if reuse else None,refresh_materials=reuse=='materials' or isinstance(reuse,dict),dirty_meshes=reuse.get('dirty_meshes') if isinstance(reuse,dict) else None,shading_kept=isinstance(reuse,dict) and bool(reuse.get('shading_kept')))
+            if held_key is not None:scene_reading.keep(held_key,scene_reading.freeze(scene),scene)
+        # A move: every mesh where its item now stands, but the copies read again with it (incremental.classify).
+        if reuse=='transforms' or (isinstance(reuse,dict) and reuse.get('placements')):
             from .incremental import refresh_transforms
-            refresh_transforms(modo.Scene(),scene,transform_items)
+            loose=(self._geometry_cache or {}).get('_loose_items') or ()
+            refresh_transforms(modo.Scene(),scene,transform_items if reuse=='transforms' else None,loose=loose)
         import copy,time
         full_capture=scene.pop('_full_capture',not reuse)
         if not reuse or reuse in ('materials','transforms') or isinstance(reuse,dict):
             # What was found of the meshes when they were last read whole holds while they are only moved or shaded anew.
-            stand=self._geometry_cache.get('_item_transforms') if self._geometry_cache is not None and reuse in ('materials','transforms') else None
+            held=self._geometry_cache if self._geometry_cache is not None and reuse in ('materials','transforms') else {}
             self._geometry_cache=dict(scene,meshes=[dict(m) for m in scene['meshes']],materials=copy.deepcopy(scene['materials']),native_materials=copy.deepcopy(scene.get('native_materials',{})))
-            if stand:self._geometry_cache['_item_transforms']=True
+            for key in ('_item_transforms','_loose_items'):
+                if key in held:self._geometry_cache[key]=held[key]
         if full_capture or isinstance(reuse,dict):self._last_full_capture=time.monotonic()
-        if full_capture and self._geometry_cache is not None and scene.get('_evaluated_data') is not None:
+        if (full_capture or isinstance(reuse,dict)) and self._geometry_cache is not None and scene.get('_evaluated_data') is not None:
             # Whether each evaluated mesh stands where its item does, which lets a later move of an item be followed
-            # without evaluating every mesh again. Not so for copies Modo generates, which are no item's.
-            self._geometry_cache['_item_transforms']=self._stand_with_items(modo.Scene(),scene)
+            # without evaluating every mesh again, and which copies (a replicator's, no item's) are read again with it.
+            # Found again after a mesh is read again as well: kept only from a whole reading, a car's one edited mesh
+            # had every move after it read the whole car again.
+            followed,loose=self._standing(modo.Scene(),scene)
+            self._geometry_cache['_item_transforms']=followed;self._geometry_cache['_loose_items']=loose
         scene.pop('_evaluated_data',None)
         scene['_geometry_revision']=str(id(self))+':'+str(self._last_full_capture)
         configured=self._configure_snapshot(scene)
@@ -1123,9 +1279,9 @@ class Panel(Tools, QtWidgets.QWidget):
             self._asset_signature=signature(configured)
         return configured
 
-    def _stand_with_items(self,document,scene):
-        from .incremental import stands_with_items
-        return stands_with_items(document,scene)
+    def _standing(self,document,scene):
+        from .incremental import standing
+        return standing(document,scene)
 
     def _capture_output(self):
         values=self._settings_values()
@@ -1136,6 +1292,7 @@ class Panel(Tools, QtWidgets.QWidget):
     def _capture_preview(self):
         if self._engine()!='moonlightipr' or not self.preferences.get('preview_motion'):return self._capture()
         from .animation import capture_current
+        self._reading()
         scene=self._configure_snapshot(capture_current(self._settings_values()['surface']==2))
         # Stepping through the shutter is not an edit for IPR to follow.
         self.changes.consume()
@@ -1164,7 +1321,17 @@ class Panel(Tools, QtWidgets.QWidget):
         self._failure=None
         # A render begun by hand begins from an empty view, unless it turns out to be one continued.
         self._clear_first=True
-        self.render_once()
+        # Reading the scene holds Modo's thread, for a minute on a heavy scene: it is said before it begins, and the
+        # button is greyed until the render is on its way and Stop can stop it.
+        reading=not self._live()
+        if reading:
+            self.status.setText(READING);self.status.setToolTip('')
+            self.start.setEnabled(False)
+            self.status.repaint();self.start.repaint()
+        try:self.render_once()
+        finally:
+            # A render on its way has set the button already; one that never began gives it back.
+            if reading and not self._rendering:self.start.setEnabled(True)
 
     def _set_rendering(self,rendering):
         """Keep the Render button saying what pressing it will do."""
@@ -1243,6 +1410,31 @@ class Panel(Tools, QtWidgets.QWidget):
         width, height = self._dimensions(scene, bool(output))
         original_digest=digest or self._digest(scene,timeless=not output and self._engine()=='moonlightipr')
         if not output:scene=dict(scene,_clay_preview=self._clay())
+        # A preview following the scene (MoonLightIPR, or MoonRay's realtime) cuts its subdivided, displaced and dense
+        # meshes by their size on screen, coarser after an edit and finer once the scene is left alone
+        # (moonlightipr_detail): the detail timer sends it again then.
+        # An edit that leaves the meshes as they were (the camera, a light, a material or where items stand) and a
+        # refinement keep the cut as it stands: cut anew, every mesh would be built again twice for each move.
+        fine,self._detail_fine=getattr(self,'_detail_fine',False),False
+        kept,self._detail_kept=getattr(self,'_detail_kept',False) or refining,False
+        # The camera the meshes are cut from is held through every edit, and taken anew only at rest where the view came
+        # far enough (_refine_detail: _detail_recut).
+        recut,self._detail_recut=getattr(self,'_detail_recut',False),False
+        if not output and self._following and self._engine()=='moonray':
+            # MoonRay's realtime: the fine cut from the first, no coarse one before it (a cut of other meshes is a reload
+            # of the scene: the coarse pass cost a second preparation of a heavy scene); through a move of the camera
+            # its dicing camera is held whatever the view (_detail_keep), and looked at again once the view rests
+            # (_refine_detail), the meshes cut anew only where it came far enough.
+            self._detail_now='fine'
+            scene=dict(scene,_geometry_detail='fine',_detail_keep=not recut)
+            self.detail_timer.start()
+        elif not output and self._following:
+            now=getattr(self,'_detail_now',None)
+            detail=now if kept and now else 'fine' if fine else 'coarse'
+            self._detail_now=detail
+            scene=dict(scene,_geometry_detail=detail,_detail_keep=not recut)
+            if not (kept and self.detail_timer.isActive()):self.detail_timer.start()
+        else:self.detail_timer.stop()
         if self._draft_engine:scene=dict(scene,_draft=2,_draft_samples=3 if (getattr(self,'_draft_hasty',False) and not self._following) else 12)
         if not output and self.draft.isChecked():
             # The picture is spoken of at the size the camera renders it, however finely its lines are drawn.
@@ -1492,6 +1684,10 @@ class Panel(Tools, QtWidgets.QWidget):
                 engine=self._preview_denoiser()
                 if engine=='auto':self.renderer.buffers.denoiser.request(engine)
             self.renderer.buffers.select(key,values(stored['display']))
+            if self._following and self._engine()=='moonray' and key not in ('beauty','denoised_beauty') and self._ipr_refine_scene is not None:
+                # MoonRay's realtime renders the beauty and the buffer looked at (outputs.preview): another is rendered
+                # from the scene as last read, not read again.
+                self._submit(dict(self._ipr_refine_scene,preview_buffer=key))
             if key=='denoised_beauty' and self._engine()=='moonlightipr' and not getattr(self.renderer,'moonlightipr_denoises',False):
                 # MoonLightIPR has not been denoising: it renders again, denoising this time.
                 if self._following or self._rendering or not self.preview.image.isNull():self.render_once()
@@ -1550,6 +1746,10 @@ class Panel(Tools, QtWidgets.QWidget):
                 scene=self._capture_preview()
                 # What Modo has told of up to now is in this reading of the scene.
                 self.changes.consume()
+                # And the moment and settings it was read at: following, the first tick found none, took the time for
+                # changed, and read the whole scene again with nothing edited (a car scene's 41 s on Modo's thread, just
+                # after its first picture; MoonRay's realtime the same).
+                self._last_time=lx.service.Selection().GetTime();self._settled()
             self._submit(scene)
         except Exception as exc:
             self._failed(str(exc))
@@ -1635,19 +1835,40 @@ class Panel(Tools, QtWidgets.QWidget):
                 self.changes.full=self.changes.full or full;self.changes.items.update(items)
                 self.release_timer.start();return
             # MoonLightIPR with motion blur: once an edit is let go, the scene is read at both ends of the shutter as well
-            # (three readings in all). Only a material edit to a scene last found to hold nothing that moves skips that:
-            # any other edit may have keyed something to move. While dragging, it is followed sharp, as fast as it can be.
-            blurred=False
+            # (three readings in all). A material edit, or a move of items (the camera among them) none of whose channels is animated, to a scene
+            # last found to hold nothing that moves skips that: any other edit may have keyed something to move. While
+            # dragging, it is followed sharp, as fast as it can be.
+            blurred=False;moving=False;first=None
             if not held and self._engine()=='moonlightipr' and self.preferences.get('preview_motion'):
                 still=(time,modo.Scene().renderItem.id,repr(sorted(settings.items(),key=lambda entry:entry[0])))
-                if full or changed or reuse!='materials' or getattr(self,'_live_still',None)!=still:
+                # A move cannot make anything move during the shutter without a key (a fur scene's three readings held
+                # Modo 0.8 s for each move).
+                from .incremental import animated
+                # (reuse True: only the camera or lights were moved, the meshes kept.)
+                unkeyed=(reuse is True or reuse in ('materials','transforms')) and (reuse=='materials' or not animated(modo.Scene(),items))
+                if full or changed or not unkeyed or getattr(self,'_live_still',None)!=still:
+                    # Read once, and the shutter's ends asked of where the items stand: where nothing moves, that
+                    # reading is the picture (its meshes not read a second time); else the scene is read with its motion.
+                    from .animation import shutter_moves
+                    scene=first=self._capture(reuse,items if reuse=='transforms' else None);blurred=True
+                    try:moving=shutter_moves(self._geometry_cache,self._settings_values()['surface']==2) if self._geometry_cache is not None else None
+                    except Exception:moving=None
+                    self.changes.consume()
+                    if moving is False:self._live_still=still
+                if blurred and moving is not False:
                     from .motion import moves
-                    scene=self._capture_preview();blurred=True
-                    # The meshes are read whole again on the next edit: a reading at the shutter's ends leaves none to reuse.
-                    self._geometry_cache=None
-                    self._live_still=None if moves(scene) else still
+                    scene=self._capture_preview()
+                    if moves(scene):
+                        # The meshes are read whole again on the next edit: a reading at the shutter's ends leaves none to reuse.
+                        self._geometry_cache=None;self._live_still=None
+                    else:
+                        # Nothing moves: the scene as read once, the same picture, its meshes kept for the next move.
+                        self._live_still=still
+                        scene=first if first is not None else self._capture()
             if not blurred:
                 scene = self._capture(reuse,items if reuse=='transforms' else None)
+            # The meshes as they were: their cut is kept (_submit).
+            self._detail_kept=not full and not changed and (reuse is True or reuse in ('materials','transforms'))
             if held:
                 # Whatever was dragged, if it changed what lights the scene from all around (an environment, one of
                 # its layers or where that sits, a sky's sun, a MoonRay environment light), it is shown on release.
@@ -1675,11 +1896,17 @@ class Panel(Tools, QtWidgets.QWidget):
     def stop(self):
         self._draft_quiet=False
         self.refine_timer.stop()
+        self.detail_timer.stop();self._detail_fine=False;self._detail_now=None
         self._pending_preview=False;self.release_timer.stop()
         self.preview_timer.stop()
         if self.sequence is not None:
             self.sequence.stop()
         self._following=False;self.timer.stop()
+        # The live render cache let go: Modo no longer keeps it up to date for a preview that does not follow the scene.
+        try:
+            from . import evaluated
+            evaluated.stop_live()
+        except Exception:pass
         # A draft's region is not gone on to once its lines have been stopped.
         self._draft_then=None;self._draft_pass=False
         self.preview.set_show_buckets(self.show_buckets.isChecked())
@@ -1829,6 +2056,8 @@ class Panel(Tools, QtWidgets.QWidget):
     def _renderer_status(self,text):
         # Left as it is while a draft redraws by itself.
         if getattr(self,'_draft_quiet',False):return
+        # Said as each renderer says it: Caching scene... only while the Scene cache keeps what it makes
+        # (moonlightipr_session), not for every scene made ready.
         self.status.setText(text)
 
     def _render_progress(self,value,label):
@@ -1913,6 +2142,27 @@ class Panel(Tools, QtWidgets.QWidget):
             if self._following and self.preferences.get('ipr/refine') and snapshot.get('_ipr') and not snapshot.get('_ipr_refined') and snapshot.get('render_settings',{}).get('max_adaptive_samples',1)<16:
                 self.refine_timer.start()
 
+    def _refine_detail(self):
+        """The scene left alone: its meshes cut finer, where the coarse cut left any coarser."""
+        if self.disposed or not self._following or self.preview_lock.isChecked() or self._output_busy():return
+        from .interaction import dragging
+        if dragging() or self.release_timer.isActive():self.detail_timer.start();return
+        from . import moonlightipr_scene
+        from .moonlightipr_detail import rested
+        scene=self._ipr_refine_scene
+        if scene is None:return
+        # A scene still being made ready is waited for: what its cut left coarser is known once it is (LAST_REFINABLE),
+        # and before, the refinement was missed until the next edit, then made in the middle of it.
+        if getattr(getattr(self.renderer,'moonlightipr',None),'packer',None) is not None:self.detail_timer.start();return
+        # At rest: the meshes cut anew, once, where the view came far enough from the camera held through its moves
+        # (moonlightipr_detail.rested); MoonLightIPR's coarse cut made fine besides.
+        moved=not scene.get('dicing_camera') and rested(scene.get('camera') or {},scene.get('meshes',[]),60.0 if self._engine()=='moonray' else None)
+        refinable=self._engine()=='moonlightipr' and moonlightipr_scene.LAST_REFINABLE
+        if not (moved or refinable):return
+        self._detail_fine=True;self._detail_recut=moved
+        try:self._submit(scene)
+        except Exception as exc:self._failed(str(exc))
+
     def _refine_ipr(self):
         if self.disposed or not self._following or not self.preferences.get('ipr/refine') or self.preview_lock.isChecked() or self._output_busy():return
         from .interaction import dragging
@@ -1928,6 +2178,7 @@ class Panel(Tools, QtWidgets.QWidget):
         if not self.disposed:
             self.disposed = True
             self.refine_timer.stop()
+            self.detail_timer.stop()
             self.changes.close()
             self.release_timer.stop()
             self.display_timer.stop()

@@ -33,6 +33,12 @@ public:
         const float x=r0.x*p.x+r0.y*p.y+r0.z*p.z+r0.w,y=r1.x*p.x+r1.y*p.y+r1.z*p.z+r1.w,z=r2.x*p.x+r2.y*p.y+r2.z*p.z+r2.w;
         MP_Settings settings;
         for(int i=0;i<24;++i) settings.v[i]=me->mData.mSettings[i];
+        if(me->get(attrPattern)>=400) {
+            // A process: its colour made from the colour beneath it, wholly there.
+            const Color beneath=evalColor(me,attrInput,tls,state);
+            const MP_Rgb made=mp_process(me->get(attrPattern),beneath.r,beneath.g,beneath.b,settings);
+            *out=me->get(attrOutput)==1?Color(1.0f,1.0f,1.0f):Color(made.r,made.g,made.b);return;
+        }
         const float t=mp_pattern(me->get(attrPattern),me->get(attrType),x,y,z,settings);
         if(me->get(attrOutput)==1) {
             const float low=std::min(me->get(attrAlpha1),me->get(attrAlpha2)),high=std::max(me->get(attrAlpha1),me->get(attrAlpha2));

@@ -141,7 +141,8 @@ class Renderer(QtCore.QObject):
             signal.connect(self._moonlightipr_flush)
         self.process = QtCore.QProcess(self)
         self.process.started.connect(lambda: native.lower_priority(self.process.processId()))
-        terminal.watch(self.process, lambda: 'Denoiser' if self.phase == 'denoise' else 'MoonRay')
+        # MoonRay named by the mode it renders in (native.engine_name): MoonRay Vector, Scalar, XPU or Auto.
+        terminal.watch(self.process, lambda: 'Denoiser' if self.phase == 'denoise' else native.engine_name(getattr(self, 'engine_mode', None)))
         self.process.setProcessChannelMode(QtCore.QProcess.MergedChannels)
         self.process.readyReadStandardOutput.connect(self._read)
         self.process.finished.connect(self._exited)
@@ -622,6 +623,7 @@ class Renderer(QtCore.QObject):
             self.process.setWorkingDirectory(self.directory.name)
             self.process.setProgram(str(request['runtime'] / 'moonray.exe'))
             args=native.arguments(scene, self.image_path, request['threads'],mode)
+            self.engine_mode=mode
             if not self.using_session and Path(scene).with_suffix('.rdlb').is_file():
                 args[2:2]=['-in', str(Path(scene).with_suffix('.rdlb').resolve())]
             sampling=options.render_values(snapshot.get('render_settings',{}))

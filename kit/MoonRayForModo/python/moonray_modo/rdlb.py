@@ -16,6 +16,7 @@ from contextlib import contextmanager
 from itertools import chain
 import struct
 import sys
+from . import rows
 
 # scene_rdl2's ValueContainerUtil::ValueType
 BOOL, INT, INT_VECTOR, FLOAT, FLOAT_VECTOR, STRING, STRING_VECTOR = 1, 3, 4, 7, 8, 11, 12
@@ -64,6 +65,9 @@ def int_list(values):
         return vl(0)
     if min(held) < 0 or max(held) >= FIXED_LIMIT:
         return vl(count) + b''.join(zigzag(int(v)) for v in held)
+    native = rows.zigzag4(held)
+    if native is not None:
+        return vl(count) + native
     lanes = array('I', held)
     if not _LITTLE:
         lanes.byteswap()
@@ -179,7 +183,9 @@ def heavy(klass, name, attribute, kind, source, label, encode, owner=None, writt
         return ''
     if owner is not None and written is not None:
         _SINK.texts[(owner, attribute)] = written
-    return _cached('rdlb-fingerprint-' + label, source, lambda: _blake2b(encoded, digest_size=12).hexdigest())
+    # Kept apart from the encodings, which a heavy scene's fill their cache with (serialization.small).
+    from .serialization import small
+    return small('rdlb-fingerprint-' + label, source, lambda: _blake2b(encoded, digest_size=12).hexdigest())
 
 
 from hashlib import blake2b as _blake2b

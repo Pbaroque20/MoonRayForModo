@@ -3,10 +3,14 @@ import math
 import re
 from functools import lru_cache
 from . import options, textures, outputs, __version__
-from . import rdlb, primitive_attributes
+from . import rdlb, primitive_attributes, rows
 from .serialization import array as _kept
 from array import array as numbers
 from itertools import chain
+
+# Whether the last realtime preview's scene had a mesh cut coarser than at rest (moonlightipr_detail): the preview
+# window then sends it again with fine detail once it is left alone.
+LAST_REFINABLE = False
 
 IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
 
@@ -98,15 +102,20 @@ def vector_array(values,kind='Vec3'):
 def _heavy_line(name, attribute, kind, source, written, klass='RdlMeshGeometry', indent='    '):
     """One heavy list of a mesh (or of its UserData): as text in the scene, or (while rdlb.collecting) in its binary
     file instead."""
+    # Lists as Modo handed them over (rows.Rows, rows.Faces) go as the numbers they came in: the same bytes.
     if kind == 'vec3' or kind == 'vec2':
         size = 3 if kind == 'vec3' else 2
-        encode, value_type = (lambda: rdlb.float_list(source, size)), (rdlb.VEC3F_VECTOR if size == 3 else rdlb.VEC2F_VECTOR)
+        held = rows.numbers(source, size)
+        encode, value_type = (lambda: rdlb.float_list(source if held is None else held, size)), (rdlb.VEC3F_VECTOR if size == 3 else rdlb.VEC2F_VECTOR)
     elif kind == 'indices':
-        encode, value_type = (lambda: rdlb.int_list(numbers('l', chain.from_iterable(source)))), rdlb.INT_VECTOR
+        held = rows.corners(source)
+        encode, value_type = (lambda: rdlb.int_list(numbers('l', chain.from_iterable(source)) if held is None else held)), rdlb.INT_VECTOR
     elif kind == 'counts':
-        encode, value_type = (lambda: rdlb.int_list(numbers('l', map(len, source)))), rdlb.INT_VECTOR
+        held = rows.counts(source)
+        encode, value_type = (lambda: rdlb.int_list(numbers('l', map(len, source)) if held is None else held)), rdlb.INT_VECTOR
     elif kind == 'rgb':
-        encode, value_type = (lambda: rdlb.float_list(source, 3)), rdlb.RGB_VECTOR
+        held = rows.numbers(source, 3)
+        encode, value_type = (lambda: rdlb.float_list(source if held is None else held, 3)), rdlb.RGB_VECTOR
     elif kind == 'float':
         encode, value_type = (lambda: rdlb.float_list(numbers('f', (v[0] for v in source)))), rdlb.FLOAT_VECTOR
     elif kind == 'string':
@@ -333,6 +342,12 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
     from . import entities
     # A MeshLight item makes the mesh it names emit, through the same settings as Object controls.
     scene = entities.mesh_lights(scene)
+    # A realtime preview (its _geometry_detail, from the preview window) cuts its meshes by their size on screen, from a
+    # dicing camera held while the view moves little, unless the scene names one of its own (moonlightipr_detail).
+    detail = scene.get('_geometry_detail')
+    if detail and not scene.get('dicing_camera') and scene.get('camera'):
+        from .moonlightipr_detail import held_dicing
+        scene = dict(scene, dicing_camera=held_dicing(scene['camera'], scene.get('meshes', []), bool(scene.get('_detail_keep'))))
     if entities.replaces_environment(scene):
         # A MoonRay environment light set to replace Modo's: neither the Modo environments nor
         # the preview environment light are written.
@@ -495,7 +510,7 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
             from .nodes import emit as emit_graph
             ref=emit_graph(source,'/modo/displacement/%d'%index,native_index,lines,native_library,output='displacement')
             lines.append('displacements[%s] = %s'%(string(tag),ref));displacement_tags.add(tag)
-        elif shader_displacement.get(tag) and shader_displacement[tag][1]:
+        elif shader_displacement.get(tag) and shader_displacement[tag][1] and not graph_module.zero_height(shader_displacement[tag][0], lines):
             # Displacement layers in the Shader Tree: the surface moved along its normal by their height times the
             # material's Displacement Distance, as Modo moves it.
             raised,distance=shader_displacement[tag]
@@ -582,14 +597,45 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
     # resolution it tessellates subdivision surfaces and displacement at.
     held_render = options.render_values(scene.get('render_settings', {}))
     resolution_cap = held_render['max_geometry_resolution'] if held_render['enable_max_geometry_resolution'] else None
+    # A realtime preview's cut of each mesh (moonlightipr_detail): subdivided and displaced ones tessellated by MoonRay to
+    # the pixels it says, dense ones made lighter (simplify.py).
+    cuts = {}
+    if detail:
+        from . import moonlightipr_detail
+        global LAST_REFINABLE
+        cuts, LAST_REFINABLE = moonlightipr_detail.plan(render_meshes, scene.get('dicing_camera') or scene['camera'], width, detail,
+            lambda held: bool(({held.get('material', '')} | set(held.get('face_materials') or [])) & displacement_tags))
     for index, mesh in enumerate(render_meshes):
+        cut = cuts.get(id(mesh))
+        if cut and cut.get('simplify'):
+            from . import simplify
+            lighter = simplify.polygon_mesh(mesh, cut['simplify']['triangles'], cut['simplify']['error'])
+            if lighter is not None:
+                mesh = lighter
+        if cut and mesh.get('subdivision') and not mesh.get('adaptive_error') and 'instances' not in mesh:
+            mesh = dict(mesh, adaptive_error=cut['pixels'])
+        elif mesh.get('subdivision') and not mesh.get('adaptive_error') and 'instances' not in mesh and held_render['displacement_tessellation']:
+            # A subdivision surface with no screen error of its own follows the scene's Displacement Tessellation too:
+            # Modo's Displacement Rate (or the Adaptive Error Override), as for a displaced polygon mesh.
+            mesh = dict(mesh, adaptive_error=held_render['displacement_adaptive_error'] or float(scene.get('displacement_rate', 1.0)))
+        if not mesh.get('subdivision') and mesh.get('faces'):
+            # N-gons cut here, as MoonLightIPR cuts them (polygons.cut_mesh), with "N-gons triangulated cleanly" on:
+            # MoonRay is handed the same triangles. A subdivision surface keeps its n-gons, which its limit surface needs.
+            from . import native, polygons
+            if native.ngon_ears():
+                polygons.follow(True)
+                mesh = polygons.cut_mesh(mesh)
         vertices = mesh['vertices']
         faces = mesh['faces']
         if not faces:
             continue
         def checked(faces=faces, vertices=vertices, mesh=mesh):
             # All the corners at once where they are all whole numbers within the points: the usual case. Otherwise
-            # face by face, which says which mesh is wrong.
+            # face by face, which says which mesh is wrong. Faces as Modo handed them over (rows.Faces) are whole
+            # numbers by their kind, their corners and counts looked over as they came.
+            held = rows.corners(faces)
+            if held is not None and min(rows.counts(faces)) >= 3 and (not len(held) or (min(held) >= 0 and max(held) < len(vertices))):
+                return ''
             if min(map(len, faces)) >= 3:
                 corners = list(chain.from_iterable(faces))
                 if set(map(type, corners)) == {int} and min(corners) >= 0 and max(corners) < len(vertices):
@@ -599,7 +645,8 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
                     raise ValueError('Invalid face in ' + mesh['name'])
             return ''
         # Looked over once for as long as the mesh's lists stay the same ones, as their text is written once.
-        _kept('checked:%d' % len(vertices), faces, checked)
+        from .serialization import small
+        small('checked:%d' % len(vertices), faces, checked)
         tag = mesh.get('material', '')
         if tag not in materials:
             tag = ''
@@ -615,7 +662,14 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
         displaced=bool(({tag}|set(parts)) & displacement_tags)
         if displaced and not mesh.get('subdivision'):
             settings=options.object_values(mesh.get('geometry_settings',{}))
-            mesh=dict(mesh,adaptive_error=settings['adaptive_error'])
+            # The object's own screen error; else, as the scene's Displacement Tessellation says, Modo's Displacement Rate
+            # (or the Adaptive Error Override) or none (uniform). An instancer's reference is tessellated once for all its
+            # instances, so it stays uniform.
+            if settings['adaptive_error']:error=settings['adaptive_error']
+            elif cut and 'instances' not in mesh:error=cut['pixels']
+            elif 'instances' in mesh or held_render['displacement_tessellation']==0:error=0.0
+            else:error=held_render['displacement_adaptive_error'] or float(scene.get('displacement_rate',1.0))
+            mesh=dict(mesh,adaptive_error=error)
         level = mesh.get('subdivision_level', 3)
         if type(level) is not int or not 1 <= level <= 5:
             raise ValueError('Subdivision level must be an integer between 1 and 5')
@@ -627,7 +681,7 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
                 mesh=dict(mesh,uvs=fallback_uvs(faces))
             named_uvs['modo_primary_uv']=mesh['uvs']
         for uv_index, (uv_name, values) in enumerate(sorted(named_uvs.items())):
-            if len(values) != sum(map(len, faces)):
+            if len(values) != rows.corner_count(faces):
                 raise ValueError('Named UV set must match polygon corners: '+uv_name)
             name = '/modo/mesh/%d/uv/%d' % (index,uv_index)
             lines += ['UserData(%s) {' % string(name),
@@ -638,7 +692,7 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
             user_data.append('UserData(%s)' % string(name))
         # The mesh's weight and colour maps (vertex_maps), for its materials to read by their names: MoonRay's rate 4
         # for a value at each point, 6 for one at each corner of each face.
-        for source, rate, count in (('point_attributes', 4, len(vertices)), ('corner_attributes', 6, sum(map(len, faces)))):
+        for source, rate, count in (('point_attributes', 4, len(vertices)), ('corner_attributes', 6, rows.corner_count(faces))):
             for map_index, (map_name, held) in enumerate(sorted((mesh.get(source) or {}).items())):
                 values = held['values']
                 if len(values) != count:
@@ -722,7 +776,7 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
             if source == 'normals' and (subdivision or not mesh.get('smooth', True)):
                 continue
             if values:
-                if len(values) != sum(map(len, faces)):
+                if len(values) != rows.corner_count(faces):
                     raise ValueError('Face-varying %s must match the corner count' % source)
                 lines += _heavy_line('/modo/mesh/%s' % index, attribute, kind.lower(), values,
                                      lambda: vector_array(values, kind))

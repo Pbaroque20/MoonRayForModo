@@ -8,6 +8,7 @@ import hashlib
 import json
 import marshal
 import threading
+from .rows import Rows
 
 # Per-mesh lists that scale with polygon count.
 HEAVY = ('vertices', 'vertices_close', 'faces', 'uvs', 'normals', 'face_materials', 'creases')
@@ -44,6 +45,10 @@ def content(value):
     return entry[1]
 
 
+def _unknown(value):
+    raise TypeError('Object of type %s is not JSON serializable' % type(value).__name__)
+
+
 def digest(scene, *extra):
     """Hash a snapshot and any settings that also decide whether a preview must restart."""
     used = set()
@@ -51,7 +56,7 @@ def digest(scene, *extra):
     def light(mesh):
         result = dict(mesh)
         for key in HEAVY:
-            if isinstance(mesh.get(key), list) and mesh[key]:
+            if isinstance(mesh.get(key), (list, Rows)) and mesh[key]:
                 result[key] = content(mesh[key]); used.add(id(mesh[key]))
         sets = mesh.get('uv_sets')
         if isinstance(sets, dict):
@@ -68,5 +73,7 @@ def digest(scene, *extra):
     with _lock:
         for stale in [key for key in _remembered if key not in used]:
             del _remembered[stale]
-    encoded = json.dumps([compact, list(extra)], sort_keys=True, separators=(',', ':'))
+    # Rows anywhere else (a vertex map's values, say) by their digest too.
+    encoded = json.dumps([compact, list(extra)], sort_keys=True, separators=(',', ':'),
+                         default=lambda value: content(value) if isinstance(value, Rows) else _unknown(value))
     return hashlib.sha256(encoded.encode('utf-8')).hexdigest()

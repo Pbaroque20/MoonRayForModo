@@ -17,6 +17,15 @@ try:
 except Exception:
     pass
 
+# Installed from a package over an older version: what that version left and this one does not have, moved aside.
+try:
+    from moonray_modo import stale_files as _stale
+    _moved = _stale.tidy()
+    if _moved:
+        lx.out('MoonRay for Modo: %d files an older version left were moved into the kit folder\'s _replaced folder' % len(_moved))
+except Exception:
+    pass
+
 
 def _same(kind, *args):
     """One popup description for each set of choices (moonray_modo.hint_cache); the kit is on the path only once commands run."""

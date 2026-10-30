@@ -97,6 +97,9 @@ def bindings(material, index, lines, glass=False, absorption=False, separate_mas
             held={'pattern':str(solid['pattern']),'type':str(solid['type']),'settings':'{'+', '.join(number(v) for v in solid['settings'])+'}',
                   'color1':rgb(solid['color1']),'color2':rgb(solid['color2']),'alpha1':number(solid['alpha1']),'alpha2':number(solid['alpha2']),
                   **{'row%d'%index:vector(row,'Vec4') for index,row in enumerate(solid['rows'])}}
+            if solid.get('process'):
+                # A process (Enhance: Modo's RegionalHSV) makes its colour from what is beneath it.
+                held['input']=current[effect]
             foreground=node('ModoProceduralMap',dict(held,output='0'))
             if solid['alpha1']!=1 or solid['alpha2']!=1:
                 mask=node('ModoProceduralMap',dict(held,output='1'))
@@ -107,6 +110,13 @@ def bindings(material, index, lines, glass=False, absorption=False, separate_mas
                 mask=emit_gradient(dict(layer['gradient'],colors=[[v]*3 for v in layer['gradient']['alpha']]),current,node,rgb)
         elif kind=='constant':
             foreground = rgb(layer['value'])
+        elif kind=='wireframe':
+            # Modo's Wireframe: MoonRay's WireframeMap, its lines as wide as Modo's in the scene's units.
+            wire=layer['wireframe']
+            lines={'raster':'false','line_width':number(wire['width'])}
+            foreground=node('WireframeMap',dict(lines,line_color=rgb(wire['color1']),fill_color=rgb(wire['color2'])))
+            if wire['alpha1']!=1 or wire['alpha2']!=1:
+                mask=node('WireframeMap',dict(lines,line_color=rgb(wire['alpha1']),fill_color=rgb(wire['alpha2'])))
         elif kind in ('checker','noise'):
             foreground = node('ModoTextureMap', {'mode':str(2 if kind=='checker' else 3),
                 'background':rgb(0), 'foreground':rgb(1),
@@ -283,6 +293,72 @@ BUMP_STEP = False
 # While a material is written (rdla), the Shader Tree displacements its layers make, in the order they are written:
 # the last, the topmost, is the one MoonRay is given. None when no material is being written.
 DISPLACEMENT = None
+
+
+def zero_height(binding, lines):
+    """Whether a displacement's height (a binding written into lines) is zero everywhere: layers that only blend black
+    over black (a layer whose image is missing is black). Modo moves nothing then, and MoonRay would still tessellate
+    every mesh of the material at its mesh resolution and make its normals anew for it."""
+    import re
+    if binding.strip() in ('0', '0.0'):
+        return True
+    global _BODIES
+    if _BODIES is None or _BODIES[0] is not lines or _BODIES[1] != len(lines):
+        _BODIES = (lines, len(lines), _bodies(lines))
+    bodies = _BODIES[2]
+    seen = {}
+
+    def zero(node):
+        if node in seen:
+            return seen[node]
+        seen[node] = False
+        klass, attributes = bodies.get(node, (None, None))
+        if klass != 'ModoTextureMap':
+            return False
+        for attribute in attributes:
+            pair = re.match(r'\["(\w+)"\]\s*=\s*(.+?),?$', attribute)
+            if not pair:
+                return False
+            key, value = pair.groups()
+            if key in ('blend', 'opacity'):
+                continue
+            if key not in ('background', 'foreground'):
+                return False  # an image, a pattern or a setting of its own: not known to be black
+            bound = re.match(r'bind\(\w+\("([^"]+)"\)', value)
+            if bound:
+                if not zero(bound.group(1)):
+                    return False
+            elif value.strip() not in _ZERO:
+                return False
+        seen[node] = True
+        return True
+
+    bound = re.match(r'\s*bind\(\w+\("([^"]+)"\)', binding)
+    return bool(bound) and zero(bound.group(1))
+
+
+_ZERO = {'0', '0.0', 'Rgb(0, 0, 0)', 'Rgb(0.0, 0.0, 0.0)'}
+# The objects read from a scene's lines (zero_height), read again when more lines are written: the list, its length then,
+# the objects.
+_BODIES = None
+
+
+def _bodies(lines):
+    """Each object written in lines, by name: its class and its attribute lines."""
+    import re
+    bodies = {}
+    name = None
+    for line in '\n'.join(lines).splitlines():
+        start = re.match(r'\s*(?:\w+\[[^\]]*\]\s*=\s*)?(\w+)\("([^"]+)"\)\s*\{\s*$', line)
+        if start:
+            name = start.group(2)
+            bodies[name] = (start.group(1), [])
+        elif name is not None:
+            if line.strip() == '}':
+                name = None
+            else:
+                bodies[name][1].append(line.strip())
+    return bodies
 
 
 def defaults_for(material):

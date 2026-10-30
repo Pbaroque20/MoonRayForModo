@@ -71,6 +71,13 @@
       "type": "FloatVector",
       "default": "{}",
       "comment": "The pattern's settings in the order of procedurals.MAP_SETTINGS or ENHANCE, up to 22; the 23rd and 24th are its bias and gain"
+    },
+    "attrInput": {
+      "name": "input",
+      "type": "Rgb",
+      "default": "Rgb(0.0f,0.0f,0.0f)",
+      "flags": "FLAGS_BINDABLE",
+      "comment": "For a process (pattern 400 on): the colour beneath it, from which it makes its own"
     }
   }
 }

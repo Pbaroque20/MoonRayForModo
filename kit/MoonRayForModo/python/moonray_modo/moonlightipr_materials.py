@@ -4,6 +4,7 @@ A material becomes starting values for each channel plus an ordered list of laye
 constant, an image, a gradient or a pattern blended over the rows below it, as graph.py builds
 for MoonRay. What has no counterpart is collected by name so the caller can report it.
 """
+from .cache_folder import root as cache_root
 import hashlib
 import math
 import os
@@ -161,12 +162,25 @@ LAYER_INVERT, LAYER_FLIP_RED, LAYER_FLIP_GREEN, LAYER_FLIP_BLUE = 2, 4, 8, 16
 LAYER_ALPHA_MASK, LAYER_ALPHA_ONLY, LAYER_COVERAGE_U, LAYER_COVERAGE_V, LAYER_PICK_SHIFT = 32, 64, 128, 256, 9
 LAYER_RAMP, LAYER_CHECKER, LAYER_NOISE, LAYER_UDIM = 1 << 16, 1 << 17, 1 << 18, 1 << 19
 LAYER_PROCEDURAL = 1 << 21     # Modo's pattern through the object (modo_patterns.h, procedurals.solid)
+LAYER_WIREFRAME = 1 << 22      # Modo's Wireframe: the first colour along the polygons' edges
+RAMP_CURVATURE = 255           # a gradient row's slot when the surface's curvature looks it up (Modo's Curvature)
 IDENTITY_ROWS = ((1.0, 0.0, 0.0, 0.0), (0.0, 1.0, 0.0, 0.0), (0.0, 0.0, 1.0, 0.0))
 BLEND_REORIENTED_NORMAL = 15
 WRAP = {'repeat': 0, 'edge': 1, 'mirror': 2, 'reset': 3}
 TEXTURE_FLOAT, TEXTURE_SRGB, TEXTURE_WRAP_U_SHIFT, TEXTURE_WRAP_V_SHIFT = 1, 2, 2, 4
 UV_SLOTS = 8
-MAX_TEXTURE_SIDE = 4096
+# The largest side of an image MoonLightIPR is given (larger ones are fitted within it as they are converted): 1024,
+# perceptually enough at realtime's sizes, with far less for the card to hold and read (it was 4096, then 1280). The
+# environment's image is sized on its own (moonlightipr_scene).
+MAX_TEXTURE_SIDE = 1024
+
+
+def fitted(width, height, side=MAX_TEXTURE_SIDE):
+    """An image's size made no larger than side on either axis, its shape kept."""
+    scale = side / max(width, height)
+    return max(1, round(width * scale)), max(1, round(height * scale))
+
+
 RAMP_STEPS = 257
 HDR_SUFFIXES = ('.exr', '.hdr', '.tx')
 SPACE_ALIASES = {'(default)': '', '(none)': 'raw', 'Linear': 'linear', 'lin_rec709': 'linear', 'srgb_texture': 'sRGB'}
@@ -180,7 +194,7 @@ def triple(value):
 
 
 def cache_folder():
-    return Path(os.environ.get('LOCALAPPDATA', tempfile.gettempdir())) / 'MoonRayForModo/MoonLightIPR'
+    return cache_root() / 'MoonLightIPR'
 
 
 def color_space(source, authored, srgb):
@@ -799,7 +813,7 @@ class Compiler:
         stat = source.stat()
         hdr = source.suffix.lower() in HDR_SUFFIXES
         space, ocio = color_space(source, layer.get('color_space', ''), layer.get('srgb'))
-        digest = hashlib.sha256(repr((str(source.resolve()), stat.st_size, stat.st_mtime_ns, MAX_TEXTURE_SIDE, 'moonlightipr-v2', ocio and (space, ocio))).encode()).hexdigest()
+        digest = hashlib.sha256(repr((str(source.resolve()), stat.st_size, stat.st_mtime_ns, MAX_TEXTURE_SIDE, 'moonlightipr-v3', ocio and (space, ocio))).encode()).hexdigest()
         target = cache_folder() / (digest + ('.pfm' if hdr else '.tga'))
         if not target.is_file() or not target.stat().st_size:
             # Alongside the scene's other textures, while the scene is packed (moonlightipr_scene.pack).
@@ -819,10 +833,8 @@ class Compiler:
 
     def run(self, args, name):
         from . import native
-        runtime = Path(self.runtime or native.default_runtime())
-        tool = runtime / 'oiiotool.exe'
-        if not tool.is_file():
-            raise ValueError('Texture conversion needs oiiotool.exe in the MoonRay runtime')
+        tool = native.tool('oiiotool.exe', self.runtime)
+        runtime = tool.parent
         result = subprocess.run([str(tool)] + args, env=native.environment(runtime), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                 text=True, timeout=120, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
         if result.returncode:
@@ -849,7 +861,9 @@ class Compiler:
         if resample is not None:
             args += list(resample)
         elif max(width, height) > MAX_TEXTURE_SIDE:
-            args += ['--fit', '%dx%d' % (MAX_TEXTURE_SIDE, MAX_TEXTURE_SIDE)]
+            # Its own shape, its longer side at the limit: --fit pads to the square, and Dose's 2103x1673 label filled
+            # only the middle of its UVs, the can dark above and below it.
+            args += ['--resize', '%dx%d' % fitted(width, height)]
         target.parent.mkdir(parents=True, exist_ok=True)
         staged = target.with_name(target.stem + '-' + uuid.uuid4().hex + target.suffix)
         try:
@@ -1104,10 +1118,27 @@ class Compiler:
                 flags |= LAYER_PROCEDURAL
                 value = solid['color1']
                 extra = dict(color2=solid['color2'], alpha1=float(solid['alpha1']), alpha2=float(solid['alpha2']),
-                             pattern=int(solid['pattern']) | (int(solid['type']) << 8),
+                             pattern=int(solid['pattern']) | (int(solid['type']) << 16),
                              settings=list(solid['settings']), rows=solid['rows'])
             elif kind == 'constant':
                 value = layer['value']
+            elif kind == 'gradient' and layer['gradient'].get('input') == '@curvature':
+                # Modo's Curvature: looked up by how the surface bends over each triangle, settings[0] the scale.
+                try:
+                    texture = self.ramp(layer['gradient'])
+                except (OSError, ValueError, KeyError, TypeError, IndexError) as exc:
+                    self.note('a Curvature gradient that could not be read (%s)' % exc, name)
+                    abandon()
+                    continue
+                flags |= LAYER_RAMP
+                slot = RAMP_CURVATURE
+                extra = dict(settings=[float(layer['gradient'].get('scale', 1))] + [0.0] * 21 + [.5, .5])
+            elif kind == 'wireframe':
+                wire = layer['wireframe']
+                flags |= LAYER_WIREFRAME
+                value = wire['color1']
+                extra = dict(color2=wire['color2'], alpha1=float(wire['alpha1']), alpha2=float(wire['alpha2']),
+                             settings=[float(wire['width']), float(wire['soft'])] + [0.0] * 20 + [.5, .5])
             elif kind == 'gradient':
                 data = layer['gradient']
                 if data.get('input') not in CHANNELS:

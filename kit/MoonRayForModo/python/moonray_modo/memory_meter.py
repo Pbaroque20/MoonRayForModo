@@ -1,0 +1,212 @@
+"""The preview window's memory meter: what the renderer holds, what the machine has free and what the graphics card
+holds, read from Windows and the NVIDIA driver once a second, whatever the engine. It turns amber, then red, as the
+machine or the card runs short, before a render can take more than there is (a heavy scene once froze the machine)."""
+import ctypes
+import ctypes.wintypes as w
+import os
+import threading
+from PySide2 import QtCore, QtWidgets
+
+GB = 1024.0 ** 3
+
+
+class _MemoryStatus(ctypes.Structure):
+    _fields_ = [('dwLength', w.DWORD), ('dwMemoryLoad', w.DWORD), ('ullTotalPhys', ctypes.c_ulonglong), ('ullAvailPhys', ctypes.c_ulonglong),
+                ('ullTotalPageFile', ctypes.c_ulonglong), ('ullAvailPageFile', ctypes.c_ulonglong), ('ullTotalVirtual', ctypes.c_ulonglong),
+                ('ullAvailVirtual', ctypes.c_ulonglong), ('ullAvailExtendedVirtual', ctypes.c_ulonglong)]
+
+
+class _ProcessCounters(ctypes.Structure):
+    _fields_ = [('cb', w.DWORD), ('PageFaultCount', w.DWORD), ('PeakWorkingSetSize', ctypes.c_size_t), ('WorkingSetSize', ctypes.c_size_t),
+                ('QuotaPeakPagedPoolUsage', ctypes.c_size_t), ('QuotaPagedPoolUsage', ctypes.c_size_t),
+                ('QuotaPeakNonPagedPoolUsage', ctypes.c_size_t), ('QuotaNonPagedPoolUsage', ctypes.c_size_t),
+                ('PagefileUsage', ctypes.c_size_t), ('PeakPagefileUsage', ctypes.c_size_t), ('PrivateUsage', ctypes.c_size_t)]
+
+
+class _NvmlMemory(ctypes.Structure):
+    _fields_ = [('total', ctypes.c_ulonglong), ('free', ctypes.c_ulonglong), ('used', ctypes.c_ulonglong)]
+
+
+def machine():
+    """The machine's RAM: (total, free) in bytes, or None."""
+    status = _MemoryStatus()
+    status.dwLength = ctypes.sizeof(status)
+    try:
+        if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+            return status.ullTotalPhys, status.ullAvailPhys
+    except (AttributeError, OSError):
+        pass
+    return None
+
+
+def process(pid):
+    """A process's memory in RAM (its working set) and committed, in bytes, or None where it cannot be read."""
+    if not pid:
+        return None
+    try:
+        k32 = ctypes.windll.kernel32
+        k32.OpenProcess.restype = w.HANDLE
+        handle = k32.OpenProcess(0x1000, False, int(pid))  # PROCESS_QUERY_LIMITED_INFORMATION
+        if not handle:
+            return None
+        try:
+            counters = _ProcessCounters()
+            counters.cb = ctypes.sizeof(counters)
+            if not k32.K32GetProcessMemoryInfo(w.HANDLE(handle), ctypes.byref(counters), counters.cb):
+                return None
+            return counters.WorkingSetSize, counters.PrivateUsage
+        finally:
+            k32.CloseHandle(w.HANDLE(handle))
+    except (AttributeError, OSError):
+        return None
+
+
+class _Card:
+    """The NVIDIA driver's NVML (nvml.dll, installed with the driver): the first card's memory, or None without one."""
+
+    def __init__(self):
+        self.device = None
+        self.name = ''
+        try:
+            path = os.path.join(os.environ.get('SystemRoot', r'C:\Windows'), 'System32', 'nvml.dll')
+            self.nvml = ctypes.CDLL(path) if os.path.isfile(path) else None
+            if self.nvml and self.nvml.nvmlInit_v2() == 0:
+                device = ctypes.c_void_p()
+                if self.nvml.nvmlDeviceGetHandleByIndex_v2(0, ctypes.byref(device)) == 0:
+                    self.device = device
+                    name = ctypes.create_string_buffer(96)
+                    if self.nvml.nvmlDeviceGetName(device, name, 96) == 0:
+                        self.name = name.value.decode('utf-8', 'replace')
+        except (OSError, AttributeError):
+            self.device = None
+
+    def memory(self):
+        """(total, used) in bytes."""
+        if self.device is None:
+            return None
+        info = _NvmlMemory()
+        try:
+            if self.nvml.nvmlDeviceGetMemoryInfo(self.device, ctypes.byref(info)) == 0:
+                return info.total, info.used
+        except OSError:
+            pass
+        return None
+
+
+_CARD = None
+
+
+def card():
+    global _CARD
+    if _CARD is None:
+        _CARD = _Card()
+    return _CARD
+
+
+def _level(short):
+    # 0 fine, 1 short (amber), 2 very short (red)
+    return 2 if short >= 2 else 1 if short >= 1 else 0
+
+
+COLOURS = {0: '', 1: '#d9a13b', 2: '#e0533d'}
+
+
+def readings(pids):
+    """What the meter shows, read: the processes' memory, the machine's RAM and the card's memory."""
+    return [m for m in (process(p) for p in pids) if m], machine(), card().memory()
+
+
+class _Reader(threading.Thread):
+    """The readings taken once a second on a thread of their own: the driver's answer can wait while the card is busy (a
+    realtime render's launches), and Modo's own thread waited with it, the preview hesitating once a second."""
+
+    def __init__(self):
+        super().__init__(name='MoonRay memory meter', daemon=True)
+        # active: whether to read at all (a meter switched off reads nothing).
+        self.pids, self.latest, self.wake, self.stopped, self.active = [], None, threading.Event(), False, True
+
+    def run(self):
+        while not self.stopped:
+            try:
+                if self.active:
+                    self.latest = readings(list(self.pids))
+            except Exception:
+                pass
+            self.wake.wait(1.0)
+            self.wake.clear()
+
+
+class MemoryMeter(QtWidgets.QLabel):
+    """The meter: renderer, RAM free and GPU, its colour the worst of them. processes() gives the renderer's processes'
+    ids (none running: the renderer is left out). The readings are taken on a thread of their own (_Reader); Modo's
+    thread only shows them, and sets the text again only when it reads otherwise."""
+
+    def __init__(self, processes, parent=None, on=None, placed=None):
+        super().__init__(parent)
+        self.processes = processes
+        # on(): whether it is shown and read at all (a preference); placed(): told when its words change, to be set in
+        # its place again (the preview's HUD).
+        self.on, self.placed = on or (lambda: True), placed
+        self.shown = None
+        self.setEnabled(False)
+        self.setTextFormat(QtCore.Qt.RichText)
+        self.reader = _Reader()
+        self.timer = QtCore.QTimer(self)
+        self.timer.setInterval(1000)
+        self.timer.timeout.connect(self.refresh)
+        self.timer.start()
+        # The first reading at once, then the reader's.
+        self.reader.latest = readings([p for p in (self.processes() or []) if p])
+        self.refresh()
+        self.reader.start()
+
+    def refresh(self):
+        on = self.on()
+        self.reader.active = on
+        if not on:
+            if self.isVisible():
+                self.hide()
+            return
+        self.reader.pids = [p for p in (self.processes() or []) if p]
+        if self.reader.latest is None:
+            return
+        held, ram, gpu = self.reader.latest
+        parts, notes, worst = [], [], 0
+        if held:
+            resident = sum(m[0] for m in held)
+            committed = sum(m[1] for m in held)
+            parts.append('Renderer %.1f GB' % (resident / GB))
+            notes.append('The renderer holds %.1f GB of RAM (%.1f GB committed: what it has asked Windows for, including what the graphics driver '
+                         'keeps in reserve for the card).' % (resident / GB, committed / GB))
+        if ram:
+            total, free = ram
+            share = free / total if total else 1.0
+            level = _level(2 if share < 0.08 else 1 if share < 0.15 else 0)
+            worst = max(worst, level)
+            text = 'RAM %.0f GB free' % (free / GB)
+            parts.append('<span style="color:%s">%s</span>' % (COLOURS[level], text) if level else text)
+            notes.append('The machine has %.1f GB of its %.0f GB of RAM free.' % (free / GB, total / GB))
+        if gpu:
+            total, used = gpu
+            share = used / total if total else 0.0
+            level = _level(2 if share > 0.95 else 1 if share > 0.85 else 0)
+            worst = max(worst, level)
+            text = 'GPU %.1f/%.0f GB' % (used / GB, total / GB)
+            parts.append('<span style="color:%s">%s</span>' % (COLOURS[level], text) if level else text)
+            notes.append('The graphics card%s holds %.1f GB of its %.0f GB (every program on it, Modo\'s viewport too).' % (
+                ' (' + card().name + ')' if card().name else '', used / GB, total / GB))
+        if worst:
+            notes.append('Memory is running short: a render that needs more may slow the machine or fall back.')
+        # Set again only when it reads otherwise: a label set anew lays the window's row out again.
+        shown = (' \u00b7 '.join(parts), '\n'.join(notes), bool(worst))
+        if shown == self.shown:
+            return
+        self.shown = shown
+        self.setText(shown[0])
+        self.setToolTip(shown[1])
+        # Shown in full colour when short, dimmed like the picture's details otherwise.
+        self.setEnabled(shown[2])
+        self.adjustSize()
+        self.setVisible(bool(shown[0]))
+        if self.placed is not None:
+            self.placed()

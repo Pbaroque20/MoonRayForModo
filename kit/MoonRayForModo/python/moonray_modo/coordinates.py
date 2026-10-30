@@ -2,6 +2,7 @@
 import hashlib
 import json
 import math
+from . import rows
 
 
 def key(layer):
@@ -103,12 +104,16 @@ def transform_uv(layer, values):
     rotation = layer.get('rotation', 0)
     cosine, sine = math.cos(rotation), math.sin(rotation)
     sx,sy = layer.get('scale', [1,1])
+    # UVs as Modo handed them over, all at once by the geometry adapter: the same arithmetic.
+    moved = rows.uv_transform(values, (a, b, c, d, e, f, cosine, sine, sx, sy))
+    if moved is not None:
+        return moved
     return [[((x := a*u+b*v+c)*cosine-(y := d*u+e*v+f)*sine)*sx, (x*sine+y*cosine)*sy] for u,v in values]
 
 
 def mesh_corners(layer, vertices, faces, uv, world_matrix):
     """Bake independently per polygon, keeping seam correction local to a face."""
-    count = sum(len(polygon) for polygon in faces)
+    count = rows.corner_count(faces)
     if layer.get('projection','uv') == 'uv' and len(uv) != count:
         raise ValueError('Named UV count does not match mesh corners')
     if layer.get('projection','uv') == 'uv':

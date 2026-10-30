@@ -4,6 +4,7 @@ ENUMS = {'sampling_mode': [('Uniform',0),('Adaptive',2)],
          'light_sampling_mode': [('Uniform lights',0),('Adaptive lights',1)],
          'shadow_terminator_fix': [('Off',0),('Targeted',1),('Sine',2),('GGX',3),('Cosine',4)]}
 ENUMS['batch_tile_order'] = [('Morton',4),('Top to bottom',0),('Bottom to top',1),('Left to right',2),('Right to left',3),('Random',5),('Spiral square (default)',6),('Spiral rectangle',7),('Morton shift / flip',8)]
+ENUMS['displacement_tessellation'] = [('Uniform (mesh resolution)',0),('Follow Modo (Displacement Rate)',1),('Fixed dicing camera',2)]
 ENUMS['bucket_size'] = [('Auto (resolution)',0),('32 x 32',32),('64 x 64',64),('128 x 128',128),('256 x 256',256)]
 RENDER = {
     'bucket_size': (0, 0, 256, 'Bucket size (preview and final)'),
@@ -60,6 +61,14 @@ RENDER = {
     # MoonRay's global switches, each at MoonRay's own value: on for displacement, subsurface and shadows, off for lights
     # seen by the camera and for a limit to geometry resolution (whose limit then matters not).
     'enable_displacement': (1, 0, 1, 'Displacement'),
+    # How a displaced polygon mesh is tessellated where the object says nothing (the kit's own, OWN): 1 follows Modo, by
+    # its render item's Displacement Rate, from the render camera; 2 the same from a dicing camera held at the Dicing
+    # Frame (the triangles stay put while the camera moves: no shimmer in an animation); 0 uniformly, by mesh resolution.
+    'displacement_tessellation': (1, 0, 2, 'Displacement tessellation'),
+    # The screen error in pixels (adaptive_error) in place of Modo's Displacement Rate; 0: Modo's.
+    'displacement_adaptive_error': (0.0, 0.0, 64.0, 'Adaptive error override (pixels; 0 = Modo\'s Displacement Rate)'),
+    # The frame the fixed dicing camera is held at; below 0: the scene's first frame.
+    'dicing_frame': (-1.0, -1000000.0, 1000000.0, 'Dicing frame (-1 = the first frame)'),
     'enable_subsurface_scattering': (1, 0, 1, 'Subsurface scattering'),
     'enable_shadowing': (1, 0, 1, 'Shadows'),
     'lights_visible_in_camera': (0, 0, 1, 'Lights seen by the camera'),
@@ -70,7 +79,7 @@ RENDER = {
 BOOLS = ('enable_presence_shadows', 'cryptomatte_multi_presence', 'disable_optimized_hair_sampling', 'lock_frame_noise', 'important_first', 'enable_displacement', 'enable_subsurface_scattering',
          'enable_shadowing', 'lights_visible_in_camera', 'enable_max_geometry_resolution')
 # Settings that are the kit's own, and are not written into a MoonRay scene by their names.
-OWN = ('batch_tile_order', 'bucket_size', 'important_first')
+OWN = ('batch_tile_order', 'bucket_size', 'important_first', 'displacement_adaptive_error', 'displacement_tessellation', 'dicing_frame')
 ENUMS['volume_overlap_mode'] = [('Add them up', 0), ('The densest', 1), ('One at random', 2)]
 # The first three are MoonRay's own, from its source. The other three are this plugin's additions to MoonRay: filters that
 # never go negative, which is what MoonRay's filter importance sampling needs (it places samples by the filter's shape).

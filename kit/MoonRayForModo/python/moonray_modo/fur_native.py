@@ -7,6 +7,7 @@ that the runtime's ModoFurGeometry reads: no fibre passes through Python or thro
 grown as Modo would grow, each as wide as the Fur material says. Where the program is not to be had, or fails, grow()
 returns None and the fur is grown in Python as before.
 """
+from .cache_folder import root as cache_root
 import hashlib
 import os
 import struct
@@ -47,7 +48,7 @@ def reads(runtime=None):
 
 
 def folder():
-    path = Path(os.environ.get('LOCALAPPDATA', tempfile.gettempdir())) / 'MoonRayForModo/Fur'
+    path = cache_root() / 'Fur'
     path.mkdir(parents=True, exist_ok=True)
     return path
 

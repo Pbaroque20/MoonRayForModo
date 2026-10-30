@@ -89,8 +89,11 @@ def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, mat
             continue
         if channel(layer,'effect','') in baked_effects:
             continue
-        from .procedurals import ENHANCE
-        if layer.type not in ('imageMap','constant','checker','noise','grid','dots','gradient','cellular','wood','weave','ripples') and layer.type not in ENHANCE:
+        from .procedurals import ENHANCE, SURFACE_KINDS
+        # Modo's Gabor and Poisson noise are drawn through the object as Enhance: Modo's patterns are.
+        SOLID_ONLY = ('val.noise.gabor', 'val.noise.poisson')
+        if layer.type not in ('imageMap','constant','checker','noise','grid','dots','gradient','cellular','wood','weave','ripples') and layer.type not in ENHANCE \
+                and layer.type not in SURFACE_KINDS and layer.type not in SOLID_ONLY:
             from . import properties
             # A render output says what Modo's own renderer writes; it is not a layer of any material.
             if not properties.is_material(layer) and layer.type not in ('defaultShader','mask','envMaterial','renderOutput','furMaterial') and channel(layer,'effect',None) is not None:
@@ -150,6 +153,24 @@ def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, mat
                 warnings.append('Gradient '+layer.name+': evaluated at 257 samples over input 0..1; outside values clamp. Exact curve and discontinuity parity is unverified.')
             elif layer.type == 'constant':
                 node['value'] = color(layer,'color',(0,0,0)) if is_color else [float(channel(layer,'value',1))]*3
+            elif layer.type in SURFACE_KINDS:
+                # These need no texture locator: they take what is beneath them, or the surface itself.
+                from . import procedurals
+                if layer.type == 'val.Process_EasyGrad.RJJ':
+                    node['kind'] = 'gradient'
+                    node['gradient'] = procedurals.easygrad(layer,channel,color,is_color,effect)
+                    warnings.append('EasyGrad '+layer.name+': a gradient over the brightness of what is beneath it; Modo equivalence is unverified.')
+                elif layer.type == 'val.Process_RegionalHSV.RJJ':
+                    node['solid_map'] = procedurals.regional(layer,channel,color)
+                    node['procedural'] = None
+                    warnings.append('RegionalHSV '+layer.name+': each colour beneath it given its own at random; Modo equivalence is unverified.')
+                elif layer.type == 'val.RTCurvature':
+                    node['kind'] = 'gradient'
+                    node['gradient'] = procedurals.curvature(layer,channel,is_color)
+                    warnings.append('Curvature '+layer.name+': measured from the normals of the surface, triangle by triangle in MoonLightIPR; Modo equivalence is unverified.')
+                else:
+                    node['kind'] = 'wireframe'
+                    node['wireframe'] = procedurals.wireframe(layer,channel,color,is_color)
             else:
                 connected = layer.itemGraph('shadeLoc').forward()
                 locator = next((i for i in connected if i.type=='txtrLocator'),None)
@@ -166,8 +187,8 @@ def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, mat
                     solid_map = solid(layer,channel,color,is_color,world_matrix(locator))
                     projection='cubic'
                     warnings.append('Layer %s: Solid projection%s laid on as Cubic.'%(layer.name,', drawn through the object by MoonRay; MoonLightIPR' if solid_map else ''))
-                if layer.type in ENHANCE and not solid_map:
-                    raise ValueError('Enhance: Modo textures are drawn with a Solid projection')
+                if (layer.type in ENHANCE or layer.type in SOLID_ONLY) and not solid_map:
+                    raise ValueError(('Gabor and Poisson noise are' if layer.type in SOLID_ONLY else 'Enhance: Modo textures are')+' drawn with a Solid projection')
                 if projection not in ('uv','planar','spherical','cylindrical','cubic'):
                     raise ValueError('unsupported projection '+projection)
                 node['projection'] = projection
@@ -221,11 +242,13 @@ def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, mat
                         srgb=effect not in ('normal','normalCoat','bump','coatBump') and (space=='sRGB' or
                             (space=='(default)' and effect in textures.COLOR_EFFECTS and path.suffix.lower() not in ('.exr','.hdr','.tx'))),
                         use_alpha=source_channel=='use')
-                elif layer.type in ENHANCE:
-                    # Enhance: Modo's patterns are drawn through the object by MoonRay and MoonLightIPR alike.
+                elif layer.type in ENHANCE or layer.type in SOLID_ONLY:
+                    # Enhance: Modo's patterns, and Modo's Gabor and Poisson noise, are drawn through the object by
+                    # MoonRay and MoonLightIPR alike.
                     node['solid_map']=solid_map
                     node['procedural']=None
-                    warnings.append('Procedural '+layer.name+': drawn in 3D after Enhance: Modo\'s '+layer.type[4:-4].replace('_',' ')+'; Modo pattern equivalence is unverified.')
+                    named=('Modo\'s '+layer.type[4:].replace('.',' ')) if layer.type in SOLID_ONLY else ('Enhance: Modo\'s '+layer.type[4:-4].replace('_',' '))
+                    warnings.append('Procedural '+layer.name+': drawn in 3D after '+named+'; Modo pattern equivalence is unverified.')
                 elif layer.type in ('grid','dots','cellular','wood','weave','ripples'):
                     from .procedurals import capture
                     if solid_map:node['solid_map']=solid_map

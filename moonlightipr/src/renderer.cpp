@@ -1353,10 +1353,10 @@ void Renderer::setMaterials(const Material* materials, size_t count, const Layer
         std::copy(layer.rows, layer.rows + 12, out.rows);
         if (layer.gamma != 1.0f || layer.bias != 0.5f || layer.gainCurve != 0.5f) out.flags |= LAYER_CURVES;
         // Coordinates and channels are followed on the GPU without checks.
-        const unsigned sources = out.flags & (LAYER_RAMP | LAYER_CHECKER | LAYER_NOISE | LAYER_UDIM | LAYER_PROCEDURAL);
+        const unsigned sources = out.flags & (LAYER_RAMP | LAYER_CHECKER | LAYER_NOISE | LAYER_UDIM | LAYER_PROCEDURAL | LAYER_WIREFRAME);
         if (sources & (sources - 1)) throw std::runtime_error("MoonLightIPR layer has more than one source");
         if (out.flags & LAYER_RAMP) {
-            if (layer.uvSlot >= CHANNEL_COUNT) throw std::runtime_error("MoonLightIPR gradient layer refers to a missing channel");
+            if (layer.uvSlot >= CHANNEL_COUNT && layer.uvSlot != RAMP_CURVATURE) throw std::runtime_error("MoonLightIPR gradient layer refers to a missing channel");
             out.texture = object(layer.texture);
         } else if (out.flags & LAYER_UDIM) {
             if (layer.texture < 0 || size_t(layer.texture) >= tileCount || layer.uvSlot >= UV_SLOTS)
@@ -1364,6 +1364,7 @@ void Renderer::setMaterials(const Material* materials, size_t count, const Layer
             out.texture = impl->tileTable.ptr + size_t(layer.texture) * sizeof(unsigned long long);
         } else if (out.flags & (LAYER_CHECKER | LAYER_NOISE)) {
             if (layer.uvSlot >= UV_SLOTS) throw std::runtime_error("MoonLightIPR layer refers to a missing coordinate slot");
+        } else if (out.flags & LAYER_WIREFRAME) {
         } else if (layer.texture >= 0) {
             if (layer.uvSlot >= UV_SLOTS) throw std::runtime_error("MoonLightIPR layer refers to a missing coordinate slot");
             out.texture = object(layer.texture);
@@ -1585,6 +1586,8 @@ void Renderer::setLights(const Light* lights, size_t count) {
             }
             filters.push_back(filter);
         }
+        // Whether the camera sees the light itself, as MoonRay shows a light whose Visible in Camera is on.
+        out.pad = light.visibleInCamera && light.kind != Light::Portal ? 1u : 0u;
         if (light.kind == Light::Mesh) {
             // A corner, two edges and the running share of the area, which picks a triangle.
             if (!light.triangles || !light.triangleCount || light.triangleCount > 0xffffffffu)
@@ -1606,8 +1609,6 @@ void Renderer::setLights(const Light* lights, size_t count) {
             if (!(total > 0.0) || !std::isfinite(total)) throw std::runtime_error("MoonLightIPR mesh light has no area");
             for (size_t t = 0; t < light.triangleCount; ++t) triangles[triangleStart[i] + t * 10 + 9] /= float(total);
             triangles.back() = 1.0f;
-            // A mesh light has no cone; the number says instead whether the camera sees the surface shining.
-            out.pad = light.outerConeDegrees > 0.5f ? 1u : 0u;
             out.area = float(total);
             out.triangleCount = uint32_t(light.triangleCount);
             continue;

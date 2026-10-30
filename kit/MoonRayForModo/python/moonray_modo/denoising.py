@@ -2,9 +2,9 @@
 from pathlib import Path
 ENGINES=('off','optix','oidn_cpu')
 SMART=('off','draft','medium','fine')
-# How much of the fine detail a denoiser smooths away is put back: hair, fur and other things a pixel or so wide.
-# Where the denoiser's guides (the albedo and the normals, which are clean) change from one pixel to the next, the
-# picture as it was rendered is let through, by this much for a guide that changes all the way.
+# How much of the fine detail a denoiser smooths away is put back: fur, hair and curves, a pixel or so wide. Where the
+# render's matte of them says they are, the picture as it was rendered is let through, by this much for a pixel they
+# cover whole.
 DETAIL={'off':0.0,'some':1.0,'more':2.0}
 def settings(value):
     # safe: MoonRay saves its picture every few seconds as it renders, so that a render stopped by hand is kept and
@@ -62,18 +62,17 @@ def jobs(runtime,source,base,engine,guides,detail='some'):
     steps=[(oiio,['--no-autopremult',str(source),'--ch','R,G,B,A=1','-d','float','-o',str(rgba)],rgba),
         (denoiser,['-in',str(rgba),'-albedo',guides['albedo'],'-normals',guides['normal'],'-mode',engine,'-out',str(filtered)],filtered)]
     gain=DETAIL.get(detail,0.0)
-    if gain<=0:
+    # Only where the render made the matte of fur, hair and curves. The guides' own fine detail (each guide against
+    # itself blurred) is not used: on a textured or bumpy surface they change at every pixel, and letting the render
+    # through there brought its noise back (a scaled dragon at 16 samples: 3.50 to 4.52 in 8-bit steps from the clean
+    # picture, against the denoiser alone).
+    if gain<=0 or not guides.get('fine'):
         return steps+[(oiio,['--no-autopremult',str(filtered),'--ch','R,G,B','-d','float','-o',str(output)],output)]
-    # Where the fine detail is: how far each guide stands from itself blurred, the greater of the two, a little
-    # soft at its edges. A hair over a surface turns the normal there and, where it is another colour, the albedo.
+    # How much of each pixel is fibres: the surface under them is the denoised one and the fibres are the rendered
+    # ones, laid over it.
     mask=base.with_suffix('.denoise-detail.exr')
-    def fine(guide,weight):
-        return [str(guide),'--chnames','R,G,B','--dup','--blur','7x7','--absdiff','--chsum:weight=%g,%g,%g'%(weight,weight,weight)]
-    # And, where the render made it, the matte of fur, hair and curves itself: how much of each pixel is those. With
-    # it the surface under the fibres is the denoised one and the fibres are the rendered ones, laid over it.
-    matte=[str(guides['fine']),'--ch','0,0,0','--chnames','R,G,B','--mulc',str(1.5*gain),'--max'] if guides.get('fine') else []
-    steps.append((oiio,fine(guides['albedo'],2.0)+fine(guides['normal'],.6667)+['--max','--mulc',str(gain),'--blur','3x3','--mulc','1.5',
-                       '--clamp:min=0:max=1','--ch','0,0,0','--chnames','R,G,B']+matte+['--clamp:min=0:max=1','-d','float','-o',str(mask)],mask))
+    steps.append((oiio,[str(guides['fine']),'--ch','0,0,0','--chnames','R,G,B','--mulc',str(1.5*gain),
+                       '--clamp:min=0:max=1','-d','float','-o',str(mask)],mask))
     # The denoised picture, and over it the rendered one by as much as the mask says.
     steps.append((oiio,['--no-autopremult',str(rgba),'--ch','R,G,B',str(filtered),'--ch','R,G,B','--sub',str(mask),'--mul',
                        str(filtered),'--ch','R,G,B','--add','-d','float','-o',str(output)],output))

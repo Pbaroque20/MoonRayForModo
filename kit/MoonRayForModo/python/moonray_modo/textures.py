@@ -1,4 +1,5 @@
 """Cached, tiled/mipmapped texture preparation for MoonRay's ImageMap."""
+from .cache_folder import root as cache_root
 import hashlib
 import re
 import shutil
@@ -114,7 +115,7 @@ def _prepare(source, srgb=False, mipmaps=True, color_space=""):
             raise ValueError('No UDIM tiles found: ' + str(source))
         signature = [(n, str(p), p.stat().st_size, p.stat().st_mtime_ns) for n,p in sorted(tiles.items())]
         digest = hashlib.sha256(repr((signature,transform_key,mipmaps)).encode()).hexdigest()
-        cache = Path(os.environ.get('LOCALAPPDATA', tempfile.gettempdir())) / 'MoonRayForModo/Textures' / digest
+        cache = cache_root() / 'Textures' / digest
         cache.mkdir(parents=True, exist_ok=True)
         from . import conversions
         for tile,path in tiles.items():
@@ -140,15 +141,14 @@ def _prepare(source, srgb=False, mipmaps=True, color_space=""):
     if not mipmaps:
         key_data += '|no-mips'
     key = hashlib.sha256(key_data.encode('utf-8')).hexdigest()
-    cache = Path(os.environ.get('LOCALAPPDATA', tempfile.gettempdir())) / 'MoonRayForModo/Textures'
+    cache = cache_root() / 'Textures'
     cache.mkdir(parents=True, exist_ok=True)
     target = cache / (key + '.tx')
     if target.is_file() and target.stat().st_size:
         return str(target)
-    runtime = Path(native.default_runtime())
-    converter = runtime / 'maketx.exe'
-    if not converter.is_file():
-        raise ValueError('Texture conversion needs maketx.exe in the MoonRay runtime. Reinstall the kit.')
+    # Where the runtime's maketx is (native.tool: the chosen runtime, then the kit's), its folder the runtime it runs in.
+    converter = native.tool('maketx.exe')
+    runtime = converter.parent
     def convert():
         staged = cache / (key + '-' + uuid.uuid4().hex + '.tx')
         _convert(args + ['-o', str(staged), str(source)], staged, target, source, runtime)
