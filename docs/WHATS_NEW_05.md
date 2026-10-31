@@ -23,8 +23,17 @@
   last colour from there on.
 - **A scene XPU2 hands to MoonRay XPU keeps its geometry.** Its meshes could come out empty, leaving a white picture or
   none of the scene's objects.
-- **Texture overflow mode:** where a scene runs out of memory as it loads, on the computer or the graphics card, XPU2 makes
-  its textures smaller until it fits, and a notice in the preview says how far.
+- **Texture overflow mode:** where a scene runs out of memory as it loads, on the computer or the graphics card, XPU2
+  compresses its textures, then makes them smaller if it still does not fit, and a notice in the preview says how far.
+- **XPU2's Render gives the samples you set.** On a scene with heavy textures it could stop at about two thirds of them, its
+  progress sitting at 100% for half the render. Progress now climbs steadily to the end. Such a scene takes longer than it
+  did, with a cleaner picture: lower Generation Samples for the old speed.
+- **A texture that cannot be read no longer ends XPU2 with no reason given.** The Terminal names the file, and MoonRay XPU
+  renders the preview instead.
+- **Compile XPU2 Shaders says whether the shaders are up to date**, or why they are out of date, where it only said they
+  were compiled.
+- **An environment image not yet cached no longer stops the render** with a "file not found" error.
+- **The MoonRay Terminal reports XPU2's texture memory**: what the textures take in RAM and on the graphics card.
 - **XPU2 takes Gaussian, Triangle and Blackman-Harris pixel filters**, and Material Samples of any count. Subsurface
   Samples above 4 render too, at 4 x 4 a hit: raise Pixel Samples for less noise.
 - **Realtime on a heavy scene:** after a mesh's detail is cut anew the picture comes back in under a second, not several.

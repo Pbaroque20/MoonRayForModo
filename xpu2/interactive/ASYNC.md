@@ -139,6 +139,10 @@ one substitute texture, through the session harness; a re-cut in Modo also costs
   (`@@MODO_XPU2 NOTICE`). It also starts where every decoded tile has been let go, RAM is still short and the card is
   short too, with a size left to go to. It holds until the scene is loaded anew. Finer levels are neither decoded nor sent; `XPU2_SESSION_CARD_FREE_MB` stands in
   for a full card in tests. A failure once a frame is rendering still goes to MoonRay XPU.
+- **A texture tile that cannot be read.** The frame fails with the file, the tile and OpenImageIO's reason, and the scene goes
+  to MoonRay XPU. Every thread joins before the failure goes on, and the CPU lane's workers stop before the frame's grid and film
+  go: thrown past running threads it ended the process ("terminate called"). `XPU2_SESSION_FAIL_TILE=N` fails the Nth read, for
+  tests. Why the one crash seen, the car's second Render on 31 October, would have failed a read is not known.
 - **Letting tiles go.** Free RAM below a tenth of the machine's (2 GB at least), or the session's commit past 92% of its ceiling,
   lets the oldest decoded tiles go, but 1 GB of them stay, tiles too few to matter are left alone, and a letting go that did not
   help waits twice as long before the next, up to a minute. At 85%, every tile, every quarter of a second to two, a car's render
