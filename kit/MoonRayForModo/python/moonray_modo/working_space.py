@@ -62,7 +62,8 @@ def matrix_argument(matrix):
 
 def texture(source):
     if not enabled():return source
-    from . import native,textures
+    from . import conversions,native,textures
+    conversions.finished(source)
     source=Path(source);signature=[str(source),source.stat().st_mtime_ns,source.stat().st_size,TO_AP1]
     digest=hashlib.sha256(repr(signature).encode()).hexdigest()
     folder=cache_root() / 'Textures';folder.mkdir(parents=True,exist_ok=True)

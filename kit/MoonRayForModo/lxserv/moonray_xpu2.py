@@ -19,6 +19,9 @@ def _running(pid):
 
 
 
+UP_TO_DATE = 'Up to date'
+
+
 def compiled():
     """Whether XPU2's runtime finds its mark of compiled shaders (native.xpu2_shaders_compiled)."""
     from moonray_modo import native
@@ -98,7 +101,11 @@ def state():
         done, waiting, seconds = counts
         return 'Compiling %d%%' % int(100 * done / (done + waiting))
     _keep_took(lines)
-    if compiled(): return 'Compiled'
+    # For these programs and this graphics driver, or for others (asked 2026-10-31: "compiled" did not say which).
+    from moonray_modo import native
+    held, why = native.xpu2_shaders_state()
+    if held == 'current': return UP_TO_DATE
+    if held == 'stale': return 'Out of date' + (' (%s)' % why if why else '')
     # Just that (asked 2026-10-30); why a compile failed is in its log and the Render Log.
     return 'Not compiled'
 
@@ -106,7 +113,7 @@ def state():
 import lxifc
 
 # The form's own notifier: told while the shaders compile, it asks the form to look again at the button and the
-# shaders' state (how far along, then Compiled and Re-compile).
+# shaders' state (how far along, then Up to date and Re-compile).
 NOTIFIER = 'moonray.xpu2.shaders'
 
 
@@ -158,8 +165,8 @@ class CompileShaders(lxu.command.BasicCommand):
     def cmd_Flags(self): return lx.symbol.fCMD_UI
     # Greyed while a compile is under way: pressed again, it would only start another.
     def basic_Enable(self, msg): return not state().startswith('Compiling')
-    # Named for what it does now: compiled, the shaders can only be compiled again (after a driver update).
-    def basic_ButtonName(self): return 'Re-compile XPU2 Shaders' if state() == 'Compiled' else 'Compile XPU2 Shaders'
+    # Named for what it does now: up to date, the shaders can only be compiled again.
+    def basic_ButtonName(self): return 'Re-compile XPU2 Shaders' if state() == UP_TO_DATE else 'Compile XPU2 Shaders'
     def basic_Notifier(self, index): return (NOTIFIER, '') if index == 0 else None
     def basic_Execute(self, msg, flags):
         import subprocess

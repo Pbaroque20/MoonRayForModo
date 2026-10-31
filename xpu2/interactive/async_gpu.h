@@ -1664,6 +1664,19 @@ public:
     std::string fineBudgetWhy_;
     size_t fineLoaded() const { return fine_.loaded; }
     size_t fineEvicted() const { return fine_.evicted; }
+    // Where the textures stand on the card, for the session's log: the coarser levels, the fine-detail cache and its tiles,
+    // and how many more tiles it would hold were each slot the size of its own tile's format.
+    std::string textureCardText() const {
+        const size_t slots = fine_.slots, held = slots - std::min<size_t>(slots, fine_.freeSlots.size());
+        uint64_t own = 0;
+        for (size_t i = 1; i < fine_.sources.size(); ++i) own += fine_.sources[i].bytes;
+        const uint64_t asSlots = uint64_t(fine_.tiles) * fine_.tileBytes;
+        char text[260];
+        std::snprintf(text, sizeof text, "coarser levels %.0f MB, fine-detail cache %.0f MB (%zu tiles in it of %zu slots of %zu KB; %zu sent, %zu let go); by format its tiles would take %.0f MB, not %.0f MB",
+                      double(scene_.mipBytes) / (1 << 20), double(slots * fine_.tileBytes) / (1 << 20), held, slots, fine_.tileBytes >> 10, fine_.loaded, fine_.evicted,
+                      double(own) / (1 << 20), double(asSlots) / (1 << 20));
+        return text;
+    }
     size_t residentMipBytes() const { return scene_.mipBytes; }
 
 private:

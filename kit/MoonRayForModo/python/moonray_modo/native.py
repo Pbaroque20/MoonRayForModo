@@ -454,9 +454,10 @@ def xpu2_shaders_log():
 _shaders_asked = [0.0, None]
 
 
-def xpu2_shaders_compiled():
-    """Whether XPU2's runtime finds its mark of compiled shaders (moonray_xpu2 --shaders-compiled), asked at most every
-    few seconds: without them XPU2 does not render (persistent), and says where to compile them."""
+def xpu2_shaders_state():
+    """Where XPU2's shaders stand by its runtime's marks (moonray_xpu2 --shaders-compiled), asked at most every few seconds:
+    ('current', ''), ('stale', why they are out of date, which may be '') or ('none', ''). Only current ones render (persistent),
+    and otherwise the preview says where to compile them."""
     import subprocess, time
     if time.monotonic() - _shaders_asked[0] < 5 and _shaders_asked[1] is not None:
         return _shaders_asked[1]
@@ -466,14 +467,28 @@ def xpu2_shaders_compiled():
     for key in ('PYTHONHOME', 'PYTHONPATH', 'QT_PLUGIN_PATH', 'QT_QPA_PLATFORM_PLUGIN_PATH'):
         env.pop(key, None)
     try:
-        result = subprocess.run([str(exe), '--shaders-compiled'], cwd=str(exe.parent), env=env, capture_output=True,
-                                timeout=30, creationflags=0x08000000).returncode == 0
+        done = subprocess.run([str(exe), '--shaders-compiled'], cwd=str(exe.parent), env=env, capture_output=True,
+                              timeout=30, creationflags=0x08000000)
+        said = done.stdout.decode('utf-8', 'replace')
+        result = ('current', '') if done.returncode == 0 else ('stale', said.partition('out of date')[2].strip(' :\r\n')) if done.returncode == 4 else ('none', '')
     except (OSError, subprocess.SubprocessError):
-        result = False
+        result = ('none', '')
     _shaders_asked[0], _shaders_asked[1] = time.monotonic(), result
     return result
+
+
+def xpu2_shaders_compiled():
+    """Whether XPU2's shaders are compiled for these programs and this graphics driver (xpu2_shaders_state)."""
+    return xpu2_shaders_state()[0] == 'current'
+
+
+def xpu2_shaders_unavailable():
+    """What a preview says when XPU2 is chosen and its shaders are not ready."""
+    return XPU2_OUT_OF_DATE if xpu2_shaders_state()[0] == 'stale' else XPU2_NOT_COMPILED
 
 
 # What a preview says when XPU2 is chosen and its shaders are not compiled: nothing is rendered.
 XPU2_NOT_COMPILED = ("Render unavailable: MoonRay XPU2's shaders not compiled. "
                      "System > Preferences > MoonRay > XPU2 > Compile XPU2 Shaders.")
+XPU2_OUT_OF_DATE = ("Render unavailable: MoonRay XPU2's shaders out of date. "
+                    "System > Preferences > MoonRay > XPU2 > Compile XPU2 Shaders.")

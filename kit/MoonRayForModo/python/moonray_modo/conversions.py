@@ -65,6 +65,16 @@ def together():
         _batch.reset(token)
 
 
+def finished(key):
+    """The file key names, made by now: for what reads it as the scene is written, not only names it. Inside together() a
+    conversion's path comes back before its file exists (an environment image into the working colour space, read at once:
+    "[WinError 2]", the render refused, for any image not yet in the cache). Raises what the conversion raised."""
+    batch = _batch.get()
+    job = batch.jobs.get(str(key)) if batch is not None else None
+    if job is not None:
+        job.result()
+
+
 def run(key, work):
     """Do work (which makes the file key names) now, or, inside together(), alongside the others."""
     batch = _batch.get()

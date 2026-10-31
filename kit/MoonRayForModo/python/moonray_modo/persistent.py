@@ -262,7 +262,7 @@ class Session(QtCore.QObject):
         if self.xpu2_active and native.xpu2_devices()!='cpu' and not native.xpu2_shaders_compiled():
             # XPU2 chosen, its shaders not compiled: nothing is rendered (MoonRay XPU in its place hid that it was not XPU2),
             # and the preview says where to compile them.
-            self.sent=None;self.failed.emit(native.XPU2_NOT_COMPILED);return
+            self.sent=None;self.failed.emit(native.xpu2_shaders_unavailable());return
         # The view again, now that it is known whose: Denoised Beauty is XPU2's own (realtime), the beauty MoonRay's.
         self.select_view(self.view)
         if self.xpu2_active:

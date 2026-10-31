@@ -110,6 +110,9 @@ struct Pyramid {
   while(freed<want&&!lazyTiles.empty()){auto& t=lazyTiles.front();pages[t.level][t.tile]=nullptr;freed+=t.size;out.push_back(std::move(t.block));lazyTiles.pop_front();lazyLoaded--;}
   lazyBytes-=freed;bytes-=freed;return freed;}
  ~Pyramid();
+ // What the file holds (reportTextures): 0 8-bit, 1 half, 2 float, 3 another; and, read once from a decoded level, whether its
+ // three channels are one and how much of it is flat.
+ unsigned sourceFormat=3;mutable bool scanned=false,grey=false;mutable double flatShare=0;
  Pyramid(const Pyramid&)=delete;
  explicit Pyramid(const std::string& name,bool alpha=false):file(name),alphaOnly(alpha){auto in=OIIO::ImageInput::open(name);need(bool(in),"Pyramid read");pages.reserve(tex::MaxLevels);
   for(unsigned level=0;level<tex::MaxLevels&&in->seek_subimage(0,level);++level){auto spec=in->spec();need(spec.get_int_attribute("sampleborder",0)==0&&spec.get_int_attribute("oiio:sampleborder",0)==0,"Border-sampled TX unsupported");
@@ -119,6 +122,7 @@ struct Pyramid {
    static const bool floats=[]{const char* v=std::getenv("XPU2_SESSION_FLOAT_TEXTURES");return v&&v[0]=='1';}();
    const bool eight=spec.format==OIIO::TypeDesc::UINT8&&bytesExact()&&!floats;
    channels=spec.nchannels;alphaChannel=spec.alpha_channel;
+   sourceFormat=spec.format==OIIO::TypeDesc::UINT8?0u:spec.format==OIIO::TypeDesc::HALF?1u:spec.format==OIIO::TypeDesc::FLOAT?2u:3u;
    if(!image.count&&lazyTextures()&&spec.tile_width>0){
     // The finest level read when first used (loadTile): its pages empty for now.
     lazyEight=eight;pages.emplace_back(size_t(nx)*ny,nullptr);
@@ -225,6 +229,49 @@ struct File {
  }
  ~File(){if(lock!=INVALID_HANDLE_VALUE)CloseHandle(lock);}File(const File&)=delete;
 };
+// Where a scene's textures stand in memory, for the log (the session prints it at each load and frame), and what each lossless
+// way of holding them would save. Greyness and flatness are read from a level of at most 1024 pixels, the first decoded, once
+// a texture: an estimate of its finest level, flat tiles more so.
+struct TextureReport {
+ size_t files=0,eightBit=0,half=0,floats=0,grey=0;unsigned largest=0;
+ uint64_t finest=0,coarser=0,decoded=0,tiles=0,tilesDecoded=0;
+ uint64_t saveGrey=0,saveHalf=0,saveFlat=0;double scanSeconds=0;
+};
+inline void scanPyramid(const Pyramid& p){
+ if(p.scanned)return;p.scanned=true;
+ const tex::Image& image=p.image;unsigned k=(image.count&&image.levels[0].load)?1u:0u;
+ while(k+1<image.count&&std::max(image.levels[k].width,image.levels[k].height)>1024)++k;
+ if(k>=image.count)return;
+ const tex::Mip& m=image.levels[k];const unsigned nx=(m.width+tex::Tile-1)/tex::Tile,ny=(m.height+tex::Tile-1)/tex::Tile;
+ bool grey=true;uint64_t flat=0;
+ for(unsigned i=0;i<nx*ny;++i){
+  const unsigned tw=std::min(tex::Tile,m.width-(i%nx)*tex::Tile),th=std::min(tex::Tile,m.height-(i/nx)*tex::Tile),n=tw*th;bool same=true;
+  if(m.format==1){const auto* t=reinterpret_cast<const unsigned char*>(m.pages[i]);
+   for(unsigned q=0;q<n;++q){const unsigned char* c=t+size_t(q)*3;if(c[0]!=c[1]||c[1]!=c[2])grey=false;if(c[0]!=t[0]||c[1]!=t[1]||c[2]!=t[2])same=false;if(!grey&&!same)break;}}
+  else{const surface::V3* t=m.pages[i];
+   for(unsigned q=0;q<n;++q){const surface::V3& c=t[q];if(c.x!=c.y||c.y!=c.z)grey=false;if(c.x!=t[0].x||c.y!=t[0].y||c.z!=t[0].z)same=false;if(!grey&&!same)break;}}
+  if(same)++flat;}
+ p.grey=grey;p.flatShare=double(flat)/double(nx*ny);
+}
+inline TextureReport reportTextures(const std::vector<std::shared_ptr<File>>& files,bool realtime){
+ TextureReport r;const auto began=std::chrono::steady_clock::now();
+ for(const auto& f:files){if(!f||!f->pyramid)continue;const Pyramid& p=*f->pyramid;++r.files;
+  if(p.sourceFormat==0)++r.eightBit;else if(p.sourceFormat==1)++r.half;else ++r.floats;
+  scanPyramid(p);if(p.grey)++r.grey;
+  const tex::Image& view=p.view(realtime);if(!view.count)continue;
+  const tex::Mip& m=view.levels[0];r.largest=std::max(r.largest,std::max(m.width,m.height));
+  const unsigned nx=(m.width+tex::Tile-1)/tex::Tile,ny=(m.height+tex::Tile-1)/tex::Tile;
+  const uint64_t level=uint64_t(m.width)*m.height*tex::texelBytes(m.format);
+  uint64_t coarse=0;for(unsigned l=1;l<view.count;++l)coarse+=uint64_t(view.levels[l].width)*view.levels[l].height*tex::texelBytes(view.levels[l].format);
+  const uint64_t held=const_cast<Pyramid&>(p).lazyHeld();
+  r.finest+=level;r.coarser+=coarse;r.tiles+=uint64_t(nx)*ny;
+  if(m.load){r.decoded+=held;for(unsigned i=0;i<nx*ny;++i)if(m.pages[i])++r.tilesDecoded;}
+  if(p.grey)r.saveGrey+=(level+coarse)/3*2;
+  if(p.sourceFormat==1)r.saveHalf+=(p.grey?(level+coarse)/3:level+coarse)/2;
+  r.saveFlat+=uint64_t(double(level)*p.flatShare);
+ }
+ r.scanSeconds=std::chrono::duration<double>(std::chrono::steady_clock::now()-began).count();return r;
+}
 struct Binding {
  std::shared_ptr<File> file;float sx=1,sy=1,ox=0,oy=0,mipBias=0;bool wrap=true,gamma=false;
  tex::Binding descriptor(bool realtime=false)const{return {file->pyramid?&file->pyramid->view(realtime):nullptr,sx,sy,ox,oy,mipBias,wrap?1u:0u,gamma&&file->eightBit?1u:0u};}

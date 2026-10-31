@@ -92,6 +92,30 @@ void memoryCeiling() {
 }
 
 // The session's committed memory now and at its peak, in MB.
+// Where the scene's textures stand, for the MoonRay XPU2 Terminal: at a load (whole) and after each frame (what changes).
+void logTextures(const cpu::Plan& plan, const async::GpuLane* card, bool whole) {
+    std::vector<std::shared_ptr<texture::File>> files;
+    for (auto* bindings : {&plan.diffuseMaps, &plan.emissionMaps})
+        for (auto& pair : *bindings)
+            if (std::find(files.begin(), files.end(), pair.second.file) == files.end()) files.push_back(pair.second.file);
+    for (auto& file : plan.textures)
+        if (std::find(files.begin(), files.end(), file) == files.end()) files.push_back(file);
+    if (files.empty()) return;
+    const texture::TextureReport r = texture::reportTextures(files, plan.realtime);
+    const auto mb = [](uint64_t bytes) { return double(bytes) / (1 << 20); };
+    if (whole) {
+        std::printf("MoonRay XPU2: textures: %zu files (%zu 8-bit, %zu half, %zu float), %zu of them grey; at most %u pixels a side%s; finest levels %.0f MB if all read, coarser levels %.0f MB\n",
+                    r.files, r.eightBit, r.half, r.floats, r.grey, r.largest, plan.realtime ? " in realtime" : "", mb(r.finest), mb(r.coarser));
+        std::printf("MoonRay XPU2: textures could save: grey maps as one channel %.0f MB, half-float maps as 16-bit %.0f MB, flat tiles about %.0f MB (read in %.3f s)\n",
+                    mb(r.saveGrey), mb(r.saveHalf), mb(r.saveFlat), r.scanSeconds);
+    }
+    std::printf("MoonRay XPU2: textures in RAM: coarser levels %.0f MB, %llu of %llu finest tiles decoded (%.0f MB)\n", mb(r.coarser),
+                (unsigned long long)r.tilesDecoded, (unsigned long long)r.tiles, mb(r.decoded));
+    if (card) std::printf("MoonRay XPU2: textures on the card: %s\n", card->textureCardText().c_str());
+    if (const unsigned side = texture::overflowSide().load()) std::printf("MoonRay XPU2: textures limited to %u pixels a side (texture overflow mode)\n", side);
+    std::fflush(stdout);
+}
+
 std::string memoryText() {
     PROCESS_MEMORY_COUNTERS_EX counters{};
     counters.cb = sizeof counters;
@@ -227,7 +251,14 @@ std::unique_ptr<async::GpuLane> gpuLane(const Programs& p, std::function<void(un
 // OptiX hands out compile tasks whether or not its disk cache holds a program, so whether it does is kept as a mark
 // of our own: a file named for the programs' text and the graphics driver (a new driver empties OptiX's cache),
 // left once they have compiled.
-fs::path shaderMark(const Programs& p) {
+// It also says, inside, which programs and which driver it was for: a mark that is not this one tells why they are out of
+// date (shadersCompiled).
+struct ShaderStamp {
+    std::uint64_t programs = 0, driver = 0;
+    fs::path mark;
+};
+ShaderStamp shaderStamp(const Programs& p) {
+    ShaderStamp stamp;
     std::uint64_t h = 1469598103934665603ull;
     auto mix = [&](const void* data, size_t n) {
         for (size_t i = 0; i < n; ++i) h = (h ^ static_cast<const unsigned char*>(data)[i]) * 1099511628211ull;
@@ -240,20 +271,29 @@ fs::path shaderMark(const Programs& p) {
     }
     // So is a diagnostic build's with OptiX's exceptions (XPU2_OPTIX_EXCEPTIONS).
     if (std::getenv("XPU2_OPTIX_EXCEPTIONS")) mix("exceptions", 10);
+    stamp.programs = h;
     wchar_t system[MAX_PATH] = {};
     GetSystemDirectoryW(system, MAX_PATH);
     WIN32_FILE_ATTRIBUTE_DATA driver{};
     if (GetFileAttributesExW((fs::path(system) / "nvcuda.dll").c_str(), GetFileExInfoStandard, &driver))
         mix(&driver.ftLastWriteTime, sizeof(driver.ftLastWriteTime)), mix(&driver.nFileSizeLow, sizeof(driver.nFileSizeLow));
+    {
+        const std::uint64_t programs = stamp.programs;
+        stamp.driver = (std::uint64_t(driver.ftLastWriteTime.dwHighDateTime) << 32 | driver.ftLastWriteTime.dwLowDateTime) ^ driver.nFileSizeLow;
+        stamp.programs = programs;
+    }
     const char* local = std::getenv("LOCALAPPDATA");
     char name[32];
     std::snprintf(name, sizeof(name), "%016llx.compiled", (unsigned long long)h);
-    return fs::u8path(local ? local : ".") / "MoonRayForModo" / "xpu2-shaders" / name;
+    stamp.mark = fs::u8path(local ? local : ".") / "MoonRayForModo" / "xpu2-shaders" / name;
+    return stamp;
 }
+fs::path shaderMark(const Programs& p) { return shaderStamp(p).mark; }
 void markCompiled(const Programs& p) {
     std::error_code ignored;
-    fs::create_directories(shaderMark(p).parent_path(), ignored);
-    std::ofstream(shaderMark(p)) << "compiled\n";
+    const ShaderStamp stamp = shaderStamp(p);
+    fs::create_directories(stamp.mark.parent_path(), ignored);
+    std::ofstream(stamp.mark) << "compiled\n" << stamp.programs << ' ' << stamp.driver << '\n';
 }
 
 // --compile-shaders: the GPU programs into OptiX's disk cache, with progress as it goes.
@@ -282,9 +322,34 @@ int compileShaders(const fs::path& folder) {
 
 int shadersCompiled(const fs::path& folder) {
     try {
-        const bool compiled = fs::exists(shaderMark(programs(folder)));
-        std::cout << (compiled ? "MoonRay XPU2 shaders: compiled" : "MoonRay XPU2 shaders: not compiled") << std::endl;
-        return compiled ? 0 : 3;
+        const ShaderStamp stamp = shaderStamp(programs(folder));
+        if (fs::exists(stamp.mark)) {
+            std::cout << "MoonRay XPU2 shaders: compiled" << std::endl;
+            return 0;
+        }
+        // Not these, but compiled before: out of date (exit 4), and why, by the newest mark that says what it was for.
+        std::error_code ignored;
+        fs::path newest;
+        fs::file_time_type when{};
+        for (const auto& entry : fs::directory_iterator(stamp.mark.parent_path(), ignored)) {
+            if (entry.path().extension() != ".compiled") continue;
+            const auto written = entry.last_write_time(ignored);
+            if (newest.empty() || written > when) {
+                newest = entry.path();
+                when = written;
+            }
+        }
+        if (newest.empty()) {
+            std::cout << "MoonRay XPU2 shaders: not compiled" << std::endl;
+            return 3;
+        }
+        std::ifstream file(newest);
+        std::string word;
+        std::uint64_t oldPrograms = 0, oldDriver = 0;
+        const bool said = bool(file >> word >> oldPrograms >> oldDriver);
+        const char* why = !said ? "" : oldPrograms == stamp.programs ? ": new graphics driver" : oldDriver == stamp.driver ? ": XPU2 updated" : ": XPU2 and graphics driver updated";
+        std::cout << "MoonRay XPU2 shaders: out of date" << why << std::endl;
+        return 4;
     } catch (const std::exception& e) {
         std::cerr << "MoonRay XPU2 shaders: " << e.what() << std::endl;
         return 1;
@@ -1489,6 +1554,7 @@ int session(const Args& args, const fs::path& directory) {
                     renderer = std::make_unique<async::Renderer>(scene.plan, *scene.cpuScene, gpuUsable ? gpu.get() : nullptr);
                     renderer->deviceRatio(deviceRatio);
                     std::printf("MoonRay XPU2: memory with the renderer made: %s\n", memoryText().c_str());
+                    logTextures(*scene.plan, gpu && gpuUsable ? gpu.get() : nullptr, true);
                     // Sampling generations: uniform's samples spent where they show, or adaptive's to its target error.
                     std::printf("MoonRay XPU2: scene ready in %.2f s (%ux%u, %s %u)\n", std::chrono::duration<double>(Clock::now() - began).count(),
                                 scene.plan->width, scene.plan->height,
@@ -2004,6 +2070,7 @@ int session(const Args& args, const fs::path& directory) {
                         std::printf("MoonRay XPU2: %s in %.2f s (CPU %llu samples, GPU %llu)\n", result.drained ? "drained" : "finished",
                                     result.seconds, (unsigned long long)result.cpuSamples, (unsigned long long)result.gpuSamples);
                         std::printf("MoonRay XPU2: memory: %s; GPU lane %s\n", memoryText().c_str(), gpu ? gpu->memoryText().c_str() : "none");
+                        logTextures(*scene.plan, gpu && gpuUsable ? gpu.get() : nullptr, false);
                     }
                 }
                 outlines.watch(nullptr, id, 0, 0);
