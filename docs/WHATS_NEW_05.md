@@ -10,6 +10,11 @@
 - **Samples for the material widget**: 32, 64, 128 or 256 in the graph editor, for a cleaner picture of the material.
 - **Graph editor presets**: the Presets menu saves the selected nodes or a whole network, to load into any material.
 - **A Car paint material in the library**: a dark metal with a sharp clearcoat and fine flakes, to start a metallic paint from.
+- **Multi-part EXRs** (Render settings > Output Renders > Multi-Part EXR): each output in a part of its own, for a compositor to read one at a time.
+- **EXR channels by standard names**: the beauty's alpha is `A`, so it comes in as the beauty's alpha, and depth is `depth.Z`.
+- **A graph's new output reaches Modo's form**: changing a material's output shows the new material's form, selected and ready to edit, and the new output starts on its own colour.
+- **Glitter no longer turns a material pink**, turned on or off again, in MoonRay, MoonRay XPU and XPU2.
+- **The graph editor's Samples field shows its whole text.**
 - **A MoonRay material's colour and Modo's diffuse follow each other**, under Traditional and Principled, so the viewport
   shows the material's colour. A new material starts on its diffuse.
 - **Weight Map Texture layers render**, in MoonRay, XPU2 and MoonLightIPR, with their Low, High, Bias and Gain, matching Modo's own render:
@@ -23,8 +28,17 @@
   last colour from there on.
 - **A scene XPU2 hands to MoonRay XPU keeps its geometry.** Its meshes could come out empty, leaving a white picture or
   none of the scene's objects.
-- **Texture overflow mode:** where a scene runs out of memory as it loads, on the computer or the graphics card, XPU2 makes
-  its textures smaller until it fits, and a notice in the preview says how far.
+- **Texture overflow mode:** where a scene runs out of memory as it loads, on the computer or the graphics card, XPU2
+  compresses its textures, then makes them smaller if it still does not fit, and a notice in the preview says how far.
+- **XPU2's Render gives the samples you set.** On a scene with heavy textures it could stop at about two thirds of them, its
+  progress sitting at 100% for half the render. Progress now climbs steadily to the end. Such a scene takes longer than it
+  did, with a cleaner picture: lower Generation Samples for the old speed.
+- **A texture that cannot be read no longer ends XPU2 with no reason given.** The Terminal names the file, and MoonRay XPU
+  renders the preview instead.
+- **Compile XPU2 Shaders says whether the shaders are up to date**, or why they are out of date, where it only said they
+  were compiled.
+- **An environment image not yet cached no longer stops the render** with a "file not found" error.
+- **The MoonRay Terminal reports XPU2's texture memory**: what the textures take in RAM and on the graphics card.
 - **XPU2 takes Gaussian, Triangle and Blackman-Harris pixel filters**, and Material Samples of any count. Subsurface
   Samples above 4 render too, at 4 x 4 a hit: raise Pixel Samples for less noise.
 - **Realtime on a heavy scene:** after a mesh's detail is cut anew the picture comes back in under a second, not several.

@@ -259,14 +259,16 @@ differ: presence shadows, shadow linking, volumes, a minimum shadow distance and
 
 ## 10. Memory tiers and partial shading
 
-- **Host RAM** holds every texture's mip levels and is the system of record (`host_texture.h`). The CPU lane reads it
+- **Host RAM** holds every texture's coarser mip levels and the level-0 tiles read so far (`host_texture.h`); the texture
+  files on disk are the system of record. The CPU lane reads RAM
   directly. Since 2026-10-26 the finest level (level 0) is decoded tile by tile the first time it is read
   (`Pyramid::loadTile`, through an OpenImageIO ImageCache), the coarser levels as the scene is prepared;
   `XPU2_SESSION_EAGER_TEXTURES=1` decodes them all at once. 8-bit files are kept as bytes (`tex::Mip::format`).
 - **VRAM** holds every texture's levels 1 and up for the whole session, plus a cache of level-0 (fine-detail) tiles,
   loaded on demand and evicted least recently used.
 - **Under memory pressure** the oldest decoded level-0 tiles are let go, and a scene that still does not load has its
-  textures limited for the session (texture overflow mode, `ASYNC.md`, "Limits a scene can meet").
+  textures compressed (BC6H), then limited, for the session (texture overflow mode, `ASYNC.md`, "Limits a scene can meet").
+- **A tile that cannot be read** fails the frame with its file and reason, and the scene goes to the reference renderer.
 - **The cache's budget** (`GpuLane::fineBudget`) is measured at each preparation, and again as a frame starts if the card has filled up (`fineCacheTooBig`): what the scene's level-0 tiles need,
   up to the card's free memory minus a fifth of the card (at least 1.5 GB left for the frame and the host's own use),
   and never below 256 MB. `XPU2_SESSION_FINE_BUDGET_MB` fixes it.
@@ -642,7 +644,7 @@ From the design notes. Each has more detail where it's listed.
   the plan again, and a changed mesh's structures are built again, never refitted (`INDEXER.md` order, step 6).
 - GPU program modules linked per scene by its families (`INDEXER.md` section 5).
 - Cellular generations on the GPU pass chain; the adaptive chain as one CUDA graph (`ASYNC.md`).
-- SIMD batches on the CPU lane; RAM-to-VRAM spill under host memory pressure (`ASYNC.md`).
+- SIMD batches on the CPU lane (`ASYNC.md`).
 - Material-coherent shading on the GPU: on hold, since the profile says shadow rays dominate (`INDEXER.md` section 9).
 
 **MoonRay port**

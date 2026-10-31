@@ -69,13 +69,12 @@ ramp_count = 0
 for i, shader in enumerate([''] + sorted(catalog)):
     if not shader:
         continue
-    # The controls, shown by two tabs: one for a material assigned to a mesh, which carries a
-    # package named for its shader, and one for a layer added from Add Layer, whose type is the
-    # shader. Both use Modo's own filters, which also tell it how well a form fits the
-    # selection; a filter written in Python cannot, and Modo's material form stayed in front.
+    # The controls, shown by a tab for a material of this shader, which carries a package named for it:
+    # one assigned to a mesh and one added from Add Layer alike, as a graph's output can change what
+    # either is. It uses Modo's own filter, which also tells it how well a form fits the selection;
+    # a filter written in Python cannot, and Modo's material form stayed in front.
     form = sheet('MoonRayShaderBody%d:sheet' % i, shader)
-    for tab, test in (('MoonRayShader%d:sheet' % i, 'item.withPackageIsSelected moonray.shader.%s' % shader),
-                      ('MoonRayShaderLayer%d:sheet' % i, 'item.withTypeIsSelected {material.dw.%s}' % shader)):
+    for tab, test in (('MoonRayShader%d:sheet' % i, 'item.withPackageIsSelected moonray.shader.%s' % shader),):
         shown = sheet(tab, shader)
         atom(shown, 'FilterCommand', test)
         atom(shown, 'FilterCommandPriorityInfluencesTabChoice', 1)

@@ -20,7 +20,7 @@ DEFAULTS = {
     # A deep EXR written beside the render: every surface and volume a pixel sees, each at its own depth.
     'deep': {'enabled': False, 'format': 0, 'curvature': 45.0, 'z': 2.0, 'volume': 10},
     # How the final EXR is compressed, by MoonRay's numbers (options.EXR_COMPRESSIONS), and the level of its DWA ones.
-    'exr': {'compression': 1, 'dwa_level': 85.0},
+    'exr': {'compression': 1, 'dwa_level': 85.0, 'multipart': False},
     'denoising': {'engine': 'off', 'preview': True, 'final': True, 'safe': False, 'smart': 'off', 'detail': 'some'},
     # XPU2's sampling generations: 16 samples a pixel on average and a noise target of 10 by
     # default; the rest are what XPU2 does without them.
@@ -225,6 +225,7 @@ GROUPS = [
         field('final_motion', ('final_motion',), 'bool', 'Motion Blur', 'Motion blur and motion vectors in Render EXR and animations'),
         field('exr_compression', ('exr', 'compression'), 'choice', 'EXR Compression', 'How Render EXR and animations compress their EXRs. The lossy ones make smaller files; they are not used with checkpoints or Safe Denoising, which take a render up again from what it saved', choices=options.EXR_COMPRESSIONS),
         field('exr_dwa_level', ('exr', 'dwa_level'), 'float', 'DWA Compression Level', 'For DWAA and DWAB: higher is smaller and loses more', 0.0, 1000.0),
+        field('exr_multipart', ('exr', 'multipart'), 'bool', 'Multi-Part EXR', 'Each output in a part of its own in the EXR, which a compositor can read one at a time, not all together. The beauty, its alpha and any Cryptomatte stay in the first part'),
         field('deep', ('deep', 'enabled'), 'bool', 'Save a Deep EXR', 'Written beside the render as name.deep.exr: every surface and volume a pixel sees, each at its own depth, for deep compositing'),
         field('deep_format', ('deep', 'format'), 'choice', 'Deep Format', 'OpenEXR 2 opens everywhere. OpenDCX adds per-sample coverage masks, for compositors that read them', choices=DEEP_FORMATS),
         field('deep_curvature', ('deep', 'curvature'), 'float', 'Deep Curvature Tolerance', 'Degrees a surface may curve within a pixel before it is split into more deep samples', 0.0, 180.0),

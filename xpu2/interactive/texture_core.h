@@ -4,6 +4,7 @@
 // SPDX-License-Identifier: Apache-2.0. See vendor/oiio/LICENSE.md.
 #pragma once
 #include "surface_core.h"
+#include "bc6h_core.h"
 #if !defined(__CUDA_ARCH__)
 #include <atomic>
 #include <thread>
@@ -45,7 +46,10 @@ enum Status:unsigned {Invalid=0,Ready=1,Miss=2};
 struct Mip {unsigned width=0,height=0;const V3* const* pages=nullptr;unsigned tileBase=0;unsigned format=0;
  void (*load)(const void*,unsigned,unsigned)=nullptr;const void* loader=nullptr;};
 // Bytes a texel of a level of this format.
-X2_HD inline unsigned texelBytes(unsigned format){return format==1?3u:unsigned(sizeof(V3));}
+X2_HD inline unsigned texelBytes(unsigned format){return format==1?3u:format==2?1u:unsigned(sizeof(V3));}
+// Bytes a tile of count texels takes. Format 2, BC6H (texture overflow mode; bc6h_core.h): a whole tile's blocks, whatever its size,
+// its texels padded to 32 x 32.
+X2_HD inline unsigned tileBytes(unsigned format,unsigned count){return format==2?bc6h::TileBytes:count*texelBytes(format);}
 // A sink receives the scene-wide id of each missing tile, and of each tracked tile
 // that is read (for the fine-detail cache's eviction order). NoSink ignores both.
 // Partial shading: where the sink takes coarse(), a texel whose tile is missing is read from its parent a level up
@@ -73,6 +77,9 @@ X2_HD inline float exp(float a){float x=clamp(a*1.4426950408889634f,-126,126);in
 X2_HD inline int address(int x,int n,bool wrap){if(wrap){int v=x%n;return v<0?v+n:v;}return x<0?0:x>=n?n-1:x;}
 // A resident page's texel.
 X2_HD inline Status texel(const V3* page,unsigned width,unsigned tx,unsigned x,unsigned y,V3& out,unsigned format=0){
+ if(format==2){const unsigned lx=x%Tile,ly=y%Tile;float rgb[3];
+  bc6h::texel(reinterpret_cast<const unsigned*>(reinterpret_cast<const unsigned char*>(page)+((ly/4u)*bc6h::BlocksAcross+lx/4u)*bc6h::BlockBytes),(ly%4u)*4u+lx%4u,rgb);
+  out=V3{rgb[0],rgb[1],rgb[2]};return Ready;}
  unsigned stride=width-tx*Tile;if(stride>Tile)stride=Tile;const unsigned i=(y%Tile)*stride+x%Tile;
  if(format==1){const unsigned char* b=reinterpret_cast<const unsigned char*>(page)+3u*i;const float k=1.0f/255.0f;
   out=V3{float(b[0])*k,float(b[1])*k,float(b[2])*k};return Ready;}

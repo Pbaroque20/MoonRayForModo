@@ -37,6 +37,14 @@ def wanted(materials):
     return any(asks(material) for material in (materials or {}).values())
 
 
+def with_rest(mesh):
+    """A mesh that was read without rest positions, its points as rendered serving: without any the material is pink."""
+    held = mesh.get('point_attributes') or {}
+    if NAME in held:
+        return mesh
+    return dict(mesh, point_attributes=dict(held, **{NAME: {'kind': 'vec3', 'values': mesh['vertices']}}))
+
+
 def read(item, count):
     """A mesh item's rest positions: its base mesh's points, before deformers, in its own space; None where the base
     mesh has not the same number of points as the mesh rendered (a deformer that adds or takes away points)."""

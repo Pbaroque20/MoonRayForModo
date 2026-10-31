@@ -346,6 +346,7 @@ Comparison audit between MoonRay 2026.29.1's source and the current plugin.
 | Checkpoints and resuming a render | ![yes](docs/images/feature-yes.svg) | Recovery, Safe Denoising and Continue |
 | EXR metadata | ![yes](docs/images/feature-yes.svg) | |
 | Choice of EXR compression | ![yes](docs/images/feature-yes.svg) | All of MoonRay's, zip by default |
+| Multi-part EXR | ![yes](docs/images/feature-yes.svg) | Each output in a part of its own, by choice |
 | Picture types besides OpenEXR | ![yes](docs/images/feature-yes.svg) | PNG, JPEG, TIFF and Targa for a render to a file, animation frames and exported AOVs, the OpenEXR kept beside them |
 | Colour management: OCIO, ACES views, ACEScg working space | ![yes](docs/images/feature-yes.svg) | Modo's own OCIO configuration and colour spaces, any OCIO display and view, and ACES 1.3 and ACES 2.0 for an sRGB display; ACEScg scenes render and look right |
 | Denoising (OptiX, Open Image Denoise) | ![yes](docs/images/feature-yes.svg) | The Denoiser set to Off is off everywhere, the denoised beauty and Smart Render included |

@@ -776,9 +776,13 @@ inline long long nowNs(){return std::chrono::duration_cast<std::chrono::nanoseco
 template<class F> inline void parallelRange(size_t n,const F& f){
  const unsigned threads=std::max(1u,std::min(32u,std::thread::hardware_concurrency()));
  if(n<65536||threads<2){f(size_t(0),n);return;}
- const size_t chunk=(n+threads-1)/threads;std::vector<std::thread> pool;
- for(unsigned t=1;t<threads;++t){const size_t a=size_t(t)*chunk,b=std::min(n,a+chunk);if(a<b)pool.emplace_back([&f,a,b]{f(a,b);});}
- f(size_t(0),std::min(n,chunk));for(auto& t:pool)t.join();}
+ const size_t chunk=(n+threads-1)/threads;std::vector<std::thread> pool;std::mutex failing;std::exception_ptr failed;
+ // A failure goes to the caller once every thread has left: thrown past threads still running, it ended the process.
+ auto part=[&](size_t a,size_t b){try{f(a,b);}catch(...){std::lock_guard<std::mutex> lock(failing);if(!failed)failed=std::current_exception();}};
+ size_t begun=chunk;
+ try{for(unsigned t=1;t<threads;++t){const size_t a=size_t(t)*chunk,b=std::min(n,a+chunk);if(a<b){pool.emplace_back([&part,a,b]{part(a,b);});begun=b;}}}catch(const std::system_error&){}
+ part(size_t(0),std::min(n,chunk));if(begun<n)part(begun,n);
+ for(auto& t:pool)t.join();if(failed)std::rethrow_exception(failed);}
 // A part of preparation timed while it is in scope (PrepLaps::parts).
 struct PrepPart{const char* what;long long began=nowNs();~PrepPart();};
 inline std::shared_ptr<const SubdSurface> tessellateSubdivision(const rdl::SceneObject& o,const rdl::Layer& layer,const Plan& plan,const rdl::Mat4d& objectToWorld,
@@ -2955,6 +2959,7 @@ inline std::string geometryKey(const rdl::SceneObject& o,const std::vector<std::
  const unsigned char displace=get<rdl::Bool>(sv,"enable_displacement")?1:0;k.add(&displace,1);
  // Displaced from textures made smaller (texture overflow mode): not what a session with the whole textures may take.
  if(const unsigned side=texture::overflowSide().load())k.add(&side,sizeof side);
+ if(texture::overflowCompress().load()){const unsigned char compressed=1;k.add(&compressed,1);}
  // The kit's MoonRay Source Overrides (their switches can change what a displacement's maps give).
  for(const char* name:{"MOONRAY_MODO_TOON_TERMINATOR","MOONRAY_MODO_TOON_ALBEDO","MOONRAY_MODO_USD_SPECULAR","MOONRAY_MODO_OPAQUE_ALPHA",
                        "MOONRAY_MODO_TRANSMISSION_ROUGHNESS"}){const char* v=std::getenv(name);k.add(std::string(name)+"="+(v?v:""));}

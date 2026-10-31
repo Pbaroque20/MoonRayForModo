@@ -208,8 +208,11 @@ generations (async_adaptive.h Cellular); the scene's sampling mode picks only wh
 
 - Uniform (cpu::Plan::sampleBudget, cpu_scene.h): every pixel is seeded with an eighth of its samples (16 at least);
   the seed's steady rate (its passes after the first, which go out together) prices uniform's samples as uniform's
-  time. Each generation after, the target is the error every tile would come down to if the samples that time left
-  buys, at the last generation's rate, were spent (a tile's error falls as the square root of its samples); tiles above
+  time. Where the first pass ended past half way to the seed's end (its texture tiles still loading), that time says nothing,
+  and all the seed's samples over all its time price it: the car, at 16 a pixel, had stopped at 10.7 after 64.9 s, at 100%
+  from 35 s; now 18.9 in 111 s at the same rate, past 16 because the seed's rate includes the first tiles' loading. Each generation
+  after, the target is the error every tile would come down to if the samples that time left
+  buys, at the last generation's rate (uniform's where the seed's passes ended together), were spent (a tile's error falls as the square root of its samples); tiles above
   it sample the next pass, the furthest above first if the pass would buy more than the time left. The frame ends when
   the time is up, at most twice uniform's samples and 16 times its samples a pixel. spp stays uniform's (ray
   differentials, progress). Not with a pixel sample map, a bake camera, or at 16 samples a pixel or fewer.

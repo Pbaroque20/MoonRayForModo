@@ -107,8 +107,7 @@ class Panel(QtWidgets.QWidget):
         stored=self.samples.findData(QtCore.QSettings('MoonRayForModo','GraphEditor').value('widget_samples','standard'))
         self.samples.setCurrentIndex(stored if stored>=0 else self.samples.findData('standard'))
         self.samples.setToolTip('Preview only: the most samples a pixel of the widget takes, and how clean it renders. More is cleaner and slower; clean parts still stop early. Live takes far fewer, to keep up.')
-        # As wide as its longest choice with room for the arrow, or the text is cut against it.
-        self.samples.setMinimumWidth(max(self.samples.fontMetrics().horizontalAdvance(self.samples.itemText(i)) for i in range(self.samples.count()))+44)
+        self.fit_samples()
         choices=QtWidgets.QHBoxLayout();choices.addWidget(self.clay_mode,1);choices.addWidget(self.samples);layout.addLayout(choices)
 
         self.viewer=WidgetPreview(self);layout.addWidget(self.viewer,1)
@@ -129,8 +128,15 @@ class Panel(QtWidgets.QWidget):
         self.samples.currentIndexChanged.connect(self.samples_changed,QtCore.Qt.QueuedConnection)
         self.button.clicked.connect(self.pressed)
         self.viewer.start_requested.connect(self.refresh,QtCore.Qt.QueuedConnection)
+    def fit_samples(self):
+        """The Samples field and its list as wide as the longest choice with room for the arrow, or the text is cut against it."""
+        box=self.samples;box.ensurePolished()
+        wide=max(box.fontMetrics().horizontalAdvance(box.itemText(i)) for i in range(box.count()))+56
+        box.setMinimumWidth(max(box.sizeHint().width(),wide));box.view().setMinimumWidth(wide)
     def showEvent(self,event):
         super().showEvent(event)
+        # Measured again on the screen: Modo's own font and style are only on the field by now.
+        self.fit_samples()
         # Opened in the graph editor, the widget starts its picture at once, a moment after the editor is up: MoonRay
         # is loaded and the picture ready (or taken from the cache) before it is asked for.
         if self.embedded and not self.warmed:

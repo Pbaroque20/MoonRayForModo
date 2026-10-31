@@ -112,7 +112,7 @@ void logTextures(const cpu::Plan& plan, const async::GpuLane* card, bool whole) 
     std::printf("MoonRay XPU2: textures in RAM: coarser levels %.0f MB, %llu of %llu finest tiles decoded (%.0f MB)\n", mb(r.coarser),
                 (unsigned long long)r.tilesDecoded, (unsigned long long)r.tiles, mb(r.decoded));
     if (card) std::printf("MoonRay XPU2: textures on the card: %s\n", card->textureCardText().c_str());
-    if (const unsigned side = texture::overflowSide().load()) std::printf("MoonRay XPU2: textures limited to %u pixels a side (texture overflow mode)\n", side);
+    if (const std::string overflow = texture::overflowWords(); !overflow.empty()) std::printf("MoonRay XPU2: textures %s (texture overflow mode; %zu of %zu files compressed)\n", overflow.c_str(), r.compressed, r.files);
     std::fflush(stdout);
 }
 
@@ -1473,9 +1473,9 @@ int session(const Args& args, const fs::path& directory) {
                 }
                 scene.prepare();
                 // Said for every scene sent while it holds, the preview's notices being each scene's.
-                if (const unsigned side = texture::overflowSide().load())
-                    modoProtocolLine("@@MODO_XPU2 NOTICE Texture overflow mode: memory ran short, so textures are limited to " + std::to_string(side) +
-                                     " pixels a side. Free memory, or use fewer or smaller textures, then start the preview again for full detail.");
+                if (const std::string overflow = texture::overflowWords(); !overflow.empty())
+                    modoProtocolLine("@@MODO_XPU2 NOTICE Texture overflow mode: memory ran short, so textures are " + overflow +
+                                     ". Free memory, or use fewer or smaller textures, then start the preview again for full detail.");
                 if (scene.plan->aovs) checkOutputs(*scene.plan->aovs, mode != 0);
                 if (mode != 0 && !gpu) {
                     const Programs p = programs(folder);
@@ -2084,7 +2084,7 @@ int session(const Args& args, const fs::path& directory) {
                                     why.find("residency budget") != std::string::npos || why == "CUDA error 2" ||  // CUDA_ERROR_OUT_OF_MEMORY
                                     why == "OptiX error 7002";  // OPTIX_ERROR_HOST_OUT_OF_MEMORY
                 if (memory && !loaded && texture::nextOverflowSide()) {
-                    std::printf("MoonRay XPU2: %s: textures limited to %u pixels a side\n", why.c_str(), texture::overflowSide().load());
+                    std::printf("MoonRay XPU2: %s: textures %s\n", why.c_str(), texture::overflowWords().c_str());
                     std::fflush(stdout);
                     denoiser.reset();
                     renderer.reset();
@@ -2128,6 +2128,7 @@ int session(const Args& args, const fs::path& directory) {
                 refining.reset();
                 scene.coarse = scene.coarseCamera = false;
                 texture::overflowSide().store(0);  // a scene loaded anew may fit: it steps down again if not
+                texture::overflowCompress().store(false);
                 if (gpu) gpu->dropScene();
                 gpuPlan.reset();
                 scene.load(list);

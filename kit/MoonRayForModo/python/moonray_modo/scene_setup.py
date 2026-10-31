@@ -48,8 +48,8 @@ def configure(scene, values):
     scene['recovery']=values['recovery']
     # Kept out of a scene that does not ask for it, so that a checkpoint saved before still matches.
     if values['deep']['enabled']:scene['deep']=values['deep']
-    # Likewise the EXR's compression, where it is not MoonRay's zip.
-    if values['exr']!={'compression':1,'dwa_level':85.0}:scene['exr']=values['exr']
+    # Likewise the EXR's compression, where it is not MoonRay's zip, and its parts.
+    if values['exr']!={'compression':1,'dwa_level':85.0,'multipart':False}:scene['exr']=values['exr']
     scene['preview_buffer'] = values['preview_buffer']
     scene['execution_mode'] = values['execution_mode']
     # XPU2's sampling generations, written into a preview's scene for XPU2 (rdla.py).

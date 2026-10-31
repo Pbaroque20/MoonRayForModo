@@ -2078,6 +2078,7 @@ private:
         struct Source { const tex::Mip* mip; U32 page; U32 bytes; };
         std::vector<Source> sources;      // host texels of each tile id
         bool floatTiles = false;          // a level-0 tile in floats: the slots are a float tile's size
+        bool byteTiles = false;           // one in bytes
         size_t tileBytes = 0;             // a slot's bytes
         std::vector<U32> slotTile, tileSlot;
         std::vector<U64> lastUse;
@@ -2156,7 +2157,7 @@ private:
             if (std::find(files.begin(), files.end(), file) == files.end()) files.push_back(file);
         fine_ = {};
         fine_.sources.push_back({nullptr, 0});  // id 0 is untracked
-        fine_.floatTiles = false;
+        fine_.floatTiles = fine_.byteTiles = false;
         std::vector<std::pair<std::shared_ptr<texture::File>, B>> images;
         std::vector<std::pair<B, std::vector<U32>>> levelZeroPages;  // per file: page array and its tile ids
         size_t cardFree = 0, cardTotal = 0, mipBytes = 0;
@@ -2181,7 +2182,7 @@ private:
                     packed.resize((packed.size() + 15) / 16 * 16);
                     offsets[level].push_back(packed.size());
                     const auto* from = reinterpret_cast<const unsigned char*>(m.pages[i]);
-                    packed.insert(packed.end(), from, from + count * tex::texelBytes(m.format));
+                    packed.insert(packed.end(), from, from + tex::tileBytes(m.format, U32(count)));
                 }
             }
             // Levels 1 and up that would not fit, the rest of the frame besides (the session's texture overflow mode).
@@ -2208,8 +2209,9 @@ private:
             for (unsigned i = 0; i < nx * ny; ++i) {
                 const unsigned tx = i % nx, ty = i / nx;
                 const U32 count = std::min(tex::Tile, m.width - tx * tex::Tile) * std::min(tex::Tile, m.height - ty * tex::Tile);
-                fine_.sources.push_back({&host.levels[0], i, count * tex::texelBytes(m.format)});
+                fine_.sources.push_back({&host.levels[0], i, tex::tileBytes(m.format, count)});
                 if (m.format == 0) fine_.floatTiles = true;
+                if (m.format == 1) fine_.byteTiles = true;
                 ids.push_back(base + i);
             }
             descriptor.levels[0] = {m.width, m.height, reinterpret_cast<const surface::V3* const*>(table->pointer), base, m.format};
@@ -2222,7 +2224,9 @@ private:
         fine_.requestCapacity = fine_.tiles + 1;
         // A slot holds a tile of the largest format the scene has: an 8-bit scene's slots are a quarter the size, so the
         // same budget holds four times its tiles.
-        fine_.tileBytes = size_t(tex::Tile) * tex::Tile * (fine_.floatTiles ? sizeof(surface::V3) : 3u);
+        // All BC6H (texture overflow mode): its tile's bytes, up to whole texels of floats, as the device counts slots.
+        fine_.tileBytes = fine_.floatTiles ? size_t(tex::Tile) * tex::Tile * sizeof(surface::V3) : fine_.byteTiles ? size_t(tex::Tile) * tex::Tile * 3u
+                                           : (size_t(tex::tileBytes(2, 0)) + sizeof(surface::V3) - 1) / sizeof(surface::V3) * sizeof(surface::V3);
         const size_t tileBytes = fine_.tileBytes;
         // A scene without textures keeps one unused slot, so the buffers below are never empty.
         const size_t need = size_t(std::max<U32>(fine_.tiles, 1)) * tileBytes;
@@ -2318,16 +2322,31 @@ private:
             }
             const unsigned threads = unsigned(std::min<size_t>(missing.size(), std::max(1u, std::thread::hardware_concurrency() / 2)));
             std::atomic<size_t> next{0};
+            // A tile that cannot be read is the frame's failure, said with its reason, once every thread has left: thrown past
+            // threads still running, on this thread or theirs, it ended the process with nothing said ("terminate called").
+            std::mutex failing;
+            std::exception_ptr failed;
             auto work = [&] {
-                for (size_t k; (k = next++) < missing.size();) {
-                    const auto& source = fine_.sources[missing[k]];
-                    source.mip->load(source.mip->loader, 0, source.page);
+                try {
+                    for (size_t k; (k = next++) < missing.size();) {
+                        const auto& source = fine_.sources[missing[k]];
+                        source.mip->load(source.mip->loader, 0, source.page);
+                    }
+                } catch (...) {
+                    std::lock_guard<std::mutex> lock(failing);
+                    if (!failed) failed = std::current_exception();
+                    next = missing.size();
                 }
             };
             std::vector<std::thread> pool;
-            for (unsigned k = 1; k < threads; ++k) pool.emplace_back(work);
+            try {
+                for (unsigned k = 1; k < threads; ++k) pool.emplace_back(work);
+            } catch (const std::system_error&) {
+                // No more threads to be had: those there are, and this one, do the work.
+            }
             if (threads) work();
             for (auto& t : pool) t.join();
+            if (failed) std::rethrow_exception(failed);
         }
         for (U32 tile : fine_.pending) {
             if (fine_.freeSlots.empty()) {  // more asked for than the cache holds: next time

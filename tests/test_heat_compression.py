@@ -60,7 +60,7 @@ class CompressionTests(unittest.TestCase):
     def test_setting_in_the_form(self):
         keys = [f['key'] if isinstance(f, dict) else f[0] for f in scene_settings.FIELDS]
         self.assertIn('exr_compression', keys)
-        self.assertEqual(scene_settings.complete({})['exr'], {'compression': 1, 'dwa_level': 85.0})
+        self.assertEqual(scene_settings.complete({})['exr'], {'compression': 1, 'dwa_level': 85.0, 'multipart': False})
 
 
 if __name__ == '__main__':

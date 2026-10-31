@@ -29,6 +29,17 @@ def register():
         class Layer(lxu.package.BasicPackage, lxu.package.BasicItemBehaviors):
             def test_parent(self,item,parent):return True
             def synth_name(self,item):return shader
+            def newborn(self,item,original,flags):
+                # The package its form is shown by, in the making of it and so in the same undo. A copy has its original's.
+                try:
+                    if original is not None and lx.object.Item(original).test():return
+                except TypeError:
+                    # A fresh item passes a null lx.object.Unknown, not None.
+                    pass
+                except (RuntimeError,LookupError):
+                    return
+                try:lx.object.Item(item).PackageAdd(properties.SHADER_PACKAGE+shader)
+                except Exception:pass
         return Layer
 
     class MaterialXMaterial(lxu.package.BasicPackage, lxu.package.BasicItemBehaviors):
@@ -92,9 +103,35 @@ def register():
         try:lx.eval('moonray.material.fromEntry {%s} {%s}'%(identity,real))
         except RuntimeError:pass
 
+    class Marker(lxu.command.BasicCommand):
+        """Give the layer materials of a scene from before layers had one the package their form is shown by. It is not
+        undone, and so clears Modo's undo history: only for a scene just opened, which has none."""
+        def cmd_Flags(self):return lx.symbol.fCMD_MODEL
+        def basic_Enable(self,msg):return True
+        def basic_Execute(self,msg,flags):
+            import modo
+            scene=modo.Scene()
+            for shader in shader_library.catalog():
+                for material in scene.items(properties.LAYER_PREFIX+shader):
+                    properties.mark_shader(material,properties.read(material))
+    lx.bless(Marker,'moonray.material.markLayers')
+
+    def mark_opened():
+        try:
+            import modo
+            scene=modo.Scene()
+            if any(not properties.is_marked(material) for shader in shader_library.catalog() for material in scene.items(properties.LAYER_PREFIX+shader)):
+                lx.eval('!moonray.material.markLayers')
+        except (RuntimeError,LookupError,AttributeError):pass
+
     class Watcher(lxifc.SceneItemListener):
         """Sees an entry made, and has the material put in its place once Modo has finished making it: a scene may
-        not be changed from inside the making of an item."""
+        not be changed from inside the making of an item. Likewise a scene opened, whose layers may need marking."""
+        def sil_SceneCreate(self,scene):
+            try:
+                from PySide2 import QtCore
+                QtCore.QTimer.singleShot(0,mark_opened)
+            except Exception:pass
         def sil_ItemAdd(self,item):
             try:
                 made=lx.object.Item(item)

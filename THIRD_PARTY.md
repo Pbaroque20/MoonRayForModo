@@ -71,6 +71,18 @@ MoonLightIPR's velvet lobe reads two tables taken unchanged from OpenMoonRay (`m
 Copyright 2023-2024 DreamWorks Animation LLC, under the Apache License 2.0; they keep that notice and are not
 relicensed under MIT. See `moonlightipr/NOTICE.md`.
 
+## ISPC Texture Compressor
+
+XPU2's texture overflow mode compresses textures with Intel's ISPC Texture Compressor (https://github.com/GameTechDev/ISPCTextureCompressor,
+commit 79ddbc9; `upstream/ISPCTextureCompressor`, which Git ignores). `ispc_texcomp.cpp` and `kernel.ispc` are compiled unchanged into
+`moonray_xpu2.exe`, and `xpu2/interactive/bc6h_core.h` is generated from the format's layouts in `kernel.ispc`.
+
+Copyright 2017 Intel Corporation. MIT License: permission is hereby granted, free of charge, to any person obtaining a copy of this
+software and associated documentation files, to deal in the Software without restriction, including without limitation the rights to use,
+copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, subject to the copyright notice and this
+permission notice being included in all copies or substantial portions of the Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY
+OF ANY KIND. See `license.txt` beside its source for the whole text.
+
 ## meshoptimizer
 
 The realtime previews' mesh simplification uses meshoptimizer by Arseny Kapoulkine (zeux), version 0.22, under the MIT

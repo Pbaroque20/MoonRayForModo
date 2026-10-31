@@ -568,6 +568,9 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
               '  table.insert(assignments, a)', 'end']
     from . import geometry
     render_meshes = apart(render_meshes, {tag for tag, medium in media.items() if medium is not None})
+    from . import reference_points
+    if reference_points.wanted(scene.get('materials')):
+        render_meshes = [reference_points.with_rest(mesh) for mesh in render_meshes]
     # The objects an object casts no shadow onto, as MoonRay's shadow receiver set: the meshes of those objects, which
     # are known by their place among the meshes about to be written.
     receiver_records = [('object', identity, settings) for identity, settings in sorted(scene.get('production', {}).get('objects', {}).items())]
@@ -916,6 +919,8 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
         if entities.display_filters(scene):
             display_filter_lines(scene, lines, output_file)
             render_outputs += [(entities.filter_key(e), entities.filter_output(e), e['name']) for e in entities.display_filters(scene)]
+        if (scene.get('exr') or {}).get('multipart'):
+            render_outputs=outputs.in_parts(render_outputs)
         if recovery:
             # MoonRay needs sample weights and odd-sample beauty/alpha to resume.
             # Keep these in the primary EXR part alongside the regular beauty AOV.

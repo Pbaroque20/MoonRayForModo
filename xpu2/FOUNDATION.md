@@ -27,10 +27,12 @@ The mantra for XPU2 is: "Use your silicon!"
   the GPU and never blocks on it.
 - **Work goes where it runs best.** An indexer classifies each scene object by the devices that can render it. Cells
   start on the better-suited device, and a GPU sample that hits a CPU-only feature is handed to the CPU.
-- **Tiered texture memory.** Host RAM holds every mip level. VRAM holds the coarse levels and a cache of fine tiles.
-  A GPU sample that misses a fine tile shades from a coarser level and is re-rendered in full before the frame ends.
+- **Tiered texture memory.** Host RAM holds the coarse mip levels and the fine tiles read so far, which are decoded on
+  demand and let go under memory pressure. VRAM holds the coarse levels and a cache of fine tiles. A GPU sample that
+  misses a fine tile shades from a coarser level and is re-rendered in full before the frame ends. A scene that does
+  not fit has its textures compressed (BC6H), then made smaller, and the preview says so.
 - **Sampling generations.** One sampler handles both uniform and adaptive sampling, spending samples where the error
-  is highest.
+  is highest. A frame runs for as long as uniform sampling would take, or to an exact sample count.
 - **Audited results.** Each device keeps its own film. When a frame ends the films merge and every pixel's sample
   count is checked.
 

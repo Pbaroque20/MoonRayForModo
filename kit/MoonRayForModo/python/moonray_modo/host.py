@@ -517,7 +517,10 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
                         mesh['point_attributes'] = dict(mesh.get('point_attributes') or {}, **{reference_points.NAME: {'kind': 'vec3', 'values': mesh['vertices']}})
             result['extra_geometry']=evaluated.extra_geometry(data,warnings)
         if reuse_geometry is not None and refresh_materials and not evaluated_geometry:
-            if coordinates.descriptors(result['materials']) != coordinates.descriptors(reuse_geometry['materials']):
+            from . import reference_points
+            # Rest positions come with the meshes: a material that now asks for them (glitter turned on) reads them again.
+            if (coordinates.descriptors(result['materials']) != coordinates.descriptors(reuse_geometry['materials'])
+                    or reference_points.wanted(result['materials']) != reference_points.wanted(reuse_geometry['materials'])):
                 return snapshot(evaluated_geometry=False)
             result['meshes']=[dict(mesh) for mesh in reuse_geometry['meshes'] if not dirty_meshes or mesh['identity'].split('|')[0] not in dirty_meshes]
         # Resolve each visible instance to one mesh prototype, including hidden sources.

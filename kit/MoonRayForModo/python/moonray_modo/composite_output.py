@@ -18,14 +18,22 @@ def beside(path):
     return path.with_name(path.stem + '.composite.exr')
 
 
-def channel_names(runtime, path):
-    """The names of an EXR's channels, in the file's order."""
-    done = subprocess.run([str(Path(runtime) / 'oiiotool.exe'), '--info', '-v', str(path)], env=native.environment(runtime),
+def channel_parts(runtime, path):
+    """The names of the channels of each part of an EXR, in the file's order: one list where it is not multi-part."""
+    done = subprocess.run([str(Path(runtime) / 'oiiotool.exe'), '-a', '--info', '-v', str(path)], env=native.environment(runtime),
                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=60, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
-    for line in done.stdout.decode('utf-8', errors='replace').splitlines():
-        if 'channel list:' in line:
-            return [name.strip() for name in line.split('channel list:', 1)[1].split(',') if name.strip()]
-    return []
+    return [[name.strip() for name in line.split('channel list:', 1)[1].split(',') if name.strip()]
+            for line in done.stdout.decode('utf-8', errors='replace').splitlines() if 'channel list:' in line]
+
+
+def channel_names(runtime, path):
+    """The names of an EXR's channels, in the file's order, of all its parts."""
+    return [name for part in channel_parts(runtime, path) for name in part]
+
+
+def part_of(key, parts):
+    """Which part of an EXR holds a buffer: selection(key, part) finds it there."""
+    return next((index for index, names in enumerate(parts) if selection(key, names) is not None), None)
 
 
 def selection(key, names):
@@ -39,7 +47,7 @@ def selection(key, names):
     pair = [key + '.' + c for c in ('R', 'G')]
     if all(part in names for part in pair):
         return ','.join(pair) + ',B=0'
-    for single in (key, key + '.R', key + '.Y', key + '.Z', key + '.A'):
+    for single in ('A' if key == 'alpha' else key, key + '.R', key + '.Y', key + '.Z', key + '.A'):
         if single in names:
             return 'R=%s,G=%s,B=%s' % (single, single, single)
     return None
@@ -52,8 +60,9 @@ def write(runtime, graph, rendered, denoised=None, scene=None):
     if compositor.trivial(graph):
         return None
     runtime, rendered = Path(runtime), Path(rendered)
-    names = channel_names(runtime, rendered)
-    files, channels = {}, {}
+    parts = channel_parts(runtime, rendered)
+    names = [name for part in parts for name in part]
+    files, channels, elsewhere = {}, {}, {}
     for key in compositor.buffers(graph):
         if key == 'denoised_beauty':
             if denoised is None or not Path(denoised).is_file():
@@ -64,8 +73,15 @@ def write(runtime, graph, rendered, denoised=None, scene=None):
         if chosen is None:
             raise ValueError('The render has no %s buffer for the compositor to take' % key)
         files[key] = rendered; channels[key] = ['--ch', chosen]
+        if part_of(key, parts):elsewhere[key] = part_of(key, parts)
     files.setdefault('beauty', rendered); channels.setdefault('beauty', ['--ch', 'R,G,B'])
     with tempfile.TemporaryDirectory(prefix='MoonRayComposite-') as held:
+        # What the compositor reads comes from a file's first part: a multi-part render's other parts are taken out for it.
+        for key, index in elsewhere.items():
+            files[key] = Path(held) / ('part-%d.exr' % index)
+            subprocess.run([str(runtime / 'oiiotool.exe'), '--no-autopremult', str(rendered), '--subimage', str(index), '-d', 'float', '-o', str(files[key])],
+                           env=native.environment(runtime), check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=600,
+                           creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
         # The same program as the preview's Composite, where the runtime has it: the two always agree.
         # Each Cryptomatte node is a picture of its matte, from the Cryptomatte channels of the render's EXR.
         from . import cryptomatte_pick
