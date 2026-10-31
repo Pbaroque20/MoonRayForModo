@@ -130,10 +130,19 @@ one substitute texture, through the session harness; a re-cut in Modo also costs
 - **Pixel filters.** Box, the two B-splines, and the kit's Gaussian, Triangle and Blackman-Harris, warped as its MoonRay
   warps them; widths up to 64.
 - **Texture overflow mode.** Where a scene's load runs out of memory on the machine or the card, or a texture budget, the
-  frame is made again with textures limited to half the size, down to 256 pixels a side, and the preview says so
+  frame is made again with its textures compressed: BC6H, a byte a texel at any size, encoded by Intel's ISPC Texture
+  Compressor as tiles are read and decoded texel by texel on both devices (`bc6h_core.h`, generated from the encoder's own
+  layouts by `make_bc6h_core.py`, and matched against OpenImageIO's decoder on all fourteen modes). A map with negative values
+  stays as it is, BC6H being unsigned. If that is not enough, textures are limited to half the size, down to 256 pixels a side.
+  On the car the card's textures went from 3.7 GB to 311 MB, the frame took 7% longer, and the picture differs by 0.0025 a pixel
+  on a mean of 0.60. The preview says so
   (`@@MODO_XPU2 NOTICE`). It also starts where every decoded tile has been let go, RAM is still short and the card is
   short too, with a size left to go to. It holds until the scene is loaded anew. Finer levels are neither decoded nor sent; `XPU2_SESSION_CARD_FREE_MB` stands in
   for a full card in tests. A failure once a frame is rendering still goes to MoonRay XPU.
+- **Letting tiles go.** Free RAM below a tenth of the machine's (2 GB at least), or the session's commit past 92% of its ceiling,
+  lets the oldest decoded tiles go, but 1 GB of them stay, tiles too few to matter are left alone, and a letting go that did not
+  help waits twice as long before the next, up to a minute. At 85%, every tile, every quarter of a second to two, a car's render
+  stalled reading them again: its commit passes that with the graphics driver's alone, RAM to spare.
 - **A card that fills up.** The fine-detail cache is sized from the card's free memory when the scene is prepared, and made
   again to fit where, as a frame starts, the card has come to hold much less (`GpuLane::fineCacheTooBig`).
 
@@ -149,13 +158,11 @@ Each of these was on the list of what was left; each was measured or read agains
   the kit. Reprojection is left out on purpose: it would show stretched pixels after every move, the kind of brief
   glitch the half-resolution start was removed for. The session has OptiX denoising; the 0.5 kit does not use it in
   realtime. Deadlines have not been needed: Realtime Samples and the Realtime Adaptive Sampling Cap bound a frame.
-- **Spill under host memory pressure (MEM-06 to MEM-09): done, as letting tiles go.** Level-0 tiles are decoded when
-  first read. Under pressure (free RAM below a tenth of the machine's, 2 GB at least, or the session past 85% of its
-  ceiling) the oldest are let go, four times a second if need be, and are decoded again from their files if asked for
-  again; the card's copies stay. `tex::spill` guards every host read, so a tile is freed only when no reader can hold
-  it. `XPU2_SESSION_SPILL_MB` holds the tiles to a size, for tests. Letting every tile go, continuously: CPU-only images
-  byte-identical, GPU-only images within the run-to-run difference, render time within 1%. Freed tiles go back to
-  Windows (2.1 GB of tiles, half freed: 1.15 GB committed). The coarser levels are not let go.
+- **Spill under host memory pressure (MEM-06 to MEM-09): done, as letting tiles go** (see Limits a scene can meet). Level-0 tiles
+  are decoded when first read, and those let go are decoded again from their files if asked for again; the card's copies stay.
+  `tex::spill` guards every host read, so a tile is freed only when no reader can hold it. `XPU2_SESSION_SPILL_MB` holds the tiles
+  to a size, for tests: every tile let go, continuously, gave CPU-only images byte-identical and GPU-only images within the
+  run-to-run difference. The coarser levels are not let go.
 - **Mapped zero-copy rings (MBX-01): measured, not adopted.** The chunk ring in pinned host memory, mapped for the
   device, against stream-ordered copies, 12 threads: gallery-dense 392 against 388 ms, workshop-detail 609 against
   611 ms, the difference within the noise. Copies stay, as the simpler and the one that does not read across the bus.
