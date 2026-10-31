@@ -505,7 +505,7 @@ MAP_SETTINGS.update({
                           ('valVariation', 0.0), ('brightness', 0.0), ('contrast', 0.0)),
 })
 # Read without a texture locator: they take what is beneath them, or the surface itself.
-SURFACE_KINDS = ('val.Process_EasyGrad.RJJ', 'val.Process_RegionalHSV.RJJ', 'val.RTCurvature', 'val.wireframe')
+SURFACE_KINDS = ('val.Process_EasyGrad.RJJ', 'val.Process_RegionalHSV.RJJ', 'val.RTCurvature', 'val.wireframe', 'vmapTexture')
 IDENTITY_ROWS = [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0]]
 
 
@@ -545,6 +545,36 @@ def regional(layer, channel, color):
                        'RegionalHSV setting')
     return {'pattern': 400, 'type': 0, 'settings': settings + [0.0] * (22 - len(settings)) + [.5, .5],
             'color1': [0.0, 0.0, 0.0], 'color2': [1.0, 1.0, 1.0], 'alpha1': 1.0, 'alpha2': 1.0, 'rows': IDENTITY_ROWS, 'process': True}
+
+
+def weight_curve(t, bias, gain):
+    """How far from Low to High a weight of t lies, under the layer's Bias and Gain; both at 0.5 leave it as it is.
+    Schlick's bias then gain, each of 1 less the channel's value: found from Modo's renders (probe_gui_weight_layer.py)."""
+    t = min(1.0, max(0.0, t))
+    a, g = 1 - min(.999, max(.001, bias)), 1 - min(.999, max(.001, gain))
+    t = t / ((1 / a - 2) * (1 - t) + 1)
+    k = (1 / g - 2) * (1 - 2 * t)
+    return t / (k + 1) if t < .5 else (k - t) / (k - 1)
+
+
+def vertex_map(layer, channel, color, is_color):
+    """Modo's Weight Map Texture as a gradient looked up by the weight at each point (a primitive attribute of the map's
+    name, vertex_maps): from its Low to its High, as Bias and Gain bend the way between them. Read at 257 points."""
+    name = str(channel(layer, 'vmap', '') or '').strip()
+    bias, gain = float(channel(layer, 'bias', .5)), float(channel(layer, 'gain', .5))
+    low, high = float(channel(layer, 'value1', 0)), float(channel(layer, 'value2', 1))
+    ends = (list(color(layer, 'color1', (0, 0, 0))), list(color(layer, 'color2', (1, 1, 1)))) if is_color else ([low] * 3, [high] * 3)
+    alphas = float(channel(layer, 'alpha1', 1)), float(channel(layer, 'alpha2', 1))
+    positions = [i / 256.0 for i in range(257)]
+    colors, alpha = [], []
+    for x in positions:
+        t = weight_curve(x, bias, gain)
+        colors.append(_finite([a + (b - a) * t for a, b in zip(*ends)], 'Weight Map Texture value'))
+        alpha.append(min(1.0, max(0.0, alphas[0] + (alphas[1] - alphas[0]) * t)))
+    data = {'input': '@vmap', 'vmap': name, 'label': 'the weight map ' + (name or '(none chosen)'), 'positions': positions, 'colors': colors}
+    if any(a != 1.0 for a in alpha):
+        data['alpha'] = alpha
+    return data
 
 
 def curvature(layer, channel, is_color):

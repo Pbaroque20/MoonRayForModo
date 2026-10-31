@@ -891,7 +891,7 @@ class Compiler:
         exact keeps every point given, for ramps that do not go through MoonRay's RampMap.
         """
         from .gradients import reduced, sample
-        # MoonRay's RampMap holds 20 points, so that is the gradient the final render shows.
+        # MoonRay's RampMap holds 10 points (gradients.reduced), so that is the gradient the final render shows.
         data = data if exact else reduced(data)
         steps = [i / (RAMP_STEPS - 1) for i in range(RAMP_STEPS)]
         colors = data['colors'] if list(data['positions']) == steps else [sample(data, x) for x in steps]
@@ -1142,7 +1142,7 @@ class Compiler:
             elif kind == 'gradient':
                 data = layer['gradient']
                 if data.get('input') not in CHANNELS:
-                    self.note('gradients driven by %s' % textures.EFFECTS.get(data.get('input'), data.get('input')), name)
+                    self.note('gradients driven by %s' % (data.get('label') or textures.EFFECTS.get(data.get('input'), data.get('input'))), name)
                     abandon()
                     continue
                 try:

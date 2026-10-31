@@ -50,19 +50,32 @@ def capture(layer,channel,is_color):
         data['alpha']=[max(0,min(1,x)) for x in alpha]
     return data
 
-RAMP_POINTS=20
+# MoonRay's RampMap takes 20 points, but what evaluates it (RampControl, RAMP_MAX_POINTS) keeps the first 10 and holds the
+# last of those from there on.
+RAMP_POINTS=10
 
 def reduced(data):
-    """The gradient as MoonRay's RampMap can hold it: at most 20 points, evenly spaced."""
-    if len(data['positions'])<=RAMP_POINTS:return data
-    positions=[i/(RAMP_POINTS-1) for i in range(RAMP_POINTS)]
-    result=dict(data,positions=positions,colors=[sample(data,x) for x in positions])
-    if 'alpha' in data:
-        result['alpha']=[sample(dict(data,colors=[[a]*3 for a in data['alpha']]),x)[0] for x in positions]
+    """The gradient as MoonRay's RampMap can hold it: at most 10 of its points, those it is furthest out without."""
+    count=len(data['positions'])
+    if count<=RAMP_POINTS:return data
+    rows=[list(colour)+([data['alpha'][i]] if 'alpha' in data else []) for i,colour in enumerate(data['colors'])]
+    places=data['positions']
+    kept=[0,count-1]
+    while len(kept)<RAMP_POINTS:
+        worst,where=-1.0,None
+        for left,right in zip(kept,kept[1:]):
+            for i in range(left+1,right):
+                amount=(places[i]-places[left])/(places[right]-places[left])
+                off=max(abs(a+(b-a)*amount-c) for a,b,c in zip(rows[left],rows[right],rows[i]))
+                if off>worst:worst,where=off,i
+        if where is None or worst<=1e-6:break
+        kept=sorted(kept+[where])
+    result=dict(data,positions=[places[i] for i in kept],colors=[data['colors'][i] for i in kept])
+    if 'alpha' in data:result['alpha']=[data['alpha'][i] for i in kept]
     return result
 
 def emit(data,current,node,rgb):
-    from .rdla import array,number
+    from .rdla import array,number,string
     # RampMap refuses more points than this and the layer would render blank.
     data=reduced(data)
     source=data['input']
@@ -70,6 +83,11 @@ def emit(data,current,node,rgb):
         # Modo's Curvature: MoonRay's CurvatureMap, 0.5 flat, turned so that a bulge reads towards 1.
         measured=node('CurvatureMap',{'mode':'2','scale':number(data.get('scale',1)),'power':'1'})
         signal=node('ModoTextureMap',{'background':rgb(1),'foreground':measured,'blend':'3'})
+    elif source=='@vmap':
+        # Modo's Weight Map Texture: the weight the shape carries under the map's name (vertex_maps). A mesh without the
+        # map reads 0, its Low.
+        weight=node('AttributeMap',{'primitive_attribute_name':string(data.get('vmap','')),'primitive_attribute_type':'0','default_value':'Rgb(0,0,0)'})
+        signal=node('ModoTextureMap',{'mode':'7','component':'0','foreground':weight})
     elif source not in current:raise ValueError('Missing gradient source '+source)
     elif data.get('luminance'):
         # Enhance: Modo's EasyGrad: looked up by the brightness of its own channel beneath it.
