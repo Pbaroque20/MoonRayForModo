@@ -2,8 +2,12 @@
 
 0.5 is a **pre-production release**: the plugin is no longer experimental, and it brings a new GPU renderer, MoonRay XPU2.
 
-## Coming in 0.5.1
+## New in 0.5.1
 
+A hotfix to 0.5, with a new runtime ZIP: install both, and **Compile XPU2 Shaders once more**.
+
+- **Realtime Sample %** in the preview's preferences as well as Render Settings, its new name.
+- **The About window gives a build number** after the version.
 - **Automatic Presence Shadows** (Preferences > MoonRay > Renderer, off unless chosen): a label or other surface cut out
   by a Stencil layer or a map in its presence no longer shades what lies under its cut-out parts. Off where nothing is cut
   out, which is quicker. While it is on, Presence Shadows in Render Settings and on lights are greyed.
@@ -49,7 +53,6 @@
   A scene with much displacement or subdivision shows a first picture in seconds, and follows the camera while its full
   geometry is made.
 - **Subdivided meshes no longer stretch textures in MoonLightIPR**: texture coordinates follow the smoothed surface.
-- **Compile XPU2 Shaders once more** after installing: XPU2's programs have changed.
 
 ## MoonRay XPU2
 

@@ -9,9 +9,9 @@ The plugin includes CPU, XPU and XPU2 rendering, a dockable live preview with a 
 
 **Built on MoonRay [2026.29.1](https://github.com/dreamworksanimation/openmoonray/releases/tag/v2026.29.1)** (OpenMoonRay's latest release; MoonRay 18.4), with the plugin's own patches for Windows and the preview.
 
-**Current version: 0.5 — pre-production release.** The plugin is no longer experimental. 0.5 brings **MoonRay XPU2**, a new GPU renderer for previews in which the processor and the graphics card work on the same picture at once, now the default; realtime that keeps up with heavy scenes and a Scene cache; Modo's procedural textures worked out through the object, 145 of Modo's Enhance textures among them; Modo's light volumetrics and fog; and MoonLightIPR starting in seconds. Install the new runtime with it.
+**Current version: 0.5.1 — pre-production release, a hotfix to 0.5.** The plugin is no longer experimental. 0.5 brought **MoonRay XPU2**, a new GPU renderer for previews in which the processor and the graphics card work on the same picture at once, now the default; realtime that keeps up with heavy scenes and a Scene cache; Modo's procedural textures worked out through the object, 145 of Modo's Enhance textures among them; Modo's light volumetrics and fog; and MoonLightIPR starting in seconds. Install the new runtime with it.
 
-[Download 0.5: the kit, the Windows runtime and the MoonRay content](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.5) · [Installation instructions](docs/INSTALLATION.md) · [What's new in 0.5](docs/WHATS_NEW_05.md) · [What's new in 0.4 to 0.4.3.1](docs/WHATS_NEW_04.md) · [MoonRay's features in the plugin](#moonrays-features-in-the-plugin) · [Modo's features in the plugin](#modos-features-in-the-plugin) · [Engineers' notes: where the plugin changes MoonRay](patches/native-windows/README.md)
+[Download 0.5.1: the kit, the Windows runtime and the MoonRay content](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.5.1) · [Installation instructions](docs/INSTALLATION.md) · [What's new in 0.5](docs/WHATS_NEW_05.md) · [What's new in 0.4 to 0.4.3.1](docs/WHATS_NEW_04.md) · [MoonRay's features in the plugin](#moonrays-features-in-the-plugin) · [Modo's features in the plugin](#modos-features-in-the-plugin) · [Engineers' notes: where the plugin changes MoonRay](patches/native-windows/README.md)
 
 Work on the next version goes on in the [MoonLightIPR branch](https://github.com/Pbaroque20/MoonRayForModo/tree/MoonLightIPR).
 
@@ -43,6 +43,21 @@ Work on the next version goes on in the [MoonLightIPR branch](https://github.com
 | **The graph editor**, with a MoonRay material | **Modo's Fur material** rendered by MoonRay |
 | ![The compositor](docs/images/compositor-editor.png) | ![Modern Hall, imported from MoonRay's scene files](docs/images/rdl-modern_hall.jpg) |
 | **The compositor**: the beauty graded, vignetted and sharpened | **An imported MoonRay scene**: its own render (left), after the trip through Modo (right). Modern Hall by NewSee2l035, CC BY |
+
+## New in 0.5.1
+
+A hotfix, with a new runtime ZIP: install both, and Compile XPU2 Shaders once more. The full list is in [What's new in 0.5](docs/WHATS_NEW_05.md).
+
+- **XPU2 fixes:** Subsurface Samples above 4, Material Samples of any count and Gaussian, Triangle and Blackman-Harris filters render. Render gives the samples you set, its progress climbing steadily, so a scene with heavy textures takes longer than it did, with a cleaner picture. A scene XPU2 hands to MoonRay XPU keeps its geometry.
+- **Texture overflow mode:** where a scene runs out of memory as it loads, XPU2 compresses its textures, then makes them smaller if it must, and the preview says so.
+- **Realtime on a heavy scene:** a first picture in seconds, and back in under a second after a mesh's detail is cut anew.
+- **Weight Map Texture layers render**, in MoonRay, XPU2 and MoonLightIPR. Gradient and Curvature layers no longer stop halfway.
+- **Multi-part EXRs**, by choice, and EXR channels by standard names.
+- **MoonLightIPR's subsurface** follows a material's chosen model, and its colour is much closer to MoonRay's. Subdivided meshes no longer stretch its textures.
+- **Glitter no longer turns a material pink.** Toon lines come out whole, and the Toon filter's Output Mode works under XPU2.
+- **Automatic Presence Shadows** (Preferences > MoonRay > Renderer, off unless chosen): a label's cut-out parts no longer shade what lies under them.
+- **In the graph editor:** presets, Samples for the material widget, and colours that match Modo's form. A Car paint material in the library.
+- **Realtime Sample %** in the preview's preferences as well as Render Settings, and a build number in the About window.
 
 ## New in 0.5
 
@@ -278,7 +293,7 @@ In each pair, MoonRay's render of the scene from its own files is on the left; o
 - Render outputs: configurable AOVs, Cryptomatte surface categories, buffer switching, deep EXR, texture baking, a compositor over the finished buffers, and denoising (OptiX or Open Image Denoise) that survives a stopped render.
 - Workflow tools: ACES/sRGB/OCIO view transforms and LUTs, animation output and recovery controls, an asset library with MoonRay's example scenes, and RDL scene import.
 
-## Known issues in 0.5
+## Known issues in 0.5.1
 
 The ones you are most likely to meet:
 
@@ -286,7 +301,7 @@ The ones you are most likely to meet:
 - Under Principled, Modo's diffuse gets brighter with roughness and MoonRay's does not.
 - Glass under Blinn and Ashikhmin lets through about 8% less light than Modo's, and a very strong anisotropy draws a shorter streak than Modo's.
 - MoonRay tessellates a displaced polygon mesh coarsely, so fine displacement shows little on it; subdivision surfaces show it fully.
-- Hair in MoonLightIPR is close to MoonRay's but not exact.
+- Hair in MoonLightIPR is close to MoonRay's but not exact, and its subsurface can have less red than MoonRay's on a strongly coloured material.
 - A glowing VDB volume, or a light with a cookie filter, renders in MoonRay's slower scalar mode; the plugin switches for you and says so.
 - Smart Render and Important Parts First work on MoonRay renders in the preview window, not on Render EXR or animations.
 - XPU2 renders previews only after its shaders are compiled once (Preferences > MoonRay > XPU2 > Compile XPU2 Shaders); until then the preview says so. A scene XPU2 cannot render yet goes to MoonRay XPU.
@@ -336,7 +351,7 @@ Comparison audit between MoonRay 2026.29.1's source and the current plugin.
 | Volume attenuation and contribution factors | ![yes](docs/images/feature-yes.svg) | Render Settings, Volumes, with the phase attenuation factor; MoonLightIPR follows them |
 | Pixel filters: box, cubic and quadratic B-spline | ![yes](docs/images/feature-yes.svg) | |
 | Global switches: displacement, subsurface, shadows, lights seen by the camera, geometry resolution, dicing camera | ![yes](docs/images/feature-yes.svg) | Render Settings, Global Switches |
-| Presence quality, Cryptomatte multi-presence, optimised hair sampling switch | ![yes](docs/images/feature-yes.svg) | In Render Settings |
+| Presence quality, Cryptomatte multi-presence, optimised hair sampling switch | ![yes](docs/images/feature-yes.svg) | In Render Settings. Automatic Presence Shadows, in Preferences, sets presence shadows by whether a material is cut out |
 | AOVs: light path expressions, material AOVs | ![yes](docs/images/feature-yes.svg) | Ready-made, or type your own expression. The compositor adds the light passes or light groups and puts them back together, each with its own Grade; a probe shows each node's value at a pixel and keeps it as a note; the colour nodes take a mask |
 | Time per pixel (where the render spent its time) | ![yes](docs/images/feature-yes.svg) | A preview buffer and an EXR channel |
 | Visibility outputs (how much of each light reaches a point) | ![yes](docs/images/feature-yes.svg) | Every light or one light group, in the Outputs window |
@@ -395,7 +410,7 @@ Comparison audit between Modo 16.1v9 and the current plugin: what of a Modo scen
 | Instances and replicators | ![yes](docs/images/feature-yes.svg) | Replicators through Modo's evaluated geometry |
 | Deformed and animated meshes | ![yes](docs/images/feature-yes.svg) | Through Modo's evaluated geometry |
 | Curves, hair and Modo's Fur material | ![partly](docs/images/feature-partly.svg) | Fur guides, and the fur vector and width maps, are not read |
-| Weight and colour vertex maps | ![yes](docs/images/feature-yes.svg) | As values MoonRay's materials read. Coming in 0.5.1: the Shader Tree's Weight Map Texture layer, with weight maps |
+| Weight and colour vertex maps | ![yes](docs/images/feature-yes.svg) | As values MoonRay's materials read, and the Shader Tree's Weight Map Texture layer, with weight maps |
 | Modo's volume items | ![partly](docs/images/feature-partly.svg) | Rendered from a VDB file attached in the MoonRay controls |
 | Blobs and particles | ![no](docs/images/feature-no.svg) |  |
 
