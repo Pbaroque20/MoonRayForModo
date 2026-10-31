@@ -54,7 +54,9 @@ def main():
     kit={prefix+p.relative_to(ROOT/'kit/MoonRayForModo').as_posix():p for p in (ROOT/'kit/MoonRayForModo').rglob('*') if p.is_file() and not {'__pycache__','bin'}&set(p.relative_to(ROOT/'kit/MoonRayForModo').parts) and p.suffix!='.pyc' and p.name not in ('runtime.json','development-install.json')}
     kit[prefix+'bin/MoonRayGeometry.lx']=geometry
     for source,name in [('LICENSE','LICENSE.txt'),('THIRD_PARTY.md','THIRD_PARTY.txt'),('docs/INSTALLATION.md','INSTALLATION.md'),('README.md','README.md')]:kit[prefix+name]=ROOT/source
-    kit_file=package('MoonRayForModo-'+version+'-kit.zip',kit,{})
+    # The About window's build number, stamped as the package is made.
+    from build_number import FILE,number
+    kit_file=package('MoonRayForModo-'+version+'-kit.zip',kit,{prefix+FILE:(number()+'\n').encode('ascii')})
     rprefix=prefix+'runtime/'
     entries={rprefix+p.relative_to(runtime).as_posix():p for p in runtime.rglob('*') if p.is_file() and p.name!='build-manifest.json'}
     # XPU2's runtime beside it, where the kit looks for it (native.xpu2_runtime).
