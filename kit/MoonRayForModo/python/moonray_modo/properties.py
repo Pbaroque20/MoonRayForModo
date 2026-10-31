@@ -119,26 +119,57 @@ SHADER_PACKAGE = 'moonray.shader.'
 
 
 def mark_shader(item, values):
-    """Keep the one package that names the material's native shader, and no other."""
+    """Keep the one package that names the material's native shader, and no other. A graph's new output changes it with
+    the material selected: Modo lets go of an item whose packages change, and its form with it, so it is selected again."""
     try:
-        if item.type != 'advancedMaterial':
+        if item.type != 'advancedMaterial' and not layer_shader(item):
             return
         from . import material_override, shader_library
         shader = material_override.effective(values).get('native_shader') or ''
+        if not shader:
+            shader = layer_shader(item)
+        changes = []
         for name in shader_library.catalog():
             held = bool(item.PackageTest(SHADER_PACKAGE + name))
             if held and name != shader:
-                item.PackageRemove(SHADER_PACKAGE + name)
+                changes.append((item.PackageRemove, name))
             elif not held and name == shader:
-                item.PackageAdd(SHADER_PACKAGE + name)
+                changes.append((item.PackageAdd, name))
+        if not changes:
+            return
+        selected = _is_selected(item)
+        for change, name in changes:
+            change(SHADER_PACKAGE + name)
+        if selected:
+            _select_again(item)
     except Exception:
         pass
+
+
+def is_marked(item):
+    """Whether a material holds a package naming any shader."""
+    from . import shader_library
+    return any(item.PackageTest(SHADER_PACKAGE + name) for name in shader_library.catalog())
+
+
+def _is_selected(item):
+    try:
+        import modo
+        return any(chosen.id == item.id for chosen in modo.Scene().selected)
+    except (AttributeError, LookupError, RuntimeError):
+        return False
+
+
+def _select_again(item):
+    import lx
+    lx.eval('select.item {%s} add' % item.id)
 
 
 def write(item, values):
     # Modo's diffuse follows a MoonRay material's main colour, in this same step (material_diffuse).
     try:
-        from .material_diffuse import LINKED, to_diffuse
+        from .material_diffuse import LINKED, on_new_output, to_diffuse
+        values = on_new_output(item, values)
         if to_diffuse(item, values):
             values = dict(values, **{LINKED: True})
     except Exception:

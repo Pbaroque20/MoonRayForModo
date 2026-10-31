@@ -14,6 +14,11 @@ The current release is [0.5](https://github.com/Pbaroque20/MoonRayForModo/releas
 - **Samples for the material widget**: 32, 64, 128 or 256 in the graph editor, for a cleaner picture of the material.
 - **Graph editor presets**: the Presets menu saves the selected nodes or a whole network, to load into any material.
 - **A Car paint material in the library**: a dark metal with a sharp clearcoat and fine flakes, to start a metallic paint from.
+- **Multi-part EXRs** (Render settings > Output Renders > Multi-Part EXR): each output in a part of its own, for a compositor to read one at a time.
+- **EXR channels by standard names**: the beauty's alpha is `A`, so it comes in as the beauty's alpha, and depth is `depth.Z`.
+- **A graph's new output reaches Modo's form**: changing a material's output shows the new material's form, selected and ready to edit, and the new output starts on its own colour.
+- **Glitter no longer turns a material pink**, turned on or off again, in MoonRay, MoonRay XPU and XPU2.
+- **The graph editor's Samples field shows its whole text.**
 - **A MoonRay material's colour and Modo's diffuse follow each other**, under Traditional and Principled, so the viewport
   shows the material's colour. A new material starts on its diffuse.
 - **Weight Map Texture layers render**, in MoonRay, XPU2 and MoonLightIPR, with their Low, High, Bias and Gain, matching Modo's own render:

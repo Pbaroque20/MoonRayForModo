@@ -7,7 +7,7 @@ from unittest import mock
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'kit/MoonRayForModo/python'))
 sys.modules.setdefault('modo', types.ModuleType('modo'))
-from moonray_modo import material_diffuse, properties
+from moonray_modo import material_diffuse, material_override, node_defaults, properties, shader_library
 
 
 class Channel:
@@ -103,6 +103,71 @@ class LinkedTests(unittest.TestCase):
         properties.write(item, base(albedo=[.1, .2, .3]))
         self.assertTrue(item.settings[material_diffuse.LINKED])
         self.assertEqual(material_diffuse.diffuse(item), [.1, .2, .3])
+
+    def two_outputs(self, root, **first):
+        return {'version': 1, 'root': root, 'nodes': {
+            'first': {'type': 'DwaBaseMaterial', 'parameters': first, 'inputs': {}},
+            'second': {'type': 'DwaMetalMaterial', 'parameters': {}, 'inputs': {}},
+            'third': {'type': 'DwaBaseMaterial', 'parameters': {}, 'inputs': {}}}}
+
+    def settled(self, root):
+        """A linked material on the first output, red, whose output then becomes this one, as the graph editor writes it."""
+        item = Item({})
+        properties.write(item, material_override.synchronize({}, self.two_outputs('first', albedo=[1, 0, 0])))
+        properties.write(item, material_override.synchronize(properties.read(item), self.two_outputs(root, albedo=[1, 0, 0])))
+        return item
+
+    def test_a_new_output_with_no_colour_starts_on_its_own(self):
+        item = self.settled('second')
+        read = properties.read(item)
+        self.assertEqual(read['native_shader'], 'DwaMetalMaterial')
+        start = node_defaults.start('DwaMetalMaterial', 'metallic_color', shader_library.catalog()['DwaMetalMaterial']['attributes']['metallic_color'])
+        self.assertEqual(read['native_parameters']['metallic_color'], start)
+        self.assertEqual(read['node_graph']['nodes']['second']['parameters']['metallic_color'], start)
+        self.assertEqual(material_diffuse.diffuse(item), start)
+        self.assertNotEqual(start, [1, 0, 0])
+
+    def test_also_for_a_new_output_of_the_same_shader(self):
+        item = self.settled('third')
+        self.assertEqual(properties.read(item)['native_shader'], 'DwaBaseMaterial')
+        self.assertNotEqual(material_diffuse.diffuse(item), [1, 0, 0])
+
+    def test_a_new_output_with_a_colour_keeps_it(self):
+        graph = self.two_outputs('first', albedo=[1, 0, 0])
+        graph['nodes']['second']['parameters']['metallic_color'] = [0, 1, 0]
+        item = Item({})
+        properties.write(item, material_override.synchronize({}, graph))
+        graph = dict(graph, root='second')
+        properties.write(item, material_override.synchronize(properties.read(item), graph))
+        self.assertEqual(material_diffuse.diffuse(item), [0, 1, 0])
+        self.assertEqual(properties.read(item)['native_parameters']['metallic_color'], [0, 1, 0])
+
+    def test_the_same_output_keeps_the_diffuse(self):
+        item = self.settled('first')
+        self.assertEqual(material_diffuse.diffuse(item), [1, 0, 0])
+
+    def test_a_graph_made_for_the_material_is_not_a_new_output(self):
+        item = Item(dict(base(), **{material_diffuse.LINKED: True}), (.1, .2, .3))
+        properties.write(item, material_override.synchronize(properties.read(item), self.two_outputs('third')))
+        self.assertEqual(material_diffuse.diffuse(item), [.1, .2, .3])
+
+    def test_a_material_of_any_kind_is_marked_with_its_output(self):
+        for kind in ('advancedMaterial', properties.LAYER_PREFIX + 'DwaBaseMaterial'):
+            item = Item({})
+            item.type = kind
+            held = item.held = set()
+            item.PackageTest = lambda name, held=held: name in held
+            item.PackageAdd = held.add
+            item.PackageRemove = held.discard
+            properties.write(item, material_override.synchronize({}, self.two_outputs('first')))
+            self.assertEqual(held, {properties.SHADER_PACKAGE + 'DwaBaseMaterial'})
+            properties.write(item, material_override.synchronize(properties.read(item), self.two_outputs('second')))
+            self.assertEqual(held, {properties.SHADER_PACKAGE + 'DwaMetalMaterial'})
+
+    def test_every_form_follows_the_marker_not_the_type(self):
+        forms = (Path(__file__).resolve().parents[1] / 'kit/MoonRayForModo/material_forms.cfg').read_text(encoding='utf-8')
+        self.assertNotIn('withTypeIsSelected', forms)
+        self.assertIn('item.withPackageIsSelected moonray.shader.DwaMetalMaterial', forms)
 
     def test_a_write_with_no_colour_does_not(self):
         item = Item({})

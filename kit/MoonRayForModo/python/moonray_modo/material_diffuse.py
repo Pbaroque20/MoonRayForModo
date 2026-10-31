@@ -4,7 +4,9 @@ to it) a material's colour is its diffuse, read from the channel (properties.rea
 one step: a colour edited in its form or graph goes to the diffuse in the command that writes it, and a diffuse edited in
 Modo needs nothing written. A material of a scene saved before this keeps both colours until one is edited
 (moonray_material_properties). A map wired into the colour leaves the colour's own value, and so the diffuse, as they are."""
-from . import material_override, properties, shader_library
+import json
+
+from . import material_override, node_defaults, properties, shader_library
 
 COLOURS = ('albedo', 'color', 'metallic_color', 'diffuse_color')
 AXES = 'RGB'
@@ -46,6 +48,31 @@ def with_colour(settings, key, value):
         graph['nodes'][graph['root']] = root
         settings['node_graph'] = graph
     return settings
+
+
+def _output(settings):
+    """(the graph's output node or None, the shader it is) of settings as they render."""
+    graph = settings.get('node_graph')
+    return (graph or {}).get('root'), material_override.effective(settings).get('native_shader') or ''
+
+
+def on_new_output(item, settings):
+    """Settings about to be written. A linked material reads its colour from the diffuse, so an output that sets no colour
+    of its own would take the last output's: it starts on its own default, which then goes to the diffuse."""
+    try:
+        before = json.loads(item.readTag(properties.TAG))
+    except (LookupError, RuntimeError, ValueError, TypeError):
+        return settings
+    if not isinstance(before, dict) or not before.get(LINKED):
+        return settings
+    node, shader = _output(settings)
+    held_node, held_shader = _output(before)
+    if shader == held_shader and not (node and held_node and node != held_node):
+        return settings
+    key, value = stored_colour(settings)
+    if key is None or value is not None:
+        return settings
+    return with_colour(settings, key, node_defaults.start(shader, key, shader_library.catalog()[shader]['attributes'][key]))
 
 
 def diffuse(item):

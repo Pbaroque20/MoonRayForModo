@@ -94,6 +94,20 @@ def values(entries):
                 raise ValueError('Each Cryptomatte category needs its own EXR part')
     return result
 
+FIRST_PART='rgba'
+
+def in_parts(render_outputs,cryptomattes=()):
+    """(name, attributes, channel) of a final EXR's outputs, each in a part of its own (a multi-part EXR). The beauty, its alpha
+    and any Cryptomatte stay together in the first part, where what reads the file looks for them. An output given a part by
+    the user keeps it."""
+    result=[]
+    for name,attrs,channel in render_outputs:
+        together=name in ('beauty','alpha') or name in cryptomattes or attrs.get('result')==13
+        result.append((name,dict(attrs,file_part=attrs.get('file_part') or (FIRST_PART if together else name)),channel))
+    # MoonRay writes the parts in the order it meets them: the beauty's first.
+    return sorted(result,key=lambda entry:entry[1]['file_part']!=FIRST_PART)
+
+
 class Raw(str):
     """An output attribute written into the scene as it is, not as text: a reference to another scene object."""
 

@@ -128,6 +128,7 @@ HAIR_MODES = [('Around each guide (locks)', 0), ('Between guides (fur)', 1)]
 # In the order the preview's buffer list and the form show them: what the surface is and how it is lit first (colour,
 # diffuse, glossy, reflection, refraction, subsurface, emission, and diffuse without shadows for a shadow pass), then
 # the environment, then what is for compositing and checking.
+# Each: its label, its render output, and its channel in the EXR, by the names compositors look for: the beauty's alpha is A, depth is depth.Z.
 AOVS = {
     'albedo': ('Albedo', {'result': 7, 'material_aov': 'albedo'}, 'albedo'),
     'diffuse_direct': ('Direct diffuse', {'result': 8, 'lpe': 'diffuse'}, 'diffuse_direct'),
@@ -141,8 +142,8 @@ AOVS = {
     'unshadowed_diffuse': ('Diffuse without shadows (shadow pass)', {'result': 8, 'lpe': 'unoccluded;CD[<L.>O]'}, 'unshadowed_diffuse'),
     'environment_lighting': ('Environment lighting', {'result':8,'lpe':"C.+<L.'modo_environment'>"}, 'environment_lighting'),
     'environment_background': ('Environment background', {'result':8,'lpe':"C<L.'modo_environment'>"}, 'environment_background'),
-    'alpha': ('Alpha', {'result': 1}, 'alpha'),
-    'depth': ('Camera depth', {'result': 2}, 'depth'),
+    'alpha': ('Alpha', {'result': 1}, 'A'),
+    'depth': ('Camera depth', {'result': 2}, 'depth.Z'),
     'normal': ('Shading normal', {'result': 3, 'state_variable': 2}, 'normal'),
     'geometric_normal': ('Geometric normal', {'result': 3, 'state_variable': 1}, 'geometric_normal'),
     'position': ('World position', {'result': 3, 'state_variable': 10}, 'position'),
