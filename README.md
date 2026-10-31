@@ -4,10 +4,14 @@ This is the development branch of [MoonRay for Modo](https://github.com/Pbaroque
 
 **MoonLightIPR** (echoing DreamWorks' earlier rasterizer MoonLight) is the plugin's fast GPU preview. It shows an approximation of what MoonRay will render and updates quickly after each edit. Final renders always come from MoonRay. What of a Modo scene it draws is in [its audit table](#modos-features-in-moonlightipr).
 
-The current release is [0.5](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.5). **Built on MoonRay [2026.29.1](https://github.com/dreamworksanimation/openmoonray/releases/tag/v2026.29.1)** (OpenMoonRay's latest release; MoonRay 18.4), with the plugin's own patches for Windows and the preview.
+The current release is [0.5.1](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.5.1). **Built on MoonRay [2026.29.1](https://github.com/dreamworksanimation/openmoonray/releases/tag/v2026.29.1)** (OpenMoonRay's latest release; MoonRay 18.4), with the plugin's own patches for Windows and the preview.
 
-## Coming in 0.5.1
+## New in 0.5.1
 
+A hotfix to 0.5, with a new runtime ZIP: install both, and **Compile XPU2 Shaders once more**.
+
+- **Realtime Sample %** in the preview's preferences as well as Render Settings, its new name.
+- **The About window gives a build number** after the version.
 - **Automatic Presence Shadows** (Preferences > MoonRay > Renderer, off unless chosen): a label or other surface cut out
   by a Stencil layer or a map in its presence no longer shades what lies under its cut-out parts. Off where nothing is cut
   out, which is quicker. While it is on, Presence Shadows in Render Settings and on lights are greyed.
@@ -36,15 +40,23 @@ The current release is [0.5](https://github.com/Pbaroque20/MoonRayForModo/releas
   last colour from there on.
 - **A scene XPU2 hands to MoonRay XPU keeps its geometry.** Its meshes could come out empty, leaving a white picture or
   none of the scene's objects.
-- **Texture overflow mode:** where a scene runs out of memory as it loads, on the computer or the graphics card, XPU2 makes
-  its textures smaller until it fits, and a notice in the preview says how far.
+- **Texture overflow mode:** where a scene runs out of memory as it loads, on the computer or the graphics card, XPU2
+  compresses its textures, then makes them smaller if it still does not fit, and a notice in the preview says how far.
+- **XPU2's Render gives the samples you set.** On a scene with heavy textures it could stop at about two thirds of them, its
+  progress sitting at 100% for half the render. Progress now climbs steadily to the end. Such a scene takes longer than it
+  did, with a cleaner picture: lower Generation Samples for the old speed.
+- **A texture that cannot be read no longer ends XPU2 with no reason given.** The Terminal names the file, and MoonRay XPU
+  renders the preview instead.
+- **Compile XPU2 Shaders says whether the shaders are up to date**, or why they are out of date, where it only said they
+  were compiled.
+- **An environment image not yet cached no longer stops the render** with a "file not found" error.
+- **The MoonRay Terminal reports XPU2's texture memory**: what the textures take in RAM and on the graphics card.
 - **XPU2 takes Gaussian, Triangle and Blackman-Harris pixel filters**, and Material Samples of any count. Subsurface
   Samples above 4 render too, at 4 x 4 a hit: raise Pixel Samples for less noise.
 - **Realtime on a heavy scene:** after a mesh's detail is cut anew the picture comes back in under a second, not several.
   A scene with much displacement or subdivision shows a first picture in seconds, and follows the camera while its full
   geometry is made.
 - **Subdivided meshes no longer stretch textures in MoonLightIPR**: texture coordinates follow the smoothed surface.
-- **Compile XPU2 Shaders once more** after installing: XPU2's programs have changed.
 
 ## New in 0.5
 
