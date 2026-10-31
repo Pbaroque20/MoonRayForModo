@@ -96,5 +96,29 @@ class GradientTests(unittest.TestCase):
         self.assertEqual(made[0][1]['primitive_attribute_type'], '0')
 
 
+class MoonLightIPRTests(unittest.TestCase):
+    def test_a_weight_comes_as_coordinates_for_each_corner(self):
+        from moonray_modo.moonlightipr_scene import with_weights
+        mesh = {'faces': [[0, 1, 2], [2, 1, 3]], 'point_attributes': {'Cornea': {'kind': 'float', 'values': [[.1], [.2], [.3], [.4]]}}}
+        available = {}
+        with_weights(mesh, available, {'': 0, '@vmap:Cornea': 1})
+        self.assertEqual(available, {'@vmap:Cornea': [(.1, 0.0), (.2, 0.0), (.3, 0.0), (.3, 0.0), (.2, 0.0), (.4, 0.0)]})
+
+    def test_values_set_apart_on_corners_go_first(self):
+        from moonray_modo.moonlightipr_scene import with_weights
+        mesh = {'faces': [[0, 1, 2]], 'point_attributes': {'Cornea': {'kind': 'float', 'values': [[0], [0], [0]]}},
+                'corner_attributes': {'Cornea': {'kind': 'float', 'values': [[.5], [.6], [.7]]}}}
+        available = {}
+        with_weights(mesh, available, {'@vmap:Cornea': 0})
+        self.assertEqual(available['@vmap:Cornea'], [(.5, 0.0), (.6, 0.0), (.7, 0.0)])
+
+    def test_a_mesh_without_the_map_or_a_colour_map_has_none(self):
+        from moonray_modo.moonlightipr_scene import with_weights
+        for mesh in ({'faces': [[0, 1, 2]]}, {'faces': [[0, 1, 2]], 'point_attributes': {'Cornea': {'kind': 'color', 'values': [[1, 1, 1]] * 3}}}):
+            available = {}
+            with_weights(mesh, available, {'@vmap:Cornea': 0})
+            self.assertEqual(available, {})
+
+
 if __name__ == '__main__':
     unittest.main()

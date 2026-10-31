@@ -15,8 +15,12 @@ The current release is [0.5](https://github.com/Pbaroque20/MoonRayForModo/releas
 - **Graph editor presets**: the Presets menu saves the selected nodes or a whole network, to load into any material.
 - **A MoonRay material's colour and Modo's diffuse follow each other**, under Traditional and Principled, so the viewport
   shows the material's colour. A new material starts on its diffuse.
-- **Weight Map Texture layers render**, in MoonRay and XPU2, with their Low, High, Bias and Gain, matching Modo's own render:
-  a weight map in the Shader Tree can drive a material's colour, reflections, roughness and more. Not yet in MoonLightIPR.
+- **Weight Map Texture layers render**, in MoonRay, XPU2 and MoonLightIPR, with their Low, High, Bias and Gain, matching Modo's own render:
+  a weight map in the Shader Tree can drive a material's colour, reflections, roughness and more.
+- **Toon lines come out whole**: no more broken gap showing the surface down the middle of a line. A MoonRay Source Override,
+  on by default.
+- **The Toon filter's Output Mode works under XPU2**, for its Lines and Shading passes: it always gave the shading with its
+  lines.
 - **Gradient and Curvature layers no longer stop halfway**: MoonRay kept only the first half of a gradient, holding its
   last colour from there on.
 - **A scene XPU2 hands to MoonRay XPU keeps its geometry.** Its meshes could come out empty, leaving a white picture or

@@ -482,6 +482,7 @@ def cage_payload(mesh, material_index, slots, warnings):
     available = dict(mesh.get('uv_sets') or {})
     if mesh.get('uvs'):
         available[''] = mesh['uvs']
+    with_weights(mesh, available, slots)
     sets = sorted((slot, available[key]) for key, slot in slots.items() if available.get(key))
     creases = mesh.get('creases') or []
     corner_count = sum(map(len, faces))
@@ -606,6 +607,22 @@ def _by_corner(rows, corners):
     return array('f', chain.from_iterable(map(rows.__getitem__, corners)))
 
 
+def with_weights(mesh, available, slots):
+    """The weight maps the materials read (Modo's Weight Map Texture, moonlightipr_materials), each as coordinates of its
+    own, for each corner of each polygon: the weight first, then nothing."""
+    for key in slots:
+        if not key.startswith('@vmap:'):
+            continue
+        name = key[len('@vmap:'):]
+        corners = (mesh.get('corner_attributes') or {}).get(name)
+        points = (mesh.get('point_attributes') or {}).get(name)
+        if corners and corners.get('kind') == 'float':
+            available[key] = [(float(value[0]), 0.0) for value in corners['values']]
+        elif points and points.get('kind') == 'float':
+            values = points['values']
+            available[key] = [(float(values[point][0]), 0.0) for face in mesh['faces'] for point in face]
+
+
 def mesh_payload(mesh, material_index, slots, simplified=None):
     """Triangulate one mesh; return (key, flags, payload, slot map), cached by the content of its lists. simplified,
     where given (moonlightipr_detail), makes it lighter first: about its triangles, within its error (simplify.py).
@@ -628,6 +645,7 @@ def mesh_payload(mesh, material_index, slots, simplified=None):
     available = dict(mesh.get('uv_sets') or {})
     if mesh.get('uvs'):
         available[''] = mesh['uvs']
+    with_weights(mesh, available, slots)
     sets = sorted((slot, available[key]) for key, slot in slots.items() if available.get(key))
     # Keyed by content, so a mesh recaptured into new lists is not triangulated again.
     signature = (content(vertices), content(faces), content(normals) if normals else '',

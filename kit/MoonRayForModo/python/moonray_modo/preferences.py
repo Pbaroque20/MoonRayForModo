@@ -33,7 +33,7 @@ KEYS = {
     'crypto_volumes': (True, bool),
     # Fog in front of a see-through surface in alpha (native.fog_alpha), and each Cryptomatte sample counted once
     # (native.crypto_once).
-    'fog_alpha': (True, bool), 'toon_lines_apart': (True, bool), 'filter_inputs': (True, bool),
+    'fog_alpha': (True, bool), 'toon_lines_apart': (True, bool), 'toon_close_gaps': (True, bool), 'filter_inputs': (True, bool),
     'crypto_once': (True, bool),
     # A render stopped by hand or by Smart Render finishes the tiles in hand (native.drain_tiles).
     'drain_tiles': (True, bool),

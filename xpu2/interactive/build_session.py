@@ -128,6 +128,10 @@ def build_session(source, runtime, async_build, out, cpu_test=False):
         filters = sorted(runtime.glob('*DisplayFilter.so'))
         for p in filters:
             shutil.copyfile(p, rt / p.name)
+        # But for Toon's, as the kit's MoonRay has it: the reference is older than its Output Mode and whole lines, which
+        # the kit's scenes ask of it. As the reference's it gives every Output Mode the shading with its lines.
+        for name in ('ToonDisplayFilter.so', 'ToonDisplayFilter.so.proxy'):
+            shutil.copyfile(source / 'build/native-renderer-avx/bin' / name, rt / name)
         libraries = closure(objdump, runtime, [exe] + proxies + filters + [out / 'geom' / 'xpu2_geom.dll'])
         for p in libraries:
             shutil.copyfile(p, rt / p.name)

@@ -2817,9 +2817,17 @@ ML_INLINE MappedSlots evalLayers(const DeviceMaterial& material, const DeviceMes
             if (layer.channel == CHANNEL_BUMP) slots.bump = layer.uvSlot;
         } else if (layer.flags & LAYER_RAMP) {
             // A gradient: 257 colours from 0 to 1, looked up by the first component of another channel; by its own
-            // channel's brightness beneath it (Enhance: Modo's EasyGrad); or by the surface's curvature.
+            // channel's brightness beneath it (Enhance: Modo's EasyGrad); by the surface's curvature; or by a weight map
+            // (Modo's Weight Map Texture), settings[1] saying so and settings[2] the coordinates the weight came in, as
+            // their first component. A mesh without the map reads 0, as in MoonRay.
             float key;
-            if (layer.uvSlot == RAMP_CURVATURE) key = curvatureKey(mesh, primitive, layer.settings[0]);
+            if (layer.uvSlot == RAMP_CURVATURE && layer.settings[1] > 0.5f) {
+                Corners held;
+                key = 0.0f;
+                if (triangleUvs(mesh, unsigned(layer.settings[2]), primitive, held))
+                    key = held.a.x * (1.0f - barycentrics.x - barycentrics.y) + held.b.x * barycentrics.x + held.c.x * barycentrics.y;
+            }
+            else if (layer.uvSlot == RAMP_CURVATURE) key = curvatureKey(mesh, primitive, layer.settings[0]);
             else if (layer.uvSlot >= CHANNEL_COUNT) continue;
             else key = layer.uvSlot == layer.channel ? luminance(channel[layer.uvSlot]) : channel[layer.uvSlot].x;
             const float4 texel = tex2D<float4>(layer.texture, (clamp(key, 0.0f, 1.0f) * 256.0f + 0.5f) / 257.0f, 0.5f);

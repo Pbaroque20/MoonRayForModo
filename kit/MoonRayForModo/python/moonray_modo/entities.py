@@ -1104,6 +1104,15 @@ def toon_lines_apart():
         return True
 
 
+def toon_close_gaps():
+    """The MoonRay Source Override that closes the gaps down the middle of a Toon display filter's lines."""
+    try:
+        from .preferences import Preferences
+        return bool(Preferences().get('toon_close_gaps'))
+    except Exception:
+        return True
+
+
 def completed_filters(entities, warnings):
     """The entities, each display filter with every input MoonRay needs: one left empty takes the output it starts
     on, said in a notice; a filter missing one with nothing to take is left out, said, rather than drawn pink."""
@@ -1113,6 +1122,8 @@ def completed_filters(entities, warnings):
         if entity['class'] == 'ToonDisplayFilter' and entity['parameters'].get('output_mode') and not toon_lines_apart():
             # The MoonRay Source Override is off: the shading with its lines, as MoonRay itself gives it.
             entity = dict(entity, parameters={k: v for k, v in entity['parameters'].items() if k != 'output_mode'})
+        if entity['class'] == 'ToonDisplayFilter' and toon_close_gaps():
+            entity = dict(entity, parameters=dict(entity['parameters'], close_line_gaps=True))
         inputs = FILTER_INPUTS.get(entity['class'])
         if not complete or not inputs or catalog()[entity['class']]['category'] != 'displayfilter':
             result.append(entity)

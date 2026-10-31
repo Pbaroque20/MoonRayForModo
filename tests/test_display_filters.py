@@ -2,6 +2,7 @@
 buffer of the preview and a channel of the final EXR. No Modo or renderer launch."""
 import sys
 import unittest
+from unittest import mock
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'kit/MoonRayForModo/python'))
 from moonray_modo import entities, outputs, rdla
@@ -19,6 +20,15 @@ def scene(*filters, **extra):
 
 
 class DisplayFilterTests(unittest.TestCase):
+    def test_toon_lines_without_gaps_is_a_source_override(self):
+        toon = {'identity': 'toon', 'name': 'Toon', 'class': 'ToonDisplayFilter', 'parameters': {'output_mode': 1}}
+        with mock.patch.object(entities, 'toon_close_gaps', lambda: True):
+            self.assertIs(entities.completed_filters([toon], [])[0]['parameters'].get('close_line_gaps'), True)
+        with mock.patch.object(entities, 'toon_close_gaps', lambda: False):
+            self.assertNotIn('close_line_gaps', entities.completed_filters([toon], [])[0]['parameters'])
+        self.assertEqual(entities.completed_filters([toon], [])[0]['parameters']['output_mode'], 1)
+        self.assertIn('close_line_gaps', entities.catalog()['ToonDisplayFilter']['attributes'])
+
     def test_catalog_has_every_display_filter_of_the_source(self):
         named = set(entities.classes('displayfilter'))
         source = Path(__file__).resolve().parents[1] / 'upstream/openmoonray/moonray'

@@ -1133,6 +1133,23 @@ class Compiler:
                 flags |= LAYER_RAMP
                 slot = RAMP_CURVATURE
                 extra = dict(settings=[float(layer['gradient'].get('scale', 1))] + [0.0] * 21 + [.5, .5])
+            elif kind == 'gradient' and layer['gradient'].get('input') == '@vmap':
+                # Modo's Weight Map Texture: the weight comes as the first component of a set of coordinates of its own
+                # (moonlightipr_scene.with_weights), and the row looks the gradient up by it.
+                held = self.slot('@vmap:' + layer['gradient'].get('vmap', ''))
+                if held is None:
+                    self.note('textures beyond %d UV projections' % UV_SLOTS, name)
+                    abandon()
+                    continue
+                try:
+                    texture = self.ramp(layer['gradient'])
+                except (OSError, ValueError, KeyError, TypeError, IndexError) as exc:
+                    self.note('a weight map layer that could not be read (%s)' % exc, name)
+                    abandon()
+                    continue
+                flags |= LAYER_RAMP
+                slot = RAMP_CURVATURE
+                extra = dict(settings=[0.0, 1.0, float(held)] + [0.0] * 19 + [.5, .5])
             elif kind == 'wireframe':
                 wire = layer['wireframe']
                 flags |= LAYER_WIREFRAME
