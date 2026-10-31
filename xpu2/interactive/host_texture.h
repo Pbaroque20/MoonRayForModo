@@ -66,7 +66,8 @@ inline bool nextOverflowSide(){
  if(from<=SmallestOverflowSide)return false;
  unsigned next=SmallestOverflowSide;while(next*2<from)next*=2;
  overflowSide().store(next);return true;}
-// Set by the pressure watch where letting every tile go did not bring memory back (RAM still short).
+inline bool canOverflow(){const unsigned now=overflowSide().load();return (now?now:largestTexture().load())>SmallestOverflowSide;}
+// Set by the pressure watch where tiles were let go, all of them, and memory did not come back (RAM still short).
 inline std::atomic<bool>& pressureShort(){static std::atomic<bool> s{false};return s;}
 struct Pyramid;
 // Every texture whose tiles can be let go; a list never freed, as the pressure watch outlives what ends at exit.
@@ -189,11 +190,15 @@ inline size_t pressure(size_t ceiling){
 // past its ceiling used to go back to MoonRay XPU, and a machine out of RAM stalled, with tiles on hand it could read again.
 inline void watchPressure(size_t ceiling){
  std::thread([ceiling]{
-  auto said=std::chrono::steady_clock::now()-std::chrono::seconds(60);size_t since=0;
+  auto said=std::chrono::steady_clock::now()-std::chrono::seconds(60),last=said;size_t since=0;
   for(;;std::this_thread::sleep_for(std::chrono::milliseconds(250))){
    const size_t want=pressure(ceiling);if(!want)continue;
-   since+=relieve(want);const auto now=std::chrono::steady_clock::now();
-   if(!tilesHeld())pressureShort().store(true);
+   // Memory low for long (other applications'): tiles let go every quarter of a second would be read again as often.
+   const auto now=std::chrono::steady_clock::now();
+   if(now-last<std::chrono::seconds(2)&&!std::getenv("XPU2_SESSION_SPILL_MB"))continue;
+   last=now;
+   const size_t freed=relieve(want);since+=freed;
+   if(freed&&!tilesHeld())pressureShort().store(true);
    if(since&&now-said>std::chrono::seconds(5)){std::printf("MoonRay XPU2: memory pressure: %zu MB of decoded texture tiles let go, %zu MB kept\n",since>>20,tilesHeld()>>20);std::fflush(stdout);said=now;since=0;}
   }}).detach();
 }

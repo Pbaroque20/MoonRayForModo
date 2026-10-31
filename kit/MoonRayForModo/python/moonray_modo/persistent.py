@@ -195,10 +195,13 @@ class Session(QtCore.QObject):
         return binary
 
     def _rewritten(self,rewrite):
+        prepared,rewrite.prepared=rewrite.prepared,None  # the thread keeps none of the scene: gigabytes on a heavy one
+        if self._rewrite is rewrite:self._rewrite=None
+        rewrite.deleteLater()
         if rewrite.failure:
             self.failed.emit('The scene could not be written again: '+rewrite.failure);return
-        rewrite.request['text']=rewrite.prepared.pop('text')
-        rewrite.request['prepared']=rewrite.prepared
+        rewrite.request['text']=prepared.pop('text')
+        rewrite.request['prepared']=prepared
         self._launch()
 
     def _release_mappings(self):
@@ -209,7 +212,8 @@ class Session(QtCore.QObject):
 
     def _launch(self):
         request=self.latest
-        if not request or self.closed:return
+        # Started meanwhile (a newer scene, while the one below was written again): nothing to start.
+        if not request or self.closed or self.running():return
         # A scene already applied has given up its prepared parts (APPLIED), its text holding its meshes' fingerprints alone:
         # started from that text, MoonRay taking over from XPU2 rendered every mesh empty. Written again first.
         if not request.get('prepared') and request.get('again') and '-- rdlb' in request['text']:

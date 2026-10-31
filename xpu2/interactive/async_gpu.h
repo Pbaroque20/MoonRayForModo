@@ -1049,6 +1049,10 @@ public:
         driver.drain();  // startup only: everything above has landed
         uploads_.clear();
         lap("films, and everything landed");
+        {
+            size_t totalBytes = 0;
+            if (!memoryInfo(freeAfterPrepare_, totalBytes)) freeAfterPrepare_ = 0;
+        }
     }
     std::vector<std::pair<const char*, double>> prepareLaps_;
 
@@ -1610,7 +1614,20 @@ public:
         if (std::getenv("XPU2_SESSION_FINE_BUDGET_MB") || options_.fineBudget || !fine_.slots || !memoryInfo(freeBytes, totalBytes)) return false;
         const size_t held = size_t(fine_.slots) * fine_.tileBytes, reserve = cardReserve(totalBytes);
         const size_t room = freeBytes + held > reserve ? freeBytes + held - reserve : 0;
-        return std::max<size_t>(256ull << 20, room) < held / 10 * 9;
+        // Taken since this scene was prepared: the scene's own films, made after the cache was sized, are not that.
+        return freeAfterPrepare_ > freeBytes && freeAfterPrepare_ - freeBytes > held / 10 && std::max<size_t>(256ull << 20, room) < held / 10 * 9;
+    }
+    size_t freeAfterPrepare_ = 0;
+    // All that is held of the scene let go, the lane left ready for prepare.
+    void dropScene() {
+        driver.drain();
+        plan_.reset();
+        scene_ = {};
+        fine_ = {};
+        meshCache_.clear();
+        placedKeep_.clear();
+        tops_.clear();
+        freeAfterPrepare_ = 0;
     }
     // Whether the card is short of even what is kept back.
     bool cardTight() {

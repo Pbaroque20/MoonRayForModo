@@ -42,6 +42,8 @@ class XPU2Retry(unittest.TestCase):
 
 
 class AfterAFallback(unittest.TestCase):
+    running = False
+
     """MoonRay taking over from XPU2 once the scene was applied: its text holds the meshes' fingerprints alone, so that started
     from it every mesh came out empty (the geometry gone, the picture white)."""
 
@@ -70,7 +72,7 @@ class AfterAFallback(unittest.TestCase):
             written.append('started')
             raise Started  # the launch itself is not what is asked here
 
-        state = SimpleNamespace(closed=False, latest=dict(text=text, prepared=prepared, again=again),
+        state = SimpleNamespace(closed=False, running=lambda: self.running, latest=dict(text=text, prepared=prepared, again=again),
                                 status=SimpleNamespace(emit=lambda *a: None), _release_mappings=started)
         try:
             Session._launch(state)
@@ -82,6 +84,10 @@ class AfterAFallback(unittest.TestCase):
         written = self.launch('RdlMeshGeometry("m") {\n  -- rdlb ["vertex_list_0"] abc\n}', None, ('arguments',))
         self.assertEqual(len(written), 1)
         self.assertNotEqual(written[0], 'started')
+
+    def test_a_session_started_meanwhile_is_left_alone(self):
+        self.running = True
+        self.assertEqual(self.launch('RdlMeshGeometry("m") {}', dict(binary=b'x'), None), [])
 
     def test_a_scene_with_its_parts_starts_at_once(self):
         self.assertEqual(self.launch('RdlMeshGeometry("m") {\n  -- rdlb ["vertex_list_0"] abc\n}', dict(binary=b'x'), ('arguments',))[0], 'started')

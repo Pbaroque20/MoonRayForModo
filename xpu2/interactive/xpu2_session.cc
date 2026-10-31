@@ -32,6 +32,7 @@
 #include <cstring>
 #include <new>
 #include <psapi.h>
+#include <functional>
 #include <dxgi.h>
 #include <fstream>
 #include <iostream>
@@ -524,6 +525,7 @@ struct Scene {
     // The camera moved since the coarse plan's frame, before its full plan came: that plan, made from the frame, has the
     // camera as it was (the frame's picture would end there, whatever the view had come to).
     bool coarseCamera = false;
+    std::function<void()> beforeFullPreparation;
     CanonicalView frameHeld;
     // Whether the scene's tessellation is heavy enough for a coarse first pass to bring its first picture on: its
     // subdivision surfaces' and displaced meshes' faces times their resolution squared (an adaptive mesh's as 4), two
@@ -754,6 +756,8 @@ struct Scene {
         }
         placementOnly = false;
         cameraOnly = false;
+        // The full plan being made reads the canonical copy, which this changes: it first, for this to keep what it can.
+        if (beforeFullPreparation) beforeFullPreparation();
         coarseCamera = false;
         ++epoch;
         const fs::path folder = staging / ("frame-" + std::to_string(++frames));
@@ -1378,6 +1382,9 @@ int session(const Args& args, const fs::path& directory) {
         scene.keepBase(scene.plan);
         scene.cpuScene = std::move(full.second);
     };
+    scene.beforeFullPreparation = [&] {
+        if (refining) takeRefined();
+    };
     try {
         scene.load(args.scenes);
     } catch (const std::exception& e) {
@@ -1399,16 +1406,11 @@ int session(const Args& args, const fs::path& directory) {
                     outlines.watch(nullptr, id, 0, 0);
                     renderer.reset();
                 }
-                // An edit other than the camera's prepares the scene: the full plan first, for it to keep what it can.
-                if (refining && scene.changed && !scene.cameraOnly) takeRefined();
                 scene.prepare();
-                // Every tile let go and RAM still short, the card full too: textures smaller, as for a failed load.
-                if (texture::pressureShort().exchange(false) && (!gpu || !gpuUsable || gpu->cardTight()) && texture::largestTexture().load() > texture::SmallestOverflowSide)
-                    throw std::runtime_error("memory is short on the machine and the card (texture overflow)");
                 // Said for every scene sent while it holds, the preview's notices being each scene's.
                 if (const unsigned side = texture::overflowSide().load())
                     modoProtocolLine("@@MODO_XPU2 NOTICE Texture overflow mode: memory ran short, so textures are limited to " + std::to_string(side) +
-                                     " pixels a side. Free memory, or use fewer or smaller textures, and render again for full detail.");
+                                     " pixels a side. Free memory, or use fewer or smaller textures, then start the preview again for full detail.");
                 if (scene.plan->aovs) checkOutputs(*scene.plan->aovs, mode != 0);
                 if (mode != 0 && !gpu) {
                     const Programs p = programs(folder);
@@ -1766,6 +1768,11 @@ int session(const Args& args, const fs::path& directory) {
                     watch.checkpointSeconds = std::max(1.0, scene.plan->aovs->checkpointMinutes * 60.0);
                     watch.checkpoint = [&](async::RenderResult&& sofar) { checkpoints.save(std::move(sofar)); };
                 }
+                // Every tile let go and RAM short still, the card full too (or no card in this render): textures smaller, as
+                // for a failed load.
+                if (texture::pressureShort().exchange(false) && texture::pressure(ceilingBytes) && texture::canOverflow() &&
+                    (mode == 0 || (gpu && gpuUsable && gpu->cardTight())))
+                    throw std::runtime_error("memory is short on the machine and the card (texture overflow)");
                 loaded = true;
                 // The coarse first pass (coarse_geometry.h): the frame's first samples on lighter geometry, in its pictures
                 // and never in its film, while the full geometry is prepared on this thread; then the full plan renders the
@@ -1810,6 +1817,7 @@ int session(const Args& args, const fs::path& directory) {
                         // The coarse renderer holds the coarse CPU scene: let go first, the outlines' watch on it before it.
                         outlines.watch(nullptr, id, 0, 0);
                         renderer.reset();
+                        loaded = false;  // nothing renders till the full plan is on the card: as a load, it may overflow
                         takeRefined();
                         if (gpu) {
                             const std::string why = async::GpuLane::cpuOnly(scene.plan);
@@ -1821,6 +1829,7 @@ int session(const Args& args, const fs::path& directory) {
                         renderer->deviceRatio(deviceRatio);
                         outlines.watch(renderer.get(), id, width, height);
                         options.mode = gpu && gpuUsable ? mode : 0;
+                        loaded = true;
                         // The full frame's pictures from where the coarse pass came to, but no later than a quarter of the way: a
                         // coarse frame done before the full geometry was ready would otherwise stand for the whole render.
                         hideBelow = std::min(reached, 0.25);
@@ -2005,8 +2014,8 @@ int session(const Args& args, const fs::path& directory) {
                 const std::string why = e.what();
                 const bool memory = dynamic_cast<const std::bad_alloc*>(&e) || why.find("texture overflow") != std::string::npos ||
                                     why.find("Decoded texture budget") != std::string::npos || why.find("Aggregate host texture budget") != std::string::npos ||
-                                    why.find("residency budget") != std::string::npos || why.find("CUDA error 2") != std::string::npos ||
-                                    why.find("OUT_OF_MEMORY") != std::string::npos;
+                                    why.find("residency budget") != std::string::npos || why == "CUDA error 2" ||  // CUDA_ERROR_OUT_OF_MEMORY
+                                    why == "OptiX error 7002";  // OPTIX_ERROR_HOST_OUT_OF_MEMORY
                 if (memory && !loaded && texture::nextOverflowSide()) {
                     std::printf("MoonRay XPU2: %s: textures limited to %u pixels a side\n", why.c_str(), texture::overflowSide().load());
                     std::fflush(stdout);
@@ -2015,6 +2024,9 @@ int session(const Args& args, const fs::path& directory) {
                     refining.reset();
                     scene.dropForOverflow();
                     gpuPlan.reset();
+                    if (gpu) gpu->dropScene();  // what it holds of the scene gone before the scene is made again, not after
+                    // Realtime's textures are 1024 pixels a side at most on the card: larger steps would free nothing there.
+                    while (scene.realtimeAsked() && texture::overflowSide().load() > 1024 && texture::nextOverflowSide()) {}
                     goto renderFrame;
                 }
                 fallback(e.what());
@@ -2048,6 +2060,9 @@ int session(const Args& args, const fs::path& directory) {
                 }
                 refining.reset();
                 scene.coarse = scene.coarseCamera = false;
+                texture::overflowSide().store(0);  // a scene loaded anew may fit: it steps down again if not
+                if (gpu) gpu->dropScene();
+                gpuPlan.reset();
                 scene.load(list);
                 event("RELOADED", id);
             } else if (mode_ == "delta") {
