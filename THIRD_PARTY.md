@@ -80,3 +80,11 @@ License: https://github.com/zeux/meshoptimizer. Its simplifier, index generator 
 (`xpu2/interactive/xpu2_meshopt.cc`, called by `coarse_geometry.h`). Its sources are not committed here
 (`upstream/meshoptimizer`, from the v0.22 release, is ignored by Git). Its copyright and license notice ship with the kit
 in `licenses/meshoptimizer-LICENSE.md`: Copyright (c) 2016-2024 Arseny Kapoulkine. Thanks to zeux for it.
+
+## ISPC Texture Compressor
+
+Block compression of XPU2's textures is to use Intel's ISPC Texture Compressor (GameTechDev), under the MIT License:
+https://github.com/GameTechDev/ISPCTextureCompressor. The project is archived by Intel. It is not yet compiled into any
+program here. Its sources are not committed (`upstream/ISPCTextureCompressor`, at 79ddbc9, is ignored by Git). Its copyright
+and license notice ship with the kit in `licenses/ISPCTextureCompressor-LICENSE.txt`: Copyright 2017 Intel Corporation.
+Thanks to Intel for it.

@@ -21,6 +21,7 @@ The current release is [0.5](https://github.com/Pbaroque20/MoonRayForModo/releas
   on by default.
 - **The Toon filter's Output Mode works under XPU2**, for its Lines and Shading passes: it always gave the shading with its
   lines.
+- **A missing normal map texture leaves the surface flat**, where it darkened and streaked the surface's reflections in MoonRay.
 - **Gradient and Curvature layers no longer stop halfway**: MoonRay kept only the first half of a gradient, holding its
   last colour from there on.
 - **A scene XPU2 hands to MoonRay XPU keeps its geometry.** Its meshes could come out empty, leaving a white picture or
