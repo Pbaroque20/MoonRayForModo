@@ -259,7 +259,8 @@ differ: presence shadows, shadow linking, volumes, a minimum shadow distance and
 
 ## 10. Memory tiers and partial shading
 
-- **Host RAM** holds every texture's mip levels and is the system of record (`host_texture.h`). The CPU lane reads it
+- **Host RAM** holds every texture's coarser mip levels and the level-0 tiles read so far (`host_texture.h`); the texture
+  files on disk are the system of record. The CPU lane reads RAM
   directly. Since 2026-10-26 the finest level (level 0) is decoded tile by tile the first time it is read
   (`Pyramid::loadTile`, through an OpenImageIO ImageCache), the coarser levels as the scene is prepared;
   `XPU2_SESSION_EAGER_TEXTURES=1` decodes them all at once. 8-bit files are kept as bytes (`tex::Mip::format`).
