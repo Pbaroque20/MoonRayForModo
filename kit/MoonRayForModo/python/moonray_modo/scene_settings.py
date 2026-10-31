@@ -112,7 +112,7 @@ GROUPS = [
         render_field('light_sampling_quality', 'Light Quality', 'Adaptive light sampling quality'),
         render_field('light_samples', 'Light Samples', '2 means 2 x 2 samples per light'),
         render_field('bsdf_samples', 'Material Samples', '2 means 2 x 2 samples per material'),
-        render_field('bssrdf_samples', 'Subsurface Samples', '2 means 2 x 2 subsurface samples'),
+        render_field('bssrdf_samples', 'Subsurface Samples', '2 means 2 x 2 subsurface samples. MoonRay XPU2 takes at most 4 x 4'),
     ]),
     ('XPU2 Sampling', False, [
         field('xpu2_samples', ('xpu2_generations', 'samples'), 'int', 'Generation Samples', "What the render is worth, in samples a pixel on average: the generations share them out where the picture is still noisy. 0: Pixel Samples squared. XPU2 previews always sample this way: MoonRay's Sampling Mode and adaptive settings are for MoonRay renders", 0, 4096),

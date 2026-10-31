@@ -108,6 +108,11 @@ GPU in the final build. A scene with anything not listed as done still renders, 
 | The GPU program in nine modules, compiled in parallel (manual section 12) | done (build_async.py) |
 | Volumes and subsurface as continuation callables | done (async_volumes.cu) |
 | Modules linked by the scene's families | todo |
+| Pixel filters: Gaussian, Triangle, Blackman-Harris, width to 64 | done (session 201; means and images beside MoonRay's as the B-splines') |
+| Material Samples of any count (rays thinned to the room a path has) | done (session 201; compared up to 8) |
+| Subsurface Samples above 4 | render at 4 x 4 a hit, noisier than MoonRay's asked count; more than 4 x 4 a hit needs the GPU programs: todo |
+| Texture overflow mode, the fine-detail cache refit to a filling card | done (session 202; overflow forced by a full card and a ceiling; the refit's trigger not yet seen firing) |
+| Realtime coarse first pass, a camera followed on it | done (session 199; heavy tessellation, first preparation) |
 | Scene edits as change sets to both devices (partial rebuilds) | done for moves, lights and one-mesh edits (placements, reuse of unchanged meshes); a change of shape rebuilds that mesh |
 | The kit's Denoiser with XPU2 previews (guides: albedo and normal; drain on Stop) | done (session 97: the kit's denoising steps on XPU2's beauty and guides, a drain mid-render denoised); not in realtime |
 | Smart Render and Safe Denoising with XPU2 previews | greyed in the 0.5 kit: they are MoonRay's. The session's drains and checkpoints remain (session 97: Safe saves promoted); Continue starts again |

@@ -423,6 +423,22 @@ Upstream's own branch, taken with the switch on. Off, Auto starts in vector mode
 The same scene in Auto: MoonRay's log says "Executing an XPU render since execution mode was set to auto." with the switch
 on, and "Executing a vectorized render since execution mode was set to auto." with it off.
 
+## `moonshine.patch`: toon lines without gaps (`close_line_gaps`)
+
+A new attribute of `ToonDisplayFilter`, behind the preference "Toon lines without gaps", on by default; with it off the
+plugin does not write the attribute and the filter renders as MoonRay's own.
+
+### What MoonRay does
+
+The edge detectors answer on either side of a crease and next to nothing at its middle, and `saturate` makes that no ink:
+a line comes out as two, with the surface showing between them, broken into dashes by the pixels' staircase. More samples
+only clean it.
+
+### The change
+
+Near an edge (the nine pixels around this one not on one surface), a pixel takes the most of, along each of four axes, the
+lesser line of its two neighbours. The depth and normal inputs' window widens by 2 to give the neighbours their kernels.
+
 ## `moonshine.patch`: toon lines apart from the shading (`output_mode`)
 
 A new attribute of `ToonDisplayFilter`, behind the preference "Toon lines apart from the shading", on by default; with it

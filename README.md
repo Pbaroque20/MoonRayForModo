@@ -394,7 +394,7 @@ Comparison audit between Modo 16.1v9 and the current plugin: what of a Modo scen
 | Instances and replicators | ![yes](docs/images/feature-yes.svg) | Replicators through Modo's evaluated geometry |
 | Deformed and animated meshes | ![yes](docs/images/feature-yes.svg) | Through Modo's evaluated geometry |
 | Curves, hair and Modo's Fur material | ![partly](docs/images/feature-partly.svg) | Fur guides, and the fur vector and width maps, are not read |
-| Weight and colour vertex maps | ![yes](docs/images/feature-yes.svg) | As values MoonRay's materials read. Coming in 0.5.1: the Shader Tree's Weight Map Texture layer, with weight maps; not in MoonLightIPR |
+| Weight and colour vertex maps | ![yes](docs/images/feature-yes.svg) | As values MoonRay's materials read. Coming in 0.5.1: the Shader Tree's Weight Map Texture layer, with weight maps |
 | Modo's volume items | ![partly](docs/images/feature-partly.svg) | Rendered from a VDB file attached in the MoonRay controls |
 | Blobs and particles | ![no](docs/images/feature-no.svg) |  |
 

@@ -19,6 +19,24 @@ def supported(runtime):
 
 # The most MoonRay takes of a scene through shared memory: the loaded renderer refuses more.
 SHARED_LIMIT=256*1024*1024
+class _Rewrite(QtCore.QThread):
+    """A scene written again, its text and its geometry's binary file, for a session started again once it had been applied."""
+
+    def __init__(self,request,parent=None):
+        super().__init__(parent)
+        self.request=request;self.prepared=None;self.failure=''
+
+    def run(self):
+        try:
+            from . import rdla,rdlb
+            with rdlb.collecting() as sink:
+                text=rdla.scene_text(*self.request['again'])
+            self.prepared=dict(base=None,delta=None,delta_bytes=None,text=text,full_bytes=text.encode('utf-8'),heavy=sink.text_of,
+                               binary=sink.payload() if sink.objects else None,again=self.request['again'])
+        except Exception as exc:
+            self.failure=str(exc) or type(exc).__name__
+
+
 class _Rediff(QtCore.QThread):
     """A delta made again off Modo's thread (_dispatch): a request's text against the scene the session has applied,
     where the writer made it against an earlier one and the text is too large to compare on Modo's thread. delta: the
@@ -74,6 +92,7 @@ class Session(QtCore.QObject):
     acknowledged=QtCore.Signal(int)
     failed=QtCore.Signal(str)
     status=QtCore.Signal(str)
+    notice=QtCore.Signal(str)
 
     def __init__(self,parent=None):
         super().__init__(parent)
@@ -131,7 +150,8 @@ class Session(QtCore.QObject):
         try:
             staged=self.root/'important.tmp';staged.write_text('1' if important else '0',encoding='ascii');staged.replace(self.root/'important.txt')
         except (OSError,AttributeError):pass
-        request=dict(text=text,runtime=Path(runtime),threads=threads,mode=mode,id=generation,bucket_size=bucket_size,prepared=prepared)
+        request=dict(text=text,runtime=Path(runtime),threads=threads,mode=mode,id=generation,bucket_size=bucket_size,prepared=prepared,
+                     again=(prepared or {}).get('again'))
         # A change of the toon preference is read by MoonRay only as it starts: it starts again.
         signature=(str(runtime),threads,mode,bucket_size)+native.source_switches()
         self.latest=request
@@ -174,6 +194,13 @@ class Session(QtCore.QObject):
         binary=self.root/('%d.full.rdlb'%request['id']);binary.write_bytes(payload)
         return binary
 
+    def _rewritten(self,rewrite):
+        if rewrite.failure:
+            self.failed.emit('The scene could not be written again: '+rewrite.failure);return
+        rewrite.request['text']=rewrite.prepared.pop('text')
+        rewrite.request['prepared']=rewrite.prepared
+        self._launch()
+
     def _release_mappings(self):
         for mappings in self.mappings.values():
             for mapping in mappings:mapping.close()
@@ -183,6 +210,16 @@ class Session(QtCore.QObject):
     def _launch(self):
         request=self.latest
         if not request or self.closed:return
+        # A scene already applied has given up its prepared parts (APPLIED), its text holding its meshes' fingerprints alone:
+        # started from that text, MoonRay taking over from XPU2 rendered every mesh empty. Written again first.
+        if not request.get('prepared') and request.get('again') and '-- rdlb' in request['text']:
+            writing=getattr(self,'_rewrite',None)
+            if writing is not None and writing.isRunning():return  # its end launches the latest request
+            self._rewrite=_Rewrite(request,self)
+            self._rewrite.finished.connect(lambda rewrite=self._rewrite:None if self.closed else self._rewritten(rewrite))
+            self.status.emit('Preparing the scene again')
+            self._rewrite.start()
+            return
         self._release_mappings()
         for path in self.root.iterdir():
             if path.is_file():path.unlink()
@@ -297,6 +334,10 @@ class Session(QtCore.QObject):
                     # A frame already taken back (shared_image.Withdrawn) is passed over without a word: newer ones follow.
                     from .shared_image import Withdrawn
                     if not isinstance(exc,Withdrawn):self.status.emit('Progressive image skipped: '+str(exc))
+                continue
+            if line.startswith('@@MODO_XPU2 NOTICE '):
+                # Something the artist has to know of this picture (Texture overflow mode): among the preview's notices.
+                self.notice.emit(line[len('@@MODO_XPU2 NOTICE '):].strip())
                 continue
             if line.startswith('@@MODO_XPU2 FALLBACK'):
                 # XPU2 does not render this scene: MoonRay is started in its place with the scene, as after a restart.

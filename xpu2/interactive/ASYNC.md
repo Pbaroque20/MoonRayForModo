@@ -91,6 +91,52 @@ python xpu2/interactive/run_async_adaptive_benchmark.py --build test-results/my-
 `async_grid_test.cc` checks the scheduler's invariants (VER-5): every chunk claimed exactly once under 12 workers and
 the broker, every pixel given exactly its samples, the cellular rules, the checkerboard and the flip limits.
 
+## First load and re-cuts
+
+A heavy scene's first picture comes from a coarse first pass (`coarse_geometry.h`): tessellation at a quarter of the
+resolution, dense meshes simplified, shown in the pictures and never in the film, while the full plan is made on a
+thread of its own (`RefineJob`, `xpu2_session.cc`). It is used for a scene with more than about 2 M tessellated
+triangles (`Scene::heavyTessellation`), in realtime for the session's first preparation alone. A camera moved meanwhile
+is followed on the coarse geometry, and the full plan takes the camera as it then is; any other edit waits for the full
+plan and keeps what it can. Dense meshes that are not tessellated gain nothing from it: simplifying them costs more than
+preparing them.
+
+An edit that changes a mesh's shape, such as the kit's realtime re-cut, prepares the scene again but keeps all that did
+not change: meshes by their signature, instancers' shared meshes among them, and a baked volume's grid while its mesh,
+maps, place and render space are the same.
+
+| The car, 7.8 M triangles, 960×540 | Before | Now |
+| --- | --- | --- |
+| One mesh re-cut, edit to render | 6.3 s | 0.73 s |
+| Making its meshes, first load | 6.9 s | 2.7 s |
+
+| Heavy displaced scene, realtime | First picture | Finished |
+| --- | --- | --- |
+| Tessellation not cached, coarse pass off | 15.1 s | 18.3 s |
+| Tessellation not cached, coarse pass on | 2.6 s | 20.6 s |
+| Tessellation cached, coarse pass off | 5.7 s | 8.9 s |
+| Tessellation cached, coarse pass on | 2.6 s | 11.8 s |
+
+Each edit case gave the same image as the scene rendered whole by a fresh session. The car's numbers use its export with
+one substitute texture, through the session harness; a re-cut in Modo also costs the kit's own cut.
+
+## Limits a scene can meet
+
+- **Rays a path has room for.** A path's pending rays have 32 places (`MaxPending`). A hit's bounces are thinned evenly to
+  the room under a reserve of 16, and past the reserve a child is kept by chance, its share of light divided by that
+  chance: the image the same on average, a little noisier there. Material Samples of any count render.
+- **Subsurface Samples.** At most 4 x 4 exit samples a hit: a higher setting takes 16 and says so in the log. The image is
+  the same on average and as noisy as 4 x 4, so that more samples at a hit have to come from Pixel Samples.
+- **Pixel filters.** Box, the two B-splines, and the kit's Gaussian, Triangle and Blackman-Harris, warped as its MoonRay
+  warps them; widths up to 64.
+- **Texture overflow mode.** Where a scene's load runs out of memory on the machine or the card, or a texture budget, the
+  frame is made again with textures limited to half the size, down to 256 pixels a side, and the preview says so
+  (`@@MODO_XPU2 NOTICE`). It also starts where every decoded tile has been let go, RAM is still short and the card is
+  short too. It holds for the session. Finer levels are neither decoded nor sent; `XPU2_SESSION_CARD_FREE_MB` stands in
+  for a full card in tests. A failure once a frame is rendering still goes to MoonRay XPU.
+- **A card that fills up.** The fine-detail cache is sized from the card's free memory when the scene is prepared, and made
+  again to fit where, as a frame starts, the card has come to hold much less (`GpuLane::fineCacheTooBig`).
+
 ## Decided, 30 October 2026
 
 Each of these was on the list of what was left; each was measured or read against the renderer as it stands.

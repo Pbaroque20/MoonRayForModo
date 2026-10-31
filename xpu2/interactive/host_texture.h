@@ -55,6 +55,19 @@ inline std::shared_ptr<OIIO::ImageCache> lazyCache(){static std::shared_ptr<OIIO
   s->attribute("max_memory_MB",512.0f);return s;}();return c;}
 // Whether the finest level is read when first used (XPU2_SESSION_EAGER_TEXTURES=1: every level decoded at once).
 inline bool lazyTextures(){static const bool on=[]{const char* v=std::getenv("XPU2_SESSION_EAGER_TEXTURES");return !(v&&v[0]=='1');}();return on;}
+// Texture overflow mode: the largest side a texture has for the rest of the session (0: as stored), where a scene's load ran
+// out of memory on the machine or the card: finer levels are neither decoded nor sent. The session halves it until the
+// scene loads (nextOverflowSide) and says so in the preview.
+inline std::atomic<unsigned>& overflowSide(){static std::atomic<unsigned> side{0};return side;}
+inline std::atomic<unsigned>& largestTexture(){static std::atomic<unsigned> side{0};return side;}
+constexpr unsigned SmallestOverflowSide=256;
+inline bool nextOverflowSide(){
+ const unsigned now=overflowSide().load(),from=now?now:largestTexture().load();
+ if(from<=SmallestOverflowSide)return false;
+ unsigned next=SmallestOverflowSide;while(next*2<from)next*=2;
+ overflowSide().store(next);return true;}
+// Set by the pressure watch where letting every tile go did not bring memory back (RAM still short).
+inline std::atomic<bool>& pressureShort(){static std::atomic<bool> s{false};return s;}
 struct Pyramid;
 // Every texture whose tiles can be let go; a list never freed, as the pressure watch outlives what ends at exit.
 inline std::mutex& spillLock(){static auto* m=new std::mutex;return *m;}
@@ -65,7 +78,7 @@ struct Pyramid {
  std::vector<std::vector<unsigned char>> byteTiles;
  std::vector<std::vector<const surface::V3*>> pages;std::atomic<uint64_t> bytes{0};
  // The finest level on demand (lazyTextures): its tiles decoded when first read (loadTile), each into a block of its own.
- std::string file;int channels=0,alphaChannel=-1;bool alphaOnly=false,lazyEight=false;std::mutex lazyLock;
+ std::string file;int channels=0,alphaChannel=-1,fileBase=0;bool alphaOnly=false,lazyEight=false;std::mutex lazyLock;
  // Loaded tiles, oldest first: under memory pressure the oldest are let go (letGo), and read again if asked for again.
  struct LazyTile {std::unique_ptr<unsigned char[]> block;unsigned level,tile;size_t size;};
  std::deque<LazyTile> lazyTiles;size_t lazyBytes=0;std::atomic<unsigned> lazyLoaded{0};
@@ -80,7 +93,7 @@ struct Pyramid {
   const tex::Mip& m=p->image.levels[level];const unsigned nx=(m.width+tex::Tile-1)/tex::Tile,tx=tile%nx,ty=tile/nx;
   const unsigned tw=std::min(tex::Tile,m.width-tx*tex::Tile),th=std::min(tex::Tile,m.height-ty*tex::Tile);
   std::vector<float> decoded(size_t(tw)*th*p->channels);
-  need(lazyCache()->get_pixels(OIIO::ustring(p->file),0,int(level),int(tx*tex::Tile),int(tx*tex::Tile+tw),int(ty*tex::Tile),int(ty*tex::Tile+th),0,1,
+  need(lazyCache()->get_pixels(OIIO::ustring(p->file),0,int(level)+p->fileBase,int(tx*tex::Tile),int(tx*tex::Tile+tw),int(ty*tex::Tile),int(ty*tex::Tile+th),0,1,
                                OIIO::TypeDesc::FLOAT,decoded.data()),"Texture tile read");
   const size_t size=size_t(tw)*th*(p->lazyEight?3u:unsigned(sizeof(surface::V3)));
   std::unique_ptr<unsigned char[]> block(new unsigned char[size]);
@@ -100,13 +113,15 @@ struct Pyramid {
  explicit Pyramid(const std::string& name,bool alpha=false):file(name),alphaOnly(alpha){auto in=OIIO::ImageInput::open(name);need(bool(in),"Pyramid read");pages.reserve(tex::MaxLevels);
   for(unsigned level=0;level<tex::MaxLevels&&in->seek_subimage(0,level);++level){auto spec=in->spec();need(spec.get_int_attribute("sampleborder",0)==0&&spec.get_int_attribute("oiio:sampleborder",0)==0,"Border-sampled TX unsupported");
    unsigned w=spec.width,h=spec.height,nx=(w+tex::Tile-1)/tex::Tile,ny=(h+tex::Tile-1)/tex::Tile;
+   // Texture overflow mode: the levels over its side left out, the first one under it this pyramid's finest.
+   if(const unsigned side=overflowSide().load();side&&std::max(w,h)>side&&!image.count){fileBase=int(level)+1;continue;}
    static const bool floats=[]{const char* v=std::getenv("XPU2_SESSION_FLOAT_TEXTURES");return v&&v[0]=='1';}();
    const bool eight=spec.format==OIIO::TypeDesc::UINT8&&bytesExact()&&!floats;
    channels=spec.nchannels;alphaChannel=spec.alpha_channel;
-   if(level==0&&lazyTextures()&&spec.tile_width>0){
+   if(!image.count&&lazyTextures()&&spec.tile_width>0){
     // The finest level read when first used (loadTile): its pages empty for now.
     lazyEight=eight;pages.emplace_back(size_t(nx)*ny,nullptr);
-    image.levels[level]={w,h,pages.back().data(),0,eight?1u:0u,&Pyramid::loadTile,this};++image.count;continue;}
+    image.levels[image.count]={w,h,pages.back().data(),0,eight?1u:0u,&Pyramid::loadTile,this};++image.count;continue;}
    std::vector<float> decoded(size_t(w)*h*spec.nchannels);
    need(in->read_image(0,int(level),0,spec.nchannels,OIIO::TypeDesc::FLOAT,decoded.data()),"Stored mip decode");pages.emplace_back(nx*ny,nullptr);auto& page=pages.back();
    for(unsigned y=0;y<ny;++y)for(unsigned x=0;x<nx;++x){unsigned tw=std::min(tex::Tile,w-x*tex::Tile),th=std::min(tex::Tile,h-y*tex::Tile);
@@ -124,7 +139,7 @@ struct Pyramid {
      // Negative values are kept, as MoonRay's texture sampler keeps them (a signed displacement or vector map).
      if(alpha)c={a,a,a};need(surface::finite(c),"Invalid TX sample");tile[j*tw+i]=c;}
     page[y*nx+x]=tile.data();bytes+=tile.size()*sizeof(surface::V3);
-   }image.levels[level]={w,h,page.data(),0,eight?1u:0u};++image.count;
+   }image.levels[image.count]={w,h,page.data(),0,eight?1u:0u};++image.count;
   }need(image.count&&image.levels[image.count-1].width==1&&image.levels[image.count-1].height==1,"Software mip level bound");
   // Realtime's view: the pyramid from its first level no wider or taller than realtimeSide() on.
   const unsigned side=realtimeSide();
@@ -178,6 +193,7 @@ inline void watchPressure(size_t ceiling){
   for(;;std::this_thread::sleep_for(std::chrono::milliseconds(250))){
    const size_t want=pressure(ceiling);if(!want)continue;
    since+=relieve(want);const auto now=std::chrono::steady_clock::now();
+   if(!tilesHeld())pressureShort().store(true);
    if(since&&now-said>std::chrono::seconds(5)){std::printf("MoonRay XPU2: memory pressure: %zu MB of decoded texture tiles let go, %zu MB kept\n",since>>20,tilesHeld()>>20);std::fflush(stdout);said=now;since=0;}
   }}).detach();
 }
@@ -195,7 +211,9 @@ struct File {
     need(spec.depth==1&&spec.x==0&&spec.y==0&&spec.z==0&&spec.full_x==0&&spec.full_y==0&&spec.full_width==spec.width&&spec.full_height==spec.height&&spec.width>0&&spec.height>0&&spec.tile_width>0&&spec.tile_height>0&&spec.nchannels>=1&&spec.nchannels<=4&&spec.channelformats.empty()&&!spec.deep,"Unsupported TX layout");
     if(level==0){eightBit=spec.format==OIIO::TypeDesc::UINT8;need(eightBit||spec.format==OIIO::TypeDesc::HALF||spec.format==OIIO::TypeDesc::FLOAT,"Unsupported TX format");}
     else need(spec.width==std::max(1,w/2)&&spec.height==std::max(1,h/2),"Invalid stored mip pyramid");
-    w=spec.width;h=spec.height;decodedBytes+=uint64_t(w)*h*spec.nchannels*4;need(decodedBytes<=(2ull<<30),"Decoded texture budget");++levels;
+    w=spec.width;h=spec.height;if(level==0){unsigned seen=largestTexture().load();while(unsigned(std::max(w,h))>seen&&!largestTexture().compare_exchange_weak(seen,unsigned(std::max(w,h)))){}}
+    if(const unsigned side=overflowSide().load();!side||unsigned(std::max(w,h))<=side)decodedBytes+=uint64_t(w)*h*spec.nchannels*4;
+    need(decodedBytes<=(2ull<<30),"Decoded texture budget");++levels;
    }need(levels>0&&w==1&&h==1,"Complete stored mip pyramid required");need(!in->seek_subimage(1,0),"Multipart texture unsupported");
    OIIO::ImageSpec spec;need(system->get_imagespec(name,spec),"OIIO texture admission failed");
   }catch(...){CloseHandle(lock);lock=INVALID_HANDLE_VALUE;throw;}

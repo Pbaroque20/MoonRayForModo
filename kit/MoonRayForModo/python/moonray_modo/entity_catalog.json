@@ -6785,6 +6785,13 @@
         "name": "num_cels",
         "type": "Int"
       },
+      "close_line_gaps": {
+        "comment": "MoonRay for Modo: a pixel without ink between two with ink is taken as part of the line, so that a line does not come out as two with the surface showing between them",
+        "default": false,
+        "label": "close line gaps",
+        "name": "close_line_gaps",
+        "type": "Bool"
+      },
       "output_mode": {
         "comment": "MoonRay for Modo: the cel shading with its ink lines, the ink lines alone (white on black, a matte to composite with), or the cel shading without them",
         "default": 0,
