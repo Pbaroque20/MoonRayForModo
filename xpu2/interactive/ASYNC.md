@@ -24,8 +24,9 @@ build: exact shared triangle arithmetic, fixed ownership and byte-repeatable ima
   the host; it polls events, so the host never waits for the GPU (ARC-01). Launches are sized from the GPU's rate,
   timed on the device (the donation forecast, CA-08); near the end of a frame the remaining work is split so both
   devices finish together (the lookahead).
-- **Textures** (§13). Host RAM holds every level of every texture and is the system of record; the CPU reads it
-  directly and never misses. VRAM holds each texture's mip levels from 1 up, for the whole session, and a bounded
+- **Textures** (§13). The files are the system of record. Host RAM holds the coarser levels of every texture and each
+  level-0 tile once it is first read, decoded on the spot, so the CPU never misses; under memory pressure the oldest
+  of those tiles are let go (see Decided, below). VRAM holds each texture's mip levels from 1 up, for the whole session, and a bounded
   cache of fine-detail (level-0) tiles, loaded on demand and evicted least recently used. A GPU sample that needs a
   tile that is not resident parks in a bounded queue on the GPU, asks for the tile once, and runs again on the GPU,
   with the same random numbers, after the tile has landed. The host sizes launches so the queue cannot overflow.
@@ -37,6 +38,10 @@ build: exact shared triangle arithmetic, fixed ownership and byte-repeatable ima
   count is audited (ACC-07).
 
 ## Adaptive sampling
+
+The kit's frames sample by cellular generations, on the host, with the CPU taking part (`INDEXER.md`,
+`RenderOptions::cellular`). What follows is the error-tree sampler they are checked against, which the benchmark and
+`XPU2_SESSION_ADAPTIVE=trees` still run.
 
 A scene with `sampling_mode` 2 renders with MoonRay's adaptive sampler (`async_adaptive.h`, adapted from MoonRay's
 `rndr/adaptive`): the same error measure (the luma of the difference between the even- and odd-index half-images,
@@ -64,7 +69,7 @@ trees still find unconverged, filled to their bounding rectangle in each 8×8 ti
 - **Texture misses.** A chain render that parks a sample stalls the chain: its later steps do nothing, the host lands
   the tiles and reruns the parked samples by ordinary launches, then queues the chain again after that step. It
   happens on a session's first frame, which loads its fine-detail tiles.
-- **Who samples.** With a GPU, the GPU takes every sample of an adaptive frame: a CPU chunk would sit on the chain.
+- **Who samples.** With a GPU and the chain, the GPU takes every sample of an adaptive frame: a CPU chunk would sit on the chain.
   Without one, the CPU lane samples and the host works the errors out from its film and rebuilds the trees on a pool.
 
 The same target need not give the same error as MoonRay's: the trees are MoonRay's, but the estimate reads XPU2's
@@ -86,19 +91,36 @@ python xpu2/interactive/run_async_adaptive_benchmark.py --build test-results/my-
 `async_grid_test.cc` checks the scheduler's invariants (VER-5): every chunk claimed exactly once under 12 workers and
 the broker, every pixel given exactly its samples, the cellular rules, the checkerboard and the flip limits.
 
+## Decided, 30 October 2026
+
+Each of these was on the list of what was left; each was measured or read against the renderer as it stands.
+
+- **The adaptive chain as one CUDA graph: not built.** The kit's frames make their passes on the host, by sampling
+  generations (`XPU2_SESSION_CHAIN` is off by default, `xpu2_session.cc`). The GPU chain runs only in the adaptive
+  benchmark and under that preference, so a graph would speed up a path no artist's render takes.
+- **Interactive frame mode (§15): shipped in the preview session,** without reprojection or frame deadlines.
+  `xpu2_session.cc` publishes the merged film as it renders, stops a frame when the scene changes, and shows it through
+  the kit. Reprojection is left out on purpose: it would show stretched pixels after every move, the kind of brief
+  glitch the half-resolution start was removed for. The session has OptiX denoising; the 0.5 kit does not use it in
+  realtime. Deadlines have not been needed: Realtime Samples and the Realtime Adaptive Sampling Cap bound a frame.
+- **Spill under host memory pressure (MEM-06 to MEM-09): done, as letting tiles go.** Level-0 tiles are decoded when
+  first read. Under pressure (free RAM below a tenth of the machine's, 2 GB at least, or the session past 85% of its
+  ceiling) the oldest are let go, four times a second if need be, and are decoded again from their files if asked for
+  again; the card's copies stay. `tex::spill` guards every host read, so a tile is freed only when no reader can hold
+  it. `XPU2_SESSION_SPILL_MB` holds the tiles to a size, for tests. Letting every tile go, continuously: CPU-only images
+  byte-identical, GPU-only images within the run-to-run difference, render time within 1%. Freed tiles go back to
+  Windows (2.1 GB of tiles, half freed: 1.15 GB committed). The coarser levels are not let go.
+- **Mapped zero-copy rings (MBX-01): measured, not adopted.** The chunk ring in pinned host memory, mapped for the
+  device, against stream-ordered copies, 12 threads: gallery-dense 392 against 388 ms, workshop-detail 609 against
+  611 ms, the difference within the noise. Copies stay, as the simpler and the one that does not read across the bus.
+- **SIMD batches on the CPU lane (CPU-03): measured for camera rays, not adopted.** Camera rays traced eight at a time
+  through Embree's packets, the only coherent rays of a path, CPU only: 0.3% and 1.3% less time, and images no longer
+  byte-identical to one-ray tracing. Vectorizing the rest would mean rewriting the integrator around queues of rays.
+
 ## Not done yet
 
-- **The adaptive chain as one CUDA graph.** A small adaptive pass now costs about 0.3 ms on the GPU, most of it the
-  latency of one sample's path and of four bookkeeping kernels. A captured graph would trim the launch gaps; the
-  passes themselves stay in order, as MoonRay's trees require.
-
-- **Interactive frame mode** (§15): deadlines, progressive publication of the merged film, reprojection, denoising
-  and display. The renderer runs in throughput mode (THR), the mode the success gate (VER-11) is measured in.
-- **Spill from RAM to VRAM** under host memory pressure (MEM-06 to MEM-09). Host textures are fully decoded and never
-  evicted, so there is no pressure state yet.
-- **Wider native coverage.** The admitted domain is the prototype's: static triangles, diffuse and emissive
-  materials, image maps and a constant environment. Everything else routes to the pinned XPU.
-- **SIMD batches on the CPU lane** (CPU-03). The CPU lane traces one ray at a time; with the GPU this fast it renders
-  about 1% of a frame.
-- **Mapped zero-copy rings** (MBX-01). Chunks and readbacks travel by stream-ordered copies on one CUDA stream, which
-  gives the same single-owner guarantees.
+- **Coverage.** OpenVdbMap, deep output and camera medium materials are not native; `FEATURE_PROGRESS.md` holds the
+  list, and what is not native routes to MoonRay XPU.
+- **GPU modules linked by the scene's families.** All nine modules link into every pipeline.
+- **Letting geometry and coarser texture levels go under pressure.** Past its ceiling the session still goes to
+  MoonRay XPU, the machine left alone.

@@ -9,7 +9,8 @@ _Cellular Automata Scheduling_
 claims its own work, neither waits for the other, and any sample can be rendered on either device with the same
 result.
 
-XPU2 is designed by Raphael Tobar, implemented with AI-assistance.
+XPU2 is designed by Raphael Tobar, implemented with AI-assistance. Not affiliated with or endorsed by DreamWorks
+Animation; MoonRay and OpenMoonRay are DreamWorks Animation's.
 
 The mantra for XPU2 is: "Use your silicon!"
 
@@ -42,8 +43,8 @@ XPU. [Feature progress](/xpu2/interactive/FEATURE_PROGRESS.md) lists each featur
 
 ## Showcase: MoonRay for Modo
 
-XPU2 renders previews in MoonRay for Modo, through an XPU2 build of the kit, on real production scenes. Measured on an
-RTX 3090 and an i7-4930K (6 cores, 12 threads):
+XPU2 renders previews in MoonRay for Modo on real production scenes, as part of the standard kit since 0.5, a
+pre-production release. Measured on an RTX 3090 and an i7-4930K (6 cores, 12 threads):
 
 | Scene | XPU2 (CPU + GPU) | MoonRay | Image vs MoonRay |
 |---|---|---|---|
@@ -54,7 +55,7 @@ RTX 3090 and an i7-4930K (6 cores, 12 threads):
 | Interior, 512×340, 64 samples/pixel | 51 s | 193 s (vector) | mean ratio 1.0003 |
 | Material fixtures, first 10 of the final benchmark, 64 samples/pixel | 86–92% less time | | all pass |
 
-Test conditions are in the [kit roadmap](/xpu2/interactive/KIT_ROADMAP.md) and the
+Test conditions are in the [kit history](/xpu2/interactive/KIT_ROADMAP.md) and the
 [indexer notes](/xpu2/interactive/INDEXER.md) (sections 14 and 15).
 
 ## Start here
@@ -64,7 +65,7 @@ Test conditions are in the [kit roadmap](/xpu2/interactive/KIT_ROADMAP.md) and t
 | How XPU2 works, with the files behind each part | [Engineer manual](/xpu2/manual/README.md) |
 | The core in depth | [Asynchronous renderer](/xpu2/interactive/ASYNC.md), [indexer and scheduling](/xpu2/interactive/INDEXER.md) |
 | The MoonRay port | [Path tracer and shaders](/xpu2/interactive/PATH_TRACER.md), [feature progress](/xpu2/interactive/FEATURE_PROGRESS.md) |
-| Running XPU2 in Modo | [Kit roadmap](/xpu2/interactive/KIT_ROADMAP.md), [tools](/xpu2/tools/README.md) |
+| Running XPU2 in Modo | [Manual: XPU2 in MoonRay for Modo](/xpu2/manual/README.md#13-xpu2-in-moonray-for-modo), [tools](/xpu2/tools/README.md) |
 | Building | [Manual: building and running](/xpu2/manual/README.md#14-building-and-running) |
 
 ## Repository layout
@@ -73,7 +74,7 @@ Test conditions are in the [kit roadmap](/xpu2/interactive/KIT_ROADMAP.md) and t
 |---|---|
 | Core | `xpu2/interactive/`: work grid, broker, CPU and GPU lanes, integrator framework, sampling, texture tiers, indexer |
 | MoonRay port | `xpu2/interactive/`: plan builder for MoonRay's RDL scenes, and the shading library (`shade_*.h`, `light_*.h`, `camera_core.h`, `volume_*.h`, `aov_*.h`) |
-| MoonRay for Modo host | `xpu2/interactive/xpu2_session.cc`, `xpu2/tools/` (XPU2 kit builder, headless Modo tools), and the MoonRay for Modo tree (`native-port/`, `kit/`, ...) |
+| MoonRay for Modo host | `xpu2/interactive/xpu2_session.cc`, `xpu2/tools/` (headless Modo tools), and the MoonRay for Modo tree (`native-port/`, `kit/`, ...) |
 | Documentation | `xpu2/manual/` |
 | History | `xpu2/*.md`, `xpu2/*.cc`: the first attempt (the October 16 bridge experiments) |
 
@@ -81,18 +82,6 @@ The core and the MoonRay port currently share a folder. The manual's file map as
 
 ## Branches
 
-- `xpu2-async`: the main research branch.
+- `MoonLightIPR`, in MoonRay for Modo: where XPU2 is developed, with its host.
 - `xpu-plus`: XPU+, the earlier synchronous approach (19–20 October 2026). It speeds up MoonRay XPU's own pipeline with
   exact savings that keep images identical, rather than replacing it. Kept for its measurements and techniques.
-
-## Merging from MoonRay for Modo
-
-The host code comes from the MoonRay for Modo repository. Merge it in one direction only:
-
-```bash
-git fetch origin
-git merge origin/<branch>
-git push xpu2-foundation xpu2-async
-```
-
-`origin` is MoonRay for Modo and `xpu2-foundation` is this repository. Never push `xpu2-async` to `origin`.

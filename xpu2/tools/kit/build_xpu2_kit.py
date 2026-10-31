@@ -1,4 +1,7 @@
-"""Make the private XPU2 test kit: the installed MoonRay for Modo kit (0.4.3.1) with XPU2 beside MoonRay XPU.
+"""Retired 2026-10-30: XPU2 is part of the standard kit since 0.5 (kit/MoonRayForModo), packaged by
+tools/package_development_release.py. Kept as a record; what follows says what this script did.
+
+Make the private XPU2 test kit: the installed MoonRay for Modo kit (0.4.3.1) with XPU2 beside MoonRay XPU.
 
     python build_xpu2_kit.py --session <xpu2-session-N folder> [--base <kit folder>]
 

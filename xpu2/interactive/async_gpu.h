@@ -2281,13 +2281,16 @@ private:
             fine_.freeSlots.pop_back();
             const auto& source = fine_.sources[tile];
             char* at = static_cast<char*>(staging->host()) + n * tileBytes;
-            const surface::V3* texels = source.mip->pages[source.page];
-            if (!texels && source.mip->load) {
-                source.mip->load(source.mip->loader, 0, source.page);
-                texels = source.mip->pages[source.page];
+            {
+                tex::spill::Guard guard;  // a tile may be let go under memory pressure, or have been since it was decoded
+                const surface::V3* texels = source.mip->pages[source.page];
+                while (!texels && source.mip->load) {
+                    source.mip->load(source.mip->loader, 0, source.page);
+                    texels = source.mip->pages[source.page];
+                }
+                cpu::need(texels != nullptr, "A fine-detail tile with no texels");
+                std::memcpy(at, texels, size_t(source.bytes));
             }
-            cpu::need(texels != nullptr, "A fine-detail tile with no texels");
-            std::memcpy(at, texels, size_t(source.bytes));
             gpu::Driver::check(driver.cuMemcpyHtoDAsync_v2_p(fine_.slab->pointer + size_t(s) * tileBytes, at, size_t(source.bytes), stream_));
             fine_.tileSlot[tile] = s;
             fine_.slotTile[s] = tile;

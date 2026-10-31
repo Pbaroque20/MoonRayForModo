@@ -4,8 +4,35 @@
 // SPDX-License-Identifier: Apache-2.0. See vendor/oiio/LICENSE.md.
 #pragma once
 #include "surface_core.h"
+#if !defined(__CUDA_ARCH__)
+#include <atomic>
+#include <thread>
+#endif
 namespace xpu2::interactive::tex {
 using surface::V3;
+#if !defined(__CUDA_ARCH__)
+// A host thread reading a tile that may be let go under memory pressure (host_texture.h's relieve) holds a Guard while
+// it does: a tile is freed only once no reader that could have seen it remains. A reader stands in its own slot, the
+// frame's epoch as it entered; a page is cleared, the epoch moves on, and those who entered before it are waited for.
+namespace spill {
+constexpr unsigned Slots=512;
+struct alignas(64) Reader {std::atomic<unsigned long long> in{0};std::atomic<bool> taken{false};};
+inline Reader readers[Slots];
+inline std::atomic<unsigned long long> epoch{1};
+struct Seat {
+ Reader* reader=nullptr;
+ Seat(){for(;;std::this_thread::yield())for(auto& r:readers){bool free=false;if(r.taken.compare_exchange_strong(free,true)){reader=&r;return;}}}
+ ~Seat(){reader->taken.store(false);}
+};
+inline Reader& mine(){thread_local Seat seat;return *seat.reader;}
+struct Guard {
+ Reader& r;
+ Guard():r(mine()){r.in.store(epoch.load(std::memory_order_relaxed),std::memory_order_seq_cst);}
+ ~Guard(){r.in.store(0,std::memory_order_release);}
+ Guard(const Guard&)=delete;
+};
+}
+#endif
 constexpr unsigned Tile=32,MaxLevels=16;
 enum Status:unsigned {Invalid=0,Ready=1,Miss=2};
 // tileBase numbers this level's tiles in a scene-wide tile space, so a miss can
@@ -63,8 +90,13 @@ template<class Sink>X2_HD inline Status fetch(const Image& image,unsigned level,
  if(!m.width||!m.height)return Invalid;if(!m.pages)return Miss;x=address(x,int(m.width),wrap);y=address(y,int(m.height),wrap);
  unsigned tx=unsigned(x)/Tile,ty=unsigned(y)/Tile,nx=(m.width+Tile-1)/Tile;const V3* page=m.pages[ty*nx+tx];
 #if !defined(__CUDA_ARCH__)
- // A host level loaded on demand: its page decoded now, then read as any other.
- if(!page&&m.load){m.load(m.loader,level,ty*nx+tx);page=m.pages[ty*nx+tx];}
+ // A host level loaded on demand: its page decoded now, then read as any other, under a guard as it may be let go.
+ if(m.load){
+  spill::Guard guard;const V3* held=m.pages[ty*nx+tx];
+  while(!held){m.load(m.loader,level,ty*nx+tx);held=m.pages[ty*nx+tx];}
+  if(m.tileBase)sink.touch(m.tileBase+ty*nx+tx);
+  return texel(held,m.width,tx,unsigned(x),unsigned(y),out,m.format);
+ }
 #endif
  if(!page){
   sink(m.tileBase+ty*nx+tx);
