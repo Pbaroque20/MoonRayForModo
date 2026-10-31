@@ -32,7 +32,7 @@ class Compatibility036(unittest.TestCase):
   self.assertEqual(native_light_links.allowed(links,'mesh|3','mat',{'a','b','c'}),['a','b'])
  def test_material_presets_have_valid_native_parameters(self):
   files=list((asset_library.bundled()/'materials').glob('*.moonmat.json'))
-  self.assertEqual(len(files),8)
+  self.assertEqual(len(files),9)
   for path in files:asset_library.read_preset(path)
  def test_asset_collection_content_and_tampering(self):
   with tempfile.TemporaryDirectory() as folder:

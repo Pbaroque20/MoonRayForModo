@@ -107,6 +107,8 @@ class Panel(QtWidgets.QWidget):
         stored=self.samples.findData(QtCore.QSettings('MoonRayForModo','GraphEditor').value('widget_samples','standard'))
         self.samples.setCurrentIndex(stored if stored>=0 else self.samples.findData('standard'))
         self.samples.setToolTip('Preview only: the most samples a pixel of the widget takes, and how clean it renders. More is cleaner and slower; clean parts still stop early. Live takes far fewer, to keep up.')
+        # As wide as its longest choice with room for the arrow, or the text is cut against it.
+        self.samples.setMinimumWidth(max(self.samples.fontMetrics().horizontalAdvance(self.samples.itemText(i)) for i in range(self.samples.count()))+44)
         choices=QtWidgets.QHBoxLayout();choices.addWidget(self.clay_mode,1);choices.addWidget(self.samples);layout.addLayout(choices)
 
         self.viewer=WidgetPreview(self);layout.addWidget(self.viewer,1)
