@@ -75,7 +75,8 @@ class SceneWriter(QtCore.QThread):
                 binary = None
                 heavy = None
             self.prepared = dict(base=self.applied, delta=delta, full_bytes=text.encode('utf-8'), heavy=heavy,
-                                 delta_bytes=delta.encode('utf-8') if delta is not None else None, binary=binary)
+                                 delta_bytes=delta.encode('utf-8') if delta is not None else None, binary=binary,
+                                 again=self.arguments)
             if binary is None and not self.applied and native.binary_geometry():
                 # A MoonRay that reloads from text alone still starts with the geometry as binary; later changes
                 # are found against the full text, as before.
@@ -128,6 +129,7 @@ class Renderer(QtCore.QObject):
         if application is not None:application.aboutToQuit.connect(self._quitting)
         self.session.failed.connect(self._session_failed)
         self.session.status.connect(self.status.emit)
+        self.session.notice.connect(self._session_notice)
         self.session_serial=0;self.gather=None
         self.using_session=False
         # Approximate GPU preview; final frames never use it.
@@ -671,6 +673,14 @@ class Renderer(QtCore.QObject):
             QtCore.QTimer.singleShot(0,lambda:self._fall_back_to_cpu("MoonRay's GPU mode failed on this render; rendering it on the CPU instead"))
             return
         self.failed.emit(message)
+
+    def _session_notice(self,said):
+        """Something the session says of the picture: on the status line for now, among the notices for as long as it shows."""
+        self.status.emit(said)
+        if getattr(self,'active',None):
+            warnings=self.active['snapshot'].setdefault('warnings',[])
+            if said not in warnings:warnings.append(said)
+        self.notices.emit([said])
 
     def _fall_back_to_cpu(self,reason='The GPU ran out of room for this scene with all its buffers; rendering it on the CPU instead'):
         if self.closed or self.canceled or not getattr(self,'active',None):

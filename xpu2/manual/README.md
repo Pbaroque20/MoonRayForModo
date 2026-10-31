@@ -265,7 +265,9 @@ differ: presence shadows, shadow linking, volumes, a minimum shadow distance and
   `XPU2_SESSION_EAGER_TEXTURES=1` decodes them all at once. 8-bit files are kept as bytes (`tex::Mip::format`).
 - **VRAM** holds every texture's levels 1 and up for the whole session, plus a cache of level-0 (fine-detail) tiles,
   loaded on demand and evicted least recently used.
-- **The cache's budget** (`GpuLane::fineBudget`) is measured at each preparation: what the scene's level-0 tiles need,
+- **Under memory pressure** the oldest decoded level-0 tiles are let go, and a scene that still does not load has its
+  textures limited for the session (texture overflow mode, `ASYNC.md`, "Limits a scene can meet").
+- **The cache's budget** (`GpuLane::fineBudget`) is measured at each preparation, and again as a frame starts if the card has filled up (`fineCacheTooBig`): what the scene's level-0 tiles need,
   up to the card's free memory minus a fifth of the card (at least 1.5 GB left for the frame and the host's own use),
   and never below 256 MB. `XPU2_SESSION_FINE_BUDGET_MB` fixes it.
 - **Filtering** is shared by both devices (`texture_core.h`, adapted from OpenImageIO). A miss names the tile it needs
@@ -393,7 +395,9 @@ Modo ── MoonRay for Modo kit ───────────────�
   takes it back.
 - **Scenes in memory.** The scene's text may come as `modo-memory:<length>:<name>` and, since 2026-10-26, the
   geometry's binary scene as `modo-memory-rdlb:<length>:<name>` (`readBinaryMemory`): mappings the kit holds, so a
-  heavy scene's gigabyte of geometry doesn't go through the disk. MoonRay, on fallback, is handed files.
+  heavy scene's gigabyte of geometry doesn't go through the disk. MoonRay, on fallback, is handed files. A scene already
+  applied has let its prepared parts go, its text holding the meshes' fingerprints alone: the kit writes it again first
+  (`persistent._Rewrite`).
 - **Without `MOONRAY_MODO_SESSION`**, `moonray_xpu2.exe` passes its arguments to the kit's own `moonray.exe`
   (`MOONRAY_XPU2_MOONRAY` names it).
 
@@ -518,6 +522,10 @@ Environment variables read by the session or the renderer. The defaults are the 
 | Variable | Effect |
 |---|---|
 | `XPU2_SESSION_MODE` | `0` CPU only, `1` GPU only, `2` both (default) |
+| `XPU2_SESSION_COARSE_FIRST` | `0` leaves out the coarse first pass of a heavy scene |
+| `XPU2_SESSION_PREP_ITEMS` | `1` logs each mesh made, its time and triangles |
+| `XPU2_SESSION_SPILL_MB` | Holds decoded texture tiles to this many MB, for tests |
+| `XPU2_SESSION_CARD_FREE_MB` | Says the card has this much memory, all of it free, for tests of a full card |
 | `XPU2_SESSION_PARTIAL=0` | No partial shading: texture misses wait for their tile |
 | `XPU2_SESSION_ADAPTIVE=trees` | MoonRay's error trees instead of sampling generations |
 | `XPU2_SESSION_ADAPTIVE_CPU=0` | With generations, the GPU takes every chunk |

@@ -41,5 +41,54 @@ class XPU2Retry(unittest.TestCase):
         self.assertEqual(state.xpu2_refused, 'it does not render this scene')
 
 
+class AfterAFallback(unittest.TestCase):
+    """MoonRay taking over from XPU2 once the scene was applied: its text holds the meshes' fingerprints alone, so that started
+    from it every mesh came out empty (the geometry gone, the picture white)."""
+
+    def launch(self, text, prepared, again):
+        Session = persistent_session()
+        module = Session._launch.__globals__
+        written = []
+
+        class Rewrite:
+            def __init__(self, request, parent=None):
+                written.append(request)
+                self.finished = SimpleNamespace(connect=lambda slot: None)
+
+            def isRunning(self):
+                return False
+
+            def start(self):
+                pass
+
+        held, module['_Rewrite'] = module.get('_Rewrite'), Rewrite
+        self.addCleanup(module.__setitem__, '_Rewrite', held)
+        class Started(Exception):
+            pass
+
+        def started():
+            written.append('started')
+            raise Started  # the launch itself is not what is asked here
+
+        state = SimpleNamespace(closed=False, latest=dict(text=text, prepared=prepared, again=again),
+                                status=SimpleNamespace(emit=lambda *a: None), _release_mappings=started)
+        try:
+            Session._launch(state)
+        except Started:
+            pass
+        return written
+
+    def test_a_scene_applied_is_written_again_first(self):
+        written = self.launch('RdlMeshGeometry("m") {\n  -- rdlb ["vertex_list_0"] abc\n}', None, ('arguments',))
+        self.assertEqual(len(written), 1)
+        self.assertNotEqual(written[0], 'started')
+
+    def test_a_scene_with_its_parts_starts_at_once(self):
+        self.assertEqual(self.launch('RdlMeshGeometry("m") {\n  -- rdlb ["vertex_list_0"] abc\n}', dict(binary=b'x'), ('arguments',))[0], 'started')
+
+    def test_a_scene_all_in_its_text_starts_at_once(self):
+        self.assertEqual(self.launch('RdlMeshGeometry("m") {}', None, ('arguments',))[0], 'started')
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -1593,8 +1593,29 @@ public:
     // The card's free and total memory (cuMemGetInfo); false where the driver does not say.
     bool memoryInfo(size_t& freeBytes, size_t& totalBytes) {
         using Info = CUresult(CUDAAPI*)(size_t*, size_t*);
+        // XPU2_SESSION_CARD_FREE_MB: a card with this much free, of this much, for tests of a full card.
+        if (const char* v = std::getenv("XPU2_SESSION_CARD_FREE_MB")) {
+            freeBytes = totalBytes = size_t(std::max(1.0, std::atof(v))) << 20;
+            return true;
+        }
         const auto info = reinterpret_cast<Info>(GetProcAddress(driver.library, "cuMemGetInfo_v2"));
         return info && info(&freeBytes, &totalBytes) == CUDA_SUCCESS && totalBytes > 0;
+    }
+    // What fineBudget keeps back on the card.
+    static size_t cardReserve(size_t totalBytes) { return std::max<size_t>(totalBytes / 5, 3ull << 29); }
+    // Whether the card has come to hold much less than the fine-detail cache was sized for (something else took it, Modo's
+    // viewport or another application): prepare again makes the cache to fit, meshes and all else kept. Read as a frame starts.
+    bool fineCacheTooBig() {
+        size_t freeBytes = 0, totalBytes = 0;
+        if (std::getenv("XPU2_SESSION_FINE_BUDGET_MB") || options_.fineBudget || !fine_.slots || !memoryInfo(freeBytes, totalBytes)) return false;
+        const size_t held = size_t(fine_.slots) * fine_.tileBytes, reserve = cardReserve(totalBytes);
+        const size_t room = freeBytes + held > reserve ? freeBytes + held - reserve : 0;
+        return std::max<size_t>(256ull << 20, room) < held / 10 * 9;
+    }
+    // Whether the card is short of even what is kept back.
+    bool cardTight() {
+        size_t freeBytes = 0, totalBytes = 0;
+        return memoryInfo(freeBytes, totalBytes) && freeBytes < cardReserve(totalBytes) / 2;
     }
     // The fine-detail cache's VRAM: what the scene's level-0 tiles need, up to what the card has free less a reserve
     // for the rest of the frame and for Modo's own viewport (a fifth of the card, a gigabyte and a half at least), and
@@ -1614,7 +1635,7 @@ public:
             fineBudgetWhy_ = "the card's memory unknown";
             return 512ull << 20;
         }
-        const size_t reserve = std::max<size_t>(totalBytes / 5, 3ull << 29);
+        const size_t reserve = cardReserve(totalBytes);
         const size_t spare = freeBytes > reserve ? freeBytes - reserve : 0;
         char why[160];
         std::snprintf(why, sizeof why, "%.1f GB of the card's %.1f GB free, %.1f GB kept back", double(freeBytes) / (1 << 30),
@@ -2108,6 +2129,8 @@ private:
         fine_.floatTiles = false;
         std::vector<std::pair<std::shared_ptr<texture::File>, B>> images;
         std::vector<std::pair<B, std::vector<U32>>> levelZeroPages;  // per file: page array and its tile ids
+        size_t cardFree = 0, cardTotal = 0, mipBytes = 0;
+        const bool cardKnown = memoryInfo(cardFree, cardTotal);
         for (auto& file : files) {
             cpu::need(bool(file->pyramid), "Missing host mip pyramid");
             // A realtime plan's from its first level of 1024 pixels or less (Pyramid::view).
@@ -2131,6 +2154,10 @@ private:
                     packed.insert(packed.end(), from, from + count * tex::texelBytes(m.format));
                 }
             }
+            // Levels 1 and up that would not fit, the rest of the frame besides (the session's texture overflow mode).
+            mipBytes += packed.size();
+            if (cardKnown && mipBytes + std::max<size_t>(cardTotal / 20, 256ull << 20) > cardFree)
+                throw std::runtime_error("the textures do not fit on the card (texture overflow)");
             B pixels = packed.empty() ? B() : upload(packed.data(), packed.size());
             scene_.mipBytes += packed.size();
             for (unsigned level = 1; level < host.count; ++level) {

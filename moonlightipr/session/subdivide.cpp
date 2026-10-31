@@ -24,6 +24,124 @@ void add(float* out, const float* in, float weight = 1.0f) {
     for (int k = 0; k < 3; ++k) out[k] += in[k] * weight;
 }
 
+// One round of a texture coordinate set, to the quads' corners: Catmull-Clark over the set's own mesh, where a corner's
+// vertex is its mesh vertex and its coordinates together, so that a seam is an open edge of it. As MoonRay's default
+// (subd_fvar_linear "corners only", OpenSubdiv's): the coordinates move as the surface does, and only a corner of a
+// piece of the map stays put. Carried across each face linearly they stayed as the surface moved inward: a texture
+// stretched on a coarse cage, a bottle's cork.
+void refineUvs(const Cage& cage, const std::vector<uint32_t>& faceStart, const std::vector<uint32_t>& cornerEdge,
+               const std::vector<Edge>& meshEdges, const std::vector<float>& uv, std::vector<float>& out) {
+    const size_t faceCount = cage.faceSizes.size(), cornerCount = cage.corners.size();
+    // The set's vertices: a mesh vertex's corners with the same coordinates are one.
+    const size_t meshVertices = cage.positions.size() / 3;
+    std::vector<uint32_t> head(meshVertices, UINT32_MAX), next, vertexOf(cornerCount);
+    std::vector<float> values;
+    values.reserve(cornerCount);
+    next.reserve(cornerCount);
+    for (size_t c = 0; c < cornerCount; ++c) {
+        const float u = uv[c * 2], v = uv[c * 2 + 1];
+        uint32_t found = head[cage.corners[c]];
+        while (found != UINT32_MAX && (values[size_t(found) * 2] != u || values[size_t(found) * 2 + 1] != v)) found = next[found];
+        if (found == UINT32_MAX) {
+            found = uint32_t(next.size());
+            next.push_back(head[cage.corners[c]]);
+            head[cage.corners[c]] = found;
+            values.push_back(u);
+            values.push_back(v);
+        }
+        vertexOf[c] = found;
+    }
+    const size_t count = next.size();
+    // Its edges: a mesh edge whose two faces agree on the coordinates at both ends is one, else one each.
+    std::vector<Edge> edges;
+    edges.reserve(meshEdges.size());
+    std::vector<uint32_t> firstOf(meshEdges.size(), UINT32_MAX), edgeOf(cornerCount);
+    for (size_t f = 0; f < faceCount; ++f) {
+        const uint32_t size = cage.faceSizes[f], start = faceStart[f];
+        for (uint32_t i = 0; i < size; ++i) {
+            const uint32_t a = vertexOf[start + i], b = vertexOf[start + (i + 1) % size], low = std::min(a, b), high = std::max(a, b);
+            const uint32_t mesh = cornerEdge[start + i];
+            uint32_t id = firstOf[mesh];
+            if (id == UINT32_MAX || edges[id].a != low || edges[id].b != high) {
+                const uint32_t made = uint32_t(edges.size());
+                edges.push_back({low, high});
+                edges.back().sharpness = meshEdges[mesh].sharpness;
+                if (id == UINT32_MAX) firstOf[mesh] = made;
+                id = made;
+            }
+            Edge& edge = edges[id];
+            if (edge.faceCount < 2) edge.faces[edge.faceCount] = uint32_t(f);
+            ++edge.faceCount;
+            edgeOf[start + i] = id;
+        }
+    }
+    // Face points, edge points and moved vertices, by the rule refine has for the positions.
+    std::vector<float> facePoints(faceCount * 2, 0.0f), edgePoints(edges.size() * 2, 0.0f), moved(count * 2, 0.0f);
+    std::vector<float> faceSum(count * 2, 0.0f), edgeSum(count * 2, 0.0f), sharpSum(count * 2, 0.0f), sharpTotal(count, 0.0f);
+    std::vector<uint32_t> faceTouch(count, 0), edgeTouch(count, 0), sharpTouch(count, 0);
+    for (size_t f = 0; f < faceCount; ++f) {
+        const uint32_t size = cage.faceSizes[f], start = faceStart[f];
+        for (uint32_t i = 0; i < size; ++i) {
+            const uint32_t w = vertexOf[start + i];
+            for (int k = 0; k < 2; ++k) facePoints[f * 2 + k] += values[size_t(w) * 2 + k] / size;
+        }
+        for (uint32_t i = 0; i < size; ++i) {
+            const uint32_t w = vertexOf[start + i];
+            for (int k = 0; k < 2; ++k) faceSum[size_t(w) * 2 + k] += facePoints[f * 2 + k];
+            ++faceTouch[w];
+        }
+    }
+    for (size_t e = 0; e < edges.size(); ++e) {
+        const Edge& edge = edges[e];
+        const bool open = edge.faceCount != 2;
+        const float sharp = open ? 1.0f : std::min(edge.sharpness, 1.0f);
+        for (int k = 0; k < 2; ++k) {
+            const float middle = 0.5f * (values[size_t(edge.a) * 2 + k] + values[size_t(edge.b) * 2 + k]);
+            const float smooth = open ? 0.0f : 0.5f * middle + 0.25f * (facePoints[size_t(edge.faces[0]) * 2 + k] + facePoints[size_t(edge.faces[1]) * 2 + k]);
+            edgePoints[e * 2 + k] = sharp * middle + (1.0f - sharp) * smooth;
+            edgeSum[size_t(edge.a) * 2 + k] += middle;
+            edgeSum[size_t(edge.b) * 2 + k] += middle;
+            if (open || edge.sharpness > 0.0f) {
+                sharpSum[size_t(edge.a) * 2 + k] += values[size_t(edge.b) * 2 + k];
+                sharpSum[size_t(edge.b) * 2 + k] += values[size_t(edge.a) * 2 + k];
+            }
+        }
+        for (uint32_t w : {edge.a, edge.b}) {
+            ++edgeTouch[w];
+            if (open || edge.sharpness > 0.0f) {
+                ++sharpTouch[w];
+                sharpTotal[w] += sharp;
+            }
+        }
+    }
+    for (size_t w = 0; w < count; ++w) {
+        const float n = float(edgeTouch[w]);
+        for (int k = 0; k < 2; ++k) {
+            const float p = values[w * 2 + k];
+            if (!edgeTouch[w] || !faceTouch[w]) { moved[w * 2 + k] = p; continue; }
+            const float smooth = faceSum[w * 2 + k] / (faceTouch[w] * n) + edgeSum[w * 2 + k] * 2.0f / (n * n) + p * (n - 3.0f) / n;
+            if (sharpTouch[w] < 2) { moved[w * 2 + k] = smooth; continue; }
+            const bool corner = sharpTouch[w] > 2 || (edgeTouch[w] == 2 && faceTouch[w] == 1);
+            const float crease = corner ? p : 0.75f * p + 0.125f * sharpSum[w * 2 + k];
+            const float sharp = std::min(sharpTotal[w] / sharpTouch[w], 1.0f);
+            moved[w * 2 + k] = sharp * crease + (1.0f - sharp) * smooth;
+        }
+    }
+    for (size_t f = 0; f < faceCount; ++f) {
+        const uint32_t size = cage.faceSizes[f], start = faceStart[f];
+        for (uint32_t i = 0; i < size; ++i) {
+            const uint32_t previous = (i + size - 1) % size;
+            float* to = &out[(size_t(start) + i) * 8];
+            for (int k = 0; k < 2; ++k) {
+                to[k] = moved[size_t(vertexOf[start + i]) * 2 + k];
+                to[2 + k] = edgePoints[size_t(edgeOf[start + i]) * 2 + k];
+                to[4 + k] = facePoints[f * 2 + k];
+                to[6 + k] = edgePoints[size_t(edgeOf[start + previous]) * 2 + k];
+            }
+        }
+    }
+}
+
 // One round: every face becomes one quad per corner.
 Cage refine(const Cage& cage) {
     const size_t vertexCount = cage.positions.size() / 3, faceCount = cage.faceSizes.size();
@@ -142,21 +260,9 @@ Cage refine(const Cage& cage) {
             corner[2] = uint32_t(vertexCount + edgeCount + f);
             corner[3] = uint32_t(vertexCount) + cornerEdge[start + previous];
             if (!cage.faceMaterials.empty()) out.faceMaterials[quad] = cage.faceMaterials[f];
-            for (size_t s = 0; s < cage.uvSets.size(); ++s) {
-                const float* uv = &cage.uvSets[s][size_t(start) * 2];
-                float centre[2] = {0, 0};
-                for (uint32_t k = 0; k < size; ++k) { centre[0] += uv[k * 2] / size; centre[1] += uv[k * 2 + 1] / size; }
-                const uint32_t next = (i + 1) % size;
-                float* to = &out.uvSets[s][size_t(quad) * 8];
-                for (int k = 0; k < 2; ++k) {
-                    to[k] = uv[i * 2 + k];
-                    to[2 + k] = 0.5f * (uv[i * 2 + k] + uv[next * 2 + k]);
-                    to[4 + k] = centre[k];
-                    to[6 + k] = 0.5f * (uv[i * 2 + k] + uv[previous * 2 + k]);
-                }
-            }
         }
     }
+    for (size_t s = 0; s < cage.uvSets.size(); ++s) refineUvs(cage, faceStart, cornerEdge, edges, cage.uvSets[s], out.uvSets[s]);
     // Each half of a creased edge is one level less sharp.
     for (size_t e = 0; e < edgeCount; ++e) {
         if (edges[e].sharpness <= 1.0f) continue;

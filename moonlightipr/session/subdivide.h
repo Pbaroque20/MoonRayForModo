@@ -30,7 +30,7 @@ struct Triangles {
 
 // Subdivides levels times and splits the resulting quads. Open edges stay where they are and
 // corners of an open mesh stay sharp, as MoonRay's default boundary rule has them. Texture
-// coordinates are carried across each face linearly. Throws std::runtime_error on a cage whose
+// coordinates are smoothed as the surface is, a seam an open edge, as MoonRay's default. Throws std::runtime_error on a cage whose
 // lists do not agree.
 Triangles subdivide(Cage cage, uint32_t levels);
 

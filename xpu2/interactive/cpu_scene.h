@@ -1464,7 +1464,10 @@ inline bool isLight(const std::string& cls){return cls=="EnvLight"||cls=="RectLi
 // A BaseVolume (moonray dso/volume/Base) as volume_core.h shades it: homogeneous (no attribute bound), not emissive;
 // its ramps over the depth a ray travels through it as RampControl builds them.
 // A VDB grid (xpu2_geom.dll's x2VdbRead, as geom::internal::VdbVolume reads it), kept as NanoVDB and freed by the DLL.
-struct VdbGridData{X2VdbGrid raw{};std::string key,path,name;std::vector<float> dense;VdbGridData()=default;VdbGridData(const VdbGridData&)=delete;
+struct VdbGridData{X2VdbGrid raw{};std::string key,path,name;std::vector<float> dense;
+ // A baked grid's making (bakeVolume), for the next preparation to keep it: what its values came from, and how it is read.
+ const MeshData* bakeMesh=nullptr;std::vector<std::shared_ptr<const ix::Buffer>> bakeSignature;double bakeSpace[32]={};volume::Grid bakeView{};
+ VdbGridData()=default;VdbGridData(const VdbGridData&)=delete;
  ~VdbGridData(){if(raw.data&&subdLibrary().vdbFree)subdLibrary().vdbFree(&raw);}};
 // A grid of a file for the plan (read once a plan; the previous plan's while the file is unchanged): its index.
 inline unsigned vdbGrid(Plan& plan,const Plan* previous,const std::string& path,const std::string& name,bool vec3,const std::string& owner){
@@ -1863,7 +1866,8 @@ inline void bakeVdbVolume(Plan& plan,unsigned volumeIndex,const rdl::SceneObject
 // bake_divisions, or bake_voxel_size), each voxel's extinct() of density one at its index point, read at the nearest
 // voxel; its feature size the grid's largest voxel side. Otherwise (no bound extinction, another geometry, or no
 // resolution) extinct() of MoonRay's empty state: its maps at the render origin.
-inline void bakeVolume(Plan& plan,unsigned volumeIndex,const MeshData& mesh,const rdl::SceneObject& shader,const rdl::Mat4d& nodeXform,bool polygons){
+inline void bakeVolume(Plan& plan,unsigned volumeIndex,const MeshData& mesh,const rdl::SceneObject& shader,const rdl::Mat4d& nodeXform,bool polygons,
+                       const Plan* previous=nullptr,const std::vector<std::shared_ptr<const ix::Buffer>>* signature=nullptr){
  namespace sm=scene_rdl2::math;
  volume::Shader& s=plan.volumes[volumeIndex];
  rdl::Mat4d w2r;for(int i=0;i<4;++i)for(int j=0;j<4;++j)w2r[i][j]=plan.world2render[4*i+j];
@@ -1897,7 +1901,15 @@ inline void bakeVolume(Plan& plan,unsigned volumeIndex,const MeshData& mesh,cons
  const rdl::Mat4d st(double(scale.x),0,0,0,0,double(scale.y),0,0,0,0,double(scale.z),0,0,0,0,1);
  const rdl::Mat4d tr(1,0,0,0,0,1,0,0,0,0,1,0,double(localBox.lower.x),double(localBox.lower.y),double(localBox.lower.z),1);
  const rdl::Mat4d indexToRender=st*tr*l2r;
- auto g=std::make_shared<VdbGridData>();g->key="baked|"+shader.getName()+"|"+std::to_string(volumeIndex);g->dense.assign(size_t(dims[0])*size_t(dims[1])*size_t(dims[2])*3,0.0f);
+ // The same volume, from the same mesh, maps, place and render space as the last preparation's: its grid kept. Any edit of
+ // a scene with a baked volume baked it again (0.56 s on the car).
+ const std::string bakedKey="baked|"+shader.getName()+"|"+std::to_string(volumeIndex);
+ double bakedSpace[32];for(int i=0;i<4;++i)for(int j=0;j<4;++j){bakedSpace[4*i+j]=nodeXform[i][j];bakedSpace[16+4*i+j]=w2r[i][j];}
+ if(previous&&signature)for(const auto& old:previous->volumeGrids)if(old->key==bakedKey&&old->bakeMesh==&mesh&&old->bakeSignature==*signature&&std::memcmp(old->bakeSpace,bakedSpace,sizeof bakedSpace)==0){
+  s.densityGrid=unsigned(plan.volumeGrids.size());plan.volumeGrids.push_back(old);plan.volumeGridViews.push_back(old->bakeView);
+  double kept=0;for(int a=0;a<3;++a)kept=std::max(kept,std::sqrt(indexToRender[a][0]*indexToRender[a][0]+indexToRender[a][1]*indexToRender[a][1]+indexToRender[a][2]*indexToRender[a][2]));
+  s.featureSize=float(kept);return;}
+ auto g=std::make_shared<VdbGridData>();g->key=bakedKey;g->dense.assign(size_t(dims[0])*size_t(dims[1])*size_t(dims[2])*3,0.0f);
  // Each voxel's extinct() of density one with its maps at the voxel's index point, sliced over the threads.
  const unsigned threads=std::max(1u,std::min(16u,std::thread::hardware_concurrency()));
  std::vector<std::thread> pool;std::atomic<int> nextSlice{0};std::mutex failLock;std::string failure;
@@ -1919,6 +1931,7 @@ inline void bakeVolume(Plan& plan,unsigned volumeIndex,const MeshData& mesh,cons
  // The grid read through the mesh's world to object (the volume's worldToGrid), then object to index.
  volume::Grid view;view.dense=g->dense.data();view.vec3=1;for(int a=0;a<3;++a)view.dims[a]=dims[a];
  const rdl::Mat4d objectToIndex=(st*tr).inverse();for(int i=0;i<4;++i)for(int j=0;j<4;++j)view.worldToIndex[4*i+j]=objectToIndex[i][j];
+ g->bakeMesh=&mesh;if(signature)g->bakeSignature=*signature;std::memcpy(g->bakeSpace,bakedSpace,sizeof bakedSpace);g->bakeView=view;
  s.densityGrid=unsigned(plan.volumeGrids.size());plan.volumeGrids.push_back(std::move(g));plan.volumeGridViews.push_back(view);
  // transform->voxelSize(): each index axis's length in render space; the feature size their largest.
  double fs=0;for(int a=0;a<3;++a)fs=std::max(fs,std::sqrt(indexToRender[a][0]*indexToRender[a][0]+indexToRender[a][1]*indexToRender[a][1]+indexToRender[a][2]*indexToRender[a][2]));
@@ -3078,9 +3091,11 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
   need(std::isfinite(roughnessClamping)&&roughnessClamping>=0&&std::isfinite(transparency),"Invalid roughness clamping/transparency threshold");
   plan->roughnessClamping=roughnessClamping;plan->transparencyThreshold=transparency;
   // PathIntegrator: bssrdf_samples is a square root (at least two samples); the subsurface integrator keeps
-  // at most sixteen exit samples a hit.
+  // at most sixteen exit samples a hit. More asked for take sixteen: the same image on average, as noisy as 4 x 4, where
+  // more than 4 used to send the whole scene to MoonRay XPU.
   int bssrdf=get<rdl::Int>(sv,"bssrdf_samples"),maxSss=get<rdl::Int>(sv,"max_subsurface_per_path");
-  need(bssrdf>=1&&bssrdf<=4&&maxSss>=0&&maxSss<=16,"Subsurface sample budget");
+  need(bssrdf>=1&&maxSss>=0&&maxSss<=16,"Subsurface sample budget");
+  if(bssrdf>4){std::printf("MoonRay XPU2: Subsurface Samples %d: XPU2 takes 4 x 4 at a hit (raise Pixel Samples for less noise)%c",bssrdf,char(10));bssrdf=4;}
   plan->bssrdfSamples=unsigned(std::max(2,bssrdf*bssrdf));plan->maxSubsurfacePerPath=unsigned(maxSss);
   plan->enableSss=get<rdl::Bool>(sv,"enable_subsurface_scattering")?1u:0u;
   // The volume settings (RenderContext's integrator parameters): the transmittance threshold from the opacity one, the
@@ -3106,7 +3121,7 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
  // lights_visible_in_camera: each light's visible_in_camera reads it (lightVisibleInCamera).
  float frameNumber=get<rdl::Float>(sv,"frame");need(std::isfinite(frameNumber)&&frameNumber>=0&&double(frameNumber)<=4294967295.&&std::floor(frameNumber)==frameNumber,"Invalid integer frame");
  plan->seed=surface::frameSeed(unsigned(frameNumber),0,get<rdl::Bool>(sv,"lock_frame_noise"));
- int filter=get<rdl::Int>(sv,"pixel_filter");plan->filterWidth=get<rdl::Float>(sv,"pixel_filter_width");need(filter>=0&&filter<=2&&surface::finite(plan->filterWidth)&&plan->filterWidth>0&&plan->filterWidth<=4,"Unsupported pixel filter");plan->filter=surface::Filter(filter);
+ int filter=get<rdl::Int>(sv,"pixel_filter");plan->filterWidth=get<rdl::Float>(sv,"pixel_filter_width");need(filter>=0&&filter<=5&&surface::finite(plan->filterWidth)&&plan->filterWidth>0&&plan->filterWidth<=64,"Unsupported pixel filter");plan->filter=surface::Filter(filter);
  auto* camera=get<rdl::SceneObject*>(sv,"camera");auto* layerObject=get<rdl::SceneObject*>(sv,"layer");
  need(camera&&(paths||camera->getSceneClass().getName()=="PerspectiveCamera"),"Perspective camera required");need(layerObject&&layerObject->isA<rdl::Layer>(),"Layer required");auto& layer=*layerObject->asA<rdl::Layer>();
  // The lens's depth of field, bokeh and shutter count only with depth of field or motion blur, which are refused.
@@ -3562,8 +3577,10 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
    if(!subdGeometry&&!polyGeometry)displacementKey+="triangles:"+std::to_string(edgeVertices);}
   // The fur file can change under the same name: fur is read again each time.
   const bool curveGeometry=isCurves(o.getSceneClass().getName());
-  if(previous&&previous->domain==domain&&!item.instancer&&o.getSceneClass().getName()!="ModoFurGeometry"&&(!objectDisplaced||!displacementKey.empty())&&&o!=bakeGeometry&&
-   !(adaptiveMesh&&!dicingCamera))for(auto& old:previous->meshes)if(old.data->name==meshName&&old.data->signature==sig&&old.data->displacementKey==displacementKey&&
+  // A shared instance's data too (in its own space, its instances' attributes and places their own): the 4 M triangles of
+  // a car's four tyres were made again for any edit of anything (3.3 s), and every instance's geometry after them.
+  if(!data&&previous&&previous->domain==domain&&(!item.instancer||shareInstance)&&o.getSceneClass().getName()!="ModoFurGeometry"&&(!objectDisplaced||!displacementKey.empty())&&&o!=bakeGeometry&&
+   !(adaptiveMesh&&!dicingCamera))for(auto& old:previous->meshes)if(old.data->name==meshName&&old.data->signature==sig&&(!shareInstance||old.data->instanced)&&old.data->displacementKey==displacementKey&&
    !old.data->coarse&&old.data->polyVertices.empty()==!(plan->aovs&&plan->aovs->wireframe)&&((o.getSceneClass().getName()!="RdlMeshGeometry"&&o.getSceneClass().getName()!="RdlCurveGeometry"&&!isPoints(o.getSceneClass().getName()))||!meshHasMotion(o)||previous->motion==plan->motion)){data=old.data;++plan->reusedMeshes;reusedData=true;break;}
   // A plain mesh whose node_xform alone changed since it was made (MeshData::shape): its data taken over, placed anew as
   // an instance from where it was made to where it is (below, once its plan entry is made). A car turned whole, then a
@@ -3749,9 +3766,10 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
     auto steps=item.instancer?instanceMotionSteps(o,plan->motion,item):
                  meshMotionSteps(o,plan->motion,o.get<rdl::Mat4d>("node_xform",rdl::TIMESTEP_BEGIN),o.get<rdl::Mat4d>("node_xform",rdl::TIMESTEP_END));
     m->positions=std::move(steps[0]);for(size_t k=1;k<steps.size();++k)m->steps.push_back(std::move(steps[k]));}
+   prepLaps().add("made: positions",double(nowNs()-pieceBegan)*1e-9);
    PolygonSplit split;
    const bool reversed=paths&&get<rdl::Bool>(o,"reverse_normals");
-   if(paths){split=splitPolygons(v,counts,indices,o.getName());
+   if(paths){PrepPart t{"made: split"};split=splitPolygons(v,counts,indices,o.getName());
     // MoonRay's QuadMesh hands polygon maps four polyvertices; a displaced mesh is tessellated from its faces.
     need(!displacementShader||(!split.quads&&split.faceOf.size()==counts.size()),o.getName()+": a displacement on a mesh with faces of more than three vertices is not rendered yet");
     need(!displacementShader||!faceMask,o.getName()+": a displacement on a mesh with parts is not rendered yet");}
@@ -3760,6 +3778,7 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
     // Its smooth normals are made from the faces as given (initAttributesAndDisplace), then negated with the rest.
     PolygonSplit given=split;reverseSplit(split,counts,indices);split.quadVertices=given.quadVertices;
     need(!displacementShader,o.getName()+": a displaced mesh with reversed normals falls back");}
+   const long long keptBegan=nowNs();
    std::vector<unsigned> kept;  // the split's triangles kept, in order
    for(size_t i=0;i<split.faceOf.size();++i){if(faceMask&&!(*faceMask)[split.faceOf[i]])continue;unsigned ids[3];for(int j=0;j<3;++j){auto k=paths?split.vertices[i*3+size_t(j)]:indices[split.corners[i*3+size_t(j)]];need(k>=0&&size_t(k)<v.size(),"Vertex index out of bounds");ids[j]=unsigned(k);}
     auto a=m->positions[ids[0]],b=m->positions[ids[1]],c=m->positions[ids[2]];double area=(double(b.x)-a.x)*(double(c.y)-a.y)-(double(b.y)-a.y)*(double(c.x)-a.x);
@@ -3767,6 +3786,7 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
      if(!some&&paths)continue;need(some,"Degenerate triangle");}
     else need(std::isfinite(area)&&area>0,"Degenerate/reversed triangle unsupported");m->triangles.push_back({ids[0],ids[1],ids[2]});kept.push_back(unsigned(i));}
    need(!m->triangles.empty(),o.getName()+": no triangle of any area");
+   prepLaps().add("made: triangles kept",double(nowNs()-keptBegan)*1e-9);const long long attributesBegan=nowNs();
    // MoonRay's polyvertices, where the wireframe AOV or a polygon map reads them.
    if(paths&&((plan->aovs&&plan->aovs->wireframe)||(mat&&(plan->materialRecords.at(materialIds.at(mat->getName())).flags&shade::MatPolyVertices)))){
     m->polyVertices.reserve(kept.size()*4);
@@ -3774,10 +3794,10 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
      if(split.quads){const size_t f=split.faceOf[t];for(int j=0;j<4;++j)m->polyVertices.push_back(unsigned(split.quadVertices[f*4+size_t(j)]));}
      else{for(int j=0;j<3;++j)m->polyVertices.push_back(unsigned(split.vertices[size_t(t)*3+size_t(j)]));m->polyVertices.push_back(~0u);}}}
    // Face-varying values a kept triangle's corner, uniform ones its face's (QuadMesh/TriMesh splitNGons).
-   auto byCorner=[&](const std::vector<float>& d,unsigned n){std::vector<float> r;r.reserve(kept.size()*3*n);
-    for(unsigned t:kept)for(int j=0;j<3;++j){const size_t c=split.corners[size_t(t)*3+size_t(j)];r.insert(r.end(),d.begin()+std::ptrdiff_t(c*n),d.begin()+std::ptrdiff_t((c+1)*n));}return r;};
-   auto byFace=[&](const std::vector<float>& d,unsigned n){std::vector<float> r;r.reserve(kept.size()*n);
-    for(unsigned t:kept){const size_t f=split.faceOf[t];r.insert(r.end(),d.begin()+std::ptrdiff_t(f*n),d.begin()+std::ptrdiff_t((f+1)*n));}return r;};
+   auto byCorner=[&](const std::vector<float>& d,unsigned n){std::vector<float> r(kept.size()*3*n);float* w=r.data();
+    for(unsigned t:kept)for(int j=0;j<3;++j){const float* from=d.data()+split.corners[size_t(t)*3+size_t(j)]*n;for(unsigned k=0;k<n;++k)*w++=from[k];}return r;};
+   auto byFace=[&](const std::vector<float>& d,unsigned n){std::vector<float> r(kept.size()*n);float* w=r.data();
+    for(unsigned t:kept){const float* from=d.data()+size_t(split.faceOf[t])*n;for(unsigned k=0;k<n;++k)*w++=from[k];}return r;};
    if(paths){
     // pickRate: face-varying when there is one value a face-vertex, else one a vertex.
     auto rate=[&](size_t n)->unsigned{if(n==0)return shade::RateNone;if(n==indices.size())return shade::RateFaceVarying;if(n==v.size())return shade::RateVertex;throw Unsupported(o.getName()+": unsupported attribute rate");};
@@ -3797,10 +3817,12 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
      double det=M[0][0]*(M[1][1]*M[2][2]-M[1][2]*M[2][1])-M[0][1]*(M[1][0]*M[2][2]-M[1][2]*M[2][0])+M[0][2]*(M[1][0]*M[2][1]-M[1][1]*M[2][0]);
      double inv[3][3];for(int i=0;i<3;++i)for(int j=0;j<3;++j){int a=(j+1)%3,b=(j+2)%3,cc=(i+1)%3,d=(i+2)%3;inv[i][j]=(M[a][cc]*M[b][d]-M[a][d]*M[b][cc])/det;}
      m->normals.reserve(nl.size());
+     // X2_NEED: a message made for every normal, in case, was most of a dense mesh's time.
      for(auto n:nl){double x=n.x*inv[0][0]+n.y*inv[0][1]+n.z*inv[0][2],y=n.x*inv[1][0]+n.y*inv[1][1]+n.z*inv[1][2],z=n.x*inv[2][0]+n.y*inv[2][1]+n.z*inv[2][2];
-      double l=std::sqrt(x*x+y*y+z*z);need(std::isfinite(l)&&l>0,o.getName()+": invalid normal");m->normals.push_back({float(x/l),float(y/l),float(z/l)});}
-     if(m->normalRate==shade::RateFaceVarying){std::vector<float> f;for(auto& n:m->normals)f.insert(f.end(),{n.x,n.y,n.z});f=byCorner(f,3);
-      m->normals.clear();for(size_t i=0;i<f.size();i+=3)m->normals.push_back({f[i],f[i+1],f[i+2]});}
+      double l=std::sqrt(x*x+y*y+z*z);X2_NEED(std::isfinite(l)&&l>0,o.getName()+": invalid normal");m->normals.push_back({float(x/l),float(y/l),float(z/l)});}
+     if(m->normalRate==shade::RateFaceVarying){std::vector<V3> f(kept.size()*3);V3* w=f.data();
+      for(unsigned t:kept)for(int j=0;j<3;++j)*w++=m->normals[split.corners[size_t(t)*3+size_t(j)]];
+      m->normals=std::move(f);}
     }
     // primitive_attributes: UserData of floats, colours, vectors and ints (geom/PrimitiveUserData processArbitraryData).
     for(auto* object:o.get<rdl::SceneObjectVector>("primitive_attributes")){
@@ -3907,6 +3929,7 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
     for(int i=0;i<12;++i)data->view.worldToRender[i]=plan->worldToRender[i];
     plan->cameraMap=data;plan->camera.map=&data->view;
    }
+   prepLaps().add("made: attributes",double(nowNs()-attributesBegan)*1e-9);
    data=std::move(m);++plan->preparedMeshes;
   }
   }
@@ -3942,6 +3965,9 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
    mappedVolumes.push_back({unsigned(volumeIndex),plan->meshes.size()-1,volumeInner,affine(o),o.getSceneClass().getName()=="RdlMeshGeometry"&&!get<rdl::Bool>(o,"is_subd")});
   if(volumeIndex>=0&&plan->volumes[size_t(volumeIndex)].kind==volume::KindBase){const auto& vs=plan->volumes[size_t(volumeIndex)];
    if(!(vs.emission.x==0&&vs.emission.y==0&&vs.emission.z==0)&&(vs.visibility&0x3fcu))meshEmissionRegion(*plan,*data,unsigned(volumeIndex),vs.visibility);}
+  // XPU2_SESSION_PREP_ITEMS=1: each mesh made, by name, as it is done.
+  {static const bool said=[]{const char* v=std::getenv("XPU2_SESSION_PREP_ITEMS");return v&&v[0]=='1';}();
+   if(said&&!reusedData)std::printf("MoonRay XPU2: made %s%s in %.3f s (%zu triangles)%c",o.getName().c_str(),piece.suffix.c_str(),double(nowNs()-pieceBegan)*1e-9,data?data->triangles.size():size_t(0),char(10));}
   prepLaps().add(reusedData?"kept meshes' items":"made meshes' items",double(nowNs()-pieceBegan)*1e-9);
   }
  }
@@ -3994,7 +4020,8 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
  if(!mappedVolumes.empty()){plan->volumeMaps=volume::MapEval{&runVolumeMaps,plan.get()};
   for(const auto& mv:mappedVolumes){
    if(mv.vdb){bakeVdbVolume(*plan,mv.volume,*mv.vdb,*mv.shader);continue;}
-   bakeVolume(*plan,mv.volume,*plan->meshes[mv.mesh].data,*mv.shader,mv.nodeXform,mv.polygons);
+   {const auto bakedFrom=deepSignature(*mv.shader,frame);
+    bakeVolume(*plan,mv.volume,*plan->meshes[mv.mesh].data,*mv.shader,mv.nodeXform,mv.polygons,previous.get(),&bakedFrom);}
    const auto& vs=plan->volumes[mv.volume];
    const bool emits=(vs.mapped&((1u<<volume::MapEmissionColor)|(1u<<volume::MapEmissionIntensity)))!=0||!(vs.emission.x==0&&vs.emission.y==0&&vs.emission.z==0);
    if(emits&&(vs.visibility&0x3fcu))meshEmissionRegion(*plan,*plan->meshes[mv.mesh].data,mv.volume,vs.visibility,true);}}

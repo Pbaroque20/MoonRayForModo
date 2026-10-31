@@ -15,6 +15,17 @@
   a weight map in the Shader Tree can drive a material's colour, reflections, roughness and more. Not yet in MoonLightIPR.
 - **Gradient and Curvature layers no longer stop halfway**: MoonRay kept only the first half of a gradient, holding its
   last colour from there on.
+- **A scene XPU2 hands to MoonRay XPU keeps its geometry.** Its meshes could come out empty, leaving a white picture or
+  none of the scene's objects.
+- **Texture overflow mode:** where a scene runs out of memory as it loads, on the computer or the graphics card, XPU2 makes
+  its textures smaller until it fits, and a notice in the preview says how far.
+- **XPU2 takes Gaussian, Triangle and Blackman-Harris pixel filters**, and Material Samples of any count. Subsurface
+  Samples above 4 render too, at 4 x 4 a hit: raise Pixel Samples for less noise.
+- **Realtime on a heavy scene:** after a mesh's detail is cut anew the picture comes back in under a second, not several.
+  A scene with much displacement or subdivision shows a first picture in seconds, and follows the camera while its full
+  geometry is made.
+- **Subdivided meshes no longer stretch textures in MoonLightIPR**: texture coordinates follow the smoothed surface.
+- **Compile XPU2 Shaders once more** after installing: XPU2's programs have changed.
 
 ## MoonRay XPU2
 
