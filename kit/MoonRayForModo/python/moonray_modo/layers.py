@@ -164,6 +164,9 @@ def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, mat
                     node['solid_map'] = procedurals.regional(layer,channel,color)
                     node['procedural'] = None
                     warnings.append('RegionalHSV '+layer.name+': each colour beneath it given its own at random; Modo equivalence is unverified.')
+                elif layer.type == 'vmapTexture':
+                    node['kind'] = 'gradient'
+                    node['gradient'] = procedurals.vertex_map(layer,channel,color,is_color)
                 elif layer.type == 'val.RTCurvature':
                     node['kind'] = 'gradient'
                     node['gradient'] = procedurals.curvature(layer,channel,is_color)
