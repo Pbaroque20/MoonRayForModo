@@ -5,12 +5,15 @@ package_lpk.py <version> [--with-content]
 
 Reads dist/release-<version>/MoonRayForModo-<version>-kit.zip and -windows-runtime.zip (made by
 tools/package_development_release.py) and writes dist/release-<version>/MoonRayForModo-<version>.lpk. An .lpk is a ZIP
-whose index.xml names the kit and lists each file with where it goes inside the kit's folder. --with-content adds the
+whose index.xml names the kit and lists each file with where it goes, relative to the Kits folder: so each target starts
+with the kit's folder (without it Modo unpacks into Kits itself, as other kits' packages show). --with-content adds the
 example scenes of the content ZIP to the asset library as well (about 300 MB more).
 
-It replaces an older install: Modo only adds and overwrites, so the package also lists its own files (installed.txt,
-in the kit's folder), and the kit, the first time it starts after, moves aside what an older version left that the
-list does not name (stale_files.py). On install Modo shows the package's message: thanks, and to restart.
+It replaces an older install: Modo only adds and overwrites, so the package names what earlier releases installed and
+this one does not (superseded.txt, from dist/release-*'s kit and runtime ZIPs), and the kit, the first time it starts
+after, moves those files aside (stale_files.py). Nothing else in the kit's folder is touched. The cleanup itself is taken
+from this checkout, so a package made for a release already out has the current one. On install Modo shows the package's
+message of thanks, and asks to restart itself (restart="YES").
 """
 import argparse
 import hashlib
@@ -35,6 +38,8 @@ if missing:
 PREFIX = 'MoonRayForModo/'
 target = folder / ('MoonRayForModo-%s.lpk' % args.version)
 staged = target.with_suffix('.lpk.tmp')
+CLEANUP = 'python/moonray_modo/stale_files.py'
+cleanup = (root / 'kit/MoonRayForModo' / CLEANUP).read_bytes()
 listed = []
 seen = set()
 with zipfile.ZipFile(staged, 'w', zipfile.ZIP_DEFLATED, compresslevel=6, allowZip64=True) as package:
@@ -49,18 +54,30 @@ with zipfile.ZipFile(staged, 'w', zipfile.ZIP_DEFLATED, compresslevel=6, allowZi
                 seen.add(inside)
                 # Stored under its own path in the package, and installed to the same place inside the kit.
                 with archive.open(info) as data:
-                    package.writestr(zipfile.ZipInfo(inside, info.date_time), data.read(), zipfile.ZIP_DEFLATED)
+                    package.writestr(zipfile.ZipInfo(inside, info.date_time), cleanup if inside == CLEANUP else data.read(), zipfile.ZIP_DEFLATED)
                 listed.append(inside)
     if 'index.cfg' not in seen:
         raise SystemExit('The kit ZIP has no index.cfg')
     # The list of what this version installs, which the kit reads to move aside what an older one left (stale_files.py).
     package.writestr('installed.txt', '%s\n%s\n' % (args.version, '\n'.join(sorted(listed + ['installed.txt']))))
     listed.append('installed.txt')
+    # What earlier releases installed and this one does not: all that the kit moves aside.
+    earlier = set()
+    for release in sorted((root / 'dist').glob('release-*')):
+        if release == folder or not release.is_dir():
+            continue
+        for held in list(release.glob('MoonRayForModo-*-kit.zip')) + list(release.glob('MoonRayForModo-*-windows-runtime.zip')):
+            with zipfile.ZipFile(held) as archive:
+                earlier.update(n[len(PREFIX):] for n in archive.namelist() if n.startswith(PREFIX) and not n.endswith('/'))
+    KEPT = {'runtime.json', 'layout.cfg', 'development-install.json', 'moonray_keys.cfg'}
+    superseded = sorted(n for n in earlier - set(listed) if n.rsplit('/', 1)[-1] not in KEPT)
+    package.writestr('superseded.txt', ''.join(n + '\n' for n in superseded))
+    listed.append('superseded.txt')
     lines = ['<?xml version="1.0" encoding="UTF-8"?>', '<package version="1000">',
-             '  <kit name="MoonRayForModo" version=%s>' % quoteattr(args.version)]
-    lines += ['    <source target=%s>%s</source>' % (quoteattr(path), escape(path)) for path in listed]
+             '  <kit name="MoonRayForModo" version=%s restart="YES">' % quoteattr(args.version)]
+    lines += ['    <source target=%s>%s</source>' % (quoteattr(PREFIX + path), escape(path)) for path in listed]
     lines += ['  </kit>',
-              '  <message>Thank you for installing MoonRay for Modo %s. Use your silicon! Restart Modo to load it.</message>'
+              '  <message>Thank you for installing MoonRay for Modo %s. Use your silicon!</message>'
               % escape(args.version),
               '</package>', '']
     package.writestr('index.xml', '\n'.join(lines))
