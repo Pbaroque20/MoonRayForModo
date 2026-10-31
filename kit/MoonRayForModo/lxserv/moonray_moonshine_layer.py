@@ -68,6 +68,10 @@ def register():
             material=scene.addItem(self.dyna_String(1))
             if parent is not None:material.setParent(parent,place if place is not None else 0)
             scene.removeItems(made)
+            # It starts on Modo's diffuse, as an assigned material does (material_diffuse).
+            from moonray_modo.material_diffuse import colour_key,diffuse,with_colour
+            settings=properties.read(material);key=colour_key(settings.get('native_shader') or '')
+            if key:properties.write(material,with_colour(settings,key,diffuse(material)))
             scene.select(material)
     lx.bless(FromEntry,'moonray.material.fromEntry')
 

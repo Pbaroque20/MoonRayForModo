@@ -2,6 +2,16 @@
 
 0.5 is a **pre-production release**: the plugin is no longer experimental, and it brings a new GPU renderer, MoonRay XPU2.
 
+## Coming in 0.5.1
+
+- **Automatic Presence Shadows** (Preferences > MoonRay > Renderer, off unless chosen): a label or other surface cut out
+  by a Stencil layer or a map in its presence no longer shades what lies under its cut-out parts. Off where nothing is cut
+  out, which is quicker. While it is on, Presence Shadows in Render Settings and on lights are greyed.
+- **Samples for the material widget**: 32, 64, 128 or 256 in the graph editor, for a cleaner picture of the material.
+- **Graph editor presets**: the Presets menu saves the selected nodes or a whole network, to load into any material.
+- **A MoonRay material's colour and Modo's diffuse follow each other**, under Traditional and Principled, so the viewport
+  shows the material's colour. A new material starts on its diffuse.
+
 ## MoonRay XPU2
 
 **XPU2** is a new way of rendering MoonRay previews: the processor and the graphics card work on the same picture at

@@ -100,6 +100,11 @@ def assign(shader=None, kind='advancedMaterial', name=None, color=None, smoothin
         from . import shader_library
         key=colour_attribute(shader)
         if key:held['native_parameters']=shader_library.validate(shader,{key:[float(v) for v in color]})
+    else:
+        # It starts on Modo's diffuse (material_diffuse).
+        from .material_diffuse import colour_key,diffuse
+        key=colour_key(shader)
+        if key:held['native_parameters']={key:diffuse(material)}
     if smoothing is not None:
         held.update(smoothing=bool(smoothing),smoothing_angle=max(0.0,min(180.0,float(angle))))
     properties.write(material,held)

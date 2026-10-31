@@ -319,3 +319,64 @@ class AddOverrideAbove(OpenNodes):
         scene.select(item)
 
 lx.bless(AddOverrideAbove,'moonray.material.addOverrideAbove')
+
+
+# A diffuse edited in Modo goes to the MoonRay material's main colour, once the edit has stopped: a scene may not be
+# changed from inside a listener, and a colour picker's drag sends many values.
+_DIFFUSE_EDITED=set()
+
+
+class DiffuseToColour(lxu.command.BasicCommand):
+    def cmd_Flags(self):return lx.symbol.fCMD_MODEL|lx.symbol.fCMD_UNDO
+    def basic_Enable(self,msg):return True
+    def basic_Execute(self,msg,flags):
+        import modo
+        from moonray_modo.material_diffuse import from_diffuse
+        held=list(_DIFFUSE_EDITED);_DIFFUSE_EDITED.clear()
+        for identity in held:
+            try:from_diffuse(modo.Scene().item(identity))
+            except LookupError:pass
+
+lx.bless(DiffuseToColour,'moonray.material.diffuseToColour')
+
+
+def _diffuse_settled():
+    try:
+        from PySide2 import QtCore,QtWidgets
+        import modo
+        from moonray_modo.material_diffuse import differs
+        if QtWidgets.QApplication.mouseButtons()!=QtCore.Qt.NoButton:
+            _diffuse_settled.timer.start();return
+        # Only a real difference makes a step: an undo leaves the two the same, and must keep what can be redone.
+        scene=modo.Scene();found=False
+        for identity in _DIFFUSE_EDITED:
+            try:found=differs(scene.item(identity)) or found
+            except LookupError:pass
+        if found:lx.eval('moonray.material.diffuseToColour')
+        else:_DIFFUSE_EDITED.clear()
+    except Exception as exc:
+        _DIFFUSE_EDITED.clear()
+        lx.out('A MoonRay material did not follow its diffuse: %s'%exc)
+
+
+class _DiffuseWatcher(lxifc.SceneItemListener):
+    def sil_ChannelValue(self,action,item,index):
+        try:
+            made=lx.object.Item(item)
+            if not made.TestType(_DiffuseWatcher.material_type):return
+            if not made.ChannelName(index).startswith('diffCol'):return
+            _DIFFUSE_EDITED.add(made.Ident())
+            if getattr(_diffuse_settled,'timer',None) is None:
+                from PySide2 import QtCore
+                _diffuse_settled.timer=QtCore.QTimer();_diffuse_settled.timer.setSingleShot(True);_diffuse_settled.timer.setInterval(200)
+                _diffuse_settled.timer.timeout.connect(_diffuse_settled)
+            _diffuse_settled.timer.start()
+        except Exception:pass
+
+
+try:
+    _DiffuseWatcher.material_type=lx.service.Scene().ItemTypeLookup('advancedMaterial')
+    _diffuse_watcher=_DiffuseWatcher()
+    lx.service.Listener().AddListener(_diffuse_watcher)
+except Exception as exc:
+    lx.out('MoonRay materials will not follow their diffuse: %s'%exc)

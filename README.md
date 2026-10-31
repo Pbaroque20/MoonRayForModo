@@ -6,6 +6,16 @@ This is the development branch of [MoonRay for Modo](https://github.com/Pbaroque
 
 The current release is [0.5](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.5). **Built on MoonRay [2026.29.1](https://github.com/dreamworksanimation/openmoonray/releases/tag/v2026.29.1)** (OpenMoonRay's latest release; MoonRay 18.4), with the plugin's own patches for Windows and the preview.
 
+## Coming in 0.5.1
+
+- **Automatic Presence Shadows** (Preferences > MoonRay > Renderer, off unless chosen): a label or other surface cut out
+  by a Stencil layer or a map in its presence no longer shades what lies under its cut-out parts. Off where nothing is cut
+  out, which is quicker. While it is on, Presence Shadows in Render Settings and on lights are greyed.
+- **Samples for the material widget**: 32, 64, 128 or 256 in the graph editor, for a cleaner picture of the material.
+- **Graph editor presets**: the Presets menu saves the selected nodes or a whole network, to load into any material.
+- **A MoonRay material's colour and Modo's diffuse follow each other**, under Traditional and Principled, so the viewport
+  shows the material's colour. A new material starts on its diffuse.
+
 ## New in 0.5
 
 0.5 is a **pre-production release**: the plugin is no longer experimental. In short: [What's new in 0.5](docs/WHATS_NEW_05.md).
