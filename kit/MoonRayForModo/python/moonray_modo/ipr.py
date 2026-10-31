@@ -4,13 +4,15 @@ from . import options
 # The material widget's Samples choice: the most samples a pixel, and the noise it stops at (lower is cleaner, and slower),
 # for a picture from Refresh and, held lighter to keep up with values being dragged, under Live. A pixel stops at its
 # noise whatever it may still take, so each step asks for less noise as well as more samples.
-WIDGET_SAMPLES=(('standard','64 samples',(64,5.0),(4,50.0)),
+WIDGET_SAMPLES=(('low','32 samples',(32,8.0),(2,80.0)),
+                ('standard','64 samples',(64,5.0),(4,50.0)),
+                ('medium','128 samples',(128,3.0),(8,30.0)),
                 ('high','256 samples',(256,2.0),(16,20.0)))
 
 
 def widget_samples(choice,live=False):
     """(most samples a pixel, noise) for the widget's choice; Standard for one no longer known."""
-    row=next((r for r in WIDGET_SAMPLES if r[0]==choice),WIDGET_SAMPLES[0])
+    row=next((r for r in WIDGET_SAMPLES if r[0]==choice),WIDGET_SAMPLES[1])
     return row[3] if live else row[2]
 
 
@@ -18,7 +20,7 @@ def prepare(scene, width, height, sample_grid, width_cap=160, sample_cap=1, erro
     """MoonRay LS's scene: adaptive, from 2 samples a pixel up to its cap, stopping where a pixel is clean enough; or,
     with sampling 'uniform', the same samples in every pixel, MoonRay's square grid of no more than the cap
     (kept as '_uniform_grid', for the render to be given)."""
-    if width_cap not in (80,160,240,320,640,960,1280) or sample_cap not in (1,4,16,32,64,128,256):
+    if width_cap not in (80,160,240,320,640,960,1280) or sample_cap not in (1,2,4,8,16,32,64,128,256):
         raise ValueError('Invalid IPR quality preset')
     if sampling not in ('adaptive','uniform'):
         raise ValueError('MoonRay LS sampling is adaptive or uniform')

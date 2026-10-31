@@ -125,6 +125,12 @@ def mark_shader(item, values):
 def write(item, values):
     item.setTag(TAG, json.dumps(values, sort_keys=True, separators=(',', ':')))
     mark_shader(item, values)
+    # Modo's diffuse follows a MoonRay material's main colour (material_diffuse).
+    try:
+        from .material_diffuse import to_diffuse
+        to_diffuse(item, values)
+    except Exception:
+        pass
     from .property_notifications import notify
     notify()
 

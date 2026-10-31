@@ -104,7 +104,8 @@ class Panel(QtWidgets.QWidget):
         self.clay_mode.setToolTip('Preview only: show the material graph, terracotta clay or gray clay.')
         self.samples=QtWidgets.QComboBox()
         for key,label,*_ in WIDGET_SAMPLES:self.samples.addItem(label,key)
-        self.samples.setCurrentIndex(max(0,self.samples.findData(QtCore.QSettings('MoonRayForModo','GraphEditor').value('widget_samples','standard'))))
+        stored=self.samples.findData(QtCore.QSettings('MoonRayForModo','GraphEditor').value('widget_samples','standard'))
+        self.samples.setCurrentIndex(stored if stored>=0 else self.samples.findData('standard'))
         self.samples.setToolTip('Preview only: the most samples a pixel of the widget takes, and how clean it renders. More is cleaner and slower; clean parts still stop early. Live takes far fewer, to keep up.')
         choices=QtWidgets.QHBoxLayout();choices.addWidget(self.clay_mode,1);choices.addWidget(self.samples);layout.addLayout(choices)
 

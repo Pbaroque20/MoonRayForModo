@@ -10,7 +10,7 @@ import json
 import os
 import uuid
 from PySide2 import QtCore,QtGui,QtWidgets
-from . import nodes,materialx,properties,shader_library,node_defaults
+from . import nodes,materialx,properties,shader_library,node_defaults,node_presets
 from .ramps import parts as ramps_parts
 from .node_widgets import (GraphView,ParameterDelegate,NumericField,ChoiceField,IntegerField,VectorField,TextField,NameField,RampField,MatrixField,ramp_groups,QuickAdd,key_of,describe,hint,COLORS,HEADERS,NODE_BODY,NODE_EDGE,ACCENT,
                            TEXT,TEXT_PORT,TEXT_DIM,GRID,MENU_STYLE,curve,file_parameter,tint_value)
@@ -286,6 +286,8 @@ class Editor(QtWidgets.QDialog):
                     (None,None),('Set as Material Output',self.output),('Set / Clear Displacement Output',self.displacement_output),
                     (None,None),('Connect Input...',self.connect_selected),('Disconnect Input...',self.disconnect),
                     ('Browse Image...',self.browse_image),('Reset Selected Input',self.reset_input)])
+        menu_button('Presets',[('Save Selected Nodes...',lambda:self.save_preset(False)),('Save Whole Network...',lambda:self.save_preset(True)),
+                    (None,None),('Load Preset...',self.load_preset),('Delete Preset...',self.delete_preset)])
         view_menu=menu_button('View',[('Frame Selected\tF',self.frame),('Frame All\tA',lambda:self.frame(everything=True)),('Arrange Nodes',self.arrange_nodes),(None,None)])
         self.snap=checkable(view_menu,'Snap to Grid',True)
         self.auto_connect=checkable(view_menu,'Connect New Nodes to the Selected Input',True)
@@ -713,6 +715,60 @@ class Editor(QtWidgets.QDialog):
         except ValueError as exc:self.graph=before;self.error(exc);return
         self.remember(before);self.rebuild();self.canvas.clearSelection()
         for identity in made:self.items[identity].setSelected(True)
+    def save_preset(self,whole):
+        """Keep the selected nodes, or all of the graph, as a preset of its own for any scene."""
+        self.commit_inputs();chosen=None if whole else self.selected_nodes()
+        if not whole and not chosen:self.error('Select the nodes to save first.');return
+        name,ok=QtWidgets.QInputDialog.getText(self,'Save Preset','Name')
+        name=name.strip()
+        if not ok or not name:return
+        try:
+            if node_presets.file_for(name).exists() and QtWidgets.QMessageBox.question(self,'Save Preset','Replace the preset '+name+'?')!=QtWidgets.QMessageBox.Yes:return
+            node_presets.save(name,node_presets.capture(self.graph,chosen))
+        except (OSError,ValueError) as exc:self.error(exc);return
+        self.info.setText('Saved preset '+name)
+    def chosen_preset(self,title):
+        """Ask which preset; (name, path), or None."""
+        rows=node_presets.listed()
+        if not rows:self.info.setText('No presets saved yet. Presets > Save Selected Nodes or Save Whole Network.');return None
+        labels=['%s (%s)'%(name,node_presets.LABELS[kind]) for name,kind,_ in rows]
+        label,ok=QtWidgets.QInputDialog.getItem(self,title,'Preset',labels,0,False)
+        return rows[labels.index(label)][::2] if ok else None
+    def load_preset(self):
+        """Add a preset's nodes where the view is, or with a whole network, put it in the graph's place. One undoable step."""
+        chosen=self.chosen_preset('Load Preset')
+        if chosen is None:return
+        self.commit_inputs();name,path=chosen
+        try:preset=node_presets.read(path)
+        except (OSError,ValueError) as exc:self.error(exc);return
+        replace=False
+        if preset['kind']==node_presets.NETWORK:
+            dialog=QtWidgets.QMessageBox(QtWidgets.QMessageBox.Question,'Load Preset',name+' is a whole network.',parent=self)
+            replacing=dialog.addButton('Replace This Graph',QtWidgets.QMessageBox.AcceptRole)
+            adding=dialog.addButton('Add Its Nodes',QtWidgets.QMessageBox.AcceptRole)
+            dialog.addButton(QtWidgets.QMessageBox.Cancel);dialog.exec_()
+            if dialog.clickedButton() not in (replacing,adding):return
+            replace=dialog.clickedButton()==replacing
+        before=copy.deepcopy(self.graph);made=[]
+        try:
+            if replace:self.graph=node_presets.network_of(preset)
+            else:
+                centre=self.view.mapToScene(self.view.viewport().rect().center())
+                made=node_presets.added_to(self.graph,preset,(centre.x(),centre.y()))
+            self.validate_draft()
+        except (ValueError,KeyError,TypeError) as exc:self.graph=before;self.error('This preset cannot be loaded: '+str(exc));return
+        self.remember(before);self.rebuild();self.canvas.clearSelection()
+        for identity in made:self.items[identity].setSelected(True)
+        if replace:self.frame(everything=True)
+        self.info.setText('Loaded preset '+name)
+    def delete_preset(self):
+        chosen=self.chosen_preset('Delete Preset')
+        if chosen is None:return
+        name,path=chosen
+        if QtWidgets.QMessageBox.question(self,'Delete Preset','Delete the preset '+name+'? This cannot be undone.')!=QtWidgets.QMessageBox.Yes:return
+        try:path.unlink()
+        except OSError as exc:self.error(exc);return
+        self.info.setText('Deleted preset '+name)
     def focus_socket(self,identity,key):
         self.canvas.clearSelection();self.items[identity].setSelected(True)
         if key is not None:self.selected_input=(identity,key);self.info.setText('Selected input: '+key+'. Drag a wire here or add a compatible node with Auto-connect enabled.')

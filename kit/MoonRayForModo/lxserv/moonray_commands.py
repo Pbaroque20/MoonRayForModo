@@ -635,7 +635,7 @@ class AssignLibraryMaterial(lxu.command.BasicCommand):
         from moonray_modo import properties,materials,shader_library
         values=properties.decode(self.dyna_String(0));shader=values['shader'];parameters=shader_library.validate(shader,values.get('parameters',{}))
         material=materials.assign(shader)
-        settings=properties.read(material);settings['native_parameters']=parameters;properties.write(material,settings)
+        settings=properties.read(material);settings['native_parameters']=dict(settings.get('native_parameters') or {},**parameters);properties.write(material,settings)
 
 lx.bless(AssetLibrary,'moonray.library')
 lx.bless(AssignLibraryMaterial,'moonray.library.assign')
