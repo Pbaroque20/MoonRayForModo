@@ -63,6 +63,12 @@ def register():
                                     'bucket_size','batch_tile_order','important_first','volume_indirect_samples','disable_optimized_hair_sampling'):
                     from moonray_modo import xpu2_sampling
                     if xpu2_sampling.active():return False
+                # Automatic Presence Shadows (Preferences) decides this one, by whether a material is cut out by a map.
+                if entry['key']=='enable_presence_shadows':
+                    try:
+                        from moonray_modo.presence_shadows import automatic
+                        return not automatic()
+                    except Exception:return True
                 # Pixel Samples is uniform sampling's: under adaptive sampling MoonRay does not use it, so it is greyed.
                 if entry['key']=='samples':
                     try:return scene_settings.complete(properties.scene_settings())['render'].get('sampling_mode')!=ADAPTIVE

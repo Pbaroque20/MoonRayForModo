@@ -25,6 +25,8 @@ KEYS = {
     'toon_albedo': (True, bool),
     # Open Image Denoise cleans the albedo and normal guides first and trusts them (native.denoise_clean_guides).
     'denoise_clean_guides': (True, bool),
+    # Presence shadows on where a material is cut out by a map, and off where none is (presence_shadows).
+    'presence_shadows_auto': (False, bool),
     # Moving lights blur: MoonRay's mb switch set on a light that moves during the shutter (native.light_motion).
     'light_motion': (True, bool),
     # Fog in Cryptomatte, with mattes of its own (native.crypto_volumes).

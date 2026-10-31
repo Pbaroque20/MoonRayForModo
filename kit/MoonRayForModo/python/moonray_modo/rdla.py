@@ -840,7 +840,8 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
         # A MoonRay without the filter's plugin would not render at all: the filter is left out, and said.
         scene.setdefault('warnings',[]).append('This runtime has no plugin for the display filter%s %s; its MoonRay is older. Left out.'
                                                % ('s' if len(missing)>1 else '',', '.join(missing)))
-    for key, value in options.render_values(scene.get('render_settings', {})).items():
+    from .presence_shadows import render_values as presence_render_values
+    for key, value in presence_render_values(scene).items():
         if key=='pixel_filter' and value in options.NEWER_PIXEL_FILTERS and not scene.get('_pixel_filters'):
             # A MoonRay without that filter would quietly use a box filter: its own default is used, and said.
             scene.setdefault('warnings',[]).append('This runtime has no %s pixel filter; its MoonRay is older. Cubic B-spline is used.'

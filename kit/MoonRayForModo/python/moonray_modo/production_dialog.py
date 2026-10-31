@@ -110,6 +110,8 @@ class Controls(QtWidgets.QDialog):
                     'Surfaces further from the light than this receive no shadow from it, in scene units. 0 leaves shadows at every distance.')
                 field('presence_shadows','Shadows respect presence','choice',2,choices=[('Scene setting',2),('On',1),('Off',0)]).setToolTip(
                     'On: dissolved and cut-out surfaces cast shadows only as much as they are there. Off: they cast solid shadows from this light, which is quicker. Scene setting: as Render Settings say.')
+                from .presence_shadows import automatic as presence_automatic
+                self.fields[category]['presence_shadows'][0].setEnabled(not presence_automatic())
             pick.currentIndexChanged.connect(lambda _index,c=category:self._select(c))
             self._select(category)
         buttons=QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Save|QtWidgets.QDialogButtonBox.Cancel);buttons.accepted.connect(self._accept);buttons.rejected.connect(self.reject);layout.addWidget(buttons)

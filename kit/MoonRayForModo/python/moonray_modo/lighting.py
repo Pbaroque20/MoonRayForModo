@@ -48,7 +48,8 @@ def emit(scene,meshes,environment,lines):
         # they respect presence. MoonRay's own where left alone.
         for key in ('min_shadow_distance','max_shadow_distance'):
             if float(settings.get(key) or 0)>0:attrs[key]=number(float(settings[key]))
-        if int(settings.get('presence_shadows',2)) in (0,1):attrs['presence_shadows']=str(int(settings['presence_shadows']))
+        from .presence_shadows import automatic as presence_automatic
+        if int(settings.get('presence_shadows',2)) in (0,1) and not presence_automatic():attrs['presence_shadows']=str(int(settings['presence_shadows']))
         # A sun that shows in the sky as a disc.
         if light.get('camera_visible'):attrs['visible_in_camera']='1'
         # A sun whose disc is drawn apart leaves mirrors to that disc, so that they show it once.

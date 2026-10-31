@@ -894,7 +894,8 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     motion = bool(scene.get('motion_steps'))
     if motion and camera.get('focal_mm_close', camera['focal_mm']) <= 0:
         raise ValueError('Camera focal length must be positive at both shutter endpoints')
-    settings = options.render_values(scene.get('render_settings', {}))
+    from .presence_shadows import render_values as presence_render_values
+    settings = presence_render_values(scene)
     depths = [min(8, settings[key]) for key in ('max_depth', 'max_diffuse_depth', 'max_glossy_depth', 'max_volume_depth')]
     # Material colours are worked out in Rec.709; the session takes them to the working space.
     working = working_enabled()

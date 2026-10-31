@@ -7,6 +7,7 @@ import math
 from pathlib import Path
 from PySide2 import QtCore, QtGui, QtWidgets
 from . import coordinates, native, nodes, options, shader_library
+from .ipr import WIDGET_SAMPLES,widget_samples
 from .rdla import IDENTITY
 from .preview_diagnostics import record
 from .render import Renderer
@@ -101,7 +102,11 @@ class Panel(QtWidgets.QWidget):
         self.clay_mode=QtWidgets.QComboBox()
         for label,key in CHOICES:self.clay_mode.addItem(label,key)
         self.clay_mode.setToolTip('Preview only: show the material graph, terracotta clay or gray clay.')
-        layout.addWidget(self.clay_mode)
+        self.samples=QtWidgets.QComboBox()
+        for key,label,*_ in WIDGET_SAMPLES:self.samples.addItem(label,key)
+        self.samples.setCurrentIndex(max(0,self.samples.findData(QtCore.QSettings('MoonRayForModo','GraphEditor').value('widget_samples','standard'))))
+        self.samples.setToolTip('Preview only: the most samples a pixel of the widget takes, and how clean it renders. More is cleaner and slower; clean parts still stop early. Live takes far fewer, to keep up.')
+        choices=QtWidgets.QHBoxLayout();choices.addWidget(self.clay_mode,1);choices.addWidget(self.samples);layout.addLayout(choices)
 
         self.viewer=WidgetPreview(self);layout.addWidget(self.viewer,1)
         self.status=QtWidgets.QLabel('Live preview is off. Enable it or click Refresh.');self.status.setWordWrap(True);layout.addWidget(self.status)
@@ -118,6 +123,7 @@ class Panel(QtWidgets.QWidget):
         self.live.toggled.connect(self.live_changed)
         self.parts.toggled.connect(lambda *_:self.schedule())
         self.clay_mode.currentIndexChanged.connect(self.refresh,QtCore.Qt.QueuedConnection)
+        self.samples.currentIndexChanged.connect(self.samples_changed,QtCore.Qt.QueuedConnection)
         self.button.clicked.connect(self.pressed)
         self.viewer.start_requested.connect(self.refresh,QtCore.Qt.QueuedConnection)
     def showEvent(self,event):
@@ -155,6 +161,9 @@ class Panel(QtWidgets.QWidget):
         if enabled:self.schedule()
         else:
             self.timer.stop();self.renderer.stop();self.status.setText('Live preview off. Last image retained.')
+    def samples_changed(self,*_):
+        QtCore.QSettings('MoonRayForModo','GraphEditor').setValue('widget_samples',self.samples.currentData())
+        self.refresh()
     def schedule(self):
         if not self.closed and self.live.isChecked():self.timer.start()
     def graph_changed(self,graph):
@@ -187,13 +196,14 @@ class Panel(QtWidgets.QWidget):
             scene=self.capture_snapshot()
             record("Capture draft complete")
             self.timer.stop()  # Draft commit can itself notify graph_changed.
-            # MoonRay LS, as the render window's quick look, but with more samples to a pixel than its own default (32)
-            # and an adaptive error that stops once the picture is clean, to load fast. Live, while values are
-            # being dragged, it is held lighter to keep up.
+            # MoonRay LS, as the render window's quick look, with the samples chosen under the picture and an adaptive
+            # error that stops once the picture is clean, to load fast. Live, while values are being dragged, it is held
+            # lighter to keep up.
             live=self.live.isChecked()
-            size,samples,error=(256,4,50.0) if live else (384,64,5.0)
+            size=256 if live else 384
+            samples,error=widget_samples(self.samples.currentData(),live)
             # The fewest as MoonRay LS takes them (2): the scene's own fewest (16 by default) is more than Live's most.
-            scene['render_settings'].update(sampling_mode=2,min_adaptive_samples=2,max_adaptive_samples=samples)
+            scene['render_settings'].update(sampling_mode=2,min_adaptive_samples=2,max_adaptive_samples=samples,target_adaptive_error=error)
             scene=dict(scene,width=size,height=size)
             from .ipr import prepare
             scene,width,height=prepare(scene,size,size,1,640,samples,error)

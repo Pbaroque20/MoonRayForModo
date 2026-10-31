@@ -4,7 +4,7 @@ import sys
 import unittest
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'kit/MoonRayForModo/python'))
-from moonray_modo.ipr import prepare
+from moonray_modo.ipr import WIDGET_SAMPLES,prepare,widget_samples
 
 class IprTests(unittest.TestCase):
     def test_preview_copy_preserves_final_settings(self):
@@ -19,6 +19,19 @@ class IprTests(unittest.TestCase):
         self.assertEqual(preview['render_settings']['target_adaptive_error'],100)
         self.assertIsNot(preview['render_settings'],scene['render_settings'])
         self.assertEqual(preview['denoising'],scene['denoising'])
+
+    def test_widget_samples_reach_the_scene_and_standard_is_as_it_was(self):
+        self.assertEqual(widget_samples('standard'),(64,5.0))
+        self.assertEqual(widget_samples('standard',True),(4,50.0))
+        self.assertEqual(widget_samples('gone'),(64,5.0))
+        for key,_,*_ in WIDGET_SAMPLES:
+            for live in (False,True):
+                samples,error=widget_samples(key,live)
+                # As the widget asks: its own cap and noise put in first, or the scene's would hold them back.
+                settings={'sampling_mode':2,'min_adaptive_samples':2,'max_adaptive_samples':samples,'target_adaptive_error':error}
+                preview,_w,_h=prepare({'width':384,'height':384,'render_settings':settings},384,384,1,640,samples,error)
+                self.assertEqual(preview['render_settings']['max_adaptive_samples'],samples)
+                self.assertEqual(preview['render_settings']['target_adaptive_error'],error)
 
     def test_uniform_gives_every_pixel_the_square_grid_within_the_cap(self):
         scene={'width':640,'height':360,'render_settings':{'sampling_mode':2,'min_adaptive_samples':16,'max_adaptive_samples':1024}}
