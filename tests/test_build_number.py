@@ -17,9 +17,9 @@ class BuildNumber(unittest.TestCase):
     def test_reads_the_stamp(self):
         with tempfile.TemporaryDirectory() as folder:
             path = pathlib.Path(folder) / 'BUILD.txt'
-            path.write_text('1195+\n', encoding='ascii')
+            path.write_text('1195\n', encoding='ascii')
             with mock.patch.object(moonray_modo, '_BUILD_FILE', path):
-                self.assertEqual(moonray_modo.build_number(), '1195+')
+                self.assertEqual(moonray_modo.build_number(), '1195')
 
     def test_unstamped_kit(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -27,7 +27,7 @@ class BuildNumber(unittest.TestCase):
                 self.assertEqual(moonray_modo.build_number(), 'unknown')
 
     def test_stamp_is_commits_so_far(self):
-        self.assertRegex(build_number.number(), r'^\d+\+?$')
+        self.assertRegex(build_number.number(), r'^\d+$')
 
     def test_about_says_it_after_the_version(self):
         text = (ROOT / 'kit/MoonRayForModo/python/moonray_modo/about.py').read_text(encoding='utf-8')

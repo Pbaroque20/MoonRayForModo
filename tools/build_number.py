@@ -1,4 +1,4 @@
-"""The kit's build number: this branch's commits so far, "+" where the kit has changes not yet committed.
+"""The kit's build number: this branch's commits so far.
 
 build_number.py <kit folder> writes it into that kit, for its About window. Release packages get theirs as they are made."""
 import subprocess
@@ -10,8 +10,7 @@ FILE = 'python/moonray_modo/BUILD.txt'
 
 
 def number():
-    git = lambda *args: subprocess.check_output(['git', *args], cwd=ROOT, text=True).strip()
-    return git('rev-list', '--count', 'HEAD') + ('+' if git('status', '--porcelain', '--', 'kit/MoonRayForModo') else '')
+    return subprocess.check_output(['git', 'rev-list', '--count', 'HEAD'], cwd=ROOT, text=True).strip()
 
 
 def main():
