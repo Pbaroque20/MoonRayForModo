@@ -392,6 +392,8 @@ public:
     // The most one light sample may add once the path has scattered off `depth` rough things; 0 is no limit. MoonRay's
     // sample_clamping_value and sample_clamping_depth.
     void setSampleClamp(float value, uint32_t depth = 1);
+    // How many times one path may scatter beneath a surface; after that, plain diffuse. MoonRay's max_subsurface_per_path.
+    void setMaxSubsurface(uint32_t perPath);
     // How each further bounce of light in fog counts for less, as MoonRay's volume_attenuation_factor,
     // volume_contribution_factor and volume_phase_attenuation_factor: raised to the bounce's number.
     void setVolumeScattering(float attenuation, float contribution, float phaseAttenuation);

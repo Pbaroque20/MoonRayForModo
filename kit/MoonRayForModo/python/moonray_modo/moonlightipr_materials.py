@@ -415,7 +415,7 @@ def native_surface(shader, parameters, note):
         'clearcoat': coat, 'clearcoat_roughness': coat_roughness,
         'emission': emission, 'raw_emission': emission, 'emission_amount': 1.0, 'presence': float(get('presence', 1.0)),
         'anisotropy': float(get('anisotropy', 0.0)), 'thin_geometry': bool(get('thin_geometry', False)),
-        'subsurface_amount': 1.0 if radius > 0 else 0.0, 'subsurface_distance': radius, 'subsurface_color': get('scattering_color', white),
+        'subsurface_amount': 1.0 if radius > 0 else 0.0, 'subsurface_distance': radius, 'subsurface_model': int(get('bssrdf', 0)), 'subsurface_color': get('scattering_color', white),
         'diffuse_roughness': float(get('diffuse_roughness', 0.0)),
         'dispersion_abbe': float(get('dispersion_abbe_number', 34.0)) if get('use_dispersion', False) else 0.0,
         # 0 is Beckmann, 1 GGX; only DwaBaseMaterial offers the choice.

@@ -39,7 +39,7 @@ class LightSeen(unittest.TestCase):
         scene = {'camera': {'matrix': [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 5, 1], 'focal_mm': 50.0, 'film_mm': 36.0},
                  'materials': {'': {'color': [.5, .5, .5]}}, 'meshes': [], 'lights': [rect(camera_visible=True)], 'environments': []}
         payload, _, _ = moonlightipr_scene.pack(scene, 64, 36, 0.0)
-        self.assertEqual(payload[:4], b'MLSN')
+        self.assertEqual(payload[:4], b'MLSO')
 
     def test_a_moonray_light_forced_on_is_seen(self):
         for forced, expected in ((1, True), (0, False), (2, False)):

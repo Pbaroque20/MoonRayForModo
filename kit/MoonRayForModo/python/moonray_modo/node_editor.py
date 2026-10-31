@@ -429,11 +429,12 @@ class Editor(QtWidgets.QDialog):
         self.commit_inputs()
         node=nodes.effective(self.graph)['nodes'][identity];spec=nodes.specs(node['type'])[key]
         current=node.get('parameters',{}).get(key,node_defaults.value(spec))
-        color=QtWidgets.QColorDialog.getColor(QtGui.QColor.fromRgbF(*[max(0,min(1,v)) for v in current[:3]]),self,'Choose '+key)
+        from . import parameter_state
+        color=QtWidgets.QColorDialog.getColor(QtGui.QColor.fromRgbF(*[max(0,min(1,parameter_state.shown_colour(v))) for v in current[:3]]),self,'Choose '+key)
         if not color.isValid():return
         before=copy.deepcopy(self.graph)
         try:
-            target=self.target(identity);target.setdefault('parameters',{})[key]=[color.redF(),color.greenF(),color.blueF()]
+            target=self.target(identity);target.setdefault('parameters',{})[key]=[parameter_state.kept_colour(part) for part in (color.redF(),color.greenF(),color.blueF())]
             target.setdefault('inputs',{}).pop(key,None);self.validate_draft();self.remember(before);self.rebuild()
         except ValueError as exc:self.graph=before;self.error(exc)
     def choose_node_file(self,identity,key):
@@ -871,7 +872,7 @@ class Editor(QtWidgets.QDialog):
         for identity,node in graph['nodes'].items():
             for key,spec in nodes.specs(node['type']).items():
                 if not file_parameter(spec):continue
-                value=node.get('parameters',{}).get(key,node_defaults.value(spec))
+                value=node.get('parameters',{}).get(key,node_defaults.start(node['type'],key,spec))
                 for path in value if isinstance(value,list) else [value]:
                     if not path:continue
                     checked+=1
@@ -1065,7 +1066,7 @@ class Editor(QtWidgets.QDialog):
                 label.setForeground(QtGui.QBrush(QtGui.QColor('#000000')))
                 if title:label.setText(title)
                 inherited=key not in node.get('parameters',{})
-                value=node.get('parameters',{}).get(key,node_defaults.value(spec))
+                value=node.get('parameters',{}).get(key,node_defaults.start(node['type'],key,spec))
                 cell=QtWidgets.QTableWidgetItem('' if value is None else json.dumps(value))
                 if key in node.get('inputs',{}):cell.setBackground(QtGui.QColor('#294757'));label.setToolTip('Connected from '+node['inputs'][key]+'; editing this value replaces the connection')
                 if inherited:

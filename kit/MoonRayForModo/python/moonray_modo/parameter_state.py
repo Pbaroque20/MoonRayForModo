@@ -21,3 +21,19 @@ def equal(a,b):
 
 def color(value,spec,kind=None,key=None,connected=False):
     return EDITED_COLOR if connected or not equal(value,default(spec,kind,key)) else DEFAULT_COLOR
+
+
+def shown_colour(value):
+    """A colour part as Modo's forms show it, its swatches and numbers in sRGB; a material keeps it linear."""
+    value = float(value)
+    if value <= 0.0:
+        return value
+    return 12.92 * value if value <= 0.0031308 else 1.055 * value ** (1.0 / 2.4) - 0.055
+
+
+def kept_colour(value):
+    """A colour part as shown back to the linear value a material keeps."""
+    value = float(value)
+    if value <= 0.0:
+        return value
+    return value / 12.92 if value <= 0.04045 else ((value + 0.055) / 1.055) ** 2.4

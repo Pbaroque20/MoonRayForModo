@@ -1751,6 +1751,8 @@ extern "C" __global__ void __raygen__moonlightipr() {
     unsigned entryInstance = 0;
     // Whether the probe is the last step of a random walk, which meets the surface from inside the solid.
     bool walked = false;
+    // How many times this path has scattered beneath a surface.
+    unsigned subsurfaces = 0;
     // The kind of ray being followed, which finds only what is visible to its kind.
     unsigned seen = SEEN_CAMERA;
     // The fog the ray is in, as its entry among the volumes, and how many edges of fog the path has crossed.
@@ -2175,7 +2177,10 @@ extern "C" __global__ void __raygen__moonlightipr() {
         // Light that scatters beneath the surface is gathered where it comes out again, so at
         // this point only the mirror-like lobes are lit. The share that scatters is chosen by
         // chance, as is whether this path follows it.
-        const bool scatters = ML_HAS(FEATURE_SUBSURFACE) && !inside && hit.subsurface > 0.0f && maxComponent(hit.subsurfaceRadius) > 0.0f
+        // A random walk starts from whichever side was met, as MoonRay's does: light sent through the surface by diffuse
+        // transmission walks from the inside of the far wall.
+        const bool scatters = ML_HAS(FEATURE_SUBSURFACE) && (!inside || (hit.flags & MATERIAL_RANDOM_WALK)) && subsurfaces < params.maxSubsurface
+                              && hit.subsurface > 0.0f && maxComponent(hit.subsurfaceRadius) > 0.0f
                               && lobes.specular < 1.0f && rnd(seed) < hit.subsurface;
         const float beneath = scatters ? 1.0f - lobes.specular : 0.0f;
         if (scatters) {
@@ -2212,11 +2217,14 @@ extern "C" __global__ void __raygen__moonlightipr() {
         }
 
         if (scatters && (hit.flags & MATERIAL_RANDOM_WALK) && rnd(seed) < beneath) {
+            ++subsurfaces;
             // MoonRay's random walk: the light is followed through the solid, from where it goes in to where it
             // comes out. How far it goes between scatterings, and how much of it each scattering keeps, come
             // from the surface's colour and its scattering radius by MoonRay's own fit (VolumeSubsurface.cc,
             // after Chiang and others, Practical and Controllable Subsurface Scattering).
-            const float3 a = make_float3(fmaxf(surface.albedo.x, 0.001f), fmaxf(surface.albedo.y, 0.001f), fmaxf(surface.albedo.z, 0.001f));
+            // The colour it scatters by is what diffuse transmission leaves of the surface's (MoonRay's reflectionAlbedo).
+            const float3 scatterColour = surface.albedo * surface.frontKeep;
+            const float3 a = make_float3(fmaxf(scatterColour.x, 0.001f), fmaxf(scatterColour.y, 0.001f), fmaxf(scatterColour.z, 0.001f));
             const float3 d = make_float3(fmaxf(hit.subsurfaceRadius.x * 0.3333f, 0.001f), fmaxf(hit.subsurfaceRadius.y * 0.3333f, 0.001f),
                                          fmaxf(hit.subsurfaceRadius.z * 0.3333f, 0.001f));
             const float3 kept = make_float3(1.0f - expf(-3.25172f * a.x * a.x * a.x + 1.2166f * a.x * a.x - 4.75914f * a.x),
@@ -2238,7 +2246,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
             const float3 straight = make_float3(-logf(fmaxf(a.x - 1e-6f, 1e-6f)) / d.x, -logf(fmaxf(a.y - 1e-6f, 1e-6f)) / d.y,
                                                 -logf(fmaxf(a.z - 1e-6f, 1e-6f)) / d.z);
             // What goes in is what the surface did not reflect; its colour comes from the walk.
-            const float3 entered = surface.frontKeep * (entering(surface, wo) * (1.0f - surface.transmission) / ((1.0f - through) * beneath));
+            const float3 entered = vec(entering(surface, wo) * (1.0f - surface.transmission) / ((1.0f - through) * beneath));
             float3 weight = entered, from = hit.p, along = -ns;
             float far = 0.0f;
             bool out = false, lost = false;
@@ -2348,6 +2356,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
         }
 
         if (scatters && rnd(seed) < beneath) {
+            ++subsurfaces;
             // MoonRay's diffusion, as its integrator works it out (PathIntegratorSubsurface.cc). Where the light
             // comes out is looked for from several points drawn from the profile, each projected onto the surface
             // along the normal (three times in four) or along one of the two directions across it, so that a
@@ -2356,8 +2365,10 @@ extern "C" __global__ void __raygen__moonlightipr() {
             // against what a flat, endless surface would give, and made up to it: a small or thin shape loses
             // none of its light for being small. And light is looked for through the solid, on a far side that
             // faces away, as it comes through an ear or a leaf.
-            const float3 albedo = make_float3(fmaxf(surface.albedo.x, 0.001f), fmaxf(surface.albedo.y, 0.001f),
-                                              fmaxf(surface.albedo.z, 0.001f));
+            // Its colour is what diffuse transmission leaves of the surface's (MoonRay's reflectionAlbedo).
+            const float3 scatterColour = surface.albedo * surface.frontKeep;
+            const float3 albedo = make_float3(fmaxf(scatterColour.x, 0.001f), fmaxf(scatterColour.y, 0.001f),
+                                              fmaxf(scatterColour.z, 0.001f));
             const float3 width = make_float3(profileWidth(albedo.x, hit.subsurfaceRadius.x), profileWidth(albedo.y, hit.subsurfaceRadius.y),
                                              profileWidth(albedo.z, hit.subsurfaceRadius.z));
             const float total = albedo.x + albedo.y + albedo.z;
@@ -2442,7 +2453,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
             for (int i = 0; i < count; ++i) { if (left < heavy[i]) { taken = i; break; } left -= heavy[i]; }
             if (!(heavy[taken] > 0.0f)) break;
             // What comes out is diffuse light, already dimmed by what the surface reflected.
-            throughput *= surface.frontKeep * (entering(surface, wo) * (1.0f - surface.transmission) / ((1.0f - through) * beneath))
+            throughput *= (entering(surface, wo) * (1.0f - surface.transmission) / ((1.0f - through) * beneath))
                         * found[taken] * (whole / (heavy[taken] * float(tries)));
             entryInstance = hit.instance;
             origin = from[taken];

@@ -902,6 +902,7 @@ Renderer::Renderer(const std::string& ptxPath) : impl(new Impl) {
     // MoonRay's defaults, including its sample_clamping_value.
     impl->params.maxDepth = 4;
     impl->params.maxDiffuseDepth = impl->params.maxGlossyDepth = 2;
+    impl->params.maxSubsurface = 1;
     impl->params.maxVolumeDepth = 1;
     impl->params.sampleClamp = 10.0f;
     impl->params.sampleClampDepth = 1;
@@ -1768,6 +1769,11 @@ void Renderer::setVolumeScattering(float attenuation, float contribution, float 
 void Renderer::setSampleClamp(float value, uint32_t depth) {
     impl->params.sampleClamp = std::max(value, 0.0f);
     impl->params.sampleClampDepth = depth;
+    impl->restart();
+}
+
+void Renderer::setMaxSubsurface(uint32_t perPath) {
+    impl->params.maxSubsurface = perPath;
     impl->restart();
 }
 
