@@ -1,11 +1,14 @@
 """A MoonRay material's main colour and Modo's diffuse colour, the channel Traditional and Principled materials share and
-Modo's viewport draws, kept the same: a material starts on its diffuse, a colour edited in its form or graph goes to its
-diffuse (properties.write), and a diffuse edited in Modo comes back (moonray_material_properties). A map wired into the
-colour leaves the colour's own value, and so the diffuse, as they are."""
+Modo's viewport draws, kept the same. Once linked (LINKED in its settings: from when it is made, or from a colour written
+to it) a material's colour is its diffuse, read from the channel (properties.read), so that undoing either undoes both in
+one step: a colour edited in its form or graph goes to the diffuse in the command that writes it, and a diffuse edited in
+Modo needs nothing written. A material of a scene saved before this keeps both colours until one is edited
+(moonray_material_properties). A map wired into the colour leaves the colour's own value, and so the diffuse, as they are."""
 from . import material_override, properties, shader_library
 
 COLOURS = ('albedo', 'color', 'metallic_color', 'diffuse_color')
 AXES = 'RGB'
+LINKED = 'diffuse_linked'
 _KEYS = {}
 
 
@@ -50,13 +53,24 @@ def diffuse(item):
 
 
 def to_diffuse(item, settings):
-    """The material's colour, as just written, into its diffuse."""
+    """The material's colour, as just written, into its diffuse. Whether it has one, and so is linked from now on."""
     if not properties.is_material(item):
-        return
+        return False
     value = stored_colour(settings)[1]
-    if value is not None and not same(value, diffuse(item)):
+    if value is None:
+        return False
+    if not same(value, diffuse(item)):
         for axis, part in zip(AXES, value):
             item.channel('diffCol.' + axis).set(float(part))
+    return True
+
+
+def read_linked(item, settings):
+    """Settings as read, a linked material's colour being its diffuse as it stands."""
+    if not settings.get(LINKED):
+        return settings
+    key = colour_key(settings.get('native_shader') or '')
+    return with_colour(settings, key, diffuse(item)) if key else settings
 
 
 def differs(item):

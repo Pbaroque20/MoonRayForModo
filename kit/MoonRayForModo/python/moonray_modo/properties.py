@@ -92,6 +92,19 @@ def read(item):
             # The graph editor's output node is the same material.
             node = graph['nodes'][graph['root']]
             node['parameters'] = dict(node.get('parameters') or {}, **tried)
+    if data.get('diffuse_linked'):
+        # Its colour is Modo's diffuse (material_diffuse), though not over a colour being tried out.
+        try:
+            from .material_diffuse import read_linked
+            data = read_linked(item, data)
+            if tried:
+                data['native_parameters'] = dict(data.get('native_parameters') or {}, **tried)
+                graph = data.get('node_graph')
+                if graph and graph.get('root') in graph.get('nodes', {}):
+                    node = graph['nodes'][graph['root']]
+                    node['parameters'] = dict(node.get('parameters') or {}, **tried)
+        except (LookupError, RuntimeError, AttributeError):
+            pass
     if data.get('native_shader') and not data.get('node_graph'):
         # What the plugin starts such a material with, where it has not been set: a toon material's toon look.
         from .node_defaults import STARTS, started
@@ -123,14 +136,15 @@ def mark_shader(item, values):
 
 
 def write(item, values):
-    item.setTag(TAG, json.dumps(values, sort_keys=True, separators=(',', ':')))
-    mark_shader(item, values)
-    # Modo's diffuse follows a MoonRay material's main colour (material_diffuse).
+    # Modo's diffuse follows a MoonRay material's main colour, in this same step (material_diffuse).
     try:
-        from .material_diffuse import to_diffuse
-        to_diffuse(item, values)
+        from .material_diffuse import LINKED, to_diffuse
+        if to_diffuse(item, values):
+            values = dict(values, **{LINKED: True})
     except Exception:
         pass
+    item.setTag(TAG, json.dumps(values, sort_keys=True, separators=(',', ':')))
+    mark_shader(item, values)
     from .property_notifications import notify
     notify()
 
