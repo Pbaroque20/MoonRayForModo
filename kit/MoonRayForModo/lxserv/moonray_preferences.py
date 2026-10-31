@@ -64,7 +64,13 @@ def held():
     return Preferences()
 
 
-def switch(key):
+def render_settings_changed():
+    """The Render item's form looks again: a field it greys by a preference only changes when told."""
+    from moonray_modo import property_notifications
+    property_notifications.notify()
+
+
+def switch(key,changed=None):
     class Switch(lxu.command.BasicCommand):
         def __init__(self):
             super().__init__()
@@ -73,7 +79,9 @@ def switch(key):
         def cmd_Flags(self):return lx.symbol.fCMD_UI
         def basic_Enable(self,msg):return True
         def cmd_Query(self,index,query):lx.object.ValueArray(query).AddInt(1 if held().get(key) else 0)
-        def basic_Execute(self,msg,flags):held().set(key,bool(self.dyna_Int(0)))
+        def basic_Execute(self,msg,flags):
+            held().set(key,bool(self.dyna_Int(0)))
+            if changed:changed()
     return Switch
 
 
@@ -154,7 +162,7 @@ lx.bless(switch('denoise_clean_guides'),'moonray.pref.denoiseCleanGuides')
 lx.bless(switch('light_motion'),'moonray.pref.lightMotion')
 lx.bless(switch('crypto_volumes'),'moonray.pref.cryptoVolumes')
 lx.bless(switch('fog_alpha'),'moonray.pref.fogAlpha')
-lx.bless(switch('presence_shadows_auto'),'moonray.pref.presenceShadowsAuto')
+lx.bless(switch('presence_shadows_auto',render_settings_changed),'moonray.pref.presenceShadowsAuto')
 lx.bless(switch('toon_lines_apart'),'moonray.pref.toonLinesApart')
 lx.bless(switch('toon_close_gaps'),'moonray.pref.toonCloseGaps')
 lx.bless(switch('filter_inputs'),'moonray.pref.filterInputs')

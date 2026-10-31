@@ -161,7 +161,7 @@ Each of these was on the list of what was left; each was measured or read agains
   `xpu2_session.cc` publishes the merged film as it renders, stops a frame when the scene changes, and shows it through
   the kit. Reprojection is left out on purpose: it would show stretched pixels after every move, the kind of brief
   glitch the half-resolution start was removed for. The session has OptiX denoising; the 0.5 kit does not use it in
-  realtime. Deadlines have not been needed: Realtime Samples and the Realtime Adaptive Sampling Cap bound a frame.
+  realtime. Deadlines have not been needed: Realtime Sample % and the Realtime Adaptive Sampling Cap bound a frame.
 - **Spill under host memory pressure (MEM-06 to MEM-09): done, as letting tiles go** (see Limits a scene can meet). Level-0 tiles
   are decoded when first read, and those let go are decoded again from their files if asked for again; the card's copies stay.
   `tex::spill` guards every host read, so a tile is freed only when no reader can hold it. `XPU2_SESSION_SPILL_MB` holds the tiles
