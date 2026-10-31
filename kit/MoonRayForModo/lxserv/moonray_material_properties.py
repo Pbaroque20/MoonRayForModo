@@ -321,8 +321,9 @@ class AddOverrideAbove(OpenNodes):
 lx.bless(AddOverrideAbove,'moonray.material.addOverrideAbove')
 
 
-# A diffuse edited in Modo goes to the MoonRay material's main colour, once the edit has stopped: a scene may not be
-# changed from inside a listener, and a colour picker's drag sends many values.
+# A diffuse edited in Modo: a linked material has it already (material_diffuse), and what shows it is told. One of a scene
+# saved before the link takes it as its colour once the edit has stopped, which links it: a scene may not be changed from
+# inside a listener, and a colour picker's drag sends many values.
 _DIFFUSE_EDITED=set()
 
 
@@ -353,7 +354,9 @@ def _diffuse_settled():
             try:found=differs(scene.item(identity)) or found
             except LookupError:pass
         if found:lx.eval('moonray.material.diffuseToColour')
-        else:_DIFFUSE_EDITED.clear()
+        else:
+            _DIFFUSE_EDITED.clear()
+            property_notifications.notify()
     except Exception as exc:
         _DIFFUSE_EDITED.clear()
         lx.out('A MoonRay material did not follow its diffuse: %s'%exc)

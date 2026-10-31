@@ -1,7 +1,7 @@
 # python
 """Isolated GUI test: a MoonRay material's main colour and Modo's diffuse. A material made starts on its diffuse; a colour
-written goes to the diffuse; a diffuse edited comes back, in Traditional and Principled; undo takes both back and leaves
-redo; a saved scene whose two differ is left as it is when opened. Writes test-results/material-diffuse/report.json."""
+written goes to the diffuse; a diffuse edited comes back, in Traditional and Principled, as a render reads it; one undo
+takes both back and leaves redo; a saved scene whose two differ is left as it is when opened, until one is edited. Writes test-results/material-diffuse/report.json."""
 import json
 import pathlib
 import traceback
@@ -26,9 +26,11 @@ def rounded(values):
 
 def note(name):
     from moonray_modo import material_diffuse, properties
+    from moonray_modo.host import material_values
     item = held['material']
     result['steps'].append({'step': name, 'diffuse': rounded(material_diffuse.diffuse(item)),
                             'albedo': rounded(material_diffuse.stored_colour(properties.read(item))[1]),
+                            'rendered': rounded(material_values(item).get('native_parameters', {}).get('albedo')),
                             'brdf': item.channel('brdfType').get()})
     save()
 
@@ -58,19 +60,28 @@ def steps():
     yield lambda: set_diffuse((.7, .8, .2))
     yield lambda: note('Principled diffuse edited 0.7 0.8 0.2')
     yield lambda: lx.eval('app.undo')
-    yield lambda: note('undo once')
-    yield lambda: lx.eval('app.undo')
-    yield lambda: note('undo twice')
+    yield lambda: note('one undo of the diffuse edit')
     yield lambda: lx.eval('app.redo')
     yield lambda: note('redo')
+    yield lambda: lx.eval('app.undo')
+
+    def typed_again():
+        settings = properties.read(held['material'])
+        settings['native_parameters'] = dict(settings.get('native_parameters') or {}, albedo=[.4, .4, .9])
+        lx.eval('moonray.material.applyGraph {%s} %s' % (held['material'].id, properties.encode(settings)))
+    yield typed_again
+    yield lambda: note('albedo written 0.4 0.4 0.9')
+    yield lambda: lx.eval('app.undo')
+    yield lambda: note('one undo of the albedo edit')
 
     def mismatch():
         # As a scene saved before this: the two differ. Opening it must leave them.
         from moonray_modo import material_diffuse
         settings = properties.read(held['material'])
         settings['native_parameters'] = dict(settings.get('native_parameters') or {}, albedo=[.5, .5, .5])
+        settings.pop(material_diffuse.LINKED, None)
         kept = material_diffuse.to_diffuse
-        material_diffuse.to_diffuse = lambda *_: None
+        material_diffuse.to_diffuse = lambda *_: False
         try:
             lx.eval('moonray.material.applyGraph {%s} %s' % (held['material'].id, properties.encode(settings)))
         finally:
@@ -88,6 +99,9 @@ def steps():
         held['material'] = next(i for i in modo.Scene().items() if p.is_material(i) and p.read(i).get('native_shader'))
         note('opened again: still as saved')
     yield reopened
+    yield lambda: set_diffuse((.3, .8, .2))
+    yield lambda: note('older scene, diffuse edited: linked now')
+    yield lambda: result.__setitem__('finished', True)
 
 
 def run(plan):
