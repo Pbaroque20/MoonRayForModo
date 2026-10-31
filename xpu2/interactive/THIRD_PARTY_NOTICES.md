@@ -21,4 +21,4 @@ MoonRay/scene_rdl2, Embree, OpenImageIO, NVIDIA CUDA/NVRTC/OptiX, and the Window
 ## ISPC Texture Compressor
 
 `xpu2_bc6h.cc` compiles Intel's ISPC Texture Compressor (Copyright 2017 Intel Corporation, MIT License, `upstream/ISPCTextureCompressor`), and
-`bc6h_core.h` is generated from the BC6H layouts in its `kernel.ispc`. Its full notice is in the repository's `THIRD_PARTY.md`.
+`bc6h_core.h` is generated from the BC6H layouts in its `kernel.ispc`. Its whole license is in the kit, in `licenses/ISPCTextureCompressor-LICENSE.txt`.
