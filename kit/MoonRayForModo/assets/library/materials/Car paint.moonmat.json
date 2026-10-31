@@ -1,0 +1,36 @@
+{
+  "format": 1,
+  "name": "Car paint",
+  "shader": "DwaMetalMaterial",
+  "parameters": {
+    "metallic_color": [
+      0.22,
+      0.004,
+      0.008
+    ],
+    "metallic_edge_color": [
+      0.7,
+      0.1,
+      0.08
+    ],
+    "roughness": 0.4,
+    "show_clearcoat": true,
+    "clearcoat": 1.0,
+    "clearcoat_roughness": 0.015,
+    "clearcoat_refractive_index": 1.5,
+    "show_glitter": true,
+    "glitter": 1.0,
+    "glitter_color_A": [
+      1.0,
+      0.9,
+      0.85
+    ],
+    "glitter_size_A": 0.015,
+    "glitter_density": 1.0,
+    "glitter_roughness_A": 0.05,
+    "glitter_randomness": 1.0,
+    "glitter_style_A_frequency": 1.0,
+    "glitter_space": 4,
+    "glitter_layering_mode": 1
+  }
+}

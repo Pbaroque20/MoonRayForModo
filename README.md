@@ -13,6 +13,7 @@ The current release is [0.5](https://github.com/Pbaroque20/MoonRayForModo/releas
   out, which is quicker. While it is on, Presence Shadows in Render Settings and on lights are greyed.
 - **Samples for the material widget**: 32, 64, 128 or 256 in the graph editor, for a cleaner picture of the material.
 - **Graph editor presets**: the Presets menu saves the selected nodes or a whole network, to load into any material.
+- **A Car paint material in the library**: a dark metal with a sharp clearcoat and fine flakes, to start a metallic paint from.
 - **A MoonRay material's colour and Modo's diffuse follow each other**, under Traditional and Principled, so the viewport
   shows the material's colour. A new material starts on its diffuse.
 - **Weight Map Texture layers render**, in MoonRay, XPU2 and MoonLightIPR, with their Low, High, Bias and Gain, matching Modo's own render:
