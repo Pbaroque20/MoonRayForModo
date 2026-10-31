@@ -132,7 +132,7 @@ one substitute texture, through the session harness; a re-cut in Modo also costs
 - **Texture overflow mode.** Where a scene's load runs out of memory on the machine or the card, or a texture budget, the
   frame is made again with textures limited to half the size, down to 256 pixels a side, and the preview says so
   (`@@MODO_XPU2 NOTICE`). It also starts where every decoded tile has been let go, RAM is still short and the card is
-  short too. It holds for the session. Finer levels are neither decoded nor sent; `XPU2_SESSION_CARD_FREE_MB` stands in
+  short too, with a size left to go to. It holds until the scene is loaded anew. Finer levels are neither decoded nor sent; `XPU2_SESSION_CARD_FREE_MB` stands in
   for a full card in tests. A failure once a frame is rendering still goes to MoonRay XPU.
 - **A card that fills up.** The fine-detail cache is sized from the card's free memory when the scene is prepared, and made
   again to fit where, as a frame starts, the card has come to hold much less (`GpuLane::fineCacheTooBig`).

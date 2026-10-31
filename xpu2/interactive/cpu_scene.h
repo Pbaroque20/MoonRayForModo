@@ -2953,6 +2953,8 @@ inline std::string geometryKey(const rdl::SceneObject& o,const std::vector<std::
  GeometryKey k;const uint32_t version=GeometryCacheVersion;k.add(&version,4);k.add(displacementKey);k.add(&shared,1);
  for(const auto& b:sig)if(b){k.add(b->source.data(),b->source.size());}
  const unsigned char displace=get<rdl::Bool>(sv,"enable_displacement")?1:0;k.add(&displace,1);
+ // Displaced from textures made smaller (texture overflow mode): not what a session with the whole textures may take.
+ if(const unsigned side=texture::overflowSide().load())k.add(&side,sizeof side);
  // The kit's MoonRay Source Overrides (their switches can change what a displacement's maps give).
  for(const char* name:{"MOONRAY_MODO_TOON_TERMINATOR","MOONRAY_MODO_TOON_ALBEDO","MOONRAY_MODO_USD_SPECULAR","MOONRAY_MODO_OPAQUE_ALPHA",
                        "MOONRAY_MODO_TRANSMISSION_ROUGHNESS"}){const char* v=std::getenv(name);k.add(std::string(name)+"="+(v?v:""));}

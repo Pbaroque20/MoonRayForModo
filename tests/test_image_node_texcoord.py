@@ -40,5 +40,37 @@ class ImageTexcoordTests(unittest.TestCase):
         self.assertNotIn('AttributeMap(', text)
 
 
+class MissingNormalTests(unittest.TestCase):
+    def written(self, image, through=None):
+        graph = nodes.new()
+        graph['nodes']['img'] = {'type': 'image', 'parameters': {'file': image, 'srgb': False}, 'inputs': {}}
+        source = 'img'
+        if through:
+            graph['nodes']['between'] = {'type': through, 'parameters': {}, 'inputs': {'input': 'img'}}
+            source = 'between'
+        graph['nodes']['normal'] = {'type': 'normalmap', 'parameters': {'scale': 1.0}, 'inputs': {'in': source}}
+        graph['nodes']['surface']['inputs']['input_normal'] = 'normal'
+        lines = []
+        with mock.patch.object(textures, '_prepare', lambda source, *rest: str(source)):
+            nodes.emit({'node_graph': graph, 'color': [.5] * 3}, '/test', [0], lines, {})
+        return '\n'.join(lines)
+
+    def test_a_missing_image_leaves_the_normal_flat(self):
+        text = self.written('V:/not/here/flakes.png')
+        self.assertIn('["normal"] = Rgb(0.5, 0.5, 1)', text)
+        self.assertIn('ModoNormalMap(', text)
+
+    def test_also_through_another_node(self):
+        self.assertIn('["normal"] = Rgb(0.5, 0.5, 1)', self.written('V:/not/here/flakes.png', 'ColorCorrectHsvMap'))
+
+    def test_an_image_that_is_there_is_used(self):
+        with tempfile.TemporaryDirectory() as folder:
+            texture = Path(folder) / 'flakes.tx'
+            texture.write_bytes(b'')
+            text = self.written(str(texture))
+        self.assertNotIn('Rgb(0.5, 0.5, 1)', text)
+        self.assertIn('ImageMap(', text)
+
+
 if __name__ == '__main__':
     unittest.main()

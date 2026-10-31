@@ -160,11 +160,15 @@ def _cached(kind, source, encode):
 def collecting(fingerprints=True):
     """While the scene's text is written, its geometry's heavy lists go to a Sink instead."""
     global _SINK
-    held, _SINK = _SINK, Sink(fingerprints)
-    try:
-        yield _SINK
-    finally:
-        _SINK = held
+    # One scene written at a time (serialization.WRITING, which writing its text takes too): two threads, a scene written
+    # again after a fallback and the next edit's, would put each other's lists in the wrong file.
+    from .serialization import WRITING
+    with WRITING:
+        held, _SINK = _SINK, Sink(fingerprints)
+        try:
+            yield _SINK
+        finally:
+            _SINK = held
 
 
 def active():

@@ -195,10 +195,13 @@ class Session(QtCore.QObject):
         return binary
 
     def _rewritten(self,rewrite):
+        prepared,rewrite.prepared=rewrite.prepared,None  # the thread keeps none of the scene: gigabytes on a heavy one
+        if self._rewrite is rewrite:self._rewrite=None
+        rewrite.deleteLater()
         if rewrite.failure:
             self.failed.emit('The scene could not be written again: '+rewrite.failure);return
-        rewrite.request['text']=rewrite.prepared.pop('text')
-        rewrite.request['prepared']=rewrite.prepared
+        rewrite.request['text']=prepared.pop('text')
+        rewrite.request['prepared']=prepared
         self._launch()
 
     def _release_mappings(self):
@@ -209,7 +212,8 @@ class Session(QtCore.QObject):
 
     def _launch(self):
         request=self.latest
-        if not request or self.closed:return
+        # Started meanwhile (a newer scene, while the one below was written again): nothing to start.
+        if not request or self.closed or self.running():return
         # A scene already applied has given up its prepared parts (APPLIED), its text holding its meshes' fingerprints alone:
         # started from that text, MoonRay taking over from XPU2 rendered every mesh empty. Written again first.
         if not request.get('prepared') and request.get('again') and '-- rdlb' in request['text']:
@@ -258,7 +262,7 @@ class Session(QtCore.QObject):
         if self.xpu2_active and native.xpu2_devices()!='cpu' and not native.xpu2_shaders_compiled():
             # XPU2 chosen, its shaders not compiled: nothing is rendered (MoonRay XPU in its place hid that it was not XPU2),
             # and the preview says where to compile them.
-            self.sent=None;self.failed.emit(native.XPU2_NOT_COMPILED);return
+            self.sent=None;self.failed.emit(native.xpu2_shaders_unavailable());return
         # The view again, now that it is known whose: Denoised Beauty is XPU2's own (realtime), the beauty MoonRay's.
         self.select_view(self.view)
         if self.xpu2_active:

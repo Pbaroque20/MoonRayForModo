@@ -301,6 +301,20 @@ def authored_texcoord(params):
     return value if value is not None and any(float(v) for v in value) else None
 
 
+def reads_missing(graph,identity,seen=None):
+    """Whether a node, or anything feeding it, reads a texture that is not on this machine."""
+    node=graph['nodes'].get(identity)
+    seen=set() if seen is None else seen
+    if node is None or identity in seen:return False
+    seen.add(identity)
+    name={'image':'file','ImageMap':'texture'}.get(node.get('type'))
+    held=(node.get('parameters') or {}).get(name) if name else None
+    if held:
+        from .textures import missing
+        if missing(held):return True
+    return any(reads_missing(graph,source,seen) for source in (node.get('inputs') or {}).values())
+
+
 def emit_map(graph,name,lines,library=None):
     """A map and what is wired into it, written for a MoonRay item's attribute to be bound to; its reference."""
     return emit({'node_graph':graph},name,[2000000000],lines,library or {},validated=False)
@@ -407,7 +421,11 @@ def emit(material,name,index,lines,library,output="root",validated=True):
             elif kind=='normalmap':
                 normal=values['in']
                 source=g['nodes'].get(item.get('inputs',{}).get('in'),{})
-                descriptor=normal_descriptor(item,g)
+                # A texture not on this machine gives its node's default, black as a rule: as a normal that is a tilt, not
+                # no normal, and it ruins the surface's reflections. The map is flat in its place (the notice is the image's).
+                flat=reads_missing(g,item.get('inputs',{}).get('in'))
+                if flat:normal=literal([.5,.5,1.0],schema['in']['type'])
+                descriptor=None if flat else normal_descriptor(item,g)
                 if descriptor:
                     p=source.get('parameters',{});address={'periodic':0,'clamp':1,'mirror':2,'constant':3}
                     corrected=definition('ModoTextureMap',path+'/uv_basis',{'mode':'13','foreground':normal,'uv_name':string(descriptor['coordinate_key']),'tile_u':str(address[p.get('uaddressmode','periodic')]),'tile_v':str(address[p.get('vaddressmode','periodic')])})

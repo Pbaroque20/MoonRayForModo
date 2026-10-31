@@ -72,6 +72,8 @@ def has_alpha(path):
 def image_pixels(layer, folder, width, height):
     converter=native.tool('oiiotool.exe');runtime=converter.parent
     source=textures.prepare(layer['path'],layer.get('srgb',False),mipmaps=False,color_space=layer.get('color_space',''))
+    from . import conversions
+    conversions.finished(source)  # read below, as the scene is written
     def run(args):
         result=subprocess.run([str(converter)]+args,env=native.environment(runtime),stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,timeout=120,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
