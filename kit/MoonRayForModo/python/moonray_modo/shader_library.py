@@ -122,6 +122,8 @@ def emit(material, name, index, lines, library, trail=(), authored_bindings=None
     # Glitter turned off is left out, not written as false: a running MoonRay keeps asking for the rest positions glitter
     # in reference space asked for, and a material without them stays pink, until the setting is gone.
     if parameters.get('show_glitter') is False:parameters={key:value for key,value in parameters.items() if key!='show_glitter'}
+    from .node_defaults import with_flakes
+    parameters=with_flakes(shader,parameters)
     attributes=catalog()[shader]['attributes']
     def literal(value, spec):
         kind=spec['type']

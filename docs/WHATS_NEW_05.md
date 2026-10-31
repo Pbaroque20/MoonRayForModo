@@ -14,6 +14,10 @@
 - **EXR channels by standard names**: the beauty's alpha is `A`, so it comes in as the beauty's alpha, and depth is `depth.Z`.
 - **A graph's new output reaches Modo's form**: changing a material's output shows the new material's form, selected and ready to edit, and the new output starts on its own colour.
 - **Glitter no longer turns a material pink**, turned on or off again, in MoonRay, MoonRay XPU and XPU2.
+- **MoonLightIPR follows a material's chosen subsurface model**: a Random Walk material rendered as Normalized Diffusion there, which could leave a dark brown patch where one part of a mesh passes close over another.
+- **MoonLightIPR's subsurface colour is much closer to MoonRay's**: diffuse transmission now changes the colour light scatters by, as in MoonRay, rather than only dimming the result; a path scatters only as often as Subsurface per path allows; and a random walk also starts from the inside of a surface.
+- **Glitter's flakes start at 3 centimetres**, not MoonRay's default of 1, which is a metre across in Modo's scenes and covered a surface in shards. A size you set is kept, and so is a scene imported from MoonRay.
+- **The graph editor's colour numbers and swatches match Modo's form**: both show sRGB for the same stored colour.
 - **The graph editor's Samples field shows its whole text.**
 - **A MoonRay material's colour and Modo's diffuse follow each other**, under Traditional and Principled, so the viewport
   shows the material's colour. A new material starts on its diffuse.
@@ -70,7 +74,8 @@ Animation.*
 - **Devices** (Preferences > MoonRay > XPU2): the processor and the graphics card together, or either one alone.
 - **Realtime**: camera moves, object moves and light changes are taken up at once, without preparing the scene again.
   While things move, the picture comes at the Realtime preview size, every pixel from the start, and is not denoised.
-  **Realtime Samples** sets how much of the render realtime makes (100% by default).
+  **Realtime Sample %** sets how much of the render realtime makes (100% by default), in Render Settings and the preview's
+  preferences.
 - **Denoising**: the Denoiser works with XPU2 previews. Smart Render and Safe Denoising are MoonRay's own, and are
   greyed while XPU2 renders the preview: it is quick enough to need neither.
 - **Final renders come from MoonRay**, as before. A scene XPU2 cannot render yet goes to MoonRay XPU.

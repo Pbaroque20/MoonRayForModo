@@ -66,12 +66,29 @@ STARTS={'DwaToonMaterial':{'diffuse_model':1,'specular_model':2,
 # so that the flakes stay put on a deforming surface.
 
 
+# The size of glitter's flakes, in the scene's units. MoonRay's default of 1 is a flake a metre across in Modo's metres, shards
+# bigger than most things in a scene: it starts at 3 centimetres. Written only where glitter is on (with_flakes).
+FLAKE_SIZES={'glitter_size_A':0.03,'glitter_size_B':0.03}
+
+
+def has_flakes(shader):
+    from .reference_points import GLITTERING
+    return shader in GLITTERING
+
+
+def with_flakes(shader,parameters):
+    """A material's settings as they are written, its glitter's flakes at the plugin's size where none has been set."""
+    if not parameters.get('show_glitter') or not has_flakes(shader):return parameters
+    return dict(FLAKE_SIZES,**parameters)
+
+
 def keep_moonray_defaults(graph):
     """A graph from a MoonRay scene, its nodes given MoonRay's own default wherever the scene left one the plugin
     starts otherwise: the material is the scene's, not a new one, and renders as the scene had it."""
     from . import nodes
     for node in (graph or {}).get('nodes', {}).values():
-        held = STARTS.get(node.get('type'))
+        glitters = has_flakes(node.get('type')) and (node.get('parameters') or {}).get('show_glitter')
+        held = dict(STARTS.get(node.get('type')) or {}, **(FLAKE_SIZES if glitters else {}))
         if not held:continue
         parameters = node.setdefault('parameters', {})
         specs = nodes.specs(node['type'])
@@ -82,6 +99,7 @@ def keep_moonray_defaults(graph):
 
 def start(shader,key,spec):
     """What a setting of a shader is before it has been set: the plugin's own start, else MoonRay's default."""
+    if key in FLAKE_SIZES and has_flakes(shader):return FLAKE_SIZES[key]
     held=STARTS.get(shader,{})
     return copy.deepcopy(held[key]) if key in held else value(spec)
 

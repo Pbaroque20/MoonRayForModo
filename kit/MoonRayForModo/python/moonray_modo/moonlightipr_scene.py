@@ -918,13 +918,13 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     # Material colours are worked out in Rec.709; the session takes them to the working space.
     working = working_enabled()
     # The letter after MLS says which form of scene this is; the session refuses any other than its own.
-    parts = [b'MLSN', struct.pack('<8I', width, height, *depths, samples, (SCENE_DENOISE if denoise else 0)
+    parts = [b'MLSO', struct.pack('<8I', width, height, *depths, samples, (SCENE_DENOISE if denoise else 0)
                                   | (SCENE_WORKING_SPACE if working else 0) | (SCENE_MOTION if motion else 0)
                                   # See-through surfaces cast whole shadows unless the scene asks for lighter ones, as in MoonRay.
                                   | (SCENE_PRESENCE_SHADOWS if settings.get('enable_presence_shadows') else 0)),
-             # The scene's sample clamp, and from which bounce it holds; then how each further bounce in fog counts for
+             # The scene's sample clamp, and from which bounce it holds, and the subsurface scatterings a path may have; then how each further bounce in fog counts for
              # less (form 'G').
-             struct.pack('<fI', float(settings['sample_clamping_value']), int(settings['sample_clamping_depth'])),
+             struct.pack('<fII', float(settings['sample_clamping_value']), int(settings['sample_clamping_depth']), int(settings['max_subsurface_per_path'])),
              struct.pack('<3f', *(float(settings[key]) for key in ('volume_attenuation_factor', 'volume_contribution_factor',
                                                                   'volume_phase_attenuation_factor'))),
              struct.pack('<9f', *(v for row in (TO_AP1 if working else [[1, 0, 0], [0, 1, 0], [0, 0, 1]]) for v in row)),

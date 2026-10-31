@@ -438,10 +438,16 @@ def value(entity, key):
 
 
 def checked(scene):
-    """The scene's entities, validated again: a snapshot may come from a file or another version."""
+    """The scene's entities, validated again: a snapshot may come from a file or another version. A light's own Presence
+    Shadows is not written while Automatic Presence Shadows decides them (presence_shadows)."""
+    from .presence_shadows import automatic
+    decided = automatic()
     result = []
     for entity in scene.get('entities', []):
-        result.append(dict(entity, parameters=validate(entity['class'], entity.get('parameters', {}))))
+        parameters = validate(entity['class'], entity.get('parameters', {}))
+        if decided and catalog()[entity['class']].get('category') == 'light':
+            parameters = {key: value for key, value in parameters.items() if key != 'presence_shadows'}
+        result.append(dict(entity, parameters=parameters))
     return result
 
 

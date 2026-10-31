@@ -388,6 +388,7 @@ struct LaunchParams {
     unsigned maxDepth;      // bounces after the camera ray
     unsigned maxDiffuseDepth;   // of those, how many may leave a diffuse lobe
     unsigned maxGlossyDepth;    // and how many a specular lobe
+    unsigned maxSubsurface;     // how many times one path may scatter beneath a surface; after that, plain diffuse. MoonRay's max_subsurface_per_path
     unsigned maxVolumeDepth;    // how many times light may scatter in fog along one path; MoonRay's max_volume_depth
     unsigned opaqueShadows; // a surface that is partly absent casts a whole shadow all the same: MoonRay with its presence shadows off
     unsigned sampleClampDepth;  // how many rough things: MoonRay's sample_clamping_depth, 1 leaving alone what the camera sees directly

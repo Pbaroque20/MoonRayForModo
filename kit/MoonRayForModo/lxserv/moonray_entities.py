@@ -240,6 +240,7 @@ def register():
 
     class Listed(lxu.command.BasicCommand):
         """A command with one queried popup argument that follows the selection."""
+        ALSO=()  # the notifiers it follows besides
         def __init__(self):
             super().__init__()
             self.dyna_Add('value',lx.symbol.sTYPE_INTEGER)
@@ -250,6 +251,7 @@ def register():
                 self._notifications=lxu.command.NotifierHost()
                 # Value, enabled state and the list itself (+t): a popup's choices change with the selected item.
                 self._notifications.add('select.event','item +vdt')
+                for notifier in self.ALSO:self._notifications.add(notifier,'')
             self._notifications.add_client(client)
         def cmd_NotifyRemoveClient(self,client):
             if getattr(self,'_notifications',None):self._notifications.rem_client(client)
@@ -262,9 +264,17 @@ def register():
         """A popup for an attribute with named values."""
         labels=entities.choice_labels(name,key)
         numbers=[number for number,_,_ in labels]
+        # A light's own Presence Shadows: Automatic Presence Shadows (Preferences) decides, and says so when it changes.
+        from moonray_modo import property_notifications
+        automatic=key=='presence_shadows'
         class Choice(Listed):
+            ALSO=(property_notifications.NAME,) if automatic else ()
             def arg_UIValueHints(self,index):return _same(Popup,[(internal,label) for _,internal,label in labels])
-            def basic_Enable(self,msg):return bool(chosen(name))
+            def basic_Enable(self,msg):
+                if automatic:
+                    from moonray_modo.presence_shadows import automatic as presence_automatic
+                    if presence_automatic():return False
+                return bool(chosen(name))
             def cmd_Query(self,index,query):
                 values=lx.object.ValueArray(query)
                 for item in chosen(name):

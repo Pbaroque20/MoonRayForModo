@@ -121,7 +121,7 @@ GROUPS = [
         field('xpu2_noise', ('xpu2_generations', 'noise'), 'float', 'Halt at Noise', "A part of the picture stops early once it is this clean, in Target Error's units (lower is cleaner, and slower). 0: none, every pixel gets its share. MoonRay's Target Error is for MoonRay renders", 0.0, 1000.0),
         field('xpu2_most', ('xpu2_generations', 'most'), 'int', 'Most Samples', 'The most samples one pixel may get. 0: 16 times the average', 0, 16384),
         field('xpu2_cpu', ('xpu2_generations', 'cpu'), 'bool', 'CPU Workers', "The processor's workers take part in the generations beside the graphics card. Off: the graphics card takes every sample. Which devices XPU2 uses at all: Preferences > MoonRay > XPU2 > Devices"),
-        field('xpu2_realtime', ('xpu2_generations', 'realtime'), 'int', 'Realtime Samples', 'While realtime follows the scene (RT), the share of Generation Samples XPU2 takes, in percent: lower settles sooner and noisier. Previews started with Render and final renders take them all', 1, 100),
+        field('xpu2_realtime', ('xpu2_generations', 'realtime'), 'int', 'Realtime Sample %', 'While realtime follows the scene (RT), the share of Generation Samples XPU2 takes, in percent: lower settles sooner and noisier. Previews started with Render and final renders take them all', 1, 100),
     ]),
     ('Bounces', False, [
         render_field('max_depth', 'Total'),

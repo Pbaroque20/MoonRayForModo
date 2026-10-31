@@ -111,8 +111,17 @@ class Preferences:
         self.store.setValue(key, ('true' if value else 'false') if KEYS[key][1] is bool else value)
 
 
+def realtime_share():
+    """Realtime Sample %, the open scene's (XPU2 Sampling in its render settings); None with no scene to read it from."""
+    try:
+        from . import properties, scene_settings
+        return int(scene_settings.complete(properties.scene_settings())['xpu2_generations']['realtime'])
+    except Exception:
+        return None
+
+
 class Dialog(QtWidgets.QDialog):
-    """The few choices about previewing that do not belong to a scene."""
+    """The few choices about previewing that do not belong to a scene, and Realtime Sample %, which does, kept to hand."""
     def __init__(self, preferences, parent=None):
         super().__init__(parent)
         self.preferences = preferences
@@ -169,6 +178,14 @@ class Dialog(QtWidgets.QDialog):
                           '10 GB, the least lately used let go. The status says Caching scene... while it keeps what it makes, and Loading scene '
                           'from cache... while it reads back what it kept.'))
         form.addRow('Realtime preview size', combo('preview_size', SIZES))
+        self.realtime_held = realtime_share()
+        self.realtime_share = QtWidgets.QSpinBox()
+        self.realtime_share.setRange(1, 100)
+        self.realtime_share.setValue(100 if self.realtime_held is None else self.realtime_held)
+        self.realtime_share.setEnabled(self.realtime_held is not None and native.xpu2())
+        self.realtime_share.setToolTip('MoonRay XPU2 only. While realtime follows the scene (RT), the share of Generation Samples XPU2 takes, in '
+                                       "percent: lower settles sooner and noisier. The open scene's own, the same as in its render settings")
+        form.addRow('Realtime Sample %', self.realtime_share)
         form.addRow(check('persistent_preview', 'Keep MoonRay loaded between previews',
                           'Faster updates; structural edits still reload the scene'))
         form.addRow('Release idle renderer memory', combo('idle_release_minutes',
@@ -249,6 +266,10 @@ class Dialog(QtWidgets.QDialog):
         from .cache_folder import forget
         forget()
         self.preferences.set('ipr/error', self.error.value())
+        if self.realtime_share.isEnabled() and self.realtime_share.value() != self.realtime_held:
+            # Through its command, as in the render settings: undone with the scene, and the form follows.
+            import lx
+            lx.eval('moonray.render.xpu2_realtime %d' % self.realtime_share.value())
         for key, widget in self.widgets.items():
             self.preferences.set(key, widget.currentData() if isinstance(widget, QtWidgets.QComboBox) else widget.isChecked())
         super().accept()

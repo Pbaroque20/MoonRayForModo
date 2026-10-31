@@ -423,6 +423,8 @@ class VectorField(QtWidgets.QWidget):
         self.spec,self.kind=spec,kind
         count=2 if spec['type'] in ('Vec2f','Vec2d') else 3
         self.is_color=spec['type']=='Rgb'
+        # The numbers of a colour are in sRGB, as in Modo's form: what is not edited keeps its exact value.
+        self.held=[float(part) for part in value[:count]] if self.is_color and isinstance(value,(list,tuple)) else []
         layout=QtWidgets.QHBoxLayout(self);layout.setContentsMargins(2,0,2,0);layout.setSpacing(2)
         self.swatch=None
         if self.is_color:
@@ -436,7 +438,8 @@ class VectorField(QtWidgets.QWidget):
             spin=QtWidgets.QDoubleSpinBox();spin.setRange(low,high);spin.setDecimals(3);spin.setSingleStep(.05 if self.is_color else .1)
             spin.setButtonSymbols(QtWidgets.QAbstractSpinBox.NoButtons);spin.setKeyboardTracking(False);spin.setFrame(False)
             spin.setFocusPolicy(QtCore.Qt.StrongFocus);spin.setToolTip(('Red','Green','Blue')[index] if self.is_color else 'XYZ'[index])
-            spin.setValue(float(values[index]) if index<len(values) else 0.0)
+            part=float(values[index]) if index<len(values) else 0.0
+            spin.setValue(parameter_state.shown_colour(part) if self.is_color else part)
             spin.installEventFilter(self)
             spin.valueChanged.connect(self.publish);layout.addWidget(spin,1);self.spins.append(spin)
             tint_value(spin,value,spec,kind,key,connected)
@@ -446,13 +449,19 @@ class VectorField(QtWidgets.QWidget):
         if event.type()==QtCore.QEvent.Wheel and not watched.hasFocus():
             event.ignore();return True
         return False
-    def value(self):return [spin.value() for spin in self.spins]
+    def value(self):
+        if not self.is_color:return [spin.value() for spin in self.spins]
+        result=[]
+        for index,spin in enumerate(self.spins):
+            kept=self.held[index] if index<len(self.held) else None
+            result.append(kept if kept is not None and abs(parameter_state.shown_colour(kept)-spin.value())<.0005 else parameter_state.kept_colour(spin.value()))
+        return result
     def paint_swatch(self):
         if self.swatch is None:return
-        color=QtGui.QColor.fromRgbF(*[max(0.0,min(1.0,v)) for v in self.value()])
+        color=QtGui.QColor.fromRgbF(*[max(0.0,min(1.0,spin.value())) for spin in self.spins])
         self.swatch.setStyleSheet('background-color: '+color.name()+'; border: 1px solid #15171a; border-radius: 3px;')
     def choose(self):
-        color=QtWidgets.QColorDialog.getColor(QtGui.QColor.fromRgbF(*[max(0.0,min(1.0,v)) for v in self.value()]),self,'Choose '+self.key.replace('_',' '))
+        color=QtWidgets.QColorDialog.getColor(QtGui.QColor.fromRgbF(*[max(0.0,min(1.0,spin.value())) for spin in self.spins]),self,'Choose '+self.key.replace('_',' '))
         if not color.isValid():return
         for spin,part in zip(self.spins,(color.redF(),color.greenF(),color.blueF())):
             blocker=QtCore.QSignalBlocker(spin);spin.setValue(part);del blocker
@@ -667,7 +676,7 @@ class ParameterDelegate(QtWidgets.QStyledItemDelegate):
         if file_parameter(spec):
             decoration=QtGui.QIcon(str(Path(__file__).resolve().parents[2]/'assets/folder.svg'))
         elif spec['type']=='Rgb' and isinstance(value,(list,tuple)) and len(value)==3:
-            decoration=QtGui.QColor.fromRgbF(*[max(0,min(1,float(v))) for v in value])
+            decoration=QtGui.QColor.fromRgbF(*[max(0,min(1,parameter_state.shown_colour(v))) for v in value])
         cell.setData(QtCore.Qt.DecorationRole,decoration)
     def editorEvent(self,event,model,option,index):
         if index.column()==1 and file_parameter(self.schema(index)):
