@@ -124,11 +124,15 @@ struct Pyramid {
  static void loadTile(const void* self,unsigned level,unsigned tile){auto* p=const_cast<Pyramid*>(static_cast<const Pyramid*>(self));
   // Decoded outside the lock (tiles of one texture decode side by side); the first to finish publishes its page.
   auto& page=p->pages[level][tile];if(page)return;
+  // XPU2_SESSION_FAIL_TILE=N: the Nth tile read fails, to test what follows one.
+  static std::atomic<long long> untilFailure{[]{const char* v=std::getenv("XPU2_SESSION_FAIL_TILE");return v?std::atoll(v):0ll;}()};
+  if(untilFailure.load(std::memory_order_relaxed)>0&&untilFailure.fetch_sub(1)==1)throw std::runtime_error("Texture tile read: "+p->file+", tile "+std::to_string(tile)+": failed for a test (XPU2_SESSION_FAIL_TILE)");
   const tex::Mip& m=p->image.levels[level];const unsigned nx=(m.width+tex::Tile-1)/tex::Tile,tx=tile%nx,ty=tile/nx;
   const unsigned tw=std::min(tex::Tile,m.width-tx*tex::Tile),th=std::min(tex::Tile,m.height-ty*tex::Tile);
   std::vector<float> decoded(size_t(tw)*th*p->channels);
-  need(lazyCache()->get_pixels(OIIO::ustring(p->file),0,int(level)+p->fileBase,int(tx*tex::Tile),int(tx*tex::Tile+tw),int(ty*tex::Tile),int(ty*tex::Tile+th),0,1,
-                               OIIO::TypeDesc::FLOAT,decoded.data()),"Texture tile read");
+  if(!lazyCache()->get_pixels(OIIO::ustring(p->file),0,int(level)+p->fileBase,int(tx*tex::Tile),int(tx*tex::Tile+tw),int(ty*tex::Tile),int(ty*tex::Tile+th),0,1,
+                              OIIO::TypeDesc::FLOAT,decoded.data()))
+   throw std::runtime_error("Texture tile read: "+p->file+", tile "+std::to_string(tile)+": "+lazyCache()->geterror());
   const size_t size=p->compressed?size_t(tex::tileBytes(2,0)):size_t(tw)*th*(p->lazyEight?3u:unsigned(sizeof(surface::V3)));
   std::unique_ptr<unsigned char[]> block(new unsigned char[size]);
   if(p->compressed){std::vector<surface::V3> held(size_t(tw)*th);
@@ -178,13 +182,15 @@ struct Pyramid {
     // Its tiles side by side: a level of some thousands of tiles, as the scene is made ready.
     const size_t base=byteTiles.size();byteTiles.resize(base+size_t(nx)*ny);for(size_t k=base;k<byteTiles.size();++k)byteTiles[k].resize(tex::tileBytes(2,0));
     std::atomic<unsigned> next{0};const int nc=spec.nchannels,ac=spec.alpha_channel;const bool onlyAlpha=alpha;
-    auto work=[&]{std::vector<surface::V3> held;for(unsigned i;(i=next++)<nx*ny;){const unsigned x=i%nx,y=i/nx,tw=std::min(tex::Tile,w-x*tex::Tile),th=std::min(tex::Tile,h-y*tex::Tile);
+    std::mutex failing;std::exception_ptr failed;
+    auto work=[&]{try{std::vector<surface::V3> held;for(unsigned i;(i=next++)<nx*ny;){const unsigned x=i%nx,y=i/nx,tw=std::min(tex::Tile,w-x*tex::Tile),th=std::min(tex::Tile,h-y*tex::Tile);
       held.resize(size_t(tw)*th);
       for(unsigned j=0;j<th;++j)for(unsigned q=0;q<tw;++q){size_t idx=(size_t(y*tex::Tile+j)*w+x*tex::Tile+q)*nc;surface::V3 c;float a;texelChannels(&decoded[idx],nc,ac,c,a);if(onlyAlpha)c={a,a,a};held[size_t(j)*tw+q]=c;}
-      encodeTile(held.data(),tw,th,byteTiles[base+i].data());}};
+      encodeTile(held.data(),tw,th,byteTiles[base+i].data());}}
+     catch(...){std::lock_guard<std::mutex> lock(failing);if(!failed)failed=std::current_exception();next=nx*ny;}};
     const unsigned threads=std::max(1u,std::thread::hardware_concurrency()/2);std::vector<std::thread> pool;
-    if(size_t(nx)*ny>64)for(unsigned k=1;k<threads;++k)pool.emplace_back(work);
-    work();for(auto& t:pool)t.join();
+    try{if(size_t(nx)*ny>64)for(unsigned k=1;k<threads;++k)pool.emplace_back(work);}catch(const std::system_error&){}
+    work();for(auto& t:pool)t.join();if(failed)std::rethrow_exception(failed);
     for(unsigned i=0;i<nx*ny;++i){page[i]=reinterpret_cast<const surface::V3*>(byteTiles[base+i].data());bytes+=byteTiles[base+i].size();}
     image.levels[image.count]={w,h,page.data(),0,2u};++image.count;continue;}
    for(unsigned y=0;y<ny;++y)for(unsigned x=0;x<nx;++x){unsigned tw=std::min(tex::Tile,w-x*tex::Tile),th=std::min(tex::Tile,h-y*tex::Tile);

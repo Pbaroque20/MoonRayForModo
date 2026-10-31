@@ -2322,16 +2322,31 @@ private:
             }
             const unsigned threads = unsigned(std::min<size_t>(missing.size(), std::max(1u, std::thread::hardware_concurrency() / 2)));
             std::atomic<size_t> next{0};
+            // A tile that cannot be read is the frame's failure, said with its reason, once every thread has left: thrown past
+            // threads still running, on this thread or theirs, it ended the process with nothing said ("terminate called").
+            std::mutex failing;
+            std::exception_ptr failed;
             auto work = [&] {
-                for (size_t k; (k = next++) < missing.size();) {
-                    const auto& source = fine_.sources[missing[k]];
-                    source.mip->load(source.mip->loader, 0, source.page);
+                try {
+                    for (size_t k; (k = next++) < missing.size();) {
+                        const auto& source = fine_.sources[missing[k]];
+                        source.mip->load(source.mip->loader, 0, source.page);
+                    }
+                } catch (...) {
+                    std::lock_guard<std::mutex> lock(failing);
+                    if (!failed) failed = std::current_exception();
+                    next = missing.size();
                 }
             };
             std::vector<std::thread> pool;
-            for (unsigned k = 1; k < threads; ++k) pool.emplace_back(work);
+            try {
+                for (unsigned k = 1; k < threads; ++k) pool.emplace_back(work);
+            } catch (const std::system_error&) {
+                // No more threads to be had: those there are, and this one, do the work.
+            }
             if (threads) work();
             for (auto& t : pool) t.join();
+            if (failed) std::rethrow_exception(failed);
         }
         for (U32 tile : fine_.pending) {
             if (fine_.freeSlots.empty()) {  // more asked for than the cache holds: next time

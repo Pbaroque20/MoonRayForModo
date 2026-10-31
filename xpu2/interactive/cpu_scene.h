@@ -776,9 +776,13 @@ inline long long nowNs(){return std::chrono::duration_cast<std::chrono::nanoseco
 template<class F> inline void parallelRange(size_t n,const F& f){
  const unsigned threads=std::max(1u,std::min(32u,std::thread::hardware_concurrency()));
  if(n<65536||threads<2){f(size_t(0),n);return;}
- const size_t chunk=(n+threads-1)/threads;std::vector<std::thread> pool;
- for(unsigned t=1;t<threads;++t){const size_t a=size_t(t)*chunk,b=std::min(n,a+chunk);if(a<b)pool.emplace_back([&f,a,b]{f(a,b);});}
- f(size_t(0),std::min(n,chunk));for(auto& t:pool)t.join();}
+ const size_t chunk=(n+threads-1)/threads;std::vector<std::thread> pool;std::mutex failing;std::exception_ptr failed;
+ // A failure goes to the caller once every thread has left: thrown past threads still running, it ended the process.
+ auto part=[&](size_t a,size_t b){try{f(a,b);}catch(...){std::lock_guard<std::mutex> lock(failing);if(!failed)failed=std::current_exception();}};
+ size_t begun=chunk;
+ try{for(unsigned t=1;t<threads;++t){const size_t a=size_t(t)*chunk,b=std::min(n,a+chunk);if(a<b){pool.emplace_back([&part,a,b]{part(a,b);});begun=b;}}}catch(const std::system_error&){}
+ part(size_t(0),std::min(n,chunk));if(begun<n)part(begun,n);
+ for(auto& t:pool)t.join();if(failed)std::rethrow_exception(failed);}
 // A part of preparation timed while it is in scope (PrepLaps::parts).
 struct PrepPart{const char* what;long long began=nowNs();~PrepPart();};
 inline std::shared_ptr<const SubdSurface> tessellateSubdivision(const rdl::SceneObject& o,const rdl::Layer& layer,const Plan& plan,const rdl::Mat4d& objectToWorld,
