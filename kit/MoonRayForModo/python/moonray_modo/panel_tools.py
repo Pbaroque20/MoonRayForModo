@@ -121,7 +121,7 @@ class Tools:
             return
         try:
             from .package_sequence import PackageSequence
-            self.packaging = PackageSequence(self, path, first, last, step, float(modo.Scene().fps), self._settings_values()['final_motion'])
+            self.packaging = PackageSequence(self, path, first, last, step, float(modo.Scene().fps), self._motion_wanted())
             self.packaging.start()
         except Exception as exc:
             self._failed(str(exc))
@@ -281,7 +281,7 @@ class Tools:
         render = scene.renderItem
         return {'first': int(round(float(channel(render, 'first', 1)))), 'last': int(round(float(channel(render, 'last', 1)))),
                 'step': max(1, int(round(float(channel(render, 'step', 1))))), 'fps': float(scene.fps),
-                'motion': bool(self._settings_values()['final_motion'])}
+                'motion': self._motion_wanted()}
 
     def _output_view(self):
         """The window made ready to show a render to files, with realtime already ended (left on with its render stopped,

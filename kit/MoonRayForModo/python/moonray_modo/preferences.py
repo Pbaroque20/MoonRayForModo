@@ -11,7 +11,7 @@ KEYS = {
     # Illumination on in the Render item, as Modo's own renderer has it ('modo').
     'environment_lighting': ('moonray', str),
     'idle_release_minutes': (5, int),
-    'persistent_preview': (True, bool), 'preview_motion': (False, bool), 'memory_hud': (True, bool),
+    'persistent_preview': (True, bool), 'preview_motion': (False, bool), 'xpu2_motion': (False, bool), 'memory_hud': (True, bool),
     'ipr': (False, bool), 'show_buckets': (True, bool), 'worker_tiles': (True, bool), 'clay': ('materials', str),
     'display_gamma': (1.0, float),
     # Set on the MoonRay page of Modo's Preferences: what Assign Material starts with, the ink of a draft, whether a
@@ -181,10 +181,10 @@ class Dialog(QtWidgets.QDialog):
         self.realtime_held = realtime_share()
         self.realtime_share = QtWidgets.QSpinBox()
         self.realtime_share.setRange(1, 100)
-        self.realtime_share.setValue(100 if self.realtime_held is None else self.realtime_held)
+        self.realtime_share.setValue(30 if self.realtime_held is None else self.realtime_held)
         self.realtime_share.setEnabled(self.realtime_held is not None and native.xpu2())
         self.realtime_share.setToolTip('MoonRay XPU2 only. While realtime follows the scene (RT), the share of Generation Samples XPU2 takes, in '
-                                       "percent: lower settles sooner and noisier. The open scene's own, the same as in its render settings")
+                                       "percent: lower settles sooner and noisier. 30 unless changed. The open scene's own, saved with it, the same as in its render settings")
         form.addRow('Realtime Sample %', self.realtime_share)
         form.addRow(check('persistent_preview', 'Keep MoonRay loaded between previews',
                           'Faster updates; structural edits still reload the scene'))
@@ -194,6 +194,11 @@ class Dialog(QtWidgets.QDialog):
         form.addRow(check('preview_motion', 'Motion blur in MoonLightIPR renders',
                           'Off by default: each update then also reads the scene at shutter open and close, which adds to its wait. '
                           'While dragging, updates stay sharp. Said as Motion Blur at the foot of the picture while on'))
+        form.addRow(check('xpu2_motion', 'Motion blur in MoonRay XPU2 realtime',
+                          'Off by default. On, realtime (RT) shows motion blur once an edit is let go: where something moves during the '
+                          'shutter, each update also reads the scene at shutter open and close and XPU2 prepares it again, which adds to its wait. '
+                          'While dragging, updates stay sharp. Said as Motion Blur at the foot of the picture while on'))
+        self.widgets['xpu2_motion'].setEnabled(native.xpu2())
         form.addRow(check('memory_hud', 'Memory in the picture',
                           "What the renderer holds, the machine's free RAM and the graphics card's memory, read once a second "
                           'and shown at the bottom right of the picture, in colour when it runs short. Off, it is hidden and nothing is read'))

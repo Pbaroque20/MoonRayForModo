@@ -97,7 +97,18 @@ class Wiring(unittest.TestCase):
         self.assertIn('deferredHead_ = 0;', source[start - 400:start])
 
     def test_a_render_with_moonray_has_the_scenes_motion_blur(self):
-        self.assertIn("still=self.preview_engine.currentData()=='moonray' and not self._following", self.read('panel.py'))
+        self.assertIn("still=self.preview_engine.currentData()=='moonray' and not self._following and not self.draft.isChecked() and self._motion_wanted()", self.read('panel.py'))
+
+    def test_motion_blur_on_the_modo_camera_counts_everywhere(self):
+        self.assertIn("channel(scene.renderCamera, 'motionBlur', 0)", self.read('host.py'))
+        self.assertIn('if not self._motion_wanted():return self._capture()', self.read('panel.py'))
+        self.assertIn("'motion': self._motion_wanted()", self.read('panel_tools.py'))
+
+    def test_xpu2_realtime_blur_is_a_preference_off_by_default(self):
+        self.assertIn("'xpu2_motion': (False, bool)", self.read('preferences.py'))
+        panel = self.read('panel.py')
+        self.assertIn('if not held and self._preview_blurred():', panel)
+        self.assertIn("not self.ipr_mode.isChecked() or not self.preferences.get('xpu2_motion')", panel)
 
 
 if __name__ == '__main__':

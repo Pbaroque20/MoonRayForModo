@@ -326,6 +326,14 @@ def picture_size(scene, camera=None):
     return width, height
 
 
+def camera_motion_blur(scene):
+    """Whether Motion Blur is on on the scene's render camera, Modo's own switch."""
+    try:
+        return bool(int(channel(scene.renderCamera, 'motionBlur', 0)))
+    except Exception:
+        return False
+
+
 def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=False,dirty_meshes=None,shading_kept=False):
     scene = modo.Scene()
     try:

@@ -24,7 +24,7 @@ DEFAULTS = {
     'denoising': {'engine': 'off', 'preview': True, 'final': True, 'safe': False, 'smart': 'off', 'detail': 'some'},
     # XPU2's sampling generations: 16 samples a pixel on average and a noise target of 10 by
     # default; the rest are what XPU2 does without them.
-    'xpu2_generations': {'on': True, 'samples': 16, 'spend': 'time', 'noise': 10.0, 'seed': 4, 'most': 0, 'cpu': True, 'realtime': 100},
+    'xpu2_generations': {'on': True, 'samples': 16, 'spend': 'time', 'noise': 10.0, 'seed': 4, 'most': 0, 'cpu': True, 'realtime': 30},
     'execution_mode': 'auto', 'preview_buffer': 'beauty',
     # The camera MoonRay tessellates adaptive geometry for, by its item's identity; '' for the render camera.
     'dicing_camera': '',
@@ -123,7 +123,7 @@ GROUPS = [
         field('xpu2_noise', ('xpu2_generations', 'noise'), 'float', 'Halt at Noise', "A part of the picture stops early once it is this clean, in Target Error's units (lower is cleaner, and slower). 0: none, every pixel gets its share. MoonRay's Target Error is for MoonRay renders", 0.0, 1000.0),
         field('xpu2_most', ('xpu2_generations', 'most'), 'int', 'Most Samples', 'The most samples one pixel may get. 0: 16 times the average', 0, 16384),
         field('xpu2_cpu', ('xpu2_generations', 'cpu'), 'bool', 'CPU Workers', "The processor's workers take part in the generations beside the graphics card. Off: the graphics card takes every sample. Which devices XPU2 uses at all: Preferences > MoonRay > XPU2 > Devices"),
-        field('xpu2_realtime', ('xpu2_generations', 'realtime'), 'int', 'Realtime Sample %', 'While realtime follows the scene (RT), the share of Generation Samples XPU2 takes, in percent: lower settles sooner and noisier. Previews started with Render and final renders take them all', 1, 100),
+        field('xpu2_realtime', ('xpu2_generations', 'realtime'), 'int', 'Realtime Sample %', 'While realtime follows the scene (RT), the share of Generation Samples XPU2 takes, in percent: lower settles sooner and noisier. 30 unless changed, and a change is saved with the scene. Previews started with Render and final renders take them all', 1, 100),
     ]),
     ('Bounces', False, [
         render_field('max_depth', 'Total'),
@@ -224,7 +224,7 @@ GROUPS = [
         field('colors', None, 'button', 'Input Color Spaces and Texture Cache...'),
     ]),
     ('Output Renders', True, [
-        field('final_motion', ('final_motion',), 'bool', 'Motion Blur', 'Motion blur and motion vectors in MoonRay renders: Render, Render to a File and animations. Not while realtime follows the scene'),
+        field('final_motion', ('final_motion',), 'bool', 'Motion Blur', 'Motion blur and motion vectors in MoonRay renders: Render, Render to a File and animations. Also on where Motion Blur is on on the Modo camera. Realtime has a preference of its own (Preview Preferences)'),
         field('exr_compression', ('exr', 'compression'), 'choice', 'EXR Compression', 'How Render EXR and animations compress their EXRs. The lossy ones make smaller files; they are not used with checkpoints or Safe Denoising, which take a render up again from what it saved', choices=options.EXR_COMPRESSIONS),
         field('exr_dwa_level', ('exr', 'dwa_level'), 'float', 'DWA Compression Level', 'For DWAA and DWAB: higher is smaller and loses more', 0.0, 1000.0),
         field('exr_multipart', ('exr', 'multipart'), 'bool', 'Multi-Part EXR', 'Each output in a part of its own in the EXR, which a compositor can read one at a time, not all together. The beauty, its alpha and any Cryptomatte stay in the first part'),
