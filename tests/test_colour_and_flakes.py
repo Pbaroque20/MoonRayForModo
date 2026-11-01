@@ -8,6 +8,22 @@ sys.modules.setdefault('modo', types.ModuleType('modo'))
 from moonray_modo import node_defaults, parameter_state, shader_library
 
 
+class TextureWithNowhereToGo(unittest.TestCase):
+    def said(self, shader, effect='diffuseColor'):
+        return shader_library.no_such_input({'name': 'Floor'}, shader, effect, shader_library.catalog()[shader]['attributes'])
+
+    def test_a_material_of_materials_points_to_its_inputs(self):
+        for shader in ('DwaLayerMaterial', 'DwaMixMaterial', 'DwaSwitchMaterial', 'DwaColorCorrectMaterial', 'DwaAdjustMaterial', 'DwaTwoSidedMaterial'):
+            words = self.said(shader)
+            self.assertIn('Floor (%s) has no Diffuse Color of its own' % shader, words)
+            self.assertIn('one of those materials', words)
+
+    def test_any_other_is_told_to_move_it_or_change_its_effect(self):
+        words = self.said('DwaEmissiveMaterial')
+        self.assertIn('has no Diffuse Color input', words)
+        self.assertIn("change the texture's effect", words)
+
+
 class Colours(unittest.TestCase):
     def test_numbers_are_the_ones_modos_form_shows_for_the_same_colour(self):
         # A material of metaltest.lxo: kept, and what Modo's form showed for it.
