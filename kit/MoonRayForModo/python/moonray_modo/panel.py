@@ -1964,6 +1964,9 @@ class Panel(Tools, QtWidgets.QWidget):
         # from, brought up to date at every edit. With realtime off nothing keeps it so, and the scene is read anew.
         if not self._following:return None
         if scene is None or not self.changes.registered or self.changes.full or self.changes.items:return None
+        # A Render with Motion Blur keeps a reading with the shutter's ends: realtime switched on after it, its preference
+        # off, showed that blur until the first edit.
+        if bool(scene.get('motion_steps'))!=self._preview_blurred():return None
         try:
             if self._capture_key()!=self._kept_key:return None
         except Exception:return None

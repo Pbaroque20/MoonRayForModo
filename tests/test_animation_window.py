@@ -196,6 +196,9 @@ class Wiring(unittest.TestCase):
         self.assertIn('if not held and self._preview_blurred():', panel)
         self.assertIn("not self.ipr_mode.isChecked() or not self.preferences.get('xpu2_motion')", panel)
 
+    def test_realtime_does_not_take_over_a_blurred_renders_reading(self):
+        self.assertIn("if bool(scene.get('motion_steps'))!=self._preview_blurred():return None", self.read('panel.py'))
+
 
 if __name__ == '__main__':
     unittest.main()

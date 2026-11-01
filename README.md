@@ -8,7 +8,7 @@ The current release is [0.5.1](https://github.com/Pbaroque20/MoonRayForModo/rele
 
 ## Coming in 0.5.2
 
-A hotfix to 0.5.1, with a new runtime ZIP: install both.
+A hotfix to 0.5.1, with a new runtime ZIP: install both, and **Compile XPU2 Shaders once more**.
 
 - **Render Animation renders with XPU2** where XPU2 is chosen, and so does Render to a File, with each picture shown in the
   preview as it comes. Deep images and checkpoints stay with MoonRay. Under MoonRay XPU, each frame appears as it finishes.
@@ -29,6 +29,16 @@ A hotfix to 0.5.1, with a new runtime ZIP: install both.
 - **RT and Render come back after an output render**, with no need to switch engine and back.
 - **XPU2 no longer stalls on a second motion-blurred picture**: from the second frame in a session, a scene with motion blur or a
   volume only the CPU renders waited for good.
+- **XPU2 renders moving objects on the GPU**: moving meshes, subdivision surfaces, instances, curves, fog and any number of moving
+  lights, and points whether moving or still, no longer send their samples, or the whole scene, to the CPU. Test scenes finished
+  about 2.6 to 8.5 times sooner; a scene with nothing moving takes about 2 to 3% longer.
+- **Fog no longer goes missing from XPU2's CPU samples**: a volume on a mesh with no material of its own was left out of what the
+  CPU renders, which could thin it where the CPU and GPU render together.
+- **MoonRay cameras no longer render black up close**: a dwPerspectiveCamera or another MoonRay camera kept MoonRay's near clip of 1 m,
+  so within a metre of a surface it looked at the surface's dark inside. It now sees as near as a Modo camera, unless you set Near yourself.
+  A new MoonRay camera also starts where the render camera stands, not at the origin, inside whatever stands there.
+- **Round lights under an unevenly scaled parent stay on**: a disk, sphere, spot or cylinder light there now renders round, at the mean of
+  its scales, in every engine. MoonRay would have switched it off, and XPU2 refused the scene.
 
 ## New in 0.5.1
 

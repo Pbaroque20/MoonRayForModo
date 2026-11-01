@@ -100,6 +100,8 @@ def starting(name):
     held = dict(STARTING.get(name, {}))
     # A display filter starts on the pictures it needs: the beauty, or the passes it is made for.
     held.update(FILTER_INPUTS.get(name, {}))
+    if name in VIEWED_CAMERAS:
+        held['near'] = CAMERA_NEAR
     if 'intensity' in held:
         try:
             from .preferences import Preferences
@@ -811,6 +813,7 @@ def proxy(name, number):
 # gate as it does for any camera. The bake camera is not: it renders from a mesh's UVs and has no view.
 VIEWED_CAMERAS = ('DomeMaster3DCamera', 'FisheyeCamera', 'OrthographicCamera', 'PerspectiveCamera', 'SphericalCamera')
 CAMERA_PACKAGE_PREFIX = 'moonray.cameraKind.'
+CAMERA_NEAR = 0.001
 
 
 def camera_package(name):
@@ -867,6 +870,17 @@ def make_item(scene, name, label):
         item.PackageAdd(camera_package(name))
         return item
     return scene.addItem(item_type(name), name=label)
+
+
+def stand_like(item, camera):
+    """A new camera where another stands and facing as it faces: under the same parent, with the same place and turn.
+    At the origin a new camera was inside whatever stands there, and rendered its dark inside. Call inside a command."""
+    import modo
+    if camera.parent is not None:
+        item.setParent(camera.parent)
+    source, target = modo.LocatorSuperType(camera), modo.LocatorSuperType(item)
+    target.position.set(source.position.get())
+    target.rotation.set(source.rotation.get())
 
 
 def modo_cameras(scene):
@@ -1008,6 +1022,33 @@ def literal(entities, entity, key, authored):
     return one(authored, kind)
 
 
+# The lights MoonRay switches off under an uneven scale (LocalParamLight::updateTransforms), and the axes across which each
+# is round. RectLight takes an uneven scale into its size. An uneven scale reaches these from a parent: the scale tool's
+# own goes into their size (scaled_size), by the same mean.
+ROUND_LIGHTS = {'DiskLight': (0, 1), 'SpotLight': (0, 1), 'SphereLight': (0, 1, 2), 'CylinderLight': (0, 1, 2)}
+
+
+def round_light(name, matrix):
+    """A round light's matrix with an uneven scale made even, as MoonRay can render it: the mean of its scales across
+    the light, and its axes square to the way it faces. Any other matrix comes back as it is."""
+    across = ROUND_LIGHTS.get(name)
+    if not across or not matrix:
+        return matrix
+    rows = [[float(v) for v in matrix[at:at + 3]] for at in (0, 4, 8)]
+    lengths = [math.sqrt(sum(v * v for v in row)) for row in rows]
+    dot = lambda a, b: sum(p * q for p, q in zip(a, b))
+    if (max(lengths) - min(lengths) <= 0.0001 and abs(dot(rows[0], rows[1])) <= 0.0001 and abs(dot(rows[0], rows[2])) <= 0.0001
+            and abs(dot(rows[1], rows[2])) <= 0.0001) or min(lengths) <= 0:
+        return matrix
+    z = [v / lengths[2] for v in rows[2]]
+    x = [v - dot(rows[0], z) * w for v, w in zip(rows[0], z)]
+    x = [v / math.sqrt(dot(x, x)) for v in x]
+    y = [v - dot(rows[1], z) * w - dot(rows[1], x) * u for v, w, u in zip(rows[1], z, x)]
+    y = [v / math.sqrt(dot(y, y)) for v in y]
+    scale = math.exp(sum(math.log(lengths[axis]) for axis in across) / len(across))
+    return [v * scale for v in x] + [0.0] + [v * scale for v in y] + [0.0] + [v * scale for v in z] + [0.0] + [float(v) for v in matrix[12:16]]
+
+
 def block(entities, entity, extra=()):
     """The lines that define one entity: its place, then what the user set."""
     from .rdla import node_matrix, string
@@ -1015,8 +1056,8 @@ def block(entities, entity, extra=()):
     lines = [name + ' {']
     if catalog()[entity['class']]['placed']:
         # Where it stands, or, moving during the shutter, where it stands as it opens and as it closes.
-        lines.append('  ["node_xform"] = %s,' % node_matrix(dict(matrix=entity.get('matrix', IDENTITY), **(
-            {'matrix_close': entity['matrix_close']} if entity.get('matrix_close') else {}))))
+        lines.append('  ["node_xform"] = %s,' % node_matrix(dict(matrix=round_light(entity['class'], entity.get('matrix', IDENTITY)), **(
+            {'matrix_close': round_light(entity['class'], entity['matrix_close'])} if entity.get('matrix_close') else {}))))
         from .native import light_motion
         if entity.get('matrix_close') and catalog()[entity['class']]['category'] == 'light' and 'mb' not in entity['parameters']                 and light_motion():
             # MoonRay moves a light during the shutter only when the light says so.
@@ -1325,6 +1366,10 @@ def camera_lines(scene, entity):
     entities = checked(scene)
     steps = scene.get('motion_steps', [-.25, .25])
     shutter = [(key, number(steps[i])) for key, i in (('mb_shutter_open', 0), ('mb_shutter_close', -1)) if key not in entity['parameters']]
+    # As near as a Modo camera sees (rdla.py): left at MoonRay's 1, what is nearer than a metre was cut away, and a camera
+    # inside that metre of a surface looked at its dark inside, a black picture.
+    if entity['class'] in VIEWED_CAMERAS and 'near' not in entity['parameters']:
+        shutter = shutter + [('near', number(CAMERA_NEAR))]
     target = entity['parameters'].get('geometry')
     if entity['class'] == 'BakeCamera' and not any(target in (e['name'], e['identity']) and catalog()[e['class']]['category'] == 'geometry' for e in entities):
         # What it bakes is a Modo mesh, which the scene's text names only once the meshes are written.

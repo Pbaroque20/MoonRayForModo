@@ -34,7 +34,7 @@ material and many DwaBase ones is not judged by the glitter.
   map interpreter split into a function per map type and the families moved into separate modules, a scene compiles
   only what it uses, cached per combination.
 - **Deferral to the CPU.** An entity classified `Cpu` is in the GPU scene as a stand-in: a bounding primitive (a
-  moving mesh's motion bounds, a VDB's box, points' bounds) or a flag on a light or material. A GPU sample that meets
+  VDB's box, a mesh left to the CPU by the card's budget) or a flag on a light or material. A GPU sample that meets
   one stops and is handed to the CPU lane, which renders that sample whole from its identity (pixel, index, frame).
   Every sample's random numbers come from its identity, so the CPU's result is the one the GPU would have made; no
   path state crosses devices, and the GPU's partial work for it is dropped (its film never sees it). The CPU lane's
@@ -448,8 +448,9 @@ As of 2026-10-30, where it could be checked against the code:
 2. Scene mode from the decisions; the plan builder keeps its checks as assertions. The mode is worked out and logged
    ("MoonRay XPU2 routing", `xpu2_session.cc`); the plan builder still refuses by itself.
 3. Deferral to the CPU (GPU stand-ins, deferral status, the CPU lane's retry queue), replacing `cpuOnly`. Done for
-   stand-ins; `cpuOnly` remains for lights in motion, light filters, shadow linking, lobe light sets and emissive
-   volumes.
+   stand-ins; `cpuOnly` remains for light filters, shadow linking, lobe light sets and emissive volumes. Points, and
+   geometry and lights in motion, are the GPU's since sessions 211-213 (`XPU2_GPU_MOTION_OFF` defers them again, to
+   compare).
 4. Cell seeding by suitability and ownership by deferral rate. Done (`device_suit.h`; deferred samples count as the
    CPU's in the ownership flips).
 5. GPU program families as separate modules, compiled on demand. Nine modules, done (`build_async.py`); linking and

@@ -742,6 +742,9 @@ def register():
             for key,value in entities.starting(name).items():
                 try:item.channel(entities.CHANNEL_PREFIX+key).set(value)
                 except (TypeError,ValueError,AttributeError,LookupError,RuntimeError):pass
+            if name in entities.VIEWED_CAMERAS and scene.renderCamera is not None:
+                try:entities.stand_like(item,scene.renderCamera)
+                except (TypeError,ValueError,AttributeError,LookupError,RuntimeError):pass
             if name=='VdbGeometry':
                 # A VDB shape is nothing without its file: ask for it now, and set up what shows it.
                 try:path=modo.dialogs.customFile('fileOpen','Choose a VDB file',('vdb','all'),('OpenVDB files','All files'),('*.vdb','*.*'))

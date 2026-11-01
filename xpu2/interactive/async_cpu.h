@@ -355,7 +355,8 @@ struct CpuScene {
         // A mesh with no material bounds a volume only: it is in the volumes' scene, not the surfaces'.
         const bool surface = plan->meshes[i].material != ~0u, bounds = plan->meshes[i].volume >= 0;
         for (int pass = ownScene(i) || plan->meshes[i].instance ? 1 : 0; pass < 2; ++pass) {
-            if (pass == 0 ? !surface : !bounds) return;
+            if (pass == 0 && !surface) continue;
+            if (pass == 1 && !bounds) return;
             if (pass == 1 && surfaceOnly) return;
             if (pass == 1 && !volumes) {
                 volumes = rtcNewScene(device->handle);

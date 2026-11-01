@@ -2989,11 +2989,11 @@ inline size_t tessellationJobs(){if(const char* v=std::getenv("XPU2_SESSION_TESS
 // The tessellation handler's routing by device (INDEXER.md section 16): the triangle meshes' data the GPU would hold
 // (each shared data once), and past the card's budget the largest left to the CPU lane alone, every plan mesh of that
 // data with it (Mesh::cpuOnly: a stand-in on the GPU, a sample that meets it rendered by the CPU from its identity, the
-// image unchanged). Volume bounds, curves and points stay as they are.
+// image unchanged). Volume bounds, curves and points stay as they are. A moving mesh holds each of its time steps.
 inline void routeMeshes(Plan& plan,size_t gpuBytes){
  std::map<const MeshData*,size_t> held;
- for(const auto& m:plan.meshes){const MeshData& d=*m.data;if(m.volume>=0||d.points||d.curveBasis||!d.steps.empty())continue;
-  held[&d]=d.positions.size()*sizeof(V3)+d.triangles.size()*sizeof(Tri);}
+ for(const auto& m:plan.meshes){const MeshData& d=*m.data;if(m.volume>=0||d.points||d.curveBasis)continue;
+  held[&d]=(1+d.steps.size())*d.positions.size()*sizeof(V3)+d.triangles.size()*sizeof(Tri);}
  size_t total=0;for(const auto& [d,b]:held)total+=b;
  std::vector<std::pair<size_t,const MeshData*>> largest;for(const auto& [d,b]:held)largest.push_back({b,d});
  std::sort(largest.begin(),largest.end(),[](const auto& a,const auto& b){return a.first>b.first;});

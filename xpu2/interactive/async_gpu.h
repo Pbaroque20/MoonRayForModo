@@ -159,22 +159,30 @@ public:
     // resident mip levels and an empty fine-detail cache. Startup work.
     // What the GPU programs do not render yet (the session then renders the scene on the CPU alone), or empty.
     static std::string cpuOnly(const cpu::PlanView& plan) {
-        if (!plan->lightMotion.empty()) return "lights in motion";
+        if (!plan->lightMotion.empty() && !motionOnGpu()) return "lights in motion";
         if (!plan->filterLists.empty()) return "light filters";
         if (!plan->shadowLinks.empty()) return "shadow linking";
         if (!plan->lobeLightSetBits.empty()) return "lobe light sets";
         // Emissive volumes light every surface (their emissive regions are light sources, volume_emission.h): a GPU
         // sample that does not cross one would still miss its light, so none may be the GPU's.
         if (!plan->emissiveRegions.empty()) return "emissive volumes";
-        // Points, geometry in motion and VDB, heterogeneous and emissive volumes are stand-ins (standIn): their
-        // samples are deferred to the CPU lane.
+        // VDB, heterogeneous and emissive volumes are stand-ins (standIn): their samples are deferred to the CPU lane.
         return {};
     }
+    // A launch thread's records of lights in motion at the sample's time (GpuBackend::movedLight): however many move, the
+    // card holds this many a thread.
+    static constexpr size_t MovedLightSlots = 16;
+    // XPU2_GPU_MOTION_OFF: points, geometry and lights in motion left to the CPU lane, as before the GPU rendered them, to compare.
+    static bool motionOnGpu() {
+        static const bool on = std::getenv("XPU2_GPU_MOTION_OFF") == nullptr;
+        return on;
+    }
     // A mesh the GPU programs do not render, or one the card's budget left to the CPU lane (cpu::routeMeshes): its samples
-    // go to the CPU lane.
+    // go to the CPU lane. Points shared by an instance's transform are one: the point program reads them in world space.
     static bool standIn(const cpu::Mesh& mesh) {
         const auto& m = *mesh.data;
-        return mesh.cpuOnly || m.points || !m.steps.empty() || !m.curveSteps.empty();
+        const bool moving = !m.steps.empty() || !m.curveSteps.empty();
+        return mesh.cpuOnly || (m.points && mesh.instance) || ((moving || m.points) && !motionOnGpu());
     }
     // Whether the GPU hands samples to the CPU lane: stand-in meshes, or volumes its programs do not render (VDB,
     // heterogeneous, emissive: volumeCrossings defers them), which need the CPU lane and the deferred samples' ring.
@@ -250,7 +258,7 @@ public:
                 x.material != y.material || x.cpuOnly != y.cpuOnly)
                 return false;
             if (x.instance == y.instance && std::memcmp(x.objectToWorld, y.objectToWorld, sizeof x.objectToWorld) == 0) continue;
-            if (standIn(y) || y.data->curveBasis || standIn(x)) return false;
+            if (standIn(y) || y.data->curveBasis || standIn(x) || !y.data->steps.empty()) return false;
             if (meshCache_.find(y.data.get()) == meshCache_.end()) return false;
             moved.push_back(i);
         }
@@ -565,6 +573,7 @@ public:
         std::vector<shade::MaterialRecord> meshMaterials;
         std::vector<shade::MeshAttributes> meshAttributes;
         std::vector<OptixInstance> standIns;
+        std::vector<MeshMotion> meshMotion(plan->meshes.size());
         std::map<const cpu::MeshData*, MeshEntry> nextCache;
         meshesReused_ = 0;
         for (unsigned i = 0; i < plan->meshes.size(); ++i) {
@@ -681,13 +690,28 @@ public:
                 // Curves: a custom primitive a span, its box as OptixGPUCurve::getPrimitiveAabbs makes it; the curve
                 // hit group's program (async_gpu.cu) runs MoonRay XPU's curve programs (curve_core.h).
                 const curves::Set host = cpu::curveSet(m);
-                std::vector<OptixAabb> boxes(host.spanCount);
-                for (U32 k = 0; k < host.spanCount; ++k) {
-                    float lower[3], upper[3];
-                    curves::spanBounds(host, k, lower, upper);
-                    boxes[k] = {lower[0], lower[1], lower[2], upper[0], upper[1], upper[2]};
+                // In motion, its boxes and control points at each time step (OptiX's keys, evenly over the shutter).
+                std::vector<U64L> boxKeys, pointKeys;
+                for (U32 step = 0; step < host.stepCount; ++step) {
+                    curves::Set at = host;
+                    at.points = step ? m.curveSteps[step - 1].data() : m.curvePoints.data();
+                    at.stepCount = 1;
+                    std::vector<OptixAabb> boxes(host.spanCount);
+                    for (U32 k = 0; k < host.spanCount; ++k) {
+                        float lower[3], upper[3];
+                        curves::spanBounds(at, k, lower, upper);
+                        boxes[k] = {lower[0], lower[1], lower[2], upper[0], upper[1], upper[2]};
+                    }
+                    auto stepBoxes = upload(boxes.data(), boxes.size() * sizeof(OptixAabb));
+                    boxKeys.push_back(stepBoxes->pointer);
+                    scene_.keep.push_back(stepBoxes);
+                    if (step) {
+                        const auto& s = m.curveSteps[step - 1];
+                        auto stepPoints = upload(s.data(), s.size() * sizeof(float));
+                        pointKeys.push_back(stepPoints->pointer);
+                        scene_.keep.push_back(stepPoints);
+                    }
                 }
-                auto aabbs = upload(boxes.data(), boxes.size() * sizeof(OptixAabb));
                 auto points = upload(m.curvePoints.data(), m.curvePoints.size() * sizeof(float));
                 auto spans = upload(m.curveSpans.data(), m.curveSpans.size() * sizeof(unsigned));
                 auto counts = upload(m.curveSpanCounts.data(), m.curveSpanCounts.size() * sizeof(unsigned));
@@ -695,12 +719,12 @@ public:
                 unsigned flag = OPTIX_GEOMETRY_FLAG_DISABLE_ANYHIT;
                 input.type = OPTIX_BUILD_INPUT_TYPE_CUSTOM_PRIMITIVES;
                 auto& custom = input.customPrimitiveArray;
-                custom.aabbBuffers = &aabbs->pointer;
+                custom.aabbBuffers = boxKeys.data();
                 custom.numPrimitives = host.spanCount;
                 custom.strideInBytes = sizeof(OptixAabb);
                 custom.flags = &flag;
                 custom.numSbtRecords = 1;
-                auto gas = build(input);
+                auto gas = build(input, host.stepCount);
                 auto& inst = instances[i];
                 inst.transform[0] = inst.transform[5] = inst.transform[10] = 1;
                 inst.instanceId = i;
@@ -725,8 +749,75 @@ public:
                 attributes.curve.points = reinterpret_cast<const float*>(points->pointer);
                 attributes.curve.spans = reinterpret_cast<const U32*>(spans->pointer);
                 attributes.curve.curveSpans = reinterpret_cast<const U32*>(counts->pointer);
+                if (host.stepCount > 1) {
+                    auto steps = upload(pointKeys.data(), pointKeys.size() * sizeof(U64L));
+                    attributes.curve.steps = reinterpret_cast<const float* const*>(steps->pointer);
+                    scene_.keep.push_back(steps);
+                    meshMotion[i].steps = host.stepCount;
+                    meshMotion[i].kind = MotionCurves;
+                } else {
+                    attributes.curve.steps = nullptr;
+                }
                 meshAttributes.push_back(attributes);
-                scene_.keep.insert(scene_.keep.end(), {aabbs, points, spans, counts, gas.first});
+                scene_.keep.insert(scene_.keep.end(), {points, spans, counts, gas.first});
+                continue;
+            }
+            if (m.points) {
+                // Points: a custom primitive each, its box at each time step; the same hit group as curves, whose program
+                // runs MoonRay's sphere test (points_core.h).
+                auto centres = upload(m.positions.data(), m.positions.size() * sizeof(surface::V3));
+                std::vector<U64L> centreKeys{centres->pointer}, boxKeys;
+                scene_.keep.push_back(centres);
+                for (const auto& s : m.steps) {
+                    auto step = upload(s.data(), s.size() * sizeof(surface::V3));
+                    centreKeys.push_back(step->pointer);
+                    scene_.keep.push_back(step);
+                }
+                for (size_t step = 0; step < centreKeys.size(); ++step) {
+                    const std::vector<surface::V3>& at = step ? m.steps[step - 1] : m.positions;
+                    std::vector<OptixAabb> boxes(m.points);
+                    for (unsigned k = 0; k < m.points; ++k) {
+                        const float r = m.pointRadius[k];
+                        boxes[k] = {at[k].x - r, at[k].y - r, at[k].z - r, at[k].x + r, at[k].y + r, at[k].z + r};
+                    }
+                    auto stepBoxes = upload(boxes.data(), boxes.size() * sizeof(OptixAabb));
+                    boxKeys.push_back(stepBoxes->pointer);
+                    scene_.keep.push_back(stepBoxes);
+                }
+                auto radii = upload(m.pointRadius.data(), m.pointRadius.size() * sizeof(float));
+                OptixBuildInput input{};
+                unsigned flag = OPTIX_GEOMETRY_FLAG_DISABLE_ANYHIT;
+                input.type = OPTIX_BUILD_INPUT_TYPE_CUSTOM_PRIMITIVES;
+                auto& custom = input.customPrimitiveArray;
+                custom.aabbBuffers = boxKeys.data();
+                custom.numPrimitives = m.points;
+                custom.strideInBytes = sizeof(OptixAabb);
+                custom.flags = &flag;
+                custom.numSbtRecords = 1;
+                auto gas = build(input, unsigned(boxKeys.size()));
+                auto& inst = instances[i];
+                inst.transform[0] = inst.transform[5] = inst.transform[10] = 1;
+                inst.instanceId = i;
+                inst.sbtOffset = 1;  // the curve hit group
+                inst.visibilityMask = plan->meshes[i].visibility & 0xffu;
+                inst.traversableHandle = gas.second;
+                geometry.push_back({reinterpret_cast<const surface::V3*>(centres->pointer), nullptr, unsigned(m.positions.size()), 0});
+                materials.push_back(plan->materials.at(plan->meshes[i].material));
+                meshMaterials.push_back(plan->materialRecords.at(plan->meshes[i].material));
+                shade::MeshAttributes attributes;
+                for (int k = 0; k < 12; ++k) attributes.worldToObject[k] = m.worldToObject[k];
+                if (!m.prims.empty()) {
+                    auto prims = upload(m.prims.data(), m.prims.size() * sizeof(shade::PrimAttr));
+                    auto data = upload(m.primData.data(), std::max<size_t>(m.primData.size(), 1) * sizeof(float));
+                    attributes.prims = reinterpret_cast<const shade::PrimAttr*>(prims->pointer);
+                    attributes.primData = reinterpret_cast<const float*>(data->pointer);
+                    attributes.primCount = U32(m.prims.size());
+                    scene_.keep.insert(scene_.keep.end(), {prims, data});
+                }
+                if (!m.steps.empty()) meshMotion[i] = uploadMotion(m, attributes, centreKeys, scene_.keep);
+                meshMotion[i].pointRadius = reinterpret_cast<const float*>(radii->pointer);
+                meshAttributes.push_back(attributes);
+                scene_.keep.insert(scene_.keep.end(), {radii, gas.first});
                 continue;
             }
             const bool surface = plan->meshes[i].material != ~0u;
@@ -745,6 +836,7 @@ public:
                 inst.traversableHandle = here->second.handle;
                 geometry.push_back(here->second.geometry);
                 meshAttributes.push_back(here->second.attributes);
+                meshMotion[i] = here->second.motion;
                 continue;
             }
             if (auto found = meshCache_.find(&m); found != meshCache_.end()) {
@@ -752,6 +844,7 @@ public:
                 inst.traversableHandle = entry.handle;
                 geometry.push_back(entry.geometry);
                 meshAttributes.push_back(entry.attributes);
+                meshMotion[i] = entry.motion;
                 scene_.keep.insert(scene_.keep.end(), entry.keep.begin(), entry.keep.end());
                 nextCache.emplace(&m, std::move(entry));
                 ++meshesReused_;
@@ -761,11 +854,18 @@ public:
             entry.data = plan->meshes[i].data;
             auto vertices = upload(m.positions.data(), m.positions.size() * sizeof(surface::V3));
             auto indices = upload(m.triangles.data(), m.triangles.size() * sizeof(cpu::Tri));
+            // In motion, its vertices at each time step (OptiX's keys, evenly over the shutter as Embree's).
+            std::vector<U64L> vertexKeys{vertices->pointer};
+            for (const auto& s : m.steps) {
+                auto step = upload(s.data(), s.size() * sizeof(surface::V3));
+                vertexKeys.push_back(step->pointer);
+                entry.keep.push_back(step);
+            }
             OptixBuildInput input{};
             unsigned flag = OPTIX_GEOMETRY_FLAG_DISABLE_ANYHIT;
             input.type = OPTIX_BUILD_INPUT_TYPE_TRIANGLES;
             auto& tri = input.triangleArray;
-            tri.vertexBuffers = &vertices->pointer;
+            tri.vertexBuffers = vertexKeys.data();
             tri.numVertices = unsigned(m.positions.size());
             tri.vertexFormat = OPTIX_VERTEX_FORMAT_FLOAT3;
             tri.vertexStrideInBytes = sizeof(surface::V3);
@@ -775,7 +875,7 @@ public:
             tri.indexStrideInBytes = sizeof(cpu::Tri);
             tri.flags = &flag;
             tri.numSbtRecords = 1;
-            auto gas = build(input);
+            auto gas = build(input, unsigned(vertexKeys.size()));
             inst.traversableHandle = gas.second;
             entry.handle = gas.second;
             entry.geometry = {reinterpret_cast<const surface::V3*>(vertices->pointer), reinterpret_cast<const surface::Triangle*>(indices->pointer),
@@ -814,6 +914,10 @@ public:
             }
             meshAttributes.push_back(attributes);
             entry.attributes = attributes;
+            if (!m.steps.empty()) {
+                entry.motion = uploadMotion(m, attributes, vertexKeys, entry.keep);
+                meshMotion[i] = entry.motion;
+            }
             entry.keep.insert(entry.keep.end(), {vertices, indices, gas.first});
             scene_.keep.insert(scene_.keep.end(), entry.keep.begin(), entry.keep.end());
             nextCache.emplace(&m, std::move(entry));
@@ -877,6 +981,12 @@ public:
         }
         scene_.geometry = upload(geometry.data(), geometry.size() * sizeof(mixed::Geometry));
         scene_.materials = upload(materials.data(), materials.size() * sizeof(surface::Lambert));
+        scene_.meshMotion = nullptr;
+        for (const MeshMotion& motion : meshMotion)
+            if (motion.steps || motion.pointRadius) {
+                scene_.meshMotion = upload(meshMotion.data(), meshMotion.size() * sizeof(MeshMotion));
+                break;
+            }
         if (plan->paths) {
             // The lights with their textures' tables on the device: each Image's arrays, then the Image itself with
             // device pointers, which the light then points to.
@@ -977,7 +1087,10 @@ public:
                 cryptoEvents_ = std::min<U32>(aov::CryptoMaxEvents, 2 * plan->maxPresenceDepth + 3);
                 cryptoScratch_ = (size_t(cryptoEvents_) * sizeof(aov::CryptoEvent) + 15) & ~size_t(15);
             }
-            scene_.scratch = device(size_t(options_.launchThreads) * (scratchStride(plan->dwaSlots, plan->glitter) + aovScratch_ + cryptoScratch_));
+            movedLightSlots_ = U32(std::min(plan->lightMotion.size(), MovedLightSlots));
+            movedLightsScratch_ = (movedLightSlots_ * sizeof(lights::Light) + (movedLightSlots_ + 1) * sizeof(U32) + 15) & ~size_t(15);
+            if (!movedLightSlots_) movedLightsScratch_ = 0;
+            scene_.scratch = device(size_t(options_.launchThreads) * (scratchStride(plan->dwaSlots, plan->glitter) + aovScratch_ + cryptoScratch_ + movedLightsScratch_));
         }
         lap("lights, volumes, materials, outputs");
         uploadConfig(plan);
@@ -1689,6 +1802,7 @@ private:
     static OptixPipelineCompileOptions pipelineOptions() {
         OptixPipelineCompileOptions po{};
         po.traversableGraphFlags = OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_LEVEL_INSTANCING;
+        po.usesMotionBlur = 1;  // moving meshes and curves: structures with a key a time step, traced at the sample's time
         po.numPayloadValues = 2;
         po.numAttributeValues = 2;
         po.pipelineLaunchParamsVariableName = "params";
@@ -1968,8 +2082,43 @@ private:
         OptixTraversableHandle handle = 0;
         mixed::Geometry geometry{};
         shade::MeshAttributes attributes{};
+        MeshMotion motion{};
     };
     std::map<const cpu::MeshData*, MeshEntry> meshCache_;
+    size_t movedLightsScratch_ = 0;
+    U32 movedLightSlots_ = 0;
+    // A moving mesh's time steps on the device (MeshMotion): tables of device pointers to arrays there, kept with it.
+    MeshMotion uploadMotion(const cpu::MeshData& m, const shade::MeshAttributes& attributes, const std::vector<U64L>& vertexKeys, std::vector<B>& keep) {
+        auto table = [&](const std::vector<U64L>& pointers) {
+            B b = upload(pointers.data(), pointers.size() * sizeof(U64L));
+            keep.push_back(b);
+            return reinterpret_cast<const surface::V3* const*>(b->pointer);
+        };
+        auto steps = [&](const surface::V3* first, const std::vector<std::vector<surface::V3>>& later) {
+            std::vector<U64L> pointers{reinterpret_cast<U64L>(first)};
+            for (const auto& s : later) {
+                B b = upload(s.data(), s.size() * sizeof(surface::V3));
+                keep.push_back(b);
+                pointers.push_back(b->pointer);
+            }
+            return table(pointers);
+        };
+        MeshMotion motion;
+        motion.steps = unsigned(vertexKeys.size());
+        motion.kind = m.subdSteps ? MotionSubd : m.stepShading ? MotionStepped : MotionPolygon;
+        motion.positions = table(vertexKeys);
+        if (!m.stepNormals.empty()) motion.normals = steps(attributes.normals, m.stepNormals);
+        if (!m.stepDpds.empty()) {
+            motion.dpds = steps(attributes.dpds, m.stepDpds);
+            motion.dpdt = steps(attributes.dpdt, m.stepDpdt);
+        }
+        if (!m.normals1.empty()) {
+            B b = upload(m.normals1.data(), m.normals1.size() * sizeof(surface::V3));
+            keep.push_back(b);
+            motion.normals1 = reinterpret_cast<const surface::V3*>(b->pointer);
+        }
+        return motion;
+    }
     size_t meshesReused_ = 0;
     // What a placement-only edit changes (updatePlacements): every mesh's instance and attribute record as the card has
     // them, the top trees' buffers (replaced, not kept), each light's tables on the card by their host view, and a moved
@@ -2021,6 +2170,13 @@ private:
         scene_.lights = upload(deviceLights.data(), deviceLights.size() * sizeof(lights::Light));
         scene_.meshLights = upload(plan.meshLights.data(), plan.meshLights.size() * sizeof(U32));
         scene_.lightSetBits = plan.lightSetBits.empty() ? nullptr : upload(plan.lightSetBits.data(), plan.lightSetBits.size() * sizeof(U32));
+        scene_.lightMotion = scene_.lightMoved = nullptr;
+        if (!plan.lightMotion.empty()) {
+            scene_.lightMotion = upload(plan.lightMotion.data(), plan.lightMotion.size() * sizeof(lights::LightMotion));
+            std::vector<U32> movedAt(plan.lights.size(), ~0u);
+            for (size_t k = 0; k < plan.lightMotion.size(); ++k) movedAt[plan.lightMotion[k].light] = U32(k);
+            scene_.lightMoved = upload(movedAt.data(), movedAt.size() * sizeof(U32));
+        }
         scene_.lightTree = scene_.lightTreeRoots = nullptr;
         if (!plan.lightTree.empty()) {
             scene_.lightTree = upload(plan.lightTree.data(), plan.lightTree.size() * sizeof(lights::TreeNode));
@@ -2062,7 +2218,7 @@ private:
         std::vector<B> gridData;
         U32 volumeGridCount = 0;
         B provSums, provCounts, hostProvSums, hostProvCounts;
-        B geometry, materials, lights, meshLights, lightSetBits, lightTree, lightTreeRoots, volumes, meshVolumes, walkSequences, meshMaterials, meshAttributes, materialPool, scratch, config, maps, textures, sums, odd, counts,
+        B geometry, materials, lights, meshLights, lightSetBits, lightTree, lightTreeRoots, lightMotion, lightMoved, volumes, meshVolumes, walkSequences, meshMaterials, meshAttributes, meshMotion, materialPool, scratch, config, maps, textures, sums, odd, counts,
             hostSums,
             hostOdd, hostCounts, aovTables, geomLabels, aovs, hostAovs, aovClosest, hostAovClosest, hostAovDepths, heat, hostHeat, cryptoHeads,
             cryptoNodes, cryptoNodeCount;
@@ -2115,10 +2271,16 @@ private:
     // An acceleration structure, compacted (OptiX's compaction), its temporary memory and the uploads it read let go as
     // soon as it is made. Before, every build's temporary memory and every upload's pinned copy were held until the whole
     // scene was ready, so the card's peak was their sum (about 23 bytes of the card a byte of geometry).
-    std::pair<B, OptixTraversableHandle> build(const OptixBuildInput& input) {
+    std::pair<B, OptixTraversableHandle> build(const OptixBuildInput& input, unsigned keys = 1) {
         OptixAccelBuildOptions options{};
         options.buildFlags = OPTIX_BUILD_FLAG_PREFER_FAST_TRACE | OPTIX_BUILD_FLAG_ALLOW_COMPACTION;
         options.operation = OPTIX_BUILD_OPERATION_BUILD;
+        if (keys > 1) {  // geometry in motion: its keys evenly over the shutter, the samples' times 0 to 1
+            options.motionOptions.numKeys = static_cast<unsigned short>(keys);
+            options.motionOptions.flags = OPTIX_MOTION_FLAG_NONE;
+            options.motionOptions.timeBegin = 0.0f;
+            options.motionOptions.timeEnd = 1.0f;
+        }
         OptixAccelBufferSizes sizes{};
         ox(optixAccelComputeMemoryUsage(optix_, &options, &input, 1, &sizes));
         auto temporary = device(std::max<size_t>(sizes.tempSizeInBytes, 16));
@@ -2417,6 +2579,10 @@ private:
         p.walkSequences = scene_.walkSequences ? reinterpret_cast<const float*>(scene_.walkSequences->pointer) : nullptr;
         p.meshMaterials = scene_.meshMaterials ? reinterpret_cast<const shade::MaterialRecord*>(scene_.meshMaterials->pointer) : nullptr;
         p.meshAttributes = scene_.meshAttributes ? reinterpret_cast<const shade::MeshAttributes*>(scene_.meshAttributes->pointer) : nullptr;
+        p.meshMotion = scene_.meshMotion ? reinterpret_cast<const MeshMotion*>(scene_.meshMotion->pointer) : nullptr;
+        p.lightMotion = scene_.lightMotion ? reinterpret_cast<const lights::LightMotion*>(scene_.lightMotion->pointer) : nullptr;
+        p.lightMoved = scene_.lightMoved ? reinterpret_cast<const U32*>(scene_.lightMoved->pointer) : nullptr;
+        p.movedLightSlots = scene_.lightMotion ? movedLightSlots_ : 0u;
         p.materialPool = scene_.materialPool ? reinterpret_cast<const float*>(scene_.materialPool->pointer) : nullptr;
         p.scratch = scene_.scratch ? reinterpret_cast<unsigned char*>(scene_.scratch->pointer) : nullptr;
         p.scratchStride = scratchStride(plan_->dwaSlots, plan_->glitter) + aovScratch_;
@@ -2428,7 +2594,8 @@ private:
         p.aovClosestChannels = aovClosestChannels_;
         p.heat = scene_.heat ? reinterpret_cast<double*>(scene_.heat->pointer) : nullptr;
         p.secondsPerTick = secondsPerTick_;
-        p.scratchStride += cryptoScratch_;
+        p.movedLightsOffset = p.scratchStride + cryptoScratch_;
+        p.scratchStride += cryptoScratch_ + movedLightsScratch_;
         if (cryptoEvents_) {
             p.cryptoOffset = scratchStride(plan_->dwaSlots, plan_->glitter) + aovScratch_;
             p.cryptoEvents = cryptoEvents_;
