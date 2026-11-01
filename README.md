@@ -23,8 +23,8 @@ Work on the next version goes on in the [MoonLightIPR branch](https://github.com
 
 - **MoonRay XPU2**: a new hybrid renderer for previews. The processor and the graphics card work on the same picture at once, samples go where the picture is still noisy, and its pictures settle to MoonRay's own. Final renders come from MoonRay. *XPU2: Asynchronous Monte Carlo Path Tracer designed by Raphael Tobar. Not affiliated with or endorsed by DreamWorks Animation.* (Core architecture information can be found in [xpu2-foundation](https://github.com/Pbaroque20/xpu2-foundation).)
 - **MoonLightIPR**: the plugin's own GPU preview engine (NVIDIA), which shows an approximation of MoonRay's picture moments after each edit. Final renders always come from MoonRay.
-- **Smart Render**: MoonRay stops by itself once the picture is clean enough for the denoiser, and denoises it.
-- **Safe Denoising**: stop a MoonRay render at any time and keep it, denoised. **Continue** takes it up where it stood.
+- **Smart Render** (XPU Only): MoonRay stops by itself once the picture is clean enough for the denoiser, and denoises it.
+- **Safe Denoising** (XPU Only): stop a MoonRay render at any time and keep it, denoised. **Continue** takes it up where it stood.
 - **Draft mode**: the scene as clean outlines, redrawn in about a third of a second after a move. Press **Region** and drag to render just that part among the lines.
 - **One dockable preview, three engines**: MoonRay for the full render, MoonRay LS for a quick low-sample look, and MoonLightIPR. **Important Parts First** renders the most detailed buckets before the plain ones.
 - **MoonRay's own materials and items in Modo**: native MoonRay materials with a node graph editor, and 30 of MoonRay's lights, light filters, cameras, shapes and volumes as Modo items.
