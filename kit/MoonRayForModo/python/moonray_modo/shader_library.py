@@ -114,6 +114,17 @@ def attach_dependencies(materials, library):
                 child['uv_map']=next((d['uv_map'] for d in child['native_dependencies'] if d.get('uv_map')),'')
 
 
+def no_such_input(material, shader, effect, attributes):
+    """What an artist is told of a texture on a material with nothing for its effect to drive: which material and effect,
+    and where the texture can go. A material with materials plugged into it takes its look from them."""
+    import re
+    label=re.sub(r'(?<=[a-z])(?=[A-Z])',' ',effect).title()
+    named='%s (%s)'%(material['name'],shader) if material.get('name') else shader
+    if any(spec.get('type')=='SceneObject*' and spec.get('interface','').startswith('INTERFACE_DWABASE') for spec in attributes.values()):
+        return "%s has no %s of its own: it takes its look from the materials plugged into it. Move this texture onto one of those materials."%(named,label)
+    return "%s has no %s input. Move this texture onto a material that has one, or change the texture's effect."%(named,label)
+
+
 def emit(material, name, index, lines, library, trail=(), authored_bindings=None):
     from .rdla import string,number
     from .graph import bindings
@@ -162,7 +173,7 @@ def emit(material, name, index, lines, library, trail=(), authored_bindings=None
         if key=='diffuseColor' and target not in attributes and 'metallic_color' in attributes:
             target='metallic_color'
         if target not in attributes:
-            raise ValueError(shader+' cannot accept the mapped '+key+' effect; put this texture on a compatible input material')
+            raise ValueError(no_such_input(material,shader,key,attributes))
         authored[target]=value
     authored.update(authored_bindings or {})
     from .working_space import enabled as working_enabled,color as working_color
