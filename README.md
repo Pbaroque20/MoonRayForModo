@@ -6,7 +6,9 @@ This is the development branch of [MoonRay for Modo](https://github.com/Pbaroque
 
 The current release is [0.5.1](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.5.1). **Built on MoonRay [2026.29.1](https://github.com/dreamworksanimation/openmoonray/releases/tag/v2026.29.1)** (OpenMoonRay's latest release; MoonRay 18.4), with the plugin's own patches for Windows and the preview.
 
-## Coming next
+## Coming in 0.5.2
+
+A hotfix to 0.5.1, with a new runtime ZIP: install both.
 
 - **Render Animation renders with XPU2** where XPU2 is chosen, and so does Render to a File, with each picture shown in the
   preview as it comes. Deep images and checkpoints stay with MoonRay. Under MoonRay XPU, each frame appears as it finishes.

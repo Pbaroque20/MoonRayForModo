@@ -2,7 +2,9 @@
 
 0.5 is a **pre-production release**: the plugin is no longer experimental, and it brings a new GPU renderer, MoonRay XPU2.
 
-## Coming next
+## Coming in 0.5.2
+
+A hotfix to 0.5.1, with a new runtime ZIP: install both.
 
 - **Render Animation renders with XPU2** where XPU2 is chosen, and so does Render to a File, with each picture shown in the
   preview as it comes. Deep images and checkpoints stay with MoonRay. Under MoonRay XPU, each frame appears as it finishes.
