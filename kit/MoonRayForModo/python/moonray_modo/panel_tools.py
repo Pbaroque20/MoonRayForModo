@@ -163,7 +163,10 @@ class Tools:
         asked = None if extension == 'exr' else {'type': kind, 'path': path, 'quality': int(self.settings.value('output/jpeg_quality', 92))}
         if asked:
             path = str(Path(path).with_suffix('.exr'))
+        if self.ipr_mode.isChecked():
+            self.ipr_mode.setChecked(False)
         self.stop()
+        self._output_view()
         self._stereo_after = {}
         try:
             scene = self._capture_output()
@@ -184,7 +187,8 @@ class Tools:
                     self._stereo_after[right] = ('composite', kind, (left, right), path)
                 self._submit(dict(scene, _stereo_eye='left'), left)
             else:
-                self._submit(scene, path)
+                # Rendered by XPU2 where it renders the preview (render.xpu2_output).
+                self._submit(dict(scene, _xpu2_output=True), path)
         except Exception as exc:
             self._failed(str(exc))
 
@@ -268,23 +272,53 @@ class Tools:
             count = len(sequence['keys'])
             self.status.setText('Camera Sequence: %d key%s%s.' % (count, '' if count == 1 else 's', '' if sequence['enabled'] else ', off'))
 
+    def _animation_scene(self):
+        """What the scene itself says of an animation: the Render item's frames and step, the scene's rate, and Motion
+        Blur in its render settings."""
+        import modo
+        from .host import channel
+        scene = modo.Scene()
+        render = scene.renderItem
+        return {'first': int(round(float(channel(render, 'first', 1)))), 'last': int(round(float(channel(render, 'last', 1)))),
+                'step': max(1, int(round(float(channel(render, 'step', 1))))), 'fps': float(scene.fps),
+                'motion': bool(self._settings_values()['final_motion'])}
+
+    def _output_view(self):
+        """The window made ready to show a render to files, with realtime already ended (left on with its render stopped,
+        RT stayed On and greyed and Render greyed once the files were done, until another engine was chosen): Draft off,
+        whose lines would be drawn over the picture, and the beauty shown, which is what is rendered."""
+        if self.draft.isChecked():
+            self.draft.setChecked(False)
+        if self.buffer.currentData() != 'beauty':
+            self.buffer.setCurrentIndex(self.buffer.findData('beauty'))
+
     def render_animation(self):
         if self._output_busy():
             self.status.setText('An output render is running. Press Stop before starting an animation.')
             return
         from .output_dialog import AnimationDialog
         from .animation import Sequence
-        dialog = AnimationDialog(self.settings, self)
+        from .sequence_plan import window_values
+        scene = self._animation_scene()
+        stored = self._settings_values().get('animation_output')
+        dialog = AnimationDialog(self.settings, self, window_values(stored, scene))
         if not dialog.exec_():
             return
         directory = dialog.folder.text().strip()
+        # Kept with the scene, as soon as it is asked for: a folder that refuses the render costs nothing to come back to.
+        kept = dict(dialog.kept(), scene=scene)
+        if kept != stored:
+            self._store(animation_output=kept)
         try:
             candidate = Sequence(self, directory, dialog.first.value(), dialog.last.value(),
                                  dialog.fps.value(), dialog.motion.isChecked(),
                                  step=dialog.step.value(), prefix=dialog.prefix.text(), missing=dialog.missing.isChecked(),
-                                 export_as=dialog.export_as())
+                                 export_as=dialog.export_as(), digits=dialog.digits.value())
             self.settings.setValue('output/animation', directory)
+            if self.ipr_mode.isChecked():
+                self.ipr_mode.setChecked(False)
             self.stop()
+            self._output_view()
             self.sequence = candidate
             self.sequence.start()
         except Exception as exc:

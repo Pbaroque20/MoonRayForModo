@@ -1319,7 +1319,7 @@ class Panel(Tools, QtWidgets.QWidget):
         self._set_rendering(self._rendering)
 
     def _output_busy(self):
-        return (self.sequence is not None and self.sequence.running) or bool(self.renderer.pending and self.renderer.pending.get('output')) or bool(self.renderer.active and self.renderer.active.get('output') and self.renderer.process.state()!=QtCore.QProcess.NotRunning)
+        return (self.sequence is not None and self.sequence.running) or self.renderer.output_busy()
 
     def _lock_changed(self,locked):
         if locked:
@@ -1427,7 +1427,10 @@ class Panel(Tools, QtWidgets.QWidget):
         return self._configure_snapshot(capture_current(values['surface']==2))
 
     def _capture_preview(self):
-        if self._engine()!='moonlightipr' or not self.preferences.get('preview_motion'):return self._capture()
+        # Render with MoonRay as the engine is the picture itself, with the scene's Motion Blur as a render to a file has it.
+        # Not while realtime follows the scene, where each edit would read the shutter's ends too, nor MoonRay LS or a draft.
+        still=self.preview_engine.currentData()=='moonray' and not self._following and not self.draft.isChecked() and self._settings_values()['final_motion']
+        if not still and (self._engine()!='moonlightipr' or not self.preferences.get('preview_motion')):return self._capture()
         from .animation import capture_current
         self._reading()
         scene=self._configure_snapshot(capture_current(self._settings_values()['surface']==2))
@@ -1547,6 +1550,8 @@ class Panel(Tools, QtWidgets.QWidget):
             # never an older one than the picture on screen was made from.
             try:self._kept_capture=scene;self._kept_key=self._capture_key()
             except Exception:self._kept_capture=None
+        # A render to files is shown as it comes, over a picture that was being held as well.
+        if output:self._held=False
         if not output:
             self._held=False;self._draft_engine=self._draft_lines=False
             region_pass,self._draft_pass=getattr(self,'_draft_pass',False),False

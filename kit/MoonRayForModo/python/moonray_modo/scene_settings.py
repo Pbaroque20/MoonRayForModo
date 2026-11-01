@@ -32,6 +32,8 @@ DEFAULTS = {
     'compositor': {},
     # Cameras keyed to ranges of frames, each rendered through over its range (camera_sequence.py).
     'camera_sequence': {'enabled': True, 'keys': []},
+    # What the Render Animation window last rendered with, for it to open with (sequence_plan.window_values).
+    'animation_output': {},
 }
 
 
@@ -208,7 +210,7 @@ GROUPS = [
         field('region_bottom', ('region', 3), 'float', 'Bottom', 'Percent of the frame', 0.0, 100.0, scale=100.0),
     ]),
     ('Outputs (AOVs)', True,
-     [field('aov_' + key, ('aovs',), 'member', label, 'Adds the ' + channel + ' channel to the EXR', member=key)
+     [field('aov_' + key, ('aovs',), 'member', label, 'Adds the ' + channel + ' channel to the EXR' + (', and to a PNG, TIFF or Targa saved from the render' if key == 'alpha' else ''), member=key)
       for key, (label, _, channel) in options.AOVS.items()]),
     ('Display', True, [
         field('view', ('display', 'view'), 'choice', 'View Transform', 'How the preview is shown; EXRs stay linear. Modo color management follows the OCIO configuration and color spaces in Modo\'s system preferences; what is chosen here is remembered for new scenes; OCIO display / view uses the configuration, source, display and view named below', choices=VIEWS),
@@ -222,7 +224,7 @@ GROUPS = [
         field('colors', None, 'button', 'Input Color Spaces and Texture Cache...'),
     ]),
     ('Output Renders', True, [
-        field('final_motion', ('final_motion',), 'bool', 'Motion Blur', 'Motion blur and motion vectors in Render EXR and animations'),
+        field('final_motion', ('final_motion',), 'bool', 'Motion Blur', 'Motion blur and motion vectors in MoonRay renders: Render, Render to a File and animations. Not while realtime follows the scene'),
         field('exr_compression', ('exr', 'compression'), 'choice', 'EXR Compression', 'How Render EXR and animations compress their EXRs. The lossy ones make smaller files; they are not used with checkpoints or Safe Denoising, which take a render up again from what it saved', choices=options.EXR_COMPRESSIONS),
         field('exr_dwa_level', ('exr', 'dwa_level'), 'float', 'DWA Compression Level', 'For DWAA and DWAB: higher is smaller and loses more', 0.0, 1000.0),
         field('exr_multipart', ('exr', 'multipart'), 'bool', 'Multi-Part EXR', 'Each output in a part of its own in the EXR, which a compositor can read one at a time, not all together. The beauty, its alpha and any Cryptomatte stay in the first part'),

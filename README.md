@@ -6,6 +6,22 @@ This is the development branch of [MoonRay for Modo](https://github.com/Pbaroque
 
 The current release is [0.5.1](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.5.1). **Built on MoonRay [2026.29.1](https://github.com/dreamworksanimation/openmoonray/releases/tag/v2026.29.1)** (OpenMoonRay's latest release; MoonRay 18.4), with the plugin's own patches for Windows and the preview.
 
+## Coming next
+
+- **Render Animation renders with XPU2** where XPU2 is chosen, and so does Render to a File, with each picture shown in the
+  preview as it comes. Deep images and checkpoints stay with MoonRay. Under MoonRay XPU, each frame appears as it finishes.
+- **Render with MoonRay has motion blur**: Motion Blur in Render Settings now applies to the Render button, so a still no longer
+  needs Render Animation. Realtime stays without it.
+- **The Render Animation window opens with the scene's settings**: its frames, step, frame rate and Motion Blur, and it keeps
+  what you last rendered with, in the scene.
+- **Alpha reaches every file that can hold it**: a denoised EXR, and a PNG, TIFF or Targa saved from a render, now have the render's
+  alpha while Alpha is on in Render Settings. Where the alpha is 0, as on a visible background, those pictures are transparent.
+- **Frame digits**: choose how many digits frame numbers have, so 4 gives `frame.0001.exr`.
+- **Several sequences in one folder**, each under its own file prefix.
+- **RT and Render come back after an output render**, with no need to switch engine and back.
+- **XPU2 no longer stalls on a second motion-blurred picture**: from the second frame in a session, a scene with motion blur or a
+  volume only the CPU renders waited for good.
+
 ## New in 0.5.1
 
 A hotfix to 0.5, with a new runtime ZIP: install both, and **Compile XPU2 Shaders once more**.

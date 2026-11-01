@@ -2,6 +2,22 @@
 
 0.5 is a **pre-production release**: the plugin is no longer experimental, and it brings a new GPU renderer, MoonRay XPU2.
 
+## Coming next
+
+- **Render Animation renders with XPU2** where XPU2 is chosen, and so does Render to a File, with each picture shown in the
+  preview as it comes. Deep images and checkpoints stay with MoonRay. Under MoonRay XPU, each frame appears as it finishes.
+- **Render with MoonRay has motion blur**: Motion Blur in Render Settings now applies to the Render button, so a still no longer
+  needs Render Animation. Realtime stays without it.
+- **The Render Animation window opens with the scene's settings**: its frames, step, frame rate and Motion Blur, and it keeps
+  what you last rendered with, in the scene.
+- **Alpha reaches every file that can hold it**: a denoised EXR, and a PNG, TIFF or Targa saved from a render, now have the render's
+  alpha while Alpha is on in Render Settings. Where the alpha is 0, as on a visible background, those pictures are transparent.
+- **Frame digits**: choose how many digits frame numbers have, so 4 gives `frame.0001.exr`.
+- **Several sequences in one folder**, each under its own file prefix.
+- **RT and Render come back after an output render**, with no need to switch engine and back.
+- **XPU2 no longer stalls on a second motion-blurred picture**: from the second frame in a session, a scene with motion blur or a
+  volume only the CPU renders waited for good.
+
 ## New in 0.5.1
 
 A hotfix to 0.5, with a new runtime ZIP: install both, and **Compile XPU2 Shaders once more**.

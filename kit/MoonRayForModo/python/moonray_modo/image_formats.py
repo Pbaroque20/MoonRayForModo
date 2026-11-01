@@ -57,18 +57,35 @@ def picture_filters():
     return ';;'.join(entries), entries
 
 
-def convert(runtime, key, source, target, display=None, quality=92):
-    """Write the picture of a render saved at source as target, in a type, from its beauty. Raises RuntimeError where the
-    image tool could not."""
+def holds_alpha(key):
+    """Whether a type keeps a picture's alpha beside its colour: all but JPEG, and OpenEXR is copied whole."""
+    return find(key)[2] in ('png', 'tif', 'tga')
+
+
+def convert(runtime, key, source, target, display=None, quality=92, alpha=False):
+    """Write the picture of a render saved at source as target, in a type, from its beauty, with its alpha where alpha is
+    asked for and the type holds it. Raises RuntimeError where the image tool could not."""
     import subprocess
     from . import native
     runtime = Path(runtime)
-    done = subprocess.run([str(runtime / 'oiiotool.exe')] + arguments(key, 'beauty', source, target, display, quality),
+    done = subprocess.run([str(runtime / 'oiiotool.exe')] + (with_alpha(key, source, target, display) if alpha and holds_alpha(key) else arguments(key, 'beauty', source, target, display, quality)),
                           env=native.environment(runtime), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=600,
                           creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
     if done.returncode or not Path(target).is_file():
         raise RuntimeError(done.stdout.decode('utf-8', errors='replace')[-300:])
     return Path(target)
+
+
+def with_alpha(key, source, target, display=None):
+    """The image tool's arguments that write a beauty with its alpha. These types keep colour apart from alpha: the
+    render's is divided by it first, in linear, and the view transform then applies to the colour alone. Where the
+    alpha is 0 the colour stays as it is."""
+    key, label, extension, numbers, shown = find(key)
+    args = ['--no-autopremult', str(source), '--fixnan', 'black', '--ch', 'R,G,B,A', '--unpremult', '--ch', '0,1,2']
+    if shown:
+        from .display import arguments as view
+        args += view(display or {})
+    return args + [str(source), '--ch', 'A', '--chappend', '-d', numbers, '--attrib:type=int', 'oiio:UnassociatedAlpha', '1', '-o', str(target)]
 
 
 def linear(key):
