@@ -65,7 +65,15 @@ def safe_name(path):return str(path)+'.safe.exr'
 def sidecar(path):
     path=Path(path);return path.with_name(path.stem+'.denoised.exr')
 
-def jobs(runtime,source,base,engine,guides,detail='some'):
+def jobs(runtime,source,base,engine,guides,detail='some',alpha=False):
+    """The steps of denoising a picture. alpha: the source has its alpha, which the result is given (the denoiser takes
+    colour alone, and a denoised frame came out with no alpha where the render had one)."""
+    steps=denoised_steps(runtime,source,base,engine,guides,detail)
+    if not alpha:return steps
+    done=steps[-1][2];whole=Path(base).with_suffix('.denoised-alpha.exr')
+    return steps+[(Path(runtime)/'oiiotool.exe',['--no-autopremult',str(done),'--ch','R,G,B',str(source),'--ch','A','--chappend','-d','float','-o',str(whole)],whole)]
+
+def denoised_steps(runtime,source,base,engine,guides,detail='some'):
     runtime=Path(runtime);base=Path(base)
     if engine not in ENGINES[1:]: raise ValueError('Choose a denoising engine')
     denoiser=runtime/'denoise.exe';oiio=runtime/'oiiotool.exe'

@@ -48,7 +48,7 @@ def budget(generations, grid, realtime=False):
     Realtime Sample % says (Pixel Samples squared where Generation Samples is 0), one at least, and no more than the
     Realtime Adaptive Sampling Cap."""
     samples = int(generations.get('samples', 0))
-    share = int(generations.get('realtime', 100))
+    share = int(generations.get('realtime', 30))
     if realtime and share < 100:
         samples = max(1, int(round((samples or int(grid) ** 2) * share / 100.0)))
     cap = realtime_cap() if realtime else 0

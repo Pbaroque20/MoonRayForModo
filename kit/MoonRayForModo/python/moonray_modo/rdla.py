@@ -994,11 +994,11 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
                   '  ["file_name"] = %s,' % string(path), *kept(path), '  ["channel_format"] = 0,', '  ["compression"] = 1,']
         for attr,value in attributes.items(): lines.append('  [%s] = %s,' % (string(attr),(value if isinstance(value,outputs.Raw) else string(value)) if isinstance(value,str) else ('true' if value else 'false') if isinstance(value,bool) else number(value)))
         lines.append('}')
-    # XPU2's sampling generations: its render settings in a preview, as a UserData that XPU2
+    # XPU2's sampling generations: its render settings in a preview or a render to files it makes, as a UserData that XPU2
     # reads (cpu_scene.h: 1, on, samples, spend exactly, noise target, first generation, most samples, CPU workers,
     # realtime: the preview following the scene with RT on, panel.py) and MoonRay leaves alone.
     generation=scene.get('xpu2_generations')
-    if generation and not output_file:
+    if generation and (not output_file or scene.get('_xpu2')):
         # On: they are whenever XPU2 renders the preview, and only XPU2 reads them (xpu2_sampling). Form 2: they
         # rule, a scene's adaptive sampling being MoonRay's alone (cpu_scene.h).
         from . import xpu2_sampling

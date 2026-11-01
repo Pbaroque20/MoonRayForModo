@@ -339,7 +339,7 @@ Comparison audit between MoonRay 2026.29.1's source and the current plugin.
 | Meshes, subdivision, curves, points, instancing | ![yes](docs/images/feature-yes.svg) | From Modo's geometry. Creases from Modo's Subdivision weights |
 | Box and sphere shapes | ![yes](docs/images/feature-yes.svg) | |
 | VDB volumes, base and cutout volumes | ![yes](docs/images/feature-yes.svg) | |
-| Motion blur | ![yes](docs/images/feature-yes.svg) | Final renders, and MoonLightIPR previews. On by default in MoonLightIPR, also while it follows edits, and moving lights |
+| Motion blur | ![yes](docs/images/feature-yes.svg) | Final renders, and MoonLightIPR previews. On by default in MoonLightIPR, also while it follows edits, and moving lights *Coming in 0.5.2:* MoonRay XPU2 for Render, Render to a File and animations, the Render button, and XPU2 realtime as a Preview Preference. |
 | Depth of field | ![yes](docs/images/feature-yes.svg) | |
 | DWA materials (base, metal, fabric, skin, layer, mix and the rest) | ![yes](docs/images/feature-yes.svg) | Two Sided and Color Correct take the other DWA materials as their inputs, and a layer or two-sided material missing an input no longer crashes MoonRay |
 | Hair, toon and USD Preview Surface materials | ![yes](docs/images/feature-yes.svg) | Toon edges smooth on coarse meshes, and toon renders that denoise cleanly, each a preference; a new toon material is brightest facing the light |
@@ -362,7 +362,7 @@ Comparison audit between MoonRay 2026.29.1's source and the current plugin.
 | EXR metadata | ![yes](docs/images/feature-yes.svg) | |
 | Choice of EXR compression | ![yes](docs/images/feature-yes.svg) | All of MoonRay's, zip by default |
 | Multi-part EXR | ![yes](docs/images/feature-yes.svg) | Each output in a part of its own, by choice |
-| Picture types besides OpenEXR | ![yes](docs/images/feature-yes.svg) | PNG, JPEG, TIFF and Targa for a render to a file, animation frames and exported AOVs, the OpenEXR kept beside them |
+| Picture types besides OpenEXR | ![yes](docs/images/feature-yes.svg) | PNG, JPEG, TIFF and Targa for a render to a file, animation frames and exported AOVs, the OpenEXR kept beside them *Coming in 0.5.2:* PNG, TIFF and Targa keep the render's alpha. |
 | Colour management: OCIO, ACES views, ACEScg working space | ![yes](docs/images/feature-yes.svg) | Modo's own OCIO configuration and colour spaces, any OCIO display and view, and ACES 1.3 and ACES 2.0 for an sRGB display; ACEScg scenes render and look right |
 | Denoising (OptiX, Open Image Denoise) | ![yes](docs/images/feature-yes.svg) | The Denoiser set to Off is off everywhere, the denoised beauty and Smart Render included |
 | Primitive attributes (values a shape carries for its materials) | ![yes](docs/images/feature-yes.svg) | Per item or instance, and per point or per face from Modo's weight and colour vertex maps; imported from MoonRay scenes |
@@ -386,7 +386,7 @@ Comparison audit between Modo 16.1v9 and the current plugin: what of a Modo scen
 | **Environment** | | |
 | Gradients, constant colours and HDRI image layers | ![yes](docs/images/feature-yes.svg) | An HDRI turns as in Modo, and quickly |
 | **Cameras** | | |
-| Perspective and orthographic cameras | ![yes](docs/images/feature-yes.svg) | With depth of field, motion blur, stereo and overscan |
+| Perspective and orthographic cameras | ![yes](docs/images/feature-yes.svg) | With depth of field, motion blur, stereo and overscan *Coming in 0.5.2:* Motion Blur on the Modo camera turns on motion blur in renders. |
 | Other camera projections | ![no](docs/images/feature-no.svg) | Refused; MoonRay's fisheye, spherical and dome cameras in their place |
 | **Materials** | | |
 | Standard material: GTR, Blinn and Ashikhmin | ![partly](docs/images/feature-partly.svg) | Highlights matched by measurement; very smooth ones (roughness under 0.2) come out dimmer, as do rough reflections of the environment |

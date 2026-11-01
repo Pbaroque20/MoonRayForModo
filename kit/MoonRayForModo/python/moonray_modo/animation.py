@@ -104,7 +104,7 @@ def shutter_moves(snapshot, evaluated=False):
 
 
 class Sequence(QtCore.QObject):
-    def __init__(self, panel, directory, first, last, fps, motion=False, step=1, prefix="frame", missing=False, export_as=None):
+    def __init__(self, panel, directory, first, last, fps, motion=False, step=1, prefix="frame", missing=False, export_as=None, digits=None):
         super().__init__(panel)
         # Each frame in another picture type as well, beside its EXR (image_formats): {'type', 'quality'}, or None.
         self.export_as = export_as
@@ -114,6 +114,10 @@ class Sequence(QtCore.QObject):
             raise ValueError('Frame step must be a positive integer')
         if not re.fullmatch(r'[A-Za-z0-9_-]+',prefix):
             raise ValueError('Output prefix must use letters, digits, underscores or hyphens')
+        from .sequence_plan import DIGITS
+        self.digits=DIGITS if digits is None else digits
+        if not isinstance(self.digits,int) or not 1<=self.digits<=12:
+            raise ValueError('Frame digits must be between 1 and 12')
         self.first,self.step,self.prefix=first,step,prefix
         self.total=len(range(first,last+1,step))
         self.panel, self.directory = panel, Path(directory)
@@ -123,10 +127,10 @@ class Sequence(QtCore.QObject):
         filename=modo.Scene().filename
         if missing and not (filename and Path(filename).is_file()):raise ValueError('Save the scene before resuming a sequence; unsaved scene revisions cannot be verified')
         source=[str(filename),file_hash(filename)] if filename and Path(filename).is_file() else ['unsaved',modo.Scene().renderItem.id]
-        settings={k:v for k,v in panel._settings_values().items() if k not in ('display','preview_buffer','recovery')}
+        settings={k:v for k,v in panel._settings_values().items() if k not in ('display','preview_buffer','recovery','animation_output')}
         snapshot=panel._capture()
         self.signature=hashlib.sha256(json.dumps([source,settings,asset_signature(snapshot)],sort_keys=True).encode()).hexdigest()
-        self.pending_frames,self.completed=plan(self.directory,first,last,step,prefix,fps,motion,missing,settings.get('denoising',{}).get('final',True) and settings.get('denoising',{}).get('engine','off')!='off',self.signature)
+        self.pending_frames,self.completed=plan(self.directory,first,last,step,prefix,fps,motion,missing,settings.get('denoising',{}).get('final',True) and settings.get('denoising',{}).get('engine','off')!='off',self.signature,self.digits)
         self.directory.mkdir(parents=True,exist_ok=True)
         self.frame, self.last, self.fps, self.motion = first,last,fps,motion
         self.running = False
@@ -159,16 +163,20 @@ class Sequence(QtCore.QObject):
     def capture(self):
         if not self.running:
             return
-        destination = self.directory/('%s.%06d.exr'%(self.prefix,self.frame))
+        from .sequence_plan import frame_name
+        destination = self.directory/frame_name(self.prefix,self.frame,self.digits)
         if destination.exists():
             self.expected_output=destination.resolve()
-            self.panel.renderer.resume_denoise(destination,self.panel.runtime_path(),self.panel._settings_values()['denoising'])
+            values=self.panel._settings_values()
+            self.panel.renderer.resume_denoise(destination,self.panel.runtime_path(),values['denoising'],alpha='alpha' in (values.get('aovs') or []))
             return
         snapshot = capture_frame(self.frame/self.fps, self.panel._settings_values()['surface']==2,
                                  self.motion, self.fps)
         snapshot['frame']=self.frame;snapshot['fps']=self.fps
         snapshot = self.panel._configure_snapshot(snapshot)
         if self.export_as:snapshot['_export_as']=dict(self.export_as)
+        # Rendered by XPU2 where it renders the preview (render.xpu2_output).
+        snapshot['_xpu2_output']=True
         self.expected_output = destination.resolve()
         self.panel._submit(snapshot,str(destination))
 
@@ -197,9 +205,10 @@ class Sequence(QtCore.QObject):
             QtCore.QTimer.singleShot(0,self.next_frame)
 
     def write_manifest(self, status):
-        path = self.directory/'moonray-sequence.json'
+        from .sequence_plan import manifest_path
+        path = manifest_path(self.directory,self.prefix)
         staged = path.with_suffix('.json.tmp')
-        staged.write_text(json.dumps({'signature':self.signature,'status':status,'fps':self.fps,'first':self.first,'last':self.last,'step':self.step,'prefix':self.prefix,'motion_blur':self.motion,'total_frames':self.total,'frames':sorted(self.completed,key=lambda value:value['frame'])},indent=2),encoding='utf-8')
+        staged.write_text(json.dumps({'signature':self.signature,'status':status,'fps':self.fps,'first':self.first,'last':self.last,'step':self.step,'prefix':self.prefix,'digits':self.digits,'motion_blur':self.motion,'total_frames':self.total,'frames':sorted(self.completed,key=lambda value:value['frame'])},indent=2),encoding='utf-8')
         staged.replace(path)
 
     def failed(self, message):
@@ -216,7 +225,12 @@ class Sequence(QtCore.QObject):
             active = None
         self.panel.renderer.finished.disconnect(self.finished)
         self.panel.renderer.failed.disconnect(self.failed)
-        self.panel.renderer.stop()
+        # Its last frame done there is nothing to stop, and nothing to call stopped: XPU2 lets go of the scene's memory.
+        if status=='complete':self.panel.renderer.session.stop()
+        else:self.panel.renderer.stop()
+        # The window's buttons said a render was going to the last: the render that ended under this sequence was still
+        # its own when they were last set, and RT stayed greyed until another engine was chosen.
+        if hasattr(self.panel,'_set_rendering'):self.panel._set_rendering(False)
         try:
             self.write_manifest(status)
         except OSError as exc:

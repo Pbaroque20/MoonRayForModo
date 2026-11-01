@@ -709,7 +709,7 @@ class Panel(Tools, QtWidgets.QWidget):
                     self._draft_hasty=False
                     self._draft_submit(self._kept_capture)
                 return
-            if self._engine()=='moonlightipr' and self.preferences.get('preview_motion'):
+            if self._preview_blurred():
                 if held:return
                 self._draft_time=time
                 self.render_once();return
@@ -967,7 +967,8 @@ class Panel(Tools, QtWidgets.QWidget):
         try:
             values=self._settings_values()
             # MoonLightIPR's motion blur, off by default: each update then reads the shutter's ends too.
-            if self.preview_engine.currentData()=='moonlightipr' and self.preferences.get('preview_motion'):words.append('Motion Blur')
+            # And MoonRay's realtime under XPU2, by a preference of its own.
+            if self._preview_blurred():words.append('Motion Blur')
             from . import native
             if self.preview_engine.currentData()=='moonray' and values['denoising'].get('safe') and values['denoising'].get('engine','off')!='off' \
                     and not native.xpu2():
@@ -1319,7 +1320,7 @@ class Panel(Tools, QtWidgets.QWidget):
         self._set_rendering(self._rendering)
 
     def _output_busy(self):
-        return (self.sequence is not None and self.sequence.running) or bool(self.renderer.pending and self.renderer.pending.get('output')) or bool(self.renderer.active and self.renderer.active.get('output') and self.renderer.process.state()!=QtCore.QProcess.NotRunning)
+        return (self.sequence is not None and self.sequence.running) or self.renderer.output_busy()
 
     def _lock_changed(self,locked):
         if locked:
@@ -1420,14 +1421,36 @@ class Panel(Tools, QtWidgets.QWidget):
         from .incremental import standing
         return standing(document,scene)
 
+    def _motion_wanted(self):
+        """Whether the scene asks for motion blur in a render: Motion Blur in its render settings, or on its Modo camera."""
+        if self._settings_values()['final_motion']:return True
+        try:
+            import modo
+            from .host import camera_motion_blur
+            return camera_motion_blur(modo.Scene())
+        except Exception:return False
+
+    def _preview_blurred(self):
+        """Whether what follows the scene shows motion blur, by the preview's preferences: MoonLightIPR's own switch, and
+        one for MoonRay's realtime, which is XPU2's."""
+        if self._engine()=='moonlightipr':return bool(self.preferences.get('preview_motion'))
+        if self.preview_engine.currentData()!='moonray' or not self.ipr_mode.isChecked() or not self.preferences.get('xpu2_motion'):return False
+        try:
+            from . import native
+            return bool(native.xpu2())
+        except Exception:return False
+
     def _capture_output(self):
         values=self._settings_values()
-        if not values['final_motion']:return self._capture()
+        if not self._motion_wanted():return self._capture()
         from .animation import capture_current
         return self._configure_snapshot(capture_current(values['surface']==2))
 
     def _capture_preview(self):
-        if self._engine()!='moonlightipr' or not self.preferences.get('preview_motion'):return self._capture()
+        # Render with MoonRay as the engine is the picture itself, with the scene's Motion Blur as a render to a file has it.
+        # Not while realtime follows the scene, where each edit would read the shutter's ends too, nor MoonRay LS or a draft.
+        still=self.preview_engine.currentData()=='moonray' and not self._following and not self.draft.isChecked() and self._motion_wanted()
+        if not still and not self._preview_blurred():return self._capture()
         from .animation import capture_current
         self._reading()
         scene=self._configure_snapshot(capture_current(self._settings_values()['surface']==2))
@@ -1547,6 +1570,8 @@ class Panel(Tools, QtWidgets.QWidget):
             # never an older one than the picture on screen was made from.
             try:self._kept_capture=scene;self._kept_key=self._capture_key()
             except Exception:self._kept_capture=None
+        # A render to files is shown as it comes, over a picture that was being held as well.
+        if output:self._held=False
         if not output:
             self._held=False;self._draft_engine=self._draft_lines=False
             region_pass,self._draft_pass=getattr(self,'_draft_pass',False),False
@@ -1927,7 +1952,7 @@ class Panel(Tools, QtWidgets.QWidget):
         import modo
         settings={k:v for k,v in self._settings_values().items() if k not in ('display','preview_buffer','aovs','recovery','compositor')}
         return (repr(sorted(settings.items(),key=lambda entry:entry[0])),lx.service.Selection().GetTime(),modo.Scene().renderItem.id,self._engine(),
-                self.preferences.get('preview_motion'),self.runtime_path())
+                self.preferences.get('preview_motion'),self.preferences.get('xpu2_motion'),self.runtime_path())
 
     def _unchanged_scene(self):
         """The scene as it was last read out of Modo, where nothing has changed since: reading it is most of the wait
@@ -2002,12 +2027,12 @@ class Panel(Tools, QtWidgets.QWidget):
                 # middle of a tool waits for the release.
                 self.changes.full=self.changes.full or full;self.changes.items.update(items)
                 self.release_timer.start();return
-            # MoonLightIPR with motion blur: once an edit is let go, the scene is read at both ends of the shutter as well
+            # MoonLightIPR with motion blur, or XPU2's realtime: once an edit is let go, the scene is read at both ends of the shutter as well
             # (three readings in all). A material edit, or a move of items (the camera among them) none of whose channels is animated, to a scene
             # last found to hold nothing that moves skips that: any other edit may have keyed something to move. While
             # dragging, it is followed sharp, as fast as it can be.
             blurred=False;moving=False;first=None
-            if not held and self._engine()=='moonlightipr' and self.preferences.get('preview_motion'):
+            if not held and self._preview_blurred():
                 still=(time,modo.Scene().renderItem.id,repr(sorted(settings.items(),key=lambda entry:entry[0])))
                 # A move cannot make anything move during the shutter without a key (a fur scene's three readings held
                 # Modo 0.8 s for each move).

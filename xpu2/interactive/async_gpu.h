@@ -1075,6 +1075,10 @@ public:
         std::fill(profile_, profile_ + ProfileStages, 0ull);
         refineHead_ = 0;
         refinesOut_.clear();
+        // With the device's state, whose count of deferred samples starts again: its second frame's were never taken for
+        // the CPU lane, and a scene with motion blur or a volume only the CPU renders waited on them for good.
+        deferredHead_ = 0;
+        deferredOut_.clear();
         memset32(state_->pointer, 0, sizeof(DeviceState) / 4);
         if (aovChannels_ || scene_.heat || cryptoEvents_) {  // mode 4: the AOV film readied
             LaunchParams p = baseParams();

@@ -28,6 +28,14 @@ def scalar_only(snapshot):
     return None
 
 
+def xpu2_output(snapshot):
+    """Whether a render to files is XPU2's, in the session that renders the preview and shown as it comes: asked for by
+    Render to a File and Render Animation (_xpu2_output), where XPU2 is chosen and the execution mode leaves it to the
+    graphics card. It writes the scene's outputs as MoonRay does; a deep image and checkpoints are MoonRay's alone."""
+    return bool(snapshot.get('_xpu2_output') and native.xpu2() and snapshot.get('execution_mode','auto') in ('xpu','auto')
+                and not scalar_only(snapshot) and not (snapshot.get('deep') or {}).get('enabled') and not (snapshot.get('recovery') or {}).get('enabled'))
+
+
 def binary_sessions(runtime):
     """Whether this runtime's loaded MoonRay reloads a scene from its text and its geometry's binary file."""
     try:
@@ -132,6 +140,8 @@ class Renderer(QtCore.QObject):
         self.session.notice.connect(self._session_notice)
         self.session_serial=0;self.gather=None
         self.using_session=False
+        # A render to files under way in the session, whose own process is not self.process.
+        self.session_output=False
         # Approximate GPU preview; final frames never use it.
         self.moonlightipr=MoonLightIPRSession(self)
         self.moonlightipr.output.connect(self._consume_log)
@@ -181,7 +191,13 @@ class Renderer(QtCore.QObject):
             value,label=self.progress_state.display(self.phase)
             self.progress.emit(value,label)
 
+    def output_busy(self):
+        """Whether a render to files is asked for or under way."""
+        return bool(self.pending and self.pending.get('output')) or bool(self.active and self.active.get('output') and
+                                                                          (self.session_output or self.process.state()!=QtCore.QProcess.NotRunning))
+
     def _progress_end(self,success):
+        self.session_output=False
         self.buckets.emit(None)
         self.progress_timer.stop()
         if self.progress_state:
@@ -229,8 +245,10 @@ class Renderer(QtCore.QObject):
                        linear_preview=linear_preview, moonlightipr=moonlightipr, resume=bool(resume),
                        # A safe render is rendered by the MoonRay kept loaded where that one can save as it renders,
                        # and so is shown as it comes on; else by a MoonRay of its own, shown at each save.
-                       persistent=bool(persistent_preview and not moonlightipr and not output and not linear_preview and persistent_supported(runtime)
-                                       and (not denoising.settings(snapshot.get('denoising',{}))['safe'] or persistent_saves(runtime) or native.xpu2())))
+                       # A render to files goes to it where XPU2 makes it (xpu2_output), else to a MoonRay of its own.
+                       persistent=bool((xpu2_output(snapshot) and not self.cpu_fallback and persistent_supported(runtime)) if output else
+                                       (persistent_preview and not moonlightipr and not linear_preview and persistent_supported(runtime)
+                                        and (not denoising.settings(snapshot.get('denoising',{}))['safe'] or persistent_saves(runtime) or native.xpu2()))))
         # New edits replace queued work; stale images never reach the panel.
         self.pending = request
         # A stop that was still waiting for MoonRay to save is over: this render is not one being stopped.
@@ -244,13 +262,13 @@ class Renderer(QtCore.QObject):
         else:
             self._begin_pending()
 
-    def resume_denoise(self,output,runtime,settings):
+    def resume_denoise(self,output,runtime,settings,alpha=False):
         from .postprocess import recover
         runtime=native.find_runtime(runtime);engine=denoising.settings(settings)['engine'];guides=recover(output,engine)
         self.generation+=1;self.canceled=False;self.pending=None;self.using_session=False
         self.active={'output':str(output),'runtime':runtime,'snapshot':{'denoising':settings},'generation':self.generation}
         self.image_path=Path(output);self.original_published=True;self.current_base=Path(self.directory.name)/uuid.uuid4().hex
-        self.post_jobs=denoising.jobs(runtime,self.image_path,self.current_base,engine,guides,denoising.settings(settings)['detail']);self.denoise_result=self.post_jobs[-1][2]
+        self.post_jobs=denoising.jobs(runtime,self.image_path,self.current_base,engine,guides,denoising.settings(settings)['detail'],alpha);self.denoise_result=self.post_jobs[-1][2]
         self.progress_state=Progress();self.progress_timer.start()
         env=QtCore.QProcessEnvironment()
         for key,value in native.environment(runtime).items():env.insert(key,value)
@@ -486,6 +504,7 @@ class Renderer(QtCore.QObject):
         self.image_path = self.current_base.with_suffix('.exr')
         self.phase = 'render'
         self.using_session=request['persistent']
+        self.session_output=bool(self.using_session and request['output'])
         self.progress_state.reset_pass()
         self._progress_tick()
         self.original_published=False
@@ -537,7 +556,8 @@ class Renderer(QtCore.QObject):
                 self.denoise_guides=snapshot['_denoise_guides']
             if use_denoise:
                 if request['output'] and denoising.sidecar(request['output']).exists(): raise ValueError('Denoised output already exists: '+str(denoising.sidecar(request['output'])))
-                self.post_jobs=denoising.jobs(request['runtime'],self.image_path if request['output'] else self.buffer_path,self.current_base,denoising.settings(snapshot['denoising'])['engine'],snapshot['_denoise_guides'],denoising.settings(snapshot['denoising'])['detail'])
+                self.post_jobs=denoising.jobs(request['runtime'],self.image_path if request['output'] else self.buffer_path,self.current_base,denoising.settings(snapshot['denoising'])['engine'],snapshot['_denoise_guides'],denoising.settings(snapshot['denoising'])['detail'],
+                                            alpha=bool(request['output'] and 'alpha' in (snapshot.get('aovs') or [])))
                 self.denoise_result=self.post_jobs[-1][2]
             if mode=='xpu' and not native.supports_xpu(request['runtime']):
                 raise ValueError('The selected runtime has no XPU GPU program/CUDA runtime. Choose the XPU runtime or CPU mode.')
@@ -570,8 +590,8 @@ class Renderer(QtCore.QObject):
                 self.resumable_before,self.resumable=getattr(self,'resumable',None),None
             arguments = (snapshot, request['width'], request['height'], self.sample_grid, request['environment'],
                          str(self.image_path) if request['output'] else None)
-            if self.using_session and not request['output']:
-                # A preview by the MoonRay kept loaded, which is what follows a scene: its text is written on a
+            if self.using_session:
+                # A render by the MoonRay kept loaded, which is what follows a scene: its text is written on a
                 # thread of its own, and the pass goes on from _written when that is done.
                 self.writer = SceneWriter(arguments, scene, (request, snapshot, scene, mode), generation, self, applied=self.session.applied)
                 self.writer.finished.connect(self._written)
@@ -646,7 +666,7 @@ class Renderer(QtCore.QObject):
             if snapshot.get('_ipr'):label='LS · '+label
             # XPU2 renders the preview: how XPU2 samples it, as the picture's line says it.
             from . import xpu2_sampling
-            if not request.get('output') and mode in ('xpu','auto') and xpu2_sampling.active():
+            if (not request.get('output') or snapshot.get('_xpu2')) and mode in ('xpu','auto') and xpu2_sampling.active():
                 try:label='Rendering · '+xpu2_sampling.words({'samples':self.sample_grid,'render':sampling,'xpu2_generations':snapshot.get('xpu2_generations') or {}},realtime=bool(snapshot.get('_realtime')))
                 except Exception:pass
             self.status.emit(label+' · '+self.backend_status)
@@ -921,14 +941,28 @@ class Renderer(QtCore.QObject):
                 try:
                     from .image_formats import convert,find
                     target=Path(asked['path']) if asked.get('path') else destination.with_suffix('.'+find(asked['type'])[2])
-                    convert(self.active['runtime'],asked['type'],destination,target,self.active['snapshot'].get('display'),asked.get('quality',92))
+                    convert(self.active['runtime'],asked['type'],destination,target,self.active['snapshot'].get('display'),asked.get('quality',92),
+                            alpha='alpha' in (self.active['snapshot'].get('aovs') or []))
                     self.log+='Saved as '+str(target)+'\n'
                 except Exception as exc:
                     self.status.emit('The %s copy was not written: %s'%(asked.get('type'),exc))
+            self._show_output(destination)
             self.finished.emit(str(destination))
             return
         self.image_ready.emit(str(self.image_path))
         self._preview_pass_finished()
+
+    def _show_output(self,destination):
+        """A render to files is done. The session showed it as it came: its files are let go of, frame after frame adding
+        to them otherwise. A MoonRay of its own hands over nothing as it renders: the file is shown now it is whole."""
+        if self.using_session:
+            for path in Path(self.directory.name).iterdir():
+                if path.is_file() and path.name.startswith(self.current_base.name):
+                    try:path.unlink()
+                    except OSError:pass
+        elif self.buffers.key=='beauty':
+            try:self.buffers.publish({'beauty':destination},self.active['runtime'],self.active['snapshot'],self.backend_status,partial=True)
+            except (ValueError,OSError) as exc:self.status.emit('The finished picture is not shown: '+str(exc))
 
     def _preview_pass_finished(self):
         if self.using_session:
