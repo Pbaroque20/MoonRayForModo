@@ -676,6 +676,7 @@ def register():
         for key,value in made.items():item.channel(entities.CHANNEL_PREFIX+key).set(value)
         for axis in 'XYZ':transform.channel('scl.'+axis).set(1.0)
         applied[item.id]=(scale,values)
+        if entities.uneven_across(name,scale):entities.SCALED_UNEVENLY[item.id]=True
         return True
 
     class ApplyScale(lxu.command.BasicCommand):

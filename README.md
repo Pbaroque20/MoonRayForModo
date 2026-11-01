@@ -333,7 +333,7 @@ Comparison audit between MoonRay 2026.29.1's source and the current plugin.
 | Stereo cameras | ![yes](docs/images/feature-yes.svg) | Modo's camera Stereo: one eye, or both with a red/cyan picture in Render EXR; MoonLightIPR shows the eye chosen, and the left for both |
 | Overscan (rendering past the frame edge) | ![yes](docs/images/feature-yes.svg) | Modo's camera Overscan, or a MoonRay camera's own when it is rendered through, in final renders |
 | Bake camera | ![yes](docs/images/feature-yes.svg) | Texture baking |
-| Lights: rect, disk, sphere, spot, cylinder, distant, environment, mesh, portal | ![yes](docs/images/feature-yes.svg) | MoonRay light items, or Modo's lights *Coming in 0.5.2:* round lights under an unevenly scaled parent stay on. |
+| Lights: rect, disk, sphere, spot, cylinder, distant, environment, mesh, portal | ![yes](docs/images/feature-yes.svg) | MoonRay light items, or Modo's lights *Coming in 0.5.2:* round lights under an unevenly scaled parent stay on. A round light given an uneven scale stays round, and a notice says so. |
 | Light filters: barn door, colour ramp, combine, cookie, decay, intensity, rod, VDB | ![yes](docs/images/feature-yes.svg) | |
 | Light, shadow and light filter linking | ![yes](docs/images/feature-yes.svg) | MoonRay's own sets, and Modo's own Light Linking groups (include or exclude), which reach MoonRay Shadow receiver sets, and a shadow ray offset, in Light Links |
 | Meshes, subdivision, curves, points, instancing | ![yes](docs/images/feature-yes.svg) | From Modo's geometry. Creases from Modo's Subdivision weights |
