@@ -14,8 +14,8 @@ from . import compositor, native
 
 def beside(path):
     """Where the composite of a render saved at path is written."""
-    path = Path(path)
-    return path.with_name(path.stem + '.composite.exr')
+    from .denoising import beside as named
+    return named(path, 'composite')
 
 
 def channel_parts(runtime, path):

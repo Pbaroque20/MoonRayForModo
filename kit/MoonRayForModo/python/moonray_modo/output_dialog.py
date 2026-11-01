@@ -4,6 +4,10 @@ from PySide2 import QtWidgets
 from .sequence_plan import DIGITS, frame_name
 
 
+# Before a type in the Frames As list: saved in that type alone.
+ONLY='only:'
+
+
 class AnimationDialog(QtWidgets.QDialog):
     def __init__(self, settings, parent=None, values=None):
         super().__init__(parent)
@@ -29,9 +33,11 @@ class AnimationDialog(QtWidgets.QDialog):
         from .image_formats import FORMATS
         self.type=QtWidgets.QComboBox();self.type.addItem('OpenEXR only',None)
         for key,label,extension,numbers,shown in FORMATS:
+            if extension!='exr':self.type.addItem(label+' only',ONLY+key)
+        for key,label,extension,numbers,shown in FORMATS:
             if extension!='exr':self.type.addItem('OpenEXR, and '+label,key)
         self.type.setCurrentIndex(max(0,self.type.findData(settings.value('output/animation_type',None))))
-        self.type.setToolTip('Each frame is saved as OpenEXR, with every output. Another type is saved beside it, as the preview shows the picture, with its alpha where Alpha is on in Render Settings (JPEG has none).')
+        self.type.setToolTip('OpenEXR keeps every output. Another type holds the picture as the preview shows it, denoised where the render is, with its alpha where Alpha is on in Render Settings (JPEG has none). A type on its own leaves no EXR: the other outputs are not kept.')
         self.type.currentIndexChanged.connect(self.update_summary)
         form.addRow('Frames as',self.type)
         self.settings=settings
@@ -51,11 +57,13 @@ class AnimationDialog(QtWidgets.QDialog):
 
     def update_summary(self,*args):
         count=max(0,(self.last.value()-self.first.value())//self.step.value()+1)
-        also=''
+        also='';extension='exr'
         if getattr(self,'type',None) is not None and self.type.currentData():
             from .image_formats import find
-            also=' and .%s'%find(self.type.currentData())[2]
-        self.summary.setText('%d frames · %s%s\nExisting frames are never overwritten. Enable Render missing frames to fill gaps in a matching sequence.'%(count,frame_name(self.prefix.text(),self.first.value(),self.digits.value()),also))
+            held=self.type.currentData()
+            if held.startswith(ONLY):extension=find(held[len(ONLY):])[2]
+            else:also=' and .%s'%find(held)[2]
+        self.summary.setText('%d frames · %s%s\nExisting frames are never overwritten. Enable Render missing frames to fill gaps in a matching sequence.'%(count,frame_name(self.prefix.text(),self.first.value(),self.digits.value(),extension),also))
 
     def kept(self):
         """What the window has now, as it is kept with the scene for the next time it opens."""
@@ -63,10 +71,13 @@ class AnimationDialog(QtWidgets.QDialog):
                 'last':self.last.value(),'step':self.step.value(),'fps':self.fps.value(),'motion':self.motion.isChecked()}
 
     def export_as(self):
-        """The other type each frame is saved in, {'type', 'quality'}, or None for OpenEXR only."""
+        """The other type each frame is saved in, {'type', 'quality', 'only'}, or None for OpenEXR only. only: in that type
+        alone, with no EXR left beside it."""
         key=self.type.currentData()
         self.settings.setValue('output/animation_type',key or '')
-        return {'type':key,'quality':int(self.settings.value('output/jpeg_quality',92))} if key else None
+        if not key:return None
+        only=key.startswith(ONLY)
+        return {'type':key[len(ONLY):] if only else key,'quality':int(self.settings.value('output/jpeg_quality',92)),'only':only}
 
     def accept(self):
         import re

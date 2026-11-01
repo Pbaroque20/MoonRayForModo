@@ -20,6 +20,18 @@ def _running(pid):
 
 
 UP_TO_DATE = 'Up to date'
+# How long a press says Compiling at the least, in seconds: with OptiX's cache holding the programs a compile is over in a
+# second, before the form next looks, and the press seemed to do nothing.
+SHOWN_AT_LEAST = 3.0
+# When the button was last pressed.
+_pressed = [None]
+
+
+def button_name(held):
+    """The button, named for what it does now, by the shaders' state: compiling, it says so; up to date, the shaders can
+    only be compiled again."""
+    if held.startswith('Compiling'): return 'Compiling XPU2 Shaders...'
+    return 'Re-compile XPU2 Shaders' if held == UP_TO_DATE else 'Compile XPU2 Shaders'
 
 
 def compiled():
@@ -92,7 +104,8 @@ def state():
     try: compiling = _running(pid.read_text().strip())
     except (OSError, ValueError): compiling = False
     last = lines[-1] if lines else ''
-    if compiling:
+    import time
+    if compiling or (_pressed[0] is not None and time.monotonic() - _pressed[0] < SHOWN_AT_LEAST):
         # How far, in percent of its compile tasks: 0% from the moment it starts (asked 2026-10-30: the state changes at
         # once, no message box).
         counts = _counts(lines)
@@ -165,8 +178,7 @@ class CompileShaders(lxu.command.BasicCommand):
     def cmd_Flags(self): return lx.symbol.fCMD_UI
     # Greyed while a compile is under way: pressed again, it would only start another.
     def basic_Enable(self, msg): return not state().startswith('Compiling')
-    # Named for what it does now: up to date, the shaders can only be compiled again.
-    def basic_ButtonName(self): return 'Re-compile XPU2 Shaders' if state() == UP_TO_DATE else 'Compile XPU2 Shaders'
+    def basic_ButtonName(self): return button_name(state())
     def basic_Notifier(self, index): return (NOTIFIER, '') if index == 0 else None
     def basic_Execute(self, msg, flags):
         import subprocess
@@ -177,6 +189,8 @@ class CompileShaders(lxu.command.BasicCommand):
         if state().startswith('Compiling'):
             lx.out('MoonRay XPU2: the shaders are compiling already'); return
         log = native.xpu2_shaders_log(); log.parent.mkdir(parents=True, exist_ok=True)
+        import time
+        _pressed[0] = time.monotonic()
         env = dict(os.environ)
         env.update(native.xpu2_environment(native.default_runtime()))
         for key in ('PYTHONHOME', 'PYTHONPATH', 'QT_PLUGIN_PATH', 'QT_QPA_PLATFORM_PLUGIN_PATH'): env.pop(key, None)

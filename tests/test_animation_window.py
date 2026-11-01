@@ -6,8 +6,9 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'kit/MoonRayForModo/python'))
-from moonray_modo import sequence_plan
+from moonray_modo import denoising, sequence_plan
 
+EXR = b'\x76\x2f\x31\x01' + b'0' * 64
 SCENE = {'first': 1, 'last': 120, 'step': 1, 'fps': 30.0, 'motion': True}
 
 
@@ -42,6 +43,88 @@ class FrameNames(unittest.TestCase):
             self.assertEqual(sequence_plan.plan(folder, 1, 2, 1, 'frame', 24, False, digits=6)[0], [1, 2])
             with self.assertRaises(ValueError):
                 sequence_plan.plan(folder, 1, 2, 1, 'frame', 24, False, digits=4)
+
+
+class DenoisedNames(unittest.TestCase):
+    def test_the_frame_number_stays_last(self):
+        self.assertEqual(denoising.sidecar('D:/out/shot.001.exr').name, 'shot.denoised.001.exr')
+        self.assertEqual(denoising.sidecar('D:/out/shot.-0012.exr').name, 'shot.denoised.-0012.exr')
+
+    def test_a_composite_is_named_the_same_way(self):
+        from moonray_modo.composite_output import beside
+        self.assertEqual(beside('D:/out/shot.001.exr').name, 'shot.composite.001.exr')
+        self.assertEqual(beside('D:/out/shot.exr').name, 'shot.composite.exr')
+
+    def test_a_still_has_no_number_to_keep_last(self):
+        self.assertEqual(denoising.sidecar('D:/out/shot.exr').name, 'shot.denoised.exr')
+
+    def test_a_sequence_begun_under_the_old_name_is_still_recognised(self):
+        with tempfile.TemporaryDirectory() as folder:
+            frame = Path(folder) / 'shot.0001.exr'
+            self.assertEqual(denoising.held_sidecar(frame).name, 'shot.denoised.0001.exr')
+            (Path(folder) / 'shot.0001.denoised.exr').write_bytes(b'x')
+            self.assertEqual(denoising.held_sidecar(frame).name, 'shot.0001.denoised.exr')
+
+    def test_a_resumed_frame_counts_its_denoised_copy(self):
+        with tempfile.TemporaryDirectory() as folder:
+            sequence_plan.manifest_path(folder, 'shot').write_text(json.dumps({'signature': 's', 'first': 1, 'last': 1, 'step': 1, 'prefix': 'shot', 'fps': 24, 'motion_blur': False, 'digits': 4}))
+            (Path(folder) / 'shot.0001.exr').write_bytes(EXR)
+            (Path(folder) / 'shot.denoised.0001.exr').write_bytes(EXR)
+            pending, completed = sequence_plan.plan(folder, 1, 1, 1, 'shot', 24, False, True, True, 's', 4)
+            self.assertEqual((pending, len(completed)), ([], 1))
+
+
+class PictureOnly(unittest.TestCase):
+    RECORD = {'signature': 's', 'first': 1, 'last': 2, 'step': 1, 'prefix': 'shot', 'fps': 24, 'motion_blur': False, 'digits': 4, 'picture': 'png8'}
+
+    def plan(self, folder, picture='png8', missing=False, signature=None):
+        return sequence_plan.plan(folder, 1, 2, 1, 'shot', 24, False, missing, False, signature, 4, picture)
+
+    def test_the_name_takes_the_types_extension(self):
+        self.assertEqual(sequence_plan.frame_name('shot', 12, 4, 'jpg'), 'shot.0012.jpg')
+
+    def test_a_new_sequence_has_every_frame_to_render(self):
+        with tempfile.TemporaryDirectory() as folder:
+            self.assertEqual(self.plan(folder)[0], [1, 2])
+
+    def test_a_picture_already_there_is_never_overwritten(self):
+        with tempfile.TemporaryDirectory() as folder:
+            (Path(folder) / 'shot.0001.png').write_bytes(b'x')
+            with self.assertRaisesRegex(ValueError, 'Output exists'):
+                self.plan(folder)
+
+    def test_an_exr_it_did_not_render_is_never_taken_for_its_own(self):
+        with tempfile.TemporaryDirectory() as folder:
+            (Path(folder) / 'shot.0001.exr').write_bytes(EXR)
+            with self.assertRaisesRegex(ValueError, 'Output exists'):
+                self.plan(folder)
+            with self.assertRaisesRegex(ValueError, 'Output exists'):
+                self.plan(folder, missing=True, signature='s')
+
+    def test_resuming_keeps_the_pictures_and_renders_the_rest(self):
+        with tempfile.TemporaryDirectory() as folder:
+            sequence_plan.manifest_path(folder, 'shot').write_text(json.dumps(self.RECORD))
+            (Path(folder) / 'shot.0001.png').write_bytes(b'x')
+            (Path(folder) / 'shot.0002.exr').write_bytes(EXR)
+            pending, completed = self.plan(folder, missing=True, signature='s')
+            self.assertEqual(pending, [2])
+            self.assertEqual(Path(completed[0]['file']).name, 'shot.0001.png')
+
+    def test_resuming_in_another_type_is_refused(self):
+        with tempfile.TemporaryDirectory() as folder:
+            sequence_plan.manifest_path(folder, 'shot').write_text(json.dumps(self.RECORD))
+            with self.assertRaisesRegex(ValueError, 'picture'):
+                self.plan(folder, picture='jpg', missing=True, signature='s')
+
+    def test_only_what_the_frame_was_made_from_goes(self):
+        with tempfile.TemporaryDirectory() as folder:
+            folder = Path(folder)
+            for name in ('shot.0001.exr', 'shot.denoised.0001.exr', 'shot.0001.png', 'shot.0002.exr', 'shot.composite.0001.exr'):
+                (folder / name).write_bytes(b'x')
+            (folder / 'shot.0001.exr.postprocess').mkdir()
+            (folder / 'shot.0001.exr.postprocess' / 'manifest.json').write_text('{}')
+            sequence_plan.let_go(folder / 'shot.0001.exr')
+            self.assertEqual(sorted(path.name for path in folder.iterdir()), ['shot.0001.png', 'shot.0002.exr', 'shot.composite.0001.exr'])
 
 
 class SharedFolder(unittest.TestCase):
@@ -87,6 +170,9 @@ class Wiring(unittest.TestCase):
         rule = self.read('render.py').split('def xpu2_output')[1].split('def binary_sessions')[0]
         for word in ("'deep'", "'recovery'", 'scalar_only', 'execution_mode'):
             self.assertIn(word, rule)
+
+    def test_a_saved_picture_comes_from_the_denoised_render(self):
+        self.assertIn("denoised if self.phase=='postdone' and denoised.is_file() else destination", self.read('render.py'))
 
     def test_a_sequence_gives_the_buttons_back_as_it_ends(self):
         self.assertIn('self.panel._set_rendering(False)', self.read('animation.py'))
