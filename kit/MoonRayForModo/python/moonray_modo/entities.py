@@ -378,6 +378,10 @@ def collect(scene, warnings):
                     held = {'identity': item.id, 'name': item.name, 'class': name, 'matrix': world_matrix(item),
                             'parameters': from_channels(name, lambda channel: item.channel(channel).get()),
                             'attributes': primitive_attributes.read(item)}
+                    # An uneven scale from a parent, or the scale tool's just put into the light's size.
+                    scaled = SCALED_UNEVENLY.pop(item.id, None) or round_light(name, held['matrix']) is not held['matrix']
+                    if scaled and round_note(item.name, name) not in warnings:
+                        warnings.append(round_note(item.name, name))
                     # Maps wired into its values, as a MoonRay scene brought in had them (block binds them).
                     bindings = properties.read(item).get('map_bindings')
                     if bindings:
@@ -1026,6 +1030,25 @@ def literal(entities, entity, key, authored):
 # is round. RectLight takes an uneven scale into its size. An uneven scale reaches these from a parent: the scale tool's
 # own goes into their size (scaled_size), by the same mean.
 ROUND_LIGHTS = {'DiskLight': (0, 1), 'SpotLight': (0, 1), 'SphereLight': (0, 1, 2), 'CylinderLight': (0, 1, 2)}
+
+
+# The round lights Modo's scale tool has just scaled unevenly, by item id, each with its name and class, for the next reading
+# of the scene to say so: the scale itself is gone by then, put into the light's size.
+SCALED_UNEVENLY = {}
+
+
+def uneven_across(name, scale):
+    """Whether a scale (sx, sy, sz) differs across a round light, where it can only be taken by its mean."""
+    if name not in ROUND_LIGHTS:
+        return False
+    by = dict(zip('xyz', (float(v) for v in scale)))
+    return any(max(by[axis] for axis in along) - min(by[axis] for axis in along) > 0.0001 for along in SCALED_SIZES[name].values() if len(along) > 1)
+
+
+def round_note(item_name, name):
+    """The notice for a round light given an uneven scale."""
+    note = '%s stays round: MoonRay has no uneven scale for a %s, so the scale is averaged.' % (item_name, display(name))
+    return note + ' A %s has Width and Height.' % display('RectLight') if name == 'DiskLight' else note
 
 
 def round_light(name, matrix):
