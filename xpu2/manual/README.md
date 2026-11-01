@@ -188,9 +188,12 @@ Design: `ASYNC.md` ("How a frame runs"), `INDEXER.md` section 7.
   atomic: first parked samples, then its range of chunk items. Neighbouring claims are neighbouring pixels of the same
   sample, so warps trace coherent rays. The device film accumulates in double precision.
 - **Acceleration structures.** One GAS per mesh, kept while the mesh is unchanged, under an IAS. Curves and points
-  are OptiX custom primitives.
-- **Stand-ins.** Objects classified `Cpu` are in the GPU scene as bounding stand-ins (a moving mesh's motion bounds,
-  a VDB's box, points' bounds). A sample that meets one is deferred to the CPU lane through the deferred-samples ring.
+  are OptiX custom primitives. Geometry in motion has a key a time step, traced at the sample's time, so the pipeline
+  is compiled for motion in every scene (about 2 to 3% on a still one).
+- **Lights in motion.** Each launch thread holds up to 16 records of them at the sample's time, worked out as the sample
+  reaches a light (`GpuBackend::movedLight`), however many lights move.
+- **Stand-ins.** Objects classified `Cpu` are in the GPU scene as bounding stand-ins (a VDB's box, a mesh the card's
+  budget left to the CPU). A sample that meets one is deferred to the CPU lane through the deferred-samples ring.
 - **The program in modules.** OptiX compiles each module separately and in parallel, but a module's call graph
   compiles as a whole, so the program is split until no module is large. Today it has nine modules (section 12 lists
   them). Direct callables can't trace rays in OptiX 7.6, so anything that traces is a continuation callable or stays
@@ -205,14 +208,14 @@ Design: `ASYNC.md` ("How a frame runs"), `INDEXER.md` section 7.
 `async_cpu.h`. Persistent, pinned workers claim their own chunks by the cellular rules. Embree, in robust mode,
 traverses triangles, and user geometry handles curves and points. The CPU lane:
 
-- renders every feature XPU2 has, including those the GPU defers (today: points, geometry in motion, VDB volumes, and
-  heterogeneous and emissive volumes);
+- renders every feature XPU2 has, including those the GPU defers (today: VDB volumes, and heterogeneous and emissive
+  volumes);
 - works through the retry queue: deferred GPU samples, each re-rendered whole from its identity;
 - re-renders provisional samples in full: every texture level is in RAM, so the CPU never misses;
 - keeps its own film, merged with the GPU's when the frame ends.
 
 Some features keep a whole scene on the CPU lane because the GPU programs lack them and they affect every sample
-(`GpuLane::cpuOnly`): today, lights in motion, light filters, shadow linking, lobe light sets and emissive volumes.
+(`GpuLane::cpuOnly`): today, light filters, shadow linking, lobe light sets and emissive volumes.
 
 ## 8. The shared integrator
 
@@ -649,8 +652,7 @@ From the design notes. Each has more detail where it's listed.
 
 **MoonRay port**
 
-- On the GPU: VDB, heterogeneous and emissive volumes, points and motion (deferred to the CPU today); light filters,
-  shadow linking and lobe light sets (they keep a scene on the CPU today).
+- On the GPU: VDB, heterogeneous and emissive volumes (deferred to the CPU today); light filters, shadow linking and lobe light sets (they keep a scene on the CPU today).
 - Resuming from a checkpoint, and deep output (`FEATURE_PROGRESS.md`).
 
 ## 22. Further reading

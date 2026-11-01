@@ -342,10 +342,11 @@ def lights(scene, warnings, environment=0.0, compiler=None, closing=None, named=
         if kind not in LOCAL_LIGHTS and kind != 'DistantLight':
             warnings.append('MoonLightIPR does not show %s %s yet.' % (kind, light.get('name', '')))
             continue
-        matrix = finite(light.get('matrix', IDENTITY))
+        from .entities import round_light
+        matrix = round_light(kind, finite(light.get('matrix', IDENTITY)))
         # Held still unless moving lights blur (MoonRay's own way, which MoonLightIPR then follows).
         from .native import light_motion
-        ending = finite(light.get('matrix_close') or matrix) if light_motion() else matrix
+        ending = round_light(kind, finite(light.get('matrix_close') or matrix)) if light_motion() else matrix
         color = [c * float(light['intensity']) for c in working_color(finite(light['color']))]
         # Filters from Lighting controls, and those a MoonRay light item names.
         filters = multiplied(control_filters(settings, light, scene, warnings) + list(light.get('filters', [])))
@@ -843,7 +844,8 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     # N-gons cut by the MoonRay Source Override's rules or MoonRay's own (native.ngon_ears), read once for the pack.
     from . import native, polygons
     polygons.follow(native.ngon_ears())
-    warnings = []
+    from . import left_out
+    warnings = left_out.moonlightipr(scene)
     # Which lights light an object is drawn (light_sets); whose shadows fall where is still MoonRay's to work out.
     if any(held.get('shadow_exclude') or held.get('shadow_receivers')
            for held in (scene.get('production') or {}).get('objects', {}).values() if isinstance(held, dict)):

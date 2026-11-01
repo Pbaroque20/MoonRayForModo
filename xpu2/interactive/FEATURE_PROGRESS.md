@@ -86,7 +86,7 @@ GPU in the final build. A scene with anything not listed as done still renders, 
 | Depth AOV: MoonRay takes the least of the camera depth and -volumeT * ray z (volumeT the largest float without a volume), so rays toward the camera's +z give huge negative depths that sum to -inf | reproduced (volume surface depth itself: with volumes) |
 | Camera pixel sample map | done, weights exact |
 | Camera medium material and geometry | todo (with volumes) |
-| Motion blur: transforms, vertex steps, velocities and accelerations, instances, curves and points in motion, shutter bias | done on the CPU lane, within noise (pm1 all, mi1 most); curves turning 0.9981 (block 0.0101) and moving curves in screen-space radius 0.0077 open; on the GPU: deferred to the CPU (stand-ins) |
+| Motion blur: transforms, vertex steps, velocities and accelerations, instances, curves and points in motion, shutter bias | done on the CPU lane, within noise (pm1 all, mi1 most); curves turning 0.9981 (block 0.0101) and moving curves in screen-space radius 0.0077 open; on the GPU: done for meshes, subdivision, instances, curves, points, meshes bounding a volume and lights (OptiX motion structures, sessions 211-213: every case with no sample deferred, as close to MoonRay as the CPU lane or within noise); any number of moving lights (16 records a launch thread, worked out as a sample reaches them); moving lights read about 0.17% and moving fog about 0.08% over MoonRay on every lane, open |
 | Subdivision surfaces: MoonRay's own OpenSubdiv tessellation (xpu2_geom.dll), Catmull-Clark and bilinear, creases, corners, boundaries, face-varying UVs, uniform and camera-adaptive, parts, reversed | done, within noise (13 cases; N, St, dPds exact); an open grid twice MoonRay's time, open |
 | Geometry sets: only geometry in a GeometrySet is rendered (as MoonRay) | done |
 | Subdivision with displacement, primitive attributes, dicing camera | displacement done (vdp1: Z exact); P and Wp behind a volume's surface fixed, retest pending; attributes in displacement done (INDEXER.md section 15); polygon maps in displacement not verified |
@@ -102,7 +102,7 @@ GPU in the final build. A scene with anything not listed as done still renders, 
 | Feature | State |
 |---|---|
 | Classification of every RDL object (support, GPU families), shown in the session's log | done |
-| Deferral: what the GPU programs lack (points, geometry in motion, VDB, heterogeneous and emissive volumes) is a stand-in box on the GPU; a sample meeting one is rendered whole by the CPU lane from its identity | done: the GPU round (session 94-96) matches for points, motion, VDB, cutouts; the volumes defer through the same ring |
+| Deferral: what the GPU programs lack (VDB, heterogeneous and emissive volumes) is a stand-in box on the GPU; a sample meeting one is rendered whole by the CPU lane from its identity | done: the GPU round (session 94-96) matches for points, motion, VDB, cutouts; the volumes defer through the same ring |
 | Cells by suitability: a first-hit probe gives each cell a probability per device of being its efficient owner (families, deferral, the lanes' measured rates); the cells start by comparative advantage before any stealing; deferred samples count as the CPU's in the ownership flips | built (session 76), GPU test pending |
 | One OptiX program for uniform and adaptive frames (half the compile's CPU and memory) | done (build 76) |
 | The GPU program in nine modules, compiled in parallel (manual section 12) | done (build_async.py) |

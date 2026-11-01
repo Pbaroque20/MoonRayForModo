@@ -34,7 +34,9 @@ def emit(scene,meshes,environment,lines):
         identity=light.get('identity',str(index));settings=light_controls.get(identity,{});kind=settings.get('kind') or light['kind']
         if kind not in LIGHT_KINDS:raise ValueError('Unsupported light: '+kind)
         name='/modo/light/'+identity;ref='%s(%s)'%(kind,string(name));refs[identity]=[ref]
-        attrs={'node_xform':node_matrix(light),'color':vector(working_color(light['color']),'Rgb'),'intensity':number(light['intensity'])}
+        from .entities import round_light
+        placed=dict(light,**{key:round_light(kind,light[key]) for key in ('matrix','matrix_close') if light.get(key)})
+        attrs={'node_xform':node_matrix(placed),'color':vector(working_color(light['color']),'Rgb'),'intensity':number(light['intensity'])}
         # MoonRay moves a light during the shutter only when the light says so.
         if light.get('matrix_close') and light['matrix_close']!=light.get('matrix'):
             from .native import light_motion
