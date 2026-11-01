@@ -1,4 +1,5 @@
 """Linear beauty-only denoising; raw EXR/AOVs never enter a destructive operation."""
+import re
 from pathlib import Path
 ENGINES=('off','optix','oidn_cpu')
 SMART=('off','draft','medium','fine')
@@ -62,8 +63,20 @@ def one_or_other(stored,changed):
     return stored
 def safe_name(path):return str(path)+'.safe.exr'
 
+def beside(path,word):
+    """A file made of the render saved at path, named for what it is. A frame's number stays last, for a sequence to read
+    as one in other programs: frame.0001.exr has frame.denoised.0001.exr, and a still shot.exr has shot.denoised.exr."""
+    path=Path(path);frame=re.fullmatch(r'(.+)\.(-?\d+)',path.stem)
+    return path.with_name('%s.%s.%s.exr'%(frame.group(1),word,frame.group(2)) if frame else '%s.%s.exr'%(path.stem,word))
+
 def sidecar(path):
-    path=Path(path);return path.with_name(path.stem+'.denoised.exr')
+    return beside(path,'denoised')
+
+def held_sidecar(path):
+    """The denoised copy a render already has: under its name, or the one frames had until 0.5.2, frame.0001.denoised.exr,
+    so that a sequence begun then can be resumed. Its name where it has none yet."""
+    path=Path(path);named=sidecar(path);older=path.with_name(path.stem+'.denoised.exr')
+    return older if not named.exists() and older.exists() else named
 
 def jobs(runtime,source,base,engine,guides,detail='some',alpha=False):
     """The steps of denoising a picture. alpha: the source has its alpha, which the result is given (the denoiser takes

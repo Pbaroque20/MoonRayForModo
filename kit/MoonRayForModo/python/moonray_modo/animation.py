@@ -106,8 +106,10 @@ def shutter_moves(snapshot, evaluated=False):
 class Sequence(QtCore.QObject):
     def __init__(self, panel, directory, first, last, fps, motion=False, step=1, prefix="frame", missing=False, export_as=None, digits=None):
         super().__init__(panel)
-        # Each frame in another picture type as well, beside its EXR (image_formats): {'type', 'quality'}, or None.
+        # Each frame in another picture type as well, beside its EXR (image_formats): {'type', 'quality'}, or None. With
+        # 'only' it is saved in that type alone, and the type is what the sequence is planned by.
         self.export_as = export_as
+        self.picture = export_as['type'] if export_as and export_as.get('only') else None
         if last < first or last-first > 100000 or not math.isfinite(fps) or fps<=0:
             raise ValueError('Invalid animation frame range or frame rate')
         if not isinstance(step,int) or step<1:
@@ -130,7 +132,7 @@ class Sequence(QtCore.QObject):
         settings={k:v for k,v in panel._settings_values().items() if k not in ('display','preview_buffer','recovery','animation_output')}
         snapshot=panel._capture()
         self.signature=hashlib.sha256(json.dumps([source,settings,asset_signature(snapshot)],sort_keys=True).encode()).hexdigest()
-        self.pending_frames,self.completed=plan(self.directory,first,last,step,prefix,fps,motion,missing,settings.get('denoising',{}).get('final',True) and settings.get('denoising',{}).get('engine','off')!='off',self.signature,self.digits)
+        self.pending_frames,self.completed=plan(self.directory,first,last,step,prefix,fps,motion,missing,settings.get('denoising',{}).get('final',True) and settings.get('denoising',{}).get('engine','off')!='off',self.signature,self.digits,self.picture)
         self.directory.mkdir(parents=True,exist_ok=True)
         self.frame, self.last, self.fps, self.motion = first,last,fps,motion
         self.running = False
@@ -163,8 +165,10 @@ class Sequence(QtCore.QObject):
     def capture(self):
         if not self.running:
             return
-        from .sequence_plan import frame_name
+        from .sequence_plan import frame_name,let_go
         destination = self.directory/frame_name(self.prefix,self.frame,self.digits)
+        # What a stopped render left of a frame saved only as a picture, which plan let by: it is rendered again.
+        if self.picture:let_go(destination)
         if destination.exists():
             self.expected_output=destination.resolve()
             values=self.panel._settings_values()
@@ -189,8 +193,12 @@ class Sequence(QtCore.QObject):
         self.expected_output = None
         from .assets import file_hash
         from .denoising import sidecar
-        entry={'frame':self.frame,'file':output,'sha256':file_hash(output)}
-        if sidecar(output).is_file():entry['denoised_sha256']=file_hash(sidecar(output))
+        if self.picture:
+            entry=self._picture_only(output)
+            if entry is None:return
+        else:
+            entry={'frame':self.frame,'file':output,'sha256':file_hash(output)}
+            if sidecar(output).is_file():entry['denoised_sha256']=file_hash(sidecar(output))
         self.completed.append(entry)
         try:
             self.write_manifest('rendering')
@@ -204,11 +212,25 @@ class Sequence(QtCore.QObject):
             self.frame=self.pending_frames.pop(0)
             QtCore.QTimer.singleShot(0,self.next_frame)
 
+    def _picture_only(self, output):
+        """A frame saved only as a picture: its entry in the record, with the EXR it was made from let go of. A picture
+        that was not written stops the sequence with the EXR kept, rather than go on rendering frames that are lost."""
+        from .assets import file_hash
+        from .image_formats import find
+        from .sequence_plan import let_go
+        shown=Path(output).with_suffix('.'+find(self.picture)[2])
+        if not shown.is_file():
+            self.failed('Frame %d could not be saved as %s; its EXR is kept: %s'%(self.frame,find(self.picture)[1],output))
+            return None
+        try:let_go(output)
+        except OSError as exc:self.panel.status.setText('Frame %d is saved, but its EXR could not be removed: %s'%(self.frame,exc))
+        return {'frame':self.frame,'file':str(shown),'sha256':file_hash(shown)}
+
     def write_manifest(self, status):
         from .sequence_plan import manifest_path
         path = manifest_path(self.directory,self.prefix)
         staged = path.with_suffix('.json.tmp')
-        staged.write_text(json.dumps({'signature':self.signature,'status':status,'fps':self.fps,'first':self.first,'last':self.last,'step':self.step,'prefix':self.prefix,'digits':self.digits,'motion_blur':self.motion,'total_frames':self.total,'frames':sorted(self.completed,key=lambda value:value['frame'])},indent=2),encoding='utf-8')
+        staged.write_text(json.dumps({'signature':self.signature,'status':status,'fps':self.fps,'first':self.first,'last':self.last,'step':self.step,'prefix':self.prefix,'digits':self.digits,'picture':self.picture,'motion_blur':self.motion,'total_frames':self.total,'frames':sorted(self.completed,key=lambda value:value['frame'])},indent=2),encoding='utf-8')
         staged.replace(path)
 
     def failed(self, message):

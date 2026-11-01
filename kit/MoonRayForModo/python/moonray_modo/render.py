@@ -941,7 +941,9 @@ class Renderer(QtCore.QObject):
                 try:
                     from .image_formats import convert,find
                     target=Path(asked['path']) if asked.get('path') else destination.with_suffix('.'+find(asked['type'])[2])
-                    convert(self.active['runtime'],asked['type'],destination,target,self.active['snapshot'].get('display'),asked.get('quality',92),
+                    # The denoised picture where there is one: the render's own is its noisy original.
+                    denoised=denoising.sidecar(destination)
+                    convert(self.active['runtime'],asked['type'],denoised if self.phase=='postdone' and denoised.is_file() else destination,target,self.active['snapshot'].get('display'),asked.get('quality',92),
                             alpha='alpha' in (self.active['snapshot'].get('aovs') or []))
                     self.log+='Saved as '+str(target)+'\n'
                 except Exception as exc:
