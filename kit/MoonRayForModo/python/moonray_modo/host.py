@@ -441,8 +441,13 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
         warnings.extend(reuse_geometry.get('warnings',[]))
     else:
         material_candidates = {}
+        from . import left_out
+        warnings.extend(left_out.group_blends(scene.items('mask',superType=False),channel))
         for material in reversed(list(ordered_items(scene.renderItem))):
             from .materials import active as material_active
+            unread = left_out.unread_material(material,channel)
+            if unread:
+                warnings.append(unread)
             if not properties.is_material(material) or not material_active(material) or not channel(material, 'enable', 1):
                 continue
             try:
@@ -524,6 +529,7 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
                     if reference_points.NAME not in (mesh.get('point_attributes') or {}):
                         mesh['point_attributes'] = dict(mesh.get('point_attributes') or {}, **{reference_points.NAME: {'kind': 'vec3', 'values': mesh['vertices']}})
             result['extra_geometry']=evaluated.extra_geometry(data,warnings)
+            warnings.extend(left_out.vertex_maps_lost(result['materials']))
         if reuse_geometry is not None and refresh_materials and not evaluated_geometry:
             from . import reference_points
             # Rest positions come with the meshes: a material that now asks for them (glitter turned on) reads them again.

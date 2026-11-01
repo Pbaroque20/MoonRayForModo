@@ -18,6 +18,7 @@ A hotfix to 0.5.1, with a new runtime ZIP: install both, and **Compile XPU2 Shad
   alpha while Alpha is on in Render Settings. Where the alpha is 0, as on a visible background, those pictures are transparent.
 - **Realtime Sample % starts at 30%**, so realtime settles sooner. A value you set is saved with the scene, and a scene that already has one keeps it.
 - **The compile button says Compiling XPU2 Shaders...** as soon as it is pressed, even when the shaders are already cached and it is over in a second.
+- **Notices name more of what is left out**: Modo's other material kinds, Principled sheen, shadow distances and fog in MoonLightIPR, and weight maps in scenes with replicators or some masks. A group mask set to Normal Multiply no longer stops a scene reading; it is drawn as Normal.
 - **Frames as JPEG, PNG, TIFF or Targa alone**: Render Animation can save just those, with no EXR left beside them. Those frames are denoised when the render is.
 - **Denoised and composite frames keep their number last**: `frame.denoised.0001.exr` and `frame.composite.0001.exr`, so other programs read them as sequences.
 - **Frame digits**: choose how many digits frame numbers have, so 4 gives `frame.0001.exr`.

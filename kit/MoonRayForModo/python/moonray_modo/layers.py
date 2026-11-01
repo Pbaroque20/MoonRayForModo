@@ -60,7 +60,9 @@ def texture_groups(layer, channel, stop_type='polyRender'):
         if parent.type != 'mask':
             raise ValueError('unsupported shader parent ' + parent.type)
         blend = channel(parent, 'blend', 'normal')
-        if blend not in BLENDS:raise ValueError('unsupported group blend '+str(blend))
+        # A blend mode the plugin has not (Normal Multiply) is drawn as Normal, and said (left_out.group_blends): one such
+        # group stopped the whole scene being read.
+        if blend not in BLENDS:blend='normal'
         result.append({'id':parent.id, 'opacity':float(channel(parent,'opacity',1)), 'blend':blend,'invert':bool(channel(parent,'invert',False))})
         parent = parent.parent
     return list(reversed(result))
@@ -96,7 +98,9 @@ def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, mat
                 and layer.type not in SURFACE_KINDS and layer.type not in SOLID_ONLY:
             from . import properties
             # A render output says what Modo's own renderer writes; it is not a layer of any material.
-            if not properties.is_material(layer) and layer.type not in ('defaultShader','mask','envMaterial','renderOutput','furMaterial') and channel(layer,'effect',None) is not None:
+            # A kind of material the plugin does not read has a notice of its own (left_out.unread_material).
+            from .left_out import UNREAD_MATERIALS
+            if not properties.is_material(layer) and layer.type not in UNREAD_MATERIALS and layer.type not in ('defaultShader','mask','envMaterial','renderOutput','furMaterial') and channel(layer,'effect',None) is not None:
                 try:
                     scope=material_key if layer_filter is not None else material_tag(layer,texture=True)
                     if scope in materials and texture_groups(layer,channel) is not None:
@@ -183,13 +187,13 @@ def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, mat
                 solid_map = None
                 if projection=='none' and layer.type!='imageMap':
                     # Solid, as Modo starts a procedural layer: the pattern runs through the object. MoonRay works it
-                    # out so, at each point (procedurals.solid, ModoProceduralMap); MoonLightIPR, and a runtime
-                    # without that map, lay the pattern flat from six sides, which is the nearest to it.
+                    # out so, at each point (procedurals.solid, ModoProceduralMap), as is MoonLightIPR's; a pattern
+                    # with no such map is laid flat from six sides, which is the nearest to it.
                     from .procedurals import solid
                     from .host import world_matrix
                     solid_map = solid(layer,channel,color,is_color,world_matrix(locator))
                     projection='cubic'
-                    warnings.append('Layer %s: Solid projection%s laid on as Cubic.'%(layer.name,', drawn through the object by MoonRay; MoonLightIPR' if solid_map else ''))
+                    if not solid_map:warnings.append('Layer %s: Solid projection laid on as Cubic.'%layer.name)
                 if (layer.type in ENHANCE or layer.type in SOLID_ONLY) and not solid_map:
                     raise ValueError(('Gabor and Poisson noise are' if layer.type in SOLID_ONLY else 'Enhance: Modo textures are')+' drawn with a Solid projection')
                 if projection not in ('uv','planar','spherical','cylindrical','cubic'):
@@ -260,7 +264,7 @@ def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, mat
                         # A pattern only the 3D map draws (Grid's and Dots' Cube): MoonLightIPR has none of it.
                         if not solid_map:raise
                         node['procedural']=None
-                    warnings.append('Procedural '+layer.name+': '+('drawn in 3D by MoonRay' if solid_map else 'sampled 2D '+layer.type+' translation')+'; Modo pattern equivalence is unverified.')
+                    warnings.append('Procedural '+layer.name+': '+('drawn through the object' if solid_map else 'sampled 2D '+layer.type+' translation')+'; Modo pattern equivalence is unverified.')
                 else:
                     node.update(color1=color(layer,'color1',(0,0,0)) if is_color else [float(channel(layer,'value1',0))]*3,
                                 color2=color(layer,'color2') if is_color else [float(channel(layer,'value2',1))]*3)

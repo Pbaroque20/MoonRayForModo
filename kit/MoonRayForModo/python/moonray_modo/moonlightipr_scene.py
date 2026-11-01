@@ -844,7 +844,8 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     # N-gons cut by the MoonRay Source Override's rules or MoonRay's own (native.ngon_ears), read once for the pack.
     from . import native, polygons
     polygons.follow(native.ngon_ears())
-    warnings = []
+    from . import left_out
+    warnings = left_out.moonlightipr(scene)
     # Which lights light an object is drawn (light_sets); whose shadows fall where is still MoonRay's to work out.
     if any(held.get('shadow_exclude') or held.get('shadow_receivers')
            for held in (scene.get('production') or {}).get('objects', {}).values() if isinstance(held, dict)):
