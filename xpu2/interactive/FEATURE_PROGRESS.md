@@ -67,6 +67,7 @@ GPU in the final build. A scene with anything not listed as done still renders, 
 | A BSDF ray meeting two lights picks one from a non-uniform sequence: 3% dark there (mirror reflecting a light in front of the environment) | not reproduced; XPU2 = scalar mode = exact (gl1: the chrome's reflection of the key light +3.6% against vector mode, within noise against scalar) |
 | Visibility misses counted once per lobe (insert's result discarded in accumVisibilityAovsOccluded) | reproduced |
 | Modo's procedural textures through the object (ModoProceduralMap), by the patterns MoonRay and MoonLightIPR share | ported, world and texture spaces; not yet compared pattern by pattern |
+| Scenes with Modo's fur (ModoFurGeometry) past the mesh motion check | fixed; 9 Spheres renders, not yet compared against MoonRay in this form |
 | A camera ray seeing a light past every surface adds nothing to light AOVs (case 1 redeclares lpeStateId) | reproduced with the override off; MOONRAY_MODO_CAMERA_LIGHT_LPE keeps it |
 | Subsurface light samples give unoccluded LPEs the attenuated value and count visibility at any depth | reproduced |
 | Random walk rescales its light and visibility AOVs with its radiance (MOONRAY-3352) | reproduced |

@@ -16,6 +16,7 @@ struct SceneSettings {
     uint32_t height = 0;
     uint32_t targetSamples = 0;
     bool denoise = false;
+    bool flatOut = false;   // every sample everywhere, as fast as the graphics card can: not paced, no rest once clean
 };
 
 class SceneLoader {

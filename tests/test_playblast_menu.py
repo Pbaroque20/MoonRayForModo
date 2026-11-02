@@ -15,6 +15,19 @@ class PlayblastMenu(unittest.TestCase):
         self.assertIn('samples=dialog.samples.value(), motion=motion)', tools)
         self.assertIn("self.motion, self.fps, preview=True)", (root / 'playblast.py').read_text(encoding='utf-8'))
 
+    def test_a_playblast_renders_flat_out_and_a_preview_does_not(self):
+        root = ROOT / 'kit/MoonRayForModo/python/moonray_modo'
+        self.assertIn("snapshot['_flat_out'] = True", (root / 'playblast.py').read_text(encoding='utf-8'))
+        self.assertNotIn('_flat_out', (root / 'panel.py').read_text(encoding='utf-8'))
+        scene = (root / 'moonlightipr_scene.py').read_text(encoding='utf-8')
+        self.assertIn("SCENE_FLAT_OUT if scene.get('_flat_out')", scene)
+        self.assertIn('SCENE_FLAT_OUT = 1, 2, 4, 8, 16', scene)
+        loader = (ROOT / 'moonlightipr/session/scene_loader.cpp').read_text(encoding='utf-8')
+        self.assertIn('SCENE_FLAT_OUT = 16', loader)
+        self.assertIn('settings.flatOut ? 0.0f', loader)
+        session = (ROOT / 'moonlightipr/session/moonlightipr_session.cpp').read_text(encoding='utf-8')
+        self.assertIn('settings.flatOut ? std::chrono::duration<double>(0.0) : pace', session)
+
     def test_kit_menu_has_the_playblast_after_the_animation(self):
         text = (ROOT / 'kit/MoonRayForModo/layout.cfg').read_text(encoding='utf-8')
         self.assertEqual(text.count('cmd moonray.page playblast'), 1)

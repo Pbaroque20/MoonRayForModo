@@ -9,6 +9,7 @@ import modo
 package_root = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'python')
 if package_root not in sys.path:
     sys.path.insert(0, package_root)
+from moonray_modo.property_notifications import NAME as PROPERTIES_WRITTEN, Followed
 
 # The MoonRay Terminal records the programs the plugin runs from the start of the session, before its window opens.
 try:
@@ -130,15 +131,13 @@ class SaveObjectSettings(SaveSceneSettings):
             properties.write(item, values)
 
 
-class ObjectFilter(lxu.command.BasicCommand):
+class ObjectFilter(Followed, lxu.command.BasicCommand):
+    WATCHED = (('select.event', 'item +d'),)
     def cmd_Flags(self): return lx.symbol.fCMD_UI
     def basic_Enable(self,msg):
         from moonray_modo import properties
         return bool(properties.selected_geometry())
     def basic_Execute(self,msg,flags): pass
-    def basic_Notifier(self,index):
-        if index==0: return ('select.event','item +v')
-        if index==1: return ('scene.edit','')
 
 lx.bless(ObjectFilter,'moonray.object.filter')
 
@@ -362,7 +361,8 @@ class AssignMaterial(lxu.command.BasicCommand):
 
 
 def material_option(key):
-    class MaterialOption(lxu.command.BasicCommand):
+    class MaterialOption(Followed, lxu.command.BasicCommand):
+        WATCHED = (('select.event', 'item +vd'), (PROPERTIES_WRITTEN, ''))
         def __init__(self):
             super().__init__()
             self.dyna_Add('value',lx.symbol.sTYPE_BOOLEAN)
@@ -394,10 +394,6 @@ def material_option(key):
             for item in selected():
                 value=properties.read(item).get(key)
                 values.AddInt(int(value=='DwaBaseMaterial' if key=='shader' else bool(value)))
-
-        def basic_Notifier(self,index):
-            if index==0: return ('select.event','item +v')
-            if index==1: return ('scene.edit','')
     return MaterialOption
 
 lx.bless(AssignMaterial,'moonray.material.assign')
@@ -438,8 +434,9 @@ class ImportMaterialX(lxu.command.BasicCommand):
 lx.bless(ImportMaterialX, 'moonray.material.importMaterialX')
 
 
-class LoadMaterialX(lxu.command.BasicCommand):
+class LoadMaterialX(Followed, lxu.command.BasicCommand):
     """Give the selected MaterialX material the material of a file. The file is asked for unless it is given."""
+    WATCHED = (('select.event', 'item +d'),)
     def __init__(self):
         super().__init__()
         self.dyna_Add('file', lx.symbol.sTYPE_STRING)
@@ -473,10 +470,6 @@ class LoadMaterialX(lxu.command.BasicCommand):
         except ValueError as exc:
             modo.dialogs.alert('Load MaterialX File', 'This MaterialX file could not be loaded.' + chr(10) * 2 + str(exc), dtype='warning')
 
-    def basic_Notifier(self, index):
-        if index == 0:
-            return ('select.event', 'item +v')
-
 
 lx.bless(LoadMaterialX, 'moonray.material.loadMaterialX')
 lx.bless(material_option('shader'),'moonray.material.enable')
@@ -486,7 +479,8 @@ lx.bless(material_option('thin_geometry'),'moonray.material.thin')
 def material_control(key):
     from moonray_modo.material_settings import DEFAULTS, validate
     default = DEFAULTS[key]
-    class MaterialControl(lxu.command.BasicCommand):
+    class MaterialControl(Followed, lxu.command.BasicCommand):
+        WATCHED = (('select.event', 'item +vd'), (PROPERTIES_WRITTEN, ''))
         def __init__(self):
             super().__init__()
             kind = lx.symbol.sTYPE_BOOLEAN if type(default) is bool else (
@@ -522,10 +516,6 @@ def material_control(key):
                     output.AddFloat(value)
                 else:
                     output.AddInt(int(value))
-
-        def basic_Notifier(self,index):
-            if index==0: return ('select.event','item +v')
-            if index==1: return ('scene.edit','')
     return MaterialControl
 
 

@@ -68,6 +68,8 @@ class Playblast(QtCore.QObject):
         snapshot = animation.capture_frame(self.frame/self.fps, panel._settings_values()['surface'] == 2, self.motion, self.fps, preview=True)
         snapshot['frame'] = self.frame
         snapshot['fps'] = self.fps
+        # Not spread over the seconds a preview leaves room for edits in, and every sample of it gathered.
+        snapshot['_flat_out'] = True
         self.waiting = True
         panel._submit(panel._configure_snapshot(snapshot))
 
