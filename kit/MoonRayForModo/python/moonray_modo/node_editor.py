@@ -88,6 +88,10 @@ class Toggle(QtWidgets.QGraphicsSimpleTextItem):
         QtCore.QTimer.singleShot(0,lambda editor=self.editor,identity=self.identity:editor.toggle_expanded(identity))
 
 
+# How long the list of properties is filled for before the window is let answer, in seconds.
+FILL_SLICE=.008
+
+
 class Node(QtWidgets.QGraphicsRectItem):
     """A node, made of Qt's own shapes. The item itself paints nothing, so that Qt does not
     draw its dashed selection box; the outline changes colour instead."""
@@ -347,7 +351,8 @@ class Editor(QtWidgets.QDialog):
         buttons=QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Close);footer.addWidget(buttons)
         buttons.button(QtWidgets.QDialogButtonBox.Close).setToolTip('Edits are written to the material as they are made; Ctrl+Z here or in Modo undoes them')
         buttons.rejected.connect(self.reject)
-        self.canvas.selectionChanged.connect(self.inspect);self.table.itemChanged.connect(self.edited);self.layers.currentIndexChanged.connect(self.inspect)
+        self.inspect_waiting=False;self.fill_job=None
+        self.canvas.selectionChanged.connect(self.selection_changed);self.table.itemChanged.connect(self.edited);self.layers.currentIndexChanged.connect(self.inspect)
         for button in self.findChildren(QtWidgets.QPushButton):
             button.setAutoDefault(False);button.setDefault(False)
         self.rebuild();self.frame_output()
@@ -1023,8 +1028,47 @@ class Editor(QtWidgets.QDialog):
         if not keys: return
         key,ok=QtWidgets.QInputDialog.getItem(self,'Disconnect','Input',keys,0,False)
         if ok:self.unlink(identity,key)
+    def selection_changed(self):
+        """The selection has changed. Filling the list of properties takes a large material a second, which is not to be had in
+        the middle of a click or a marquee: with the button down on the canvas it waits for the button to come up."""
+        if self.view.holding:self.inspect_waiting=True
+        else:self.inspect()
+
+    def selection_settled(self):
+        """The button has come up: the list is filled from just after, once the picture has shown what was selected, a little at
+        a time so that the window keeps answering."""
+        if self.inspect_waiting:QtCore.QTimer.singleShot(10,self.inspect_now_waited)
+
+    def inspect_now_waited(self):
+        from shiboken2 import isValid
+        if isValid(self) and self.inspect_waiting and not self.view.holding and not self.busy:
+            self.inspect_waiting=False;self.fill_job=self.fill_properties();self.fill_slice()
+
+    def fill_slice(self):
+        """Some rows of the list, for no more than a few milliseconds, then back to the window. A list being filled gives way to
+        anything that fills it again; with the button down on the canvas it waits."""
+        from shiboken2 import isValid
+        if not isValid(self) or self.fill_job is None:return
+        if self.view.holding:
+            QtCore.QTimer.singleShot(30,self.fill_slice);return
+        import time
+        job=self.fill_job;ending=time.perf_counter()+FILL_SLICE;self.busy=True
+        try:
+            while time.perf_counter()<ending:next(job)
+        except StopIteration:
+            self.fill_job=None;return
+        except Exception:
+            self.fill_job=None;self.busy=False;raise
+        self.busy=False;self.filter_properties()
+        QtCore.QTimer.singleShot(0,self.fill_slice)
+
     def inspect(self,*args):
         if self.busy: return
+        self.inspect_waiting=False;self.fill_job=None
+        for _ in self.fill_properties():pass
+
+    def fill_properties(self):
+        """Fills the list of properties, as a generator that stops after each row (fill_slice)."""
         self.busy=True;self.numeric_fields=[];self.table.setRowCount(0);identity=self.selected()
         # With no node chosen, the material's own controls: what its MaterialX file named for adjusting.
         controls=[] if identity else [c for c in self.graph.get('controls',[]) if c.get('node') in self.graph['nodes'] and c.get('key') in nodes.specs(self.graph['nodes'][c['node']]['type'])]
@@ -1039,6 +1083,7 @@ class Editor(QtWidgets.QDialog):
             if identity:rows=[(identity,key,group,False) for key,group in rows]
             shown_group=None
             for identity,key,title,single in rows:
+                yield
                 if identity is not None and isinstance(title,tuple):
                     # A node's row carries its group: a header goes in front of the first of each.
                     group=title[0];title=None
