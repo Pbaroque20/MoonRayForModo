@@ -23,7 +23,7 @@ DISPLACED_TRIANGLES = 400000
 LAST_REFINABLE = False
 # A subdivision surface is refined in the session, up to this many quads; MoonRay's own limit is finer.
 SUBDIVISION_QUADS = 3000000
-SCENE_DENOISE, SCENE_WORKING_SPACE, SCENE_MOTION, SCENE_PRESENCE_SHADOWS = 1, 2, 4, 8
+SCENE_DENOISE, SCENE_WORKING_SPACE, SCENE_MOTION, SCENE_PRESENCE_SHADOWS, SCENE_FLAT_OUT = 1, 2, 4, 8, 16
 ENVIRONMENT_ROWS = 64
 ENVIRONMENT_IMAGE = (1024, 512)
 # How a camera turns a point of the picture into a direction, by the session's numbering.
@@ -923,7 +923,9 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     parts = [b'MLSO', struct.pack('<8I', width, height, *depths, samples, (SCENE_DENOISE if denoise else 0)
                                   | (SCENE_WORKING_SPACE if working else 0) | (SCENE_MOTION if motion else 0)
                                   # See-through surfaces cast whole shadows unless the scene asks for lighter ones, as in MoonRay.
-                                  | (SCENE_PRESENCE_SHADOWS if settings.get('enable_presence_shadows') else 0)),
+                                  | (SCENE_PRESENCE_SHADOWS if settings.get('enable_presence_shadows') else 0)
+                                  # A playblast's frame: every sample, as fast as the graphics card can.
+                                  | (SCENE_FLAT_OUT if scene.get('_flat_out') else 0)),
              # The scene's sample clamp, and from which bounce it holds, and the subsurface scatterings a path may have; then how each further bounce in fog counts for
              # less (form 'G').
              struct.pack('<fII', float(settings['sample_clamping_value']), int(settings['sample_clamping_depth']), int(settings['max_subsurface_per_path'])),

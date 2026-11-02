@@ -25,7 +25,7 @@ const uint32_t MESH_HAS_DATA = 1, MESH_HAS_NORMALS = 2, MESH_HAS_MATERIAL_IDS = 
                MESH_LINEAR = 256,       // those curves' segments are straight, from one point to the next
                MESH_RIBBON = 512,       // and they are lit as flat ribbons that face the ray
                MESH_DISPLACE = 1024;    // its materials displace it: split finer here, then moved by their height
-const uint32_t SCENE_DENOISE = 1, SCENE_WORKING_SPACE = 2, SCENE_MOTION = 4, SCENE_PRESENCE_SHADOWS = 8;
+const uint32_t SCENE_DENOISE = 1, SCENE_WORKING_SPACE = 2, SCENE_MOTION = 4, SCENE_PRESENCE_SHADOWS = 8, SCENE_FLAT_OUT = 16;
 const uint32_t LAYER_UDIM = 1 << 19;    // as in src/device/shared.h
 const uint32_t TEXTURE_FLOAT = 1, TEXTURE_SRGB = 2, TEXTURE_WRAP_U_SHIFT = 2, TEXTURE_WRAP_V_SHIFT = 4;
 // Meshes unused for this many scenes are freed, so hiding and showing an item stays cheap.
@@ -331,7 +331,8 @@ SceneSettings SceneLoader::apply(const std::string& path) {
     settings.denoise = (sceneFlags & SCENE_DENOISE) != 0;
     // The render rests once the picture is clean: noise of about a step of an 8-bit screen's colour, or three where
     // the denoiser takes away what is left, rather than gathering every sample of a scene that needs few.
-    renderer.setConvergence(settings.denoise ? 0.012f : 0.004f);
+    settings.flatOut = (sceneFlags & SCENE_FLAT_OUT) != 0;
+    renderer.setConvergence(settings.flatOut ? 0.0f : settings.denoise ? 0.012f : 0.004f);
     const float sampleClamp = in.value<float>();
     const uint32_t sampleClampDepth = in.value<uint32_t>();
     const uint32_t maxSubsurface = in.value<uint32_t>();

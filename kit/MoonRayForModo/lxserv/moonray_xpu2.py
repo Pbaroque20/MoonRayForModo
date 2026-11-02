@@ -5,6 +5,7 @@ package_root = os.path.join(os.path.dirname(os.path.dirname(__file__)), "python"
 if package_root not in sys.path: sys.path.insert(0, package_root)
 import lx
 import lxu.command
+from moonray_modo.property_notifications import Followed
 
 
 def _running(pid):
@@ -172,14 +173,14 @@ def _watch():
     _ticking.append(timer)
 
 
-class CompileShaders(lxu.command.BasicCommand):
+class CompileShaders(Followed, lxu.command.BasicCommand):
     """Compile XPU2's GPU programs into OptiX's disk cache in the background, once (the state says how long it has left),
     after which every XPU2 preview starts in seconds. Modo stays usable meanwhile."""
+    WATCHED = ((NOTIFIER, ''),)
     def cmd_Flags(self): return lx.symbol.fCMD_UI
     # Greyed while a compile is under way: pressed again, it would only start another.
     def basic_Enable(self, msg): return not state().startswith('Compiling')
     def basic_ButtonName(self): return button_name(state())
-    def basic_Notifier(self, index): return (NOTIFIER, '') if index == 0 else None
     def basic_Execute(self, msg, flags):
         import subprocess
         from moonray_modo import native
@@ -205,15 +206,15 @@ class CompileShaders(lxu.command.BasicCommand):
         lx.out('MoonRay XPU2: compiling the shaders in the background (%s); see %s' % (how_long(), log))
 
 
-class ShaderState(lxu.command.BasicCommand):
+class ShaderState(Followed, lxu.command.BasicCommand):
     """The state of XPU2's shaders (read only)."""
+    WATCHED = ((NOTIFIER, ''),)
     def __init__(self):
         super().__init__()
         self.dyna_Add('value', lx.symbol.sTYPE_STRING)
         self.basic_SetFlags(0, lx.symbol.fCMDARG_QUERY)
     def cmd_Flags(self): return lx.symbol.fCMD_UI
     def basic_Enable(self, msg): return True
-    def basic_Notifier(self, index): return (NOTIFIER, '') if index == 0 else None
     def cmd_Query(self, index, query):
         held = state()
         # A compile found under way (one still running from before Modo was opened) is followed from here.

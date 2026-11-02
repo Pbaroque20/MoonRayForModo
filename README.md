@@ -23,9 +23,9 @@ A hotfix to 0.5.1, with a new runtime ZIP: install both, and **Compile XPU2 Shad
 - **Alpha reaches every file that can hold it**: a denoised EXR, and a PNG, TIFF or Targa saved from a render, now have the render's
   alpha while Alpha is on in Render Settings. Where the alpha is 0, as on a visible background, those pictures are transparent.
 - **Realtime Sample % starts at 30%**, so realtime settles sooner. A value you set is saved with the scene, and a scene that already has one keeps it.
-- **The compile button says Compiling XPU2 Shaders...** as soon as it is pressed, even when the shaders are already cached and it is over in a second.
 - **The graph editor's marquee starts at once**: it draws from the first pixel, and the property list fills when you let go, so clicking and marquee selecting no longer pause.
 - **Playblasts show motion blur**: when Motion Blur is on in the scene or its camera, or in MoonLightIPR's Preview Preferences.
+- **Playblasts render flat out**: each frame gathers all its samples as fast as the graphics card can, without the 8 seconds a preview spreads a render over, and previews keep that pacing for drags.
 - **Hues and angles have a slider in the graph editor**: hue shift, rotation and the other values that go round a circle, beside their number.
 - **The Toon filter's form** has Close Line Gaps, which it was missing, and its later controls change the right settings again.
 - **Sliders in the compositor**: Blur, Glow, Sharpen and Median radius and Vignette have a slider beside their number.

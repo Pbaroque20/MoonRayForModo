@@ -1,4 +1,5 @@
 """Compile XPU2 Shaders: pressed, the button and the state say Compiling, however soon the compile is over. No Modo."""
+import ast
 import importlib.util
 import sys
 import tempfile
@@ -49,6 +50,22 @@ class CompileButton(unittest.TestCase):
 
     def test_out_of_date_until_pressed(self):
         self.assertTrue(self.module.state().startswith('Out of date'))
+
+    def test_the_controls_follow_the_notifier_as_modo_asks_python_commands(self):
+        for command in (self.module.CompileShaders, self.module.ShaderState):
+            self.assertTrue(issubclass(command, self.module.Followed))
+            self.assertEqual(command.WATCHED, ((self.module.NOTIFIER, ''),))
+        self.assertIn('cmd_NotifyAddClient', vars(self.module.Followed))
+        self.assertIn('cmd_NotifyRemoveClient', vars(self.module.Followed))
+
+    def test_no_command_relies_on_what_modo_never_asks(self):
+        for server in (ROOT / 'lxserv').glob('*.py'):
+            tree = ast.parse(server.read_text(encoding='utf-8'))
+            for held in ast.walk(tree):
+                if isinstance(held, ast.ClassDef):
+                    names = {step.name for step in held.body if isinstance(step, ast.FunctionDef)}
+                    if 'basic_Notifier' in names:
+                        self.assertTrue(names & {'arg_UIValueHints', 'cmd_NotifyAddClient'}, (server.name, held.name))
 
     def test_a_compile_over_at_once_still_says_compiling_for_a_moment(self):
         self.module._pressed[0] = time.monotonic()
