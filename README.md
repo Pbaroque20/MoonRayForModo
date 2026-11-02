@@ -6,6 +6,13 @@ This is the development branch of [MoonRay for Modo](https://github.com/Pbaroque
 
 The current release is [0.5.2](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.5.2). **Built on MoonRay [2026.29.1](https://github.com/dreamworksanimation/openmoonray/releases/tag/v2026.29.1)** (OpenMoonRay's latest release; MoonRay 18.4), with the plugin's own patches for Windows and the preview.
 
+## Coming after 0.5.2
+
+With a new runtime ZIP: install both, and **Compile XPU2 Shaders once more**.
+
+- **XPU2 renders Modo's procedural textures worked out through the object**, Enhance: Modo's patterns among them, with the patterns MoonRay and MoonLightIPR share. Such a scene used to go to MoonRay XPU.
+- **Scenes with Modo's fur render in XPU2**: they stopped with "No Attribute named 'vertex_list_1'" and went to MoonRay XPU.
+
 ## New in 0.5.2
 
 A hotfix to 0.5.1, with a new runtime ZIP: install both, and **Compile XPU2 Shaders once more**.
