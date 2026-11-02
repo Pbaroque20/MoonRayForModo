@@ -55,5 +55,19 @@ class AlphaKept(unittest.TestCase):
         self.assertNotIn('--colorconvert', image_formats.with_alpha('tif32', 'in.exr', 'out.tif', {'view': 'srgb'}))
 
 
+class EnvironmentTakenOut(unittest.TestCase):
+    def test_the_environment_leaves_the_colour_before_it_is_divided_by_alpha(self):
+        args = image_formats.with_alpha('png8', 'in.exr', 'out.png', {'view': 'srgb'}, 'whole.exr')
+        self.assertIn('whole.exr', args)
+        self.assertIn(','.join(image_formats.BACKGROUND), args)
+        self.assertLess(args.index('--sub'), args.index('--unpremult'))
+        self.assertIn('--clamp:min=0', args)
+
+    def test_without_a_background_the_picture_is_as_it_was(self):
+        args = image_formats.with_alpha('png8', 'in.exr', 'out.png', {'view': 'srgb'})
+        self.assertNotIn('--sub', args)
+        self.assertIn('R,G,B,A', args)
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -944,7 +944,7 @@ class Renderer(QtCore.QObject):
                     # The denoised picture where there is one: the render's own is its noisy original.
                     denoised=denoising.sidecar(destination)
                     convert(self.active['runtime'],asked['type'],denoised if self.phase=='postdone' and denoised.is_file() else destination,target,self.active['snapshot'].get('display'),asked.get('quality',92),
-                            alpha='alpha' in (self.active['snapshot'].get('aovs') or []))
+                            alpha='alpha' in (self.active['snapshot'].get('aovs') or []),background=destination)
                     self.log+='Saved as '+str(target)+'\n'
                 except Exception as exc:
                     self.status.emit('The %s copy was not written: %s'%(asked.get('type'),exc))

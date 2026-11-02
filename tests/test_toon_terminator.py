@@ -112,7 +112,7 @@ class ToonTerminator(unittest.TestCase):
                 self.assertAlmostEqual(made['refraction_roughness'], expected)
         # A session started with other switches is started again: the nine above and XPU2's three (renderer, adaptive
         # passes, devices).
-        self.assertEqual(len(native.source_switches()), 12)
+        self.assertEqual(len(native.source_switches()), 13)
 
     def test_on_the_preferences_page(self):
         page = (KIT / 'preferences.cfg').read_text(encoding='utf-8')

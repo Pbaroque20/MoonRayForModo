@@ -339,7 +339,7 @@ Comparison audit between MoonRay 2026.29.1's source and the current plugin.
 | Meshes, subdivision, curves, points, instancing | ![yes](docs/images/feature-yes.svg) | From Modo's geometry. Creases from Modo's Subdivision weights |
 | Box and sphere shapes | ![yes](docs/images/feature-yes.svg) | |
 | VDB volumes, base and cutout volumes | ![yes](docs/images/feature-yes.svg) | |
-| Motion blur | ![yes](docs/images/feature-yes.svg) | Final renders, and MoonLightIPR previews, where it is a Preview Preference, off by default, with moving lights blurred too *Coming in 0.5.2:* MoonRay XPU2 for Render, Render to a File and animations, the Render button, and XPU2 realtime as a Preview Preference. XPU2 traces moving objects on the GPU; compile its shaders once more. |
+| Motion blur | ![yes](docs/images/feature-yes.svg) | Final renders, and MoonLightIPR previews, where it is a Preview Preference, off by default, with moving lights blurred too *Coming in 0.5.2:* MoonRay XPU2 for Render, Render to a File and animations, the Render button, and XPU2 realtime as a Preview Preference. XPU2 traces moving objects on the GPU; compile its shaders once more. MoonLightIPR playblasts show it when it is active. |
 | Depth of field | ![yes](docs/images/feature-yes.svg) | |
 | DWA materials (base, metal, fabric, skin, layer, mix and the rest) | ![yes](docs/images/feature-yes.svg) | Two Sided and Color Correct take the other DWA materials as their inputs, and a layer or two-sided material missing an input no longer crashes MoonRay |
 | Hair, toon and USD Preview Surface materials | ![yes](docs/images/feature-yes.svg) | Toon edges smooth on coarse meshes, and toon renders that denoise cleanly, each a preference; a new toon material is brightest facing the light |
@@ -355,7 +355,7 @@ Comparison audit between MoonRay 2026.29.1's source and the current plugin.
 | Adaptive tessellation by screen error | ![yes](docs/images/feature-yes.svg) | Displacement Tessellation in Render Settings, following Modo's Displacement Rate, or per object |
 | Global switches: displacement, subsurface, shadows, lights seen by the camera, geometry resolution, dicing camera | ![yes](docs/images/feature-yes.svg) | Render Settings, Global Switches |
 | Presence quality, Cryptomatte multi-presence, optimised hair sampling switch | ![yes](docs/images/feature-yes.svg) | In Render Settings. Automatic Presence Shadows, in Preferences, sets presence shadows by whether a material is cut out |
-| AOVs: light path expressions, material AOVs | ![yes](docs/images/feature-yes.svg) | Ready-made, or type your own expression. The compositor adds the light passes or light groups and puts them back together, each with its own Grade; a probe shows each node's value at a pixel and keeps it as a note; the colour nodes take a mask |
+| AOVs: light path expressions, material AOVs | ![yes](docs/images/feature-yes.svg) | Ready-made, or type your own expression. The compositor adds the light passes or light groups and puts them back together, each with its own Grade; a probe shows each node's value at a pixel and keeps it as a note; the colour nodes take a mask *Coming in 0.5.2:* the Environment background output has its picture in vector and XPU modes. |
 | Time per pixel (where the render spent its time) | ![yes](docs/images/feature-yes.svg) | A preview buffer and an EXR channel |
 | Depth, normal, position, UV, motion vector, wireframe and sample count outputs | ![yes](docs/images/feature-yes.svg) | Render Settings; each a preview buffer and an EXR channel |
 | Visibility outputs (how much of each light reaches a point) | ![yes](docs/images/feature-yes.svg) | Every light or one light group, in the Outputs window |
@@ -366,7 +366,7 @@ Comparison audit between MoonRay 2026.29.1's source and the current plugin.
 | EXR metadata | ![yes](docs/images/feature-yes.svg) | |
 | Choice of EXR compression | ![yes](docs/images/feature-yes.svg) | All of MoonRay's, zip by default |
 | Multi-part EXR | ![yes](docs/images/feature-yes.svg) | Each output in a part of its own, by choice |
-| Picture types besides OpenEXR | ![yes](docs/images/feature-yes.svg) | PNG, JPEG, TIFF and Targa for a render to a file, animation frames and exported AOVs, the OpenEXR kept beside them *Coming in 0.5.2:* PNG, TIFF and Targa keep the render's alpha. Animation frames can be saved in these types alone, with no EXR left beside them, and a saved picture comes from the denoised render where there is one. |
+| Picture types besides OpenEXR | ![yes](docs/images/feature-yes.svg) | PNG, JPEG, TIFF and Targa for a render to a file, animation frames and exported AOVs, the OpenEXR kept beside them *Coming in 0.5.2:* PNG, TIFF and Targa keep the render's alpha. Animation frames can be saved in these types alone, with no EXR left beside them, and a saved picture comes from the denoised render where there is one. Soft edges no longer flare in PNG, TIFF and Targa with alpha and a visible environment. |
 | Colour management: OCIO, ACES views, ACEScg working space | ![yes](docs/images/feature-yes.svg) | Modo's own OCIO configuration and colour spaces, any OCIO display and view, and ACES 1.3 and ACES 2.0 for an sRGB display; ACEScg scenes render and look right |
 | Denoising (OptiX, Open Image Denoise) | ![yes](docs/images/feature-yes.svg) | The Denoiser set to Off is off everywhere, the denoised beauty and Smart Render included *Coming in 0.5.2:* denoised and composite frames keep their number last: `frame.denoised.0001.exr`, `frame.composite.0001.exr`. |
 | Primitive attributes (values a shape carries for its materials) | ![yes](docs/images/feature-yes.svg) | Per item or instance, and per point or per face from Modo's weight and colour vertex maps; imported from MoonRay scenes |
@@ -421,11 +421,11 @@ Comparison audit between Modo 16.1v9 and the current plugin: what of a Modo scen
 ### Where the plugin changes MoonRay
 
 Besides the patches that build MoonRay on Windows, the plugin changes MoonRay where it renders something wrongly or
-slowly for an artist: eighteen MoonRay Source Overrides, each a checkbox in Preferences (MoonRay, MoonRay Source Overrides;
+slowly for an artist: nineteen MoonRay Source Overrides, each a checkbox in Preferences (MoonRay, MoonRay Source Overrides;
 Auto's is under XPU), on by default; off renders as MoonRay's source does. Low-latency rendering, geometry loaded as binary,
 smooth toon edges on coarse meshes, toon materials that denoise cleanly, the denoiser's guides cleaned first, toon lines
 without gaps and apart from the shading, display filters given the inputs they need, n-gons triangulated cleanly,
-blurred moving lights, fog in Cryptomatte, fog in front of see-through surfaces in alpha, each Cryptomatte sample
+blurred moving lights, fog in Cryptomatte, fog in front of see-through surfaces in alpha, lights seen by the camera in light outputs (*coming in 0.5.2*), each Cryptomatte sample
 counted once, a stopped render finishing the tiles in hand, UsdPreviewSurface's specular colour, images without alpha
 read as opaque, rough glass under a smooth surface, and Auto rendering on the graphics card first. A few additions have no
 switch, such as three more pixel filters. Those that change MoonRay's own code are described in the [engineers' notes](patches/native-windows/README.md).

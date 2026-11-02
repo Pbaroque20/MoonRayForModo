@@ -358,6 +358,60 @@ class NumericField(QtWidgets.QDoubleSpinBox):
         self.changed.emit(self.identity,self.key,self.layer,value)
 
 
+class QuietSlider(QtWidgets.QSlider):
+    """A slider that scrolling the list of properties passes over, as it does a number."""
+    def wheelEvent(self,event):
+        if self.hasFocus():super().wheelEvent(event)
+        else:event.ignore()
+
+
+class RadialField(QtWidgets.QWidget):
+    """A hue or an angle: its number, and a slider across its range (parameter_state.slider_range). The slider moves the
+    number as it is dragged and the value is taken when it is let go, as one step to undo; a click or a key on it is taken
+    at once. A number typed past the ends stands, with the slider at that end."""
+    STEPS=1000
+    def __init__(self,identity,key,layer,spec,value,span,parent=None,kind=None,connected=False):
+        super().__init__(parent)
+        self.identity,self.key,self.low,self.high=identity,key,span[0],span[1]
+        layout=QtWidgets.QHBoxLayout(self);layout.setContentsMargins(2,0,2,0);layout.setSpacing(6)
+        self.number=NumericField(identity,key,layer,spec,value,self,kind=kind,connected=connected)
+        self.number.setDecimals(3);self.number.setButtonSymbols(QtWidgets.QAbstractSpinBox.NoButtons);self.number.setFixedWidth(64)
+        self.slider=QuietSlider(QtCore.Qt.Horizontal,self);self.slider.setRange(0,self.STEPS);self.slider.setFocusPolicy(QtCore.Qt.ClickFocus)
+        self.slider.setSingleStep(self.STEPS//100);self.slider.setPageStep(self.STEPS//10)
+        layout.addWidget(self.number);layout.addWidget(self.slider,1)
+        self.changed,self.focused=self.number.changed,self.number.focused
+        self.place(self.number.value())
+        self.number.valueChanged.connect(self.place)
+        self.slider.valueChanged.connect(self.moved)
+        self.slider.sliderReleased.connect(self.released)
+        self.slider.sliderPressed.connect(lambda:self.focused.emit(self.identity,self.key))
+    def setPalette(self,palette):
+        # The number shows whether the value is its default or edited (tint_value).
+        self.number.setPalette(palette)
+    def palette(self):
+        return self.number.palette()
+    def interpretText(self):
+        self.number.interpretText()
+    def value(self):
+        return self.number.value()
+    def place(self,value):
+        blocker=QtCore.QSignalBlocker(self.slider)
+        self.slider.setValue(int(round((min(self.high,max(self.low,value))-self.low)/(self.high-self.low)*self.STEPS)))
+        del blocker
+    def picked(self,position):
+        return round(self.low+(self.high-self.low)*position/self.STEPS,3)
+    def moved(self,position):
+        if self.slider.isSliderDown():
+            # Shown as it is dragged; not yet taken.
+            blocker=QtCore.QSignalBlocker(self.number)
+            self.number.setValue(self.picked(position))
+            del blocker
+        else:self.number.setValue(self.picked(position))
+    def released(self):
+        # Shown while dragged with the number's signals held, so this is what publishes it.
+        self.number.publish(self.number.value())
+
+
 # The spaces a ramp or gradient can be laid out in, said plainly and with the usual ones first.
 SPACE_LABELS={'object':'Object (stays on the object)','world':'World (fixed in the scene)','texture':'Texture (follows the UVs)',
               'render':'Render (follows the camera)','camera':'Camera (follows the camera)','screen':'Screen (follows the picture)',

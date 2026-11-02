@@ -41,6 +41,8 @@ def environment(directory):
     # (crypto_once).
     env['MOONRAY_MODO_FOG_ALPHA'] = '1' if fog_alpha() else '0'
     env['MOONRAY_MODO_CRYPTO_ONCE'] = '1' if crypto_once() else '0'
+    # A light seen by a camera ray past every surface, in light path expressions (camera_light_lpe).
+    env['MOONRAY_MODO_CAMERA_LIGHT_LPE'] = '1' if camera_light_lpe() else '0'
     # The four overrides of tools/port_source_switches.py, each read by MoonRay as it starts.
     env['MOONRAY_MODO_USD_SPECULAR'] = '1' if usd_specular() else '0'
     env['MOONRAY_MODO_OPAQUE_ALPHA'] = '1' if opaque_alpha() else '0'
@@ -278,6 +280,13 @@ def fog_alpha():
     return _switch('fog_alpha', 'MOONRAY_MODO_FOG_ALPHA')
 
 
+def camera_light_lpe():
+    """Whether a light a camera ray sees past every surface reaches light path expressions, as in MoonRay's scalar mode.
+    MoonRay's vector and XPU modes lose it, so that the Environment background output is black. With it on, a PNG,
+    TIFF or Targa has the visible environment taken out of its soft edges before its colour is divided by alpha."""
+    return _switch('camera_light_lpe', 'MOONRAY_MODO_CAMERA_LIGHT_LPE')
+
+
 def crypto_once():
     """Whether each Cryptomatte sample is counted once in MoonRay's vector and XPU modes, where MoonRay's own now
     and then counts a pixel's surface twice."""
@@ -337,7 +346,7 @@ def engine_name(mode):
 
 def source_switches():
     """The MoonRay Source Overrides MoonRay reads as it starts: a session started with others is started again."""
-    return (toon_terminator(), toon_albedo(), crypto_volumes(), fog_alpha(), crypto_once()) + tuple(
+    return (toon_terminator(), toon_albedo(), crypto_volumes(), fog_alpha(), crypto_once(), camera_light_lpe()) + tuple(
         globals()[key]() for key in ('usd_specular', 'opaque_alpha', 'transmission_roughness', 'auto_xpu')) + (xpu2(), xpu2_chain(), xpu2_devices())
 
 

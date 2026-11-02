@@ -5,6 +5,18 @@ from .node_defaults import value as declared_default
 DEFAULT_COLOR='#000000'
 EDITED_COLOR='#00ffff'
 
+# The values that go round a circle, and the range a slider gives each where the node declares none: hues in degrees, angles
+# in degrees. A range the node declares comes first (some hues run from 0 to 1). A number can still be typed past the ends.
+RADIAL={'hue':(0.0,360.0),'hue_shift':(0.0,360.0),'glitter_color_hue_variation':(0.0,1.0),'angle':(-180.0,180.0),'rotation':(-180.0,180.0),
+        'rotation_angle':(-180.0,180.0),'flow_angle':(-180.0,180.0),'crease_threshold':(0.0,180.0),'warp_thread_elevation':(-90.0,90.0),
+        'primary_specular_offset':(-10.0,10.0),'secondary_specular_offset':(-10.0,10.0),'transmission_offset':(-10.0,10.0)}
+
+def slider_range(key,spec):
+    """The (low, high) of a slider for a property that goes round a circle, or None for any other."""
+    if key not in RADIAL or spec.get('type') not in ('Float','Double') or spec.get('enum'):return None
+    low,high=RADIAL[key]
+    return (float(str(spec.get('min',low)).rstrip('f')),float(str(spec.get('max',high)).rstrip('f')))
+
 def default(spec,kind=None,key=None):
     return declared_default(spec)
 
