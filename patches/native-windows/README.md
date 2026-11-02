@@ -272,6 +272,32 @@ scene without a presence surface the alpha is unchanged.
 
 *A pane of presence 0.4 with fog in front of it and sky behind (left); its alpha with the switch off, the pane alone (middle), and on, the fog counted in front of the pane (right). 16 samples a pixel, scalar.*
 
+## `moonray.patch`: a light the camera sees, in light path outputs (`MOONRAY_MODO_CAMERA_LIGHT_LPE`)
+
+Applied by `tools/port_camera_light_lpe.py`, behind a switch of its own (the plugin's preference, on by default).
+
+### What MoonRay does
+
+The miss handlers in vector and XPU modes (`RayHandlers.cc` and its copy, `XPURayHandlers.cc`) declare two variables again inside
+their branches: `hitLight`, so that the one the light path code asks is always null, and `lpeStateId` in that code's case 1, so
+that the state it accumulates with stays -1. A light a camera ray sees past every surface reaches no light output. Scalar mode has
+it right. `C<L.'modo_environment'>`, the kit's Environment background output, was black in vector and XPU modes.
+
+### The fix
+
+The light seen is kept, and the transition to it made, where the camera ray's state is valid. Both handlers need it: with
+`RayHandlers.cc` alone, an XPU render's tiles have the output only where they fell back to the CPU, in blocks.
+
+### What the plugin does with it
+
+With Alpha on, a render also holds the Environment background. A PNG, TIFF or Targa has it taken out before its colour is divided by
+alpha (`image_formats.with_alpha`): a soft edge is part surface and part environment while alpha counts the surface alone, so
+that dividing clipped those edges to white. On a test soft edge of alpha 0.125, the stored colour went from 1.0 to 0.80 on XPU2 and
+0.81 on XPU, against 0.81 and 0.82 with the environment hidden from the camera. An EXR keeps its colour as rendered, and holds
+the channel for a compositor. A MoonRay EnvLight item has no such label, so soft edges in front of one are not helped.
+
+XPU2 follows the switch (`modoSwitches` 8). Off, MoonRay is as its source has it, and pictures are as they were.
+
 ## `moonray.patch`: each Cryptomatte sample counted once (`MOONRAY_MODO_CRYPTO_ONCE`)
 
 Applied by `tools/port_crypto_once.py`, behind a switch of its own (the plugin's preference, on by default).
