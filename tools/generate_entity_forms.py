@@ -40,7 +40,12 @@ def control(parent, command, label, tip=''):
 TIP_LENGTH = 90
 # Attributes whose MoonRay name says little on its own: what the form calls them, and where it puts them.
 REWORDED = {'label': {'label': 'AOV label', 'group': 'Advanced',
-                      'comment': 'Optional name for picking this out in render passes (AOVs). Leave blank if you do not use it'}}
+                      'comment': 'Optional name for picking this out in render passes (AOVs). Leave blank if you do not use it'},
+            # MoonRay works these out and throws them away (createRayImpl discards sampleLens's weight).
+            'bokeh_weight_location': {'label': 'bokeh weight location (no effect)',
+                                      'comment': 'MoonRay does not use this yet, so changing it changes nothing'},
+            'bokeh_weight_strength': {'label': 'bokeh weight strength (no effect)',
+                                      'comment': 'MoonRay does not use this yet, so changing it changes nothing'}}
 
 
 def brief(comment):

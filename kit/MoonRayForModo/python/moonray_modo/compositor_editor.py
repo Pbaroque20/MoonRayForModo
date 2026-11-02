@@ -9,7 +9,7 @@ import uuid
 from pathlib import Path
 from PySide2 import QtCore, QtGui, QtWidgets
 from . import compositor
-from .node_widgets import GraphView, QuickAdd, curve, MENU_STYLE, NODE_BODY, NODE_EDGE, ACCENT, TEXT, TEXT_PORT, TEXT_DIM, GRID
+from .node_widgets import SliderRow, GraphView, QuickAdd, curve, MENU_STYLE, NODE_BODY, NODE_EDGE, ACCENT, TEXT, TEXT_PORT, TEXT_DIM, GRID
 
 WIDTH, HEADER, ROW = 170, 24, 20
 # A node's header and the wire out of it, by what the node is.
@@ -1068,6 +1068,9 @@ class Editor(QtWidgets.QDialog):
                 field = QtWidgets.QDoubleSpinBox(); field.setDecimals(3); field.setRange(spec[2], spec[3])
                 field.setSingleStep(max((spec[3] - spec[2]) / 200.0, 0.01)); field.setValue(float(held[key])); field.setKeyboardTracking(False)
                 field.valueChanged.connect(lambda value, key=key: self.set_value(identity, key, float(value)))
+                span = compositor.slider_range(node['type'], key, spec)
+                if span:
+                    field = SliderRow(field, span, lambda value, key=key: self.set_value(identity, key, float(value)))
             elif spec[0] == 'choice':
                 field = QtWidgets.QComboBox(); field.addItems(list(spec[2])); field.setCurrentText(held[key])
                 field.currentTextChanged.connect(lambda value, key=key: self.set_value(identity, key, value, redraw=True))
@@ -1115,6 +1118,9 @@ class Editor(QtWidgets.QDialog):
             self.tab_between.watch(field)
         if not schema['parameters']:
             self.property_help.setText(schema['tip'] + ' It has no settings.')
+
+    def selection_settled(self):
+        """The canvas's button has come up (GraphView). This form is short and is filled as the selection changes."""
 
     def set_value(self, identity, key, value, redraw=False):
         node = self.graph['nodes'].get(identity)

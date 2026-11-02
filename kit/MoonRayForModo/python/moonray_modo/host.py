@@ -379,6 +379,9 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
     for name, default in [('filmRoll', 0), ('distort', 0), ('squeeze', 1)]:
         if channel(camera, name, default) != default:
             warnings.append('Camera %s is not translated.' % name)
+    # Modo's Edge Weighting (0.5 is even) has nothing to go to: MoonRay's bokeh is even across the lens.
+    if channel(camera, 'dof', 0) and abs(float(channel(camera, 'irisBias', .5)) - .5) > 1e-4:
+        warnings.append('Camera %s: Edge Weighting is not followed: the bokeh is even across the lens.' % camera.name)
     result = {'camera': {'matrix': world_matrix(camera),
                          'identity':camera.id,
                          'film_offset':film_offset,

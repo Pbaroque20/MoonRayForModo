@@ -340,7 +340,7 @@ Comparison audit between MoonRay 2026.29.1's source and the current plugin.
 | Box and sphere shapes | ![yes](docs/images/feature-yes.svg) | |
 | VDB volumes, base and cutout volumes | ![yes](docs/images/feature-yes.svg) | |
 | Motion blur | ![yes](docs/images/feature-yes.svg) | Final renders, and MoonLightIPR previews, where it is a Preview Preference, off by default, with moving lights blurred too *Coming in 0.5.2:* MoonRay XPU2 for Render, Render to a File and animations, the Render button, and XPU2 realtime as a Preview Preference. XPU2 traces moving objects on the GPU; compile its shaders once more. MoonLightIPR playblasts show it when it is active. |
-| Depth of field | ![yes](docs/images/feature-yes.svg) | |
+| Depth of field | ![yes](docs/images/feature-yes.svg) | A polygon or disc bokeh, by sides and angle, or an image. *Coming in 0.5.2:* MoonRay's two bokeh weight settings, which it does not use, are marked as having no effect. |
 | DWA materials (base, metal, fabric, skin, layer, mix and the rest) | ![yes](docs/images/feature-yes.svg) | Two Sided and Color Correct take the other DWA materials as their inputs, and a layer or two-sided material missing an input no longer crashes MoonRay |
 | Hair, toon and USD Preview Surface materials | ![yes](docs/images/feature-yes.svg) | Toon edges smooth on coarse meshes, and toon renders that denoise cleanly, each a preference; a new toon material is brightest facing the light |
 | Switch and Ray Switch materials | ![yes](docs/images/feature-yes.svg) | In the node editor |
@@ -390,7 +390,7 @@ Comparison audit between Modo 16.1v9 and the current plugin: what of a Modo scen
 | **Environment** | | |
 | Gradients, overcast and physical skies, constant colours and HDRI image layers | ![yes](docs/images/feature-yes.svg) | An HDRI turns as in Modo, and quickly |
 | **Cameras** | | |
-| Perspective and orthographic cameras | ![yes](docs/images/feature-yes.svg) | With depth of field, motion blur, stereo and overscan; Film Roll, distortion and squeeze are not followed, and a notice names them *Coming in 0.5.2:* Motion Blur on the Modo camera turns on motion blur in renders. |
+| Perspective and orthographic cameras | ![yes](docs/images/feature-yes.svg) | With depth of field, motion blur, stereo and overscan; Film Roll, distortion and squeeze are not followed, and a notice names them *Coming in 0.5.2:* Motion Blur on the Modo camera turns on motion blur in renders. Edge Weighting is not followed, and a notice says so. |
 | Other camera projections | ![no](docs/images/feature-no.svg) | Refused; MoonRay's fisheye, spherical and dome cameras in their place |
 | **Materials** | | |
 | Standard material: GTR, Blinn and Ashikhmin | ![partly](docs/images/feature-partly.svg) | Highlights matched by measurement; very smooth ones (roughness under 0.2) come out dimmer, as do rough reflections of the environment |

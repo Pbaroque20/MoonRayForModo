@@ -330,7 +330,7 @@ displaced through a named UV set's AttributeMap) engulfs the camera; XPU2 draws 
 in XPU2 because ball6's absorption volume is textured (FamilyVolumesMapped, not in GpuFamilies): 3.6 million of its
 19.7 million samples go to the CPU.
 
-Source Overrides: XPU2 follows the toon terminator and albedo, Cryptomatte volumes, fog alpha, opaque alpha,
+Source Overrides: XPU2 follows the toon terminator and albedo, Cryptomatte volumes, fog alpha, lights seen by the camera in light outputs (`MOONRAY_MODO_CAMERA_LIGHT_LPE`), opaque alpha,
 transmission roughness and USD specular; counts each Cryptomatte sample once by construction (no shared flag to race);
 the scene-level ones (display filter inputs, toon lines apart, light motion) arrive in the scene. Low-latency rendering
 (async::lowLatency, from the process's priority class the kit lowers, or XPU2_SESSION_LOW_LATENCY): no thread raised

@@ -24,6 +24,17 @@ RAMPS = ('left to right', 'top to bottom')
 SUM_INPUTS = tuple('in%d' % n for n in range(1, 33))
 
 # Each kind of node: the pictures it takes, and its settings as (kind, default, least, most) or (kind, default, choices).
+# The numbers that spread out from a point, and the part of each one's range a slider covers where the whole is more than a
+# hand can use: a number can still be typed up to its limit. The compositor has no hue or angle of its own.
+SLIDERS = {('blur', 'radius'): (0.0, 50.0), ('glow', 'radius'): (0.0, 50.0), ('sharpen', 'radius'): (0.5, 20.0), ('median', 'radius'): (1.0, 6.0),
+           ('vignette', 'amount'): (0.0, 1.0), ('vignette', 'falloff'): (0.05, 4.0)}
+
+
+def slider_range(kind, key, spec):
+    """The (low, high) of the slider beside a node's number, or None for one with none."""
+    return SLIDERS.get((kind, key))
+
+
 NODES = {
     'input': {'label': 'Buffer', 'inputs': (), 'tip': 'One of the render\'s buffers.',
               'parameters': {'buffer': ('buffer', 'beauty')}},

@@ -144,6 +144,9 @@ class QuickAdd(QtWidgets.QFrame):
 class GraphView(QtWidgets.QGraphicsView):
     def __init__(self,editor,scene):
         super().__init__(scene);self.editor=editor;self.start_socket=None;self.rubber=None;self.pan=None;self.move_before=None;self.lifted=None
+        # The marquee, from the point it began, and what was selected already where it adds to that; holding: the left button
+        # is down on the canvas, and the list of properties waits for it to come up.
+        self.band=None;self.band_from=None;self.band_base=[];self.holding=False
         self.setRenderHint(QtGui.QPainter.Antialiasing);self.setDragMode(self.RubberBandDrag)
         self.setTransformationAnchor(self.AnchorUnderMouse);self.setBackgroundBrush(grid_brush())
         # Panning is by dragging; the canvas has no edges to scroll to.
@@ -193,9 +196,33 @@ class GraphView(QtWidgets.QGraphicsView):
             self.rubber=self.scene().addPath(curve(socket.scenePos(),socket.scenePos()),QtGui.QPen(QtGui.QColor('#a9d7ff'),2,QtCore.Qt.DashLine));self.rubber.setZValue(10)
             self.editor.focus_socket(socket.identity,socket.key)
             event.accept();return
-        if event.button()==QtCore.Qt.LeftButton:self.move_before=copy.deepcopy(self.editor.graph)
+        if event.button()==QtCore.Qt.LeftButton:
+            self.holding=True
+            if self.node_at(event.pos()) is None:
+                self.begin_band(event);event.accept();return
+            self.move_before=copy.deepcopy(self.editor.graph)
         super().mousePressEvent(event)
+    def begin_band(self,event):
+        """A marquee from empty canvas, drawn from the first pixel: Qt's own waits for the mouse to have moved 10 pixels or so.
+        Ctrl or Shift adds to what is selected."""
+        adding=bool(event.modifiers()&(QtCore.Qt.ControlModifier|QtCore.Qt.ShiftModifier))
+        self.band_base=list(self.scene().selectedItems()) if adding else []
+        if not adding:self.scene().clearSelection()
+        self.band_from=event.pos()
+        self.band=QtWidgets.QRubberBand(QtWidgets.QRubberBand.Rectangle,self.viewport())
+        self.band.setGeometry(QtCore.QRect(self.band_from,QtCore.QSize()));self.band.show()
+    def move_band(self,point):
+        area=QtCore.QRect(self.band_from,point).normalized()
+        self.band.setGeometry(area)
+        shape=QtGui.QPainterPath();shape.addPolygon(self.mapToScene(area));shape.closeSubpath()
+        self.scene().setSelectionArea(shape,self.viewportTransform())
+        for item in self.band_base:item.setSelected(True)
+    def end_band(self):
+        self.band.hide();self.band.deleteLater()
+        self.band=None;self.band_from=None;self.band_base=[]
     def mouseMoveEvent(self,event):
+        if self.band is not None:
+            self.move_band(event.pos());event.accept();return
         if self.pan is not None:
             delta=event.pos()-self.pan;self.pan=event.pos()
             self.horizontalScrollBar().setValue(self.horizontalScrollBar().value()-delta.x());self.verticalScrollBar().setValue(self.verticalScrollBar().value()-delta.y());event.accept();return
@@ -209,6 +236,10 @@ class GraphView(QtWidgets.QGraphicsView):
             self.rubber.setPen(QtGui.QPen(QtGui.QColor('#89ce94' if valid else '#a9d7ff' if end is None else '#f08a84'),2,QtCore.Qt.DashLine));event.accept();return
         super().mouseMoveEvent(event)
     def mouseReleaseEvent(self,event):
+        if event.button()==QtCore.Qt.LeftButton and self.holding:
+            self.holding=False;self.editor.selection_settled()
+        if self.band is not None and event.button()==QtCore.Qt.LeftButton:
+            self.end_band();event.accept();return
         if self.pan is not None and event.button() in (QtCore.Qt.MiddleButton,QtCore.Qt.LeftButton):
             self.pan=None;self.unsetCursor();event.accept();return
         if self.start_socket and event.button()==QtCore.Qt.LeftButton and self.lifted:
@@ -233,7 +264,9 @@ class GraphView(QtWidgets.QGraphicsView):
         super().mouseReleaseEvent(event)
         if self.move_before is not None:
             self.editor.snap_selected()
-            self.editor.remember(self.move_before);self.move_before=None
+            # A click moved nothing, and is no step to undo.
+            if self.editor.graph!=self.move_before:self.editor.remember(self.move_before)
+            self.move_before=None
     def mouseDoubleClickEvent(self,event):
         if event.button()==QtCore.Qt.LeftButton and self.itemAt(event.pos()) is None:
             self.editor.quick_add(self.mapToScene(event.pos()),event.globalPos());event.accept();return
@@ -365,31 +398,23 @@ class QuietSlider(QtWidgets.QSlider):
         else:event.ignore()
 
 
-class RadialField(QtWidgets.QWidget):
-    """A hue or an angle: its number, and a slider across its range (parameter_state.slider_range). The slider moves the
-    number as it is dragged and the value is taken when it is let go, as one step to undo; a click or a key on it is taken
-    at once. A number typed past the ends stands, with the slider at that end."""
+class SliderRow(QtWidgets.QWidget):
+    """A number and a slider across a range. The slider moves the number as it is dragged and the value is taken when it is let
+    go (commit), as one step to undo; a click or a key on it is taken at once. A number typed past the ends stands, with the
+    slider at that end."""
     STEPS=1000
-    def __init__(self,identity,key,layer,spec,value,span,parent=None,kind=None,connected=False):
+    def __init__(self,number,span,commit,parent=None):
         super().__init__(parent)
-        self.identity,self.key,self.low,self.high=identity,key,span[0],span[1]
+        self.number,self.commit,self.low,self.high=number,commit,span[0],span[1]
         layout=QtWidgets.QHBoxLayout(self);layout.setContentsMargins(2,0,2,0);layout.setSpacing(6)
-        self.number=NumericField(identity,key,layer,spec,value,self,kind=kind,connected=connected)
         self.number.setDecimals(3);self.number.setButtonSymbols(QtWidgets.QAbstractSpinBox.NoButtons);self.number.setFixedWidth(64)
         self.slider=QuietSlider(QtCore.Qt.Horizontal,self);self.slider.setRange(0,self.STEPS);self.slider.setFocusPolicy(QtCore.Qt.ClickFocus)
         self.slider.setSingleStep(self.STEPS//100);self.slider.setPageStep(self.STEPS//10)
         layout.addWidget(self.number);layout.addWidget(self.slider,1)
-        self.changed,self.focused=self.number.changed,self.number.focused
         self.place(self.number.value())
         self.number.valueChanged.connect(self.place)
         self.slider.valueChanged.connect(self.moved)
         self.slider.sliderReleased.connect(self.released)
-        self.slider.sliderPressed.connect(lambda:self.focused.emit(self.identity,self.key))
-    def setPalette(self,palette):
-        # The number shows whether the value is its default or edited (tint_value).
-        self.number.setPalette(palette)
-    def palette(self):
-        return self.number.palette()
     def interpretText(self):
         self.number.interpretText()
     def value(self):
@@ -409,7 +434,22 @@ class RadialField(QtWidgets.QWidget):
         else:self.number.setValue(self.picked(position))
     def released(self):
         # Shown while dragged with the number's signals held, so this is what publishes it.
-        self.number.publish(self.number.value())
+        self.commit(self.number.value())
+
+
+class RadialField(SliderRow):
+    """A hue or an angle in the graph editor (parameter_state.slider_range): its property's number, and the slider."""
+    def __init__(self,identity,key,layer,spec,value,span,parent=None,kind=None,connected=False):
+        number=NumericField(identity,key,layer,spec,value,None,kind=kind,connected=connected)
+        super().__init__(number,span,number.publish,parent)
+        self.identity,self.key=identity,key
+        self.changed,self.focused=number.changed,number.focused
+        self.slider.sliderPressed.connect(lambda:self.focused.emit(self.identity,self.key))
+    def setPalette(self,palette):
+        # The number shows whether the value is its default or edited (tint_value).
+        self.number.setPalette(palette)
+    def palette(self):
+        return self.number.palette()
 
 
 # The spaces a ramp or gradient can be laid out in, said plainly and with the usual ones first.

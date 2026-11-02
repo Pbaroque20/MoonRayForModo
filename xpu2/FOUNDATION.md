@@ -27,6 +27,9 @@ The mantra for XPU2 is: "Use your silicon!"
   the GPU and never blocks on it.
 - **Work goes where it runs best.** An indexer classifies each scene object by the devices that can render it. Cells
   start on the better-suited device, and a GPU sample that hits a CPU-only feature is handed to the CPU.
+- **Motion on both devices.** Moving meshes, subdivision surfaces, instances, curves, points, volume bounds and any
+  number of moving lights render on the GPU as on the CPU, traced at each sample's time. Test scenes that used to send
+  those samples to the CPU finished 2.6 to 8.5 times sooner; a scene with nothing moving costs the GPU about 2 to 3%.
 - **Tiered texture memory.** Host RAM holds the coarse mip levels and the fine tiles read so far, which are decoded on
   demand and let go under memory pressure. VRAM holds the coarse levels and a cache of fine tiles. A GPU sample that
   misses a fine tile shades from a coarser level and is re-rendered in full before the frame ends. A scene that does

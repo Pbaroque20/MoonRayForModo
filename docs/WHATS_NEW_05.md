@@ -2,7 +2,7 @@
 
 0.5 is a **pre-production release**: the plugin is no longer experimental, and it brings a new GPU renderer, MoonRay XPU2.
 
-## Coming in 0.5.2
+## New in 0.5.2
 
 A hotfix to 0.5.1, with a new runtime ZIP: install both, and **Compile XPU2 Shaders once more**.
 
@@ -18,8 +18,11 @@ A hotfix to 0.5.1, with a new runtime ZIP: install both, and **Compile XPU2 Shad
   alpha while Alpha is on in Render Settings. Where the alpha is 0, as on a visible background, those pictures are transparent.
 - **Realtime Sample % starts at 30%**, so realtime settles sooner. A value you set is saved with the scene, and a scene that already has one keeps it.
 - **The compile button says Compiling XPU2 Shaders...** as soon as it is pressed, even when the shaders are already cached and it is over in a second.
+- **The graph editor's marquee starts at once**: it draws from the first pixel, and the property list fills when you let go, so clicking and marquee selecting no longer pause.
 - **Playblasts show motion blur**: when Motion Blur is on in the scene or its camera, or in MoonLightIPR's Preview Preferences.
 - **Hues and angles have a slider in the graph editor**: hue shift, rotation and the other values that go round a circle, beside their number.
+- **Sliders in the compositor**: Blur, Glow, Sharpen and Median radius and Vignette have a slider beside their number.
+- **Bokeh settings say what they do**: the two bokeh weight settings, which MoonRay does not use, are marked as having no effect, and Modo's Edge Weighting gets a notice.
 - **A clearer notice for a texture with nowhere to go**: it names the material and the effect, and says where to move the texture.
 - **A round light says when it stays round**: an uneven scale on a dwDiskLight, or another round MoonRay light, is averaged, and a notice now says so. dwRectLight has Width and Height.
 - **Notices name more of what is left out**: Modo's other material kinds, Principled sheen, shadow distances and fog in MoonLightIPR, and weight maps in scenes with replicators or some masks. A group mask set to Normal Multiply no longer stops a scene reading; it is drawn as Normal.
@@ -38,8 +41,8 @@ A hotfix to 0.5.1, with a new runtime ZIP: install both, and **Compile XPU2 Shad
 - **MoonRay cameras no longer render black up close**: a dwPerspectiveCamera or another MoonRay camera kept MoonRay's near clip of 1 m,
   so within a metre of a surface it looked at the surface's dark inside. It now sees as near as a Modo camera, unless you set Near yourself.
   A new MoonRay camera also starts where the render camera stands, not at the origin, inside whatever stands there.
-- **Soft edges no longer flare in PNG, TIFF and Targa**: with alpha and a visible environment, the edges of motion blur and depth of field came
-  out too bright, because the environment was divided by the alpha along with the surface. It is now taken out first. Needs the new runtime.
+- **Soft edges no longer flare in PNG, TIFF and Targa**: with alpha and a visible environment, soft edges such as motion blur came
+  out too bright, because the environment was divided by the alpha along with the surface. Measured on motion blur. It is now taken out first. Needs the new runtime.
 - **The Environment background output has its picture**: MoonRay lost a light seen past every surface from light outputs, so this output was black.
   Lights seen by the camera in light outputs, in MoonRay Source Overrides, is on by default. EXRs with alpha now hold this channel too.
 - **Round lights under an unevenly scaled parent stay on**: a disk, sphere, spot or cylinder light there now renders round, at the mean of
