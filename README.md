@@ -44,6 +44,13 @@ Work on the next version goes on in the [MoonLightIPR branch](https://github.com
 | ![The compositor](docs/images/compositor-editor.png) | ![Modern Hall, imported from MoonRay's scene files](docs/images/rdl-modern_hall.jpg) |
 | **The compositor**: the beauty graded, vignetted and sharpened | **An imported MoonRay scene**: its own render (left), after the trip through Modo (right). Modern Hall by NewSee2l035, CC BY |
 
+## Coming after 0.5.2
+
+With a new runtime ZIP: install both, and **Compile XPU2 Shaders once more**.
+
+- **XPU2 renders Modo's procedural textures worked out through the object**, Enhance: Modo's patterns among them, with the patterns MoonRay and MoonLightIPR share. Such a scene used to go to MoonRay XPU.
+- **Scenes with Modo's fur render in XPU2**: they stopped with "No Attribute named 'vertex_list_1'" and went to MoonRay XPU.
+
 ## New in 0.5.2
 
 A hotfix, with a new runtime ZIP: install both, and Compile XPU2 Shaders once more. The full list is in [What's new in 0.5](docs/WHATS_NEW_05.md).
@@ -418,7 +425,7 @@ Comparison audit between Modo 16.1v9 and the current plugin: what of a Modo scen
 | Unreal, Unity, glTF and AxF materials | ![no](docs/images/feature-no.svg) | Nor Modo's Substance, Matcap, Cel, Halftone, Iridescence, Skin and Thin Film materials, each named in a notice. |
 | **Shader Tree** | | |
 | Image maps: UV and projections, UDIMs, Low and High values | ![partly](docs/images/feature-partly.svg) | UV, planar, cylindrical, spherical and cubic projections, a locator's worked out at the polygons' corners; Box, Front, Triplanar, Light Probe and Implicit UV projections, and image sequences, are left out with a notice |
-| Procedural textures | ![partly](docs/images/feature-partly.svg) | Constant, checker, noise, grid, dots, gradient, cellular, wood, weave, ripples, Gabor and Poisson noise, Curvature and Wireframe, EasyGrad and RegionalHSV, and 145 Enhance textures, worked out through the object (new in 0.5); not yet compared with Modo's renders; Surface Probe, Occlusion, Tension, Variation and Process not |
+| Procedural textures | ![partly](docs/images/feature-partly.svg) | Constant, checker, noise, grid, dots, gradient, cellular, wood, weave, ripples, Gabor and Poisson noise, Curvature and Wireframe, EasyGrad and RegionalHSV, and 145 Enhance textures, worked out through the object (new in 0.5); not yet compared with Modo's renders; Surface Probe, Occlusion, Tension, Variation and Process not. MoonRay XPU2 shades them too. |
 | Layer blend modes | ![partly](docs/images/feature-partly.svg) | All but Normal Multiply, which is left out; Normal Map Blend on normal maps only. A group mask set to Normal Multiply is drawn as Normal, with a notice, and no longer stops the scene reading. |
 | Bump and normal maps | ![yes](docs/images/feature-yes.svg) |  |
 | Displacement and Stencil layers | ![yes](docs/images/feature-yes.svg) | Checked against Modo's renders |
