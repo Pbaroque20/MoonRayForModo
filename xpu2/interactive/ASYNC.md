@@ -17,7 +17,10 @@ build: exact shared triangle arithmetic, fixed ownership and byte-repeatable ima
   triangles. Every thread claims one sample at a time from its launch's range with one atomic; neighbouring claims
   are neighbouring pixels of the same sample, so warps trace coherent rays. Results accumulate in a device film in
   double precision. The program is built twice, for uniform and for adaptive frames: OptiX links a pipeline's programs
-  into one kernel, and the adaptive paths cost a uniform frame a third of its GPU rate in registers.
+  into one kernel, and the adaptive paths cost a uniform frame a third of its GPU rate in registers. Geometry in motion
+  has a key a time step and is traced at the sample's time (`optixGetRayTime`); the pipeline is compiled for motion in every
+  scene, about 2 to 3% on a still one, where a second pipeline would double the compile. `XPU2_GPU_MOTION_OFF` defers motion
+  and points to the CPU lane again, to compare.
 - **Mailbox and broker** (`async_render.h`, §8-9). The feeder thread, pinned to its own core, is the GPU's broker: it
   claims chunks for the GPU (its own cells first, then the CPU's hottest) and hands them over through a ring in
   device memory, with ownership passing at publication. It keeps two launches queued, so the GPU never waits for
@@ -147,6 +150,9 @@ one substitute texture, through the session harness; a re-cut in Modo also costs
   lets the oldest decoded tiles go, but 1 GB of them stay, tiles too few to matter are left alone, and a letting go that did not
   help waits twice as long before the next, up to a minute. At 85%, every tile, every quarter of a second to two, a car's render
   stalled reading them again: its commit passes that with the graphics driver's alone, RAM to spare.
+- **Moving lights on the card.** Each launch thread holds up to 16 of them at its sample's time, worked out as a path
+  reaches each (`GpuBackend::movedLight`): about 440 MB of the card, for 65,536 threads, in a scene with a moving light. A path
+  holds one light at a time, so any number of them can move. Large moving meshes against the card's budget have not been tested.
 - **A card that fills up.** The fine-detail cache is sized from the card's free memory when the scene is prepared, and made
   again to fit where, as a frame starts, the card has come to hold much less (`GpuLane::fineCacheTooBig`).
 
