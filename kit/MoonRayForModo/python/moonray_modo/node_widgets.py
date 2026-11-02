@@ -398,31 +398,23 @@ class QuietSlider(QtWidgets.QSlider):
         else:event.ignore()
 
 
-class RadialField(QtWidgets.QWidget):
-    """A hue or an angle: its number, and a slider across its range (parameter_state.slider_range). The slider moves the
-    number as it is dragged and the value is taken when it is let go, as one step to undo; a click or a key on it is taken
-    at once. A number typed past the ends stands, with the slider at that end."""
+class SliderRow(QtWidgets.QWidget):
+    """A number and a slider across a range. The slider moves the number as it is dragged and the value is taken when it is let
+    go (commit), as one step to undo; a click or a key on it is taken at once. A number typed past the ends stands, with the
+    slider at that end."""
     STEPS=1000
-    def __init__(self,identity,key,layer,spec,value,span,parent=None,kind=None,connected=False):
+    def __init__(self,number,span,commit,parent=None):
         super().__init__(parent)
-        self.identity,self.key,self.low,self.high=identity,key,span[0],span[1]
+        self.number,self.commit,self.low,self.high=number,commit,span[0],span[1]
         layout=QtWidgets.QHBoxLayout(self);layout.setContentsMargins(2,0,2,0);layout.setSpacing(6)
-        self.number=NumericField(identity,key,layer,spec,value,self,kind=kind,connected=connected)
         self.number.setDecimals(3);self.number.setButtonSymbols(QtWidgets.QAbstractSpinBox.NoButtons);self.number.setFixedWidth(64)
         self.slider=QuietSlider(QtCore.Qt.Horizontal,self);self.slider.setRange(0,self.STEPS);self.slider.setFocusPolicy(QtCore.Qt.ClickFocus)
         self.slider.setSingleStep(self.STEPS//100);self.slider.setPageStep(self.STEPS//10)
         layout.addWidget(self.number);layout.addWidget(self.slider,1)
-        self.changed,self.focused=self.number.changed,self.number.focused
         self.place(self.number.value())
         self.number.valueChanged.connect(self.place)
         self.slider.valueChanged.connect(self.moved)
         self.slider.sliderReleased.connect(self.released)
-        self.slider.sliderPressed.connect(lambda:self.focused.emit(self.identity,self.key))
-    def setPalette(self,palette):
-        # The number shows whether the value is its default or edited (tint_value).
-        self.number.setPalette(palette)
-    def palette(self):
-        return self.number.palette()
     def interpretText(self):
         self.number.interpretText()
     def value(self):
@@ -442,7 +434,22 @@ class RadialField(QtWidgets.QWidget):
         else:self.number.setValue(self.picked(position))
     def released(self):
         # Shown while dragged with the number's signals held, so this is what publishes it.
-        self.number.publish(self.number.value())
+        self.commit(self.number.value())
+
+
+class RadialField(SliderRow):
+    """A hue or an angle in the graph editor (parameter_state.slider_range): its property's number, and the slider."""
+    def __init__(self,identity,key,layer,spec,value,span,parent=None,kind=None,connected=False):
+        number=NumericField(identity,key,layer,spec,value,None,kind=kind,connected=connected)
+        super().__init__(number,span,number.publish,parent)
+        self.identity,self.key=identity,key
+        self.changed,self.focused=number.changed,number.focused
+        self.slider.sliderPressed.connect(lambda:self.focused.emit(self.identity,self.key))
+    def setPalette(self,palette):
+        # The number shows whether the value is its default or edited (tint_value).
+        self.number.setPalette(palette)
+    def palette(self):
+        return self.number.palette()
 
 
 # The spaces a ramp or gradient can be laid out in, said plainly and with the usual ones first.
