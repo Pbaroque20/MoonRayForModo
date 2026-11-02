@@ -12,7 +12,7 @@ import uuid
 from PySide2 import QtCore,QtGui,QtWidgets
 from . import nodes,materialx,properties,shader_library,node_defaults,node_presets
 from .ramps import parts as ramps_parts
-from .node_widgets import (GraphView,ParameterDelegate,NumericField,ChoiceField,IntegerField,VectorField,TextField,NameField,RampField,MatrixField,ramp_groups,QuickAdd,key_of,describe,hint,COLORS,HEADERS,NODE_BODY,NODE_EDGE,ACCENT,
+from .node_widgets import (GraphView,ParameterDelegate,NumericField,RadialField,ChoiceField,IntegerField,VectorField,TextField,NameField,RampField,MatrixField,ramp_groups,QuickAdd,key_of,describe,hint,COLORS,HEADERS,NODE_BODY,NODE_EDGE,ACCENT,
                            TEXT,TEXT_PORT,TEXT_DIM,GRID,MENU_STYLE,curve,file_parameter,tint_value)
 import lx
 
@@ -1097,7 +1097,11 @@ class Editor(QtWidgets.QDialog):
                     field.changed.connect(lambda i,k,l,v:self.set_value(i,k,l,[v,v,v]));field.focused.connect(self.numeric_focus)
                     self.place_field(row,cell,field);self.numeric_fields.append(field)
                 elif spec['type'] in ('Float','Double') and not spec.get('enum'):
-                    field=NumericField(identity,key,layer,spec,value,self.table,kind=node['type'],connected=connected)
+                    # A hue or an angle has a slider beside its number.
+                    from .parameter_state import slider_range
+                    span=slider_range(key,spec)
+                    field=(RadialField(identity,key,layer,spec,value,span,self.table,kind=node['type'],connected=connected) if span else
+                           NumericField(identity,key,layer,spec,value,self.table,kind=node['type'],connected=connected))
                     field.changed.connect(self.numeric_changed);field.focused.connect(self.numeric_focus)
                     self.place_field(row,cell,field);self.numeric_fields.append(field)
                 elif spec['type']=='Bool' or spec.get('enum') or spec['type'] in ('Int','Long'):

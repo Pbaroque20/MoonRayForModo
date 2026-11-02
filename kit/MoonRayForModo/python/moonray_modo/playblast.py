@@ -17,7 +17,7 @@ SAMPLES = 32
 class Playblast(QtCore.QObject):
     done = QtCore.Signal(list)
 
-    def __init__(self, panel, directory, first, last, fps, step=1, prefix='playblast', width=640, samples=SAMPLES):
+    def __init__(self, panel, directory, first, last, fps, step=1, prefix='playblast', width=640, samples=SAMPLES, motion=False):
         super().__init__(panel)
         if last < first or last-first > 100000 or not math.isfinite(fps) or fps <= 0:
             raise ValueError('Invalid playblast frame range or frame rate')
@@ -27,6 +27,7 @@ class Playblast(QtCore.QObject):
             raise ValueError('File prefix must use letters, digits, underscores or hyphens')
         self.panel, self.directory, self.prefix, self.fps = panel, Path(directory), prefix, float(fps)
         self.width, self.samples = max(16, int(width)), max(1, int(samples))
+        self.motion = bool(motion)
         self.frames = list(range(first, last+1, step))
         self.total = len(self.frames)
         self.frame = first
@@ -63,7 +64,8 @@ class Playblast(QtCore.QObject):
         if not self.running:
             return
         panel = self.panel
-        snapshot = animation.capture_frame(self.frame/self.fps, panel._settings_values()['surface'] == 2, False, self.fps)
+        # preview: what cannot be followed through the shutter is shown still, with a notice, rather than the frame refused.
+        snapshot = animation.capture_frame(self.frame/self.fps, panel._settings_values()['surface'] == 2, self.motion, self.fps, preview=True)
         snapshot['frame'] = self.frame
         snapshot['fps'] = self.fps
         self.waiting = True
@@ -134,8 +136,9 @@ def scene_range():
 
 
 class PlayblastDialog(QtWidgets.QDialog):
-    def __init__(self, settings, width, widest, denoised, parent=None):
+    def __init__(self, settings, width, widest, denoised, parent=None, motion=False):
         super().__init__(parent)
+        self.motion = motion
         self.setWindowTitle('MoonLightIPR Playblast')
         self.resize(520, 300)
         form = QtWidgets.QFormLayout(self)
@@ -187,8 +190,8 @@ class PlayblastDialog(QtWidgets.QDialog):
 
     def update_summary(self, *args):
         count = max(0, (self.last.value()-self.first.value())//self.step.value()+1)
-        self.summary.setText('%d frames · %s.%06d.png, rendered by MoonLightIPR whichever engine is chosen, %s. Frames already in the folder are written over.'
-                             % (count, self.prefix.text(), self.first.value(),
+        self.summary.setText('%d frames · %s.%06d.png, rendered by MoonLightIPR whichever engine is chosen, %s%s. Frames already in the folder are written over.'
+                             % (count, self.prefix.text(), self.first.value(), 'with motion blur, ' if self.motion else '',
                                 'denoised, as Denoised Beauty is the buffer chosen' if self.denoised else 'not denoised: choose Denoised Beauty in the window first to have them denoised'))
 
     def accept(self):

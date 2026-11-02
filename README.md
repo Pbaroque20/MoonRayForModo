@@ -22,6 +22,8 @@ A hotfix to 0.5.1, with a new runtime ZIP: install both, and **Compile XPU2 Shad
   alpha while Alpha is on in Render Settings. Where the alpha is 0, as on a visible background, those pictures are transparent.
 - **Realtime Sample % starts at 30%**, so realtime settles sooner. A value you set is saved with the scene, and a scene that already has one keeps it.
 - **The compile button says Compiling XPU2 Shaders...** as soon as it is pressed, even when the shaders are already cached and it is over in a second.
+- **Playblasts show motion blur**: when Motion Blur is on in the scene or its camera, or in MoonLightIPR's Preview Preferences.
+- **Hues and angles have a slider in the graph editor**: hue shift, rotation and the other values that go round a circle, beside their number.
 - **A clearer notice for a texture with nowhere to go**: it names the material and the effect, and says where to move the texture.
 - **A round light says when it stays round**: an uneven scale on a dwDiskLight, or another round MoonRay light, is averaged, and a notice now says so. dwRectLight has Width and Height.
 - **Notices name more of what is left out**: Modo's other material kinds, Principled sheen, shadow distances and fog in MoonLightIPR, and weight maps in scenes with replicators or some masks. A group mask set to Normal Multiply no longer stops a scene reading; it is drawn as Normal.

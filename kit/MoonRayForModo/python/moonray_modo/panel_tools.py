@@ -337,14 +337,16 @@ class Tools:
         except Exception:
             widest = 8192
         size = self.preferences.get('preview_size')
-        dialog = PlayblastDialog(self.settings, size if size > 0 else 640, widest, self.buffer.currentData() == 'denoised_beauty', self)
+        # Motion blur where the scene asks for it in a render, or MoonLightIPR is set to show it.
+        motion = self._motion_wanted() or bool(self.preferences.get('preview_motion'))
+        dialog = PlayblastDialog(self.settings, size if size > 0 else 640, widest, self.buffer.currentData() == 'denoised_beauty', self, motion=motion)
         if not dialog.exec_():
             return
         directory = dialog.folder.text().strip()
         try:
             candidate = Playblast(self, directory, dialog.first.value(), dialog.last.value(), dialog.fps.value(),
                                   step=dialog.step.value(), prefix=dialog.prefix.text(), width=dialog.width.value(),
-                                  samples=dialog.samples.value())
+                                  samples=dialog.samples.value(), motion=motion)
             self.settings.setValue('output/playblast', directory)
             self.settings.setValue('output/playblast_samples', dialog.samples.value())
             self.stop()
