@@ -3401,7 +3401,7 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
   for(const auto& [name,index]:materialIds){auto& rec=plan->materialRecords[index];rec.flags|=global;
    const auto found=sorted.find(name);
    if(found!=sorted.end()&&found->second->getSceneClass().getName()=="DwaToonMaterial"&&on("MOONRAY_MODO_TOON_TERMINATOR"))rec.flags|=shade::MatModoToonMaterial;}
-  plan->modoSwitches=(on("MOONRAY_MODO_TOON_ALBEDO")?1u:0u)|(on("MOONRAY_MODO_FOG_ALPHA")?2u:0u)|(on("MOONRAY_MODO_CRYPTO_VOLUMES")?4u:0u);}
+  plan->modoSwitches=(on("MOONRAY_MODO_TOON_ALBEDO")?1u:0u)|(on("MOONRAY_MODO_FOG_ALPHA")?2u:0u)|(on("MOONRAY_MODO_CRYPTO_VOLUMES")?4u:0u)|(on("MOONRAY_MODO_CAMERA_LIGHT_LPE")?8u:0u);}
  // The switches' records: copies of their materials' (a switch's switch first; a material not shaded fails the scene).
  {std::map<const rdl::SceneObject*,int> state;
   std::function<void(const rdl::SceneObject*)> fill=[&](const rdl::SceneObject* s){

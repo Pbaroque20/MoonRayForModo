@@ -1877,8 +1877,8 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
             radiance += Lv;
             // LPE: the camera saw a light in front of a surface (PathIntegratorBundled). One seen past every surface adds
             // nothing: MoonRay's miss handler (RayHandlers.cc, its case 1) declares the state anew inside its branch, so
-            // the state it accumulates with stays -1.
-            if (lpeOn && hitLight != ~0u && !missed)
+            // the state it accumulates with stays -1. MOONRAY_MODO_CAMERA_LIGHT_LPE keeps it (tools/port_camera_light_lpe.py).
+            if (lpeOn && hitLight != ~0u && (!missed || (c.modoSwitches & 8u)))
                 aov::light(at, aovs, aovDepths, Lv, nullptr, 0, aov::lpeNext(at, pv.lpe, aov::LpeLight, backend.light(hitLight).lpeLabel));
         }
         if (hit.geom == ~0u) {

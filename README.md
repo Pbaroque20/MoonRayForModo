@@ -42,6 +42,10 @@ A hotfix to 0.5.1, with a new runtime ZIP: install both, and **Compile XPU2 Shad
 - **MoonRay cameras no longer render black up close**: a dwPerspectiveCamera or another MoonRay camera kept MoonRay's near clip of 1 m,
   so within a metre of a surface it looked at the surface's dark inside. It now sees as near as a Modo camera, unless you set Near yourself.
   A new MoonRay camera also starts where the render camera stands, not at the origin, inside whatever stands there.
+- **Soft edges no longer flare in PNG, TIFF and Targa**: with alpha and a visible environment, the edges of motion blur and depth of field came
+  out too bright, because the environment was divided by the alpha along with the surface. It is now taken out first. Needs the new runtime.
+- **The Environment background output has its picture**: MoonRay lost a light seen past every surface from light outputs, so this output was black.
+  Lights seen by the camera in light outputs, in MoonRay Source Overrides, is on by default. EXRs with alpha now hold this channel too.
 - **Round lights under an unevenly scaled parent stay on**: a disk, sphere, spot or cylinder light there now renders round, at the mean of
   its scales, in every engine. MoonRay would have switched it off, and XPU2 refused the scene.
 

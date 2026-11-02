@@ -102,7 +102,7 @@ def in_parts(render_outputs,cryptomattes=()):
     the user keeps it."""
     result=[]
     for name,attrs,channel in render_outputs:
-        together=name in ('beauty','alpha') or name in cryptomattes or attrs.get('result')==13
+        together=name in ('beauty','alpha','environment_background') or name in cryptomattes or attrs.get('result')==13
         result.append((name,dict(attrs,file_part=attrs.get('file_part') or (FIRST_PART if together else name)),channel))
     # MoonRay writes the parts in the order it meets them: the beauty's first.
     return sorted(result,key=lambda entry:entry[1]['file_part']!=FIRST_PART)

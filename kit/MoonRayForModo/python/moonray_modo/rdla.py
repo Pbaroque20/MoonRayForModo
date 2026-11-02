@@ -910,6 +910,11 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
         selected = scene.get('aovs', ['alpha'])
         if any(key not in options.AOVS for key in selected):
             raise ValueError('Unknown AOV')
+        # With alpha, what of each pixel is the environment seen past the surfaces: a picture with straight alpha is
+        # saved with it taken out, or its soft edges flare (image_formats.with_alpha).
+        from .native import camera_light_lpe
+        if 'alpha' in selected and camera_light_lpe():
+            selected = list(selected) + ['environment_background']
         render_outputs = [('beauty', {'result': 0}, '')]
         render_outputs += [(key, options.AOVS[key][1], options.AOVS[key][2]) for key in dict.fromkeys(selected)]
         if crypto:render_outputs.append(('object_id',{'result':4,'primitive_attribute':'modo_object_id','primitive_attribute_type':0},'modo_object_id'))

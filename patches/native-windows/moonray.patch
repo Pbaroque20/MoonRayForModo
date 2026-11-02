@@ -1596,10 +1596,18 @@ index 2e41df1..d23180f 100644
  
  #define RAY_STATE_MEMBERS                                                   \
 diff --git a/lib/rendering/pbr/handlers/RayHandlers.cc b/lib/rendering/pbr/handlers/RayHandlers.cc
-index a031d6d..766cf93 100644
+index a031d6d..89e0f0d 100644
 --- a/lib/rendering/pbr/handlers/RayHandlers.cc
 +++ b/lib/rendering/pbr/handlers/RayHandlers.cc
-@@ -14,6 +14,7 @@
+@@ -3,6 +3,7 @@
+ 
+ //
+ //
++#include <cstdlib>
+ #include "RayHandlerUtils.h"
+ #include "RayHandlers.h"
+ 
+@@ -14,6 +15,7 @@
  #include <moonray/rendering/mcrt_common/ThreadLocalState.h>
  #include <moonray/rendering/pbr/core/PathVisualizer.h>
  #include <moonray/rendering/pbr/core/PbrTLState.h>
@@ -1607,7 +1615,7 @@ index a031d6d..766cf93 100644
  #include <moonray/rendering/pbr/core/RayState.h>
  #include <moonray/rendering/pbr/core/Scene.h>
  #include <moonray/rendering/pbr/integrator/PathIntegrator.h>
-@@ -367,6 +368,13 @@ rayBundleHandler(mcrt_common::ThreadLocalState *tls, unsigned numEntries,
+@@ -367,6 +369,13 @@ rayBundleHandler(mcrt_common::ThreadLocalState *tls, unsigned numEntries,
          rs.mVolTalpha = vt.mTransmittanceAlpha;
          rs.mVolTm = vt.mTransmittanceMin;
          rs.mVolumeSurfaceT = volumeSurfaceT;
@@ -1621,7 +1629,7 @@ index a031d6d..766cf93 100644
      }
  
      CHECK_CANCELLATION(pbrTls, return);
-@@ -481,7 +489,8 @@ rayBundleHandler(mcrt_common::ThreadLocalState *tls, unsigned numEntries,
+@@ -481,7 +490,8 @@ rayBundleHandler(mcrt_common::ThreadLocalState *tls, unsigned numEntries,
                      // We will add the radiance from the volume to the radiance
                      // queue and set the alpha based on the volume alpha.
                      const float alpha = ray.getDepth() == 0 ?
@@ -1631,7 +1639,23 @@ index a031d6d..766cf93 100644
                      BundledRadiance rad;
                      rad.mRadiance = RenderColor(rs.mVolRad.r, rs.mVolRad.g, rs.mVolRad.b, alpha);
                      rad.mPathPixelWeight = rs.mPathVertex.pathPixelWeight;
-@@ -605,6 +614,12 @@ rayBundleHandler(mcrt_common::ThreadLocalState *tls, unsigned numEntries,
+@@ -554,6 +564,7 @@ rayBundleHandler(mcrt_common::ThreadLocalState *tls, unsigned numEntries,
+                 // primary rays intersected any lights, so we can include their contribution if visible.
+ 
+                 const Light *hitLight = nullptr;
++                const Light *modoCameraLight = nullptr; // Modo: the light seen (tools/port_camera_light_lpe.py)
+                 if (rs->mRay.getDepth() == 0) {
+ 
+                     LightIntersection hitLightIsect;
+@@ -566,6 +577,7 @@ rayBundleHandler(mcrt_common::ThreadLocalState *tls, unsigned numEntries,
+                     IntegratorSample1D lightChoiceSamples(sid);
+                     hitLight = fs.mScene->intersectVisibleLight(rs->mRay,
+                         sInfiniteLightDistance, lightChoiceSamples, hitLightIsect, numHits);
++                    modoCameraLight = hitLight;
+ 
+                     if (hitLight) {
+                         // Evaluate the radiance on the selected light in camera.
+@@ -605,6 +617,12 @@ rayBundleHandler(mcrt_common::ThreadLocalState *tls, unsigned numEntries,
                      }
                  }
  
@@ -1644,6 +1668,21 @@ index a031d6d..766cf93 100644
                  // add in any volume radiance
                  radiance += rs->mVolRad;
  
+@@ -673,6 +691,14 @@ rayBundleHandler(mcrt_common::ThreadLocalState *tls, unsigned numEntries,
+                         // transition already computed in PathIntegratorBundled
+                         lpeStateId = rs->mPathVertex.lpeStateIdLight;
+                     }
++                    // Modo: what the two branches above lose as they end.
++                    static const bool modoCameraLightOn = [] {
++                        const char *value = std::getenv("MOONRAY_MODO_CAMERA_LIGHT_LPE");
++                        return value && value[0] == '1';
++                    }();
++                    if (modoCameraLightOn && modoCameraLight && rs->mPathVertex.lpeStateId >= 0) {
++                        lpeStateId = lightAovs.lightEventTransition(pbrTls, rs->mPathVertex.lpeStateId, modoCameraLight);
++                    }
+ 
+                     if (lpeStateId >= 0) {
+                         // accumulate results. As this has to do with directly hitting a light, we don't have
 diff --git a/lib/rendering/pbr/handlers/ShadeBundleHandler.cc b/lib/rendering/pbr/handlers/ShadeBundleHandler.cc
 index 0b0687c..a9ed134 100644
 --- a/lib/rendering/pbr/handlers/ShadeBundleHandler.cc
@@ -1713,10 +1752,18 @@ index 0b0687c..a9ed134 100644
                          // update cryptomatte info for current ray
                          cryptomatteData->mPresenceDepth = rs->mPathVertex.presenceDepth;
 diff --git a/lib/rendering/pbr/handlers/XPURayHandlers.cc b/lib/rendering/pbr/handlers/XPURayHandlers.cc
-index 1cc70f8..1b192c7 100644
+index 1cc70f8..8a090ad 100644
 --- a/lib/rendering/pbr/handlers/XPURayHandlers.cc
 +++ b/lib/rendering/pbr/handlers/XPURayHandlers.cc
-@@ -13,6 +13,7 @@
+@@ -1,6 +1,7 @@
+ // Copyright 2023-2024 DreamWorks Animation LLC
+ // SPDX-License-Identifier: Apache-2.0
+ 
++#include <cstdlib>
+ #include "XPURayHandlers.h"
+ 
+ #include "RayHandlerUtils.h"
+@@ -13,6 +14,7 @@
  #include <moonray/rendering/mcrt_common/ProfileAccumulatorHandles.h>
  #include <moonray/rendering/mcrt_common/ThreadLocalState.h>
  #include <moonray/rendering/pbr/core/PbrTLState.h>
@@ -1724,7 +1771,7 @@ index 1cc70f8..1b192c7 100644
  #include <moonray/rendering/pbr/core/RayState.h>
  #include <moonray/rendering/pbr/integrator/PathIntegrator.h>
  #include <moonray/rendering/pbr/integrator/PathIntegratorUtil.h>
-@@ -365,6 +366,13 @@ xpuRayBundleHandler(mcrt_common::ThreadLocalState *tls,
+@@ -365,6 +367,13 @@ xpuRayBundleHandler(mcrt_common::ThreadLocalState *tls,
          rs.mVolTalpha = vt.mTransmittanceAlpha;
          rs.mVolTm = vt.mTransmittanceMin;
          rs.mVolumeSurfaceT = volumeSurfaceT;
@@ -1738,7 +1785,7 @@ index 1cc70f8..1b192c7 100644
      }
  
      CHECK_CANCELLATION(pbrTls, return);
-@@ -464,7 +472,8 @@ xpuRayBundleHandler(mcrt_common::ThreadLocalState *tls,
+@@ -464,7 +473,8 @@ xpuRayBundleHandler(mcrt_common::ThreadLocalState *tls,
                      // We will add the radiance from the volume to the radiance
                      // queue and set the alpha based on the volume alpha.
                      const float alpha = ray.getDepth() == 0 ?
@@ -1748,7 +1795,23 @@ index 1cc70f8..1b192c7 100644
                      BundledRadiance rad;
                      rad.mRadiance = RenderColor(rs.mVolRad.r, rs.mVolRad.g, rs.mVolRad.b, alpha);
                      rad.mPathPixelWeight = rs.mPathVertex.pathPixelWeight;
-@@ -588,6 +597,12 @@ xpuRayBundleHandler(mcrt_common::ThreadLocalState *tls,
+@@ -537,6 +547,7 @@ xpuRayBundleHandler(mcrt_common::ThreadLocalState *tls,
+                 // primary rays intersected any lights, so we can include their contribution if visible.
+ 
+                 const Light *hitLight = nullptr;
++                const Light *modoCameraLight = nullptr; // Modo: the light seen (tools/port_camera_light_lpe.py)
+                 if (rs->mRay.getDepth() == 0) {
+ 
+                     LightIntersection hitLightIsect;
+@@ -549,6 +560,7 @@ xpuRayBundleHandler(mcrt_common::ThreadLocalState *tls,
+                     IntegratorSample1D lightChoiceSamples(sid);
+                     hitLight = fs.mScene->intersectVisibleLight(rs->mRay,
+                         sInfiniteLightDistance, lightChoiceSamples, hitLightIsect, numHits);
++                    modoCameraLight = hitLight;
+ 
+                     if (hitLight) {
+                         // Evaluate the radiance on the selected light in camera.
+@@ -588,6 +600,12 @@ xpuRayBundleHandler(mcrt_common::ThreadLocalState *tls,
                      }
                  }
  
@@ -1761,6 +1824,21 @@ index 1cc70f8..1b192c7 100644
                  // add in any volume radiance
                  radiance += rs->mVolRad;
  
+@@ -656,6 +674,14 @@ xpuRayBundleHandler(mcrt_common::ThreadLocalState *tls,
+                         // transition already computed in PathIntegratorBundled
+                         lpeStateId = rs->mPathVertex.lpeStateIdLight;
+                     }
++                    // Modo: what the two branches above lose as they end.
++                    static const bool modoCameraLightOn = [] {
++                        const char *value = std::getenv("MOONRAY_MODO_CAMERA_LIGHT_LPE");
++                        return value && value[0] == '1';
++                    }();
++                    if (modoCameraLightOn && modoCameraLight && rs->mPathVertex.lpeStateId >= 0) {
++                        lpeStateId = lightAovs.lightEventTransition(pbrTls, rs->mPathVertex.lpeStateId, modoCameraLight);
++                    }
+ 
+                     if (lpeStateId >= 0) {
+                         // accumulate results. As this has to do with directly hitting a light, we don't have
 diff --git a/lib/rendering/pbr/integrator/PathIntegrator.cc b/lib/rendering/pbr/integrator/PathIntegrator.cc
 index 227c68e..8a2f078 100644
 --- a/lib/rendering/pbr/integrator/PathIntegrator.cc
