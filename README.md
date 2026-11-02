@@ -55,6 +55,8 @@ With a new runtime ZIP: install both, and **Compile XPU2 Shaders once more**.
 
 A hotfix, with a new runtime ZIP: install both, and Compile XPU2 Shaders once more. The full list is in [What's new in 0.5](docs/WHATS_NEW_05.md).
 
+- **XPU2 renders Modo's procedural textures worked out through the object**, Enhance: Modo's patterns among them, with the patterns MoonRay and MoonLightIPR share. Such a scene used to go to MoonRay XPU.
+- **Scenes with Modo's fur render in XPU2**: they stopped with "No Attribute named 'vertex_list_1'" and went to MoonRay XPU.
 - **XPU2 renders moving objects on the GPU:** moving meshes, subdivision surfaces, instances, curves, fog and any number of moving lights, and points whether moving or still. Test scenes finished about 2.6 to 8.5 times sooner; a scene with nothing moving takes about 2 to 3% longer.
 - **Render Animation and Render to a File render with XPU2**, each picture shown in the preview as it comes. **Render has motion blur**, from Render Settings or the Modo camera, and XPU2 realtime has it as a Preview Preference.
 - **Alpha reaches every file that can hold it:** a denoised EXR, and a PNG, TIFF or Targa saved from a render. In those three, **soft edges no longer flare** in front of a visible environment.
