@@ -227,6 +227,10 @@ for category, (label, shared, classes) in CATEGORIES.items():
             attributes['modo_render_camera'] = {'name': 'modo_render_camera', 'type': 'Bool', 'default': False, 'group': 'Assignment',
                                                 'label': 'render through this camera',
                                                 'comment': 'Render through this camera, from where this item stands, instead of the Modo camera.'}
+        if name in ('PerspectiveCamera', 'OrthographicCamera'):
+            attributes['modo_lens'] = {'name': 'modo_lens', 'type': 'Bool', 'default': False, 'group': 'Lens', 'label': "use the Modo camera's lens",
+                                       'comment': "Take the lens from this camera's own Modo properties (focal length, film, offsets, depth of field, "
+                                                  'F-stop, focus distance and iris) instead of the MoonRay values below.'}
         catalog[name] = {'category': category, 'category_label': label, 'attributes': attributes, 'placed': placed,
                          'source': path.relative_to(root).as_posix()}
 target = root / 'kit/MoonRayForModo/python/moonray_modo/entity_catalog.json'

@@ -59,7 +59,8 @@ def lens_modifiers():
     """An evaluation modifier on Modo's cameras: on each that is a MoonRay camera it sets the Modo lens from the
     MoonRay one (entities.modo_lens), so that Modo's viewport, looking through it, frames what MoonRay renders and
     draws its resolution gate there. The Modo channels are then driven, and follow each change to the MoonRay ones,
-    undo included. Other cameras are left alone."""
+    undo included. A camera that uses the Modo camera's lens (modo_lens) keeps its own: they are passed through as
+    they are, to be edited in its Camera tab. Other cameras are left alone."""
     import lxu.meta
     from moonray_modo import entities
 
@@ -72,7 +73,10 @@ def lens_modifiers():
                 self.slots[label]=len(self.slots);self.mod_add_chan(item,channel,kind)
             for key in entities.lens_inputs(self.kind):add(key,entities.CHANNEL_PREFIX+key)
             add('target','target')
-            for channel in LENS_FLOATS+tuple(LENS_CHOICES):add('out.'+channel,channel,lx.symbol.fECHAN_WRITE)
+            self.own=self.kind in entities.MODO_LENS_CAMERAS
+            if self.own:add('modo_lens',entities.CHANNEL_PREFIX+'modo_lens')
+            # Read as well as written, so that the Modo camera's own values can be passed through.
+            for channel in LENS_FLOATS+tuple(LENS_CHOICES):add('out.'+channel,channel,lx.symbol.fECHAN_READ|lx.symbol.fECHAN_WRITE)
         def change_test(self):
             # A camera made a MoonRay camera (or no longer one) is bound again, with the channels of its kind.
             try:return camera_kind(self.mod_item())==self.kind
@@ -81,6 +85,12 @@ def lens_modifiers():
             if self.kind is None:return
             attributes=self.mod_attr();slots=self.slots
             number=lambda label:attributes.GetFlt(self.mod_cust_index(slots[label]))
+            if self.own and attributes.GetInt(self.mod_cust_index(slots['modo_lens'])):
+                for channel in LENS_FLOATS:
+                    index=self.mod_cust_index(slots['out.'+channel]);attributes.SetFlt(index,attributes.GetFlt(index))
+                for channel in LENS_CHOICES:
+                    index=self.mod_cust_index(slots['out.'+channel]);attributes.SetInt(index,attributes.GetInt(index))
+                return
             lens=entities.modo_lens(self.kind,number,number('target'))
             for channel in LENS_FLOATS:attributes.SetFlt(self.mod_cust_index(slots['out.'+channel]),float(lens[channel]))
             for channel in LENS_CHOICES:

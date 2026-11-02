@@ -44,6 +44,8 @@ REWORDED = {'label': {'label': 'AOV label', 'group': 'Advanced',
             # MoonRay works these out and throws them away (createRayImpl discards sampleLens's weight).
             'bokeh_weight_location': {'label': 'bokeh weight location (no effect)',
                                       'comment': 'MoonRay does not use this yet, so changing it changes nothing'},
+            # MoonRay's own comment calls it the focus distance; it is an f-stop (PerspectiveCamera.cc).
+            'dof_aperture': {'label': 'dof aperture (f-stop)', 'comment': 'The f-stop: a lower number gives a shallower depth of field'},
             'bokeh_weight_strength': {'label': 'bokeh weight strength (no effect)',
                                       'comment': 'MoonRay does not use this yet, so changing it changes nothing'}}
 
@@ -192,7 +194,10 @@ for i, name in enumerate(sorted(catalog)):
         # commands, which work on the item selected.
         transform_section(form, name)
     groups = {}
-    for j, (key, channel, kind, default, choices) in enumerate(entities.channels(name)):
+    # A camera's switch to the Modo camera's lens comes first, in a section of its own that starts open; the commands
+    # keep their numbers (j).
+    ordered = sorted(enumerate(entities.channels(name)), key=lambda entry: entry[1][0] != 'modo_lens')
+    for j, (key, channel, kind, default, choices) in ordered:
         spec = dict(catalog[name]['attributes'][key], **REWORDED.get(key, {}))
         shown = entities.presentation(name, key)
         opens = [(k, ramp[0]) for k, ramp in enumerate(entities.RAMPS.get(name, [])) if key == ramp[1]]

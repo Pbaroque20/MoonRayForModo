@@ -59,6 +59,10 @@ def lens(camera, kind):
               'bokeh': blades >= 3, 'bokeh_sides': max(0, blades), 'bokeh_angle': math.degrees(float(channel(camera, 'irisRot', 0)))}
     if kind == 'PerspectiveCamera':
         result.update(focal=focal * 1000, film_width_aperture=aperture_x * 1000)
+        # Modo's stereo: one eye, how far apart and where they meet. Both eyes at once is the middle view here.
+        eye = str(channel(camera, 'stereoEye', 'both')) if channel(camera, 'stereo', 0) else ''
+        result.update(stereo_view={'left': 1, 'right': 2}.get(eye, 0), stereo_interocular_distance=float(channel(camera, 'ioDist', .065)),
+                      stereo_convergence_distance=float(channel(camera, 'convDist', 2.0)))
     else:
         result.update(film_width_aperture=ortho_width)
     return result
@@ -119,6 +123,10 @@ def revert(camera):
     from . import entities
     name = entities.class_of(camera)
     if name not in entities.VIEWED_CAMERAS:
+        return camera
+    if entities.uses_modo_lens(camera, name):
+        # Its lens is already Modo's own.
+        camera.PackageRemove(entities.camera_package(name))
         return camera
 
     def number(attribute):

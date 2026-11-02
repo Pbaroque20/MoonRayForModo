@@ -1,5 +1,6 @@
 """The Export AOVs window: the outputs of the last finished render, grouped by what they are, saved as picture files of
 a chosen type into a chosen folder."""
+from functools import partial
 from pathlib import Path
 from PySide2 import QtCore, QtWidgets
 
@@ -64,7 +65,8 @@ class ExportAOVs(QtWidgets.QDialog):
                 box.toggled.connect(lambda on, g=group: self.follow(g))
                 boxes.append(box)
                 self.items.append(box)
-            whole.clicked.connect(lambda on, members=boxes: [box.setChecked(on) for box in members if box.isEnabled()])
+            # By the group's own box as it now stands: what a click hands a lambda with defaults was not to be relied on.
+            whole.clicked.connect(partial(self.tick_group, group))
             self.groups[group] = (whole, boxes)
         rows.addStretch(1)
         scroll = QtWidgets.QScrollArea()
@@ -109,6 +111,10 @@ class ExportAOVs(QtWidgets.QDialog):
         self.names.setWordWrap(True)
         self.names.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
         form.addRow('Files', self.names)
+        self.layers = QtWidgets.QCheckBox('One multilayer EXR')
+        self.layers.setToolTip('Every output ticked in one OpenEXR file: the beauty as R, G, B and A, the others each a layer under its own name')
+        self.layers.setChecked(str(settings.value('output/aov_multilayer', 'false')).lower() == 'true')
+        form.addRow('', self.layers)
         self.open_after = QtWidgets.QCheckBox('Open the folder when done')
         self.open_after.setChecked(str(settings.value('output/aov_open', 'false')).lower() == 'true')
         form.addRow('', self.open_after)
@@ -119,11 +125,21 @@ class ExportAOVs(QtWidgets.QDialog):
         self.buttons.rejected.connect(self.reject)
         layout.addWidget(self.buttons)
         self.kind.currentIndexChanged.connect(self.update)
+        self.layers.toggled.connect(self.update)
         self.prefix.textChanged.connect(self.update)
         self.folder.textChanged.connect(self.update)
         for group in self.groups:
             self.follow(group)
         self.update()
+
+    def tick_group(self, group, *_):
+        """A group's own checkbox clicked: all of the group ticked as it now is, or none."""
+        whole, boxes = self.groups[group]
+        on = whole.isChecked()
+        for box in boxes:
+            if box.isEnabled():
+                box.setChecked(on)
+        self.follow(group)
 
     def follow(self, group):
         """A group's checkbox is ticked when all of it is, and the files are named again."""
@@ -151,6 +167,18 @@ class ExportAOVs(QtWidgets.QDialog):
         prefix = self.prefix.text().strip()
         return Path(self.folder.text().strip()) / ('%s%s.%s' % (prefix + '_' if prefix else '', key, extension))
 
+    def layered(self):
+        """Whether the outputs go into one multilayer OpenEXR: asked for, and the type an OpenEXR."""
+        return self.layers.isChecked() and image_formats.find(self.type())[2] == 'exr'
+
+    def layered_target(self):
+        prefix = self.prefix.text().strip()
+        return Path(self.folder.text().strip()) / ('%s.exr' % (prefix or 'render'))
+
+    def targets(self):
+        """The files the export writes."""
+        return [self.layered_target()] if self.layered() else [self.target(key) for key in self.chosen()]
+
     def update(self, *args):
         """What the choices come to: the outputs a type cannot hold set aside, the colour said, the files named."""
         key = self.type()
@@ -161,12 +189,17 @@ class ExportAOVs(QtWidgets.QDialog):
             box.setEnabled(not refused)
             box.setToolTip('A Cryptomatte is saved as OpenEXR only: its IDs are numbers the other types cannot hold.' if refused else box.key)
         self.quality.setEnabled(image_formats.find(key)[2] == 'jpg')
+        self.layers.setEnabled(exr)
+        self.layers.setToolTip('Every output ticked in one OpenEXR file: the beauty as R, G, B and A, the others each a layer under its own name'
+                               if exr else 'Choose an OpenEXR type to save the outputs as one multilayer file')
         self.colour.setText('The render\'s own linear values, as they are.' if linear else
                             'As the preview shows it: through the view transform, with data outputs shown as greys and colours.')
         chosen = self.chosen()
         folder = self.folder.text().strip()
         if not chosen:
             self.names.setText('Tick the outputs to export.')
+        elif self.layered():
+            self.names.setText('%s, with %d layer%s' % (self.layered_target().name, len(chosen), '' if len(chosen) == 1 else 's'))
         else:
             shown = [self.target(name).name for name in chosen[:4]]
             more = len(chosen) - len(shown)
@@ -178,7 +211,7 @@ class ExportAOVs(QtWidgets.QDialog):
         if not folder.is_dir():
             QtWidgets.QMessageBox.warning(self, 'Export AOVs', 'That folder does not exist: choose one with Browse.')
             return
-        existing = [self.target(key).name for key in self.chosen() if self.target(key).exists()]
+        existing = [target.name for target in self.targets() if target.exists()]
         if existing:
             asked = QtWidgets.QMessageBox.question(self, 'Export AOVs', '%d file%s there already: %s%s. Replace %s?' % (
                 len(existing), ' is' if len(existing) == 1 else 's are', ', '.join(existing[:3]), ' ...' if len(existing) > 3 else '',
@@ -190,4 +223,5 @@ class ExportAOVs(QtWidgets.QDialog):
         self.settings.setValue('output/aov_prefix', self.prefix.text())
         self.settings.setValue('output/jpeg_quality', self.quality.value())
         self.settings.setValue('output/aov_open', 'true' if self.open_after.isChecked() else 'false')
+        self.settings.setValue('output/aov_multilayer', 'true' if self.layers.isChecked() else 'false')
         super().accept()

@@ -377,8 +377,20 @@ class Tools:
             self.status.setText('Render a preview first.')
             return
         path = self._save_path('Save preview', 'png', 'png', 'PNG image (*.png)')
-        if path:
-            self.status.setText('Saved ' + path if self.preview.image.save(path, 'PNG') else 'Could not save the preview image.')
+        if not path:
+            return
+        # A finished MoonRay preview's beauty or denoised beauty is saved from the render itself, with its alpha.
+        frame = self.renderer.buffers.frame
+        key = self.buffer.currentData()
+        if self.preview_engine.currentData() != 'moonlightipr' and frame and key in self.WITH_ALPHA and key in (frame.get('files') or {}) \
+                and self._alpha_of(frame, key):
+            try:
+                self.write_buffer(frame, key, Path(path), 'png8')
+                self.status.setText('Saved %s with its alpha' % path)
+                return
+            except (OSError, ValueError, RuntimeError):
+                pass
+        self.status.setText('Saved ' + path if self.preview.image.save(path, 'PNG') else 'Could not save the preview image.')
 
     def buffer_names(self, frame):
         """The outputs a finished preview holds, as (key, what it is called), in the buffer list's order."""
@@ -426,8 +438,14 @@ class Tools:
         if dialog.exec_() != QtWidgets.QDialog.Accepted:
             return
         chosen, folder = dialog.chosen(), Path(dialog.folder.text().strip())
-        saved, failed = self.write_buffers(frame, chosen, folder, dialog.prefix.text().strip(), dialog.type(), dialog.quality.value())
-        self.status.setText('Exported %d AOV%s to %s' % (len(saved), '' if len(saved) == 1 else 's', folder) + ('; could not write %s' % ', '.join(failed) if failed else ''))
+        if dialog.layered():
+            saved, failed = self.write_layered(frame, chosen, dialog.layered_target(), dialog.type())
+            done = len(chosen) - len(failed) if saved else 0
+            told = 'Exported %d AOV%s into %s' % (done, '' if done == 1 else 's', saved[0]) if saved else 'Exported nothing'
+        else:
+            saved, failed = self.write_buffers(frame, chosen, folder, dialog.prefix.text().strip(), dialog.type(), dialog.quality.value())
+            told = 'Exported %d AOV%s to %s' % (len(saved), '' if len(saved) == 1 else 's', folder)
+        self.status.setText(told + ('; could not write %s' % ', '.join(failed) if failed else ''))
         if saved and dialog.open_after.isChecked():
             QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(str(folder)))
 
@@ -435,28 +453,102 @@ class Tools:
         """Write a render's outputs into a folder in a picture type (image_formats): as shown in the preview for the types
         of a picture to look at, with their own values for the linear ones. Returns (the files written, the outputs
         that could not be)."""
-        import subprocess
-        from . import image_formats, native, outputs
-        from .display import values as display_values
-        values = self._settings_values()
-        display = display_values(dict(values['display'], working_space=frame['snapshot'].get('asset_settings', {}).get('working_space', 'rec709')))
+        from . import image_formats
         extension = image_formats.find(kind)[2]
         saved, failed = [], []
         for key in keys:
-            source = frame['files'].get(key)
             target = Path(folder) / ('%s%s.%s' % (prefix + '_' if prefix else '', key, extension))
+            try:
+                saved.append(str(self.write_buffer(frame, key, target, kind, quality)))
+            except (OSError, ValueError, RuntimeError):
+                failed.append(key)
+        return saved, failed
+
+    # The pictures that are saved with the render's alpha beside their colour.
+    WITH_ALPHA = ('beauty', 'denoised_beauty')
+
+    def _alpha_of(self, frame, key):
+        """Where a picture's alpha is, as (file, channel): its own A, or else the render's Alpha output. None where the
+        render has none (Alpha is not among its outputs) or the output is not a picture."""
+        from .composite_output import channel_names
+        if key not in self.WITH_ALPHA:
+            return None
+        runtime = frame['runtime']
+        source = frame['files'].get(key)
+        try:
+            if source and 'A' in channel_names(runtime, source):
+                return (source, 'A')
+            held = frame['files'].get('alpha')
+            if held and Path(held).is_file():
+                names = channel_names(runtime, held)
+                return (held, 'A' if 'A' in names else names[0]) if names else None
+        except (OSError, RuntimeError, ValueError, IndexError):
+            return None
+        return None
+
+    def _run_image_tool(self, frame, args, target):
+        import subprocess
+        from . import native
+        try:
+            done = subprocess.run([str(Path(frame['runtime']) / 'oiiotool.exe')] + args, env=native.environment(frame['runtime']), capture_output=True,
+                                  creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0), timeout=300)
+        except subprocess.SubprocessError as exc:
+            raise RuntimeError(str(exc))
+        if done.returncode or not Path(target).is_file():
+            raise RuntimeError((done.stdout + done.stderr).decode(errors='replace')[-200:])
+        return Path(target)
+
+    def write_buffer(self, frame, key, target, kind, quality=92):
+        """Write one output of a render as a file in a picture type. The beauty and the denoised beauty take the render's
+        alpha with them, in each type that holds one (all but JPEG). Returns the file; raises where it could not."""
+        from . import image_formats, outputs
+        from .display import values as display_values
+        source = frame['files'].get(key)
+        if source is None or not Path(source).is_file():
+            raise OSError('not held')
+        values = self._settings_values()
+        display = display_values(dict(values['display'], working_space=frame['snapshot'].get('asset_settings', {}).get('working_space', 'rec709')))
+        alpha = self._alpha_of(frame, key)
+        if alpha and image_formats.holds_alpha(kind):
+            args = image_formats.with_alpha(kind, source, target, display, alpha=None if alpha[0] == source and alpha[1] == 'A' else alpha)
+        elif alpha and image_formats.find(kind)[2] == 'exr' and alpha[0] != source:
+            args = image_formats.exr_with_alpha(kind, source, alpha, target)
+        else:
+            args = image_formats.arguments(kind, outputs.display_kind(frame['snapshot'], key), source, target, display, quality)
+        return self._run_image_tool(frame, args, target)
+
+    def write_layered(self, frame, keys, target, kind):
+        """Write chosen outputs of a render into one multilayer OpenEXR: the beauty as R, G, B and A, the others each a
+        layer under its own name (image_formats.multilayer). Returns ([the file], the outputs left out)."""
+        from . import image_formats, outputs
+        from .composite_output import channel_names
+        layers, failed = [], []
+        # The beauty first: it is what a viewer opens a multilayer file on.
+        ordered = sorted(keys, key=lambda key: key != 'beauty')
+        for key in ordered:
+            source = frame['files'].get(key)
             try:
                 if source is None or not Path(source).is_file():
                     raise OSError('not held')
-                args = image_formats.arguments(kind, outputs.display_kind(frame['snapshot'], key), source, target, display, quality)
-                done = subprocess.run([str(Path(frame['runtime']) / 'oiiotool.exe')] + args, env=native.environment(frame['runtime']), capture_output=True,
-                                      creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0), timeout=300)
-                if done.returncode or not target.is_file():
-                    raise OSError((done.stdout + done.stderr).decode(errors='replace')[-200:])
-                saved.append(str(target))
-            except (OSError, ValueError, subprocess.SubprocessError):
+                names = channel_names(frame['runtime'], source)
+                crypto = outputs.display_kind(frame['snapshot'], key) == 'cryptomatte'
+                if crypto:
+                    layers.append((source, names, names, True))
+                    continue
+                beauty = key == 'beauty'
+                colour = names[:3] if key in self.WITH_ALPHA else names
+                layers.append((source, colour, image_formats.layer_names(key, colour, beauty), False))
+                alpha = self._alpha_of(frame, key)
+                if alpha:
+                    layers.append((alpha[0], [alpha[1]], ['A' if beauty else key + '.A'], False))
+            except (OSError, RuntimeError, ValueError, IndexError):
                 failed.append(key)
-        return saved, failed
+        if not layers:
+            return [], failed
+        try:
+            return [str(self._run_image_tool(frame, image_formats.multilayer(kind, layers, target), target))], failed
+        except RuntimeError:
+            return [], [key for key in ordered]
 
     def show_log(self):
         dialog = QtWidgets.QDialog(self)

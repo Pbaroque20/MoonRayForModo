@@ -31,7 +31,22 @@ PREVIEW_LIGHTS = {'DistantLight': {'angular_extent': 'angle'}, 'SphereLight': {'
 STARTING = {'EnvLight': {'modo_replace_environment': True, 'visible_in_camera': 1},   # 1 is force on: seen behind the scene
             'SphereLight': {'intensity': 50.0, 'radius': .1}, 'RectLight': {'intensity': 50.0},
             'DiskLight': {'intensity': 50.0, 'radius': .5}, 'SpotLight': {'intensity': 50.0, 'lens_radius': .05},
-            'CylinderLight': {'intensity': 50.0, 'radius': .05}, 'MeshLight': {'intensity': 50.0}}
+            'CylinderLight': {'intensity': 50.0, 'radius': .05}, 'MeshLight': {'intensity': 50.0},
+            # A new camera is edited as any Modo camera is, in its own Camera tab. Off, as in scenes from before, it
+            # renders by the MoonRay lens values in its dw tab.
+            'PerspectiveCamera': {'modo_lens': True}, 'OrthographicCamera': {'modo_lens': True}}
+# The MoonRay cameras that can take their lens from the Modo camera they are (modo_lens).
+MODO_LENS_CAMERAS = ('PerspectiveCamera', 'OrthographicCamera')
+
+
+def uses_modo_lens(item, name):
+    """Whether a MoonRay camera takes its lens from Modo's own camera channels."""
+    if name not in MODO_LENS_CAMERAS:
+        return False
+    try:
+        return bool(item.channel(CHANNEL_PREFIX + 'modo_lens').get())
+    except (TypeError, ValueError, AttributeError, LookupError, RuntimeError):
+        return False
 
 
 @lru_cache(maxsize=1)
@@ -378,6 +393,12 @@ def collect(scene, warnings):
                     held = {'identity': item.id, 'name': item.name, 'class': name, 'matrix': world_matrix(item),
                             'parameters': from_channels(name, lambda channel: item.channel(channel).get()),
                             'attributes': primitive_attributes.read(item)}
+                    if uses_modo_lens(item, name):
+                        # Its lens as the Modo camera's own properties have it, read as a Modo camera is rendered, and
+                        # its shutter as the scene's (host.snapshot gives the scene this camera's Blur Length and Offset).
+                        from .camera_convert import lens
+                        own = {key: held_value for key, held_value in held['parameters'].items() if key not in ('mb_shutter_open', 'mb_shutter_close')}
+                        held['parameters'] = validate(name, dict(own, **lens(item, name)))
                     # An uneven scale from a parent, or the scale tool's just put into the light's size.
                     scaled = SCALED_UNEVENLY.pop(item.id, None) or round_light(name, held['matrix']) is not held['matrix']
                     if scaled and round_note(item.name, name) not in warnings:
