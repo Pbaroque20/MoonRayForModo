@@ -4056,6 +4056,14 @@
         "name": "medium_material",
         "type": "SceneObject*"
       },
+      "modo_lens": {
+        "comment": "Take the lens from this camera's own Modo properties (focal length, film, offsets, depth of field, F-stop, focus distance and iris) instead of the MoonRay values below.",
+        "default": false,
+        "group": "Lens",
+        "label": "use the Modo camera's lens",
+        "name": "modo_lens",
+        "type": "Bool"
+      },
       "modo_render_camera": {
         "comment": "Render through this camera, from where this item stands, instead of the Modo camera.",
         "default": false,
@@ -4282,6 +4290,14 @@
         "label": "medium material",
         "name": "medium_material",
         "type": "SceneObject*"
+      },
+      "modo_lens": {
+        "comment": "Take the lens from this camera's own Modo properties (focal length, film, offsets, depth of field, F-stop, focus distance and iris) instead of the MoonRay values below.",
+        "default": false,
+        "group": "Lens",
+        "label": "use the Modo camera's lens",
+        "name": "modo_lens",
+        "type": "Bool"
       },
       "modo_render_camera": {
         "comment": "Render through this camera, from where this item stands, instead of the Modo camera.",
@@ -6709,6 +6725,13 @@
         "name": "ambient",
         "type": "Rgb"
       },
+      "close_line_gaps": {
+        "comment": "MoonRay for Modo: a pixel without ink between two with ink is taken as part of the line, so that a line does not come out as two with the surface showing between them",
+        "default": false,
+        "label": "close line gaps",
+        "name": "close_line_gaps",
+        "type": "Bool"
+      },
       "edge_detector": {
         "comment": "Type of edge detector to use",
         "default": 0,
@@ -6784,13 +6807,6 @@
         "label": "num cels",
         "name": "num_cels",
         "type": "Int"
-      },
-      "close_line_gaps": {
-        "comment": "MoonRay for Modo: a pixel without ink between two with ink is taken as part of the line, so that a line does not come out as two with the surface showing between them",
-        "default": false,
-        "label": "close line gaps",
-        "name": "close_line_gaps",
-        "type": "Bool"
       },
       "output_mode": {
         "comment": "MoonRay for Modo: the cel shading with its ink lines, the ink lines alone (white on black, a matte to composite with), or the cel shading without them",

@@ -84,22 +84,62 @@ def convert(runtime, key, source, target, display=None, quality=92, alpha=False,
 BACKGROUND = ('environment_background.R', 'environment_background.G', 'environment_background.B')
 
 
-def with_alpha(key, source, target, display=None, background=None):
+def with_alpha(key, source, target, display=None, background=None, alpha=None):
     """The image tool's arguments that write a beauty with its alpha. These types keep colour apart from alpha: the
     render's is divided by it first, in linear, and the view transform then applies to the colour alone. Where the
     alpha is 0 the colour stays as it is. background: a file holding the Environment background, which is taken out
     first: a soft edge is part surface, part visible environment, and alpha counts the surface alone, so that dividing
-    the two made the edge flare. Colour where the alpha is 0 is then black."""
+    the two made the edge flare; or (file, its three channels). Colour where the alpha is 0 is then black.
+
+    alpha: (file, channel) where the alpha is a file of its own, as a preview's outputs are, and the colour is then the
+    first three channels of source; otherwise source's R, G, B and A, as the render's own file has them."""
     key, label, extension, numbers, shown = find(key)
+    colour = 'R,G,B' if alpha is None else '0,1,2'
+    taken = [str(source), '--ch', 'A'] if alpha is None else [str(alpha[0]), '--ch', str(alpha[1]), '--chnames', 'A']
     if background:
-        args = ['--no-autopremult', str(source), '--fixnan', 'black', '--ch', 'R,G,B', str(background), '--fixnan', 'black', '--ch', ','.join(BACKGROUND),
-                '--chnames', 'R,G,B', '--sub', '--clamp:min=0', str(source), '--ch', 'A', '--chappend', '--unpremult', '--ch', '0,1,2']
-    else:
+        held, channels = (background, ','.join(BACKGROUND)) if isinstance(background, (str, Path)) else background
+        args = ['--no-autopremult', str(source), '--fixnan', 'black', '--ch', colour, '--chnames', 'R,G,B', str(held), '--fixnan', 'black',
+                '--ch', channels, '--chnames', 'R,G,B', '--sub', '--clamp:min=0'] + taken + ['--chappend', '--unpremult', '--ch', '0,1,2']
+    elif alpha is None:
         args = ['--no-autopremult', str(source), '--fixnan', 'black', '--ch', 'R,G,B,A', '--unpremult', '--ch', '0,1,2']
+    else:
+        args = ['--no-autopremult', str(source), '--fixnan', 'black', '--ch', colour, '--chnames', 'R,G,B'] + taken + ['--chappend', '--unpremult', '--ch', '0,1,2']
     if shown:
         from .display import arguments as view
         args += view(display or {})
-    return args + [str(source), '--ch', 'A', '--chappend', '-d', numbers, '--attrib:type=int', 'oiio:UnassociatedAlpha', '1', '-o', str(target)]
+    return args + taken + ['--chappend', '-d', numbers, '--attrib:type=int', 'oiio:UnassociatedAlpha', '1', '-o', str(target)]
+
+
+def exr_with_alpha(key, source, alpha, target):
+    """The image tool's arguments that write a beauty and its alpha (file, channel) as one OpenEXR: R, G, B and A, the
+    colour premultiplied as the render made it."""
+    numbers = find(key)[3]
+    return [str(source), '--ch', '0,1,2', '--chnames', 'R,G,B', str(alpha[0]), '--ch', str(alpha[1]), '--chnames', 'A', '--chappend',
+            '-d', numbers, '-o', str(target)]
+
+
+def layer_names(key, names, beauty=False):
+    """A buffer's channels as a layer of a multilayer OpenEXR: the beauty as R, G, B (and A), the rest under their own
+    name, render_albedo's R as albedo.R. A Cryptomatte keeps the names its readers look for."""
+    if beauty:
+        return ['RGBA'[i] if i < 4 else '%s.%s' % (key, name) for i, name in enumerate(names)]
+    return ['%s.%s' % (key, name.rsplit('.', 1)[-1]) for name in names]
+
+
+def multilayer(key, layers, target):
+    """The image tool's arguments that write several buffers into one OpenEXR, each a layer: layers are (file, the
+    channels taken from it, their names in the file written, whether they must stay 32-bit float). The beauty's alpha
+    is a layer of its own channel, A, after the beauty."""
+    numbers = find(key)[3]
+    args, kept, written = [], [], set()
+    for index, (source, channels, names, exact) in enumerate(layers):
+        # A name already written gets the buffer's file name in front, so that no layer hides another.
+        names = [name if name not in written else '%s.%s' % (Path(source).stem, name) for name in names]
+        written.update(names)
+        args += [str(source), '--ch', ','.join(channels), '--chnames', ','.join(names)] + (['--chappend'] if index else [])
+        if exact:
+            kept += names
+    return args + ['-d', numbers] + [item for name in kept for item in ('-d', '%s=float' % name)] + ['-o', str(target)]
 
 
 def linear(key):

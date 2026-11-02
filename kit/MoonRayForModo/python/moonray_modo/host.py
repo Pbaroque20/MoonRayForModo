@@ -904,7 +904,13 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
     through = next((entity for entity in result['entities'] if entity.get('parameters', {}).get('modo_render_camera')), None)
     if through is not None:
         try:
-            overscan = float(channel(scene.item(through['identity']), 'overscan', 1.0))
+            through_item = scene.item(through['identity'])
+            overscan = float(channel(through_item, 'overscan', 1.0))
+            from .entities import uses_modo_lens
+            if uses_modo_lens(through_item, through.get('class')):
+                # Its own shutter too, as its Camera tab has it (Blur Length and Blur Offset), for the motion read.
+                result['camera']['shutter_length'] = float(channel(through_item, 'blurLen', .5))
+                result['camera']['shutter_offset'] = float(channel(through_item, 'blurOff', 0))
         except (LookupError, KeyError, TypeError, ValueError):
             overscan = float(result['camera'].get('overscan', 1.0))
         if overscan > 1.0:
