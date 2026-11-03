@@ -6,6 +6,13 @@ This is the development branch of [MoonRay for Modo](https://github.com/Pbaroque
 
 The current release is [0.5.2.1](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.5.2.1). **Built on MoonRay [2026.29.1](https://github.com/dreamworksanimation/openmoonray/releases/tag/v2026.29.1)** (OpenMoonRay's latest release; MoonRay 18.4), with the plugin's own patches for Windows and the preview.
 
+## Coming in 0.5.2.2
+
+The next hotfix, to the kit alone.
+
+- **Smart Render and Safe Denoising follow the renderer chosen**: switching Preferences > MoonRay > XPU2 to MoonRay XPU makes them editable at once, and they work in Vector and Scalar mode whichever renderer is chosen. Smart Render chosen from the picture's menu with the Denoiser off sets Open Image Denoise.
+- **Render over a draft renders at the first press**: pressed while Draft is still drawing its lines, it had to be pressed again once they were done.
+
 ## New in 0.5.2.1
 
 A hotfix to 0.5.2, with a new runtime ZIP: install both, and **Compile XPU2 Shaders once more**.

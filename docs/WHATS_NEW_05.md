@@ -2,6 +2,13 @@
 
 0.5 is a **pre-production release**: the plugin is no longer experimental, and it brings a new GPU renderer, MoonRay XPU2.
 
+## Coming in 0.5.2.2
+
+The next hotfix, to the kit alone: the runtime of 0.5.2.1 stays.
+
+- **Smart Render and Safe Denoising follow the renderer chosen**: switching Preferences > MoonRay > XPU2 to MoonRay XPU makes them editable in the Render item at once, and they work in Vector and Scalar mode whichever renderer is chosen. Smart Render chosen from the picture's menu with the Denoiser off sets Open Image Denoise, and the foot of the picture says when Smart Render is not applied.
+- **Render over a draft renders at the first press**: pressed while Draft is still drawing its lines, it stopped the draft and had to be pressed again; now the draft stops and the region renders, with MoonRay XPU and XPU2.
+
 ## New in 0.5.2.1
 
 A hotfix to 0.5.2, with a new runtime ZIP: install both, and **Compile XPU2 Shaders once more**.
@@ -14,8 +21,6 @@ A hotfix to 0.5.2, with a new runtime ZIP: install both, and **Compile XPU2 Shad
 - **dw Perspective and Orthographic cameras use the Modo camera's lens**: focal length, film, offsets, depth of field, F-stop, focus distance, iris blades, stereo eye and shutter are edited in the camera's own Camera and Camera Effects tabs. The switch heads the dwPerspectiveCamera tab; turn it off to use the MoonRay values there, as scenes from before do.
 - **Saved pictures keep their alpha**: with Alpha among the render's outputs, Save Image and Export AOVs save the Beauty and the Denoised Beauty with it, as PNG, TIFF, Targa or OpenEXR. Export AOVs can also save every output ticked as one multilayer OpenEXR, and a group's own checkbox (Pictures, Light and the rest) ticks and unticks what is under it.
 - **MoonRay starts whatever is in the Windows PATH**: with a file in it, such as `cmd.exe`, every preview and scene load stopped with "directory iterator cannot open directory: Not a directory". The kit now hands MoonRay only PATH's folders, and MoonRay's own look passes over such entries (Start with any PATH, among the Source Overrides).
-- **Smart Render and Safe Denoising follow the renderer chosen**: switching Preferences > MoonRay > XPU2 to MoonRay XPU makes them editable in the Render item at once, and they work in Vector and Scalar mode whichever renderer is chosen. Smart Render chosen from the picture's menu with the Denoiser off sets Open Image Denoise, and the foot of the picture says when Smart Render is not applied.
-- **Render over a draft renders at the first press**: pressed while Draft is still drawing its lines, it stopped the draft and had to be pressed again; now the draft stops and the region renders, with MoonRay XPU and XPU2.
 
 ## New in 0.5.2
 
