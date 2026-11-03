@@ -4,7 +4,7 @@
 
 ## Coming in 0.5.2.3
 
-The next hotfix, to the kit alone: the runtime of 0.5.2.1 stays.
+The next hotfix, with a new XPU2 runtime (runtime-xpu2): install it, and **Compile XPU2 Shaders once more**.
 
 - **Look-dev is lighter on Modo**: a change in the graph editor is a material's edit, not a reading of the whole scene with its meshes; values stepping in the graph editor are written at most every 150 ms; the Shader Tree is walked once for a reading, not once for each material; and the check of the scene's texture files runs beside Modo, not on its thread once a second.
 - **Hidden meshes' materials are left alone**: a material worn only by hidden meshes is not read at each edit of another, and its images are not made ready for rendering.
@@ -15,6 +15,7 @@ The next hotfix, to the kit alone: the runtime of 0.5.2.1 stays.
 - **Switching networks in the graph editor keeps the window**: choosing another material in its list closed the editor altogether when it had been opened from another one.
 - **Remove Network**: Graph > Remove Network removes another material's whole node network, offered only while the scene has more than one and never the one open; right-click a node > Remove Network removes the loose network it belongs to, beside the material's own. Each asks first, and undoes.
 - **A cookie light filter renders in XPU2**: XPU2 draws it as MoonRay's scalar mode does, so a light with a cookie no longer sends the whole render to scalar mode. Should XPU2 hand the scene back, MoonRay renders it in scalar, as MoonRay's vector and XPU modes leave the picture blank.
+- **XPU2 needs a third of the texture memory**: float textures are held in half floats (each value within 1/2048 of itself; a tile with a value past their range, such as a sun, stays in floats), grey images in one channel (the kit makes them so, and converts textures again once), a tile of one colour as that colour alone, and the graphics card's texture cache gives each texture slots of its own size. A grass scene with 8K ground maps went from 4 GB of textures on the card to 1.4 GB, out of texture overflow mode, with the same picture. Set `XPU2_SESSION_FLOAT_TEXTURES=1` to keep floats.
 - **A bokeh image turns bokeh on**: with the switch to use the Modo camera's lens on, choosing a bokeh image on a dw camera uses it whatever Modo's iris blades say. The dw camera's fields that Modo's camera drives (focal length, film, offsets, depth of field, blades, stereo, shutter) are greyed while the switch is on.
 
 ## New in 0.5.2.2

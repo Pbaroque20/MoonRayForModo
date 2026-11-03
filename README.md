@@ -8,13 +8,14 @@ The current release is [0.5.2.2](https://github.com/Pbaroque20/MoonRayForModo/re
 
 ## Coming in 0.5.2.3
 
-The next hotfix, to the kit alone.
+The next hotfix, with a new XPU2 runtime: **Compile XPU2 Shaders once more**.
 
 - **Look-dev is lighter on Modo**: graph editor changes no longer re-read the whole scene, hidden meshes' materials are left alone, and Low Value, High Value, gamma, brightness and contrast change without reloading the scene.
 - **Wired inputs are locked in Properties**, and **a material node's inputs fold into groups** (Diffuse, Specular, Clearcoat ...), connected ones always shown.
 - **A material's lists come up quicker** in Properties and the graph editor, **switching networks keeps the graph editor open**, and **Remove Network** removes another material's network or a loose one, after asking.
 - **A cookie light filter renders in XPU2**, at XPU2's speed, where it sent the whole render to MoonRay's slow scalar mode.
 - **A bokeh image turns bokeh on**, and the dw camera fields Modo's camera drives are greyed while it does.
+- **XPU2 needs a third of the texture memory**: a scene with a few 8K maps that went into texture overflow mode now holds 1.4 GB of textures on the graphics card, not 4 GB, with the same picture.
 
 ## New in 0.5.2.2
 

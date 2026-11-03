@@ -137,7 +137,7 @@ def _prepare(source, srgb=False, mipmaps=True, color_space=""):
         # Already a texture made for the renderer, and nothing to change in its colours: it is used as it is.
         return str(source)
     stat = source.stat()
-    key_data = repr((str(source),stat.st_size,stat.st_mtime_ns,transform_key,'v4-input-ocio'))
+    key_data = repr((str(source),stat.st_size,stat.st_mtime_ns,transform_key,'v5-monochrome'))
     if not mipmaps:
         key_data += '|no-mips'
     key = hashlib.sha256(key_data.encode('utf-8')).hexdigest()
@@ -152,7 +152,9 @@ def _prepare(source, srgb=False, mipmaps=True, color_space=""):
     def convert():
         staged = cache / (key + '-' + uuid.uuid4().hex + '.tx')
         _convert(args + ['-o', str(staged), str(source)], staged, target, source, runtime)
-    args = [str(converter), '--oiio', '--threads', '2', '-d', 'float', '--unpremult']
+    # A grey image (red, green and blue alike throughout) as one channel: renderers read it grey in all three as before, and
+    # XPU2 holds a third of it.
+    args = [str(converter), '--oiio', '--threads', '2', '-d', 'float', '--unpremult', '--monochrome-detect']
     if not mipmaps:
         args += ['--nomipmap']
     if custom:args += ['--colorconfig',config,'--colorconvert',space,policy.get('linear_space','Linear Rec.709 (sRGB)')]
