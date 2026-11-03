@@ -30,6 +30,15 @@ class Renders(unittest.TestCase):
         self.assertNotIn('if native.xpu2():smart.setEnabled', panel)
         self.assertNotIn('if native.xpu2():safe.setEnabled', panel)
 
+    def test_smart_render_brings_optix_on_an_nvidia_card_and_oidn_without(self):
+        from moonray_modo import hardware
+        with mock.patch.object(hardware, 'gpu', return_value='RTX 3090'):
+            self.assertEqual(hardware.denoiser(), 'optix')
+        with mock.patch.object(hardware, 'gpu', return_value=''):
+            self.assertEqual(hardware.denoiser(), 'oidn_cpu')
+        panel = (KIT / 'python/moonray_modo/panel.py').read_text(encoding='utf-8')
+        self.assertIn("stored['engine']=denoiser()", panel)
+
     def test_choosing_the_renderer_refreshes_the_render_form(self):
         commands = (KIT / 'lxserv/moonray_preferences.py').read_text(encoding='utf-8')
         self.assertIn("choice('xpu2/renderer',(('xpu','MoonRay XPU'),('xpu2','XPU2')),render_settings_changed)", commands)

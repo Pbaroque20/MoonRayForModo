@@ -32,6 +32,12 @@ def gpu():
     return _held['gpu']
 
 
+def denoiser():
+    """The denoiser to set where one is wanted and none is chosen: OptiX on an NVIDIA graphics card, which it needs, and
+    Open Image Denoise, on the processor, where there is none."""
+    return 'optix' if gpu() else 'oidn_cpu'
+
+
 def cpu():
     """The processor's name, shortened, or ''."""
     if 'cpu' not in _held:
