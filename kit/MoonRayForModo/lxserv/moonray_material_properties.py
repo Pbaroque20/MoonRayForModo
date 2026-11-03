@@ -81,7 +81,9 @@ def parameter_command(shader,key,spec):
         def cmd_Flags(self): return lx.symbol.fCMD_MODEL|lx.symbol.fCMD_UNDO
         def basic_Enable(self,msg):
             items=selected()
-            return bool(items) and all(material_override.enabled(properties.read(item)) and material_override.effective(properties.read(item)).get('native_shader')==shader for item in items)
+            # An input wired in the graph editor is the graph's: greyed, as typing a value cut the wire.
+            return bool(items) and all(material_override.enabled(properties.read(item)) and material_override.effective(properties.read(item)).get('native_shader')==shader
+                                       and not material_override.driver(item,key) for item in items)
         def cmd_Query(self,index,query):
             values=lx.object.ValueArray(query)
             for item in selected():

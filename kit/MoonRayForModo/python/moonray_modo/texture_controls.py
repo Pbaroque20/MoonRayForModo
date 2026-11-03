@@ -18,13 +18,16 @@ def remap(controls):
     low,high=float(controls.get('low',0)),float(controls.get('high',1))
     return high-low,low
 
+def affine(controls):
+    """(gain, offset) of contrast, then brightness, then Low Value and High Value, each a gain and an offset: one."""
+    brightness=controls.get('brightness',1);contrast=controls.get('contrast',1)
+    gain,offset=remap(controls)
+    return contrast*brightness*gain,.5*(1-contrast)*brightness*gain+offset
 def emit(value, controls, node, number):
     # Work on unassociated linear RGB; alpha is a coverage mask, not a color.
-    gamma=controls.get('gamma',1);brightness=controls.get('brightness',1);contrast=controls.get('contrast',1)
-    if gamma!=1:value=node('ColorCorrectGammaMap',{'input':value,'gamma':number(gamma)})
-    if contrast!=1:
-        value=node('ColorCorrectGainOffsetMap',{'input':value,'gain':number(contrast),'offset':number(.5*(1-contrast))})
-    if brightness!=1:value=node('ColorCorrectGainOffsetMap',{'input':value,'gain':number(brightness)})
-    gain,offset=remap(controls)
-    if (gain,offset)!=(1.0,0.0):value=node('ColorCorrectGainOffsetMap',{'input':value,'gain':number(gain),'offset':number(offset)})
-    return value
+    # The same two nodes whatever the values, at no change where nothing is set: a node there only while a value was
+    # set made a change of Low Value, High Value, gamma, brightness or contrast to or from its default a new scene to
+    # MoonRay (scene_delta: its lines change), which loaded everything again, twenty seconds on a heavy scene.
+    value=node('ColorCorrectGammaMap',{'input':value,'gamma':number(controls.get('gamma',1))})
+    gain,offset=affine(controls)
+    return node('ColorCorrectGainOffsetMap',{'input':value,'gain':number(gain),'offset':number(offset)})

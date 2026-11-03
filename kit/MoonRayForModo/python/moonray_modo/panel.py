@@ -1433,11 +1433,28 @@ class Panel(Tools, QtWidgets.QWidget):
         configured=self._configure_snapshot(scene)
         self._asset_scene=configured
         # Which files the scene names, and how they stand on disk, is looked into when the scene was read: not when
-        # only where things stand was asked again, which names no new file. Looking walks the whole scene.
+        # only where things stand was asked again, which names no new file. Looking walks the whole scene and asks the
+        # disk of every file, so it is done on a thread of its own (_assets_signed), Modo's left to the edit.
         if reuse not in (True,'transforms') or not self._asset_signature:
-            from .assets import signature
-            self._asset_signature=signature(configured)
+            self._asset_signature=None
+            self._assets_signed(configured,True)
         return configured
+
+    def _assets_signed(self,scene,baseline):
+        """Which files the scene names and how they stand on disk (assets.signature), found on a thread of its own: on
+        Modo's, a textured scene's walk and its files' stats were a small hang at each edit and once a second while
+        realtime rested. The finding waits in _asset_results for the live tick, which takes it only for the scene it
+        was found of: baseline, what that scene's files are; otherwise a look to compare with it."""
+        import threading
+        from .assets import signature
+        if not baseline:self._asset_busy=True
+        results=self.__dict__.setdefault('_asset_results',[])
+        def work():
+            try:results.append((scene,baseline,signature(scene)))
+            except Exception:pass
+            finally:
+                if not baseline:self._asset_busy=False
+        threading.Thread(target=work,name='MoonRay asset check',daemon=True).start()
 
     def _standing(self,document,scene):
         from .incremental import standing
@@ -2040,8 +2057,16 @@ class Panel(Tools, QtWidgets.QWidget):
             asset_changed=False
             # The periodic checks wait for the button too; they would turn a drag that can be
             # followed into a full capture.
-            if not held and now-self._asset_check_time>=1:
-                self._asset_check_time=now;asset_changed=signature(self._asset_scene)!=self._asset_signature
+            # What the asset thread found (_assets_signed), of the scene as last read: its files as they were then, or
+            # as they are now, changed or not.
+            results=self.__dict__.get('_asset_results')
+            while results:
+                found_scene,baseline,found=results.pop(0)
+                if found_scene is not self._asset_scene:continue
+                if baseline:self._asset_signature=found
+                elif self._asset_signature is not None and found!=self._asset_signature:asset_changed=True
+            if not held and now-self._asset_check_time>=1 and self._asset_signature is not None and not getattr(self,'_asset_busy',False):
+                self._asset_check_time=now;self._assets_signed(self._asset_scene,False)
             full=full or asset_changed
             settings={k:v for k,v in self._settings_values().items() if k not in ('display','preview_buffer','aovs','recovery','denoising','compositor')}
             changed=settings!=self._live_settings or time!=self._last_time or modo.Scene().renderItem.id!=self._scene_id

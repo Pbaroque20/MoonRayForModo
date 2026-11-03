@@ -12,6 +12,8 @@ A hotfix to 0.5.2.1, to the kit alone.
 
 - **Smart Render and Safe Denoising follow the renderer chosen**: switching Preferences > MoonRay > XPU2 to MoonRay XPU makes them editable at once, and they work in Vector and Scalar mode whichever renderer is chosen. Smart Render chosen from the picture's menu with the Denoiser off sets one: OptiX with an NVIDIA graphics card, Open Image Denoise without.
 - **Render over a draft renders at the first press**: pressed while Draft is still drawing its lines, it had to be pressed again once they were done.
+- **Look-dev is lighter on Modo**: graph editor changes no longer re-read the whole scene, hidden meshes' materials are left alone, and Low Value, High Value, gamma, brightness and contrast change without reloading the scene.
+- **Wired inputs are locked in Properties**, and **a material node's inputs fold into groups** (Diffuse, Specular, Clearcoat ...), connected ones always shown.
 
 ## New in 0.5.2.1
 

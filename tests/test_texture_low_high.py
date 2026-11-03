@@ -26,14 +26,16 @@ class LowAndHigh(unittest.TestCase):
         gain, offset = texture_controls.remap(controls)
         self.assertEqual((offset, gain + offset), (1.0, 0.0))
 
-    def test_the_moonray_graph_gets_one_more_node(self):
+    def test_the_moonray_graph_gets_its_gain_and_offset(self):
+        # The same two nodes whatever the values (test_texture_controls_structure): gamma at 1, and one gain and offset.
         made = []
 
         def node(kind, values):
             made.append((kind, values))
             return 'node%d' % len(made)
         texture_controls.emit('image', texture_controls.capture(None, channels(max=0.2)), node, str)
-        self.assertEqual(made, [('ColorCorrectGainOffsetMap', {'input': 'image', 'gain': '0.2', 'offset': '0.0'})])
+        self.assertEqual(made, [('ColorCorrectGammaMap', {'input': 'image', 'gamma': '1.0'}),
+                                ('ColorCorrectGainOffsetMap', {'input': 'node1', 'gain': '0.2', 'offset': '0.0'})])
 
 
 if __name__ == '__main__':

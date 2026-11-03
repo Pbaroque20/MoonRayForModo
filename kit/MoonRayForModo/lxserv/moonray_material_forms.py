@@ -52,6 +52,18 @@ def register():
 
     WATCHED=(('select.event','item +v'),(property_notifications.NAME,''))
 
+    def driven(items,keys):
+        """The type of the graph node wired to one of these inputs of any of the items, or None: such an input is the
+        graph's, greyed here, and a value typed in would have cut the wire."""
+        for item in items:
+            for key in keys:
+                found=material_override.driver(item,key)
+                if found:return found
+        return None
+
+    def refuse(found,key):
+        raise ValueError('%s is driven by a %s node in the graph editor: disconnect it there to set a value here.'%(key.replace('_',' ').capitalize(),found))
+
     def command(shader,key,spec):
         kind=spec['type']
         # What is not kept is what the material starts with: MoonRay's default, or the plugin's own start.
@@ -75,7 +87,9 @@ def register():
                 self.dyna_Add('value',argument)
                 self.basic_SetFlags(0,lx.symbol.fCMDARG_QUERY)
             def cmd_Flags(self):return lx.symbol.fCMD_MODEL|lx.symbol.fCMD_UNDO
-            def basic_Enable(self,msg):return bool(matching(shader))
+            def basic_Enable(self,msg):
+                items=matching(shader)
+                return bool(items) and not driven(items,(key,))
             def arg_UIValueHints(self,index):
                 return _same(Hints,WATCHED,labels if how=='choice' else ())
             def cmd_Query(self,index,query):
@@ -95,6 +109,8 @@ def register():
             def basic_Execute(self,msg,flags):
                 items=matching(shader)
                 if not items:raise ValueError('Select a '+shader+' material')
+                found=driven(items,(key,))
+                if found:refuse(found,key)
                 if how=='boolean':value=bool(self.dyna_Int(0))
                 elif how=='choice':
                     index=self.dyna_Int(0)
@@ -136,7 +152,9 @@ def register():
                 self.dyna_Add('value',lx.symbol.sTYPE_FLOAT)
                 self.basic_SetFlags(0,lx.symbol.fCMDARG_QUERY)
             def cmd_Flags(self):return lx.symbol.fCMD_MODEL|lx.symbol.fCMD_UNDO
-            def basic_Enable(self,msg):return bool(matching(shader))
+            def basic_Enable(self,msg):
+                items=matching(shader)
+                return bool(items) and not driven(items,(key,))
             def arg_UIValueHints(self,index):return _same(Hints,WATCHED)
             def cmd_Query(self,index,query):
                 values=lx.object.ValueArray(query)
@@ -146,6 +164,8 @@ def register():
             def basic_Execute(self,msg,flags):
                 items=matching(shader)
                 if not items:raise ValueError('Select a '+shader+' material')
+                found=driven(items,(key,))
+                if found:refuse(found,key)
                 number=float(self.dyna_Float(0));updates=[]
                 for item in items:
                     settings=properties.read(item);parameters=settings.setdefault('native_parameters',{})
@@ -298,12 +318,16 @@ def register():
         schema=shader_library.catalog()[shader]['attributes']
         class Ramp(lxu.command.BasicCommand):
             def cmd_Flags(self):return lx.symbol.fCMD_MODEL|lx.symbol.fCMD_UNDO
-            def basic_Enable(self,msg):return bool(matching(shader))
+            def basic_Enable(self,msg):
+                items=matching(shader)
+                return bool(items) and not driven(items,keys)
             def basic_Execute(self,msg,flags):
                 from PySide2 import QtWidgets
                 from moonray_modo.ramp_editor import RampDialog
                 items=matching(shader)
                 if not items:raise ValueError('Select a '+shader+' material')
+                found=driven(items,keys)
+                if found:refuse(found,keys[0])
                 held=properties.read(items[0]).get('native_parameters',{})
                 lists=[held.get(key,node_defaults.value(schema[key])) or [] for key in keys]
                 if len({len(v) for v in lists})!=1:lists=[[],[],[]]
