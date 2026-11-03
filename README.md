@@ -11,7 +11,19 @@ The plugin includes CPU, XPU and XPU2 rendering, a dockable live preview with a 
 
 **Current version: 0.5.2.1 — pre-production release, a hotfix to 0.5.** The plugin is no longer experimental. 0.5 brought **MoonRay XPU2**, a new GPU renderer for previews in which the processor and the graphics card work on the same picture at once, now the default; realtime that keeps up with heavy scenes and a Scene cache; Modo's procedural textures worked out through the object, 145 of Modo's Enhance textures among them; Modo's light volumetrics and fog; and MoonLightIPR starting in seconds. Install the new runtime with it.
 
-[Download 0.5.2.1: the kit, the Windows runtime and the MoonRay content](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.5.2.1) · [Installation instructions](docs/INSTALLATION.md) · [What's new in 0.5](docs/WHATS_NEW_05.md) · [What's new in 0.4 to 0.4.3.1](docs/WHATS_NEW_04.md) · [MoonRay's features in the plugin](#moonrays-features-in-the-plugin) · [Modo's features in the plugin](#modos-features-in-the-plugin) · [Engineers' notes: where the plugin changes MoonRay](patches/native-windows/README.md)
+· [Download 0.5.2.1: the kit, the Windows runtime and the MoonRay content](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.5.2.1)
+
+· [Installation instructions](docs/INSTALLATION.md) 
+
+· [What's new in 0.5](docs/WHATS_NEW_05.md) 
+
+· [What's new in 0.4 to 0.4.3.1](docs/WHATS_NEW_04.md) 
+
+· [MoonRay's features in the plugin](#moonrays-features-in-the-plugin) 
+
+· [Modo's features in the plugin](#modos-features-in-the-plugin) 
+
+· [Engineers' notes: where the plugin changes MoonRay](patches/native-windows/README.md)
 
 Work on the next version goes on in the [MoonLightIPR branch](https://github.com/Pbaroque20/MoonRayForModo/tree/MoonLightIPR).
 
