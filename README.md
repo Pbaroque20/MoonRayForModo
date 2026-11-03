@@ -35,7 +35,7 @@ Work on the next version goes on in the [MoonLightIPR branch](https://github.com
 
 ![Cellular automata scheduling in XPU2](docs/images/xpu2-cellular-scheduling.gif)
 
-*Cellular automata scheduling in XPU2. Both CPU/GPU contribute asynchronously towards the image.*
+*Cellular automata scheduling in XPU2. Both CPU/GPU contribute asynchronously towards the image. Footage provided by Pixelwerk.*
 
 - **MoonRay XPU2**: a new hybrid renderer for previews. The processor and the graphics card work on the same picture at once, samples go where the picture is still noisy, and its pictures settle to MoonRay's own. Final renders come from MoonRay. *XPU2: Asynchronous Monte Carlo Path Tracer designed by Raphael Tobar. Not affiliated with or endorsed by DreamWorks Animation.* (Core architecture information can be found in [xpu2-foundation](https://github.com/Pbaroque20/xpu2-foundation).)
 - **MoonLightIPR**: the plugin's own GPU preview engine (NVIDIA), which shows an approximation of MoonRay's picture moments after each edit. Final renders always come from MoonRay.
