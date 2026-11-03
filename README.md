@@ -56,6 +56,12 @@ A hotfix to 0.5.1, with a new runtime ZIP: install both, and **Compile XPU2 Shad
   Lights seen by the camera in light outputs, in MoonRay Source Overrides, is on by default. EXRs with alpha now hold this channel too.
 - **Round lights under an unevenly scaled parent stay on**: a disk, sphere, spot or cylinder light there now renders round, at the mean of
   its scales, in every engine. MoonRay would have switched it off, and XPU2 refused the scene.
+- **XPU2 needs about half the graphics card's memory**: a simple scene went from about 11 GB to 4.5 GB, at the same speed and
+  with the same picture, so XPU2 runs on smaller graphics cards. Needs the new runtime, and Compile XPU2 Shaders once more.
+- **Moving subdivision surfaces render in XPU2**: a moving mesh with adaptive subdivision, and copies of a subdivision mesh
+  that changes shape during the shutter, no longer send the scene to MoonRay XPU.
+- **A still mesh is no longer taken for a moving one**: XPU2 sent some scenes with motion blur to MoonRay XPU for meshes that
+  do not change shape.
 
 ## New in 0.5.1
 
