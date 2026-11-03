@@ -184,6 +184,8 @@ def bindings(material, index, lines, glass=False, absorption=False, separate_mas
         if layer.get('corrections'):
             from .texture_controls import emit as correct
             foreground=correct(foreground,layer['corrections'],node,number)
+        # Bias and gain only where they are set: both clamp to 0 to 1 (RemapMap's clamp, ModoTextureMap's layerGain),
+        # so written at a half they would cut an HDR image's brights, unlike the corrections (texture_controls.emit).
         if kind not in ('checker','noise') and layer.get('bias',.5)!=.5:
             foreground=node('RemapMap',{'input':foreground,'midpoint_bias':number(layer['bias'])})
         if kind not in ('checker','noise') and layer.get('gain',.5)!=.5:

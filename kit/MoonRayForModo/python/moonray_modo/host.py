@@ -147,6 +147,20 @@ def render_visible(item):
     return True
 
 
+def worn_tags(found):
+    """The material tags a reading's meshes, extra geometry (fur, curves, points, volumes) and native shapes wear, and
+    '' (the base material, which every surface not otherwise tagged wears)."""
+    worn = {''}
+    for mesh in found.get('meshes') or []:
+        worn.update(mesh.get('face_materials') or [mesh.get('material', '')])
+    for extra in found.get('extra_geometry') or []:
+        worn.add(extra.get('material', ''))
+    for entity in found.get('entities') or []:
+        worn.add((entity.get('parameters') or {}).get('modo_material') or '')
+    worn.discard(None)
+    return worn
+
+
 def unworn(scene, result, warnings):
     """Say where a MoonRay material is on nothing: it sits in a group for a material tag that no polygon being
     rendered carries, as happens when a material is dragged into another group after being assigned. It then renders
@@ -335,6 +349,14 @@ def camera_motion_blur(scene):
 
 
 def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=False,dirty_meshes=None,shading_kept=False):
+    """The scene as MoonRay is to be given it. The Shader Tree's order and its layer masks are found once for the
+    reading (layers.held_tree), not again for each material's stack."""
+    from .layers import held_tree
+    with held_tree():
+        return _snapshot(evaluated_geometry,reuse_geometry,refresh_materials,dirty_meshes,shading_kept)
+
+
+def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=False,dirty_meshes=None,shading_kept=False):
     scene = modo.Scene()
     try:
         from . import modo_color
@@ -444,9 +466,14 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
         warnings.extend(reuse_geometry.get('warnings',[]))
     else:
         material_candidates = {}
+        # An edit of materials, the meshes kept: only the materials something rendered wears are read. A material on
+        # hidden meshes alone had its Shader Tree stack and its images read at every edit of any other (Modo's
+        # Shader Tree is slow to ask). A mesh shown or hidden, or tagged anew, is a reading of the whole scene.
+        worn = worn_tags(reuse_geometry) if reuse_geometry is not None and refresh_materials and not evaluated_geometry else None
         from . import left_out
         warnings.extend(left_out.group_blends(scene.items('mask',superType=False),channel))
-        for material in reversed(list(ordered_items(scene.renderItem))):
+        from .layers import ordered
+        for material in reversed(ordered(scene.renderItem)):
             from .materials import active as material_active
             unread = left_out.unread_material(material,channel)
             if unread:
@@ -459,7 +486,7 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
                 if not evaluated_geometry:
                     warnings.append('Material %s: %s' % (material.name, exc))
                 continue
-            if tag is None:
+            if tag is None or (worn is not None and tag not in worn):
                 continue
             material_candidates.setdefault(tag,[]).append(material)
             result['materials'][tag] = material_values(material)
@@ -933,6 +960,11 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
                         'Set a smoothing angle in the MoonRay material settings to hold it.'
                         % (SMOOTHING_ANGLE_FACES, ', '.join(smoothed_whole[:6]) + (' ...' if len(smoothed_whole) > 6 else '')))
     unworn(scene, result, warnings)
+    # The materials nothing rendered wears are not handed on: their images were made ready for MoonRay (maketx) and
+    # MoonLightIPR all the same, a hidden mesh's textures among them.
+    if result.get('meshes'):
+        worn = worn_tags(result)
+        result['materials'] = {tag: material for tag, material in result['materials'].items() if tag in worn}
     result['cryptomatte_objects'] = cryptomatte_objects(scene)
     result['warnings'] = sorted(set(warnings))
     return result

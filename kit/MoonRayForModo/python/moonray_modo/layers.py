@@ -14,9 +14,53 @@ def ordered_items(parent):
         yield item
         yield from ordered_items(item)
 
+# The Shader Tree as found once for one reading of the scene (held_tree): each material's stack walked the whole tree
+# again with Modo's calls, and asked each layer's siblings for its mask's target, so that a scene of many materials and
+# layers took materials times layers to read at every edit of one of them.
+_HELD = None
+_DEPTH = 0
+
+
+class held_tree:
+    """While a reading of the scene lasts (host.snapshot), which changes nothing in it: the tree's order, its layer
+    masks' targets and what stands above its Base Shader are found once and kept."""
+    def __enter__(self):
+        global _HELD, _DEPTH
+        if _DEPTH == 0:
+            _HELD = {}
+        _DEPTH += 1
+        return self
+
+    def __exit__(self, *args):
+        global _HELD, _DEPTH
+        _DEPTH -= 1
+        if _DEPTH == 0:
+            _HELD = None
+        return False
+
+
+def ordered(render):
+    """list(ordered_items(render)), found once while held_tree holds."""
+    if _HELD is None:
+        return list(ordered_items(render))
+    key = ('ordered', render.id)
+    if key not in _HELD:
+        _HELD[key] = list(ordered_items(render))
+    return _HELD[key]
+
+
 def above_shader(render):
     """The items at the top of the Shader Tree that sit above its topmost Base Shader, which Modo does not apply to
     any surface (render outputs, which are not layers, aside)."""
+    if _HELD is not None:
+        key = ('above', render.id)
+        if key not in _HELD:
+            _HELD[key] = _above_shader(render)
+        return _HELD[key]
+    return _above_shader(render)
+
+
+def _above_shader(render):
     children = list(render.children())  # bottom first
     shaders = [i for i, item in enumerate(children) if item.type == 'defaultShader']
     if not shaders:
@@ -25,6 +69,14 @@ def above_shader(render):
 
 
 def layer_mask_target(layer,channel):
+    if _HELD is not None:
+        key=('mask',layer.id)
+        if key not in _HELD:_HELD[key]=_layer_mask_target(layer,channel)
+        return _HELD[key]
+    return _layer_mask_target(layer,channel)
+
+
+def _layer_mask_target(layer,channel):
     if channel(layer,'effect','')!='layerMask' or not layer.parent:return ''
     siblings=list(reversed(list(layer.parent.children())))
     index=next((i for i,item in enumerate(siblings) if item.id==layer.id),-1)
@@ -70,7 +122,7 @@ def texture_groups(layer, channel, stop_type='polyRender'):
 
 def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, material_key=None):
     from .host import channel, color
-    items = list(ordered_items(scene.renderItem))
+    items = ordered(scene.renderItem)
     positions = {item.id:i for i,item in enumerate(items)}
     by_id = {item.id:item for item in items}
     ignored = above_shader(scene.renderItem)
@@ -296,8 +348,8 @@ def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, mat
 def material_stack(scene, candidates, warnings, tag, membership=None):
     """Partition channel layers at material boundaries, then emit bottom to top."""
     from .host import material_values, channel
-    ordered = list(ordered_items(scene.renderItem))
-    positions = {item.id:i for i,item in enumerate(ordered)}
+    tree = ordered(scene.renderItem)
+    positions = {item.id:i for i,item in enumerate(tree)}
     candidates = sorted(candidates, key=lambda item:positions[item.id])
     result = []
     captured_group_masks=set()
@@ -307,7 +359,7 @@ def material_stack(scene, candidates, warnings, tag, membership=None):
         value['material_groups'] = texture_groups(base, channel) or []
         allowed = set()
         upper = positions[candidates[index-1].id] if index else -1
-        for layer in ordered[upper+1:positions[base.id]]:
+        for layer in tree[upper+1:positions[base.id]]:
             if membership is not None and layer.id not in membership:
                 continue
             try:
@@ -316,7 +368,7 @@ def material_stack(scene, candidates, warnings, tag, membership=None):
             except ValueError:
                 continue
         scope_ids={group['id'] for group in value['material_groups']}
-        for layer in ordered:
+        for layer in tree:
             target=layer_mask_target(layer,channel)
             if membership is not None and layer.id not in membership:continue
             if target==base.id:allowed.add(layer.id)

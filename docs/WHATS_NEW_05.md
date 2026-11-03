@@ -2,9 +2,19 @@
 
 0.5 is a **pre-production release**: the plugin is no longer experimental, and it brings a new GPU renderer, MoonRay XPU2.
 
-## Coming in 0.5.2.2
+## Coming in 0.5.2.3
 
 The next hotfix, to the kit alone: the runtime of 0.5.2.1 stays.
+
+- **Look-dev is lighter on Modo**: a change in the graph editor is a material's edit, not a reading of the whole scene with its meshes; values stepping in the graph editor are written at most every 150 ms; the Shader Tree is walked once for a reading, not once for each material; and the check of the scene's texture files runs beside Modo, not on its thread once a second.
+- **Hidden meshes' materials are left alone**: a material worn only by hidden meshes is not read at each edit of another, and its images are not made ready for rendering.
+- **Low Value, High Value and the texture corrections change without a reload**: gamma, brightness, contrast and Low and High Value are the same nodes whatever their values, so a change is a value MoonRay's session takes as it is, where moving one to or from its default loaded the whole scene again (twenty seconds on a heavy one).
+- **An input wired in the graph editor is locked in Properties**: it is greyed there, and setting it can no longer cut the wire.
+- **A material node's inputs in folding groups**: Diffuse, Specular, Clearcoat, Fuzz, Glitter and the rest, as Properties has them; click a group to open or fold it; connected inputs always show.
+
+## New in 0.5.2.2
+
+A hotfix to 0.5.2.1, to the kit alone: the runtime of 0.5.2.1 stays.
 
 - **Smart Render and Safe Denoising follow the renderer chosen**: switching Preferences > MoonRay > XPU2 to MoonRay XPU makes them editable in the Render item at once, and they work in Vector and Scalar mode whichever renderer is chosen. Smart Render chosen from the picture's menu with the Denoiser off sets one, OptiX with an NVIDIA graphics card and Open Image Denoise without, and the foot of the picture says when Smart Render is not applied.
 - **Render over a draft renders at the first press**: pressed while Draft is still drawing its lines, it stopped the draft and had to be pressed again; now the draft stops and the region renders, with MoonRay XPU and XPU2.

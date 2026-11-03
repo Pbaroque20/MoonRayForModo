@@ -33,6 +33,39 @@ def _synchronized(result,graph):
                   native_shader=shader,native_parameters=parameters,shader='DwaBaseMaterial')
     return result
 
+# The inputs of a material's output node wired in its graph, by the material's tag as it stands: asked by every control
+# of the Properties panel each time the panel looks again, so read once for each version of the tag.
+_DRIVEN={}
+
+def driven_inputs(text):
+    """{input: the type of the node wired to it} of the graph's output node, overrides applied, for a material's tag
+    text (properties.TAG); {} where there is no graph."""
+    held=_DRIVEN.get(text)
+    if held is None:
+        held={}
+        try:
+            import json
+            from . import nodes
+            data=json.loads(text) if text else {}
+            graph=data.get('node_graph') if isinstance(data,dict) and enabled(data) else None
+            if graph:
+                resolved=nodes.effective(graph);graph_nodes=resolved['nodes']
+                for key,source in (graph_nodes[resolved['root']].get('inputs') or {}).items():
+                    if source is not None and source in graph_nodes:held[key]=str(graph_nodes[source].get('type',''))
+        except Exception:
+            held={}
+        if len(_DRIVEN)>2048:_DRIVEN.clear()
+        _DRIVEN[text]=held
+    return held
+
+def driver(item,key):
+    """The type of the node in the graph that drives this input of the material item, or None where nothing does: its
+    value is then the graph's, not one to type in Properties."""
+    from . import properties
+    try:text=item.readTag(properties.TAG)
+    except (LookupError,RuntimeError,AttributeError,TypeError):return None
+    return driven_inputs(text).get(key)
+
 def effective(settings):
     result=copy.deepcopy(settings)
     if not enabled(result):

@@ -20,8 +20,12 @@ import lx
 WIDTH,HEADER,ROW=190,24,20
 # Inputs shown on a node that has more; the rest are a click away.
 SHOWN=6
+# A node with more inputs than this, in more than one group (a material), shows them in its groups (port_rows).
+GROUPED_FROM=12
 # The property groups open in the graph editor for a kind of node never folded or unfolded yet; the rest start folded.
 OPEN_GROUPS=('diffuse','specular')
+# How often a value changing in the editor is written to the material, at most, in milliseconds (publish_soon).
+PUBLISH_EVERY=150
 
 
 def grouped(kind):
@@ -88,6 +92,36 @@ class Toggle(QtWidgets.QGraphicsSimpleTextItem):
         QtCore.QTimer.singleShot(0,lambda editor=self.editor,identity=self.identity:editor.toggle_expanded(identity))
 
 
+class GroupToggle(QtWidgets.QGraphicsSimpleTextItem):
+    """A group's line among a node's inputs (Diffuse, Specular, Clearcoat ...), as the Properties panel groups them:
+    clicked, the group's inputs are put away, but for those connected, or brought back."""
+    def __init__(self,editor,kind,group,words,parent):
+        super().__init__(words,parent)
+        self.editor,self.kind,self.group=editor,kind,group
+        self.setBrush(QtGui.QColor(TEXT_DIM));self.setCursor(QtCore.Qt.PointingHandCursor)
+        font=self.font();font.setBold(True);font.setPointSizeF(max(6.0,font.pointSizeF()-1));self.setFont(font)
+        self.setToolTip('Click to show or put away the %s inputs; connected ones are always shown'%group)
+    def mousePressEvent(self,event):
+        event.accept()
+        # The node is rebuilt, and this item with it, once the click has been dealt with.
+        QtCore.QTimer.singleShot(0,lambda editor=self.editor,kind=self.kind,group=self.group:editor.fold_port_group(kind,group))
+
+
+def port_rows(kind,ports,authored,folded):
+    """A node's input rows in its groups: [('group', name, connected, of)] then [('port', key)] for each input of the
+    group shown, all of an open group's and only the connected ones of a folded group. None for a kind whose inputs are
+    in one group, which keeps its plain list."""
+    order=[(key,group) for key,(group,) in grouped(kind) if key in ports]
+    if not order or order[0][1] is None:return None
+    rows=[]
+    for name in dict.fromkeys(group for _,group in order):
+        members=[key for key,group in order if group==name]
+        connected=[key for key in members if key in authored]
+        rows.append(('group',name,len(connected),len(members)))
+        rows.extend(('port',key) for key in (connected if name in folded else members))
+    return rows
+
+
 # How long the list of properties is filled for before the window is let answer, in seconds.
 FILL_SLICE=.008
 
@@ -101,10 +135,18 @@ class Node(QtWidgets.QGraphicsRectItem):
         authored=list(value.get('inputs',{}))
         ports=authored+[key for key in ports if key not in authored]
         expanded=identity in editor.expanded or editor.show_all.isChecked()
-        shown=ports if expanded else ports[:max(SHOWN,len(authored))]
-        self.hidden_ports=len(ports)-len(shown)
-        foot=bool(self.hidden_ports) or (identity in editor.expanded and len(ports)>SHOWN)
-        height=HEADER+len(shown)*ROW+(ROW if foot else 0)+8
+        # A material's long list of inputs in its groups, each folded away but for its connected inputs (port_rows); a
+        # node shown whole (Show All Inputs, or its own) has every group open.
+        folds=set() if expanded else editor.port_folds(kind)
+        rows=port_rows(kind,ports,authored,folds) if len(ports)>GROUPED_FROM else None
+        if rows is not None:
+            shown=[row[1] for row in rows if row[0]=='port'];self.hidden_ports=0;foot=False
+        else:
+            shown=ports if expanded else ports[:max(SHOWN,len(authored))]
+            self.hidden_ports=len(ports)-len(shown)
+            foot=bool(self.hidden_ports) or (identity in editor.expanded and len(ports)>SHOWN)
+            rows=[('port',key) for key in shown]
+        height=HEADER+len(rows)*ROW+(ROW if foot else 0)+8
         # A texture node shows what it makes beneath its inputs (node_previews).
         previews=getattr(editor,'previews',None)
         self.previewed=previews is not None and previews.wanted(identity)
@@ -128,14 +170,21 @@ class Node(QtWidgets.QGraphicsRectItem):
         title=text(self,value.get('label',kind),TEXT,10,4,WIDTH-24-(badge.boundingRect().width()+8 if badge else 0))
         if not title.toolTip():title.setToolTip(kind)
         self.sockets={None:Socket(editor,identity,None,self)};self.sockets[None].setPos(WIDTH,HEADER/2)
-        for index,key in enumerate(shown):
+        for index,row in enumerate(rows):
             y=HEADER+4+index*ROW
+            if row[0]=='group':
+                _,name,connected,of=row
+                opened=name not in folds
+                words='%s %s'%('▾' if opened else '▸',name)+(' (%d/%d)'%(connected,of) if connected else ' (%d)'%of)
+                GroupToggle(editor,kind,name,words,self).setPos(8,y+3)
+                continue
+            key=row[1]
             label=text(self,key.replace('_',' '),TEXT if key in authored else TEXT_PORT,12,y+2,WIDTH-22,size=-1);label.setToolTip(key)
             socket=Socket(editor,identity,key,self);socket.setPos(0,y+ROW/2);self.sockets[key]=socket
         if foot:
             words=('+ %d more inputs'%self.hidden_ports) if self.hidden_ports else '- fewer inputs'
             toggle=Toggle(editor,identity,words,self);font=toggle.font();font.setPointSizeF(max(6.0,font.pointSizeF()-1));toggle.setFont(font)
-            toggle.setPos(12,HEADER+6+len(shown)*ROW)
+            toggle.setPos(12,HEADER+6+len(rows)*ROW)
         self.preview=None
         if self.previewed:self.show_preview(None,waiting=True)
         self.setPos(*value.get('position',[0,0]))
@@ -626,7 +675,16 @@ class Editor(QtWidgets.QDialog):
                 edge=self.canvas.addPath(path,pen);edge.setZValue(-1);edge.connection=(identity,key);edge.setToolTip('Right-click to disconnect '+key);self.links.append(edge)
     def remember(self,before):
         if before!=self.graph:self.undo_states.append(before);self.undo_states=self.undo_states[-50:];self.redo_states=[]
-        self.material_preview.graph_changed(self.graph);self.publish_draft()
+        self.material_preview.graph_changed(self.graph);self.publish_soon()
+    def publish_soon(self):
+        """publish_draft for a value as it changes (a spin box steps, a field is typed in): at most once in PUBLISH_EVERY,
+        the last value always. Written at every step, each wrote the material and had the preview follow it, which a
+        held arrow or a fast scroll made into a queue of renders behind the hand."""
+        timer=getattr(self,'_publish_timer',None)
+        if timer is None:
+            timer=self._publish_timer=QtCore.QTimer(self);timer.setSingleShot(True);timer.setInterval(PUBLISH_EVERY)
+            timer.timeout.connect(self.publish_draft)
+        if not timer.isActive():timer.start()
     def draft_settings(self):
         """The material's settings with the graph as it stands."""
         settings=copy.deepcopy(properties.read(self.item))
@@ -656,6 +714,9 @@ class Editor(QtWidgets.QDialog):
         """The material was written; if not by this window, show what it holds now."""
         from shiboken2 import isValid
         if self.writing or not isValid(self) or self.busy:return
+        # A value of this window's is still to be written (publish_soon): the window's graph is the newer.
+        timer=getattr(self,'_publish_timer',None)
+        if timer is not None and timer.isActive():return
         try:stored=self.stored_graph()
         except (RuntimeError,LookupError):return
         if stored==self.graph:return
@@ -699,6 +760,18 @@ class Editor(QtWidgets.QDialog):
     def toggle_expanded(self,identity):
         if identity in self.expanded:self.expanded.discard(identity)
         else:self.expanded.add(identity)
+        self.rebuild()
+    def port_folds(self,kind):
+        """The groups of a kind of node whose inputs are put away on its nodes (GroupToggle), as last left: kept for each
+        kind, apart from the property table's. A kind never folded or unfolded yet has only Diffuse and Specular open."""
+        settings=QtCore.QSettings('MoonRayForModo','GraphEditor')
+        if not settings.contains('ports/'+kind):
+            return {group for _,(group,) in grouped(kind) if group is not None and group.casefold() not in OPEN_GROUPS}
+        return {name for name in str(settings.value('ports/'+kind,'') or '').split('|') if name}
+    def fold_port_group(self,kind,group):
+        """A group's line on a node was clicked: its inputs are put away on every node of the kind, or brought back."""
+        folded=self.port_folds(kind);folded^={group}
+        QtCore.QSettings('MoonRayForModo','GraphEditor').setValue('ports/'+kind,'|'.join(sorted(folded)) or '|')
         self.rebuild()
     def quick_add(self,scene_point=None,global_point=None,connect=None):
         """Open the add-node search at a point; connect names the input the new node will feed."""
@@ -1213,7 +1286,7 @@ class Editor(QtWidgets.QDialog):
             del blocker
             # Scalar edits do not change the node layout. Keep the active Qt
             # cell editor alive until its delegate has finished committing.
-            self.edges();self.material_preview.graph_changed(self.graph);self.publish_draft()
+            self.edges();self.material_preview.graph_changed(self.graph);self.publish_soon()
         except (ValueError,TypeError) as exc:
             self.graph=old
             # No modal dialog or table destruction inside setModelData: both

@@ -33,6 +33,18 @@ class Changes(lxifc.SceneItemListener):
         for item in (source,target):
             identity=self._place(item)
             if identity is not None:self.items.add(identity)
+    def tagged(self,item,*args):
+        """A tag set on an item: on a material, its MoonRay settings and graph (properties.TAG), which the graph editor and
+        the Properties panel write at every change. That is the material's edit like a channel's, told as one (the edit is
+        then the materials', incremental.classify): taken for a change to the scene, each step of a value in the graph
+        editor read the whole scene again, meshes and all. On anything else a tag may say anything: the scene is read."""
+        try:
+            item=lx.object.Item(item)
+            kind=lx.service.Scene().ItemTypeName(item.Type())
+            from .incremental import MATERIALS
+            if kind in MATERIALS or kind.startswith('material.'):self.items.add(item.Ident())
+            else:self.full=True
+        except (RuntimeError,LookupError,TypeError):self.full=True
     def sil_ChannelValue(self,action,item,index):
         try:
             item=lx.object.Item(item)
@@ -60,7 +72,7 @@ class Changes(lxifc.SceneItemListener):
     sil_ItemLocal=invalidate
     sil_ItemSource=invalidate
     sil_ItemPackage=invalidate
-    sil_ItemTag=invalidate
+    sil_ItemTag=tagged
     sil_ItemRemoveChannel=invalidate
     sil_LinkAdd=joined
     sil_LinkRemAfter=invalidate
