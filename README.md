@@ -6,6 +6,21 @@ This is the development branch of [MoonRay for Modo](https://github.com/Pbaroque
 
 The current release is [0.5.2](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.5.2). **Built on MoonRay [2026.29.1](https://github.com/dreamworksanimation/openmoonray/releases/tag/v2026.29.1)** (OpenMoonRay's latest release; MoonRay 18.4), with the plugin's own patches for Windows and the preview.
 
+## Coming in 0.5.2.1
+
+The next hotfix, with a new runtime: install both, and **Compile XPU2 Shaders once more**.
+
+- **Playblasts render flat out**: each frame gathers all its samples as fast as the graphics card can, without the 8 seconds a preview spreads a render over, and previews keep that pacing for drags.
+- **dw Perspective and Orthographic cameras use the Modo camera's lens**: focal length, film, offsets, depth of field, F-stop, focus distance, iris blades, stereo eye and shutter are edited in the camera's own Camera and Camera Effects tabs. The switch heads the dwPerspectiveCamera tab; turn it off to use the MoonRay values there, as scenes from before do.
+- **Saved pictures keep their alpha**: with Alpha among the render's outputs, Save Image and Export AOVs save the Beauty and the Denoised Beauty with it, as PNG, TIFF, Targa or OpenEXR. Export AOVs can also save every output ticked as one multilayer OpenEXR, and a group's own checkbox (Pictures, Light and the rest) ticks and unticks what is under it.
+- **MoonRay starts whatever is in the Windows PATH**: a file in it, such as `cmd.exe`, no longer stops every preview and scene load with "Not a directory".
+- **XPU2 needs about half the graphics card's memory**: a simple scene went from about 11 GB to 4.5 GB, at the same speed and
+  with the same picture, so XPU2 runs on smaller graphics cards.
+- **Moving subdivision surfaces render in XPU2**: a moving mesh with adaptive subdivision, and copies of a subdivision mesh
+  that changes shape during the shutter, no longer send the scene to MoonRay XPU.
+- **A still mesh is no longer taken for a moving one**: XPU2 sent some scenes with motion blur to MoonRay XPU for meshes that
+  do not change shape.
+
 ## New in 0.5.2
 
 A hotfix to 0.5.1, with a new runtime ZIP: install both, and **Compile XPU2 Shaders once more**.
@@ -25,10 +40,6 @@ A hotfix to 0.5.1, with a new runtime ZIP: install both, and **Compile XPU2 Shad
 - **Realtime Sample % starts at 30%**, so realtime settles sooner. A value you set is saved with the scene, and a scene that already has one keeps it.
 - **The graph editor's marquee starts at once**: it draws from the first pixel, and the property list fills when you let go, so clicking and marquee selecting no longer pause.
 - **Playblasts show motion blur**: when Motion Blur is on in the scene or its camera, or in MoonLightIPR's Preview Preferences.
-- **Playblasts render flat out**: each frame gathers all its samples as fast as the graphics card can, without the 8 seconds a preview spreads a render over, and previews keep that pacing for drags.
-- **dw Perspective and Orthographic cameras use the Modo camera's lens**: focal length, film, offsets, depth of field, F-stop, focus distance, iris blades, stereo eye and shutter are edited in the camera's own Camera and Camera Effects tabs. The switch heads the dwPerspectiveCamera tab; turn it off to use the MoonRay values there, as scenes from before do.
-- **Saved pictures keep their alpha**: with Alpha among the render's outputs, Save Image and Export AOVs save the Beauty and the Denoised Beauty with it, as PNG, TIFF, Targa or OpenEXR. Export AOVs can also save every output ticked as one multilayer OpenEXR, and a group's own checkbox (Pictures, Light and the rest) ticks and unticks what is under it.
-- **MoonRay starts whatever is in the Windows PATH**: a file in it, such as `cmd.exe`, no longer stops every preview and scene load with "Not a directory".
 - **Hues and angles have a slider in the graph editor**: hue shift, rotation and the other values that go round a circle, beside their number.
 - **The Toon filter's form** has Close Line Gaps, which it was missing, and its later controls change the right settings again.
 - **Sliders in the compositor**: Blur, Glow, Sharpen and Median radius and Vignette have a slider beside their number.
@@ -57,12 +68,6 @@ A hotfix to 0.5.1, with a new runtime ZIP: install both, and **Compile XPU2 Shad
   Lights seen by the camera in light outputs, in MoonRay Source Overrides, is on by default. EXRs with alpha now hold this channel too.
 - **Round lights under an unevenly scaled parent stay on**: a disk, sphere, spot or cylinder light there now renders round, at the mean of
   its scales, in every engine. MoonRay would have switched it off, and XPU2 refused the scene.
-- **XPU2 needs about half the graphics card's memory**: a simple scene went from about 11 GB to 4.5 GB, at the same speed and
-  with the same picture, so XPU2 runs on smaller graphics cards. Needs the new runtime, and Compile XPU2 Shaders once more.
-- **Moving subdivision surfaces render in XPU2**: a moving mesh with adaptive subdivision, and copies of a subdivision mesh
-  that changes shape during the shutter, no longer send the scene to MoonRay XPU.
-- **A still mesh is no longer taken for a moving one**: XPU2 sent some scenes with motion blur to MoonRay XPU for meshes that
-  do not change shape.
 
 ## New in 0.5.1
 

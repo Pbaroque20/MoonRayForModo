@@ -41,7 +41,7 @@ Do not install the runtime ZIP alone: the kit ZIP contains the Modo integration 
 
 If the MoonRay menu is missing, check the folder nesting and restart Modo. If the runtime cannot be found, select the folder containing `moonray.exe`. For render errors, open Render Log; avoid replacing individual DLLs with files from other runtime versions.
 
-If every preview and every `.rdla` fails at once with "filesystem error: directory iterator cannot open directory: Not a directory [...]", your Windows PATH names a file where it should name a folder (often `c:\Windows\System32\cmd.exe`). Releases up to 0.5.1 stop on it; 0.5.2 and later start anyway. On an older release, remove that entry from PATH (System Properties > Environment Variables, in both lists) and restart Modo.
+If every preview and every `.rdla` fails at once with "filesystem error: directory iterator cannot open directory: Not a directory [...]", your Windows PATH names a file where it should name a folder (often `c:\Windows\System32\cmd.exe`). Releases up to 0.5.2 stop on it; 0.5.2.1 and later start anyway. On an older release, remove that entry from PATH (System Properties > Environment Variables, in both lists) and restart Modo.
 
 To roll back, close Modo, move the new kit outside `Kits`, and restore your backed-up kit. If you changed the runtime path, restore that path too. Only one MoonRay kit should remain under `Kits`.
 
