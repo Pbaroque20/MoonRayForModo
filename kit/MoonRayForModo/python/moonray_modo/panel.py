@@ -421,7 +421,7 @@ class Panel(Tools, QtWidgets.QWidget):
         # Smart Render is MoonRay's: greyed while XPU2 renders the preview.
         try:
             from . import native
-            if native.xpu2():smart.setEnabled(False);smart.setToolTip("Smart Render is MoonRay's; XPU2 renders the preview.")
+            if self._xpu2_previews():smart.setEnabled(False);smart.setToolTip("Smart Render is MoonRay's; XPU2 renders the preview.")
         except Exception:pass
         menu.addMenu(smart);self._smart_menu=smart
         # Safe Denoising itself, chosen here as in the scene's render settings: off, or on with one denoiser or the
@@ -439,7 +439,7 @@ class Panel(Tools, QtWidgets.QWidget):
         # MoonRay's: greyed while XPU2 renders the preview, which is quick enough to need it no more.
         try:
             from . import native
-            if native.xpu2():safe.setEnabled(False);safe.setToolTip("Safe Denoising is MoonRay's; XPU2 renders the preview.")
+            if self._xpu2_previews():safe.setEnabled(False);safe.setToolTip("Safe Denoising is MoonRay's; XPU2 renders the preview.")
         except Exception:pass
         menu.addMenu(safe);self._safe_menu=safe
         menu.addSeparator()
@@ -866,12 +866,20 @@ class Panel(Tools, QtWidgets.QWidget):
             return words
         except Exception:return ''
 
+    def _xpu2_previews(self):
+        """Whether XPU2 renders this scene's preview: chosen in the preferences as they now stand, and the scene's
+        Rendering Mode XPU or Auto (native.xpu2_renders)."""
+        from . import native
+        try:return native.xpu2_renders(self._settings_values().get('execution_mode','auto'))
+        except Exception:return bool(native.xpu2())
+
     def _smart_on(self):
         """Whether Smart Render is on for the scene."""
         from . import denoising, native
         try:
-            if native.xpu2():return False
-            return denoising.settings(self._settings_values()['denoising'])['smart']!='off'
+            values=self._settings_values()
+            if native.xpu2_renders(values.get('execution_mode','auto')):return False
+            return denoising.settings(values['denoising'])['smart']!='off'
         except Exception:return False
 
     def _settings_values_stored(self):
@@ -939,12 +947,16 @@ class Panel(Tools, QtWidgets.QWidget):
             from .denoising import one_or_other
             stored=dict(self._settings_values()['denoising']);was=stored.get('safe');stored['smart']=level
             one_or_other(stored,'smart')
+            # Smart Render stops a render for the denoiser to finish (denoising.settings): with the Denoiser Off it was
+            # stored and never applied. Chosen here, it brings Open Image Denoise, which every machine has.
+            given=level!='off' and stored.get('engine','off')=='off'
+            if given:stored['engine']='oidn_cpu'
             if not self._store(denoising=stored):return
         except Exception as exc:
             self.status.setText('Cannot set Smart Render: '+str(exc));return
         self._hud_update()
         self.status.setText('Smart Render is off.' if level=='off' else 'Smart Render is on: a MoonRay render stops once it is clean enough for the denoiser.'
-                            +(' Safe Denoising is switched off.' if was else ''))
+                            +(' Safe Denoising is switched off.' if was else '')+(' The Denoiser is set to Open Image Denoise.' if given else ''))
 
     def _safe_chosen(self,engine):
         """Safe Denoising chosen from the picture's menu: off, or on with a denoiser. Written to the scene's settings,
@@ -970,11 +982,16 @@ class Panel(Tools, QtWidgets.QWidget):
             # And MoonRay's realtime under XPU2, by a preference of its own.
             if self._preview_blurred():words.append('Motion Blur')
             from . import native
+            xpu2=native.xpu2_renders(values.get('execution_mode','auto'))
             if self.preview_engine.currentData()=='moonray' and values['denoising'].get('safe') and values['denoising'].get('engine','off')!='off' \
-                    and not native.xpu2():
+                    and not xpu2:
                 words.append('Safe Denoiser')
             level=values['denoising'].get('smart','off')
-            if self.preview_engine.currentData()=='moonray' and level!='off':
+            # Not while XPU2 renders the preview: Smart Render is MoonRay's, and is not applied then (render.py).
+            # With the Denoiser Off it is not applied either (denoising.settings): said, not shown as if it were.
+            if self.preview_engine.currentData()=='moonray' and level!='off' and not xpu2 and values['denoising'].get('engine','off')=='off':
+                words.append('Smart Render: needs a Denoiser')
+            elif self.preview_engine.currentData()=='moonray' and level!='off' and not xpu2:
                 from .smart_render import LEVELS
                 watch=getattr(self.renderer,'smart',None)
                 read=getattr(watch,'noise',None) if self._rendering else None
@@ -982,6 +999,8 @@ class Panel(Tools, QtWidgets.QWidget):
                 # Before there is a reading (a pass's first seconds, while the picture is still coarse), it says so.
                 words.append('Smart Render: noise %.1f%%, stops at %.1f%%'%(100*read,100*LEVELS[level]) if read is not None
                              else 'Smart Render: stops at %.1f%% noise'%(100*LEVELS[level]) if self._rendering and watch is not None
+                             # A render under way with no watcher: this one is not stopped by it (render.py says why).
+                             else 'Smart Render: not watching this render' if self._rendering
                              else 'Smart Render')
         except Exception:pass
         return words
@@ -1467,6 +1486,19 @@ class Panel(Tools, QtWidgets.QWidget):
     # Rendering
 
     def _render_or_stop(self):
+        if self.draft.isChecked() and self._rendering and not self._following and not self._output_busy():
+            # The draft's lines are being drawn, the button saying Render over them (_set_rendering leaves it as it is
+            # while a draft redraws by itself): Render asks for the render, not a stop. As RT does (_rt_toggled), Draft
+            # goes off, the draft is stopped, and the render begins once it has; pressed, it stopped the draft and
+            # nothing more, and had to be pressed again once the lines were done.
+            self.draft.setChecked(False)
+            if self._rendering or getattr(self,'_stopping',False):
+                self._render_after_stop=True
+                if not getattr(self,'_stopping',False):self.stop()
+                if self._rendering or getattr(self,'_stopping',False):
+                    self.status.setText('Draft off: the render begins as the draft stops.');return
+                self._render_after_stop=False
+            self.start_render();return
         if self._rendering or self._following:
             if self.ipr_mode.isChecked():self.ipr_mode.setChecked(False)
             self.stop();self._sync_rt()
@@ -1508,6 +1540,10 @@ class Panel(Tools, QtWidgets.QWidget):
         if not self._rendering and getattr(self,'_rt_after_stop',False):
             self._rt_after_stop=False
             QtCore.QTimer.singleShot(0,lambda:None if self.disposed else self.rt.setChecked(True))
+        # And Render pressed over a draft that was drawing its lines (_render_or_stop): it begins now.
+        if not self._rendering and getattr(self,'_render_after_stop',False):
+            self._render_after_stop=False
+            QtCore.QTimer.singleShot(0,lambda:None if self.disposed or self._rendering else self.start_render())
         self.start.setEnabled(not getattr(self,'_stopping',False))
         # The mattes picked are of the picture there was: a new render takes them away, and they are laid over the new
         # picture when it is finished, where they are still in it.

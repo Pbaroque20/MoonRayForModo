@@ -91,7 +91,8 @@ def register():
                 if entry['key'] in ('smart_render','denoise_safe'):
                     try:
                         from moonray_modo import native
-                        if native.xpu2():return False
+                        mode=scene_settings.complete(properties.scene_settings()).get('execution_mode','auto')
+                        if native.xpu2_renders(mode):return False
                     except Exception:pass
                 if entry['key'] in NEEDS_DENOISER:
                     try:

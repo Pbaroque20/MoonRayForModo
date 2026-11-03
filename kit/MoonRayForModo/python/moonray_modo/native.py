@@ -447,6 +447,12 @@ def xpu2():
     return str(_setting('xpu2/renderer', 'xpu2')) == 'xpu2' and (xpu2_runtime() / 'moonray_xpu2.exe').is_file()
 
 
+def xpu2_renders(mode='auto'):
+    """Whether XPU2 renders a preview in this execution mode: chosen in the preferences, and the mode XPU or Auto. In
+    Vector or Scalar mode MoonRay renders it on the processor, with Smart Render and Safe Denoising."""
+    return str(mode or 'auto') in ('xpu', 'auto') and xpu2()
+
+
 def xpu2_chain():
     """Whether XPU2 makes an adaptive render's passes on the graphics card: quicker, without the outlines of the work,
     which are known only where the passes are made on the processor."""
