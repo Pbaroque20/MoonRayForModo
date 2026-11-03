@@ -14,7 +14,7 @@ The MoonShine Material properties section now has an inline type dropdown. Nativ
 
 Beauty now comes from a float linear EXR buffer. The display conversion removes coverage alpha before exposure, view transforms and PNG output; it never unpremultiplies or multiplies the already integrated environment RGB by alpha. This addresses the previous preview path's risk of bright silhouette fringes. Actual fringe removal remains unverified without a render comparison.
 
-The Color / LUT tab provides exposure, highlight compression plus sRGB (default), sRGB without compression, raw linear and an OCIO display/view. A custom OCIO config is optional; source, display and view names must exist in the chosen configuration. The render working space remains linear RGB; these controls do not convert the scene to ACEScg or import every Modo color-management preference.
+The Color / LUT tab provides exposure, highlight compression plus sRGB (default), sRGB without compression, raw linear and an OCIO display/view. A custom OCIO config is optional; source, display and view names must exist in the chosen configuration. The render working space is the scene's, or the Render working space preference for a scene that has none; these controls do not convert the scene to ACEScg or import every Modo color-management preference.
 
 Optional LUT files can operate on scene-linear RGB before the view or display RGB afterward. Select the placement matching the LUT's intended input. Saved EXRs remain linear and are not baked with these display settings. Display edits trigger a new preview after a short debounce; Stop cancels rendering and conversion. Output renders are not interrupted by selecting another preview buffer.
 

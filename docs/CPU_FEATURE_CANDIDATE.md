@@ -1,5 +1,7 @@
 # CPU compatibility candidate — unverified
 
+*A record of the 1 October 2026 checkpoint, kept for its history: features it lists as missing, moving lights among them, have been done since (see the README's release notes). It is not kept up to date.*
+
 Full Modo parity has **not** been achieved. The implementation checkpoints below
 were written without running tests. Following the user's request to update the
 plugin, the Windows AVX1 runtime and standalone MoonRayGeometry adapter were

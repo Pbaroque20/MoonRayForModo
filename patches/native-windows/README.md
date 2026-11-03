@@ -4,6 +4,19 @@ These patches are applied to OpenMoonRay's own source (`sources.json` names each
 patch) to build MoonRay natively on Windows with MinGW-w64 (UCRT64) for the MoonRay for Modo plugin. Most of them
 are portability changes. This file explains the ones whose reason is not obvious from the diff.
 
+## Switches on the Source Overrides page that change no source
+
+Five switches on Preferences > MoonRay Source Overrides are the plugin's own, with no patch behind them. Each is on
+by default; off does as MoonRay itself does.
+
+- **Low-latency rendering**: MoonRay runs below Modo's priority and leaves one processor thread free.
+- **Load geometry as binary**: the scene's geometry goes to MoonRay as a binary file beside the scene text.
+- **N-gons triangulated cleanly**: flat polygons of more than four corners are cut along their outline (ear clipping),
+  the same triangles for MoonRay and MoonLightIPR.
+- **Blur moving lights**: a light that moves during the shutter has its motion blur switch (`mb`) set.
+- **Display filters given the inputs they need**: a display filter missing an input takes the one it starts on, with a
+  notice, and one that cannot be given it is left out rather than drawn pink.
+
 ## `moonray.patch`: `lib/rendering/mcrt_common/Clock.h`, the heat map's clock on Windows
 
 ### What MoonRay does
@@ -451,7 +464,7 @@ seen through the ball is blurred, off it is sharp (mean difference 22).
 ## `moonray.patch`: Auto renders on the graphics card first (`MOONRAY_MODO_AUTO_XPU`)
 
 Applied by `tools/port_source_switches.py`, behind the preference "Auto renders on the graphics card first", on by
-default.
+default. It is in Preferences > MoonRay > XPU (graphics card), not on the Source Overrides page.
 
 ### What MoonRay does
 
@@ -510,9 +523,13 @@ without its lines. Two Toon filters, one of each, are two buffers of the preview
 
 ### How it was checked
 
-Built (`ninja bin/ToonDisplayFilter.so bin/ToonDisplayFilter.so.proxy` in `build/native-renderer-avx`); not yet rendered.
+Built (`ninja bin/ToonDisplayFilter.so bin/ToonDisplayFilter.so.proxy` in `build/native-renderer-avx`), and rendered by
+`tools/check_toon_lines.py`: each Output Mode's Toon channel, with and without closing the gaps.
 
 ## `cl1-pool-scale.patch`: a larger store for rays in flight (no switch)
+
+The change is in `moonray.patch` too, which the build applies; the file alone is kept for the one-library rebuild
+(`tools/install_moonlightipr.py`).
 
 `ThreadLocalState.cc` gives each thread four times MoonRay's store of CacheLine1 items, about 4 GB of address space at 16
 threads, touched only as it is used. In XPU mode, with many render outputs and adaptive sampling, MoonRay's own size runs

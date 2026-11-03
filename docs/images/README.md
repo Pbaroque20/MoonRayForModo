@@ -1,6 +1,6 @@
 # Images in the documents
 
-These pictures were made while 0.3.50.1 was being checked, on one machine (RTX 3090), at small sizes and low sample counts: they are there to show what was compared, not to show the renderer at its best. The noise in them is the sample count.
+Most of these pictures were made while 0.3.50.1 was being checked; the MoonRay Source Overrides' come from the checks in `patches/native-windows/README.md`. They were made on one machine (RTX 3090), at small sizes and low sample counts: they are there to show what was compared, not to show the renderer at its best. The noise in them is the sample count.
 
 ## Imported MoonRay scenes (`rdl-*.jpg`)
 

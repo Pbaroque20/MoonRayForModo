@@ -1,5 +1,7 @@
 # CPU production-readiness work
 
+*A record of the work as it stood in early October 2026, kept for its history: much it lists as to do has been done since (see the README's release notes). It is not kept up to date.*
+
 This is an implementation and verification checklist, not a compatibility claim.
 Unchecked items remain required by the requested CPU work.
 

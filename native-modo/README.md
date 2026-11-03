@@ -1,6 +1,6 @@
 # Native Modo adapters
 
-`geometry_bridge.cpp`, `render_cache.cpp`, `mesh_reader.cpp` and `rows_math.cpp` build `MoonRayGeometry.lx`, the
+`geometry_bridge.cpp`, `render_cache.cpp`, `mesh_reader.cpp`, `rows_math.cpp`, `simplify.cpp` and `shader_stacks.cpp` build `MoonRayGeometry.lx`, the
 adapter the kit ships. `rows_math.cpp` (added 2026-10-26) works on the rows of numbers the adapter hands over, which
 the plugin keeps as they came (`rows.py`): a texture layer's UV transform and the binary scene's four-byte numbers, in
 the same order of operations as the plugin's own Python (built with `-ffp-contract=off`), so the scene is the same

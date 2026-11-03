@@ -8,9 +8,9 @@ MoonRay XPU runs ray intersections on an NVIDIA CUDA/OptiX GPU and shading on th
 CPU. It is a hybrid mode; CPU AVX compatibility remains relevant. This integration
 uses the existing material, geometry, texture, AOV and preview pipeline.
 
-In MoonRay Render Setup, open **Runtime and CPU** and choose **Rendering mode >
-XPU (NVIDIA GPU + CPU)**. CPU AVX and CPU scalar remain selectable. New scenes
-default to XPU when the installed runtime contains its GPU program and CUDA DLL.
+On the Render item's MoonRay tab, in its System group, choose **Rendering Mode >
+XPU**. Vector and Scalar remain selectable. New scenes start in Auto, which
+renders on the graphics card first where the runtime has its GPU program.
 Store render settings in scene to preserve the selection. Preview and animation
 use the same choice. Completion reports XPU active or a CPU fallback; Render Log
 contains device identification, memory use and GPU ray utilization.
@@ -46,8 +46,8 @@ checks replace Linux /sys lookups. Statistics use a deterministic locale fallbac
 
 Runtime staging includes cudart, the PTX program and applicable NVIDIA notices.
 The NVIDIA components retain their own licenses; the plugin's MIT license does
-not relicense them. The upstream renderer remains Apache 2.0. This is a local
-development runtime, not a completed redistributable installer.
+not relicense them. The upstream renderer remains Apache 2.0. Releases ship this runtime
+as a ZIP beside the kit, and as a Modo package (.lpk).
 
 Reference: https://docs.openmoonray.org/user-reference/execution-modes/
 
