@@ -16,8 +16,8 @@ The viewer displays the existing renderer's progressive beauty images.
 Wheel zooms around the pointer, dragging pans, and double-click or **Fit image**
 restores the full image. Live updates, Stop, render settings, EXR output and
 Save preview continue to use the existing panel. Save preview saves the image,
-not the zoomed viewport. AOVs can be written to EXR; selecting them for display
-and calibrated display color management remain future work.
+not the zoomed viewport. The beauty or any AOV can be chosen for display, under
+the view transform the preview window's Color / LUT tab sets.
 
 This is a dedicated MoonRay viewport, not Modo PView or the final Render View.
 A developer reported that the external-render interface broke in Modo 14/15;
@@ -27,11 +27,8 @@ That report is not an independently obtained Foundry bug confirmation.
 Run `tools/launch_gui_probe.py probe_custom_view.py --profile gui-custom-opengl
 --without-native --wait` in Modo's Python environment. The bounded probe renders
 a scene, checks the OpenGL framebuffer for bright pixels, and disposes the
-panel. It does not load the experimental native adapter. Installation with
-`tools/install_kit.py --custom-view-only` requires matching tested kit sources
-and a clean exit, and backs up the previous kit before excluding the adapter.
-Modo-evaluated geometry requires that separate experimental adapter and is
-unavailable in this adapter-free installation; ordinary geometry still works.
+panel. It does not load the native adapter. The kit ships that adapter
+(`bin/MoonRayGeometry.lx`) for every installation; there is no adapter-free one.
 
 Validation on October 1, 2026: Modo 16.1v9 produced two progressive frames,
 with 200,740 bright framebuffer pixels, a valid OpenGL context, successful panel

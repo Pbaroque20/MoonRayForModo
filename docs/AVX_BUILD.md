@@ -14,9 +14,9 @@ rendering, image delivery and temporary-file cleanup pass.
 
 `native-port/moonshine/CMakeLists.txt` builds the real Moonshine DwaBaseMaterial
 and its interpolation, projection, glitter and material libraries with the same
-AVX1 flags. Generated ISPC headers are staged explicitly for Windows. The small
-`patches/native-windows/moonshine.patch` fixes independent refraction roughness
-being ignored by the mirror branch when reflection roughness is zero.
+AVX1 flags. Generated ISPC headers are staged explicitly for Windows. `patches/native-windows/moonshine.patch`
+holds the plugin's Moonshine changes, each behind a MoonRay Source Override
+(`patches/native-windows/README.md`).
 
 Original adapter DSOs add ordered texture blending, tangent normal/bump evaluation
 and the NormalMap interface needed by Moonshine. Before installing a new build,
@@ -56,8 +56,8 @@ is `C:/Program Files/Modo16.1v9/modo/resrc/python3kit/extra64/modopython.bat`.
 4. `tools/validate_renderer.py` checks scalar and vectorized images and failure
    cleanup. It creates the validation marker only on full success.
 5. `tools/validate_live_process.py` runs the real Qt process lifecycle check.
-6. With Modo closed, `tools/install_kit.py` installs this kit, backs up any prior
-   copy of this kit, and checks the validated executable checksum.
+6. With Modo closed, `tools/install_moonlightipr.py` installs this kit, backs up any
+   prior copy of it, and moves files the repository no longer has into the backup.
 7. `tools/launch_installed_probe.py` opens the exact Modo 16.1v9 executable and
    creates a separate test scene for the live-edit check.
 

@@ -1,6 +1,6 @@
-# MoonLightIPR (experimental)
+# MoonLightIPR
 
-*Updated November 1, 2026. Releases 0.3.50.1 and 0.3.50.2 hold an earlier MoonLightIPR; what is described as added since is on the `MoonLightIPR` branch. Sections that record a check keep the date it was made.*
+*Updated November 1, 2026. Every release since 0.3.50.1 ships MoonLightIPR, 0.5.2 the latest; what is added after a release is on the `MoonLightIPR` branch first. Sections that record a check keep the date it was made.*
 
 Created by Raphael Tobar. Released under the [MIT License](LICENSE). MoonLightIPR is not a DreamWorks
 Animation product and is not affiliated with, sponsored by or endorsed by DreamWorks Animation;
@@ -16,7 +16,7 @@ the one is not taken for the other.
 MoonLightIPR (it echoes DreamWorks' earlier rasterizer MoonLight) is a small standalone OptiX path tracer intended as an interactive preview
 engine beside MoonRay. It does not touch MoonRay's renderer. It is an approximation:
 one fixed uber-shader replaces MoonRay's materials, and final frames always come from
-MoonRay. It ships in the 0.3.50.1 release, in the runtime's `moonlightipr` folder, and is
+MoonRay. It ships with every release since 0.3.50.1, in the runtime's `moonlightipr` folder, and is
 chosen in the preview window's engine popup. `tools/install_moonlightipr.py` adds a newer
 build to an installed kit during development.
 
@@ -322,7 +322,7 @@ running session leaves out the data of meshes it already holds.
 | `transmission`, `transmission_color`, `refraction_roughness`, `ior`, `thin_geometry` | Refraction through the surface in place of diffuse, tinted at each crossing of a solid's surface, bent at both faces of a solid or passed straight through a thin sheet. Glass casts an opaque shadow to light sampling; light reaches what is behind it through bounce rays, as in MoonRay |
 | `clearcoat`, `clearcoat_roughness` | A second GGX lobe on top. For material stacks it takes its reflection out of the layers beneath, as `DwaBaseMaterial`'s outer specular does; for plain materials it is added, as in `UsdPreviewSurface` |
 | `presence` (and dissolve layers) | Each camera, bounce and shadow ray passes through with that probability, in an any-hit test that only scenes with such a material pay for |
-| Material stacks and their layers on colour, colour amount, roughness, metallic, emission, emission amount, normal, transmission amount, colour and roughness, coat amount and roughness, dissolve, anisotropy, subsurface amount and colour, and the four driver channels | A layer stack per material: material rows, constants, images, gradients, checker and noise patterns and baked grid and dots procedurals, with the plugin's 15 blend modes and normal map blending, opacity, invert, channel flips, single-channel picks, alpha as mask, gamma, contrast, brightness, bias and gain, and the four tiling modes. Groups blend their rows as one, with their own opacity, blend mode and group mask, up to 4 deep; layer masks scale the row, material row or group they target. Constant rows are worked out by the packer until a channel gets a row that varies, so a material without images costs the GPU no layers |
+| Material stacks and their layers on colour, colour amount, roughness, metallic, emission, emission amount, normal, transmission amount, colour and roughness, coat amount and roughness, dissolve, anisotropy, subsurface amount and colour, and the four driver channels | A layer stack per material: material rows, constants, images, gradients, checker and noise patterns, procedurals worked out through the object with a Solid projection (baked flat with others), and grid and dots procedurals, with the plugin's 15 blend modes and normal map blending, opacity, invert, channel flips, single-channel picks, alpha as mask, gamma, contrast, brightness, bias and gain, and the four tiling modes. Groups blend their rows as one, with their own opacity, blend mode and group mask, up to 4 deep; layer masks scale the row, material row or group they target. Constant rows are worked out by the packer until a channel gets a row that varies, so a material without images costs the GPU no layers |
 | `subsurface_amount`, `subsurface_distance`, `subsurface_color` | Burley's normalized diffusion, MoonRay's default model, worked out as MoonRay's integrator works it out: where the light comes out is looked for from points drawn from the profile, projected along the normal or across it and weighed by all three ways; what is found is made up to what a flat surface would give, so small and thin shapes keep their light; and light is looked for through the solid on a far side that faces away. The dipole model is shown the same way. The random walk model is followed through the solid as MoonRay follows it (its colour-to-scattering fit, its one unscattered crossing, and its steered walk), and with the material's own model, colour and limit per path; bounced light is less tinted by the scattering colour than in MoonRay |
 | `anisotropy` and the anisotropy angle | The Beckmann lobe narrowed along or across a tangent measured from texture u of the primary coordinates, with `DwaBaseMaterial`'s roughness rule |
 | `absorption_distance` | The surface stops tinting; light crossing the solid keeps its transmission colour per that depth |
