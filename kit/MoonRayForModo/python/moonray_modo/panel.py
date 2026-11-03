@@ -948,15 +948,18 @@ class Panel(Tools, QtWidgets.QWidget):
             stored=dict(self._settings_values()['denoising']);was=stored.get('safe');stored['smart']=level
             one_or_other(stored,'smart')
             # Smart Render stops a render for the denoiser to finish (denoising.settings): with the Denoiser Off it was
-            # stored and never applied. Chosen here, it brings Open Image Denoise, which every machine has.
+            # stored and never applied. Chosen here, it brings a denoiser: OptiX on an NVIDIA graphics card, Open Image
+            # Denoise where there is none (hardware.denoiser).
             given=level!='off' and stored.get('engine','off')=='off'
-            if given:stored['engine']='oidn_cpu'
+            if given:
+                from .hardware import denoiser
+                stored['engine']=denoiser()
             if not self._store(denoising=stored):return
         except Exception as exc:
             self.status.setText('Cannot set Smart Render: '+str(exc));return
         self._hud_update()
         self.status.setText('Smart Render is off.' if level=='off' else 'Smart Render is on: a MoonRay render stops once it is clean enough for the denoiser.'
-                            +(' Safe Denoising is switched off.' if was else '')+(' The Denoiser is set to Open Image Denoise.' if given else ''))
+                            +(' Safe Denoising is switched off.' if was else '')+(' The Denoiser is set to %s.'%('OptiX' if stored['engine']=='optix' else 'Open Image Denoise') if given else ''))
 
     def _safe_chosen(self,engine):
         """Safe Denoising chosen from the picture's menu: off, or on with a denoiser. Written to the scene's settings,

@@ -10,7 +10,7 @@ The current release is [0.5.2.1](https://github.com/Pbaroque20/MoonRayForModo/re
 
 The next hotfix, to the kit alone.
 
-- **Smart Render and Safe Denoising follow the renderer chosen**: switching Preferences > MoonRay > XPU2 to MoonRay XPU makes them editable at once, and they work in Vector and Scalar mode whichever renderer is chosen. Smart Render chosen from the picture's menu with the Denoiser off sets Open Image Denoise.
+- **Smart Render and Safe Denoising follow the renderer chosen**: switching Preferences > MoonRay > XPU2 to MoonRay XPU makes them editable at once, and they work in Vector and Scalar mode whichever renderer is chosen. Smart Render chosen from the picture's menu with the Denoiser off sets one: OptiX with an NVIDIA graphics card, Open Image Denoise without.
 - **Render over a draft renders at the first press**: pressed while Draft is still drawing its lines, it had to be pressed again once they were done.
 
 ## New in 0.5.2.1

@@ -52,10 +52,11 @@ def opened():
         was = (item.channel('resX').get(), item.channel('resY').get())
         lx.eval('render.res 0 %d' % width)
         lx.eval('render.res 1 %d' % max(16, round(width * was[1] / max(1, was[0]))))
-        lx.eval('moonray.render.smart_render %d' % level)
-        # MOONRAY_PROBE_COMMANDS: further commands, a semicolon between them, to set the scene up for a comparison.
+        # MOONRAY_PROBE_COMMANDS: further commands, a semicolon between them, to set the scene up for a comparison. First:
+        # Smart Render is greyed, and its command refused, while the scene's Denoiser is Off.
         for command in filter(None, (c.strip() for c in os.environ.get('MOONRAY_PROBE_COMMANDS', '').split(';'))):
             lx.eval(command)
+        lx.eval('moonray.render.smart_render %d' % level)
         # What the reading makes of each picture, and why it does not judge one.
         from moonray_modo import smart_render
         reading = smart_render.reading
@@ -114,6 +115,20 @@ def watch():
                            'buffers_kept': len(frame.get('files', {})),
                            'denoise_engine': frame.get('denoise_engine'), 'rendering': panel._rendering, 'hud': panel.hud.text() if panel.hud.isVisible() else None}
         panel.preview.grab().save(str(out / (tag + '.png')))
+        # The buffers the denoiser was given and what it made, and the takes of a pass caught part way, kept to look at.
+        import shutil
+        kept = {}
+        for key in ('beauty', 'denoise_albedo', 'denoise_normal', 'denoised_beauty'):
+            source = frame.get('files', {}).get(key)
+            if source and pathlib.Path(str(source)).is_file():
+                target = out / ('%s-%s%s' % (tag, key, pathlib.Path(str(source)).suffix))
+                shutil.copyfile(str(source), str(target));kept[key] = str(target)
+        for key, takes in (frame.get('takes') or {}).items():
+            for index, source in enumerate(takes):
+                if pathlib.Path(str(source)).is_file():
+                    target = out / ('%s-%s-take%d%s' % (tag, key, index, pathlib.Path(str(source)).suffix))
+                    shutil.copyfile(str(source), str(target));kept['%s-take%d' % (key, index)] = str(target)
+        result['kept'] = kept
         save()
         panel.stop()
         QtCore.QTimer.singleShot(1500, lambda: lx.eval('!app.quit'))
