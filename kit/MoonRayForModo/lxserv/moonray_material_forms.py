@@ -45,8 +45,8 @@ def register():
 
     def matching(shader):
         items=selected()
-        if items and all(material_override.enabled(properties.read(item)) and
-                         material_override.effective(properties.read(item)).get('native_shader')==shader for item in items):
+        # Asked by every control at every refresh: each material's summary is found once for each version of its tag.
+        if items and all(material_override.summary(item)==(True,shader) for item in items):
             return items
         return []
 
@@ -95,7 +95,7 @@ def register():
             def cmd_Query(self,index,query):
                 values=lx.object.ValueArray(query)
                 for item in matching(shader):
-                    value=properties.read(item).get('native_parameters',{}).get(key,default)
+                    value=properties.peek(item).get('native_parameters',{}).get(key,default)
                     if how=='boolean':values.AddInt(int(bool(value)))
                     elif how=='choice':values.AddInt(numbers.index(int(value)) if value is not None and int(value) in numbers else 0)
                     elif how=='integer':values.AddInt(int(value or 0))
@@ -159,7 +159,7 @@ def register():
             def cmd_Query(self,index,query):
                 values=lx.object.ValueArray(query)
                 for item in matching(shader):
-                    held=properties.read(item).get('native_parameters',{}).get(key) or default
+                    held=properties.peek(item).get('native_parameters',{}).get(key) or default
                     values.AddFloat(float(held[part]))
             def basic_Execute(self,msg,flags):
                 items=matching(shader)

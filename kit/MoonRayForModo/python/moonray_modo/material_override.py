@@ -33,6 +33,28 @@ def _synchronized(result,graph):
                   native_shader=shader,native_parameters=parameters,shader='DwaBaseMaterial')
     return result
 
+# What every control of a material's form asks first, by the material's tag as it stands: whether it is MoonRay's and
+# which shader it is. Asked by each of a DwaBaseMaterial's hundred and more controls each time the Properties panel
+# looks again, which read the tag, parsed it and copied the graph each time: once for each version of the tag now.
+_SUMMARY={}
+
+def summary(item):
+    """(enabled, the effective native shader) of a material item, as enabled(properties.read(item)) and
+    effective(properties.read(item)).get('native_shader','') give them, found once for each version of its tag."""
+    from . import properties
+    try:text=item.readTag(properties.TAG)
+    except (LookupError,RuntimeError,AttributeError,TypeError):text=None
+    try:key=(item.id,item.type,text)
+    except (LookupError,RuntimeError,AttributeError):key=None
+    held=_SUMMARY.get(key) if key is not None else None
+    if held is None:
+        data=properties.read(item)
+        held=(enabled(data),effective(data).get('native_shader',''))
+        if key is not None:
+            if len(_SUMMARY)>4096:_SUMMARY.clear()
+            _SUMMARY[key]=held
+    return held
+
 # The inputs of a material's output node wired in its graph, by the material's tag as it stands: asked by every control
 # of the Properties panel each time the panel looks again, so read once for each version of the tag.
 _DRIVEN={}

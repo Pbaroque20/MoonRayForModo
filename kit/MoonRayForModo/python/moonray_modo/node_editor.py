@@ -299,8 +299,12 @@ def open_editor(item,materialx_override=False):
 
 class Editor(QtWidgets.QDialog):
     def __init__(self,item,materialx_override=False):
-        # A window in its own right, above Modo's but not blocking it.
-        super().__init__(QtWidgets.QApplication.activeWindow())
+        # A window in its own right, above Modo's but not blocking it: Modo's, never another editor. Another material
+        # chosen in the editor's list opens its editor while that one is the active window, and then closes it, which
+        # deleted the new editor with it as its child: the window went the moment it came.
+        parent=QtWidgets.QApplication.activeWindow()
+        while isinstance(parent,Editor):parent=parent.parentWidget()
+        super().__init__(parent)
         self.setWindowFlags(QtCore.Qt.Window|QtCore.Qt.WindowTitleHint|QtCore.Qt.WindowSystemMenuHint|QtCore.Qt.WindowMinMaxButtonsHint|QtCore.Qt.WindowCloseButtonHint)
         self.setModal(False);self.setAttribute(QtCore.Qt.WA_DeleteOnClose)
         self.setMinimumSize(900,560)
@@ -332,9 +336,15 @@ class Editor(QtWidgets.QDialog):
             # Made first and then added: an action a menu makes for a label cannot be used later in Modo's Qt.
             action=QtWidgets.QAction(label,self);action.setCheckable(True);action.setChecked(checked);menu.addAction(action)
             return action
-        menu_button('Graph', [('Import MaterialX...',self.import_file),('Export Definitions...',self.export_file),('Inspect MaterialX Support...',self.inspect_materialx),
+        graph_menu=menu_button('Graph', [('Import MaterialX...',self.import_file),('Export Definitions...',self.export_file),('Inspect MaterialX Support...',self.inspect_materialx),
                     (None,None),('Check Asset Files...',self.check_assets),('Fix Ramps That Follow the Camera',self.fix_camera_ramps),
-                    (None,None),('Add Override Layer...',self.add_override),('Toggle Override Layer',self.toggle_override)])
+                    (None,None),('Add Override Layer...',self.add_override),('Toggle Override Layer',self.toggle_override),(None,None)])
+        # Another material's whole network removed (remove_material_network): offered only while the scene has more than
+        # one, and never this window's own.
+        remove_network=QtWidgets.QAction('Remove Network...',self);remove_network.triggered.connect(lambda *_:self.remove_material_network())
+        remove_network.setToolTip('Remove another material\'s node network. Not this one, and only while the scene has more than one.')
+        graph_menu.addAction(remove_network);graph_menu.setToolTipsVisible(True)
+        graph_menu.aboutToShow.connect(lambda:remove_network.setEnabled(len(graph_materials())>1))
         menu_button('Node', [('Add Node...\tTab',lambda:self.quick_add()),('Duplicate\tCtrl+D',self.duplicate),('Delete\tDel',self.remove),
                     (None,None),('Set as Material Output',self.output),('Set / Clear Displacement Output',self.displacement_output),
                     (None,None),('Connect Input...',self.connect_selected),('Disconnect Input...',self.disconnect),
@@ -975,6 +985,9 @@ class Editor(QtWidgets.QDialog):
         except ValueError as exc:self.graph=before;self.error(exc)
     def filter_properties(self,*args):
         query=self.property_search.text().casefold()
+        # A search reaching a folded group's row made without its field: filled again, with those it reaches.
+        if query and not self.busy and any(query in searched for searched in getattr(self,'lazy_rows',{}).values()):
+            self.inspect();return
         hidden=getattr(self,'hidden_rows',set());headers=getattr(self,'group_rows',{});groups=getattr(self,'row_groups',{})
         folded=self.folded_groups()
         matched=set()
@@ -996,8 +1009,9 @@ class Editor(QtWidgets.QDialog):
         kind=self.graph['nodes'][identity]['type']
         settings=QtCore.QSettings('MoonRayForModo','GraphEditor')
         if not settings.contains('folded/'+kind):
-            # A kind never folded or unfolded yet starts with only its Diffuse and Specular groups open.
-            return {group for group in set(getattr(self,'group_rows',{}).values()) if group.casefold() not in OPEN_GROUPS}
+            # A kind never folded or unfolded yet starts with only its Diffuse and Specular groups open: told from the
+            # kind's own groups, so that it is known before the list has a row (fill_properties builds by it).
+            return {group for _,(group,) in grouped(kind) if group is not None and group.casefold() not in OPEN_GROUPS}
         held=settings.value('folded/'+kind,'') or ''
         return {name for name in str(held).split('|') if name}
     def fold_group(self,row,column=0):
@@ -1007,6 +1021,10 @@ class Editor(QtWidgets.QDialog):
         if group is None or not identity:return
         folded=self.folded_groups();folded^={group}
         QtCore.QSettings('MoonRayForModo','GraphEditor').setValue('folded/'+self.graph['nodes'][identity]['type'],'|'.join(sorted(folded)))
+        # A group folded when the list was filled has its rows without their fields (fill_properties): opened, the list is
+        # filled again, with them.
+        if group not in folded and group in getattr(self,'lazy_groups',set()):
+            self.inspect();return
         self.filter_properties()
     def group_header(self,group):
         """A row naming a group of properties, across the table, that folds the group away when clicked."""
@@ -1049,6 +1067,84 @@ class Editor(QtWidgets.QDialog):
             if len(chosen)==1:self.error('Choose another output before deleting this node');return
             chosen=[identity for identity in chosen if identity!=self.graph['root']]
             self.info.setText('The output node was kept.')
+        self.remove_nodes(chosen)
+    def used_nodes(self):
+        """The nodes the material renders with: the output's and the displacement's, and all that feeds them, through any
+        override layer's wires too."""
+        wires={}
+        for identity,node in self.graph['nodes'].items():wires.setdefault(identity,set()).update(v for v in node.get('inputs',{}).values() if v)
+        for layer in self.graph.get('overrides',[]):
+            wires.setdefault(layer.get('node'),set()).update(v for v in layer.get('inputs',{}).values() if v)
+        used=set();stack=[n for n in (self.graph.get('root'),self.graph.get('displacement')) if n]
+        while stack:
+            identity=stack.pop()
+            if identity in used or identity not in self.graph['nodes']:continue
+            used.add(identity);stack.extend(wires.get(identity,()))
+        return used
+    def loose_network(self,identity):
+        """The nodes wired, either way, to this one that the material does not render with (used_nodes): a network of its
+        own beside the material's, such as a material left over after another was set as the output. None where the
+        node is one the material uses."""
+        used=self.used_nodes()
+        if identity in used or identity not in self.graph['nodes']:return None
+        neighbours={}
+        for source,node in self.graph['nodes'].items():
+            for target in node.get('inputs',{}).values():
+                if target in self.graph['nodes']:
+                    neighbours.setdefault(source,set()).add(target);neighbours.setdefault(target,set()).add(source)
+        found=set();stack=[identity]
+        while stack:
+            current=stack.pop()
+            if current in found or current in used:continue
+            found.add(current);stack.extend(neighbours.get(current,()))
+        return found
+    def remove_network(self,identity=None):
+        """Remove the loose network a node belongs to (loose_network), once asked: never the material's own."""
+        if not isinstance(identity,str):identity=self.selected()
+        if not identity:self.error('Select a node of the network to remove');return
+        network=self.loose_network(identity)
+        if not network:
+            self.error('This node is part of the material\'s own network: it feeds the material output. Remove a network that is beside it, or delete nodes one by one.');return
+        named=', '.join(sorted({self.graph['nodes'][n].get('label',self.graph['nodes'][n]['type']) for n in network})[:4])
+        asked=QtWidgets.QMessageBox.question(self,'Remove Network','Remove this network of %d node%s (%s)? The material output does not use it.%s'%(
+            len(network),'' if len(network)==1 else 's',named,' Ctrl+Z undoes it.'),QtWidgets.QMessageBox.Yes|QtWidgets.QMessageBox.Cancel,QtWidgets.QMessageBox.Cancel)
+        if asked!=QtWidgets.QMessageBox.Yes:return
+        self.remove_nodes(sorted(network))
+        self.info.setText('Removed a network of %d node%s.'%(len(network),'' if len(network)==1 else 's'))
+    def remove_material_network(self):
+        """Remove another material's whole network, once asked. Not this window's own, and only while the scene has more
+        than one: a material with a graph goes back to Modo's own material; one added from Add Layer, which is MoonRay's by
+        its type, is deleted from the Shader Tree."""
+        import modo
+        others=[(label,item) for label,item in graph_materials() if item.id!=self.item.id]
+        if not others:self.error('This is the scene\'s only node network: there is none other to remove.');return
+        labels=[label for label,_ in others]
+        label,ok=QtWidgets.QInputDialog.getItem(self,'Remove Network','The node network to remove:',labels,0,False)
+        if not ok:return
+        item=others[labels.index(label)][1]
+        layer=item.type!='advancedMaterial'
+        words=('Remove %s? It is a MoonRay material layer, so the layer is deleted from the Shader Tree.' if layer else
+               'Remove the node network of %s? The material stays, as Modo\'s own material.')%item.name
+        asked=QtWidgets.QMessageBox.question(self,'Remove Network',words+' Ctrl+Z in Modo undoes it.',QtWidgets.QMessageBox.Yes|QtWidgets.QMessageBox.Cancel,QtWidgets.QMessageBox.Cancel)
+        if asked!=QtWidgets.QMessageBox.Yes:return
+        from shiboken2 import isValid
+        held=_open.get((item.id,False))
+        if held is not None and isValid(held):held.reject()
+        try:
+            if layer:
+                lx.eval('select.item {%s} set'%item.id)
+                try:lx.eval('texture.delete')
+                except RuntimeError:lx.eval('item.delete')
+            else:
+                settings=properties.read(item)
+                settings.pop('node_graph',None);settings.update(moonshine_override=False,node_override=False)
+                lx.eval('moonray.material.applyGraph {%s} %s'%(item.id,properties.encode(settings)))
+        except (RuntimeError,LookupError) as exc:
+            self.error('Could not remove the network: '+str(exc));return
+        self.fill_materials()
+        self.info.setText('Removed the node network of %s.'%label)
+    def remove_nodes(self,chosen):
+        """Delete these nodes, the wires to them and override layers on them, as one step to undo."""
         before=copy.deepcopy(self.graph)
         for identity in chosen:
             self.graph['nodes'].pop(identity);self.expanded.discard(identity)
@@ -1150,6 +1246,13 @@ class Editor(QtWidgets.QDialog):
         for widget,shown in ((self.table,listed),(self.property_search,listed),(self.property_help,listed),(self.property_hint,not listed)):widget.setVisible(shown)
         self.property_help.setText('')
         self.hidden_rows=set();self.group_rows={};self.row_groups={}
+        # The rows of a group folded away are made without their fields, which are most of what filling the list takes
+        # (a DwaBaseMaterial's hundred and more, a second or so): a label and the value as text, put away. Opened, or
+        # reached by a search, the list is filled again with them (fold_group, filter_properties).
+        lazy=set() if not identity else self.folded_groups()
+        query=self.property_search.text().strip().casefold()
+        # The text each such row is searched by, so that a search builds only the rows it reaches (filter_properties).
+        self.lazy_groups=set();self.lazy_rows={}
         if listed:
             effective=nodes.effective(self.graph)['nodes']
             rows=grouped(effective[identity]['type']) if identity else [(c['node'],c['key'],c.get('label'),c.get('kind')=='number') for c in controls]
@@ -1164,6 +1267,15 @@ class Editor(QtWidgets.QDialog):
                         shown_group=group;self.group_header(group)
                     self.row_groups[self.table.rowCount()]=group
                 node=effective[identity];spec=nodes.specs(node['type'])[key]
+                group_now=self.row_groups.get(self.table.rowCount())
+                searched=(key.replace('_',' ')+' '+key).casefold()
+                if group_now in lazy and not (query and query in searched) and not (spec['type']=='SceneObject*' and spec.get('interface') not in ('INTERFACE_CAMERA','INTERFACE_NODE')):
+                    row=self.table.rowCount();self.table.insertRow(row)
+                    label=QtWidgets.QTableWidgetItem(key.replace('_',' '));label.setData(QtCore.Qt.UserRole,key);label.setFlags(label.flags() & ~QtCore.Qt.ItemIsEditable)
+                    value=node.get('parameters',{}).get(key) if spec['type']=='SceneObject*' else node.get('parameters',{}).get(key,node_defaults.start(node['type'],key,spec))
+                    self.table.setItem(row,0,label);self.table.setItem(row,1,QtWidgets.QTableWidgetItem('' if value is None else json.dumps(value)))
+                    self.lazy_groups.add(group_now);self.lazy_rows[row]=searched
+                    continue
                 # A control is a row of its own, never one of a ramp's three lists.
                 ramps=ramp_groups(nodes.specs(node['type'])) if title is None else {}
                 members={member:group for group in ramps.values() for member in group[1:]}

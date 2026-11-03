@@ -63,7 +63,7 @@ def filter_command(shader):
         def cmd_Flags(self): return lx.symbol.fCMD_UI
         def basic_Enable(self,msg):
             items=selected()
-            return bool(items) and all(material_override.effective(properties.read(item)).get('native_shader','')==shader for item in items)
+            return bool(items) and all(material_override.summary(item)[1]==shader for item in items)
         def basic_Execute(self,msg,flags): pass
     return Filter
 
@@ -82,12 +82,11 @@ def parameter_command(shader,key,spec):
         def basic_Enable(self,msg):
             items=selected()
             # An input wired in the graph editor is the graph's: greyed, as typing a value cut the wire.
-            return bool(items) and all(material_override.enabled(properties.read(item)) and material_override.effective(properties.read(item)).get('native_shader')==shader
-                                       and not material_override.driver(item,key) for item in items)
+            return bool(items) and all(material_override.summary(item)==(True,shader) and not material_override.driver(item,key) for item in items)
         def cmd_Query(self,index,query):
             values=lx.object.ValueArray(query)
             for item in selected():
-                value=properties.read(item).get('native_parameters',{}).get(key)
+                value=properties.peek(item).get('native_parameters',{}).get(key)
                 if choices: values.AddInt(choices.index(value) if value in choices else 0)
                 else: values.AddString('' if value is None else value if spec['type']=='String' else json.dumps(value))
         def basic_Execute(self,msg,flags):
