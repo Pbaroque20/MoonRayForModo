@@ -2,9 +2,9 @@
 
 0.5 is a **pre-production release**: the plugin is no longer experimental, and it brings a new GPU renderer, MoonRay XPU2.
 
-## Coming in 0.5.2.1
+## New in 0.5.2.1
 
-The next hotfix, with a new runtime: install both, and **Compile XPU2 Shaders once more**.
+A hotfix to 0.5.2, with a new runtime ZIP: install both, and **Compile XPU2 Shaders once more**.
 
 - **XPU2 needs about half the graphics card's memory**: a simple scene went from about 11 GB to 4.5 GB, at the same speed and
   with the same picture, so XPU2 runs on smaller graphics cards.
