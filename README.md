@@ -21,7 +21,7 @@ Work on the next version goes on in the [MoonLightIPR branch](https://github.com
 
 ## Major features
 
-![Cellular automata scheduling in XPU2](docs/images/xpu2-cellular-scheduling.webp)
+![Cellular automata scheduling in XPU2](docs/images/xpu2-cellular-scheduling.gif)
 
 *Cellular automata scheduling in XPU2*
 
