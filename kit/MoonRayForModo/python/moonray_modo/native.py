@@ -16,6 +16,20 @@ def find_runtime(root):
     raise ValueError('Select the Windows MoonRay folder containing moonray.exe.')
 
 
+def folders_only(path):
+    """PATH with only its folders: MoonRay looks through every entry of it for moonray.exe as it starts, and stops with
+    "directory iterator cannot open directory: Not a directory" at an entry that is a file (a tester's PATH named
+    c:\\Windows\\System32\\cmd.exe). Entries that are not there are dropped too; the order is kept."""
+    kept = []
+    for entry in path.split(os.pathsep):
+        try:
+            if entry.strip() and Path(os.path.expandvars(entry.strip().strip('"'))).is_dir():
+                kept.append(entry)
+        except (OSError, ValueError):
+            pass
+    return os.pathsep.join(kept)
+
+
 def environment(directory):
     directory = Path(directory)
     env = dict(os.environ)
@@ -25,8 +39,8 @@ def environment(directory):
     from .cache_folder import root as cache_root
     env['MOONRAY_MODO_CACHE'] = str(cache_root())
     env['REZ_MOONRAY_ROOT'] = str(directory.resolve())
-    env['PATH'] = str(directory) + os.pathsep + env.get('PATH', '')
-    dsos = [directory / 'rdl2dso', directory.parent / 'rdl2dso', directory.parent / 'lib' / 'rdl2dso', directory]
+    env['PATH'] = str(directory) + os.pathsep + folders_only(env.get('PATH', ''))
+    dsos =[directory / 'rdl2dso', directory.parent / 'rdl2dso', directory.parent / 'lib' / 'rdl2dso', directory]
     env['RDL2_DSO_PATH'] = os.pathsep.join(str(p) for p in dsos if p.is_dir())
     # Toon materials lit by their smooth normals, not cut into steps along a coarse mesh's faces: read by MoonRay as it
     # starts (a runtime without the patch ignores it).
@@ -43,6 +57,8 @@ def environment(directory):
     env['MOONRAY_MODO_CRYPTO_ONCE'] = '1' if crypto_once() else '0'
     # A light seen by a camera ray past every surface, in light path expressions (camera_light_lpe).
     env['MOONRAY_MODO_CAMERA_LIGHT_LPE'] = '1' if camera_light_lpe() else '0'
+    # PATH entries that are not folders passed over as MoonRay looks for itself (dso_search).
+    env['MOONRAY_MODO_DSO_SEARCH'] = '1' if dso_search() else '0'
     # The four overrides of tools/port_source_switches.py, each read by MoonRay as it starts.
     env['MOONRAY_MODO_USD_SPECULAR'] = '1' if usd_specular() else '0'
     env['MOONRAY_MODO_OPAQUE_ALPHA'] = '1' if opaque_alpha() else '0'
@@ -287,6 +303,14 @@ def camera_light_lpe():
     return _switch('camera_light_lpe', 'MOONRAY_MODO_CAMERA_LIGHT_LPE')
 
 
+def dso_search():
+    """Whether MoonRay, looking along PATH for moonray.exe as it starts (tools/port_dso_search.py), passes over entries
+    that are files or cannot be read, and stops at the first folder holding it. MoonRay's own goes through all of PATH,
+    since it compares names without their .exe, and stops with "directory iterator cannot open directory: Not a
+    directory" at an entry that is a file. The kit gives MoonRay a PATH of folders only (folders_only) either way."""
+    return _switch('dso_search', 'MOONRAY_MODO_DSO_SEARCH')
+
+
 def crypto_once():
     """Whether each Cryptomatte sample is counted once in MoonRay's vector and XPU modes, where MoonRay's own now
     and then counts a pixel's surface twice."""
@@ -346,7 +370,7 @@ def engine_name(mode):
 
 def source_switches():
     """The MoonRay Source Overrides MoonRay reads as it starts: a session started with others is started again."""
-    return (toon_terminator(), toon_albedo(), crypto_volumes(), fog_alpha(), crypto_once(), camera_light_lpe()) + tuple(
+    return (toon_terminator(), toon_albedo(), crypto_volumes(), fog_alpha(), crypto_once(), camera_light_lpe(), dso_search()) + tuple(
         globals()[key]() for key in ('usd_specular', 'opaque_alpha', 'transmission_roughness', 'auto_xpu')) + (xpu2(), xpu2_chain(), xpu2_devices())
 
 

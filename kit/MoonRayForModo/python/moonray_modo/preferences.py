@@ -35,6 +35,8 @@ KEYS = {
     # (native.crypto_once).
     'fog_alpha': (True, bool), 'camera_light_lpe': (True, bool), 'toon_lines_apart': (True, bool), 'toon_close_gaps': (True, bool), 'filter_inputs': (True, bool),
     'crypto_once': (True, bool),
+    # MoonRay's look along PATH as it starts passes over entries that are not folders (native.dso_search).
+    'dso_search': (True, bool),
     # A render stopped by hand or by Smart Render finishes the tiles in hand (native.drain_tiles).
     'drain_tiles': (True, bool),
     # Geometry handed to MoonRay as binary beside the scene text (native.binary_geometry).
