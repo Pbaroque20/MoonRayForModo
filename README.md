@@ -130,10 +130,6 @@ A hotfix to 0.5, with a new runtime ZIP: install both, and **Compile XPU2 Shader
 **XPU2** renders MoonRay previews with the processor and the graphics card on the same picture at once, neither
 waiting for the other. Its pictures settle to MoonRay's own.
 
-![Cellular automata scheduling in XPU2](docs/images/xpu2-cellular-scheduling.webp)
-
-*Cellular automata scheduling in XPU2*
-
 *XPU2: Asynchronous Monte Carlo Path Tracer designed by Raphael Tobar. Not affiliated with or endorsed by DreamWorks
 Animation.*
 
