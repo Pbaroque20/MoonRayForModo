@@ -248,7 +248,7 @@ class Renderer(QtCore.QObject):
                        # A render to files goes to it where XPU2 makes it (xpu2_output), else to a MoonRay of its own.
                        persistent=bool((xpu2_output(snapshot) and not self.cpu_fallback and persistent_supported(runtime)) if output else
                                        (persistent_preview and not moonlightipr and not linear_preview and persistent_supported(runtime)
-                                        and (not denoising.settings(snapshot.get('denoising',{}))['safe'] or persistent_saves(runtime) or native.xpu2()))))
+                                        and (not denoising.settings(snapshot.get('denoising',{}))['safe'] or persistent_saves(runtime) or native.xpu2_renders(snapshot.get('execution_mode','auto'))))))
         # New edits replace queued work; stale images never reach the panel.
         self.pending = request
         # A stop that was still waiting for MoonRay to save is over: this render is not one being stopped.
@@ -432,10 +432,12 @@ class Renderer(QtCore.QObject):
         try:
             level=denoising.settings(self.active['snapshot'].get('denoising',{}))['smart']
             # Not while XPU2 renders the preview: Smart Render is MoonRay's.
-            if level!='off' and not self.active['output'] and not self.active['moonlightipr'] and not self.active.get('linear_preview') and not self.active['snapshot'].get('_ipr') and not native.xpu2():
+            if level!='off' and not self.active['output'] and not self.active['moonlightipr'] and not self.active.get('linear_preview') and not self.active['snapshot'].get('_ipr') \
+                    and not native.xpu2_renders(self.active['snapshot'].get('execution_mode','auto')):
                 from .smart_render import Watch
                 self.smart=Watch(level,time.monotonic)
-        except (ValueError,KeyError):pass
+        except (ValueError,KeyError) as exc:
+            self.status.emit('Smart Render is not applied: %s'%exc)
         self.using_moonlightipr=self.active['moonlightipr']
         if self.using_moonlightipr:
             self._begin_moonlightipr();return
@@ -821,7 +823,9 @@ class Renderer(QtCore.QObject):
         if smart is not None and key=='beauty' and not self.passes and self.phase=='render':
             try:
                 if smart.look(width,height,pixels):self.settled_clean.emit(float(smart.noise))
-            except Exception:self.smart=None
+            except Exception as exc:
+                # The render goes on to its end as without Smart Render: said, not passed over in silence.
+                self.smart=None;self.status.emit('Smart Render stopped watching: %s: %s'%(type(exc).__name__,exc))
 
     def _persistent_image(self,serial,key,path):
         # While a pass's scene is being written, what the loaded MoonRay reports is of the render that pass replaces:

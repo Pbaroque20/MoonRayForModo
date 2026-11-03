@@ -98,8 +98,8 @@ def number(key,least,most):
     return Number
 
 
-def choice(key,entries):
-    """entries are (what is stored, what is shown), or a function giving them."""
+def choice(key,entries,changed=None):
+    """entries are (what is stored, what is shown), or a function giving them; changed is called after a choice."""
     class Choice(lxu.command.BasicCommand):
         def __init__(self):
             super().__init__()
@@ -114,7 +114,9 @@ def choice(key,entries):
             lx.object.ValueArray(query).AddInt(values.index(now) if now in values else 0)
         def basic_Execute(self,msg,flags):
             values=[value for value,_ in self.listed()];index=self.dyna_Int(0)
-            if 0<=index<len(values):held().set(key,values[index])
+            if 0<=index<len(values):
+                held().set(key,values[index])
+                if changed:changed()
     return Choice
 
 
@@ -176,7 +178,8 @@ lx.bless(switch('usd_specular'),'moonray.pref.usdSpecular')
 lx.bless(switch('opaque_alpha'),'moonray.pref.opaqueAlpha')
 lx.bless(switch('transmission_roughness'),'moonray.pref.transmissionRoughness')
 lx.bless(switch('auto_xpu'),'moonray.pref.autoXpu')
-lx.bless(choice('xpu2/renderer',(('xpu','MoonRay XPU'),('xpu2','XPU2'))),'moonray.pref.xpu2')
+# The Render item's form greys Smart Render, Safe Denoising and XPU2's sampling by this choice: told to look again.
+lx.bless(choice('xpu2/renderer',(('xpu','MoonRay XPU'),('xpu2','XPU2')),render_settings_changed),'moonray.pref.xpu2')
 lx.bless(switch('xpu2/adaptive_chain'),'moonray.pref.xpu2Chain')
 lx.bless(choice('xpu2/devices',(('both','Processor and graphics card'),('gpu','Graphics card only'),('cpu','Processor only'))),'moonray.pref.xpu2Devices')
 lx.bless(choice('xpu2/rt_cap',(('none','None'),('30','30'),('60','60'))),'moonray.pref.xpu2RealtimeCap')
