@@ -35,14 +35,16 @@ Work on the next version goes on in the [MoonLightIPR branch](https://github.com
 
 | | |
 |---|---|
-| ![Glass and a coated material, in MoonRay and in MoonLightIPR](docs/images/moonlightipr-dwa_glass_coat.jpg) | ![Smart Render's noise reading during a render](docs/images/smart-render-noise.png) |
-| **MoonLightIPR**: MoonRay (left), MoonLightIPR (right) | **Smart Render**: the noise falling, and where it will stop |
-| <img alt="A MoonRay preview stopped part way, kept and denoised" src="https://github.com/user-attachments/assets/e06a1fc0-231d-4eac-8468-669d6f3e0ec3" /> | ![Draft with a region rendered among the lines](docs/images/preview-draft-region.png) |
-| **Safe Denoising**: stopped part way, kept and denoised | **Draft mode**: a region rendered among the outlines |
-| ![The material graph editor with a MoonRay material](docs/images/graph-editor.png) | ![Modo's Fur material in MoonRay](docs/images/fur-extras.jpg) |
-| **The graph editor**, with a MoonRay material | **Modo's Fur material** rendered by MoonRay |
-| ![The compositor](docs/images/compositor-editor.png) | ![Modern Hall, imported from MoonRay's scene files](docs/images/rdl-modern_hall.jpg) |
-| **The compositor**: the beauty graded, vignetted and sharpened | **An imported MoonRay scene**: its own render (left), after the trip through Modo (right). Modern Hall by NewSee2l035, CC BY |
+| ![Cellular automata scheduling in XPU2](docs/images/xpu2-cellular-scheduling.webp) | ![Glass and a coated material, in MoonRay and in MoonLightIPR](docs/images/moonlightipr-dwa_glass_coat.jpg) |
+| **Cellular automata scheduling in XPU2** | **MoonLightIPR**: MoonRay (left), MoonLightIPR (right) |
+| ![Smart Render's noise reading during a render](docs/images/smart-render-noise.png) | <img alt="A MoonRay preview stopped part way, kept and denoised" src="https://github.com/user-attachments/assets/e06a1fc0-231d-4eac-8468-669d6f3e0ec3" /> |
+| **Smart Render**: the noise falling, and where it will stop | **Safe Denoising**: stopped part way, kept and denoised |
+| ![Draft with a region rendered among the lines](docs/images/preview-draft-region.png) | ![The material graph editor with a MoonRay material](docs/images/graph-editor.png) |
+| **Draft mode**: a region rendered among the outlines | **The graph editor**, with a MoonRay material |
+| ![Modo's Fur material in MoonRay](docs/images/fur-extras.jpg) | ![The compositor](docs/images/compositor-editor.png) |
+| **Modo's Fur material** rendered by MoonRay | **The compositor**: the beauty graded, vignetted and sharpened |
+| ![Modern Hall, imported from MoonRay's scene files](docs/images/rdl-modern_hall.jpg) |  |
+| **An imported MoonRay scene**: its own render (left), after the trip through Modo (right). Modern Hall by NewSee2l035, CC BY |  |
 
 ## New in 0.5.2.1
 
