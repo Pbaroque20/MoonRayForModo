@@ -17,6 +17,9 @@ MOONLIGHTIPR_STATUS = 'MoonLightIPR (GPU preview, approximate)'
 MOONLIGHTIPR_SAMPLES = 256
 
 
+COOKIE='A light with a cookie filter'
+
+
 def scalar_only(snapshot):
     """What in a scene this build of MoonRay draws rightly only in its scalar mode, in words, or None. A VDB volume
     that gives off light stops its vector and GPU modes; a cookie filter leaves pixels that are not numbers in them."""
@@ -24,7 +27,7 @@ def scalar_only(snapshot):
         return 'A VDB volume with an emission grid'
     lights=(snapshot.get('production') or {}).get('lights',{})
     if any(isinstance(held,dict) and held.get('cookie_file') for held in lights.values())             or any(str(entity.get('class','')).startswith('CookieLightFilter') for entity in snapshot.get('entities',[])):
-        return 'A light with a cookie filter'
+        return COOKIE
     return None
 
 
@@ -33,7 +36,7 @@ def xpu2_output(snapshot):
     Render to a File and Render Animation (_xpu2_output), where XPU2 is chosen and the execution mode leaves it to the
     graphics card. It writes the scene's outputs as MoonRay does; a deep image and checkpoints are MoonRay's alone."""
     return bool(snapshot.get('_xpu2_output') and native.xpu2() and snapshot.get('execution_mode','auto') in ('xpu','auto')
-                and not scalar_only(snapshot) and not (snapshot.get('deep') or {}).get('enabled') and not (snapshot.get('recovery') or {}).get('enabled'))
+                and scalar_only(snapshot) in (None,COOKIE) and not (snapshot.get('deep') or {}).get('enabled') and not (snapshot.get('recovery') or {}).get('enabled'))
 
 
 def binary_sessions(runtime):
@@ -523,7 +526,13 @@ class Renderer(QtCore.QObject):
             mode='vectorized'
         # Two things this build of MoonRay draws rightly in its scalar mode only.
         slow=scalar_only(request['snapshot'])
-        if mode!='scalar' and slow:
+        self.moonray_mode=None
+        xpu2_takes=bool(request.get('persistent') and mode in ('xpu','auto') and native.xpu2() and not getattr(self.session,'xpu2_refused',None))
+        if mode!='scalar' and slow==COOKIE and xpu2_takes:
+            # XPU2 draws a cookie rightly: it renders the scene, and MoonRay, should XPU2 leave it the scene, does so in
+            # scalar. Forced to scalar before, the cookie kept XPU2 out altogether and the preview crawled.
+            self.moonray_mode='scalar'
+        elif mode!='scalar' and slow:
             mode='scalar'
             request['snapshot'].setdefault('warnings',[]).append(slow+" is rendered in MoonRay's scalar mode, which is slower: its vector and GPU modes do not draw it rightly in this build.")
         self.backend_status={'auto':'Auto requested (XPU → Vector → Scalar)','xpu':'XPU requested','vectorized':'Vector requested','vector':'Vector requested','scalar':'Scalar requested'}[mode]
@@ -679,7 +688,8 @@ class Renderer(QtCore.QObject):
                 self.session_files[self.session_serial]=self.current_base
                 self._started()
                 self.session.submit(text,request['runtime'],request['threads'],mode,self.session_serial,bucket_size,prepared=prepared,
-                                    important=bool(options.render_values(snapshot.get('render_settings',{}))['important_first']))
+                                    important=bool(options.render_values(snapshot.get('render_settings',{}))['important_first']),
+                                    moonray_mode=getattr(self,'moonray_mode',None))
             else:
                 self.process.start()
         except Exception as exc:

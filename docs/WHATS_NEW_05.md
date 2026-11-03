@@ -14,6 +14,8 @@ The next hotfix, to the kit alone: the runtime of 0.5.2.1 stays.
 - **A material's lists come up quicker**: the Properties panel reads each material once for all of its controls (a DwaBaseMaterial's refresh 60 ms to 15 ms), and the graph editor's property table makes the fields of a folded group only when it is opened or searched into (0.9 s to 0.3 s).
 - **Switching networks in the graph editor keeps the window**: choosing another material in its list closed the editor altogether when it had been opened from another one.
 - **Remove Network**: Graph > Remove Network removes another material's whole node network, offered only while the scene has more than one and never the one open; right-click a node > Remove Network removes the loose network it belongs to, beside the material's own. Each asks first, and undoes.
+- **A cookie light filter renders in XPU2**: XPU2 draws it as MoonRay's scalar mode does, so a light with a cookie no longer sends the whole render to scalar mode. Should XPU2 hand the scene back, MoonRay renders it in scalar, as MoonRay's vector and XPU modes leave the picture blank.
+- **A bokeh image turns bokeh on**: with the switch to use the Modo camera's lens on, choosing a bokeh image on a dw camera uses it whatever Modo's iris blades say. The dw camera's fields that Modo's camera drives (focal length, film, offsets, depth of field, blades, stereo, shutter) are greyed while the switch is on.
 
 ## New in 0.5.2.2
 

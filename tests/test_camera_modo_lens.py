@@ -70,6 +70,18 @@ class ModoLens(unittest.TestCase):
         self.assertNotIn('mb_shutter_close', held)
         self.assertAlmostEqual(held['mb_shutter_bias'], .5)
 
+    def test_a_bokeh_image_turns_the_bokeh_on_whatever_the_blades(self):
+        global MODO
+        held_modo = MODO
+        try:
+            MODO = dict(held_modo, irisBlades=0)
+            self.assertFalse(collected(camera(self.OWN))['bokeh'])
+            held = collected(camera(dict(self.OWN, bokeh_image='C:/bokeh/ring.exr')))
+            self.assertTrue(held['bokeh'])
+            self.assertEqual(held['bokeh_image'], 'C:/bokeh/ring.exr')
+        finally:
+            MODO = held_modo
+
     def test_unlinked_camera_keeps_its_moonray_values(self):
         held = collected(camera(self.OWN, linked=False))
         self.assertAlmostEqual(held['focal'], 80.0)

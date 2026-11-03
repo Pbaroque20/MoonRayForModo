@@ -144,16 +144,18 @@ class Session(QtCore.QObject):
         held for the whole session, its cause passed or not, until a preference changed."""
         if getattr(self,'xpu2_refused',None):self._retry_xpu2=True
 
-    def submit(self,text,runtime,threads,mode,generation,bucket_size=0,prepared=None,important=False):
+    def submit(self,text,runtime,threads,mode,generation,bucket_size=0,prepared=None,important=False,moonray_mode=None):
+        """moonray_mode: the mode MoonRay starts in where XPU2 does not render the scene (left to MoonRay, or not chosen),
+        in place of mode: scalar for a scene that XPU2 draws rightly and this build of MoonRay only in scalar (a cookie)."""
         self.idle.cancel()
         # Whether the render takes the tiles with the most in them first: read by MoonRay as each render begins.
         try:
             staged=self.root/'important.tmp';staged.write_text('1' if important else '0',encoding='ascii');staged.replace(self.root/'important.txt')
         except (OSError,AttributeError):pass
         request=dict(text=text,runtime=Path(runtime),threads=threads,mode=mode,id=generation,bucket_size=bucket_size,prepared=prepared,
-                     again=(prepared or {}).get('again'))
+                     again=(prepared or {}).get('again'),moonray_mode=moonray_mode)
         # A change of the toon preference is read by MoonRay only as it starts: it starts again.
-        signature=(str(runtime),threads,mode,bucket_size)+native.source_switches()
+        signature=(str(runtime),threads,mode,bucket_size,moonray_mode)+native.source_switches()
         self.latest=request
         retry=getattr(self,'_retry_xpu2',False);self._retry_xpu2=False
         if self.running() and (signature!=self.signature or (retry and getattr(self,'xpu2_refused',None))):
@@ -229,7 +231,7 @@ class Session(QtCore.QObject):
             if path.is_file():path.unlink()
         self.select_view(self.view)
         self.partial='';self.applied=None;self.sent=request
-        self.signature=(str(request['runtime']),request['threads'],request['mode'],request['bucket_size'])+native.source_switches()
+        self.signature=(str(request['runtime']),request['threads'],request['mode'],request['bucket_size'],request.get('moonray_mode'))+native.source_switches()
         metadata=json.loads((request['runtime']/'modo-session.json').read_text(encoding='utf-8'))
         self.scene_memory=metadata.get('scene_memory',False)
         prepared=request.get('prepared') or {}
@@ -270,7 +272,9 @@ class Session(QtCore.QObject):
             for key,value in native.xpu2_environment(request['runtime']).items():env.insert(key,value)
         self.process.setProcessEnvironment(env);self.process.setWorkingDirectory(str(self.root))
         self.process.setProgram(str(program))
-        args=native.arguments(self.root/'bootstrap.rdla',self.root/'main.exr',request['threads'],request['mode'])
+        # MoonRay, where XPU2 does not render it, in the mode the scene needs from it (submit's moonray_mode).
+        mode=request['mode'] if self.xpu2_active else (request.get('moonray_mode') or request['mode'])
+        args=native.arguments(self.root/'bootstrap.rdla',self.root/'main.exr',request['threads'],mode)
         args[args.index('-in')+1]=str(scene)
         if binary:args[2:2]=['-in',str(binary)]
         self.process.setArguments(args)

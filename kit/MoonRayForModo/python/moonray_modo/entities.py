@@ -398,7 +398,13 @@ def collect(scene, warnings):
                         # its shutter as the scene's (host.snapshot gives the scene this camera's Blur Length and Offset).
                         from .camera_convert import lens
                         own = {key: held_value for key, held_value in held['parameters'].items() if key not in ('mb_shutter_open', 'mb_shutter_close')}
-                        held['parameters'] = validate(name, dict(own, **lens(item, name)))
+                        taken = lens(item, name)
+                        # A bokeh image is the MoonRay camera's own, which Modo has nothing like: chosen, the bokeh is
+                        # its shape, whatever Modo's Iris Blades say (which turned the bokeh on only from three, and
+                        # left the image unused below that).
+                        if own.get('bokeh_image') and 'bokeh' in taken:
+                            taken['bokeh'] = True
+                        held['parameters'] = validate(name, dict(own, **taken))
                     # An uneven scale from a parent, or the scale tool's just put into the light's size.
                     scaled = SCALED_UNEVENLY.pop(item.id, None) or round_light(name, held['matrix']) is not held['matrix']
                     if scaled and round_note(item.name, name) not in warnings:
