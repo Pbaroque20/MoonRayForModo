@@ -59,6 +59,36 @@ def layer_shader(item):
     return kind[len(LAYER_PREFIX):] if kind.startswith(LAYER_PREFIX) else ''
 
 
+# read(item) kept for looking at, by the item, its tag and what is being tried out on it (LIVE): each control of a
+# material's form shows its value from it, a DwaBaseMaterial's hundred and more at every refresh of the Properties panel,
+# which parsed the tag each time.
+_PEEKED = {}
+
+
+def peek(item):
+    """read(item) for reading values only, never to be changed: the same dict while the tag and what is tried out on
+    the item stay as they are. A material whose colour is Modo's diffuse (diffuse_linked) is read anew each time, as
+    that colour changes with no change to the tag."""
+    try:
+        text = item.readTag(TAG)
+    except (LookupError, RuntimeError, AttributeError, TypeError):
+        text = None
+    try:
+        tried = LIVE.get(item.id) if LIVE else None
+        key = (item.id, item.type, text, json.dumps(tried, sort_keys=True) if tried else None)
+    except (LookupError, RuntimeError, AttributeError, TypeError, ValueError):
+        return read(item)
+    held = _PEEKED.get(key)
+    if held is None:
+        held = read(item)
+        if held.get('diffuse_linked'):
+            return held
+        if len(_PEEKED) > 2048:
+            _PEEKED.clear()
+        _PEEKED[key] = held
+    return held
+
+
 def read(item):
     try:
         data = json.loads(item.readTag(TAG))

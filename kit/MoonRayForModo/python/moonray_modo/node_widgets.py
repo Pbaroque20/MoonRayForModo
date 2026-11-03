@@ -324,6 +324,8 @@ class GraphView(QtWidgets.QGraphicsView):
                 entry('Show Fewer Inputs' if identity in self.editor.expanded else 'Show All Inputs','expand')
             entry('Duplicate\tCtrl+D','duplicate')
             entry('Delete\tDel','delete')
+            # The loose network this node is part of, beside the material's own (Editor.loose_network).
+            entry('Remove Network...','remove_network',bool(self.editor.loose_network(identity)))
         if not menu.isEmpty():menu.addSeparator()
         entry('Add Node...\tTab','add');entry('Frame Selected\tF','frame');entry('Frame All\tA','frame_all')
         chosen=menu.exec_(event.globalPos())
@@ -333,6 +335,7 @@ class GraphView(QtWidgets.QGraphicsView):
         elif what=='expand':self.editor.toggle_expanded(identity)
         elif what=='duplicate':self.editor.duplicate()
         elif what=='delete':self.editor.remove()
+        elif what=='remove_network':self.editor.remove_network(identity)
         elif what=='add':self.editor.quick_add(self.mapToScene(event.pos()),event.globalPos())
         elif what=='frame':self.editor.frame()
         elif what=='frame_all':self.editor.frame(everything=True)
