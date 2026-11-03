@@ -2,9 +2,9 @@
 
 0.5 is a **pre-production release**: the plugin is no longer experimental, and it brings a new GPU renderer, MoonRay XPU2.
 
-## Coming in 0.5.2.2
+## New in 0.5.2.2
 
-The next hotfix, to the kit alone: the runtime of 0.5.2.1 stays.
+A hotfix to 0.5.2.1, to the kit alone: the runtime of 0.5.2.1 stays.
 
 - **Smart Render and Safe Denoising follow the renderer chosen**: switching Preferences > MoonRay > XPU2 to MoonRay XPU makes them editable in the Render item at once, and they work in Vector and Scalar mode whichever renderer is chosen. Smart Render chosen from the picture's menu with the Denoiser off sets one, OptiX with an NVIDIA graphics card and Open Image Denoise without, and the foot of the picture says when Smart Render is not applied.
 - **Render over a draft renders at the first press**: pressed while Draft is still drawing its lines, it stopped the draft and had to be pressed again; now the draft stops and the region renders, with MoonRay XPU and XPU2.
