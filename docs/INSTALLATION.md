@@ -1,6 +1,6 @@
 # Installing MoonRay for Modo
 
-These instructions are for **0.5.2**, **Modo 16.1v9**, and **Windows x64**. The runtime is MoonRay [2026.29.1](https://github.com/dreamworksanimation/openmoonray/releases/tag/v2026.29.1) (MoonRay 18.4), built for Windows with the plugin's own patches. This is a pre-production release, not a production-certified build.
+These instructions are for **0.5.2.1**, **Modo 16.1v9**, and **Windows x64**. The runtime is MoonRay [2026.29.1](https://github.com/dreamworksanimation/openmoonray/releases/tag/v2026.29.1) (MoonRay 18.4), built for Windows with the plugin's own patches. This is a pre-production release, not a production-certified build.
 
 ## Requirements
 
@@ -10,7 +10,7 @@ These instructions are for **0.5.2**, **Modo 16.1v9**, and **Windows x64**. The 
 
 ## Download and install
 
-1. Open the [0.5.2 release](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.5.2). Download **MoonRayForModo-0.5.2-kit.zip** and **MoonRayForModo-0.5.2-windows-runtime.zip** from Assets, and, if you want MoonRay's ten example scenes in the asset library, **MoonRayForModo-0.5.2-content.zip** (about 300 MB). GitHub's automatic Source code ZIP does not include the runtime.
+1. Open the [0.5.2.1 release](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.5.2.1). Download **MoonRayForModo-0.5.2.1-kit.zip** and **MoonRayForModo-0.5.2.1-windows-runtime.zip** from Assets, and, if you want MoonRay's ten example scenes in the asset library, **MoonRayForModo-0.5.2.1-content.zip** (about 300 MB). GitHub's automatic Source code ZIP does not include the runtime.
 2. Save your scene and close all Modo instances.
 3. Extract the ZIPs into the **same temporary folder**. Merge their `MoonRayForModo` folders (the content ZIP adds to `assets/library`). The resulting folder must contain `index.cfg`, `bin/MoonRayGeometry.lx`, `runtime/moonray.exe` and `runtime-xpu2`.
 4. In Windows Explorer, enter `%APPDATA%\Luxology\Kits`. Create the `Kits` folder if needed. If a `MoonRayForModo` folder already exists, move it to a backup location **outside Kits**; do not merge a new release into the old installation.
@@ -40,6 +40,8 @@ Do not install the runtime ZIP alone: the kit ZIP contains the Modo integration 
 `SHA256SUMS.txt` contains checksums for the ZIPs and the installation guide. Compare a download with PowerShell `Get-FileHash -Algorithm SHA256 'path-to-download.zip'` if needed.
 
 If the MoonRay menu is missing, check the folder nesting and restart Modo. If the runtime cannot be found, select the folder containing `moonray.exe`. For render errors, open Render Log; avoid replacing individual DLLs with files from other runtime versions.
+
+If every preview and every `.rdla` fails at once with "filesystem error: directory iterator cannot open directory: Not a directory [...]", your Windows PATH names a file where it should name a folder (often `c:\Windows\System32\cmd.exe`). Releases up to 0.5.2 stop on it; 0.5.2.1 and later start anyway. On an older release, remove that entry from PATH (System Properties > Environment Variables, in both lists) and restart Modo.
 
 To roll back, close Modo, move the new kit outside `Kits`, and restore your backed-up kit. If you changed the runtime path, restore that path too. Only one MoonRay kit should remain under `Kits`.
 

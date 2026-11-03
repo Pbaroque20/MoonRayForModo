@@ -9,9 +9,9 @@ The plugin includes CPU, XPU and XPU2 rendering, a dockable live preview with a 
 
 **Built on MoonRay [2026.29.1](https://github.com/dreamworksanimation/openmoonray/releases/tag/v2026.29.1)** (OpenMoonRay's latest release; MoonRay 18.4), with the plugin's own patches for Windows and the preview.
 
-**Current version: 0.5.2 — pre-production release, a hotfix to 0.5.** The plugin is no longer experimental. 0.5 brought **MoonRay XPU2**, a new GPU renderer for previews in which the processor and the graphics card work on the same picture at once, now the default; realtime that keeps up with heavy scenes and a Scene cache; Modo's procedural textures worked out through the object, 145 of Modo's Enhance textures among them; Modo's light volumetrics and fog; and MoonLightIPR starting in seconds. Install the new runtime with it.
+**Current version: 0.5.2.1 — pre-production release, a hotfix to 0.5.** The plugin is no longer experimental. 0.5 brought **MoonRay XPU2**, a new GPU renderer for previews in which the processor and the graphics card work on the same picture at once, now the default; realtime that keeps up with heavy scenes and a Scene cache; Modo's procedural textures worked out through the object, 145 of Modo's Enhance textures among them; Modo's light volumetrics and fog; and MoonLightIPR starting in seconds. Install the new runtime with it.
 
-[Download 0.5.2: the kit, the Windows runtime and the MoonRay content](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.5.2) · [Installation instructions](docs/INSTALLATION.md) · [What's new in 0.5](docs/WHATS_NEW_05.md) · [What's new in 0.4 to 0.4.3.1](docs/WHATS_NEW_04.md) · [MoonRay's features in the plugin](#moonrays-features-in-the-plugin) · [Modo's features in the plugin](#modos-features-in-the-plugin) · [Engineers' notes: where the plugin changes MoonRay](patches/native-windows/README.md)
+[Download 0.5.2.1: the kit, the Windows runtime and the MoonRay content](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.5.2.1) · [Installation instructions](docs/INSTALLATION.md) · [What's new in 0.5](docs/WHATS_NEW_05.md) · [What's new in 0.4 to 0.4.3.1](docs/WHATS_NEW_04.md) · [MoonRay's features in the plugin](#moonrays-features-in-the-plugin) · [Modo's features in the plugin](#modos-features-in-the-plugin) · [Engineers' notes: where the plugin changes MoonRay](patches/native-windows/README.md)
 
 Work on the next version goes on in the [MoonLightIPR branch](https://github.com/Pbaroque20/MoonRayForModo/tree/MoonLightIPR).
 
@@ -43,6 +43,17 @@ Work on the next version goes on in the [MoonLightIPR branch](https://github.com
 | **The graph editor**, with a MoonRay material | **Modo's Fur material** rendered by MoonRay |
 | ![The compositor](docs/images/compositor-editor.png) | ![Modern Hall, imported from MoonRay's scene files](docs/images/rdl-modern_hall.jpg) |
 | **The compositor**: the beauty graded, vignetted and sharpened | **An imported MoonRay scene**: its own render (left), after the trip through Modo (right). Modern Hall by NewSee2l035, CC BY |
+
+## New in 0.5.2.1
+
+A hotfix, with a new runtime ZIP: install both, and Compile XPU2 Shaders once more. The full list is in [What's new in 0.5](docs/WHATS_NEW_05.md).
+
+- **XPU2 needs about half the graphics card's memory:** a simple scene went from about 11 GB to 4.5 GB, at the same speed and with the same picture, so XPU2 runs on smaller graphics cards.
+- **Moving subdivision surfaces render in XPU2:** a moving mesh with adaptive subdivision, and copies of a subdivision mesh that changes shape during the shutter, no longer send the scene to MoonRay XPU.
+- **Playblasts render flat out**, each frame as fast as the graphics card can.
+- **dw Perspective and Orthographic cameras use the Modo camera's lens**, edited in the camera's own tabs.
+- **Saved pictures keep their alpha:** Save Image and Export AOVs save the Beauty and the Denoised Beauty with it, and Export AOVs can save one multilayer OpenEXR.
+- **A file in your Windows PATH no longer stops MoonRay**, where every preview and scene load failed with "directory iterator cannot open directory".
 
 ## New in 0.5.2
 
@@ -310,7 +321,7 @@ In each pair, MoonRay's render of the scene from its own files is on the left; o
 - Render outputs: configurable AOVs, Cryptomatte surface categories, buffer switching, deep EXR, texture baking, a compositor over the finished buffers, and denoising (OptiX or Open Image Denoise) that survives a stopped render.
 - Workflow tools: ACES/sRGB/OCIO view transforms and LUTs, animation output and recovery controls, an asset library with MoonRay's example scenes, and RDL scene import.
 
-## Known issues in 0.5.2
+## Known issues in 0.5.2.1
 
 The ones you are most likely to meet:
 
@@ -345,9 +356,9 @@ Comparison audit between MoonRay 2026.29.1's source and the current plugin.
 | MoonRay feature | Plugin | Notes |
 |---|:---:|---|
 | CPU rendering (scalar and vector) | ![yes](docs/images/feature-yes.svg) | AVX build |
-| XPU rendering on the graphics card | ![yes](docs/images/feature-yes.svg) | NVIDIA only. XPU2, the plugin's own GPU renderer (new in 0.5), renders previews by default, and Render to a File and animations; deep images and checkpoints stay with MoonRay. |
+| XPU rendering on the graphics card | ![yes](docs/images/feature-yes.svg) | NVIDIA only. XPU2, the plugin's own GPU renderer (new in 0.5), renders previews by default, and Render to a File and animations; deep images and checkpoints stay with MoonRay. XPU2 takes about half the graphics card memory it did before 0.5.2.1. |
 | Progressive rendering, and region rendering | ![yes](docs/images/feature-yes.svg) | The preview window, and the graph editor's MoonRay Widget. The widget renders under MoonRay LS, which is quicker |
-| Cameras: perspective, orthographic, fisheye, spherical, dome | ![yes](docs/images/feature-yes.svg) | MoonRay camera items, or Modo's camera. A Modo camera converted to any of them in its place (animation kept), and changed back to a Modo camera; a Camera Sequence keying cameras to ranges of frames, and MoonRay cameras that are Modo cameras, looked through in the viewport by their lens with Modo's resolution gate. A MoonRay camera sees as near as a Modo camera unless Near is set, and a new one starts where the render camera stands. |
+| Cameras: perspective, orthographic, fisheye, spherical, dome | ![yes](docs/images/feature-yes.svg) | MoonRay camera items, or Modo's camera. A Modo camera converted to any of them in its place (animation kept), and changed back to a Modo camera; a Camera Sequence keying cameras to ranges of frames, and MoonRay cameras that are Modo cameras, looked through in the viewport by their lens with Modo's resolution gate. A MoonRay camera sees as near as a Modo camera unless Near is set, and a new one starts where the render camera stands. dw Perspective and Orthographic cameras take the Modo camera's lens, edited in its own tabs. |
 | Stereo cameras | ![yes](docs/images/feature-yes.svg) | Modo's camera Stereo: one eye, or both with a red/cyan picture in Render EXR; MoonLightIPR shows the eye chosen, and the left for both |
 | Overscan (rendering past the frame edge) | ![yes](docs/images/feature-yes.svg) | Modo's camera Overscan, or a MoonRay camera's own when it is rendered through, in final renders |
 | Bake camera | ![yes](docs/images/feature-yes.svg) | Texture baking |
@@ -357,7 +368,7 @@ Comparison audit between MoonRay 2026.29.1's source and the current plugin.
 | Meshes, subdivision, curves, points, instancing | ![yes](docs/images/feature-yes.svg) | From Modo's geometry. Creases from Modo's Subdivision weights |
 | Box and sphere shapes | ![yes](docs/images/feature-yes.svg) | |
 | VDB volumes, base and cutout volumes | ![yes](docs/images/feature-yes.svg) | |
-| Motion blur | ![yes](docs/images/feature-yes.svg) | Final renders, and MoonLightIPR previews, where it is a Preview Preference, off by default, with moving lights blurred too; MoonRay XPU2 for Render, Render to a File and animations, and for XPU2 realtime as a Preview Preference. XPU2 traces moving objects on the GPU. MoonLightIPR playblasts show it when it is active. |
+| Motion blur | ![yes](docs/images/feature-yes.svg) | Final renders, and MoonLightIPR previews, where it is a Preview Preference, off by default, with moving lights blurred too; MoonRay XPU2 for Render, Render to a File and animations, and for XPU2 realtime as a Preview Preference. XPU2 traces moving objects on the GPU, subdivision surfaces that move or change shape among them. MoonLightIPR playblasts show it when it is active. |
 | Depth of field | ![yes](docs/images/feature-yes.svg) | A polygon or disc bokeh, by sides and angle, or an image. MoonRay's two bokeh weight settings, which it does not use, are marked as having no effect. |
 | DWA materials (base, metal, fabric, skin, layer, mix and the rest) | ![yes](docs/images/feature-yes.svg) | Two Sided and Color Correct take the other DWA materials as their inputs, and a layer or two-sided material missing an input no longer crashes MoonRay |
 | Hair, toon and USD Preview Surface materials | ![yes](docs/images/feature-yes.svg) | Toon edges smooth on coarse meshes, and toon renders that denoise cleanly, each a preference; a new toon material is brightest facing the light |
@@ -384,7 +395,7 @@ Comparison audit between MoonRay 2026.29.1's source and the current plugin.
 | EXR metadata | ![yes](docs/images/feature-yes.svg) | |
 | Choice of EXR compression | ![yes](docs/images/feature-yes.svg) | All of MoonRay's, zip by default |
 | Multi-part EXR | ![yes](docs/images/feature-yes.svg) | Each output in a part of its own, by choice |
-| Picture types besides OpenEXR | ![yes](docs/images/feature-yes.svg) | PNG, JPEG, TIFF and Targa for a render to a file, animation frames and exported AOVs, the OpenEXR kept beside them. PNG, TIFF and Targa keep the render's alpha. Animation frames can be saved in these types alone, with no EXR left beside them, and a saved picture comes from the denoised render where there is one. Soft edges no longer flare in PNG, TIFF and Targa with alpha and a visible environment. |
+| Picture types besides OpenEXR | ![yes](docs/images/feature-yes.svg) | PNG, JPEG, TIFF and Targa for a render to a file, animation frames and exported AOVs, the OpenEXR kept beside them. PNG, TIFF and Targa keep the render's alpha, as do Save Image and Export AOVs; Export AOVs can also save one multilayer OpenEXR. Animation frames can be saved in these types alone, with no EXR left beside them, and a saved picture comes from the denoised render where there is one. Soft edges no longer flare in PNG, TIFF and Targa with alpha and a visible environment. |
 | Colour management: OCIO, ACES views, ACEScg working space | ![yes](docs/images/feature-yes.svg) | Modo's own OCIO configuration and colour spaces, any OCIO display and view, and ACES 1.3 and ACES 2.0 for an sRGB display; ACEScg scenes render and look right |
 | Denoising (OptiX, Open Image Denoise) | ![yes](docs/images/feature-yes.svg) | The Denoiser set to Off is off everywhere, the denoised beauty and Smart Render included. Denoised and composite frames keep their number last: `frame.denoised.0001.exr`, `frame.composite.0001.exr`. |
 | Primitive attributes (values a shape carries for its materials) | ![yes](docs/images/feature-yes.svg) | Per item or instance, and per point or per face from Modo's weight and colour vertex maps; imported from MoonRay scenes |
