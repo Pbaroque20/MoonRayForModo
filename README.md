@@ -44,13 +44,6 @@ Work on the next version goes on in the [MoonLightIPR branch](https://github.com
 | ![The compositor](docs/images/compositor-editor.png) | ![Modern Hall, imported from MoonRay's scene files](docs/images/rdl-modern_hall.jpg) |
 | **The compositor**: the beauty graded, vignetted and sharpened | **An imported MoonRay scene**: its own render (left), after the trip through Modo (right). Modern Hall by NewSee2l035, CC BY |
 
-## Coming after 0.5.2
-
-With a new runtime ZIP: install both, and **Compile XPU2 Shaders once more**.
-
-- **XPU2 renders Modo's procedural textures worked out through the object**, Enhance: Modo's patterns among them, with the patterns MoonRay and MoonLightIPR share. Such a scene used to go to MoonRay XPU.
-- **Scenes with Modo's fur render in XPU2**: they stopped with "No Attribute named 'vertex_list_1'" and went to MoonRay XPU.
-
 ## New in 0.5.2
 
 A hotfix, with a new runtime ZIP: install both, and Compile XPU2 Shaders once more. The full list is in [What's new in 0.5](docs/WHATS_NEW_05.md).
@@ -336,7 +329,7 @@ Every open issue is in the [issue tracker](https://github.com/Pbaroque20/MoonRay
 
 ## This Version's Current Limitations
 
-- **Windows and Modo 16.1v9 only.** XPU, XPU2 and MoonLightIPR need an NVIDIA GPU; they have been exercised on an RTX 3090 only.
+- **Windows and Modo 16.1v9 only.** XPU and MoonLightIPR need an NVIDIA GPU, and so does XPU2 except with its Devices preference set to the processor only; they have been exercised on an RTX 3090 only.
 - **MoonLightIPR is an approximation.** It matches MoonRay closely on many scenes but not all; [moonlightipr/README.md](moonlightipr/README.md) says how closely, scene by scene, and what it leaves out.
 - **Modo parity is partial.** Only Modo's own lights and standard/Principled materials are matched. Blinn and Ashikhmin highlights are matched to Modo's by measurement (the lobe, roughness and strength that came closest to Modo's own renders), closely once the roughness is 0.2 or more and loosely below that; a roughness driven by an image is matched the same way. A Modo material's smoothing angle is followed, except on a mesh of more than 300,000 faces, which is smoothed all over and named in a notice. Under Principled, Modo's diffuse brightens with roughness and MoonRay's does not. Anisotropy runs along the material's UV map, with its strength fitted to Modo's renders. Rough environment reflections come out dimmer in MoonRay. Specular Tint, Flatness and a reflection amount apart from specular have nothing like them in MoonRay's material and are named in a notice. Modo's cylinder, dome and photometric lights are left out, with a notice; MoonRay's own lights and volume items stand in. Modo's own group light linking is translated but experimental; check it against Modo.
 - **MaterialX is a supported subset**: Standard Surface, OpenPBR and glTF surfaces made of images, maths, mixes, remaps, UV transforms and MoonRay's own maps. Nodes outside that subset are not read.
@@ -477,6 +470,6 @@ a subdivided one (left); with the override, both are smooth (right).*
 
 Each of these, and what MoonRay documents that the plugin has no control for yet (Alembic and USD procedurals, Arras and more), is in the [issue tracker](https://github.com/Pbaroque20/MoonRayForModo/issues).
 
-**Production readiness:** this is an experimental development build, not a production-certified release. Some users have confirmed it works. Each release note says what was and was not checked.
+**Production readiness:** this is a pre-production release, not a production-certified build. Some users have confirmed it works. Each release note says what was and was not checked.
 
 Detailed implementation notes and recorded checks are in [docs](docs/). Plugin licensing is in [LICENSE](LICENSE); MoonRay and bundled assets retain their respective licenses. MoonLightIPR, the GPU preview engine, was created by Raphael Tobar and is under the same MIT License; it is not a DreamWorks Animation product and is not affiliated with or endorsed by DreamWorks Animation (see [moonlightipr/NOTICE.md](moonlightipr/NOTICE.md)).
