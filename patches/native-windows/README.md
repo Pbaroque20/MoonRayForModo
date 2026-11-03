@@ -298,6 +298,29 @@ the channel for a compositor. A MoonRay EnvLight item has no such label, so soft
 
 XPU2 follows the switch (`modoSwitches` 8). Off, MoonRay is as its source has it, and pictures are as they were.
 
+## `scene_rdl2.patch`: MoonRay starts with any PATH (`MOONRAY_MODO_DSO_SEARCH`)
+
+Applied by `tools/port_dso_search.py`, behind a switch of its own (the plugin's preference, on by default).
+
+### What MoonRay does
+
+As it starts, `DsoFinder::guessDsoPath` reads each PATH entry as a folder, looking for `moonray.exe` so as to find the scene
+classes beside it. It checks only that an entry exists, so an entry that is a file stops MoonRay before any scene is read: a
+tester whose PATH named `c:\Windows\System32\cmd.exe` got "filesystem error: directory iterator cannot open directory: Not a
+directory" on every preview and every `.rdla`. It compares names without their extension with `moonray.exe`, which never
+matches on Windows, so it always reads the whole of PATH. `SceneContext::loadAllSceneClasses` reads `RDL2_DSO_PATH` the same way.
+
+### The fix
+
+Entries that are not folders, or cannot be read, are passed over without throwing, and `moonray.exe` is matched by its whole name,
+so the look stops at the first folder holding it (the kit puts its runtime first). Checked with `cmd.exe` in PATH: MoonRay's own
+stops with the error above; with the switch on, the scene renders.
+
+### What the plugin does with it
+
+The kit also hands MoonRay a PATH of folders only (`native.folders_only`), so a runtime without this patch starts too. Off,
+MoonRay is as its source has it.
+
 ## `moonray.patch`: each Cryptomatte sample counted once (`MOONRAY_MODO_CRYPTO_ONCE`)
 
 Applied by `tools/port_crypto_once.py`, behind a switch of its own (the plugin's preference, on by default).

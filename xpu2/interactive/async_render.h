@@ -689,6 +689,12 @@ public:
         if (cancelled) {
             result.cancelled = true;
             result.seconds = at();
+            // The frame's report as far as it went (the session's summary line read 0 samples a second and no tiles).
+            result.gpuItemsPerSecond = gpuRate;
+            if (useGpu) {
+                result.fineLoaded = gpu_->fineLoaded();
+                result.fineEvicted = gpu_->fineEvicted();
+            }
             return result;
         }
         result.drained = drained;

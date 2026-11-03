@@ -29,7 +29,9 @@ def main():
  records=saved.get('frames',{})
  def save(status):
   stage=report.with_suffix('.tmp');stage.write_text(json.dumps({'signature':signature,'status':status,'frames':records},indent=2),encoding='utf-8');stage.replace(report)
- env=dict(os.environ);env['PATH']=str(runtime)+os.pathsep+env.get('PATH','');env['REZ_MOONRAY_ROOT']=str(runtime);env['TMPDIR']=tempfile.gettempdir()
+ # Folders only: MoonRay stops at a PATH entry that is a file (native.folders_only).
+ path=[p for p in os.environ.get('PATH','').split(os.pathsep) if p.strip() and Path(os.path.expandvars(p.strip().strip('"'))).is_dir()]
+ env=dict(os.environ);env['PATH']=os.pathsep.join([str(runtime)]+path);env['REZ_MOONRAY_ROOT']=str(runtime);env['TMPDIR']=tempfile.gettempdir()
  env['RDL2_DSO_PATH']=os.pathsep.join(str(p) for p in (runtime/'rdl2dso',runtime) if p.is_dir())
  for key in ('PYTHONHOME','PYTHONPATH','QT_PLUGIN_PATH','QT_QPA_PLATFORM_PLUGIN_PATH','MOONRAY_MODO_SESSION','MOONRAY_MODO_GENERATION','MOONRAY_MODO_BUCKETS'):env.pop(key,None)
  # Validate every frame and asset before launching a renderer.
