@@ -155,6 +155,10 @@ def register():
         plan=entities.channels(name)
         Drawn=instance(name)
         floors={channel:entities.limits(name,key) for key,channel,kind,default,choices in plan if entities.limits(name,key) is not None}
+        # The channels the Modo camera's lens gives a MoonRay camera that uses it, and that switch's channel.
+        from moonray_modo.camera_convert import taken
+        driven={channel for key,channel,kind,default,choices in plan if key in taken(name)}
+        switch=next((channel for key,channel,kind,default,choices in plan if key=='modo_lens'),None)
         class Typed(lxu.package.BasicPackage, lxu.package.BasicItemBehaviors, lxifc.ChannelUI):
             def newborn(self,item,original,flags):
                 # Called for newly created items, not when a saved scene is loaded. A duplicate keeps
@@ -213,6 +217,18 @@ def register():
                     try:lx.object.UIHints(hints).MinFloat(float(floors[channelName]))
                     except Exception:pass
                 return lx.result.OK
+            # A camera that uses the Modo camera's lens: what that lens gives it (camera_convert.taken) is greyed in its dw
+            # tab, where values typed did nothing, and looks again as the switch is turned.
+            def cui_Enabled(self,channelName,msg,item,chanRead):
+                if channelName not in driven or not switch:return lx.result.OK
+                try:
+                    held=lx.object.Item(item);read=lx.object.ChannelRead(chanRead)
+                    if read.Integer(held,held.ChannelLookup(switch)):return lx.result.CMD_DISABLED
+                except Exception:pass
+                return lx.result.OK
+            def cui_DependencyCount(self,channelName):return 1 if channelName in driven and switch else 0
+            def cui_DependencyByIndexName(self,channelName,index):return ('camera',switch)
+            def cui_DependencyByIndex(self,channelName,index):return (lx.service.Scene().ItemTypeLookup('camera'),switch)
         return Typed
 
     def chosen(name):

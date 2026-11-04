@@ -30,6 +30,18 @@ def suited(camera):
     return 'OrthographicCamera' if channel(camera, 'projType', 'persp') == 'ortho' else 'PerspectiveCamera'
 
 
+def taken(kind):
+    """The attributes of a MoonRay camera that lens() takes from the Modo camera, and the shutter, which is the scene's:
+    greyed in its dw tab while it uses the Modo camera's lens (lxserv/moonray_entities.py, cui_Enabled)."""
+    if kind not in ('PerspectiveCamera', 'OrthographicCamera'):
+        return frozenset()
+    common = {'horizontal_film_offset', 'vertical_film_offset', 'pixel_aspect_ratio', 'dof', 'dof_aperture', 'dof_focus_distance',
+              'bokeh', 'bokeh_sides', 'bokeh_angle', 'film_width_aperture', 'mb_shutter_open', 'mb_shutter_close'}
+    if kind == 'PerspectiveCamera':
+        common |= {'focal', 'stereo_view', 'stereo_interocular_distance', 'stereo_convergence_distance'}
+    return frozenset(common)
+
+
 def lens(camera, kind):
     """The MoonRay attributes the chosen kind takes from the Modo camera, as host.snapshot reads them."""
     import modo

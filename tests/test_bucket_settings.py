@@ -57,7 +57,7 @@ class BucketSettings(unittest.TestCase):
         from types import SimpleNamespace
         Session=persistent_session()
         calls=[]
-        state=SimpleNamespace(running=lambda:True,signature=('runtime',0,'auto',0)+native.source_switches(),
+        state=SimpleNamespace(running=lambda:True,signature=('runtime',0,'auto',0,None)+native.source_switches(),
             stopping=False,sent=None,process=SimpleNamespace(kill=lambda:calls.append('restart')),
             _dispatch=lambda:calls.append('dispatch'),idle=SimpleNamespace(cancel=lambda:None))
         Session.submit(state,'scene','runtime',0,'auto',1,0)
