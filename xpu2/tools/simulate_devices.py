@@ -39,9 +39,11 @@ class Case:
     """One simulated machine: its switches, what its Terminal must say and must not, and what it is compared with."""
 
     def __init__(self, name, what, env=None, expect=(), forbid=(r'left out',), realtime=False, against='base-a',
-                 tolerance=None):
+                 tolerance=None, needs=None):
         self.name, self.what, self.env, self.expect, self.forbid = name, what, dict(env or {}), list(expect), list(forbid)
-        self.realtime, self.against, self.tolerance = realtime, against, tolerance
+        # needs: (pattern, why) the Terminal must show for the case to say anything, else it is skipped: a scene that
+        # decodes no texture tiles has none to move.
+        self.realtime, self.against, self.tolerance, self.needs = realtime, against, tolerance, needs
 
 
 def cases(suite, cards, groups):
@@ -77,7 +79,8 @@ def cases(suite, cards, groups):
     out.append(Case('numa-cards', 'two cards, each near a node of its own', {'XPU2_SIMULATE_CARDS': 2, 'XPU2_SIMULATE_NODES': 2,
                     'XPU2_SIMULATE_CARD_NODES': '0,1'}, expect=[r'\(lane 1\) near node 1', r'first graphics card near node 0']))
     out.append(Case('numa-spill', 'two NUMA nodes, the first holding 1 MB of texture tiles: the rest moved to the second',
-                    {'XPU2_SIMULATE_NODES': 2, 'XPU2_SIMULATE_NODE_MB': '1,0'}, expect=[r'moved to node 1']))
+                    {'XPU2_SIMULATE_NODES': 2, 'XPU2_SIMULATE_NODE_MB': '1,0'}, expect=[r'moved to node 1'],
+                    needs=(r'[1-9]\d* of \d+ finest tiles decoded', 'the scene decoded no fine texture tiles')))
     # Realtime's denoiser: OptiX on the first card that runs it, else Open Image Denoise on the processor.
     dn = [Case('denoise-optix', 'realtime, denoised by OptiX on the first card', realtime=True, against=None,
                expect=[r'denoised by OptiX on lane 0']),
@@ -212,6 +215,9 @@ def judge(result, results):
                     why.append('RMS %.5f past twice the noise (%.5f)' % (cmp['rms'], floor))
                 if abs(cmp['ratio'] - 1) > max(0.005, 3 * rel):
                     why.append('mean ratio %.4f' % cmp['ratio'])
+    result['skipped'] = None
+    if case.needs and not re.search(case.needs[0], log):
+        result['skipped'], why = case.needs[1], []
     result['passed'] = not why
     result['why'] = why
     return result
@@ -304,7 +310,8 @@ def main():
             judge(r, by_name)
             if case.name == 'base-b':
                 r['comparison'] = compare(by_name['base-a']['picture'] if 'base-a' in by_name else None, r['picture'])
-            print('  %s%s' % ('pass' if r['passed'] else 'FAIL', (': ' + '; '.join(r['why'])) if r['why'] else ''), flush=True)
+            print('  %s%s' % ('skipped: ' + r['skipped'] if r.get('skipped') else 'pass' if r['passed'] else 'FAIL',
+                              (': ' + '; '.join(r['why'])) if r['why'] else ''), flush=True)
             results.append(r)
         scenes_results.append((scene, results))
     passed = page(scenes_results, out, a.exe)
