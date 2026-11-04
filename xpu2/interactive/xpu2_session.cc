@@ -237,9 +237,14 @@ Programs programs(const fs::path& folder) {
 }
 
 // card: the graphics card, CUDA's numbering (multi_device.h).
-std::unique_ptr<async::GpuLane> gpuLane(const Programs& p, std::function<void(unsigned, unsigned)> progress = {}, int card = 0) {
+// lane: its place among the lanes (0 the first); XPU2_SIMULATE_CARD_THREADS narrows it as a smaller card would be.
+std::unique_ptr<async::GpuLane> gpuLane(const Programs& p, std::function<void(unsigned, unsigned)> progress = {}, int card = 0,
+                                        int lane = 0) {
     async::GpuOptions options;
     options.device = card;
+    options.lane = lane;
+    if (const unsigned threads = multi::simulatedEntry("XPU2_SIMULATE_CARD_THREADS", size_t(lane)))
+        options.launchThreads = std::min(options.launchThreads, threads);
     options.compileProgress = std::move(progress);
     options.mapsPtx = p.maps;
     options.lightsPtx = p.lights;
@@ -1254,7 +1259,10 @@ private:
         wchar_t exe[MAX_PATH];
         const DWORD n = GetModuleFileNameW(nullptr, exe, MAX_PATH);
         const fs::path here = n && n < MAX_PATH ? fs::path(exe).parent_path() : fs::current_path();
-        for (const fs::path& dll : {here / "libOpenImageDenoise-2.dll", here.parent_path() / "runtime" / "libOpenImageDenoise-2.dll"})
+        // Beside XPU2, in MoonRay's runtime beside XPU2's (an installed kit), or where XPU2_SESSION_OIDN_DIR says.
+        std::vector<fs::path> places{here / "libOpenImageDenoise-2.dll", here.parent_path() / "runtime" / "libOpenImageDenoise-2.dll"};
+        if (const char* dir = std::getenv("XPU2_SESSION_OIDN_DIR")) places.push_back(fs::path(dir) / "libOpenImageDenoise-2.dll");
+        for (const fs::path& dll : places)
             if (!library_ && fs::exists(dll)) library_ = LoadLibraryExW(dll.wstring().c_str(), nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
         if (!library_) {
             error = loadError_ = "Open Image Denoise not found beside XPU2 or in MoonRay's runtime";
@@ -1313,11 +1321,11 @@ public:
     DenoiseEngine(async::GpuLane* first, bool upscale) {
         if (first) {
             cards_.push_back(std::make_unique<async::GpuLane::Denoiser>(*first, upscale));
-            names_.push_back(first->card());
+            names_.push_back(first->lane());
             for (const auto& f : first->followers()) {
                 keep_.push_back(f);  // the card's lane outlives its denoiser, should the card be left out meanwhile
                 cards_.push_back(std::make_unique<async::GpuLane::Denoiser>(*f, upscale));
-                names_.push_back(f->card());
+                names_.push_back(f->lane());
             }
         }
     }
@@ -1330,19 +1338,36 @@ public:
             if (at_ < multi::simulated("XPU2_SIMULATE_DENOISE_FAIL")) failed = "failed (simulated, XPU2_SIMULATE_DENOISE_FAIL)";
             else if (cards_[at_]->run(color, albedo, normal, out, w, h, failed)) {
                 upscaled_ = cards_[at_]->upscales();
+                said("OptiX on lane " + std::to_string(names_[at_]));
                 return true;
             }
             ++at_;
-            std::printf("MoonRay XPU2: OptiX's denoiser on graphics card %d: %s; realtime pictures are denoised %s\n", names_[at_ - 1],
-                        failed.c_str(), at_ < cards_.size() ? ("on graphics card " + std::to_string(names_[at_])).c_str()
+            std::printf("MoonRay XPU2: OptiX's denoiser on lane %d: %s; realtime pictures are denoised %s\n", names_[at_ - 1],
+                        failed.c_str(), at_ < cards_.size() ? ("on lane " + std::to_string(names_[at_])).c_str()
                                                              : "by Open Image Denoise on the processor");
             std::fflush(stdout);
         }
         upscaled_ = false;
-        return cpu_.run(color, albedo, normal, out, w, h, error);
+        const bool ok = cpu_.run(color, albedo, normal, out, w, h, error);
+        if (ok) said("Open Image Denoise on the processor");
+        else if (!cpuFailed_) {
+            cpuFailed_ = true;
+            std::printf("MoonRay XPU2: Open Image Denoise on the processor: %s; realtime pictures are not denoised\n", error.c_str());
+            std::fflush(stdout);
+        }
+        return ok;
     }
 
 private:
+    // Once a device: the Terminal says which denoises realtime's pictures.
+    void said(const std::string& where) {
+        if (where == saidWhere_) return;
+        saidWhere_ = where;
+        std::printf("MoonRay XPU2: realtime pictures denoised by %s\n", where.c_str());
+        std::fflush(stdout);
+    }
+    std::string saidWhere_;
+    bool cpuFailed_ = false;
     std::vector<std::shared_ptr<async::GpuLane>> keep_;  // before cards_: let go after the denoisers on them
     std::vector<std::unique_ptr<async::GpuLane::Denoiser>> cards_;
     std::vector<int> names_;
@@ -1678,8 +1703,8 @@ int session(const Args& args, const fs::path& directory) {
                         const std::vector<int> cards = multi::cardOrdinals(gpu::cardCount());
                         for (size_t k = 1; k < cards.size(); ++k) {
                             try {
-                                gpu->follow(gpuLane(p, {}, cards[k]));
-                                std::printf("MoonRay XPU2: graphics card %d renders with the first%s\n", cards[k],
+                                gpu->follow(gpuLane(p, {}, cards[k], int(k)));
+                                std::printf("MoonRay XPU2: graphics card %d (lane %zu) renders with the first%s\n", cards[k], k,
                                             cards[k] == cards[0] ? " (simulated, XPU2_SIMULATE_CARDS)" : "");
                             } catch (const std::exception& e) {
                                 gpu->use();

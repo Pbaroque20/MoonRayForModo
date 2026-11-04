@@ -19,6 +19,7 @@
 #include "async_gpu_abi.h"
 #include <chrono>
 #include "gpu_lane.h"
+#include "multi_device.h"
 #include <condition_variable>
 #include <cstdio>
 #include <cstdlib>
@@ -48,6 +49,7 @@ struct GpuOptions {
     // The extras module (async_extras.cu): the camera's ray and the AOVs' accumulation, called by the path tracer.
     std::string extrasPtx;
     int device = 0;  // the graphics card, CUDA's numbering (multi_device.h)
+    int lane = 0;    // its place among the lanes, the first 0 (multi_device.h's simulation switches)
 };
 
 
@@ -182,6 +184,7 @@ public:
     // This lane's context current on the calling thread.
     void use() const { gpu::Driver::check(driver.cuCtxSetCurrent_p(driver.context)); }
     int card() const { return driver.ordinal; }
+    int lane() const { return options_.lane; }
     GpuLane(const GpuLane&) = delete;
 
     // Bytes of scratch per launch thread: a Bsdf, the pending rays and the DwaBase parameter slots
@@ -648,7 +651,11 @@ public:
     void prepare(const cpu::PlanView& plan) {
         prepareOwn(plan);
         if (followers_.empty()) return;
-        forwardOrDrop([&](GpuLane& f) { f.prepare(plan); });
+        forwardOrDrop([&](GpuLane& f) {
+            if (multi::simulated("XPU2_SIMULATE_CARD_FAIL") == unsigned(f.options_.lane) && f.options_.lane)
+                throw std::runtime_error("failed (simulated, XPU2_SIMULATE_CARD_FAIL)");
+            f.prepare(plan);
+        });
         // The card's memory as every lane left it: lanes sharing a card (XPU2_SIMULATE_CARDS) did not take it since.
         size_t freeBytes = 0, totalBytes = 0;
         forwardOrDrop([&](GpuLane& f) {
@@ -1693,9 +1700,16 @@ public:
         auto& slot = takeParams(p);
         ox(optixLaunch(program_->pipeline, stream_, slot.device->pointer, sizeof(LaunchParams), &program_->sbt, p.pixels, 1, 1));
         copyOut(scene_.hostErrors, scene_.errors, size_t(p.pixels) * sizeof(float));
-        if (countsWithErrors_) {  // to pool them: a copy of their own, apart from the pictures'
-            if (!errorCounts_ || errorCounts_->bytes != size_t(p.pixels) * sizeof(U32)) errorCounts_ = pinned(size_t(p.pixels) * sizeof(U32));
-            copyOut(errorCounts_, scene_.counts, size_t(p.pixels) * sizeof(U32));
+        if (countsWithErrors_) {  // to pool them: the film's sums, odd sums and counts, apart from the pictures' copy
+            const size_t pixels = p.pixels;
+            if (!errorCounts_ || errorCounts_->bytes != pixels * sizeof(U32)) {
+                errorSums_ = pinned(pixels * 4 * sizeof(double));
+                errorOdd_ = pinned(pixels * 4 * sizeof(double));
+                errorCounts_ = pinned(pixels * sizeof(U32));
+            }
+            copyOut(errorSums_, scene_.sums, pixels * 4 * sizeof(double));
+            copyOut(errorOdd_, scene_.odd, pixels * 4 * sizeof(double));
+            copyOut(errorCounts_, scene_.counts, pixels * sizeof(U32));
         }
         gpu::Driver::check(driver.cuEventRecord_p(scene_.errorsDone->value, stream_));
         slot.done = scene_.errorsDone;
@@ -1712,26 +1726,33 @@ public:
         errorsPooled_ = true;
         return true;
     }
-    // The cards' errors as one card's over all their samples: an error is the spread over the square root of the
-    // samples, so they pool by their counts, sqrt(sum n_k^2 e_k^2) / n (Renderer's merged() pools the CPU's so); where
-    // some have too few samples for an error, the rest stand for the pixel, scaled to all of its samples.
+    // The cards' errors as one card's: each pixel's sums, odd sums and counts added over the cards, and its error worked
+    // out from them as the device works out its own (pixelError), so it is the error one card with all the samples
+    // would have found. (Pooling each card's error by its count was noisier: each card's error rests on its share of a
+    // pixel's samples alone, and the samples went to the wrong places; three simulated cards came out past the noise.)
     void poolErrors() {
         const size_t pixels = size_t(plan_->width) * plan_->height;
         pooled_.resize(pixels);
-        const float* own = static_cast<const float*>(scene_.hostErrors->host());
-        const U32* ownCounts = errorCounts();
+        const double* sums = static_cast<const double*>(errorSums_->host());
+        const double* odd = static_cast<const double*>(errorOdd_->host());
+        const U32* counts = errorCounts();
         for (size_t i = 0; i < pixels; ++i) {
-            double all = 0, valid = 0, squares = 0;
-            auto take = [&](float e, U32 n) {
-                all += n;
-                if (e >= 0 && n) {
-                    valid += n;
-                    squares += double(n) * n * double(e) * e;
+            double total[4], halves[4];
+            U32 n = counts[i];
+            for (int c = 0; c < 4; ++c) {
+                total[c] = sums[i * 4 + c];
+                halves[c] = odd[i * 4 + c];
+            }
+            for (const auto& f : followers_) {
+                const double* s = static_cast<const double*>(f->errorSums_->host());
+                const double* o = static_cast<const double*>(f->errorOdd_->host());
+                for (int c = 0; c < 4; ++c) {
+                    total[c] += s[i * 4 + c];
+                    halves[c] += o[i * 4 + c];
                 }
-            };
-            take(own[i], ownCounts[i]);
-            for (const auto& f : followers_) take(f->errorsOwn()[i], f->errorCounts()[i]);
-            pooled_[i] = valid > 0 ? float(std::sqrt(squares) / valid * std::sqrt(valid / all)) : ErrorNotReady;
+                n += f->errorCounts()[i];
+            }
+            pooled_[i] = pixelError(total, halves, n);
         }
     }
     const U32* errorCounts() const { return static_cast<const U32*>(errorCounts_->host()); }
@@ -3177,7 +3198,7 @@ private:
     std::vector<std::shared_ptr<GpuLane>> followers_;  // shared: a denoiser on one keeps it (xpu2_session.cc)
     mutable std::vector<U32> passSum_;
     std::vector<float> pooled_;
-    gpu::B errorCounts_;  // the counts read back with the errors
+    gpu::B errorSums_, errorOdd_, errorCounts_;  // the film read back with the errors, to pool them (poolErrors)
     bool countsWithErrors_ = false, filmAdded_ = false, previewAdded_ = false, errorsPooled_ = false;
     U64 published_ = 0, launches_ = 0;
     U64 parkedTail_ = 0, parkedIssued_ = 0;

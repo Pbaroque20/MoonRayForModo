@@ -36,9 +36,11 @@ of the scene and film. Every lane is made and used on the one feeder thread, eac
 - **Films.** As the first card's film lands, the followers' sums, counts, odd sums and render times are added into its
   host copy (`GpuLane::addFollowers`), and their AOVs merged by each output's filter (`Renderer::addCardAovs`). The
   previews, the picture, the sample audit and the outputs all read that copy.
-- **Adaptive sampling.** Each card works out its pixels' errors over its own samples; they pool by their counts,
-  `sqrt(sum n_k^2 e_k^2) / n` (`GpuLane::poolErrors`), as the renderer then pools the CPU's. Errors are asked for only
-  once no card holds parked samples and each has a launch slot free.
+- **Adaptive sampling.** With the errors, each card's film comes back (its sums, odd sums and counts); they add over the
+  cards, and each pixel's error is worked out from the sums as one card works out its own (`GpuLane::poolErrors`), so
+  it is the error one card with every sample would have found. The renderer then pools the CPU's as before. Errors are
+  asked for only once no card holds parked samples and each has a launch slot free. (Pooling each card's own error by
+  its count, the first way, was noisier: the full suite's three cards on Hydra came out past the noise.)
 - **One card's alone.** The pass chain and partial shading stay with a single card: with followers, a frame takes the
   host's passes and parks samples on a missing tile, paths XPU2 already had.
 - **Shaders.** Compile XPU2 Shaders compiles for each card used, since OptiX's cache holds the programs for each kind of
@@ -64,6 +66,14 @@ For a machine with one group and one card:
 - `XPU2_SIMULATE_CARDS=N` makes N lanes on the first card, each with its own context, scene and film, fed as N cards.
 - `XPU2_SIMULATE_DENOISE_FAIL=N` makes the first N cards' OptiX denoisers fail, so realtime's pictures go to the next
   card, or to Open Image Denoise past the last.
+- `XPU2_SIMULATE_CARD_THREADS=a,b,...` narrows each lane's launches (a, the first's; b, the second's...), so a lane works
+  as a smaller card would beside a larger one.
+- `XPU2_SIMULATE_CARD_FAIL=k` fails lane k (1 or more) as it takes the scene, so it is left out and the others go on.
+- `XPU2_SIMULATE_SEED=n` renders the frame's other samples: the app's second one-card render, which measures the
+  scene's noise (two renders with one seed are all but the same picture, a sample being its pixel, index and seed).
+
+The simulation app, `xpu2/tools/simulate_devices.py`, runs a scene on these machines and judges each render against two
+one-card renders, within their noise, with the Terminal lines each machine should give (`--suite quick` or `full`).
 
 A simulated card shares the real card's memory and speed, so the timings say nothing about real cards. What it shows is
 that the lanes claim, launch, merge and audit correctly: the picture should match a one-card render's within noise.

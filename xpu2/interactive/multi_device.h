@@ -21,6 +21,7 @@
 #include <windows.h>
 #include <algorithm>
 #include <cstdlib>
+#include <cstring>
 #include <thread>
 #include <vector>
 
@@ -36,6 +37,8 @@ struct Group {
 // Simulation, for a machine with one group and one card (the simulation app's): XPU2_SIMULATE_GROUPS=K splits the
 // first group's processors into K groups of the same number, so the workers are placed as on K groups;
 // XPU2_SIMULATE_CARDS=N makes N lanes on the first card, each with its own context, scene and film, fed as N cards.
+// For those lanes: XPU2_SIMULATE_CARD_THREADS=a,b,... caps each lane's launch width (a smaller card), and
+// XPU2_SIMULATE_CARD_FAIL=k fails lane k (1 or more) as it takes a scene, so it is left out.
 inline unsigned simulated(const char* name) {
     const char* v = std::getenv(name);
     return v && *v ? unsigned(std::max(0, std::atoi(v))) : 0u;
@@ -112,6 +115,17 @@ inline void placeWorker(unsigned w, unsigned n, WORD home, KAFFINITY homeMask) {
         }
         at += g.processors;
     }
+}
+
+// Entry i of a comma-separated simulation list (0: none there).
+inline unsigned simulatedEntry(const char* name, size_t i) {
+    const char* v = std::getenv(name);
+    for (size_t at = 0; v && *v; ++at) {
+        if (at == i) return unsigned(std::max(0, std::atoi(v)));
+        v = std::strchr(v, ',');
+        if (v) ++v;
+    }
+    return 0;
 }
 
 // The graphics cards to use, of count found: XPU2_CARDS=N caps them (at least 1).
