@@ -44,7 +44,7 @@ A hotfix to 0.5.2, with a new runtime ZIP: install both, and **Compile XPU2 Shad
   with the same picture, so XPU2 runs on smaller graphics cards. A leafy scene that filled 32 GB of graphics memory and
   crashed now renders in 20 GB.
 
-  ![A tree's leaves against the sky, rendered in XPU2 in 20 GB of graphics memory (picture: pixelwerk)](images/Leaf.webp)
+  ![A tree's leaves against the sky, rendered in XPU2 in 20 GB of graphics memory (picture: Pixelwerk)](images/Leaf.webp)
 
 - **Moving subdivision surfaces render in XPU2**: a moving mesh with adaptive subdivision, and copies of a subdivision mesh
   that changes shape during the shutter, no longer send the scene to MoonRay XPU, nor does a still mesh taken for a moving one.

@@ -68,6 +68,6 @@ Left of each pair: MoonRay's render from the scene's own files. Right: after imp
 ## 0.5.2.x pictures
 
 - `graph-editor-groups.webp`: a DwaBaseMaterial node in the graph editor with its inputs in folding groups, beside Properties.
-- `Leaf.webp`: a tree's leaves rendered in XPU2 once its graphics card memory was halved in 0.5.2.1 (32 GB and a crash before, 20 GB after). Picture by pixelwerk.
+- `Leaf.webp`: a tree's leaves rendered in XPU2 once its graphics card memory was halved in 0.5.2.1 (32 GB and a crash before, 20 GB after). Picture by Pixelwerk.
 - `xpu2-bokeh-image.jpg`: eight lights 20 m away with focus at 8 m, through the hexagonal bokeh image of a user's scene; MoonRay (scalar) left, XPU2 right, 1,024 samples a pixel. Total light within 0.2 %, each shape's centre within a tenth of a pixel.
 - `xpu2-texture-memory-grass.jpg`: a 960 x 540 crop at full size of a grass scene with 8K maps; XPU2 holding its textures in floats (4 GB on the card) left, in a third of the memory (1.4 GB) right.
