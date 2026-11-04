@@ -12,10 +12,20 @@ The next hotfix, with a new XPU2 runtime: **Compile XPU2 Shaders once more**.
 
 - **Look-dev is lighter on Modo**: graph editor changes no longer re-read the whole scene, hidden meshes' materials are left alone, and Low Value, High Value, gamma, brightness and contrast change without reloading the scene.
 - **Wired inputs are locked in Properties**, and **a material node's inputs fold into groups** (Diffuse, Specular, Clearcoat ...), connected ones always shown.
+
+  ![A DwaBaseMaterial node with Diffuse open and its other groups folded, beside the same groups in Properties](docs/images/graph-editor-groups.webp)
+
 - **A material's lists come up quicker** in Properties and the graph editor, **switching networks keeps the graph editor open**, and **Remove Network** removes another material's network or a loose one, after asking.
 - **A cookie light filter renders in XPU2**, at XPU2's speed, where it sent the whole render to MoonRay's slow scalar mode.
 - **A bokeh image turns bokeh on**, and the dw camera fields Modo's camera drives are greyed while it does.
+
+  ![Lights far out of focus through a hexagonal bokeh image, MoonRay left and XPU2 right](docs/images/xpu2-bokeh-image.jpg)
+
 - **XPU2 needs a third of the texture memory**: a scene with a few 8K maps that went into texture overflow mode now holds 1.4 GB of textures on the graphics card, not 4 GB, with the same picture. **XPU2 also holds less of the card**: a scene with grass peaked at 9.7 GB rather than 10.9 GB (8.7 GB without subsurface).
+
+  ![Grass, a crop at full size: XPU2 holding its textures in floats on the left, in a third of the memory on the right](docs/images/xpu2-texture-memory-grass.jpg)
+
+- **A sliver triangle no longer sends an XPU2 frame to MoonRay**: a hit on a triangle too thin for its normal in single precision failed the sample, and with it the whole frame. The grass scene fell back to MoonRay every time on the processor alone and now and then with the graphics card.
 
 ## New in 0.5.2.2
 
@@ -33,7 +43,11 @@ A hotfix to 0.5.2, with a new runtime ZIP: install both, and **Compile XPU2 Shad
 - **Saved pictures keep their alpha**: with Alpha among the render's outputs, Save Image and Export AOVs save the Beauty and the Denoised Beauty with it, as PNG, TIFF, Targa or OpenEXR. Export AOVs can also save every output ticked as one multilayer OpenEXR, and a group's own checkbox (Pictures, Light and the rest) ticks and unticks what is under it.
 - **MoonRay starts whatever is in the Windows PATH**: a file in it, such as `cmd.exe`, no longer stops every preview and scene load with "Not a directory".
 - **XPU2 needs about half the graphics card's memory**: a simple scene went from about 11 GB to 4.5 GB, at the same speed and
-  with the same picture, so XPU2 runs on smaller graphics cards.
+  with the same picture, so XPU2 runs on smaller graphics cards. A leafy scene that filled 32 GB of graphics memory and
+  crashed now renders in 20 GB.
+
+  ![A tree's leaves against the sky, rendered in XPU2 in 20 GB of graphics memory (picture: pixelwerk)](docs/images/Leaf.webp)
+
 - **Moving subdivision surfaces render in XPU2**: a moving mesh with adaptive subdivision, and copies of a subdivision mesh
   that changes shape during the shutter, no longer send the scene to MoonRay XPU.
 - **A still mesh is no longer taken for a moving one**: XPU2 sent some scenes with motion blur to MoonRay XPU for meshes that
