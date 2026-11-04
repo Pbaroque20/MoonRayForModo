@@ -101,6 +101,8 @@ class PageTests(unittest.TestCase):
         # Under XPU2's page, whose devices it chooses: no page of its own.
         self.assertIn('val="sub MoonRayDevices:sheet"', text.split('key="MoonRayXPU2Page:sheet"')[1].split('</hash>')[0])
         self.assertNotIn('prefs/moonray/devices:filterPreset', text)
+        # Nor an empty category of its own in the Preferences' list.
+        self.assertNotIn('moonray/devices', text)
         self.assertIn('cmd moonray.xpu2.compileShaders', text.split('key="MoonRayDevices:sheet"')[1])
         self.assertNotIn('moonray.pref.xpu2Devices', text)
 

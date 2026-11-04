@@ -70,8 +70,16 @@ def render_settings_changed():
     property_notifications.notify()
 
 
+def _followed():
+    """The kit's commands' notifier, so that a preference changed elsewhere (Preview Preferences) is shown here as it is."""
+    from moonray_modo import property_notifications
+    return property_notifications.Followed, ((property_notifications.NAME,''),)
+
+
 def switch(key,changed=None):
-    class Switch(lxu.command.BasicCommand):
+    Followed,watched=_followed()
+    class Switch(Followed,lxu.command.BasicCommand):
+        WATCHED=watched
         def __init__(self):
             super().__init__()
             self.dyna_Add('value',lx.symbol.sTYPE_BOOLEAN)
@@ -100,7 +108,9 @@ def number(key,least,most):
 
 def choice(key,entries,changed=None):
     """entries are (what is stored, what is shown), or a function giving them; changed is called after a choice."""
-    class Choice(lxu.command.BasicCommand):
+    Followed,watched=_followed()
+    class Choice(Followed,lxu.command.BasicCommand):
+        WATCHED=watched
         def __init__(self):
             super().__init__()
             self.dyna_Add('value',lx.symbol.sTYPE_INTEGER)
@@ -179,7 +189,7 @@ lx.bless(switch('usd_specular'),'moonray.pref.usdSpecular')
 lx.bless(switch('opaque_alpha'),'moonray.pref.opaqueAlpha')
 lx.bless(switch('transmission_roughness'),'moonray.pref.transmissionRoughness')
 lx.bless(switch('auto_xpu'),'moonray.pref.autoXpu')
-lx.bless(switch('xpu_realtime'),'moonray.pref.xpuRealtime')
+lx.bless(switch('xpu_realtime',render_settings_changed),'moonray.pref.xpuRealtime')
 lx.bless(switch('pbr_validity'),'moonray.pref.pbrValidity')
 # The Render item's form greys Smart Render, Safe Denoising and XPU2's sampling by this choice: told to look again.
 lx.bless(choice('xpu2/renderer',(('xpu','MoonRay XPU'),('xpu2','XPU2')),render_settings_changed),'moonray.pref.xpu2')

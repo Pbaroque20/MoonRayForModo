@@ -148,6 +148,9 @@ class GraphView(QtWidgets.QGraphicsView):
         # is down on the canvas, and the list of properties waits for it to come up.
         self.band=None;self.band_from=None;self.band_base=[];self.holding=False
         self.setRenderHint(QtGui.QPainter.Antialiasing);self.setDragMode(self.RubberBandDrag)
+        # The whole view drawn again at each change: Qt's least update left a moved node's wire where it had been on a
+        # tester's screen until something drew the whole view (a node deleted). A graph is small enough for it.
+        self.setViewportUpdateMode(self.FullViewportUpdate)
         self.setTransformationAnchor(self.AnchorUnderMouse);self.setBackgroundBrush(grid_brush())
         # Panning is by dragging; the canvas has no edges to scroll to.
         self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff);self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)

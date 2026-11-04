@@ -222,6 +222,11 @@ class Panel(Tools, QtWidgets.QWidget):
         self.rt=QtWidgets.QPushButton('RT Off');self.rt.setCheckable(True)
         self.rt.setStyleSheet('QPushButton:checked{background-color:#f49c1c;color:#1a1a1a;border:1px solid #ffb84d;border-radius:3px;font-weight:bold;}')
         self.rt.toggled.connect(self._rt_toggled)
+        # The preferences RT hangs on (the engine, Realtime with MoonRay XPU) are changed in Modo's Preferences as well as
+        # in Preview Preferences: either says so (property_notifications), and RT follows at once.
+        from . import property_notifications
+        self._preferences_followed=lambda:self._sync_rt() if not getattr(self,'disposed',False) else None
+        property_notifications.watchers.append(self._preferences_followed)
         row.addWidget(self.rt)
         row.addWidget(self.preview_engine)
         # The camera rendered through: Modo's, or a MoonRay camera item such as a fisheye.
@@ -574,6 +579,13 @@ class Panel(Tools, QtWidgets.QWidget):
 
     def _preferences_changed(self):
         self.status.setText('Preview preferences saved.')
+        # Realtime with MoonRay XPU on the processor may have been switched: RT is offered or not at once, and Modo's
+        # Preferences page, which has the same switch, shows it as it now is.
+        self._sync_rt()
+        try:
+            from . import property_notifications
+            property_notifications.notify()
+        except Exception:pass
         self.refine_timer.stop()
         if self._following:self.preview_timer.start()
 
@@ -2473,6 +2485,10 @@ class Panel(Tools, QtWidgets.QWidget):
     def dispose(self):
         if not self.disposed:
             self.disposed = True
+            try:
+                from . import property_notifications
+                property_notifications.watchers.remove(self._preferences_followed)
+            except (ValueError,AttributeError,ImportError):pass
             self.refine_timer.stop()
             self.detail_timer.stop()
             self.changes.close()

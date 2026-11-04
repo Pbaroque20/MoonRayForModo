@@ -1,4 +1,4 @@
-"""Device Management (Preferences > MoonRay > Device Management): the processors and graphics cards XPU2 finds, a switch
+"""Device Management (Preferences > MoonRay > XPU2 > Device Management): the processors and graphics cards XPU2 finds, a switch
 for each, and the shaders compiled for every card (moonray_modo.devices).
 
 The page has a slot for each of the first few cards and processor groups: a slot's sheet shows only where there is a
