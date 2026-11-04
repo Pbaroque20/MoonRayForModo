@@ -55,6 +55,14 @@ class CardMemory(unittest.TestCase):
         self.assertIn('bool growKind(Fine::Kind& c)', card)
         self.assertIn('if (c.freeSlots.empty()) growKind(c);', card)
 
+    def test_a_sliver_triangle_does_not_fail_the_frame(self):
+        # Grass: a hit on a triangle whose float face normal is zero failed the sample and sent the frame to MoonRay.
+        material = (XPU2 / 'shade_material.h').read_text(encoding='utf-8')
+        self.assertIn('ng = dl > 0 ? V3{float(nx / dl), float(ny / dl), float(nz / dl)} : -rayDir;', material)
+        cpu = (XPU2 / 'async_cpu.h').read_text(encoding='utf-8')
+        self.assertIn('(status %u at pixel %u, %u)', (XPU2 / 'async_render.h').read_text(encoding='utf-8'))
+        self.assertIn('void failed(SampleStatus status, U32 pixel', cpu)
+
     def test_large_allocations_reach_the_terminal(self):
         lane = (XPU2 / 'gpu_lane.h').read_text(encoding='utf-8')
         self.assertIn('const int mb=v?std::atoi(v):256;', lane)
