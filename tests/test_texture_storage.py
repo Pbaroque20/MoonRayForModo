@@ -55,6 +55,22 @@ class CardMemory(unittest.TestCase):
         self.assertIn('bool growKind(Fine::Kind& c)', card)
         self.assertIn('if (c.freeSlots.empty()) growKind(c);', card)
 
+    def test_a_sliver_triangle_does_not_fail_the_frame(self):
+        # Grass: a hit on a triangle whose float face normal is zero failed the sample and sent the frame to MoonRay.
+        material = (XPU2 / 'shade_material.h').read_text(encoding='utf-8')
+        self.assertIn('ng = dl > 0 ? V3{float(nx / dl), float(ny / dl), float(nz / dl)} : -rayDir;', material)
+        cpu = (XPU2 / 'async_cpu.h').read_text(encoding='utf-8')
+        self.assertIn('(status %u at pixel %u, %u)', (XPU2 / 'async_render.h').read_text(encoding='utf-8'))
+        self.assertIn('void failed(SampleStatus status, U32 pixel', cpu)
+
+    def test_lens_samples_have_an_order_of_their_own_and_owen_scrambling(self):
+        # A light far out of focus showed a lattice in every bokeh disc: a digital shift kept each pixel's set the same
+        # net, and the lens points were drawn in the pixel position's order.
+        stream = (XPU2 / 'sample_stream.h').read_text(encoding='utf-8')
+        self.assertIn('X2_HD inline U32 owenScramble(U32 x,U32 seed)', stream)
+        self.assertIn('return owenScramble(sobol(U32(id.index),d),', stream)
+        self.assertIn('owenScramble(sobol(owenScramble(U32(id.index),seeds.v[0]),dimension<4?dimension-2:0u)', stream)
+
     def test_large_allocations_reach_the_terminal(self):
         lane = (XPU2 / 'gpu_lane.h').read_text(encoding='utf-8')
         self.assertIn('const int mb=v?std::atoi(v):256;', lane)

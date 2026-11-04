@@ -2,22 +2,34 @@
 
 0.5 is a **pre-production release**: the plugin is no longer experimental, and it brings a new GPU renderer, MoonRay XPU2.
 
-## Coming in 0.5.2.3
+## Coming in 0.5.3
 
-The next hotfix, with a new XPU2 runtime (runtime-xpu2): install it, and **Compile XPU2 Shaders once more**.
+The next release, for its lighter use of memory and XPU2 on several devices, with a new XPU2 runtime (runtime-xpu2): install it, and **Compile XPU2 Shaders once more**.
 
 - **Look-dev is lighter on Modo**: a change in the graph editor is a material's edit, not a reading of the whole scene with its meshes; values stepping in the graph editor are written at most every 150 ms; the Shader Tree is walked once for a reading, not once for each material; and the check of the scene's texture files runs beside Modo, not on its thread once a second.
 - **Hidden meshes' materials are left alone**: a material worn only by hidden meshes is not read at each edit of another, and its images are not made ready for rendering.
 - **Low Value, High Value and the texture corrections change without a reload**: gamma, brightness, contrast and Low and High Value are the same nodes whatever their values, so a change is a value MoonRay's session takes as it is, where moving one to or from its default loaded the whole scene again (twenty seconds on a heavy one).
 - **An input wired in the graph editor is locked in Properties**: it is greyed there, and setting it can no longer cut the wire.
 - **A material node's inputs in folding groups**: Diffuse, Specular, Clearcoat, Fuzz, Glitter and the rest, as Properties has them; click a group to open or fold it; connected inputs always show.
+
+  ![A DwaBaseMaterial node with Diffuse open and its other groups folded, beside the same groups in Properties](images/graph-editor-groups.webp)
+
 - **A material's lists come up quicker**: the Properties panel reads each material once for all of its controls (a DwaBaseMaterial's refresh 60 ms to 15 ms), and the graph editor's property table makes the fields of a folded group only when it is opened or searched into (0.9 s to 0.3 s).
 - **Switching networks in the graph editor keeps the window**: choosing another material in its list closed the editor altogether when it had been opened from another one.
 - **Remove Network**: Graph > Remove Network removes another material's whole node network, offered only while the scene has more than one and never the one open; right-click a node > Remove Network removes the loose network it belongs to, beside the material's own. Each asks first, and undoes.
 - **A cookie light filter renders in XPU2**: XPU2 draws it as MoonRay's scalar mode does, so a light with a cookie no longer sends the whole render to scalar mode. Should XPU2 hand the scene back, MoonRay renders it in scalar, as MoonRay's vector and XPU modes leave the picture blank.
 - **XPU2 needs a third of the texture memory**: float textures are held in half floats (each value within 1/2048 of itself; a tile with a value past their range, such as a sun, stays in floats), grey images in one channel (the kit makes them so, and converts textures again once), a tile of one colour as that colour alone, and the graphics card's texture cache gives each texture slots of its own size. A grass scene with 8K ground maps went from 4 GB of textures on the card to 1.4 GB, out of texture overflow mode, with the same picture. Set `XPU2_SESSION_FLOAT_TEXTURES=1` to keep floats.
 - **XPU2 holds less of the graphics card**: the queue for samples waiting on texture tiles is made only where a frame can use it, the subsurface stack only where a material scatters under its surface (any DwaBase material kept it, some 3.5 GB of a 24 GB card), and the texture cache grows as tiles are read. A scene with grass peaked at 9.7 GB rather than 10.9 GB, 8.7 GB without subsurface, with the same picture.
+
+  ![Grass, a crop at full size: XPU2 holding its textures in floats on the left, in a third of the memory on the right](images/xpu2-texture-memory-grass.jpg)
+
+- **Depth of field in XPU2 has even grain**: a light far out of focus showed a lattice inside its bokeh disc; the lens samples now have an order of their own and every sample sequence is Owen-scrambled, so the noise is MoonRay's kind. The lens and shutter times draw Sobol's first dimensions in a per-pixel scrambled order (Burley's padding) instead of sharing the pixel position's; at 256 samples a pixel the difference from MoonRay halves. Pictures change in their noise only.
+- **A sliver triangle no longer sends an XPU2 frame to MoonRay**: a hit on a triangle too thin for its normal in single precision failed the sample, and with it the whole frame. The grass scene fell back to MoonRay every time on the processor alone and now and then with the graphics card. The normal is worked out again in double precision, else facing the ray. A fallback now names the sample that failed (its status and pixel); `XPU2_SESSION_DEBUG_FAILURES=1` says why.
+- **XPU2 uses every graphics card and every processor**: a second or third NVIDIA card renders the same picture alongside the first, taking samples from the same grid at its own pace, and a machine with more than 64 threads (several processor groups in Windows) puts XPU2's workers on all of them. A card that can't run OptiX's denoiser hands realtime denoising to the next card that can, and with none, to Open Image Denoise on the processor. A card that fails to take the scene is left out and the others carry on. Tested in simulation only, with one card here.
 - **A bokeh image turns bokeh on**: with the switch to use the Modo camera's lens on, choosing a bokeh image on a dw camera uses it whatever Modo's iris blades say. The dw camera's fields that Modo's camera drives (focal length, film, offsets, depth of field, blades, stereo, shutter) are greyed while the switch is on.
+
+  ![Lights far out of focus through a hexagonal bokeh image, MoonRay left and XPU2 right](images/xpu2-bokeh-image.jpg)
+
 
 ## New in 0.5.2.2
 
@@ -31,7 +43,11 @@ A hotfix to 0.5.2.1, to the kit alone: the runtime of 0.5.2.1 stays.
 A hotfix to 0.5.2, with a new runtime ZIP: install both, and **Compile XPU2 Shaders once more**.
 
 - **XPU2 needs about half the graphics card's memory**: a simple scene went from about 11 GB to 4.5 GB, at the same speed and
-  with the same picture, so XPU2 runs on smaller graphics cards.
+  with the same picture, so XPU2 runs on smaller graphics cards. A leafy scene that filled 32 GB of graphics memory and
+  crashed now renders in 20 GB.
+
+  ![A tree's leaves against the sky, rendered in XPU2 in 20 GB of graphics memory (picture: Pixelwerk)](images/Leaf.webp)
+
 - **Moving subdivision surfaces render in XPU2**: a moving mesh with adaptive subdivision, and copies of a subdivision mesh
   that changes shape during the shutter, no longer send the scene to MoonRay XPU, nor does a still mesh taken for a moving one.
 - **Playblasts render flat out**: each frame gathers all its samples as fast as the graphics card can, without the 8 seconds a preview spreads a render over, and previews keep that pacing for drags.
