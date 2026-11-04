@@ -57,6 +57,8 @@ def environment(directory):
     env['MOONRAY_MODO_CRYPTO_ONCE'] = '1' if crypto_once() else '0'
     # A light seen by a camera ray past every surface, in light path expressions (camera_light_lpe).
     env['MOONRAY_MODO_CAMERA_LIGHT_LPE'] = '1' if camera_light_lpe() else '0'
+    # A mesh its placement mirrors, with normals of its own, no longer black (mirrored_meshes).
+    env['MOONRAY_MODO_MIRRORED_MESHES'] = '1' if mirrored_meshes() else '0'
     # PATH entries that are not folders passed over as MoonRay looks for itself (dso_search).
     env['MOONRAY_MODO_DSO_SEARCH'] = '1' if dso_search() else '0'
     # The four overrides of tools/port_source_switches.py, each read by MoonRay as it starts.
@@ -303,6 +305,23 @@ def camera_light_lpe():
     return _switch('camera_light_lpe', 'MOONRAY_MODO_CAMERA_LIGHT_LPE')
 
 
+def pbr_validity():
+    """Whether renders hold MoonRay's PBR validity output (Preferences > MoonRay > Diagnostics, off by default): green where
+    a material's albedo, glass index or metal reflectivity is physically plausible, red where it is not."""
+    try:
+        from PySide2 import QtCore
+    except ImportError:
+        return os.environ.get('MOONRAY_MODO_PBR_VALIDITY', '0') == '1'
+    return str(QtCore.QSettings('MoonRayForModo', settings_name()).value('pbr_validity', False)).lower() in ('true', '1')
+
+
+def mirrored_meshes():
+    """Whether a mesh its placement mirrors (a negative scale) is turned outward again (tools/port_mirrored_meshes.py).
+    MoonRay keeps the faces' order as it moves the vertices, so the mirror turns their winding inward while the mesh's own
+    normals stay outward: such a mesh renders black, and one without normals of its own a little wrong. XPU2 follows it."""
+    return _switch('mirrored_meshes', 'MOONRAY_MODO_MIRRORED_MESHES')
+
+
 def dso_search():
     """Whether MoonRay, looking along PATH for moonray.exe as it starts (tools/port_dso_search.py), passes over entries
     that are files or cannot be read, and stops at the first folder holding it. MoonRay's own goes through all of PATH,
@@ -370,7 +389,7 @@ def engine_name(mode):
 
 def source_switches():
     """The MoonRay Source Overrides MoonRay reads as it starts: a session started with others is started again."""
-    return (toon_terminator(), toon_albedo(), crypto_volumes(), fog_alpha(), crypto_once(), camera_light_lpe(), dso_search()) + tuple(
+    return (toon_terminator(), toon_albedo(), crypto_volumes(), fog_alpha(), crypto_once(), camera_light_lpe(), mirrored_meshes(), dso_search()) + tuple(
         globals()[key]() for key in ('usd_specular', 'opaque_alpha', 'transmission_roughness', 'auto_xpu')) + (xpu2(), xpu2_chain(), __import__('moonray_modo.devices', fromlist=['state']).state())
 
 

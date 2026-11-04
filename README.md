@@ -380,7 +380,7 @@ Comparison audit between MoonRay 2026.29.1's source and the current plugin.
 |---|:---:|---|
 | CPU rendering (scalar and vector) | ![yes](docs/images/feature-yes.svg) | AVX build |
 | XPU rendering on the graphics card | ![yes](docs/images/feature-yes.svg) | NVIDIA only. XPU2, the plugin's own GPU renderer (new in 0.5), renders previews by default, and Render to a File and animations; deep images and checkpoints stay with MoonRay. XPU2 takes about half the graphics card memory it did before 0.5.2.1. Coming in 0.5.3: XPU2 needs a third of the texture memory, and less of the card; it renders on every NVIDIA card in the machine and every processor, past 64 threads, with each card and processor switched on or off in Preferences > MoonRay > Device Management, and its workers and texture memory placed by NUMA node on two-socket and many-die machines. |
-| Progressive rendering, and region rendering | ![yes](docs/images/feature-yes.svg) | The preview window, and the graph editor's MoonRay Widget. The widget renders under MoonRay LS, which is quicker |
+| Progressive rendering, and region rendering | ![yes](docs/images/feature-yes.svg) | The preview window, and the graph editor's MoonRay Widget. The widget renders under MoonRay LS, which is quicker. Coming in 0.5.3: the widget renders with XPU2, at 1024 to 4096 samples, with a Scale for the ball |
 | Cameras: perspective, orthographic, fisheye, spherical, dome | ![yes](docs/images/feature-yes.svg) | MoonRay camera items, or Modo's camera. A Modo camera converted to any of them in its place (animation kept), and changed back to a Modo camera; a Camera Sequence keying cameras to ranges of frames, and MoonRay cameras that are Modo cameras, looked through in the viewport by their lens with Modo's resolution gate. A MoonRay camera sees as near as a Modo camera unless Near is set, and a new one starts where the render camera stands. dw Perspective and Orthographic cameras take the Modo camera's lens, edited in its own tabs. |
 | Stereo cameras | ![yes](docs/images/feature-yes.svg) | Modo's camera Stereo: one eye, or both with a red/cyan picture in Render EXR; MoonLightIPR shows the eye chosen, and the left for both |
 | Overscan (rendering past the frame edge) | ![yes](docs/images/feature-yes.svg) | Modo's camera Overscan, or a MoonRay camera's own when it is rendered through, in final renders |
@@ -390,7 +390,7 @@ Comparison audit between MoonRay 2026.29.1's source and the current plugin.
 | Light, shadow and light filter linking | ![yes](docs/images/feature-yes.svg) | MoonRay's own sets, and Modo's own Light Linking groups (include or exclude), which reach MoonRay Shadow receiver sets, and a shadow ray offset, in Light Links |
 | Meshes, subdivision, curves, points, instancing | ![yes](docs/images/feature-yes.svg) | From Modo's geometry. Creases from Modo's Subdivision weights |
 | Box and sphere shapes | ![yes](docs/images/feature-yes.svg) | |
-| VDB volumes, base and cutout volumes | ![yes](docs/images/feature-yes.svg) | |
+| VDB volumes, base and cutout volumes | ![yes](docs/images/feature-yes.svg) | Coming in 0.5.3: a VDB that does not glow renders on XPU2's graphics card, about five times faster; a dwVdbVolume asks for its VDB file |
 | Motion blur | ![yes](docs/images/feature-yes.svg) | Final renders, and MoonLightIPR previews, where it is a Preview Preference, off by default, with moving lights blurred too; MoonRay XPU2 for Render, Render to a File and animations, and for XPU2 realtime as a Preview Preference. XPU2 traces moving objects on the GPU, subdivision surfaces that move or change shape among them. MoonLightIPR playblasts show it when it is active. |
 | Depth of field | ![yes](docs/images/feature-yes.svg) | A polygon or disc bokeh, by sides and angle, or an image. MoonRay's two bokeh weight settings, which it does not use, are marked as having no effect. Coming in 0.5.3: with the Modo camera's lens, a bokeh image turns bokeh on. |
 | DWA materials (base, metal, fabric, skin, layer, mix and the rest) | ![yes](docs/images/feature-yes.svg) | Two Sided and Color Correct take the other DWA materials as their inputs, and a layer or two-sided material missing an input no longer crashes MoonRay |
@@ -462,7 +462,7 @@ Comparison audit between Modo 16.1v9 and the current plugin: what of a Modo scen
 | Group masks by material, Part and Selection Set | ![yes](docs/images/feature-yes.svg) | Checked against Modo's render |
 | Group masks by item | ![yes](docs/images/feature-yes.svg) | Checked against Modo's render |
 | **Geometry** | | |
-| Meshes, subdivision and creases | ![yes](docs/images/feature-yes.svg) |  |
+| Meshes, subdivision and creases | ![yes](docs/images/feature-yes.svg) | Coming in 0.5.3: a mirrored mesh (negative scale) faces outward, a Source Override on by default |
 | Instances and replicators | ![yes](docs/images/feature-yes.svg) | Replicators through Modo's evaluated geometry |
 | Deformed and animated meshes | ![yes](docs/images/feature-yes.svg) | Through Modo's evaluated geometry |
 | Curves, hair and Modo's Fur material | ![partly](docs/images/feature-partly.svg) | Fur guides, the fur vector and width maps, and Modo's Hair Material are not read |

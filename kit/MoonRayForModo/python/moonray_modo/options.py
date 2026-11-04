@@ -131,6 +131,9 @@ HAIR_MODES = [('Around each guide (locks)', 0), ('Between guides (fur)', 1)]
 # Each: its label, its render output, and its channel in the EXR, by the names compositors look for: the beauty's alpha is A, depth is depth.Z.
 AOVS = {
     'albedo': ('Albedo', {'result': 7, 'material_aov': 'albedo'}, 'albedo'),
+    # MoonRay's PBR validity: green where a material's albedo, glass index or metal reflectivity is physically plausible,
+    # red where it is not, shading from one to the other.
+    'pbr_validity': ('PBR validity', {'result': 7, 'material_aov': 'pbr_validity'}, 'pbr_validity'),
     'diffuse_direct': ('Direct diffuse', {'result': 8, 'lpe': 'diffuse'}, 'diffuse_direct'),
     'indirect_diffuse': ('Indirect diffuse', {'result': 8, 'lpe': 'C<RD>[DSG]+[<L.>O]'}, 'indirect_diffuse'),
     'glossy_direct': ('Direct glossy', {'result': 8, 'lpe': 'glossy'}, 'glossy_direct'),

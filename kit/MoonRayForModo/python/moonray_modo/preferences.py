@@ -33,7 +33,7 @@ KEYS = {
     'crypto_volumes': (True, bool),
     # Fog in front of a see-through surface in alpha (native.fog_alpha), and each Cryptomatte sample counted once
     # (native.crypto_once).
-    'fog_alpha': (True, bool), 'camera_light_lpe': (True, bool), 'toon_lines_apart': (True, bool), 'toon_close_gaps': (True, bool), 'filter_inputs': (True, bool),
+    'fog_alpha': (True, bool), 'camera_light_lpe': (True, bool), 'mirrored_meshes': (True, bool), 'toon_lines_apart': (True, bool), 'toon_close_gaps': (True, bool), 'filter_inputs': (True, bool),
     'crypto_once': (True, bool),
     # MoonRay's look along PATH as it starts passes over entries that are not folders (native.dso_search).
     'dso_search': (True, bool),
@@ -50,6 +50,10 @@ KEYS = {
     # N-gons ear-clipped whatever their size and winding (native.ngon_ears).
     'ngon_ears': (True, bool),
     'auto_xpu': (True, bool),
+    # Realtime with MoonRay where XPU2 does not render the preview, on MoonRay's processor path (opt-in).
+    'xpu_realtime': (False, bool),
+    # A diagnostic: renders hold MoonRay's PBR validity output (native.pbr_validity).
+    'pbr_validity': (False, bool),
     # XPU2: what renders on the graphics card, and where its adaptive passes are made.
     'xpu2/renderer': ('xpu2', str), 'xpu2/adaptive_chain': (False, bool), 'xpu2/devices': ('both', str), 'xpu2/rt_cap': ('none', str),
     'draft/ink': ('tan', str), 'draft/width': (640.0, float), 'render_on_open': (False, bool), 'light_intensity': (10.0, float), 'working_space': ('rec709', str), 'notices_open': (False, bool),

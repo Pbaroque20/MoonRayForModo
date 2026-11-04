@@ -20,10 +20,12 @@ class IprTests(unittest.TestCase):
         self.assertIsNot(preview['render_settings'],scene['render_settings'])
         self.assertEqual(preview['denoising'],scene['denoising'])
 
-    def test_widget_samples_reach_the_scene_and_standard_is_as_it_was(self):
-        self.assertEqual(widget_samples('standard'),(64,5.0))
-        self.assertEqual(widget_samples('standard',True),(4,50.0))
-        self.assertEqual(widget_samples('gone'),(64,5.0))
+    def test_widget_samples_reach_the_scene_and_a_choice_no_longer_offered_is_the_default(self):
+        self.assertEqual([row[2][0] for row in WIDGET_SAMPLES],[1024,2048,4096])
+        self.assertEqual(widget_samples('very_high'),(1024,1.0))
+        self.assertEqual(widget_samples('very_high',True),(32,10.0))
+        # 32 to 256 samples are gone: a widget left on one opens on 1024.
+        self.assertEqual(widget_samples('standard'),(1024,1.0))
         for key,_,*_ in WIDGET_SAMPLES:
             for live in (False,True):
                 samples,error=widget_samples(key,live)

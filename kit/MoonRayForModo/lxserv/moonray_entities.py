@@ -461,6 +461,29 @@ def register():
             volume=scene.addItem(entities.item_type('VdbVolume'),name=label)
             item.channel(prefix+'modo_volume').set(volume.name)
 
+    def ask_vdb():
+        """A VDB file chosen in a file dialog, or None."""
+        import modo
+        try:return modo.dialogs.customFile('fileOpen','Choose a VDB file',('vdb','all'),('OpenVDB files','All files'),('*.vdb','*.*')) or None
+        except RuntimeError:return None
+
+    def volume_file(volume,path):
+        """A VDB volume's file: MoonRay keeps it on the VDB shape that names the volume (VdbGeometry's model), which is
+        given it, or made for it where there is none, so that a VDB volume added alone shows its file."""
+        import modo
+        from pathlib import Path as FilePath
+        scene=modo.Scene();prefix=entities.CHANNEL_PREFIX
+        shapes=[i for i in scene.items(entities.item_type('VdbGeometry')) if text(i,prefix+'modo_volume')==volume.name]
+        if not shapes:
+            shape=entities.make_item(scene,'VdbGeometry','VDB '+FilePath(str(path)).stem)
+            for key,value in entities.starting('VdbGeometry').items():
+                try:shape.channel(prefix+key).set(value)
+                except (TypeError,ValueError,AttributeError,LookupError,RuntimeError):pass
+            shape.channel(prefix+'modo_volume').set(volume.name)
+            shapes=[shape]
+        for shape in shapes:load_vdb(shape,path)
+        return shapes
+
     def scene_names(mode,item,channel):
         """What there is to choose from for an attribute that used to be typed."""
         import modo
@@ -777,6 +800,10 @@ def register():
                 try:path=modo.dialogs.customFile('fileOpen','Choose a VDB file',('vdb','all'),('OpenVDB files','All files'),('*.vdb','*.*'))
                 except RuntimeError:path=None
                 if path:load_vdb(item,path)
+            elif name=='VdbVolume':
+                # A VDB volume shows a file through the VDB shape that names it: asked for now, the shape is made too.
+                path=ask_vdb()
+                if path:volume_file(item,path)
             scene.select(item)
 
     lx.bless(Add,'moonray.entity.add')
@@ -792,6 +819,22 @@ def register():
             for item in chosen('VdbGeometry'):load_vdb(item,self.dyna_String(0))
 
     lx.bless(LoadVdb,'moonray.entity.loadVdb')
+
+    class VolumeFile(lxu.command.BasicCommand):
+        """Load VDB File on a VDB volume: the file goes to the VDB shape that names the volume, made where there is none.
+        With a file given (scripts), no dialog."""
+        def __init__(self):
+            super().__init__()
+            self.dyna_Add('file',lx.symbol.sTYPE_STRING);self.basic_SetFlags(0,lx.symbol.fCMDARG_OPTIONAL)
+        def cmd_Flags(self):return lx.symbol.fCMD_MODEL|lx.symbol.fCMD_UNDO
+        def basic_Enable(self,msg):return bool(chosen('VdbVolume'))
+        def basic_Execute(self,msg,flags):
+            volumes=chosen('VdbVolume')
+            path=self.dyna_String(0) if self.dyna_IsSet(0) else ask_vdb()
+            if not path:return
+            for volume in volumes:volume_file(volume,path)
+
+    lx.bless(VolumeFile,'moonray.entity.volumeFile')
 
 
 # A fault here must not keep the rest of the kit from loading.

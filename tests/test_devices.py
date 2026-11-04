@@ -98,8 +98,10 @@ class PageTests(unittest.TestCase):
             for k in range(slots):
                 for name in ('Shown', 'Name', 'On'):
                     self.assertIn('moonray.pref.%s%s%d' % (kind, name, k), text)
-        self.assertIn('prefs/moonray/devices:filterPreset', text)
-        self.assertIn('cmd moonray.xpu2.compileShaders', text.split('MoonRayDevices:sheet')[1])
+        # Under XPU2's page, whose devices it chooses: no page of its own.
+        self.assertIn('val="sub MoonRayDevices:sheet"', text.split('key="MoonRayXPU2Page:sheet"')[1].split('</hash>')[0])
+        self.assertNotIn('prefs/moonray/devices:filterPreset', text)
+        self.assertIn('cmd moonray.xpu2.compileShaders', text.split('key="MoonRayDevices:sheet"')[1])
         self.assertNotIn('moonray.pref.xpu2Devices', text)
 
     def test_commands_are_blessed(self):

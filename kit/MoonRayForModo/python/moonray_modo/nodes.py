@@ -69,6 +69,38 @@ def effective(graph):
     return result
 
 
+def rendered(graph):
+    """What of a graph a render sees: its effective nodes that the output or the displacement reach, without where they
+    stand in the editor or their labels. Moving a node, or adding one wired to nothing, leaves it as it was, and the
+    preview has nothing to render again (a tester's preview restarted at each of them)."""
+    result=effective(graph)
+    members=result.get('nodes',{})
+    reached=set()
+    pending=[key for key in (result.get('root'),result.get('displacement')) if key in members]
+    while pending:
+        key=pending.pop()
+        if key in reached:continue
+        reached.add(key)
+        for source in (members[key].get('inputs') or {}).values():
+            if isinstance(source,str) and source in members:pending.append(source)
+    kept={key:{k:v for k,v in members[key].items() if k not in ('position','label')} for key in reached}
+    return {'root':result.get('root'),'displacement':result.get('displacement'),'nodes':kept}
+
+
+# Each material's form as last rendered or about to be written over (material_form), by item identity: the graph editor
+# puts a material's form here before it writes the material, so the preview can tell that write needs no new picture.
+FORMS={}
+
+
+def material_form(settings):
+    """A material's MoonRay settings (properties.read) as a render sees them: each graph as rendered() has it."""
+    import json
+    settings=dict(settings)
+    for key in ('node_graph','materialx_graph'):
+        if settings.get(key):settings[key]=rendered(settings[key])
+    return json.dumps(settings,sort_keys=True,default=str)
+
+
 def validate(graph):
     g=effective(graph);nodes=g['nodes']
     root=g.get('root')

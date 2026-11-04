@@ -201,9 +201,18 @@ class Node(QtWidgets.QGraphicsRectItem):
                 return
         self.preview=text(self,'Rendering...' if waiting else 'No preview',TEXT_DIM,int(left)+8,int(self.preview_top+SIZE/2-8),SIZE-8,size=-1)
     def itemChange(self,change,value):
-        if change==self.ItemPositionHasChanged and hasattr(self,'identity') and not self.editor.busy:
-            self.editor.graph['nodes'][self.identity]['position']=[self.pos().x(),self.pos().y()]
-            self.editor.edges()
+        # Not while the canvas is made again (rebuild places every node): the properties' filling (busy) does not
+        # stop a node's wires following it, or a wire stayed where the node was until the graph was rebuilt.
+        if change==self.ItemPositionHasChanged and hasattr(self,'identity') and not getattr(self.editor,'rebuilding',False):
+            # Said in the diagnostics where it fails (Qt keeps quiet about a fault in here, and the wires stayed put).
+            try:
+                self.editor.graph['nodes'][self.identity]['position']=[self.pos().x(),self.pos().y()]
+                self.editor.edges()
+            except Exception as exc:
+                from .preview_diagnostics import record
+                record('Graph editor node %s moved, wires not redrawn: %r (in graph: %s, rebuilding: %s, busy: %s)'%(
+                    self.identity,exc,self.identity in self.editor.graph.get('nodes',{}),getattr(self.editor,'rebuilding',None),
+                    getattr(self.editor,'busy',None)))
         elif change==self.ItemSelectedHasChanged and hasattr(self,'body'):
             self.body.setPen(QtGui.QPen(QtGui.QColor(ACCENT),2) if value else QtGui.QPen(QtGui.QColor(NODE_EDGE),1))
             self.setZValue(1 if value else 0)
@@ -313,7 +322,7 @@ class Editor(QtWidgets.QDialog):
         self.numeric_fields=[]
         self.item=item;self.materialx_override=materialx_override;self.graph_key="materialx_graph" if materialx_override else "node_graph";settings=properties.read(item)
         self.graph=copy.deepcopy(settings.get(self.graph_key) or nodes.from_material(item))
-        self.pending=None;self.items={};self.links=[];self.busy=False
+        self.pending=None;self.items={};self.links=[];self.busy=self.rebuilding=False
         # writing: this window is the one changing the material. live: edits are written as made.
         self.writing=False;self.live=False
         self.undo_states=[];self.redo_states=[];self.selected_input=None;self.add_at=None
@@ -648,17 +657,25 @@ class Editor(QtWidgets.QDialog):
     def rebuild(self,*args):
         selected=self.selected()
         if hasattr(self,'view'):self.view.cancel_wire()
-        self.busy=True;self.pending=None;self.items={};self.links=[];self.canvas.clear()
-        graph=nodes.effective(self.graph)
-        self.output_label.setText('Output: '+graph['nodes'][graph['root']]['type'])
-        for identity,value in graph['nodes'].items():
-            item=Node(self,identity,value);self.items[identity]=item;self.canvas.addItem(item)
-        self.edges();old=self.layers.currentIndex();self.layers.clear();self.layers.addItem('Base graph',-1)
-        # The layer chooser is only there when there is a layer to choose.
-        self.layers.setVisible(bool(self.graph.get('overrides')))
-        for index,layer in enumerate(self.graph.get('overrides',[])):
-            self.layers.addItem(('On: ' if layer.get('enabled',True) else 'Off: ')+layer.get('name','Override'),index)
-        self.layers.setCurrentIndex(min(max(0,old),self.layers.count()-1));self.busy=False
+        self.busy=self.rebuilding=True;self.pending=None;self.items={};self.links=[];self.canvas.clear()
+        # Whatever goes wrong in here, the editor is not left busy or rebuilding for good: no edit was taken after it, and
+        # no wire followed its node (a tester's wire stayed where its node had been until a node was deleted).
+        try:
+            graph=nodes.effective(self.graph)
+            self.output_label.setText('Output: '+graph['nodes'][graph['root']]['type'])
+            for identity,value in graph['nodes'].items():
+                try:item=Node(self,identity,value)
+                except Exception as exc:
+                    from .preview_diagnostics import record
+                    record('Graph editor node %s could not be drawn: %r'%(identity,exc));self.info.setText('A node could not be drawn: %s'%exc);continue
+                self.items[identity]=item;self.canvas.addItem(item)
+            self.edges();old=self.layers.currentIndex();self.layers.clear();self.layers.addItem('Base graph',-1)
+            # The layer chooser is only there when there is a layer to choose.
+            self.layers.setVisible(bool(self.graph.get('overrides')))
+            for index,layer in enumerate(self.graph.get('overrides',[])):
+                self.layers.addItem(('On: ' if layer.get('enabled',True) else 'Off: ')+layer.get('name','Override'),index)
+            self.layers.setCurrentIndex(min(max(0,old),self.layers.count()-1))
+        finally:self.busy=self.rebuilding=False
         if selected in self.items:self.items[selected].setSelected(True)
         # Room on every side, so the graph can be panned freely.
         self.canvas.setSceneRect(self.canvas.itemsBoundingRect().adjusted(-3000,-3000,3000,3000));self.inspect()
@@ -716,6 +733,10 @@ class Editor(QtWidgets.QDialog):
         except (ValueError,KeyError,TypeError,RuntimeError,LookupError):
             # A graph that is not yet valid is not written; the scene keeps the last valid one.
             return
+        # The material's form before this write, for the preview to compare with (panel._materials_as_rendered): a node
+        # moved, or added wired to nothing, is then no new picture from the first such edit on.
+        try:nodes.FORMS.setdefault(self.item.id,nodes.material_form(properties.read(self.item)))
+        except Exception:pass
         self.writing=True
         try:lx.eval('moonray.material.applyGraph {%s} %s'%(self.item.id,properties.encode(settings)))
         except (RuntimeError,LookupError) as exc:self.info.setText('Could not update the material: '+str(exc))
@@ -1023,15 +1044,21 @@ class Editor(QtWidgets.QDialog):
         QtCore.QSettings('MoonRayForModo','GraphEditor').setValue('folded/'+self.graph['nodes'][identity]['type'],'|'.join(sorted(folded)))
         # A group folded when the list was filled has its rows without their fields (fill_properties): opened, the list is
         # filled again, with them.
+        # The list stays where it was scrolled to, the group's header where it was clicked: filled again, it went back to
+        # the top.
+        bar=self.table.verticalScrollBar();kept=bar.value()
         if group not in folded and group in getattr(self,'lazy_groups',set()):
-            self.inspect();return
-        self.filter_properties()
+            self.inspect()
+        else:self.filter_properties()
+        bar.setValue(min(kept,bar.maximum()))
+        QtCore.QTimer.singleShot(0,lambda:bar.setValue(min(kept,bar.maximum())))
     def group_header(self,group):
         """A row naming a group of properties, across the table, that folds the group away when clicked."""
         row=self.table.rowCount();self.table.insertRow(row)
         item=QtWidgets.QTableWidgetItem('\u25be '+group);item.setData(QtCore.Qt.UserRole,'')
         item.setFlags(QtCore.Qt.ItemIsEnabled);font=item.font();font.setBold(True);item.setFont(font)
-        item.setBackground(QtGui.QColor('#3a3d42'));item.setForeground(QtGui.QBrush(QtGui.QColor('#e6e6e6')))
+        # Black, the group's name in light text: the grey of before read poorly against the rows (a tester).
+        item.setBackground(QtGui.QColor('#000000'));item.setForeground(QtGui.QBrush(QtGui.QColor('#e6e6e6')))
         item.setToolTip('Click to fold or unfold the %s properties'%group)
         self.table.setItem(row,0,item);self.table.setSpan(row,0,1,2);self.group_rows[row]=group
     def edit_ramp(self,identity,key):
@@ -1234,7 +1261,15 @@ class Editor(QtWidgets.QDialog):
     def inspect(self,*args):
         if self.busy: return
         self.inspect_waiting=False;self.fill_job=None
-        for _ in self.fill_properties():pass
+        # A row that cannot be made no longer leaves the editor busy for good (no edit taken, no wire following its
+        # node): it is said, and the rest of the editor goes on.
+        try:
+            for _ in self.fill_properties():pass
+        except Exception as exc:
+            self.busy=False
+            from .preview_diagnostics import record
+            record('Graph editor properties failed: %r'%(exc,))
+            self.info.setText('The properties could not all be listed: %s'%exc)
 
     def fill_properties(self):
         """Fills the list of properties, as a generator that stops after each row (fill_slice)."""

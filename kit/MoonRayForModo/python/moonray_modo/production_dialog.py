@@ -5,7 +5,7 @@ import modo
 
 class Controls(QtWidgets.QDialog):
     def __init__(self,values,parent=None):
-        super().__init__(parent);self.setWindowTitle('MoonRay scene controls');self.resize(760,740)
+        super().__init__(parent);self.setWindowTitle('Light Links, Emitters and Volumes');self.resize(760,740)
         self.values=copy.deepcopy(values);self.values.setdefault('objects',{});self.values.setdefault('lights',{})
         self.current={};self.fields={};self.selectors={};self.lists={};layout=QtWidgets.QVBoxLayout(self);tabs=QtWidgets.QTabWidget();layout.addWidget(tabs)
         scene=modo.Scene();lights=list(scene.items('light'));objects=list(scene.items('locator'));known={i.id for i in objects}

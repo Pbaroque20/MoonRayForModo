@@ -140,6 +140,9 @@ class Renderer(QtCore.QObject):
         if application is not None:application.aboutToQuit.connect(self._quitting)
         self.session.failed.connect(self._session_failed)
         self.session.status.connect(self.status.emit)
+        # A fallback to MoonRay XPU, or XPU2 taking the scene again: the render settings form looks again, for MoonRay's
+        # sampling settings to be editable while MoonRay renders the preview (xpu2_sampling.active).
+        self.session.fallback.connect(self._xpu2_fallback)
         self.session.notice.connect(self._session_notice)
         self.session_serial=0;self.gather=None
         self.using_session=False
@@ -251,7 +254,9 @@ class Renderer(QtCore.QObject):
                        # A render to files goes to it where XPU2 makes it (xpu2_output), else to a MoonRay of its own.
                        persistent=bool((xpu2_output(snapshot) and not self.cpu_fallback and persistent_supported(runtime)) if output else
                                        (persistent_preview and not moonlightipr and not linear_preview and persistent_supported(runtime)
-                                        and (not denoising.settings(snapshot.get('denoising',{}))['safe'] or persistent_saves(runtime) or native.xpu2_renders(snapshot.get('execution_mode','auto'))))))
+                                        and (not denoising.settings(snapshot.get('denoising',{}))['safe'] or persistent_saves(runtime) or native.xpu2_renders(snapshot.get('execution_mode','auto'))
+                                            # The material widget, which XPU2 renders whatever the preview's choice.
+                                            or getattr(self.session,'always_xpu2',False)))))
         # New edits replace queued work; stale images never reach the panel.
         self.pending = request
         # A stop that was still waiting for MoonRay to save is over: this render is not one being stopped.
@@ -527,7 +532,7 @@ class Renderer(QtCore.QObject):
         # Two things this build of MoonRay draws rightly in its scalar mode only.
         slow=scalar_only(request['snapshot'])
         self.moonray_mode=None
-        xpu2_takes=bool(request.get('persistent') and mode in ('xpu','auto') and native.xpu2() and not getattr(self.session,'xpu2_refused',None))
+        xpu2_takes=bool(request.get('persistent') and mode in ('xpu','auto') and self.session.xpu2_chosen() and not getattr(self.session,'xpu2_refused',None))
         if mode!='scalar' and slow==COOKIE and xpu2_takes:
             # XPU2 draws a cookie rightly: it renders the scene, and MoonRay, should XPU2 leave it the scene, does so in
             # scalar. Forced to scalar before, the cookie kept XPU2 out altogether and the preview crawled.
@@ -541,7 +546,7 @@ class Renderer(QtCore.QObject):
         snapshot = dict(request['snapshot'],preview_buffer=self.buffer_key)
         # XPU2 renders it where it is chosen, the mode is XPU or Auto and it has not left this
         # session to MoonRay.
-        snapshot['_xpu2']=bool(request.get('persistent') and mode in ('xpu','auto') and native.xpu2() and not getattr(self.session,'xpu2_refused',None))
+        snapshot['_xpu2']=bool(request.get('persistent') and mode in ('xpu','auto') and self.session.xpu2_chosen() and not getattr(self.session,'xpu2_refused',None))
         snapshot['_crypto_categories']=native.supports_crypto_categories(request['runtime'])
         snapshot['_bump_step']=native.supports_bump_step(request['runtime'])
         snapshot['_pixel_filters']=native.supports_pixel_filters(request['runtime'])
@@ -694,6 +699,14 @@ class Renderer(QtCore.QObject):
                 self.process.start()
         except Exception as exc:
             self.failed.emit(str(exc))
+
+    def _xpu2_fallback(self,reason):
+        """XPU2 left the preview to MoonRay XPU, or took it again: the Render item's form greys or frees MoonRay's own
+        sampling settings by it (moonray_render_settings, xpu2_sampling.active)."""
+        try:
+            from . import property_notifications
+            property_notifications.notify()
+        except Exception:pass
 
     def _session_failed(self,message):
         """The preview's MoonRay ended. Where its GPU mode failed (MoonRay's GPU tracing now and then reads memory it

@@ -12,7 +12,7 @@ XPU2 = ROOT / 'xpu2/interactive'
 class Storage(unittest.TestCase):
     def test_the_kit_makes_grey_images_one_channel_and_converts_them_again(self):
         source = (KIT / 'textures.py').read_text(encoding='utf-8')
-        self.assertIn("'--unpremult', '--monochrome-detect']", source)
+        self.assertIn("'--unpremult'] + ([] if light else ['--monochrome-detect'])", source)
         self.assertIn("'v5-monochrome'", source)
 
     def test_xpu2_reads_half_one_channel_flat_and_wide_pages(self):

@@ -93,6 +93,21 @@ class Session(QtCore.QObject):
     failed=QtCore.Signal(str)
     status=QtCore.Signal(str)
     notice=QtCore.Signal(str)
+    # XPU2 left this scene to MoonRay XPU (its reason), or took it again (''): MoonRay's own sampling settings, greyed
+    # while XPU2 renders, are what the preview uses (xpu2_sampling.active).
+    fallback=QtCore.Signal(str)
+
+    @property
+    def xpu2_refused(self):
+        return self.__dict__.get('_xpu2_refused')
+
+    @xpu2_refused.setter
+    def xpu2_refused(self,reason):
+        before=self.__dict__.get('_xpu2_refused')
+        self.__dict__['_xpu2_refused']=reason or None
+        from . import xpu2_sampling
+        xpu2_sampling.fell_back(reason)
+        if bool(before)!=bool(reason) or (reason and reason!=before):self.fallback.emit(reason or '')
 
     def __init__(self,parent=None):
         super().__init__(parent)
@@ -137,6 +152,12 @@ class Session(QtCore.QObject):
         return True
 
     def running(self):return self.process.state()!=QtCore.QProcess.NotRunning
+
+    def xpu2_chosen(self):
+        """Whether XPU2 is this session's to try: chosen in the preferences, or, for the material widget (always_xpu2),
+        whatever the preview's choice, where its shaders are compiled (else MoonRay renders the widget, as before)."""
+        if native.xpu2():return True
+        return bool(getattr(self,'always_xpu2',False) and (native.xpu2_devices()=='cpu' or native.xpu2_shaders_compiled()))
 
     def retry_xpu2(self):
         """A render started by hand (Render, or RT switched on) gives XPU2 another try: where it left this session to
@@ -240,7 +261,7 @@ class Session(QtCore.QObject):
             # Its first scene with the geometry as binary (rdlb.py): the text, then the binary file it sets.
             scene=self._write_scene(request,'full',None,split[0])
             # Whether XPU2 takes it (as below), which reads the binary scene from shared memory.
-            xpu2=bool(native.xpu2() and request['mode'] in ('xpu','auto') and not getattr(self,'xpu2_refused',None))
+            xpu2=bool(self.xpu2_chosen() and request['mode'] in ('xpu','auto') and not getattr(self,'xpu2_refused',None))
             binary=self._write_binary(request,split[1],xpu2)
         else:
             scene=self._write_scene(request,'full',request['text'],(request.get('prepared') or {}).get('full_bytes'));binary=None
@@ -260,7 +281,7 @@ class Session(QtCore.QObject):
         # XPU2 renders in MoonRay's place where it is chosen, the render's execution mode is
         # XPU or Auto, and XPU2 has not left this scene to MoonRay (@@MODO_XPU2 FALLBACK).
         program=request['runtime']/'moonray.exe'
-        self.xpu2_active=bool(native.xpu2() and request['mode'] in ('xpu','auto') and not getattr(self,'xpu2_refused',None))
+        self.xpu2_active=bool(self.xpu2_chosen() and request['mode'] in ('xpu','auto') and not getattr(self,'xpu2_refused',None))
         if self.xpu2_active and native.xpu2_devices()!='cpu' and not native.xpu2_shaders_compiled():
             # XPU2 chosen, its shaders not compiled: nothing is rendered (MoonRay XPU in its place hid that it was not XPU2),
             # and the preview says where to compile them.
