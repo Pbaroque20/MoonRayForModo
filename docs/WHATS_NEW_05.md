@@ -23,6 +23,7 @@ The next hotfix, with a new XPU2 runtime (runtime-xpu2): install it, and **Compi
 
   ![Grass, a crop at full size: XPU2 holding its textures in floats on the left, in a third of the memory on the right](images/xpu2-texture-memory-grass.jpg)
 
+- **Depth of field in XPU2 has even grain**: a light far out of focus showed a lattice inside its bokeh disc; the lens samples now have an order of their own and every sample sequence is Owen-scrambled, so the noise is MoonRay's kind. The lens and shutter times draw Sobol's first dimensions in a per-pixel scrambled order (Burley's padding) instead of sharing the pixel position's; at 256 samples a pixel the difference from MoonRay halves. Pictures change in their noise only.
 - **A sliver triangle no longer sends an XPU2 frame to MoonRay**: a hit on a triangle too thin for its normal in single precision failed the sample, and with it the whole frame. The grass scene fell back to MoonRay every time on the processor alone and now and then with the graphics card. The normal is worked out again in double precision, else facing the ray. A fallback now names the sample that failed (its status and pixel); `XPU2_SESSION_DEBUG_FAILURES=1` says why.
 - **A bokeh image turns bokeh on**: with the switch to use the Modo camera's lens on, choosing a bokeh image on a dw camera uses it whatever Modo's iris blades say. The dw camera's fields that Modo's camera drives (focal length, film, offsets, depth of field, blades, stereo, shutter) are greyed while the switch is on.
 
