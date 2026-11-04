@@ -17,11 +17,16 @@
 // exactly once, and their films are added into the first card's host copy as it
 // is read, so the previews, the picture and the adaptive errors hold every
 // sample. XPU2_CARDS=N uses the first N cards (1: the first alone); unset, all.
+//
+// The artist's choice (Preferences > MoonRay > Device Management): XPU2_CARD_LIST=0,2 uses those cards (CUDA's
+// numbering, or the simulated lanes) and XPU2_GROUP_LIST=0,1 those processor groups (by number, or the simulated
+// groups' places). A list that leaves nothing keeps everything. --list-devices says what there is (listDevices).
 #pragma once
 #include <windows.h>
 #include <algorithm>
 #include <cstdlib>
 #include <cstring>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -44,7 +49,17 @@ inline unsigned simulated(const char* name) {
     return v && *v ? unsigned(std::max(0, std::atoi(v))) : 0u;
 }
 
-inline const std::vector<Group>& groups() {
+// Whether entry i is in the comma-separated list name (every entry where the list is unset).
+inline bool chosen(const char* name, unsigned i) {
+    const char* v = std::getenv(name);
+    if (!v || !*v) return true;
+    for (; v && *v; v = std::strchr(v, ',') ? std::strchr(v, ',') + 1 : nullptr)
+        if (*v >= '0' && *v <= '9' && unsigned(std::atoi(v)) == i) return true;
+    return false;
+}
+
+// Every active processor group, chosen or not.
+inline const std::vector<Group>& allGroups() {
     static const std::vector<Group> found = [] {
         std::vector<Group> out;
         if (const unsigned k = simulated("XPU2_SIMULATE_GROUPS"); k > 1) {
@@ -79,8 +94,30 @@ inline const std::vector<Group>& groups() {
     return found;
 }
 
-// More than one processor group: the CPU lane's workers are spread over them.
-inline bool spread() { return groups().size() > 1; }
+// The processor groups XPU2 uses: those XPU2_GROUP_LIST names (a simulated group by its place), all where it
+// names none of them.
+inline bool groupsChosen() {
+    const auto& all = allGroups();
+    const bool simulatedGroups = simulated("XPU2_SIMULATE_GROUPS") > 1;
+    for (size_t i = 0; i < all.size(); ++i)
+        if (!chosen("XPU2_GROUP_LIST", simulatedGroups ? unsigned(i) : all[i].number)) return true;
+    return false;
+}
+
+inline const std::vector<Group>& groups() {
+    static const std::vector<Group> kept = [] {
+        const auto& all = allGroups();
+        const bool simulatedGroups = simulated("XPU2_SIMULATE_GROUPS") > 1;
+        std::vector<Group> out;
+        for (size_t i = 0; i < all.size(); ++i)
+            if (chosen("XPU2_GROUP_LIST", simulatedGroups ? unsigned(i) : all[i].number)) out.push_back(all[i]);
+        return out.empty() ? all : out;
+    }();
+    return kept;
+}
+
+// More than one processor group, or groups left out: the CPU lane's workers are placed on the chosen ones.
+inline bool spread() { return groups().size() > 1 || (groupsChosen() && groups().size() < allGroups().size()); }
 
 // The logical processors XPU2 may use: every group's with more than one, else as before.
 inline unsigned logicalProcessors() {
@@ -137,13 +174,32 @@ inline int cardsToUse(int found) {
 }
 
 // Each lane's card (CUDA's numbering), the first lane's first: the cards to use, or N lanes on the first card where
-// XPU2_SIMULATE_CARDS=N.
-inline std::vector<int> cardOrdinals(int found) {
+// XPU2_SIMULATE_CARDS=N. Of those, the ones XPU2_CARD_LIST names (all of them where it names none, or with every):
+// Compile XPU2 Shaders compiles for every card, so that one switched on later renders at once.
+inline std::vector<int> cardOrdinals(int found, bool every = false) {
     std::vector<int> out;
     if (found < 1) return out;
-    if (const unsigned n = simulated("XPU2_SIMULATE_CARDS"); n > 1) return std::vector<int>(n, 0);
-    for (int k = 0; k < cardsToUse(found); ++k) out.push_back(k);
+    const unsigned n = simulated("XPU2_SIMULATE_CARDS");
+    const int lanes = n > 1 ? int(n) : cardsToUse(found);
+    for (int k = 0; k < lanes; ++k)
+        if (every || chosen("XPU2_CARD_LIST", unsigned(k))) out.push_back(n > 1 ? 0 : k);
+    if (out.empty()) out.push_back(0);
     return out;
+}
+
+// The processor's name, as Windows has it.
+inline std::string processorName() {
+    HKEY key = nullptr;
+    char name[256] = {};
+    DWORD bytes = sizeof(name) - 1;
+    if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, "HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0", 0, KEY_READ, &key) == ERROR_SUCCESS) {
+        RegQueryValueExA(key, "ProcessorNameString", nullptr, nullptr, reinterpret_cast<LPBYTE>(name), &bytes);
+        RegCloseKey(key);
+    }
+    std::string s(name);
+    while (!s.empty() && s.back() == ' ') s.pop_back();
+    while (!s.empty() && s.front() == ' ') s.erase(s.begin());
+    return s.empty() ? "Processor" : s;
 }
 
 }  // namespace xpu2::interactive::multi

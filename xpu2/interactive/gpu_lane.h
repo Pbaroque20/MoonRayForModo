@@ -60,6 +60,19 @@ inline int cardCount(){HMODULE library=nullptr;wchar_t path[MAX_PATH];auto n=Get
  std::wstring file(path);file+=L"\\nvcuda.dll";library=LoadLibraryW(file.c_str());if(!library)return 0;
  auto init=reinterpret_cast<decltype(&cuInit)>(GetProcAddress(library,"cuInit"));auto count=reinterpret_cast<decltype(&cuDeviceGetCount)>(GetProcAddress(library,"cuDeviceGetCount"));
  int cards=0;if(!init||!count||init(0)!=CUDA_SUCCESS||count(&cards)!=CUDA_SUCCESS)cards=0;FreeLibrary(library);return cards;}
+// The graphics cards CUDA finds, for --list-devices: each one's name, memory and UUID (none without a driver).
+struct CardInfo {std::string name,uuid;size_t bytes=0;};
+inline std::vector<CardInfo> cardInfos(){std::vector<CardInfo> out;HMODULE library=nullptr;wchar_t path[MAX_PATH];auto n=GetSystemDirectoryW(path,MAX_PATH);if(!n||n>=MAX_PATH-12)return out;
+ std::wstring file(path);file+=L"\\nvcuda.dll";library=LoadLibraryW(file.c_str());if(!library)return out;
+ auto init=reinterpret_cast<decltype(&cuInit)>(GetProcAddress(library,"cuInit"));auto count=reinterpret_cast<decltype(&cuDeviceGetCount)>(GetProcAddress(library,"cuDeviceGetCount"));
+ auto get=reinterpret_cast<decltype(&cuDeviceGet)>(GetProcAddress(library,"cuDeviceGet"));auto name=reinterpret_cast<decltype(&cuDeviceGetName)>(GetProcAddress(library,"cuDeviceGetName"));
+ auto total=reinterpret_cast<decltype(&cuDeviceTotalMem_v2)>(GetProcAddress(library,"cuDeviceTotalMem_v2"));auto uuid=reinterpret_cast<CUresult(CUDAAPI*)(CUuuid*,CUdevice)>(GetProcAddress(library,"cuDeviceGetUuid"));
+ int cards=0;if(init&&count&&get&&name&&init(0)==CUDA_SUCCESS&&count(&cards)==CUDA_SUCCESS)
+  for(int k=0;k<cards;++k){CUdevice dev{};if(get(&dev,k)!=CUDA_SUCCESS)continue;CardInfo c;char text[256]={};if(name(text,int(sizeof(text))-1,dev)==CUDA_SUCCESS)c.name=text;
+   size_t bytes=0;if(total&&total(&bytes,dev)==CUDA_SUCCESS)c.bytes=bytes;CUuuid id{};
+   if(uuid&&uuid(&id,dev)==CUDA_SUCCESS){static const char* hex="0123456789abcdef";for(int b=0;b<16;++b){c.uuid+=hex[(unsigned char)id.bytes[b]>>4];c.uuid+=hex[(unsigned char)id.bytes[b]&15];}}
+   else c.uuid="card"+std::to_string(k);out.push_back(c);}
+ FreeLibrary(library);return out;}
 // What the lane is allocating, for the Terminal's memory lines (Buffer): named where a large allocation is made.
 inline thread_local const char* allocating=nullptr;
 struct Allocating {const char* before;explicit Allocating(const char* what):before(allocating){allocating=what;}~Allocating(){allocating=before;}

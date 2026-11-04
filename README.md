@@ -27,7 +27,7 @@ The next release, for its lighter use of memory and XPU2 on several devices, wit
 
 - **Depth of field in XPU2 has even grain**: a light far out of focus showed a lattice inside its bokeh disc; the lens samples now have an order of their own and every sample sequence is Owen-scrambled, so the noise is MoonRay's kind.
 - **A sliver triangle no longer sends an XPU2 frame to MoonRay**: a hit on a triangle too thin for its normal in single precision failed the sample, and with it the whole frame. The grass scene fell back to MoonRay every time on the processor alone and now and then with the graphics card.
-- **XPU2 uses every graphics card and every processor**: a second or third NVIDIA card renders the same picture alongside the first, and a machine with more than 64 threads uses them all. A card that can't run OptiX's denoiser hands realtime denoising to one that can, or to Open Image Denoise on the processor. Tested in simulation only, as we have one card here.
+- **XPU2 uses every graphics card and every processor**: a second or third NVIDIA card renders the same picture alongside the first, and a machine with more than 64 threads uses them all. A card that can't run OptiX's denoiser hands realtime denoising to one that can, or to Open Image Denoise on the processor. Preferences > MoonRay > **Device Management** lists the processors and cards found, with a switch for each, and compiles the shaders for every card. Tested in simulation only, as we have one card here.
 
 ## New in 0.5.2.2
 

@@ -58,6 +58,16 @@ runtime beside XPU2's). A device that fails hands its pictures on to the next fo
 Terminal says where they went. A scene the cards leave to the processor is still denoised on a card. Open Image Denoise
 has no upscaling model: pictures from a quarter of their pixels are denoised at half size and enlarged.
 
+## Choosing devices
+
+`moonray_xpu2 --list-devices` prints a line for each processor group (`group`, its number, its processors, the
+processor's name) and each card (`card`, CUDA's number, its UUID, its memory in bytes, its name), simulated ones as
+they render. `XPU2_CARD_LIST=0,2` and `XPU2_GROUP_LIST=0,1` use only those (a list that leaves nothing keeps
+everything); `--compile-shaders` compiles for every card whatever the list says, so a card switched on later renders
+at once. The kit's Preferences > MoonRay > Device Management (`devices.py`, `moonray_devices.py`) lists the devices,
+keeps a switch for each (a card by its UUID, a group by its number) and starts XPU2 with the lists and the matching
+`XPU2_SESSION_MODE`. One device at least stays on.
+
 ## Simulation
 
 For a machine with one group and one card:

@@ -66,6 +66,11 @@ def cases(suite, cards, groups):
     out.append(Case('card-fails', 'three cards, the third failing as it takes the scene',
                     {'XPU2_SIMULATE_CARDS': 3, 'XPU2_SIMULATE_CARD_FAIL': 2},
                     expect=[r'left out: failed \(simulated, XPU2_SIMULATE_CARD_FAIL\)'], forbid=()))
+    # Device Management's switches: cards and processor groups left out of the render.
+    out.append(Case('cards-chosen', 'three cards, the second switched off', {'XPU2_SIMULATE_CARDS': 3, 'XPU2_CARD_LIST': '0,2'},
+                    expect=[r'\(lane 1\) renders with the first'], forbid=(r'left out', r'\(lane 2\)')))
+    out.append(Case('groups-chosen', 'three processor groups, only the second switched on', {'XPU2_SIMULATE_GROUPS': 3, 'XPU2_GROUP_LIST': '1'},
+                    expect=[r'1 processor groups']))
     # Realtime's denoiser: OptiX on the first card that runs it, else Open Image Denoise on the processor.
     dn = [Case('denoise-optix', 'realtime, denoised by OptiX on the first card', realtime=True, against=None,
                expect=[r'denoised by OptiX on lane 0']),
