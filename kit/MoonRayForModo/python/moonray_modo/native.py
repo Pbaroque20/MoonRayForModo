@@ -371,7 +371,7 @@ def engine_name(mode):
 def source_switches():
     """The MoonRay Source Overrides MoonRay reads as it starts: a session started with others is started again."""
     return (toon_terminator(), toon_albedo(), crypto_volumes(), fog_alpha(), crypto_once(), camera_light_lpe(), dso_search()) + tuple(
-        globals()[key]() for key in ('usd_specular', 'opaque_alpha', 'transmission_roughness', 'auto_xpu')) + (xpu2(), xpu2_chain(), xpu2_devices())
+        globals()[key]() for key in ('usd_specular', 'opaque_alpha', 'transmission_roughness', 'auto_xpu')) + (xpu2(), xpu2_chain(), __import__('moonray_modo.devices', fromlist=['state']).state())
 
 
 def binary_geometry():
@@ -460,9 +460,10 @@ def xpu2_chain():
 
 
 def xpu2_devices():
-    """Which devices XPU2 renders with: 'both' (the processor and the graphics card, the default), 'gpu' or 'cpu'."""
-    value = str(_setting('xpu2/devices', 'both'))
-    return value if value in ('both', 'gpu', 'cpu') else 'both'
+    """Which devices XPU2 renders with: 'both' (the processor and the graphics cards, the default), 'gpu' or 'cpu', by
+    the devices switched on in Preferences > MoonRay > Device Management (devices.py)."""
+    from . import devices
+    return devices.mode()
 
 
 def xpu2_rt_cap():
@@ -479,8 +480,10 @@ def xpu2_environment(runtime):
     return {'PATH': str(root) + os.pathsep + environment(runtime)['PATH'], 'RDL2_DSO_PATH': str(root),
             'REZ_MOONRAY_ROOT': str(root), 'MOONRAY_XPU2_MOONRAY': str(Path(runtime) / 'moonray.exe'),
             'XPU2_SESSION_CHAIN': '1' if xpu2_chain() else '0',
-            # Its devices (Preferences > MoonRay > XPU2 > Devices): 2 both, 1 the graphics card, 0 the processor.
+            # Its devices (Preferences > MoonRay > Device Management): 2 both, 1 the graphics cards, 0 the processor,
+            # and which cards and processor groups where some are off.
             'XPU2_SESSION_MODE': {'both': '2', 'gpu': '1', 'cpu': '0'}[xpu2_devices()],
+            **__import__('moonray_modo.devices', fromlist=['environment']).environment(),
             # XPU2's tessellations kept in the cache folder as the Scene cache says (cache_folder).
             'XPU2_SESSION_GEOMETRY_CACHE': '1' if __import__('moonray_modo.cache_folder', fromlist=['scene_cache']).scene_cache() else '0'}
 

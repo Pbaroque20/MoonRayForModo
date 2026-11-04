@@ -181,7 +181,7 @@ lx.bless(switch('auto_xpu'),'moonray.pref.autoXpu')
 # The Render item's form greys Smart Render, Safe Denoising and XPU2's sampling by this choice: told to look again.
 lx.bless(choice('xpu2/renderer',(('xpu','MoonRay XPU'),('xpu2','XPU2')),render_settings_changed),'moonray.pref.xpu2')
 lx.bless(switch('xpu2/adaptive_chain'),'moonray.pref.xpu2Chain')
-lx.bless(choice('xpu2/devices',(('both','Processor and graphics card'),('gpu','Graphics card only'),('cpu','Processor only'))),'moonray.pref.xpu2Devices')
+lx.bless(choice('xpu2/devices',(('both','Processor and graphics cards'),('gpu','Graphics cards only'),('cpu','Processor only'))),'moonray.pref.xpu2Devices')
 lx.bless(choice('xpu2/rt_cap',(('none','None'),('30','30'),('60','60'))),'moonray.pref.xpu2RealtimeCap')
 lx.bless(switch('ngon_ears'),'moonray.pref.ngonEars')
 lx.bless(choice('assign/shader',shaders),'moonray.pref.assignType')
