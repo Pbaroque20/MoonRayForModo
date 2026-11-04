@@ -48,6 +48,7 @@ A hotfix to 0.5.2, with a new runtime ZIP: install both, and **Compile XPU2 Shad
   crashed now renders in 20 GB.
 
   ![A tree's leaves against the sky, rendered in XPU2 in 20 GB of graphics memory (picture: Pixelwerk)](docs/images/Leaf.webp)
+  _Image provided by Pixelwerk_
 
 - **Moving subdivision surfaces render in XPU2**: a moving mesh with adaptive subdivision, and copies of a subdivision mesh
   that changes shape during the shutter, no longer send the scene to MoonRay XPU.
