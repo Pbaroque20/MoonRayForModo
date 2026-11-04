@@ -48,6 +48,13 @@ The mantra for XPU2 is: "Use your silicon!"
   floats, grey maps in one channel and flat tiles as one value, so textures take about a third of the memory.
 - **Sampling generations.** One sampler handles both uniform and adaptive sampling, spending samples where the error
   is highest. A frame runs for as long as uniform sampling would take, or to an exact sample count.
+- **Every device in the machine.** Extra graphics cards follow the first, each with its own scene and film, taking
+  cells from the same grid at their own rate. CPU workers span every Windows processor group. Realtime denoising goes
+  to the first card that can run OptiX's denoiser, then to Open Image Denoise on the CPU. Each card and processor
+  group can be switched off (`--list-devices` lists them).
+- **NUMA-aware.** Workers are placed a share on each NUMA node, each card is fed and its texture tiles decoded on the
+  node nearest it, and decoded tiles live in their node's memory. A node short of memory moves its oldest tiles to
+  another node before letting any go. A simulation app tests cards, groups, nodes and denoiser hand-offs on one card.
 - **Audited results.** Each device keeps its own film. When a frame ends the films merge and every pixel's sample
   count is checked.
 
