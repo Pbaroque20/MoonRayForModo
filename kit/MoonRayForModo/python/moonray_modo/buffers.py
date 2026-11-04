@@ -25,7 +25,7 @@ def conversion(key, source, destination, display=None):
         args += ['--mulc','0.5','--addc','0.5']
     elif key=='position':
         args += ['--rangecompress','--mulc','0.5','--addc','0.5']
-    elif key not in ('alpha','uv','wireframe','motion','motion_vectors'):
+    elif key not in ('alpha','uv','wireframe','motion','motion_vectors','pbr_validity'):
         from .display import arguments
         args += arguments(display or {})
     return args+['-d','uint8','-o',str(destination)]

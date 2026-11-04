@@ -4,6 +4,9 @@ import lx,lxifc
 class Changes(lxifc.SceneItemListener):
     def __init__(self):
         self.full=True;self.items=set();self.service=lx.service.Listener();self.registered=False
+        # The items whose channels changed, beside items (a material's tag alone is told of in tagged): consume hands
+        # them on as consumed_channels, so a material's tag rewritten with nothing to render anew can be told apart.
+        self.channel_items=set();self.consumed_channels=set()
         # Scenes closed and made since the panel last looked: the picture may be of a scene no longer open.
         self.closed=self.created=False
         try:self.service.AddListener(self);self.registered=True
@@ -50,10 +53,11 @@ class Changes(lxifc.SceneItemListener):
             item=lx.object.Item(item)
             if item.ChannelName(index) in ('enable','render','visible','ptag','ptyp','effect','opacity'):
                 self.full=True
-            self.items.add(item.Ident())
+            self.items.add(item.Ident());self.channel_items.add(item.Ident())
         except (RuntimeError,LookupError):self.full=True
     def consume(self):
-        result=(self.full or not self.registered,set(self.items));self.full=False;self.items.clear();return result
+        result=(self.full or not self.registered,set(self.items));self.full=False;self.items.clear()
+        self.consumed_channels=set(self.channel_items);self.channel_items.clear();return result
     def close(self):
         if self.registered:self.service.RemoveListener(self);self.registered=False
     def sil_SceneCreate(self,*args):self.full=self.created=True

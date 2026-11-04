@@ -915,6 +915,10 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
         from .native import camera_light_lpe
         if 'alpha' in selected and camera_light_lpe():
             selected = list(selected) + ['environment_background']
+        # PBR validity, a diagnostic switched on in the preferences (Diagnostics), for every render while it is on.
+        from .native import pbr_validity
+        if pbr_validity():
+            selected = list(selected) + ['pbr_validity']
         render_outputs = [('beauty', {'result': 0}, '')]
         render_outputs += [(key, options.AOVS[key][1], options.AOVS[key][2]) for key in dict.fromkeys(selected)]
         if crypto:render_outputs.append(('object_id',{'result':4,'primitive_attribute':'modo_object_id','primitive_attribute_type':0},'modo_object_id'))

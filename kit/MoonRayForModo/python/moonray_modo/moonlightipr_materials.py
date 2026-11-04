@@ -971,6 +971,12 @@ class Compiler:
                     from . import native
                     wired = graph_layers(source, lambda what: self.note(what, name), self.runtime or native.default_runtime())
                 source = dict(source, **surface)
+                # The Modo material it rides on says nothing of its highlight: Modo's roughness (the Material Ref tab's,
+                # which graph.defaults_for took over the material's own), its shading model's roughness curve and its
+                # specular strength are left out (a dw Metal or Base material's roughness did nothing in the preview).
+                for key in ('raw_roughness', 'shading_model'):
+                    source.pop(key, None)
+                source['_specular_strength'] = 1.0
         defaults = graph.defaults_for(source)
         layers = source.get('layers')
         if layers is None:

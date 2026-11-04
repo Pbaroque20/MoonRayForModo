@@ -14,8 +14,20 @@ SHOWN = ('sampling_mode', 'samples', 'min_adaptive_samples', 'max_adaptive_sampl
 CAMERA = ['']
 
 
+# Why XPU2 left the preview's scene to MoonRay XPU (persistent.Session.xpu2_refused), or None while XPU2 renders it.
+FALLEN = [None]
+
+
+def fell_back(reason):
+    """XPU2 left the preview to MoonRay XPU (the reason), or took it again (None)."""
+    FALLEN[0] = reason or None
+
+
 def active():
-    """Whether XPU2 renders the preview."""
+    """Whether XPU2 renders the preview: chosen in the preferences, and not fallen back to MoonRay XPU for this scene,
+    where MoonRay's own sampling settings are the ones used and so are not greyed."""
+    if FALLEN[0]:
+        return False
     try:
         from . import native
         return bool(native.xpu2())

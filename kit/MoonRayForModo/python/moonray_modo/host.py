@@ -866,7 +866,7 @@ def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fal
             warnings.append('%s items are not translated in this version.' % kind)
     for volume in scene.items('volume',superType=False):
         if not properties.scene_settings().get('production',{}).get('objects',{}).get(volume.id,{}).get('geometry_file'):
-            warnings.append('Volume '+volume.name+': attach a VDB file in MoonRay scene controls.')
+            warnings.append('Volume '+volume.name+': attach a VDB file in MoonRay > Light Links, Emitters and Volumes (Objects / geometry).')
     from .environments import collect as collect_environments
     result['environments'] = collect_environments(scene, warnings)
     # With every light hidden the scene is still lit where an environment is: said, since Modo's own renderer

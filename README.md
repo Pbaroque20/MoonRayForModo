@@ -28,8 +28,18 @@ The next release, for its lighter use of memory and XPU2 on several devices, wit
 - **Depth of field in XPU2 has even grain**: a light far out of focus showed a lattice inside its bokeh disc; the lens samples now have an order of their own and every sample sequence is Owen-scrambled, so the noise is MoonRay's kind.
 - **A sliver triangle no longer sends an XPU2 frame to MoonRay**: a hit on a triangle too thin for its normal in single precision failed the sample, and with it the whole frame. The grass scene fell back to MoonRay every time on the processor alone and now and then with the graphics card.
 - **XPU2 uses every graphics card and every processor**: a second or third NVIDIA card renders the same picture alongside the first, and a machine with more than 64 threads uses them all. A card that can't run OptiX's denoiser hands realtime denoising to one that can, or to Open Image Denoise on the processor. Tested in simulation only, as we have one card here.
-- **Device Management**: a new page, Preferences > MoonRay > Device Management, lists the processor and every NVIDIA card XPU2 finds, each with its own switch, and compiles XPU2's shaders for every card. It replaces the Devices choice on the XPU2 page.
+- **Device Management**: under XPU2 in Preferences > MoonRay, lists the processor and every NVIDIA card XPU2 finds, each with its own switch, and compiles XPU2's shaders for every card. It replaces the Devices choice on the XPU2 page.
 - **XPU2 knows NUMA**: on two-socket workstations and many-die processors (Threadripper, EPYC, Xeons with Sub-NUMA Clustering), XPU2 puts its workers on every node, feeds each card from the node nearest it, and keeps texture tiles in the memory of the node that reads them. A node that runs short moves its tiles to another before letting any go. On a one-socket machine nothing changes. Tested in simulation only.
+- **VDB volumes render on XPU2's graphics card**: a VDB cloud that did not glow was handed sample by sample to the processor; the card now samples its grids itself and marches it without a table of steps, about five times faster on a test cloud with the same picture. Glowing VDBs still render on the processor.
+- **Mirrored meshes face outward**: a mesh with a negative scale and normals of its own rendered black in MoonRay and XPU2 (MoonRay's own behaviour), and one without them slightly wrong; a new MoonRay Source Override, on by default, turns them outward.
+- **The graph editor does not restart the preview for nothing**: moving a node, or adding one wired to nothing, no longer renders the picture again.
+- **A dw material's own roughness in MoonLightIPR**: a dw Metal or Base material's roughness was taken from Modo's Material Ref tab; it is now the material's own.
+- **The MoonRay Widget renders with XPU2** (whatever the preview's choice), at the size it is shown, with 1024, 2048 or 4096 samples, and a **Scale** to size the ball in scene units for curvature and other procedurals.
+- **A dwVdbVolume takes its VDB file**: adding one asks for the file, and its form has Load VDB File; the VDB shape that shows it is made for it.
+- **PBR validity** is a diagnostic in Preferences > MoonRay > Diagnostics: every render holds the output while it is on.
+- **Realtime with MoonRay XPU, on the processor**: an opt-in in Preferences > MoonRay > XPU; with XPU2 off, RT then follows the scene with MoonRay and MoonRay LS.
+- **After XPU2 hands a scene to MoonRay XPU**, MoonRay's sampling settings are no longer greyed: they are the ones used.
+- **An environment no longer renders red**: a grey environment, saved as one channel since the texture memory work, lit the scene red in MoonRay and XPU2; images that light the scene keep three channels.
 
 ## New in 0.5.2.2
 

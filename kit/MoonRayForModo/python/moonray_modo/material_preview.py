@@ -7,7 +7,7 @@ import math
 from pathlib import Path
 from PySide2 import QtCore, QtGui, QtWidgets
 from . import coordinates, native, nodes, options, shader_library
-from .ipr import WIDGET_SAMPLES,widget_samples
+from .ipr import WIDGET_DEFAULT,WIDGET_SAMPLES,widget_samples
 from .rdla import IDENTITY
 from .preview_diagnostics import record
 from .render import Renderer
@@ -36,7 +36,11 @@ def look_at(eye, target=(0, 0, 0)):
     return right+[0]+up+[0]+back+[0]+list(eye)+[1]
 
 
-def snapshot(material, library, all_parts=False):
+def snapshot(material, library, all_parts=False, scale=1.0):
+    """The widget's scene: its ball and stand, camera and two lights. scale (Object scale) makes all of it that many times
+    larger together, framed and lit the same, so a procedural working in the scene's own units (curvature, noise, a
+    projection) is seen at the size it has on a mesh that large."""
+    scale=float(scale) if scale and math.isfinite(float(scale)) and float(scale)>0 else 1.0
     material=copy.deepcopy(material);library=copy.deepcopy(library)
     if material.get('node_graph'):
         material['node_graph']=nodes.validate(material['node_graph'])
@@ -49,10 +53,10 @@ def snapshot(material, library, all_parts=False):
     meshes=document['meshes'];points=[v for mesh in meshes for v in mesh['vertices']]
     low=[min(p[i] for p in points) for i in range(3)]
     high=[max(p[i] for p in points) for i in range(3)]
-    center=[(a+b)/2 for a,b in zip(low,high)];scale=2/max(b-a for a,b in zip(low,high))
+    center=[(a+b)/2 for a,b in zip(low,high)];fit=2/max(b-a for a,b in zip(low,high))*scale
     descriptors=coordinates.descriptors(materials)
     for mesh in meshes:
-        mesh['vertices']=[[(v[i]-center[i])*scale for i in range(3)] for v in mesh['vertices']]
+        mesh['vertices']=[[(v[i]-center[i])*fit for i in range(3)] for v in mesh['vertices']]
         mesh['matrix']=IDENTITY[:]
         mesh['material']='preview' if all_parts or mesh['name'] not in ('base','stand') else ''
         mesh['uv_sets']={}
@@ -63,13 +67,14 @@ def snapshot(material, library, all_parts=False):
                 values.extend(coordinates.face(layer,[mesh['vertices'][i] for i in face],uv,IDENTITY))
             mesh['uv_sets'][key]=values
     # The camera looks a little below the middle, for the object to sit higher in the picture and not sink to its foot.
-    return {'camera':{'identity':'widget/camera','matrix':look_at((2.5,1.4,3.8),(0,-.22,0)),
+    s=lambda point:tuple(x*scale for x in point)
+    return {'camera':{'identity':'widget/camera','matrix':look_at(s((2.5,1.4,3.8)),s((0,-.22,0))),
                       'focal_mm':55,'film_mm':36},
             'meshes':meshes,'materials':materials,'native_materials':library,'fps':24,
-            'lights':[{'identity':'widget/key','kind':'RectLight','matrix':look_at((2,3,3)),
-                       'color':[1,1,1],'intensity':3,'width':2,'height':2},
-                      {'identity':'widget/rim','kind':'RectLight','matrix':look_at((-2,1,-2)),
-                       'color':[1,1,1],'intensity':2,'width':2,'height':3}],
+            'lights':[{'identity':'widget/key','kind':'RectLight','matrix':look_at(s((2,3,3))),
+                       'color':[1,1,1],'intensity':3,'width':2*scale,'height':2*scale},
+                      {'identity':'widget/rim','kind':'RectLight','matrix':look_at(s((-2,1,-2))),
+                       'color':[1,1,1],'intensity':2,'width':2*scale,'height':3*scale}],
             'display':{'view':'srgb'},'render_settings':options.render_values({'target_adaptive_error':5.0})}
 
 
@@ -104,17 +109,26 @@ class Panel(QtWidgets.QWidget):
         self.clay_mode.setToolTip('Preview only: show the material graph, terracotta clay or gray clay.')
         self.samples=QtWidgets.QComboBox()
         for key,label,*_ in WIDGET_SAMPLES:self.samples.addItem(label,key)
-        stored=self.samples.findData(QtCore.QSettings('MoonRayForModo','GraphEditor').value('widget_samples','standard'))
-        self.samples.setCurrentIndex(stored if stored>=0 else self.samples.findData('standard'))
+        stored=self.samples.findData(QtCore.QSettings('MoonRayForModo','GraphEditor').value('widget_samples',WIDGET_DEFAULT))
+        # A choice no longer offered (32 to 256 samples) opens on the default.
+        self.samples.setCurrentIndex(stored if stored>=0 else self.samples.findData(WIDGET_DEFAULT))
         self.samples.setToolTip('Preview only: the most samples a pixel of the widget takes, and how clean it renders. More is cleaner and slower; clean parts still stop early. Live takes far fewer, to keep up.')
         self.fit_samples()
-        choices=QtWidgets.QHBoxLayout();choices.addWidget(self.clay_mode,1);choices.addWidget(self.samples);layout.addLayout(choices)
+        # The ball's size in the scene's units (2 across at 1): procedurals that work in those units (curvature, noise,
+        # projections) look on it as on a mesh that size. Kept for the next widget.
+        self.scale=QtWidgets.QDoubleSpinBox();self.scale.setRange(.001,1000.);self.scale.setDecimals(3);self.scale.setSingleStep(.1)
+        self.scale.setPrefix('Scale ');self.scale.setValue(float(QtCore.QSettings('MoonRayForModo','GraphEditor').value('widget_scale',1.0) or 1.0))
+        self.scale.setToolTip('Preview only: the ball, stand, camera and lights this many times larger (the ball is 2 units across at 1), framed the same. Procedurals in scene units, such as curvature, noise and projections, show at the size they have on a mesh that large.')
+        choices=QtWidgets.QHBoxLayout();choices.addWidget(self.clay_mode,1);choices.addWidget(self.scale);choices.addWidget(self.samples);layout.addLayout(choices)
 
         self.viewer=WidgetPreview(self);layout.addWidget(self.viewer,1)
         self.status=QtWidgets.QLabel('Live preview is off. Enable it or click Refresh.');self.status.setWordWrap(True);layout.addWidget(self.status)
         self.setToolTip('Previews the current draft with widget UVs and studio lighting. Scene masks, projectors and hair geometry are not recreated. Live preview updates committed graph edits after a short pause.')
         credit=QtWidgets.QLabel('MoonRay Widget Copyright 2023–2025 DreamWorks Animation LLC. All rights reserved.\nASWF Digital Assets License v1.1');credit.setWordWrap(True);layout.addWidget(credit)
         self.renderer=Renderer(self)
+        # XPU2 renders the widget even where the preview window's choice is MoonRay XPU (persistent.Session.xpu2_chosen):
+        # its 1024 to 4096 samples are for the graphics card.
+        self.renderer.session.always_xpu2=True
         self.renderer.image_object.connect(self.viewer.set_image);self.renderer.image_ready.connect(self.viewer.load)
         self.renderer.status.connect(self.status.setText);self.renderer.failed.connect(self.preview_failed)
         # The widget shows its picture with no bucket outlines over it.
@@ -126,6 +140,7 @@ class Panel(QtWidgets.QWidget):
         self.parts.toggled.connect(lambda *_:self.schedule())
         self.clay_mode.currentIndexChanged.connect(self.refresh,QtCore.Qt.QueuedConnection)
         self.samples.currentIndexChanged.connect(self.samples_changed,QtCore.Qt.QueuedConnection)
+        self.scale.valueChanged.connect(self.scale_changed)
         self.button.clicked.connect(self.pressed)
         self.viewer.start_requested.connect(self.refresh,QtCore.Qt.QueuedConnection)
     def fit_samples(self):
@@ -170,6 +185,9 @@ class Panel(QtWidgets.QWidget):
         if enabled:self.schedule()
         else:
             self.timer.stop();self.renderer.stop();self.status.setText('Live preview off. Last image retained.')
+    def scale_changed(self,*_):
+        QtCore.QSettings('MoonRayForModo','GraphEditor').setValue('widget_scale',self.scale.value())
+        self.schedule()
     def samples_changed(self,*_):
         QtCore.QSettings('MoonRayForModo','GraphEditor').setValue('widget_samples',self.samples.currentData())
         self.refresh()
@@ -191,7 +209,7 @@ class Panel(QtWidgets.QWidget):
         from .host import material_values
         library={candidate.id:material_values(candidate) for candidate in modo.Scene().items('advancedMaterial',superType=True)}
         draft=material_values(self.item);draft.update(self.draft());library[self.item.id]=draft
-        return dict(snapshot(draft,library,self.parts.isChecked()),_clay_preview=self.clay_mode.currentData())
+        return dict(snapshot(draft,library,self.parts.isChecked(),self.scale.value()),_clay_preview=self.clay_mode.currentData())
 
     @QtCore.Slot()
     def refresh(self):
@@ -209,18 +227,21 @@ class Panel(QtWidgets.QWidget):
             # error that stops once the picture is clean, to load fast. Live, while values are being dragged, it is held
             # lighter to keep up.
             live=self.live.isChecked()
-            size=256 if live else 384
+            # As large as the picture is on the screen (its pixels, at the screen's scale), from 256 to 1024; half that
+            # while values are being dragged.
+            shown=max(self.viewer.width(),self.viewer.height())*max(1.0,float(self.viewer.devicePixelRatioF()))
+            size=max(256,min(1024,int(round(shown/32.0))*32))
+            if live:size=max(192,size//2)
             samples,error=widget_samples(self.samples.currentData(),live)
             # The fewest as MoonRay LS takes them (2): the scene's own fewest (16 by default) is more than Live's most.
             scene['render_settings'].update(sampling_mode=2,min_adaptive_samples=2,max_adaptive_samples=samples,target_adaptive_error=error)
             scene=dict(scene,width=size,height=size)
             from .ipr import prepare
-            scene,width,height=prepare(scene,size,size,1,640,samples,error)
+            scene,width,height=prepare(scene,size,size,1,1024,samples,error)
             scene['_pixel_samples']=samples
-            # Rendered by MoonRay on the processor where XPU2 would take it: XPU2 reads a texture at a coarser level,
-            # and on the widget's small ball an image came out as its average colour. The ball is small enough for
-            # MoonRay to render quickly.
-            if native.xpu2():scene['execution_mode']='vectorized'
+            # XPU2 renders it where it is on, on the graphics card: at the picture's size and thousands of samples where
+            # MoonRay on the processor was held to 384 pixels. (A texture read a level coarser while its tiles landed is
+            # rendered again in full: the ball no longer comes out in an image's average colour, as it once did.)
             # The runtime the preview window renders with, chosen in Preferences (the kit's own where none is).
             from .preferences import Preferences
             runtime=Preferences().get('runtime') or native.default_runtime()

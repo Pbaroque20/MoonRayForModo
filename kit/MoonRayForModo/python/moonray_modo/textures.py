@@ -61,8 +61,8 @@ def color_rule(source):
     key=str(asset_path(source)).casefold()
     return next((r["space"] for r in _policy.get().get("rules",[]) if str(asset_path(r["path"])).casefold()==key),"")
 
-def prepare(source,srgb=False,mipmaps=True,color_space=""):
-    return register(_prepare(source,srgb,mipmaps,color_space))
+def prepare(source,srgb=False,mipmaps=True,color_space="",light=False):
+    return register(_prepare(source,srgb,mipmaps,color_space,light))
 
 from . import native
 
@@ -99,7 +99,7 @@ def source_tiles(source):
             if path.is_file() for match in [pattern.match(path.name)] if match}
 
 
-def _prepare(source, srgb=False, mipmaps=True, color_space=""):
+def _prepare(source, srgb=False, mipmaps=True, color_space="", light=False):
     policy=_policy.get();space=color_rule(source) or color_space
     aliases={"(default)":"","(none)":"raw","Linear":"linear","lin_rec709":"linear","srgb_texture":"sRGB"}
     space=aliases.get(space,space)
@@ -140,6 +140,8 @@ def _prepare(source, srgb=False, mipmaps=True, color_space=""):
     key_data = repr((str(source),stat.st_size,stat.st_mtime_ns,transform_key,'v5-monochrome'))
     if not mipmaps:
         key_data += '|no-mips'
+    if light:
+        key_data += '|light'
     key = hashlib.sha256(key_data.encode('utf-8')).hexdigest()
     cache = cache_root() / 'Textures'
     cache.mkdir(parents=True, exist_ok=True)
@@ -153,8 +155,9 @@ def _prepare(source, srgb=False, mipmaps=True, color_space=""):
         staged = cache / (key + '-' + uuid.uuid4().hex + '.tx')
         _convert(args + ['-o', str(staged), str(source)], staged, target, source, runtime)
     # A grey image (red, green and blue alike throughout) as one channel: renderers read it grey in all three as before, and
-    # XPU2 holds a third of it.
-    args = [str(converter), '--oiio', '--threads', '2', '-d', 'float', '--unpremult', '--monochrome-detect']
+    # XPU2 holds a third of it. Not an image that lights the scene (light): MoonRay's lights read its first channel into red
+    # alone (Distribution.cc's flip into three channels), and a grey environment lit a tester's scene red.
+    args = [str(converter), '--oiio', '--threads', '2', '-d', 'float', '--unpremult'] + ([] if light else ['--monochrome-detect'])
     if not mipmaps:
         args += ['--nomipmap']
     if custom:args += ['--colorconfig',config,'--colorconvert',space,policy.get('linear_space','Linear Rec.709 (sRGB)')]

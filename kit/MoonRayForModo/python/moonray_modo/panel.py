@@ -1096,14 +1096,18 @@ class Panel(Tools, QtWidgets.QWidget):
             self.preview_engine.insertItem(self.preview_engine.findData('moonray')+1,'MoonRay LS','moonray_ls')
             del blocker
         self.preview_engine.setToolTip('\n'.join(line for line in self._engine_tip.split('\n') if not (xpu2 and line.startswith('MoonRay LS'))))
-        # RT is MoonRay's with XPU2 alone.
+        # RT is MoonRay's with XPU2, or with the standard XPU on the processor where opted into (_rt_capable).
         if hasattr(self,'_sync_rt'):self._sync_rt()
 
     def _rt_capable(self):
         """Whether the engine chosen can follow the scene in realtime: MoonLightIPR, or MoonRay
-        where XPU2 renders the preview (Preferences > MoonRay > XPU2)."""
+        where XPU2 renders the preview (Preferences > MoonRay > XPU2), or MoonRay on the processor where that is
+        opted into (Preferences > MoonRay > XPU (graphics card) > Realtime with MoonRay XPU, on the processor), MoonRay
+        LS's quick renders among them: with Draft, the same either-or as XPU2's (_rt_toggled, _draft_toggled)."""
         engine=self.preview_engine.currentData()
         if engine=='moonlightipr':return True
+        if self._engine()!='moonray':return False
+        if self.preferences.get('xpu_realtime'):return True
         if engine!='moonray':return False
         try:
             from . import native
@@ -1127,7 +1131,8 @@ class Panel(Tools, QtWidgets.QWidget):
                 self._rt_after_stop=False
         if on and (not self._rt_capable() or self._output_busy() or self._rt_blocked()):
             if not self._rt_capable():
-                self.status.setText('Realtime is MoonLightIPR\'s, or MoonRay\'s with XPU2 chosen in Preferences > MoonRay > XPU2.')
+                self.status.setText('Realtime is MoonLightIPR\'s, or MoonRay\'s with XPU2 chosen in Preferences > MoonRay > XPU2, or on the '
+                                    'processor with Preferences > MoonRay > XPU (graphics card) > Realtime with MoonRay XPU, on the processor.')
             self._sync_rt();return
         if on:
             self.ipr_mode.setChecked(True)
@@ -1156,8 +1161,9 @@ class Panel(Tools, QtWidgets.QWidget):
             self.rt.setToolTip('Realtime is on: the preview follows the scene as you edit it. Press to switch it off.' if on else
                                'A render is under way. Stop it, or let it finish, to switch realtime on.' if self._rt_blocked() else
                                'Realtime is off. Press to have the preview follow the scene as you edit it (MoonLightIPR, or '
-                               'MoonRay with XPU2).' if self._rt_capable() else
-                               'Realtime is MoonLightIPR\'s, or MoonRay\'s with XPU2 chosen in Preferences > MoonRay > XPU2.')
+                               'MoonRay with XPU2, or on the processor where opted into).' if self._rt_capable() else
+                               'Realtime is MoonLightIPR\'s, or MoonRay\'s with XPU2 chosen in Preferences > MoonRay > XPU2, or on the '
+                               'processor with Preferences > MoonRay > XPU (graphics card) > Realtime with MoonRay XPU, on the processor.')
         finally:self._rt_syncing=False
 
     def _live(self):
@@ -1256,9 +1262,13 @@ class Panel(Tools, QtWidgets.QWidget):
         low=self._low()
         # The Denoiser set to Off in Render Settings is off everywhere: the denoised beauty is not in the list.
         on=self._denoiser_on()
+        # PBR validity is a diagnostic, listed while the preferences have it on (Diagnostics).
+        from .native import pbr_validity
+        validity=pbr_validity()
         for row in range(1,self.buffer.count()):
             denoised=self.buffer.itemData(row)=='denoised_beauty'
-            self.buffer.view().setRowHidden(row,low or (denoised and not on) or (only and not (denoises and denoised)))
+            self.buffer.view().setRowHidden(row,low or (denoised and not on) or (only and not (denoises and denoised))
+                                            or (self.buffer.itemData(row)=='pbr_validity' and not validity))
         if not on and self.buffer.currentData()=='denoised_beauty':self.buffer.setCurrentIndex(self.buffer.findData('beauty'))
         if low:
             if self.buffer.currentData()!='beauty':self.buffer.setCurrentIndex(self.buffer.findData('beauty'))
@@ -1613,6 +1623,11 @@ class Panel(Tools, QtWidgets.QWidget):
     def _submit(self, scene, output=None, refining=False, digest=None):
         # MoonLightIPR denoises when its denoised beauty is the buffer chosen, as of now.
         self.renderer.moonlightipr_wanted=self.buffer.currentData()=='denoised_beauty'
+        # Realtime with MoonRay where XPU2 does not render it (opted into): on MoonRay's processor path, the graphics
+        # card left to Modo, whatever the scene's Rendering Mode says for its renders.
+        if (not output and self.ipr_mode.isChecked() and self._engine()=='moonray' and
+                self.preferences.get('xpu_realtime') and not self._xpu2_previews()):
+            scene=dict(scene,execution_mode='vectorized')
         # And gathers as many samples a pixel as the preferences say; a playblast has its own number.
         self.renderer.moonlightipr_preview_samples=self.preferences.get('moonlightipr/samples')
         # Whether this is a draft redrawing by itself, for which the window is left as it is. The region that follows
@@ -2010,6 +2025,23 @@ class Panel(Tools, QtWidgets.QWidget):
         return (repr(sorted(settings.items(),key=lambda entry:entry[0])),lx.service.Selection().GetTime(),modo.Scene().renderItem.id,self._engine(),
                 self.preferences.get('preview_motion'),self.preferences.get('xpu2_motion'),self.runtime_path())
 
+    def _materials_as_rendered(self,items,channels):
+        """Whether the materials edited (items, their MoonRay settings written: changes.tagged) render as they did when
+        last edited: their settings with each graph as a render sees it (nodes.rendered), no node's place nor a node wired
+        to nothing. A material told of by a channel of its own is never: its channels are not in its settings. Each
+        material's last form is in nodes.FORMS (the graph editor puts one there before it writes); one not seen is rendered."""
+        import modo
+        from . import nodes
+        held=nodes.FORMS
+        same=bool(items) and not (set(items)&set(channels))
+        for identity in items:
+            try:form=nodes.material_form(properties.read(modo.Scene().item(identity)))
+            except Exception:
+                held.pop(identity,None);same=False;continue
+            if held.get(identity)!=form:same=False
+            held[identity]=form
+        return same
+
     def _unchanged_scene(self):
         """The scene as it was last read out of Modo, where nothing has changed since: reading it is most of the wait
         for a draft's outlines, and switching Draft on or off or drawing a region changes nothing in the scene.
@@ -2076,6 +2108,9 @@ class Panel(Tools, QtWidgets.QWidget):
             if reuse:
                 from .incremental import classify
                 reuse=classify(modo.Scene(),items,self._geometry_cache) if items else True
+            # A material's settings written again with nothing to render anew (a node moved or added unwired in the graph
+            # editor): the picture stands.
+            if reuse=='materials' and not settling and self._materials_as_rendered(items,self.changes.consumed_channels):return
             sky=False
             if held and reuse is True:
                 # A physically based sky is painted again for every place its sun is put, which a drag cannot keep

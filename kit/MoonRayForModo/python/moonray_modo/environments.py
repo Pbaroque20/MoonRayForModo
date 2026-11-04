@@ -199,7 +199,7 @@ def gradient_texture(environment):
             staged.replace(target)
         finally:
             if staged.exists(): staged.unlink()
-    return textures.prepare(target,False,mipmaps=False)
+    return textures.prepare(target,False,mipmaps=False,light=True)
 
 
 def emit(environments, lines):
@@ -226,7 +226,7 @@ def emit(environments, lines):
         elif environment['kind']=='constant':
             attributes['color']=vector(working_color(environment['zenith']),'Rgb')
         else:
-            path=(textures.prepare(environment['path'],environment.get('srgb',False),mipmaps=False,color_space=environment.get('color_space',''))
+            path=(textures.prepare(environment['path'],environment.get('srgb',False),mipmaps=False,color_space=environment.get('color_space',''),light=True)
                   if environment['kind']=='image' else gradient_texture(environment))
             attributes['texture']=string(textures.register(working_texture(path)))
             # EnvLight's importance distribution rejects the terminal 1x1 mip.

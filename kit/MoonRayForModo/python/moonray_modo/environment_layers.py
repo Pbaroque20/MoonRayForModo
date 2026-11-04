@@ -71,7 +71,7 @@ def has_alpha(path):
 
 def image_pixels(layer, folder, width, height):
     converter=native.tool('oiiotool.exe');runtime=converter.parent
-    source=textures.prepare(layer['path'],layer.get('srgb',False),mipmaps=False,color_space=layer.get('color_space',''))
+    source=textures.prepare(layer['path'],layer.get('srgb',False),mipmaps=False,color_space=layer.get('color_space',''),light=True)
     from . import conversions
     conversions.finished(source)  # read below, as the scene is written
     def run(args):
@@ -232,4 +232,4 @@ def texture(environment, width=512, height=256):
             staged.replace(target)
         finally:
             if staged.exists(): staged.unlink()
-    return textures.prepare(target,False,mipmaps=False)
+    return textures.prepare(target,False,mipmaps=False,light=True)

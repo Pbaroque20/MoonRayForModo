@@ -207,6 +207,11 @@ for i, name in enumerate(sorted(catalog)):
         group = spec.get('group', 'Parameters')
         if group not in groups:
             groups[group] = nested(form, 'MoonRayEntity_%s_%d:sheet' % (name, len(groups)), group, collapsed=1 if groups else 0)
+            if name == 'VdbVolume' and len(groups) == 1:
+                # MoonRay keeps a VDB volume's file on the VDB shape that names it: chosen here, it goes there.
+                control(groups[group], 'moonray.entity.volumeFile', 'Load VDB File...',
+                        'Choose the .vdb file this volume shows. MoonRay keeps the file on the VDB shape (dwVdbGeometry) that '
+                        'names this volume; one is made if there is none.')
         label = spec.get('label', key.replace('_', ' '))
         tip = brief(spec.get('comment', ''))
         channel_control = 'item.channel %s$%s ?' % (entities.channel_owner(name), channel)

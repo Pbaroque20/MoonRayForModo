@@ -311,6 +311,38 @@ the channel for a compositor. A MoonRay EnvLight item has no such label, so soft
 
 XPU2 follows the switch (`modoSwitches` 8). Off, MoonRay is as its source has it, and pictures are as they were.
 
+## `moonray.patch`: mirrored meshes face outward (`MOONRAY_MODO_MIRRORED_MESHES`)
+
+Applied by `tools/port_mirrored_meshes.py`, behind a switch of its own (the plugin's preference, on by default).
+
+### What MoonRay does
+
+`PolygonMesh::transformPrimitive` moves a mesh's vertices by its `node_xform` with its faces in the order given, so a placement
+that mirrors the mesh (a negative scale) turns every face's winding over: Embree's geometric normal, from the winding, points
+inward. The mesh's own normals go through the inverse transpose and keep pointing out. At a hit MoonRay turns both normals to
+the side the ray came from by the geometric one, and the shading normal ends up facing away from the camera: a mirrored mesh
+with vertex normals renders black (a tester's Modo scenes). One without them is shaded by smooth normals made from the
+turned-over faces, and comes out slightly wrong.
+
+### The fix
+
+`PolyMesh` and `OpenSubdivMesh` reverse the orientation of a mirrored mesh as they tessellate (`reverseOrientation`, which
+`reverse_normals` uses), so its winding is outward again; a mesh both mirrored and set to `reverse_normals` is not reversed.
+Its own normals are negated for `reverse_normals` alone, as before; smooth normals `PolyMesh` makes from a mirrored mesh's faces
+are negated where they are made (in `initAttributesAndDisplace`, after any displacement), as the mirror turned them over.
+
+A cube of quads, lit from one side, mirrored and beside the same cube with the mirror baked into its vertices:
+
+| | MoonRay as it is | With the switch | Mirror in the vertices |
+|---|---|---|---|
+| quads, with normals | 0.0 (black) | 62.03 | 62.03 |
+| quads, without normals | 32.45 | 42.36 | 42.36 |
+| triangles, with normals | 0.0 (black) | 62.02 | 62.03 |
+| triangles, without normals | | 41.11 | 41.11 |
+
+XPU2 follows the switch (`modoSwitches` 16: the same winding reversal of a mirrored mesh it bakes; mirrored instances were
+already right) and gives the same values within its noise. Off, MoonRay is as its source has it, and pictures are as they were.
+
 ## `scene_rdl2.patch`: MoonRay starts with any PATH (`MOONRAY_MODO_DSO_SEARCH`)
 
 Applied by `tools/port_dso_search.py`, behind a switch of its own (the plugin's preference, on by default).
