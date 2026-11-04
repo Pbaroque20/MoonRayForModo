@@ -71,6 +71,13 @@ def cases(suite, cards, groups):
                     expect=[r'\(lane 1\) renders with the first'], forbid=(r'left out', r'\(lane 2\)')))
     out.append(Case('groups-chosen', 'three processor groups, only the second switched on', {'XPU2_SIMULATE_GROUPS': 3, 'XPU2_GROUP_LIST': '1'},
                     expect=[r'1 processor groups']))
+    # NUMA: workers a share on each node, each card's lane on its own node, and a node short of memory moving its texture
+    # tiles to the other (multi_device.h, host_texture.h).
+    out.append(Case('numa-2', 'two NUMA nodes', {'XPU2_SIMULATE_NODES': 2}, expect=[r'2 NUMA nodes']))
+    out.append(Case('numa-cards', 'two cards, each near a node of its own', {'XPU2_SIMULATE_CARDS': 2, 'XPU2_SIMULATE_NODES': 2,
+                    'XPU2_SIMULATE_CARD_NODES': '0,1'}, expect=[r'\(lane 1\) near node 1', r'first graphics card near node 0']))
+    out.append(Case('numa-spill', 'two NUMA nodes, the first holding 1 MB of texture tiles: the rest moved to the second',
+                    {'XPU2_SIMULATE_NODES': 2, 'XPU2_SIMULATE_NODE_MB': '1,0'}, expect=[r'moved to node 1']))
     # Realtime's denoiser: OptiX on the first card that runs it, else Open Image Denoise on the processor.
     dn = [Case('denoise-optix', 'realtime, denoised by OptiX on the first card', realtime=True, against=None,
                expect=[r'denoised by OptiX on lane 0']),

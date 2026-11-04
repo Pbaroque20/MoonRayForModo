@@ -116,8 +116,83 @@ inline const std::vector<Group>& groups() {
     return kept;
 }
 
-// More than one processor group, or groups left out: the CPU lane's workers are placed on the chosen ones.
-inline bool spread() { return groups().size() > 1 || (groupsChosen() && groups().size() < allGroups().size()); }
+// NUMA nodes. A machine with more than one (two sockets, or a processor with several dies such as a Threadripper or an
+// EPYC) reaches its own node's memory quicker than another's. The workers are placed a share on each node (places),
+// whichever groups the nodes are in; each knows its node (currentNode), so the texture tiles it decodes are kept in its
+// node's memory (host_texture.h); and each graphics card's pinned buffers and tile decoding are made on the node nearest
+// it (async_gpu.h, gpu::cardNode). With one node nothing here changes what XPU2 does.
+//
+// Simulation: XPU2_SIMULATE_NODES=K splits the chosen groups' processors, in order, into K nodes;
+// XPU2_SIMULATE_CARD_NODES=a,b,... gives each card's lane its node; XPU2_SIMULATE_NODE_MB=a,b,... holds each node's
+// decoded tiles to that many MB, as a node short of memory would (host_texture.h).
+struct Place {
+    unsigned node = 0;
+    WORD group = 0;
+    KAFFINITY mask = 0;
+    unsigned processors = 0;
+};
+
+inline unsigned bits(KAFFINITY m) {
+    unsigned n = 0;
+    for (; m; m &= m - 1) ++n;
+    return n;
+}
+
+// Where the workers go: each node's processors in each chosen group (one place a group where there are no nodes).
+inline const std::vector<Place>& places() {
+    static const std::vector<Place> found = [] {
+        std::vector<Place> out;
+        const auto& chosen = groups();
+        if (const unsigned k = simulated("XPU2_SIMULATE_NODES"); k > 1) {
+            std::vector<std::pair<WORD, KAFFINITY>> all;
+            for (const Group& g : chosen)
+                for (unsigned b = 0; b < 8 * sizeof(KAFFINITY); ++b)
+                    if (g.mask & (KAFFINITY(1) << b)) all.push_back({g.number, KAFFINITY(1) << b});
+            const unsigned n = std::min<unsigned>(k, unsigned(all.size()));
+            for (size_t i = 0; i < all.size(); ++i) {
+                const unsigned node = unsigned(i * n / all.size());
+                if (out.empty() || out.back().node != node || out.back().group != all[i].first) out.push_back({node, all[i].first, 0, 0});
+                out.back().mask |= all[i].second;
+                ++out.back().processors;
+            }
+            return out;
+        }
+        DWORD bytes = 0;
+        GetLogicalProcessorInformationEx(RelationNumaNode, nullptr, &bytes);
+        std::vector<char> buffer(bytes ? bytes : 1);
+        if (bytes && GetLogicalProcessorInformationEx(RelationNumaNode, reinterpret_cast<SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX*>(buffer.data()), &bytes))
+            for (DWORD at = 0; at < bytes;) {
+                const auto* info = reinterpret_cast<const SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX*>(buffer.data() + at);
+                if (!info->Size) break;
+                at += info->Size;
+                if (info->Relationship != RelationNumaNode) continue;
+                const GROUP_AFFINITY& a = info->NumaNode.GroupMask;
+                for (const Group& g : chosen)
+                    if (g.number == a.Group && (g.mask & a.Mask)) out.push_back({unsigned(info->NumaNode.NodeNumber), g.number, g.mask & a.Mask, bits(g.mask & a.Mask)});
+            }
+        if (out.empty())
+            for (const Group& g : chosen) out.push_back({0, g.number, g.mask, g.processors});
+        return out;
+    }();
+    return found;
+}
+
+// The nodes the workers are on, in order.
+inline const std::vector<unsigned>& nodes() {
+    static const std::vector<unsigned> found = [] {
+        std::vector<unsigned> out;
+        for (const Place& p : places())
+            if (std::find(out.begin(), out.end(), p.node) == out.end()) out.push_back(p.node);
+        return out;
+    }();
+    return found;
+}
+
+// More than one NUMA node among the chosen processors.
+inline bool numa() { return nodes().size() > 1; }
+
+// More than one processor group, groups left out, or more than one node: the CPU lane's workers are placed.
+inline bool spread() { return groups().size() > 1 || (groupsChosen() && groups().size() < allGroups().size()) || numa(); }
 
 // The logical processors XPU2 may use: every group's with more than one, else as before.
 inline unsigned logicalProcessors() {
@@ -133,24 +208,66 @@ inline WORD currentGroup() {
     return GetThreadGroupAffinity(GetCurrentThread(), &a) ? a.Group : 0;
 }
 
-// Worker w of n placed on a group, the groups taking workers in proportion to their processors. In the feeder's own
-// group (home) a worker keeps to homeMask where one is given (every processor but the feeder's), as with one group.
+// The node a thread was placed on (placeWorker, OnNode), -1 where it was not.
+inline thread_local int placedNode = -1;
+
+// The calling thread's node: where it was placed, else the node of the processor it is on now.
+inline unsigned currentNode() {
+    if (placedNode >= 0) return unsigned(placedNode);
+    if (!numa()) return nodes().empty() ? 0 : nodes()[0];
+    PROCESSOR_NUMBER at{};
+    GetCurrentProcessorNumberEx(&at);
+    for (const Place& p : places())
+        if (p.group == at.Group && (p.mask & (KAFFINITY(1) << at.Number))) return p.node;
+    return nodes()[0];
+}
+
+// The calling thread on node's processors for as long as it lives (its own group's share of the node where the node is
+// in several), then back where it was. Nothing where there is one node.
+struct OnNode {
+    GROUP_AFFINITY old{};
+    int oldNode = -1;
+    bool moved = false;
+    explicit OnNode(int node) {
+        if (!numa() || node < 0) return;
+        GROUP_AFFINITY to{};
+        for (const Place& p : places())
+            if (p.node == unsigned(node) && (!to.Mask || p.group == to.Group)) {
+                to.Group = p.group;
+                to.Mask |= p.mask;
+            }
+        if (!to.Mask || !GetThreadGroupAffinity(GetCurrentThread(), &old)) return;
+        moved = SetThreadGroupAffinity(GetCurrentThread(), &to, nullptr) != 0;
+        oldNode = placedNode;
+        if (moved) placedNode = node;
+    }
+    ~OnNode() {
+        if (!moved) return;
+        SetThreadGroupAffinity(GetCurrentThread(), &old, nullptr);
+        placedNode = oldNode;
+    }
+    OnNode(const OnNode&) = delete;
+};
+
+// Worker w of n placed on a node's processors in a group, the places taking workers in proportion to their processors.
+// In the feeder's own group (home) a worker keeps to homeMask where one is given (every processor but the feeder's), as
+// with one group.
 inline void placeWorker(unsigned w, unsigned n, WORD home, KAFFINITY homeMask) {
-    const auto& all = groups();
+    const auto& all = places();
     unsigned total = 0;
-    for (const Group& g : all) total += g.processors;
+    for (const Place& p : all) total += p.processors;
     if (!total || !n) return;
     const unsigned slot = unsigned((unsigned long long)w * total / n);
     unsigned at = 0;
-    for (const Group& g : all) {
-        if (slot < at + g.processors) {
+    for (const Place& p : all) {
+        if (slot < at + p.processors) {
             GROUP_AFFINITY a{};
-            a.Group = g.number;
-            a.Mask = g.number == home && homeMask ? (g.mask & homeMask) : g.mask;
-            if (a.Mask) SetThreadGroupAffinity(GetCurrentThread(), &a, nullptr);
+            a.Group = p.group;
+            a.Mask = p.group == home && homeMask && (p.mask & homeMask) ? (p.mask & homeMask) : p.mask;
+            if (a.Mask && SetThreadGroupAffinity(GetCurrentThread(), &a, nullptr)) placedNode = int(p.node);
             return;
         }
-        at += g.processors;
+        at += p.processors;
     }
 }
 

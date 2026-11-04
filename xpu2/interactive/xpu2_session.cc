@@ -244,6 +244,9 @@ std::unique_ptr<async::GpuLane> gpuLane(const Programs& p, std::function<void(un
     async::GpuOptions options;
     options.device = card;
     options.lane = lane;
+    // Made on the node nearest the card, where there are several (multi_device.h).
+    options.node = gpu::cardNode(card, lane);
+    multi::OnNode near(options.node);
     if (const unsigned threads = multi::simulatedEntry("XPU2_SIMULATE_CARD_THREADS", size_t(lane)))
         options.launchThreads = std::min(options.launchThreads, threads);
     options.compileProgress = std::move(progress);
@@ -1730,6 +1733,8 @@ int session(const Args& args, const fs::path& directory) {
                                 gpu->follow(gpuLane(p, {}, cards[k], int(k)));
                                 std::printf("MoonRay XPU2: graphics card %d (lane %zu) renders with the first%s\n", cards[k], k,
                                             cards[k] == cards[0] ? " (simulated, XPU2_SIMULATE_CARDS)" : "");
+                                if (gpu->followers().back()->node() >= 0)
+                                    std::printf("MoonRay XPU2: graphics card %d (lane %zu) near node %d\n", cards[k], k, gpu->followers().back()->node());
                             } catch (const std::exception& e) {
                                 gpu->use();
                                 std::printf("MoonRay XPU2: graphics card %d left out: %s\n", cards[k], e.what());
@@ -1738,6 +1743,9 @@ int session(const Args& args, const fs::path& directory) {
                         if (multi::spread())
                             std::printf("MoonRay XPU2: %zu processor groups, %u logical processors%s\n", multi::groups().size(),
                                         multi::logicalProcessors(), multi::simulated("XPU2_SIMULATE_GROUPS") > 1 ? " (simulated, XPU2_SIMULATE_GROUPS)" : "");
+                        if (multi::numa())
+                            std::printf("MoonRay XPU2: %zu NUMA nodes, the first graphics card near node %d%s\n", multi::nodes().size(), gpu->node(),
+                                        multi::simulated("XPU2_SIMULATE_NODES") > 1 ? " (simulated, XPU2_SIMULATE_NODES)" : "");
                     } catch (...) {
                         loaded.store(true);
                         guard.join();
