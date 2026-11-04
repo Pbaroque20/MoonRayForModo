@@ -1118,6 +1118,7 @@ public:
             if (std::getenv("XPU2_ASYNC_STACKS"))
                 std::fprintf(stderr, "scratch: threads %u (card %u) of %zu bytes: %zu MB\n", options_.launchThreads, cardThreads_, threadScratch,
                              (size_t(options_.launchThreads) * threadScratch) >> 20);
+            gpu::Allocating what("each launch thread's scratch (materials, outputs, Cryptomatte)");
             scene_.scratch = device(size_t(options_.launchThreads) * threadScratch);
         }
         lap("lights, volumes, materials, outputs");
@@ -1125,6 +1126,7 @@ public:
         if (cpu::gpuTextures(plan->domain)) prepareTextures(*plan);
         lap("textures");
         const size_t pixels = size_t(plan->width) * plan->height;
+        gpu::Allocating films("the picture's films and outputs");
         scene_.sums = device(pixels * 4 * sizeof(double));
         scene_.odd = device(pixels * 4 * sizeof(double));
         scene_.counts = device(pixels * sizeof(U32));
@@ -1165,6 +1167,7 @@ public:
             cryptoNodeWords_ = cryptoExtras_ ? 26u : 5u;
             cryptoNodeCapacity_ = U32(std::min<size_t>(pixels * cryptoCategories_ * 4 + (size_t(1) << 20), size_t(0x7fffffff) / cryptoNodeWords_));
             scene_.cryptoHeads = device(pixels * cryptoCategories_ * sizeof(U32));
+            gpu::Allocating what("Cryptomatte's fragments");
             scene_.cryptoNodes = device(size_t(cryptoNodeCapacity_) * cryptoNodeWords_ * sizeof(U32));
             scene_.cryptoNodeCount = device(sizeof(U32));
         }
@@ -1205,8 +1208,8 @@ public:
         program_ = &programs_[adaptive && !single_ ? 1 : 0];
         itemsPerChunk_ = samplesPerChunk * TilePixels;
         adaptive_ = adaptive;
-        sizeParked();
-        program_->fitStack(!plan_->volumes.empty(), plan_->dwaSlots > 0);
+        sizeParked(partial);
+        program_->fitStack(!plan_->volumes.empty(), plan_->subsurface);
         const size_t pixels = size_t(plan_->width) * plan_->height;
         memset32(scene_.sums->pointer, 0, pixels * 8);
         memset32(scene_.odd->pointer, 0, pixels * 8);
@@ -1353,6 +1356,8 @@ public:
         gpu::Driver::check(driver.cuEventElapsedTime_p(&ms, f.readback->begun->value, f.readback->ended->value));
         out.deviceSeconds = ms / 1000.0;
         parkedTail_ = state.parkedTail;
+        // A frame sized not to park (sizeParked) that did: its small queue may have wrapped, so the frame is not trusted.
+        cpu::need(mayPark_ || parkedTail_ - parkedIssued_ <= parkedCapacity_, "A sample parked in a frame sized not to park");
         if (adaptive_) std::copy(state.passDone, state.passDone + MaxPasses, passDone_.begin());
         if (f.chain) {
             chainState_ = state;
@@ -1817,10 +1822,10 @@ public:
         std::string sizes;
         size_t held = 0;
         for (const auto& c : fine_.classes) {
-            const size_t in = c.slots - std::min<size_t>(c.slots, c.freeSlots.size());
+            const size_t in = c.made - std::min<size_t>(c.made, c.freeSlots.size());
             held += in;
-            char one[80];
-            std::snprintf(one, sizeof one, "%s%zu of %u slots of %zu KB", sizes.empty() ? "" : ", ", in, c.slots, c.slotBytes >> 10);
+            char one[100];
+            std::snprintf(one, sizeof one, "%s%zu in %u slots of %zu KB made, of %u", sizes.empty() ? "" : ", ", in, c.made, c.slotBytes >> 10, c.slots);
             sizes += one;
         }
         char text[420];
@@ -2097,8 +2102,9 @@ private:
             if (exceptions()) sbt.exceptionRecord = records->pointer + (count - 1) * sizeof(Record);
         }
         // The continuation stack a scene needs: the volume module's callables only where the scene can call them, the
-        // volume ones where it has volumes, the subsurface one where it has a DwaBase-family material (the only ones with
-        // subsurface). The driver keeps a stack for every hardware thread, so the frame left out is saved on each.
+        // volume ones where it has volumes, the subsurface one where a material scatters under its surface (cpu::Plan's
+        // subsurface: a DwaBase-family material whose subsurface model is not none; any DwaBase material kept it before, some
+        // 3.5 GB of the card on a 24 GB one). The driver keeps a stack for every hardware thread, so the frame left out is saved on each.
         // Between frames only (begin): no launch in flight.
         void fitStack(bool volumes, bool subsurface) {
             if (!fitted) return;
@@ -2324,12 +2330,19 @@ private:
         // (tex::Mip::load) where the level is read on demand.
         struct Source { const tex::Mip* mip; U32 page; U32 bytes; U32 kind; };
         std::vector<Source> sources;      // host texels of each tile id
-        // The slab's slots by size, one kind for each size the scene's formats have (an 8-bit grey map's tile takes 1 KB, a
-        // float one's 12 KB): a kind's slots side by side from its offset in the slab, numbered on from first; its own share
-        // of the budget, its free slots and its eviction.
-        struct Kind { size_t slotBytes = 0, offset = 0; U32 slots = 0, first = 0, tiles = 0; std::vector<U32> freeSlots; };
+        // The cache's slots by size, one kind for each size the scene's formats have (an 8-bit grey map's tile takes 1 KB, a
+        // float one's 12 KB), numbered on from first: its own share of the budget (slots), its free slots and its eviction.
+        // Its slots are made as tiles come to need them, a block of 64 MB at a time (made of them so far), so a scene whose
+        // tiles are mostly never read, or flat, holds only what it uses.
+        struct Kind {
+            size_t slotBytes = 0;
+            U32 slots = 0, first = 0, tiles = 0, made = 0, blockSlots = 1;
+            std::vector<U32> freeSlots;
+            std::vector<B> blocks;
+        };
         std::vector<Kind> classes;
-        size_t slabBytes = 0;             // all the slots' bytes
+        size_t slabBytes = 0;             // the slots' bytes made so far
+        size_t limitBytes = 0;            // and at most (the budget)
         size_t flat = 0;                  // flat tiles held as one value (flatPool)
         B flatPool;                       // each tile id's 16 bytes: a flat tile's value
         // Wide tiles (tex::widePage: a float file's tile past half floats' range, in floats), each in memory of its own for the
@@ -2378,6 +2391,7 @@ private:
         }
         OptixAccelBufferSizes sizes{};
         ox(optixAccelComputeMemoryUsage(optix_, &options, &input, 1, &sizes));
+        gpu::Allocating what("geometry's ray-tracing structures");
         auto temporary = device(std::max<size_t>(sizes.tempSizeInBytes, 16));
         auto output = device(std::max<size_t>(sizes.outputSizeInBytes, 16));
         auto compactedSize = device(8);
@@ -2409,6 +2423,27 @@ private:
     // The acceleration structures' memory as built and as kept (the lane's memory line).
     size_t builtBytes_ = 0, compactedBytes_ = 0;
 
+    // One more block of a kind's slots, where its budget has room and the card has the memory; false where neither.
+    bool growKind(Fine::Kind& c) {
+        if (c.made >= c.slots) return false;
+        const U32 n = std::min(c.blockSlots, c.slots - c.made);
+        try {
+            gpu::Allocating what("the fine-detail texture cache");
+            c.blocks.push_back(device(size_t(n) * c.slotBytes));
+        } catch (const std::exception&) {
+            c.slots = c.made;  // the card is full: the kind keeps the slots it has, and evicts
+            return false;
+        }
+        for (U32 s = n; s-- > 0;) c.freeSlots.push_back(c.first + c.made + s);
+        c.made += n;
+        fine_.slabBytes += size_t(n) * c.slotBytes;
+        return true;
+    }
+    // A slot's place on the card: its block, and its place in it.
+    CUdeviceptr slotAddress(const Fine::Kind& c, U32 s) const {
+        const U32 local = s - c.first;
+        return c.blocks[local / c.blockSlots]->pointer + size_t(local % c.blockSlots) * c.slotBytes;
+    }
     // A flat tile's tileSlot: resident, in no slot (its value in the flat pool).
     static constexpr U32 FlatSlot = NoSlot - 1;
     // The slot kind of a level-0 tile of this format, made as first met: its whole tile's bytes, at 16-byte steps.
@@ -2428,6 +2463,7 @@ private:
             if (std::find(files.begin(), files.end(), file) == files.end()) files.push_back(file);
         fine_ = {};
         fine_.sources.push_back({nullptr, 0, 0, 0});  // id 0 is untracked
+        singleLevel_ = false;
         std::vector<std::pair<std::shared_ptr<texture::File>, B>> images;
         std::vector<std::pair<B, std::vector<U32>>> levelZeroPages;  // per file: page array and its tile ids
         size_t cardFree = 0, cardTotal = 0, mipBytes = 0;
@@ -2438,6 +2474,7 @@ private:
             const auto& host = file->pyramid->view(plan.realtime);
             tex::Image descriptor{};
             descriptor.count = host.count;
+            if (host.count < 2) singleLevel_ = true;  // no level up for partial shading (sizeParked)
             // Levels 1 and up are resident for the whole session, in their format (tex::Mip::format), each tile at a
             // 16-byte boundary so that a float level's texels are aligned whatever came before.
             std::vector<unsigned char> packed;
@@ -2459,6 +2496,7 @@ private:
             mipBytes += packed.size();
             if (cardKnown && mipBytes + std::max<size_t>(cardTotal / 20, 256ull << 20) > cardFree)
                 throw std::runtime_error("the textures do not fit on the card (texture overflow)");
+            gpu::Allocating what("a texture's coarser levels");
             B pixels = packed.empty() ? B() : upload(packed.data(), packed.size());
             scene_.mipBytes += packed.size();
             for (unsigned level = 1; level < host.count; ++level) {
@@ -2502,19 +2540,17 @@ private:
         for (auto& c : fine_.classes) {
             c.slots = std::max<U32>(1, std::min<U32>(std::max<U32>(c.tiles, 1), U32(double(std::max<U32>(c.tiles, 1)) * share)));
             c.first = fine_.slots;
-            c.offset = fine_.slabBytes;
+            c.blockSlots = U32(std::max<size_t>(1, (64ull << 20) / c.slotBytes));
             fine_.slots += c.slots;
-            fine_.slabBytes += size_t(c.slots) * c.slotBytes;
-            for (U32 s = c.slots; s-- > 0;) c.freeSlots.push_back(c.first + s);
+            fine_.limitBytes += size_t(c.slots) * c.slotBytes;
         }
         if (fine_.tiles)
-            std::printf("XPU2: fine-detail texture cache %.0f MB of the %.0f MB its tiles would take (%s)\n", double(fine_.slabBytes) / (1 << 20),
-                        double(need) / (1 << 20), fineBudgetWhy_.c_str());
+            std::printf("XPU2: fine-detail texture cache up to %.0f MB of the %.0f MB its tiles would take, made as tiles are read (%s)\n",
+                        double(fine_.limitBytes) / (1 << 20), double(need) / (1 << 20), fineBudgetWhy_.c_str());
         cpu::need(fine_.slots > 0, "Fine-detail cache budget");
         fine_.tileState = device((fine_.tiles + 1) * sizeof(U32));
         fine_.touched = device(fine_.tiles + 1);
         fine_.requests = device(fine_.requestBytes());
-        fine_.slab = device(fine_.slabBytes);
         fine_.flatPool = device(size_t(fine_.tiles + 1) * 16);
         memset32(fine_.tileState->pointer, 0, fine_.tiles + 1);
         gpu::Driver::check(driver.cuMemsetD8Async_p(fine_.touched->pointer, 0, fine_.tiles + 1, stream_));
@@ -2610,12 +2646,13 @@ private:
         }
         for (size_t k = 0; k < fine_.classes.size(); ++k) {
             auto& c = fine_.classes[k];
-            if (wanted[k] <= c.freeSlots.size()) continue;
+            const size_t room = c.freeSlots.size() + (c.slots - c.made);  // free, or still to be made
+            if (wanted[k] <= room) continue;
             std::vector<U32> resident;
-            for (U32 s = c.first; s < c.first + c.slots; ++s)
+            for (U32 s = c.first; s < c.first + c.made; ++s)
                 if (fine_.slotTile[s]) resident.push_back(fine_.slotTile[s]);
             std::sort(resident.begin(), resident.end(), [&](U32 a, U32 b) { return fine_.lastUse[a] < fine_.lastUse[b]; });
-            const size_t need = wanted[k] - c.freeSlots.size();
+            const size_t need = wanted[k] - room;
             for (size_t i = 0; i < resident.size() && i < need; ++i) {
                 const U32 tile = resident[i], s = fine_.tileSlot[tile];
                 fine_.tileSlot[tile] = NoSlot;
@@ -2627,6 +2664,7 @@ private:
         }
         size_t most = 16;
         for (const auto& c : fine_.classes) most = std::max(most, c.slotBytes);
+        gpu::Allocating what("texture tiles on their way to the card");
         auto staging = pinned(std::max<size_t>(fine_.pending.size(), 1) * most);
         size_t n = 0;
         std::vector<U32> deferred;
@@ -2664,13 +2702,14 @@ private:
                 ++fine_.loaded;
                 continue;
             } else {
+                if (c.freeSlots.empty()) growKind(c);
                 if (c.freeSlots.empty()) {  // more asked for than its kind's slots hold: next time
                     deferred.push_back(tile);
                     continue;
                 }
                 s = c.freeSlots.back();
                 c.freeSlots.pop_back();
-                to = fine_.slab->pointer + c.offset + size_t(s - c.first) * c.slotBytes;
+                to = slotAddress(c, s);
                 bytes = size_t(source.bytes);
                 std::memcpy(at, texels, bytes);
                 fine_.slotTile[s] = tile;
@@ -2793,7 +2832,7 @@ private:
             p.requestCapacity = fine_.requestCapacity;
             p.touched = reinterpret_cast<unsigned char*>(fine_.touched->pointer);
             p.pageEntry = reinterpret_cast<const U64L*>(fine_.pageEntry->pointer);
-            p.slab = reinterpret_cast<const surface::V3*>(fine_.slab->pointer);
+            p.slab = nullptr;  // slots are in blocks; each update carries its address
         }
         return p;
     }
@@ -2814,14 +2853,17 @@ private:
     }
     // The parked queue for this frame. Only a texture's missing tile parks a sample, so a scene without textures holds no
     // real queue; with them, each of the frame's samples may wait on the queue and run again, twice over at most, up to
-    // 2^26 (1 GB of the card).
-    void sizeParked() {
-        mayPark_ = !plan_->textures.empty();
+    // 2^26 (1 GB of the card). With partial shading a missing tile is read a level up, always on the card, so nothing parks
+    // but where a texture has no level up (one of a single pixel): such a frame keeps the small queue too, and the card its
+    // gigabyte. The pass chain, which parks, sizes it as before.
+    void sizeParked(bool partial) {
+        mayPark_ = fine_.tiles > 0 && (!partial || singleLevel_);
         const U64 tiles = U64((plan_->width + 7) / 8) * ((plan_->height + 7) / 8);
         const U32 wanted = mayPark_ ? U32(std::min<U64>(2 * tiles * TilePixels * plan_->spp + 1024, 1ull << 26)) : 1024u;
         if (parked_ && parkedCapacity_ >= wanted) return;
         parked_.reset();
         parkedCapacity_ = wanted;
+        gpu::Allocating what("samples waiting on texture tiles (parked queue)");
         parked_ = device(size_t(parkedCapacity_) * sizeof(Parked));
     }
     // The highest the parked queue can have reached: the last readback plus
@@ -2907,7 +2949,8 @@ private:
     Scene scene_;
     Fine fine_;
     U32 itemsPerChunk_ = 0, parkedCapacity_ = 0;
-    bool mayPark_ = false;  // the scene has textures (sizeParked)
+    bool mayPark_ = false;  // the frame may park samples (sizeParked)
+    bool singleLevel_ = false;  // a texture of one level, which partial shading cannot read a level up
     bool adaptive_ = false;
     // The AOV film's channels and closest depths a pixel, a sample's scratch for them, and the clock's seconds a tick.
     U32 aovChannels_ = 0, aovClosest_ = 0, aovClosestChannels_ = 0;

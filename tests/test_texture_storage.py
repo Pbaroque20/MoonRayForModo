@@ -34,5 +34,32 @@ class Storage(unittest.TestCase):
         self.assertIn('*entry = reinterpret_cast<const surface::V3*>(u.address);', device)
 
 
+class CardMemory(unittest.TestCase):
+    """The rest of the card's memory on the Grass scene: the parked queue (1 GB) only for frames that can park, the deep
+    subsurface stack only for a material that scatters under its surface, the texture cache made as its tiles are read, and
+    each large allocation said in the MoonRay Terminal."""
+
+    def test_only_frames_that_can_park_get_the_big_queue(self):
+        card = (XPU2 / 'async_gpu.h').read_text(encoding='utf-8')
+        self.assertIn('mayPark_ = fine_.tiles > 0 && (!partial || singleLevel_);', card)
+        self.assertIn('"A sample parked in a frame sized not to park"', card)
+
+    def test_the_subsurface_stack_follows_real_subsurface(self):
+        card = (XPU2 / 'async_gpu.h').read_text(encoding='utf-8')
+        self.assertIn('program_->fitStack(!plan_->volumes.empty(), plan_->subsurface);', card)
+        plan = (XPU2 / 'cpu_scene.h').read_text(encoding='utf-8')
+        self.assertIn('if(tree.up.subsurface!=shade::SubsurfaceNone)plan->subsurface=true;', plan)
+
+    def test_the_texture_cache_grows_in_blocks(self):
+        card = (XPU2 / 'async_gpu.h').read_text(encoding='utf-8')
+        self.assertIn('bool growKind(Fine::Kind& c)', card)
+        self.assertIn('if (c.freeSlots.empty()) growKind(c);', card)
+
+    def test_large_allocations_reach_the_terminal(self):
+        lane = (XPU2 / 'gpu_lane.h').read_text(encoding='utf-8')
+        self.assertIn('const int mb=v?std::atoi(v):256;', lane)
+        self.assertIn('"MoonRay XPU2: %s %zu MB for %s', lane)
+
+
 if __name__ == '__main__':
     unittest.main()
