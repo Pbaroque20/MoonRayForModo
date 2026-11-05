@@ -9,9 +9,9 @@ The plugin includes CPU, XPU and XPU2 rendering, a dockable live preview with a 
 
 **Built on MoonRay [2026.29.1](https://github.com/dreamworksanimation/openmoonray/releases/tag/v2026.29.1)** (OpenMoonRay's latest release; MoonRay 18.4), with the plugin's own patches for Windows and the preview.
 
-**Current version: 0.5.2.2 — pre-production release, a hotfix to 0.5.** The plugin is no longer experimental. 0.5 brought **MoonRay XPU2**, a new GPU renderer for previews in which the processor and the graphics card work on the same picture at once, now the default; realtime that keeps up with heavy scenes and a Scene cache; Modo's procedural textures worked out through the object, 145 of Modo's Enhance textures among them; Modo's light volumetrics and fog; and MoonLightIPR starting in seconds. Install the new runtime with it.
+**Current version: 0.5.3 — pre-production release.** The plugin is no longer experimental. 0.5 brought **MoonRay XPU2**, a new GPU renderer for previews in which the processor and the graphics card work on the same picture at once, now the default; realtime that keeps up with heavy scenes and a Scene cache; Modo's procedural textures worked out through the object, 145 of Modo's Enhance textures among them; Modo's light volumetrics and fog; and MoonLightIPR starting in seconds. Install the new runtime with it.
 
-· [Download 0.5.2.2: the kit, the Windows runtime and the MoonRay content](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.5.2.2)
+· [Download 0.5.3: the kit, the Windows runtime and the MoonRay content](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.5.3)
 
 · [Installation instructions](docs/INSTALLATION.md) 
 
@@ -59,6 +59,47 @@ Work on the next version goes on in the [MoonLightIPR branch](https://github.com
 | **The graph editor**, with a MoonRay material | **Modo's Fur material** rendered by MoonRay |
 | ![The compositor](docs/images/compositor-editor.png) | ![Modern Hall, imported from MoonRay's scene files](docs/images/rdl-modern_hall.jpg) |
 | **The compositor**: the beauty graded, vignetted and sharpened | **An imported MoonRay scene**: its own render (left), after the trip through Modo (right). Modern Hall by NewSee2l035, CC BY |
+
+## New in 0.5.3
+
+A release for its lighter use of memory and XPU2 on several devices, with a new runtime: install it, and **Compile XPU2 Shaders once more**. The full list is in [What's new in 0.5](docs/WHATS_NEW_05.md).
+
+- **Look-dev is lighter on Modo**: graph editor changes no longer re-read the whole scene, hidden meshes' materials are left alone, and Low Value, High Value, gamma, brightness and contrast change without reloading the scene.
+- **Wired inputs are locked in Properties**, and **a material node's inputs fold into groups** (Diffuse, Specular, Clearcoat ...), connected ones always shown.
+
+  ![A DwaBaseMaterial node with Diffuse open and its other groups folded, beside the same groups in Properties](docs/images/graph-editor-groups.webp)
+
+- **A material's lists come up quicker** in Properties and the graph editor, **switching networks keeps the graph editor open**, and **Remove Network** removes another material's network or a loose one, after asking.
+- **A cookie light filter renders in XPU2**, at XPU2's speed, where it sent the whole render to MoonRay's slow scalar mode.
+- **A bokeh image turns bokeh on**, and the dw camera fields Modo's camera drives are greyed while it does.
+
+  ![Lights far out of focus through a hexagonal bokeh image, MoonRay left and XPU2 right](docs/images/xpu2-bokeh-image.jpg)
+
+- **XPU2 needs a third of the texture memory**: a scene with a few 8K maps that went into texture overflow mode now holds 1.4 GB of textures on the graphics card, not 4 GB, with the same picture. **XPU2 also holds less of the card**: a scene with grass peaked at 9.7 GB rather than 10.9 GB (8.7 GB without subsurface).
+
+  ![Grass, a crop at full size: XPU2 holding its textures in floats on the left, in a third of the memory on the right](docs/images/xpu2-texture-memory-grass.jpg)
+
+- **Depth of field in XPU2 has even grain**: a light far out of focus showed a lattice inside its bokeh disc; the lens samples now have an order of their own and every sample sequence is Owen-scrambled, so the noise is MoonRay's kind.
+- **A sliver triangle no longer sends an XPU2 frame to MoonRay**: a hit on a triangle too thin for its normal in single precision failed the sample, and with it the whole frame. The grass scene fell back to MoonRay every time on the processor alone and now and then with the graphics card.
+- **XPU2 uses every graphics card and every processor**: a second or third NVIDIA card renders the same picture alongside the first, and a machine with more than 64 threads uses them all. A card that can't run OptiX's denoiser hands realtime denoising to one that can, or to Open Image Denoise on the processor. Tested in simulation only, as we have one card here.
+- **Device Management**: under XPU2 in Preferences > MoonRay, lists the processor and every NVIDIA card XPU2 finds, each with its own switch, and compiles XPU2's shaders for each kind of card that is not up to date: a new kind of card shows as Out of date, naming it, and only it is compiled. It replaces the Devices choice on the XPU2 page.
+- **XPU2 knows NUMA**: on two-socket workstations and many-die processors (Threadripper, EPYC, Xeons with Sub-NUMA Clustering), XPU2 puts its workers on every node, feeds each card from the node nearest it, and keeps texture tiles in the memory of the node that reads them. A node that runs short moves its tiles to another before letting any go. On a one-socket machine nothing changes. Tested in simulation only.
+- **VDB volumes render on XPU2's graphics card**: a VDB cloud that did not glow was handed sample by sample to the processor; the card now samples its grids itself and marches it without a table of steps, about five times faster on a test cloud with the same picture. Glowing VDBs still render on the processor.
+- **Mirrored meshes face outward**: a mesh with a negative scale and normals of its own rendered black in MoonRay and XPU2 (MoonRay's own behaviour), and one without them slightly wrong; a new MoonRay Source Override, on by default, turns them outward.
+- **The graph editor does not restart the preview for nothing**: moving a node, or adding one wired to nothing, no longer renders the picture again.
+- **A dw material's own roughness in MoonLightIPR**: a dw Metal or Base material's roughness was taken from Modo's Material Ref tab; it is now the material's own.
+- **The MoonRay Widget renders with XPU2** (whatever the preview's choice), at the size it is shown, with 1024, 2048 or 4096 samples, and a **Scale** to size the ball in scene units for curvature and other procedurals.
+- **A dwVdbVolume takes its VDB file**: adding one asks for the file, and its form has Load VDB File; the VDB shape that shows it is made for it.
+- **PBR validity**, a diagnostic in Preferences > MoonRay > Renderer > Diagnostics: while it is on, MoonRay XPU's and XPU2's renders hold MoonRay's PBR validity output in place of the standard outputs, and the preview window shows it. Green is a plausible material, red one out of range, yellow in between: here the dragon's bright orange is just above the brightest plausible albedo. Off, the standard outputs come back.
+
+  ![The dragon test scene, its beauty on the left and its PBR validity on the right: the floor green, the dragon yellow](docs/images/pbr-validity-dragon.jpg)
+
+- **Realtime with MoonRay XPU, on the processor**: an opt-in in Preferences > MoonRay > XPU; with XPU2 off, RT then follows the scene with MoonRay and MoonRay LS.
+- **After XPU2 hands a scene to MoonRay XPU**, MoonRay's sampling settings are no longer greyed: they are the ones used.
+- **Modo no longer crashes as it quits**: with a graph editor open, or once the preview window or a material's properties had been used, Modo could end with an error on the way out. The kit no longer looks through all of Modo's windows to find its own, puts its open windows away first, and lets go of its scene listener properly.
+- **Modo's Mesh Lights shine**: a Mesh Light gave no light in MoonRay, XPU2 or MoonLightIPR. It now shines from its Prototype mesh, shown or hidden, placed by the prototype or by the light as Use Prototype Transform says, with its radiance and colour, and seen by the camera when Visible to Camera is on.
+- **Alembic streams in**: a file loaded as Alembic Streaming Meshes (Modo's Alembic Mesh items) now renders, moving over time and with motion blur, as files loaded as Modo meshes with streaming deformers already did. Alembic Curves and Point Clouds take the same path, though untested.
+- **An environment no longer renders red**: a grey environment, saved as one channel since the texture memory work, lit the scene red in MoonRay and XPU2; images that light the scene keep three channels.
 
 ## New in 0.5.2.2
 
@@ -344,7 +385,7 @@ In each pair, MoonRay's render of the scene from its own files is on the left; o
 - Render outputs: configurable AOVs, Cryptomatte surface categories, buffer switching, deep EXR, texture baking, a compositor over the finished buffers, and denoising (OptiX or Open Image Denoise) that survives a stopped render.
 - Workflow tools: ACES/sRGB/OCIO view transforms and LUTs, animation output and recovery controls, an asset library with MoonRay's example scenes, and RDL scene import.
 
-## Known issues in 0.5.2.2
+## Known issues in 0.5.3
 
 The ones you are most likely to meet:
 
@@ -379,20 +420,20 @@ Comparison audit between MoonRay 2026.29.1's source and the current plugin.
 | MoonRay feature | Plugin | Notes |
 |---|:---:|---|
 | CPU rendering (scalar and vector) | ![yes](docs/images/feature-yes.svg) | AVX build |
-| XPU rendering on the graphics card | ![yes](docs/images/feature-yes.svg) | NVIDIA only. XPU2, the plugin's own GPU renderer (new in 0.5), renders previews by default, and Render to a File and animations; deep images and checkpoints stay with MoonRay. XPU2 takes about half the graphics card memory it did before 0.5.2.1. Coming in 0.5.3: XPU2 needs a third of the texture memory, and less of the card; it renders on every NVIDIA card in the machine and every processor, past 64 threads, with each card and processor switched on or off in Preferences > MoonRay > Device Management, and its workers and texture memory placed by NUMA node on two-socket and many-die machines. Coming in 0.5.3: Compile XPU2 Shaders compiles only the kinds of card that are not up to date, and names a new one. |
-| Progressive rendering, and region rendering | ![yes](docs/images/feature-yes.svg) | The preview window, and the graph editor's MoonRay Widget. The widget renders under MoonRay LS, which is quicker. Coming in 0.5.3: the widget renders with XPU2, at 1024 to 4096 samples, with a Scale for the ball |
+| XPU rendering on the graphics card | ![yes](docs/images/feature-yes.svg) | NVIDIA only. XPU2, the plugin's own GPU renderer (new in 0.5), renders previews by default, and Render to a File and animations; deep images and checkpoints stay with MoonRay. XPU2 takes about half the graphics card memory it did before 0.5.2.1. XPU2 needs a third of the texture memory, and less of the card; it renders on every NVIDIA card in the machine and every processor, past 64 threads, with each card and processor switched on or off in Preferences > MoonRay > XPU2 > Device Management, and its workers and texture memory placed by NUMA node on two-socket and many-die machines. Compile XPU2 Shaders compiles only the kinds of card that are not up to date, and names a new one. |
+| Progressive rendering, and region rendering | ![yes](docs/images/feature-yes.svg) | The preview window, and the graph editor's MoonRay Widget. The widget renders under MoonRay LS, which is quicker. The widget renders with XPU2, at 1024 to 4096 samples, with a Scale for the ball |
 | Cameras: perspective, orthographic, fisheye, spherical, dome | ![yes](docs/images/feature-yes.svg) | MoonRay camera items, or Modo's camera. A Modo camera converted to any of them in its place (animation kept), and changed back to a Modo camera; a Camera Sequence keying cameras to ranges of frames, and MoonRay cameras that are Modo cameras, looked through in the viewport by their lens with Modo's resolution gate. A MoonRay camera sees as near as a Modo camera unless Near is set, and a new one starts where the render camera stands. dw Perspective and Orthographic cameras take the Modo camera's lens, edited in its own tabs. |
 | Stereo cameras | ![yes](docs/images/feature-yes.svg) | Modo's camera Stereo: one eye, or both with a red/cyan picture in Render EXR; MoonLightIPR shows the eye chosen, and the left for both |
 | Overscan (rendering past the frame edge) | ![yes](docs/images/feature-yes.svg) | Modo's camera Overscan, or a MoonRay camera's own when it is rendered through, in final renders |
 | Bake camera | ![yes](docs/images/feature-yes.svg) | Texture baking |
 | Lights: rect, disk, sphere, spot, cylinder, distant, environment, mesh, portal | ![yes](docs/images/feature-yes.svg) | MoonRay light items, or Modo's lights. A round light under an uneven scale stays on and round, in every engine, and a notice says so. |
-| Light filters: barn door, colour ramp, combine, cookie, decay, intensity, rod, VDB | ![yes](docs/images/feature-yes.svg) | Coming in 0.5.3: a cookie filter renders in XPU2, where it sent the render to MoonRay's scalar mode. |
+| Light filters: barn door, colour ramp, combine, cookie, decay, intensity, rod, VDB | ![yes](docs/images/feature-yes.svg) | A cookie filter renders in XPU2, where it sent the render to MoonRay's scalar mode. |
 | Light, shadow and light filter linking | ![yes](docs/images/feature-yes.svg) | MoonRay's own sets, and Modo's own Light Linking groups (include or exclude), which reach MoonRay Shadow receiver sets, and a shadow ray offset, in Light Links |
 | Meshes, subdivision, curves, points, instancing | ![yes](docs/images/feature-yes.svg) | From Modo's geometry. Creases from Modo's Subdivision weights |
 | Box and sphere shapes | ![yes](docs/images/feature-yes.svg) | |
-| VDB volumes, base and cutout volumes | ![yes](docs/images/feature-yes.svg) | Coming in 0.5.3: a VDB that does not glow renders on XPU2's graphics card, about five times faster; a dwVdbVolume asks for its VDB file |
+| VDB volumes, base and cutout volumes | ![yes](docs/images/feature-yes.svg) | A VDB that does not glow renders on XPU2's graphics card, about five times faster; a dwVdbVolume asks for its VDB file |
 | Motion blur | ![yes](docs/images/feature-yes.svg) | Final renders, and MoonLightIPR previews, where it is a Preview Preference, off by default, with moving lights blurred too; MoonRay XPU2 for Render, Render to a File and animations, and for XPU2 realtime as a Preview Preference. XPU2 traces moving objects on the GPU, subdivision surfaces that move or change shape among them. MoonLightIPR playblasts show it when it is active. |
-| Depth of field | ![yes](docs/images/feature-yes.svg) | A polygon or disc bokeh, by sides and angle, or an image. MoonRay's two bokeh weight settings, which it does not use, are marked as having no effect. Coming in 0.5.3: with the Modo camera's lens, a bokeh image turns bokeh on. |
+| Depth of field | ![yes](docs/images/feature-yes.svg) | A polygon or disc bokeh, by sides and angle, or an image. MoonRay's two bokeh weight settings, which it does not use, are marked as having no effect. With the Modo camera's lens, a bokeh image turns bokeh on. |
 | DWA materials (base, metal, fabric, skin, layer, mix and the rest) | ![yes](docs/images/feature-yes.svg) | Two Sided and Color Correct take the other DWA materials as their inputs, and a layer or two-sided material missing an input no longer crashes MoonRay |
 | Hair, toon and USD Preview Surface materials | ![yes](docs/images/feature-yes.svg) | Toon edges smooth on coarse meshes, and toon renders that denoise cleanly, each a preference; a new toon material is brightest facing the light |
 | Switch and Ray Switch materials | ![yes](docs/images/feature-yes.svg) | In the node editor |
@@ -407,7 +448,7 @@ Comparison audit between MoonRay 2026.29.1's source and the current plugin.
 | Adaptive tessellation by screen error | ![yes](docs/images/feature-yes.svg) | Displacement Tessellation in Render Settings, following Modo's Displacement Rate, or per object |
 | Global switches: displacement, subsurface, shadows, lights seen by the camera, geometry resolution, dicing camera | ![yes](docs/images/feature-yes.svg) | Render Settings, Global Switches |
 | Presence quality, Cryptomatte multi-presence, optimised hair sampling switch | ![yes](docs/images/feature-yes.svg) | In Render Settings. Automatic Presence Shadows, in Preferences, sets presence shadows by whether a material is cut out |
-| AOVs: light path expressions, material AOVs | ![yes](docs/images/feature-yes.svg) | Ready-made, or type your own expression. The compositor adds the light passes or light groups and puts them back together, each with its own Grade; a probe shows each node's value at a pixel and keeps it as a note; the colour nodes take a mask. The Environment background output has its picture in vector and XPU modes. Coming in 0.5.3: PBR validity, a diagnostic in Preferences > MoonRay > Renderer, takes the standard outputs' place and is shown in the preview while on. |
+| AOVs: light path expressions, material AOVs | ![yes](docs/images/feature-yes.svg) | Ready-made, or type your own expression. The compositor adds the light passes or light groups and puts them back together, each with its own Grade; a probe shows each node's value at a pixel and keeps it as a note; the colour nodes take a mask. The Environment background output has its picture in vector and XPU modes. PBR validity, a diagnostic in Preferences > MoonRay > Renderer, takes the standard outputs' place and is shown in the preview while on. |
 | Time per pixel (where the render spent its time) | ![yes](docs/images/feature-yes.svg) | A preview buffer and an EXR channel |
 | Depth, normal, position, UV, motion vector, wireframe and sample count outputs | ![yes](docs/images/feature-yes.svg) | Render Settings; each a preview buffer and an EXR channel |
 | Visibility outputs (how much of each light reaches a point) | ![yes](docs/images/feature-yes.svg) | Every light or one light group, in the Outputs window |
@@ -420,7 +461,7 @@ Comparison audit between MoonRay 2026.29.1's source and the current plugin.
 | Multi-part EXR | ![yes](docs/images/feature-yes.svg) | Each output in a part of its own, by choice |
 | Picture types besides OpenEXR | ![yes](docs/images/feature-yes.svg) | PNG, JPEG, TIFF and Targa for a render to a file, animation frames and exported AOVs, the OpenEXR kept beside them. PNG, TIFF and Targa keep the render's alpha, as do Save Image and Export AOVs; Export AOVs can also save one multilayer OpenEXR. Animation frames can be saved in these types alone, with no EXR left beside them, and a saved picture comes from the denoised render where there is one. Soft edges no longer flare in PNG, TIFF and Targa with alpha and a visible environment. |
 | Colour management: OCIO, ACES views, ACEScg working space | ![yes](docs/images/feature-yes.svg) | Modo's own OCIO configuration and colour spaces, any OCIO display and view, and ACES 1.3 and ACES 2.0 for an sRGB display; ACEScg scenes render and look right |
-| Denoising (OptiX, Open Image Denoise) | ![yes](docs/images/feature-yes.svg) | The Denoiser set to Off is off everywhere, the denoised beauty and Smart Render included. Denoised and composite frames keep their number last: `frame.denoised.0001.exr`, `frame.composite.0001.exr`. Coming in 0.5.3: a card that cannot run OptiX's denoiser hands XPU2's realtime denoising to one that can, or to Open Image Denoise on the processor. |
+| Denoising (OptiX, Open Image Denoise) | ![yes](docs/images/feature-yes.svg) | The Denoiser set to Off is off everywhere, the denoised beauty and Smart Render included. Denoised and composite frames keep their number last: `frame.denoised.0001.exr`, `frame.composite.0001.exr`. A card that cannot run OptiX's denoiser hands XPU2's realtime denoising to one that can, or to Open Image Denoise on the processor. |
 | Primitive attributes (values a shape carries for its materials) | ![yes](docs/images/feature-yes.svg) | Per item or instance, and per point or per face from Modo's weight and colour vertex maps; imported from MoonRay scenes |
 | RDL scene import | ![partly](docs/images/feature-partly.svg) | A few things left out, named in its report. Motion, creases, fog meshes and values by point or face come in, and instancers of any size, though past 20,000 copies only meshes do |
 | RDL scene export (RDLA, RDLB or split) | ![yes](docs/images/feature-yes.svg) | Export as MoonRay Scene, in the MoonRay menu and the preview's Options, to render with MoonRay on its own or on a farm: outputs, collected textures and each frame of the range optional |
@@ -436,7 +477,7 @@ Comparison audit between Modo 16.1v9 and the current plugin: what of a Modo scen
 | **Lights** | | |
 | Directional light, with the physical sun | ![yes](docs/images/feature-yes.svg) |  |
 | Point, spot and area lights | ![yes](docs/images/feature-yes.svg) | Their intensity measured against Modo per kind |
-| Mesh lights | ![no](docs/images/feature-no.svg) | Skipped, with a notice. Coming in 0.5.3: a Mesh Light shines from its Prototype mesh, shown or hidden, in MoonRay, XPU2 and MoonLightIPR |
+| Mesh lights | ![yes](docs/images/feature-yes.svg) | A Mesh Light shines from its Prototype mesh, shown or hidden, in MoonRay, XPU2 and MoonLightIPR |
 | Cylinder, dome and photometric (IES) lights | ![no](docs/images/feature-no.svg) | Skipped, with a notice; MoonRay's own cylinder and environment lights stand in |
 | Light linking (Modo's groups, include or exclude) | ![partly](docs/images/feature-partly.svg) | Experimental, with a notice; check it against Modo |
 | Light volumetrics, and fog | ![partly](docs/images/feature-partly.svg) | Point, spot and directional light volumetrics, and the environment's fog (new in 0.5); Layered fog has no falloff and a Base Shader's fog is left out, each with a notice; not yet compared with Modo's renders |
@@ -463,10 +504,10 @@ Comparison audit between Modo 16.1v9 and the current plugin: what of a Modo scen
 | Group masks by material, Part and Selection Set | ![yes](docs/images/feature-yes.svg) | Checked against Modo's render |
 | Group masks by item | ![yes](docs/images/feature-yes.svg) | Checked against Modo's render |
 | **Geometry** | | |
-| Meshes, subdivision and creases | ![yes](docs/images/feature-yes.svg) | Coming in 0.5.3: a mirrored mesh (negative scale) faces outward, a Source Override on by default |
+| Meshes, subdivision and creases | ![yes](docs/images/feature-yes.svg) | A mirrored mesh (negative scale) faces outward, a Source Override on by default |
 | Instances and replicators | ![yes](docs/images/feature-yes.svg) | Replicators through Modo's evaluated geometry |
 | Deformed and animated meshes | ![yes](docs/images/feature-yes.svg) | Through Modo's evaluated geometry |
-| Alembic | ![partly](docs/images/feature-partly.svg) | Loaded as Modo meshes with streaming deformers. Coming in 0.5.3: Alembic Streaming Meshes render too, moving over time with motion blur |
+| Alembic | ![yes](docs/images/feature-yes.svg) | Loaded as Modo meshes with streaming deformers, or as Alembic Streaming Meshes, moving over time with motion blur; Alembic Curves and Point Clouds untested |
 | Curves, hair and Modo's Fur material | ![partly](docs/images/feature-partly.svg) | Fur guides, the fur vector and width maps, and Modo's Hair Material are not read |
 | Weight and colour vertex maps | ![partly](docs/images/feature-partly.svg) | As values MoonRay's materials read, and the Shader Tree's Weight Map Texture layer, with weight maps; not in a scene with replicators or masks by item, Part or Selection Set. A notice names a weight map lost that way. |
 | Modo's volume items | ![partly](docs/images/feature-partly.svg) | Rendered from a VDB file attached in the MoonRay controls |

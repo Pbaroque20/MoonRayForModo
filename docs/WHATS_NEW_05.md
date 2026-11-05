@@ -2,9 +2,9 @@
 
 0.5 is a **pre-production release**: the plugin is no longer experimental, and it brings a new GPU renderer, MoonRay XPU2.
 
-## Coming in 0.5.3
+## New in 0.5.3
 
-The next release, for its lighter use of memory and XPU2 on several devices, with a new XPU2 runtime (runtime-xpu2): install it, and **Compile XPU2 Shaders once more**.
+A release for its lighter use of memory and XPU2 on several devices, with a new XPU2 runtime (runtime-xpu2): install it, and **Compile XPU2 Shaders once more**.
 
 - **Look-dev is lighter on Modo**: a change in the graph editor is a material's edit, not a reading of the whole scene with its meshes; values stepping in the graph editor are written at most every 150 ms; the Shader Tree is walked once for a reading, not once for each material; and the check of the scene's texture files runs beside Modo, not on its thread once a second.
 - **Hidden meshes' materials are left alone**: a material worn only by hidden meshes is not read at each edit of another, and its images are not made ready for rendering.
