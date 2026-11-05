@@ -9,7 +9,11 @@ class Changes(lxifc.SceneItemListener):
         self.channel_items=set();self.consumed_channels=set()
         # Scenes closed and made since the panel last looked: the picture may be of a scene no longer open.
         self.closed=self.created=False
-        try:self.service.AddListener(self);self.registered=True
+        # Registered through one COM object kept for it, as Modo's SDK asks: Modo's Python makes a new one at every call,
+        # so RemoveListener(self) named one Modo never had ('not found'), the listener stayed for good, and the panel's
+        # closing (dispose) stopped there, its renderer left running into Modo's exit, which crashed.
+        self.com=lx.object.Unknown(self)
+        try:self.service.AddListener(self.com);self.registered=True
         except (RuntimeError,LookupError):pass
     def invalidate(self,*args):self.full=True
     # An item moved for the first time is given a place of its own: Modo adds a transform item and joins it to the
@@ -59,7 +63,10 @@ class Changes(lxifc.SceneItemListener):
         result=(self.full or not self.registered,set(self.items));self.full=False;self.items.clear()
         self.consumed_channels=set(self.channel_items);self.channel_items.clear();return result
     def close(self):
-        if self.registered:self.service.RemoveListener(self);self.registered=False
+        if self.registered:
+            self.registered=False
+            try:self.service.RemoveListener(self.com)
+            except (RuntimeError,LookupError):pass
     def sil_SceneCreate(self,*args):self.full=self.created=True
     def sil_SceneDestroy(self,*args):self.full=self.closed=True
     sil_SceneClear=invalidate

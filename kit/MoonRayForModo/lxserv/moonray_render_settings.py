@@ -83,9 +83,14 @@ def register():
                     try:return scene_settings.complete(properties.scene_settings())['render'].get('light_sampling_mode')==ADAPTIVE_LIGHTS
                     except Exception:return True
                 # What a denoiser does is greyed while the Denoiser is Off: it is off everywhere then.
-                # XPU2's sampling generations' own settings, greyed with generations off.
+                # XPU2's own sampling settings: greyed while the preview's engine is MoonRay XPU, which never reads them.
+                # Told by the engine chosen, not by a fall-back (xpu2_sampling.FALLEN): then they stay set for XPU2's
+                # next go at the scene.
                 if entry['key'] in ('xpu2_samples', 'xpu2_spend', 'xpu2_noise', 'xpu2_seed', 'xpu2_most', 'xpu2_cpu', 'xpu2_realtime'):
-                    return True
+                    try:
+                        from moonray_modo import native
+                        return bool(native.xpu2())
+                    except Exception:return True
                 # Smart Render and Safe Denoising are MoonRay's: greyed while XPU2 renders the preview, which is quick
                 # enough to need neither.
                 if entry['key'] in ('smart_render','denoise_safe'):

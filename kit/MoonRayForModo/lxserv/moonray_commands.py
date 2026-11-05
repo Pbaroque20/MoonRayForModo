@@ -91,12 +91,13 @@ class PreviewPage(lxu.command.BasicCommand):
             # Render settings are the Render item's MoonRay properties; no window is needed.
             lx.eval('select.item {%s} set' % modo.Scene().renderItem.id)
             return
-        widget = next((w for w in QtWidgets.QApplication.allWidgets()
-                       if isinstance(w, Panel) and w.isVisible()), None)
+        # The kit's own list of its windows (panel.live_panels), not every widget of Modo's: that gave each a Python
+        # wrapper, and Modo crashed as it quit.
+        from moonray_modo.panel import live_panels
+        widget = next((w for w in live_panels() if w.isVisible()), None)
         if widget is None:
             lx.eval('moonray.open')
-            widget = next(w for w in QtWidgets.QApplication.allWidgets()
-                          if isinstance(w, Panel) and w.isVisible())
+            widget = next(w for w in live_panels() if w.isVisible())
         # The window does the rest: output renders, the scene dialogs, or selecting the Render
         # item, whose MoonRay properties hold the render settings.
         widget.run(self.dyna_String(0))

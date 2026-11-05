@@ -348,6 +348,81 @@ def camera_motion_blur(scene):
         return False
 
 
+# A Modo Mesh Light's shape is its Prototype mesh's (Properties > Prototype), read for the light alone: past this many
+# polygons it is left out, said in a notice.
+MESH_LIGHT_POLYGONS = 200000
+
+
+def mesh_light_shape(light, warnings):
+    """A Modo Mesh Light's shape: its Prototype mesh as rendered (deformed), shown or hidden, in local points and
+    polygons, with the matrix it stands at (the prototype's where the light says Use Prototype Transform, else the
+    light's own). None, with a notice, where it has no prototype or the prototype no polygons."""
+    import modo
+    try:
+        prototypes = [i for i in light.itemGraph('shadeLoc').forward() if i.type == 'mesh']
+    except Exception:
+        prototypes = []
+    if len(prototypes) != 1:
+        warnings.append('Mesh light %s gives no light: it needs one mesh as its Prototype.' % light.name)
+        return None
+    prototype = prototypes[0]
+    mesh = modo.meshgeometry.MeshProvider.meshFromMeshChannel(prototype._item, 'deformed')
+    count = mesh.PolygonCount()
+    if not count or count > MESH_LIGHT_POLYGONS:
+        warnings.append('Mesh light %s gives no light: its Prototype %s has %s polygons.' % (
+            light.name, prototype.name, 'no' if not count else '%d (the limit is %d)' % (count, MESH_LIGHT_POLYGONS)))
+        return None
+    points = lx.object.Point(mesh.PointAccessor())
+    vertices = []
+    for index in range(mesh.PointCount()):
+        points.SelectByIndex(index)
+        vertices.append([float(v) for v in points.Pos()])
+    polygons = lx.object.Polygon(mesh.PolygonAccessor())
+    faces = []
+    for index in range(count):
+        polygons.SelectByIndex(index)
+        if polygons.Type() not in (lx.symbol.iPTYP_FACE, lx.symbol.iPTYP_PSUB, lx.symbol.iPTYP_SUBD) or polygons.VertexCount() < 3:
+            continue
+        corners = []
+        for corner in range(polygons.VertexCount()):
+            points.Select(polygons.VertexByIndex(corner))
+            corners.append(points.Index())
+        faces.append(corners)
+    if not faces:
+        warnings.append('Mesh light %s gives no light: its Prototype %s has no surface polygons.' % (light.name, prototype.name))
+        return None
+    own = bool(channel(light, 'useSrcXfrm', 1))
+    return {'vertices': vertices, 'faces': faces, 'matrix': world_matrix(prototype if own else light), 'prototype': prototype.id}
+
+
+def world_area(shape):
+    """The area of a shape's polygons where its matrix puts them (rows are the basis vectors, as in the snapshot)."""
+    m = shape['matrix']
+    world = [[v[0] * m[0 + a] + v[1] * m[4 + a] + v[2] * m[8 + a] + m[12 + a] for a in range(3)] for v in shape['vertices']]
+    area = 0.0
+    for face in shape['faces']:
+        for i in range(1, len(face) - 1):
+            a, b, c = world[face[0]], world[face[i]], world[face[i + 1]]
+            e1, e2 = [b[k] - a[k] for k in range(3)], [c[k] - a[k] for k in range(3)]
+            n = (e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0])
+            area += .5 * math.sqrt(sum(v * v for v in n))
+    return area
+
+
+# Modo's Alembic loader's own items (alembicIO.lx): streamed meshes, curves and point clouds, read from the file at
+# each time asked. Meshes loaded as Modo meshes with an Alembic streaming deformer are ordinary meshes, bent.
+ALEMBIC_ITEMS = ('AlembicMesh', 'AlembicCurves', 'AlembicCloud')
+
+
+def alembic_items(scene):
+    """The scene's streamed Alembic items; none where Modo's Alembic loader is not there to name their types."""
+    found = []
+    for kind in ALEMBIC_ITEMS:
+        try:found.extend(scene.items(kind, superType=False))
+        except (LookupError, RuntimeError, TypeError, ValueError):pass
+    return found
+
+
 def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=False,dirty_meshes=None,shading_kept=False):
     """The scene as MoonRay is to be given it. The Shader Tree's order and its layer masks are found once for the
     reading (layers.held_tree), not again for each material's stack."""
@@ -366,6 +441,10 @@ def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fal
         # Render Cache resolves generated replica transforms and source meshes.
         evaluated_geometry = True
     if any(properties.read(item).get('override') for item in scene.items('meshInst',superType=False)):
+        evaluated_geometry = True
+    if alembic_items(scene):
+        # Alembic streamed in as its own items (Alembic Mesh, Curves, Point Cloud): their surfaces are Modo's render
+        # cache's, frame by frame from the file, with no mesh channel to read.
         evaluated_geometry = True
     from .mask_types import needs_cache
     for mask in scene.items('mask',superType=False):
@@ -833,11 +912,17 @@ def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fal
     for item in scene.items('light'):
         if not render_visible(item):
             continue
-        types = {'sunLight': 'DistantLight', 'pointLight': 'SphereLight', 'areaLight': 'RectLight', 'spotLight': 'SpotLight'}
+        types = {'sunLight': 'DistantLight', 'pointLight': 'SphereLight', 'areaLight': 'RectLight', 'spotLight': 'SpotLight',
+                 # A Mesh Light shines from its Prototype mesh's shape (mesh_light_shape), as MoonRay's MeshLight.
+                 'meshLight': 'MeshLight'}
         if item.type not in types:
             warnings.append('Skipped unsupported light: ' + item.name)
             continue
-        material = item.material
+        try:
+            material = item.material
+        except AttributeError:
+            # A light the modo module does not know as one (a Mesh Light): its light material is a child of it.
+            material = next((child for child in item.children() if child.type == 'lightMaterial'), None)
         if material and not channel(material, 'enable', 1):
             # Its material's eye is off in the Shader Tree: in Modo's own renders such a light gives no light.
             warnings.append('Light %s gives no light: its light material is switched off in the Shader Tree.' % item.name)
@@ -852,6 +937,14 @@ def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fal
                  'width': float(channel(item, 'width', 1)), 'height': float(channel(item, 'height', 1)),
                  # Visible to Camera: the light seen shining where it stands (MoonRay's visible_in_camera).
                  'camera_visible': bool(channel(item, 'visCam', 0))}
+        if item.type == 'meshLight':
+            shape = mesh_light_shape(item, warnings)
+            if shape is None:
+                continue
+            light.update(matrix=shape['matrix'], shape=shape, area=world_area(shape))
+            if not light['area'] > 0:
+                warnings.append('Mesh light %s gives no light: its Prototype has no area.' % item.name)
+                continue
         if item.type == 'sunLight' and channel(item,'sunPos',False):
             from .sun import matrix as sun_matrix, physical as physical_sun
             light['matrix']=sun_matrix(item)

@@ -69,9 +69,24 @@ class ElidedLabel(QtWidgets.QLabel):
         painter.drawText(self.contentsRect(), int(self.alignment()) | QtCore.Qt.AlignVCenter, shown)
 
 
+# The preview windows open, each added as it is made and taken out as it is put away (dispose). Asked for in place of
+# QApplication.allWidgets(): looking through every widget gave each of Modo's a Python wrapper, and Modo then crashed as
+# it quit (0xC0000005 in its Python plug-in's clean-up, tools/probe_quit_preview.py 'allwidgets').
+PANELS = []
+
+
+def live_panels():
+    """The preview windows open and not put away."""
+    from shiboken2 import isValid
+    PANELS[:] = [panel for panel in PANELS if isValid(panel) and not panel.disposed]
+    return list(PANELS)
+
+
 class Panel(Tools, QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.disposed = False
+        PANELS.append(self)
         self.preferences = Preferences()
         self.settings = self.preferences.store
         self.renderer = Renderer(self)
@@ -222,6 +237,18 @@ class Panel(Tools, QtWidgets.QWidget):
         self.rt=QtWidgets.QPushButton('RT Off');self.rt.setCheckable(True)
         self.rt.setStyleSheet('QPushButton:checked{background-color:#f49c1c;color:#1a1a1a;border:1px solid #ffb84d;border-radius:3px;font-weight:bold;}')
         self.rt.toggled.connect(self._rt_toggled)
+        # The preferences RT hangs on (the engine, Realtime with MoonRay XPU) are changed in Modo's Preferences as well as
+        # in Preview Preferences: either says so (property_notifications), and RT follows at once.
+        from . import property_notifications
+        self._preferences_followed=lambda:self._preferences_followed_now() if not getattr(self,'disposed',False) else None
+        property_notifications.watchers.append(self._preferences_followed)
+        from .native import pbr_validity
+        self._validity_held=pbr_validity()
+        # Modo quitting puts the window away as its closing does (dispose): its timers stopped and its renderer closed
+        # while Qt still stands. A Modo view is not closed on the way out, and after a render Modo crashed as it quit
+        # (0xC0000005, tools/probe_quit_preview.py).
+        application=QtCore.QCoreApplication.instance()
+        if application is not None:application.aboutToQuit.connect(self.dispose)
         row.addWidget(self.rt)
         row.addWidget(self.preview_engine)
         # The camera rendered through: Modo's, or a MoonRay camera item such as a fisheye.
@@ -572,8 +599,27 @@ class Panel(Tools, QtWidgets.QWidget):
         self.preview.set_worker_overlay(self.worker_tiles.isChecked())
         self.preview.set_show_buckets(self.show_buckets.isChecked() and not self._following)
 
+    def _preferences_followed_now(self):
+        """A preference changed in Modo's Preferences or Preview Preferences: RT as it can now be, and the buffers. PBR
+        validity switched either way changes what MoonRay's renders hold (rdla): a preview following the scene renders
+        again with it, or with the standard outputs once it is off."""
+        self._sync_rt()
+        from .native import pbr_validity
+        validity=pbr_validity()
+        changed=validity!=getattr(self,'_validity_held',validity)
+        self._validity_held=validity
+        self._limit_buffers()
+        if changed and getattr(self,'_following',False):self.preview_timer.start()
+
     def _preferences_changed(self):
         self.status.setText('Preview preferences saved.')
+        # Realtime with MoonRay XPU on the processor may have been switched: RT is offered or not at once, and Modo's
+        # Preferences page, which has the same switch, shows it as it now is.
+        self._sync_rt()
+        try:
+            from . import property_notifications
+            property_notifications.notify()
+        except Exception:pass
         self.refine_timer.stop()
         if self._following:self.preview_timer.start()
 
@@ -1265,10 +1311,23 @@ class Panel(Tools, QtWidgets.QWidget):
         # PBR validity is a diagnostic, listed while the preferences have it on (Diagnostics).
         from .native import pbr_validity
         validity=pbr_validity()
+        # While it is on, MoonRay's renders hold it in the standard outputs' place (rdla): the list is the beauty and it,
+        # and it is what is shown from the moment it is switched on, the beauty again once it is off. MoonLightIPR does
+        # not make it.
+        checking=validity and not only
         for row in range(1,self.buffer.count()):
-            denoised=self.buffer.itemData(row)=='denoised_beauty'
-            self.buffer.view().setRowHidden(row,low or (denoised and not on) or (only and not (denoises and denoised))
-                                            or (self.buffer.itemData(row)=='pbr_validity' and not validity))
+            key=self.buffer.itemData(row)
+            denoised=key=='denoised_beauty'
+            if checking:hidden=key!='pbr_validity'
+            else:hidden=(low or (denoised and not on) or (only and not (denoises and denoised))
+                         or (key=='pbr_validity' and not validity))
+            self.buffer.view().setRowHidden(row,hidden)
+        was=getattr(self,'_validity_checked',False);self._validity_checked=checking
+        if checking:
+            if not was or self.buffer.currentData() not in ('beauty','pbr_validity'):
+                self.buffer.setCurrentIndex(self.buffer.findData('pbr_validity'))
+            return
+        if was and self.buffer.currentData()=='pbr_validity':self.buffer.setCurrentIndex(self.buffer.findData('beauty'))
         if not on and self.buffer.currentData()=='denoised_beauty':self.buffer.setCurrentIndex(self.buffer.findData('beauty'))
         if low:
             if self.buffer.currentData()!='beauty':self.buffer.setCurrentIndex(self.buffer.findData('beauty'))
@@ -2473,9 +2532,16 @@ class Panel(Tools, QtWidgets.QWidget):
     def dispose(self):
         if not self.disposed:
             self.disposed = True
+            if self in PANELS:PANELS.remove(self)
+            try:
+                from . import property_notifications
+                property_notifications.watchers.remove(self._preferences_followed)
+            except (ValueError,AttributeError,ImportError):pass
             self.refine_timer.stop()
             self.detail_timer.stop()
-            self.changes.close()
+            # Whatever the listener says, the rest is put away: the renderer above all.
+            try:self.changes.close()
+            except Exception:pass
             self.release_timer.stop()
             self.display_timer.stop()
             self.preview_timer.stop()

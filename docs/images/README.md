@@ -65,6 +65,10 @@ Left of each pair: MoonRay's render from the scene's own files. Right: after imp
 
 ![A subdivided cage, in MoonRay and in MoonLightIPR](moonlightipr-subdivision.jpg)
 
+## PBR validity (`pbr-validity-*.jpg`)
+
+The dragon test scene rendered by XPU2 in the preview window with Preferences > MoonRay > Renderer > Diagnostics > PBR validity output on, 1280 x 720 at 16 samples a pixel average: `pbr-validity-dragon.jpg` is the beauty beside the PBR validity picture, `pbr-validity-window.jpg` the whole window. MoonRay XPU's validity picture is the same. Made by `tools/probe_pbr_validity_shots.py`.
+
 ## 0.5.2.x pictures
 
 - `graph-editor-groups.webp`: a DwaBaseMaterial node in the graph editor with its inputs in folding groups, beside Properties.

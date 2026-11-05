@@ -24,8 +24,19 @@ SHOWN=6
 GROUPED_FROM=12
 # The property groups open in the graph editor for a kind of node never folded or unfolded yet; the rest start folded.
 OPEN_GROUPS=('diffuse','specular')
+# The key of the mark (QGraphicsItem.data) every wire of the canvas carries, so that edges() finds each to redraw it.
+WIRE=0x57495245
 # How often a value changing in the editor is written to the material, at most, in milliseconds (publish_soon).
 PUBLISH_EVERY=150
+
+
+def default_folds(kind):
+    """The groups a kind of node starts with folded away: all but Diffuse and Specular; a kind with neither (a map, a
+    light filter) has its first group open, not every group folded."""
+    groups=list(dict.fromkeys(group for _,(group,) in grouped(kind) if group is not None))
+    folded={group for group in groups if group.casefold() not in OPEN_GROUPS}
+    if groups and folded==set(groups):folded.discard(groups[0])
+    return folded
 
 
 def grouped(kind):
@@ -291,6 +302,27 @@ def follows_camera(node):
 
 # The open editors, by the material they edit, so that asking for one again brings it forward.
 _open={}
+# Whether Modo's quitting closes the open editors (_close_on_quit), asked once.
+_quit_hooked=[False]
+
+
+def _close_on_quit():
+    """Modo quitting closes every open graph editor first, as its Close button does: its node previews, its MoonRay
+    Widget's session and its scene watcher stopped while Qt still stands. Left open, Modo crashed on the way out
+    (0xC0000005, tools/probe_quit_graph_editor.py); closed first, it quit cleanly."""
+    if _quit_hooked[0]:return
+    application=QtCore.QCoreApplication.instance()
+    if application is None:return
+    def closing():
+        from shiboken2 import isValid
+        for editor in list(_open.values()):
+            try:
+                if isValid(editor):editor.done(0)
+            except Exception:
+                pass
+        _open.clear()
+    application.aboutToQuit.connect(closing)
+    _quit_hooked[0]=True
 
 
 def open_editor(item,materialx_override=False):
@@ -302,6 +334,7 @@ def open_editor(item,materialx_override=False):
         editor.raise_();editor.activateWindow();return editor
     editor=_open[key]=Editor(item,materialx_override)
     editor.finished.connect(lambda *_,key=key:_open.pop(key,None))
+    _close_on_quit()
     editor.show();editor.raise_();editor.activateWindow()
     return editor
 
@@ -686,9 +719,15 @@ class Editor(QtWidgets.QDialog):
         self.previews.schedule()
     def edges(self):
         if not hasattr(self,'canvas'): return
-        for item in self.links:
-            if item.scene(): self.canvas.removeItem(item)
+        # Every wire on the canvas goes, found by the mark Qt keeps on it (WIRE), not by this window's list of them: a
+        # wire in the list whose C++ side Qt had deleted threw when asked for its scene, every later move of a node
+        # failed at it, and wires the list no longer held stayed where they were drawn until the graph was rebuilt (a
+        # tester's wires, until a node was deleted: Graph editor node ... moved, wires not redrawn, in the diagnostics).
         self.links=[]
+        for item in self.canvas.items():
+            try:
+                if item.data(WIRE)=='wire':self.canvas.removeItem(item)
+            except RuntimeError:pass
         graph=nodes.effective(self.graph)
         for identity,node in graph['nodes'].items():
             if identity not in self.items: continue
@@ -699,7 +738,7 @@ class Editor(QtWidgets.QDialog):
                 path=curve(a,b)
                 # A wire takes the colour of what it carries.
                 pen=QtGui.QPen(QtGui.QColor(COLORS[nodes.category(graph['nodes'][source]['type'])]),2);pen.setCapStyle(QtCore.Qt.RoundCap)
-                edge=self.canvas.addPath(path,pen);edge.setZValue(-1);edge.connection=(identity,key);edge.setToolTip('Right-click to disconnect '+key);self.links.append(edge)
+                edge=self.canvas.addPath(path,pen);edge.setData(WIRE,'wire');edge.setZValue(-1);edge.connection=(identity,key);edge.setToolTip('Right-click to disconnect '+key);self.links.append(edge)
     def remember(self,before):
         if before!=self.graph:self.undo_states.append(before);self.undo_states=self.undo_states[-50:];self.redo_states=[]
         self.material_preview.graph_changed(self.graph);self.publish_soon()
@@ -796,8 +835,7 @@ class Editor(QtWidgets.QDialog):
         """The groups of a kind of node whose inputs are put away on its nodes (GroupToggle), as last left: kept for each
         kind, apart from the property table's. A kind never folded or unfolded yet has only Diffuse and Specular open."""
         settings=QtCore.QSettings('MoonRayForModo','GraphEditor')
-        if not settings.contains('ports/'+kind):
-            return {group for _,(group,) in grouped(kind) if group is not None and group.casefold() not in OPEN_GROUPS}
+        if not settings.contains('ports/'+kind):return default_folds(kind)
         return {name for name in str(settings.value('ports/'+kind,'') or '').split('|') if name}
     def fold_port_group(self,kind,group):
         """A group's line on a node was clicked: its inputs are put away on every node of the kind, or brought back."""
@@ -1030,11 +1068,16 @@ class Editor(QtWidgets.QDialog):
         kind=self.graph['nodes'][identity]['type']
         settings=QtCore.QSettings('MoonRayForModo','GraphEditor')
         if not settings.contains('folded/'+kind):
-            # A kind never folded or unfolded yet starts with only its Diffuse and Specular groups open: told from the
-            # kind's own groups, so that it is known before the list has a row (fill_properties builds by it).
-            return {group for _,(group,) in grouped(kind) if group is not None and group.casefold() not in OPEN_GROUPS}
+            # A kind never folded or unfolded yet starts with only its Diffuse and Specular groups open (its first where it
+            # has neither): told from the kind's own groups, so that it is known before the list has a row (fill_properties
+            # builds by it).
+            return default_folds(kind)
         held=settings.value('folded/'+kind,'') or ''
-        return {name for name in str(held).split('|') if name}
+        folded={name for name in str(held).split('|') if name}
+        # Never every group folded away: the first stays open, or the list showed nothing but its headers.
+        groups=list(dict.fromkeys(group for _,(group,) in grouped(kind) if group is not None))
+        if groups and set(groups)<=folded:folded.discard(groups[0])
+        return folded
     def fold_group(self,row,column=0):
         """A group's header was clicked: its rows are put away, or brought back."""
         group=getattr(self,'group_rows',{}).get(row)

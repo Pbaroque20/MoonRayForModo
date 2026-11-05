@@ -480,7 +480,7 @@ def xpu2_chain():
 
 def xpu2_devices():
     """Which devices XPU2 renders with: 'both' (the processor and the graphics cards, the default), 'gpu' or 'cpu', by
-    the devices switched on in Preferences > MoonRay > Device Management (devices.py)."""
+    the devices switched on in Preferences > MoonRay > XPU2 > Device Management (devices.py)."""
     from . import devices
     return devices.mode()
 
@@ -499,7 +499,7 @@ def xpu2_environment(runtime):
     return {'PATH': str(root) + os.pathsep + environment(runtime)['PATH'], 'RDL2_DSO_PATH': str(root),
             'REZ_MOONRAY_ROOT': str(root), 'MOONRAY_XPU2_MOONRAY': str(Path(runtime) / 'moonray.exe'),
             'XPU2_SESSION_CHAIN': '1' if xpu2_chain() else '0',
-            # Its devices (Preferences > MoonRay > Device Management): 2 both, 1 the graphics cards, 0 the processor,
+            # Its devices (Preferences > MoonRay > XPU2 > Device Management): 2 both, 1 the graphics cards, 0 the processor,
             # and which cards and processor groups where some are off.
             'XPU2_SESSION_MODE': {'both': '2', 'gpu': '1', 'cpu': '0'}[xpu2_devices()],
             **__import__('moonray_modo.devices', fromlist=['environment']).environment(),
@@ -550,6 +550,6 @@ def xpu2_shaders_unavailable():
 
 # What a preview says when XPU2 is chosen and its shaders are not compiled: nothing is rendered.
 XPU2_NOT_COMPILED = ("Render unavailable: MoonRay XPU2's shaders not compiled. "
-                     "System > Preferences > MoonRay > XPU2 > Compile XPU2 Shaders.")
+                     "System > Preferences > MoonRay > XPU2 > Device Management > Compile XPU2 Shaders.")
 XPU2_OUT_OF_DATE = ("Render unavailable: MoonRay XPU2's shaders out of date. "
-                    "System > Preferences > MoonRay > XPU2 > Compile XPU2 Shaders.")
+                    "System > Preferences > MoonRay > XPU2 > Device Management > Compile XPU2 Shaders.")

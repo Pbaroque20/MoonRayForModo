@@ -44,11 +44,9 @@ def given_up(items):
 def looked_at(items):
     """Tell the preview windows that these materials are to be read again, as an edit in Modo would."""
     try:
-        from PySide2 import QtWidgets
-        from .panel import Panel
-        for widget in QtWidgets.QApplication.allWidgets():
-            if isinstance(widget, Panel) and not widget.disposed:
-                widget.changes.items.update(item.id for item in items)
+        from .panel import live_panels
+        for widget in live_panels():
+            widget.changes.items.update(item.id for item in items)
     except Exception:
         pass
 

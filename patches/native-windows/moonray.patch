@@ -750,10 +750,39 @@ index 808dbdd..3814962 100644
      template<typename T> void
      computeVaryingAttributeDerivatives(shading::TypedAttributeKey<T> key,
 diff --git a/lib/rendering/geom/prim/OpenSubdivMesh.cc b/lib/rendering/geom/prim/OpenSubdivMesh.cc
-index 3f7e1a1..d8c6219 100644
+index 3f7e1a1..851de1f 100644
 --- a/lib/rendering/geom/prim/OpenSubdivMesh.cc
 +++ b/lib/rendering/geom/prim/OpenSubdivMesh.cc
-@@ -1541,7 +1541,7 @@ generatePatchCvs(const OpenSubdiv::Far::TopologyRefiner* refiner,
+@@ -5,6 +5,7 @@
+ /// @file OpenSubdivMesh.cc
+ ///
+ 
++#include <cstdlib>
+ #include "OpenSubdivMesh.h"
+ 
+ #include <moonray/rendering/geom/prim/GeomTLState.h>
+@@ -36,6 +37,20 @@
+ #include <limits>
+ #include <numeric>
+ 
++
++namespace {
++// Modo: a mesh its placement mirrors (tools/port_mirrored_meshes.py): its winding is turned over by the mirror, its own
++// normals are not. Only with MOONRAY_MODO_MIRRORED_MESHES=1.
++bool modoMirrored(const moonray::shading::XformSamples& xforms)
++{
++    static const bool on = [] {
++        const char *value = std::getenv("MOONRAY_MODO_MIRRORED_MESHES");
++        return value && value[0] == '1';
++    }();
++    return on && !xforms.empty() && xforms[0].l.det() < 0.0f;
++}
++} // namespace
++
+ namespace moonray {
+ namespace geom {
+ namespace internal {
+@@ -1541,7 +1556,7 @@ generatePatchCvs(const OpenSubdiv::Far::TopologyRefiner* refiner,
                   std::vector<PatchCV>& patchCvs,
                   std::vector<TextureCV>& textureCvs,
                   bool requireUniformFix,
@@ -762,7 +791,7 @@ index 3f7e1a1..d8c6219 100644
  {
      // compute the total number of points we need to evaluate patchTable
      // we use local points around extraordinary features.
-@@ -1754,7 +1754,7 @@ evalLimitSurface(const OpenSubdiv::Far::PatchTable* patchTable,
+@@ -1754,7 +1769,7 @@ evalLimitSurface(const OpenSubdiv::Far::PatchTable* patchTable,
                   VertexBuffer<Vec3f, InterleavedTraits>& surfaceDpdt,
                   std::vector<DisplacementFootprint>& displacementFootprints,
                   bool& hasBadDerivatives, bool requireUniformFix,
@@ -771,7 +800,17 @@ index 3f7e1a1..d8c6219 100644
  {
      // allocate tessellated vertex/index buffer to hold the evaluation result
      size_t tessellatedVertexCount = limitSurfaceSamples.size();
-@@ -2905,10 +2905,10 @@ OpenSubdivMesh::bakePosMap(int width,
+@@ -2161,7 +2176,8 @@ OpenSubdivMesh::tessellate(const TessellationParams& tessellationParams,
+                                          {StandardAttributes::sdPdt, Vec3Type::VECTOR}});
+ 
+     // reverse normals reverses orientation and negates normals
+-    if (mIsNormalReversed) {
++    // Modo: so does a mirror, by its own (tools/port_mirrored_meshes.py); the two together cancel.
++    if (mIsNormalReversed != modoMirrored(mControlMeshData->mXforms)) {
+         reverseOrientation(mControlMeshData->mFaceVertexCount,
+                            mControlMeshData->mIndices,
+                            mAttributes);
+@@ -2905,10 +2921,10 @@ OpenSubdivMesh::bakePosMap(int width,
      const int faceVertexCount = 4; // tessellated mesh is always quads
      for (size_t faceId = 0; faceId < getTessellatedMeshFaceCount(); ++faceId) {
          // vertex ids of quad
@@ -786,7 +825,7 @@ index 3f7e1a1..d8c6219 100644
  
          // texture coordinates for this quad
          Vec2f st0, st1, st2, st3;
-@@ -3207,6 +3207,13 @@ OpenSubdivMesh::postIntersect(mcrt_common::ThreadLocalState& tls,
+@@ -3207,6 +3223,13 @@ OpenSubdivMesh::postIntersect(mcrt_common::ThreadLocalState& tls,
          }
      }
  
@@ -800,6 +839,71 @@ index 3f7e1a1..d8c6219 100644
      intersection.setDifferentialGeometry(Ng,
                                           N,
                                           St,
+diff --git a/lib/rendering/geom/prim/PolyMesh.cc b/lib/rendering/geom/prim/PolyMesh.cc
+index f542c19..49a8dbb 100644
+--- a/lib/rendering/geom/prim/PolyMesh.cc
++++ b/lib/rendering/geom/prim/PolyMesh.cc
+@@ -6,6 +6,7 @@
+ /// $Id$
+ ///
+ 
++#include <cstdlib>
+ #include "PolyMesh.h"
+ 
+ #include <moonray/rendering/geom/prim/GeomTLState.h>
+@@ -20,6 +21,20 @@
+ #include <moonray/rendering/geom/BakedAttribute.h>
+ #include <scene_rdl2/common/math/MathUtil.h>
+ 
++
++namespace {
++// Modo: a mesh its placement mirrors (tools/port_mirrored_meshes.py): its winding is turned over by the mirror, its own
++// normals are not. Only with MOONRAY_MODO_MIRRORED_MESHES=1.
++bool modoMirrored(const moonray::shading::XformSamples& xforms)
++{
++    static const bool on = [] {
++        const char *value = std::getenv("MOONRAY_MODO_MIRRORED_MESHES");
++        return value && value[0] == '1';
++    }();
++    return on && !xforms.empty() && xforms[0].l.det() < 0.0f;
++}
++} // namespace
++
+ namespace moonray {
+ namespace geom {
+ namespace internal {
+@@ -168,6 +183,8 @@ PolyMesh::tessellate(const TessellationParams& tessellationParams,
+         mIsTessellated = false;
+     }
+ 
++    // Modo: whether the placement mirrors the mesh, asked before initAttributesAndDisplace lets its data go.
++    const bool modoMirror = modoMirrored(mPolyMeshData->mXforms);
+     initAttributesAndDisplace(pRdlLayer,
+                               baseFaceCount,
+                               baseVertexCount,
+@@ -177,7 +194,8 @@ PolyMesh::tessellate(const TessellationParams& tessellationParams,
+                               tessellationParams.mWorld2Render);
+ 
+     // reverse normals reverses orientation and negates normals
+-    if (mIsNormalReversed) {
++    // Modo: so does a mirror, by its own (tools/port_mirrored_meshes.py); the two together cancel.
++    if (mIsNormalReversed != modoMirror) {
+         size_t faceVertexCount = mIsTessellated ?
+                                  sQuadVertexCount :
+                                  baseFaceVertexCount;
+@@ -1015,6 +1033,12 @@ PolyMesh::initAttributesAndDisplace(const scene_rdl2::rdl2::Layer *pRdlLayer,
+         displaceMesh(pRdlLayer, world2render);
+     }
+ 
++    // Modo: smooth normals made from a mirrored mesh's faces turned over with them (its own do not); tessellate then
++    // reverses its orientation (tools/port_mirrored_meshes.py).
++    if (calculateSmoothNormal && modoMirrored(mPolyMeshData->mXforms)) {
++        getAttributes()->negateNormal();
++    }
++
+     // if it's not real time mode, we don't need the smooth normal utility
+     // after shading normal computation is done
+     if (!realtimeMode) {
 diff --git a/lib/rendering/geom/prim/PolyMeshCalcNv.cc b/lib/rendering/geom/prim/PolyMeshCalcNv.cc
 index f729162..a5d8f6f 100644
 --- a/lib/rendering/geom/prim/PolyMeshCalcNv.cc

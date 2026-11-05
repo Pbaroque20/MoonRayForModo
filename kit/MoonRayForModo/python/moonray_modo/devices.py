@@ -1,4 +1,4 @@
-"""Device Management (Preferences > MoonRay > Device Management): the processors and graphics cards XPU2 finds, each
+"""Device Management (Preferences > MoonRay > XPU2 > Device Management): the processors and graphics cards XPU2 finds, each
 switched on or off.
 
 XPU2's runtime lists them (moonray_xpu2 --list-devices): a processor group is known by its number, a graphics card by

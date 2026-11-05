@@ -339,6 +339,21 @@ def lights(scene, warnings, environment=0.0, compiler=None, closing=None, named=
     for index, light in enumerate(scene.get('lights', [])):
         settings = controls.get(light.get('identity', str(index)), {})
         kind = settings.get('kind') or light['kind']
+        if kind == 'MeshLight' and light.get('shape'):
+            # A Modo Mesh Light: its Prototype's shape shining, as an emitting mesh does (emitter), but a light alone,
+            # found by the lights' sampling and not as a surface.
+            shape = light['shape']
+            record = emitter({'name': light.get('name', ''), 'vertices': shape['vertices'], 'faces': shape['faces'],
+                              'matrix': shape['matrix']},
+                             {'light_intensity': light['intensity'], 'light_color': light['color'],
+                              'light_seen': bool(light.get('camera_visible'))}, warnings)
+            if record:
+                local.append(record)
+                if closing is not None:
+                    closing.setdefault('local', []).append([0.0] * 12)
+                if named is not None:
+                    named.setdefault('local', []).append(light.get('identity', str(index)))
+            continue
         if kind not in LOCAL_LIGHTS and kind != 'DistantLight':
             warnings.append('MoonLightIPR does not show %s %s yet.' % (kind, light.get('name', '')))
             continue

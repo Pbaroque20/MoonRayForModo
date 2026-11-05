@@ -57,10 +57,8 @@ def sync_panels(settings):
     import copy
     from PySide2 import QtWidgets
     from .panel import Panel
-    app=QtWidgets.QApplication.instance()
-    if not app:return
-    for widget in app.allWidgets():
-        if not isinstance(widget,Panel):continue
+    from .panel import live_panels
+    for widget in live_panels():
         widget.production=copy.deepcopy(settings.get('production',{}))
         control=widget.display_controls.get('lut')
         if control is not None:

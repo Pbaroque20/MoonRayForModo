@@ -204,7 +204,25 @@ class Dialog(QtWidgets.QDialog):
                           'Off by default. On, realtime (RT) shows motion blur once an edit is let go: where something moves during the '
                           'shutter, each update also reads the scene at shutter open and close and XPU2 prepares it again, which adds to its wait. '
                           'While dragging, updates stay sharp. Said as Motion Blur at the foot of the picture while on'))
-        self.widgets['xpu2_motion'].setEnabled(native.xpu2())
+        # The same choice as Preferences > MoonRay > XPU2 > Renderer: one setting. Greyed without XPU2's renderer in the kit.
+        engine = combo('xpu2/renderer', [('XPU2', 'xpu2'), ('MoonRay XPU (standard)', 'xpu')],
+                       "Which renders MoonRay's preview where it would render on the graphics card: XPU2, or the standard MoonRay "
+                       "XPU. The same choice as Preferences > MoonRay > XPU2. Final renders are MoonRay's either way")
+        engine.setEnabled((native.xpu2_runtime() / 'moonray_xpu2.exe').is_file())
+        # Above Realtime Sample %, which is XPU2's.
+        form.insertRow(form.getWidgetPosition(self.realtime_share)[0], 'Preview engine', engine)
+
+        def engine_chosen(_=None):
+            xpu2 = engine.currentData() == 'xpu2' and engine.isEnabled()
+            self.widgets['xpu2_motion'].setEnabled(xpu2)
+            self.realtime_share.setEnabled(self.realtime_held is not None and xpu2)
+        engine.currentIndexChanged.connect(engine_chosen)
+        engine_chosen()
+        # The same switch as Preferences > MoonRay > XPU (graphics card): one setting.
+        form.addRow(check('xpu_realtime', 'Realtime with MoonRay XPU, on the processor',
+                          'RT with MoonRay and MoonRay LS where XPU2 does not render the preview (the standard XPU chosen): the preview '
+                          'follows the scene as it is edited, MoonRay rendering it on the processor, the graphics card left to Modo. '
+                          "Renders keep the scene's Rendering Mode. Off by default"))
         form.addRow(check('memory_hud', 'Memory in the picture',
                           "What the renderer holds, the machine's free RAM and the graphics card's memory, read once a second "
                           'and shown at the bottom right of the picture, in colour when it runs short. Off, it is hidden and nothing is read'))
