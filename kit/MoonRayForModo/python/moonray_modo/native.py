@@ -550,6 +550,6 @@ def xpu2_shaders_unavailable():
 
 # What a preview says when XPU2 is chosen and its shaders are not compiled: nothing is rendered.
 XPU2_NOT_COMPILED = ("Render unavailable: MoonRay XPU2's shaders not compiled. "
-                     "System > Preferences > MoonRay > XPU2 > Compile XPU2 Shaders.")
+                     "System > Preferences > MoonRay > XPU2 > Device Management > Compile XPU2 Shaders.")
 XPU2_OUT_OF_DATE = ("Render unavailable: MoonRay XPU2's shaders out of date. "
-                    "System > Preferences > MoonRay > XPU2 > Compile XPU2 Shaders.")
+                    "System > Preferences > MoonRay > XPU2 > Device Management > Compile XPU2 Shaders.")

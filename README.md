@@ -28,7 +28,7 @@ The next release, for its lighter use of memory and XPU2 on several devices, wit
 - **Depth of field in XPU2 has even grain**: a light far out of focus showed a lattice inside its bokeh disc; the lens samples now have an order of their own and every sample sequence is Owen-scrambled, so the noise is MoonRay's kind.
 - **A sliver triangle no longer sends an XPU2 frame to MoonRay**: a hit on a triangle too thin for its normal in single precision failed the sample, and with it the whole frame. The grass scene fell back to MoonRay every time on the processor alone and now and then with the graphics card.
 - **XPU2 uses every graphics card and every processor**: a second or third NVIDIA card renders the same picture alongside the first, and a machine with more than 64 threads uses them all. A card that can't run OptiX's denoiser hands realtime denoising to one that can, or to Open Image Denoise on the processor. Tested in simulation only, as we have one card here.
-- **Device Management**: under XPU2 in Preferences > MoonRay, lists the processor and every NVIDIA card XPU2 finds, each with its own switch, and compiles XPU2's shaders for every card. It replaces the Devices choice on the XPU2 page.
+- **Device Management**: under XPU2 in Preferences > MoonRay, lists the processor and every NVIDIA card XPU2 finds, each with its own switch, and compiles XPU2's shaders for each kind of card that is not up to date: a new kind of card shows as Out of date, naming it, and only it is compiled. It replaces the Devices choice on the XPU2 page.
 - **XPU2 knows NUMA**: on two-socket workstations and many-die processors (Threadripper, EPYC, Xeons with Sub-NUMA Clustering), XPU2 puts its workers on every node, feeds each card from the node nearest it, and keeps texture tiles in the memory of the node that reads them. A node that runs short moves its tiles to another before letting any go. On a one-socket machine nothing changes. Tested in simulation only.
 - **VDB volumes render on XPU2's graphics card**: a VDB cloud that did not glow was handed sample by sample to the processor; the card now samples its grids itself and marches it without a table of steps, about five times faster on a test cloud with the same picture. Glowing VDBs still render on the processor.
 - **Mirrored meshes face outward**: a mesh with a negative scale and normals of its own rendered black in MoonRay and XPU2 (MoonRay's own behaviour), and one without them slightly wrong; a new MoonRay Source Override, on by default, turns them outward.
@@ -36,9 +36,14 @@ The next release, for its lighter use of memory and XPU2 on several devices, wit
 - **A dw material's own roughness in MoonLightIPR**: a dw Metal or Base material's roughness was taken from Modo's Material Ref tab; it is now the material's own.
 - **The MoonRay Widget renders with XPU2** (whatever the preview's choice), at the size it is shown, with 1024, 2048 or 4096 samples, and a **Scale** to size the ball in scene units for curvature and other procedurals.
 - **A dwVdbVolume takes its VDB file**: adding one asks for the file, and its form has Load VDB File; the VDB shape that shows it is made for it.
-- **PBR validity** is a diagnostic in Preferences > MoonRay > Diagnostics: every render holds the output while it is on.
+- **PBR validity**, a diagnostic in Preferences > MoonRay > Renderer > Diagnostics: while it is on, MoonRay XPU's and XPU2's renders hold MoonRay's PBR validity output in place of the standard outputs, and the preview window shows it. Green is a plausible material, red one out of range, yellow in between: here the dragon's bright orange is just above the brightest plausible albedo. Off, the standard outputs come back.
+
+  ![The dragon test scene, its beauty on the left and its PBR validity on the right: the floor green, the dragon yellow](docs/images/pbr-validity-dragon.jpg)
+
 - **Realtime with MoonRay XPU, on the processor**: an opt-in in Preferences > MoonRay > XPU; with XPU2 off, RT then follows the scene with MoonRay and MoonRay LS.
 - **After XPU2 hands a scene to MoonRay XPU**, MoonRay's sampling settings are no longer greyed: they are the ones used.
+- **Modo's Mesh Lights shine**: a Mesh Light gave no light in MoonRay, XPU2 or MoonLightIPR. It now shines from its Prototype mesh, shown or hidden, placed by the prototype or by the light as Use Prototype Transform says, with its radiance and colour, and seen by the camera when Visible to Camera is on.
+- **Alembic streams in**: a file loaded as Alembic Streaming Meshes (Modo's Alembic Mesh items) now renders, moving over time and with motion blur, as files loaded as Modo meshes with streaming deformers already did. Alembic Curves and Point Clouds take the same path, though untested.
 - **An environment no longer renders red**: a grey environment, saved as one channel since the texture memory work, lit the scene red in MoonRay and XPU2; images that light the scene keep three channels.
 
 ## New in 0.5.2.2
@@ -587,6 +592,7 @@ Comparison audit between Modo 16.1v9 and MoonLightIPR, the realtime preview: wha
 | **Lights** |  |  |
 | Directional light, with the physical sun | ![yes](docs/images/feature-yes.svg) | The sun's disc in Modo's colour |
 | Point, spot and area lights | ![yes](docs/images/feature-yes.svg) | Within about 1% of MoonRay's brightness; Visible to Camera shows the light |
+| Mesh lights | ![yes](docs/images/feature-yes.svg) | From the Prototype mesh, shown or hidden, placed as Use Prototype Transform says; within 0.2% of XPU2's brightness. Found by the lights' sampling, not seen as a surface |
 | Cylinder, dome and photometric (IES) lights | ![no](docs/images/feature-no.svg) | Left out by the plugin for MoonRay too; MoonRay's own cylinder and environment lights are drawn |
 | Light linking (Modo's groups, include or exclude) | ![partly](docs/images/feature-partly.svg) | Which lights reach each object, from Object controls, a material's links or Modo's groups, compared with MoonRay at 0.96 to 1.01 of its brightness. Objects set not to cast some shadows, or not onto some objects, cast them all; said in Notices An object whose materials are linked to different lights is lit as its first |
 | Light volumetrics, and fog | ![partly](docs/images/feature-partly.svg) | Point, spot and directional lights' volumetrics, and the Environment Material's fog (Linear and Layered approximated), as fog lit by all the scene's lights; not yet compared with Modo's renders. Area, cylinder and dome lights' volumetrics and the Shader's fog are named in Notices |
@@ -616,6 +622,7 @@ Comparison audit between Modo 16.1v9 and MoonLightIPR, the realtime preview: wha
 | Meshes, subdivision and creases | ![yes](docs/images/feature-yes.svg) | UVs follow the smoothed surface; up to 3,000,000 quads a mesh, cut by its size on screen; n-gons cut along their outline |
 | Instances and replicators | ![yes](docs/images/feature-yes.svg) |  |
 | Deformed and animated meshes | ![yes](docs/images/feature-yes.svg) | With motion blur where turned on in Preview Preferences; a subdivided mesh that changes shape does not blur |
+| Alembic | ![yes](docs/images/feature-yes.svg) | Loaded as Modo meshes with streaming deformers or as Alembic Streaming Meshes, moving over time; Alembic Curves and Point Clouds untested |
 | Curves, hair and Modo's Fur material | ![partly](docs/images/feature-partly.svg) | Hair close to MoonRay's but not exact; fur drawn with up to 150,000 fibres; fur guides, the fur vector and width maps, and Modo's Hair Material are not read |
 | Weight and colour vertex maps | ![partly](docs/images/feature-partly.svg) | Weight maps through a Weight Map Texture layer, each taking one of the 8 UV sets; colour maps show in MoonRay only |
 | Modo's volume items | ![partly](docs/images/feature-partly.svg) | Drawn from a VDB file attached in the MoonRay controls; no motion blur, whether the item moves or from a velocity grid |

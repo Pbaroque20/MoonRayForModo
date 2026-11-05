@@ -3,7 +3,7 @@ import re
 from .rdla import string,number,vector,node_matrix,array
 from .working_space import color as working_color
 
-LIGHT_KINDS=('','DistantLight','SphereLight','RectLight','SpotLight','DiskLight','CylinderLight','PortalLight')
+LIGHT_KINDS=('','DistantLight','SphereLight','RectLight','SpotLight','DiskLight','CylinderLight','PortalLight','MeshLight')
 
 def owner(geometry):
     return geometry.get('source_item') or str(geometry.get('identity','')).split('|')[0]
@@ -37,8 +37,20 @@ def emit(scene,meshes,environment,lines):
         from .entities import round_light
         placed=dict(light,**{key:round_light(kind,light[key]) for key in ('matrix','matrix_close') if light.get(key)})
         attrs={'node_xform':node_matrix(placed),'color':vector(working_color(light['color']),'Rgb'),'intensity':number(light['intensity'])}
+        if kind=='MeshLight':
+            # A Modo Mesh Light: its Prototype's shape (host.mesh_light_shape), a geometry of the light's own that is in no
+            # layer (MoonRay refuses a MeshLight whose geometry is), placed where the light says.
+            shape=light.get('shape')
+            if not shape:raise ValueError('Mesh light %s has no shape'%light.get('name',identity))
+            geometry='RdlMeshGeometry(%s)'%string(name+'/geometry')
+            lines += ['%s {'%geometry,'  ["node_xform"] = %s,'%node_matrix({'matrix':shape['matrix']}),
+                      '  ["vertex_list_0"] = %s,'%array(vector(v) for v in shape['vertices']),
+                      '  ["vertices_by_index"] = %s,'%array(str(int(i)) for face in shape['faces'] for i in face),
+                      '  ["face_vertex_count"] = %s,'%array(str(len(face)) for face in shape['faces']),
+                      '  ["is_subd"] = false,','  ["smooth_normal"] = false,','}']
+            attrs={'geometry':geometry,'color':attrs['color'],'intensity':attrs['intensity']}
         # MoonRay moves a light during the shutter only when the light says so.
-        if light.get('matrix_close') and light['matrix_close']!=light.get('matrix'):
+        if kind!='MeshLight' and light.get('matrix_close') and light['matrix_close']!=light.get('matrix'):
             from .native import light_motion
             if light_motion():attrs['mb']='true'
         label=settings.get('label','')

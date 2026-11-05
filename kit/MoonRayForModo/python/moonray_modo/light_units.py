@@ -9,6 +9,7 @@ with each kind in Modo, and tools/check_light_units.py renders the same in MoonR
     Point        Modo: per steradian.                       MoonRay: the light's whole output.
     Spot         Modo: per steradian.                       MoonRay: of a disc, a quarter of the point's on its axis.
     Area         Modo: per square metre of the light.       MoonRay: the light's whole output.
+    Mesh         Modo: per square metre, as Area.            MoonRay: the light's whole output (by Area's rule, not measured).
 """
 import math
 
@@ -23,6 +24,9 @@ def intensity(kind, radiance, light, shape='rectangle'):
         # On its axis. MoonRay's spot is a small disc and dims by the cosine of the angle off the axis,
         # which Modo's does not: a quarter dimmer at the edge of an 80 degree cone.
         return radiance * math.pi
+    if kind == 'meshLight':
+        # Per square metre, as an area light: MoonRay's MeshLight, normalized, spreads its intensity over the mesh's area.
+        return radiance * math.pi * float(light.get('area', 1))
     if kind == 'areaLight':
         area = float(light.get('width', 1)) * float(light.get('height', 1))
         # An ellipse fills pi/4 of its rectangle.

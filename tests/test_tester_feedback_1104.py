@@ -83,7 +83,7 @@ class PbrValidity(unittest.TestCase):
         self.assertIn('cmd moonray.pref.pbrValidity ?', cfg)
         self.assertNotIn('aov_pbr_validity', (ROOT / 'kit/MoonRayForModo/render_settings.cfg').read_text(encoding='utf-8'))
         rdla = (KIT / 'moonray_modo/rdla.py').read_text(encoding='utf-8')
-        self.assertIn("selected = list(selected) + ['pbr_validity']", rdla)
+        self.assertIn("selected = ['pbr_validity']", rdla)
 
 
 
@@ -243,6 +243,83 @@ class LinkedEngineChoices(unittest.TestCase):
         panel = (KIT / 'moonray_modo/panel.py').read_text(encoding='utf-8')
         self.assertIn('property_notifications.watchers.append(self._preferences_followed)', panel)
         self.assertIn('property_notifications.watchers.remove(self._preferences_followed)', panel)
+
+
+class AlembicStreamed(unittest.TestCase):
+    """Alembic loaded as Modo's own streamed items (Alembic Mesh, Curves, Point Cloud) has no mesh channel: the scene is
+    read from Modo's render cache, frame by frame, so they render and blur (probe_alembic: all three load modes)."""
+
+    def test_streamed_items_read_from_the_render_cache(self):
+        host = (KIT / 'moonray_modo/host.py').read_text(encoding='utf-8')
+        self.assertIn("ALEMBIC_ITEMS = ('AlembicMesh', 'AlembicCurves', 'AlembicCloud')", host)
+        self.assertIn('if alembic_items(scene):', host.split('def _snapshot(', 1)[1].split('camera = scene.renderCamera', 1)[0])
+
+    def test_no_alembic_loader_is_no_items(self):
+        import sys
+        sys.path.insert(0, str(KIT))
+        import types
+        for name in ('lx', 'lxu', 'lxu.object', 'lxu.command', 'lxifc', 'modo'):
+            sys.modules.setdefault(name, types.ModuleType(name))
+        src = (KIT / 'moonray_modo/host.py').read_text(encoding='utf-8')
+        start = src.index('ALEMBIC_ITEMS = ')
+        ns = {}
+        exec(src[start:src.index('def snapshot(', start)], ns)
+        class Scene:
+            def items(self, kind, superType=False):
+                if kind == 'AlembicMesh': return ['m']
+                raise LookupError(kind)
+        self.assertEqual(ns['alembic_items'](Scene()), ['m'])
+
+
+class PbrValidityReplaces(unittest.TestCase):
+    """PBR validity on: it takes the standard outputs' place in MoonRay XPU's and XPU2's renders, and the preview shows
+    it; off, the standard outputs and the beauty again."""
+
+    def test_outputs_replaced_while_on(self):
+        rdla = (KIT / 'moonray_modo/rdla.py').read_text(encoding='utf-8')
+        self.assertIn("if pbr_validity():\n            selected = ['pbr_validity']", rdla)
+
+    def test_preview_shows_it_and_gives_it_back(self):
+        panel = (KIT / 'moonray_modo/panel.py').read_text(encoding='utf-8')
+        self.assertIn("self.buffer.setCurrentIndex(self.buffer.findData('pbr_validity'))", panel)
+        self.assertIn("if was and self.buffer.currentData()=='pbr_validity':self.buffer.setCurrentIndex(self.buffer.findData('beauty'))", panel)
+
+
+class ModoMeshLights(unittest.TestCase):
+    """A tester's Modo Mesh Lights lit nothing (the kit skipped the type). The light shines from its Prototype mesh
+    (shadeLoc), hidden or not, placed by the prototype or the light (Use Prototype Transform), its radiance per square
+    metre as an area light's (probe_mesh_light_render: a hidden panel lights the floor in MoonRay's vector and XPU modes)."""
+
+    def test_radiance_over_the_area(self):
+        import math, sys
+        sys.path.insert(0, str(KIT))
+        from moonray_modo import light_units
+        self.assertAlmostEqual(light_units.intensity('meshLight', 3.0, {'area': 2.0}), 3.0 * math.pi * 2.0)
+        # The same as an area light of that size.
+        self.assertAlmostEqual(light_units.intensity('meshLight', 3.0, {'area': 2.0}),
+                               light_units.intensity('areaLight', 3.0, {'width': 1.0, 'height': 2.0}))
+
+    def test_written_as_a_mesh_light_with_its_own_geometry(self):
+        import sys
+        sys.path.insert(0, str(KIT))
+        from moonray_modo import lighting
+        light = {'kind': 'MeshLight', 'identity': 'meshLight1', 'name': 'Mesh Light', 'color': [1, 1, 1], 'intensity': 3.0,
+                 'matrix': [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 2, 0, 1],
+                 'shape': {'vertices': [[-1, 0, -1], [1, 0, -1], [1, 0, 1], [-1, 0, 1]], 'faces': [[0, 1, 2, 3]],
+                           'matrix': [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 2, 0, 1]}}
+        lines = []
+        lighting.emit({'lights': [light]}, [], 0, lines)
+        text = '\n'.join(lines)
+        self.assertIn('RdlMeshGeometry("/modo/light/meshLight1/geometry") {', text)
+        self.assertIn('MeshLight("/modo/light/meshLight1") {', text)
+        self.assertIn('["geometry"] = RdlMeshGeometry("/modo/light/meshLight1/geometry")', text)
+        self.assertNotIn('table.insert(geometries', text)
+
+    def test_the_kit_reads_the_prototype(self):
+        host = (KIT / 'moonray_modo/host.py').read_text(encoding='utf-8')
+        self.assertIn("light.itemGraph('shadeLoc').forward()", host)
+        self.assertIn("'meshLight': 'MeshLight'", host)
+        self.assertIn("world_matrix(prototype if own else light)", host)
 
 
 class KitCompiles(unittest.TestCase):

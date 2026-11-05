@@ -225,8 +225,10 @@ class Panel(Tools, QtWidgets.QWidget):
         # The preferences RT hangs on (the engine, Realtime with MoonRay XPU) are changed in Modo's Preferences as well as
         # in Preview Preferences: either says so (property_notifications), and RT follows at once.
         from . import property_notifications
-        self._preferences_followed=lambda:self._sync_rt() if not getattr(self,'disposed',False) else None
+        self._preferences_followed=lambda:self._preferences_followed_now() if not getattr(self,'disposed',False) else None
         property_notifications.watchers.append(self._preferences_followed)
+        from .native import pbr_validity
+        self._validity_held=pbr_validity()
         row.addWidget(self.rt)
         row.addWidget(self.preview_engine)
         # The camera rendered through: Modo's, or a MoonRay camera item such as a fisheye.
@@ -576,6 +578,18 @@ class Panel(Tools, QtWidgets.QWidget):
         self.preferences.set('worker_tiles',self.worker_tiles.isChecked())
         self.preview.set_worker_overlay(self.worker_tiles.isChecked())
         self.preview.set_show_buckets(self.show_buckets.isChecked() and not self._following)
+
+    def _preferences_followed_now(self):
+        """A preference changed in Modo's Preferences or Preview Preferences: RT as it can now be, and the buffers. PBR
+        validity switched either way changes what MoonRay's renders hold (rdla): a preview following the scene renders
+        again with it, or with the standard outputs once it is off."""
+        self._sync_rt()
+        from .native import pbr_validity
+        validity=pbr_validity()
+        changed=validity!=getattr(self,'_validity_held',validity)
+        self._validity_held=validity
+        self._limit_buffers()
+        if changed and getattr(self,'_following',False):self.preview_timer.start()
 
     def _preferences_changed(self):
         self.status.setText('Preview preferences saved.')
@@ -1277,10 +1291,23 @@ class Panel(Tools, QtWidgets.QWidget):
         # PBR validity is a diagnostic, listed while the preferences have it on (Diagnostics).
         from .native import pbr_validity
         validity=pbr_validity()
+        # While it is on, MoonRay's renders hold it in the standard outputs' place (rdla): the list is the beauty and it,
+        # and it is what is shown from the moment it is switched on, the beauty again once it is off. MoonLightIPR does
+        # not make it.
+        checking=validity and not only
         for row in range(1,self.buffer.count()):
-            denoised=self.buffer.itemData(row)=='denoised_beauty'
-            self.buffer.view().setRowHidden(row,low or (denoised and not on) or (only and not (denoises and denoised))
-                                            or (self.buffer.itemData(row)=='pbr_validity' and not validity))
+            key=self.buffer.itemData(row)
+            denoised=key=='denoised_beauty'
+            if checking:hidden=key!='pbr_validity'
+            else:hidden=(low or (denoised and not on) or (only and not (denoises and denoised))
+                         or (key=='pbr_validity' and not validity))
+            self.buffer.view().setRowHidden(row,hidden)
+        was=getattr(self,'_validity_checked',False);self._validity_checked=checking
+        if checking:
+            if not was or self.buffer.currentData() not in ('beauty','pbr_validity'):
+                self.buffer.setCurrentIndex(self.buffer.findData('pbr_validity'))
+            return
+        if was and self.buffer.currentData()=='pbr_validity':self.buffer.setCurrentIndex(self.buffer.findData('beauty'))
         if not on and self.buffer.currentData()=='denoised_beauty':self.buffer.setCurrentIndex(self.buffer.findData('beauty'))
         if low:
             if self.buffer.currentData()!='beauty':self.buffer.setCurrentIndex(self.buffer.findData('beauty'))
