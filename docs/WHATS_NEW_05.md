@@ -43,6 +43,7 @@ The next release, for its lighter use of memory and XPU2 on several devices, wit
 
 - **Realtime with MoonRay XPU, on the processor**: an opt-in in Preferences > MoonRay > XPU; with XPU2 off, RT then follows the scene with MoonRay and MoonRay LS.
 - **After XPU2 hands a scene to MoonRay XPU**, MoonRay's sampling settings are no longer greyed: they are the ones used.
+- **Modo no longer crashes as it quits**: with a graph editor open, or once the preview window or a material's properties had been used, Modo could end with an error on the way out. The kit no longer looks through all of Modo's windows to find its own, puts its open windows away first, and lets go of its scene listener properly.
 - **Modo's Mesh Lights shine**: a Mesh Light gave no light in MoonRay, XPU2 or MoonLightIPR. It now shines from its Prototype mesh, shown or hidden, placed by the prototype or by the light as Use Prototype Transform says, with its radiance and colour, and seen by the camera when Visible to Camera is on.
 - **Alembic streams in**: a file loaded as Alembic Streaming Meshes (Modo's Alembic Mesh items) now renders, moving over time and with motion blur, as files loaded as Modo meshes with streaming deformers already did. Alembic Curves and Point Clouds take the same path, though untested.
 - **An environment no longer renders red**: a grey environment, saved as one channel since the texture memory work, lit the scene red in MoonRay and XPU2; images that light the scene keep three channels.

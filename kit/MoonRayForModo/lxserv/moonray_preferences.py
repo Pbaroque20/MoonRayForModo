@@ -217,7 +217,12 @@ class ReleaseIdleRenderers(lxu.command.BasicCommand):
         from moonray_modo.render import Renderer
         released = 0
         seen = set()
-        for widget in QtWidgets.QApplication.allWidgets():
+        # The preview windows and the graph editors' MoonRay Widgets, from the kit's own lists: not every widget of
+        # Modo's, which gave each a Python wrapper, and Modo crashed as it quit.
+        from moonray_modo.panel import live_panels
+        from moonray_modo import node_editor
+        holders = list(live_panels()) + [getattr(e, 'material_preview', None) for e in list(node_editor._open.values())]
+        for widget in holders:
             renderer = getattr(widget, 'renderer', None)
             if not isinstance(renderer, Renderer) or id(renderer) in seen: continue
             seen.add(id(renderer))

@@ -322,6 +322,35 @@ class ModoMeshLights(unittest.TestCase):
         self.assertIn("world_matrix(prototype if own else light)", host)
 
 
+class CleanQuit(unittest.TestCase):
+    """Modo crashed as it quit (0xC0000005 in its Python plug-in's clean-up): looking through every widget of Modo's
+    (QApplication.allWidgets) gave each a Python wrapper; a graph editor left open was not put away; the preview's
+    scene listener could never be removed, which stopped the window's putting away at it. Each found with a test Modo:
+    tools/probe_quit_preview.py and tools/probe_quit_graph_editor.py."""
+
+    def test_no_widget_scan_left(self):
+        for path in list((KIT / 'moonray_modo').glob('*.py')) + list((KIT.parent / 'lxserv').glob('*.py')):
+            text = path.read_text(encoding='utf-8')
+            code = '\n'.join(line for line in text.splitlines() if not line.lstrip().startswith('#'))
+            with self.subTest(path=path.name):
+                self.assertNotIn('.allWidgets()', code)
+
+    def test_editors_closed_on_quit(self):
+        editor = (KIT / 'moonray_modo/node_editor.py').read_text(encoding='utf-8')
+        self.assertIn('application.aboutToQuit.connect(closing)', editor)
+        self.assertIn('_close_on_quit()', editor)
+
+    def test_listener_removed_through_its_own_object(self):
+        changes = (KIT / 'moonray_modo/changes.py').read_text(encoding='utf-8')
+        self.assertIn('self.com=lx.object.Unknown(self)', changes)
+        self.assertIn('self.service.AddListener(self.com)', changes)
+        self.assertIn('self.service.RemoveListener(self.com)', changes)
+
+    def test_window_put_away_on_quit(self):
+        panel = (KIT / 'moonray_modo/panel.py').read_text(encoding='utf-8')
+        self.assertIn('application.aboutToQuit.connect(self.dispose)', panel)
+
+
 class KitCompiles(unittest.TestCase):
     """Every Python file of the kit compiles: a module only Modo's Qt imports (preferences.py) once broke on a quote, with
     no other test to see it."""

@@ -69,9 +69,24 @@ class ElidedLabel(QtWidgets.QLabel):
         painter.drawText(self.contentsRect(), int(self.alignment()) | QtCore.Qt.AlignVCenter, shown)
 
 
+# The preview windows open, each added as it is made and taken out as it is put away (dispose). Asked for in place of
+# QApplication.allWidgets(): looking through every widget gave each of Modo's a Python wrapper, and Modo then crashed as
+# it quit (0xC0000005 in its Python plug-in's clean-up, tools/probe_quit_preview.py 'allwidgets').
+PANELS = []
+
+
+def live_panels():
+    """The preview windows open and not put away."""
+    from shiboken2 import isValid
+    PANELS[:] = [panel for panel in PANELS if isValid(panel) and not panel.disposed]
+    return list(PANELS)
+
+
 class Panel(Tools, QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.disposed = False
+        PANELS.append(self)
         self.preferences = Preferences()
         self.settings = self.preferences.store
         self.renderer = Renderer(self)
@@ -229,6 +244,11 @@ class Panel(Tools, QtWidgets.QWidget):
         property_notifications.watchers.append(self._preferences_followed)
         from .native import pbr_validity
         self._validity_held=pbr_validity()
+        # Modo quitting puts the window away as its closing does (dispose): its timers stopped and its renderer closed
+        # while Qt still stands. A Modo view is not closed on the way out, and after a render Modo crashed as it quit
+        # (0xC0000005, tools/probe_quit_preview.py).
+        application=QtCore.QCoreApplication.instance()
+        if application is not None:application.aboutToQuit.connect(self.dispose)
         row.addWidget(self.rt)
         row.addWidget(self.preview_engine)
         # The camera rendered through: Modo's, or a MoonRay camera item such as a fisheye.
@@ -2512,13 +2532,16 @@ class Panel(Tools, QtWidgets.QWidget):
     def dispose(self):
         if not self.disposed:
             self.disposed = True
+            if self in PANELS:PANELS.remove(self)
             try:
                 from . import property_notifications
                 property_notifications.watchers.remove(self._preferences_followed)
             except (ValueError,AttributeError,ImportError):pass
             self.refine_timer.stop()
             self.detail_timer.stop()
-            self.changes.close()
+            # Whatever the listener says, the rest is put away: the renderer above all.
+            try:self.changes.close()
+            except Exception:pass
             self.release_timer.stop()
             self.display_timer.stop()
             self.preview_timer.stop()

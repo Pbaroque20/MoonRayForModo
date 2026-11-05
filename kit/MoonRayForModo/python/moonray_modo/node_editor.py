@@ -302,6 +302,27 @@ def follows_camera(node):
 
 # The open editors, by the material they edit, so that asking for one again brings it forward.
 _open={}
+# Whether Modo's quitting closes the open editors (_close_on_quit), asked once.
+_quit_hooked=[False]
+
+
+def _close_on_quit():
+    """Modo quitting closes every open graph editor first, as its Close button does: its node previews, its MoonRay
+    Widget's session and its scene watcher stopped while Qt still stands. Left open, Modo crashed on the way out
+    (0xC0000005, tools/probe_quit_graph_editor.py); closed first, it quit cleanly."""
+    if _quit_hooked[0]:return
+    application=QtCore.QCoreApplication.instance()
+    if application is None:return
+    def closing():
+        from shiboken2 import isValid
+        for editor in list(_open.values()):
+            try:
+                if isValid(editor):editor.done(0)
+            except Exception:
+                pass
+        _open.clear()
+    application.aboutToQuit.connect(closing)
+    _quit_hooked[0]=True
 
 
 def open_editor(item,materialx_override=False):
@@ -313,6 +334,7 @@ def open_editor(item,materialx_override=False):
         editor.raise_();editor.activateWindow();return editor
     editor=_open[key]=Editor(item,materialx_override)
     editor.finished.connect(lambda *_,key=key:_open.pop(key,None))
+    _close_on_quit()
     editor.show();editor.raise_();editor.activateWindow()
     return editor
 
