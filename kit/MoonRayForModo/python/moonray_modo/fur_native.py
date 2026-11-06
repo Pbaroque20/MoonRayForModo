@@ -57,6 +57,17 @@ def folder():
 GUIDE_MODES = {'none': 0, 'clump': 1, 'normal': 2, 'dirlen': 3, 'shape': 4, 'range': 5}
 
 
+def _doubles(values, depth):
+    """Nested numbers (depth levels of lists inside the list) as the bytes of their doubles, one after another; a run
+    the geometry adapter wrote (fur_reader.Flat) as it is."""
+    if hasattr(values, 'flat'):
+        return values.flat.tobytes()
+    flat = values
+    for _ in range(depth):
+        flat = chain.from_iterable(flat)
+    return array('d', flat).tobytes()
+
+
 def request(triangles, held, maps, groups, most=0, guides=None):
     """What the program is asked: the triangles with the group each one's fibres go in, the Fur material's settings
     (fur.settings) and the weight maps there are."""
@@ -72,19 +83,19 @@ def request(triangles, held, maps, groups, most=0, guides=None):
                                   1 if held['bendDirection'] == 'up' else 0, 0 if held['curlMode'] == 'curls' else 1),
              struct.pack('<%dd' % len(NUMBERS), *[float(held[name]) for name in NUMBERS]),
              struct.pack('<i', len(triangles)),
-             array('d', chain.from_iterable(chain.from_iterable(triangles))).tobytes(),
+             _doubles(triangles, 2),
              array('i', [int(group) for group in groups]).tobytes(),
              struct.pack('<5i', *[1 if (maps or {}).get(name) else 0 for name in MAPS])]
     for name in MAPS:
         if (maps or {}).get(name):
-            parts.append(array('d', chain.from_iterable(maps[name])).tobytes())
+            parts.append(_doubles(maps[name], 1))
     if third:
         parts.append(struct.pack('<i', 1 if width else 0))
         if width:
-            parts.append(array('d', chain.from_iterable(width)).tobytes())
+            parts.append(_doubles(width, 1))
         parts.append(struct.pack('<i', 1 if vector else 0))
         if vector:
-            parts.append(array('d', (v for trio in vector for corner in trio for v in corner[:3])).tobytes())
+            parts.append(_doubles(vector, 2))
         parts.append(struct.pack('<i2di', mode if guided else 0, float(held['guideRange']), float(held['guideLength']), len(guides) if guided else 0))
         for strand in (guides if guided else ()):
             parts.append(struct.pack('<i', len(strand)))

@@ -293,6 +293,38 @@ def fur_guides(scene,item,mesh,polygons,points,layer,wanted):
     return [[coordinates.transform(coordinates.transform(p,out_of),into) for p in strand] for strand in strands]
 
 
+def fur_surface_native(item,mesh,layer,wanted,read,warnings):
+    """fur_entries' reading of a mesh's fur by the geometry adapter (fur_reader): (triangles, each one's material, the
+    maps by what they vary, the guides), as the reading here gives them; None where the adapter cannot. Guides of an
+    Item of their own are read by fur_guides, a few curves of another mesh."""
+    from . import fur,fur_reader
+    from .host import channel
+    names,whats=[],[]
+    for key,what in fur.WEIGHTS.items():
+        try:named=read(key)
+        except Exception:named=''
+        if named:names.append(named);whats.append(what)
+    try:vector=read('vectorMap') or ''
+    except Exception:vector=''
+    mode=str(channel(layer,'guides','none') or 'none')
+    on_surface=mode!='none' and bool(channel(layer,'guideSurf',1))
+    tag=str(channel(layer,'guideTag','') or '');kind=GUIDE_TAGS.get(str(channel(layer,'guideType','') or '').lower(),'MATR')
+    got=fur_reader.read(mesh,wanted,names,vector,on_surface,tag,kind)
+    if got is None:return None
+    varied={}
+    for named,what in zip(names,whats):
+        if got['weights'].get(named) is None:
+            warnings.append('Fur on %s: the weight map %s that its %s follows was not found, and is left out.'%(item.name,named,what));continue
+        varied[what]=got['weights'][named]
+    if vector:
+        if got['vector'] is None:warnings.append('Fur on %s: the vector map %s it follows was not found, and is left out.'%(item.name,vector))
+        else:varied['vector']=got['vector']
+    guides=got['guides'] if on_surface else []
+    if mode!='none' and not on_surface:
+        guides=fur_guides(None,item,mesh,None,None,layer,wanted)
+    return got['triangles'],got['worn'],varied,guides
+
+
 def fur_entries(scene,item,mesh,polygons,points,warnings):
     """The fur of a mesh that wears one of Modo's Fur materials, as curve geometry: one for each Fur material that is
     on any of its polygons."""
@@ -314,65 +346,72 @@ def fur_entries(scene,item,mesh,polygons,points,warnings):
             try:targets=list(mask.itemGraph('shadeLoc').forward())
             except (LookupError,RuntimeError,AttributeError):targets=[]
             if targets and all(target.id!=item.id for target in targets):continue
-        tags=lx.object.StringTag(polygons);places={};faces=[]
-        for i in range(mesh.PolygonCount()):
-            polygons.SelectByIndex(i)
-            if lxu.utils.decodeID4(polygons.Type()) not in ('FACE','SUBD','PSUB') or polygons.VertexCount()<3:continue
-            if wanted and strand_tag(tags,lx.symbol.i_POLYTAG_MATERIAL)!=wanted:continue
-            corners=[]
-            for v in range(polygons.VertexCount()):
-                point=polygons.VertexByIndex(v)
-                if point not in places:
-                    points.Select(point);places[point]=tuple(points.Pos())
-                corners.append(point)
-            faces.append((corners,strand_tag(tags,lx.symbol.i_POLYTAG_MATERIAL)))
-        if not faces:continue
-        # The surface's normal at each point: its faces' normals together, so fur on a round thing stands out all round.
-        normals={}
-        for corners,_ in faces:
-            x=y=z=0.0
-            for k,point in enumerate(corners):
-                a,b=places[point],places[corners[(k+1)%len(corners)]]
-                x+=(a[1]-b[1])*(a[2]+b[2]);y+=(a[2]-b[2])*(a[0]+b[0]);z+=(a[0]-b[0])*(a[1]+b[1])
-            for point in corners:
-                held=normals.get(point,(0.0,0.0,0.0));normals[point]=(held[0]+x,held[1]+y,held[2]+z)
-        for point,(x,y,z) in normals.items():
-            size=math.sqrt(x*x+y*y+z*z) or 1.0;normals[point]=(x/size,y/size,z/size)
-        triangles=[(places[c[0]],places[c[k]],places[c[k+1]],normals[c[0]],normals[c[k]],normals[c[k+1]]) for c,_ in faces for k in range(1,len(c)-1)]
-        # Each fibre takes the material of the polygon it stands on.
-        worn=[tag for c,tag in faces for k in range(1,len(c)-1)]
         read=lambda key,layer=layer:layer.channel(key).get()
-        # The weight maps the Fur material names, which vary the fur across the surface: a point with no weight has none.
-        varied={}
-        for key,what in fur.WEIGHTS.items():
-            try:named=read(key)
+        # The surface, its maps and its guides read by the geometry adapter in one call (fur_reader); where it cannot,
+        # a polygon and a point at a time here.
+        native=fur_surface_native(item,mesh,layer,wanted,read,warnings)
+        if native is not None:
+            triangles,worn,varied,guides=native
+            if not len(triangles):continue
+        else:
+            tags=lx.object.StringTag(polygons);places={};faces=[]
+            for i in range(mesh.PolygonCount()):
+                polygons.SelectByIndex(i)
+                if lxu.utils.decodeID4(polygons.Type()) not in ('FACE','SUBD','PSUB') or polygons.VertexCount()<3:continue
+                if wanted and strand_tag(tags,lx.symbol.i_POLYTAG_MATERIAL)!=wanted:continue
+                corners=[]
+                for v in range(polygons.VertexCount()):
+                    point=polygons.VertexByIndex(v)
+                    if point not in places:
+                        points.Select(point);places[point]=tuple(points.Pos())
+                    corners.append(point)
+                faces.append((corners,strand_tag(tags,lx.symbol.i_POLYTAG_MATERIAL)))
+            if not faces:continue
+            # The surface's normal at each point: its faces' normals together, so fur on a round thing stands out all round.
+            normals={}
+            for corners,_ in faces:
+                x=y=z=0.0
+                for k,point in enumerate(corners):
+                    a,b=places[point],places[corners[(k+1)%len(corners)]]
+                    x+=(a[1]-b[1])*(a[2]+b[2]);y+=(a[2]-b[2])*(a[0]+b[0]);z+=(a[0]-b[0])*(a[1]+b[1])
+                for point in corners:
+                    held=normals.get(point,(0.0,0.0,0.0));normals[point]=(held[0]+x,held[1]+y,held[2]+z)
+            for point,(x,y,z) in normals.items():
+                size=math.sqrt(x*x+y*y+z*z) or 1.0;normals[point]=(x/size,y/size,z/size)
+            triangles=[(places[c[0]],places[c[k]],places[c[k+1]],normals[c[0]],normals[c[k]],normals[c[k+1]]) for c,_ in faces for k in range(1,len(c)-1)]
+            # Each fibre takes the material of the polygon it stands on.
+            worn=[tag for c,tag in faces for k in range(1,len(c)-1)]
+            # The weight maps the Fur material names, which vary the fur across the surface: a point with no weight has none.
+            varied={}
+            for key,what in fur.WEIGHTS.items():
+                try:named=read(key)
+                except Exception:named=''
+                if not named:continue
+                try:
+                    maps=lx.object.MeshMap(mesh.MeshMapAccessor());maps.SelectByName(lx.symbol.i_VMAP_WEIGHT,named);map_id=maps.ID()
+                    storage=lx.object.storage('f',1);weights={}
+                    for point in places:
+                        points.Select(point)
+                        weights[point]=float(storage.get()[0]) if points.MapEvaluate(map_id,storage) else 0.0
+                except (LookupError,RuntimeError,TypeError):
+                    warnings.append('Fur on %s: the weight map %s that its %s follows was not found, and is left out.'%(item.name,named,what));continue
+                varied[what]=[(weights[c[0]],weights[c[k]],weights[c[k+1]]) for c,_ in faces for k in range(1,len(c)-1)]
+            # Its vector map (Vector VMap, Modo's VECT kind): each fibre grows along the vector at its root, as long as it is,
+            # and none where it is nothing (tools/probe_cl_fur_maps.py). A point without a value has none.
+            try:named=read('vectorMap')
             except Exception:named=''
-            if not named:continue
-            try:
-                maps=lx.object.MeshMap(mesh.MeshMapAccessor());maps.SelectByName(lx.symbol.i_VMAP_WEIGHT,named);map_id=maps.ID()
-                storage=lx.object.storage('f',1);weights={}
-                for point in places:
-                    points.Select(point)
-                    weights[point]=float(storage.get()[0]) if points.MapEvaluate(map_id,storage) else 0.0
-            except (LookupError,RuntimeError,TypeError):
-                warnings.append('Fur on %s: the weight map %s that its %s follows was not found, and is left out.'%(item.name,named,what));continue
-            varied[what]=[(weights[c[0]],weights[c[k]],weights[c[k+1]]) for c,_ in faces for k in range(1,len(c)-1)]
-        # Its vector map (Vector VMap, Modo's VECT kind): each fibre grows along the vector at its root, as long as it is,
-        # and none where it is nothing (tools/probe_cl_fur_maps.py). A point without a value has none.
-        try:named=read('vectorMap')
-        except Exception:named=''
-        if named:
-            try:
-                maps=lx.object.MeshMap(mesh.MeshMapAccessor());maps.SelectByName(lx.symbol.i_VMAP_VECTOR,named);map_id=maps.ID()
-                storage=lx.object.storage('f',3);vectors={}
-                for point in places:
-                    points.Select(point)
-                    vectors[point]=tuple(float(v) for v in storage.get()) if points.MapEvaluate(map_id,storage) else (0.0,0.0,0.0)
-                varied['vector']=[(vectors[c[0]],vectors[c[k]],vectors[c[k+1]]) for c,_ in faces for k in range(1,len(c)-1)]
-            except (LookupError,RuntimeError,TypeError):
-                warnings.append('Fur on %s: the vector map %s it follows was not found, and is left out.'%(item.name,named))
-        # Its guides, where it follows them: none found, it grows as if it did not, and says so.
-        guides=fur_guides(scene,item,mesh,polygons,points,layer,wanted)
+            if named:
+                try:
+                    maps=lx.object.MeshMap(mesh.MeshMapAccessor());maps.SelectByName(lx.symbol.i_VMAP_VECTOR,named);map_id=maps.ID()
+                    storage=lx.object.storage('f',3);vectors={}
+                    for point in places:
+                        points.Select(point)
+                        vectors[point]=tuple(float(v) for v in storage.get()) if points.MapEvaluate(map_id,storage) else (0.0,0.0,0.0)
+                    varied['vector']=[(vectors[c[0]],vectors[c[k]],vectors[c[k+1]]) for c,_ in faces for k in range(1,len(c)-1)]
+                except (LookupError,RuntimeError,TypeError):
+                    warnings.append('Fur on %s: the vector map %s it follows was not found, and is left out.'%(item.name,named))
+            # Its guides, where it follows them: none found, it grows as if it did not, and says so.
+            guides=fur_guides(scene,item,mesh,polygons,points,layer,wanted)
         if str(channel(layer,'guides','none') or 'none')!='none' and not guides:
             warnings.append("Fur on %s follows guides, but none were found: guides are curves wearing the fur's material on the mesh "
                             '(Use Guides from Base Surface), or the curves of the guide Item.'%item.name)

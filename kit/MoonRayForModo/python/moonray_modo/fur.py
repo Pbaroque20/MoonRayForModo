@@ -410,11 +410,18 @@ def grow(triangles, held, maps=None, guides=None):
 def kept(triangles, held, maps=None, guides=None):
     """As grow, kept by what the fur grew from: the same lists come back while nothing about it has changed."""
     mark = hashlib.sha1()
-    for a, b, c, na, nb, nc in triangles:
-        mark.update(struct.pack('<18d', *a, *b, *c, *na, *nb, *nc))
+    # Runs the geometry adapter read (fur_reader.Flat) are hashed as the doubles they are: the same bytes.
+    if hasattr(triangles, 'flat'):
+        mark.update(triangles.flat.tobytes())
+    else:
+        for a, b, c, na, nb, nc in triangles:
+            mark.update(struct.pack('<18d', *a, *b, *c, *na, *nb, *nc))
     mark.update(repr(sorted(held.items())).encode())
     for what, weights in sorted((maps or {}).items()):
         mark.update(what.encode())
+        if hasattr(weights, 'flat'):
+            mark.update(weights.flat.tobytes())
+            continue
         for trio in weights:
             # A weight at each corner, or a vector map's vector at each.
             flat = [v for corner in trio for v in corner] if trio and isinstance(trio[0], (tuple, list)) else list(trio)
