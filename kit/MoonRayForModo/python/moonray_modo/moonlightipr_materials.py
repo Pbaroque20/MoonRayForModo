@@ -718,7 +718,10 @@ def graph_layers(source, note, runtime=None, displacement=None, wanted='height',
         amplitude = None
         if effect == 'normal' and node['type'] == 'bump':
             # A bump node: its height is a Shader Tree Bump layer, at the node's amplitude (the material's
-            # bump_strength, which Compiler takes from the layer).
+            # bump_strength, which Compiler takes from the layer). Flat with its MoonRay Source Override off.
+            from .native import bump_node
+            if not bump_node():
+                continue
             amplitude = float((node.get('parameters') or {}).get('amplitude', .005))
             identity = node.get('inputs', {}).get('height')
             node = graph['nodes'].get(identity)

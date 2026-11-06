@@ -487,7 +487,9 @@ def emit(material,name,index,lines,library,output="root",validated=True):
                 from . import graph as shader_tree
                 amplitude=float(params.get('amplitude',.005))
                 if not math.isfinite(amplitude):raise ValueError('Bump amplitude must be a number')
-                flat='height' not in refs or reads_missing(g,inputs['height'])
+                # Off in MoonRay Source Overrides (native.bump_node), the node is flat, as MoonRay has no bump of its own.
+                from .native import bump_node
+                flat='height' not in refs or reads_missing(g,inputs['height']) or not bump_node()
                 step=float(params.get('step',0) or 0)
                 mapped=definition('ModoTextureMap',path+'/tangent',{'mode':'1','normal':'Rgb(0.5,0.5,1)',
                     'height':values['height'],'bump_strength':number(0.0 if flat else amplitude),

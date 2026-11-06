@@ -13,7 +13,7 @@ The current release is [0.5.3](https://github.com/Pbaroque20/MoonRayForModo/rele
   ![Two Mesh Lights, a square and an octagon beside a quad and a triangle, lighting a ball: Modo, MoonRay, XPU2 and MoonLightIPR](docs/images/mesh-lights-engines.jpg)
 
 - **A mesh light hidden from the camera still shows in reflections**: with Object controls' camera appearance at Hidden, other surfaces reflect the light cleanly, not blotched with the mesh's grey; MoonLightIPR follows that setting too.
-- **Bump node in the MoonShine graph**: under Normals and bump, a Bump node turns a greyscale height image into the material's normal, as a Shader Tree Bump layer does; Amplitude is how high white stands, in scene units. In every engine.
+- **Bump node in the MoonShine graph**: under Normals and bump, a Bump node turns a greyscale height image into the material's normal, as a Shader Tree Bump layer does; Amplitude is how high white stands, in scene units. In every engine; a MoonRay Source Override (Bump node in MoonShine graphs), on by default.
 - **Checkers placed as in Modo**: a Checker's squares, through its texture locator, are the size, angle and colour Modo gives them in every engine (they were twice as large and turned).
 - **A missing UV map is a notice, not a failed render**: a material whose texture reads a UV map the mesh has not (one set up on another mesh) rendered nothing, with "missing UV values"; those polygons now render with the map at 0, and a notice names the mesh, the map and the material.
 - **PBR validity in Preview Preferences** too, the same switch as in Modo's Preferences.

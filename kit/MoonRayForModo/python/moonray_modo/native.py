@@ -367,6 +367,13 @@ def ngon_ears():
     return _switch('ngon_ears', 'MOONRAY_MODO_NGON_EARS')
 
 
+def bump_node():
+    """Whether the MoonShine graph's Bump node bumps (nodes.py, moonlightipr_materials.graph_layers): a height turned
+    into the material's normal by the kit's ModoTextureMap, as a Shader Tree Bump layer is. MoonRay has no node of its
+    own that does this; off, the node leaves the normal flat."""
+    return _switch('bump_node', 'MOONRAY_MODO_BUMP_NODE')
+
+
 # What MoonRay is called in the MoonRay Terminal, by the execution mode it was started in.
 ENGINE_NAMES = {'vectorized': 'MoonRay Vector', 'vector': 'MoonRay Vector', 'scalar': 'MoonRay Scalar', 'xpu': 'MoonRay XPU',
                 'auto': 'MoonRay Auto'}

@@ -71,6 +71,16 @@ class BumpNodeTests(unittest.TestCase):
         text = written(bump_graph('V:/not/here/height.png'))
         self.assertIn('["bump_strength"] = 0', text)
 
+    def test_override_off_leaves_it_flat(self):
+        import os
+        with mock.patch.dict(os.environ, {'MOONRAY_MODO_BUMP_NODE': '0'}):
+            self.assertIn('["bump_strength"] = 0', written(bump_graph(str(self.image))))
+            from moonray_modo import moonlightipr_materials
+            layers = moonlightipr_materials.graph_layers({'node_graph': bump_graph(str(self.image))}, lambda what: None)
+            self.assertFalse([layer for layer in layers if layer.get('effect') == 'bump'])
+        with mock.patch.dict(os.environ, {'MOONRAY_MODO_BUMP_NODE': '1'}):
+            self.assertRegex(written(bump_graph(str(self.image), amplitude=.01)), r'\["bump_strength"\] = 0\.01\b')
+
     def test_moonlightipr_reads_it_as_a_bump_layer(self):
         from moonray_modo import moonlightipr_materials
         layers = moonlightipr_materials.graph_layers({'node_graph': bump_graph(str(self.image), amplitude=.02)}, lambda what: None)
