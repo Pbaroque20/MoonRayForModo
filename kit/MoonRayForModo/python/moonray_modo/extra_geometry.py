@@ -180,11 +180,13 @@ def batches(identity,name,strands,shape,material,matrix):
     one count per strand. MoonRay builds one acceleration structure for the lot, which is what
     makes thousands of hairs cost little more than one mesh."""
     groups={}
-    for strand,tag,stable in strands:groups.setdefault(material or tag,[]).append((strand,stable))
-    result=[];tapered=abs(shape['root']-shape['tip'])>1e-12
+    scales=shape.get('scales')
+    for index,(strand,tag,stable) in enumerate(strands):
+        groups.setdefault(material or tag,[]).append((strand,stable,scales[index] if scales else 1.0))
+    result=[];tapered=abs(shape['root']-shape['tip'])>1e-12 or bool(scales)
     for tag,members in groups.items():
         vertices=[];counts=[];radii=[];uvs=[];ids=[]
-        for index,(strand,stable) in enumerate(members):
+        for index,(strand,stable,scale) in enumerate(members):
             vertices+=strand;counts.append(len(strand))
             if stable is not None:ids.append(stable)
             if not (tapered or shape['uv']):continue
@@ -194,7 +196,7 @@ def batches(identity,name,strands,shape,material,matrix):
             total=lengths[-1] or 1.0;across=(index+.5)/len(members)
             for length in lengths:
                 along=length/total
-                if tapered:radii.append(shape['root']+(shape['tip']-shape['root'])*along**shape['envelope'])
+                if tapered:radii.append((shape['root']+(shape['tip']-shape['root'])*along**shape['envelope'])*scale)
                 if shape['uv']:uvs.append([across,along])
         entry=dict(kind='curves',identity=identity+'|curves|'+tag,source_item=identity,name=name,vertices=vertices,counts=counts,
                    radius=shape['root'],curve_type=0,material=tag,matrix=matrix)
@@ -355,6 +357,20 @@ def fur_entries(scene,item,mesh,polygons,points,warnings):
             except (LookupError,RuntimeError,TypeError):
                 warnings.append('Fur on %s: the weight map %s that its %s follows was not found, and is left out.'%(item.name,named,what));continue
             varied[what]=[(weights[c[0]],weights[c[k]],weights[c[k+1]]) for c,_ in faces for k in range(1,len(c)-1)]
+        # Its vector map (Vector VMap, Modo's VECT kind): each fibre grows along the vector at its root, as long as it is,
+        # and none where it is nothing (tools/probe_cl_fur_maps.py). A point without a value has none.
+        try:named=read('vectorMap')
+        except Exception:named=''
+        if named:
+            try:
+                maps=lx.object.MeshMap(mesh.MeshMapAccessor());maps.SelectByName(lx.symbol.i_VMAP_VECTOR,named);map_id=maps.ID()
+                storage=lx.object.storage('f',3);vectors={}
+                for point in places:
+                    points.Select(point)
+                    vectors[point]=tuple(float(v) for v in storage.get()) if points.MapEvaluate(map_id,storage) else (0.0,0.0,0.0)
+                varied['vector']=[(vectors[c[0]],vectors[c[k]],vectors[c[k+1]]) for c,_ in faces for k in range(1,len(c)-1)]
+            except (LookupError,RuntimeError,TypeError):
+                warnings.append('Fur on %s: the vector map %s it follows was not found, and is left out.'%(item.name,named))
         # Its guides, where it follows them: none found, it grows as if it did not, and says so.
         guides=fur_guides(scene,item,mesh,polygons,points,layer,wanted)
         if str(channel(layer,'guides','none') or 'none')!='none' and not guides:
@@ -377,11 +393,13 @@ def fur_entries(scene,item,mesh,polygons,points,warnings):
                                  vertices=[],counts=[],radius=grown['root'],curve_type=0,material=tags[number],matrix=world_matrix(item),
                                  fur_file=str(path),fur_fibres=fibres,fur_points=points,**alone))
             continue
-        strands,root,tip,asked,stands=fur.kept(triangles,fur.settings(read),varied,guides)
+        strands,root,tip,asked,stands,widths=fur.kept(triangles,fur.settings(read),varied,guides)
         if asked>fur.MOST:
             warnings.append('Fur on %s: Modo would grow %s fibres; %s are grown, the most this runtime grows. It is thinner fur than Modo\'s.'%(item.name,format(asked,','),format(len(strands),',')))
         if not strands:continue
         shape=dict(root=root,tip=tip,envelope=1.0,samples=8,uv=True,round=False,basis=0)
+        # Each fibre's width, where a width map varies it: its radii scaled by the map's weight at its root.
+        if 'width' in varied:shape['scales']=widths
         kept=(item.id+'|fur|'+layer.id,item.name,root,tip,wanted,tuple(world_matrix(item)))
         held=BATCHED.get(kept)
         if held is None or held[0] is not strands:

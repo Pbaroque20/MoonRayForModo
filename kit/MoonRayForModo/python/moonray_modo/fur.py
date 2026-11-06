@@ -26,10 +26,10 @@ CHANNELS = {'dist': .005, 'length': .05, 'width': .5, 'widthMode': 'relative', '
 # What Modo leaves to follow another where it is not set: the tip's kink and frizz are the root's.
 FOLLOWS = {'kinkAmpTip': 'kinkAmp', 'frizAmpTip': 'frizAmp'}
 # The weight maps that are followed: the Fur material's channel naming the map, and what it varies.
-WEIGHTS = {'densityMap': 'density', 'lengthMap': 'length', 'clumpMap': 'clump', 'curlMap': 'curl', 'bendMap': 'bend'}
+WEIGHTS = {'densityMap': 'density', 'lengthMap': 'length', 'clumpMap': 'clump', 'curlMap': 'curl', 'bendMap': 'bend', 'widthMap': 'width'}
 # What is not read: the channel, and what it is called. Each is said once where it is not at rest.
 UNREAD = (('guideBlend', 0.0, "its guides' Blend Amount"),)
-MAPS = (('vectorMap', 'its vector map'), ('widthMap', 'its width map'))
+MAPS = ()
 GROWN = {}
 
 
@@ -192,10 +192,11 @@ class Guides:
 
 def grow(triangles, held, maps=None, guides=None):
     """The fibres of one mesh's fur: (strands, radius at the root, radius at the tip, how many Modo would grow, the
-    triangle each strand stands on).
+    triangle each strand stands on, each strand's width as a share of the radii, from the width map).
     triangles are [(a, b, c, na, nb, nc)]: three corners and the surface's normal at each, in the mesh's own space.
     maps are the weights that vary the fur over the surface, by what they vary ('density', 'length', 'clump', 'curl',
-    'bend'): for each, the weight at the three corners of every triangle."""
+    'bend', 'width'): for each, the weight at the three corners of every triangle; and 'vector', the vector map's
+    vectors at the three corners of every triangle."""
     held = dict(CHANNELS, **held)
     maps = maps or {}
     areas, total = [], 0.0
@@ -208,7 +209,7 @@ def grow(triangles, held, maps=None, guides=None):
     wanted = int(total / (apart * apart) * max(0.0, held['density']))
     count = min(wanted, MOST)
     if count <= 0 or total <= 0:
-        return [], 0.0, 0.0, wanted, []
+        return [], 0.0, 0.0, wanted, [], []
     # A fibre is as thick as the Fur material says, however many of Modo's are grown: fewer of them are thinner
     # fur, not wider fibres.
     root = held['widthAbs'] / 2 if held['widthMode'] == 'absolute' else apart * max(0.0, held['width']) / 2
@@ -223,7 +224,8 @@ def grow(triangles, held, maps=None, guides=None):
     chance = random.Random(int(held['seed']))
     # What the extras draw from is kept apart, so that fur with none of them stands as it always did.
     other = random.Random(int(held['seed']) * 7919 + 1).random
-    uniform, strands, stands = chance.random, [], []
+    uniform, strands, stands, widths = chance.random, [], [], []
+    vectored = bool(maps.get('vector'))
 
     def weight(what, picked, r, s, t):
         found = maps.get(what)
@@ -299,10 +301,20 @@ def grow(triangles, held, maps=None, guides=None):
 
     for _ in range(count):
         picked, r, s, t, x, y, z, nx, ny, nz = place(uniform)
+        # A vector map gives the fibre its way and its length: the vector at its root (none where it is nothing).
+        base = held['length']
+        if vectored:
+            va, vb, vc = maps['vector'][picked]
+            vx, vy, vz = (va[k] * r + vb[k] * s + vc[k] * t for k in range(3))
+            base = math.sqrt(vx * vx + vy * vy + vz * vz)
+            if base > 0:
+                nx, ny, nz = vx / base, vy / base, vz / base
         # The way the fibre grows: out along the surface's normal, thrown off it a little.
         off = held['nrmJitter']
         dx, dy, dz = nx + off * (2 * uniform() - 1), ny + off * (2 * uniform() - 1), nz + off * (2 * uniform() - 1)
-        length = held['length'] * (1.0 - held['sclJitter'] * uniform()) * (1.0 - held['growthJitter'] * uniform() * .5)
+        length = base * (1.0 - held['sclJitter'] * uniform()) * (1.0 - held['growthJitter'] * uniform() * .5)
+        if vectored and not base > 0:
+            continue
         if maps.get('density') and other() > weight('density', picked, r, s, t):
             continue
         length *= weight('length', picked, r, s, t)
@@ -390,8 +402,9 @@ def grow(triangles, held, maps=None, guides=None):
                 p[1] += much * (2 * other() - 1)
                 p[2] += much * (2 * other() - 1)
         stands.append(picked)
+        widths.append(weight('width', picked, r, s, t))
         strands.append(strand)
-    return strands, root, tip, wanted, stands
+    return strands, root, tip, wanted, stands, widths
 
 
 def kept(triangles, held, maps=None, guides=None):
@@ -403,7 +416,9 @@ def kept(triangles, held, maps=None, guides=None):
     for what, weights in sorted((maps or {}).items()):
         mark.update(what.encode())
         for trio in weights:
-            mark.update(struct.pack('<3d', *trio))
+            # A weight at each corner, or a vector map's vector at each.
+            flat = [v for corner in trio for v in corner] if trio and isinstance(trio[0], (tuple, list)) else list(trio)
+            mark.update(struct.pack('<%dd' % len(flat), *flat))
     for strand in guides or ():
         mark.update(struct.pack('<i', len(strand)))
         for point in strand:

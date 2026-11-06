@@ -62,11 +62,13 @@ def request(triangles, held, maps, groups, most=0, guides=None):
     (fur.settings) and the weight maps there are."""
     from . import fur
     held = dict(fur.CHANNELS, **held)
-    # Fur that follows guides is asked for in the second form (MFG2), which a program from before guides refuses:
-    # the fur is then grown in Python (grow returns None).
+    # Fur that follows guides, or a width or vector map, is asked for in the third form (MFG3), which a program from
+    # before them refuses: the fur is then grown in Python (grow returns None).
     mode = GUIDE_MODES.get(str(held.get('guides') or 'none'), 0)
     guided = bool(guides) and mode != 0
-    parts = [b'MFG2' if guided else b'MFG1', struct.pack('<2q4i', int(held['seed']), int(most), int(held['maxSegment']), 1 if held['widthMode'] == 'absolute' else 0,
+    width, vector = (maps or {}).get('width'), (maps or {}).get('vector')
+    third = guided or bool(width) or bool(vector)
+    parts = [b'MFG3' if third else b'MFG1', struct.pack('<2q4i', int(held['seed']), int(most), int(held['maxSegment']), 1 if held['widthMode'] == 'absolute' else 0,
                                   1 if held['bendDirection'] == 'up' else 0, 0 if held['curlMode'] == 'curls' else 1),
              struct.pack('<%dd' % len(NUMBERS), *[float(held[name]) for name in NUMBERS]),
              struct.pack('<i', len(triangles)),
@@ -76,9 +78,15 @@ def request(triangles, held, maps, groups, most=0, guides=None):
     for name in MAPS:
         if (maps or {}).get(name):
             parts.append(array('d', chain.from_iterable(maps[name])).tobytes())
-    if guided:
-        parts.append(struct.pack('<i2di', mode, float(held['guideRange']), float(held['guideLength']), len(guides)))
-        for strand in guides:
+    if third:
+        parts.append(struct.pack('<i', 1 if width else 0))
+        if width:
+            parts.append(array('d', chain.from_iterable(width)).tobytes())
+        parts.append(struct.pack('<i', 1 if vector else 0))
+        if vector:
+            parts.append(array('d', (v for trio in vector for corner in trio for v in corner[:3])).tobytes())
+        parts.append(struct.pack('<i2di', mode if guided else 0, float(held['guideRange']), float(held['guideLength']), len(guides) if guided else 0))
+        for strand in (guides if guided else ()):
             parts.append(struct.pack('<i', len(strand)))
             parts.append(array('d', chain.from_iterable(p[:3] for p in strand)).tobytes())
     return b''.join(parts)

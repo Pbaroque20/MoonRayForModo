@@ -9,6 +9,8 @@
 // map as three doubles a triangle. "MFG2" adds, after the maps, the guides (fur.Guides): the guide mode as a 32-bit
 // integer (0 none, 1 clump, 2 Direction, 3 Direction + Length, 4 shape, 5 range), Guide Range and Guide Length as
 // doubles, the number of guides (32-bit), and each guide's number of points (32-bit) and points (three doubles each).
+// "MFG3" is MFG1 followed by the width map (a 32-bit 1 and three doubles a triangle, or a 0), the vector map (a 1 and
+// three vectors of three doubles a triangle, or a 0), and the guides as MFG2 has them.
 // For each group there is a file <prefix>.<group>.mfc: "MFC1", the number of fibres (32-bit) and of points (64-bit),
 // the radius at the root and at the tip (floats), the number of points of each fibre (32-bit), each point as four
 // floats (where it is, and the fibre's radius there) and each point's place as two floats (which fibre of the group,
@@ -233,8 +235,10 @@ int main(int argc, char** argv) {
         std::vector<char> data((std::istreambuf_iterator<char>(source)), std::istreambuf_iterator<char>());
         size_t at = 0;
         // MFG2: as MFG1, then the guides (fur.Guides): the mode, Guide Range and Guide Length, and each guide's points.
+        // MFG3: as MFG1, then the width map and the vector map, each after a flag, then the guides as MFG2 has them.
         const bool second = data.size() >= 4 && !std::memcmp(data.data(), "MFG2", 4);
-        if (data.size() < 4 || (std::memcmp(data.data(), "MFG1", 4) && !second)) throw std::runtime_error("not a fur request");
+        const bool third = data.size() >= 4 && !std::memcmp(data.data(), "MFG3", 4);
+        if (data.size() < 4 || (std::memcmp(data.data(), "MFG1", 4) && !second && !third)) throw std::runtime_error("not a fur request");
         at = 4;
         const int64_t seed = take<int64_t>(data, at), most = take<int64_t>(data, at);
         const int32_t maxSegment = take<int32_t>(data, at), absolute = take<int32_t>(data, at), up = take<int32_t>(data, at),
@@ -257,7 +261,18 @@ int main(int argc, char** argv) {
         int32_t mode = GUIDE_NONE;
         double guideRange = 0.0, guideLength = 1.0;
         std::vector<std::vector<P>> guideStrands;
-        if (second) {
+        std::vector<double> widthMap, vectorMap;
+        if (third) {
+            if (take<int32_t>(data, at)) {
+                widthMap.resize(size_t(n) * 3);
+                for (auto& w : widthMap) w = take<double>(data, at);
+            }
+            if (take<int32_t>(data, at)) {
+                vectorMap.resize(size_t(n) * 9);
+                for (auto& v : vectorMap) v = take<double>(data, at);
+            }
+        }
+        if (second || third) {
             mode = take<int32_t>(data, at);
             guideRange = std::max(0.0, take<double>(data, at));
             guideLength = std::max(0.0, take<double>(data, at));
@@ -285,6 +300,7 @@ int main(int argc, char** argv) {
         const int64_t count = most > 0 ? std::min(wanted, most) : wanted;
         std::map<int32_t, std::vector<size_t>> members;   // the fibres of each group, in the order grown
         std::vector<std::vector<P>> strands;
+        std::vector<double> widths;   // each fibre's width as a share of the radii
         double root = 0.0, tip = 0.0;
         if (count > 0 && total > 0) {
             // A fibre is as thick as the Fur material says, however many of Modo's are grown.
@@ -386,12 +402,24 @@ int main(int argc, char** argv) {
             strands.reserve(size_t(count));
             for (int64_t made = 0; made < count; ++made) {
                 const Placed q = place(chance);
+                // A vector map gives the fibre its way and its length: the vector at its root (none where it is nothing).
+                double base = held.length, nx = q.nx, ny = q.ny, nz = q.nz;
+                const bool vectored = !vectorMap.empty();
+                if (vectored) {
+                    const double* v = &vectorMap[q.picked * 9];
+                    const double vx = v[0] * q.r + v[3] * q.s + v[6] * q.t;
+                    const double vy = v[1] * q.r + v[4] * q.s + v[7] * q.t;
+                    const double vz = v[2] * q.r + v[5] * q.s + v[8] * q.t;
+                    base = std::sqrt(vx * vx + vy * vy + vz * vz);
+                    if (base > 0) { nx = vx / base; ny = vy / base; nz = vz / base; }
+                }
                 const double off = held.nrmJitter;
-                double dx = q.nx + off * (2 * chance.random() - 1);
-                double dy = q.ny + off * (2 * chance.random() - 1);
-                double dz = q.nz + off * (2 * chance.random() - 1);
+                double dx = nx + off * (2 * chance.random() - 1);
+                double dy = ny + off * (2 * chance.random() - 1);
+                double dz = nz + off * (2 * chance.random() - 1);
                 const double first = chance.random(), next = chance.random();
-                double length = held.length * (1.0 - held.sclJitter * first) * (1.0 - held.growthJitter * next * .5);
+                double length = base * (1.0 - held.sclJitter * first) * (1.0 - held.growthJitter * next * .5);
+                if (vectored && !(base > 0)) continue;
                 if (!maps[DENSITY].empty() && other.random() > weight(DENSITY, q.picked, q.r, q.s, q.t)) continue;
                 length *= weight(LENGTH, q.picked, q.r, q.s, q.t);
                 if (length <= 0) continue;
@@ -501,12 +529,19 @@ int main(int argc, char** argv) {
                     }
                 }
                 members[group[q.picked]].push_back(strands.size());
+                // The fibre's width as a share of the radii, from the width map (fur.py's weight('width')).
+                if (widthMap.empty()) widths.push_back(1.0);
+                else {
+                    const double* w = &widthMap[q.picked * 3];
+                    widths.push_back(std::min(1.0, std::max(0.0, w[0] * q.r + w[1] * q.s + w[2] * q.t)));
+                }
                 strands.push_back(std::move(strand));
             }
         }
 
         const std::string prefix = argv[2];
         const bool tapered = std::fabs(root - tip) > 1e-12;
+        const bool scaled = !widthMap.empty();
         std::vector<int64_t> told{wanted, int64_t(strands.size()), int64_t(members.size())};
         for (const auto& entry : members) {
             const std::vector<size_t>& which = entry.second;
@@ -531,7 +566,7 @@ int main(int argc, char** argv) {
                 for (size_t j = 0; j < strand.size(); ++j) {
                     const double along = lengths[j] / whole;
                     placed.push_back(float(strand[j].x)); placed.push_back(float(strand[j].y)); placed.push_back(float(strand[j].z));
-                    placed.push_back(float(tapered ? root + (tip - root) * along : root));
+                    placed.push_back(float((tapered ? root + (tip - root) * along : root) * (scaled ? widths[which[k]] : 1.0)));
                     across.push_back(fibre_at); across.push_back(float(along));
                 }
             }
