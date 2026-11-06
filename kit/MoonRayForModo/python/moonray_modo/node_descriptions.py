@@ -8,6 +8,7 @@ DESCRIPTIONS={
  'image':'Reads an image with UV mapping, color-space and image-addressing controls.',
  'texcoord':'Provides named UV coordinates to image or procedural inputs.',
  'normalmap':'Converts an RGB normal texture into a shading-normal input; scale controls its strength.',
+ 'bump':'Turns a height (a greyscale bump image) into a shading normal, as a Shader Tree Bump layer; amplitude is how high white stands, in scene units. Connect it to a material\'s normal input.',
  'checker':'Creates alternating checker colors, with independent horizontal and vertical scale.',
  'swizzle':'Reorders or extracts color/vector components, such as selecting a single channel.',
  'combine':'Combines three scalar inputs into RGB components.',
