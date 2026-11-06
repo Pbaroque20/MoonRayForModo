@@ -99,6 +99,28 @@ def vector_array(values,kind='Vec3'):
         return whole if whole is not None else array(vector(v,kind) for v in values)
     return cached(kind,values,write)
 
+# Each mesh's faces by material (_parts_of), kept while its list of materials and the materials it names are the same:
+# made anew at every write, a car's multi-material meshes were walked face by face at every realtime edit, and the
+# binary file's cache, which knows a list by the list itself, never found them.
+_PARTS = {}
+
+
+def _parts_of(face_materials, materials):
+    """{material tag: [its faces]}, a face whose tag names no material under ''."""
+    known = tuple(sorted(tag for tag in set(face_materials) if tag in materials))
+    key = (id(face_materials), known)
+    held = _PARTS.get(key)
+    if held is not None and held[0] is face_materials:
+        return held[1]
+    parts, chosen = {}, set(known)
+    for face_index, face_tag in enumerate(face_materials):
+        parts.setdefault(face_tag if face_tag in chosen else '', []).append(face_index)
+    if len(_PARTS) >= 4096:
+        _PARTS.clear()
+    _PARTS[key] = (face_materials, parts)
+    return parts
+
+
 def _heavy_line(name, attribute, kind, source, written, klass='RdlMeshGeometry', indent='    '):
     """One heavy list of a mesh (or of its UserData): as text in the scene, or (while rdlb.collecting) in its binary
     file instead."""
@@ -116,6 +138,9 @@ def _heavy_line(name, attribute, kind, source, written, klass='RdlMeshGeometry',
     elif kind == 'rgb':
         held = rows.numbers(source, 3)
         encode, value_type = (lambda: rdlb.float_list(source if held is None else held, 3)), rdlb.RGB_VECTOR
+    elif kind == 'floats':
+        # A run of 32-bit floats (cryptomatte.ids) as it is.
+        encode, value_type = (lambda: rdlb.float_list(source, 1)), rdlb.FLOAT_VECTOR
     elif kind == 'float':
         encode, value_type = (lambda: rdlb.float_list(numbers('f', (v[0] for v in source)))), rdlb.FLOAT_VECTOR
     elif kind == 'string':
@@ -137,6 +162,8 @@ def _list_text(kind, source):
     """The text of one heavy list, as the scene would hold it: None for the lists whose change is structural."""
     if kind in ('vec3', 'vec2', 'rgb'):
         return vector_array(source, {'vec3': 'Vec3', 'vec2': 'Vec2', 'rgb': 'Rgb'}[kind])
+    if kind == 'floats':
+        return array(number(v) for v in source)
     if kind == 'float':
         return array(number(v[0]) for v in source)
     if kind == 'string':
@@ -658,9 +685,7 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
         if face_materials is not None:
             if len(face_materials) != len(faces):
                 raise ValueError('Face materials must match the face count')
-            for face_index, face_tag in enumerate(face_materials):
-                face_tag = face_tag if face_tag in materials else ''
-                parts.setdefault(face_tag, []).append(face_index)
+            parts = _parts_of(face_materials, materials)
         subdivision = bool(mesh.get('subdivision', False))
         displaced=bool(({tag}|set(parts)) & displacement_tags)
         if displaced and not mesh.get('subdivision'):

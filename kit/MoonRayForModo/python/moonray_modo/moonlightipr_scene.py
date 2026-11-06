@@ -503,7 +503,8 @@ def cage_payload(mesh, material_index, slots, warnings):
     with_weights(mesh, available, slots)
     sets = sorted((slot, available[key]) for key, slot in slots.items() if available.get(key))
     creases = mesh.get('creases') or []
-    corner_count = sum(map(len, faces))
+    from .rows import corner_count as count_corners, corners as flat_corners, counts as flat_counts
+    corner_count = count_corners(faces)
     level = max(0, min(6, int(mesh.get('subdivision_level', 3))))
     wanted = level
     while level > 0 and corner_count * 4 ** (level - 1) > SUBDIVISION_QUADS:
@@ -518,16 +519,25 @@ def cage_payload(mesh, material_index, slots, warnings):
         return cached
     if face_materials is not None and len(face_materials) != len(faces):
         raise ValueError('Face materials must match the face count')
-    try:
-        corners = array('I', chain.from_iterable(faces))
-    except (TypeError, OverflowError):
-        raise ValueError('Invalid face in ' + mesh['name'])
-    if min(map(len, faces)) < 3 or max(corners) >= len(vertices):
+    # The corners and counts as the adapter handed them over (rows.Faces) where it did; walked, the faces were made
+    # lists one by one.
+    held_corners, held_counts = flat_corners(faces), flat_counts(faces)
+    if held_corners is not None and held_counts is not None:
+        corners = array('I')
+        corners.frombytes(held_corners.tobytes() if held_corners.itemsize == 4 else array('i', held_corners).tobytes())
+        sizes = array('I')
+        sizes.frombytes(held_counts.tobytes() if held_counts.itemsize == 4 else array('i', held_counts).tobytes())
+    else:
+        try:
+            corners = array('I', chain.from_iterable(faces))
+        except (TypeError, OverflowError):
+            raise ValueError('Invalid face in ' + mesh['name'])
+        sizes = array('I', map(len, faces))
+    if not len(sizes) or min(sizes) < 3 or max(corners) >= len(vertices):
         raise ValueError('Invalid face in ' + mesh['name'])
     positions = _numbers(vertices, 3)
     if not _finite(positions):
         raise ValueError('Mesh %s contains a non-finite number' % mesh['name'])
-    sizes = array('I', map(len, faces))
     material_ids = array('I')
     if face_materials is not None:
         default = material_index['']
@@ -808,23 +818,31 @@ def light_sets(scene, named, linked, instances, warnings):
     every = set(named['distant']) | set(named['local'])
     surroundings = {'__environment__'} | {e.get('identity') for e in scene.get('environments', []) if e.get('identity')}
     table, index = [[0xffffffff] * words], {}
+    # Each mesh's set worked out once for all its instances (they share its list of materials): worked out for every
+    # instance, each walked every face's material, instances times faces for a scattered scene.
+    sets = {}
     for place, owner, tags in linked:
-        chosen = [linked_lights(scene, owner, tag, every) for tag in dict.fromkeys(tags)]
-        if any(c != chosen[0] for c in chosen[1:]):
-            warnings.append('MoonLightIPR lights all of %s as its first material is lit; its materials are linked to different '
-                            'lights, which MoonRay shows.' % owner)
-        allowed = chosen[0]
-        if allowed is None:
+        held = sets.get((owner, id(tags)))
+        if held is None or held[0] is not tags:
+            chosen = [linked_lights(scene, owner, tag, every) for tag in dict.fromkeys(tags)]
+            if any(c != chosen[0] for c in chosen[1:]):
+                warnings.append('MoonLightIPR lights all of %s as its first material is lit; its materials are linked to different '
+                                'lights, which MoonRay shows.' % owner)
+            allowed, key = chosen[0], None
+            if allowed is not None:
+                bits = ([0] if allowed & surroundings else []) + [1 + i for i, name in enumerate(named['distant']) if name in allowed]
+                bits += [1 + len(named['distant']) + i for i, name in enumerate(named['local']) if name in allowed]
+                key = tuple(bits)
+                if key not in index:
+                    row = [0] * words
+                    for bit in bits:
+                        row[bit >> 5] |= 1 << (bit & 31)
+                    index[key] = len(table)
+                    table.append(row)
+            held = sets[(owner, id(tags))] = (tags, key)
+        key = held[1]
+        if key is None:
             continue
-        bits = ([0] if allowed & surroundings else []) + [1 + i for i, name in enumerate(named['distant']) if name in allowed]
-        bits += [1 + len(named['distant']) + i for i, name in enumerate(named['local']) if name in allowed]
-        key = tuple(bits)
-        if key not in index:
-            row = [0] * words
-            for bit in bits:
-                row[bit >> 5] |= 1 << (bit & 31)
-            index[key] = len(table)
-            table.append(row)
         record = bytearray(instances[place])
         seen = struct.unpack_from('<I', record, 12)[0] & 255
         struct.pack_into('<I', record, 12, seen | (index[key] << 8))

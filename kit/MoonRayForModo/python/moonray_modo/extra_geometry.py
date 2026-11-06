@@ -609,12 +609,20 @@ def attach(scene,settings):
         values.append(value)
     scene['extra_geometry']=values
 
+# Hair glints' numbers for each strand, by how many strands there are (each strand's is its place's).
+SCATTER={}
+
+
 def emit(scene,materials,lines,crypto=False):
     from .lighting import owner
     from .working_space import color as working_color
     for index,entry in enumerate(scene.get('extra_geometry',[])):
         path='/modo/extra/'+entry['identity'];kind=entry['kind'];tag=entry.get('material','');tag=tag if tag in materials else ''
         attrs={'node_xform':node_matrix(entry)}
+        # The long lists of strands and points: lines of their own, in the binary file beside the scene where it is
+        # written (rdla._heavy_line), as a mesh's are; written as text on the object's one line, each was formatted again
+        # at every write.
+        heavy=[]
         if kind=='vdb':
             shader='VdbVolume(%s)'%string(path+'/volume');gain=max(0,float(entry.get('density',1)));emission=max(0,float(entry.get('emission',1)));anisotropy=float(entry.get('anisotropy',0))
             if not -1<=anisotropy<=1:raise ValueError('Volume anisotropy must be between -1 and 1')
@@ -629,27 +637,34 @@ def emit(scene,materials,lines,crypto=False):
             vertices=entry['vertices'];radii=entry.get('radii',[entry.get('radius',.001)])
             if not vertices:continue
             if not isinstance(radii,list):raise ValueError('Geometry radii must be an array')
-            if any(not math.isfinite(float(r)) or r<0 for r in radii) or not any(r>0 for r in radii):raise ValueError('Curve/point radii must be nonnegative with at least one positive radius')
+            from .serialization import small
+            # Looked over once for as long as it is the same list.
+            if not small('radii-checked',radii,lambda:not any(not math.isfinite(float(r)) or r<0 for r in radii) and any(r>0 for r in radii)):
+                raise ValueError('Curve/point radii must be nonnegative with at least one positive radius')
             if kind=='points' and len(radii)==1:radii=radii*len(vertices)
             counts=entry.get('counts',[])
             allowed={1,len(vertices),len(counts)} if kind=='curves' else {len(vertices)}
             if len(radii) not in allowed:raise ValueError('Radius count does not match geometry')
-            attrs.update(vertex_list_0=written('points',vertices,lambda:vectors(vertices)),
-                         radius_list=written('radii',radii,lambda:'{'+', '.join(map('%.12g'.__mod__,radii))+'}'))
+            constructor='RdlPointGeometry' if kind!='curves' else 'RdlCurveGeometry'
+            from .rdla import _heavy_line
+            heavy+=_heavy_line(path,'vertex_list_0','vec3',vertices,lambda:written('points',vertices,lambda:vectors(vertices)),constructor)
+            heavy+=_heavy_line(path,'radius_list','floats',radii,lambda:written('radii',radii,lambda:'{'+', '.join(map('%.12g'.__mod__,radii))+'}'),constructor)
             for key,target in (('vertices_close','vertex_list_1'),('velocities','velocity_list_0')):
                 if key in entry:
                     if len(entry[key])!=len(vertices):raise ValueError('Motion data does not match geometry vertices')
-                    attrs[target]=vectors(entry[key])
-            constructor='RdlPointGeometry'
+                    moving=entry[key]
+                    heavy+=_heavy_line(path,target,'vec3',moving,lambda moving=moving:vectors(moving),constructor)
             if kind=='curves':
                 curve_type=int(entry.get('curve_type',0))
-                if curve_type not in (0,1,2) or sum(counts)!=len(vertices) or any(type(c)!=int or c<(2 if curve_type==0 else 4) or (curve_type==1 and (c-1)%3) for c in counts):raise ValueError('Invalid curve counts or interpolation')
-                constructor='RdlCurveGeometry';attrs.update(curves_vertex_count=written('counts',counts,lambda:array(str(c) for c in counts)),curve_type=str(curve_type))
+                if not small('counts-checked:%d:%d'%(curve_type,len(vertices)),counts,lambda:sum(counts)==len(vertices) and not any(type(c)!=int or c<(2 if curve_type==0 else 4) or (curve_type==1 and (c-1)%3) for c in counts)) or curve_type not in (0,1,2):
+                    raise ValueError('Invalid curve counts or interpolation')
+                attrs.update(curves_vertex_count=written('counts',counts,lambda:array(str(c) for c in counts)),curve_type=str(curve_type))
                 # MoonRay's own default is a ribbon that faces the view.
                 if entry.get('round'):attrs['curves_subtype']='1'
                 if entry.get('uvs'):
                     if len(entry['uvs']) not in (len(counts),len(vertices)):raise ValueError('Curve UVs must have one entry per strand or per point')
-                    attrs['uv_list']=written('uvs',entry['uvs'],lambda:vectors(entry['uvs'],'Vec2'))
+                    uvs=entry['uvs']
+                    heavy+=_heavy_line(path,'uv_list','vec2',uvs,lambda:written('uvs',uvs,lambda:vectors(uvs,'Vec2')),constructor)
         if 'visibility' in entry:
             camera,indirect,reflection,refraction,subsurface,shadow=entry['visibility']
             for key,value in [('visible_in_camera',camera),('visible_shadow',shadow),('visible_diffuse_reflection',indirect),('visible_diffuse_transmission',indirect),('visible_glossy_reflection',reflection),('visible_mirror_reflection',reflection),('visible_glossy_transmission',refraction),('visible_mirror_transmission',refraction)]:attrs[key]='true' if value else 'false'
@@ -666,7 +681,12 @@ def emit(scene,materials,lines,crypto=False):
             held=materials.get(tag) or {};held=(held.get('material_stack') or [held])[-1]
             if held.get('native_shader')=='HairMaterial_v3' and (held.get('native_parameters') or {}).get('show_hair_glint'):
                 from .moonlightipr_curves import chance
-                lines+=['UserData(%s) {'%string(path+'/scatter'),'  ["float_key"] = "scatter_tag",','  ["float_values_0"] = {%s},'%', '.join('%.6f'%chance(i) for i in range(len(counts))),'}']
+                # Each strand's number, kept for as many strands as there are.
+                scatter=SCATTER.get(len(counts))
+                if scatter is None:
+                    if len(SCATTER)>=16:SCATTER.clear()
+                    scatter=SCATTER[len(counts)]=', '.join('%.6f'%chance(i) for i in range(len(counts)))
+                lines+=['UserData(%s) {'%string(path+'/scatter'),'  ["float_key"] = "scatter_tag",','  ["float_values_0"] = {%s},'%scatter,'}']
                 carried.append('UserData(%s)'%string(path+'/scatter'))
         if kind=='curves' and not entry.get('fur_file'):
             # Curves say they are fine: the matte of fur, hair and curves by which a denoised picture keeps its
@@ -674,7 +694,10 @@ def emit(scene,materials,lines,crypto=False):
             lines+=['UserData(%s) {'%string(path+'/fine'),'  ["float_key"] = "modo_fine",','  ["float_values_0"] = {1},','}']
             carried.append('UserData(%s)'%string(path+'/fine'))
         if carried:attrs['primitive_attributes']=array(carried)
-        lines += ['do','  local g = %s(%s) { %s }'%(constructor,string(path),', '.join('[%s] = %s'%(string(k),v) for k,v in attrs.items())),'  table.insert(geometries, g)']
+        if heavy:
+            lines += ['do','  local g = %s(%s) {'%(constructor,string(path)),*['    [%s] = %s,'%(string(k),v) for k,v in attrs.items()],*heavy,'  }','  table.insert(geometries, g)']
+        else:
+            lines += ['do','  local g = %s(%s) { %s }'%(constructor,string(path),', '.join('[%s] = %s'%(string(k),v) for k,v in attrs.items())),'  table.insert(geometries, g)']
         if kind=='vdb':
             lines += ['  local a = {g, "", %s, objectLightSets[%s] or (nativeLightSets[%s] and nativeLightSets[%s][%s]) or lightSet}'%(shader,string(owner(entry)),string(owner(entry)),string(owner(entry)),string(tag)),'  if objectShadowSets[%s] then table.insert(a, objectShadowSets[%s]) end'%(string(owner(entry)),string(owner(entry))),'  table.insert(assignments,a)']
         else:lines.append('  assign(g, "", %s, %s)'%(string(tag),string(owner(entry))))

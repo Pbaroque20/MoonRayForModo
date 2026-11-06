@@ -99,9 +99,13 @@ _HEADERS = {}
 
 class SceneObject:
     def __init__(self, klass, name):
-        self.klass, self.name, self.parts = klass, name, []
+        self.klass, self.name, self.parts, self.given = klass, name, [], set()
 
     def add(self, kind, attribute, encoded):
+        # An object named by what it holds (cryptomatte's UserData) may be written by several meshes: its values once.
+        if attribute in self.given:
+            return
+        self.given.add(attribute)
         # The type, not a transient id, the name, no further timestep (not blurrable), timestep 0, the value.
         header = _HEADERS.get((kind, attribute))
         if header is None:

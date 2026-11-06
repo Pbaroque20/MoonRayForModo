@@ -56,6 +56,13 @@ def begin():
         p.preview_engine.setCurrentIndex(p.preview_engine.findData(os.environ.get('MOONRAY_PROBE_ENGINE', 'moonray')))
         QtWidgets.QApplication.processEvents()
         result['rt_enabled_before'] = p.rt.isEnabled()
+        try:
+            from moonray_modo import native
+            result['rt_checks'] = {'engine_choice': p.preview_engine.currentData(), 'engine': p._engine(), 'xpu2': native.xpu2(),
+                                   'renderer_setting': p.preferences.get('xpu2/renderer'), 'capable': p._rt_capable(),
+                                   'output_busy': p._output_busy(), 'blocked': p._rt_blocked(), 'rendering': getattr(p, '_rendering', None)}
+        except Exception:
+            result['rt_checks_error'] = traceback.format_exc()[-800:]
         result['rt_tip'] = p.rt.toolTip()
         # The renderers' own lines (MoonRay's session, XPU2's, MoonLightIPR's), as they come.
         for name in ('session', 'moonlightipr', 'xpu2'):

@@ -10,8 +10,13 @@ import marshal
 import threading
 from .rows import Rows
 
-# Per-mesh lists that scale with polygon count.
-HEAVY = ('vertices', 'vertices_close', 'faces', 'uvs', 'normals', 'face_materials', 'creases')
+# Per-mesh lists that scale with polygon count, and with instances, strands or particles: each hashed once by the list
+# itself (content). The others json.dumps walked whole at every edit: a scattered scene's matrices, a mesh's map values.
+HEAVY = ('vertices', 'vertices_close', 'faces', 'uvs', 'normals', 'face_materials', 'creases', 'corners',
+         'instances', 'instances_close', 'instance_ids', 'instance_attributes', 'instance_velocities',
+         'counts', 'radii', 'ids', 'velocities', 'widths')
+# Dicts of a mesh's maps whose values are heavy: {name: {'kind', 'values'}}.
+MAPPED = ('point_attributes', 'corner_attributes')
 _remembered = {}
 # Where lists were made from rows of numbers handed over whole (evaluated registers itself), what each was made from:
 # a function giving a list's numbers flat, as an array, and a digest of their bytes; None for any other list.
@@ -61,6 +66,16 @@ def digest(scene, *extra):
         for key in HEAVY:
             if isinstance(mesh.get(key), (list, Rows)) and mesh[key]:
                 result[key] = content(mesh[key]); used.add(id(mesh[key]))
+        for key in MAPPED:
+            held = mesh.get(key)
+            if isinstance(held, dict):
+                result[key] = {}
+                for name, entry in held.items():
+                    values = entry.get('values') if isinstance(entry, dict) else None
+                    if isinstance(values, (list, Rows)) and values:
+                        result[key][name] = dict(entry, values=content(values)); used.add(id(values))
+                    else:
+                        result[key][name] = entry
         sets = mesh.get('uv_sets')
         if isinstance(sets, dict):
             result['uv_sets'] = {}

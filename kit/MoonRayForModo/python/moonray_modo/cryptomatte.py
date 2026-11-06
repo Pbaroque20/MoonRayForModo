@@ -118,17 +118,54 @@ def labels(geometry,category='object',scene=None,instances=False):
     return [name(geometry,category,scene)]
 
 
-def userdata(geometry,lines,category='object',scene=None,instances=False):
+# A mesh's IDs by its faces' materials (ids), kept while its list of materials and what each is named are the same.
+_IDS={}
+
+
+def ids(geometry,category='object',scene=None,instances=False):
+    """The IDs a geometry is written with in a category, one a face (material) or instance or one in all, as 32-bit
+    floats. A mesh's faces' material IDs are made from its few materials and kept by its list of them: made a face at a
+    time at every write, with each face's name, they took seconds of a car's writes."""
+    from array import array as packed
+    tags=geometry.get('face_materials') if category=='material' and not instances else None
+    fog=not geometry.get('material') and (geometry.get('kind')=='vdb' or geometry.get('volume'))
+    if tags and not fog:
+        table={tag:as_float(value(material_name(tag,scene),'material',scene,tag)) for tag in dict.fromkeys(tags)}
+        key=(id(tags),tuple(sorted(table.items())))
+        held=_IDS.get(key)
+        if held is not None and held[0] is tags:return held[1]
+        made=packed('f',map(table.__getitem__,tags))
+        if len(_IDS)>=4096:_IDS.clear()
+        _IDS[key]=(tags,made)
+        return made
     found=entries(geometry,category,scene,instances)
     if not found:raise ValueError('Cryptomatte instances require stable identities')
-    values=[label for label,_,_ in found]
+    return packed('f',(as_float(held) for _,held,_ in found))
+
+
+def userdata(geometry,lines,category='object',scene=None,instances=False):
+    values=ids(geometry,category,scene,instances)
     import hashlib
     key='modo_'+category+'_id' if multiple(scene or {}) else 'modo_object_id'
-    path='/modo/crypto/'+hashlib.sha256(json.dumps([key,values,instances]).encode()).hexdigest()[:24]
+    # Named by what it holds: the same IDs are the same object, however many meshes have them.
+    path='/modo/crypto/'+hashlib.blake2b(values.tobytes()+key.encode()+(b'|instances' if instances else b''),digest_size=12).hexdigest()
     rate=0 if instances else 3 if len(values)>1 else 1
-    written={held:number(as_float(held)) for held in {held for _,held,_ in found}}
-    lines.append('UserData(%s) { ["float_key"] = %s, ["float_values_0"] = %s, ["rate"] = %d }'%(string(path),string(key),array(written[held] for _,held,_ in found),rate))
+    # The values as a heavy list (rdla._heavy_line): in the binary file beside the scene where it is written, not as a
+    # face's number of text each.
+    from .rdla import _heavy_line
+    lines+=['UserData(%s) {'%string(path),'  ["float_key"] = %s,'%string(key),
+            *_heavy_line(path,'float_values_0','floats',values,lambda:array(number(v) for v in values),'UserData','  '),
+            '  ["rate"] = %d,'%rate,'}']
     return 'UserData(%s)'%string(path)
+
+
+def distinct(geometry,category,scene,instances):
+    """entries(), each matte once: a mesh's faces of one material are one matte."""
+    if category=='material' and not instances and geometry.get('face_materials'):
+        fog=not geometry.get('material') and (geometry.get('kind')=='vdb' or geometry.get('volume'))
+        if not fog:
+            return [(material_name(tag,scene),value(material_name(tag,scene),'material',scene,tag),tag) for tag in dict.fromkeys(geometry['face_materials'])]
+    return entries(geometry,category,scene,instances)
 
 
 def mattes(geometries,category,scene):
@@ -136,7 +173,7 @@ def mattes(geometries,category,scene):
     found={}
     for g in geometries:
         if g.get('kind')=='vdb' and not volumes():continue
-        for label,held,_ in entries(g,category,scene,instances='instances' in g and category!='material'):found[label]=held
+        for label,held,_ in distinct(g,category,scene,'instances' in g and category!='material'):found[label]=held
     return found
 
 
@@ -144,7 +181,7 @@ def owners(geometries,category,scene):
     """What each matte is of, {name: [item or material tag]}: what clicking it selects in Modo."""
     found={}
     for g in geometries:
-        for label,_,key in entries(g,category,scene,instances='instances' in g and category!='material'):
+        for label,_,key in distinct(g,category,scene,'instances' in g and category!='material'):
             if key is not None and key not in found.setdefault(label,[]):found[label].append(key)
     return found
 
