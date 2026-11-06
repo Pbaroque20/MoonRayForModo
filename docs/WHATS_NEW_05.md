@@ -35,6 +35,7 @@
 - **A mesh's weight and colour maps are read at once**: its weight, RGB and RGBA maps, with values set apart on some polygons, are read by the kit's native geometry adapter in one call instead of a point and a corner at a time from Python, the same values (a mesh of 21,600 polygons and six maps: 1.04 s to 0.08 s, Modo's thread free sooner).
 - **A subdivided mesh's creases are read at once**: its Subdivision weights on edges and points, which go to MoonRay as crease sharpness, are read by the native geometry adapter in one call instead of an edge and a point at a time from Python, the same creases (a subdivided mesh of 21,600 polygons with 8,000 weighted edges: 0.3 s to 0.05 s).
 - **Texture projections are worked out at once**: a texture locator's planar, cubic, cylindrical or spherical projection, with the layer's UV matrix, rotation and scale, is worked out at every corner of a mesh by the native geometry adapter in one call instead of a corner at a time in Python, the same numbers as 32-bit floats (a mesh of 359,400 faces: 6 s to 0.5 s).
+- **Hair is lighter to read and pack**: hair grown from guides keeps its strands as the hair grower hands them over, its scalp is read and laid out in the world in one call, and each strand's taper and UVs, and MoonLightIPR's segments, are worked out by the native geometry adapter, not a point at a time in Python, the same numbers (30,000 strands of 7 points on a scalp of 399,000 triangles: reading the scene 8.4 s to 3 s, MoonLightIPR's packing 1.2 s to 0.1 s).
 
 ## New in 0.5.3
 

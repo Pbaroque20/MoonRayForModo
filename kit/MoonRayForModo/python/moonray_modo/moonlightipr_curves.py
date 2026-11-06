@@ -83,10 +83,11 @@ def payload(entry, slot):
     if same is not None and all(a is b for a, b in zip(same[0], lists)) and same[1] == plain:
         return same[2]
     held = hashlib.sha1()
-    for part in (array('d', itertools.chain.from_iterable(entry['vertices'])), array('q', entry['counts']),
-                 array('d', entry.get('radii') or [entry.get('radius', .001)]), array('d', itertools.chain.from_iterable(entry.get('uvs') or [])),
+    points = _doubles(entry['vertices'], 3)
+    for part in (points, array('q', entry['counts']),
+                 array('d', entry.get('radii') or [entry.get('radius', .001)]), _doubles(entry.get('uvs') or [], 2),
                  array('q', [int(entry.get('curve_type', LINEAR)), -1 if slot is None else slot]),
-                 array('d', itertools.chain.from_iterable(closing or []))):
+                 _doubles(closing or [], 3)):
         held.update(part.tobytes())
         held.update(b'|')
     signature = held.digest()
@@ -97,13 +98,17 @@ def payload(entry, slot):
         return built
     if signature in BUILT:
         return remembered(BUILT[signature])
+    native = built_natively(entry, slot, closing, points)
+    if native is not None:
+        if native is False:
+            return None
+        positions, radii, indices, strand_values, coordinates, moved, straight = native
+        return remembered(_packed(signature, positions, radii, indices, strand_values, coordinates, moved, straight, entry))
     controls, widths, firsts, strands, straight, alongs = segments(entry)
     if not firsts:
         return None
     positions, radii, indices = array('f', itertools.chain.from_iterable(controls)), array('f', widths), array('I', firsts)
     moved = array('f', itertools.chain.from_iterable(segments(entry, closing)[0])) if closing is not None else array('f')
-    if not math.isfinite(sum(positions)) or not math.isfinite(sum(radii)) or not math.isfinite(sum(moved)):
-        raise ValueError('Curves %s contain a non-finite number' % entry.get('name', ''))
     # How far along its strand each control point is, and its strand's own number.
     numbers = {strand: chance(strand) for strand in set(strands)}
     strand_values = array('f', itertools.chain.from_iterable(
@@ -119,6 +124,12 @@ def payload(entry, slot):
             first.append(uvs[start])
             start += count
         coordinates = array('f', itertools.chain.from_iterable(first[strand] for strand in strands))
+    return remembered(_packed(signature, positions, radii, indices, strand_values, coordinates, moved, straight, entry))
+
+
+def _packed(signature, positions, radii, indices, strand_values, coordinates, moved, straight, entry):
+    if not math.isfinite(sum(positions)) or not math.isfinite(sum(radii)) or not math.isfinite(sum(moved)):
+        raise ValueError('Curves %s contain a non-finite number' % entry.get('name', ''))
     if coordinates and not math.isfinite(sum(coordinates)):
         raise ValueError('Curves %s have invalid texture coordinates' % entry.get('name', ''))
     data = (struct.pack('<2I', len(radii), len(indices)) + positions.tobytes() + radii.tobytes() + indices.tobytes()
@@ -128,4 +139,109 @@ def payload(entry, slot):
     if len(BUILT) >= 16:
         BUILT.pop(next(iter(BUILT)))
     BUILT[signature] = (key, data, bool(coordinates), straight, bool(moved))
-    return remembered(BUILT[signature])
+    return BUILT[signature]
+
+
+CHANCES = {}
+
+
+def chances(count):
+    """chance() of strands 0 to count - 1, as doubles, kept for as many strands as there are."""
+    held = CHANCES.get(count)
+    if held is None:
+        if len(CHANCES) >= 16:
+            CHANCES.clear()
+        held = CHANCES[count] = array('d', (chance(strand) for strand in range(count)))
+    return held
+
+
+def _doubles(values, width):
+    """A list of points or UVs as one run of doubles: the run itself where they came as one (rows.Rows)."""
+    from . import rows
+    held = rows.numbers(values, width, 'd')
+    return held if held is not None else array('d', itertools.chain.from_iterable(values))
+
+
+def built_natively(entry, slot, closing, points=None):
+    """segments() and what payload() packs of them, by the geometry adapter (curves.cpp): (positions, radii, segment
+    firsts, strand values, coordinates, positions at the shutter's close, straight) as payload makes them; False where
+    there are no segments; None where it cannot."""
+    import ctypes
+    from . import rows
+    native = rows._native()
+    if native is None or not hasattr(native, 'MR_curve_segments'):
+        return None
+    try:
+        points = _doubles(entry['vertices'], 3) if points is None else points
+        counts = array('i', entry['counts'])
+        radii_in = array('d', entry.get('radii') or [entry.get('radius', .001)])
+        late = _doubles(closing, 3) if closing is not None else None
+    except (TypeError, ValueError, OverflowError):
+        return None
+    total = len(entry['vertices'])
+    if len(points) != 3 * total or sum(counts) != total or (late is not None and len(late) != len(points)) or any(c < 0 for c in counts):
+        return None
+    kind = int(entry.get('curve_type', LINEAR))
+    if kind == BSPLINE and not all(count >= 4 for count in counts if count >= 2):
+        kind = LINEAR
+    if kind == BEZIER and not all(count >= 4 and (count - 1) % 3 == 0 for count in counts if count >= 2):
+        kind = LINEAR
+    if kind not in (LINEAR, BEZIER, BSPLINE):
+        return None
+    if kind == BEZIER:
+        room = sum(4 * ((c - 1) // 3) for c in counts if c >= 2)
+        segment_room = sum((c - 1) // 3 for c in counts if c >= 2)
+    else:
+        room = sum(c for c in counts if c >= 2)
+        segment_room = sum(c - (3 if kind == BSPLINE else 1) for c in counts if c >= 2)
+    if not room or segment_room <= 0:
+        return False
+    uvs = entry.get('uvs') or []
+    strand_uvs = None
+    if uvs and slot is not None and len(uvs) == len(counts):
+        strand_uvs = array('d', itertools.chain.from_iterable(uvs[strand] for strand in range(len(counts))))
+    elif uvs and slot is not None and len(uvs) == total and rows.numbers(uvs, 2, 'd') is not None and all(counts):
+        # The first UV of each strand, picked from the run by the adapter.
+        from itertools import accumulate
+        strand_uvs = rows.gather(rows.numbers(uvs, 2, 'd'), 16, array('I', accumulate(counts[:-1], initial=0)))
+        if strand_uvs is None:
+            return None
+    elif uvs and slot is not None and len(uvs) == total:
+        firsts_of, start = [], 0
+        for count in counts:
+            firsts_of.append(uvs[start] if count else [0.0, 0.0])
+            start += count
+        strand_uvs = array('d', itertools.chain.from_iterable(firsts_of))
+    if strand_uvs is not None and len(strand_uvs) != 2 * len(counts):
+        return None
+    table = chances(len(counts))
+    pointer = ctypes.c_void_p
+    function = native.MR_curve_segments
+    function.restype = ctypes.c_int
+    function.argtypes = [pointer, pointer, ctypes.c_longlong, pointer, ctypes.c_longlong, ctypes.c_longlong, ctypes.c_int,
+                         pointer, pointer, pointer, pointer, pointer, pointer, pointer, ctypes.c_longlong, ctypes.c_longlong, pointer]
+    address = rows._address
+
+    def run(where, uv_table):
+        positions, widths = array('f', bytes(12 * room)), array('f', bytes(4 * room))
+        values, coordinates = array('f', bytes(12 * room)), array('f', bytes(8 * room)) if uv_table is not None else array('f')
+        firsts, made = array('I', bytes(4 * segment_room)), (ctypes.c_longlong * 2)()
+        if function(address(where), address(counts), len(counts), address(radii_in), len(radii_in), total, kind,
+                    address(table) if len(table) else None, address(uv_table) if uv_table is not None else None,
+                    address(positions), address(widths), address(values), address(coordinates) if uv_table is not None else None,
+                    address(firsts), room, segment_room, ctypes.addressof(made)):
+            return None
+        if made[0] != room or made[1] != segment_room:
+            return None
+        return positions, widths, firsts, values, coordinates
+    first = run(points, strand_uvs)
+    if first is None:
+        return None
+    positions, widths, firsts, values, coordinates = first
+    moved = array('f')
+    if late is not None:
+        second = run(late, None)
+        if second is None:
+            return None
+        moved = second[0]
+    return positions, widths, firsts, values, coordinates, moved, kind == LINEAR

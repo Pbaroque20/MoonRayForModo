@@ -142,3 +142,25 @@ extern "C" __declspec(dllexport) int MR_project(const double* points, long long 
     }
     return 0;
 }
+
+// extra_geometry.scalp_triangles: a mesh's surface polygons (corners into points, three doubles each) as triangles in
+// the world, each polygon a fan from its first corner, its points taken through matrix as coordinates.transform takes
+// them. out: nine doubles a triangle. Returns 0, -1 where a corner is out of range.
+extern "C" __declspec(dllexport) int MR_fan_triangles(const double* points, long long pointCount, const std::uint32_t* corners,
+                                                      const std::int32_t* counts, long long faceCount, const double* matrix,
+                                                      double* out) {
+    std::vector<P> placed(size_t(pointCount > 0 ? pointCount : 0));
+    for (long long i = 0; i < pointCount; ++i) placed[size_t(i)] = transform(P{points[3 * i], points[3 * i + 1], points[3 * i + 2]}, matrix);
+    long long at = 0, written = 0;
+    for (long long f = 0; f < faceCount; ++f) {
+        const long long size = counts[f];
+        if (size < 0) return -1;
+        for (long long k = 0; k < size; ++k) if ((long long)corners[at + k] >= pointCount) return -1;
+        for (long long k = 1; k + 1 < size; ++k) {
+            const P* three[3] = {&placed[corners[at]], &placed[corners[at + k]], &placed[corners[at + k + 1]]};
+            for (const P* p : three) { out[written++] = p->x; out[written++] = p->y; out[written++] = p->z; }
+        }
+        at += size;
+    }
+    return 0;
+}

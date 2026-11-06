@@ -37,12 +37,55 @@ def request(guides, triangles, mode, count, width, clump, length_variation, seed
     if triangles is None:
         parts.append(struct.pack('<i', -1))
     else:
-        parts += [struct.pack('<i', len(triangles)), array('d', chain.from_iterable(chain.from_iterable(triangles))).tobytes()]
+        # A scalp the adapter made (extra_geometry.Triangles) is already its run of numbers.
+        flat = getattr(triangles, 'flat', None)
+        parts += [struct.pack('<i', len(triangles)), (flat if flat is not None else array('d', chain.from_iterable(chain.from_iterable(triangles)))).tobytes()]
     return b''.join(parts)
 
 
+class Strand:
+    """One strand of the program's answer: its points, kept in the answer's one run of numbers (three doubles a point)
+    and read as the list of [x, y, z] they stand for. A batch of them is taken from the run as it is
+    (extra_geometry._shaped_natively), not made into lists and back."""
+    __slots__ = ('data', 'start', 'count')
+
+    def __init__(self, data, start, count):
+        self.data, self.start, self.count = data, start, count
+
+    def numbers(self):
+        return self.data[3 * self.start:3 * (self.start + self.count)]
+
+    def points(self):
+        flat = self.numbers().tolist()
+        return [flat[k:k + 3] for k in range(0, len(flat), 3)]
+
+    def __len__(self):
+        return self.count
+
+    def __iter__(self):
+        return iter(self.points())
+
+    def __getitem__(self, index):
+        if isinstance(index, slice):
+            return self.points()[index]
+        if index < 0:
+            index += self.count
+        if not 0 <= index < self.count:
+            raise IndexError('point index out of range')
+        at = 3 * (self.start + index)
+        return self.data[at:at + 3].tolist()
+
+    def __eq__(self, other):
+        return self.points() == (other.points() if isinstance(other, Strand) else other)
+
+    # No __add__ or __radd__: a list += a Strand would find __radd__ before the list's own extending, and copy the
+    # whole list for each strand (two minutes for 30,000 strands).
+    __hash__ = None
+
+
 def answer(data):
-    """The program's answer as (strands, how many guides start too far from the scalp): each strand a list of points."""
+    """The program's answer as (strands, how many guides start too far from the scalp): each strand its points
+    (Strand, read as a list of points)."""
     if len(data) < 20 or data[:4] != b'MHS1':
         raise ValueError('the hair that came back is not hair')
     adrift, strands = struct.unpack_from('<2q', data, 4)
@@ -52,10 +95,9 @@ def answer(data):
     flat.frombytes(data[20 + 4 * strands:])
     if len(flat) != 3 * sum(counts):
         raise ValueError('the hair that came back is cut short')
-    points = [list(point) for point in zip(*[iter(flat)] * 3)]
     made, start = [], 0
     for count in counts:
-        made.append(points[start:start + count])
+        made.append(Strand(flat, start, count))
         start += count
     return made, int(adrift)
 

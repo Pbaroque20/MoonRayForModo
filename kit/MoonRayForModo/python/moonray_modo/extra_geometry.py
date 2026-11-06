@@ -49,8 +49,11 @@ def scalp_triangles(scene,identity):
     except LookupError:return None
     if item.type!='mesh':return None
     mesh=modo.meshgeometry.MeshProvider.meshFromMeshChannel(item._item,'deformed')
+    matrix=world_matrix(item)
+    fast=scalp_natively(mesh,matrix)
+    if fast is not None:return fast
     points=lx.object.Point(mesh.PointAccessor());polygons=lx.object.Polygon(mesh.PolygonAccessor())
-    matrix=world_matrix(item);places={};triangles=[]
+    places={};triangles=[]
     for i in range(mesh.PolygonCount()):
         polygons.SelectByIndex(i)
         count=polygons.VertexCount()
@@ -63,6 +66,59 @@ def scalp_triangles(scene,identity):
             corners.append(place)
         triangles+=[(corners[0],corners[k],corners[k+1]) for k in range(1,count-1)]
     return triangles
+
+
+class Triangles:
+    """A scalp's triangles (scalp_triangles), as the adapter made them: nine doubles a triangle in one run (flat), read
+    as the list of three (x, y, z) corners each they stand for."""
+    __slots__=('flat',)
+
+    def __init__(self,flat):self.flat=flat
+
+    def __len__(self):return len(self.flat)//9
+
+    def __bool__(self):return len(self.flat)>0
+
+    def __iter__(self):
+        numbers=self.flat.tolist()
+        return iter([(tuple(numbers[k:k+3]),tuple(numbers[k+3:k+6]),tuple(numbers[k+6:k+9])) for k in range(0,len(numbers),9)])
+
+    def __getitem__(self,index):return list(self)[index]
+
+
+def scalp_natively(mesh,matrix):
+    """scalp_triangles() by the geometry adapter: the mesh read whole (mesh_reader), its points taken into the world and
+    its polygons fanned in one call (projections.cpp), the same numbers. None where it cannot, or where the mesh has
+    curves or lines, which the walk here counts among its polygons."""
+    import ctypes
+    from array import array as packed
+    from . import mesh_reader,rows
+    native=rows._native()
+    if native is None or not hasattr(native,'MR_fan_triangles'):return None
+    whole=mesh_reader.read(mesh)
+    if whole is None or whole.lines:return None
+    points=packed('d',whole.vertices.data if hasattr(whole.vertices,'data') else (v for p in whole.vertices for v in p))
+    corners,counts=whole.indices,whole.counts
+    total=sum(max(0,c-2) for c in counts)
+    out=packed('d',bytes(72*total))
+    try:matrix_in=(ctypes.c_double*16)(*[float(v) for v in matrix])
+    except (TypeError,ValueError):return None
+    if len(matrix_in)!=16:return None
+    pointer=ctypes.c_void_p;function=native.MR_fan_triangles;address=rows._address
+    function.restype=ctypes.c_int
+    function.argtypes=[pointer,ctypes.c_longlong,pointer,pointer,ctypes.c_longlong,pointer,pointer]
+    if function(address(points) if len(points) else None,len(points)//3,address(corners) if len(corners) else None,
+                address(counts) if len(counts) else None,len(counts),ctypes.addressof(matrix_in),address(out) if total else None):
+        return None
+    return Triangles(out)
+
+
+def _triangle_numbers(triangles):
+    """A scalp's triangles as one run of doubles: the run itself where the adapter made them."""
+    import itertools
+    from array import array as packed
+    if isinstance(triangles,Triangles):return triangles.flat
+    return packed('d',itertools.chain.from_iterable(itertools.chain.from_iterable(triangles or [])))
 
 
 def grown(scene,item,strands,settings,warnings):
@@ -79,7 +135,7 @@ def grown(scene,item,strands,settings,warnings):
     guides=[[transform(list(p),matrix) for p in strand] for strand,_,_ in strands]
     held=hashlib.sha1()
     for part in (packed('d',itertools.chain.from_iterable(itertools.chain.from_iterable(guides))),packed('q',[len(g) for g in guides]),
-                 packed('d',itertools.chain.from_iterable(itertools.chain.from_iterable(triangles or []))),
+                 _triangle_numbers(triangles),
                  packed('d',[settings['mode'],settings['count'],settings['width'],settings['clump'],settings['length'],settings['seed']])):
         held.update(part.tobytes());held.update(b'|')
     key=held.digest()
@@ -99,7 +155,7 @@ def grown(scene,item,strands,settings,warnings):
                 # The scalp's grid is kept by its triangles: a guide moved, or a setting changed, leaves the scalp as it was.
                 surface=None
                 if triangles:
-                    shape=hashlib.sha1(packed('d',itertools.chain.from_iterable(itertools.chain.from_iterable(triangles))).tobytes()).digest()
+                    shape=hashlib.sha1(_triangle_numbers(triangles).tobytes()).digest()
                     if shape not in SCALPS:
                         if len(SCALPS)>=4:SCALPS.pop(next(iter(SCALPS)))
                         SCALPS[shape]=hair.Scalp(triangles)
@@ -186,7 +242,13 @@ def batches(identity,name,strands,shape,material,matrix):
     result=[];tapered=abs(shape['root']-shape['tip'])>1e-12 or bool(scales)
     for tag,members in groups.items():
         vertices=[];counts=[];radii=[];uvs=[];ids=[]
-        for index,(strand,stable,scale) in enumerate(members):
+        shaped=_shaped_natively(members,shape,tapered) if tapered or shape['uv'] else None
+        if shaped is not None:
+            # Lengths, radii and UVs for every point by the geometry adapter (curves.cpp); the strands' points as they are.
+            radii,uvs,vertices=shaped
+            counts=[len(strand) for strand,_,_ in members]
+            ids=[stable for _,stable,_ in members if stable is not None]
+        for index,(strand,stable,scale) in enumerate(members if shaped is None else ()):
             vertices+=strand;counts.append(len(strand))
             if stable is not None:ids.append(stable)
             if not (tapered or shape['uv']):continue
@@ -210,6 +272,42 @@ def batches(identity,name,strands,shape,material,matrix):
         if ids:entry['ids']=ids
         result.append(entry)
     return result
+
+
+def _shaped_natively(members,shape,tapered):
+    """batches()'s radii (a list), UVs and points (rows.Rows of doubles: the strands' points one after another, as
+    they were) for one batch, by the geometry adapter in one call: the same numbers. None where it cannot (no adapter,
+    a point not of three numbers)."""
+    import ctypes,itertools
+    from array import array as packed
+    from hashlib import blake2b
+    from . import rows
+    native=rows._native()
+    if native is None or not hasattr(native,'MR_curve_shape') or not members:return None
+    try:
+        counts=packed('i',(len(strand) for strand,_,_ in members))
+        # Strands the hair grower handed over (hair_native.Strand) are copied from its run of numbers as they are.
+        from .hair_native import Strand
+        points=packed('d')
+        for strand,_,_ in members:
+            if isinstance(strand,Strand):points.extend(strand.numbers())
+            else:points.extend(itertools.chain.from_iterable(strand))
+        scales=packed('d',(float(scale) for _,_,scale in members))
+        root,tip,envelope=float(shape['root']),float(shape['tip']),float(shape['envelope'])
+    except (TypeError,ValueError,OverflowError):return None
+    total=sum(counts)
+    if len(points)!=3*total or not total:return None
+    radii=packed('d',bytes(8*total)) if tapered else packed('d')
+    uvs=packed('d',bytes(16*total)) if shape['uv'] else packed('d')
+    address=rows._address;pointer=ctypes.c_void_p
+    function=native.MR_curve_shape
+    function.restype=ctypes.c_int
+    function.argtypes=[pointer,pointer,ctypes.c_longlong,pointer,ctypes.c_double,ctypes.c_double,ctypes.c_double,ctypes.c_int,ctypes.c_int,pointer,pointer]
+    if function(address(points),address(counts),len(counts),address(scales),root,tip,envelope,1 if tapered else 0,1 if shape['uv'] else 0,
+                address(radii) if tapered else None,address(uvs) if shape['uv'] else None):
+        return None
+    return ((radii.tolist() if tapered else []),(rows.Rows(uvs,2,'curve-uvs:'+blake2b(memoryview(uvs),digest_size=16).hexdigest()) if shape['uv'] else []),
+            rows.Rows(points,3,'curve-points:'+blake2b(memoryview(points),digest_size=16).hexdigest()))
 
 
 # The text of the long lists of a curve geometry, kept by what is in them: thousands of strands

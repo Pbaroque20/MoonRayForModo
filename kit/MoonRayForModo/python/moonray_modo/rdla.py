@@ -128,6 +128,10 @@ def _heavy_line(name, attribute, kind, source, written, klass='RdlMeshGeometry',
     if kind == 'vec3' or kind == 'vec2':
         size = 3 if kind == 'vec3' else 2
         held = rows.numbers(source, size)
+        if held is None:
+            # Rows of doubles (a curve's UVs, extra_geometry._shaped_natively): as 32-bit floats, as float_list makes them.
+            doubles = rows.numbers(source, size, 'd')
+            held = numbers('f', doubles) if doubles is not None else None
         encode, value_type = (lambda: rdlb.float_list(source if held is None else held, size)), (rdlb.VEC3F_VECTOR if size == 3 else rdlb.VEC2F_VECTOR)
     elif kind == 'indices':
         held = rows.corners(source)
