@@ -783,15 +783,12 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
             lines += ['    ["subd_corner_indices"] = %s,' % array(str(a) for a, _ in corners),
                       '    ["subd_corner_sharpnesses"] = %s,' % array(number(sharpness) for _, sharpness in corners)]
         emitting = scene.get('production',{}).get('objects',{}).get(lighting.owner(mesh),{})
-        if emitting.get('mesh_light') and lighting.mesh_camera(emitting)[0]:
-            # A mesh light that is seen is the light itself, which lies exactly on the mesh: were the mesh seen too, each
-            # ray would find one or the other by chance, and the light would come out blotched with the mesh's own grey.
-            # So the mesh is seen by nothing, and still casts its shadow in other lights.
+        if emitting.get('mesh_light') and not lighting.mesh_camera(emitting)[1]:
+            # A mesh light is the light itself, which lies exactly on the mesh, and other surfaces see it in their
+            # reflections whether the camera sees it or not: were the mesh seen too, each ray would find one or the
+            # other by chance, and the light would come out blotched with the mesh's own grey. So the mesh is seen by
+            # nothing, and still casts its shadow in other lights; the camera sees the light or, hidden, nothing.
             mesh = dict(mesh, visibility=[False, False, False, False, False, (mesh.get('visibility') or [True] * 6)[5]])
-        elif emitting.get('mesh_light') and not lighting.mesh_camera(emitting)[1]:
-            visibility = list(mesh.get('visibility') or [True] * 6)
-            visibility[0] = False
-            mesh = dict(mesh, visibility=visibility)
         if 'visibility' in mesh:
             camera_v, indirect, reflection, refraction, subscatter, shadow = mesh['visibility']
             for attribute, value in [('visible_in_camera', camera_v), ('visible_shadow', shadow),

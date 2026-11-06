@@ -243,7 +243,7 @@ def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, mat
                     # with no such map is laid flat from six sides, which is the nearest to it.
                     from .procedurals import solid
                     from .host import world_matrix
-                    solid_map = solid(layer,channel,color,is_color,world_matrix(locator))
+                    solid_map = solid(layer,channel,color,is_color,world_matrix(locator),channel(locator,'projAxis',2))
                     projection='cubic'
                     if not solid_map:warnings.append('Layer %s: Solid projection laid on as Cubic.'%layer.name)
                 if (layer.type in ENHANCE or layer.type in SOLID_ONLY) and not solid_map:

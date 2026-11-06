@@ -480,7 +480,12 @@ def emitter(mesh, settings, warnings):
         cached = _emitters[signature] = (struct.pack('<I', triangles) + corners.tobytes(), area)
     # MoonRay divides by the area, so the light gives the same power at any size.
     # Whether the camera sees the surface shining, as for any light; a mesh light has no cone.
-    seen = (1 if settings.get('light_seen', True) else 0) | (2 if settings.get('light_alone') else 0)
+    # Object controls' MoonRay camera appearance decides, as for MoonRay (lighting.mesh_camera): the light shown, the
+    # surface shown, or neither, when camera rays pass through it as through a light that is no surface (2); a Modo
+    # Mesh Light's shape has no such control and goes by light_seen.
+    from .lighting import mesh_camera
+    shown, surface = mesh_camera(settings) if 'mesh_camera_mode' in settings else (settings.get('light_seen', True), True)
+    seen = (1 if shown else 0) | (2 if settings.get('light_alone') or not (shown or surface) else 0)
     return (struct.pack('<I20fiII', MESH_LIGHT, *([0.0] * 12 + [1.0, 1.0, 1.0] + [c / (math.pi * cached[1]) for c in color] + [0.0, 0.0]), -1, seen, 0)
             + cached[0])
 
