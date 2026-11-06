@@ -100,7 +100,10 @@ def entries(geometry,category='object',scene=None,instances=False):
         fog=not geometry.get('material') and (geometry.get('kind')=='vdb' or geometry.get('volume'))
         if not fog:
             tags=geometry.get('face_materials') or [geometry.get('material','')]
-            return [(material_name(tag,scene),value(material_name(tag,scene),'material',scene,tag),tag) for tag in tags]
+            # One entry a polygon, of a few materials: each named and hashed once (a car's 1.5 million polygons
+            # were hashed one by one, 50 s of each scene written).
+            known={tag:(material_name(tag,scene),value(material_name(tag,scene),'material',scene,tag),tag) for tag in set(tags)}
+            return [known[tag] for tag in tags]
         category='object'
     key=owner_of(geometry) if category=='object' else None
     label=name(geometry,category,scene)
@@ -110,7 +113,8 @@ def entries(geometry,category='object',scene=None,instances=False):
 def labels(geometry,category='object',scene=None,instances=False):
     if instances:return [name(geometry,category,scene,str(identity)) for identity in geometry.get('instance_ids',[])]
     if category=='material' and geometry.get('face_materials'):
-        return [material_name(tag,scene) for tag in geometry['face_materials']]
+        known={tag:material_name(tag,scene) for tag in set(geometry['face_materials'])}
+        return [known[tag] for tag in geometry['face_materials']]
     return [name(geometry,category,scene)]
 
 
@@ -122,7 +126,8 @@ def userdata(geometry,lines,category='object',scene=None,instances=False):
     key='modo_'+category+'_id' if multiple(scene or {}) else 'modo_object_id'
     path='/modo/crypto/'+hashlib.sha256(json.dumps([key,values,instances]).encode()).hexdigest()[:24]
     rate=0 if instances else 3 if len(values)>1 else 1
-    lines.append('UserData(%s) { ["float_key"] = %s, ["float_values_0"] = %s, ["rate"] = %d }'%(string(path),string(key),array(number(as_float(held)) for _,held,_ in found),rate))
+    written={held:number(as_float(held)) for held in {held for _,held,_ in found}}
+    lines.append('UserData(%s) { ["float_key"] = %s, ["float_values_0"] = %s, ["rate"] = %d }'%(string(path),string(key),array(written[held] for _,held,_ in found),rate))
     return 'UserData(%s)'%string(path)
 
 

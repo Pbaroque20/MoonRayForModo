@@ -791,8 +791,18 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
         lines += ['  }']
         if scene.get('production',{}).get('objects',{}).get(lighting.owner(mesh),{}).get('mesh_light'):
             # MoonRay refuses a MeshLight whose geometry is also in the layer, so the light gets its own copy.
-            opening=len(lines)-1-lines[::-1].index('  local geometry = RdlMeshGeometry("/modo/mesh/%s") {' % index)
-            lines += ['  RdlMeshGeometry("/modo/meshLight/geometry/%s") {' % index]+lines[opening+1:]
+            # Its own lists, written out: a copy of the mesh's lines would hold only pointers to the mesh's entries in
+            # the binary file (rdlb), which name the mesh, and leave the light without points. And its faces as
+            # triangles: MoonRay reads a mesh light's corners in steps of one size (lighting.light_triangles).
+            shape=faces if subdivision else lighting.light_triangles(vertices,faces)
+            copied=['    ["node_xform"] = %s,' % node_matrix(mesh),'    ["vertex_list_0"] = %s,' % vector_array(vertices),
+                    *(['    ["vertex_list_1"] = %s,' % vector_array(mesh['vertices_close'])] if 'vertices_close' in mesh else []),
+                    '    ["vertices_by_index"] = %s,' % array(str(int(i)) for face in shape for i in face),
+                    '    ["face_vertex_count"] = %s,' % array(str(len(face)) for face in shape),
+                    '    ["is_subd"] = %s,' % ('true' if subdivision else 'false'),
+                    *(['    ["mesh_resolution"] = %d,' % min(mesh.get('mesh_resolution',2 ** level), resolution_cap or 2 ** 31)] if subdivision else []),
+                    '  }']
+            lines += ['  RdlMeshGeometry("/modo/meshLight/geometry/%s") {' % index]+copied
         if parts:
             for part_index, face_tag in enumerate(parts):
                 lines.append('  assign(geometry, %s, %s, %s)' %

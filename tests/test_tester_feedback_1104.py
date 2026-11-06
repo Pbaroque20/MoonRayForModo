@@ -1,6 +1,7 @@
 """A tester's look-dev and MoonLightIPR reports (2026-11-04): a node moved, or added wired to nothing, in the graph editor
 restarted the preview; a dw Metal or Base material's own roughness did nothing in MoonLightIPR (Modo's Material Ref
 roughness was used)."""
+import struct
 import sys
 import types
 import unittest
@@ -117,18 +118,25 @@ class VdbVolumeFile(unittest.TestCase):
 
 
 class XpuRealtime(unittest.TestCase):
-    """Realtime with MoonRay and MoonRay LS where the standard XPU is chosen (XPU2 off), on the processor: an opt-in."""
+    """Realtime with MoonRay and MoonRay LS where the standard XPU is chosen (XPU2 off): an opt-in, on the processor or
+    (since 2026-11-05) on the graphics card, one choice in Modo's Preferences and Preview Preferences."""
 
-    def test_an_opt_in_on_the_xpu_page(self):
+    def test_a_choice_on_the_xpu_page(self):
         source = (KIT / 'moonray_modo/preferences.py').read_text(encoding='utf-8')
-        self.assertIn("'xpu_realtime': (False, bool)", source)
+        self.assertIn("'xpu_realtime_mode': ('', str)", source)
+        self.assertIn("XPU_REALTIME_MODES = ('off', 'vector', 'xpu')", source)
+        # The switch it replaces gives the default: on was the processor.
+        self.assertIn("return 'vector' if self.get('xpu_realtime') else 'off'", source)
+        self.assertIn("combo('xpu_realtime_mode'", source)
         cfg = (KIT.parent / 'preferences.cfg').read_text(encoding='utf-8')
         self.assertIn('cmd moonray.pref.xpuRealtime ?', cfg)
+        lxserv = (KIT.parent / 'lxserv/moonray_preferences.py').read_text(encoding='utf-8')
+        self.assertIn("choice('xpu_realtime_mode',XPU_REALTIME_CHOICES,render_settings_changed)", lxserv)
 
-    def test_rt_follows_moonray_and_moonray_ls_on_the_processor(self):
+    def test_rt_follows_moonray_on_the_processor_or_the_card(self):
         panel = (KIT / 'moonray_modo/panel.py').read_text(encoding='utf-8')
-        self.assertIn("if self._engine()!='moonray':return False\n        if self.preferences.get('xpu_realtime'):return True", panel)
-        self.assertIn("scene=dict(scene,execution_mode='vectorized')", panel)
+        self.assertIn("if self._engine()!='moonray':return False\n        if self.preferences.get('xpu_realtime_mode')!='off':return True", panel)
+        self.assertIn("scene=dict(scene,execution_mode='xpu' if realtime_mode=='xpu' else 'vectorized')", panel)
 
 
 class Xpu2FallbackSampling(unittest.TestCase):
@@ -233,11 +241,18 @@ class LinkedEngineChoices(unittest.TestCase):
         prefs = (KIT / 'moonray_modo/preferences.py').read_text(encoding='utf-8')
         self.assertIn("combo('xpu2/renderer', [('XPU2', 'xpu2'), ('MoonRay XPU (standard)', 'xpu')]", prefs)
 
+    def test_preview_preferences_offer_pbr_validity(self):
+        # 2026-11-05: the Diagnostics switch in Preview Preferences too, the same setting as Modo's Preferences.
+        prefs = (KIT / 'moonray_modo/preferences.py').read_text(encoding='utf-8')
+        self.assertIn("form.addRow(check('pbr_validity', 'PBR validity output',", prefs)
+        lxserv = (KIT.parent / 'lxserv/moonray_preferences.py').read_text(encoding='utf-8')
+        self.assertIn("switch('pbr_validity',render_settings_changed)", lxserv)
+
     def test_modo_preferences_follow(self):
         lxserv = (KIT.parent / 'lxserv/moonray_preferences.py').read_text(encoding='utf-8')
         self.assertIn('class Switch(Followed,lxu.command.BasicCommand):', lxserv)
         self.assertIn('class Choice(Followed,lxu.command.BasicCommand):', lxserv)
-        self.assertIn("switch('xpu_realtime',render_settings_changed)", lxserv)
+        self.assertIn("choice('xpu_realtime_mode',XPU_REALTIME_CHOICES,render_settings_changed)", lxserv)
 
     def test_rt_follows_the_preferences(self):
         panel = (KIT / 'moonray_modo/panel.py').read_text(encoding='utf-8')
@@ -287,8 +302,8 @@ class PbrValidityReplaces(unittest.TestCase):
 
 class ModoMeshLights(unittest.TestCase):
     """A tester's Modo Mesh Lights lit nothing (the kit skipped the type). The light shines from its Prototype mesh
-    (shadeLoc), hidden or not, placed by the prototype or the light (Use Prototype Transform), its radiance per square
-    metre as an area light's (probe_mesh_light_render: a hidden panel lights the floor in MoonRay's vector and XPU modes)."""
+    (shadeLoc), placed by the prototype or the light (Use Prototype Transform), its radiance per square metre as an area
+    light's. Since 2026-11-05 a hidden Prototype gives no light, as in Modo (test_mesh_lights_1105)."""
 
     def test_radiance_over_the_area(self):
         import math, sys
@@ -314,6 +329,28 @@ class ModoMeshLights(unittest.TestCase):
         self.assertIn('MeshLight("/modo/light/meshLight1") {', text)
         self.assertIn('["geometry"] = RdlMeshGeometry("/modo/light/meshLight1/geometry")', text)
         self.assertNotIn('table.insert(geometries', text)
+
+    def test_seen_by_the_camera_in_moonlightipr(self):
+        # The engine shows a mesh light where a camera ray meets its surface; a Modo Mesh Light's surface is its own,
+        # found by camera rays alone, and only when Visible to Camera is on.
+        import sys
+        sys.path.insert(0, str(KIT))
+        from moonray_modo import moonlightipr_scene
+        shape = {'vertices': [[-1, 0, -1], [1, 0, -1], [1, 0, 1], [-1, 0, 1]], 'faces': [[0, 1, 2, 3]],
+                 'matrix': [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 2, 0, 1]}
+
+        def packed(seen):
+            scene = {'camera': {'matrix': [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 5, 1], 'focal_mm': 50.0, 'film_mm': 36.0},
+                     'materials': {'': {'color': [.5, .5, .5], 'roughness': .6}}, 'meshes': [], 'environments': [],
+                     'lights': [{'kind': 'MeshLight', 'identity': 'meshLight1', 'name': 'Mesh Light', 'color': [1, 1, 1],
+                                 'intensity': 3.0, 'matrix': shape['matrix'], 'shape': shape, 'area': 4.0,
+                                 'camera_visible': seen}]}
+            return moonlightipr_scene.pack(scene, 320, 180, .2)
+        shown, keys, _ = packed(True)
+        hidden, none, _ = packed(False)
+        self.assertEqual(len(keys), 1)
+        self.assertEqual(len(none), 0)
+        self.assertIn(struct.pack('<iI', 0, 1), shown)
 
     def test_the_kit_reads_the_prototype(self):
         host = (KIT / 'moonray_modo/host.py').read_text(encoding='utf-8')

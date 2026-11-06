@@ -268,3 +268,76 @@ def zigzag4(held):
 def corner_count(faces):
     """How many corners the faces have in all."""
     return len(faces.data) if isinstance(faces, Faces) else sum(map(len, faces))
+
+
+def _smoothing(library):
+    """The adapter's MR_smooth_normals, made ready to be called; None where this adapter has it not."""
+    try:
+        held = library.MR_smooth_normals
+    except AttributeError:
+        return None
+    if held.argtypes is None:
+        held.argtypes = [ctypes.c_void_p, ctypes.c_longlong, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_longlong, ctypes.c_void_p,
+                         ctypes.c_double, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int]
+        held.restype = ctypes.c_int
+    return held
+
+
+def smooth_normals(vertices, faces, limits=None, threshold=-1.0):
+    """geometry.prepare's smoothed normals, a normal for each corner, by the adapter over all of the machine's threads:
+    (Rows of 3, the most two neighbouring polygons bend in degrees). limits: each polygon's limit as the cosine of its
+    smoothing angle, or None for threshold throughout. None where the adapter cannot be asked, for Python to do it."""
+    native = _native()
+    smoothing = _smoothing(native) if native is not None else None
+    if smoothing is None:
+        return None
+    points = numbers(vertices, 3)
+    if points is None:
+        points = array('f', [float(v) for point in vertices for v in point[:3]])
+    flat = corners(faces)
+    sizes = counts(faces)
+    if flat is None or sizes is None:
+        flat = array('i', [int(v) for face in faces for v in face])
+        sizes = array('i', [len(face) for face in faces])
+    flat = flat if flat.typecode in ('i', 'l') and flat.itemsize == 4 else array('i', flat)
+    sizes = sizes if sizes.typecode in ('i', 'l') and sizes.itemsize == 4 else array('i', sizes)
+    held = None
+    if limits is not None:
+        held = limits if isinstance(limits, array) and limits.typecode == 'f' else array('f', limits)
+        if len(held) != len(sizes):
+            return None
+    out = array('f', bytes(12 * len(flat)))
+    bend = ctypes.c_double(0.0)
+    if len(flat) and smoothing(_address(points), len(points) // 3, _address(flat), _address(sizes), len(sizes),
+                               _address(held) if held is not None and len(held) else None, float(threshold),
+                               _address(out), ctypes.addressof(bend), 0):
+        return None
+    return Rows(out, 3, 'smooth:' + blake2b(memoryview(out), digest_size=16).hexdigest()), bend.value
+
+
+def smoothing_available():
+    """Whether the geometry adapter can smooth normals (smooth_normals)."""
+    native = _native()
+    return native is not None and _smoothing(native) is not None
+
+
+def mask_corners(values, width, counts, keep):
+    """A whole mesh's per-corner values (Rows of width, or lists) with the corners of the polygons keep marks 0 (keep:
+    a byte for each polygon, 0 to clear its corners) set to 0, by the adapter: Rows. None where it cannot."""
+    native = _native()
+    held = numbers(values, width)
+    if native is None or held is None or not hasattr(native, 'MR_mask_corners'):
+        return None
+    function = native.MR_mask_corners
+    if function.argtypes is None:
+        function.argtypes = [ctypes.c_void_p, ctypes.c_longlong, ctypes.c_void_p, ctypes.c_longlong, ctypes.c_char_p,
+                             ctypes.c_void_p, ctypes.c_longlong]
+        function.restype = ctypes.c_int
+    sizes = counts if isinstance(counts, array) and counts.itemsize == 4 and counts.typecode in ('i', 'l') else array('i', counts)
+    keep = bytes(keep)
+    if len(keep) != len(sizes):
+        return None
+    out = array('f', bytes(len(held) * 4))
+    if function(_address(held), width, _address(sizes), len(sizes), keep, _address(out), len(held) // width):
+        return None
+    return Rows(out, width, 'masked:' + blake2b(memoryview(out), digest_size=16).hexdigest())

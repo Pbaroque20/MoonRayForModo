@@ -50,7 +50,9 @@ KEYS = {
     # N-gons ear-clipped whatever their size and winding (native.ngon_ears).
     'ngon_ears': (True, bool),
     'auto_xpu': (True, bool),
-    # Realtime with MoonRay where XPU2 does not render the preview, on MoonRay's processor path (opt-in).
+    # Realtime with MoonRay where XPU2 does not render the preview (the standard XPU chosen): off, on MoonRay's processor
+    # path (vector), or on the graphics card (XPU). xpu_realtime is the switch it was before 0.5.3.1, read for its default.
+    'xpu_realtime_mode': ('', str),
     'xpu_realtime': (False, bool),
     # A diagnostic: renders hold MoonRay's PBR validity output (native.pbr_validity).
     'pbr_validity': (False, bool),
@@ -61,6 +63,15 @@ KEYS = {
     # How many samples a pixel MoonLightIPR gathers before it rests, in realtime.
     'moonlightipr/samples': (256, int),
 }
+# Realtime with the standard XPU: off, on the processor (MoonRay's vector mode), or on the graphics card (XPU).
+XPU_REALTIME_MODES = ('off', 'vector', 'xpu')
+XPU_REALTIME_CHOICES = (('off', 'Off'), ('vector', 'On the processor (vector)'), ('xpu', 'On the graphics card (XPU)'))
+XPU_REALTIME_TIP = ("RT with MoonRay and MoonRay LS where XPU2 does not render the preview (the standard MoonRay XPU chosen). "
+                    "Off: RT is MoonLightIPR's, or MoonRay's with XPU2. On the processor: MoonRay follows the scene in its vector "
+                    "mode, restarting quickly at each edit and leaving the graphics card to Modo's viewport. On the graphics card: "
+                    "MoonRay follows the scene in XPU, which is somewhat quicker to render but slower to restart, as each change of "
+                    "geometry is built on the card again, and shares the card with Modo's viewport. Renders, Render and animations "
+                    "keep the scene's Rendering Mode either way")
 # The samples a pixel each realtime engine may be set to stop at.
 LS_SAMPLES = (32, 64, 128)
 # How wide MoonRay LS may render: small, to be quick, or any of the preview sizes.
@@ -94,6 +105,9 @@ class Preferences:
             if kind is str:
                 if key == 'ipr/sampling' and value not in ('adaptive', 'uniform'):
                     return default
+                if key == 'xpu_realtime_mode' and value not in XPU_REALTIME_MODES:
+                    # Not chosen yet: as the switch it replaces said, on the processor where it was on.
+                    return 'vector' if self.get('xpu_realtime') else 'off'
                 if key == 'preview_engine' and value == 'moonlight':
                     # The engine's name as 0.3.50.1 and 0.3.50.2 stored it.
                     return 'moonlightipr'
@@ -218,11 +232,9 @@ class Dialog(QtWidgets.QDialog):
             self.realtime_share.setEnabled(self.realtime_held is not None and xpu2)
         engine.currentIndexChanged.connect(engine_chosen)
         engine_chosen()
-        # The same switch as Preferences > MoonRay > XPU (graphics card): one setting.
-        form.addRow(check('xpu_realtime', 'Realtime with MoonRay XPU, on the processor',
-                          'RT with MoonRay and MoonRay LS where XPU2 does not render the preview (the standard XPU chosen): the preview '
-                          'follows the scene as it is edited, MoonRay rendering it on the processor, the graphics card left to Modo. '
-                          "Renders keep the scene's Rendering Mode. Off by default"))
+        # The same choice as Preferences > MoonRay > XPU (graphics card): one setting.
+        form.addRow('Realtime with standard XPU', combo('xpu_realtime_mode', [(label, value) for value, label in XPU_REALTIME_CHOICES],
+                                                        XPU_REALTIME_TIP + '. The same choice as Preferences > MoonRay > XPU (graphics card)'))
         form.addRow(check('memory_hud', 'Memory in the picture',
                           "What the renderer holds, the machine's free RAM and the graphics card's memory, read once a second "
                           'and shown at the bottom right of the picture, in colour when it runs short. Off, it is hidden and nothing is read'))
@@ -253,6 +265,15 @@ class Dialog(QtWidgets.QDialog):
         # Adaptive sampling's own: greyed under uniform sampling.
         self.error.setEnabled(sampling.currentData() == 'adaptive')
         sampling.currentIndexChanged.connect(lambda _: self.error.setEnabled(sampling.currentData() == 'adaptive'))
+        # The same switch as Preferences > MoonRay > Renderer > Diagnostics: one setting.
+        heading = QtWidgets.QLabel('Diagnostics')
+        heading.setStyleSheet('font-weight: bold; margin-top: 8px')
+        form.addRow(heading)
+        form.addRow(check('pbr_validity', 'PBR validity output',
+                          "While on, MoonRay's renders hold its PBR validity output in place of the standard outputs, for MoonRay XPU "
+                          'and XPU2 alike, and the preview shows it: green where a material is physically plausible, red where it is '
+                          'not, yellow in between. Off, the standard outputs again. MoonLightIPR does not draw it. The same switch as '
+                          'Preferences > MoonRay > Renderer > Diagnostics'))
         buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)

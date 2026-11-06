@@ -1588,7 +1588,7 @@ void Renderer::setLights(const Light* lights, size_t count) {
             filters.push_back(filter);
         }
         // Whether the camera sees the light itself, as MoonRay shows a light whose Visible in Camera is on.
-        out.pad = light.visibleInCamera && light.kind != Light::Portal ? 1u : 0u;
+        out.pad = (light.visibleInCamera && light.kind != Light::Portal ? LIGHT_SEEN : 0u) | (light.alone ? LIGHT_ALONE : 0u);
         if (light.kind == Light::Mesh) {
             // A corner, two edges and the running share of the area, which picks a triangle.
             if (!light.triangles || !light.triangleCount || light.triangleCount > 0xffffffffu)

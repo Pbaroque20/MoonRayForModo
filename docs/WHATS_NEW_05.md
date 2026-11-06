@@ -2,6 +2,27 @@
 
 0.5 is a **pre-production release**: the plugin is no longer experimental, and it brings a new GPU renderer, MoonRay XPU2.
 
+## New in 0.5.3.1 (coming)
+
+- **Mesh lights render as in Modo in every engine**, checked against Modo's own renders:
+  - **Any polygons**: MoonRay reads a mesh light's corners in steps of three or four, never cutting its faces, so a Prototype with n-gons, or quads beside triangles, shone from triangles that were not its own (an octagon beside a quad and a triangle lit only from the triangle). The kit now hands MoonRay the faces as triangles, for MoonRay's Scalar, Vector and XPU modes and XPU2.
+  - **Meshes emitting by their Object controls** (Use mesh as emitter, or a MoonRay MeshLight item naming them) light again, in the preview window and in renders: the light's copy of the mesh held no points, as the scene's meshes go in a binary file beside its text.
+  - **The Prototype is the light**: Modo never renders a Mesh Light's Prototype as a surface. The kit drew it as a grey mesh too, lying on the light, which hid the light and blocked its own light.
+  - **A hidden Prototype gives no light**, as in Modo's own renderer, with a notice saying so. Show the Prototype mesh to light with it.
+  - **MoonLightIPR** shows a Mesh Light that is Visible to Camera (before, it lit the scene but stayed invisible), and shines and is seen from the polygons' front only, as Modo and MoonRay do; it shone from both faces.
+- **A missing UV map is a notice, not a failed render**: a material whose texture reads a UV map that the mesh wearing it has not (a texture set up on another mesh's map) stopped the render with "Mesh ... is missing UV values in map ...". Those polygons now render with the map's values at 0, and a notice names the mesh, the map and the material, so the texture can be pointed at a map the mesh has.
+- **PBR validity in Preview Preferences**: the Diagnostics switch is in the preview window's Preview Preferences as well as in Modo's Preferences > MoonRay > Renderer, one setting, each following the other.
+- **Realtime with standard XPU** is a choice of three, where it was a switch: Off, On the processor (vector, as before: quick to restart, the card left to Modo's viewport) or On the graphics card (XPU: somewhat quicker to render, slower to restart as each change of geometry is built on the card again). In Preferences > MoonRay > XPU (graphics card) and in Preview Preferences, one setting. Where the switch was on, the choice starts at On the processor.
+- **Heavy scenes start much sooner**: on a tester's 1.5-million-polygon car, realtime's first picture came after about 2 min 20 s of preparing the scene, and now comes in about 16 s (XPU2, cached textures).
+  - **Smoothing in native code**: normals smoothed by each material's smoothing angle are worked out by the kit's geometry adapter on all of the processor's threads, about a second for 1.5 million polygons where Python took a minute on one. Meshes of any size now take their material's Modo smoothing angle, where those over 300,000 polygons were smoothed all over.
+  - **Cryptomatte by material** hashes each material once, where it hashed every polygon (40 s of every scene written on the car).
+  - **Smoothed normals are kept for every mesh**: kept for 64 meshes, a scene of more had all of them worked out again at every write.
+  - **The mesh reader keeps the numbers as they come**, where it made Python lists of every point, UV and normal (5 s of every reading of the car).
+- **A scene's first realtime run is much quicker**: on the car, the first picture of a run with nothing cached yet came after more than 4 minutes, and now after about 47 s.
+  - **Environment images shrunk straight from the file**, their colours converted as before, several side by side: each was first made into a full-size float texture only to be shrunk to 512 by 256 (the car's three 16,000-pixel-wide HDRs: 85 s to 15 s).
+  - **Grey environment images are grey**, where they came out black: an image of one channel was asked for its red, green and blue.
+  - **Textures that lay out their own UVs** (moved, rotated, scaled or projected) are worked out for whole meshes at once, and **meshes whose materials use different UV maps** (a tyre's tread and sidewall) are split by map in the kit's native code and read whole: both were read a polygon at a time (the car's reading: 7.7 s to 4.6 s, the same numbers).
+
 ## New in 0.5.3
 
 A release for its lighter use of memory and XPU2 on several devices, with a new XPU2 runtime (runtime-xpu2): install it, and **Compile XPU2 Shaders once more**.

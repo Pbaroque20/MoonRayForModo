@@ -6,6 +6,15 @@ This is the development branch of [MoonRay for Modo](https://github.com/Pbaroque
 
 The current release is [0.5.3](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.5.3). **Built on MoonRay [2026.29.1](https://github.com/dreamworksanimation/openmoonray/releases/tag/v2026.29.1)** (OpenMoonRay's latest release; MoonRay 18.4), with the plugin's own patches for Windows and the preview.
 
+## New in 0.5.3.1 (coming)
+
+- **Mesh lights render as in Modo in every engine**: a Prototype's n-gons, or quads beside triangles, shine in their own shape in MoonRay and XPU2; a mesh emitting by its Object controls lights again; the shown Prototype is the light, not also a grey surface over it; a hidden Prototype gives no light, as in Modo. MoonLightIPR shows a Mesh Light that is Visible to Camera, and shines from the polygons' front only, as Modo and MoonRay do.
+- **A missing UV map is a notice, not a failed render**: a material whose texture reads a UV map the mesh has not (one set up on another mesh) rendered nothing, with "missing UV values"; those polygons now render with the map at 0, and a notice names the mesh, the map and the material.
+- **PBR validity in Preview Preferences** too, the same switch as in Modo's Preferences.
+- **Realtime with standard XPU: Off, On the processor or On the graphics card**: RT with the standard MoonRay XPU can now render on the card too, in Modo's Preferences and Preview Preferences alike.
+- **Heavy scenes start much sooner**: a 1.5-million-polygon car's first realtime picture came after about 2 min 20 s of preparing; it now comes in about 16 s. Smoothing by each material's smoothing angle is done in the kit's native code on all processor threads, Cryptomatte by material no longer hashes every polygon, and the mesh reader no longer makes Python lists of every point. Meshes of any size now take their material's Modo smoothing angle.
+- **A scene's first realtime run is much quicker**: environment images are shrunk straight from the file, side by side (the car's three HDRs: 85 s to 15 s), and meshes whose textures lay out their own UVs, or whose materials use different UV maps, are read whole. Grey environment images are no longer black.
+
 ## New in 0.5.3
 
 A release for its lighter use of memory and XPU2 on several devices, with a new runtime: install it, and **Compile XPU2 Shaders once more**.

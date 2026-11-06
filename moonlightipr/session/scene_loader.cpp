@@ -644,7 +644,10 @@ SceneSettings SceneLoader::apply(const std::string& path) {
         light.outerConeDegrees = in.value<float>();
         light.innerConeDegrees = in.value<float>();
         light.texture = image(in.value<int32_t>());
-        light.visibleInCamera = in.value<uint32_t>() != 0;
+        // Bit 1: seen by the camera. Bit 2: a mesh light that is no surface of the scene (a Modo Mesh Light's shape).
+        const uint32_t seen = in.value<uint32_t>();
+        light.visibleInCamera = (seen & 1u) != 0;
+        light.alone = (seen & 2u) != 0;
         lightFilters[l].resize(in.value<uint32_t>());
         for (LightFilter& filter : lightFilters[l]) {
             const uint32_t filterKind = in.value<uint32_t>();

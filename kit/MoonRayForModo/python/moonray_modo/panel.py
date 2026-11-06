@@ -1153,7 +1153,7 @@ class Panel(Tools, QtWidgets.QWidget):
         engine=self.preview_engine.currentData()
         if engine=='moonlightipr':return True
         if self._engine()!='moonray':return False
-        if self.preferences.get('xpu_realtime'):return True
+        if self.preferences.get('xpu_realtime_mode')!='off':return True
         if engine!='moonray':return False
         try:
             from . import native
@@ -1683,10 +1683,12 @@ class Panel(Tools, QtWidgets.QWidget):
         # MoonLightIPR denoises when its denoised beauty is the buffer chosen, as of now.
         self.renderer.moonlightipr_wanted=self.buffer.currentData()=='denoised_beauty'
         # Realtime with MoonRay where XPU2 does not render it (opted into): on MoonRay's processor path, the graphics
-        # card left to Modo, whatever the scene's Rendering Mode says for its renders.
+        # card left to Modo, or on the graphics card (XPU), as Realtime with standard XPU says, whatever the scene's
+        # Rendering Mode says for its renders.
+        realtime_mode=self.preferences.get('xpu_realtime_mode')
         if (not output and self.ipr_mode.isChecked() and self._engine()=='moonray' and
-                self.preferences.get('xpu_realtime') and not self._xpu2_previews()):
-            scene=dict(scene,execution_mode='vectorized')
+                realtime_mode!='off' and not self._xpu2_previews()):
+            scene=dict(scene,execution_mode='xpu' if realtime_mode=='xpu' else 'vectorized')
         # And gathers as many samples a pixel as the preferences say; a playblast has its own number.
         self.renderer.moonlightipr_preview_samples=self.preferences.get('moonlightipr/samples')
         # Whether this is a draft redrawing by itself, for which the window is left as it is. The region that follows

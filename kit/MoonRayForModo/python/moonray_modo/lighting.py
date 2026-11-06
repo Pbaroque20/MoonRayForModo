@@ -5,6 +5,21 @@ from .working_space import color as working_color
 
 LIGHT_KINDS=('','DistantLight','SphereLight','RectLight','SpotLight','DiskLight','CylinderLight','PortalLight','MeshLight')
 
+def light_triangles(vertices,faces):
+    """A mesh light's faces as triangles, each three corners into vertices. MoonRay never cuts a mesh light's geometry
+    (it is outside the layer), and reads its corners in steps of three, or four where it thinks the mesh quads: a face
+    of another size shifts every face after it, so that an n-gon, or quads beside triangles, shine from triangles that
+    are not the mesh's (tools/probe_mesh_light_all_engines.py). Cut here, every face is read as it is. An n-gon is
+    ear-clipped as the kit cuts one for rendering (polygons.ear_clip), any other face fanned."""
+    from .polygons import ear_clip
+    out=[]
+    for face in faces:
+        if len(face)<3:continue
+        clipped=ear_clip([vertices[i] for i in face]) if len(face)>4 else None
+        if clipped:out+=[[face[a],face[b],face[c]] for a,b,c in zip(clipped[0::3],clipped[1::3],clipped[2::3])]
+        else:out+=[[face[0],face[k],face[k+1]] for k in range(1,len(face)-1)]
+    return out
+
 def owner(geometry):
     return geometry.get('source_item') or str(geometry.get('identity','')).split('|')[0]
 
@@ -45,8 +60,8 @@ def emit(scene,meshes,environment,lines):
             geometry='RdlMeshGeometry(%s)'%string(name+'/geometry')
             lines += ['%s {'%geometry,'  ["node_xform"] = %s,'%node_matrix({'matrix':shape['matrix']}),
                       '  ["vertex_list_0"] = %s,'%array(vector(v) for v in shape['vertices']),
-                      '  ["vertices_by_index"] = %s,'%array(str(int(i)) for face in shape['faces'] for i in face),
-                      '  ["face_vertex_count"] = %s,'%array(str(len(face)) for face in shape['faces']),
+                      '  ["vertices_by_index"] = %s,'%array(str(int(i)) for face in light_triangles(shape['vertices'],shape['faces']) for i in face),
+                      '  ["face_vertex_count"] = %s,'%array('3' for face in light_triangles(shape['vertices'],shape['faces'])),
                       '  ["is_subd"] = false,','  ["smooth_normal"] = false,','}']
             attrs={'geometry':geometry,'color':attrs['color'],'intensity':attrs['intensity']}
         # MoonRay moves a light during the shutter only when the light says so.

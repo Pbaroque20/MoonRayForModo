@@ -68,3 +68,22 @@ extern "C" __declspec(dllexport) int MR_iota(uint32_t* out, long long count) {
     for(long long i=0;i<count;++i) out[i]=uint32_t(i);
     return 0;
 }
+
+// host's whole-mesh UVs for a texture some of a mesh's materials have: each corner's values (width floats) kept where its
+// polygon's material has the texture (keep[polygon] != 0) and 0 where it has not, as the polygon-at-a-time reading gave
+// them. counts: each polygon's corners. Python's loop over a car's corners took seconds. -1 where the counts run past
+// the values (total: how many corners the values hold).
+extern "C" __declspec(dllexport) int MR_mask_corners(const float* in, long long width, const int32_t* counts, long long faces,
+                                                     const unsigned char* keep, float* out, long long total) {
+    long long at=0;
+    for(long long f=0;f<faces;++f) {
+        const long long n=counts[f];
+        if(n<0 || at+n>total) return -1;
+        const float* from=in+at*width;
+        float* to=out+at*width;
+        if(keep[f]) for(long long k=0;k<n*width;++k) to[k]=from[k];
+        else for(long long k=0;k<n*width;++k) to[k]=0.0f;
+        at+=n;
+    }
+    return at==total?0:-1;
+}

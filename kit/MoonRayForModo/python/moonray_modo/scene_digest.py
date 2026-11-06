@@ -33,7 +33,10 @@ def content(value):
     """A stable hash of one large list; equal values hash equally within a session."""
     entry = _remembered.get(id(value))
     if entry is None or entry[0] is not value:
-        held = flat(value)
+        # Rows of numbers handed over whole (rows.Rows, rows.Faces) carry the digest of their bytes: known by it whether
+        # or not evaluated's hook is set. A scene read without Modo's render cache never set it, and marshal, which
+        # cannot write Rows, stopped the render ("unmarshallable object").
+        held = (value.data, value.digest) if isinstance(value, Rows) and value.digest else flat(value)
         # A list made from a row handed over is known by that row's bytes, which were hashed as they came: the
         # numbers of a large scene's meshes are not walked again. Else marshal walks nested lists of numbers and
         # strings in C; version 2 writes floats exactly.

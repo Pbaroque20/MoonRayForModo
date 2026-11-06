@@ -189,7 +189,8 @@ lx.bless(switch('usd_specular'),'moonray.pref.usdSpecular')
 lx.bless(switch('opaque_alpha'),'moonray.pref.opaqueAlpha')
 lx.bless(switch('transmission_roughness'),'moonray.pref.transmissionRoughness')
 lx.bless(switch('auto_xpu'),'moonray.pref.autoXpu')
-lx.bless(switch('xpu_realtime',render_settings_changed),'moonray.pref.xpuRealtime')
+from moonray_modo.preferences import XPU_REALTIME_CHOICES
+lx.bless(choice('xpu_realtime_mode',XPU_REALTIME_CHOICES,render_settings_changed),'moonray.pref.xpuRealtime')
 lx.bless(switch('pbr_validity',render_settings_changed),'moonray.pref.pbrValidity')
 # The Render item's form greys Smart Render, Safe Denoising and XPU2's sampling by this choice: told to look again.
 lx.bless(choice('xpu2/renderer',(('xpu','MoonRay XPU'),('xpu2','XPU2')),render_settings_changed),'moonray.pref.xpu2')

@@ -46,6 +46,14 @@ def alpha_index(xml):
     return int(value)
 
 
+def channel_count(xml):
+    """How many channels an image has, from oiiotool's --info:format=xml."""
+    import xml.etree.ElementTree as ET
+    start=xml.find('<ImageSpec');end=xml.find('</ImageSpec>',start)
+    if start<0 or end<0:raise ValueError('Cannot read environment image metadata')
+    return int(ET.fromstring(xml[start:end+len('</ImageSpec>')]).findtext('nchannels') or 3)
+
+
 _ALPHA = {}
 
 
@@ -71,9 +79,18 @@ def has_alpha(path):
 
 def image_pixels(layer, folder, width, height):
     converter=native.tool('oiiotool.exe');runtime=converter.parent
-    source=textures.prepare(layer['path'],layer.get('srgb',False),mipmaps=False,color_space=layer.get('color_space',''),light=True)
-    from . import conversions
-    conversions.finished(source)  # read below, as the scene is written
+    # Shrunk straight from the image, its colours taken to linear as prepare takes them (textures.color_conversion):
+    # made into a full-size float texture first, a car's three 8k HDRs took 85 s of a first preview, only to be shrunk.
+    # A set of UDIM tiles is made into one texture first, as before.
+    colour=[]
+    if '<UDIM>' in str(layer['path']):
+        source=textures.prepare(layer['path'],layer.get('srgb',False),mipmaps=False,color_space=layer.get('color_space',''),light=True)
+        from . import conversions
+        conversions.finished(source)  # read below, as the scene is written
+    else:
+        source=str(textures.asset_path(layer['path']))
+        _,colour,_=textures.color_conversion(layer['path'],layer.get('srgb',False),layer.get('color_space',''))
+        if colour:colour=['--unpremult']+colour+['--premult']
     def run(args):
         result=subprocess.run([str(converter)]+args,env=native.environment(runtime),stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,timeout=120,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
@@ -82,7 +99,8 @@ def image_pixels(layer, folder, width, height):
     def read(args):
         target=folder/(uuid.uuid4().hex+'.pfm')
         try:
-            run(args+['-o',str(target)])
+            # Floats, whatever the image holds: an 8-bit image, read straight, was written as an 8-bit PPM.
+            run(args+['-d','float','-o',str(target)])
             with target.open('rb') as stream:
                 if stream.readline().strip()!=b'PF':raise ValueError('Expected RGB PFM')
                 w,h=map(int,stream.readline().split());scale=float(stream.readline());data=stream.read()
@@ -92,12 +110,16 @@ def image_pixels(layer, folder, width, height):
             if target.exists():target.unlink()
     channel=layer.get('image_channel','use')
     if channel not in ('use','ignore','only','red','green','blue'):raise ValueError('Unsupported environment image channel')
+    info=run(['--info:format=xml','-v',source])
+    # A grey image (one channel, or grey and alpha) read as that channel in red, green and blue. Asked for R, G and B
+    # it had none of, it came out black ('R=0' is oiiotool's for a channel of zeros, not a copy of channel 0).
+    grey=['--ch','0,0,0','--chnames','R,G,B'] if channel_count(info)<3 else []
     alpha=None
     if channel in ('use','only'):
-        index=alpha_index(run(['--info:format=xml','-v',source]))
+        index=alpha_index(info)
         if index>=0:
             alpha=read([source,'--ch',','.join([str(index)]*3),'--resize','%dx%d!'%(width,height)])[::3]
-    args=[source,'--resize','%dx%d!'%(width,height),'--unpremult','--ch','R,G,B']
+    args=[source]+grey+colour+['--resize','%dx%d!'%(width,height),'--unpremult','--ch','R,G,B']
     if channel=='only':
         if alpha is None:alpha=(1.0,)*(width*height)
         # Alpha is linear data; never apply an input color transform to it.
@@ -161,8 +183,18 @@ def texture(environment, width=512, height=256):
     target = folder/(digest+'.pfm')
     if not target.exists():
         layers = []
-        for layer in reversed(environment['layers']):
-            pixels,alpha = image_pixels(layer,folder,width,height) if layer['kind']=='image' else (None,None)
+        # The images read side by side, each by a converter of its own: one after another, a car's three HDRs took
+        # three times as long.
+        ordered = list(reversed(environment['layers']))
+        images = [layer for layer in ordered if layer['kind']=='image']
+        if len(images) > 1:
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=min(4, len(images))) as pool:
+                read = dict(zip(map(id, images), pool.map(lambda layer: image_pixels(layer,folder,width,height), images)))
+        else:
+            read = {id(layer): image_pixels(layer,folder,width,height) for layer in images}
+        for layer in ordered:
+            pixels,alpha = read[id(layer)] if layer['kind']=='image' else (None,None)
             inv = coordinates.inverse(layer['matrix']) if 'matrix' in layer else None
             layers.append((layer,pixels,alpha,inv))
         staged = folder/(digest+'-'+uuid.uuid4().hex+'.pfm')

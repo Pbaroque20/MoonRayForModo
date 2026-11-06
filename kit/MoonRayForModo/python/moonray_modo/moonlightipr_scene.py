@@ -346,7 +346,7 @@ def lights(scene, warnings, environment=0.0, compiler=None, closing=None, named=
             record = emitter({'name': light.get('name', ''), 'vertices': shape['vertices'], 'faces': shape['faces'],
                               'matrix': shape['matrix']},
                              {'light_intensity': light['intensity'], 'light_color': light['color'],
-                              'light_seen': bool(light.get('camera_visible'))}, warnings)
+                              'light_seen': bool(light.get('camera_visible')), 'light_alone': True}, warnings)
             if record:
                 local.append(record)
                 if closing is not None:
@@ -435,7 +435,9 @@ def lights(scene, warnings, environment=0.0, compiler=None, closing=None, named=
 
 
 def emitter(mesh, settings, warnings):
-    """A mesh light's record: its triangles in world space, emitting from both faces as MoonRay's MeshLight."""
+    """A mesh light's record: its triangles in world space, emitting from their front faces (the side their corners wind
+    about) as MoonRay's MeshLight and Modo's Mesh Light. light_alone in settings marks a light that is no surface of the
+    scene (a Modo Mesh Light's shape), which a camera ray meeting it from behind passes through."""
     from .scene_digest import content
     from .working_space import color as working_color
     if 'instances' in mesh:
@@ -469,7 +471,7 @@ def emitter(mesh, settings, warnings):
         cached = _emitters[signature] = (struct.pack('<I', triangles) + corners.tobytes(), area)
     # MoonRay divides by the area, so the light gives the same power at any size.
     # Whether the camera sees the surface shining, as for any light; a mesh light has no cone.
-    seen = 1 if settings.get('light_seen', True) else 0
+    seen = (1 if settings.get('light_seen', True) else 0) | (2 if settings.get('light_alone') else 0)
     return (struct.pack('<I20fiII', MESH_LIGHT, *([0.0] * 12 + [1.0, 1.0, 1.0] + [c / (math.pi * cached[1]) for c in color] + [0.0, 0.0]), -1, seen, 0)
             + cached[0])
 
@@ -1088,6 +1090,28 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
                            mesh.get('face_materials') or [mesh.get('material', '')]))
             instances.append(struct.pack('<2IiI12f', order[key], material, light, seen, *transform(placement))
                              + (struct.pack('<12f', *transform(later)) if motion else b''))
+    # A Modo Mesh Light whose Visible to Camera is on is seen where its Prototype's shape stands: the engine shows a mesh
+    # light where a camera ray meets its surface, and this light's surface is in no layer (MoonRay keeps a MeshLight's
+    # geometry out of it), so it is a surface of its own that camera rays alone find, hiding nothing else (1: the
+    # camera's rays, as seen_by counts them).
+    light_controls = scene.get('production', {}).get('lights', {})
+    for index, light in enumerate(scene.get('lights', [])):
+        identity = light.get('identity', str(index))
+        kind = light_controls.get(identity, {}).get('kind') or light['kind']
+        if kind != 'MeshLight' or not light.get('shape') or not light.get('camera_visible') or identity not in named['local']:
+            continue
+        shape = light['shape']
+        surface = {'name': light.get('name', ''), 'identity': identity, 'vertices': shape['vertices'], 'faces': shape['faces'],
+                   'matrix': shape['matrix'], 'smooth': False, 'material': ''}
+        key, flags, payload, slot_map = mesh_payload(surface, material_index, compiler.slots)
+        if key not in order:
+            order[key] = len(meshes)
+            meshes.append(key + struct.pack('<I', flags | MESH_HAS_DATA) + slot_map + payload if key not in known
+                          else key + struct.pack('<I', flags) + slot_map)
+        used.add(key)
+        placement = transform(shape['matrix'])
+        instances.append(struct.pack('<2IiI12f', order[key], material_index[''], named['local'].index(identity), 1,
+                                     *placement) + (struct.pack('<12f', *placement) if motion else b''))
     # Curves are curves on the GPU too: each strand a run of round segments, in the strands' own material.
     from .moonlightipr_curves import payload as curve_payload
     from .moonlightipr_materials import UV_SLOTS
