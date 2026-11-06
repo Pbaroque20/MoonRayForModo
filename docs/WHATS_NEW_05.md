@@ -2,7 +2,7 @@
 
 0.5 is a **pre-production release**: the plugin is no longer experimental, and it brings a new GPU renderer, MoonRay XPU2.
 
-## New in 0.5.3.1 (coming)
+## New in 0.5.3.1
 
 - **Mesh lights render as in Modo in every engine**, checked against Modo's own renders:
   - **Any polygons**: MoonRay reads a mesh light's corners in steps of three or four, never cutting its faces, so a Prototype with n-gons, or quads beside triangles, shone from triangles that were not its own (an octagon beside a quad and a triangle lit only from the triangle). The kit now hands MoonRay the faces as triangles, for MoonRay's Scalar, Vector and XPU modes and XPU2.
