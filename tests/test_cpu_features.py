@@ -56,7 +56,11 @@ class Textures(unittest.TestCase):
         faces=[[0,1,2],[3,4,5]]
         values=coordinates.mesh_corners(descriptor,vertices,faces,[],rdla.IDENTITY)
         expected=sum([coordinates.face(descriptor,[vertices[i] for i in face],[],rdla.IDENTITY) for face in faces],[])
-        self.assertEqual(values,expected)
+        if hasattr(values,'data'):
+            # By the geometry adapter: the same numbers as 32-bit floats.
+            from array import array
+            expected=[list(array('f',p)) for p in expected]
+        self.assertEqual(list(values),expected)
         self.assertTrue(all(u<.5 for u,v in values[3:]))
 
     def test_nested_group_opacity_is_applied_once_at_each_boundary(self):

@@ -34,6 +34,7 @@
 - **The Fur material's vector map and width map are followed**, as Modo's own renderer draws them: each fibre grows along the vector map's vector at its root and as long as the vector, whatever the material's Length, and none grows where the vector is nothing; the width map's weight at a fibre's root is its share of the material's width. Grown by the native fur grower, which writes each fibre's own radii, so the preview engines and MoonRay draw them the same.
 - **A mesh's weight and colour maps are read at once**: its weight, RGB and RGBA maps, with values set apart on some polygons, are read by the kit's native geometry adapter in one call instead of a point and a corner at a time from Python, the same values (a mesh of 21,600 polygons and six maps: 1.04 s to 0.08 s, Modo's thread free sooner).
 - **A subdivided mesh's creases are read at once**: its Subdivision weights on edges and points, which go to MoonRay as crease sharpness, are read by the native geometry adapter in one call instead of an edge and a point at a time from Python, the same creases (a subdivided mesh of 21,600 polygons with 8,000 weighted edges: 0.3 s to 0.05 s).
+- **Texture projections are worked out at once**: a texture locator's planar, cubic, cylindrical or spherical projection, with the layer's UV matrix, rotation and scale, is worked out at every corner of a mesh by the native geometry adapter in one call instead of a corner at a time in Python, the same numbers as 32-bit floats (a mesh of 359,400 faces: 6 s to 0.5 s).
 
 ## New in 0.5.3
 

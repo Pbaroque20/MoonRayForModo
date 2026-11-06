@@ -22,7 +22,7 @@ The current release is [0.5.3](https://github.com/Pbaroque20/MoonRayForModo/rele
 - **A scene's first realtime run is much quicker**: environment images are shrunk straight from the file, side by side (the car's three HDRs: 85 s to 15 s), and meshes whose textures lay out their own UVs, or whose materials use different UV maps, are read whole. Grey environment images are no longer black. An environment's layers are laid over one another in the kit's native code (the car's: 10 s to nothing), every mesh is read by the native adapter, and a mesh missing a UV map its texture reads is read whole too, with its notice (the car's reading: 7.1 s to 3.2 s).
 - **Fur guides**: a Fur material's guides are followed in every engine, from curves on the fur's own mesh wearing its material or from a guide item, in Modo's modes: Direction, Direction + Length, Shape, Range and Clump, with Guide Range and Guide Length.
 - **Fur vector and width maps**: a Fur material's Vector VMap grows each fibre along its vector, as long as it is (none where it is nothing), and its width map thins the fibres by its weight, in every engine.
-- **Weight and colour maps, and creases, read at once**: a mesh's weight, RGB and RGBA maps, and a subdivided mesh's Subdivision weights, are read in the kit's native code in one call, not a point or an edge at a time (a mesh of 21,600 polygons and six maps: 1 s to 0.08 s; its creases: 0.3 s to 0.05 s).
+- **Weight and colour maps, and creases, read at once**: a mesh's weight, RGB and RGBA maps, and a subdivided mesh's Subdivision weights, are read in the kit's native code in one call, not a point or an edge at a time (a mesh of 21,600 polygons and six maps: 1 s to 0.08 s; its creases: 0.3 s to 0.05 s). Planar, cubic, cylindrical and spherical texture projections are worked out there too (a mesh of 359,400 faces: 6 s to 0.5 s).
 
 ## New in 0.5.3
 
@@ -611,7 +611,7 @@ Comparison audit between Modo 16.1v9 and MoonLightIPR, the realtime preview: wha
 | **Lights** |  |  |
 | Directional light, with the physical sun | ![yes](docs/images/feature-yes.svg) | The sun's disc in Modo's colour |
 | Point, spot and area lights | ![yes](docs/images/feature-yes.svg) | Within about 1% of MoonRay's brightness; Visible to Camera shows the light |
-| Mesh lights | ![yes](docs/images/feature-yes.svg) | From the Prototype mesh, shown or hidden, placed as Use Prototype Transform says; within 0.2% of XPU2's brightness. Found by the lights' sampling, not seen as a surface |
+| Mesh lights | ![yes](docs/images/feature-yes.svg) | From the shown Prototype mesh, placed as Use Prototype Transform says (a hidden Prototype gives no light, as in Modo); within 0.2% of XPU2's brightness. Shines from the polygons' front only, as Modo and MoonRay do; seen by the camera where Visible to Camera is on |
 | Cylinder, dome and photometric (IES) lights | ![no](docs/images/feature-no.svg) | Left out by the plugin for MoonRay too; MoonRay's own cylinder and environment lights are drawn |
 | Light linking (Modo's groups, include or exclude) | ![partly](docs/images/feature-partly.svg) | Which lights reach each object, from Object controls, a material's links or Modo's groups, compared with MoonRay at 0.96 to 1.01 of its brightness. Objects set not to cast some shadows, or not onto some objects, cast them all; said in Notices An object whose materials are linked to different lights is lit as its first |
 | Light volumetrics, and fog | ![partly](docs/images/feature-partly.svg) | Point, spot and directional lights' volumetrics, and the Environment Material's fog (Linear and Layered approximated), as fog lit by all the scene's lights; not yet compared with Modo's renders. Area, cylinder and dome lights' volumetrics and the Shader's fog are named in Notices |
@@ -629,7 +629,7 @@ Comparison audit between Modo 16.1v9 and MoonLightIPR, the realtime preview: wha
 | Specular Tint, Flatness, and a reflection amount apart from specular | ![no](docs/images/feature-no.svg) | As for MoonRay; named in a notice |
 | Unreal, Unity, glTF and AxF materials | ![no](docs/images/feature-no.svg) |  |
 | **Shader Tree** |  |  |
-| Image maps: UV and projections, UDIMs, Low and High values | ![yes](docs/images/feature-yes.svg) | Up to 8 UV sets a scene; images at most 1024 pixels a side, their shape kept |
+| Image maps: UV and projections, UDIMs, Low and High values | ![yes](docs/images/feature-yes.svg) | Up to 8 UV sets a scene; images at most 1024 pixels a side, their shape kept. A texture reading a UV map its mesh has not is drawn with the map at 0, and a notice names it |
 | Procedural textures | ![partly](docs/images/feature-partly.svg) | Modo's built-in patterns, Gabor and Poisson noise and Enhance textures run through the object with a Solid projection, as MoonRay draws them; other projections bake the built-in patterns flat, and Enhance needs Solid. Curvature, Wireframe, EasyGrad and RegionalHSV draw too |
 | Layer blend modes | ![partly](docs/images/feature-partly.svg) | All but Normal Multiply; Normal Map Blend on normal maps only |
 | Bump and normal maps | ![yes](docs/images/feature-yes.svg) |  |
@@ -637,12 +637,13 @@ Comparison audit between Modo 16.1v9 and MoonLightIPR, the realtime preview: wha
 | Other texture effects (Modo has 218) | ![partly](docs/images/feature-partly.svg) | The ones a standard or Principled material uses; others named in Notices |
 | Group masks by material, Part and Selection Set | ![yes](docs/images/feature-yes.svg) | As MoonRay draws them |
 | Group masks by item | ![yes](docs/images/feature-yes.svg) | As MoonRay draws them |
+| Layer masks | ![yes](docs/images/feature-yes.svg) | Masking the layer above, the same in MoonRay, XPU2 and MoonLightIPR |
 | **Geometry** |  |  |
 | Meshes, subdivision and creases | ![yes](docs/images/feature-yes.svg) | UVs follow the smoothed surface; up to 3,000,000 quads a mesh, cut by its size on screen; n-gons cut along their outline |
 | Instances and replicators | ![yes](docs/images/feature-yes.svg) |  |
 | Deformed and animated meshes | ![yes](docs/images/feature-yes.svg) | With motion blur where turned on in Preview Preferences; a subdivided mesh that changes shape does not blur |
 | Alembic | ![yes](docs/images/feature-yes.svg) | Loaded as Modo meshes with streaming deformers or as Alembic Streaming Meshes, moving over time; Alembic Curves and Point Clouds untested |
-| Curves, hair and Modo's Fur material | ![partly](docs/images/feature-partly.svg) | Hair close to MoonRay's but not exact; fur drawn with up to 150,000 fibres; fur guides, the fur vector and width maps, and Modo's Hair Material are not read |
+| Curves, hair and Modo's Fur material | ![partly](docs/images/feature-partly.svg) | Hair close to MoonRay's but not exact; fur drawn with up to 150,000 fibres, following its guides (Direction, Direction + Length, Shape, Range and Clump), its vector map and its width map, as MoonRay draws them. The guides' Blend Amount and Blend Angle, and Modo's Hair Material, are not read |
 | Weight and colour vertex maps | ![partly](docs/images/feature-partly.svg) | Weight maps through a Weight Map Texture layer, each taking one of the 8 UV sets; colour maps show in MoonRay only |
 | Modo's volume items | ![partly](docs/images/feature-partly.svg) | Drawn from a VDB file attached in the MoonRay controls; no motion blur, whether the item moves or from a velocity grid |
 | Blobs and particles | ![no](docs/images/feature-no.svg) |  |
