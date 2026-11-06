@@ -94,8 +94,14 @@ try:
     result['snapshot_meshes'] = [m.get('name') for m in shot.get('meshes') or []]
     result['warnings'] = shot.get('warnings')
     save()
-    # Modo's own render, the reference.
-    lx.eval('!render.animation {%s} openexr' % str(out / 'modo'))
+    # Modo's own render, the reference: the current frame alone (a scene opened with PROBE_SCENE keeps its own frame
+    # range, and Modo rendered the whole of it). MOONRAY_PROBE_NO_MODO leaves it out, for MoonRay's own lights, which
+    # Modo's renderer does not draw.
+    if not os.environ.get('MOONRAY_PROBE_NO_MODO'):
+        frame = int(round(lx.service.Selection().GetTime() * scene.fps))
+        for name in ('first', 'last'):
+            scene.renderItem.channel(name).set(frame)
+        lx.eval('!render.animation {%s} openexr' % str(out / 'modo'))
     result['modo_render'] = [p.name for p in out.glob('modo*.exr')]
     lx.eval('moonray.open')
 except Exception:

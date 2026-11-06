@@ -11,8 +11,9 @@ import tempfile
 from array import array
 from pathlib import Path
 
-# Below this many polygons the slow way is quick enough, and is the way that has been in use longest.
-THRESHOLD = 5000
+# Below this many polygons a mesh is read a polygon at a time, through Modo's own accessors. Every mesh is read by the
+# adapter since 0.5.3.1: the small meshes of a car (22,000 polygons in all) were a second of each reading the slow way.
+THRESHOLD = 1
 _bridge = False
 
 

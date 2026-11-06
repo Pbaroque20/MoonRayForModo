@@ -44,5 +44,36 @@ class WholeMeshUVs(unittest.TestCase):
         self.assertIn('MR_mask_corners', native)
 
 
+
+class NativeEnvironmentBlend(unittest.TestCase):
+    """The environment's layers laid by the geometry adapter (MR_environment_blend); the Python loop where a layer is of
+    a kind it does not lay. On the car's four layers the two maps are the same to the bit (2026-11-05)."""
+
+    def test_falls_back_for_what_it_does_not_lay(self):
+        from moonray_modo import environment_layers
+        held = environment_layers.native_blend
+        layer = {'kind': 'procedural', 'effect': 'envColor', 'blend': 'normal'}
+        self.assertIsNone(held([(layer, None, None, None)], 4, 2))
+        grouped = {'kind': 'color', 'color': [1, 0, 0], 'groups': [{'id': 'g'}]}
+        self.assertIsNone(held([(grouped, None, None, None)], 4, 2))
+
+    def test_the_texture_uses_it(self):
+        source = (KIT / 'moonray_modo/environment_layers.py').read_text(encoding='utf-8')
+        self.assertIn('blended = native_blend(layers, width, height)', source)
+        native = (ROOT / 'native-modo/environment_blend.cpp').read_text(encoding='utf-8')
+        self.assertIn('MR_environment_blend', native)
+
+
+class EveryMeshWhole(unittest.TestCase):
+    def test_every_mesh_by_the_adapter(self):
+        from moonray_modo import mesh_reader
+        self.assertEqual(mesh_reader.THRESHOLD, 1)
+
+    def test_missing_uv_maps_whole(self):
+        source = (KIT / 'moonray_modo/host.py').read_text(encoding='utf-8')
+        self.assertIn('def uv_source(whole, name, tags=None):', source)
+        self.assertIn("return rows_mask(whole.uv_values[which], 2, whole.counts, bytes(valid))", source)
+
+
 if __name__ == '__main__':
     unittest.main()

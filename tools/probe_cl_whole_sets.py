@@ -14,8 +14,14 @@ try:
     lx.eval('scene.open {%s} normal' % os.environ['MOONRAY_PROBE_SCENE'])
     from moonray_modo import host
 
+    from moonray_modo import mesh_reader
+    threshold = mesh_reader.THRESHOLD
+
     def reading(whole):
+        # The new way throughout (the adapter for every mesh, whole meshes), against the old (the adapter from 5,000
+        # polygons, a polygon at a time wherever a texture lays its own UVs out).
         host.WHOLE_MESH_SETS = whole
+        mesh_reader.THRESHOLD = threshold if whole else 5000
         began = time.perf_counter()
         shot = host.snapshot()
         return shot, time.perf_counter() - began
@@ -61,6 +67,8 @@ try:
             if gap > 1e-4:
                 differ.append(('values', mesh['name'], key, gap))
     result['slow_reads'] = dict(host.SLOW_READS)
+    result['warnings_differ'] = sorted(set(each.get('warnings') or []) ^ set(polygon.get('warnings') or []))[:10]
+    result['meshes'] = [len(each['meshes']), len(polygon['meshes'])]
     result['small_meshes'] = sorted((len(m['faces']), m['name']) for m in each['meshes'] if len(m['faces']) < 5000)[-15:]
     result.update(compared_corners=compared, worst=worst, differ=differ[:20],
                   meshes_with_sets=sum(1 for m in each['meshes'] if m.get('uv_sets')))

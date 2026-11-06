@@ -75,3 +75,8 @@ The dragon test scene rendered by XPU2 in the preview window with Preferences > 
 - `Leaf.webp`: a tree's leaves rendered in XPU2 once its graphics card memory was halved in 0.5.2.1 (32 GB and a crash before, 20 GB after). Picture by Pixelwerk.
 - `xpu2-bokeh-image.jpg`: eight lights 20 m away with focus at 8 m, through the hexagonal bokeh image of a user's scene; MoonRay (scalar) left, XPU2 right, 1,024 samples a pixel. Total light within 0.2 %, each shape's centre within a tenth of a pixel.
 - `xpu2-texture-memory-grass.jpg`: a 960 x 540 crop at full size of a grass scene with 8K maps; XPU2 holding its textures in floats (4 GB on the card) left, in a third of the memory (1.4 GB) right.
+
+## 0.5.3.1 pictures
+
+- `mesh-lights-engines.jpg`: two Modo Mesh Lights with shown Prototypes facing the floor (a square of two quads; an octagon beside a quad and a triangle), radiance 3, Visible to Camera on, lighting a grey ball; Modo's own render top left, MoonRay (vector) top right, XPU2 bottom left, MoonLightIPR bottom right (tools/probe_mesh_light_all_engines.py).
+- `preview-preferences-realtime-xpu.png`: the preview window's Preview Preferences, with Realtime with standard XPU (Off, On the processor, On the graphics card) and PBR validity under Diagnostics.

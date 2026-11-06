@@ -10,9 +10,15 @@
   - **The Prototype is the light**: Modo never renders a Mesh Light's Prototype as a surface. The kit drew it as a grey mesh too, lying on the light, which hid the light and blocked its own light.
   - **A hidden Prototype gives no light**, as in Modo's own renderer, with a notice saying so. Show the Prototype mesh to light with it.
   - **MoonLightIPR** shows a Mesh Light that is Visible to Camera (before, it lit the scene but stayed invisible), and shines and is seen from the polygons' front only, as Modo and MoonRay do; it shone from both faces.
+
+  ![Two Mesh Lights, a square and an octagon beside a quad and a triangle, lighting a ball: Modo, MoonRay, XPU2 and MoonLightIPR](images/mesh-lights-engines.jpg)
+
 - **A missing UV map is a notice, not a failed render**: a material whose texture reads a UV map that the mesh wearing it has not (a texture set up on another mesh's map) stopped the render with "Mesh ... is missing UV values in map ...". Those polygons now render with the map's values at 0, and a notice names the mesh, the map and the material, so the texture can be pointed at a map the mesh has.
 - **PBR validity in Preview Preferences**: the Diagnostics switch is in the preview window's Preview Preferences as well as in Modo's Preferences > MoonRay > Renderer, one setting, each following the other.
 - **Realtime with standard XPU** is a choice of three, where it was a switch: Off, On the processor (vector, as before: quick to restart, the card left to Modo's viewport) or On the graphics card (XPU: somewhat quicker to render, slower to restart as each change of geometry is built on the card again). In Preferences > MoonRay > XPU (graphics card) and in Preview Preferences, one setting. Where the switch was on, the choice starts at On the processor.
+
+  ![Preview Preferences: Realtime with standard XPU, and PBR validity under Diagnostics](images/preview-preferences-realtime-xpu.png)
+
 - **Heavy scenes start much sooner**: on a tester's 1.5-million-polygon car, realtime's first picture came after about 2 min 20 s of preparing the scene, and now comes in about 16 s (XPU2, cached textures).
   - **Smoothing in native code**: normals smoothed by each material's smoothing angle are worked out by the kit's geometry adapter on all of the processor's threads, about a second for 1.5 million polygons where Python took a minute on one. Meshes of any size now take their material's Modo smoothing angle, where those over 300,000 polygons were smoothed all over.
   - **Cryptomatte by material** hashes each material once, where it hashed every polygon (40 s of every scene written on the car).
@@ -22,6 +28,8 @@
   - **Environment images shrunk straight from the file**, their colours converted as before, several side by side: each was first made into a full-size float texture only to be shrunk to 512 by 256 (the car's three 16,000-pixel-wide HDRs: 85 s to 15 s).
   - **Grey environment images are grey**, where they came out black: an image of one channel was asked for its red, green and blue.
   - **Textures that lay out their own UVs** (moved, rotated, scaled or projected) are worked out for whole meshes at once, and **meshes whose materials use different UV maps** (a tyre's tread and sidewall) are split by map in the kit's native code and read whole: both were read a polygon at a time (the car's reading: 7.7 s to 4.6 s, the same numbers).
+  - **Environment layers laid in native code**: an environment of image, colour and sky-gradient layers is laid together by the kit's geometry adapter over all the processor's threads, where Python did it a direction at a time (the car's four layers: 10 s to a fraction of a second, the same map to the bit). Layers in groups or with masks, procedurals and physical skies are laid in Python as before.
+  - **Every mesh is read by the native adapter**, small ones too, and **a mesh missing a UV map its texture reads is read whole**, its polygons without the map at 0, with the same notice (the car's reading: 7.1 s to 3.2 s, the same lists and notices).
 
 ## New in 0.5.3
 

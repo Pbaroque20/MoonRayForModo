@@ -142,6 +142,78 @@ def image_pixels(layer, folder, width, height):
     return read(args),alpha
 
 
+# Modo's sky gradients by the native blend's numbers (environments.gradient_color's kinds; any other is four colours).
+GRADIENT_KINDS = {'constant': 0, 'overcast': 1, 'grad2': 2}
+
+
+def native_blend(layers, width, height):
+    """The environment's layers laid over one another by the geometry adapter (MR_environment_blend), over all of the
+    machine's threads: the map's floats, rows bottom up, as texture() writes them. None where the adapter cannot, or a
+    layer is of a kind it does not lay (groups, masks, procedurals, texture gradients, a physical sky), for the loop in
+    Python. A car's four layers took 15 s of a first preview there."""
+    import ctypes
+    from array import array
+    from .layers import BLENDS
+    from .rows import _native
+    library = _native()
+    if library is None or not hasattr(library, 'MR_environment_blend') or not layers:
+        return None
+    count = len(layers)
+    kinds, modes, opacities, inverts = [], [], [], []
+    images, alphas, turns, uvs, colours, gradients, held = [], [], [], [], [], [], []
+    for layer, pixels, alpha, inv in layers:
+        if layer.get('groups') or layer.get('effect', 'envColor') != 'envColor' or layer.get('blend', 'normal') not in BLENDS:
+            return None
+        kind = layer['kind']
+        if kind in ('gradient', 'procedural', 'physical') or (kind == 'image' and pixels is None):
+            return None
+        kinds.append(0 if kind == 'image' else 1 if kind == 'color' else 2)
+        modes.append(BLENDS[layer.get('blend', 'normal')])
+        opacities.append(float(layer.get('opacity', 1)))
+        inverts.append(1 if layer.get('invert') else 0)
+        a, b, c, d, e, f = layer.get('uv_matrix', [1, 0, 0, 0, 1, 0])
+        rotation = layer.get('rotation', 0)
+        sx, sy = layer.get('scale', [1, 1])
+        uvs += [a, b, c, d, e, f, math.cos(rotation), math.sin(rotation), sx, sy]
+        turns += [inv[j * 4 + i] for j in range(3) for i in range(3)] if inv is not None else [0.0] * 9
+        colours += [float(v) for v in (layer.get('color') or [0, 0, 0])[:3]] if kind == 'color' else [0.0] * 3
+        if kinds[-1] == 2:
+            gradients.append(GRADIENT_KINDS.get(kind, 3))
+            for key in ('zenith', 'sky', 'ground', 'nadir'):
+                gradients += [float(v) for v in (layer.get(key) or [0, 0, 0])[:3]]
+            gradients += [float(layer.get('sky_exponent', 1)), float(layer.get('ground_exponent', 1))]
+        else:
+            gradients += [0.0] * 15
+        if kind == 'image':
+            image = array('f', pixels)
+            if len(image) != width * height * 3:
+                return None
+            held.append(image)
+            images.append(ctypes.cast(image.buffer_info()[0], ctypes.POINTER(ctypes.c_float)))
+            if alpha is not None:
+                coverage = array('f', alpha)
+                held.append(coverage)
+                alphas.append(ctypes.cast(coverage.buffer_info()[0], ctypes.POINTER(ctypes.c_float)))
+            else:
+                alphas.append(None)
+        else:
+            images.append(None)
+            alphas.append(None)
+    function = library.MR_environment_blend
+    if function.argtypes is None:
+        function.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_int] + [ctypes.c_void_p] * 11 + [ctypes.c_int]
+        function.restype = ctypes.c_int
+    numbers = lambda kind, values: (kind * len(values))(*values)
+    pointers = lambda values: (ctypes.POINTER(ctypes.c_float) * count)(*values)
+    out = array('f', bytes(width * height * 12))
+    if function(width, height, count, numbers(ctypes.c_int, kinds), numbers(ctypes.c_int, modes), numbers(ctypes.c_double, opacities),
+                numbers(ctypes.c_int, inverts), pointers(images), pointers(alphas), numbers(ctypes.c_double, turns),
+                numbers(ctypes.c_double, uvs), numbers(ctypes.c_double, colours), numbers(ctypes.c_double, gradients),
+                out.buffer_info()[0], 0):
+        return None
+    return out
+
+
 IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
 # The layers the whole of whose look turns with their locator, and those that look the same however it turns.
 PLACED_KINDS = ('image', 'procedural')
@@ -199,9 +271,12 @@ def texture(environment, width=512, height=256):
             layers.append((layer,pixels,alpha,inv))
         staged = folder/(digest+'-'+uuid.uuid4().hex+'.pfm')
         try:
+            blended = native_blend(layers, width, height)
             with staged.open('wb') as out:
                 out.write(('PF\n%d %d\n-1.0\n'%(width,height)).encode())
-                for y in range(height):
+                if blended is not None:
+                    out.write(blended.tobytes())
+                for y in (range(height) if blended is None else ()):
                     latitude = ((y+.5)/height-.5)*math.pi
                     for x in range(width):
                         longitude = ((x+.5)/width-.5)*2*math.pi

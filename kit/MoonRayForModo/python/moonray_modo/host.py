@@ -776,6 +776,23 @@ def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fal
                 groups.setdefault((subdivision, uv_name), []).append((face, tag, face_uv, normals, extra_uvs))
                 ordinals.setdefault((subdivision, uv_name), []).append(ordinal)
 
+            def uv_source(whole, name, tags=None):
+                """A UV map's value at every corner of a mesh the adapter read whole, 0 at the corners of polygons
+                without it, which polygon() gives the same way (missing_uvs), with its notice for each material of
+                those polygons (of tags, by their places among the mesh's tags, where given). None where it cannot."""
+                which = whole.uv_map(name)
+                count = len(whole.counts)
+                valid = whole.uv_valid[which] if which is not None else None
+                if valid is not None and valid.count(1) == count:
+                    return whole.uv_values[which]
+                lacking = {whole.tag_indices[f] for f in range(count) if (valid is None or not valid[f])}
+                for index in sorted(lacking if tags is None else lacking & set(tags)):
+                    missing_uvs(name, whole.tags[index], 0)
+                if valid is None:
+                    corners = len(whole.indices)
+                    return Rows(array('f', bytes(8 * corners)), 2, 'zeros:%d' % corners)
+                return rows_mask(whole.uv_values[which], 2, whole.counts, bytes(valid))
+
             def whole_mesh_sets(whole, faces, tag_descriptors, transform):
                 """Each texture's own UVs for a mesh the adapter read whole, {key: a UV for every corner}: those of the
                 polygons whose material has the texture worked out as polygon() works them, 0 for the rest. None where
@@ -789,10 +806,9 @@ def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fal
                 for key, (descriptor, having) in sorted(keys.items()):
                     source = []
                     if descriptor.get('projection', 'uv') == 'uv':
-                        which = whole.uv_map(descriptor.get('uv_map', ''))
-                        if which is None or whole.uv_valid[which].count(1) != len(whole.counts):
+                        source = uv_source(whole, descriptor.get('uv_map', ''), having)
+                        if source is None:
                             return None
-                        source = whole.uv_values[which]
                     values = coordinates.mesh_corners(descriptor, whole.vertices, faces, source, transform)
                     if len(having) < len(used):
                         # Only some materials have the texture: the others' corners are 0, as polygon() leaves them.
@@ -809,7 +825,7 @@ def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fal
                 return sets
 
             from . import mesh_reader
-            from .rows import mask_corners as rows_mask
+            from .rows import mask_corners as rows_mask, Rows
             from array import array
             whole = mesh_reader.read(mesh)
             if whole is not None:
@@ -836,7 +852,9 @@ def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fal
                     textures' own UVs), or None where a polygon lacks a UV map it is drawn with or a texture reads."""
                     which = source.uv_map(uv_name)
                     complete = which is not None and source.uv_valid[which].count(1) == len(source.counts)
-                    if uv_name and not complete:
+                    # A polygon without the UV map it is drawn with: 0 there, and the notice (uv_source).
+                    drawn = (source.uv_values[which] if complete else uv_source(source, uv_name)) if uv_name else []
+                    if drawn is None:
                         return None
                     faces_of = source.faces()
                     # Textures that lay their own UVs out (moved, or projected), worked out for the whole group at once
@@ -846,7 +864,7 @@ def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fal
                         return None
                     normal = source.normal_values is not None and source.normal_valid.count(1) == len(source.counts)
                     ordinals[(bool(source.subdivided[0]), uv_name)] = ordinal
-                    return (faces_of, [source.tags[i] for i in source.tag_indices], source.uv_values[which] if complete else [],
+                    return (faces_of, [source.tags[i] for i in source.tag_indices], drawn if uv_name else (source.uv_values[which] if complete else []),
                             source.normal_values if normal else [], sets)
                 made = {}
                 if plain and len(names) == 1:
