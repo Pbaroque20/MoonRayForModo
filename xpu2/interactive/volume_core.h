@@ -33,6 +33,10 @@ constexpr U32 MaxSteps = MarchLimit;
 // the host samples them (volume_grid.h), marched with no table of steps (async_integrator.h's ReplaySteps). Off: their
 // samples go to the CPU lane, as before.
 constexpr bool GpuVdb = true;
+// GPU_EMISSION: glowing volumes (BaseVolume emission, a VDB's emission grid) on the CUDA lane: their emissive regions
+// uploaded with the grids (async_gpu.h's uploadRegions) and sampled as the host samples them (volume_emission.h). Off:
+// a scene with one renders on the CPU lane alone, as before.
+constexpr bool GpuEmission = true;
 constexpr float Epsilon = 1.1920928955078125e-07f;  // scene_rdl2 sEpsilon
 constexpr float HitEpsilonStart = 1e-5f;            // pbr sHitEpsilonStart
 constexpr float FarLimit = 0.999f * lights::DistantDistance;  // sHitEpsilonEnd * sDistantLightDistance
@@ -116,26 +120,28 @@ struct Step {
     float surfaceThreshold;    // its surface opacity threshold (1 with no volume)
 };
 X2_HD inline bool homogeneous(const Shader& s) { return s.kind == KindBase; }
-// Whether the GPU's programs render a volume (async_gpu.h, async_gpu_device.h): a homogeneous BaseVolume, or a mapped
-// one whose maps give its attenuation alone (baked into a dense grid the GPU holds, or taken at the render origin
-// unbaked), neither emitting. VDB volumes, and mapped ones whose maps give their colour, emission or anisotropy (the
-// host's map programs at each point), are the CPU lane's: their samples are deferred to it.
+// Whether the GPU's programs render a volume (async_gpu.h, async_gpu_device.h): a homogeneous BaseVolume, a VDB volume
+// whose grids are on the card, or a mapped one whose maps give its attenuation alone (baked into a dense grid the GPU
+// holds, or taken at the render origin unbaked); glowing or not (GpuEmission: their emissive regions are on the card
+// too). Mapped ones whose maps give their colour, emission or anisotropy (the host's map programs at each point) are
+// the CPU lane's: their samples are deferred to it.
 X2_HD inline bool gpuRenders(const Shader& s, const Grids& grids) {
-    if (s.emission.x != 0.0f || s.emission.y != 0.0f || s.emission.z != 0.0f) return false;
+    if (!GpuEmission && (s.emission.x != 0.0f || s.emission.y != 0.0f || s.emission.z != 0.0f)) return false;
     if (s.kind == KindBase) return true;
     if (s.kind == KindVdb) {
-        // A VDB volume the GPU samples from its NanoVDB grids (volume_grid.h): one that does not glow (an emissive volume
-        // lights every surface, left to the CPU lane with all its samples) and is not mapped (the maps run on the host),
-        // its grids on the card (null where uploadGrids has not sent them: then deferred, as before).
+        // A VDB volume the GPU samples from its NanoVDB grids (volume_grid.h): one that is not mapped (the maps run on
+        // the host), its grids on the card (null where uploadGrids has not sent them: then deferred, as before), its
+        // emission grid too where it glows.
         if (!GpuVdb) return false;
         auto there = [&](U32 g) { return g == NoGrid || (g < grids.count && (grids.grids[g].data || grids.grids[g].dense)); };
-        return !s.mapped && s.emissionGrid == NoGrid && s.densityGrid != NoGrid && there(s.densityGrid) && there(s.bakedGrid) &&
-               (!s.hasVelocity || there(s.velocityGrid));
+        return !s.mapped && (GpuEmission ? there(s.emissionGrid) : s.emissionGrid == NoGrid) && s.densityGrid != NoGrid &&
+               there(s.densityGrid) && there(s.bakedGrid) && (!s.hasVelocity || there(s.velocityGrid));
     }
     if (s.kind != KindBaseMapped) return false;
     const U32 attenuation = (1u << MapAttenuationColor) | (1u << MapAttenuationIntensity) | (1u << MapAttenuationFactor);
     if (s.mapped & ~attenuation) return false;
-    if (s.emissionIntensity != 0.0f && (s.emissionColor.x != 0.0f || s.emissionColor.y != 0.0f || s.emissionColor.z != 0.0f)) return false;
+    if (!GpuEmission && s.emissionIntensity != 0.0f && (s.emissionColor.x != 0.0f || s.emissionColor.y != 0.0f || s.emissionColor.z != 0.0f))
+        return false;
     return s.densityGrid == NoGrid || (s.densityGrid < grids.count && grids.grids[s.densityGrid].dense);
 }
 // A point in the volume's grid world (its geometry's own space).

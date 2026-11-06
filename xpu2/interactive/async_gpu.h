@@ -208,9 +208,15 @@ public:
         if (!plan->shadowLinks.empty()) return "shadow linking";
         if (!plan->lobeLightSetBits.empty()) return "lobe light sets";
         // Emissive volumes light every surface (their emissive regions are light sources, volume_emission.h): a GPU
-        // sample that does not cross one would still miss its light, so none may be the GPU's.
-        if (!plan->emissiveRegions.empty()) return "emissive volumes";
-        // VDB, heterogeneous and emissive volumes are stand-ins (standIn): their samples are deferred to the CPU lane.
+        // sample that does not cross one would still miss its light, so a glowing volume the GPU does not render (one
+        // whose maps give its emission) leaves none to the GPU. The others' regions go to the card (uploadRegions).
+        if (!plan->emissiveRegions.empty()) {
+            if (!volume::GpuEmission) return "emissive volumes";
+            const volume::Grids host{plan->volumeGridViews.data(), U32(plan->volumeGridViews.size()), nullptr, 0.0f};
+            for (const auto& r : plan->emissiveRegions)
+                if (r.volume >= plan->volumes.size() || !volume::gpuRenders(plan->volumes[r.volume], host)) return "emissive volumes with mapped emission";
+        }
+        // Volumes the GPU does not render are stand-ins (standIn): their samples are deferred to the CPU lane.
         return {};
     }
     // A launch thread's records of lights in motion at the sample's time (GpuBackend::movedLight): however many move, the
@@ -230,8 +236,8 @@ public:
         const bool moving = !m.steps.empty() || !m.curveSteps.empty();
         return mesh.cpuOnly || (m.points && mesh.instance) || ((moving || m.points) && !motionOnGpu());
     }
-    // Whether the GPU hands samples to the CPU lane: stand-in meshes, or volumes its programs do not render (VDB,
-    // heterogeneous, emissive: volumeCrossings defers them), which need the CPU lane and the deferred samples' ring.
+    // Whether the GPU hands samples to the CPU lane: stand-in meshes, or volumes its programs do not render (mapped
+    // colour, emission or anisotropy; grids not on the card: volumeCrossings defers them), which need the CPU lane and the deferred samples' ring.
     // Each follower in its context, then this lane's again. Between frames (the scene, its edits, a frame's begin) a
     // follower that fails is let go and the others go on (forwardOrDrop); within a frame its failure is the frame's
     // (forward), which goes to the fallback as any GPU failure does.
@@ -329,7 +335,10 @@ public:
         if (!followers_.empty()) forwardOrDrop([&](GpuLane& f) { f.updateCamera(plan); });
         plan_ = plan;
         // The volumes' records again: a mapped one's settings at the render origin, where the camera now is.
-        if (scene_.volumes && !plan->volumes.empty()) scene_.volumes = upload(plan->volumes.data(), plan->volumes.size() * sizeof(volume::Shader));
+        if (scene_.volumes && !plan->volumes.empty()) {
+            scene_.volumes = upload(plan->volumes.data(), plan->volumes.size() * sizeof(volume::Shader));
+            uploadRegions(*plan);
+        }
         uploadConfig(plan);
     }
     // A placement-only edit (the session's fast path, realtime): the plan is the one prepared with some meshes placed
@@ -410,6 +419,7 @@ public:
             bool regrid = plan->volumeGridViews.size() != gridsSent_.size();
             for (size_t k = 0; !regrid && k < gridsSent_.size(); ++k) regrid = gridHeld(plan->volumeGridViews[k]) != gridsSent_[k];
             if (regrid) uploadGrids(*plan);
+            uploadRegions(*plan);  // a moved glowing volume's regions where it is
         }
         uploadConfig(plan);
         placementsMoved_ = moved.size();
@@ -1153,6 +1163,7 @@ public:
             if (!plan->volumes.empty()) {
                 scene_.volumes = upload(plan->volumes.data(), plan->volumes.size() * sizeof(volume::Shader));
                 uploadGrids(*plan);
+                uploadRegions(*plan);
                 std::vector<int> meshVolumes;
                 for (const auto& mesh : plan->meshes) meshVolumes.push_back(mesh.volume);
                 scene_.meshVolumes = upload(meshVolumes.data(), meshVolumes.size() * sizeof(int));
@@ -2521,6 +2532,19 @@ private:
     std::vector<const void*> gridsSent_;
     // A grid's host data, dense or NanoVDB, by which a grid made again is told from the one sent.
     static const void* gridHeld(const volume::Grid& g) { return g.dense ? static_cast<const void*>(g.dense) : g.data; }
+    // The glowing volumes' emissive regions and their distributions' pool (volume_emission.h), for the path tracer's
+    // light samples toward them; none without (the integrator then finds no regions).
+    void uploadRegions(const cpu::Plan& plan) {
+        scene_.emissiveRegions = nullptr;
+        scene_.emissionPool = nullptr;
+        scene_.emissiveRegionCount = 0;
+        if (plan.emissiveRegions.empty() || !volume::GpuEmission) return;
+        gpu::Allocating what("the glowing volumes' regions");
+        scene_.emissiveRegions = upload(plan.emissiveRegions.data(), plan.emissiveRegions.size() * sizeof(volume::Region));
+        const std::vector<float> pool = plan.emissionPool.empty() ? std::vector<float>{0.0f} : plan.emissionPool;
+        scene_.emissionPool = upload(pool.data(), pool.size() * sizeof(float));
+        scene_.emissiveRegionCount = U32(plan.emissiveRegions.size());
+    }
     void uploadGrids(const cpu::Plan& plan) {
         scene_.gridData.clear();
         scene_.volumeGrids = nullptr;
@@ -2564,6 +2588,8 @@ private:
         B volumeGrids;               // the volumes' grids as the device reads them, and the dense grids' data
         std::vector<B> gridData;
         U32 volumeGridCount = 0;
+        B emissiveRegions, emissionPool;  // the glowing volumes' regions (uploadRegions)
+        U32 emissiveRegionCount = 0;
         B provSums, provCounts, hostProvSums, hostProvCounts;
         B geometry, materials, lights, meshLights, lightSetBits, lightTree, lightTreeRoots, lightMotion, lightMoved, volumes, meshVolumes, walkSequences, meshMaterials, meshAttributes, meshMotion, materialPool, scratch, config, maps, textures, sums, odd, counts,
             hostSums,
@@ -3015,6 +3041,9 @@ private:
         p.meshVolumes = scene_.meshVolumes ? reinterpret_cast<const int*>(scene_.meshVolumes->pointer) : nullptr;
         p.volumeGrids = scene_.volumeGrids ? reinterpret_cast<const volume::Grid*>(scene_.volumeGrids->pointer) : nullptr;
         p.volumeGridCount = scene_.volumeGrids ? scene_.volumeGridCount : 0u;
+        p.emissiveRegions = scene_.emissiveRegions ? reinterpret_cast<const volume::Region*>(scene_.emissiveRegions->pointer) : nullptr;
+        p.emissionPool = scene_.emissionPool ? reinterpret_cast<const float*>(scene_.emissionPool->pointer) : nullptr;
+        p.emissiveRegionCount = scene_.emissiveRegions ? scene_.emissiveRegionCount : 0u;
         p.walkSequences = scene_.walkSequences ? reinterpret_cast<const float*>(scene_.walkSequences->pointer) : nullptr;
         p.meshMaterials = scene_.meshMaterials ? reinterpret_cast<const shade::MaterialRecord*>(scene_.meshMaterials->pointer) : nullptr;
         p.meshAttributes = scene_.meshAttributes ? reinterpret_cast<const shade::MeshAttributes*>(scene_.meshAttributes->pointer) : nullptr;
