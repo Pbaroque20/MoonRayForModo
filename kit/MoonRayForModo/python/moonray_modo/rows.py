@@ -227,6 +227,43 @@ class Faces(Rows):
         return (Faces, (self.data, self.counts, self.digest))
 
 
+class Singles(Rows):
+    """Numbers one to a row, read as the one-number lists a weight map's values were ([v] for each point or corner,
+    vertex_maps), kept as the run they came in."""
+    __slots__ = ()
+
+    def __init__(self, data, digest):
+        Rows.__init__(self, data, 1, digest)
+
+    def rows(self):
+        if self._rows is None:
+            self._rows = [[v] for v in self.data.tolist()]
+        return self._rows
+
+    def __getitem__(self, index):
+        if self._rows is not None or isinstance(index, slice):
+            return self.rows()[index]
+        return [self.data[index]]
+
+    def __eq__(self, other):
+        if isinstance(other, Singles):
+            return self.data == other.data
+        return self.rows() == other
+
+    __hash__ = None
+
+    def __repr__(self):
+        return 'Singles(%d)' % len(self)
+
+    def __reduce__(self):
+        return (Singles, (self.data, self.digest))
+
+
+def run(data, width, digest):
+    """A run of numbers as rows of width: Singles for one to a row."""
+    return Singles(data, digest) if width == 1 else Rows(data, width, digest)
+
+
 def numbers(value, width, typecode='f'):
     """A list of rows' numbers flat, as the run they came in, where they did (of this width and kind); else None."""
     if isinstance(value, Rows) and not isinstance(value, Faces) and value.width == width and value.data.typecode == typecode:

@@ -142,7 +142,9 @@ def _heavy_line(name, attribute, kind, source, written, klass='RdlMeshGeometry',
         # A run of 32-bit floats (cryptomatte.ids) as it is.
         encode, value_type = (lambda: rdlb.float_list(source, 1)), rdlb.FLOAT_VECTOR
     elif kind == 'float':
-        encode, value_type = (lambda: rdlb.float_list(numbers('f', (v[0] for v in source)))), rdlb.FLOAT_VECTOR
+        # A weight map read by the adapter (rows.Singles) goes as its run of numbers.
+        held = rows.numbers(source, 1)
+        encode, value_type = (lambda: rdlb.float_list(numbers('f', (v[0] for v in source)) if held is None else held)), rdlb.FLOAT_VECTOR
     elif kind == 'string':
         encode, value_type = (lambda: rdlb.string_list(str(v[0]) for v in source)), rdlb.STRING_VECTOR
     elif kind == 'part_faces':

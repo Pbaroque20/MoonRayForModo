@@ -22,6 +22,7 @@ The current release is [0.5.3](https://github.com/Pbaroque20/MoonRayForModo/rele
 - **A scene's first realtime run is much quicker**: environment images are shrunk straight from the file, side by side (the car's three HDRs: 85 s to 15 s), and meshes whose textures lay out their own UVs, or whose materials use different UV maps, are read whole. Grey environment images are no longer black. An environment's layers are laid over one another in the kit's native code (the car's: 10 s to nothing), every mesh is read by the native adapter, and a mesh missing a UV map its texture reads is read whole too, with its notice (the car's reading: 7.1 s to 3.2 s).
 - **Fur guides**: a Fur material's guides are followed in every engine, from curves on the fur's own mesh wearing its material or from a guide item, in Modo's modes: Direction, Direction + Length, Shape, Range and Clump, with Guide Range and Guide Length.
 - **Fur vector and width maps**: a Fur material's Vector VMap grows each fibre along its vector, as long as it is (none where it is nothing), and its width map thins the fibres by its weight, in every engine.
+- **Weight and colour maps read at once**: a mesh's weight, RGB and RGBA maps are read in the kit's native code in one call, not a point at a time (a mesh of 21,600 polygons and six maps: 1 s to 0.08 s).
 
 ## New in 0.5.3
 

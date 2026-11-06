@@ -657,10 +657,19 @@ def with_weights(mesh, available, slots):
         corners = (mesh.get('corner_attributes') or {}).get(name)
         points = (mesh.get('point_attributes') or {}).get(name)
         if corners and corners.get('kind') == 'float':
-            available[key] = [(float(value[0]), 0.0) for value in corners['values']]
+            values = _singles(corners['values'])
+            available[key] = [(float(value[0]), 0.0) for value in corners['values']] if values is None else [(value, 0.0) for value in values]
         elif points and points.get('kind') == 'float':
-            values = points['values']
-            available[key] = [(float(values[point][0]), 0.0) for face in mesh['faces'] for point in face]
+            values = _singles(points['values'])
+            if values is None:
+                values = [float(value[0]) for value in points['values']]
+            available[key] = [(values[point], 0.0) for face in mesh['faces'] for point in face]
+
+
+def _singles(values):
+    """A weight map's numbers as a list, where they came as a run (rows.Singles); else None."""
+    from .rows import Singles
+    return values.data.tolist() if isinstance(values, Singles) else None
 
 
 def mesh_payload(mesh, material_index, slots, simplified=None):
