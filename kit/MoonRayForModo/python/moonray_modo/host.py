@@ -30,6 +30,9 @@ def subdivision_creases(mesh, faces):
     map_id = first_map(mesh, lx.symbol.i_VMAP_SUBDIV)
     if map_id is None:
         return [], []
+    held = creases_natively(mesh, map_id, faces)
+    if held is not None:
+        return held
     points = lx.object.Point(mesh.PointAccessor())
     edge = lx.object.Edge(mesh.EdgeAccessor())
     value = lx.object.storage('f', 1)
@@ -67,6 +70,42 @@ def subdivision_creases(mesh, faces):
         if weight > 0:
             corners.append((index, min(1.0, weight) * 10.0))
     return creases, corners
+
+
+def creases_natively(mesh, map_id, faces):
+    """subdivision_creases() by the geometry adapter in one call (native-modo/subdivision_creases.cpp); None where it
+    cannot."""
+    import ctypes
+    from array import array
+    from . import mesh_reader, rows
+    library = mesh_reader.bridge()
+    reader = getattr(library, 'MR_subdivision_creases', None) if library is not None else None
+    if reader is None:
+        return None
+    try:
+        address = mesh.__peekobj__()
+    except AttributeError:
+        return None
+    corners = rows.corners(faces)
+    corners = corners if corners is not None and corners.typecode in ('I', 'i', 'L', 'l') and corners.itemsize == 4 else array('I', (v for face in faces for v in face))
+    counts = rows.counts(faces)
+    counts = counts if counts is not None and counts.itemsize == 4 else array('i', map(len, faces))
+    room = len(corners)
+    edges, edge_weights = array('i', bytes(8 * room)), array('f', bytes(4 * room))
+    points, point_weights = array('i', bytes(4 * room)), array('f', bytes(4 * room))
+    made = (ctypes.c_longlong * 2)()
+    pointer = ctypes.c_void_p
+    reader.argtypes = [pointer, pointer, pointer, pointer, ctypes.c_longlong, pointer, pointer, ctypes.c_longlong,
+                       pointer, pointer, ctypes.c_longlong, pointer]
+    reader.restype = ctypes.c_char_p
+    address_of = rows._address
+    if reader(pointer(address), pointer(int(map_id)), pointer(address_of(corners) if room else None), pointer(address_of(counts) if len(counts) else None),
+              len(counts), address_of(edges) if room else None, address_of(edge_weights) if room else None, room,
+              address_of(points) if room else None, address_of(point_weights) if room else None, room, ctypes.addressof(made)):
+        return None
+    # As the slow reading makes them: a weight of 1 (100%) a sharpness of 10.
+    creases = [(edges[2 * k], edges[2 * k + 1], min(1.0, edge_weights[k]) * 10.0) for k in range(made[0])]
+    return creases, [(points[k], min(1.0, point_weights[k]) * 10.0) for k in range(made[1])]
 
 
 def first_map(mesh, map_type, name=None):
