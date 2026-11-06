@@ -43,6 +43,16 @@ def layer(kind, under, effect, color=None):
     lx.eval('shader.create %s' % kind)
     made = next(i for i in scene.iterItems() if i.id not in before and i.type == kind)
     made.channel('effect').set(effect)
+    if kind == 'checker':
+        # Squares of 0.3, turned so that they cross every face of the cubes.
+        for locator in made.itemGraph('shadeLoc').forward():
+            report.setdefault('locator_channels', sorted(c.name for c in locator.channels())[:80])
+            for name, value in (('scl.X', .3), ('scl.Y', .3), ('scl.Z', .3), ('rot.X', 30), ('rot.Y', 30)):
+                try:
+                    lx.eval('select.item {%s} set' % locator.id)
+                    lx.eval('transform.channel %s %s' % (name, value))
+                except Exception as exc:
+                    report.setdefault('locator_errors', []).append('%s: %s' % (name, exc))
     if color is not None:
         for axis, value in zip('RGB', color):
             made.channel('color.' + axis).set(value)
@@ -79,8 +89,9 @@ try:
     camera.rotation.set((-0.3, 0.0, 0.0))
     # Left: a red Constant, and above it a Checker as its Layer Mask.
     left = mask_of('LeftMaterial')
-    red = layer('constant', left, 'diffColor', (1.0, 0.0, 0.0))
+    # The mask first, then the red above it: a Layer Mask masks the layer directly above it.
     checker = layer('checker', left, 'layerMask')
+    red = layer('constant', left, 'diffColor', (1.0, 0.0, 0.0))
     # Right: a blue Constant in a group masked by a Checker (Group Mask).
     right = mask_of('RightMaterial')
     blue = layer('constant', right, 'diffColor', (0.0, 0.0, 1.0))

@@ -53,12 +53,20 @@ def folder():
     return path
 
 
-def request(triangles, held, maps, groups, most=0):
+# The guide modes by the program's numbers.
+GUIDE_MODES = {'none': 0, 'clump': 1, 'normal': 2, 'dirlen': 3, 'shape': 4, 'range': 5}
+
+
+def request(triangles, held, maps, groups, most=0, guides=None):
     """What the program is asked: the triangles with the group each one's fibres go in, the Fur material's settings
     (fur.settings) and the weight maps there are."""
     from . import fur
     held = dict(fur.CHANNELS, **held)
-    parts = [b'MFG1', struct.pack('<2q4i', int(held['seed']), int(most), int(held['maxSegment']), 1 if held['widthMode'] == 'absolute' else 0,
+    # Fur that follows guides is asked for in the second form (MFG2), which a program from before guides refuses:
+    # the fur is then grown in Python (grow returns None).
+    mode = GUIDE_MODES.get(str(held.get('guides') or 'none'), 0)
+    guided = bool(guides) and mode != 0
+    parts = [b'MFG2' if guided else b'MFG1', struct.pack('<2q4i', int(held['seed']), int(most), int(held['maxSegment']), 1 if held['widthMode'] == 'absolute' else 0,
                                   1 if held['bendDirection'] == 'up' else 0, 0 if held['curlMode'] == 'curls' else 1),
              struct.pack('<%dd' % len(NUMBERS), *[float(held[name]) for name in NUMBERS]),
              struct.pack('<i', len(triangles)),
@@ -68,17 +76,22 @@ def request(triangles, held, maps, groups, most=0):
     for name in MAPS:
         if (maps or {}).get(name):
             parts.append(array('d', chain.from_iterable(maps[name])).tobytes())
+    if guided:
+        parts.append(struct.pack('<i2di', mode, float(held['guideRange']), float(held['guideLength']), len(guides)))
+        for strand in guides:
+            parts.append(struct.pack('<i', len(strand)))
+            parts.append(array('d', chain.from_iterable(p[:3] for p in strand)).tobytes())
     return b''.join(parts)
 
 
-def grow(triangles, held, maps, groups, most=0, runtime=None):
+def grow(triangles, held, maps, groups, most=0, runtime=None, guides=None):
     """Grow the fur into files. Returns {'wanted', 'grown', 'root', 'tip', 'files': {group: (path, fibres, points)}},
     or None where the program cannot be used. The same request gives the same files, which are kept."""
     tool = program(runtime)
     if tool is None:
         return None
     try:
-        asked = request(triangles, held, maps, groups, most)
+        asked = request(triangles, held, maps, groups, most, guides)
         key = hashlib.sha1(asked).hexdigest()
         home = folder()
         prefix = home / key

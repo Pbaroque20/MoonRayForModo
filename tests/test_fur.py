@@ -65,7 +65,8 @@ class Fur(unittest.TestCase):
         # The tip's kink is the root's where Modo leaves it to follow.
         self.assertEqual((got['curls'], got['kinkAmp'], got['kinkAmpTip']), (.5, .4, .4))
         # Curls and the density map are grown; guides and the width map are named as left out.
-        self.assertEqual(fur.unread(read), ['guides', 'its width map'])
+        # Guides are read since 0.5.3.1 (fur.Guides).
+        self.assertEqual(fur.unread(read), ['its width map'])
 
     def test_curls_kink_and_frizz_move_a_fibre_about_and_leave_its_root_where_it_was(self):
         plain = fur.grow(FLOOR, held(dist=.05, strays=0.0, nrmJitter=0.0, flex=0.0))[0]

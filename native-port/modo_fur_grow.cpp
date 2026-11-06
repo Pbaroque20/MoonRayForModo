@@ -6,7 +6,9 @@
 // sways; twenty-three doubles of the Fur material (in the order of Settings below); the number of triangles, their
 // three corners and the surface's normal at each as doubles, and for each the group its fibres go in; then five
 // 32-bit integers, one for each weight map (density, length, clump, curl, bend), 1 where it is given, and each given
-// map as three doubles a triangle.
+// map as three doubles a triangle. "MFG2" adds, after the maps, the guides (fur.Guides): the guide mode as a 32-bit
+// integer (0 none, 1 clump, 2 Direction, 3 Direction + Length, 4 shape, 5 range), Guide Range and Guide Length as
+// doubles, the number of guides (32-bit), and each guide's number of points (32-bit) and points (three doubles each).
 // For each group there is a file <prefix>.<group>.mfc: "MFC1", the number of fibres (32-bit) and of points (64-bit),
 // the radius at the root and at the tip (floats), the number of points of each fibre (32-bit), each point as four
 // floats (where it is, and the fibre's radius there) and each point's place as two floats (which fibre of the group,
@@ -100,6 +102,128 @@ template <class T> T take(const std::vector<char>& data, size_t& at) {
 
 struct Placed { size_t picked; double r, s, t, x, y, z, nx, ny, nz; };
 
+double distance(const P& a, const P& b) {
+    return std::sqrt((a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y) + (a.z - b.z) * (a.z - b.z));
+}
+
+// fur.Guides: each guide's root, its form as offsets from the root at steps + 1 even lengths along it, its length and
+// the way it sets out, and a grid of the roots. The same arithmetic and the same order as fur.py's.
+enum { GUIDE_NONE, GUIDE_CLUMP, GUIDE_NORMAL, GUIDE_DIRLEN, GUIDE_SHAPE, GUIDE_RANGE };
+struct Guides {
+    std::vector<P> roots, directions;
+    std::vector<std::vector<P>> offsets;
+    std::vector<double> lengths;
+    int steps = 2;
+    double cell = 1.0;
+    std::map<std::tuple<int64_t, int64_t, int64_t>, std::vector<size_t>> grid;
+
+    Guides(const std::vector<std::vector<P>>& strands, int steps_) : steps(steps_) {
+        for (const auto& points : strands) {
+            if (points.size() < 2) continue;
+            std::vector<double> along{0.0};
+            for (size_t i = 1; i < points.size(); ++i) along.push_back(along.back() + distance(points[i - 1], points[i]));
+            const double total = along.back();
+            if (!(total > 0)) continue;
+            std::vector<P> made;
+            size_t at = 0;
+            for (int j = 0; j <= steps; ++j) {
+                const double sought = total * j / steps;
+                while (at < along.size() - 2 && along[at + 1] < sought) ++at;
+                const double span = along[at + 1] - along[at];
+                const double f = span > 0 ? (sought - along[at]) / span : 0.0;
+                const P& a = points[at];
+                const P& b = points[at + 1];
+                made.push_back({a.x + (b.x - a.x) * f - points[0].x, a.y + (b.y - a.y) * f - points[0].y, a.z + (b.z - a.z) * f - points[0].z});
+            }
+            P first = points[1];
+            for (size_t i = 1; i < points.size(); ++i)
+                if (distance(points[i], points[0]) > 0) { first = points[i]; break; }
+            P way{first.x - points[0].x, first.y - points[0].y, first.z - points[0].z};
+            double size = std::sqrt(way.x * way.x + way.y * way.y + way.z * way.z);
+            if (size == 0.0) size = 1.0;
+            roots.push_back(points[0]);
+            offsets.push_back(std::move(made));
+            lengths.push_back(total);
+            directions.push_back({way.x / size, way.y / size, way.z / size});
+        }
+        if (roots.empty()) return;
+        P low = roots[0], high = roots[0];
+        for (const P& r : roots) {
+            low = {std::min(low.x, r.x), std::min(low.y, r.y), std::min(low.z, r.z)};
+            high = {std::max(high.x, r.x), std::max(high.y, r.y), std::max(high.z, r.z)};
+        }
+        const double spread = distance(low, high);
+        cell = std::max(1e-4, spread / std::max(1.0, std::sqrt(double(roots.size()))));
+        for (size_t i = 0; i < roots.size(); ++i) grid[key(roots[i])].push_back(i);
+    }
+    std::tuple<int64_t, int64_t, int64_t> key(const P& p) const {
+        return std::make_tuple(int64_t(std::floor(p.x / cell)), int64_t(std::floor(p.y / cell)), int64_t(std::floor(p.z / cell)));
+    }
+    size_t nearest(const P& p) const {
+        const auto c = key(p);
+        const int64_t cx = std::get<0>(c), cy = std::get<1>(c), cz = std::get<2>(c);
+        bool found = false;
+        size_t best = 0;
+        double least = 1e300;
+        for (int64_t ring = 0;; ++ring) {
+            for (int64_t i = cx - ring; i <= cx + ring; ++i)
+                for (int64_t j = cy - ring; j <= cy + ring; ++j)
+                    for (int64_t k = cz - ring; k <= cz + ring; ++k) {
+                        if (std::max(std::max(std::llabs(i - cx), std::llabs(j - cy)), std::llabs(k - cz)) != ring) continue;
+                        const auto here = grid.find(std::make_tuple(i, j, k));
+                        if (here == grid.end()) continue;
+                        for (size_t index : here->second) {
+                            const double far = distance(roots[index], p);
+                            if (far < least) { best = index; least = far; found = true; }
+                        }
+                    }
+            if (found && ring * cell > least) return best;
+            if (ring + 1 > 4096) return best;
+        }
+    }
+    std::vector<std::pair<size_t, double>> within(const P& p, double reach) const {
+        std::vector<std::pair<size_t, double>> found;
+        if (reach <= 0) return found;
+        const int64_t span = int64_t(std::ceil(reach / cell));
+        const auto c = key(p);
+        for (int64_t i = std::get<0>(c) - span; i <= std::get<0>(c) + span; ++i)
+            for (int64_t j = std::get<1>(c) - span; j <= std::get<1>(c) + span; ++j)
+                for (int64_t k = std::get<2>(c) - span; k <= std::get<2>(c) + span; ++k) {
+                    const auto here = grid.find(std::make_tuple(i, j, k));
+                    if (here == grid.end()) continue;
+                    for (size_t index : here->second) {
+                        const double far = distance(roots[index], p);
+                        if (far <= reach) found.push_back({index, far});
+                    }
+                }
+        return found;
+    }
+    std::vector<P> placed(size_t index, const P& p, double length) const {
+        const double scale = length / lengths[index];
+        std::vector<P> strand;
+        for (const P& o : offsets[index]) strand.push_back({p.x + o.x * scale, p.y + o.y * scale, p.z + o.z * scale});
+        return strand;
+    }
+    std::vector<P> blended(const std::vector<std::pair<size_t, double>>& near, const P& p, double reach, double scale) const {
+        double total = 0.0;
+        for (const auto& entry : near) total += 1.0 - entry.second / reach;
+        if (total == 0.0) total = 1.0;
+        std::vector<P> strand;
+        for (int j = 0; j <= steps; ++j) {
+            P point = p;
+            for (const auto& entry : near) {
+                const double w = 1.0 - entry.second / reach;
+                const P& o = offsets[entry.first][j];
+                point.x += o.x * scale * w / total;
+                point.y += o.y * scale * w / total;
+                point.z += o.z * scale * w / total;
+            }
+            strand.push_back(point);
+        }
+        return strand;
+    }
+};
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -108,7 +232,9 @@ int main(int argc, char** argv) {
         std::ifstream source(argv[1], std::ios::binary);
         std::vector<char> data((std::istreambuf_iterator<char>(source)), std::istreambuf_iterator<char>());
         size_t at = 0;
-        if (data.size() < 4 || std::memcmp(data.data(), "MFG1", 4)) throw std::runtime_error("not a fur request");
+        // MFG2: as MFG1, then the guides (fur.Guides): the mode, Guide Range and Guide Length, and each guide's points.
+        const bool second = data.size() >= 4 && !std::memcmp(data.data(), "MFG2", 4);
+        if (data.size() < 4 || (std::memcmp(data.data(), "MFG1", 4) && !second)) throw std::runtime_error("not a fur request");
         at = 4;
         const int64_t seed = take<int64_t>(data, at), most = take<int64_t>(data, at);
         const int32_t maxSegment = take<int32_t>(data, at), absolute = take<int32_t>(data, at), up = take<int32_t>(data, at),
@@ -128,6 +254,20 @@ int main(int argc, char** argv) {
                 maps[m].resize(size_t(n) * 3);
                 for (auto& w : maps[m]) w = take<double>(data, at);
             }
+        int32_t mode = GUIDE_NONE;
+        double guideRange = 0.0, guideLength = 1.0;
+        std::vector<std::vector<P>> guideStrands;
+        if (second) {
+            mode = take<int32_t>(data, at);
+            guideRange = std::max(0.0, take<double>(data, at));
+            guideLength = std::max(0.0, take<double>(data, at));
+            const int32_t many = take<int32_t>(data, at);
+            for (int32_t g = 0; g < many; ++g) {
+                std::vector<P> strand(size_t(std::max(0, take<int32_t>(data, at))));
+                for (auto& p : strand) p = take<P>(data, at);
+                guideStrands.push_back(std::move(strand));
+            }
+        }
         enum { DENSITY, LENGTH, CLUMP, CURL, BEND };
 
         std::vector<double> areas(n);
@@ -226,7 +366,10 @@ int main(int argc, char** argv) {
             std::map<std::tuple<int64_t, int64_t, int64_t>, std::vector<size_t>> cells;
             const double size = std::max(1e-4, held.clumpSize);
             auto cell = [&](double value) { return int64_t(std::floor(value / size)); };
-            if (clumps > 0 && total / (size * size) < double(count)) {
+            // Guides, where the Fur material follows them; with Clump, they are the tufts, and no others are made.
+            const Guides lead(mode != GUIDE_NONE ? guideStrands : std::vector<std::vector<P>>(), steps);
+            const bool guided = mode != GUIDE_NONE && !lead.roots.empty();
+            if (clumps > 0 && total / (size * size) < double(count) && !(guided && mode == GUIDE_CLUMP)) {
                 const int64_t many = std::min<int64_t>(count, std::max<int64_t>(1, int64_t(total / (size * size))));
                 for (int64_t k = 0; k < many; ++k) {
                     const Placed q = place(other);
@@ -262,8 +405,46 @@ int main(int argc, char** argv) {
                 double near = std::sqrt(dx * dx + dy * dy + dz * dz);
                 if (near == 0.0) near = 1.0;
                 dx /= near; dy /= near; dz /= near;
-                std::vector<P> strand = fibre(q.x, q.y, q.z, dx, dy, dz, length, weight(BEND, q.picked, q.r, q.s, q.t));
+                std::vector<P> strand;
+                bool shaped = false;
+                const P here{q.x, q.y, q.z};
+                if (guided && mode != GUIDE_CLUMP) {
+                    if (mode == GUIDE_RANGE) {
+                        // Fur only within reach of a guide, of the form of those it is within reach of.
+                        const auto close = lead.within(here, guideRange);
+                        if (close.empty()) continue;
+                        strand = lead.blended(close, here, guideRange, guideLength);
+                        shaped = true;
+                    } else if (mode == GUIDE_SHAPE) {
+                        strand = lead.placed(lead.nearest(here), here, length * guideLength);
+                        shaped = true;
+                    } else {
+                        // Direction: the nearest guide's way out of the surface; with Length, Guide Length too.
+                        const P& way = lead.directions[lead.nearest(here)];
+                        dx = way.x; dy = way.y; dz = way.z;
+                        if (mode == GUIDE_DIRLEN) length *= guideLength;
+                    }
+                }
+                if (!shaped) strand = fibre(q.x, q.y, q.z, dx, dy, dz, length, weight(BEND, q.picked, q.r, q.s, q.t));
                 if (kinked) kink(strand, length);
+                if (guided && mode == GUIDE_CLUMP && clumps > 0 && !stray) {
+                    // Gathered to the nearest guide within reach, as to a tuft: its form at its root, as long as this fibre.
+                    const auto close = lead.within(here, guideRange);
+                    if (!close.empty()) {
+                        size_t index = close[0].first;
+                        double least = close[0].second;
+                        for (const auto& entry : close)
+                            if (entry.second < least) { index = entry.first; least = entry.second; }
+                        const std::vector<P> middle = lead.placed(index, lead.roots[index], length);
+                        const double much = clumps * weight(CLUMP, q.picked, q.r, q.s, q.t);
+                        for (int j = 1; j <= steps; ++j) {
+                            const double lean_in = much * j / steps;
+                            strand[j].x += (middle[j].x - strand[j].x) * lean_in;
+                            strand[j].y += (middle[j].y - strand[j].y) * lean_in;
+                            strand[j].z += (middle[j].z - strand[j].z) * lean_in;
+                        }
+                    }
+                }
                 if (!tufts.empty() && !stray) {
                     const int64_t cx = cell(q.x), cy = cell(q.y), cz = cell(q.z);
                     bool found = false;

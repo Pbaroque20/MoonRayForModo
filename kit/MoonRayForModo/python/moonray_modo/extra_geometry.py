@@ -245,6 +245,52 @@ def fur_runtime():
     return None
 
 
+GUIDE_TAGS={'material':'MATR','part':'PART','selection set':'PICK','pick':'PICK'}
+
+
+def fur_guides(scene,item,mesh,polygons,points,layer,wanted):
+    """A Fur material's guides, each the points of one curve from its root, in the space of the mesh the fur grows on.
+    Modo takes them (tools/probe_cl_fur_guides.py) from the curves of that mesh that wear the fur's material (Use
+    Guides from Base Surface), or from the curves of the mesh its Item names (the Fur material's shadeLoc link); with
+    a Polygon Tag set, from the curves with that tag alone."""
+    import lx,modo
+    from .host import channel,world_matrix
+    from . import coordinates
+    if str(channel(layer,'guides','none') or 'none')=='none':return []
+    tag=str(channel(layer,'guideTag','') or '');kind=GUIDE_TAGS.get(str(channel(layer,'guideType','') or '').lower(),'MATR')
+
+    def curves(source_mesh,source_polygons,source_points,owner,only):
+        found=[]
+        for strand,material,_ in polylines(source_mesh,source_polygons,source_points,None,owner):
+            found.append((strand,material))
+        if tag:
+            # The curves of the chosen tag: read again by that tag where it is not their material.
+            if kind!='MATR':
+                import lxu.utils
+                tags=lx.object.StringTag(source_polygons);chosen=[]
+                for i in range(source_mesh.PolygonCount()):
+                    source_polygons.SelectByIndex(i)
+                    # The curves polylines() keeps, in its order.
+                    if lxu.utils.decodeID4(source_polygons.Type())!='LINE' or source_polygons.VertexCount()<2:continue
+                    try:value=tags.Get(lxu.utils.lxID4(kind)) or ''
+                    except (LookupError,RuntimeError):value=''
+                    chosen.append(tag in value.split(';') if kind=='PICK' else value==tag)
+                return [strand for (strand,_),keep in zip(found,chosen) if keep]
+            return [strand for strand,material in found if material==tag]
+        return [strand for strand,material in found if only is None or material==only]
+    if channel(layer,'guideSurf',1):
+        return curves(mesh,polygons,points,item,wanted or None)
+    try:sources=[i for i in layer.itemGraph('shadeLoc').forward() if i.type=='mesh']
+    except (LookupError,RuntimeError,AttributeError):sources=[]
+    if not sources:return []
+    source=sources[0]
+    held=modo.meshgeometry.MeshProvider.meshFromMeshChannel(source._item,'deformed')
+    strands=curves(held,lx.object.Polygon(held.PolygonAccessor()),lx.object.Point(held.PointAccessor()),source,None)
+    # From the guides' item into the fur's mesh.
+    into=coordinates.inverse(world_matrix(item));out_of=world_matrix(source)
+    return [[coordinates.transform(coordinates.transform(p,out_of),into) for p in strand] for strand in strands]
+
+
 def fur_entries(scene,item,mesh,polygons,points,warnings):
     """The fur of a mesh that wears one of Modo's Fur materials, as curve geometry: one for each Fur material that is
     on any of its polygons."""
@@ -309,6 +355,11 @@ def fur_entries(scene,item,mesh,polygons,points,warnings):
             except (LookupError,RuntimeError,TypeError):
                 warnings.append('Fur on %s: the weight map %s that its %s follows was not found, and is left out.'%(item.name,named,what));continue
             varied[what]=[(weights[c[0]],weights[c[k]],weights[c[k+1]]) for c,_ in faces for k in range(1,len(c)-1)]
+        # Its guides, where it follows them: none found, it grows as if it did not, and says so.
+        guides=fur_guides(scene,item,mesh,polygons,points,layer,wanted)
+        if str(channel(layer,'guides','none') or 'none')!='none' and not guides:
+            warnings.append("Fur on %s follows guides, but none were found: guides are curves wearing the fur's material on the mesh "
+                            '(Use Guides from Base Surface), or the curves of the guide Item.'%item.name)
         left=fur.unread(read)
         if left:warnings.append('Fur on %s is grown without %s, which the plugin does not read from a Fur material.'%(item.name,', '.join(left)))
         alone={'fur_only':wanted} if channel(layer,'furOnly',0) else {}
@@ -319,14 +370,14 @@ def fur_entries(scene,item,mesh,polygons,points,warnings):
         grown=None
         if runtime is not None:
             tags=sorted(set(worn));numbers={tag:index for index,tag in enumerate(tags)}
-            grown=fur_native.grow(triangles,fur.settings(read),varied,[numbers[tag] for tag in worn],0,runtime)
+            grown=fur_native.grow(triangles,fur.settings(read),varied,[numbers[tag] for tag in worn],0,runtime,guides)
         if grown is not None:
             for number,(path,fibres,points) in sorted(grown['files'].items()):
                 made.append(dict(kind='curves',identity=item.id+'|fur|'+layer.id+'|curves|'+tags[number],source_item=item.id,name=item.name,
                                  vertices=[],counts=[],radius=grown['root'],curve_type=0,material=tags[number],matrix=world_matrix(item),
                                  fur_file=str(path),fur_fibres=fibres,fur_points=points,**alone))
             continue
-        strands,root,tip,asked,stands=fur.kept(triangles,fur.settings(read),varied)
+        strands,root,tip,asked,stands=fur.kept(triangles,fur.settings(read),varied,guides)
         if asked>fur.MOST:
             warnings.append('Fur on %s: Modo would grow %s fibres; %s are grown, the most this runtime grows. It is thinner fur than Modo\'s.'%(item.name,format(asked,','),format(len(strands),',')))
         if not strands:continue

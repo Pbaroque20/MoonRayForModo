@@ -114,6 +114,7 @@ extern "C" __declspec(dllexport) int MR_smooth_normals(const float* points, long
         }
     }
     double most=0.0;
+    const double flatEpsilon=0.0;  // more bend let through as smooth than the limit says
     for(size_t i=0;i<edges.size();) {
         size_t j=i;
         while(j<edges.size() && edges[j].low==edges[i].low && edges[j].high==edges[i].high) ++j;
@@ -125,7 +126,7 @@ extern "C" __declspec(dllexport) int MR_smooth_normals(const float* points, long
             dot=std::max(-1.0,std::min(1.0,dot));
             most=std::max(most,std::acos(dot)*180.0/3.14159265358979323846);
             const double limit=limits?std::max(double(limits[a]),double(limits[b])):threshold;
-            if(dot>=limit-1e-10) {
+            if(dot>=limit-1e-10-flatEpsilon) {
                 for(uint32_t point:{edges[i].low,edges[i].high}) join(parent,place(a,point),place(b,point));
             }
         }
