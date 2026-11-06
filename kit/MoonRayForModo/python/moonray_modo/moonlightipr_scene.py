@@ -9,7 +9,16 @@ import math
 import struct
 from array import array
 from itertools import chain, accumulate
-from .scene_digest import flat
+from .scene_digest import flat as _digest_flat
+
+
+def flat(value):
+    """A list's numbers flat, as the run they were handed over in, and a digest of them (scene_digest.flat); rows of
+    numbers (rows.Rows, rows.Faces) known by themselves, whether or not evaluated's hook is set."""
+    from .rows import Rows
+    if isinstance(value, Rows):
+        return value.data, value.digest
+    return _digest_flat(value)
 
 IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
 # Layout flags; keep in step with moonlightipr/session/scene_loader.cpp.
@@ -601,6 +610,9 @@ def displaced(mesh, key, flags, payload, materials, material_index, warnings, li
 from .polygons import fan as _fan, corners as _corners, rules as _polygon_rules
 
 
+from .rows import gather as _gather
+
+
 def _numbers(rows, width):
     """Rows of width numbers each, flat: the array they were handed over in, where they were (scene_digest.flat)."""
     held = flat(rows)
@@ -720,8 +732,16 @@ def mesh_payload(mesh, material_index, slots, simplified=None):
     if normals and len(normals) != len(corners):
         raise ValueError('Face-varying normals must match the corner count')
     quads = not triangles and least == widest == 4
+    # Faces not all triangles cut by the geometry adapter in one call (polygons.triangulate): each triangle corner's
+    # polygon corner, and each triangle's face. Cut here a face or a corner at a time where it cannot.
+    cut = None
+    if not triangles:
+        from .polygons import triangulate
+        cut = triangulate(vertices, faces, False)
     fan = None      # each triangle corner as an index into the polygon corners
-    if normals or sets:
+    if cut is not None:
+        fan = cut[0]
+    elif normals or sets:
         if triangles:
             fan = iota(len(corners))
         elif quads:
@@ -746,6 +766,8 @@ def mesh_payload(mesh, material_index, slots, simplified=None):
             moved = _numbers(closing, 3)
         if triangles:
             indices = corners
+        elif cut is not None and (picked := _gather(corners, 4, cut[0])) is not None:
+            indices = picked
         elif quads:
             indices = array('I', [face[k] for face in faces for k in (0, 1, 2, 0, 2, 3)])
         else:
@@ -757,7 +779,13 @@ def mesh_payload(mesh, material_index, slots, simplified=None):
     material_ids = array('I')
     if face_materials is not None:
         default = material_index['']
-        material_ids = array('I', [material_index.get(tag, default) for tag in face_materials]) if triangles else             array('I', [index for tag, face in zip(face_materials, faces)
+        per_face = array('I', [material_index.get(tag, default) for tag in face_materials])
+        by_triangle = None
+        if cut is not None:
+            faces_of = array('I')
+            faces_of.frombytes(cut[1].tobytes())
+            by_triangle = _gather(per_face, 4, faces_of)
+        material_ids = per_face if triangles else by_triangle if by_triangle is not None else             array('I', [index for tag, face in zip(face_materials, faces)
                                    for index in [material_index.get(tag, default)] * (len(face) - 2)])
     # Texture coordinates go per triangle corner, whichever way the vertices are shared.
     uvs, slot_map = [], [-1] * UV_SLOTS
@@ -765,7 +793,8 @@ def mesh_payload(mesh, material_index, slots, simplified=None):
         if len(values) != len(corners):
             raise ValueError('Texture coordinates of %s must match its polygon corners' % mesh['name'])
         slot_map[slot] = len(uvs)
-        uvs.append(_numbers(values, 2) if triangles else array('f', chain.from_iterable(map(values.__getitem__, fan))))
+        laid = None if triangles or cut is None else _gather(_numbers(values, 2), 8, fan)
+        uvs.append(_numbers(values, 2) if triangles else laid if laid is not None else array('f', chain.from_iterable(map(values.__getitem__, fan))))
         if len(uvs[-1]) != len(fan) * 2 or not _finite(uvs[-1]):
             raise ValueError('Mesh %s has invalid texture coordinates' % mesh['name'])
     if simplified:
