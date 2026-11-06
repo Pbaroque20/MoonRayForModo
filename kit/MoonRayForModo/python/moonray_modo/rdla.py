@@ -99,6 +99,28 @@ def vector_array(values,kind='Vec3'):
         return whole if whole is not None else array(vector(v,kind) for v in values)
     return cached(kind,values,write)
 
+# Each mesh's faces by material (_parts_of), kept while its list of materials and the materials it names are the same:
+# made anew at every write, a car's multi-material meshes were walked face by face at every realtime edit, and the
+# binary file's cache, which knows a list by the list itself, never found them.
+_PARTS = {}
+
+
+def _parts_of(face_materials, materials):
+    """{material tag: [its faces]}, a face whose tag names no material under ''."""
+    known = tuple(sorted(tag for tag in set(face_materials) if tag in materials))
+    key = (id(face_materials), known)
+    held = _PARTS.get(key)
+    if held is not None and held[0] is face_materials:
+        return held[1]
+    parts, chosen = {}, set(known)
+    for face_index, face_tag in enumerate(face_materials):
+        parts.setdefault(face_tag if face_tag in chosen else '', []).append(face_index)
+    if len(_PARTS) >= 4096:
+        _PARTS.clear()
+    _PARTS[key] = (face_materials, parts)
+    return parts
+
+
 def _heavy_line(name, attribute, kind, source, written, klass='RdlMeshGeometry', indent='    '):
     """One heavy list of a mesh (or of its UserData): as text in the scene, or (while rdlb.collecting) in its binary
     file instead."""
@@ -106,6 +128,10 @@ def _heavy_line(name, attribute, kind, source, written, klass='RdlMeshGeometry',
     if kind == 'vec3' or kind == 'vec2':
         size = 3 if kind == 'vec3' else 2
         held = rows.numbers(source, size)
+        if held is None:
+            # Rows of doubles (a curve's UVs, extra_geometry._shaped_natively): as 32-bit floats, as float_list makes them.
+            doubles = rows.numbers(source, size, 'd')
+            held = numbers('f', doubles) if doubles is not None else None
         encode, value_type = (lambda: rdlb.float_list(source if held is None else held, size)), (rdlb.VEC3F_VECTOR if size == 3 else rdlb.VEC2F_VECTOR)
     elif kind == 'indices':
         held = rows.corners(source)
@@ -116,8 +142,13 @@ def _heavy_line(name, attribute, kind, source, written, klass='RdlMeshGeometry',
     elif kind == 'rgb':
         held = rows.numbers(source, 3)
         encode, value_type = (lambda: rdlb.float_list(source if held is None else held, 3)), rdlb.RGB_VECTOR
+    elif kind == 'floats':
+        # A run of 32-bit floats (cryptomatte.ids) as it is.
+        encode, value_type = (lambda: rdlb.float_list(source, 1)), rdlb.FLOAT_VECTOR
     elif kind == 'float':
-        encode, value_type = (lambda: rdlb.float_list(numbers('f', (v[0] for v in source)))), rdlb.FLOAT_VECTOR
+        # A weight map read by the adapter (rows.Singles) goes as its run of numbers.
+        held = rows.numbers(source, 1)
+        encode, value_type = (lambda: rdlb.float_list(numbers('f', (v[0] for v in source)) if held is None else held)), rdlb.FLOAT_VECTOR
     elif kind == 'string':
         encode, value_type = (lambda: rdlb.string_list(str(v[0]) for v in source)), rdlb.STRING_VECTOR
     elif kind == 'part_faces':
@@ -137,6 +168,8 @@ def _list_text(kind, source):
     """The text of one heavy list, as the scene would hold it: None for the lists whose change is structural."""
     if kind in ('vec3', 'vec2', 'rgb'):
         return vector_array(source, {'vec3': 'Vec3', 'vec2': 'Vec2', 'rgb': 'Rgb'}[kind])
+    if kind == 'floats':
+        return array(number(v) for v in source)
     if kind == 'float':
         return array(number(v[0]) for v in source)
     if kind == 'string':
@@ -658,9 +691,7 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
         if face_materials is not None:
             if len(face_materials) != len(faces):
                 raise ValueError('Face materials must match the face count')
-            for face_index, face_tag in enumerate(face_materials):
-                face_tag = face_tag if face_tag in materials else ''
-                parts.setdefault(face_tag, []).append(face_index)
+            parts = _parts_of(face_materials, materials)
         subdivision = bool(mesh.get('subdivision', False))
         displaced=bool(({tag}|set(parts)) & displacement_tags)
         if displaced and not mesh.get('subdivision'):
@@ -752,15 +783,12 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
             lines += ['    ["subd_corner_indices"] = %s,' % array(str(a) for a, _ in corners),
                       '    ["subd_corner_sharpnesses"] = %s,' % array(number(sharpness) for _, sharpness in corners)]
         emitting = scene.get('production',{}).get('objects',{}).get(lighting.owner(mesh),{})
-        if emitting.get('mesh_light') and lighting.mesh_camera(emitting)[0]:
-            # A mesh light that is seen is the light itself, which lies exactly on the mesh: were the mesh seen too, each
-            # ray would find one or the other by chance, and the light would come out blotched with the mesh's own grey.
-            # So the mesh is seen by nothing, and still casts its shadow in other lights.
+        if emitting.get('mesh_light') and not lighting.mesh_camera(emitting)[1]:
+            # A mesh light is the light itself, which lies exactly on the mesh, and other surfaces see it in their
+            # reflections whether the camera sees it or not: were the mesh seen too, each ray would find one or the
+            # other by chance, and the light would come out blotched with the mesh's own grey. So the mesh is seen by
+            # nothing, and still casts its shadow in other lights; the camera sees the light or, hidden, nothing.
             mesh = dict(mesh, visibility=[False, False, False, False, False, (mesh.get('visibility') or [True] * 6)[5]])
-        elif emitting.get('mesh_light') and not lighting.mesh_camera(emitting)[1]:
-            visibility = list(mesh.get('visibility') or [True] * 6)
-            visibility[0] = False
-            mesh = dict(mesh, visibility=visibility)
         if 'visibility' in mesh:
             camera_v, indirect, reflection, refraction, subscatter, shadow = mesh['visibility']
             for attribute, value in [('visible_in_camera', camera_v), ('visible_shadow', shadow),
@@ -791,8 +819,18 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
         lines += ['  }']
         if scene.get('production',{}).get('objects',{}).get(lighting.owner(mesh),{}).get('mesh_light'):
             # MoonRay refuses a MeshLight whose geometry is also in the layer, so the light gets its own copy.
-            opening=len(lines)-1-lines[::-1].index('  local geometry = RdlMeshGeometry("/modo/mesh/%s") {' % index)
-            lines += ['  RdlMeshGeometry("/modo/meshLight/geometry/%s") {' % index]+lines[opening+1:]
+            # Its own lists, written out: a copy of the mesh's lines would hold only pointers to the mesh's entries in
+            # the binary file (rdlb), which name the mesh, and leave the light without points. And its faces as
+            # triangles: MoonRay reads a mesh light's corners in steps of one size (lighting.light_triangles).
+            shape=faces if subdivision else lighting.light_triangles(vertices,faces)
+            copied=['    ["node_xform"] = %s,' % node_matrix(mesh),'    ["vertex_list_0"] = %s,' % vector_array(vertices),
+                    *(['    ["vertex_list_1"] = %s,' % vector_array(mesh['vertices_close'])] if 'vertices_close' in mesh else []),
+                    '    ["vertices_by_index"] = %s,' % array(str(int(i)) for face in shape for i in face),
+                    '    ["face_vertex_count"] = %s,' % array(str(len(face)) for face in shape),
+                    '    ["is_subd"] = %s,' % ('true' if subdivision else 'false'),
+                    *(['    ["mesh_resolution"] = %d,' % min(mesh.get('mesh_resolution',2 ** level), resolution_cap or 2 ** 31)] if subdivision else []),
+                    '  }']
+            lines += ['  RdlMeshGeometry("/modo/meshLight/geometry/%s") {' % index]+copied
         if parts:
             for part_index, face_tag in enumerate(parts):
                 lines.append('  assign(geometry, %s, %s, %s)' %

@@ -1153,7 +1153,7 @@ class Panel(Tools, QtWidgets.QWidget):
         engine=self.preview_engine.currentData()
         if engine=='moonlightipr':return True
         if self._engine()!='moonray':return False
-        if self.preferences.get('xpu_realtime'):return True
+        if self.preferences.get('xpu_realtime_mode')!='off':return True
         if engine!='moonray':return False
         try:
             from . import native
@@ -1439,12 +1439,11 @@ class Panel(Tools, QtWidgets.QWidget):
 
     def _dimensions(self, scene, final=False):
         """The size a render is made at. MoonRay, chosen as the engine, renders the picture itself: at the camera's
-        resolution, or the scene's where the camera does not override it. MoonRay LS and MoonLightIPR are previews, at the
-        preview size and never wider than it, however large the picture is to be."""
+        resolution, or the scene's where the camera does not override it. MoonRay LS, MoonLightIPR and RT are previews, at
+        the share of that resolution Realtime preview resolution asks for (a half, a third...), tall or wide alike."""
         scene_w, scene_h = scene['width'], scene['height']
-        size=self.preferences.get('preview_size')
-        if size<=0:size=640
-        width = scene_w if final or not (self._live() or self._low() or (self.ipr_mode.isChecked() and self._rt_capable())) else min(scene_w,size)
+        share=max(1,int(self.preferences.get('preview_fraction') or 1))
+        width = scene_w if final or not (self._live() or self._low() or (self.ipr_mode.isChecked() and self._rt_capable())) else max(16,round(scene_w/share))
         # A playblast has a width of its own, whichever engine is chosen.
         blast=None if final else self._playblasting()
         if blast is not None:width=min(scene_w,blast.width)
@@ -1683,10 +1682,12 @@ class Panel(Tools, QtWidgets.QWidget):
         # MoonLightIPR denoises when its denoised beauty is the buffer chosen, as of now.
         self.renderer.moonlightipr_wanted=self.buffer.currentData()=='denoised_beauty'
         # Realtime with MoonRay where XPU2 does not render it (opted into): on MoonRay's processor path, the graphics
-        # card left to Modo, whatever the scene's Rendering Mode says for its renders.
+        # card left to Modo, or on the graphics card (XPU), as Realtime with standard XPU says, whatever the scene's
+        # Rendering Mode says for its renders.
+        realtime_mode=self.preferences.get('xpu_realtime_mode')
         if (not output and self.ipr_mode.isChecked() and self._engine()=='moonray' and
-                self.preferences.get('xpu_realtime') and not self._xpu2_previews()):
-            scene=dict(scene,execution_mode='vectorized')
+                realtime_mode!='off' and not self._xpu2_previews()):
+            scene=dict(scene,execution_mode='xpu' if realtime_mode=='xpu' else 'vectorized')
         # And gathers as many samples a pixel as the preferences say; a playblast has its own number.
         self.renderer.moonlightipr_preview_samples=self.preferences.get('moonlightipr/samples')
         # Whether this is a draft redrawing by itself, for which the window is left as it is. The region that follows
@@ -1835,7 +1836,7 @@ class Panel(Tools, QtWidgets.QWidget):
         dropped=('preview_buffer','display','aovs','recovery','_geometry_revision','denoising','compositor')+(('time','frame') if timeless else ())
         render_scene={key:value for key,value in scene.items() if key not in dropped}
         stored=self._settings_values();get=self.preferences.get
-        values = [render_scene, self._clay(), self.runtime_path(), get('preview_size'), stored['samples'], stored['environment'], stored['threads'], get('persistent_preview'), self._following, get('ipr/width'), get('ipr/samples'), get('ipr/error'), get('moonlightipr/samples'), self._engine()]
+        values = [render_scene, self._clay(), self.runtime_path(), get('preview_fraction'), stored['samples'], stored['environment'], stored['threads'], get('persistent_preview'), self._following, get('ipr/width'), get('ipr/samples'), get('ipr/error'), get('moonlightipr/samples'), self._engine()]
         # Geometry is hashed once per list; a streaming JSON pass over every vertex took seconds per update.
         from .scene_digest import digest
         return digest(*values)

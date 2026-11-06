@@ -495,8 +495,12 @@ def meshes(data, materials, warnings, scene=None):
         uv_name = material.get('uv_map', '')
         uv_names = [f['name'] for f in prototype['features'] if f['type'] == 0x54585556]
         if uv_name and uv_name not in uv_names:
-            raise ValueError('Evaluated mesh is missing UV map ' + uv_name)
-        uv_index = uv_names.index(uv_name) if uv_name else 0
+            # A material whose texture names a UV map the mesh has not (one of another mesh's): rendered without it, said.
+            missing_uv_map(warnings, item_name(scene, surfaces[0]['source_item']), uv_name, tag)
+            uv_name = ''
+            uv_index = len(uv_names) + 1
+        else:
+            uv_index = uv_names.index(uv_name) if uv_name else 0
         surfaces.sort(key=lambda s:(s['source_item'],s.get('instance_index',0)))
         for segment_index,segment in enumerate(_merged_segments(prototype['segments'])):
             if not segment['faces'] or len(segment['faces'][0])<3: continue
@@ -530,7 +534,8 @@ def meshes(data, materials, warnings, scene=None):
                     source_name=names[uv_index]
                 elif not source_name and uv_names:source_name=sorted(uv_names)[0]
                 if source_name not in uv_names:
-                    raise ValueError('Evaluated mesh is missing UV map '+source_name)
+                    missing_uv_map(warnings, item_name(scene, surfaces[0]['source_item']), source_name, tag)
+                    continue
                 source_index = uv_names.index(source_name)
                 if source_index >= len(uv_sets):
                     raise ValueError('Missing evaluated UV values: '+source_name)
@@ -587,3 +592,20 @@ def extra_geometry(data,warnings):
                     item['uvs']=[uvs[2*i if segment.get('face_varying') else face[0]] for i,face in enumerate(faces)]
             result.append(item)
     return result
+
+
+def missing_uv_map(warnings, item, name, tag):
+    """Say once that a mesh has not the UV map its material reads (a texture set up on another mesh's map): it renders
+    without it, where it stopped the render."""
+    said = ('Mesh %s has no UV map %s, which material %s reads: it is rendered without it. Give the mesh that UV map, or '
+            'the texture a UV map the mesh has.' % (item, name, tag or '(base)'))
+    if said not in warnings:
+        warnings.append(said)
+
+
+def item_name(scene, identity):
+    """An item's name for a notice, or its id where the scene cannot say."""
+    try:
+        return scene.item(identity).name
+    except Exception:
+        return identity

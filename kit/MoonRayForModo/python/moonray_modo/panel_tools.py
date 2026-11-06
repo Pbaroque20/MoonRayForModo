@@ -336,10 +336,11 @@ class Tools:
             widest = int(modo.Scene().renderItem.channel('resX').get())
         except Exception:
             widest = 8192
-        size = self.preferences.get('preview_size')
+        # The realtime preview's share of the picture's width to start from (Realtime preview resolution).
+        size = max(16, round(widest / max(1, int(self.preferences.get('preview_fraction') or 1))))
         # Motion blur where the scene asks for it in a render, or MoonLightIPR is set to show it.
         motion = self._motion_wanted() or bool(self.preferences.get('preview_motion'))
-        dialog = PlayblastDialog(self.settings, size if size > 0 else 640, widest, self.buffer.currentData() == 'denoised_beauty', self, motion=motion)
+        dialog = PlayblastDialog(self.settings, size, widest, self.buffer.currentData() == 'denoised_beauty', self, motion=motion)
         if not dialog.exec_():
             return
         directory = dialog.folder.text().strip()
@@ -506,6 +507,10 @@ class Tools:
         source = frame['files'].get(key)
         if source is None or not Path(source).is_file():
             raise OSError('not held')
+        if outputs.display_kind(frame['snapshot'], key) == 'cryptomatte':
+            # Its mattes under its own name, with the header every Cryptomatte reader needs (the preview's file has none).
+            channels, header = self._cryptomatte_layer(frame, key)
+            return self._run_image_tool(frame, image_formats.cryptomatte(source, channels, header, target), target)
         values = self._settings_values()
         display = display_values(dict(values['display'], working_space=frame['snapshot'].get('asset_settings', {}).get('working_space', 'rec709')))
         alpha = self._alpha_of(frame, key)
@@ -517,12 +522,24 @@ class Tools:
             args = image_formats.arguments(kind, outputs.display_kind(frame['snapshot'], key), source, target, display, quality)
         return self._run_image_tool(frame, args, target)
 
+    def _cryptomatte_layer(self, frame, key):
+        """A Cryptomatte buffer as it is saved: its channels under the layer's name (cryptomatte.export_channels) and
+        its header, with the manifest of the scene it was rendered from."""
+        from . import cryptomatte
+        from .composite_output import channel_names
+        snapshot = frame.get('snapshot') or {}
+        category = next((entry.get('category', 'object') for entry in snapshot.get('custom_aovs') or []
+                         if entry.get('name') == key and entry.get('kind') == 'cryptomatte'), 'object')
+        name = cryptomatte.export_name(category)
+        channels = cryptomatte.export_channels(channel_names(frame['runtime'], frame['files'][key]), name)
+        return channels, cryptomatte.header(name, cryptomatte.snapshot_manifest(snapshot, category))
+
     def write_layered(self, frame, keys, target, kind):
         """Write chosen outputs of a render into one multilayer OpenEXR: the beauty as R, G, B and A, the others each a
         layer under its own name (image_formats.multilayer). Returns ([the file], the outputs left out)."""
         from . import image_formats, outputs
         from .composite_output import channel_names
-        layers, failed = [], []
+        layers, failed, header = [], [], []
         # The beauty first: it is what a viewer opens a multilayer file on.
         ordered = sorted(keys, key=lambda key: key != 'beauty')
         for key in ordered:
@@ -533,7 +550,11 @@ class Tools:
                 names = channel_names(frame['runtime'], source)
                 crypto = outputs.display_kind(frame['snapshot'], key) == 'cryptomatte'
                 if crypto:
-                    layers.append((source, names, names, True))
+                    channels, held = self._cryptomatte_layer(frame, key)
+                    if not channels:
+                        raise ValueError('no Cryptomatte channels')
+                    layers.append((source, [old for _, old in channels], [new for new, _ in channels], True))
+                    header += held
                     continue
                 beauty = key == 'beauty'
                 colour = names[:3] if key in self.WITH_ALPHA else names
@@ -546,7 +567,7 @@ class Tools:
         if not layers:
             return [], failed
         try:
-            return [str(self._run_image_tool(frame, image_formats.multilayer(kind, layers, target), target))], failed
+            return [str(self._run_image_tool(frame, image_formats.multilayer(kind, layers, target, header), target))], failed
         except RuntimeError:
             return [], [key for key in ordered]
 

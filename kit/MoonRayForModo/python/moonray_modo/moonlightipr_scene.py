@@ -9,7 +9,16 @@ import math
 import struct
 from array import array
 from itertools import chain, accumulate
-from .scene_digest import flat
+from .scene_digest import flat as _digest_flat
+
+
+def flat(value):
+    """A list's numbers flat, as the run they were handed over in, and a digest of them (scene_digest.flat); rows of
+    numbers (rows.Rows, rows.Faces) known by themselves, whether or not evaluated's hook is set."""
+    from .rows import Rows
+    if isinstance(value, Rows):
+        return value.data, value.digest
+    return _digest_flat(value)
 
 IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
 # Layout flags; keep in step with moonlightipr/session/scene_loader.cpp.
@@ -346,7 +355,7 @@ def lights(scene, warnings, environment=0.0, compiler=None, closing=None, named=
             record = emitter({'name': light.get('name', ''), 'vertices': shape['vertices'], 'faces': shape['faces'],
                               'matrix': shape['matrix']},
                              {'light_intensity': light['intensity'], 'light_color': light['color'],
-                              'light_seen': bool(light.get('camera_visible'))}, warnings)
+                              'light_seen': bool(light.get('camera_visible')), 'light_alone': True}, warnings)
             if record:
                 local.append(record)
                 if closing is not None:
@@ -435,7 +444,9 @@ def lights(scene, warnings, environment=0.0, compiler=None, closing=None, named=
 
 
 def emitter(mesh, settings, warnings):
-    """A mesh light's record: its triangles in world space, emitting from both faces as MoonRay's MeshLight."""
+    """A mesh light's record: its triangles in world space, emitting from their front faces (the side their corners wind
+    about) as MoonRay's MeshLight and Modo's Mesh Light. light_alone in settings marks a light that is no surface of the
+    scene (a Modo Mesh Light's shape), which a camera ray meeting it from behind passes through."""
     from .scene_digest import content
     from .working_space import color as working_color
     if 'instances' in mesh:
@@ -469,7 +480,12 @@ def emitter(mesh, settings, warnings):
         cached = _emitters[signature] = (struct.pack('<I', triangles) + corners.tobytes(), area)
     # MoonRay divides by the area, so the light gives the same power at any size.
     # Whether the camera sees the surface shining, as for any light; a mesh light has no cone.
-    seen = 1 if settings.get('light_seen', True) else 0
+    # Object controls' MoonRay camera appearance decides, as for MoonRay (lighting.mesh_camera): the light shown, the
+    # surface shown, or neither, when camera rays pass through it as through a light that is no surface (2); a Modo
+    # Mesh Light's shape has no such control and goes by light_seen.
+    from .lighting import mesh_camera
+    shown, surface = mesh_camera(settings) if 'mesh_camera_mode' in settings else (settings.get('light_seen', True), True)
+    seen = (1 if shown else 0) | (2 if settings.get('light_alone') or not (shown or surface) else 0)
     return (struct.pack('<I20fiII', MESH_LIGHT, *([0.0] * 12 + [1.0, 1.0, 1.0] + [c / (math.pi * cached[1]) for c in color] + [0.0, 0.0]), -1, seen, 0)
             + cached[0])
 
@@ -501,7 +517,8 @@ def cage_payload(mesh, material_index, slots, warnings):
     with_weights(mesh, available, slots)
     sets = sorted((slot, available[key]) for key, slot in slots.items() if available.get(key))
     creases = mesh.get('creases') or []
-    corner_count = sum(map(len, faces))
+    from .rows import corner_count as count_corners, corners as flat_corners, counts as flat_counts
+    corner_count = count_corners(faces)
     level = max(0, min(6, int(mesh.get('subdivision_level', 3))))
     wanted = level
     while level > 0 and corner_count * 4 ** (level - 1) > SUBDIVISION_QUADS:
@@ -516,16 +533,25 @@ def cage_payload(mesh, material_index, slots, warnings):
         return cached
     if face_materials is not None and len(face_materials) != len(faces):
         raise ValueError('Face materials must match the face count')
-    try:
-        corners = array('I', chain.from_iterable(faces))
-    except (TypeError, OverflowError):
-        raise ValueError('Invalid face in ' + mesh['name'])
-    if min(map(len, faces)) < 3 or max(corners) >= len(vertices):
+    # The corners and counts as the adapter handed them over (rows.Faces) where it did; walked, the faces were made
+    # lists one by one.
+    held_corners, held_counts = flat_corners(faces), flat_counts(faces)
+    if held_corners is not None and held_counts is not None:
+        corners = array('I')
+        corners.frombytes(held_corners.tobytes() if held_corners.itemsize == 4 else array('i', held_corners).tobytes())
+        sizes = array('I')
+        sizes.frombytes(held_counts.tobytes() if held_counts.itemsize == 4 else array('i', held_counts).tobytes())
+    else:
+        try:
+            corners = array('I', chain.from_iterable(faces))
+        except (TypeError, OverflowError):
+            raise ValueError('Invalid face in ' + mesh['name'])
+        sizes = array('I', map(len, faces))
+    if not len(sizes) or min(sizes) < 3 or max(corners) >= len(vertices):
         raise ValueError('Invalid face in ' + mesh['name'])
     positions = _numbers(vertices, 3)
     if not _finite(positions):
         raise ValueError('Mesh %s contains a non-finite number' % mesh['name'])
-    sizes = array('I', map(len, faces))
     material_ids = array('I')
     if face_materials is not None:
         default = material_index['']
@@ -589,6 +615,9 @@ def displaced(mesh, key, flags, payload, materials, material_index, warnings, li
 from .polygons import fan as _fan, corners as _corners, rules as _polygon_rules
 
 
+from .rows import gather as _gather
+
+
 def _numbers(rows, width):
     """Rows of width numbers each, flat: the array they were handed over in, where they were (scene_digest.flat)."""
     held = flat(rows)
@@ -633,10 +662,19 @@ def with_weights(mesh, available, slots):
         corners = (mesh.get('corner_attributes') or {}).get(name)
         points = (mesh.get('point_attributes') or {}).get(name)
         if corners and corners.get('kind') == 'float':
-            available[key] = [(float(value[0]), 0.0) for value in corners['values']]
+            values = _singles(corners['values'])
+            available[key] = [(float(value[0]), 0.0) for value in corners['values']] if values is None else [(value, 0.0) for value in values]
         elif points and points.get('kind') == 'float':
-            values = points['values']
-            available[key] = [(float(values[point][0]), 0.0) for face in mesh['faces'] for point in face]
+            values = _singles(points['values'])
+            if values is None:
+                values = [float(value[0]) for value in points['values']]
+            available[key] = [(values[point], 0.0) for face in mesh['faces'] for point in face]
+
+
+def _singles(values):
+    """A weight map's numbers as a list, where they came as a run (rows.Singles); else None."""
+    from .rows import Singles
+    return values.data.tolist() if isinstance(values, Singles) else None
 
 
 def mesh_payload(mesh, material_index, slots, simplified=None):
@@ -708,8 +746,16 @@ def mesh_payload(mesh, material_index, slots, simplified=None):
     if normals and len(normals) != len(corners):
         raise ValueError('Face-varying normals must match the corner count')
     quads = not triangles and least == widest == 4
+    # Faces not all triangles cut by the geometry adapter in one call (polygons.triangulate): each triangle corner's
+    # polygon corner, and each triangle's face. Cut here a face or a corner at a time where it cannot.
+    cut = None
+    if not triangles:
+        from .polygons import triangulate
+        cut = triangulate(vertices, faces, False)
     fan = None      # each triangle corner as an index into the polygon corners
-    if normals or sets:
+    if cut is not None:
+        fan = cut[0]
+    elif normals or sets:
         if triangles:
             fan = iota(len(corners))
         elif quads:
@@ -734,6 +780,8 @@ def mesh_payload(mesh, material_index, slots, simplified=None):
             moved = _numbers(closing, 3)
         if triangles:
             indices = corners
+        elif cut is not None and (picked := _gather(corners, 4, cut[0])) is not None:
+            indices = picked
         elif quads:
             indices = array('I', [face[k] for face in faces for k in (0, 1, 2, 0, 2, 3)])
         else:
@@ -745,7 +793,13 @@ def mesh_payload(mesh, material_index, slots, simplified=None):
     material_ids = array('I')
     if face_materials is not None:
         default = material_index['']
-        material_ids = array('I', [material_index.get(tag, default) for tag in face_materials]) if triangles else             array('I', [index for tag, face in zip(face_materials, faces)
+        per_face = array('I', [material_index.get(tag, default) for tag in face_materials])
+        by_triangle = None
+        if cut is not None:
+            faces_of = array('I')
+            faces_of.frombytes(cut[1].tobytes())
+            by_triangle = _gather(per_face, 4, faces_of)
+        material_ids = per_face if triangles else by_triangle if by_triangle is not None else             array('I', [index for tag, face in zip(face_materials, faces)
                                    for index in [material_index.get(tag, default)] * (len(face) - 2)])
     # Texture coordinates go per triangle corner, whichever way the vertices are shared.
     uvs, slot_map = [], [-1] * UV_SLOTS
@@ -753,7 +807,8 @@ def mesh_payload(mesh, material_index, slots, simplified=None):
         if len(values) != len(corners):
             raise ValueError('Texture coordinates of %s must match its polygon corners' % mesh['name'])
         slot_map[slot] = len(uvs)
-        uvs.append(_numbers(values, 2) if triangles else array('f', chain.from_iterable(map(values.__getitem__, fan))))
+        laid = None if triangles or cut is None else _gather(_numbers(values, 2), 8, fan)
+        uvs.append(_numbers(values, 2) if triangles else laid if laid is not None else array('f', chain.from_iterable(map(values.__getitem__, fan))))
         if len(uvs[-1]) != len(fan) * 2 or not _finite(uvs[-1]):
             raise ValueError('Mesh %s has invalid texture coordinates' % mesh['name'])
     if simplified:
@@ -806,23 +861,31 @@ def light_sets(scene, named, linked, instances, warnings):
     every = set(named['distant']) | set(named['local'])
     surroundings = {'__environment__'} | {e.get('identity') for e in scene.get('environments', []) if e.get('identity')}
     table, index = [[0xffffffff] * words], {}
+    # Each mesh's set worked out once for all its instances (they share its list of materials): worked out for every
+    # instance, each walked every face's material, instances times faces for a scattered scene.
+    sets = {}
     for place, owner, tags in linked:
-        chosen = [linked_lights(scene, owner, tag, every) for tag in dict.fromkeys(tags)]
-        if any(c != chosen[0] for c in chosen[1:]):
-            warnings.append('MoonLightIPR lights all of %s as its first material is lit; its materials are linked to different '
-                            'lights, which MoonRay shows.' % owner)
-        allowed = chosen[0]
-        if allowed is None:
+        held = sets.get((owner, id(tags)))
+        if held is None or held[0] is not tags:
+            chosen = [linked_lights(scene, owner, tag, every) for tag in dict.fromkeys(tags)]
+            if any(c != chosen[0] for c in chosen[1:]):
+                warnings.append('MoonLightIPR lights all of %s as its first material is lit; its materials are linked to different '
+                                'lights, which MoonRay shows.' % owner)
+            allowed, key = chosen[0], None
+            if allowed is not None:
+                bits = ([0] if allowed & surroundings else []) + [1 + i for i, name in enumerate(named['distant']) if name in allowed]
+                bits += [1 + len(named['distant']) + i for i, name in enumerate(named['local']) if name in allowed]
+                key = tuple(bits)
+                if key not in index:
+                    row = [0] * words
+                    for bit in bits:
+                        row[bit >> 5] |= 1 << (bit & 31)
+                    index[key] = len(table)
+                    table.append(row)
+            held = sets[(owner, id(tags))] = (tags, key)
+        key = held[1]
+        if key is None:
             continue
-        bits = ([0] if allowed & surroundings else []) + [1 + i for i, name in enumerate(named['distant']) if name in allowed]
-        bits += [1 + len(named['distant']) + i for i, name in enumerate(named['local']) if name in allowed]
-        key = tuple(bits)
-        if key not in index:
-            row = [0] * words
-            for bit in bits:
-                row[bit >> 5] |= 1 << (bit & 31)
-            index[key] = len(table)
-            table.append(row)
         record = bytearray(instances[place])
         seen = struct.unpack_from('<I', record, 12)[0] & 255
         struct.pack_into('<I', record, 12, seen | (index[key] << 8))
@@ -1088,6 +1151,28 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
                            mesh.get('face_materials') or [mesh.get('material', '')]))
             instances.append(struct.pack('<2IiI12f', order[key], material, light, seen, *transform(placement))
                              + (struct.pack('<12f', *transform(later)) if motion else b''))
+    # A Modo Mesh Light whose Visible to Camera is on is seen where its Prototype's shape stands: the engine shows a mesh
+    # light where a camera ray meets its surface, and this light's surface is in no layer (MoonRay keeps a MeshLight's
+    # geometry out of it), so it is a surface of its own that camera rays alone find, hiding nothing else (1: the
+    # camera's rays, as seen_by counts them).
+    light_controls = scene.get('production', {}).get('lights', {})
+    for index, light in enumerate(scene.get('lights', [])):
+        identity = light.get('identity', str(index))
+        kind = light_controls.get(identity, {}).get('kind') or light['kind']
+        if kind != 'MeshLight' or not light.get('shape') or not light.get('camera_visible') or identity not in named['local']:
+            continue
+        shape = light['shape']
+        surface = {'name': light.get('name', ''), 'identity': identity, 'vertices': shape['vertices'], 'faces': shape['faces'],
+                   'matrix': shape['matrix'], 'smooth': False, 'material': ''}
+        key, flags, payload, slot_map = mesh_payload(surface, material_index, compiler.slots)
+        if key not in order:
+            order[key] = len(meshes)
+            meshes.append(key + struct.pack('<I', flags | MESH_HAS_DATA) + slot_map + payload if key not in known
+                          else key + struct.pack('<I', flags) + slot_map)
+        used.add(key)
+        placement = transform(shape['matrix'])
+        instances.append(struct.pack('<2IiI12f', order[key], material_index[''], named['local'].index(identity), 1,
+                                     *placement) + (struct.pack('<12f', *placement) if motion else b''))
     # Curves are curves on the GPU too: each strand a run of round segments, in the strands' own material.
     from .moonlightipr_curves import payload as curve_payload
     from .moonlightipr_materials import UV_SLOTS

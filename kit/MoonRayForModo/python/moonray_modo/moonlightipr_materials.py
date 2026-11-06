@@ -715,6 +715,19 @@ def graph_layers(source, note, runtime=None, displacement=None, wanted='height',
             continue
         if key in GRAPH_SWITCHES and not switches.get(GRAPH_SWITCHES[key], False):
             continue
+        amplitude = None
+        if effect == 'normal' and node['type'] == 'bump':
+            # A bump node: its height is a Shader Tree Bump layer, at the node's amplitude (the material's
+            # bump_strength, which Compiler takes from the layer). Flat with its MoonRay Source Override off.
+            from .native import bump_node
+            if not bump_node():
+                continue
+            amplitude = float((node.get('parameters') or {}).get('amplitude', .005))
+            identity = node.get('inputs', {}).get('height')
+            node = graph['nodes'].get(identity)
+            effect = 'bump'
+            if node is None or not math.isfinite(amplitude):
+                continue
         if effect == 'normal' and node['type'] == 'normalmap':
             # The normal map node stands between the material and its image.
             node = graph['nodes'].get(node.get('inputs', {}).get('in'))
@@ -728,6 +741,9 @@ def graph_layers(source, note, runtime=None, displacement=None, wanted='height',
             if stack:
                 if effect == 'dissolve':
                     stack[-1]['invert'] = True
+                if amplitude is not None:
+                    for held in stack:
+                        held['bump_amplitude'] = amplitude
                 layers += stack
                 continue
             # Not an image: have MoonRay make one of it.
@@ -763,6 +779,8 @@ def graph_layers(source, note, runtime=None, displacement=None, wanted='height',
         layer.update(effect=effect, blend='normal', opacity=1.0, identity=identity)
         if effect == 'dissolve':
             layer['invert'] = True
+        if amplitude is not None:
+            layer['bump_amplitude'] = amplitude
         layers.append(layer)
     return layers
 
@@ -971,6 +989,10 @@ class Compiler:
                     from . import native
                     wired = graph_layers(source, lambda what: self.note(what, name), self.runtime or native.default_runtime())
                 source = dict(source, **surface)
+                # A Bump node's amplitude is the material's Bump Amplitude, as the Shader Tree's.
+                amplitudes = [layer['bump_amplitude'] for layer in wired if 'bump_amplitude' in layer]
+                if amplitudes:
+                    source['bump_strength'] = amplitudes[0]
                 # The Modo material it rides on says nothing of its highlight: Modo's roughness (the Material Ref tab's,
                 # which graph.defaults_for took over the material's own), its shading model's roughness curve and its
                 # specular strength are left out (a dw Metal or Base material's roughness did nothing in the preview).

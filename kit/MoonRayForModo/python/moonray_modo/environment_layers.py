@@ -46,6 +46,14 @@ def alpha_index(xml):
     return int(value)
 
 
+def channel_count(xml):
+    """How many channels an image has, from oiiotool's --info:format=xml."""
+    import xml.etree.ElementTree as ET
+    start=xml.find('<ImageSpec');end=xml.find('</ImageSpec>',start)
+    if start<0 or end<0:raise ValueError('Cannot read environment image metadata')
+    return int(ET.fromstring(xml[start:end+len('</ImageSpec>')]).findtext('nchannels') or 3)
+
+
 _ALPHA = {}
 
 
@@ -71,9 +79,18 @@ def has_alpha(path):
 
 def image_pixels(layer, folder, width, height):
     converter=native.tool('oiiotool.exe');runtime=converter.parent
-    source=textures.prepare(layer['path'],layer.get('srgb',False),mipmaps=False,color_space=layer.get('color_space',''),light=True)
-    from . import conversions
-    conversions.finished(source)  # read below, as the scene is written
+    # Shrunk straight from the image, its colours taken to linear as prepare takes them (textures.color_conversion):
+    # made into a full-size float texture first, a car's three 8k HDRs took 85 s of a first preview, only to be shrunk.
+    # A set of UDIM tiles is made into one texture first, as before.
+    colour=[]
+    if '<UDIM>' in str(layer['path']):
+        source=textures.prepare(layer['path'],layer.get('srgb',False),mipmaps=False,color_space=layer.get('color_space',''),light=True)
+        from . import conversions
+        conversions.finished(source)  # read below, as the scene is written
+    else:
+        source=str(textures.asset_path(layer['path']))
+        _,colour,_=textures.color_conversion(layer['path'],layer.get('srgb',False),layer.get('color_space',''))
+        if colour:colour=['--unpremult']+colour+['--premult']
     def run(args):
         result=subprocess.run([str(converter)]+args,env=native.environment(runtime),stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,timeout=120,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
@@ -82,7 +99,8 @@ def image_pixels(layer, folder, width, height):
     def read(args):
         target=folder/(uuid.uuid4().hex+'.pfm')
         try:
-            run(args+['-o',str(target)])
+            # Floats, whatever the image holds: an 8-bit image, read straight, was written as an 8-bit PPM.
+            run(args+['-d','float','-o',str(target)])
             with target.open('rb') as stream:
                 if stream.readline().strip()!=b'PF':raise ValueError('Expected RGB PFM')
                 w,h=map(int,stream.readline().split());scale=float(stream.readline());data=stream.read()
@@ -92,12 +110,16 @@ def image_pixels(layer, folder, width, height):
             if target.exists():target.unlink()
     channel=layer.get('image_channel','use')
     if channel not in ('use','ignore','only','red','green','blue'):raise ValueError('Unsupported environment image channel')
+    info=run(['--info:format=xml','-v',source])
+    # A grey image (one channel, or grey and alpha) read as that channel in red, green and blue. Asked for R, G and B
+    # it had none of, it came out black ('R=0' is oiiotool's for a channel of zeros, not a copy of channel 0).
+    grey=['--ch','0,0,0','--chnames','R,G,B'] if channel_count(info)<3 else []
     alpha=None
     if channel in ('use','only'):
-        index=alpha_index(run(['--info:format=xml','-v',source]))
+        index=alpha_index(info)
         if index>=0:
             alpha=read([source,'--ch',','.join([str(index)]*3),'--resize','%dx%d!'%(width,height)])[::3]
-    args=[source,'--resize','%dx%d!'%(width,height),'--unpremult','--ch','R,G,B']
+    args=[source]+grey+colour+['--resize','%dx%d!'%(width,height),'--unpremult','--ch','R,G,B']
     if channel=='only':
         if alpha is None:alpha=(1.0,)*(width*height)
         # Alpha is linear data; never apply an input color transform to it.
@@ -118,6 +140,78 @@ def image_pixels(layer, folder, width, height):
     if any(flips):args+=['--mulc',','.join('-1' if v else '1' for v in flips),'--addc',','.join('1' if v else '0' for v in flips)]
     if channel in ('red','green','blue'):args+=['--ch',','.join([{'red':'R','green':'G','blue':'B'}[channel]]*3)]
     return read(args),alpha
+
+
+# Modo's sky gradients by the native blend's numbers (environments.gradient_color's kinds; any other is four colours).
+GRADIENT_KINDS = {'constant': 0, 'overcast': 1, 'grad2': 2}
+
+
+def native_blend(layers, width, height):
+    """The environment's layers laid over one another by the geometry adapter (MR_environment_blend), over all of the
+    machine's threads: the map's floats, rows bottom up, as texture() writes them. None where the adapter cannot, or a
+    layer is of a kind it does not lay (groups, masks, procedurals, texture gradients, a physical sky), for the loop in
+    Python. A car's four layers took 15 s of a first preview there."""
+    import ctypes
+    from array import array
+    from .layers import BLENDS
+    from .rows import _native
+    library = _native()
+    if library is None or not hasattr(library, 'MR_environment_blend') or not layers:
+        return None
+    count = len(layers)
+    kinds, modes, opacities, inverts = [], [], [], []
+    images, alphas, turns, uvs, colours, gradients, held = [], [], [], [], [], [], []
+    for layer, pixels, alpha, inv in layers:
+        if layer.get('groups') or layer.get('effect', 'envColor') != 'envColor' or layer.get('blend', 'normal') not in BLENDS:
+            return None
+        kind = layer['kind']
+        if kind in ('gradient', 'procedural', 'physical') or (kind == 'image' and pixels is None):
+            return None
+        kinds.append(0 if kind == 'image' else 1 if kind == 'color' else 2)
+        modes.append(BLENDS[layer.get('blend', 'normal')])
+        opacities.append(float(layer.get('opacity', 1)))
+        inverts.append(1 if layer.get('invert') else 0)
+        a, b, c, d, e, f = layer.get('uv_matrix', [1, 0, 0, 0, 1, 0])
+        rotation = layer.get('rotation', 0)
+        sx, sy = layer.get('scale', [1, 1])
+        uvs += [a, b, c, d, e, f, math.cos(rotation), math.sin(rotation), sx, sy]
+        turns += [inv[j * 4 + i] for j in range(3) for i in range(3)] if inv is not None else [0.0] * 9
+        colours += [float(v) for v in (layer.get('color') or [0, 0, 0])[:3]] if kind == 'color' else [0.0] * 3
+        if kinds[-1] == 2:
+            gradients.append(GRADIENT_KINDS.get(kind, 3))
+            for key in ('zenith', 'sky', 'ground', 'nadir'):
+                gradients += [float(v) for v in (layer.get(key) or [0, 0, 0])[:3]]
+            gradients += [float(layer.get('sky_exponent', 1)), float(layer.get('ground_exponent', 1))]
+        else:
+            gradients += [0.0] * 15
+        if kind == 'image':
+            image = array('f', pixels)
+            if len(image) != width * height * 3:
+                return None
+            held.append(image)
+            images.append(ctypes.cast(image.buffer_info()[0], ctypes.POINTER(ctypes.c_float)))
+            if alpha is not None:
+                coverage = array('f', alpha)
+                held.append(coverage)
+                alphas.append(ctypes.cast(coverage.buffer_info()[0], ctypes.POINTER(ctypes.c_float)))
+            else:
+                alphas.append(None)
+        else:
+            images.append(None)
+            alphas.append(None)
+    function = library.MR_environment_blend
+    if function.argtypes is None:
+        function.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_int] + [ctypes.c_void_p] * 11 + [ctypes.c_int]
+        function.restype = ctypes.c_int
+    numbers = lambda kind, values: (kind * len(values))(*values)
+    pointers = lambda values: (ctypes.POINTER(ctypes.c_float) * count)(*values)
+    out = array('f', bytes(width * height * 12))
+    if function(width, height, count, numbers(ctypes.c_int, kinds), numbers(ctypes.c_int, modes), numbers(ctypes.c_double, opacities),
+                numbers(ctypes.c_int, inverts), pointers(images), pointers(alphas), numbers(ctypes.c_double, turns),
+                numbers(ctypes.c_double, uvs), numbers(ctypes.c_double, colours), numbers(ctypes.c_double, gradients),
+                out.buffer_info()[0], 0):
+        return None
+    return out
 
 
 IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
@@ -161,15 +255,28 @@ def texture(environment, width=512, height=256):
     target = folder/(digest+'.pfm')
     if not target.exists():
         layers = []
-        for layer in reversed(environment['layers']):
-            pixels,alpha = image_pixels(layer,folder,width,height) if layer['kind']=='image' else (None,None)
+        # The images read side by side, each by a converter of its own: one after another, a car's three HDRs took
+        # three times as long.
+        ordered = list(reversed(environment['layers']))
+        images = [layer for layer in ordered if layer['kind']=='image']
+        if len(images) > 1:
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=min(4, len(images))) as pool:
+                read = dict(zip(map(id, images), pool.map(lambda layer: image_pixels(layer,folder,width,height), images)))
+        else:
+            read = {id(layer): image_pixels(layer,folder,width,height) for layer in images}
+        for layer in ordered:
+            pixels,alpha = read[id(layer)] if layer['kind']=='image' else (None,None)
             inv = coordinates.inverse(layer['matrix']) if 'matrix' in layer else None
             layers.append((layer,pixels,alpha,inv))
         staged = folder/(digest+'-'+uuid.uuid4().hex+'.pfm')
         try:
+            blended = native_blend(layers, width, height)
             with staged.open('wb') as out:
                 out.write(('PF\n%d %d\n-1.0\n'%(width,height)).encode())
-                for y in range(height):
+                if blended is not None:
+                    out.write(blended.tobytes())
+                for y in (range(height) if blended is None else ()):
                     latitude = ((y+.5)/height-.5)*math.pi
                     for x in range(width):
                         longitude = ((x+.5)/width-.5)*2*math.pi

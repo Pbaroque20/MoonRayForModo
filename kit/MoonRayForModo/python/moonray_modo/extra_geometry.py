@@ -49,8 +49,11 @@ def scalp_triangles(scene,identity):
     except LookupError:return None
     if item.type!='mesh':return None
     mesh=modo.meshgeometry.MeshProvider.meshFromMeshChannel(item._item,'deformed')
+    matrix=world_matrix(item)
+    fast=scalp_natively(mesh,matrix)
+    if fast is not None:return fast
     points=lx.object.Point(mesh.PointAccessor());polygons=lx.object.Polygon(mesh.PolygonAccessor())
-    matrix=world_matrix(item);places={};triangles=[]
+    places={};triangles=[]
     for i in range(mesh.PolygonCount()):
         polygons.SelectByIndex(i)
         count=polygons.VertexCount()
@@ -63,6 +66,59 @@ def scalp_triangles(scene,identity):
             corners.append(place)
         triangles+=[(corners[0],corners[k],corners[k+1]) for k in range(1,count-1)]
     return triangles
+
+
+class Triangles:
+    """A scalp's triangles (scalp_triangles), as the adapter made them: nine doubles a triangle in one run (flat), read
+    as the list of three (x, y, z) corners each they stand for."""
+    __slots__=('flat',)
+
+    def __init__(self,flat):self.flat=flat
+
+    def __len__(self):return len(self.flat)//9
+
+    def __bool__(self):return len(self.flat)>0
+
+    def __iter__(self):
+        numbers=self.flat.tolist()
+        return iter([(tuple(numbers[k:k+3]),tuple(numbers[k+3:k+6]),tuple(numbers[k+6:k+9])) for k in range(0,len(numbers),9)])
+
+    def __getitem__(self,index):return list(self)[index]
+
+
+def scalp_natively(mesh,matrix):
+    """scalp_triangles() by the geometry adapter: the mesh read whole (mesh_reader), its points taken into the world and
+    its polygons fanned in one call (projections.cpp), the same numbers. None where it cannot, or where the mesh has
+    curves or lines, which the walk here counts among its polygons."""
+    import ctypes
+    from array import array as packed
+    from . import mesh_reader,rows
+    native=rows._native()
+    if native is None or not hasattr(native,'MR_fan_triangles'):return None
+    whole=mesh_reader.read(mesh)
+    if whole is None or whole.lines:return None
+    points=packed('d',whole.vertices.data if hasattr(whole.vertices,'data') else (v for p in whole.vertices for v in p))
+    corners,counts=whole.indices,whole.counts
+    total=sum(max(0,c-2) for c in counts)
+    out=packed('d',bytes(72*total))
+    try:matrix_in=(ctypes.c_double*16)(*[float(v) for v in matrix])
+    except (TypeError,ValueError):return None
+    if len(matrix_in)!=16:return None
+    pointer=ctypes.c_void_p;function=native.MR_fan_triangles;address=rows._address
+    function.restype=ctypes.c_int
+    function.argtypes=[pointer,ctypes.c_longlong,pointer,pointer,ctypes.c_longlong,pointer,pointer]
+    if function(address(points) if len(points) else None,len(points)//3,address(corners) if len(corners) else None,
+                address(counts) if len(counts) else None,len(counts),ctypes.addressof(matrix_in),address(out) if total else None):
+        return None
+    return Triangles(out)
+
+
+def _triangle_numbers(triangles):
+    """A scalp's triangles as one run of doubles: the run itself where the adapter made them."""
+    import itertools
+    from array import array as packed
+    if isinstance(triangles,Triangles):return triangles.flat
+    return packed('d',itertools.chain.from_iterable(itertools.chain.from_iterable(triangles or [])))
 
 
 def grown(scene,item,strands,settings,warnings):
@@ -79,7 +135,7 @@ def grown(scene,item,strands,settings,warnings):
     guides=[[transform(list(p),matrix) for p in strand] for strand,_,_ in strands]
     held=hashlib.sha1()
     for part in (packed('d',itertools.chain.from_iterable(itertools.chain.from_iterable(guides))),packed('q',[len(g) for g in guides]),
-                 packed('d',itertools.chain.from_iterable(itertools.chain.from_iterable(triangles or []))),
+                 _triangle_numbers(triangles),
                  packed('d',[settings['mode'],settings['count'],settings['width'],settings['clump'],settings['length'],settings['seed']])):
         held.update(part.tobytes());held.update(b'|')
     key=held.digest()
@@ -99,7 +155,7 @@ def grown(scene,item,strands,settings,warnings):
                 # The scalp's grid is kept by its triangles: a guide moved, or a setting changed, leaves the scalp as it was.
                 surface=None
                 if triangles:
-                    shape=hashlib.sha1(packed('d',itertools.chain.from_iterable(itertools.chain.from_iterable(triangles))).tobytes()).digest()
+                    shape=hashlib.sha1(_triangle_numbers(triangles).tobytes()).digest()
                     if shape not in SCALPS:
                         if len(SCALPS)>=4:SCALPS.pop(next(iter(SCALPS)))
                         SCALPS[shape]=hair.Scalp(triangles)
@@ -180,11 +236,19 @@ def batches(identity,name,strands,shape,material,matrix):
     one count per strand. MoonRay builds one acceleration structure for the lot, which is what
     makes thousands of hairs cost little more than one mesh."""
     groups={}
-    for strand,tag,stable in strands:groups.setdefault(material or tag,[]).append((strand,stable))
-    result=[];tapered=abs(shape['root']-shape['tip'])>1e-12
+    scales=shape.get('scales')
+    for index,(strand,tag,stable) in enumerate(strands):
+        groups.setdefault(material or tag,[]).append((strand,stable,scales[index] if scales else 1.0))
+    result=[];tapered=abs(shape['root']-shape['tip'])>1e-12 or bool(scales)
     for tag,members in groups.items():
         vertices=[];counts=[];radii=[];uvs=[];ids=[]
-        for index,(strand,stable) in enumerate(members):
+        shaped=_shaped_natively(members,shape,tapered) if tapered or shape['uv'] else None
+        if shaped is not None:
+            # Lengths, radii and UVs for every point by the geometry adapter (curves.cpp); the strands' points as they are.
+            radii,uvs,vertices=shaped
+            counts=[len(strand) for strand,_,_ in members]
+            ids=[stable for _,stable,_ in members if stable is not None]
+        for index,(strand,stable,scale) in enumerate(members if shaped is None else ()):
             vertices+=strand;counts.append(len(strand))
             if stable is not None:ids.append(stable)
             if not (tapered or shape['uv']):continue
@@ -194,7 +258,7 @@ def batches(identity,name,strands,shape,material,matrix):
             total=lengths[-1] or 1.0;across=(index+.5)/len(members)
             for length in lengths:
                 along=length/total
-                if tapered:radii.append(shape['root']+(shape['tip']-shape['root'])*along**shape['envelope'])
+                if tapered:radii.append((shape['root']+(shape['tip']-shape['root'])*along**shape['envelope'])*scale)
                 if shape['uv']:uvs.append([across,along])
         entry=dict(kind='curves',identity=identity+'|curves|'+tag,source_item=identity,name=name,vertices=vertices,counts=counts,
                    radius=shape['root'],curve_type=0,material=tag,matrix=matrix)
@@ -208,6 +272,42 @@ def batches(identity,name,strands,shape,material,matrix):
         if ids:entry['ids']=ids
         result.append(entry)
     return result
+
+
+def _shaped_natively(members,shape,tapered):
+    """batches()'s radii (a list), UVs and points (rows.Rows of doubles: the strands' points one after another, as
+    they were) for one batch, by the geometry adapter in one call: the same numbers. None where it cannot (no adapter,
+    a point not of three numbers)."""
+    import ctypes,itertools
+    from array import array as packed
+    from hashlib import blake2b
+    from . import rows
+    native=rows._native()
+    if native is None or not hasattr(native,'MR_curve_shape') or not members:return None
+    try:
+        counts=packed('i',(len(strand) for strand,_,_ in members))
+        # Strands the hair grower handed over (hair_native.Strand) are copied from its run of numbers as they are.
+        from .hair_native import Strand
+        points=packed('d')
+        for strand,_,_ in members:
+            if isinstance(strand,Strand):points.extend(strand.numbers())
+            else:points.extend(itertools.chain.from_iterable(strand))
+        scales=packed('d',(float(scale) for _,_,scale in members))
+        root,tip,envelope=float(shape['root']),float(shape['tip']),float(shape['envelope'])
+    except (TypeError,ValueError,OverflowError):return None
+    total=sum(counts)
+    if len(points)!=3*total or not total:return None
+    radii=packed('d',bytes(8*total)) if tapered else packed('d')
+    uvs=packed('d',bytes(16*total)) if shape['uv'] else packed('d')
+    address=rows._address;pointer=ctypes.c_void_p
+    function=native.MR_curve_shape
+    function.restype=ctypes.c_int
+    function.argtypes=[pointer,pointer,ctypes.c_longlong,pointer,ctypes.c_double,ctypes.c_double,ctypes.c_double,ctypes.c_int,ctypes.c_int,pointer,pointer]
+    if function(address(points),address(counts),len(counts),address(scales),root,tip,envelope,1 if tapered else 0,1 if shape['uv'] else 0,
+                address(radii) if tapered else None,address(uvs) if shape['uv'] else None):
+        return None
+    return ((radii.tolist() if tapered else []),(rows.Rows(uvs,2,'curve-uvs:'+blake2b(memoryview(uvs),digest_size=16).hexdigest()) if shape['uv'] else []),
+            rows.Rows(points,3,'curve-points:'+blake2b(memoryview(points),digest_size=16).hexdigest()))
 
 
 # The text of the long lists of a curve geometry, kept by what is in them: thousands of strands
@@ -245,6 +345,84 @@ def fur_runtime():
     return None
 
 
+GUIDE_TAGS={'material':'MATR','part':'PART','selection set':'PICK','pick':'PICK'}
+
+
+def fur_guides(scene,item,mesh,polygons,points,layer,wanted):
+    """A Fur material's guides, each the points of one curve from its root, in the space of the mesh the fur grows on.
+    Modo takes them (tools/probe_cl_fur_guides.py) from the curves of that mesh that wear the fur's material (Use
+    Guides from Base Surface), or from the curves of the mesh its Item names (the Fur material's shadeLoc link); with
+    a Polygon Tag set, from the curves with that tag alone."""
+    import lx,modo
+    from .host import channel,world_matrix
+    from . import coordinates
+    if str(channel(layer,'guides','none') or 'none')=='none':return []
+    tag=str(channel(layer,'guideTag','') or '');kind=GUIDE_TAGS.get(str(channel(layer,'guideType','') or '').lower(),'MATR')
+
+    def curves(source_mesh,source_polygons,source_points,owner,only):
+        found=[]
+        for strand,material,_ in polylines(source_mesh,source_polygons,source_points,None,owner):
+            found.append((strand,material))
+        if tag:
+            # The curves of the chosen tag: read again by that tag where it is not their material.
+            if kind!='MATR':
+                import lxu.utils
+                tags=lx.object.StringTag(source_polygons);chosen=[]
+                for i in range(source_mesh.PolygonCount()):
+                    source_polygons.SelectByIndex(i)
+                    # The curves polylines() keeps, in its order.
+                    if lxu.utils.decodeID4(source_polygons.Type())!='LINE' or source_polygons.VertexCount()<2:continue
+                    try:value=tags.Get(lxu.utils.lxID4(kind)) or ''
+                    except (LookupError,RuntimeError):value=''
+                    chosen.append(tag in value.split(';') if kind=='PICK' else value==tag)
+                return [strand for (strand,_),keep in zip(found,chosen) if keep]
+            return [strand for strand,material in found if material==tag]
+        return [strand for strand,material in found if only is None or material==only]
+    if channel(layer,'guideSurf',1):
+        return curves(mesh,polygons,points,item,wanted or None)
+    try:sources=[i for i in layer.itemGraph('shadeLoc').forward() if i.type=='mesh']
+    except (LookupError,RuntimeError,AttributeError):sources=[]
+    if not sources:return []
+    source=sources[0]
+    held=modo.meshgeometry.MeshProvider.meshFromMeshChannel(source._item,'deformed')
+    strands=curves(held,lx.object.Polygon(held.PolygonAccessor()),lx.object.Point(held.PointAccessor()),source,None)
+    # From the guides' item into the fur's mesh.
+    into=coordinates.inverse(world_matrix(item));out_of=world_matrix(source)
+    return [[coordinates.transform(coordinates.transform(p,out_of),into) for p in strand] for strand in strands]
+
+
+def fur_surface_native(item,mesh,layer,wanted,read,warnings):
+    """fur_entries' reading of a mesh's fur by the geometry adapter (fur_reader): (triangles, each one's material, the
+    maps by what they vary, the guides), as the reading here gives them; None where the adapter cannot. Guides of an
+    Item of their own are read by fur_guides, a few curves of another mesh."""
+    from . import fur,fur_reader
+    from .host import channel
+    names,whats=[],[]
+    for key,what in fur.WEIGHTS.items():
+        try:named=read(key)
+        except Exception:named=''
+        if named:names.append(named);whats.append(what)
+    try:vector=read('vectorMap') or ''
+    except Exception:vector=''
+    mode=str(channel(layer,'guides','none') or 'none')
+    on_surface=mode!='none' and bool(channel(layer,'guideSurf',1))
+    tag=str(channel(layer,'guideTag','') or '');kind=GUIDE_TAGS.get(str(channel(layer,'guideType','') or '').lower(),'MATR')
+    got=fur_reader.read(mesh,wanted,names,vector,on_surface,tag,kind)
+    if got is None:return None
+    varied={}
+    for named,what in zip(names,whats):
+        if got['weights'].get(named) is None:
+            warnings.append('Fur on %s: the weight map %s that its %s follows was not found, and is left out.'%(item.name,named,what));continue
+        varied[what]=got['weights'][named]
+    if vector:
+        if got['vector'] is None:warnings.append('Fur on %s: the vector map %s it follows was not found, and is left out.'%(item.name,vector))
+        else:varied['vector']=got['vector']
+    guides=got['guides'] if on_surface else []
+    if mode!='none' and not on_surface:
+        guides=fur_guides(None,item,mesh,None,None,layer,wanted)
+    return got['triangles'],got['worn'],varied,guides
+
+
 def fur_entries(scene,item,mesh,polygons,points,warnings):
     """The fur of a mesh that wears one of Modo's Fur materials, as curve geometry: one for each Fur material that is
     on any of its polygons."""
@@ -266,49 +444,75 @@ def fur_entries(scene,item,mesh,polygons,points,warnings):
             try:targets=list(mask.itemGraph('shadeLoc').forward())
             except (LookupError,RuntimeError,AttributeError):targets=[]
             if targets and all(target.id!=item.id for target in targets):continue
-        tags=lx.object.StringTag(polygons);places={};faces=[]
-        for i in range(mesh.PolygonCount()):
-            polygons.SelectByIndex(i)
-            if lxu.utils.decodeID4(polygons.Type()) not in ('FACE','SUBD','PSUB') or polygons.VertexCount()<3:continue
-            if wanted and strand_tag(tags,lx.symbol.i_POLYTAG_MATERIAL)!=wanted:continue
-            corners=[]
-            for v in range(polygons.VertexCount()):
-                point=polygons.VertexByIndex(v)
-                if point not in places:
-                    points.Select(point);places[point]=tuple(points.Pos())
-                corners.append(point)
-            faces.append((corners,strand_tag(tags,lx.symbol.i_POLYTAG_MATERIAL)))
-        if not faces:continue
-        # The surface's normal at each point: its faces' normals together, so fur on a round thing stands out all round.
-        normals={}
-        for corners,_ in faces:
-            x=y=z=0.0
-            for k,point in enumerate(corners):
-                a,b=places[point],places[corners[(k+1)%len(corners)]]
-                x+=(a[1]-b[1])*(a[2]+b[2]);y+=(a[2]-b[2])*(a[0]+b[0]);z+=(a[0]-b[0])*(a[1]+b[1])
-            for point in corners:
-                held=normals.get(point,(0.0,0.0,0.0));normals[point]=(held[0]+x,held[1]+y,held[2]+z)
-        for point,(x,y,z) in normals.items():
-            size=math.sqrt(x*x+y*y+z*z) or 1.0;normals[point]=(x/size,y/size,z/size)
-        triangles=[(places[c[0]],places[c[k]],places[c[k+1]],normals[c[0]],normals[c[k]],normals[c[k+1]]) for c,_ in faces for k in range(1,len(c)-1)]
-        # Each fibre takes the material of the polygon it stands on.
-        worn=[tag for c,tag in faces for k in range(1,len(c)-1)]
         read=lambda key,layer=layer:layer.channel(key).get()
-        # The weight maps the Fur material names, which vary the fur across the surface: a point with no weight has none.
-        varied={}
-        for key,what in fur.WEIGHTS.items():
-            try:named=read(key)
+        # The surface, its maps and its guides read by the geometry adapter in one call (fur_reader); where it cannot,
+        # a polygon and a point at a time here.
+        native=fur_surface_native(item,mesh,layer,wanted,read,warnings)
+        if native is not None:
+            triangles,worn,varied,guides=native
+            if not len(triangles):continue
+        else:
+            tags=lx.object.StringTag(polygons);places={};faces=[]
+            for i in range(mesh.PolygonCount()):
+                polygons.SelectByIndex(i)
+                if lxu.utils.decodeID4(polygons.Type()) not in ('FACE','SUBD','PSUB') or polygons.VertexCount()<3:continue
+                if wanted and strand_tag(tags,lx.symbol.i_POLYTAG_MATERIAL)!=wanted:continue
+                corners=[]
+                for v in range(polygons.VertexCount()):
+                    point=polygons.VertexByIndex(v)
+                    if point not in places:
+                        points.Select(point);places[point]=tuple(points.Pos())
+                    corners.append(point)
+                faces.append((corners,strand_tag(tags,lx.symbol.i_POLYTAG_MATERIAL)))
+            if not faces:continue
+            # The surface's normal at each point: its faces' normals together, so fur on a round thing stands out all round.
+            normals={}
+            for corners,_ in faces:
+                x=y=z=0.0
+                for k,point in enumerate(corners):
+                    a,b=places[point],places[corners[(k+1)%len(corners)]]
+                    x+=(a[1]-b[1])*(a[2]+b[2]);y+=(a[2]-b[2])*(a[0]+b[0]);z+=(a[0]-b[0])*(a[1]+b[1])
+                for point in corners:
+                    held=normals.get(point,(0.0,0.0,0.0));normals[point]=(held[0]+x,held[1]+y,held[2]+z)
+            for point,(x,y,z) in normals.items():
+                size=math.sqrt(x*x+y*y+z*z) or 1.0;normals[point]=(x/size,y/size,z/size)
+            triangles=[(places[c[0]],places[c[k]],places[c[k+1]],normals[c[0]],normals[c[k]],normals[c[k+1]]) for c,_ in faces for k in range(1,len(c)-1)]
+            # Each fibre takes the material of the polygon it stands on.
+            worn=[tag for c,tag in faces for k in range(1,len(c)-1)]
+            # The weight maps the Fur material names, which vary the fur across the surface: a point with no weight has none.
+            varied={}
+            for key,what in fur.WEIGHTS.items():
+                try:named=read(key)
+                except Exception:named=''
+                if not named:continue
+                try:
+                    maps=lx.object.MeshMap(mesh.MeshMapAccessor());maps.SelectByName(lx.symbol.i_VMAP_WEIGHT,named);map_id=maps.ID()
+                    storage=lx.object.storage('f',1);weights={}
+                    for point in places:
+                        points.Select(point)
+                        weights[point]=float(storage.get()[0]) if points.MapEvaluate(map_id,storage) else 0.0
+                except (LookupError,RuntimeError,TypeError):
+                    warnings.append('Fur on %s: the weight map %s that its %s follows was not found, and is left out.'%(item.name,named,what));continue
+                varied[what]=[(weights[c[0]],weights[c[k]],weights[c[k+1]]) for c,_ in faces for k in range(1,len(c)-1)]
+            # Its vector map (Vector VMap, Modo's VECT kind): each fibre grows along the vector at its root, as long as it is,
+            # and none where it is nothing (tools/probe_cl_fur_maps.py). A point without a value has none.
+            try:named=read('vectorMap')
             except Exception:named=''
-            if not named:continue
-            try:
-                maps=lx.object.MeshMap(mesh.MeshMapAccessor());maps.SelectByName(lx.symbol.i_VMAP_WEIGHT,named);map_id=maps.ID()
-                storage=lx.object.storage('f',1);weights={}
-                for point in places:
-                    points.Select(point)
-                    weights[point]=float(storage.get()[0]) if points.MapEvaluate(map_id,storage) else 0.0
-            except (LookupError,RuntimeError,TypeError):
-                warnings.append('Fur on %s: the weight map %s that its %s follows was not found, and is left out.'%(item.name,named,what));continue
-            varied[what]=[(weights[c[0]],weights[c[k]],weights[c[k+1]]) for c,_ in faces for k in range(1,len(c)-1)]
+            if named:
+                try:
+                    maps=lx.object.MeshMap(mesh.MeshMapAccessor());maps.SelectByName(lx.symbol.i_VMAP_VECTOR,named);map_id=maps.ID()
+                    storage=lx.object.storage('f',3);vectors={}
+                    for point in places:
+                        points.Select(point)
+                        vectors[point]=tuple(float(v) for v in storage.get()) if points.MapEvaluate(map_id,storage) else (0.0,0.0,0.0)
+                    varied['vector']=[(vectors[c[0]],vectors[c[k]],vectors[c[k+1]]) for c,_ in faces for k in range(1,len(c)-1)]
+                except (LookupError,RuntimeError,TypeError):
+                    warnings.append('Fur on %s: the vector map %s it follows was not found, and is left out.'%(item.name,named))
+            # Its guides, where it follows them: none found, it grows as if it did not, and says so.
+            guides=fur_guides(scene,item,mesh,polygons,points,layer,wanted)
+        if str(channel(layer,'guides','none') or 'none')!='none' and not guides:
+            warnings.append("Fur on %s follows guides, but none were found: guides are curves wearing the fur's material on the mesh "
+                            '(Use Guides from Base Surface), or the curves of the guide Item.'%item.name)
         left=fur.unread(read)
         if left:warnings.append('Fur on %s is grown without %s, which the plugin does not read from a Fur material.'%(item.name,', '.join(left)))
         alone={'fur_only':wanted} if channel(layer,'furOnly',0) else {}
@@ -319,18 +523,20 @@ def fur_entries(scene,item,mesh,polygons,points,warnings):
         grown=None
         if runtime is not None:
             tags=sorted(set(worn));numbers={tag:index for index,tag in enumerate(tags)}
-            grown=fur_native.grow(triangles,fur.settings(read),varied,[numbers[tag] for tag in worn],0,runtime)
+            grown=fur_native.grow(triangles,fur.settings(read),varied,[numbers[tag] for tag in worn],0,runtime,guides)
         if grown is not None:
             for number,(path,fibres,points) in sorted(grown['files'].items()):
                 made.append(dict(kind='curves',identity=item.id+'|fur|'+layer.id+'|curves|'+tags[number],source_item=item.id,name=item.name,
                                  vertices=[],counts=[],radius=grown['root'],curve_type=0,material=tags[number],matrix=world_matrix(item),
                                  fur_file=str(path),fur_fibres=fibres,fur_points=points,**alone))
             continue
-        strands,root,tip,asked,stands=fur.kept(triangles,fur.settings(read),varied)
+        strands,root,tip,asked,stands,widths=fur.kept(triangles,fur.settings(read),varied,guides)
         if asked>fur.MOST:
             warnings.append('Fur on %s: Modo would grow %s fibres; %s are grown, the most this runtime grows. It is thinner fur than Modo\'s.'%(item.name,format(asked,','),format(len(strands),',')))
         if not strands:continue
         shape=dict(root=root,tip=tip,envelope=1.0,samples=8,uv=True,round=False,basis=0)
+        # Each fibre's width, where a width map varies it: its radii scaled by the map's weight at its root.
+        if 'width' in varied:shape['scales']=widths
         kept=(item.id+'|fur|'+layer.id,item.name,root,tip,wanted,tuple(world_matrix(item)))
         held=BATCHED.get(kept)
         if held is None or held[0] is not strands:
@@ -501,12 +707,20 @@ def attach(scene,settings):
         values.append(value)
     scene['extra_geometry']=values
 
+# Hair glints' numbers for each strand, by how many strands there are (each strand's is its place's).
+SCATTER={}
+
+
 def emit(scene,materials,lines,crypto=False):
     from .lighting import owner
     from .working_space import color as working_color
     for index,entry in enumerate(scene.get('extra_geometry',[])):
         path='/modo/extra/'+entry['identity'];kind=entry['kind'];tag=entry.get('material','');tag=tag if tag in materials else ''
         attrs={'node_xform':node_matrix(entry)}
+        # The long lists of strands and points: lines of their own, in the binary file beside the scene where it is
+        # written (rdla._heavy_line), as a mesh's are; written as text on the object's one line, each was formatted again
+        # at every write.
+        heavy=[]
         if kind=='vdb':
             shader='VdbVolume(%s)'%string(path+'/volume');gain=max(0,float(entry.get('density',1)));emission=max(0,float(entry.get('emission',1)));anisotropy=float(entry.get('anisotropy',0))
             if not -1<=anisotropy<=1:raise ValueError('Volume anisotropy must be between -1 and 1')
@@ -521,27 +735,34 @@ def emit(scene,materials,lines,crypto=False):
             vertices=entry['vertices'];radii=entry.get('radii',[entry.get('radius',.001)])
             if not vertices:continue
             if not isinstance(radii,list):raise ValueError('Geometry radii must be an array')
-            if any(not math.isfinite(float(r)) or r<0 for r in radii) or not any(r>0 for r in radii):raise ValueError('Curve/point radii must be nonnegative with at least one positive radius')
+            from .serialization import small
+            # Looked over once for as long as it is the same list.
+            if not small('radii-checked',radii,lambda:not any(not math.isfinite(float(r)) or r<0 for r in radii) and any(r>0 for r in radii)):
+                raise ValueError('Curve/point radii must be nonnegative with at least one positive radius')
             if kind=='points' and len(radii)==1:radii=radii*len(vertices)
             counts=entry.get('counts',[])
             allowed={1,len(vertices),len(counts)} if kind=='curves' else {len(vertices)}
             if len(radii) not in allowed:raise ValueError('Radius count does not match geometry')
-            attrs.update(vertex_list_0=written('points',vertices,lambda:vectors(vertices)),
-                         radius_list=written('radii',radii,lambda:'{'+', '.join(map('%.12g'.__mod__,radii))+'}'))
+            constructor='RdlPointGeometry' if kind!='curves' else 'RdlCurveGeometry'
+            from .rdla import _heavy_line
+            heavy+=_heavy_line(path,'vertex_list_0','vec3',vertices,lambda:written('points',vertices,lambda:vectors(vertices)),constructor)
+            heavy+=_heavy_line(path,'radius_list','floats',radii,lambda:written('radii',radii,lambda:'{'+', '.join(map('%.12g'.__mod__,radii))+'}'),constructor)
             for key,target in (('vertices_close','vertex_list_1'),('velocities','velocity_list_0')):
                 if key in entry:
                     if len(entry[key])!=len(vertices):raise ValueError('Motion data does not match geometry vertices')
-                    attrs[target]=vectors(entry[key])
-            constructor='RdlPointGeometry'
+                    moving=entry[key]
+                    heavy+=_heavy_line(path,target,'vec3',moving,lambda moving=moving:vectors(moving),constructor)
             if kind=='curves':
                 curve_type=int(entry.get('curve_type',0))
-                if curve_type not in (0,1,2) or sum(counts)!=len(vertices) or any(type(c)!=int or c<(2 if curve_type==0 else 4) or (curve_type==1 and (c-1)%3) for c in counts):raise ValueError('Invalid curve counts or interpolation')
-                constructor='RdlCurveGeometry';attrs.update(curves_vertex_count=written('counts',counts,lambda:array(str(c) for c in counts)),curve_type=str(curve_type))
+                if not small('counts-checked:%d:%d'%(curve_type,len(vertices)),counts,lambda:sum(counts)==len(vertices) and not any(type(c)!=int or c<(2 if curve_type==0 else 4) or (curve_type==1 and (c-1)%3) for c in counts)) or curve_type not in (0,1,2):
+                    raise ValueError('Invalid curve counts or interpolation')
+                attrs.update(curves_vertex_count=written('counts',counts,lambda:array(str(c) for c in counts)),curve_type=str(curve_type))
                 # MoonRay's own default is a ribbon that faces the view.
                 if entry.get('round'):attrs['curves_subtype']='1'
                 if entry.get('uvs'):
                     if len(entry['uvs']) not in (len(counts),len(vertices)):raise ValueError('Curve UVs must have one entry per strand or per point')
-                    attrs['uv_list']=written('uvs',entry['uvs'],lambda:vectors(entry['uvs'],'Vec2'))
+                    uvs=entry['uvs']
+                    heavy+=_heavy_line(path,'uv_list','vec2',uvs,lambda:written('uvs',uvs,lambda:vectors(uvs,'Vec2')),constructor)
         if 'visibility' in entry:
             camera,indirect,reflection,refraction,subsurface,shadow=entry['visibility']
             for key,value in [('visible_in_camera',camera),('visible_shadow',shadow),('visible_diffuse_reflection',indirect),('visible_diffuse_transmission',indirect),('visible_glossy_reflection',reflection),('visible_mirror_reflection',reflection),('visible_glossy_transmission',refraction),('visible_mirror_transmission',refraction)]:attrs[key]='true' if value else 'false'
@@ -558,7 +779,12 @@ def emit(scene,materials,lines,crypto=False):
             held=materials.get(tag) or {};held=(held.get('material_stack') or [held])[-1]
             if held.get('native_shader')=='HairMaterial_v3' and (held.get('native_parameters') or {}).get('show_hair_glint'):
                 from .moonlightipr_curves import chance
-                lines+=['UserData(%s) {'%string(path+'/scatter'),'  ["float_key"] = "scatter_tag",','  ["float_values_0"] = {%s},'%', '.join('%.6f'%chance(i) for i in range(len(counts))),'}']
+                # Each strand's number, kept for as many strands as there are.
+                scatter=SCATTER.get(len(counts))
+                if scatter is None:
+                    if len(SCATTER)>=16:SCATTER.clear()
+                    scatter=SCATTER[len(counts)]=', '.join('%.6f'%chance(i) for i in range(len(counts)))
+                lines+=['UserData(%s) {'%string(path+'/scatter'),'  ["float_key"] = "scatter_tag",','  ["float_values_0"] = {%s},'%scatter,'}']
                 carried.append('UserData(%s)'%string(path+'/scatter'))
         if kind=='curves' and not entry.get('fur_file'):
             # Curves say they are fine: the matte of fur, hair and curves by which a denoised picture keeps its
@@ -566,7 +792,10 @@ def emit(scene,materials,lines,crypto=False):
             lines+=['UserData(%s) {'%string(path+'/fine'),'  ["float_key"] = "modo_fine",','  ["float_values_0"] = {1},','}']
             carried.append('UserData(%s)'%string(path+'/fine'))
         if carried:attrs['primitive_attributes']=array(carried)
-        lines += ['do','  local g = %s(%s) { %s }'%(constructor,string(path),', '.join('[%s] = %s'%(string(k),v) for k,v in attrs.items())),'  table.insert(geometries, g)']
+        if heavy:
+            lines += ['do','  local g = %s(%s) {'%(constructor,string(path)),*['    [%s] = %s,'%(string(k),v) for k,v in attrs.items()],*heavy,'  }','  table.insert(geometries, g)']
+        else:
+            lines += ['do','  local g = %s(%s) { %s }'%(constructor,string(path),', '.join('[%s] = %s'%(string(k),v) for k,v in attrs.items())),'  table.insert(geometries, g)']
         if kind=='vdb':
             lines += ['  local a = {g, "", %s, objectLightSets[%s] or (nativeLightSets[%s] and nativeLightSets[%s][%s]) or lightSet}'%(shader,string(owner(entry)),string(owner(entry)),string(owner(entry)),string(tag)),'  if objectShadowSets[%s] then table.insert(a, objectShadowSets[%s]) end'%(string(owner(entry)),string(owner(entry))),'  table.insert(assignments,a)']
         else:lines.append('  assign(g, "", %s, %s)'%(string(tag),string(owner(entry))))

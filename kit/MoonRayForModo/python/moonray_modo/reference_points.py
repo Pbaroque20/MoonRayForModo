@@ -56,7 +56,9 @@ def read(item, count):
         return None
     whole = mesh_reader.read(base)
     if whole is not None and len(whole.vertices) == count:
-        return [list(point) for point in whole.vertices]
+        # The adapter's run of numbers as it is (rows.Rows): made into a list a point at a time, the binary scene file
+        # and the scene's digest lost their quick ways with it.
+        return whole.vertices
     points = lx.object.Point(base.PointAccessor())
     found = []
     for index in range(count):

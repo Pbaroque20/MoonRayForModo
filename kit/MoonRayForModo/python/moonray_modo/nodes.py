@@ -17,7 +17,11 @@ MAPS={
  'mix':{'bg':('Rgb',[0,0,0]),'fg':('Rgb',[1,1,1]),'mix':('Float',.5)},
  'checker':{'color1':('Rgb',[0,0,0]),'color2':('Rgb',[1,1,1]),'scale':('Vec2f',[8,8])},
  'normalmap':{'in':('Rgb',[.5,.5,1]),'scale':('Float',1),'basis_mode':('Int',0),'uv_map':('String',''),'basis_scale':('Vec2f',[1,1]),'basis_rotation':('Float',0),'basis_offset':('Vec2f',[0,0])},
+ # A bump map: a height (an image, mostly) turned into a shading normal, as a Shader Tree Bump layer with the
+ # material's Bump Amplitude; step, where it is not 0, is how far apart in UV the height is read.
+ 'bump':{'height':('Float',0),'amplitude':('Float',.005),'step':('Float',0)},
 }
+NORMAL_NODES=('normalmap','bump')
 
 from .math_nodes import SCHEMAS as MATH_SCHEMAS
 MAPS.update(MATH_SCHEMAS)
@@ -27,17 +31,21 @@ def specs(kind):
     if kind in map_library.catalog():return map_library.catalog()[kind]['attributes']
     if kind not in MAPS: raise ValueError('Unsupported node type: '+str(kind))
     result={key:{'name':key,'type':value[0],'default_value':value[1],
-                  'flags':'FLAGS_BINDABLE' if key not in ('file','srgb','color_space','uv_map','scale','channel','channels','index','doclamp','uaddressmode','vaddressmode','default','filtertype','basis_mode','basis_scale','basis_rotation','basis_offset') else ''} for key,value in MAPS[kind].items()}
+                  'flags':'FLAGS_BINDABLE' if key not in ('file','srgb','color_space','uv_map','scale','channel','channels','index','doclamp','uaddressmode','vaddressmode','default','filtertype','basis_mode','basis_scale','basis_rotation','basis_offset','amplitude','step') else ''} for key,value in MAPS[kind].items()}
     if kind=='normalmap':
         result['basis_mode']['enum']={'Connected image UVs':0,'Explicit UV basis':1,'Primary shading basis':2}
         result['basis_rotation']['comment']='UV basis rotation in degrees; used only with Explicit UV basis.'
+    if kind=='bump':
+        result['height']['comment']='The height: wire a greyscale image (or any texture) here; white is raised, black is sunk.'
+        result['amplitude']['comment']="How high white stands above black, in scene units, as Modo's Bump Amplitude (5 mm by default)."
+        result['step']['comment']='How far apart in UV the height is read; 0 reads it a thousandth of the UVs apart.'
     return result
 
 
 def category(kind):
     if kind in shader_library.catalog(): return 'material'
     if map_library.catalog().get(kind,{}).get('type')=='Displacement':return 'displacement'
-    return 'normal' if kind=='normalmap' or map_library.catalog().get(kind,{}).get('type')=='NormalMap' else 'map'
+    return 'normal' if kind in NORMAL_NODES or map_library.catalog().get(kind,{}).get('type')=='NormalMap' else 'map'
 
 
 def connectable(kind,key):
@@ -356,6 +364,14 @@ def emit(material,name,index,lines,library,output="root",validated=True):
     from .rdla import string,number,vector
     from .textures import prepare,missing,note_missing
     g=validate(material['node_graph']) if validated else effective(material['node_graph']);cache={}
+    # What a Bump node's height is made from: the bump reads it again at UVs a little to either side, which an image
+    # follows only when it takes its UVs as the surface's own UVs move (ModoTextureMap mode 12), not as read off the mesh.
+    bumped=set()
+    pending=[n['inputs']['height'] for n in g['nodes'].values() if n.get('type')=='bump' and (n.get('inputs') or {}).get('height')]
+    while pending:
+        key=pending.pop()
+        if key in bumped or key not in g['nodes']:continue
+        bumped.add(key);pending.extend((g['nodes'][key].get('inputs') or {}).values())
     def definition(kind,path,attributes):
         lines.append('%s(%s) {'%(kind,string(path)))
         lines.extend('  [%s] = %s,'%(string(key),value) for key,value in attributes.items())
@@ -390,6 +406,7 @@ def emit(material,name,index,lines,library,output="root",validated=True):
                 descriptor=image_descriptor(item)
                 uv=refs.get('texcoord')
                 if uv is None and authored_texcoord(params):uv=definition('ConstantColorMap',path+'/authored_uv',{'color_value':vector(params['texcoord'],'Rgb')})
+                if uv is None and identity in bumped:uv=definition('ModoTextureMap',path+'/uv',{'mode':'12','uv_name':string(descriptor['coordinate_key'])})
                 if uv is None:uv=definition('AttributeMap',path+'/uv',{'primitive_attribute_name':string(descriptor['coordinate_key']),'primitive_attribute_type':'1','warn_when_unavailable':'true'})
                 address={'periodic':0,'clamp':1,'mirror':2,'constant':3}
                 u,v=params.get('uaddressmode','periodic'),params.get('vaddressmode','periodic')
@@ -463,6 +480,20 @@ def emit(material,name,index,lines,library,output="root",validated=True):
                     corrected=definition('ModoTextureMap',path+'/uv_basis',{'mode':'13','foreground':normal,'uv_name':string(descriptor['coordinate_key']),'tile_u':str(address[p.get('uaddressmode','periodic')]),'tile_v':str(address[p.get('vaddressmode','periodic')])})
                     normal=binding(corrected,'Rgb')
                 mapped=definition('ModoTextureMap',path+'/tangent',{'mode':'1','normal':normal,'normal_strength':values['scale']})
+                ref=definition('ModoNormalMap',path,{'input':binding(mapped,'Vec3f')})
+            elif kind=='bump':
+                # As a Shader Tree Bump layer (graph.py): the height read to either side of each point, the slope
+                # tipping the normal by the amplitude. A height from a texture not on this machine is flat.
+                from . import graph as shader_tree
+                amplitude=float(params.get('amplitude',.005))
+                if not math.isfinite(amplitude):raise ValueError('Bump amplitude must be a number')
+                # Off in MoonRay Source Overrides (native.bump_node), the node is flat, as MoonRay has no bump of its own.
+                from .native import bump_node
+                flat='height' not in refs or reads_missing(g,inputs['height']) or not bump_node()
+                step=float(params.get('step',0) or 0)
+                mapped=definition('ModoTextureMap',path+'/tangent',{'mode':'1','normal':'Rgb(0.5,0.5,1)',
+                    'height':values['height'],'bump_strength':number(0.0 if flat else amplitude),
+                    **({'bump_step':number(step)} if step>0 and shader_tree.BUMP_STEP else {})})
                 ref=definition('ModoNormalMap',path,{'input':binding(mapped,'Vec3f')})
         cache[identity]=ref
         return ref

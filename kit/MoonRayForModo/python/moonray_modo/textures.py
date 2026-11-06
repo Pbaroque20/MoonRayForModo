@@ -99,7 +99,9 @@ def source_tiles(source):
             if path.is_file() for match in [pattern.match(path.name)] if match}
 
 
-def _prepare(source, srgb=False, mipmaps=True, color_space="", light=False):
+def color_conversion(source, srgb=False, color_space=""):
+    """How an image's colours are taken to the renderer's linear space, as prepare takes them: (its colour space, the
+    converter's arguments for it, a key for what decides it). The same arguments serve maketx and oiiotool."""
     policy=_policy.get();space=color_rule(source) or color_space
     aliases={"(default)":"","(none)":"raw","Linear":"linear","lin_rec709":"linear","srgb_texture":"sRGB"}
     space=aliases.get(space,space)
@@ -109,6 +111,12 @@ def _prepare(source, srgb=False, mipmaps=True, color_space="", light=False):
     if custom and (not config or not Path(config).is_file()):raise ValueError("An input OCIO config is required for color space "+space)
     config_key=(str(Path(config).resolve()),Path(config).stat().st_mtime_ns) if custom else None
     transform_key=(space,config_key,policy.get("linear_space","Linear Rec.709 (sRGB)"))
+    args=['--colorconfig',config,'--colorconvert',space,policy.get('linear_space','Linear Rec.709 (sRGB)')] if custom else          ['--colorconvert','sRGB','linear'] if space=='sRGB' else []
+    return space,args,transform_key
+
+
+def _prepare(source, srgb=False, mipmaps=True, color_space="", light=False):
+    space,colour_args,transform_key=color_conversion(source,srgb,color_space)
     if '<UDIM>' in str(source):
         tiles = source_tiles(source)
         if not tiles:
@@ -160,8 +168,7 @@ def _prepare(source, srgb=False, mipmaps=True, color_space="", light=False):
     args = [str(converter), '--oiio', '--threads', '2', '-d', 'float', '--unpremult'] + ([] if light else ['--monochrome-detect'])
     if not mipmaps:
         args += ['--nomipmap']
-    if custom:args += ['--colorconfig',config,'--colorconvert',space,policy.get('linear_space','Linear Rec.709 (sRGB)')]
-    elif space=='sRGB':args += ['--colorconvert','sRGB','linear']
+    args += colour_args
     # Inside a scene being written (conversions.together), alongside the scene's other textures.
     from . import conversions
     conversions.run(str(target), convert)

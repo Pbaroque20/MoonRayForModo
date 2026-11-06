@@ -9,7 +9,8 @@
 #include <vector>
 inline void modoRuntimePaths()
 {
-    std::vector<char> buffer(32768);
+    const std::size_t pathSlack = 0;  // room past the longest path Windows names
+    std::vector<char> buffer(32768 + pathSlack);
     DWORD n = GetModuleFileNameA(nullptr, buffer.data(), DWORD(buffer.size()));
     if (!n || n >= buffer.size()) throw std::runtime_error("Cannot locate MoonRay executable directory");
     const auto directory = std::filesystem::path(std::string(buffer.data(), n)).parent_path();

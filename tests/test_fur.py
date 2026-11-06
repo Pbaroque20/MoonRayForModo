@@ -21,7 +21,7 @@ def held(**changed):
 
 class Fur(unittest.TestCase):
     def test_as_many_fibres_as_the_spacing_asks_stand_on_the_surface(self):
-        strands, root, tip, asked, stands = fur.grow(FLOOR, held(dist=.02))
+        strands, root, tip, asked, stands, _ = fur.grow(FLOOR, held(dist=.02))
         self.assertEqual(len(stands), len(strands))
         self.assertEqual(set(stands), {0, 1})
         self.assertEqual((asked, len(strands)), (2500, 2500))
@@ -45,7 +45,7 @@ class Fur(unittest.TestCase):
         self.assertTrue(all(s[-1][1] < s[0][1] - .005 for s in limp))
 
     def test_too_many_fibres_are_grown_fewer_and_no_wider(self):
-        strands, root, _, asked, _ = fur.grow(FLOOR, held(dist=.002))
+        strands, root, _, asked, _, _ = fur.grow(FLOOR, held(dist=.002))
         self.assertEqual((asked, len(strands)), (250000, fur.MOST))
         # As thick as the Fur material says, however many are grown.
         self.assertAlmostEqual(root, .002 * .5 / 2)
@@ -65,7 +65,8 @@ class Fur(unittest.TestCase):
         # The tip's kink is the root's where Modo leaves it to follow.
         self.assertEqual((got['curls'], got['kinkAmp'], got['kinkAmpTip']), (.5, .4, .4))
         # Curls and the density map are grown; guides and the width map are named as left out.
-        self.assertEqual(fur.unread(read), ['guides', 'its width map'])
+        # Guides, the vector map and the width map are read since 0.5.3.1.
+        self.assertEqual(fur.unread(read), [])
 
     def test_curls_kink_and_frizz_move_a_fibre_about_and_leave_its_root_where_it_was(self):
         plain = fur.grow(FLOOR, held(dist=.05, strays=0.0, nrmJitter=0.0, flex=0.0))[0]
@@ -95,7 +96,7 @@ class Fur(unittest.TestCase):
     def test_weight_maps_thin_the_fur_and_shorten_it(self):
         # The first triangle carries no weight, the second all of it.
         maps = {'density': [(0.0, 0.0, 0.0), (1.0, 1.0, 1.0)]}
-        strands, _, _, asked, stands = fur.grow(FLOOR, held(dist=.02), maps)
+        strands, _, _, asked, stands, _ = fur.grow(FLOOR, held(dist=.02), maps)
         self.assertEqual(set(stands), {1})
         self.assertTrue(900 < len(strands) < 1600 and asked == 2500)
         short = fur.grow(FLOOR, held(dist=.05, length=.1, sclJitter=0.0, growthJitter=0.0, nrmJitter=0.0, flex=0.0, strays=0.0), {'length': [(.5, .5, .5), (.5, .5, .5)]})[0]

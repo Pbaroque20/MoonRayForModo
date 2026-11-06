@@ -100,7 +100,10 @@ def entries(geometry,category='object',scene=None,instances=False):
         fog=not geometry.get('material') and (geometry.get('kind')=='vdb' or geometry.get('volume'))
         if not fog:
             tags=geometry.get('face_materials') or [geometry.get('material','')]
-            return [(material_name(tag,scene),value(material_name(tag,scene),'material',scene,tag),tag) for tag in tags]
+            # One entry a polygon, of a few materials: each named and hashed once (a car's 1.5 million polygons
+            # were hashed one by one, 50 s of each scene written).
+            known={tag:(material_name(tag,scene),value(material_name(tag,scene),'material',scene,tag),tag) for tag in set(tags)}
+            return [known[tag] for tag in tags]
         category='object'
     key=owner_of(geometry) if category=='object' else None
     label=name(geometry,category,scene)
@@ -110,20 +113,59 @@ def entries(geometry,category='object',scene=None,instances=False):
 def labels(geometry,category='object',scene=None,instances=False):
     if instances:return [name(geometry,category,scene,str(identity)) for identity in geometry.get('instance_ids',[])]
     if category=='material' and geometry.get('face_materials'):
-        return [material_name(tag,scene) for tag in geometry['face_materials']]
+        known={tag:material_name(tag,scene) for tag in set(geometry['face_materials'])}
+        return [known[tag] for tag in geometry['face_materials']]
     return [name(geometry,category,scene)]
 
 
-def userdata(geometry,lines,category='object',scene=None,instances=False):
+# A mesh's IDs by its faces' materials (ids), kept while its list of materials and what each is named are the same.
+_IDS={}
+
+
+def ids(geometry,category='object',scene=None,instances=False):
+    """The IDs a geometry is written with in a category, one a face (material) or instance or one in all, as 32-bit
+    floats. A mesh's faces' material IDs are made from its few materials and kept by its list of them: made a face at a
+    time at every write, with each face's name, they took seconds of a car's writes."""
+    from array import array as packed
+    tags=geometry.get('face_materials') if category=='material' and not instances else None
+    fog=not geometry.get('material') and (geometry.get('kind')=='vdb' or geometry.get('volume'))
+    if tags and not fog:
+        table={tag:as_float(value(material_name(tag,scene),'material',scene,tag)) for tag in dict.fromkeys(tags)}
+        key=(id(tags),tuple(sorted(table.items())))
+        held=_IDS.get(key)
+        if held is not None and held[0] is tags:return held[1]
+        made=packed('f',map(table.__getitem__,tags))
+        if len(_IDS)>=4096:_IDS.clear()
+        _IDS[key]=(tags,made)
+        return made
     found=entries(geometry,category,scene,instances)
     if not found:raise ValueError('Cryptomatte instances require stable identities')
-    values=[label for label,_,_ in found]
+    return packed('f',(as_float(held) for _,held,_ in found))
+
+
+def userdata(geometry,lines,category='object',scene=None,instances=False):
+    values=ids(geometry,category,scene,instances)
     import hashlib
     key='modo_'+category+'_id' if multiple(scene or {}) else 'modo_object_id'
-    path='/modo/crypto/'+hashlib.sha256(json.dumps([key,values,instances]).encode()).hexdigest()[:24]
+    # Named by what it holds: the same IDs are the same object, however many meshes have them.
+    path='/modo/crypto/'+hashlib.blake2b(values.tobytes()+key.encode()+(b'|instances' if instances else b''),digest_size=12).hexdigest()
     rate=0 if instances else 3 if len(values)>1 else 1
-    lines.append('UserData(%s) { ["float_key"] = %s, ["float_values_0"] = %s, ["rate"] = %d }'%(string(path),string(key),array(number(as_float(held)) for _,held,_ in found),rate))
+    # The values as a heavy list (rdla._heavy_line): in the binary file beside the scene where it is written, not as a
+    # face's number of text each.
+    from .rdla import _heavy_line
+    lines+=['UserData(%s) {'%string(path),'  ["float_key"] = %s,'%string(key),
+            *_heavy_line(path,'float_values_0','floats',values,lambda:array(number(v) for v in values),'UserData','  '),
+            '  ["rate"] = %d,'%rate,'}']
     return 'UserData(%s)'%string(path)
+
+
+def distinct(geometry,category,scene,instances):
+    """entries(), each matte once: a mesh's faces of one material are one matte."""
+    if category=='material' and not instances and geometry.get('face_materials'):
+        fog=not geometry.get('material') and (geometry.get('kind')=='vdb' or geometry.get('volume'))
+        if not fog:
+            return [(material_name(tag,scene),value(material_name(tag,scene),'material',scene,tag),tag) for tag in dict.fromkeys(geometry['face_materials'])]
+    return entries(geometry,category,scene,instances)
 
 
 def mattes(geometries,category,scene):
@@ -131,7 +173,7 @@ def mattes(geometries,category,scene):
     found={}
     for g in geometries:
         if g.get('kind')=='vdb' and not volumes():continue
-        for label,held,_ in entries(g,category,scene,instances='instances' in g and category!='material'):found[label]=held
+        for label,held,_ in distinct(g,category,scene,'instances' in g and category!='material'):found[label]=held
     return found
 
 
@@ -139,9 +181,40 @@ def owners(geometries,category,scene):
     """What each matte is of, {name: [item or material tag]}: what clicking it selects in Modo."""
     found={}
     for g in geometries:
-        for label,_,key in entries(g,category,scene,instances='instances' in g and category!='material'):
+        for label,_,key in distinct(g,category,scene,'instances' in g and category!='material'):
             if key is not None and key not in found.setdefault(label,[]):found[label].append(key)
     return found
+
+
+def header(name,manifest):
+    """The standard Cryptomatte header of a layer called name, [(key, value)]: what every reader (Nuke, Fusion, ProEXR
+    and Exr-IO in Photoshop) looks for to know the layer for a Cryptomatte and to name its mattes."""
+    prefix='cryptomatte/'+('%08x'%hash32(name))[:7]+'/'
+    fields={'name':name,'hash':'MurmurHash3_32','conversion':'uint32_to_float32','manifest':json.dumps(manifest,separators=(',',':'),sort_keys=True)}
+    return [(prefix+key,value) for key,value in fields.items()]
+
+
+def manifest(geometries,category,scene):
+    """Every matte of a category by name, as the hex of its ID: a Cryptomatte header's manifest."""
+    return {label:'%08x'%held for label,held in mattes(geometries,category,scene).items()}
+
+
+def snapshot_manifest(snapshot,category):
+    """The manifest of a category for the scene a preview was rendered from."""
+    snapshot=snapshot or {}
+    return manifest(list(snapshot.get('meshes') or [])+list(snapshot.get('extra_geometry') or []),category,snapshot)
+
+
+def export_name(category):
+    """What a saved Cryptomatte's layer is called: one a category (CryptoObject, CryptoMaterial, CryptoAsset), so that
+    several can share one file."""
+    return 'Crypto'+str(category or 'object').capitalize()
+
+
+def export_channels(names,name):
+    """A Cryptomatte's channels as a saved file gives them, [(new name, channel)]: its ranks (Cryptomatte00.R and on)
+    under the layer's own name; the channels MoonRay keeps only to take a render up again (CryptoS) left out."""
+    return [(name+channel[len('Cryptomatte'):],channel) for channel in names if channel.startswith('Cryptomatte')]
 
 
 def metadata(geometries,lines,crypto=False,scene=None,category_override=None):
@@ -149,10 +222,7 @@ def metadata(geometries,lines,crypto=False,scene=None,category_override=None):
     names=['MoonRayForModo/workingSpace'];types=['string'];values=[label((scene or {}).get('asset_settings',{}))]
     if crypto:
         cat=category_override or category(scene or {})
-        manifest={label:'%08x'%held for label,held in mattes(geometries,cat,scene).items()}
-        prefix='cryptomatte/'+('%08x'%hash32('Cryptomatte'))[:7]+'/'
-        fields={'name':'Cryptomatte','hash':'MurmurHash3_32','conversion':'uint32_to_float32','manifest':json.dumps(manifest,separators=(',',':'),sort_keys=True)}
-        for key,value in fields.items():names.append(prefix+key);types.append('string');values.append(value)
+        for key,value in header('Cryptomatte',manifest(geometries,cat,scene)):names.append(key);types.append('string');values.append(value)
         names.append('MoonRayForModo/cryptomatteCategory');types.append('string');values.append(cat)
     path='/modo/outputMetadata'+('/'+category_override if category_override else '')
     lines.append('Metadata('+string(path)+') '+array(array(string(v) for v in row) for row in zip(names,types,values)))

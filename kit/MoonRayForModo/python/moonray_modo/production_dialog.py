@@ -62,7 +62,7 @@ class Controls(QtWidgets.QDialog):
                 field('mesh_light','Use mesh as emitter','bool',False);field('light_intensity','Emitter intensity','number',1,0)
                 camera=field('mesh_camera_mode','MoonRay camera appearance','choice','auto',choices=[
                     ('Use emitter settings','auto'),('Show emitter','emitter'),('Show surface only','surface'),('Hidden; keep illumination','hidden')])
-                camera.setToolTip('Native MoonRay camera visibility. Illumination is retained in every mode. MoonLightIPR does not yet follow this override.')
+                camera.setToolTip('What the camera sees of this emitter. Illumination is retained in every mode, and other surfaces show the emitter in their reflections unless it is shown as a surface only. MoonLightIPR follows it too.')
                 field('light_label','Emitter AOV group','text','');field('light_color','Emitter color (linear RGB)','color',[1,1,1])
                 field('points','Render every mesh vertex as a point','bool',False)
                 field('radius','Strand / point radius (m)','number',.001,.000001)

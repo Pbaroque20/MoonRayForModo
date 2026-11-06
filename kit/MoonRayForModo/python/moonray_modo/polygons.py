@@ -204,6 +204,9 @@ def _cut_mesh(mesh, face_counts):
     sizes = list(sizes) if sizes is not None else [len(face) for face in faces]
     if not sizes or max(sizes) <= 4:
         return mesh
+    native = _cut_natively(mesh, len(faces))
+    if native is not None:
+        return native
     vertices = mesh['vertices']
     faces = [list(face) for face in faces]
     # Where each new face's corners come from among the old corners, and which old face each is of.
@@ -242,6 +245,54 @@ def _cut_mesh(mesh, face_counts):
     return out
 
 
+def _cut_natively(mesh, face_total):
+    """_cut_mesh by the geometry adapter: the faces cut in one call (triangulate), the corners' and faces' lists
+    gathered by it (rows.gather) where they are runs of numbers, a list's items picked here where not. None where the
+    adapter cannot."""
+    from array import array
+    from hashlib import blake2b
+    from .rows import Faces, Rows, gather, numbers
+    made = triangulate(mesh['vertices'], mesh['faces'], True)
+    if made is None:
+        return None
+    places, from_face, sizes, corners = made
+    total = len(corners)
+    picked = gather(corners, 4, places)
+    if picked is None:
+        return None
+    vertices_of = array('i')
+    vertices_of.frombytes(picked.tobytes())
+    mark = blake2b(memoryview(vertices_of), digest_size=16)
+    mark.update(memoryview(sizes))
+    out = dict(mesh, faces=Faces(vertices_of, sizes, 'cut:' + mark.hexdigest()))
+    face_places = array('I')
+    face_places.frombytes(from_face.tobytes())
+
+    def by_corner(values):
+        if values is None or len(values) != total:
+            return values
+        for width in (2, 3, 1):
+            run = numbers(values, width)
+            if run is not None:
+                gathered = gather(run, 4 * width, places)
+                if gathered is not None:
+                    return Rows(gathered, width, 'cut:%d:%s' % (width, blake2b(memoryview(gathered), digest_size=16).hexdigest()))
+        return [values[i] for i in places]
+
+    def by_face(values):
+        return [values[i] for i in face_places] if values is not None and len(values) == face_total else values
+    for key in ('normals', 'uvs'):
+        if mesh.get(key):
+            out[key] = by_corner(mesh[key])
+    if mesh.get('uv_sets'):
+        out['uv_sets'] = {name: by_corner(values) for name, values in mesh['uv_sets'].items()}
+    if mesh.get('corner_attributes'):
+        out['corner_attributes'] = {name: dict(held, values=by_corner(held['values'])) for name, held in mesh['corner_attributes'].items()}
+    if mesh.get('face_materials') is not None:
+        out['face_materials'] = by_face(mesh['face_materials'])
+    return out
+
+
 def corners(face, vertices):
     """A face's triangles as its corners' places in it, flat (three a triangle): MoonRay's, an n-gon ear-clipped."""
     size = len(face)
@@ -250,3 +301,41 @@ def corners(face, vertices):
         if clipped is not None:
             return clipped
     return fan(size)
+
+
+def triangulate(vertices, faces, keep):
+    """The faces cut as corners() and fan() cut them, by the geometry adapter (MR_triangulate) in one call: (for each new
+    corner the place of the old corner it is, for each new face its old face, each new face's number of corners), as
+    arrays. keep: triangles and quads kept whole (cut_mesh); else every face cut into triangles (MoonLightIPR). None
+    where the adapter cannot be asked, for the cutting a face at a time here."""
+    import ctypes
+    from array import array
+    from itertools import chain
+    from .rows import _native, numbers, corners as flat_corners, counts as flat_counts, _address
+    native = _native()
+    if native is None or not hasattr(native, 'MR_triangulate'):
+        return None
+    function = native.MR_triangulate
+    if function.argtypes is None:
+        function.argtypes = [ctypes.c_void_p, ctypes.c_longlong, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_longlong, ctypes.c_int,
+                             ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_longlong, ctypes.c_longlong,
+                             ctypes.c_void_p]
+        function.restype = ctypes.c_int
+    held = numbers(vertices, 3)
+    points = array('d', held) if held is not None else array('d', chain.from_iterable(p[:3] for p in vertices))
+    run = flat_corners(faces)
+    corners = array('I')
+    if run is not None and run.itemsize == 4:
+        corners.frombytes(run.tobytes())
+    else:
+        corners = array('I', run if run is not None else chain.from_iterable(faces))
+    sizes = flat_counts(faces)
+    sizes = sizes if sizes is not None and sizes.itemsize == 4 and sizes.typecode in ('i', 'l') else array('i', map(len, faces))
+    room = 3 * len(corners)
+    places, from_face, made_sizes = array('I', bytes(4 * room)), array('i', bytes(4 * max(1, len(corners)))), array('i', bytes(4 * max(1, len(corners))))
+    made = (ctypes.c_longlong * 2)()
+    if not len(sizes) or function(_address(points), len(points) // 3, _address(corners), _address(sizes), len(sizes), 1 if _RULES['clean'] else 0,
+                                  1 if keep else 0, _address(places), _address(from_face), _address(made_sizes), room, len(corners),
+                                  ctypes.addressof(made)):
+        return None
+    return places[:made[0]], from_face[:made[1]], made_sizes[:made[1]], corners

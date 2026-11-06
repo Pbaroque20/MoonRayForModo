@@ -130,6 +130,9 @@ def mesh_corners(layer, vertices, faces, uv, world_matrix):
         raise ValueError('Unsupported texture projection: ' + projection)
     inv = inverse(layer['locator_matrix'])
     axis = layer.get('axis', 'z')
+    moved = _project_natively(layer, projection, inv, axis, vertices, faces, world_matrix)
+    if moved is not None:
+        return moved
     def placed(p):
         p = transform(p, inv) if layer.get('object_space') else transform(transform(p, world_matrix), inv)
         return (p[1],p[2],p[0]) if axis in ('x',0) else (p[0],p[2],p[1]) if axis in ('y',1) else p
@@ -167,6 +170,51 @@ def mesh_corners(layer, vertices, faces, uv, world_matrix):
             own = [(u+1 if u < .5 else u,v) for u,v in own]
         values.extend(own)
     return transform_uv(layer, values)
+
+
+PROJECTIONS = ('planar', 'cubic', 'cylindrical', 'spherical')
+
+
+def _project_natively(layer, projection, inv, axis, vertices, faces, world_matrix):
+    """mesh_corners()'s projection by the geometry adapter (native-modo/projections.cpp), moved by the layer's UV
+    transform: the same numbers as 32-bit floats, as rows.Rows, as rows.uv_transform gives a UV map's. None where it
+    cannot (no adapter, a face it leaves to Python to say what is wrong with)."""
+    import ctypes
+    from array import array
+    from hashlib import blake2b
+    native = rows._native()
+    if native is None or not hasattr(native, 'MR_project') or not len(faces):
+        return None
+    try:
+        held = rows.numbers(vertices, 3)
+        points = array('d', held) if held is not None else array('d', (float(v) for p in vertices for v in p[:3]))
+        if len(points) != 3 * len(vertices):
+            return None
+        corners = rows.corners(faces)
+        corners = corners if corners is not None and corners.itemsize == 4 else array('I', (v for face in faces for v in face))
+        counts = rows.counts(faces)
+        counts = counts if counts is not None and counts.itemsize == 4 else array('i', map(len, faces))
+        a, b, c, d, e, f = layer.get('uv_matrix', [1, 0, 0, 0, 1, 0])
+        rotation = layer.get('rotation', 0)
+        sx, sy = layer.get('scale', [1, 1])
+        uv = (ctypes.c_double * 10)(a, b, c, d, e, f, math.cos(rotation), math.sin(rotation), sx, sy)
+        inverse_of = (ctypes.c_double * 16)(*inv)
+        world = (ctypes.c_double * 16)(*(world_matrix if world_matrix is not None and not layer.get('object_space') else [0.0] * 16))
+    except (TypeError, ValueError):
+        return None
+    total = len(corners)
+    out = array('f', bytes(8 * total))
+    address = rows._address
+    pointer = ctypes.c_void_p
+    native.MR_project.restype = ctypes.c_int
+    native.MR_project.argtypes = [pointer, ctypes.c_longlong, pointer, pointer, ctypes.c_longlong, pointer, pointer,
+                                  ctypes.c_int, ctypes.c_int, ctypes.c_int, pointer, pointer]
+    if native.MR_project(address(points) if len(points) else None, len(vertices), address(corners) if total else None,
+                         address(counts), len(counts), ctypes.addressof(inverse_of), ctypes.addressof(world),
+                         1 if layer.get('object_space') else 0, 0 if axis in ('x', 0) else 1 if axis in ('y', 1) else 2,
+                         PROJECTIONS.index(projection), ctypes.addressof(uv), address(out) if total else None):
+        return None
+    return rows.Rows(out, 2, 'projected:' + blake2b(memoryview(out), digest_size=16).hexdigest())
 
 
 def affine(layer):

@@ -156,23 +156,27 @@ def polygon_mesh(mesh, triangles, error):
     if not len(size_list) or min(size_list) < 3:
         return None
     # Each polygon a fan of triangles: its corners' places among the polygon corners (triangles as they are).
+    cut = None
     if min(size_list) == max(size_list) == 3:
         fan = array('I', range(len(corner_list)))
         indices = array('I', corner_list)
     else:
-        # An n-gon ear-clipped as MoonRay does it (polygons.corners, by the n-gon override as it stands), the rest fanned.
-        from .polygons import corners as face_corners, follow
+        # An n-gon ear-clipped as MoonRay does it (polygons.corners, by the n-gon override as it stands), the rest fanned:
+        # by the geometry adapter in one call (polygons.triangulate) where it can, else a face at a time here.
+        from .polygons import corners as face_corners, follow, triangulate
         from .native import ngon_ears
         follow(ngon_ears())
-        fan, start = array('I'), 0
-        for index, n in enumerate(size_list):
+        cut = triangulate(vertices, faces, False)
+        fan, start = (cut[0] if cut is not None else array('I')), 0
+        for index, n in (enumerate(size_list) if cut is None else ()):
             if n > 4:
                 fan.extend(start + k for k in face_corners(faces[index], vertices))
             else:
                 for k in range(1, n - 1):
                     fan.extend((start, start + k, start + k + 1))
             start += n
-        indices = array('I', (corner_list[c] for c in fan))
+        picked = _gather(cut[3], 1, fan) if cut is not None else None
+        indices = picked if picked is not None else array('I', (corner_list[c] for c in fan))
     whole = len(fan) == len(corner_list)
     positions = numbers(vertices, 3) or array('f', chain.from_iterable(vertices))
     uvs = []
@@ -191,7 +195,12 @@ def polygon_mesh(mesh, triangles, error):
     if tags is not None:
         names = sorted(set(tags))
         place = {tag: i for i, tag in enumerate(names)}
-        materials = array('I', (place[tag] for tag, n in zip(tags, size_list) for _ in range(n - 2)))
+        if cut is not None:
+            faces_of = array('I')
+            faces_of.frombytes(cut[1].tobytes())
+            materials = _gather(array('I', (place[tag] for tag in tags)), 1, faces_of)
+        else:
+            materials = array('I', (place[tag] for tag, n in zip(tags, size_list) for _ in range(n - 2)))
     made = arrays(positions, indices, normal_values, None, uvs, materials, bool(mesh.get('smooth', True)), triangles, error, key)
     if made is None:
         return None

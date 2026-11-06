@@ -74,6 +74,7 @@ void write(void* object, const char* path) {
     std::int32_t lines = 0, small = 0;
     CLxLoc_StringTag tag;
     std::vector<LXtPointID> corners;
+    const unsigned cornerFloor = 0;  // corners beyond a triangle's that a surface polygon must have
 
     for (int i = 0; i < polygonCount; ++i) {
         if (LXx_FAIL(polygons.SelectByIndex(i))) throw std::runtime_error("Polygon unavailable");
@@ -82,7 +83,7 @@ void write(void* object, const char* path) {
         polygons.Type(&type);
         if (!surface(type)) { ++lines; continue; }
         polygons.VertexCount(&count);
-        if (count < 3) { ++small; continue; }
+        if (count < 3 + cornerFloor) { ++small; continue; }
         corners.resize(count);
         for (unsigned k = 0; k < count; ++k) {
             unsigned index = 0;

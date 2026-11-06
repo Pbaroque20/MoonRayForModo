@@ -9,9 +9,9 @@ The plugin includes CPU, XPU and XPU2 rendering, a dockable live preview with a 
 
 **Built on MoonRay [2026.29.1](https://github.com/dreamworksanimation/openmoonray/releases/tag/v2026.29.1)** (OpenMoonRay's latest release; MoonRay 18.4), with the plugin's own patches for Windows and the preview.
 
-**Current version: 0.5.3 — pre-production release.** The plugin is no longer experimental. 0.5 brought **MoonRay XPU2**, a new GPU renderer for previews in which the processor and the graphics card work on the same picture at once, now the default; realtime that keeps up with heavy scenes and a Scene cache; Modo's procedural textures worked out through the object, 145 of Modo's Enhance textures among them; Modo's light volumetrics and fog; and MoonLightIPR starting in seconds. Install the new runtime with it.
+**Current version: 0.5.3.1 — pre-production release.** The plugin is no longer experimental. 0.5 brought **MoonRay XPU2**, a new GPU renderer for previews in which the processor and the graphics card work on the same picture at once, now the default; realtime that keeps up with heavy scenes and a Scene cache; Modo's procedural textures worked out through the object, 145 of Modo's Enhance textures among them; Modo's light volumetrics and fog; and MoonLightIPR starting in seconds. Install the new runtime with it.
 
-· [Download 0.5.3: the kit, the Windows runtime and the MoonRay content](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.5.3)
+· [Download 0.5.3.1: the kit, the Windows runtime and the MoonRay content](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.5.3.1)
 
 · [Installation instructions](docs/INSTALLATION.md) 
 
@@ -59,6 +59,32 @@ Work on the next version goes on in the [MoonLightIPR branch](https://github.com
 | **The graph editor**, with a MoonRay material | **Modo's Fur material** rendered by MoonRay |
 | ![The compositor](docs/images/compositor-editor.png) | ![Modern Hall, imported from MoonRay's scene files](docs/images/rdl-modern_hall.jpg) |
 | **The compositor**: the beauty graded, vignetted and sharpened | **An imported MoonRay scene**: its own render (left), after the trip through Modo (right). Modern Hall by NewSee2l035, CC BY |
+
+## New in 0.5.3.1
+
+A release of fixes and speed for scenes as Modo makes them: mesh lights, fur, checkers and heavy scenes, with a new runtime: install it, and **Compile XPU2 Shaders once more**. The full list is in [What's new in 0.5](docs/WHATS_NEW_05.md).
+
+- **Mesh lights render as in Modo in every engine**: a Prototype's n-gons, or quads beside triangles, shine in their own shape in MoonRay and XPU2; a mesh emitting by its Object controls lights again; the shown Prototype is the light, not also a grey surface over it; a hidden Prototype gives no light, as in Modo. MoonLightIPR shows a Mesh Light that is Visible to Camera, and shines from the polygons' front only, as Modo and MoonRay do.
+
+  ![Two Mesh Lights, a square and an octagon beside a quad and a triangle, lighting a ball: Modo, MoonRay, XPU2 and MoonLightIPR](docs/images/mesh-lights-engines.jpg)
+
+- **A mesh light hidden from the camera still shows in reflections**: with Object controls' camera appearance at Hidden, other surfaces reflect the light cleanly, not blotched with the mesh's grey; MoonLightIPR follows that setting too.
+- **Glowing volumes render on XPU2's graphics card**: a fog that glows (a MoonRay volume's emission) or a VDB fire (its emission grid) renders on the card with the rest of the scene, lighting the surfaces and the fog around it; before, one glowing volume sent the whole scene to the processor. Compile XPU2 Shaders once more after installing.
+- **Bump node in the MoonShine graph**: under Normals and bump, a Bump node turns a greyscale height image into the material's normal, as a Shader Tree Bump layer does; Amplitude is how high white stands, in scene units. In every engine; a MoonRay Source Override (Bump node in MoonShine graphs), on by default.
+- **Realtime preview resolution as a share of the render's**: Full, 1/2, 1/3 or 1/4 in Preview Preferences, in place of a width in pixels, under which a tall picture could stay at full size. A width chosen before becomes the nearest share.
+- **Exported Cryptomattes open as Cryptomattes**: Export AOVs saves each with its mattes' names (CryptoObject, CryptoMaterial) and the header readers need, so Photoshop (with ProEXR or Exr-IO), Nuke and Fusion pick its mattes; several in one multilayer EXR no longer clash. Object and material Cryptomattes render together again (since 0.5.2.1 the kit refused them).
+- **Checkers placed as in Modo**: a Checker's squares, through its texture locator, are the size, angle and colour Modo gives them in every engine (they were twice as large and turned).
+- **A missing UV map is a notice, not a failed render**: a material whose texture reads a UV map the mesh has not (one set up on another mesh) rendered nothing, with "missing UV values"; those polygons now render with the map at 0, and a notice names the mesh, the map and the material.
+- **PBR validity in Preview Preferences** too, the same switch as in Modo's Preferences.
+- **Realtime with standard XPU: Off, On the processor or On the graphics card**: RT with the standard MoonRay XPU can now render on the card too, in Modo's Preferences and Preview Preferences alike.
+
+  ![Preview Preferences: Realtime with standard XPU, and PBR validity under Diagnostics](docs/images/preview-preferences-realtime-xpu.png)
+
+- **Heavy scenes start much sooner**: a 1.5-million-polygon car's first realtime picture came after about 2 min 20 s of preparing; it now comes in about 16 s. Smoothing by each material's smoothing angle is done in the kit's native code on all processor threads, Cryptomatte by material no longer hashes every polygon, and the mesh reader no longer makes Python lists of every point. Meshes of any size now take their material's Modo smoothing angle.
+- **A scene's first realtime run is much quicker**: environment images are shrunk straight from the file, side by side (the car's three HDRs: 85 s to 15 s), and meshes whose textures lay out their own UVs, or whose materials use different UV maps, are read whole. Grey environment images are no longer black. An environment's layers are laid over one another in the kit's native code (the car's: 10 s to nothing), every mesh is read by the native adapter, and a mesh missing a UV map its texture reads is read whole too, with its notice (the car's reading: 7.1 s to 3.2 s).
+- **Fur guides**: a Fur material's guides are followed in every engine, from curves on the fur's own mesh wearing its material or from a guide item, in Modo's modes: Direction, Direction + Length, Shape, Range and Clump, with Guide Range and Guide Length.
+- **Fur vector and width maps**: a Fur material's Vector VMap grows each fibre along its vector, as long as it is (none where it is nothing), and its width map thins the fibres by its weight, in every engine.
+- **Weight and colour maps, and creases, read at once**: a mesh's weight, RGB and RGBA maps, and a subdivided mesh's Subdivision weights, are read in the kit's native code in one call, not a point or an edge at a time (a mesh of 21,600 polygons and six maps: 1 s to 0.08 s; its creases: 0.3 s to 0.05 s). Planar, cubic, cylindrical and spherical texture projections are worked out there too (a mesh of 359,400 faces: 6 s to 0.5 s). Hair grown from guides is shaped there too, its scalp read at once and its strands kept as the grower made them (30,000 strands on a 399,000-triangle scalp: the scene read 8.4 s to 3 s, MoonLightIPR's packing 1.2 s to 0.1 s).
 
 ## New in 0.5.3
 
@@ -385,7 +411,7 @@ In each pair, MoonRay's render of the scene from its own files is on the left; o
 - Render outputs: configurable AOVs, Cryptomatte surface categories, buffer switching, deep EXR, texture baking, a compositor over the finished buffers, and denoising (OptiX or Open Image Denoise) that survives a stopped render.
 - Workflow tools: ACES/sRGB/OCIO view transforms and LUTs, animation output and recovery controls, an asset library with MoonRay's example scenes, and RDL scene import.
 
-## Known issues in 0.5.3
+## Known issues in 0.5.3.1
 
 The ones you are most likely to meet:
 
@@ -431,13 +457,13 @@ Comparison audit between MoonRay 2026.29.1's source and the current plugin.
 | Light, shadow and light filter linking | ![yes](docs/images/feature-yes.svg) | MoonRay's own sets, and Modo's own Light Linking groups (include or exclude), which reach MoonRay Shadow receiver sets, and a shadow ray offset, in Light Links |
 | Meshes, subdivision, curves, points, instancing | ![yes](docs/images/feature-yes.svg) | From Modo's geometry. Creases from Modo's Subdivision weights |
 | Box and sphere shapes | ![yes](docs/images/feature-yes.svg) | |
-| VDB volumes, base and cutout volumes | ![yes](docs/images/feature-yes.svg) | A VDB that does not glow renders on XPU2's graphics card, about five times faster; a dwVdbVolume asks for its VDB file |
+| VDB volumes, base and cutout volumes | ![yes](docs/images/feature-yes.svg) | A VDB renders on XPU2's graphics card, glowing ones too, about five times faster; a dwVdbVolume asks for its VDB file |
 | Motion blur | ![yes](docs/images/feature-yes.svg) | Final renders, and MoonLightIPR previews, where it is a Preview Preference, off by default, with moving lights blurred too; MoonRay XPU2 for Render, Render to a File and animations, and for XPU2 realtime as a Preview Preference. XPU2 traces moving objects on the GPU, subdivision surfaces that move or change shape among them. MoonLightIPR playblasts show it when it is active. |
 | Depth of field | ![yes](docs/images/feature-yes.svg) | A polygon or disc bokeh, by sides and angle, or an image. MoonRay's two bokeh weight settings, which it does not use, are marked as having no effect. With the Modo camera's lens, a bokeh image turns bokeh on. |
 | DWA materials (base, metal, fabric, skin, layer, mix and the rest) | ![yes](docs/images/feature-yes.svg) | Two Sided and Color Correct take the other DWA materials as their inputs, and a layer or two-sided material missing an input no longer crashes MoonRay |
 | Hair, toon and USD Preview Surface materials | ![yes](docs/images/feature-yes.svg) | Toon edges smooth on coarse meshes, and toon renders that denoise cleanly, each a preference; a new toon material is brightest facing the light |
 | Switch and Ray Switch materials | ![yes](docs/images/feature-yes.svg) | In the node editor |
-| Maps, normal maps and displacement nodes | ![yes](docs/images/feature-yes.svg) | In the node editor, and the Shader Tree's Displacement and Stencil layers |
+| Maps, normal maps and displacement nodes | ![yes](docs/images/feature-yes.svg) | In the node editor, with a Bump node turning a height image into the normal (a Source Override, on by default), and the Shader Tree's Displacement and Stencil layers |
 | Switch displacement | ![yes](docs/images/feature-yes.svg) | In the node editor |
 | Display filters (colour correct, toon, halftone and the rest) | ![yes](docs/images/feature-yes.svg) | All 18, as MoonRay items; each a preview buffer and an EXR channel |
 | Uniform and adaptive sampling, light sampling, bounce limits, clamping | ![yes](docs/images/feature-yes.svg) | Render Settings. Settings a sampling mode does not use are greyed, and MoonRay LS samples adaptively or uniformly, chosen in Preview Preferences |
@@ -477,7 +503,7 @@ Comparison audit between Modo 16.1v9 and the current plugin: what of a Modo scen
 | **Lights** | | |
 | Directional light, with the physical sun | ![yes](docs/images/feature-yes.svg) |  |
 | Point, spot and area lights | ![yes](docs/images/feature-yes.svg) | Their intensity measured against Modo per kind |
-| Mesh lights | ![yes](docs/images/feature-yes.svg) | A Mesh Light shines from its Prototype mesh, shown or hidden, in MoonRay, XPU2 and MoonLightIPR |
+| Mesh lights | ![yes](docs/images/feature-yes.svg) | A Mesh Light shines from its shown Prototype mesh, of any polygons, in MoonRay, XPU2 and MoonLightIPR; a hidden Prototype gives no light, as in Modo, and a light hidden from the camera still shows in reflections |
 | Cylinder, dome and photometric (IES) lights | ![no](docs/images/feature-no.svg) | Skipped, with a notice; MoonRay's own cylinder and environment lights stand in |
 | Light linking (Modo's groups, include or exclude) | ![partly](docs/images/feature-partly.svg) | Experimental, with a notice; check it against Modo |
 | Light volumetrics, and fog | ![partly](docs/images/feature-partly.svg) | Point, spot and directional light volumetrics, and the environment's fog (new in 0.5); Layered fog has no falloff and a Base Shader's fog is left out, each with a notice; not yet compared with Modo's renders |
@@ -508,7 +534,7 @@ Comparison audit between Modo 16.1v9 and the current plugin: what of a Modo scen
 | Instances and replicators | ![yes](docs/images/feature-yes.svg) | Replicators through Modo's evaluated geometry |
 | Deformed and animated meshes | ![yes](docs/images/feature-yes.svg) | Through Modo's evaluated geometry |
 | Alembic | ![yes](docs/images/feature-yes.svg) | Loaded as Modo meshes with streaming deformers, or as Alembic Streaming Meshes, moving over time with motion blur; Alembic Curves and Point Clouds untested |
-| Curves, hair and Modo's Fur material | ![partly](docs/images/feature-partly.svg) | Fur guides, the fur vector and width maps, and Modo's Hair Material are not read |
+| Curves, hair and Modo's Fur material | ![partly](docs/images/feature-partly.svg) | Fur follows its guides (Direction, Direction + Length, Shape, Range and Clump, with Guide Range and Guide Length), its vector map and its width map; a guide's Blend Amount and Modo's Hair Material are not read |
 | Weight and colour vertex maps | ![partly](docs/images/feature-partly.svg) | As values MoonRay's materials read, and the Shader Tree's Weight Map Texture layer, with weight maps; not in a scene with replicators or masks by item, Part or Selection Set. A notice names a weight map lost that way. |
 | Modo's volume items | ![partly](docs/images/feature-partly.svg) | Rendered from a VDB file attached in the MoonRay controls |
 | Blobs and particles | ![no](docs/images/feature-no.svg) | A mesh's loose points render as points |

@@ -11,8 +11,9 @@ import tempfile
 from array import array
 from pathlib import Path
 
-# Below this many polygons the slow way is quick enough, and is the way that has been in use longest.
-THRESHOLD = 5000
+# Below this many polygons a mesh is read a polygon at a time, through Modo's own accessors. Every mesh is read by the
+# adapter since 0.5.3.1: the small meshes of a car (22,000 polygons in all) were a second of each reading the slow way.
+THRESHOLD = 1
 _bridge = False
 
 
@@ -40,7 +41,9 @@ class Mesh:
             raise ValueError('Not a mesh from the geometry adapter')
         points, faces, corners, uv_count, has_normal, tag_count, self.lines, self.small = struct.unpack_from('<8i', data, 4)
         self.offset, self.data = 36, data
-        self.vertices = self.grouped(self.numbers('f', points * 3), 3)
+        # Points, UVs and normals kept as the runs of numbers they came in, read as lists only where something walks
+        # them (rows.Rows): made into lists here, a car's 1.5 million polygons took 5 s of every reading.
+        self.vertices = self.rows(self.numbers('f', points * 3), 3)
         self.counts = self.numbers('i', faces)
         self.tag_indices = self.numbers('i', faces)
         self.subdivided = self.numbers('B', faces)
@@ -49,13 +52,20 @@ class Mesh:
         for _ in range(uv_count):
             self.uv_names.append(self.text())
             self.uv_valid.append(self.numbers('B', faces))
-            self.uv_values.append(self.grouped(self.numbers('f', corners * 2), 2))
+            self.uv_values.append(self.rows(self.numbers('f', corners * 2), 2))
         self.normal_valid, self.normal_values = None, None
         if has_normal:
             self.normal_valid = self.numbers('B', faces)
-            self.normal_values = self.grouped(self.numbers('f', corners * 3), 3)
+            self.normal_values = self.rows(self.numbers('f', corners * 3), 3)
         self.tags = [self.text() for _ in range(tag_count)]
         del self.data
+
+    @staticmethod
+    def rows(flat, size):
+        """A run of numbers as rows of size, kept as the run (rows.Rows)."""
+        from hashlib import blake2b
+        from .rows import Rows
+        return Rows(flat, size, 'mesh:%d:%s' % (size, blake2b(memoryview(flat), digest_size=16).hexdigest()))
 
     @staticmethod
     def grouped(flat, size):
@@ -67,13 +77,12 @@ class Mesh:
         counts, indices = self.counts, self.indices
         if not len(counts):
             return []
-        first = counts[0]
-        if counts.count(first) == len(counts):
-            # All of a size, as a mesh of triangles or of quads is: cut in one go.
-            return self.grouped(indices, first)
-        from itertools import islice
-        run = iter(indices)
-        return [list(islice(run, count)) for count in counts]
+        # The corners and the counts kept as they came (rows.Faces), cut into lists only where something walks them.
+        from hashlib import blake2b
+        from .rows import Faces
+        mark = blake2b(memoryview(indices), digest_size=16)
+        mark.update(memoryview(counts))
+        return Faces(indices, counts, 'mesh-faces:' + mark.hexdigest())
 
     def numbers(self, kind, count):
         values = array(kind)
@@ -128,3 +137,38 @@ def read(mesh):
             os.unlink(name)
         except OSError:
             pass
+
+
+class Part:
+    """Some of a Mesh's polygons (faces: their places, in order), with all the mesh's points: their corners, counts,
+    material tags, UVs and normals gathered out of the mesh's runs by the adapter (rows.gather). Read as a Mesh is."""
+
+    def __init__(self, mesh, faces):
+        from array import array
+        from itertools import accumulate, chain
+        from hashlib import blake2b
+        from .rows import gather, Rows
+        starts = array('q', accumulate(mesh.counts, initial=0))
+        places = array('I', chain.from_iterable(range(starts[f], starts[f + 1]) for f in faces))
+        picked = array('I', faces)
+
+        def pick(values, width, places=places):
+            held = gather(values, width, places)
+            if held is None:
+                raise ValueError('The geometry adapter could not gather a part of the mesh')
+            return held
+        self.vertices, self.tags, self.lines, self.small = mesh.vertices, mesh.tags, mesh.lines, mesh.small
+        self.indices = pick(mesh.indices, 4)
+        self.counts = pick(mesh.counts, 4, picked)
+        self.tag_indices = pick(mesh.tag_indices, 4, picked)
+        self.subdivided = pick(mesh.subdivided, 1, picked)
+        self.uv_names = mesh.uv_names
+        self.uv_valid = [pick(valid, 1, picked) for valid in mesh.uv_valid]
+        self.uv_values = [self._rows(pick(values.data, 8), 2) for values in mesh.uv_values]
+        self.normal_valid = pick(mesh.normal_valid, 1, picked) if mesh.normal_valid is not None else None
+        self.normal_values = self._rows(pick(mesh.normal_values.data, 12), 3) if mesh.normal_values is not None else None
+        self.faces_of = picked
+
+    _rows = staticmethod(Mesh.rows)
+    faces = Mesh.faces
+    uv_map = Mesh.uv_map

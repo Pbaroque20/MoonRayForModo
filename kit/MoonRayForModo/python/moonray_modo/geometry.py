@@ -20,6 +20,8 @@ def topology(vertices,faces):
     return weighted,[unit(n) for n in weighted],edges
 
 _SMOOTHED={}
+# How many meshes' smoothed normals are kept.
+SMOOTHED_KEPT=4096
 import threading
 _SMOOTHED_LOCK=threading.Lock()
 
@@ -48,6 +50,28 @@ def prepare(mesh):
               tuple(sorted(declared.items())))
         if kept in _SMOOTHED:
             result['normals']=_SMOOTHED[kept];return result
+    # By the geometry adapter where it can (rows.smooth_normals, over all of the machine's threads, Python's lock let
+    # go); else here, a corner at a time.
+    from . import rows
+    if by_material:
+        tags=mesh.get('face_materials') or [mesh.get('material','')]*len(mesh['faces'])
+        cosines={tag:math.cos(math.radians(declared.get(tag,180.0))) for tag in set(tags)}
+        native_limits=[cosines[tag] for tag in tags]
+    else:
+        native_limits=None
+    made=rows.smooth_normals(mesh['vertices'],mesh['faces'],native_limits,math.cos(math.radians(settings['smoothing_angle'])))
+    if made is not None:
+        corners,bend=made
+        if angular:
+            estimate=max(1,math.ceil(bend/settings['tessellation_angle']))
+            result['mesh_resolution']=min(2**settings['level'],estimate)
+        if smooth:
+            result['normals']=corners
+            if kept is not None:
+                with _SMOOTHED_LOCK:
+                    if len(_SMOOTHED)>=SMOOTHED_KEPT:_SMOOTHED.pop(next(iter(_SMOOTHED)),None)
+                    _SMOOTHED[kept]=corners
+        return result
     faces=[list(f) for f in mesh['faces']]
     weighted,normals,edges=topology(mesh['vertices'],faces)
     adjacency={};bend=0.;threshold=math.cos(math.radians(settings['smoothing_angle']))
@@ -88,7 +112,9 @@ def prepare(mesh):
         if kept is not None:
             # Asked from the thread that makes a scene ready for MoonLightIPR as well as from Modo's own.
             with _SMOOTHED_LOCK:
-                if len(_SMOOTHED)>=64:_SMOOTHED.pop(next(iter(_SMOOTHED)),None)
+                # Room for every mesh of a large scene: written in the same order each time, a cache smaller than the
+                # scene let each mesh go just before it was asked for again (a car's 73 meshes, 64 s at every write).
+                if len(_SMOOTHED)>=SMOOTHED_KEPT:_SMOOTHED.pop(next(iter(_SMOOTHED)),None)
                 _SMOOTHED[kept]=corners
     return result
 

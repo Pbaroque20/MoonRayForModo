@@ -492,6 +492,21 @@ def skip_unknown(left=180):
         shown = sorted({w.windowTitle() for w in QtWidgets.QApplication.topLevelWidgets() if w.isVisible() and w.windowTitle()})
         (out / 'windows.txt').write_text('%d s left: %s\n' % (left, shown), encoding='utf-8')
         for widget in QtWidgets.QApplication.topLevelWidgets():
+            if widget.isVisible() and widget.windowTitle().startswith('OCIO not found'):
+                # A scene naming an OCIO configuration the test profile has not (the Hyundai's): told, and gone on
+                # with Modo's own colour management, where the message waited for a click and the scene never opened.
+                buttons = [b for b in widget.findChildren(QtWidgets.QAbstractButton) if b.isVisible()]
+                texts = [w.text() for w in widget.findChildren(QtWidgets.QLabel) if w.text()][:4]
+                with open(str(out / 'ocio.txt'), 'a', encoding='utf-8') as said:
+                    said.write('OCIO window %s: buttons %s, text %s\n' % (type(widget).__name__, [b.text() for b in buttons], texts))
+                result.setdefault('skipped', []).append([widget.windowTitle(), texts])
+                if isinstance(widget, QtWidgets.QDialog):
+                    widget.accept()
+                elif buttons:
+                    buttons[0].click()
+                else:
+                    widget.close()
+                continue
             if widget.isVisible() and widget.windowTitle().startswith('Load Error'):
                 for button in widget.findChildren(QtWidgets.QAbstractButton):
                     if button.text().replace('&', '').startswith('Yes to All'):

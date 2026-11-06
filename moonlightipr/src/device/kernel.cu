@@ -386,7 +386,8 @@ ML_INLINE bool sampleLightShape(const DeviceLight& light, float3 p, float u1, fl
         const float normalLength = length(n);
         if (distance <= 1e-6f || normalLength <= 0.0f) return false;
         wi = wi * (1.0f / distance);
-        const float cosine = fabsf(dot(wi, n)) / normalLength;
+        // It shines from its front alone, the side its corners wind about, as MoonRay's MeshLight and Modo's Mesh Light.
+        const float cosine = -dot(wi, n) / normalLength;
         if (cosine <= 1e-6f) return false;
         pdf = distance * distance / (light.area * cosine);
         return true;
@@ -1964,7 +1965,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
             float3 shining = vec(0.0f);
             bool seenLight = false;
             for (unsigned i = 0; i < params.lightCount; ++i) {
-                if (!lights[i].pad || lights[i].type == LIGHT_MESH) continue;
+                if (!(lights[i].pad & LIGHT_SEEN) || lights[i].type == LIGHT_MESH) continue;
                 float pdf, reached = 0.0f;
                 float3 emitted;
                 if (!hitLightShape(lights[i], origin, direction, nearest, pdf, emitted, reached)) continue;
@@ -2033,8 +2034,15 @@ extern "C" __global__ void __raygen__moonlightipr() {
                 continue;
             }
         }
-        // A mesh light is the surface just hit; it emits from both faces.
-        if (camera && !emerged && hit.light >= 0 && lights[hit.light].pad) {
+        // A mesh light is the surface just hit; it emits from its front face.
+        const bool lightFront = hit.light >= 0 && dot(direction, hit.ng) < 0.0f;
+        if (camera && !emerged && hit.light >= 0 && (lights[hit.light].pad & LIGHT_ALONE) && !(lightFront && (lights[hit.light].pad & LIGHT_SEEN))) {
+            // A light that is no surface (a Modo Mesh Light's shape), met from behind: nothing is there, as in Modo.
+            origin = offsetOrigin(hit.p, hit.ng, direction);
+            --depth;
+            continue;
+        }
+        if (camera && !emerged && lightFront && (lights[hit.light].pad & LIGHT_SEEN)) {
             // Seen by the camera, it is the light itself that is seen, as MoonRay shows a light it is told to show.
             const float3 shining = vec(lights[hit.light].radiance);
             radiance += throughput * shining;
@@ -2042,9 +2050,9 @@ extern "C" __global__ void __raygen__moonlightipr() {
             guideNormal = -direction;
             break;
         }
-        if (!camera && !emerged && hit.light >= 0 && reaches(fromSet, 1 + params.distantLightCount + unsigned(hit.light))) {
+        if (!camera && !emerged && lightFront && reaches(fromSet, 1 + params.distantLightCount + unsigned(hit.light))) {
             const DeviceLight& light = lights[hit.light];
-            const float cosine = fabsf(dot(direction, hit.ng));
+            const float cosine = -dot(direction, hit.ng);
             if (cosine > 1e-6f) {
                 const float pdf = hit.t * hit.t / (light.area * cosine);
                 radiance += clampSample(throughput * lightWeight * vec(light.radiance)

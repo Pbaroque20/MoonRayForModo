@@ -30,6 +30,9 @@ def subdivision_creases(mesh, faces):
     map_id = first_map(mesh, lx.symbol.i_VMAP_SUBDIV)
     if map_id is None:
         return [], []
+    held = creases_natively(mesh, map_id, faces)
+    if held is not None:
+        return held
     points = lx.object.Point(mesh.PointAccessor())
     edge = lx.object.Edge(mesh.EdgeAccessor())
     value = lx.object.storage('f', 1)
@@ -67,6 +70,42 @@ def subdivision_creases(mesh, faces):
         if weight > 0:
             corners.append((index, min(1.0, weight) * 10.0))
     return creases, corners
+
+
+def creases_natively(mesh, map_id, faces):
+    """subdivision_creases() by the geometry adapter in one call (native-modo/subdivision_creases.cpp); None where it
+    cannot."""
+    import ctypes
+    from array import array
+    from . import mesh_reader, rows
+    library = mesh_reader.bridge()
+    reader = getattr(library, 'MR_subdivision_creases', None) if library is not None else None
+    if reader is None:
+        return None
+    try:
+        address = mesh.__peekobj__()
+    except AttributeError:
+        return None
+    corners = rows.corners(faces)
+    corners = corners if corners is not None and corners.typecode in ('I', 'i', 'L', 'l') and corners.itemsize == 4 else array('I', (v for face in faces for v in face))
+    counts = rows.counts(faces)
+    counts = counts if counts is not None and counts.itemsize == 4 else array('i', map(len, faces))
+    room = len(corners)
+    edges, edge_weights = array('i', bytes(8 * room)), array('f', bytes(4 * room))
+    points, point_weights = array('i', bytes(4 * room)), array('f', bytes(4 * room))
+    made = (ctypes.c_longlong * 2)()
+    pointer = ctypes.c_void_p
+    reader.argtypes = [pointer, pointer, pointer, pointer, ctypes.c_longlong, pointer, pointer, ctypes.c_longlong,
+                       pointer, pointer, ctypes.c_longlong, pointer]
+    reader.restype = ctypes.c_char_p
+    address_of = rows._address
+    if reader(pointer(address), pointer(int(map_id)), pointer(address_of(corners) if room else None), pointer(address_of(counts) if len(counts) else None),
+              len(counts), address_of(edges) if room else None, address_of(edge_weights) if room else None, room,
+              address_of(points) if room else None, address_of(point_weights) if room else None, room, ctypes.addressof(made)):
+        return None
+    # As the slow reading makes them: a weight of 1 (100%) a sharpness of 10.
+    creases = [(edges[2 * k], edges[2 * k + 1], min(1.0, edge_weights[k]) * 10.0) for k in range(made[0])]
+    return creases, [(points[k], min(1.0, point_weights[k]) * 10.0) for k in range(made[1])]
 
 
 def first_map(mesh, map_type, name=None):
@@ -305,9 +344,15 @@ def material_values(material):
 
 # The sun's width in the sky, in degrees, at a solar disc size of 100%.
 SUN_DEGREES = 0.53
-# The most polygons a mesh may have for its material's Modo smoothing angle to be worked out for it: about three
-# seconds' work for 75,000 polygons and ten for 250,000, done once for a mesh and kept until the mesh changes.
+# The most polygons a mesh may have for its material's Modo smoothing angle to be worked out for it in Python: about
+# three seconds' work for 75,000 polygons and ten for 250,000, done once for a mesh and kept until the mesh changes.
+# Where the geometry adapter smooths (rows.smooth_normals, about a second for 1.5 million polygons) there is no limit.
 SMOOTHING_ANGLE_FACES = 300000
+# Textures that lay their own UVs out worked out for a whole mesh the adapter read at once (whole_mesh_sets); off, a
+# polygon at a time, as before 0.5.3.1 (for comparing the two: tools/probe_cl_whole_sets.py).
+WHOLE_MESH_SETS = True
+# Why each mesh the adapter read was then taken a polygon at a time, by its name: the latest reading's.
+SLOW_READS = {}
 
 
 def solar_discs(result):
@@ -353,10 +398,30 @@ def camera_motion_blur(scene):
 MESH_LIGHT_POLYGONS = 200000
 
 
+def mesh_light_prototypes(scene):
+    """The ids of the meshes Modo's Mesh Lights take their shapes from. Modo never renders such a mesh as a surface: it
+    is the light (tools/probe_cl_mesh_light_modo.py: seen with Visible to Camera off, it is not there at all)."""
+    found = set()
+    for light in scene.items('meshLight', superType=False):
+        try:
+            found.update(i.id for i in light.itemGraph('shadeLoc').forward() if i.type == 'mesh')
+        except Exception:
+            pass
+    return found
+
+
+def without_mesh_light_prototypes(meshes, prototypes):
+    """The meshes, less those that are Mesh Lights' Prototypes (mesh_light_prototypes)."""
+    if not prototypes:
+        return meshes
+    return [m for m in meshes if str(m.get('source_item') or m.get('identity', '')).split('|')[0] not in prototypes]
+
+
 def mesh_light_shape(light, warnings):
-    """A Modo Mesh Light's shape: its Prototype mesh as rendered (deformed), shown or hidden, in local points and
-    polygons, with the matrix it stands at (the prototype's where the light says Use Prototype Transform, else the
-    light's own). None, with a notice, where it has no prototype or the prototype no polygons."""
+    """A Modo Mesh Light's shape: its Prototype mesh as rendered (deformed), in local points and polygons, with the
+    matrix it stands at (the prototype's where the light says Use Prototype Transform, else the light's own). None,
+    with a notice, where it has no prototype, the prototype is hidden (Modo's own renderer then gives no light) or has
+    no polygons."""
     import modo
     try:
         prototypes = [i for i in light.itemGraph('shadeLoc').forward() if i.type == 'mesh']
@@ -366,6 +431,9 @@ def mesh_light_shape(light, warnings):
         warnings.append('Mesh light %s gives no light: it needs one mesh as its Prototype.' % light.name)
         return None
     prototype = prototypes[0]
+    if not render_visible(prototype):
+        warnings.append('Mesh light %s gives no light: its Prototype %s is hidden, and Modo lights only from a shown one.' % (light.name, prototype.name))
+        return None
     mesh = modo.meshgeometry.MeshProvider.meshFromMeshChannel(prototype._item, 'deformed')
     count = mesh.PolygonCount()
     if not count or count > MESH_LIGHT_POLYGONS:
@@ -432,6 +500,7 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
 
 
 def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=False,dirty_meshes=None,shading_kept=False):
+    SLOW_READS.clear()
     scene = modo.Scene()
     try:
         from . import modo_color
@@ -705,6 +774,19 @@ def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fal
                 for name in vertex_maps.strings(painted, kept['string_attributes'], sizes, mesh.PointCount()):
                     warnings.append('%s: the words of %s no longer match its points or polygons, and are left out' % (item.name, name))
 
+            told_missing = set()
+
+            def missing_uvs(name, tag, count):
+                """A polygon without the UV map its material's textures ask for: given UVs of 0, so that the render
+                goes on, with a notice once for each map and material of each mesh. A material whose texture names a UV
+                map of another mesh (a tyre's sidewall map, on a mesh that has none) stopped the render here."""
+                if (name, tag) not in told_missing:
+                    told_missing.add((name, tag))
+                    warnings.append('Mesh %s has no UV values in map %s on some polygons, which material %s reads: '
+                                    'they are rendered with that map at 0. Give the mesh that UV map, or the '
+                                    'texture a UV map the mesh has.' % (item.name, name, tag or '(base)'))
+                return [[0.0, 0.0]] * count
+
             def polygon(face, tag, subdivision, uv_of, normals, ordinal):
                 """Put one polygon with its like. uv_of(name) is its corners' values in a UV map, or nothing."""
                 # Polygons no material is set on carry Modo's own tag, which names no material: they wear the
@@ -712,10 +794,10 @@ def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fal
                 maps = (result['materials'].get(tag) or result['materials'].get('', {})).get('textures', {})
                 uv_name = (result['materials'].get(tag) or result['materials'].get('', {})).get('uv_map', '') or (next(iter(maps.values()))['uv_map'] if maps else '')
                 face_uv = uv_of(uv_name)
+                if uv_name and not face_uv:
+                    face_uv = missing_uvs(uv_name, tag, len(face))
                 # A UV map several images read, each moved or scaled its own way, is read from the polygon once.
                 read = {uv_name: face_uv}
-                if uv_name and not face_uv:
-                    raise ValueError('Mesh %s is missing UV values in map %s.' % (item.name, uv_name))
                 extra_uvs = {}
                 if tag not in tag_descriptors:
                     tag_descriptors[tag] = coordinates.descriptors({tag:(result['materials'].get(tag) or result['materials'].get('', {}))})
@@ -724,13 +806,66 @@ def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fal
                     source_uv = []
                     if descriptor.get('projection','uv') == 'uv':
                         if source_name not in read:
-                            read[source_name] = uv_of(source_name)
+                            read[source_name] = uv_of(source_name) or missing_uvs(source_name, tag, len(face))
                         source_uv = read[source_name]
-                    extra_uvs[key] = coordinates.face(descriptor, [vertices[v] for v in face], source_uv, transform)
+                    # The points as a list, made once for the mesh (rows.Rows keeps it): read through the row of numbers a
+                    # point at a time, a car's moved and projected UVs took twice as long.
+                    listed = vertices.rows() if hasattr(vertices, 'rows') else vertices
+                    extra_uvs[key] = coordinates.face(descriptor, [listed[v] for v in face], source_uv, transform)
                 groups.setdefault((subdivision, uv_name), []).append((face, tag, face_uv, normals, extra_uvs))
                 ordinals.setdefault((subdivision, uv_name), []).append(ordinal)
 
+            def uv_source(whole, name, tags=None):
+                """A UV map's value at every corner of a mesh the adapter read whole, 0 at the corners of polygons
+                without it, which polygon() gives the same way (missing_uvs), with its notice for each material of
+                those polygons (of tags, by their places among the mesh's tags, where given). None where it cannot."""
+                which = whole.uv_map(name)
+                count = len(whole.counts)
+                valid = whole.uv_valid[which] if which is not None else None
+                if valid is not None and valid.count(1) == count:
+                    return whole.uv_values[which]
+                lacking = {whole.tag_indices[f] for f in range(count) if (valid is None or not valid[f])}
+                for index in sorted(lacking if tags is None else lacking & set(tags)):
+                    missing_uvs(name, whole.tags[index], 0)
+                if valid is None:
+                    corners = len(whole.indices)
+                    return Rows(array('f', bytes(8 * corners)), 2, 'zeros:%d' % corners)
+                return rows_mask(whole.uv_values[which], 2, whole.counts, bytes(valid))
+
+            def whole_mesh_sets(whole, faces, tag_descriptors, transform):
+                """Each texture's own UVs for a mesh the adapter read whole, {key: a UV for every corner}: those of the
+                polygons whose material has the texture worked out as polygon() works them, 0 for the rest. None where
+                a polygon lacks a UV map a texture reads, which the polygon-at-a-time reading says."""
+                used = sorted(set(whole.tag_indices))
+                keys = {}
+                for index in used:
+                    for key, descriptor in tag_descriptors.get(whole.tags[index], {}).items():
+                        keys.setdefault(key, (descriptor, set()))[1].add(index)
+                sets = {}
+                for key, (descriptor, having) in sorted(keys.items()):
+                    source = []
+                    if descriptor.get('projection', 'uv') == 'uv':
+                        source = uv_source(whole, descriptor.get('uv_map', ''), having)
+                        if source is None:
+                            return None
+                    values = coordinates.mesh_corners(descriptor, whole.vertices, faces, source, transform)
+                    if len(having) < len(used):
+                        # Only some materials have the texture: the others' corners are 0, as polygon() leaves them.
+                        table = bytes(1 if i in having else 0 for i in range(256))
+                        if max(used) > 255:
+                            return None
+                        keep = bytes(array('B', whole.tag_indices)).translate(table)
+                        masked = rows_mask(values if hasattr(values, 'data') else values, 2, whole.counts, keep)
+                        if masked is None:
+                            flat_keep = [k for k, n in zip(keep, whole.counts) for _ in range(n)]
+                            masked = [v if k else [0.0, 0.0] for v, k in zip(values, flat_keep)]
+                        values = masked
+                    sets[key] = values
+                return sets
+
             from . import mesh_reader
+            from .rows import mask_corners as rows_mask, Rows
+            from array import array
             whole = mesh_reader.read(mesh)
             if whole is not None:
                 # A heavy mesh, read in one go by the native adapter.
@@ -740,26 +875,63 @@ def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fal
                 mesh_reader.SURFACES_ONLY[item.id] = (mesh.PolygonCount(), mesh.PointCount()) if not whole.lines and not whole.small else None
                 # The usual mesh, all of one kind of polygon with one UV map for all its materials and nothing worked out
                 # for each polygon, is put together whole. Any other is taken a polygon at a time below.
-                names = set()
                 plain = len(whole.counts) and whole.subdivided.count(whole.subdivided[0]) == len(whole.subdivided)
+                # The UV map each material's polygons are drawn with, by its place among the mesh's tags.
+                named = {}
                 for which in set(whole.tag_indices) if plain else ():
                     tag = whole.tags[which]
                     maps = (result['materials'].get(tag) or result['materials'].get('', {})).get('textures', {})
-                    names.add((result['materials'].get(tag) or result['materials'].get('', {})).get('uv_map', '') or (next(iter(maps.values()))['uv_map'] if maps else ''))
+                    named[which] = (result['materials'].get(tag) or result['materials'].get('', {})).get('uv_map', '') or (next(iter(maps.values()))['uv_map'] if maps else '')
                     if tag not in tag_descriptors:
                         tag_descriptors[tag] = coordinates.descriptors({tag:(result['materials'].get(tag) or result['materials'].get('', {}))})
-                    plain = plain and not tag_descriptors[tag]
+                names = set(named.values())
+
+                def whole_group(source, uv_name, ordinal):
+                    """A group of polygons all drawn with one UV map, put together whole: (its faces, tags, UVs, normals,
+                    textures' own UVs), or None where a polygon lacks a UV map it is drawn with or a texture reads."""
+                    which = source.uv_map(uv_name)
+                    complete = which is not None and source.uv_valid[which].count(1) == len(source.counts)
+                    # A polygon without the UV map it is drawn with: 0 there, and the notice (uv_source).
+                    drawn = (source.uv_values[which] if complete else uv_source(source, uv_name)) if uv_name else []
+                    if drawn is None:
+                        return None
+                    faces_of = source.faces()
+                    # Textures that lay their own UVs out (moved, or projected), worked out for the whole group at once
+                    # (coordinates.mesh_corners), where they were worked out a polygon at a time below.
+                    sets = whole_mesh_sets(source, faces_of, tag_descriptors, transform)
+                    if sets is None or (sets and not WHOLE_MESH_SETS):
+                        return None
+                    normal = source.normal_values is not None and source.normal_valid.count(1) == len(source.counts)
+                    ordinals[(bool(source.subdivided[0]), uv_name)] = ordinal
+                    return (faces_of, [source.tags[i] for i in source.tag_indices], drawn if uv_name else (source.uv_values[which] if complete else []),
+                            source.normal_values if normal else [], sets)
+                made = {}
                 if plain and len(names) == 1:
                     uv_name = next(iter(names))
-                    which = whole.uv_map(uv_name)
-                    complete = which is not None and whole.uv_valid[which].count(1) == len(whole.counts)
-                    if complete or not uv_name:
-                        normal = whole.normal_values is not None and whole.normal_valid.count(1) == len(whole.counts)
-                        tags_of = whole.tags
-                        ordinals[(bool(whole.subdivided[0]), uv_name)] = list(range(len(whole.counts)))
-                        groups[(bool(whole.subdivided[0]), uv_name)] = (whole.faces(), [tags_of[i] for i in whole.tag_indices],
-                            whole.uv_values[which] if complete else [], whole.normal_values if normal else [], {})
-                        whole = None
+                    group = whole_group(whole, uv_name, list(range(len(whole.counts))))
+                    if group is not None:
+                        made[(bool(whole.subdivided[0]), uv_name)] = group
+                elif plain and len(names) > 1:
+                    # Materials drawn with different UV maps (a tyre's tread and sidewall): the polygons of each map
+                    # gathered out as a part of their own (mesh_reader.Part), and each part put together whole.
+                    by_name = {}
+                    for face, which in enumerate(whole.tag_indices):
+                        by_name.setdefault(named[which], []).append(face)
+                    for uv_name, faces_of in sorted(by_name.items()):
+                        part = mesh_reader.Part(whole, faces_of)
+                        group = whole_group(part, uv_name, list(faces_of))
+                        if group is None:
+                            made = {}
+                            break
+                        made[(bool(whole.subdivided[0]), uv_name)] = group
+                if made:
+                    groups.update(made)
+                    whole = None
+                else:
+                    for key in [k for k in ordinals if k[0] == bool(whole.subdivided[0])] if plain else ():
+                        ordinals.pop(key, None)
+                    SLOW_READS[item.name] = ('mixed subdivision' if not plain else 'a polygon lacks a UV map it is drawn with, or a '
+                                             'texture reads one it lacks: %s' % sorted(names))
             if whole is not None:
                 chosen = {}
                 offset = 0
@@ -818,12 +990,15 @@ def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fal
                     # A deformer that adds or takes away points leaves no base point for each: the points as rendered
                     # serve, so that glitter in reference space draws (its flakes moving with the deformer, as in object
                     # space) rather than fail.
-                    rest = [list(point) for point in vertices]
+                    rest = vertices
             object_settings = options.object_values(properties.read(item))
             instance_records = sorted(instances.get(item.id, []),key=lambda pair:pair[0])
             if item.id in instances and render_visible(item):
                 instance_records = [(item.id,transform)] + instance_records
             transforms = [value for identity,value in instance_records]
+            from .rows import Faces, smoothing_available
+            # Smoothed by the geometry adapter, a mesh of any size takes its material's Modo smoothing angle.
+            native_smoothing = smoothing_available()
             for (subdivision, uv_name), tagged_faces in sorted(groups.items()):
                 if isinstance(tagged_faces, tuple):
                     # Put together whole, above.
@@ -837,7 +1012,8 @@ def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fal
                                   for key in sorted({k for values in extras for k in values})}
                 result['meshes'].append({'name': item.name, 'identity':item.id+'|'+str(subdivision)+'|'+uv_name, 'vertices': vertices,
                                          'uv_sets': whole_sets,
-                                         'faces': list(faces), 'matrix': transform, 'material': '',
+                                         # Faces as the adapter handed them over stay the run they came in (rows.Faces).
+                                         'faces': faces if isinstance(faces, Faces) else list(faces), 'matrix': transform, 'material': '',
                                          'face_materials': list(face_materials),
                                          'uvs': whole_uvs,
                                          'normals': whole_normals,
@@ -862,7 +1038,7 @@ def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fal
                         # which is then smoothed all over, as MoonRay smooths, and named in a notice.
                         modo_said = next((layer.get('modo_smoothing_angle') for layer in reversed(worn.get('material_stack', [worn])) if layer.get('modo_smoothing_angle') is not None), None)
                         if modo_said is not None and modo_said < 179.0:
-                            if len(faces) <= SMOOTHING_ANGLE_FACES:
+                            if len(faces) <= SMOOTHING_ANGLE_FACES or native_smoothing:
                                 said = modo_said
                             elif item.name not in smoothed_whole:
                                 smoothed_whole.append(item.name)
@@ -981,6 +1157,8 @@ def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fal
             warnings.append('A Fur material is in the scene but no fur is grown: the mesh wearing it is hidden or set to Render: Off, or wears another material.')
     except (LookupError,RuntimeError,TypeError):pass
     result['meshes']=without_fur_bases(result['meshes'],result['extra_geometry'],warnings)
+    # A Mesh Light's Prototype is the light, not a surface of the scene: it would hide the light and block its light.
+    result['meshes']=without_mesh_light_prototypes(result['meshes'],mesh_light_prototypes(scene))
     from .scene_references import capture as capture_references
     result['scene_references']=capture_references(scene,result)
     result['time']=lx.service.Selection().GetTime();result['fps']=float(scene.fps);result['frame']=round(result['time']*result['fps'])

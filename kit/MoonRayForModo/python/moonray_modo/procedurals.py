@@ -184,10 +184,30 @@ MAP_SETTINGS = {'noise': (('freqs', 4), ('freqRatio', 2.0), ('ampRatio', .5)),
                 'weave': (('yarnWidth', .6), ('roundness', .6)), 'ripples': (('sources', 8), ('wavelength', .2), ('phase', 0.0))}
 
 
-def solid(layer, channel, color, is_color, locator_matrix):
+AXES = {'x': 0, 'y': 1, 'z': 2}
+
+
+def checker_rows(rows, axis, cube=False):
+    """The rows for a Checker laid as Modo lays it (measured against Modo's renders of a plane, tools/
+    probe_cl_checker_variants.py): Modo reads the point with its Y and Z turned over (a half turn about X) before the
+    locator takes it; a square is half a locator unit; Square lies across the two locator axes other than the
+    projection axis, given here as the map's X and Y, the projection axis as its Z (for Cube); and the colours fall
+    one square over from the map's for a Square on the X and Y axes."""
+    axis = AXES.get(str(axis).lower(), axis) if not isinstance(axis, int) else axis
+    axis = axis if axis in (0, 1, 2) else 2
+    turned = [[2.0 * r[0], -2.0 * r[1], -2.0 * r[2], 2.0 * r[3]] for r in rows]
+    order = {0: (1, 2, 0), 1: (0, 2, 1), 2: (0, 1, 2)}[axis]
+    made = [list(turned[k]) for k in order]
+    if axis != 2 and not cube:
+        made[0][3] += 1.0
+    return made
+
+
+def solid(layer, channel, color, is_color, locator_matrix, axis=2):
     """A procedural layer as MoonRay's ModoProceduralMap works it out, through the object at each point (Modo's Solid
     projection): its pattern, Type and settings, its colours, and rows that take a point of the world into the texture
-    locator's space. None for a layer of a kind it does not draw."""
+    locator's space (for a Checker, as checker_rows lays it about the locator's projection axis). None for a layer of
+    a kind it does not draw."""
     kind = layer.type
     if kind in ENHANCE:
         return enhance(layer, channel, color, is_color, locator_matrix)
@@ -198,12 +218,13 @@ def solid(layer, channel, color, is_color, locator_matrix):
     chosen = str(channel(layer, 'type', types[0] if types else ''))
     settings = [float(channel(layer, key, default)) for key, default in MAP_SETTINGS[kind]]
     inv = inverse(locator_matrix)
+    rows = [[inv[0], inv[4], inv[8], inv[12]], [inv[1], inv[5], inv[9], inv[13]], [inv[2], inv[6], inv[10], inv[14]]]
     data = {'pattern': PATTERNS[kind], 'type': types.index(chosen) if chosen in types else 0,
             'settings': settings + [0.0] * (22 - len(settings)) + [float(channel(layer, 'bias', .5)), float(channel(layer, 'gain', .5))],
             'color1': color(layer, 'color1', (0, 0, 0)) if is_color else [float(channel(layer, 'value1', 0))] * 3,
             'color2': color(layer, 'color2', (1, 1, 1)) if is_color else [float(channel(layer, 'value2', 1))] * 3,
             'alpha1': float(channel(layer, 'alpha1', 1)), 'alpha2': float(channel(layer, 'alpha2', 1)),
-            'rows': [[inv[0], inv[4], inv[8], inv[12]], [inv[1], inv[5], inv[9], inv[13]], [inv[2], inv[6], inv[10], inv[14]]]}
+            'rows': checker_rows(rows, axis, chosen == 'cube') if kind == 'checker' else rows}
     if not all(math.isfinite(v) for v in data['settings'] + [v for row in data['rows'] for v in row]):
         raise ValueError('Nonfinite procedural parameter')
     return data

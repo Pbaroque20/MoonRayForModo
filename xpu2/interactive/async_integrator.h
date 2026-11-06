@@ -996,15 +996,15 @@ X2_CALL V3 volumeRadiance(const mixed::Config& c, const sample::Identity& root, 
                 if (lpe) lpeAdd(direct, aov::lpeNext(*lpe->t, volumeState, aov::LpeLight, L.lpeLabel));
             }
         }
-#if !defined(__CUDACC__)
         // Emissive volumes lighting the steps (computeRadianceEmissiveRegionsVolumes): equi-angular samples about a
-        // place in each region its geometry lets light volumes, each through its emissive volume integral.
+        // place in each region its geometry lets light volumes, each through its emissive volume integral. Both lanes:
+        // the step at a distance from the lookup (the CPU's table, the GPU's replay of the march).
         {
             const volume::Regions er = backend.emissiveRegions();
             const bool hq = pv.nonMirrorDepth == 0;
             const U32 nls = hq ? c.lightSamples : 1, nss = hq ? c.volumeIlluminationSamples : 1;
             const float invN = 1.0f / float(nls * nss);
-            const float rayStart = steps[0].tStart, rayStop = steps[count - 1].tStart + steps[count - 1].delta;
+            const float rayStart = firstStart, rayStop = rayEnd;
             for (U32 ri = 0; ri < er.count && nss > 0; ++ri) {
                 const volume::Region& R = er.regions[ri];
                 if (!(R.visibility & 0x100u)) continue;
@@ -1024,9 +1024,8 @@ X2_CALL V3 volumeRadiance(const mixed::Config& c, const sample::Identity& root, 
                     const float pdfTe = volume::pdfEquiAngular(te, D, thetaA, thetaB);
                     if (pdfTe == 0.0f || !volume::finitef(pdfTe)) continue;
                     const float tePrime = te + offset;
-                    U32 kk = 0;  // findInterval over the steps' starts and the march's end
-                    while (kk + 1 < count && steps[kk + 1].tStart <= tePrime) ++kk;
-                    const volume::Step& vp = steps[kk];
+                    float pdfK;  // findInterval over the steps' starts and the march's end (its pdf unused)
+                    const volume::Step vp = lookup.at(tePrime, pdfK);
                     if (volume::black(vp.sigmaS)) continue;
                     const V3 trScatter = volume::times(volume::times(vp.tr, vp.trH),
                                                        volume::expNeg(volume::plus(vp.sigmaT, vp.sigmaTh), tePrime - vp.tStart));
@@ -1045,7 +1044,6 @@ X2_CALL V3 volumeRadiance(const mixed::Config& c, const sample::Identity& root, 
                 if (lpe) lpeAdd(regionLight, aov::lpeNext(*lpe->t, volumeState, aov::LpeEmission, shaders[R.volume].lpeLabel));
             }
         }
-#endif
         ++pv.volumeDepth;
         // approximateVolumeMultipleScattering (Wrenninge 2015): scatter events along the ray, then free paths from
         // them with the extinction, contribution and anisotropy shrinking each order.
@@ -1101,7 +1099,6 @@ X2_CALL V3 volumeRadiance(const mixed::Config& c, const sample::Identity& root, 
                         radiance = volume::plus(radiance, contribution);
                         if (lpe) lpeAdd(contribution, aov::lpeNext(*lpe->t, scatterState, aov::LpeLight, backend.light(li).lpeLabel));
                     }
-#if !defined(__CUDACC__)
                     // The emissive volumes lighting this scatter (a direction toward each region that lights volumes,
                     // through its emissive volume integral, by the phase function).
                     {
@@ -1120,7 +1117,6 @@ X2_CALL V3 volumeRadiance(const mixed::Config& c, const sample::Identity& root, 
                             if (lpe) lpeAdd(contribution, aov::lpeNext(*lpe->t, scatterState, aov::LpeEmission, shaders[R.volume].lpeLabel));
                         }
                     }
-#endif
                     const float uq0 = ms.next(), uq1 = ms.next();
                     scatterDir = volume::phaseSample(g, V3{-rayDir.x, -rayDir.y, -rayDir.z}, uq0, uq1);
                 }
@@ -2278,7 +2274,6 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
         // it; bounces skip the epsilon over the cosine to Ng.
         const float curveEpsilon = hit.epsilon;
 
-#if !defined(__CUDACC__)
         // Emissive volumes (computeRadianceEmissiveRegionsBundled): per region, the lobes its geometry is visible to as
         // a BsdfOneSampler (picked by albedo), light samples (a place in its emission distribution) and BSDF samples,
         // MIS-weighted, each through the region's emissive volume integral.
@@ -2409,7 +2404,6 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
                 }
             }
         }();
-#endif
         // Light samples (drawLightSamples, integrateLightSetSample): each light of the hit's set; with adaptive light
         // sampling, the lights outside the set's tree and those the tree picks (chooseLightsToSample), a sample's pdf
         // times the probability its light was picked while the MIS weights keep the light's own (misPdf).

@@ -295,6 +295,7 @@ struct Light {
     size_t triangleCount = 0;
     int32_t texture = -1;               // a picture across the light, from addTexture; not for a portal or a mesh
     bool visibleInCamera = false;       // whether the camera sees it shining where it stands; never a portal
+    bool alone = false;                 // mesh: a light that is no surface of the scene, its shape found by camera rays alone
     const LightFilter* filters = nullptr;
     size_t filterCount = 0;
 };

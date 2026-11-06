@@ -29,7 +29,7 @@ class NativeFur(unittest.TestCase):
 
     def test_the_same_fur_grows_as_in_python(self):
         held = {'dist': .02, 'curls': .2, 'clumps': .4, 'clumpSize': .1, 'kinkAmp': .3, 'frizAmp': .2, 'strays': .1}
-        strands, root, tip, asked, _ = fur.grow(FLOOR, held)
+        strands, root, tip, asked, _, _ = fur.grow(FLOOR, held)
         made = self.grown(held)
         vertices, counts, radii, places, fibres = fur_native.read(made['files'][0][0])
         self.assertEqual((made['wanted'], fibres, counts), (asked, len(strands), [len(strand) for strand in strands]))
