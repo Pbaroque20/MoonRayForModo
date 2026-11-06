@@ -126,10 +126,30 @@ def layer_names(key, names, beauty=False):
     return ['%s.%s' % (key, name.rsplit('.', 1)[-1]) for name in names]
 
 
-def multilayer(key, layers, target):
+def header_arguments(attributes):
+    """The image tool's arguments that write string attributes (key, value) into a file's header, word for word: the
+    tool otherwise works out anything in braces, and a Cryptomatte's manifest is all braces."""
+    attributes = list(attributes)
+    if not attributes:
+        return []
+    return ['--evaloff'] + [item for key, value in attributes for item in ('--sattrib', key, value)] + ['--evalon']
+
+
+def cryptomatte(source, channels, attributes, target):
+    """The image tool's arguments that save a Cryptomatte: channels are (new name, channel) of export_channels, written
+    at full precision, with its header (cryptomatte.header), without which no reader takes it for one."""
+    if Path(str(target)).suffix.lower() != '.exr':
+        raise ValueError('a Cryptomatte is saved as OpenEXR only: its IDs are numbers the other types cannot hold')
+    if not channels:
+        raise ValueError('the Cryptomatte buffer holds no Cryptomatte channels')
+    return ([str(source), '--ch', ','.join('%s=%s' % pair for pair in channels)] + header_arguments(attributes)
+            + ['-d', 'float', '-o', str(target)])
+
+
+def multilayer(key, layers, target, attributes=()):
     """The image tool's arguments that write several buffers into one OpenEXR, each a layer: layers are (file, the
     channels taken from it, their names in the file written, whether they must stay 32-bit float). The beauty's alpha
-    is a layer of its own channel, A, after the beauty."""
+    is a layer of its own channel, A, after the beauty. attributes, (key, value), go into its header: a Cryptomatte's."""
     numbers = find(key)[3]
     args, kept, written = [], [], set()
     for index, (source, channels, names, exact) in enumerate(layers):
@@ -139,7 +159,8 @@ def multilayer(key, layers, target):
         args += [str(source), '--ch', ','.join(channels), '--chnames', ','.join(names)] + (['--chappend'] if index else [])
         if exact:
             kept += names
-    return args + ['-d', numbers] + [item for name in kept for item in ('-d', '%s=float' % name)] + ['-o', str(target)]
+    return (args + ['-d', numbers] + [item for name in kept for item in ('-d', '%s=float' % name)] + header_arguments(attributes)
+            + ['-o', str(target)])
 
 
 def linear(key):

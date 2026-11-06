@@ -4,9 +4,21 @@ from . import native
 
 # Of the previews (MoonRay LS and MoonLightIPR). MoonRay itself renders at the camera's resolution.
 SIZES = (('320 px wide', 320), ('640 px wide', 640), ('960 px wide', 960), ('1280 px wide', 1280))
+# The realtime preview's resolution as a share of the render's (preview_fraction): the render's size divided by it, so a
+# tall picture is made as small as a wide one. It took the place of a width in pixels (preview_size), which a tall
+# picture could stay full size under.
+FRACTIONS = (('Full resolution', 1), ('1/2 resolution', 2), ('1/3 resolution', 3), ('1/4 resolution', 4))
+
+
+def fraction_of_width(width, reference=1920):
+    """The share nearest a width in pixels once chosen (preview_size), taken of a render the reference wide."""
+    share = max(1.0, float(width)) / reference
+    return min((value for _, value in FRACTIONS), key=lambda divisor: abs(1.0 / divisor - share))
 # key: (default, kind)
 KEYS = {
     'runtime': ('', str), 'cache_folder': ('', str), 'scene_cache': (True, bool), 'preview_engine': ('moonray', str), 'open_engine': ('moonray', str), 'preview_size': (640, int),
+    # The realtime preview at the render's resolution divided by this (FRACTIONS); 0, not chosen: from preview_size.
+    'preview_fraction': (0, int),
     # Whether the environment lights the scene always, as a path tracer has it ('moonray'), or only with Global
     # Illumination on in the Render item, as Modo's own renderer has it ('modo').
     'environment_lighting': ('moonray', str),
@@ -122,6 +134,14 @@ class Preferences:
             if key == 'draft/width':
                 # A width that could once be typed is taken to the nearest of those that can be chosen now.
                 return float(min(DRAFT_WIDTHS, key=lambda width: abs(width - float(value))))
+            if key == 'preview_fraction' and kind(value) not in [v for _, v in FRACTIONS]:
+                # Not chosen yet: the width once chosen in pixels as the nearest share of a 1920-wide render (640 px, the
+                # old default, a third), a third where none was.
+                held = self.store.value('preview_size')
+                try:
+                    return fraction_of_width(int(held)) if held is not None and int(held) > 0 else 3
+                except (TypeError, ValueError):
+                    return 3
             if key == 'preview_size' and kind(value) <= 0:
                 # Scene resolution, as it could once be set to: a realtime preview is no longer made that large.
                 return default
@@ -199,7 +219,9 @@ class Dialog(QtWidgets.QDialog):
                           'tessellated), so that a scene opened again, or the same meshes in another, is ready sooner. At most '
                           '10 GB, the least lately used let go. The status says Caching scene... while it keeps what it makes, and Loading scene '
                           'from cache... while it reads back what it kept.'))
-        form.addRow('Realtime preview size', combo('preview_size', SIZES))
+        form.addRow('Realtime preview resolution', combo('preview_fraction', FRACTIONS,
+                    "The realtime previews' size as a share of the render's resolution, tall or wide alike: MoonLightIPR, "
+                    "MoonRay LS, and RT with MoonRay XPU2 or XPU. Render makes the picture at its full resolution."))
         self.realtime_held = realtime_share()
         self.realtime_share = QtWidgets.QSpinBox()
         self.realtime_share.setRange(1, 100)

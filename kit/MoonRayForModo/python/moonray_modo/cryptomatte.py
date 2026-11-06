@@ -186,15 +186,43 @@ def owners(geometries,category,scene):
     return found
 
 
+def header(name,manifest):
+    """The standard Cryptomatte header of a layer called name, [(key, value)]: what every reader (Nuke, Fusion, ProEXR
+    and Exr-IO in Photoshop) looks for to know the layer for a Cryptomatte and to name its mattes."""
+    prefix='cryptomatte/'+('%08x'%hash32(name))[:7]+'/'
+    fields={'name':name,'hash':'MurmurHash3_32','conversion':'uint32_to_float32','manifest':json.dumps(manifest,separators=(',',':'),sort_keys=True)}
+    return [(prefix+key,value) for key,value in fields.items()]
+
+
+def manifest(geometries,category,scene):
+    """Every matte of a category by name, as the hex of its ID: a Cryptomatte header's manifest."""
+    return {label:'%08x'%held for label,held in mattes(geometries,category,scene).items()}
+
+
+def snapshot_manifest(snapshot,category):
+    """The manifest of a category for the scene a preview was rendered from."""
+    snapshot=snapshot or {}
+    return manifest(list(snapshot.get('meshes') or [])+list(snapshot.get('extra_geometry') or []),category,snapshot)
+
+
+def export_name(category):
+    """What a saved Cryptomatte's layer is called: one a category (CryptoObject, CryptoMaterial, CryptoAsset), so that
+    several can share one file."""
+    return 'Crypto'+str(category or 'object').capitalize()
+
+
+def export_channels(names,name):
+    """A Cryptomatte's channels as a saved file gives them, [(new name, channel)]: its ranks (Cryptomatte00.R and on)
+    under the layer's own name; the channels MoonRay keeps only to take a render up again (CryptoS) left out."""
+    return [(name+channel[len('Cryptomatte'):],channel) for channel in names if channel.startswith('Cryptomatte')]
+
+
 def metadata(geometries,lines,crypto=False,scene=None,category_override=None):
     from .working_space import label
     names=['MoonRayForModo/workingSpace'];types=['string'];values=[label((scene or {}).get('asset_settings',{}))]
     if crypto:
         cat=category_override or category(scene or {})
-        manifest={label:'%08x'%held for label,held in mattes(geometries,cat,scene).items()}
-        prefix='cryptomatte/'+('%08x'%hash32('Cryptomatte'))[:7]+'/'
-        fields={'name':'Cryptomatte','hash':'MurmurHash3_32','conversion':'uint32_to_float32','manifest':json.dumps(manifest,separators=(',',':'),sort_keys=True)}
-        for key,value in fields.items():names.append(prefix+key);types.append('string');values.append(value)
+        for key,value in header('Cryptomatte',manifest(geometries,cat,scene)):names.append(key);types.append('string');values.append(value)
         names.append('MoonRayForModo/cryptomatteCategory');types.append('string');values.append(cat)
     path='/modo/outputMetadata'+('/'+category_override if category_override else '')
     lines.append('Metadata('+string(path)+') '+array(array(string(v) for v in row) for row in zip(names,types,values)))

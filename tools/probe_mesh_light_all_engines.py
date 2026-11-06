@@ -19,6 +19,9 @@ result = {'steps': []}
 held = {}
 ENGINES = [('scalar', 'moonray', 'scalar', 'xpu'), ('vector', 'moonray', 'vectorized', 'xpu'), ('xpu', 'moonray', 'xpu', 'xpu'),
            ('xpu2', 'moonray', 'xpu', 'xpu2'), ('moonlightipr', 'moonlightipr', 'vectorized', 'xpu')]
+# PROBE_ENGINES, where set, names the engines rendered (comma-separated labels).
+if os.environ.get('PROBE_ENGINES'):
+    ENGINES = [e for e in ENGINES if e[0] in os.environ['PROBE_ENGINES'].split(',')]
 
 
 def save():
@@ -140,7 +143,8 @@ def render(index):
                     try:
                         from moonray_modo import terminal
                         said = [str(e[4]) for e in terminal.entries()][-40:]
-                        result.setdefault('log', {})[label] = [s for s in said if 'ight' in s or 'rror' in s or 'arn' in s][-15:]
+                        result.setdefault('log', {})[label] = (said if os.environ.get('PROBE_LOG_ALL') else
+                                                               [s for s in said if 'ight' in s or 'rror' in s or 'arn' in s][-15:])
                     except Exception:
                         pass
                     save(); render(index + 1)
