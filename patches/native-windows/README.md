@@ -6,7 +6,7 @@ are portability changes. This file explains the ones whose reason is not obvious
 
 ## Switches on the Source Overrides page that change no source
 
-Five switches on Preferences > MoonRay Source Overrides are the plugin's own, with no patch behind them. Each is on
+Six switches on Preferences > MoonRay Source Overrides are the plugin's own, with no patch behind them. Each is on
 by default; off does as MoonRay itself does.
 
 - **Low-latency rendering**: MoonRay runs below Modo's priority and leaves one processor thread free.
@@ -16,6 +16,9 @@ by default; off does as MoonRay itself does.
 - **Blur moving lights**: a light that moves during the shutter has its motion blur switch (`mb`) set.
 - **Display filters given the inputs they need**: a display filter missing an input takes the one it starts on, with a
   notice, and one that cannot be given it is left out rather than drawn pink.
+- **Bump node in MoonShine graphs**: the MoonShine graph's Bump node turns a height (an image or any texture) into a
+  shading normal, as the plugin's Shader Tree Bump layers do (its own ModoTextureMap in height mode, with a bump
+  strength). MoonRay has no node of its own for it; off, the node leaves the normal flat.
 
 ## `moonray.patch`: `lib/rendering/mcrt_common/Clock.h`, the heat map's clock on Windows
 
@@ -528,10 +531,24 @@ The edge detectors answer on either side of a crease and next to nothing at its 
 a line comes out as two, with the surface showing between them, broken into dashes by the pixels' staircase. More samples
 only clean it.
 
+A toon head as a tester rendered it before the change: the outline and the creases of the face come out doubled and
+dashed, the surface showing through the middle of each line. Images by Ironic3D.
+
+![A toon-shaded head on a grey floor, its outline and the lines of its face drawn by a Toon display filter (image by Ironic3D)](../../docs/images/toon-line-gaps-head.png)
+
+![Close up of the face: the lines of the ear, nose and mouth are two thin lines with the skin between them, broken into dashes (image by Ironic3D)](../../docs/images/toon-line-gaps-face.png)
+
+![Close up of the shoulder's outline: a dashed light line runs inside the black ink (image by Ironic3D)](../../docs/images/toon-line-gaps-shoulder.png)
+
 ### The change
 
 Near an edge (the nine pixels around this one not on one surface), a pixel takes the most of, along each of four axes, the
 lesser line of its two neighbours. The depth and normal inputs' window widens by 2 to give the neighbours their kernels.
+
+The result: with the switch on, the lines come out whole, one solid stroke along each edge, here the lines alone
+(Output Mode set to lines), white on black, on the material ball.
+
+![The material ball's toon lines alone, white on black, each edge one solid unbroken line](../../docs/images/toon-line-gaps-fixed.png)
 
 ## `moonshine.patch`: toon lines apart from the shading (`output_mode`)
 
