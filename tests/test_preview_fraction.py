@@ -35,7 +35,7 @@ def read(**stored):
 
 class PreviewFraction(unittest.TestCase):
     def test_the_choices(self):
-        self.assertEqual([value for _, value in preferences.FRACTIONS], [1, 2, 3, 4])
+        self.assertEqual([value for _, value in preferences.FRACTIONS], [1, 2, 3, 4, 8, 16])
 
     def test_a_third_where_nothing_was_chosen(self):
         self.assertEqual(read(), 3)
@@ -47,7 +47,7 @@ class PreviewFraction(unittest.TestCase):
         self.assertEqual(read(preview_size='320'), 4)
 
     def test_a_share_chosen_is_kept(self):
-        for value in (1, 2, 3, 4):
+        for value in (1, 2, 3, 4, 8, 16):
             self.assertEqual(read(preview_fraction=str(value), preview_size='320'), value)
 
     def test_nonsense_is_taken_as_not_chosen(self):

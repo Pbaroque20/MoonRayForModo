@@ -6,7 +6,7 @@ are portability changes. This file explains the ones whose reason is not obvious
 
 ## Switches on the Source Overrides page that change no source
 
-Five switches on Preferences > MoonRay Source Overrides are the plugin's own, with no patch behind them. Each is on
+Six switches on Preferences > MoonRay Source Overrides are the plugin's own, with no patch behind them. Each is on
 by default; off does as MoonRay itself does.
 
 - **Low-latency rendering**: MoonRay runs below Modo's priority and leaves one processor thread free.
@@ -16,6 +16,9 @@ by default; off does as MoonRay itself does.
 - **Blur moving lights**: a light that moves during the shutter has its motion blur switch (`mb`) set.
 - **Display filters given the inputs they need**: a display filter missing an input takes the one it starts on, with a
   notice, and one that cannot be given it is left out rather than drawn pink.
+- **Bump node in MoonShine graphs**: the MoonShine graph's Bump node turns a height (an image or any texture) into a
+  shading normal, as the plugin's Shader Tree Bump layers do (its own ModoTextureMap in height mode, with a bump
+  strength). MoonRay has no node of its own for it; off, the node leaves the normal flat.
 
 ## `moonray.patch`: `lib/rendering/mcrt_common/Clock.h`, the heat map's clock on Windows
 

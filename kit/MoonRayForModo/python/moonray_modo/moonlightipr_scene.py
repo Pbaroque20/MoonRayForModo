@@ -10,6 +10,7 @@ import struct
 from array import array
 from itertools import chain, accumulate
 from .scene_digest import flat as _digest_flat
+from . import face_tags
 
 
 def flat(value):
@@ -587,7 +588,7 @@ def displaced(mesh, key, flags, payload, materials, material_index, warnings, li
     program (moonlightipr_materials.displacement_tree), as its count and its operations. The key then names the
     displacement too, which a change to it makes again."""
     from .moonlightipr_materials import displacement
-    tags = set(mesh.get('face_materials') or [mesh.get('material', '')])
+    tags = face_tags.worn(mesh)
     distances = []
     for tag in sorted(tags):
         held = materials.get(tag if tag in materials else '')
@@ -1079,7 +1080,7 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     from .moonlightipr_materials import displacement as displacement_program
 
     def displaces(mesh):
-        for tag in set(mesh.get('face_materials') or [mesh.get('material', '')]):
+        for tag in face_tags.worn(mesh):
             held = materials.get(tag if tag in materials else '')
             if held and displacement_program(held):
                 return True
@@ -1110,7 +1111,7 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
         cut = cuts.get(id(mesh))
         if cut is not None and mesh.get('subdivision'):
             mesh = dict(mesh, subdivision_level=cut['subdivision'])
-        if set(mesh.get('face_materials') or [mesh.get('material', '')]) <= alone:
+        if face_tags.worn(mesh) <= alone:
             # A fog that is not even all through (a VDB's, or one with ramps), which MoonLightIPR draws in VDB items only.
             warnings.append('MoonLightIPR leaves out %s, whose fog is not even all through; MoonRay renders it.' % mesh['name'])
             continue

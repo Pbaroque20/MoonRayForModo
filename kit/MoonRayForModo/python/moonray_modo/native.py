@@ -170,12 +170,20 @@ def tool(name, first=None):
                      'Preferences, or reinstall the kit.' % (name, '; '.join(looked) or 'no runtime is set'))
 
 
+_INSTALLATION=[]
+
+
 def installation_id():
+    """The installed kit's own mark (runtime.json), read once: a kit is installed with Modo closed. Read at every
+    Preferences made, it was a file opened a few times at each step of a drag."""
+    if _INSTALLATION:return _INSTALLATION[0]
     path=Path(__file__).resolve().parents[2]/'runtime.json'
     try:
-        return json.loads(path.read_text(encoding='utf-8')).get('installation_id','')
+        found=json.loads(path.read_text(encoding='utf-8')).get('installation_id','')
     except (OSError,ValueError,TypeError,AttributeError):
         return ''
+    _INSTALLATION.append(found)
+    return found
 
 
 def supports_xpu(directory):

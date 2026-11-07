@@ -1,5 +1,6 @@
 """Conservative edit classification; unknown dependencies force a full capture."""
 LIGHTS={'camera','sunLight','pointLight','areaLight','spotLight','lightMaterial','environment','envMaterial'}
+from . import face_tags
 MATERIALS={'advancedMaterial','material.moonrayMoonShine','material.moonrayMaterialX','imageMap','constant','checker','noise','grid','dots','cellular','wood','weave','ripples','gradient','videoStill'}
 
 def deformers(scene):
@@ -37,7 +38,7 @@ def projected_items(cache):
         tags={tag for tag,material in materials.items() if any(d.get('projection','uv')!='uv' for d in descriptors({tag:material}).values())}
         if not tags:return set()
         return {mesh.get('source_item') or mesh['identity'].split('|')[0] for mesh in cache.get('meshes') or []
-                if tags&set(mesh.get('face_materials') or [mesh.get('material','')])}
+                if tags&face_tags.worn(mesh)}
     except Exception:return None
 
 
@@ -319,3 +320,82 @@ def refresh_transforms(scene,snapshot,identities=None,loose=()):
             if identity in loose:continue
             if targets is None or identity in targets:mesh['matrix']=where(mesh.get('matrix'),identity)
     snapshot['extra_geometry']=[dict(item,matrix=where(item.get('matrix'),item.get('source_item') or item['identity'].split('|')[0])) if targets is None or (item.get('source_item') or item['identity'].split('|')[0]) in targets else item for item in snapshot.get('extra_geometry',[])]
+
+
+# What a scene sent holds that may name an item, beside its meshes, its extra geometry and its camera (move_only).
+_NAMED={'key':None,'names':frozenset()}
+
+
+def _names(value,found):
+    if isinstance(value,str):found.add(value.split('|')[0])
+    elif isinstance(value,dict):
+        for entry in value.values():_names(entry,found)
+    elif isinstance(value,(list,tuple)):
+        for entry in value:
+            if isinstance(entry,(str,dict,list,tuple)):_names(entry,found)
+
+
+def named_elsewhere(snapshot):
+    """Every string a snapshot holds outside its meshes, extra geometry and camera (identities among them): an item
+    named there (a light, a texture locator, a MoonRay item, a dicing camera) renders by more than its matrix. Found
+    once while those parts are the same objects, as they stay through a drag made by move_only."""
+    parts=sorted(key for key in snapshot if key not in ('meshes','extra_geometry','camera'))
+    key=tuple((name,id(snapshot[name])) for name in parts)
+    if _NAMED['key']!=key:
+        found=set()
+        for name in parts:_names(snapshot[name],found)
+        _NAMED.update(key=key,names=frozenset(found),held=[snapshot[name] for name in parts])
+    return _NAMED['names']
+
+
+MOVES=('translation','rotation','scale','transform')
+
+
+# Why move_only last declined a drag, for probes and the Render Log.
+REFUSED=[]
+
+
+def _refused(why):
+    REFUSED[:]=[why]
+    return None
+
+
+def move_only(scene,snapshot,identities,camera_moved=False,loose=(),camera_matrix=None):
+    """The scene sent last (snapshot) with only where things stand made new, for a drag that moves the camera rendered
+    through or items that hang meshes: the transforms moved (identities) and every mesh and camera they carry asked
+    where they now stand, nothing else read. None where the drag may change anything more: an item it moves is named
+    anywhere else in the scene (a light, a texture locator, a MoonRay item, a dicing camera), is a volume, or Modo moves
+    more than can be told (instances, replicators, channel modifiers; transform_targets). Reading a heavy car again for
+    each step of a camera drag held Modo ~150 ms a step; this asks it only for matrices."""
+    from .host import world_matrix
+    camera=snapshot.get('camera') or {}
+    identity=camera.get('identity')
+    if not identity:return _refused('no camera')
+    try:
+        for held in identities:
+            if scene.item(held).type not in MOVES:return _refused('not a move: '+scene.item(held).type+'')
+        # What the moved transforms carry: their items and all that hangs from them. Where Modo may move more than that
+        # (instances, replicators, channel modifiers: transform_targets cannot tell), every mesh is asked where it now
+        # stands, as a move read the usual way does; what else they carry must still be only meshes and the camera.
+        carried=set()
+        for held in identities:
+            for owner in scene.item(held).itemGraph('xfrmCore').forward():
+                carried.add(owner.id);carried.update(child.id for child in owner.children(recursive=True))
+        if identities and not carried:return _refused('what moves cannot be told')
+        known=transform_targets(scene,identities) if identities else set()
+        targets=carried if known is None else known
+        if identity in targets:camera_moved=True
+        # A dicing camera may be the camera moved, which tessellates the meshes from where it stands.
+        if camera_moved and snapshot.get('dicing_camera'):return _refused('dicing camera')
+        targets=set(targets)-{identity}
+        if targets&named_elsewhere(snapshot):return _refused('named elsewhere: '+','.join(sorted(targets&named_elsewhere(snapshot))[:4])+'')
+        meshes=snapshot.get('meshes') or []
+        if any(mesh.get('volumetric') and (mesh.get('source_item') or mesh['identity'].split('|')[0]) in targets for mesh in meshes):return _refused('a volume')
+        result=dict(snapshot)
+        # camera_matrix: where a viewport navigated through the camera looks from, before Modo moves the camera itself.
+        if camera_moved:result['camera']=dict(camera,matrix=list(camera_matrix) if camera_matrix else world_matrix(scene.item(identity)))
+        if targets:
+            result['meshes']=[dict(mesh) for mesh in meshes]
+            refresh_transforms(scene,result,identities,loose=loose)
+        return result
+    except (RuntimeError,LookupError,AttributeError,KeyError,TypeError) as exc:return _refused(type(exc).__name__+': '+str(exc))

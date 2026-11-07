@@ -4,7 +4,7 @@ import lx
 import lxu.utils
 import lxifc
 import modo
-from . import properties, options, coordinates
+from . import properties, options, coordinates, face_tags
 
 
 def channel(item, name, default=None):
@@ -191,7 +191,7 @@ def worn_tags(found):
     '' (the base material, which every surface not otherwise tagged wears)."""
     worn = {''}
     for mesh in found.get('meshes') or []:
-        worn.update(mesh.get('face_materials') or [mesh.get('material', '')])
+        worn.update(face_tags.worn(mesh))
     for extra in found.get('extra_geometry') or []:
         worn.add(extra.get('material', ''))
     for entity in found.get('entities') or []:
@@ -211,7 +211,7 @@ def unworn(scene, result, warnings):
     else:
         carried = set()
         for mesh in result.get('meshes', []):
-            carried.update(mesh.get('face_materials') or [mesh.get('material', '')])
+            carried.update(face_tags.worn(mesh))
     carried.discard(None)
     if not carried:
         return

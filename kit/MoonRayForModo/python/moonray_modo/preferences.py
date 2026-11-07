@@ -6,25 +6,17 @@ from . import native
 SIZES = (('320 px wide', 320), ('640 px wide', 640), ('960 px wide', 960), ('1280 px wide', 1280))
 # The realtime preview's resolution as a share of the render's (preview_fraction): the render's size divided by it, so a
 # tall picture is made as small as a wide one. It took the place of a width in pixels (preview_size), which a tall
-# picture could stay full size under.
-FRACTIONS = (('Full resolution', 1), ('1/2 resolution', 2), ('1/3 resolution', 3), ('1/4 resolution', 4))
+# picture could stay full size under. MoonRay LS renders at it too (it had a Resolution of its own for a day, and a width
+# limit in pixels before).
+FRACTIONS = (('Full resolution', 1), ('1/2 resolution', 2), ('1/3 resolution', 3), ('1/4 resolution', 4),
+             ('1/8 resolution', 8), ('1/16 resolution', 16))
 
 
 def fraction_of_width(width, reference=1920):
-    """The share nearest a width in pixels once chosen (preview_size), taken of a render the reference wide."""
+    """The share nearest a width in pixels once chosen (preview_size, 320 to 1280), taken of a render the reference
+    wide: Full to a quarter, the shares there were when widths were left behind."""
     share = max(1.0, float(width)) / reference
-    return min((value for _, value in FRACTIONS), key=lambda divisor: abs(1.0 / divisor - share))
-
-
-# MoonRay LS's resolution as a share of the render's (ipr/fraction), never larger than the realtime preview: 1 is the
-# realtime preview's own. It took the place of a width limit in pixels (ipr/width), which a tall picture stayed tall under.
-LS_FRACTIONS = (('As realtime', 1), ('1/2 resolution', 2), ('1/4 resolution', 4), ('1/8 resolution', 8), ('1/16 resolution', 16))
-
-
-def ls_fraction_of_width(width, reference=1920):
-    """The MoonRay LS share nearest a width limit once chosen (ipr/width), taken of a render the reference wide."""
-    share = max(1.0, float(width)) / reference
-    return min((value for _, value in LS_FRACTIONS[1:]), key=lambda divisor: abs(1.0 / divisor - share))
+    return min((value for _, value in FRACTIONS[:4]), key=lambda divisor: abs(1.0 / divisor - share))
 # key: (default, kind)
 KEYS = {
     'runtime': ('', str), 'cache_folder': ('', str), 'scene_cache': (True, bool), 'preview_engine': ('moonray', str), 'open_engine': ('moonray', str), 'preview_size': (640, int),
@@ -84,7 +76,7 @@ KEYS = {
     # XPU2: what renders on the graphics card, and where its adaptive passes are made.
     'xpu2/renderer': ('xpu2', str), 'xpu2/adaptive_chain': (False, bool), 'xpu2/devices': ('both', str), 'xpu2/rt_cap': ('none', str),
     'draft/ink': ('tan', str), 'draft/width': (640.0, float), 'render_on_open': (False, bool), 'light_intensity': (10.0, float), 'working_space': ('rec709', str), 'notices_open': (False, bool),
-    'ipr/width': (640, int), 'ipr/fraction': (0, int), 'ipr/sampling': ('adaptive', str), 'ipr/samples': (32, int), 'ipr/error': (100.0, float), 'ipr/refine': (False, bool),
+    'ipr/width': (640, int), 'ipr/sampling': ('adaptive', str), 'ipr/samples': (32, int), 'ipr/error': (100.0, float), 'ipr/refine': (False, bool),
     # How many samples a pixel MoonLightIPR gathers before it rests, in realtime.
     'moonlightipr/samples': (256, int),
 }
@@ -151,14 +143,6 @@ class Preferences:
                     return fraction_of_width(int(held)) if held is not None and int(held) > 0 else 3
                 except (TypeError, ValueError):
                     return 3
-            if key == 'ipr/fraction' and kind(value) not in [v for _, v in LS_FRACTIONS]:
-                # Not chosen yet: the width limit once chosen as the nearest share of a 1920-wide render (640 px, the old
-                # default, a quarter), a quarter where none was.
-                held = self.store.value('ipr/width')
-                try:
-                    return ls_fraction_of_width(int(held)) if held is not None and int(held) > 0 else 4
-                except (TypeError, ValueError):
-                    return 4
             if key == 'preview_size' and kind(value) <= 0:
                 # Scene resolution, as it could once be set to: a realtime preview is no longer made that large.
                 return default
@@ -287,9 +271,6 @@ class Dialog(QtWidgets.QDialog):
         heading = QtWidgets.QLabel('MoonRay LS quality')
         heading.setStyleSheet('font-weight: bold; margin-top: 8px')
         form.addRow(heading)
-        form.addRow('Resolution', combo('ipr/fraction', LS_FRACTIONS,
-                                        "MoonRay LS's resolution as a share of the render's, and never larger than the realtime "
-                                        'preview above (As realtime: the same). Smaller is quicker.'))
         sampling = combo('ipr/sampling', [('Adaptive', 'adaptive'), ('Uniform', 'uniform')],
                          'Adaptive takes more samples where a pixel is still noisy and stops where it is clean enough, by the '
                          'Adaptive error below. Uniform gives every pixel the same samples, for an even grain.')

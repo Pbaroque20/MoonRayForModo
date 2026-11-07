@@ -21,12 +21,12 @@ def prepare(scene, width, height, sample_grid, width_cap=160, sample_cap=1, erro
     """MoonRay LS's scene: adaptive, from 2 samples a pixel up to its cap, stopping where a pixel is clean enough; or,
     with sampling 'uniform', the same samples in every pixel, MoonRay's square grid of no more than the cap
     (kept as '_uniform_grid', for the render to be given). Its size: no wider than width_cap or, given a share, than the
-    render's width (scene['width']) divided by it (Preview Preferences' MoonRay LS resolution); never larger than the
-    width and height asked for (the realtime preview's)."""
+    render's width (scene['width']) divided by it (Preview Preferences' Realtime preview resolution); never larger than
+    the width and height asked for (the realtime preview's)."""
     # 1024 wide and 1024 or 4096 samples: the MoonRay Widget's picture at its size, for fine tuning under XPU2.
     if share is not None:
-        if share not in (1,2,4,8,16):raise ValueError('Invalid MoonRay LS resolution share')
-        width_cap=float(scene['width'])/share
+        if share not in (1,2,3,4,8,16):raise ValueError('Invalid MoonRay LS resolution share')
+        width_cap=max(16,round(float(scene['width'])/share)) # as the realtime preview rounds it (panel._dimensions)
     elif width_cap not in (80,160,240,320,640,960,1024,1280):
         raise ValueError('Invalid IPR quality preset')
     if sample_cap not in (1,2,4,8,16,32,64,128,256,1024,2048,4096):
