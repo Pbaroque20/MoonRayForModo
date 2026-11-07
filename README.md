@@ -6,7 +6,7 @@ This is the development branch of [MoonRay for Modo](https://github.com/Pbaroque
 
 The current release is [0.5.3.1](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.5.3.1). **Built on MoonRay [2026.29.1](https://github.com/dreamworksanimation/openmoonray/releases/tag/v2026.29.1)** (OpenMoonRay's latest release; MoonRay 18.4), with the plugin's own patches for Windows and the preview.
 
-## Coming in the next version
+## New in 0.5.3.2 (coming)
 
 - **Edits that change nothing leave realtime alone**: a value entered as it already is, in the graph editor or a MoonRay material's Properties (0 where it was 0, 0.3 where it was 0.30000000000000004), and Schematic work (workspaces, nodes added, moved or taken out) no longer start MoonLightIPR or XPU2's realtime again, nor read the scene whole.
 - **One resolution for every realtime preview**: Preview Preferences' Realtime preview resolution now goes down to 1/8 and 1/16 of the render's, and MoonRay LS renders at it as MoonLightIPR and RT do. LS's own Width limit is gone, under which a tall picture stayed tall.

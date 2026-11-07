@@ -2,7 +2,7 @@
 
 0.5 is a **pre-production release**: the plugin is no longer experimental, and it brings a new GPU renderer, MoonRay XPU2.
 
-## Coming in the next version
+## New in 0.5.3.2 (coming)
 
 - **Edits that change nothing leave realtime alone**: an edit that changes nothing no longer starts MoonLightIPR or XPU2's realtime over, nor has the scene read whole. Checked in Modo with both engines, each against a real change of the same kind, which still renders:
   - A value entered as it already is, in the graph editor or in a MoonRay material's Properties: Enter pressed on 0 where it was 0, a start value entered as shown (the graph editor used to store it, which counted as a change), or 0.3 entered where the field showed a stored 0.30000000000000004. The graph editor's own preview is left alone too.
