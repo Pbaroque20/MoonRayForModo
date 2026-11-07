@@ -9,6 +9,7 @@ The current release is [0.5.3.1](https://github.com/Pbaroque20/MoonRayForModo/re
 ## Coming in the next version
 
 - **Edits that change nothing leave realtime alone**: a value entered as it already is, in the graph editor or a MoonRay material's Properties (0 where it was 0, 0.3 where it was 0.30000000000000004), and Schematic work (workspaces, nodes added, moved or taken out) no longer start MoonLightIPR or XPU2's realtime again, nor read the scene whole.
+- **MoonRay LS's resolution as a share of the render's**: Preview Preferences' MoonRay LS Resolution is 1/2, 1/4, 1/8 or 1/16 of the render's resolution, or as realtime, in place of a width limit in pixels, under which a tall picture stayed tall. It is never larger than the realtime preview; a width limit chosen before becomes the nearest share.
 
 ## New in 0.5.3.1
 

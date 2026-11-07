@@ -1284,10 +1284,10 @@ class Panel(Tools, QtWidgets.QWidget):
             if engine=='moonlightipr':
                 words=self._sampling_words('moonlightipr')
             elif self._low():
-                # As MoonRay LS has a scene prepared: no wider than its width limit, and sampled to its own limit.
+                # As MoonRay LS has a scene prepared: no larger than its share of the render, and sampled to its own limit.
                 from .ipr import prepare
                 prepared,width,height=prepare({'width':scene_w,'height':scene_h,'render_settings':values['render']},width,height,
-                                              values['samples'],get('ipr/width'),get('ipr/samples'),get('ipr/error'),get('ipr/sampling'))
+                                              values['samples'],None,get('ipr/samples'),get('ipr/error'),get('ipr/sampling'),share=get('ipr/fraction'))
                 words=self._sampling_words('ls',prepared['render_settings'],pixel_samples=prepared.get('_uniform_grid',1)**2)
             else:
                 words=self._sampling_words('moonray',values['render'],pixel_samples=int(values['samples'])**2)
@@ -1789,7 +1789,7 @@ class Panel(Tools, QtWidgets.QWidget):
         # MoonRay LS is MoonRay within its quality limits. A draft's region is not held to them.
         if self._low() and not output and not scene.get('_draft'):
             from .ipr import prepare
-            scene,width,height=prepare(scene,width,height,values['samples'],get('ipr/width'),get('ipr/samples'),get('ipr/error'),get('ipr/sampling'))
+            scene,width,height=prepare(scene,width,height,values['samples'],None,get('ipr/samples'),get('ipr/error'),get('ipr/sampling'),share=get('ipr/fraction'))
         if refining:
             from .ipr import refine
             scene=refine(scene)
@@ -1836,7 +1836,7 @@ class Panel(Tools, QtWidgets.QWidget):
         dropped=('preview_buffer','display','aovs','recovery','_geometry_revision','denoising','compositor')+(('time','frame') if timeless else ())
         render_scene={key:value for key,value in scene.items() if key not in dropped}
         stored=self._settings_values();get=self.preferences.get
-        values = [render_scene, self._clay(), self.runtime_path(), get('preview_fraction'), stored['samples'], stored['environment'], stored['threads'], get('persistent_preview'), self._following, get('ipr/width'), get('ipr/samples'), get('ipr/error'), get('moonlightipr/samples'), self._engine()]
+        values = [render_scene, self._clay(), self.runtime_path(), get('preview_fraction'), stored['samples'], stored['environment'], stored['threads'], get('persistent_preview'), self._following, get('ipr/fraction'), get('ipr/samples'), get('ipr/error'), get('moonlightipr/samples'), self._engine()]
         # Geometry is hashed once per list; a streaming JSON pass over every vertex took seconds per update.
         from .scene_digest import digest
         return digest(*values)

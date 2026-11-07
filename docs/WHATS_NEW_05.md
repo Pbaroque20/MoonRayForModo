@@ -8,6 +8,7 @@
   - A value entered as it already is, in the graph editor or in a MoonRay material's Properties: Enter pressed on 0 where it was 0, a start value entered as shown (the graph editor used to store it, which counted as a change), or 0.3 entered where the field showed a stored 0.30000000000000004. The graph editor's own preview is left alone too.
   - Schematic work: a workspace made, an item added to it or taken out, a node moved. Modo told of these as links and groups, which were taken for changes to the scene. Every link Modo tells of was so taken, as its graph is told by name; a transform made for an item's first move is now the move it is, not a reading of the whole scene.
   - A Modo material channel set to its own value is still read (Modo tells of it as an edit), but renders nothing anew.
+- **MoonRay LS's resolution as a share of the render's**: MoonRay LS quality's Width limit (80 to 1280 pixels wide) held a tall picture, narrower than it, at the realtime preview's size. It is now Resolution: 1/2, 1/4, 1/8 or 1/16 of the render's resolution, or As realtime, never larger than the realtime preview, so a portrait shrinks as a landscape does. A width limit chosen before is taken to the nearest share of a 1920-wide render (640 px, the old default, a quarter); a quarter where none was chosen.
 
 ## New in 0.5.3.1
 
