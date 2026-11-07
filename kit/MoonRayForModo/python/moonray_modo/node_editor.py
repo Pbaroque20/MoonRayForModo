@@ -631,6 +631,20 @@ class Editor(QtWidgets.QDialog):
     def object_changed(self,identity,key,layer,value):
         self.set_value(identity,key,layer,value)
 
+    def holds(self,identity,key,layer,value):
+        """Whether a value entered for a node's input is the one the editor already shows for it (the node's own, an
+        override layer's, or what it starts at), give or take a float's last digits: entered so, nothing changes,
+        nothing is written, and nothing renders again (Enter pressed in a field at 0 that was 0)."""
+        node=self.graph['nodes'][identity];spec=nodes.specs(node['type'])[key]
+        if key in (node.get('inputs') or {}):return False
+        held=(node.get('parameters') or {}).get(key,node_defaults.start(node['type'],key,spec))
+        if layer>=0:
+            layered=self.graph['overrides'][layer]
+            if layered.get('node')!=identity or key in (layered.get('inputs') or {}):return False
+            if key not in (layered.get('parameters') or {}):return False
+            held=layered['parameters'][key]
+        return properties.same_value(value,held)
+
     def set_value(self,identity,key,layer,value):
         """Take a value from one of the property controls that stay in place."""
         if self.busy:return
@@ -638,6 +652,7 @@ class Editor(QtWidgets.QDialog):
         try:
             node=self.graph['nodes'][identity];spec=nodes.specs(node['type'])[key]
             value=shader_library.typed(value,spec)
+            if self.holds(identity,key,layer,value):return
             target=node if layer<0 else self.graph['overrides'][layer]
             if layer>=0 and target['node']!=identity:raise ValueError('Override targets another node')
             target.setdefault('parameters',{})[key]=value;target.setdefault('inputs',{}).pop(key,None)
@@ -740,7 +755,9 @@ class Editor(QtWidgets.QDialog):
                 pen=QtGui.QPen(QtGui.QColor(COLORS[nodes.category(graph['nodes'][source]['type'])]),2);pen.setCapStyle(QtCore.Qt.RoundCap)
                 edge=self.canvas.addPath(path,pen);edge.setData(WIRE,'wire');edge.setZValue(-1);edge.connection=(identity,key);edge.setToolTip('Right-click to disconnect '+key);self.links.append(edge)
     def remember(self,before):
-        if before!=self.graph:self.undo_states.append(before);self.undo_states=self.undo_states[-50:];self.redo_states=[]
+        # A graph as it was (a value entered as it stood) is no edit: the material preview and the scene are left alone.
+        if before==self.graph:return
+        self.undo_states.append(before);self.undo_states=self.undo_states[-50:];self.redo_states=[]
         self.material_preview.graph_changed(self.graph);self.publish_soon()
     def publish_soon(self):
         """publish_draft for a value as it changes (a spin box steps, a field is typed in): at most once in PUBLISH_EVERY,
@@ -1467,8 +1484,17 @@ class Editor(QtWidgets.QDialog):
                 spec=nodes.specs(self.graph['nodes'][identity]['type'])[key]
                 try:value=shader_library.typed(json.loads(text),spec)
                 except ValueError as exc:raise ValueError(key+': '+str(exc))
-                target.setdefault('parameters',{})[key]=value
-                target.setdefault('inputs',{}).pop(key,None)
+                if not self.holds(identity,key,self.layers.currentData(),value):
+                    target.setdefault('parameters',{})[key]=value
+                    target.setdefault('inputs',{}).pop(key,None)
+            if self.graph==old:
+                # Entered as it was: the cell shows the value again, and nothing is written or rendered.
+                blocker=QtCore.QSignalBlocker(self.table)
+                spec=nodes.specs(self.graph['nodes'][identity]['type'])[key]
+                self.table.itemDelegateForColumn(1).decorate(cell,spec,
+                    nodes.effective(self.graph)['nodes'][identity].get('parameters',{}).get(key,node_defaults.value(spec)))
+                del blocker
+                return
             self.validate_draft();self.remember(old)
             blocker=QtCore.QSignalBlocker(self.table)
             self.table.itemDelegateForColumn(1).decorate(cell,nodes.specs(self.graph['nodes'][identity]['type'])[key],

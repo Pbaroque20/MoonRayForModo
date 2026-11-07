@@ -193,6 +193,18 @@ def _select_again(item):
     lx.eval('select.item {%s} add' % item.id)
 
 
+def same_value(a, b):
+    """Whether a value entered is the one already held: equal, or numbers (alone or in a list) within a millionth of
+    each other, as a field shows a stored 0.30000000000000004 as 0.3 and hands back 0.3 when Enter is pressed."""
+    if isinstance(a, bool) or isinstance(b, bool):
+        return a == b
+    if isinstance(a, (int, float)) and isinstance(b, (int, float)):
+        return a == b or abs(float(a) - float(b)) <= 1e-6 * max(1.0, abs(float(a)), abs(float(b)))
+    if isinstance(a, (list, tuple)) and isinstance(b, (list, tuple)):
+        return len(a) == len(b) and all(same_value(x, y) for x, y in zip(a, b))
+    return a == b
+
+
 def write(item, values):
     # Modo's diffuse follows a MoonRay material's main colour, in this same step (material_diffuse).
     try:
@@ -202,7 +214,15 @@ def write(item, values):
             values = dict(values, **{LINKED: True})
     except Exception:
         pass
-    item.setTag(TAG, json.dumps(values, sort_keys=True, separators=(',', ':')))
+    encoded = json.dumps(values, sort_keys=True, separators=(',', ':'))
+    # Settings written as they already are (a field entered at the value it shows, a form applied unchanged) are no
+    # edit: nothing is written and nothing told, so realtime and MoonLightIPR do not start again for it.
+    try:
+        if item.readTag(TAG) == encoded:
+            return
+    except (LookupError, RuntimeError):
+        pass
+    item.setTag(TAG, encoded)
     mark_shader(item, values)
     from .property_notifications import notify
     notify()

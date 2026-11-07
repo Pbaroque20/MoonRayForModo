@@ -126,10 +126,14 @@ def register():
                     value=None if not text else text if kind=='String' else json.loads(text)
                 if value is not None:value=shader_library.typed(value,spec)
                 # A value back at MoonRay's own default is not kept.
-                if value is not None and default is not None and value==default:value=None
+                if value is not None and default is not None and properties.same_value(value,default):value=None
                 updates=[]
                 for item in items:
                     settings=properties.read(item);parameters=settings.setdefault('native_parameters',{})
+                    # The value it already has (a field entered as it shows, 0.3 for a stored 0.30000000000000004): this
+                    # material is left as it is, and nothing renders again for it.
+                    held=parameters.get(key,default)
+                    if (value is None and key not in parameters) or (value is not None and held is not None and properties.same_value(value,held)):continue
                     if value is None:parameters.pop(key,None)
                     else:parameters[key]=value
                     graph=settings.get('node_graph')
@@ -169,10 +173,13 @@ def register():
                 number=float(self.dyna_Float(0));updates=[]
                 for item in items:
                     settings=properties.read(item);parameters=settings.setdefault('native_parameters',{})
-                    value=[float(v) for v in (parameters.get(key) or default)];value[part]=number
+                    held=[float(v) for v in (parameters.get(key) or default)]
+                    # The number it already has: this material is left as it is (see Attribute).
+                    if properties.same_value(held[part],number):continue
+                    value=list(held);value[part]=number
                     value=shader_library.typed(value,spec)
                     # A value back at MoonRay's own default is not kept.
-                    if value==default:value=None
+                    if properties.same_value(value,default):value=None
                     graph=settings.get('node_graph');root=graph['nodes'][graph['root']] if graph else None
                     if value is None:parameters.pop(key,None)
                     else:parameters[key]=value
