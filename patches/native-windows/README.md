@@ -531,10 +531,24 @@ The edge detectors answer on either side of a crease and next to nothing at its 
 a line comes out as two, with the surface showing between them, broken into dashes by the pixels' staircase. More samples
 only clean it.
 
+A toon head as a tester rendered it before the change: the outline and the creases of the face come out doubled and
+dashed, the surface showing through the middle of each line. Images by Ironic3D.
+
+![A toon-shaded head on a grey floor, its outline and the lines of its face drawn by a Toon display filter (image by Ironic3D)](../../docs/images/toon-line-gaps-head.png)
+
+![Close up of the face: the lines of the ear, nose and mouth are two thin lines with the skin between them, broken into dashes (image by Ironic3D)](../../docs/images/toon-line-gaps-face.png)
+
+![Close up of the shoulder's outline: a dashed light line runs inside the black ink (image by Ironic3D)](../../docs/images/toon-line-gaps-shoulder.png)
+
 ### The change
 
 Near an edge (the nine pixels around this one not on one surface), a pixel takes the most of, along each of four axes, the
 lesser line of its two neighbours. The depth and normal inputs' window widens by 2 to give the neighbours their kernels.
+
+The result: with the switch on, the lines come out whole, one solid stroke along each edge, here the lines alone
+(Output Mode set to lines), white on black, on the material ball.
+
+![The material ball's toon lines alone, white on black, each edge one solid unbroken line](../../docs/images/toon-line-gaps-fixed.png)
 
 ## `moonshine.patch`: toon lines apart from the shading (`output_mode`)
 

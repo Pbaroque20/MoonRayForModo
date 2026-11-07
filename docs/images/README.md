@@ -80,3 +80,7 @@ The dragon test scene rendered by XPU2 in the preview window with Preferences > 
 
 - `mesh-lights-engines.jpg`: two Modo Mesh Lights with shown Prototypes facing the floor (a square of two quads; an octagon beside a quad and a triangle), radiance 3, Visible to Camera on, lighting a grey ball; Modo's own render top left, MoonRay (vector) top right, XPU2 bottom left, MoonLightIPR bottom right (tools/probe_mesh_light_all_engines.py).
 - `preview-preferences-realtime-xpu.png`: the preview window's Preview Preferences, with Realtime with standard XPU (Off, On the processor, On the graphics card) and PBR validity under Diagnostics.
+
+## Toon lines with gaps (`toon-line-gaps-*.png`)
+
+`toon-line-gaps-head.png`, `-face` and `-shoulder` by Ironic3D, a tester, used with credit: a toon head rendered before the Toon lines without gaps override, its lines doubled and dashed. `toon-line-gaps-head.png` is the whole picture, `toon-line-gaps-face.png` and `toon-line-gaps-shoulder.png` close-ups. Shown in `patches/native-windows/README.md`. `toon-line-gaps-fixed.png` is the patch's result: the material ball's toon lines alone (Output Mode set to lines), whole with the override on.
