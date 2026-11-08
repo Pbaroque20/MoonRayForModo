@@ -1167,7 +1167,7 @@ def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fal
         if settings.get('geometry_file'):
             try:result['asset_owners'][identity]={'matrix':world_matrix(scene.item(identity))}
             except LookupError:warnings.append('Geometry asset owner is missing: '+identity)
-    result['motion_policies']={identity:v.get('motion_topology','strict') for identity,v in properties.scene_settings().get('production',{}).get('objects',{}).items()}
+    result['motion_policies']={identity:v.get('motion_topology','auto') for identity,v in properties.scene_settings().get('production',{}).get('objects',{}).items()}
     result['source_assets']=[]
     for clip in scene.items('videoStill',superType=False):
         filename=channel(clip,'filename','')

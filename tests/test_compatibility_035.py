@@ -93,11 +93,28 @@ class Compatibility035(unittest.TestCase):
     def test_strict_and_frozen_changing_topology(self):
         center=scene();first=copy.deepcopy(center);last=copy.deepcopy(center)
         last['meshes'][0]['vertices'].append([0,0,1]);last['meshes'][0]['faces']=[[0,1,3]]
-        with self.assertRaisesRegex(ValueError,'stable topology'):motion.apply_motion(copy.deepcopy(center),first,last,[-.25,.25])
+        # Require stable topology, chosen, refuses; the default (auto) renders it at the frame (it has no velocities).
+        strict=copy.deepcopy(center);strict['motion_policies']={'mesh':'strict'}
+        with self.assertRaisesRegex(ValueError,'stable topology'):motion.apply_motion(strict,first,last,[-.25,.25])
+        auto=copy.deepcopy(center);motion.apply_motion(auto,first,last,[-.25,.25])
+        self.assertEqual(auto['meshes'][0]['faces'],[[0,1,2]])
+        self.assertNotIn('vertices_close',auto['meshes'][0])
+        self.assertTrue(any('without motion blur' in w for w in auto.get('warnings',[])))
         center['motion_policies']={'mesh':'freeze'}
         motion.apply_motion(center,first,last,[-.25,.25])
         self.assertEqual(center['meshes'][0]['faces'],[[0,1,2]])
         self.assertNotIn('vertices_close',center['meshes'][0])
+
+    def test_a_rebuilt_mesh_blurs_along_its_velocities(self):
+        # An Alembic fluid mesh: other points and faces a moment either side of the frame, a velocity a point at it.
+        center=scene();center['meshes'][0]['velocities']=[[24,0,0]]*len(center['meshes'][0]['vertices'])
+        first=copy.deepcopy(center);last=copy.deepcopy(center)
+        last['meshes'][0]['vertices'].append([0,0,1]);last['meshes'][0]['faces']=[[0,1,3]]
+        motion.apply_motion(center,first,last,[-.25,.25])
+        mesh=center['meshes'][0]
+        self.assertEqual(mesh['faces'],[[0,1,2]])
+        self.assertEqual([round(p[0]-q[0],6) for p,q in zip(mesh['vertices_close'],mesh['vertices'])],[.5]*len(mesh['vertices']))
+        self.assertNotIn('velocities',mesh)
 
     def test_particle_velocity_is_applied_once(self):
         center=scene();center['extra_geometry']=[{'kind':'points','identity':'particles','vertices':[[0,0,0]],'velocities':[[24,0,0]]}]

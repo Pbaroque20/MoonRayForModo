@@ -55,7 +55,7 @@ class Controls(QtWidgets.QDialog):
                     "How far from this object's surface a shadow ray starts, in scene units. Raise it a little where the object shadows itself in specks or stripes (shadow acne). 0 leaves MoonRay's own.")
                 field('ray_epsilon','Secondary ray offset (0: automatic)','number',0,0,1000).setToolTip(
                     "The same for reflection, refraction and bounce rays leaving this object. 0 leaves MoonRay's own.")
-                field('motion_topology','Changing topology during shutter','choice','strict',choices=[('Require stable topology','strict'),('Frame-time geometry; no deformation blur','freeze'),('Frame-time points / strands with velocities','velocity')])
+                field('motion_topology','Changing topology during shutter','choice','auto',choices=[('Blur by velocities where it has them, else frame-time','auto'),('Require stable topology','strict'),('Frame-time geometry; no deformation blur','freeze'),('Frame-time points / strands with velocities','velocity')])
                 field('point_id_map','Persistent point ID weight map','text','')
                 field('strand_id_tag','Persistent strand ID tag (4 characters)','text','')
                 field('asset_label','Cryptomatte asset label','text','')

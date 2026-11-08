@@ -520,6 +520,10 @@ def meshes(data, materials, warnings, scene=None):
                         uvs=_gather(uv_sets[uv_index], segment['faces'], indices, segment.get('face_varying')) if uv_index < len(uv_sets) else [],
                         subdivision=False, subdivision_level=1, smooth=True,
                         object_override=True, evaluated_geometry=True, geometry_settings=dict(settings), visibility=list(visibility))
+            # Its points' velocities, where Modo gives them (an Alembic mesh's .velocities): what blurs a mesh whose
+            # points and faces change during the shutter, as a fluid mesher's do (motion.py, policy auto).
+            if segment.get('velocities') and len(segment['velocities']) == len(vertices):
+                mesh['velocities'] = segment['velocities']
             coordinates = _coordinates()
             descriptors = coordinates.descriptors({tag:material})
             projected = any(d.get('projection','uv')!='uv' for d in descriptors.values())
