@@ -575,6 +575,38 @@ without its lines. Two Toon filters, one of each, are two buffers of the preview
 Built (`ninja bin/ToonDisplayFilter.so bin/ToonDisplayFilter.so.proxy` in `build/native-renderer-avx`), and rendered by
 `tools/check_toon_lines.py`: each Output Mode's Toon channel, with and without closing the gaps.
 
+## `moonshine.patch`: toon lines in a colour (`ink_color`)
+
+A new attribute of `ToonDisplayFilter`, behind the preference "Toon lines in a colour", on by default; with it off the
+plugin does not write the attribute and the lines are black, as MoonRay draws them. Asked in issue 134.
+
+### What MoonRay does
+
+The ink only darkens: `result * ink` makes every line black. A tester laying the lines over the beauty took the lines
+alone (white on black), inverted them and multiplied, and could not fade them without showing white.
+
+### The change
+
+`ink_color` (black by default): where Output Mode draws the shading with its lines, each pixel is the shading where there
+is no ink and the ink's colour where there is, `result * ink + ink_color * (1 - ink)`; black ink is MoonRay's own picture.
+The lines alone stay white on black: they are the lines' cover, a matte.
+
+Kit side (not MoonRay's source, so no switch): the Compositor's Ink Lines node lays a colour over a picture through such a
+matte, Mix fading the lines towards the picture beneath; and a buffer of the lines alone is saved as the lines in their Ink
+Color with their cover as alpha (premultiplied in OpenEXR, straight in PNG, TIFF and Targa).
+
+The material ball with red ink:
+
+![The material ball's cel shading with its lines drawn in red](../../docs/images/toon-ink-color.png)
+
+### How it was checked
+
+Built (`ninja bin/ToonDisplayFilter.so` in `build/native-renderer-avx`, a runtime on PATH) and rendered three times on the
+material ball: black ink, red ink, and the lines alone. Where there is no ink the red render matches the black one within
+3e-6, and where there is, the shading plus red as much as the lines cover, within 6e-5; the lines alone stay white on
+black. The Ink Lines node gives the same values from the compositor program, the image tool and the probe's arithmetic
+(`tests/test_toon_ink_lines.py`).
+
 ## `cl1-pool-scale.patch`: a larger store for rays in flight (no switch)
 
 The change is in `moonray.patch` too, which the build applies; the file alone is kept for the one-library rebuild

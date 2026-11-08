@@ -110,6 +110,23 @@ def with_alpha(key, source, target, display=None, background=None, alpha=None):
     return args + taken + ['--chappend', '-d', numbers, '--attrib:type=int', 'oiio:UnassociatedAlpha', '1', '-o', str(target)]
 
 
+def lines_with_alpha(key, source, colour, target, display=None):
+    """The image tool's arguments that write a Toon display filter's lines alone (white on black: how much of each pixel
+    they cover) as lines of one colour with that cover as their alpha (issue 134): a layer to lay over the beauty. An
+    OpenEXR keeps the colour premultiplied, as renders are; PNG, TIFF and Targa the colour itself, through the view, with
+    the alpha beside it."""
+    key, label, extension, numbers, shown = find(key)
+    paint = ','.join('%.6g' % float(c) for c in colour)
+    cover = ['--no-autopremult', str(source), '--fixnan', 'black', '--ch', '0', '--clamp:min=0:max=1']
+    if extension == 'exr':
+        return cover + ['--ch', '0,0,0,0', '--chnames', 'R,G,B,A', '--mulc', paint + ',1', '-d', numbers, '-o', str(target)]
+    args = cover + ['--ch', '0,0,0', '--chnames', 'R,G,B', '--mulc', '0', '--addc', paint]
+    if shown:
+        from .display import arguments as view
+        args += view(display or {})
+    return args + cover + ['--chnames', 'A', '--chappend', '-d', numbers, '--attrib:type=int', 'oiio:UnassociatedAlpha', '1', '-o', str(target)]
+
+
 def exr_with_alpha(key, source, alpha, target):
     """The image tool's arguments that write a beauty and its alpha (file, channel) as one OpenEXR: R, G, B and A, the
     colour premultiplied as the render made it."""

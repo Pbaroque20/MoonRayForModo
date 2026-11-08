@@ -1210,6 +1210,15 @@ def toon_close_gaps():
         return True
 
 
+def toon_ink_color():
+    """The MoonRay Source Override that draws a Toon display filter's lines in its Ink Color (issue 134)."""
+    try:
+        from .preferences import Preferences
+        return bool(Preferences().get('toon_ink_color'))
+    except Exception:
+        return True
+
+
 def completed_filters(entities, warnings):
     """The entities, each display filter with every input MoonRay needs: one left empty takes the output it starts
     on, said in a notice; a filter missing one with nothing to take is left out, said, rather than drawn pink."""
@@ -1219,6 +1228,9 @@ def completed_filters(entities, warnings):
         if entity['class'] == 'ToonDisplayFilter' and entity['parameters'].get('output_mode') and not toon_lines_apart():
             # The MoonRay Source Override is off: the shading with its lines, as MoonRay itself gives it.
             entity = dict(entity, parameters={k: v for k, v in entity['parameters'].items() if k != 'output_mode'})
+        if entity['class'] == 'ToonDisplayFilter' and 'ink_color' in entity['parameters'] and not toon_ink_color():
+            # The MoonRay Source Override is off: black lines, as MoonRay draws them.
+            entity = dict(entity, parameters={k: v for k, v in entity['parameters'].items() if k != 'ink_color'})
         if entity['class'] == 'ToonDisplayFilter' and toon_close_gaps():
             entity = dict(entity, parameters=dict(entity['parameters'], close_line_gaps=True))
         inputs = FILTER_INPUTS.get(entity['class'])
@@ -1292,6 +1304,28 @@ def filter_inputs(scene):
             if attributes[key].get('interface') == 'RENDEROUTPUT' and authored not in names and authored not in used:
                 used.append(authored)
     return used
+
+
+def ink_lines(snapshot, key):
+    """The ink colour of a buffer that is a Toon display filter's lines alone (Output Mode Lines only: white on black,
+    how much of each pixel the lines cover), or None for any other buffer. Saved, such a buffer is the lines in that
+    colour with what they cover as alpha (issue 134). Black where the Toon lines in a colour override is off."""
+    for entity in (snapshot or {}).get('entities') or []:
+        if entity.get('class') != 'ToonDisplayFilter' or filter_key(entity) != key:
+            continue
+        parameters = entity.get('parameters') or {}
+        try:
+            if int(parameters.get('output_mode') or 0) != 1 or not toon_lines_apart():
+                return None
+        except (TypeError, ValueError):
+            return None
+        colour = parameters.get('ink_color') if toon_ink_color() else None
+        try:
+            values = [float(v) for v in (colour.split() if isinstance(colour, str) else colour)][:3] if colour is not None else []
+        except (TypeError, ValueError):
+            values = []
+        return tuple(values) if len(values) == 3 else (0.0, 0.0, 0.0)
+    return None
 
 
 def filter_key(entity):

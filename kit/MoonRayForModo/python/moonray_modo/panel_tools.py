@@ -513,6 +513,11 @@ class Tools:
             return self._run_image_tool(frame, image_formats.cryptomatte(source, channels, header, target), target)
         values = self._settings_values()
         display = display_values(dict(values['display'], working_space=frame['snapshot'].get('asset_settings', {}).get('working_space', 'rec709')))
+        from .entities import ink_lines
+        ink = ink_lines(frame['snapshot'], key)
+        if ink is not None and (image_formats.holds_alpha(kind) or image_formats.find(kind)[2] == 'exr'):
+            # A Toon filter's lines alone: the lines in their ink colour, with what they cover as alpha (issue 134).
+            return self._run_image_tool(frame, image_formats.lines_with_alpha(kind, source, ink, target, display), target)
         alpha = self._alpha_of(frame, key)
         if alpha and image_formats.holds_alpha(kind):
             args = image_formats.with_alpha(kind, source, target, display, alpha=None if alpha[0] == source and alpha[1] == 'A' else alpha)

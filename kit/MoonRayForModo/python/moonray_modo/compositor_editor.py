@@ -13,8 +13,8 @@ from .node_widgets import SliderRow, GraphView, QuickAdd, curve, MENU_STYLE, NOD
 
 WIDTH, HEADER, ROW = 170, 24, 20
 # A node's header and the wire out of it, by what the node is.
-HEADERS = {'input': '#35627f', 'merge': '#3d7449', 'sum': '#3d7449', 'grade': '#86682f', 'blur': '#65548a', 'glow': '#65548a', 'output': '#7a3f3f'}
-WIRES = {'input': '#77bce8', 'merge': '#89ce94', 'sum': '#89ce94', 'grade': '#e4b367', 'blur': '#c6a0e9', 'glow': '#c6a0e9', 'output': '#e89a9a'}
+HEADERS = {'input': '#35627f', 'merge': '#3d7449', 'sum': '#3d7449', 'ink_lines': '#3d7449', 'grade': '#86682f', 'blur': '#65548a', 'glow': '#65548a', 'output': '#7a3f3f'}
+WIRES = {'input': '#77bce8', 'merge': '#89ce94', 'sum': '#89ce94', 'ink_lines': '#89ce94', 'grade': '#e4b367', 'blur': '#c6a0e9', 'glow': '#c6a0e9', 'output': '#e89a9a'}
 # The other nodes are coloured by what they are for: colour as Grade is, filters as Blur is, and so on.
 FAMILIES = {'colour': ('#86682f', '#e4b367'), 'filter': ('#65548a', '#c6a0e9'), 'matte': ('#59636e', '#c8d2dc'), 'make': ('#35627f', '#77bce8'),
             'note': ('#8a7d3a', '#d8c86a')}
@@ -382,6 +382,7 @@ class Editor(QtWidgets.QDialog):
         for mode in compositor.MODES:
             row(merges, 'Merge: ' + mode, 'merge', {'mode': mode}, compositor.NODES['merge']['tip'])
         row(merges, 'Sum', 'sum', {}, compositor.NODES['sum']['tip'])
+        row(merges, 'Ink Lines', 'ink_lines', {}, compositor.NODES['ink_lines']['tip'])
         def family(name):
             return [kind for kind, node in compositor.NODES.items() if node.get('family') == name]
         colour = group('Colour')

@@ -6745,6 +6745,17 @@
         "name": "edge_detector",
         "type": "Int"
       },
+      "ink_color": {
+        "comment": "MoonRay for Modo: the colour the ink lines are drawn in over the cel shading (black, as MoonRay draws them, by default). The lines alone stay white on black: a matte, the lines' alpha",
+        "default": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "label": "ink color",
+        "name": "ink_color",
+        "type": "Rgb"
+      },
       "ink_depth_threshold": {
         "comment": "The threshold for the depth-based ink outline",
         "default": 0.01,
@@ -6905,6 +6916,13 @@
         "label": "volume",
         "name": "modo_volume",
         "type": "SceneObject*"
+      },
+      "primitive_attributes": {
+        "comment": "Vector of UserData. Read only for the volume's Cryptomatte IDs.",
+        "group": "User Data",
+        "label": "primitive attributes",
+        "name": "primitive_attributes",
+        "type": "SceneObjectVector"
       },
       "ray_epsilon": {
         "comment": "When a secondary ray is fired, anything within this distance of the intersection point will be ignored. Instead, it is considered part of the current intersection's geometry. If zero, an automatically calculated epsilon will be used.",

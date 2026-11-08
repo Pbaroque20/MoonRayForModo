@@ -55,6 +55,13 @@ NODES = {
              'tip': 'Words kept on the canvas. Not part of the picture. A probe note (made by a right-click on the preview '
                     'in probe mode) holds the values at its pixel, Probe X and Y, and follows the graph and the render.',
              'parameters': {'text': ('text', ''), 'probe_x': ('number', -1.0, -1.0, 100000.0), 'probe_y': ('number', -1.0, -1.0, 100000.0)}},
+    # Issue 134: a Toon display filter's lines alone are white on black, a matte; laid over a picture with a Merge
+    # (multiply) they could not be faded without showing white.
+    'ink_lines': {'label': 'Ink Lines', 'inputs': ('image', 'lines'),
+                  'tip': 'Draws lines over the picture in a colour: wire a Toon display filter set to Lines only into lines. '
+                         'Where the lines are white the colour is laid on, where grey as much as they are. Mix fades the '
+                         'lines towards the picture beneath.',
+                  'parameters': {'color': ('color', [0.0, 0.0, 0.0]), 'mix': ('number', 1.0, 0.0, 1.0)}},
     'sum': {'label': 'Sum', 'inputs': SUM_INPUTS, 'tip': 'Every picture wired in, added up: render passes back into one picture.',
             'parameters': {}},
     # Colour.
@@ -291,6 +298,14 @@ def sample(graph, read, x, y, width, height):
                        'screen': lambda p, q: 1 - (1 - p) * (1 - q), 'lighten': max, 'darken': min, 'difference': lambda p, q: abs(p - q)}
                 op = ops[held['mode']]
                 result = tuple((op(a[c], b[c]) - a[c]) * mask * float(held['mix']) + a[c] for c in range(3))
+        elif kind == 'ink_lines':
+            lines = taken.get('lines')
+            picture = image or black
+            if lines is None:
+                result = picture
+            else:
+                cover = min(max(lines[0], 0.0), 1.0) * float(held['mix'])
+                result = tuple(picture[c] + (float(held['color'][c]) - picture[c]) * cover for c in range(3))
         elif kind == 'constant':
             result = tuple(float(c) for c in held['color'])
         elif kind == 'ramp':
@@ -727,6 +742,16 @@ def program_jobs(graph, files, kinds, folder, channels, composite):
                 total = step('merge', total, picture, -1, i0=MODES.index('add'), f=(1.0,))
             slot_of[identity] = total
             continue
+        if kind == 'ink_lines':
+            # The colour laid over the picture through the lines, as a Merge of a Colour with the lines as its mask.
+            beneath = image if image is not None else none()
+            if taken.get('lines') is None:
+                slot_of[identity] = beneath
+                continue
+            ink = step('constant', f=[float(v) for v in held['color']])
+            cover = step('clamp', taken['lines'], f=(0.0, 1.0))
+            slot_of[identity] = step('merge', beneath, ink, cover, i0=MODES.index('normal'), f=(float(held['mix']),))
+            continue
         if kind == 'constant':
             slot_of[identity] = step('constant', f=[float(v) for v in held['color']])
             continue
@@ -883,6 +908,14 @@ def jobs(graph, files, kinds, folder, channels=None, composite=None):
             if taken.get('mask') is not None:
                 args += [str(taken['mask']), '--mul']
             args += ['--mulc', _number(held['mix']), a, '--add']
+        elif kind == 'ink_lines':
+            beneath = str(taken.get('image') or none())
+            if taken.get('lines') is None:
+                made[identity] = taken.get('image') or none()
+                continue
+            # beneath + (colour - beneath) * clamp(lines) * mix
+            args = [beneath, '--mulc', '-1', '--addc', _colour(held['color']), str(taken['lines']), '--clamp:min=0:max=1', '--mul',
+                    '--mulc', _number(held['mix']), beneath, '--add']
         elif kind == 'grade':
             if taken.get('image') is None:
                 made[identity] = none()
