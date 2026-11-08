@@ -68,6 +68,10 @@ KEYS = {
     'bump_node': (True, bool),
     # VDB fire coloured by its temperature (native.vdb_blackbody).
     'vdb_blackbody': (True, bool),
+    # VDB sequences, static unticked (native.vdb_sequences).
+    'vdb_sequences': (True, bool),
+    # Meshes from Modo's Alembic import read from their files (native.alembic_import).
+    'alembic_import': (True, bool),
     'auto_xpu': (True, bool),
     # Realtime with MoonRay where XPU2 does not render the preview (the standard XPU chosen): off, on MoonRay's processor
     # path (vector), or on the graphics card (XPU). xpu_realtime is the switch it was before 0.5.3.1, read for its default.

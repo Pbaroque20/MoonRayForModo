@@ -593,22 +593,35 @@ def vdb_blackbody(path, grid, kelvin):
     return str(target)
 
 
+def vdb_sequenced(parameters):
+    """Whether a VDB shape reads a sequence of files, one a frame: MoonRay's own static unticked (its geometry changes
+    between frames), or a file named with # for the frame; with VDB sequences switched on (native.vdb_sequences)."""
+    from .native import vdb_sequences
+    if not vdb_sequences():
+        return False
+    static = parameters.get('static', True)
+    return (static is not None and not bool(static)) or '#' in Path(str(parameters.get('model') or '')).name
+
+
 def resolve_vdb(parameters, scene):
-    """A VDB shape's file as the frame and its fire need it: with its file set to Sequence, the numbered file for the
-    scene's frame (and its frame offset), none outside its frames unless held; with blackbody colour (native.vdb_blackbody), a copy of the file
-    whose added "modo_blackbody" grid is the emission grid's temperatures in colour. The kit's own settings go no
-    further; MoonRay, XPU2 and MoonLightIPR read what this gives."""
+    """A VDB shape's file as the frame and its fire need it: with static unticked (vdb_sequenced), the numbered file for
+    the scene's frame (and its frame offset), none outside its frames unless held; with blackbody colour
+    (native.vdb_blackbody), a copy of the file whose added "modo_blackbody" grid is the emission grid's temperatures in
+    colour. The kit's own settings go no further; MoonRay, XPU2 and MoonLightIPR read what this gives."""
     model = parameters.get('model') or ''
     if not model:
         return parameters
-    # File set to Sequence: the numbered files beside the one chosen (a name with # is a sequence as it is).
-    if int(parameters.get('modo_vdb_file', 0) or 0) == 1 and '#' not in Path(model).name:
-        model = vdb_pattern(model)
     resolved = dict(parameters)
-    frame = int(scene.get('frame', 0) or 0) + int(parameters.get('modo_frame_offset', 0) or 0)
-    found = vdb_frame_file(model, frame, bool(parameters.get('modo_sequence_hold', False)))
-    if found is None:
-        return None
+    if vdb_sequenced(parameters):
+        # The numbered files beside the one chosen (a name with # is a sequence as it is).
+        if '#' not in Path(model).name:
+            model = vdb_pattern(model)
+        frame = int(scene.get('frame', 0) or 0) + int(parameters.get('modo_frame_offset', 0) or 0)
+        found = vdb_frame_file(model, frame, bool(parameters.get('modo_sequence_hold', False)))
+        if found is None:
+            return None
+    else:
+        found = model
     resolved['model'] = found
     grid = parameters.get('emission_grid') or ''
     if grid and parameters.get('modo_blackbody') and Path(found).is_file():

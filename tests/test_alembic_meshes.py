@@ -61,5 +61,44 @@ class AlembicMeshes(unittest.TestCase):
         self.assertTrue(any('blurred along its velocities' in w for w in scene.get('warnings', [])))
 
 
+class ImportedTimes(unittest.TestCase):
+    """How a mesh from Modo's own Alembic import (File > Import) is found again in its file and timed."""
+
+    def test_modo_writes_the_drive_without_its_slash(self):
+        self.assertEqual(extra_geometry.alembic_path('C:Users/Raphael Tobar/Downloads/Mesher/Mesher.abc'),
+                         Path('C:/Users/Raphael Tobar/Downloads/Mesher/Mesher.abc'))
+        self.assertEqual(extra_geometry.alembic_path('D:/fluids/a.abc'), Path('D:/fluids/a.abc'))
+
+    def test_played_once_the_time_runs_on(self):
+        self.assertAlmostEqual(extra_geometry.alembic_seconds(5.0, 'Play-once', 0.0, 1.0, 2.8, 7.96), 5.0)
+        self.assertAlmostEqual(extra_geometry.alembic_seconds(9.0, 'Play-once', 0.0, 1.0, 2.8, 7.96), 9.0)
+        self.assertAlmostEqual(extra_geometry.alembic_seconds(2.0, 'Play-once', 1.0, 2.0, 2.8, 7.96), 5.0)
+
+    def test_looped_and_bounced_within_the_samples(self):
+        self.assertAlmostEqual(extra_geometry.alembic_seconds(9.0, 'Loop', 0.0, 1.0, 3.0, 8.0), 4.0)
+        self.assertAlmostEqual(extra_geometry.alembic_seconds(9.0, 'Ping-pong', 0.0, 1.0, 3.0, 8.0), 7.0)
+
+    def test_the_mesh_named_by_its_transform(self):
+        read = [{'name': '/xf/StormMesh'}, {'name': '/spray/SprayMesh'}]
+        self.assertIs(extra_geometry.alembic_match('xf', read), read[0])
+        self.assertIs(extra_geometry.alembic_match('spray: SprayMesh', read), read[1])
+        self.assertIsNone(extra_geometry.alembic_match('other', read))
+        self.assertIs(extra_geometry.alembic_match('anything', read[:1]), read[0])
+
+
+class ImportedSwitch(unittest.TestCase):
+    def test_switched_off_modo_s_mesh_is_kept(self):
+        from unittest import mock
+        meshes = [{'identity': 'xf|evaluated_material_0|0'}]
+        with mock.patch.dict(sys.modules, {'PySide2': None}), mock.patch.dict(os.environ, {'MOONRAY_MODO_ALEMBIC_IMPORT': '0'}):
+            self.assertIs(extra_geometry.imported_alembic(meshes, 120, 24.0), meshes)
+
+    def test_the_switch_is_in_the_overrides(self):
+        kit = ROOT / 'kit/MoonRayForModo'
+        self.assertIn('cmd moonray.pref.alembicImport ?', (kit / 'preferences.cfg').read_text(encoding='utf-8'))
+        self.assertIn("lx.bless(switch('alembic_import'),'moonray.pref.alembicImport')", (kit / 'lxserv/moonray_preferences.py').read_text(encoding='utf-8'))
+        self.assertIn("'alembic_import': (True, bool)", (kit / 'python/moonray_modo/preferences.py').read_text(encoding='utf-8'))
+
+
 if __name__ == '__main__':
     unittest.main()

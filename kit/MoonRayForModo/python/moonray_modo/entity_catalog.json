@@ -6925,7 +6925,7 @@
         "type": "Float"
       },
       "modo_frame_offset": {
-        "comment": "For a sequence of VDB files: added to the scene's frame to choose the file.",
+        "comment": "For a sequence of VDB files (static unticked): added to the scene's frame to choose the file.",
         "default": 0,
         "group": "VDB",
         "label": "frame offset",
@@ -6947,18 +6947,6 @@
         "label": "hold first and last frames",
         "name": "modo_sequence_hold",
         "type": "Bool"
-      },
-      "modo_vdb_file": {
-        "comment": "Static: the one VDB file, at every frame. Sequence: the numbered files beside it (fire_1.vdb, fire_2.vdb...), the one for each frame.",
-        "default": 0,
-        "enum": {
-          "sequence": 1,
-          "static": 0
-        },
-        "group": "VDB",
-        "label": "file",
-        "name": "modo_vdb_file",
-        "type": "Int"
       },
       "modo_volume": {
         "comment": "The name of a MoonRay volume item that fills this shape.",
@@ -7031,8 +7019,9 @@
         "type": "Int"
       },
       "static": {
-        "comment": "disable if the geometry will be updated between frames",
+        "comment": "Ticked: the one VDB file, at every frame. Unticked: the numbered files beside it (fire_1.vdb, fire_2.vdb...), the one for each frame, as the geometry changes between frames. (MoonRay: disable if the geometry will be updated between frames.)",
         "default": true,
+        "group": "VDB",
         "name": "static",
         "type": "Bool"
       },

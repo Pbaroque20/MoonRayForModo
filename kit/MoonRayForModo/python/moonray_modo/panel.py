@@ -1873,10 +1873,9 @@ class Panel(Tools, QtWidgets.QWidget):
         """What a render of the scene depends on, hashed. timeless leaves out the frame the scene was read at, for
         MoonLightIPR's previews: it draws nothing from the time itself, what an animation changes being in the rest of
         the scene, so going to another frame of a scene that does not move gives it nothing new to draw. A VDB sequence
-        (its file set to Sequence) is the frame's own file, so a scene with one keeps its frame."""
-        def sequence(parameters):
-            return int(parameters.get('modo_vdb_file',0) or 0)==1 or '#' in str(parameters.get('model',''))
-        if timeless and any(entity.get('class')=='VdbGeometry' and sequence(entity.get('parameters') or {}) for entity in scene.get('entities') or []):
+        (static unticked, entities.vdb_sequenced) is the frame's own file, so a scene with one keeps its frame."""
+        from .entities import vdb_sequenced
+        if timeless and any(entity.get('class')=='VdbGeometry' and vdb_sequenced(entity.get('parameters') or {}) for entity in scene.get('entities') or []):
             timeless=False
         dropped=('preview_buffer','display','aovs','recovery','_geometry_revision','denoising','compositor')+(('time','frame') if timeless else ())
         render_scene={key:value for key,value in scene.items() if key not in dropped}

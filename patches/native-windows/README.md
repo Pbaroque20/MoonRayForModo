@@ -6,7 +6,7 @@ are portability changes. This file explains the ones whose reason is not obvious
 
 ## Switches on the Source Overrides page that change no source
 
-Seven switches on Preferences > MoonRay Source Overrides are the plugin's own, with no patch behind them. Each is on
+Nine switches on Preferences > MoonRay Source Overrides are the plugin's own, with no patch behind them. Each is on
 by default; off does as MoonRay itself does.
 
 - **Low-latency rendering**: MoonRay runs below Modo's priority and leaves one processor thread free.
@@ -25,6 +25,13 @@ by default; off does as MoonRay itself does.
   fit, linear Rec.709 or the working space, at a luminance of one, times the grid's value; below 800 K, 800 K's deep red),
   and points MoonRay, XPU2 and MoonLightIPR at it (`entities.resolve_vdb`). MoonRay has no blackbody of its own; off, the
   fire glows in its incandescence gain mult's one colour.
+- **VDB sequences when static is unticked**: a VDB shape with MoonRay's own `static` unticked (its geometry changes
+  between frames) reads the numbered files beside the one chosen, the one for each frame, with a frame offset and the
+  volume hidden or held outside its frames (`entities.vdb_sequenced`, `resolve_vdb`). Off, MoonRay reads the one file.
+- **Imported Alembic meshes read from their files**: a mesh Modo's own Alembic import streams (an `ABCStreamingDeformer`
+  beside an `AlembicFile` item) is read again from the .abc by the kit's reader (`native-port/modo_abc_reader.cpp`,
+  `extra_geometry.imported_alembic`), with the file's points, faces and velocities. Modo hands a render a mesh of fixed
+  size stretched to the file's, without velocities; off, that mesh is rendered as Modo gives it.
 
 ## `moonray.patch`: `lib/rendering/mcrt_common/Clock.h`, the heat map's clock on Windows
 

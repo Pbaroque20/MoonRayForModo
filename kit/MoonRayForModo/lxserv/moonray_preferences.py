@@ -203,6 +203,8 @@ lx.bless(choice('xpu2/rt_cap',(('none','None'),('30','30'),('60','60'))),'moonra
 lx.bless(switch('ngon_ears'),'moonray.pref.ngonEars')
 lx.bless(switch('bump_node'),'moonray.pref.bumpNode')
 lx.bless(switch('vdb_blackbody'),'moonray.pref.vdbBlackbody')
+lx.bless(switch('vdb_sequences'),'moonray.pref.vdbSequences')
+lx.bless(switch('alembic_import'),'moonray.pref.alembicImport')
 lx.bless(choice('assign/shader',shaders),'moonray.pref.assignType')
 lx.bless(switch('assign/smooth'),'moonray.pref.assignSmooth')
 lx.bless(number('assign/angle',0.0,180.0),'moonray.pref.assignAngle')

@@ -195,12 +195,12 @@ for i, name in enumerate(sorted(catalog)):
         transform_section(form, name)
     groups = {}
     # A camera's switch to the Modo camera's lens comes first, in a section of its own that starts open, and a VDB
-    # shape's Static or Sequence just after its file; the commands keep their numbers (j).
+    # shape's static (one file or a sequence) just after its file; the commands keep their numbers (j).
     keys = [channel[0] for channel in entities.channels(name)]
 
     def place(entry):
         j, key = entry[0], entry[1][0]
-        return (key != 'modo_lens', keys.index('model') + 0.5 if key == 'modo_vdb_file' and 'model' in keys else j)
+        return (key != 'modo_lens', keys.index('model') + 0.5 if name == 'VdbGeometry' and key == 'static' and 'model' in keys else j)
     ordered = sorted(enumerate(entities.channels(name)), key=place)
     for j, (key, channel, kind, default, choices) in ordered:
         spec = dict(catalog[name]['attributes'][key], **REWORDED.get(key, {}))

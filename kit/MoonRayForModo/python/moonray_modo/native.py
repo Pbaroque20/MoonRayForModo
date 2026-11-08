@@ -398,6 +398,21 @@ def vdb_blackbody():
     return _switch('vdb_blackbody', 'MOONRAY_MODO_VDB_BLACKBODY')
 
 
+def vdb_sequences():
+    """Whether a VDB shape with MoonRay's static unticked reads the numbered files beside the one chosen, the one for
+    each frame (entities.vdb_sequenced, resolve_vdb), with its frame offset and hold. MoonRay reads one file whatever
+    static says; off, as it does."""
+    return _switch('vdb_sequences', 'MOONRAY_MODO_VDB_SEQUENCES')
+
+
+def alembic_import():
+    """Whether a mesh Modo's own Alembic import streams (File > Import) is read again from its file by the kit
+    (extra_geometry.imported_alembic), with the file's points, faces and velocities. Modo hands a render a mesh of fixed
+    size stretched to the file's, without velocities, so a fluid mesh whose faces change renders torn and unblurred;
+    off, that mesh is rendered as Modo gives it."""
+    return _switch('alembic_import', 'MOONRAY_MODO_ALEMBIC_IMPORT')
+
+
 # What MoonRay is called in the MoonRay Terminal, by the execution mode it was started in.
 ENGINE_NAMES = {'vectorized': 'MoonRay Vector', 'vector': 'MoonRay Vector', 'scalar': 'MoonRay Scalar', 'xpu': 'MoonRay XPU',
                 'auto': 'MoonRay Auto'}

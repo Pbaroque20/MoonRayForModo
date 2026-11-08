@@ -25,7 +25,8 @@ The current release is [0.5.3.1](https://github.com/Pbaroque20/MoonRayForModo/re
   ![JangaFX's free EmberGen explosion glowing from its flames grid: MoonRay left, XPU2's graphics card right](docs/images/vdb-fire-flames-grid.png)
 
 - **Alembic fluids and other changing meshes**: set an object's Geometry file (production settings) to an .abc, and the kit reads its meshes itself each frame, even ones whose points and faces change, as a fluid mesher's do (Modo's own loader shows one frame of those), blurred along the file's velocities. A mesh that changes during the shutter no longer stops a render with "Motion blur requires stable topology".
-- **VDB sequences**: a VDB shape's new file setting, Static or Sequence: set to Sequence, the numbered files beside the one you chose (fire_1.vdb, fire_2.vdb...) play with the timeline, with a frame offset, and the volume hidden or held outside its frames.
+- **VDB sequences**: untick a VDB shape's static (now beside its file) and the numbered files beside the one you chose (fire_1.vdb, fire_2.vdb...) play with the timeline, with a frame offset, and the volume hidden or held outside its frames.
+- **Imported Alembic fluids blur**: a mesh brought in with File > Import of an .abc renders from the file itself, its own points and faces at each frame, blurred along the file's velocities. Modo's own import stretched one fixed mesh and had no velocities to blur a fluid mesher's mesh with.
 - **VDB fire coloured by its temperature**: turn on a VDB shape's blackbody colour and choose its temperature grid as the emission grid: the fire glows deep red where it is cool, orange, then yellow-white where it is hottest, with kelvin at 1 to make it hotter or cooler. In MoonRay, XPU2 and MoonLightIPR. A MoonRay Source Override, on by default.
 
   ![The EmberGen explosion coloured by its temperature grid, rendered on XPU2's graphics card](docs/images/vdb-fire-blackbody.png)
@@ -680,7 +681,7 @@ Comparison audit between Modo 16.1v9 and MoonLightIPR, the realtime preview: wha
 | Meshes, subdivision and creases | ![yes](docs/images/feature-yes.svg) | UVs follow the smoothed surface; up to 3,000,000 quads a mesh, cut by its size on screen; n-gons cut along their outline |
 | Instances and replicators | ![yes](docs/images/feature-yes.svg) |  |
 | Deformed and animated meshes | ![yes](docs/images/feature-yes.svg) | With motion blur where turned on in Preview Preferences; a subdivided mesh that changes shape does not blur |
-| Alembic | ![yes](docs/images/feature-yes.svg) | Loaded as Modo meshes with streaming deformers or as Alembic Streaming Meshes, moving over time; Alembic Curves and Point Clouds untested |
+| Alembic | ![yes](docs/images/feature-yes.svg) | Loaded as Modo meshes with streaming deformers or as Alembic Streaming Meshes, moving over time; meshes with streaming deformers read from the file itself, fluids with changing faces blurred along their velocities; Alembic Curves and Point Clouds untested |
 | Curves, hair and Modo's Fur material | ![partly](docs/images/feature-partly.svg) | Hair close to MoonRay's but not exact; fur drawn with up to 150,000 fibres, following its guides (Direction, Direction + Length, Shape, Range and Clump), its vector map and its width map, as MoonRay draws them. The guides' Blend Amount and Blend Angle, and Modo's Hair Material, are not read |
 | Weight and colour vertex maps | ![partly](docs/images/feature-partly.svg) | Weight maps through a Weight Map Texture layer, each taking one of the 8 UV sets; colour maps show in MoonRay only |
 | Modo's volume items | ![partly](docs/images/feature-partly.svg) | Drawn from a VDB file attached in the MoonRay controls; no motion blur, whether the item moves or from a velocity grid |

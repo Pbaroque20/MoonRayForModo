@@ -16,6 +16,10 @@ class Sequences(unittest.TestCase):
     def setUp(self):
         self.folder = tempfile.TemporaryDirectory()
         self.root = Path(self.folder.name)
+        # The switches as outside Modo: from the environment, VDB sequences on.
+        for patch in (mock.patch.dict(sys.modules, {'PySide2': None}), mock.patch.dict(os.environ, {'MOONRAY_MODO_VDB_SEQUENCES': '1'})):
+            patch.start()
+            self.addCleanup(patch.stop)
 
     def tearDown(self):
         self.folder.cleanup()
@@ -55,36 +59,51 @@ class Sequences(unittest.TestCase):
         self.assertEqual(Path(resolved['model']).name, 'fire_11.vdb')
         self.assertIsNone(entities.resolve_vdb({'model': pattern}, {'frame': 1}))
 
-    def test_static_or_sequence_from_the_file_chosen(self):
+    def test_moonray_s_static_says_one_file_or_a_sequence(self):
         self.files('fire_%d.vdb' % n for n in (1, 2, 3))
         chosen = str(self.root / 'fire_2.vdb')
         self.assertEqual(Path(entities.resolve_vdb({'model': chosen}, {'frame': 3})['model']).name, 'fire_2.vdb')
-        self.assertEqual(Path(entities.resolve_vdb({'model': chosen, 'modo_vdb_file': 1}, {'frame': 3})['model']).name, 'fire_3.vdb')
-        self.assertIsNone(entities.resolve_vdb({'model': chosen, 'modo_vdb_file': 1}, {'frame': 9}))
+        self.assertEqual(Path(entities.resolve_vdb({'model': chosen, 'static': True}, {'frame': 3})['model']).name, 'fire_2.vdb')
+        self.assertEqual(Path(entities.resolve_vdb({'model': chosen, 'static': False}, {'frame': 3})['model']).name, 'fire_3.vdb')
+        self.assertIsNone(entities.resolve_vdb({'model': chosen, 'static': False}, {'frame': 9}))
+
+    def test_switched_off_the_one_file_whatever_static_says(self):
+        self.files('fire_%d.vdb' % n for n in (1, 2, 3))
+        chosen = str(self.root / 'fire_2.vdb')
+        with mock.patch.dict(os.environ, {'MOONRAY_MODO_VDB_SEQUENCES': '0'}):
+            self.assertFalse(entities.vdb_sequenced({'model': chosen, 'static': False}))
+            self.assertEqual(Path(entities.resolve_vdb({'model': chosen, 'static': False}, {'frame': 3})['model']).name, 'fire_2.vdb')
 
     def test_blackbody_follows_its_switch(self):
         self.files(['hot_1.vdb'])
         given = {'model': str(self.root / 'hot_1.vdb'), 'emission_grid': 'temperature', 'modo_blackbody': True, 'modo_blackbody_kelvin': 2500.0}
         made = str(self.root / 'made.vdb')
         with mock.patch.object(entities, 'vdb_blackbody', return_value=made) as convert:
-            with mock.patch.dict(sys.modules, {'PySide2': None}), mock.patch.dict(os.environ, {'MOONRAY_MODO_VDB_BLACKBODY': '1'}):
+            with mock.patch.dict(os.environ, {'MOONRAY_MODO_VDB_BLACKBODY': '1'}):
                 resolved = entities.resolve_vdb(given, {'frame': 1})
             self.assertEqual((resolved['model'], resolved['emission_grid']), (made, 'modo_blackbody'))
             convert.assert_called_once_with(given['model'], 'temperature', 2500.0)
-            with mock.patch.dict(sys.modules, {'PySide2': None}), mock.patch.dict(os.environ, {'MOONRAY_MODO_VDB_BLACKBODY': '0'}):
+            with mock.patch.dict(os.environ, {'MOONRAY_MODO_VDB_BLACKBODY': '0'}):
                 resolved = entities.resolve_vdb(given, {'frame': 1})
             self.assertEqual((resolved['model'], resolved['emission_grid']), (given['model'], 'temperature'))
 
     def test_the_settings_and_the_switch_are_in_the_kit(self):
         attributes = entities.catalog()['VdbGeometry']['attributes']
-        self.assertEqual(attributes['modo_vdb_file']['enum'], {'static': 0, 'sequence': 1})
+        # One control for one file or a sequence: MoonRay's own static, in the VDB section after the file.
+        self.assertNotIn('modo_vdb_file', attributes)
+        self.assertEqual(attributes['static']['group'], 'VDB')
         for key in ('modo_blackbody', 'modo_blackbody_kelvin', 'modo_frame_offset', 'modo_sequence_hold'):
             self.assertIn(key, attributes)
         page = (KIT / 'preferences.cfg').read_text(encoding='utf-8')
         self.assertIn('cmd moonray.pref.vdbBlackbody ?', page)
+        self.assertIn('cmd moonray.pref.vdbSequences ?', page)
+        self.assertIn("lx.bless(switch('vdb_sequences'),'moonray.pref.vdbSequences')", (KIT / 'lxserv/moonray_preferences.py').read_text(encoding='utf-8'))
         self.assertIn("lx.bless(switch('vdb_blackbody'),'moonray.pref.vdbBlackbody')", (KIT / 'lxserv/moonray_preferences.py').read_text(encoding='utf-8'))
         forms = (KIT / 'entities.cfg').read_text(encoding='utf-8')
-        self.assertLess(forms.index('Label">model<'), forms.index('Label">file<'))
+        form = forms[forms.index('moonray.VdbGeometry$mr_contains_camera'):forms.index('moonray.VdbGeometry$mr_modo_sequence_hold')]
+        self.assertNotIn('Label">file<', form)
+        self.assertEqual(form.count('Label">static<'), 1)
+        self.assertLess(form.index('Label">model<'), form.index('Label">static<'))
 
 
 if __name__ == '__main__':

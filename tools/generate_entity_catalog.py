@@ -221,11 +221,14 @@ for category, (label, shared, classes) in CATEGORIES.items():
                                          'comment': 'The name of a MoonRay volume item that fills this shape.'}
         if name == 'VdbGeometry':
             # A VDB file of a sequence (a run of # in its name for the frame) and fire coloured by its temperature: the
-            # kit resolves both as it writes the scene (entities.resolve_vdb).
-            attributes['modo_vdb_file'] = {
-                'name': 'modo_vdb_file', 'type': 'Int', 'default': 0, 'enum': {'static': 0, 'sequence': 1}, 'group': 'VDB',
-                'label': 'file', 'comment': 'Static: the one VDB file, at every frame. Sequence: the numbered files beside it '
-                                           '(fire_1.vdb, fire_2.vdb...), the one for each frame.'}
+            # kit resolves both as it writes the scene (entities.resolve_vdb). MoonRay's own static says which: a shape
+            # whose geometry changes between frames is not static, so unticked it reads the numbered files, one a frame
+            # (native.vdb_sequences); it sits with the file, in the VDB section.
+            if 'static' in attributes:
+                attributes['static'] = dict(attributes['static'], group='VDB', comment=(
+                    'Ticked: the one VDB file, at every frame. Unticked: the numbered files beside it (fire_1.vdb, fire_2.vdb...), '
+                    'the one for each frame, as the geometry changes between frames. (MoonRay: disable if the geometry will '
+                    'be updated between frames.)'))
             attributes['modo_blackbody'] = {
                 'name': 'modo_blackbody', 'type': 'Bool', 'default': False, 'group': 'VDB', 'label': 'blackbody colour',
                 'comment': 'Colour the emission grid by temperature, as a hot body glows: deep red where it is cool, orange, then '
@@ -237,7 +240,7 @@ for category, (label, shared, classes) in CATEGORIES.items():
                            'lower is redder.'}
             attributes['modo_frame_offset'] = {
                 'name': 'modo_frame_offset', 'type': 'Int', 'default': 0, 'group': 'VDB', 'label': 'frame offset',
-                'comment': "For a sequence of VDB files: added to the scene's frame to "
+                'comment': "For a sequence of VDB files (static unticked): added to the scene's frame to "
                            'choose the file.'}
             attributes['modo_sequence_hold'] = {
                 'name': 'modo_sequence_hold', 'type': 'Bool', 'default': False, 'group': 'VDB', 'label': 'hold first and last frames',
