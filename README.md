@@ -12,6 +12,24 @@ The current release is [0.5.3.1](https://github.com/Pbaroque20/MoonRayForModo/re
 - **One resolution for every realtime preview**: Preview Preferences' Realtime preview resolution now goes down to 1/8 and 1/16 of the render's, and MoonRay LS renders at it as MoonLightIPR and RT do. LS's own Width limit is gone, under which a tall picture stayed tall.
 - **EV and gamma by dragging**: press anywhere on the preview window's EV or gamma field, its number or its arrows, and drag right or up for more, left or down for less; Ctrl for fine steps, Shift for coarse. A click on an arrow steps once; a click on the number lets you type. The picture follows exposure as it changes, where holding an arrow showed nothing until it stopped.
 - **Select a material from the picture**: right-click a surface in the preview window and choose Select Material Here: the material it wears is selected in Modo, found as Focus Here finds a surface's distance.
+- **Toon lines in a colour, with their own alpha** (issue 134): a Toon filter's Ink Color draws its lines in any colour, the Compositor's Ink Lines node lays them over a picture, and lines saved or rendered alone keep their own alpha. A MoonRay Source Override, on by default.
+
+  ![Toon lines in a colour over the shading](docs/images/toon-ink-color.png)
+
+- **Toon lines smoothed**: outlines no longer step with the pixel grid. A MoonRay Source Override, on by default.
+
+  ![Toon outlines smoothed along their direction](docs/images/toon-smooth-lines.png)
+
+- **VDB fire from temperature or flames grids**: a VDB whose emission grid holds single values, as EmberGen, Houdini and Blender write fire, now glows in MoonRay, XPU2 and MoonLightIPR, coloured by the VDB volume's incandescence gain mult. MoonRay refused such a grid and left the whole VDB out. A MoonRay Source Override, on by default.
+
+  ![JangaFX's free EmberGen explosion glowing from its flames grid: MoonRay left, XPU2's graphics card right](docs/images/vdb-fire-flames-grid.png)
+
+- **Glowing fog from maps on XPU2's graphics card**: a volume whose glow or colour comes from procedural maps (a gradient, a noise) renders on the card instead of the processor. Maps that read image files still glow on the processor.
+
+  ![A fog box glowing orange to blue from a gradient map, rendered on XPU2's graphics card](docs/images/xpu2-mapped-glow.png)
+
+- **Volumes render faster in XPU2**: VDB clouds and glowing fog render in about two thirds of the time on the graphics card, with the same picture.
+- **A smaller XPU2 shader compile, with a memory meter**: Compile XPU2 Shaders takes 8 to 15 minutes and well under 12 GB, where it could climb past 40 GB. Preferences shows the free memory beside the button (enough, tight or not enough); the compile needs about 8 GB free to begin and stops itself before memory runs out.
 
 ## New in 0.5.3.1
 

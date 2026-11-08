@@ -520,6 +520,39 @@ Upstream's own branch, taken with the switch on. Off, Auto starts in vector mode
 The same scene in Auto: MoonRay's log says "Executing an XPU render since execution mode was set to auto." with the switch
 on, and "Executing a vectorized render since execution mode was set to auto." with it off.
 
+## `moonray.patch`: VDB fire from temperature or flames grids (`MOONRAY_MODO_SCALAR_EMISSION`)
+
+Applied by `tools/port_scalar_emission.py`, behind a switch of its own (the plugin's preference, on by default).
+
+### What MoonRay does
+
+`VdbVolume::initEmissionSampler` (`lib/rendering/geom/prim/VdbVolume.cc`) takes only an RGB grid (`openvdb::VectorGrid`) as a
+VDB's emission grid. Any other is refused at load with `Emission grid: "flames" is not an RGB grid.`, and the whole VDB
+geometry is dropped from the render, smoke included. EmberGen, Houdini and Blender write their `temperature`, `flames` and
+`heat` grids as single values (float grids), so none of their fire glows: a tester's EmberGen explosion rendered as an
+empty floor.
+
+### The fix
+
+A float emission grid is read and made into an RGB grid of the same shape (its topology copied, tiles kept as tiles), each
+value v as (v, v, v), its background and transform kept (`modoGreyGrid`). From there MoonRay goes on as with an RGB grid:
+the emission sampler, its distribution, the emission sample rate. The VDB volume's `incandescence_gain_mult` gives the glow
+its colour and strength.
+
+JangaFX's free Midair Explosion (frame 40, emission grid `flames`, incandescence gain mult (24, 9, 2.4)), 480 x 300, 16
+samples a pixel:
+
+| | MoonRay as it is | With the switch |
+|---|---|---|
+| MoonRay (scalar) | the VDB dropped: an empty floor | the fire, lighting the floor (691 s) |
+| XPU2, graphics card | | the same picture (116 s) |
+| XPU2, processor | | the same picture (969 s) |
+
+XPU2 follows the switch (`xpu2_geom.cc` makes the grid by the same steps, for the card, the host and the emission
+distribution); its average matches MoonRay's within 0.001%, the card's and the processor's pictures within 0.007 a pixel.
+The MoonLightIPR preview follows it too: its single-number grid is expanded to grey colours once (`moonlightipr_volumes.py`).
+Off, MoonRay is as its source has it.
+
 ## `moonshine.patch`: toon lines without gaps (`close_line_gaps`)
 
 A new attribute of `ToonDisplayFilter`, behind the preference "Toon lines without gaps", on by default; with it off the

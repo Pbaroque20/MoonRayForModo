@@ -18,6 +18,13 @@
   - A render to a file gives them the same way in its EXR: the lines' channels become the lines in their Ink Color with an alpha channel of what they cover.
   - Outlines no longer step with the pixel grid: the lines are smoothed along their direction (a MoonRay Source Override, "Toon lines smoothed", on by default).
 - **Memory meter for the shader compile**: Preferences' Shaders section (under Graphics cards) shows the machine's free RAM beside Compile XPU2 Shaders, read every few seconds while Preferences is open: enough, tight (the compile begins but may stop if other programs take the memory it needs) or not enough (it needs about 8 GB free to begin). Once a compile has finished, the meter goes by what that compile took on this machine.
+- **VDB fire from temperature or flames grids**: a VDB's emission grid of single values (temperature, flames or heat, as EmberGen, Houdini and Blender write them) glows grey, coloured and scaled by the VDB volume's incandescence gain mult. MoonRay takes only an RGB emission grid; it refused one of single values ("is not an RGB grid") and left the whole VDB out of the render, smoke included. MoonRay, XPU2 and the MoonLightIPR preview all follow it. A MoonRay Source Override in Preferences ("VDB fire from temperature or flames grids"), on by default.
+
+  ![JangaFX's free EmberGen explosion glowing from its flames grid: MoonRay left, XPU2's graphics card right](images/vdb-fire-flames-grid.png)
+
+- **Glowing fog from maps on XPU2's graphics card**: a volume whose emission, colour or density comes from procedural maps renders on the card, where before it sent the whole scene to the processor. Maps that read image textures still run on the processor.
+- **Volumes render faster in XPU2**: on the graphics card a VDB cloud renders in about two thirds of the time (88 s to 57 s on a test cloud) and glowing fog in about three quarters, with every pixel the same as before.
+- **A smaller XPU2 shader compile**: the compile could climb past 40 GB of memory and never finish; it now takes 8 to 15 minutes and at most about 11 GB. It will not begin without about 8 GB free, and stops itself, saying so, if memory runs low while it works.
 
 ## New in 0.5.3.1
 

@@ -39,6 +39,24 @@ def dense(path, grid, runtime, colours=False):
         staged.replace(target)
     with target.open('rb') as held:
         head = held.read(84)
+    # An emission grid of single numbers (temperature, flames) as grey colours, as MoonRay's patched VdbVolume makes it
+    # (native.scalar_emission, tools/port_scalar_emission.py): each cell's number as red, green and blue, made once.
+    if colours and head[:4] == b'MLV1' and native.scalar_emission():
+        grey = target.with_name(target.stem + '-grey.mlv')
+        if not grey.is_file() or not grey.stat().st_size:
+            from array import array
+            numbers = array('f')
+            numbers.frombytes(target.read_bytes()[84:])
+            cells = array('f', bytes(16 * len(numbers)))
+            cells[0::4] = numbers
+            cells[1::4] = numbers
+            cells[2::4] = numbers
+            staged = grey.with_suffix('.part')
+            staged.write_bytes(b'MLV4' + head[4:84] + cells.tobytes())
+            staged.replace(grey)
+        target = grey
+        with target.open('rb') as held:
+            head = held.read(84)
     if len(head) < 84 or head[:4] != (b'MLV4' if colours else b'MLV1'):
         if head[:4] in (b'MLV1', b'MLV4'):
             raise ValueError('grid %s holds %s, where %s are needed' % (grid, 'single numbers' if head[:4] == b'MLV1' else 'colours', 'colours' if colours else 'single numbers'))

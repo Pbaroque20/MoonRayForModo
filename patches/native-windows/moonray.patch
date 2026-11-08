@@ -5007,3 +5007,72 @@ new file mode 100644
 +
 +} // namespace shading
 +} // namespace moonray
+diff --git a/lib/rendering/geom/prim/VdbVolume.cc b/lib/rendering/geom/prim/VdbVolume.cc
+index 011b580..e98109c 100644
+--- a/lib/rendering/geom/prim/VdbVolume.cc
++++ b/lib/rendering/geom/prim/VdbVolume.cc
+@@ -17,6 +17,7 @@
+ #include <scene_rdl2/render/util/stdmemory.h>
+ #include <scene_rdl2/scene/rdl2/VisibilityFlags.h>
+ 
++#include <cstdlib>
+ #include <openvdb/openvdb.h>
+ #include <openvdb/Grid.h>
+ #include <openvdb/io/Stream.h>
+@@ -33,6 +34,35 @@
+ 
+ using scene_rdl2::logging::Logger;
+ 
++
++namespace {
++// Modo: a single-value emission grid glows grey (tools/port_scalar_emission.py). Only with MOONRAY_MODO_SCALAR_EMISSION=1.
++bool modoScalarEmission()
++{
++    static const bool on = [] {
++        const char *value = std::getenv("MOONRAY_MODO_SCALAR_EMISSION");
++        return value && value[0] == '1';
++    }();
++    return on;
++}
++
++// The float grid as an RGB grid of the same shape, each value v as (v, v, v); XPU2's xpu2_geom.cc makes it the same way.
++openvdb::VectorGrid::Ptr modoGreyGrid(const openvdb::FloatGrid& scalar)
++{
++    const float background = scalar.background();
++    openvdb::VectorGrid::Ptr grey = openvdb::VectorGrid::create(openvdb::Vec3f(background, background, background));
++    grey->setTransform(scalar.transform().copy());
++    grey->setName(scalar.getName());
++    grey->tree().topologyUnion(scalar.tree());
++    const openvdb::FloatGrid::ConstAccessor values = scalar.getConstAccessor();
++    for (auto it = grey->beginValueAll(); it; ++it) {
++        const float v = values.getValue(it.getCoord());
++        it.setValue(openvdb::Vec3f(v, v, v));
++    }
++    return grey;
++}
++} // namespace
++
+ namespace moonray {
+ namespace geom {
+ namespace internal {
+@@ -1461,7 +1491,9 @@ VdbVolume::initEmissionSampler(openvdb::io::File& file,
+ 
+     // check that it is a valid grid. If not, throw error.
+     if (emissionGrid) {
+-        if (!emissionGrid->isType<openvdb::VectorGrid>()) {
++        // Modo: a single-value grid glows grey (tools/port_scalar_emission.py).
++        const bool modoGrey = emissionGrid->isType<openvdb::FloatGrid>() && modoScalarEmission();
++        if (!emissionGrid->isType<openvdb::VectorGrid>() && !modoGrey) {
+             rdlGeometry.error("Emission grid: \"", emissionGridName, "\" is not an RGB grid.");
+             return false;
+         }
+@@ -1473,7 +1505,8 @@ VdbVolume::initEmissionSampler(openvdb::io::File& file,
+             return false;
+         }
+ 
+-        mEmissionGrid = openvdb::gridPtrCast<openvdb::VectorGrid>(emissionGrid);
++        mEmissionGrid = modoGrey ? modoGreyGrid(*openvdb::gridPtrCast<openvdb::FloatGrid>(emissionGrid))
++                                 : openvdb::gridPtrCast<openvdb::VectorGrid>(emissionGrid);
+     } else {
+         rdlGeometry.error("Emission grid: \"", emissionGridName, "\" does not exist.");
+         return false;

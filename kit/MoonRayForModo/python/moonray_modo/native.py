@@ -59,6 +59,8 @@ def environment(directory):
     env['MOONRAY_MODO_CAMERA_LIGHT_LPE'] = '1' if camera_light_lpe() else '0'
     # A mesh its placement mirrors, with normals of its own, no longer black (mirrored_meshes).
     env['MOONRAY_MODO_MIRRORED_MESHES'] = '1' if mirrored_meshes() else '0'
+    # A VDB's emission grid of single values (temperature, flames) glowing grey (scalar_emission).
+    env['MOONRAY_MODO_SCALAR_EMISSION'] = '1' if scalar_emission() else '0'
     # PATH entries that are not folders passed over as MoonRay looks for itself (dso_search).
     env['MOONRAY_MODO_DSO_SEARCH'] = '1' if dso_search() else '0'
     # The four overrides of tools/port_source_switches.py, each read by MoonRay as it starts.
@@ -330,6 +332,13 @@ def mirrored_meshes():
     return _switch('mirrored_meshes', 'MOONRAY_MODO_MIRRORED_MESHES')
 
 
+def scalar_emission():
+    """Whether a VDB's emission grid of single values (a temperature or flames grid, as EmberGen, Houdini and Blender write
+    them) glows grey, coloured by the volume's incandescence gain mult (tools/port_scalar_emission.py). MoonRay takes only
+    an RGB grid and refuses one of single values, so such a fire gives off no light. XPU2 follows it."""
+    return _switch('scalar_emission', 'MOONRAY_MODO_SCALAR_EMISSION')
+
+
 def dso_search():
     """Whether MoonRay, looking along PATH for moonray.exe as it starts (tools/port_dso_search.py), passes over entries
     that are files or cannot be read, and stops at the first folder holding it. MoonRay's own goes through all of PATH,
@@ -404,7 +413,7 @@ def engine_name(mode):
 
 def source_switches():
     """The MoonRay Source Overrides MoonRay reads as it starts: a session started with others is started again."""
-    return (toon_terminator(), toon_albedo(), crypto_volumes(), fog_alpha(), crypto_once(), camera_light_lpe(), mirrored_meshes(), dso_search()) + tuple(
+    return (toon_terminator(), toon_albedo(), crypto_volumes(), fog_alpha(), crypto_once(), camera_light_lpe(), mirrored_meshes(), scalar_emission(), dso_search()) + tuple(
         globals()[key]() for key in ('usd_specular', 'opaque_alpha', 'transmission_roughness', 'auto_xpu')) + (xpu2(), xpu2_chain(), __import__('moonray_modo.devices', fromlist=['state']).state())
 
 
