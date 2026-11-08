@@ -114,6 +114,13 @@ class _Scrub:
             watched.setCursor(QtCore.Qt.IBeamCursor)
         return super().eventFilter(watched, event)
 
+    def hideEvent(self, event):
+        # A field taken away mid-drag (another node chosen) ends its drag, so that nothing waits on its release.
+        if self._scrubbing:
+            self._press, self._scrubbing = None, False
+            _drag['active'] = False
+        super().hideEvent(event)
+
     def mousePressEvent(self, event):
         if not self._pressed(event, self._arrow(event.pos())):
             super().mousePressEvent(event)

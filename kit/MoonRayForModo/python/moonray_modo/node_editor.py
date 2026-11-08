@@ -767,12 +767,21 @@ class Editor(QtWidgets.QDialog):
     def publish_soon(self):
         """publish_draft for a value as it changes (a spin box steps, a field is typed in): at most once in PUBLISH_EVERY,
         the last value always. Written at every step, each wrote the material and had the preview follow it, which a
-        held arrow or a fast scroll made into a queue of renders behind the hand."""
+        held arrow or a fast scroll made into a queue of renders behind the hand. A number being dragged (scrub_field) is
+        written once, when it is let go: written as it went, Modo's form for the material was rebuilt over and over."""
         timer=getattr(self,'_publish_timer',None)
         if timer is None:
             timer=self._publish_timer=QtCore.QTimer(self);timer.setSingleShot(True);timer.setInterval(PUBLISH_EVERY)
-            timer.timeout.connect(self.publish_draft)
+            timer.timeout.connect(self.publish_when_let_go)
         if not timer.isActive():timer.start()
+    def publish_when_let_go(self):
+        from .scrub_field import scrub_in_progress
+        # Kept waiting while the drag goes on; the timer running also keeps scene_changed from taking the stored graph.
+        # A release never seen (the field gone mid-drag) does not hold the write off for good: a minute at most.
+        waited=getattr(self,'_publish_waits',0)
+        if scrub_in_progress() is not None and waited*PUBLISH_EVERY<60000:
+            self._publish_waits=waited+1;self._publish_timer.start();return
+        self._publish_waits=0;self.publish_draft()
     def draft_settings(self):
         """The material's settings with the graph as it stands."""
         settings=copy.deepcopy(properties.read(self.item))

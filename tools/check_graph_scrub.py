@@ -63,7 +63,28 @@ results['undo goes back to before the drag'] = editor.undo_states[-1] == {'v': 1
 field.setValue(5.0); results['a typed value, undo states'] = len(editor.undo_states)
 results['no drag going on after'] = scrub_field.scrub_in_progress() is None
 
-expected = {'float right 40 px': 1.5, 'float back left': 0.5, 'float Ctrl right 40 px': 0.6, 'float published each step': True,
+# The material is written once, when the drag is let go, not as it goes (Modo's form was rebuilt at every write).
+written = []
+publisher = types.SimpleNamespace(publish_draft=lambda: written.append(1))
+publisher._publish_timer = QtCore.QTimer(); publisher._publish_timer.setSingleShot(True); publisher._publish_timer.setInterval(10)
+publisher._publish_timer.timeout.connect(lambda: NodeEditor.publish_when_let_go(publisher))
+held = NumericField('n1', 'k', -1, {'type': 'Float'}, 0.0); held.resize(120, 22); held.show(); application.processEvents()
+held.changed.connect(lambda *a: publisher._publish_timer.isActive() or publisher._publish_timer.start())
+edit = held.lineEdit(); start = QtCore.QPoint(10, 8)
+application.sendEvent(edit, QtGui.QMouseEvent(QtCore.QEvent.MouseButtonPress, start, edit.mapToGlobal(start), QtCore.Qt.LeftButton, QtCore.Qt.LeftButton, QtCore.Qt.NoModifier))
+for step in range(1, 11):
+    point = start + QtCore.QPoint(4 * step, 0)
+    application.sendEvent(edit, QtGui.QMouseEvent(QtCore.QEvent.MouseMove, point, edit.mapToGlobal(point), QtCore.Qt.NoButton, QtCore.Qt.LeftButton, QtCore.Qt.NoModifier))
+    end = QtCore.QTime.currentTime().addMSecs(25)
+    while QtCore.QTime.currentTime() < end: application.processEvents()
+results['writes while dragging'] = len(written)
+application.sendEvent(edit, QtGui.QMouseEvent(QtCore.QEvent.MouseButtonRelease, start + QtCore.QPoint(40, 0), edit.mapToGlobal(start), QtCore.Qt.LeftButton, QtCore.Qt.NoButton, QtCore.Qt.NoModifier))
+end = QtCore.QTime.currentTime().addMSecs(60)
+while QtCore.QTime.currentTime() < end: application.processEvents()
+results['writes after letting go'] = len(written)
+
+expected = {'writes while dragging': 0, 'writes after letting go': 1,
+'float right 40 px': 1.5, 'float back left': 0.5, 'float Ctrl right 40 px': 0.6, 'float published each step': True,
             'float from the down arrow, right': 1.5, 'int right 40 px': 14, 'int past the bottom': 0,
             'one drag, undo states': 1, 'two drags, undo states': 2, 'undo goes back to before the drag': True,
             'a typed value, undo states': 3, 'no drag going on after': True}
