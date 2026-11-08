@@ -15,6 +15,8 @@
   - The Toon filter's Ink Color draws its lines in any colour over its shading (a MoonRay Source Override, "Toon lines in a colour", on by default).
   - The Compositor's Ink Lines node (in Merge) lays a colour over a picture through a Toon filter set to Lines only; Mix fades the lines towards the picture beneath, never towards white.
   - Saving a Toon filter's lines alone from the preview gives the lines in their Ink Color with what they cover as alpha: premultiplied in OpenEXR, straight in PNG, TIFF and Targa.
+  - A render to a file gives them the same way in its EXR: the lines' channels become the lines in their Ink Color with an alpha channel of what they cover.
+  - Outlines no longer step with the pixel grid: the lines are smoothed along their direction (a MoonRay Source Override, "Toon lines smoothed", on by default).
 - **Memory meter for the shader compile**: Preferences' Shaders section (under Graphics cards) shows the machine's free RAM beside Compile XPU2 Shaders, read every few seconds while Preferences is open: enough, tight (the compile begins but may stop if other programs take the memory it needs) or not enough (it needs about 8 GB free to begin). Once a compile has finished, the meter goes by what that compile took on this machine.
 
 ## New in 0.5.3.1

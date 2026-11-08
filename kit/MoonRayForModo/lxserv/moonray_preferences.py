@@ -180,6 +180,7 @@ lx.bless(switch('presence_shadows_auto',render_settings_changed),'moonray.pref.p
 lx.bless(switch('toon_lines_apart'),'moonray.pref.toonLinesApart')
 lx.bless(switch('toon_close_gaps'),'moonray.pref.toonCloseGaps')
 lx.bless(switch('toon_ink_color'),'moonray.pref.toonInkColor')
+lx.bless(switch('toon_smooth_lines'),'moonray.pref.toonSmoothLines')
 lx.bless(switch('filter_inputs'),'moonray.pref.filterInputs')
 lx.bless(switch('crypto_once'),'moonray.pref.cryptoOnce')
 lx.bless(switch('dso_search'),'moonray.pref.dsoSearch')

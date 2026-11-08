@@ -607,6 +607,45 @@ material ball: black ink, red ink, and the lines alone. Where there is no ink th
 black. The Ink Lines node gives the same values from the compositor program, the image tool and the probe's arithmetic
 (`tests/test_toon_ink_lines.py`).
 
+## `moonshine.patch`: toon lines smoothed (`smooth_lines`)
+
+A new attribute of `ToonDisplayFilter`, behind the preference "Toon lines smoothed", on by default; with it off the plugin
+does not write the attribute and the lines are as MoonRay draws them. Asked in issue 134.
+
+### What MoonRay does
+
+An outline comes from depth. The jump in depth across a silhouette is far over any threshold, so each pixel of an outline
+is all ink or none, and the outline steps with the pixel grid along every curve. Lines from normals, which change
+gradually, are already soft.
+
+### The change
+
+Where the line changes within the nine pixels around a pixel, the line (with its gaps closed, where that is on) is worked
+out over the 7 x 7 pixels around it and blended along its own direction, as FXAA does a picture's edges: two and four taps
+read between pixels along the line, up to four pixels long, the four-tap result kept unless it leaves the range of the
+pixel and its corners. A step becomes as much ink as the line covers there; a line's inside and its straight runs stay as
+they were. The depth and normal inputs' window widens by 6 to give the 7 x 7 pixels their kernels. Elsewhere nothing more
+is read.
+
+The material ball's lines alone, close up: Laplacian of Gaussian above and Sobel below, as MoonRay draws them on the left
+and smoothed on the right.
+
+![Close-ups of the material ball's toon outline, stepped on the left and smooth on the right, for two edge detectors](../../docs/images/toon-smooth-lines.png)
+
+### How it was checked
+
+Built and rendered on the material ball (512 x 512, 8 samples) with each detector, with and without the switch: the
+lines' total ink changes by under 1% (14,281 to 14,201 with Laplacian of Gaussian), and the render takes no longer.
+
+### A final render's lines with their alpha (kit side, no switch)
+
+MoonRay writes a display filter's picture as R, G and B alone. Once a render to a file is written (after its composite and
+any copy in another type, which read the lines as MoonRay wrote them), the channels of each Toon filter set to Lines only
+become its lines in its Ink Color, premultiplied, with `<name>.A` what they cover, in whichever part of the EXR holds them
+(`toon_lines.py`). The other channels, parts, headers, data types and compression are kept; a file whose lines have an
+alpha already is left alone. Checked on a three-part EXR with a Cryptomatte header and a half-float lines part, and on a
+single-part one: alpha equal to the lines' cover (within half-float rounding), colour the ink times it.
+
 ## `cl1-pool-scale.patch`: a larger store for rays in flight (no switch)
 
 The change is in `moonray.patch` too, which the build applies; the file alone is kept for the one-library rebuild

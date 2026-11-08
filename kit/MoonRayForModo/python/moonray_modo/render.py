@@ -984,6 +984,14 @@ class Renderer(QtCore.QObject):
                     self.log+='Saved as '+str(target)+'\n'
                 except Exception as exc:
                     self.status.emit('The %s copy was not written: %s'%(asked.get('type'),exc))
+            # A Toon filter's lines alone with their own alpha, in the EXR itself (issue 134), once the composite and the
+            # copies above have read the lines as MoonRay wrote them (white on black).
+            try:
+                from .toon_lines import add_alpha
+                given=add_alpha(self.active['runtime'],destination,self.active['snapshot'])
+                if given:self.log+='Toon lines given their alpha: '+', '.join(given)+'\n'
+            except Exception as exc:
+                self.status.emit('The Toon lines were not given their alpha: '+str(exc))
             self._show_output(destination)
             self.finished.emit(str(destination))
             return

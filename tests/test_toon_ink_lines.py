@@ -8,7 +8,7 @@ from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'kit/MoonRayForModo/python'))
-from moonray_modo import compositor, entities, image_formats
+from moonray_modo import compositor, entities, image_formats, toon_lines
 
 TOON = {'identity': 'toon', 'name': 'Toon', 'class': 'ToonDisplayFilter',
         'parameters': {'output_mode': 1, 'ink_color': [0.1, 0.0, 0.5]}}
@@ -79,6 +79,45 @@ class LinesSaved(unittest.TestCase):
         self.assertIn('--addc', png)
         self.assertEqual(png[png.index('--chappend') - 1], 'A')
         self.assertIn('oiio:UnassociatedAlpha', png)
+
+
+class SmoothLinesOverride(unittest.TestCase):
+    def test_written_with_the_switch_on_left_out_with_it_off(self):
+        with mock.patch.object(entities, 'toon_smooth_lines', lambda: True):
+            self.assertIs(entities.completed_filters([TOON], [])[0]['parameters'].get('smooth_lines'), True)
+        with mock.patch.object(entities, 'toon_smooth_lines', lambda: False):
+            self.assertNotIn('smooth_lines', entities.completed_filters([TOON], [])[0]['parameters'])
+
+    def test_in_the_catalog_and_the_filter_source(self):
+        self.assertIn('smooth_lines', entities.catalog()['ToonDisplayFilter']['attributes'])
+        source = (ROOT / 'upstream/openmoonray/moonray/moonshine/dso/displayfilter/ToonDisplayFilter/ToonDisplayFilter.cc').read_text(encoding='utf-8')
+        self.assertIn('get(attrSmoothLines) ? 6', source)
+
+
+class FinalRenderLines(unittest.TestCase):
+    def test_the_part_holding_the_lines_gets_their_alpha(self):
+        parts = [['R', 'G', 'B', 'A'], ['Toon.R', 'Toon.G', 'Toon.B'], ['depth.Z']]
+        args = toon_lines.arguments(parts, {'Toon': (0.1, 0.0, 0.5)}, 'in.exr', 'out.exr')
+        self.assertEqual(args.count('--subimage'), 3)
+        self.assertEqual(args.count('--siappend'), 2)
+        self.assertIn('Toon.R,Toon.G,Toon.B,Toon.A=Toon.R', args)
+        self.assertIn('0.1,0,0.5,1', args)
+        self.assertEqual(args[-2:], ['-o', 'out.exr'])
+
+    def test_lines_in_the_first_part_keep_the_other_channels(self):
+        args = toon_lines.arguments([['R', 'G', 'B', 'A', 'Toon.R', 'Toon.G', 'Toon.B']], {'Toon': (1.0, 0.0, 0.0)}, 'in.exr', 'out.exr')
+        self.assertIn('R,G,B,A,Toon.R,Toon.G,Toon.B,Toon.A=Toon.R', args)
+        self.assertIn('1,1,1,1,1,0,0,1', args)
+        self.assertNotIn('--siappend', args)
+
+    def test_nothing_to_do(self):
+        self.assertIsNone(toon_lines.arguments([['R', 'G', 'B', 'A']], {'Toon': (0, 0, 0)}, 'in.exr', 'out.exr'))
+        self.assertIsNone(toon_lines.arguments([['Toon.R', 'Toon.G', 'Toon.B', 'Toon.A']], {'Toon': (0, 0, 0)}, 'in.exr', 'out.exr'))
+
+    def test_only_toon_filters_giving_lines_alone(self):
+        shading = dict(TOON, name='Shade', identity='s', parameters={'output_mode': 0})
+        with mock.patch.object(entities, 'toon_lines_apart', lambda: True), mock.patch.object(entities, 'toon_ink_color', lambda: True),              mock.patch.object(entities, 'display_filters', lambda s: s['entities']):
+            self.assertEqual(toon_lines.wanted({'entities': [TOON, shading]}), {'Toon': (0.1, 0.0, 0.5)})
 
 
 if __name__ == '__main__':

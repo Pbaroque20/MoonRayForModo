@@ -48,7 +48,7 @@ KEYS = {
     'crypto_volumes': (True, bool),
     # Fog in front of a see-through surface in alpha (native.fog_alpha), and each Cryptomatte sample counted once
     # (native.crypto_once).
-    'fog_alpha': (True, bool), 'camera_light_lpe': (True, bool), 'mirrored_meshes': (True, bool), 'toon_lines_apart': (True, bool), 'toon_close_gaps': (True, bool), 'toon_ink_color': (True, bool), 'filter_inputs': (True, bool),
+    'fog_alpha': (True, bool), 'camera_light_lpe': (True, bool), 'mirrored_meshes': (True, bool), 'toon_lines_apart': (True, bool), 'toon_close_gaps': (True, bool), 'toon_ink_color': (True, bool), 'toon_smooth_lines': (True, bool), 'filter_inputs': (True, bool),
     'crypto_once': (True, bool),
     # MoonRay's look along PATH as it starts passes over entries that are not folders (native.dso_search).
     'dso_search': (True, bool),

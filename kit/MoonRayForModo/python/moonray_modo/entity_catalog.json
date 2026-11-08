@@ -6830,6 +6830,13 @@
         "label": "output mode",
         "name": "output_mode",
         "type": "Int"
+      },
+      "smooth_lines": {
+        "comment": "MoonRay for Modo: near an edge, the lines are blended along their own direction, so that an outline does not step with the pixel grid",
+        "default": false,
+        "label": "smooth lines",
+        "name": "smooth_lines",
+        "type": "Bool"
       }
     },
     "category": "displayfilter",
