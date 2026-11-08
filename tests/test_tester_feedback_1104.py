@@ -174,7 +174,10 @@ class VdbOnTheCard(unittest.TestCase):
     def test_the_card_marches_again_for_a_step(self):
         integrator = (self.X / 'async_integrator.h').read_text(encoding='utf-8')
         self.assertIn('struct ReplaySteps {', integrator)
-        self.assertIn('const ReplaySteps<VolumeMarch<Backend>> lookup{march, count, weights != 0.0f ? weights : 1.0f, weights == 0.0f};', integrator)
+        self.assertIn('const ReplaySteps<VolumeMarch<Backend>> lookup{march, count, weights != 0.0f ? weights : 1.0f, weights == 0.0f,', integrator)
+        # Since 2026-11-08 from the first march's checkpoints, the same steps bit for bit (GPU_MARCH_CHECKPOINTS).
+        self.assertIn('volume::gpuMarchCheckpoints() ? &record : nullptr};', integrator)
+        self.assertIn('m.run(emit, from);', integrator)
         core = (self.X / 'volume_core.h').read_text(encoding='utf-8')
         self.assertIn('constexpr bool GpuVdb = true;', core)
         self.assertIn('constexpr U32 MarchLimit = 1u << 14;', core)
