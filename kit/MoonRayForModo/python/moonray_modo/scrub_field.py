@@ -1,20 +1,30 @@
-"""A number changed by dragging on it, as Modo's own fields are: the preview window's EV and gamma.
+"""A number changed by dragging on it, as Modo's own fields are: the preview window's EV and gamma, and the MoonShine
+graph's numbers.
 
 Qt's spin box changes only from its small arrows, held to repeat slowly, or by typing; a tester found sliding slow and
-the arrows hard to hit. Pressed anywhere on this one, the number or its arrows, and dragged, it steps as the pointer
-goes: one step for every few pixels right or up (left or down for less), a tenth of one with Ctrl held, five with Shift.
-A click that does not drag is a click as before: on the number it puts the cursor in it to type, on an arrow it steps
-once. An arrow held still no longer repeats: dragging is the quicker way.
+the arrows hard to hit, a few pixels apart, each going one way only. Pressed anywhere on this one, the number or its
+arrows, and dragged, it steps as the pointer goes: one step for every few pixels right or up (left or down for less), a
+tenth of one with Ctrl held, five with Shift. A click that does not drag is a click as before: on the number it puts the
+cursor in it to type, on an arrow it steps once. An arrow held still no longer repeats: dragging is the quicker way.
+
+While a drag goes on, scrub_in_progress() says which drag it is, so that an editor can keep all its steps as one undo.
 """
 from PySide2 import QtCore, QtWidgets
 
+_drag = {'number': 0, 'active': False}
 
-class ScrubSpinBox(QtWidgets.QDoubleSpinBox):
+
+def scrub_in_progress():
+    """A number for the drag going on now, the same through all its steps, or None when no field is being dragged."""
+    return _drag['number'] if _drag['active'] else None
+
+
+class _Scrub:
+    """The dragging, shared by the field for decimals and the one for whole numbers."""
     PIXELS = 4          # pixels of drag to a step
     THRESHOLD = 3       # pixels a press may wander and still be a click
 
-    def __init__(self, parent=None):
-        super().__init__(parent)
+    def _scrub_setup(self):
         # (where the press was, the value then, what was pressed: 0 the number, 1 or -1 an arrow)
         self._press = None
         self._scrubbing = False
@@ -31,7 +41,9 @@ class ScrubSpinBox(QtWidgets.QDoubleSpinBox):
         elif modifiers & QtCore.Qt.ShiftModifier:
             step *= 5
         value = start + int(pixels / self.PIXELS) * step
-        return min(self.maximum(), max(self.minimum(), round(value, self.decimals())))
+        decimals = self.decimals() if hasattr(self, 'decimals') else 0
+        value = round(value, decimals) if decimals else int(round(value))
+        return min(self.maximum(), max(self.minimum(), value))
 
     def _arrow(self, position):
         """1 for the up arrow at a point of the field, -1 for the down one, 0 for anything else."""
@@ -56,7 +68,10 @@ class ScrubSpinBox(QtWidgets.QDoubleSpinBox):
         pixels = moved.x() if abs(moved.x()) >= abs(moved.y()) else -moved.y()
         if not self._scrubbing and abs(pixels) < self.THRESHOLD:
             return True
-        self._scrubbing = True
+        if not self._scrubbing:
+            self._scrubbing = True
+            _drag['number'] += 1
+            _drag['active'] = True
         value = self.scrub_value(self._press[1], pixels, event.modifiers())
         if abs(value - self.value()) > 1e-12:
             self.setValue(value)
@@ -68,6 +83,7 @@ class ScrubSpinBox(QtWidgets.QDoubleSpinBox):
         scrubbed, kind = self._scrubbing, self._press[2]
         self._press, self._scrubbing = None, False
         if scrubbed:
+            _drag['active'] = False
             if edit is not None and edit.hasFocus():
                 edit.deselect()
         elif kind:
@@ -109,3 +125,15 @@ class ScrubSpinBox(QtWidgets.QDoubleSpinBox):
     def mouseReleaseEvent(self, event):
         if not self._released(event, self.lineEdit()):
             super().mouseReleaseEvent(event)
+
+
+class ScrubSpinBox(_Scrub, QtWidgets.QDoubleSpinBox):
+    def __init__(self, parent=None):
+        QtWidgets.QDoubleSpinBox.__init__(self, parent)
+        self._scrub_setup()
+
+
+class ScrubIntBox(_Scrub, QtWidgets.QSpinBox):
+    def __init__(self, parent=None):
+        QtWidgets.QSpinBox.__init__(self, parent)
+        self._scrub_setup()

@@ -757,7 +757,12 @@ class Editor(QtWidgets.QDialog):
     def remember(self,before):
         # A graph as it was (a value entered as it stood) is no edit: the material preview and the scene are left alone.
         if before==self.graph:return
-        self.undo_states.append(before);self.undo_states=self.undo_states[-50:];self.redo_states=[]
+        # A number dragged (scrub_field) is one undo, back to where the drag began, however many steps it took.
+        from .scrub_field import scrub_in_progress
+        drag=scrub_in_progress()
+        if drag is None or drag!=getattr(self,'_undo_drag',None):
+            self.undo_states.append(before);self.undo_states=self.undo_states[-50:]
+        self._undo_drag=drag;self.redo_states=[]
         self.material_preview.graph_changed(self.graph);self.publish_soon()
     def publish_soon(self):
         """publish_draft for a value as it changes (a spin box steps, a field is typed in): at most once in PUBLISH_EVERY,

@@ -75,7 +75,7 @@ MoonLightIPR's kernel draws its samples from OpenQMC (https://github.com/Academy
 Academy Software Foundation project, version 0.7.1: the headers of its Owen-scrambled Sobol sampler are kept
 unchanged in `moonlightipr/third_party/openqmc` and compiled into `MoonLightIPRKernel.ptx`. Copyright Contributors
 to the OpenQMC Project, under the Apache License 2.0, with NVIDIA's covenant not to assert patents; both texts ship
-in the kit as `licenses/OpenQMC-LICENSE.txt` and `licenses/OpenQMC-LICENSE-NVIDIA.txt`. Thanks to Framestore and
+in the kit as `runtime/moonlightipr/licenses/OpenQMC-LICENSE.txt` and `OpenQMC-LICENSE-NVIDIA.txt`. Thanks to Framestore and
 the OpenQMC contributors for it.
 
 ## ISPC Texture Compressor

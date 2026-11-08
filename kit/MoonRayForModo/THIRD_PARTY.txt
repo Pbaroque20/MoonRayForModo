@@ -55,6 +55,12 @@ with or endorsed by DreamWorks Animation. It runs on NVIDIA OptiX and CUDA, whos
 MoonLightIPR's velvet lobe reads two tables taken unchanged from OpenMoonRay, Copyright 2023-2024
 DreamWorks Animation LLC, under the Apache License 2.0; they keep that notice and are not relicensed under MIT.
 
+MoonLightIPR's kernel draws its samples from OpenQMC (https://github.com/AcademySoftwareFoundation/openqmc), an
+Academy Software Foundation project, version 0.7.1: the headers of its Owen-scrambled Sobol sampler are compiled
+unchanged into runtime/moonlightipr/MoonLightIPRKernel.ptx. Copyright Contributors to the OpenQMC Project, under the
+Apache License 2.0, with NVIDIA's covenant not to assert patents; both texts are in runtime/moonlightipr/licenses/
+(OpenQMC-LICENSE.txt and OpenQMC-LICENSE-NVIDIA.txt). They are not relicensed under MIT.
+
 ## meshoptimizer
 
 The realtime previews' mesh simplification uses meshoptimizer by Arseny Kapoulkine (zeux), version 0.22, under the MIT
