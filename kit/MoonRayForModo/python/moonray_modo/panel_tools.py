@@ -350,6 +350,10 @@ class Tools:
                                   samples=dialog.samples.value(), motion=motion)
             self.settings.setValue('output/playblast', directory)
             self.settings.setValue('output/playblast_samples', dialog.samples.value())
+            # Realtime ended first, as for an animation: left on, the stop below ended its following but RT stayed On
+            # after the playblast with nothing updating, until another engine was chosen.
+            if self.ipr_mode.isChecked():
+                self.ipr_mode.setChecked(False)
             self.stop()
             # The picture itself is wanted, and MoonLightIPR has its beauty and its denoised beauty to show.
             if self.draft.isChecked():
