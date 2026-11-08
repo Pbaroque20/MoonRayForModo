@@ -4,6 +4,7 @@
 
 ## New in 0.5.3.2 (coming)
 
+- **MoonLightIPR clears its noise sooner**: the preview now draws its samples from OpenQMC, the Academy Software Foundation's sampling library, so each pixel's samples spread evenly over the lights, the lens and the ways light bounces, where before they fell by chance. For the same noise it needs about half the samples where the light comes from lamps, an environment or fog, and fewer on VDB fog, hair, depth of field and glass; subsurface random walks gain little. A sample takes up to about a tenth longer. Nothing changes in how the preview looks once it has cleared.
 - **Edits that change nothing leave realtime alone**: an edit that changes nothing no longer starts MoonLightIPR or XPU2's realtime over, nor has the scene read whole. Checked in Modo with both engines, each against a real change of the same kind, which still renders:
   - A value entered as it already is, in the graph editor or in a MoonRay material's Properties: Enter pressed on 0 where it was 0, a start value entered as shown (the graph editor used to store it, which counted as a change), or 0.3 entered where the field showed a stored 0.30000000000000004. The graph editor's own preview is left alone too.
   - Schematic work: a workspace made, an item added to it or taken out, a node moved. Modo told of these as links and groups, which were taken for changes to the scene. Every link Modo tells of was so taken, as its graph is told by name; a transform made for an item's first move is now the move it is, not a reading of the whole scene.

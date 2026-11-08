@@ -71,6 +71,13 @@ MoonLightIPR's velvet lobe reads two tables taken unchanged from OpenMoonRay (`m
 Copyright 2023-2024 DreamWorks Animation LLC, under the Apache License 2.0; they keep that notice and are not
 relicensed under MIT. See `moonlightipr/NOTICE.md`.
 
+MoonLightIPR's kernel draws its samples from OpenQMC (https://github.com/AcademySoftwareFoundation/openqmc), an
+Academy Software Foundation project, version 0.7.1: the headers of its Owen-scrambled Sobol sampler are kept
+unchanged in `moonlightipr/third_party/openqmc` and compiled into `MoonLightIPRKernel.ptx`. Copyright Contributors
+to the OpenQMC Project, under the Apache License 2.0, with NVIDIA's covenant not to assert patents; both texts ship
+in the kit as `licenses/OpenQMC-LICENSE.txt` and `licenses/OpenQMC-LICENSE-NVIDIA.txt`. Thanks to Framestore and
+the OpenQMC contributors for it.
+
 ## ISPC Texture Compressor
 
 XPU2's texture overflow mode compresses textures with Intel's ISPC Texture Compressor (https://github.com/GameTechDev/ISPCTextureCompressor,

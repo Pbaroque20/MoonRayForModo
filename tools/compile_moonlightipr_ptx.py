@@ -26,8 +26,15 @@ try:
     # --precise (the compositor): IEEE division, square roots and no fused multiply-adds, so that the graphics card works
     # each value out as the processor does.
     precise='--precise' in sys.argv[3:]
-    flags=['--std=c++14','--gpu-architecture=compute_75']+(['--fmad=false','--prec-div=true','--prec-sqrt=true','--ftz=false'] if precise else ['--use_fast_math'])
+    # --openqmc (MoonLightIPR's kernel): OpenQMC's headers, which want C++17, with the few standard headers they include,
+    # and their functions, which are not marked for the device, compiled for it (moonlightipr/third_party).
+    openqmc='--openqmc' in sys.argv[3:]
+    if openqmc: includes+=[root/'moonlightipr/third_party/openqmc/include',root/'moonlightipr/third_party/nvrtc-std']
+    flags=['--std=c++17' if openqmc else '--std=c++14','--gpu-architecture=compute_75']+(['--fmad=false','--prec-div=true','--prec-sqrt=true','--ftz=false'] if precise else ['--use_fast_math'])
+    if openqmc: flags.append('-default-device')
     flags+=['--include-path='+str(p) for p in includes]
+    # Further include folders given as -I<path>.
+    flags+=['--include-path='+a[2:] for a in sys.argv[3:] if a.startswith('-I')]
     # Defines given after the paths (-DNAME=value), such as a kernel made with some of its features left out.
     flags+=[a for a in sys.argv[3:] if a.startswith('-D')]
     options=(C.c_char_p*len(flags))(*(v.encode() for v in flags))

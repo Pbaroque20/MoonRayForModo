@@ -1,0 +1,8 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Raphael Tobar. MoonLightIPR is not affiliated with DreamWorks Animation; see moonlightipr/NOTICE.md.
+// What OpenQMC needs of this standard header, for NVRTC, which has no standard library (third_party/openqmc/README.md).
+#pragma once
+namespace std {
+typedef unsigned long long size_t;
+typedef long long ptrdiff_t;
+}

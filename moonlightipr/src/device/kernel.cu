@@ -7,6 +7,7 @@
 // Modo's procedural textures, the same code MoonRay's ModoProceduralMap runs.
 #include "../../../native-port/maps/ModoProcedural/modo_patterns.h"
 #include "vec.h"
+#include "qmc.h"
 #include "velvet_tables.h"
 
 using namespace moonlightipr;
@@ -77,7 +78,7 @@ ML_INLINE float fogDensity(const DeviceVolume& fog, float3 p) {
 
 // What the fogs that have grids let through along a ray. Each fills the unit cube its rows take the scene into, so
 // where the ray is inside one is worked out from the cube, and any number of them may lie along the ray or overlap.
-ML_INLINE float3 gridShadow(float3 origin, float3 direction, float distance, unsigned& seed, float thin) {
+ML_INLINE float3 gridShadow(float3 origin, float3 direction, float distance, Seed& seed, float thin) {
     float3 through = vec(1.0f);
     const DeviceVolume* fogs = reinterpret_cast<const DeviceVolume*>(params.volumes);
     for (unsigned i = 0; i < params.volumeCount; ++i) {
@@ -117,12 +118,12 @@ ML_INLINE bool reaches(unsigned set, unsigned bit) {
 
 // thin scales what fog stops: MoonRay lets light that has already scattered in fog through more of it (its volume
 // attenuation factor), which stands for the light that would have found its way round.
-ML_INLINE float3 shadow(float3 origin, float3 direction, unsigned& seed, float distance = 1e16f, float thin = 1.0f) {
+ML_INLINE float3 shadow(float3 origin, float3 direction, Seed& seed, float distance = 1e16f, float thin = 1.0f) {
     // A fog with a grid is not the same all through, so the any-hit test only notes where the ray goes into it and
     // comes out, and which fog it is; what it stops is added up along that stretch below.
-    unsigned unoccluded = 0, stream = seed, d0 = 0, d1 = 0, d2 = 0, e0 = 0, e1 = 0, e2 = 0;
+    unsigned unoccluded = 0, stream = seed.lcg, d0 = 0, d1 = 0, d2 = 0, e0 = 0, e1 = 0, e2 = 0;
     unsigned entered = __float_as_uint(0.0f), left = __float_as_uint(1e30f), gridded = 0;
-    rnd(seed);
+    rnd(seed.lcg);
     optixTrace(params.traversable, origin, direction, 0.0f, distance, 0.0f, OptixVisibilityMask(SEEN_SHADOW),
                (params.presence ? OPTIX_RAY_FLAG_NONE : OPTIX_RAY_FLAG_DISABLE_ANYHIT)
                | OPTIX_RAY_FLAG_DISABLE_CLOSESTHIT | OPTIX_RAY_FLAG_TERMINATE_ON_FIRST_HIT,
@@ -1229,7 +1230,7 @@ ML_INLINE float3 shadowFrom(const Surface& surface, float3 p, float3 lift, float
 // Next event estimation at one surface point: the environment, the distant lights, then the
 // local lights. weight is the path's weight on arriving at the surface.
 ML_INLINE float3 directLight(const Surface& surface, const Lobes& lobes, float3 wo, const Frame& frame,
-                             float3 p, float3 ng, float3 weight, bool lit, unsigned& seed, float3 lift = make_float3(0.0f, 0.0f, 0.0f),
+                             float3 p, float3 ng, float3 weight, bool lit, Seed& seed, float3 lift = make_float3(0.0f, 0.0f, 0.0f),
                              unsigned set = 0) {
     const DeviceDistantLight* distantLights = reinterpret_cast<const DeviceDistantLight*>(params.distantLights);
     const DeviceLight* lights = reinterpret_cast<const DeviceLight*>(params.lights);
@@ -1462,7 +1463,7 @@ ML_INLINE float3 fibreEval(const Fibre& fibre, float3 wi, float& pdf) {
 }
 
 // A direction drawn from one of the four lobes; false if none can be.
-ML_INLINE bool fibreSample(const Fibre& fibre, unsigned& seed, float3& wi) {
+ML_INLINE bool fibreSample(const Fibre& fibre, Seed& seed, float3& wi) {
     const DeviceHair& hair = *fibre.hair;
     const float pick = rnd(seed);
     int lobe = 0;
@@ -1487,7 +1488,7 @@ ML_INLINE bool fibreSample(const Fibre& fibre, unsigned& seed, float3& wi) {
 }
 
 // Next event estimation on a fibre, which light reaches from every side.
-ML_INLINE float3 fibreLight(const Fibre& fibre, float3 p, float3 ng, float3 weight, bool lit, unsigned& seed, unsigned set = 0) {
+ML_INLINE float3 fibreLight(const Fibre& fibre, float3 p, float3 ng, float3 weight, bool lit, Seed& seed, unsigned set = 0) {
     const DeviceDistantLight* distantLights = reinterpret_cast<const DeviceDistantLight*>(params.distantLights);
     const DeviceLight* lights = reinterpret_cast<const DeviceLight*>(params.lights);
     float3 radiance = vec(0.0f);
@@ -1547,7 +1548,7 @@ ML_INLINE float3 samplePhase(float3 forward, float g, float u1, float u2) {
     return normalize(Frame(forward).toWorld(make_float3(sine * cosf(phi), sine * sinf(phi), cosine)));
 }
 // The light every lamp sends to a point in fog and on along wo, the way back to the viewer.
-ML_INLINE float3 fogLight(float3 p, float3 wo, float g, float3 weight, bool lit, unsigned& seed, float thin = 1.0f) {
+ML_INLINE float3 fogLight(float3 p, float3 wo, float g, float3 weight, bool lit, Seed& seed, float thin = 1.0f) {
     const DeviceDistantLight* distantLights = reinterpret_cast<const DeviceDistantLight*>(params.distantLights);
     const DeviceLight* lights = reinterpret_cast<const DeviceLight*>(params.lights);
     float3 radiance = vec(0.0f);
@@ -1655,7 +1656,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
         // Draft: three rays, to here and to the pixels beside and above, and a line where what they find parts.
         // Nothing is lit or shaded, so it costs next to nothing however heavy the scene, and what is behind the
         // nearest surface is not drawn.
-        unsigned seed = tea(pixel, params.sample);
+        Seed seed = startSeed(index.x, index.y, pixel, params.sample);
         const float sx = 2.0f * (index.x + rnd(seed)) / params.width - 1.0f;
         const float sy = 2.0f * (index.y + rnd(seed)) / params.height - 1.0f;
         const float3 from = cameraStart(sx, sy);
@@ -1690,7 +1691,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
         reinterpret_cast<float4*>(params.normal)[pixel] = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
         return;
     }
-    unsigned seed = tea(pixel, params.sample);
+    Seed seed = startSeed(index.x, index.y, pixel, params.sample);
 
     const float sx = 2.0f * (index.x + rnd(seed)) / params.width - 1.0f;
     const float sy = 2.0f * (index.y + rnd(seed)) / params.height - 1.0f;
@@ -1763,6 +1764,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
     // The light set of the surface the ray last left, which the lights it comes upon are held to.
     unsigned fromSet = 0;
     for (unsigned depth = 0;; ++depth) {
+        bounceSeed(seed, depth);
         Hit hit;
         traceRadiance(origin, direction, hit, reach, seen);
         if (ML_HAS(FEATURE_FOG) && params.volumeCount && !probing) {
@@ -1799,6 +1801,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
                 float at = from, anisotropy = 0.0f, stops = 0.0f;
                 float3 albedo = vec(0.0f);
                 for (int k = 0; k < 1024; ++k) {
+                    seedPhase(seed, QMC_FOG_STEP, k, 4);
                     at += -logf(fmaxf(1e-12f, 1.0f - rnd(seed))) / most;
                     if (at >= to) break;
                     const float3 p = origin + direction * at;
@@ -1831,6 +1834,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
                     }
                 }
                 if (stopped) {
+                    seedPhase(seed, QMC_FOG_SCATTER, 0, 12);
                     // What the lamps send here goes on towards the viewer.
                     float3 here = origin + direction * at;
                     if (bounces)
@@ -1842,6 +1846,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
                     // from the lamps, and it is thrown more evenly.
                     float3 carried = throughput * bounceWeight * albedo, way = samplePhase(direction, anisotropy, rnd(seed), rnd(seed));
                     for (unsigned order = 1; bounces && order < params.maxVolumeDepth; ++order) {
+                        seedPhase(seed, QMC_FOG_SCATTER, int(order), 12);
                         here = here + way * (-logf(fmaxf(1e-12f, 1.0f - rnd(seed))) / stops);
                         float thick = 0.0f, turned = 0.0f;
                         float3 kept = vec(0.0f);
@@ -1871,12 +1876,14 @@ extern "C" __global__ void __raygen__moonlightipr() {
             const DeviceVolume& fog = reinterpret_cast<const DeviceVolume*>(params.volumes)[medium];
             {
             const float3 stops = vec(fog.extinction);
+            seedPhase(seed, QMC_MEDIUM, 0, 4);
             const float limit = hit.valid ? hit.t : 1e30f, choice = rnd(seed);
             const float chosen = choice < 1.0f / 3.0f ? stops.x : choice < 2.0f / 3.0f ? stops.y : stops.z;
             const float reached = chosen > 0.0f ? -logf(fmaxf(1e-12f, 1.0f - rnd(seed))) / chosen : 1e30f;
             const float far = fminf(reached, limit);
             const float3 left = make_float3(expf(-stops.x * far), expf(-stops.y * far), expf(-stops.z * far));
             if (reached < limit) {
+                seedPhase(seed, QMC_FOG_SCATTER, 0, 12);
                 // Stopped: here the fog gives off its own light and sends the lamps' on towards the viewer. As in
                 // MoonRay by default, light scatters in fog once, so the path ends here.
                 const float density = average(stops * left);
@@ -1892,6 +1899,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
                 const float thickness = average(stops);
                 float3 carried = on, way = samplePhase(direction, fog.anisotropy, rnd(seed), rnd(seed));
                 for (unsigned order = 1; bounces && thickness > 0.0f && order < params.maxVolumeDepth; ++order) {
+                    seedPhase(seed, QMC_FOG_SCATTER, int(order), 12);
                     const float step = -logf(fmaxf(1e-12f, 1.0f - rnd(seed))) / thickness;
                     Hit met;
                     traceRadiance(here, way, met, step, SEEN_DIFFUSE);
@@ -2014,6 +2022,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
             }
         }
         if (!hit.valid) break;
+        seedPhase(seed, QMC_LIGHTS, 0, 12);
         if (ML_HAS(FEATURE_FOG) && (hit.flags & MATERIAL_VOLUME) && !emerged) {
             // A surface in the plane of the fog's edge, as the floor under a box of fog standing on it, is met as far
             // off as the edge, and which of the two the trace returns is chance; going on past the edge would miss the
@@ -2095,6 +2104,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
             }
             radiance += fibreLight(fibre, hit.p, hit.ng, throughput, roughDepth >= params.sampleClampDepth, seed, fromSet);
             float3 wi;
+            seedPhase(seed, QMC_BSDF, 0, 8);
             if (depth >= params.maxDepth || !fibreSample(fibre, seed, wi)) break;
             const float3 f = fibreEval(fibre, wi, bsdfPdf);
             if (bsdfPdf <= 0.0f || maxComponent(f) <= 0.0f) break;
@@ -2202,6 +2212,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
         radiance += directLight(surface, lobes, wo, frame, hit.p, ng, throughput, lit, seed, hit.lift, fromSet);
 
         // The light that enters a transmissive surface goes through it rather than scattering.
+        seedPhase(seed, QMC_BSDF, 0, 8);
         const float through = mayBounce ? transmitted(surface, wo) : 0.0f;
         const float u1 = rnd(seed), u2 = rnd(seed);
         if (rnd(seed) < through) {
@@ -2265,6 +2276,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
             const int tries = roughDepth == 0 ? 4 : 1;
             for (int attempt = 0; attempt < tries && !out && !lost; ++attempt) {
                 weight = entered;
+                seedPhase(seed, QMC_WALK_START, attempt, 4);
                 const float3 local = sampleDiffuse(rnd(seed), rnd(seed));
                 along = -(frame.t * local.x + frame.b * local.y + ns * local.z);
                 from = offsetOrigin(hit.p, ng, along);
@@ -2288,6 +2300,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
                 // step is weighed by the one density MoonRay gives it. That weighing is part of how MoonRay's
                 // random walk looks; a walk weighed by the book comes out brighter than MoonRay's.
                 bool scattered = false, steered = false;
+                seedPlain(seed);    // the steps draw from the old stream, as fog's do
                 for (int event = 0; event < 256; ++event) {
                     const float sum = weight.x + weight.y + weight.z;
                     if (!(sum > 0.0f)) { lost = true; break; }
@@ -2390,6 +2403,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
             int count = 0;
             float3 measured = vec(0.0f);
             for (int i = 0; i < tries; ++i) {
+                seedPhase(seed, QMC_DIFFUSION, i, 8);
                 // A colour channel by its albedo, and a distance from that channel's profile.
                 const float pick = rnd(seed) * total;
                 const float chosen = pick < albedo.x ? width.x : pick < albedo.x + albedo.y ? width.y : width.z;
@@ -2435,6 +2449,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
             for (int i = 0; i < count; ++i) found[i] = found[i] * made;
             // Through the solid: a way in, anywhere within 85 degrees of straight down, to a far side that faces away.
             for (int i = 0; i < tries && count < 8; ++i) {
+                seedPhase(seed, QMC_DIFFUSION_FAR, i, 4);
                 const float lowest = 0.0871557f;   // cos 85 degrees
                 const float z = 1.0f - rnd(seed) * (1.0f - lowest), ring = sqrtf(fmaxf(0.0f, 1.0f - z * z)), turn = 2.0f * ML_PI * rnd(seed);
                 const float3 in = -(frame.t * (ring * cosf(turn)) + frame.b * (ring * sinf(turn)) + ns * z);
@@ -2457,6 +2472,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
             for (int i = 0; i < count; ++i) { heavy[i] = found[i].x + found[i].y + found[i].z; whole += heavy[i]; }
             if (!(whole > 0.0f)) break;
             int taken = count - 1;
+            seedPhase(seed, QMC_DIFFUSION, 8, 4);    // which of the tries is followed
             float left = rnd(seed) * whole;
             for (int i = 0; i < count; ++i) { if (left < heavy[i]) { taken = i; break; } left -= heavy[i]; }
             if (!(heavy[taken] > 0.0f)) break;

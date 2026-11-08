@@ -56,6 +56,19 @@ build to an installed kit during development.
   Fresnel, so that Modo's and MoonRay's materials keep their own balance; refraction,
   clearcoat, subsurface, anisotropy, absorption and dispersion; and a distant light whose
   disc the camera can see, for the sun of a physical sky.
+- `src/device/qmc.h`: where a path's random numbers come from. The camera's draws and the first four bounces'
+  come from OpenQMC's Owen-scrambled Sobol sampler (`third_party/openqmc`, v0.7.1), so a pixel's samples
+  spread over each choice evenly instead of by chance; further draws come from the hashed LCG stream that
+  was used for all of them before (November 8, 2026). Each bounce is a domain of its own, and so is each part
+  of it (the lights a surface is lit by, its BSDF, each step through a gridded fog, each scattering in fog,
+  each try of a diffusion profile), so the same choice draws from the same dimensions in every sample. A
+  random walk's steps keep the old stream: a domain for each cost more than it gained. Building with
+  `-DML_QMC=0` gives the old stream alone. Measured against 2,048-sample renders of `tools/compare_moonlightipr.py`'s
+  scenes, at 64 samples it leaves about 35 to 40% less noise where light comes from lamps, an environment or even
+  fog (about half the samples for the same noise), 15 to 25% less on a VDB fog, diffusion subsurface, hair and
+  depth of field, 10% on glass and 3% on a random walk, for up to 10% more time a sample (15% in a VDB fog,
+  none on some scenes). The converged pictures match the old stream's to within 0.01% in brightness. OpenQMC's blue-noise variants were tried
+  and left out: about 5% less noise once blurred, for 20% more time.
 - The denoiser is given the light without the surface colour: the picture is divided by
   the albedo, denoised and multiplied back, so that a printed pattern is not smoothed away,
   and from 32 samples on a growing share of the picture's own detail is kept beside the

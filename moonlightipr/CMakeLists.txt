@@ -16,10 +16,12 @@ set(PYTHON_EXECUTABLE "${ROOT}/toolchain/msys64/ucrt64/bin/python.exe")
 # Device code is compiled by NVRTC, so no host CUDA compiler is needed.
 set(MOONLIGHTIPR_PTX "${CMAKE_BINARY_DIR}/shaders/MoonLightIPRKernel.ptx")
 file(GLOB deviceHeaders CONFIGURE_DEPENDS src/device/*.h)
+# OpenQMC, for the samples a path draws (src/device/qmc.h).
+file(GLOB openqmcHeaders CONFIGURE_DEPENDS third_party/openqmc/include/oqmc/*.h third_party/nvrtc-std/*)
 add_custom_command(OUTPUT "${MOONLIGHTIPR_PTX}"
   COMMAND "${PYTHON_EXECUTABLE}" "${ROOT}/tools/compile_moonlightipr_ptx.py"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/device/kernel.cu" "${MOONLIGHTIPR_PTX}"
-  DEPENDS src/device/kernel.cu ${deviceHeaders} "${ROOT}/tools/compile_moonlightipr_ptx.py" "${ROOT}/native-port/maps/ModoProcedural/modo_patterns.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/device/kernel.cu" "${MOONLIGHTIPR_PTX}" --openqmc
+  DEPENDS src/device/kernel.cu ${deviceHeaders} ${openqmcHeaders} "${ROOT}/tools/compile_moonlightipr_ptx.py" "${ROOT}/native-port/maps/ModoProcedural/modo_patterns.h"
   VERBATIM)
 add_custom_target(moonlightipr_ptx DEPENDS "${MOONLIGHTIPR_PTX}")
 

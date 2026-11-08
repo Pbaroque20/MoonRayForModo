@@ -23,6 +23,7 @@ def main():
     folder.mkdir(parents=True, exist_ok=True)
     # The procedural patterns the kernel shares with MoonRay's ModoProceduralMap count among its sources too.
     sources = [source] + sorted(source.parent.glob('*.h')) + [ROOT / 'tools/compile_moonlightipr_ptx.py', ROOT / 'native-port/maps/ModoProcedural/modo_patterns.h']
+    sources += sorted((ROOT / 'moonlightipr/third_party/openqmc/include/oqmc').glob('*.h')) + sorted((ROOT / 'moonlightipr/third_party/nvrtc-std').glob('*'))
     newest = max(path.stat().st_mtime for path in sources)
     wanted = [features for features in range(ALL) if not (folder / ('MoonLightIPRKernel_f%02d.ptx' % features)).is_file()
               or (folder / ('MoonLightIPRKernel_f%02d.ptx' % features)).stat().st_mtime < newest]
@@ -32,7 +33,7 @@ def main():
 
     def compile_one(features):
         target = folder / ('MoonLightIPRKernel_f%02d.ptx' % features)
-        done = subprocess.run([sys.executable, str(ROOT / 'tools/compile_moonlightipr_ptx.py'), str(source), str(target), '-DML_FEATURES=%du' % features],
+        done = subprocess.run([sys.executable, str(ROOT / 'tools/compile_moonlightipr_ptx.py'), str(source), str(target), '--openqmc', '-DML_FEATURES=%du' % features],
                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         return features, done.returncode, done.stdout.decode('utf-8', errors='replace')
 

@@ -17,7 +17,10 @@ assets = {'moonlightipr_session.exe': build / 'bin/moonlightipr_session.exe',
           # MoonLightIPR's own licence, and what it is and is not to MoonRay and DreamWorks.
           'licenses/MoonLightIPR.txt': root / 'moonlightipr/LICENSE', 'licenses/MoonLightIPR-NOTICE.md': root / 'moonlightipr/NOTICE.md',
           'licenses/CUDA.txt': xpu / 'cuda_cudart-windows-x86_64-12.8.90-archive/LICENSE',
-          'licenses/OptiX.txt': xpu / 'optix-dev/LICENSE.txt'}
+          'licenses/OptiX.txt': xpu / 'optix-dev/LICENSE.txt',
+          # OpenQMC, compiled into the kernel for the samples a path draws (moonlightipr/third_party/openqmc).
+          'licenses/OpenQMC-LICENSE.txt': root / 'moonlightipr/third_party/openqmc/LICENSE',
+          'licenses/OpenQMC-LICENSE-NVIDIA.txt': root / 'moonlightipr/third_party/openqmc/LICENSE-NVIDIA'}
 # The kernel without each set of its heavy features, for scenes that do not use them; the full kernel serves any missing.
 for variant in (build / 'shaders').glob('MoonLightIPRKernel_f*.ptx'):
     assets[variant.name] = variant
