@@ -578,7 +578,7 @@ def vdb_blackbody(path, grid, kelvin):
         return _BLACKBODY[key]
     target = cache_root() / 'VDB' / (hashlib.sha256(key.encode()).hexdigest()[:32] + '.vdb')
     if not target.is_file() or not target.stat().st_size:
-        tool = native.default_runtime() / 'modo_vdb_grid.exe'
+        tool = Path(native.default_runtime()) / 'modo_vdb_grid.exe'
         if not tool.is_file():
             raise OSError('this runtime has no VDB tool for blackbody colours (modo_vdb_grid.exe)')
         target.parent.mkdir(parents=True, exist_ok=True)

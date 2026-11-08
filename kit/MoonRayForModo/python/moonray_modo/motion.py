@@ -70,6 +70,10 @@ def apply_motion(scene, start, end, endpoints, preview=False):
             a,b=first.get(identity,original),last.get(identity,original)
             policy=scene.get('motion_policies',{}).get(str(identity).split('|')[0],'auto')
             changing=category=='meshes' and any(v['faces']!=original['faces'] or len(v['vertices'])!=len(original['vertices']) for v in (a,b))
+            # An Alembic mesh the kit reads (extra_geometry.alembic_scene_meshes): its file's velocities blur it, the
+            # shutter's ends reading the same sample or another.
+            if category=='meshes' and original.get('_alembic') and policy in ('auto','velocity'):
+                changing=True
             if changing and policy in ('auto','velocity'):
                 # A mesh rebuilt during the shutter (a fluid mesher's): its frame's mesh, its points moved along their
                 # velocities to the shutter's ends, where it has one a point; else still, where it is at the frame.

@@ -24,6 +24,7 @@ The current release is [0.5.3.1](https://github.com/Pbaroque20/MoonRayForModo/re
 
   ![JangaFX's free EmberGen explosion glowing from its flames grid: MoonRay left, XPU2's graphics card right](docs/images/vdb-fire-flames-grid.png)
 
+- **Alembic fluids and other changing meshes**: set an object's Geometry file (production settings) to an .abc, and the kit reads its meshes itself each frame, even ones whose points and faces change, as a fluid mesher's do (Modo's own loader shows one frame of those), blurred along the file's velocities. A mesh that changes during the shutter no longer stops a render with "Motion blur requires stable topology".
 - **VDB sequences**: a VDB shape's new file setting, Static or Sequence: set to Sequence, the numbered files beside the one you chose (fire_1.vdb, fire_2.vdb...) play with the timeline, with a frame offset, and the volume hidden or held outside its frames.
 - **VDB fire coloured by its temperature**: turn on a VDB shape's blackbody colour and choose its temperature grid as the emission grid: the fire glows deep red where it is cool, orange, then yellow-white where it is hottest, with kelvin at 1 to make it hotter or cooler. In MoonRay, XPU2 and MoonLightIPR. A MoonRay Source Override, on by default.
 
