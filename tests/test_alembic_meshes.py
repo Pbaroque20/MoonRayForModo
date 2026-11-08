@@ -6,6 +6,7 @@ import os
 import shutil
 import sys
 import tempfile
+import types
 import unittest
 from pathlib import Path
 
@@ -59,6 +60,65 @@ class AlembicMeshes(unittest.TestCase):
             for c in range(3):
                 self.assertAlmostEqual(mesh['vertices_close'][k][c] - mesh['vertices'][k][c], held['velocities'][k][c] * .5 / fps, places=4)
         self.assertTrue(any('blurred along its velocities' in w for w in scene.get('warnings', [])))
+
+
+class Channel:
+    def __init__(self, value):
+        self.value = value
+
+    def get(self):
+        return self.value
+
+
+class Item:
+    def __init__(self, name, kind, parent=None, **channels):
+        self.name, self.id, self.type, self.parent, self.channels, self.kids = name, name, kind, parent, channels, []
+        if parent is not None:
+            parent.kids.append(self)
+
+    def channel(self, name):
+        if name not in self.channels:
+            raise LookupError(name)
+        return Channel(self.channels[name])
+
+    def children(self):
+        return list(self.kids)
+
+
+@unittest.skipUnless(READER.is_file() and FLUID.is_file() and os.name == 'nt', 'needs the built Alembic reader and the tester file')
+class ImportedStreamingMeshes(AlembicMeshes):
+    """A file imported as Alembic Streaming Meshes (an Alembic Mesh item beside its Alembic File item, as the tester's
+    scene had it): Modo's stretched mesh is swapped for the file's own; a file that is not there leaves it, with a notice."""
+
+    def swap(self, file_path, frame=120):
+        from unittest import mock
+        group = Item('Mesher', 'groupLocator')
+        Item('Mesher.abc', 'AlembicFile', group, filePath=file_path, timeMode='Play-once', timeOffset=0.0, timeSpeed=1.0)
+        streamed = Item('xf', 'AlembicMesh', group)
+        document = types.SimpleNamespace(items=lambda kind: [streamed] if kind == 'AlembicMesh' else [])
+        modo = types.SimpleNamespace(Scene=lambda: document)
+        host = types.SimpleNamespace(world_matrix=lambda item: IDENTITY)
+        stretched = {'identity': 'xf|evaluated_material_0|0', 'name': 'xf', 'vertices': [[0, 0, 0]] * 3, 'faces': [[0, 1, 2]],
+                     'material': 'evaluated_material_0', 'visibility': [True, True, True, True, True, False], 'evaluated_geometry': True}
+        warnings = []
+        with mock.patch.dict(sys.modules, {'modo': modo, 'moonray_modo.host': host, 'PySide2': None}), \
+                mock.patch.dict(os.environ, {'MOONRAY_MODO_RUNTIME': str(self.runtime), 'MOONRAY_MODO_ALEMBIC_IMPORT': '1'}):
+            return extra_geometry.imported_alembic([stretched], frame, 24.0, warnings), warnings
+
+    def test_the_file_s_own_mesh_in_place_of_modo_s(self):
+        meshes, warnings = self.swap('C:' + str(FLUID)[2:].replace('\\', '/').lstrip('/'))
+        self.assertEqual(warnings, [])
+        self.assertEqual(len(meshes), 1)
+        mesh = meshes[0]
+        self.assertEqual((mesh['identity'], len(mesh['vertices']), mesh['material']), ('xf|abc|/xf/StormMesh', 126139, 'evaluated_material_0'))
+        self.assertTrue(mesh['_alembic'])
+        self.assertEqual(mesh['visibility'], [True, True, True, True, True, False])
+        self.assertEqual(len(mesh['velocities']), 126139)
+
+    def test_a_missing_file_leaves_modo_s_mesh_and_says_so(self):
+        meshes, warnings = self.swap('C:/nowhere/Mesher.abc')
+        self.assertEqual(meshes[0]['identity'], 'xf|evaluated_material_0|0')
+        self.assertTrue(any('is not there' in w for w in warnings))
 
 
 class ImportedTimes(unittest.TestCase):

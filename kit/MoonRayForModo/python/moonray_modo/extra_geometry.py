@@ -779,7 +779,7 @@ def attach(scene,settings):
             align(value,value)
         values.append(value)
     scene['extra_geometry']=values
-    scene['meshes']=imported_alembic(meshes,frame,float(scene.get('fps',modo.Scene().fps)))
+    scene['meshes']=imported_alembic(meshes,frame,float(scene.get('fps',modo.Scene().fps)),scene.setdefault('warnings',[]))
 
 
 def alembic_path(text):
@@ -813,37 +813,53 @@ def alembic_match(name,read):
     return found[0] if len(found)==1 else None
 
 
-def imported_alembic(meshes,frame,fps):
-    """Meshes Modo's own Alembic import streams (File > Import: a mesh item with an Alembic streaming deformer, beside
-    the Alembic File item that names the file), read again from the file by the kit (alembic_scene_meshes): Modo hands
-    the render cache a mesh of fixed size stretched to the file's, without the file's velocities, so a fluid mesh's
-    changing faces could not be blurred (a tester's Mesher.abc, 2026-11-08). Their material, visibility and flags are
-    kept; a mesh the file does not account for is left as Modo gives it. Switched off in Preferences (native.alembic_import)."""
+def imported_alembic(meshes,frame,fps,warnings=None):
+    """Meshes Modo's own Alembic import streams, read again from the file by the kit (alembic_scene_meshes): File > Import
+    makes either an Alembic Mesh item (Alembic Streaming Meshes) or a mesh item with an Alembic streaming deformer, each
+    beside the Alembic File item that names the file. Modo hands the render cache a mesh of fixed size stretched to the
+    file's, without the file's velocities, so a fluid mesh's changing faces could not be blurred (a tester's Mesher.abc,
+    2026-11-08). Their material, visibility and flags are kept; a mesh the kit cannot read from its file is left as Modo
+    gives it, with a notice why (warnings). Switched off in Preferences (native.alembic_import)."""
     from . import native
     if not native.alembic_import():return meshes
     import modo
     from .host import world_matrix
     document=modo.Scene()
-    try:deformers=list(document.items('ABCStreamingDeformer'))
-    except Exception:return meshes
-    if not deformers:return meshes
+    notices=warnings if warnings is not None else []
+    def notice(text):
+        if text not in notices:notices.append(text)
+    # What streams a mesh, and the items its timing is read from, first found first: an Alembic Mesh item's own, then its
+    # file's; a deformer's own.
+    streamed=[]
+    for kind in ('AlembicMesh','ABCStreamingDeformer'):
+        try:found=list(document.items(kind))
+        except Exception:found=[]
+        for source in found:
+            try:
+                if kind=='AlembicMesh':streamed.append((source,[source]))
+                elif int(source.channel('enable').get()):
+                    streamed.extend((item,[source]) for item in source.itemGraph('deformers').forward() if item.type=='mesh')
+            except Exception:continue
+    if not streamed:return meshes
     replaced={}
-    for deformer in deformers:
-        try:
-            if not int(deformer.channel('enable').get()):continue
-            targets=[item for item in deformer.itemGraph('deformers').forward() if item.type=='mesh']
-        except Exception:continue
-        for item in targets:
-            files=[sibling for sibling in (item.parent.children() if item.parent else document.items('AlembicFile')) if sibling.type=='AlembicFile']
-            if len(files)!=1:continue
-            path=alembic_path(files[0].channel('filePath').get())
-            if not path.is_file():continue
-            def number(name,default):
-                try:return float(deformer.channel(name).get())
-                except Exception:return default
-            try:mode=deformer.channel('timeMode').get()
-            except Exception:mode=''
-            replaced[item.id]=(item,path,mode,number('timeOffset',0.0),number('timeSpeed',1.0))
+    for item,timing in streamed:
+        files=[sibling for sibling in (item.parent.children() if item.parent else document.items('AlembicFile')) if sibling.type=='AlembicFile']
+        if len(files)!=1:
+            notice('%s comes from an Alembic file the kit cannot tell (%s beside it); it renders as Modo gives it.'%(item.name,'no Alembic File item' if not files else 'several Alembic File items'))
+            continue
+        path=alembic_path(files[0].channel('filePath').get())
+        if not path.is_file():
+            notice('%s: its Alembic file %s is not there; it renders as Modo gives it.'%(item.name,path))
+            continue
+        timing=timing+[files[0]]
+        def value(name,default):
+            for held in timing:
+                try:return held.channel(name).get()
+                except Exception:continue
+            return default
+        try:offset,speed=float(value('timeOffset',0.0)),float(value('timeSpeed',1.0))
+        except (TypeError,ValueError):offset,speed=0.0,1.0
+        replaced[item.id]=(item,path,value('timeMode',''),offset,speed)
     if not replaced:return meshes
     kept=[];made={}
     scalar=(bool,int,float,str)
@@ -858,11 +874,13 @@ def imported_alembic(meshes,frame,fps):
             plain=float(offset)+float(frame)/fps*float(speed)
             held=alembic_match(item.name,alembic_meshes_cached(path,plain))
             if held is None:
+                notice('%s: the kit cannot tell which mesh of %s it is; it renders as Modo gives it.'%(item.name,path.name))
                 kept.append(mesh);continue
             seconds=alembic_seconds(float(frame)/fps,mode,offset,speed,held['first'],held['last'])
             found=[m for m in alembic_scene_meshes(path,seconds,world_matrix(item),owner,item.name,mesh.get('material',''))
                    if m['identity'].endswith('|abc|'+held['name'])]
-        except (OSError,ValueError):
+        except (OSError,ValueError) as problem:
+            notice('%s: its Alembic file could not be read (%s); it renders as Modo gives it.'%(item.name,problem))
             kept.append(mesh);continue
         flags={k:v for k,v in mesh.items() if isinstance(v,scalar) and k not in ('identity','name','material','subdivision','subdivision_level','smooth')}
         if mesh.get('visibility') is not None:flags['visibility']=list(mesh['visibility'])

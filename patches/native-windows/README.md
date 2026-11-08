@@ -28,8 +28,8 @@ by default; off does as MoonRay itself does.
 - **VDB sequences when static is unticked**: a VDB shape with MoonRay's own `static` unticked (its geometry changes
   between frames) reads the numbered files beside the one chosen, the one for each frame, with a frame offset and the
   volume hidden or held outside its frames (`entities.vdb_sequenced`, `resolve_vdb`). Off, MoonRay reads the one file.
-- **Imported Alembic meshes read from their files**: a mesh Modo's own Alembic import streams (an `ABCStreamingDeformer`
-  beside an `AlembicFile` item) is read again from the .abc by the kit's reader (`native-port/modo_abc_reader.cpp`,
+- **Imported Alembic meshes read from their files**: a mesh Modo's own Alembic import streams (an `AlembicMesh` item, or a
+  mesh with an `ABCStreamingDeformer`, beside an `AlembicFile` item) is read again from the .abc by the kit's reader (`native-port/modo_abc_reader.cpp`,
   `extra_geometry.imported_alembic`), with the file's points, faces and velocities. Modo hands a render a mesh of fixed
   size stretched to the file's, without velocities; off, that mesh is rendered as Modo gives it.
 
