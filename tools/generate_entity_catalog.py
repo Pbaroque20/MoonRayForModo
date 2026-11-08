@@ -219,6 +219,30 @@ for category, (label, shared, classes) in CATEGORIES.items():
                                            'comment': 'The material tag of the Modo material this is rendered with; empty for the base material.'}
             attributes['modo_volume'] = {'name': 'modo_volume', 'type': 'SceneObject*', 'interface': 'VOLUME', 'group': 'Assignment', 'label': 'volume',
                                          'comment': 'The name of a MoonRay volume item that fills this shape.'}
+        if name == 'VdbGeometry':
+            # A VDB file of a sequence (a run of # in its name for the frame) and fire coloured by its temperature: the
+            # kit resolves both as it writes the scene (entities.resolve_vdb).
+            attributes['modo_vdb_file'] = {
+                'name': 'modo_vdb_file', 'type': 'Int', 'default': 0, 'enum': {'static': 0, 'sequence': 1}, 'group': 'VDB',
+                'label': 'file', 'comment': 'Static: the one VDB file, at every frame. Sequence: the numbered files beside it '
+                                           '(fire_1.vdb, fire_2.vdb...), the one for each frame.'}
+            attributes['modo_blackbody'] = {
+                'name': 'modo_blackbody', 'type': 'Bool', 'default': False, 'group': 'VDB', 'label': 'blackbody colour',
+                'comment': 'Colour the emission grid by temperature, as a hot body glows: deep red where it is cool, orange, then '
+                           'yellow-white where it is hottest. Choose the temperature grid as the emission grid. Off, it glows grey, '
+                           "coloured by the volume's incandescence gain mult."}
+            attributes['modo_blackbody_kelvin'] = {
+                'name': 'modo_blackbody_kelvin', 'type': 'Float', 'default': 3000.0, 'group': 'VDB', 'label': 'kelvin at 1',
+                'comment': 'The temperature, in kelvin, a value of 1 in the temperature grid stands for. Higher is whiter and hotter; '
+                           'lower is redder.'}
+            attributes['modo_frame_offset'] = {
+                'name': 'modo_frame_offset', 'type': 'Int', 'default': 0, 'group': 'VDB', 'label': 'frame offset',
+                'comment': "For a sequence of VDB files: added to the scene's frame to "
+                           'choose the file.'}
+            attributes['modo_sequence_hold'] = {
+                'name': 'modo_sequence_hold', 'type': 'Bool', 'default': False, 'group': 'VDB', 'label': 'hold first and last frames',
+                'comment': 'Before a sequence of VDB files begins, show its first file, and after it ends, its last. Off, the volume '
+                           'is not there outside its frames.'}
         if name == 'EnvLight':
             attributes['modo_replace_environment'] = {
                 'name': 'modo_replace_environment', 'type': 'Bool', 'default': False, 'group': 'Assignment', 'label': 'replace Modo environment',

@@ -22,6 +22,12 @@
 
   ![JangaFX's free EmberGen explosion glowing from its flames grid: MoonRay left, XPU2's graphics card right](images/vdb-fire-flames-grid.png)
 
+- **VDB sequences**: a VDB shape has a file setting, Static or Sequence. Set to Sequence, the numbered files beside the one chosen (fire_1.vdb, fire_2.vdb... or smoke.0001.vdb, smoke.0002.vdb...) are its frames: each frame renders its own file, in MoonRay, XPU2 and MoonLightIPR, live as the timeline moves. A frame offset shifts it; outside its frames the volume is not there, or, with hold first and last frames, shows its first or last file. A frame missing in the middle shows the one before.
+- **VDB fire coloured by its temperature** (blackbody): with a VDB shape's blackbody colour on and its temperature grid chosen as the emission grid, the fire glows in the colours a hot body glows at each voxel's temperature: deep red, orange, then yellow-white where it is hottest; hotter is also brighter. Kelvin at 1 sets the temperature a grid value of 1 stands for (3,000 K at first). The kit makes a copy of each frame's file with the colours added (about a second a frame, then kept). The incandescence gain mult still scales the glow. A MoonRay Source Override in Preferences ("VDB fire coloured by its temperature"), on by default.
+
+  ![The EmberGen explosion coloured by its temperature grid, rendered on XPU2's graphics card](images/vdb-fire-blackbody.png)
+
+- **MoonLightIPR keeps a VDB fire's colour**: the preview averaged a VDB volume's incandescence gain mult, so an orange fire glowed white; it now glows in its colour.
 - **Glowing fog from maps on XPU2's graphics card**: a volume whose emission, colour or density comes from procedural maps renders on the card, where before it sent the whole scene to the processor. Maps that read image textures still run on the processor.
 - **Volumes render faster in XPU2**: on the graphics card a VDB cloud renders in about two thirds of the time (88 s to 57 s on a test cloud) and glowing fog in about three quarters, with every pixel the same as before.
 - **A smaller XPU2 shader compile**: the compile could climb past 40 GB of memory and never finish; it now takes 8 to 15 minutes and at most about 11 GB. It will not begin without about 8 GB free, and stops itself, saying so, if memory runs low while it works.

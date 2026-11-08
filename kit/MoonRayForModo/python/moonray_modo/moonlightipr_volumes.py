@@ -97,7 +97,7 @@ def fogs(scene, runtime, warnings):
         tag = '|vdb|' + str(entry.get('identity', name))
         gain = max(0.0, float(entry.get('density', 1)))
         material = {'color': [0.0, 0.0, 0.0], 'roughness': 1.0, 'metallic': 0, '_volume': {
-            'extinction': [gain] * 3, 'albedo': working_color([float(v) for v in entry.get('volume_color', [1, 1, 1])]), 'emission': [given if glow else 0.0] * 3,
+            'extinction': [gain] * 3, 'albedo': working_color([float(v) for v in entry.get('volume_color', [1, 1, 1])]), 'emission': [max(0.0, float(v)) if glow else 0.0 for v in entry.get('emission_color') or [given] * 3],
             'anisotropy': float(entry.get('anisotropy', 0)), 'grid': file, 'rows': [v for row in inverse_rows(world) for v in row],
             'glow': glow, 'glow_rows': glow_rows}}
         mesh = {'name': name, 'identity': tag, 'vertices': UNIT_CUBE[0], 'faces': UNIT_CUBE[1], 'matrix': world, 'material': tag, 'smooth': False}

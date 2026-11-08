@@ -245,9 +245,37 @@ def presentation(name, key):
     return 'channel'
 
 
+def vdb_pattern(path):
+    """A VDB file that is one of a numbered sequence (its siblings differ only in the number before .vdb) as the
+    sequence's name, a run of # for the frame (one # where the numbers are not padded, as EmberGen writes them);
+    the file itself otherwise."""
+    import re
+    source = Path(path)
+    found = re.match(r'^(.*?)(\d+)(\D*)$', source.stem)
+    if not found:
+        return str(path)
+    head, number, tail = found.groups()
+    padded = len(number) > 1 and number.startswith('0')
+    shape = re.compile('^' + re.escape(head) + r'(\d+)' + re.escape(tail + source.suffix) + '$', re.IGNORECASE)
+    try:
+        others = [held.name for held in source.parent.iterdir() if held.name != source.name and shape.match(held.name)]
+    except OSError:
+        return str(path)
+    if not others:
+        return str(path)
+    return str(source.with_name(head + '#' * (len(number) if padded else 1) + tail + source.suffix))
+
+
 def vdb_grids(path):
-    """The names of the grids in an OpenVDB file, read from its header; none if it cannot be read."""
+    """The names of the grids in an OpenVDB file, read from its header; none if it cannot be read. A sequence's (a #
+    in its name) from its first file."""
     import struct
+    if '#' in Path(path).name:
+        frames = vdb_sequence(path)
+        if not frames:
+            return []
+        from .extra_geometry import asset_frame
+        path = asset_frame(path, frames[0])
     try:
         with open(path, 'rb') as stream:
             def number(code):
@@ -480,8 +508,118 @@ def checked(scene):
         parameters = validate(entity['class'], entity.get('parameters', {}))
         if decided and catalog()[entity['class']].get('category') == 'light':
             parameters = {key: value for key, value in parameters.items() if key != 'presence_shadows'}
+        if entity['class'] == 'VdbGeometry':
+            parameters = resolve_vdb(parameters, scene)
+            if parameters is None:  # a sequence's file, outside its frames, not held
+                continue
         result.append(dict(entity, parameters=parameters))
     return result
+
+
+# ---- VDB sequences and blackbody fire ------------------------------------------------------------
+
+def vdb_sequence(pattern):
+    """The frames a VDB sequence has on disk (a run of # in its file name for the frame), in order; none for one file."""
+    import re
+    path = Path(pattern)
+    if '#' not in path.name:
+        return []
+    found = re.match(r'^(.*?)(#+)(.*)$', path.name)
+    head, width, tail = found.group(1), len(found.group(2)), found.group(3)
+    digits = r'(\d{%d,})' % width if width > 1 else r'(\d+)'
+    shape = re.compile('^' + re.escape(head) + digits + re.escape(tail) + '$', re.IGNORECASE)
+    frames = []
+    try:
+        for held in path.parent.iterdir():
+            matched = shape.match(held.name)
+            if matched:
+                frames.append(int(matched.group(1)))
+    except OSError:
+        return []
+    return sorted(set(frames))
+
+
+def vdb_frame_file(pattern, frame, hold):
+    """A VDB sequence's file at a frame; outside its frames its first or last where held, else None."""
+    from .extra_geometry import asset_frame
+    if '#' not in Path(pattern).name:
+        return pattern
+    wanted = asset_frame(pattern, frame)
+    if Path(wanted).is_file():
+        return wanted
+    frames = vdb_sequence(pattern)
+    if not frames:
+        return wanted  # said missing where it is read
+    if frames[0] <= frame <= frames[-1]:
+        # A gap in the sequence: the frame before it.
+        return asset_frame(pattern, max(f for f in frames if f <= frame))
+    if not hold:
+        return None
+    return asset_frame(pattern, frames[0] if frame < frames[0] else frames[-1])
+
+
+# Blackbody copies made this session, by what they were made from.
+_BLACKBODY = {}
+
+
+def vdb_blackbody(path, grid, kelvin):
+    """The VDB file with "modo_blackbody" added: its float grid's temperatures as the colours a hot body glows
+    (native-port/modo_vdb_grid.cpp --blackbody), in the working space. Made once for a file as it stands and kept."""
+    import hashlib
+    import subprocess
+    from . import native
+    from .cache_folder import root as cache_root
+    from .working_space import enabled, TO_AP1
+    source = Path(path)
+    stat = source.stat()
+    matrix = [v for row in TO_AP1 for v in row] if enabled() else None
+    key = repr((str(source.resolve()), stat.st_size, stat.st_mtime_ns, grid, round(float(kelvin), 3), matrix, 'blackbody-v1'))
+    if key in _BLACKBODY and Path(_BLACKBODY[key]).is_file():
+        return _BLACKBODY[key]
+    target = cache_root() / 'VDB' / (hashlib.sha256(key.encode()).hexdigest()[:32] + '.vdb')
+    if not target.is_file() or not target.stat().st_size:
+        tool = native.default_runtime() / 'modo_vdb_grid.exe'
+        if not tool.is_file():
+            raise OSError('this runtime has no VDB tool for blackbody colours (modo_vdb_grid.exe)')
+        target.parent.mkdir(parents=True, exist_ok=True)
+        staged = target.with_suffix('.part')
+        command = [str(tool), '--blackbody', str(source), grid, repr(float(kelvin)), str(staged)] + ([repr(v) for v in matrix] if matrix else [])
+        done = subprocess.run(command, env=native.environment(native.default_runtime()), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                              creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0), timeout=600)
+        if done.returncode or not staged.is_file():
+            raise ValueError(done.stdout.decode(errors='replace').strip()[-300:] or 'the blackbody colours could not be made')
+        staged.replace(target)
+    _BLACKBODY[key] = str(target)
+    return str(target)
+
+
+def resolve_vdb(parameters, scene):
+    """A VDB shape's file as the frame and its fire need it: with its file set to Sequence, the numbered file for the
+    scene's frame (and its frame offset), none outside its frames unless held; with blackbody colour (native.vdb_blackbody), a copy of the file
+    whose added "modo_blackbody" grid is the emission grid's temperatures in colour. The kit's own settings go no
+    further; MoonRay, XPU2 and MoonLightIPR read what this gives."""
+    model = parameters.get('model') or ''
+    if not model:
+        return parameters
+    # File set to Sequence: the numbered files beside the one chosen (a name with # is a sequence as it is).
+    if int(parameters.get('modo_vdb_file', 0) or 0) == 1 and '#' not in Path(model).name:
+        model = vdb_pattern(model)
+    resolved = dict(parameters)
+    frame = int(scene.get('frame', 0) or 0) + int(parameters.get('modo_frame_offset', 0) or 0)
+    found = vdb_frame_file(model, frame, bool(parameters.get('modo_sequence_hold', False)))
+    if found is None:
+        return None
+    resolved['model'] = found
+    grid = parameters.get('emission_grid') or ''
+    if grid and parameters.get('modo_blackbody') and Path(found).is_file():
+        from .native import vdb_blackbody as switched_on
+        if switched_on():
+            try:
+                resolved['model'] = vdb_blackbody(found, grid, parameters.get('modo_blackbody_kelvin', 3000.0) or 3000.0)
+                resolved['emission_grid'] = 'modo_blackbody'
+            except (OSError, ValueError) as problem:
+                print('MoonRay: blackbody colours for %s were not made (%s); its fire glows grey' % (Path(found).name, problem))
+    return resolved
 
 
 # ---- Ramps -------------------------------------------------------------------------------------
@@ -1619,6 +1757,7 @@ def emitting_area(name, light):
 def preview(scene, warnings):
     """The snapshot with its entities turned into what MoonLightIPR draws: ordinary lights,
     environments and meshes. What has no counterpart there is named in warnings."""
+    from .working_space import color as working_color
     entities = scene.get('entities')
     if not entities:
         return scene
@@ -1720,7 +1859,9 @@ def preview(scene, warnings):
                           'density_grid': value(entity, 'density_grid') or 'density', 'emission_grid': value(entity, 'emission_grid') or '',
                           'density': sum(stops) / 3, 'volume_color': [float(v) for v in (value(shader, 'color_mult') or [1.0, 1.0, 1.0])],
                           'anisotropy': float(value(shader, 'anisotropy') or 0.0),
-                          'emission': sum(float(v) for v in (value(shader, 'incandescence_gain_mult') or [1.0, 1.0, 1.0])) / 3})
+                          'emission': sum(float(v) for v in (value(shader, 'incandescence_gain_mult') or [1.0, 1.0, 1.0])) / 3,
+                          # Its colour too: an orange incandescence, averaged, glowed white in MoonLightIPR.
+                          'emission_color': working_color([float(v) for v in (value(shader, 'incandescence_gain_mult') or [1.0, 1.0, 1.0])])})
         elif category in ('lightfilter', 'volume'):
             # A filter shows through the lights that name it, and a volume in the shape that holds it; what cannot be
             # applied is said there.

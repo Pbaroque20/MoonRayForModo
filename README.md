@@ -24,6 +24,12 @@ The current release is [0.5.3.1](https://github.com/Pbaroque20/MoonRayForModo/re
 
   ![JangaFX's free EmberGen explosion glowing from its flames grid: MoonRay left, XPU2's graphics card right](docs/images/vdb-fire-flames-grid.png)
 
+- **VDB sequences**: a VDB shape's new file setting, Static or Sequence: set to Sequence, the numbered files beside the one you chose (fire_1.vdb, fire_2.vdb...) play with the timeline, with a frame offset, and the volume hidden or held outside its frames.
+- **VDB fire coloured by its temperature**: turn on a VDB shape's blackbody colour and choose its temperature grid as the emission grid: the fire glows deep red where it is cool, orange, then yellow-white where it is hottest, with kelvin at 1 to make it hotter or cooler. In MoonRay, XPU2 and MoonLightIPR. A MoonRay Source Override, on by default.
+
+  ![The EmberGen explosion coloured by its temperature grid, rendered on XPU2's graphics card](docs/images/vdb-fire-blackbody.png)
+
+- **MoonLightIPR keeps a VDB fire's colour**: an orange incandescence no longer glows white in the preview.
 - **Glowing fog from maps on XPU2's graphics card**: a volume whose glow or colour comes from procedural maps (a gradient, a noise) renders on the card instead of the processor. Maps that read image files still glow on the processor.
 
   ![A fog box glowing orange to blue from a gradient map, rendered on XPU2's graphics card](docs/images/xpu2-mapped-glow.png)

@@ -391,6 +391,13 @@ def bump_node():
     return _switch('bump_node', 'MOONRAY_MODO_BUMP_NODE')
 
 
+def vdb_blackbody():
+    """Whether a VDB shape set to blackbody colour glows in the colours of its temperature grid (entities.resolve_vdb,
+    native-port/modo_vdb_grid.cpp --blackbody): the kit adds a colour grid to a copy of the file. MoonRay has no blackbody
+    of its own; off, the fire glows grey, coloured by the volume's incandescence gain mult."""
+    return _switch('vdb_blackbody', 'MOONRAY_MODO_VDB_BLACKBODY')
+
+
 # What MoonRay is called in the MoonRay Terminal, by the execution mode it was started in.
 ENGINE_NAMES = {'vectorized': 'MoonRay Vector', 'vector': 'MoonRay Vector', 'scalar': 'MoonRay Scalar', 'xpu': 'MoonRay XPU',
                 'auto': 'MoonRay Auto'}

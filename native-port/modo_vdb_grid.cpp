@@ -6,6 +6,12 @@
 // own space (basis vectors in rows, as MoonRay and Modo hold a transform), then the values, x fastest. A grid of
 // colours, as an emission grid is, is written as "MLV4" with four numbers a cell: red, green, blue and one to spare.
 //
+//   modo_vdb_grid --blackbody <file.vdb> <grid name> <kelvin at 1> <output.vdb> [nine numbers: a 3x3 matrix, rows]
+// copies every grid of the file and adds "modo_blackbody": an RGB grid of the float grid's shape (its topology copied, as
+// MoonRay's patched VdbVolume makes a grey one), each value v as the colour a black body glows at v times the kelvin, at a
+// luminance of one, times v: hotter is brighter and whiter. The colour is linear Rec.709, or through the matrix (the
+// kit's working space). For a VDB's temperature grid, as EmberGen, Houdini and Blender write it.
+//
 //   modo_vdb_grid --ball <output.vdb>
 // writes a small grid named "density" for tests: a ball of fog, thickest in the middle, with a hole off to one side,
 // and one named "emission": a smaller ball of orange light inside it, as colours.
@@ -20,9 +26,85 @@
 #include <string>
 #include <vector>
 
+// The CIE 1931 2-degree colour matching functions, Wyman, Sloan and Shirley's multi-lobe fit (JCGT 2013).
+static double lobe(double x, double mu, double below, double above) {
+    const double t = (x - mu) / (x < mu ? below : above);
+    return std::exp(-0.5 * t * t);
+}
+// A black body's colour at kelvin, linear Rec.709 at a luminance (Y) of one; none below 1 K. Planck's law over 380 to
+// 780 nm, every nanometre.
+static openvdb::Vec3d blackbody(double kelvin) {
+    if (!(kelvin > 1.0)) return openvdb::Vec3d(0.0);
+    const double h = 6.62607015e-34, c = 2.99792458e8, k = 1.380649e-23;
+    double X = 0, Y = 0, Z = 0;
+    for (int nm = 380; nm <= 780; ++nm) {
+        const double l = nm * 1e-9;
+        const double radiance = 1.0 / (std::pow(l, 5.0) * (std::exp(h * c / (l * k * kelvin)) - 1.0));
+        X += radiance * (1.056 * lobe(nm, 599.8, 37.9, 31.0) + 0.362 * lobe(nm, 442.0, 16.0, 26.7) - 0.065 * lobe(nm, 501.1, 20.4, 26.2));
+        Y += radiance * (0.821 * lobe(nm, 568.8, 46.9, 40.5) + 0.286 * lobe(nm, 530.9, 16.3, 31.1));
+        Z += radiance * (1.217 * lobe(nm, 437.0, 11.8, 36.0) + 0.681 * lobe(nm, 459.0, 26.0, 13.8));
+    }
+    if (!(Y > 0.0) || !std::isfinite(Y)) return openvdb::Vec3d(0.0);
+    X /= Y, Z /= Y, Y = 1.0;
+    const openvdb::Vec3d rgb(3.2404542 * X - 1.5371385 * Y - 0.4985314 * Z, -0.9692660 * X + 1.8760108 * Y + 0.0415560 * Z,
+                             0.0556434 * X - 0.2040259 * Y + 1.0572252 * Z);
+    return openvdb::Vec3d(std::max(0.0, rgb[0]), std::max(0.0, rgb[1]), std::max(0.0, rgb[2]));
+}
+
 int main(int argc, char** argv) {
     try {
         openvdb::initialize();
+        if ((argc == 6 || argc == 15) && std::string(argv[1]) == "--blackbody") {
+            const std::string wanted = argv[3];
+            const double kelvin = std::atof(argv[4]);
+            double matrix[9] = {1, 0, 0, 0, 1, 0, 0, 0, 1};
+            if (argc == 15)
+                for (int i = 0; i < 9; ++i) matrix[i] = std::atof(argv[6 + i]);
+            openvdb::io::File file(argv[2]);
+            file.open();
+            openvdb::GridPtrVecPtr grids = file.getGrids();
+            file.close();
+            openvdb::FloatGrid::Ptr temperature;
+            for (const auto& grid : *grids)
+                if (grid->getName() == wanted) temperature = openvdb::gridPtrCast<openvdb::FloatGrid>(grid);
+            if (!temperature) throw std::runtime_error("the file has no float grid named " + wanted);
+            // The colour of each temperature, from a table every 5 K to the hottest voxel's, read between its entries.
+            float hottest = 0.0f;
+            for (auto it = temperature->cbeginValueOn(); it; ++it) hottest = std::max(hottest, *it);
+            const double step = 5.0, top = std::max(800.0, double(hottest) * kelvin) + step;
+            std::vector<openvdb::Vec3d> table(size_t(top / step) + 2);
+            for (size_t i = 0; i < table.size(); ++i) {
+                const openvdb::Vec3d rgb = blackbody(i * step);
+                table[i] = openvdb::Vec3d(matrix[0] * rgb[0] + matrix[1] * rgb[1] + matrix[2] * rgb[2],
+                                          matrix[3] * rgb[0] + matrix[4] * rgb[1] + matrix[5] * rgb[2],
+                                          matrix[6] * rgb[0] + matrix[7] * rgb[1] + matrix[8] * rgb[2]);
+            }
+            auto glow = [&](float v) {
+                if (!(v > 0.0f) || !std::isfinite(v)) return openvdb::Vec3f(0.0f);
+                // Below the Draper point (about 800 K) a body gives off no light one sees, and the colour matching fit
+                // turns green there: such a voxel takes 800 K's deep red, dimmed by its own value.
+                const double at = std::min(std::max(double(v) * kelvin, 800.0) / step, double(table.size() - 2));
+                const size_t i = size_t(at);
+                const openvdb::Vec3d rgb = table[i] * (1.0 - (at - i)) + table[i + 1] * (at - i);
+                return openvdb::Vec3f(float(rgb[0] * v), float(rgb[1] * v), float(rgb[2] * v));
+            };
+            const float background = temperature->background();
+            openvdb::Vec3SGrid::Ptr colours = openvdb::Vec3SGrid::create(glow(background));
+            colours->setTransform(temperature->transform().copy());
+            colours->setName("modo_blackbody");
+            colours->tree().topologyUnion(temperature->tree());
+            const openvdb::FloatGrid::ConstAccessor values = temperature->getConstAccessor();
+            for (auto it = colours->beginValueAll(); it; ++it) it.setValue(glow(values.getValue(it.getCoord())));
+            openvdb::GridPtrVec written;
+            for (const auto& grid : *grids)
+                if (grid->getName() != "modo_blackbody") written.push_back(grid);
+            written.push_back(colours);
+            openvdb::io::File out(argv[5]);
+            out.write(written);
+            out.close();
+            std::cout << "blackbody " << hottest << " " << hottest * kelvin << " K" << std::endl;
+            return 0;
+        }
         if (argc == 3 && std::string(argv[1]) == "--ball") {
             openvdb::FloatGrid::Ptr grid = openvdb::FloatGrid::create(0.0f);
             grid->setName("density");

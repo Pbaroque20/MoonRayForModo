@@ -6908,6 +6908,30 @@
         "name": "model",
         "type": "String"
       },
+      "modo_blackbody": {
+        "comment": "Colour the emission grid by temperature, as a hot body glows: deep red where it is cool, orange, then yellow-white where it is hottest. Choose the temperature grid as the emission grid. Off, it glows grey, coloured by the volume's incandescence gain mult.",
+        "default": false,
+        "group": "VDB",
+        "label": "blackbody colour",
+        "name": "modo_blackbody",
+        "type": "Bool"
+      },
+      "modo_blackbody_kelvin": {
+        "comment": "The temperature, in kelvin, a value of 1 in the temperature grid stands for. Higher is whiter and hotter; lower is redder.",
+        "default": 3000.0,
+        "group": "VDB",
+        "label": "kelvin at 1",
+        "name": "modo_blackbody_kelvin",
+        "type": "Float"
+      },
+      "modo_frame_offset": {
+        "comment": "For a sequence of VDB files: added to the scene's frame to choose the file.",
+        "default": 0,
+        "group": "VDB",
+        "label": "frame offset",
+        "name": "modo_frame_offset",
+        "type": "Int"
+      },
       "modo_material": {
         "comment": "The material tag of the Modo material this is rendered with; empty for the base material.",
         "default": "",
@@ -6915,6 +6939,26 @@
         "label": "material tag",
         "name": "modo_material",
         "type": "String"
+      },
+      "modo_sequence_hold": {
+        "comment": "Before a sequence of VDB files begins, show its first file, and after it ends, its last. Off, the volume is not there outside its frames.",
+        "default": false,
+        "group": "VDB",
+        "label": "hold first and last frames",
+        "name": "modo_sequence_hold",
+        "type": "Bool"
+      },
+      "modo_vdb_file": {
+        "comment": "Static: the one VDB file, at every frame. Sequence: the numbered files beside it (fire_1.vdb, fire_2.vdb...), the one for each frame.",
+        "default": 0,
+        "enum": {
+          "sequence": 1,
+          "static": 0
+        },
+        "group": "VDB",
+        "label": "file",
+        "name": "modo_vdb_file",
+        "type": "Int"
       },
       "modo_volume": {
         "comment": "The name of a MoonRay volume item that fills this shape.",

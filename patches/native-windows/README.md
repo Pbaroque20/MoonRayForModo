@@ -6,7 +6,7 @@ are portability changes. This file explains the ones whose reason is not obvious
 
 ## Switches on the Source Overrides page that change no source
 
-Six switches on Preferences > MoonRay Source Overrides are the plugin's own, with no patch behind them. Each is on
+Seven switches on Preferences > MoonRay Source Overrides are the plugin's own, with no patch behind them. Each is on
 by default; off does as MoonRay itself does.
 
 - **Low-latency rendering**: MoonRay runs below Modo's priority and leaves one processor thread free.
@@ -19,6 +19,12 @@ by default; off does as MoonRay itself does.
 - **Bump node in MoonShine graphs**: the MoonShine graph's Bump node turns a height (an image or any texture) into a
   shading normal, as the plugin's Shader Tree Bump layers do (its own ModoTextureMap in height mode, with a bump
   strength). MoonRay has no node of its own for it; off, the node leaves the normal flat.
+- **VDB fire coloured by its temperature**: a VDB shape set to blackbody colour glows in the colours of its emission
+  grid's temperatures. The kit adds an RGB grid, `modo_blackbody`, to a cached copy of the file
+  (`native-port/modo_vdb_grid.cpp --blackbody`: Planck's law over the CIE 1931 matching functions, Wyman, Sloan and Shirley's
+  fit, linear Rec.709 or the working space, at a luminance of one, times the grid's value; below 800 K, 800 K's deep red),
+  and points MoonRay, XPU2 and MoonLightIPR at it (`entities.resolve_vdb`). MoonRay has no blackbody of its own; off, the
+  fire glows in its incandescence gain mult's one colour.
 
 ## `moonray.patch`: `lib/rendering/mcrt_common/Clock.h`, the heat map's clock on Windows
 

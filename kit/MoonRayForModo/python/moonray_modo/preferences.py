@@ -66,6 +66,8 @@ KEYS = {
     'ngon_ears': (True, bool),
     # The MoonShine graph's Bump node bumps (native.bump_node).
     'bump_node': (True, bool),
+    # VDB fire coloured by its temperature (native.vdb_blackbody).
+    'vdb_blackbody': (True, bool),
     'auto_xpu': (True, bool),
     # Realtime with MoonRay where XPU2 does not render the preview (the standard XPU chosen): off, on MoonRay's processor
     # path (vector), or on the graphics card (XPU). xpu_realtime is the switch it was before 0.5.3.1, read for its default.
