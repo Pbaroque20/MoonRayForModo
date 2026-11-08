@@ -26,7 +26,13 @@ The current release is [0.5.3.1](https://github.com/Pbaroque20/MoonRayForModo/re
 
 - **Alembic fluids and other changing meshes**: set an object's Geometry file (production settings) to an .abc, and the kit reads its meshes itself each frame, even ones whose points and faces change, as a fluid mesher's do (Modo's own loader shows one frame of those), blurred along the file's velocities. A mesh that changes during the shutter no longer stops a render with "Motion blur requires stable topology".
 - **VDB sequences**: untick a VDB shape's static (now beside its file) and the numbered files beside the one you chose (fire_1.vdb, fire_2.vdb...) play with the timeline, with a frame offset, and the volume hidden or held outside its frames.
+
+  ![The EmberGen explosion as a VDB sequence, coloured by its temperature: frames 20, 45, 70 and 100, rendered on XPU2's graphics card](docs/images/vdb-fire-sequence.png)
+
 - **Imported Alembic fluids blur**: a mesh brought in with File > Import of an .abc renders from the file itself, its own points and faces at each frame, blurred along the file's velocities. Modo's own import stretched one fixed mesh and had no velocities to blur a fluid mesher's mesh with.
+
+  ![A fluid mesher's Alembic mesh at frames 90, 120, 150 and 180, its faces changing every frame, its drops blurred along the file's velocities, rendered on XPU2's graphics card](docs/images/alembic-fluid-frames.png)
+
 - **VDB fire coloured by its temperature**: turn on a VDB shape's blackbody colour and choose its temperature grid as the emission grid: the fire glows deep red where it is cool, orange, then yellow-white where it is hottest, with kelvin at 1 to make it hotter or cooler. In MoonRay, XPU2 and MoonLightIPR. A MoonRay Source Override, on by default.
 
   ![The EmberGen explosion coloured by its temperature grid, rendered on XPU2's graphics card](docs/images/vdb-fire-blackbody.png)
