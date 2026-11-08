@@ -151,7 +151,8 @@ struct LaunchParams {
     unsigned char* scratch;
     U64L scratchStride;
     U64L glitterOffset;  // the glitter scratch's place in a thread's scratch (0: the scene has no glitter)
-    U64L registersOffset;  // the map registers' place in a thread's scratch: two runs of mapRegisters (X2_MAP_REGISTERS)
+    U64L registersOffset;  // the map registers' place in a thread's scratch: two runs of mapRegisters (X2_MAP_REGISTERS),
+                           // a third for mapped volumes' maps where the card runs them (deviceVolumeMaps)
     U32 mapRegisters;
     U64L traversable;  // OptixTraversableHandle
     U64L volumeTraversable;  // the volumes' bounds (0: none)

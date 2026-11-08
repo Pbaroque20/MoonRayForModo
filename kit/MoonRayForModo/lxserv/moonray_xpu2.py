@@ -120,6 +120,10 @@ def state():
     held, why = native.xpu2_shaders_state()
     if held == 'current': return UP_TO_DATE
     if held == 'stale': return 'Out of date' + (' (%s)' % why if why else '')
+    # Memory (the compile's guard, asked 2026-11-07): not begun for want of free memory, or stopped as it ran low.
+    tail = ' '.join(lines[-3:])
+    if 'not enough free memory' in tail: return 'Not compiled (needs more free memory: close other programs)'
+    if 'memory ran low' in tail: return 'Stopped (memory ran low: close other programs, compile again)'
     # Just that (asked 2026-10-30); why a compile failed is in its log and the Render Log.
     return 'Not compiled'
 
