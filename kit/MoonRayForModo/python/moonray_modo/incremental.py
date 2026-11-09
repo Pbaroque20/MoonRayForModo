@@ -151,6 +151,8 @@ def transform_targets(scene,identities):
     try:
         if scene.items('meshInst',superType=False) or scene.items('replicator',superType=False):return None
         if scene.items('chanModify',superType=True):return None
+        # A Scene Proxy's surfaces are the render cache's, placed by it: read again whole.
+        if scene.items('proxy',superType=False):return None
         result=set()
         for identity in identities:
             item=scene.item(identity)

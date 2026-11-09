@@ -30,6 +30,7 @@ The current release is [0.5.3.1](https://github.com/Pbaroque20/MoonRayForModo/re
 
   ![The EmberGen explosion as a VDB sequence, coloured by its temperature: frames 20, 45, 70 and 100, rendered on XPU2's graphics card](docs/images/vdb-fire-sequence.png)
 
+- **Scene Proxies render with their own materials**: each proxy's geometry once, where it stands, shaded by the scene file it loads, as Modo renders it. Modo may crash as it quits with such a scene still open (Modo's own; your work and settings are kept).
 - **Imported Alembic fluids blur**: a mesh brought in with File > Import of an .abc renders from the file itself, its own points and faces at each frame, blurred along the file's velocities. Modo's own import stretched one fixed mesh and had no velocities to blur a fluid mesher's mesh with.
 
   ![A fluid mesher's Alembic mesh at frames 90, 120, 150 and 180, its faces changing every frame, its drops blurred along the file's velocities, rendered on XPU2's graphics card](docs/images/alembic-fluid-frames.png)

@@ -47,6 +47,188 @@ def native_stacks(scene, surfaces):
     return [[layer for layer in line.split(';') if layer] for line in lines[:len(surfaces)]]
 
 
+# The scenes the scene's Scene Proxies load, for the reading in progress (proxies). A proxy's surfaces are shaded by the
+# Shader Tree of the scene it loads, as Modo renders them, and Modo keeps that scene out of every list of scenes Python
+# can read: the adapter gives it to a listener as the reading is made (_Catching). A surface shaded so has its scene's
+# place here as 'shading_scene'.
+_FOREIGN = []
+
+
+def shading_scene(surface, scene):
+    """The scene whose Shader Tree shades a surface: a Scene Proxy's own, or the scene rendered."""
+    place = surface.get('shading_scene')
+    return _FOREIGN[place] if place is not None and place < len(_FOREIGN) else scene
+
+
+def _shading_key(surface):
+    """Which Shader Tree a surface's stack is of, for its material's tag to be kept by: None for the scene rendered,
+    the file of a Scene Proxy's scene."""
+    place = surface.get('shading_scene')
+    if place is None or place >= len(_FOREIGN):
+        return None
+    return _FOREIGN[place].scene.Filename() or 'proxy %d' % place
+
+
+def _as_in_own_scene(surface, scene):
+    """A surface as its own Shader Tree knows it: a Scene Proxy's has the item the proxy renders (its Render Item, by
+    name in the proxy's scene) for its item, for item masks there to find; any other, itself."""
+    where = shading_scene(surface, scene)
+    if where is scene:
+        return surface
+    key = ('render_item', surface['source_item'], _shading_key(surface))
+    if key not in _RENDER_ITEMS:
+        found = surface['source_item']
+        try:
+            name = str(scene.item(surface['source_item']).channel('itemRender').get() or '')
+            found = next((item.id for item in where.iterItems() if item.name == name), found)
+        except Exception:
+            pass
+        _RENDER_ITEMS[key] = found
+    return dict(surface, source_item=_RENDER_ITEMS[key])
+
+
+def source_of(surface, scene):
+    """A surface's item: in the scene rendered, or, for a Scene Proxy's, in the scene the proxy loads, which the render
+    cache can name it by. None where neither has it."""
+    for where in (scene, shading_scene(surface, scene)):
+        try:
+            return where.item(surface['source_item'])
+        except (LookupError, RuntimeError, TypeError):
+            pass
+    return None
+
+
+# What each Scene Proxy renders, as its own scene names it, for the reading in progress.
+_RENDER_ITEMS = {}
+
+
+def release_proxies():
+    """Let go of the scenes Scene Proxies load, once a reading is done with them: held on, Modo crashed as it quit."""
+    global _FOREIGN, _CAUGHT
+    _FOREIGN = []
+    _CAUGHT = None
+    _RENDER_ITEMS.clear()
+
+
+def _scene_catcher():
+    import lx
+    import lxifc
+
+    class Catcher(lxifc.SceneItemListener):
+        """Takes the scenes the adapter gives it (MR_geometry_foreign_catcher), as a scene item listener's SceneCreate. Only that
+        one call is ever made of it; it is never added to Modo's listeners."""
+        def __init__(self):
+            self.scenes = []
+
+        def sil_SceneCreate(self, scene):
+            self.scenes.append(lx.object.Scene(scene))
+    return Catcher
+
+
+def _SceneCatcher():
+    global _catcher_class
+    if _catcher_class is None:
+        _catcher_class = _scene_catcher()
+    return _catcher_class()
+
+
+_catcher_class = None
+
+
+def _proxied(scene):
+    """The identifiers of a scene's Scene Proxies (none where it has none or cannot say)."""
+    try:
+        return {item.id for item in scene.items('proxy', superType=False)}
+    except (LookupError, RuntimeError, TypeError, ValueError, AttributeError):
+        return set()
+
+
+class _Catching:
+    """While a reading (capture) is made of a scene with Scene Proxies: the adapter notes each surface shaded by a
+    proxy's own scene and gives that scene to a listener (MR_geometry_foreign_catcher); the scenes are kept for
+    proxies to take (_CAUGHT). An adapter older than the kit notes nothing, and proxies says so."""
+    def __init__(self, bridge):
+        self.bridge, self.set = bridge, None
+
+    def __enter__(self):
+        global _CAUGHT
+        try:
+            import modo
+            scene = modo.Scene()
+            if not _proxied(scene):
+                return self
+            self.set = self.bridge.MR_geometry_foreign_catcher
+        except (AttributeError, ImportError, LookupError, RuntimeError):
+            self.set = None
+            return self
+        import lx
+        self.set.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+        self.set.restype = None
+        self.catcher = _SceneCatcher()
+        self.handle = lx.object.Unknown(self.catcher)
+        _CAUGHT = None
+        self.set(ctypes.c_void_p(self.handle.__peekobj__()), ctypes.c_void_p(scene.scene.__peekobj__()))
+        return self
+
+    def __exit__(self, *exc):
+        global _CAUGHT
+        if self.set is not None:
+            self.set(None, None)
+            _CAUGHT = list(self.catcher.scenes)
+            del self.handle, self.catcher
+        return False
+
+
+# The scenes the last reading's Scene Proxies load, in the order the adapter gave them (_Catching), or None where that
+# reading noted none (no proxies, or an adapter older than the kit).
+_CAUGHT = None
+
+
+def proxies(data, scene, time, warnings, displaced=True):
+    """Ready a render cache reading (capture) for its Scene Proxies, where the scene has any: each proxy's surfaces
+    once (Modo's render cache gives them twice in the same place: as the proxy's source, and as the instance of it
+    that Modo renders), and shaded by the proxy's own scene, as the reading noted ('shading_scene'). Without proxies,
+    nothing is done."""
+    global _FOREIGN
+    _FOREIGN = []
+    _RENDER_ITEMS.clear()
+    kept = _proxied(scene)
+    if not kept:
+        for surface in data['surfaces']:
+            surface.pop('shading_scene', None)
+        return
+    instanced = {surface['source_id'] for surface in data['surfaces']
+                 if surface.get('instanced') and surface['source_item'] in kept}
+    data['surfaces'] = [surface for surface in data['surfaces']
+                        if surface.get('instanced') or surface['source_item'] not in kept or surface['id'] not in instanced]
+    # A proxy with a Render Item is given a third time: an instance named for that item in the proxy's own scene (not an
+    # item of this one), where the proxy's own instance of the same surface already stands. It is that one again.
+    placed = {(surface['source_id'], tuple(round(v, 6) for v in surface.get('matrix') or ()))
+              for surface in data['surfaces'] if surface.get('instanced') and surface['source_item'] in kept}
+
+    def ours(identity):
+        try:
+            scene.item(identity)
+            return True
+        except (LookupError, RuntimeError, TypeError):
+            return False
+    data['surfaces'] = [surface for surface in data['surfaces']
+                        if not surface.get('instanced') or surface['source_item'] in kept
+                        or (surface['source_id'], tuple(round(v, 6) for v in surface.get('matrix') or ())) not in placed
+                        or ours(surface['source_item'])]
+    import modo
+    if _CAUGHT is None:
+        for surface in data['surfaces']:
+            surface.pop('shading_scene', None)
+        warnings.append("Scene Proxies are shaded by the scene's own Shader Tree: the geometry adapter is older than "
+                        'the kit. Install the kit again to shade them by their own scenes.')
+        return
+    _FOREIGN = [modo.Scene(found) for found in _CAUGHT]
+    for surface in data['surfaces']:
+        if surface.get('shading_scene') is not None and surface['shading_scene'] >= len(_FOREIGN):
+            surface.pop('shading_scene')
+
+
 def assign_materials(data, scene, warnings, shading_kept=False):
     """Use host-resolved Shader Tree membership for each evaluated surface. shading_kept: the Shader Tree is as it was at
     the last reading (an edit of meshes alone), and each stack's material as it was made then is taken again."""
@@ -55,9 +237,14 @@ def assign_materials(data, scene, warnings, shading_kept=False):
     from .layers import ordered_items, collect
     from .mask_types import tag_kind
     global _kept_stacks
-    items=list(ordered_items(scene.renderItem))
-    order={item.id:index for index,item in enumerate(items)}
-    by_id={item.id:item for item in items}
+    # Each Shader Tree's items, their order and themselves by identifier: the scene's, and a Scene Proxy's own (proxies).
+    trees={}
+    def tree(surface):
+        key=_shading_key(surface)
+        if key not in trees:
+            items=list(ordered_items(shading_scene(surface,scene).renderItem))
+            trees[key]=({item.id:index for index,item in enumerate(items)},{item.id:item for item in items})
+        return trees[key]
     materials={}
     tags={}
     kept=_kept_stacks if shading_kept else {}
@@ -66,15 +253,31 @@ def assign_materials(data, scene, warnings, shading_kept=False):
     for surface in data['surfaces']:
         surface.setdefault('source_material',surface['material'])
         surface.setdefault('source_layers',list(surface['layers']))
-    applying=native_stacks(scene,data['surfaces'])
+    # The layers applying to each surface, asked of the adapter for each Shader Tree's surfaces together.
+    shaded={}
+    for index,surface in enumerate(data['surfaces']):
+        shaded.setdefault(_shading_key(surface),[]).append(index)
+    applying=[None]*len(data['surfaces'])
+    for indices in shaded.values():
+        found=native_stacks(shading_scene(data['surfaces'][indices[0]],scene),
+                            [_as_in_own_scene(data['surfaces'][i],scene) for i in indices])
+        if found is None:
+            applying=None
+            break
+        for i,layers in zip(indices,found):
+            applying[i]=layers
     numbered=[int(tag.rsplit('_',1)[1]) for tag,_ in kept.values() if tag.rsplit('_',1)[1].isdigit()]
     following=max(numbered)+1 if numbered else 0
     for index,surface in enumerate(data['surfaces']):
         surface['material']=surface['source_material']
         surface['layers']=list(surface['source_layers'])
+        where=shading_scene(surface,scene)
+        order,by_id=tree(surface)
+        # A stack of a Scene Proxy's Shader Tree is told from the same stack of another's by its scene's file.
+        tagged=lambda stack,key=_shading_key(surface):stack if key is None else (('@scene',key),)+stack
         if applying is not None:
-            stack=tuple(identity for identity in applying[index] if identity in by_id)
-            surface['layers']=list(stack)
+            stack=tagged(tuple(identity for identity in applying[index] if identity in by_id))
+            surface['layers']=[identity for identity in stack if isinstance(identity,str)]
             if stack not in tags and stack in kept and kept[stack][0]:
                 # As the last reading made it: the same tag, the same material.
                 tag,material=kept[stack]
@@ -82,9 +285,9 @@ def assign_materials(data, scene, warnings, shading_kept=False):
             if stack in tags:
                 surface['material']=tags[stack]
                 continue
-        source_ids={surface['source_item']}
-        source=scene.item(surface['source_item'])
-        while source.type=='meshInst':
+        source_ids={surface['source_item'],_as_in_own_scene(surface,scene)['source_item']}
+        source=source_of(surface,scene)
+        while source is not None and source.type=='meshInst':
             links=source.itemGraph('source').forward()
             if len(links)!=1 or links[0].id in source_ids: break
             source=links[0];source_ids.add(source.id)
@@ -103,7 +306,7 @@ def assign_materials(data, scene, warnings, shading_kept=False):
                     # reach this function; never widen membership to all layers.
                     targets=parent.itemGraph('shadeLoc').forward()
                     targets=[i for i in targets if i.type in ('mesh','meshInst','replicator','groupLocator')]
-                    applicable_ids=source_ids if channel(parent,'instApply',False) else {surface['source_item']}
+                    applicable_ids=source_ids if channel(parent,'instApply',False) else {surface['source_item'],_as_in_own_scene(surface,scene)['source_item']}
                     def contains(target):
                         return target.id in applicable_ids or (target.type=='groupLocator' and any(contains(child) for child in target.children()))
                     if targets and not any(contains(i) for i in targets): return False
@@ -112,14 +315,14 @@ def assign_materials(data, scene, warnings, shading_kept=False):
         # In 16.1 the returned stack may include item masks that still need to
         # be evaluated against the particular instance (not just its prototype).
         if applying is None:
-            stack=tuple(identity for identity in surface['layers'] if identity in by_id and matches(by_id[identity]))
-            surface['layers']=list(stack)
+            stack=tagged(tuple(identity for identity in surface['layers'] if identity in by_id and matches(by_id[identity])))
+            surface['layers']=[identity for identity in stack if isinstance(identity,str)]
             if stack not in tags and stack in kept and kept[stack][0]:
                 tag,material=kept[stack]
                 tags[stack]=tag;materials[tag]=copy.deepcopy(material);made[stack]=kept[stack]
         if stack not in tags:
             from . import properties
-            candidates=[by_id[identity] for identity in stack if identity in by_id
+            candidates=[by_id[identity] for identity in stack if isinstance(identity,str) and identity in by_id
                         and properties.is_material(by_id[identity]) and material_active(by_id[identity]) and channel(by_id[identity],'enable',1)]
             if not candidates:
                 tags[stack]='';made[stack]=('',None);following+=1
@@ -132,11 +335,11 @@ def assign_materials(data, scene, warnings, shading_kept=False):
             materials[tag]=material_values(base)
             if channel(base,'subsAmt',0) or channel(base,'aniso',0):
                 materials[tag]['shader']='DwaBaseMaterial'
-            collect(scene,{tag:materials[tag]},warnings,baked_effects=('displace',),
+            collect(where,{tag:materials[tag]},warnings,baked_effects=('displace',),
                     layer_filter=set(stack),material_key=tag)
             if candidates:
                 from .layers import material_stack
-                materials[tag]['material_stack']=material_stack(scene,candidates,warnings,tag,set(stack))
+                materials[tag]['material_stack']=material_stack(where,candidates,warnings,tag,set(stack))
             made[stack]=(tag,copy.deepcopy(materials[tag]))
         surface['material']=tags[stack]
     _kept_stacks=made
@@ -272,8 +475,8 @@ def capture(time, path=None, displaced=True, only=None, before=None):
     """Modo's render cache read: every surface, and each surface's segments. only (item identifiers) and before (the
     reading before): the segments of those items' surfaces alone, the others' taken from before by their item, material
     and part; read whole where any is not there to take, or the adapter cannot."""
-    _load(path)
-    with tempfile.TemporaryDirectory(prefix='MoonRay-geometry-') as folder:
+    bridge=_load(path)
+    with tempfile.TemporaryDirectory(prefix='MoonRay-geometry-') as folder, _Catching(bridge):
         output=Path(folder)/'geometry.json'
         # Each surface's segments joined by the adapter where it can (MR_geometry_snapshot_merged), else one by one.
         try:rows=_bridge.MR_geometry_snapshot_merged
@@ -467,7 +670,8 @@ def meshes(data, materials, warnings, scene=None):
         visibility = tuple(bool(v) for v in surface['visibility'])
         if scene is not None:
             # The sixth is what shadow rays go by; Modo's own sixth, for occlusion rays, is not that.
-            visibility = visibility[:5] + (casts_shadow(scene, tuple(surface['layers']), shadows),)
+            visibility = visibility[:5] + (casts_shadow(shading_scene(surface, scene), tuple(surface['layers']),
+                                                        shadows.setdefault(_shading_key(surface), {})),)
         if not any(visibility):
             continue
         tag = surface['material']
@@ -477,7 +681,8 @@ def meshes(data, materials, warnings, scene=None):
             warnings.append('Evaluated surface %s has a Shader Tree override that is not yet translated.' % surface['source_item'])
         identity=surface['source_item']
         if identity not in settings_cache:
-            settings=options.object_values(properties.read(scene.item(identity))) if scene else options.object_values({})
+            held=source_of(surface,scene) if scene else None
+            settings=options.object_values(properties.read(held)) if held is not None else options.object_values({})
             settings_cache[identity]=settings if settings['override'] else options.object_values({})
         settings=settings_cache[identity]
         if settings['override'] and (settings['angular_tessellation'] or settings['adaptive_error'] or settings['dynamic_tessellation']):

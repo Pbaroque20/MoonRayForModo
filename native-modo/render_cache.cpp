@@ -1,5 +1,7 @@
 // Read-only evaluated geometry export. All host calls run on Modo's main thread.
 #include <lx_item.hpp>
+#include <lx_value.hpp>
+#include <lxpackage.h>
 #include <lx_rendercache.hpp>
 #include <lx_vertex.hpp>
 #include <lx_listener.hpp>
@@ -362,6 +364,54 @@ extern "C" __declspec(dllexport) const char* MR_geometry_cache_timing(double tim
 static const std::set<std::string>* onlyItems=nullptr;
 static bool forcedEvaluation=false;
 extern "C" __declspec(dllexport) void MR_geometry_forced(int on) {forcedEvaluation=on!=0;}
+// Surfaces shaded from a scene other than the one rendered: a Scene Proxy's, whose Shader Tree is in the scene the proxy
+// loads, which Modo keeps out of every list Python can read. While a catcher is set (MR_geometry_foreign_catcher: a scene
+// item listener the plugin made in Python, lxifc.SceneItemListener, and the scene rendered), the next readings note, for
+// each surface whose shader layers are another scene's, that scene's place ("shading_scene"), and give each such scene
+// to the catcher through its SceneCreate, once, in the order first met; Python's wrapper takes its own reference.
+// It is noted in the reading itself, from its own render cache: a second cache made to ask it, made and let go, left
+// Modo crashing as it quit on a scene with proxies, as an item reference value made in Python did when one was set.
+namespace {
+struct Foreign {
+    void* catcher=nullptr;
+    std::string mainFile;
+    void* mainScene=nullptr;
+    std::map<void*,int> places;
+};
+Foreign foreign;
+}
+extern "C" __declspec(dllexport) void MR_geometry_foreign_catcher(void* catcher,void* sceneObject) {
+    foreign=Foreign{};
+    if(!catcher || !sceneObject) return;
+    CLxUser_Scene scene;
+    if(!scene.set(reinterpret_cast<ILxUnknownID>(sceneObject))) return;
+    const char* file=nullptr;scene.Filename(&file);
+    foreign.catcher=catcher;foreign.mainScene=sceneObject;foreign.mainFile=file?file:"";
+}
+
+// The place of the scene a layer is of, given to the catcher the first time; -1 for the scene rendered (or no catcher).
+static int foreign_place(CLxLoc_Item& layer) {
+    if(!foreign.catcher) return -1;
+    void* context=nullptr;
+    if(LXx_FAIL(layer.Context(&context)) || !context) return -1;
+    CLxUser_Scene owner;owner.take(context);
+    const char* file=nullptr;owner.Filename(&file);
+    // Not the scene rendered: another object, and another file where both have one.
+    if(context==foreign.mainScene || (!foreign.mainFile.empty() && file && foreign.mainFile==file)) return -1;
+    auto found=foreign.places.find(context);
+    if(found!=foreign.places.end()) return found->second;
+    const int place=int(foreign.places.size());
+    static const LXtGUID listener={0xAFB67180,0xEC4F,0x4E9B,0xAA,0xF1,0x67,0xAA,0x47,0x09,0x7C,0x29};
+    void* told=nullptr;
+    if(lx::ObjQuery(reinterpret_cast<LXtObjectID>(foreign.catcher),&listener,&told) && told) {
+        ILxSceneItemListenerID asked=reinterpret_cast<ILxSceneItemListenerID>(told);
+        asked[0]->SceneCreate(asked,reinterpret_cast<LXtObjectID>(owner.m_loc));
+        lx::ObjRelease(told);
+    }
+    foreign.places.emplace(context,place);
+    return place;
+}
+
 static void write_snapshot(std::ostream& out,double time,int displaced) {
         blobAt=0;skippedSegments=0;skippedWhere.str("");skippedWhere.clear();
         const auto began=std::chrono::steady_clock::now();
@@ -429,13 +479,18 @@ static void write_snapshot(std::ostream& out,double time,int displaced) {
             out<<",\"visibility\":["<<visibility.camera<<','<<visibility.indirect<<','<<visibility.reflection<<','
                <<visibility.refraction<<','<<visibility.subscatter<<','<<visibility.occlusion<<']';
             unsigned layers=0;check(surface.ShaderLayerCount(&layers),"Surface shader layers");
+            int shading=-1;
             out<<",\"layers\":[";
             for(unsigned n=0;n<layers;++n) {
                 object=nullptr;check(surface.ShaderLayerAt(n,&object),"Surface shader layer");
                 CLxLoc_Item layer;layer.set(object);check(layer.Ident(&name),"Shader identifier");
+                // A surface's layers are all of one Shader Tree: its first says whose (foreign_place).
+                if(!n) shading=foreign_place(layer);
                 if(n)out<<',';text(out,name);
             }
-            out<<"]}";
+            out<<"]";
+            if(shading>=0) out<<",\"shading_scene\":"<<shading;
+            out<<"}";
         }
         const double listed=since();
         out<<"],\"prototypes\":{";bool first=true;

@@ -511,6 +511,10 @@ def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fal
         evaluated_geometry = True
     if any(properties.read(item).get('override') for item in scene.items('meshInst',superType=False)):
         evaluated_geometry = True
+    if scene.items('proxy',superType=False):
+        # Scene Proxies render what their scene files hold: their surfaces are Modo's render cache's, as Modo renders
+        # them, with no mesh of this scene to read (evaluated.proxies).
+        evaluated_geometry = True
     if alembic_items(scene):
         # Alembic streamed in as its own items (Alembic Mesh, Curves, Point Cloud): their surfaces are Modo's render
         # cache's, frame by frame from the file, with no mesh channel to read.
@@ -692,6 +696,8 @@ def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fal
             else:
                 data=dict(cached,surfaces=[dict(v) for v in cached['surfaces']]) if cached else evaluated.capture(lx.service.Selection().GetTime())
             result['_evaluated_data']=data
+            # Scene Proxies' surfaces once each, shaded by their own scenes.
+            evaluated.proxies(data, scene, lx.service.Selection().GetTime(), warnings)
             native_shape_materials = result['materials']
             # An edit of meshes alone: each Shader Tree stack's material as the last reading made it (shading_kept).
             result['materials'] = evaluated.assign_materials(data, scene, warnings, shading_kept=shading_kept)

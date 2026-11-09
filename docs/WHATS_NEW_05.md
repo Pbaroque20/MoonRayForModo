@@ -30,6 +30,7 @@
 
   ![The EmberGen explosion as a VDB sequence, coloured by its temperature: frames 20, 45, 70 and 100, rendered on XPU2's graphics card](images/vdb-fire-sequence.png)
 
+- **Scene Proxies render with their own materials**: an object brought in as a Scene Proxy (Add Item > Scene Proxy) now renders in MoonRay as Modo renders it: its geometry once for each proxy, where each proxy stands, shaded by the Shader Tree of the scene file it loads, where before it took the main scene's or came twice. A proxy with a Render Item renders that item alone. Imported references (File > Import Reference) already rendered with theirs. Modo itself may crash as it quits while a scene with a Scene Proxy is still open, once it has been rendered or previewed (with or without the plugin's code); saved scenes and Modo's settings are kept. Closing the scene first avoids it.
 - **Imported Alembic fluids blur**: a mesh brought in with File > Import of an Alembic file renders from the file itself, its own points and faces at each frame, blurred along the file's velocities, in MoonRay, XPU2 and MoonLightIPR. Modo's own import hands a render one mesh of fixed size stretched to follow the file, with no velocities, so a fluid mesher's mesh could not be blurred. Its switch is on the MoonRay Source Overrides page.
 
   ![A fluid mesher's Alembic mesh at frames 90, 120, 150 and 180, its faces changing every frame, its drops blurred along the file's velocities, rendered on XPU2's graphics card](images/alembic-fluid-frames.png)
