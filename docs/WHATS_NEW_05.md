@@ -2,7 +2,7 @@
 
 0.5 is a **pre-production release**: the plugin is no longer experimental, and it brings a new GPU renderer, MoonRay XPU2.
 
-## New in 0.5.3.2 (coming)
+## New in 0.5.3.2
 
 - **MoonLightIPR clears its noise sooner**: the preview now draws its samples from OpenQMC, the Academy Software Foundation's sampling library, so each pixel's samples spread evenly over the lights, the lens and the ways light bounces, where before they fell by chance. For the same noise it needs about half the samples where the light comes from lamps, an environment or fog, and fewer on VDB fog, hair, depth of field and glass; subsurface random walks gain little. A sample takes up to about a tenth longer. Nothing changes in how the preview looks once it has cleared.
 - **Edits that change nothing leave realtime alone**: an edit that changes nothing no longer starts MoonLightIPR or XPU2's realtime over, nor has the scene read whole. Checked in Modo with both engines, each against a real change of the same kind, which still renders:
