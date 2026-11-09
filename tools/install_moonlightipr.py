@@ -118,6 +118,10 @@ if converter.is_file() and (kit / 'runtime').is_dir():
 grids = root / 'build/native-avx/bin/modo_vdb_grid.exe'
 if grids.is_file() and (kit / 'runtime').is_dir():
     shutil.copyfile(grids, kit / 'runtime' / grids.name)
+# What reads an Alembic file's meshes, which the kit renders itself (tools/build_abc_reader.py).
+alembic = root / 'build/native-avx/bin/modo_abc_reader.exe'
+if alembic.is_file() and (kit / 'runtime').is_dir():
+    shutil.copyfile(alembic, kit / 'runtime' / alembic.name)
 # The MoonRay menu: its MoonRay items submenu, dividers between its groups, and plain characters.
 # The installed layout.cfg is edited in place, not replaced, so nothing else in it changes.
 sys.path.insert(0, str(root / 'tools'))

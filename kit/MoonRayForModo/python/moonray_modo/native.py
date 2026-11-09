@@ -59,6 +59,8 @@ def environment(directory):
     env['MOONRAY_MODO_CAMERA_LIGHT_LPE'] = '1' if camera_light_lpe() else '0'
     # A mesh its placement mirrors, with normals of its own, no longer black (mirrored_meshes).
     env['MOONRAY_MODO_MIRRORED_MESHES'] = '1' if mirrored_meshes() else '0'
+    # A VDB's emission grid of single values (temperature, flames) glowing grey (scalar_emission).
+    env['MOONRAY_MODO_SCALAR_EMISSION'] = '1' if scalar_emission() else '0'
     # PATH entries that are not folders passed over as MoonRay looks for itself (dso_search).
     env['MOONRAY_MODO_DSO_SEARCH'] = '1' if dso_search() else '0'
     # The four overrides of tools/port_source_switches.py, each read by MoonRay as it starts.
@@ -170,12 +172,20 @@ def tool(name, first=None):
                      'Preferences, or reinstall the kit.' % (name, '; '.join(looked) or 'no runtime is set'))
 
 
+_INSTALLATION=[]
+
+
 def installation_id():
+    """The installed kit's own mark (runtime.json), read once: a kit is installed with Modo closed. Read at every
+    Preferences made, it was a file opened a few times at each step of a drag."""
+    if _INSTALLATION:return _INSTALLATION[0]
     path=Path(__file__).resolve().parents[2]/'runtime.json'
     try:
-        return json.loads(path.read_text(encoding='utf-8')).get('installation_id','')
+        found=json.loads(path.read_text(encoding='utf-8')).get('installation_id','')
     except (OSError,ValueError,TypeError,AttributeError):
         return ''
+    _INSTALLATION.append(found)
+    return found
 
 
 def supports_xpu(directory):
@@ -322,6 +332,13 @@ def mirrored_meshes():
     return _switch('mirrored_meshes', 'MOONRAY_MODO_MIRRORED_MESHES')
 
 
+def scalar_emission():
+    """Whether a VDB's emission grid of single values (a temperature or flames grid, as EmberGen, Houdini and Blender write
+    them) glows grey, coloured by the volume's incandescence gain mult (tools/port_scalar_emission.py). MoonRay takes only
+    an RGB grid and refuses one of single values, so such a fire gives off no light. XPU2 follows it."""
+    return _switch('scalar_emission', 'MOONRAY_MODO_SCALAR_EMISSION')
+
+
 def dso_search():
     """Whether MoonRay, looking along PATH for moonray.exe as it starts (tools/port_dso_search.py), passes over entries
     that are files or cannot be read, and stops at the first folder holding it. MoonRay's own goes through all of PATH,
@@ -374,6 +391,28 @@ def bump_node():
     return _switch('bump_node', 'MOONRAY_MODO_BUMP_NODE')
 
 
+def vdb_blackbody():
+    """Whether a VDB shape set to blackbody colour glows in the colours of its temperature grid (entities.resolve_vdb,
+    native-port/modo_vdb_grid.cpp --blackbody): the kit adds a colour grid to a copy of the file. MoonRay has no blackbody
+    of its own; off, the fire glows grey, coloured by the volume's incandescence gain mult."""
+    return _switch('vdb_blackbody', 'MOONRAY_MODO_VDB_BLACKBODY')
+
+
+def vdb_sequences():
+    """Whether a VDB shape with MoonRay's static unticked reads the numbered files beside the one chosen, the one for
+    each frame (entities.vdb_sequenced, resolve_vdb), with its frame offset and hold. MoonRay reads one file whatever
+    static says; off, as it does."""
+    return _switch('vdb_sequences', 'MOONRAY_MODO_VDB_SEQUENCES')
+
+
+def alembic_import():
+    """Whether a mesh Modo's own Alembic import streams (File > Import) is read again from its file by the kit
+    (extra_geometry.imported_alembic), with the file's points, faces and velocities. Modo hands a render a mesh of fixed
+    size stretched to the file's, without velocities, so a fluid mesh whose faces change renders torn and unblurred;
+    off, that mesh is rendered as Modo gives it."""
+    return _switch('alembic_import', 'MOONRAY_MODO_ALEMBIC_IMPORT')
+
+
 # What MoonRay is called in the MoonRay Terminal, by the execution mode it was started in.
 ENGINE_NAMES = {'vectorized': 'MoonRay Vector', 'vector': 'MoonRay Vector', 'scalar': 'MoonRay Scalar', 'xpu': 'MoonRay XPU',
                 'auto': 'MoonRay Auto'}
@@ -396,7 +435,7 @@ def engine_name(mode):
 
 def source_switches():
     """The MoonRay Source Overrides MoonRay reads as it starts: a session started with others is started again."""
-    return (toon_terminator(), toon_albedo(), crypto_volumes(), fog_alpha(), crypto_once(), camera_light_lpe(), mirrored_meshes(), dso_search()) + tuple(
+    return (toon_terminator(), toon_albedo(), crypto_volumes(), fog_alpha(), crypto_once(), camera_light_lpe(), mirrored_meshes(), scalar_emission(), dso_search()) + tuple(
         globals()[key]() for key in ('usd_specular', 'opaque_alpha', 'transmission_roughness', 'auto_xpu')) + (xpu2(), xpu2_chain(), __import__('moonray_modo.devices', fromlist=['state']).state())
 
 

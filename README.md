@@ -9,9 +9,9 @@ The plugin includes CPU, XPU and XPU2 rendering, a dockable live preview with a 
 
 **Built on MoonRay [2026.29.1](https://github.com/dreamworksanimation/openmoonray/releases/tag/v2026.29.1)** (OpenMoonRay's latest release; MoonRay 18.4), with the plugin's own patches for Windows and the preview.
 
-**Current version: 0.5.3.1 — pre-production release.** The plugin is no longer experimental. 0.5 brought **MoonRay XPU2**, a new GPU renderer for previews in which the processor and the graphics card work on the same picture at once, now the default; realtime that keeps up with heavy scenes and a Scene cache; Modo's procedural textures worked out through the object, 145 of Modo's Enhance textures among them; Modo's light volumetrics and fog; and MoonLightIPR starting in seconds. Install the new runtime with it.
+**Current version: 0.5.3.2 — pre-production release.** The plugin is no longer experimental. 0.5 brought **MoonRay XPU2**, a new GPU renderer for previews in which the processor and the graphics card work on the same picture at once, now the default; realtime that keeps up with heavy scenes and a Scene cache; Modo's procedural textures worked out through the object, 145 of Modo's Enhance textures among them; Modo's light volumetrics and fog; and MoonLightIPR starting in seconds. Install the new runtime with it.
 
-· [Download 0.5.3.1: the kit, the Windows runtime and the MoonRay content](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.5.3.1)
+· [Download 0.5.3.2: the kit, the Windows runtime and the MoonRay content](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.5.3.2)
 
 · [Installation instructions](docs/INSTALLATION.md) 
 
@@ -59,6 +59,50 @@ Work on the next version goes on in the [MoonLightIPR branch](https://github.com
 | **The graph editor**, with a MoonRay material | **Modo's Fur material** rendered by MoonRay |
 | ![The compositor](docs/images/compositor-editor.png) | ![Modern Hall, imported from MoonRay's scene files](docs/images/rdl-modern_hall.jpg) |
 | **The compositor**: the beauty graded, vignetted and sharpened | **An imported MoonRay scene**: its own render (left), after the trip through Modo (right). Modern Hall by NewSee2l035, CC BY |
+
+## New in 0.5.3.2
+
+Fire, fluids and faster volumes: VDB fire from temperature grids and in its colours, VDB and Alembic sequences, imported Alembic fluids with motion blur, Scene Proxies with their own materials, and a cleaner, quicker MoonLightIPR. It comes with a new runtime: install it, and **Compile XPU2 Shaders once more**. The full list is in [What's new in 0.5](docs/WHATS_NEW_05.md).
+
+- **Edits that change nothing leave realtime alone**: a value entered as it already is, in the graph editor or a MoonRay material's Properties (0 where it was 0, 0.3 where it was 0.30000000000000004), and Schematic work (workspaces, nodes added, moved or taken out) no longer start MoonLightIPR or XPU2's realtime again, nor read the scene whole.
+- **One resolution for every realtime preview**: Preview Preferences' Realtime preview resolution now goes down to 1/8 and 1/16 of the render's, and MoonRay LS renders at it as MoonLightIPR and RT do. LS's own Width limit is gone, under which a tall picture stayed tall.
+- **EV and gamma by dragging**: press anywhere on the preview window's EV or gamma field, its number or its arrows, and drag right or up for more, left or down for less; Ctrl for fine steps, Shift for coarse. A click on an arrow steps once; a click on the number lets you type. The picture follows exposure as it changes, where holding an arrow showed nothing until it stopped. The MoonShine graph's numbers drag the same way (a tester's report: their steps were 0.1 only, and the two arrows a few pixels apart): Ctrl drags in hundredths, and one drag is one undo.
+- **MoonLightIPR clears its noise sooner**: the preview draws its samples from [OpenQMC](https://github.com/AcademySoftwareFoundation/openqmc), the Academy Software Foundation's sampling library, so each pixel's samples spread evenly instead of by chance. For the same noise it needs about half the samples where the light comes from lamps, an environment or fog, and fewer on VDB fog, hair, depth of field and glass. A sample takes up to about a tenth longer; the cleared picture is unchanged.
+- **RT goes off after a MoonLightIPR Playblast**: once its frames are done, or it is stopped, RT says Off and one press follows the scene again. It stayed On with nothing updating until another engine was chosen.
+- **Select a material from the picture**: right-click a surface in the preview window and choose Select Material Here: the material it wears is selected in Modo, found as Focus Here finds a surface's distance.
+- **Toon lines in a colour, with their own alpha** (issue 134): a Toon filter's Ink Color draws its lines in any colour, the Compositor's Ink Lines node lays them over a picture, and lines saved or rendered alone keep their own alpha. A MoonRay Source Override, on by default.
+
+  ![Toon lines in a colour over the shading](docs/images/toon-ink-color.png)
+
+- **Toon lines smoothed**: outlines no longer step with the pixel grid. A MoonRay Source Override, on by default.
+
+  ![Toon outlines smoothed along their direction](docs/images/toon-smooth-lines.png)
+
+- **VDB fire from temperature or flames grids**: a VDB whose emission grid holds single values, as EmberGen, Houdini and Blender write fire, now glows in MoonRay, XPU2 and MoonLightIPR, coloured by the VDB volume's incandescence gain mult. MoonRay refused such a grid and left the whole VDB out. A MoonRay Source Override, on by default.
+
+  ![JangaFX's free EmberGen explosion glowing from its flames grid: MoonRay left, XPU2's graphics card right](docs/images/vdb-fire-flames-grid.png)
+
+- **Alembic fluids and other changing meshes**: set an object's Geometry file (production settings) to an .abc, and the kit reads its meshes itself each frame, even ones whose points and faces change, as a fluid mesher's do (Modo's own loader shows one frame of those), blurred along the file's velocities. A mesh that changes during the shutter no longer stops a render with "Motion blur requires stable topology".
+- **VDB sequences**: untick a VDB shape's static (now beside its file) and the numbered files beside the one you chose (fire_1.vdb, fire_2.vdb...) play with the timeline, with a frame offset, and the volume hidden or held outside its frames.
+
+  ![The EmberGen explosion as a VDB sequence, coloured by its temperature: frames 20, 45, 70 and 100, rendered on XPU2's graphics card](docs/images/vdb-fire-sequence.png)
+
+- **Scene Proxies render with their own materials**: each proxy's geometry once, where it stands, shaded by the scene file it loads, as Modo renders it. Modo may crash as it quits with such a scene still open (Modo's own; your work and settings are kept).
+- **Imported Alembic fluids blur**: a mesh brought in with File > Import of an .abc renders from the file itself, its own points and faces at each frame, blurred along the file's velocities. Modo's own import stretched one fixed mesh and had no velocities to blur a fluid mesher's mesh with.
+
+  ![A fluid mesher's Alembic mesh at frames 90, 120, 150 and 180, its faces changing every frame, its drops blurred along the file's velocities, rendered on XPU2's graphics card](docs/images/alembic-fluid-frames.png)
+
+- **VDB fire coloured by its temperature**: turn on a VDB shape's blackbody colour and choose its temperature grid as the emission grid: the fire glows deep red where it is cool, orange, then yellow-white where it is hottest, with kelvin at 1 to make it hotter or cooler. In MoonRay, XPU2 and MoonLightIPR. A MoonRay Source Override, on by default.
+
+  ![The EmberGen explosion coloured by its temperature grid, rendered on XPU2's graphics card](docs/images/vdb-fire-blackbody.png)
+
+- **MoonLightIPR keeps a VDB fire's colour**: an orange incandescence no longer glows white in the preview.
+- **Glowing fog from maps on XPU2's graphics card**: a volume whose glow or colour comes from procedural maps (a gradient, a noise) renders on the card instead of the processor. Maps that read image files still glow on the processor.
+
+  ![A fog box glowing orange to blue from a gradient map, rendered on XPU2's graphics card](docs/images/xpu2-mapped-glow.png)
+
+- **Volumes render faster in XPU2**: VDB clouds and glowing fog render in about two thirds of the time on the graphics card, with the same picture.
+- **A smaller XPU2 shader compile, with a memory meter**: Compile XPU2 Shaders takes 8 to 15 minutes and well under 12 GB, where it could climb past 40 GB. Preferences shows the free memory beside the button (enough, tight or not enough); the compile needs about 8 GB free to begin and stops itself before memory runs out.
 
 ## New in 0.5.3.1
 
@@ -411,7 +455,7 @@ In each pair, MoonRay's render of the scene from its own files is on the left; o
 - Render outputs: configurable AOVs, Cryptomatte surface categories, buffer switching, deep EXR, texture baking, a compositor over the finished buffers, and denoising (OptiX or Open Image Denoise) that survives a stopped render.
 - Workflow tools: ACES/sRGB/OCIO view transforms and LUTs, animation output and recovery controls, an asset library with MoonRay's example scenes, and RDL scene import.
 
-## Known issues in 0.5.3.1
+## Known issues in 0.5.3.2
 
 The ones you are most likely to meet:
 
@@ -457,7 +501,7 @@ Comparison audit between MoonRay 2026.29.1's source and the current plugin.
 | Light, shadow and light filter linking | ![yes](docs/images/feature-yes.svg) | MoonRay's own sets, and Modo's own Light Linking groups (include or exclude), which reach MoonRay Shadow receiver sets, and a shadow ray offset, in Light Links |
 | Meshes, subdivision, curves, points, instancing | ![yes](docs/images/feature-yes.svg) | From Modo's geometry. Creases from Modo's Subdivision weights |
 | Box and sphere shapes | ![yes](docs/images/feature-yes.svg) | |
-| VDB volumes, base and cutout volumes | ![yes](docs/images/feature-yes.svg) | A VDB renders on XPU2's graphics card, glowing ones too, about five times faster; a dwVdbVolume asks for its VDB file |
+| VDB volumes, base and cutout volumes | ![yes](docs/images/feature-yes.svg) | A VDB renders on XPU2's graphics card, glowing ones too, about five times faster; fire from a temperature or flames grid glows, in its blackbody colours where asked; numbered VDB files play as a sequence (static unticked); a dwVdbVolume asks for its VDB file |
 | Motion blur | ![yes](docs/images/feature-yes.svg) | Final renders, and MoonLightIPR previews, where it is a Preview Preference, off by default, with moving lights blurred too; MoonRay XPU2 for Render, Render to a File and animations, and for XPU2 realtime as a Preview Preference. XPU2 traces moving objects on the GPU, subdivision surfaces that move or change shape among them. MoonLightIPR playblasts show it when it is active. |
 | Depth of field | ![yes](docs/images/feature-yes.svg) | A polygon or disc bokeh, by sides and angle, or an image. MoonRay's two bokeh weight settings, which it does not use, are marked as having no effect. With the Modo camera's lens, a bokeh image turns bokeh on. |
 | DWA materials (base, metal, fabric, skin, layer, mix and the rest) | ![yes](docs/images/feature-yes.svg) | Two Sided and Color Correct take the other DWA materials as their inputs, and a layer or two-sided material missing an input no longer crashes MoonRay |
@@ -533,7 +577,7 @@ Comparison audit between Modo 16.1v9 and the current plugin: what of a Modo scen
 | Meshes, subdivision and creases | ![yes](docs/images/feature-yes.svg) | A mirrored mesh (negative scale) faces outward, a Source Override on by default |
 | Instances and replicators | ![yes](docs/images/feature-yes.svg) | Replicators through Modo's evaluated geometry |
 | Deformed and animated meshes | ![yes](docs/images/feature-yes.svg) | Through Modo's evaluated geometry |
-| Alembic | ![yes](docs/images/feature-yes.svg) | Loaded as Modo meshes with streaming deformers, or as Alembic Streaming Meshes, moving over time with motion blur; Alembic Curves and Point Clouds untested |
+| Alembic | ![yes](docs/images/feature-yes.svg) | Loaded as Modo meshes with streaming deformers, or as Alembic Streaming Meshes, moving over time with motion blur; read from the file itself, so fluids whose faces change render and blur along their velocities; Alembic Curves and Point Clouds untested |
 | Curves, hair and Modo's Fur material | ![partly](docs/images/feature-partly.svg) | Fur follows its guides (Direction, Direction + Length, Shape, Range and Clump, with Guide Range and Guide Length), its vector map and its width map; a guide's Blend Amount and Modo's Hair Material are not read |
 | Weight and colour vertex maps | ![partly](docs/images/feature-partly.svg) | As values MoonRay's materials read, and the Shader Tree's Weight Map Texture layer, with weight maps; not in a scene with replicators or masks by item, Part or Selection Set. A notice names a weight map lost that way. |
 | Modo's volume items | ![partly](docs/images/feature-partly.svg) | Rendered from a VDB file attached in the MoonRay controls |

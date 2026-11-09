@@ -6,6 +6,7 @@ from shiboken2 import isValid
 from . import nodes,parameter_state
 
 from .file_inputs import file_parameter
+from .scrub_field import ScrubSpinBox,ScrubIntBox
 
 TYPED=(QtWidgets.QLineEdit,QtWidgets.QAbstractSpinBox,QtWidgets.QComboBox,QtWidgets.QAbstractButton,QtWidgets.QPlainTextEdit)
 
@@ -369,8 +370,9 @@ class VectorEdit(QtWidgets.QWidget):
 
 from .node_defaults import value as default_value
 
-class NumericField(QtWidgets.QDoubleSpinBox):
-    """A persistent property control; entering a value never destroys its widget."""
+class NumericField(ScrubSpinBox):
+    """A persistent property control; entering a value never destroys its widget. Dragged on, number or arrows, it steps
+    as the preview window's EV does (scrub_field)."""
     changed=QtCore.Signal(str,str,int,float)
     focused=QtCore.Signal(str,str)
     def __init__(self,identity,key,layer,spec,value,parent=None,kind=None,connected=False):
@@ -494,8 +496,8 @@ class ChoiceField(QtWidgets.QComboBox):
         self.changed.emit(self.identity,self.key,self.layer,int(self.itemData(index)))
 
 
-class IntegerField(QtWidgets.QSpinBox):
-    """A whole number that is always there to edit."""
+class IntegerField(ScrubIntBox):
+    """A whole number that is always there to edit, dragged on as a NumericField is."""
     changed=QtCore.Signal(str,str,int,int)
     def __init__(self,identity,key,layer,spec,value,parent=None,kind=None,connected=False):
         super().__init__(parent)
@@ -535,7 +537,7 @@ class VectorField(QtWidgets.QWidget):
         low=float(str(spec['min']).rstrip('f')) if 'min' in spec else -1e12
         high=float(str(spec['max']).rstrip('f')) if 'max' in spec else 1e12
         for index in range(count):
-            spin=QtWidgets.QDoubleSpinBox();spin.setRange(low,high);spin.setDecimals(3);spin.setSingleStep(.05 if self.is_color else .1)
+            spin=ScrubSpinBox();spin.setRange(low,high);spin.setDecimals(3);spin.setSingleStep(.05 if self.is_color else .1)
             spin.setButtonSymbols(QtWidgets.QAbstractSpinBox.NoButtons);spin.setKeyboardTracking(False);spin.setFrame(False)
             spin.setFocusPolicy(QtCore.Qt.StrongFocus);spin.setToolTip(('Red','Green','Blue')[index] if self.is_color else 'XYZ'[index])
             part=float(values[index]) if index<len(values) else 0.0

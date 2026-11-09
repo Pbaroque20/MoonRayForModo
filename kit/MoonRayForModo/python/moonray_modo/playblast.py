@@ -124,6 +124,12 @@ class Playblast(QtCore.QObject):
         renderer.failed.disconnect(self.failed)
         renderer.moonlightipr_samples = None
         renderer.stop()
+        # Done or stopped, realtime is left off and RT says so (render_playblast switched it off).
+        panel = self.panel
+        if panel.ipr_mode.isChecked():
+            panel.ipr_mode.setChecked(False)
+        if hasattr(panel, '_sync_rt'):
+            panel._sync_rt()
 
 
 def scene_range():

@@ -6745,6 +6745,17 @@
         "name": "edge_detector",
         "type": "Int"
       },
+      "ink_color": {
+        "comment": "MoonRay for Modo: the colour the ink lines are drawn in over the cel shading (black, as MoonRay draws them, by default). The lines alone stay white on black: a matte, the lines' alpha",
+        "default": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "label": "ink color",
+        "name": "ink_color",
+        "type": "Rgb"
+      },
       "ink_depth_threshold": {
         "comment": "The threshold for the depth-based ink outline",
         "default": 0.01,
@@ -6819,6 +6830,13 @@
         "label": "output mode",
         "name": "output_mode",
         "type": "Int"
+      },
+      "smooth_lines": {
+        "comment": "MoonRay for Modo: near an edge, the lines are blended along their own direction, so that an outline does not step with the pixel grid",
+        "default": false,
+        "label": "smooth lines",
+        "name": "smooth_lines",
+        "type": "Bool"
       }
     },
     "category": "displayfilter",
@@ -6890,6 +6908,30 @@
         "name": "model",
         "type": "String"
       },
+      "modo_blackbody": {
+        "comment": "Colour the emission grid by temperature, as a hot body glows: deep red where it is cool, orange, then yellow-white where it is hottest. Choose the temperature grid as the emission grid. Off, it glows grey, coloured by the volume's incandescence gain mult.",
+        "default": false,
+        "group": "VDB",
+        "label": "blackbody colour",
+        "name": "modo_blackbody",
+        "type": "Bool"
+      },
+      "modo_blackbody_kelvin": {
+        "comment": "The temperature, in kelvin, a value of 1 in the temperature grid stands for. Higher is whiter and hotter; lower is redder.",
+        "default": 3000.0,
+        "group": "VDB",
+        "label": "kelvin at 1",
+        "name": "modo_blackbody_kelvin",
+        "type": "Float"
+      },
+      "modo_frame_offset": {
+        "comment": "For a sequence of VDB files (static unticked): added to the scene's frame to choose the file.",
+        "default": 0,
+        "group": "VDB",
+        "label": "frame offset",
+        "name": "modo_frame_offset",
+        "type": "Int"
+      },
       "modo_material": {
         "comment": "The material tag of the Modo material this is rendered with; empty for the base material.",
         "default": "",
@@ -6898,6 +6940,14 @@
         "name": "modo_material",
         "type": "String"
       },
+      "modo_sequence_hold": {
+        "comment": "Before a sequence of VDB files begins, show its first file, and after it ends, its last. Off, the volume is not there outside its frames.",
+        "default": false,
+        "group": "VDB",
+        "label": "hold first and last frames",
+        "name": "modo_sequence_hold",
+        "type": "Bool"
+      },
       "modo_volume": {
         "comment": "The name of a MoonRay volume item that fills this shape.",
         "group": "Assignment",
@@ -6905,6 +6955,13 @@
         "label": "volume",
         "name": "modo_volume",
         "type": "SceneObject*"
+      },
+      "primitive_attributes": {
+        "comment": "Vector of UserData. Read only for the volume's Cryptomatte IDs.",
+        "group": "User Data",
+        "label": "primitive attributes",
+        "name": "primitive_attributes",
+        "type": "SceneObjectVector"
       },
       "ray_epsilon": {
         "comment": "When a secondary ray is fired, anything within this distance of the intersection point will be ignored. Instead, it is considered part of the current intersection's geometry. If zero, an automatically calculated epsilon will be used.",
@@ -6962,8 +7019,9 @@
         "type": "Int"
       },
       "static": {
-        "comment": "disable if the geometry will be updated between frames",
+        "comment": "Ticked: the one VDB file, at every frame. Unticked: the numbered files beside it (fire_1.vdb, fire_2.vdb...), the one for each frame, as the geometry changes between frames. (MoonRay: disable if the geometry will be updated between frames.)",
         "default": true,
+        "group": "VDB",
         "name": "static",
         "type": "Bool"
       },

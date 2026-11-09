@@ -6,7 +6,7 @@ are portability changes. This file explains the ones whose reason is not obvious
 
 ## Switches on the Source Overrides page that change no source
 
-Six switches on Preferences > MoonRay Source Overrides are the plugin's own, with no patch behind them. Each is on
+Nine switches on Preferences > MoonRay Source Overrides are the plugin's own, with no patch behind them. Each is on
 by default; off does as MoonRay itself does.
 
 - **Low-latency rendering**: MoonRay runs below Modo's priority and leaves one processor thread free.
@@ -19,6 +19,19 @@ by default; off does as MoonRay itself does.
 - **Bump node in MoonShine graphs**: the MoonShine graph's Bump node turns a height (an image or any texture) into a
   shading normal, as the plugin's Shader Tree Bump layers do (its own ModoTextureMap in height mode, with a bump
   strength). MoonRay has no node of its own for it; off, the node leaves the normal flat.
+- **VDB fire coloured by its temperature**: a VDB shape set to blackbody colour glows in the colours of its emission
+  grid's temperatures. The kit adds an RGB grid, `modo_blackbody`, to a cached copy of the file
+  (`native-port/modo_vdb_grid.cpp --blackbody`: Planck's law over the CIE 1931 matching functions, Wyman, Sloan and Shirley's
+  fit, linear Rec.709 or the working space, at a luminance of one, times the grid's value; below 800 K, 800 K's deep red),
+  and points MoonRay, XPU2 and MoonLightIPR at it (`entities.resolve_vdb`). MoonRay has no blackbody of its own; off, the
+  fire glows in its incandescence gain mult's one colour.
+- **VDB sequences when static is unticked**: a VDB shape with MoonRay's own `static` unticked (its geometry changes
+  between frames) reads the numbered files beside the one chosen, the one for each frame, with a frame offset and the
+  volume hidden or held outside its frames (`entities.vdb_sequenced`, `resolve_vdb`). Off, MoonRay reads the one file.
+- **Imported Alembic meshes read from their files**: a mesh Modo's own Alembic import streams (an `AlembicMesh` item, or a
+  mesh with an `ABCStreamingDeformer`, beside an `AlembicFile` item) is read again from the .abc by the kit's reader (`native-port/modo_abc_reader.cpp`,
+  `extra_geometry.imported_alembic`), with the file's points, faces and velocities. Modo hands a render a mesh of fixed
+  size stretched to the file's, without velocities; off, that mesh is rendered as Modo gives it.
 
 ## `moonray.patch`: `lib/rendering/mcrt_common/Clock.h`, the heat map's clock on Windows
 
@@ -520,6 +533,39 @@ Upstream's own branch, taken with the switch on. Off, Auto starts in vector mode
 The same scene in Auto: MoonRay's log says "Executing an XPU render since execution mode was set to auto." with the switch
 on, and "Executing a vectorized render since execution mode was set to auto." with it off.
 
+## `moonray.patch`: VDB fire from temperature or flames grids (`MOONRAY_MODO_SCALAR_EMISSION`)
+
+Applied by `tools/port_scalar_emission.py`, behind a switch of its own (the plugin's preference, on by default).
+
+### What MoonRay does
+
+`VdbVolume::initEmissionSampler` (`lib/rendering/geom/prim/VdbVolume.cc`) takes only an RGB grid (`openvdb::VectorGrid`) as a
+VDB's emission grid. Any other is refused at load with `Emission grid: "flames" is not an RGB grid.`, and the whole VDB
+geometry is dropped from the render, smoke included. EmberGen, Houdini and Blender write their `temperature`, `flames` and
+`heat` grids as single values (float grids), so none of their fire glows: a tester's EmberGen explosion rendered as an
+empty floor.
+
+### The fix
+
+A float emission grid is read and made into an RGB grid of the same shape (its topology copied, tiles kept as tiles), each
+value v as (v, v, v), its background and transform kept (`modoGreyGrid`). From there MoonRay goes on as with an RGB grid:
+the emission sampler, its distribution, the emission sample rate. The VDB volume's `incandescence_gain_mult` gives the glow
+its colour and strength.
+
+JangaFX's free Midair Explosion (frame 40, emission grid `flames`, incandescence gain mult (24, 9, 2.4)), 480 x 300, 16
+samples a pixel:
+
+| | MoonRay as it is | With the switch |
+|---|---|---|
+| MoonRay (scalar) | the VDB dropped: an empty floor | the fire, lighting the floor (691 s) |
+| XPU2, graphics card | | the same picture (116 s) |
+| XPU2, processor | | the same picture (969 s) |
+
+XPU2 follows the switch (`xpu2_geom.cc` makes the grid by the same steps, for the card, the host and the emission
+distribution); its average matches MoonRay's within 0.001%, the card's and the processor's pictures within 0.007 a pixel.
+The MoonLightIPR preview follows it too: its single-number grid is expanded to grey colours once (`moonlightipr_volumes.py`).
+Off, MoonRay is as its source has it.
+
 ## `moonshine.patch`: toon lines without gaps (`close_line_gaps`)
 
 A new attribute of `ToonDisplayFilter`, behind the preference "Toon lines without gaps", on by default; with it off the
@@ -574,6 +620,77 @@ without its lines. Two Toon filters, one of each, are two buffers of the preview
 
 Built (`ninja bin/ToonDisplayFilter.so bin/ToonDisplayFilter.so.proxy` in `build/native-renderer-avx`), and rendered by
 `tools/check_toon_lines.py`: each Output Mode's Toon channel, with and without closing the gaps.
+
+## `moonshine.patch`: toon lines in a colour (`ink_color`)
+
+A new attribute of `ToonDisplayFilter`, behind the preference "Toon lines in a colour", on by default; with it off the
+plugin does not write the attribute and the lines are black, as MoonRay draws them. Asked in issue 134.
+
+### What MoonRay does
+
+The ink only darkens: `result * ink` makes every line black. A tester laying the lines over the beauty took the lines
+alone (white on black), inverted them and multiplied, and could not fade them without showing white.
+
+### The change
+
+`ink_color` (black by default): where Output Mode draws the shading with its lines, each pixel is the shading where there
+is no ink and the ink's colour where there is, `result * ink + ink_color * (1 - ink)`; black ink is MoonRay's own picture.
+The lines alone stay white on black: they are the lines' cover, a matte.
+
+Kit side (not MoonRay's source, so no switch): the Compositor's Ink Lines node lays a colour over a picture through such a
+matte, Mix fading the lines towards the picture beneath; and a buffer of the lines alone is saved as the lines in their Ink
+Color with their cover as alpha (premultiplied in OpenEXR, straight in PNG, TIFF and Targa).
+
+The material ball with red ink:
+
+![The material ball's cel shading with its lines drawn in red](../../docs/images/toon-ink-color.png)
+
+### How it was checked
+
+Built (`ninja bin/ToonDisplayFilter.so` in `build/native-renderer-avx`, a runtime on PATH) and rendered three times on the
+material ball: black ink, red ink, and the lines alone. Where there is no ink the red render matches the black one within
+3e-6, and where there is, the shading plus red as much as the lines cover, within 6e-5; the lines alone stay white on
+black. The Ink Lines node gives the same values from the compositor program, the image tool and the probe's arithmetic
+(`tests/test_toon_ink_lines.py`).
+
+## `moonshine.patch`: toon lines smoothed (`smooth_lines`)
+
+A new attribute of `ToonDisplayFilter`, behind the preference "Toon lines smoothed", on by default; with it off the plugin
+does not write the attribute and the lines are as MoonRay draws them. Asked in issue 134.
+
+### What MoonRay does
+
+An outline comes from depth. The jump in depth across a silhouette is far over any threshold, so each pixel of an outline
+is all ink or none, and the outline steps with the pixel grid along every curve. Lines from normals, which change
+gradually, are already soft.
+
+### The change
+
+Where the line changes within the nine pixels around a pixel, the line (with its gaps closed, where that is on) is worked
+out over the 7 x 7 pixels around it and blended along its own direction, as FXAA does a picture's edges: two and four taps
+read between pixels along the line, up to four pixels long, the four-tap result kept unless it leaves the range of the
+pixel and its corners. A step becomes as much ink as the line covers there; a line's inside and its straight runs stay as
+they were. The depth and normal inputs' window widens by 6 to give the 7 x 7 pixels their kernels. Elsewhere nothing more
+is read.
+
+The material ball's lines alone, close up: Laplacian of Gaussian above and Sobel below, as MoonRay draws them on the left
+and smoothed on the right.
+
+![Close-ups of the material ball's toon outline, stepped on the left and smooth on the right, for two edge detectors](../../docs/images/toon-smooth-lines.png)
+
+### How it was checked
+
+Built and rendered on the material ball (512 x 512, 8 samples) with each detector, with and without the switch: the
+lines' total ink changes by under 1% (14,281 to 14,201 with Laplacian of Gaussian), and the render takes no longer.
+
+### A final render's lines with their alpha (kit side, no switch)
+
+MoonRay writes a display filter's picture as R, G and B alone. Once a render to a file is written (after its composite and
+any copy in another type, which read the lines as MoonRay wrote them), the channels of each Toon filter set to Lines only
+become its lines in its Ink Color, premultiplied, with `<name>.A` what they cover, in whichever part of the EXR holds them
+(`toon_lines.py`). The other channels, parts, headers, data types and compression are kept; a file whose lines have an
+alpha already is left alone. Checked on a three-part EXR with a Cryptomatte header and a half-float lines part, and on a
+single-part one: alpha equal to the lines' cover (within half-float rounding), colour the ink times it.
 
 ## `cl1-pool-scale.patch`: a larger store for rays in flight (no switch)
 

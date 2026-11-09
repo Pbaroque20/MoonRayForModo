@@ -6,14 +6,17 @@ from . import native
 SIZES = (('320 px wide', 320), ('640 px wide', 640), ('960 px wide', 960), ('1280 px wide', 1280))
 # The realtime preview's resolution as a share of the render's (preview_fraction): the render's size divided by it, so a
 # tall picture is made as small as a wide one. It took the place of a width in pixels (preview_size), which a tall
-# picture could stay full size under.
-FRACTIONS = (('Full resolution', 1), ('1/2 resolution', 2), ('1/3 resolution', 3), ('1/4 resolution', 4))
+# picture could stay full size under. MoonRay LS renders at it too (it had a Resolution of its own for a day, and a width
+# limit in pixels before).
+FRACTIONS = (('Full resolution', 1), ('1/2 resolution', 2), ('1/3 resolution', 3), ('1/4 resolution', 4),
+             ('1/8 resolution', 8), ('1/16 resolution', 16))
 
 
 def fraction_of_width(width, reference=1920):
-    """The share nearest a width in pixels once chosen (preview_size), taken of a render the reference wide."""
+    """The share nearest a width in pixels once chosen (preview_size, 320 to 1280), taken of a render the reference
+    wide: Full to a quarter, the shares there were when widths were left behind."""
     share = max(1.0, float(width)) / reference
-    return min((value for _, value in FRACTIONS), key=lambda divisor: abs(1.0 / divisor - share))
+    return min((value for _, value in FRACTIONS[:4]), key=lambda divisor: abs(1.0 / divisor - share))
 # key: (default, kind)
 KEYS = {
     'runtime': ('', str), 'cache_folder': ('', str), 'scene_cache': (True, bool), 'preview_engine': ('moonray', str), 'open_engine': ('moonray', str), 'preview_size': (640, int),
@@ -45,7 +48,7 @@ KEYS = {
     'crypto_volumes': (True, bool),
     # Fog in front of a see-through surface in alpha (native.fog_alpha), and each Cryptomatte sample counted once
     # (native.crypto_once).
-    'fog_alpha': (True, bool), 'camera_light_lpe': (True, bool), 'mirrored_meshes': (True, bool), 'toon_lines_apart': (True, bool), 'toon_close_gaps': (True, bool), 'filter_inputs': (True, bool),
+    'fog_alpha': (True, bool), 'camera_light_lpe': (True, bool), 'mirrored_meshes': (True, bool), 'scalar_emission': (True, bool), 'toon_lines_apart': (True, bool), 'toon_close_gaps': (True, bool), 'toon_ink_color': (True, bool), 'toon_smooth_lines': (True, bool), 'filter_inputs': (True, bool),
     'crypto_once': (True, bool),
     # MoonRay's look along PATH as it starts passes over entries that are not folders (native.dso_search).
     'dso_search': (True, bool),
@@ -63,6 +66,12 @@ KEYS = {
     'ngon_ears': (True, bool),
     # The MoonShine graph's Bump node bumps (native.bump_node).
     'bump_node': (True, bool),
+    # VDB fire coloured by its temperature (native.vdb_blackbody).
+    'vdb_blackbody': (True, bool),
+    # VDB sequences, static unticked (native.vdb_sequences).
+    'vdb_sequences': (True, bool),
+    # Meshes from Modo's Alembic import read from their files (native.alembic_import).
+    'alembic_import': (True, bool),
     'auto_xpu': (True, bool),
     # Realtime with MoonRay where XPU2 does not render the preview (the standard XPU chosen): off, on MoonRay's processor
     # path (vector), or on the graphics card (XPU). xpu_realtime is the switch it was before 0.5.3.1, read for its default.
@@ -88,8 +97,6 @@ XPU_REALTIME_TIP = ("RT with MoonRay and MoonRay LS where XPU2 does not render t
                     "keep the scene's Rendering Mode either way")
 # The samples a pixel each realtime engine may be set to stop at.
 LS_SAMPLES = (32, 64, 128)
-# How wide MoonRay LS may render: small, to be quick, or any of the preview sizes.
-LS_WIDTHS = (80, 160, 240) + tuple(size for label, size in SIZES)
 MOONLIGHTIPR_SAMPLES = (128, 256, 512, 1024)
 # How wide Draft renders while the scene is moved, for a quick picture.
 DRAFT_WIDTHS = (320, 640, 1280)
@@ -270,8 +277,6 @@ class Dialog(QtWidgets.QDialog):
         heading = QtWidgets.QLabel('MoonRay LS quality')
         heading.setStyleSheet('font-weight: bold; margin-top: 8px')
         form.addRow(heading)
-        form.addRow('Width limit', combo('ipr/width', [('%d px' % v, v) for v in LS_WIDTHS],
-                                          'How wide MoonRay LS renders, and never wider than the preview size above. Narrower is quicker.'))
         sampling = combo('ipr/sampling', [('Adaptive', 'adaptive'), ('Uniform', 'uniform')],
                          'Adaptive takes more samples where a pixel is still noisy and stops where it is clean enough, by the '
                          'Adaptive error below. Uniform gives every pixel the same samples, for an even grain.')

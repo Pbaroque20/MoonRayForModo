@@ -49,6 +49,11 @@ PLAYBACK_REST=0.35
 DRAFT_MOST=4500000
 # How long Modo's thread is left alone after an update of a followed scene, in lengths of that update.
 LIVE_REST=2.0
+# Whether MoonLightIPR follows a drag that only moves things (the camera, a viewport looking through it, items' places)
+# step by step, from the scene sent last (incremental.move_only); off, a drag is rendered once the mouse is let go.
+# Off since 2026-11-06: it follows, but a heavy scene's viewport lags behind while it does (a car: Modo made 40 of 100
+# moves a drag asked for, 85 with it off). The drag report (_drag_note) says what each followed drag came to.
+IPR_DRAGS=False
 
 
 class ElidedLabel(QtWidgets.QLabel):
@@ -269,18 +274,22 @@ class Panel(Tools, QtWidgets.QWidget):
         # Exposure and gamma: each a button that puts it back as it was, and its value beside it.
         reset=self.exposure_reset=QtWidgets.QToolButton();reset.setText('EV');reset.setToolTip('Exposure, in stops. Click for 0, and again for the exposure you had set.')
         reset.clicked.connect(self._exposure_toggle);row.addWidget(reset)
-        self.exposure=QtWidgets.QDoubleSpinBox();self.exposure.setRange(-20,20);self.exposure.setSingleStep(.25)
+        # Each changed by dragging across its number as well as by its arrows (scrub_field).
+        from .scrub_field import ScrubSpinBox
+        self.exposure=ScrubSpinBox();self.exposure.setRange(-20,20);self.exposure.setSingleStep(.25)
         self.exposure.setKeyboardTracking(False)
-        self.exposure.setToolTip('Display exposure in stops. The rendered values are not changed.')
-        self.exposure.valueChanged.connect(lambda value:self.display_timer.start())
+        self.exposure.setToolTip('Display exposure in stops. The rendered values are not changed.\nDrag on it, number or arrows, to change it: right or up for more; Ctrl for fine steps, Shift for coarse.')
+        # Shown at most every 200 ms while it changes, not 200 ms after the last change: a drag, or an arrow held, showed
+        # nothing until it stopped.
+        self.exposure.valueChanged.connect(lambda value:self.display_timer.isActive() or self.display_timer.start())
         self.exposure.valueChanged.connect(lambda value:self._mark_display())
         row.addWidget(self.exposure)
         reset=self.gamma_reset=QtWidgets.QToolButton();reset.setText('γ')
         reset.setToolTip('Gamma (γ): the viewing gamma. Click for 1, and again for the gamma you had set.')
         reset.clicked.connect(self._gamma_toggle);row.addWidget(reset)
-        self.gamma=QtWidgets.QDoubleSpinBox();self.gamma.setRange(.1,5.0);self.gamma.setSingleStep(.05);self.gamma.setDecimals(2)
+        self.gamma=ScrubSpinBox();self.gamma.setRange(.1,5.0);self.gamma.setSingleStep(.05);self.gamma.setDecimals(2)
         self.gamma.setValue(self.preferences.get('display_gamma'))
-        self.gamma.setToolTip('A gamma for looking at the picture, after its view transform: above 1 lifts the shadows, below 1 deepens them.\nIt is kept with this window, not with the scene, and changes neither the render nor a saved EXR.')
+        self.gamma.setToolTip('A gamma for looking at the picture, after its view transform: above 1 lifts the shadows, below 1 deepens them.\nIt is kept with this window, not with the scene, and changes neither the render nor a saved EXR.\nDrag on it, number or arrows, to change it: right or up for more; Ctrl for fine steps, Shift for coarse.')
         self.gamma.valueChanged.connect(self._gamma_changed)
         self.gamma.valueChanged.connect(lambda value:self._mark_display())
         row.addWidget(self.gamma)
@@ -432,6 +441,7 @@ class Panel(Tools, QtWidgets.QWidget):
             menu.addSeparator()
         if point is not None:
             menu.addAction('Focus Here',lambda:self.focus_at(point))
+            menu.addAction('Select Material Here',lambda:self.material_at(point))
             menu.addSeparator()
         menu.addAction('Fit',self.preview.fit)
         menu.addAction('Actual Size',self.preview.actual_size)
@@ -585,6 +595,36 @@ class Panel(Tools, QtWidgets.QWidget):
             self.status.setText(message)
         except Exception as exc:
             self.status.setText('Cannot set focus: '+str(exc))
+
+    def material_at(self,point):
+        """Select in Modo the material of the surface under a point of the image, found as Focus Here finds its depth:
+        a ray through the scene the picture was rendered from (focus.hit), the face it meets, and that face's material
+        tag; the material is then the one the Cryptomatte's material mattes select (_crypto_select)."""
+        try:
+            rect=self.preview.image_rect()
+            if rect.isEmpty() or not rect.contains(QtCore.QPointF(point)):
+                self.status.setText('Right-click inside the rendered image to select its material.');return
+            scene=self._asset_scene
+            if not scene or not scene.get('camera'):
+                self.status.setText('Render once, then pick the material.');return
+            from .focus import hit
+            found=hit(scene,(point.x()-rect.left())/rect.width(),(point.y()-rect.top())/rect.height())
+            if found is None:
+                self.status.setText('No surface there.');return
+            _,mesh,face=found
+            tags=mesh.get('face_materials') or []
+            tag=tags[face] if face<len(tags) else mesh.get('material','')
+            material=(scene.get('materials') or {}).get(tag) or (scene.get('materials') or {}).get('') or {}
+            owner=material.get('item') or next((layer.get('item') for layer in reversed(material.get('material_stack') or []) if layer.get('item')),None)
+            if not owner:
+                self.status.setText('The material there (%s) is not an item Modo can select.'%(tag or 'the base material'));return
+            identity=str(owner).split('|')[0]
+            lx.eval('select.drop item')
+            lx.eval('select.item {%s} add'%identity)
+            import modo
+            self.status.setText('Selected material %s, on %s.'%(modo.Scene().item(identity).name,mesh.get('name') or 'the mesh'))
+        except Exception as exc:
+            self.status.setText('Cannot select the material: '+str(exc))
 
     def _clay(self):
         action=self.clay_group.checkedAction()
@@ -1284,10 +1324,10 @@ class Panel(Tools, QtWidgets.QWidget):
             if engine=='moonlightipr':
                 words=self._sampling_words('moonlightipr')
             elif self._low():
-                # As MoonRay LS has a scene prepared: no wider than its width limit, and sampled to its own limit.
+                # As MoonRay LS has a scene prepared: no larger than its share of the render, and sampled to its own limit.
                 from .ipr import prepare
                 prepared,width,height=prepare({'width':scene_w,'height':scene_h,'render_settings':values['render']},width,height,
-                                              values['samples'],get('ipr/width'),get('ipr/samples'),get('ipr/error'),get('ipr/sampling'))
+                                              values['samples'],None,get('ipr/samples'),get('ipr/error'),get('ipr/sampling'),share=get('preview_fraction'))
                 words=self._sampling_words('ls',prepared['render_settings'],pixel_samples=prepared.get('_uniform_grid',1)**2)
             else:
                 words=self._sampling_words('moonray',values['render'],pixel_samples=int(values['samples'])**2)
@@ -1789,7 +1829,7 @@ class Panel(Tools, QtWidgets.QWidget):
         # MoonRay LS is MoonRay within its quality limits. A draft's region is not held to them.
         if self._low() and not output and not scene.get('_draft'):
             from .ipr import prepare
-            scene,width,height=prepare(scene,width,height,values['samples'],get('ipr/width'),get('ipr/samples'),get('ipr/error'),get('ipr/sampling'))
+            scene,width,height=prepare(scene,width,height,values['samples'],None,get('ipr/samples'),get('ipr/error'),get('ipr/sampling'),share=get('preview_fraction'))
         if refining:
             from .ipr import refine
             scene=refine(scene)
@@ -1832,11 +1872,15 @@ class Panel(Tools, QtWidgets.QWidget):
     def _digest(self, scene, timeless=False):
         """What a render of the scene depends on, hashed. timeless leaves out the frame the scene was read at, for
         MoonLightIPR's previews: it draws nothing from the time itself, what an animation changes being in the rest of
-        the scene, so going to another frame of a scene that does not move gives it nothing new to draw."""
+        the scene, so going to another frame of a scene that does not move gives it nothing new to draw. A VDB sequence
+        (static unticked, entities.vdb_sequenced) is the frame's own file, so a scene with one keeps its frame."""
+        from .entities import vdb_sequenced
+        if timeless and any(entity.get('class')=='VdbGeometry' and vdb_sequenced(entity.get('parameters') or {}) for entity in scene.get('entities') or []):
+            timeless=False
         dropped=('preview_buffer','display','aovs','recovery','_geometry_revision','denoising','compositor')+(('time','frame') if timeless else ())
         render_scene={key:value for key,value in scene.items() if key not in dropped}
         stored=self._settings_values();get=self.preferences.get
-        values = [render_scene, self._clay(), self.runtime_path(), get('preview_fraction'), stored['samples'], stored['environment'], stored['threads'], get('persistent_preview'), self._following, get('ipr/width'), get('ipr/samples'), get('ipr/error'), get('moonlightipr/samples'), self._engine()]
+        values = [render_scene, self._clay(), self.runtime_path(), get('preview_fraction'), stored['samples'], stored['environment'], stored['threads'], get('persistent_preview'), self._following, get('ipr/samples'), get('ipr/error'), get('moonlightipr/samples'), self._engine()]
         # Geometry is hashed once per list; a streaming JSON pass over every vertex took seconds per update.
         from .scene_digest import digest
         return digest(*values)
@@ -2120,6 +2164,91 @@ class Panel(Tools, QtWidgets.QWidget):
         except Exception:return None
         return scene
 
+    def _drag_count(self,what):
+        report=getattr(self,'_drag_steps',None)
+        if report is not None:report[what]=report.get(what,0)+1
+
+    def _drag_told(self,items):
+        """The kinds of item Modo told of during a MoonLightIPR drag, for its report."""
+        report=getattr(self,'_drag_steps',None)
+        if report is None:return
+        try:
+            import modo
+            scene=modo.Scene()
+            for identity in list(items)[:6]:
+                kind='told: '+scene.item(identity).type
+                report[kind]=report.get(kind,0)+1
+        except Exception:pass
+
+    def _drag_note(self,held):
+        """What following a MoonLightIPR drag came to, said in the Render Log once the mouse is let go (and in
+        test-results/drag-report.log where the plugin's source folder is on this machine): how often it was looked at,
+        what Modo told of, what was sent, and what made a step wait for the release."""
+        import time as clock
+        report=getattr(self,'_drag_steps',None)
+        if held:
+            if report is None:self._drag_steps={'began':clock.monotonic(),'frames':getattr(self.renderer,'frames_shown',0)}
+            else:report['looked']=report.get('looked',0)+1
+            return
+        if report is None:return
+        self._drag_steps=None
+        seconds=clock.monotonic()-report.pop('began');frames=getattr(self.renderer,'frames_shown',0)-report.pop('frames')
+        if seconds<0.15:return
+        text='MoonLightIPR drag of %.1f s: %s; %d frames shown during it.'%(seconds,', '.join('%s %d'%(k,v) for k,v in sorted(report.items())) or 'nothing looked at',frames)
+        from . import terminal
+        terminal.note('Preview',text)
+        try:
+            from pathlib import Path
+            folder=Path(r'C:\Users\Raphael Tobar\MoonRayForModo\test-results')
+            if folder.is_dir():
+                with open(folder/'drag-report.log','a',encoding='utf-8') as log:log.write(clock.strftime('%H:%M:%S ')+text+'\n')
+        except Exception:pass
+
+    @staticmethod
+    def _view_matrices():
+        """Where each of Modo's 3D viewports looks from, as a world matrix: its turn (Matrix) and, for a viewport
+        looking through a camera, the camera's place (Center). None for one that cannot be read."""
+        found=[]
+        try:
+            ports=lx.service.View3Dport()
+            for index in range(ports.Count()):
+                try:
+                    view=lx.object.View3D(ports.View(index))
+                    turn=view.Matrix(0);place=view.Center()
+                    found.append([float(v) for row in turn for v in tuple(row)+(0.0,)]+[float(v) for v in place]+[1.0])
+                except Exception:found.append(None)
+        except Exception:pass
+        return found
+
+    def _camera_moved(self):
+        """The camera rendered through, as a set of its identity, where it has moved since last looked at; else empty.
+        Where it stands is kept in _camera_place. A camera navigated in a viewport that looks through it is moved by
+        Modo only once the mouse is let go: while the mouse is held, where that viewport looks from is where it stands
+        (a viewport found looking from the camera's place at the drag's first step)."""
+        try:
+            import modo
+            from . import camera_choice
+            from .host import world_matrix
+            scene=modo.Scene()
+            identity=camera_choice.current(scene) or scene.renderCamera.id
+            matrix=world_matrix(scene.item(identity))
+        except Exception:return set()
+
+        def near(a,b):
+            return a is not None and b is not None and len(a)==len(b)==16 and all(abs(x-y)<=1e-4*max(1.0,abs(y)) for x,y in zip(a,b))
+        before=getattr(self,'_camera_seen',None)
+        views=self._view_matrices()
+        if before is None or before[0]!=identity:
+            # The drag's first step: the viewports that look through the camera now.
+            self._camera_views=[index for index,seen in enumerate(views) if near(seen,matrix)]
+        else:
+            for index in getattr(self,'_camera_views',()):
+                seen=views[index] if index<len(views) else None
+                if seen is not None and not near(seen,matrix):
+                    matrix=seen;break
+        self._camera_seen=(identity,matrix);self._camera_place=matrix
+        return {identity} if before is not None and before[0]==identity and not near(before[1],matrix) else set()
+
     def _live_tick(self):
         if self.disposed or not self._following:return
         from .interaction import dragging
@@ -2129,19 +2258,33 @@ class Panel(Tools, QtWidgets.QWidget):
         # An animation playing in Modo is not followed frame by frame: the frame it stops on is rendered. A time
         # dragged by hand is another matter, and is followed as any drag is.
         if not self._time_settled() and not held:return
-        # MoonLightIPR renders an edit once the mouse is let go: following each step of a drag held Modo up more than
-        # it showed. What Modo tells of meanwhile waits in its queue for the release.
-        if held and self._engine()=='moonlightipr':
+        # MoonLightIPR follows a drag that only moves things (the camera, lights, items' places) step by step, as the
+        # scene's meshes are kept and packed away from Modo's thread; anything else dragged is rendered once the mouse is
+        # let go (below). Up to 0.5.3.1 every drag waited for the release: following one held Modo up more than it showed.
+        ipr=self._engine()=='moonlightipr'
+        if held and ipr and not IPR_DRAGS:
+            # Drags followed by MoonLightIPR are set aside (IPR_DRAGS): what Modo tells of waits for the release.
             self.release_timer.start();return
+        if not (held and ipr):self._camera_seen=None
+        self._drag_note(held and ipr)
         import time as clock
         began=clock.monotonic()
-        if began<getattr(self,'_live_rest',0.0):return
+        if began<getattr(self,'_live_rest',0.0):
+            self._drag_count('rested');return
         # Keep host reads from competing with the Python writer during a drag. Notices stay queued.
         if held and self.preview_engine.currentData()=='moonray_ls' and getattr(self.renderer,'writer',None) is not None:return
         if not held:self._live_drag_read=False
         try:
             import modo
             full,items=self.changes.consume();time=lx.service.Selection().GetTime()
+            # The camera looked through, moved by navigating a viewport that looks through it: Modo tells of that only
+            # once the mouse is let go, so where it stands is looked at while MoonLightIPR follows a drag.
+            polled=self._camera_moved() if held and ipr and not full else set()
+            items|=polled
+            # A drag followed by move_only (below) is read the usual way once the mouse is let go, which checks it.
+            moved=self.__dict__.setdefault('_drag_moved',set())
+            if not held and moved:
+                items|=moved;moved.clear()
             from .assets import signature
             # Periodic reconciliation covers host notifications omitted by some
             # procedural mesh providers. Normal idle ticks do not capture geometry.
@@ -2163,7 +2306,9 @@ class Panel(Tools, QtWidgets.QWidget):
             settings={k:v for k,v in self._settings_values().items() if k not in ('display','preview_buffer','aovs','recovery','denoising','compositor')}
             changed=settings!=self._live_settings or time!=self._last_time or modo.Scene().renderItem.id!=self._scene_id
             settling=not held and getattr(self,'_live_digest_pending',False)
-            if not (full or items or changed or settling):return
+            if not (full or items or changed or settling):
+                self._drag_count('nothing told');return
+            self._drag_told(items)
             reuse=not full and not changed and bool(items or settling) and self._geometry_cache is not None
             if reuse:
                 from .incremental import classify
@@ -2177,6 +2322,15 @@ class Panel(Tools, QtWidgets.QWidget):
                 # up with: the sun of such a sky is shown where it was let go.
                 from .incremental import moves_sky
                 if moves_sky(modo.Scene(),items,self._geometry_cache):reuse=False;sky=True
+            if held and ipr and reuse not in (True,'transforms') and (reuse=='materials' or sky or getattr(self,'_live_drag_read',False)):
+                # MoonLightIPR follows moves alone: a material, a mesh's points or the scene read whole wait for the release.
+                # The scene is read whole once in a drag all the same (below), as what is told first (an item's first
+                # move, or an edit made before the drag) would otherwise have every step of it wait.
+                self._drag_count('waited: '+('the scene read whole' if full else 'settings or time changed' if changed
+                                             else 'sky' if sky else 'no reading kept' if self._geometry_cache is None
+                                             else 'edit is %s'%(type(reuse).__name__ if isinstance(reuse,dict) else reuse)))
+                self.changes.full=self.changes.full or full;self.changes.items.update(items)
+                self.release_timer.start();return
             if held and reuse not in (True,'transforms','materials') and not sky and not getattr(self,'_live_drag_read',False):
                 # The first step of a drag often makes something new in the scene (an item's first move gives it a
                 # place of its own), which needs the scene read whole. That is done once in a drag, so that the rest
@@ -2220,11 +2374,22 @@ class Panel(Tools, QtWidgets.QWidget):
                         # Nothing moves: the scene as read once, the same picture, its meshes kept for the next move.
                         self._live_still=still
                         scene=first if first is not None else self._capture()
-            if not blurred:
+            fast=None
+            if held and ipr and reuse in (True,'transforms') and getattr(self,'_kept_capture',None) is not None:
+                # Only where things stand made new in the scene sent last: the camera and meshes a drag moves.
+                from .incremental import move_only
+                fast=move_only(modo.Scene(),self._kept_capture,[identity for identity in items if identity not in polled],
+                               camera_moved=bool(polled),camera_matrix=getattr(self,'_camera_place',None) if polled else None,loose=(self._geometry_cache or {}).get('_loose_items') or ())
+                if fast is not None:moved.update(items);self._moves_only=getattr(self,'_moves_only',0)+1;self._drag_count('moves only')
+                else:
+                    from .incremental import REFUSED
+                    self._drag_count('read the usual way: '+(REFUSED[0] if REFUSED else '?'))
+            if fast is not None:scene=fast
+            elif not blurred:
                 scene = self._capture(reuse,items if reuse=='transforms' else None)
             # The meshes as they were: their cut is kept (_submit).
             self._detail_kept=not full and not changed and (reuse is True or reuse in ('materials','transforms'))
-            if held:
+            if held and fast is None:
                 # Whatever was dragged, if it changed what lights the scene from all around (an environment, one of
                 # its layers or where that sits, a sky's sun, a MoonRay environment light), it is shown on release.
                 from .incremental import surroundings
@@ -2236,7 +2401,18 @@ class Panel(Tools, QtWidgets.QWidget):
                 self._live_digest_pending=True
                 self.release_timer.start()
                 self._submit(scene,digest=('live-drag',object()))
+            elif fast is not None:
+                self._drag_count('sent')
+                # Something moved, or Modo would not have told of it: sent without hashing the whole scene again (a
+                # car's materials and settings, ~16 ms a step). The last of the drag is hashed once it is let go.
+                self._drag_scene=fast
+                self._submit(scene,digest=('live-drag',object()))
             else:
+                drag=getattr(self,'_drag_scene',None);self._drag_scene=None
+                if drag is not None and isinstance(self.last_digest,tuple):
+                    # A drag followed by moves alone, now read the usual way: unchanged since its last step, nothing is sent.
+                    try:self.last_digest=self._digest(drag,timeless=self._engine()=='moonlightipr')
+                    except Exception:pass
                 digest=self._digest(scene,timeless=self._engine()=='moonlightipr')
                 self._live_digest_pending=False
                 if digest != self.last_digest:self._submit(scene,digest=digest)

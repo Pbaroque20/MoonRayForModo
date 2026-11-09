@@ -677,6 +677,73 @@ def collect(scene,warnings,controls):
                 result[-1]['ids']=stable
     return result
 
+# Alembic meshes read this session, by file, its state and the time of the sample read.
+ALEMBIC={}
+
+
+def alembic_meshes(path,seconds,runtime=None):
+    """An Alembic file's meshes at a time (the sample at or before it), as native-port/modo_abc_reader.cpp --meshes reads
+    them: each a dict of its name, its world matrix (sixteen numbers, rows), its sample's time and its first and last,
+    its points, its velocities (units a second; none where the file has none) and its faces, each turned to Modo's
+    winding. Read again only for another sample of the file."""
+    import struct,subprocess,tempfile,os
+    from array import array
+    from . import native
+    source=Path(path)
+    stat=source.stat()
+    runtime=Path(runtime or native.default_runtime())  # (a string where the runtime is named)
+    tool=runtime/'modo_abc_reader.exe'
+    if not tool.is_file():raise OSError('this runtime has no Alembic reader (modo_abc_reader.exe)')
+    handle,staged=tempfile.mkstemp(suffix='.mab2');os.close(handle)
+    try:
+        done=subprocess.run([str(tool),'--meshes',str(source),repr(float(seconds)),staged],env=native.environment(runtime),
+                            stdout=subprocess.PIPE,stderr=subprocess.STDOUT,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0),timeout=600)
+        if done.returncode:raise ValueError(done.stdout.decode(errors='replace').strip()[-300:] or 'the Alembic file could not be read')
+        data=Path(staged).read_bytes()
+    finally:
+        try:os.remove(staged)
+        except OSError:pass
+    if data[:4]!=b'MAB2':raise ValueError('the Alembic reader gave nothing it can use')
+    at=4;count=struct.unpack_from('<I',data,at)[0];at+=4
+    found=[]
+    for _ in range(count):
+        length=struct.unpack_from('<I',data,at)[0];at+=4
+        name=data[at:at+length].decode('utf-8','replace');at+=length
+        matrix=list(struct.unpack_from('<16f',data,at));at+=64
+        sample,first,last=struct.unpack_from('<3f',data,at);at+=12
+        points,faces,indices,moving=struct.unpack_from('<4I',data,at);at+=16
+        def floats(n):
+            nonlocal at
+            values=array('f');values.frombytes(data[at:at+4*n]);at+=4*n;return values
+        def ints(n):
+            nonlocal at
+            values=array('i');values.frombytes(data[at:at+4*n]);at+=4*n;return values
+        p=floats(3*points);v=floats(3*points) if moving else None
+        counts=ints(faces);corners=ints(indices)
+        vertices=[[p[3*i],p[3*i+1],p[3*i+2]] for i in range(points)]
+        velocities=[[v[3*i],v[3*i+1],v[3*i+2]] for i in range(points)] if v is not None else []
+        polygons=[];k=0
+        for n in counts:
+            polygons.append(list(corners[k:k+n]));k+=n
+        found.append(dict(name=name,matrix=matrix,sample=sample,first=first,last=last,vertices=vertices,velocities=velocities,faces=polygons))
+    return found
+
+
+def alembic_scene_meshes(path,seconds,owner,identity,name,material,runtime=None):
+    """The kit's meshes for an Alembic file at a time, placed by the object it hangs on (owner: its world matrix):
+    none outside the file's samples. Kept by file and sample: a shutter's ends often read the same one."""
+    def product(a,b):
+        return [sum(a[4*r+k]*b[4*k+c] for k in range(4)) for r in range(4) for c in range(4)]
+    read=alembic_meshes_cached(path,seconds,runtime)
+    made=[]
+    for held in read:
+        if not held['first']-1e-6<=seconds<=held['last']+1e-6:continue  # not yet there, or gone
+        made.append(dict(name=name+' '+held['name'],identity=identity+'|abc|'+held['name'],vertices=held['vertices'],faces=held['faces'],
+                         matrix=product(held['matrix'],owner),material=material or '',normals=[],uvs=[],subdivision=False,
+                         subdivision_level=1,smooth=True,visibility=[True]*6,velocities=held['velocities'],_alembic=True))
+    return made
+
+
 def attach(scene,settings):
     # Controls refer to stable item IDs. File geometry can be attached to a locator.
     from .host import world_matrix
@@ -686,6 +753,7 @@ def attach(scene,settings):
         if scene['_external_motion_settings']!=settings:raise ValueError('Geometry asset settings changed after shutter capture; capture the frame again')
         return
     values=[value for value in scene.get('extra_geometry',[]) if not value.get('_external_asset')]
+    meshes=[mesh for mesh in scene.get('meshes',[]) if not mesh.get('_alembic')]
     for identity,entry in settings.get('objects',{}).items():
         path=entry.get('geometry_file','')
         if not path:continue
@@ -694,6 +762,11 @@ def attach(scene,settings):
         try:item=modo.Scene().item(identity)
         except LookupError:raise ValueError('Geometry asset owner no longer exists: '+identity)
         transform=scene.get('asset_owners',{}).get(identity,{'matrix':world_matrix(item)})
+        if path.suffix.lower()=='.abc':
+            # Its meshes at the frame's time, the kit's own (Modo's loader does not play one whose faces change).
+            fps=float(scene.get('fps',modo.Scene().fps))
+            meshes.extend(alembic_scene_meshes(path,float(frame)/fps,transform['matrix'],identity,item.name,entry.get('material','')))
+            continue
         if path.suffix.lower()=='.vdb':
             value=dict(entry,kind='vdb',file=str(path),identity=identity+'|vdb',source_item=identity,name=item.name,**transform)
         else:
@@ -706,6 +779,126 @@ def attach(scene,settings):
             align(value,value)
         values.append(value)
     scene['extra_geometry']=values
+    scene['meshes']=imported_alembic(meshes,frame,float(scene.get('fps',modo.Scene().fps)),scene.setdefault('warnings',[]))
+
+
+def alembic_path(text):
+    """An Alembic File item's filePath as a path: Modo writes 'C:Users/...', its drive without the slash after it."""
+    import re
+    text=str(text or '').strip()
+    if re.match(r'^[A-Za-z]:[^/\\]',text):text=text[:2]+'/'+text[2:]
+    return Path(text)
+
+
+def alembic_seconds(seconds,mode,offset,speed,first,last):
+    """The file's time for the scene's, as Modo's Alembic streaming plays it: started at the offset, at the speed; looped
+    or bounced within the file's samples where its mode says so, else as it comes (none outside the samples)."""
+    at=float(offset)+float(seconds)*float(speed)
+    span=float(last)-float(first)
+    mode=str(mode or '').lower()
+    if span>0 and 'loop' in mode:
+        at=float(first)+(at-float(first))%span
+    elif span>0 and ('pong' in mode or 'bounce' in mode):
+        k=(at-float(first))%(2*span)
+        at=float(first)+(k if k<=span else 2*span-k)
+    return at
+
+
+def alembic_match(name,read):
+    """Of an Alembic file's meshes, the one Modo's mesh item of this name streams: the file's one mesh, or the one whose
+    path has the name among its parts ('xf' for /xf/StormMesh), or 'parent: mesh' as a static import names them."""
+    if len(read)==1:return read[0]
+    found=[held for held in read if name in held['name'].strip('/').split('/') or
+           name.replace(': ','/') in held['name'] or name==held['name']]
+    return found[0] if len(found)==1 else None
+
+
+def imported_alembic(meshes,frame,fps,warnings=None):
+    """Meshes Modo's own Alembic import streams, read again from the file by the kit (alembic_scene_meshes): File > Import
+    makes either an Alembic Mesh item (Alembic Streaming Meshes) or a mesh item with an Alembic streaming deformer, each
+    beside the Alembic File item that names the file. Modo hands the render cache a mesh of fixed size stretched to the
+    file's, without the file's velocities, so a fluid mesh's changing faces could not be blurred (a tester's Mesher.abc,
+    2026-11-08). Their material, visibility and flags are kept; a mesh the kit cannot read from its file is left as Modo
+    gives it, with a notice why (warnings). Switched off in Preferences (native.alembic_import)."""
+    from . import native
+    if not native.alembic_import():return meshes
+    import modo
+    from .host import world_matrix
+    document=modo.Scene()
+    notices=warnings if warnings is not None else []
+    def notice(text):
+        if text not in notices:notices.append(text)
+    # What streams a mesh, and the items its timing is read from, first found first: an Alembic Mesh item's own, then its
+    # file's; a deformer's own.
+    streamed=[]
+    for kind in ('AlembicMesh','ABCStreamingDeformer'):
+        try:found=list(document.items(kind))
+        except Exception:found=[]
+        for source in found:
+            try:
+                if kind=='AlembicMesh':streamed.append((source,[source]))
+                elif int(source.channel('enable').get()):
+                    streamed.extend((item,[source]) for item in source.itemGraph('deformers').forward() if item.type=='mesh')
+            except Exception:continue
+    if not streamed:return meshes
+    replaced={}
+    for item,timing in streamed:
+        files=[sibling for sibling in (item.parent.children() if item.parent else document.items('AlembicFile')) if sibling.type=='AlembicFile']
+        if len(files)!=1:
+            notice('%s comes from an Alembic file the kit cannot tell (%s beside it); it renders as Modo gives it.'%(item.name,'no Alembic File item' if not files else 'several Alembic File items'))
+            continue
+        path=alembic_path(files[0].channel('filePath').get())
+        if not path.is_file():
+            notice('%s: its Alembic file %s is not there; it renders as Modo gives it.'%(item.name,path))
+            continue
+        timing=timing+[files[0]]
+        def value(name,default):
+            for held in timing:
+                try:return held.channel(name).get()
+                except Exception:continue
+            return default
+        try:offset,speed=float(value('timeOffset',0.0)),float(value('timeSpeed',1.0))
+        except (TypeError,ValueError):offset,speed=0.0,1.0
+        replaced[item.id]=(item,path,value('timeMode',''),offset,speed)
+    if not replaced:return meshes
+    kept=[];made={}
+    scalar=(bool,int,float,str)
+    for mesh in meshes:
+        owner=str(mesh.get('identity','')).split('|')[0]
+        if owner not in replaced or mesh.get('_alembic'):
+            kept.append(mesh);continue
+        if owner in made:continue  # Modo's mesh in further material parts: the file's mesh is one, under the first's material
+        item,path,mode,offset,speed=replaced[owner]
+        try:
+            # Read at the time as it plays straight on: which mesh is Modo's, and its samples' span to loop within.
+            plain=float(offset)+float(frame)/fps*float(speed)
+            held=alembic_match(item.name,alembic_meshes_cached(path,plain))
+            if held is None:
+                notice('%s: the kit cannot tell which mesh of %s it is; it renders as Modo gives it.'%(item.name,path.name))
+                kept.append(mesh);continue
+            seconds=alembic_seconds(float(frame)/fps,mode,offset,speed,held['first'],held['last'])
+            found=[m for m in alembic_scene_meshes(path,seconds,world_matrix(item),owner,item.name,mesh.get('material',''))
+                   if m['identity'].endswith('|abc|'+held['name'])]
+        except (OSError,ValueError) as problem:
+            notice('%s: its Alembic file could not be read (%s); it renders as Modo gives it.'%(item.name,problem))
+            kept.append(mesh);continue
+        flags={k:v for k,v in mesh.items() if isinstance(v,scalar) and k not in ('identity','name','material','subdivision','subdivision_level','smooth')}
+        if mesh.get('visibility') is not None:flags['visibility']=list(mesh['visibility'])
+        if isinstance(mesh.get('geometry_settings'),dict):flags['geometry_settings']=dict(mesh['geometry_settings'])
+        made[owner]=[dict(m,**flags) for m in found]
+        kept.extend(made[owner])
+    return kept
+
+
+def alembic_meshes_cached(path,seconds,runtime=None):
+    """alembic_meshes kept by file and sample time: a shutter's ends often read the same one."""
+    source=Path(path);stat=source.stat()
+    key=(str(source.resolve()),stat.st_size,stat.st_mtime_ns,round(float(seconds),6))
+    read=ALEMBIC.get(key)
+    if read is None:
+        if len(ALEMBIC)>8:ALEMBIC.clear()
+        read=ALEMBIC[key]=alembic_meshes(source,seconds,runtime)
+    return read
 
 # Hair glints' numbers for each strand, by how many strands there are (each strand's is its place's).
 SCATTER={}

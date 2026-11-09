@@ -67,6 +67,17 @@ def begin():
             held['submits'] += 1
             return submit(*a, **k)
         panel._live_tick, panel.renderer.submit = timed, counted
+        # How long each scene takes to make ready for MoonLightIPR, on its own thread (which holds Python's lock).
+        from moonray_modo import moonlightipr_scene
+        pack = moonlightipr_scene.pack
+
+        def timed_pack(*a, **k):
+            started = time.perf_counter()
+            try:
+                return pack(*a, **k)
+            finally:
+                held.setdefault('packs', []).append(time.perf_counter() - started)
+        moonlightipr_scene.pack = timed_pack
         consume = panel.changes.consume
 
         def told():
@@ -105,10 +116,13 @@ def begin():
         # The timers were joined to the tick as it was: joined again to the timed one.
         panel.timer.timeout.disconnect()
         panel.timer.timeout.connect(timed)
-        held['mesh'] = next((m.id for m in modo.Scene().items('mesh')), None)
+        named = os.environ.get('MOONRAY_PROBE_MESH')
+        held['mesh'] = next((m.id for m in modo.Scene().items('mesh') if not named or m.name == named), None)
         held['camera'] = modo.Scene().renderCamera.id
         result['interval_ms'] = panel.timer.interval()
-        panel.start.click()
+        # Realtime on, as the RT button is pressed (Render is a render of its own).
+        if not panel.rt.isChecked():
+            panel.rt.click()
     except Exception:
         result['error'] = traceback.format_exc()
     save()
@@ -136,6 +150,8 @@ def phase(index):
         lx.eval('!app.quit')
         return
     held['ticks'], held['moves'], held['submits'], held['update_ticks'] = [], [], 0, []
+    held['frames'] = getattr(panel_widget().renderer, 'frames_shown', 0)
+    held['fast'] = getattr(panel_widget(), '_moves_only', 0)
     # Should Modo's thread stop answering, where every thread stands is written down.
     import faulthandler
     held['stuck'] = open(str(out / ('stuck_%d.txt' % index)), 'wb', 0)
@@ -155,7 +171,39 @@ def drag(index):
     if index:
         from moonray_modo import interaction
         interaction.dragging = lambda: True
+        if NAMES[index].startswith('view'):
+            # A viewport looking through the camera navigated: the view moved, the camera item left as it is.
+            try:
+                lx.eval('view3d.projection cam')
+            except Exception:
+                pass
+            ports = lx.service.View3Dport()
+            view = lx.object.View3D(ports.View(ports.Current()))
+            held['view_start'] = tuple(view.Center())
+            held['offset'] = 0.0
+
+            def navigate():
+                started = time.perf_counter()
+                held['offset'] += 0.01
+                x, y, z = held['view_start']
+                try:
+                    view.SetCenter((x + held['offset'], y, z))
+                except Exception as exc:
+                    result['navigate_error'] = str(exc)
+                held['moves'].append(time.perf_counter() - started)
+            held['mover'] = QtCore.QTimer()
+            held['mover'].setInterval(30)
+            held['mover'].timeout.connect(navigate)
+            held['mover'].start()
+            return
         what = held['camera'] if NAMES[index].startswith('camera') else held['mesh']
+        kept = getattr(panel_widget(), '_kept_capture', None)
+        if not NAMES[index].startswith('camera') and not os.environ.get('MOONRAY_PROBE_MESH') and kept:
+            # A mesh that is rendered: the first in the scene last sent.
+            first = next((m for m in kept['meshes'] if not m.get('volumetric') and 'instances' not in m), None)
+            if first is not None:
+                what = first.get('source_item') or first['identity'].split('|')[0]
+        result.setdefault('dragged', []).append(what)
         lx.eval('select.item {%s} set' % what)
         held['here'] = lx.eval('transform.channel pos.X ?')
         held['offset'] = 0.0
@@ -189,6 +237,11 @@ def close(name):
                              'share_of_modo_thread': round(sum(ticks) / span, 3), 'tick_median_ms': round(1000 * ticks[len(ticks) // 2], 1) if ticks else None,
                              'update_tick_median_ms': round(1000 * sorted(held['update_ticks'])[len(held['update_ticks'])//2], 1) if held.get('update_ticks') else None,
                              'tick_longest_ms': round(1000 * ticks[-1], 1) if ticks else None, 'renders_asked': held['submits'],
+                             'move_only_refused': list(getattr(__import__('moonray_modo.incremental',fromlist=['x']),'REFUSED',[])),
+                             'kept_capture': getattr(panel_widget(), '_kept_capture', None) is not None,
+                             'pack_ms': sorted(round(1000 * s, 1) for s in held.pop('packs', [])),
+                             'moves_only': getattr(panel_widget(), '_moves_only', 0) - held.get('fast', 0),
+                             'frames_shown': getattr(panel_widget().renderer, 'frames_shown', 0) - held.get('frames', 0),
                              'moonray_passes_begun': held.pop('passes', 0), 'pass_begin_seconds': round(held.pop('pass_time', 0.0), 3), 'of_which_outside_ticks': round(held.pop('outside', 0.0), 3),
                              'whole_asked_by': held.pop('whole', [])[:12],
                              'told_of': held.pop('told', [])[:12], 'time_now': lx.service.Selection().GetTime(),

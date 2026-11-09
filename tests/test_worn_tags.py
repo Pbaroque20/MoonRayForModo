@@ -11,7 +11,10 @@ def worn_tags():
     # host imports Modo; the function is taken from its source, as it stands alone.
     tree = ast.parse(HOST.read_text(encoding='utf-8'))
     found = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == 'worn_tags')
-    space = {}
+    import sys
+    sys.path.insert(0, str(ROOT / 'kit/MoonRayForModo/python'))
+    from moonray_modo import face_tags
+    space = {'face_tags': face_tags}
     exec(compile(ast.Module(body=[found], type_ignores=[]), str(HOST), 'exec'), space)
     return space['worn_tags']
 
@@ -30,6 +33,18 @@ class Worn(unittest.TestCase):
         source = HOST.read_text(encoding='utf-8')
         self.assertIn("if tag is None or (worn is not None and tag not in worn):", source)
         self.assertIn("result['materials'] = {tag: material for tag, material in result['materials'].items() if tag in worn}", source)
+
+
+    def test_a_list_of_tags_is_made_a_set_once(self):
+        import sys
+        sys.path.insert(0, str(ROOT / 'kit/MoonRayForModo/python'))
+        from moonray_modo import face_tags
+        faces = ['body', 'glass', 'body']
+        first = face_tags.worn({'face_materials': faces})
+        self.assertEqual(first, {'body', 'glass'})
+        self.assertIs(face_tags.worn({'face_materials': faces}), first)
+        self.assertEqual(face_tags.worn({'face_materials': list(faces) + ['tyre']}), {'body', 'glass', 'tyre'})
+        self.assertEqual(face_tags.worn({'material': 'chrome'}), {'chrome'})
 
 
 if __name__ == '__main__':

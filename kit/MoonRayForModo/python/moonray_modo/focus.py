@@ -1,6 +1,6 @@
 """Find how far from the camera the surface under a point of the preview is.
 
-Works on a captured scene, the same one the preview was rendered from, so it sees instances
+The material there as well (hit), to select it in Modo. Works on a captured scene, the same one the preview was rendered from, so it sees instances
 and evaluated geometry as rendered. Pure Python: one ray against every triangle, with a box
 test per mesh placement first.
 """
@@ -49,8 +49,16 @@ def box_hit(origin, direction, low, high, nearest):
 
 def depth(scene, u, v):
     """Depth of the nearest surface under (u, v), or None where there is none."""
+    found = hit(scene, u, v)
+    return found[0] if found else None
+
+
+def hit(scene, u, v):
+    """The nearest surface under (u, v): (its depth, the mesh, the index of its face in the mesh's faces), or None
+    where there is none. The face says what material is there (its tag in the mesh's face_materials)."""
     eye, direction = ray(scene['camera'], scene['width'], scene['height'], u, v)
     nearest = math.inf
+    struck = None
     for mesh in scene.get('meshes', []):
         vertices, faces = mesh.get('vertices') or [], mesh.get('faces') or []
         if not vertices or not faces:
@@ -70,7 +78,7 @@ def depth(scene, u, v):
                 continue
             ox, oy, oz = o
             dx, dy, dz = d
-            for face in faces:
+            for index, face in enumerate(faces):
                 a = vertices[face[0]]
                 ax, ay, az = a[0], a[1], a[2]
                 for n in range(1, len(face) - 1):
@@ -91,5 +99,5 @@ def depth(scene, u, v):
                         continue
                     t = (e2x * qx + e2y * qy + e2z * qz) / det
                     if 1e-6 < t < nearest:
-                        nearest = t
-    return nearest if math.isfinite(nearest) else None
+                        nearest, struck = t, (mesh, index)
+    return (nearest,) + struck if struck is not None else None

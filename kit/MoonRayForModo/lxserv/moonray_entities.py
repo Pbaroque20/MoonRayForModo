@@ -447,6 +447,8 @@ def register():
         a VDB volume inside it. Without the volume the shape renders as nothing, or as the box it sits in."""
         import modo
         prefix=entities.CHANNEL_PREFIX;scene=modo.Scene()
+        # The file as chosen: its file setting (Static or Sequence) says whether its numbered siblings are the frames
+        # (entities.resolve_vdb).
         item.channel(prefix+'model').set(str(path).replace(chr(92),'/'))
         grids=entities.vdb_grids(str(path))
         if grids and text(item,prefix+'density_grid') not in grids:

@@ -25,10 +25,19 @@ def directory(runtime):
     return bundled if supported(bundled) else selected
 
 
+_SUPPORTED = set()
+
+
 def supported(directory):
-    """MoonLightIPR needs its executable, its device program and the CUDA runtime side by side."""
+    """MoonLightIPR needs its executable, its device program and the CUDA runtime side by side. A folder found to have
+    them is remembered: looked for at every scene sent, the files were a few milliseconds of each step of a drag."""
     directory = Path(directory)
-    return (directory / EXECUTABLE).is_file() and (directory / PROGRAM).is_file() and any(directory.glob('cudart64_*.dll'))
+    if str(directory) in _SUPPORTED:
+        return True
+    found = (directory / EXECUTABLE).is_file() and (directory / PROGRAM).is_file() and any(directory.glob('cudart64_*.dll'))
+    if found:
+        _SUPPORTED.add(str(directory))
+    return found
 
 
 def rejected(reason):
@@ -205,7 +214,7 @@ class Session(QtCore.QObject):
                     from .shared_image import receive
                     packet = receive(line, self.process.processId())
                     # A frame of a scene that has since been replaced is acknowledged but not shown.
-                    if not self.stopping and not self.closed and not self.latest and packet[0] == self.current: self.memory_image.emit(packet)
+                    if not self.stopping and not self.closed and packet[0] == self.current: self.memory_image.emit(packet)
                 except (ValueError, OSError) as exc:
                     # A frame already taken back (shared_image.Withdrawn) is passed over without a word: newer ones follow.
                     from .shared_image import Withdrawn

@@ -4,7 +4,7 @@ import lx
 import lxu.utils
 import lxifc
 import modo
-from . import properties, options, coordinates
+from . import properties, options, coordinates, face_tags
 
 
 def channel(item, name, default=None):
@@ -191,7 +191,7 @@ def worn_tags(found):
     '' (the base material, which every surface not otherwise tagged wears)."""
     worn = {''}
     for mesh in found.get('meshes') or []:
-        worn.update(mesh.get('face_materials') or [mesh.get('material', '')])
+        worn.update(face_tags.worn(mesh))
     for extra in found.get('extra_geometry') or []:
         worn.add(extra.get('material', ''))
     for entity in found.get('entities') or []:
@@ -211,7 +211,7 @@ def unworn(scene, result, warnings):
     else:
         carried = set()
         for mesh in result.get('meshes', []):
-            carried.update(mesh.get('face_materials') or [mesh.get('material', '')])
+            carried.update(face_tags.worn(mesh))
     carried.discard(None)
     if not carried:
         return
@@ -511,6 +511,10 @@ def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fal
         evaluated_geometry = True
     if any(properties.read(item).get('override') for item in scene.items('meshInst',superType=False)):
         evaluated_geometry = True
+    if scene.items('proxy',superType=False):
+        # Scene Proxies render what their scene files hold: their surfaces are Modo's render cache's, as Modo renders
+        # them, with no mesh of this scene to read (evaluated.proxies).
+        evaluated_geometry = True
     if alembic_items(scene):
         # Alembic streamed in as its own items (Alembic Mesh, Curves, Point Cloud): their surfaces are Modo's render
         # cache's, frame by frame from the file, with no mesh channel to read.
@@ -692,6 +696,8 @@ def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fal
             else:
                 data=dict(cached,surfaces=[dict(v) for v in cached['surfaces']]) if cached else evaluated.capture(lx.service.Selection().GetTime())
             result['_evaluated_data']=data
+            # Scene Proxies' surfaces once each, shaded by their own scenes.
+            evaluated.proxies(data, scene, lx.service.Selection().GetTime(), warnings)
             native_shape_materials = result['materials']
             # An edit of meshes alone: each Shader Tree stack's material as the last reading made it (shading_kept).
             result['materials'] = evaluated.assign_materials(data, scene, warnings, shading_kept=shading_kept)
@@ -1167,7 +1173,7 @@ def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fal
         if settings.get('geometry_file'):
             try:result['asset_owners'][identity]={'matrix':world_matrix(scene.item(identity))}
             except LookupError:warnings.append('Geometry asset owner is missing: '+identity)
-    result['motion_policies']={identity:v.get('motion_topology','strict') for identity,v in properties.scene_settings().get('production',{}).get('objects',{}).items()}
+    result['motion_policies']={identity:v.get('motion_topology','auto') for identity,v in properties.scene_settings().get('production',{}).get('objects',{}).items()}
     result['source_assets']=[]
     for clip in scene.items('videoStill',superType=False):
         filename=channel(clip,'filename','')

@@ -62,14 +62,36 @@ def apply_motion(scene, start, end, endpoints, preview=False):
         last=indexed(end.get(category,[]),category)
         if set(center)!=set(first) or set(center)!=set(last):
             affected=set(center)^set(first) | set(center)^set(last)
-            if category!='meshes' or any(scene.get('motion_policies',{}).get(str(i).split('|')[0],'strict')=='strict' for i in affected):
+            if category!='meshes' or any(scene.get('motion_policies',{}).get(str(i).split('|')[0],'auto')=='strict' for i in affected):
                 raise ValueError('Motion blur cannot export changing '+category+' identities')
             warnings.append('Changing mesh membership uses frame-time visibility; births/deaths inside the shutter are not integrated.')
         outputs=[]
         for identity,original in center.items():
             a,b=first.get(identity,original),last.get(identity,original)
-            policy=scene.get('motion_policies',{}).get(str(identity).split('|')[0],'strict')
-            if category=='meshes' and policy=='freeze' and any(v['faces']!=original['faces'] or len(v['vertices'])!=len(original['vertices']) for v in (a,b)):
+            policy=scene.get('motion_policies',{}).get(str(identity).split('|')[0],'auto')
+            changing=category=='meshes' and any(v['faces']!=original['faces'] or len(v['vertices'])!=len(original['vertices']) for v in (a,b))
+            # An Alembic mesh the kit reads (extra_geometry.alembic_scene_meshes): its file's velocities blur it, the
+            # shutter's ends reading the same sample or another.
+            if category=='meshes' and original.get('_alembic') and policy in ('auto','velocity'):
+                changing=True
+            if changing and policy in ('auto','velocity'):
+                # A mesh rebuilt during the shutter (a fluid mesher's): its frame's mesh, its points moved along their
+                # velocities to the shutter's ends, where it has one a point; else still, where it is at the frame.
+                velocity=original.get('velocities') or []
+                fps=float(scene.get('fps',24))
+                if len(velocity)==len(original['vertices']) and math.isfinite(fps) and fps>0:
+                    moved=lambda t:[[p[k]+v[k]*t/fps for k in range(3)] for p,v in zip(original['vertices'],velocity)]
+                    node=dict(original,vertices=moved(endpoints[0]),vertices_close=moved(endpoints[1]))
+                    node.pop('velocities',None)
+                    node.update(matrix=a.get('matrix',IDENTITY),matrix_close=b.get('matrix',IDENTITY))
+                    outputs.append(node)
+                    warning=str(original.get('name',identity))+' changes its points and faces during the shutter; it is blurred along its velocities.'
+                else:
+                    outputs.append(dict(original))
+                    warning=str(original.get('name',identity))+' changes its points and faces during the shutter and has no velocities; it renders where it is at the frame, without motion blur.'
+                if warning not in warnings:warnings.append(warning)
+                continue
+            if changing and policy=='freeze':
                 outputs.append(dict(original));warnings.append('Frame-time topology used without deformation blur: '+str(identity));continue
             node=dict(original)
             node.update(matrix=a.get('matrix',IDENTITY),matrix_close=b.get('matrix',IDENTITY))
@@ -139,7 +161,7 @@ def apply_motion(scene, start, end, endpoints, preview=False):
             extras.append(dict(original,matrix=a.get('matrix',IDENTITY),matrix_close=b.get('matrix',IDENTITY)))
             if a.get('file')!=original.get('file') or b.get('file')!=original.get('file'):warnings.append('Animated VDB density uses the frame-time grid; shutter motion requires its velocity grid.')
             continue
-        policy=scene.get('motion_policies',{}).get(str(identity).split('|')[0],'strict')
+        policy=scene.get('motion_policies',{}).get(str(identity).split('|')[0],'auto')
         if policy=='velocity':
             velocity=original.get('velocities',[])
             if len(velocity)!=len(original['vertices']):raise ValueError('Velocity topology mode requires one velocity per point/strand vertex: '+str(identity))
