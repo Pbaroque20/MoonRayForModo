@@ -9,7 +9,7 @@
 - **VDB shapes show their size in the viewport**: the box the grid fills and a cloud of points where it is thick, read once in the background and drawn natively, of the frame's own file as the timeline moves.
 - **XPU2's sampling settings follow the engine in use**: where XPU2 falls back to MoonRay XPU for a scene, its Sampling settings are greyed and MoonRay's own come back; they return as XPU2 takes the scene again.
 - **XPU2 realtime with denoising**: the buffer list under XPU2's realtime is the beauty and the denoised beauty alone, and the denoised beauty is offered again.
-- **MoonLightIPR at the camera's resolution**: Preview Preferences has an opt-in for MoonLightIPR to render at the active camera's resolution, in realtime too; Realtime preview resolution is then greyed.
+- **MoonLightIPR renders at the camera's resolution**: Preview Preferences > MoonLightIPR quality has an opt-in for a MoonLightIPR Render (RT off) to be made at the active camera's resolution, as MoonRay's is; realtime keeps Realtime preview resolution, as XPU2's realtime does. Pixel samples there is now RT pixel samples, realtime's; Render samples is the Render's.
 - **Select Mesh Here**: right-click the picture to select in Modo the mesh under the pointer, or the instance of it there.
 - **Finer graph sliders**: the MoonShine graph's numbers drag in steps of 0.01, 0.001 with Ctrl and 0.1 with Shift, and a colour's parts stay between 0 and 1.
 - **The engine's status stays put**: the persistent session no longer says "Reloading scene structure" over what the status bar says of the engine rendering.

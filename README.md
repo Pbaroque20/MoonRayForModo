@@ -10,7 +10,7 @@ The current release is [0.5.3.2](https://github.com/Pbaroque20/MoonRayForModo/re
 
 - **VDB sequences stay on XPU2**, a numbered VDB file plays as a sequence at once, and VDB shapes show their box and a point cloud in the viewport.
 - **XPU2's sampling settings follow the engine in use**, and XPU2 realtime offers the denoised beauty, with the beauty, alone.
-- **MoonLightIPR at the camera's resolution** (Preview Preferences), **Select Mesh Here** in the picture's menu, finer graph sliders.
+- **MoonLightIPR Render at the camera's resolution** (Preview Preferences), **Select Mesh Here** in the picture's menu, finer graph sliders.
 - **AOVs in MoonLightIPR, for motion graphics**: Diffuse, Glossy, Emission and Environment background, which add up to the beauty, and Alpha, Camera depth, Shading normal, World position and Albedo, in the buffer list, shown at once and costing the beauty nothing.
 - **Render with MoonLightIPR**: with RT off, Render is no longer greyed: MoonLightIPR gathers Render samples a pixel (Preview Preferences, 500 unless changed) as fast as the graphics card can, and stops. The label under the picture says how many samples a pixel the picture holds as it comes (137 / 500 ps), in realtime too.
 

@@ -87,7 +87,7 @@ KEYS = {
     'moonlightipr/samples': (256, int),
     # How many samples a pixel a MoonLightIPR Render (realtime off) gathers before it stops.
     'moonlightipr/render_samples': (500, int),
-    # MoonLightIPR renders at the active camera's resolution, not the share Realtime preview resolution gives (opt-in).
+    # A MoonLightIPR Render (realtime off) is made at the active camera's resolution, not the realtime share (opt-in).
     'moonlightipr/camera_resolution': (False, bool),
 }
 # Realtime with the standard XPU: off, on the processor (MoonRay's vector mode), or on the graphics card (XPU).
@@ -233,13 +233,6 @@ class Dialog(QtWidgets.QDialog):
         form.addRow('Realtime preview resolution', combo('preview_fraction', FRACTIONS,
                     "The realtime previews' size as a share of the render's resolution, tall or wide alike: MoonLightIPR, "
                     "MoonRay LS, and RT with MoonRay XPU2 or XPU. Render makes the picture at its full resolution."))
-        follow = check('moonlightipr/camera_resolution', "MoonLightIPR at the camera's resolution",
-                       "MoonLightIPR renders at the active camera's resolution, as a render is, in realtime too. Realtime "
-                       'preview resolution is then greyed: it no longer applies to MoonLightIPR')
-        fraction = self.widgets['preview_fraction']
-        fraction.setEnabled(not follow.isChecked())
-        follow.toggled.connect(lambda on: fraction.setEnabled(not on))
-        form.addRow(follow)
         self.realtime_held = realtime_share()
         self.realtime_share = QtWidgets.QSpinBox()
         self.realtime_share.setRange(1, 100)
@@ -283,8 +276,8 @@ class Dialog(QtWidgets.QDialog):
         heading = QtWidgets.QLabel('MoonLightIPR quality')
         heading.setStyleSheet('font-weight: bold; margin-top: 8px')
         form.addRow(heading)
-        form.addRow('Pixel samples', combo('moonlightipr/samples', [('%d per pixel' % v, v) for v in MOONLIGHTIPR_SAMPLES],
-                                            'How many samples a pixel MoonLightIPR gathers in realtime before it rests. Fewer settles sooner and is grainier.'))
+        form.addRow('RT pixel samples', combo('moonlightipr/samples', [('%d per pixel' % v, v) for v in MOONLIGHTIPR_SAMPLES],
+                                              'How many samples a pixel MoonLightIPR gathers in realtime (RT on) before it rests. Fewer settles sooner and is grainier.'))
         self.render_samples = QtWidgets.QSpinBox()
         self.render_samples.setRange(1, 100000)
         self.render_samples.setSingleStep(50)
@@ -293,6 +286,9 @@ class Dialog(QtWidgets.QDialog):
         self.render_samples.setToolTip('Render with MoonLightIPR (realtime off) gathers this many samples a pixel, as fast as the '
                                        'graphics card can, and stops. The label under the picture says how many it has so far.')
         form.addRow('Render samples', self.render_samples)
+        form.addRow(check('moonlightipr/camera_resolution', "Render at the camera's resolution",
+                          "Render with MoonLightIPR (RT off) makes the picture at the active camera's resolution, as MoonRay's "
+                          'Render does. Realtime keeps Realtime preview resolution, as XPU2 realtime does'))
         heading = QtWidgets.QLabel('MoonRay LS quality')
         heading.setStyleSheet('font-weight: bold; margin-top: 8px')
         form.addRow(heading)

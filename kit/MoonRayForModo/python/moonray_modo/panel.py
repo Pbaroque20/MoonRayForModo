@@ -1540,8 +1540,9 @@ class Panel(Tools, QtWidgets.QWidget):
         the share of that resolution Realtime preview resolution asks for (a half, a third...), tall or wide alike."""
         scene_w, scene_h = scene['width'], scene['height']
         share=max(1,int(self.preferences.get('preview_fraction') or 1))
-        # MoonLightIPR at the active camera's resolution, where Preview Preferences asks for it.
-        if self._engine()=='moonlightipr' and self.preferences.get('moonlightipr/camera_resolution'):share=1
+        # A MoonLightIPR Render (realtime off) at the active camera's resolution, where Preview Preferences asks for it;
+        # realtime keeps its share, as XPU2's does.
+        if self._engine()=='moonlightipr' and self.preferences.get('moonlightipr/camera_resolution') and not getattr(self,'_following',False):share=1
         width = scene_w if final or not (self._live() or self._low() or (self.ipr_mode.isChecked() and self._rt_capable())) else max(16,round(scene_w/share))
         # A playblast has a width of its own, whichever engine is chosen.
         blast=None if final else self._playblasting()
