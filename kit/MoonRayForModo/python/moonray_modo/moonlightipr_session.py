@@ -232,7 +232,9 @@ class Session(QtCore.QObject):
                 continue
             # What the session says of a scene: its textures made smaller to fit the card, or why it was rejected.
             if line.startswith('MoonLightIPR textures: '):
-                self.status.emit('MoonLightIPR shows textures ' + line[len('MoonLightIPR textures: '):].strip() + '.')
+                said = line[len('MoonLightIPR textures: '):].strip()
+                # Kept whole in the computer's memory (out of core), or, where that refused them, made smaller.
+                self.status.emit(('MoonLightIPR textures: ' + said if 'computer' in said else 'MoonLightIPR shows textures ' + said) + '.')
                 continue
             if line.startswith('MoonLightIPR scene rejected: '):
                 self.rejection = line[len('MoonLightIPR scene rejected: '):].strip()

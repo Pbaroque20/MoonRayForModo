@@ -332,7 +332,7 @@ def assign_materials(data, scene, warnings, shading_kept=False):
             # Numbered on from the stacks kept, which keep theirs (as the count of stacks, where none are kept).
             tag='evaluated_material_%d' % following;following+=1
             tags[stack]=tag
-            materials[tag]=material_values(base)
+            materials[tag]=material_values(base,warnings)
             if channel(base,'subsAmt',0) or channel(base,'aniso',0):
                 materials[tag]['shader']='DwaBaseMaterial'
             collect(where,{tag:materials[tag]},warnings,baked_effects=('displace',),

@@ -249,7 +249,43 @@ def arranged(graph):
     return dict(graph,nodes={key:{k:v for k,v in node.items() if k!='position'} for key,node in graph['nodes'].items()})
 
 
-def material_values(material):
+def relinked_graph(graph, warnings=None):
+    """A material's graph with each image it names that is not where it says found as the scene's image clips are
+    (textures.relink_graph): beside the scene by its last folders, or by its name in a folder the scene's own images are
+    in. The scene is not changed (Relink Images does that); each image found elsewhere is said in warnings."""
+    from . import textures
+    if not isinstance(graph, dict) or not isinstance(graph.get('nodes'), dict):
+        return graph
+    values = [value for node in graph['nodes'].values() if isinstance(node, dict)
+              for value in (node.get('parameters') or {}).values() if textures.graph_image_value(value)]
+    if not values or all(not textures.missing(value) for value in values):
+        return graph
+    scene = modo.Scene()
+    filename = getattr(scene, 'filename', None)
+    graph, changes = textures.relink_graph(graph, filename, _image_folders(scene))
+    if warnings is not None:
+        for _, _, old, new, how in changes:
+            note = 'Graph image %s found %s: %s' % (old, "by its name in the scene's images folder" if how == 'same name' else 'beside the scene', new)
+            if note not in warnings:
+                warnings.append(note)
+    return graph
+
+
+_FOLDERS = {}
+
+
+def _image_folders(scene):
+    """The folders of the scene's image clips (textures.image_folders), kept while its clips are the same."""
+    from . import textures
+    clips = tuple(channel(clip, 'filename', '') for clip in scene.items('videoStill', superType=False))
+    key = (getattr(scene, 'filename', None), clips)
+    if key not in _FOLDERS:
+        _FOLDERS.clear()
+        _FOLDERS[key] = textures.image_folders(scene)
+    return _FOLDERS[key]
+
+
+def material_values(material, warnings=None):
     from .material_settings import values as material_settings
     settings = properties.read(material)
     settings=dict(settings)
@@ -272,7 +308,7 @@ def material_values(material):
     value = {'name':material.name,'item':material.id,'crypto_name':str(settings.get('crypto_name') or '').strip(),
              'crypto_id':int(settings.get('crypto_id') or 0),'color': [c * diffuse_amount for c in diffuse],
                                 **controls,
-                                'node_graph': arranged(settings.get('node_graph')),
+                                'node_graph': arranged(relinked_graph(settings.get('node_graph'), warnings)),
                                 'node_override': settings.get('node_override',False) or material.type in ('material.moonrayMaterialX','material.moonrayMoonShine'),
                                 'native_shader': settings.get('native_shader',''),
                                 'native_parameters': settings.get('native_parameters',{}),
@@ -641,7 +677,7 @@ def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fal
             if tag is None or (worn is not None and tag not in worn):
                 continue
             material_candidates.setdefault(tag,[]).append(material)
-            result['materials'][tag] = material_values(material)
+            result['materials'][tag] = material_values(material, warnings)
             if material.type=='advancedMaterial' and not properties.read(material).get('native_shader'):
                 # What of Modo's material MoonRay is not given as Modo renders it, as measured against Modo's renders.
                 if float(channel(material,'reflAmt',0))>0 and not channel(material,'reflSpec',1):

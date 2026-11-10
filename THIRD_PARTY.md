@@ -80,9 +80,9 @@ the OpenQMC contributors for it.
 
 ## ISPC Texture Compressor
 
-XPU2's texture overflow mode compresses textures with Intel's ISPC Texture Compressor (https://github.com/GameTechDev/ISPCTextureCompressor,
+XPU2's texture overflow mode, and MoonLightIPR's textures, are compressed with Intel's ISPC Texture Compressor (https://github.com/GameTechDev/ISPCTextureCompressor,
 commit 79ddbc9; `upstream/ISPCTextureCompressor`, which Git ignores). `ispc_texcomp.cpp` and `kernel.ispc` are compiled unchanged into
-`moonray_xpu2.exe`, and `xpu2/interactive/bc6h_core.h` is generated from the format's layouts in `kernel.ispc`.
+`moonray_xpu2.exe` and `moonlightipr_session.exe`, and `xpu2/interactive/bc6h_core.h` is generated from the format's layouts in `kernel.ispc`.
 
 Copyright 2017 Intel Corporation. MIT License: permission is hereby granted, free of charge, to any person obtaining a copy of this
 software and associated documentation files, to deal in the Software without restriction, including without limitation the rights to use,

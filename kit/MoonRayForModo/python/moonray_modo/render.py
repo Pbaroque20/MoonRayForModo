@@ -487,7 +487,8 @@ class Renderer(QtCore.QObject):
         self.moonlightipr_gathering=(getattr(self,'moonlightipr_samples',None) or once
                                      or getattr(self,'moonlightipr_preview_samples',None) or MOONLIGHTIPR_SAMPLES)
         # A Render (realtime off) gathers all its samples, flat out: neither paced nor stopped once clean.
-        snapshot=dict(request['snapshot'],_flat_out=True) if once and not getattr(self,'moonlightipr_samples',None) else request['snapshot']
+        # And has each image at its full size, where realtime's are fitted to 1024 (moonlightipr_materials).
+        snapshot=dict(request['snapshot'],_flat_out=True,_full_textures=True) if once and not getattr(self,'moonlightipr_samples',None) else request['snapshot']
         self.moonlightipr.submit(snapshot,directory,request['width'],request['height'],request['environment'],self.moonlightipr_serial,self.moonlightipr_gathering,
                                  denoise=self.moonlightipr_denoises,runtime=request['runtime'])
         self.moonlightipr.view(self.moonlightipr_denoises or self.buffers.key!='beauty')

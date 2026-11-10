@@ -25,5 +25,9 @@ MoonLightIPR is a GPU preview renderer created by Raphael Tobar for MoonRay for 
   unchanged in `third_party/openqmc` (version 0.7.1). Copyright Contributors to the OpenQMC Project, under the
   Apache License 2.0, with NVIDIA's covenant not to assert patents; both are installed beside MoonLightIPR in
   `licenses/`. They are not relicensed under the MIT License.
+- **ISPC Texture Compressor.** Textures are compressed for the graphics card by Intel's ISPC Texture Compressor
+  (`upstream/ISPCTextureCompressor`, commit 79ddbc9), its `ispc_texcomp.cpp` and `kernel.ispc` compiled unchanged into
+  the session. Copyright 2016-2019 Intel Corporation, under the MIT License; its text is in the kit, in
+  `licenses/ISPCTextureCompressor-LICENSE.txt`.
 - **What it is built on.** MoonLightIPR runs on NVIDIA OptiX and CUDA, which remain under NVIDIA's
   own licences; their notices are installed beside MoonLightIPR in `licenses/`.

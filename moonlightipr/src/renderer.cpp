@@ -116,13 +116,20 @@ void scaleTo(float* v, float length) {
 
 struct Texture {
     cudaArray_t array = nullptr;
+    // A picture with its smaller copies (PreparedTexture's levels), in place of array.
+    cudaMipmappedArray_t mipmapped = nullptr;
     cudaTextureObject_t object = 0;
+    // Out of core (TextureDesc::hostResident): the texels in pinned memory of the computer's, which object reads.
+    void* host = nullptr;
+    size_t hostBytes = 0;
     // How bright the picture is, on a grid of at most 64 by 64, top row first: what a light that wears it is sampled by.
     std::vector<float> brightness;
     uint32_t gridWidth = 0, gridHeight = 0;
     ~Texture() {
         if (object) cudaDestroyTextureObject(object);
         if (array) cudaFreeArray(array);
+        if (mipmapped) cudaFreeMipmappedArray(mipmapped);
+        if (host) cudaFreeHost(host);
     }
 };
 
@@ -1131,10 +1138,81 @@ void halve(std::vector<float>& rgba, uint32_t& width, uint32_t& height) {
 
 }
 
+// A prepared texture on the card: its levels in one mipmapped array (or a plain one, for a single level), read with
+// filtering within each level and between them, compressed blocks decoded by the card as they are read.
+std::unique_ptr<Texture> uploadPrepared(const PreparedTexture& prepared, const TextureDesc& desc) {
+    if (prepared.levels.empty() || !prepared.width || !prepared.height)
+        throw std::runtime_error("MoonLightIPR texture was prepared empty");
+    auto texture = std::make_unique<Texture>();
+    cudaChannelFormatDesc format;
+    switch (prepared.format) {
+    case PreparedTexture::Halves: format = cudaCreateChannelDesc(16, 16, 16, 16, cudaChannelFormatKindFloat); break;
+    case PreparedTexture::BC7:
+        format = prepared.srgb ? cudaCreateChannelDesc<cudaChannelFormatKindUnsignedBlockCompressed7SRGB>()
+                               : cudaCreateChannelDesc<cudaChannelFormatKindUnsignedBlockCompressed7>();
+        break;
+    case PreparedTexture::BC6H: format = cudaCreateChannelDesc<cudaChannelFormatKindUnsignedBlockCompressed6H>(); break;
+    default: format = cudaCreateChannelDesc(8, 8, 8, 8, cudaChannelFormatKindUnsigned); break;
+    }
+    const bool blocks = prepared.format == PreparedTexture::BC7 || prepared.format == PreparedTexture::BC6H;
+    // A row of a level as the copy counts it: of blocks, for a compressed one, four texel rows at a time.
+    const auto copy = [&](cudaArray_t to, uint32_t level) {
+        const uint32_t w = std::max(1u, prepared.width >> level), h = std::max(1u, prepared.height >> level);
+        const size_t rowBytes = blocks ? size_t(w / 4) * 16 : size_t(w) * (prepared.format == PreparedTexture::Halves ? 8 : 4);
+        const size_t rows = blocks ? h / 4 : h;
+        if (prepared.levels[level].size() != rowBytes * rows) throw std::runtime_error("MoonLightIPR texture level is the wrong size");
+        ML_CHECK(cudaMemcpy2DToArray(to, 0, 0, prepared.levels[level].data(), rowBytes, rowBytes, rows, cudaMemcpyHostToDevice));
+    };
+    cudaResourceDesc resource = {};
+    const uint32_t levels = uint32_t(prepared.levels.size());
+    if (levels == 1) {
+        ML_CHECK(cudaMallocArray(&texture->array, &format, prepared.width, prepared.height));
+        copy(texture->array, 0);
+        resource.resType = cudaResourceTypeArray;
+        resource.res.array.array = texture->array;
+    } else {
+        ML_CHECK(cudaMallocMipmappedArray(&texture->mipmapped, &format, make_cudaExtent(prepared.width, prepared.height, 0), levels));
+        for (uint32_t level = 0; level < levels; ++level) {
+            cudaArray_t array = nullptr;
+            ML_CHECK(cudaGetMipmappedArrayLevel(&array, texture->mipmapped, level));
+            copy(array, level);
+        }
+        resource.resType = cudaResourceTypeMipmappedArray;
+        resource.res.mipmap.mipmap = texture->mipmapped;
+    }
+    const cudaTextureAddressMode modes[] = {cudaAddressModeWrap, cudaAddressModeClamp, cudaAddressModeMirror, cudaAddressModeBorder};
+    cudaTextureDesc sampling = {};
+    sampling.addressMode[0] = modes[std::min<uint32_t>(desc.wrapU, 3)];
+    sampling.addressMode[1] = modes[std::min<uint32_t>(desc.wrapV, 3)];
+    sampling.filterMode = cudaFilterModeLinear;
+    const bool floats = prepared.format == PreparedTexture::Halves || prepared.format == PreparedTexture::BC6H;
+    sampling.readMode = floats ? cudaReadModeElementType : cudaReadModeNormalizedFloat;
+    sampling.normalizedCoords = 1;
+    sampling.sRGB = prepared.srgb;
+    sampling.mipmapFilterMode = cudaFilterModeLinear;
+    sampling.minMipmapLevelClamp = 0.0f;
+    sampling.maxMipmapLevelClamp = float(levels - 1);
+    ML_CHECK(cudaCreateTextureObject(&texture->object, &resource, &sampling, nullptr));
+    texture->gridWidth = prepared.gridWidth;
+    texture->gridHeight = prepared.gridHeight;
+    texture->brightness = prepared.brightness;
+    return texture;
+}
+
 uint32_t Renderer::addTexture(const TextureDesc& desc) {
+    std::unique_ptr<Texture> texture;
+    if (!desc.hostResident) {
+        // On the card: as it was prepared, or prepared now as it is (one level, uncompressed).
+        if (desc.prepared) texture = uploadPrepared(*desc.prepared, desc);
+        else texture = uploadPrepared(prepareTexture(desc, false, false), desc);
+        auto slot = std::find(impl->textures.begin(), impl->textures.end(), nullptr);
+        if (slot == impl->textures.end()) slot = impl->textures.emplace(slot);
+        *slot = std::move(texture);
+        return uint32_t(slot - impl->textures.begin());
+    }
     if (!desc.pixels || !desc.width || !desc.height || desc.width > 16384 || desc.height > 16384)
         throw std::runtime_error("MoonLightIPR texture has no pixels or is too large");
-    auto texture = std::make_unique<Texture>();
+    texture = std::make_unique<Texture>();
     // What the card is given: the picture as it is, or halved to its size limit, with a picture of high dynamic range
     // as halves. Bytes are halved as light, from sRGB where they are sRGB, so that a smaller picture is not darker.
     uint32_t width = desc.width, height = desc.height;
@@ -1163,23 +1241,39 @@ uint32_t Renderer::addTexture(const TextureDesc& desc) {
         }
     }
     const void* uploaded = desc.floatData ? static_cast<const void*>(halves.data()) : (bytes.empty() ? desc.pixels : bytes.data());
-    const cudaChannelFormatDesc format = desc.floatData ? cudaCreateChannelDesc(16, 16, 16, 16, cudaChannelFormatKindFloat)
-                                                        : cudaCreateChannelDesc(8, 8, 8, 8, cudaChannelFormatKindUnsigned);
     const size_t rowBytes = size_t(width) * (desc.floatData ? 8 : 4);
-    ML_CHECK(cudaMallocArray(&texture->array, &format, width, height));
-    ML_CHECK(cudaMemcpy2DToArray(texture->array, 0, 0, uploaded, rowBytes, rowBytes, height, cudaMemcpyHostToDevice));
-    cudaResourceDesc resource = {};
-    resource.resType = cudaResourceTypeArray;
-    resource.res.array.array = texture->array;
-    const cudaTextureAddressMode modes[] = {cudaAddressModeWrap, cudaAddressModeClamp, cudaAddressModeMirror, cudaAddressModeBorder};
-    cudaTextureDesc sampling = {};
-    sampling.addressMode[0] = modes[std::min<uint32_t>(desc.wrapU, 3)];
-    sampling.addressMode[1] = modes[std::min<uint32_t>(desc.wrapV, 3)];
-    sampling.filterMode = cudaFilterModeLinear;
-    sampling.readMode = desc.floatData ? cudaReadModeElementType : cudaReadModeNormalizedFloat;
-    sampling.normalizedCoords = 1;
-    sampling.sRGB = desc.srgb && !desc.floatData;
-    ML_CHECK(cudaCreateTextureObject(&texture->object, &resource, &sampling, nullptr));
+    {
+        // Out of core: the texels in pinned memory of the computer's, mapped for the card, which its texture unit reads
+        // across the bus as it reads a picture of its own (filtered, wrapped and decoded alike): the kernel does not
+        // know the difference. Rows are spaced as the card's texture unit needs them.
+        int device = 0, alignment = 32;
+        cudaGetDevice(&device);
+        cudaDeviceGetAttribute(&alignment, cudaDevAttrTexturePitchAlignment, device);
+        const size_t pitch = (rowBytes + size_t(alignment) - 1) / size_t(alignment) * size_t(alignment);
+        texture->hostBytes = pitch * height;
+        ML_CHECK(cudaHostAlloc(&texture->host, texture->hostBytes, cudaHostAllocMapped | cudaHostAllocPortable));
+        for (uint32_t y = 0; y < height; ++y)
+            std::memcpy(static_cast<char*>(texture->host) + pitch * y, static_cast<const char*>(uploaded) + rowBytes * y, rowBytes);
+        void* onCard = nullptr;
+        ML_CHECK(cudaHostGetDevicePointer(&onCard, texture->host, 0));
+        cudaResourceDesc resource = {};
+        resource.resType = cudaResourceTypePitch2D;
+        resource.res.pitch2D.devPtr = onCard;
+        resource.res.pitch2D.desc = desc.floatData ? cudaCreateChannelDesc(16, 16, 16, 16, cudaChannelFormatKindFloat)
+                                                   : cudaCreateChannelDesc(8, 8, 8, 8, cudaChannelFormatKindUnsigned);
+        resource.res.pitch2D.width = width;
+        resource.res.pitch2D.height = height;
+        resource.res.pitch2D.pitchInBytes = pitch;
+        const cudaTextureAddressMode modes[] = {cudaAddressModeWrap, cudaAddressModeClamp, cudaAddressModeMirror, cudaAddressModeBorder};
+        cudaTextureDesc sampling = {};
+        sampling.addressMode[0] = modes[std::min<uint32_t>(desc.wrapU, 3)];
+        sampling.addressMode[1] = modes[std::min<uint32_t>(desc.wrapV, 3)];
+        sampling.filterMode = cudaFilterModeLinear;
+        sampling.readMode = desc.floatData ? cudaReadModeElementType : cudaReadModeNormalizedFloat;
+        sampling.normalizedCoords = 1;
+        sampling.sRGB = desc.srgb && !desc.floatData;
+        ML_CHECK(cudaCreateTextureObject(&texture->object, &resource, &sampling, nullptr));
+    }
     texture->gridWidth = std::min<uint32_t>(desc.width, 64);
     texture->gridHeight = std::min<uint32_t>(desc.height, 64);
     texture->brightness.assign(size_t(texture->gridWidth) * texture->gridHeight, 0.0f);

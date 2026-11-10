@@ -6,14 +6,16 @@ This is the development branch of [MoonRay for Modo](https://github.com/Pbaroque
 
 The current release is [0.5.3.2](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.5.3.2). **Built on MoonRay [2026.29.1](https://github.com/dreamworksanimation/openmoonray/releases/tag/v2026.29.1)** (OpenMoonRay's latest release; MoonRay 18.4), with the plugin's own patches for Windows and the preview.
 
-## New in 0.5.3.2.1 (coming)
+## New in 0.5.4 (coming)
 
+- **MoonRay graph images are found when a scene has moved**, as Modo's image clips are, and Relink Missing Images lists them.
+- **Sharp textures in a MoonLightIPR Render**: full-size images, compressed on the graphics card so big scenes fit, and kept in the computer's memory where they still do not.
 - **Render Animation with MoonLightIPR** (an Engine in its window), **motion vectors** in MoonLightIPR's AOVs, and Denoised Beauty after a MoonLightIPR Render without rendering again.
 - **VDB sequences stay on XPU2**, a numbered VDB file plays as a sequence at once, and VDB shapes show their box and a point cloud in the viewport.
 - **XPU2's sampling settings follow the engine in use**, and XPU2 realtime offers the denoised beauty, with the beauty, alone.
 - **MoonLightIPR Render at the camera's resolution** (Preview Preferences), **Select Mesh Here** in the picture's menu, finer graph sliders.
 - **AOVs in MoonLightIPR, for motion graphics**: Diffuse, Glossy, Emission and Environment background, which add up to the beauty, and Alpha, Camera depth, Shading normal, World position and Albedo, in the buffer list, shown at once and costing the beauty nothing.
-- **Render with MoonLightIPR**: with RT off, Render is no longer greyed: MoonLightIPR gathers Render samples a pixel (Preview Preferences, 500 unless changed) as fast as the graphics card can, and stops. The label under the picture says how many samples a pixel the picture holds as it comes (137 / 500 ps), in realtime too.
+- **Render with MoonLightIPR**: with RT off, Render is no longer greyed: MoonLightIPR gathers Render samples a pixel (Preview Preferences, 2000 unless changed) as fast as the graphics card can, and stops. The label under the picture says how many samples a pixel the picture holds as it comes (137 / 500 ps), in realtime too.
 
 ## New in 0.5.3.2
 
@@ -673,7 +675,7 @@ Comparison audit between Modo 16.1v9 and MoonLightIPR, the realtime preview: wha
 | Light linking (Modo's groups, include or exclude) | ![partly](docs/images/feature-partly.svg) | Which lights reach each object, from Object controls, a material's links or Modo's groups, compared with MoonRay at 0.96 to 1.01 of its brightness. Objects set not to cast some shadows, or not onto some objects, cast them all; said in Notices An object whose materials are linked to different lights is lit as its first |
 | Light volumetrics, and fog | ![partly](docs/images/feature-partly.svg) | Point, spot and directional lights' volumetrics, and the Environment Material's fog (Linear and Layered approximated), as fog lit by all the scene's lights; not yet compared with Modo's renders. Area, cylinder and dome lights' volumetrics and the Shader's fog are named in Notices |
 | **Environment** |  |  |
-| Gradients, constant colours and HDRI image layers | ![yes](docs/images/feature-yes.svg) | An HDRI that is the whole environment at 1024 x 512; layered environments and physical skies at 256 x 128; a third environment image shows as grey |
+| Gradients, constant colours and HDRI image layers | ![yes](docs/images/feature-yes.svg) | An HDRI that is the whole environment at 1024 x 512 in realtime, at its full size in a Render; layered environments and physical skies at 256 x 128; a third environment image shows as grey |
 | **Cameras** |  |  |
 | Perspective and orthographic cameras | ![yes](docs/images/feature-yes.svg) | With depth of field, motion blur and stereo (a camera set to both eyes shows the left) |
 | Other camera projections | ![no](docs/images/feature-no.svg) | MoonRay's fisheye, spherical and dome cameras are drawn in their place |
@@ -686,7 +688,7 @@ Comparison audit between Modo 16.1v9 and MoonLightIPR, the realtime preview: wha
 | Specular Tint, Flatness, and a reflection amount apart from specular | ![no](docs/images/feature-no.svg) | As for MoonRay; named in a notice |
 | Unreal, Unity, glTF and AxF materials | ![no](docs/images/feature-no.svg) |  |
 | **Shader Tree** |  |  |
-| Image maps: UV and projections, UDIMs, Low and High values | ![yes](docs/images/feature-yes.svg) | Up to 8 UV sets a scene; images at most 1024 pixels a side, their shape kept. A texture reading a UV map its mesh has not is drawn with the map at 0, and a notice names it |
+| Image maps: UV and projections, UDIMs, Low and High values | ![yes](docs/images/feature-yes.svg) | Up to 8 UV sets a scene; images at most 1024 pixels a side in realtime, their shape kept, and at full size in a Render, compressed on the graphics card. A MoonRay graph's images are found when the scene has moved, as Modo's clips are. A texture reading a UV map its mesh has not is drawn with the map at 0, and a notice names it |
 | Procedural textures | ![partly](docs/images/feature-partly.svg) | Modo's built-in patterns, Gabor and Poisson noise and Enhance textures run through the object with a Solid projection, as MoonRay draws them; other projections bake the built-in patterns flat, and Enhance needs Solid. Curvature, Wireframe, EasyGrad and RegionalHSV draw too |
 | Layer blend modes | ![partly](docs/images/feature-partly.svg) | All but Normal Multiply; Normal Map Blend on normal maps only |
 | Bump and normal maps | ![yes](docs/images/feature-yes.svg) |  |

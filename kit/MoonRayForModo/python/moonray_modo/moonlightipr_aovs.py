@@ -30,7 +30,8 @@ AOVS = {
     'motion_vectors': 10,
 }
 
-# MoonLightIPR's own buffers, listed after MoonRay's, and only while MoonLightIPR is the engine.
+# MoonLightIPR's own buffers, listed first after the beauty, and only while MoonLightIPR is the engine. Glossy is
+# MoonRay's direct and indirect glossy together (what compositors call specular): highlights from lights, glossy and mirror reflections, refraction, hair.
 OWN = (('Diffuse', 'moonlightipr_diffuse'), ('Glossy', 'moonlightipr_glossy'))
 OWN_KEYS = frozenset(key for _, key in OWN)
 

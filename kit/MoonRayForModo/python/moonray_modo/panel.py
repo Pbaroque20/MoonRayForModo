@@ -266,11 +266,12 @@ class Panel(Tools, QtWidgets.QWidget):
         self.buffer = QtWidgets.QComboBox()
         self.buffer.addItem('Beauty','beauty')
         self.buffer.addItem('Denoised Beauty','denoised_beauty')
-        for key,(label,attributes,channel) in options.AOVS.items():
-            self.buffer.addItem(label,key)
-        # MoonLightIPR's own light passes, listed only while it is the engine (moonlightipr_aovs).
+        # MoonLightIPR's own light passes, listed only while it is the engine (moonlightipr_aovs): first after the
+        # beauty, as the passes a composite starts from.
         from .moonlightipr_aovs import OWN
         for label,key in OWN:self.buffer.addItem(label,key)
+        for key,(label,attributes,channel) in options.AOVS.items():
+            self.buffer.addItem(label,key)
         self.buffer.setToolTip('The render buffer shown. Switching does not restart the render.')
         row.addWidget(self.buffer)
         row.addSpacing(5)
@@ -1379,12 +1380,28 @@ class Panel(Tools, QtWidgets.QWidget):
         if shown:text+=' | '+shown
         self.image_info.setText(text)
 
+    def _order_buffers(self,only):
+        """MoonLightIPR's list in a composite's order: the beauty, the light passes that add up to it (Diffuse,
+        Glossy, Emission, Environment background), then what the camera sees first, Albedo among them. MoonRay's
+        list keeps its own order, Albedo first."""
+        if getattr(self,'_buffers_ordered_for',None)==only:return
+        self._buffers_ordered_for=only
+        row=self.buffer.findData('albedo')
+        after=self.buffer.findData('environment_background' if only else 'moonlightipr_glossy')
+        if row<0 or after<0:return
+        target=after if row<after else after+1
+        if row==target:return
+        key=self.buffer.currentData();blocker=QtCore.QSignalBlocker(self.buffer)
+        model=self.buffer.model();items=model.takeRow(row);model.insertRow(target,items)
+        self.buffer.setCurrentIndex(max(0,self.buffer.findData(key)));del blocker
+
     def _limit_buffers(self):
         """MoonLightIPR makes the beauty and, where it is asked for, a denoised beauty, and the AOVs of its own
         (moonlightipr_aovs): the list then holds those. It shows the beauty unless another is chosen by hand, and choosing
         the denoised one is what has MoonLightIPR denoise. The other buffers are MoonRay's."""
         from .moonlightipr_aovs import AOVS as MOONLIGHTIPR_AOVS,OWN_KEYS
         only=self._engine()=='moonlightipr'
+        self._order_buffers(only)
         denoises=self._moonlightipr_denoises()
         self.buffer.setItemText(0,'Beauty')
         # MoonRay LS is a quick look: the beauty alone.

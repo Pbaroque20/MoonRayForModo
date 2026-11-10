@@ -206,3 +206,93 @@ def resolve_scene_source(filename,scene_filename=None):
     if len(candidates)>1:
         raise ValueError('Ambiguous relocated texture; relink the image in Modo: '+str(filename))
     return (next(iter(candidates.values())),True) if candidates else (direct,False)
+
+
+# What a graph's parameter names when it names an image: a file ending as an image does, or a set of <UDIM> tiles.
+GRAPH_IMAGE_SUFFIXES=('.jpg','.jpeg','.png','.tif','.tiff','.exr','.hdr','.tga','.tx','.bmp','.psd','.webp','.dds')
+
+
+def graph_image_value(value):
+    """Whether a node's parameter value is an image's path."""
+    if not isinstance(value,str) or not value.strip():return False
+    lowered=value.strip().lower()
+    return lowered.endswith(GRAPH_IMAGE_SUFFIXES) or '<udim>' in lowered
+
+
+def image_folders(scene):
+    """The folders a scene's image clips are found in, as they are resolved for rendering (resolve_scene_source): where
+    a node graph's image that is nowhere else is looked for by its name (resolve_graph_image)."""
+    from .host import channel
+    folders=[]
+    for clip in scene.items('videoStill',superType=False):
+        filename=channel(clip,'filename','')
+        if not filename:continue
+        try:path,_=resolve_scene_source(filename,getattr(scene,'filename',None))
+        except (ValueError,OSError):continue
+        try:found=bool(source_tiles(path))
+        except OSError:found=False
+        if found and str(path.parent).casefold() not in [str(f).casefold() for f in folders]:folders.append(path.parent)
+    return folders
+
+
+def resolve_graph_image(filename,scene_filename=None,folders=()):
+    """A node graph's image found: (its path, how) where how is None where it is where the graph says, 'relocated' where
+    its last folders are found beside the scene (resolve_scene_source, as image clips are), and 'same name' where a file
+    of its name is in exactly one of folders, the folders the scene's own images are in (image_folders); (None, why)
+    where it is not found, or found in more than one of them."""
+    try:
+        path,recovered=resolve_scene_source(filename,scene_filename)
+    except ValueError as exc:
+        return None,str(exc)
+    try:
+        if source_tiles(path):return path,('relocated' if recovered else None)
+    except OSError:
+        pass
+    name=Path(str(filename).replace('\\','/')).name
+    if not name:return None,'no file name'
+    matches={}
+    for folder in folders:
+        candidate=Path(folder)/name
+        try:
+            if source_tiles(candidate):matches[str(candidate).casefold()]=candidate
+        except OSError:
+            continue
+    if len(matches)==1:return next(iter(matches.values())),'same name'
+    if len(matches)>1:return None,'a file of its name is in more than one of the scene\'s image folders: '+', '.join(str(p.parent) for p in matches.values())
+    return None,'not found'
+
+
+def relink_graph(graph,scene_filename=None,folders=()):
+    """The graph with each image a node names that is not where it says found as resolve_graph_image finds it: (the
+    graph, a copy only where something changed, and [(node, parameter, old, new, how)])."""
+    if not isinstance(graph,dict) or not isinstance(graph.get('nodes'),dict):return graph,[]
+    changes=[]
+    nodes=None
+    for key,node in graph['nodes'].items():
+        parameters=node.get('parameters') if isinstance(node,dict) else None
+        if not isinstance(parameters,dict):continue
+        for name,value in parameters.items():
+            if not graph_image_value(value):continue
+            found,how=resolve_graph_image(value,scene_filename,folders)
+            if found is None or how is None:continue
+            new=str(found).replace('\\','/')
+            if nodes is None:nodes=dict(graph['nodes'])
+            node=nodes[key]=dict(nodes[key]);node['parameters']=dict(node['parameters']);node['parameters'][name]=new
+            changes.append((key,name,value,new,how))
+    return (dict(graph,nodes=nodes) if nodes is not None else graph),changes
+
+
+def missing_graph_images(graph,scene_filename=None,folders=()):
+    """[(node, parameter, path as the graph has it, what it would be relinked to or None, how or why)] for each image a
+    graph names that is not where it says: for Relink Images."""
+    found=[]
+    if not isinstance(graph,dict) or not isinstance(graph.get('nodes'),dict):return found
+    for key,node in graph['nodes'].items():
+        parameters=node.get('parameters') if isinstance(node,dict) else None
+        if not isinstance(parameters,dict):continue
+        for name,value in parameters.items():
+            if not graph_image_value(value):continue
+            path,how=resolve_graph_image(value,scene_filename,folders)
+            if path is not None and how is None:continue
+            found.append((key,name,value,None if path is None else str(path).replace('\\','/'),how))
+    return found

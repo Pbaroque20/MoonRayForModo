@@ -47,7 +47,21 @@ struct Hit {
     float curveAlong, curveChance;  // how far along its strand the hit is, and the strand's own number
     float3 curveTangent;
     float3 lift;                // a toon surface's way up to the smooth surface its corner normals describe, or 0
+    // How wide the ray is, as a cone: its width where it leaves and how much wider it grows each unit along (set before
+    // a camera ray is traced; other rays are 0), and so how wide it is where it lands, in the mesh's own units (set by
+    // the hit, for a material with layers): which of an image's smaller copies a texture is read from. 0 reads the
+    // whole picture.
+    float coneWidth = 0.0f, coneSpread = 0.0f, footprint = 0.0f;
 };
+
+// ---- Images ------------------------------------------------------------------------------------
+// An image, by its CUDA texture: on the graphics card, or kept in the computer's memory (out of core), which the card's
+// texture unit reads across the bus alike.
+ML_INLINE float4 sampleImage(unsigned long long handle, float u, float v, float across = 0.0f) {
+    // across: how much of the picture's width and height a texel of the surface spans where the ray lands, which the card
+    // turns into the smaller copy read (mip levels); 0 for the whole picture.
+    return across > 0.0f ? tex2DGrad<float4>(handle, u, v, make_float2(across, 0.0f), make_float2(0.0f, across)) : tex2D<float4>(handle, u, v);
+}
 
 ML_INLINE Hit* hitPayload() {
     return reinterpret_cast<Hit*>((static_cast<unsigned long long>(optixGetPayload_0()) << 32) | optixGetPayload_1());
@@ -285,7 +299,7 @@ ML_INLINE float3 distantRadiance(const DeviceDistantLight& light, float3 directi
     float3 radiance = vec(light.radiance);
     if (light.texture) {
         const float2 at = distantCoordinates(light, direction);
-        const float4 texel = tex2D<float4>(light.texture, at.x, at.y);
+        const float4 texel = sampleImage(light.texture, at.x, at.y);
         radiance = radiance * make_float3(texel.x, texel.y, texel.z);
     }
     return radiance;
@@ -579,7 +593,7 @@ ML_INLINE float3 filterFactor(const DeviceFilter& filter, unsigned i, const Devi
                 return vec(outside);
             }
             // MoonRay reads a cookie's picture from its top row down, as it does one laid round a sphere.
-            const float4 texel = tex2D<float4>(filter.texture, s, t);
+            const float4 texel = sampleImage(filter.texture, s, t);
             float3 value = vec(1.0f - filter.b[0]) + make_float3(texel.x, texel.y, texel.z) * filter.b[0];
             if (filter.flags & FILTER_INVERT) value = vec(1.0f) - value;
             return value;
@@ -660,7 +674,7 @@ ML_INLINE float3 lightTint(const DeviceLight& light, float3 p, float3 wi, float 
             s = 0.5f + 0.5f * dot(offset, u) / across;
             t = 0.5f - 0.5f * dot(offset, v) / up;
         }
-        const float4 texel = tex2D<float4>(light.texture, 1.0f - s, 1.0f - t);
+        const float4 texel = sampleImage(light.texture, 1.0f - s, 1.0f - t);
         tint = make_float3(texel.x, texel.y, texel.z);
     }
     const DeviceFilter* filters = reinterpret_cast<const DeviceFilter*>(params.lightFilters) + light.filterStart;
@@ -1795,6 +1809,15 @@ extern "C" __global__ void __raygen__moonlightipr() {
     for (unsigned depth = 0;; ++depth) {
         bounceSeed(seed, depth);
         Hit hit;
+        if (depth == 0) {
+            // The camera ray as a cone a pixel wide, for the texture sizes read where it lands (Hit::footprint): a
+            // pixel's angle (for MoonRay's fisheye and spherical cameras, about the same), or, for the orthographic
+            // camera, its width. Rays after it read whole pictures, as a path's later bounces blur them anyway.
+            if (params.cameraProjection == 3) hit.coneWidth = params.cameraProjectionValues[0] / float(params.width);
+            else if (params.cameraProjection == 0)
+                hit.coneSpread = 2.0f * length(vec(params.cameraV)) / (float(params.height) * length(vec(params.cameraW)));
+            else hit.coneSpread = ML_PI / float(params.height);
+        }
         traceRadiance(origin, direction, hit, reach, seen);
         // A light pass takes nothing of fog before the first surface.
         const bool fogCounts = !(params.aovPass && depth == 0);
@@ -2826,7 +2849,7 @@ ML_INLINE float modoRoughness(unsigned model, float roughness, float& strength) 
 }
 
 ML_INLINE MappedSlots evalLayers(const DeviceMaterial& material, const DeviceMesh& mesh, unsigned primitive,
-                                 float2 barycentrics, float3* channel, float2 shift, float3 position) {
+                                 float2 barycentrics, float3* channel, float2 shift, float3 position, float footprint = 0.0f) {
     channel[CHANNEL_COLOR] = vec(material.color);
     channel[CHANNEL_COLOR_AMOUNT] = vec(material.colorAmount);
     channel[CHANNEL_ROUGHNESS] = vec(material.roughness);
@@ -2958,8 +2981,19 @@ ML_INLINE MappedSlots evalLayers(const DeviceMaterial& material, const DeviceMes
                     tu = u - column;
                     tv = v - row;
                 }
+                // How much of the picture the ray's width covers here: its width in the mesh's units, times the
+                // texture coordinates' size to the triangle's, as lengths.
+                float across = 0.0f;
+                if (footprint > 0.0f && !mesh.curves) {
+                    const uint3 corners = reinterpret_cast<const uint3*>(mesh.indices)[primitive];
+                    const float3* at = reinterpret_cast<const float3*>(mesh.positions);
+                    const float area = length(cross(at[corners.y] - at[corners.x], at[corners.z] - at[corners.x]));
+                    const float2 du = make_float2(uv.b.x - uv.a.x, uv.b.y - uv.a.y), dv = make_float2(uv.c.x - uv.a.x, uv.c.y - uv.a.y);
+                    const float covered = fabsf(du.x * dv.y - du.y * dv.x) * fabsf(layer.scale[0] * layer.scale[1]);
+                    if (area > 0.0f) across = footprint * sqrtf(covered / area);
+                }
                 // Images are stored top row first; texture v runs upwards.
-                const float4 texel = tex2D<float4>(texture, tu, 1.0f - tv);
+                const float4 texel = sampleImage(texture, tu, 1.0f - tv, across);
                 value = (layer.flags & LAYER_ALPHA_ONLY) ? vec(texel.w) : make_float3(texel.x, texel.y, texel.z);
                 if (layer.flags & LAYER_ALPHA_MASK) mask *= texel.w;
                 if (((layer.flags & LAYER_COVERAGE_U) && (u < 0.0f || u > 1.0f)) || ((layer.flags & LAYER_COVERAGE_V) && (v < 0.0f || v > 1.0f)))
@@ -3115,7 +3149,18 @@ ML_INLINE MappedSlots resolveMaterial(Hit* hit, const DeviceMaterial& material, 
     hit->absorptionDistance = material.absorptionDistance;
     slots.normal = slots.bump = UV_SLOTS;
     if (material.layerCount) {
-        slots = evalLayers(material, mesh, primitive, uv, channel, make_float2(0.0f, 0.0f), hit->p);
+        // The ray's width where it lands, in the mesh's own units (the triangle's area there to its area in the world),
+        // and wider where it meets the surface aslant: the texture sizes read are worked out from it (evalLayers).
+        if ((hit->coneWidth > 0.0f || hit->coneSpread > 0.0f) && !mesh.curves) {
+            const uint3 corners = reinterpret_cast<const uint3*>(mesh.indices)[primitive];
+            const float3* at = reinterpret_cast<const float3*>(mesh.positions);
+            const float3 e1 = at[corners.y] - at[corners.x], e2 = at[corners.z] - at[corners.x];
+            const float world = length(cross(optixTransformVectorFromObjectToWorldSpace(e1), optixTransformVectorFromObjectToWorldSpace(e2)));
+            const float slant = fabsf(dot(optixGetWorldRayDirection(), hit->ng));
+            const float width = hit->coneWidth + hit->coneSpread * hit->t;
+            hit->footprint = world > 0.0f ? width * sqrtf(length(cross(e1, e2)) / world) * rsqrtf(fmaxf(slant, 0.05f)) : 0.0f;
+        }
+        slots = evalLayers(material, mesh, primitive, uv, channel, make_float2(0.0f, 0.0f), hit->p, hit->footprint);
         // A stack's highlight: the lobe set for the most any of its rows reflects, weighted by this point's share.
         hit->specular = material.specular * clamp(average(channel[CHANNEL_SPECULAR]), 0.0f, 1.0f);
         // Scalars take the mean of a colour, as MoonRay does for a map bound to a float attribute.
@@ -3244,13 +3289,13 @@ extern "C" __global__ void __closesthit__radiance() {
             if (bumped) {
                 const float step = 0.001f;
                 float3 other[CHANNEL_COUNT];
-                evalLayers(material, mesh, primitive, uv, other, make_float2(step, 0.0f), hit->p);
+                evalLayers(material, mesh, primitive, uv, other, make_float2(step, 0.0f), hit->p, hit->footprint);
                 const float right = average(other[CHANNEL_BUMP]);
-                evalLayers(material, mesh, primitive, uv, other, make_float2(-step, 0.0f), hit->p);
+                evalLayers(material, mesh, primitive, uv, other, make_float2(-step, 0.0f), hit->p, hit->footprint);
                 const float left = average(other[CHANNEL_BUMP]);
-                evalLayers(material, mesh, primitive, uv, other, make_float2(0.0f, step), hit->p);
+                evalLayers(material, mesh, primitive, uv, other, make_float2(0.0f, step), hit->p, hit->footprint);
                 const float up = average(other[CHANNEL_BUMP]);
-                evalLayers(material, mesh, primitive, uv, other, make_float2(0.0f, -step), hit->p);
+                evalLayers(material, mesh, primitive, uv, other, make_float2(0.0f, -step), hit->p, hit->footprint);
                 const float down = average(other[CHANNEL_BUMP]);
                 const float dx = (right - left) / (2.0f * step * lengthT), dy = (up - down) / (2.0f * step);
                 const float crossT = dot(alongV, t), crossB = dot(alongV, b);

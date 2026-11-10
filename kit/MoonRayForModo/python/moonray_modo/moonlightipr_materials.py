@@ -169,8 +169,10 @@ BLEND_REORIENTED_NORMAL = 15
 WRAP = {'repeat': 0, 'edge': 1, 'mirror': 2, 'reset': 3}
 TEXTURE_FLOAT, TEXTURE_SRGB, TEXTURE_WRAP_U_SHIFT, TEXTURE_WRAP_V_SHIFT = 1, 2, 2, 4
 UV_SLOTS = 8
-# The largest side of an image MoonLightIPR is given (larger ones are fitted within it as they are converted): 1024,
-# perceptually enough at realtime's sizes, with far less for the card to hold and read (it was 4096, then 1280). The
+# The largest side of an image MoonLightIPR's realtime is given (larger ones are fitted within it as they are converted):
+# 1024, perceptually enough at realtime's sizes, with far less for the card to hold and read (it was 4096, then 1280).
+# A Render, and Render Animation, are given each image at its full size (Compiler's side 0, the scene's _full_textures):
+# where those do not all fit on the card the session keeps the largest in the computer's memory (out of core). The
 # environment's image is sized on its own (moonlightipr_scene).
 MAX_TEXTURE_SIDE = 1024
 
@@ -788,8 +790,10 @@ def graph_layers(source, note, runtime=None, displacement=None, wanted='height',
 class Compiler:
     """Collects the materials of one scene; textures and coordinate slots are shared between them."""
 
-    def __init__(self, runtime=None):
+    def __init__(self, runtime=None, side=MAX_TEXTURE_SIDE):
         self.runtime = runtime
+        # The largest side an image is given at; 0 for each at its full size (a Render's).
+        self.side = side
         self.textures = {}      # record -> index, in first-use order
         self.slots = {}         # coordinate key -> scene-wide slot
         self.grids = {}         # a fog's grid of densities, as its record -> its index
@@ -831,7 +835,7 @@ class Compiler:
         stat = source.stat()
         hdr = source.suffix.lower() in HDR_SUFFIXES
         space, ocio = color_space(source, layer.get('color_space', ''), layer.get('srgb'))
-        digest = hashlib.sha256(repr((str(source.resolve()), stat.st_size, stat.st_mtime_ns, MAX_TEXTURE_SIDE, 'moonlightipr-v3', ocio and (space, ocio))).encode()).hexdigest()
+        digest = hashlib.sha256(repr((str(source.resolve()), stat.st_size, stat.st_mtime_ns, self.side or 'full', 'moonlightipr-v3', ocio and (space, ocio))).encode()).hexdigest()
         target = cache_folder() / (digest + ('.pfm' if hdr else '.tga'))
         if not target.is_file() or not target.stat().st_size:
             # Alongside the scene's other textures, while the scene is packed (moonlightipr_scene.pack).
@@ -878,10 +882,10 @@ class Compiler:
             args += ['--colorconvert', 'linear', 'sRGB']
         if resample is not None:
             args += list(resample)
-        elif max(width, height) > MAX_TEXTURE_SIDE:
+        elif self.side and max(width, height) > self.side:
             # Its own shape, its longer side at the limit: --fit pads to the square, and Dose's 2103x1673 label filled
             # only the middle of its UVs, the can dark above and below it.
-            args += ['--resize', '%dx%d' % fitted(width, height)]
+            args += ['--resize', '%dx%d' % fitted(width, height, self.side)]
         target.parent.mkdir(parents=True, exist_ok=True)
         staged = target.with_name(target.stem + '-' + uuid.uuid4().hex + target.suffix)
         try:

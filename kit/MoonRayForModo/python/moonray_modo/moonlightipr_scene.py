@@ -73,7 +73,7 @@ def transform(matrix):
     return [m[0], m[4], m[8], m[12], m[1], m[5], m[9], m[13], m[2], m[6], m[10], m[14]]
 
 
-def environment_image(item, runtime):
+def environment_image(item, runtime, full=False):
     """Convert a latitude-longitude image once to a linear float file in the working space."""
     import uuid
     from pathlib import Path
@@ -88,13 +88,15 @@ def environment_image(item, runtime):
         space, ocio = color_space(source, item.get('color_space', ''), item.get('srgb'))
     stat = source.stat()
     working = working_enabled()
-    digest = hashlib.sha256(repr((str(source.resolve()), stat.st_size, stat.st_mtime_ns, space, ocio, working, ENVIRONMENT_IMAGE,
+    digest = hashlib.sha256(repr((str(source.resolve()), stat.st_size, stat.st_mtime_ns, space, ocio, working, 'full' if full else ENVIRONMENT_IMAGE,
                                   'moonlightipr-env-v2')).encode()).hexdigest()
     target = cache_folder() / (digest + '.pfm')
     if not target.is_file() or not target.stat().st_size:
         compiler = Compiler(runtime)
         steps = ((['--colorconvert', 'sRGB', 'linear'] if space == 'sRGB' else [])
-                 + (['--ccmatrix', matrix_argument(TO_AP1)] if working else []) + ['--resize', '%dx%d' % ENVIRONMENT_IMAGE])
+                 + (['--ccmatrix', matrix_argument(TO_AP1)] if working else [])
+                 # A Render's at its own size, realtime's fitted to ENVIRONMENT_IMAGE.
+                 + ([] if full else ['--resize', '%dx%d' % ENVIRONMENT_IMAGE]))
         if not ocio:
             compiler.convert(source, target, True, steps)
         else:
@@ -141,7 +143,7 @@ def environment_section(scene, environment, warnings, runtime):
                     # it (environments.emit): Dose's HDRI faced the other way, the can lit by the room's bright side.
                     matrix = [-v for v in matrix[0:4]] + matrix[4:8] + [-v for v in matrix[8:12]] + matrix[12:16]
                 # The image's own axes in world space, which the session turns directions into.
-                record = (environment_image(baked, runtime), intensity, unit(matrix[0:3]) + unit(matrix[4:7]) + unit(matrix[8:11]))
+                record = (environment_image(baked, runtime, bool(scene.get('_full_textures'))), intensity, unit(matrix[0:3]) + unit(matrix[4:7]) + unit(matrix[8:11]))
             except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as exc:
                 warnings.append('MoonLightIPR shows environment %s as uniform grey; its image could not be made (%s).' % (item.get('name', ''), exc))
             else:
@@ -1052,7 +1054,9 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     for _, tag, fog in fogs:
         materials[tag] = fog
     material_index = {tag: index for index, tag in enumerate(sorted(materials))}
-    compiler = Compiler(runtime)
+    # A Render's images at their full size, realtime's no larger than MAX_TEXTURE_SIDE (moonlightipr_materials).
+    from .moonlightipr_materials import MAX_TEXTURE_SIDE
+    compiler = Compiler(runtime, 0 if scene.get('_full_textures') else MAX_TEXTURE_SIDE)
     records = [compiler.material(materials[tag], tag or 'base material') for tag in sorted(materials)]
     # Lights now, since a filter's ramp or a light's picture adds to the images.
     # Where each light is when the shutter closes: lights move as the camera and the meshes do.

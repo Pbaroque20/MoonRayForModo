@@ -136,7 +136,39 @@ struct TextureDesc {
     // The most texels across a side the card is given: a larger picture is halved, each texel the mean of four, until
     // it is no larger. 0 for no limit. A picture of high dynamic range is kept on the card as halves whatever its size.
     uint32_t maxSize = 0;
+    // Kept whole in the computer's memory, which the card reads across the bus (out of core), rather than on the card:
+    // for a picture that does not fit there. Slower to read; nothing is lost of it.
+    bool hostResident = false;
+    // Ready for the card already (prepareTexture, or a file of one read back): used in place of pixels, which may then
+    // be null. Not with hostResident.
+    const struct PreparedTexture* prepared = nullptr;
 };
+
+// A picture as the card is given it: each smaller copy of it (mip levels, the whole picture first, each half the one
+// before) and in what form, compressed or not. The card reads each point of a surface from the copy nearest the size
+// it is seen at, so that a picture far away is read quickly and does not sparkle.
+struct PreparedTexture {
+    enum Format : uint32_t { Bytes = 0, Halves = 1, BC7 = 2, BC6H = 3 };
+    uint32_t width = 0, height = 0;     // of the whole picture
+    Format format = Bytes;              // Bytes: four a texel; Halves: four half floats; BC7 and BC6H: 16 bytes a block of 4 x 4
+    bool srgb = false;                  // bytes (or BC7) encoded sRGB, decoded as they are read
+    std::vector<std::vector<unsigned char>> levels;
+    // How bright the picture is, on a grid of at most 64 by 64, top row first: what a light that wears it is sampled by.
+    uint32_t gridWidth = 0, gridHeight = 0;
+    std::vector<float> brightness;
+    size_t bytes() const { size_t total = 0; for (const auto& level : levels) total += level.size(); return total; }
+};
+
+// desc's picture made ready for the card (its pixels, halved first to maxSize where that is set): with mips its smaller
+// copies, down to a texel; with compress, compressed where it can be, BC7 for bytes (sRGB kept as it is) and BC6H for
+// floats that are none of them negative or past a half's range and whose alpha is 1, each level whose sides are
+// multiples of four (the chain stops at the first that is not). The work is spread over every core of the processor.
+PreparedTexture prepareTexture(const TextureDesc& desc, bool mips, bool compress);
+// A prepared texture to a file and back ("MLT1"); false where it cannot be written, or read as one.
+bool writePreparedTexture(const std::string& path, const PreparedTexture& texture);
+bool readPreparedTexture(const std::string& path, PreparedTexture& texture);
+// The bytes a picture of this size takes on the card once prepared, without preparing it.
+size_t preparedBytes(uint32_t width, uint32_t height, bool floatData, bool mips, bool compress);
 
 // One row of a material's layer stack, blended over the rows before it. The channel, blend and
 // flag numbers are those of the plugin's Shader Tree translation (see src/device/shared.h).

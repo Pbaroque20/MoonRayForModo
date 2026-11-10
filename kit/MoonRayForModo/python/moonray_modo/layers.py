@@ -354,7 +354,7 @@ def material_stack(scene, candidates, warnings, tag, membership=None):
     result = []
     captured_group_masks=set()
     for index, base in reversed(list(enumerate(candidates))):
-        value = material_values(base)
+        value = material_values(base, warnings)
         value['shader'] = 'DwaBaseMaterial'
         value['material_groups'] = texture_groups(base, channel) or []
         allowed = set()

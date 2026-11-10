@@ -70,6 +70,8 @@ class Playblast(QtCore.QObject):
         snapshot['fps'] = self.fps
         # Not spread over the seconds a preview leaves room for edits in, and every sample of it gathered.
         snapshot['_flat_out'] = True
+        # Each image at its full size, as a Render has them (moonlightipr_materials).
+        snapshot['_full_textures'] = True
         self.waiting = True
         panel._submit(panel._configure_snapshot(snapshot))
 
