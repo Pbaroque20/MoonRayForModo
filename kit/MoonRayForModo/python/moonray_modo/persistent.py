@@ -346,7 +346,8 @@ class Session(QtCore.QObject):
         else:
             staged.write_text(command,encoding='utf-8');staged.replace(self.root/'command.txt')
         self.sent=request
-        self.status.emit('Updating loaded scene' if mode=='delta' else 'Reloading scene structure in persistent session')
+        # Nothing is said of it: "Reloading scene structure" told nothing the picture does not, and took the place of what
+        # the status says of the engine rendering (a tester's report).
 
     def _read(self):
         text=self.process.readAllStandardOutput().data().decode('utf-8',errors='replace')

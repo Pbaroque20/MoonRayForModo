@@ -620,6 +620,9 @@ def resolve_vdb(parameters, scene):
         found = vdb_frame_file(model, frame, bool(parameters.get('modo_sequence_hold', False)))
         if found is None:
             return None
+        # The frame's own file is what MoonRay reads: to it the shape is static, as it is to XPU2, which refuses static
+        # unticked and gave the scene to XPU (a tester's report: the sequence fell back, a static file did not).
+        resolved.pop('static', None)
     else:
         found = model
     resolved['model'] = found

@@ -87,6 +87,8 @@ KEYS = {
     'moonlightipr/samples': (256, int),
     # How many samples a pixel a MoonLightIPR Render (realtime off) gathers before it stops.
     'moonlightipr/render_samples': (500, int),
+    # MoonLightIPR renders at the active camera's resolution, not the share Realtime preview resolution gives (opt-in).
+    'moonlightipr/camera_resolution': (False, bool),
 }
 # Realtime with the standard XPU: off, on the processor (MoonRay's vector mode), or on the graphics card (XPU).
 XPU_REALTIME_MODES = ('off', 'vector', 'xpu')
@@ -231,6 +233,13 @@ class Dialog(QtWidgets.QDialog):
         form.addRow('Realtime preview resolution', combo('preview_fraction', FRACTIONS,
                     "The realtime previews' size as a share of the render's resolution, tall or wide alike: MoonLightIPR, "
                     "MoonRay LS, and RT with MoonRay XPU2 or XPU. Render makes the picture at its full resolution."))
+        follow = check('moonlightipr/camera_resolution', "MoonLightIPR at the camera's resolution",
+                       "MoonLightIPR renders at the active camera's resolution, as a render is, in realtime too. Realtime "
+                       'preview resolution is then greyed: it no longer applies to MoonLightIPR')
+        fraction = self.widgets['preview_fraction']
+        fraction.setEnabled(not follow.isChecked())
+        follow.toggled.connect(lambda on: fraction.setEnabled(not on))
+        form.addRow(follow)
         self.realtime_held = realtime_share()
         self.realtime_share = QtWidgets.QSpinBox()
         self.realtime_share.setRange(1, 100)

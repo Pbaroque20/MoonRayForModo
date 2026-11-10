@@ -445,6 +445,7 @@ class Panel(Tools, QtWidgets.QWidget):
         if point is not None:
             menu.addAction('Focus Here',lambda:self.focus_at(point))
             menu.addAction('Select Material Here',lambda:self.material_at(point))
+            menu.addAction('Select Mesh Here',lambda:self.mesh_at(point))
             menu.addSeparator()
         menu.addAction('Fit',self.preview.fit)
         menu.addAction('Actual Size',self.preview.actual_size)
@@ -628,6 +629,39 @@ class Panel(Tools, QtWidgets.QWidget):
             self.status.setText('Selected material %s, on %s.'%(modo.Scene().item(identity).name,mesh.get('name') or 'the mesh'))
         except Exception as exc:
             self.status.setText('Cannot select the material: '+str(exc))
+
+    def mesh_at(self,point):
+        """Select in Modo the mesh under a point of the image, found as Select Material Here finds its surface (focus.hit):
+        the mesh item, or the instance of it the ray met where it is placed more than once."""
+        try:
+            rect=self.preview.image_rect()
+            if rect.isEmpty() or not rect.contains(QtCore.QPointF(point)):
+                self.status.setText('Right-click inside the rendered image to select its mesh.');return
+            scene=self._asset_scene
+            if not scene or not scene.get('camera'):
+                self.status.setText('Render once, then pick the mesh.');return
+            from .focus import hit
+            found=hit(scene,(point.x()-rect.left())/rect.width(),(point.y()-rect.top())/rect.height(),placed=True)
+            if found is None:
+                self.status.setText('No mesh there.');return
+            _,mesh,_,number=found
+            # The item: the instance met (its identifier first in the instance's own), else the last item the mesh's
+            # identity names (an instance read apart has its own identifier after its mesh's).
+            import modo
+            instances=mesh.get('instance_ids') or []
+            names=[str(instances[number]).split('|')[0]] if number<len(instances) else list(reversed(str(mesh.get('identity') or '').split('|')))
+            item=None
+            for identity in names:
+                try:item=modo.Scene().item(identity);break
+                except LookupError:continue
+            if item is None:
+                self.status.setText('The mesh there (%s) is not an item Modo can select.'%(mesh.get('name') or mesh.get('identity')));return
+            identity=item.id
+            lx.eval('select.drop item')
+            lx.eval('select.item {%s} add'%identity)
+            self.status.setText('Selected %s.'%item.name)
+        except Exception as exc:
+            self.status.setText('Cannot select the mesh: '+str(exc))
 
     def _clay(self):
         action=self.clay_group.checkedAction()
@@ -1364,10 +1398,14 @@ class Panel(Tools, QtWidgets.QWidget):
         # and it is what is shown from the moment it is switched on, the beauty again once it is off. MoonLightIPR does
         # not make it.
         checking=validity and not only
+        # XPU2's realtime: the beauty and the denoised beauty alone, as it renders them; the other buffers are a render's.
+        from . import native
+        xpu2_realtime=self._engine()=='moonray' and getattr(self,'_following',False) and native.xpu2()
         for row in range(1,self.buffer.count()):
             key=self.buffer.itemData(row)
             denoised=key=='denoised_beauty'
-            if checking:hidden=key!='pbr_validity'
+            if xpu2_realtime:hidden=not denoised or not on
+            elif checking:hidden=key!='pbr_validity'
             else:hidden=(low or (denoised and not on) or (only and not ((denoises and denoised) or key in MOONLIGHTIPR_AOVS))
                          or (not only and key in OWN_KEYS) or (key=='pbr_validity' and not validity))
             self.buffer.view().setRowHidden(row,hidden)
@@ -1378,6 +1416,9 @@ class Panel(Tools, QtWidgets.QWidget):
             return
         if was and self.buffer.currentData()=='pbr_validity':self.buffer.setCurrentIndex(self.buffer.findData('beauty'))
         if not on and self.buffer.currentData()=='denoised_beauty':self.buffer.setCurrentIndex(self.buffer.findData('beauty'))
+        if xpu2_realtime and self.buffer.currentData() not in ('beauty','denoised_beauty'):
+            self.buffer.setCurrentIndex(self.buffer.findData('beauty'))
+            return
         if low:
             if self.buffer.currentData()!='beauty':self.buffer.setCurrentIndex(self.buffer.findData('beauty'))
             return
@@ -1462,6 +1503,8 @@ class Panel(Tools, QtWidgets.QWidget):
             if self.buffer.currentData()=='denoised_beauty' and self._engine()!='moonlightipr' and not (self.ipr_mode.isChecked() and self._rt_capable()):
                 self.buffer.setCurrentIndex(self.buffer.findData('beauty'))
             if not self.preview_lock.isChecked():self.timer.start()
+        # The buffers listed follow: XPU2's realtime has the beauty and the denoised beauty alone.
+        self._limit_buffers()
         self._set_rendering(self._rendering)
 
     def _output_busy(self):
@@ -1497,6 +1540,8 @@ class Panel(Tools, QtWidgets.QWidget):
         the share of that resolution Realtime preview resolution asks for (a half, a third...), tall or wide alike."""
         scene_w, scene_h = scene['width'], scene['height']
         share=max(1,int(self.preferences.get('preview_fraction') or 1))
+        # MoonLightIPR at the active camera's resolution, where Preview Preferences asks for it.
+        if self._engine()=='moonlightipr' and self.preferences.get('moonlightipr/camera_resolution'):share=1
         width = scene_w if final or not (self._live() or self._low() or (self.ipr_mode.isChecked() and self._rt_capable())) else max(16,round(scene_w/share))
         # A playblast has a width of its own, whichever engine is chosen.
         blast=None if final else self._playblasting()
@@ -1850,8 +1895,10 @@ class Panel(Tools, QtWidgets.QWidget):
         if engine=='moonray':scene=dict(scene,_pixel_samples=int(grid)**2)
         if engine=='moonray' and self._following and not output:scene=dict(scene,_realtime=True)
         if not output:
-            from . import native
-            self._offer_denoised(not (engine=='moonray' and self._following and native.xpu2()))
+            # Denoised Beauty is offered under XPU2's realtime too (a tester asked for it), and the list there is the
+            # beauty and it alone (_limit_buffers).
+            self._offer_denoised(True)
+            self._limit_buffers()
         self.renderer.submit(scene, self.runtime_path(), width, height, grid,
                              values['environment'], values['threads'], output, persistent_preview=get('persistent_preview'), engine=engine, resume=resume)
         if resume:self.status.setText('Continuing the stopped render.')

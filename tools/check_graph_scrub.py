@@ -34,7 +34,14 @@ number.changed.connect(lambda i, k, l, v: seen.append(v))
 drag(number, 40); results['float right 40 px'] = round(number.value(), 6)
 drag(number, -40); results['float back left'] = round(number.value(), 6)
 drag(number, 40, QtCore.Qt.ControlModifier); results['float Ctrl right 40 px'] = round(number.value(), 6)
+number.setValue(0.5); drag(number, 40, QtCore.Qt.ShiftModifier); results['float Shift right 40 px'] = round(number.value(), 6)
 results['float published each step'] = len(seen) >= 20
+# A colour's parts stay between 0 and 1.
+from moonray_modo.node_widgets import VectorField
+colour = VectorField('n1', 'color', -1, {'type': 'Rgb', 'default': 'Rgb(0.5, 0.5, 0.5)'}, [0.5, 0.5, 0.5])
+colour.resize(240, 22); colour.show(); application.processEvents()
+drag(colour.spins[0], 400, QtCore.Qt.ShiftModifier); results['colour up as far as it goes'] = round(colour.spins[0].value(), 6)
+drag(colour.spins[0], -800, QtCore.Qt.ShiftModifier); results['colour down as far as it goes'] = round(colour.spins[0].value(), 6)
 number.setValue(0.5); drag(number, 40, on_edit=False); results['float from the down arrow, right'] = round(number.value(), 6)
 
 whole = IntegerField('n1', 'samples', -1, {'type': 'Int', 'min': 0, 'max': 64}, 4)
@@ -59,7 +66,7 @@ def take(i, k, l, v):
 field.changed.connect(take)
 drag(field, 40); results['one drag, undo states'] = len(editor.undo_states)
 drag(field, 40); results['two drags, undo states'] = len(editor.undo_states)
-results['undo goes back to before the drag'] = editor.undo_states[-1] == {'v': 1.0}
+results['undo goes back to before the drag'] = editor.undo_states[-1] == {'v': 0.1}
 field.setValue(5.0); results['a typed value, undo states'] = len(editor.undo_states)
 results['no drag going on after'] = scrub_field.scrub_in_progress() is None
 
@@ -84,8 +91,9 @@ while QtCore.QTime.currentTime() < end: application.processEvents()
 results['writes after letting go'] = len(written)
 
 expected = {'writes while dragging': 0, 'writes after letting go': 1,
-'float right 40 px': 1.5, 'float back left': 0.5, 'float Ctrl right 40 px': 0.6, 'float published each step': True,
-            'float from the down arrow, right': 1.5, 'int right 40 px': 14, 'int past the bottom': 0,
+'float right 40 px': 0.6, 'float back left': 0.5, 'float Ctrl right 40 px': 0.51, 'float Shift right 40 px': 1.5,
+            'colour up as far as it goes': 1.0, 'colour down as far as it goes': 0.0, 'float published each step': True,
+            'float from the down arrow, right': 0.6, 'int right 40 px': 14, 'int past the bottom': 0,
             'one drag, undo states': 1, 'two drags, undo states': 2, 'undo goes back to before the drag': True,
             'a typed value, undo states': 3, 'no drag going on after': True}
 bad = {k: (results.get(k), v) for k, v in expected.items() if results.get(k) != v}

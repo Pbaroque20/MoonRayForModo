@@ -350,7 +350,7 @@ class VectorEdit(QtWidgets.QWidget):
     def __init__(self,count,color,parent):
         super().__init__(parent);layout=QtWidgets.QHBoxLayout(self);layout.setContentsMargins(0,0,0,0);self.spins=[];self.choosing_color=False
         for _ in range(count):
-            spin=QtWidgets.QDoubleSpinBox();spin.setRange(-1e12,1e12);spin.setDecimals(6);spin.setSingleStep(.1);layout.addWidget(spin);self.spins.append(spin)
+            spin=QtWidgets.QDoubleSpinBox();spin.setRange(0.0,1.0) if color else spin.setRange(-1e12,1e12);spin.setDecimals(6);spin.setSingleStep(.01);layout.addWidget(spin);self.spins.append(spin)
         if color:
             self.swatch=QtWidgets.QPushButton();self.swatch.setFixedSize(40,24);self.swatch.setAutoDefault(False);self.swatch.setDefault(False);self.swatch.setAccessibleName('Choose color');layout.addWidget(self.swatch);self.swatch.clicked.connect(self.choose)
             for spin in self.spins:spin.valueChanged.connect(self.update_swatch)
@@ -379,7 +379,8 @@ class NumericField(ScrubSpinBox):
         super().__init__(parent)
         self.identity,self.key,self.layer=identity,key,layer
         self.spec,self.kind=spec,kind
-        self.setDecimals(6);self.setSingleStep(.1);self.setKeyboardTracking(False)
+        # 0.01 a step, 0.001 with Ctrl and 0.1 with Shift, dragged or by the arrows (a tester found 0.1 too coarse).
+        self.setDecimals(6);self.setSingleStep(.01);self.COARSE=10;self.setKeyboardTracking(False)
         self.setRange(float(str(spec.get('min',-1e12)).rstrip('f')),
                       float(str(spec.get('max',1e12)).rstrip('f')))
         self.setValue(float(value or 0));self.setFrame(False)
@@ -537,7 +538,9 @@ class VectorField(QtWidgets.QWidget):
         low=float(str(spec['min']).rstrip('f')) if 'min' in spec else -1e12
         high=float(str(spec['max']).rstrip('f')) if 'max' in spec else 1e12
         for index in range(count):
-            spin=ScrubSpinBox();spin.setRange(low,high);spin.setDecimals(3);spin.setSingleStep(.05 if self.is_color else .1)
+            # A colour's parts stay between 0 and 1. 0.01 a step, 0.001 with Ctrl and 0.1 with Shift.
+            spin=ScrubSpinBox();spin.setRange(max(low,0.0),min(high,1.0)) if self.is_color else spin.setRange(low,high)
+            spin.setDecimals(3);spin.setSingleStep(.01);spin.COARSE=10
             spin.setButtonSymbols(QtWidgets.QAbstractSpinBox.NoButtons);spin.setKeyboardTracking(False);spin.setFrame(False)
             spin.setFocusPolicy(QtCore.Qt.StrongFocus);spin.setToolTip(('Red','Green','Blue')[index] if self.is_color else 'XYZ'[index])
             part=float(values[index]) if index<len(values) else 0.0
