@@ -8,6 +8,7 @@ The current release is [0.5.3.2](https://github.com/Pbaroque20/MoonRayForModo/re
 
 ## New in 0.5.4 (coming)
 
+- **Flipping an environment image (Horizontal Wrap -1) no longer changes its lighting**: the image is mirrored at its full size.
 - **MoonRay graph images are found when a scene has moved**, as Modo's image clips are, and Relink Missing Images lists them.
 - **Sharp textures in a MoonLightIPR Render**: full-size images, compressed on the graphics card so big scenes fit, and kept in the computer's memory where they still do not.
 - **Render Animation with MoonLightIPR** (an Engine in its window), **motion vectors** in MoonLightIPR's AOVs, and Denoised Beauty after a MoonLightIPR Render without rendering again.

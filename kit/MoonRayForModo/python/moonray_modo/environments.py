@@ -141,6 +141,13 @@ def collect(scene, warnings):
                     entry.update(kind='image',color_space=space,path=str(path.resolve()),mtime=path.stat().st_mtime_ns,
                         size=path.stat().st_size, matrix=world_matrix(locator),
                         srgb=space=='sRGB' or (space=='(default)' and path.suffix.lower() not in ('.exr','.hdr','.tx')))
+                    if flipped_across(entry):
+                        # Horizontal Wrap -1, nothing else changed: the image mirrored left to right at its full size
+                        # (mirrored_image), as the bake would have it, rather than baked small with the layered
+                        # environments, which smeared an HDRI's sun and lit the scene wrongly.
+                        mirrored=mirrored_image(path)
+                        entry.update(path=str(mirrored),mtime=mirrored.stat().st_mtime_ns,size=mirrored.stat().st_size,
+                                     scale=[1.0,1.0],transformed=False,mirrored_from=str(path.resolve()))
                 else:
                     raise ValueError('unsupported environment layer type '+layer.type)
                 stack.append(entry)
@@ -157,6 +164,37 @@ def collect(scene, warnings):
             else:
                 result.append(dict(item,kind='stack',layers=stack))
     return result
+
+
+def flipped_across(entry):
+    """Whether an environment image's placement is a left-to-right flip alone: Horizontal Wrap -1, Vertical Wrap 1, no
+    rotation and no other transform. The bake reads u * -1, wrapped, which is the image mirrored."""
+    return ([float(v) for v in entry.get('scale',[1,1])]==[-1.0,1.0] and [float(v) for v in entry.get('uv_matrix',[1,0,0,0,1,0])]==[1,0,0,0,1,0]
+            and float(entry.get('rotation',0))==0)
+
+
+def mirrored_image(path):
+    """An image mirrored left to right at its full size, made once with the runtime's oiiotool and kept in the texture
+    cache, named by the image's path, size and time: an HDR one (.hdr, .exr, .tx) as a float EXR, any other as a PNG of
+    its own depth, so that how its colours are read does not change."""
+    from . import native
+    import subprocess
+    path=Path(path).resolve();stat=path.stat()
+    key=hashlib.sha256(repr((str(path),stat.st_size,stat.st_mtime_ns,'mirrored-v1')).encode('utf-8')).hexdigest()
+    hdr=path.suffix.lower() in ('.exr','.hdr','.tx')
+    folder=cache_root()/'Textures';folder.mkdir(parents=True,exist_ok=True)
+    target=folder/(key+('.exr' if hdr else '.png'))
+    if target.is_file() and target.stat().st_size:return target
+    tool=native.tool('oiiotool.exe')
+    staged=folder/(key+'-'+uuid.uuid4().hex+target.suffix)
+    try:
+        result=subprocess.run([str(tool),str(path),'--flop']+(['-d','float'] if hdr else [])+['-o',str(staged)],env=native.environment(tool.parent),
+                              stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,timeout=600,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+        if result.returncode or not staged.is_file():raise ValueError('Could not mirror the environment image %s: %s'%(path.name,result.stdout[-600:]))
+        staged.replace(target)
+    finally:
+        if staged.exists():staged.unlink()
+    return target
 
 
 def covers(layer):
