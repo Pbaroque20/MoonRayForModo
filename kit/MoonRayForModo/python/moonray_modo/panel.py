@@ -1106,7 +1106,7 @@ class Panel(Tools, QtWidgets.QWidget):
             values=self._settings_values()
             # MoonLightIPR's motion blur, off by default: each update then reads the shutter's ends too.
             # And MoonRay's realtime under XPU2, by a preference of its own.
-            if self._preview_blurred():words.append('Motion Blur')
+            if self._preview_blurred() and not (self._engine()=='moonlightipr' and not self.preferences.get('preview_motion')):words.append('Motion Blur')
             from . import native
             xpu2=native.xpu2_renders(values.get('execution_mode','auto'))
             if self.preview_engine.currentData()=='moonray' and values['denoising'].get('safe') and values['denoising'].get('engine','off')!='off' \
@@ -1640,12 +1640,17 @@ class Panel(Tools, QtWidgets.QWidget):
     def _preview_blurred(self):
         """Whether what follows the scene shows motion blur, by the preview's preferences: MoonLightIPR's own switch, and
         one for MoonRay's realtime, which is XPU2's."""
-        if self._engine()=='moonlightipr':return bool(self.preferences.get('preview_motion'))
+        # MoonLightIPR's motion vectors read the shutter's ends as well (held at the frame's moment where blur is off).
+        if self._engine()=='moonlightipr':return bool(self.preferences.get('preview_motion')) or self._moonlightipr_vectors()
         if self.preview_engine.currentData()!='moonray' or not self.ipr_mode.isChecked() or not self.preferences.get('xpu2_motion'):return False
         try:
             from . import native
             return bool(native.xpu2())
         except Exception:return False
+
+    def _moonlightipr_vectors(self):
+        """Whether MoonLightIPR's motion vectors are looked at: the scene is then read with the shutter's ends."""
+        return self._engine()=='moonlightipr' and self.buffer.currentData()=='motion_vectors'
 
     def _capture_output(self):
         values=self._settings_values()
@@ -1784,6 +1789,8 @@ class Panel(Tools, QtWidgets.QWidget):
             scene=dict(scene,execution_mode='xpu' if realtime_mode=='xpu' else 'vectorized')
         # And gathers as many samples a pixel as the preferences say; a playblast has its own number.
         self.renderer.moonlightipr_preview_samples=self.preferences.get('moonlightipr/samples')
+        # A scene read with the shutter's ends for the motion vectors alone (blur off) is held at the frame's moment.
+        self.renderer.moonlightipr_blur=bool(self.preferences.get('preview_motion'))
         # Render with MoonLightIPR (realtime off): Render samples a pixel, as fast as the card can, and it stops.
         once=not output and not self._following and not self.draft.isChecked() and self._engine()=='moonlightipr'
         self.renderer.moonlightipr_once=self.preferences.get('moonlightipr/render_samples') if once else None
@@ -2115,9 +2122,14 @@ class Panel(Tools, QtWidgets.QWidget):
                 # MoonRay's realtime renders the beauty and the buffer looked at (outputs.preview): another is rendered
                 # from the scene as last read, not read again.
                 self._submit(dict(self._ipr_refine_scene,preview_buffer=key))
-            if key=='denoised_beauty' and self._engine()=='moonlightipr' and not getattr(self.renderer,'moonlightipr_denoises',False):
-                # MoonLightIPR has not been denoising: it renders again, denoising this time.
+            # MoonLightIPR's motion vectors need the scene read with the shutter's ends, and the others not: read again.
+            if self._engine()=='moonlightipr' and (key=='motion_vectors')!=getattr(self,'_vectors_read',False):
+                self._vectors_read=key=='motion_vectors'
                 if self._following or self._rendering or not self.preview.image.isNull():self.render_once()
+            if key=='denoised_beauty' and self._engine()=='moonlightipr' and not getattr(self.renderer,'moonlightipr_denoises',False):
+                # MoonLightIPR has not been denoising: it denoises the picture as it stands, a finished Render as well,
+                # without rendering again (a tester's report: it started over); the buffer chosen asked it for that.
+                self.renderer.moonlightipr_denoises=True
             # A Cryptomatte buffer is read for picking, with what was picked in it laid over it; any other has nothing laid over.
             if not self._rendering:self._crypto_ready()
             else:self.preview.set_overlay(None)

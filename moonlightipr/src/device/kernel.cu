@@ -2583,6 +2583,35 @@ extern "C" __global__ void __raygen__moonlightipr() {
     }
 }
 
+// A point through an instance's transform (OptiX's 3x4 rows), and back through it.
+ML_INLINE float3 placeBy(const float* m, float3 p) {
+    return make_float3(m[0] * p.x + m[1] * p.y + m[2] * p.z + m[3], m[4] * p.x + m[5] * p.y + m[6] * p.z + m[7],
+                       m[8] * p.x + m[9] * p.y + m[10] * p.z + m[11]);
+}
+ML_INLINE float3 unplaceBy(const float* m, float3 p) {
+    const float3 q = make_float3(p.x - m[3], p.y - m[7], p.z - m[11]);
+    const float a = m[0], b = m[1], c = m[2], d = m[4], e = m[5], f = m[6], g = m[8], h = m[9], i = m[10];
+    const float det = a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g);
+    if (fabsf(det) < 1e-20f) return q;
+    const float r = 1.0f / det;
+    return make_float3(((e * i - f * h) * q.x + (c * h - b * i) * q.y + (b * f - c * e) * q.z) * r,
+                       ((f * g - d * i) * q.x + (a * i - c * g) * q.y + (c * d - a * f) * q.z) * r,
+                       ((d * h - e * g) * q.x + (b * g - a * h) * q.y + (a * e - b * d) * q.z) * r);
+}
+// Where a point is in the picture, in pixels across and up, for a camera (origin, U, V, W as LaunchParams has them); seen
+// as cameraDirection sees it, with its film shift. False where it is behind the camera.
+ML_INLINE bool inPicture(const float* camera, float3 p, float2& at) {
+    const float3 o = make_float3(camera[0], camera[1], camera[2]), u = make_float3(camera[3], camera[4], camera[5]);
+    const float3 v = make_float3(camera[6], camera[7], camera[8]), w = make_float3(camera[9], camera[10], camera[11]);
+    const float3 d = p - o;
+    const float along = dot(d, w) / fmaxf(dot(w, w), 1e-20f);
+    if (!(along > 1e-6f)) return false;
+    const float sx = dot(d, u) / fmaxf(dot(u, u), 1e-20f) / along - params.cameraShift[0];
+    const float sy = dot(d, v) / fmaxf(dot(v, v), 1e-20f) / along - params.cameraShift[1];
+    at = make_float2((sx + 1.0f) * 0.5f * float(params.width), (sy + 1.0f) * 0.5f * float(params.height));
+    return true;
+}
+
 // The geometry AOVs (AovSlot), a program of their own launched after each sample while they are gathered (params.aovs):
 // a ray from the camera through the pixel, and what it meets first, through the edges of fog, which are no surface.
 extern "C" __global__ void __raygen__aovs() {
@@ -2616,6 +2645,19 @@ extern "C" __global__ void __raygen__aovs() {
         aovAdd(pixel, AOV_NORMAL, ns);
         aovAdd(pixel, AOV_POSITION, hit.p);
         aovAdd(pixel, AOV_ALPHA, make_float3(1.0f, 1.0f, 1.0f));
+        // The motion vector: the point at the shutter's opening and closing, each seen through the camera then.
+        float3 opening = hit.p, closing = hit.p;
+        if (params.instanceMotion) {
+            const float* ends = reinterpret_cast<const float*>(params.instanceMotion) + size_t(hit.instance) * 24;
+            float now[12];
+            for (int k = 0; k < 12; ++k) now[k] = ends[k] + (ends[12 + k] - ends[k]) * params.time;
+            const float3 local = unplaceBy(now, hit.p);
+            opening = placeBy(ends, local);
+            closing = placeBy(ends + 12, local);
+        }
+        float2 from, to;
+        if (inPicture(params.cameraOpen, opening, from) && inPicture(params.cameraClose, closing, to))
+            aovAdd(pixel, AOV_MOTION, make_float3(to.x - from.x, to.y - from.y, 0.0f));
         return;
     }
 }

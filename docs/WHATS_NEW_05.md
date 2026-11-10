@@ -4,6 +4,9 @@
 
 ## New in 0.5.3.2.1 (coming)
 
+- **Render Animation with MoonLightIPR**: the Render Animation window has an Engine: MoonRay as before, or MoonLightIPR, which renders each frame on the graphics card at the render's resolution to Render samples a pixel, denoised where the Denoiser is on, and writes it as an EXR (the beauty), with the picture type chosen beside it or in its place. Frames already in the folder are kept, as MoonRay's are.
+- **Motion vectors in MoonLightIPR**: Motion vectors joins MoonLightIPR's AOVs: how far what the camera sees moves, in pixels across and up, from the shutter's opening to its closing, as MoonRay's say it; moving objects and the camera (a mesh changing shape not yet). With motion blur off the picture stays sharp, the scene read with the shutter's ends and held at the frame's moment. In a test, a cube's front face moved 128.84 pixels against the 128.8 its keys and the lens give.
+- **Denoised Beauty after a MoonLightIPR Render**: chosen once the Render is done, the picture is denoised as it stands, not rendered again.
 - **VDB sequences stay on XPU2**: a VDB shape playing a sequence (static unticked) fell back to MoonRay XPU, which XPU2 refused static unticked for; the kit hands MoonRay each frame's own file, so it is now passed on as static, and XPU2 renders it. Standard XPU, which crashed on such a scene with a mesh beside it, is no longer reached.
 - **A numbered VDB file plays as a sequence**: Load VDB File unticks static by itself where the file chosen is one of a numbered run (EmberGen, Houdini), so that scrubbing the timeline steps through it at once, and says so in the Event Log. Tick static again for the one file.
 - **VDB shapes show their size in the viewport**: the box the grid fills and a cloud of points where it is thick, read once in the background and drawn natively, of the frame's own file as the timeline moves.

@@ -274,6 +274,10 @@ struct Renderer::Impl {
     Buffer lightDistributions, distantDistributions;
     Buffer beauty, albedo, normal, denoised, lighting, paramsBuffer;
     Buffer aov;     // the geometry AOVs, AOV_SLOTS float[4] per pixel (setAovs), while they are gathered
+    Buffer instanceMotion;  // each instance's transform as the shutter opens and closes, for the motion vectors
+    // Held at one moment of the shutter (setMotionHeld): no blur, the motion kept for the motion vectors.
+    bool motionHeld = false;
+    float heldMoment = 0.5f;
     // Stopping once clean (setConvergence): the even samples' mean, and which squares of the picture are done.
     Buffer half, done;
     Buffer lightSetTable;
@@ -621,6 +625,19 @@ struct Renderer::Impl {
         }
         params.mixedVisibility = mixed ? 1 : 0;
         instanceTable.upload(table);
+        // The two ends of each instance's shutter, for the motion vectors, where any instance moves.
+        if (instancesMove && !instances.empty()) {
+            std::vector<float> ends(instances.size() * 24);
+            for (size_t i = 0; i < instances.size(); ++i)
+                for (int k = 0; k < 12; ++k) {
+                    ends[i * 24 + k] = instances[i].transform[k];
+                    ends[i * 24 + 12 + k] = instances[i].moves ? instances[i].closeTransform[k] : instances[i].transform[k];
+                }
+            instanceMotion.upload(ends);
+            params.instanceMotion = instanceMotion.ptr;
+        } else {
+            params.instanceMotion = 0;
+        }
         params.instances = instanceTable.ptr;
         params.traversable = 0;     // tracing an empty scene always misses
         if (instances.empty()) return;
@@ -646,6 +663,7 @@ struct Renderer::Impl {
     // Puts the scene where it is at one moment of the shutter: the camera, the meshes that change
     // shape, and then the instance layer, which holds what moves and bounds what changed.
     void setTime(float time) {
+        params.time = time;
         if (cameraMoves) {
             const Camera held = camera;
             for (int i = 0; i < 3; ++i) {
@@ -654,7 +672,7 @@ struct Renderer::Impl {
                 camera.up[i] += (cameraClose.up[i] - camera.up[i]) * time;
             }
             camera.verticalFovDegrees += (cameraClose.verticalFovDegrees - camera.verticalFovDegrees) * time;
-            updateCamera();
+            updateCamera(false);
             camera = held;
         }
         if (meshesMove) {
@@ -698,20 +716,36 @@ struct Renderer::Impl {
         }
     }
 
-    void updateCamera() {
-        if (!params.width || !params.height) return;
+    // A camera's origin and the three directions of its image plane (cameraU, cameraV, cameraW), twelve floats.
+    void cameraFrame(const Camera& c, float* out) const {
         float w[3], u[3], v[3];
-        subtract(camera.target, camera.eye, w);
+        subtract(c.target, c.eye, w);
         scaleTo(w, 1.0f);
-        cross(w, camera.up, u);
-        const float halfHeight = std::tan(camera.verticalFovDegrees * 3.14159265358979323846f / 360.0f);
+        cross(w, c.up, u);
+        const float halfHeight = std::tan(c.verticalFovDegrees * 3.14159265358979323846f / 360.0f);
         scaleTo(u, halfHeight * float(params.width) / float(params.height));
         cross(u, w, v);
         scaleTo(v, halfHeight);
-        std::copy(camera.eye, camera.eye + 3, params.cameraOrigin);
-        std::copy(u, u + 3, params.cameraU);
-        std::copy(v, v + 3, params.cameraV);
-        std::copy(w, w + 3, params.cameraW);
+        std::copy(c.eye, c.eye + 3, out);
+        std::copy(u, u + 3, out + 3);
+        std::copy(v, v + 3, out + 6);
+        std::copy(w, w + 3, out + 9);
+    }
+
+    // ends: the camera at the shutter's two ends as well, for the motion vectors (not while setTime places it between).
+    void updateCamera(bool ends = true) {
+        if (!params.width || !params.height) return;
+        float frame[12];
+        cameraFrame(camera, frame);
+        std::copy(frame, frame + 3, params.cameraOrigin);
+        std::copy(frame + 3, frame + 6, params.cameraU);
+        std::copy(frame + 6, frame + 9, params.cameraV);
+        std::copy(frame + 9, frame + 12, params.cameraW);
+        if (ends) {
+            std::copy(frame, frame + 12, params.cameraOpen);
+            if (cameraMoves) cameraFrame(cameraClose, params.cameraClose);
+            else std::copy(frame, frame + 12, params.cameraClose);
+        }
         params.lensRadius = std::max(camera.lensRadius, 0.0f);
         params.focusDistance = std::max(camera.focusDistance, 1e-6f);
         params.lensBlades = camera.blades >= 3 ? std::min<uint32_t>(camera.blades, 64) : 0;
@@ -1825,7 +1859,10 @@ void Renderer::render() {
             impl->nextCheck = 16;
         }
     }
-    if (impl->cameraMoves || impl->instancesMove || impl->meshesMove || impl->lightsMove) {
+    if (impl->motionHeld && (impl->cameraMoves || impl->instancesMove || impl->meshesMove || impl->lightsMove)) {
+        // Held at one moment: placed there once, as the render begins.
+        if (impl->samples == 0) impl->setTime(impl->heldMoment);
+    } else if (impl->cameraMoves || impl->instancesMove || impl->meshesMove || impl->lightsMove) {
         // One moment per sample: the bits of the sample index reversed, which spreads any number
         // of samples evenly over the shutter.
         uint32_t bits = impl->samples, reversed = 0;
@@ -1946,6 +1983,14 @@ void Renderer::setPass(uint32_t pass) {
 }
 
 uint32_t Renderer::pass() const { return impl->params.aovPass; }
+
+void Renderer::setMotionHeld(bool held, float moment) {
+    moment = std::clamp(moment, 0.0f, 1.0f);
+    if (held == impl->motionHeld && (!held || moment == impl->heldMoment)) return;
+    impl->motionHeld = held;
+    impl->heldMoment = moment;
+    impl->restart();
+}
 
 void Renderer::readAov(uint32_t slot, float* rgb) {
     if (!impl->samples) throw std::runtime_error("MoonLightIPR has no samples to read");

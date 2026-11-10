@@ -43,8 +43,8 @@ def window_values(held,scene):
     it was last rendered with (held, as kept with the scene). The folder, prefix and digits stay. The frames, rate and
     motion blur stay while the scene's own are what they were then, and follow the scene's own once those change."""
     held=held if isinstance(held,dict) else {}
-    values=dict(scene,folder='',prefix='frame',digits=DIGITS)
-    values.update({key:held[key] for key in ('folder','prefix','digits') if key in held})
+    values=dict(scene,folder='',prefix='frame',digits=DIGITS,engine='moonray')
+    values.update({key:held[key] for key in ('folder','prefix','digits','engine') if key in held})
     if held.get('scene')==scene:values.update({key:held[key] for key in scene if key in held})
     return values
 

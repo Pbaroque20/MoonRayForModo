@@ -425,6 +425,14 @@ struct LaunchParams {
     // A light pass rendered in place of the beauty (AovPass); 0 the beauty.
     unsigned aovPass;
     unsigned aovPad;
+    // For the motion vectors: each instance's transform as the shutter opens and as it closes (OptiX's 3x4 rows, twelve
+    // then twelve floats an instance), or 0 where none moves; the moment of the shutter this sample is at (0 to 1); and
+    // the camera as the shutter opens and closes: its origin, then cameraU, cameraV and cameraW as they are above.
+    DevicePtr instanceMotion;
+    float time;
+    unsigned timePad;
+    float cameraOpen[12];
+    float cameraClose[12];
 };
 
 // MoonLightIPR's AOVs, for motion graphics. The light in four passes that add up to the beauty (fog's light before the
@@ -433,6 +441,9 @@ struct LaunchParams {
 enum AovPass : unsigned { PASS_BEAUTY = 0, PASS_DIFFUSE = 1, PASS_GLOSSY = 2, PASS_EMISSION = 3, PASS_BACKGROUND = 4 };
 // And from what the camera sees first, gathered beside the beauty, all at once: its albedo, depth, shading normal,
 // world position and alpha, each a running mean as the beauty is.
-enum AovSlot : unsigned { AOV_ALBEDO = 0, AOV_DEPTH = 1, AOV_NORMAL = 2, AOV_POSITION = 3, AOV_ALPHA = 4, AOV_SLOTS = 5 };
+// And the motion vectors: how far, in pixels across and up, what the camera sees there moves from the shutter's opening
+// to its closing, as MoonRay's motion vectors say it.
+enum AovSlot : unsigned { AOV_ALBEDO = 0, AOV_DEPTH = 1, AOV_NORMAL = 2, AOV_POSITION = 3, AOV_ALPHA = 4, AOV_MOTION = 5,
+                          AOV_SLOTS = 6 };
 
 }

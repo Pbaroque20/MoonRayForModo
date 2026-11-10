@@ -8,6 +8,7 @@ The current release is [0.5.3.2](https://github.com/Pbaroque20/MoonRayForModo/re
 
 ## New in 0.5.3.2.1 (coming)
 
+- **Render Animation with MoonLightIPR** (an Engine in its window), **motion vectors** in MoonLightIPR's AOVs, and Denoised Beauty after a MoonLightIPR Render without rendering again.
 - **VDB sequences stay on XPU2**, a numbered VDB file plays as a sequence at once, and VDB shapes show their box and a point cloud in the viewport.
 - **XPU2's sampling settings follow the engine in use**, and XPU2 realtime offers the denoised beauty, with the beauty, alone.
 - **MoonLightIPR Render at the camera's resolution** (Preview Preferences), **Select Mesh Here** in the picture's menu, finer graph sliders.

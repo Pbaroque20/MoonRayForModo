@@ -132,6 +132,107 @@ class Playblast(QtCore.QObject):
             panel._sync_rt()
 
 
+class MoonLightIPRAnimation(Playblast):
+    """Render Animation with MoonLightIPR (its Engine): each frame rendered as a playblast's is, at the render's own
+    resolution and Render samples a pixel (Preview Preferences), denoised where the Denoiser is on, and written as an
+    EXR from MoonLightIPR's own numbers, with the picture type chosen beside it or in its place (image_formats). Frames
+    already in the folder are kept: refused, or passed over with Render missing frames."""
+
+    def __init__(self, panel, directory, first, last, fps, step=1, prefix='frame', width=640, samples=500, motion=False,
+                 digits=6, export_as=None, missing=False, denoise=False):
+        super().__init__(panel, directory, first, last, fps, step=step, prefix=prefix, width=width, samples=samples, motion=motion)
+        from .sequence_plan import frame_name
+        self.digits, self.export_as, self.denoise = int(digits), export_as, bool(denoise)
+        only = bool(export_as and export_as.get('only'))
+
+        def kept(frame):
+            from .image_formats import find
+            extension = find(export_as['type'])[2] if only else 'exr'
+            return self.directory / frame_name(prefix, frame, self.digits, extension)
+        there = [frame for frame in self.frames if kept(frame).exists()]
+        if there and not missing:
+            raise ValueError('Frames of a sequence named %s are already in this folder (frame %d). Choose another file prefix, '
+                             'or enable Render missing frames to render only the others.' % (prefix, there[0]))
+        self.frames = [frame for frame in self.frames if frame not in there]
+        if not self.frames:
+            raise ValueError('Every frame of this sequence is already in the folder.')
+        self.total = len(self.frames)
+        self.frame = self.frames[0]
+
+    def start(self):
+        # The denoised picture where the Denoiser is on, MoonLightIPR's own; else the beauty as it is rendered.
+        panel = self.panel
+        wanted = 'denoised_beauty' if self.denoise else 'beauty'
+        if panel.buffer.currentData() != wanted and panel.buffer.findData(wanted) >= 0:
+            panel.buffer.setCurrentIndex(panel.buffer.findData(wanted))
+        super().start()
+
+    def _settled(self):
+        if not self.running:
+            self.poll.stop()
+            return
+        renderer = self.panel.renderer
+        if getattr(renderer, 'moonlightipr_frame', None) is not None or renderer.buffers.busy():
+            self.quiet = 0
+            return
+        self.quiet += 1
+        if self.quiet < 2:
+            return
+        self.poll.stop()
+        try:
+            written = self._write()
+        except Exception as exc:
+            self.failed('frame %d could not be written: %s' % (self.frame, exc))
+            return
+        self.completed.append(written)
+        if len(self.completed) == self.total:
+            self.stop()
+            self.panel.status.setText('Animation complete with MoonLightIPR: %d frames in %s' % (self.total, self.directory))
+            self.done.emit(list(self.completed))
+        else:
+            self.frame = self.frames[len(self.completed)]
+            QtCore.QTimer.singleShot(0, self.next_frame)
+
+    def failed(self, message):
+        if not self.running:
+            return
+        self.stop()
+        self.panel.status.setText('Animation stopped (MoonLightIPR): ' + message)
+
+    def _write(self):
+        """The frame as MoonLightIPR rendered it, from its own numbers (linear, the picture sent last): an EXR, and the
+        picture type asked for beside it or in its place."""
+        import subprocess
+        from . import native
+        from .sequence_plan import frame_name
+        renderer = self.panel.renderer
+        frame = renderer.buffers.progressive_frames.get('beauty') or {}
+        linear = frame.get('linear', {}).get('beauty')
+        if not linear:
+            raise ValueError('MoonLightIPR sent no picture for it')
+        width, height, pixels = linear
+        runtime = Path(renderer.active['runtime']) if getattr(renderer, 'active', None) else native.default_runtime()
+        target = self.directory / frame_name(self.prefix, self.frame, self.digits, 'exr')
+        with tempfile.TemporaryDirectory(prefix='MoonLightIPRFrame-') as folder:
+            pfm = Path(folder) / 'frame.pfm'
+            with pfm.open('wb') as stream:
+                stream.write(('PF\n%d %d\n-1.0\n' % (width, height)).encode('ascii'))
+                stream.write(pixels)
+            done = subprocess.run([str(runtime / 'oiiotool.exe'), str(pfm), '-o', str(target)], env=native.environment(runtime),
+                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0), timeout=300)
+        if done.returncode or not target.is_file():
+            raise ValueError(done.stdout.decode(errors='replace').strip()[-300:] or 'oiiotool wrote no EXR')
+        if not self.export_as:
+            return str(target)
+        from .image_formats import convert, find
+        shown = target.with_suffix('.' + find(self.export_as['type'])[2])
+        convert(runtime, self.export_as['type'], target, shown, getattr(renderer.buffers, 'display', None), self.export_as.get('quality', 92))
+        if self.export_as.get('only'):
+            target.unlink()
+            return str(shown)
+        return str(target)
+
+
 def scene_range():
     """The frames and rate of the scene: what a playblast is offered at first."""
     try:

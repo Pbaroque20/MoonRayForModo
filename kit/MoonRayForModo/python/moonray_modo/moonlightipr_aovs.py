@@ -5,7 +5,9 @@ subsurface), Glossy (with hair, mirror reflections and refraction), Emission and
 rendered in place of the beauty, as the first surface the camera sees decides, by the same kernel the beauty uses: no
 kernel is compiled for it, and choosing one renders again from the start.
 
-From what the camera sees first: Albedo, Camera depth, Shading normal, World position and Alpha. These are gathered all
+From what the camera sees first: Albedo, Camera depth, Shading normal, World position, Alpha and Motion vectors (how far
+it moves in pixels from the shutter's opening to its closing, as MoonRay's say it: objects and the camera, not yet a
+mesh changing shape). These are gathered all
 at once beside the beauty, by a small program of their own, from the first one chosen; after that, choosing another is
 only another picture sent. Cryptomatte is MoonRay's alone.
 
@@ -24,6 +26,8 @@ AOVS = {
     'normal': 7,
     'position': 8,
     'alpha': 9,
+    # The motion vectors: read with the shutter's two ends, held at the frame's moment where motion blur is off.
+    'motion_vectors': 10,
 }
 
 # MoonLightIPR's own buffers, listed after MoonRay's, and only while MoonLightIPR is the engine.

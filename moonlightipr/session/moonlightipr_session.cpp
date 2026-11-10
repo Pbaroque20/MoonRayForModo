@@ -74,7 +74,7 @@ private:
 };
 
 // The light passes (1 to LIGHT_PASSES, AovPass) and the geometry AOVs after them (AovSlot), as src/device/shared.h has them.
-const unsigned LIGHT_PASSES = 4, GEOMETRY_AOVS = 5;
+const unsigned LIGHT_PASSES = 4, GEOMETRY_AOVS = 6;
 
 void event(const char* kind, const std::string& generation) {
     std::cout << "\n@@MODO_SESSION " << kind << " " << generation << std::endl;
@@ -119,7 +119,11 @@ int main(int argc, char** argv) {
             if (aovShown >= 0 && renderer.aovs()) { renderer.readAov(uint32_t(aovShown), pixels.data()); return aovName; }
             // A light pass, in the beauty's place: not denoised.
             if (renderer.pass()) { renderer.readBeauty(pixels.data()); return aovName; }
-            if (settings.denoise && showDenoised) renderer.readDenoised(pixels.data()); else renderer.readBeauty(pixels.data());
+            // The denoised picture whenever it is looked at: a render made without denoising (a Render, its denoised
+            // beauty chosen once it is done) is denoised as it stands, not rendered again; the denoiser's albedo and
+            // normal are gathered with every sample.
+            (void)settings;
+            if (showDenoised) renderer.readDenoised(pixels.data()); else renderer.readBeauty(pixels.data());
             return "beauty";
         };
         // Takes what the host says about that as it comes, in the middle of a render or between two. True where
@@ -164,6 +168,13 @@ int main(int argc, char** argv) {
             std::getline(command >> std::ws, path);     // a path may contain spaces
             moonlightipr::SceneSettings settings;
             if (verb == "quit") return 0;
+            if (verb == "vectors") {
+                // "vectors <0|1> <moment>": the scene held at that moment of its shutter, for motion vectors without
+                // motion blur; 0, spread over the shutter as before. Read as the next scene is.
+                const bool held = generation == "1";
+                renderer.setMotionHeld(held, held ? float(std::atof(path.c_str())) : 0.5f);
+                continue;
+            }
             if (verb == "aov") {
                 const unsigned n = unsigned(std::strtoul(generation.c_str(), nullptr, 10));
                 if (n > LIGHT_PASSES + GEOMETRY_AOVS) continue;

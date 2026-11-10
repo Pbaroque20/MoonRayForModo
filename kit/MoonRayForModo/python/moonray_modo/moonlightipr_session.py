@@ -106,6 +106,8 @@ class Session(QtCore.QObject):
         self.samples_now = None
         # The AOV the session gathers (moonlightipr_aovs): its number and the buffer key its frames come under.
         self.aov_now = (0, 'none')
+        # Held at one moment of the shutter (motion vectors without blur), and that moment.
+        self.vectors_now = (0, 0.5)
         # The scene being made ready on another thread, if one is.
         self.packer = None
         self.packer_poll = QtCore.QTimer(self); self.packer_poll.setSingleShot(True); self.packer_poll.setInterval(5)
@@ -203,6 +205,7 @@ class Session(QtCore.QObject):
         # The AOV looked at, said before every scene: a session newly started has not been told, and one told already
         # passes it over.
         self.process.write(('aov %d %s\n' % self.aov_now).encode('utf-8'))
+        self.process.write(('vectors %d %.6f\n' % self.vectors_now).encode('utf-8'))
         self.process.write(('scene %d %s\n' % (request['id'], path)).encode('utf-8'))
         self.sent = dict(request, keys=keys, path=path)
         self.current = request['id']
@@ -292,6 +295,11 @@ class Session(QtCore.QObject):
         self.aov_now = now
         if self.running() and not self.stopping and not self.closed:
             self.process.write(('aov %d %s\n' % now).encode('utf-8'))
+
+    def vectors(self, held, moment=0.5):
+        """Hold the scenes that follow at one moment of the shutter (0 its opening, 1 its closing): the motion vectors
+        without motion blur. Said with the next scene."""
+        self.vectors_now = (1 if held else 0, float(moment))
 
     def finish(self):
         """Stop sampling and have what is rendered so far sent as the finished picture. Returns whether there is a

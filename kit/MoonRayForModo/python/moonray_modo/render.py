@@ -494,6 +494,12 @@ class Renderer(QtCore.QObject):
         # And gathers the AOV looked at, where it is one of its own.
         from .moonlightipr_aovs import kind
         self.moonlightipr.aov(kind(self.buffers.key),self.buffers.key)
+        # A scene read with the shutter's ends for the motion vectors, motion blur off: held at the frame's own moment
+        # of the shutter (its ends are frames before and after it), the motion kept for the vectors.
+        steps=request['snapshot'].get('motion_steps') or []
+        held=len(steps)==2 and not getattr(self,'moonlightipr_blur',False) and not getattr(self,'moonlightipr_samples',None)
+        moment=(-float(steps[0])/(float(steps[1])-float(steps[0]))) if held and float(steps[1])>float(steps[0]) else 0.5
+        self.moonlightipr.vectors(held,min(1.0,max(0.0,moment)))
 
     def _moonlightipr_shown(self,packet):
         """Whether a frame is for showing: of the scene last asked for or, while newer edits wait their turn (a drag), of

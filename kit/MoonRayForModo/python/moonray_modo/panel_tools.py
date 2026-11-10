@@ -310,10 +310,23 @@ class Tools:
         if kept != stored:
             self._store(animation_output=kept)
         try:
-            candidate = Sequence(self, directory, dialog.first.value(), dialog.last.value(),
-                                 dialog.fps.value(), dialog.motion.isChecked(),
-                                 step=dialog.step.value(), prefix=dialog.prefix.text(), missing=dialog.missing.isChecked(),
-                                 export_as=dialog.export_as(), digits=dialog.digits.value())
+            if dialog.engine.currentData() == 'moonlightipr':
+                # MoonLightIPR as the engine: frames rendered as a playblast's are, at the render's resolution and Render
+                # samples, written as EXRs of its own picture (playblast.MoonLightIPRAnimation).
+                from .playblast import MoonLightIPRAnimation
+                import modo
+                widest = int(modo.Scene().renderItem.channel('resX').get())
+                denoise = self._denoiser_on() and self._settings_values().get('denoising', {}).get('final', True)
+                candidate = MoonLightIPRAnimation(self, directory, dialog.first.value(), dialog.last.value(), dialog.fps.value(),
+                                                  step=dialog.step.value(), prefix=dialog.prefix.text(), width=widest,
+                                                  samples=self.preferences.get('moonlightipr/render_samples'), motion=dialog.motion.isChecked(),
+                                                  digits=dialog.digits.value(), export_as=dialog.export_as(), missing=dialog.missing.isChecked(),
+                                                  denoise=denoise)
+            else:
+                candidate = Sequence(self, directory, dialog.first.value(), dialog.last.value(),
+                                     dialog.fps.value(), dialog.motion.isChecked(),
+                                     step=dialog.step.value(), prefix=dialog.prefix.text(), missing=dialog.missing.isChecked(),
+                                     export_as=dialog.export_as(), digits=dialog.digits.value())
             self.settings.setValue('output/animation', directory)
             if self.ipr_mode.isChecked():
                 self.ipr_mode.setChecked(False)

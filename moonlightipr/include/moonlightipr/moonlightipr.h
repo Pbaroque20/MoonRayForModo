@@ -423,6 +423,9 @@ public:
     // A light pass (AovPass) rendered in place of the beauty, 0 for the beauty; a render begins again with another.
     void setPass(uint32_t pass);
     uint32_t pass() const;
+    // Held at one moment of the shutter (0 its opening, 1 its closing) instead of spread over it: no motion blur, the
+    // motion of what moves kept for the motion vectors. Off, the samples are spread over the shutter as before.
+    void setMotionHeld(bool held, float moment = 0.5f);
 
     // Blocks until queued GPU work has finished; for timing.
     void synchronize();
