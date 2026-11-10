@@ -272,6 +272,7 @@ struct Renderer::Impl {
     Buffer envPixels, envBackground, envMarginal, envConditional, distantLights, lights, lightTriangles, lightFilters;
     Buffer lightDistributions, distantDistributions;
     Buffer beauty, albedo, normal, denoised, lighting, paramsBuffer;
+    Buffer aov;     // the AOV looked at (setAov), while there is one
     // Stopping once clean (setConvergence): the even samples' mean, and which squares of the picture are done.
     Buffer half, done;
     Buffer lightSetTable;
@@ -301,6 +302,8 @@ struct Renderer::Impl {
     // use fewer is rendered by a kernel made without the rest (specialize).
     std::string kernelPath;
     unsigned kernelFeatures = FEATURE_ALL;
+    // The features the materials use (setMaterials): the kernel for them, unless an AOV asks for the full one.
+    unsigned materialFeatures = FEATURE_ALL;
 
     ~Impl() {
         if (launched) cudaEventDestroy(launched);
@@ -1222,7 +1225,8 @@ void Renderer::setMaterials(const Material* materials, size_t count, const Layer
         if (layers[i].channel == CHANNEL_SUBSURFACE || layers[i].channel == CHANNEL_SUBSURFACE_COLOR) features |= FEATURE_SUBSURFACE;
         if (layers[i].flags & LAYER_PROCEDURAL) features |= FEATURE_PROCEDURAL;
     }
-    impl->specialize(features);
+    impl->materialFeatures = features;
+    impl->specialize(impl->params.aovKind ? FEATURE_ALL : features);
     std::vector<DeviceMaterial> table(count);
     std::transform(materials, materials + count, table.begin(), toDevice);
     std::vector<DeviceHair> hairs;
@@ -1757,6 +1761,10 @@ void Renderer::resize(uint32_t width, uint32_t height) {
     impl->params.beauty = impl->beauty.ptr;
     impl->params.albedo = impl->albedo.ptr;
     impl->params.normal = impl->normal.ptr;
+    if (impl->params.aovKind) {
+        impl->aov.reserve(bytes);
+        impl->params.aov = impl->aov.ptr;
+    }
     impl->params.width = width;
     impl->params.height = height;
     // The denoiser is sized for one resolution; it is recreated on the next request.
@@ -1904,6 +1912,28 @@ void Renderer::readDenoised(float* rgb) {
     if (!impl->samples) throw std::runtime_error("MoonLightIPR has no samples to read");
     impl->denoise();
     impl->download(impl->denoised, rgb);
+}
+
+void Renderer::setAov(uint32_t kind) {
+    if (kind == impl->params.aovKind) return;
+    if (kind > AOV_POSITION) throw std::runtime_error("MoonLightIPR has no such AOV");
+    impl->params.aovKind = kind;
+    if (kind && impl->params.width && impl->params.height) {
+        impl->aov.reserve(size_t(impl->params.width) * impl->params.height * 4 * sizeof(float));
+        impl->params.aov = impl->aov.ptr;
+    } else if (!kind) {
+        impl->params.aov = 0;
+    }
+    impl->specialize(kind ? FEATURE_ALL : impl->materialFeatures);
+    impl->restart();
+}
+
+uint32_t Renderer::aov() const { return impl->params.aovKind; }
+
+void Renderer::readAov(float* rgb) {
+    if (!impl->samples) throw std::runtime_error("MoonLightIPR has no samples to read");
+    if (!impl->params.aovKind || !impl->params.aov) throw std::runtime_error("MoonLightIPR gathers no AOV");
+    impl->download(impl->aov, rgb);
 }
 
 void Renderer::synchronize() { ML_CHECK(cudaDeviceSynchronize()); }

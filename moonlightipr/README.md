@@ -56,6 +56,7 @@ build to an installed kit during development.
   Fresnel, so that Modo's and MoonRay's materials keep their own balance; refraction,
   clearcoat, subsurface, anisotropy, absorption and dispersion; and a distant light whose
   disc the camera can see, for the sun of a physical sky.
+- AOVs (`AovKind` in `src/device/shared.h`, `aovPart` in the kernel): one gathered beside the beauty, the one looked at, in the full kernel alone (`FEATURE_AOV`), so the variants and the beauty pay nothing for them. The light added to the beauty is told apart by where it came by (`AovStage`: seen by the camera, lit at the first surface, found along the first bounce, or later) and by that first bounce (`FirstBounce`); a rough reflection's light is split into diffuse and glossy by each lobe's share of its weight, per channel, and the first surface's direct light is sampled again with the diffuse or glossy lobes alone (`directLight`'s `only`). The four light passes add up to the beauty: in a test scene, 0.284115 against the beauty's 0.284114. The session takes `aov <kind> <name>` and sends the AOV's frames under that name.
 - `src/device/qmc.h`: where a path's random numbers come from. The camera's draws and the first four bounces'
   come from OpenQMC's Owen-scrambled Sobol sampler (`third_party/openqmc`, v0.7.1), so a pixel's samples
   spread over each choice evenly instead of by chance; further draws come from the hashed LCG stream that

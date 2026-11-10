@@ -235,8 +235,11 @@ class Renderer(QtCore.QObject):
         # MoonLightIPR denoises when its denoised beauty is the buffer chosen in the window, with its own denoiser.
         # (The window says so before it hands the scene over: a scene read earlier and used again says what was
         # chosen when it was read.)
-        # MoonLightIPR produces beauty only.
-        if moonlightipr:snapshot=dict(snapshot,preview_buffer='beauty')
+        # MoonLightIPR makes the beauty, its denoised picture (sent as the beauty), and the AOV looked at where it
+        # gathers that one (moonlightipr_aovs).
+        if moonlightipr:
+            from .moonlightipr_aovs import AOVS as MOONLIGHTIPR_AOVS
+            if snapshot.get('preview_buffer','beauty') not in MOONLIGHTIPR_AOVS:snapshot=dict(snapshot,preview_buffer='beauty')
         if not output and not linear_preview:
             chosen,shown=snapshot.get('preview_buffer','beauty'),snapshot.get('display',{})
             # A draft redrawn with the same buffer shown the same way has nothing to choose: choosing converts the
@@ -488,6 +491,9 @@ class Renderer(QtCore.QObject):
         self.moonlightipr.submit(snapshot,directory,request['width'],request['height'],request['environment'],self.moonlightipr_serial,self.moonlightipr_gathering,
                                  denoise=self.moonlightipr_denoises,runtime=request['runtime'])
         self.moonlightipr.view(self.moonlightipr_denoises or self.buffers.key!='beauty')
+        # And gathers the AOV looked at, where it is one of its own.
+        from .moonlightipr_aovs import kind
+        self.moonlightipr.aov(kind(self.buffers.key),self.buffers.key)
 
     def _moonlightipr_shown(self,packet):
         """Whether a frame is for showing: of the scene last asked for or, while newer edits wait their turn (a drag), of
@@ -830,8 +836,12 @@ class Renderer(QtCore.QObject):
 
     def _select_view(self,key):
         if getattr(self,'using_moonlightipr',False):
-            # MoonLightIPR has its beauty and its denoised picture both: it sends the one now chosen.
-            self.moonlightipr.view(key!='beauty');return
+            # MoonLightIPR has its beauty and its denoised picture both: it sends the one now chosen. An AOV of its own
+            # it gathers from then on, rendering again from the start (moonlightipr_aovs).
+            from .moonlightipr_aovs import kind
+            self.moonlightipr.aov(kind(key),key)
+            if not kind(key):self.moonlightipr.view(key!='beauty')
+            return
         if key=='denoised_beauty' and not native.xpu2():return # Post-process result, not a native render output.
         snapshot=self.active['snapshot'] if getattr(self,'active',None) else {}
         if outputs.display_kind(snapshot,key)=='cryptomatte':

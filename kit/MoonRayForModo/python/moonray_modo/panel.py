@@ -268,6 +268,9 @@ class Panel(Tools, QtWidgets.QWidget):
         self.buffer.addItem('Denoised Beauty','denoised_beauty')
         for key,(label,attributes,channel) in options.AOVS.items():
             self.buffer.addItem(label,key)
+        # MoonLightIPR's own light passes, listed only while it is the engine (moonlightipr_aovs).
+        from .moonlightipr_aovs import OWN
+        for label,key in OWN:self.buffer.addItem(label,key)
         self.buffer.setToolTip('The render buffer shown. Switching does not restart the render.')
         row.addWidget(self.buffer)
         row.addSpacing(5)
@@ -1144,7 +1147,8 @@ class Panel(Tools, QtWidgets.QWidget):
         # graph does nothing, it says where to make one that does.
         names.insert(0,('Composite','composite'))
         if 'asset' in held:names.append(('Cryptomatte: Assets',held['asset']))
-        base=2+len(options.AOVS)
+        from .moonlightipr_aovs import OWN
+        base=2+len(options.AOVS)+len(OWN)
         if names==[(self.buffer.itemText(i),self.buffer.itemData(i)) for i in range(base,self.buffer.count())]:return
         key=self.buffer.currentData();blocker=QtCore.QSignalBlocker(self.buffer)
         while self.buffer.count()>base:self.buffer.removeItem(self.buffer.count()-1)
@@ -1342,9 +1346,10 @@ class Panel(Tools, QtWidgets.QWidget):
         self.image_info.setText(text)
 
     def _limit_buffers(self):
-        """MoonLightIPR makes the beauty and, where it is asked for, a denoised beauty: the list then holds those two.
-        It shows the beauty unless the denoised one is chosen by hand, and choosing it is what has MoonLightIPR
-        denoise. The other buffers are MoonRay's."""
+        """MoonLightIPR makes the beauty and, where it is asked for, a denoised beauty, and the AOVs of its own
+        (moonlightipr_aovs): the list then holds those. It shows the beauty unless another is chosen by hand, and choosing
+        the denoised one is what has MoonLightIPR denoise. The other buffers are MoonRay's."""
+        from .moonlightipr_aovs import AOVS as MOONLIGHTIPR_AOVS,OWN_KEYS
         only=self._engine()=='moonlightipr'
         denoises=self._moonlightipr_denoises()
         self.buffer.setItemText(0,'Beauty')
@@ -1363,8 +1368,8 @@ class Panel(Tools, QtWidgets.QWidget):
             key=self.buffer.itemData(row)
             denoised=key=='denoised_beauty'
             if checking:hidden=key!='pbr_validity'
-            else:hidden=(low or (denoised and not on) or (only and not (denoises and denoised))
-                         or (key=='pbr_validity' and not validity))
+            else:hidden=(low or (denoised and not on) or (only and not ((denoises and denoised) or key in MOONLIGHTIPR_AOVS))
+                         or (not only and key in OWN_KEYS) or (key=='pbr_validity' and not validity))
             self.buffer.view().setRowHidden(row,hidden)
         was=getattr(self,'_validity_checked',False);self._validity_checked=checking
         if checking:
@@ -1376,8 +1381,13 @@ class Panel(Tools, QtWidgets.QWidget):
         if low:
             if self.buffer.currentData()!='beauty':self.buffer.setCurrentIndex(self.buffer.findData('beauty'))
             return
-        if not only:return
+        if not only:
+            # MoonLightIPR's own passes are not MoonRay's: the beauty is shown in their place.
+            if self.buffer.currentData() in OWN_KEYS:self.buffer.setCurrentIndex(self.buffer.findData('beauty'))
+            return
         shown=self.buffer.currentData()
+        # An AOV MoonLightIPR gathers stays chosen.
+        if shown in MOONLIGHTIPR_AOVS:return
         # The beauty is what is shown. The denoised picture is for whoever is looking to choose, and stays chosen
         # for as long as there is one.
         wanted='denoised_beauty' if denoises and shown=='denoised_beauty' and self._buffer_picked=='denoised_beauty' else 'beauty'

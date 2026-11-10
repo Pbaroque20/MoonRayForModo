@@ -6,8 +6,9 @@ This is the development branch of [MoonRay for Modo](https://github.com/Pbaroque
 
 The current release is [0.5.3.2](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.5.3.2). **Built on MoonRay [2026.29.1](https://github.com/dreamworksanimation/openmoonray/releases/tag/v2026.29.1)** (OpenMoonRay's latest release; MoonRay 18.4), with the plugin's own patches for Windows and the preview.
 
-## New in 0.5.3.3 (coming)
+## New in 0.5.3.2.1 (coming)
 
+- **AOVs in MoonLightIPR, for motion graphics**: Diffuse, Glossy, Emission and Environment background, which add up to the beauty, and Alpha, Camera depth, Shading normal, World position and Albedo, in the buffer list. The first one chosen takes a minute or two to prepare, once.
 - **Render with MoonLightIPR**: with RT off, Render is no longer greyed: MoonLightIPR gathers Render samples a pixel (Preview Preferences, 500 unless changed) as fast as the graphics card can, and stops. The label under the picture says how many samples a pixel the picture holds as it comes (137 / 500 ps), in realtime too.
 
 ## New in 0.5.3.2

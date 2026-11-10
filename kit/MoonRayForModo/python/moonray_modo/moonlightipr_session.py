@@ -104,6 +104,8 @@ class Session(QtCore.QObject):
         self.partial = ''; self.stopping = False; self.closed = False
         # (generation, samples a pixel) of the newest frame the session said it was sending.
         self.samples_now = None
+        # The AOV the session gathers (moonlightipr_aovs): its number and the buffer key its frames come under.
+        self.aov_now = (0, 'none')
         # The scene being made ready on another thread, if one is.
         self.packer = None
         self.packer_poll = QtCore.QTimer(self); self.packer_poll.setSingleShot(True); self.packer_poll.setInterval(5)
@@ -198,6 +200,9 @@ class Session(QtCore.QObject):
         if error:
             self.failed.emit('MoonLightIPR cannot preview this scene: ' + error); return
         self.warnings.emit(warnings)
+        # The AOV looked at, said before every scene: a session newly started has not been told, and one told already
+        # passes it over.
+        self.process.write(('aov %d %s\n' % self.aov_now).encode('utf-8'))
         self.process.write(('scene %d %s\n' % (request['id'], path)).encode('utf-8'))
         self.sent = dict(request, keys=keys, path=path)
         self.current = request['id']
@@ -225,6 +230,10 @@ class Session(QtCore.QObject):
             # What the session says of a scene: its textures made smaller to fit the card, or why it was rejected.
             if line.startswith('MoonLightIPR textures: '):
                 self.status.emit('MoonLightIPR shows textures ' + line[len('MoonLightIPR textures: '):].strip() + '.')
+                continue
+            if line.startswith('MoonLightIPR AOV kernel: '):
+                # The kernel that gathers AOVs being made ready, which takes a while the first time.
+                self.status.emit('MoonLightIPR is ' + line[len('MoonLightIPR AOV kernel: '):].strip() + '.')
                 continue
             if line.startswith('MoonLightIPR scene rejected: '):
                 self.rejection = line[len('MoonLightIPR scene rejected: '):].strip()
@@ -278,6 +287,15 @@ class Session(QtCore.QObject):
         self.denoised_view = bool(denoised)
         if self.running() and not self.stopping and not self.closed:
             self.process.write(('view %d %s\n' % (self.current or 0, 'denoised' if denoised else 'beauty')).encode('utf-8'))
+
+    def aov(self, kind, key):
+        """Gather an AOV beside the beauty (moonlightipr_aovs), its frames sent under key; 0 for none. A render already
+        finished is rendered again with it."""
+        now = (int(kind), str(key) if kind else 'none')
+        if now == self.aov_now: return
+        self.aov_now = now
+        if self.running() and not self.stopping and not self.closed:
+            self.process.write(('aov %d %s\n' % now).encode('utf-8'))
 
     def finish(self):
         """Stop sampling and have what is rendered so far sent as the finished picture. Returns whether there is a

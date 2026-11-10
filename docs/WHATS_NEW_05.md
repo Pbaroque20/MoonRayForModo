@@ -2,9 +2,10 @@
 
 0.5 is a **pre-production release**: the plugin is no longer experimental, and it brings a new GPU renderer, MoonRay XPU2.
 
-## New in 0.5.3.3 (coming)
+## New in 0.5.3.2.1 (coming)
 
 - **Render with MoonLightIPR**: with RT off, the Render button is no longer greyed for MoonLightIPR. A Render gathers the samples a pixel set in Preview Preferences > MoonLightIPR quality > Render samples (500 unless changed), flat out, neither paced nor stopped early once the picture looks clean, and stops; Stop keeps what it has. The label under the picture says how many samples a pixel the picture holds, against the target, as each frame comes (137 / 500 ps), in realtime as well.
+- **AOVs in MoonLightIPR, for motion graphics**: with MoonLightIPR as the engine, the buffer list offers the passes a motion graphics composite is made with. The light in four passes that add up to the beauty (fog's light apart): Diffuse (with subsurface), Glossy (with mirror reflections and refraction), Emission and Environment background. And from what the camera sees first: Alpha, Camera depth, Shading normal, World position and Albedo. MoonLightIPR gathers the one chosen beside the beauty, rendering again from the start when another is chosen; the first time, the kernel that gathers them is compiled, for a minute or two, and the status bar says so. Cryptomatte and MoonRay's other buffers stay MoonRay's. Motion vectors are to follow.
 - **A diagnostic for MoonLightIPR crashes**: with the environment variable MOONLIGHTIPR_VALIDATE=1 set before Modo starts, OptiX checks every launch and writes what went wrong to the Render Log. Slower; for reports from graphics cards not tested here.
 
 ## New in 0.5.3.2

@@ -13,6 +13,8 @@
 //   @@MODO_SHARED <generation> beauty ...  a frame is waiting in shared memory
 //   @@MODO_SESSION DONE <generation>       the picture is clean, or the sample target was reached
 //   @@MODO_SESSION SAMPLES <generation> <n> the frame about to be sent holds n samples a pixel
+// An AOV is gathered beside the beauty while the host asks for one ("aov <kind> <name>", AovKind's numbers, 0 for none):
+// its frames are sent under that name, and a render already finished is rendered again with it.
 //   @@MODO_SESSION FAILED <generation>     the scene was rejected; the reason is on standard error
 #include "moonlightipr/moonlightipr.h"
 #include "scene_loader.h"
@@ -104,6 +106,14 @@ int main(int argc, char** argv) {
         // Which picture is sent of a scene that is denoised: the denoised one, or the beauty as it is rendered.
         // Both are there all the while; the host says which it is looking at, and may change its mind at any time.
         bool showDenoised = true, viewChanged = false;
+        // The AOV gathered (Renderer::setAov), by the host's name for it, which its frames are sent under.
+        std::string aovName;
+        // The picture sent: the AOV where one is gathered, else the denoised picture or the beauty. Its name is returned.
+        auto readPicture = [&](const moonlightipr::SceneSettings& settings) -> std::string {
+            if (renderer.aov()) { renderer.readAov(pixels.data()); return aovName; }
+            if (settings.denoise && showDenoised) renderer.readDenoised(pixels.data()); else renderer.readBeauty(pixels.data());
+            return "beauty";
+        };
         // Takes what the host says about that as it comes, in the middle of a render or between two. True where
         // something else is waiting, which is for the render to give way to.
         auto interrupted = [&]() {
@@ -118,10 +128,10 @@ int main(int argc, char** argv) {
         };
         auto send = [&](const moonlightipr::SceneSettings& settings, const std::string& generation) {
             if (!sharedImage.ready()) return false;
-            if (settings.denoise && showDenoised) renderer.readDenoised(pixels.data()); else renderer.readBeauty(pixels.data());
+            const std::string key = readPicture(settings);
             // Said before the frame, so that the frame is shown with its own count.
             samplesSent(generation, renderer.sampleCount());
-            return sharedImage.publish(generation, "beauty", settings.width, settings.height,
+            return sharedImage.publish(generation, key, settings.width, settings.height,
                 [&](size_t i, float* rgb) { rgb[0] = pixels[i * 3]; rgb[1] = pixels[i * 3 + 1]; rgb[2] = pixels[i * 3 + 2]; });
         };
 
@@ -130,7 +140,28 @@ int main(int argc, char** argv) {
             std::string verb, generation, path;
             command >> verb >> generation;
             std::getline(command >> std::ws, path);     // a path may contain spaces
+            moonlightipr::SceneSettings settings;
             if (verb == "quit") return 0;
+            if (verb == "aov") {
+                // Another AOV: gathered from the start. A render already finished is rendered again with it, unless
+                // the host has more to say first (a new scene).
+                const uint32_t kind = uint32_t(std::strtoul(generation.c_str(), nullptr, 10));
+                aovName = kind ? path : std::string();
+                if (kind == renderer.aov()) continue;
+                // The kernel that gathers AOVs is the full one: compiled the first time, for a minute or more.
+                if (kind && !renderer.aov())
+                    std::cout << "MoonLightIPR AOV kernel: preparing the kernel that gathers AOVs (a minute or two the first time)" << std::endl;
+                try {
+                    renderer.setAov(kind);
+                } catch (const std::exception& error) {
+                    std::cerr << "MoonLightIPR cannot gather that AOV: " << error.what() << std::endl;
+                    continue;
+                }
+                if (lastGeneration.empty() || commands.waiting()) continue;
+                settings = lastSettings;
+                generation = lastGeneration;
+                goto render;
+            }
             if (verb == "pause") continue;      // stop sampling; the loaded scene stays for the next one
             if (verb == "view") {
                 // Between renders: the picture there is, sent again as the one now looked at.
@@ -157,7 +188,6 @@ int main(int argc, char** argv) {
                 std::cerr << "MoonLightIPR ignored an unknown command" << std::endl;
                 continue;
             }
-            moonlightipr::SceneSettings settings;
             try {
                 settings = loader.apply(path);
             } catch (const std::exception& error) {
@@ -169,15 +199,16 @@ int main(int argc, char** argv) {
             lastSettings = settings;
             lastGeneration = generation;
 
+        render:
             pixels.resize(size_t(settings.width) * settings.height * 3);
             const auto began = std::chrono::steady_clock::now();
             auto lastFrame = began;
             uint32_t published = 0;
             auto publish = [&]() {
                 if (!sharedImage.ready()) return false;
-                if (settings.denoise && showDenoised) renderer.readDenoised(pixels.data()); else renderer.readBeauty(pixels.data());
+                const std::string key = readPicture(settings);
                 samplesSent(generation, renderer.sampleCount());
-                const bool sent = sharedImage.publish(generation, "beauty", settings.width, settings.height,
+                const bool sent = sharedImage.publish(generation, key, settings.width, settings.height,
                     [&](size_t i, float* rgb) { rgb[0] = pixels[i * 3]; rgb[1] = pixels[i * 3 + 1]; rgb[2] = pixels[i * 3 + 2]; });
                 if (sent) published = renderer.sampleCount();
                 return sent;

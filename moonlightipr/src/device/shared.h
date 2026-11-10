@@ -10,8 +10,9 @@ typedef unsigned long long DevicePtr;
 // The heavy features a kernel can be made without (ML_FEATURES in kernel.cu): a scene that uses none of them is rendered
 // by a kernel without their code, a third faster or more. All of them is FEATURE_ALL, the kernel as it is built.
 // Procedural layers (Modo's patterns, modo_patterns.h) are one too: a kernel without them is a quarter quicker to compile.
+// AOVs (FEATURE_AOV) are in the full kernel alone: a scene shows one with it, and its beauty pays nothing for them otherwise.
 const unsigned FEATURE_FOG = 1, FEATURE_HAIR = 2, FEATURE_SUBSURFACE = 4, FEATURE_TOON = 8, FEATURE_FUZZ = 16, FEATURE_PROCEDURAL = 32,
-               FEATURE_ALL = 63;
+               FEATURE_AOV = 64, FEATURE_ALL = 127;
 
 // Material channels a layer can drive; they are the plugin's Shader Tree effects.
 const unsigned CHANNEL_COLOR = 0, CHANNEL_COLOR_AMOUNT = 1, CHANNEL_ROUGHNESS = 2, CHANNEL_METALLIC = 3,
@@ -419,6 +420,19 @@ struct LaunchParams {
     unsigned region[4];     // the pixels to render: from column, from row, to column, to row; the rest are black
     unsigned draft;         // 0 none, 1 lines outside the region, 2 lines everywhere
     unsigned mixedVisibility;   // some instance is hidden from one kind of ray and not from another
+    // The AOV gathered beside the beauty (AOV_*; AOV_NONE for none), as a running mean, float[4] per pixel.
+    DevicePtr aov;
+    unsigned aovKind;
+    unsigned aovPad;
+};
+
+// The AOVs MoonLightIPR gathers, one at a time: the one looked at. Those a motion graphics composite is made with:
+// the light in four passes that add up to the beauty (fog's light apart), diffuse (with subsurface), glossy (with mirror
+// reflections and refraction), emission and the environment seen; and from what the camera sees first, its alpha, depth,
+// shading normal, world position and albedo.
+enum AovKind : unsigned {
+    AOV_NONE = 0, AOV_ALBEDO = 1, AOV_DIFFUSE = 2, AOV_GLOSSY = 3, AOV_EMISSION = 4, AOV_BACKGROUND = 5,
+    AOV_ALPHA = 6, AOV_DEPTH = 7, AOV_NORMAL = 8, AOV_POSITION = 9,
 };
 
 }

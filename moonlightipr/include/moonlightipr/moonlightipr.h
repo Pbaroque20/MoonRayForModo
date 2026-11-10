@@ -415,6 +415,11 @@ public:
     void readBeauty(float* rgb);
     // Same, after the OptiX denoiser guided by the albedo and normal buffers.
     void readDenoised(float* rgb);
+    // The AOV gathered beside the beauty (AovKind in the device's shared.h; 0 for none), from the next sample on: a
+    // render with one uses the full kernel. readAov copies it as readBeauty does.
+    void setAov(uint32_t kind);
+    uint32_t aov() const;
+    void readAov(float* rgb);
 
     // Blocks until queued GPU work has finished; for timing.
     void synchronize();
