@@ -876,6 +876,13 @@ Renderer::Renderer(const std::string& ptxPath) : impl(new Impl) {
     OptixDeviceContextOptions options = {};
     options.logCallbackFunction = &logCallback;
     options.logCallbackLevel = 2;
+    // MOONLIGHTIPR_VALIDATE=1: OptiX checks every launch and says what went wrong, at a cost in speed (a diagnostic,
+    // for a crash on a card that is not here to test on).
+    if (const char* validate = std::getenv("MOONLIGHTIPR_VALIDATE"); validate && *validate && *validate != '0') {
+        options.validationMode = OPTIX_DEVICE_CONTEXT_VALIDATION_MODE_ALL;
+        options.logCallbackLevel = 4;
+        std::cerr << "MoonLightIPR: OptiX validation on (MOONLIGHTIPR_VALIDATE)" << std::endl;
+    }
     ML_CHECK(optixDeviceContextCreate(nullptr, &options, &impl->context));
     // Compiled kernels kept in a cache of MoonLightIPR's own, with room for all of them: a kernel takes a minute or more
     // to compile, and in OptiX's shared cache, filled by MoonRay's XPU mode and other programs, they were turned out

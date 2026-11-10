@@ -12,6 +12,7 @@
 //   @@MODO_SESSION APPLIED <generation>    the scene is loaded
 //   @@MODO_SHARED <generation> beauty ...  a frame is waiting in shared memory
 //   @@MODO_SESSION DONE <generation>       the picture is clean, or the sample target was reached
+//   @@MODO_SESSION SAMPLES <generation> <n> the frame about to be sent holds n samples a pixel
 //   @@MODO_SESSION FAILED <generation>     the scene was rejected; the reason is on standard error
 #include "moonlightipr/moonlightipr.h"
 #include "scene_loader.h"
@@ -72,6 +73,11 @@ void event(const char* kind, const std::string& generation) {
     std::cout << "\n@@MODO_SESSION " << kind << " " << generation << std::endl;
 }
 
+// How many samples a pixel the frame just sent holds, for the label under the picture.
+void samplesSent(const std::string& generation, uint32_t samples) {
+    std::cout << "\n@@MODO_SESSION SAMPLES " << generation << " " << samples << std::endl;
+}
+
 }
 
 int main(int argc, char** argv) {
@@ -113,6 +119,8 @@ int main(int argc, char** argv) {
         auto send = [&](const moonlightipr::SceneSettings& settings, const std::string& generation) {
             if (!sharedImage.ready()) return false;
             if (settings.denoise && showDenoised) renderer.readDenoised(pixels.data()); else renderer.readBeauty(pixels.data());
+            // Said before the frame, so that the frame is shown with its own count.
+            samplesSent(generation, renderer.sampleCount());
             return sharedImage.publish(generation, "beauty", settings.width, settings.height,
                 [&](size_t i, float* rgb) { rgb[0] = pixels[i * 3]; rgb[1] = pixels[i * 3 + 1]; rgb[2] = pixels[i * 3 + 2]; });
         };
@@ -168,6 +176,7 @@ int main(int argc, char** argv) {
             auto publish = [&]() {
                 if (!sharedImage.ready()) return false;
                 if (settings.denoise && showDenoised) renderer.readDenoised(pixels.data()); else renderer.readBeauty(pixels.data());
+                samplesSent(generation, renderer.sampleCount());
                 const bool sent = sharedImage.publish(generation, "beauty", settings.width, settings.height,
                     [&](size_t i, float* rgb) { rgb[0] = pixels[i * 3]; rgb[1] = pixels[i * 3 + 1]; rgb[2] = pixels[i * 3 + 2]; });
                 if (sent) published = renderer.sampleCount();

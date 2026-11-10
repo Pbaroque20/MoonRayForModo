@@ -102,6 +102,8 @@ class Session(QtCore.QObject):
         # Mesh keys the running process is known to hold; their data is not sent again.
         self.known = set()
         self.partial = ''; self.stopping = False; self.closed = False
+        # (generation, samples a pixel) of the newest frame the session said it was sending.
+        self.samples_now = None
         # The scene being made ready on another thread, if one is.
         self.packer = None
         self.packer_poll = QtCore.QTimer(self); self.packer_poll.setSingleShot(True); self.packer_poll.setInterval(5)
@@ -229,6 +231,11 @@ class Session(QtCore.QObject):
                 continue
             if not line.startswith('@@MODO_SESSION '): continue
             parts = line.strip().split()
+            if len(parts) == 4 and parts[1] == 'SAMPLES':
+                # The samples a pixel of the frame about to come, for the label under the picture.
+                try: self.samples_now = (int(parts[2]), int(parts[3]))
+                except ValueError: pass
+                continue
             if len(parts) != 3: continue
             try: generation = int(parts[2])
             except ValueError: continue

@@ -1284,11 +1284,13 @@ class Panel(Tools, QtWidgets.QWidget):
         self._limit_buffers()
         self._show_planned()
 
-    def _sampling_words(self, engine, settings=None, pixel_samples=None, gathering=None):
+    def _sampling_words(self, engine, settings=None, pixel_samples=None, gathering=None, done=None):
         """How a picture is sampled, as the label beside it says it. MoonRay: uniform with its samples a pixel, or
-        adaptive with the fewest and most (LS before it for MoonRay LS); MoonLightIPR: the samples a pixel it gathers."""
+        adaptive with the fewest and most (LS before it for MoonRay LS); MoonLightIPR: the samples a pixel it gathers,
+        after those the picture holds so far (done) where they are known."""
         if engine=='moonlightipr':
-            return '%d ps'%(gathering or self.preferences.get('moonlightipr/samples'))
+            most=gathering or self.preferences.get('moonlightipr/samples')
+            return '%d / %d ps'%(done,most) if done else '%d ps'%most
         from .options import render_values
         settings=render_values(settings or {})
         # XPU2 renders the preview: how it samples it (xpu2_sampling), not MoonRay's Uniform or Adaptive.
@@ -1322,7 +1324,9 @@ class Panel(Tools, QtWidgets.QWidget):
             width,height=self._dimensions({'width':scene_w,'height':scene_h})
             engine=self._engine()
             if engine=='moonlightipr':
-                words=self._sampling_words('moonlightipr')
+                # Realtime's samples a pixel while RT is on; a Render's (Render samples) while it is off.
+                words=self._sampling_words('moonlightipr',gathering=None if self.ipr_mode.isChecked()
+                                           else self.preferences.get('moonlightipr/render_samples'))
             elif self._low():
                 # As MoonRay LS has a scene prepared: no larger than its share of the render, and sampled to its own limit.
                 from .ipr import prepare
@@ -1692,12 +1696,6 @@ class Panel(Tools, QtWidgets.QWidget):
             self.start.setEnabled(False);self.start.setText('Render')
             self.start.setToolTip('Realtime is on. Switch RT off to render once.')
             return
-        if self._engine()=='moonlightipr' and not self._rendering:
-            # MoonLightIPR renders in realtime alone: RT turns it on, and this button is greyed.
-            self.start.setChecked(False);self.start.setCheckable(False)
-            self.start.setEnabled(False);self.start.setText('Render')
-            self.start.setToolTip('MoonLightIPR renders in realtime: switch RT on.')
-            return
         if False:
             # (Realtime has its switch, RT, left of the engine; this button renders once.)
             # A realtime engine is switched on and off, not started and stopped.
@@ -1730,6 +1728,9 @@ class Panel(Tools, QtWidgets.QWidget):
             scene=dict(scene,execution_mode='xpu' if realtime_mode=='xpu' else 'vectorized')
         # And gathers as many samples a pixel as the preferences say; a playblast has its own number.
         self.renderer.moonlightipr_preview_samples=self.preferences.get('moonlightipr/samples')
+        # Render with MoonLightIPR (realtime off): Render samples a pixel, as fast as the card can, and it stops.
+        once=not output and not self._following and not self.draft.isChecked() and self._engine()=='moonlightipr'
+        self.renderer.moonlightipr_once=self.preferences.get('moonlightipr/render_samples') if once else None
         # Whether this is a draft redrawing by itself, for which the window is left as it is. The region that follows
         # a draft's lines is of the same redraw; anything else asked for is not.
         asked=getattr(self,'_draft_quiet_asked',False);self._draft_quiet_asked=False
@@ -2573,7 +2574,10 @@ class Panel(Tools, QtWidgets.QWidget):
             text='%d x %d'%(self.preview.image.width(),self.preview.image.height())
             if snapshot.get('_draft'):pass
             elif frame.get('moonlightipr') or active.get('moonlightipr'):
-                text+=' | '+self._sampling_words('moonlightipr',gathering=getattr(self.renderer,'moonlightipr_gathering',None))
+                # With the samples a pixel this picture holds, as the session said it was sending it.
+                said=getattr(getattr(self.renderer,'moonlightipr',None),'samples_now',None)
+                done=said[1] if said and said[0]==getattr(self.renderer,'moonlightipr_serial',None) else None
+                text+=' | '+self._sampling_words('moonlightipr',gathering=getattr(self.renderer,'moonlightipr_gathering',None),done=done)
             elif snapshot.get('_pixel_samples'):
                 text+=' | '+self._sampling_words('ls' if snapshot.get('_ipr') else 'moonray',snapshot.get('render_settings',{}),pixel_samples=snapshot['_pixel_samples'])
             # And how it is shown: the view transform, and a LUT where there is one.
