@@ -251,11 +251,12 @@ DeviceHair toDeviceHair(const Material& m) {
 struct Renderer::Impl {
     OptixDeviceContext context = nullptr;
     OptixModule module = nullptr, curveModule = nullptr, linearModule = nullptr;
-    OptixProgramGroup groups[7] = {};       // the last, the displacement pass's ray generation
+    OptixProgramGroup groups[8] = {};       // the last two, the displacement pass's ray generation and the geometry AOVs'
     OptixPipeline pipeline = nullptr;
     OptixShaderBindingTable sbt = {};
-    Buffer raygenRecord, missRecords, hitRecord, displaceRecord;
+    Buffer raygenRecord, missRecords, hitRecord, displaceRecord, aovsRecord;
     OptixShaderBindingTable displaceSbt = {};
+    OptixShaderBindingTable aovsSbt = {};      // the geometry AOVs' program (__raygen__aovs)
 
     std::vector<std::unique_ptr<Mesh>> meshes;
     std::vector<std::unique_ptr<Texture>> textures;
@@ -272,7 +273,7 @@ struct Renderer::Impl {
     Buffer envPixels, envBackground, envMarginal, envConditional, distantLights, lights, lightTriangles, lightFilters;
     Buffer lightDistributions, distantDistributions;
     Buffer beauty, albedo, normal, denoised, lighting, paramsBuffer;
-    Buffer aov;     // the AOV looked at (setAov), while there is one
+    Buffer aov;     // the geometry AOVs, AOV_SLOTS float[4] per pixel (setAovs), while they are gathered
     // Stopping once clean (setConvergence): the even samples' mean, and which squares of the picture are done.
     Buffer half, done;
     Buffer lightSetTable;
@@ -302,8 +303,6 @@ struct Renderer::Impl {
     // use fewer is rendered by a kernel made without the rest (specialize).
     std::string kernelPath;
     unsigned kernelFeatures = FEATURE_ALL;
-    // The features the materials use (setMaterials): the kernel for them, unless an AOV asks for the full one.
-    unsigned materialFeatures = FEATURE_ALL;
 
     ~Impl() {
         if (launched) cudaEventDestroy(launched);
@@ -426,7 +425,7 @@ struct Renderer::Impl {
         curveOptions.curveEndcapFlags = OPTIX_CURVE_ENDCAP_DEFAULT;
         ML_CHECK(optixBuiltinISModuleGet(context, &moduleOptions, &pipelineOptions, &curveOptions, &linearModule));
 
-        OptixProgramGroupDesc descriptions[7] = {};
+        OptixProgramGroupDesc descriptions[8] = {};
         descriptions[0].kind = OPTIX_PROGRAM_GROUP_KIND_RAYGEN;
         descriptions[0].raygen.module = module;
         descriptions[0].raygen.entryFunctionName = "__raygen__moonlightipr";
@@ -452,15 +451,18 @@ struct Renderer::Impl {
         descriptions[6].kind = OPTIX_PROGRAM_GROUP_KIND_RAYGEN;
         descriptions[6].raygen.module = module;
         descriptions[6].raygen.entryFunctionName = "__raygen__displace";
+        descriptions[7].kind = OPTIX_PROGRAM_GROUP_KIND_RAYGEN;
+        descriptions[7].raygen.module = module;
+        descriptions[7].raygen.entryFunctionName = "__raygen__aovs";
         OptixProgramGroupOptions groupOptions = {};
         logSize = sizeof(log);
-        ML_CHECK(optixProgramGroupCreate(context, descriptions, 7, &groupOptions, log, &logSize, groups));
+        ML_CHECK(optixProgramGroupCreate(context, descriptions, 8, &groupOptions, log, &logSize, groups));
 
         // Shading runs in the ray generation program, so traces never nest.
         OptixPipelineLinkOptions linkOptions = {};
         linkOptions.maxTraceDepth = 1;
         logSize = sizeof(log);
-        ML_CHECK(optixPipelineCreate(context, &pipelineOptions, &linkOptions, groups, 7, log, &logSize, &pipeline));
+        ML_CHECK(optixPipelineCreate(context, &pipelineOptions, &linkOptions, groups, 8, log, &logSize, &pipeline));
         OptixStackSizes stackSizes = {};
         for (OptixProgramGroup group : groups) ML_CHECK(optixUtilAccumulateStackSizes(group, &stackSizes));
         unsigned fromTraversal = 0, fromState = 0, continuation = 0;
@@ -491,6 +493,12 @@ struct Renderer::Impl {
         displaceRecord.upload(&displace, sizeof(displace));
         displaceSbt = sbt;
         displaceSbt.raygenRecord = displaceRecord.ptr;
+        // And the geometry AOVs' program likewise.
+        SbtRecord aovsHeader;
+        ML_CHECK(optixSbtRecordPackHeader(groups[7], &aovsHeader));
+        aovsRecord.upload(&aovsHeader, sizeof(aovsHeader));
+        aovsSbt = sbt;
+        aovsSbt.raygenRecord = aovsRecord.ptr;
     }
 
     // refit moves an existing structure to the vertices now in the mesh's buffer.
@@ -1225,8 +1233,7 @@ void Renderer::setMaterials(const Material* materials, size_t count, const Layer
         if (layers[i].channel == CHANNEL_SUBSURFACE || layers[i].channel == CHANNEL_SUBSURFACE_COLOR) features |= FEATURE_SUBSURFACE;
         if (layers[i].flags & LAYER_PROCEDURAL) features |= FEATURE_PROCEDURAL;
     }
-    impl->materialFeatures = features;
-    impl->specialize(impl->params.aovKind ? FEATURE_ALL : features);
+    impl->specialize(features);
     std::vector<DeviceMaterial> table(count);
     std::transform(materials, materials + count, table.begin(), toDevice);
     std::vector<DeviceHair> hairs;
@@ -1761,9 +1768,9 @@ void Renderer::resize(uint32_t width, uint32_t height) {
     impl->params.beauty = impl->beauty.ptr;
     impl->params.albedo = impl->albedo.ptr;
     impl->params.normal = impl->normal.ptr;
-    if (impl->params.aovKind) {
-        impl->aov.reserve(bytes);
-        impl->params.aov = impl->aov.ptr;
+    if (impl->params.aovs) {
+        impl->aov.reserve(bytes * AOV_SLOTS);
+        impl->params.aovs = impl->aov.ptr;
     }
     impl->params.width = width;
     impl->params.height = height;
@@ -1831,6 +1838,10 @@ void Renderer::render() {
     impl->paramsBuffer.upload(&impl->params, sizeof(LaunchParams));
     ML_CHECK(optixLaunch(impl->pipeline, nullptr, impl->paramsBuffer.ptr, sizeof(LaunchParams), &impl->sbt,
         impl->params.width, impl->params.height, 1));
+    // The geometry AOVs, where they are gathered: a program of their own, one ray a pixel.
+    if (impl->params.aovs)
+        ML_CHECK(optixLaunch(impl->pipeline, nullptr, impl->paramsBuffer.ptr, sizeof(LaunchParams), &impl->aovsSbt,
+            impl->params.width, impl->params.height, 1));
     ML_CHECK(cudaEventRecord(impl->launched, nullptr));
     ++impl->samples;
     if (impl->params.done && impl->samples == impl->nextCheck) {
@@ -1914,26 +1925,37 @@ void Renderer::readDenoised(float* rgb) {
     impl->download(impl->denoised, rgb);
 }
 
-void Renderer::setAov(uint32_t kind) {
-    if (kind == impl->params.aovKind) return;
-    if (kind > AOV_POSITION) throw std::runtime_error("MoonLightIPR has no such AOV");
-    impl->params.aovKind = kind;
-    if (kind && impl->params.width && impl->params.height) {
-        impl->aov.reserve(size_t(impl->params.width) * impl->params.height * 4 * sizeof(float));
-        impl->params.aov = impl->aov.ptr;
-    } else if (!kind) {
-        impl->params.aov = 0;
+void Renderer::setAovs(bool on) {
+    if (on == (impl->params.aovs != 0)) return;
+    if (on) {
+        impl->aov.reserve(size_t(std::max(impl->params.width, 1u)) * std::max(impl->params.height, 1u) * AOV_SLOTS * 4 * sizeof(float));
+        impl->params.aovs = impl->aov.ptr;
+    } else {
+        impl->params.aovs = 0;
     }
-    impl->specialize(kind ? FEATURE_ALL : impl->materialFeatures);
     impl->restart();
 }
 
-uint32_t Renderer::aov() const { return impl->params.aovKind; }
+bool Renderer::aovs() const { return impl->params.aovs != 0; }
 
-void Renderer::readAov(float* rgb) {
+void Renderer::setPass(uint32_t pass) {
+    if (pass > PASS_BACKGROUND) throw std::runtime_error("MoonLightIPR has no such light pass");
+    if (pass == impl->params.aovPass) return;
+    impl->params.aovPass = pass;
+    impl->restart();
+}
+
+uint32_t Renderer::pass() const { return impl->params.aovPass; }
+
+void Renderer::readAov(uint32_t slot, float* rgb) {
     if (!impl->samples) throw std::runtime_error("MoonLightIPR has no samples to read");
-    if (!impl->params.aovKind || !impl->params.aov) throw std::runtime_error("MoonLightIPR gathers no AOV");
-    impl->download(impl->aov, rgb);
+    if (!impl->params.aovs || slot >= AOV_SLOTS) throw std::runtime_error("MoonLightIPR gathers no such AOV");
+    // That slot of every pixel: one float[4] in each pixel's AOV_SLOTS.
+    const size_t count = size_t(impl->params.width) * impl->params.height;
+    std::vector<float> pixels(count * 4);
+    ML_CHECK(cudaMemcpy2D(pixels.data(), 4 * sizeof(float), reinterpret_cast<const char*>(impl->params.aovs) + slot * 4 * sizeof(float),
+                          AOV_SLOTS * 4 * sizeof(float), 4 * sizeof(float), count, cudaMemcpyDeviceToHost));
+    for (size_t i = 0; i < count; ++i) std::copy(&pixels[i * 4], &pixels[i * 4] + 3, rgb + i * 3);
 }
 
 void Renderer::synchronize() { ML_CHECK(cudaDeviceSynchronize()); }

@@ -1,23 +1,29 @@
-"""The AOVs MoonLightIPR gathers, one at a time (the one looked at), for motion graphics: what a composite is made with.
+"""The AOVs MoonLightIPR makes, for motion graphics: what a composite is made with.
 
-The light in four passes that add up to the beauty, fog's light apart: Diffuse (with subsurface), Glossy (with mirror
-reflections and refraction), Emission and the Environment background. From what the camera sees first: Alpha, Camera
-depth, Shading normal, World position and Albedo. Cryptomatte is MoonRay's alone.
+The light in four passes that add up to the beauty (fog's light before the first surface apart): Diffuse (with
+subsurface), Glossy (with hair, mirror reflections and refraction), Emission and the Environment background. Each is
+rendered in place of the beauty, as the first surface the camera sees decides, by the same kernel the beauty uses: no
+kernel is compiled for it, and choosing one renders again from the start.
 
-Each is the kit's buffer key and the kernel's number for it (AovKind, moonlightipr/src/device/shared.h). Diffuse and
+From what the camera sees first: Albedo, Camera depth, Shading normal, World position and Alpha. These are gathered all
+at once beside the beauty, by a small program of their own, from the first one chosen; after that, choosing another is
+only another picture sent. Cryptomatte is MoonRay's alone.
+
+Each is the kit's buffer key and the number the session takes for it ("aov <n> <key>", moonlightipr_session.cpp): 1 to 4
+the light passes (AovPass in moonlightipr/src/device/shared.h), 5 on the geometry AOVs (AovSlot, from 0). Diffuse and
 Glossy are MoonLightIPR's own buffers: MoonRay's are split into direct and indirect light.
 """
 
 AOVS = {
-    'albedo': 1,
-    'moonlightipr_diffuse': 2,
-    'moonlightipr_glossy': 3,
-    'emission': 4,
-    'environment_background': 5,
-    'alpha': 6,
-    'depth': 7,
-    'normal': 8,
-    'position': 9,
+    'moonlightipr_diffuse': 1,
+    'moonlightipr_glossy': 2,
+    'emission': 3,
+    'environment_background': 4,
+    'albedo': 5,
+    'depth': 6,
+    'normal': 7,
+    'position': 8,
+    'alpha': 9,
 }
 
 # MoonLightIPR's own buffers, listed after MoonRay's, and only while MoonLightIPR is the engine.
@@ -26,5 +32,5 @@ OWN_KEYS = frozenset(key for _, key in OWN)
 
 
 def kind(key):
-    """The kernel's number for a buffer, 0 for the beauty or a buffer MoonLightIPR does not gather."""
+    """The session's number for a buffer, 0 for the beauty or a buffer MoonLightIPR does not make."""
     return AOVS.get(key, 0)

@@ -13,8 +13,10 @@
 //   @@MODO_SHARED <generation> beauty ...  a frame is waiting in shared memory
 //   @@MODO_SESSION DONE <generation>       the picture is clean, or the sample target was reached
 //   @@MODO_SESSION SAMPLES <generation> <n> the frame about to be sent holds n samples a pixel
-// An AOV is gathered beside the beauty while the host asks for one ("aov <kind> <name>", AovKind's numbers, 0 for none):
-// its frames are sent under that name, and a render already finished is rendered again with it.
+// AOVs ("aov <n> <name>", 0 for the beauty): 1 to 4 a light pass (AovPass), rendered in place of the beauty, the
+// render begun again with it; from 5 a geometry AOV (AovSlot n - 5), gathered beside the beauty, all of them at once
+// from the first asked for (the render then begun again, once), and after that only another picture sent, at once, in
+// the middle of a render or after it. Either is sent under its name.
 //   @@MODO_SESSION FAILED <generation>     the scene was rejected; the reason is on standard error
 #include "moonlightipr/moonlightipr.h"
 #include "scene_loader.h"
@@ -71,6 +73,9 @@ private:
     std::thread reader;
 };
 
+// The light passes (1 to LIGHT_PASSES, AovPass) and the geometry AOVs after them (AovSlot), as src/device/shared.h has them.
+const unsigned LIGHT_PASSES = 4, GEOMETRY_AOVS = 5;
+
 void event(const char* kind, const std::string& generation) {
     std::cout << "\n@@MODO_SESSION " << kind << " " << generation << std::endl;
 }
@@ -106,11 +111,14 @@ int main(int argc, char** argv) {
         // Which picture is sent of a scene that is denoised: the denoised one, or the beauty as it is rendered.
         // Both are there all the while; the host says which it is looking at, and may change its mind at any time.
         bool showDenoised = true, viewChanged = false;
-        // The AOV gathered (Renderer::setAov), by the host's name for it, which its frames are sent under.
+        // The AOV looked at (its AovSlot, or -1 for the beauty), by the host's name for it, which its frames are sent under.
+        int aovShown = -1;
         std::string aovName;
-        // The picture sent: the AOV where one is gathered, else the denoised picture or the beauty. Its name is returned.
+        // The picture sent: the AOV looked at, else the denoised picture or the beauty. Its name is returned.
         auto readPicture = [&](const moonlightipr::SceneSettings& settings) -> std::string {
-            if (renderer.aov()) { renderer.readAov(pixels.data()); return aovName; }
+            if (aovShown >= 0 && renderer.aovs()) { renderer.readAov(uint32_t(aovShown), pixels.data()); return aovName; }
+            // A light pass, in the beauty's place: not denoised.
+            if (renderer.pass()) { renderer.readBeauty(pixels.data()); return aovName; }
             if (settings.denoise && showDenoised) renderer.readDenoised(pixels.data()); else renderer.readBeauty(pixels.data());
             return "beauty";
         };
@@ -119,6 +127,20 @@ int main(int argc, char** argv) {
         auto interrupted = [&]() {
             while (commands.waiting()) {
                 const std::string line = commands.front();
+                if (line.rfind("aov ", 0) == 0) {
+                    // Another AOV while they are gathered (or the beauty): only another picture to send.
+                    std::istringstream words(line.substr(4));
+                    unsigned n = 0;
+                    std::string name;
+                    words >> n >> name;
+                    // Another light pass, or the first geometry AOV: the render begins again with it.
+                    if ((n <= LIGHT_PASSES && n != renderer.pass()) || (n > LIGHT_PASSES && !renderer.aovs())) return true;
+                    commands.next();
+                    aovShown = n > LIGHT_PASSES ? int(n - LIGHT_PASSES - 1) : -1;
+                    aovName = n ? name : std::string();
+                    viewChanged = true;
+                    continue;
+                }
                 if (line.rfind("view ", 0) != 0) return true;
                 commands.next();
                 const bool denoised = line.find(" beauty") == std::string::npos;
@@ -143,24 +165,25 @@ int main(int argc, char** argv) {
             moonlightipr::SceneSettings settings;
             if (verb == "quit") return 0;
             if (verb == "aov") {
-                // Another AOV: gathered from the start. A render already finished is rendered again with it, unless
-                // the host has more to say first (a new scene).
-                const uint32_t kind = uint32_t(std::strtoul(generation.c_str(), nullptr, 10));
-                aovName = kind ? path : std::string();
-                if (kind == renderer.aov()) continue;
-                // The kernel that gathers AOVs is the full one: compiled the first time, for a minute or more.
-                if (kind && !renderer.aov())
-                    std::cout << "MoonLightIPR AOV kernel: preparing the kernel that gathers AOVs (a minute or two the first time)" << std::endl;
-                try {
-                    renderer.setAov(kind);
-                } catch (const std::exception& error) {
-                    std::cerr << "MoonLightIPR cannot gather that AOV: " << error.what() << std::endl;
-                    continue;
+                const unsigned n = unsigned(std::strtoul(generation.c_str(), nullptr, 10));
+                if (n > LIGHT_PASSES + GEOMETRY_AOVS) continue;
+                aovShown = n > LIGHT_PASSES ? int(n - LIGHT_PASSES - 1) : -1;
+                aovName = n ? path : std::string();
+                // Another light pass (or the beauty again), or the first geometry AOV asked for: rendered again with it,
+                // a render already finished as well, unless the host has more to say first (a new scene).
+                const bool again = n <= LIGHT_PASSES ? n != renderer.pass() : !renderer.aovs();
+                if (again) {
+                    if (n <= LIGHT_PASSES) renderer.setPass(n); else renderer.setAovs(true);
+                    if (lastGeneration.empty() || commands.waiting()) continue;
+                    settings = lastSettings;
+                    generation = lastGeneration;
+                    goto render;
                 }
-                if (lastGeneration.empty() || commands.waiting()) continue;
-                settings = lastSettings;
-                generation = lastGeneration;
-                goto render;
+                // Between renders: the picture there is, sent as the one now looked at.
+                if (!lastGeneration.empty() && renderer.sampleCount() > 0)
+                    while (!interrupted() && !send(lastSettings, lastGeneration))
+                        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+                continue;
             }
             if (verb == "pause") continue;      // stop sampling; the loaded scene stays for the next one
             if (verb == "view") {

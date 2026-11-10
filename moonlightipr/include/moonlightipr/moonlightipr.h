@@ -415,11 +415,14 @@ public:
     void readBeauty(float* rgb);
     // Same, after the OptiX denoiser guided by the albedo and normal buffers.
     void readDenoised(float* rgb);
-    // The AOV gathered beside the beauty (AovKind in the device's shared.h; 0 for none), from the next sample on: a
-    // render with one uses the full kernel. readAov copies it as readBeauty does.
-    void setAov(uint32_t kind);
-    uint32_t aov() const;
-    void readAov(float* rgb);
+    // The geometry AOVs (AovSlot in the device's shared.h), gathered all at once beside the beauty while on, from the
+    // next sample on: a render begins again when they are switched on or off. readAov copies one as readBeauty does.
+    void setAovs(bool on);
+    bool aovs() const;
+    void readAov(uint32_t slot, float* rgb);
+    // A light pass (AovPass) rendered in place of the beauty, 0 for the beauty; a render begins again with another.
+    void setPass(uint32_t pass);
+    uint32_t pass() const;
 
     // Blocks until queued GPU work has finished; for timing.
     void synchronize();

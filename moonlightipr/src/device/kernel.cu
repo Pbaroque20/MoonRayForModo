@@ -1227,7 +1227,7 @@ ML_INLINE float3 shadowFrom(const Surface& surface, float3 p, float3 lift, float
     return offsetOrigin(shadowStart(p, lift, ng, ns, direction), ns, direction);
 }
 
-// The diffuse lobes alone (only 1) or the glossy ones (only 2), for the direct diffuse and direct glossy AOVs; 0 all.
+// The diffuse lobes alone (only 1) or the glossy ones (only 2), for a light pass; 0 all.
 ML_INLINE BsdfEval onlyLobes(BsdfEval e, unsigned only) {
     if (only == 1) { e.specular = make_float3(0.0f, 0.0f, 0.0f); e.toon = make_float3(0.0f, 0.0f, 0.0f); }
     else if (only == 2) e.diffuse = make_float3(0.0f, 0.0f, 0.0f);
@@ -1656,35 +1656,25 @@ ML_INLINE float3 cameraStart(float sx, float sy) {
 }
 
 // ---- AOVs ----------------------------------------------------------------------------------------
-// The light added to the beauty is told apart by where it came by (AovStage), and by the first bounce off what the
-// camera sees (FirstBounce): what the AOV looked at takes of it is aovPart's. A rough reflection's light carries both its
-// lobes; the diffuse share of it, per channel, is that lobe's part of the weight (shareLight for light found along the
-// ray, shareBounce for what the path goes on to find). Direct diffuse and direct glossy light at the first surface are
-// its light sampled again with those lobes alone (directLight's only).
-enum AovStage : unsigned { STAGE_NONE, STAGE_EMISSION, STAGE_BACKGROUND, STAGE_DIRECT0, STAGE_DIRECT_HAIR, STAGE_REACHED, STAGE_LATER };
-enum FirstBounce : unsigned { FIRST_NONE, FIRST_REFLECT, FIRST_MIRROR, FIRST_THROUGH, FIRST_SUBSURFACE, FIRST_VOLUME };
+// The geometry AOVs (AovSlot), gathered beside the beauty while params.aovs is set, at the first hit.
+ML_INLINE float4* aovSlot(unsigned pixel, unsigned slot) {
+    return reinterpret_cast<float4*>(params.aovs) + size_t(pixel) * AOV_SLOTS + slot;
+}
 
-ML_INLINE float3 aovPart(float3 d, unsigned stage, unsigned first, float3 shareLight, float3 shareBounce, unsigned kind) {
-    const float3 none = make_float3(0.0f, 0.0f, 0.0f), one = make_float3(1.0f, 1.0f, 1.0f);
-    const bool after = stage == STAGE_REACHED || stage == STAGE_LATER;
-    switch (kind) {
-    case AOV_EMISSION: return stage == STAGE_EMISSION ? d : none;
-    case AOV_BACKGROUND: return stage == STAGE_BACKGROUND ? d : none;
-    case AOV_DIFFUSE:
-        if (!after) return none;
-        if (first == FIRST_SUBSURFACE) return d;
-        return first == FIRST_REFLECT ? d * (stage == STAGE_REACHED ? shareLight : shareBounce) : none;
-    case AOV_GLOSSY:
-        if (stage == STAGE_DIRECT_HAIR) return d;
-        if (!after) return none;
-        if (first == FIRST_MIRROR || first == FIRST_THROUGH) return d;
-        return first == FIRST_REFLECT ? d * (one - (stage == STAGE_REACHED ? shareLight : shareBounce)) : none;
-    default: return none;
+// A sample begins: each mean made room for it (sample 0 begins them).
+ML_INLINE void aovBegin(unsigned pixel) {
+    const float keep = float(params.sample) / float(params.sample + 1);
+    for (unsigned k = 0; k < AOV_SLOTS; ++k) {
+        float4* p = aovSlot(pixel, k);
+        *p = params.sample == 0 ? make_float4(0.0f, 0.0f, 0.0f, 1.0f) : make_float4(p->x * keep, p->y * keep, p->z * keep, 1.0f);
     }
 }
 
-ML_INLINE float3 lobeShare(float3 part, float3 all) {
-    return make_float3(all.x > 0.0f ? part.x / all.x : 0.0f, all.y > 0.0f ? part.y / all.y : 0.0f, all.z > 0.0f ? part.z / all.z : 0.0f);
+// value, as one sample's share of the running mean.
+ML_INLINE void aovAdd(unsigned pixel, unsigned slot, float3 value) {
+    float4* p = aovSlot(pixel, slot);
+    const float w = 1.0f / float(params.sample + 1);
+    *p = make_float4(p->x + value.x * w, p->y + value.y * w, p->z + value.z * w, 1.0f);
 }
 
 extern "C" __global__ void __raygen__moonlightipr() {
@@ -1747,11 +1737,6 @@ extern "C" __global__ void __raygen__moonlightipr() {
             *buffers[i] = make_float4(kept.x, kept.y, kept.z, i < 2 ? 1.0f : 0.0f);
         }
         if (params.half) reinterpret_cast<float4*>(params.half)[pixel] = make_float4(0.0f, 0.0f, 0.0f, 1.0f);
-        if (ML_HAS(FEATURE_AOV) && params.aov && params.aovKind) {
-            float4* aov = reinterpret_cast<float4*>(params.aov) + pixel;
-            const float3 kept = lerp(make_float3(aov->x, aov->y, aov->z), vec(0.0f), weight);
-            *aov = make_float4(kept.x, kept.y, kept.z, 1.0f);
-        }
         return;
     }
     if (params.lensRadius > 0.0f && params.cameraProjection == 0) {
@@ -1807,32 +1792,12 @@ extern "C" __global__ void __raygen__moonlightipr() {
 
     // The light set of the surface the ray last left, which the lights it comes upon are held to.
     unsigned fromSet = 0;
-    // The AOV looked at, in the full kernel alone (FEATURE_AOV): its light is kept apart as the beauty's is added up.
-    const unsigned aovKind = ML_HAS(FEATURE_AOV) && params.aov ? params.aovKind : AOV_NONE;
-    const bool aovLight = aovKind >= AOV_DIFFUSE && aovKind <= AOV_BACKGROUND;
-    float3 aovValue = vec(0.0f), aovMark = vec(0.0f), shareLight = vec(1.0f), shareBounce = vec(1.0f);
-    float aovAlpha = 0.0f;
-    unsigned aovStage = STAGE_NONE, firstBounce = FIRST_NONE;
-    // What was added since the last call is credited as aovStage says, and next is the stage from here on.
-    auto aovCredit = [&](unsigned next) {
-        if (aovLight) {
-            aovValue += aovPart(radiance - aovMark, aovStage, firstBounce, shareLight, shareBounce, aovKind);
-            aovMark = radiance;
-        }
-        aovStage = next;
-    };
     for (unsigned depth = 0;; ++depth) {
         bounceSeed(seed, depth);
-        if (ML_HAS(FEATURE_AOV) && aovLight) {
-            // The first bounce, as the path left the first surface the camera saw.
-            if (depth == 1 && firstBounce == FIRST_NONE)
-                firstBounce = probing ? FIRST_SUBSURFACE : seen == SEEN_THROUGH ? FIRST_THROUGH
-                            : seen == SEEN_REFLECTED && sharp ? FIRST_MIRROR : (seen == SEEN_REFLECTED || seen == SEEN_DIFFUSE) ? FIRST_REFLECT
-                            : FIRST_VOLUME;
-            aovCredit(depth == 0 ? STAGE_NONE : depth == 1 ? STAGE_REACHED : STAGE_LATER);
-        }
         Hit hit;
         traceRadiance(origin, direction, hit, reach, seen);
+        // A light pass takes nothing of fog before the first surface.
+        const bool fogCounts = !(params.aovPass && depth == 0);
         if (ML_HAS(FEATURE_FOG) && params.volumeCount && !probing) {
             // Fogs as thick as their grids say. Each fills the unit cube its rows take the scene into, so the stretch of
             // the ray inside each is worked out from the cube, and they may overlap. Steps are drawn as if the fog were
@@ -1890,7 +1855,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
                     }
                     // The fog's own light, gathered at every step drawn, real stop or not, which is what makes the
                     // steps add up to all the light given off along the way.
-                    if (given.x + given.y + given.z > 0.0f) radiance += clampSample(throughput * lightWeight * given * (1.0f / most), clampFound);
+                    if (given.x + given.y + given.z > 0.0f) if (fogCounts) radiance += clampSample(throughput * lightWeight * given * (1.0f / most), clampFound);
                     if (rnd(seed) * most < thick) {
                         stopped = true;
                         stops = thick;
@@ -1904,7 +1869,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
                     // What the lamps send here goes on towards the viewer.
                     float3 here = origin + direction * at;
                     if (bounces)
-                        radiance += fogLight(here, -direction, anisotropy, throughput * bounceWeight * albedo, roughDepth >= params.sampleClampDepth, seed);
+                        if (fogCounts) radiance += fogLight(here, -direction, anisotropy, throughput * bounceWeight * albedo, roughDepth >= params.sampleClampDepth, seed);
                     // And, for as many times as the scene allows, so does what other fog sends here, as MoonRay works it
                     // out (after Wrenninge): from here the light is followed a step at a time through the fog, each step
                     // as long as the fog where it starts makes likely, and ended where a step lands outside the fog.
@@ -1929,7 +1894,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
                         // The scene's volume factors (MoonRay's defaults 0.65, 0.65 and 0.5), raised to the bounce's number.
                         const float less = powf(params.volumeAttenuation, float(order)), sent = powf(params.volumeContribution, float(order));
                         const float even = turned / thick * powf(params.volumePhaseAttenuation, float(order));
-                        radiance += fogLight(here, -way, even, carried * sent, true, seed, less);
+                        if (fogCounts) radiance += fogLight(here, -way, even, carried * sent, true, seed, less);
                         way = samplePhase(way, even, rnd(seed), rnd(seed));
                         stops = thick;
                     }
@@ -1954,10 +1919,10 @@ extern "C" __global__ void __raygen__moonlightipr() {
                 // MoonRay by default, light scatters in fog once, so the path ends here.
                 const float density = average(stops * left);
                 if (!(density > 0.0f)) break;
-                radiance += clampSample(throughput * lightWeight * vec(fog.emission) * left * (1.0f / density), clampFound);
+                if (fogCounts) radiance += clampSample(throughput * lightWeight * vec(fog.emission) * left * (1.0f / density), clampFound);
                 const float3 on = throughput * bounceWeight * stops * vec(fog.albedo) * left * (1.0f / density);
                 float3 here = origin + direction * reached;
-                if (bounces) radiance += fogLight(here, -direction, fog.anisotropy, on, roughDepth >= params.sampleClampDepth, seed);
+                if (bounces) if (fogCounts) radiance += fogLight(here, -direction, fog.anisotropy, on, roughDepth >= params.sampleClampDepth, seed);
                 // And what other fog sends here, as MoonRay works it out: the light is followed a step at a time, each
                 // as long as the fog makes likely, and ended where a step leaves the fog or meets something in it.
                 // Each time the light has scattered before, it counts for less, fog stops less of it on its way from
@@ -1974,7 +1939,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
                     carried = carried * stops * vec(fog.albedo) * (1.0f / thickness);
                     const float less = powf(params.volumeAttenuation, float(order)), sent = powf(params.volumeContribution, float(order));
                     const float even = fog.anisotropy * powf(params.volumePhaseAttenuation, float(order));
-                    radiance += fogLight(here, -way, even, carried * sent, true, seed, less);
+                    if (fogCounts) radiance += fogLight(here, -way, even, carried * sent, true, seed, less);
                     way = samplePhase(way, even, rnd(seed), rnd(seed));
                 }
                 break;
@@ -1986,8 +1951,6 @@ extern "C" __global__ void __raygen__moonlightipr() {
             bounceWeight *= left * (1.0f / chance);
             }
         }
-        // Fog's light is no AOV's at the first surface; past it, the first bounce's.
-        if (ML_HAS(FEATURE_AOV) && aovLight) aovCredit(depth == 0 ? (hit.valid ? STAGE_EMISSION : STAGE_BACKGROUND) : aovStage);
         const bool emerged = probing;
         if (emerged) {
             // The probe looked straight down the normal of where the light went in. Failing to find
@@ -2051,11 +2014,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
                 seenLight = true;
             }
             if (seenLight) {
-                if (ML_HAS(FEATURE_AOV)) {
-                    if (aovLight) aovCredit(STAGE_EMISSION);
-                    aovAlpha = 1.0f;
-                }
-                radiance += throughput * shining;
+                if (!params.aovPass || params.aovPass == PASS_EMISSION) radiance += throughput * shining;
                 guideAlbedo = make_float3(fminf(shining.x, 1.0f), fminf(shining.y, 1.0f), fminf(shining.z, 1.0f));
                 guideNormal = -direction;
                 break;
@@ -2074,7 +2033,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
             // later bounces share the lighting environment with light sampling.
             const float3 sky = camera ? envLookup(reinterpret_cast<const float4*>(params.envBackground), params.envBackgroundRotation, direction)
                              : params.envPortal ? vec(0.0f) : envRadiance(direction);
-            if (camera || reaches(fromSet, 0))
+            if ((camera || reaches(fromSet, 0)) && (!camera || !params.aovPass || params.aovPass == PASS_BACKGROUND))
                 radiance += clampSample(throughput * lightWeight * sky * (sharp ? 1.0f : powerHeuristic(bsdfPdf, envPdf(direction))), clampFound);
             if (camera) guideAlbedo = make_float3(fminf(sky.x, 1.0f), fminf(sky.y, 1.0f), fminf(sky.z, 1.0f));
             // Distant lights are found by scattered rays; the camera sees only the discs that ask to be seen, as a sun does.
@@ -2084,7 +2043,8 @@ extern "C" __global__ void __raygen__moonlightipr() {
                 if (camera || (sharp && light.visible > 0.0f)) {
                     // The camera, and a mirror, see the disc they are told to: for a sun in a physical sky, not the one that
                     // lights the scene.
-                    if (light.visible > 0.0f && dot(direction, vec(light.direction)) >= 1.0f - light.seenVersine)
+                    if (light.visible > 0.0f && dot(direction, vec(light.direction)) >= 1.0f - light.seenVersine
+                        && (!camera || !params.aovPass || params.aovPass == PASS_BACKGROUND))
                         radiance += clampSample(throughput * lightWeight * vec(light.seen), clampFound);
                     continue;
                 }
@@ -2126,8 +2086,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
         if (camera && !emerged && lightFront && (lights[hit.light].pad & LIGHT_SEEN)) {
             // Seen by the camera, it is the light itself that is seen, as MoonRay shows a light it is told to show.
             const float3 shining = vec(lights[hit.light].radiance);
-            if (ML_HAS(FEATURE_AOV)) aovAlpha = 1.0f;
-            radiance += throughput * shining;
+            if (!params.aovPass || params.aovPass == PASS_EMISSION) radiance += throughput * shining;
             guideAlbedo = make_float3(fminf(shining.x, 1.0f), fminf(shining.y, 1.0f), fminf(shining.z, 1.0f));
             guideNormal = -direction;
             break;
@@ -2154,7 +2113,9 @@ extern "C" __global__ void __raygen__moonlightipr() {
             surface.transmission = 0.0f;
         }
         if (!emerged) {
-            radiance += clampSample(throughput * lightWeight * hit.emission, clampFound);
+            if (!camera || !params.aovPass || params.aovPass == PASS_EMISSION)
+                radiance += clampSample(throughput * lightWeight * hit.emission, clampFound);
+            if (camera && params.aovPass >= PASS_EMISSION) break;
             if (!bounces) break;
             throughput *= bounceWeight;
             if (maxComponent(throughput) <= 0.0f) break;
@@ -2174,21 +2135,10 @@ extern "C" __global__ void __raygen__moonlightipr() {
                 guideAlbedo = hit.albedo;
                 guideNormal = make_float3(dot(hit.ns, normalize(vec(params.cameraU))), dot(hit.ns, normalize(vec(params.cameraV))),
                                           -dot(hit.ns, normalize(vec(params.cameraW))));
-                if (ML_HAS(FEATURE_AOV) && aovKind) {
-                    aovAlpha = 1.0f;
-                    if (aovKind == AOV_ALBEDO) aovValue = hit.albedo;
-                    else if (aovKind == AOV_DEPTH) aovValue = vec(hit.t * dot(direction, normalize(vec(params.cameraW))));
-                    else if (aovKind == AOV_NORMAL) aovValue = hit.ns;
-                    else if (aovKind == AOV_POSITION) aovValue = hit.p;
-                }
-            }
-            // A fibre's light is all glossy, as MoonRay's hair lobes are.
-            if (ML_HAS(FEATURE_AOV) && aovLight) {
-                aovCredit(depth == 0 ? STAGE_DIRECT_HAIR : STAGE_LATER);
-                if (depth == 0) shareLight = shareBounce = vec(0.0f);
+                // A fibre's light is all glossy, as MoonRay's hair lobes are.
+                if (params.aovPass == PASS_DIFFUSE) break;
             }
             radiance += fibreLight(fibre, hit.p, hit.ng, throughput, roughDepth >= params.sampleClampDepth, seed, fromSet);
-            if (ML_HAS(FEATURE_AOV) && aovLight) aovCredit(depth == 0 ? STAGE_NONE : STAGE_LATER);
             float3 wi;
             seedPhase(seed, QMC_BSDF, 0, 8);
             if (depth >= params.maxDepth || !fibreSample(fibre, seed, wi)) break;
@@ -2240,13 +2190,6 @@ extern "C" __global__ void __raygen__moonlightipr() {
             guideAlbedo = lerp(surface.albedo, vec(1.0f), surface.transmission * (1.0f - surface.metallic));
             guideNormal = make_float3(dot(ns, normalize(vec(params.cameraU))), dot(ns, normalize(vec(params.cameraV))),
                                       -dot(ns, normalize(vec(params.cameraW))));
-            if (ML_HAS(FEATURE_AOV) && aovKind) {
-                aovAlpha = 1.0f;
-                if (aovKind == AOV_ALBEDO) aovValue = surface.albedo;
-                else if (aovKind == AOV_DEPTH) aovValue = vec(hit.t * dot(direction, normalize(vec(params.cameraW))));
-                else if (aovKind == AOV_NORMAL) aovValue = smoothed;
-                else if (aovKind == AOV_POSITION) aovValue = hit.p;
-            }
         }
         const bool mayBounce = depth < params.maxDepth;
 
@@ -2260,7 +2203,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
                                           powf(clamp(hit.absorption.z, 1e-6f, 1.0f), depths));
             }
             // Leaving a solid the light entered: a plain interface, mirrored back or bent out.
-            if (!mayBounce) break;
+            if (!mayBounce || (camera && params.aovPass == PASS_DIFFUSE)) break;
             float3 tint;
             const float ior = spectralIor(surface.transmissionIor, hit.abbe, rnd(seed), tint);
             const float3 h = surface.transmissionAlpha > 0.0f ? sampleFacet(surface.transmissionAlpha, wo, rnd(seed), rnd(seed))
@@ -2292,7 +2235,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
         // transmission walks from the inside of the far wall.
         const bool scatters = ML_HAS(FEATURE_SUBSURFACE) && (!inside || (hit.flags & MATERIAL_RANDOM_WALK)) && subsurfaces < params.maxSubsurface
                               && hit.subsurface > 0.0f && maxComponent(hit.subsurfaceRadius) > 0.0f
-                              && lobes.specular < 1.0f && rnd(seed) < hit.subsurface;
+                              && lobes.specular < 1.0f && !(camera && params.aovPass == PASS_GLOSSY) && rnd(seed) < hit.subsurface;
         const float beneath = scatters ? 1.0f - lobes.specular : 0.0f;
         if (scatters) {
             surface.diffuseScale = 0.0f;
@@ -2302,22 +2245,15 @@ extern "C" __global__ void __raygen__moonlightipr() {
             lobes.specular = glossyBounces ? 1.0f : 0.0f;
         }
         const bool lit = roughDepth >= params.sampleClampDepth;   // this surface was reached by scattering off something rough
-        if (ML_HAS(FEATURE_AOV) && aovLight) aovCredit(depth == 0 ? STAGE_DIRECT0 : STAGE_LATER);
-        radiance += directLight(surface, lobes, wo, frame, hit.p, ng, throughput, lit, seed, hit.lift, fromSet);
-        if (ML_HAS(FEATURE_AOV) && aovLight) {
-            aovCredit(depth == 0 ? STAGE_NONE : STAGE_LATER);
-            // Diffuse or glossy light straight from the lights at the first surface: its light sampled again, with those
-            // lobes alone.
-            if (depth == 0 && (aovKind == AOV_DIFFUSE || aovKind == AOV_GLOSSY))
-                aovValue += directLight(surface, lobes, wo, frame, hit.p, ng, throughput, lit, seed, hit.lift, fromSet,
-                                        aovKind == AOV_DIFFUSE ? 1u : 2u);
-        }
+        radiance += directLight(surface, lobes, wo, frame, hit.p, ng, throughput, lit, seed, hit.lift, fromSet,
+                                camera ? params.aovPass : 0u);
 
         // The light that enters a transmissive surface goes through it rather than scattering.
         seedPhase(seed, QMC_BSDF, 0, 8);
         const float through = mayBounce ? transmitted(surface, wo) : 0.0f;
         const float u1 = rnd(seed), u2 = rnd(seed);
         if (rnd(seed) < through) {
+            if (camera && params.aovPass == PASS_DIFFUSE) break;
             float3 wi = -wo;    // thin sheets and missing facets pass the light straight on
             float3 tint = vec(1.0f);
             if (!surface.thin) {
@@ -2607,7 +2543,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
         }
         else if (rnd(seed) < broadShare(surface)) wi = sampleDiffuse(u1, u2);
         else wi = reflectAbout(wo, surface.beckmann ? sampleBeckmann(surface.alphaX, surface.alphaY, u1, u2) : sampleFacet(surface.alpha, wo, u1, u2));
-        const BsdfEval e = evalBsdf(surface, lobes, wo, wi);
+        const BsdfEval e = onlyLobes(evalBsdf(surface, lobes, wo, wi), camera ? params.aovPass : 0u);
         bsdfPdf = lobes.specular * e.specularPdf + (1.0f - lobes.specular) * e.diffusePdf;
         direction = frame.toWorld(wi);
         // A direction through the surface is good only as light passing through it, and one off it only as a reflection.
@@ -2617,11 +2553,6 @@ extern "C" __global__ void __raygen__moonlightipr() {
         const float scale = 1.0f / (bsdfPdf * (1.0f - through) * (1.0f - beneath));
         lightWeight = (e.diffuse + e.specular) * scale;
         bounceWeight = ((diffuseBounces ? e.diffuse : vec(0.0f)) + (glossyBounces ? e.specular : vec(0.0f))) * scale;
-        if (ML_HAS(FEATURE_AOV) && aovLight && depth == 0) {
-            shareLight = lobeShare(e.diffuse, e.diffuse + e.specular);
-            shareBounce = lobeShare(diffuseBounces ? e.diffuse : vec(0.0f),
-                                    (diffuseBounces ? e.diffuse : vec(0.0f)) + (glossyBounces ? e.specular : vec(0.0f)));
-        }
         bounces = diffuseBounces || glossyBounces;
         sharp = false;
         clampFound = roughDepth >= params.sampleClampDepth;
@@ -2631,7 +2562,6 @@ extern "C" __global__ void __raygen__moonlightipr() {
         seen = glossy ? SEEN_REFLECTED : SEEN_DIFFUSE;
         origin = offsetOrigin(hit.p, ng, direction);
     }
-    if (ML_HAS(FEATURE_AOV) && aovLight) aovCredit(STAGE_NONE);
     if (!finite(radiance)) radiance = vec(0.0f);
 
     // Sample 0 overwrites, so a reset needs no clear.
@@ -2645,17 +2575,48 @@ extern "C" __global__ void __raygen__moonlightipr() {
     *beauty = make_float4(b.x, b.y, b.z, 1.0f);
     *albedo = make_float4(a.x, a.y, a.z, 1.0f);
     *normal = make_float4(n.x, n.y, n.z, 0.0f);
-    if (ML_HAS(FEATURE_AOV) && aovKind) {
-        float4* aov = reinterpret_cast<float4*>(params.aov) + pixel;
-        const float3 value = aovKind == AOV_ALPHA ? vec(aovAlpha) : finite(aovValue) ? aovValue : vec(0.0f);
-        const float3 m = lerp(make_float3(aov->x, aov->y, aov->z), value, weight);
-        *aov = make_float4(m.x, m.y, m.z, 1.0f);
-    }
     if (params.half && !(params.sample & 1)) {
         // The mean of the even samples alone: how far it is from the mean of them all tells how noisy that still is.
         float4* half = reinterpret_cast<float4*>(params.half) + pixel;
         const float3 h = lerp(make_float3(half->x, half->y, half->z), radiance, 1.0f / float(params.sample / 2 + 1));
         *half = make_float4(h.x, h.y, h.z, 1.0f);
+    }
+}
+
+// The geometry AOVs (AovSlot), a program of their own launched after each sample while they are gathered (params.aovs):
+// a ray from the camera through the pixel, and what it meets first, through the edges of fog, which are no surface.
+extern "C" __global__ void __raygen__aovs() {
+    if (!params.aovs) return;
+    const uint3 index = optixGetLaunchIndex();
+    const unsigned pixel = index.y * params.width + index.x;
+    aovBegin(pixel);
+    Seed seed = startSeed(index.x, index.y, pixel, params.sample);
+    const float sx = 2.0f * (index.x + rnd(seed)) / params.width - 1.0f;
+    const float sy = 2.0f * (index.y + rnd(seed)) / params.height - 1.0f;
+    float3 origin = cameraStart(sx, sy);
+    bool outside = false;
+    const float3 direction = cameraDirection(sx, sy, outside);
+    if (outside) return;
+    const float3 forward = normalize(vec(params.cameraW));
+    float travelled = 0.0f;
+    for (int crossing = 0; crossing < 16; ++crossing) {
+        Hit hit;
+        traceRadiance(origin, direction, hit, 1e16f, SEEN_CAMERA);
+        if (!hit.valid) return;
+        travelled += hit.t;
+        if (hit.flags & MATERIAL_VOLUME) {
+            origin = offsetOrigin(hit.p, hit.ng, direction);
+            continue;
+        }
+        const float3 ng = dot(hit.ng, direction) > 0.0f ? -hit.ng : hit.ng;
+        const float3 ns = dot(hit.ns, ng) < 0.0f ? -hit.ns : hit.ns;
+        aovAdd(pixel, AOV_ALBEDO, hit.albedo);
+        const float depth = travelled * dot(direction, forward);
+        aovAdd(pixel, AOV_DEPTH, make_float3(depth, depth, depth));
+        aovAdd(pixel, AOV_NORMAL, ns);
+        aovAdd(pixel, AOV_POSITION, hit.p);
+        aovAdd(pixel, AOV_ALPHA, make_float3(1.0f, 1.0f, 1.0f));
+        return;
     }
 }
 

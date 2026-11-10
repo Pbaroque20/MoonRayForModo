@@ -231,10 +231,6 @@ class Session(QtCore.QObject):
             if line.startswith('MoonLightIPR textures: '):
                 self.status.emit('MoonLightIPR shows textures ' + line[len('MoonLightIPR textures: '):].strip() + '.')
                 continue
-            if line.startswith('MoonLightIPR AOV kernel: '):
-                # The kernel that gathers AOVs being made ready, which takes a while the first time.
-                self.status.emit('MoonLightIPR is ' + line[len('MoonLightIPR AOV kernel: '):].strip() + '.')
-                continue
             if line.startswith('MoonLightIPR scene rejected: '):
                 self.rejection = line[len('MoonLightIPR scene rejected: '):].strip()
                 continue
