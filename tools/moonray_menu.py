@@ -200,18 +200,28 @@ def camera_sequence_entry(text):
 
 
 
+RHIZOME_ROW = ('<list type="Control" val="cmd moonray.rhizome"><atom type="Label">Rhizome: Render Across Machines...</atom>'
+               '<atom type="Hash">MoonRayMenu_rhizome:control</atom></list>')
+
+
 def rhizome_entry(text):
-    """Rhizome (render across machines) in the MoonRay menu, after Camera Sequence (else after Render Animation);
-    unchanged if it is there."""
-    if 'cmd moonray.rhizome' in text:
+    """Rhizome (render across machines) in the MoonRay menu, right after Terminal; an entry elsewhere (after Camera
+    Sequence, where it was first put) is moved there. Unchanged when it is there already, or there is no Terminal."""
+    anchor = '<list type="Control" val="cmd moonray.terminal">'
+    if text.count(anchor) != 1:
         return text
-    for anchor in ('<list type="Control" val="cmd moonray.page cameras">', '<list type="Control" val="cmd moonray.page animation">'):
-        if text.count(anchor) == 1:
-            end = text.index('</list>', text.index(anchor)) + len('</list>')
-            eol = '\r\n' if '\r\n' in text else '\n'
-            return (text[:end] + eol + '      <list type="Control" val="cmd moonray.rhizome"><atom type="Label">Rhizome: Render Across Machines...</atom>'
-                    '<atom type="Hash">MoonRayMenu_rhizome:control</atom></list>' + text[end:])
-    return text
+    eol = '\r\n' if '\r\n' in text else '\n'
+    after = text.index('</list>', text.index(anchor)) + len('</list>')
+    if text[after:].lstrip(' \t\r\n').startswith(RHIZOME_ROW):
+        return text
+    # Any entry of it elsewhere taken out, its line with it.
+    while RHIZOME_ROW in text:
+        at = text.index(RHIZOME_ROW)
+        start = text.rfind('\n', 0, at) + 1
+        end = text.index('\n', at) + 1 if '\n' in text[at:] else len(text)
+        text = text[:start] + text[end:]
+    after = text.index('</list>', text.index(anchor)) + len('</list>')
+    return text[:after] + eol + '      ' + RHIZOME_ROW + text[after:]
 
 def round_control(text):
     """The mesh form's round-curves and curve-basis controls, after the curve UV control; each unchanged if it is there."""
