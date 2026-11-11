@@ -81,6 +81,35 @@ def point_normals(vertices, faces):
     return normals
 
 
+def number(*words):
+    """A random number from 0 to 1 for these words (an item's identity, a part's name), the same each render."""
+    text = '|'.join(str(word) for word in words)
+    return int(hashlib.sha256(text.encode('utf-8')).hexdigest()[:8], 16) / float(0xFFFFFFFF)
+
+
+def reads(materials, name):
+    """Whether any material reads the weight map of this name."""
+    def walk(value):
+        if isinstance(value, dict):
+            return value.get('vmap') == name or any(walk(inner) for inner in value.values())
+        if isinstance(value, (list, tuple)):
+            return any(walk(inner) for inner in value)
+        return False
+    return walk(materials or {})
+
+
+def part_numbers(identity, parts, ordinals, faces):
+    """Variation by Mesh Part: at each corner of each face, its Part's number (from the item and the part's name).
+    parts holds each surface polygon's Part tag, ordinals which surface polygon each face is."""
+    held, values = {}, []
+    for index, ordinal in enumerate(ordinals):
+        part = parts[ordinal] if 0 <= ordinal < len(parts) else ''
+        if part not in held:
+            held[part] = [number(identity, part)]
+        values.extend([held[part]] * len(faces[index]))
+    return values
+
+
 def variation(snapshot, warnings):
     """Modo's Variation Texture by Item: each mesh item's points given one random number of its own, from its identity
     (the same from one render to the next), under the map the layer reads (procedurals.VARIATION_MAP)."""

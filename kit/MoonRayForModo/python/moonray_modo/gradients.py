@@ -21,6 +21,33 @@ SAMPLED={'incidenceAngle':(0.0,2.0),'incidenceNobump':(0.0,2.0),'locatorIncAngle
          'objDistanceY':None,'objDistanceZ':None,'backFacing':(0.0,1.0)}
 
 
+# Texture U and V: which coordinate of the layer's UV map.
+TEXTURE_UV={'textureU':0,'textureV':1}
+
+
+def texture_projection(layer,channel,axis):
+    """How a Gradient on Texture U (axis 0) or V (1) reads its coordinate, as measured against Modo's renders
+    (tools/probe_gui_gradient_uv.py): ('uv', the UV map's name), the map's own coordinate; or ('local', locator place,
+    the locator's axis over its length squared, wrapped), the point's coordinate in the texture locator's space along
+    that axis: as it is under the default projection (Solid), plus a half and wrapped to 0..1 under Planar along Z."""
+    locator=next((i for i in layer.itemGraph('shadeLoc').forward() if i.type=='txtrLocator'),None)
+    if locator is None:raise ValueError("Texture U and V need the layer's texture locator")
+    projection=channel(locator,'projType','uv')
+    if projection=='uv':
+        name=str(channel(locator,'uvMap','') or '')
+        if not name:raise ValueError('Texture U and V: choose a named UV map')
+        return ('uv',name)
+    if projection not in ('none','planar'):
+        raise ValueError('Texture U and V are followed with UV map, Solid and Planar projections, not '+str(projection))
+    if projection=='planar' and str(channel(locator,'projAxis',2)) not in ('2','z','Z'):
+        raise ValueError('Texture U and V under a Planar projection are followed along Z only')
+    from .host import world_matrix
+    matrix=[float(v) for v in world_matrix(locator)]
+    along=matrix[4*axis:4*axis+3]
+    size=sum(v*v for v in along) or 1.0
+    return ('local',matrix[12:15],[v/size for v in along],projection=='planar')
+
+
 def locator_place(layer):
     """Where a texture layer's locator is in the world, [0, 0, 0] where it has none."""
     try:
@@ -49,7 +76,7 @@ def capture(layer,channel,is_color):
     import lx
     name=str(channel(layer,'param',''))
     source=EFFECT_ALIASES.get(name,name)
-    if source not in INPUTS and source not in SAMPLED:
+    if source not in INPUTS and source not in SAMPLED and source not in TEXTURE_UV and source not in ('textureValue','surfaceID'):
         raise ValueError('Gradient input '+name+' has no translated sample source')
     def reader(name,required=True):
         try:
@@ -85,6 +112,42 @@ def capture(layer,channel,is_color):
         if not all(math.isfinite(x) for x in row):raise ValueError('Nonfinite evaluated gradient')
         colors.append(row)
     data={'input':source,'positions':positions,'colors':colors}
+    if source=='surfaceID':
+        # Surface ID: a number from 0 to 1 for each item (Modo's own differ, from its own hash), as Variation by Item
+        # gives it (occlusion.variation), through the gradient over 0..1.
+        from .procedurals import VARIATION_MAP
+        data.update(input='@vmap',vmap=VARIATION_MAP,label='Surface ID')
+    if source=='textureValue':
+        # The Value of the layer beneath (not its colour), 0..1: layers.py looks it up over a Constant beneath.
+        data['input']='@texture_value'
+    if source in TEXTURE_UV:
+        # Texture U or V: the layer's UV map at each corner (texture_uv.apply), a weight over the span its keys change
+        # in; or the point's place in the texture locator's space, worked out where it is shaded.
+        reading=texture_projection(layer,channel,TEXTURE_UV[source])
+        low,high=changing_span(filters+([alpha_filter] if alpha_filter else []),-1e5,1e5)
+        if reading[0]=='local':
+            low,high=(0.0,1.0) if reading[3] else (min(low,-1.0),max(high,1.0))
+            inputs=[low+(high-low)*x for x in positions]
+            colors=[[float(f(position)) for f in filters] for position in inputs]
+            colors=[row*3 if len(row)==1 else row for row in colors]
+            if not all(math.isfinite(x) for row in colors for x in row):raise ValueError('Nonfinite evaluated gradient')
+            data={'input':'@sample','sample':'textureLocal','span':[low,high],'locator':reading[1],'positions':positions,
+                  'colors':colors,'axis_vector':reading[2],'wrap':reading[3]}
+            if alpha_filter is not None:
+                data['alpha']=[max(0.0,min(1.0,float(alpha_filter(x)))) for x in inputs]
+            return data
+        uv_map=reading[1]
+        low,high=min(low,0.0),max(high,1.0)
+        inputs=[low+(high-low)*x for x in positions]
+        colors=[[float(f(position)) for f in filters] for position in inputs]
+        colors=[row*3 if len(row)==1 else row for row in colors]
+        if not all(math.isfinite(x) for row in colors for x in row):raise ValueError('Nonfinite evaluated gradient')
+        from .texture_uv import map_name
+        data={'input':'@vmap','vmap':map_name(TEXTURE_UV[source],uv_map,low,high),'label':'Texture '+'UV'[TEXTURE_UV[source]],
+              'positions':positions,'colors':colors,'texture':{'axis':TEXTURE_UV[source],'uv_map':uv_map,'low':low,'high':high}}
+        if alpha_filter is not None:
+            data['alpha']=[max(0.0,min(1.0,float(alpha_filter(x)))) for x in inputs]
+        return data
     if span is not None:
         # The input's span the positions run over, and the layer's locator, which the distances and the locator's
         # incidence are measured from (its place in the world).
@@ -188,6 +251,13 @@ def sample_signal(data,node,rgb):
         value=op('15',op('8',op('1',world_point,locator),rgb(axis)))
     elif kind=='backFacing':
         value=node('TwoSidedMap',{'front_color':rgb(0),'back_color':rgb(1)})
+    elif kind=='textureLocal':
+        # Texture U or V under a Solid or Planar projection: the point in the texture locator's space along its axis
+        # (the axis over its length squared, so that a scaled locator stretches it); Planar a half on, wrapped to 0..1.
+        value=op('8',op('1',world_point,locator),rgb([float(v) for v in data['axis_vector']]))
+        if data.get('wrap'):
+            value=op('0',value,rgb(.5))
+            value=op('1',value,op('17',value))
     else:
         raise ValueError('Gradient input %s has no translated sample source'%kind)
     low,high=data.get('span',[0.0,1.0])

@@ -169,9 +169,12 @@ def dicing_view(scene, identity, width, height, pixel_aspect, warnings, time=Non
 
 
 def tension_maps(materials):
-    """The Tension layers' weight maps the materials read (tension.wanted): which meshes need their base points."""
+    """The Tension layers' weight maps the materials read (tension.wanted), and whether a Variation by Mesh Part is read:
+    what has a mesh read with more than its points (its base points, its polygons' Parts)."""
     from . import tension
-    return sorted(tension.wanted(materials)[0])
+    from .occlusion import reads
+    from .procedurals import VARIATION_PART_MAP
+    return sorted(tension.wanted(materials)[0]) + (['parts'] if reads(materials, VARIATION_PART_MAP) else [])
 
 
 def render_visible(item):
@@ -794,6 +797,10 @@ def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fal
         # Base-mesh points too where a Tension layer compares the mesh with them: tension.
         from . import tension as tension_layers
         tension_wanted = bool(tension_layers.wanted(result['materials'])[0])
+        # Each polygon's Part too where a Variation Texture by Mesh Part reads it: occlusion.part_numbers.
+        from . import occlusion as point_numbers
+        from .procedurals import VARIATION_PART_MAP
+        parts_wanted = point_numbers.reads(result['materials'], VARIATION_PART_MAP)
         # Fresh read-only evaluated meshes; never change selection, time or scene geometry.
         for item in ([] if evaluated_geometry or (reuse_geometry is not None and not dirty_meshes) else scene.items('mesh', superType=False)):
             if dirty_meshes and item.id not in dirty_meshes:continue
@@ -812,6 +819,7 @@ def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fal
             # The mesh's weight and colour maps, for its materials to read (vertex_maps).
             from . import vertex_maps
             painted = vertex_maps.read(mesh)
+            parts = vertex_maps.part_tags(mesh) if parts_wanted else None
             # Colour maps that hold vectors, as a MoonRay scene brought in had them: given back as vectors.
             kept = properties.read(item)
             vertex_maps.as_vectors(painted, kept.get('vertex_map_kinds') or {})
@@ -1114,6 +1122,10 @@ def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fal
                     result['meshes'][-1].setdefault('point_attributes', {})[reference_points.NAME] = {'kind': 'vec3', 'values': rest}
                 if tension_rest is not None:
                     result['meshes'][-1][tension_layers.REST] = tension_rest
+                if parts is not None:
+                    shaped = result['meshes'][-1]
+                    shaped.setdefault('corner_attributes', {})[VARIATION_PART_MAP] = {
+                        'kind': 'float', 'values': point_numbers.part_numbers(item.id, parts, list(ordinals.get((subdivision, uv_name), [])), shaped['faces'])}
                 own_attributes = primitive_attributes.read(item)
                 if own_attributes:
                     result['meshes'][-1]['attributes'] = own_attributes
@@ -1306,6 +1318,9 @@ def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fal
     # Modo's Tension textures: how each mesh wearing one has stretched or folded from its base mesh.
     from . import tension
     tension.apply(result, warnings)
+    # Gradients on Texture U or V: the UV map at each corner, as a weight.
+    from . import texture_uv
+    texture_uv.apply(result, warnings)
     result['warnings'] = sorted(set(warnings))
     return result
 
