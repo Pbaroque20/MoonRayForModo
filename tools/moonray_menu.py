@@ -200,23 +200,25 @@ def camera_sequence_entry(text):
 
 
 
-RHIZOME_ROW = ('<list type="Control" val="cmd moonray.rhizome"><atom type="Label">Rhizome: Render Across Machines...</atom>'
+RHIZOME_ROW = ('<list type="Control" val="cmd moonray.rhizome"><atom type="Label">Rhizome: Decentralized Rendering</atom>'
                '<atom type="Hash">MoonRayMenu_rhizome:control</atom></list>')
 
 
 def rhizome_entry(text):
-    """Rhizome (render across machines) in the MoonRay menu, right after Terminal; an entry elsewhere (after Camera
-    Sequence, where it was first put) is moved there. Unchanged when it is there already, or there is no Terminal."""
+    """Rhizome: Decentralized Rendering in the MoonRay menu, right after Terminal. An entry elsewhere (after Camera
+    Sequence, where it was first put) or under an earlier label (Rhizome: Render Across Machines...) is replaced by it
+    there. Unchanged when it is there already, or there is no Terminal."""
     anchor = '<list type="Control" val="cmd moonray.terminal">'
     if text.count(anchor) != 1:
         return text
     eol = '\r\n' if '\r\n' in text else '\n'
     after = text.index('</list>', text.index(anchor)) + len('</list>')
-    if text[after:].lstrip(' \t\r\n').startswith(RHIZOME_ROW):
+    if text[after:].lstrip(' \t\r\n').startswith(RHIZOME_ROW) and text.count('val="cmd moonray.rhizome"') == 1:
         return text
-    # Any entry of it elsewhere taken out, its line with it.
-    while RHIZOME_ROW in text:
-        at = text.index(RHIZOME_ROW)
+    # Every entry of it taken out, whatever its label, its line with it.
+    row = '<list type="Control" val="cmd moonray.rhizome">'
+    while row in text:
+        at = text.index(row)
         start = text.rfind('\n', 0, at) + 1
         end = text.index('\n', at) + 1 if '\n' in text[at:] else len(text)
         text = text[:start] + text[end:]

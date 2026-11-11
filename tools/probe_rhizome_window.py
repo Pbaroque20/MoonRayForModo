@@ -1,5 +1,5 @@
 # python
-"""Isolated GUI test: the Rhizome window in Modo (MoonRay > Rhizome: Render Across Machines...).
+"""Isolated GUI test: the Rhizome window in Modo (MoonRay > Rhizome: Decentralized Rendering).
 
 A small scene is opened at 320 x 180, the window opened by its menu command, a node started from its node page, and
 frames 1-2 rendered with its Render button: the scene exported by the window itself, a master started on it, the
