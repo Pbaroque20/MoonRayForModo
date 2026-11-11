@@ -78,9 +78,27 @@ Get-ChildItem 'C:\scenes\shot.*.rdlb' | ForEach-Object { & 'C:\path\MoonRayForMo
 
 The runtime finds `shaders/OptixGPUPrograms.ptx` and the shader libraries in the folder that holds `moonray.exe`, so keep the runtime folder whole. The bundled layout needs no environment setup. If `REZ_MOONRAY_ROOT`, `RDL2_DSO_PATH` or `TMPDIR` is already set, it takes precedence; clear it if it points to another installation.
 
-### XPU2 does not render headless
+### Render it with XPU2
 
-XPU2 renders only inside Modo: the MoonRay preview, and Render and Render Animation in the preview window. `runtime-xpu2\moonray_xpu2.exe` cannot render a scene file on its own. Run without Modo, it hands its command line to the MoonRay named in `MOONRAY_XPU2_MOONRAY` and stops if that is not set. For a headless or farm render, use MoonRay's `xpu` mode above. It is slower than XPU2.
+`runtime-xpu2\moonray_xpu2.exe render` renders the same scene with XPU2, without Modo. It renders one frame at the full
+samples of the scene's XPU2 Sampling settings, as a Render in the preview does. It writes the scene's render outputs as
+the scene names them, and `-out` also writes the beauty with its alpha:
+
+```powershell
+& 'C:\path\MoonRayForModo\runtime-xpu2\moonray_xpu2.exe' render -in 'C:\scenes\shot.rdlb' -out 'C:\renders\shot.exr'
+```
+
+`--mode 0` renders on the processor alone, `--mode 1` on the graphics cards alone, and `--mode 2` (the default) on both.
+`-threads <n>` sets the processor threads. A scene XPU2 cannot render (deep outputs, for one) is rendered by MoonRay
+instead, from the same command line, as a preview falls back. The exit code is 0 when the picture is written and 1
+otherwise. Keep `runtime-xpu2` beside `runtime`, as the kit installs them: XPU2 takes MoonRay from there. Its shaders
+must have been compiled once on the machine (Preferences > MoonRay > XPU2 > Compile XPU2 Shaders, or
+`moonray_xpu2.exe --compile-shaders`); until then it renders on the processor. `moonray_xpu2.exe render --help` lists
+the options.
+
+For a sequence, render each frame's scene the same way.
+
+To render across several machines, see Rhizome (MoonRay > Rhizome: Render Across Machines).
 
 A GPU render with many outputs has four times the room it had for what each ray owes them; `MOONRAY_MODO_CL1_POOL_SCALE` (1 to 8, default 4) sets another size if a render still reports that it could not allocate a CacheLine1.
 

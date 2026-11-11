@@ -172,7 +172,7 @@ RAMP_SAMPLE = 254              # and when one of Modo's Sample or Surface Parame
 SAMPLE_KINDS = {'incidenceAngle': 0, 'incidenceNobump': 0, 'locatorIncAngle': 1, 'slope': 2, 'slopeUndisplaced': 2,
                 'cameraDistance': 3, 'screenX': 4, 'screenY': 5, 'screenR': 6, 'distance': 7, 'objDistance': 7,
                 'distanceX': 8, 'objDistanceX': 8, 'distanceY': 9, 'objDistanceY': 9, 'distanceZ': 10, 'objDistanceZ': 10,
-                'backFacing': 11}
+                'backFacing': 11, 'textureLocal': 12}
 IDENTITY_ROWS = ((1.0, 0.0, 0.0, 0.0), (0.0, 1.0, 0.0, 0.0), (0.0, 0.0, 1.0, 0.0))
 BLEND_REORIENTED_NORMAL = 15
 WRAP = {'repeat': 0, 'edge': 1, 'mirror': 2, 'reset': 3}
@@ -1202,7 +1202,10 @@ class Compiler:
                 flags |= LAYER_RAMP
                 slot = RAMP_SAMPLE
                 extra = dict(settings=[0.0, float(SAMPLE_KINDS[data['sample']])] + [float(v) for v in data.get('locator', [0, 0, 0])]
-                             + [low, 1.0 / max(high - low, 1e-9)] + [0.0] * 15 + [.5, .5])
+                             + [low, 1.0 / max(high - low, 1e-9)]
+                             # Texture U or V in the texture locator's space: its axis (over its length squared), wrapped.
+                             + [float(v) for v in data.get('axis_vector', [0, 0, 0])] + [1.0 if data.get('wrap') else 0.0]
+                             + [0.0] * 11 + [.5, .5])
             elif kind == 'gradient' and layer['gradient'].get('input') == '@vmap':
                 # Modo's Weight Map Texture: the weight comes as the first component of a set of coordinates of its own
                 # (moonlightipr_scene.with_weights), and the row looks the gradient up by it.

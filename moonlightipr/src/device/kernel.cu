@@ -2902,6 +2902,14 @@ ML_INLINE float sampleKey(const DeviceLayer& layer, const Hit* surface) {
     case SAMPLE_DISTANCE_Y: v = fabsf(toward.y); break;
     case SAMPLE_DISTANCE_Z: v = fabsf(toward.z); break;
     case SAMPLE_BACK_FACING: v = dot(along, surface->ng) > 0.0f ? 1.0f : 0.0f; break;
+    case SAMPLE_TEXTURE_LOCAL: {
+        // Modo's Texture U or V under a Solid or Planar projection: the point in the texture locator's space along its
+        // axis; Planar a half on and wrapped to 0..1.
+        v = dot(p - make_float3(layer.settings[2], layer.settings[3], layer.settings[4]),
+                make_float3(layer.settings[7], layer.settings[8], layer.settings[9]));
+        if (layer.settings[10] > 0.5f) { v += 0.5f; v -= floorf(v); }
+        break;
+    }
     default: break;
     }
     return (v - layer.settings[5]) * layer.settings[6];

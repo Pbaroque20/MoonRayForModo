@@ -40,5 +40,21 @@ class VariationItem(unittest.TestCase):
         self.assertEqual(len(warnings), 1)
 
 
+class VariationPart(unittest.TestCase):
+    def test_each_part_its_own(self):
+        faces = [(0, 1, 2), (0, 2, 3, 4), (1, 2, 3)]
+        values = occlusion.part_numbers('Mesh1', ['Lid', 'Body', 'Lid'], [0, 1, 2], faces)
+        self.assertEqual(len(values), 10)
+        lid, body = values[0][0], values[3][0]
+        self.assertNotEqual(lid, body)
+        self.assertEqual({v[0] for v in values[:3] + values[7:]}, {lid})
+        self.assertEqual(values, occlusion.part_numbers('Mesh1', ['Lid', 'Body', 'Lid'], [0, 1, 2], faces))
+        self.assertNotEqual(occlusion.part_numbers('Mesh2', ['Lid'], [0], faces[:1])[0][0], lid)
+
+    def test_reads(self):
+        self.assertTrue(occlusion.reads({'m': {'layers': [{'gradient': {'vmap': procedurals.VARIATION_PART_MAP}}]}}, procedurals.VARIATION_PART_MAP))
+        self.assertFalse(occlusion.reads({'m': {'layers': []}}, procedurals.VARIATION_PART_MAP))
+
+
 if __name__ == '__main__':
     unittest.main()

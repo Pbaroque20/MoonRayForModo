@@ -68,7 +68,7 @@ class SampledInputs(unittest.TestCase):
         self.assertLessEqual(high, 20.0)
 
     def test_moonlightipr_numbers_each(self):
-        self.assertEqual(set(materials.SAMPLE_KINDS), set(gradients.SAMPLED))
+        self.assertEqual(set(materials.SAMPLE_KINDS), set(gradients.SAMPLED) | {'textureLocal'})  # and Texture U, V by the locator
         source = (ROOT / 'moonlightipr/src/device/shared.h').read_text(encoding='utf-8')
         self.assertIn('RAMP_SAMPLE = 254', source)
         self.assertIn('SAMPLE_BACK_FACING = 11', source)
