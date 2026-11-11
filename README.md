@@ -8,6 +8,7 @@ The current release is [0.5.3.2](https://github.com/Pbaroque20/MoonRayForModo/re
 
 ## New in 0.5.4 (coming)
 
+- **Modo's Process texture** (Hue, Saturation, Value, Hue Shift) renders in all three engines as in Modo.
 - **MoonLightIPR draws bokeh images, diffuse transmission maps and the motion of meshes that change shape**, and an environment flipped with Vertical Wrap -1 flips rightly.
 - **16K textures stay on XPU2**, a VDB's fire renders when XPU2 hands a scene to MoonRay, and **Select Volume Here** in the preview's right-click menu.
 - **Flipping an environment image (Horizontal Wrap -1) no longer changes its lighting**: the image is mirrored at its full size.

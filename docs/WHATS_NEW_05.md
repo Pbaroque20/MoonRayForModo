@@ -4,6 +4,7 @@
 
 ## New in 0.5.4 (coming)
 
+- **Modo's Process texture** renders in MoonRay, XPU2 and MoonLightIPR: its Hue, Saturation, Value and Hue Shift on the layers beneath it, matching Modo's own render to within 0.0004. Its Bias and Gain are not followed yet, and say so.
 - **MoonLightIPR draws a camera's bokeh image**: out-of-focus highlights take the image's shape, turned as the blades are, where they were round.
 - **MoonLightIPR takes a map wired to diffuse transmission colour** (a leaf's or a blade of grass's translucency), at the material's diffuse transmission amount, where the map was left out.
 - **MoonLightIPR's motion vectors follow a mesh that changes shape** during the shutter, not only its item's move.

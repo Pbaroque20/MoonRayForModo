@@ -526,7 +526,7 @@ MAP_SETTINGS.update({
                           ('valVariation', 0.0), ('brightness', 0.0), ('contrast', 0.0)),
 })
 # Read without a texture locator: they take what is beneath them, or the surface itself.
-SURFACE_KINDS = ('val.Process_EasyGrad.RJJ', 'val.Process_RegionalHSV.RJJ', 'val.RTCurvature', 'val.wireframe', 'vmapTexture')
+SURFACE_KINDS = ('val.Process_EasyGrad.RJJ', 'val.Process_RegionalHSV.RJJ', 'val.RTCurvature', 'val.wireframe', 'vmapTexture', 'process')
 IDENTITY_ROWS = [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0]]
 
 
@@ -566,6 +566,17 @@ def regional(layer, channel, color):
                        'RegionalHSV setting')
     return {'pattern': 400, 'type': 0, 'settings': settings + [0.0] * (22 - len(settings)) + [.5, .5],
             'color1': [0.0, 0.0, 0.0], 'color2': [1.0, 1.0, 1.0], 'alpha1': 1.0, 'alpha2': 1.0, 'rows': IDENTITY_ROWS, 'process': True}
+
+
+def modo_process(layer, channel):
+    """Modo's own Process texture for ModoProceduralMap and MoonLightIPR (pattern 401, modo_patterns.h mp_modo_process):
+    the colour beneath it with its hue, saturation and value each multiplied by one more than its Hue, Saturation and
+    Value, then Hue Shift (radians) added round the wheel, as measured against Modo's renders (within 0.0004).
+    (the layer's record, whether its Bias and Gain are moved, which are not followed yet)."""
+    settings = _finite([channel(layer, name, 0.0) for name in ('hue', 'sat', 'val', 'hueShift')], 'Process setting')
+    moved = any(abs(float(channel(layer, name, .5)) - .5) > 1e-6 for name in ('bias', 'gain'))
+    return {'pattern': 401, 'type': 0, 'settings': settings + [0.0] * (22 - len(settings)) + [.5, .5],
+            'color1': [0.0, 0.0, 0.0], 'color2': [1.0, 1.0, 1.0], 'alpha1': 1.0, 'alpha2': 1.0, 'rows': IDENTITY_ROWS, 'process': True}, moved
 
 
 def weight_curve(t, bias, gain):

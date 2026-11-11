@@ -2031,9 +2031,23 @@ MP_HEAVY MP_Rgb mp_regional_hsv(float r, float g, float b, MP_Settings s) {
     return mp_from_hsv(h, mp_clamp01(sat), MP_MAX(0.0f, val));
 }
 
-// A process: a colour made from the colour beneath it. RegionalHSV is the one so far.
+// Modo's own Process texture (401), on the colour beneath it, as measured against Modo's renders
+// (tools/probe_gui_process_layer.py): its hue, saturation and value each multiplied by one more than its Hue, Saturation
+// and Value (the saturation no more than 1, the value unbounded), then Hue Shift, in radians, added round the wheel.
+// Settings: hue, saturation, value, hue shift.
+MP_HEAVY MP_Rgb mp_modo_process(float r, float g, float b, MP_Settings s) {
+    float high = MP_MAX(r, MP_MAX(g, b));
+    float low = MP_MIN(r, MP_MIN(g, b));
+    if (high <= 0.0f) return mp_rgb(r, g, b);
+    float sat = (high - low) / high;
+    float h = mp_hue(r, g, b) * (1.0f + s.v[0]) + s.v[3] * 0.15915494f;
+    return mp_from_hsv(mp_fract(h), mp_clamp01(sat * (1.0f + s.v[1])), MP_MAX(0.0f, high * (1.0f + s.v[2])));
+}
+
+// A process: a colour made from the colour beneath it: Enhance: Modo's RegionalHSV (400), Modo's Process (401).
 MP_HEAVY MP_Rgb mp_process(int pattern, float r, float g, float b, MP_Settings s) {
     if (pattern == 400) return mp_regional_hsv(r, g, b, s);
+    if (pattern == 401) return mp_modo_process(r, g, b, s);
     return mp_rgb(r, g, b);
 }
 

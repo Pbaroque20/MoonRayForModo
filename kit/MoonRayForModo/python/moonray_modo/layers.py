@@ -220,6 +220,12 @@ def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, mat
                     node['solid_map'] = procedurals.regional(layer,channel,color)
                     node['procedural'] = None
                     warnings.append('RegionalHSV '+layer.name+': each colour beneath it given its own at random; Modo equivalence is unverified.')
+                elif layer.type == 'process':
+                    # Modo's own Process: hue, saturation, value and hue shift on the colour beneath (pattern 401).
+                    node['solid_map'],moved = procedurals.modo_process(layer,channel)
+                    node['procedural'] = None
+                    if moved:
+                        warnings.append('Process '+layer.name+': its Bias and Gain are not followed yet; its Hue, Saturation, Value and Hue Shift are.')
                 elif layer.type == 'vmapTexture':
                     node['kind'] = 'gradient'
                     node['gradient'] = procedurals.vertex_map(layer,channel,color,is_color)
