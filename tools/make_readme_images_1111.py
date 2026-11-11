@@ -6,7 +6,7 @@
   albedo; shading normal, world position, camera depth, shadow matte;
 - docs/images/roughness-clamp-engines.jpg: rough gold balls among near-mirror metal, Roughness Clamp off (top) and 1
   (bottom), MoonRay left and MoonLightIPR right (test-results/moonlightipr-roughness-clamp, mirrors case).
-make_readme_images_1111.py <runtime folder> [aovs|roughness_clamp|dragon]..."""
+make_readme_images_1111.py <runtime folder> [aovs|roughness_clamp|dragon|rect_light]..."""
 import array
 import pathlib
 import pickle
@@ -189,6 +189,24 @@ def roughness_clamp():
             w, h, values = pfm(folder / ('mirrors_clamp%s_%s.pfm' % (factor, engine)))
             tiles.append(tile(w, h, values))
     save(grid(tiles, 2), 'roughness-clamp-engines.jpg')
+
+
+def rect_light():
+    """An area light (left) and the MoonRay RectLight Convert to MoonRay Rect Light made of it (right), both rendered by
+    MoonRay: tools/probe_cl_light_convert.py's captures before and after."""
+    import compare_moonlightipr as compare
+    W, H = 640, 360
+    compare.WIDTH, compare.HEIGHT = W, H
+    compare.fixture.WIDTH, compare.fixture.HEIGHT = W, H
+    compare.os.environ['MOONRAY_MODO_RUNTIME'] = str(runtime)
+    folder = ROOT / 'test-results/light-convert'
+    pictures = []
+    for index in (0, 1):
+        scene = pickle.loads((folder / ('scene_%d.pickle' % index)).read_bytes())
+        pictures.append(compare.moonray(scene, runtime, work, 'rect_light_%d' % index))
+    off = [abs(a - b) for a, b in zip(*pictures)]
+    print('area light against the RectLight: mean difference %.5f, largest %.4f' % (sum(off) / len(off), max(off)))
+    save(grid([tile(W, H, values) for values in pictures], 2), 'convert-rect-light.jpg')
 
 
 if __name__ == '__main__':

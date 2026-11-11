@@ -26,9 +26,10 @@ DEFAULTS = {
     # default; the rest are what XPU2 does without them.
     'xpu2_generations': {'on': True, 'samples': 16, 'spend': 'time', 'noise': 10.0, 'seed': 4, 'most': 0, 'cpu': True, 'realtime': 30},
     # MoonLightIPR's Render (realtime off): samples a pixel it gathers before it stops.
-    # MoonLightIPR's own: its Render's samples, and the bounce its sample clamp holds from (0: from what the camera sees,
-    # through clear glass too, where its fireflies are; MoonRay's own Clamp From Bounce stays as MoonRay has it).
-    'moonlightipr': {'render_samples': 2000, 'clamp_depth': 0},
+    # MoonLightIPR's own: its Render's samples, and its firefly controls apart from MoonRay's (Noise and Filtering): its
+    # Sample Clamp, the bounce it holds from (0: from what the camera sees, through clear glass too, where its fireflies
+    # are) and its Roughness Clamp. A scene that has not set its Sample Clamp or Roughness Clamp takes MoonRay's (complete).
+    'moonlightipr': {'render_samples': 2000, 'sample_clamp': 10.0, 'clamp_depth': 0, 'roughness_clamp': 0.0},
     'execution_mode': 'auto', 'preview_buffer': 'beauty',
     # The camera MoonRay tessellates adaptive geometry for, by its item's identity; '' for the render camera.
     'dicing_camera': '',
@@ -69,6 +70,13 @@ def complete(stored):
         result['render'] = options.render_values(render)
     except ValueError:
         result['render'] = options.render_values({})
+    # MoonLightIPR's clamps, where the scene has not set them: MoonRay's, as both engines shared them before, so that a
+    # scene keeps its look.
+    own = stored.get('moonlightipr') if isinstance(stored.get('moonlightipr'), dict) else {}
+    if 'sample_clamp' not in own:
+        result['moonlightipr']['sample_clamp'] = float(result['render']['sample_clamping_value'])
+    if 'roughness_clamp' not in own:
+        result['moonlightipr']['roughness_clamp'] = float(result['render']['roughness_clamping_factor'])
     result['background'] = dict(background_defaults, **(stored.get('background') or {}))
     # What the scene has not chosen for itself is as last chosen through MoonRay on this machine.
     from . import display_memory
@@ -137,10 +145,10 @@ GROUPS = [
     ]),
     ('MoonLightIPR', False, [
         field('moonlightipr_render_samples', ('moonlightipr', 'render_samples'), 'int', 'Render Samples', 'Render with MoonLightIPR (realtime off) gathers this many samples a pixel, as fast as the graphics card can, and stops; Render Animation too, each frame. The label under the picture says how many it has so far. 2000 unless changed, and a change is saved with the scene', 1, 100000),
-        # The firefly controls MoonLightIPR follows, shown here as well: the same settings as under Noise and Filtering.
-        render_field('sample_clamping_value', 'Sample Clamp', 'Limits how bright one sample may be, which removes fireflies; 0 is no limit. The same setting as under Noise and Filtering, which MoonRay and MoonLightIPR both follow'),
+        # MoonLightIPR's own firefly controls, apart from MoonRay's under Noise and Filtering.
+        field('moonlightipr_sample_clamp', ('moonlightipr', 'sample_clamp'), 'float', 'Sample Clamp', "MoonLightIPR's own: limits how bright one sample may be, which removes fireflies; 0 is no limit. Until it is set it is MoonRay's (10 unless changed), as both engines shared it before; set, it is MoonLightIPR's own, saved with the scene. MoonRay's own is under Noise and Filtering", 0.0, 1000000.0),
         field('moonlightipr_clamp_depth', ('moonlightipr', 'clamp_depth'), 'int', 'Clamp From Bounce', "MoonLightIPR's own: the Sample Clamp applies from this bounce on. 0, the default, clamps from what the camera sees, which takes away the fireflies seen through clear glass (refraction through smooth glass is not a bounce); 1 leaves what the camera sees directly or through glass alone. MoonRay's own is under Noise and Filtering. Saved with the scene", 0, 100),
-        render_field('roughness_clamping_factor', 'Roughness Clamp', 'Roughens shiny surfaces seen after a bounce, which removes fireflies from indirect caustics; 0 is off, 1 the most. As in MoonRay, it roughens hair and the materials MoonRay renders as DwaBase, not plain materials. The same setting as under Noise and Filtering'),
+        field('moonlightipr_roughness_clamp', ('moonlightipr', 'roughness_clamp'), 'float', 'Roughness Clamp', "MoonLightIPR's own: roughens shiny surfaces seen after a bounce, which removes fireflies from indirect caustics; 0 is off, 1 the most. As in MoonRay, it roughens hair and the materials MoonRay renders as DwaBase, not plain materials. Until it is set it is MoonRay's (0 unless changed); set, it is MoonLightIPR's own, saved with the scene. MoonRay's own is under Noise and Filtering", 0.0, 1.0),
     ]),
     ('Bounces', False, [
         render_field('max_depth', 'Total'),
@@ -166,9 +174,9 @@ GROUPS = [
         render_field('volume_phase_attenuation_factor', 'Phase Attenuation Factor', 'With Volume bounces above 1: how much more evenly each further bounce of light is thrown, whatever way the volume throws it at first'),
     ]),
     ('Noise and Filtering', True, [
-        render_field('sample_clamping_value', 'Sample Clamp', 'Limits how bright one sample may be, which removes fireflies; 0 is no limit'),
-        render_field('sample_clamping_depth', 'Clamp From Bounce', 'The clamp applies from this bounce on; 1 leaves what the camera sees directly alone'),
-        render_field('roughness_clamping_factor', 'Roughness Clamp', 'Roughens materials after a bounce to remove fireflies; 0 is off'),
+        render_field('sample_clamping_value', 'Sample Clamp', "Limits how bright one sample may be, which removes fireflies; 0 is no limit. MoonRay's and XPU2's; MoonLightIPR has its own in its group"),
+        render_field('sample_clamping_depth', 'Clamp From Bounce', "The clamp applies from this bounce on; 1 leaves what the camera sees directly alone. MoonRay's and XPU2's; MoonLightIPR has its own in its group"),
+        render_field('roughness_clamping_factor', 'Roughness Clamp', "Roughens materials after a bounce to remove fireflies; 0 is off. MoonRay's and XPU2's; MoonLightIPR has its own in its group"),
         render_field('russian_roulette_threshold', 'Russian Roulette', 'Paths dimmer than this may be ended early. Lower is cleaner and slower'),
         render_field('pixel_filter', 'Pixel Filter'),
         render_field('pixel_filter_width', 'Pixel Filter Width', 'In pixels'),

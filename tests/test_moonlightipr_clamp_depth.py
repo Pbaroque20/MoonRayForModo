@@ -39,8 +39,34 @@ class ClampDepth(unittest.TestCase):
 
     def test_shown_in_the_moonlightipr_group(self):
         group = next(entries for name, _, entries in scene_settings.GROUPS if name == 'MoonLightIPR')
-        self.assertIn(('moonlightipr', 'clamp_depth'), [entry['path'] for entry in group])
-        self.assertNotIn(('render', 'sample_clamping_depth'), [entry['path'] for entry in group])
+        paths = [entry['path'] for entry in group]
+        for key in ('sample_clamp', 'clamp_depth', 'roughness_clamp'):
+            self.assertIn(('moonlightipr', key), paths)
+        # MoonRay's own stay in Noise and Filtering alone.
+        for key in ('sample_clamping_value', 'sample_clamping_depth', 'roughness_clamping_factor'):
+            self.assertNotIn(('render', key), paths)
+
+
+class OwnClamps(unittest.TestCase):
+    """MoonLightIPR's Sample Clamp and Roughness Clamp: MoonRay's until the scene sets them (so a scene keeps its look),
+    then its own; packed in place of MoonRay's."""
+    def test_unset_they_are_moonrays(self):
+        self.assertEqual(scene_settings.complete({})['moonlightipr']['sample_clamp'], 10.0)
+        self.assertEqual(scene_settings.complete({})['moonlightipr']['roughness_clamp'], 0.0)
+        values = scene_settings.complete({'render': {'sample_clamping_value': 100.0, 'roughness_clamping_factor': 1.0}})
+        self.assertEqual((values['moonlightipr']['sample_clamp'], values['moonlightipr']['roughness_clamp']), (100.0, 1.0))
+
+    def test_set_they_are_its_own(self):
+        values = scene_settings.complete({'render': {'sample_clamping_value': 100.0, 'roughness_clamping_factor': 1.0},
+                                          'moonlightipr': {'sample_clamp': 4.0, 'roughness_clamp': 0.5}})
+        self.assertEqual((values['moonlightipr']['sample_clamp'], values['moonlightipr']['roughness_clamp']), (4.0, 0.5))
+        self.assertEqual(values['render']['sample_clamping_value'], 100.0)
+
+    def test_packed_in_place_of_moonrays(self):
+        held = scene(_moonlightipr_sample_clamp=4.0, _moonlightipr_roughness_clamp=0.5)
+        payload, _, _ = moonlightipr_scene.pack(held, 64, 36, 0.0)
+        clamp, depth, _, roughness = struct.unpack_from('<fIIf', payload, 36)
+        self.assertEqual((clamp, depth, roughness), (4.0, 0, 0.5))
 
 
 if __name__ == '__main__':

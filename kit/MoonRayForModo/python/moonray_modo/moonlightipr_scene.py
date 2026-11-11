@@ -1049,9 +1049,11 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
                                   | (SCENE_FLAT_OUT if scene.get('_flat_out') else 0)),
              # The scene's sample clamp, and from which bounce it holds, the subsurface scatterings a path may have and the roughness
              # clamp (form 'Q'); then how each further bounce in fog counts for less (form 'G').
-             # Its own Clamp From Bounce (scene_setup), 0 unless the scene says otherwise; MoonRay's stays MoonRay's.
-             struct.pack('<fIIf', float(settings['sample_clamping_value']), int(scene.get('_moonlightipr_clamp_depth', 0)), int(settings['max_subsurface_per_path']),
-                         float(settings.get('roughness_clamping_factor', 0.0) or 0.0)),
+             # Its own Sample Clamp, Clamp From Bounce and Roughness Clamp (scene_setup): MoonRay's stay MoonRay's. A scene
+             # read without them (a test's) takes MoonRay's clamps and clamps from bounce 0.
+             struct.pack('<fIIf', float(scene.get('_moonlightipr_sample_clamp', settings['sample_clamping_value'])),
+                         int(scene.get('_moonlightipr_clamp_depth', 0)), int(settings['max_subsurface_per_path']),
+                         float(scene.get('_moonlightipr_roughness_clamp', settings.get('roughness_clamping_factor', 0.0)) or 0.0)),
              struct.pack('<3f', *(float(settings[key]) for key in ('volume_attenuation_factor', 'volume_contribution_factor',
                                                                   'volume_phase_attenuation_factor'))),
              struct.pack('<9f', *(v for row in (TO_AP1 if working else [[1, 0, 0], [0, 1, 0], [0, 0, 1]]) for v in row)),

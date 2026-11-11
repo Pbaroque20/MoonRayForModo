@@ -88,3 +88,7 @@ The dragon test scene rendered by XPU2 in the preview window with Preferences > 
 ## MoonLightIPR's AOVs, fireflies and Roughness Clamp (`moonlightipr-aovs.jpg`, `moonlightipr-fireflies-dragon.jpg`, `roughness-clamp-engines.jpg`)
 
 Made by `tools/make_readme_images_1111.py` from a tester's dragon scene (a DwaRefractiveMaterial dragon on a floor, a sun and a gradient sky) and from the Roughness Clamp check's renders (`tools/check_moonlightipr_roughness_clamp.py`, rough gold balls among near-mirror metal). The dragon at 960 x 540 and 1024 samples a pixel in MoonLightIPR, its AOVs shown at half size; the clamp's at 960 x 540, MoonRay at its check's samples and MoonLightIPR at 2048.
+
+## Convert to MoonRay Rect Light (`convert-rect-light.jpg`)
+
+Made by `tools/make_readme_images_1111.py rect_light` from `tools/probe_cl_light_convert.py`'s two captures of one scene: a box on a floor lit by a warm area light alone (2 x 0.5, radiance 12, the sky black), before and after the conversion, each rendered by MoonRay at 640 x 360. They differ by 0.0014 on average, the samples' noise.

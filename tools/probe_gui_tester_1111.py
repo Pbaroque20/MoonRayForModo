@@ -135,11 +135,41 @@ def wait(label, then):
     step(then, 1000)
 
 
+def window_picture():
+    """The Render Animation window as it is filled to continue the sequence (frames 1 to 4, Render missing frames on),
+    grabbed as a picture for the documents; not run."""
+    from moonray_modo.output_dialog import AnimationDialog
+    from moonray_modo.sequence_plan import window_values
+    p = panel()
+    values = window_values({'folder': str(frames), 'prefix': 'probe', 'digits': 4, 'engine': 'moonray'},
+                           {'first': 1, 'last': 4, 'step': 1, 'fps': float(modo.Scene().fps), 'motion': False})
+    dialog = AnimationDialog(p.settings, p, values)
+    dialog.folder.setText(str(frames))
+    dialog.first.setValue(1)
+    dialog.last.setValue(4)
+    dialog.missing.setChecked(True)
+    dialog.show()
+    QtWidgets.QApplication.processEvents()
+    dialog.grab().save(str(out / 'render-animation-window.png'))
+    dialog.close()
+
+
 def render_more():
     state['before'] = files()
     try:
+        window_picture()
+    except Exception:
+        report['window_picture_error'] = traceback.format_exc()
+    try:
         sequence(1, 4, True)
         report['missing_notices'] = list(getattr(state['sequence'], 'notices', []))
+
+        def grab():
+            p = panel()
+            report['status_when_resumed'] = p.status.text()
+            p.window().grab().save(str(out / 'resumed-window.png'))
+            save()
+        QtCore.QTimer.singleShot(150, grab)
         step(lambda: wait('missing', refused), 2000)
     except Exception as exc:
         report['missing_refused'] = str(exc)
