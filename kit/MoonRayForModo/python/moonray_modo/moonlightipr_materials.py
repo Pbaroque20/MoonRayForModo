@@ -46,6 +46,8 @@ MATERIAL_NO_CAUSTICS = 1024
 MATERIAL_RANDOM_WALK = 2048
 # MoonRay's toon material: its diffuse light banded by a ramp, its highlight by another.
 MATERIAL_TOON_DIFFUSE, MATERIAL_TOON_SPECULAR = 4096, 8192
+# What MoonRay renders through DwaBaseMaterial (or another Dwa material): the materials its Roughness Clamp roughens.
+MATERIAL_ROUGHNESS_CLAMPED = 16384
 TOON_STEPS = 256
 
 
@@ -1355,6 +1357,8 @@ class Compiler:
         # A stack's coat is DwaBaseMaterial's outer specular, which shades what is beneath it.
         flags = (MATERIAL_THIN if source.get('thin_geometry') else 0) | (MATERIAL_COAT_DIMS if stack else 0)
         # A metal rendered through DwaBaseMaterial reflects by its own curve, with a white edge.
+        if dwa or str(native or '').startswith('Dwa'):
+            flags |= MATERIAL_ROUGHNESS_CLAMPED
         if dwa:
             flags |= MATERIAL_CONDUCTOR
             # DwaBaseMaterial leaves its highlight, coat, metal and glass out of a path that has already left a diffuse

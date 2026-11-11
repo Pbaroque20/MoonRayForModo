@@ -13,10 +13,9 @@
 //   @@MODO_SHARED <generation> beauty ...  a frame is waiting in shared memory
 //   @@MODO_SESSION DONE <generation>       the picture is clean, or the sample target was reached
 //   @@MODO_SESSION SAMPLES <generation> <n> the frame about to be sent holds n samples a pixel
-// AOVs ("aov <n> <name>", 0 for the beauty): 1 to 4 a light pass (AovPass), rendered in place of the beauty, the
-// render begun again with it; from 5 a geometry AOV (AovSlot n - 5), gathered beside the beauty, all of them at once
-// from the first asked for (the render then begun again, once), and after that only another picture sent, at once, in
-// the middle of a render or after it. Either is sent under its name.
+// AOVs ("aov <n> <name>", 0 for the beauty): 1 to 4 a light pass (AovPass), from 5 a geometry AOV (AovSlot n - 5). All
+// of them are gathered beside the beauty, from its own paths, from the start; choosing one is only another picture
+// sent, at once, in the middle of a render or after it. Each is sent under its name.
 //   @@MODO_SESSION FAILED <generation>     the scene was rejected; the reason is on standard error
 #include "moonlightipr/moonlightipr.h"
 #include "scene_loader.h"
@@ -94,6 +93,9 @@ int main(int argc, char** argv) {
     }
     try {
         moonlightipr::Renderer renderer(argv[1]);
+        // Every AOV gathered beside the beauty from the first sample, so that choosing one, or exporting them, renders
+        // nothing again.
+        renderer.setAovs(true);
         moonlightipr::SceneLoader loader(renderer);
         std::cout << "MoonLightIPR GPU preview on " << renderer.deviceName() << std::endl;
         Commands commands;
@@ -111,14 +113,16 @@ int main(int argc, char** argv) {
         // Which picture is sent of a scene that is denoised: the denoised one, or the beauty as it is rendered.
         // Both are there all the while; the host says which it is looking at, and may change its mind at any time.
         bool showDenoised = true, viewChanged = false;
-        // The AOV looked at (its AovSlot, or -1 for the beauty), by the host's name for it, which its frames are sent under.
+        // The AOV looked at (its AovSlot, or -1 for the beauty), or the light pass (1 to 4, else 0), by the host's name for
+        // it, which its frames are sent under.
         int aovShown = -1;
+        unsigned passShown = 0;
         std::string aovName;
         // The picture sent: the AOV looked at, else the denoised picture or the beauty. Its name is returned.
         auto readPicture = [&](const moonlightipr::SceneSettings& settings) -> std::string {
             if (aovShown >= 0 && renderer.aovs()) { renderer.readAov(uint32_t(aovShown), pixels.data()); return aovName; }
-            // A light pass, in the beauty's place: not denoised.
-            if (renderer.pass()) { renderer.readBeauty(pixels.data()); return aovName; }
+            // A light pass: not denoised.
+            if (passShown && renderer.aovs()) { renderer.readPass(passShown, pixels.data()); return aovName; }
             // The denoised picture whenever it is looked at: a render made without denoising (a Render, its denoised
             // beauty chosen once it is done) is denoised as it stands, not rendered again; the denoiser's albedo and
             // normal are gathered with every sample.
@@ -137,10 +141,11 @@ int main(int argc, char** argv) {
                     unsigned n = 0;
                     std::string name;
                     words >> n >> name;
-                    // Another light pass, or the first geometry AOV: the render begins again with it.
-                    if ((n <= LIGHT_PASSES && n != renderer.pass()) || (n > LIGHT_PASSES && !renderer.aovs())) return true;
+                    // The first AOV asked for: the render begins again, gathering them all.
+                    if (n && !renderer.aovs()) return true;
                     commands.next();
                     aovShown = n > LIGHT_PASSES ? int(n - LIGHT_PASSES - 1) : -1;
+                    passShown = n <= LIGHT_PASSES ? n : 0;
                     aovName = n ? name : std::string();
                     viewChanged = true;
                     continue;
@@ -179,12 +184,13 @@ int main(int argc, char** argv) {
                 const unsigned n = unsigned(std::strtoul(generation.c_str(), nullptr, 10));
                 if (n > LIGHT_PASSES + GEOMETRY_AOVS) continue;
                 aovShown = n > LIGHT_PASSES ? int(n - LIGHT_PASSES - 1) : -1;
+                passShown = n <= LIGHT_PASSES ? n : 0;
                 aovName = n ? path : std::string();
-                // Another light pass (or the beauty again), or the first geometry AOV asked for: rendered again with it,
-                // a render already finished as well, unless the host has more to say first (a new scene).
-                const bool again = n <= LIGHT_PASSES ? n != renderer.pass() : !renderer.aovs();
+                // The first AOV asked for: rendered again, gathering them all, a render already finished as well, unless
+                // the host has more to say first (a new scene).
+                const bool again = n && !renderer.aovs();
                 if (again) {
-                    if (n <= LIGHT_PASSES) renderer.setPass(n); else renderer.setAovs(true);
+                    renderer.setAovs(true);
                     if (lastGeneration.empty() || commands.waiting()) continue;
                     settings = lastSettings;
                     generation = lastGeneration;

@@ -51,6 +51,9 @@ const unsigned MATERIAL_THIN = 1, MATERIAL_COAT_DIMS = 2, MATERIAL_HAS_PRESENCE 
                MATERIAL_RANDOM_WALK = 1u << 11,
                // MoonRay's toon material: the diffuse light is banded by a ramp, and so is the highlight.
                MATERIAL_TOON_DIFFUSE = 1u << 12, MATERIAL_TOON_SPECULAR = 1u << 13,
+               // MoonRay renders the material through DwaBaseMaterial (or another Dwa material), whose lobes its roughness
+               // clamp roughens (LaunchParams::roughnessClamp); UsdPreviewSurface's it leaves alone.
+               MATERIAL_ROUGHNESS_CLAMPED = 1u << 14,
                MATERIAL_MATTE = 1u << 30;   // set by the kernel alone, where light leaves from beneath a surface
 const unsigned LAYER_IMAGE = 1, LAYER_INVERT = 2, LAYER_FLIP_RED = 4, LAYER_FLIP_GREEN = 8, LAYER_FLIP_BLUE = 16,
                LAYER_ALPHA_MASK = 32, LAYER_ALPHA_ONLY = 64, LAYER_COVERAGE_U = 128, LAYER_COVERAGE_V = 256,
@@ -214,6 +217,10 @@ struct DeviceHair {
     float glintSaturation;
     float twists[2];            // fewest and most turns the fibre's cross-section makes from root to tip
     float layers;               // cuticle layers, for the layered Fresnel term
+    // The roughnesses those were worked out from (along the fibre for each of the four, around it for TT, and the
+    // glint's), which MoonRay's roughness clamp raises on a path that has scattered (LaunchParams::roughnessClamp).
+    float roughness[4];
+    float azimuthalRoughness, glintRoughness;
 };
 
 struct DeviceMesh {
@@ -410,6 +417,9 @@ struct LaunchParams {
     unsigned opaqueShadows; // a surface that is partly absent casts a whole shadow all the same: MoonRay with its presence shadows off
     unsigned sampleClampDepth;  // how many rough things: MoonRay's sample_clamping_depth, 1 leaving alone what the camera sees directly
     float sampleClamp;      // largest value of one light sample once the path has scattered off enough rough things; 0 is unlimited
+    // MoonRay's roughness_clamping_factor: after each bounce, the surfaces met further on (MATERIAL_ROUGHNESS_CLAMPED)
+    // are at least as rough as the lobe bounced off (a diffuse one counting as 1) times this; 0 is off.
+    float roughnessClamp;
     // MoonRay's volume_attenuation_factor, volume_contribution_factor and volume_phase_attenuation_factor.
     float volumeAttenuation, volumeContribution, volumePhaseAttenuation;
     unsigned presence;      // some material can be partly absent or is a fog's edge, so rays must run the any-hit test
@@ -444,6 +454,9 @@ struct LaunchParams {
     // A light pass rendered in place of the beauty (AovPass); 0 the beauty.
     unsigned aovPass;
     unsigned aovPad;
+    // The light passes, gathered beside the beauty from its own paths while the AOVs are: PASS_BACKGROUND float[4] per
+    // pixel, pass after pass (diffuse, glossy, emission, background), each a running mean as the beauty is; 0 none.
+    DevicePtr passes;
     // For the motion vectors: each instance's transform as the shutter opens and as it closes (OptiX's 3x4 rows, twelve
     // then twelve floats an instance), or 0 where none moves; the moment of the shutter this sample is at (0 to 1); and
     // the camera as the shutter opens and closes: its origin, then cameraU, cameraV and cameraW as they are above.

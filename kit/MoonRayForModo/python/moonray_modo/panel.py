@@ -488,10 +488,9 @@ class Panel(Tools, QtWidgets.QWidget):
         menu.addSeparator()
         menu.addAction('Copy Image',self.copy_image)
         menu.addAction('Save Image...',self.save_preview)
-        # The outputs of the last finished MoonRay preview, each as a picture of its own. MoonLightIPR has the one.
-        batch=menu.addAction('Export AOVs as Images...',self.export_buffers)
-        batch.setEnabled(self._engine()!='moonlightipr')
-        if not batch.isEnabled():batch.setToolTip('MoonLightIPR renders the one picture; choose MoonRay for its outputs.')
+        # The outputs of the last finished preview, each as a picture of its own: MoonRay's, or MoonLightIPR's picture
+        # and its own AOVs (panel_tools._moonlightipr_outputs).
+        menu.addAction('Export AOVs as Images...',self.export_buffers)
         if getattr(self,'_continuable',None) is not None and not self._rendering:
             # Continue is what the button offers; this is the other choice. It throws the stopped render away, so it
             # stands last and apart, and asks before it does.

@@ -22,7 +22,7 @@ class AnimationDialog(QtWidgets.QDialog):
         self.engine.setCurrentIndex(max(0,self.engine.findData(values.get('engine','moonray'))))
         self.engine.setToolTip('MoonRay renders each frame as Render Settings and Preferences say (XPU2, XPU or the processor). '
                                "MoonLightIPR renders each frame on the graphics card to its Render Samples a pixel (Render Settings, MoonLightIPR), "
-                               'denoised where the Denoiser is on, written as an EXR of its own picture: the beauty alone, no other outputs.')
+                               'written as an EXR of its own picture, the beauty, with its denoised beauty beside it (frame.denoised.0001.exr) where the Denoiser is on, as MoonRay writes it; no other outputs.')
         self.engine.currentIndexChanged.connect(self.update_summary)
         form.addRow('Engine',self.engine)
         row=QtWidgets.QHBoxLayout()

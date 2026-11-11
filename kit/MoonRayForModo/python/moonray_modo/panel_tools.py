@@ -426,21 +426,122 @@ class Tools:
         keys = [key for key in order if key in held] + sorted(key for key in held if key not in order)
         return [(key, named.get(key, key)) for key in keys]
 
+    def _moonlightipr_linear(self, key):
+        """The numbers MoonLightIPR sent last for a buffer, (width, height, pixels), or None. Its beauty and its denoised
+        beauty both come under the beauty's name: the one looked at."""
+        sent = 'beauty' if key in ('beauty', 'denoised_beauty') else key
+        frame = self.renderer.buffers.progressive_frames.get(sent) or {}
+        return frame.get('linear', {}).get(sent)
+
+    def _moonlightipr_outputs(self):
+        """MoonLightIPR's picture and AOVs as Export AOVs takes a render's outputs: each asked of the session in turn and
+        written as an EXR of its own numbers into a folder of its own. Every AOV is gathered beside the beauty, so each
+        comes at once, rendering nothing again; the buffer looked at is chosen again after. Motion vectors are taken
+        only where they are what was read (they need the scene read with the shutter's ends). Returns (frame, the
+        buffers as (key, name), the folder to remove when done); raises ValueError where there is nothing to export."""
+        import shutil
+        import subprocess
+        import tempfile
+        import time
+        from . import moonlightipr_aovs, native
+        buffers = self.renderer.buffers
+        snapshot = buffers.progressive_scene
+        if snapshot is None or self._moonlightipr_linear('beauty') is None:
+            raise ValueError('Render with MoonLightIPR first; its picture and AOVs are what is exported.')
+        listed = [(self.buffer.itemData(i), self.buffer.itemText(i)) for i in range(self.buffer.count())]
+        wanted = [(key, name) for key, name in listed if key == 'beauty'
+                  or (key == 'denoised_beauty' and self._denoiser_on())
+                  or (key in moonlightipr_aovs.AOVS and (key != 'motion_vectors' or getattr(self, '_vectors_read', False)))]
+        shown = self.buffer.currentData()
+        pictures = {}
+        try:
+            for key, _ in wanted:
+                before = self._moonlightipr_linear(key)
+                if key == self.buffer.currentData() and before is not None:
+                    pictures[key] = before
+                    continue
+                self.buffer.setCurrentIndex(self.buffer.findData(key))
+                # Until it has come (another picture than the one before), and is shown; half a minute at most.
+                ends = time.monotonic() + 30
+                while time.monotonic() < ends:
+                    QtWidgets.QApplication.processEvents()
+                    now = self._moonlightipr_linear(key)
+                    if now is not None and now is not before and not buffers.busy():
+                        pictures[key] = now
+                        break
+                    time.sleep(0.02)
+        finally:
+            if self.buffer.currentData() != shown and self.buffer.findData(shown) >= 0:
+                self.buffer.setCurrentIndex(self.buffer.findData(shown))
+        if 'beauty' not in pictures:
+            raise ValueError('MoonLightIPR sent no picture to export.')
+        renderer = self.renderer
+        runtime = Path(renderer.active['runtime']) if getattr(renderer, 'active', None) else native.default_runtime()
+        folder = Path(tempfile.mkdtemp(prefix='MoonLightIPRExport-'))
+        files, self._moonlightipr_skipped = {}, []
+        try:
+            for key, (width, height, pixels) in pictures.items():
+                # Three floats a pixel, whole: oiiotool waits for ever on a picture shorter than its size says.
+                held = bytes(pixels)
+                if len(held) != width * height * 12:
+                    self._moonlightipr_skipped.append('%s (%d of %d bytes)' % (key, len(held), width * height * 12))
+                    continue
+                pfm, exr = folder / (key + '.pfm'), folder / (key + '.exr')
+                with pfm.open('wb') as stream:
+                    stream.write(('PF\n%d %d\n-1.0\n' % (width, height)).encode('ascii'))
+                    stream.write(held)
+                try:
+                    done = subprocess.run([str(runtime / 'oiiotool.exe'), str(pfm), '-o', str(exr)], env=native.environment(runtime),
+                                          stdin=subprocess.DEVNULL, capture_output=True,
+                                          creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0), timeout=120)
+                except subprocess.TimeoutExpired:
+                    self._moonlightipr_skipped.append(key + ' (not converted)')
+                    continue
+                finally:
+                    pfm.unlink()
+                if not done.returncode and exr.is_file():
+                    files[key] = exr
+                else:
+                    self._moonlightipr_skipped.append(key)
+        except Exception:
+            shutil.rmtree(folder, ignore_errors=True)
+            raise
+        names = [(key, name) for key, name in wanted if key in files]
+        return {'files': files, 'snapshot': snapshot, 'runtime': runtime}, names, folder
+
     def export_buffers(self):
-        """Save chosen outputs of the last finished preview, each as an image file of its own."""
-        from . import outputs
-        frame = self.renderer.buffers.frame
+        """Save chosen outputs of the last finished preview, each as an image file of its own: MoonRay's, or
+        MoonLightIPR's picture and AOVs (_moonlightipr_outputs)."""
+        import shutil
+        temporary = None
         if self.preview_engine.currentData() == 'moonlightipr':
-            self.status.setText('MoonLightIPR renders the one picture; choose MoonRay to export its outputs.')
-            return
-        if not frame or not frame.get('files'):
-            self.status.setText('Let a MoonRay preview finish first; its outputs are what is exported.')
-            return
+            try:
+                frame, names, temporary = self._moonlightipr_outputs()
+            except (ValueError, OSError, RuntimeError) as exc:
+                self.status.setText(str(exc))
+                return
+        else:
+            frame = self.renderer.buffers.frame
+            if not frame or not frame.get('files'):
+                self.status.setText('Let a MoonRay preview finish first; its outputs are what is exported.')
+                return
+            names = self.buffer_names(frame)
+        try:
+            self._export_buffers(frame, names)
+            skipped = getattr(self, '_moonlightipr_skipped', None) if temporary is not None else None
+            if skipped:
+                self.status.setText(self.status.text() + '; MoonLightIPR could not give ' + ', '.join(skipped))
+        finally:
+            if temporary is not None:
+                shutil.rmtree(temporary, ignore_errors=True)
+
+    def _export_buffers(self, frame, names):
+        from . import outputs
         from .export_dialog import ExportAOVs, group_of
         snapshot = frame.get('snapshot') or {}
         customs = {entry.get('name'): entry.get('kind') for entry in snapshot.get('custom_aovs') or []}
         entries = []
-        for key, label in self.buffer_names(frame):
+        for key, label in names:
             kind = outputs.display_kind(snapshot, key)
             entries.append((key, label, group_of(key, kind, customs.get(key)), kind))
         # The size the render was made at, and the camera it was seen through.

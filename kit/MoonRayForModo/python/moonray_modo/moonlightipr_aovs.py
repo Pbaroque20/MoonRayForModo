@@ -1,15 +1,17 @@
 """The AOVs MoonLightIPR makes, for motion graphics: what a composite is made with.
 
 The light in four passes that add up to the beauty (fog's light before the first surface apart): Diffuse (with
-subsurface), Glossy (with hair, mirror reflections and refraction), Emission and the Environment background. Each is
-rendered in place of the beauty, as the first surface the camera sees decides, by the same kernel the beauty uses: no
-kernel is compiled for it, and choosing one renders again from the start.
+subsurface), Glossy (with hair, mirror reflections and refraction), Emission and the Environment background, as the
+first surface the camera sees decides. They are gathered beside the beauty from its own paths, so that they add up to
+it sample by sample.
 
 From what the camera sees first: Albedo, Camera depth, Shading normal, World position, Alpha and Motion vectors (how far
 it moves in pixels from the shutter's opening to its closing, as MoonRay's say it: objects and the camera, not yet a
-mesh changing shape). These are gathered all
-at once beside the beauty, by a small program of their own, from the first one chosen; after that, choosing another is
-only another picture sent. Cryptomatte is MoonRay's alone.
+mesh changing shape), by a small program of their own.
+
+All of them are gathered at once from the first one chosen, which begins the render again once; after that, choosing
+another (or the beauty) is only another picture sent, at once (tools/check_moonlightipr_passes.py). Cryptomatte is
+MoonRay's alone.
 
 Each is the kit's buffer key and the number the session takes for it ("aov <n> <key>", moonlightipr_session.cpp): 1 to 4
 the light passes (AovPass in moonlightipr/src/device/shared.h), 5 on the geometry AOVs (AovSlot, from 0). Diffuse and

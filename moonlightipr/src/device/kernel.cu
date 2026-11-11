@@ -1049,6 +1049,11 @@ ML_INLINE float3 litBy(const BsdfEval& e, float surfacePdf, float lightPdf) {
     else found += e.toon * (1.0f / lightPdf);
     return found;
 }
+// The diffuse share of a light's sample (litBy): each colour's diffuse part over the whole.
+ML_INLINE float3 diffusePartOf(const BsdfEval& e, float surfacePdf, float lightPdf, float3 found) {
+    const float3 d = e.diffuse * (powerHeuristic(lightPdf, surfacePdf) / lightPdf);
+    return make_float3(found.x > 0.0f ? d.x / found.x : 0.0f, found.y > 0.0f ? d.y / found.y : 0.0f, found.z > 0.0f ? d.z / found.z : 0.0f);
+}
 // How far the fuzz's samples lean (sampleSheen): not at all seen face on, where the fuzz is even all round, and
 // more the more the view is from the side.
 ML_INLINE float sheenLean(float3 wo) { return 0.9f * sqrtf(fmaxf(0.0f, 1.0f - wo.z * wo.z)); }
@@ -1255,7 +1260,7 @@ ML_INLINE BsdfEval onlyLobes(BsdfEval e, unsigned only) {
 // local lights. weight is the path's weight on arriving at the surface.
 ML_INLINE float3 directLight(const Surface& surface, const Lobes& lobes, float3 wo, const Frame& frame,
                              float3 p, float3 ng, float3 weight, bool lit, Seed& seed, float3 lift = make_float3(0.0f, 0.0f, 0.0f),
-                             unsigned set = 0, unsigned only = 0) {
+                             unsigned set = 0, unsigned only = 0, float3* diffuseShare = nullptr) {
     const DeviceDistantLight* distantLights = reinterpret_cast<const DeviceDistantLight*>(params.distantLights);
     const DeviceLight* lights = reinterpret_cast<const DeviceLight*>(params.lights);
     float3 radiance = vec(0.0f);
@@ -1267,8 +1272,11 @@ ML_INLINE float3 directLight(const Surface& surface, const Lobes& lobes, float3 
             const BsdfEval e = onlyLobes(evalBsdf(surface, lobes, wo, frame.toLocal(toLight)), only);
             const float pdf = lobes.specular * e.specularPdf + (1.0f - lobes.specular) * e.diffusePdf;
             const float3 found = litBy(e, pdf, lightPdf);
-            if (maxComponent(found) > 0.0f)
-                radiance += clampSample(weight * found * envRadiance(toLight) * shadow(shadowFrom(surface, p, lift, ng, frame.n, toLight), toLight, seed), lit);
+            if (maxComponent(found) > 0.0f) {
+                const float3 c = clampSample(weight * found * envRadiance(toLight) * shadow(shadowFrom(surface, p, lift, ng, frame.n, toLight), toLight, seed), lit);
+                radiance += c;
+                if (diffuseShare) *diffuseShare += c * diffusePartOf(e, pdf, lightPdf, found);
+            }
         }
     }
     for (unsigned i = 0; i < params.distantLightCount; ++i) {
@@ -1278,9 +1286,13 @@ ML_INLINE float3 directLight(const Surface& surface, const Lobes& lobes, float3 
         if (!surface.passes && !surface.smoothToon && dot(ng, toSun) <= 0.0f) continue;
         const BsdfEval e = onlyLobes(evalBsdf(surface, lobes, wo, frame.toLocal(toSun)), only);
         const float pdf = lobes.specular * e.specularPdf + (1.0f - lobes.specular) * e.diffusePdf;
-        const float3 found = litBy(e, pdf, distantPdf(light, toSun));
-        if (maxComponent(found) > 0.0f)
-            radiance += clampSample(weight * found * distantRadiance(light, toSun) * shadow(shadowFrom(surface, p, lift, ng, frame.n, toSun), toSun, seed), lit);
+        const float sunPdf = distantPdf(light, toSun);
+        const float3 found = litBy(e, pdf, sunPdf);
+        if (maxComponent(found) > 0.0f) {
+            const float3 c = clampSample(weight * found * distantRadiance(light, toSun) * shadow(shadowFrom(surface, p, lift, ng, frame.n, toSun), toSun, seed), lit);
+            radiance += c;
+            if (diffuseShare) *diffuseShare += c * diffusePartOf(e, pdf, sunPdf, found);
+        }
     }
     const unsigned firstLight = params.lightPick ? pickLight(lights, params.lightCount, rnd(seed)) : 0;
     const unsigned lastLight = params.lightPick ? firstLight + 1 : params.lightCount;
@@ -1294,8 +1306,11 @@ ML_INLINE float3 directLight(const Surface& surface, const Lobes& lobes, float3 
         const BsdfEval e = onlyLobes(evalBsdf(surface, lobes, wo, frame.toLocal(toLamp)), only);
         const float pdf = lobes.specular * e.specularPdf + (1.0f - lobes.specular) * e.diffusePdf;
         const float3 found = litBy(e, pdf, lampPdf);
-        if (maxComponent(found) > 0.0f)
-            radiance += clampSample(weight * found * emitted * shadow(shadowFrom(surface, p, lift, ng, frame.n, toLamp), toLamp, seed, distance * 0.999f), lit);
+        if (maxComponent(found) > 0.0f) {
+            const float3 c = clampSample(weight * found * emitted * shadow(shadowFrom(surface, p, lift, ng, frame.n, toLamp), toLamp, seed, distance * 0.999f), lit);
+            radiance += c;
+            if (diffuseShare) *diffuseShare += c * diffusePartOf(e, pdf, lampPdf, found);
+        }
     }
     return radiance;
 }
@@ -1347,6 +1362,9 @@ struct Fibre {
     float3 through, absorbs;
     float turned;               // how far round the fibre the viewer is from the long axis of its cross-section
     float share[4];
+    // How far each lobe spreads along the fibre, TT around it and a glint around it, and the roughness along the fibre
+    // of each lobe: the hair's own, or raised by MoonRay's roughness clamp (fibreFrom).
+    float variance[4], azimuthal, glintWidth, rough[4];
     const DeviceHair* hair;
 };
 
@@ -1387,9 +1405,31 @@ ML_INLINE void fibreAttenuation(const Fibre& fibre, float f, float3* out) {
     out[3] = (hair.lobes & HAIR_TRRT) ? make_float3(t.x * t.x * t.x / rest.x, t.y * t.y * t.y / rest.y, t.z * t.z * t.z / rest.z) * (pass * f * f) : vec(0.0f);
 }
 
-ML_INLINE Fibre fibreFrom(const Hit& hit, const DeviceHair& hair, float3 wo) {
+ML_INLINE Fibre fibreFrom(const Hit& hit, const DeviceHair& hair, float3 wo, float leastRough = 0.0f) {
     Fibre fibre;
     fibre.hair = &hair;
+    // MoonRay's roughness clamp, as its hair lobes take it (BsdfBuilder clampHairRoughness): each roughness at least the
+    // path's least; the spreads worked out from them as toDeviceHair does. What the fibre absorbs keeps the hair's own.
+    for (int i = 0; i < 4; ++i) {
+        fibre.rough[i] = hair.roughness[i];
+        fibre.variance[i] = hair.variance[i];
+    }
+    fibre.azimuthal = hair.azimuthal;
+    fibre.glintWidth = hair.glintWidth;
+    if (leastRough > 0.0f) {
+        for (int i = 0; i < 4; ++i) {
+            if (hair.roughness[i] >= leastRough) continue;
+            const float r = fminf(leastRough, 0.999f);
+            const float root = 0.726f * r + 0.812f * r * r + 3.7f * powf(r, 20.0f);
+            fibre.rough[i] = r;
+            fibre.variance[i] = root * root;
+        }
+        if (hair.azimuthalRoughness < leastRough) {
+            const float a = fminf(leastRough, 0.999999f);
+            fibre.azimuthal = fmaxf(0.626657069f * (0.265f * a + 1.194f * a * a + 5.372f * powf(a, 22.0f)), 0.05f);
+        }
+        if (hair.glintRoughness < leastRough) fibre.glintWidth = fmaxf(0.125f * leastRough * leastRough, 1e-3f);
+    }
     fibre.along = hit.curveTangent;
     fibre.sinO = clamp(dot(wo, fibre.along), -1.0f, 1.0f);
     fibre.cosO = sqrtf(fmaxf(0.0f, 1.0f - fibre.sinO * fibre.sinO));
@@ -1462,8 +1502,8 @@ ML_INLINE float3 fibreEval(const Fibre& fibre, float3 wi, float& pdf) {
         const float etaP = sqrtf(fmaxf(0.0f, etaStar * etaStar - sinD * sinD)) / fmaxf(cosD, 1e-6f);
         const float caustic = sqrtf(fmaxf(0.0f, (4.0f - etaP * etaP) / 3.0f));
         const float where = etaP < 2.0f ? turnOf(4.0f * asinf(clamp(caustic / etaP, -1.0f, 1.0f)) - 2.0f * asinf(clamp(caustic, -1.0f, 1.0f)) + 2.0f * ML_PI) : 0.0f;
-        const float peak = trimmedLogistic(0.0f, hair.glintWidth);
-        const float one = trimmedLogistic(turnOf(phi - where), hair.glintWidth), other = trimmedLogistic(turnOf(phi + where), hair.glintWidth);
+        const float peak = trimmedLogistic(0.0f, fibre.glintWidth);
+        const float one = trimmedLogistic(turnOf(phi - where), fibre.glintWidth), other = trimmedLogistic(turnOf(phi + where), fibre.glintWidth);
         plain = 1.0f - (one + other) / peak;
         float3 passed = fibrePass(fibre, sqrtf(fmaxf(0.0f, 1.0f - fibre.cosGamma * fibre.cosGamma)), fmaxf(etaStar, 1.0001f), fmaxf(etaP, 1e-6f));
         const float brightest = maxComponent(passed);
@@ -1472,14 +1512,14 @@ ML_INLINE float3 fibreEval(const Fibre& fibre, float3 wi, float& pdf) {
     }
     // Around the fibre: reflections spread as a quarter of the cosine of half the angle, light passing through as a
     // logistic curve about straight on, and what is left evenly.
-    const float spread[4] = {fmaxf(0.0f, 0.25f * cosf(0.5f * phi)), trimmedLogistic(ML_PI - phi, hair.azimuthal),
+    const float spread[4] = {fmaxf(0.0f, 0.25f * cosf(0.5f * phi)), trimmedLogistic(ML_PI - phi, fibre.azimuthal),
                              fmaxf(0.0f, 0.25f * cosf(0.5f * phi)), 1.0f / (2.0f * ML_PI)};
     float3 value = vec(0.0f);
     for (int i = 0; i < 4; ++i) {
         if (!((hair.lobes >> i) & 1)) continue;
         const float sinShifted = sinI * hair.cosShift[i] + cosI * hair.sinShift[i];
         const float cosShifted = fabsf(cosI * hair.cosShift[i] - sinI * hair.sinShift[i]);
-        const float m = hairLongitudinal(hair.variance[i], sinShifted, cosShifted, fibre.sinO, fibre.cosO);
+        const float m = hairLongitudinal(fibre.variance[i], sinShifted, cosShifted, fibre.sinO, fibre.cosO);
         value += (i == 2 ? left[i] * (plain * spread[i]) + glint : left[i] * spread[i]) * m;
         pdf += fibre.share[i] * m * spread[i];
     }
@@ -1487,15 +1527,16 @@ ML_INLINE float3 fibreEval(const Fibre& fibre, float3 wi, float& pdf) {
 }
 
 // A direction drawn from one of the four lobes; false if none can be.
-ML_INLINE bool fibreSample(const Fibre& fibre, Seed& seed, float3& wi) {
+ML_INLINE bool fibreSample(const Fibre& fibre, Seed& seed, float3& wi, int* chosen = nullptr) {
     const DeviceHair& hair = *fibre.hair;
     const float pick = rnd(seed);
     int lobe = 0;
     float running = fibre.share[0];
     while (lobe < 3 && pick >= running) running += fibre.share[++lobe];
     if (fibre.share[lobe] <= 0.0f) return false;
+    if (chosen) *chosen = lobe;
     // Along the fibre (the derivation of pbrt, steadier where the lobe is narrow), then tilted back by the scales.
-    const float u = fmaxf(rnd(seed), 1e-5f), variance = hair.variance[lobe];
+    const float u = fmaxf(rnd(seed), 1e-5f), variance = fibre.variance[lobe];
     const float cosine = 1.0f + variance * logf(u + (1.0f - u) * expf(-2.0f / variance));
     const float sine = sqrtf(fmaxf(0.0f, 1.0f - cosine * cosine));
     float sinI = -cosine * fibre.sinO + sine * cosf(2.0f * ML_PI * rnd(seed)) * fibre.cosO;
@@ -1505,7 +1546,7 @@ ML_INLINE bool fibreSample(const Fibre& fibre, Seed& seed, float3& wi) {
     sinI = sinShifted;
     // Around it.
     const float v = rnd(seed);
-    const float phi = lobe == 1 ? sampleTrimmedLogistic(v, hair.azimuthal) + ML_PI
+    const float phi = lobe == 1 ? sampleTrimmedLogistic(v, fibre.azimuthal) + ML_PI
                     : lobe == 3 ? ML_PI * (2.0f * v - 1.0f) : 2.0f * asinf(clamp(2.0f * v - 1.0f, -1.0f, 1.0f));
     wi = normalize(fibre.along * sinI + (fibre.facing * cosf(phi) + fibre.across * sinf(phi)) * cosI);
     return true;
@@ -1694,6 +1735,41 @@ ML_INLINE void aovAdd(unsigned pixel, unsigned slot, float3 value) {
     *p = make_float4(p->x + value.x * w, p->y + value.y * w, p->z + value.z * w, 1.0f);
 }
 
+// The light passes (AovPass 1 to 4), gathered beside the beauty while params.passes is set, from the beauty's own
+// paths: each part of a path's light goes to the pass the camera's first surface sends it on by, so that the four add
+// up to the beauty sample by sample (fog's light before the first surface apart). Switching between them is then only
+// another picture read. PASS_SPLIT: the rest of the path went on from the first surface by its diffuse and its glossy
+// lobes together, in the shares passShare says (diffuse; glossy the rest).
+const unsigned PASS_SPLIT = 5;
+ML_INLINE float4* passSlot(unsigned pixel, unsigned pass) {
+    return reinterpret_cast<float4*>(params.passes) + size_t(pixel) * PASS_BACKGROUND + (pass - 1);
+}
+ML_INLINE void passBegin(unsigned pixel) {
+    const float keep = float(params.sample) / float(params.sample + 1);
+    for (unsigned k = 1; k <= PASS_BACKGROUND; ++k) {
+        float4* p = passSlot(pixel, k);
+        *p = params.sample == 0 ? make_float4(0.0f, 0.0f, 0.0f, 1.0f) : make_float4(p->x * keep, p->y * keep, p->z * keep, 1.0f);
+    }
+}
+ML_INLINE void passAdd(unsigned pixel, unsigned pass, float3 value) {
+    if (!pass || (value.x == 0.0f && value.y == 0.0f && value.z == 0.0f)) return;
+    float4* p = passSlot(pixel, pass);
+    const float w = 1.0f / float(params.sample + 1);
+    *p = make_float4(p->x + value.x * w, p->y + value.y * w, p->z + value.z * w, 1.0f);
+}
+// The light gathered since mark goes to pass; the mark moves up to it.
+ML_INLINE void passTo(unsigned pixel, unsigned pass, float3 radiance, float3& mark, float3 diffuseShare) {
+    const float3 gathered = radiance - mark;
+    mark = radiance;
+    if (pass == PASS_SPLIT) {
+        passAdd(pixel, PASS_DIFFUSE, gathered * diffuseShare);
+        passAdd(pixel, PASS_GLOSSY, gathered * (vec(1.0f) - diffuseShare));
+    } else passAdd(pixel, pass, gathered);
+}
+// At the camera's first surface (camera in scope), while passes are gathered: what the path gathers from here on goes
+// to pass p.
+#define PASS_NOW(p) do { if (params.passes && camera) { passTo(pixel, passNow, radiance, passMark, passShare); passNow = (p); } } while (0)
+
 extern "C" __global__ void __raygen__moonlightipr() {
     const uint3 index = optixGetLaunchIndex();
     const unsigned pixel = index.y * params.width + index.x;
@@ -1801,12 +1877,20 @@ extern "C" __global__ void __raygen__moonlightipr() {
     const DeviceDistantLight* distantLights = reinterpret_cast<const DeviceDistantLight*>(params.distantLights);
     const DeviceLight* lights = reinterpret_cast<const DeviceLight*>(params.lights);
     float3 radiance = vec(0.0f);
+    // Which light pass the path's light now goes to (PASS_NOW), 0 none yet; the light already given out; and, for
+    // PASS_SPLIT, the diffuse share.
+    unsigned passNow = 0;
+    float3 passMark = vec(0.0f), passShare = vec(0.0f);
+    if (params.passes) passBegin(pixel);
     float3 guideAlbedo = vec(0.0f), guideNormal = vec(0.0f);
     // The path's weight up to the last surface, then that surface's two weights for the ray
     // leaving it: all lobes for light found along the ray, and only the lobes that may bounce on.
     float3 throughput = vec(1.0f), lightWeight = vec(1.0f), bounceWeight = vec(1.0f);
     float bsdfPdf = 0.0f;
     unsigned diffuseDepth = 0, glossyDepth = 0, roughDepth = 0;
+    // The least roughness of what the path meets from here on (params.roughnessClamp, MoonRay's computeMinRoughness), and
+    // the roughness of the lobe the path last left by.
+    float leastRough = 0.0f, lobeRough = 1.0f;
     bool bounces = true;
     bool sharp = true;          // the ray left a mirror-like event, which light sampling cannot find
     bool clampFound = false;    // whether light found along the ray is subject to the sample clamp
@@ -2058,6 +2142,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
                 seenLight = true;
             }
             if (seenLight) {
+                PASS_NOW(PASS_EMISSION);
                 if (!params.aovPass || params.aovPass == PASS_EMISSION) radiance += throughput * shining;
                 guideAlbedo = make_float3(fminf(shining.x, 1.0f), fminf(shining.y, 1.0f), fminf(shining.z, 1.0f));
                 guideNormal = -direction;
@@ -2073,6 +2158,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
                                         * (sharp ? 1.0f : powerHeuristic(bsdfPdf, params.lightPick ? pdf * lights[i].pick : pdf)), clampFound);
         }
         if (!lightBlocked) {
+            PASS_NOW(PASS_BACKGROUND);
             // Camera rays see the background, which may differ from what lights the scene;
             // later bounces share the lighting environment with light sampling.
             const float3 sky = camera ? envLookup(reinterpret_cast<const float4*>(params.envBackground), params.envBackgroundRotation, direction)
@@ -2130,6 +2216,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
         if (camera && !emerged && lightFront && (lights[hit.light].pad & LIGHT_SEEN)) {
             // Seen by the camera, it is the light itself that is seen, as MoonRay shows a light it is told to show.
             const float3 shining = vec(lights[hit.light].radiance);
+            PASS_NOW(PASS_EMISSION);
             if (!params.aovPass || params.aovPass == PASS_EMISSION) radiance += throughput * shining;
             guideAlbedo = make_float3(fminf(shining.x, 1.0f), fminf(shining.y, 1.0f), fminf(shining.z, 1.0f));
             guideNormal = -direction;
@@ -2146,6 +2233,14 @@ extern "C" __global__ void __raygen__moonlightipr() {
         }
 
         fromSet = reinterpret_cast<const DeviceInstance*>(params.instances)[hit.instance].lightSet;
+        if (leastRough > 0.0f && (hit.flags & MATERIAL_ROUGHNESS_CLAMPED)) {
+            // MoonRay's roughness clamp, as DwaBase applies it: its specular, outer specular and transmission lobes made
+            // at least as rough as the path has already scattered (fireflies from indirect caustics). MoonRay's
+            // UsdPreviewSurface, which most plain materials go to it as, is left as it is.
+            hit.roughness = fmaxf(hit.roughness, leastRough);
+            hit.coatRoughness = fmaxf(hit.coatRoughness, leastRough);
+            hit.transmissionRoughness = fmaxf(hit.transmissionRoughness, leastRough);
+        }
         Surface surface = surfaceFrom(hit);
         if ((hit.flags & MATERIAL_NO_CAUSTICS) && diffuseDepth > 0) {
             // MoonRay's DwaBaseMaterial leaves its specular, outer specular, metallic and transmission parts out
@@ -2157,6 +2252,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
             surface.transmission = 0.0f;
         }
         if (!emerged) {
+            PASS_NOW(PASS_EMISSION);
             if (!camera || !params.aovPass || params.aovPass == PASS_EMISSION)
                 radiance += clampSample(throughput * lightWeight * hit.emission, clampFound);
             if (camera && params.aovPass >= PASS_EMISSION) break;
@@ -2174,18 +2270,22 @@ extern "C" __global__ void __raygen__moonlightipr() {
 
         if (ML_HAS(FEATURE_HAIR) && hit.curve && (hit.flags & MATERIAL_HAIR)) {
             // A hair fibre scatters light all round itself, so nothing here asks which side the light is on.
-            const Fibre fibre = fibreFrom(hit, reinterpret_cast<const DeviceHair*>(params.hairs)[hit.hair], -direction);
+            const Fibre fibre = fibreFrom(hit, reinterpret_cast<const DeviceHair*>(params.hairs)[hit.hair], -direction, leastRough);
             if (camera) {
                 guideAlbedo = hit.albedo;
                 guideNormal = make_float3(dot(hit.ns, normalize(vec(params.cameraU))), dot(hit.ns, normalize(vec(params.cameraV))),
                                           -dot(hit.ns, normalize(vec(params.cameraW))));
                 // A fibre's light is all glossy, as MoonRay's hair lobes are.
                 if (params.aovPass == PASS_DIFFUSE) break;
+                PASS_NOW(PASS_GLOSSY);
             }
             radiance += fibreLight(fibre, hit.p, hit.ng, throughput, roughDepth >= params.sampleClampDepth, seed, fromSet);
             float3 wi;
             seedPhase(seed, QMC_BSDF, 0, 8);
-            if (depth >= params.maxDepth || !fibreSample(fibre, seed, wi)) break;
+            int lobe = 0;
+            if (depth >= params.maxDepth || !fibreSample(fibre, seed, wi, &lobe)) break;
+            // The path is now as rough as the lobe it left by, for the roughness clamp.
+            if (params.roughnessClamp > 0.0f) leastRough = clamp(fibre.rough[lobe] * params.roughnessClamp, leastRough, 1.0f);
             const float3 f = fibreEval(fibre, wi, bsdfPdf);
             if (bsdfPdf <= 0.0f || maxComponent(f) <= 0.0f) break;
             direction = wi;
@@ -2248,6 +2348,8 @@ extern "C" __global__ void __raygen__moonlightipr() {
             }
             // Leaving a solid the light entered: a plain interface, mirrored back or bent out.
             if (!mayBounce || (camera && params.aovPass == PASS_DIFFUSE)) break;
+            if (params.roughnessClamp > 0.0f) leastRough = clamp(hit.transmissionRoughness * params.roughnessClamp, leastRough, 1.0f);
+            PASS_NOW(PASS_GLOSSY);
             float3 tint;
             const float ior = spectralIor(surface.transmissionIor, hit.abbe, rnd(seed), tint);
             const float3 h = surface.transmissionAlpha > 0.0f ? sampleFacet(surface.transmissionAlpha, wo, rnd(seed), rnd(seed))
@@ -2289,8 +2391,13 @@ extern "C" __global__ void __raygen__moonlightipr() {
             lobes.specular = glossyBounces ? 1.0f : 0.0f;
         }
         const bool lit = roughDepth >= params.sampleClampDepth;   // this surface was reached by scattering off something rough
+        // At the camera's first surface, while passes are gathered, the lights' samples are glossy but for their diffuse share.
+        float3 litDiffuse = vec(0.0f);
+        const bool splitLit = params.passes && camera;
+        PASS_NOW(PASS_GLOSSY);
         radiance += directLight(surface, lobes, wo, frame, hit.p, ng, throughput, lit, seed, hit.lift, fromSet,
-                                camera ? params.aovPass : 0u);
+                                camera ? params.aovPass : 0u, splitLit ? &litDiffuse : nullptr);
+        if (splitLit) { passAdd(pixel, PASS_DIFFUSE, litDiffuse); passMark += litDiffuse; }
 
         // The light that enters a transmissive surface goes through it rather than scattering.
         seedPhase(seed, QMC_BSDF, 0, 8);
@@ -2298,6 +2405,9 @@ extern "C" __global__ void __raygen__moonlightipr() {
         const float u1 = rnd(seed), u2 = rnd(seed);
         if (rnd(seed) < through) {
             if (camera && params.aovPass == PASS_DIFFUSE) break;
+            if (params.roughnessClamp > 0.0f)
+                leastRough = clamp((surface.thin ? 0.0f : hit.transmissionRoughness) * params.roughnessClamp, leastRough, 1.0f);
+            PASS_NOW(PASS_GLOSSY);
             float3 wi = -wo;    // thin sheets and missing facets pass the light straight on
             float3 tint = vec(1.0f);
             if (!surface.thin) {
@@ -2318,6 +2428,8 @@ extern "C" __global__ void __raygen__moonlightipr() {
         }
 
         if (scatters && (hit.flags & MATERIAL_RANDOM_WALK) && rnd(seed) < beneath) {
+            if (params.roughnessClamp > 0.0f) leastRough = clamp(params.roughnessClamp, leastRough, 1.0f);
+            PASS_NOW(PASS_DIFFUSE);
             ++subsurfaces;
             // MoonRay's random walk: the light is followed through the solid, from where it goes in to where it
             // comes out. How far it goes between scatterings, and how much of it each scattering keeps, come
@@ -2459,6 +2571,8 @@ extern "C" __global__ void __raygen__moonlightipr() {
         }
 
         if (scatters && rnd(seed) < beneath) {
+            if (params.roughnessClamp > 0.0f) leastRough = clamp(params.roughnessClamp, leastRough, 1.0f);
+            PASS_NOW(PASS_DIFFUSE);
             ++subsurfaces;
             // MoonRay's diffusion, as its integrator works it out (PathIntegratorSubsurface.cc). Where the light
             // comes out is looked for from several points drawn from the profile, each projected onto the surface
@@ -2584,9 +2698,16 @@ extern "C" __global__ void __raygen__moonlightipr() {
         else if (rnd(seed) < lobes.coat) {
             const Frame coatFrame(surface.coatNormal);
             wi = reflectAbout(wo, coatFrame.toWorld(sampleFacet(surface.coatAlpha, coatFrame.toLocal(wo), u1, u2)));
+            lobeRough = hit.coatRoughness;
         }
         else if (rnd(seed) < broadShare(surface)) wi = sampleDiffuse(u1, u2);
-        else wi = reflectAbout(wo, surface.beckmann ? sampleBeckmann(surface.alphaX, surface.alphaY, u1, u2) : sampleFacet(surface.alpha, wo, u1, u2));
+        else {
+            wi = reflectAbout(wo, surface.beckmann ? sampleBeckmann(surface.alphaX, surface.alphaY, u1, u2) : sampleFacet(surface.alpha, wo, u1, u2));
+            lobeRough = hit.roughness;
+        }
+        if (params.roughnessClamp > 0.0f)
+            leastRough = clamp((glossy ? lobeRough : 1.0f) * params.roughnessClamp, leastRough, 1.0f);
+        lobeRough = 1.0f;
         const BsdfEval e = onlyLobes(evalBsdf(surface, lobes, wo, wi), camera ? params.aovPass : 0u);
         bsdfPdf = lobes.specular * e.specularPdf + (1.0f - lobes.specular) * e.diffusePdf;
         direction = frame.toWorld(wi);
@@ -2596,6 +2717,13 @@ extern "C" __global__ void __raygen__moonlightipr() {
         // one beneath the surface.
         const float scale = 1.0f / (bsdfPdf * (1.0f - through) * (1.0f - beneath));
         lightWeight = (e.diffuse + e.specular) * scale;
+        if (params.passes && camera) {
+            // Whichever lobe the direction was drawn by, what comes back along it is each lobe's in its share.
+            const float3 whole = e.diffuse + e.specular;
+            PASS_NOW(PASS_SPLIT);
+            passShare = make_float3(whole.x > 0.0f ? e.diffuse.x / whole.x : 0.0f, whole.y > 0.0f ? e.diffuse.y / whole.y : 0.0f,
+                                    whole.z > 0.0f ? e.diffuse.z / whole.z : 0.0f);
+        }
         bounceWeight = ((diffuseBounces ? e.diffuse : vec(0.0f)) + (glossyBounces ? e.specular : vec(0.0f))) * scale;
         bounces = diffuseBounces || glossyBounces;
         sharp = false;
@@ -2607,6 +2735,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
         origin = offsetOrigin(hit.p, ng, direction);
     }
     if (!finite(radiance)) radiance = vec(0.0f);
+    else if (params.passes) passTo(pixel, passNow, radiance, passMark, passShare);
 
     // Sample 0 overwrites, so a reset needs no clear.
     const float weight = 1.0f / float(params.sample + 1);

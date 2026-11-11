@@ -68,7 +68,7 @@ class VariationParticle(unittest.TestCase):
         # The numbers are in the instances whatever the material: a plain one here.
         held['materials'] = {'m': {'color': [.5, .5, .5]}, '': {'color': [.5, .5, .5]}}
         payload, _, _ = moonlightipr_scene.pack(held, 64, 36, 0.0)
-        self.assertEqual(payload[:4], b'MLSP')
+        self.assertEqual(payload[:4], b'MLSQ')
         for number, x in zip(held['meshes'][0]['instance_variation'], (0, 2, 4)):
             self.assertIn(struct.pack('<f12f', number, *moonlightipr_scene.transform(moved(x))), payload)
 

@@ -219,7 +219,8 @@ DeviceMaterial toDevice(const Material& m) {
     d.fuzzDims = d.fuzz * (m.fuzzAbsorbs ? 1.0f : std::max(d.fuzzColor[0], std::max(d.fuzzColor[1], d.fuzzColor[2])));
     d.flags = (m.thin ? MATERIAL_THIN : 0) | (m.clearcoatDims ? MATERIAL_COAT_DIMS : 0) | (m.dissolve > 0.0f ? MATERIAL_HAS_PRESENCE : 0)
             | (m.beckmann ? MATERIAL_BECKMANN : 0) | ((unsigned(m.roughnessCurve) & 3u) << MATERIAL_ROUGH_SHIFT)
-            | (m.noCaustics ? MATERIAL_NO_CAUSTICS : 0) | (m.randomWalk ? MATERIAL_RANDOM_WALK : 0);
+            | (m.noCaustics ? MATERIAL_NO_CAUSTICS : 0) | (m.randomWalk ? MATERIAL_RANDOM_WALK : 0)
+            | (m.roughnessClamped ? MATERIAL_ROUGHNESS_CLAMPED : 0);
     d.layerStart = m.layerStart;
     d.layerCount = m.layerCount;
     return d;
@@ -252,6 +253,9 @@ DeviceHair toDeviceHair(const Material& m) {
     d.glintEccentricity = std::clamp(m.hairGlintEccentricity, 0.5f, 1.0f);
     d.glintSaturation = m.hairGlintSaturation;
     std::copy(m.hairTwists, m.hairTwists + 2, d.twists);
+    for (int i = 0; i < 4; ++i) d.roughness[i] = std::clamp(m.hairRoughness[i], 0.01f, 0.999f);
+    d.azimuthalRoughness = a;
+    d.glintRoughness = m.hairGlintRoughness;
     return d;
 }
 
@@ -283,6 +287,7 @@ struct Renderer::Impl {
     Buffer lightDistributions, distantDistributions;
     Buffer beauty, albedo, normal, denoised, lighting, paramsBuffer;
     Buffer aov;     // the geometry AOVs, AOV_SLOTS float[4] per pixel (setAovs), while they are gathered
+    Buffer passes;  // and the light passes beside them, PASS_BACKGROUND float[4] per pixel (LaunchParams::passes)
     Buffer instanceMotion;  // each instance's transform as the shutter opens and closes, for the motion vectors
     Buffer bokeh;           // the camera's bokeh image as a table to draw lens points by (LaunchParams::bokeh)
     std::vector<float> bokehMade;   // the image it was made from
@@ -1941,6 +1946,8 @@ void Renderer::resize(uint32_t width, uint32_t height) {
     if (impl->params.aovs) {
         impl->aov.reserve(bytes * AOV_SLOTS);
         impl->params.aovs = impl->aov.ptr;
+        impl->passes.reserve(bytes * PASS_BACKGROUND);
+        impl->params.passes = impl->passes.ptr;
     }
     impl->params.width = width;
     impl->params.height = height;
@@ -1955,6 +1962,13 @@ void Renderer::setVolumeScattering(float attenuation, float contribution, float 
     impl->params.volumeAttenuation = std::clamp(attenuation, 0.0f, 1.0f);
     impl->params.volumeContribution = std::clamp(contribution, 0.0f, 1.0f);
     impl->params.volumePhaseAttenuation = std::clamp(phaseAttenuation, 0.0f, 1.0f);
+    impl->restart();
+}
+
+void Renderer::setRoughnessClamp(float factor) {
+    factor = std::clamp(factor, 0.0f, 1.0f);
+    if (factor == impl->params.roughnessClamp) return;
+    impl->params.roughnessClamp = factor;
     impl->restart();
 }
 
@@ -2105,10 +2119,15 @@ void Renderer::readDenoised(float* rgb) {
 void Renderer::setAovs(bool on) {
     if (on == (impl->params.aovs != 0)) return;
     if (on) {
-        impl->aov.reserve(size_t(std::max(impl->params.width, 1u)) * std::max(impl->params.height, 1u) * AOV_SLOTS * 4 * sizeof(float));
+        const size_t pixels = size_t(std::max(impl->params.width, 1u)) * std::max(impl->params.height, 1u);
+        impl->aov.reserve(pixels * AOV_SLOTS * 4 * sizeof(float));
         impl->params.aovs = impl->aov.ptr;
+        // The light passes come with them, from the beauty's own paths, so that switching to one renders nothing again.
+        impl->passes.reserve(pixels * PASS_BACKGROUND * 4 * sizeof(float));
+        impl->params.passes = impl->passes.ptr;
     } else {
         impl->params.aovs = 0;
+        impl->params.passes = 0;
     }
     impl->restart();
 }
@@ -2140,6 +2159,16 @@ void Renderer::readAov(uint32_t slot, float* rgb) {
     std::vector<float> pixels(count * 4);
     ML_CHECK(cudaMemcpy2D(pixels.data(), 4 * sizeof(float), reinterpret_cast<const char*>(impl->params.aovs) + slot * 4 * sizeof(float),
                           AOV_SLOTS * 4 * sizeof(float), 4 * sizeof(float), count, cudaMemcpyDeviceToHost));
+    for (size_t i = 0; i < count; ++i) std::copy(&pixels[i * 4], &pixels[i * 4] + 3, rgb + i * 3);
+}
+
+void Renderer::readPass(uint32_t pass, float* rgb) {
+    if (!impl->samples) throw std::runtime_error("MoonLightIPR has no samples to read");
+    if (!impl->params.passes || pass < 1 || pass > PASS_BACKGROUND) throw std::runtime_error("MoonLightIPR gathers no such light pass");
+    const size_t count = size_t(impl->params.width) * impl->params.height;
+    std::vector<float> pixels(count * 4);
+    ML_CHECK(cudaMemcpy2D(pixels.data(), 4 * sizeof(float), reinterpret_cast<const char*>(impl->params.passes) + (pass - 1) * 4 * sizeof(float),
+                          PASS_BACKGROUND * 4 * sizeof(float), 4 * sizeof(float), count, cudaMemcpyDeviceToHost));
     for (size_t i = 0; i < count; ++i) std::copy(&pixels[i * 4], &pixels[i * 4] + 3, rgb + i * 3);
 }
 

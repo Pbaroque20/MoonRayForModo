@@ -43,6 +43,7 @@ struct Material {
     std::vector<float> toon;
     unsigned toonMore = 0;      // highlights after the first (a hair toon's second and third), each TOON_EXTRA more numbers
     bool noCaustics = false;        // DwaBaseMaterial with casts_caustics off: plain diffuse once a path has left a diffuse lobe
+    bool roughnessClamped = false;  // MoonRay renders it through a Dwa material, whose lobes its roughness clamp roughens
     int roughnessCurve = 0;         // the roughness the layers give is Modo's: 1 Blinn, 2 Ashikhmin, 3 GTR; 0 as it is
     bool beckmann = false;          // Beckmann specular lobe (DwaBaseMaterial as the plugin sets it up) rather than GGX
     float baseColorAmount = 1.0f;   // multiplies the colour after its layers
@@ -431,6 +432,9 @@ public:
     // The most one light sample may add once the path has scattered off `depth` rough things; 0 is no limit. MoonRay's
     // sample_clamping_value and sample_clamping_depth.
     void setSampleClamp(float value, uint32_t depth = 1);
+    // MoonRay's roughness_clamping_factor: surfaces met after a bounce made at least as rough as the lobe left by
+    // (diffuse counting as 1) times this, 0 to 1; 0 is off.
+    void setRoughnessClamp(float factor);
     // How many times one path may scatter beneath a surface; after that, plain diffuse. MoonRay's max_subsurface_per_path.
     void setMaxSubsurface(uint32_t perPath);
     // How each further bounce of light in fog counts for less, as MoonRay's volume_attenuation_factor,
@@ -458,6 +462,9 @@ public:
     void setAovs(bool on);
     bool aovs() const;
     void readAov(uint32_t slot, float* rgb);
+    // A light pass (1 diffuse, 2 glossy, 3 emission, 4 background), gathered with the AOVs from the beauty's own paths:
+    // the four add up to the beauty, fog before the first surface apart.
+    void readPass(uint32_t pass, float* rgb);
     // A light pass (AovPass) rendered in place of the beauty, 0 for the beauty; a render begins again with another.
     void setPass(uint32_t pass);
     uint32_t pass() const;

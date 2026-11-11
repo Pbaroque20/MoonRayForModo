@@ -290,8 +290,8 @@ class Session(QtCore.QObject):
             self.process.write(('view %d %s\n' % (self.current or 0, 'denoised' if denoised else 'beauty')).encode('utf-8'))
 
     def aov(self, kind, key):
-        """Gather an AOV beside the beauty (moonlightipr_aovs), its frames sent under key; 0 for none. A render already
-        finished is rendered again with it."""
+        """Look at an AOV (moonlightipr_aovs), its frames sent under key; 0 for the beauty. Every AOV is gathered beside
+        the beauty from the start, so the session sends it at once, rendering nothing again."""
         now = (int(kind), str(key) if kind else 'none')
         if now == self.aov_now: return
         self.aov_now = now
