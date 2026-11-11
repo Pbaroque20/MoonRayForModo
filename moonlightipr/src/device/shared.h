@@ -73,7 +73,8 @@ const unsigned RAMP_SAMPLE = 254;
 const unsigned SAMPLE_INCIDENCE = 0, SAMPLE_LOCATOR_INCIDENCE = 1, SAMPLE_SLOPE = 2, SAMPLE_CAMERA_DISTANCE = 3,
                SAMPLE_SCREEN_X = 4, SAMPLE_SCREEN_Y = 5, SAMPLE_SCREEN_R = 6, SAMPLE_DISTANCE = 7, SAMPLE_DISTANCE_X = 8,
                SAMPLE_DISTANCE_Y = 9, SAMPLE_DISTANCE_Z = 10, SAMPLE_BACK_FACING = 11,
-               SAMPLE_TEXTURE_LOCAL = 12;   // settings[7..9] the locator's axis over its length squared, settings[10] 1 to wrap (Planar)
+               SAMPLE_TEXTURE_LOCAL = 12,   // settings[7..9] the locator's axis over its length squared, settings[10] 1 to wrap (Planar)
+               SAMPLE_INSTANCE_VALUE = 13;  // the hit instance's own number (DeviceInstance::value)
 const unsigned UV_SLOTS = 8;
 
 // One row of a material's layer stack: a constant or an image blended over what is below it.
@@ -242,6 +243,7 @@ struct DeviceInstance {
     unsigned material;
     int light;              // the mesh light this instance is the surface of, or -1
     unsigned lightSet;      // the lights that reach it (LaunchParams::lightSets), 0 for all of them
+    float value;            // its own number, 0 to 1, which a Variation Texture by Particle reads (SAMPLE_INSTANCE_VALUE)
 };
 
 // A uniform spherical cap at infinity, as MoonRay's DistantLight.

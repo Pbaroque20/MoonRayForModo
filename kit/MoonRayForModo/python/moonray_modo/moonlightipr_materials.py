@@ -14,6 +14,7 @@ import subprocess
 import tempfile
 import uuid
 from pathlib import Path
+from .procedurals import VARIATION_PARTICLE_MAP
 
 # Channel, flag and wrap numbers; keep in step with moonlightipr/src/device/shared.h.
 CHANNELS = {'diffCol': 0, 'diffAmt': 1, 'rough': 2, 'metallic': 3, 'lumiCol': 4, 'lumiAmt': 5, 'normal': 6,
@@ -173,6 +174,8 @@ SAMPLE_KINDS = {'incidenceAngle': 0, 'incidenceNobump': 0, 'locatorIncAngle': 1,
                 'cameraDistance': 3, 'screenX': 4, 'screenY': 5, 'screenR': 6, 'distance': 7, 'objDistance': 7,
                 'distanceX': 8, 'objDistanceX': 8, 'distanceY': 9, 'objDistanceY': 9, 'distanceZ': 10, 'objDistanceZ': 10,
                 'backFacing': 11, 'textureLocal': 12}
+# The hit instance's own number (Variation by Particle): see moonlightipr_scene.INSTANCE.
+SAMPLE_INSTANCE_VALUE = 13
 IDENTITY_ROWS = ((1.0, 0.0, 0.0, 0.0), (0.0, 1.0, 0.0, 0.0), (0.0, 0.0, 1.0, 0.0))
 BLEND_REORIENTED_NORMAL = 15
 WRAP = {'repeat': 0, 'edge': 1, 'mirror': 2, 'reset': 3}
@@ -1206,6 +1209,18 @@ class Compiler:
                              # Texture U or V in the texture locator's space: its axis (over its length squared), wrapped.
                              + [float(v) for v in data.get('axis_vector', [0, 0, 0])] + [1.0 if data.get('wrap') else 0.0]
                              + [0.0] * 11 + [.5, .5])
+            elif kind == 'gradient' and layer['gradient'].get('input') == '@vmap' and layer['gradient'].get('vmap') == VARIATION_PARTICLE_MAP:
+                # Modo's Variation Texture by Particle: each instance's own number (occlusion.particles), which the kernel
+                # reads from the instance it hits (sampleKey).
+                try:
+                    texture = self.ramp(layer['gradient'])
+                except (OSError, ValueError, KeyError, TypeError, IndexError) as exc:
+                    self.note('a gradient that could not be read (%s)' % exc, name)
+                    abandon()
+                    continue
+                flags |= LAYER_RAMP
+                slot = RAMP_SAMPLE
+                extra = dict(settings=[0.0, float(SAMPLE_INSTANCE_VALUE), 0.0, 0.0, 0.0, 0.0, 1.0] + [0.0] * 15 + [.5, .5])
             elif kind == 'gradient' and layer['gradient'].get('input') == '@vmap':
                 # Modo's Weight Map Texture: the weight comes as the first component of a set of coordinates of its own
                 # (moonlightipr_scene.with_weights), and the row looks the gradient up by it.

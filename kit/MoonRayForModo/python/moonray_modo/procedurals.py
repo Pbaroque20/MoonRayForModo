@@ -625,17 +625,21 @@ def occlusion(layer, channel, color, is_color):
 VARIATION_MAP = '__modo_variation_item'
 # By Mesh Part: a number for each Part of each mesh item, at each corner of its polygons (it changes at a part's edge).
 VARIATION_PART_MAP = '__modo_variation_part'
+# By Particle: a number for each replica of a Replicator (each instance of a mesh), and for a mesh that stands alone
+# one of its own: carried by each instance (occlusion.variation), not by the mesh's points.
+VARIATION_PARTICLE_MAP = '__modo_variation_particle'
 
 
 def variation(layer, channel, color, is_color):
-    """Modo's Variation Texture by Item or Mesh Part as a gradient looked up by a random number for each mesh item
-    (occlusion.variation gives each item's points its own, from its identity) or each Part of it (host gives the corners
-    of each part's polygons theirs, from the item and the part): the layer's own gradient, read at 257 points over 0 to 1.
+    """Modo's Variation Texture by Item, Mesh Part or Particle as a gradient looked up by a random number for each mesh
+    item (occlusion.variation gives each item's points its own, from its identity), each Part of it (host gives the
+    corners of each part's polygons theirs, from the item and the part) or each replica (occlusion.variation gives each
+    instance its own, from the replica's identity): the layer's own gradient, read at 257 points over 0 to 1.
     (the gradient's record, or None with the words for a source not followed yet.)"""
     import lx
     source = str(channel(layer, 'type', 'particle'))
-    if source not in ('item', 'meshPart'):
-        return None, {'particle': 'Particle', 'txtrParticle': 'Texture Particle', 'textureParticle': 'Texture Particle'}.get(source, source)
+    if source not in ('item', 'meshPart', 'particle'):
+        return None, {'txtrParticle': 'Texture Particle', 'textureParticle': 'Texture Particle'}.get(source, source)
     names = ['color.' + axis for axis in 'RGB'] if is_color else ['value']
     filters = []
     for name in names + (['color.A'] if is_color else []):
@@ -649,8 +653,9 @@ def variation(layer, channel, color, is_color):
         filters.append(gradient.Generate)
     positions = [i / 256.0 for i in range(257)]
     colours = [(lambda row: row * 3 if len(row) == 1 else row)([float(f(x)) for f in filters[:len(names)]]) for x in positions]
-    data = {'input': '@vmap', 'vmap': VARIATION_MAP if source == 'item' else VARIATION_PART_MAP,
-            'label': 'Variation by item' if source == 'item' else 'Variation by mesh part', 'positions': positions,
+    data = {'input': '@vmap', 'vmap': {'item': VARIATION_MAP, 'meshPart': VARIATION_PART_MAP, 'particle': VARIATION_PARTICLE_MAP}[source],
+            'label': {'item': 'Variation by item', 'meshPart': 'Variation by mesh part', 'particle': 'Variation by particle'}[source],
+            'positions': positions,
             'colors': [_finite(c, 'Variation Texture value') for c in colours], 'variation': {'source': source}}
     if is_color:
         data['alpha'] = [min(1.0, max(0.0, float(filters[-1](x)))) for x in positions]

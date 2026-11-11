@@ -12,7 +12,7 @@ NAMED = {'distant': ['sun'], 'local': ['key', 'fill']}
 
 
 def instance(seen=31):
-    return struct.pack('<2IiI12f', 0, 0, -1, seen, *([0.0] * 12))
+    return struct.pack(moonlightipr_scene.INSTANCE, 0, 0, -1, seen, 0.0, *([0.0] * 12))
 
 
 def packed(scene, linked):

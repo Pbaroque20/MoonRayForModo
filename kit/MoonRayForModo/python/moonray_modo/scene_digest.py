@@ -13,7 +13,7 @@ from .rows import Rows
 # Per-mesh lists that scale with polygon count, and with instances, strands or particles: each hashed once by the list
 # itself (content). The others json.dumps walked whole at every edit: a scattered scene's matrices, a mesh's map values.
 HEAVY = ('vertices', 'vertices_close', 'faces', 'uvs', 'normals', 'face_materials', 'creases', 'corners',
-         'instances', 'instances_close', 'instance_ids', 'instance_attributes', 'instance_velocities',
+         'instances', 'instances_close', 'instance_ids', 'instance_attributes', 'instance_velocities', 'instance_variation',
          'counts', 'radii', 'ids', 'velocities', 'widths')
 # Dicts of a mesh's maps whose values are heavy: {name: {'kind', 'values'}}.
 MAPPED = ('point_attributes', 'corner_attributes')

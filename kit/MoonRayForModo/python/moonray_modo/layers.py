@@ -206,18 +206,22 @@ def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, mat
             if layer.type == 'gradient':
                 from .gradients import capture
                 node['gradient']=capture(layer,channel,is_color)
-                if node['gradient'].get('input')=='@texture_value':
-                    # Texture Value: the Value of the layer beneath, as measured against Modo's renders
-                    # (tools/probe_gui_gradient_texture_value.py): over a Constant, the gradient at its Value.
-                    beneath=(materials[tag].get('layers') or [])[-1:]
-                    if not beneath or beneath[0].get('kind')!='constant' or 'texture_value' not in beneath[0]:
-                        raise ValueError('a Gradient on Texture Value is followed over a Constant layer directly beneath it')
+                if node['gradient'].get('input') in ('@texture_value','@held'):
+                    if node['gradient']['input']=='@held':
+                        at=node['gradient']['held']
+                    else:
+                        # Texture Value: the Value of the layer beneath, as measured against Modo's renders
+                        # (tools/probe_gui_gradient_texture_value.py): over a Constant, the gradient at its Value.
+                        beneath=(materials[tag].get('layers') or [])[-1:]
+                        if not beneath or beneath[0].get('kind')!='constant' or 'texture_value' not in beneath[0]:
+                            raise ValueError('a Gradient on Texture Value is followed over a Constant layer directly beneath it')
+                        at=beneath[0]['texture_value']
                     from .gradients import sample
                     held=node.pop('gradient')
                     node['kind']='constant'
-                    node['value']=sample(held,beneath[0]['texture_value'])
+                    node['value']=sample(held,at)
                     if 'alpha' in held:
-                        node['opacity']*=sample(dict(held,colors=[[a]*3 for a in held['alpha']]),beneath[0]['texture_value'])[0]
+                        node['opacity']*=sample(dict(held,colors=[[a]*3 for a in held['alpha']]),at)[0]
                 elif 'texture' in node['gradient']:
                     # Texture U or V: the mesh is read with the layer's UV map, as for an image (texture_uv).
                     node['uv_map']=node['gradient']['texture']['uv_map']
@@ -250,7 +254,7 @@ def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, mat
                     # Modo's Variation Texture: a random number for each mesh item, through the layer's own gradient.
                     data,unfollowed = procedurals.variation(layer,channel,color,is_color)
                     if data is None:
-                        warnings.append('Variation Texture '+layer.name+': its source '+unfollowed+' is not followed yet; Item and Mesh Part are. The layer is left out.')
+                        warnings.append('Variation Texture '+layer.name+': its source '+unfollowed+' is not followed yet; Item, Mesh Part and Particle are. The layer is left out.')
                         continue
                     node['kind'] = 'gradient'
                     node['gradient'] = data

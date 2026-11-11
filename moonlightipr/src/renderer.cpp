@@ -633,7 +633,7 @@ struct Renderer::Impl {
             if ((instances[i].visibility & 31u) != 31u) mixed = true;
             input[i].flags = OPTIX_INSTANCE_FLAG_NONE;
             input[i].traversableHandle = meshes[instances[i].mesh]->handle;
-            table[i] = {instances[i].mesh, instances[i].material, instances[i].light, instances[i].visibility >> 8};
+            table[i] = {instances[i].mesh, instances[i].material, instances[i].light, instances[i].visibility >> 8, instances[i].value};
         }
         params.mixedVisibility = mixed ? 1 : 0;
         instanceTable.upload(table);

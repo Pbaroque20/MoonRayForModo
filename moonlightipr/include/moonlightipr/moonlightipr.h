@@ -250,6 +250,8 @@ struct Instance {
     // 8 light passing through a surface, 16 shadows. Above those eight bits, the light set that lights it
     // (setLightSets), 0 for every light.
     uint32_t visibility = 255;
+    // Its own number, 0 to 1, which a Variation Texture by Particle reads: one for each replica.
+    float value = 0.0f;
     // Where the instance is when the shutter closes, if it moves.
     bool moves = false;
     float closeTransform[12] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0};

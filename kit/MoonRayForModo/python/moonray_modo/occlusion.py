@@ -139,10 +139,42 @@ def variation(snapshot, warnings):
             warnings.append('Variation by item on %s: its copies share one number.' % mesh.get('name'))
 
 
+def replica(mesh):
+    """Which replica a mesh that stands alone is: a Replicator's replica given its own mesh (evaluated, its identity the
+    source item, the replica's number, the material and the piece) by the first two, any other mesh by its item."""
+    words = str(mesh.get('identity') or mesh.get('name') or '').split('|')
+    return '|'.join(words[:2]) if mesh.get('evaluated_geometry') and len(words) >= 4 else words[0]
+
+
+def particles(snapshot):
+    """Modo's Variation Texture by Particle: a random number for each replica, from its identity (the same from one
+    render to the next), as instance_variation, one for each placement of each mesh. MoonRay reads it as an attribute of
+    each instance (instance_attributes) or, where a mesh stands alone, of its points, under procedurals.
+    VARIATION_PARTICLE_MAP; MoonLightIPR as a number of each instance (moonlightipr_scene)."""
+    from .procedurals import VARIATION_PARTICLE_MAP
+    if not reads(snapshot.get('materials'), VARIATION_PARTICLE_MAP):
+        return
+    for mesh in snapshot.get('meshes', []):
+        if not mesh.get('vertices'):
+            continue
+        ids = mesh.get('instance_ids')
+        if mesh.get('instances') and ids and len(ids) == len(mesh['instances']):
+            values = [number(identity) for identity in ids]
+            held = mesh.get('instance_attributes') or [[] for _ in ids]
+            mesh['instance_attributes'] = [[entry for entry in row if entry.get('name') != VARIATION_PARTICLE_MAP]
+                                           + [{'name': VARIATION_PARTICLE_MAP, 'type': 'float', 'value': value}]
+                                           for row, value in zip(held, values)]
+        else:
+            values = [number(replica(mesh))] * len(placements(mesh))
+            mesh.setdefault('point_attributes', {})[VARIATION_PARTICLE_MAP] = {'kind': 'float', 'values': [[values[0]]] * len(mesh['vertices'])}
+        mesh['instance_variation'] = values
+
+
 def apply(snapshot, warnings, runtime=None):
     """Add each Occlusion layer's weights to the meshes that wear it (point_attributes), and each item's Variation
     Texture number."""
     variation(snapshot, warnings)
+    particles(snapshot)
     found, holders = wanted(snapshot.get('materials'))
     if not found:
         return

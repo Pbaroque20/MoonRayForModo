@@ -36,7 +36,9 @@ def asked_vertex_maps(value):
 def vertex_maps_lost(materials):
     """The notice for a scene read through Modo's evaluated geometry, which holds no vertex maps: a material that reads one
     has only its Low value there. Empty where no material asks for one."""
-    names = sorted(asked_vertex_maps(materials))
+    from .procedurals import VARIATION_MAP, VARIATION_PARTICLE_MAP
+    # Numbers the kit gives each item and replica itself (occlusion.variation, occlusion.particles) are not read from Modo.
+    names = sorted(asked_vertex_maps(materials) - {VARIATION_MAP, VARIATION_PARTICLE_MAP})
     if not names:
         return []
     return ['The weight map %s is not read: replicators, instance overrides and masks by item, Part or Selection Set '

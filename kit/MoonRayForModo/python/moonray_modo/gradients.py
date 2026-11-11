@@ -24,6 +24,15 @@ SAMPLED={'incidenceAngle':(0.0,2.0),'incidenceNobump':(0.0,2.0),'locatorIncAngle
 # Texture U and V: which coordinate of the layer's UV map.
 TEXTURE_UV={'textureU':0,'textureV':1}
 
+# Bump and Displacement Height: the Bump or Displacement value the layers beneath give, not scaled by the material's bump
+# amplitude or displacement distance, as measured against Modo's renders (tools/probe_gui_gradient_heights.py): read as
+# the Gradient reads those channels.
+HEIGHTS={'bumpHeight':'bump','displaceHeight':'displace'}
+
+# Inputs Modo's renders read as one number on every visible surface (tools/probe_gui_gradient_clip.py): Clip Distance 0,
+# with the camera's clipping on or off. The gradient is held at that number.
+HELD={'clipDist':0.0}
+
 
 def texture_projection(layer,channel,axis):
     """How a Gradient on Texture U (axis 0) or V (1) reads its coordinate, as measured against Modo's renders
@@ -76,7 +85,9 @@ def capture(layer,channel,is_color):
     import lx
     name=str(channel(layer,'param',''))
     source=EFFECT_ALIASES.get(name,name)
-    if source not in INPUTS and source not in SAMPLED and source not in TEXTURE_UV and source not in ('textureValue','surfaceID'):
+    source=HEIGHTS.get(source,source)
+    if (source not in INPUTS and source not in SAMPLED and source not in TEXTURE_UV and source not in HELD
+            and source not in ('textureValue','surfaceID','displace')):
         raise ValueError('Gradient input '+name+' has no translated sample source')
     def reader(name,required=True):
         try:
@@ -117,6 +128,9 @@ def capture(layer,channel,is_color):
         # gives it (occlusion.variation), through the gradient over 0..1.
         from .procedurals import VARIATION_MAP
         data.update(input='@vmap',vmap=VARIATION_MAP,label='Surface ID')
+    if source in HELD:
+        # One number everywhere: layers.py makes the layer a Constant of the gradient there.
+        data.update(input='@held',held=HELD[source])
     if source=='textureValue':
         # The Value of the layer beneath (not its colour), 0..1: layers.py looks it up over a Constant beneath.
         data['input']='@texture_value'

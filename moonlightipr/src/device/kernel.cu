@@ -2910,6 +2910,10 @@ ML_INLINE float sampleKey(const DeviceLayer& layer, const Hit* surface) {
         if (layer.settings[10] > 0.5f) { v += 0.5f; v -= floorf(v); }
         break;
     }
+    case SAMPLE_INSTANCE_VALUE:
+        // Modo's Variation Texture by Particle: the number of the replica hit.
+        v = reinterpret_cast<const DeviceInstance*>(params.instances)[optixGetInstanceId()].value;
+        break;
     default: break;
     }
     return (v - layer.settings[5]) * layer.settings[6];

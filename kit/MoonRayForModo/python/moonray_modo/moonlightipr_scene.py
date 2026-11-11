@@ -65,6 +65,11 @@ def unit(values):
     return [v / length for v in values]
 
 
+# An instance: its mesh, material, mesh light (or -1), which rays see it (with its light set above the first 8 bits), its
+# own number (Variation by Particle) and where it stands, a 3x4 matrix by rows.
+INSTANCE = '<2IiIf12f'
+
+
 def transform(matrix):
     """Modo and MoonRay store basis vectors in rows; OptiX wants a row-major 3x4."""
     m = finite(matrix)
@@ -1036,7 +1041,7 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     # Material colours are worked out in Rec.709; the session takes them to the working space.
     working = working_enabled()
     # The letter after MLS says which form of scene this is; the session refuses any other than its own.
-    parts = [b'MLSO', struct.pack('<8I', width, height, *depths, samples, (SCENE_DENOISE if denoise else 0)
+    parts = [b'MLSP', struct.pack('<8I', width, height, *depths, samples, (SCENE_DENOISE if denoise else 0)
                                   | (SCENE_WORKING_SPACE if working else 0) | (SCENE_MOTION if motion else 0)
                                   # See-through surfaces cast whole shadows unless the scene asks for lighter ones, as in MoonRay.
                                   | (SCENE_PRESENCE_SHADOWS if settings.get('enable_presence_shadows') else 0)
@@ -1197,10 +1202,14 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
             raise ValueError('Instance shutter transforms of %s must match' % mesh['name'])
         # A fog's box is found by every ray, and so is a mesh light, which is the light itself.
         seen = 255 if light >= 0 or mesh.get('volume') else seen_by(mesh)
-        for placement, later in zip(opening, ending):
+        # Each placement's own number, which a Variation Texture by Particle reads (occlusion.particles), else 0.
+        variation = mesh.get('instance_variation') or []
+        if len(variation) != len(opening):
+            variation = [0.0] * len(opening)
+        for placement, later, number in zip(opening, ending, variation):
             linked.append((len(instances), mesh.get('source_item') or str(mesh.get('identity', '')).split('|')[0],
                            mesh.get('face_materials') or [mesh.get('material', '')]))
-            instances.append(struct.pack('<2IiI12f', order[key], material, light, seen, *transform(placement))
+            instances.append(struct.pack(INSTANCE, order[key], material, light, seen, float(number), *transform(placement))
                              + (struct.pack('<12f', *transform(later)) if motion else b''))
     # A Modo Mesh Light whose Visible to Camera is on is seen where its Prototype's shape stands: the engine shows a mesh
     # light where a camera ray meets its surface, and this light's surface is in no layer (MoonRay keeps a MeshLight's
@@ -1222,7 +1231,7 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
                           else key + struct.pack('<I', flags) + slot_map)
         used.add(key)
         placement = transform(shape['matrix'])
-        instances.append(struct.pack('<2IiI12f', order[key], material_index[''], named['local'].index(identity), 1,
+        instances.append(struct.pack(INSTANCE, order[key], material_index[''], named['local'].index(identity), 1, 0.0,
                                      *placement) + (struct.pack('<12f', *placement) if motion else b''))
     # Curves are curves on the GPU too: each strand a run of round segments, in the strands' own material.
     from .moonlightipr_curves import payload as curve_payload
@@ -1252,7 +1261,7 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
         used.add(key)
         placement = transform(entry.get('matrix') or IDENTITY)
         linked.append((len(instances), entry.get('source_item') or str(entry.get('identity', '')).split('|')[0], [entry.get('material', '')]))
-        instances.append(struct.pack('<2IiI12f', order[key], material_index.get(entry.get('material', ''), material_index['']), -1, seen_by(entry), *placement)
+        instances.append(struct.pack(INSTANCE, order[key], material_index.get(entry.get('material', ''), material_index['']), -1, seen_by(entry), 0.0, *placement)
                          + (struct.pack('<12f', *transform(entry.get('matrix_close') or entry.get('matrix') or IDENTITY)) if motion else b''))
     if any(entry.get('kind') not in ('curves', 'vdb') for entry in scene.get('extra_geometry', [])):
         warnings.append('MoonLightIPR does not show points.')
