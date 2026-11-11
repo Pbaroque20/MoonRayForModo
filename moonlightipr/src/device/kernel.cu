@@ -2872,8 +2872,44 @@ ML_INLINE float modoRoughness(unsigned model, float roughness, float& strength) 
     return to[7];
 }
 
+// One of Modo's Sample or Surface Parameters at a hit (a RAMP_SAMPLE row), scaled from the span the gradient was sampled
+// over to 0..1: as measured against Modo's renders (gradients.SAMPLED), 1 less the cosine of the angle to the camera or
+// to the layer's locator, the angle from up in radians, distances in the scene's units, the screen's place 0 to 1.
+ML_INLINE float sampleKey(const DeviceLayer& layer, const Hit* surface) {
+    const float3 p = surface->p, n = surface->ns;
+    const float3 toward = make_float3(layer.settings[2], layer.settings[3], layer.settings[4]) - p;
+    const float3 along = optixGetWorldRayDirection();
+    float v = 0.0f;
+    switch (unsigned(layer.settings[1])) {
+    case SAMPLE_INCIDENCE: v = 1.0f - dot(n, -normalize(along)); break;
+    case SAMPLE_LOCATOR_INCIDENCE: v = 1.0f - dot(n, normalize(toward)); break;
+    case SAMPLE_SLOPE: v = acosf(clamp(n.y, -1.0f, 1.0f)); break;
+    case SAMPLE_CAMERA_DISTANCE: v = length(p - vec(params.cameraOrigin)); break;
+    case SAMPLE_SCREEN_X: case SAMPLE_SCREEN_Y: case SAMPLE_SCREEN_R: {
+        // Where the point lies on the picture: across and up from -1 to 1, as camera rays leave (cameraDirection).
+        const float3 d = p - vec(params.cameraOrigin), u = vec(params.cameraU), w = vec(params.cameraW), up = vec(params.cameraV);
+        const float depth = dot(d, w) / fmaxf(dot(w, w), 1e-20f);
+        const float sx = depth != 0.0f ? dot(d, u) / (dot(u, u) * depth) : 0.0f;
+        const float sy = depth != 0.0f ? dot(d, up) / (dot(up, up) * depth) : 0.0f;
+        const unsigned which = unsigned(layer.settings[1]);
+        if (which == SAMPLE_SCREEN_X) v = 0.5f * (sx + 1.0f);
+        else if (which == SAMPLE_SCREEN_Y) v = 0.5f * (1.0f - sy);   // cameraV runs down the picture: Modo's runs up it
+        else v = sqrtf(sx * sx + sy * sy * float(params.height * params.height) / float(params.width * params.width));
+        break;
+    }
+    case SAMPLE_DISTANCE: v = length(toward); break;
+    case SAMPLE_DISTANCE_X: v = fabsf(toward.x); break;
+    case SAMPLE_DISTANCE_Y: v = fabsf(toward.y); break;
+    case SAMPLE_DISTANCE_Z: v = fabsf(toward.z); break;
+    case SAMPLE_BACK_FACING: v = dot(along, surface->ng) > 0.0f ? 1.0f : 0.0f; break;
+    default: break;
+    }
+    return (v - layer.settings[5]) * layer.settings[6];
+}
+
 ML_INLINE MappedSlots evalLayers(const DeviceMaterial& material, const DeviceMesh& mesh, unsigned primitive,
-                                 float2 barycentrics, float3* channel, float2 shift, float3 position, float footprint = 0.0f) {
+                                 float2 barycentrics, float3* channel, float2 shift, float3 position, float footprint = 0.0f,
+                                 const Hit* surface = nullptr) {
     channel[CHANNEL_COLOR] = vec(material.color);
     channel[CHANNEL_COLOR_AMOUNT] = vec(material.colorAmount);
     channel[CHANNEL_ROUGHNESS] = vec(material.roughness);
@@ -3039,6 +3075,11 @@ ML_INLINE MappedSlots evalLayers(const DeviceMaterial& material, const DeviceMes
                     key = held.a.x * (1.0f - barycentrics.x - barycentrics.y) + held.b.x * barycentrics.x + held.c.x * barycentrics.y;
             }
             else if (layer.uvSlot == RAMP_CURVATURE) key = curvatureKey(mesh, primitive, layer.settings[0]);
+            else if (layer.uvSlot == RAMP_SAMPLE) {
+                // Modo's Sample and Surface Parameters need the hit; elsewhere (displacement, presence) the low end.
+                if (!surface) continue;
+                key = sampleKey(layer, surface);
+            }
             else if (layer.uvSlot >= CHANNEL_COUNT) continue;
             else key = layer.uvSlot == layer.channel ? luminance(channel[layer.uvSlot]) : channel[layer.uvSlot].x;
             const float4 texel = tex2D<float4>(layer.texture, (clamp(key, 0.0f, 1.0f) * 256.0f + 0.5f) / 257.0f, 0.5f);
@@ -3185,7 +3226,7 @@ ML_INLINE MappedSlots resolveMaterial(Hit* hit, const DeviceMaterial& material, 
             const float width = hit->coneWidth + hit->coneSpread * hit->t;
             hit->footprint = world > 0.0f ? width * sqrtf(length(cross(e1, e2)) / world) * rsqrtf(fmaxf(slant, 0.05f)) : 0.0f;
         }
-        slots = evalLayers(material, mesh, primitive, uv, channel, make_float2(0.0f, 0.0f), hit->p, hit->footprint);
+        slots = evalLayers(material, mesh, primitive, uv, channel, make_float2(0.0f, 0.0f), hit->p, hit->footprint, hit);
         // A stack's highlight: the lobe set for the most any of its rows reflects, weighted by this point's share.
         hit->specular = material.specular * clamp(average(channel[CHANNEL_SPECULAR]), 0.0f, 1.0f);
         // Scalars take the mean of a colour, as MoonRay does for a map bound to a float attribute.
@@ -3330,13 +3371,13 @@ extern "C" __global__ void __closesthit__radiance() {
             if (bumped) {
                 const float step = 0.001f;
                 float3 other[CHANNEL_COUNT];
-                evalLayers(material, mesh, primitive, uv, other, make_float2(step, 0.0f), hit->p, hit->footprint);
+                evalLayers(material, mesh, primitive, uv, other, make_float2(step, 0.0f), hit->p, hit->footprint, hit);
                 const float right = average(other[CHANNEL_BUMP]);
-                evalLayers(material, mesh, primitive, uv, other, make_float2(-step, 0.0f), hit->p, hit->footprint);
+                evalLayers(material, mesh, primitive, uv, other, make_float2(-step, 0.0f), hit->p, hit->footprint, hit);
                 const float left = average(other[CHANNEL_BUMP]);
-                evalLayers(material, mesh, primitive, uv, other, make_float2(0.0f, step), hit->p, hit->footprint);
+                evalLayers(material, mesh, primitive, uv, other, make_float2(0.0f, step), hit->p, hit->footprint, hit);
                 const float up = average(other[CHANNEL_BUMP]);
-                evalLayers(material, mesh, primitive, uv, other, make_float2(0.0f, -step), hit->p, hit->footprint);
+                evalLayers(material, mesh, primitive, uv, other, make_float2(0.0f, -step), hit->p, hit->footprint, hit);
                 const float down = average(other[CHANNEL_BUMP]);
                 const float dx = (right - left) / (2.0f * step * lengthT), dy = (up - down) / (2.0f * step);
                 const float crossT = dot(alongV, t), crossB = dot(alongV, b);

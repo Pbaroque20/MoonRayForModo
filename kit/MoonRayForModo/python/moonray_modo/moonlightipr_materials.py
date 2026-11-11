@@ -166,6 +166,13 @@ LAYER_RAMP, LAYER_CHECKER, LAYER_NOISE, LAYER_UDIM = 1 << 16, 1 << 17, 1 << 18, 
 LAYER_PROCEDURAL = 1 << 21     # Modo's pattern through the object (modo_patterns.h, procedurals.solid)
 LAYER_WIREFRAME = 1 << 22      # Modo's Wireframe: the first colour along the polygons' edges
 RAMP_CURVATURE = 255           # a gradient row's slot when the surface's curvature looks it up (Modo's Curvature)
+RAMP_SAMPLE = 254              # and when one of Modo's Sample or Surface Parameters does, worked out at the hit
+# Modo's Sample and Surface Parameters as the kernel numbers them (shared.h SAMPLE_*), the object-space distances as the
+# world's.
+SAMPLE_KINDS = {'incidenceAngle': 0, 'incidenceNobump': 0, 'locatorIncAngle': 1, 'slope': 2, 'slopeUndisplaced': 2,
+                'cameraDistance': 3, 'screenX': 4, 'screenY': 5, 'screenR': 6, 'distance': 7, 'objDistance': 7,
+                'distanceX': 8, 'objDistanceX': 8, 'distanceY': 9, 'objDistanceY': 9, 'distanceZ': 10, 'objDistanceZ': 10,
+                'backFacing': 11}
 IDENTITY_ROWS = ((1.0, 0.0, 0.0, 0.0), (0.0, 1.0, 0.0, 0.0), (0.0, 0.0, 1.0, 0.0))
 BLEND_REORIENTED_NORMAL = 15
 WRAP = {'repeat': 0, 'edge': 1, 'mirror': 2, 'reset': 3}
@@ -1177,6 +1184,25 @@ class Compiler:
                 flags |= LAYER_RAMP
                 slot = RAMP_CURVATURE
                 extra = dict(settings=[float(layer['gradient'].get('scale', 1))] + [0.0] * 21 + [.5, .5])
+            elif kind == 'gradient' and layer['gradient'].get('input') == '@sample':
+                # One of Modo's Sample or Surface Parameters, worked out at the hit (kernel sampleKey): which, the
+                # layer's locator, and the span the gradient was sampled over.
+                data = layer['gradient']
+                if data.get('sample') not in SAMPLE_KINDS:
+                    self.note('gradients driven by %s' % data.get('sample'), name)
+                    abandon()
+                    continue
+                try:
+                    texture = self.ramp(data)
+                except (OSError, ValueError, KeyError, TypeError, IndexError) as exc:
+                    self.note('a gradient that could not be read (%s)' % exc, name)
+                    abandon()
+                    continue
+                low, high = (float(v) for v in data.get('span', [0.0, 1.0]))
+                flags |= LAYER_RAMP
+                slot = RAMP_SAMPLE
+                extra = dict(settings=[0.0, float(SAMPLE_KINDS[data['sample']])] + [float(v) for v in data.get('locator', [0, 0, 0])]
+                             + [low, 1.0 / max(high - low, 1e-9)] + [0.0] * 15 + [.5, .5])
             elif kind == 'gradient' and layer['gradient'].get('input') == '@vmap':
                 # Modo's Weight Map Texture: the weight comes as the first component of a set of coordinates of its own
                 # (moonlightipr_scene.with_weights), and the row looks the gradient up by it.

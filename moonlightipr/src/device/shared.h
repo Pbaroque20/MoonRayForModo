@@ -66,6 +66,13 @@ const unsigned LAYER_IMAGE = 1, LAYER_INVERT = 2, LAYER_FLIP_RED = 4, LAYER_FLIP
 // A LAYER_RAMP row's uvSlot for a gradient looked up by the surface's curvature (Modo's Curvature texture), settings[0]
 // the scale: 0.5 flat, more where the surface bulges, less where it hollows.
 const unsigned RAMP_CURVATURE = 255;
+// A LAYER_RAMP row's uvSlot for a gradient on one of Modo's Sample or Surface Parameters, worked out at the hit
+// (sampleKey): settings[1] which (SAMPLE_*), settings[2..4] the layer's locator in the world, settings[5] the low end of
+// the span the gradient was sampled over and settings[6] one over its width.
+const unsigned RAMP_SAMPLE = 254;
+const unsigned SAMPLE_INCIDENCE = 0, SAMPLE_LOCATOR_INCIDENCE = 1, SAMPLE_SLOPE = 2, SAMPLE_CAMERA_DISTANCE = 3,
+               SAMPLE_SCREEN_X = 4, SAMPLE_SCREEN_Y = 5, SAMPLE_SCREEN_R = 6, SAMPLE_DISTANCE = 7, SAMPLE_DISTANCE_X = 8,
+               SAMPLE_DISTANCE_Y = 9, SAMPLE_DISTANCE_Z = 10, SAMPLE_BACK_FACING = 11;
 const unsigned UV_SLOTS = 8;
 
 // One row of a material's layer stack: a constant or an image blended over what is below it.

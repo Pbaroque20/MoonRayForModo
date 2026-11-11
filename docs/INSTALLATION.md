@@ -47,15 +47,40 @@ To roll back, close Modo, move the new kit outside `Kits`, and restore your back
 
 See the [README](../README.md) for current limitations. This release was packaged with file-integrity checks, and the packaged files were unpacked into an empty folder and rendered from there with no environment set; it has been run on one machine only, and no clean-machine install was tested.
 
-## Standalone command-line rendering
+## Rendering headless (no Modo window)
 
-The runtime defaults to the folder containing `moonray.exe` when locating `shaders/OptixGPUPrograms.ptx` and shader libraries. Keep the complete runtime folder together. No environment setup is required for the bundled layout. Existing `REZ_MOONRAY_ROOT`, `RDL2_DSO_PATH`, and `TMPDIR` settings take precedence; clear stale values if they point to another installation.
+A headless render takes two steps: write the Modo scene as a MoonRay scene, then render that file with the kit's `moonray.exe`. Neither step needs Modo's window, so both can run on a farm.
 
-In PowerShell, adjust these paths:
+### 1. Write the MoonRay scene
+
+From Modo: **MoonRay > Export as MoonRay Scene** (RDLA, RDLB or both; one scene per frame if you like).
+
+Without a window, from Modo's command-line version `modo_cl.exe` and the kit's `scripts/export_moonray.py`. Put the commands in a text file and give it to `modo_cl` as its input. A plain PowerShell pipe does not work: `modo_cl` misreads its first line. Put quotes, not braces, around the two paths. In PowerShell, adjust these paths:
 
 ```powershell
-& 'C:\path\MoonRayForModo\runtime\moonray.exe' -in 'C:\scenes\scene.rdla' -out 'C:\renders\beauty.exr' -exec_mode xpu 2>&1 | Tee-Object "$env:USERPROFILE\Desktop\moonray-log.txt"
+Set-Content -Encoding ascii "$env:TEMP\export.txt" '@{kit_MoonRayForModo:scripts/export_moonray.py} "C:\scenes\shot.lxo" "C:\scenes\shot.rdlb"', 'app.quit'
+Start-Process -Wait -NoNewWindow 'C:\Program Files\Modo16.1v9\modo\modo_cl.exe' -RedirectStandardInput "$env:TEMP\export.txt"
 ```
+
+The script writes RDLB if the name ends in `.rdlb` and RDLA otherwise. Add `"frames"` after the two paths to write one scene for each frame of the frame range (`shot.0001.rdlb`, `shot.0002.rdlb`...). Each scene uses the Modo scene's own MoonRay render settings and keeps its render outputs.
+
+### 2. Render it with MoonRay
+
+```powershell
+& 'C:\path\MoonRayForModo\runtime\moonray.exe' -in 'C:\scenes\shot.rdlb' -out 'C:\renders\shot.exr' -exec_mode xpu 2>&1 | Tee-Object "$env:USERPROFILE\Desktop\moonray-log.txt"
+```
+
+`-exec_mode` is `xpu` (graphics card and processor), `vector` or `scalar` (processor only). A glowing VDB volume, or a light with a cookie filter, needs `scalar` in this build. For a sequence, render each frame's scene:
+
+```powershell
+Get-ChildItem 'C:\scenes\shot.*.rdlb' | ForEach-Object { & 'C:\path\MoonRayForModo\runtime\moonray.exe' -in $_.FullName -out ('C:\renders\' + $_.BaseName + '.exr') -exec_mode xpu }
+```
+
+The runtime finds `shaders/OptixGPUPrograms.ptx` and the shader libraries in the folder that holds `moonray.exe`, so keep the runtime folder whole. The bundled layout needs no environment setup. If `REZ_MOONRAY_ROOT`, `RDL2_DSO_PATH` or `TMPDIR` is already set, it takes precedence; clear it if it points to another installation.
+
+### XPU2 does not render headless
+
+XPU2 renders only inside Modo: the MoonRay preview, and Render and Render Animation in the preview window. `runtime-xpu2\moonray_xpu2.exe` cannot render a scene file on its own. Run without Modo, it hands its command line to the MoonRay named in `MOONRAY_XPU2_MOONRAY` and stops if that is not set. For a headless or farm render, use MoonRay's `xpu` mode above. It is slower than XPU2.
 
 A GPU render with many outputs has four times the room it had for what each ray owes them; `MOONRAY_MODO_CL1_POOL_SCALE` (1 to 8, default 4) sets another size if a render still reports that it could not allocate a CacheLine1.
 

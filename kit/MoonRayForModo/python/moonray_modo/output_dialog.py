@@ -16,12 +16,12 @@ class AnimationDialog(QtWidgets.QDialog):
         self.setWindowTitle('Render animation');self.resize(520,300)
         form=QtWidgets.QFormLayout(self)
         # Which engine renders the frames: MoonRay, by Render Settings and the preferences (XPU2, XPU or the processor),
-        # or MoonLightIPR, to Render samples a pixel (Preview Preferences).
+        # or MoonLightIPR, to Render Samples a pixel (Render Settings, MoonLightIPR).
         self.engine=QtWidgets.QComboBox()
         self.engine.addItem('MoonRay','moonray');self.engine.addItem('MoonLightIPR','moonlightipr')
         self.engine.setCurrentIndex(max(0,self.engine.findData(values.get('engine','moonray'))))
         self.engine.setToolTip('MoonRay renders each frame as Render Settings and Preferences say (XPU2, XPU or the processor). '
-                               "MoonLightIPR renders each frame on the graphics card to its Render samples a pixel (Preview Preferences), "
+                               "MoonLightIPR renders each frame on the graphics card to its Render Samples a pixel (Render Settings, MoonLightIPR), "
                                'denoised where the Denoiser is on, written as an EXR of its own picture: the beauty alone, no other outputs.')
         self.engine.currentIndexChanged.connect(self.update_summary)
         form.addRow('Engine',self.engine)
