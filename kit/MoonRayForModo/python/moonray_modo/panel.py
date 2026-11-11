@@ -447,6 +447,7 @@ class Panel(Tools, QtWidgets.QWidget):
             menu.addAction('Focus Here',lambda:self.focus_at(point))
             menu.addAction('Select Material Here',lambda:self.material_at(point))
             menu.addAction('Select Mesh Here',lambda:self.mesh_at(point))
+            menu.addAction('Select Volume Here',lambda:self.volume_at(point))
             menu.addSeparator()
         menu.addAction('Fit',self.preview.fit)
         menu.addAction('Actual Size',self.preview.actual_size)
@@ -663,6 +664,32 @@ class Panel(Tools, QtWidgets.QWidget):
             self.status.setText('Selected %s.'%item.name)
         except Exception as exc:
             self.status.setText('Cannot select the mesh: '+str(exc))
+
+    def volume_at(self,point):
+        """Select in Modo the VDB volume under a point of the image, where it is thick (volume_pick): the kit's VDB item,
+        or the item of a VDB read with a MoonRay scene."""
+        try:
+            rect=self.preview.image_rect()
+            if rect.isEmpty() or not rect.contains(QtCore.QPointF(point)):
+                self.status.setText('Right-click inside the rendered image to select its volume.');return
+            scene=self._asset_scene
+            if not scene or not scene.get('camera'):
+                self.status.setText('Render once, then pick the volume.');return
+            from .volume_pick import volume_at
+            depth,*found=volume_at(scene,(point.x()-rect.left())/rect.width(),(point.y()-rect.top())/rect.height())
+            if depth is None:
+                waiting=found[0] if found else []
+                self.status.setText('Reading %s; pick again in a moment.'%', '.join(waiting) if waiting else 'No volume there.');return
+            identity,name=found
+            import modo
+            try:item=modo.Scene().item(identity.split('|')[0])
+            except LookupError:
+                self.status.setText('The volume there (%s) is not an item Modo can select.'%name);return
+            lx.eval('select.drop item')
+            lx.eval('select.item {%s} add'%item.id)
+            self.status.setText('Selected %s.'%item.name)
+        except Exception as exc:
+            self.status.setText('Cannot select the volume: '+str(exc))
 
     def _clay(self):
         action=self.clay_group.checkedAction()

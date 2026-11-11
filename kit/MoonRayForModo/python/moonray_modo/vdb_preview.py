@@ -69,17 +69,47 @@ def _make(key):
         _busy.discard(key)
 
 
-def _read(path, grid):
-    from . import native
+def _target(path, grid):
+    """(the name the coarse copy of a file's grid is kept under, its file in the cache)."""
     from .moonlightipr_materials import cache_folder
-    bridge = _adapter()
-    if bridge is None:
-        return None
     source = Path(path)
     stat = source.stat()
-    runtime = native.default_runtime()
     digest = hashlib.sha256(repr((str(source.resolve()), stat.st_size, stat.st_mtime_ns, grid, POINT_CELLS, 'viewport-vdb-v1')).encode()).hexdigest()
-    target = cache_folder() / (digest + '.mlv')
+    return digest, cache_folder() / (digest + '.mlv')
+
+
+def coarse_file(path, grid):
+    """The coarse copy of a VDB file's grid the viewport draws (Select Volume Here marches through it too), where it
+    has been read; None while it is being read (it is asked for then)."""
+    _, target = _target(path, grid or '')
+    if target.is_file() and target.stat().st_size:
+        return target
+    with _lock:
+        key = (str(path), str(grid or ''))
+        if key in _busy:
+            return None
+        _busy.add(key)
+    threading.Thread(target=_coarse_only, args=(key,), daemon=True).start()
+    return None
+
+
+def _coarse_only(key):
+    """The coarse copy made without the viewport's adapter (Select Volume Here in a session that has not drawn it)."""
+    try:
+        _made(*key)
+    except Exception:
+        pass
+    with _lock:
+        _busy.discard(key)
+
+
+def _made(path, grid):
+    """The coarse copy of a file's grid in the cache, read by the runtime's modo_vdb_grid where it is not there yet:
+    (its name, its file), or None where it cannot be read."""
+    from . import native
+    source = Path(path)
+    runtime = native.default_runtime()
+    digest, target = _target(source, grid)
     if not target.is_file() or not target.stat().st_size:
         tool = Path(runtime) / 'modo_vdb_grid.exe'
         if not tool.is_file():
@@ -91,6 +121,17 @@ def _read(path, grid):
         if done.returncode or not staged.is_file():
             return None
         staged.replace(target)
+    return digest, target
+
+
+def _read(path, grid):
+    bridge = _adapter()
+    if bridge is None:
+        return None
+    made = _made(path, grid)
+    if made is None:
+        return None
+    digest, target = made
     # ctypes lets go of Python's lock for the call: the adapter reads it with Modo going on.
     if not bridge.MR_vdb_preview_load(str(target).encode('utf-8'), digest.encode('utf-8'), THICK, MOST_POINTS):
         return None

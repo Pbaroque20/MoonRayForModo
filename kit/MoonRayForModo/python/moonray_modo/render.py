@@ -18,6 +18,10 @@ MOONLIGHTIPR_SAMPLES = 256
 
 
 COOKIE='A light with a cookie filter'
+# A VDB made with the kit's MoonRay items (Load VDB File) whose emission grid is set: XPU2 draws its fire rightly, so it
+# renders the scene where chosen, and MoonRay, should XPU2 leave it the scene, does so in scalar (as for COOKIE). A
+# tester's volcano: a 16K diffuse map sent it from XPU2 to MoonRay XPU, whose fire then failed.
+VDB_ITEM='A VDB with an emission grid'
 
 
 def scalar_only(snapshot):
@@ -25,6 +29,8 @@ def scalar_only(snapshot):
     that gives off light stops its vector and GPU modes; a cookie filter leaves pixels that are not numbers in them."""
     if any(entry.get('kind')=='vdb' and entry.get('emission_grid') and float(entry.get('emission',1))>0 for entry in snapshot.get('extra_geometry',[])):
         return 'A VDB volume with an emission grid'
+    if any(entity.get('class')=='VdbGeometry' and (entity.get('parameters') or {}).get('emission_grid') for entity in snapshot.get('entities',[])):
+        return VDB_ITEM
     lights=(snapshot.get('production') or {}).get('lights',{})
     if any(isinstance(held,dict) and held.get('cookie_file') for held in lights.values())             or any(str(entity.get('class','')).startswith('CookieLightFilter') for entity in snapshot.get('entities',[])):
         return COOKIE
@@ -36,7 +42,7 @@ def xpu2_output(snapshot):
     Render to a File and Render Animation (_xpu2_output), where XPU2 is chosen and the execution mode leaves it to the
     graphics card. It writes the scene's outputs as MoonRay does; a deep image and checkpoints are MoonRay's alone."""
     return bool(snapshot.get('_xpu2_output') and native.xpu2() and snapshot.get('execution_mode','auto') in ('xpu','auto')
-                and scalar_only(snapshot) in (None,COOKIE) and not (snapshot.get('deep') or {}).get('enabled') and not (snapshot.get('recovery') or {}).get('enabled'))
+                and scalar_only(snapshot) in (None,COOKIE,VDB_ITEM) and not (snapshot.get('deep') or {}).get('enabled') and not (snapshot.get('recovery') or {}).get('enabled'))
 
 
 def binary_sessions(runtime):
@@ -559,7 +565,7 @@ class Renderer(QtCore.QObject):
         slow=scalar_only(request['snapshot'])
         self.moonray_mode=None
         xpu2_takes=bool(request.get('persistent') and mode in ('xpu','auto') and self.session.xpu2_chosen() and not getattr(self.session,'xpu2_refused',None))
-        if mode!='scalar' and slow==COOKIE and xpu2_takes:
+        if mode!='scalar' and slow in (COOKIE,VDB_ITEM) and xpu2_takes:
             # XPU2 draws a cookie rightly: it renders the scene, and MoonRay, should XPU2 leave it the scene, does so in
             # scalar. Forced to scalar before, the cookie kept XPU2 out altogether and the preview crawled.
             self.moonray_mode='scalar'
