@@ -659,8 +659,10 @@ class Window(QtWidgets.QWidget):
         self.render_button.setEnabled(not master_pid)
         self.stop_button.setEnabled(bool(master_pid))
         frame = master.get('frame', {}) if master else {}
-        self.progress.setMaximum(max(1, int(frame.get('chunks', 0))))
-        self.progress.setValue(int(frame.get('back', 0)))
+        # From its status while it runs only: once it has ended its last status (of a frame part way) stays a few seconds.
+        if master_pid:
+            self.progress.setMaximum(max(1, int(frame.get('chunks', 0))))
+            self.progress.setValue(int(frame.get('back', 0)))
         if self.tabs.currentIndex() == 0:
             text = log_tail('master')
             if text != self.master_log.toPlainText():
@@ -669,6 +671,9 @@ class Window(QtWidgets.QWidget):
         if self.master_process is not None and self.master_process.poll() is not None:
             code = self.master_process.returncode
             self.master_process = None
+            # Done: the bar full (the master's last status may be of a frame part way); stopped or failed: empty.
+            self.progress.setMaximum(1)
+            self.progress.setValue(1 if code == 0 else 0)
             self.status.setText('Done: the pictures are in %s.' % self.output.text() if code == 0 else
                                 'The master stopped (exit %d): its log says why.' % code)
         node_pid = running_pid('node')
@@ -712,12 +717,39 @@ class Window(QtWidgets.QWidget):
 
 
 _window = None
+_quit_hooked = [False]
+
+
+def _close_on_quit():
+    """Modo quitting closes the window first, its timer stopped, while Qt still stands: left open, Modo crashed on the
+    way out (0xC0000005, tools/probe_rhizome_window.py), as the graph editors did (node_editor._close_on_quit). The
+    master and the node it started go on."""
+    if _quit_hooked[0]:
+        return
+    application = QtCore.QCoreApplication.instance()
+    if application is None:
+        return
+
+    def closing():
+        global _window
+        from shiboken2 import isValid
+        window, _window = _window, None
+        try:
+            if window is not None and isValid(window):
+                window.timer.stop()
+                window.close()
+                window.deleteLater()
+        except Exception:
+            pass
+    application.aboutToQuit.connect(closing)
+    _quit_hooked[0] = True
 
 
 def show(parent=None):
     global _window
     if _window is None:
         _window = Window(parent)
+        _close_on_quit()
     _window.show()
     _window.raise_()
     _window.activateWindow()
