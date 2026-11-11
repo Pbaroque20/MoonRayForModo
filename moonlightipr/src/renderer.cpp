@@ -75,6 +75,8 @@ struct Buffer {
 
 struct Mesh {
     Buffer positions, normals, indices, materialIds, uvs, accel, widths;
+    // A mesh that changes shape: each vertex's move from the shutter's opening to its closing (DeviceMesh::motion).
+    Buffer motion;
     bool curves = false;    // round curve segments: positions, widths and each segment's first point
     bool linear = false;    // those segments are straight, not cubic B-splines
     bool ribbon = false;    // and they are lit as flat ribbons facing the ray
@@ -282,6 +284,8 @@ struct Renderer::Impl {
     Buffer beauty, albedo, normal, denoised, lighting, paramsBuffer;
     Buffer aov;     // the geometry AOVs, AOV_SLOTS float[4] per pixel (setAovs), while they are gathered
     Buffer instanceMotion;  // each instance's transform as the shutter opens and closes, for the motion vectors
+    Buffer bokeh;           // the camera's bokeh image as a table to draw lens points by (LaunchParams::bokeh)
+    std::vector<float> bokehMade;   // the image it was made from
     // Held at one moment of the shutter (setMotionHeld): no blur, the motion kept for the motion vectors.
     bool motionHeld = false;
     float heldMoment = 0.5f;
@@ -601,6 +605,7 @@ struct Renderer::Impl {
                 entry.indices = mesh->indices.ptr;
                 entry.materialIds = mesh->materialIds.ptr;
                 entry.uvs = mesh->uvs.ptr;
+                entry.motion = mesh->close.empty() || mesh->curves ? 0 : mesh->motion.ptr;
                 entry.triangleCount = mesh->triangleCount;
                 entry.curves = mesh->curves ? (mesh->linear ? 2 : 1) | (mesh->ribbon ? 4 : 0) : 0;
                 // A slot may only name a set this mesh has; the kernel does not check.
@@ -633,7 +638,7 @@ struct Renderer::Impl {
         params.mixedVisibility = mixed ? 1 : 0;
         instanceTable.upload(table);
         // The two ends of each instance's shutter, for the motion vectors, where any instance moves.
-        if (instancesMove && !instances.empty()) {
+        if ((instancesMove || meshesMove) && !instances.empty()) {
             std::vector<float> ends(instances.size() * 24);
             for (size_t i = 0; i < instances.size(); ++i)
                 for (int k = 0; k < 12; ++k) {
@@ -757,6 +762,40 @@ struct Renderer::Impl {
         params.focusDistance = std::max(camera.focusDistance, 1e-6f);
         params.lensBlades = camera.blades >= 3 ? std::min<uint32_t>(camera.blades, 64) : 0;
         params.lensAngle = camera.bladeAngle;
+        // The bokeh image as running sums: down its rows, then across each, each ending at 1; made again only when the
+        // image changes. An image with nothing bright in it is no bokeh image.
+        const uint32_t n = camera.bokehSize;
+        if (!n || camera.bokeh.size() != size_t(n) * n) {
+            params.bokeh = 0;
+            params.bokehSize = 0;
+            bokehMade.clear();
+        } else if (camera.bokeh != bokehMade || !params.bokeh) {
+            std::vector<float> table(size_t(n + 1) + size_t(n) * (n + 1), 0.0f);
+            double total = 0.0;
+            for (uint32_t y = 0; y < n; ++y) {
+                float* across = table.data() + (n + 1) + size_t(y) * (n + 1);
+                double row = 0.0;
+                for (uint32_t x = 0; x < n; ++x) {
+                    const float v = camera.bokeh[size_t(y) * n + x];
+                    row += std::isfinite(v) && v > 0.0f ? v : 0.0f;
+                    across[x + 1] = float(row);
+                }
+                for (uint32_t x = 1; x <= n; ++x) across[x] = row > 0.0 ? float(across[x] / row) : float(x) / float(n);
+                total += row;
+                table[y + 1] = float(total);
+            }
+            if (total > 0.0) {
+                for (uint32_t y = 1; y <= n; ++y) table[y] = float(table[y] / total);
+                bokeh.upload(table);
+                params.bokeh = bokeh.ptr;
+                params.bokehSize = n;
+                bokehMade = camera.bokeh;
+            } else {
+                params.bokeh = 0;
+                params.bokehSize = 0;
+                bokehMade.clear();
+            }
+        }
         params.cameraProjection = camera.projection <= 3 ? camera.projection : 0;
         std::copy(camera.projectionValues, camera.projectionValues + 4, params.cameraProjectionValues);
         // Rows count upward from the picture's foot; the region's top and bottom are measured from its head.
@@ -1003,6 +1042,9 @@ uint32_t Renderer::addMesh(const MeshDesc& desc) {
     if (desc.closePositions) {
         mesh->open.assign(desc.positions, desc.positions + desc.vertexCount * 3);
         mesh->close.assign(desc.closePositions, desc.closePositions + desc.vertexCount * 3);
+        std::vector<float> moves(mesh->open.size());
+        for (size_t i = 0; i < moves.size(); ++i) moves[i] = mesh->close[i] - mesh->open[i];
+        mesh->motion.upload(moves);
     }
     if (desc.uvSetCount) {
         const size_t perSet = desc.triangleCount * 6;
@@ -2024,9 +2066,13 @@ void Renderer::reshapeMesh(uint32_t index, const float* positions, const float* 
     if (closePositions) {
         mesh.open.assign(positions, positions + mesh.vertexCount * 3);
         mesh.close.assign(closePositions, closePositions + mesh.vertexCount * 3);
+        std::vector<float> moves(mesh.open.size());
+        for (size_t i = 0; i < moves.size(); ++i) moves[i] = mesh.close[i] - mesh.open[i];
+        mesh.motion.upload(moves);
     } else {
         mesh.open.clear();
         mesh.close.clear();
+        mesh.motion.release();
     }
     if (normals) mesh.normals.upload(normals, mesh.vertexCount * 3 * sizeof(float));
     else mesh.normals.release();

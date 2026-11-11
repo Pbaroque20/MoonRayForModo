@@ -141,11 +141,12 @@ def collect(scene, warnings):
                     entry.update(kind='image',color_space=space,path=str(path.resolve()),mtime=path.stat().st_mtime_ns,
                         size=path.stat().st_size, matrix=world_matrix(locator),
                         srgb=space=='sRGB' or (space=='(default)' and path.suffix.lower() not in ('.exr','.hdr','.tx')))
-                    if flipped_across(entry):
-                        # Horizontal Wrap -1, nothing else changed: the image mirrored left to right at its full size
-                        # (mirrored_image), as the bake would have it, rather than baked small with the layered
-                        # environments, which smeared an HDRI's sun and lit the scene wrongly.
-                        mirrored=mirrored_image(path)
+                    flips=flipped_across(entry)
+                    if flips:
+                        # Horizontal or Vertical Wrap -1 (or both), nothing else changed: the image mirrored at its full
+                        # size (mirrored_image), rather than baked small with the layered environments, which smeared an
+                        # HDRI's sun and lit the scene wrongly; and a vertical flip there smeared the top row over the sky.
+                        mirrored=mirrored_image(path,*flips)
                         entry.update(path=str(mirrored),mtime=mirrored.stat().st_mtime_ns,size=mirrored.stat().st_size,
                                      scale=[1.0,1.0],transformed=False,mirrored_from=str(path.resolve()))
                 else:
@@ -167,20 +168,26 @@ def collect(scene, warnings):
 
 
 def flipped_across(entry):
-    """Whether an environment image's placement is a left-to-right flip alone: Horizontal Wrap -1, Vertical Wrap 1, no
-    rotation and no other transform. The bake reads u * -1, wrapped, which is the image mirrored."""
-    return ([float(v) for v in entry.get('scale',[1,1])]==[-1.0,1.0] and [float(v) for v in entry.get('uv_matrix',[1,0,0,0,1,0])]==[1,0,0,0,1,0]
-            and float(entry.get('rotation',0))==0)
+    """(across, down) where an environment image's placement is a flip alone: Horizontal Wrap -1 mirrors it left to right,
+    Vertical Wrap -1 top to bottom, either or both at 1 or -1, with no rotation and no other transform; None otherwise.
+    u * -1, wrapped, is the image mirrored; so is v (the bake clamped v instead, and smeared the top row over the sky)."""
+    scale=[float(v) for v in entry.get('scale',[1,1])]
+    if (len(scale)!=2 or any(v not in (1.0,-1.0) for v in scale) or scale==[1.0,1.0]
+            or [float(v) for v in entry.get('uv_matrix',[1,0,0,0,1,0])]!=[1,0,0,0,1,0] or float(entry.get('rotation',0))!=0):
+        return None
+    return (scale[0]==-1.0,scale[1]==-1.0)
 
 
-def mirrored_image(path):
-    """An image mirrored left to right at its full size, made once with the runtime's oiiotool and kept in the texture
+def mirrored_image(path,across=True,down=False):
+    """An image mirrored left to right (across) and or top to bottom (down) at its full size, made once with the runtime's oiiotool and kept in the texture
     cache, named by the image's path, size and time: an HDR one (.hdr, .exr, .tx) as a float EXR, any other as a PNG of
     its own depth, so that how its colours are read does not change."""
     from . import native
     import subprocess
     path=Path(path).resolve();stat=path.stat()
-    key=hashlib.sha256(repr((str(path),stat.st_size,stat.st_mtime_ns,'mirrored-v1')).encode('utf-8')).hexdigest()
+    # A left-to-right mirror keeps the name it was first cached under.
+    kind='mirrored-v1' if (across,down)==(True,False) else 'mirrored-v1-%d%d'%(across,down)
+    key=hashlib.sha256(repr((str(path),stat.st_size,stat.st_mtime_ns,kind)).encode('utf-8')).hexdigest()
     hdr=path.suffix.lower() in ('.exr','.hdr','.tx')
     folder=cache_root()/'Textures';folder.mkdir(parents=True,exist_ok=True)
     target=folder/(key+('.exr' if hdr else '.png'))
@@ -188,7 +195,7 @@ def mirrored_image(path):
     tool=native.tool('oiiotool.exe')
     staged=folder/(key+'-'+uuid.uuid4().hex+target.suffix)
     try:
-        result=subprocess.run([str(tool),str(path),'--flop']+(['-d','float'] if hdr else [])+['-o',str(staged)],env=native.environment(tool.parent),
+        result=subprocess.run([str(tool),str(path)]+(['--flop'] if across else [])+(['--flip'] if down else [])+(['-d','float'] if hdr else [])+['-o',str(staged)],env=native.environment(tool.parent),
                               stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,timeout=600,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
         if result.returncode or not staged.is_file():raise ValueError('Could not mirror the environment image %s: %s'%(path.name,result.stdout[-600:]))
         staged.replace(target)

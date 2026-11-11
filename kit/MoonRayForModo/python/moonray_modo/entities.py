@@ -1667,7 +1667,8 @@ def camera_view(camera, entity, matrix, note):
                         iris_blades=int(value(entity, 'bokeh_sides')) if value(entity, 'bokeh') else 0,
                         iris_rotation=math.radians(float(value(entity, 'bokeh_angle'))))
             if value(entity, 'bokeh') and entity['parameters'].get('bokeh_image'):
-                note('a bokeh image')
+                # Its shape is the image's (moonlightipr_scene.bokeh_values), turned as the blades are.
+                view['bokeh_image'] = str(entity['parameters']['bokeh_image'])
         eye = int(value(entity, 'stereo_view') or 0)
         if eye in (1, 2):
             # The eye it renders, moved to as MoonRay moves it (stereo.placed).

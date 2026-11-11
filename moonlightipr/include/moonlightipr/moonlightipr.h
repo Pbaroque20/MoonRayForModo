@@ -344,6 +344,10 @@ struct Camera {
     float focusDistance = 1.0f;
     uint32_t blades = 0;
     float bladeAngle = 0.0f;
+    // A bokeh image, as MoonRay's camera takes one: bokehSize x bokehSize brightnesses, top row first, over the square
+    // the lens fills; each camera ray leaves the lens at a point drawn by them, turned by bladeAngle. Empty for none.
+    uint32_t bokehSize = 0;
+    std::vector<float> bokeh;
     // How a point of the picture becomes a direction: 0 through a pinhole or lens, as above;
     // 1 MoonRay's FisheyeCamera, with projectionValues its mapping, format, zoom and half field
     // of view in radians; 2 MoonRay's SphericalCamera, with projectionValues the latitude and

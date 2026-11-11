@@ -24,7 +24,9 @@ const unsigned CHANNEL_COLOR = 0, CHANNEL_COLOR_AMOUNT = 1, CHANNEL_ROUGHNESS = 
                CHANNEL_DISPLACE = 23,   // DISPLACE_SLOTS channels the displacement pass alone reads, each a displacement
                                         // node's height or vector; the first is Shader Tree displacement's height
                CHANNEL_STENCIL = 27,    // where Shader Tree stencil layers take the surface away, white taking it all
-               CHANNEL_COUNT = 28;
+               CHANNEL_BACK = 28,       // diffuse light passed through to the far side (DwaBase's diffuse transmission
+                                        // colour times its amount): the material's back, where a map is wired to it
+               CHANNEL_COUNT = 29;
 const unsigned DISPLACE_SLOTS = 4;
 // Rows that are not a channel: the start and end of a group, whose rows are blended as one
 // over what was there before it, and a mask written to a register for a later row to use.
@@ -216,6 +218,8 @@ struct DeviceMesh {
     int uvSet[UV_SLOTS];    // which of this mesh's sets serves each scene-wide slot, or -1
     unsigned curves;        // curves rather than triangles: 1 round cubic B-spline segments, 2 round straight ones;
                             // with 4 added they are lit as flat ribbons facing the ray, MoonRay's default
+    DevicePtr motion;       // for a mesh that changes shape during the shutter, float[3] per vertex: how far it moves from
+                            // the shutter's opening to its closing, in the mesh's own space (the motion vectors); else 0
 };
 
 // A vertex of a displaced mesh, as a place on one triangle that has it (OptiX's barycentrics).
@@ -413,6 +417,11 @@ struct LaunchParams {
     float focusDistance;    // along the view direction
     unsigned lensBlades;    // 0 for a disc
     float lensAngle;
+    // A bokeh image (Camera::bokeh) as a table to draw lens points by: bokehSize + 1 sums over its rows (the last 1),
+    // then for each row bokehSize + 1 sums across it; 0 for none.
+    DevicePtr bokeh;
+    unsigned bokehSize;
+    unsigned bokehPad;
     unsigned cameraProjection;      // 0 perspective, 1 fisheye, 2 spherical, 3 orthographic
     float cameraProjectionValues[4];
     float cameraShift[2];           // a perspective camera's film offset, in halves of the picture across and up

@@ -52,6 +52,9 @@ struct Hit {
     // the hit, for a material with layers): which of an image's smaller copies a texture is read from. 0 reads the
     // whole picture.
     float coneWidth = 0.0f, coneSpread = 0.0f, footprint = 0.0f;
+    // On a mesh that changes shape during the shutter: how far the point moves from its opening to its closing, in the
+    // mesh's own space (DeviceMesh::motion), for the motion vectors; else 0.
+    float3 vertexMotion = {0.0f, 0.0f, 0.0f};
 };
 
 // ---- Images ------------------------------------------------------------------------------------
@@ -1758,7 +1761,25 @@ extern "C" __global__ void __raygen__moonlightipr() {
         // pinhole ray meets the plane in focus.
         float lensX, lensY;
         const float u = rnd(seed), v = rnd(seed);
-        if (params.lensBlades) {
+        if (params.bokehSize) {
+            // A bokeh image: a row by the sums down it, a place in that row by the sums across it, then a point within
+            // that cell; the image fills the square the lens fits in, its top up, turned as the blades are.
+            const unsigned n = params.bokehSize;
+            const float* sums = reinterpret_cast<const float*>(params.bokeh);
+            unsigned low = 0, high = n;
+            while (high - low > 1) { const unsigned mid = (low + high) / 2; if (sums[mid] <= v) low = mid; else high = mid; }
+            const float rowSpan = fmaxf(sums[low + 1] - sums[low], 1e-12f);
+            const float* across = sums + (n + 1) + size_t(low) * (n + 1);
+            unsigned left = 0, right = n;
+            while (right - left > 1) { const unsigned mid = (left + right) / 2; if (across[mid] <= u) left = mid; else right = mid; }
+            const float cellSpan = fmaxf(across[left + 1] - across[left], 1e-12f);
+            const float x = (float(left) + clamp((u - across[left]) / cellSpan, 0.0f, 1.0f)) / float(n);
+            const float y = (float(low) + clamp((v - sums[low]) / rowSpan, 0.0f, 1.0f)) / float(n);
+            const float sx = 2.0f * x - 1.0f, sy = 1.0f - 2.0f * y;
+            const float c = cosf(params.lensAngle), s = sinf(params.lensAngle);
+            lensX = sx * c - sy * s;
+            lensY = sx * s + sy * c;
+        } else if (params.lensBlades) {
             // A polygon, as MoonRay's: one of its triangles, then a point spread evenly over it.
             const float scaled = u * params.lensBlades;
             const unsigned blade = min(unsigned(scaled), params.lensBlades - 1);
@@ -2674,9 +2695,12 @@ extern "C" __global__ void __raygen__aovs() {
             const float* ends = reinterpret_cast<const float*>(params.instanceMotion) + size_t(hit.instance) * 24;
             float now[12];
             for (int k = 0; k < 12; ++k) now[k] = ends[k] + (ends[12 + k] - ends[k]) * params.time;
+            // In its own space at this moment, then where it was as the shutter opened and will be as it closes: a
+            // mesh that changes shape moves there too (Hit::vertexMotion), evenly over the shutter as it is blended.
             const float3 local = unplaceBy(now, hit.p);
-            opening = placeBy(ends, local);
-            closing = placeBy(ends + 12, local);
+            const float3 atOpening = local - hit.vertexMotion * params.time;
+            opening = placeBy(ends, atOpening);
+            closing = placeBy(ends + 12, atOpening + hit.vertexMotion);
         }
         float2 from, to;
         if (inPicture(params.cameraOpen, opening, from) && inPicture(params.cameraClose, closing, to))
@@ -2872,6 +2896,7 @@ ML_INLINE MappedSlots evalLayers(const DeviceMaterial& material, const DeviceMes
     channel[CHANNEL_SPECULAR] = vec(1.0f);
     for (unsigned slot = 0; slot < DISPLACE_SLOTS; ++slot) channel[CHANNEL_DISPLACE + slot] = vec(0.0f);
     channel[CHANNEL_STENCIL] = vec(0.0f);
+    channel[CHANNEL_BACK] = vec(material.back);
     MappedSlots slots;
     slots.normal = slots.bump = UV_SLOTS;
 
@@ -2880,7 +2905,7 @@ ML_INLINE MappedSlots evalLayers(const DeviceMaterial& material, const DeviceMes
     unsigned level = 0, used = 0;
     float masks[MASK_REGISTERS] = {1.0f, 1.0f, 1.0f, 1.0f};
     const unsigned colours = (1u << CHANNEL_COLOR) | (1u << CHANNEL_EMISSION) | (1u << CHANNEL_TRANSMISSION_COLOR)
-                           | (1u << CHANNEL_SUBSURFACE_COLOR);
+                           | (1u << CHANNEL_SUBSURFACE_COLOR) | (1u << CHANNEL_BACK);
 
     const DeviceLayer* layers = reinterpret_cast<const DeviceLayer*>(params.layers) + material.layerStart;
     for (unsigned i = 0; i < material.layerCount; ++i) {
@@ -3212,6 +3237,18 @@ ML_INLINE MappedSlots resolveMaterial(Hit* hit, const DeviceMaterial& material, 
     hit->tangent = vec(0.0f);
     hit->back = working(vec(material.back));
     hit->frontKeep = vec(material.frontKeep);
+    if (material.layerCount) {
+        // A map wired to the diffuse transmission colour (CHANNEL_BACK): what passes through, and what MoonRay then
+        // leaves on the lit side, as the material blends it: as much of each colour, or as much of every colour as of
+        // the strongest (a material's own keep is the same in all three then).
+        const float3 back = channel[CHANNEL_BACK];
+        const float3 passed = make_float3(clamp(back.x, 0.0f, 1.0f), clamp(back.y, 0.0f, 1.0f), clamp(back.z, 0.0f, 1.0f));
+        if (passed.x != material.back[0] || passed.y != material.back[1] || passed.z != material.back[2]) {
+            hit->back = working(passed);
+            const bool strongest = material.frontKeep[0] == material.frontKeep[1] && material.frontKeep[1] == material.frontKeep[2];
+            hit->frontKeep = strongest ? vec(1.0f - maxComponent(passed)) : vec(1.0f) - passed;
+        }
+    }
     hit->fuzz = material.fuzz;
     hit->fuzzColor = working(vec(material.fuzzColor));
     hit->fuzzRoughness = material.fuzzRoughness;
@@ -3237,6 +3274,10 @@ extern "C" __global__ void __closesthit__radiance() {
         ns = normals[triangle.x] * w + normals[triangle.y] * uv.x + normals[triangle.z] * uv.y;
     }
     hit->p = optixTransformPointFromObjectToWorldSpace(p0 * w + p1 * uv.x + p2 * uv.y);
+    if (mesh.motion) {
+        const float3* moves = reinterpret_cast<const float3*>(mesh.motion);
+        hit->vertexMotion = moves[triangle.x] * w + moves[triangle.y] * uv.x + moves[triangle.z] * uv.y;
+    }
     hit->ng = normalize(optixTransformNormalFromObjectToWorldSpace(ng));
     hit->ns = normalize(optixTransformNormalFromObjectToWorldSpace(ns));
     hit->coatNormal = vec(0.0f);

@@ -27,10 +27,12 @@ CHANNELS = {'diffCol': 0, 'diffAmt': 1, 'rough': 2, 'metallic': 3, 'lumiCol': 4,
             # layers put their height.
             'displace': 23, '_disp0': 23, '_disp1': 24, '_disp2': 25, '_disp3': 26,
             # Shader Tree stencil layers: the surface is taken away where they are white, over any dissolve.
-            'stencil': 27}
+            'stencil': 27,
+            # A map wired to DwaBase's diffuse transmission colour: the diffuse light passed through to the far side.
+            '_backCol': 28}
 # Channels a material row does not set: the maps, the mask, and values only gradients read.
 UNSET_BY_ROWS = ('normal', 'bump', 'groupMask', 'driverA', 'driverB', 'driverC', 'driverD', 'displace', '_disp0', '_disp1', '_disp2', '_disp3',
-                 'stencil')
+                 'stencil', '_backCol')
 # Channels whose constant rows can be worked out here instead of on the GPU, with the range the
 # material record keeps a single number in (None for colours, which it keeps whole).
 FOLDED = {'diffCol': None, 'diffAmt': (-math.inf, math.inf), 'rough': (0, 1), 'metallic': (0, 1), 'lumiCol': None,
@@ -483,7 +485,9 @@ def hair_surface(shader, parameters, note):
 GRAPH_INPUTS = {'albedo': 'diffCol', 'hair_color': 'diffCol', 'roughness': 'rough', 'metallic': 'metallic', 'emission': 'lumiCol',
                 'transmission': 'tranAmt', 'transmission_color': 'tranCol', 'clearcoat': 'coatAmt',
                 'clearcoat_roughness': 'coatRough', 'anisotropy': 'aniso', 'scattering_color': 'subsCol',
-                'input_normal': 'normal', 'presence': 'dissolve'}
+                'input_normal': 'normal', 'presence': 'dissolve',
+                # Its amount is the map's brightness (wired_layers), as MoonRay multiplies the two.
+                'diffuse_transmission_color': '_backCol'}
 GRAPH_SWITCHES = {'emission': 'show_emission', 'clearcoat': 'show_clearcoat', 'clearcoat_roughness': 'show_clearcoat'}
 GRAPH_WRAP = {'periodic': 'repeat', 'repeat': 'repeat', 'clamp': 'edge', 'mirror': 'mirror', 'black': 'reset'}
 
@@ -779,6 +783,14 @@ def graph_layers(source, note, runtime=None, displacement=None, wanted='height',
                 held = placed['type'] == 'GradientMap' or int(placed.get('parameters', {}).get('wrap_type', 0)) == 1
                 layer['tile_u'] = layer['tile_v'] = 'edge' if held else 'repeat'
         layer.update(effect=effect, blend='normal', opacity=1.0, identity=identity)
+        if effect == '_backCol':
+            # The diffuse transmission amount times the colour, as MoonRay takes them (the material's own back).
+            amount = (root.get('parameters') or {}).get('diffuse_transmission', switches.get('diffuse_transmission', 1.0))
+            try:
+                amount = min(1.0, max(0.0, float(amount)))
+            except (TypeError, ValueError):
+                amount = 1.0
+            layer['corrections'] = dict(layer.get('corrections') or {}, brightness=float((layer.get('corrections') or {}).get('brightness', 1.0)) * amount)
         if effect == 'dissolve':
             layer['invert'] = True
         if amplitude is not None:

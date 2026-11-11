@@ -73,6 +73,41 @@ def transform(matrix):
     return [m[0], m[4], m[8], m[12], m[1], m[5], m[9], m[13], m[2], m[6], m[10], m[14]]
 
 
+# A bokeh image is drawn from at this many brightnesses a side.
+BOKEH_SIZE = 64
+
+
+def bokeh_values(path, runtime):
+    """A camera's bokeh image as BOKEH_SIZE x BOKEH_SIZE brightnesses, top row first: made once with the runtime's oiiotool
+    and kept in the cache, named by the image's path, size and time."""
+    import uuid
+    from pathlib import Path
+    from .moonlightipr_materials import Compiler, cache_folder
+    source = Path(path)
+    stat = source.stat()
+    digest = hashlib.sha256(repr((str(source.resolve()), stat.st_size, stat.st_mtime_ns, BOKEH_SIZE, 'moonlightipr-bokeh-v1')).encode()).hexdigest()
+    target = cache_folder() / (digest + '.pfm')
+    if not target.is_file() or not target.stat().st_size:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        staged = target.with_name(target.stem + '-' + uuid.uuid4().hex + '.pfm')
+        try:
+            Compiler(runtime).run([str(source), '--ch', 'R,G,B', '--resize', '%dx%d!' % (BOKEH_SIZE, BOKEH_SIZE), '-d', 'float', '-o', str(staged)], source.name)
+            staged.replace(target)
+        finally:
+            if staged.exists():
+                staged.unlink()
+    data = target.read_bytes()
+    head = data.split(b'\n', 3)
+    width, height = (int(v) for v in head[1].split())
+    if (width, height) != (BOKEH_SIZE, BOKEH_SIZE):
+        raise ValueError('bokeh image read at %d x %d' % (width, height))
+    values = struct.unpack(('<' if float(head[2]) < 0 else '>') + '%df' % (width * height * 3), head[3][:width * height * 12])
+    # PFM rows run from the bottom: turned to top row first.
+    rows = [[0.2126 * values[(y * width + x) * 3] + 0.7152 * values[(y * width + x) * 3 + 1] + 0.0722 * values[(y * width + x) * 3 + 2]
+             for x in range(width)] for y in range(height)]
+    return [max(0.0, v) for row in reversed(rows) for v in row]
+
+
 def environment_image(item, runtime, full=False):
     """Convert a latitude-longitude image once to a linear float file in the working space."""
     import uuid
@@ -1019,6 +1054,17 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
              struct.pack('<4fI', *region, int(scene.get('_draft') or 0)),
              # The film offset (form 'H').
              struct.pack('<2f', *film_shift)]
+    # A bokeh image: its size and its brightnesses, top row first (form 'B'); 0 for none.
+    import subprocess
+    bokeh = None
+    if camera.get('dof') and camera.get('bokeh_image'):
+        try:
+            bokeh = bokeh_values(camera['bokeh_image'], runtime)
+        except (OSError, ValueError, subprocess.SubprocessError) as exc:
+            warnings.append('MoonLightIPR draws the lens without its bokeh image (%s).' % exc)
+    parts.append(struct.pack('<I', BOKEH_SIZE if bokeh else 0))
+    if bokeh:
+        parts.append(struct.pack('<%df' % len(bokeh), *bokeh))
     if motion:
         parts.append(struct.pack('<10f', *placed(camera.get('matrix_close', camera.get('matrix', IDENTITY)),
                                                  camera.get('focal_mm_close', camera['focal_mm']))))

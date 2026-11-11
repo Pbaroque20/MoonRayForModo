@@ -363,6 +363,11 @@ SceneSettings SceneLoader::apply(const std::string& path) {
     in.floats(camera.region, 4);
     camera.draft = in.value<uint32_t>();
     in.floats(camera.filmShift, 2);
+    // A bokeh image: its size, then its brightnesses, top row first (form 'B'); 0 for none.
+    camera.bokehSize = in.value<uint32_t>();
+    if (camera.bokehSize > 256) throw std::runtime_error("MoonLightIPR bokeh image is too large");
+    camera.bokeh.resize(size_t(camera.bokehSize) * camera.bokehSize);
+    if (!camera.bokeh.empty()) in.floats(camera.bokeh.data(), camera.bokeh.size());
     // With motion blur, the camera again as it is when the shutter closes.
     Camera cameraClose = camera;
     if (sceneFlags & SCENE_MOTION) {

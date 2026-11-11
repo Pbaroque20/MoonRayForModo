@@ -12,12 +12,15 @@ from moonray_modo import environments  # noqa: E402
 
 class EnvironmentFlip(unittest.TestCase):
     def test_a_flip_alone(self):
-        self.assertTrue(environments.flipped_across({'scale': [-1, 1], 'uv_matrix': [1, 0, 0, 0, 1, 0], 'rotation': 0}))
-        self.assertTrue(environments.flipped_across({'scale': [-1.0, 1.0]}))
+        self.assertEqual(environments.flipped_across({'scale': [-1, 1], 'uv_matrix': [1, 0, 0, 0, 1, 0], 'rotation': 0}), (True, False))
+        self.assertEqual(environments.flipped_across({'scale': [-1.0, 1.0]}), (True, False))
+
+    def test_a_vertical_flip_and_both(self):
+        self.assertEqual(environments.flipped_across({'scale': [1, -1]}), (False, True))
+        self.assertEqual(environments.flipped_across({'scale': [-1, -1]}), (True, True))
 
     def test_anything_more_is_baked_as_before(self):
         self.assertFalse(environments.flipped_across({'scale': [1, 1]}))
-        self.assertFalse(environments.flipped_across({'scale': [-1, -1]}))
         self.assertFalse(environments.flipped_across({'scale': [2, 1]}))
         self.assertFalse(environments.flipped_across({'scale': [-1, 1], 'rotation': 0.5}))
         self.assertFalse(environments.flipped_across({'scale': [-1, 1], 'uv_matrix': [1, 0, 0.25, 0, 1, 0]}))
@@ -25,7 +28,8 @@ class EnvironmentFlip(unittest.TestCase):
     def test_the_capture_mirrors_and_clears_the_transform(self):
         source = (KIT / 'moonray_modo/environments.py').read_text(encoding='utf-8')
         self.assertIn("scale=[1.0,1.0],transformed=False,mirrored_from=str(path.resolve())", source)
-        self.assertIn("'--flop'", source)
+        self.assertIn("['--flop'] if across", source)
+        self.assertIn("['--flip'] if down", source)
 
 
 if __name__ == '__main__':

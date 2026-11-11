@@ -8,6 +8,7 @@ The current release is [0.5.3.2](https://github.com/Pbaroque20/MoonRayForModo/re
 
 ## New in 0.5.4 (coming)
 
+- **MoonLightIPR draws bokeh images, diffuse transmission maps and the motion of meshes that change shape**, and an environment flipped with Vertical Wrap -1 flips rightly.
 - **16K textures stay on XPU2**, a VDB's fire renders when XPU2 hands a scene to MoonRay, and **Select Volume Here** in the preview's right-click menu.
 - **Flipping an environment image (Horizontal Wrap -1) no longer changes its lighting**: the image is mirrored at its full size.
 - **MoonRay graph images are found when a scene has moved**, as Modo's image clips are, and Relink Missing Images lists them.
@@ -679,7 +680,7 @@ Comparison audit between Modo 16.1v9 and MoonLightIPR, the realtime preview: wha
 | **Environment** |  |  |
 | Gradients, constant colours and HDRI image layers | ![yes](docs/images/feature-yes.svg) | An HDRI that is the whole environment at 1024 x 512 in realtime, at its full size in a Render; layered environments and physical skies at 256 x 128; a third environment image shows as grey |
 | **Cameras** |  |  |
-| Perspective and orthographic cameras | ![yes](docs/images/feature-yes.svg) | With depth of field, motion blur and stereo (a camera set to both eyes shows the left) |
+| Perspective and orthographic cameras | ![yes](docs/images/feature-yes.svg) | With depth of field (a bokeh image too), motion blur and stereo (a camera set to both eyes shows the left) |
 | Other camera projections | ![no](docs/images/feature-no.svg) | MoonRay's fisheye, spherical and dome cameras are drawn in their place |
 | **Materials** |  |  |
 | Standard material: GTR, Blinn and Ashikhmin | ![partly](docs/images/feature-partly.svg) | Highlights fitted to Modo's as for MoonRay; very smooth ones come out dimmer |

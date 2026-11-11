@@ -4,6 +4,10 @@
 
 ## New in 0.5.4 (coming)
 
+- **MoonLightIPR draws a camera's bokeh image**: out-of-focus highlights take the image's shape, turned as the blades are, where they were round.
+- **MoonLightIPR takes a map wired to diffuse transmission colour** (a leaf's or a blade of grass's translucency), at the material's diffuse transmission amount, where the map was left out.
+- **MoonLightIPR's motion vectors follow a mesh that changes shape** during the shutter, not only its item's move.
+- **Vertical Wrap -1 flips an environment image top to bottom**, and both wraps at -1 flip it both ways, at its full size; a vertical flip smeared the image's top row over the sky.
 - **16K textures stay on XPU2**: a texture whose file was larger than 1 GB sent the whole scene to MoonRay XPU (a tester's volcano with a 16K EXR diffuse map), and textures past 2 GB each or 4 GB together, as decoded, went into Texture Overflow on any machine (the same volcano at 8K). XPU2 reads a texture a tile at a time, so a file's size no longer matters, and textures may now take half of XPU2's memory ceiling, 4 GB at least. Grass with a 16K float EXR renders on XPU2 with no overflow.
 - **A VDB's fire renders when XPU2 hands a scene to MoonRay**: a VDB made with Load VDB File whose emission grid is set (flames, temperature) failed in MoonRay XPU, which this build cannot draw it in; MoonRay now starts in scalar for it, as for a cookie filter, while XPU2 keeps rendering it where it can.
 - **Select Volume Here**: right-click in the preview to select the VDB volume under the pointer, found where it is thick rather than anywhere in its box.
