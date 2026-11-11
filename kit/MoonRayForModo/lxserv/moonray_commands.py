@@ -632,7 +632,7 @@ lx.bless(AssetLibrary,'moonray.library')
 
 
 class RhizomeWindow(lxu.command.BasicCommand):
-    """MoonRay > Rhizome...: XPU2 across the studio's machines (rhizome_window.py)."""
+    """MoonRay > Rhizome: Decentralized Rendering: XPU2 across the studio's machines (rhizome_window.py)."""
     def cmd_Flags(self): return lx.symbol.fCMD_UI
     def basic_Execute(self, msg, flags):
         from moonray_modo.rhizome_window import show

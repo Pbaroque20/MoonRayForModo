@@ -1,4 +1,4 @@
-"""Rhizome (MoonRay menu > Rhizome...): XPU2 across the studio's machines, from Modo.
+"""Rhizome (MoonRay menu > Rhizome: Decentralized Rendering): XPU2 across the studio's machines, from Modo.
 
 Four pages:
 - Render: the scene (this frame or a range) exported and rendered by this machine as the master, with every node it
