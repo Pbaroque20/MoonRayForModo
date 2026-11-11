@@ -61,6 +61,15 @@ unchanged into runtime/moonlightipr/MoonLightIPRKernel.ptx. Copyright Contributo
 Apache License 2.0, with NVIDIA's covenant not to assert patents; both texts are in runtime/moonlightipr/licenses/
 (OpenQMC-LICENSE.txt and OpenQMC-LICENSE-NVIDIA.txt). They are not relicensed under MIT.
 
+## Rhizome
+
+Rhizome, the decentralized rendering that spreads XPU2's frames across a studio's machines (MoonRay > Rhizome: Render
+Across Machines, and `moonray_xpu2 rhizome`), is not third-party software: it was designed by Raphael Tobar and is
+released under this project's MIT License. It is not a DreamWorks Animation product and is not affiliated with or
+endorsed by DreamWorks Animation. It renders with XPU2 and MoonRay, whose notices are above. Its encryption (ECDH P-256
+key exchange, AES-256-GCM) and its network discovery use Windows' own Cryptography API: Next Generation and network
+libraries, which are part of Windows and are not shipped with the kit; it bundles no other third-party code.
+
 ## meshoptimizer
 
 The realtime previews' mesh simplification uses meshoptimizer by Arseny Kapoulkine (zeux), version 0.22, under the MIT
