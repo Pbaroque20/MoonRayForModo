@@ -199,6 +199,20 @@ def camera_sequence_entry(text):
             '<atom type="Hash">MoonRayMenu_cameras:control</atom></list>' + text[end:])
 
 
+
+def rhizome_entry(text):
+    """Rhizome (render across machines) in the MoonRay menu, after Camera Sequence (else after Render Animation);
+    unchanged if it is there."""
+    if 'cmd moonray.rhizome' in text:
+        return text
+    for anchor in ('<list type="Control" val="cmd moonray.page cameras">', '<list type="Control" val="cmd moonray.page animation">'):
+        if text.count(anchor) == 1:
+            end = text.index('</list>', text.index(anchor)) + len('</list>')
+            eol = '\r\n' if '\r\n' in text else '\n'
+            return (text[:end] + eol + '      <list type="Control" val="cmd moonray.rhizome"><atom type="Label">Rhizome: Render Across Machines...</atom>'
+                    '<atom type="Hash">MoonRayMenu_rhizome:control</atom></list>' + text[end:])
+    return text
+
 def round_control(text):
     """The mesh form's round-curves and curve-basis controls, after the curve UV control; each unchanged if it is there."""
     anchor = '<list type="Control" val="cmd moonray.object.curve_uv ?">'

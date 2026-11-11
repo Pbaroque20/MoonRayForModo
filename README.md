@@ -23,6 +23,7 @@ The current release is [0.5.3.2](https://github.com/Pbaroque20/MoonRayForModo/re
 - **MoonLightIPR Render at the camera's resolution** (Preview Preferences), **Select Mesh Here** in the picture's menu, finer graph sliders.
 - **AOVs in MoonLightIPR, for motion graphics**: Diffuse, Glossy, Emission and Environment background, which add up to the beauty, and Alpha, Camera depth, Shading normal, World position and Albedo, in the buffer list, shown at once and costing the beauty nothing.
 - **Render with MoonLightIPR**: with RT off, Render is no longer greyed: MoonLightIPR gathers Render Samples a pixel (Render Settings > MoonLightIPR, 2000 unless changed, saved with the scene) as fast as the graphics card can, and stops. The label under the picture says how many samples a pixel the picture holds as it comes (137 / 500 ps), in realtime too.
+- **Rhizome: render across the studio's machines** (MoonRay > Rhizome: Render Across Machines...): this frame or a range rendered by XPU2 on every machine running a Rhizome node, the picture as one machine renders it. The same window starts a node on this machine, shows the machines at work, approves new ones and adds the Windows Firewall rule. Windows only.
 
 ## New in 0.5.3.2
 

@@ -629,6 +629,15 @@ class AssignLibraryMaterial(lxu.command.BasicCommand):
         settings=properties.read(material);settings['native_parameters']=dict(settings.get('native_parameters') or {},**parameters);properties.write(material,settings)
 
 lx.bless(AssetLibrary,'moonray.library')
+
+
+class RhizomeWindow(lxu.command.BasicCommand):
+    """MoonRay > Rhizome...: XPU2 across the studio's machines (rhizome_window.py)."""
+    def cmd_Flags(self): return lx.symbol.fCMD_UI
+    def basic_Execute(self, msg, flags):
+        from moonray_modo.rhizome_window import show
+        show()
+lx.bless(RhizomeWindow, 'moonray.rhizome')
 lx.bless(AssignLibraryMaterial,'moonray.library.assign')
 
 class AssignMaterialBundle(lxu.command.BasicCommand):

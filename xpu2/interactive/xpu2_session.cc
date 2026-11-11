@@ -9,6 +9,7 @@
 //       cached for every session after. A mark of it is left (shaderMark) for this driver and these programs.
 //   moonray_xpu2 --shaders-compiled
 //   moonray_xpu2 --list-devices   (the processor groups and graphics cards, one a line, for Device Management)
+//   moonray_xpu2 rhizome node | master | id | trust | approve | revoke | status   (a frame across machines: rhizome_session.inc, RHIZOME.md)
 //       Exits 0 when the mark is there for every kind of card in the machine, 4 when it is out of date (other
 //       programs, another driver, or a kind of card it was not compiled for), 3 when there is none.
 //
@@ -18,6 +19,11 @@
 // the work as @@MODO_TILES, the work grid's cells being rendered (its cellular rules move the CPU's workers from cell
 // to cell), @@MODO_WORKERS: each CPU worker's 8-pixel tile, and @@MODO_GPU_WORKERS: the cells the GPU's queued
 // launches hold (the private kit draws them in a colour of their own).
+// Winsock before windows.h (Rhizome, rhizome_session.inc).
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#undef near  // windows.h's, which the integrator's names would meet
+#undef far
 #include <OpenImageDenoise/oidn.h>  // types only: the library is loaded at run time (CpuDenoiser)
 #include "async_render.h"
 #include "../../native-port/modo_protocol_line.h"
@@ -305,6 +311,9 @@ ShaderStamp shaderStamp(const Programs& p) {
     char name[32];
     std::snprintf(name, sizeof(name), "%016llx.compiled", (unsigned long long)h);
     stamp.mark = fs::u8path(local ? local : ".") / "MoonRayForModo" / "xpu2-shaders" / name;
+    // XPU2_SHADER_MARKS: the marks kept in that folder instead (a test of a machine with none compiled, OptiX's own cache
+    // left as it is).
+    if (const char* marks = std::getenv("XPU2_SHADER_MARKS"); marks && *marks) stamp.mark = fs::u8path(marks) / name;
     return stamp;
 }
 fs::path shaderMark(const Programs& p) { return shaderStamp(p).mark; }
@@ -2557,8 +2566,25 @@ int session(const Args& args, const fs::path& directory) {
 
 }  // namespace
 
+#include "rhizome_session.inc"
+
 int main(int argc, char** argv) {
     const fs::path folder = executableFolder();
+    if (argc >= 2 && (std::string(argv[1]) == "rhizome" || std::string(argv[1]) == "--rhizome-master" || std::string(argv[1]) == "--rhizome-node")) {
+        // A node or master renders: its memory ceiling and the texture watch, as a session's. The identity verbs print
+        // their answer alone (a script reads the hash rhizome id prints).
+        const std::string verb = argc >= 3 ? argv[2] : "";
+        if (std::string(argv[1]) != "rhizome" || verb == "node" || verb == "master") {
+            memoryCeiling();
+            texture::watchPressure(ceilingBytes);
+        }
+        try {
+            return rhizomesession::run(argc, argv);
+        } catch (const std::exception& e) {
+            std::fprintf(stderr, "MoonRay XPU2 Rhizome: %s\n", e.what());
+            return 1;
+        }
+    }
     if (argc == 2 && std::string(argv[1]) == "--compile-shaders") return compileShaders(folder);
     if (argc == 2 && std::string(argv[1]) == "--shaders-compiled") return shadersCompiled(folder);
     if (argc == 2 && std::string(argv[1]) == "--list-devices") return listDevices();
