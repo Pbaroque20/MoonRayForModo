@@ -30,11 +30,13 @@ AOVS = {
     'alpha': 9,
     # The motion vectors: read with the shutter's two ends, held at the frame's moment where motion blur is off.
     'motion_vectors': 10,
+    # A shadow matte, how much of the direct light at what the camera sees was blocked: 0 lit to 1 in full shadow.
+    'moonlightipr_shadow': 11,
 }
 
 # MoonLightIPR's own buffers, listed first after the beauty, and only while MoonLightIPR is the engine. Glossy is
 # MoonRay's direct and indirect glossy together (what compositors call specular): highlights from lights, glossy and mirror reflections, refraction, hair.
-OWN = (('Diffuse', 'moonlightipr_diffuse'), ('Glossy', 'moonlightipr_glossy'))
+OWN = (('Diffuse', 'moonlightipr_diffuse'), ('Glossy', 'moonlightipr_glossy'), ('Shadow', 'moonlightipr_shadow'))
 OWN_KEYS = frozenset(key for _, key in OWN)
 
 

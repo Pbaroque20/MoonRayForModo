@@ -287,7 +287,7 @@ struct Renderer::Impl {
     Buffer lightDistributions, distantDistributions;
     Buffer beauty, albedo, normal, denoised, lighting, paramsBuffer;
     Buffer aov;     // the geometry AOVs, AOV_SLOTS float[4] per pixel (setAovs), while they are gathered
-    Buffer passes;  // and the light passes beside them, PASS_BACKGROUND float[4] per pixel (LaunchParams::passes)
+    Buffer passes;  // and the light passes and the shadow matte beside them, PASS_SLOTS float[4] per pixel (LaunchParams::passes)
     Buffer instanceMotion;  // each instance's transform as the shutter opens and closes, for the motion vectors
     Buffer bokeh;           // the camera's bokeh image as a table to draw lens points by (LaunchParams::bokeh)
     std::vector<float> bokehMade;   // the image it was made from
@@ -1946,7 +1946,7 @@ void Renderer::resize(uint32_t width, uint32_t height) {
     if (impl->params.aovs) {
         impl->aov.reserve(bytes * AOV_SLOTS);
         impl->params.aovs = impl->aov.ptr;
-        impl->passes.reserve(bytes * PASS_BACKGROUND);
+        impl->passes.reserve(bytes * PASS_SLOTS);
         impl->params.passes = impl->passes.ptr;
     }
     impl->params.width = width;
@@ -2123,7 +2123,7 @@ void Renderer::setAovs(bool on) {
         impl->aov.reserve(pixels * AOV_SLOTS * 4 * sizeof(float));
         impl->params.aovs = impl->aov.ptr;
         // The light passes come with them, from the beauty's own paths, so that switching to one renders nothing again.
-        impl->passes.reserve(pixels * PASS_BACKGROUND * 4 * sizeof(float));
+        impl->passes.reserve(pixels * PASS_SLOTS * 4 * sizeof(float));
         impl->params.passes = impl->passes.ptr;
     } else {
         impl->params.aovs = 0;
@@ -2164,11 +2164,11 @@ void Renderer::readAov(uint32_t slot, float* rgb) {
 
 void Renderer::readPass(uint32_t pass, float* rgb) {
     if (!impl->samples) throw std::runtime_error("MoonLightIPR has no samples to read");
-    if (!impl->params.passes || pass < 1 || pass > PASS_BACKGROUND) throw std::runtime_error("MoonLightIPR gathers no such light pass");
+    if (!impl->params.passes || pass < 1 || pass > PASS_SLOTS) throw std::runtime_error("MoonLightIPR gathers no such light pass");
     const size_t count = size_t(impl->params.width) * impl->params.height;
     std::vector<float> pixels(count * 4);
     ML_CHECK(cudaMemcpy2D(pixels.data(), 4 * sizeof(float), reinterpret_cast<const char*>(impl->params.passes) + (pass - 1) * 4 * sizeof(float),
-                          PASS_BACKGROUND * 4 * sizeof(float), 4 * sizeof(float), count, cudaMemcpyDeviceToHost));
+                          PASS_SLOTS * 4 * sizeof(float), 4 * sizeof(float), count, cudaMemcpyDeviceToHost));
     for (size_t i = 0; i < count; ++i) std::copy(&pixels[i * 4], &pixels[i * 4] + 3, rgb + i * 3);
 }
 

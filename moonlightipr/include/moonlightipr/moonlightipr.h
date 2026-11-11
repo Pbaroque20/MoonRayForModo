@@ -463,7 +463,7 @@ public:
     bool aovs() const;
     void readAov(uint32_t slot, float* rgb);
     // A light pass (1 diffuse, 2 glossy, 3 emission, 4 background), gathered with the AOVs from the beauty's own paths:
-    // the four add up to the beauty, fog before the first surface apart.
+    // the four add up to the beauty, fog before the first surface apart; or 5, the shadow matte (0 lit to 1 in shadow).
     void readPass(uint32_t pass, float* rgb);
     // A light pass (AovPass) rendered in place of the beauty, 0 for the beauty; a render begins again with another.
     void setPass(uint32_t pass);

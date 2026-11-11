@@ -454,8 +454,9 @@ struct LaunchParams {
     // A light pass rendered in place of the beauty (AovPass); 0 the beauty.
     unsigned aovPass;
     unsigned aovPad;
-    // The light passes, gathered beside the beauty from its own paths while the AOVs are: PASS_BACKGROUND float[4] per
-    // pixel, pass after pass (diffuse, glossy, emission, background), each a running mean as the beauty is; 0 none.
+    // The light passes, gathered beside the beauty from its own paths while the AOVs are: PASS_SLOTS float[4] per
+    // pixel, pass after pass (diffuse, glossy, emission, background, then the shadow matte), each a running mean as the
+    // beauty is; 0 none.
     DevicePtr passes;
     // For the motion vectors: each instance's transform as the shutter opens and as it closes (OptiX's 3x4 rows, twelve
     // then twelve floats an instance), or 0 where none moves; the moment of the shutter this sample is at (0 to 1); and
@@ -471,6 +472,9 @@ struct LaunchParams {
 // first surface apart), each rendered in place of the beauty, as the first surface the camera sees decides: diffuse
 // (with subsurface), glossy (with hair, mirror reflections and refraction), emission and the environment seen.
 enum AovPass : unsigned { PASS_BEAUTY = 0, PASS_DIFFUSE = 1, PASS_GLOSSY = 2, PASS_EMISSION = 3, PASS_BACKGROUND = 4 };
+// Gathered beside the light passes (LaunchParams::passes), from the same paths: a shadow matte, how much of the direct
+// light at the camera's first surface its lights' samples found blocked, 0 lit to 1 in full shadow.
+const unsigned PASS_SHADOW = 5, PASS_SLOTS = 5;
 // And from what the camera sees first, gathered beside the beauty, all at once: its albedo, depth, shading normal,
 // world position and alpha, each a running mean as the beauty is.
 // And the motion vectors: how far, in pixels across and up, what the camera sees there moves from the shutter's opening

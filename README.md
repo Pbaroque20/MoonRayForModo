@@ -21,7 +21,15 @@ The current release is [0.5.3.2](https://github.com/Pbaroque20/MoonRayForModo/re
 - **VDB sequences stay on XPU2**, a numbered VDB file plays as a sequence at once, and VDB shapes show their box and a point cloud in the viewport.
 - **XPU2's sampling settings follow the engine in use**, and XPU2 realtime offers the denoised beauty, with the beauty, alone.
 - **MoonLightIPR Render at the camera's resolution** (Preview Preferences), **Select Mesh Here** in the picture's menu, finer graph sliders.
-- **AOVs in MoonLightIPR, for motion graphics**: Diffuse, Glossy, Emission and Environment background, which add up to the beauty, and Alpha, Camera depth, Shading normal, World position and Albedo, in the buffer list, shown at once and costing the beauty nothing.
+- **AOVs in MoonLightIPR, for motion graphics**: Diffuse, Glossy, Emission and Environment background, which add up to the beauty, and Alpha, Camera depth, Shading normal, World position, Albedo, Motion vectors (wherever something moves) and a Shadow matte (how much of the direct light was blocked, 0 lit to 1 in full shadow), in the buffer list. All are gathered with the beauty from its first sample, so choosing one shows it at once, and **Export AOVs** (right-click the picture) saves the ones ticked as EXRs, a multilayer EXR or pictures, exactly as MoonLightIPR rendered them.
+
+  ![MoonLightIPR's AOVs of a glass dragon: beauty, diffuse, glossy and albedo above; shading normal, world position, camera depth and the shadow matte below](docs/images/moonlightipr-aovs.jpg)
+- **Fewer fireflies in MoonLightIPR**: it clamps from what the camera sees by default (its own Clamp From Bounce, 0), so Sample Clamp also takes the specks seen through clear glass; and it follows MoonRay's Roughness Clamp, on the materials MoonRay renders as DwaBase and on hair. The clamps are in Render Settings' MoonLightIPR group.
+
+  ![A refractive dragon in MoonLightIPR: Clamp From Bounce 1 on the left, speckled with red, and 0 on the right, the new default](docs/images/moonlightipr-fireflies-dragon.jpg)
+
+  ![Rough gold balls among near-mirror metal, Roughness Clamp off above and 1 below, MoonRay left and MoonLightIPR right: the clamp blurs and brightens their reflections alike](docs/images/roughness-clamp-engines.jpg)
+- **Render missing frames continues a sequence**, taken further or finished after an edit, keeping the frames already there; **Convert to MoonRay Rect Light** on an area light's right-click menu; MoonLightIPR's Render Animation writes the denoised beauty beside the beauty; no more .postprocess folders beside frames.
 - **Render with MoonLightIPR**: with RT off, Render is no longer greyed: MoonLightIPR gathers Render Samples a pixel (Render Settings > MoonLightIPR, 2000 unless changed, saved with the scene) as fast as the graphics card can, and stops. The label under the picture says how many samples a pixel the picture holds as it comes (137 / 500 ps), in realtime too.
 - **Rhizome: render across the studio's machines** (MoonRay > Rhizome: Decentralized Rendering): this frame or a range rendered by XPU2 on every machine running a Rhizome node, the picture as one machine renders it. The same window starts a node on this machine, shows the machines at work, approves new ones and adds the Windows Firewall rule. Windows only.
 

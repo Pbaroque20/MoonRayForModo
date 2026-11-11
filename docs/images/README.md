@@ -84,3 +84,7 @@ The dragon test scene rendered by XPU2 in the preview window with Preferences > 
 ## Toon lines with gaps (`toon-line-gaps-*.png`)
 
 `toon-line-gaps-head.png`, `-face` and `-shoulder` by Ironic3D, a tester, used with credit: a toon head rendered before the Toon lines without gaps override, its lines doubled and dashed. `toon-line-gaps-head.png` is the whole picture, `toon-line-gaps-face.png` and `toon-line-gaps-shoulder.png` close-ups. Shown in `patches/native-windows/README.md`. `toon-line-gaps-fixed.png` is the patch's result: the material ball's toon lines alone (Output Mode set to lines), whole with the override on.
+
+## MoonLightIPR's AOVs, fireflies and Roughness Clamp (`moonlightipr-aovs.jpg`, `moonlightipr-fireflies-dragon.jpg`, `roughness-clamp-engines.jpg`)
+
+Made by `tools/make_readme_images_1111.py` from a tester's dragon scene (a DwaRefractiveMaterial dragon on a floor, a sun and a gradient sky) and from the Roughness Clamp check's renders (`tools/check_moonlightipr_roughness_clamp.py`, rough gold balls among near-mirror metal). The dragon at 960 x 540 and 1024 samples a pixel in MoonLightIPR, its AOVs shown at half size; the clamp's at 960 x 540, MoonRay at its check's samples and MoonLightIPR at 2048.

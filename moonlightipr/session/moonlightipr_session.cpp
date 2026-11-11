@@ -13,7 +13,8 @@
 //   @@MODO_SHARED <generation> beauty ...  a frame is waiting in shared memory
 //   @@MODO_SESSION DONE <generation>       the picture is clean, or the sample target was reached
 //   @@MODO_SESSION SAMPLES <generation> <n> the frame about to be sent holds n samples a pixel
-// AOVs ("aov <n> <name>", 0 for the beauty): 1 to 4 a light pass (AovPass), from 5 a geometry AOV (AovSlot n - 5). All
+// AOVs ("aov <n> <name>", 0 for the beauty): 1 to 4 a light pass (AovPass), 5 to 10 a geometry AOV (AovSlot n - 5), 11 the
+// shadow matte (PASS_SHADOW). All
 // of them are gathered beside the beauty, from its own paths, from the start; choosing one is only another picture
 // sent, at once, in the middle of a render or after it. Each is sent under its name.
 //   @@MODO_SESSION FAILED <generation>     the scene was rejected; the reason is on standard error
@@ -74,6 +75,8 @@ private:
 
 // The light passes (1 to LIGHT_PASSES, AovPass) and the geometry AOVs after them (AovSlot), as src/device/shared.h has them.
 const unsigned LIGHT_PASSES = 4, GEOMETRY_AOVS = 6;
+// After the geometry AOVs: the shadow matte, read as the fifth of the passes (PASS_SHADOW).
+const unsigned SHADOW_AOV = LIGHT_PASSES + GEOMETRY_AOVS + 1;
 
 void event(const char* kind, const std::string& generation) {
     std::cout << "\n@@MODO_SESSION " << kind << " " << generation << std::endl;
@@ -144,8 +147,8 @@ int main(int argc, char** argv) {
                     // The first AOV asked for: the render begins again, gathering them all.
                     if (n && !renderer.aovs()) return true;
                     commands.next();
-                    aovShown = n > LIGHT_PASSES ? int(n - LIGHT_PASSES - 1) : -1;
-                    passShown = n <= LIGHT_PASSES ? n : 0;
+                    aovShown = n > LIGHT_PASSES && n < SHADOW_AOV ? int(n - LIGHT_PASSES - 1) : -1;
+                    passShown = n <= LIGHT_PASSES ? n : n == SHADOW_AOV ? 5u : 0u;
                     aovName = n ? name : std::string();
                     viewChanged = true;
                     continue;
@@ -182,9 +185,9 @@ int main(int argc, char** argv) {
             }
             if (verb == "aov") {
                 const unsigned n = unsigned(std::strtoul(generation.c_str(), nullptr, 10));
-                if (n > LIGHT_PASSES + GEOMETRY_AOVS) continue;
-                aovShown = n > LIGHT_PASSES ? int(n - LIGHT_PASSES - 1) : -1;
-                passShown = n <= LIGHT_PASSES ? n : 0;
+                if (n > SHADOW_AOV) continue;
+                aovShown = n > LIGHT_PASSES && n < SHADOW_AOV ? int(n - LIGHT_PASSES - 1) : -1;
+                passShown = n <= LIGHT_PASSES ? n : n == SHADOW_AOV ? 5u : 0u;
                 aovName = n ? path : std::string();
                 // The first AOV asked for: rendered again, gathering them all, a render already finished as well, unless
                 // the host has more to say first (a new scene).

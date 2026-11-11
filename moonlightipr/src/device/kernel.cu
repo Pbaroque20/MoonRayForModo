@@ -1260,7 +1260,7 @@ ML_INLINE BsdfEval onlyLobes(BsdfEval e, unsigned only) {
 // local lights. weight is the path's weight on arriving at the surface.
 ML_INLINE float3 directLight(const Surface& surface, const Lobes& lobes, float3 wo, const Frame& frame,
                              float3 p, float3 ng, float3 weight, bool lit, Seed& seed, float3 lift = make_float3(0.0f, 0.0f, 0.0f),
-                             unsigned set = 0, unsigned only = 0, float3* diffuseShare = nullptr) {
+                             unsigned set = 0, unsigned only = 0, float3* diffuseShare = nullptr, float2* shaded = nullptr) {
     const DeviceDistantLight* distantLights = reinterpret_cast<const DeviceDistantLight*>(params.distantLights);
     const DeviceLight* lights = reinterpret_cast<const DeviceLight*>(params.lights);
     float3 radiance = vec(0.0f);
@@ -1273,8 +1273,10 @@ ML_INLINE float3 directLight(const Surface& surface, const Lobes& lobes, float3 
             const float pdf = lobes.specular * e.specularPdf + (1.0f - lobes.specular) * e.diffusePdf;
             const float3 found = litBy(e, pdf, lightPdf);
             if (maxComponent(found) > 0.0f) {
-                const float3 c = clampSample(weight * found * envRadiance(toLight) * shadow(shadowFrom(surface, p, lift, ng, frame.n, toLight), toLight, seed), lit);
+                const float3 open = weight * found * envRadiance(toLight);
+                const float3 c = clampSample(open * shadow(shadowFrom(surface, p, lift, ng, frame.n, toLight), toLight, seed), lit);
                 radiance += c;
+                if (shaded) { shaded->x += luminance(c); shaded->y += luminance(clampSample(open, lit)); }
                 if (diffuseShare) *diffuseShare += c * diffusePartOf(e, pdf, lightPdf, found);
             }
         }
@@ -1289,8 +1291,10 @@ ML_INLINE float3 directLight(const Surface& surface, const Lobes& lobes, float3 
         const float sunPdf = distantPdf(light, toSun);
         const float3 found = litBy(e, pdf, sunPdf);
         if (maxComponent(found) > 0.0f) {
-            const float3 c = clampSample(weight * found * distantRadiance(light, toSun) * shadow(shadowFrom(surface, p, lift, ng, frame.n, toSun), toSun, seed), lit);
+            const float3 open = weight * found * distantRadiance(light, toSun);
+            const float3 c = clampSample(open * shadow(shadowFrom(surface, p, lift, ng, frame.n, toSun), toSun, seed), lit);
             radiance += c;
+            if (shaded) { shaded->x += luminance(c); shaded->y += luminance(clampSample(open, lit)); }
             if (diffuseShare) *diffuseShare += c * diffusePartOf(e, pdf, sunPdf, found);
         }
     }
@@ -1307,8 +1311,10 @@ ML_INLINE float3 directLight(const Surface& surface, const Lobes& lobes, float3 
         const float pdf = lobes.specular * e.specularPdf + (1.0f - lobes.specular) * e.diffusePdf;
         const float3 found = litBy(e, pdf, lampPdf);
         if (maxComponent(found) > 0.0f) {
-            const float3 c = clampSample(weight * found * emitted * shadow(shadowFrom(surface, p, lift, ng, frame.n, toLamp), toLamp, seed, distance * 0.999f), lit);
+            const float3 open = weight * found * emitted;
+            const float3 c = clampSample(open * shadow(shadowFrom(surface, p, lift, ng, frame.n, toLamp), toLamp, seed, distance * 0.999f), lit);
             radiance += c;
+            if (shaded) { shaded->x += luminance(c); shaded->y += luminance(clampSample(open, lit)); }
             if (diffuseShare) *diffuseShare += c * diffusePartOf(e, pdf, lampPdf, found);
         }
     }
@@ -1742,11 +1748,11 @@ ML_INLINE void aovAdd(unsigned pixel, unsigned slot, float3 value) {
 // lobes together, in the shares passShare says (diffuse; glossy the rest).
 const unsigned PASS_SPLIT = 5;
 ML_INLINE float4* passSlot(unsigned pixel, unsigned pass) {
-    return reinterpret_cast<float4*>(params.passes) + size_t(pixel) * PASS_BACKGROUND + (pass - 1);
+    return reinterpret_cast<float4*>(params.passes) + size_t(pixel) * PASS_SLOTS + (pass - 1);
 }
 ML_INLINE void passBegin(unsigned pixel) {
     const float keep = float(params.sample) / float(params.sample + 1);
-    for (unsigned k = 1; k <= PASS_BACKGROUND; ++k) {
+    for (unsigned k = 1; k <= PASS_SLOTS; ++k) {
         float4* p = passSlot(pixel, k);
         *p = params.sample == 0 ? make_float4(0.0f, 0.0f, 0.0f, 1.0f) : make_float4(p->x * keep, p->y * keep, p->z * keep, 1.0f);
     }
@@ -2393,11 +2399,17 @@ extern "C" __global__ void __raygen__moonlightipr() {
         const bool lit = roughDepth >= params.sampleClampDepth;   // this surface was reached by scattering off something rough
         // At the camera's first surface, while passes are gathered, the lights' samples are glossy but for their diffuse share.
         float3 litDiffuse = vec(0.0f);
+        float2 litShaded = make_float2(0.0f, 0.0f);     // the lights' samples as they reach it, and as they would unblocked
         const bool splitLit = params.passes && camera;
         PASS_NOW(PASS_GLOSSY);
         radiance += directLight(surface, lobes, wo, frame, hit.p, ng, throughput, lit, seed, hit.lift, fromSet,
-                                camera ? params.aovPass : 0u, splitLit ? &litDiffuse : nullptr);
-        if (splitLit) { passAdd(pixel, PASS_DIFFUSE, litDiffuse); passMark += litDiffuse; }
+                                camera ? params.aovPass : 0u, splitLit ? &litDiffuse : nullptr, splitLit ? &litShaded : nullptr);
+        if (splitLit) {
+            passAdd(pixel, PASS_DIFFUSE, litDiffuse);
+            passMark += litDiffuse;
+            // The shadow matte: the share of the direct light that was blocked.
+            if (litShaded.y > 0.0f) passAdd(pixel, PASS_SHADOW, vec(clamp(1.0f - litShaded.x / litShaded.y, 0.0f, 1.0f)));
+        }
 
         // The light that enters a transmissive surface goes through it rather than scattering.
         seedPhase(seed, QMC_BSDF, 0, 8);
