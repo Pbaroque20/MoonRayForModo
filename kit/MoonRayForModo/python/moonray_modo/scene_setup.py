@@ -51,6 +51,8 @@ def configure(scene, values):
     # Likewise the EXR's compression, where it is not MoonRay's zip, and its parts.
     if values['exr']!={'compression':1,'dwa_level':85.0,'multipart':False}:scene['exr']=values['exr']
     scene['preview_buffer'] = values['preview_buffer']
+    # MoonLightIPR's own Clamp From Bounce (moonlightipr_scene), apart from MoonRay's in render_settings.
+    scene['_moonlightipr_clamp_depth'] = int((values.get('moonlightipr') or {}).get('clamp_depth', 0))
     scene['execution_mode'] = values['execution_mode']
     # XPU2's sampling generations, written into a preview's scene for XPU2 (rdla.py).
     scene['xpu2_generations'] = values['xpu2_generations']

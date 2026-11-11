@@ -48,47 +48,69 @@ def window_values(held,scene):
     if held.get('scene')==scene:values.update({key:held[key] for key in scene if key in held})
     return values
 
-def plan(directory,first,last,step,prefix,fps,motion,missing=False,denoise=False,signature=None,digits=DIGITS,picture=None):
-    """picture: the type (image_formats) a sequence is saved in alone, its EXRs let go of as each frame is done; a frame is
-    done when its picture is there. An EXR in the way is only let go of where this sequence's own record says it may be
-    its own, from a render that was stopped: anything else in the folder stands, and the render is refused."""
+def plan(directory,first,last,step,prefix,fps,motion,missing=False,denoise=False,signature=None,digits=DIGITS,picture=None,notices=None):
+    """The frames to render, and those already there. Without Render missing frames, a sequence of this prefix already in
+    the folder is refused, so that nothing is overwritten unasked. With it, every frame of the range that is already
+    there is kept and passed over, and only the others are rendered: the range, the step, the scene and its settings may
+    have changed since (a sequence taken further, or finished after an edit), which notices (a list, where given) is
+    told. Nothing already there is ever overwritten; an EXR in the way that is not one is refused.
+    picture: the type (image_formats) a sequence is saved in alone, its EXRs let go of as each frame is done; a frame is
+    done when its picture is there."""
     from .assets import file_hash
     from .image_formats import find
+    said=notices if notices is not None else []
     saved={}
     directory=Path(directory);manifest=held_manifest(directory,prefix)
     if manifest is not None:
         if not missing:raise ValueError('A sequence named %s is already in this folder. Choose another file prefix, or enable Render missing frames to continue it.'%prefix)
-        saved=json.loads(manifest.read_text(encoding='utf-8'))
-        if signature is not None and saved.get('signature')!=signature:raise ValueError('Sequence scene/settings/assets differ from its completion manifest. Use a new output folder.')
-        for key,value in dict(first=first,last=last,step=step,prefix=prefix,fps=fps,motion_blur=motion,digits=digits,picture=picture).items():
-            if saved.get(key,1 if key=='step' else 'frame' if key=='prefix' else DIGITS if key=='digits' else None)!=value:raise ValueError('Sequence '+key+' differs from its saved manifest')
-    recorded={v['frame']:v for v in saved.get('frames',[])}
+        try:saved=json.loads(manifest.read_text(encoding='utf-8'))
+        except (OSError,ValueError):saved={}
+        if signature is not None and saved.get('signature') not in (None,signature):
+            said.append('The scene or its settings changed since the frames already there were rendered; they are kept as they are.')
+        # A sequence is in one picture type: its frames' names and what is let go of follow it.
+        if 'picture' in saved and saved['picture']!=picture:raise ValueError('Sequence picture type differs from the frames already there; choose the same type, or another file prefix.')
+        # And in one count of digits, which its frames' names are written with.
+        if saved.get('digits',DIGITS)!=digits:raise ValueError('Sequence frame digits differ from the frames already there (%d); choose the same, or another file prefix.'%saved.get('digits',DIGITS))
+        for key,words in (('fps','frame rate'),('motion_blur','motion blur')):
+            value={'fps':fps,'motion_blur':motion}[key]
+            if key in saved and saved[key]!=value:said.append('The %s differs from the frames already there.'%words)
+    recorded={v.get('frame'):v for v in saved.get('frames',[]) if isinstance(v,dict)}
     pending=[];completed=[]
     for frame in range(first,last+1,step):
         path=directory/frame_name(prefix,frame,digits);sidecar=held_sidecar(path)
         if picture:
             shown=directory/frame_name(prefix,frame,digits,find(picture)[2])
             if shown.exists():
-                if not missing:raise ValueError('Output exists for frame %d'%frame)
-                if signature is not None and not saved:raise ValueError('Existing frames have no matching sequence manifest; use a new folder')
-                entry=recorded.get(frame,{})
-                if entry.get('sha256') and entry['sha256']!=file_hash(shown):raise ValueError('Completed frame has changed: '+str(shown))
-                completed.append(dict(entry,frame=frame,file=str(shown.resolve()),sha256=file_hash(shown),reused=True))
-            elif (path.exists() or sidecar.exists()) and not (missing and saved):raise ValueError('Output exists for frame %d'%frame)
+                if not missing:raise ValueError('Output exists for frame %d. Enable Render missing frames to keep it and render the others.'%frame)
+                completed.append(dict(recorded.get(frame,{}),frame=frame,file=str(shown.resolve()),sha256=file_hash(shown),reused=True))
+            # An EXR in the way is only this sequence's own (let go of once its picture is written) where its record says so.
+            elif (path.exists() or sidecar.exists()) and not (missing and saved):raise ValueError('Output exists for frame %d: an EXR this sequence has no record of. Move it aside, or choose another file prefix.'%frame)
             else:pending.append(frame)
             continue
         if path.exists():
-            if not missing:raise ValueError('Output exists for frame %d'%frame)
+            if not missing:raise ValueError('Output exists for frame %d. Enable Render missing frames to keep it and render the others.'%frame)
             if not valid_exr(path):raise ValueError('Existing frame is not a recognizable EXR; move it aside before recovery: '+str(path))
-            if signature is not None and not saved:raise ValueError('Existing frames have no matching sequence manifest; use a new folder')
             entry=recorded.get(frame,{})
-            if entry.get('sha256') and entry['sha256']!=file_hash(path):raise ValueError('Completed frame has changed: '+str(path))
             if denoise and not sidecar.exists():
-                if not (path.with_name(path.name+'.postprocess')/'manifest.json').is_file():raise ValueError('Missing denoise recovery inputs for '+str(path))
+                # Rendered, its denoised copy not made yet: made from what was kept for it, else rendered again.
+                if not (path.with_name(path.name+'.postprocess')/'manifest.json').is_file():
+                    said.append('Frame %d has no denoised copy and nothing kept to make one: it is kept as it is.'%frame)
+                    completed.append(dict(entry,frame=frame,file=str(path.resolve()),sha256=file_hash(path),reused=True))
+                    continue
                 pending.append(frame);continue
-            if denoise and (not valid_exr(sidecar) or entry.get('denoised_sha256') and entry['denoised_sha256']!=file_hash(sidecar)):raise ValueError('Denoised frame is invalid or has changed: '+str(sidecar))
+            if denoise and not valid_exr(sidecar):raise ValueError('Denoised frame is not a recognizable EXR; move it aside before recovery: '+str(sidecar))
             completed.append(dict(entry,frame=frame,file=str(path.resolve()),sha256=file_hash(path),reused=True,**({'denoised_sha256':file_hash(sidecar)} if denoise else {})))
         else:
             if sidecar.exists():raise ValueError('Orphan denoised output exists: '+str(sidecar))
             pending.append(frame)
     return pending,completed
+
+def earlier_frames(directory,prefix,first,last,step):
+    """What the sequence's record holds of frames outside this range (a sequence taken further, or a part of it rendered
+    again), kept in its record beside the frames of this one."""
+    manifest=held_manifest(directory,prefix)
+    if manifest is None:return []
+    try:frames=json.loads(manifest.read_text(encoding='utf-8')).get('frames',[])
+    except (OSError,ValueError,AttributeError):return []
+    wanted=set(range(first,last+1,step))
+    return [v for v in frames if isinstance(v,dict) and v.get('frame') not in wanted]

@@ -48,13 +48,27 @@ class ProductionTests(unittest.TestCase):
         v=outputs.values([{'name':'velocity','kind':'motion'}])[0]
         self.assertEqual(outputs.attributes(v)['state_variable'],12)
 
-    def test_sequence_reuses_matching_frames_and_rejects_changed_file(self):
+    def test_render_missing_frames_keeps_what_is_there_and_renders_the_rest(self):
         with tempfile.TemporaryDirectory() as folder:
             path=Path(folder)/'frame.000001.exr';path.write_bytes(b'\x76\x2f\x31\x01'+b'0'*64)
             manifest={'signature':'scene','first':1,'last':2,'step':1,'prefix':'frame','fps':24,'motion_blur':False,'frames':[{'frame':1,'sha256':assets.file_hash(path)}]}
             (Path(folder)/'moonray-sequence.json').write_text(json.dumps(manifest))
             pending,done=sequence_plan.plan(folder,1,2,1,'frame',24,False,True,False,'scene');self.assertEqual(pending,[2]);self.assertEqual(len(done),1)
+            # Without Render missing frames the sequence is refused, nothing overwritten.
+            with self.assertRaises(ValueError):sequence_plan.plan(folder,1,2,1,'frame',24,False,False,False,'scene')
+            # Taken further, after the scene changed (another signature) and the frame was touched: kept, said, not refused.
             path.write_bytes(path.read_bytes()+b'changed')
+            notices=[]
+            pending,done=sequence_plan.plan(folder,1,5,1,'frame',24,False,True,False,'edited',notices=notices)
+            self.assertEqual(pending,[2,3,4,5]);self.assertEqual([d['frame'] for d in done],[1]);self.assertEqual(len(notices),1)
+            # Another prefix in the same folder is a sequence of its own.
+            self.assertEqual(sequence_plan.plan(folder,1,2,1,'beauty',24,False,False,False,'scene')[0],[1,2])
+            # What the record holds outside a range is kept beside it.
+            self.assertEqual([v['frame'] for v in sequence_plan.earlier_frames(folder,'frame',2,3,1)],[1])
+
+    def test_a_file_in_the_way_that_is_not_an_exr_is_refused(self):
+        with tempfile.TemporaryDirectory() as folder:
+            (Path(folder)/'frame.000001.exr').write_bytes(b'not an exr')
             with self.assertRaises(ValueError):sequence_plan.plan(folder,1,2,1,'frame',24,False,True,False,'scene')
 
     def test_missing_assets_are_reported(self):

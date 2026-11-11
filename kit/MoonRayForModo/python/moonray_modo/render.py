@@ -946,6 +946,10 @@ class Renderer(QtCore.QObject):
             if self.active['output']:
                 try: self._publish(self.denoise_result,denoising.sidecar(self.active['output']))
                 except OSError as exc: self.failed.emit('Cannot save denoised beauty; original EXR preserved: '+str(exc));return
+                # The denoiser's guides kept beside the frame (postprocess.preserve) were only for making this copy after a
+                # stop; now that it is made they go, rather than leave a .postprocess folder beside every frame.
+                from .postprocess import release
+                release(self.active['output'])
             # Keep the original beauty available for comparison.
         if self.phase=='render' and self.gpu_error:
             self.failed.emit('GPU execution failed. Open Render Log for details or select CPU (AVX).')

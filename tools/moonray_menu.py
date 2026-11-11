@@ -161,6 +161,26 @@ def camera_revert_entry(text):
                         '<atom type="ShowWhenDisabled">0</atom><atom type="Hash">MoonRayContext_revert_camera:control</atom></list>')
 
 
+def area_light_entries(text):
+    """Convert to MoonRay Rect Light in the Item List's right-click menu of an area light (its sheet as the checkout's
+    layout.cfg has it, before the mesh's), and in the MoonRay menu after Convert Camera to MoonRay Camera; each unchanged
+    if it is there."""
+    eol = '\r\n' if '\r\n' in text else '\n'
+    source = (Path(__file__).resolve().parents[1] / 'kit/MoonRayForModo/layout.cfg').read_bytes().decode('utf-8').replace('\r\n', '\n')
+    mesh = '    <!-- Right-clicking a mesh in the Item List'
+    if 'MoonRayAreaLightContext:sheet' not in text and text.count(mesh) == 1:
+        begin = source.index('    <!-- Right-clicking an area light in the Item List')
+        block = source[begin:source.index(mesh)].replace('\n', eol)
+        at = text.index(mesh)
+        text = text[:at] + block + text[at:]
+    anchor = '<list type="Control" val="cmd moonray.camera.convert"><atom type="Label">Convert Camera to MoonRay Camera...</atom>'
+    if 'MoonRayMenu_convert_area_light' not in text and text.count(anchor) == 1:
+        end = text.index('</list>', text.index(anchor)) + len('</list>')
+        text = (text[:end] + eol + '      <list type="Control" val="cmd moonray.light.convert"><atom type="Label">Convert Area Light to MoonRay Rect Light</atom>'
+                '<atom type="Hash">MoonRayMenu_convert_area_light:control</atom></list>' + text[end:])
+    return text
+
+
 def viewport_title(text):
     """The preview set into Modo's layout is titled MoonRay; its own window keeps MoonRay Preview."""
     return text.replace('<atom type="ViewportTitle">MoonRay Preview</atom>', '<atom type="ViewportTitle">MoonRay</atom>')

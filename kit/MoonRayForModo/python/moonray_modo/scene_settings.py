@@ -26,7 +26,9 @@ DEFAULTS = {
     # default; the rest are what XPU2 does without them.
     'xpu2_generations': {'on': True, 'samples': 16, 'spend': 'time', 'noise': 10.0, 'seed': 4, 'most': 0, 'cpu': True, 'realtime': 30},
     # MoonLightIPR's Render (realtime off): samples a pixel it gathers before it stops.
-    'moonlightipr': {'render_samples': 2000},
+    # MoonLightIPR's own: its Render's samples, and the bounce its sample clamp holds from (0: from what the camera sees,
+    # through clear glass too, where its fireflies are; MoonRay's own Clamp From Bounce stays as MoonRay has it).
+    'moonlightipr': {'render_samples': 2000, 'clamp_depth': 0},
     'execution_mode': 'auto', 'preview_buffer': 'beauty',
     # The camera MoonRay tessellates adaptive geometry for, by its item's identity; '' for the render camera.
     'dicing_camera': '',
@@ -137,7 +139,7 @@ GROUPS = [
         field('moonlightipr_render_samples', ('moonlightipr', 'render_samples'), 'int', 'Render Samples', 'Render with MoonLightIPR (realtime off) gathers this many samples a pixel, as fast as the graphics card can, and stops; Render Animation too, each frame. The label under the picture says how many it has so far. 2000 unless changed, and a change is saved with the scene', 1, 100000),
         # The firefly controls MoonLightIPR follows, shown here as well: the same settings as under Noise and Filtering.
         render_field('sample_clamping_value', 'Sample Clamp', 'Limits how bright one sample may be, which removes fireflies; 0 is no limit. The same setting as under Noise and Filtering, which MoonRay and MoonLightIPR both follow'),
-        render_field('sample_clamping_depth', 'Clamp From Bounce', 'The clamp applies from this bounce on; 1 leaves what the camera sees directly alone. The same setting as under Noise and Filtering'),
+        field('moonlightipr_clamp_depth', ('moonlightipr', 'clamp_depth'), 'int', 'Clamp From Bounce', "MoonLightIPR's own: the Sample Clamp applies from this bounce on. 0, the default, clamps from what the camera sees, which takes away the fireflies seen through clear glass (refraction through smooth glass is not a bounce); 1 leaves what the camera sees directly or through glass alone. MoonRay's own is under Noise and Filtering. Saved with the scene", 0, 100),
         render_field('roughness_clamping_factor', 'Roughness Clamp', 'Roughens shiny surfaces seen after a bounce, which removes fireflies from indirect caustics; 0 is off, 1 the most. As in MoonRay, it roughens hair and the materials MoonRay renders as DwaBase, not plain materials. The same setting as under Noise and Filtering'),
     ]),
     ('Bounces', False, [

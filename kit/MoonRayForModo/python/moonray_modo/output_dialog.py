@@ -74,7 +74,7 @@ class AnimationDialog(QtWidgets.QDialog):
             if held.startswith(ONLY):extension=find(held[len(ONLY):])[2]
             else:also=' and .%s'%find(held)[2]
         by=' · MoonLightIPR' if getattr(self,'engine',None) is not None and self.engine.currentData()=='moonlightipr' else ' · MoonRay'
-        self.summary.setText('%d frames · %s%s%s\nExisting frames are never overwritten. Enable Render missing frames to fill gaps in a matching sequence.'%(count,frame_name(self.prefix.text(),self.first.value(),self.digits.value(),extension),also,by))
+        self.summary.setText('%d frames · %s%s%s\nExisting frames are never overwritten. Enable Render missing frames to keep the frames already there and render the others.'%(count,frame_name(self.prefix.text(),self.first.value(),self.digits.value(),extension),also,by))
 
     def kept(self):
         """What the window has now, as it is kept with the scene for the next time it opens."""

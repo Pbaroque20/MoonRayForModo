@@ -1,4 +1,4 @@
-"""Persist denoising inputs when a completed beauty precedes its sidecar."""
+"""Persist denoising inputs when a completed beauty precedes its sidecar, until the sidecar is made."""
 import json,shutil
 from pathlib import Path
 from .assets import file_hash
@@ -21,3 +21,8 @@ def recover(output,engine):
     for entry in data['guides'].values():
         if file_hash(entry['path'])!=entry['sha256']:raise ValueError('Denoise recovery guide has changed')
     return {k:v['path'] for k,v in data['guides'].items()}
+
+def release(output):
+    """The denoiser's guides kept beside a render (preserve), let go of once its denoised copy is made: they were only for
+    making that copy after a render stopped between the two. Nothing is said where they cannot be removed."""
+    shutil.rmtree(str(Path(output).with_name(Path(output).name+'.postprocess')),ignore_errors=True)
