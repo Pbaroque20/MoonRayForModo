@@ -135,6 +135,10 @@ GROUPS = [
     ]),
     ('MoonLightIPR', False, [
         field('moonlightipr_render_samples', ('moonlightipr', 'render_samples'), 'int', 'Render Samples', 'Render with MoonLightIPR (realtime off) gathers this many samples a pixel, as fast as the graphics card can, and stops; Render Animation too, each frame. The label under the picture says how many it has so far. 2000 unless changed, and a change is saved with the scene', 1, 100000),
+        # The firefly controls MoonLightIPR follows, shown here as well: the same settings as under Noise and Filtering.
+        render_field('sample_clamping_value', 'Sample Clamp', 'Limits how bright one sample may be, which removes fireflies; 0 is no limit. The same setting as under Noise and Filtering, which MoonRay and MoonLightIPR both follow'),
+        render_field('sample_clamping_depth', 'Clamp From Bounce', 'The clamp applies from this bounce on; 1 leaves what the camera sees directly alone. The same setting as under Noise and Filtering'),
+        render_field('roughness_clamping_factor', 'Roughness Clamp', 'Roughens shiny surfaces seen after a bounce, which removes fireflies from indirect caustics; 0 is off, 1 the most. As in MoonRay, it roughens hair and the materials MoonRay renders as DwaBase, not plain materials. The same setting as under Noise and Filtering'),
     ]),
     ('Bounces', False, [
         render_field('max_depth', 'Total'),
@@ -264,7 +268,11 @@ GROUPS = [
     ]),
 ]
 
-FIELDS = [entry for _, _, entries in GROUPS for entry in entries]
+# Each setting once, as its command is made (lxserv/moonray_render_settings.py), however many groups show it.
+FIELDS = []
+for _, _, _entries in GROUPS:
+    FIELDS.extend(entry for entry in _entries if all(entry['key'] != held['key'] for held in FIELDS))
+del _entries
 
 
 def hex_to_rgb(text):

@@ -1,5 +1,5 @@
 # python
-"""GUI: Export AOVs with MoonLightIPR (panel_tools._moonlightipr_outputs). A Render of 64 samples a pixel, realtime off,
+"""GUI: Export AOVs with MoonLightIPR (panel_tools._moonlightipr_fetch). A Render of 64 samples a pixel, realtime off,
 then the preview's right-click menu checked for its Export AOVs entry (enabled), and Export AOVs run with every output
 ticked: once as EXRs, once as PNGs, once as one multilayer EXR. The dialog is the real one, answered by the probe. For
 each: the files written, and each EXR's mean beside the mean of the numbers MoonLightIPR sent for it. Writes
@@ -91,8 +91,10 @@ def export(kind, layered):
         class Answered(real):
             def exec_(self):
                 seen['offered'] = [(box.key, box.text()) for box in self.items]
+                # The PNGs: only three ticked, which alone must be asked of the session and written.
+                some = ('beauty', 'moonlightipr_glossy', 'normal')
                 for box in self.items:
-                    box.setChecked(True)
+                    box.setChecked(kind != 'png8' or box.key in some)
                 self.kind.setCurrentIndex(self.kind.findData(kind))
                 self.folder.setText(str(folder))
                 self.prefix.setText('probe')
@@ -103,11 +105,30 @@ def export(kind, layered):
         export_dialog.ExportAOVs = Answered
         p = panel()
         shown = p.buffer.currentData()
+        changes = []
+        follow = lambda index: changes.append(p.buffer.itemData(index))
+        p.buffer.currentIndexChanged.connect(follow)
+        asked = []
+        session = p.renderer.moonlightipr
+        real_aov = session.aov
+        session.aov = lambda kind_, key_: (asked.append(key_), real_aov(kind_, key_))[1]
         started = time.monotonic()
         try:
             p.export_buffers()
         finally:
             export_dialog.ExportAOVs = real
+            session.aov = real_aov
+            p.buffer.currentIndexChanged.disconnect(follow)
+        seen['buffer_list_changes'] = changes
+        seen['asked_of_session'] = asked
+        # The numbers MoonLightIPR sent for each output (the beauty's and the denoised beauty's under the beauty's name,
+        # the last of them), kept as PFMs beside the export, for check_moonlightipr_export_aovs.py.
+        if kind == 'exr32' and not layered:
+            for key, f in p.renderer.buffers.progressive_frames.items():
+                held = f.get('linear', {}).get(key)
+                if held:
+                    width, height, pixels = held
+                    (out / ('sent_%s.pfm' % key)).write_bytes(('PF\n%d %d\n-1.0\n' % (width, height)).encode('ascii') + bytes(pixels))
         entry = dict(seen, seconds=round(time.monotonic() - started, 2), status=p.status.text(),
                      shown_before=shown, shown_after=p.buffer.currentData(),
                      files=sorted(f.name for f in folder.iterdir()))

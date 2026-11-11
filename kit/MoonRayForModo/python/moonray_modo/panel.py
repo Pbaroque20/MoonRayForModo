@@ -489,7 +489,7 @@ class Panel(Tools, QtWidgets.QWidget):
         menu.addAction('Copy Image',self.copy_image)
         menu.addAction('Save Image...',self.save_preview)
         # The outputs of the last finished preview, each as a picture of its own: MoonRay's, or MoonLightIPR's picture
-        # and its own AOVs (panel_tools._moonlightipr_outputs).
+        # and its own AOVs (panel_tools._moonlightipr_fetch).
         menu.addAction('Export AOVs as Images...',self.export_buffers)
         if getattr(self,'_continuable',None) is not None and not self._rendering:
             # Continue is what the button offers; this is the other choice. It throws the stopped render away, so it
@@ -1692,8 +1692,10 @@ class Panel(Tools, QtWidgets.QWidget):
         except Exception:return False
 
     def _moonlightipr_vectors(self):
-        """Whether MoonLightIPR's motion vectors are looked at: the scene is then read with the shutter's ends."""
-        return self._engine()=='moonlightipr' and self.buffer.currentData()=='motion_vectors'
+        """Whether the scene is read for MoonLightIPR's motion vectors: always with MoonLightIPR, which gathers every AOV
+        with the beauty. Read once, and with the shutter's ends only where something moves during it (shutter_moves),
+        held at the frame's moment where blur is off (render.py), so that the vectors are there from the first sample."""
+        return self._engine()=='moonlightipr'
 
     def _capture_output(self):
         values=self._settings_values()
@@ -1706,6 +1708,16 @@ class Panel(Tools, QtWidgets.QWidget):
         # Not while realtime follows the scene, where each edit would read the shutter's ends too, nor MoonRay LS or a draft.
         still=self.preview_engine.currentData()=='moonray' and not self._following and not self.draft.isChecked() and self._motion_wanted()
         if not still and not self._preview_blurred():return self._capture()
+        if not still and not self._following and self._engine()=='moonlightipr' and not self.preferences.get('preview_motion'):
+            # A MoonLightIPR Render without blur, read for its motion vectors alone: once, and the shutter's ends asked of
+            # where the items stand; where nothing moves, that reading is the scene (no vectors to gather, the meshes not
+            # read again), else it is read with its motion. (Realtime asks the same before it comes here.)
+            from .animation import shutter_moves
+            first=self._capture()
+            try:moving=shutter_moves(self._geometry_cache,self._settings_values()['surface']==2) if self._geometry_cache is not None else None
+            except Exception:moving=None
+            self.changes.consume()
+            if moving is False:return first
         from .animation import capture_current
         self._reading()
         scene=self._configure_snapshot(capture_current(self._settings_values()['surface']==2))
@@ -2165,10 +2177,6 @@ class Panel(Tools, QtWidgets.QWidget):
                 # MoonRay's realtime renders the beauty and the buffer looked at (outputs.preview): another is rendered
                 # from the scene as last read, not read again.
                 self._submit(dict(self._ipr_refine_scene,preview_buffer=key))
-            # MoonLightIPR's motion vectors need the scene read with the shutter's ends, and the others not: read again.
-            if self._engine()=='moonlightipr' and (key=='motion_vectors')!=getattr(self,'_vectors_read',False):
-                self._vectors_read=key=='motion_vectors'
-                if self._following or self._rendering or not self.preview.image.isNull():self.render_once()
             if key=='denoised_beauty' and self._engine()=='moonlightipr' and not getattr(self.renderer,'moonlightipr_denoises',False):
                 # MoonLightIPR has not been denoising: it denoises the picture as it stands, a finished Render as well,
                 # without rendering again (a tester's report: it started over); the buffer chosen asked it for that.
