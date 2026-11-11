@@ -164,6 +164,16 @@ class Preferences:
         self.store.setValue(key, ('true' if value else 'false') if KEYS[key][1] is bool else value)
 
 
+def moonlightipr_render_samples():
+    """MoonLightIPR's Render samples a pixel: the open scene's (MoonLightIPR in its render settings), 2000 unless changed."""
+    from . import scene_settings
+    try:
+        from . import properties
+        return int(scene_settings.complete(properties.scene_settings())['moonlightipr']['render_samples'])
+    except Exception:
+        return int(scene_settings.DEFAULTS['moonlightipr']['render_samples'])
+
+
 def realtime_share():
     """XPU2 RT Sample %, the open scene's (XPU2 Sampling in its render settings); None with no scene to read it from."""
     try:
@@ -278,14 +288,6 @@ class Dialog(QtWidgets.QDialog):
         form.addRow(heading)
         form.addRow('RT pixel samples', combo('moonlightipr/samples', [('%d per pixel' % v, v) for v in MOONLIGHTIPR_SAMPLES],
                                               'How many samples a pixel MoonLightIPR gathers in realtime (RT on) before it rests. Fewer settles sooner and is grainier.'))
-        self.render_samples = QtWidgets.QSpinBox()
-        self.render_samples.setRange(1, 100000)
-        self.render_samples.setSingleStep(50)
-        self.render_samples.setSuffix(' per pixel')
-        self.render_samples.setValue(preferences.get('moonlightipr/render_samples'))
-        self.render_samples.setToolTip('Render with MoonLightIPR (realtime off) gathers this many samples a pixel, as fast as the '
-                                       'graphics card can, and stops. The label under the picture says how many it has so far.')
-        form.addRow('Render samples', self.render_samples)
         form.addRow(check('moonlightipr/camera_resolution', "Render at the camera's resolution",
                           "Render with MoonLightIPR (RT off) makes the picture at the active camera's resolution, as MoonRay's "
                           'Render does. Realtime keeps Realtime preview resolution, as XPU2 realtime does'))
@@ -360,7 +362,6 @@ class Dialog(QtWidgets.QDialog):
         from .cache_folder import forget
         forget()
         self.preferences.set('ipr/error', self.error.value())
-        self.preferences.set('moonlightipr/render_samples', self.render_samples.value())
         if self.realtime_share.isEnabled() and self.realtime_share.value() != self.realtime_held:
             # Through its command, as in the render settings: undone with the scene, and the form follows.
             import lx

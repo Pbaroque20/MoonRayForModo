@@ -1,6 +1,6 @@
 """Generate the Render item's MoonRay properties form.
 
-Reads moonray_modo/scene_settings.py and writes kit/MoonRayForModo/render_settings.cfg: one form,
+Reads moonray_modo/scene_settings.py and writes kit/MoonRayForModo/render_settings.cfg (or the path given): one form,
 in front when the Render item is selected, with a section per group of settings. Each control is
 a command from lxserv/moonray_render_settings.py; buttons open the preview window's dialogs.
 """
@@ -46,8 +46,14 @@ atom(form, 'FilterCommandPriorityInfluencesTabChoice', 1)
 atom(form, 'Group', 'itemprops')
 ET.SubElement(ET.SubElement(form, 'hash', type='InCategory', key='itemprops:general#head'), 'atom', type='Ordinal').text = '40'
 count = 0
-for index, (group, collapsed, entries) in enumerate(scene_settings.GROUPS):
-    key = 'MoonRayRender_%d:sheet' % index
+numbered = 0
+for group, collapsed, entries in scene_settings.GROUPS:
+    # A group named in SHEET_KEYS has its sheet under that name; the rest are numbered in order without them.
+    if group in scene_settings.SHEET_KEYS:
+        key = scene_settings.SHEET_KEYS[group] + ':sheet'
+    else:
+        key = 'MoonRayRender_%d:sheet' % numbered
+        numbered += 1
     place = ET.SubElement(form, 'list', type='Control', val='sub ' + key)
     atom(place, 'Label', group)
     atom(place, 'ShowLabel', 1)
@@ -55,6 +61,8 @@ for index, (group, collapsed, entries) in enumerate(scene_settings.GROUPS):
     atom(place, 'Hash', key)
     section = sheet(key, group)
     for entry in entries:
+        if entry['key'] in scene_settings.NOT_IN_FORM:
+            continue
         if entry['kind'] == 'command':
             # A command of its own, kept elsewhere: the camera chooser.
             control(section, 'moonray.%s ?' % entry['key'], entry['label'], entry['tip'])
@@ -68,5 +76,6 @@ for index, (group, collapsed, entries) in enumerate(scene_settings.GROUPS):
         count += 1
 ET.indent(config)
 assert ET.tostring(config, encoding='unicode').isascii(), 'Modo draws anything outside ASCII as stray characters'
-ET.ElementTree(config).write(str(kit / 'render_settings.cfg'), encoding='utf-8', xml_declaration=True)
+target = Path(sys.argv[1]) if len(sys.argv) > 1 else kit / 'render_settings.cfg'
+ET.ElementTree(config).write(str(target), encoding='utf-8', xml_declaration=True)
 print('Generated the Render item form:', len(scene_settings.GROUPS), 'groups,', count, 'settings')

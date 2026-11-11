@@ -168,6 +168,12 @@ def dicing_view(scene, identity, width, height, pixel_aspect, warnings, time=Non
             'pixel_aspect': moonray_pixel_aspect, 'focal_mm': float(channel(item, 'focalLen', .05)) * 1000, 'film_mm': aperture_x * 1000}
 
 
+def tension_maps(materials):
+    """The Tension layers' weight maps the materials read (tension.wanted): which meshes need their base points."""
+    from . import tension
+    return sorted(tension.wanted(materials)[0])
+
+
 def render_visible(item):
     """Whether Modo would render the item. Render: Yes or No settles it, for the item and what is under it. Left at
     Default, an item renders as it is shown: not with its eye off, nor under a parent hidden with its children."""
@@ -754,7 +760,8 @@ def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fal
             from . import reference_points
             # Rest positions come with the meshes: a material that now asks for them (glitter turned on) reads them again.
             if (coordinates.descriptors(result['materials']) != coordinates.descriptors(reuse_geometry['materials'])
-                    or reference_points.wanted(result['materials']) != reference_points.wanted(reuse_geometry['materials'])):
+                    or reference_points.wanted(result['materials']) != reference_points.wanted(reuse_geometry['materials'])
+                    or tension_maps(result['materials']) != tension_maps(reuse_geometry['materials'])):
                 return snapshot(evaluated_geometry=False)
             result['meshes']=[dict(mesh) for mesh in reuse_geometry['meshes'] if not dirty_meshes or mesh['identity'].split('|')[0] not in dirty_meshes]
         # Resolve each visible instance to one mesh prototype, including hidden sources.
@@ -784,6 +791,9 @@ def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fal
         # Rest positions, where a material reads its surface in reference space (glitter): reference_points.
         from . import reference_points
         rest_wanted = reference_points.wanted(result['materials'])
+        # Base-mesh points too where a Tension layer compares the mesh with them: tension.
+        from . import tension as tension_layers
+        tension_wanted = bool(tension_layers.wanted(result['materials'])[0])
         # Fresh read-only evaluated meshes; never change selection, time or scene geometry.
         for item in ([] if evaluated_geometry or (reuse_geometry is not None and not dirty_meshes) else scene.items('mesh', superType=False)):
             if dirty_meshes and item.id not in dirty_meshes:continue
@@ -1023,6 +1033,12 @@ def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fal
                     surfaces += 1
             transform = world_matrix(item)
             rest = None
+            tension_rest = None
+            if tension_wanted:
+                try:
+                    tension_rest = reference_points.read(item, len(vertices))
+                except (LookupError, RuntimeError, AttributeError, TypeError) as exc:
+                    warnings.append('Base mesh of %s could not be read for its Tension: %s.' % (item.name, exc))
             if rest_wanted:
                 try:
                     rest = reference_points.read(item, len(vertices))
@@ -1096,6 +1112,8 @@ def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fal
                         result['meshes'][-1]['corner_attributes'] = corner_maps
                 if rest is not None:
                     result['meshes'][-1].setdefault('point_attributes', {})[reference_points.NAME] = {'kind': 'vec3', 'values': rest}
+                if tension_rest is not None:
+                    result['meshes'][-1][tension_layers.REST] = tension_rest
                 own_attributes = primitive_attributes.read(item)
                 if own_attributes:
                     result['meshes'][-1]['attributes'] = own_attributes
@@ -1279,6 +1297,15 @@ def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fal
         worn = worn_tags(result)
         result['materials'] = {tag: material for tag, material in result['materials'].items() if tag in worn}
     result['cryptomatte_objects'] = cryptomatte_objects(scene)
+    # Modo's Occlusion textures: how open each point of the meshes that wear them is, worked out over the whole scene.
+    try:
+        from . import occlusion
+        occlusion.apply(result, warnings)
+    except (ValueError, OSError) as exc:
+        warnings.append('Occlusion textures are left out: %s' % exc)
+    # Modo's Tension textures: how each mesh wearing one has stretched or folded from its base mesh.
+    from . import tension
+    tension.apply(result, warnings)
     result['warnings'] = sorted(set(warnings))
     return result
 

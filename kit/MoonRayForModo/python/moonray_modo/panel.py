@@ -10,7 +10,7 @@ import functools
 import lx
 from .render import Renderer
 from .viewer import Preview
-from .preferences import Preferences
+from .preferences import Preferences, moonlightipr_render_samples
 from .panel_tools import Tools
 
 RENDER_TIP = 'Render the current scene. The previous image stays until its replacement is ready.'
@@ -1392,7 +1392,7 @@ class Panel(Tools, QtWidgets.QWidget):
             if engine=='moonlightipr':
                 # Realtime's samples a pixel while RT is on; a Render's (Render samples) while it is off.
                 words=self._sampling_words('moonlightipr',gathering=None if self.ipr_mode.isChecked()
-                                           else self.preferences.get('moonlightipr/render_samples'))
+                                           else moonlightipr_render_samples())
             elif self._low():
                 # As MoonRay LS has a scene prepared: no larger than its share of the render, and sampled to its own limit.
                 from .ipr import prepare
@@ -1837,7 +1837,7 @@ class Panel(Tools, QtWidgets.QWidget):
         self.renderer.moonlightipr_blur=bool(self.preferences.get('preview_motion'))
         # Render with MoonLightIPR (realtime off): Render samples a pixel, as fast as the card can, and it stops.
         once=not output and not self._following and not self.draft.isChecked() and self._engine()=='moonlightipr'
-        self.renderer.moonlightipr_once=self.preferences.get('moonlightipr/render_samples') if once else None
+        self.renderer.moonlightipr_once=moonlightipr_render_samples() if once else None
         # Whether this is a draft redrawing by itself, for which the window is left as it is. The region that follows
         # a draft's lines is of the same redraw; anything else asked for is not.
         asked=getattr(self,'_draft_quiet_asked',False);self._draft_quiet_asked=False

@@ -8,6 +8,9 @@ The current release is [0.5.3.2](https://github.com/Pbaroque20/MoonRayForModo/re
 
 ## New in 0.5.4 (coming)
 
+- **Modo's Processing textures**: Gradient reads Incidence, Slope, Distance, Screen and Back Facing, as well as its other inputs; Occlusion, Variation by Item and Tension (Area and Angle) render in all three engines, matching Modo's own render to within about 0.03.
+- **Render Settings tidied**: MoonLightIPR's Render Samples has its own MoonLightIPR group after XPU2 Sampling and is saved with the scene (it was a Preview Preference); MoonRay's Sampling group is now XPU Sampling; XPU2's Most Samples is gone (XPU2 keeps 16 times the average as its limit). Displacement Tessellation, Adaptive Error Override and Dicing Frame (Global Switches), missing from the form since they were added, are there.
+- **Headless MoonRay renders**: the kit's `scripts/export_moonray.py` writes a scene for MoonRay from Modo's command-line version, with no window; [how to render headless](docs/INSTALLATION.md#rendering-headless-no-modo-window), and why XPU2 renders only inside Modo.
 - **Modo's Process texture** (Hue, Saturation, Value, Hue Shift) renders in all three engines as in Modo.
 - **MoonLightIPR draws bokeh images, diffuse transmission maps and the motion of meshes that change shape**, and an environment flipped with Vertical Wrap -1 flips rightly.
 - **16K textures stay on XPU2**, a VDB's fire renders when XPU2 hands a scene to MoonRay, and **Select Volume Here** in the preview's right-click menu.
@@ -19,7 +22,7 @@ The current release is [0.5.3.2](https://github.com/Pbaroque20/MoonRayForModo/re
 - **XPU2's sampling settings follow the engine in use**, and XPU2 realtime offers the denoised beauty, with the beauty, alone.
 - **MoonLightIPR Render at the camera's resolution** (Preview Preferences), **Select Mesh Here** in the picture's menu, finer graph sliders.
 - **AOVs in MoonLightIPR, for motion graphics**: Diffuse, Glossy, Emission and Environment background, which add up to the beauty, and Alpha, Camera depth, Shading normal, World position and Albedo, in the buffer list, shown at once and costing the beauty nothing.
-- **Render with MoonLightIPR**: with RT off, Render is no longer greyed: MoonLightIPR gathers Render samples a pixel (Preview Preferences, 2000 unless changed) as fast as the graphics card can, and stops. The label under the picture says how many samples a pixel the picture holds as it comes (137 / 500 ps), in realtime too.
+- **Render with MoonLightIPR**: with RT off, Render is no longer greyed: MoonLightIPR gathers Render Samples a pixel (Render Settings > MoonLightIPR, 2000 unless changed, saved with the scene) as fast as the graphics card can, and stops. The label under the picture says how many samples a pixel the picture holds as it comes (137 / 500 ps), in realtime too.
 
 ## New in 0.5.3.2
 
@@ -694,6 +697,7 @@ Comparison audit between Modo 16.1v9 and MoonLightIPR, the realtime preview: wha
 | **Shader Tree** |  |  |
 | Image maps: UV and projections, UDIMs, Low and High values | ![yes](docs/images/feature-yes.svg) | Up to 8 UV sets a scene; images at most 1024 pixels a side in realtime, their shape kept, and at full size in a Render, compressed on the graphics card. A MoonRay graph's images are found when the scene has moved, as Modo's clips are. A texture reading a UV map its mesh has not is drawn with the map at 0, and a notice names it |
 | Procedural textures | ![partly](docs/images/feature-partly.svg) | Modo's built-in patterns, Gabor and Poisson noise and Enhance textures run through the object with a Solid projection, as MoonRay draws them; other projections bake the built-in patterns flat, and Enhance needs Solid. Curvature, Wireframe, EasyGrad and RegionalHSV draw too |
+| Processing textures: Process, Gradient, Occlusion, Variation, Tension | ![partly](docs/images/feature-partly.svg) | As in MoonRay; Occlusion and Tension worked out at the mesh's points, Variation by Item only; Gradient's Texture U/V, Thickness, Texture Value and a few more inputs not followed |
 | Layer blend modes | ![partly](docs/images/feature-partly.svg) | All but Normal Multiply; Normal Map Blend on normal maps only |
 | Bump and normal maps | ![yes](docs/images/feature-yes.svg) |  |
 | Displacement and Stencil layers | ![yes](docs/images/feature-yes.svg) | Displacement layers, and a node graph's Normal, Vector, Combine and Switch displacement nodes, as MoonRay's, a displaced mesh split evenly up to 400,000 triangles; stencils cut the surface as MoonRay's do |
@@ -731,6 +735,7 @@ Every known issue, and what is still to implement, is in the [issue tracker](htt
 
 ## More
 
+- [Rendering headless](docs/INSTALLATION.md#rendering-headless-no-modo-window): export the scene (from Modo, or from `modo_cl` with the kit's `scripts/export_moonray.py`), then render it with `runtime\moonray.exe`. XPU2 renders only inside Modo; for a headless render use MoonRay's `xpu` mode.
 - [How MoonLightIPR works, what it draws and how closely it matches MoonRay](moonlightipr/README.md)
 - [The plugin's main page](https://github.com/Pbaroque20/MoonRayForModo/tree/codex/native-avx-modo), with the full feature list, limitations and installation
 - [What's new in 0.4](docs/WHATS_NEW_04.md)

@@ -6,6 +6,7 @@ from pathlib import Path
 from PySide2 import QtCore, QtGui, QtWidgets
 import lx
 from . import properties, rdla
+from .preferences import moonlightipr_render_samples
 
 
 # What Panel.run() does in the window; any other page is a group of render settings.
@@ -319,7 +320,7 @@ class Tools:
                 denoise = self._denoiser_on() and self._settings_values().get('denoising', {}).get('final', True)
                 candidate = MoonLightIPRAnimation(self, directory, dialog.first.value(), dialog.last.value(), dialog.fps.value(),
                                                   step=dialog.step.value(), prefix=dialog.prefix.text(), width=widest,
-                                                  samples=self.preferences.get('moonlightipr/render_samples'), motion=dialog.motion.isChecked(),
+                                                  samples=moonlightipr_render_samples(), motion=dialog.motion.isChecked(),
                                                   digits=dialog.digits.value(), export_as=dialog.export_as(), missing=dialog.missing.isChecked(),
                                                   denoise=denoise)
             else:

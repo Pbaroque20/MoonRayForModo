@@ -1545,7 +1545,7 @@ void Renderer::setMaterials(const Material* materials, size_t count, const Layer
         const unsigned sources = out.flags & (LAYER_RAMP | LAYER_CHECKER | LAYER_NOISE | LAYER_UDIM | LAYER_PROCEDURAL | LAYER_WIREFRAME);
         if (sources & (sources - 1)) throw std::runtime_error("MoonLightIPR layer has more than one source");
         if (out.flags & LAYER_RAMP) {
-            if (layer.uvSlot >= CHANNEL_COUNT && layer.uvSlot != RAMP_CURVATURE) throw std::runtime_error("MoonLightIPR gradient layer refers to a missing channel");
+            if (layer.uvSlot >= CHANNEL_COUNT && layer.uvSlot != RAMP_CURVATURE && layer.uvSlot != RAMP_SAMPLE) throw std::runtime_error("MoonLightIPR gradient layer refers to a missing channel");
             out.texture = object(layer.texture);
         } else if (out.flags & LAYER_UDIM) {
             if (layer.texture < 0 || size_t(layer.texture) >= tileCount || layer.uvSlot >= UV_SLOTS)

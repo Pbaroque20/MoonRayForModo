@@ -136,7 +136,7 @@ class Playblast(QtCore.QObject):
 
 class MoonLightIPRAnimation(Playblast):
     """Render Animation with MoonLightIPR (its Engine): each frame rendered as a playblast's is, at the render's own
-    resolution and Render samples a pixel (Preview Preferences), denoised where the Denoiser is on, and written as an
+    resolution and Render Samples a pixel (Render Settings, MoonLightIPR), denoised where the Denoiser is on, and written as an
     EXR from MoonLightIPR's own numbers, with the picture type chosen beside it or in its place (image_formats). Frames
     already in the folder are kept: refused, or passed over with Render missing frames."""
 

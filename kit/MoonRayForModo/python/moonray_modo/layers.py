@@ -229,6 +229,23 @@ def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, mat
                 elif layer.type == 'vmapTexture':
                     node['kind'] = 'gradient'
                     node['gradient'] = procedurals.vertex_map(layer,channel,color,is_color)
+                elif layer.type == 'variationTexture':
+                    # Modo's Variation Texture: a random number for each mesh item, through the layer's own gradient.
+                    data,unfollowed = procedurals.variation(layer,channel,color,is_color)
+                    if data is None:
+                        warnings.append('Variation Texture '+layer.name+': its source '+unfollowed+' is not followed yet; Item is. The layer is left out.')
+                        continue
+                    node['kind'] = 'gradient'
+                    node['gradient'] = data
+                elif layer.type == 'occlusion':
+                    # Modo's Occlusion: how open each point is, worked out over the scene (occlusion.apply), as a weight.
+                    node['kind'] = 'gradient'
+                    node['gradient'] = procedurals.occlusion(layer,channel,color,is_color)
+                    warnings.append('Occlusion '+layer.name+": worked out at the mesh's points rather than at each pixel; within about 0.03 of Modo where the mesh is fine enough.")
+                elif layer.type == 'tensionTexture':
+                    # Modo's Tension: how the surface has stretched or folded from its base mesh at each point (tension.apply).
+                    node['kind'] = 'gradient'
+                    node['gradient'] = procedurals.tension(layer,channel,color,is_color)
                 elif layer.type == 'val.RTCurvature':
                     node['kind'] = 'gradient'
                     node['gradient'] = procedurals.curvature(layer,channel,is_color)
