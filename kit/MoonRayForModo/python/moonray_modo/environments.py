@@ -213,7 +213,8 @@ def covers(layer):
 def gradient_color(environment, height):
     """Y-up approximation of Modo's gradient controls; linear scene colors."""
     kind=environment['kind']; height=max(-1,min(1,height))
-    zenith,nadir=environment['zenith'],environment['nadir']
+    # A constant has its colour as zenith alone (the Render Settings background colour writes no nadir).
+    zenith=environment['zenith'];nadir=environment.get('nadir',zenith)
     if kind=='constant': return zenith
     if kind=='overcast': return [v*(1+2*height)/3 for v in zenith] if height>=0 else nadir
     if kind=='grad2': a,b,t=nadir,zenith,(height+1)/2

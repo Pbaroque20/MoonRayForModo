@@ -62,6 +62,18 @@ class EnvironmentVisibility(unittest.TestCase):
         got = seen(dict(self.BASE, intensity=0.0), preview=0.5)
         self.assertEqual(got, {'lighting': 0.5, 'background': 0.0, 'reflected': 0.5, 'through': 0.5})
 
+    def test_a_solid_background_colour_is_seen_by_the_camera_alone(self):
+        """Render Settings > Background: Solid color. The scene's environment still lights everything but is hidden from
+        the camera, which sees the colour alone (background.apply), and the colour lights nothing."""
+        from moonray_modo import background
+        scene = {'environments': [dict(self.BASE)]}
+        background.apply(scene, {'mode': 'color', 'color': '#ffffff', 'intensity': 0.25})
+        parts = moonlightipr_scene.environment_section(scene, 0.0, [], None)
+        rows = moonlightipr_scene.ENVIRONMENT_ROWS
+        got = {name: round(struct.unpack('<%df' % (rows * 3), parts[1 + i])[rows // 2 * 3], 6)
+               for i, name in enumerate(moonlightipr_scene.ENVIRONMENT_PARTS)}
+        self.assertEqual(got, {'lighting': 2.0, 'background': 0.25, 'reflected': 2.0, 'through': 2.0})
+
 
 class TextureFit(unittest.TestCase):
     def test_the_shape_is_kept(self):
