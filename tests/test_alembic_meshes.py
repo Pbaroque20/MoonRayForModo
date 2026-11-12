@@ -27,7 +27,10 @@ class AlembicMeshes(unittest.TestCase):
         cls.folder = tempfile.TemporaryDirectory()
         cls.runtime = Path(cls.folder.name)
         shutil.copy2(READER, cls.runtime / READER.name)
-        shutil.copy2(ROOT / 'toolchain/msys64/ucrt64/bin/libImath-3_2.dll', cls.runtime / 'libImath-3_2.dll')
+        # And the GCC libraries the two need, which the kit's runtime also holds: the run's PATH is the runtime's, not the
+        # toolchain's.
+        for dll in ('libImath-3_2.dll', 'libwinpthread-1.dll', 'libstdc++-6.dll', 'libgcc_s_seh-1.dll'):
+            shutil.copy2(ROOT / 'toolchain/msys64/ucrt64/bin' / dll, cls.runtime / dll)
 
     @classmethod
     def tearDownClass(cls):
