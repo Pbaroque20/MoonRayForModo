@@ -6,6 +6,11 @@ This is the development branch of [MoonRay for Modo](https://github.com/Pbaroque
 
 The current release is [0.5.4.1](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.5.4.1). **Built on MoonRay [2026.29.1](https://github.com/dreamworksanimation/openmoonray/releases/tag/v2026.29.1)** (OpenMoonRay's latest release; MoonRay 18.4), with the plugin's own patches for Windows and the preview.
 
+## New in 0.5.4.2
+
+- **Camera Background overrides MoonRay's EnvLight too**: Black, Solid color or Image hid only Modo's environments from the camera, and an EnvLight still showed behind the scene. It is now hidden from the camera for the render, still lighting the scene and seen in reflections and refractions, in MoonRay XPU, XPU2 and MoonLightIPR.
+- **Solid color and Image stay behind an EnvLight that replaces Modo's environments** (as a new one does), where the background came out black.
+
 ## New in 0.5.4.1
 
 - **MoonLightIPR follows an environment's visibility switches**: Visible to Camera, Indirect, Reflection and Refraction Rays. An environment hidden from Indirect Rays was gone from reflections too.
