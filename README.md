@@ -38,7 +38,8 @@ Work on the next version goes on in the [MoonLightIPR branch](https://github.com
 *Cellular automata scheduling in XPU2. Both CPU/GPU contribute asynchronously towards the image. Footage provided by Pixelwerk.*
 
 - **MoonRay XPU2**: a new hybrid renderer for previews. The processor and the graphics card work on the same picture at once, samples go where the picture is still noisy, and its pictures settle to MoonRay's own. Final renders come from MoonRay. *XPU2: Asynchronous Monte Carlo Path Tracer designed by Raphael Tobar. Not affiliated with or endorsed by DreamWorks Animation.* (Core architecture information can be found in [xpu2-foundation](https://github.com/Pbaroque20/xpu2-foundation).)
-- **MoonLightIPR**: the plugin's own GPU preview engine (NVIDIA), which shows an approximation of MoonRay's picture moments after each edit. Final renders always come from MoonRay.
+- **Rhizome: rendering across machines** (MoonRay > Rhizome: Decentralized Rendering): a frame or a range rendered by XPU2 on every machine running a Rhizome node, machine to machine with no render server, and the picture comes out as one machine would render it. The same window starts a node, shows the machines at work and approves new ones. Windows only.
+- **MoonLightIPR**: the plugin's own GPU preview engine (NVIDIA), which shows an approximation of MoonRay's picture moments after each edit. Since 0.5.4 it also makes final renders with the Render button, with its own AOVs and denoised beauty.
 - **Smart Render** (XPU Only): MoonRay stops by itself once the picture is clean enough for the denoiser, and denoises it.
 - **Safe Denoising** (XPU Only): stop a MoonRay render at any time and keep it, denoised. **Continue** takes it up where it stood.
 - **Draft mode**: the scene as clean outlines, redrawn in about a third of a second after a move. Press **Region** and drag to render just that part among the lines.
