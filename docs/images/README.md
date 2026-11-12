@@ -92,3 +92,11 @@ Made by `tools/make_readme_images_1111.py` from a tester's dragon scene (a DwaRe
 ## Convert to MoonRay Rect Light (`convert-rect-light.jpg`)
 
 Made by `tools/make_readme_images_1111.py rect_light` from `tools/probe_cl_light_convert.py`'s two captures of one scene: a box on a floor lit by a warm area light alone (2 x 0.5, radiance 12, the sky black), before and after the conversion, each rendered by MoonRay at 640 x 360. They differ by 0.0014 on average, the samples' noise.
+
+## A VDB shape in the viewport (`vdb-viewport-point-cloud.webp`)
+
+A screenshot from Modo by the plugin's author: JangaFX's EmberGen explosion in the MoonRay preview, and its VDB shape in the viewport as its box and point cloud.
+
+## The Rhizome window (`rhizome-window.png`)
+
+A screenshot of the Rhizome window in Modo, taken by the GUI test `tools/probe_rhizome_window.py`: a two-frame job of a test scene rendered by a master and two nodes on one machine.
