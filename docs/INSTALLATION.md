@@ -98,7 +98,7 @@ the options.
 
 For a sequence, render each frame's scene the same way.
 
-To render across several machines, see Rhizome (MoonRay > Rhizome: Render Across Machines).
+To render across several machines, use Rhizome (MoonRay > Rhizome: Decentralized Rendering): it renders a frame or a range with XPU2 on every machine running a Rhizome node. Windows only.
 
 A GPU render with many outputs has four times the room it had for what each ray owes them; `MOONRAY_MODO_CL1_POOL_SCALE` (1 to 8, default 4) sets another size if a render still reports that it could not allocate a CacheLine1.
 
