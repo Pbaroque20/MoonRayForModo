@@ -283,6 +283,8 @@ struct DistantLight {
     float radiance[3] = {1, 1, 1};      // radiance of the disc, after any normalization
     float angularExtentDegrees = 0.5f;  // full angle of the disc
     bool visibleInCamera = false;       // whether the camera sees the disc, as a sun in the sky
+    // The kinds of rays it is hidden from: 1 diffuse, 2 reflections, 4 refractions (MoonRay's visible_* lobes off).
+    uint32_t hiddenFrom = 0;
     // What the camera then sees: a disc of this radiance and this full angle, which may differ from what lights the
     // scene, as the disc of a physical sky does.
     float seenRadiance[3] = {1, 1, 1};
@@ -336,6 +338,8 @@ struct Light {
     size_t triangleCount = 0;
     int32_t texture = -1;               // a picture across the light, from addTexture; not for a portal or a mesh
     bool visibleInCamera = false;       // whether the camera sees it shining where it stands; never a portal
+    // The kinds of rays it is hidden from: 1 diffuse, 2 reflections, 4 refractions (MoonRay's visible_* lobes off).
+    uint32_t hiddenFrom = 0;
     bool alone = false;                 // mesh: a light that is no surface of the scene, its shape found by camera rays alone
     const LightFilter* filters = nullptr;
     size_t filterCount = 0;

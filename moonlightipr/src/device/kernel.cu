@@ -1280,6 +1280,29 @@ ML_INLINE BsdfEval onlyLobes(BsdfEval e, unsigned only) {
     return e;
 }
 
+// A light's kinds of rays it is hidden from (HIDDEN_FROM_*), and the lobes its samples may light as onlyLobes takes them
+// (0 all, 1 diffuse, 2 glossy), within those a light pass asks for (only): 3 where none may.
+ML_INLINE unsigned hiddenOf(const DeviceLight& light) { return (light.pad >> LIGHT_HIDDEN_SHIFT) & 7u; }
+ML_INLINE unsigned visibleLobes(unsigned only, unsigned hidden) {
+    const bool diffuse = !(hidden & HIDDEN_FROM_DIFFUSE), glossy = !(hidden & HIDDEN_FROM_REFLECTED);
+    if (!diffuse && !glossy) return 3u;
+    const unsigned allowed = diffuse && glossy ? 0u : diffuse ? 1u : 2u;
+    if (!only || !allowed || allowed == only) return only ? only : allowed;
+    return 3u;
+}
+// How much of a light a ray finds by its kind: a mirror's or a refraction's all or none, a rough surface's the shares of
+// its diffuse and glossy lobes (glossyShare) that may see it.
+ML_INLINE float3 seenBy(unsigned hidden, bool sharp, unsigned seen, float3 glossyShare) {
+    if (!hidden) return make_float3(1.0f, 1.0f, 1.0f);
+    if (sharp) {
+        const unsigned kind = seen == SEEN_REFLECTED ? HIDDEN_FROM_REFLECTED : seen == SEEN_THROUGH ? HIDDEN_FROM_THROUGH : HIDDEN_FROM_DIFFUSE;
+        const float open = (hidden & kind) ? 0.0f : 1.0f;
+        return make_float3(open, open, open);
+    }
+    const float diffuse = (hidden & HIDDEN_FROM_DIFFUSE) ? 0.0f : 1.0f, glossy = (hidden & HIDDEN_FROM_REFLECTED) ? 0.0f : 1.0f;
+    return (make_float3(1.0f, 1.0f, 1.0f) - glossyShare) * diffuse + glossyShare * glossy;
+}
+
 // Next event estimation at one surface point: the environment, the distant lights, then the
 // local lights. weight is the path's weight on arriving at the surface.
 ML_INLINE float3 directLight(const Surface& surface, const Lobes& lobes, float3 wo, const Frame& frame,
@@ -1313,9 +1336,11 @@ ML_INLINE float3 directLight(const Surface& surface, const Lobes& lobes, float3 
     for (unsigned i = 0; i < params.distantLightCount; ++i) {
         if (!reaches(set, 1 + i)) continue;
         const DeviceDistantLight& light = distantLights[i];
+        const unsigned sunLobes = visibleLobes(only, light.hidden);
+        if (sunLobes == 3u) continue;
         const float3 toSun = sampleDistant(light, rnd(seed), rnd(seed));
         if (!surface.passes && !surface.smoothToon && dot(ng, toSun) <= 0.0f) continue;
-        const BsdfEval e = onlyLobes(evalBsdf(surface, lobes, wo, frame.toLocal(toSun)), only);
+        const BsdfEval e = onlyLobes(evalBsdf(surface, lobes, wo, frame.toLocal(toSun)), sunLobes);
         const float pdf = lobes.specular * e.specularPdf + (1.0f - lobes.specular) * e.diffusePdf;
         const float sunPdf = distantPdf(light, toSun);
         const float3 found = litBy(e, pdf, sunPdf);
@@ -1331,12 +1356,14 @@ ML_INLINE float3 directLight(const Surface& surface, const Lobes& lobes, float3 
     const unsigned lastLight = params.lightPick ? firstLight + 1 : params.lightCount;
     for (unsigned i = firstLight; i < lastLight; ++i) {
         if (!reaches(set, 1 + params.distantLightCount + i)) continue;
+        const unsigned lampLobes = visibleLobes(only, hiddenOf(lights[i]));
+        if (lampLobes == 3u) continue;
         float3 toLamp, emitted;
         float distance, lampPdf;
         if (!sampleLight(lights[i], p, rnd(seed), rnd(seed), toLamp, distance, lampPdf, emitted)) continue;
         if (!surface.passes && !surface.smoothToon && dot(ng, toLamp) <= 0.0f) continue;
         if (params.lightPick) lampPdf *= lights[i].pick;
-        const BsdfEval e = onlyLobes(evalBsdf(surface, lobes, wo, frame.toLocal(toLamp)), only);
+        const BsdfEval e = onlyLobes(evalBsdf(surface, lobes, wo, frame.toLocal(toLamp)), lampLobes);
         const float pdf = lobes.specular * e.specularPdf + (1.0f - lobes.specular) * e.diffusePdf;
         const float3 found = litBy(e, pdf, lampPdf);
         if (maxComponent(found) > 0.0f) {
@@ -1604,7 +1631,7 @@ ML_INLINE float3 fibreLight(const Fibre& fibre, float3 p, float3 ng, float3 weig
         }
     }
     for (unsigned i = 0; i < params.distantLightCount; ++i) {
-        if (!reaches(set, 1 + i)) continue;
+        if (!reaches(set, 1 + i) || (distantLights[i].hidden & HIDDEN_FROM_DIFFUSE)) continue;  // a fibre's rays are diffuse ones
         const DeviceDistantLight& light = distantLights[i];
         const float3 toSun = sampleDistant(light, rnd(seed), rnd(seed));
         const float3 f = fibreEval(fibre, toSun, pdf);
@@ -1615,7 +1642,7 @@ ML_INLINE float3 fibreLight(const Fibre& fibre, float3 p, float3 ng, float3 weig
     const unsigned firstLight = params.lightPick ? pickLight(lights, params.lightCount, rnd(seed)) : 0;
     const unsigned lastLight = params.lightPick ? firstLight + 1 : params.lightCount;
     for (unsigned i = firstLight; i < lastLight; ++i) {
-        if (!reaches(set, 1 + params.distantLightCount + i)) continue;
+        if (!reaches(set, 1 + params.distantLightCount + i) || (hiddenOf(lights[i]) & HIDDEN_FROM_DIFFUSE)) continue;
         float3 toLamp, emitted;
         float distance, lampPdf;
         if (!sampleLight(lights[i], p, rnd(seed), rnd(seed), toLamp, distance, lampPdf, emitted)) continue;
@@ -2192,7 +2219,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
             float pdf;
             float3 emitted;
             if (hitLight(lights[i], origin, direction, lightReach, pdf, emitted))
-                radiance += clampSample(throughput * lightWeight * emitted
+                radiance += clampSample(throughput * lightWeight * emitted * seenBy(hiddenOf(lights[i]), sharp, seen, glossyShare)
                                         * (sharp ? 1.0f : powerHeuristic(bsdfPdf, params.lightPick ? pdf * lights[i].pick : pdf)), clampFound);
         }
         if (!lightBlocked) {
@@ -2224,16 +2251,19 @@ extern "C" __global__ void __raygen__moonlightipr() {
             for (unsigned i = 0; i < params.distantLightCount; ++i) {
                 if (!camera && !reaches(fromSet, 1 + i)) continue;
                 const DeviceDistantLight& light = distantLights[i];
+                // A ray of a kind the light is hidden from finds nothing of it (the camera's own switch is visible).
+                const float3 open = camera ? vec(1.0f) : seenBy(light.hidden, sharp, seen, glossyShare);
+                if (maxComponent(open) <= 0.0f) continue;
                 if (camera || (sharp && light.visible > 0.0f)) {
                     // The camera, and a mirror, see the disc they are told to: for a sun in a physical sky, not the one that
                     // lights the scene.
                     if (light.visible > 0.0f && dot(direction, vec(light.direction)) >= 1.0f - light.seenVersine
                         && (!camera || !params.aovPass || params.aovPass == PASS_BACKGROUND))
-                        radiance += clampSample(throughput * lightWeight * vec(light.seen), clampFound);
+                        radiance += clampSample(throughput * lightWeight * vec(light.seen) * open, clampFound);
                     continue;
                 }
                 if (dot(direction, vec(light.direction)) >= 1.0f - light.versine)
-                    radiance += clampSample(throughput * lightWeight * distantRadiance(light, direction)
+                    radiance += clampSample(throughput * lightWeight * distantRadiance(light, direction) * open
                                             * ((sharp || camera) ? 1.0f : powerHeuristic(bsdfPdf, distantPdf(light, direction))), clampFound);
             }
         }
@@ -2281,7 +2311,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
             const float cosine = -dot(direction, hit.ng);
             if (cosine > 1e-6f) {
                 const float pdf = hit.t * hit.t / (light.area * cosine);
-                radiance += clampSample(throughput * lightWeight * vec(light.radiance)
+                radiance += clampSample(throughput * lightWeight * vec(light.radiance) * seenBy(hiddenOf(light), sharp, seen, glossyShare)
                                         * (sharp ? 1.0f : powerHeuristic(bsdfPdf, params.lightPick ? pdf * light.pick : pdf)), clampFound);
             }
         }
@@ -2778,7 +2808,8 @@ extern "C" __global__ void __raygen__moonlightipr() {
         // one beneath the surface.
         const float scale = 1.0f / (bsdfPdf * (1.0f - through) * (1.0f - beneath));
         lightWeight = (e.diffuse + e.specular) * scale;
-        if (params.envSplit) {
+        {
+            // For the environments and lights hidden from some kinds of rays (params.envSplit, seenBy).
             const float3 whole = e.diffuse + e.specular;
             glossyShare = make_float3(whole.x > 0.0f ? e.specular.x / whole.x : 0.0f, whole.y > 0.0f ? e.specular.y / whole.y : 0.0f,
                                       whole.z > 0.0f ? e.specular.z / whole.z : 0.0f);

@@ -315,11 +315,11 @@ class Dialog(QtWidgets.QDialog):
         heading = QtWidgets.QLabel('Diagnostics')
         heading.setStyleSheet('font-weight: bold; margin-top: 8px')
         form.addRow(heading)
-        form.addRow(check('pbr_validity', 'PBR validity output',
-                          "While on, MoonRay's renders hold its PBR validity output in place of the standard outputs, for MoonRay XPU "
-                          'and XPU2 alike, and the preview shows it: green where a material is physically plausible, red where it is '
-                          'not, yellow in between. Off, the standard outputs again. MoonLightIPR does not draw it. The same switch as '
-                          'Preferences > MoonRay > Renderer > Diagnostics'))
+        form.addRow(check('pbr_validity', 'PBR validity output (XPU / XPU2 only)',
+                          'For MoonRay XPU and XPU2 only: MoonLightIPR does not draw it. While on, their renders hold MoonRay\'s PBR '
+                          'validity output in place of the standard outputs, and the preview shows it: green where a material is '
+                          'physically plausible, red where it is not, yellow in between. Off, the standard outputs again. The same '
+                          'switch as Preferences > MoonRay > Renderer > Diagnostics'))
         buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)

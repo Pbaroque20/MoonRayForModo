@@ -1735,6 +1735,7 @@ void Renderer::setDistantLights(const DistantLight* lights, size_t count) {
         const float sinHalf = std::sin(0.5f * radius);
         table[i].versine = 2.0f * sinHalf * sinHalf;
         table[i].visible = lights[i].visibleInCamera ? 1.0f : 0.0f;
+        table[i].hidden = lights[i].hiddenFrom & 7u;
         std::copy(lights[i].seenRadiance, lights[i].seenRadiance + 3, table[i].seen);
         const float seenHalf = std::sin(0.5f * std::clamp(lights[i].seenExtentDegrees, 0.01f, 360.0f) * 3.14159265358979323846f / 360.0f);
         table[i].seenVersine = 2.0f * seenHalf * seenHalf;
@@ -1819,7 +1820,8 @@ void Renderer::setLights(const Light* lights, size_t count) {
             filters.push_back(filter);
         }
         // Whether the camera sees the light itself, as MoonRay shows a light whose Visible in Camera is on.
-        out.pad = (light.visibleInCamera && light.kind != Light::Portal ? LIGHT_SEEN : 0u) | (light.alone ? LIGHT_ALONE : 0u);
+        out.pad = (light.visibleInCamera && light.kind != Light::Portal ? LIGHT_SEEN : 0u) | (light.alone ? LIGHT_ALONE : 0u)
+                | ((light.hiddenFrom & 7u) << LIGHT_HIDDEN_SHIFT);
         if (light.kind == Light::Mesh) {
             // A corner, two edges and the running share of the area, which picks a triangle.
             if (!light.triangles || !light.triangleCount || light.triangleCount > 0xffffffffu)

@@ -504,6 +504,7 @@ Comparison audit between MoonRay 2026.29.1's source and the current plugin.
 | Overscan (rendering past the frame edge) | ![yes](docs/images/feature-yes.svg) | Modo's camera Overscan, or a MoonRay camera's own when it is rendered through, in final renders |
 | Bake camera | ![yes](docs/images/feature-yes.svg) | Texture baking |
 | Lights: rect, disk, sphere, spot, cylinder, distant, environment, mesh, portal | ![yes](docs/images/feature-yes.svg) | MoonRay light items, or Modo's lights. A round light under an uneven scale stays on and round, in every engine, and a notice says so. |
+| Light visibility: visible in camera, diffuse, glossy and mirror reflection and transmission | ![yes](docs/images/feature-yes.svg) | On MoonRay's light items, EnvLight among them, in every engine. MoonLightIPR follows them since after 0.5.4 by three kinds of rays (diffuse, reflections, refractions): a pair set differently is seen by both, with a notice |
 | Light filters: barn door, colour ramp, combine, cookie, decay, intensity, rod, VDB | ![yes](docs/images/feature-yes.svg) | A cookie filter renders in XPU2, where it sent the render to MoonRay's scalar mode. |
 | Light, shadow and light filter linking | ![yes](docs/images/feature-yes.svg) | MoonRay's own sets, and Modo's own Light Linking groups (include or exclude), which reach MoonRay Shadow receiver sets, and a shadow ray offset, in Light Links |
 | Meshes, subdivision, curves, points, instancing | ![yes](docs/images/feature-yes.svg) | From Modo's geometry. Creases from Modo's Subdivision weights |

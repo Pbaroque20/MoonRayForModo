@@ -321,13 +321,13 @@ SceneSettings SceneLoader::apply(const std::string& path) {
     // "MLS" and a letter for the form of the scene, which changes whenever what is written in it does: "C" since
     // the scene's sample clamp is written in it, "D" since a toon material's ramps are, "E" since a hair toon's highlights are,
     // "F" since the lights' poses at the shutter's close are, "G" since the volume scattering factors are, "H" since the
-    // camera's film offset is, "I" since a material's fuzz is, "J" since the light sets are, "K" since a mesh may be displaced, "L" since by a program of displacement nodes, "M" since a material's clearcoat bump strength is, "N" since whether the camera sees each light is, "O" since the subsurface scatterings a path may have are, "P" since each instance's own number is, "Q" since the roughness clamp is, "R" since what reflections and refractions see of the environment is. A plugin and a session of different versions say so plainly, in
+    // camera's film offset is, "I" since a material's fuzz is, "J" since the light sets are, "K" since a mesh may be displaced, "L" since by a program of displacement nodes, "M" since a material's clearcoat bump strength is, "N" since whether the camera sees each light is, "O" since the subsurface scatterings a path may have are, "P" since each instance's own number is, "Q" since the roughness clamp is, "R" since what reflections and refractions see of the environment is, "S" since the kinds of rays each light is hidden from are. A plugin and a session of different versions say so plainly, in
     // place of reading each other's scenes wrongly.
     const uint32_t mark = in.value<uint32_t>();
     if ((mark & 0x00ffffff) != 0x00534c4d) throw std::runtime_error("Not a MoonLightIPR scene: " + path);
-    if (mark != 0x52534c4d)
+    if (mark != 0x53534c4d)
         throw std::runtime_error("This MoonLightIPR and the plugin are of different versions (the scene is form '" + std::string(1, char(mark >> 24))
-                                 + "', this MoonLightIPR reads 'R'). Install the kit and its runtime from the same release.");
+                                 + "', this MoonLightIPR reads 'S'). Install the kit and its runtime from the same release.");
     ++generation;
     SceneSettings settings;
     settings.width = in.value<uint32_t>();
@@ -687,7 +687,10 @@ SceneSettings SceneLoader::apply(const std::string& path) {
         in.floats(light.direction, 3);
         in.floats(light.radiance, 3);
         light.angularExtentDegrees = in.value<float>();
-        light.visibleInCamera = in.value<uint32_t>() != 0;
+        // Bit 1: seen by the camera; bits 3 to 5 (form S): hidden from diffuse light, reflections, refractions.
+        const uint32_t seen = in.value<uint32_t>();
+        light.visibleInCamera = (seen & 1u) != 0;
+        light.hiddenFrom = (seen >> 2) & 7u;
         in.floats(light.axisX, 3);
         in.floats(light.axisY, 3);
         light.texture = image(in.value<int32_t>());
@@ -715,9 +718,11 @@ SceneSettings SceneLoader::apply(const std::string& path) {
         light.innerConeDegrees = in.value<float>();
         light.texture = image(in.value<int32_t>());
         // Bit 1: seen by the camera. Bit 2: a mesh light that is no surface of the scene (a Modo Mesh Light's shape).
+        // Bits 3 to 5 (form S): hidden from diffuse light, reflections, refractions.
         const uint32_t seen = in.value<uint32_t>();
         light.visibleInCamera = (seen & 1u) != 0;
         light.alone = (seen & 2u) != 0;
+        light.hiddenFrom = (seen >> 2) & 7u;
         lightFilters[l].resize(in.value<uint32_t>());
         for (LightFilter& filter : lightFilters[l]) {
             const uint32_t filterKind = in.value<uint32_t>();

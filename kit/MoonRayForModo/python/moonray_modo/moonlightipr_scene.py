@@ -404,7 +404,8 @@ def lights(scene, warnings, environment=0.0, compiler=None, closing=None, named=
             record = emitter({'name': light.get('name', ''), 'vertices': shape['vertices'], 'faces': shape['faces'],
                               'matrix': shape['matrix']},
                              {'light_intensity': light['intensity'], 'light_color': light['color'],
-                              'light_seen': bool(light.get('camera_visible')), 'light_alone': True}, warnings)
+                              'light_seen': bool(light.get('camera_visible')), 'light_alone': True,
+                              'light_hidden': int(light.get('hidden_from', 0))}, warnings)
             if record:
                 local.append(record)
                 if closing is not None:
@@ -447,7 +448,7 @@ def lights(scene, warnings, environment=0.0, compiler=None, closing=None, named=
             # sees is seen as it shines.
             seen = light.get('disc')
             shown = working_color(finite(seen['radiance'])) + [float(seen['angle'])] if seen else [c * scale for c in color] + [angle]
-            distant.append(unit(matrix[8:11]) + [c * scale for c in color] + [angle, 1 if seen or light.get('camera_visible') else 0]
+            distant.append(unit(matrix[8:11]) + [c * scale for c in color] + [angle, (1 if seen or light.get('camera_visible') else 0) | (int(light.get('hidden_from', 0)) & 7) << 2]
                            + unit(matrix[0:3]) + unit(matrix[4:7]) + [texture] + shown)
             if closing is not None:
                 closing.setdefault('distant', []).append(unit(ending[8:11]) + unit(ending[0:3]) + unit(ending[4:7]))
@@ -484,7 +485,8 @@ def lights(scene, warnings, environment=0.0, compiler=None, closing=None, named=
         if named is not None:
             named.setdefault('local', []).append(light.get('identity', str(index)))
         # Seen by the camera where it stands, as MoonRay shows a light whose Visible in Camera is on (a portal never).
-        seen = 1 if light.get('camera_visible') and kind != 'PortalLight' else 0
+        # Bit 1: the camera sees it; bits 3 to 5: the kinds of rays it is hidden from (entities.hidden_bits).
+        seen = (1 if light.get('camera_visible') and kind != 'PortalLight' else 0) | (int(light.get('hidden_from', 0)) & 7) << 2
         local.append(struct.pack('<I20fiI', LOCAL_LIGHTS[kind], *(matrix[12:15] + unit(matrix[0:3]) + unit(matrix[4:7])
             + [-v for v in unit(matrix[8:11])] + [width, height, radius] + [c * normalization for c in color]
             + [cone, max(0.0, cone - 2 * float(light.get('soft_edge', 0)))]), texture, seen)
@@ -534,7 +536,7 @@ def emitter(mesh, settings, warnings):
     # Mesh Light's shape has no such control and goes by light_seen.
     from .lighting import mesh_camera
     shown, surface = mesh_camera(settings) if 'mesh_camera_mode' in settings else (settings.get('light_seen', True), True)
-    seen = (1 if shown else 0) | (2 if settings.get('light_alone') or not (shown or surface) else 0)
+    seen = (1 if shown else 0) | (2 if settings.get('light_alone') or not (shown or surface) else 0) | (int(settings.get('light_hidden', 0)) & 7) << 2
     return (struct.pack('<I20fiII', MESH_LIGHT, *([0.0] * 12 + [1.0, 1.0, 1.0] + [c / (math.pi * cached[1]) for c in color] + [0.0, 0.0]), -1, seen, 0)
             + cached[0])
 
@@ -1047,7 +1049,7 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     # Material colours are worked out in Rec.709; the session takes them to the working space.
     working = working_enabled()
     # The letter after MLS says which form of scene this is; the session refuses any other than its own.
-    parts = [b'MLSR', struct.pack('<8I', width, height, *depths, samples, (SCENE_DENOISE if denoise else 0)
+    parts = [b'MLSS', struct.pack('<8I', width, height, *depths, samples, (SCENE_DENOISE if denoise else 0)
                                   | (SCENE_WORKING_SPACE if working else 0) | (SCENE_MOTION if motion else 0)
                                   # See-through surfaces cast whole shadows unless the scene asks for lighter ones, as in MoonRay.
                                   | (SCENE_PRESENCE_SHADOWS if settings.get('enable_presence_shadows') else 0)
