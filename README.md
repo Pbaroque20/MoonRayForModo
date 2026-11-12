@@ -561,6 +561,7 @@ Comparison audit between Modo 16.1v9 and the current plugin: what of a Modo scen
 | Light volumetrics, and fog | ![partly](docs/images/feature-partly.svg) | Point, spot and directional light volumetrics, and the environment's fog (new in 0.5); Layered fog has no falloff and a Base Shader's fog is left out, each with a notice; not yet compared with Modo's renders |
 | **Environment** | | |
 | Gradients, overcast and physical skies, constant colours and HDRI image layers | ![yes](docs/images/feature-yes.svg) | An HDRI turns as in Modo, and quickly |
+| Visible to Camera, Indirect, Reflection and Refraction Rays | ![yes](docs/images/feature-yes.svg) | In every engine: an environment can light the scene unseen, or be seen only behind the scene or in reflections. MoonLightIPR follows all four since after 0.5.4; before, only Camera and Indirect |
 | **Cameras** | | |
 | Perspective and orthographic cameras | ![yes](docs/images/feature-yes.svg) | With depth of field, motion blur, stereo and overscan; Film Roll, distortion and squeeze are not followed, and a notice names them. Motion Blur on the Modo camera turns on motion blur in renders. Edge Weighting is not followed, and a notice says so. |
 | Other camera projections | ![no](docs/images/feature-no.svg) | Refused; MoonRay's fisheye, spherical and dome cameras in their place |

@@ -35,6 +35,8 @@ LAST_REFINABLE = False
 SUBDIVISION_QUADS = 3000000
 SCENE_DENOISE, SCENE_WORKING_SPACE, SCENE_MOTION, SCENE_PRESENCE_SHADOWS, SCENE_FLAT_OUT = 1, 2, 4, 8, 16
 ENVIRONMENT_ROWS = 64
+# What diffuse light sees, what the camera sees, what reflections see, what refractions see: the order the session reads them.
+ENVIRONMENT_PARTS = ('lighting', 'background', 'reflected', 'through')
 ENVIRONMENT_IMAGE = (1024, 512)
 # How a camera turns a point of the picture into a direction, by the session's numbering.
 PROJECTIONS = {'persp': 0, 'fisheye': 1, 'spherical': 2, 'ortho': 3}
@@ -161,13 +163,16 @@ def environment_section(scene, environment, warnings, runtime):
     import subprocess
     from .working_space import color as working_color
     from .environments import gradient_color
-    # MoonRay does not show the preview environment light to the camera.
-    rows = {'lighting': [[max(0.0, float(environment))] * 3 for _ in range(ENVIRONMENT_ROWS)],
-            'background': [[0.0] * 3 for _ in range(ENVIRONMENT_ROWS)]}
-    images = {'lighting': None, 'background': None}
+    # MoonRay does not show the preview environment light to the camera; every other ray sees it.
+    rows = {name: [[max(0.0, float(environment)) if name != 'background' else 0.0] * 3 for _ in range(ENVIRONMENT_ROWS)]
+            for name in ENVIRONMENT_PARTS}
+    images = {name: None for name in ENVIRONMENT_PARTS}
     for item in scene.get('environments', []):
         intensity = float(item['intensity'])
-        targets = [name for name, visible in (('lighting', item.get('indirect', True)), ('background', item.get('camera', True))) if visible]
+        # Each environment is seen by the rays Modo's Visible to ... switches let see it, as MoonRay's EnvLight is by its
+        # visible_* attributes (environments.emit): diffuse light (Indirect), the camera, reflections and refractions.
+        targets = [name for name, visible in (('lighting', item.get('indirect', True)), ('background', item.get('camera', True)),
+                                              ('reflected', item.get('reflection', True)), ('through', item.get('refraction', True))) if visible]
         if item['kind'] in ('image', 'stack'):
             try:
                 matrix = finite(item.get('matrix', IDENTITY))
@@ -187,14 +192,15 @@ def environment_section(scene, environment, warnings, runtime):
             except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as exc:
                 warnings.append('MoonLightIPR shows environment %s as uniform grey; its image could not be made (%s).' % (item.get('name', ''), exc))
             else:
-                # One image lights the scene and one is seen behind it; any further one falls back to grey.
+                # One image for each kind of ray; any further one falls back to grey.
                 fits = [name for name in targets if images[name] is None]
                 for name in fits:
                     images[name] = record
                 targets = [name for name in targets if name not in fits]
                 if not targets:
                     continue
-                warnings.append('MoonLightIPR shows one environment image for lighting and one behind the scene; %s is uniform grey where another is in use.' % item.get('name', ''))
+                warnings.append('MoonLightIPR shows one environment image to each kind of ray (lighting, camera, reflections, '
+                                'refractions); %s is uniform grey where another is in use.' % item.get('name', ''))
         elif item['kind'] not in GRADIENTS:
             warnings.append('MoonLightIPR shows environment %s as uniform grey; MoonRay renders its %s.' % (item.get('name', ''), item['kind']))
         for y in range(ENVIRONMENT_ROWS):
@@ -204,8 +210,8 @@ def environment_section(scene, environment, warnings, runtime):
                 for c, v in enumerate(color):
                     rows[name][y][c] += max(0.0, v) * intensity
     parts = [struct.pack('<I', ENVIRONMENT_ROWS)]
-    parts += [struct.pack('<%df' % (ENVIRONMENT_ROWS * 3), *chain.from_iterable(rows[name])) for name in ('lighting', 'background')]
-    for name in ('lighting', 'background'):
+    parts += [struct.pack('<%df' % (ENVIRONMENT_ROWS * 3), *chain.from_iterable(rows[name])) for name in ENVIRONMENT_PARTS]
+    for name in ENVIRONMENT_PARTS:
         if images[name] is None:
             parts.append(struct.pack('<I', 0))
             continue
@@ -1041,7 +1047,7 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     # Material colours are worked out in Rec.709; the session takes them to the working space.
     working = working_enabled()
     # The letter after MLS says which form of scene this is; the session refuses any other than its own.
-    parts = [b'MLSQ', struct.pack('<8I', width, height, *depths, samples, (SCENE_DENOISE if denoise else 0)
+    parts = [b'MLSR', struct.pack('<8I', width, height, *depths, samples, (SCENE_DENOISE if denoise else 0)
                                   | (SCENE_WORKING_SPACE if working else 0) | (SCENE_MOTION if motion else 0)
                                   # See-through surfaces cast whole shadows unless the scene asks for lighter ones, as in MoonRay.
                                   | (SCENE_PRESENCE_SHADOWS if settings.get('enable_presence_shadows') else 0)

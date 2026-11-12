@@ -269,6 +269,12 @@ struct Environment {
     // The map's own axes in world space, as rows, for the lighting and for the background.
     float rotation[9] = {1, 0, 0, 0, 1, 0, 0, 0, 1};
     float backgroundRotation[9] = {1, 0, 0, 0, 1, 0, 0, 0, 1};
+    // What reflections and what refractions see, same size as pixels, where it differs from what diffuse light sees
+    // (pixels): environments visible to some kinds of rays only. Null, both see pixels.
+    const float* reflected = nullptr;
+    const float* through = nullptr;
+    float reflectedRotation[9] = {1, 0, 0, 0, 1, 0, 0, 0, 1};
+    float throughRotation[9] = {1, 0, 0, 0, 1, 0, 0, 0, 1};
 };
 
 // A uniform disc at infinity, as MoonRay's DistantLight.
