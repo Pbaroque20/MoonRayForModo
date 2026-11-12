@@ -4,9 +4,9 @@ This is the development branch of [MoonRay for Modo](https://github.com/Pbaroque
 
 **MoonLightIPR** (echoing DreamWorks' earlier rasterizer MoonLight) is the plugin's fast GPU preview. It shows an approximation of what MoonRay will render and updates quickly after each edit. Final renders always come from MoonRay. What of a Modo scene it draws is in [its audit table](#modos-features-in-moonlightipr).
 
-The current release is [0.5.3.2](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.5.3.2). **Built on MoonRay [2026.29.1](https://github.com/dreamworksanimation/openmoonray/releases/tag/v2026.29.1)** (OpenMoonRay's latest release; MoonRay 18.4), with the plugin's own patches for Windows and the preview.
+The current release is [0.5.4](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.5.4). **Built on MoonRay [2026.29.1](https://github.com/dreamworksanimation/openmoonray/releases/tag/v2026.29.1)** (OpenMoonRay's latest release; MoonRay 18.4), with the plugin's own patches for Windows and the preview.
 
-## New in 0.5.4 (coming)
+## New in 0.5.4
 
 - **Modo's Processing textures**: Gradient reads Incidence, Slope, Distance, Screen and Back Facing, as well as its other inputs; Occlusion, Variation by Item, Mesh Part and Particle, and Tension (Area and Angle) render in all three engines, matching Modo's own render to within about 0.03. A Gradient also reads Texture U and V (UV map, Solid and Planar along Z), Texture Value over a Constant, Surface ID, Bump and Displacement Height, and Clip Distance.
 - **Render Settings tidied**: MoonLightIPR's Render Samples has its own MoonLightIPR group after XPU2 Sampling and is saved with the scene (it was a Preview Preference); MoonRay's Sampling group is now XPU Sampling; XPU2's Most Samples is gone (XPU2 keeps 16 times the average as its limit). Displacement Tessellation, Adaptive Error Override and Dicing Frame (Global Switches), missing from the form since they were added, are there.

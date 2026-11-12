@@ -2,7 +2,7 @@
 
 0.5 is a **pre-production release**: the plugin is no longer experimental, and it brings a new GPU renderer, MoonRay XPU2.
 
-## New in 0.5.4 (coming)
+## New in 0.5.4
 
 - **Rhizome: render across the studio's machines** (MoonRay > Rhizome: Decentralized Rendering). XPU2 renders this frame, or a range of frames, on every machine running a Rhizome node, and the picture comes out as one machine renders it. There is no render server: any machine can lead a render, and if it stops, another takes over. Each machine fetches only the scene data its share of the picture reads. Every machine's work is checked, and traffic between machines is encrypted. The same window starts a node on this machine, shows the machines at work, approves new ones and adds the Windows Firewall rule. A machine behind a router or VPN is found by its address and remembered. Windows only; every machine needs the same kit version. Tested so far with several nodes on one machine; a test across two real machines is still to come.
 
