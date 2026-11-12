@@ -124,9 +124,11 @@ def emit(scene,meshes,environment,lines):
         ref='MeshLight(%s)'%string('/modo/meshLight/'+str(index));refs.setdefault(identity,[]).append(ref)
         label=settings.get('light_label','')
         if label and not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]*',label):raise ValueError('Invalid mesh light group label')
-        lines.append('table.insert(lights, %s { ["geometry"] = RdlMeshGeometry("/modo/meshLight/geometry/%d"), ["color"] = %s, ["intensity"] = %s, ["label"] = %s, ["visible_in_camera"] = %d })'%(ref,index,vector(working_color(settings.get('light_color',[1,1,1])),'Rgb'),number(settings.get('light_intensity',1)),string(label),
+        # A MoonRay MeshLight item's lobe switches turned off, as it has them (entities.mesh_lights).
+        lobes=''.join(', [%s] = false'%string(k) for k,v in sorted((settings.get('light_lobes') or {}).items()) if not v)
+        lines.append('table.insert(lights, %s { ["geometry"] = RdlMeshGeometry("/modo/meshLight/geometry/%d"), ["color"] = %s, ["intensity"] = %s, ["label"] = %s, ["visible_in_camera"] = %d%s })'%(ref,index,vector(working_color(settings.get('light_color',[1,1,1])),'Rgb'),number(settings.get('light_intensity',1)),string(label),
             # Seen by the camera, the mesh looks as it is: a surface giving off light. MoonRay's own default hides every light.
-            1 if mesh_camera(settings)[0] else 0))
+            1 if mesh_camera(settings)[0] else 0,lobes))
     from .entities import emit_lights
     # MoonRay light items may be named in an object's Light Links as Modo's lights are.
     items={}

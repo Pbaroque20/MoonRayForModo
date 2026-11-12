@@ -43,6 +43,25 @@ def scene(environments):
         'environments': environments}
 
 
+def lit(*lights):
+    """The balls under a black environment, lit by these lights alone."""
+    def made(environments):
+        return dict(scene(environments), lights=list(lights))
+    return made
+
+
+def rect(**more):
+    """A large rect light behind the camera facing the balls: it lights the diffuse ball, and the mirror and rough
+    metal reflect it back to the camera."""
+    return dict({'kind': 'RectLight', 'identity': 'panel', 'name': 'Panel', 'color': [1, 1, 1], 'intensity': 300.0,
+                 'width': 8.0, 'height': 8.0, 'matrix': fixture.placed(0, 0, 14)}, **more)
+
+
+def sun(**more):
+    return dict({'kind': 'DistantLight', 'identity': 'sun', 'name': 'Sun', 'color': [1, 1, 1], 'intensity': 2.0, 'angle': 2.0,
+                 'matrix': fixture.look_at([0, 0, 0], [0, 0, -1])}, **more)
+
+
 def white(**flags):
     return dict({'kind': 'constant', 'name': 'White', 'intensity': 1.0, 'zenith': [1, 1, 1], 'nadir': [1, 1, 1]}, **flags)
 
@@ -70,7 +89,13 @@ CASES = [('all', [white()]),
          ('refraction_off', [white(refraction=False)]),
          ('two_environments', [white(reflection=False, refraction=False, camera=False),
                                {'kind': 'constant', 'name': 'Red', 'intensity': 1.0, 'zenith': [1, 0, 0], 'nadir': [1, 0, 0],
-                                'indirect': False}])]
+                                'indirect': False}]),
+         # MoonRay's lights' own switches (entities.hidden_bits): 1 diffuse light, 2 reflections, 4 refractions.
+         ('light_all', (lit(rect()), [])),
+         ('light_diffuse_off', (lit(rect(hidden_from=1)), [])),
+         ('light_reflection_off', (lit(rect(hidden_from=2)), [])),
+         ('sun_all', (lit(sun()), [])),
+         ('sun_diffuse_off', (lit(sun(hidden_from=1)), []))]
 
 
 def main():
@@ -80,7 +105,8 @@ def main():
     report = {}
     try:
         for name, environments in CASES:
-            result = session.submit(scene(environments))
+            build, environments = environments if isinstance(environments, tuple) else (scene, environments)
+            result = session.submit(build(environments))
             fixture.write_images(folder / name, result['pixels'])
             report[name] = measure(result['pixels'])
             report[name]['seconds'] = round(result['done_ms'] / 1000, 2)
@@ -114,6 +140,18 @@ def main():
     # The red one is left visible to the camera and to refractions; the white one is hidden from both.
     expect('two_environments', 'background', lambda v: v[0] > .99 and v[1] < .001, 'the camera does not see the red one alone')
     expect('two_environments', 'glass', lambda v: v[0] > .8 and v[1] < .05, 'the glass does not show the red one through it')
+    light = report['light_all']
+    for part in ('diffuse', 'mirror', 'rough'):
+        expect('light_all', part, lambda v: grey(v) > .05, 'the panel does not reach this ball: the scene is wrong')
+    expect('light_diffuse_off', 'diffuse', lambda v: grey(v) < .25 * grey(light['diffuse']), 'diffuse light still finds the panel')
+    for part in ('mirror', 'rough'):
+        expect('light_diffuse_off', part, lambda v, p=part: abs(grey(v) - grey(light[p])) < .05 * max(1, grey(light[p])),
+               'its reflection of the panel changed')
+    for part in ('mirror', 'rough'):
+        expect('light_reflection_off', part, lambda v: grey(v) < .02, 'still reflects the panel')
+    expect('light_reflection_off', 'diffuse', lambda v: grey(v) > .8 * grey(light['diffuse']), 'lost more than its shine')
+    expect('sun_all', 'diffuse', lambda v: grey(v) > .1, 'the sun does not light the diffuse ball: the scene is wrong')
+    expect('sun_diffuse_off', 'diffuse', lambda v: grey(v) < .2 * grey(report['sun_all']['diffuse']), 'diffuse light still finds the sun')
     if problems:
         raise SystemExit('Environment visibility check failed:\n  ' + '\n  '.join(problems))
     print('MoonLightIPR environment visibility check passed')

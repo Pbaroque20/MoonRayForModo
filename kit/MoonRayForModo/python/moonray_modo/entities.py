@@ -903,6 +903,10 @@ def mesh_lights(scene, warnings=None):
         # The mesh is seen shining unless the item's Visible in Camera is forced off (0).
         objects[owner] = dict(objects.get(owner, {}), mesh_light=True, light_color=value(entity, 'color'),
                               light_seen=int(value(entity, 'visible_in_camera')) != 0,
+                              # Its six lobe switches as authored, for MoonRay (lighting.py), and as MoonLightIPR's kinds.
+                              light_lobes={'visible_' + lobe: bool(value(entity, 'visible_' + lobe))
+                                           for _, pair in LOBE_PAIRS for lobe in pair},
+                              light_hidden=hidden_bits(lobes_seen(entity, label, warnings)),
                               light_intensity=float(value(entity, 'intensity')) * 2 ** float(value(entity, 'exposure')))
     production['objects'] = objects
     return dict(scene, production=production, entities=[e for e in scene['entities'] if e['class'] != 'MeshLight'])
@@ -1771,6 +1775,34 @@ def emitting_area(name, light):
     return math.pi * size if size > 1e-12 else None
 
 
+LOBE_PAIRS = (('indirect', ('diffuse_reflection', 'diffuse_transmission')),
+              ('reflection', ('glossy_reflection', 'mirror_reflection')),
+              ('refraction', ('glossy_transmission', 'mirror_transmission')))
+
+
+def lobes_seen(entity, label, warnings):
+    """A MoonRay light's six lobe switches (visible_diffuse_*, visible_glossy_*, visible_mirror_*) by the three kinds of rays
+    MoonLightIPR tells apart: diffuse light (diffuse reflection and transmission), reflections (glossy and mirror) and
+    refractions (glossy and mirror). {'indirect', 'reflection', 'refraction': seen}; a pair set differently is seen by
+    that kind, with a notice. A class without the switches is seen by all."""
+    attributes = catalog()[entity['class']]['attributes']
+    shown = {}
+    for kind, (first, second) in LOBE_PAIRS:
+        pair = [bool(value(entity, 'visible_' + lobe)) if 'visible_' + lobe in attributes else True for lobe in (first, second)]
+        shown[kind] = any(pair)
+        if pair[0] != pair[1]:
+            warnings.append('MoonLightIPR shows %s to %s and %s rays alike: Visible %s and Visible %s differ, so both see it.'
+                            % (label, first.replace('_', ' '), second.replace('_', ' '),
+                               first.replace('_', ' ').title(), second.replace('_', ' ').title()))
+    return shown
+
+
+def hidden_bits(shown):
+    """The engine's bits for the kinds of rays a light is hidden from (shared.h HIDDEN_FROM_*): 1 diffuse light,
+    2 reflections, 4 refractions."""
+    return sum(bit for kind, bit in (('indirect', 1), ('reflection', 2), ('refraction', 4)) if not shown.get(kind, True))
+
+
 def preview(scene, warnings):
     """The snapshot with its entities turned into what MoonLightIPR draws: ordinary lights,
     environments and meshes. What has no counterpart there is named in warnings."""
@@ -1802,7 +1834,7 @@ def preview(scene, warnings):
                 color = [c * s for c, s in zip(color, record['scale'])]
             filters = [r for r in filters if r['kind'] != 'intensity']
             if name == 'EnvLight':
-                shown = {'camera': value(entity, 'visible_in_camera') == 1, 'indirect': True, 'reflection': True, 'refraction': True}
+                shown = dict(lobes_seen(entity, label, warnings), camera=value(entity, 'visible_in_camera') == 1)
                 texture = value(entity, 'texture')
                 if texture:
                     if color != [1.0, 1.0, 1.0]:
@@ -1819,6 +1851,10 @@ def preview(scene, warnings):
                 continue
             light = {'kind': name, 'identity': entity['identity'], 'name': label, 'color': color, 'intensity': intensity, 'matrix': matrix,
                      'filters': filters}
+            # The kinds of rays it is hidden from, by MoonRay's lobe switches (a portal shows the environment: none).
+            hidden = hidden_bits(lobes_seen(entity, label, warnings)) if name != 'PortalLight' else 0
+            if hidden:
+                light['hidden_from'] = hidden
             if entity.get('matrix_close'):
                 light['matrix_close'] = entity['matrix_close']
             # Visible in Camera forced on (1): the camera sees it shining. Left to the scene's default, MoonRay hides it.

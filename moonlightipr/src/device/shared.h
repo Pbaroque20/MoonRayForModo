@@ -262,7 +262,7 @@ struct DeviceDistantLight {
     float u[3];             // the light's own x and y axes, which a picture across the disc runs along
     float uvScale;          // what MoonRay's equal-area mapping multiplies a direction's x and y by
     float v[3];
-    float pad;
+    unsigned hidden;        // the kinds of rays it is hidden from (HIDDEN_FROM_*)
     unsigned long long texture;     // a picture across the disc, or 0
     DevicePtr distribution;         // where that picture is bright, to draw directions from; see DeviceLight
     float seen[3];          // the disc the camera sees, which may differ from the one that lights the scene
@@ -273,8 +273,11 @@ struct DeviceDistantLight {
 // A cylinder emits from its side; a portal is a rectangle the environment shines through; a
 // mesh light emits from the front faces of a list of triangles.
 // A local light's pad: LIGHT_SEEN where the camera sees it shining; LIGHT_ALONE for a mesh light that is no surface of
-// the scene (a Modo Mesh Light's shape), which a camera ray meeting it from behind passes through.
-const unsigned LIGHT_SEEN = 1, LIGHT_ALONE = 2;
+// the scene (a Modo Mesh Light's shape), which a camera ray meeting it from behind passes through. Above them, from
+// LIGHT_HIDDEN_SHIFT, the kinds of rays it is hidden from (HIDDEN_FROM_*: MoonRay's visible_diffuse_*, visible_glossy_*
+// and visible_mirror_* off), which neither find it nor are lit by it.
+const unsigned LIGHT_SEEN = 1, LIGHT_ALONE = 2, LIGHT_HIDDEN_SHIFT = 2;
+const unsigned HIDDEN_FROM_DIFFUSE = 1, HIDDEN_FROM_REFLECTED = 2, HIDDEN_FROM_THROUGH = 4;
 const unsigned LIGHT_SPHERE = 0, LIGHT_RECT = 1, LIGHT_DISK = 2, LIGHT_SPOT = 3, LIGHT_CYLINDER = 4,
                LIGHT_PORTAL = 5, LIGHT_MESH = 6;
 struct DeviceLight {
