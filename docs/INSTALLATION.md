@@ -98,8 +98,69 @@ the options.
 
 For a sequence, render each frame's scene the same way.
 
-To render across several machines, use Rhizome (MoonRay > Rhizome: Decentralized Rendering): it renders a frame or a range with XPU2 on every machine running a Rhizome node. Windows only.
+To render across several machines, see [Rendering across machines with Rhizome](#rendering-across-machines-with-rhizome).
 
 A GPU render with many outputs has four times the room it had for what each ray owes them; `MOONRAY_MODO_CL1_POOL_SCALE` (1 to 8, default 4) sets another size if a render still reports that it could not allocate a CacheLine1.
 
 If OptiX still fails, report the complete log and NVIDIA driver version. Automatic file discovery does not resolve an incompatible driver or invalid PTX program.
+
+## Rendering across machines with Rhizome
+
+Rhizome renders a frame, or a range of frames, with XPU2 on several Windows machines at once. You render from the
+machine that has the scene open; every other machine runs a **node** that renders its share. There is no render
+server to set up. Everything is in **MoonRay > Rhizome: Decentralized Rendering**.
+
+### On every machine, once
+
+1. Install the **same release** of the kit and runtime on every machine (the machines only talk to the same XPU2
+   build), and run **Compile XPU2 Shaders** once on each (System > Preferences > MoonRay > XPU2 > Device Management).
+2. Open the Rhizome window and type the **Rhizome key** at the top: any words you choose, the same on every machine.
+   Machines with another key never meet. The key stays on the machine and is never sent over the network.
+3. On the **Approvals and Firewall** page, click **Add Rule...** and say yes to Windows' administrator prompt. The
+   rule lets the other machines reach this one on private and domain networks, so Windows must not see your network
+   as a public one.
+
+### On each machine that helps
+
+On **This Machine as a Node**, click **Start Node**. The node renders for whichever machine starts a render, with the
+devices Device Management chooses. It keeps running after Modo is closed; come back to this page and click
+**Stop Node** to end it. For a workstation someone uses during the day:
+
+- **Render**: only after so many seconds without keyboard or mouse.
+- **Hours**: only between two hours, for example 19:00 to 8:00.
+- **While in use**: step back (its work goes to the others), or go on with a few threads.
+
+### On the machine that renders
+
+1. Open the scene, then the **Render** page of the Rhizome window.
+2. Choose **This frame** or **Frames** (first, last, every), and the folder the pictures go to (**Pictures in**).
+3. Click **Render on the Swarm**. The scene is exported, and this machine leads the render with every node it finds.
+   The bar shows the frame's progress, and the log below it each machine's share.
+4. The pictures are written as `<scene>.exr` (or `<scene>.####.exr` for a range); **Open Pictures Folder** shows them.
+
+**Stop** ends the render. Started again on the same frames, it picks up where it stopped. The **Swarm** page lists
+every machine taking part, its speed and its share.
+
+The other machines need neither the scene nor its textures: they get what their share of the picture reads from the
+machine that leads.
+
+### When nodes are not found
+
+Nodes on the same local network are found on their own. When they are not:
+
+- Check that each node shows *running* on its **This Machine as a Node** page, that its key is the same, and that
+  its firewall rule is in (Approvals and Firewall).
+- Behind a router or over a VPN, give the node's address under **Nodes by address** (`host:47100`, several separated
+  by commas), or a range under **Look for nodes in** (`10.8.0.0/24`, or `*` for each of this machine's networks). A
+  machine found once is remembered.
+- **Wait for** sets how many nodes to wait for before starting, and **At most** how long to wait; then the render
+  starts with the nodes that are ready.
+
+The ports are 47100 (node) and 47110 (machine leading the render) over TCP, and 47101 to 47104 over UDP to find the
+nodes. The rule from **Add Rule...** covers them.
+
+### Only machines you approve
+
+Tick **Only machines approved** on the Render page to keep unknown machines out. A new machine then waits on the
+**Approvals and Firewall** page until you select it and click **Approve**. **Revoke** shuts one out again, by its
+hash: the 64 characters shown under **This machine** on it.
