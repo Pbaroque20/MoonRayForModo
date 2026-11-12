@@ -141,6 +141,12 @@ def replaces_environment(scene):
                for e in checked(scene))
 
 
+def kept_environments(environments):
+    """What a MoonRay environment light replacing Modo's leaves of the environments: the Render Settings camera
+    background alone (background.apply's backdrop), which only the camera sees."""
+    return [e for e in environments if e.get('backdrop')]
+
+
 def hint_name(label):
     """A popup choice as Modo stores it: no spaces or punctuation."""
     import re
@@ -1818,8 +1824,8 @@ def preview(scene, warnings):
     camera = scene['camera']
     entities_checked = checked(scene)
     if replaces_environment(scene):
-        # A MoonRay environment light set to replace Modo's leaves only itself and its kind.
-        environments = []
+        # A MoonRay environment light set to replace Modo's leaves only itself and its kind, and the camera background.
+        environments = kept_environments(environments)
     for entity in entities_checked:
         name, label, matrix = entity['class'], entity['name'], entity.get('matrix', IDENTITY)
         category = catalog()[name]['category']

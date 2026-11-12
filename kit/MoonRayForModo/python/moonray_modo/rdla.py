@@ -383,8 +383,8 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
         scene = dict(scene, dicing_camera=held_dicing(scene['camera'], scene.get('meshes', []), bool(scene.get('_detail_keep'))))
     if entities.replaces_environment(scene):
         # A MoonRay environment light set to replace Modo's: neither the Modo environments nor
-        # the preview environment light are written.
-        scene = dict(scene, environments=[])
+        # the preview environment light are written; the camera background chosen in Render Settings is.
+        scene = dict(scene, environments=entities.kept_environments(scene.get('environments', [])))
         environment = 0
     camera = scene['camera']
     dof = bool(camera.get('dof', False))

@@ -17,7 +17,10 @@ def apply(scene, settings):
     if mode=='black': return
     intensity=float(values['intensity'])
     if not math.isfinite(intensity) or intensity<0: raise ValueError('Invalid background intensity')
-    entry={'camera':True,'indirect':False,'reflection':False,'refraction':False,'intensity':intensity,'name':'Camera background override'}
+    # backdrop: the camera's background itself, which a MoonRay EnvLight replacing Modo's environments leaves in place
+    # (entities.kept_environments): dropped with them, a Solid color came out black.
+    entry={'camera':True,'indirect':False,'reflection':False,'refraction':False,'intensity':intensity,'name':'Camera background override',
+           'backdrop':True}
     if mode=='color':
         text=values['color'].lstrip('#')
         if len(text)!=6: raise ValueError('Background color must be #RRGGBB')
