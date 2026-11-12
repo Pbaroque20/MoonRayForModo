@@ -4,7 +4,7 @@
 
 How XPU2 works, part by part, with the files behind each part. Written 2026-10-25; updated 2026-10-26 for the
 tessellation handler and the second round of scene preparation (`INDEXER.md` sections 16 and 17); corrected 2026-10-30
-against `MoonLightIPR` at 422a003, the 0.5 release, where XPU2 is part of the kit; updated 2026-11-02 for release 0.5.2
+against `MoonLightIPR` at 422a003, the 0.5 release, where XPU2 is part of the kit; updated 2026-11-04 for release 0.5.3
 and what came after it (card memory, subdivision under motion); updated 2026-11-08 for volumes on the card (VDB,
 mapped and glowing ones), march checkpoints, volume crossings in one traversal, the shader compile's memory guard and
 emission grids of single values. The design notes it points to go
