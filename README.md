@@ -535,7 +535,8 @@ Comparison audit between MoonRay 2026.29.1's source and the current plugin.
 | Primitive attributes (values a shape carries for its materials) | ![yes](docs/images/feature-yes.svg) | Per item or instance, and per point or per face from Modo's weight and colour vertex maps; imported from MoonRay scenes |
 | RDL scene import | ![partly](docs/images/feature-partly.svg) | A few things left out, named in its report. Motion, creases, fog meshes and values by point or face come in, and instancers of any size, though past 20,000 copies only meshes do |
 | RDL scene export (RDLA, RDLB or split) | ![yes](docs/images/feature-yes.svg) | Export as MoonRay Scene, in the MoonRay menu and the preview's Options, to render with MoonRay on its own or on a farm: outputs, collected textures and each frame of the range optional |
-| Arras: rendering spread over several machines | ![no](docs/images/feature-no.svg) | |
+| Arras: rendering spread over several machines | ![no](docs/images/feature-no.svg) | Coming in 0.5.4, the plugin's own instead: Rhizome (below) |
+| Rendering across machines with Rhizome, added by the plugin | ![partly](docs/images/feature-partly.svg) | Coming in 0.5.4. MoonRay > Rhizome: Decentralized Rendering: XPU2 renders a frame or a range on every machine running a Rhizome node, P2P with no render server, the picture as one machine renders it. Windows only; tested so far with several nodes on one machine |
 | Hydra render delegate and USD procedurals | ![no](docs/images/feature-no.svg) | For USD applications; not part of Modo |
 
 ### Modo's features in the plugin
@@ -582,6 +583,8 @@ Comparison audit between Modo 16.1v9 and the current plugin: what of a Modo scen
 | Weight and colour vertex maps | ![partly](docs/images/feature-partly.svg) | As values MoonRay's materials read, and the Shader Tree's Weight Map Texture layer, with weight maps; not in a scene with replicators or masks by item, Part or Selection Set. A notice names a weight map lost that way. |
 | Modo's volume items | ![partly](docs/images/feature-partly.svg) | Rendered from a VDB file attached in the MoonRay controls |
 | Blobs and particles | ![no](docs/images/feature-no.svg) | A mesh's loose points render as points |
+| **Rendering** | | |
+| Network rendering across machines | ![partly](docs/images/feature-partly.svg) | Coming in 0.5.4: not Modo's own network rendering, but Rhizome, which renders the frame or a range with XPU2 on every machine running a Rhizome node. Windows only |
 
 ### Where the plugin changes MoonRay
 
