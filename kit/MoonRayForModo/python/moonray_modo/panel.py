@@ -1060,6 +1060,9 @@ class Panel(Tools, QtWidgets.QWidget):
         # was the last.
         if closed and self._rendered_scene is not None and (created or self._scene_key()!=self._rendered_scene):
             self._scene_closed()
+        elif closed and self.ipr_mode.isChecked() and (created or self._scene_key()!=getattr(self,'_rt_scene',None)):
+            # RT on with nothing rendered yet: switched off all the same, the next scene opened not followed unasked.
+            self._rt_off_for_closed()
         try:
             import modo
             scene_id=modo.Scene().renderItem.id
@@ -1286,6 +1289,8 @@ class Panel(Tools, QtWidgets.QWidget):
                                     'processor with Preferences > MoonRay > XPU (graphics card) > Realtime with MoonRay XPU, on the processor.')
             self._sync_rt();return
         if on:
+            # The scene realtime follows, which closing ends it (_poll, _rt_off_for_closed).
+            self._rt_scene=self._scene_key()
             self.ipr_mode.setChecked(True)
             self.start_render()
         else:
@@ -1442,13 +1447,15 @@ class Panel(Tools, QtWidgets.QWidget):
         # not make it.
         checking=validity and not only
         # XPU2's realtime: the beauty and the denoised beauty alone, as it renders them; the other buffers are a render's.
+        # PBR validity is the exception: while it is on, realtime renders it beside the beauty (outputs.preview), in
+        # MoonRay XPU's realtime and XPU2's alike.
         from . import native
         xpu2_realtime=self._engine()=='moonray' and getattr(self,'_following',False) and native.xpu2()
         for row in range(1,self.buffer.count()):
             key=self.buffer.itemData(row)
             denoised=key=='denoised_beauty'
-            if xpu2_realtime:hidden=not denoised or not on
-            elif checking:hidden=key!='pbr_validity'
+            if checking:hidden=key!='pbr_validity'
+            elif xpu2_realtime:hidden=not denoised or not on
             else:hidden=(low or (denoised and not on) or (only and not ((denoises and denoised) or key in MOONLIGHTIPR_AOVS))
                          or (not only and key in OWN_KEYS) or (key=='pbr_validity' and not validity))
             self.buffer.view().setRowHidden(row,hidden)
@@ -1981,11 +1988,20 @@ class Panel(Tools, QtWidgets.QWidget):
             return (scene.name,scene.filename,scene.renderItem.id)
         except Exception:return None
 
+    def _rt_off_for_closed(self):
+        """RT switched off as the scene it followed closes (the button, the mode and the follow alike)."""
+        if not self.ipr_mode.isChecked():return
+        self.ipr_mode.setChecked(False)
+        if self._following:self._follow(False)
+        self._sync_rt()
+
     def _scene_closed(self):
         """The scene the picture was rendered from is closed in Modo. Its render, and the render of it still going,
         are let go of, so that no picture is left standing over a scene it is not of. A render to files goes on."""
         if self._output_busy():return
         self._rendered_scene=None;self._settle_token=None
+        # Realtime ends with the scene: RT switched off, so that the scene opened next is not rendered unasked.
+        self._rt_off_for_closed()
         if self._following:self._follow(False)
         if self.sequence is not None:self.sequence.stop()
         if self._rendering:self.renderer.stop()

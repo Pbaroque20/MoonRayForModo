@@ -588,7 +588,11 @@ class Renderer(QtCore.QObject):
         snapshot['_display_filter_classes']=native.display_filter_classes(request['runtime'])
         snapshot['_paired_instance_motion']=native.supports_paired_instance_motion(request['runtime'])
         if not request['output'] and not request.get('linear_preview'):
-            self.preview_files={key:self.current_base.with_suffix('.'+key+'.exr') for key in outputs.preview(snapshot)}
+            # Realtime renders the beauty and the buffer looked at (outputs.preview): asked with the buffer the request
+            # names, not the beauty this render's own picture is read from, which left realtime with the beauty alone
+            # whatever was chosen (PBR validity among them).
+            asked=dict(snapshot,preview_buffer=request['snapshot'].get('preview_buffer','beauty'))
+            self.preview_files={key:self.current_base.with_suffix('.'+key+'.exr') for key in outputs.preview(asked)}
             self.buffer_path=self.preview_files['beauty']
             snapshot['preview_buffer_files']={key:str(path) for key,path in self.preview_files.items()}
             snapshot.pop('preview_buffer_file',None)

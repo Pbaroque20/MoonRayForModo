@@ -248,7 +248,7 @@ class LinkedEngineChoices(unittest.TestCase):
     def test_preview_preferences_offer_pbr_validity(self):
         # 2026-11-05: the Diagnostics switch in Preview Preferences too, the same setting as Modo's Preferences.
         prefs = (KIT / 'moonray_modo/preferences.py').read_text(encoding='utf-8')
-        self.assertIn("form.addRow(check('pbr_validity', 'PBR validity output',", prefs)
+        self.assertIn("form.addRow(check('pbr_validity', 'PBR validity output (XPU / XPU2 only)',", prefs)
         lxserv = (KIT.parent / 'lxserv/moonray_preferences.py').read_text(encoding='utf-8')
         self.assertIn("switch('pbr_validity',render_settings_changed)", lxserv)
 
