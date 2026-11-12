@@ -9,9 +9,9 @@ The plugin includes CPU, XPU and XPU2 rendering, a dockable live preview with a 
 
 **Built on MoonRay [2026.29.1](https://github.com/dreamworksanimation/openmoonray/releases/tag/v2026.29.1)** (OpenMoonRay's latest release; MoonRay 18.4), with the plugin's own patches for Windows and the preview.
 
-**Current version: 0.5.3.2 — pre-production release.** The plugin is no longer experimental. 0.5 brought **MoonRay XPU2**, a new GPU renderer for previews in which the processor and the graphics card work on the same picture at once, now the default; realtime that keeps up with heavy scenes and a Scene cache; Modo's procedural textures worked out through the object, 145 of Modo's Enhance textures among them; Modo's light volumetrics and fog; and MoonLightIPR starting in seconds. Install the new runtime with it.
+**Current version: 0.5.4 — pre-production release.** The plugin is no longer experimental. 0.5 brought **MoonRay XPU2**, a new GPU renderer for previews in which the processor and the graphics card work on the same picture at once, now the default; realtime that keeps up with heavy scenes and a Scene cache; Modo's procedural textures worked out through the object, 145 of Modo's Enhance textures among them; Modo's light volumetrics and fog; and MoonLightIPR starting in seconds. Install the new runtime with it.
 
-· [Download 0.5.3.2: the kit, the Windows runtime and the MoonRay content](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.5.3.2)
+· [Download 0.5.4: the kit, the Windows runtime and the MoonRay content](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.5.4)
 
 · [Installation instructions](docs/INSTALLATION.md) 
 
@@ -59,6 +59,12 @@ Work on the next version goes on in the [MoonLightIPR branch](https://github.com
 | **The graph editor**, with a MoonRay material | **Modo's Fur material** rendered by MoonRay |
 | ![The compositor](docs/images/compositor-editor.png) | ![Modern Hall, imported from MoonRay's scene files](docs/images/rdl-modern_hall.jpg) |
 | **The compositor**: the beauty graded, vignetted and sharpened | **An imported MoonRay scene**: its own render (left), after the trip through Modo (right). Modern Hall by NewSee2l035, CC BY |
+
+## New in 0.5.4
+
+Rendering across machines, and Modo's Processing textures. **Rhizome** renders a frame or a range with XPU2 on every machine running a Rhizome node, with no render server (MoonRay > Rhizome: Decentralized Rendering; Windows only). Modo's **Processing textures** render in MoonRay, XPU2 and MoonLightIPR: the Gradient's inputs, Occlusion, Variation, Tension and Process. **MoonLightIPR** gathers AOVs for motion graphics (light passes, a shadow matte, motion vectors) and exports them, has its own firefly clamps and Roughness Clamp, and renders with the Render button. Scenes render **headless**, with MoonRay or XPU2, from the command line. 16K textures stay on XPU2, Render missing frames continues a sequence, and Convert to MoonRay Rect Light turns an area light into MoonRay's own. It comes with a new runtime: install it, and **Compile XPU2 Shaders once more**. The full list is in [What's new in 0.5](docs/WHATS_NEW_05.md).
+
+![The Rhizome window in Modo: two frames rendered on the swarm by two nodes, the master's log showing the audit and each node's share](docs/images/rhizome-window.png)
 
 ## New in 0.5.3.2
 
@@ -455,7 +461,7 @@ In each pair, MoonRay's render of the scene from its own files is on the left; o
 - Render outputs: configurable AOVs, Cryptomatte surface categories, buffer switching, deep EXR, texture baking, a compositor over the finished buffers, and denoising (OptiX or Open Image Denoise) that survives a stopped render.
 - Workflow tools: ACES/sRGB/OCIO view transforms and LUTs, animation output and recovery controls, an asset library with MoonRay's example scenes, and RDL scene import.
 
-## Known issues in 0.5.3.2
+## Known issues in 0.5.4
 
 The ones you are most likely to meet:
 
@@ -535,8 +541,8 @@ Comparison audit between MoonRay 2026.29.1's source and the current plugin.
 | Primitive attributes (values a shape carries for its materials) | ![yes](docs/images/feature-yes.svg) | Per item or instance, and per point or per face from Modo's weight and colour vertex maps; imported from MoonRay scenes |
 | RDL scene import | ![partly](docs/images/feature-partly.svg) | A few things left out, named in its report. Motion, creases, fog meshes and values by point or face come in, and instancers of any size, though past 20,000 copies only meshes do |
 | RDL scene export (RDLA, RDLB or split) | ![yes](docs/images/feature-yes.svg) | Export as MoonRay Scene, in the MoonRay menu and the preview's Options, to render with MoonRay on its own or on a farm: outputs, collected textures and each frame of the range optional |
-| Arras: rendering spread over several machines | ![no](docs/images/feature-no.svg) | Coming in 0.5.4, the plugin's own instead: Rhizome (below) |
-| Rendering across machines with Rhizome, added by the plugin | ![partly](docs/images/feature-partly.svg) | Coming in 0.5.4. MoonRay > Rhizome: Decentralized Rendering: XPU2 renders a frame or a range on every machine running a Rhizome node, P2P with no render server, the picture as one machine renders it. Windows only; tested so far with several nodes on one machine |
+| Arras: rendering spread over several machines | ![no](docs/images/feature-no.svg) | The plugin's own instead, new in 0.5.4: Rhizome (below) |
+| Rendering across machines with Rhizome, added by the plugin | ![partly](docs/images/feature-partly.svg) | New in 0.5.4. MoonRay > Rhizome: Decentralized Rendering: XPU2 renders a frame or a range on every machine running a Rhizome node, P2P with no render server, the picture as one machine renders it. Windows only; tested so far with several nodes on one machine |
 | Hydra render delegate and USD procedurals | ![no](docs/images/feature-no.svg) | For USD applications; not part of Modo |
 
 ### Modo's features in the plugin
@@ -567,7 +573,7 @@ Comparison audit between Modo 16.1v9 and the current plugin: what of a Modo scen
 | Unreal, Unity, glTF and AxF materials | ![no](docs/images/feature-no.svg) | Nor Modo's Substance, Matcap, Cel, Halftone, Iridescence, Skin and Thin Film materials, each named in a notice. |
 | **Shader Tree** | | |
 | Image maps: UV and projections, UDIMs, Low and High values | ![partly](docs/images/feature-partly.svg) | UV, planar, cylindrical, spherical and cubic projections, a locator's worked out at the polygons' corners; Box, Front, Triplanar, Light Probe and Implicit UV projections, and image sequences, are left out with a notice |
-| Procedural textures | ![partly](docs/images/feature-partly.svg) | Constant, checker, noise, grid, dots, gradient, cellular, wood, weave, ripples, Gabor and Poisson noise, Curvature and Wireframe, EasyGrad and RegionalHSV, and 145 Enhance textures, worked out through the object (new in 0.5); not yet compared with Modo's renders; Surface Probe, Occlusion, Tension, Variation and Process not. MoonRay XPU2 shades them too. |
+| Procedural textures | ![partly](docs/images/feature-partly.svg) | Constant, checker, noise, grid, dots, gradient, cellular, wood, weave, ripples, Gabor and Poisson noise, Curvature and Wireframe, EasyGrad and RegionalHSV, and 145 Enhance textures, worked out through the object (new in 0.5); not yet compared with Modo's renders. The Processing textures (new in 0.5.4): the Gradient's inputs (Incidence Angle, Slope, Camera Distance, Distance, Screen and the rest), Occlusion, Variation, Tension and Process, within 0.01 to 0.03 of Modo's render; Surface Probe not. MoonRay XPU2 and MoonLightIPR shade them too. |
 | Layer blend modes | ![partly](docs/images/feature-partly.svg) | All but Normal Multiply, which is left out; Normal Map Blend on normal maps only. A group mask set to Normal Multiply is drawn as Normal, with a notice, and no longer stops the scene reading. |
 | Bump and normal maps | ![yes](docs/images/feature-yes.svg) |  |
 | Displacement and Stencil layers | ![yes](docs/images/feature-yes.svg) | Checked against Modo's renders |
@@ -584,7 +590,7 @@ Comparison audit between Modo 16.1v9 and the current plugin: what of a Modo scen
 | Modo's volume items | ![partly](docs/images/feature-partly.svg) | Rendered from a VDB file attached in the MoonRay controls |
 | Blobs and particles | ![no](docs/images/feature-no.svg) | A mesh's loose points render as points |
 | **Rendering** | | |
-| Network rendering across machines | ![partly](docs/images/feature-partly.svg) | Coming in 0.5.4: not Modo's own network rendering, but Rhizome, which renders the frame or a range with XPU2 on every machine running a Rhizome node. Windows only |
+| Network rendering across machines | ![partly](docs/images/feature-partly.svg) | New in 0.5.4: not Modo's own network rendering, but Rhizome, which renders the frame or a range with XPU2 on every machine running a Rhizome node. Windows only |
 
 ### Where the plugin changes MoonRay
 
