@@ -148,7 +148,34 @@ def register():
                         else:
                             stroke.Begin(lx.symbol.iSTROKE_LINES if kind=='lines' else lx.symbol.iSTROKE_LINE_STRIP,itemColor,1.0)
                             for point in data:stroke.Vertex(point3(point),lx.symbol.iSTROKE_ABSOLUTE)
+                    if name=='VdbGeometry':self.draw_grid(read,stroke,itemColor)
                 except Exception:pass
+            def draw_grid(self,read,stroke,itemColor):
+                """A VDB shape's grid: the box it fills and points where it is thick (vdb_preview), of the frame's own
+                file in a sequence; nothing until they are ready."""
+                from moonray_modo import vdb_preview
+                prefix=entities.CHANNEL_PREFIX
+                def channel(key,kind):
+                    index=self.item.ChannelLookup(prefix+key)
+                    return read.String(self.item,index) if kind=='s' else read.Integer(self.item,index)
+                model=channel('model','s') or ''
+                if not model:return
+                parameters={'model':model,'static':channel('static','i'),'modo_frame_offset':channel('modo_frame_offset','i'),
+                            'modo_sequence_hold':channel('modo_sequence_hold','i')}
+                found=model
+                if entities.vdb_sequenced(parameters):
+                    import modo
+                    pattern=model if '#' in os.path.basename(model) else entities.vdb_pattern(model)
+                    frame=int(round(lx.service.Selection().GetTime()*float(modo.Scene().fps)))+int(parameters['modo_frame_offset'] or 0)
+                    found=entities.vdb_frame_file(pattern,frame,bool(parameters['modo_sequence_hold']))
+                    if not found:return
+                    # Until the frame's own is ready, the last one drawn stands for it.
+                    shown=vdb_preview.ready(found,channel('density_grid','s')) or getattr(self,'grid_shown',None)
+                else:
+                    shown=vdb_preview.ready(found,channel('density_grid','s'))
+                if not shown:return
+                # Drawn by the geometry adapter, in C++, on the viewport's own stroke object.
+                if vdb_preview.draw(stroke,shown,itemColor):self.grid_shown=shown
         return Drawn
 
     def package(name):
@@ -450,6 +477,15 @@ def register():
         # The file as chosen: its file setting (Static or Sequence) says whether its numbered siblings are the frames
         # (entities.resolve_vdb).
         item.channel(prefix+'model').set(str(path).replace(chr(92),'/'))
+        # A file that is one frame of a numbered sequence (EmberGen's, Houdini's...) plays with the timeline at once:
+        # static is unticked for it, where it was left ticked and the timeline did nothing (a tester's report). Ticked
+        # again, the shape shows the one file chosen.
+        if entities.vdb_pattern(str(path))!=str(path):
+            try:
+                item.channel(prefix+'static').set(0)
+                frames=entities.vdb_sequence(entities.vdb_pattern(str(path)))
+                lx.out('MoonRay: %s is one of %d numbered VDB files: played as a sequence (static unticked).'%(os.path.basename(str(path)),len(frames)))
+            except (LookupError,RuntimeError,TypeError,ValueError):pass
         grids=entities.vdb_grids(str(path))
         if grids and text(item,prefix+'density_grid') not in grids:
             item.channel(prefix+'density_grid').set('density' if 'density' in grids else grids[0])

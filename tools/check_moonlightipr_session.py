@@ -109,7 +109,12 @@ class Session:
                     result['first'] = result['first'] or time.perf_counter()
                     result['pixels'] = pixels
             elif line.startswith('@@MODO_SESSION '):
-                _, event, generation = line.split()
+                _, event, generation = line.split()[:3]
+                if event == 'SAMPLES':
+                    # The samples a pixel of the frame about to come (the label under the picture).
+                    if int(generation) == self.generation:
+                        result['samples'] = int(line.split()[3])
+                    continue
                 if int(generation) == self.generation and event in ('DONE', 'FAILED'):
                     result.update(event=event, done=time.perf_counter())
                     return result

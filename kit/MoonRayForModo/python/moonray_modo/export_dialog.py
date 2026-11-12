@@ -19,6 +19,10 @@ def group_of(key, kind, custom):
         return 'Mattes'
     if key in STATISTICS:
         return 'Render statistics'
+    from .moonlightipr_aovs import OWN_KEYS
+    if key in OWN_KEYS:
+        # MoonLightIPR's own Diffuse and Glossy: light, as MoonRay's direct and indirect passes are.
+        return 'Light'
     if key in options.AOVS:
         return 'Light' if options.AOVS[key][1].get('result') == LIGHT_RESULT else 'Surface data'
     if custom == 'lpe':

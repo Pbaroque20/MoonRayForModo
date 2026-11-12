@@ -15,6 +15,16 @@ class AnimationDialog(QtWidgets.QDialog):
         values=values or {}
         self.setWindowTitle('Render animation');self.resize(520,300)
         form=QtWidgets.QFormLayout(self)
+        # Which engine renders the frames: MoonRay, by Render Settings and the preferences (XPU2, XPU or the processor),
+        # or MoonLightIPR, to Render Samples a pixel (Render Settings, MoonLightIPR).
+        self.engine=QtWidgets.QComboBox()
+        self.engine.addItem('MoonRay','moonray');self.engine.addItem('MoonLightIPR','moonlightipr')
+        self.engine.setCurrentIndex(max(0,self.engine.findData(values.get('engine','moonray'))))
+        self.engine.setToolTip('MoonRay renders each frame as Render Settings and Preferences say (XPU2, XPU or the processor). '
+                               "MoonLightIPR renders each frame on the graphics card to its Render Samples a pixel (Render Settings, MoonLightIPR), "
+                               'written as an EXR of its own picture, the beauty, with its denoised beauty beside it (frame.denoised.0001.exr) where the Denoiser is on, as MoonRay writes it; no other outputs.')
+        self.engine.currentIndexChanged.connect(self.update_summary)
+        form.addRow('Engine',self.engine)
         row=QtWidgets.QHBoxLayout()
         self.folder=QtWidgets.QLineEdit(str(values.get('folder') or settings.value('output/animation','')))
         browse=QtWidgets.QPushButton('Browse…');browse.clicked.connect(self.browse)
@@ -63,11 +73,12 @@ class AnimationDialog(QtWidgets.QDialog):
             held=self.type.currentData()
             if held.startswith(ONLY):extension=find(held[len(ONLY):])[2]
             else:also=' and .%s'%find(held)[2]
-        self.summary.setText('%d frames · %s%s\nExisting frames are never overwritten. Enable Render missing frames to fill gaps in a matching sequence.'%(count,frame_name(self.prefix.text(),self.first.value(),self.digits.value(),extension),also))
+        by=' · MoonLightIPR' if getattr(self,'engine',None) is not None and self.engine.currentData()=='moonlightipr' else ' · MoonRay'
+        self.summary.setText('%d frames · %s%s%s\nExisting frames are never overwritten. Enable Render missing frames to keep the frames already there and render the others.'%(count,frame_name(self.prefix.text(),self.first.value(),self.digits.value(),extension),also,by))
 
     def kept(self):
         """What the window has now, as it is kept with the scene for the next time it opens."""
-        return {'folder':self.folder.text().strip(),'prefix':self.prefix.text(),'digits':self.digits.value(),'first':self.first.value(),
+        return {'engine':self.engine.currentData(),'folder':self.folder.text().strip(),'prefix':self.prefix.text(),'digits':self.digits.value(),'first':self.first.value(),
                 'last':self.last.value(),'step':self.step.value(),'fps':self.fps.value(),'motion':self.motion.isChecked()}
 
     def export_as(self):

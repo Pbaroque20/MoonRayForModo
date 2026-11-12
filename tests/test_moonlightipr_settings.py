@@ -30,9 +30,13 @@ class SceneSettings(unittest.TestCase):
         self.assertTrue(flags&moonlightipr_scene.SCENE_PRESENCE_SHADOWS)
 
     def test_the_sample_clamp_is_the_scenes(self):
+        # The clamp is MoonRay's own; the bounce it holds from is MoonLightIPR's own (0 unless the scene says otherwise),
+        # whatever MoonRay's is.
         _,clamp,depth=header(moonlightipr_scene.pack(scene(),320,180)[0])
-        self.assertEqual((clamp,depth),(10.0,1))    # MoonRay's own, where the scene says nothing
+        self.assertEqual((clamp,depth),(10.0,0))
         _,clamp,depth=header(moonlightipr_scene.pack(scene(sample_clamping_value=0.0,sample_clamping_depth=2),320,180)[0])
+        self.assertEqual((clamp,depth),(0.0,0))
+        _,clamp,depth=header(moonlightipr_scene.pack(dict(scene(sample_clamping_value=0.0),_moonlightipr_clamp_depth=2),320,180)[0])
         self.assertEqual((clamp,depth),(0.0,2))
 
 

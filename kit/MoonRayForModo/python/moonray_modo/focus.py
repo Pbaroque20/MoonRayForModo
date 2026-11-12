@@ -53,9 +53,10 @@ def depth(scene, u, v):
     return found[0] if found else None
 
 
-def hit(scene, u, v):
+def hit(scene, u, v, placed=False):
     """The nearest surface under (u, v): (its depth, the mesh, the index of its face in the mesh's faces), or None
-    where there is none. The face says what material is there (its tag in the mesh's face_materials)."""
+    where there is none. The face says what material is there (its tag in the mesh's face_materials). placed: the index
+    of the mesh's placement (its instances, 0 for a mesh placed once) at the end as well."""
     eye, direction = ray(scene['camera'], scene['width'], scene['height'], u, v)
     nearest = math.inf
     struck = None
@@ -65,7 +66,7 @@ def hit(scene, u, v):
             continue
         low = [min(p[k] for p in vertices) for k in range(3)]
         high = [max(p[k] for p in vertices) for k in range(3)]
-        for placement in (mesh['instances'] if 'instances' in mesh else [mesh.get('matrix', IDENTITY)]):
+        for number, placement in enumerate(mesh['instances'] if 'instances' in mesh else [mesh.get('matrix', IDENTITY)]):
             m = [float(value) for value in placement]
             back = inverse(m)
             if back is None:
@@ -99,5 +100,7 @@ def hit(scene, u, v):
                         continue
                     t = (e2x * qx + e2y * qy + e2z * qz) / det
                     if 1e-6 < t < nearest:
-                        nearest, struck = t, (mesh, index)
-    return (nearest,) + struck if struck is not None else None
+                        nearest, struck = t, (mesh, index, number)
+    if struck is None:
+        return None
+    return (nearest,) + (struck if placed else struck[:2])

@@ -23,6 +23,8 @@ class _Scrub:
     """The dragging, shared by the field for decimals and the one for whole numbers."""
     PIXELS = 4          # pixels of drag to a step
     THRESHOLD = 3       # pixels a press may wander and still be a click
+    FINE = .1           # a step with Ctrl held, as a share of a step
+    COARSE = 5          # and with Shift
 
     def _scrub_setup(self):
         # (where the press was, the value then, what was pressed: 0 the number, 1 or -1 an arrow)
@@ -37,9 +39,9 @@ class _Scrub:
         """The value a drag of so many pixels from start comes to, kept within the field's range."""
         step = self.singleStep()
         if modifiers & QtCore.Qt.ControlModifier:
-            step *= .1
+            step *= self.FINE
         elif modifiers & QtCore.Qt.ShiftModifier:
-            step *= 5
+            step *= self.COARSE
         value = start + int(pixels / self.PIXELS) * step
         decimals = self.decimals() if hasattr(self, 'decimals') else 0
         value = round(value, decimals) if decimals else int(round(value))

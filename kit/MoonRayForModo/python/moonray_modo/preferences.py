@@ -85,6 +85,10 @@ KEYS = {
     'ipr/width': (640, int), 'ipr/sampling': ('adaptive', str), 'ipr/samples': (32, int), 'ipr/error': (100.0, float), 'ipr/refine': (False, bool),
     # How many samples a pixel MoonLightIPR gathers before it rests, in realtime.
     'moonlightipr/samples': (256, int),
+    # How many samples a pixel a MoonLightIPR Render (realtime off) gathers before it stops.
+    'moonlightipr/render_samples': (2000, int),
+    # A MoonLightIPR Render (realtime off) is made at the active camera's resolution, not the realtime share (opt-in).
+    'moonlightipr/camera_resolution': (False, bool),
 }
 # Realtime with the standard XPU: off, on the processor (MoonRay's vector mode), or on the graphics card (XPU).
 XPU_REALTIME_MODES = ('off', 'vector', 'xpu')
@@ -160,8 +164,18 @@ class Preferences:
         self.store.setValue(key, ('true' if value else 'false') if KEYS[key][1] is bool else value)
 
 
+def moonlightipr_render_samples():
+    """MoonLightIPR's Render samples a pixel: the open scene's (MoonLightIPR in its render settings), 2000 unless changed."""
+    from . import scene_settings
+    try:
+        from . import properties
+        return int(scene_settings.complete(properties.scene_settings())['moonlightipr']['render_samples'])
+    except Exception:
+        return int(scene_settings.DEFAULTS['moonlightipr']['render_samples'])
+
+
 def realtime_share():
-    """Realtime Sample %, the open scene's (XPU2 Sampling in its render settings); None with no scene to read it from."""
+    """XPU2 RT Sample %, the open scene's (XPU2 Sampling in its render settings); None with no scene to read it from."""
     try:
         from . import properties, scene_settings
         return int(scene_settings.complete(properties.scene_settings())['xpu2_generations']['realtime'])
@@ -170,7 +184,7 @@ def realtime_share():
 
 
 class Dialog(QtWidgets.QDialog):
-    """The few choices about previewing that do not belong to a scene, and Realtime Sample %, which does, kept to hand."""
+    """The few choices about previewing that do not belong to a scene, and XPU2 RT Sample %, which does, kept to hand."""
     def __init__(self, preferences, parent=None):
         super().__init__(parent)
         self.preferences = preferences
@@ -236,7 +250,7 @@ class Dialog(QtWidgets.QDialog):
         self.realtime_share.setEnabled(self.realtime_held is not None and native.xpu2())
         self.realtime_share.setToolTip('MoonRay XPU2 only. While realtime follows the scene (RT), the share of Generation Samples XPU2 takes, in '
                                        "percent: lower settles sooner and noisier. 30 unless changed. The open scene's own, saved with it, the same as in its render settings")
-        form.addRow('Realtime Sample %', self.realtime_share)
+        form.addRow('XPU2 RT Sample %', self.realtime_share)
         form.addRow(check('persistent_preview', 'Keep MoonRay loaded between previews',
                           'Faster updates; structural edits still reload the scene'))
         form.addRow('Release idle renderer memory', combo('idle_release_minutes',
@@ -254,7 +268,7 @@ class Dialog(QtWidgets.QDialog):
                        "Which renders MoonRay's preview where it would render on the graphics card: XPU2, or the standard MoonRay "
                        "XPU. The same choice as Preferences > MoonRay > XPU2. Final renders are MoonRay's either way")
         engine.setEnabled((native.xpu2_runtime() / 'moonray_xpu2.exe').is_file())
-        # Above Realtime Sample %, which is XPU2's.
+        # Above XPU2 RT Sample %, which is XPU2's.
         form.insertRow(form.getWidgetPosition(self.realtime_share)[0], 'Preview engine', engine)
 
         def engine_chosen(_=None):
@@ -272,8 +286,11 @@ class Dialog(QtWidgets.QDialog):
         heading = QtWidgets.QLabel('MoonLightIPR quality')
         heading.setStyleSheet('font-weight: bold; margin-top: 8px')
         form.addRow(heading)
-        form.addRow('Pixel samples', combo('moonlightipr/samples', [('%d per pixel' % v, v) for v in MOONLIGHTIPR_SAMPLES],
-                                            'How many samples a pixel MoonLightIPR gathers in realtime before it rests. Fewer settles sooner and is grainier.'))
+        form.addRow('RT pixel samples', combo('moonlightipr/samples', [('%d per pixel' % v, v) for v in MOONLIGHTIPR_SAMPLES],
+                                              'How many samples a pixel MoonLightIPR gathers in realtime (RT on) before it rests. Fewer settles sooner and is grainier.'))
+        form.addRow(check('moonlightipr/camera_resolution', "Render at the camera's resolution",
+                          "Render with MoonLightIPR (RT off) makes the picture at the active camera's resolution, as MoonRay's "
+                          'Render does. Realtime keeps Realtime preview resolution, as XPU2 realtime does'))
         heading = QtWidgets.QLabel('MoonRay LS quality')
         heading.setStyleSheet('font-weight: bold; margin-top: 8px')
         form.addRow(heading)

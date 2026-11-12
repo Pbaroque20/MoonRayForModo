@@ -12,6 +12,7 @@
 #include <cstring>
 #include <fstream>
 #include <iterator>
+#include <set>
 #include <stdexcept>
 #include <vector>
 
@@ -85,6 +86,7 @@ struct Image {
 struct ImageSize {
     uint32_t width = 0, height = 0;
     bool floatData = false;
+    bool gradient = false;      // one of the packer's own gradients ("MLF1"), which is read as it is
 };
 
 ImageSize imageSize(const std::string& path) {
@@ -97,6 +99,7 @@ ImageSize imageSize(const std::string& path) {
         std::memcpy(&size.width, head + 4, 4);
         std::memcpy(&size.height, head + 8, 4);
         size.floatData = true;
+        size.gradient = true;
     } else if (got >= 2 && head[0] == 'P' && head[1] == 'F') {
         std::istringstream fields(std::string(head + 2, got - 2));
         fields >> size.width >> size.height;
@@ -109,13 +112,18 @@ ImageSize imageSize(const std::string& path) {
     return size;
 }
 
-// The bytes a texture takes on the card, given the most texels it may have across a side (0 for no limit): halves for
-// floats, bytes for the rest, four to a texel.
+// The bytes a texture takes on the card, given the most texels it may have across a side (0 for no limit): with its
+// smaller copies and compressed, as it is prepared (preparedBytes), but for the packer's gradients, which are as they are.
 size_t cardBytes(const ImageSize& size, uint32_t limit) {
     uint32_t width = size.width, height = size.height;
     while (limit && std::max(width, height) > limit) { width = std::max(1u, width / 2); height = std::max(1u, height / 2); }
-    return size_t(width) * height * (size.floatData ? 8 : 4);
+    return preparedBytes(width, height, size.floatData, !size.gradient, !size.gradient);
 }
+
+// A texture made ready for the card is kept beside the packer's file, as that file's name and ".mlt", and read from there
+// the next time, so that a picture is filtered down and compressed once. The packer's file is named by what it was made
+// from, so the two go together; one made smaller to fit (a limit) is not kept.
+std::string preparedPath(const std::string& file) { return file + ".mlt"; }
 
 Image readImage(const std::string& path) {
     std::ifstream file(path, std::ios::binary);
@@ -313,13 +321,13 @@ SceneSettings SceneLoader::apply(const std::string& path) {
     // "MLS" and a letter for the form of the scene, which changes whenever what is written in it does: "C" since
     // the scene's sample clamp is written in it, "D" since a toon material's ramps are, "E" since a hair toon's highlights are,
     // "F" since the lights' poses at the shutter's close are, "G" since the volume scattering factors are, "H" since the
-    // camera's film offset is, "I" since a material's fuzz is, "J" since the light sets are, "K" since a mesh may be displaced, "L" since by a program of displacement nodes, "M" since a material's clearcoat bump strength is, "N" since whether the camera sees each light is, "O" since the subsurface scatterings a path may have are. A plugin and a session of different versions say so plainly, in
+    // camera's film offset is, "I" since a material's fuzz is, "J" since the light sets are, "K" since a mesh may be displaced, "L" since by a program of displacement nodes, "M" since a material's clearcoat bump strength is, "N" since whether the camera sees each light is, "O" since the subsurface scatterings a path may have are, "P" since each instance's own number is, "Q" since the roughness clamp is. A plugin and a session of different versions say so plainly, in
     // place of reading each other's scenes wrongly.
     const uint32_t mark = in.value<uint32_t>();
     if ((mark & 0x00ffffff) != 0x00534c4d) throw std::runtime_error("Not a MoonLightIPR scene: " + path);
-    if (mark != 0x4f534c4d)
+    if (mark != 0x51534c4d)
         throw std::runtime_error("This MoonLightIPR and the plugin are of different versions (the scene is form '" + std::string(1, char(mark >> 24))
-                                 + "', this MoonLightIPR reads 'O'). Install the kit and its runtime from the same release.");
+                                 + "', this MoonLightIPR reads 'Q'). Install the kit and its runtime from the same release.");
     ++generation;
     SceneSettings settings;
     settings.width = in.value<uint32_t>();
@@ -336,6 +344,7 @@ SceneSettings SceneLoader::apply(const std::string& path) {
     const float sampleClamp = in.value<float>();
     const uint32_t sampleClampDepth = in.value<uint32_t>();
     const uint32_t maxSubsurface = in.value<uint32_t>();
+    const float roughnessClamp = in.value<float>();
     float volumeFactors[3];
     in.floats(volumeFactors, 3);
     float workingSpace[9];
@@ -355,6 +364,11 @@ SceneSettings SceneLoader::apply(const std::string& path) {
     in.floats(camera.region, 4);
     camera.draft = in.value<uint32_t>();
     in.floats(camera.filmShift, 2);
+    // A bokeh image: its size, then its brightnesses, top row first (form 'B'); 0 for none.
+    camera.bokehSize = in.value<uint32_t>();
+    if (camera.bokehSize > 256) throw std::runtime_error("MoonLightIPR bokeh image is too large");
+    camera.bokeh.resize(size_t(camera.bokehSize) * camera.bokehSize);
+    if (!camera.bokeh.empty()) in.floats(camera.bokeh.data(), camera.bokeh.size());
     // With motion blur, the camera again as it is when the shutter closes.
     Camera cameraClose = camera;
     if (sceneFlags & SCENE_MOTION) {
@@ -376,29 +390,45 @@ SceneSettings SceneLoader::apply(const std::string& path) {
         entry.flags = in.value<uint32_t>();
         entry.file = in.text(in.value<uint32_t>());
     }
-    // Where the new images would not all fit on the graphics card as they are, each is made smaller: halved until no
-    // side is longer than the largest limit, a power of two, at which they all fit. The card keeps room for the
-    // picture's own buffers, the denoiser and the geometry. MOONLIGHTIPR_TEXTURE_LIMIT, where it is set, is the limit.
+    // Where the new images would not all fit on the graphics card as they are, the largest are kept whole in the
+    // computer's memory instead (out of core, TextureDesc::hostResident), which the card reads across the bus, until
+    // the rest fit: nothing is made smaller. The card keeps room for the picture's own buffers, the denoiser and the
+    // geometry. Only where the computer's memory will not hold them either are images made smaller, as they all were
+    // before: halved until no side is longer than the largest limit, a power of two, at which they fit.
+    // MOONLIGHTIPR_TEXTURE_LIMIT, where it is set, is that limit and keeps every image on the card;
+    // MOONLIGHTIPR_TEXTURES_IN_MEMORY=1 keeps every new image in the computer's memory (for tests).
     uint32_t limit = 0;
+    std::set<uint64_t> inMemory;
     {
-        std::vector<ImageSize> sizes;
+        std::vector<std::pair<ImageSize, uint64_t>> sizes;
         for (const TextureEntry& entry : entries)
-            if (textures.find(entry.key) == textures.end()) sizes.push_back(imageSize(entry.file));
-        const auto needed = [&](uint32_t cap) { size_t total = 0; for (const ImageSize& size : sizes) total += cardBytes(size, cap); return total; };
+            if (textures.find(entry.key) == textures.end()) sizes.push_back({imageSize(entry.file), entry.key});
+        const auto needed = [&](uint32_t cap) { size_t total = 0; for (const auto& size : sizes) total += cardBytes(size.first, cap); return total; };
         const size_t reserve = size_t(1024) << 20;
         const size_t free = renderer.freeMemory();
         const size_t room = free > reserve ? size_t(double(free - reserve) * 0.8) : 0;
+        const char* allInMemory = std::getenv("MOONLIGHTIPR_TEXTURES_IN_MEMORY");
         if (const char* forced = std::getenv("MOONLIGHTIPR_TEXTURE_LIMIT")) limit = uint32_t(std::strtoul(forced, nullptr, 10));
-        else if (!sizes.empty() && needed(0) > room) {
+        else if (allInMemory && *allInMemory == '1') {
+            for (const auto& size : sizes) inMemory.insert(size.second);
+        } else if (!sizes.empty() && needed(0) > room) {
+            // The largest to the computer's memory first, until what is left fits on the card.
+            std::vector<std::pair<ImageSize, uint64_t>> largestFirst = sizes;
+            std::sort(largestFirst.begin(), largestFirst.end(), [](const auto& a, const auto& b) { return cardBytes(a.first, 0) > cardBytes(b.first, 0); });
+            size_t onCard = needed(0), moved = 0;
+            for (const auto& size : largestFirst) {
+                if (onCard <= room) break;
+                inMemory.insert(size.second);
+                onCard -= cardBytes(size.first, 0);
+                moved += cardBytes(size.first, 0);
+            }
+            std::cerr << "MoonLightIPR textures: " << inMemory.size() << " of " << sizes.size() << " kept whole in the computer's memory ("
+                      << (moved >> 20) << " MB), the " << (free >> 20) << " MB free on the graphics card not holding them all" << std::endl;
+            // The limit they would all have been made smaller to, kept for where the computer's memory refuses them.
             limit = 256;
             for (uint32_t cap = 8192; cap >= 256; cap /= 2)
                 if (needed(cap) <= room) { limit = cap; break; }
         }
-        uint32_t largest = 0;
-        for (const ImageSize& size : sizes) largest = std::max(largest, std::max(size.width, size.height));
-        if (limit && largest > limit)
-            std::cerr << "MoonLightIPR textures: at most " << limit << " pixels across, to fit the " << (free >> 20)
-                      << " MB free on the graphics card (they would take " << (needed(0) >> 20) << " MB as they are)" << std::endl;
     }
     std::vector<uint32_t> textureIndices(entries.size());
     for (size_t t = 0; t < entries.size(); ++t) {
@@ -408,17 +438,51 @@ SceneSettings SceneLoader::apply(const std::string& path) {
         const std::string& file = entries[t].file;
         auto cached = textures.find(key);
         if (cached == textures.end()) {
-            const Image image = readImage(file);
+            const bool outOfCore = inMemory.count(key) != 0;
+            const bool srgb = (flags & TEXTURE_SRGB) != 0;
+            const uint32_t maxSize = outOfCore ? 0 : (inMemory.empty() ? limit : 0);
             TextureDesc desc;
-            desc.pixels = image.floatData ? static_cast<const void*>(image.floats.data()) : image.bytes.data();
-            desc.width = image.width;
-            desc.height = image.height;
-            desc.floatData = image.floatData;
-            desc.srgb = (flags & TEXTURE_SRGB) != 0;
+            desc.srgb = srgb;
             desc.wrapU = TextureDesc::Wrap((flags >> TEXTURE_WRAP_U_SHIFT) & 3);
             desc.wrapV = TextureDesc::Wrap((flags >> TEXTURE_WRAP_V_SHIFT) & 3);
-            desc.maxSize = limit;
-            cached = textures.emplace(key, CachedMesh{renderer.addTexture(desc), 0}).first;
+            desc.hostResident = outOfCore;
+            desc.maxSize = maxSize;
+            // On the card: as prepared before where that is kept, else prepared now (and kept, unless made smaller).
+            PreparedTexture prepared;
+            // MOONLIGHTIPR_TEXTURE_PREP, for tests: "plain" for the picture alone, "mips" for its smaller copies uncompressed.
+            const char* preparing = std::getenv("MOONLIGHTIPR_TEXTURE_PREP");
+            const std::string prep = preparing ? preparing : "";
+            const bool reused = prep.empty() && !outOfCore && !maxSize && readPreparedTexture(preparedPath(file), prepared)
+                                && prepared.srgb == (srgb && prepared.format != PreparedTexture::Halves && prepared.format != PreparedTexture::BC6H);
+            Image image;
+            if (!reused) {
+                image = readImage(file);
+                desc.pixels = image.floatData ? static_cast<const void*>(image.floats.data()) : image.bytes.data();
+                desc.width = image.width;
+                desc.height = image.height;
+                desc.floatData = image.floatData;
+                const bool gradient = imageSize(file).gradient;
+                if (!outOfCore) {
+                    prepared = prepareTexture(desc, !gradient && prep != "plain", !gradient && prep.empty());
+                    if (!maxSize && !gradient && prep.empty()) writePreparedTexture(preparedPath(file), prepared);
+                }
+            }
+            if (!outOfCore) desc.prepared = &prepared;
+            uint32_t made = 0;
+            try {
+                made = renderer.addTexture(desc);
+            } catch (const std::exception& refused) {
+                if (!outOfCore) throw;
+                // The computer's memory would not hold it either: on the card, made smaller, as before.
+                std::cerr << "MoonLightIPR textures: at most " << limit << " pixels across for " << file
+                          << ", the computer's memory refusing it (" << refused.what() << ")" << std::endl;
+                desc.hostResident = false;
+                desc.maxSize = limit;
+                prepared = prepareTexture(desc, !imageSize(file).gradient, !imageSize(file).gradient);
+                desc.prepared = &prepared;
+                made = renderer.addTexture(desc);
+            }
+            cached = textures.emplace(key, CachedMesh{made, 0}).first;
         }
         cached->second.lastUsed = generation;
         textureIndex = cached->second.index;
@@ -491,6 +555,7 @@ SceneSettings SceneLoader::apply(const std::string& path) {
         material.roughnessCurve = int((materialFlags >> 8) & 3);
         material.noCaustics = (materialFlags & 1024) != 0;
         material.randomWalk = (materialFlags & 2048) != 0;
+        material.roughnessClamped = (materialFlags & 16384) != 0;
         material.layerStart = in.value<uint32_t>();
         material.layerCount = in.value<uint32_t>();
         material.tangentSlot = in.value<uint32_t>();
@@ -840,6 +905,7 @@ SceneSettings SceneLoader::apply(const std::string& path) {
         instance.light = in.value<int32_t>();
         if (instance.light >= int32_t(localLights.size())) throw std::runtime_error("MoonLightIPR scene instance refers to a missing light");
         instance.visibility = in.value<uint32_t>();
+        instance.value = in.value<float>();
         in.floats(instance.transform, 12);
         if (sceneFlags & SCENE_MOTION) {
             in.floats(instance.closeTransform, 12);
@@ -993,6 +1059,7 @@ SceneSettings SceneLoader::apply(const std::string& path) {
     }
     renderer.setMaxDepth(maxDepth, maxDiffuseDepth, maxGlossyDepth, maxVolumeDepth, (sceneFlags & SCENE_PRESENCE_SHADOWS) != 0);
     renderer.setSampleClamp(sampleClamp, sampleClampDepth);
+    renderer.setRoughnessClamp(roughnessClamp);
     renderer.setMaxSubsurface(maxSubsurface);
     renderer.setVolumeScattering(volumeFactors[0], volumeFactors[1], volumeFactors[2]);
     if (settings.width != renderer.width() || settings.height != renderer.height()) renderer.resize(settings.width, settings.height);

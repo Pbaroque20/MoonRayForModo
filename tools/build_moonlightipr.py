@@ -26,6 +26,14 @@ def run(args, name):
     if completed.returncode:
         raise SystemExit(completed.returncode)
 
+# ISPC Texture Compressor's kernels (src/texture_prep.cpp), for SSE2 up to AVX2, the best chosen as it runs; made again
+# only where the kernel source is newer.
+TEXCOMP = BUILD / 'texcomp'
+KERNEL_ISPC = ROOT / 'upstream/ISPCTextureCompressor/ispc_texcomp/kernel.ispc'
+if not (TEXCOMP / 'kernel_ispc.h').exists() or (TEXCOMP / 'kernel_ispc.h').stat().st_mtime < KERNEL_ISPC.stat().st_mtime:
+    TEXCOMP.mkdir(parents=True, exist_ok=True)
+    run([BIN / 'ispc.exe', '-O2', KERNEL_ISPC, '-o', TEXCOMP / 'kernel.o', '-h', TEXCOMP / 'kernel_ispc.h',
+         '--target=sse2-i32x4,sse4-i32x4,avx1-i32x8,avx2-i32x8', '--opt=fast-math', '--pic', '--woff'], 'texcomp')
 if '--build-only' not in sys.argv or not (BUILD / 'build.ninja').exists():
     run([BIN / 'cmake.exe', '-S', ROOT / 'moonlightipr', '-B', BUILD, '-G', 'Ninja',
          '-DCMAKE_BUILD_TYPE=Release', '-DCMAKE_CXX_COMPILER=' + str(BIN / 'g++.exe'),

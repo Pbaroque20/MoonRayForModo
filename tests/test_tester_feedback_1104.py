@@ -238,7 +238,8 @@ class LinkedEngineChoices(unittest.TestCase):
     def test_xpu2_sampling_greyed_by_the_engine(self):
         lxserv = (KIT.parent / 'lxserv/moonray_render_settings.py').read_text(encoding='utf-8')
         block = lxserv.split("'xpu2_cpu', 'xpu2_realtime'):", 1)[1].split('# Smart Render', 1)[0]
-        self.assertIn('return bool(native.xpu2())', block)
+        # By the engine in use: XPU2 chosen and not fallen back to MoonRay XPU for the scene (xpu2_sampling.active).
+        self.assertIn('return xpu2_sampling.active()', block)
 
     def test_preview_preferences_offer_the_engine(self):
         prefs = (KIT / 'moonray_modo/preferences.py').read_text(encoding='utf-8')

@@ -57,7 +57,7 @@ def realtime_cap():
 
 def budget(generations, grid, realtime=False):
     """Generation Samples as XPU2 is given them (rdla.py): while realtime follows the scene, the share of them its
-    Realtime Sample % says (Pixel Samples squared where Generation Samples is 0), one at least, and no more than the
+    XPU2 RT Sample % says (Pixel Samples squared where Generation Samples is 0), one at least, and no more than the
     Realtime Adaptive Sampling Cap."""
     samples = int(generations.get('samples', 0))
     share = int(generations.get('realtime', 30))

@@ -75,6 +75,8 @@ struct Buffer {
 
 struct Mesh {
     Buffer positions, normals, indices, materialIds, uvs, accel, widths;
+    // A mesh that changes shape: each vertex's move from the shutter's opening to its closing (DeviceMesh::motion).
+    Buffer motion;
     bool curves = false;    // round curve segments: positions, widths and each segment's first point
     bool linear = false;    // those segments are straight, not cubic B-splines
     bool ribbon = false;    // and they are lit as flat ribbons facing the ray
@@ -116,13 +118,20 @@ void scaleTo(float* v, float length) {
 
 struct Texture {
     cudaArray_t array = nullptr;
+    // A picture with its smaller copies (PreparedTexture's levels), in place of array.
+    cudaMipmappedArray_t mipmapped = nullptr;
     cudaTextureObject_t object = 0;
+    // Out of core (TextureDesc::hostResident): the texels in pinned memory of the computer's, which object reads.
+    void* host = nullptr;
+    size_t hostBytes = 0;
     // How bright the picture is, on a grid of at most 64 by 64, top row first: what a light that wears it is sampled by.
     std::vector<float> brightness;
     uint32_t gridWidth = 0, gridHeight = 0;
     ~Texture() {
         if (object) cudaDestroyTextureObject(object);
         if (array) cudaFreeArray(array);
+        if (mipmapped) cudaFreeMipmappedArray(mipmapped);
+        if (host) cudaFreeHost(host);
     }
 };
 
@@ -210,7 +219,8 @@ DeviceMaterial toDevice(const Material& m) {
     d.fuzzDims = d.fuzz * (m.fuzzAbsorbs ? 1.0f : std::max(d.fuzzColor[0], std::max(d.fuzzColor[1], d.fuzzColor[2])));
     d.flags = (m.thin ? MATERIAL_THIN : 0) | (m.clearcoatDims ? MATERIAL_COAT_DIMS : 0) | (m.dissolve > 0.0f ? MATERIAL_HAS_PRESENCE : 0)
             | (m.beckmann ? MATERIAL_BECKMANN : 0) | ((unsigned(m.roughnessCurve) & 3u) << MATERIAL_ROUGH_SHIFT)
-            | (m.noCaustics ? MATERIAL_NO_CAUSTICS : 0) | (m.randomWalk ? MATERIAL_RANDOM_WALK : 0);
+            | (m.noCaustics ? MATERIAL_NO_CAUSTICS : 0) | (m.randomWalk ? MATERIAL_RANDOM_WALK : 0)
+            | (m.roughnessClamped ? MATERIAL_ROUGHNESS_CLAMPED : 0);
     d.layerStart = m.layerStart;
     d.layerCount = m.layerCount;
     return d;
@@ -243,6 +253,9 @@ DeviceHair toDeviceHair(const Material& m) {
     d.glintEccentricity = std::clamp(m.hairGlintEccentricity, 0.5f, 1.0f);
     d.glintSaturation = m.hairGlintSaturation;
     std::copy(m.hairTwists, m.hairTwists + 2, d.twists);
+    for (int i = 0; i < 4; ++i) d.roughness[i] = std::clamp(m.hairRoughness[i], 0.01f, 0.999f);
+    d.azimuthalRoughness = a;
+    d.glintRoughness = m.hairGlintRoughness;
     return d;
 }
 
@@ -251,11 +264,12 @@ DeviceHair toDeviceHair(const Material& m) {
 struct Renderer::Impl {
     OptixDeviceContext context = nullptr;
     OptixModule module = nullptr, curveModule = nullptr, linearModule = nullptr;
-    OptixProgramGroup groups[7] = {};       // the last, the displacement pass's ray generation
+    OptixProgramGroup groups[8] = {};       // the last two, the displacement pass's ray generation and the geometry AOVs'
     OptixPipeline pipeline = nullptr;
     OptixShaderBindingTable sbt = {};
-    Buffer raygenRecord, missRecords, hitRecord, displaceRecord;
+    Buffer raygenRecord, missRecords, hitRecord, displaceRecord, aovsRecord;
     OptixShaderBindingTable displaceSbt = {};
+    OptixShaderBindingTable aovsSbt = {};      // the geometry AOVs' program (__raygen__aovs)
 
     std::vector<std::unique_ptr<Mesh>> meshes;
     std::vector<std::unique_ptr<Texture>> textures;
@@ -272,6 +286,14 @@ struct Renderer::Impl {
     Buffer envPixels, envBackground, envMarginal, envConditional, distantLights, lights, lightTriangles, lightFilters;
     Buffer lightDistributions, distantDistributions;
     Buffer beauty, albedo, normal, denoised, lighting, paramsBuffer;
+    Buffer aov;     // the geometry AOVs, AOV_SLOTS float[4] per pixel (setAovs), while they are gathered
+    Buffer passes;  // and the light passes and the shadow matte beside them, PASS_SLOTS float[4] per pixel (LaunchParams::passes)
+    Buffer instanceMotion;  // each instance's transform as the shutter opens and closes, for the motion vectors
+    Buffer bokeh;           // the camera's bokeh image as a table to draw lens points by (LaunchParams::bokeh)
+    std::vector<float> bokehMade;   // the image it was made from
+    // Held at one moment of the shutter (setMotionHeld): no blur, the motion kept for the motion vectors.
+    bool motionHeld = false;
+    float heldMoment = 0.5f;
     // Stopping once clean (setConvergence): the even samples' mean, and which squares of the picture are done.
     Buffer half, done;
     Buffer lightSetTable;
@@ -423,7 +445,7 @@ struct Renderer::Impl {
         curveOptions.curveEndcapFlags = OPTIX_CURVE_ENDCAP_DEFAULT;
         ML_CHECK(optixBuiltinISModuleGet(context, &moduleOptions, &pipelineOptions, &curveOptions, &linearModule));
 
-        OptixProgramGroupDesc descriptions[7] = {};
+        OptixProgramGroupDesc descriptions[8] = {};
         descriptions[0].kind = OPTIX_PROGRAM_GROUP_KIND_RAYGEN;
         descriptions[0].raygen.module = module;
         descriptions[0].raygen.entryFunctionName = "__raygen__moonlightipr";
@@ -449,15 +471,18 @@ struct Renderer::Impl {
         descriptions[6].kind = OPTIX_PROGRAM_GROUP_KIND_RAYGEN;
         descriptions[6].raygen.module = module;
         descriptions[6].raygen.entryFunctionName = "__raygen__displace";
+        descriptions[7].kind = OPTIX_PROGRAM_GROUP_KIND_RAYGEN;
+        descriptions[7].raygen.module = module;
+        descriptions[7].raygen.entryFunctionName = "__raygen__aovs";
         OptixProgramGroupOptions groupOptions = {};
         logSize = sizeof(log);
-        ML_CHECK(optixProgramGroupCreate(context, descriptions, 7, &groupOptions, log, &logSize, groups));
+        ML_CHECK(optixProgramGroupCreate(context, descriptions, 8, &groupOptions, log, &logSize, groups));
 
         // Shading runs in the ray generation program, so traces never nest.
         OptixPipelineLinkOptions linkOptions = {};
         linkOptions.maxTraceDepth = 1;
         logSize = sizeof(log);
-        ML_CHECK(optixPipelineCreate(context, &pipelineOptions, &linkOptions, groups, 7, log, &logSize, &pipeline));
+        ML_CHECK(optixPipelineCreate(context, &pipelineOptions, &linkOptions, groups, 8, log, &logSize, &pipeline));
         OptixStackSizes stackSizes = {};
         for (OptixProgramGroup group : groups) ML_CHECK(optixUtilAccumulateStackSizes(group, &stackSizes));
         unsigned fromTraversal = 0, fromState = 0, continuation = 0;
@@ -488,6 +513,12 @@ struct Renderer::Impl {
         displaceRecord.upload(&displace, sizeof(displace));
         displaceSbt = sbt;
         displaceSbt.raygenRecord = displaceRecord.ptr;
+        // And the geometry AOVs' program likewise.
+        SbtRecord aovsHeader;
+        ML_CHECK(optixSbtRecordPackHeader(groups[7], &aovsHeader));
+        aovsRecord.upload(&aovsHeader, sizeof(aovsHeader));
+        aovsSbt = sbt;
+        aovsSbt.raygenRecord = aovsRecord.ptr;
     }
 
     // refit moves an existing structure to the vertices now in the mesh's buffer.
@@ -579,6 +610,7 @@ struct Renderer::Impl {
                 entry.indices = mesh->indices.ptr;
                 entry.materialIds = mesh->materialIds.ptr;
                 entry.uvs = mesh->uvs.ptr;
+                entry.motion = mesh->close.empty() || mesh->curves ? 0 : mesh->motion.ptr;
                 entry.triangleCount = mesh->triangleCount;
                 entry.curves = mesh->curves ? (mesh->linear ? 2 : 1) | (mesh->ribbon ? 4 : 0) : 0;
                 // A slot may only name a set this mesh has; the kernel does not check.
@@ -606,10 +638,23 @@ struct Renderer::Impl {
             if ((instances[i].visibility & 31u) != 31u) mixed = true;
             input[i].flags = OPTIX_INSTANCE_FLAG_NONE;
             input[i].traversableHandle = meshes[instances[i].mesh]->handle;
-            table[i] = {instances[i].mesh, instances[i].material, instances[i].light, instances[i].visibility >> 8};
+            table[i] = {instances[i].mesh, instances[i].material, instances[i].light, instances[i].visibility >> 8, instances[i].value};
         }
         params.mixedVisibility = mixed ? 1 : 0;
         instanceTable.upload(table);
+        // The two ends of each instance's shutter, for the motion vectors, where any instance moves.
+        if ((instancesMove || meshesMove) && !instances.empty()) {
+            std::vector<float> ends(instances.size() * 24);
+            for (size_t i = 0; i < instances.size(); ++i)
+                for (int k = 0; k < 12; ++k) {
+                    ends[i * 24 + k] = instances[i].transform[k];
+                    ends[i * 24 + 12 + k] = instances[i].moves ? instances[i].closeTransform[k] : instances[i].transform[k];
+                }
+            instanceMotion.upload(ends);
+            params.instanceMotion = instanceMotion.ptr;
+        } else {
+            params.instanceMotion = 0;
+        }
         params.instances = instanceTable.ptr;
         params.traversable = 0;     // tracing an empty scene always misses
         if (instances.empty()) return;
@@ -635,6 +680,7 @@ struct Renderer::Impl {
     // Puts the scene where it is at one moment of the shutter: the camera, the meshes that change
     // shape, and then the instance layer, which holds what moves and bounds what changed.
     void setTime(float time) {
+        params.time = time;
         if (cameraMoves) {
             const Camera held = camera;
             for (int i = 0; i < 3; ++i) {
@@ -643,7 +689,7 @@ struct Renderer::Impl {
                 camera.up[i] += (cameraClose.up[i] - camera.up[i]) * time;
             }
             camera.verticalFovDegrees += (cameraClose.verticalFovDegrees - camera.verticalFovDegrees) * time;
-            updateCamera();
+            updateCamera(false);
             camera = held;
         }
         if (meshesMove) {
@@ -687,24 +733,74 @@ struct Renderer::Impl {
         }
     }
 
-    void updateCamera() {
-        if (!params.width || !params.height) return;
+    // A camera's origin and the three directions of its image plane (cameraU, cameraV, cameraW), twelve floats.
+    void cameraFrame(const Camera& c, float* out) const {
         float w[3], u[3], v[3];
-        subtract(camera.target, camera.eye, w);
+        subtract(c.target, c.eye, w);
         scaleTo(w, 1.0f);
-        cross(w, camera.up, u);
-        const float halfHeight = std::tan(camera.verticalFovDegrees * 3.14159265358979323846f / 360.0f);
+        cross(w, c.up, u);
+        const float halfHeight = std::tan(c.verticalFovDegrees * 3.14159265358979323846f / 360.0f);
         scaleTo(u, halfHeight * float(params.width) / float(params.height));
         cross(u, w, v);
         scaleTo(v, halfHeight);
-        std::copy(camera.eye, camera.eye + 3, params.cameraOrigin);
-        std::copy(u, u + 3, params.cameraU);
-        std::copy(v, v + 3, params.cameraV);
-        std::copy(w, w + 3, params.cameraW);
+        std::copy(c.eye, c.eye + 3, out);
+        std::copy(u, u + 3, out + 3);
+        std::copy(v, v + 3, out + 6);
+        std::copy(w, w + 3, out + 9);
+    }
+
+    // ends: the camera at the shutter's two ends as well, for the motion vectors (not while setTime places it between).
+    void updateCamera(bool ends = true) {
+        if (!params.width || !params.height) return;
+        float frame[12];
+        cameraFrame(camera, frame);
+        std::copy(frame, frame + 3, params.cameraOrigin);
+        std::copy(frame + 3, frame + 6, params.cameraU);
+        std::copy(frame + 6, frame + 9, params.cameraV);
+        std::copy(frame + 9, frame + 12, params.cameraW);
+        if (ends) {
+            std::copy(frame, frame + 12, params.cameraOpen);
+            if (cameraMoves) cameraFrame(cameraClose, params.cameraClose);
+            else std::copy(frame, frame + 12, params.cameraClose);
+        }
         params.lensRadius = std::max(camera.lensRadius, 0.0f);
         params.focusDistance = std::max(camera.focusDistance, 1e-6f);
         params.lensBlades = camera.blades >= 3 ? std::min<uint32_t>(camera.blades, 64) : 0;
         params.lensAngle = camera.bladeAngle;
+        // The bokeh image as running sums: down its rows, then across each, each ending at 1; made again only when the
+        // image changes. An image with nothing bright in it is no bokeh image.
+        const uint32_t n = camera.bokehSize;
+        if (!n || camera.bokeh.size() != size_t(n) * n) {
+            params.bokeh = 0;
+            params.bokehSize = 0;
+            bokehMade.clear();
+        } else if (camera.bokeh != bokehMade || !params.bokeh) {
+            std::vector<float> table(size_t(n + 1) + size_t(n) * (n + 1), 0.0f);
+            double total = 0.0;
+            for (uint32_t y = 0; y < n; ++y) {
+                float* across = table.data() + (n + 1) + size_t(y) * (n + 1);
+                double row = 0.0;
+                for (uint32_t x = 0; x < n; ++x) {
+                    const float v = camera.bokeh[size_t(y) * n + x];
+                    row += std::isfinite(v) && v > 0.0f ? v : 0.0f;
+                    across[x + 1] = float(row);
+                }
+                for (uint32_t x = 1; x <= n; ++x) across[x] = row > 0.0 ? float(across[x] / row) : float(x) / float(n);
+                total += row;
+                table[y + 1] = float(total);
+            }
+            if (total > 0.0) {
+                for (uint32_t y = 1; y <= n; ++y) table[y] = float(table[y] / total);
+                bokeh.upload(table);
+                params.bokeh = bokeh.ptr;
+                params.bokehSize = n;
+                bokehMade = camera.bokeh;
+            } else {
+                params.bokeh = 0;
+                params.bokehSize = 0;
+                bokehMade.clear();
+            }
+        }
         params.cameraProjection = camera.projection <= 3 ? camera.projection : 0;
         std::copy(camera.projectionValues, camera.projectionValues + 4, params.cameraProjectionValues);
         // Rows count upward from the picture's foot; the region's top and bottom are measured from its head.
@@ -876,6 +972,13 @@ Renderer::Renderer(const std::string& ptxPath) : impl(new Impl) {
     OptixDeviceContextOptions options = {};
     options.logCallbackFunction = &logCallback;
     options.logCallbackLevel = 2;
+    // MOONLIGHTIPR_VALIDATE=1: OptiX checks every launch and says what went wrong, at a cost in speed (a diagnostic,
+    // for a crash on a card that is not here to test on).
+    if (const char* validate = std::getenv("MOONLIGHTIPR_VALIDATE"); validate && *validate && *validate != '0') {
+        options.validationMode = OPTIX_DEVICE_CONTEXT_VALIDATION_MODE_ALL;
+        options.logCallbackLevel = 4;
+        std::cerr << "MoonLightIPR: OptiX validation on (MOONLIGHTIPR_VALIDATE)" << std::endl;
+    }
     ML_CHECK(optixDeviceContextCreate(nullptr, &options, &impl->context));
     // Compiled kernels kept in a cache of MoonLightIPR's own, with room for all of them: a kernel takes a minute or more
     // to compile, and in OptiX's shared cache, filled by MoonRay's XPU mode and other programs, they were turned out
@@ -944,6 +1047,9 @@ uint32_t Renderer::addMesh(const MeshDesc& desc) {
     if (desc.closePositions) {
         mesh->open.assign(desc.positions, desc.positions + desc.vertexCount * 3);
         mesh->close.assign(desc.closePositions, desc.closePositions + desc.vertexCount * 3);
+        std::vector<float> moves(mesh->open.size());
+        for (size_t i = 0; i < moves.size(); ++i) moves[i] = mesh->close[i] - mesh->open[i];
+        mesh->motion.upload(moves);
     }
     if (desc.uvSetCount) {
         const size_t perSet = desc.triangleCount * 6;
@@ -1079,10 +1185,81 @@ void halve(std::vector<float>& rgba, uint32_t& width, uint32_t& height) {
 
 }
 
+// A prepared texture on the card: its levels in one mipmapped array (or a plain one, for a single level), read with
+// filtering within each level and between them, compressed blocks decoded by the card as they are read.
+std::unique_ptr<Texture> uploadPrepared(const PreparedTexture& prepared, const TextureDesc& desc) {
+    if (prepared.levels.empty() || !prepared.width || !prepared.height)
+        throw std::runtime_error("MoonLightIPR texture was prepared empty");
+    auto texture = std::make_unique<Texture>();
+    cudaChannelFormatDesc format;
+    switch (prepared.format) {
+    case PreparedTexture::Halves: format = cudaCreateChannelDesc(16, 16, 16, 16, cudaChannelFormatKindFloat); break;
+    case PreparedTexture::BC7:
+        format = prepared.srgb ? cudaCreateChannelDesc<cudaChannelFormatKindUnsignedBlockCompressed7SRGB>()
+                               : cudaCreateChannelDesc<cudaChannelFormatKindUnsignedBlockCompressed7>();
+        break;
+    case PreparedTexture::BC6H: format = cudaCreateChannelDesc<cudaChannelFormatKindUnsignedBlockCompressed6H>(); break;
+    default: format = cudaCreateChannelDesc(8, 8, 8, 8, cudaChannelFormatKindUnsigned); break;
+    }
+    const bool blocks = prepared.format == PreparedTexture::BC7 || prepared.format == PreparedTexture::BC6H;
+    // A row of a level as the copy counts it: of blocks, for a compressed one, four texel rows at a time.
+    const auto copy = [&](cudaArray_t to, uint32_t level) {
+        const uint32_t w = std::max(1u, prepared.width >> level), h = std::max(1u, prepared.height >> level);
+        const size_t rowBytes = blocks ? size_t(w / 4) * 16 : size_t(w) * (prepared.format == PreparedTexture::Halves ? 8 : 4);
+        const size_t rows = blocks ? h / 4 : h;
+        if (prepared.levels[level].size() != rowBytes * rows) throw std::runtime_error("MoonLightIPR texture level is the wrong size");
+        ML_CHECK(cudaMemcpy2DToArray(to, 0, 0, prepared.levels[level].data(), rowBytes, rowBytes, rows, cudaMemcpyHostToDevice));
+    };
+    cudaResourceDesc resource = {};
+    const uint32_t levels = uint32_t(prepared.levels.size());
+    if (levels == 1) {
+        ML_CHECK(cudaMallocArray(&texture->array, &format, prepared.width, prepared.height));
+        copy(texture->array, 0);
+        resource.resType = cudaResourceTypeArray;
+        resource.res.array.array = texture->array;
+    } else {
+        ML_CHECK(cudaMallocMipmappedArray(&texture->mipmapped, &format, make_cudaExtent(prepared.width, prepared.height, 0), levels));
+        for (uint32_t level = 0; level < levels; ++level) {
+            cudaArray_t array = nullptr;
+            ML_CHECK(cudaGetMipmappedArrayLevel(&array, texture->mipmapped, level));
+            copy(array, level);
+        }
+        resource.resType = cudaResourceTypeMipmappedArray;
+        resource.res.mipmap.mipmap = texture->mipmapped;
+    }
+    const cudaTextureAddressMode modes[] = {cudaAddressModeWrap, cudaAddressModeClamp, cudaAddressModeMirror, cudaAddressModeBorder};
+    cudaTextureDesc sampling = {};
+    sampling.addressMode[0] = modes[std::min<uint32_t>(desc.wrapU, 3)];
+    sampling.addressMode[1] = modes[std::min<uint32_t>(desc.wrapV, 3)];
+    sampling.filterMode = cudaFilterModeLinear;
+    const bool floats = prepared.format == PreparedTexture::Halves || prepared.format == PreparedTexture::BC6H;
+    sampling.readMode = floats ? cudaReadModeElementType : cudaReadModeNormalizedFloat;
+    sampling.normalizedCoords = 1;
+    sampling.sRGB = prepared.srgb;
+    sampling.mipmapFilterMode = cudaFilterModeLinear;
+    sampling.minMipmapLevelClamp = 0.0f;
+    sampling.maxMipmapLevelClamp = float(levels - 1);
+    ML_CHECK(cudaCreateTextureObject(&texture->object, &resource, &sampling, nullptr));
+    texture->gridWidth = prepared.gridWidth;
+    texture->gridHeight = prepared.gridHeight;
+    texture->brightness = prepared.brightness;
+    return texture;
+}
+
 uint32_t Renderer::addTexture(const TextureDesc& desc) {
+    std::unique_ptr<Texture> texture;
+    if (!desc.hostResident) {
+        // On the card: as it was prepared, or prepared now as it is (one level, uncompressed).
+        if (desc.prepared) texture = uploadPrepared(*desc.prepared, desc);
+        else texture = uploadPrepared(prepareTexture(desc, false, false), desc);
+        auto slot = std::find(impl->textures.begin(), impl->textures.end(), nullptr);
+        if (slot == impl->textures.end()) slot = impl->textures.emplace(slot);
+        *slot = std::move(texture);
+        return uint32_t(slot - impl->textures.begin());
+    }
     if (!desc.pixels || !desc.width || !desc.height || desc.width > 16384 || desc.height > 16384)
         throw std::runtime_error("MoonLightIPR texture has no pixels or is too large");
-    auto texture = std::make_unique<Texture>();
+    texture = std::make_unique<Texture>();
     // What the card is given: the picture as it is, or halved to its size limit, with a picture of high dynamic range
     // as halves. Bytes are halved as light, from sRGB where they are sRGB, so that a smaller picture is not darker.
     uint32_t width = desc.width, height = desc.height;
@@ -1111,23 +1288,39 @@ uint32_t Renderer::addTexture(const TextureDesc& desc) {
         }
     }
     const void* uploaded = desc.floatData ? static_cast<const void*>(halves.data()) : (bytes.empty() ? desc.pixels : bytes.data());
-    const cudaChannelFormatDesc format = desc.floatData ? cudaCreateChannelDesc(16, 16, 16, 16, cudaChannelFormatKindFloat)
-                                                        : cudaCreateChannelDesc(8, 8, 8, 8, cudaChannelFormatKindUnsigned);
     const size_t rowBytes = size_t(width) * (desc.floatData ? 8 : 4);
-    ML_CHECK(cudaMallocArray(&texture->array, &format, width, height));
-    ML_CHECK(cudaMemcpy2DToArray(texture->array, 0, 0, uploaded, rowBytes, rowBytes, height, cudaMemcpyHostToDevice));
-    cudaResourceDesc resource = {};
-    resource.resType = cudaResourceTypeArray;
-    resource.res.array.array = texture->array;
-    const cudaTextureAddressMode modes[] = {cudaAddressModeWrap, cudaAddressModeClamp, cudaAddressModeMirror, cudaAddressModeBorder};
-    cudaTextureDesc sampling = {};
-    sampling.addressMode[0] = modes[std::min<uint32_t>(desc.wrapU, 3)];
-    sampling.addressMode[1] = modes[std::min<uint32_t>(desc.wrapV, 3)];
-    sampling.filterMode = cudaFilterModeLinear;
-    sampling.readMode = desc.floatData ? cudaReadModeElementType : cudaReadModeNormalizedFloat;
-    sampling.normalizedCoords = 1;
-    sampling.sRGB = desc.srgb && !desc.floatData;
-    ML_CHECK(cudaCreateTextureObject(&texture->object, &resource, &sampling, nullptr));
+    {
+        // Out of core: the texels in pinned memory of the computer's, mapped for the card, which its texture unit reads
+        // across the bus as it reads a picture of its own (filtered, wrapped and decoded alike): the kernel does not
+        // know the difference. Rows are spaced as the card's texture unit needs them.
+        int device = 0, alignment = 32;
+        cudaGetDevice(&device);
+        cudaDeviceGetAttribute(&alignment, cudaDevAttrTexturePitchAlignment, device);
+        const size_t pitch = (rowBytes + size_t(alignment) - 1) / size_t(alignment) * size_t(alignment);
+        texture->hostBytes = pitch * height;
+        ML_CHECK(cudaHostAlloc(&texture->host, texture->hostBytes, cudaHostAllocMapped | cudaHostAllocPortable));
+        for (uint32_t y = 0; y < height; ++y)
+            std::memcpy(static_cast<char*>(texture->host) + pitch * y, static_cast<const char*>(uploaded) + rowBytes * y, rowBytes);
+        void* onCard = nullptr;
+        ML_CHECK(cudaHostGetDevicePointer(&onCard, texture->host, 0));
+        cudaResourceDesc resource = {};
+        resource.resType = cudaResourceTypePitch2D;
+        resource.res.pitch2D.devPtr = onCard;
+        resource.res.pitch2D.desc = desc.floatData ? cudaCreateChannelDesc(16, 16, 16, 16, cudaChannelFormatKindFloat)
+                                                   : cudaCreateChannelDesc(8, 8, 8, 8, cudaChannelFormatKindUnsigned);
+        resource.res.pitch2D.width = width;
+        resource.res.pitch2D.height = height;
+        resource.res.pitch2D.pitchInBytes = pitch;
+        const cudaTextureAddressMode modes[] = {cudaAddressModeWrap, cudaAddressModeClamp, cudaAddressModeMirror, cudaAddressModeBorder};
+        cudaTextureDesc sampling = {};
+        sampling.addressMode[0] = modes[std::min<uint32_t>(desc.wrapU, 3)];
+        sampling.addressMode[1] = modes[std::min<uint32_t>(desc.wrapV, 3)];
+        sampling.filterMode = cudaFilterModeLinear;
+        sampling.readMode = desc.floatData ? cudaReadModeElementType : cudaReadModeNormalizedFloat;
+        sampling.normalizedCoords = 1;
+        sampling.sRGB = desc.srgb && !desc.floatData;
+        ML_CHECK(cudaCreateTextureObject(&texture->object, &resource, &sampling, nullptr));
+    }
     texture->gridWidth = std::min<uint32_t>(desc.width, 64);
     texture->gridHeight = std::min<uint32_t>(desc.height, 64);
     texture->brightness.assign(size_t(texture->gridWidth) * texture->gridHeight, 0.0f);
@@ -1357,7 +1550,7 @@ void Renderer::setMaterials(const Material* materials, size_t count, const Layer
         const unsigned sources = out.flags & (LAYER_RAMP | LAYER_CHECKER | LAYER_NOISE | LAYER_UDIM | LAYER_PROCEDURAL | LAYER_WIREFRAME);
         if (sources & (sources - 1)) throw std::runtime_error("MoonLightIPR layer has more than one source");
         if (out.flags & LAYER_RAMP) {
-            if (layer.uvSlot >= CHANNEL_COUNT && layer.uvSlot != RAMP_CURVATURE) throw std::runtime_error("MoonLightIPR gradient layer refers to a missing channel");
+            if (layer.uvSlot >= CHANNEL_COUNT && layer.uvSlot != RAMP_CURVATURE && layer.uvSlot != RAMP_SAMPLE) throw std::runtime_error("MoonLightIPR gradient layer refers to a missing channel");
             out.texture = object(layer.texture);
         } else if (out.flags & LAYER_UDIM) {
             if (layer.texture < 0 || size_t(layer.texture) >= tileCount || layer.uvSlot >= UV_SLOTS)
@@ -1750,6 +1943,12 @@ void Renderer::resize(uint32_t width, uint32_t height) {
     impl->params.beauty = impl->beauty.ptr;
     impl->params.albedo = impl->albedo.ptr;
     impl->params.normal = impl->normal.ptr;
+    if (impl->params.aovs) {
+        impl->aov.reserve(bytes * AOV_SLOTS);
+        impl->params.aovs = impl->aov.ptr;
+        impl->passes.reserve(bytes * PASS_SLOTS);
+        impl->params.passes = impl->passes.ptr;
+    }
     impl->params.width = width;
     impl->params.height = height;
     // The denoiser is sized for one resolution; it is recreated on the next request.
@@ -1763,6 +1962,13 @@ void Renderer::setVolumeScattering(float attenuation, float contribution, float 
     impl->params.volumeAttenuation = std::clamp(attenuation, 0.0f, 1.0f);
     impl->params.volumeContribution = std::clamp(contribution, 0.0f, 1.0f);
     impl->params.volumePhaseAttenuation = std::clamp(phaseAttenuation, 0.0f, 1.0f);
+    impl->restart();
+}
+
+void Renderer::setRoughnessClamp(float factor) {
+    factor = std::clamp(factor, 0.0f, 1.0f);
+    if (factor == impl->params.roughnessClamp) return;
+    impl->params.roughnessClamp = factor;
     impl->restart();
 }
 
@@ -1803,7 +2009,10 @@ void Renderer::render() {
             impl->nextCheck = 16;
         }
     }
-    if (impl->cameraMoves || impl->instancesMove || impl->meshesMove || impl->lightsMove) {
+    if (impl->motionHeld && (impl->cameraMoves || impl->instancesMove || impl->meshesMove || impl->lightsMove)) {
+        // Held at one moment: placed there once, as the render begins.
+        if (impl->samples == 0) impl->setTime(impl->heldMoment);
+    } else if (impl->cameraMoves || impl->instancesMove || impl->meshesMove || impl->lightsMove) {
         // One moment per sample: the bits of the sample index reversed, which spreads any number
         // of samples evenly over the shutter.
         uint32_t bits = impl->samples, reversed = 0;
@@ -1816,6 +2025,10 @@ void Renderer::render() {
     impl->paramsBuffer.upload(&impl->params, sizeof(LaunchParams));
     ML_CHECK(optixLaunch(impl->pipeline, nullptr, impl->paramsBuffer.ptr, sizeof(LaunchParams), &impl->sbt,
         impl->params.width, impl->params.height, 1));
+    // The geometry AOVs, where they are gathered: a program of their own, one ray a pixel.
+    if (impl->params.aovs)
+        ML_CHECK(optixLaunch(impl->pipeline, nullptr, impl->paramsBuffer.ptr, sizeof(LaunchParams), &impl->aovsSbt,
+            impl->params.width, impl->params.height, 1));
     ML_CHECK(cudaEventRecord(impl->launched, nullptr));
     ++impl->samples;
     if (impl->params.done && impl->samples == impl->nextCheck) {
@@ -1867,9 +2080,13 @@ void Renderer::reshapeMesh(uint32_t index, const float* positions, const float* 
     if (closePositions) {
         mesh.open.assign(positions, positions + mesh.vertexCount * 3);
         mesh.close.assign(closePositions, closePositions + mesh.vertexCount * 3);
+        std::vector<float> moves(mesh.open.size());
+        for (size_t i = 0; i < moves.size(); ++i) moves[i] = mesh.close[i] - mesh.open[i];
+        mesh.motion.upload(moves);
     } else {
         mesh.open.clear();
         mesh.close.clear();
+        mesh.motion.release();
     }
     if (normals) mesh.normals.upload(normals, mesh.vertexCount * 3 * sizeof(float));
     else mesh.normals.release();
@@ -1897,6 +2114,62 @@ void Renderer::readDenoised(float* rgb) {
     if (!impl->samples) throw std::runtime_error("MoonLightIPR has no samples to read");
     impl->denoise();
     impl->download(impl->denoised, rgb);
+}
+
+void Renderer::setAovs(bool on) {
+    if (on == (impl->params.aovs != 0)) return;
+    if (on) {
+        const size_t pixels = size_t(std::max(impl->params.width, 1u)) * std::max(impl->params.height, 1u);
+        impl->aov.reserve(pixels * AOV_SLOTS * 4 * sizeof(float));
+        impl->params.aovs = impl->aov.ptr;
+        // The light passes come with them, from the beauty's own paths, so that switching to one renders nothing again.
+        impl->passes.reserve(pixels * PASS_SLOTS * 4 * sizeof(float));
+        impl->params.passes = impl->passes.ptr;
+    } else {
+        impl->params.aovs = 0;
+        impl->params.passes = 0;
+    }
+    impl->restart();
+}
+
+bool Renderer::aovs() const { return impl->params.aovs != 0; }
+
+void Renderer::setPass(uint32_t pass) {
+    if (pass > PASS_BACKGROUND) throw std::runtime_error("MoonLightIPR has no such light pass");
+    if (pass == impl->params.aovPass) return;
+    impl->params.aovPass = pass;
+    impl->restart();
+}
+
+uint32_t Renderer::pass() const { return impl->params.aovPass; }
+
+void Renderer::setMotionHeld(bool held, float moment) {
+    moment = std::clamp(moment, 0.0f, 1.0f);
+    if (held == impl->motionHeld && (!held || moment == impl->heldMoment)) return;
+    impl->motionHeld = held;
+    impl->heldMoment = moment;
+    impl->restart();
+}
+
+void Renderer::readAov(uint32_t slot, float* rgb) {
+    if (!impl->samples) throw std::runtime_error("MoonLightIPR has no samples to read");
+    if (!impl->params.aovs || slot >= AOV_SLOTS) throw std::runtime_error("MoonLightIPR gathers no such AOV");
+    // That slot of every pixel: one float[4] in each pixel's AOV_SLOTS.
+    const size_t count = size_t(impl->params.width) * impl->params.height;
+    std::vector<float> pixels(count * 4);
+    ML_CHECK(cudaMemcpy2D(pixels.data(), 4 * sizeof(float), reinterpret_cast<const char*>(impl->params.aovs) + slot * 4 * sizeof(float),
+                          AOV_SLOTS * 4 * sizeof(float), 4 * sizeof(float), count, cudaMemcpyDeviceToHost));
+    for (size_t i = 0; i < count; ++i) std::copy(&pixels[i * 4], &pixels[i * 4] + 3, rgb + i * 3);
+}
+
+void Renderer::readPass(uint32_t pass, float* rgb) {
+    if (!impl->samples) throw std::runtime_error("MoonLightIPR has no samples to read");
+    if (!impl->params.passes || pass < 1 || pass > PASS_SLOTS) throw std::runtime_error("MoonLightIPR gathers no such light pass");
+    const size_t count = size_t(impl->params.width) * impl->params.height;
+    std::vector<float> pixels(count * 4);
+    ML_CHECK(cudaMemcpy2D(pixels.data(), 4 * sizeof(float), reinterpret_cast<const char*>(impl->params.passes) + (pass - 1) * 4 * sizeof(float),
+                          PASS_SLOTS * 4 * sizeof(float), 4 * sizeof(float), count, cudaMemcpyDeviceToHost));
+    for (size_t i = 0; i < count; ++i) std::copy(&pixels[i * 4], &pixels[i * 4] + 3, rgb + i * 3);
 }
 
 void Renderer::synchronize() { ML_CHECK(cudaDeviceSynchronize()); }

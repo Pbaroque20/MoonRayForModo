@@ -161,6 +161,26 @@ def camera_revert_entry(text):
                         '<atom type="ShowWhenDisabled">0</atom><atom type="Hash">MoonRayContext_revert_camera:control</atom></list>')
 
 
+def area_light_entries(text):
+    """Convert to MoonRay Rect Light in the Item List's right-click menu of an area light (its sheet as the checkout's
+    layout.cfg has it, before the mesh's), and in the MoonRay menu after Convert Camera to MoonRay Camera; each unchanged
+    if it is there."""
+    eol = '\r\n' if '\r\n' in text else '\n'
+    source = (Path(__file__).resolve().parents[1] / 'kit/MoonRayForModo/layout.cfg').read_bytes().decode('utf-8').replace('\r\n', '\n')
+    mesh = '    <!-- Right-clicking a mesh in the Item List'
+    if 'MoonRayAreaLightContext:sheet' not in text and text.count(mesh) == 1:
+        begin = source.index('    <!-- Right-clicking an area light in the Item List')
+        block = source[begin:source.index(mesh)].replace('\n', eol)
+        at = text.index(mesh)
+        text = text[:at] + block + text[at:]
+    anchor = '<list type="Control" val="cmd moonray.camera.convert"><atom type="Label">Convert Camera to MoonRay Camera...</atom>'
+    if 'MoonRayMenu_convert_area_light' not in text and text.count(anchor) == 1:
+        end = text.index('</list>', text.index(anchor)) + len('</list>')
+        text = (text[:end] + eol + '      <list type="Control" val="cmd moonray.light.convert"><atom type="Label">Convert Area Light to MoonRay Rect Light</atom>'
+                '<atom type="Hash">MoonRayMenu_convert_area_light:control</atom></list>' + text[end:])
+    return text
+
+
 def viewport_title(text):
     """The preview set into Modo's layout is titled MoonRay; its own window keeps MoonRay Preview."""
     return text.replace('<atom type="ViewportTitle">MoonRay Preview</atom>', '<atom type="ViewportTitle">MoonRay</atom>')
@@ -198,6 +218,32 @@ def camera_sequence_entry(text):
     return (text[:end] + eol + '      <list type="Control" val="cmd moonray.page cameras"><atom type="Label">Camera Sequence...</atom>'
             '<atom type="Hash">MoonRayMenu_cameras:control</atom></list>' + text[end:])
 
+
+
+RHIZOME_ROW = ('<list type="Control" val="cmd moonray.rhizome"><atom type="Label">Rhizome: Decentralized Rendering</atom>'
+               '<atom type="Hash">MoonRayMenu_rhizome:control</atom></list>')
+
+
+def rhizome_entry(text):
+    """Rhizome: Decentralized Rendering in the MoonRay menu, right after Terminal. An entry elsewhere (after Camera
+    Sequence, where it was first put) or under an earlier label (Rhizome: Render Across Machines...) is replaced by it
+    there. Unchanged when it is there already, or there is no Terminal."""
+    anchor = '<list type="Control" val="cmd moonray.terminal">'
+    if text.count(anchor) != 1:
+        return text
+    eol = '\r\n' if '\r\n' in text else '\n'
+    after = text.index('</list>', text.index(anchor)) + len('</list>')
+    if text[after:].lstrip(' \t\r\n').startswith(RHIZOME_ROW) and text.count('val="cmd moonray.rhizome"') == 1:
+        return text
+    # Every entry of it taken out, whatever its label, its line with it.
+    row = '<list type="Control" val="cmd moonray.rhizome">'
+    while row in text:
+        at = text.index(row)
+        start = text.rfind('\n', 0, at) + 1
+        end = text.index('\n', at) + 1 if '\n' in text[at:] else len(text)
+        text = text[:start] + text[end:]
+    after = text.index('</list>', text.index(anchor)) + len('</list>')
+    return text[:after] + eol + '      ' + RHIZOME_ROW + text[after:]
 
 def round_control(text):
     """The mesh form's round-curves and curve-basis controls, after the curve UV control; each unchanged if it is there."""

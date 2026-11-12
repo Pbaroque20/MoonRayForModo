@@ -64,6 +64,22 @@ def point_values(mesh, map_id, size):
     return values
 
 
+def part_tags(mesh):
+    """Each surface polygon's Part tag ('' where it has none), in the order the scene reader counts polygons."""
+    polygons = lx.object.Polygon(mesh.PolygonAccessor())
+    tags = lx.object.StringTag(polygons)
+    result = []
+    for index in range(mesh.PolygonCount()):
+        polygons.SelectByIndex(index)
+        if lxu.utils.decodeID4(polygons.Type()) in NOT_SURFACE or polygons.VertexCount() < 3:
+            continue
+        try:
+            result.append(tags.Get(lx.symbol.i_POLYTAG_PART) or '')
+        except LookupError:
+            result.append('')
+    return result
+
+
 def corner_values(mesh, map_id, size):
     """The map's value at each corner of each surface polygon, in the order the scene reader counts polygons; a corner
     with none has zeros."""

@@ -6,6 +6,7 @@ from pathlib import Path
 from PySide2 import QtCore, QtGui, QtWidgets
 import lx
 from . import properties, rdla
+from .preferences import moonlightipr_render_samples
 
 
 # What Panel.run() does in the window; any other page is a group of render settings.
@@ -310,10 +311,23 @@ class Tools:
         if kept != stored:
             self._store(animation_output=kept)
         try:
-            candidate = Sequence(self, directory, dialog.first.value(), dialog.last.value(),
-                                 dialog.fps.value(), dialog.motion.isChecked(),
-                                 step=dialog.step.value(), prefix=dialog.prefix.text(), missing=dialog.missing.isChecked(),
-                                 export_as=dialog.export_as(), digits=dialog.digits.value())
+            if dialog.engine.currentData() == 'moonlightipr':
+                # MoonLightIPR as the engine: frames rendered as a playblast's are, at the render's resolution and Render
+                # samples, written as EXRs of its own picture (playblast.MoonLightIPRAnimation).
+                from .playblast import MoonLightIPRAnimation
+                import modo
+                widest = int(modo.Scene().renderItem.channel('resX').get())
+                denoise = self._denoiser_on() and self._settings_values().get('denoising', {}).get('final', True)
+                candidate = MoonLightIPRAnimation(self, directory, dialog.first.value(), dialog.last.value(), dialog.fps.value(),
+                                                  step=dialog.step.value(), prefix=dialog.prefix.text(), width=widest,
+                                                  samples=moonlightipr_render_samples(), motion=dialog.motion.isChecked(),
+                                                  digits=dialog.digits.value(), export_as=dialog.export_as(), missing=dialog.missing.isChecked(),
+                                                  denoise=denoise)
+            else:
+                candidate = Sequence(self, directory, dialog.first.value(), dialog.last.value(),
+                                     dialog.fps.value(), dialog.motion.isChecked(),
+                                     step=dialog.step.value(), prefix=dialog.prefix.text(), missing=dialog.missing.isChecked(),
+                                     export_as=dialog.export_as(), digits=dialog.digits.value())
             self.settings.setValue('output/animation', directory)
             if self.ipr_mode.isChecked():
                 self.ipr_mode.setChecked(False)
@@ -412,21 +426,129 @@ class Tools:
         keys = [key for key in order if key in held] + sorted(key for key in held if key not in order)
         return [(key, named.get(key, key)) for key in keys]
 
+    def _moonlightipr_linear(self, key):
+        """The numbers MoonLightIPR sent last for a buffer, (width, height, pixels), or None. Its beauty and its denoised
+        beauty both come under the beauty's name: the one looked at."""
+        sent = 'beauty' if key in ('beauty', 'denoised_beauty') else key
+        frame = self.renderer.buffers.progressive_frames.get(sent) or {}
+        return frame.get('linear', {}).get(sent)
+
+    def _moonlightipr_listing(self):
+        """What Export AOVs offers of a MoonLightIPR render: its beauty, its denoised beauty where the Denoiser is on, and
+        its own AOVs, motion vectors where the scene was read with the shutter's ends (which it is where something moves,
+        panel._capture_preview). (the scene, the buffers as (key, name)); ValueError where nothing is rendered yet."""
+        from . import moonlightipr_aovs
+        snapshot = self.renderer.buffers.progressive_scene
+        if snapshot is None or self._moonlightipr_linear('beauty') is None:
+            raise ValueError('Render with MoonLightIPR first; its picture and AOVs are what is exported.')
+        listed = [(self.buffer.itemData(i), self.buffer.itemText(i)) for i in range(self.buffer.count())]
+        moved = len(snapshot.get('motion_steps') or []) == 2
+        return snapshot, [(key, name) for key, name in listed if key == 'beauty'
+                          or (key == 'denoised_beauty' and self._denoiser_on())
+                          or (key in moonlightipr_aovs.AOVS and (key != 'motion_vectors' or moved))]
+
+    def _moonlightipr_fetch(self, keys):
+        """The outputs chosen in Export AOVs, asked of the MoonLightIPR session one by one and written as EXRs of its own
+        numbers into a folder of its own; the buffer list is left as it is. Every AOV is gathered beside the beauty, so
+        each comes at once, rendering nothing again; after, the session is told again what is looked at. Returns
+        (frame, folder to remove when done); the outputs it could not give are kept in _moonlightipr_skipped."""
+        import shutil
+        import subprocess
+        import tempfile
+        import time
+        from . import moonlightipr_aovs, native
+        renderer = self.renderer
+        buffers, session = renderer.buffers, renderer.moonlightipr
+        snapshot = buffers.progressive_scene
+        kept_aov, kept_view = session.aov_now, getattr(session, 'denoised_view', True)
+        pictures, self._moonlightipr_skipped = {}, []
+        try:
+            for key in keys:
+                aov = (0, 'none') if key in ('beauty', 'denoised_beauty') else (moonlightipr_aovs.kind(key), key)
+                view = key == 'denoised_beauty' if key in ('beauty', 'denoised_beauty') else getattr(session, 'denoised_view', True)
+                before = self._moonlightipr_linear(key)
+                if aov == session.aov_now and view == getattr(session, 'denoised_view', True) and before is not None:
+                    # What the session sent last is that one already.
+                    pictures[key] = before
+                    continue
+                session.aov(*aov)
+                if view != getattr(session, 'denoised_view', True):
+                    session.view(view)
+                # Until it has come (another picture than the one before); half a minute at most.
+                ends = time.monotonic() + 30
+                while time.monotonic() < ends:
+                    QtWidgets.QApplication.processEvents()
+                    now = self._moonlightipr_linear(key)
+                    if now is not None and now is not before and not buffers.busy():
+                        pictures[key] = now
+                        break
+                    time.sleep(0.02)
+                else:
+                    self._moonlightipr_skipped.append(key + ' (not sent)')
+        finally:
+            # What is looked at, as it was: the session sends it again.
+            session.aov(*kept_aov)
+            if getattr(session, 'denoised_view', True) != kept_view:
+                session.view(kept_view)
+        runtime = Path(renderer.active['runtime']) if getattr(renderer, 'active', None) else native.default_runtime()
+        folder = Path(tempfile.mkdtemp(prefix='MoonLightIPRExport-'))
+        files = {}
+        try:
+            for key, (width, height, pixels) in pictures.items():
+                # Three floats a pixel, whole: oiiotool waits for ever on a picture shorter than its size says.
+                held = bytes(pixels)
+                if len(held) != width * height * 12:
+                    self._moonlightipr_skipped.append('%s (%d of %d bytes)' % (key, len(held), width * height * 12))
+                    continue
+                pfm, exr = folder / (key + '.pfm'), folder / (key + '.exr')
+                with pfm.open('wb') as stream:
+                    stream.write(('PF\n%d %d\n-1.0\n' % (width, height)).encode('ascii'))
+                    stream.write(held)
+                try:
+                    done = subprocess.run([str(runtime / 'oiiotool.exe'), str(pfm), '-o', str(exr)], env=native.environment(runtime),
+                                          stdin=subprocess.DEVNULL, capture_output=True,
+                                          creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0), timeout=120)
+                except subprocess.TimeoutExpired:
+                    self._moonlightipr_skipped.append(key + ' (not converted)')
+                    continue
+                finally:
+                    pfm.unlink()
+                if not done.returncode and exr.is_file():
+                    files[key] = exr
+                else:
+                    self._moonlightipr_skipped.append(key)
+        except Exception:
+            shutil.rmtree(folder, ignore_errors=True)
+            raise
+        return {'files': files, 'snapshot': snapshot, 'runtime': runtime}, folder
+
     def export_buffers(self):
-        """Save chosen outputs of the last finished preview, each as an image file of its own."""
-        from . import outputs
-        frame = self.renderer.buffers.frame
+        """Save chosen outputs of the last finished preview, each as an image file of its own: MoonRay's, or
+        MoonLightIPR's picture and AOVs, fetched from its session once they are chosen (_moonlightipr_fetch)."""
         if self.preview_engine.currentData() == 'moonlightipr':
-            self.status.setText('MoonLightIPR renders the one picture; choose MoonRay to export its outputs.')
+            try:
+                snapshot, names = self._moonlightipr_listing()
+            except (ValueError, OSError, RuntimeError) as exc:
+                self.status.setText(str(exc))
+                return
+            self._export_buffers({'snapshot': snapshot}, names, fetch=self._moonlightipr_fetch)
             return
+        frame = self.renderer.buffers.frame
         if not frame or not frame.get('files'):
             self.status.setText('Let a MoonRay preview finish first; its outputs are what is exported.')
             return
+        self._export_buffers(frame, self.buffer_names(frame))
+
+    def _export_buffers(self, frame, names, fetch=None):
+        """The Export AOVs window for these outputs, and the files written of those chosen in it. fetch, where given,
+        makes the frame of the outputs chosen (MoonLightIPR's, asked of its session only then): (frame, its folder)."""
+        import shutil
+        from . import outputs
         from .export_dialog import ExportAOVs, group_of
         snapshot = frame.get('snapshot') or {}
         customs = {entry.get('name'): entry.get('kind') for entry in snapshot.get('custom_aovs') or []}
         entries = []
-        for key, label in self.buffer_names(frame):
+        for key, label in names:
             kind = outputs.display_kind(snapshot, key)
             entries.append((key, label, group_of(key, kind, customs.get(key)), kind))
         # The size the render was made at, and the camera it was seen through.
@@ -443,14 +565,28 @@ class Tools:
         if dialog.exec_() != QtWidgets.QDialog.Accepted:
             return
         chosen, folder = dialog.chosen(), Path(dialog.folder.text().strip())
-        if dialog.layered():
-            saved, failed = self.write_layered(frame, chosen, dialog.layered_target(), dialog.type())
-            done = len(chosen) - len(failed) if saved else 0
-            told = 'Exported %d AOV%s into %s' % (done, '' if done == 1 else 's', saved[0]) if saved else 'Exported nothing'
-        else:
-            saved, failed = self.write_buffers(frame, chosen, folder, dialog.prefix.text().strip(), dialog.type(), dialog.quality.value())
-            told = 'Exported %d AOV%s to %s' % (len(saved), '' if len(saved) == 1 else 's', folder)
-        self.status.setText(told + ('; could not write %s' % ', '.join(failed) if failed else ''))
+        temporary, skipped = None, []
+        if fetch is not None:
+            try:
+                frame, temporary = fetch(chosen)
+            except (ValueError, OSError, RuntimeError) as exc:
+                self.status.setText('Could not export: %s' % exc)
+                return
+            skipped = list(getattr(self, '_moonlightipr_skipped', []))
+            chosen = [key for key in chosen if key in frame['files']]
+        try:
+            if dialog.layered():
+                saved, failed = self.write_layered(frame, chosen, dialog.layered_target(), dialog.type())
+                done = len(chosen) - len(failed) if saved else 0
+                told = 'Exported %d AOV%s into %s' % (done, '' if done == 1 else 's', saved[0]) if saved else 'Exported nothing'
+            else:
+                saved, failed = self.write_buffers(frame, chosen, folder, dialog.prefix.text().strip(), dialog.type(), dialog.quality.value())
+                told = 'Exported %d AOV%s to %s' % (len(saved), '' if len(saved) == 1 else 's', folder)
+        finally:
+            if temporary is not None:
+                shutil.rmtree(temporary, ignore_errors=True)
+        self.status.setText(told + ('; could not write %s' % ', '.join(failed) if failed else '')
+                            + ('; MoonLightIPR could not give %s' % ', '.join(skipped) if skipped else ''))
         if saved and dialog.open_after.isChecked():
             QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(str(folder)))
 

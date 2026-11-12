@@ -65,6 +65,11 @@ def unit(values):
     return [v / length for v in values]
 
 
+# An instance: its mesh, material, mesh light (or -1), which rays see it (with its light set above the first 8 bits), its
+# own number (Variation by Particle) and where it stands, a 3x4 matrix by rows.
+INSTANCE = '<2IiIf12f'
+
+
 def transform(matrix):
     """Modo and MoonRay store basis vectors in rows; OptiX wants a row-major 3x4."""
     m = finite(matrix)
@@ -73,7 +78,42 @@ def transform(matrix):
     return [m[0], m[4], m[8], m[12], m[1], m[5], m[9], m[13], m[2], m[6], m[10], m[14]]
 
 
-def environment_image(item, runtime):
+# A bokeh image is drawn from at this many brightnesses a side.
+BOKEH_SIZE = 64
+
+
+def bokeh_values(path, runtime):
+    """A camera's bokeh image as BOKEH_SIZE x BOKEH_SIZE brightnesses, top row first: made once with the runtime's oiiotool
+    and kept in the cache, named by the image's path, size and time."""
+    import uuid
+    from pathlib import Path
+    from .moonlightipr_materials import Compiler, cache_folder
+    source = Path(path)
+    stat = source.stat()
+    digest = hashlib.sha256(repr((str(source.resolve()), stat.st_size, stat.st_mtime_ns, BOKEH_SIZE, 'moonlightipr-bokeh-v1')).encode()).hexdigest()
+    target = cache_folder() / (digest + '.pfm')
+    if not target.is_file() or not target.stat().st_size:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        staged = target.with_name(target.stem + '-' + uuid.uuid4().hex + '.pfm')
+        try:
+            Compiler(runtime).run([str(source), '--ch', 'R,G,B', '--resize', '%dx%d!' % (BOKEH_SIZE, BOKEH_SIZE), '-d', 'float', '-o', str(staged)], source.name)
+            staged.replace(target)
+        finally:
+            if staged.exists():
+                staged.unlink()
+    data = target.read_bytes()
+    head = data.split(b'\n', 3)
+    width, height = (int(v) for v in head[1].split())
+    if (width, height) != (BOKEH_SIZE, BOKEH_SIZE):
+        raise ValueError('bokeh image read at %d x %d' % (width, height))
+    values = struct.unpack(('<' if float(head[2]) < 0 else '>') + '%df' % (width * height * 3), head[3][:width * height * 12])
+    # PFM rows run from the bottom: turned to top row first.
+    rows = [[0.2126 * values[(y * width + x) * 3] + 0.7152 * values[(y * width + x) * 3 + 1] + 0.0722 * values[(y * width + x) * 3 + 2]
+             for x in range(width)] for y in range(height)]
+    return [max(0.0, v) for row in reversed(rows) for v in row]
+
+
+def environment_image(item, runtime, full=False):
     """Convert a latitude-longitude image once to a linear float file in the working space."""
     import uuid
     from pathlib import Path
@@ -88,13 +128,15 @@ def environment_image(item, runtime):
         space, ocio = color_space(source, item.get('color_space', ''), item.get('srgb'))
     stat = source.stat()
     working = working_enabled()
-    digest = hashlib.sha256(repr((str(source.resolve()), stat.st_size, stat.st_mtime_ns, space, ocio, working, ENVIRONMENT_IMAGE,
+    digest = hashlib.sha256(repr((str(source.resolve()), stat.st_size, stat.st_mtime_ns, space, ocio, working, 'full' if full else ENVIRONMENT_IMAGE,
                                   'moonlightipr-env-v2')).encode()).hexdigest()
     target = cache_folder() / (digest + '.pfm')
     if not target.is_file() or not target.stat().st_size:
         compiler = Compiler(runtime)
         steps = ((['--colorconvert', 'sRGB', 'linear'] if space == 'sRGB' else [])
-                 + (['--ccmatrix', matrix_argument(TO_AP1)] if working else []) + ['--resize', '%dx%d' % ENVIRONMENT_IMAGE])
+                 + (['--ccmatrix', matrix_argument(TO_AP1)] if working else [])
+                 # A Render's at its own size, realtime's fitted to ENVIRONMENT_IMAGE.
+                 + ([] if full else ['--resize', '%dx%d' % ENVIRONMENT_IMAGE]))
         if not ocio:
             compiler.convert(source, target, True, steps)
         else:
@@ -141,7 +183,7 @@ def environment_section(scene, environment, warnings, runtime):
                     # it (environments.emit): Dose's HDRI faced the other way, the can lit by the room's bright side.
                     matrix = [-v for v in matrix[0:4]] + matrix[4:8] + [-v for v in matrix[8:12]] + matrix[12:16]
                 # The image's own axes in world space, which the session turns directions into.
-                record = (environment_image(baked, runtime), intensity, unit(matrix[0:3]) + unit(matrix[4:7]) + unit(matrix[8:11]))
+                record = (environment_image(baked, runtime, bool(scene.get('_full_textures'))), intensity, unit(matrix[0:3]) + unit(matrix[4:7]) + unit(matrix[8:11]))
             except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as exc:
                 warnings.append('MoonLightIPR shows environment %s as uniform grey; its image could not be made (%s).' % (item.get('name', ''), exc))
             else:
@@ -999,15 +1041,19 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     # Material colours are worked out in Rec.709; the session takes them to the working space.
     working = working_enabled()
     # The letter after MLS says which form of scene this is; the session refuses any other than its own.
-    parts = [b'MLSO', struct.pack('<8I', width, height, *depths, samples, (SCENE_DENOISE if denoise else 0)
+    parts = [b'MLSQ', struct.pack('<8I', width, height, *depths, samples, (SCENE_DENOISE if denoise else 0)
                                   | (SCENE_WORKING_SPACE if working else 0) | (SCENE_MOTION if motion else 0)
                                   # See-through surfaces cast whole shadows unless the scene asks for lighter ones, as in MoonRay.
                                   | (SCENE_PRESENCE_SHADOWS if settings.get('enable_presence_shadows') else 0)
                                   # A playblast's frame: every sample, as fast as the graphics card can.
                                   | (SCENE_FLAT_OUT if scene.get('_flat_out') else 0)),
-             # The scene's sample clamp, and from which bounce it holds, and the subsurface scatterings a path may have; then how each further bounce in fog counts for
-             # less (form 'G').
-             struct.pack('<fII', float(settings['sample_clamping_value']), int(settings['sample_clamping_depth']), int(settings['max_subsurface_per_path'])),
+             # The scene's sample clamp, and from which bounce it holds, the subsurface scatterings a path may have and the roughness
+             # clamp (form 'Q'); then how each further bounce in fog counts for less (form 'G').
+             # Its own Sample Clamp, Clamp From Bounce and Roughness Clamp (scene_setup): MoonRay's stay MoonRay's. A scene
+             # read without them (a test's) takes MoonRay's clamps and clamps from bounce 0.
+             struct.pack('<fIIf', float(scene.get('_moonlightipr_sample_clamp', settings['sample_clamping_value'])),
+                         int(scene.get('_moonlightipr_clamp_depth', 0)), int(settings['max_subsurface_per_path']),
+                         float(scene.get('_moonlightipr_roughness_clamp', settings.get('roughness_clamping_factor', 0.0)) or 0.0)),
              struct.pack('<3f', *(float(settings[key]) for key in ('volume_attenuation_factor', 'volume_contribution_factor',
                                                                   'volume_phase_attenuation_factor'))),
              struct.pack('<9f', *(v for row in (TO_AP1 if working else [[1, 0, 0], [0, 1, 0], [0, 0, 1]]) for v in row)),
@@ -1017,6 +1063,17 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
              struct.pack('<4fI', *region, int(scene.get('_draft') or 0)),
              # The film offset (form 'H').
              struct.pack('<2f', *film_shift)]
+    # A bokeh image: its size and its brightnesses, top row first (form 'B'); 0 for none.
+    import subprocess
+    bokeh = None
+    if camera.get('dof') and camera.get('bokeh_image'):
+        try:
+            bokeh = bokeh_values(camera['bokeh_image'], runtime)
+        except (OSError, ValueError, subprocess.SubprocessError) as exc:
+            warnings.append('MoonLightIPR draws the lens without its bokeh image (%s).' % exc)
+    parts.append(struct.pack('<I', BOKEH_SIZE if bokeh else 0))
+    if bokeh:
+        parts.append(struct.pack('<%df' % len(bokeh), *bokeh))
     if motion:
         parts.append(struct.pack('<10f', *placed(camera.get('matrix_close', camera.get('matrix', IDENTITY)),
                                                  camera.get('focal_mm_close', camera['focal_mm']))))
@@ -1052,7 +1109,9 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     for _, tag, fog in fogs:
         materials[tag] = fog
     material_index = {tag: index for index, tag in enumerate(sorted(materials))}
-    compiler = Compiler(runtime)
+    # A Render's images at their full size, realtime's no larger than MAX_TEXTURE_SIDE (moonlightipr_materials).
+    from .moonlightipr_materials import MAX_TEXTURE_SIDE
+    compiler = Compiler(runtime, 0 if scene.get('_full_textures') else MAX_TEXTURE_SIDE)
     records = [compiler.material(materials[tag], tag or 'base material') for tag in sorted(materials)]
     # Lights now, since a filter's ramp or a light's picture adds to the images.
     # Where each light is when the shutter closes: lights move as the camera and the meshes do.
@@ -1147,10 +1206,14 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
             raise ValueError('Instance shutter transforms of %s must match' % mesh['name'])
         # A fog's box is found by every ray, and so is a mesh light, which is the light itself.
         seen = 255 if light >= 0 or mesh.get('volume') else seen_by(mesh)
-        for placement, later in zip(opening, ending):
+        # Each placement's own number, which a Variation Texture by Particle reads (occlusion.particles), else 0.
+        variation = mesh.get('instance_variation') or []
+        if len(variation) != len(opening):
+            variation = [0.0] * len(opening)
+        for placement, later, number in zip(opening, ending, variation):
             linked.append((len(instances), mesh.get('source_item') or str(mesh.get('identity', '')).split('|')[0],
                            mesh.get('face_materials') or [mesh.get('material', '')]))
-            instances.append(struct.pack('<2IiI12f', order[key], material, light, seen, *transform(placement))
+            instances.append(struct.pack(INSTANCE, order[key], material, light, seen, float(number), *transform(placement))
                              + (struct.pack('<12f', *transform(later)) if motion else b''))
     # A Modo Mesh Light whose Visible to Camera is on is seen where its Prototype's shape stands: the engine shows a mesh
     # light where a camera ray meets its surface, and this light's surface is in no layer (MoonRay keeps a MeshLight's
@@ -1172,7 +1235,7 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
                           else key + struct.pack('<I', flags) + slot_map)
         used.add(key)
         placement = transform(shape['matrix'])
-        instances.append(struct.pack('<2IiI12f', order[key], material_index[''], named['local'].index(identity), 1,
+        instances.append(struct.pack(INSTANCE, order[key], material_index[''], named['local'].index(identity), 1, 0.0,
                                      *placement) + (struct.pack('<12f', *placement) if motion else b''))
     # Curves are curves on the GPU too: each strand a run of round segments, in the strands' own material.
     from .moonlightipr_curves import payload as curve_payload
@@ -1202,7 +1265,7 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
         used.add(key)
         placement = transform(entry.get('matrix') or IDENTITY)
         linked.append((len(instances), entry.get('source_item') or str(entry.get('identity', '')).split('|')[0], [entry.get('material', '')]))
-        instances.append(struct.pack('<2IiI12f', order[key], material_index.get(entry.get('material', ''), material_index['']), -1, seen_by(entry), *placement)
+        instances.append(struct.pack(INSTANCE, order[key], material_index.get(entry.get('material', ''), material_index['']), -1, seen_by(entry), 0.0, *placement)
                          + (struct.pack('<12f', *transform(entry.get('matrix_close') or entry.get('matrix') or IDENTITY)) if motion else b''))
     if any(entry.get('kind') not in ('curves', 'vdb') for entry in scene.get('extra_geometry', [])):
         warnings.append('MoonLightIPR does not show points.')

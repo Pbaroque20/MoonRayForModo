@@ -70,6 +70,8 @@ class Playblast(QtCore.QObject):
         snapshot['fps'] = self.fps
         # Not spread over the seconds a preview leaves room for edits in, and every sample of it gathered.
         snapshot['_flat_out'] = True
+        # Each image at its full size, as a Render has them (moonlightipr_materials).
+        snapshot['_full_textures'] = True
         self.waiting = True
         panel._submit(panel._configure_snapshot(snapshot))
 
@@ -130,6 +132,153 @@ class Playblast(QtCore.QObject):
             panel.ipr_mode.setChecked(False)
         if hasattr(panel, '_sync_rt'):
             panel._sync_rt()
+
+
+class MoonLightIPRAnimation(Playblast):
+    """Render Animation with MoonLightIPR (its Engine): each frame rendered as a playblast's is, at the render's own
+    resolution and Render Samples a pixel (Render Settings, MoonLightIPR), and written as an EXR from MoonLightIPR's own
+    numbers; where the Denoiser is on, its denoised beauty beside it as MoonRay's renders have it (denoising.sidecar,
+    frame.denoised.0001.exr), denoised from the same samples, not rendered again. The picture type chosen goes beside them
+    or in their place (image_formats), denoised where the render is. Frames already in the folder are kept: refused, or
+    passed over with Render missing frames."""
+
+    def __init__(self, panel, directory, first, last, fps, step=1, prefix='frame', width=640, samples=500, motion=False,
+                 digits=6, export_as=None, missing=False, denoise=False):
+        super().__init__(panel, directory, first, last, fps, step=step, prefix=prefix, width=width, samples=samples, motion=motion)
+        from .sequence_plan import frame_name
+        self.digits, self.export_as, self.denoise = int(digits), export_as, bool(denoise)
+        only = bool(export_as and export_as.get('only'))
+
+        def kept(frame):
+            from .image_formats import find
+            extension = find(export_as['type'])[2] if only else 'exr'
+            return self.directory / frame_name(prefix, frame, self.digits, extension)
+        there = [frame for frame in self.frames if kept(frame).exists()]
+        if there and not missing:
+            raise ValueError('Frames of a sequence named %s are already in this folder (frame %d). Choose another file prefix, '
+                             'or enable Render missing frames to render only the others.' % (prefix, there[0]))
+        self.frames = [frame for frame in self.frames if frame not in there]
+        if not self.frames:
+            raise ValueError('Every frame of this sequence is already in the folder.')
+        self.total = len(self.frames)
+        self.frame = self.frames[0]
+
+    def start(self):
+        # Each frame is rendered looking at the beauty; its denoised picture is asked for once it is done (_settled).
+        self.denoised_from = None
+        self._show('beauty')
+        super().start()
+
+    def _show(self, wanted):
+        panel = self.panel
+        if panel.buffer.currentData() != wanted and panel.buffer.findData(wanted) >= 0:
+            panel.buffer.setCurrentIndex(panel.buffer.findData(wanted))
+
+    def _picture(self):
+        """The picture MoonLightIPR sent last (its beauty, or its denoised beauty when that is looked at), linear."""
+        frame = self.panel.renderer.buffers.progressive_frames.get('beauty') or {}
+        return frame.get('linear', {}).get('beauty')
+
+    def next_frame(self):
+        self.denoised_from = None
+        self._show('beauty')
+        super().next_frame()
+
+    def _settled(self):
+        if not self.running:
+            self.poll.stop()
+            return
+        renderer = self.panel.renderer
+        if getattr(renderer, 'moonlightipr_frame', None) is not None or renderer.buffers.busy():
+            self.quiet = 0
+            return
+        self.quiet += 1
+        if self.quiet < 2:
+            return
+        if self.denoise and self.denoised_from is None:
+            # The beauty is done: written, then its denoised picture asked for (the session denoises what it has).
+            try:
+                self.beauty_written = self._write(self._picture())
+            except Exception as exc:
+                self.poll.stop()
+                self.failed('frame %d could not be written: %s' % (self.frame, exc))
+                return
+            self.denoised_from = self._picture()
+            self.waited = 0
+            self.quiet = 0
+            self._show('denoised_beauty')
+            return
+        if self.denoise:
+            # Until the denoised picture has come (another picture than the beauty written), a minute at most.
+            if self._picture() is self.denoised_from:
+                self.waited += 1
+                if self.waited < 1500:
+                    return
+                self.poll.stop()
+                self.failed('frame %d: MoonLightIPR sent no denoised picture' % self.frame)
+                return
+        self.poll.stop()
+        try:
+            if self.denoise:
+                denoised = self._write(self._picture(), denoised=True)
+                written = self.beauty_written if Path(self.beauty_written).is_file() else denoised
+            else:
+                written = self._write(self._picture())
+        except Exception as exc:
+            self.failed('frame %d could not be written: %s' % (self.frame, exc))
+            return
+        self.completed.append(written)
+        if len(self.completed) == self.total:
+            self.stop()
+            self.panel.status.setText('Animation complete with MoonLightIPR: %d frames in %s' % (self.total, self.directory))
+            self.done.emit(list(self.completed))
+        else:
+            self.frame = self.frames[len(self.completed)]
+            QtCore.QTimer.singleShot(0, self.next_frame)
+
+    def failed(self, message):
+        if not self.running:
+            return
+        self.stop()
+        self.panel.status.setText('Animation stopped (MoonLightIPR): ' + message)
+
+    def _write(self, linear, denoised=False):
+        """The frame as MoonLightIPR rendered it, from its own numbers (linear): an EXR, the denoised one under its
+        sidecar name; and the picture type asked for beside it or in its place, from the denoised picture where there
+        is one. The EXR written (the beauty's name where its picture type alone is kept)."""
+        import subprocess
+        from . import native
+        from .denoising import sidecar
+        from .sequence_plan import frame_name
+        renderer = self.panel.renderer
+        if not linear:
+            raise ValueError('MoonLightIPR sent no picture for it')
+        width, height, pixels = linear
+        runtime = Path(renderer.active['runtime']) if getattr(renderer, 'active', None) else native.default_runtime()
+        beauty = self.directory / frame_name(self.prefix, self.frame, self.digits, 'exr')
+        target = sidecar(beauty) if denoised else beauty
+        with tempfile.TemporaryDirectory(prefix='MoonLightIPRFrame-') as folder:
+            pfm = Path(folder) / 'frame.pfm'
+            with pfm.open('wb') as stream:
+                stream.write(('PF\n%d %d\n-1.0\n' % (width, height)).encode('ascii'))
+                stream.write(pixels)
+            done = subprocess.run([str(runtime / 'oiiotool.exe'), str(pfm), '-o', str(target)], env=native.environment(runtime),
+                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0), timeout=300)
+        if done.returncode or not target.is_file():
+            raise ValueError(done.stdout.decode(errors='replace').strip()[-300:] or 'oiiotool wrote no EXR')
+        # The picture type from the last picture of the frame: the denoised one where the Denoiser is on.
+        if not self.export_as or (self.denoise and not denoised):
+            return str(target)
+        from .image_formats import convert, find
+        only = self.export_as.get('only')
+        shown = beauty.with_suffix('.' + find(self.export_as['type'])[2])
+        convert(runtime, self.export_as['type'], target, shown, getattr(renderer.buffers, 'display', None), self.export_as.get('quality', 92))
+        if only:
+            target.unlink()
+            if denoised and beauty.is_file():
+                beauty.unlink()
+            return str(shown)
+        return str(target)
 
 
 def scene_range():

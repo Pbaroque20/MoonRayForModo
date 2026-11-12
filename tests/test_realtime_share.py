@@ -1,4 +1,4 @@
-"""Realtime Sample %: 30 until it is changed, and what it is changed to stays. No Modo."""
+"""RT Sample %: 30 until it is changed, and what it is changed to stays. No Modo."""
 import sys
 import types
 import unittest

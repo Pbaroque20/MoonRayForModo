@@ -43,6 +43,7 @@ struct Material {
     std::vector<float> toon;
     unsigned toonMore = 0;      // highlights after the first (a hair toon's second and third), each TOON_EXTRA more numbers
     bool noCaustics = false;        // DwaBaseMaterial with casts_caustics off: plain diffuse once a path has left a diffuse lobe
+    bool roughnessClamped = false;  // MoonRay renders it through a Dwa material, whose lobes its roughness clamp roughens
     int roughnessCurve = 0;         // the roughness the layers give is Modo's: 1 Blinn, 2 Ashikhmin, 3 GTR; 0 as it is
     bool beckmann = false;          // Beckmann specular lobe (DwaBaseMaterial as the plugin sets it up) rather than GGX
     float baseColorAmount = 1.0f;   // multiplies the colour after its layers
@@ -136,7 +137,39 @@ struct TextureDesc {
     // The most texels across a side the card is given: a larger picture is halved, each texel the mean of four, until
     // it is no larger. 0 for no limit. A picture of high dynamic range is kept on the card as halves whatever its size.
     uint32_t maxSize = 0;
+    // Kept whole in the computer's memory, which the card reads across the bus (out of core), rather than on the card:
+    // for a picture that does not fit there. Slower to read; nothing is lost of it.
+    bool hostResident = false;
+    // Ready for the card already (prepareTexture, or a file of one read back): used in place of pixels, which may then
+    // be null. Not with hostResident.
+    const struct PreparedTexture* prepared = nullptr;
 };
+
+// A picture as the card is given it: each smaller copy of it (mip levels, the whole picture first, each half the one
+// before) and in what form, compressed or not. The card reads each point of a surface from the copy nearest the size
+// it is seen at, so that a picture far away is read quickly and does not sparkle.
+struct PreparedTexture {
+    enum Format : uint32_t { Bytes = 0, Halves = 1, BC7 = 2, BC6H = 3 };
+    uint32_t width = 0, height = 0;     // of the whole picture
+    Format format = Bytes;              // Bytes: four a texel; Halves: four half floats; BC7 and BC6H: 16 bytes a block of 4 x 4
+    bool srgb = false;                  // bytes (or BC7) encoded sRGB, decoded as they are read
+    std::vector<std::vector<unsigned char>> levels;
+    // How bright the picture is, on a grid of at most 64 by 64, top row first: what a light that wears it is sampled by.
+    uint32_t gridWidth = 0, gridHeight = 0;
+    std::vector<float> brightness;
+    size_t bytes() const { size_t total = 0; for (const auto& level : levels) total += level.size(); return total; }
+};
+
+// desc's picture made ready for the card (its pixels, halved first to maxSize where that is set): with mips its smaller
+// copies, down to a texel; with compress, compressed where it can be, BC7 for bytes (sRGB kept as it is) and BC6H for
+// floats that are none of them negative or past a half's range and whose alpha is 1, each level whose sides are
+// multiples of four (the chain stops at the first that is not). The work is spread over every core of the processor.
+PreparedTexture prepareTexture(const TextureDesc& desc, bool mips, bool compress);
+// A prepared texture to a file and back ("MLT1"); false where it cannot be written, or read as one.
+bool writePreparedTexture(const std::string& path, const PreparedTexture& texture);
+bool readPreparedTexture(const std::string& path, PreparedTexture& texture);
+// The bytes a picture of this size takes on the card once prepared, without preparing it.
+size_t preparedBytes(uint32_t width, uint32_t height, bool floatData, bool mips, bool compress);
 
 // One row of a material's layer stack, blended over the rows before it. The channel, blend and
 // flag numbers are those of the plugin's Shader Tree translation (see src/device/shared.h).
@@ -218,6 +251,8 @@ struct Instance {
     // 8 light passing through a surface, 16 shadows. Above those eight bits, the light set that lights it
     // (setLightSets), 0 for every light.
     uint32_t visibility = 255;
+    // Its own number, 0 to 1, which a Variation Texture by Particle reads: one for each replica.
+    float value = 0.0f;
     // Where the instance is when the shutter closes, if it moves.
     bool moves = false;
     float closeTransform[12] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0};
@@ -312,6 +347,10 @@ struct Camera {
     float focusDistance = 1.0f;
     uint32_t blades = 0;
     float bladeAngle = 0.0f;
+    // A bokeh image, as MoonRay's camera takes one: bokehSize x bokehSize brightnesses, top row first, over the square
+    // the lens fills; each camera ray leaves the lens at a point drawn by them, turned by bladeAngle. Empty for none.
+    uint32_t bokehSize = 0;
+    std::vector<float> bokeh;
     // How a point of the picture becomes a direction: 0 through a pinhole or lens, as above;
     // 1 MoonRay's FisheyeCamera, with projectionValues its mapping, format, zoom and half field
     // of view in radians; 2 MoonRay's SphericalCamera, with projectionValues the latitude and
@@ -393,6 +432,9 @@ public:
     // The most one light sample may add once the path has scattered off `depth` rough things; 0 is no limit. MoonRay's
     // sample_clamping_value and sample_clamping_depth.
     void setSampleClamp(float value, uint32_t depth = 1);
+    // MoonRay's roughness_clamping_factor: surfaces met after a bounce made at least as rough as the lobe left by
+    // (diffuse counting as 1) times this, 0 to 1; 0 is off.
+    void setRoughnessClamp(float factor);
     // How many times one path may scatter beneath a surface; after that, plain diffuse. MoonRay's max_subsurface_per_path.
     void setMaxSubsurface(uint32_t perPath);
     // How each further bounce of light in fog counts for less, as MoonRay's volume_attenuation_factor,
@@ -415,6 +457,20 @@ public:
     void readBeauty(float* rgb);
     // Same, after the OptiX denoiser guided by the albedo and normal buffers.
     void readDenoised(float* rgb);
+    // The geometry AOVs (AovSlot in the device's shared.h), gathered all at once beside the beauty while on, from the
+    // next sample on: a render begins again when they are switched on or off. readAov copies one as readBeauty does.
+    void setAovs(bool on);
+    bool aovs() const;
+    void readAov(uint32_t slot, float* rgb);
+    // A light pass (1 diffuse, 2 glossy, 3 emission, 4 background), gathered with the AOVs from the beauty's own paths:
+    // the four add up to the beauty, fog before the first surface apart; or 5, the shadow matte (0 lit to 1 in shadow).
+    void readPass(uint32_t pass, float* rgb);
+    // A light pass (AovPass) rendered in place of the beauty, 0 for the beauty; a render begins again with another.
+    void setPass(uint32_t pass);
+    uint32_t pass() const;
+    // Held at one moment of the shutter (0 its opening, 1 its closing) instead of spread over it: no motion blur, the
+    // motion of what moves kept for the motion vectors. Off, the samples are spread over the shutter as before.
+    void setMotionHeld(bool held, float moment = 0.5f);
 
     // Blocks until queued GPU work has finished; for timing.
     void synchronize();

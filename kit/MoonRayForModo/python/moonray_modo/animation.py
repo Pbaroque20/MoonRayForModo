@@ -123,16 +123,19 @@ class Sequence(QtCore.QObject):
         self.first,self.step,self.prefix=first,step,prefix
         self.total=len(range(first,last+1,step))
         self.panel, self.directory = panel, Path(directory)
-        from .sequence_plan import plan
+        from .sequence_plan import plan,earlier_frames
         from .assets import file_hash,signature as asset_signature
         import modo
         filename=modo.Scene().filename
-        if missing and not (filename and Path(filename).is_file()):raise ValueError('Save the scene before resuming a sequence; unsaved scene revisions cannot be verified')
         source=[str(filename),file_hash(filename)] if filename and Path(filename).is_file() else ['unsaved',modo.Scene().renderItem.id]
         settings={k:v for k,v in panel._settings_values().items() if k not in ('display','preview_buffer','recovery','animation_output')}
         snapshot=panel._capture()
         self.signature=hashlib.sha256(json.dumps([source,settings,asset_signature(snapshot)],sort_keys=True).encode()).hexdigest()
-        self.pending_frames,self.completed=plan(self.directory,first,last,step,prefix,fps,motion,missing,settings.get('denoising',{}).get('final',True) and settings.get('denoising',{}).get('engine','off')!='off',self.signature,self.digits,self.picture)
+        # What Render missing frames finds changed since the frames already there were rendered: said, not refused.
+        self.notices=[]
+        self.pending_frames,self.completed=plan(self.directory,first,last,step,prefix,fps,motion,missing,settings.get('denoising',{}).get('final',True) and settings.get('denoising',{}).get('engine','off')!='off',self.signature,self.digits,self.picture,self.notices)
+        # Frames of the sequence outside this range stay in its record.
+        self.earlier=earlier_frames(self.directory,prefix,first,last,step) if missing else []
         self.directory.mkdir(parents=True,exist_ok=True)
         self.frame, self.last, self.fps, self.motion = first,last,fps,motion
         self.running = False
@@ -152,8 +155,11 @@ class Sequence(QtCore.QObject):
         except OSError as exc:
             self.failed('Cannot create sequence manifest: '+str(exc))
             return
-        if len(self.completed)==self.total:self.stop('complete');self.panel.status.setText('All sequence frames already exist.')
-        else:self.next_frame()
+        said=(' '+' '.join(self.notices)) if getattr(self,'notices',None) else ''
+        if len(self.completed)==self.total:self.stop('complete');self.panel.status.setText('All sequence frames already exist.'+said)
+        else:
+            if self.completed:self.panel.status.setText('%d frame%s already there, kept; rendering the other %d.%s'%(len(self.completed),'' if len(self.completed)==1 else 's',self.total-len(self.completed),said))
+            self.next_frame()
 
     def next_frame(self):
         if self.running:
@@ -230,7 +236,7 @@ class Sequence(QtCore.QObject):
         from .sequence_plan import manifest_path
         path = manifest_path(self.directory,self.prefix)
         staged = path.with_suffix('.json.tmp')
-        staged.write_text(json.dumps({'signature':self.signature,'status':status,'fps':self.fps,'first':self.first,'last':self.last,'step':self.step,'prefix':self.prefix,'digits':self.digits,'picture':self.picture,'motion_blur':self.motion,'total_frames':self.total,'frames':sorted(self.completed,key=lambda value:value['frame'])},indent=2),encoding='utf-8')
+        staged.write_text(json.dumps({'signature':self.signature,'status':status,'fps':self.fps,'first':self.first,'last':self.last,'step':self.step,'prefix':self.prefix,'digits':self.digits,'picture':self.picture,'motion_blur':self.motion,'total_frames':self.total,'frames':sorted(list(self.completed)+list(getattr(self,'earlier',[])),key=lambda value:value['frame'])},indent=2),encoding='utf-8')
         staged.replace(path)
 
     def failed(self, message):

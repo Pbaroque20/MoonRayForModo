@@ -60,6 +60,12 @@ def watch():
     now = round(time.monotonic() - held['began'], 1)
     said = panel.status.text()
     if said and (not result['status'] or result['status'][-1][1] != said):result['status'].append([now, said])
+    # The session's lines as they come, so that what XPU2 said (a fallback's reason) is kept if the test is cut short.
+    try:
+        (out / 'session.log').write_text('\n'.join(lines()), encoding='utf-8')
+        save()
+    except Exception:
+        pass
     if (panel._rendering or now < 10) and now < LIMIT:
         QtCore.QTimer.singleShot(2000, watch);return
     try:
@@ -78,7 +84,7 @@ def watch():
 
 
 try:
-    lx.eval('scene.open {%s} normal' % source)
+    lx.eval('!scene.open {%s} normal' % source)
     result['opened'] = True
 except Exception:
     result['open_error'] = traceback.format_exc()

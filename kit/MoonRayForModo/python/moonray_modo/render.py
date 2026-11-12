@@ -18,6 +18,10 @@ MOONLIGHTIPR_SAMPLES = 256
 
 
 COOKIE='A light with a cookie filter'
+# A VDB made with the kit's MoonRay items (Load VDB File) whose emission grid is set: XPU2 draws its fire rightly, so it
+# renders the scene where chosen, and MoonRay, should XPU2 leave it the scene, does so in scalar (as for COOKIE). A
+# tester's volcano: a 16K diffuse map sent it from XPU2 to MoonRay XPU, whose fire then failed.
+VDB_ITEM='A VDB with an emission grid'
 
 
 def scalar_only(snapshot):
@@ -25,6 +29,8 @@ def scalar_only(snapshot):
     that gives off light stops its vector and GPU modes; a cookie filter leaves pixels that are not numbers in them."""
     if any(entry.get('kind')=='vdb' and entry.get('emission_grid') and float(entry.get('emission',1))>0 for entry in snapshot.get('extra_geometry',[])):
         return 'A VDB volume with an emission grid'
+    if any(entity.get('class')=='VdbGeometry' and (entity.get('parameters') or {}).get('emission_grid') for entity in snapshot.get('entities',[])):
+        return VDB_ITEM
     lights=(snapshot.get('production') or {}).get('lights',{})
     if any(isinstance(held,dict) and held.get('cookie_file') for held in lights.values())             or any(str(entity.get('class','')).startswith('CookieLightFilter') for entity in snapshot.get('entities',[])):
         return COOKIE
@@ -36,7 +42,7 @@ def xpu2_output(snapshot):
     Render to a File and Render Animation (_xpu2_output), where XPU2 is chosen and the execution mode leaves it to the
     graphics card. It writes the scene's outputs as MoonRay does; a deep image and checkpoints are MoonRay's alone."""
     return bool(snapshot.get('_xpu2_output') and native.xpu2() and snapshot.get('execution_mode','auto') in ('xpu','auto')
-                and scalar_only(snapshot) in (None,COOKIE) and not (snapshot.get('deep') or {}).get('enabled') and not (snapshot.get('recovery') or {}).get('enabled'))
+                and scalar_only(snapshot) in (None,COOKIE,VDB_ITEM) and not (snapshot.get('deep') or {}).get('enabled') and not (snapshot.get('recovery') or {}).get('enabled'))
 
 
 def binary_sessions(runtime):
@@ -235,8 +241,11 @@ class Renderer(QtCore.QObject):
         # MoonLightIPR denoises when its denoised beauty is the buffer chosen in the window, with its own denoiser.
         # (The window says so before it hands the scene over: a scene read earlier and used again says what was
         # chosen when it was read.)
-        # MoonLightIPR produces beauty only.
-        if moonlightipr:snapshot=dict(snapshot,preview_buffer='beauty')
+        # MoonLightIPR makes the beauty, its denoised picture (sent as the beauty), and the AOV looked at where it
+        # gathers that one (moonlightipr_aovs).
+        if moonlightipr:
+            from .moonlightipr_aovs import AOVS as MOONLIGHTIPR_AOVS
+            if snapshot.get('preview_buffer','beauty') not in MOONLIGHTIPR_AOVS:snapshot=dict(snapshot,preview_buffer='beauty')
         if not output and not linear_preview:
             chosen,shown=snapshot.get('preview_buffer','beauty'),snapshot.get('display',{})
             # A draft redrawn with the same buffer shown the same way has nothing to choose: choosing converts the
@@ -480,10 +489,27 @@ class Renderer(QtCore.QObject):
         # has both pictures: the denoised one and the beauty as it is rendered. Which is shown is the buffer chosen.
         self.moonlightipr_denoises=bool(getattr(self,'moonlightipr_wanted',False))
         # Kept for the label beside the picture, which says how many samples a pixel it gathers.
-        self.moonlightipr_gathering=getattr(self,'moonlightipr_samples',None) or getattr(self,'moonlightipr_preview_samples',None) or MOONLIGHTIPR_SAMPLES
-        self.moonlightipr.submit(request['snapshot'],directory,request['width'],request['height'],request['environment'],self.moonlightipr_serial,self.moonlightipr_gathering,
+        once=getattr(self,'moonlightipr_once',None)
+        self.moonlightipr_gathering=(getattr(self,'moonlightipr_samples',None) or once
+                                     or getattr(self,'moonlightipr_preview_samples',None) or MOONLIGHTIPR_SAMPLES)
+        # A Render (realtime off) gathers all its samples, flat out: neither paced nor stopped once clean.
+        # And has each image at its full size, where realtime's are fitted to 1024 (moonlightipr_materials).
+        snapshot=dict(request['snapshot'],_flat_out=True,_full_textures=True) if once and not getattr(self,'moonlightipr_samples',None) else request['snapshot']
+        self.moonlightipr.submit(snapshot,directory,request['width'],request['height'],request['environment'],self.moonlightipr_serial,self.moonlightipr_gathering,
                                  denoise=self.moonlightipr_denoises,runtime=request['runtime'])
-        self.moonlightipr.view(self.moonlightipr_denoises or self.buffers.key!='beauty')
+        # The picture sent: the denoised one where the list names Denoised Beauty (moonlightipr_wanted, said by the panel
+        # once its list is settled for this render), else the beauty; an AOV chosen is sent in its place. Not by the
+        # buffer chosen here, which is the beauty for both, the denoised picture coming under the beauty's name.
+        self.moonlightipr.view(self.moonlightipr_denoises or self.buffers.key not in ('beauty', 'denoised_beauty'))
+        # And gathers the AOV looked at, where it is one of its own.
+        from .moonlightipr_aovs import kind
+        self.moonlightipr.aov(kind(self.buffers.key),self.buffers.key)
+        # A scene read with the shutter's ends for the motion vectors, motion blur off: held at the frame's own moment
+        # of the shutter (its ends are frames before and after it), the motion kept for the vectors.
+        steps=request['snapshot'].get('motion_steps') or []
+        held=len(steps)==2 and not getattr(self,'moonlightipr_blur',False) and not getattr(self,'moonlightipr_samples',None)
+        moment=(-float(steps[0])/(float(steps[1])-float(steps[0]))) if held and float(steps[1])>float(steps[0]) else 0.5
+        self.moonlightipr.vectors(held,min(1.0,max(0.0,moment)))
 
     def _moonlightipr_shown(self,packet):
         """Whether a frame is for showing: of the scene last asked for or, while newer edits wait their turn (a drag), of
@@ -542,7 +568,7 @@ class Renderer(QtCore.QObject):
         slow=scalar_only(request['snapshot'])
         self.moonray_mode=None
         xpu2_takes=bool(request.get('persistent') and mode in ('xpu','auto') and self.session.xpu2_chosen() and not getattr(self.session,'xpu2_refused',None))
-        if mode!='scalar' and slow==COOKIE and xpu2_takes:
+        if mode!='scalar' and slow in (COOKIE,VDB_ITEM) and xpu2_takes:
             # XPU2 draws a cookie rightly: it renders the scene, and MoonRay, should XPU2 leave it the scene, does so in
             # scalar. Forced to scalar before, the cookie kept XPU2 out altogether and the preview crawled.
             self.moonray_mode='scalar'
@@ -826,8 +852,12 @@ class Renderer(QtCore.QObject):
 
     def _select_view(self,key):
         if getattr(self,'using_moonlightipr',False):
-            # MoonLightIPR has its beauty and its denoised picture both: it sends the one now chosen.
-            self.moonlightipr.view(key!='beauty');return
+            # MoonLightIPR has its beauty and its denoised picture both: it sends the one now chosen. An AOV of its own
+            # it gathers from then on, rendering again from the start (moonlightipr_aovs).
+            from .moonlightipr_aovs import kind
+            self.moonlightipr.aov(kind(key),key)
+            if not kind(key):self.moonlightipr.view(key!='beauty')
+            return
         if key=='denoised_beauty' and not native.xpu2():return # Post-process result, not a native render output.
         snapshot=self.active['snapshot'] if getattr(self,'active',None) else {}
         if outputs.display_kind(snapshot,key)=='cryptomatte':
@@ -919,6 +949,10 @@ class Renderer(QtCore.QObject):
             if self.active['output']:
                 try: self._publish(self.denoise_result,denoising.sidecar(self.active['output']))
                 except OSError as exc: self.failed.emit('Cannot save denoised beauty; original EXR preserved: '+str(exc));return
+                # The denoiser's guides kept beside the frame (postprocess.preserve) were only for making this copy after a
+                # stop; now that it is made they go, rather than leave a .postprocess folder beside every frame.
+                from .postprocess import release
+                release(self.active['output'])
             # Keep the original beauty available for comparison.
         if self.phase=='render' and self.gpu_error:
             self.failed.emit('GPU execution failed. Open Render Log for details or select CPU (AVX).')

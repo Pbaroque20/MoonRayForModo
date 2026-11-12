@@ -24,7 +24,9 @@ const unsigned CHANNEL_COLOR = 0, CHANNEL_COLOR_AMOUNT = 1, CHANNEL_ROUGHNESS = 
                CHANNEL_DISPLACE = 23,   // DISPLACE_SLOTS channels the displacement pass alone reads, each a displacement
                                         // node's height or vector; the first is Shader Tree displacement's height
                CHANNEL_STENCIL = 27,    // where Shader Tree stencil layers take the surface away, white taking it all
-               CHANNEL_COUNT = 28;
+               CHANNEL_BACK = 28,       // diffuse light passed through to the far side (DwaBase's diffuse transmission
+                                        // colour times its amount): the material's back, where a map is wired to it
+               CHANNEL_COUNT = 29;
 const unsigned DISPLACE_SLOTS = 4;
 // Rows that are not a channel: the start and end of a group, whose rows are blended as one
 // over what was there before it, and a mask written to a register for a later row to use.
@@ -49,6 +51,9 @@ const unsigned MATERIAL_THIN = 1, MATERIAL_COAT_DIMS = 2, MATERIAL_HAS_PRESENCE 
                MATERIAL_RANDOM_WALK = 1u << 11,
                // MoonRay's toon material: the diffuse light is banded by a ramp, and so is the highlight.
                MATERIAL_TOON_DIFFUSE = 1u << 12, MATERIAL_TOON_SPECULAR = 1u << 13,
+               // MoonRay renders the material through DwaBaseMaterial (or another Dwa material), whose lobes its roughness
+               // clamp roughens (LaunchParams::roughnessClamp); UsdPreviewSurface's it leaves alone.
+               MATERIAL_ROUGHNESS_CLAMPED = 1u << 14,
                MATERIAL_MATTE = 1u << 30;   // set by the kernel alone, where light leaves from beneath a surface
 const unsigned LAYER_IMAGE = 1, LAYER_INVERT = 2, LAYER_FLIP_RED = 4, LAYER_FLIP_GREEN = 8, LAYER_FLIP_BLUE = 16,
                LAYER_ALPHA_MASK = 32, LAYER_ALPHA_ONLY = 64, LAYER_COVERAGE_U = 128, LAYER_COVERAGE_V = 256,
@@ -64,6 +69,15 @@ const unsigned LAYER_IMAGE = 1, LAYER_INVERT = 2, LAYER_FLIP_RED = 4, LAYER_FLIP
 // A LAYER_RAMP row's uvSlot for a gradient looked up by the surface's curvature (Modo's Curvature texture), settings[0]
 // the scale: 0.5 flat, more where the surface bulges, less where it hollows.
 const unsigned RAMP_CURVATURE = 255;
+// A LAYER_RAMP row's uvSlot for a gradient on one of Modo's Sample or Surface Parameters, worked out at the hit
+// (sampleKey): settings[1] which (SAMPLE_*), settings[2..4] the layer's locator in the world, settings[5] the low end of
+// the span the gradient was sampled over and settings[6] one over its width.
+const unsigned RAMP_SAMPLE = 254;
+const unsigned SAMPLE_INCIDENCE = 0, SAMPLE_LOCATOR_INCIDENCE = 1, SAMPLE_SLOPE = 2, SAMPLE_CAMERA_DISTANCE = 3,
+               SAMPLE_SCREEN_X = 4, SAMPLE_SCREEN_Y = 5, SAMPLE_SCREEN_R = 6, SAMPLE_DISTANCE = 7, SAMPLE_DISTANCE_X = 8,
+               SAMPLE_DISTANCE_Y = 9, SAMPLE_DISTANCE_Z = 10, SAMPLE_BACK_FACING = 11,
+               SAMPLE_TEXTURE_LOCAL = 12,   // settings[7..9] the locator's axis over its length squared, settings[10] 1 to wrap (Planar)
+               SAMPLE_INSTANCE_VALUE = 13;  // the hit instance's own number (DeviceInstance::value)
 const unsigned UV_SLOTS = 8;
 
 // One row of a material's layer stack: a constant or an image blended over what is below it.
@@ -203,6 +217,10 @@ struct DeviceHair {
     float glintSaturation;
     float twists[2];            // fewest and most turns the fibre's cross-section makes from root to tip
     float layers;               // cuticle layers, for the layered Fresnel term
+    // The roughnesses those were worked out from (along the fibre for each of the four, around it for TT, and the
+    // glint's), which MoonRay's roughness clamp raises on a path that has scattered (LaunchParams::roughnessClamp).
+    float roughness[4];
+    float azimuthalRoughness, glintRoughness;
 };
 
 struct DeviceMesh {
@@ -216,6 +234,8 @@ struct DeviceMesh {
     int uvSet[UV_SLOTS];    // which of this mesh's sets serves each scene-wide slot, or -1
     unsigned curves;        // curves rather than triangles: 1 round cubic B-spline segments, 2 round straight ones;
                             // with 4 added they are lit as flat ribbons facing the ray, MoonRay's default
+    DevicePtr motion;       // for a mesh that changes shape during the shutter, float[3] per vertex: how far it moves from
+                            // the shutter's opening to its closing, in the mesh's own space (the motion vectors); else 0
 };
 
 // A vertex of a displaced mesh, as a place on one triangle that has it (OptiX's barycentrics).
@@ -230,6 +250,7 @@ struct DeviceInstance {
     unsigned material;
     int light;              // the mesh light this instance is the surface of, or -1
     unsigned lightSet;      // the lights that reach it (LaunchParams::lightSets), 0 for all of them
+    float value;            // its own number, 0 to 1, which a Variation Texture by Particle reads (SAMPLE_INSTANCE_VALUE)
 };
 
 // A uniform spherical cap at infinity, as MoonRay's DistantLight.
@@ -396,6 +417,9 @@ struct LaunchParams {
     unsigned opaqueShadows; // a surface that is partly absent casts a whole shadow all the same: MoonRay with its presence shadows off
     unsigned sampleClampDepth;  // how many rough things: MoonRay's sample_clamping_depth, 1 leaving alone what the camera sees directly
     float sampleClamp;      // largest value of one light sample once the path has scattered off enough rough things; 0 is unlimited
+    // MoonRay's roughness_clamping_factor: after each bounce, the surfaces met further on (MATERIAL_ROUGHNESS_CLAMPED)
+    // are at least as rough as the lobe bounced off (a diffuse one counting as 1) times this; 0 is off.
+    float roughnessClamp;
     // MoonRay's volume_attenuation_factor, volume_contribution_factor and volume_phase_attenuation_factor.
     float volumeAttenuation, volumeContribution, volumePhaseAttenuation;
     unsigned presence;      // some material can be partly absent or is a fog's edge, so rays must run the any-hit test
@@ -413,12 +437,49 @@ struct LaunchParams {
     float focusDistance;    // along the view direction
     unsigned lensBlades;    // 0 for a disc
     float lensAngle;
+    // A bokeh image (Camera::bokeh) as a table to draw lens points by: bokehSize + 1 sums over its rows (the last 1),
+    // then for each row bokehSize + 1 sums across it; 0 for none.
+    DevicePtr bokeh;
+    unsigned bokehSize;
+    unsigned bokehPad;
     unsigned cameraProjection;      // 0 perspective, 1 fisheye, 2 spherical, 3 orthographic
     float cameraProjectionValues[4];
     float cameraShift[2];           // a perspective camera's film offset, in halves of the picture across and up
     unsigned region[4];     // the pixels to render: from column, from row, to column, to row; the rest are black
     unsigned draft;         // 0 none, 1 lines outside the region, 2 lines everywhere
     unsigned mixedVisibility;   // some instance is hidden from one kind of ray and not from another
+    // The geometry AOVs, gathered beside the beauty while this is set: AOV_SLOTS float[4] per pixel, pixel after pixel,
+    // slot by slot as AovSlot numbers them; 0 gathers none.
+    DevicePtr aovs;
+    // A light pass rendered in place of the beauty (AovPass); 0 the beauty.
+    unsigned aovPass;
+    unsigned aovPad;
+    // The light passes, gathered beside the beauty from its own paths while the AOVs are: PASS_SLOTS float[4] per
+    // pixel, pass after pass (diffuse, glossy, emission, background, then the shadow matte), each a running mean as the
+    // beauty is; 0 none.
+    DevicePtr passes;
+    // For the motion vectors: each instance's transform as the shutter opens and as it closes (OptiX's 3x4 rows, twelve
+    // then twelve floats an instance), or 0 where none moves; the moment of the shutter this sample is at (0 to 1); and
+    // the camera as the shutter opens and closes: its origin, then cameraU, cameraV and cameraW as they are above.
+    DevicePtr instanceMotion;
+    float time;
+    unsigned timePad;
+    float cameraOpen[12];
+    float cameraClose[12];
 };
+
+// MoonLightIPR's AOVs, for motion graphics. The light in four passes that add up to the beauty (fog's light before the
+// first surface apart), each rendered in place of the beauty, as the first surface the camera sees decides: diffuse
+// (with subsurface), glossy (with hair, mirror reflections and refraction), emission and the environment seen.
+enum AovPass : unsigned { PASS_BEAUTY = 0, PASS_DIFFUSE = 1, PASS_GLOSSY = 2, PASS_EMISSION = 3, PASS_BACKGROUND = 4 };
+// Gathered beside the light passes (LaunchParams::passes), from the same paths: a shadow matte, how much of the direct
+// light at the camera's first surface its lights' samples found blocked, 0 lit to 1 in full shadow.
+const unsigned PASS_SHADOW = 5, PASS_SLOTS = 5;
+// And from what the camera sees first, gathered beside the beauty, all at once: its albedo, depth, shading normal,
+// world position and alpha, each a running mean as the beauty is.
+// And the motion vectors: how far, in pixels across and up, what the camera sees there moves from the shutter's opening
+// to its closing, as MoonRay's motion vectors say it.
+enum AovSlot : unsigned { AOV_ALBEDO = 0, AOV_DEPTH = 1, AOV_NORMAL = 2, AOV_POSITION = 3, AOV_ALPHA = 4, AOV_MOTION = 5,
+                          AOV_SLOTS = 6 };
 
 }

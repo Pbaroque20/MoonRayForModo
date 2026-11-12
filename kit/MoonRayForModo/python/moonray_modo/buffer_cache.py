@@ -49,6 +49,10 @@ class BufferCache(QtCore.QObject):
         self.process.readyReadStandardOutput.connect(self._read)
         self.frame=None;self.progressive=None;self.progressive_frames={};self.progressive_scene=None;self.job=None;self.displayed=None
         self.worker=None
+        # A picture sent from memory while the display converter was busy: the newest only, shown once it is free
+        # (publish_memory). Dropped, a picture sent once (MoonLightIPR's denoised beauty after a Render, asked for when
+        # its buffer is chosen) was never shown.
+        self.held_memory=None
         self.worker_poll=QtCore.QTimer(self);self.worker_poll.setSingleShot(True)
         self.worker_poll.setInterval(10);self.worker_poll.timeout.connect(self._memory_finished)
         from .cached_denoise import CachedDenoise
@@ -92,11 +96,22 @@ class BufferCache(QtCore.QObject):
         return True
 
     def busy(self):
-        """True while a display conversion is running; publish_memory drops frames meanwhile."""
+        """True while a display conversion is running; publish_memory holds the newest frame meanwhile."""
         return self.worker is not None or self.process.state()!=QtCore.QProcess.NotRunning
 
+    def _release_held(self):
+        """The picture held while the converter was busy, shown now that it is free."""
+        if self.closed or self.held_memory is None or self.busy():return
+        held=self.held_memory;self.held_memory=None
+        try:self.publish_memory(*held)
+        except ValueError:pass
+
     def publish_memory(self,key,width,height,pixels,runtime,snapshot,backend):
-        if self.closed or self.worker is not None or self.process.state()!=QtCore.QProcess.NotRunning:return
+        if self.closed:return
+        if self.worker is not None or self.process.state()!=QtCore.QProcess.NotRunning:
+            # Held, the newest in place of any before it, and shown when the converter is done (_release_held).
+            self.held_memory=(key,width,height,pixels,runtime,snapshot,backend)
+            return
         if not 0<len(pixels)<=64*1024*1024 or len(pixels)!=width*height*12:raise ValueError('Invalid shared image size')
         folder=self.root/uuid.uuid4().hex;folder.mkdir()
         frame={'folder':folder,'files':{},'linear':{key:(width,height,pixels)},'runtime':Path(runtime),'snapshot':snapshot,'backend':backend,'partial':True}
@@ -209,6 +224,7 @@ class BufferCache(QtCore.QObject):
             self.worker_poll.start();return
         self.worker_poll.stop()
         self.worker=None;job=self.job;self.job=None
+        QtCore.QTimer.singleShot(0,self._release_held)
         data,width,height,error=getattr(worker,'outcome',(None,0,0,'Display worker produced no image'))
         worker.deleteLater()
         if self.closed:return
@@ -238,6 +254,7 @@ class BufferCache(QtCore.QObject):
         self._read()
         if self.closed:return
         job=self.job;self.job=None
+        QtCore.QTimer.singleShot(0,self._release_held)
         if not job:return
         if job['serial']!=self.serial:
             self._discard(job['destination'])

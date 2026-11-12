@@ -14,6 +14,7 @@ import subprocess
 import tempfile
 import uuid
 from pathlib import Path
+from .procedurals import VARIATION_PARTICLE_MAP
 
 # Channel, flag and wrap numbers; keep in step with moonlightipr/src/device/shared.h.
 CHANNELS = {'diffCol': 0, 'diffAmt': 1, 'rough': 2, 'metallic': 3, 'lumiCol': 4, 'lumiAmt': 5, 'normal': 6,
@@ -27,10 +28,12 @@ CHANNELS = {'diffCol': 0, 'diffAmt': 1, 'rough': 2, 'metallic': 3, 'lumiCol': 4,
             # layers put their height.
             'displace': 23, '_disp0': 23, '_disp1': 24, '_disp2': 25, '_disp3': 26,
             # Shader Tree stencil layers: the surface is taken away where they are white, over any dissolve.
-            'stencil': 27}
+            'stencil': 27,
+            # A map wired to DwaBase's diffuse transmission colour: the diffuse light passed through to the far side.
+            '_backCol': 28}
 # Channels a material row does not set: the maps, the mask, and values only gradients read.
 UNSET_BY_ROWS = ('normal', 'bump', 'groupMask', 'driverA', 'driverB', 'driverC', 'driverD', 'displace', '_disp0', '_disp1', '_disp2', '_disp3',
-                 'stencil')
+                 'stencil', '_backCol')
 # Channels whose constant rows can be worked out here instead of on the GPU, with the range the
 # material record keeps a single number in (None for colours, which it keeps whole).
 FOLDED = {'diffCol': None, 'diffAmt': (-math.inf, math.inf), 'rough': (0, 1), 'metallic': (0, 1), 'lumiCol': None,
@@ -43,6 +46,8 @@ MATERIAL_NO_CAUSTICS = 1024
 MATERIAL_RANDOM_WALK = 2048
 # MoonRay's toon material: its diffuse light banded by a ramp, its highlight by another.
 MATERIAL_TOON_DIFFUSE, MATERIAL_TOON_SPECULAR = 4096, 8192
+# What MoonRay renders through DwaBaseMaterial (or another Dwa material): the materials its Roughness Clamp roughens.
+MATERIAL_ROUGHNESS_CLAMPED = 16384
 TOON_STEPS = 256
 
 
@@ -164,13 +169,24 @@ LAYER_RAMP, LAYER_CHECKER, LAYER_NOISE, LAYER_UDIM = 1 << 16, 1 << 17, 1 << 18, 
 LAYER_PROCEDURAL = 1 << 21     # Modo's pattern through the object (modo_patterns.h, procedurals.solid)
 LAYER_WIREFRAME = 1 << 22      # Modo's Wireframe: the first colour along the polygons' edges
 RAMP_CURVATURE = 255           # a gradient row's slot when the surface's curvature looks it up (Modo's Curvature)
+RAMP_SAMPLE = 254              # and when one of Modo's Sample or Surface Parameters does, worked out at the hit
+# Modo's Sample and Surface Parameters as the kernel numbers them (shared.h SAMPLE_*), the object-space distances as the
+# world's.
+SAMPLE_KINDS = {'incidenceAngle': 0, 'incidenceNobump': 0, 'locatorIncAngle': 1, 'slope': 2, 'slopeUndisplaced': 2,
+                'cameraDistance': 3, 'screenX': 4, 'screenY': 5, 'screenR': 6, 'distance': 7, 'objDistance': 7,
+                'distanceX': 8, 'objDistanceX': 8, 'distanceY': 9, 'objDistanceY': 9, 'distanceZ': 10, 'objDistanceZ': 10,
+                'backFacing': 11, 'textureLocal': 12}
+# The hit instance's own number (Variation by Particle): see moonlightipr_scene.INSTANCE.
+SAMPLE_INSTANCE_VALUE = 13
 IDENTITY_ROWS = ((1.0, 0.0, 0.0, 0.0), (0.0, 1.0, 0.0, 0.0), (0.0, 0.0, 1.0, 0.0))
 BLEND_REORIENTED_NORMAL = 15
 WRAP = {'repeat': 0, 'edge': 1, 'mirror': 2, 'reset': 3}
 TEXTURE_FLOAT, TEXTURE_SRGB, TEXTURE_WRAP_U_SHIFT, TEXTURE_WRAP_V_SHIFT = 1, 2, 2, 4
 UV_SLOTS = 8
-# The largest side of an image MoonLightIPR is given (larger ones are fitted within it as they are converted): 1024,
-# perceptually enough at realtime's sizes, with far less for the card to hold and read (it was 4096, then 1280). The
+# The largest side of an image MoonLightIPR's realtime is given (larger ones are fitted within it as they are converted):
+# 1024, perceptually enough at realtime's sizes, with far less for the card to hold and read (it was 4096, then 1280).
+# A Render, and Render Animation, are given each image at its full size (Compiler's side 0, the scene's _full_textures):
+# where those do not all fit on the card the session keeps the largest in the computer's memory (out of core). The
 # environment's image is sized on its own (moonlightipr_scene).
 MAX_TEXTURE_SIDE = 1024
 
@@ -481,7 +497,9 @@ def hair_surface(shader, parameters, note):
 GRAPH_INPUTS = {'albedo': 'diffCol', 'hair_color': 'diffCol', 'roughness': 'rough', 'metallic': 'metallic', 'emission': 'lumiCol',
                 'transmission': 'tranAmt', 'transmission_color': 'tranCol', 'clearcoat': 'coatAmt',
                 'clearcoat_roughness': 'coatRough', 'anisotropy': 'aniso', 'scattering_color': 'subsCol',
-                'input_normal': 'normal', 'presence': 'dissolve'}
+                'input_normal': 'normal', 'presence': 'dissolve',
+                # Its amount is the map's brightness (wired_layers), as MoonRay multiplies the two.
+                'diffuse_transmission_color': '_backCol'}
 GRAPH_SWITCHES = {'emission': 'show_emission', 'clearcoat': 'show_clearcoat', 'clearcoat_roughness': 'show_clearcoat'}
 GRAPH_WRAP = {'periodic': 'repeat', 'repeat': 'repeat', 'clamp': 'edge', 'mirror': 'mirror', 'black': 'reset'}
 
@@ -777,6 +795,14 @@ def graph_layers(source, note, runtime=None, displacement=None, wanted='height',
                 held = placed['type'] == 'GradientMap' or int(placed.get('parameters', {}).get('wrap_type', 0)) == 1
                 layer['tile_u'] = layer['tile_v'] = 'edge' if held else 'repeat'
         layer.update(effect=effect, blend='normal', opacity=1.0, identity=identity)
+        if effect == '_backCol':
+            # The diffuse transmission amount times the colour, as MoonRay takes them (the material's own back).
+            amount = (root.get('parameters') or {}).get('diffuse_transmission', switches.get('diffuse_transmission', 1.0))
+            try:
+                amount = min(1.0, max(0.0, float(amount)))
+            except (TypeError, ValueError):
+                amount = 1.0
+            layer['corrections'] = dict(layer.get('corrections') or {}, brightness=float((layer.get('corrections') or {}).get('brightness', 1.0)) * amount)
         if effect == 'dissolve':
             layer['invert'] = True
         if amplitude is not None:
@@ -788,8 +814,10 @@ def graph_layers(source, note, runtime=None, displacement=None, wanted='height',
 class Compiler:
     """Collects the materials of one scene; textures and coordinate slots are shared between them."""
 
-    def __init__(self, runtime=None):
+    def __init__(self, runtime=None, side=MAX_TEXTURE_SIDE):
         self.runtime = runtime
+        # The largest side an image is given at; 0 for each at its full size (a Render's).
+        self.side = side
         self.textures = {}      # record -> index, in first-use order
         self.slots = {}         # coordinate key -> scene-wide slot
         self.grids = {}         # a fog's grid of densities, as its record -> its index
@@ -831,7 +859,7 @@ class Compiler:
         stat = source.stat()
         hdr = source.suffix.lower() in HDR_SUFFIXES
         space, ocio = color_space(source, layer.get('color_space', ''), layer.get('srgb'))
-        digest = hashlib.sha256(repr((str(source.resolve()), stat.st_size, stat.st_mtime_ns, MAX_TEXTURE_SIDE, 'moonlightipr-v3', ocio and (space, ocio))).encode()).hexdigest()
+        digest = hashlib.sha256(repr((str(source.resolve()), stat.st_size, stat.st_mtime_ns, self.side or 'full', 'moonlightipr-v3', ocio and (space, ocio))).encode()).hexdigest()
         target = cache_folder() / (digest + ('.pfm' if hdr else '.tga'))
         if not target.is_file() or not target.stat().st_size:
             # Alongside the scene's other textures, while the scene is packed (moonlightipr_scene.pack).
@@ -878,10 +906,10 @@ class Compiler:
             args += ['--colorconvert', 'linear', 'sRGB']
         if resample is not None:
             args += list(resample)
-        elif max(width, height) > MAX_TEXTURE_SIDE:
+        elif self.side and max(width, height) > self.side:
             # Its own shape, its longer side at the limit: --fit pads to the square, and Dose's 2103x1673 label filled
             # only the middle of its UVs, the can dark above and below it.
-            args += ['--resize', '%dx%d' % fitted(width, height)]
+            args += ['--resize', '%dx%d' % fitted(width, height, self.side)]
         target.parent.mkdir(parents=True, exist_ok=True)
         staged = target.with_name(target.stem + '-' + uuid.uuid4().hex + target.suffix)
         try:
@@ -1161,6 +1189,40 @@ class Compiler:
                 flags |= LAYER_RAMP
                 slot = RAMP_CURVATURE
                 extra = dict(settings=[float(layer['gradient'].get('scale', 1))] + [0.0] * 21 + [.5, .5])
+            elif kind == 'gradient' and layer['gradient'].get('input') == '@sample':
+                # One of Modo's Sample or Surface Parameters, worked out at the hit (kernel sampleKey): which, the
+                # layer's locator, and the span the gradient was sampled over.
+                data = layer['gradient']
+                if data.get('sample') not in SAMPLE_KINDS:
+                    self.note('gradients driven by %s' % data.get('sample'), name)
+                    abandon()
+                    continue
+                try:
+                    texture = self.ramp(data)
+                except (OSError, ValueError, KeyError, TypeError, IndexError) as exc:
+                    self.note('a gradient that could not be read (%s)' % exc, name)
+                    abandon()
+                    continue
+                low, high = (float(v) for v in data.get('span', [0.0, 1.0]))
+                flags |= LAYER_RAMP
+                slot = RAMP_SAMPLE
+                extra = dict(settings=[0.0, float(SAMPLE_KINDS[data['sample']])] + [float(v) for v in data.get('locator', [0, 0, 0])]
+                             + [low, 1.0 / max(high - low, 1e-9)]
+                             # Texture U or V in the texture locator's space: its axis (over its length squared), wrapped.
+                             + [float(v) for v in data.get('axis_vector', [0, 0, 0])] + [1.0 if data.get('wrap') else 0.0]
+                             + [0.0] * 11 + [.5, .5])
+            elif kind == 'gradient' and layer['gradient'].get('input') == '@vmap' and layer['gradient'].get('vmap') == VARIATION_PARTICLE_MAP:
+                # Modo's Variation Texture by Particle: each instance's own number (occlusion.particles), which the kernel
+                # reads from the instance it hits (sampleKey).
+                try:
+                    texture = self.ramp(layer['gradient'])
+                except (OSError, ValueError, KeyError, TypeError, IndexError) as exc:
+                    self.note('a gradient that could not be read (%s)' % exc, name)
+                    abandon()
+                    continue
+                flags |= LAYER_RAMP
+                slot = RAMP_SAMPLE
+                extra = dict(settings=[0.0, float(SAMPLE_INSTANCE_VALUE), 0.0, 0.0, 0.0, 0.0, 1.0] + [0.0] * 15 + [.5, .5])
             elif kind == 'gradient' and layer['gradient'].get('input') == '@vmap':
                 # Modo's Weight Map Texture: the weight comes as the first component of a set of coordinates of its own
                 # (moonlightipr_scene.with_weights), and the row looks the gradient up by it.
@@ -1295,6 +1357,8 @@ class Compiler:
         # A stack's coat is DwaBaseMaterial's outer specular, which shades what is beneath it.
         flags = (MATERIAL_THIN if source.get('thin_geometry') else 0) | (MATERIAL_COAT_DIMS if stack else 0)
         # A metal rendered through DwaBaseMaterial reflects by its own curve, with a white edge.
+        if dwa or str(native or '').startswith('Dwa'):
+            flags |= MATERIAL_ROUGHNESS_CLAMPED
         if dwa:
             flags |= MATERIAL_CONDUCTOR
             # DwaBaseMaterial leaves its highlight, coat, metal and glass out of a path that has already left a diffuse

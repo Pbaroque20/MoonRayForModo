@@ -620,6 +620,9 @@ def resolve_vdb(parameters, scene):
         found = vdb_frame_file(model, frame, bool(parameters.get('modo_sequence_hold', False)))
         if found is None:
             return None
+        # The frame's own file is what MoonRay reads: to it the shape is static, as it is to XPU2, which refuses static
+        # unticked and gave the scene to XPU (a tester's report: the sequence fell back, a static file did not).
+        resolved.pop('static', None)
     else:
         found = model
     resolved['model'] = found
@@ -1664,7 +1667,8 @@ def camera_view(camera, entity, matrix, note):
                         iris_blades=int(value(entity, 'bokeh_sides')) if value(entity, 'bokeh') else 0,
                         iris_rotation=math.radians(float(value(entity, 'bokeh_angle'))))
             if value(entity, 'bokeh') and entity['parameters'].get('bokeh_image'):
-                note('a bokeh image')
+                # Its shape is the image's (moonlightipr_scene.bokeh_values), turned as the blades are.
+                view['bokeh_image'] = str(entity['parameters']['bokeh_image'])
         eye = int(value(entity, 'stereo_view') or 0)
         if eye in (1, 2):
             # The eye it renders, moved to as MoonRay moves it (stereo.placed).

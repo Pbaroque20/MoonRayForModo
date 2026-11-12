@@ -144,7 +144,8 @@ def preview(scene):
 
 def display_kind(scene,key):
     from .entities import FILTER_PREFIX
-    if key in ('denoised_beauty','composite') or key.startswith(FILTER_PREFIX):return 'beauty'
+    # MoonLightIPR's own light passes (moonlightipr_aovs.OWN) are colours, as the beauty is.
+    if key in ('denoised_beauty','composite') or key.startswith(FILTER_PREFIX) or key.startswith('moonlightipr_'):return 'beauty'
     for entry in values(scene.get('custom_aovs',[])):
         # A number shown as it is, in grey, as alpha is; a colour as the beauty.
         if entry['name']==key and entry['kind'] in ('attribute','visibility'):return 'alpha'

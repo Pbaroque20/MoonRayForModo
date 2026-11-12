@@ -206,9 +206,30 @@ def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, mat
             if layer.type == 'gradient':
                 from .gradients import capture
                 node['gradient']=capture(layer,channel,is_color)
+                if node['gradient'].get('input') in ('@texture_value','@held'):
+                    if node['gradient']['input']=='@held':
+                        at=node['gradient']['held']
+                    else:
+                        # Texture Value: the Value of the layer beneath, as measured against Modo's renders
+                        # (tools/probe_gui_gradient_texture_value.py): over a Constant, the gradient at its Value.
+                        beneath=(materials[tag].get('layers') or [])[-1:]
+                        if not beneath or beneath[0].get('kind')!='constant' or 'texture_value' not in beneath[0]:
+                            raise ValueError('a Gradient on Texture Value is followed over a Constant layer directly beneath it')
+                        at=beneath[0]['texture_value']
+                    from .gradients import sample
+                    held=node.pop('gradient')
+                    node['kind']='constant'
+                    node['value']=sample(held,at)
+                    if 'alpha' in held:
+                        node['opacity']*=sample(dict(held,colors=[[a]*3 for a in held['alpha']]),at)[0]
+                elif 'texture' in node['gradient']:
+                    # Texture U or V: the mesh is read with the layer's UV map, as for an image (texture_uv).
+                    node['uv_map']=node['gradient']['texture']['uv_map']
                 warnings.append('Gradient '+layer.name+': evaluated at 257 samples over input 0..1; outside values clamp. Exact curve and discontinuity parity is unverified.')
             elif layer.type == 'constant':
                 node['value'] = color(layer,'color',(0,0,0)) if is_color else [float(channel(layer,'value',1))]*3
+                # Its own Value (beside its colour), which a Gradient on Texture Value above it reads.
+                node['texture_value'] = float(channel(layer,'value',1))
             elif layer.type in SURFACE_KINDS:
                 # These need no texture locator: they take what is beneath them, or the surface itself.
                 from . import procedurals
@@ -220,9 +241,32 @@ def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, mat
                     node['solid_map'] = procedurals.regional(layer,channel,color)
                     node['procedural'] = None
                     warnings.append('RegionalHSV '+layer.name+': each colour beneath it given its own at random; Modo equivalence is unverified.')
+                elif layer.type == 'process':
+                    # Modo's own Process: hue, saturation, value and hue shift on the colour beneath (pattern 401).
+                    node['solid_map'],moved = procedurals.modo_process(layer,channel)
+                    node['procedural'] = None
+                    if moved:
+                        warnings.append('Process '+layer.name+': its Bias and Gain are not followed yet; its Hue, Saturation, Value and Hue Shift are.')
                 elif layer.type == 'vmapTexture':
                     node['kind'] = 'gradient'
                     node['gradient'] = procedurals.vertex_map(layer,channel,color,is_color)
+                elif layer.type == 'variationTexture':
+                    # Modo's Variation Texture: a random number for each mesh item, through the layer's own gradient.
+                    data,unfollowed = procedurals.variation(layer,channel,color,is_color)
+                    if data is None:
+                        warnings.append('Variation Texture '+layer.name+': its source '+unfollowed+' is not followed yet; Item, Mesh Part and Particle are. The layer is left out.')
+                        continue
+                    node['kind'] = 'gradient'
+                    node['gradient'] = data
+                elif layer.type == 'occlusion':
+                    # Modo's Occlusion: how open each point is, worked out over the scene (occlusion.apply), as a weight.
+                    node['kind'] = 'gradient'
+                    node['gradient'] = procedurals.occlusion(layer,channel,color,is_color)
+                    warnings.append('Occlusion '+layer.name+": worked out at the mesh's points rather than at each pixel; within about 0.03 of Modo where the mesh is fine enough.")
+                elif layer.type == 'tensionTexture':
+                    # Modo's Tension: how the surface has stretched or folded from its base mesh at each point (tension.apply).
+                    node['kind'] = 'gradient'
+                    node['gradient'] = procedurals.tension(layer,channel,color,is_color)
                 elif layer.type == 'val.RTCurvature':
                     node['kind'] = 'gradient'
                     node['gradient'] = procedurals.curvature(layer,channel,is_color)
@@ -354,7 +398,7 @@ def material_stack(scene, candidates, warnings, tag, membership=None):
     result = []
     captured_group_masks=set()
     for index, base in reversed(list(enumerate(candidates))):
-        value = material_values(base)
+        value = material_values(base, warnings)
         value['shader'] = 'DwaBaseMaterial'
         value['material_groups'] = texture_groups(base, channel) or []
         allowed = set()

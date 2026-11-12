@@ -1,5 +1,5 @@
 """Automatic Presence Shadows greys Presence Shadows at once, in the render settings and on lights, and a light's own value is
-then not written; and Realtime Sample % in the preview's preferences as in the render settings."""
+then not written; and XPU2 RT Sample % (RT Sample % in the render settings) in the preview's preferences as in the render settings."""
 import pathlib
 import re
 import sys
@@ -50,16 +50,16 @@ class Written(unittest.TestCase):
 
 class RealtimeSamplePercent(unittest.TestCase):
     def test_named_alike_wherever_it_is(self):
-        self.assertIn("'int', 'Realtime Sample %', ", (KIT / 'python/moonray_modo/scene_settings.py').read_text(encoding='utf-8'))
-        self.assertIn('<atom type="Label">Realtime Sample %</atom>', (KIT / 'render_settings.cfg').read_text(encoding='utf-8'))
+        self.assertIn("'int', 'RT Sample %', ", (KIT / 'python/moonray_modo/scene_settings.py').read_text(encoding='utf-8'))
+        self.assertIn('<atom type="Label">RT Sample %</atom>', (KIT / 'render_settings.cfg').read_text(encoding='utf-8'))
 
     def test_in_the_preferences_page(self):
         page = (KIT / 'preferences.cfg').read_text(encoding='utf-8')
-        self.assertRegex(page, r'cmd moonray\.render\.xpu2_realtime \?">\s+<atom type="Label">Realtime Sample % \(MoonRay XPU2 only\)')
+        self.assertRegex(page, r'cmd moonray\.render\.xpu2_realtime \?">\s+<atom type="Label">XPU2 RT Sample % \(MoonRay XPU2 only\)')
 
     def test_in_the_preview_preferences_through_its_command(self):
         dialog = (KIT / 'python/moonray_modo/preferences.py').read_text(encoding='utf-8')
-        self.assertIn("form.addRow('Realtime Sample %', self.realtime_share)", dialog)
+        self.assertIn("form.addRow('XPU2 RT Sample %', self.realtime_share)", dialog)
         self.assertIn("lx.eval('moonray.render.xpu2_realtime %d' % self.realtime_share.value())", dialog)
 
 

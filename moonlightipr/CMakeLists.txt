@@ -34,7 +34,18 @@ add_custom_command(OUTPUT "${COMPOSITE_PTX}"
   VERBATIM)
 add_custom_target(composite_ptx DEPENDS "${COMPOSITE_PTX}")
 
-add_library(moonlightipr STATIC src/renderer.cpp)
+# Textures made ready for the card (src/texture_prep.cpp): ISPC Texture Compressor, its kernels compiled beforehand by
+# build_moonlightipr.py into MOONLIGHTIPR_TEXCOMP.
+set(MOONLIGHTIPR_TEXCOMP "${CMAKE_BINARY_DIR}/texcomp" CACHE PATH "ISPC Texture Compressor's kernel objects and header")
+set(TEXCOMP_SOURCE "${ROOT}/upstream/ISPCTextureCompressor/ispc_texcomp")
+file(GLOB texcompObjects "${MOONLIGHTIPR_TEXCOMP}/kernel*.o")
+if(NOT texcompObjects)
+  message(FATAL_ERROR "No ISPC Texture Compressor kernels in ${MOONLIGHTIPR_TEXCOMP}: build with tools/build_moonlightipr.py")
+endif()
+add_library(moonlightipr STATIC src/renderer.cpp src/texture_prep.cpp src/texcomp.cpp ${texcompObjects})
+set_source_files_properties(${texcompObjects} PROPERTIES EXTERNAL_OBJECT TRUE GENERATED TRUE)
+set_source_files_properties(src/texcomp.cpp PROPERTIES INCLUDE_DIRECTORIES "${MOONLIGHTIPR_TEXCOMP};${TEXCOMP_SOURCE}")
+set_source_files_properties(src/texture_prep.cpp PROPERTIES INCLUDE_DIRECTORIES "${TEXCOMP_SOURCE}")
 target_include_directories(moonlightipr PUBLIC include PRIVATE src)
 target_link_libraries(moonlightipr PRIVATE CUDA::cudart OptiX::OptiX)
 add_dependencies(moonlightipr moonlightipr_ptx)

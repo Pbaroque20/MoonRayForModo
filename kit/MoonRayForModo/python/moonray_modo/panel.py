@@ -10,7 +10,7 @@ import functools
 import lx
 from .render import Renderer
 from .viewer import Preview
-from .preferences import Preferences
+from .preferences import Preferences, moonlightipr_render_samples
 from .panel_tools import Tools
 
 RENDER_TIP = 'Render the current scene. The previous image stays until its replacement is ready.'
@@ -266,6 +266,10 @@ class Panel(Tools, QtWidgets.QWidget):
         self.buffer = QtWidgets.QComboBox()
         self.buffer.addItem('Beauty','beauty')
         self.buffer.addItem('Denoised Beauty','denoised_beauty')
+        # MoonLightIPR's own light passes, listed only while it is the engine (moonlightipr_aovs): first after the
+        # beauty, as the passes a composite starts from.
+        from .moonlightipr_aovs import OWN
+        for label,key in OWN:self.buffer.addItem(label,key)
         for key,(label,attributes,channel) in options.AOVS.items():
             self.buffer.addItem(label,key)
         self.buffer.setToolTip('The render buffer shown. Switching does not restart the render.')
@@ -442,6 +446,8 @@ class Panel(Tools, QtWidgets.QWidget):
         if point is not None:
             menu.addAction('Focus Here',lambda:self.focus_at(point))
             menu.addAction('Select Material Here',lambda:self.material_at(point))
+            menu.addAction('Select Mesh Here',lambda:self.mesh_at(point))
+            menu.addAction('Select Volume Here',lambda:self.volume_at(point))
             menu.addSeparator()
         menu.addAction('Fit',self.preview.fit)
         menu.addAction('Actual Size',self.preview.actual_size)
@@ -482,10 +488,9 @@ class Panel(Tools, QtWidgets.QWidget):
         menu.addSeparator()
         menu.addAction('Copy Image',self.copy_image)
         menu.addAction('Save Image...',self.save_preview)
-        # The outputs of the last finished MoonRay preview, each as a picture of its own. MoonLightIPR has the one.
-        batch=menu.addAction('Export AOVs as Images...',self.export_buffers)
-        batch.setEnabled(self._engine()!='moonlightipr')
-        if not batch.isEnabled():batch.setToolTip('MoonLightIPR renders the one picture; choose MoonRay for its outputs.')
+        # The outputs of the last finished preview, each as a picture of its own: MoonRay's, or MoonLightIPR's picture
+        # and its own AOVs (panel_tools._moonlightipr_fetch).
+        menu.addAction('Export AOVs as Images...',self.export_buffers)
         if getattr(self,'_continuable',None) is not None and not self._rendering:
             # Continue is what the button offers; this is the other choice. It throws the stopped render away, so it
             # stands last and apart, and asks before it does.
@@ -625,6 +630,65 @@ class Panel(Tools, QtWidgets.QWidget):
             self.status.setText('Selected material %s, on %s.'%(modo.Scene().item(identity).name,mesh.get('name') or 'the mesh'))
         except Exception as exc:
             self.status.setText('Cannot select the material: '+str(exc))
+
+    def mesh_at(self,point):
+        """Select in Modo the mesh under a point of the image, found as Select Material Here finds its surface (focus.hit):
+        the mesh item, or the instance of it the ray met where it is placed more than once."""
+        try:
+            rect=self.preview.image_rect()
+            if rect.isEmpty() or not rect.contains(QtCore.QPointF(point)):
+                self.status.setText('Right-click inside the rendered image to select its mesh.');return
+            scene=self._asset_scene
+            if not scene or not scene.get('camera'):
+                self.status.setText('Render once, then pick the mesh.');return
+            from .focus import hit
+            found=hit(scene,(point.x()-rect.left())/rect.width(),(point.y()-rect.top())/rect.height(),placed=True)
+            if found is None:
+                self.status.setText('No mesh there.');return
+            _,mesh,_,number=found
+            # The item: the instance met (its identifier first in the instance's own), else the last item the mesh's
+            # identity names (an instance read apart has its own identifier after its mesh's).
+            import modo
+            instances=mesh.get('instance_ids') or []
+            names=[str(instances[number]).split('|')[0]] if number<len(instances) else list(reversed(str(mesh.get('identity') or '').split('|')))
+            item=None
+            for identity in names:
+                try:item=modo.Scene().item(identity);break
+                except LookupError:continue
+            if item is None:
+                self.status.setText('The mesh there (%s) is not an item Modo can select.'%(mesh.get('name') or mesh.get('identity')));return
+            identity=item.id
+            lx.eval('select.drop item')
+            lx.eval('select.item {%s} add'%identity)
+            self.status.setText('Selected %s.'%item.name)
+        except Exception as exc:
+            self.status.setText('Cannot select the mesh: '+str(exc))
+
+    def volume_at(self,point):
+        """Select in Modo the VDB volume under a point of the image, where it is thick (volume_pick): the kit's VDB item,
+        or the item of a VDB read with a MoonRay scene."""
+        try:
+            rect=self.preview.image_rect()
+            if rect.isEmpty() or not rect.contains(QtCore.QPointF(point)):
+                self.status.setText('Right-click inside the rendered image to select its volume.');return
+            scene=self._asset_scene
+            if not scene or not scene.get('camera'):
+                self.status.setText('Render once, then pick the volume.');return
+            from .volume_pick import volume_at
+            depth,*found=volume_at(scene,(point.x()-rect.left())/rect.width(),(point.y()-rect.top())/rect.height())
+            if depth is None:
+                waiting=found[0] if found else []
+                self.status.setText('Reading %s; pick again in a moment.'%', '.join(waiting) if waiting else 'No volume there.');return
+            identity,name=found
+            import modo
+            try:item=modo.Scene().item(identity.split('|')[0])
+            except LookupError:
+                self.status.setText('The volume there (%s) is not an item Modo can select.'%name);return
+            lx.eval('select.drop item')
+            lx.eval('select.item {%s} add'%item.id)
+            self.status.setText('Selected %s.'%item.name)
+        except Exception as exc:
+            self.status.setText('Cannot select the volume: '+str(exc))
 
     def _clay(self):
         action=self.clay_group.checkedAction()
@@ -1069,7 +1133,7 @@ class Panel(Tools, QtWidgets.QWidget):
             values=self._settings_values()
             # MoonLightIPR's motion blur, off by default: each update then reads the shutter's ends too.
             # And MoonRay's realtime under XPU2, by a preference of its own.
-            if self._preview_blurred():words.append('Motion Blur')
+            if self._preview_blurred() and not (self._engine()=='moonlightipr' and not self.preferences.get('preview_motion')):words.append('Motion Blur')
             from . import native
             xpu2=native.xpu2_renders(values.get('execution_mode','auto'))
             if self.preview_engine.currentData()=='moonray' and values['denoising'].get('safe') and values['denoising'].get('engine','off')!='off' \
@@ -1144,7 +1208,8 @@ class Panel(Tools, QtWidgets.QWidget):
         # graph does nothing, it says where to make one that does.
         names.insert(0,('Composite','composite'))
         if 'asset' in held:names.append(('Cryptomatte: Assets',held['asset']))
-        base=2+len(options.AOVS)
+        from .moonlightipr_aovs import OWN
+        base=2+len(options.AOVS)+len(OWN)
         if names==[(self.buffer.itemText(i),self.buffer.itemData(i)) for i in range(base,self.buffer.count())]:return
         key=self.buffer.currentData();blocker=QtCore.QSignalBlocker(self.buffer)
         while self.buffer.count()>base:self.buffer.removeItem(self.buffer.count()-1)
@@ -1284,11 +1349,13 @@ class Panel(Tools, QtWidgets.QWidget):
         self._limit_buffers()
         self._show_planned()
 
-    def _sampling_words(self, engine, settings=None, pixel_samples=None, gathering=None):
+    def _sampling_words(self, engine, settings=None, pixel_samples=None, gathering=None, done=None):
         """How a picture is sampled, as the label beside it says it. MoonRay: uniform with its samples a pixel, or
-        adaptive with the fewest and most (LS before it for MoonRay LS); MoonLightIPR: the samples a pixel it gathers."""
+        adaptive with the fewest and most (LS before it for MoonRay LS); MoonLightIPR: the samples a pixel it gathers,
+        after those the picture holds so far (done) where they are known."""
         if engine=='moonlightipr':
-            return '%d ps'%(gathering or self.preferences.get('moonlightipr/samples'))
+            most=gathering or self.preferences.get('moonlightipr/samples')
+            return '%d / %d ps'%(done,most) if done else '%d ps'%most
         from .options import render_values
         settings=render_values(settings or {})
         # XPU2 renders the preview: how it samples it (xpu2_sampling), not MoonRay's Uniform or Adaptive.
@@ -1322,7 +1389,9 @@ class Panel(Tools, QtWidgets.QWidget):
             width,height=self._dimensions({'width':scene_w,'height':scene_h})
             engine=self._engine()
             if engine=='moonlightipr':
-                words=self._sampling_words('moonlightipr')
+                # Realtime's samples a pixel while RT is on; a Render's (Render samples) while it is off.
+                words=self._sampling_words('moonlightipr',gathering=None if self.ipr_mode.isChecked()
+                                           else moonlightipr_render_samples())
             elif self._low():
                 # As MoonRay LS has a scene prepared: no larger than its share of the render, and sampled to its own limit.
                 from .ipr import prepare
@@ -1337,11 +1406,28 @@ class Panel(Tools, QtWidgets.QWidget):
         if shown:text+=' | '+shown
         self.image_info.setText(text)
 
+    def _order_buffers(self,only):
+        """MoonLightIPR's list in a composite's order: the beauty, the light passes that add up to it (Diffuse,
+        Glossy, Emission, Environment background), then what the camera sees first, Albedo among them. MoonRay's
+        list keeps its own order, Albedo first."""
+        if getattr(self,'_buffers_ordered_for',None)==only:return
+        self._buffers_ordered_for=only
+        row=self.buffer.findData('albedo')
+        after=self.buffer.findData('environment_background' if only else 'moonlightipr_glossy')
+        if row<0 or after<0:return
+        target=after if row<after else after+1
+        if row==target:return
+        key=self.buffer.currentData();blocker=QtCore.QSignalBlocker(self.buffer)
+        model=self.buffer.model();items=model.takeRow(row);model.insertRow(target,items)
+        self.buffer.setCurrentIndex(max(0,self.buffer.findData(key)));del blocker
+
     def _limit_buffers(self):
-        """MoonLightIPR makes the beauty and, where it is asked for, a denoised beauty: the list then holds those two.
-        It shows the beauty unless the denoised one is chosen by hand, and choosing it is what has MoonLightIPR
-        denoise. The other buffers are MoonRay's."""
+        """MoonLightIPR makes the beauty and, where it is asked for, a denoised beauty, and the AOVs of its own
+        (moonlightipr_aovs): the list then holds those. It shows the beauty unless another is chosen by hand, and choosing
+        the denoised one is what has MoonLightIPR denoise. The other buffers are MoonRay's."""
+        from .moonlightipr_aovs import AOVS as MOONLIGHTIPR_AOVS,OWN_KEYS
         only=self._engine()=='moonlightipr'
+        self._order_buffers(only)
         denoises=self._moonlightipr_denoises()
         self.buffer.setItemText(0,'Beauty')
         # MoonRay LS is a quick look: the beauty alone.
@@ -1355,12 +1441,16 @@ class Panel(Tools, QtWidgets.QWidget):
         # and it is what is shown from the moment it is switched on, the beauty again once it is off. MoonLightIPR does
         # not make it.
         checking=validity and not only
+        # XPU2's realtime: the beauty and the denoised beauty alone, as it renders them; the other buffers are a render's.
+        from . import native
+        xpu2_realtime=self._engine()=='moonray' and getattr(self,'_following',False) and native.xpu2()
         for row in range(1,self.buffer.count()):
             key=self.buffer.itemData(row)
             denoised=key=='denoised_beauty'
-            if checking:hidden=key!='pbr_validity'
-            else:hidden=(low or (denoised and not on) or (only and not (denoises and denoised))
-                         or (key=='pbr_validity' and not validity))
+            if xpu2_realtime:hidden=not denoised or not on
+            elif checking:hidden=key!='pbr_validity'
+            else:hidden=(low or (denoised and not on) or (only and not ((denoises and denoised) or key in MOONLIGHTIPR_AOVS))
+                         or (not only and key in OWN_KEYS) or (key=='pbr_validity' and not validity))
             self.buffer.view().setRowHidden(row,hidden)
         was=getattr(self,'_validity_checked',False);self._validity_checked=checking
         if checking:
@@ -1369,11 +1459,19 @@ class Panel(Tools, QtWidgets.QWidget):
             return
         if was and self.buffer.currentData()=='pbr_validity':self.buffer.setCurrentIndex(self.buffer.findData('beauty'))
         if not on and self.buffer.currentData()=='denoised_beauty':self.buffer.setCurrentIndex(self.buffer.findData('beauty'))
+        if xpu2_realtime and self.buffer.currentData() not in ('beauty','denoised_beauty'):
+            self.buffer.setCurrentIndex(self.buffer.findData('beauty'))
+            return
         if low:
             if self.buffer.currentData()!='beauty':self.buffer.setCurrentIndex(self.buffer.findData('beauty'))
             return
-        if not only:return
+        if not only:
+            # MoonLightIPR's own passes are not MoonRay's: the beauty is shown in their place.
+            if self.buffer.currentData() in OWN_KEYS:self.buffer.setCurrentIndex(self.buffer.findData('beauty'))
+            return
         shown=self.buffer.currentData()
+        # An AOV MoonLightIPR gathers stays chosen.
+        if shown in MOONLIGHTIPR_AOVS:return
         # The beauty is what is shown. The denoised picture is for whoever is looking to choose, and stays chosen
         # for as long as there is one.
         wanted='denoised_beauty' if denoises and shown=='denoised_beauty' and self._buffer_picked=='denoised_beauty' else 'beauty'
@@ -1448,6 +1546,8 @@ class Panel(Tools, QtWidgets.QWidget):
             if self.buffer.currentData()=='denoised_beauty' and self._engine()!='moonlightipr' and not (self.ipr_mode.isChecked() and self._rt_capable()):
                 self.buffer.setCurrentIndex(self.buffer.findData('beauty'))
             if not self.preview_lock.isChecked():self.timer.start()
+        # The buffers listed follow: XPU2's realtime has the beauty and the denoised beauty alone.
+        self._limit_buffers()
         self._set_rendering(self._rendering)
 
     def _output_busy(self):
@@ -1483,6 +1583,9 @@ class Panel(Tools, QtWidgets.QWidget):
         the share of that resolution Realtime preview resolution asks for (a half, a third...), tall or wide alike."""
         scene_w, scene_h = scene['width'], scene['height']
         share=max(1,int(self.preferences.get('preview_fraction') or 1))
+        # A MoonLightIPR Render (realtime off) at the active camera's resolution, where Preview Preferences asks for it;
+        # realtime keeps its share, as XPU2's does.
+        if self._engine()=='moonlightipr' and self.preferences.get('moonlightipr/camera_resolution') and not getattr(self,'_following',False):share=1
         width = scene_w if final or not (self._live() or self._low() or (self.ipr_mode.isChecked() and self._rt_capable())) else max(16,round(scene_w/share))
         # A playblast has a width of its own, whichever engine is chosen.
         blast=None if final else self._playblasting()
@@ -1580,12 +1683,19 @@ class Panel(Tools, QtWidgets.QWidget):
     def _preview_blurred(self):
         """Whether what follows the scene shows motion blur, by the preview's preferences: MoonLightIPR's own switch, and
         one for MoonRay's realtime, which is XPU2's."""
-        if self._engine()=='moonlightipr':return bool(self.preferences.get('preview_motion'))
+        # MoonLightIPR's motion vectors read the shutter's ends as well (held at the frame's moment where blur is off).
+        if self._engine()=='moonlightipr':return bool(self.preferences.get('preview_motion')) or self._moonlightipr_vectors()
         if self.preview_engine.currentData()!='moonray' or not self.ipr_mode.isChecked() or not self.preferences.get('xpu2_motion'):return False
         try:
             from . import native
             return bool(native.xpu2())
         except Exception:return False
+
+    def _moonlightipr_vectors(self):
+        """Whether the scene is read for MoonLightIPR's motion vectors: always with MoonLightIPR, which gathers every AOV
+        with the beauty. Read once, and with the shutter's ends only where something moves during it (shutter_moves),
+        held at the frame's moment where blur is off (render.py), so that the vectors are there from the first sample."""
+        return self._engine()=='moonlightipr'
 
     def _capture_output(self):
         values=self._settings_values()
@@ -1598,6 +1708,16 @@ class Panel(Tools, QtWidgets.QWidget):
         # Not while realtime follows the scene, where each edit would read the shutter's ends too, nor MoonRay LS or a draft.
         still=self.preview_engine.currentData()=='moonray' and not self._following and not self.draft.isChecked() and self._motion_wanted()
         if not still and not self._preview_blurred():return self._capture()
+        if not still and not self._following and self._engine()=='moonlightipr' and not self.preferences.get('preview_motion'):
+            # A MoonLightIPR Render without blur, read for its motion vectors alone: once, and the shutter's ends asked of
+            # where the items stand; where nothing moves, that reading is the scene (no vectors to gather, the meshes not
+            # read again), else it is read with its motion. (Realtime asks the same before it comes here.)
+            from .animation import shutter_moves
+            first=self._capture()
+            try:moving=shutter_moves(self._geometry_cache,self._settings_values()['surface']==2) if self._geometry_cache is not None else None
+            except Exception:moving=None
+            self.changes.consume()
+            if moving is False:return first
         from .animation import capture_current
         self._reading()
         scene=self._configure_snapshot(capture_current(self._settings_values()['surface']==2))
@@ -1692,12 +1812,6 @@ class Panel(Tools, QtWidgets.QWidget):
             self.start.setEnabled(False);self.start.setText('Render')
             self.start.setToolTip('Realtime is on. Switch RT off to render once.')
             return
-        if self._engine()=='moonlightipr' and not self._rendering:
-            # MoonLightIPR renders in realtime alone: RT turns it on, and this button is greyed.
-            self.start.setChecked(False);self.start.setCheckable(False)
-            self.start.setEnabled(False);self.start.setText('Render')
-            self.start.setToolTip('MoonLightIPR renders in realtime: switch RT on.')
-            return
         if False:
             # (Realtime has its switch, RT, left of the engine; this button renders once.)
             # A realtime engine is switched on and off, not started and stopped.
@@ -1719,7 +1833,8 @@ class Panel(Tools, QtWidgets.QWidget):
                               'Right-click the picture for Restart Render.' if again else RENDER_TIP)
 
     def _submit(self, scene, output=None, refining=False, digest=None):
-        # MoonLightIPR denoises when its denoised beauty is the buffer chosen, as of now.
+        # MoonLightIPR denoises when its denoised beauty is the buffer chosen, as of now (said again below, once the list
+        # is settled for this render).
         self.renderer.moonlightipr_wanted=self.buffer.currentData()=='denoised_beauty'
         # Realtime with MoonRay where XPU2 does not render it (opted into): on MoonRay's processor path, the graphics
         # card left to Modo, or on the graphics card (XPU), as Realtime with standard XPU says, whatever the scene's
@@ -1730,6 +1845,11 @@ class Panel(Tools, QtWidgets.QWidget):
             scene=dict(scene,execution_mode='xpu' if realtime_mode=='xpu' else 'vectorized')
         # And gathers as many samples a pixel as the preferences say; a playblast has its own number.
         self.renderer.moonlightipr_preview_samples=self.preferences.get('moonlightipr/samples')
+        # A scene read with the shutter's ends for the motion vectors alone (blur off) is held at the frame's moment.
+        self.renderer.moonlightipr_blur=bool(self.preferences.get('preview_motion'))
+        # Render with MoonLightIPR (realtime off): Render samples a pixel, as fast as the card can, and it stops.
+        once=not output and not self._following and not self.draft.isChecked() and self._engine()=='moonlightipr'
+        self.renderer.moonlightipr_once=moonlightipr_render_samples() if once else None
         # Whether this is a draft redrawing by itself, for which the window is left as it is. The region that follows
         # a draft's lines is of the same redraw; anything else asked for is not.
         asked=getattr(self,'_draft_quiet_asked',False);self._draft_quiet_asked=False
@@ -1839,8 +1959,14 @@ class Panel(Tools, QtWidgets.QWidget):
         if engine=='moonray':scene=dict(scene,_pixel_samples=int(grid)**2)
         if engine=='moonray' and self._following and not output:scene=dict(scene,_realtime=True)
         if not output:
-            from . import native
-            self._offer_denoised(not (engine=='moonray' and self._following and native.xpu2()))
+            # Denoised Beauty is offered under XPU2's realtime too (a tester asked for it), and the list there is the
+            # beauty and it alone (_limit_buffers).
+            self._offer_denoised(True)
+            self._limit_buffers()
+            # As the list now stands: settling it may have put the beauty back in the denoised beauty's place, and the
+            # picture MoonLightIPR sends must be the one the list names (a tester saw the denoised picture under Beauty,
+            # and choosing Denoised Beauty then changed nothing).
+            self.renderer.moonlightipr_wanted=self.buffer.currentData()=='denoised_beauty'
         self.renderer.submit(scene, self.runtime_path(), width, height, grid,
                              values['environment'], values['threads'], output, persistent_preview=get('persistent_preview'), engine=engine, resume=resume)
         if resume:self.status.setText('Continuing the stopped render.')
@@ -2057,8 +2183,9 @@ class Panel(Tools, QtWidgets.QWidget):
                 # from the scene as last read, not read again.
                 self._submit(dict(self._ipr_refine_scene,preview_buffer=key))
             if key=='denoised_beauty' and self._engine()=='moonlightipr' and not getattr(self.renderer,'moonlightipr_denoises',False):
-                # MoonLightIPR has not been denoising: it renders again, denoising this time.
-                if self._following or self._rendering or not self.preview.image.isNull():self.render_once()
+                # MoonLightIPR has not been denoising: it denoises the picture as it stands, a finished Render as well,
+                # without rendering again (a tester's report: it started over); the buffer chosen asked it for that.
+                self.renderer.moonlightipr_denoises=True
             # A Cryptomatte buffer is read for picking, with what was picked in it laid over it; any other has nothing laid over.
             if not self._rendering:self._crypto_ready()
             else:self.preview.set_overlay(None)
@@ -2573,7 +2700,10 @@ class Panel(Tools, QtWidgets.QWidget):
             text='%d x %d'%(self.preview.image.width(),self.preview.image.height())
             if snapshot.get('_draft'):pass
             elif frame.get('moonlightipr') or active.get('moonlightipr'):
-                text+=' | '+self._sampling_words('moonlightipr',gathering=getattr(self.renderer,'moonlightipr_gathering',None))
+                # With the samples a pixel this picture holds, as the session said it was sending it.
+                said=getattr(getattr(self.renderer,'moonlightipr',None),'samples_now',None)
+                done=said[1] if said and said[0]==getattr(self.renderer,'moonlightipr_serial',None) else None
+                text+=' | '+self._sampling_words('moonlightipr',gathering=getattr(self.renderer,'moonlightipr_gathering',None),done=done)
             elif snapshot.get('_pixel_samples'):
                 text+=' | '+self._sampling_words('ls' if snapshot.get('_ipr') else 'moonray',snapshot.get('render_settings',{}),pixel_samples=snapshot['_pixel_samples'])
             # And how it is shown: the view transform, and a LUT where there is one.

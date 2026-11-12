@@ -102,6 +102,12 @@ class Session(QtCore.QObject):
         # Mesh keys the running process is known to hold; their data is not sent again.
         self.known = set()
         self.partial = ''; self.stopping = False; self.closed = False
+        # (generation, samples a pixel) of the newest frame the session said it was sending.
+        self.samples_now = None
+        # The AOV the session gathers (moonlightipr_aovs): its number and the buffer key its frames come under.
+        self.aov_now = (0, 'none')
+        # Held at one moment of the shutter (motion vectors without blur), and that moment.
+        self.vectors_now = (0, 0.5)
         # The scene being made ready on another thread, if one is.
         self.packer = None
         self.packer_poll = QtCore.QTimer(self); self.packer_poll.setSingleShot(True); self.packer_poll.setInterval(5)
@@ -196,6 +202,10 @@ class Session(QtCore.QObject):
         if error:
             self.failed.emit('MoonLightIPR cannot preview this scene: ' + error); return
         self.warnings.emit(warnings)
+        # The AOV looked at, said before every scene: a session newly started has not been told, and one told already
+        # passes it over.
+        self.process.write(('aov %d %s\n' % self.aov_now).encode('utf-8'))
+        self.process.write(('vectors %d %.6f\n' % self.vectors_now).encode('utf-8'))
         self.process.write(('scene %d %s\n' % (request['id'], path)).encode('utf-8'))
         self.sent = dict(request, keys=keys, path=path)
         self.current = request['id']
@@ -222,13 +232,20 @@ class Session(QtCore.QObject):
                 continue
             # What the session says of a scene: its textures made smaller to fit the card, or why it was rejected.
             if line.startswith('MoonLightIPR textures: '):
-                self.status.emit('MoonLightIPR shows textures ' + line[len('MoonLightIPR textures: '):].strip() + '.')
+                said = line[len('MoonLightIPR textures: '):].strip()
+                # Kept whole in the computer's memory (out of core), or, where that refused them, made smaller.
+                self.status.emit(('MoonLightIPR textures: ' + said if 'computer' in said else 'MoonLightIPR shows textures ' + said) + '.')
                 continue
             if line.startswith('MoonLightIPR scene rejected: '):
                 self.rejection = line[len('MoonLightIPR scene rejected: '):].strip()
                 continue
             if not line.startswith('@@MODO_SESSION '): continue
             parts = line.strip().split()
+            if len(parts) == 4 and parts[1] == 'SAMPLES':
+                # The samples a pixel of the frame about to come, for the label under the picture.
+                try: self.samples_now = (int(parts[2]), int(parts[3]))
+                except ValueError: pass
+                continue
             if len(parts) != 3: continue
             try: generation = int(parts[2])
             except ValueError: continue
@@ -271,6 +288,20 @@ class Session(QtCore.QObject):
         self.denoised_view = bool(denoised)
         if self.running() and not self.stopping and not self.closed:
             self.process.write(('view %d %s\n' % (self.current or 0, 'denoised' if denoised else 'beauty')).encode('utf-8'))
+
+    def aov(self, kind, key):
+        """Look at an AOV (moonlightipr_aovs), its frames sent under key; 0 for the beauty. Every AOV is gathered beside
+        the beauty from the start, so the session sends it at once, rendering nothing again."""
+        now = (int(kind), str(key) if kind else 'none')
+        if now == self.aov_now: return
+        self.aov_now = now
+        if self.running() and not self.stopping and not self.closed:
+            self.process.write(('aov %d %s\n' % now).encode('utf-8'))
+
+    def vectors(self, held, moment=0.5):
+        """Hold the scenes that follow at one moment of the shutter (0 its opening, 1 its closing): the motion vectors
+        without motion blur. Said with the next scene."""
+        self.vectors_now = (1 if held else 0, float(moment))
 
     def finish(self):
         """Stop sampling and have what is rendered so far sent as the finished picture. Returns whether there is a

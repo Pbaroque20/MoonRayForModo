@@ -526,7 +526,8 @@ MAP_SETTINGS.update({
                           ('valVariation', 0.0), ('brightness', 0.0), ('contrast', 0.0)),
 })
 # Read without a texture locator: they take what is beneath them, or the surface itself.
-SURFACE_KINDS = ('val.Process_EasyGrad.RJJ', 'val.Process_RegionalHSV.RJJ', 'val.RTCurvature', 'val.wireframe', 'vmapTexture')
+SURFACE_KINDS = ('val.Process_EasyGrad.RJJ', 'val.Process_RegionalHSV.RJJ', 'val.RTCurvature', 'val.wireframe', 'vmapTexture', 'process',
+                 'occlusion', 'variationTexture', 'tensionTexture')
 IDENTITY_ROWS = [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0]]
 
 
@@ -568,6 +569,17 @@ def regional(layer, channel, color):
             'color1': [0.0, 0.0, 0.0], 'color2': [1.0, 1.0, 1.0], 'alpha1': 1.0, 'alpha2': 1.0, 'rows': IDENTITY_ROWS, 'process': True}
 
 
+def modo_process(layer, channel):
+    """Modo's own Process texture for ModoProceduralMap and MoonLightIPR (pattern 401, modo_patterns.h mp_modo_process):
+    the colour beneath it with its hue, saturation and value each multiplied by one more than its Hue, Saturation and
+    Value, then Hue Shift (radians) added round the wheel, as measured against Modo's renders (within 0.0004).
+    (the layer's record, whether its Bias and Gain are moved, which are not followed yet)."""
+    settings = _finite([channel(layer, name, 0.0) for name in ('hue', 'sat', 'val', 'hueShift')], 'Process setting')
+    moved = any(abs(float(channel(layer, name, .5)) - .5) > 1e-6 for name in ('bias', 'gain'))
+    return {'pattern': 401, 'type': 0, 'settings': settings + [0.0] * (22 - len(settings)) + [.5, .5],
+            'color1': [0.0, 0.0, 0.0], 'color2': [1.0, 1.0, 1.0], 'alpha1': 1.0, 'alpha2': 1.0, 'rows': IDENTITY_ROWS, 'process': True}, moved
+
+
 def weight_curve(t, bias, gain):
     """How far from Low to High a weight of t lies, under the layer's Bias and Gain; both at 0.5 leave it as it is.
     Schlick's bias then gain, each of 1 less the channel's value: found from Modo's renders (probe_gui_weight_layer.py)."""
@@ -596,6 +608,100 @@ def vertex_map(layer, channel, color, is_color):
     if any(a != 1.0 for a in alpha):
         data['alpha'] = alpha
     return data
+
+
+def occlusion(layer, channel, color, is_color):
+    """Modo's Occlusion texture as a gradient looked up by how open each point is (occlusion.apply works that out over the
+    scene into a weight map of the layer's settings): from its Low (closed in) to its High (open), as Bias and Gain bend
+    the way, as a Weight Map Texture reads its weight."""
+    from .occlusion import map_name
+    rays, distance, spread = int(channel(layer, 'rays', 24)), float(channel(layer, 'dist', .2)), float(channel(layer, 'spread', math.pi / 4))
+    name = map_name(rays, distance, spread)
+    data = vertex_map(layer, lambda item, key, default=None: name if key == 'vmap' else channel(item, key, default), color, is_color)
+    data.update(label='Occlusion', occlusion={'rays': rays, 'distance': distance, 'spread': spread})
+    return data
+
+
+VARIATION_MAP = '__modo_variation_item'
+# By Mesh Part: a number for each Part of each mesh item, at each corner of its polygons (it changes at a part's edge).
+VARIATION_PART_MAP = '__modo_variation_part'
+# By Particle: a number for each replica of a Replicator (each instance of a mesh), and for a mesh that stands alone
+# one of its own: carried by each instance (occlusion.variation), not by the mesh's points.
+VARIATION_PARTICLE_MAP = '__modo_variation_particle'
+
+
+def variation(layer, channel, color, is_color):
+    """Modo's Variation Texture by Item, Mesh Part or Particle as a gradient looked up by a random number for each mesh
+    item (occlusion.variation gives each item's points its own, from its identity), each Part of it (host gives the
+    corners of each part's polygons theirs, from the item and the part) or each replica (occlusion.variation gives each
+    instance its own, from the replica's identity): the layer's own gradient, read at 257 points over 0 to 1.
+    (the gradient's record, or None with the words for a source not followed yet.)"""
+    import lx
+    source = str(channel(layer, 'type', 'particle'))
+    if source not in ('item', 'meshPart', 'particle'):
+        return None, {'txtrParticle': 'Texture Particle', 'textureParticle': 'Texture Particle'}.get(source, source)
+    names = ['color.' + axis for axis in 'RGB'] if is_color else ['value']
+    filters = []
+    for name in names + (['color.A'] if is_color else []):
+        value = layer.channel(name).get() if layer.channel(name) is not None else None
+        if value is None or isinstance(value, (int, float)):
+            filters.append(lambda x, v=float(value if value is not None else 1.0): v)
+            continue
+        gradient = lx.object.GradientFilter(value)
+        if not gradient.test():
+            raise ValueError('Cannot read the Variation Texture gradient ' + name)
+        filters.append(gradient.Generate)
+    positions = [i / 256.0 for i in range(257)]
+    colours = [(lambda row: row * 3 if len(row) == 1 else row)([float(f(x)) for f in filters[:len(names)]]) for x in positions]
+    data = {'input': '@vmap', 'vmap': {'item': VARIATION_MAP, 'meshPart': VARIATION_PART_MAP, 'particle': VARIATION_PARTICLE_MAP}[source],
+            'label': {'item': 'Variation by item', 'meshPart': 'Variation by mesh part', 'particle': 'Variation by particle'}[source],
+            'positions': positions,
+            'colors': [_finite(c, 'Variation Texture value') for c in colours], 'variation': {'source': source}}
+    if is_color:
+        data['alpha'] = [min(1.0, max(0.0, float(filters[-1](x)))) for x in positions]
+    return data, None
+
+
+def tension(layer, channel, color, is_color):
+    """Modo's Tension Texture as a gradient looked up by how the surface has stretched or bent from its base mesh at each
+    point (tension.apply works that out from the rest and deformed points into a weight): Type Area, its faces' area
+    now over their area at rest less 1; Type Angle, how far it has folded. The weight runs 0 to 1 over the span of the
+    layer's gradient keys (beyond them Modo's gradient holds its end values), read at 257 points."""
+    from .tension import map_name
+    kind = 'angle' if str(channel(layer, 'type', 'area')) == 'angle' else 'area'
+    names = ['color.' + axis for axis in 'RGB'] if is_color else ['value']
+    filters, times = [], []
+    for name in names + (['color.A'] if is_color else []):
+        held = layer.channel(name)
+        value = held.get() if held is not None else None
+        if value is None or isinstance(value, (int, float)):
+            filters.append(lambda x, v=float(value if value is not None else 1.0): v)
+            continue
+        gradient = lx_gradient(value, 'Tension Texture gradient ' + name)
+        filters.append(gradient.Generate)
+        try:
+            times.extend(float(key[0]) for key in held.envelope.keyframes)
+        except Exception:
+            pass
+    low = min(times) if times else 0.0
+    high = max(times) if times else 1.0
+    if high - low < 1e-6:
+        high = low + 1.0
+    positions = [i / 256.0 for i in range(257)]
+    colours = [(lambda row: row * 3 if len(row) == 1 else row)([float(f(low + x * (high - low))) for f in filters[:len(names)]]) for x in positions]
+    data = {'input': '@vmap', 'vmap': map_name(kind, low, high), 'label': 'Tension (%s)' % kind.title(), 'positions': positions,
+            'colors': [_finite(c, 'Tension Texture value') for c in colours], 'tension': {'kind': kind, 'low': low, 'high': high}}
+    if is_color:
+        data['alpha'] = [min(1.0, max(0.0, float(filters[-1](low + x * (high - low))))) for x in positions]
+    return data
+
+
+def lx_gradient(value, label):
+    import lx
+    gradient = lx.object.GradientFilter(value)
+    if not gradient.test():
+        raise ValueError('Cannot read the ' + label)
+    return gradient
 
 
 def curvature(layer, channel, is_color):
