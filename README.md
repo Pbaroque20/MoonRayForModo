@@ -9,9 +9,9 @@ The plugin includes CPU, XPU and XPU2 rendering, a dockable live preview with a 
 
 **Built on MoonRay [2026.29.1](https://github.com/dreamworksanimation/openmoonray/releases/tag/v2026.29.1)** (OpenMoonRay's latest release; MoonRay 18.4), with the plugin's own patches for Windows and the preview.
 
-**Current version: 0.5.4.1 — pre-production release.** The plugin is no longer experimental. 0.5 brought **MoonRay XPU2**, a new GPU renderer for previews in which the processor and the graphics card work on the same picture at once, now the default; realtime that keeps up with heavy scenes and a Scene cache; Modo's procedural textures worked out through the object, 145 of Modo's Enhance textures among them; Modo's light volumetrics and fog; and MoonLightIPR starting in seconds. Install the new runtime with it.
+**Current version: 0.5.4.2 — pre-production release.** The plugin is no longer experimental. 0.5 brought **MoonRay XPU2**, a new GPU renderer for previews in which the processor and the graphics card work on the same picture at once, now the default; realtime that keeps up with heavy scenes and a Scene cache; Modo's procedural textures worked out through the object, 145 of Modo's Enhance textures among them; Modo's light volumetrics and fog; and MoonLightIPR starting in seconds. Install the new runtime with it.
 
-· [Download 0.5.4.1: the kit, the Windows runtime and the MoonRay content](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.5.4.1)
+· [Download 0.5.4.2: the kit, the Windows runtime and the MoonRay content](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.5.4.2)
 
 · [Installation instructions](docs/INSTALLATION.md) 
 
@@ -60,6 +60,10 @@ Work on the next version goes on in the [MoonLightIPR branch](https://github.com
 | **The graph editor**, with a MoonRay material | **Modo's Fur material** rendered by MoonRay |
 | ![The compositor](docs/images/compositor-editor.png) | ![Modern Hall, imported from MoonRay's scene files](docs/images/rdl-modern_hall.jpg) |
 | **The compositor**: the beauty graded, vignetted and sharpened | **An imported MoonRay scene**: its own render (left), after the trip through Modo (right). Modern Hall by NewSee2l035, CC BY |
+
+## New in 0.5.4.2
+
+A hotfix for Render Settings > Camera Background with MoonRay's EnvLight: Black, Solid color and Image now hide an EnvLight from the camera too, which still lights the scene, and stay behind an EnvLight that replaces Modo's environments, where the background came out black. Kit only: 0.5.4.1 users can unpack just the kit ZIP.
 
 ## New in 0.5.4.1
 
@@ -466,7 +470,7 @@ In each pair, MoonRay's render of the scene from its own files is on the left; o
 - Render outputs: configurable AOVs, Cryptomatte surface categories, buffer switching, deep EXR, texture baking, a compositor over the finished buffers, and denoising (OptiX or Open Image Denoise) that survives a stopped render.
 - Workflow tools: ACES/sRGB/OCIO view transforms and LUTs, animation output and recovery controls, an asset library with MoonRay's example scenes, and RDL scene import.
 
-## Known issues in 0.5.4.1
+## Known issues in 0.5.4.2
 
 The ones you are most likely to meet:
 
