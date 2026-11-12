@@ -396,6 +396,15 @@ struct LaunchParams {
     float envBackgroundRotation[9];
     unsigned lightPick;     // sample one light per bounce, chosen by power, instead of all of them
     unsigned envPortal;     // the lighting environment reaches the scene only through portal lights
+    // Environments seen by some kinds of rays and not others (Modo's Visible to Indirect Rays, Reflection Rays and
+    // Refraction Rays; MoonRay's EnvLight visible_diffuse_*, visible_glossy_* and visible_mirror_*): with envSplit, what
+    // reflections and refractions see are maps of their own, envPixels then being what diffuse light sees. Without it all
+    // three are envPixels, as before. Same size as envPixels; reflections have their own sampling distribution.
+    unsigned envSplit;
+    DevicePtr envReflected, envThrough;
+    DevicePtr envReflectedMarginal, envReflectedConditional;
+    float envReflectedRotation[9];
+    float envThroughRotation[9];
     // Material colours are worked out in Rec.709 and then taken to the working space by these rows.
     float workingMatrix[9];
     unsigned working;

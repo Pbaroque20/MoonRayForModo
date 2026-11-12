@@ -321,13 +321,13 @@ SceneSettings SceneLoader::apply(const std::string& path) {
     // "MLS" and a letter for the form of the scene, which changes whenever what is written in it does: "C" since
     // the scene's sample clamp is written in it, "D" since a toon material's ramps are, "E" since a hair toon's highlights are,
     // "F" since the lights' poses at the shutter's close are, "G" since the volume scattering factors are, "H" since the
-    // camera's film offset is, "I" since a material's fuzz is, "J" since the light sets are, "K" since a mesh may be displaced, "L" since by a program of displacement nodes, "M" since a material's clearcoat bump strength is, "N" since whether the camera sees each light is, "O" since the subsurface scatterings a path may have are, "P" since each instance's own number is, "Q" since the roughness clamp is. A plugin and a session of different versions say so plainly, in
+    // camera's film offset is, "I" since a material's fuzz is, "J" since the light sets are, "K" since a mesh may be displaced, "L" since by a program of displacement nodes, "M" since a material's clearcoat bump strength is, "N" since whether the camera sees each light is, "O" since the subsurface scatterings a path may have are, "P" since each instance's own number is, "Q" since the roughness clamp is, "R" since what reflections and refractions see of the environment is. A plugin and a session of different versions say so plainly, in
     // place of reading each other's scenes wrongly.
     const uint32_t mark = in.value<uint32_t>();
     if ((mark & 0x00ffffff) != 0x00534c4d) throw std::runtime_error("Not a MoonLightIPR scene: " + path);
-    if (mark != 0x51534c4d)
+    if (mark != 0x52534c4d)
         throw std::runtime_error("This MoonLightIPR and the plugin are of different versions (the scene is form '" + std::string(1, char(mark >> 24))
-                                 + "', this MoonLightIPR reads 'Q'). Install the kit and its runtime from the same release.");
+                                 + "', this MoonLightIPR reads 'R'). Install the kit and its runtime from the same release.");
     ++generation;
     SceneSettings settings;
     settings.width = in.value<uint32_t>();
@@ -649,8 +649,9 @@ SceneSettings SceneLoader::apply(const std::string& path) {
         i += run + 1;
     }
 
-    // The environment: a column of rows from zenith to nadir for what lights the scene and one
-    // for what the camera sees, each optionally with a latitude-longitude image added.
+    // The environment: a column of rows from zenith to nadir for what diffuse light sees, one for what the camera sees,
+    // one for what reflections see and one for what refractions see (form R), each optionally with a
+    // latitude-longitude image added.
     struct EnvironmentPart {
         std::vector<float> rows;
         bool hasImage = false;
@@ -658,7 +659,11 @@ SceneSettings SceneLoader::apply(const std::string& path) {
         std::string file;
         float scale = 1.0f;
         float rotation[9] = {1, 0, 0, 0, 1, 0, 0, 0, 1};
-    } parts[2];
+        bool operator==(const EnvironmentPart& other) const {
+            return rows == other.rows && hasImage == other.hasImage
+                && (!hasImage || (key == other.key && scale == other.scale && std::equal(rotation, rotation + 9, other.rotation)));
+        }
+    } parts[ENVIRONMENT_PARTS];
     const size_t environmentStart = in.position();
     const uint32_t rowCount = in.value<uint32_t>();
     if (!rowCount || rowCount > 4096) throw std::runtime_error("MoonLightIPR scene environment is invalid");
@@ -1012,41 +1017,58 @@ SceneSettings SceneLoader::apply(const std::string& path) {
         } else ++entry;
     }
     if (environmentNow != environmentHash) {
-        const EnvironmentPart* pictured = nullptr;
-        for (int p = 0; p < 2; ++p) {
-            if (!parts[p].hasImage) continue;
-            if (parts[p].key != environmentImageKey[p]) {
-                const Image image = readImage(parts[p].file);
-                if (!image.floatData || image.width < 2) throw std::runtime_error("MoonLightIPR environment image is not a float image");
-                environmentImage[p].resize(size_t(image.width) * image.height * 3);
-                // MoonRay puts the middle of the image behind the map's forward axis, so turn it half way round.
-                for (uint32_t y = 0; y < image.height; ++y)
-                    for (uint32_t x = 0; x < image.width; ++x) {
-                        const float* from = &image.floats[(size_t(y) * image.width + (x + image.width / 2) % image.width) * 4];
-                        std::memcpy(&environmentImage[p][(size_t(y) * image.width + x) * 3], from, 3 * sizeof(float));
+        // Reflections and refractions that see what diffuse light sees are not built again (the usual case: every
+        // environment visible to every ray).
+        bool used[ENVIRONMENT_PARTS] = {true, true, !(parts[2] == parts[0]), !(parts[3] == parts[0])};
+        int sized = -1;
+        for (int p = 0; p < ENVIRONMENT_PARTS; ++p) {
+            if (!used[p] || !parts[p].hasImage) continue;
+            if (parts[p].key != environmentImageKey[p] || !environmentImage[p]) {
+                // Another part showing the same image shares it.
+                std::shared_ptr<std::vector<float>> shared;
+                for (int q = 0; q < ENVIRONMENT_PARTS && !shared; ++q)
+                    if (q != p && environmentImage[q] && environmentImageKey[q] == parts[p].key) {
+                        shared = environmentImage[q];
+                        environmentImageWidth[p] = environmentImageWidth[q];
+                        environmentImageHeight[p] = environmentImageHeight[q];
                     }
-                environmentImageWidth[p] = image.width;
-                environmentImageHeight[p] = image.height;
+                if (!shared) {
+                    const Image image = readImage(parts[p].file);
+                    if (!image.floatData || image.width < 2) throw std::runtime_error("MoonLightIPR environment image is not a float image");
+                    shared = std::make_shared<std::vector<float>>(size_t(image.width) * image.height * 3);
+                    // MoonRay puts the middle of the image behind the map's forward axis, so turn it half way round.
+                    for (uint32_t y = 0; y < image.height; ++y)
+                        for (uint32_t x = 0; x < image.width; ++x) {
+                            const float* from = &image.floats[(size_t(y) * image.width + (x + image.width / 2) % image.width) * 4];
+                            std::memcpy(&(*shared)[(size_t(y) * image.width + x) * 3], from, 3 * sizeof(float));
+                        }
+                    environmentImageWidth[p] = image.width;
+                    environmentImageHeight[p] = image.height;
+                }
+                environmentImage[p] = shared;
                 environmentImageKey[p] = parts[p].key;
             }
             // The packer makes every environment image the same size.
-            if (pictured && (environmentImageWidth[0] != environmentImageWidth[1] || environmentImageHeight[0] != environmentImageHeight[1]))
+            if (sized >= 0 && (environmentImageWidth[p] != environmentImageWidth[sized] || environmentImageHeight[p] != environmentImageHeight[sized]))
                 throw std::runtime_error("MoonLightIPR scene uses environment images of different sizes");
-            pictured = &parts[p];
+            if (sized < 0) sized = p;
         }
-        const int sized = parts[0].hasImage ? 0 : 1;
+        // Images no part shows any more let their memory go.
+        for (int p = 0; p < ENVIRONMENT_PARTS; ++p)
+            if (!used[p] || !parts[p].hasImage) { environmentImage[p].reset(); environmentImageKey[p] = 0; }
         Environment environment;
-        environment.width = pictured ? environmentImageWidth[sized] : 1;
-        environment.height = pictured ? environmentImageHeight[sized] : rowCount;
-        std::vector<float> pixels[2];
-        for (int p = 0; p < 2; ++p) {
+        environment.width = sized >= 0 ? environmentImageWidth[sized] : 1;
+        environment.height = sized >= 0 ? environmentImageHeight[sized] : rowCount;
+        std::vector<float> pixels[ENVIRONMENT_PARTS];
+        for (int p = 0; p < ENVIRONMENT_PARTS; ++p) {
+            if (!used[p]) continue;
             pixels[p].resize(size_t(environment.width) * environment.height * 3);
             for (uint32_t y = 0; y < environment.height; ++y) {
                 const float* row = &parts[p].rows[size_t(std::min<uint64_t>(uint64_t(y) * rowCount / environment.height, rowCount - 1)) * 3];
                 for (uint32_t x = 0; x < environment.width; ++x) {
                     const size_t i = (size_t(y) * environment.width + x) * 3;
                     for (int c = 0; c < 3; ++c)
-                        pixels[p][i + c] = row[c] + (parts[p].hasImage ? environmentImage[p][i + c] * parts[p].scale : 0.0f);
+                        pixels[p][i + c] = row[c] + (parts[p].hasImage ? (*environmentImage[p])[i + c] * parts[p].scale : 0.0f);
                 }
             }
         }
@@ -1054,6 +1076,14 @@ SceneSettings SceneLoader::apply(const std::string& path) {
         environment.background = pixels[1].data();
         std::copy(parts[0].rotation, parts[0].rotation + 9, environment.rotation);
         std::copy(parts[1].rotation, parts[1].rotation + 9, environment.backgroundRotation);
+        if (used[2]) {
+            environment.reflected = pixels[2].data();
+            std::copy(parts[2].rotation, parts[2].rotation + 9, environment.reflectedRotation);
+        }
+        if (used[3]) {
+            environment.through = pixels[3].data();
+            std::copy(parts[3].rotation, parts[3].rotation + 9, environment.throughRotation);
+        }
         renderer.setEnvironment(environment);
         environmentHash = environmentNow;
     }

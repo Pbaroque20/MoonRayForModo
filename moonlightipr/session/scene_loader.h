@@ -5,6 +5,7 @@
 #include "moonlightipr/moonlightipr.h"
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -40,10 +41,12 @@ private:
     // The environment is rebuilt only when its part of the scene changes; its image is kept
     // decoded because an intensity or rotation edit reuses it.
     uint64_t environmentHash = 0;
-    // One image for what lights the scene and one for what the camera sees behind it.
-    uint64_t environmentImageKey[2] = {0, 0};
-    uint32_t environmentImageWidth[2] = {0, 0}, environmentImageHeight[2] = {0, 0};
-    std::vector<float> environmentImage[2];     // RGB, top row first, centre column facing -Z
+    // An image for what diffuse light sees, what the camera sees behind the scene, what reflections see and what
+    // refractions see; parts showing the same image share it.
+    static const int ENVIRONMENT_PARTS = 4;
+    uint64_t environmentImageKey[ENVIRONMENT_PARTS] = {};
+    uint32_t environmentImageWidth[ENVIRONMENT_PARTS] = {}, environmentImageHeight[ENVIRONMENT_PARTS] = {};
+    std::shared_ptr<std::vector<float>> environmentImage[ENVIRONMENT_PARTS];   // RGB, top row first, centre column facing -Z
     uint64_t generation = 0;
 };
 

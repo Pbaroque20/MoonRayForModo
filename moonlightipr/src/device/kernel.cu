@@ -211,26 +211,47 @@ ML_INLINE float3 envLookup(const float4* pixels, const float* rotation, float3 d
                 lerp(envTexel(pixels, ix, iy + 1), envTexel(pixels, ix + 1, iy + 1), x - fx), y - fy);
 }
 
+// A lighting map and how it is sampled: what diffuse light sees (envPixels), or, with params.envSplit, what reflections see.
+struct EnvMap {
+    const float4* pixels;
+    const float* rotation;
+    const float* marginal;
+    const float* conditional;
+};
+ML_INLINE EnvMap diffuseEnv() {
+    return {reinterpret_cast<const float4*>(params.envPixels), params.envRotation, reinterpret_cast<const float*>(params.envMarginal),
+            reinterpret_cast<const float*>(params.envConditional)};
+}
+ML_INLINE EnvMap reflectedEnv() {
+    return {reinterpret_cast<const float4*>(params.envReflected), params.envReflectedRotation,
+            reinterpret_cast<const float*>(params.envReflectedMarginal), reinterpret_cast<const float*>(params.envReflectedConditional)};
+}
+
+ML_INLINE float3 envRadiance(float3 direction, const EnvMap& map) {
+    return envLookup(map.pixels, map.rotation, direction);
+}
 ML_INLINE float3 envRadiance(float3 direction) {
-    return envLookup(reinterpret_cast<const float4*>(params.envPixels), params.envRotation, direction);
+    return envRadiance(direction, diffuseEnv());
 }
 
 // Density per unit (u, v) of the texel at (column, row), converted to solid angle.
-ML_INLINE float envTexelPdf(unsigned column, unsigned row, float sinTheta) {
-    const float* marginal = reinterpret_cast<const float*>(params.envMarginal);
-    const float* conditional = reinterpret_cast<const float*>(params.envConditional) + row * (params.envWidth + 1);
-    const float density = (marginal[row + 1] - marginal[row]) * (conditional[column + 1] - conditional[column])
+ML_INLINE float envTexelPdf(const EnvMap& map, unsigned column, unsigned row, float sinTheta) {
+    const float* conditional = map.conditional + row * (params.envWidth + 1);
+    const float density = (map.marginal[row + 1] - map.marginal[row]) * (conditional[column + 1] - conditional[column])
                         * float(params.envWidth) * float(params.envHeight);
     return sinTheta > 1e-6f ? density / (2.0f * ML_PI * ML_PI * sinTheta) : 0.0f;
 }
 
-ML_INLINE float envPdf(float3 direction) {
+ML_INLINE float envPdf(float3 direction, const EnvMap& map) {
     float u, v;
-    direction = envLocal(params.envRotation, direction);
+    direction = envLocal(map.rotation, direction);
     envCoordinates(direction, u, v);
     const unsigned column = min(unsigned(u * params.envWidth), params.envWidth - 1);
     const unsigned row = min(unsigned(v * params.envHeight), params.envHeight - 1);
-    return envTexelPdf(column, row, sqrtf(fmaxf(0.0f, 1.0f - direction.y * direction.y)));
+    return envTexelPdf(map, column, row, sqrtf(fmaxf(0.0f, 1.0f - direction.y * direction.y)));
+}
+ML_INLINE float envPdf(float3 direction) {
+    return envPdf(direction, diffuseEnv());
 }
 
 // Largest i in [0, count) with cdf[i] <= value.
@@ -243,17 +264,20 @@ ML_INLINE unsigned findInterval(const float* cdf, unsigned count, float value) {
     return low;
 }
 
-ML_INLINE float3 sampleEnv(float u1, float u2, float& pdf) {
-    const float* marginal = reinterpret_cast<const float*>(params.envMarginal);
+ML_INLINE float3 sampleEnv(float u1, float u2, float& pdf, const EnvMap& map) {
+    const float* marginal = map.marginal;
     const unsigned row = findInterval(marginal, params.envHeight, u1);
-    const float* conditional = reinterpret_cast<const float*>(params.envConditional) + row * (params.envWidth + 1);
+    const float* conditional = map.conditional + row * (params.envWidth + 1);
     const unsigned column = findInterval(conditional, params.envWidth, u2);
     const float rowSpan = marginal[row + 1] - marginal[row], columnSpan = conditional[column + 1] - conditional[column];
     if (rowSpan <= 0.0f || columnSpan <= 0.0f) { pdf = 0.0f; return make_float3(0.0f, 1.0f, 0.0f); }
     const float u = (column + (u2 - conditional[column]) / columnSpan) / params.envWidth;
     const float v = (row + (u1 - marginal[row]) / rowSpan) / params.envHeight;
-    pdf = envTexelPdf(column, row, sinf(v * ML_PI));
-    return envWorld(params.envRotation, envDirection(u, v));
+    pdf = envTexelPdf(map, column, row, sinf(v * ML_PI));
+    return envWorld(map.rotation, envDirection(u, v));
+}
+ML_INLINE float3 sampleEnv(float u1, float u2, float& pdf) {
+    return sampleEnv(u1, u2, pdf, diffuseEnv());
 }
 
 // ---- Where a light's picture is bright -----------------------------------------------------------
@@ -1265,15 +1289,20 @@ ML_INLINE float3 directLight(const Surface& surface, const Lobes& lobes, float3 
     const DeviceLight* lights = reinterpret_cast<const DeviceLight*>(params.lights);
     float3 radiance = vec(0.0f);
     // With a portal in the scene the environment is sampled through it, as one of the lights.
-    if (!params.envPortal && reaches(set, 0)) {
+    // With the environments split by the rays that see them (params.envSplit), the diffuse lobes are lit by what diffuse
+    // light sees, and the glossy ones by what reflections see, each sampled by its own map.
+    for (unsigned part = 0; !params.envPortal && reaches(set, 0) && part < (params.envSplit ? 2u : 1u); ++part) {
+        const unsigned lobesHere = params.envSplit ? part + 1 : only;
+        if (params.envSplit && only && only != lobesHere) continue;
+        const EnvMap map = part ? reflectedEnv() : diffuseEnv();
         float lightPdf;
-        const float3 toLight = sampleEnv(rnd(seed), rnd(seed), lightPdf);
+        const float3 toLight = sampleEnv(rnd(seed), rnd(seed), lightPdf, map);
         if (lightPdf > 0.0f && (surface.passes || surface.smoothToon || dot(ng, toLight) > 0.0f)) {
-            const BsdfEval e = onlyLobes(evalBsdf(surface, lobes, wo, frame.toLocal(toLight)), only);
+            const BsdfEval e = onlyLobes(evalBsdf(surface, lobes, wo, frame.toLocal(toLight)), lobesHere);
             const float pdf = lobes.specular * e.specularPdf + (1.0f - lobes.specular) * e.diffusePdf;
             const float3 found = litBy(e, pdf, lightPdf);
             if (maxComponent(found) > 0.0f) {
-                const float3 open = weight * found * envRadiance(toLight);
+                const float3 open = weight * found * envRadiance(toLight, map);
                 const float3 c = clampSample(open * shadow(shadowFrom(surface, p, lift, ng, frame.n, toLight), toLight, seed), lit);
                 radiance += c;
                 if (shaded) { shaded->x += luminance(c); shaded->y += luminance(clampSample(open, lit)); }
@@ -1892,6 +1921,9 @@ extern "C" __global__ void __raygen__moonlightipr() {
     // The path's weight up to the last surface, then that surface's two weights for the ray
     // leaving it: all lobes for light found along the ray, and only the lobes that may bounce on.
     float3 throughput = vec(1.0f), lightWeight = vec(1.0f), bounceWeight = vec(1.0f);
+    // The share of lightWeight that the last rough bounce's glossy lobes make, which see the environment as reflections
+    // do (params.envSplit); the rest is diffuse.
+    float3 glossyShare = vec(0.0f);
     float bsdfPdf = 0.0f;
     unsigned diffuseDepth = 0, glossyDepth = 0, roughDepth = 0;
     // The least roughness of what the path meets from here on (params.roughnessClamp, MoonRay's computeMinRoughness), and
@@ -2167,10 +2199,26 @@ extern "C" __global__ void __raygen__moonlightipr() {
             PASS_NOW(PASS_BACKGROUND);
             // Camera rays see the background, which may differ from what lights the scene;
             // later bounces share the lighting environment with light sampling.
-            const float3 sky = camera ? envLookup(reinterpret_cast<const float4*>(params.envBackground), params.envBackgroundRotation, direction)
-                             : params.envPortal ? vec(0.0f) : envRadiance(direction);
+            float3 sky = camera ? envLookup(reinterpret_cast<const float4*>(params.envBackground), params.envBackgroundRotation, direction)
+                       : params.envPortal ? vec(0.0f) : envRadiance(direction);
+            float weighed = sharp ? 1.0f : powerHeuristic(bsdfPdf, envPdf(direction));
+            if (params.envSplit && !camera && !params.envPortal) {
+                // Each kind of ray sees the environments visible to it: a mirror's reflection what reflections see, a
+                // refraction what refractions see; light off a rough surface is its diffuse lobes' and its glossy lobes'
+                // shares, each weighed against the map its light samples were drawn from.
+                if (sharp && seen == SEEN_REFLECTED)
+                    sky = envLookup(reinterpret_cast<const float4*>(params.envReflected), params.envReflectedRotation, direction);
+                else if (sharp && seen == SEEN_THROUGH)
+                    sky = envLookup(reinterpret_cast<const float4*>(params.envThrough), params.envThroughRotation, direction);
+                else if (!sharp) {
+                    const EnvMap glossyMap = reflectedEnv();
+                    sky = (vec(1.0f) - glossyShare) * sky * weighed
+                        + glossyShare * envRadiance(direction, glossyMap) * powerHeuristic(bsdfPdf, envPdf(direction, glossyMap));
+                    weighed = 1.0f;
+                }
+            }
             if ((camera || reaches(fromSet, 0)) && (!camera || !params.aovPass || params.aovPass == PASS_BACKGROUND))
-                radiance += clampSample(throughput * lightWeight * sky * (sharp ? 1.0f : powerHeuristic(bsdfPdf, envPdf(direction))), clampFound);
+                radiance += clampSample(throughput * lightWeight * sky * weighed, clampFound);
             if (camera) guideAlbedo = make_float3(fminf(sky.x, 1.0f), fminf(sky.y, 1.0f), fminf(sky.z, 1.0f));
             // Distant lights are found by scattered rays; the camera sees only the discs that ask to be seen, as a sun does.
             for (unsigned i = 0; i < params.distantLightCount; ++i) {
@@ -2297,6 +2345,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
             direction = wi;
             seen = SEEN_DIFFUSE;
             lightWeight = bounceWeight = f * (1.0f / bsdfPdf);
+            glossyShare = vec(0.0f);    // a fibre's light is the lighting environment's, as its light samples are
             bounces = true;
             sharp = false;
             clampFound = roughDepth >= params.sampleClampDepth;
@@ -2729,6 +2778,11 @@ extern "C" __global__ void __raygen__moonlightipr() {
         // one beneath the surface.
         const float scale = 1.0f / (bsdfPdf * (1.0f - through) * (1.0f - beneath));
         lightWeight = (e.diffuse + e.specular) * scale;
+        if (params.envSplit) {
+            const float3 whole = e.diffuse + e.specular;
+            glossyShare = make_float3(whole.x > 0.0f ? e.specular.x / whole.x : 0.0f, whole.y > 0.0f ? e.specular.y / whole.y : 0.0f,
+                                      whole.z > 0.0f ? e.specular.z / whole.z : 0.0f);
+        }
         if (params.passes && camera) {
             // Whichever lobe the direction was drawn by, what comes back along it is each lobe's in its share.
             const float3 whole = e.diffuse + e.specular;

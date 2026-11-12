@@ -283,6 +283,7 @@ struct Renderer::Impl {
     std::vector<Instance> instances;
     size_t materialCount = 0, layerCount = 0, lightCount = 0;
     Buffer meshTable, instanceTable, materialTable, layerTable, tileTable, hairTable, volumeTable, toonTable, albedoTables, instanceInput, instanceAccel, accelTemp;
+    Buffer envReflected, envThrough, envReflectedMarginal, envReflectedConditional;
     Buffer envPixels, envBackground, envMarginal, envConditional, distantLights, lights, lightTriangles, lightFilters;
     Buffer lightDistributions, distantDistributions;
     Buffer beauty, albedo, normal, denoised, lighting, paramsBuffer;
@@ -1601,28 +1602,65 @@ void Renderer::setEnvironment(const Environment& environment) {
     const uint32_t width = mapped ? environment.width : 16, height = mapped ? environment.height : 8;
     if (!width || !height || width > 16384 || height > 16384) throw std::runtime_error("MoonLightIPR environment size is invalid");
 
-    std::vector<float> pixels(size_t(width) * height * 4), marginal(height + 1), conditional(size_t(height) * (width + 1));
-    for (uint32_t y = 0; y < height; ++y) {
-        const float sinTheta = std::sin((y + 0.5f) / height * 3.14159265358979323846f);
-        float* cdf = &conditional[size_t(y) * (width + 1)];
-        cdf[0] = 0.0f;
-        for (uint32_t x = 0; x < width; ++x) {
-            float* out = &pixels[(size_t(y) * width + x) * 4];
-            for (int c = 0; c < 3; ++c) {
-                const float value = environment.color[c] * (mapped ? environment.pixels[(size_t(y) * width + x) * 3 + c] : 1.0f);
-                out[c] = std::isfinite(value) ? std::max(value, 0.0f) : 0.0f;
+    // A map as the kernel reads it, from 3 floats a pixel (null: the colour alone), and the distribution its samples
+    // are drawn by.
+    const auto build = [&](const float* source, std::vector<float>& pixels, std::vector<float>& marginal, std::vector<float>& conditional) {
+        pixels.assign(size_t(width) * height * 4, 0.0f);
+        marginal.assign(height + 1, 0.0f);
+        conditional.assign(size_t(height) * (width + 1), 0.0f);
+        for (uint32_t y = 0; y < height; ++y) {
+            const float sinTheta = std::sin((y + 0.5f) / height * 3.14159265358979323846f);
+            float* cdf = &conditional[size_t(y) * (width + 1)];
+            cdf[0] = 0.0f;
+            for (uint32_t x = 0; x < width; ++x) {
+                float* out = &pixels[(size_t(y) * width + x) * 4];
+                for (int c = 0; c < 3; ++c) {
+                    const float value = environment.color[c] * (source ? source[(size_t(y) * width + x) * 3 + c] : 1.0f);
+                    out[c] = std::isfinite(value) ? std::max(value, 0.0f) : 0.0f;
+                }
+                out[3] = 1.0f;
+                cdf[x + 1] = cdf[x] + (0.2126f * out[0] + 0.7152f * out[1] + 0.0722f * out[2]) * sinTheta;
             }
-            out[3] = 1.0f;
-            cdf[x + 1] = cdf[x] + (0.2126f * out[0] + 0.7152f * out[1] + 0.0722f * out[2]) * sinTheta;
+            marginal[y + 1] = marginal[y] + cdf[width];
+            // A black row is never chosen, but keep its distribution well formed.
+            for (uint32_t x = 1; x <= width; ++x) cdf[x] = cdf[width] > 0.0f ? cdf[x] / cdf[width] : float(x) / width;
+            cdf[width] = 1.0f;
         }
-        marginal[y + 1] = marginal[y] + cdf[width];
-        // A black row is never chosen, but keep its distribution well formed.
-        for (uint32_t x = 1; x <= width; ++x) cdf[x] = cdf[width] > 0.0f ? cdf[x] / cdf[width] : float(x) / width;
-        cdf[width] = 1.0f;
+        const float total = marginal[height];
+        for (uint32_t y = 1; y <= height; ++y) marginal[y] = total > 0.0f ? marginal[y] / total : float(y) / height;
+        marginal[height] = 1.0f;
+    };
+    std::vector<float> pixels, marginal, conditional;
+    build(mapped ? environment.pixels : nullptr, pixels, marginal, conditional);
+
+    // Environments seen by some kinds of rays only: reflections and refractions get maps of their own.
+    const bool split = mapped && (environment.reflected || environment.through);
+    impl->params.envSplit = split ? 1u : 0u;
+    if (split) {
+        std::vector<float> seen, seenMarginal, seenConditional;
+        build(environment.reflected ? environment.reflected : environment.pixels, seen, seenMarginal, seenConditional);
+        impl->envReflected.upload(seen);
+        impl->envReflectedMarginal.upload(seenMarginal);
+        impl->envReflectedConditional.upload(seenConditional);
+        build(environment.through ? environment.through : environment.pixels, seen, seenMarginal, seenConditional);
+        impl->envThrough.upload(seen);
+        impl->params.envReflected = impl->envReflected.ptr;
+        impl->params.envReflectedMarginal = impl->envReflectedMarginal.ptr;
+        impl->params.envReflectedConditional = impl->envReflectedConditional.ptr;
+        impl->params.envThrough = impl->envThrough.ptr;
+        std::copy(environment.reflected ? environment.reflectedRotation : environment.rotation,
+                  (environment.reflected ? environment.reflectedRotation : environment.rotation) + 9, impl->params.envReflectedRotation);
+        std::copy(environment.through ? environment.throughRotation : environment.rotation,
+                  (environment.through ? environment.throughRotation : environment.rotation) + 9, impl->params.envThroughRotation);
+        for (float* rows : {impl->params.envReflectedRotation, impl->params.envThroughRotation})
+            for (int row = 0; row < 3; ++row) scaleTo(rows + row * 3, 1.0f);
+    } else {
+        // Nothing of their own: let the memory go.
+        for (Buffer* buffer : {&impl->envReflected, &impl->envThrough, &impl->envReflectedMarginal, &impl->envReflectedConditional})
+            buffer->release();
+        impl->params.envReflected = impl->params.envThrough = 0;
+        impl->params.envReflectedMarginal = impl->params.envReflectedConditional = 0;
     }
-    const float total = marginal[height];
-    for (uint32_t y = 1; y <= height; ++y) marginal[y] = total > 0.0f ? marginal[y] / total : float(y) / height;
-    marginal[height] = 1.0f;
 
     impl->envPixels.upload(pixels);
     if (mapped && environment.background) {
