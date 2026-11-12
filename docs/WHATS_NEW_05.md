@@ -2,6 +2,14 @@
 
 0.5 is a **pre-production release**: the plugin is no longer experimental, and it brings a new GPU renderer, MoonRay XPU2.
 
+## New in 0.5.4.1
+
+- **MoonLightIPR follows an environment's visibility switches**: Visible to Camera, Indirect, Reflection and Refraction Rays. An environment hidden from Indirect Rays was gone from reflections too.
+- **MoonLightIPR follows a MoonRay light's visibility**: diffuse, glossy and mirror reflection and transmission, on EnvLight and every other MoonRay light, where only Visible in Camera was read. A MoonRay Mesh Light's switches now reach MoonRay too.
+- **Solid colour backgrounds render in MoonLightIPR** (Render Settings > Camera Background > Solid color), where its scene failed to load.
+- **Realtime shows the buffer you look at**, not only the beauty; PBR validity is among them and is marked XPU / XPU2 only.
+- **Closing a scene switches RT off**, so the scene opened next is not rendered unasked.
+
 ## New in 0.5.4
 
 - **Rhizome: render across the studio's machines** (MoonRay > Rhizome: Decentralized Rendering). XPU2 renders this frame, or a range of frames, on every machine running a Rhizome node, and the picture comes out as one machine renders it. There is no render server: any machine can lead a render, and if it stops, another takes over. Each machine fetches only the scene data its share of the picture reads. Every machine's work is checked, and traffic between machines is encrypted. The same window starts a node on this machine, shows the machines at work, approves new ones and adds the Windows Firewall rule. A machine behind a router or VPN is found by its address and remembered. Windows only; every machine needs the same kit version. Tested so far with several nodes on one machine; a test across two real machines is still to come.
