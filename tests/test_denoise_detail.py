@@ -47,6 +47,14 @@ class KeepFineDetail(unittest.TestCase):
         some, more = self.steps('some')[2][1], self.steps('more')[2][1]
         self.assertLess(float(some[some.index('--mulc') + 1]), float(more[more.index('--mulc') + 1]))
 
+    def test_the_fibres_are_denoised_with_a_share_of_their_grain_put_back(self):
+        """Some let the whole render through where fur was, which left it as grainy as the render: a quarter now goes
+        back over the denoised fur (Some), half (More); never all of it."""
+        for level, share in (('some', .25), ('more', .5)):
+            mask = self.steps(level)[2][1]
+            self.assertIn('--clamp:min=0:max=%s' % share, mask)
+            self.assertAlmostEqual(float(mask[mask.index('--mulc') + 1]), 1.5 * share)
+
     def test_the_setting_is_some_unless_said(self):
         self.assertEqual(denoising.settings({})['detail'], 'some')
         with self.assertRaises(ValueError):

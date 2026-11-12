@@ -3,10 +3,13 @@ import re
 from pathlib import Path
 ENGINES=('off','optix','oidn_cpu')
 SMART=('off','draft','medium','fine')
-# How much of the fine detail a denoiser smooths away is put back: fur, hair and curves, a pixel or so wide. Where the
-# render's matte of them says they are, the picture as it was rendered is let through, by this much for a pixel they
-# cover whole.
-DETAIL={'off':0.0,'some':1.0,'more':2.0}
+# How much of the fine detail a denoiser smooths away is put back: fur, hair and curves, a pixel or so wide. They are
+# denoised with the rest, and where the render's matte of them says they are, this share of the picture as it was
+# rendered goes back over the denoised one, for a pixel they cover whole. All of it (as until 0.5.4.1) left the fur as
+# grainy as the render: a furry ball at 4 samples, 20.8 8-bit steps from a 256-sample render in the fur, as the render
+# itself. A quarter: 13.6, its strands as sharp as the reference's (the denoiser alone: 12.9, a little softer). Half:
+# 15.2, sharper than the reference, some grain.
+DETAIL={'off':0.0,'some':.25,'more':.5}
 def settings(value):
     # safe: MoonRay saves its picture every few seconds as it renders, so that a render stopped by hand is kept and
     # denoised as a finished one is.
@@ -102,11 +105,11 @@ def denoised_steps(runtime,source,base,engine,guides,detail='some'):
     # picture, against the denoiser alone).
     if gain<=0 or not guides.get('fine'):
         return steps+[(oiio,['--no-autopremult',str(filtered),'--ch','R,G,B','-d','float','-o',str(output)],output)]
-    # How much of each pixel is fibres: the surface under them is the denoised one and the fibres are the rendered
-    # ones, laid over it.
+    # How much of each pixel is fibres (the matte, full from two thirds of a pixel), by the share of the render put back
+    # there: the fibres are denoised as the surface under them is, with a little of their rendered grain over them.
     mask=base.with_suffix('.denoise-detail.exr')
     steps.append((oiio,[str(guides['fine']),'--ch','0,0,0','--chnames','R,G,B','--mulc',str(1.5*gain),
-                       '--clamp:min=0:max=1','-d','float','-o',str(mask)],mask))
+                       '--clamp:min=0:max=%s'%gain,'-d','float','-o',str(mask)],mask))
     # The denoised picture, and over it the rendered one by as much as the mask says.
     steps.append((oiio,['--no-autopremult',str(rgba),'--ch','R,G,B',str(filtered),'--ch','R,G,B','--sub',str(mask),'--mul',
                        str(filtered),'--ch','R,G,B','--add','-d','float','-o',str(output)],output))
