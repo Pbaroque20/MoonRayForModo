@@ -6,6 +6,14 @@ This is the development branch of [MoonRay for Modo](https://github.com/Pbaroque
 
 The current release is [0.5.4](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.5.4). **Built on MoonRay [2026.29.1](https://github.com/dreamworksanimation/openmoonray/releases/tag/v2026.29.1)** (OpenMoonRay's latest release; MoonRay 18.4), with the plugin's own patches for Windows and the preview.
 
+## New in 0.5.4.1
+
+- **MoonLightIPR follows an environment's visibility switches**: Visible to Camera, Indirect, Reflection and Refraction Rays. An environment hidden from Indirect Rays was gone from reflections too.
+- **MoonLightIPR follows a MoonRay light's visibility**: diffuse, glossy and mirror reflection and transmission, on EnvLight and every other MoonRay light, where only Visible in Camera was read. A MoonRay Mesh Light's switches now reach MoonRay too.
+- **Solid colour backgrounds render in MoonLightIPR** (Render Settings > Camera Background > Solid color), where its scene failed to load.
+- **Realtime shows the buffer you look at**, not only the beauty; PBR validity is among them and is marked XPU / XPU2 only.
+- **Closing a scene switches RT off**, so the scene opened next is not rendered unasked.
+
 ## New in 0.5.4
 
 - **Modo's Processing textures**: Gradient reads Incidence, Slope, Distance, Screen and Back Facing, as well as its other inputs; Occlusion, Variation by Item, Mesh Part and Particle, and Tension (Area and Angle) render in all three engines, matching Modo's own render to within about 0.03. A Gradient also reads Texture U and V (UV map, Solid and Planar along Z), Texture Value over a Constant, Surface ID, Bump and Displacement Height, and Clip Distance.
