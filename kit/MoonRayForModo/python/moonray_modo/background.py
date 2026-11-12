@@ -9,6 +9,11 @@ def apply(scene, settings):
     if mode=='environment': return
     if mode not in ('black','color','image'): raise ValueError('Unknown background mode')
     for environment in scene.get('environments',[]): environment['camera']=False
+    # MoonRay's own environment lights too (EnvLight items): hidden from the camera, still lighting, in MoonRay XPU, XPU2
+    # and MoonLightIPR alike, which all read the item's Visible in Camera (0: off).
+    if scene.get('entities'):
+        scene['entities']=[dict(e,parameters=dict(e.get('parameters') or {},visible_in_camera=0)) if e.get('class')=='EnvLight' else e
+                           for e in scene['entities']]
     if mode=='black': return
     intensity=float(values['intensity'])
     if not math.isfinite(intensity) or intensity<0: raise ValueError('Invalid background intensity')
