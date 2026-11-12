@@ -497,7 +497,10 @@ class Renderer(QtCore.QObject):
         snapshot=dict(request['snapshot'],_flat_out=True,_full_textures=True) if once and not getattr(self,'moonlightipr_samples',None) else request['snapshot']
         self.moonlightipr.submit(snapshot,directory,request['width'],request['height'],request['environment'],self.moonlightipr_serial,self.moonlightipr_gathering,
                                  denoise=self.moonlightipr_denoises,runtime=request['runtime'])
-        self.moonlightipr.view(self.moonlightipr_denoises or self.buffers.key!='beauty')
+        # The picture sent: the denoised one where the list names Denoised Beauty (moonlightipr_wanted, said by the panel
+        # once its list is settled for this render), else the beauty; an AOV chosen is sent in its place. Not by the
+        # buffer chosen here, which is the beauty for both, the denoised picture coming under the beauty's name.
+        self.moonlightipr.view(self.moonlightipr_denoises or self.buffers.key not in ('beauty', 'denoised_beauty'))
         # And gathers the AOV looked at, where it is one of its own.
         from .moonlightipr_aovs import kind
         self.moonlightipr.aov(kind(self.buffers.key),self.buffers.key)

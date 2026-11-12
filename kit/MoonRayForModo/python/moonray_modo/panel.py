@@ -1833,7 +1833,8 @@ class Panel(Tools, QtWidgets.QWidget):
                               'Right-click the picture for Restart Render.' if again else RENDER_TIP)
 
     def _submit(self, scene, output=None, refining=False, digest=None):
-        # MoonLightIPR denoises when its denoised beauty is the buffer chosen, as of now.
+        # MoonLightIPR denoises when its denoised beauty is the buffer chosen, as of now (said again below, once the list
+        # is settled for this render).
         self.renderer.moonlightipr_wanted=self.buffer.currentData()=='denoised_beauty'
         # Realtime with MoonRay where XPU2 does not render it (opted into): on MoonRay's processor path, the graphics
         # card left to Modo, or on the graphics card (XPU), as Realtime with standard XPU says, whatever the scene's
@@ -1962,6 +1963,10 @@ class Panel(Tools, QtWidgets.QWidget):
             # beauty and it alone (_limit_buffers).
             self._offer_denoised(True)
             self._limit_buffers()
+            # As the list now stands: settling it may have put the beauty back in the denoised beauty's place, and the
+            # picture MoonLightIPR sends must be the one the list names (a tester saw the denoised picture under Beauty,
+            # and choosing Denoised Beauty then changed nothing).
+            self.renderer.moonlightipr_wanted=self.buffer.currentData()=='denoised_beauty'
         self.renderer.submit(scene, self.runtime_path(), width, height, grid,
                              values['environment'], values['threads'], output, persistent_preview=get('persistent_preview'), engine=engine, resume=resume)
         if resume:self.status.setText('Continuing the stopped render.')
