@@ -59,15 +59,20 @@ def run():
         from moonray_modo import solo
         result['solo menu'] = right_click(view, centre(editor, 'sea'), 'Solo in Preview')
         result['soloed'] = solo.current()
+        QtWidgets.QApplication.instance().processEvents()
+        result['marked while soloed'] = getattr(editor.items.get('sea'), 'soloed', None)
         result['solo menu again'] = right_click(view, centre(editor, 'sea'), 'Stop Solo')
         result['solo after stop'] = solo.current()
+        QtWidgets.QApplication.instance().processEvents()
+        result['marked after stop'] = getattr(editor.items.get('sea'), 'soloed', None)
         result['surface menu'] = right_click(view, centre(editor, 'surface'), None)
         corner = QtCore.QPoint(view.viewport().width() - 10, view.viewport().height() - 10)
         result['canvas menu'] = right_click(view, corner, None)
         result['ok'] = (result['output after set'] == 'VectorDisplacement' and result['fed by ocean']
                         and result['output after clear'] is None and any('Material Output' in entry for entry in (result['surface menu'] or []))
                         and result['canvas menu'][0].startswith('Add Node')
-                        and (result['soloed'] or {}).get('node') == 'sea' and result['solo after stop'] is None)
+                        and (result['soloed'] or {}).get('node') == 'sea' and result['solo after stop'] is None
+                        and result['marked while soloed'] is True and result['marked after stop'] is False)
     except Exception:
         result['error'] = traceback.format_exc()
     save()

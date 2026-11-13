@@ -133,6 +133,8 @@ def port_rows(kind,ports,authored,folded):
 
 # How long the list of properties is filled for before the window is let answer, in seconds.
 FILL_SLICE=.008
+# A node soloed in the preview (solo.py), apart from the selection's amber.
+SOLO_COLOR='#2ec4b6'
 
 
 class Node(QtWidgets.QGraphicsRectItem):
@@ -173,9 +175,16 @@ class Node(QtWidgets.QGraphicsRectItem):
         role='OUTPUT' if identity==editor.graph['root'] else 'DISPLACEMENT' if identity==editor.graph.get('displacement') else ''
         # A ramp left in MoonRay's default space slides over the surface as the camera moves; say so on the node.
         if follows_camera(value):role='FOLLOWS CAMERA'
+        # Soloed in the preview (solo.py): marked in a colour of its own, its outline and a SOLO badge.
+        from . import solo
+        item=getattr(editor,'item',None)
+        self.soloed=item is not None and solo.is_node(item.id,identity)
+        if self.soloed:
+            role='SOLO'
+            self.body.setPen(QtGui.QPen(QtGui.QColor(SOLO_COLOR),2.5))
         badge=None
         if role:
-            badge=text(self,role,TEXT,0,6,90,size=-2);badge.setPos(WIDTH-badge.boundingRect().width()-12,6);badge.setOpacity(.8)
+            badge=text(self,role,SOLO_COLOR if self.soloed else TEXT,0,6,90,size=-2);badge.setPos(WIDTH-badge.boundingRect().width()-12,6);badge.setOpacity(1 if self.soloed else .8)
         title=text(self,value.get('label',kind),TEXT,10,4,WIDTH-24-(badge.boundingRect().width()+8 if badge else 0))
         if not title.toolTip():title.setToolTip(kind)
         self.sockets={None:Socket(editor,identity,None,self)};self.sockets[None].setPos(WIDTH,HEADER/2)
@@ -223,7 +232,7 @@ class Node(QtWidgets.QGraphicsRectItem):
                     self.identity,exc,self.identity in self.editor.graph.get('nodes',{}),getattr(self.editor,'rebuilding',None),
                     getattr(self.editor,'busy',None)))
         elif change==self.ItemSelectedHasChanged and hasattr(self,'body'):
-            self.body.setPen(QtGui.QPen(QtGui.QColor(ACCENT),2) if value else QtGui.QPen(QtGui.QColor(NODE_EDGE),1))
+            self.body.setPen(QtGui.QPen(QtGui.QColor(ACCENT),2) if value else QtGui.QPen(QtGui.QColor(SOLO_COLOR),2.5) if getattr(self,'soloed',False) else QtGui.QPen(QtGui.QColor(NODE_EDGE),1))
             self.setZValue(1 if value else 0)
         return super().itemChange(change,value)
 
@@ -481,6 +490,15 @@ class Editor(QtWidgets.QDialog):
         from . import property_notifications
         property_notifications.watchers.append(self.scene_changed)
         self.finished.connect(lambda *_:self.stop_watching())
+        # The material's scene closed: let go of it (scene_closed). Its item still answers as if it were there, and its
+        # id may be another scene's material's; a value written to it crashed Modo.
+        from . import solo
+        solo.LISTENERS.append(self.solo_changed)
+        self.finished.connect(lambda *_:solo.LISTENERS.remove(self.solo_changed) if self.solo_changed in solo.LISTENERS else None)
+        from . import scene_watch
+        self.scene_key=scene_watch.key_of_item(self.item);self.scene_gone=False
+        scene_watch.watch(self.scene_closed)
+        self.finished.connect(lambda *_:scene_watch.unwatch(self.scene_closed))
         footer=QtWidgets.QHBoxLayout();layout.addLayout(footer)
         self.info=QtWidgets.QLabel('Tab or double-click adds a node. Drag between sockets to connect.')
         # A long message is cut short rather than widening the window.
@@ -726,7 +744,23 @@ class Editor(QtWidgets.QDialog):
         except (ValueError,TypeError,KeyError,IndexError) as exc:
             self.graph=before;self.info.setText(str(exc))
 
+    def solo_changed(self):
+        """Something was soloed or the solo ended: the nodes drawn again, the soloed one marked."""
+        from shiboken2 import isValid
+        if isValid(self) and not getattr(self,'scene_gone',False):self.rebuild()
+    def scene_closed(self,key):
+        """A scene was destroyed: where it was this editor's (or which it was cannot be told), nothing more is written and
+        the editor goes (docked, the dock shows the material selected next)."""
+        if self.scene_gone or (key is not None and self.scene_key is not None and key!=self.scene_key):return
+        self.scene_gone=True;self.live=False
+        timer=getattr(self,'_publish_timer',None)
+        if timer is not None:timer.stop()
+        # Its MoonRay Widget reads the material too: stopped first.
+        try:self.material_preview.shutdown()
+        except Exception:pass
+        QtCore.QTimer.singleShot(0,lambda:self.done(0))
     def preview_draft(self):
+        if getattr(self,'scene_gone',False):return {}
         self.commit_inputs()
         material=copy.deepcopy(properties.read(self.item))
         material.update(node_graph=copy.deepcopy(self.graph),node_override=True)
@@ -838,7 +872,7 @@ class Editor(QtWidgets.QDialog):
         return properties.read(self.item).get(self.graph_key) or nodes.from_material(self.item)
     def publish_draft(self):
         """Write the graph to the material, so the scene and the preview have it as it is edited."""
-        if self.writing or not self.live:return
+        if self.writing or not self.live or getattr(self,'scene_gone',False):return
         try:
             if self.graph==self.stored_graph():return
             nodes.validate(self.graph)
@@ -857,7 +891,7 @@ class Editor(QtWidgets.QDialog):
     def scene_changed(self):
         """The material was written; if not by this window, show what it holds now."""
         from shiboken2 import isValid
-        if self.writing or not isValid(self) or self.busy:return
+        if self.writing or not isValid(self) or self.busy or getattr(self,'scene_gone',False):return
         # A value of this window's is still to be written (publish_soon): the window's graph is the newer.
         timer=getattr(self,'_publish_timer',None)
         if timer is not None and timer.isActive():return

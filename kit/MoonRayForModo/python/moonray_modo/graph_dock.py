@@ -77,6 +77,9 @@ class GraphDock(QtWidgets.QWidget):
         self.editor.show()
 
     def closed(self, *_):
+        # The material's scene closed, or the editor was closed: the next selection is followed afresh (ids repeat from
+        # one scene to the next).
+        self.followed = None
         editor, self.editor = self.editor, None
         if editor is not None:
             editor.setParent(None)

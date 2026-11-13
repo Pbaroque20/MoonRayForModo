@@ -15,7 +15,19 @@ def current():
     return dict(STATE) if STATE.get('kind') else None
 
 
+def _scene_closed(key):
+    # What was soloed names items by id, which the next scene may have too: a scene closing ends the solo.
+    if STATE.get('kind'):
+        clear()
+
+
 def _set(state):
+    if state:
+        try:
+            from . import scene_watch
+            scene_watch.watch(_scene_closed)
+        except Exception:
+            pass
     STATE.clear()
     STATE.update(state or {})
     for listener in list(LISTENERS):
