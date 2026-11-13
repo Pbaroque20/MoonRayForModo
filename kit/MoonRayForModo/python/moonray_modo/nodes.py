@@ -22,8 +22,9 @@ MAPS={
  'bump':{'height':('Float',0),'amplitude':('Float',.005),'step':('Float',0)},
 }
 NORMAL_NODES=('normalmap','bump')
-# The ocean (ocean.py): a displacement, and its foam as a map, both made from the same settings. Neither reaches an
-# engine as itself: effective() makes them a VectorDisplacement and images of the tile the kit works out for the frame.
+# The ocean (ocean.py): a vector texture of the waves, wired into a Vector Displacement node's Vector, and its foam as a
+# map, both made from the same settings. Neither reaches an engine as itself: expand_ocean() makes them images of the
+# tile the kit works out for the frame.
 from . import ocean as _ocean
 _OCEAN_TYPES={'size':'Float','repeat':'Vec2f','resolution':'Int','wind_speed':'Float','wind_direction':'Float',
               'wave_height':'Float','choppiness':'Float','small_waves':'Float','wind_alignment':'Float','against_wind':'Float',
@@ -75,7 +76,7 @@ def specs(kind):
 
 def category(kind):
     if kind in shader_library.catalog(): return 'material'
-    if map_library.catalog().get(kind,{}).get('type')=='Displacement' or kind=='ocean':return 'displacement'
+    if map_library.catalog().get(kind,{}).get('type')=='Displacement':return 'displacement'
     return 'normal' if kind in NORMAL_NODES or map_library.catalog().get(kind,{}).get('type')=='NormalMap' else 'map'
 
 
@@ -119,9 +120,11 @@ def has_ocean(scene):
 
 
 def expand_ocean(graph):
-    """The graph as the engines take it: each Ocean node a tangent-space VectorDisplacement of the ocean tile's
-    displacement image, each Ocean Foam node an image of its foam, read through the surface's UVs that many tiles
-    across (ocean.py). The tile is the frame's while a scene is written (ocean.CONTEXT); otherwise only its name is
+    """The graph as the engines take it: each Ocean node an image of the ocean tile's displacement (red the push along U,
+    green the height, blue the push along V), for a Vector Displacement node's Vector in tangent space (its default), each
+    Ocean Foam node an image of its foam, read through the surface's UVs that many tiles across (ocean.py). A Vector
+    Displacement fed by an Ocean node gets the bound padding the waves need, where its own is less. An Ocean node set as
+    the displacement output itself, as graphs before 2026-11-13 had it, is still a VectorDisplacement of its own. The tile is the frame's while a scene is written (ocean.CONTEXT); otherwise only its name is
     known, and an image not made yet reads as nothing. Off in MoonRay Source Overrides (native.ocean), the ocean is flat.
     graph is an effective() graph, changed in place and returned."""
     members=graph.get('nodes',{})
@@ -144,16 +147,26 @@ def expand_ocean(graph):
         if node['type']=='ocean_foam':
             members[key]=dict(image,position=node.get('position'))
             continue
-        tile=key+'__ocean_tile'
-        while tile in members:tile+='_'
         # The surface's slope beside it, which MoonRay does not read (it splits the surface as finely as the pixels) and
         # MoonLightIPR's shading does, for waves finer than a mesh's vertices are apart (moonlightipr_materials).
         if on:image['_slope']=str(slope)
+        reach=_ocean.reach(value) if on else 0.0
+        if graph.get('displacement')!=key:
+            # A vector texture: the tile itself, and room for the waves in the Vector Displacements it feeds.
+            members[key]=dict(image,position=node.get('position'))
+            for other in members.values():
+                if other.get('type')=='VectorDisplacement' and (other.get('inputs') or {}).get('vector')==key:
+                    held=other.setdefault('parameters',{})
+                    factor=abs(float(str(held.get('factor',1.0)).rstrip('f') or 1.0))
+                    if float(str(held.get('bound_padding',0.0)).rstrip('f') or 0.0)<reach*factor:held['bound_padding']=reach*factor
+            continue
+        tile=key+'__ocean_tile'
+        while tile in members:tile+='_'
         members[tile]=image
         # Red the push along U, green the height, blue the push along V (tnb: tangent, normal, bitangent).
         members[key]={'type':'VectorDisplacement','position':node.get('position'),
                       'parameters':{'source_space':0,'tangent_space_style':0,'factor':1.0 if on else 0.0,
-                                    'bound_padding':_ocean.reach(value) if on else 0.0},
+                                    'bound_padding':reach},
                       'inputs':{'vector':tile} if on else {}}
     return graph
 

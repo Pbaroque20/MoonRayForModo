@@ -7,6 +7,7 @@ from . import asset_library as library
 # What each kind of asset is for, in the words of the button that does it, and a line saying so. An asset with no
 # purpose here is not listed: the library is for things to use, not for a catalogue of what MoonRay contains.
 PURPOSES={'Assign material':('Assign to Selected Meshes','A saved material. Select one or more meshes, then assign it; it can be edited afterwards in the material\'s properties.'),
+          'Open Modo scene':('Open the Scene','A Modo scene. It opens as a scene of its own, with its camera, lights and render settings, beside the scene you have open. A scene that came with the kit opens from a copy in Documents\\MoonRay for Modo\\Scenes, so saving it keeps the original.'),
           'Import scene / model':('Bring into the Scene','A model or scene file. It is brought into the scene that is open, with Modo\'s own reader for its format.'),
           'Import image clip':('Add to the Scene\'s Images','A picture. It is added to the scene\'s images, ready to be chosen for a material\'s input or an environment.'),
           'Use display LUT':('Use as the Display LUT','A colour table. The preview is shown through it.'),
@@ -248,6 +249,11 @@ class Browser(QtWidgets.QDialog):
    if suffix in ('.rdla','.rdlb'):
     from .rdl_import_dialog import show
     show(path);return
+   if suffix=='.lxo':
+    # A scene of its own, not a step to undo in the open one: opened directly (a kit scene from a copy of it).
+    opened=asset_import.working_copy(path)
+    lx.eval('scene.open '+asset_import.command_path(opened)+' normal')
+    self.status.setText('Opened '+Path(opened).name+(' (a copy in '+str(Path(opened).parent)+')' if str(opened)!=str(Path(path).resolve()) else ''));return
    material_name=None
    if suffix=='.mtlx':
     from .materialx_document import load

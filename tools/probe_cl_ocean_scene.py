@@ -60,7 +60,11 @@ try:
                              'parameters': {'size': 80.0, 'repeat': [10.0, 10.0], 'resolution': 512, 'wind_speed': 12.0,
                                             'wind_direction': 30.0, 'choppiness': 1.2, 'small_waves': 0.05,
                                             'against_wind': 0.3, 'foam_threshold': 0.8}}
-    graph['displacement'] = 'sea'
+    # Its waves into MoonRay's Vector Displacement, tangent space and TNB as it starts, which is the displacement output.
+    from moonray_modo import node_defaults
+    graph['nodes']['waves'] = {'type': 'VectorDisplacement', 'position': [0, 300], 'inputs': {'vector': 'sea'},
+                               'parameters': node_defaults.parameters('VectorDisplacement')}
+    graph['displacement'] = 'waves'
     # Foam, following the Ocean node: white over the water's colour, and rough where it is.
     graph['nodes']['foam'] = {'type': 'ocean_foam', 'position': [-300, 0], 'inputs': {}, 'parameters': {}}
     graph['nodes']['colour'] = {'type': 'mix', 'position': [0, 0], 'inputs': {'mix': 'foam'},

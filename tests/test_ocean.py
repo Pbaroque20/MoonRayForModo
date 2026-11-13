@@ -110,6 +110,27 @@ class Nodes(unittest.TestCase):
         # Its slope beside it, for MoonLightIPR's shading.
         self.assertTrue(tile['_slope'].endswith('.slope.pfm') and pathlib.Path(tile['_slope']).is_file())
 
+    def test_an_ocean_wired_into_a_vector_displacement_is_its_tile(self):
+        g = nodes.new('DwaBaseMaterial', {'albedo': [0.02, 0.05, 0.08]})
+        g['nodes']['sea'] = {'type': 'ocean', 'parameters': {'resolution': 64, 'repeat': [3, 3], 'wind_speed': 12}, 'inputs': {},
+                             'position': [0, 0]}
+        g['nodes']['push'] = {'type': 'VectorDisplacement', 'parameters': {'factor': 2.0, 'bound_padding': 0.0},
+                              'inputs': {'vector': 'sea'}, 'position': [0, 0]}
+        g['displacement'] = 'push'
+        with mock.patch.dict(os.environ, {'MOONRAY_MODO_OCEAN': '1'}), ocean.writing(1.0):
+            v = nodes.validate(g)
+        self.assertEqual(v['nodes']['sea']['type'], 'ImageMap')
+        self.assertEqual(v['nodes']['sea']['parameters']['scale'], [3.0, 3.0])
+        # Room for the waves, at the node's factor.
+        self.assertAlmostEqual(v['nodes']['push']['parameters']['bound_padding'],
+                               2.0 * ocean.reach(ocean.settings({'wind_speed': 12})), places=5)
+        # MoonLightIPR displaces by it and shades its slope.
+        from moonray_modo import moonlightipr_materials
+        with mock.patch.dict(os.environ, {'MOONRAY_MODO_OCEAN': '1'}), ocean.writing(1.0):
+            leaves, program = moonlightipr_materials.displacement_tree({'node_graph': g}, lambda what: None)
+        self.assertEqual(program[0][:2], (moonlightipr_materials.OP_VECTOR, 2.0))
+        self.assertEqual([layer['effect'] for layer in leaves[0][2]], ['_disp0', '_slope'])
+
     def test_each_frame_its_own_tile_and_none_made_outside_a_render(self):
         with mock.patch.dict(os.environ, {'MOONRAY_MODO_OCEAN': '1'}):
             named = nodes.validate(graph())
@@ -151,7 +172,8 @@ class Nodes(unittest.TestCase):
 
     def test_the_editor_still_sees_the_ocean_node(self):
         self.assertEqual(nodes.effective(graph())['nodes']['sea']['type'], 'ocean')
-        self.assertEqual(nodes.category('ocean'), 'displacement')
+        # A vector texture, for a Vector Displacement's Vector.
+        self.assertEqual(nodes.category('ocean'), 'map')
         self.assertEqual(nodes.category('ocean_foam'), 'map')
         self.assertIn('wind_speed', nodes.specs('ocean'))
 

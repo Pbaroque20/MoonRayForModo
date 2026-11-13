@@ -1,13 +1,16 @@
 """Explicit per-format asset actions, invoked through an undoable host command."""
 from pathlib import Path
 
-SCENES={'.obj','.fbx','.lxo','.abc','.usd','.usda','.usdc'}
+SCENES={'.obj','.fbx','.abc','.usd','.usda','.usdc'}
 IMAGES={'.exr','.hdr','.tx','.png','.jpg','.jpeg','.tif','.tiff'}
 LUTS={'.cube','.3dl'}
 
 def action(path):
     name=str(path).lower();suffix=Path(path).suffix.lower()
     if name.endswith('.moonmat.json'):return 'Assign material'
+    # A Modo scene opens as a scene of its own: brought into the open one, its sun and sky lit it beside the open
+    # scene's own (the ocean demo twice as bright) and its camera and render settings were left behind.
+    if suffix=='.lxo':return 'Open Modo scene'
     if suffix in SCENES:return 'Import scene / model'
     if suffix in IMAGES:return 'Import image clip'
     if suffix in LUTS:return 'Use display LUT'
@@ -17,12 +20,33 @@ def command_path(path):
     if any(c in str(path) for c in '{}\r\n'):raise ValueError('Rename this asset to remove command delimiters before importing')
     return '{'+str(path)+'}'
 
+def working_copy(path):
+    """Where a library scene is opened from: a scene that came with the kit is copied to Documents/MoonRay for Modo/Scenes
+    first (a new name each time), so saving it never writes over the kit's file, which the next install would put back;
+    a scene from a folder of the user's own is opened where it is."""
+    import shutil
+    from .asset_library import bundled
+    path=Path(path).resolve()
+    try:path.relative_to(bundled().resolve())
+    except ValueError:return path
+    folder=Path.home()/'Documents'/'MoonRay for Modo'/'Scenes';folder.mkdir(parents=True,exist_ok=True)
+    target=folder/path.name;count=1
+    while target.exists():
+        count+=1;target=folder/('%s %d%s'%(path.stem,count,path.suffix))
+    shutil.copy2(path,target)
+    return target
+
 def execute(path,material_name=None):
     import copy,lx,modo
     from . import properties
     path=Path(path).expanduser().resolve()
     if not path.is_file():raise ValueError('Missing asset: '+str(path))
     suffix=path.suffix.lower();scene=modo.Scene()
+    if suffix=='.lxo':
+        opened=working_copy(path)
+        try:lx.eval('scene.open '+command_path(opened)+' normal')
+        except (RuntimeError,LookupError) as exc:raise ValueError('Modo could not open '+path.name+': '+str(exc))
+        return
     if suffix in SCENES:
         try:lx.eval('scene.open '+command_path(path)+' import')
         except (RuntimeError,LookupError) as exc:raise ValueError('Modo could not import '+suffix+'; an installed Modo reader for this format is required. '+str(exc))

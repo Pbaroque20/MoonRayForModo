@@ -6,7 +6,8 @@ An 800 m sea under a low sun, made with the MoonShine graph's **Ocean** and **Oc
 
 - **Sea**: a flat plane, 800 m across, 200 x 200 quads, with a UV map running 0 to 1 across it.
 - **Sea Water**: a DWA Base material. Its MoonShine graph holds:
-  - an **Ocean** node, set as the graph's displacement output. It moves the plane into waves.
+  - an **Ocean** node: a vector texture of the waves (red the push along U, green the height, blue the push along V).
+  - a **Vector Displacement** node, the graph's displacement output, with the Ocean node wired into its **Vector**. It moves the plane into waves.
   - an **Ocean Foam** node, with no settings of its own. It follows the Ocean node.
   - two **Mix** nodes driven by the foam. One blends the dark water colour to white foam on Albedo. The other blends a smooth surface (0.03) to a rough one (0.5) on Roughness.
 - A physical sky, a sun low ahead of the camera, and a camera 14 m above the water.
@@ -15,7 +16,11 @@ An 800 m sea under a low sun, made with the MoonShine graph's **Ocean** and **Oc
 
 1. **Make a plane with a UV map.** The ocean is laid over the surface's first UV map. It covers the 0 to 1 square, **Repeat** times across. A plane made in Modo with UVs from 0 to 1 is all it needs.
 2. **Give it a MoonShine material** and open its graph in the MoonShine Graph Editor.
-3. **Add an Ocean node** (Tab, or Node > Add Node; it is under Procedural textures). Select it, then choose **Node > Set / Clear Displacement Output**. The material's displacement now comes from the ocean; the same entry takes it off again.
+3. **Add an Ocean node** (Tab, or Node > Add Node; it is under Procedural textures) and wire it into a **Vector Displacement** node's **Vector**. Set the Vector Displacement as the displacement output (select it, **Node > Set / Clear Displacement Output**).
+   - Shortcut: select the Ocean node itself and choose **Set / Clear Displacement Output**. The editor adds the Vector Displacement, wires it and sets it as the output in one step; the same entry takes it off again.
+   - Keep the Vector Displacement's **Source Space** on tangent and its **Tangent Space Style** on TNB, as it starts: that is the order the ocean's colours are in.
+   - **Factor** scales the whole sea. **Bound Padding** is raised for you to what the waves need.
+   - A **Combine Displacement** node can add the ocean's Vector Displacement to another displacement.
 4. **Add an Ocean Foam node** (also under Procedural textures) where you want foam. Wire it into the **Mix** input of a Mix node, with the water's colour in **BG** and the foam's in **FG**. Wire that Mix node into Albedo. A second Mix node, foam into Mix, makes the foam rough.
 5. **Size the waves to your plane.** A tile of **Size** metres repeats **Repeat** times across the UVs. For the waves to come out at their real size, make Size times Repeat equal to the plane's width: 80 m times 10 makes this scene's 800 m sea.
 
@@ -51,5 +56,4 @@ The foam sits on the sharpest crests, so this 12 m/s sea has only a little. For 
 
 - **The plane can be coarse.** MoonRay and XPU2 split the surface as finely as the pixels need. MoonLightIPR moves the plane's own vertices, and its shading adds the ripples that fall between them.
 - **The tiles are made for each frame** while a frame renders, and kept in the Cache folder (the Ocean folder in it). A frame you have rendered before comes back at once.
-- **MoonRay has no ocean of its own.** The kit computes Tessendorf's FFT ocean, from the SIGGRAPH course notes "Simulating Ocean Water", and gives MoonRay a vector displacement and a foam texture. It is a MoonRay Source Override: **Ocean nodes in MoonShine graphs** in MoonRay Source Overrides turns it off, which leaves the sea flat.
-- **Bound padding** is set for you from the wind and the choppiness, so the crests are never cut off.
+- **MoonRay has no ocean of its own.** The kit computes Tessendorf's FFT ocean, from the SIGGRAPH course notes "Simulating Ocean Water", and gives MoonRay two textures, the waves and the foam. It is a MoonRay Source Override: **Ocean nodes in MoonShine graphs** in MoonRay Source Overrides turns it off, which leaves the sea flat.
