@@ -20,14 +20,15 @@ from pathlib import Path
 
 GRAVITY = 9.81
 LIBRARY = 'modo_ocean.dll'
-FORM = 3  # bumped whenever the model changes, so that tiles made by an older one are made again
+FORM = 4  # bumped whenever the model changes, so that tiles made by an older one are made again
 # The settings an Ocean node has, with their defaults (nodes.MAPS takes its schema from here).
 DEFAULTS = {
-    'size': 50.0,           # the tile's width in scene units (metres)
     'repeat': [1.0, 1.0],   # how many tiles across the surface's UVs (its first UV map), where fit_to_mesh is off
-    # Repeat worked out from the surface itself (fitted): the metres its UVs span over the size, so that the waves are
-    # their true size on any mesh, whatever its size and its UVs.
+    # The tiles laid on by the surface itself (fitted): tiles_across of them across its U, as wide as the mesh is over
+    # that many, and as many along V as keep them square. The sea is made at its size and scaled to them whole, its
+    # heights and its sideways push with its width: a smaller mesh, the same sea smaller.
     'fit_to_mesh': True,
+    'tiles_across': 10.0,
     'resolution': 256,      # points across the tile: 64 to 1024, a power of two
     'wind_speed': 10.0,     # metres a second
     'wind_direction': 0.0,  # degrees, from U towards V
@@ -46,6 +47,10 @@ DEFAULTS = {
     'foam_threshold': 0.7,
 }
 RESOLUTIONS = (64, 128, 256, 512, 1024)
+# The tile every sea is made at, in metres (an Ocean node has no Size of its own): fitted to its mesh, it is then
+# scaled whole to the tiles laid on the mesh, the waves' look coming from Tiles Across alone; with Fit to Mesh off,
+# Repeat lays tiles of this size.
+FITTED_SIZE = 80.0
 PYTHON_LIMIT = 256
 
 
@@ -66,8 +71,9 @@ def settings(params):
     value['fit_to_mesh'] = bool(value['fit_to_mesh'])
     repeat = list(value['repeat'])[:2] if isinstance(value['repeat'], (list, tuple)) else [1.0, 1.0]
     value['repeat'] = [float(r) for r in repeat] + [1.0] * (2 - len(repeat))
-    if value['size'] <= 0 or value['wind_speed'] <= 0:
-        raise ValueError('Ocean size and wind speed must be above 0')
+    value['size'] = FITTED_SIZE
+    if value['wind_speed'] <= 0 or value['tiles_across'] <= 0:
+        raise ValueError('Ocean wind speed and tiles across must be above 0')
     for key in ('wave_height', 'choppiness', 'small_waves', 'wind_alignment', 'against_wind', 'depth', 'loop', 'foam_threshold'):
         if value[key] < 0:
             raise ValueError('Ocean %s cannot be negative' % key.replace('_', ' '))
@@ -245,7 +251,7 @@ def fields(value, time, slopes=False):
 
 def key(value, time):
     """What a tile is made from: its settings that shape the waves, and the moment."""
-    shape = {k: value[k] for k in DEFAULTS if k not in ('repeat', 'fit_to_mesh', 'time_scale', 'time_offset')}
+    shape = {k: value[k] for k in DEFAULTS if k not in ('repeat', 'fit_to_mesh', 'tiles_across', 'time_scale', 'time_offset')}
     return hashlib.sha256(json.dumps([FORM, shape, round(seconds(value, time), 6)], sort_keys=True).encode()).hexdigest()[:24]
 
 
@@ -427,9 +433,13 @@ def uv_metres(mesh, limit=4000):
 
 
 def fitted(scene):
-    """The scene with each Ocean and Ocean Foam node whose Fit to Mesh is on given the repeat that makes its tiles Size
-    metres across on the meshes its material is on (uv_metres over size, area weighted over those meshes); the scene
-    as it was where there is none. Its materials and graphs are copies where they change."""
+    """The scene with each Ocean and Ocean Foam node whose Fit to Mesh is on laid on the meshes its material is on in
+    Tiles Across tiles across their U (uv_metres, area weighted over those meshes): its repeat that many along U and as
+    many along V as keep the tiles square, made at FITTED_SIZE (its own Size is for Fit to Mesh off), and its _scale
+    (on the node, nodes.expand_ocean) what makes a tile of that size that wide, the sea scaled whole by it, heights and
+    sideways push too; made only at its own size, a small mesh
+    had waves as high as the wind makes on tiles a few metres wide, folding over. The scene as it was where there is
+    none. Its materials and graphs are copies where they change."""
     import copy
     from . import face_tags
     materials = scene.get('materials') or {}
@@ -470,8 +480,11 @@ def fitted(scene):
                     continue
                 if node['type'] == 'ocean_foam' and not params:
                     continue    # it follows the Ocean node, which is fitted
-                size = float((params or {}).get('size', DEFAULTS['size']))
-                if size > 0 and math.isfinite(size):
-                    node.setdefault('parameters', {})['repeat'] = [max(1e-3, metres[0] / size), max(1e-3, metres[1] / size)]
+                tiles = float((params or {}).get('tiles_across', DEFAULTS['tiles_across']))
+                if tiles > 0 and math.isfinite(tiles) and metres[0] > 0:
+                    wide = metres[0] / tiles
+                    held = node.setdefault('parameters', {})
+                    held['repeat'] = [tiles, max(1e-3, metres[1] / wide)]
+                    node['_scale'] = wide / FITTED_SIZE
         result['materials'][tag] = material
     return result

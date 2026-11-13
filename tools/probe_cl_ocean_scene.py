@@ -28,7 +28,9 @@ try:
             rows.append([geo.vertices.new((-SIZE / 2 + SIZE * i / SEGMENTS, 0.0, z)) for i in range(SEGMENTS + 1)])
         for j in range(SEGMENTS):
             for i in range(SEGMENTS):
-                geo.polygons.new([rows[j][i], rows[j + 1][i], rows[j + 1][i + 1], rows[j][i + 1]])
+                # Wound so that the normal points up (Y), out of the water: wound the other way the sea faced down,
+                # and MoonRay rendered it as seen from under the water, bright with the sky it mirrored wholly.
+                geo.polygons.new([rows[j][i], rows[j][i + 1], rows[j + 1][i + 1], rows[j + 1][i]])
     report['polygons'] = sea.geometry.numPolygons
     # UVs from 0 to 1 across the plane: Modo's UV Create, a planar projection down Y fitted to the mesh.
     lx.eval('select.item {%s} set' % sea.id)
@@ -57,7 +59,7 @@ try:
                                            'metallic': 0.0})
     # The sea: 80 m tiles, ten across the 800 m plane, the wind at 30 degrees so no wave runs along an edge.
     graph['nodes']['sea'] = {'type': 'ocean', 'position': [-300, 300], 'inputs': {},
-                             'parameters': {'size': 80.0, 'repeat': [10.0, 10.0], 'resolution': 512, 'wind_speed': 12.0,
+                             'parameters': {'tiles_across': 10.0, 'resolution': 512, 'wind_speed': 12.0,
                                             'wind_direction': 30.0, 'choppiness': 1.2, 'small_waves': 0.05,
                                             'against_wind': 0.3, 'foam_threshold': 0.8}}
     # Its waves into MoonRay's Vector Displacement, tangent space and TNB as it starts, which is the displacement output.
