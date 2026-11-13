@@ -598,7 +598,7 @@ public:
         const std::set<std::string> held = compiledKinds(shaderMark(p));
         std::vector<int> cards;
         for (int card : multi::cardOrdinals(gpu::cardCount()))
-            if (held.count(cardKind(card))) cards.push_back(card);
+            if (gpu::supported(card) && held.count(cardKind(card))) cards.push_back(card);  // a card too old: the CPU alone
         if (cards.empty()) return;
         gpu_ = gpuLane(p, {}, cards[0]);
         for (size_t k = 1; k < cards.size(); ++k) {
