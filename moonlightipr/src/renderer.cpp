@@ -1574,6 +1574,7 @@ void Renderer::setMaterials(const Material* materials, size_t count, const Layer
             if (layerTable[material.layerStart + i].channel == CHANNEL_DISSOLVE || layerTable[material.layerStart + i].channel == CHANNEL_STENCIL)
                 material.flags |= MATERIAL_HAS_PRESENCE;
             else if (layerTable[material.layerStart + i].channel == CHANNEL_BUMP && material.bumpStrength != 0.0f) material.flags |= MATERIAL_HAS_BUMP;
+            else if (layerTable[material.layerStart + i].channel == CHANNEL_SLOPE) material.flags |= MATERIAL_HAS_SLOPE;
         if (material.flags & (MATERIAL_HAS_PRESENCE | MATERIAL_VOLUME)) impl->params.presence = 1;
     }
     impl->layerTable.upload(layerTable);

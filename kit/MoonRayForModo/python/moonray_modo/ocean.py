@@ -3,7 +3,8 @@ waves driven by the wind, each wave moving at its own speed, summed by FFT into 
 
 MoonRay has no ocean of its own. The kit works the tile out for the frame being rendered and hands MoonRay a texture:
 a vector displacement (red the sideways push along U, green the height, blue the push along V, in scene units, for a
-tangent-space VectorDisplacement) and a foam mask (where the choppy surface folds over, Tessendorf's Jacobian). The graph
+tangent-space VectorDisplacement), a foam mask (where the choppy surface folds over, Tessendorf's Jacobian), and the
+surface's slope, which MoonLightIPR's shading reads for waves finer than a mesh's vertices are apart. The graph
 editor's Ocean and Ocean Foam nodes are expanded into those before any engine sees the graph (nodes.effective), so
 MoonRay, XPU2 and MoonLightIPR render the same ocean. A switch in MoonRay Source Overrides (native.ocean) turns it off.
 
@@ -19,12 +20,11 @@ from pathlib import Path
 
 GRAVITY = 9.81
 LIBRARY = 'modo_ocean.dll'
-FORM = 1  # bumped whenever the model changes, so that tiles made by an older one are made again
+FORM = 3  # bumped whenever the model changes, so that tiles made by an older one are made again
 # The settings an Ocean node has, with their defaults (nodes.MAPS takes its schema from here).
 DEFAULTS = {
     'size': 50.0,           # the tile's width in scene units (metres)
-    'repeat': [1.0, 1.0],   # how many tiles across the surface's UVs
-    'uv_map': '',
+    'repeat': [1.0, 1.0],   # how many tiles across the surface's UVs (its first UV map)
     'resolution': 256,      # points across the tile: 64 to 1024, a power of two
     'wind_speed': 10.0,     # metres a second
     'wind_direction': 0.0,  # degrees, from U towards V
@@ -51,7 +51,7 @@ def settings(params):
     value = dict(DEFAULTS)
     value.update({k: v for k, v in (params or {}).items() if k in DEFAULTS})
     for key in DEFAULTS:
-        if key in ('uv_map', 'repeat', 'resolution', 'seed'):
+        if key in ('repeat', 'resolution', 'seed'):
             continue
         value[key] = float(value[key])
         if not math.isfinite(value[key]):
@@ -191,15 +191,16 @@ def ifft2(grid):
     return [[columns[i][j] for i in range(n)] for j in range(n)]
 
 
-def fields(value, time):
-    """Displacement (dx, height, dz) and foam at each point of the tile, rows by z, in scene units."""
+def fields(value, time, slopes=False):
+    """Displacement (dx, height, dz) and foam at each point of the tile, rows by z, in scene units; with slopes, also
+    the displaced surface's slope as the height's change across one tile along U and along V (its tangents' normal)."""
     n = value['resolution']
     h0, scale = initial(value)
     ks = wavenumbers(value)
     t = seconds(value, time)
     chop = value['choppiness']
     # Two real fields in each transform: a + ib, a and b each from a spectrum with Hermitian symmetry.
-    pair1, pair2, pair3 = ([[0j] * n for _ in range(n)] for _ in range(3))
+    pair1, pair2, pair3, pair4 = ([[0j] * n for _ in range(n)] for _ in range(4))
     for j in range(n):
         for i in range(n):
             kx, kz = ks[i], ks[j]
@@ -214,8 +215,10 @@ def fields(value, time):
             pair1[j][i] = h + 1j * dx
             pair2[j][i] = dz + 1j * jxx
             pair3[j][i] = jzz + 1j * jxz
+            pair4[j][i] = 1j * kx * h + 1j * (1j * kz * h)
     a, b, c = ifft2(pair1), ifft2(pair2), ifft2(pair3)
-    displacement, foam = [], []
+    d = ifft2(pair4) if slopes else None
+    displacement, foam, slope = [], [], []
     threshold = value['foam_threshold']
     for j in range(n):
         for i in range(n):
@@ -226,14 +229,19 @@ def fields(value, time):
             displacement.append((chop * dx, h, chop * dz))
             jacobian = (1 + chop * jxx) * (1 + chop * jzz) - (chop * jxz) ** 2
             foam.append(min(1.0, max(0.0, (threshold - jacobian) / threshold)) if threshold > 0 else 0.0)
-    return displacement, foam
+            if slopes:
+                hx, hz = d[j][i].real * sign * scale, d[j][i].imag * sign * scale
+                ax, bz, e = 1 + chop * jxx, 1 + chop * jzz, chop * jxz
+                held = max(jacobian, 0.05)
+                slope.append(((bz * hx - e * hz) / held * value['size'], (ax * hz - e * hx) / held * value['size'], 0.0))
+    return (displacement, foam, slope) if slopes else (displacement, foam)
 
 
 # ---- Tiles on disk ---------------------------------------------------------------------------------------------------
 
 def key(value, time):
     """What a tile is made from: its settings that shape the waves, and the moment."""
-    shape = {k: value[k] for k in DEFAULTS if k not in ('repeat', 'uv_map', 'time_scale', 'time_offset')}
+    shape = {k: value[k] for k in DEFAULTS if k not in ('repeat', 'time_scale', 'time_offset')}
     return hashlib.sha256(json.dumps([FORM, shape, round(seconds(value, time), 6)], sort_keys=True).encode()).hexdigest()[:24]
 
 
@@ -245,9 +253,9 @@ def folder():
 
 
 def paths(value, time):
-    """The tile's displacement and foam images (PFM) for these settings and this moment."""
+    """The tile's displacement, foam and slope images (PFM) for these settings and this moment."""
     stem = folder() / key(value, time)
-    return stem.with_suffix('.displacement.pfm'), stem.with_suffix('.foam.pfm')
+    return stem.with_suffix('.displacement.pfm'), stem.with_suffix('.foam.pfm'), stem.with_suffix('.slope.pfm')
 
 
 def write_pfm(path, width, values, channels):
@@ -275,8 +283,9 @@ def library(path=None):
             try:
                 import ctypes
                 held = ctypes.CDLL(str(path))
-                held.modo_ocean_tile.argtypes = [ctypes.c_int, ctypes.POINTER(ctypes.c_double), ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p]
-                held.modo_ocean_tile.restype = ctypes.c_int
+                held.modo_ocean_tile_slope.argtypes = [ctypes.c_int, ctypes.POINTER(ctypes.c_double), ctypes.c_int, ctypes.c_char_p,
+                                                       ctypes.c_char_p, ctypes.c_char_p]
+                held.modo_ocean_tile_slope.restype = ctypes.c_int
             except (OSError, AttributeError):
                 held = None
         _LIBRARY[str(path)] = held
@@ -290,35 +299,37 @@ def values(value, time):
     return [float(value[k]) for k in order] + [seconds(value, time)]
 
 
-def native_tile(value, time, displacement, foam, path=None):
-    """The tile made by modo_ocean.dll into the two paths; whether it was."""
+def native_tile(value, time, displacement, foam, slope, path=None):
+    """The tile made by modo_ocean.dll into the three paths; whether it was."""
     held = library(path)
     if held is None:
         return False
     import ctypes
     numbers = values(value, time)
     array = (ctypes.c_double * len(numbers))(*numbers)
-    done = held.modo_ocean_tile(int(value['resolution']), array, len(numbers), str(displacement).encode('mbcs'), str(foam).encode('mbcs'))
-    return done == 0 and Path(displacement).is_file() and Path(foam).is_file()
+    done = held.modo_ocean_tile_slope(int(value['resolution']), array, len(numbers), str(displacement).encode('mbcs'),
+                                      str(foam).encode('mbcs'), str(slope).encode('mbcs'))
+    return done == 0 and all(Path(p).is_file() for p in (displacement, foam, slope))
 
 
 def make(value, time, runtime=None):
-    """The tile's two images, made where they are not on disk yet; their paths."""
-    displacement, foam = paths(value, time)
-    if displacement.is_file() and foam.is_file():
-        return displacement, foam
-    if native_tile(value, time, displacement, foam):
-        return displacement, foam
+    """The tile's three images, made where they are not on disk yet; their paths."""
+    made = paths(value, time)
+    if all(p.is_file() for p in made):
+        return made
+    if native_tile(value, time, *made):
+        return made
     if value['resolution'] > PYTHON_LIMIT:
         # In Python a large tile takes too long: the largest it makes, the waves the same, the detail less fine.
         value = dict(value, resolution=PYTHON_LIMIT)
-        displacement, foam = paths(value, time)
-        if displacement.is_file() and foam.is_file():
-            return displacement, foam
-    vectors, mask = fields(value, time)
-    write_pfm(displacement, value['resolution'], vectors, 3)
-    write_pfm(foam, value['resolution'], mask, 1)
-    return displacement, foam
+        made = paths(value, time)
+        if all(p.is_file() for p in made):
+            return made
+    vectors, mask, slopes = fields(value, time, slopes=True)
+    write_pfm(made[0], value['resolution'], vectors, 3)
+    write_pfm(made[1], value['resolution'], [(m, m, m) for m in mask], 3)
+    write_pfm(made[2], value['resolution'], slopes, 3)
+    return made
 
 
 # The frame a scene is being written for: its time in seconds and the runtime, set while rdla or MoonLightIPR's packer
@@ -342,7 +353,7 @@ class writing:
 
 
 def tile(value):
-    """The displacement and foam images of the tile for the frame being written (made if need be), or for time 0 named
+    """The displacement, foam and slope images of the tile for the frame being written (made if need be), or for time 0 named
     only where no scene is being written."""
     time = CONTEXT['time']
     if time is None:

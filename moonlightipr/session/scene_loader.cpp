@@ -1005,6 +1005,14 @@ SceneSettings SceneLoader::apply(const std::string& path) {
             if (!held.closing.empty())
                 displaced(&held.closing[v * 3], &held.closingDirections[v * 3], &closingTangents[v * 3], found, *program);
         }
+        if (const char* dump = std::getenv("MOONLIGHTIPR_DUMP_DISPLACE")) {
+            // For tests: the displaced vertices, then the values the displacement pass found, as raw floats.
+            if (FILE* out = std::fopen(dump, "wb")) {
+                std::fwrite(held.positions.data(), sizeof(float), held.positions.size(), out);
+                std::fwrite(values.data(), sizeof(float), values.size(), out);
+                std::fclose(out);
+            }
+        }
         const std::vector<float> shading = held.smooth ? smoothNormals(held.positions, held.indices) : std::vector<float>();
         renderer.reshapeMesh(held.mesh, held.positions.data(), shading.empty() ? nullptr : shading.data(),
                              held.closing.empty() ? nullptr : held.closing.data());

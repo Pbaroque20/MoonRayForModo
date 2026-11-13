@@ -55,17 +55,35 @@ class Model(unittest.TestCase):
         value = ocean.settings({'resolution': 64, 'choppiness': 1.5, 'wind_speed': 14, 'seed': 3})
         expected, foam = ocean.fields(value, 2.5)
         with tempfile.TemporaryDirectory() as folder:
-            out = [pathlib.Path(folder) / 'd.pfm', pathlib.Path(folder) / 'f.pfm']
-            self.assertTrue(ocean.native_tile(value, 2.5, out[0], out[1], dll))
+            out = [pathlib.Path(folder) / 'd.pfm', pathlib.Path(folder) / 'f.pfm', pathlib.Path(folder) / 's.pfm']
+            self.assertTrue(ocean.native_tile(value, 2.5, out[0], out[1], out[2], dll))
+            slopes = array.array('f')
+            slopes.frombytes(out[2].read_bytes().split(b'\n', 3)[3][:64 * 64 * 12])
             data = out[0].read_bytes().split(b'\n', 3)[3]
             got = array.array('f')
             got.frombytes(data[:64 * 64 * 12])
             mask = array.array('f')
-            mask.frombytes(out[1].read_bytes().split(b'\n', 3)[3][:64 * 64 * 4])
+            mask.frombytes(out[1].read_bytes().split(b'\n', 3)[3][:64 * 64 * 12])
         for a, b in zip((c for v in expected for c in v), got):
             self.assertAlmostEqual(a, b, places=4)
-        for a, b in zip(foam, mask):
+        # The foam a grey image of three channels.
+        for a, b in zip((f for f in foam for _ in range(3)), mask):
             self.assertAlmostEqual(a, b, places=4)
+        # The slope as the Python model works it out.
+        for a, b in zip((c for v in ocean.fields(value, 2.5, slopes=True)[2] for c in v), slopes):
+            self.assertAlmostEqual(a, b, delta=1e-3 * max(1.0, abs(a)))
+
+    def test_the_slope_is_the_heights_change(self):
+        # With no sideways push, the slope across one tile is the heights' change from point to point times the points.
+        value = ocean.settings({'resolution': 64, 'choppiness': 0, 'small_waves': 3.0})  # long waves, which a difference follows
+        heights, _, slopes = ocean.fields(value, 1.0, slopes=True)
+        n = 64
+        for j in range(0, n, 7):
+            for i in range(0, n, 7):
+                du = (heights[j * n + (i + 1) % n][1] - heights[j * n + (i - 1) % n][1]) / 2 * n
+                dv = (heights[((j + 1) % n) * n + i][1] - heights[((j - 1) % n) * n + i][1]) / 2 * n
+                self.assertAlmostEqual(slopes[j * n + i][0], du, delta=0.1 + 0.03 * abs(du))
+                self.assertAlmostEqual(slopes[j * n + i][1], dv, delta=0.1 + 0.03 * abs(dv))
 
 class Nodes(unittest.TestCase):
     def setUp(self):
@@ -84,10 +102,13 @@ class Nodes(unittest.TestCase):
         self.assertEqual(sea['type'], 'VectorDisplacement')
         self.assertEqual(sea['parameters']['source_space'], 0)
         tile = g['nodes'][sea['inputs']['vector']]
-        self.assertEqual(tile['type'], 'image')
-        self.assertTrue(pathlib.Path(tile['parameters']['file']).is_file())
+        # MoonRay's own ImageMap, read as it is: the kit's image node divided by an alpha these images have not.
+        self.assertEqual(tile['type'], 'ImageMap')
+        self.assertTrue(pathlib.Path(tile['parameters']['texture']).is_file())
         self.assertEqual(tile['parameters']['scale'], [4.0, 4.0])
-        self.assertFalse(tile['parameters']['srgb'])
+        self.assertEqual(tile['parameters']['gamma'], 0)
+        # Its slope beside it, for MoonLightIPR's shading.
+        self.assertTrue(tile['_slope'].endswith('.slope.pfm') and pathlib.Path(tile['_slope']).is_file())
 
     def test_each_frame_its_own_tile_and_none_made_outside_a_render(self):
         with mock.patch.dict(os.environ, {'MOONRAY_MODO_OCEAN': '1'}):
@@ -97,9 +118,9 @@ class Nodes(unittest.TestCase):
             for time in (0.0, 1.0 / 24):
                 with ocean.writing(time):
                     g = nodes.validate(graph())
-                files.append(g['nodes'][g['nodes']['sea']['inputs']['vector']]['parameters']['file'])
+                files.append(g['nodes'][g['nodes']['sea']['inputs']['vector']]['parameters']['texture'])
         self.assertNotEqual(files[0], files[1])
-        self.assertEqual(named['nodes'][named['nodes']['sea']['inputs']['vector']]['parameters']['file'], files[0])
+        self.assertEqual(named['nodes'][named['nodes']['sea']['inputs']['vector']]['parameters']['texture'], files[0])
 
     def test_off_in_the_overrides_the_surface_stays_flat(self):
         with mock.patch.dict(os.environ, {'MOONRAY_MODO_OCEAN': '0'}), ocean.writing(1.0):
@@ -115,8 +136,8 @@ class Nodes(unittest.TestCase):
         g['nodes']['surface']['inputs']['albedo'] = 'foam'
         with mock.patch.dict(os.environ, {'MOONRAY_MODO_OCEAN': '1'}), ocean.writing(1.0):
             v = nodes.validate(g)
-        self.assertEqual(v['nodes']['foam']['type'], 'image')
-        self.assertTrue(v['nodes']['foam']['parameters']['file'].endswith('.foam.pfm'))
+        self.assertEqual(v['nodes']['foam']['type'], 'ImageMap')
+        self.assertTrue(v['nodes']['foam']['parameters']['texture'].endswith('.foam.pfm'))
 
     def test_foam_with_no_settings_follows_the_ocean_node(self):
         g = graph(wind_speed=17, repeat=[3, 3])
@@ -124,8 +145,8 @@ class Nodes(unittest.TestCase):
         g['nodes']['surface']['inputs']['albedo'] = 'foam'
         with mock.patch.dict(os.environ, {'MOONRAY_MODO_OCEAN': '1'}), ocean.writing(1.0):
             v = nodes.validate(g)
-        tile = v['nodes'][v['nodes']['sea']['inputs']['vector']]['parameters']['file']
-        self.assertEqual(v['nodes']['foam']['parameters']['file'], tile.replace('.displacement.pfm', '.foam.pfm'))
+        tile = v['nodes'][v['nodes']['sea']['inputs']['vector']]['parameters']['texture']
+        self.assertEqual(v['nodes']['foam']['parameters']['texture'], tile.replace('.displacement.pfm', '.foam.pfm'))
         self.assertEqual(v['nodes']['foam']['parameters']['scale'], [3.0, 3.0])
 
     def test_the_editor_still_sees_the_ocean_node(self):

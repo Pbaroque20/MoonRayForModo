@@ -101,9 +101,9 @@ static bool writePfm(const std::string& path, int n, const std::vector<float>& v
     return std::rename(staged.c_str(), path.c_str()) == 0;
 }
 
-// The tile for these settings, written as the two PFM images: 0; 2 for settings out of range; 1 where the images
-// cannot be written.
-static int tile(const Settings& s, const char* displacementPath, const char* foamPath) {
+// The tile for these settings, written as the PFM images (the slope where slopePath is given): 0; 2 for settings out of
+// range; 1 where the images cannot be written.
+static int tile(const Settings& s, const char* displacementPath, const char* foamPath, const char* slopePath) {
     const int n = s.n;
     if (n < 2 || (n & (n - 1)) || n > 4096 || !(s.size > 0) || !(s.windSpeed > 0)) return 2;
     std::vector<double> ks(n);
@@ -123,7 +123,7 @@ static int tile(const Settings& s, const char* displacementPath, const char* foa
     const double target = s.waveHeight * 0.21 * s.windSpeed * s.windSpeed / Gravity / 4.0;
     const double scale = variance > 0 ? target / std::sqrt(variance) : 0.0;
 
-    std::vector<Complex> pair1(size_t(n) * n), pair2(size_t(n) * n), pair3(size_t(n) * n);
+    std::vector<Complex> pair1(size_t(n) * n), pair2(size_t(n) * n), pair3(size_t(n) * n), pair4(size_t(n) * n);
     const Complex I(0, 1);
     for (int j = 0; j < n; ++j)
         for (int i = 0; i < n; ++i) {
@@ -137,11 +137,14 @@ static int tile(const Settings& s, const char* displacementPath, const char* foa
             pair1[at] = h + I * dx;
             pair2[at] = dz + I * ((kx * kx / k) * h);
             pair3[at] = (kz * kz / k) * h + I * ((kx * kz / k) * h);
+            pair4[at] = I * kx * h + I * (I * kz * h);   // the height's change along x and along z
         }
     ifft2(pair1, n);
     ifft2(pair2, n);
     ifft2(pair3, n);
-    std::vector<float> displacement(size_t(n) * n * 3), foam(size_t(n) * n);
+    if (slopePath) ifft2(pair4, n);
+    // The foam a grey image of three channels, as ocean.py writes it.
+    std::vector<float> displacement(size_t(n) * n * 3), foam(size_t(n) * n * 3), slope(slopePath ? size_t(n) * n * 3 : 0);
     const double chop = s.choppiness, threshold = s.foamThreshold;
     for (int j = 0; j < n; ++j)
         for (int i = 0; i < n; ++i) {
@@ -154,17 +157,39 @@ static int tile(const Settings& s, const char* displacementPath, const char* foa
             displacement[3 * at + 1] = float(h);
             displacement[3 * at + 2] = float(chop * dz);
             const double jacobian = (1 + chop * jxx) * (1 + chop * jzz) - (chop * jxz) * (chop * jxz);
-            foam[at] = threshold > 0 ? float(std::fmin(1.0, std::fmax(0.0, (threshold - jacobian) / threshold))) : 0.0f;
+            const float f = threshold > 0 ? float(std::fmin(1.0, std::fmax(0.0, (threshold - jacobian) / threshold))) : 0.0f;
+            foam[3 * at] = foam[3 * at + 1] = foam[3 * at + 2] = f;
+            if (slopePath) {
+                // The slope of the displaced surface (the normal of its tangents along x and z, the sideways push
+                // included) as the height's change across one tile along U and along V: what MoonLightIPR's shading
+                // reads where its vertices are too far apart for the finest waves (ocean.py).
+                const double hx = pair4[at].real() * sign * scale, hz = pair4[at].imag() * sign * scale;
+                const double a = 1 + chop * jxx, b = 1 + chop * jzz, e = chop * jxz;
+                const double held = std::fmax(jacobian, 0.05);
+                slope[3 * at] = float((b * hx - e * hz) / held * s.size);
+                slope[3 * at + 1] = float((a * hz - e * hx) / held * s.size);
+                slope[3 * at + 2] = 0.0f;
+            }
         }
-    if (!writePfm(displacementPath, n, displacement, 3) || !writePfm(foamPath, n, foam, 1)) return 1;
+    if (!writePfm(displacementPath, n, displacement, 3) || !writePfm(foamPath, n, foam, 3)) return 1;
+    if (slopePath && !writePfm(slopePath, n, slope, 3)) return 1;
     return 0;
 }
 
 // What the kit calls (moonray_modo/ocean.py, by ctypes): the resolution, then values in ocean.py's arguments() order
 // (size, wind speed, wind direction, wave height, choppiness, small waves, wind alignment, against wind, depth, seed,
 // loop, foam threshold, seconds), and the two images' paths. The same returns as tile().
+extern "C" __declspec(dllexport) int modo_ocean_tile_slope(int resolution, const double* values, int count, const char* displacementPath,
+                                                           const char* foamPath, const char* slopePath);
+
 extern "C" __declspec(dllexport) int modo_ocean_tile(int resolution, const double* values, int count, const char* displacementPath,
                                                      const char* foamPath) {
+    return modo_ocean_tile_slope(resolution, values, count, displacementPath, foamPath, nullptr);
+}
+
+// As modo_ocean_tile, and the slope image too where slopePath is given.
+extern "C" __declspec(dllexport) int modo_ocean_tile_slope(int resolution, const double* values, int count, const char* displacementPath,
+                                                           const char* foamPath, const char* slopePath) {
     if (!values || count != 13 || !displacementPath || !foamPath) return 2;
     Settings s;
     s.n = resolution;
@@ -181,5 +206,5 @@ extern "C" __declspec(dllexport) int modo_ocean_tile(int resolution, const doubl
     s.loop = values[10];
     s.foamThreshold = values[11];
     s.seconds = values[12];
-    return tile(s, displacementPath, foamPath);
+    return tile(s, displacementPath, foamPath, slopePath);
 }

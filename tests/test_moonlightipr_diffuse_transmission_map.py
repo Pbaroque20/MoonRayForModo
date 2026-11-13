@@ -22,7 +22,10 @@ class DiffuseTransmissionMap(unittest.TestCase):
         self.assertEqual(materials.CHANNELS['_backCol'], 28)
         source = (pathlib.Path(__file__).resolve().parents[1] / 'moonlightipr/src/device/shared.h').read_text(encoding='utf-8')
         self.assertIn('CHANNEL_BACK = 28', source)
-        self.assertIn('CHANNEL_COUNT = 29', source)
+        # The ocean's slope came after it (test_ocean).
+        self.assertEqual(materials.CHANNELS['_slope'], 29)
+        self.assertIn('CHANNEL_SLOPE = 29', source)
+        self.assertIn('CHANNEL_COUNT = 30', source)
 
     def test_a_wired_map_is_a_layer_at_the_amount(self):
         notes = []

@@ -1,0 +1,3 @@
+Ocean at sunset.lxo: made for MoonRay for Modo (tools/probe_cl_ocean_scene.py). An 800 m sea displaced by the
+MoonShine graph's Ocean node, white foam from its Ocean Foam node, a physical sky and a low sun. Same license as the kit.
+Ocean at sunset.png: its picture in the asset library, rendered by MoonRay.

@@ -19,6 +19,15 @@ TILES={'Models':'#5b7fa6','Modo scenes':'#5b7fa6','USD / models':'#4f8f8a','Exam
 PICTURES=('.png','.jpg','.jpeg','.tif','.tiff','.bmp','.tga')
 
 
+def notes(row):
+    """The developer's notes kept beside an asset, as Markdown under its name (Ocean at sunset.notes.md beside Ocean at
+    sunset.lxo); None where there are none."""
+    path=row.get('path') if row else None
+    if not path:return None
+    found=Path(path).with_suffix('.notes.md')
+    return found if found.is_file() and found.stat().st_size<1024*1024 else None
+
+
 def ball(colour,metal=0.0,rough=.4,clear=0.0,size=SIZE):
     """A shaded ball of a material's colour: dull or shiny, metal or not, clear or solid. A drawing, not a render."""
     image=QtGui.QImage(size,size,QtGui.QImage.Format_ARGB32);image.fill(QtCore.Qt.transparent)
@@ -111,6 +120,8 @@ class Browser(QtWidgets.QDialog):
   self.use=QtWidgets.QPushButton('Use');self.use.setMinimumHeight(32);self.use.clicked.connect(self.put_to_use);side.addWidget(self.use)
   # A picture opens in a viewer of its own, as large as its window.
   self.open=QtWidgets.QPushButton('Open');self.open.setToolTip('Look at the picture in a viewer: zoom with the wheel, drag to move it, arrow keys for the next');self.open.clicked.connect(self.view_image);side.addWidget(self.open)
+  # How an asset is made and how to use what it shows, where its maker wrote it down (notes()).
+  self.notes=QtWidgets.QPushButton("Developer's Notes");self.notes.setToolTip('How this asset is made, and how to use what it shows in your own scenes');self.notes.clicked.connect(self.show_notes);side.addWidget(self.notes)
   self.reveal=QtWidgets.QPushButton('Show in Folder');self.reveal.clicked.connect(self.open_source);side.addWidget(self.reveal)
   row=QtWidgets.QHBoxLayout();layout.addLayout(row)
   for title,callback,tip in [('Add Folder...',self.add_folder,'Show the assets of a folder of your own here: materials you have saved, models, scenes, pictures'),
@@ -144,6 +155,8 @@ class Browser(QtWidgets.QDialog):
    # A MoonRay scene is two files of one name that belong together: it is shown once, by the one that is read last.
    held=Path(row.get('path',''))
    if held.suffix.lower()=='.rdlb' and held.with_suffix('.rdla').is_file():continue
+   # A picture with the name of a scene or model beside it is that one's picture, not an image of its own.
+   if held.suffix.lower() in ('.png','.jpg','.jpeg') and any(held.with_suffix(ext).is_file() for ext in ('.lxo','.rdla','.usd','.usda','.usdc','.obj','.fbx','.abc','.vdb','.mtlx')):continue
    # And where every scene's file is called scene, each in a folder of its own, it is called by its folder.
    if row['name'].casefold() in ('scene','main','untitled'):row=dict(row,name=held.parent.name.replace('_',' ').replace('-',' ').capitalize())
    # A saved material is called by its name, without the ending its file has.
@@ -178,13 +191,25 @@ class Browser(QtWidgets.QDialog):
   from .asset_import import action
   row=self.selected();label,about=PURPOSES.get(action(row.get('path','')),('Use',''))
   self.use.setText(label);self.use.setEnabled(bool(row));self.reveal.setEnabled(bool(row.get('path')));self.open.setEnabled(self.is_picture(row))
+  self.notes.setEnabled(notes(row) is not None)
   if not row:
    self.shown.setPixmap(QtGui.QPixmap());self.title.setText('Nothing chosen');self.details.setText('Choose an asset to see what it is and what it is for.');return
   self.shown.setPixmap(QtGui.QPixmap.fromImage(picture(row,220)).scaled(220,220,QtCore.Qt.KeepAspectRatio,QtCore.Qt.SmoothTransformation))
   self.title.setText(row.get('name',''))
   if str(row.get('path','')).lower().endswith('.moonmat.json'):
    about+=' The library uses a supplied thumbnail when present; otherwise it shows a colour approximation or a Graph tile. To supply a rendered image, save it beside this file as '+Path(row['path']).with_suffix('.png').name+'.'
-  self.details.setText('\n\n'.join(part for part in (about,row.get('category',''),'In the folder '+Path(row['path']).parent.name if row.get('path') else '') if part))
+  self.details.setText('\n\n'.join(part for part in (about,"Developer's notes come with it." if notes(row) else '',row.get('category',''),'In the folder '+Path(row['path']).parent.name if row.get('path') else '') if part))
+ def show_notes(self):
+  """The chosen asset's developer's notes, in a window of their own."""
+  row=self.selected();found=notes(row)
+  if found is None:return
+  dialog=QtWidgets.QDialog(self);dialog.setWindowTitle("Developer's Notes: "+row.get('name',''));dialog.resize(640,720)
+  layout=QtWidgets.QVBoxLayout(dialog);view=QtWidgets.QTextBrowser();view.setOpenExternalLinks(True)
+  text=found.read_text(encoding='utf-8',errors='replace')
+  if hasattr(view,'setMarkdown'):view.setMarkdown(text)
+  else:view.setPlainText(text)
+  layout.addWidget(view);close=QtWidgets.QPushButton('Close');close.clicked.connect(dialog.accept);layout.addWidget(close)
+  dialog.exec_()
  def is_picture(self,row):
   from .image_viewer import viewable
   return bool(row.get('path')) and viewable(row['path'])

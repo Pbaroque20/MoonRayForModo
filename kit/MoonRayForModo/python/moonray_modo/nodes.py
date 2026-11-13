@@ -25,7 +25,7 @@ NORMAL_NODES=('normalmap','bump')
 # The ocean (ocean.py): a displacement, and its foam as a map, both made from the same settings. Neither reaches an
 # engine as itself: effective() makes them a VectorDisplacement and images of the tile the kit works out for the frame.
 from . import ocean as _ocean
-_OCEAN_TYPES={'size':'Float','repeat':'Vec2f','uv_map':'String','resolution':'Int','wind_speed':'Float','wind_direction':'Float',
+_OCEAN_TYPES={'size':'Float','repeat':'Vec2f','resolution':'Int','wind_speed':'Float','wind_direction':'Float',
               'wave_height':'Float','choppiness':'Float','small_waves':'Float','wind_alignment':'Float','against_wind':'Float',
               'depth':'Float','seed':'Int','time_scale':'Float','time_offset':'Float','loop':'Float','foam_threshold':'Float'}
 MAPS['ocean']={key:(_OCEAN_TYPES[key],value) for key,value in _ocean.DEFAULTS.items()}
@@ -34,7 +34,6 @@ OCEAN_NODES=('ocean','ocean_foam')
 OCEAN_COMMENTS={
     'size':'How wide one tile of the ocean is, in scene units (metres): the waves are shaped for it. The tile repeats seamlessly.',
     'repeat':"How many tiles across the surface's UVs. For waves of their true size, the surface's width over the size above (a 200 m plane with UVs 0 to 1 and a 50 m tile: 4).",
-    'uv_map':'The UV map the tiles follow; empty for the first.',
     'resolution':'Points across one tile: more is finer detail. 64, 128, 256, 512 or 1024.',
     'wind_speed':'The wind, in metres a second: it sets how big the waves are and how long the longest ones are.',
     'wind_direction':'Where the wind blows, in degrees from U towards V.',
@@ -135,14 +134,21 @@ def expand_ocean(graph):
     for key in oceans:
         node=members[key];own=node.get('parameters') or {}
         value=_ocean.settings(leading if node['type']=='ocean_foam' and not own else own)
-        displacement,foam=_ocean.tile(value) if on else (None,None)
-        image={'type':'image','parameters':{'file':str(foam if node['type']=='ocean_foam' else displacement or ''),'srgb':False,
-               'color_space':'','uv_map':value['uv_map'],'scale':list(value['repeat']),'default':[0.0,0.0,0.0]},'inputs':{}}
+        displacement,foam,slope=_ocean.tile(value) if on else (None,None,None)
+        # MoonRay's own ImageMap of the tile, read as it is (no sRGB, no alpha: the kit's image node divided by an alpha
+        # these images have not, which threw the sea out of view and put foam everywhere), repeated across the surface's
+        # first UV map.
+        path=str(foam if node['type']=='ocean_foam' else displacement or '')
+        image=({'type':'ImageMap','parameters':{'texture':path,'gamma':0,'wrap_around':True,'scale':list(value['repeat'])},'inputs':{}}
+               if on else {'type':'constant','parameters':{'value':[0.0,0.0,0.0]},'inputs':{}})
         if node['type']=='ocean_foam':
             members[key]=dict(image,position=node.get('position'))
             continue
         tile=key+'__ocean_tile'
         while tile in members:tile+='_'
+        # The surface's slope beside it, which MoonRay does not read (it splits the surface as finely as the pixels) and
+        # MoonLightIPR's shading does, for waves finer than a mesh's vertices are apart (moonlightipr_materials).
+        if on:image['_slope']=str(slope)
         members[tile]=image
         # Red the push along U, green the height, blue the push along V (tnb: tangent, normal, bitangent).
         members[key]={'type':'VectorDisplacement','position':node.get('position'),
