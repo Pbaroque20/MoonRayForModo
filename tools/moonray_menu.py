@@ -297,3 +297,29 @@ if __name__ == '__main__':
     if after != before:
         path.write_bytes(after.encode('utf-8'))
     print('Menu in order:', path)
+
+
+GRAPH_ROW = ('<list type="Control" val="cmd moonray.graph.dock"><atom type="Label">Use Graph Editor in Current Viewport</atom>'
+             '<atom type="Hash">MoonRayMenu_graphdock:control</atom></list>')
+GRAPH_VIEW = ('<hash type="customview" key="base.MoonRayGraphViewport" val="listed">{eol}'
+              '      <atom type="Identifier">MoonRayForModo:graphview</atom>{eol}'
+              '      <atom type="Server">MoonRayGraphView</atom>{eol}'
+              '      <atom type="ViewportTitle">MoonShine Graph</atom>{eol}'
+              '      <atom type="ViewportClass">vpapplication</atom>{eol}'
+              '    </hash>')
+
+
+def graph_dock_entry(text):
+    """The docked graph editor (graph_dock): its viewport, after MoonRay's own, and Use Graph Editor in Current Viewport
+    in the MoonRay menu after Use MoonRay in Current Viewport. Each unchanged where it is there already, or where what
+    it goes after is not."""
+    eol = '\r\n' if '\r\n' in text else '\n'
+    view = '<hash type="customview" key="base.MoonRayForModoViewport"'
+    if 'key="base.MoonRayGraphViewport"' not in text and text.count(view) == 1:
+        end = text.index('</hash>', text.index(view)) + len('</hash>')
+        text = text[:end] + eol + '    ' + GRAPH_VIEW.format(eol=eol) + text[end:]
+    anchor = '<list type="Control" val="cmd moonray.dock">'
+    if 'val="cmd moonray.graph.dock"' not in text and text.count(anchor) == 1:
+        end = text.index('</list>', text.index(anchor)) + len('</list>')
+        text = text[:end] + eol + '      ' + GRAPH_ROW + text[end:]
+    return text

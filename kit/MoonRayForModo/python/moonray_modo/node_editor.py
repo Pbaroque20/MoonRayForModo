@@ -337,17 +337,31 @@ def open_editor(item,materialx_override=False):
     return editor
 
 
+class _NoWidget:
+    """In place of the MoonRay Widget where the docked editor has none: told of each change, it does nothing."""
+    def graph_changed(self,graph):pass
+    def shutdown(self):pass
+
+
 class Editor(QtWidgets.QDialog):
-    def __init__(self,item,materialx_override=False):
+    def __init__(self,item,materialx_override=False,host=None):
         # A window in its own right, above Modo's but not blocking it: Modo's, never another editor. Another material
         # chosen in the editor's list opens its editor while that one is the active window, and then closes it, which
         # deleted the new editor with it as its child: the window went the moment it came.
-        parent=QtWidgets.QApplication.activeWindow()
-        while isinstance(parent,Editor):parent=parent.parentWidget()
-        super().__init__(parent)
-        self.setWindowFlags(QtCore.Qt.Window|QtCore.Qt.WindowTitleHint|QtCore.Qt.WindowSystemMenuHint|QtCore.Qt.WindowMinMaxButtonsHint|QtCore.Qt.WindowCloseButtonHint)
-        self.setModal(False);self.setAttribute(QtCore.Qt.WA_DeleteOnClose)
-        self.setMinimumSize(900,560)
+        # host, the docked editor (graph_dock.GraphDock), holds it in a Modo viewport instead, as a widget.
+        self.host=host
+        if host is not None:
+            super().__init__(host)
+            self.setWindowFlags(QtCore.Qt.Widget)
+            self.setModal(False)
+            self.setMinimumSize(320,240)
+        else:
+            parent=QtWidgets.QApplication.activeWindow()
+            while isinstance(parent,Editor):parent=parent.parentWidget()
+            super().__init__(parent)
+            self.setWindowFlags(QtCore.Qt.Window|QtCore.Qt.WindowTitleHint|QtCore.Qt.WindowSystemMenuHint|QtCore.Qt.WindowMinMaxButtonsHint|QtCore.Qt.WindowCloseButtonHint)
+            self.setModal(False);self.setAttribute(QtCore.Qt.WA_DeleteOnClose)
+            self.setMinimumSize(900,560)
         from .preview_diagnostics import record
         record('Graph editor opened')
         self.numeric_fields=[]
@@ -435,8 +449,34 @@ class Editor(QtWidgets.QDialog):
         self.property_help.setAlignment(QtCore.Qt.AlignTop);self.property_help.setMinimumHeight(self.fontMetrics().lineSpacing()*3);right.addWidget(self.property_help)
         self.table.setMouseTracking(True);self.table.cellEntered.connect(self.describe_row);self.table.currentCellChanged.connect(lambda row,*_:self.describe_row(row))
         self.table.cellClicked.connect(self.fold_group)
-        from .material_preview import Panel
-        self.material_preview=Panel(self.item,self.preview_draft,self,embedded=True);inspector.addWidget(self.material_preview);inspector.setSizes([420,340])
+        if self.host is not None:
+            # Docked: lean, for the whole graph to be read in a viewport (graph_dock). No node library (Tab and Node >
+            # Add Node add nodes; View > Node Library shows it), no MoonRay Widget (the preview window shows the
+            # material), no footer: the graph alone. The material's settings are in Modo's own form outside it; the
+            # selected node's inputs (a noise's or an ocean's own settings) in Node Inputs, a narrow list toggled from
+            # the toolbar or View > Node Inputs, hidden until asked for and kept so for the next dock.
+            self.material_preview=_NoWidget()
+            self.show_library.setChecked(False);self.library.setVisible(False)
+            self.property_search.hide();self.property_help.hide()
+            stored=QtCore.QSettings('MoonRayForModo','GraphEditor').value('dock_node_inputs',False)
+            shown=stored in (True,'true','1',1)
+            self.show_inputs=checkable(view_menu,'Node Inputs',shown)
+            button=QtWidgets.QToolButton();button.setText('Node Inputs');button.setCheckable(True);button.setChecked(shown);button.setAutoRaise(True)
+            button.setToolTip('Show the selected node\'s inputs beside the graph: a noise\'s or an ocean\'s own settings. The material\'s settings are in its Modo form.')
+            toolbar.insertWidget(toolbar.count()-2,button)
+
+            def inputs_shown(on,button=button,inspector=inspector,splitter=splitter):
+                for control in (button,self.show_inputs):
+                    if control.isChecked()!=on:
+                        blocker=QtCore.QSignalBlocker(control);control.setChecked(on);del blocker
+                inspector.setVisible(on)
+                splitter.setSizes([0,1000,240 if on else 0])
+                QtCore.QSettings('MoonRayForModo','GraphEditor').setValue('dock_node_inputs',bool(on))
+            button.toggled.connect(inputs_shown);self.show_inputs.toggled.connect(inputs_shown)
+            inspector.setVisible(shown);splitter.setSizes([0,1000,240 if shown else 0])
+        else:
+            from .material_preview import Panel
+            self.material_preview=Panel(self.item,self.preview_draft,self,embedded=True);inspector.addWidget(self.material_preview);inspector.setSizes([420,340])
         self.finished.connect(lambda *_:self.material_preview.shutdown())
         from . import property_notifications
         property_notifications.watchers.append(self.scene_changed)
@@ -450,6 +490,8 @@ class Editor(QtWidgets.QDialog):
         buttons=QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Close);footer.addWidget(buttons)
         buttons.button(QtWidgets.QDialogButtonBox.Close).setToolTip('Edits are written to the material as they are made; Ctrl+Z here or in Modo undoes them')
         buttons.rejected.connect(self.reject)
+        if self.host is not None:
+            self.info.hide();buttons.hide();layout.setContentsMargins(2,2,2,2)
         self.inspect_waiting=False;self.fill_job=None
         self.canvas.selectionChanged.connect(self.selection_changed);self.table.itemChanged.connect(self.edited);self.layers.currentIndexChanged.connect(self.inspect)
         for button in self.findChildren(QtWidgets.QPushButton):
@@ -479,6 +521,9 @@ class Editor(QtWidgets.QDialog):
         try:item=modo.Scene().item(identity)
         except LookupError:self.fill_materials();self.info.setText('That material is no longer in the scene.');return
         self.commit_inputs()
+        if self.host is not None:
+            # Docked: the dock shows the other material in its place.
+            QtCore.QTimer.singleShot(0,lambda:self.host.show_material(item));return
         geometry=self.geometry()
         editor=open_editor(item)
         editor.setGeometry(geometry)
