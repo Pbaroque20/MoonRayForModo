@@ -591,6 +591,10 @@ public:
     void makeGpu() {
         const fs::path folder = executableFolder();
         const Programs p = programs(folder);
+        if (gpu::cardCount() > 0 && !gpu::anySupported()) {
+            std::printf("MoonRay XPU2 Rhizome: %s is older than XPU2's GPU programs run on: the CPU alone\n", olderCards().c_str());
+            return;
+        }
         if (!fs::exists(shaderMark(p))) {
             std::printf("MoonRay XPU2 Rhizome: the GPU programs are not compiled here (moonray_xpu2 --compile-shaders): the CPU alone\n");
             return;
@@ -1232,6 +1236,12 @@ public:
         }
         if (gpu::cardCount() == 0) {
             state_ = "no graphics card";
+            return;
+        }
+        // Cards, but none XPU2's programs run on (a GTX 1080 Ti): nothing to compile, never asked; the processor alone.
+        // Chosen by itself, for a node started by hand or as a service as for one started from the kit.
+        if (!gpu::anySupported()) {
+            state_ = "not used (" + olderCards() + " older than XPU2 runs on: the processor alone)";
             return;
         }
         const auto missing = missingCards();
