@@ -632,6 +632,50 @@ def cage_payload(mesh, material_index, slots, warnings):
     return _packed[signature]
 
 
+def solid_regions(meshes, materials):
+    """The materials, those whose graphs have a map laid out in the object's space (graph_bake.solid: a noise, mostly)
+    given the box their meshes' points fill, in the meshes' own space (_object_region, {'low', 'high'}), which that map
+    is baked over (graph_bake.scene). The others as they were."""
+    from . import graph_bake, nodes
+
+    def laid(held):
+        for row in held.get('material_stack') or [held]:
+            graph = row.get('node_graph')
+            if not graph:
+                continue
+            try:
+                graph = nodes.expand_ocean(nodes.effective(graph))
+            except (ValueError, KeyError, TypeError):
+                continue
+            if any(graph_bake.solid(graph, key) for key in graph.get('nodes', {})):
+                return True
+        return False
+    wanted = {tag for tag, held in materials.items() if isinstance(held, dict) and laid(held)}
+    if not wanted:
+        return materials
+    boxes = {}
+    for mesh in meshes:
+        tags = {tag if tag in materials else '' for tag in face_tags.worn(mesh)} & wanted
+        if not tags or not mesh.get('vertices'):
+            continue
+        points = _numbers(mesh['vertices'], 3)
+        if not len(points):
+            continue
+        low = [min(points[axis::3]) for axis in range(3)]
+        high = [max(points[axis::3]) for axis in range(3)]
+        for tag in tags:
+            held = boxes.get(tag)
+            boxes[tag] = (low, high) if held is None else ([min(a, b) for a, b in zip(held[0], low)], [max(a, b) for a, b in zip(held[1], high)])
+    result = dict(materials)
+    for tag, (low, high) in boxes.items():
+        region = {'low': low, 'high': high}
+        held = dict(result[tag], _object_region=region)
+        if held.get('material_stack'):
+            held['material_stack'] = [dict(row, _object_region=region) for row in held['material_stack']]
+        result[tag] = held
+    return result
+
+
 def displaced(mesh, key, flags, payload, materials, material_index, warnings, limit=None):
     """A mesh as the session displaces it, where one of its materials displaces it (form 'L'): after its data, how many
     times to split each triangle into four, the material its instances give it, and each displacing material's
@@ -1123,6 +1167,7 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     fogs = vdb_fogs(scene, runtime, warnings)
     for _, tag, fog in fogs:
         materials[tag] = fog
+    materials = solid_regions(scene.get('meshes', []), materials)
     material_index = {tag: index for index, tag in enumerate(sorted(materials))}
     # A Render's images at their full size, realtime's no larger than MAX_TEXTURE_SIDE (moonlightipr_materials).
     from .moonlightipr_materials import MAX_TEXTURE_SIDE

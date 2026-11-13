@@ -171,6 +171,8 @@ LAYER_ALPHA_MASK, LAYER_ALPHA_ONLY, LAYER_COVERAGE_U, LAYER_COVERAGE_V, LAYER_PI
 LAYER_RAMP, LAYER_CHECKER, LAYER_NOISE, LAYER_UDIM = 1 << 16, 1 << 17, 1 << 18, 1 << 19
 LAYER_PROCEDURAL = 1 << 21     # Modo's pattern through the object (modo_patterns.h, procedurals.solid)
 LAYER_WIREFRAME = 1 << 22      # Modo's Wireframe: the first colour along the polygons' edges
+LAYER_SOLID = 1 << 23          # an image read where the point is in the object's own space, through its rows (a bake of
+                               # a map laid out in object space over the box its meshes fill: graph_bake.solid)
 RAMP_CURVATURE = 255           # a gradient row's slot when the surface's curvature looks it up (Modo's Curvature)
 RAMP_SAMPLE = 254              # and when one of Modo's Sample or Surface Parameters does, worked out at the hit
 # Modo's Sample and Surface Parameters as the kernel numbers them (shared.h SAMPLE_*), the object-space distances as the
@@ -787,8 +789,11 @@ def graph_layers(source, note, runtime=None, displacement=None, wanted='height',
                 note('%s wired to %s' % (why, key.replace('_', ' ')))
                 continue
             tile = graph_bake.single_image(graph, identity)
+            # A map laid out in the object's space (a noise, mostly): baked over the box the material's meshes fill
+            # (moonlightipr_scene.solid_regions), and read by where each point is in its object.
+            region = source.get('_object_region') if graph_bake.solid(graph, identity) else None
             try:
-                baked = graph_bake.bake(graph, identity, runtime, tile)
+                baked = graph_bake.bake(graph, identity, runtime, tile, region=region)
             except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as exc:
                 note('a node wired to %s that could not be baked (%s)' % (key.replace('_', ' '), exc))
                 continue
@@ -807,6 +812,8 @@ def graph_layers(source, note, runtime=None, displacement=None, wanted='height',
                 layer['coordinate_key'] = nodes.space_descriptor(placed)['coordinate_key']
                 held = placed['type'] == 'GradientMap' or int(placed.get('parameters', {}).get('wrap_type', 0)) == 1
                 layer['tile_u'] = layer['tile_v'] = 'edge' if held else 'repeat'
+            if region is not None:
+                layer.update(object_projection=graph_bake.solid_frame(region)[3], tile_u='edge', tile_v='edge')
         layer.update(effect=effect, blend='normal', opacity=1.0, identity=identity)
         if effect == '_backCol':
             # The diffuse transmission amount times the colour, as MoonRay takes them (the material's own back).
@@ -874,7 +881,11 @@ class Compiler:
         space, ocio = color_space(source, layer.get('color_space', ''), layer.get('srgb'))
         digest = hashlib.sha256(repr((str(source.resolve()), stat.st_size, stat.st_mtime_ns, self.side or 'full', 'moonlightipr-v3', ocio and (space, ocio))).encode()).hexdigest()
         target = cache_folder() / (digest + ('.pfm' if hdr else '.tga'))
-        if not target.is_file() or not target.stat().st_size:
+        if not ocio and self.plain_pfm(source):
+            # Already what the session reads (an Ocean tile, a new one each frame): no conversion, which ran oiiotool
+            # twice for each image of each frame of a playblast.
+            target = source
+        elif not target.is_file() or not target.stat().st_size:
             # Alongside the scene's other textures, while the scene is packed (moonlightipr_scene.pack).
             from . import conversions
             conversions.run(str(target), (lambda: self.convert_space(source, target, hdr, space, ocio)) if ocio
@@ -889,6 +900,19 @@ class Compiler:
         decoded = (space == 'sRGB' or ocio) and not hdr
         return self.record(target, (TEXTURE_FLOAT if hdr else 0) | (TEXTURE_SRGB if decoded else 0)
                            | WRAP[tile_u] << TEXTURE_WRAP_U_SHIFT | WRAP[tile_v] << TEXTURE_WRAP_V_SHIFT)
+
+    def plain_pfm(self, source):
+        """Whether an image is a colour PFM the session reads as it is: three channels of floats, its sides within the
+        size limit."""
+        if source.suffix.lower() != '.pfm':
+            return False
+        try:
+            with open(source, 'rb') as held:
+                head = held.read(64).split(b'\n')
+            width, height = (int(v) for v in head[1].split())
+        except (OSError, ValueError, IndexError):
+            return False
+        return head[0].strip() == b'PF' and 0 < width and 0 < height and (not self.side or max(width, height) <= self.side)
 
     def run(self, args, name):
         from . import native
@@ -1317,6 +1341,11 @@ class Compiler:
                     flags |= LAYER_COVERAGE_V
                 if not layer.get('coordinate_key') and effect not in ('normal', 'bump'):
                     extra = dict(scale=layer.get('scale', [1, 1]))
+                if layer.get('object_projection'):
+                    # Read by the point's place in the object, not by its UVs.
+                    flags |= LAYER_SOLID
+                    extra = dict(rows=[list(layer['object_projection'][0:4]), list(layer['object_projection'][4:8]),
+                                       list(layer['object_projection'][8:12])])
             else:
                 self.note('%s layers' % kind, name)
                 abandon()

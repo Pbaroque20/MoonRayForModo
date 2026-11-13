@@ -2,6 +2,8 @@
 
 An 800 m sea under a low sun, made with the MoonShine graph's **Ocean** and **Ocean Foam** nodes. It renders the same in MoonRay, XPU2 and MoonLightIPR, and the waves move when you play the timeline (frames 1 to 120).
 
+The ocean is based on Jerry Tessendorf's research paper **"Simulating Ocean Water"** (SIGGRAPH course notes, 2001, revised 2004): wind-driven waves from a Phillips spectrum summed by FFT, choppy crests, and foam where the surface folds over. The kit's own implementation of it is credited in the kit's third-party notices.
+
 ## What is in the scene
 
 - **Sea**: a flat plane, 800 m across, 200 x 200 quads, with a UV map running 0 to 1 across it.

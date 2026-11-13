@@ -324,6 +324,13 @@ class GraphView(QtWidgets.QGraphicsView):
             if connection:menu.addSeparator()
             if nodes.category(graph['nodes'][identity]['type'])=='material':
                 entry('Material Output (current)' if identity==graph['root'] else 'Set as Material Output','output',identity!=graph['root'])
+            kind=graph['nodes'][identity]['type']
+            if nodes.category(kind)=='displacement' or kind=='ocean':
+                # The displacement output, set or taken off again; an Ocean node's through the Vector Displacement it feeds
+                # (Editor.displacement_output adds one where there is none).
+                shown=graph.get('displacement');fed=(graph['nodes'].get(shown) or {}).get('inputs') or {}
+                current=shown==identity or (kind=='ocean' and fed.get('vector')==identity)
+                entry('Clear Displacement Output' if current else 'Set as Displacement Output','displacement')
             if getattr(owner,'hidden_ports',0) or identity in self.editor.expanded:
                 entry('Show Fewer Inputs' if identity in self.editor.expanded else 'Show All Inputs','expand')
             entry('Duplicate\tCtrl+D','duplicate')
@@ -335,6 +342,7 @@ class GraphView(QtWidgets.QGraphicsView):
         chosen=menu.exec_(event.globalPos())
         what=chosen.data() if chosen is not None else None
         if what=='output':self.editor.output(identity)
+        elif what=='displacement':self.editor.displacement_output()
         elif what=='disconnect':self.editor.unlink(*connection)
         elif what=='expand':self.editor.toggle_expanded(identity)
         elif what=='duplicate':self.editor.duplicate()
