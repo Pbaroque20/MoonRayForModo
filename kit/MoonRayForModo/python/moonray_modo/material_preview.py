@@ -42,10 +42,11 @@ def look_at(eye, target=(0, 0, 0)):
     return right+[0]+up+[0]+back+[0]+list(eye)+[1]
 
 
-def snapshot(material, library, all_parts=False, scale=1.0):
+def snapshot(material, library, all_parts=False, scale=1.0, shape='widget'):
     """The widget's scene: its ball and stand, camera and two lights. scale (Object scale) makes all of it that many times
     larger together, framed and lit the same, so a procedural working in the scene's own units (curvature, noise, a
-    projection) is seen at the size it has on a mesh that large."""
+    projection) is seen at the size it has on a mesh that large. shape another thing to show the material on
+    (preview_shapes: water, subsurface, velvet), with its own camera and lights."""
     scale=float(scale) if scale and math.isfinite(float(scale)) and float(scale)>0 else 1.0
     material=copy.deepcopy(material);library=copy.deepcopy(library)
     if material.get('node_graph'):
@@ -53,6 +54,23 @@ def snapshot(material, library, all_parts=False, scale=1.0):
         material['node_override']=True
     materials={'preview':material,'':{'color':[.18,.18,.18],'roughness':.3}}
     shader_library.attach_dependencies(materials,library)
+    from .preview_shapes import made
+    other=made(shape,scale)
+    if other is not None:
+        descriptors=coordinates.descriptors(materials)
+        for mesh in other['meshes']:
+            mesh['matrix']=IDENTITY[:]
+            mesh['material']='preview' if all_parts or mesh['name']!=other.get('floor') else ''
+            mesh['uv_sets']={}
+            for key,layer in descriptors.items():
+                values=[];offset=0
+                for face in mesh['faces']:
+                    uv=mesh['uvs'][offset:offset+len(face)];offset+=len(face)
+                    values.extend(coordinates.face(layer,[mesh['vertices'][i] for i in face],uv,IDENTITY))
+                mesh['uv_sets'][key]=values
+        return {'camera':other['camera'],'meshes':other['meshes'],'materials':materials,'native_materials':library,'fps':24,
+                'lights':other['lights'],'environments':other['environments'],
+                'display':{'view':'srgb'},'render_settings':options.render_values({'target_adaptive_error':5.0})}
     path=Path(__file__).resolve().parents[2]/'assets/library/MoonRayWidget/geometry.json'
     document=json.loads(path.read_text(encoding='utf-8'))
     if document.get('format')!=1:raise ValueError('Unsupported MoonRay Widget geometry')
@@ -129,6 +147,16 @@ class Panel(QtWidgets.QWidget):
         self.scale.setPrefix('Scale ');self.scale.setValue(float(QtCore.QSettings('MoonRayForModo','GraphEditor').value('widget_scale',1.0) or 1.0))
         self.scale.setToolTip('Preview only: the ball, stand, camera and lights this many times larger (the ball is 2 units across at 1), framed the same. Procedurals in scene units, such as curvature, noise and projections, show at the size they have on a mesh that large.')
         choices=QtWidgets.QHBoxLayout();choices.addWidget(self.clay_mode,1);choices.addWidget(self.scale);choices.addWidget(self.samples);layout.addLayout(choices)
+        # What the material is shown on: the MoonRay Widget, or water, subsurface or velvet scenes (preview_shapes).
+        # Kept for the next widget.
+        from .preview_shapes import SHAPES
+        self.shape=QtWidgets.QComboBox()
+        for key,label,tip in SHAPES:
+            self.shape.addItem(label,key);self.shape.setItemData(self.shape.count()-1,tip,QtCore.Qt.ToolTipRole)
+        held=self.shape.findData(QtCore.QSettings('MoonRayForModo','GraphEditor').value('widget_shape','widget'))
+        self.shape.setCurrentIndex(max(0,held))
+        self.shape.setToolTip('Preview only: what the material is shown on. Water for displacement such as the Ocean node, Subsurface for light through thin parts, Velvet for sheen.')
+        shapes=QtWidgets.QHBoxLayout();shapes.addWidget(QtWidgets.QLabel('Shape'));shapes.addWidget(self.shape,1);layout.addLayout(shapes)
 
         self.viewer=WidgetPreview(self);layout.addWidget(self.viewer,1)
         self.status=QtWidgets.QLabel('Live preview is on.' if self.live.isChecked() and embedded else 'Live preview is off. Enable it or click Refresh.')
@@ -151,6 +179,7 @@ class Panel(QtWidgets.QWidget):
         self.clay_mode.currentIndexChanged.connect(self.refresh,QtCore.Qt.QueuedConnection)
         self.samples.currentIndexChanged.connect(self.samples_changed,QtCore.Qt.QueuedConnection)
         self.scale.valueChanged.connect(self.scale_changed)
+        self.shape.currentIndexChanged.connect(self.shape_changed,QtCore.Qt.QueuedConnection)
         self.button.clicked.connect(self.pressed)
         self.viewer.start_requested.connect(self.refresh,QtCore.Qt.QueuedConnection)
     def fit_samples(self):
@@ -199,6 +228,9 @@ class Panel(QtWidgets.QWidget):
     def scale_changed(self,*_):
         QtCore.QSettings('MoonRayForModo','GraphEditor').setValue('widget_scale',self.scale.value())
         self.schedule()
+    def shape_changed(self,*_):
+        QtCore.QSettings('MoonRayForModo','GraphEditor').setValue('widget_shape',self.shape.currentData())
+        self.refresh()
     def samples_changed(self,*_):
         QtCore.QSettings('MoonRayForModo','GraphEditor').setValue('widget_samples',self.samples.currentData())
         self.refresh()
@@ -224,7 +256,7 @@ class Panel(QtWidgets.QWidget):
         from .host import material_values
         library={candidate.id:material_values(candidate) for candidate in modo.Scene().items('advancedMaterial',superType=True)}
         draft=material_values(self.item);draft.update(self.draft());library[self.item.id]=draft
-        return dict(snapshot(draft,library,self.parts.isChecked(),self.scale.value()),_clay_preview=self.clay_mode.currentData())
+        return dict(snapshot(draft,library,self.parts.isChecked(),self.scale.value(),self.shape.currentData()),_clay_preview=self.clay_mode.currentData())
 
     @QtCore.Slot()
     def refresh(self):

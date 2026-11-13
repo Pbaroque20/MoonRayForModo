@@ -43,7 +43,7 @@ class Model(unittest.TestCase):
         self.assertLess(sum(calm), sum(storm))
 
     def test_settings_are_checked(self):
-        for bad in ({'resolution': 100}, {'wind_speed': 0}, {'size': -1}, {'choppiness': -1}, {'depth': float('nan')}):
+        for bad in ({'resolution': 100}, {'wind_speed': 0}, {'choppiness': -1}, {'depth': float('nan')}):
             with self.assertRaises(ValueError):
                 ocean.settings(bad)
 

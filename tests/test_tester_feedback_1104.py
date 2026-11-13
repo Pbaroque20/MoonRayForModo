@@ -104,7 +104,7 @@ class Shaderball(unittest.TestCase):
 
     def test_the_scale_moves_everything_together(self):
         source = (KIT / 'moonray_modo/material_preview.py').read_text(encoding='utf-8')
-        self.assertIn("def snapshot(material, library, all_parts=False, scale=1.0):", source)
+        self.assertIn("def snapshot(material, library, all_parts=False, scale=1.0, shape='widget'):", source)
         self.assertIn("'matrix':look_at(s((2.5,1.4,3.8)),s((0,-.22,0)))", source)
         self.assertIn("'width':2*scale,'height':2*scale", source)
 

@@ -99,3 +99,12 @@ License: https://github.com/zeux/meshoptimizer. Its simplifier, index generator 
 (`xpu2/interactive/xpu2_meshopt.cc`, called by `coarse_geometry.h`). Its sources are not committed here
 (`upstream/meshoptimizer`, from the v0.22 release, is ignored by Git). Its copyright and license notice ship with the kit
 in `licenses/meshoptimizer-LICENSE.md`: Copyright (c) 2016-2024 Arseny Kapoulkine. Thanks to zeux for it.
+
+## Ocean: Jerry Tessendorf's "Simulating Ocean Water"
+
+The MoonShine graph's Ocean and Ocean Foam nodes are based on Jerry Tessendorf's research paper "Simulating Ocean
+Water" (SIGGRAPH course notes, 2001, revised 2004): a Phillips spectrum of waves driven by the wind, summed by FFT into a
+tile that repeats seamlessly, the crests made choppy by a sideways push, and the foam from where that push folds the
+surface over (its Jacobian). The kit's implementation (`moonray_modo/ocean.py`, and `native-port/modo_ocean.cpp`,
+shipped as `bin/modo_ocean.dll`) was written for this project from the paper and is under this project's MIT License;
+it includes no code from the paper or from elsewhere. Credit and thanks to Jerry Tessendorf for the paper.

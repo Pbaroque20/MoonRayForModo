@@ -22,8 +22,6 @@ WIDTH,HEADER,ROW=190,24,20
 SHOWN=6
 # A node with more inputs than this, in more than one group (a material), shows them in its groups (port_rows).
 GROUPED_FROM=12
-# The property groups open in the graph editor for a kind of node never folded or unfolded yet; the rest start folded.
-OPEN_GROUPS=('diffuse','specular')
 # The key of the mark (QGraphicsItem.data) every wire of the canvas carries, so that edges() finds each to redraw it.
 WIRE=0x57495245
 # How often a value changing in the editor is written to the material, at most, in milliseconds (publish_soon).
@@ -33,10 +31,10 @@ PUBLISH_EVERY=150
 def default_folds(kind):
     """The groups a kind of node starts with folded away: all but Diffuse and Specular; a kind with neither (a map, a
     light filter) has its first group open, not every group folded."""
+    # The same groups Modo's form for the material starts with open (form_groups).
+    from moonray_modo.form_groups import opened
     groups=list(dict.fromkeys(group for _,(group,) in grouped(kind) if group is not None))
-    folded={group for group in groups if group.casefold() not in OPEN_GROUPS}
-    if groups and folded==set(groups):folded.discard(groups[0])
-    return folded
+    return set(groups)-opened(groups)
 
 
 def grouped(kind):
@@ -135,6 +133,8 @@ def port_rows(kind,ports,authored,folded):
 
 # How long the list of properties is filled for before the window is let answer, in seconds.
 FILL_SLICE=.008
+# A node soloed in the preview (solo.py), apart from the selection's amber.
+SOLO_COLOR='#2ec4b6'
 
 
 class Node(QtWidgets.QGraphicsRectItem):
@@ -175,9 +175,16 @@ class Node(QtWidgets.QGraphicsRectItem):
         role='OUTPUT' if identity==editor.graph['root'] else 'DISPLACEMENT' if identity==editor.graph.get('displacement') else ''
         # A ramp left in MoonRay's default space slides over the surface as the camera moves; say so on the node.
         if follows_camera(value):role='FOLLOWS CAMERA'
+        # Soloed in the preview (solo.py): marked in a colour of its own, its outline and a SOLO badge.
+        from . import solo
+        item=getattr(editor,'item',None)
+        self.soloed=item is not None and solo.is_node(item.id,identity)
+        if self.soloed:
+            role='SOLO'
+            self.body.setPen(QtGui.QPen(QtGui.QColor(SOLO_COLOR),2.5))
         badge=None
         if role:
-            badge=text(self,role,TEXT,0,6,90,size=-2);badge.setPos(WIDTH-badge.boundingRect().width()-12,6);badge.setOpacity(.8)
+            badge=text(self,role,SOLO_COLOR if self.soloed else TEXT,0,6,90,size=-2);badge.setPos(WIDTH-badge.boundingRect().width()-12,6);badge.setOpacity(1 if self.soloed else .8)
         title=text(self,value.get('label',kind),TEXT,10,4,WIDTH-24-(badge.boundingRect().width()+8 if badge else 0))
         if not title.toolTip():title.setToolTip(kind)
         self.sockets={None:Socket(editor,identity,None,self)};self.sockets[None].setPos(WIDTH,HEADER/2)
@@ -225,7 +232,7 @@ class Node(QtWidgets.QGraphicsRectItem):
                     self.identity,exc,self.identity in self.editor.graph.get('nodes',{}),getattr(self.editor,'rebuilding',None),
                     getattr(self.editor,'busy',None)))
         elif change==self.ItemSelectedHasChanged and hasattr(self,'body'):
-            self.body.setPen(QtGui.QPen(QtGui.QColor(ACCENT),2) if value else QtGui.QPen(QtGui.QColor(NODE_EDGE),1))
+            self.body.setPen(QtGui.QPen(QtGui.QColor(ACCENT),2) if value else QtGui.QPen(QtGui.QColor(SOLO_COLOR),2.5) if getattr(self,'soloed',False) else QtGui.QPen(QtGui.QColor(NODE_EDGE),1))
             self.setZValue(1 if value else 0)
         return super().itemChange(change,value)
 
@@ -339,17 +346,31 @@ def open_editor(item,materialx_override=False):
     return editor
 
 
+class _NoWidget:
+    """In place of the MoonRay Widget where the docked editor has none: told of each change, it does nothing."""
+    def graph_changed(self,graph):pass
+    def shutdown(self):pass
+
+
 class Editor(QtWidgets.QDialog):
-    def __init__(self,item,materialx_override=False):
+    def __init__(self,item,materialx_override=False,host=None):
         # A window in its own right, above Modo's but not blocking it: Modo's, never another editor. Another material
         # chosen in the editor's list opens its editor while that one is the active window, and then closes it, which
         # deleted the new editor with it as its child: the window went the moment it came.
-        parent=QtWidgets.QApplication.activeWindow()
-        while isinstance(parent,Editor):parent=parent.parentWidget()
-        super().__init__(parent)
-        self.setWindowFlags(QtCore.Qt.Window|QtCore.Qt.WindowTitleHint|QtCore.Qt.WindowSystemMenuHint|QtCore.Qt.WindowMinMaxButtonsHint|QtCore.Qt.WindowCloseButtonHint)
-        self.setModal(False);self.setAttribute(QtCore.Qt.WA_DeleteOnClose)
-        self.setMinimumSize(900,560)
+        # host, the docked editor (graph_dock.GraphDock), holds it in a Modo viewport instead, as a widget.
+        self.host=host
+        if host is not None:
+            super().__init__(host)
+            self.setWindowFlags(QtCore.Qt.Widget)
+            self.setModal(False)
+            self.setMinimumSize(320,240)
+        else:
+            parent=QtWidgets.QApplication.activeWindow()
+            while isinstance(parent,Editor):parent=parent.parentWidget()
+            super().__init__(parent)
+            self.setWindowFlags(QtCore.Qt.Window|QtCore.Qt.WindowTitleHint|QtCore.Qt.WindowSystemMenuHint|QtCore.Qt.WindowMinMaxButtonsHint|QtCore.Qt.WindowCloseButtonHint)
+            self.setModal(False);self.setAttribute(QtCore.Qt.WA_DeleteOnClose)
+            self.setMinimumSize(900,560)
         from .preview_diagnostics import record
         record('Graph editor opened')
         self.numeric_fields=[]
@@ -437,12 +458,47 @@ class Editor(QtWidgets.QDialog):
         self.property_help.setAlignment(QtCore.Qt.AlignTop);self.property_help.setMinimumHeight(self.fontMetrics().lineSpacing()*3);right.addWidget(self.property_help)
         self.table.setMouseTracking(True);self.table.cellEntered.connect(self.describe_row);self.table.currentCellChanged.connect(lambda row,*_:self.describe_row(row))
         self.table.cellClicked.connect(self.fold_group)
-        from .material_preview import Panel
-        self.material_preview=Panel(self.item,self.preview_draft,self,embedded=True);inspector.addWidget(self.material_preview);inspector.setSizes([420,340])
+        if self.host is not None:
+            # Docked: lean, for the whole graph to be read in a viewport (graph_dock). No node library (Tab and Node >
+            # Add Node add nodes; View > Node Library shows it), no MoonRay Widget (the preview window shows the
+            # material), no footer: the graph alone. The material's settings are in Modo's own form outside it; the
+            # selected node's inputs (a noise's or an ocean's own settings) in Node Inputs, a narrow list toggled from
+            # the toolbar or View > Node Inputs, hidden until asked for and kept so for the next dock.
+            self.material_preview=_NoWidget()
+            self.show_library.setChecked(False);self.library.setVisible(False)
+            self.property_search.hide();self.property_help.hide()
+            stored=QtCore.QSettings('MoonRayForModo','GraphEditor').value('dock_node_inputs',False)
+            shown=stored in (True,'true','1',1)
+            self.show_inputs=checkable(view_menu,'Node Inputs',shown)
+            button=QtWidgets.QToolButton();button.setText('Node Inputs');button.setCheckable(True);button.setChecked(shown);button.setAutoRaise(True)
+            button.setToolTip('Show the selected node\'s inputs beside the graph: a noise\'s or an ocean\'s own settings. The material\'s settings are in its Modo form.')
+            toolbar.insertWidget(toolbar.count()-2,button)
+
+            def inputs_shown(on,button=button,inspector=inspector,splitter=splitter):
+                for control in (button,self.show_inputs):
+                    if control.isChecked()!=on:
+                        blocker=QtCore.QSignalBlocker(control);control.setChecked(on);del blocker
+                inspector.setVisible(on)
+                splitter.setSizes([0,1000,240 if on else 0])
+                QtCore.QSettings('MoonRayForModo','GraphEditor').setValue('dock_node_inputs',bool(on))
+            button.toggled.connect(inputs_shown);self.show_inputs.toggled.connect(inputs_shown)
+            inspector.setVisible(shown);splitter.setSizes([0,1000,240 if shown else 0])
+        else:
+            from .material_preview import Panel
+            self.material_preview=Panel(self.item,self.preview_draft,self,embedded=True);inspector.addWidget(self.material_preview);inspector.setSizes([420,340])
         self.finished.connect(lambda *_:self.material_preview.shutdown())
         from . import property_notifications
         property_notifications.watchers.append(self.scene_changed)
         self.finished.connect(lambda *_:self.stop_watching())
+        # The material's scene closed: let go of it (scene_closed). Its item still answers as if it were there, and its
+        # id may be another scene's material's; a value written to it crashed Modo.
+        from . import solo
+        solo.LISTENERS.append(self.solo_changed)
+        self.finished.connect(lambda *_:solo.LISTENERS.remove(self.solo_changed) if self.solo_changed in solo.LISTENERS else None)
+        from . import scene_watch
+        self.scene_key=scene_watch.key_of_item(self.item);self.scene_gone=False
+        scene_watch.watch(self.scene_closed)
+        self.finished.connect(lambda *_:scene_watch.unwatch(self.scene_closed))
         footer=QtWidgets.QHBoxLayout();layout.addLayout(footer)
         self.info=QtWidgets.QLabel('Tab or double-click adds a node. Drag between sockets to connect.')
         # A long message is cut short rather than widening the window.
@@ -452,6 +508,8 @@ class Editor(QtWidgets.QDialog):
         buttons=QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Close);footer.addWidget(buttons)
         buttons.button(QtWidgets.QDialogButtonBox.Close).setToolTip('Edits are written to the material as they are made; Ctrl+Z here or in Modo undoes them')
         buttons.rejected.connect(self.reject)
+        if self.host is not None:
+            self.info.hide();buttons.hide();layout.setContentsMargins(2,2,2,2)
         self.inspect_waiting=False;self.fill_job=None
         self.canvas.selectionChanged.connect(self.selection_changed);self.table.itemChanged.connect(self.edited);self.layers.currentIndexChanged.connect(self.inspect)
         for button in self.findChildren(QtWidgets.QPushButton):
@@ -481,6 +539,9 @@ class Editor(QtWidgets.QDialog):
         try:item=modo.Scene().item(identity)
         except LookupError:self.fill_materials();self.info.setText('That material is no longer in the scene.');return
         self.commit_inputs()
+        if self.host is not None:
+            # Docked: the dock shows the other material in its place.
+            QtCore.QTimer.singleShot(0,lambda:self.host.show_material(item));return
         geometry=self.geometry()
         editor=open_editor(item)
         editor.setGeometry(geometry)
@@ -683,7 +744,23 @@ class Editor(QtWidgets.QDialog):
         except (ValueError,TypeError,KeyError,IndexError) as exc:
             self.graph=before;self.info.setText(str(exc))
 
+    def solo_changed(self):
+        """Something was soloed or the solo ended: the nodes drawn again, the soloed one marked."""
+        from shiboken2 import isValid
+        if isValid(self) and not getattr(self,'scene_gone',False):self.rebuild()
+    def scene_closed(self,key):
+        """A scene was destroyed: where it was this editor's (or which it was cannot be told), nothing more is written and
+        the editor goes (docked, the dock shows the material selected next)."""
+        if self.scene_gone or (key is not None and self.scene_key is not None and key!=self.scene_key):return
+        self.scene_gone=True;self.live=False
+        timer=getattr(self,'_publish_timer',None)
+        if timer is not None:timer.stop()
+        # Its MoonRay Widget reads the material too: stopped first.
+        try:self.material_preview.shutdown()
+        except Exception:pass
+        QtCore.QTimer.singleShot(0,lambda:self.done(0))
     def preview_draft(self):
+        if getattr(self,'scene_gone',False):return {}
         self.commit_inputs()
         material=copy.deepcopy(properties.read(self.item))
         material.update(node_graph=copy.deepcopy(self.graph),node_override=True)
@@ -795,7 +872,7 @@ class Editor(QtWidgets.QDialog):
         return properties.read(self.item).get(self.graph_key) or nodes.from_material(self.item)
     def publish_draft(self):
         """Write the graph to the material, so the scene and the preview have it as it is edited."""
-        if self.writing or not self.live:return
+        if self.writing or not self.live or getattr(self,'scene_gone',False):return
         try:
             if self.graph==self.stored_graph():return
             nodes.validate(self.graph)
@@ -814,7 +891,7 @@ class Editor(QtWidgets.QDialog):
     def scene_changed(self):
         """The material was written; if not by this window, show what it holds now."""
         from shiboken2 import isValid
-        if self.writing or not isValid(self) or self.busy:return
+        if self.writing or not isValid(self) or self.busy or getattr(self,'scene_gone',False):return
         # A value of this window's is still to be written (publish_soon): the window's graph is the newer.
         timer=getattr(self,'_publish_timer',None)
         if timer is not None and timer.isActive():return

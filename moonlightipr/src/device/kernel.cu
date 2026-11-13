@@ -3267,7 +3267,21 @@ ML_INLINE MappedSlots evalLayers(const DeviceMaterial& material, const DeviceMes
             mask *= layer.alpha2 + (layer.alpha1 - layer.alpha2) * t;
         } else if (layer.flags & (LAYER_IMAGE | LAYER_UDIM | LAYER_CHECKER | LAYER_NOISE)) {
             Corners uv;
-            if (!triangleUvs(mesh, layer.uvSlot, primitive, uv)) continue;     // nothing to look the row up with
+            if (layer.flags & LAYER_SOLID) {
+                // Looked up by where the triangle's corners are in the object (a map laid out in the object's space,
+                // baked over the box its meshes fill): rows take a point to the image's u and v.
+                if (mesh.curves) continue;
+                const uint3 corners = reinterpret_cast<const uint3*>(mesh.indices)[primitive];
+                const float3* at = reinterpret_cast<const float3*>(mesh.positions);
+                const float3 q[3] = {at[corners.x], at[corners.y], at[corners.z]};
+                float2 placed[3];
+                for (int k = 0; k < 3; ++k)
+                    placed[k] = make_float2(layer.rows[0] * q[k].x + layer.rows[1] * q[k].y + layer.rows[2] * q[k].z + layer.rows[3],
+                                            layer.rows[4] * q[k].x + layer.rows[5] * q[k].y + layer.rows[6] * q[k].z + layer.rows[7]);
+                uv.a = placed[0];
+                uv.b = placed[1];
+                uv.c = placed[2];
+            } else if (!triangleUvs(mesh, layer.uvSlot, primitive, uv)) continue;     // nothing to look the row up with
             const float w = 1.0f - barycentrics.x - barycentrics.y;
             const float u = (uv.a.x * w + uv.b.x * barycentrics.x + uv.c.x * barycentrics.y + shift.x) * layer.scale[0];
             const float v = (uv.a.y * w + uv.b.y * barycentrics.x + uv.c.y * barycentrics.y + shift.y) * layer.scale[1];

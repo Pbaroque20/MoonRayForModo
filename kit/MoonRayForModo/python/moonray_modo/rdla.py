@@ -320,7 +320,8 @@ def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output
     # Ocean nodes' tiles are made for the frame being written (ocean.writing): the scene's time, in seconds.
     from . import ocean
     with ocean.writing(scene.get('time') or 0.0):
-        return _scene_text(scene, width, height, samples, environment, output_file)
+        # Their repeats fitted to the meshes they are on, where Fit to Mesh is on (ocean.fitted).
+        return _scene_text(ocean.fitted(scene), width, height, samples, environment, output_file)
 
 
 def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, output_file=None):
@@ -712,7 +713,14 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
             # (or the Adaptive Error Override) or none (uniform). An instancer's reference is tessellated once for all its
             # instances, so it stays uniform.
             if settings['adaptive_error']:error=settings['adaptive_error']
-            elif cut and 'instances' not in mesh:error=cut['pixels']
+            elif cut and 'instances' not in mesh:
+                # Realtime: the cut's target on screen, not the cut's pixels after its triangle budget. That budget
+                # counts a displaced mesh split evenly all over (MoonLightIPR's way); MoonRay dices by the screen, finely
+                # only where the mesh is near, and a large sea came out at 18 pixels where a render dices at 1, its waves
+                # flattened. Once the preview is left alone (fine), as the render; while it moves (coarse), at most 2.
+                from .moonlightipr_detail import COARSE_PIXELS
+                rendered=held_render['displacement_adaptive_error'] or float(scene.get('displacement_rate',1.0))
+                error=min(cut['pixels'],COARSE_PIXELS if detail=='coarse' else rendered)
             elif 'instances' in mesh or held_render['displacement_tessellation']==0:error=0.0
             else:error=held_render['displacement_adaptive_error'] or float(scene.get('displacement_rate',1.0))
             mesh=dict(mesh,adaptive_error=error)

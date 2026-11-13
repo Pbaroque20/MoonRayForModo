@@ -26,15 +26,16 @@ NORMAL_NODES=('normalmap','bump')
 # map, both made from the same settings. Neither reaches an engine as itself: expand_ocean() makes them images of the
 # tile the kit works out for the frame.
 from . import ocean as _ocean
-_OCEAN_TYPES={'size':'Float','repeat':'Vec2f','resolution':'Int','wind_speed':'Float','wind_direction':'Float',
+_OCEAN_TYPES={'repeat':'Vec2f','fit_to_mesh':'Bool','tiles_across':'Float','resolution':'Int','wind_speed':'Float','wind_direction':'Float',
               'wave_height':'Float','choppiness':'Float','small_waves':'Float','wind_alignment':'Float','against_wind':'Float',
               'depth':'Float','seed':'Int','time_scale':'Float','time_offset':'Float','loop':'Float','foam_threshold':'Float'}
 MAPS['ocean']={key:(_OCEAN_TYPES[key],value) for key,value in _ocean.DEFAULTS.items()}
 MAPS['ocean_foam']=dict(MAPS['ocean'])
 OCEAN_NODES=('ocean','ocean_foam')
 OCEAN_COMMENTS={
-    'size':'How wide one tile of the ocean is, in scene units (metres): the waves are shaped for it. The tile repeats seamlessly.',
-    'repeat':"How many tiles across the surface's UVs. For waves of their true size, the surface's width over the size above (a 200 m plane with UVs 0 to 1 and a 50 m tile: 4).",
+    'tiles_across':'How many tiles cover the mesh across its U, where Fit to Mesh is on: 10 lays ten tiles across it, whatever its size; as many along V as keep them square. The waves scale with the mesh.',
+    'repeat':"How many 80 m tiles across the surface's UVs, where Fit to Mesh is off (a 400 m plane with UVs 0 to 1: 5 for waves of their true size).",
+    'fit_to_mesh':"Lays the tiles on by the meshes the material is on: Tiles Across of them across the mesh, the whole sea scaled to them, whatever the mesh's size, its UVs and its scale. Off, Repeat lays 80 m tiles.",
     'resolution':'Points across one tile: more is finer detail. 64, 128, 256, 512 or 1024.',
     'wind_speed':'The wind, in metres a second: it sets how big the waves are and how long the longest ones are.',
     'wind_direction':'Where the wind blows, in degrees from U towards V.',
@@ -90,6 +91,8 @@ def effective(graph):
     result=copy.deepcopy(graph)
     if not isinstance(result.get('nodes'),dict) or len(result['nodes'])>1000: raise ValueError('Node graph requires at most 1000 nodes')
     for node in result['nodes'].values():
+        # An Ocean node's Size, which it no longer has (ocean.FITTED_SIZE): left out of graphs saved with it.
+        if node.get('type') in OCEAN_NODES and isinstance(node.get('parameters'),dict):node['parameters'].pop('size',None)
         # A switch's first input was once kept as its unnumbered name (input), which MoonRay does not have: input0.
         try:schema=specs(node['type'])
         except Exception:continue
@@ -150,22 +153,26 @@ def expand_ocean(graph):
         # The surface's slope beside it, which MoonRay does not read (it splits the surface as finely as the pixels) and
         # MoonLightIPR's shading does, for waves finer than a mesh's vertices are apart (moonlightipr_materials).
         if on:image['_slope']=str(slope)
-        reach=_ocean.reach(value) if on else 0.0
+        # Fitted to a mesh (ocean.fitted): the sea made at its Size, scaled whole to the tiles laid on the mesh.
+        scale=float(node.get('_scale',1.0)) if on else 1.0
+        if not (scale>0 and math.isfinite(scale)):scale=1.0
+        reach=_ocean.reach(value)*scale if on else 0.0
         if graph.get('displacement')!=key:
             # A vector texture: the tile itself, and room for the waves in the Vector Displacements it feeds.
             members[key]=dict(image,position=node.get('position'))
             for other in members.values():
                 if other.get('type')=='VectorDisplacement' and (other.get('inputs') or {}).get('vector')==key:
                     held=other.setdefault('parameters',{})
-                    factor=abs(float(str(held.get('factor',1.0)).rstrip('f') or 1.0))
-                    if float(str(held.get('bound_padding',0.0)).rstrip('f') or 0.0)<reach*factor:held['bound_padding']=reach*factor
+                    factor=float(str(held.get('factor',1.0)).rstrip('f') or 1.0)
+                    if scale!=1.0:held['factor']=factor*scale
+                    if float(str(held.get('bound_padding',0.0)).rstrip('f') or 0.0)<reach*abs(factor):held['bound_padding']=reach*abs(factor)
             continue
         tile=key+'__ocean_tile'
         while tile in members:tile+='_'
         members[tile]=image
         # Red the push along U, green the height, blue the push along V (tnb: tangent, normal, bitangent).
         members[key]={'type':'VectorDisplacement','position':node.get('position'),
-                      'parameters':{'source_space':0,'tangent_space_style':0,'factor':1.0 if on else 0.0,
+                      'parameters':{'source_space':0,'tangent_space_style':0,'factor':scale if on else 0.0,
                                     'bound_padding':reach},
                       'inputs':{'vector':tile} if on else {}}
     return graph

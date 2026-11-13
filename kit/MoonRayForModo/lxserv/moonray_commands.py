@@ -534,6 +534,44 @@ class DockPreview(lxu.command.BasicCommand):
 lx.bless(DockPreview,'moonray.dock')
 
 
+class MoonRayGraphView(lxifc.CustomView):
+    """The MoonShine graph editor in a Modo viewport (graph_dock): the selected material's graph, docked as Modo's
+    Schematic is."""
+    def customview_Init(self, pane):
+        from PySide2 import QtWidgets
+        from moonray_modo.graph_dock import GraphDock
+        custom = lx.object.CustomPane(pane)
+        if not custom.test():
+            return False
+        parent = lx.getQWidget(custom.GetParent())
+        if parent is None:
+            return False
+        layout = parent.layout() or QtWidgets.QVBoxLayout(parent)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self.dock = GraphDock(parent)
+        layout.addWidget(self.dock)
+        return True
+
+    def customview_Cleanup(self, pane):
+        if getattr(self, 'dock', None) is not None:
+            self.dock.dispose()
+            self.dock.deleteLater()
+            self.dock = None
+
+
+class DockGraph(lxu.command.BasicCommand):
+    def cmd_Flags(self):
+        return lx.symbol.fCMD_UI
+
+    def basic_Execute(self, msg, flags):
+        lx.eval('viewport.restore base.MoonRayGraphViewport false customview')
+
+
+if not lx.service.Platform().IsHeadless():
+    lx.bless(MoonRayGraphView, 'MoonRayGraphView', {lx.symbol.sSRV_USERNAME: 'MoonShine Graph'})
+lx.bless(DockGraph, 'moonray.graph.dock')
+
+
 # Compatibility aliases for saved menus/macros. They once belonged to an external-render
 # PView route, which is gone: Modo cannot host an external renderer in its native PView.
 class NativePreviewStartup(lxu.command.BasicCommand):

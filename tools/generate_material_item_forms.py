@@ -20,6 +20,7 @@ for name in ('modo', 'lx', 'lxifc', 'lxu'):
     sys.modules.setdefault(name, types.ModuleType(name))
 sys.path.insert(0, str(kit / 'python'))
 from moonray_modo import graph_images, ramps  # noqa: E402
+from moonray_modo.form_groups import opened  # noqa: E402
 
 config = ET.Element('configuration')
 attributes = ET.SubElement(config, 'atom', type='Attributes')
@@ -115,11 +116,11 @@ for i, shader in enumerate([''] + sorted(catalog)):
         if spec['type'] == 'SceneObject*' and key not in texturable:
             continue
         if group not in groups:
-            # The everyday groups open, the rest collapsed (a tester: less daunting); a material with none of those keeps
-            # its first group open.
-            everyday = {'Diffuse', 'Specular', 'Common'}
-            has_everyday = any(plain(s.get('group', '')) in everyday for s in catalog[shader]['attributes'].values())
-            is_open = group in everyday if has_everyday else not groups
+            # The everyday groups open, the rest collapsed (a tester: less daunting), the same groups as the graph
+            # editor's list opens (form_groups); a material with none of those keeps its first group open.
+            in_order = [plain(s.get('group', 'Parameters')) or 'Parameters' for k, s in sorted(catalog[shader]['attributes'].items())
+                        if not (s['type'] == 'SceneObject*' and k not in texturable)]
+            is_open = group in opened(in_order)
             groups[group] = nested(form, 'MoonRayShader_%s_%d:sheet' % (shader, len(groups)), group, 0 if is_open else 1)
         if spec['type'] == 'SceneObject*':
             # A normal map has no value of its own to edit, only its image.

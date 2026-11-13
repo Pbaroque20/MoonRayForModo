@@ -20,11 +20,15 @@ from pathlib import Path
 
 GRAVITY = 9.81
 LIBRARY = 'modo_ocean.dll'
-FORM = 3  # bumped whenever the model changes, so that tiles made by an older one are made again
+FORM = 4  # bumped whenever the model changes, so that tiles made by an older one are made again
 # The settings an Ocean node has, with their defaults (nodes.MAPS takes its schema from here).
 DEFAULTS = {
-    'size': 50.0,           # the tile's width in scene units (metres)
-    'repeat': [1.0, 1.0],   # how many tiles across the surface's UVs (its first UV map)
+    'repeat': [1.0, 1.0],   # how many tiles across the surface's UVs (its first UV map), where fit_to_mesh is off
+    # The tiles laid on by the surface itself (fitted): tiles_across of them across its U, as wide as the mesh is over
+    # that many, and as many along V as keep them square. The sea is made at its size and scaled to them whole, its
+    # heights and its sideways push with its width: a smaller mesh, the same sea smaller.
+    'fit_to_mesh': True,
+    'tiles_across': 10.0,
     'resolution': 256,      # points across the tile: 64 to 1024, a power of two
     'wind_speed': 10.0,     # metres a second
     'wind_direction': 0.0,  # degrees, from U towards V
@@ -43,6 +47,10 @@ DEFAULTS = {
     'foam_threshold': 0.7,
 }
 RESOLUTIONS = (64, 128, 256, 512, 1024)
+# The tile every sea is made at, in metres (an Ocean node has no Size of its own): fitted to its mesh, it is then
+# scaled whole to the tiles laid on the mesh, the waves' look coming from Tiles Across alone; with Fit to Mesh off,
+# Repeat lays tiles of this size.
+FITTED_SIZE = 80.0
 PYTHON_LIMIT = 256
 
 
@@ -51,7 +59,7 @@ def settings(params):
     value = dict(DEFAULTS)
     value.update({k: v for k, v in (params or {}).items() if k in DEFAULTS})
     for key in DEFAULTS:
-        if key in ('repeat', 'resolution', 'seed'):
+        if key in ('repeat', 'resolution', 'seed', 'fit_to_mesh'):
             continue
         value[key] = float(value[key])
         if not math.isfinite(value[key]):
@@ -60,10 +68,12 @@ def settings(params):
     if value['resolution'] not in RESOLUTIONS:
         raise ValueError('Ocean resolution must be one of %s' % ', '.join(map(str, RESOLUTIONS)))
     value['seed'] = int(value['seed'])
+    value['fit_to_mesh'] = bool(value['fit_to_mesh'])
     repeat = list(value['repeat'])[:2] if isinstance(value['repeat'], (list, tuple)) else [1.0, 1.0]
     value['repeat'] = [float(r) for r in repeat] + [1.0] * (2 - len(repeat))
-    if value['size'] <= 0 or value['wind_speed'] <= 0:
-        raise ValueError('Ocean size and wind speed must be above 0')
+    value['size'] = FITTED_SIZE
+    if value['wind_speed'] <= 0 or value['tiles_across'] <= 0:
+        raise ValueError('Ocean wind speed and tiles across must be above 0')
     for key in ('wave_height', 'choppiness', 'small_waves', 'wind_alignment', 'against_wind', 'depth', 'loop', 'foam_threshold'):
         if value[key] < 0:
             raise ValueError('Ocean %s cannot be negative' % key.replace('_', ' '))
@@ -241,7 +251,7 @@ def fields(value, time, slopes=False):
 
 def key(value, time):
     """What a tile is made from: its settings that shape the waves, and the moment."""
-    shape = {k: value[k] for k in DEFAULTS if k not in ('repeat', 'time_scale', 'time_offset')}
+    shape = {k: value[k] for k in DEFAULTS if k not in ('repeat', 'fit_to_mesh', 'tiles_across', 'time_scale', 'time_offset')}
     return hashlib.sha256(json.dumps([FORM, shape, round(seconds(value, time), 6)], sort_keys=True).encode()).hexdigest()[:24]
 
 
@@ -364,3 +374,117 @@ def tile(value):
 def reach(value):
     """How far the surface can move, for MoonRay's bound padding: four of the heights' spread, and the push sideways."""
     return value['wave_height'] * 0.21 * value['wind_speed'] ** 2 / GRAVITY * (1.0 + value['choppiness'])
+
+
+# ---- Repeat fitted to the surface --------------------------------------------------------------------------------------
+
+def uv_metres(mesh, limit=4000):
+    """How many metres one unit of a mesh's first UV map spans in the world, across U and across V (its matrix's scale
+    taken in): each triangle's own, weighted by its area, from at most limit of its faces spread over it. None where
+    the mesh has no UVs, or none that span anything."""
+    from .rows import corners as flat_corners, counts as flat_counts, numbers
+    vertices, faces, uvs = mesh.get('vertices'), mesh.get('faces'), mesh.get('uvs')
+    if not vertices or not faces or not uvs:
+        return None
+    points = numbers(vertices, 3)
+    points = points if points is not None else [c for v in vertices for c in v]
+    corners_uv = numbers(uvs, 2)
+    corners_uv = corners_uv if corners_uv is not None else [c for uv in uvs for c in uv]
+    held, sizes = flat_corners(faces), flat_counts(faces)
+    if held is None or sizes is None:
+        sizes = [len(face) for face in faces]
+        held = [i for face in faces for i in face]
+    starts, at = [], 0
+    for size in sizes:
+        starts.append(at)
+        at += size
+    if len(corners_uv) < 2 * at:
+        return None
+    matrix = mesh.get('matrix') or [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+
+    def world(v):
+        return [v[0] * matrix[0] + v[1] * matrix[4] + v[2] * matrix[8], v[0] * matrix[1] + v[1] * matrix[5] + v[2] * matrix[9],
+                v[0] * matrix[2] + v[1] * matrix[6] + v[2] * matrix[10]]
+    step = max(1, len(sizes) // limit)
+    along_u = along_v = weight = 0.0
+    for face in range(0, len(sizes), step):
+        start, size = starts[face], sizes[face]
+        for k in range(1, size - 1):
+            a, b, c = start, start + k, start + k + 1
+            ia, ib, ic = held[a], held[b], held[c]
+            p0, p1, p2 = (points[3 * i:3 * i + 3] for i in (ia, ib, ic))
+            e1 = world([p1[j] - p0[j] for j in range(3)])
+            e2 = world([p2[j] - p0[j] for j in range(3)])
+            d1 = (corners_uv[2 * b] - corners_uv[2 * a], corners_uv[2 * b + 1] - corners_uv[2 * a + 1])
+            d2 = (corners_uv[2 * c] - corners_uv[2 * a], corners_uv[2 * c + 1] - corners_uv[2 * a + 1])
+            det = d1[0] * d2[1] - d2[0] * d1[1]
+            if abs(det) < 1e-12:
+                continue
+            dpdu = [(e1[j] * d2[1] - e2[j] * d1[1]) / det for j in range(3)]
+            dpdv = [(e2[j] * d1[0] - e1[j] * d2[0]) / det for j in range(3)]
+            cross = [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]]
+            area = math.sqrt(sum(x * x for x in cross))
+            along_u += area * math.sqrt(sum(x * x for x in dpdu))
+            along_v += area * math.sqrt(sum(x * x for x in dpdv))
+            weight += area
+    if weight <= 0:
+        return None
+    return along_u / weight, along_v / weight, weight
+
+
+def fitted(scene):
+    """The scene with each Ocean and Ocean Foam node whose Fit to Mesh is on laid on the meshes its material is on in
+    Tiles Across tiles across their U (uv_metres, area weighted over those meshes): its repeat that many along U and as
+    many along V as keep the tiles square, made at FITTED_SIZE (its own Size is for Fit to Mesh off), and its _scale
+    (on the node, nodes.expand_ocean) what makes a tile of that size that wide, the sea scaled whole by it, heights and
+    sideways push too; made only at its own size, a small mesh
+    had waves as high as the wind makes on tiles a few metres wide, folding over. The scene as it was where there is
+    none. Its materials and graphs are copies where they change."""
+    import copy
+    from . import face_tags
+    materials = scene.get('materials') or {}
+
+    def oceans(material):
+        for row in material.get('material_stack') or [material]:
+            graph = row.get('node_graph') if isinstance(row, dict) else None
+            for node in ((graph or {}).get('nodes') or {}).values():
+                own = node.get('parameters') or {}
+                if (node.get('type') == 'ocean' or (node.get('type') == 'ocean_foam' and own)) and own.get('fit_to_mesh', DEFAULTS['fit_to_mesh']):
+                    return True
+        return False
+    wanted = {tag for tag, material in materials.items() if isinstance(material, dict) and oceans(material)}
+    if not wanted:
+        return scene
+    spans = {}
+    for mesh in scene.get('meshes') or []:
+        tags = {tag if tag in materials else '' for tag in face_tags.worn(mesh)} & wanted
+        if not tags:
+            continue
+        found = uv_metres(mesh)
+        if found is None:
+            continue
+        for tag in tags:
+            u, v, w = spans.get(tag, (0.0, 0.0, 0.0))
+            spans[tag] = (u + found[0] * found[2], v + found[1] * found[2], w + found[2])
+    if not spans:
+        return scene
+    result = dict(scene, materials=dict(materials))
+    for tag, (u, v, w) in spans.items():
+        metres = (u / w, v / w)
+        material = copy.deepcopy(materials[tag])
+        for row in material.get('material_stack') or [material]:
+            graph = row.get('node_graph') if isinstance(row, dict) else None
+            for node in ((graph or {}).get('nodes') or {}).values():
+                params = node.get('parameters')
+                if node.get('type') not in ('ocean', 'ocean_foam') or not (params or {}).get('fit_to_mesh', DEFAULTS['fit_to_mesh']):
+                    continue
+                if node['type'] == 'ocean_foam' and not params:
+                    continue    # it follows the Ocean node, which is fitted
+                tiles = float((params or {}).get('tiles_across', DEFAULTS['tiles_across']))
+                if tiles > 0 and math.isfinite(tiles) and metres[0] > 0:
+                    wide = metres[0] / tiles
+                    held = node.setdefault('parameters', {})
+                    held['repeat'] = [tiles, max(1e-3, metres[1] / wide)]
+                    node['_scale'] = wide / FITTED_SIZE
+        result['materials'][tag] = material
+    return result

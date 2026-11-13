@@ -71,7 +71,10 @@ const unsigned LAYER_IMAGE = 1, LAYER_INVERT = 2, LAYER_FLIP_RED = 4, LAYER_FLIP
                LAYER_CURVES = 1 << 20, LAYER_PROCEDURAL = 1 << 21,  // gamma, bias or gain differ from their neutral values
                // Modo's Wireframe: the row's two colours, the first along the polygons' edges, settings[0] wide,
                // softened over settings[1] of that.
-               LAYER_WIREFRAME = 1 << 22;
+               LAYER_WIREFRAME = 1 << 22,
+               // An image looked up by where the point is in its object, through the row's rows, in place of its UVs:
+               // a map laid out in the object's space, baked over the box its meshes fill (graph_bake.solid).
+               LAYER_SOLID = 1 << 23;
 // A LAYER_RAMP row's uvSlot for a gradient looked up by the surface's curvature (Modo's Curvature texture), settings[0]
 // the scale: 0.5 flat, more where the surface bulges, less where it hollows.
 const unsigned RAMP_CURVATURE = 255;

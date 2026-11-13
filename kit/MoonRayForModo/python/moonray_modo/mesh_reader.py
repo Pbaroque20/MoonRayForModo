@@ -56,7 +56,27 @@ class Mesh:
         self.normal_valid, self.normal_values = None, None
         if has_normal:
             self.normal_valid = self.numbers('B', faces)
-            self.normal_values = self.rows(self.numbers('f', corners * 3), 3)
+            flat = self.numbers('f', corners * 3)
+            self.normal_values = self.rows(flat, 3)
+            # A normal of no length is no normal: a vertex normal map left all zero (a tester's screw had two) is no map,
+            # and a face with any zero normal has none; it is smoothed as any mesh without a map is. Handed on, MoonRay
+            # passed over them and XPU2 left the scene to MoonRay XPU ("invalid normal").
+            held = flat.tobytes()
+            if not held.strip(b'\x00'):
+                self.normal_valid, self.normal_values = None, None
+            else:
+                empty = bytes(12)
+                at = held.find(empty)
+                if at >= 0:
+                    from bisect import bisect_right
+                    from itertools import accumulate
+                    starts = list(accumulate(self.counts, initial=0))
+                    while at >= 0:
+                        if at % 12 == 0:
+                            self.normal_valid[bisect_right(starts, at // 12) - 1] = 0
+                            at = held.find(empty, at + 12)
+                        else:
+                            at = held.find(empty, at + 1)
         self.tags = [self.text() for _ in range(tag_count)]
         del self.data
 

@@ -2,6 +2,8 @@
 
 An 800 m sea under a low sun, made with the MoonShine graph's **Ocean** and **Ocean Foam** nodes. It renders the same in MoonRay, XPU2 and MoonLightIPR, and the waves move when you play the timeline (frames 1 to 120).
 
+The ocean is based on Jerry Tessendorf's research paper **"Simulating Ocean Water"** (SIGGRAPH course notes, 2001, revised 2004): wind-driven waves from a Phillips spectrum summed by FFT, choppy crests, and foam where the surface folds over. The kit's own implementation of it is credited in the kit's third-party notices.
+
 ## What is in the scene
 
 - **Sea**: a flat plane, 800 m across, 200 x 200 quads, with a UV map running 0 to 1 across it.
@@ -22,14 +24,15 @@ An 800 m sea under a low sun, made with the MoonShine graph's **Ocean** and **Oc
    - **Factor** scales the whole sea. **Bound Padding** is raised for you to what the waves need.
    - A **Combine Displacement** node can add the ocean's Vector Displacement to another displacement.
 4. **Add an Ocean Foam node** (also under Procedural textures) where you want foam. Wire it into the **Mix** input of a Mix node, with the water's colour in **BG** and the foam's in **FG**. Wire that Mix node into Albedo. A second Mix node, foam into Mix, makes the foam rough.
-5. **Size the waves to your plane.** A tile of **Size** metres repeats **Repeat** times across the UVs. For the waves to come out at their real size, make Size times Repeat equal to the plane's width: 80 m times 10 makes this scene's 800 m sea.
+5. **Choose the waves' size.** With **Fit to Mesh** on (as it starts), **Tiles Across** says how many tiles of waves cover your mesh across its U: 10 lays ten across it, whatever its size, its UVs and its scale, and as many along V as keep them square. More tiles, smaller waves. The whole sea scales with the tiles, heights and all, so a small plane shows the same sea, smaller. Turn Fit to Mesh off to set **Repeat** yourself (tiles 80 m wide).
 
 ## The Ocean node's settings
 
 | Setting | What it does | In this scene |
 |---|---|---|
-| Size | The tile's width in metres. Waves longer than this can't appear. | 80 |
-| Repeat | How many tiles across the UV square (U, V). | 10, 10 |
+| Fit to Mesh | Lays the tiles on by the mesh: Tiles Across of them, sized to it. | On |
+| Tiles Across | How many tiles cover the mesh across its U, where Fit to Mesh is on. | 10 |
+| Repeat | How many tiles across the UV square (U, V), where Fit to Mesh is off. | (10, 10 by fitting) |
 | Resolution | Points across the tile: 64 to 1024. Higher gives finer ripples and takes longer. | 512 |
 | Wind Speed | Metres a second. It sets how big the waves are: about 0.5 m high at 5 m/s, 2 m at 10, 8.5 m at 20. | 12 |
 | Wind Direction | Degrees, from U towards V. Keep it off 0 and 90, so no wave runs along a tile's edge. | 30 |

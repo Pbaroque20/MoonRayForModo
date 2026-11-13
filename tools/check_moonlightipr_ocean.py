@@ -35,7 +35,7 @@ def plane(segments):
     for j in range(segments):
         for i in range(segments):
             a = j * (segments + 1) + i
-            faces.append([a, a + segments + 1, a + segments + 2, a + 1])
+            faces.append([a, a + 1, a + segments + 2, a + segments + 1])   # its normal up, out of the water
     uv = [[i / segments, j / segments] for j in range(segments + 1) for i in range(segments + 1)]
     return vertices, faces, [uv[k] for face in faces for k in face]
 
