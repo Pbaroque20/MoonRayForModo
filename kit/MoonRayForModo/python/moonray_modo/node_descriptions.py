@@ -9,6 +9,8 @@ DESCRIPTIONS={
  'texcoord':'Provides named UV coordinates to image or procedural inputs.',
  'normalmap':'Converts an RGB normal texture into a shading-normal input; scale controls its strength.',
  'bump':'Turns a height (a greyscale bump image) into a shading normal, as a Shader Tree Bump layer; amplitude is how high white stands, in scene units. Connect it to a material\'s normal input. A MoonRay Source Override (Bump node in MoonShine graphs), on by default.',
+ 'ocean':'An ocean: wind-driven waves (Tessendorf\'s FFT ocean) worked out for each frame and displacing the surface, choppy crests and all. Connect it to the graph\'s displacement output; the surface needs UVs and enough polygons (or subdivision) to carry the waves. Size is one seamless tile in scene units; Repeat is how many tiles across the UVs. A MoonRay Source Override (Ocean nodes in MoonShine graphs), on by default.',
+ 'ocean_foam':'The foam on an ocean\'s crests, from 0 to 1, where the waves fold over: mix it into the colour or roughness. Left with no settings of its own, it follows the graph\'s Ocean node. A MoonRay Source Override (Ocean nodes in MoonShine graphs), on by default.',
  'checker':'Creates alternating checker colors, with independent horizontal and vertical scale.',
  'swizzle':'Reorders or extracts color/vector components, such as selecting a single channel.',
  'combine':'Combines three scalar inputs into RGB components.',

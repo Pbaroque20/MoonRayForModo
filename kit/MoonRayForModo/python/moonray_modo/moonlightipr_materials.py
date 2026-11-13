@@ -272,7 +272,7 @@ def displacement_tree(material, note, runtime=None, with_layers=True):
         if not held.get('displacement'):
             continue
         try:
-            graph = nodes.effective(held)
+            graph = nodes.expand_ocean(nodes.effective(held))  # Ocean nodes as the engines take them
         except (ValueError, KeyError, TypeError):
             return None
         leaves, program = [], []
@@ -710,7 +710,7 @@ def graph_layers(source, note, runtime=None, displacement=None, wanted='height',
     layers of as_effect (displacement_tree)."""
     from . import nodes
     try:
-        graph = nodes.effective(source['node_graph'])
+        graph = nodes.expand_ocean(nodes.effective(source['node_graph']))
         root = graph['nodes'][displacement if displacement else graph['root']]
     except (ValueError, KeyError, TypeError):
         return []

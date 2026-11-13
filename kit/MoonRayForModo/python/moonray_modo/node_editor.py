@@ -505,7 +505,7 @@ class Editor(QtWidgets.QDialog):
             elif any(v in name for v in ('image','udim','uvtexture')):group='Image textures'
             elif any(v in name for v in ('project','texcoord','transform','primvar')):group='Coordinates and projections'
             elif any(v in name for v in ('colorcorrect','hsv','rgbto','gamma','saturation','contrast')):group='Color adjustments'
-            elif any(v in name for v in ('noise','checker','ramp','gradient','random','wireframe','curvature','vdb')):group='Procedural textures'
+            elif any(v in name for v in ('noise','checker','ramp','gradient','random','wireframe','curvature','vdb','ocean')):group='Procedural textures'
             elif kind in nodes.MAPS or any(v in name for v in ('opmap','blend','mix','layer','switch','clamp','remap','constant')):group='Math and blending'
             else:group='Data and utilities'
             if group not in groups:

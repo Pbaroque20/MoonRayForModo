@@ -105,6 +105,10 @@ if reader.is_file() and (kit / 'runtime').is_dir():
         backup.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(held, backup / reader.name)
     shutil.copyfile(reader, held)
+# The ocean's FFT, in the kit's own bin folder as the release ships it (tools/build_ocean.py, ocean.library).
+ocean = root / 'build/native-avx/bin/modo_ocean.dll'
+if ocean.is_file() and (kit / 'bin').is_dir():
+    shutil.copyfile(ocean, kit / 'bin' / ocean.name)
 # What grows hair, where it has been built (tools/build_hair_grower.py).
 grower = root / 'build/native-avx/bin/modo_hair_grow.exe'
 if grower.is_file() and (kit / 'runtime').is_dir():

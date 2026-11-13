@@ -66,6 +66,8 @@ KEYS = {
     'ngon_ears': (True, bool),
     # The MoonShine graph's Bump node bumps (native.bump_node).
     'bump_node': (True, bool),
+    # The MoonShine graph's Ocean nodes make waves (native.ocean).
+    'ocean': (True, bool),
     # VDB fire coloured by its temperature (native.vdb_blackbody).
     'vdb_blackbody': (True, bool),
     # VDB sequences, static unticked (native.vdb_sequences).

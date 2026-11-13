@@ -53,6 +53,10 @@ def main():
     prefix='MoonRayForModo/'
     kit={prefix+p.relative_to(ROOT/'kit/MoonRayForModo').as_posix():p for p in (ROOT/'kit/MoonRayForModo').rglob('*') if p.is_file() and not {'__pycache__','bin'}&set(p.relative_to(ROOT/'kit/MoonRayForModo').parts) and p.suffix!='.pyc' and p.name not in ('runtime.json','development-install.json')}
     kit[prefix+'bin/MoonRayGeometry.lx']=geometry
+    # The ocean's FFT (tools/build_ocean.py), shipped with the kit so that every artist has the fast one (ocean.library).
+    ocean=ROOT/'build/native-avx/bin/modo_ocean.dll'
+    if not ocean.is_file():raise ValueError('Build modo_ocean.dll first: tools/build_ocean.py')
+    kit[prefix+'bin/modo_ocean.dll']=ocean
     for source,name in [('LICENSE','LICENSE.txt'),('THIRD_PARTY.md','THIRD_PARTY.txt'),('docs/INSTALLATION.md','INSTALLATION.md'),('README.md','README.md')]:kit[prefix+name]=ROOT/source
     # The About window's build number, stamped as the package is made.
     from build_number import FILE,number

@@ -2019,6 +2019,9 @@ class Panel(Tools, QtWidgets.QWidget):
         from .entities import vdb_sequenced
         if timeless and any(entity.get('class')=='VdbGeometry' and vdb_sequenced(entity.get('parameters') or {}) for entity in scene.get('entities') or []):
             timeless=False
+        # An ocean's waves move with the time (nodes.expand_ocean): another frame is another sea.
+        from .nodes import has_ocean
+        if timeless and has_ocean(scene):timeless=False
         dropped=('preview_buffer','display','aovs','recovery','_geometry_revision','denoising','compositor')+(('time','frame') if timeless else ())
         render_scene={key:value for key,value in scene.items() if key not in dropped}
         stored=self._settings_values();get=self.preferences.get
