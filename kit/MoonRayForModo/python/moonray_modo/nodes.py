@@ -26,7 +26,7 @@ NORMAL_NODES=('normalmap','bump')
 # map, both made from the same settings. Neither reaches an engine as itself: expand_ocean() makes them images of the
 # tile the kit works out for the frame.
 from . import ocean as _ocean
-_OCEAN_TYPES={'size':'Float','repeat':'Vec2f','resolution':'Int','wind_speed':'Float','wind_direction':'Float',
+_OCEAN_TYPES={'size':'Float','repeat':'Vec2f','fit_to_mesh':'Bool','resolution':'Int','wind_speed':'Float','wind_direction':'Float',
               'wave_height':'Float','choppiness':'Float','small_waves':'Float','wind_alignment':'Float','against_wind':'Float',
               'depth':'Float','seed':'Int','time_scale':'Float','time_offset':'Float','loop':'Float','foam_threshold':'Float'}
 MAPS['ocean']={key:(_OCEAN_TYPES[key],value) for key,value in _ocean.DEFAULTS.items()}
@@ -34,7 +34,8 @@ MAPS['ocean_foam']=dict(MAPS['ocean'])
 OCEAN_NODES=('ocean','ocean_foam')
 OCEAN_COMMENTS={
     'size':'How wide one tile of the ocean is, in scene units (metres): the waves are shaped for it. The tile repeats seamlessly.',
-    'repeat':"How many tiles across the surface's UVs. For waves of their true size, the surface's width over the size above (a 200 m plane with UVs 0 to 1 and a 50 m tile: 4).",
+    'repeat':"How many tiles across the surface's UVs, where Fit to Mesh is off. For waves of their true size, the surface's width over the size above (a 200 m plane with UVs 0 to 1 and a 50 m tile: 4).",
+    'fit_to_mesh':"Works out Repeat from the meshes the material is on: their UVs' span in metres over the Size, so that the tiles are Size metres across on any mesh, whatever its size and its UVs. Off, Repeat is used as set.",
     'resolution':'Points across one tile: more is finer detail. 64, 128, 256, 512 or 1024.',
     'wind_speed':'The wind, in metres a second: it sets how big the waves are and how long the longest ones are.',
     'wind_direction':'Where the wind blows, in degrees from U towards V.',

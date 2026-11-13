@@ -22,8 +22,6 @@ WIDTH,HEADER,ROW=190,24,20
 SHOWN=6
 # A node with more inputs than this, in more than one group (a material), shows them in its groups (port_rows).
 GROUPED_FROM=12
-# The property groups open in the graph editor for a kind of node never folded or unfolded yet; the rest start folded.
-OPEN_GROUPS=('diffuse','specular')
 # The key of the mark (QGraphicsItem.data) every wire of the canvas carries, so that edges() finds each to redraw it.
 WIRE=0x57495245
 # How often a value changing in the editor is written to the material, at most, in milliseconds (publish_soon).
@@ -33,10 +31,10 @@ PUBLISH_EVERY=150
 def default_folds(kind):
     """The groups a kind of node starts with folded away: all but Diffuse and Specular; a kind with neither (a map, a
     light filter) has its first group open, not every group folded."""
+    # The same groups Modo's form for the material starts with open (form_groups).
+    from moonray_modo.form_groups import opened
     groups=list(dict.fromkeys(group for _,(group,) in grouped(kind) if group is not None))
-    folded={group for group in groups if group.casefold() not in OPEN_GROUPS}
-    if groups and folded==set(groups):folded.discard(groups[0])
-    return folded
+    return set(groups)-opened(groups)
 
 
 def grouped(kind):

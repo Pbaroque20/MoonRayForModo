@@ -992,7 +992,8 @@ def pack(scene, width, height, environment=0.15, known=(), samples=256, denoise=
     # Ocean nodes' tiles are made for the frame being packed (ocean.writing), with the kit's modo_ocean.dll.
     from . import ocean
     with ocean.writing(scene.get('time') or 0.0, runtime):
-        return _pack(scene, width, height, environment, known, samples, denoise, runtime)
+        # Their repeats fitted to the meshes they are on, where Fit to Mesh is on (ocean.fitted).
+        return _pack(ocean.fitted(scene), width, height, environment, known, samples, denoise, runtime)
 
 
 def _pack(scene, width, height, environment=0.15, known=(), samples=256, denoise=True, runtime=None):

@@ -320,7 +320,8 @@ def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output
     # Ocean nodes' tiles are made for the frame being written (ocean.writing): the scene's time, in seconds.
     from . import ocean
     with ocean.writing(scene.get('time') or 0.0):
-        return _scene_text(scene, width, height, samples, environment, output_file)
+        # Their repeats fitted to the meshes they are on, where Fit to Mesh is on (ocean.fitted).
+        return _scene_text(ocean.fitted(scene), width, height, samples, environment, output_file)
 
 
 def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, output_file=None):
