@@ -6,6 +6,17 @@ This is the development branch of [MoonRay for Modo](https://github.com/Pbaroque
 
 The current release is [0.5.4.2](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.5.4.2). **Built on MoonRay [2026.29.1](https://github.com/dreamworksanimation/openmoonray/releases/tag/v2026.29.1)** (OpenMoonRay's latest release; MoonRay 18.4), with the plugin's own patches for Windows and the preview.
 
+## New in 0.5.4.3
+
+- **Ocean**: Ocean and Ocean Foam nodes in the MoonShine graph make Tessendorf's FFT waves (wind, choppiness, foam where the surface folds, depth and loop) as a Vector Displacement, the same sea in MoonRay, XPU2 and MoonLightIPR. Fit to Mesh (on by default) sizes the sea to the mesh with Tiles Across. An "Ocean at sunset" demo with developer's notes is in the asset library. Switch: Ocean nodes in MoonShine graphs, in MoonRay Source Overrides.
+- **The graph editor docked in a viewport**: MoonRay > Use Graph Editor in Current Viewport, or MoonShine Graph in Modo's viewport list. It follows the selected material.
+- **Solo in the preview**: right-click a graph node for Solo in Preview; the preview window's Solo menu solos the selected meshes or material. Preview only: renders and the scene are left alone.
+- **Graph editor preview shapes**: the MoonRay Widget, water, subsurface or velvet. Right-click sets and clears the displacement output.
+- **Cryptomatte kept exact**: with a lossy EXR compression (DWAB), the Cryptomatte goes to a lossless EXR of its own beside the picture, where DWAB had made a 12-object frame offer 1,530 mattes. Output Renders > Cryptomatte in Its Own File does it with any compression.
+- **Denoised fur keeps a share of its detail**: Keep Fine Detail puts back a quarter (Some) or half (More) of the render over the denoised fur, not all of it.
+- **XPU2**: light path AOVs match on the graphics card and the processor (no more squares); random-walk subsurface's crease attenuation renders in XPU2. Graphics cards older than an RTX 20 series are left out and the processor renders, so a GTX 1080 Ti no longer stays "not compiled", in previews and on Rhizome nodes.
+- **Fixes**: a mesh with all-zero vertex normals renders smoothed (XPU2 used to give it to MoonRay XPU); MoonLightIPR's Render shows the HDRI the right way up; MoonLightIPR reads PFM textures as floats; object-space maps into a Vector Displacement show in MoonLightIPR; a property changed after its scene closed no longer crashes Modo; realtime MoonRay dices displacement as the render does; library Modo scenes open as their own scene; forms open the same groups as the graph editor; the graph editor's Live preview starts on.
+
 ## New in 0.5.4.2
 
 - **Camera Background overrides MoonRay's EnvLight too**: Black, Solid color or Image hid only Modo's environments from the camera, and an EnvLight still showed behind the scene. It is now hidden from the camera for the render, still lighting the scene and seen in reflections and refractions, in MoonRay XPU, XPU2 and MoonLightIPR.
