@@ -831,6 +831,50 @@ def graph_layers(source, note, runtime=None, displacement=None, wanted='height',
     return layers
 
 
+# Float images larger than this (on their longer side) are checked for which way up oiiotool wrote them (Compiler.upright).
+UPRIGHT_FROM = 2048
+
+
+def _pfm_bands(path):
+    """A colour PFM's brightness over its lowest and its highest thirty-second of rows, (bottom, top) as the picture
+    stands (a PFM keeps its rows bottom first); None where it is not one."""
+    with open(path, 'rb') as held:
+        head = b''
+        while head.count(b'\n') < 3:
+            byte = held.read(1)
+            if not byte:
+                return None
+            head += byte
+        kind, size, scale = head.split(b'\n')[:3]
+        if kind.strip() != b'PF':
+            return None
+        width, height = (int(v) for v in size.split())
+        rows = max(1, height // 32)
+        row = width * 12
+        start = held.tell()
+        means = []
+        for first in (0, height - rows):
+            held.seek(start + first * row)
+            values = struct.unpack(('<' if float(scale) < 0 else '>') + '%df' % (width * 3 * rows), held.read(row * rows))
+            means.append(sum(values) / len(values))
+        return means[0], means[1]
+
+
+def _turn_pfm(path):
+    """A colour PFM's rows turned over, top to bottom, in place."""
+    with open(path, 'rb') as held:
+        data = held.read()
+    head_end = 0
+    for _ in range(3):
+        head_end = data.index(b'\n', head_end) + 1
+    width, height = (int(v) for v in data[:head_end].split(b'\n')[1].split())
+    row = width * 12
+    body = data[head_end:head_end + row * height]
+    turned = b''.join(body[(height - 1 - y) * row:(height - y) * row] for y in range(height))
+    with open(path, 'wb') as out:
+        out.write(data[:head_end] + turned + data[head_end + row * height:])
+
+
 class Compiler:
     """Collects the materials of one scene; textures and coordinate slots are shared between them."""
 
@@ -879,7 +923,7 @@ class Compiler:
         stat = source.stat()
         hdr = source.suffix.lower() in HDR_SUFFIXES
         space, ocio = color_space(source, layer.get('color_space', ''), layer.get('srgb'))
-        digest = hashlib.sha256(repr((str(source.resolve()), stat.st_size, stat.st_mtime_ns, self.side or 'full', 'moonlightipr-v3', ocio and (space, ocio))).encode()).hexdigest()
+        digest = hashlib.sha256(repr((str(source.resolve()), stat.st_size, stat.st_mtime_ns, self.side or 'full', 'moonlightipr-v4', ocio and (space, ocio))).encode()).hexdigest()
         target = cache_folder() / (digest + ('.pfm' if hdr else '.tga'))
         if not ocio and self.plain_pfm(source):
             # Already what the session reads (an Ocean tile, a new one each frame): no conversion, which ran oiiotool
@@ -951,10 +995,39 @@ class Compiler:
         staged = target.with_name(target.stem + '-' + uuid.uuid4().hex + target.suffix)
         try:
             self.run(args + (['-d', 'float'] if hdr else ['-d', 'uint8', '--compression', 'none']) + ['-o', str(staged)], source.name)
+            if hdr and max(width, height) > UPRIGHT_FROM:
+                self.upright(source, staged, args[1:])
             staged.replace(target)
         finally:
             if staged.exists():
                 staged.unlink()
+
+    def upright(self, source, made, steps):
+        """A large float image written the right way up. oiiotool wrote an 8K EXR's PFM upside down where the picture
+        went through unchanged (a Render's environment at its full size), and the right way where it was made smaller
+        (realtime's): the HDRI flipped between them. The image's top and bottom are compared with a small copy's, made
+        smaller and so the right way up, and its rows turned over where they are the wrong way round."""
+        import tempfile
+        from pathlib import Path
+        held = Path(tempfile.mkdtemp()) / 'upright.pfm'
+        try:
+            self.run([str(source)] + [s for s in steps if s != str(source)][:2] + ['--resize', '64x32!', '-d', 'float', '-o', str(held)], source.name)
+            small = _pfm_bands(held)
+            big = _pfm_bands(made)
+        except (OSError, ValueError, subprocess.SubprocessError):
+            return
+        finally:
+            try:
+                held.unlink()
+                held.parent.rmdir()
+            except OSError:
+                pass
+        if small is None or big is None:
+            return
+        straight = abs(big[0] - small[0]) + abs(big[1] - small[1])
+        turned = abs(big[0] - small[1]) + abs(big[1] - small[0])
+        if turned < straight * 0.5:
+            _turn_pfm(made)
 
     def convert_space(self, source, target, hdr, space, ocio):
         """Take an image from an OCIO colour space to linear first, as the plugin's maketx step does."""

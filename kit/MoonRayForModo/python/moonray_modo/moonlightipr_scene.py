@@ -131,7 +131,7 @@ def environment_image(item, runtime, full=False):
     stat = source.stat()
     working = working_enabled()
     digest = hashlib.sha256(repr((str(source.resolve()), stat.st_size, stat.st_mtime_ns, space, ocio, working, 'full' if full else ENVIRONMENT_IMAGE,
-                                  'moonlightipr-env-v2')).encode()).hexdigest()
+                                  'moonlightipr-env-v3')).encode()).hexdigest()
     target = cache_folder() / (digest + '.pfm')
     if not target.is_file() or not target.stat().st_size:
         compiler = Compiler(runtime)
