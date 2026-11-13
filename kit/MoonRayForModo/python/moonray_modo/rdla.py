@@ -317,6 +317,13 @@ def display_filter_lines(scene, lines, target):
 
 
 def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output_file=None):
+    # Ocean nodes' tiles are made for the frame being written (ocean.writing): the scene's time, in seconds.
+    from . import ocean
+    with ocean.writing(scene.get('time') or 0.0):
+        return _scene_text(scene, width, height, samples, environment, output_file)
+
+
+def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, output_file=None):
     from . import graph as graph_
     graph_.BUMP_STEP = bool(scene.get('_bump_step'))
     from .serialization import revision
@@ -438,11 +445,16 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
         raise ValueError('Multiple Cryptomatte categories require a matching category-enabled runtime')
     # Fog, from a VDB or in a MoonRay box or sphere, is in the mattes as MoonRay with the plugin's patch has it.
     matted=render_meshes+scene.get('extra_geometry',[])+(entities.volume_shapes(scene) if crypto and cryptomatte.volumes() else [])
+    # Cryptomatte in Its Own File (Output Renders): its outputs, and the object IDs they are made from, in a file beside
+    # the picture with a header of their own; the picture's header has no manifest.
+    crypto_apart=bool(output_file and crypto and cryptomatte.own_file_wanted(scene,scene.get('_safe'),scene.get('_recovery')))
     if output_file:
-        cryptomatte.metadata(matted,lines,crypto and not multi_crypto,scene)
+        cryptomatte.metadata(matted,lines,crypto and not multi_crypto and not crypto_apart,scene)
         if multi_crypto:
             for cat in ('object','material','asset'):
                 cryptomatte.metadata(matted,lines,True,scene,cat)
+        elif crypto_apart:
+            cryptomatte.metadata(matted,lines,True,scene,cryptomatte.category(scene))
     lighting.emit(scene,render_meshes,float(environment),lines)
     # Keep material handles in a table to avoid Lua's local variable limit.
     lines.append('local materials = {}')
@@ -996,13 +1008,21 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
         for key, attributes, channel in render_outputs:
             crypto_category=next((v.get('category','object') for v in scene.get('custom_aovs',[]) if v.get('name')==key and v.get('kind')=='cryptomatte'),None)
             metadata_path='/modo/outputMetadata'+('/'+crypto_category if multi_crypto and crypto_category else '')
+            target=output_file;compressed=packing
+            if crypto_apart and (crypto_category is not None or key=='object_id'):
+                # Cryptomatte in its own file: this output beside the picture, with the Cryptomatte's header, compressed
+                # losslessly (zip) whatever the picture's compression, its IDs being exact numbers.
+                target=cryptomatte.own_file(output_file)
+                metadata_path='/modo/outputMetadata/'+(crypto_category or cryptomatte.category(scene))
+                attributes={k:v for k,v in attributes.items() if k!='file_part'}
+                compressed=['  ["compression"] = 1,']
             attributes=dict(attributes,**recovery_attributes(recovery))
             attributes=dict(channel_format=0,**attributes) if 'channel_format' not in attributes else attributes
             lines += ['RenderOutput(%s) {' % string('/modo/aov/' + key),
-                      '  ["file_name"] = %s,' % string(str(output_file)), *kept(output_file),
+                      '  ["file_name"] = %s,' % string(str(target)), *kept(target),
                       *(['  ["channel_name"] = %s,' % string(channel)] if 'channel_name' not in attributes else []),
                       '  ["exr_header_attributes"] = Metadata('+string(metadata_path)+'),',
-                      *packing]
+                      *compressed]
             lines += ['  [%s] = %s,' % (string(attr), (value if isinstance(value,outputs.Raw) else string(value)) if isinstance(value,str) else ('true' if value else 'false') if isinstance(value,bool) else number(value))
                       for attr, value in attributes.items()]
             lines.append('}')

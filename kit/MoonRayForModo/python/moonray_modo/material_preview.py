@@ -20,6 +20,12 @@ CACHE=collections.OrderedDict()
 CACHE_SIZE=12
 
 
+def live_default():
+    """Whether the graph editor's Live material preview starts on: on, unless it was last switched off by hand."""
+    value = QtCore.QSettings('MoonRayForModo', 'GraphEditor').value('live_preview', True)
+    return str(value).lower() not in ('false', '0')
+
+
 def cache_key(scene, runtime, width, height):
     text=json.dumps(scene,sort_keys=True,default=str)+'|%s|%d|%d'%(runtime,width,height)
     return hashlib.sha1(text.encode('utf-8')).hexdigest()
@@ -98,7 +104,10 @@ class Panel(QtWidgets.QWidget):
         layout=QtWidgets.QVBoxLayout(self);layout.setContentsMargins(4,4,4,4)
         layout.addWidget(QtWidgets.QLabel('MoonRay Widget'))
         bar=QtWidgets.QHBoxLayout();layout.addLayout(bar)
-        self.live=QtWidgets.QCheckBox('Live material preview');self.live.setChecked(False);self.live.setVisible(embedded);bar.addWidget(self.live)
+        # On unless it was switched off by hand (kept for the next graph editor); Stop pressing it off is not that.
+        self.live=QtWidgets.QCheckBox('Live material preview')
+        self.live.setChecked(live_default());self.live.setVisible(embedded);bar.addWidget(self.live)
+        self.stopping=False
         # One button: Refresh, or Stop while the widget renders.
         self.button=QtWidgets.QPushButton('Refresh');bar.addWidget(self.button)
         self.button.setAutoDefault(False);self.button.setDefault(False)
@@ -122,7 +131,8 @@ class Panel(QtWidgets.QWidget):
         choices=QtWidgets.QHBoxLayout();choices.addWidget(self.clay_mode,1);choices.addWidget(self.scale);choices.addWidget(self.samples);layout.addLayout(choices)
 
         self.viewer=WidgetPreview(self);layout.addWidget(self.viewer,1)
-        self.status=QtWidgets.QLabel('Live preview is off. Enable it or click Refresh.');self.status.setWordWrap(True);layout.addWidget(self.status)
+        self.status=QtWidgets.QLabel('Live preview is on.' if self.live.isChecked() and embedded else 'Live preview is off. Enable it or click Refresh.')
+        self.status.setWordWrap(True);layout.addWidget(self.status)
         self.setToolTip('Previews the current draft with widget UVs and studio lighting. Scene masks, projectors and hair geometry are not recreated. Live preview updates committed graph edits after a short pause.')
         credit=QtWidgets.QLabel('MoonRay Widget Copyright 2023–2025 DreamWorks Animation LLC. All rights reserved.\nASWF Digital Assets License v1.1');credit.setWordWrap(True);layout.addWidget(credit)
         self.renderer=Renderer(self)
@@ -182,6 +192,7 @@ class Panel(QtWidgets.QWidget):
         if not self.closed:self.status.setText('Preview failed: '+message)
     def live_changed(self,enabled):
         record("Live preview "+("enabled" if enabled else "disabled"))
+        if not self.stopping:QtCore.QSettings('MoonRayForModo','GraphEditor').setValue('live_preview',bool(enabled))
         if enabled:self.schedule()
         else:
             self.timer.stop();self.renderer.stop();self.status.setText('Live preview off. Last image retained.')
@@ -202,7 +213,11 @@ class Panel(QtWidgets.QWidget):
             self.last_signature=signature;self.schedule()
     def stop(self):
         self.timer.stop();self.idle();self.done=None
-        if self.live.isChecked():self.live.setChecked(False)
+        if self.live.isChecked():
+            # Stopped for now, not switched off for good: the next graph editor starts live again.
+            self.stopping=True
+            try:self.live.setChecked(False)
+            finally:self.stopping=False
         else:self.renderer.stop()
     def capture_snapshot(self):
         import modo

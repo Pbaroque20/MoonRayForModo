@@ -217,6 +217,37 @@ def export_channels(names,name):
     return [(name+channel[len('Cryptomatte'):],channel) for channel in names if channel.startswith('Cryptomatte')]
 
 
+def own_file(rendered):
+    """Where a render to file keeps its Cryptomatte with "Cryptomatte in Its Own File" on: beside the picture,
+    shot.cryptomatte.0030.exr for shot.0030.exr (denoising.beside)."""
+    from .denoising import beside
+    return beside(rendered,'cryptomatte')
+
+
+def kept_in(rendered):
+    """The file that holds a render's Cryptomatte: its own file where one was written, else the render itself."""
+    from pathlib import Path
+    own=own_file(rendered)
+    return own if Path(own).is_file() else Path(rendered)
+
+
+def own_file_wanted(scene,safe=False,recovery=False):
+    """Whether a render to file writes its Cryptomatte to its own file: asked for (Output Renders > Cryptomatte in Its
+    Own File), or the picture's compression is lossy. A Cryptomatte's IDs are exact numbers, which a lossy compression
+    changes: in a DWAB picture of 12 objects a tester's Photoshop found 1,530 mattes, every changed number one more.
+    MoonRay compresses all of a file alike, so its own file, losslessly. Not with checkpoints or Safe Denoising, which
+    take a render up again from its one file (and make the picture lossless): there it stays in the picture."""
+    from .options import LOSSY_COMPRESSIONS
+    held=scene.get('exr') or {}
+    lossy=int(held.get('compression',1)) in LOSSY_COMPRESSIONS
+    if not held.get('cryptomatte_file') and not lossy:return False
+    if safe or recovery:
+        if not held.get('cryptomatte_file'):return False
+        scene.setdefault('warnings',[]).append('The Cryptomatte stays in the render\'s EXR: checkpoints and Safe Denoising take a render up again from its one file.')
+        return False
+    return True
+
+
 def metadata(geometries,lines,crypto=False,scene=None,category_override=None):
     from .working_space import label
     names=['MoonRayForModo/workingSpace'];types=['string'];values=[label((scene or {}).get('asset_settings',{}))]

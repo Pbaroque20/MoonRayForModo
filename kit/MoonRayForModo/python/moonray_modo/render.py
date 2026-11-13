@@ -1063,11 +1063,17 @@ class Renderer(QtCore.QObject):
     @staticmethod
     def _publish(source,destination):
         destination=Path(destination)
-        staged=destination.with_name(destination.name+'.'+uuid.uuid4().hex+'.tmp')
-        try:
-            shutil.copyfile(str(source),str(staged));staged.replace(destination)
-        finally:
-            if staged.exists(): staged.unlink()
+        # The render's Cryptomatte in its own file (cryptomatte.own_file_wanted), where MoonRay wrote one beside it, goes
+        # beside the picture too.
+        from .cryptomatte import own_file
+        pairs=[(Path(source),destination)]
+        if Path(own_file(source)).is_file() and Path(source)!=destination:pairs.append((Path(own_file(source)),Path(own_file(destination))))
+        for origin,target in pairs:
+            staged=target.with_name(target.name+'.'+uuid.uuid4().hex+'.tmp')
+            try:
+                shutil.copyfile(str(origin),str(staged));staged.replace(target)
+            finally:
+                if staged.exists(): staged.unlink()
 
     def _next_post(self):
         program,args,self.post_expected=self.post_jobs.pop(0)

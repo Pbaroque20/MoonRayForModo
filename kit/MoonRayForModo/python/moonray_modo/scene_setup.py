@@ -49,7 +49,7 @@ def configure(scene, values):
     # Kept out of a scene that does not ask for it, so that a checkpoint saved before still matches.
     if values['deep']['enabled']:scene['deep']=values['deep']
     # Likewise the EXR's compression, where it is not MoonRay's zip, and its parts.
-    if values['exr']!={'compression':1,'dwa_level':85.0,'multipart':False}:scene['exr']=values['exr']
+    if values['exr']!={'compression':1,'dwa_level':85.0,'multipart':False,'cryptomatte_file':False}:scene['exr']=values['exr']
     scene['preview_buffer'] = values['preview_buffer']
     # MoonLightIPR's own firefly controls (moonlightipr_scene), apart from MoonRay's in render_settings.
     own = values.get('moonlightipr') or {}

@@ -115,7 +115,12 @@ for i, shader in enumerate([''] + sorted(catalog)):
         if spec['type'] == 'SceneObject*' and key not in texturable:
             continue
         if group not in groups:
-            groups[group] = nested(form, 'MoonRayShader_%s_%d:sheet' % (shader, len(groups)), group, 1 if groups else 0)
+            # The everyday groups open, the rest collapsed (a tester: less daunting); a material with none of those keeps
+            # its first group open.
+            everyday = {'Diffuse', 'Specular', 'Common'}
+            has_everyday = any(plain(s.get('group', '')) in everyday for s in catalog[shader]['attributes'].values())
+            is_open = group in everyday if has_everyday else not groups
+            groups[group] = nested(form, 'MoonRayShader_%s_%d:sheet' % (shader, len(groups)), group, 0 if is_open else 1)
         if spec['type'] == 'SceneObject*':
             # A normal map has no value of its own to edit, only its image.
             chooser(groups[group], key, spec, j)
