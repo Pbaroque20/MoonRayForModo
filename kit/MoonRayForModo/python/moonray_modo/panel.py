@@ -416,6 +416,15 @@ class Panel(Tools, QtWidgets.QWidget):
             action.setChecked(key==self.preferences.get('clay'));self.clay_group.addAction(action)
         if self.clay_group.checkedAction() is None:self.clay_group.actions()[0].setChecked(True)
         self.clay_group.triggered.connect(self._clay_changed)
+        # Solo (solo.py): one node of a graph, one material's meshes or the selected meshes, in the preview alone.
+        self.solo_menu=QtWidgets.QMenu('Solo',self);self.solo_menu.setStyleSheet(MENU_STYLE);menu.addMenu(self.solo_menu)
+        self.solo_menu.setToolTipsVisible(True)
+        for label,call,tip in (('Solo Selected Meshes',self._solo_meshes,'Preview only the selected meshes; the rest of the scene is left out of the preview.'),
+                               ('Solo Selected Material',self._solo_material,'Preview only the meshes that wear the selected material.'),
+                               ('Stop Solo',self._solo_stop,'Preview the whole scene again.')):
+            action=QtWidgets.QAction(label,self);action.setToolTip(tip);action.triggered.connect(call);self.solo_menu.addAction(action)
+        from . import solo
+        solo.LISTENERS.append(self._solo_changed)
         self.show_buckets=checkable(menu,'Show Buckets')
         self.show_buckets.setChecked(self.preferences.get('show_buckets'))
         self.show_buckets.toggled.connect(self._overlay_changed)
@@ -693,6 +702,37 @@ class Panel(Tools, QtWidgets.QWidget):
     def _clay(self):
         action=self.clay_group.checkedAction()
         return action.data() if action is not None else 'materials'
+
+    def _solo_meshes(self,*_):
+        import modo
+        from . import solo
+        chosen=[item for item in modo.Scene().selected if item.type=='mesh']
+        if not chosen:self.status.setText('Select one or more meshes to solo them.');return
+        solo.solo_meshes([item.id for item in chosen],', '.join(item.name for item in chosen[:3])+(' ...' if len(chosen)>3 else ''))
+
+    def _solo_material(self,*_):
+        import modo
+        from . import solo,properties
+        chosen=[]
+        for item in modo.Scene().selected:
+            if item.type=='mask':
+                chosen+=[child for child in item.children() if properties.is_material(child)]
+            elif properties.is_material(item):
+                chosen.append(item)
+        if not chosen:self.status.setText('Select a material (or its material group) in the Shader Tree to solo it.');return
+        solo.solo_materials([item.id for item in chosen],', '.join(item.name for item in chosen[:3]))
+
+    def _solo_stop(self,*_):
+        from . import solo
+        solo.clear()
+
+    def _solo_changed(self):
+        if self.disposed:return
+        from . import solo
+        state=solo.current()
+        self.solo_menu.setTitle('Solo: '+state['label'] if state else 'Solo')
+        self._preview_changed(0)
+        if state:self.status.setText('Solo: '+state['label']+'. Stop Solo in the menu shows the whole scene again.')
 
     def _clay_changed(self,action):
         self.preferences.set('clay',action.data());self._preview_changed(0)
@@ -1892,7 +1932,9 @@ class Panel(Tools, QtWidgets.QWidget):
         values=self._settings_values();get=self.preferences.get
         width, height = self._dimensions(scene, bool(output))
         original_digest=digest or self._digest(scene,timeless=not output and self._engine()=='moonlightipr')
-        if not output:scene=dict(scene,_clay_preview=self._clay())
+        if not output:
+            from . import solo
+            scene=solo.apply(dict(scene,_clay_preview=self._clay()))
         # A preview following the scene (MoonLightIPR, or MoonRay's realtime) cuts its subdivided, displaced and dense
         # meshes by their size on screen, coarser after an edit and finer once the scene is left alone
         # (moonlightipr_detail): the detail timer sends it again then.
@@ -2859,6 +2901,10 @@ class Panel(Tools, QtWidgets.QWidget):
         if not self.disposed:
             self.disposed = True
             if self in PANELS:PANELS.remove(self)
+            try:
+                from . import solo
+                solo.LISTENERS.remove(self._solo_changed)
+            except (ValueError,ImportError):pass
             try:
                 from . import property_notifications
                 property_notifications.watchers.remove(self._preferences_followed)

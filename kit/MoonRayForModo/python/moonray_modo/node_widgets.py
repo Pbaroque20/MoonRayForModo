@@ -331,6 +331,10 @@ class GraphView(QtWidgets.QGraphicsView):
                 shown=graph.get('displacement');fed=(graph['nodes'].get(shown) or {}).get('inputs') or {}
                 current=shown==identity or (kind=='ocean' and fed.get('vector')==identity)
                 entry('Clear Displacement Output' if current else 'Set as Displacement Output','displacement')
+            if nodes.category(kind) in ('map','material') and getattr(self.editor,'item',None) is not None:
+                # Solo (solo.py): this node's colour alone on the material's meshes, in the preview window.
+                from . import solo
+                entry('Stop Solo' if solo.is_node(self.editor.item.id,identity) else 'Solo in Preview','solo')
             if getattr(owner,'hidden_ports',0) or identity in self.editor.expanded:
                 entry('Show Fewer Inputs' if identity in self.editor.expanded else 'Show All Inputs','expand')
             entry('Duplicate\tCtrl+D','duplicate')
@@ -343,6 +347,12 @@ class GraphView(QtWidgets.QGraphicsView):
         what=chosen.data() if chosen is not None else None
         if what=='output':self.editor.output(identity)
         elif what=='displacement':self.editor.displacement_output()
+        elif what=='solo':
+            from . import solo
+            if solo.is_node(self.editor.item.id,identity):solo.clear()
+            else:
+                node=graph['nodes'][identity]
+                solo.solo_node(self.editor.item.id,identity,'%s in %s'%(node.get('label') or node['type'],self.editor.item.name))
         elif what=='disconnect':self.editor.unlink(*connection)
         elif what=='expand':self.editor.toggle_expanded(identity)
         elif what=='duplicate':self.editor.duplicate()

@@ -1,7 +1,7 @@
 # python
 """Isolated GUI test: the graph editor's right-click menu. A graph with an Ocean node: right-clicked, its menu offers Set as
 Displacement Output, which adds a Vector Displacement fed by it as the output; right-clicked again, Clear Displacement Output;
-the surface node offers Set as Material Output; empty canvas offers Add Node. Each menu's entries are recorded and one
+the surface node offers Set as Material Output; Solo in Preview solos the Ocean node and Stop Solo ends it; empty canvas offers Add Node. Each menu's entries are recorded and one
 chosen by name (QMenu.exec_ answered here, as the menu reads the chosen entry's data). Writes test-results/canvas-menu/report.json."""
 import json
 import pathlib
@@ -56,12 +56,18 @@ def run():
         result['fed by ocean'] = (editor.graph['nodes'].get(shown, {}).get('inputs') or {}).get('vector') == 'sea'
         result['ocean menu again'] = right_click(view, centre(editor, 'sea'), 'Clear Displacement Output')
         result['output after clear'] = editor.graph.get('displacement')
+        from moonray_modo import solo
+        result['solo menu'] = right_click(view, centre(editor, 'sea'), 'Solo in Preview')
+        result['soloed'] = solo.current()
+        result['solo menu again'] = right_click(view, centre(editor, 'sea'), 'Stop Solo')
+        result['solo after stop'] = solo.current()
         result['surface menu'] = right_click(view, centre(editor, 'surface'), None)
         corner = QtCore.QPoint(view.viewport().width() - 10, view.viewport().height() - 10)
         result['canvas menu'] = right_click(view, corner, None)
         result['ok'] = (result['output after set'] == 'VectorDisplacement' and result['fed by ocean']
                         and result['output after clear'] is None and any('Material Output' in entry for entry in (result['surface menu'] or []))
-                        and result['canvas menu'][0].startswith('Add Node'))
+                        and result['canvas menu'][0].startswith('Add Node')
+                        and (result['soloed'] or {}).get('node') == 'sea' and result['solo after stop'] is None)
     except Exception:
         result['error'] = traceback.format_exc()
     save()
