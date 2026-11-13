@@ -22,6 +22,33 @@ MAPS={
  'bump':{'height':('Float',0),'amplitude':('Float',.005),'step':('Float',0)},
 }
 NORMAL_NODES=('normalmap','bump')
+# The ocean (ocean.py): a vector texture of the waves, wired into a Vector Displacement node's Vector, and its foam as a
+# map, both made from the same settings. Neither reaches an engine as itself: expand_ocean() makes them images of the
+# tile the kit works out for the frame.
+from . import ocean as _ocean
+_OCEAN_TYPES={'size':'Float','repeat':'Vec2f','resolution':'Int','wind_speed':'Float','wind_direction':'Float',
+              'wave_height':'Float','choppiness':'Float','small_waves':'Float','wind_alignment':'Float','against_wind':'Float',
+              'depth':'Float','seed':'Int','time_scale':'Float','time_offset':'Float','loop':'Float','foam_threshold':'Float'}
+MAPS['ocean']={key:(_OCEAN_TYPES[key],value) for key,value in _ocean.DEFAULTS.items()}
+MAPS['ocean_foam']=dict(MAPS['ocean'])
+OCEAN_NODES=('ocean','ocean_foam')
+OCEAN_COMMENTS={
+    'size':'How wide one tile of the ocean is, in scene units (metres): the waves are shaped for it. The tile repeats seamlessly.',
+    'repeat':"How many tiles across the surface's UVs. For waves of their true size, the surface's width over the size above (a 200 m plane with UVs 0 to 1 and a 50 m tile: 4).",
+    'resolution':'Points across one tile: more is finer detail. 64, 128, 256, 512 or 1024.',
+    'wind_speed':'The wind, in metres a second: it sets how big the waves are and how long the longest ones are.',
+    'wind_direction':'Where the wind blows, in degrees from U towards V.',
+    'wave_height':"The waves' height, times a fully developed sea's for this wind (1: about 2 m from trough to crest at 10 m/s).",
+    'choppiness':'How far the crests are pushed together sideways, sharpening them; 0 keeps them round.',
+    'small_waves':'Waves shorter than this, in metres, fade out.',
+    'wind_alignment':'How closely the waves follow the wind: more makes them run in lines across it.',
+    'against_wind':'What is left of the waves running against the wind (0 to 1).',
+    'depth':"The water's depth in metres; 0 is deep water. Shallow water slows the long waves.",
+    'seed':'Another seed, another sea with the same settings.',
+    'time_scale':"The ocean's time is the scene's times this, plus the offset.",
+    'time_offset':"Seconds added to the ocean's time.",
+    'loop':'Seconds after which the waves repeat, for a looping animation; 0 never.',
+    'foam_threshold':'Foam where the surface is squeezed below this (1 is untouched): more makes more foam.'}
 
 from .math_nodes import SCHEMAS as MATH_SCHEMAS
 MAPS.update(MATH_SCHEMAS)
@@ -39,6 +66,11 @@ def specs(kind):
         result['height']['comment']='The height: wire a greyscale image (or any texture) here; white is raised, black is sunk.'
         result['amplitude']['comment']="How high white stands above black, in scene units, as Modo's Bump Amplitude (5 mm by default)."
         result['step']['comment']='How far apart in UV the height is read; 0 reads it a thousandth of the UVs apart.'
+    if kind in OCEAN_NODES:
+        # Settings, not inputs: the tile is worked out from them before the render.
+        for key,spec in result.items():
+            spec['flags']='';spec['comment']=OCEAN_COMMENTS[key]
+        result['resolution']['enum']={str(n):n for n in _ocean.RESOLUTIONS}
     return result
 
 
@@ -77,6 +109,68 @@ def effective(graph):
     return result
 
 
+def has_ocean(scene):
+    """Whether any material of a snapshot has an Ocean node, whose waves move with the time."""
+    for material in (scene.get('materials') or {}).values():
+        for row in (material.get('material_stack') or [material]) if isinstance(material,dict) else ():
+            graph=row.get('node_graph') if isinstance(row,dict) else None
+            if isinstance(graph,dict) and any(isinstance(n,dict) and n.get('type') in OCEAN_NODES for n in (graph.get('nodes') or {}).values()):
+                return True
+    return False
+
+
+def expand_ocean(graph):
+    """The graph as the engines take it: each Ocean node an image of the ocean tile's displacement (red the push along U,
+    green the height, blue the push along V), for a Vector Displacement node's Vector in tangent space (its default), each
+    Ocean Foam node an image of its foam, read through the surface's UVs that many tiles across (ocean.py). A Vector
+    Displacement fed by an Ocean node gets the bound padding the waves need, where its own is less. An Ocean node set as
+    the displacement output itself, as graphs before 2026-11-13 had it, is still a VectorDisplacement of its own. The tile is the frame's while a scene is written (ocean.CONTEXT); otherwise only its name is
+    known, and an image not made yet reads as nothing. Off in MoonRay Source Overrides (native.ocean), the ocean is flat.
+    graph is an effective() graph, changed in place and returned."""
+    members=graph.get('nodes',{})
+    oceans=[key for key,node in members.items() if node.get('type') in OCEAN_NODES]
+    if not oceans:return graph
+    from .native import ocean as ocean_switch
+    on=ocean_switch()
+    # A foam node with no settings of its own follows the graph's Ocean node (the first, by name).
+    leading=next((members[key].get('parameters') or {} for key in sorted(oceans) if members[key].get('type')=='ocean'),{})
+    for key in oceans:
+        node=members[key];own=node.get('parameters') or {}
+        value=_ocean.settings(leading if node['type']=='ocean_foam' and not own else own)
+        displacement,foam,slope=_ocean.tile(value) if on else (None,None,None)
+        # MoonRay's own ImageMap of the tile, read as it is (no sRGB, no alpha: the kit's image node divided by an alpha
+        # these images have not, which threw the sea out of view and put foam everywhere), repeated across the surface's
+        # first UV map.
+        path=str(foam if node['type']=='ocean_foam' else displacement or '')
+        image=({'type':'ImageMap','parameters':{'texture':path,'gamma':0,'wrap_around':True,'scale':list(value['repeat'])},'inputs':{}}
+               if on else {'type':'constant','parameters':{'value':[0.0,0.0,0.0]},'inputs':{}})
+        if node['type']=='ocean_foam':
+            members[key]=dict(image,position=node.get('position'))
+            continue
+        # The surface's slope beside it, which MoonRay does not read (it splits the surface as finely as the pixels) and
+        # MoonLightIPR's shading does, for waves finer than a mesh's vertices are apart (moonlightipr_materials).
+        if on:image['_slope']=str(slope)
+        reach=_ocean.reach(value) if on else 0.0
+        if graph.get('displacement')!=key:
+            # A vector texture: the tile itself, and room for the waves in the Vector Displacements it feeds.
+            members[key]=dict(image,position=node.get('position'))
+            for other in members.values():
+                if other.get('type')=='VectorDisplacement' and (other.get('inputs') or {}).get('vector')==key:
+                    held=other.setdefault('parameters',{})
+                    factor=abs(float(str(held.get('factor',1.0)).rstrip('f') or 1.0))
+                    if float(str(held.get('bound_padding',0.0)).rstrip('f') or 0.0)<reach*factor:held['bound_padding']=reach*factor
+            continue
+        tile=key+'__ocean_tile'
+        while tile in members:tile+='_'
+        members[tile]=image
+        # Red the push along U, green the height, blue the push along V (tnb: tangent, normal, bitangent).
+        members[key]={'type':'VectorDisplacement','position':node.get('position'),
+                      'parameters':{'source_space':0,'tangent_space_style':0,'factor':1.0 if on else 0.0,
+                                    'bound_padding':reach},
+                      'inputs':{'vector':tile} if on else {}}
+    return graph
+
+
 def rendered(graph):
     """What of a graph a render sees: its effective nodes that the output or the displacement reach, without where they
     stand in the editor or their labels. Moving a node, or adding one wired to nothing, leaves it as it was, and the
@@ -110,7 +204,7 @@ def material_form(settings):
 
 
 def validate(graph):
-    g=effective(graph);nodes=g['nodes']
+    g=expand_ocean(effective(graph));nodes=g['nodes']
     root=g.get('root')
     if root not in nodes or category(nodes[root]['type'])!='material': raise ValueError('Choose a surface material as graph output')
     if g.get('displacement') and (g['displacement'] not in nodes or category(nodes[g['displacement']]['type'])!='displacement'):

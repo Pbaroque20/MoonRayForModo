@@ -20,7 +20,7 @@ DEFAULTS = {
     # A deep EXR written beside the render: every surface and volume a pixel sees, each at its own depth.
     'deep': {'enabled': False, 'format': 0, 'curvature': 45.0, 'z': 2.0, 'volume': 10},
     # How the final EXR is compressed, by MoonRay's numbers (options.EXR_COMPRESSIONS), and the level of its DWA ones.
-    'exr': {'compression': 1, 'dwa_level': 85.0, 'multipart': False},
+    'exr': {'compression': 1, 'dwa_level': 85.0, 'multipart': False, 'cryptomatte_file': False},
     'denoising': {'engine': 'off', 'preview': True, 'final': True, 'safe': False, 'smart': 'off', 'detail': 'some'},
     # XPU2's sampling generations: 16 samples a pixel on average and a noise target of 10 by
     # default; the rest are what XPU2 does without them.
@@ -123,7 +123,7 @@ GROUPS = [
     ('Camera', False, [
         field('camera', None, 'command', 'Render Camera', 'Render through the Modo render camera or one of the MoonRay cameras in the scene, such as a fisheye'),
     ]),
-    ('XPU Sampling', False, [
+    ('XPU Sampling', True, [
         render_field('sampling_mode', 'Sampling', 'Adaptive stops sampling a pixel once it is clean enough'),
         field('samples', ('samples',), 'int', 'Pixel Samples', 'Uniform sampling: 4 means 4 x 4 = 16 samples per pixel', 1, 64),
         render_field('min_adaptive_samples', 'Minimum Samples', 'Adaptive sampling: fewest samples per pixel'),
@@ -201,7 +201,7 @@ GROUPS = [
         render_field('max_geometry_resolution', 'Geometry Resolution Limit', 'The cap, as a tessellation resolution'),
         field('dicing_camera', None, 'command', 'Dicing Camera', 'The camera adaptive tessellation is worked out for: the render camera, or another, for a render whose camera moves or is very close'),
     ]),
-    ('Denoising', True, [
+    ('Denoising', False, [
         field('denoiser', ('denoising', 'engine'), 'choice', 'Denoiser', '', choices=DENOISERS),
         field('denoise_preview', ('denoising', 'preview'), 'bool', 'Denoise Preview'),
         field('denoise_final', ('denoising', 'final'), 'bool', 'Save Denoised EXR', 'Written beside the original EXR, which is kept'),
@@ -254,6 +254,7 @@ GROUPS = [
         field('exr_compression', ('exr', 'compression'), 'choice', 'EXR Compression', 'How Render EXR and animations compress their EXRs. The lossy ones make smaller files; they are not used with checkpoints or Safe Denoising, which take a render up again from what it saved', choices=options.EXR_COMPRESSIONS),
         field('exr_dwa_level', ('exr', 'dwa_level'), 'float', 'DWA Compression Level', 'For DWAA and DWAB: higher is smaller and loses more', 0.0, 1000.0),
         field('exr_multipart', ('exr', 'multipart'), 'bool', 'Multi-Part EXR', 'Each output in a part of its own in the EXR, which a compositor can read one at a time, not all together. The beauty, its alpha and any Cryptomatte stay in the first part'),
+        field('exr_cryptomatte_file', ('exr', 'cryptomatte_file'), 'bool', 'Cryptomatte in Its Own File', 'The Cryptomatte written to an EXR of its own beside the picture (shot.cryptomatte.0030.exr), not into the picture: image editors such as Photoshop then open the picture without offering a layer for every matte, and Nuke and Fusion read the Cryptomatte file as they read it in the picture. With a lossy EXR compression (PXR24, B44, DWAA, DWAB) the Cryptomatte always goes to its own file, saved losslessly: its IDs are exact numbers that a lossy compression changes, every change one more matte. Not with checkpoints or Safe Denoising, which keep it in the picture'),
         field('deep', ('deep', 'enabled'), 'bool', 'Save a Deep EXR', 'Written beside the render as name.deep.exr: every surface and volume a pixel sees, each at its own depth, for deep compositing'),
         field('deep_format', ('deep', 'format'), 'choice', 'Deep Format', 'OpenEXR 2 opens everywhere. OpenDCX adds per-sample coverage masks, for compositors that read them', choices=DEEP_FORMATS),
         field('deep_curvature', ('deep', 'curvature'), 'float', 'Deep Curvature Tolerance', 'Degrees a surface may curve within a pixel before it is split into more deep samples', 0.0, 180.0),

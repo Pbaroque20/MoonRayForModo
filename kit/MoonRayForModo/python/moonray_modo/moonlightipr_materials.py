@@ -30,10 +30,13 @@ CHANNELS = {'diffCol': 0, 'diffAmt': 1, 'rough': 2, 'metallic': 3, 'lumiCol': 4,
             # Shader Tree stencil layers: the surface is taken away where they are white, over any dissolve.
             'stencil': 27,
             # A map wired to DwaBase's diffuse transmission colour: the diffuse light passed through to the far side.
-            '_backCol': 28}
+            '_backCol': 28,
+            # A displaced surface's slope along texture u and v (an Ocean node's tile, displacement_tree): the shading
+            # normal takes the waves finer than the mesh's vertices are apart.
+            '_slope': 29}
 # Channels a material row does not set: the maps, the mask, and values only gradients read.
 UNSET_BY_ROWS = ('normal', 'bump', 'groupMask', 'driverA', 'driverB', 'driverC', 'driverD', 'displace', '_disp0', '_disp1', '_disp2', '_disp3',
-                 'stencil', '_backCol')
+                 'stencil', '_backCol', '_slope')
 # Channels whose constant rows can be worked out here instead of on the GPU, with the range the
 # material record keeps a single number in (None for colours, which it keeps whole).
 FOLDED = {'diffCol': None, 'diffAmt': (-math.inf, math.inf), 'rough': (0, 1), 'metallic': (0, 1), 'lumiCol': None,
@@ -198,7 +201,8 @@ def fitted(width, height, side=MAX_TEXTURE_SIDE):
 
 
 RAMP_STEPS = 257
-HDR_SUFFIXES = ('.exr', '.hdr', '.tx')
+# Float images: kept as floats, negative values and all (an Ocean node's tile, PFM, holds heights below 0).
+HDR_SUFFIXES = ('.exr', '.hdr', '.tx', '.pfm')
 SPACE_ALIASES = {'(default)': '', '(none)': 'raw', 'Linear': 'linear', 'lin_rec709': 'linear', 'srgb_texture': 'sRGB'}
 
 
@@ -272,7 +276,7 @@ def displacement_tree(material, note, runtime=None, with_layers=True):
         if not held.get('displacement'):
             continue
         try:
-            graph = nodes.effective(held)
+            graph = nodes.expand_ocean(nodes.effective(held))  # Ocean nodes as the engines take them
         except (ValueError, KeyError, TypeError):
             return None
         leaves, program = [], []
@@ -321,6 +325,15 @@ def displacement_tree(material, note, runtime=None, with_layers=True):
                 program.append((OP_VECTOR, _number(values, 'factor', 1.0), 0.0, slot | space | style))
             layers = graph_layers(row, note, runtime, displacement=identity, wanted=wanted, as_effect='_disp%d' % slot) \
                 if wired and with_layers else []
+            source = graph['nodes'].get(inputs.get(wanted)) or {}
+            if layers and source.get('_slope') and kind == 'VectorDisplacement':
+                # An Ocean node's tile (nodes.expand_ocean): its slope too, by the displacement's factor, for the
+                # shading's waves finer than the mesh's vertices are apart (CHANNEL_SLOPE).
+                factor = _number(values, 'factor', 1.0)
+                layers.append({'kind': 'imageMap', 'path': source['_slope'], 'srgb': False, 'tile_u': 'repeat', 'tile_v': 'repeat',
+                               'scale': (source.get('parameters') or {}).get('scale', [1, 1]), 'effect': '_slope', 'blend': 'normal',
+                               'opacity': 1.0, 'identity': '%s:slope' % identity,
+                               **({} if factor == 1.0 else {'corrections': {'contrast': 1.0, 'brightness': factor, 'gamma': 1}})})
             leaves.append((slot, own, layers))
 
         visit(graph.get('displacement'), 0)
@@ -710,7 +723,7 @@ def graph_layers(source, note, runtime=None, displacement=None, wanted='height',
     layers of as_effect (displacement_tree)."""
     from . import nodes
     try:
-        graph = nodes.effective(source['node_graph'])
+        graph = nodes.expand_ocean(nodes.effective(source['node_graph']))
         root = graph['nodes'][displacement if displacement else graph['root']]
     except (ValueError, KeyError, TypeError):
         return []

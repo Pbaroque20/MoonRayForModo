@@ -34,7 +34,9 @@ class NumericGraph(unittest.TestCase):
         # The current editor applies valid edits immediately and has a Close button, not Save.
         self.assertEqual(properties.read(self.item)['node_graph']['nodes']['surface']['parameters']['metallic'],.5)
         self.assertTrue(self.editor.isVisible())
-        self.assertFalse(self.editor.material_preview.live.isChecked())
+        # Live material preview: on unless switched off by hand (material_preview.live_default).
+        from moonray_modo.material_preview import live_default
+        self.assertEqual(self.editor.material_preview.live.isChecked(),live_default())
     def test_draft_commits_pending_text_without_tab(self):
         field=self.type_value('0.5');draft=self.editor.preview_draft()
         self.assertEqual(draft['node_graph']['nodes']['surface']['parameters']['metallic'],.5)

@@ -945,6 +945,13 @@ def light_sets(scene, named, linked, instances, warnings):
 
 
 def pack(scene, width, height, environment=0.15, known=(), samples=256, denoise=True, runtime=None):
+    # Ocean nodes' tiles are made for the frame being packed (ocean.writing), with the kit's modo_ocean.dll.
+    from . import ocean
+    with ocean.writing(scene.get('time') or 0.0, runtime):
+        return _pack(scene, width, height, environment, known, samples, denoise, runtime)
+
+
+def _pack(scene, width, height, environment=0.15, known=(), samples=256, denoise=True, runtime=None):
     """Serialize a snapshot. Return (bytes, mesh keys, warnings).
 
     known holds the mesh keys the receiving session has already loaded; their data is left out.

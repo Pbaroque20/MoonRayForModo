@@ -3068,8 +3068,17 @@ ML_INLINE bool triangleUvs(const DeviceMesh& mesh, unsigned slot, unsigned primi
 
 // Which coordinate slots the last normal map and the last bump row used; UV_SLOTS for none.
 struct MappedSlots {
-    unsigned normal, bump;
+    unsigned normal, bump, slope;
 };
+
+// How far apart a mesh's vertices are about this triangle, in the mesh's units: as a footprint (evalLayers), the texture
+// read as finely as the vertices can follow it. The images' size is then the triangle's in texture space alone, the
+// same before a displacement moves the triangle as after.
+ML_INLINE float vertexSpacing(const DeviceMesh& mesh, unsigned primitive) {
+    const uint3 corners = reinterpret_cast<const uint3*>(mesh.indices)[primitive];
+    const float3* at = reinterpret_cast<const float3*>(mesh.positions);
+    return sqrtf(length(cross(at[corners.y] - at[corners.x], at[corners.z] - at[corners.x])));
+}
 
 // Runs a material's layer stack at a point, bottom row first, as the plugin's texture graph does:
 // rows blend over the rows beneath them, a group blends what its rows produced over what was
@@ -3171,8 +3180,9 @@ ML_INLINE MappedSlots evalLayers(const DeviceMaterial& material, const DeviceMes
     for (unsigned slot = 0; slot < DISPLACE_SLOTS; ++slot) channel[CHANNEL_DISPLACE + slot] = vec(0.0f);
     channel[CHANNEL_STENCIL] = vec(0.0f);
     channel[CHANNEL_BACK] = vec(material.back);
+    channel[CHANNEL_SLOPE] = vec(0.0f);
     MappedSlots slots;
-    slots.normal = slots.bump = UV_SLOTS;
+    slots.normal = slots.bump = slots.slope = UV_SLOTS;
 
     float3 saved[GROUP_DEPTH][CHANNEL_COUNT];
     unsigned savedUsed[GROUP_DEPTH];
@@ -3300,6 +3310,7 @@ ML_INLINE MappedSlots evalLayers(const DeviceMaterial& material, const DeviceMes
             }
             if (layer.channel == CHANNEL_NORMAL) slots.normal = layer.uvSlot;
             if (layer.channel == CHANNEL_BUMP) slots.bump = layer.uvSlot;
+            if (layer.channel == CHANNEL_SLOPE) slots.slope = layer.uvSlot;
         } else if (layer.flags & LAYER_RAMP) {
             // A gradient: 257 colours from 0 to 1, looked up by the first component of another channel; by its own
             // channel's brightness beneath it (Enhance: Modo's EasyGrad); by the surface's curvature; or by a weight map
@@ -3332,6 +3343,9 @@ ML_INLINE MappedSlots evalLayers(const DeviceMaterial& material, const DeviceMes
         if ((layer.flags & LAYER_CURVES) && layer.gamma != 1.0f)
             value = make_float3(gammaCurve(value.x, layer.gamma), gammaCurve(value.y, layer.gamma), gammaCurve(value.z, layer.gamma));
         value = value * layer.gain + vec(layer.offset);
+        // A slope is the height's change across one repeat of its image; across the surface's own u and v, the image's
+        // repeats times that.
+        if (layer.channel == CHANNEL_SLOPE) value = make_float3(value.x * layer.scale[0], value.y * layer.scale[1], 0.0f);
         if ((layer.flags & LAYER_CURVES) && !patterned) value = applyCurves(layer, value);
         if (layer.flags & LAYER_INVERT) value = vec(1.0f) - value;
         if (writesMask) {
@@ -3596,7 +3610,9 @@ extern "C" __global__ void __closesthit__radiance() {
     // ModoNormalMap use: the direction texture u runs across the surface, the normal, and their
     // cross product.
     const bool bumped = (material.flags & MATERIAL_HAS_BUMP) && slots.bump < UV_SLOTS;
-    if ((bumped || slots.normal < UV_SLOTS) && surfaceAxes(mesh, bumped ? slots.bump : slots.normal, primitive, e1, e2, alongU, alongV)) {
+    const bool sloped = (material.flags & MATERIAL_HAS_SLOPE) && slots.slope < UV_SLOTS;
+    const unsigned axes = bumped ? slots.bump : slots.normal < UV_SLOTS ? slots.normal : slots.slope;
+    if ((bumped || sloped || slots.normal < UV_SLOTS) && surfaceAxes(mesh, axes, primitive, e1, e2, alongU, alongV)) {
         const float3 n = hit->ns;
         const float3 tangent = alongU - n * dot(alongU, n);
         const float lengthT = length(tangent);
@@ -3621,6 +3637,17 @@ extern "C" __global__ void __closesthit__radiance() {
                 const float crossT = dot(alongV, t), crossB = dot(alongV, b);
                 sx -= material.bumpStrength * dx;
                 if (fabsf(crossB) > 1e-9f) sy -= material.bumpStrength * (dy - dx * crossT) / crossB;
+            }
+            if (sloped) {
+                // A displaced surface's slope as finely as the ray sees it, less the slope as the vertices follow it
+                // (the displacement pass reads its images at their spacing, as here), which the mesh already shows.
+                float3 coarse[CHANNEL_COUNT];
+                evalLayers(material, mesh, primitive, uv, coarse, make_float2(0.0f, 0.0f), hit->p, vertexSpacing(mesh, primitive), hit);
+                const float dx = (channel[CHANNEL_SLOPE].x - coarse[CHANNEL_SLOPE].x) / lengthT;
+                const float dy = channel[CHANNEL_SLOPE].y - coarse[CHANNEL_SLOPE].y;
+                const float crossT = dot(alongV, t), crossB = dot(alongV, b);
+                sx -= dx;
+                if (fabsf(crossB) > 1e-9f) sy -= (dy - dx * crossT) / crossB;
             }
             const float3 bent = t * sx + b * sy + n;
             if (dot(bent, bent) > 1e-12f) hit->ns = normalize(bent);
@@ -3729,7 +3756,10 @@ extern "C" __global__ void __raygen__displace() {
         const uint3 triangle = reinterpret_cast<const uint3*>(mesh.indices)[point.primitive];
         const float3* positions = reinterpret_cast<const float3*>(mesh.positions);
         const float3 at = positions[triangle.x] * (1.0f - point.b1 - point.b2) + positions[triangle.y] * point.b1 + positions[triangle.z] * point.b2;
-        evalLayers(material, mesh, point.primitive, make_float2(point.b1, point.b2), channel, make_float2(0.0f, 0.0f), at);
+        // Images read as finely as the vertices are apart: detail finer than that would only be sampled at random by
+        // them, a jagged surface of spikes. The shading normal takes it instead (CHANNEL_SLOPE).
+        evalLayers(material, mesh, point.primitive, make_float2(point.b1, point.b2), channel, make_float2(0.0f, 0.0f), at,
+                   vertexSpacing(mesh, point.primitive));
     }
     for (unsigned slot = 0; slot < DISPLACE_SLOTS; ++slot) {
         found[slot * 3] = channel[CHANNEL_DISPLACE + slot].x;

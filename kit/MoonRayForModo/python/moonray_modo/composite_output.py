@@ -87,7 +87,10 @@ def write(runtime, graph, rendered, denoised=None, scene=None):
         from . import cryptomatte_pick
 
         def matte(category, named):
-            frame = {'files': {cryptomatte_pick.buffer_of(scene, category) or 'cryptomatte': rendered}, 'runtime': runtime, 'snapshot': scene or {}}
+            # In its own file beside the render where it was written there (Cryptomatte in Its Own File).
+            from .cryptomatte import kept_in
+            frame = {'files': {cryptomatte_pick.buffer_of(scene, category) or 'cryptomatte': kept_in(rendered)}, 'runtime': runtime,
+                     'snapshot': scene or {}}
             return cryptomatte_pick.matte_file(frame, category, named, held)
         graph, files = compositor.lowered(graph, files, matte)
         for key in files:

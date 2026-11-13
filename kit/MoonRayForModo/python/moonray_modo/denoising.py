@@ -95,8 +95,11 @@ def denoised_steps(runtime,source,base,engine,guides,detail='some'):
     denoiser=runtime/'denoise.exe';oiio=runtime/'oiiotool.exe'
     if not denoiser.is_file() or not oiio.is_file(): raise ValueError('This runtime does not include the denoising tools')
     rgba=base.with_suffix('.denoise-input.exr');filtered=base.with_suffix('.denoise-filtered.exr');output=base.with_suffix('.denoised.exr')
-    # Isolate four known channels: native denoiser must never receive a multi-AOV EXR.
-    steps=[(oiio,['--no-autopremult',str(source),'--ch','R,G,B,A=1','-d','float','-o',str(rgba)],rgba),
+    # Isolate four known channels: native denoiser must never receive a multi-AOV EXR. The Cryptomatte's header entries
+    # go with its channels: a denoised picture that kept them (and its manifest) had Photoshop offer 1,530 mattes it
+    # does not hold.
+    steps=[(oiio,['--no-autopremult',str(source),'--ch','R,G,B,A=1','--eraseattrib','cryptomatte/.*',
+                  '--eraseattrib','MoonRayForModo/cryptomatteCategory','-d','float','-o',str(rgba)],rgba),
         (denoiser,['-in',str(rgba),'-albedo',guides['albedo'],'-normals',guides['normal'],'-mode',engine,'-out',str(filtered)],filtered)]
     gain=DETAIL.get(detail,0.0)
     # Only where the render made the matte of fur, hair and curves. The guides' own fine detail (each guide against

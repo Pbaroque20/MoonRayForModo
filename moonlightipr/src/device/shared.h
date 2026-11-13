@@ -26,7 +26,10 @@ const unsigned CHANNEL_COLOR = 0, CHANNEL_COLOR_AMOUNT = 1, CHANNEL_ROUGHNESS = 
                CHANNEL_STENCIL = 27,    // where Shader Tree stencil layers take the surface away, white taking it all
                CHANNEL_BACK = 28,       // diffuse light passed through to the far side (DwaBase's diffuse transmission
                                         // colour times its amount): the material's back, where a map is wired to it
-               CHANNEL_COUNT = 29;
+               CHANNEL_SLOPE = 29,      // a displaced surface's slope, its height's change along texture u and v (red and
+                                        // green): what the mesh's vertices are too far apart to show comes back as the
+                                        // shading normal's tilt (an Ocean node's tile)
+               CHANNEL_COUNT = 30;
 const unsigned DISPLACE_SLOTS = 4;
 // Rows that are not a channel: the start and end of a group, whose rows are blended as one
 // over what was there before it, and a mask written to a register for a later row to use.
@@ -54,6 +57,9 @@ const unsigned MATERIAL_THIN = 1, MATERIAL_COAT_DIMS = 2, MATERIAL_HAS_PRESENCE 
                // MoonRay renders the material through DwaBaseMaterial (or another Dwa material), whose lobes its roughness
                // clamp roughens (LaunchParams::roughnessClamp); UsdPreviewSurface's it leaves alone.
                MATERIAL_ROUGHNESS_CLAMPED = 1u << 14,
+               // A layer gives the displaced surface's slope (CHANNEL_SLOPE): the shading normal takes the detail finer
+               // than the mesh's vertices.
+               MATERIAL_HAS_SLOPE = 1u << 15,
                MATERIAL_MATTE = 1u << 30;   // set by the kernel alone, where light leaves from beneath a surface
 const unsigned LAYER_IMAGE = 1, LAYER_INVERT = 2, LAYER_FLIP_RED = 4, LAYER_FLIP_GREEN = 8, LAYER_FLIP_BLUE = 16,
                LAYER_ALPHA_MASK = 32, LAYER_ALPHA_ONLY = 64, LAYER_COVERAGE_U = 128, LAYER_COVERAGE_V = 256,

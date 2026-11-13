@@ -391,6 +391,13 @@ def bump_node():
     return _switch('bump_node', 'MOONRAY_MODO_BUMP_NODE')
 
 
+def ocean():
+    """Whether the MoonShine graph's Ocean and Ocean Foam nodes make an ocean (ocean.py, nodes.expand_ocean): Tessendorf's
+    FFT waves worked out by the kit for each frame and given to MoonRay as a VectorDisplacement and images. MoonRay has no
+    ocean of its own; off, the surface stays flat and the foam is none."""
+    return _switch('ocean', 'MOONRAY_MODO_OCEAN')
+
+
 def vdb_blackbody():
     """Whether a VDB shape set to blackbody colour glows in the colours of its temperature grid (entities.resolve_vdb,
     native-port/modo_vdb_grid.cpp --blackbody): the kit adds a colour grid to a copy of the file. MoonRay has no blackbody

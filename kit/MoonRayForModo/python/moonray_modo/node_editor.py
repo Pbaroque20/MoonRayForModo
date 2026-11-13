@@ -505,7 +505,7 @@ class Editor(QtWidgets.QDialog):
             elif any(v in name for v in ('image','udim','uvtexture')):group='Image textures'
             elif any(v in name for v in ('project','texcoord','transform','primvar')):group='Coordinates and projections'
             elif any(v in name for v in ('colorcorrect','hsv','rgbto','gamma','saturation','contrast')):group='Color adjustments'
-            elif any(v in name for v in ('noise','checker','ramp','gradient','random','wireframe','curvature','vdb')):group='Procedural textures'
+            elif any(v in name for v in ('noise','checker','ramp','gradient','random','wireframe','curvature','vdb','ocean')):group='Procedural textures'
             elif kind in nodes.MAPS or any(v in name for v in ('opmap','blend','mix','layer','switch','clamp','remap','constant')):group='Math and blending'
             else:group='Data and utilities'
             if group not in groups:
@@ -1262,12 +1262,27 @@ class Editor(QtWidgets.QDialog):
         else: self.error('Select a surface material node')
     def displacement_output(self):
         identity=self.selected()
+        if identity and self.graph['nodes'][identity]['type']=='ocean':
+            # An Ocean node is a vector texture: it displaces through a Vector Displacement, made here and wired to it as
+            # the output, or taken off again where one already is.
+            before=copy.deepcopy(self.graph);members=self.graph['nodes']
+            current=members.get(self.graph.get('displacement')) or {}
+            if self.graph.get('displacement')==identity or (current.get('type')=='VectorDisplacement' and (current.get('inputs') or {}).get('vector')==identity):
+                self.graph.pop('displacement')
+            else:
+                fed=next((key for key,node in members.items() if node.get('type')=='VectorDisplacement' and (node.get('inputs') or {}).get('vector')==identity),None)
+                if fed is None:
+                    fed='node_'+uuid.uuid4().hex[:12];x,y=(members[identity].get('position') or [0,0])[:2]
+                    members[fed]={'type':'VectorDisplacement','parameters':node_defaults.parameters('VectorDisplacement'),
+                                  'inputs':{'vector':identity},'position':[x+WIDTH+60,y]}
+                self.graph['displacement']=fed
+            self.remember(before);self.rebuild();return
         if identity and nodes.category(self.graph['nodes'][identity]['type'])=='displacement':
             before=copy.deepcopy(self.graph)
             if self.graph.get('displacement')==identity:self.graph.pop('displacement')
             else:self.graph['displacement']=identity
             self.remember(before);self.rebuild()
-        else:self.error('Select a scalar, vector or combined displacement node. Click again to detach it.')
+        else:self.error('Select a scalar, vector or combined displacement node, or an Ocean node. Click again to detach it.')
 
     def target(self,identity):
         index=self.layers.currentData()
