@@ -5,7 +5,7 @@ from .node_defaults import value as declared_default
 DEFAULT_COLOR='#000000'
 EDITED_COLOR='#00ffff'
 # An input with a connection: its number is kept but not used (the connection gives the value), so it is greyed out.
-CONNECTED_COLOR='#8a8a8a'
+CONNECTED_COLOR='#5f6368'
 
 # The values that go round a circle, and the range a slider gives each where the node declares none: hues in degrees, angles
 # in degrees. A range the node declares comes first (some hues run from 0 to 1). A number can still be typed past the ends.

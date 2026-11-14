@@ -57,6 +57,9 @@ def tint_value(widget,value,spec,kind=None,key=None,connected=False):
     for role in (QtGui.QPalette.Text,QtGui.QPalette.ButtonText,QtGui.QPalette.WindowText):
         palette.setColor(role,color)
     widget.setPalette(palette)
+    # Modo's style sheet gives its fields their text colour, over any palette: the grey of a connected input goes in
+    # the field's own sheet, which Modo's cannot override (a VectorField's numbers each get theirs, as tinted one by one).
+    if connected and not isinstance(widget,VectorField):widget.setStyleSheet('color: %s;'%parameter_state.CONNECTED_COLOR)
 
 
 # The canvas and what is drawn on it. Everything is made of Qt's own items and brushes: in
