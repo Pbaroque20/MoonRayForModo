@@ -106,30 +106,41 @@ If OptiX still fails, report the complete log and NVIDIA driver version. Automat
 
 ## Rendering across machines with Rhizome
 
-Rhizome renders a frame, or a range of frames, with XPU2 on several Windows machines at once. You render from the
-machine that has the scene open; every other machine runs a **node** that renders its share. There is no render
-server to set up. Everything is in **MoonRay > Rhizome: Decentralized Rendering**.
+Rhizome renders a frame, or a range of frames, with XPU2 on several Windows machines at once. One machine is the
+**head**: it has the scene, finds the other machines, hands out the work and writes the pictures. Every other machine
+is a **node** that renders its share. There is no render server to set up.
+
+There are two ways to set it up, and they mix freely: a head in Modo can use headless nodes and nodes in Modo alike.
+
+- **[Option 1: with the kit installed](#option-1-with-the-kit-installed)**: every machine has Modo and the kit.
+  Everything is done in **MoonRay > Rhizome: Decentralized Rendering**.
+- **[Option 2: head to headless nodes](#option-2-head-to-headless-nodes)**: the nodes have no Modo, only the XPU2
+  runtime folder, and are started from a command prompt. The head is Modo with the kit, or a command prompt too.
 
 ### How the machines connect
 
-1. **Nodes start first and wait.** Each node listens on its network for a machine that leads a render. It needs no
-   address and does nothing until one is found.
-2. **The leading machine looks for them.** When you click **Render on the Swarm**, the machine with the scene sends a
-   short call about once a second on every network it is on, a direct cable between two machines too.
+The same in both options:
+
+1. **Nodes start first and wait.** Each node listens on its network for a head. It needs no address and does
+   nothing until one is found.
+2. **The head looks for them.** When a render starts, the head sends a short call about once a second on every
+   network it is on, a direct cable between two machines too.
 3. **Only nodes with the same key are taken.** A node that hears the call answers with proof that it has the
-   **Rhizome key**, without sending the key itself. The leading machine ignores any answer whose proof does not
-   match its own key, so machines with another key never join.
-4. **The handshake.** The leading machine connects to each node that answered. Both prove the key again and agree an
-   encryption key for this render, and from then on everything between them is encrypted. With **Only machines
-   approved**, a new node waits here until you approve it.
-5. **Rendering.** The leading machine sends each node the scene and the share it is to render, and keeps sending
-   more until the frame is done. A node that joins late, or drops out, simply takes or leaves its share. When the
-   render ends, the nodes go back to waiting for the next one.
+   **Rhizome key**, without sending the key itself. The head ignores any answer whose proof does not match its own
+   key, so machines with another key never join.
+4. **The handshake.** The head connects to each node that answered. Both prove the key again and agree an encryption
+   key for this render, and from then on everything between them is encrypted. With approvals on, a new node waits
+   here until you approve it.
+5. **Rendering.** The head sends each node the scene and the share it is to render, and keeps sending more until the
+   frame is done. Nodes need neither the scene nor its textures beforehand. A node that joins late, or drops out,
+   simply takes or leaves its share. When the render ends, the nodes go back to waiting for the next one.
 
-A node can be a workstation with Modo (the steps below) or a machine with no Modo at all
-([A node without Modo](#a-node-without-modo)).
+Ports: 47100 (node) and 47110 (head) over TCP, and 47101 to 47104 over UDP to find the nodes. The firewall rule in
+each option covers them.
 
-### On every machine, once
+### Option 1: with the kit installed
+
+#### On every machine, once
 
 1. Install the **same release** of the kit and runtime on every machine (the machines only talk to the same XPU2
    build), and run **Compile XPU2 Shaders** once on each (System > Preferences > MoonRay > XPU2 > Device Management).
@@ -139,7 +150,7 @@ A node can be a workstation with Modo (the steps below) or a machine with no Mod
    rule lets the other machines reach this one on private and domain networks, so Windows must not see your network
    as a public one.
 
-### On each machine that helps
+#### On each node
 
 On **This Machine as a Node**, click **Start Node**. The node renders for whichever machine starts a render, with the
 devices Device Management chooses. It keeps running after Modo is closed; come back to this page and click
@@ -149,7 +160,7 @@ devices Device Management chooses. It keeps running after Modo is closed; come b
 - **Hours**: only between two hours, for example 19:00 to 8:00.
 - **While in use**: step back (its work goes to the others), or go on with a few threads.
 
-### On the machine that renders
+#### On the head
 
 1. Open the scene, then the **Render** page of the Rhizome window.
 2. Choose **This frame** or **Frames** (first, last, every), and the folder the pictures go to (**Pictures in**).
@@ -160,49 +171,74 @@ devices Device Management chooses. It keeps running after Modo is closed; come b
 **Stop** ends the render. Started again on the same frames, it picks up where it stopped. The **Swarm** page lists
 every machine taking part, its speed and its share.
 
-The other machines need neither the scene nor its textures: they get what their share of the picture reads from the
-machine that leads.
+#### When nodes are not found
 
-### A node without Modo
+Nodes on the same local network are found on their own. When they are not:
 
-A render machine needs only the **runtime-xpu2** folder: copy it out of the release's Windows runtime zip
-(`MoonRayForModo\runtime-xpu2`) to any folder, for example `C:\Rhizome\runtime-xpu2`. Then, in a command prompt in
-that folder:
+- Check that each node shows *running* on its **This Machine as a Node** page, that its key is the same, and that
+  its firewall rule is in (Approvals and Firewall).
+- Behind a router or over a VPN, give the node's address under **Nodes by address** (`host:47100`, several separated
+  by commas), or a range under **Look for nodes in** (`10.8.0.0/24`, or `*` for each of this machine's networks). A
+  machine found once is remembered.
+- **Wait for** sets how many nodes to wait for before starting, and **At most** how long to wait; then the render
+  starts with the nodes that are ready.
 
-1. `moonray_xpu2.exe rhizome firewall`, once: say yes to Windows' administrator prompt.
-2. `moonray_xpu2.exe rhizome node --key "your rhizome key" --shaders compile`: the node starts and waits. The first
-   time, it compiles its GPU programs in the background and renders on the processor until they are ready.
+#### Only machines you approve
 
-The node stays until its window is closed. `moonray_xpu2.exe rhizome status` in another prompt shows what it sees, and
-`moonray_xpu2.exe rhizome id` its hash (for **Only machines approved**). `moonray_xpu2.exe rhizome node --help`
-lists every option; the examples below show the common ones.
+Tick **Only machines approved** on the Render page to keep unknown machines out. A new machine then waits on the
+**Approvals and Firewall** page until you select it and click **Approve**. **Revoke** shuts one out again, by its
+hash: the 64 characters shown under **This machine** on it.
 
-### Examples: the head and its nodes
+### Option 2: head to headless nodes
 
-The **head** is the machine that leads a render: it has the scene, finds the nodes, hands out the work and writes
-the pictures. **Render on the Swarm** in Modo makes your machine the head; `moonray_xpu2.exe rhizome master` does the
-same from a command prompt. A **node** is any machine running `rhizome node` (or **Start Node** in Modo). Nodes never
-need the scene: the head sends it. The one thing head and nodes must share is the key.
+A headless node is a render machine with no Modo and no kit: only the **runtime-xpu2** folder, started from a command
+prompt. The head is either Modo with the kit (**Render on the Swarm**, as in Option 1) or a command prompt running
+`moonray_xpu2.exe rhizome master`.
 
-| On the head | On each node | Port used |
-| --- | --- | --- |
-| `rhizome master ... --key "k"` | `rhizome node --key "k"` | UDP 47101-47104 (finding), TCP 47100 (node), TCP 47110 (head) |
+| On the head | On each headless node |
+| --- | --- |
+| Modo: Rhizome window, **Render on the Swarm**; or `moonray_xpu2.exe rhizome master --key "k" ...` | `moonray_xpu2.exe rhizome node --key "k"` |
+| Has the scene; writes the pictures | Needs nothing but the runtime folder and the key |
 
-The paths below are examples: `C:\Rhizome\runtime-xpu2` holds the runtime, `D:\Shots\city` the scene.
+#### Set up each headless node, once
 
-**One office network.** Start the nodes, then render from Modo or from the head's prompt:
+1. Copy the **runtime-xpu2** folder out of the release's Windows runtime zip (`MoonRayForModo\runtime-xpu2`) to any
+   folder, for example `C:\Rhizome\runtime-xpu2`. It must be the same release as the head's.
+2. Open a command prompt in that folder and add the firewall rule (say yes to Windows' administrator prompt):
+
+   ```
+   moonray_xpu2.exe rhizome firewall
+   ```
+
+#### Start each headless node
 
 ```
-:: on each node
-moonray_xpu2.exe rhizome node --key "blue heron"
-
-:: on the head (Modo's Render page writes the scene into <Pictures in>\job)
-moonray_xpu2.exe rhizome master --key "blue heron" -in D:\Shots\city\job\city.rdla -in D:\Shots\city\job\city.rdlb -out D:\Shots\city\city.pfm --nodes 3 --wait 30
+moonray_xpu2.exe rhizome node --key "blue heron" --shaders compile
 ```
 
-`--nodes 3 --wait 30`: start once three nodes are ready, or after 30 seconds with those found by then.
+The node starts and waits for a head. The first time, it compiles its GPU programs in the background and renders on
+the processor until they are ready. It runs until its window is closed. In another prompt,
+`moonray_xpu2.exe rhizome status` shows what it sees and `moonray_xpu2.exe rhizome id` its hash (for approvals).
+`moonray_xpu2.exe rhizome node --help` lists every option.
 
-**A workstation that renders at night or when nobody uses it.**
+#### Start the head
+
+- **From Modo**: type the same key in the Rhizome window and click **Render on the Swarm** (Option 1, *On the head*).
+  The headless nodes are found like any other.
+- **From a command prompt**: give it the scene. Modo's Render page writes the exported scene into
+  `<Pictures in>\job`; any MoonRay scene (`.rdla`, with its `.rdlb`) renders the same way.
+
+  ```
+  moonray_xpu2.exe rhizome master --key "blue heron" -in D:\Shots\city\job\city.rdla -in D:\Shots\city\job\city.rdlb -out D:\Shots\city\city.pfm --nodes 3 --wait 30
+  ```
+
+  `--nodes 3 --wait 30`: start once three nodes are ready, or after 30 seconds with those found by then.
+
+#### Examples
+
+The paths are examples: `D:\Shots\city` holds the scene.
+
+**A workstation that renders at night**, as a headless node:
 
 ```
 moonray_xpu2.exe rhizome node --key "blue heron" --hours 19-8 --when-idle 300 --busy-threads 4
@@ -212,7 +248,7 @@ Only between 19:00 and 8:00. In those hours it renders on 4 threads while someon
 of them once nobody has touched the keyboard or mouse for 5 minutes. Without `--busy-threads 4` it waits for those 5
 minutes instead, and steps back (its work going to the others) as soon as someone comes back.
 
-**A frame range.**
+**A frame range** from a command-prompt head:
 
 ```
 moonray_xpu2.exe rhizome master --key "blue heron" --frames 1-120 -in D:\Shots\city\job\city.####.rdla -in D:\Shots\city\job\city.####.rdlb -out D:\Shots\city\city.####.pfm
@@ -234,11 +270,12 @@ moonray_xpu2.exe rhizome master --key "blue heron" ... --node 10.9.0.21:47100 --
 moonray_xpu2.exe rhizome master --key "blue heron" ... --scan 10.9.0.0/24
 ```
 
-Machines reached once are remembered and found again on their own.
+(A head in Modo: **Nodes by address** and **Look for nodes in**.) Machines reached once are remembered and found
+again on their own.
 
-**Only machines you approve.** The head is started with `--approve`. A new node waits and its hash appears on the
-head (its log, `rhizome status`, or the **Approvals and Firewall** page). Approve it on the head, giving the head's
-folder:
+**Only machines you approve.** Start the head with `--approve` (in Modo: **Only machines approved**). A new node
+waits and its hash appears on the head (its log, `rhizome status`, or the **Approvals and Firewall** page). Approve
+it on the head, giving the head's folder:
 
 ```
 moonray_xpu2.exe rhizome master --key "blue heron" ... --approve --folder C:\Rhizome\head
@@ -260,23 +297,9 @@ moonray_xpu2.exe rhizome submit --queue \\server\rhizome\jobs -in \\server\shots
 
 The head must reach a job's paths the same way, so use a shared folder.
 
-### When nodes are not found
+#### When headless nodes are not found
 
-Nodes on the same local network are found on their own. When they are not:
-
-- Check that each node shows *running* on its **This Machine as a Node** page, that its key is the same, and that
-  its firewall rule is in (Approvals and Firewall).
-- Behind a router or over a VPN, give the node's address under **Nodes by address** (`host:47100`, several separated
-  by commas), or a range under **Look for nodes in** (`10.8.0.0/24`, or `*` for each of this machine's networks). A
-  machine found once is remembered.
-- **Wait for** sets how many nodes to wait for before starting, and **At most** how long to wait; then the render
-  starts with the nodes that are ready.
-
-The ports are 47100 (node) and 47110 (machine leading the render) over TCP, and 47101 to 47104 over UDP to find the
-nodes. The rule from **Add Rule...** covers them.
-
-### Only machines you approve
-
-Tick **Only machines approved** on the Render page to keep unknown machines out. A new machine then waits on the
-**Approvals and Firewall** page until you select it and click **Approve**. **Revoke** shuts one out again, by its
-hash: the 64 characters shown under **This machine** on it.
+- Check the node's window says it is waiting, that its key is the same as the head's, and that
+  `moonray_xpu2.exe rhizome firewall --check` finds the rule.
+- Check it is the same release as the head: the machines only talk to the same XPU2 build.
+- Behind a router or over a VPN, use `--master` on the node or `--node` / `--scan` on the head (Examples above).
