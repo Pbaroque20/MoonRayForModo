@@ -54,5 +54,8 @@ if field.palette().color(QtGui.QPalette.Text) != grey:
 free = NumericField('mix', 'mix', -1, {'type': 'Float', 'default': '0.5'}, 0.7, kind='DwaMixMaterial')
 if free.palette().color(QtGui.QPalette.Text) == grey:
     failures.append('an unconnected field is greyed out')
+# In Modo its style sheet colours the fields' text over any palette: the grey is in the field's own sheet as well.
+if parameter_state.CONNECTED_COLOR not in field.styleSheet() or free.styleSheet():
+    failures.append("the grey is not in the connected field's own style sheet (%r, %r)" % (field.styleSheet(), free.styleSheet()))
 print('\n'.join(failures) if failures else 'graph keeps links: all checks passed')
 sys.exit(1 if failures else 0)

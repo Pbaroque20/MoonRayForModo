@@ -346,7 +346,7 @@ def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output
         # Displaced instances' scale in their mesh's points, as MoonRay displaces them in the mesh's own space
         # (instance_scale).
         from . import instance_scale
-        return _scene_text(ocean.fitted(instance_scale.baked(scene)), width, height, samples, environment, output_file)
+        return _scene_text(ocean.spaced(ocean.fitted(instance_scale.baked(scene))), width, height, samples, environment, output_file)
 
 
 def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, output_file=None):
@@ -758,6 +758,10 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
         level = mesh.get('subdivision_level', 3)
         if type(level) is not int or not 1 <= level <= 5:
             raise ValueError('Subdivision level must be an integer between 1 and 5')
+        if mesh.get('ocean_resolution') and displaced and mesh.get('adaptive_error') and 'mesh_resolution' not in mesh:
+            # An ocean diced by the screen, a little finer than the level's 8 (ocean.spaced, ocean_resolution): its waves
+            # too short for it reach MoonRay as a normal map (nodes.split_ocean).
+            mesh = dict(mesh, mesh_resolution=mesh['ocean_resolution'])
         user_data = cryptomatte.userdata_set(mesh,lines,scene) if crypto else []
         named_uvs=dict(mesh.get('uv_sets',{}))
         if named_uvs:
