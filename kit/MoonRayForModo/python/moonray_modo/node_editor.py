@@ -605,7 +605,7 @@ class Editor(QtWidgets.QDialog):
             held=copy.deepcopy(self.graph)
             try:
                 target=self.target(identity);target.setdefault('parameters',{})[key]=[parameter_state.kept_colour(part) for part in rgb]
-                target.setdefault('inputs',{}).pop(key,None);self.validate_draft();self.remember(held)
+                self.unlink_override(identity,target,key);self.validate_draft();self.remember(held)
             except ValueError as exc:self.graph=held;self.error(exc)
         chosen=pick([max(0,min(1,parameter_state.shown_colour(v))) for v in current[:3]],self,None,follow,key.replace('_',' ').capitalize())
         if chosen is None:
@@ -727,7 +727,7 @@ class Editor(QtWidgets.QDialog):
             if self.holds(identity,key,layer,value):return
             target=node if layer<0 else self.graph['overrides'][layer]
             if layer>=0 and target['node']!=identity:raise ValueError('Override targets another node')
-            target.setdefault('parameters',{})[key]=value;target.setdefault('inputs',{}).pop(key,None)
+            target.setdefault('parameters',{})[key]=value;self.unlink_override(identity,target,key)
             if layer<0:
                 # One of the material's controls may stand for several nodes, such as one picture read at three scales.
                 for control in self.graph.get('controls',[]):
@@ -1372,6 +1372,11 @@ class Editor(QtWidgets.QDialog):
             self.remember(before);self.rebuild()
         else:self.error('Select a scalar, vector or combined displacement node, or an Ocean node. Click again to detach it.')
 
+    def unlink_override(self,identity,target,key):
+        """After a value is typed, dragged or picked: a node's connection to that input stays (the connection gives the
+        value, the number greyed out beside it is kept for when it is disconnected); an override's own input for it is
+        dropped, as the override now gives a value."""
+        if target is not self.graph['nodes'].get(identity):target.setdefault('inputs',{}).pop(key,None)
     def target(self,identity):
         index=self.layers.currentData()
         if index is None or index<0: return self.graph['nodes'][identity]
@@ -1510,7 +1515,7 @@ class Editor(QtWidgets.QDialog):
                 inherited=key not in node.get('parameters',{})
                 value=node.get('parameters',{}).get(key,node_defaults.start(node['type'],key,spec))
                 cell=QtWidgets.QTableWidgetItem('' if value is None else json.dumps(value))
-                if key in node.get('inputs',{}):cell.setBackground(QtGui.QColor('#294757'));label.setToolTip('Connected from '+node['inputs'][key]+'; editing this value replaces the connection')
+                if key in node.get('inputs',{}):cell.setBackground(QtGui.QColor('#294757'));label.setToolTip('Connected from '+node['inputs'][key]+': the connection gives the value, so the number is greyed out; it is used again once disconnected')
                 if inherited:
                     font=cell.font();font.setItalic(True);cell.setFont(font)
                 cell.setToolTip(str(spec.get('comment',''))+' Default: '+str(spec.get('default',spec.get('default_value',''))))
@@ -1603,7 +1608,7 @@ class Editor(QtWidgets.QDialog):
                 except ValueError as exc:raise ValueError(key+': '+str(exc))
                 if not self.holds(identity,key,self.layers.currentData(),value):
                     target.setdefault('parameters',{})[key]=value
-                    target.setdefault('inputs',{}).pop(key,None)
+                    self.unlink_override(identity,target,key)
             if self.graph==old:
                 # Entered as it was: the cell shows the value again, and nothing is written or rendered.
                 blocker=QtCore.QSignalBlocker(self.table)

@@ -48,7 +48,10 @@ class TabBetween(QtCore.QObject):
 COLORS={'map':'#77bce8','material':'#89ce94','normal':'#c6a0e9','displacement':'#e4b367'}
 
 def tint_value(widget,value,spec,kind=None,key=None,connected=False):
-    """Use native palette roles; do not add Python paint/style callbacks."""
+    """Use native palette roles; do not add Python paint/style callbacks. A field made for a connected input stays greyed
+    out when it is tinted again after an edit (the connection still gives the value)."""
+    if connected:widget.setProperty('moonray_connected',True)
+    connected=connected or bool(widget.property('moonray_connected'))
     color=QtGui.QColor(parameter_state.color(value,spec,kind,key,connected))
     palette=widget.palette()
     for role in (QtGui.QPalette.Text,QtGui.QPalette.ButtonText,QtGui.QPalette.WindowText):
