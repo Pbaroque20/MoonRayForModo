@@ -6,6 +6,16 @@ This is the development branch of [MoonRay for Modo](https://github.com/Pbaroque
 
 The current release is [0.5.4.3](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.5.4.3). **Built on MoonRay [2026.29.1](https://github.com/dreamworksanimation/openmoonray/releases/tag/v2026.29.1)** (OpenMoonRay's latest release; MoonRay 18.4), with the plugin's own patches for Windows and the preview.
 
+## New in 0.5.4.3.1
+
+- **Rhizome exports in seconds**: the scene goes to the other machines as the preview hands it to XPU2, its geometry as binary and the Scene cache's reading reused, where every point used to be written as text. A heavy car scene went from about five and a half minutes to about 15 seconds, an interior from 80 seconds to under one; the picture is the same.
+- **Rhizome nodes render on the processor when their graphics card cannot**: GPU programs not compiled, still compiling or failed, a card too old, or a card refusing a job. A node never sits a render out, in every device mode.
+- **Rhizome setup in the installation guide**: Option 1, the kit installed on every machine; Option 2, a head with headless nodes that need only the runtime-xpu2 folder, with the commands for each case.
+- **Ocean's small waves in MoonRay and XPU2**: waves too short for MoonRay's dicing reach the material as a normal map, as MoonLightIPR shades them, so Small Waves looks the same in every engine. Switch: Small ocean waves as shading, in MoonRay Source Overrides.
+- **Oceans in realtime and in instanced seas**: realtime keeps an Ocean's UVs from Modo's evaluated geometry (Fit to Mesh and graph images work there again); displaced, instanced seas keep their wave height and detail.
+- **The graph editor's own colour picker**: a popup beside the swatch in place of Windows' colour dialog (a saturation and value square, hue and lightness bars, RGB and HSV numbers dragged like the graph's, a hex code). The graph and preview follow it live; Cancel puts the colour back.
+- **Connected inputs keep their connection**: editing the number beside a connected input no longer drops the connection; the number is shown grey.
+
 ## New in 0.5.4.3
 
 - **Ocean**: Ocean and Ocean Foam nodes in the MoonShine graph make Tessendorf's FFT waves (wind, choppiness, foam where the surface folds, depth and loop) as a Vector Displacement, the same sea in MoonRay, XPU2 and MoonLightIPR. Fit to Mesh (on by default) sizes the sea to the mesh with Tiles Across. An "Ocean at sunset" demo with developer's notes is in the asset library. Switch: Ocean nodes in MoonShine graphs, in MoonRay Source Overrides.
