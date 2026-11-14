@@ -105,6 +105,28 @@ def vector_array(values,kind='Vec3'):
 _PARTS = {}
 
 
+# An instancer's displaced reference: at most this many splits of a face's edge, and this many triangles in all (shared
+# by every placement); a moving realtime preview at most the coarse splits.
+INSTANCED_SPLITS, INSTANCED_TRIANGLES, INSTANCED_COARSE_SPLITS = 256, 4000000, 32
+
+
+def instanced_resolution(mesh, scene, width, held, detail, error):
+    """The even mesh_resolution of a displaced instancer's reference: its mean edge, at its nearest placement, cut to
+    about error pixels; never under the level's own (held), within INSTANCED_SPLITS and INSTANCED_TRIANGLES."""
+    import math
+    from . import moonlightipr_detail
+    camera = scene.get('dicing_camera') or scene.get('camera') or {}
+    try:
+        pixels = moonlightipr_detail.edge_pixels(mesh, camera, width)
+    except Exception:
+        return held
+    want = int(math.ceil(pixels / max(float(error), 0.25)))
+    faces = max(1, len(mesh['faces']))
+    most = min(INSTANCED_COARSE_SPLITS if detail == 'coarse' else INSTANCED_SPLITS,
+               max(1, int(math.sqrt(INSTANCED_TRIANGLES / (2.0 * faces)))))
+    return max(held, min(want, most))
+
+
 def _parts_of(face_materials, materials):
     """{material tag: [its faces]}, a face whose tag names no material under ''."""
     known = tuple(sorted(tag for tag in set(face_materials) if tag in materials))
@@ -321,7 +343,10 @@ def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output
     from . import ocean
     with ocean.writing(scene.get('time') or 0.0):
         # Their repeats fitted to the meshes they are on, where Fit to Mesh is on (ocean.fitted).
-        return _scene_text(ocean.fitted(scene), width, height, samples, environment, output_file)
+        # Displaced instances' scale in their mesh's points, as MoonRay displaces them in the mesh's own space
+        # (instance_scale).
+        from . import instance_scale
+        return _scene_text(ocean.fitted(instance_scale.baked(scene)), width, height, samples, environment, output_file)
 
 
 def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, output_file=None):
@@ -770,6 +795,12 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
             instance_values = primitive_attributes.emit('/modo/instances/%s/attribute' % index, mesh['instance_attributes'], lines)
         elif mesh.get('attributes') and 'instances' not in mesh:
             user_data += primitive_attributes.emit('/modo/mesh/%s/attribute' % index, [mesh['attributes']], lines)
+        if displaced and mesh.get('instances') and not mesh.get('adaptive_error') and 'mesh_resolution' not in mesh:
+            # An instancer's reference is diced once, evenly, for all its placements (no screen error): as finely as
+            # its nearest placement needs at the scene's displacement rate, within a budget of triangles. At the
+            # level's 8 a tester's sea of sixteen instanced 27 m planes was split 0.2 m apart and its waves flattened.
+            mesh = dict(mesh, mesh_resolution=instanced_resolution(mesh, scene, width, 2 ** level, detail,
+                        held_render['displacement_adaptive_error'] or float(scene.get('displacement_rate', 1.0))))
         lines += ['do', '  local geometry = RdlMeshGeometry("/modo/mesh/%s") {' % index,
                   '    ["node_xform"] = %s,' % node_matrix(mesh),
                   *_heavy_line('/modo/mesh/%s' % index, 'vertex_list_0', 'vec3', vertices, lambda: vector_array(vertices)),

@@ -1,7 +1,8 @@
 # python
 """Command-line test: a scene packed for MoonLightIPR as the preview packs it (host.snapshot, scene_setup.configure,
 moonlightipr_scene.pack with the kit's runtime), written to a file a MoonLightIPR session can be given on its own.
-PROBE_SCENE the .lxo, PROBE_OUT the folder (test-results/moonlightipr-pack). Writes scene.mls and report.json."""
+PROBE_SCENE the .lxo, PROBE_OUT the folder (test-results/moonlightipr-pack), PROBE_EVALUATED=1 for realtime from
+Modo's evaluated geometry. Writes scene.mls and report.json."""
 import json
 import os
 import pathlib
@@ -33,7 +34,12 @@ try:
     result['settings'] = {k: scene.get(k) for k in ('moonlightipr', 'denoising', 'samples', 'execution_mode') if k in scene}
     runtime = native.default_runtime() if hasattr(native, 'default_runtime') else None
     # As a render (still) and as realtime (each mesh cut by its size on screen, moonlightipr_detail), with denoising.
-    for name, variant in (('scene', dict(scene)), ('realtime', dict(scene, _geometry_detail='some', _realtime=True))):
+    # PROBE_EVALUATED=1: realtime from Modo's evaluated geometry, as a preview set to it reads the scene.
+    live = scene
+    if os.environ.get('PROBE_EVALUATED') == '1':
+        live = host.snapshot(evaluated_geometry=True)
+        scene_setup.configure(live, scene_setup.values())
+    for name, variant in (('scene', dict(scene)), ('realtime', dict(live, _geometry_detail='some', _realtime=True))):
         try:
             payload, keys, warnings = moonlightipr_scene.pack(variant, 960, 540, 0.15, set(), 16, name == 'realtime', runtime)
             (out / (name + '.mls')).write_bytes(payload)
