@@ -691,12 +691,22 @@ def meshes(data, materials, warnings, scene=None):
         key = (surface['source_id'], tag, visibility, tuple(surface['layers']), tuple(sorted(settings.items())))
         groups.setdefault(key, []).append(surface)
     result = []
+    readings = {}
     for (source, tag, visibility, layers, settings), surfaces in groups.items():
         prototype = data['prototypes'][str(source)]
         if not prototype['segments']:
             warnings.append('Modo returned no mesh segments for evaluated surface ' + surfaces[0]['source_item'])
         if not any(segment['faces'] and len(segment['faces'][0])>=3 for segment in prototype['segments']):continue
         material = materials.get(tag, materials.get('', {}))
+        if scene is not None and not any(f['type'] == 0x54585556 for f in prototype['features']):
+            # Modo gives a surface the UV maps its own Shader Tree textures read, none for a MoonRay graph's (an
+            # Ocean): its mesh's own, carried over (evaluated_uvs).
+            from . import evaluated_uvs
+            if evaluated_uvs.wanted(material):
+                held = source_of(surfaces[0], scene)
+                if held is not None:
+                    prototype = _derived('borrowed-uvs:' + held.id, (prototype['segments'],),
+                                         lambda: evaluated_uvs.fill(prototype, held, readings))
         uv_name = material.get('uv_map', '')
         uv_names = [f['name'] for f in prototype['features'] if f['type'] == 0x54585556]
         if uv_name and uv_name not in uv_names:

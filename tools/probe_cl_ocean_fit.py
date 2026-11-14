@@ -29,6 +29,33 @@ try:
                                                       'wave height spread m': value['wave_height'] * 0.21 * value['wind_speed'] ** 2 / 9.81 / 4,
                                                       'reach m': ocean.reach(value)}
     report['meshes'] = [{'name': m.get('name'), 'tags': sorted(face_tags.worn(m)), 'uv metres': ocean.uv_metres(m)} for m in scene.get('meshes', [])]
+    # As a realtime preview reads it: Modo's evaluated geometry.
+    try:
+        import time
+        from moonray_modo import evaluated_uvs
+        spent = []
+        original = evaluated_uvs.fill
+
+        def timed(*args):
+            mark = time.perf_counter()
+            value = original(*args)
+            spent.append(time.perf_counter() - mark)
+            return value
+        evaluated_uvs.fill = timed
+        began = time.perf_counter()
+        evaluated = host.snapshot(evaluated_geometry=True)
+        report['evaluated seconds'] = time.perf_counter() - began
+        began = time.perf_counter()
+        host.snapshot(evaluated_geometry=True, reuse_geometry=evaluated)
+        report['evaluated again seconds'] = time.perf_counter() - began
+        report['borrowed uv seconds'] = spent
+        report['evaluated meshes'] = [{'name': m.get('name'), 'tags': sorted(face_tags.worn(m)), 'uvs': len(m.get('uvs') or []),
+                                       'uv sets': sorted((m.get('uv_sets') or {}).keys())[:4], 'uv metres': ocean.uv_metres(m)}
+                                      for m in evaluated.get('meshes', [])]
+        fitted_evaluated = ocean.fitted(evaluated)
+        report['evaluated fitted'] = fitted_evaluated is not evaluated
+    except Exception:
+        report['evaluated error'] = traceback.format_exc()[-800:]
 except Exception:
     report['error'] = traceback.format_exc()
 (out / 'report.json').write_text(json.dumps(report, indent=1, default=str))

@@ -993,7 +993,9 @@ def pack(scene, width, height, environment=0.15, known=(), samples=256, denoise=
     from . import ocean
     with ocean.writing(scene.get('time') or 0.0, runtime):
         # Their repeats fitted to the meshes they are on, where Fit to Mesh is on (ocean.fitted).
-        return _pack(ocean.fitted(scene), width, height, environment, known, samples, denoise, runtime)
+        # Displaced instances' scale in their mesh's points, as MoonRay and XPU2 have them (instance_scale).
+        from . import instance_scale
+        return _pack(ocean.fitted(instance_scale.baked(scene)), width, height, environment, known, samples, denoise, runtime)
 
 
 def _pack(scene, width, height, environment=0.15, known=(), samples=256, denoise=True, runtime=None):
