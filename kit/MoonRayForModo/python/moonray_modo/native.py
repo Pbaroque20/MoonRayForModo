@@ -398,6 +398,14 @@ def ocean():
     return _switch('ocean', 'MOONRAY_MODO_OCEAN')
 
 
+def ocean_split():
+    """Whether MoonRay is given an Ocean node's waves split (ocean.spaced, nodes.split_ocean): the waves its dicing can
+    follow as the displacement, the shorter ones as a normal map over them, as MoonLightIPR shades what its vertices
+    cannot follow. Off is MoonRay as its source has it: the whole tile displaces a surface diced at the subdivision
+    level's resolution, its small waves lost and its shorter crests creased."""
+    return _switch('ocean_split', 'MOONRAY_MODO_OCEAN_SPLIT')
+
+
 def vdb_blackbody():
     """Whether a VDB shape set to blackbody colour glows in the colours of its temperature grid (entities.resolve_vdb,
     native-port/modo_vdb_grid.cpp --blackbody): the kit adds a colour grid to a copy of the file. MoonRay has no blackbody

@@ -68,6 +68,8 @@ KEYS = {
     'bump_node': (True, bool),
     # The MoonShine graph's Ocean nodes make waves (native.ocean).
     'ocean': (True, bool),
+    # MoonRay given an ocean's shorter waves as a normal map (native.ocean_split).
+    'ocean_split': (True, bool),
     # VDB fire coloured by its temperature (native.vdb_blackbody).
     'vdb_blackbody': (True, bool),
     # VDB sequences, static unticked (native.vdb_sequences).

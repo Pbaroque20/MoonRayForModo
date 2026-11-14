@@ -85,6 +85,46 @@ class Model(unittest.TestCase):
                 self.assertAlmostEqual(slopes[j * n + i][0], du, delta=0.1 + 0.03 * abs(du))
                 self.assertAlmostEqual(slopes[j * n + i][1], dv, delta=0.1 + 0.03 * abs(dv))
 
+    def test_the_split_keeps_the_long_waves_and_shades_the_rest(self):
+        # ocean split: below the cutoff the long waves' displacement is the tile's; well above it, flat; the normal map
+        # is the slope the long waves leave out, flat where there is none.
+        value = ocean.settings({'resolution': 64, 'choppiness': 0, 'small_waves': 0.0})
+        full, _, slopes = ocean.fields(value, 1.0, slopes=True)
+        long_waves, _, long_slopes = ocean.fields(value, 1.0, slopes=True, cutoff=4.0)
+        spread = lambda field: statistics.pstdev(v[1] for v in field)
+        self.assertLess(spread(long_waves), spread(full))
+        self.assertGreater(spread(long_waves), 0.2 * spread(full))
+        normals = ocean.fine_normals(slopes, long_slopes, value['size'])
+        self.assertTrue(all(0.0 <= c <= 1.0 for n in normals for c in n))
+        self.assertTrue(any(abs(n[0] - 0.5) > 1e-3 for n in normals))
+        self.assertEqual(ocean.fine_normals(slopes, slopes, value['size'])[0], (0.5, 0.5, 1.0))
+        # The cutoff: four dicing steps to a wave, a power of two, none where the dicing follows every wave.
+        self.assertEqual(ocean.cutoff(1 / 128.0, 1024), 32.0)
+        self.assertEqual(ocean.cutoff(1 / 100.0, 1024), 32.0)
+        self.assertIsNone(ocean.cutoff(1 / 4096.0, 1024))
+        self.assertIsNone(ocean.cutoff(0.0, 1024))
+
+    def test_the_library_splits_as_python_does(self):
+        dll = ROOT / 'build/native-avx/bin/modo_ocean.dll'
+        if ocean.library(dll) is None or not hasattr(ocean.library(dll), 'modo_ocean_tile_split'):
+            self.skipTest('modo_ocean.dll with the split not built (tools/build_ocean.py)')
+        import array
+        value = ocean.settings({'resolution': 64, 'choppiness': 1.2, 'wind_speed': 12, 'seed': 5})
+        _, _, full = ocean.fields(value, 1.5, slopes=True)
+        long_waves, _, long_slopes = ocean.fields(value, 1.5, slopes=True, cutoff=8.0)
+        expected = ocean.fine_normals(full, long_slopes, value['size'])
+        with tempfile.TemporaryDirectory() as folder, mock.patch('moonray_modo.ocean.library', return_value=ocean.library(dll)):
+            made = [pathlib.Path(folder) / name for name in ('d.pfm', 'f.pfm', 's.pfm')]
+            split = [pathlib.Path(folder) / 'c.pfm', pathlib.Path(folder) / 'n.pfm']
+            self.assertTrue(ocean.native_split(value, 1.5, 8.0, made, split))
+            read = lambda p: array.array('f', p.read_bytes().split(b'\n', 3)[3][:64 * 64 * 12])
+            coarse, fine = read(split[0]), read(split[1])
+        for a, b in zip((c for v in long_waves for c in v), coarse):
+            self.assertAlmostEqual(a, b, places=4)
+        for a, b in zip((c for v in expected for c in v), fine):
+            self.assertAlmostEqual(a, b, delta=2e-3)
+
+
 class Nodes(unittest.TestCase):
     def setUp(self):
         self.folder = tempfile.TemporaryDirectory()
@@ -189,6 +229,50 @@ class Nodes(unittest.TestCase):
             text = rdla.scene_text(scene, 64, 36, 1, 0.2)
         self.assertIn('VectorDisplacement(', text)
         self.assertTrue(any(pathlib.Path(self.folder.name).glob('*.displacement.pfm')))
+
+    def test_moonray_gets_the_long_waves_and_a_normal_map(self):
+        # Small ocean waves as shading (native.ocean_split): MoonRay's scene dices the sea at the ocean's resolution,
+        # displaces it by the long waves and gives the rest to the material's Input Normal; off, the tile whole as before.
+        import re
+        from moonray_modo import rdla
+
+        def written(switch):
+            scene = {'camera': {'matrix': [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 2, 30, 1], 'focal_mm': 35.0, 'film_mm': 36.0},
+                     'materials': {'sea': {'native_shader': 'DwaBaseMaterial', 'native_parameters': {},
+                                           'node_graph': graph(resolution=256, fit_to_mesh=False, repeat=[4, 4]),
+                                           'node_override': True, 'color': [.1, .1, .1]}},
+                     'meshes': [{'name': 'Sea', 'identity': 'sea', 'vertices': [[-160, 0, -160], [160, 0, -160], [160, 0, 160], [-160, 0, 160]],
+                                 'faces': [[0, 3, 2, 1]], 'material': 'sea', 'uvs': [[0, 0], [0, 1], [1, 1], [1, 0]],
+                                 'subdivision': True, 'adaptive_error': 1.0}],
+                     'lights': [], 'environments': [], 'time': 0.0}
+            with mock.patch.dict(os.environ, {'MOONRAY_MODO_OCEAN': '1', 'MOONRAY_MODO_OCEAN_SPLIT': switch}):
+                return rdla.scene_text(scene, 640, 360, 1, 0.2)
+
+        text = written('1')
+        self.assertEqual(re.search(r'\["mesh_resolution"\] = (\d+)', text).group(1), str(ocean.OCEAN_RESOLUTION))
+        self.assertIn('__long', text)
+        self.assertRegex(text, r'\["input_normal"\] = ImageNormalMap\("[^"]*__short_normal"\)')
+        self.assertRegex(text, r'\["tangent_space_normal_texture"\] = "[^"]*\.tx"')
+        # A mesh edge of 320 m over 32 steps, tiles 80 m wide: steps an eighth of a tile apart, waves of 4 tiles and
+        # longer kept, a power of two: 2 cycles across the tile.
+        self.assertTrue(any(pathlib.Path(self.folder.name).glob('*.split2.coarse.pfm')))
+        self.assertTrue(any(pathlib.Path(self.folder.name).glob('*.split2.fine.pfm')))
+        text = written('0')
+        self.assertEqual(re.search(r'\["mesh_resolution"\] = (\d+)', text).group(1), '8')
+        self.assertNotIn('__long', text)
+        self.assertNotIn('__short_normal', text)
+
+    def test_moonlightipr_keeps_the_tile_whole(self):
+        # A sea told how MoonRay dices it (_spacing) is split only in MoonRay's scene writer (nodes.emit): MoonLightIPR's
+        # displacement reads the whole tile and its slope.
+        g = graph(resolution=64)
+        g['nodes']['sea']['_spacing'] = 1 / 64.0
+        from moonray_modo import moonlightipr_materials
+        with mock.patch.dict(os.environ, {'MOONRAY_MODO_OCEAN': '1'}), ocean.writing(1.0):
+            leaves, _ = moonlightipr_materials.displacement_tree({'node_graph': g}, lambda what: None)
+        paths = [layer['path'] for layer in leaves[0][2]]
+        self.assertTrue(paths[0].endswith('.displacement.pfm') and paths[1].endswith('.slope.pfm'))
+        self.assertFalse(any(pathlib.Path(self.folder.name).glob('*.split*')))
         self.assertIsNone(ocean.CONTEXT['time'])
 
 

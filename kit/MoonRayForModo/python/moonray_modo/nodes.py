@@ -153,6 +153,10 @@ def expand_ocean(graph):
         # The surface's slope beside it, which MoonRay does not read (it splits the surface as finely as the pixels) and
         # MoonLightIPR's shading does, for waves finer than a mesh's vertices are apart (moonlightipr_materials).
         if on:image['_slope']=str(slope)
+        # Told how finely MoonRay dices its surfaces (ocean.spaced, for MoonRay's scene only): split_ocean gives MoonRay
+        # the waves it can follow as the displacement, the rest as a normal map.
+        cycles=_ocean.cutoff(float(node.get('_spacing') or 0.0),value['resolution']) if on and node['type']=='ocean' else None
+        if cycles:image['_split']={'value':value,'cycles':cycles}
         # Fitted to a mesh (ocean.fitted): the sea made at its Size, scaled whole to the tiles laid on the mesh.
         scale=float(node.get('_scale',1.0)) if on else 1.0
         if not (scale>0 and math.isfinite(scale)):scale=1.0
@@ -175,6 +179,32 @@ def expand_ocean(graph):
                       'parameters':{'source_space':0,'tangent_space_style':0,'factor':scale if on else 0.0,
                                     'bound_padding':reach},
                       'inputs':{'vector':tile} if on else {}}
+    return graph
+
+
+def split_ocean(graph,output):
+    """An expanded graph as MoonRay takes an Ocean node told how finely MoonRay dices (expand_ocean's _split): the
+    Vector Displacement it feeds reads the long waves only, and for the surface output the material's Input Normal, where
+    nothing else feeds it, the shorter waves as a normal map (ocean.make_split). Changed in place and returned."""
+    members=graph.get('nodes',{})
+    for key,node in list(members.items()):
+        held=node.get('_split')
+        if not held:continue
+        coarse,fine=_ocean.split_tile(held['value'],held['cycles'])
+        fed=[k for k,other in members.items() if other.get('type')=='VectorDisplacement' and (other.get('inputs') or {}).get('vector')==key]
+        if graph.get('displacement') not in fed:continue
+        params=dict(node.get('parameters') or {})
+        long_key=key+'__long'
+        members[long_key]={'type':'ImageMap','parameters':dict(params,texture=str(coarse)),'inputs':{}}
+        for k in fed:members[k]['inputs']['vector']=long_key
+        root=members.get(graph.get('root'))
+        if output!='displacement' and root and 'input_normal' in specs(root['type']) and not (root.get('inputs') or {}).get('input_normal'):
+            # MoonRay's own ImageNormalMap, in the frame of the surface's normal and its U: the same picture as the kit's
+            # Normal Map node, at about half its cost a sample.
+            mapped=key+'__short_normal'
+            members[mapped]={'type':'ImageNormalMap','inputs':{},'parameters':{'tangent_space_normal_texture':str(fine),
+                             'wrap_around':True,'normal_encoding':0,'scale':list(params.get('scale',[1.0,1.0]))}}
+            root.setdefault('inputs',{})['input_normal']=mapped
     return graph
 
 
@@ -465,6 +495,8 @@ def emit(material,name,index,lines,library,output="root",validated=True):
     from .rdla import string,number,vector
     from .textures import prepare,missing,note_missing
     g=validate(material['node_graph']) if validated else effective(material['node_graph']);cache={}
+    # MoonRay's own: an ocean split by how finely MoonRay dices it (split_ocean); MoonLightIPR keeps the tile whole.
+    if validated:g=split_ocean(g,output)
     # What a Bump node's height is made from: the bump reads it again at UVs a little to either side, which an image
     # follows only when it takes its UVs as the surface's own UVs move (ModoTextureMap mode 12), not as read off the mesh.
     bumped=set()

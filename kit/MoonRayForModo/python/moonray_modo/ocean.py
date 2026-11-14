@@ -201,9 +201,11 @@ def ifft2(grid):
     return [[columns[i][j] for i in range(n)] for j in range(n)]
 
 
-def fields(value, time, slopes=False):
+def fields(value, time, slopes=False, cutoff=0.0):
     """Displacement (dx, height, dz) and foam at each point of the tile, rows by z, in scene units; with slopes, also
-    the displaced surface's slope as the height's change across one tile along U and along V (its tangents' normal)."""
+    the displaced surface's slope as the height's change across one tile along U and along V (its tangents' normal).
+    With cutoff (cycles across the tile) above 0, only the waves longer than it, each weighed by exp(-(cycles /
+    cutoff)^2) (split)."""
     n = value['resolution']
     h0, scale = initial(value)
     ks = wavenumbers(value)
@@ -220,6 +222,8 @@ def fields(value, time, slopes=False):
             w = frequency(value, k) * t
             e = complex(math.cos(w), math.sin(w))
             h = h0[j][i] * e + h0[(n - j) % n][(n - i) % n].conjugate() * e.conjugate()
+            if cutoff > 0:
+                h *= math.exp(-(k * value['size'] / (2 * math.pi) / cutoff) ** 2)
             dx, dz = -1j * kx / k * h, -1j * kz / k * h
             jxx, jzz, jxz = kx * kx / k * h, kz * kz / k * h, kx * kz / k * h
             pair1[j][i] = h + 1j * dx
@@ -340,6 +344,182 @@ def make(value, time, runtime=None):
     write_pfm(made[1], value['resolution'], [(m, m, m) for m in mask], 3)
     write_pfm(made[2], value['resolution'], slopes, 3)
     return made
+
+
+# ---- The tile split for MoonRay --------------------------------------------------------------------------------------
+# MoonRay dices a displaced surface no finer than its mesh resolution (the subdivision level's, 8 as a rule): waves
+# shorter than a few of its steps come out as creases, not waves (a tester's 256-face sea), and dicing it finer cost a
+# quarter more time and three times the memory. So MoonRay is given the long waves as the displacement and the rest
+# as a normal map over them, as MoonLightIPR shades what its vertices cannot follow; MoonLightIPR keeps the tile whole.
+
+# Dicing steps to each wave the displacement keeps: fewer, and the shortest ones it keeps crease.
+STEPS_PER_WAVE = 4.0
+# The mesh resolution an ocean's surface is diced at by MoonRay where it is diced by the screen (rdla, ocean_resolution
+# on the mesh), above the subdivision level's 8: measured on a tester's sea, 32 cost about 3% more time and no more
+# memory, where 1024 cost a quarter more time and three times the memory. Within OCEAN_TRIANGLES at that resolution all
+# over (the screen dices most of it far coarser), so that a dense mesh is not made heavier.
+OCEAN_RESOLUTION, OCEAN_TRIANGLES = 32, 4000000
+
+
+def ocean_resolution(mesh, held):
+    """The mesh resolution an ocean's surface is diced at (OCEAN_RESOLUTION within OCEAN_TRIANGLES), never under the
+    level's own (held)."""
+    faces = max(1, len(mesh.get('faces') or ()))
+    budget = int(math.sqrt(OCEAN_TRIANGLES / (2.0 * faces)))
+    return max(int(held), min(OCEAN_RESOLUTION, budget))
+
+
+def cutoff(spacing, resolution):
+    """The split, in cycles across the tile, for dicing steps spacing (a fraction of the tile) apart: waves of
+    STEPS_PER_WAVE steps and longer stay displacement. A power of two, so that a mesh a little larger or smaller keeps
+    the same images; None where every wave the tile has can be diced."""
+    if not (spacing > 0 and math.isfinite(spacing)):
+        return None
+    cycles = 1.0 / (STEPS_PER_WAVE * spacing)
+    if cycles >= resolution / 2:
+        return None
+    return float(2 ** max(0, round(math.log2(max(cycles, 1.0)))))
+
+
+def split_paths(value, time, cycles):
+    """The long waves' displacement and the shorter waves' normal map (PFM), split at cycles across the tile."""
+    stem = '%s.split%g' % (key(value, time), cycles)
+    return folder() / (stem + '.coarse.pfm'), folder() / (stem + '.fine.pfm')
+
+
+def fine_normals(full, coarse, size):
+    """The shorter waves as a tangent-space normal map, 0 to 1 (U, V, the surface's normal): the slope less the long
+    waves' slope."""
+    out = []
+    for (ax, az, _), (bx, bz, _) in zip(full, coarse):
+        fx, fz = (ax - bx) / size, (az - bz) / size
+        length = math.sqrt(fx * fx + fz * fz + 1.0)
+        out.append((0.5 - 0.5 * fx / length, 0.5 - 0.5 * fz / length, 0.5 + 0.5 / length))
+    return out
+
+
+def native_split(value, time, cycles, made, split, path=None):
+    """The tile and its split made by modo_ocean.dll; whether they were (False with an older library)."""
+    held = library(path)
+    if held is None:
+        return False
+    import ctypes
+    try:
+        call = held.modo_ocean_tile_split
+    except AttributeError:
+        return False
+    call.argtypes = [ctypes.c_int, ctypes.POINTER(ctypes.c_double), ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p,
+                     ctypes.c_double, ctypes.c_char_p, ctypes.c_char_p]
+    call.restype = ctypes.c_int
+    numbers = values(value, time)
+    array = (ctypes.c_double * len(numbers))(*numbers)
+    done = call(int(value['resolution']), array, len(numbers), *(str(p).encode('mbcs') for p in made), float(cycles),
+                *(str(p).encode('mbcs') for p in split))
+    return done == 0 and all(Path(p).is_file() for p in tuple(made) + tuple(split))
+
+
+def make_split(value, time, cycles):
+    """The long waves' displacement and the shorter waves' normal map, made where they are not on disk yet; their
+    paths."""
+    if value['resolution'] > PYTHON_LIMIT and library() is None:
+        value = dict(value, resolution=PYTHON_LIMIT)
+    split = split_paths(value, time, cycles)
+    if all(p.is_file() for p in split):
+        return split
+    if native_split(value, time, cycles, paths(value, time), split):
+        return split
+    value = dict(value, resolution=min(value['resolution'], PYTHON_LIMIT))
+    split = split_paths(value, time, cycles)
+    if all(p.is_file() for p in split):
+        return split
+    _, _, full = fields(value, time, slopes=True)
+    vectors, _, coarse = fields(value, time, slopes=True, cutoff=cycles)
+    write_pfm(split[0], value['resolution'], vectors, 3)
+    write_pfm(split[1], value['resolution'], fine_normals(full, coarse, value['size']), 3)
+    return split
+
+
+def split_tile(value, cycles):
+    """The split images for the frame being written (made if need be), or for time 0 named only where no scene is
+    being written."""
+    time = CONTEXT['time']
+    if time is None:
+        return split_paths(value, 0.0, cycles)
+    return make_split(value, time, cycles)
+
+
+def spaced(scene):
+    """The scene with each Ocean node told how far apart MoonRay dices the surfaces its material is on, as a fraction
+    of a tile (_spacing, which nodes.expand_ocean splits the tile by, cutoff): each surface's mean edge over its mesh
+    resolution (the subdivision level's, 2 to the level), the finest of them. A material on an instanced surface, whose
+    reference is diced for its nearest placement (rdla.instanced_resolution), is left whole. The scene as it was where
+    there is none, or with the MoonRay Source Override (native.ocean_split) off. Its materials are copies where they
+    change."""
+    import copy
+    from . import face_tags, moonlightipr_detail, native
+    materials = scene.get('materials') or {}
+    wanted = set()
+    for tag, material in materials.items():
+        for row in (material.get('material_stack') or [material]) if isinstance(material, dict) else ():
+            graph = row.get('node_graph') if isinstance(row, dict) else None
+            if graph and graph.get('displacement') and any(n.get('type') == 'ocean' for n in (graph.get('nodes') or {}).values()):
+                wanted.add(tag)
+    if not wanted or not native.ocean_split():
+        return scene
+    steps, whole, finer = {}, set(), {}
+    for index, mesh in enumerate(scene.get('meshes') or []):
+        tags = {tag if tag in materials else '' for tag in face_tags.worn(mesh)} & wanted
+        if not tags:
+            continue
+        if mesh.get('instances'):
+            whole |= tags
+            continue
+        found = uv_metres(mesh)
+        try:
+            edge = moonlightipr_detail.extent(mesh)[2] * moonlightipr_detail._scale(mesh.get('matrix') or [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1])
+        except Exception:
+            continue
+        level = mesh.get('subdivision_level', 3)
+        resolution = mesh.get('mesh_resolution')
+        if not resolution:
+            # Diced finer for its waves where MoonRay dices it by the screen (rdla reads ocean_resolution).
+            resolution = ocean_resolution(mesh, 2 ** (level if isinstance(level, int) and 1 <= level <= 5 else 3))
+            finer[index] = resolution
+        resolution = float(resolution)
+        if found is None or not (edge > 0):
+            continue
+        for tag in tags:
+            # A step in metres, and the metres one unit of the surface's U spans (the tile's width once its repeat is
+            # known).
+            held = steps.get(tag)
+            step = edge / resolution
+            if held is None or step / found[0] < held[0] / held[1]:
+                steps[tag] = (step, found[0])
+    steps = {tag: held for tag, held in steps.items() if tag not in whole}
+    if not steps:
+        return scene
+    result = dict(scene, materials=dict(materials))
+    meshes = list(scene.get('meshes') or [])
+    for index, resolution in finer.items():
+        if ({tag if tag in materials else '' for tag in face_tags.worn(meshes[index])} & set(steps)):
+            meshes[index] = dict(meshes[index], ocean_resolution=resolution)
+    result['meshes'] = meshes
+    for tag, (step, metres) in steps.items():
+        material = copy.deepcopy(materials[tag])
+        for row in material.get('material_stack') or [material]:
+            graph = row.get('node_graph') if isinstance(row, dict) else None
+            for node in ((graph or {}).get('nodes') or {}).values():
+                if node.get('type') != 'ocean':
+                    continue
+                repeat = (node.get('parameters') or {}).get('repeat', DEFAULTS['repeat'])
+                try:
+                    tile = metres / float(repeat[0])
+                except (TypeError, ValueError, IndexError, ZeroDivisionError):
+                    continue
+                if tile > 0 and math.isfinite(tile):
+                    node['_spacing'] = step / tile
+        result['materials'][tag] = material
+    return result
 
 
 # The frame a scene is being written for: its time in seconds and the runtime, set while rdla or MoonLightIPR's packer
