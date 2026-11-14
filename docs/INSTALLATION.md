@@ -110,6 +110,25 @@ Rhizome renders a frame, or a range of frames, with XPU2 on several Windows mach
 machine that has the scene open; every other machine runs a **node** that renders its share. There is no render
 server to set up. Everything is in **MoonRay > Rhizome: Decentralized Rendering**.
 
+### How the machines connect
+
+1. **Nodes start first and wait.** Each node listens on its network for a machine that leads a render. It needs no
+   address and does nothing until one is found.
+2. **The leading machine looks for them.** When you click **Render on the Swarm**, the machine with the scene sends a
+   short call about once a second on every network it is on, a direct cable between two machines too.
+3. **Only nodes with the same key are taken.** A node that hears the call answers with proof that it has the
+   **Rhizome key**, without sending the key itself. The leading machine ignores any answer whose proof does not
+   match its own key, so machines with another key never join.
+4. **The handshake.** The leading machine connects to each node that answered. Both prove the key again and agree an
+   encryption key for this render, and from then on everything between them is encrypted. With **Only machines
+   approved**, a new node waits here until you approve it.
+5. **Rendering.** The leading machine sends each node the scene and the share it is to render, and keeps sending
+   more until the frame is done. A node that joins late, or drops out, simply takes or leaves its share. When the
+   render ends, the nodes go back to waiting for the next one.
+
+A node can be a workstation with Modo (the steps below) or a machine with no Modo at all
+([A node without Modo](#a-node-without-modo)).
+
 ### On every machine, once
 
 1. Install the **same release** of the kit and runtime on every machine (the machines only talk to the same XPU2
@@ -143,6 +162,22 @@ every machine taking part, its speed and its share.
 
 The other machines need neither the scene nor its textures: they get what their share of the picture reads from the
 machine that leads.
+
+### A node without Modo
+
+A render machine needs only the **runtime-xpu2** folder: copy it out of the release's Windows runtime zip
+(`MoonRayForModo\runtime-xpu2`) to any folder, for example `C:\Rhizome\runtime-xpu2`. Then, in a command prompt in
+that folder:
+
+1. `moonray_xpu2.exe rhizome firewall`, once: say yes to Windows' administrator prompt.
+2. `moonray_xpu2.exe rhizome node --key "your rhizome key" --shaders compile`: the node starts and waits. The first
+   time, it compiles its GPU programs in the background and renders on the processor until they are ready.
+
+The node stays until its window is closed. `moonray_xpu2.exe rhizome status` in another prompt shows what it sees, and
+`moonray_xpu2.exe rhizome id` its hash (for **Only machines approved**). The workstation options are there too:
+`--when-idle 300`, `--hours 19-8`, `--busy-threads 4`. If the leading machine is behind a router or VPN, add
+`--master host:47110` so the node reaches it instead of waiting to be found. `moonray_xpu2.exe rhizome node --help`
+lists the rest.
 
 ### When nodes are not found
 
