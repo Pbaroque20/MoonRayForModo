@@ -9,9 +9,9 @@ The plugin includes CPU, XPU and XPU2 rendering, a dockable live preview with a 
 
 **Built on MoonRay [2026.29.1](https://github.com/dreamworksanimation/openmoonray/releases/tag/v2026.29.1)** (OpenMoonRay's latest release; MoonRay 18.4), with the plugin's own patches for Windows and the preview.
 
-**Current version: 0.5.4.3 — pre-production release.** The plugin is no longer experimental. 0.5 brought **MoonRay XPU2**, a new GPU renderer for previews in which the processor and the graphics card work on the same picture at once, now the default; realtime that keeps up with heavy scenes and a Scene cache; Modo's procedural textures worked out through the object, 145 of Modo's Enhance textures among them; Modo's light volumetrics and fog; and MoonLightIPR starting in seconds. Install the new runtime with it.
+**Current version: 0.5.4.3.1 — pre-production release.** The plugin is no longer experimental. 0.5 brought **MoonRay XPU2**, a new GPU renderer for previews in which the processor and the graphics card work on the same picture at once, now the default; realtime that keeps up with heavy scenes and a Scene cache; Modo's procedural textures worked out through the object, 145 of Modo's Enhance textures among them; Modo's light volumetrics and fog; and MoonLightIPR starting in seconds. Install the new runtime with it.
 
-· [Download 0.5.4.3: the kit, the Windows runtime and the MoonRay content](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.5.4.3)
+· [Download 0.5.4.3.1: the kit, the Windows runtime and the MoonRay content](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.5.4.3.1)
 
 · [Installation instructions](docs/INSTALLATION.md) 
 
@@ -60,6 +60,10 @@ Work on the next version goes on in the [MoonLightIPR branch](https://github.com
 | **The graph editor**, with a MoonRay material | **Modo's Fur material** rendered by MoonRay |
 | ![The compositor](docs/images/compositor-editor.png) | ![Modern Hall, imported from MoonRay's scene files](docs/images/rdl-modern_hall.jpg) |
 | **The compositor**: the beauty graded, vignetted and sharpened | **An imported MoonRay scene**: its own render (left), after the trip through Modo (right). Modern Hall by NewSee2l035, CC BY |
+
+## New in 0.5.4.3.1
+
+Rhizome exports heavy scenes in seconds rather than minutes, and its nodes render on the processor when their graphics card cannot; the installation guide sets Rhizome up with the kit on every machine or with headless nodes. Ocean's small waves look the same in MoonRay and XPU2 as in MoonLightIPR, oceans work in realtime and in instanced seas again, and the graph editor has its own colour picker and keeps a connected input's connection when its number is edited. Install both ZIPs (or the .lpk); the XPU2 shaders need no new compile.
 
 ## New in 0.5.4.3
 
@@ -474,7 +478,7 @@ In each pair, MoonRay's render of the scene from its own files is on the left; o
 - Render outputs: configurable AOVs, Cryptomatte surface categories, buffer switching, deep EXR, texture baking, a compositor over the finished buffers, and denoising (OptiX or Open Image Denoise) that survives a stopped render.
 - Workflow tools: ACES/sRGB/OCIO view transforms and LUTs, animation output and recovery controls, an asset library with MoonRay's example scenes, and RDL scene import.
 
-## Known issues in 0.5.4.3
+## Known issues in 0.5.4.3.1
 
 The ones you are most likely to meet:
 
@@ -527,7 +531,7 @@ Comparison audit between MoonRay 2026.29.1's source and the current plugin.
 | DWA materials (base, metal, fabric, skin, layer, mix and the rest) | ![yes](docs/images/feature-yes.svg) | Two Sided and Color Correct take the other DWA materials as their inputs, and a layer or two-sided material missing an input no longer crashes MoonRay |
 | Hair, toon and USD Preview Surface materials | ![yes](docs/images/feature-yes.svg) | Toon edges smooth on coarse meshes, and toon renders that denoise cleanly, each a preference; a new toon material is brightest facing the light |
 | Switch and Ray Switch materials | ![yes](docs/images/feature-yes.svg) | In the node editor |
-| Maps, normal maps and displacement nodes | ![yes](docs/images/feature-yes.svg) | In the node editor, with a Bump node turning a height image into the normal (a Source Override, on by default), and the Shader Tree's Displacement and Stencil layers. Coming in the next version: Ocean and Ocean Foam nodes, wind-driven waves and their foam for a Vector Displacement, fitted to the mesh by Tiles Across (a Source Override, on by default) |
+| Maps, normal maps and displacement nodes | ![yes](docs/images/feature-yes.svg) | In the node editor, with a Bump node turning a height image into the normal (a Source Override, on by default), and the Shader Tree's Displacement and Stencil layers. Since 0.5.4.3: Ocean and Ocean Foam nodes, wind-driven waves and their foam for a Vector Displacement, fitted to the mesh by Tiles Across (a Source Override, on by default) |
 | Switch displacement | ![yes](docs/images/feature-yes.svg) | In the node editor |
 | Display filters (colour correct, toon, halftone and the rest) | ![yes](docs/images/feature-yes.svg) | All 18, as MoonRay items; each a preview buffer and an EXR channel |
 | Uniform and adaptive sampling, light sampling, bounce limits, clamping | ![yes](docs/images/feature-yes.svg) | Render Settings. Settings a sampling mode does not use are greyed, and MoonRay LS samples adaptively or uniformly, chosen in Preview Preferences |
@@ -556,8 +560,8 @@ Comparison audit between MoonRay 2026.29.1's source and the current plugin.
 | RDL scene import | ![partly](docs/images/feature-partly.svg) | A few things left out, named in its report. Motion, creases, fog meshes and values by point or face come in, and instancers of any size, though past 20,000 copies only meshes do |
 | RDL scene export (RDLA, RDLB or split) | ![yes](docs/images/feature-yes.svg) | Export as MoonRay Scene, in the MoonRay menu and the preview's Options, to render with MoonRay on its own or on a farm: outputs, collected textures and each frame of the range optional |
 | Arras: rendering spread over several machines | ![no](docs/images/feature-no.svg) | The plugin's own instead, new in 0.5.4: Rhizome (below) |
-| Ocean waves, added by the plugin | ![yes](docs/images/feature-yes.svg) | New in 0.5.4.3: the MoonShine graph's Ocean and Ocean Foam nodes (Tessendorf's FFT waves, foam where the surface folds) as a Vector Displacement, the same sea in MoonRay, XPU2 and MoonLightIPR; Fit to Mesh sizes it to the mesh. A Source Override. Coming in the next version: waves too short for MoonRay's dicing reach it as shading, as in MoonLightIPR, so Small Waves looks the same in every engine (a Source Override, on by default) |
-| Rendering across machines with Rhizome, added by the plugin | ![partly](docs/images/feature-partly.svg) | New in 0.5.4. MoonRay > Rhizome: Decentralized Rendering: XPU2 renders a frame or a range on every machine running a Rhizome node, P2P with no render server, the picture as one machine renders it. Windows only; tested so far with several nodes on one machine |
+| Ocean waves, added by the plugin | ![yes](docs/images/feature-yes.svg) | New in 0.5.4.3: the MoonShine graph's Ocean and Ocean Foam nodes (Tessendorf's FFT waves, foam where the surface folds) as a Vector Displacement, the same sea in MoonRay, XPU2 and MoonLightIPR; Fit to Mesh sizes it to the mesh. A Source Override. New in 0.5.4.3.1: waves too short for MoonRay's dicing reach it as shading, as in MoonLightIPR, so Small Waves looks the same in every engine (a Source Override, on by default) |
+| Rendering across machines with Rhizome, added by the plugin | ![partly](docs/images/feature-partly.svg) | New in 0.5.4. MoonRay > Rhizome: Decentralized Rendering: XPU2 renders a frame or a range on every machine running a Rhizome node, P2P with no render server, the picture as one machine renders it. New in 0.5.4.3.1: the scene exported in seconds (geometry as binary), nodes on the processor when their graphics card cannot render, and headless nodes that need only the runtime folder (INSTALLATION). Windows only; tested so far with several nodes on one machine |
 | Hydra render delegate and USD procedurals | ![no](docs/images/feature-no.svg) | For USD applications; not part of Modo |
 
 ### Modo's features in the plugin
@@ -611,7 +615,7 @@ Comparison audit between Modo 16.1v9 and the current plugin: what of a Modo scen
 ### Where the plugin changes MoonRay
 
 Besides the patches that build MoonRay on Windows, the plugin changes MoonRay where it renders something wrongly or
-slowly for an artist: twenty MoonRay Source Overrides, each a checkbox in Preferences (MoonRay, MoonRay Source Overrides;
+slowly for an artist: twenty-one MoonRay Source Overrides, each a checkbox in Preferences (MoonRay, MoonRay Source Overrides;
 Auto's is under XPU), on by default; off renders as MoonRay's source does. Low-latency rendering, geometry loaded as binary,
 smooth toon edges on coarse meshes, toon materials that denoise cleanly, the denoiser's guides cleaned first, toon lines
 without gaps and apart from the shading, display filters given the inputs they need, n-gons triangulated cleanly,
