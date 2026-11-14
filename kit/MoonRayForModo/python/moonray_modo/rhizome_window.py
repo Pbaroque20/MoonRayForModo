@@ -194,15 +194,20 @@ def log_tail(role, lines=200):
 
 def export_job(directory, name, frames, progress=None):
     """The scene as MoonRay reads it, a file a frame (<name>.####.rdla, or <name>.rdla for one frame) in directory/job,
-    its render outputs in directory (<name>.####.exr). Returns the -in path and the -out path for the master."""
+    its render outputs in directory (<name>.####.exr). The geometry's heavy lists go beside it as binary
+    (<name>.####.rdlb), as the preview hands them to XPU2 (rdlb.py): formatting every point as text took minutes on a
+    heavy scene. Returns the -in paths and the -out path for the master."""
     import lx
     import modo
-    from . import host, rdla
+    from . import host, native, rdla, rdlb, scene_reading
     from .scene_setup import configure, values as scene_values
     held = scene_values()
     job = Path(directory) / 'job'
     job.mkdir(parents=True, exist_ok=True)
     many = len(frames) > 1
+    binary = native.binary_geometry()
+    wrote_binary = False
+    stems = []
     selection = lx.service.Selection()
     now = selection.GetTime()
     fps = float(modo.Scene().fps)
@@ -216,17 +221,48 @@ def export_job(directory, name, frames, progress=None):
                 from .animation import capture_current
                 snapshot = capture_current(held['surface'] == 2)
             else:
-                snapshot = host.snapshot(evaluated_geometry=held['surface'] == 2)
+                # A whole reading the Scene cache kept for this frame (the preview's, scene_reading), where the scene
+                # has no unsaved changes; else read from Modo, and kept for the next export or the preview.
+                evaluated = held['surface'] == 2
+                held_key = scene_reading.key(evaluated)
+                snapshot = scene_reading.load(held_key)
+                if snapshot is None:
+                    snapshot = host.snapshot(evaluated_geometry=evaluated)
+                    if held_key is not None:
+                        scene_reading.keep(held_key, scene_reading.freeze(snapshot), snapshot)
+                snapshot.pop('_full_capture', None)
+                snapshot.pop('_evaluated_data', None)
             configure(snapshot, held)
             stem = '%s.%04d' % (name, frame) if many else name
-            text = rdla.scene_text(snapshot, snapshot['width'], snapshot['height'], held['samples'], held['environment'],
-                                   str(Path(directory) / (stem + '.exr')))
+            arguments = (snapshot, snapshot['width'], snapshot['height'], held['samples'], held['environment'],
+                         str(Path(directory) / (stem + '.exr')))
+            payload = None
+            if binary:
+                with rdlb.collecting(fingerprints=False) as sink:
+                    text = rdla.scene_text(*arguments)
+                payload = sink.payload() if sink.objects else None
+            else:
+                text = rdla.scene_text(*arguments)
             (job / (stem + '.rdla')).write_text(text, encoding='utf-8')
+            stems.append(stem)
+            if payload is not None:
+                (job / (stem + '.rdlb')).write_bytes(payload)
+                wrote_binary = True
+            else:
+                (job / (stem + '.rdlb')).unlink(missing_ok=True)
     finally:
         selection.SetTime(now)
-    scene = job / ((name + '.####.rdla') if many else (name + '.rdla'))
+    # Every frame has a binary file once any has (an empty one where a frame has no geometry), so the master's
+    # <name>.####.rdlb names one for each frame.
+    if wrote_binary:
+        for stem in stems:
+            if not (job / (stem + '.rdlb')).is_file():
+                (job / (stem + '.rdlb')).write_bytes(rdlb.Sink().payload())
+    scenes = [job / ((name + '.####.rdla') if many else (name + '.rdla'))]
+    if wrote_binary:
+        scenes.append(job / ((name + '.####.rdlb') if many else (name + '.rdlb')))
     out = job / ((name + '.####.pfm') if many else (name + '.pfm'))
-    return scene, out
+    return scenes, out
 
 
 # ---- the window
@@ -413,11 +449,12 @@ class Window(QtWidgets.QWidget):
             self.status.setText('Exporting the scene: frame %d of %d...' % (index + 1, count))
             QtWidgets.QApplication.processEvents()
         try:
-            scene, out = export_job(directory, name, frames, progress)
+            scenes, out = export_job(directory, name, frames, progress)
         except Exception as exc:
             self.status.setText('The scene could not be exported: %s' % exc)
             return
-        arguments = ['-in', str(scene), '-out', str(out), '--key', key, '--wait', str(self.wait.value()), '--cell', str(self.cell.currentData()),
+        arguments = [part for scene in scenes for part in ('-in', str(scene))]
+        arguments += ['-out', str(out), '--key', key, '--wait', str(self.wait.value()), '--cell', str(self.cell.currentData()),
                      '--chunk', str(self.chunk.value()), '--mode', device_mode(), '--fresh', '--shaders', 'skip']
         if len(frames) > 1:
             arguments += ['--frames', '%d-%d:%d' % (frames[0], frames[-1], self.step.value())]
