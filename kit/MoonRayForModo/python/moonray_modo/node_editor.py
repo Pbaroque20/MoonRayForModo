@@ -597,13 +597,24 @@ class Editor(QtWidgets.QDialog):
         node=nodes.effective(self.graph)['nodes'][identity];spec=nodes.specs(node['type'])[key]
         current=node.get('parameters',{}).get(key,node_defaults.value(spec))
         from . import parameter_state
-        color=QtWidgets.QColorDialog.getColor(QtGui.QColor.fromRgbF(*[max(0,min(1,parameter_state.shown_colour(v))) for v in current[:3]]),self,'Choose '+key)
-        if not color.isValid():return
-        before=copy.deepcopy(self.graph)
-        try:
-            target=self.target(identity);target.setdefault('parameters',{})[key]=[parameter_state.kept_colour(part) for part in (color.redF(),color.greenF(),color.blueF())]
-            target.setdefault('inputs',{}).pop(key,None);self.validate_draft();self.remember(before);self.rebuild()
-        except ValueError as exc:self.graph=before;self.error(exc)
+        from .colour_popup import pick
+        # The kit's colour popup (colour_popup) at the pointer: the graph and its preview follow it as it is chosen, one
+        # step to undo (remember keeps the popup's moves as one drag); Esc puts the colour back.
+        before=copy.deepcopy(self.graph);steps=len(self.undo_states)
+        def follow(rgb):
+            held=copy.deepcopy(self.graph)
+            try:
+                target=self.target(identity);target.setdefault('parameters',{})[key]=[parameter_state.kept_colour(part) for part in rgb]
+                target.setdefault('inputs',{}).pop(key,None);self.validate_draft();self.remember(held)
+            except ValueError as exc:self.graph=held;self.error(exc)
+        chosen=pick([max(0,min(1,parameter_state.shown_colour(v))) for v in current[:3]],self,None,follow,key.replace('_',' ').capitalize())
+        if chosen is None:
+            # Esc (or no change): the graph as it was, exactly, and the popup's steps not left to undo.
+            del self.undo_states[steps:]
+            if self.graph!=before:
+                self.graph=before
+                self.material_preview.graph_changed(self.graph);self.publish_soon()
+        self.rebuild()
     def choose_node_file(self,identity,key):
         self.commit_inputs()
         node=nodes.effective(self.graph)['nodes'][identity];spec=nodes.specs(node['type'])[key]

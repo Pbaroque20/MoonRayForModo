@@ -63,11 +63,13 @@ def int_list(values):
     count = len(held)
     if not count:
         return vl(0)
-    if min(held) < 0 or max(held) >= FIXED_LIMIT:
-        return vl(count) + b''.join(zigzag(int(v)) for v in held)
+    # The adapter writes them and says where one is out of range (MR_zigzag4); Python's min and max over a car's corners
+    # took two seconds of a Rhizome export, before the adapter was asked.
     native = rows.zigzag4(held)
     if native is not None:
         return vl(count) + native
+    if min(held) < 0 or max(held) >= FIXED_LIMIT:
+        return vl(count) + b''.join(zigzag(int(v)) for v in held)
     lanes = array('I', held)
     if not _LITTLE:
         lanes.byteswap()

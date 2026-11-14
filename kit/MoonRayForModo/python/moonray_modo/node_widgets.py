@@ -378,12 +378,16 @@ class VectorEdit(QtWidgets.QWidget):
         self.swatch.setStyleSheet('background-color: '+color.name()+'; border: 1px solid #888; border-radius: 3px;')
         self.swatch.setToolTip('Choose color — RGB '+', '.join(format(s.value(),'.4g') for s in self.spins[:3]))
     def choose(self):
-        initial=QtGui.QColor.fromRgbF(*[max(0,min(1,s.value())) for s in self.spins[:3]])
+        # The kit's colour popup (colour_popup), beside the swatch; the numbers follow it as it is chosen.
+        from .colour_popup import pick
+        initial=[max(0,min(1,s.value())) for s in self.spins[:3]]
+        def follow(rgb):
+            for spin,value in zip(self.spins,rgb):spin.setValue(value)
         self.choosing_color=True
-        try:color=QtWidgets.QColorDialog.getColor(initial,self)
+        try:color=pick(initial,self,self.swatch,follow)
         finally:self.choosing_color=False
-        if color.isValid():
-            for spin,value in zip(self.spins,(color.redF(),color.greenF(),color.blueF())):spin.setValue(value)
+        if color is not None:
+            follow(color)
             self.color_accepted.emit()
 
 from .node_defaults import value as default_value
@@ -584,11 +588,14 @@ class VectorField(QtWidgets.QWidget):
         color=QtGui.QColor.fromRgbF(*[max(0.0,min(1.0,spin.value())) for spin in self.spins])
         self.swatch.setStyleSheet('background-color: '+color.name()+'; border: 1px solid #15171a; border-radius: 3px;')
     def choose(self):
-        color=QtWidgets.QColorDialog.getColor(QtGui.QColor.fromRgbF(*[max(0.0,min(1.0,spin.value())) for spin in self.spins]),self,'Choose '+self.key.replace('_',' '))
-        if not color.isValid():return
-        for spin,part in zip(self.spins,(color.redF(),color.greenF(),color.blueF())):
-            blocker=QtCore.QSignalBlocker(spin);spin.setValue(part);del blocker
-        self.publish()
+        # The kit's colour popup (colour_popup), beside the swatch: the graph and its preview follow it as it is chosen,
+        # one step to undo; Esc puts the colour back.
+        from .colour_popup import pick
+        def follow(rgb):
+            for spin,part in zip(self.spins,rgb):
+                blocker=QtCore.QSignalBlocker(spin);spin.setValue(part);del blocker
+            self.publish()
+        pick([max(0.0,min(1.0,spin.value())) for spin in self.spins],self,self.swatch,follow,self.key.replace('_',' ').capitalize())
     def publish(self,*args):
         self.paint_swatch()
         for spin in self.spins:tint_value(spin,self.value(),self.spec,self.kind,self.key)

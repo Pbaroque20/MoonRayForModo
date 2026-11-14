@@ -38,6 +38,12 @@ def adapter(library):
         library.MR_iota.restype = ctypes.c_int
     except AttributeError:
         pass
+    # The least of an array (MR_least), in newer adapters; least() does Python's min without it.
+    try:
+        library.MR_least.argtypes = [ctypes.c_void_p, ctypes.c_longlong]
+        library.MR_least.restype = ctypes.c_longlong
+    except AttributeError:
+        pass
     NATIVE = library
 
 
@@ -75,6 +81,30 @@ def most(values):
     if native is None or not isinstance(values, array) or values.itemsize != 4 or values.typecode not in ('I', 'L'):
         return max(values) if len(values) else 0
     return int(native.MR_most(_address(values), len(values))) if len(values) else 0
+
+
+def least(values):
+    """The least of an array of 32-bit whole numbers (0 where empty), by the adapter where it has MR_least, else
+    Python's. Signed arrays are read as signed."""
+    native = _native()
+    if native is None or not hasattr(native, 'MR_least') or not isinstance(values, array) or values.itemsize != 4 \
+            or values.typecode not in ('i', 'l'):
+        return min(values) if len(values) else 0
+    return int(native.MR_least(_address(values), len(values))) if len(values) else 0
+
+
+def unsigned(values):
+    """A 32-bit signed array's bits as unsigned (a negative value reads as 2^31 or more), so that most() is one check
+    of both ends of a range from 0; the array itself where it is unsigned, None where it is not a 32-bit array."""
+    if not isinstance(values, array) or values.itemsize != 4:
+        return None
+    if values.typecode in ('I', 'L'):
+        return values
+    if values.typecode not in ('i', 'l'):
+        return None
+    held = array('I')
+    held.frombytes(values.tobytes())
+    return held
 
 
 def iota(count):
@@ -296,10 +326,12 @@ def uv_transform(values, matrix):
 
 def zigzag4(held):
     """Whole numbers (0 to 2^27) in scene_rdl2's fixed four-byte zigzag form, by the adapter; None where it cannot."""
-    if NATIVE is None or not isinstance(held, array) or held.typecode != 'i' or not len(held):
+    # Any 32-bit array: unsigned values past 2^31 read as negative there, and are refused as out of range.
+    native = NATIVE if NATIVE is not None else _native()
+    if native is None or not isinstance(held, array) or held.itemsize != 4 or held.typecode not in ('i', 'l', 'I', 'L') or not len(held):
         return None
     out = bytearray(4 * len(held))
-    return bytes(out) if NATIVE.MR_zigzag4(_address(held), _address(out), len(held)) == 0 else None
+    return bytes(out) if native.MR_zigzag4(_address(held), _address(out), len(held)) == 0 else None
 
 
 def corner_count(faces):

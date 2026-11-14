@@ -63,6 +63,15 @@ extern "C" __declspec(dllexport) long long MR_most(const uint32_t* in, long long
     return (long long)most;
 }
 
+// The least of count signed whole numbers (0 where there are none): a mesh's faces' corner counts checked to be at least
+// three, which Python's min over a car's meshes made in seconds of a Rhizome export, its lock held.
+extern "C" __declspec(dllexport) long long MR_least(const int32_t* in, long long count) {
+    if(count<=0) return 0;
+    int32_t least=in[0];
+    for(long long i=1;i<count;++i) if(in[i]<least) least=in[i];
+    return (long long)least;
+}
+
 // 0, 1, 2 ... count - 1: a triangle mesh's corners as its triangles' corners, made by Python one number at a time.
 extern "C" __declspec(dllexport) int MR_iota(uint32_t* out, long long count) {
     for(long long i=0;i<count;++i) out[i]=uint32_t(i);

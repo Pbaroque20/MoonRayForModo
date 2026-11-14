@@ -11,7 +11,8 @@ While a drag goes on, scrub_in_progress() says which drag it is, so that an edit
 """
 from PySide2 import QtCore, QtWidgets
 
-_drag = {'number': 0, 'active': False}
+# held: a drag kept going by something else (the colour popup, colour_popup.pick) while its own fields are dragged.
+_drag = {'number': 0, 'active': False, 'held': False}
 
 
 def scrub_in_progress():
@@ -72,8 +73,9 @@ class _Scrub:
             return True
         if not self._scrubbing:
             self._scrubbing = True
-            _drag['number'] += 1
-            _drag['active'] = True
+            if not _drag['held']:
+                _drag['number'] += 1
+                _drag['active'] = True
         value = self.scrub_value(self._press[1], pixels, event.modifiers())
         if abs(value - self.value()) > 1e-12:
             self.setValue(value)
@@ -85,7 +87,8 @@ class _Scrub:
         scrubbed, kind = self._scrubbing, self._press[2]
         self._press, self._scrubbing = None, False
         if scrubbed:
-            _drag['active'] = False
+            if not _drag['held']:
+                _drag['active'] = False
             if edit is not None and edit.hasFocus():
                 edit.deselect()
         elif kind:
@@ -120,7 +123,8 @@ class _Scrub:
         # A field taken away mid-drag (another node chosen) ends its drag, so that nothing waits on its release.
         if self._scrubbing:
             self._press, self._scrubbing = None, False
-            _drag['active'] = False
+            if not _drag['held']:
+                _drag['active'] = False
         super().hideEvent(event)
 
     def mousePressEvent(self, event):

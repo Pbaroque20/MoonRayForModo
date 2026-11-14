@@ -708,8 +708,14 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
             # face by face, which says which mesh is wrong. Faces as Modo handed them over (rows.Faces) are whole
             # numbers by their kind, their corners and counts looked over as they came.
             held = rows.corners(faces)
-            if held is not None and min(rows.counts(faces)) >= 3 and (not len(held) or (min(held) >= 0 and max(held) < len(vertices))):
-                return ''
+            if held is not None:
+                # Through the adapter (MR_least, MR_most), the corners read unsigned so one pass looks at both ends: a
+                # car's meshes looked over by Python's min and max took nearly two seconds of a Rhizome export.
+                counts = rows.counts(faces)
+                bits = rows.unsigned(held)
+                if (rows.least(counts) if len(counts) else 3) >= 3 and (not len(held) or (
+                        rows.most(bits) < len(vertices) if bits is not None else min(held) >= 0 and max(held) < len(vertices))):
+                    return ''
             if min(map(len, faces)) >= 3:
                 corners = list(chain.from_iterable(faces))
                 if set(map(type, corners)) == {int} and min(corners) >= 0 and max(corners) < len(vertices):
