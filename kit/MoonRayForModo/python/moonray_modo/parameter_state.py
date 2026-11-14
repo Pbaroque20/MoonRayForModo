@@ -4,6 +4,8 @@ from .node_defaults import value as declared_default
 
 DEFAULT_COLOR='#000000'
 EDITED_COLOR='#00ffff'
+# An input with a connection: its number is kept but not used (the connection gives the value), so it is greyed out.
+CONNECTED_COLOR='#8a8a8a'
 
 # The values that go round a circle, and the range a slider gives each where the node declares none: hues in degrees, angles
 # in degrees. A range the node declares comes first (some hues run from 0 to 1). A number can still be typed past the ends.
@@ -32,7 +34,8 @@ def equal(a,b):
     return type(a) is type(b) and a==b
 
 def color(value,spec,kind=None,key=None,connected=False):
-    return EDITED_COLOR if connected or not equal(value,default(spec,kind,key)) else DEFAULT_COLOR
+    if connected:return CONNECTED_COLOR
+    return EDITED_COLOR if not equal(value,default(spec,kind,key)) else DEFAULT_COLOR
 
 
 def shown_colour(value):

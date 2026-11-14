@@ -20,8 +20,9 @@ class ParameterState(unittest.TestCase):
                                      ({'type':'SceneObject*'},None,{'item':'camera'})]:
             self.assertEqual(state.color(default,spec),'#000000')
             self.assertEqual(state.color(changed,spec),'#00ffff')
-    def test_connected_default_is_edited(self):
-        self.assertEqual(state.color(1,{'type':'Int','default':'1'},connected=True),'#00ffff')
+    def test_connected_is_greyed_out(self):
+        self.assertEqual(state.color(1,{'type':'Int','default':'1'},connected=True),state.CONNECTED_COLOR)
+        self.assertEqual(state.color(5,{'type':'Int','default':'1'},connected=True),state.CONNECTED_COLOR)
     def test_control_rounding_does_not_fake_edits(self):
         self.assertTrue(state.equal(.333333,1/3))
         self.assertFalse(state.equal(.333334,1/3))
