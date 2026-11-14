@@ -174,10 +174,91 @@ that folder:
    time, it compiles its GPU programs in the background and renders on the processor until they are ready.
 
 The node stays until its window is closed. `moonray_xpu2.exe rhizome status` in another prompt shows what it sees, and
-`moonray_xpu2.exe rhizome id` its hash (for **Only machines approved**). The workstation options are there too:
-`--when-idle 300`, `--hours 19-8`, `--busy-threads 4`. If the leading machine is behind a router or VPN, add
-`--master host:47110` so the node reaches it instead of waiting to be found. `moonray_xpu2.exe rhizome node --help`
-lists the rest.
+`moonray_xpu2.exe rhizome id` its hash (for **Only machines approved**). `moonray_xpu2.exe rhizome node --help`
+lists every option; the examples below show the common ones.
+
+### Examples: the head and its nodes
+
+The **head** is the machine that leads a render: it has the scene, finds the nodes, hands out the work and writes
+the pictures. **Render on the Swarm** in Modo makes your machine the head; `moonray_xpu2.exe rhizome master` does the
+same from a command prompt. A **node** is any machine running `rhizome node` (or **Start Node** in Modo). Nodes never
+need the scene: the head sends it. The one thing head and nodes must share is the key.
+
+| On the head | On each node | Port used |
+| --- | --- | --- |
+| `rhizome master ... --key "k"` | `rhizome node --key "k"` | UDP 47101-47104 (finding), TCP 47100 (node), TCP 47110 (head) |
+
+The paths below are examples: `C:\Rhizome\runtime-xpu2` holds the runtime, `D:\Shots\city` the scene.
+
+**One office network.** Start the nodes, then render from Modo or from the head's prompt:
+
+```
+:: on each node
+moonray_xpu2.exe rhizome node --key "blue heron"
+
+:: on the head (Modo's Render page writes the scene into <Pictures in>\job)
+moonray_xpu2.exe rhizome master --key "blue heron" -in D:\Shots\city\job\city.rdla -in D:\Shots\city\job\city.rdlb -out D:\Shots\city\city.pfm --nodes 3 --wait 30
+```
+
+`--nodes 3 --wait 30`: start once three nodes are ready, or after 30 seconds with those found by then.
+
+**A workstation that renders at night or when nobody uses it.**
+
+```
+moonray_xpu2.exe rhizome node --key "blue heron" --hours 19-8 --when-idle 300 --busy-threads 4
+```
+
+Only between 19:00 and 8:00. In those hours it renders on 4 threads while someone is using the machine, and on all
+of them once nobody has touched the keyboard or mouse for 5 minutes. Without `--busy-threads 4` it waits for those 5
+minutes instead, and steps back (its work going to the others) as soon as someone comes back.
+
+**A frame range.**
+
+```
+moonray_xpu2.exe rhizome master --key "blue heron" --frames 1-120 -in D:\Shots\city\job\city.####.rdla -in D:\Shots\city\job\city.####.rdlb -out D:\Shots\city\city.####.pfm
+```
+
+The nodes stay connected between frames; files that did not change are not sent again. Stopped and started again
+with the same line, the head picks up where it was.
+
+**Across a router or VPN**, where the head's call does not reach. Either the node goes to the head:
+
+```
+moonray_xpu2.exe rhizome node --key "blue heron" --master 10.8.0.5:47110
+```
+
+or the head goes to the nodes, by address or by searching a range:
+
+```
+moonray_xpu2.exe rhizome master --key "blue heron" ... --node 10.9.0.21:47100 --node 10.9.0.22:47100
+moonray_xpu2.exe rhizome master --key "blue heron" ... --scan 10.9.0.0/24
+```
+
+Machines reached once are remembered and found again on their own.
+
+**Only machines you approve.** The head is started with `--approve`. A new node waits and its hash appears on the
+head (its log, `rhizome status`, or the **Approvals and Firewall** page). Approve it on the head, giving the head's
+folder:
+
+```
+moonray_xpu2.exe rhizome master --key "blue heron" ... --approve --folder C:\Rhizome\head
+moonray_xpu2.exe rhizome approve <node hash> --folder C:\Rhizome\head
+```
+
+The node is let in within a second, and stays approved for later renders.
+
+**A queue of shots for one head.** The head renders the jobs in a folder one after another and waits for more;
+anyone adds jobs to it:
+
+```
+:: on the head
+moonray_xpu2.exe rhizome master --key "blue heron" --queue \\server\rhizome\jobs --queue-watch
+
+:: from any machine
+moonray_xpu2.exe rhizome submit --queue \\server\rhizome\jobs -in \\server\shots\city\job\city.rdla -in \\server\shots\city\job\city.rdlb -out \\server\shots\city\city.pfm --name city
+```
+
+The head must reach a job's paths the same way, so use a shared folder.
 
 ### When nodes are not found
 
