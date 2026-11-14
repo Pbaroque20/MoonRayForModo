@@ -154,7 +154,9 @@ each option covers them.
 
 On **This Machine as a Node**, click **Start Node**. The node renders for whichever machine starts a render, with the
 devices Device Management chooses. It keeps running after Modo is closed; come back to this page and click
-**Stop Node** to end it. For a workstation someone uses during the day:
+**Stop Node** to end it. If its graphics card cannot render (GPU programs not compiled yet, a failed compile, an old
+card), the node renders on its processor by itself: see
+[When a node cannot use its graphics card](#when-a-node-cannot-use-its-graphics-card). For a workstation someone uses during the day:
 
 - **Render**: only after so many seconds without keyboard or mouse.
 - **Hours**: only between two hours, for example 19:00 to 8:00.
@@ -195,10 +197,19 @@ A headless node is a render machine with no Modo and no kit: only the **runtime-
 prompt. The head is either Modo with the kit (**Render on the Swarm**, as in Option 1) or a command prompt running
 `moonray_xpu2.exe rhizome master`.
 
-| On the head | On each headless node |
-| --- | --- |
-| Modo: Rhizome window, **Render on the Swarm**; or `moonray_xpu2.exe rhizome master --key "k" ...` | `moonray_xpu2.exe rhizome node --key "k"` |
-| Has the scene; writes the pictures | Needs nothing but the runtime folder and the key |
+| | What you run | What it needs |
+| --- | --- | --- |
+| **Head, from Modo** | Rhizome window, type the key, click **Render on the Swarm** | Modo with the kit and the scene open |
+| **Head, from a command prompt** | `moonray_xpu2.exe rhizome master --key "blue heron" -in D:\Shots\city\job\city.rdla -in D:\Shots\city\job\city.rdlb -out D:\Shots\city\city.pfm` | The runtime-xpu2 folder and the exported scene |
+| **Each headless node** | `moonray_xpu2.exe rhizome node --key "blue heron"` | The runtime-xpu2 folder and the key, nothing else |
+
+What the parts of these commands mean:
+
+- `--key "blue heron"`: the Rhizome key, any words you choose. It must be the same on the head and every node.
+- `-in`: the scene the head renders. Modo's Render page exports it into `<Pictures in>\job`: the scene file
+  (`.rdla`) and, beside it, its geometry file (`.rdlb`) when there is one. Give each file with its own `-in`.
+- `-out`: where the head writes the picture. Only the head writes files; nodes send their share back to it.
+- Every other option (such as `--nodes`, `--frames` or `--scan`) is optional; the examples below show them.
 
 #### Set up each headless node, once
 
@@ -220,6 +231,22 @@ The node starts and waits for a head. The first time, it compiles its GPU progra
 the processor until they are ready. It runs until its window is closed. In another prompt,
 `moonray_xpu2.exe rhizome status` shows what it sees and `moonray_xpu2.exe rhizome id` its hash (for approvals).
 `moonray_xpu2.exe rhizome node --help` lists every option.
+
+#### When a node cannot use its graphics card
+
+A headless node never sits a render out because of its graphics card: it renders its share on its **processor**
+instead, by itself, and says so in its window and in `rhizome status` (shown on the head too). This happens when:
+
+- its GPU programs are **not compiled** (started with `--shaders skip`, or the compile was declined),
+- they are **still compiling** (the first time, about an hour): the cards join from the next job once they are done,
+- the **compile failed**,
+- its cards are **too old** for XPU2, or it has none,
+- a card **cannot take the job** (its programs would not load, a driver refusing them).
+
+It does this in every device mode, `--mode 1` (graphics cards only) included, so a machine with a processor always
+helps. `--mode 0` renders on the processor from the start. A node on the processor is slower, so it is given less
+of the frame; the picture is the same. To have its cards join, compile its programs once
+(`moonray_xpu2.exe --compile-shaders`, or start it with `--shaders compile`).
 
 #### Start the head
 
@@ -266,8 +293,8 @@ moonray_xpu2.exe rhizome node --key "blue heron" --master 10.8.0.5:47110
 or the head goes to the nodes, by address or by searching a range:
 
 ```
-moonray_xpu2.exe rhizome master --key "blue heron" ... --node 10.9.0.21:47100 --node 10.9.0.22:47100
-moonray_xpu2.exe rhizome master --key "blue heron" ... --scan 10.9.0.0/24
+moonray_xpu2.exe rhizome master --key "blue heron" -in D:\Shots\city\job\city.rdla -in D:\Shots\city\job\city.rdlb -out D:\Shots\city\city.pfm --node 10.9.0.21:47100 --node 10.9.0.22:47100
+moonray_xpu2.exe rhizome master --key "blue heron" -in D:\Shots\city\job\city.rdla -in D:\Shots\city\job\city.rdlb -out D:\Shots\city\city.pfm --scan 10.9.0.0/24
 ```
 
 (A head in Modo: **Nodes by address** and **Look for nodes in**.) Machines reached once are remembered and found
@@ -278,7 +305,7 @@ waits and its hash appears on the head (its log, `rhizome status`, or the **Appr
 it on the head, giving the head's folder:
 
 ```
-moonray_xpu2.exe rhizome master --key "blue heron" ... --approve --folder C:\Rhizome\head
+moonray_xpu2.exe rhizome master --key "blue heron" -in D:\Shots\city\job\city.rdla -in D:\Shots\city\job\city.rdlb -out D:\Shots\city\city.pfm --approve --folder C:\Rhizome\head
 moonray_xpu2.exe rhizome approve <node hash> --folder C:\Rhizome\head
 ```
 
