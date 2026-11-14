@@ -261,19 +261,17 @@ class RampDialog(QtWidgets.QDialog):
         swatch.setText('%.3g  %.3g  %.3g' % tuple(swatch.rgb))
 
     def pick(self, swatch):
-        start = QtGui.QColor.fromRgbF(*[min(1.0, max(0.0, v)) ** (1 / 2.2) for v in swatch.rgb])
+        # The kit's colour popup (colour_popup) beside the swatch, in display values; the ramp holds linear ones.
+        from .colour_popup import pick
+        start = [min(1.0, max(0.0, v)) ** (1 / 2.2) for v in swatch.rgb]
         before = list(swatch.rgb)
-        chooser = QtWidgets.QColorDialog(start, self)
-        chooser.setWindowTitle('Stop colour')
 
         def show(colour):
-            # The picker works in display values; the ramp holds linear ones.
-            swatch.rgb = [colour.redF() ** 2.2, colour.greenF() ** 2.2, colour.blueF() ** 2.2]
+            swatch.rgb = [part ** 2.2 for part in colour]
             self.paint(swatch)
             self.touched()
-        # Shown as it is chosen, and put back if the choosing is given up.
-        chooser.currentColorChanged.connect(show)
-        if chooser.exec_() != QtWidgets.QDialog.Accepted:
+        # Shown as it is chosen, and put back if the choosing is given up (Esc).
+        if pick(start, self, swatch, show, 'Stop colour') is None and swatch.rgb != before:
             swatch.rgb = before
             self.paint(swatch)
             self.touched()
