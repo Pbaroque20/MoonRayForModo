@@ -61,7 +61,7 @@ The current release is [0.5.4.3](https://github.com/Pbaroque20/MoonRayForModo/re
   ![A box lit by a warm area light, rendered by MoonRay: the Modo area light on the left, the MoonRay RectLight Convert to MoonRay Rect Light made of it on the right](docs/images/convert-rect-light.jpg)
 
 - **Render with MoonLightIPR**: with RT off, Render is no longer greyed: MoonLightIPR gathers Render Samples a pixel (Render Settings > MoonLightIPR, 2000 unless changed, saved with the scene) as fast as the graphics card can, and stops. The label under the picture says how many samples a pixel the picture holds as it comes (137 / 500 ps), in realtime too.
-- **Rhizome: render across the studio's machines** (MoonRay > Rhizome: Decentralized Rendering): this frame or a range rendered by XPU2 on every machine running a Rhizome node, the picture as one machine renders it. The same window starts a node on this machine, shows the machines at work, approves new ones and adds the Windows Firewall rule. Windows only.
+- **Rhizome: render across the studio's machines** (MoonRay > Rhizome: Decentralized Rendering): this frame or a range rendered by XPU2 on every machine running a Rhizome node, the picture as one machine renders it. The same window starts a node on this machine, shows the machines at work, approves new ones and adds the Windows Firewall rule. Two ways to set it up: Option 1, the kit installed on every machine; Option 2, head to headless nodes that need only the runtime folder ([Installation](docs/INSTALLATION.md#rendering-across-machines-with-rhizome)). Windows only.
 
   ![The Rhizome window in Modo: two frames rendered on the swarm by two nodes, the master's log showing the audit and each node's share](docs/images/rhizome-window.png)
 
