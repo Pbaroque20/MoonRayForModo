@@ -995,10 +995,10 @@ def pack(scene, width, height, environment=0.15, known=(), samples=256, denoise=
         # Their repeats fitted to the meshes they are on, where Fit to Mesh is on (ocean.fitted).
         # Displaced instances' scale in their mesh's points, as MoonRay and XPU2 have them (instance_scale).
         from . import instance_scale
-        return _pack(ocean.fitted(instance_scale.baked(scene)), width, height, environment, known, samples, denoise, runtime)
+        return _configured(ocean.fitted(instance_scale.baked(scene)), width, height, environment, known, samples, denoise, runtime)
 
 
-def _pack(scene, width, height, environment=0.15, known=(), samples=256, denoise=True, runtime=None):
+def _configured(scene, width, height, environment=0.15, known=(), samples=256, denoise=True, runtime=None):
     """Serialize a snapshot. Return (bytes, mesh keys, warnings).
 
     known holds the mesh keys the receiving session has already loaded; their data is left out.
@@ -1007,7 +1007,9 @@ def _pack(scene, width, height, environment=0.15, known=(), samples=256, denoise
     from .working_space import configuration as working_configuration
     from .textures import configuration as texture_configuration
     from . import conversions
-    # The scene's textures are converted side by side, and all are done before the scene is handed to the session.
+    # The scene's textures are converted side by side, and all are done before the scene is handed to the session. Its
+    # own name: called _pack as the function below is, it was replaced by it (2026-11-12 to 11-14), and each texture was
+    # converted one after another, without the scene's colour settings.
     with working_configuration(scene.get('asset_settings', {})), texture_configuration(scene.get('asset_settings', {})), conversions.together():
         return _pack(scene, int(width), int(height), float(environment), set(known), int(samples), bool(denoise), runtime)
 

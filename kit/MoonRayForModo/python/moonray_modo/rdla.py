@@ -346,10 +346,12 @@ def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output
         # Displaced instances' scale in their mesh's points, as MoonRay displaces them in the mesh's own space
         # (instance_scale).
         from . import instance_scale
-        return _scene_text(ocean.spaced(ocean.fitted(instance_scale.baked(scene))), width, height, samples, environment, output_file)
+        return _configured_scene_text(ocean.spaced(ocean.fitted(instance_scale.baked(scene))), width, height, samples, environment, output_file)
 
 
-def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, output_file=None):
+def _configured_scene_text(scene, width=640, height=360, samples=2, environment=0.15, output_file=None):
+    # Its own name: called _scene_text as the writer below is, it was replaced by it (2026-11-12 to 11-14), and scenes
+    # were written without these settings, their textures converted one after another.
     from . import graph as graph_
     graph_.BUMP_STEP = bool(scene.get('_bump_step'))
     from .serialization import revision
