@@ -8,7 +8,7 @@ The current release is [0.5.4.3.1](https://github.com/Pbaroque20/MoonRayForModo/
 
 ## Coming in 0.5.5
 
-- **Texture overflow by what the screen shows**: where a scene runs out of memory, XPU2 first shrinks each texture to what its meshes show on screen (a large map on a small or distant mesh needs little), then compresses, then shrinks further, each texture by its own need. A render keeps the detail it shows; for Render Animation the sizes hold over the whole shot, so no texture changes from frame to frame. Realtime keeps its 1024 pixel cap. How XPU2 and MoonLightIPR each handle textures: [Texture handling](docs/TEXTURE_HANDLING.md).
+- **Texture overflow by what the screen shows**: where a scene runs out of memory, XPU2 first shrinks each texture to what its meshes show on screen (a large map on a small or distant mesh needs little), then compresses, then shrinks further, each texture by its own need. A render keeps the detail it shows; for Render Animation the sizes hold over the whole shot, so no texture changes from frame to frame. Realtime keeps its 1024 pixel cap.
 - **Sharper procedurals and skies, made far faster**: Grid, Dots, Cellular, Wood, Weave and Ripples laid on by UVs or a projection, and layered skies with a physical sky or a procedural, are made in native code, no longer pixel by pixel in Python: larger (skies four times sharper) in a fraction of the time, the same patterns as before.
 - **MoonLightIPR final renders at full size**: a Render and Render Animation bake MoonShine graphs at the size of their images (up to 8K), not realtime's.
 - **Replicators**: a hidden prototype stays hidden, and a replicator no longer stops MoonLightIPR's preview with a motion blur error when blur is off.
@@ -24,14 +24,18 @@ The current release is [0.5.4.3.1](https://github.com/Pbaroque20/MoonRayForModo/
 - **Ocean's small waves in MoonRay and XPU2**: waves too short for MoonRay's dicing reach the material as a normal map, as MoonLightIPR shades them, so Small Waves looks the same in every engine. Switch: Small ocean waves as shading, in MoonRay Source Overrides.
 - **Oceans in realtime and in instanced seas**: realtime keeps an Ocean's UVs from Modo's evaluated geometry (Fit to Mesh and graph images work there again); displaced, instanced seas keep their wave height and detail.
 - **The graph editor's own colour picker**: a popup beside the swatch in place of Windows' colour dialog (a saturation and value square, hue and lightness bars, RGB and HSV numbers dragged like the graph's, a hex code). The graph and preview follow it live; Cancel puts the colour back.
-- **Connected inputs keep their connection**: editing the number beside a connected input no longer drops the connection; the number is shown grey.
 
-![The graph editor's colour picker](docs/images/colour-picker.webp)
+  ![The graph editor's colour picker](docs/images/colour-picker.webp)
+
+- **Connected inputs keep their connection**: editing the number beside a connected input no longer drops the connection; the number is shown grey.
 
 
 ## New in 0.5.4.3
 
 - **Ocean**: Ocean and Ocean Foam nodes in the MoonShine graph make Tessendorf's FFT waves (wind, choppiness, foam where the surface folds, depth and loop) as a Vector Displacement, the same sea in MoonRay, XPU2 and MoonLightIPR. Fit to Mesh (on by default) sizes the sea to the mesh with Tiles Across. An "Ocean at sunset" demo with developer's notes is in the asset library. Switch: Ocean nodes in MoonShine graphs, in MoonRay Source Overrides.
+
+  ![An ocean in the MoonShine graph, rendered by XPU2](docs/images/ocean-graph.webp)
+
 - **The graph editor docked in a viewport**: MoonRay > Use Graph Editor in Current Viewport, or MoonShine Graph in Modo's viewport list. It follows the selected material.
 - **Solo in the preview**: right-click a graph node for Solo in Preview; the preview window's Solo menu solos the selected meshes or material. Preview only: renders and the scene are left alone.
 - **Graph editor preview shapes**: the MoonRay Widget, water, subsurface or velvet. Right-click sets and clears the displacement output.
@@ -39,8 +43,6 @@ The current release is [0.5.4.3.1](https://github.com/Pbaroque20/MoonRayForModo/
 - **Denoised fur keeps a share of its detail**: Keep Fine Detail puts back a quarter (Some) or half (More) of the render over the denoised fur, not all of it.
 - **XPU2**: light path AOVs match on the graphics card and the processor (no more squares); random-walk subsurface's crease attenuation renders in XPU2. Graphics cards older than an RTX 20 series are left out and the processor renders, so a GTX 1080 Ti no longer stays "not compiled", in previews and on Rhizome nodes.
 - **Fixes**: a mesh with all-zero vertex normals renders smoothed (XPU2 used to give it to MoonRay XPU); MoonLightIPR's Render shows the HDRI the right way up; MoonLightIPR reads PFM textures as floats; object-space maps into a Vector Displacement show in MoonLightIPR; a property changed after its scene closed no longer crashes Modo; realtime MoonRay dices displacement as the render does; library Modo scenes open as their own scene; forms open the same groups as the graph editor; the graph editor's Live preview starts on.
-
-![An ocean in the MoonShine graph, rendered by XPU2](docs/images/ocean-graph.webp)
 
 
 ## New in 0.5.4.2
@@ -781,6 +783,26 @@ Comparison audit between Modo 16.1v9 and MoonLightIPR, the realtime preview: wha
 | Weight and colour vertex maps | ![partly](docs/images/feature-partly.svg) | Weight maps through a Weight Map Texture layer, each taking one of the 8 UV sets; colour maps show in MoonRay only |
 | Modo's volume items | ![partly](docs/images/feature-partly.svg) | Drawn from a VDB file attached in the MoonRay controls; no motion blur, whether the item moves or from a velocity grid |
 | Blobs and particles | ![no](docs/images/feature-no.svg) |  |
+
+## Textures in XPU2 and MoonLightIPR
+
+The two GPU engines in MoonRay for Modo handle textures differently. XPU2 keeps textures exact and loads only the pieces a frame samples, compressing only when memory runs short. MoonLightIPR always compresses and keeps whole textures on the graphics card, which suits a fast preview.
+
+| | XPU2 | MoonLightIPR |
+|---|---|---|
+| **File the engine reads** | `.tx` (OpenImageIO's tiled, mipmapped format), made by `maketx` | Targa for 8-bit images, PFM for float ones, made by `oiiotool`; the session then caches its own prepared `.mlt` |
+| **Smaller detail levels (mips)** | Stored in the `.tx` | Made by the session when it prepares the texture, then cached |
+| **Compression** | None normally: bytes, half floats, or one channel for grey maps. BC6H (1 byte a texel) only in texture overflow | Always: BC7 for 8-bit images, BC6H for floats (Intel's ISPC compressor), about 1 byte a texel |
+| **Lossy?** | No, outside overflow | Yes, slightly (BC7 and BC6H) |
+| **Loading** | On demand: the small levels (128 a side and under) stay on the card; every larger level is read tile by tile, on the processor and the card, as frames sample it; tiles let go when memory runs short. Renders finish only once their tiles have landed, so pictures match loading everything | Whole texture uploaded to the card at load |
+| **When textures don't fit** | Rare, since only what frames sample counts. Texture overflow mode: fit each texture to what its meshes show on screen, then compress, then halve | Keeps the largest textures in the computer's memory, outside the card |
+| **Realtime size cap** | 1024 a side on the card, normal maps included | 1024 a side |
+| **Render size** | Full size | Full size (Render and Render Animation) |
+| **MoonShine graph bakes** | Not baked: graphs run natively as MoonRay maps | Baked to images: 512 or 2048 in realtime, the image's own size up to 8192 for a final Render |
+| **Shader Tree procedural layers** | Through the object, the native `ModoProceduralMap`; flat projections use the C++ 2D bake | The same C++ bake for flat projections (512 in realtime, 2048 for a Render); the native map through the object |
+| **Layered environments** | Composed natively, 2048 × 1024 | Composed natively, 1024 × 512 in realtime, 2048 × 1024 for a Render |
+| **Texture conversion** | Side by side, up to 8 converters | Side by side, up to 8 converters |
+| **Animations** | Overflow fitting sized over the whole shot, so no popping | No overflow fitting, so nothing to pop |
 
 ## Known issues
 
