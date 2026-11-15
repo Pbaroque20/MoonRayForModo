@@ -119,6 +119,20 @@ class Crest(unittest.TestCase):
         self.assertEqual(g['colour']['inputs']['bg'], 'glow')
         self.assertIn('crest_start', ocean_plane.OCEAN_KEYS)
 
+    def test_the_ocean_plane_has_its_roughness(self):
+        from moonray_modo import ocean_plane
+        item = {'class': 'OceanPlaneGeometry', 'name': 'Ocean Plane', 'identity': 'plane1',
+                'parameters': {'roughness': 0.12, 'foam_roughness': 0.7}, 'matrix': IDENTITY}
+        snap = {'camera': {'matrix': IDENTITY, 'focal_mm': 35.0, 'film_mm': 36.0}, 'materials': {}, 'meshes': [],
+                'entities': [item], 'lights': [], 'environments': [], 'time': 0.0}
+        with mock.patch.dict(os.environ, {'MOONRAY_MODO_OCEAN': '1'}):
+            result = ocean_plane.apply(snap, [])
+        material = result['materials'][result['meshes'][0]['material']]
+        g = material['node_graph']['nodes']
+        self.assertEqual(g['rough']['parameters']['bg'], [0.12] * 3)
+        self.assertEqual(g['rough']['parameters']['fg'], [0.7] * 3)
+        self.assertEqual(material['roughness'], 0.12)
+
 
 if __name__ == '__main__':
     unittest.main()

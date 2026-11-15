@@ -1,0 +1,5 @@
+{"name":"ModoOceanNormalMap","type":"NormalMap","attributes":{
+ "attrInput":{"name":"input","type":"Rgb","default":"Rgb(0.5,0.5,1)","flags":"FLAGS_BINDABLE","comment":"The ocean's short waves as a tangent-space normal, 0 to 1 (the kit's split tile, read by an ImageMap)."},
+ "attrDial":{"name":"dial","type":"Float","default":"1.0f","comment":"How far the short waves tilt the normal: 0 not at all, 1 as the tile has them."},
+ "attrHorizon":{"name":"horizon","type":"Float","default":"0.02f","comment":"The lowest a mirror reflection off the water may point, as the sine of its angle above the world's horizon. A reflection the short waves would send below it, where a real sea has another wave in the way, is bent up to it."}
+}}

@@ -275,11 +275,19 @@ def split_ocean(graph,output):
             # MoonRay's own ImageNormalMap, in the frame of the surface's normal and its U: the same picture as the kit's
             # Normal Map node, at about half its cost a sample.
             mapped=key+'__short_normal'
-            members[mapped]={'type':'ImageNormalMap','inputs':{},'parameters':{'tangent_space_normal_texture':str(fine),
-                             'wrap_around':True,'normal_encoding':0,'scale':list(params.get('scale',[1.0,1.0]))}}
-            if params.get('rotation_angle'):
-                # Turned as its tile is: its normals are written in the surface's frame already.
-                members[mapped]['parameters'].update(rotation_angle=params['rotation_angle'],rotation_center=list(params.get('rotation_center',[0.0,0.0])))
+            turned={'rotation_angle':params['rotation_angle'],'rotation_center':list(params.get('rotation_center',[0.0,0.0]))} \
+                if params.get('rotation_angle') else {}
+            if _ocean.normal_map_available():
+                # The kit's ModoOceanNormalMap over an ImageMap of the tile, turned as its tile is: it keeps every mirror
+                # reflection above the horizon, as on a real sea (MoonRay's ImageNormalMap let the ripples tip some
+                # below it), at the strength that matches MoonLightIPR's sea (ocean.SHORT_WAVES_DIAL).
+                image=key+'__short_image'
+                members[image]={'type':'ImageMap','inputs':{},'parameters':dict({'texture':str(fine),'gamma':0,'wrap_around':True,
+                                'scale':list(params.get('scale',[1.0,1.0]))},**turned)}
+                members[mapped]={'type':'ocean_normal','inputs':{'input':image},'parameters':{'horizon':_ocean.HORIZON,'dial':_ocean.SHORT_WAVES_DIAL}}
+            else:
+                members[mapped]={'type':'ImageNormalMap','inputs':{},'parameters':dict({'tangent_space_normal_texture':str(fine),
+                                 'wrap_around':True,'normal_encoding':0,'scale':list(params.get('scale',[1.0,1.0]))},**turned)}
             root.setdefault('inputs',{})['input_normal']=mapped
     return graph
 
@@ -598,6 +606,13 @@ def emit(material,name,index,lines,library,output="root",validated=True):
         if identity in cache: return cache[identity]
         item=g['nodes'][identity];kind=item['type'];params=item.get('parameters',{});inputs=item.get('inputs',{})
         path=name+'/node/'+str(len(cache))+'_'+identity
+        if kind=='ocean_normal':
+            # The ocean's short waves for MoonRay (split_ocean): the kit's ModoOceanNormalMap over the tile's ImageMap.
+            image=node(inputs['input'])
+            ref=definition('ModoOceanNormalMap',path,{'input':binding(image,'Rgb'),'dial':number(params.get('dial',1.0)),
+                                                      'horizon':number(params.get('horizon',_ocean.HORIZON))})
+            cache[identity]=ref
+            return ref
         schema=specs(kind)
         refs={key:node(source) for key,source in inputs.items()}
         if kind in shader_library.catalog():

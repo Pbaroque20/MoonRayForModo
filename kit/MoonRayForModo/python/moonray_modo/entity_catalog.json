@@ -3924,6 +3924,16 @@
         "name": "foam_color",
         "type": "Rgb"
       },
+      "foam_roughness": {
+        "comment": "How rough the foam is, 0 to 1, where the surface folds over.",
+        "default": 0.5,
+        "group": "Ocean Plane",
+        "label": "foam roughness",
+        "max": 1.0,
+        "min": 0.0,
+        "name": "foam_roughness",
+        "type": "Float"
+      },
       "foam_threshold": {
         "comment": "Foam where the surface is squeezed below this (1 is untouched): more makes more foam.",
         "default": 0.7,
@@ -3997,6 +4007,16 @@
         "label": "reverse normals",
         "name": "reverse_normals",
         "type": "Bool"
+      },
+      "roughness": {
+        "comment": "How rough the water's surface is, 0 to 1: 0 mirrors the sky sharply, more blurs its reflections and widens the sun's glitter.",
+        "default": 0.03,
+        "group": "Ocean Plane",
+        "label": "roughness",
+        "max": 1.0,
+        "min": 0.0,
+        "name": "roughness",
+        "type": "Float"
       },
       "seed": {
         "comment": "Another seed, another sea with the same settings.",

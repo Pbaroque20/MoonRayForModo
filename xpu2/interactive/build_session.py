@@ -130,6 +130,8 @@ def build_session(source, runtime, async_build, out, cpu_test=False):
         proxies = sorted(runtime.glob('*.so.proxy'))
         # And the kit's own class the reference is older than: without its proxy a scene holding one did not load at all.
         proxies.append(source / 'build/native-renderer-avx/bin/ModoProceduralMap.so.proxy')
+        # And the ocean's short waves (native-port/maps/ModoOceanNormal), which XPU2 shades itself (shade_mapnodes.h).
+        proxies.append(source / 'build/native-renderer-avx/bin/ModoOceanNormalMap.so.proxy')
         for p in proxies:
             shutil.copyfile(p, rt / p.name)
         # The display filters run as MoonRay's own, from their DSOs (aov_display.h).
