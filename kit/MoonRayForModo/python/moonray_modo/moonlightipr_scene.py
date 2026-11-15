@@ -1010,7 +1010,9 @@ def _configured(scene, width, height, environment=0.15, known=(), samples=256, d
     # The scene's textures are converted side by side, and all are done before the scene is handed to the session. Its
     # own name: called _pack as the function below is, it was replaced by it (2026-11-12 to 11-14), and each texture was
     # converted one after another, without the scene's colour settings.
-    with working_configuration(scene.get('asset_settings', {})), texture_configuration(scene.get('asset_settings', {})), conversions.together():
+    from .graph_bake import final as final_bakes
+    # A Render's (its images at their full size): MoonShine graphs baked at a final render's sizes too (graph_bake.final).
+    with working_configuration(scene.get('asset_settings', {})), texture_configuration(scene.get('asset_settings', {})), conversions.together(),             final_bakes(bool(scene.get('_full_textures'))):
         return _pack(scene, int(width), int(height), float(environment), set(known), int(samples), bool(denoise), runtime)
 
 
