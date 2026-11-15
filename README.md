@@ -818,7 +818,6 @@ The ones you are most likely to meet:
 - Fog from a light's volumetrics in MoonLightIPR is lit by every light, not that light alone.
 - A glowing VDB volume renders in MoonRay's slower scalar mode, and so does a light with a cookie filter outside XPU2. MoonRay's faster modes do not draw them rightly in this build.
 - Now and then, a preview with glitter in the GPU (XPU) mode fails on the graphics card; it is rendered on the CPU instead, with a notice.
-- Tested on one machine (RTX 3090) only.
 
 Every known issue, and what is still to implement, is in the [issue tracker](https://github.com/Pbaroque20/MoonRayForModo/issues). Found something else? Please report it there.
 
