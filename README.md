@@ -554,7 +554,7 @@ Comparison audit between MoonRay 2026.29.1's source and the current plugin.
 | Primitive attribute outputs | ![yes](docs/images/feature-yes.svg) | A number or a colour, by the attribute's name, in the Outputs window |
 | Cryptomatte | ![yes](docs/images/feature-yes.svg) | Fog, from a VDB or in a MoonRay box or sphere, has mattes of its own, and each sample is counted once in vector and XPU modes; names and IDs given on objects and materials; picking in the preview; a Cryptomatte node in the compositor |
 | Deep EXR | ![yes](docs/images/feature-yes.svg) | |
-| Checkpoints and resuming a render | ![yes](docs/images/feature-yes.svg) | Recovery, Safe Denoising and Continue |
+| Checkpoints and resuming a render | ![yes](docs/images/feature-yes.svg) | Recovery, Safe Denoising and Continue. Coming in 0.5.5: XPU2 renders can be continued from their own checkpoints, with Preferences > MoonRay > XPU2 > Resumable checkpoints (off by default: such a render samples every pixel alike) |
 | EXR metadata | ![yes](docs/images/feature-yes.svg) | |
 | Choice of EXR compression | ![yes](docs/images/feature-yes.svg) | All of MoonRay's, zip by default |
 | Multi-part EXR | ![yes](docs/images/feature-yes.svg) | Each output in a part of its own, by choice |
@@ -607,7 +607,7 @@ Comparison audit between Modo 16.1v9 and the current plugin: what of a Modo scen
 | Group masks by item | ![yes](docs/images/feature-yes.svg) | Checked against Modo's render |
 | **Geometry** | | |
 | Meshes, subdivision and creases | ![yes](docs/images/feature-yes.svg) | A mirrored mesh (negative scale) faces outward, a Source Override on by default |
-| Instances and replicators | ![yes](docs/images/feature-yes.svg) | Replicators through Modo's evaluated geometry. Coming in 0.5.5: a replicator's hidden prototype stays hidden, and replicators no longer stop MoonLightIPR's preview with a motion blur error; a camera move among moving replicators no longer reads the scene again |
+| Instances and replicators | ![yes](docs/images/feature-yes.svg) | Replicators through Modo's evaluated geometry. Coming in 0.5.5: a replicator's hidden prototype stays hidden, and replicators no longer stop MoonLightIPR's preview with a motion blur error; a camera move among moving replicators no longer reads the scene again; XPU2 renders displaced copies that change shape, each as MoonRay shows it, at the shutter's close |
 | Deformed and animated meshes | ![yes](docs/images/feature-yes.svg) | Through Modo's evaluated geometry |
 | Alembic | ![yes](docs/images/feature-yes.svg) | Loaded as Modo meshes with streaming deformers, or as Alembic Streaming Meshes, moving over time with motion blur; read from the file itself, so fluids whose faces change render and blur along their velocities; Alembic Curves and Point Clouds untested |
 | Curves, hair and Modo's Fur material | ![partly](docs/images/feature-partly.svg) | Fur follows its guides (Direction, Direction + Length, Shape, Range and Clump, with Guide Range and Guide Length), its vector map and its width map; a guide's Blend Amount and Modo's Hair Material are not read |

@@ -508,7 +508,13 @@ What the session does besides rendering:
 - **Checkpoints** (class `Checkpoints`): the frame so far, saved every `checkpoint_interval` minutes, with MoonRay's
   "Wrote:" lines, for a scene that asks. A capability of the session: the 0.5 kit does not ask, as Safe Denoising is
   greyed while XPU2 renders the preview (`lxserv/moonray_render_settings.py`, `panel.py`) and `render.py` writes no
-  saves under XPU2. Resuming from a save isn't done yet: Continue starts the render again.
+  saves under XPU2. With Resumable checkpoints on (Preferences > MoonRay > XPU2, off by default;
+  `XPU2_SESSION_RESUMABLE_CHECKPOINTS=1`), a checkpoint render (`stagedFrame`, class `StagedFilm`) goes in stages of sample indices, every
+  pixel's next ones as Rhizome's shares, merged by each output's filter; after each stage the film holds exactly every
+  pixel's first samples, and each save writes it beside the checkpoint files as `<checkpoint file>.xpu2resume`. A render
+  with `resume_render` reads it back and renders the rest; as samples are defined by their identity, the frame is the
+  uninterrupted one. The trade-off: such a render samples every pixel alike, in place of XPU2's sampling generations.
+  Off, a checkpoint render samples as any render does, its saves the frame so far, and a resume begins anew.
 - **Denoiser guides.** Albedo and normal at the first hit, for the kit's denoiser. Smart Render, MoonRay's, is greyed
   while XPU2 renders the preview, and realtime asks for no guides (`denoising.py`).
 - **Realtime** (`INDEXER.md` section 13). With the kit's RT switch on, the preview follows the scene at the realtime
@@ -770,9 +776,9 @@ From the design notes. Each has more detail where it's listed.
 **MoonRay port**
 
 - On the GPU: volumes whose maps read image textures (deferred to the CPU today; VDB, heterogeneous, mapped and glowing volumes render on the card since 2026-11-07); light filters, shadow linking and lobe light sets (they keep a scene on the CPU today).
-- An instanced displaced polygon mesh that deforms (it goes to MoonRay XPU today; subdivision ones render since 2026-11-02).
-- Deforming subdivision surfaces and their instances are checked by eye on one test scene, not yet against MoonRay.
-- Resuming from a checkpoint, and deep output (`FEATURE_PROGRESS.md`).
+- Deforming subdivision surfaces are checked by eye on one test scene, not yet against MoonRay (their instances are,
+  2026-11-15).
+- Deep output (`FEATURE_PROGRESS.md`).
 
 ## 22. Further reading
 
