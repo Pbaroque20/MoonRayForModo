@@ -126,7 +126,9 @@ def environment_image(item, runtime, full=False):
         from .environment_layers import texture, native_layers, NATIVE_SIZE, NATIVE_REALTIME_SIZE
         # Laid by the adapter: a Render's at a render's size, realtime's as its images are; in Python, small, for time.
         size = (NATIVE_SIZE if full else NATIVE_REALTIME_SIZE) if native_layers(item['layers']) else ENVIRONMENT_BAKE
-        source, space, ocio = Path(texture(item, *size)), 'linear', None
+        # The composed PFM itself, not the .tx made from it for MoonRay (read before it was made: "[WinError 2]", a car's
+        # environment shown grey in realtime).
+        source, space, ocio = Path(texture(item, *size, renderer=False)), 'linear', None
     else:
         source = Path(item['path'])
         space, ocio = color_space(source, item.get('color_space', ''), item.get('srgb'))
