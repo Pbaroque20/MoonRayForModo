@@ -8,7 +8,7 @@ The current release is [0.5.4.3.1](https://github.com/Pbaroque20/MoonRayForModo/
 
 ## Coming in 0.5.5
 
-- **Texture overflow by what the screen shows**: where a scene runs out of memory, XPU2 first shrinks each texture to what its meshes show on screen (a large map on a small or distant mesh needs little), then compresses, then shrinks further, each texture by its own need. A render keeps the detail it shows; for Render Animation the sizes hold over the whole shot, so no texture changes from frame to frame. Realtime keeps its 1024 pixel cap.
+- **Texture overflow by what the screen shows**: where a scene runs out of memory, XPU2 first shrinks each texture to what its meshes show on screen (a large map on a small or distant mesh needs little), then compresses, then shrinks further, each texture by its own need. A render keeps the detail it shows; for Render Animation the sizes hold over the whole shot, so no texture changes from frame to frame. Realtime keeps its 1024 pixel cap. How XPU2 and MoonLightIPR each handle textures: [Texture handling](docs/TEXTURE_HANDLING.md).
 - **Sharper procedurals and skies, made far faster**: Grid, Dots, Cellular, Wood, Weave and Ripples laid on by UVs or a projection, and layered skies with a physical sky or a procedural, are made in native code, no longer pixel by pixel in Python: larger (skies four times sharper) in a fraction of the time, the same patterns as before.
 - **MoonLightIPR final renders at full size**: a Render and Render Animation bake MoonShine graphs at the size of their images (up to 8K), not realtime's.
 - **Replicators**: a hidden prototype stays hidden, and a replicator no longer stops MoonLightIPR's preview with a motion blur error when blur is off.
