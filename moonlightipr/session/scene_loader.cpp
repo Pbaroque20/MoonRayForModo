@@ -321,13 +321,13 @@ SceneSettings SceneLoader::apply(const std::string& path) {
     // "MLS" and a letter for the form of the scene, which changes whenever what is written in it does: "C" since
     // the scene's sample clamp is written in it, "D" since a toon material's ramps are, "E" since a hair toon's highlights are,
     // "F" since the lights' poses at the shutter's close are, "G" since the volume scattering factors are, "H" since the
-    // camera's film offset is, "I" since a material's fuzz is, "J" since the light sets are, "K" since a mesh may be displaced, "L" since by a program of displacement nodes, "M" since a material's clearcoat bump strength is, "N" since whether the camera sees each light is, "O" since the subsurface scatterings a path may have are, "P" since each instance's own number is, "Q" since the roughness clamp is, "R" since what reflections and refractions see of the environment is, "S" since the kinds of rays each light is hidden from are. A plugin and a session of different versions say so plainly, in
+    // camera's film offset is, "I" since a material's fuzz is, "J" since the light sets are, "K" since a mesh may be displaced, "L" since by a program of displacement nodes, "M" since a material's clearcoat bump strength is, "N" since whether the camera sees each light is, "O" since the subsurface scatterings a path may have are, "P" since each instance's own number is, "Q" since the roughness clamp is, "R" since what reflections and refractions see of the environment is, "S" since the kinds of rays each light is hidden from are, "T" since a displaced mesh may be split by its distance from the camera. A plugin and a session of different versions say so plainly, in
     // place of reading each other's scenes wrongly.
     const uint32_t mark = in.value<uint32_t>();
     if ((mark & 0x00ffffff) != 0x00534c4d) throw std::runtime_error("Not a MoonLightIPR scene: " + path);
-    if (mark != 0x53534c4d)
+    if (mark != 0x54534c4d)
         throw std::runtime_error("This MoonLightIPR and the plugin are of different versions (the scene is form '" + std::string(1, char(mark >> 24))
-                                 + "', this MoonLightIPR reads 'S'). Install the kit and its runtime from the same release.");
+                                 + "', this MoonLightIPR reads 'T'). Install the kit and its runtime from the same release.");
     ++generation;
     SceneSettings settings;
     settings.width = in.value<uint32_t>();
@@ -827,9 +827,23 @@ SceneSettings SceneLoader::apply(const std::string& path) {
             // A displaced mesh: how often to split it, the material its instances give it, and each displacing
             // material's program (form 'L').
             uint32_t splits = 0, displacedMaterial = 0;
+            // Split by its distance from the camera (form 'T', the splits' top bit): the camera in the mesh's own
+            // space, the angle an edge may span from it, and the most triangles (splitByDistance).
+            bool byDistance = false;
+            float camera[3] = {0, 0, 0}, angle = 0.0f;
+            uint32_t budget = 0;
             std::vector<std::pair<uint32_t, std::vector<DisplacementStep>>> programs;
             if (flags & MESH_DISPLACE) {
                 splits = in.value<uint32_t>();
+                if (splits & 0x80000000u) {
+                    byDistance = true;
+                    splits &= 0xffu;
+                    for (float& value : camera) value = in.value<float>();
+                    angle = in.value<float>();
+                    budget = in.value<uint32_t>();
+                    if (!(angle > 0.0f) || !std::isfinite(angle) || budget == 0 || budget > 50000000u)
+                        throw std::runtime_error("MoonLightIPR scene's distance split is out of range");
+                }
                 displacedMaterial = in.value<uint32_t>();
                 programs.resize(in.value<uint32_t>());
                 if (splits > 8 || programs.size() > 4096) throw std::runtime_error("MoonLightIPR scene displaces a mesh beyond its limits");
@@ -847,8 +861,11 @@ SceneSettings SceneLoader::apply(const std::string& path) {
             }
             if (cached == meshes.end() && (flags & MESH_DISPLACE)) {
                 // Split finer, so that the displacement has vertices to move; moved once the materials are set.
-                const std::vector<uint32_t> coarse = closePositions.empty() ? std::vector<uint32_t>() : indices;
-                Triangles fine = split(Triangles{std::move(positions), std::move(indices), std::move(materialIds), std::move(uvSets)}, splits);
+                const std::vector<uint32_t> coarse = closePositions.empty() || byDistance ? std::vector<uint32_t>() : indices;
+                Triangles fine = byDistance
+                    ? splitByDistance(Triangles{std::move(positions), std::move(indices), std::move(materialIds), std::move(uvSets)}, closePositions,
+                                      camera, angle, splits, budget)
+                    : split(Triangles{std::move(positions), std::move(indices), std::move(materialIds), std::move(uvSets)}, splits);
                 positions = std::move(fine.positions);
                 indices = std::move(fine.indices);
                 materialIds = std::move(fine.materialIds);
@@ -860,7 +877,7 @@ SceneSettings SceneLoader::apply(const std::string& path) {
                 normals = smoothNormals(positions, indices);
                 // Where the mesh is as the shutter closes, split the same way: the splitting goes by the triangles
                 // alone, so the vertices it makes match those above one for one.
-                if (!closePositions.empty()) {
+                if (!closePositions.empty() && !byDistance) {
                     closePositions = split(Triangles{std::move(closePositions), coarse, {}, {}}, splits).positions;
                     if (closePositions.size() != positions.size()) throw std::runtime_error("MoonLightIPR scene's displaced mesh moves unevenly");
                 }
