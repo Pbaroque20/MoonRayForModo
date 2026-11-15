@@ -42,6 +42,56 @@ POINTWISE = ('multiply', 'add', 'subtract', 'divide', 'clamp', 'convert', 'swizz
 TILE_RESOLUTION = 2048
 # A map laid out in the object's space, baked over the box its meshes fill: as many pixels across it.
 SOLID_RESOLUTION = 2048
+# For a final render (final(), MoonLightIPR's Render and Render Animation, whose images are at their full size): over
+# one image, that image's own size, at most FINAL_TILE_LIMIT a side; a map of its own at FINAL_RESOLUTION; one laid out
+# in the object's space at FINAL_SOLID_RESOLUTION. Realtime keeps the sizes above.
+FINAL_RESOLUTION, FINAL_SOLID_RESOLUTION, FINAL_TILE_LIMIT = 2048, 4096, 8192
+_FINAL = __import__('contextvars').ContextVar('moonray_final_bakes', default=False)
+
+
+class final:
+    """with final(on): bakes made inside are made at a final render's sizes where on."""
+    def __init__(self, on=True):
+        self.on = bool(on)
+
+    def __enter__(self):
+        self.token = _FINAL.set(self.on)
+        return self
+
+    def __exit__(self, *exc):
+        _FINAL.reset(self.token)
+        return False
+
+
+def image_side(path, runtime=None):
+    """An image's longer side in pixels (its first UDIM tile's), by oiiotool; None where it cannot be told."""
+    import re
+    import subprocess
+    from . import native, textures
+    try:
+        tiles = textures.source_tiles(path)
+        source = tiles[min(tiles)] if tiles else None
+        if source is None:
+            return None
+        tool = native.tool('oiiotool.exe', runtime)
+        done = subprocess.run([str(tool), '--info', str(source)], env=native.environment(tool.parent), stdout=subprocess.PIPE,
+                              stderr=subprocess.STDOUT, text=True, timeout=60, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+        found = re.search(r'(\d+)\s*x\s*(\d+)', done.stdout)
+        return max(int(found.group(1)), int(found.group(2))) if found else None
+    except Exception:
+        return None
+
+
+def final_size(graph, tile, region, runtime=None):
+    """A final render's bake size for a node (final()), or None outside one."""
+    if not _FINAL.get():
+        return None
+    if region is not None:
+        return FINAL_SOLID_RESOLUTION
+    if tile is not None:
+        side = image_side(graph['nodes'][tile].get('parameters', {}).get('file', ''), runtime)
+        return min(FINAL_TILE_LIMIT, max(TILE_RESOLUTION, side or TILE_RESOLUTION))
+    return FINAL_RESOLUTION
 
 
 def space_of(node):
@@ -234,7 +284,7 @@ def scene(graph, identity, tile=None, region=None):
 def bake(graph, identity, runtime, tile=None, region=None):
     """The path of an EXR holding the node's output over one unit of UV (with tile, over one repeat of that image);
     made if it is not there yet."""
-    target, render = prepared(graph, identity, runtime, tile, region=region)
+    target, render = prepared(graph, identity, runtime, tile, size=final_size(graph, tile, region, runtime), region=region)
     if render is not None:
         render()
     return target

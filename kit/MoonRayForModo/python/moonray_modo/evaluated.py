@@ -668,6 +668,10 @@ def meshes(data, materials, warnings, scene=None):
         from . import properties
     for surface in data['surfaces']:
         visibility = tuple(bool(v) for v in surface['visibility'])
+        # Nothing of it rendered by Modo (a replicator's hidden prototype, at the origin with every flag off): left out
+        # before the shadow flag is worked out anew below, which brought a tester's hidden teapot back as a caster.
+        if not any(visibility):
+            continue
         if scene is not None:
             # The sixth is what shadow rays go by; Modo's own sixth, for occlusion rays, is not that.
             visibility = visibility[:5] + (casts_shadow(shading_scene(surface, scene), tuple(surface['layers']),
@@ -692,6 +696,9 @@ def meshes(data, materials, warnings, scene=None):
         groups.setdefault(key, []).append(surface)
     result = []
     readings = {}
+    # Each mesh's identity once: an item whose surfaces fall in two groups (a replicator of several prototypes, or parts
+    # seen differently) gave two meshes one identity, which motion blur and MoonLightIPR's motion vectors refuse.
+    used = set()
     for (source, tag, visibility, layers, settings), surfaces in groups.items():
         prototype = data['prototypes'][str(source)]
         if not prototype['segments']:
@@ -729,7 +736,11 @@ def meshes(data, materials, warnings, scene=None):
             if not _derived('within', (indices, vertices), lambda: not len(indices) or (min(indices) >= 0 and max(indices) < len(vertices))):
                 raise ValueError('Invalid evaluated geometry index')
             attribute_indices = range(len(indices)) if segment.get('face_varying') else indices
-            mesh = dict(name=surfaces[0]['source_item'], identity=surfaces[0]['source_item']+'|'+tag+'|'+str(segment_index), vertices=vertices,
+            identity = surfaces[0]['source_item']+'|'+tag+'|'+str(segment_index)
+            if identity in used:
+                identity += '|%s|%d' % (source, sum(1 for held in used if held.startswith(identity)))
+            used.add(identity)
+            mesh = dict(name=surfaces[0]['source_item'], identity=identity, vertices=vertices,
                         faces=segment['faces'], matrix=surfaces[0]['matrix'], material=tag,
                         normals=_gather(segment['normals'], segment['faces'], indices, segment.get('face_varying')) if segment['normals'] else [],
                         uvs=_gather(uv_sets[uv_index], segment['faces'], indices, segment.get('face_varying')) if uv_index < len(uv_sets) else [],

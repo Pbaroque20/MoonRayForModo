@@ -146,28 +146,88 @@ def image_pixels(layer, folder, width, height):
 GRADIENT_KINDS = {'constant': 0, 'overcast': 1, 'grad2': 2}
 
 
+# A layered environment's map where the adapter lays it (native_layers): a physical sky alone at 2048 takes 0.15 s.
+# Laid in Python it is the size asked (512 x 256 for MoonRay, MoonLightIPR's ENVIRONMENT_BAKE), or 256 x 128 with a
+# physical sky.
+NATIVE_SIZE, NATIVE_REALTIME_SIZE = (2048, 1024), (1024, 512)
+
+
+def native_layers(layers):
+    """Whether the geometry adapter lays all of an environment's layers (native_blend): none in a group or a mask, none
+    a texture gradient; a physical sky or a procedural only where it has MR_environment_layers. Asked before the
+    layers' images are read, for the map's size: a physical sky laid in Python is held to 256 x 128 pixels."""
+    from .layers import BLENDS
+    from .rows import _native
+    library = _native()
+    if library is None or not hasattr(library, 'MR_environment_blend') or not layers:
+        return False
+    richer = hasattr(library, 'MR_environment_layers')
+    for layer in layers:
+        if layer.get('groups') or layer.get('effect', 'envColor') != 'envColor' or layer.get('blend', 'normal') not in BLENDS:
+            return False
+        kind = layer['kind']
+        if kind == 'gradient' or (kind in ('procedural', 'physical') and not richer):
+            return False
+        if kind == 'procedural':
+            from .procedurals import NATIVE_KINDS
+            if (layer.get('procedural') or {}).get('kind') not in NATIVE_KINDS:
+                return False
+    return True
+
+
+def sky_numbers(layer):
+    """A physical sky as MR_environment_layers takes it: the sun's direction, the table's clamp scale, normalize, the
+    sky's gamma, whether the ground's colour moves the sky, the ground's colour, then the table daylight.sky blends for
+    the sun's height and the haze (as daylight.color reads it)."""
+    from .daylight import sky
+    sun = [float(v) for v in layer['sun_direction'][:3]]
+    length = math.sqrt(sum(v * v for v in sun))
+    if length <= 0:
+        raise ValueError('Invalid sun direction')
+    values, scale = sky(math.degrees(math.asin(max(-1.0, min(1.0, sun[1] / length)))), float(layer.get('haze', 2.0)))
+    albedo = layer.get('ground_albedo')
+    moved = bool(albedo) and any(abs(v - .5) > 1e-6 for v in albedo)
+    ground = [float(v) for v in (albedo or [.5] * 3)[:3]]
+    return sun + [float(scale), 1.0 if layer.get('normalize') else 0.0, float(layer.get('sky_gamma', 1.0)), 1.0 if moved else 0.0] + ground + [float(v) for v in values]
+
+
 def native_blend(layers, width, height):
-    """The environment's layers laid over one another by the geometry adapter (MR_environment_blend), over all of the
-    machine's threads: the map's floats, rows bottom up, as texture() writes them. None where the adapter cannot, or a
-    layer is of a kind it does not lay (groups, masks, procedurals, texture gradients, a physical sky), for the loop in
-    Python. A car's four layers took 15 s of a first preview there."""
+    """The environment's layers laid over one another by the geometry adapter (MR_environment_layers, or
+    MR_environment_blend in an older one), over all of the machine's threads: the map's floats, rows bottom up, as
+    texture() writes them. None where it cannot (native_layers), for the loop in Python. A car's four layers took 15 s
+    of a first preview there; a physical sky or a procedural were Python's until 2026-11-14."""
     import ctypes
     from array import array
     from .layers import BLENDS
     from .rows import _native
     library = _native()
-    if library is None or not hasattr(library, 'MR_environment_blend') or not layers:
+    if not native_layers([layer for layer, *_ in layers]):
         return None
+    richer = hasattr(library, 'MR_environment_layers')
     count = len(layers)
     kinds, modes, opacities, inverts = [], [], [], []
     images, alphas, turns, uvs, colours, gradients, held = [], [], [], [], [], [], []
+    skies, patterns = [], []
     for layer, pixels, alpha, inv in layers:
-        if layer.get('groups') or layer.get('effect', 'envColor') != 'envColor' or layer.get('blend', 'normal') not in BLENDS:
-            return None
         kind = layer['kind']
-        if kind in ('gradient', 'procedural', 'physical') or (kind == 'image' and pixels is None):
+        if kind == 'image' and pixels is None:
             return None
-        kinds.append(0 if kind == 'image' else 1 if kind == 'color' else 2)
+        kinds.append(0 if kind == 'image' else 1 if kind == 'color' else 3 if kind == 'physical' else 4 if kind == 'procedural' else 2)
+        if kind == 'physical':
+            values = sky_numbers(layer)
+            numbers = (ctypes.c_double * len(values))(*values)
+            held.append(numbers)
+            skies.append(ctypes.cast(numbers, ctypes.POINTER(ctypes.c_double)))
+        else:
+            skies.append(None)
+        if kind == 'procedural':
+            from .procedurals import native_settings
+            settings = native_settings(layer['procedural'])
+            numbers = (ctypes.c_double * len(settings))(*settings)
+            held.append(numbers)
+            patterns.append(ctypes.cast(numbers, ctypes.POINTER(ctypes.c_double)))
+        else:
+            patterns.append(None)
         modes.append(BLENDS[layer.get('blend', 'normal')])
         opacities.append(float(layer.get('opacity', 1)))
         inverts.append(1 if layer.get('invert') else 0)
@@ -199,19 +259,26 @@ def native_blend(layers, width, height):
         else:
             images.append(None)
             alphas.append(None)
-    function = library.MR_environment_blend
-    if function.argtypes is None:
-        function.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_int] + [ctypes.c_void_p] * 11 + [ctypes.c_int]
-        function.restype = ctypes.c_int
     numbers = lambda kind, values: (kind * len(values))(*values)
     pointers = lambda values: (ctypes.POINTER(ctypes.c_float) * count)(*values)
+    doubles = lambda values: (ctypes.POINTER(ctypes.c_double) * count)(*values)
     out = array('f', bytes(width * height * 12))
-    if function(width, height, count, numbers(ctypes.c_int, kinds), numbers(ctypes.c_int, modes), numbers(ctypes.c_double, opacities),
-                numbers(ctypes.c_int, inverts), pointers(images), pointers(alphas), numbers(ctypes.c_double, turns),
-                numbers(ctypes.c_double, uvs), numbers(ctypes.c_double, colours), numbers(ctypes.c_double, gradients),
-                out.buffer_info()[0], 0):
-        return None
-    return out
+    common = (width, height, count, numbers(ctypes.c_int, kinds), numbers(ctypes.c_int, modes), numbers(ctypes.c_double, opacities),
+              numbers(ctypes.c_int, inverts), pointers(images), pointers(alphas), numbers(ctypes.c_double, turns),
+              numbers(ctypes.c_double, uvs), numbers(ctypes.c_double, colours), numbers(ctypes.c_double, gradients))
+    if richer:
+        function = library.MR_environment_layers
+        if function.argtypes is None:
+            function.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_int] + [ctypes.c_void_p] * 13 + [ctypes.c_int]
+            function.restype = ctypes.c_int
+        done = function(*common, doubles(skies), doubles(patterns), out.buffer_info()[0], 0)
+    else:
+        function = library.MR_environment_blend
+        if function.argtypes is None:
+            function.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_int] + [ctypes.c_void_p] * 11 + [ctypes.c_int]
+            function.restype = ctypes.c_int
+        done = function(*common, out.buffer_info()[0], 0)
+    return None if done else out
 
 
 IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
@@ -247,7 +314,8 @@ def texture(environment, width=512, height=256):
     from .compositing import Groups
     from .procedurals import sample
     from .gradients import sample as gradient_sample
-    if any(layer['kind']=='physical' for layer in environment['layers']):
+    if any(layer['kind']=='physical' for layer in environment['layers']) and not native_layers(environment['layers']):
+        # Laid in Python, pixel by pixel, a physical sky is held to this size for time; the adapter lays it at the size asked.
         width,height = 256,128
     digest = hashlib.sha256(('stack-v10-daylight|%dx%d|'%(width,height)+json.dumps([environment,textures._policy.get()],sort_keys=True)).encode()).hexdigest()
     folder = cache_root() / 'Environments'

@@ -7,7 +7,45 @@ import modo
 from . import properties, options, coordinates, face_tags
 
 
+# The channels read during one reading of the scene (held_channels, snapshot): each item's channel asked once. Walking
+# each material's Shader Tree stack asked the masks above it again for every material and every layer: on a tester's
+# scene 15,044 reads were of 2,091 channels. Held for the one reading only, so nothing read is ever stale.
+_CHANNELS = None
+_MISSING = object()
+
+
+class held_channels:
+    """with held_channels(): channel() reads each item's channel once until the outermost one ends."""
+    _depth = 0
+
+    def __enter__(self):
+        global _CHANNELS
+        if held_channels._depth == 0:
+            _CHANNELS = {}
+        held_channels._depth += 1
+        return self
+
+    def __exit__(self, *exc):
+        global _CHANNELS
+        held_channels._depth -= 1
+        if held_channels._depth == 0:
+            _CHANNELS = None
+        return False
+
+
 def channel(item, name, default=None):
+    held = _CHANNELS
+    if held is not None:
+        try:
+            key = (item.id, name)
+        except Exception:
+            key = None
+        if key is not None:
+            value = held.get(key, held)
+            if value is held:
+                found = item.channel(name)
+                value = held[key] = found.get() if found is not None else _MISSING
+            return default if value is _MISSING else value
     value = item.channel(name)
     return value.get() if value is not None else default
 
@@ -540,7 +578,7 @@ def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fals
     """The scene as MoonRay is to be given it. The Shader Tree's order and its layer masks are found once for the
     reading (layers.held_tree), not again for each material's stack."""
     from .layers import held_tree
-    with held_tree():
+    with held_tree(), held_channels():
         return _snapshot(evaluated_geometry,reuse_geometry,refresh_materials,dirty_meshes,shading_kept)
 
 

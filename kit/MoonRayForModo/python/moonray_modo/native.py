@@ -433,11 +433,6 @@ ENGINE_NAMES = {'vectorized': 'MoonRay Vector', 'vector': 'MoonRay Vector', 'sca
                 'auto': 'MoonRay Auto'}
 
 
-def engine_name(mode):
-    """MoonRay named by its execution mode (ENGINE_NAMES): MoonRay Vector, MoonRay Scalar, MoonRay XPU or MoonRay Auto."""
-    return ENGINE_NAMES.get(str(mode or '').lower(), 'MoonRay')
-
-
 # What MoonRay is called in the MoonRay Terminal, by the execution mode it was started in.
 ENGINE_NAMES = {'vectorized': 'MoonRay Vector', 'vector': 'MoonRay Vector', 'scalar': 'MoonRay Scalar', 'xpu': 'MoonRay XPU',
                 'auto': 'MoonRay Auto'}

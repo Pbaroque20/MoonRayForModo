@@ -10,6 +10,8 @@
 #include <memory>
 #include <atomic>
 #include <mutex>
+#include <cctype>
+#include <unordered_map>
 #include <cstdint>
 #include <cstring>
 #include <string>
@@ -103,17 +105,49 @@ constexpr unsigned SmallestOverflowSide=256;
 // Its first step, where the encoder is there: every texture as BC6H, a byte a texel, at the size it has: lossy, but the detail stays.
 inline std::atomic<bool>& overflowCompress(){static std::atomic<bool> on{false};return on;}
 inline bool compressorThere(){return CompressBlocksBC6H&&GetProfile_bc6h_fast;}
+// How many texels across each texture its meshes can show on screen, as the kit works it out (texture_density.py, the scene's
+// /modo/xpu2/texture_density): texture overflow mode's first step fits each texture to it (overflowFitted), losing nothing
+// the frame shows; each halving after compression halves a texture from it, so that every texture keeps its share of
+// detail by the size of its meshes on screen. A texture the kit names none for (a light's, the environment's) steps down
+// by overflowSide as before. Keyed by the path folded to lower case with backslashes.
+inline std::string neededKey(std::string path){for(char& c:path){c=char(std::tolower((unsigned char)c));if(c=='/')c='\\';}return path;}
+inline std::mutex& needsLock(){static std::mutex m;return m;}
+inline std::unordered_map<std::string,unsigned>& needsTable(){static std::unordered_map<std::string,unsigned> t;return t;}
+inline void setNeeds(const std::vector<std::string>& paths,const std::vector<int>& sides){std::lock_guard<std::mutex> l(needsLock());
+ needsTable().clear();for(size_t i=0;i<paths.size()&&i<sides.size();++i)if(sides[i]>0)needsTable()[neededKey(paths[i])]=unsigned(sides[i]);}
+inline unsigned needed(const std::string& path){std::lock_guard<std::mutex> l(needsLock());
+ const auto found=needsTable().find(neededKey(path));return found==needsTable().end()?0u:found->second;}
+inline bool anyNeeds(){std::lock_guard<std::mutex> l(needsLock());return !needsTable().empty();}
+inline std::atomic<bool>& overflowFitted(){static std::atomic<bool> on{false};return on;}
+inline std::atomic<unsigned>& overflowHalvings(){static std::atomic<unsigned> n{0};return n;}
+// The largest side a texture keeps in texture overflow mode (0: as stored): fitted to its need, then halved from it with
+// each step; one with no need, overflowSide.
+inline unsigned sideFor(const std::string& path){
+ const unsigned need=overflowFitted().load()?needed(path):0u;
+ if(!need)return overflowSide().load();
+ unsigned side=need;for(unsigned k=overflowHalvings().load();k&&side>SmallestOverflowSide;--k)side/=2;
+ return std::max(side,SmallestOverflowSide);}
+inline void resetOverflow(){overflowSide().store(0);overflowCompress().store(false);overflowFitted().store(false);overflowHalvings().store(0);}
 inline bool nextOverflowSide(){
+ // First each texture fitted to what its meshes show, then compression, then halving: what is not seen goes first.
+ if(!overflowFitted().load()&&anyNeeds()){overflowFitted().store(true);return true;}
  if(!overflowCompress().load()&&compressorThere()&&largestTexture().load()){overflowCompress().store(true);return true;}
  const unsigned now=overflowSide().load(),from=now?now:largestTexture().load();
- if(from<=SmallestOverflowSide)return false;
- unsigned next=SmallestOverflowSide;while(next*2<from)next*=2;
- overflowSide().store(next);return true;}
+ bool fitted=false;
+ if(overflowFitted().load()){std::lock_guard<std::mutex> l(needsLock());unsigned k=overflowHalvings().load();
+  for(const auto& entry:needsTable())if((entry.second>>k)>SmallestOverflowSide){fitted=true;break;}}
+ if(from<=SmallestOverflowSide&&!fitted)return false;
+ if(from>SmallestOverflowSide){unsigned next=SmallestOverflowSide;while(next*2<from)next*=2;overflowSide().store(next);}
+ if(fitted)overflowHalvings().fetch_add(1);
+ return true;}
 inline bool canOverflow(){const unsigned now=overflowSide().load();
- return (!overflowCompress().load()&&compressorThere()&&largestTexture().load())||(now?now:largestTexture().load())>SmallestOverflowSide;}
+ return (!overflowFitted().load()&&anyNeeds())||(!overflowCompress().load()&&compressorThere()&&largestTexture().load())||
+        (now?now:largestTexture().load())>SmallestOverflowSide;}
 inline std::string overflowWords(){const unsigned side=overflowSide().load();std::string words;
- if(overflowCompress().load())words="compressed";
- if(side)words+=(words.empty()?"limited to ":" and limited to ")+std::to_string(side)+" pixels a side";
+ if(overflowFitted().load())words="fitted to their meshes on screen";
+ if(overflowCompress().load())words+=(words.empty()?"":", ")+std::string("compressed");
+ if(const unsigned k=overflowHalvings().load())words+=(words.empty()?"":", ")+std::string("then halved ")+std::to_string(k)+(k==1?" time":" times");
+ if(side)words+=(words.empty()?"limited to ":" and the others limited to ")+std::to_string(side)+" pixels a side";
  return words;}
 // A tile's texels (tw x th, any size up to a tile) as BC6H blocks, padded to a whole tile by its edge. Unsigned: negative values come
 // out as 0 (a map with them stays as it is: Pyramid::compressed).
@@ -241,7 +275,7 @@ struct Pyramid {
   for(unsigned level=0;level<tex::MaxLevels&&in->seek_subimage(0,level);++level){auto spec=in->spec();need(spec.get_int_attribute("sampleborder",0)==0&&spec.get_int_attribute("oiio:sampleborder",0)==0,"Border-sampled TX unsupported");
    unsigned w=spec.width,h=spec.height,nx=(w+tex::Tile-1)/tex::Tile,ny=(h+tex::Tile-1)/tex::Tile;
    // Texture overflow mode: the levels over its side left out, the first one under it this pyramid's finest.
-   if(const unsigned side=overflowSide().load();side&&std::max(w,h)>side&&!image.count){fileBase=int(level)+1;continue;}
+   if(const unsigned side=sideFor(file);side&&std::max(w,h)>side&&!image.count){fileBase=int(level)+1;continue;}
    static const bool floats=[]{const char* v=std::getenv("XPU2_SESSION_FLOAT_TEXTURES");return v&&v[0]=='1';}();
    channels=spec.nchannels;alphaChannel=spec.alpha_channel;
    sourceFormat=spec.format==OIIO::TypeDesc::UINT8?0u:spec.format==OIIO::TypeDesc::HALF?1u:spec.format==OIIO::TypeDesc::FLOAT?2u:3u;
@@ -414,7 +448,7 @@ struct File {
     if(level==0){eightBit=spec.format==OIIO::TypeDesc::UINT8;need(eightBit||spec.format==OIIO::TypeDesc::HALF||spec.format==OIIO::TypeDesc::FLOAT,"Unsupported TX format");}
     else need(spec.width==std::max(1,w/2)&&spec.height==std::max(1,h/2),"Invalid stored mip pyramid");
     w=spec.width;h=spec.height;if(level==0){unsigned seen=largestTexture().load();while(unsigned(std::max(w,h))>seen&&!largestTexture().compare_exchange_weak(seen,unsigned(std::max(w,h)))){}}
-    if(const unsigned side=overflowSide().load();!side||unsigned(std::max(w,h))<=side)decodedBytes+=overflowCompress().load()?uint64_t(w)*h:uint64_t(w)*h*spec.nchannels*4;
+    if(const unsigned side=sideFor(name.string());!side||unsigned(std::max(w,h))<=side)decodedBytes+=overflowCompress().load()?uint64_t(w)*h:uint64_t(w)*h*spec.nchannels*4;
     need(decodedBytes<=fileTextureBudget(),"Decoded texture budget");++levels;
    }need(levels>0&&w==1&&h==1,"Complete stored mip pyramid required");need(!in->seek_subimage(1,0),"Multipart texture unsupported");
    remote::addToCache(*system->imagecache(),name.string());

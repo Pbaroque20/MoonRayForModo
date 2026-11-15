@@ -420,7 +420,15 @@ def material_stack(scene, candidates, warnings, tag, membership=None):
                 allowed.add(layer.id);captured_group_masks.add(layer.id)
             elif layer.id in captured_group_masks:allowed.discard(layer.id)
         collect(scene, {tag:value}, warnings, layer_filter=allowed, material_key=tag)
-        if value.get("node_override") and (value.get("node_graph") or value.get("native_shader")):
+        graph_material=value.get("node_override") and (value.get("node_graph") or value.get("native_shader"))
+        if not graph_material and result and value.get('layer_opacity',1)==1 and value.get('layer_blend','normal')=='normal' \
+                and not value['material_groups'] and not any(layer.get('effect') in ('groupMask','layerMask') for layer in value.get('layers',[])) \
+                and not any(layer.get('effect') in ('groupMask','layerMask') for row in result for layer in row.get('layers',[])):
+            # A plain Modo material over the stack, whole and unmasked, covers everything below it as Modo renders it:
+            # what is under it, its textures with it, is not handed on. A tester's grey material at the top of the
+            # Shader Tree left every texture below it for XPU2 to load, and its texture memory overflowed.
+            result=[]
+        if graph_material:
             masked=any(layer.get('effect') in ('groupMask','layerMask') for layer in value.get('layers',[]))
             groups_opaque=all(g.get('opacity',1)==1 and g.get('blend','normal')=='normal' and not g.get('invert') for g in value['material_groups'])
             inherited_masks=any(layer.get('effect') in ('groupMask','layerMask') for row in result for layer in row.get('layers',[]))

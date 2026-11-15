@@ -123,8 +123,10 @@ def environment_image(item, runtime, full=False):
     from .working_space import TO_AP1, enabled as working_enabled, matrix_argument
     if item['kind'] == 'stack':
         # The plugin composes layered environments and physical skies into one linear image.
-        from .environment_layers import texture
-        source, space, ocio = Path(texture(item, *ENVIRONMENT_BAKE)), 'linear', None
+        from .environment_layers import texture, native_layers, NATIVE_SIZE, NATIVE_REALTIME_SIZE
+        # Laid by the adapter: a Render's at a render's size, realtime's as its images are; in Python, small, for time.
+        size = (NATIVE_SIZE if full else NATIVE_REALTIME_SIZE) if native_layers(item['layers']) else ENVIRONMENT_BAKE
+        source, space, ocio = Path(texture(item, *size)), 'linear', None
     else:
         source = Path(item['path'])
         space, ocio = color_space(source, item.get('color_space', ''), item.get('srgb'))
@@ -995,10 +997,10 @@ def pack(scene, width, height, environment=0.15, known=(), samples=256, denoise=
         # Their repeats fitted to the meshes they are on, where Fit to Mesh is on (ocean.fitted).
         # Displaced instances' scale in their mesh's points, as MoonRay and XPU2 have them (instance_scale).
         from . import instance_scale
-        return _pack(ocean.fitted(instance_scale.baked(scene)), width, height, environment, known, samples, denoise, runtime)
+        return _configured(ocean.fitted(instance_scale.baked(scene)), width, height, environment, known, samples, denoise, runtime)
 
 
-def _pack(scene, width, height, environment=0.15, known=(), samples=256, denoise=True, runtime=None):
+def _configured(scene, width, height, environment=0.15, known=(), samples=256, denoise=True, runtime=None):
     """Serialize a snapshot. Return (bytes, mesh keys, warnings).
 
     known holds the mesh keys the receiving session has already loaded; their data is left out.
@@ -1007,8 +1009,12 @@ def _pack(scene, width, height, environment=0.15, known=(), samples=256, denoise
     from .working_space import configuration as working_configuration
     from .textures import configuration as texture_configuration
     from . import conversions
-    # The scene's textures are converted side by side, and all are done before the scene is handed to the session.
-    with working_configuration(scene.get('asset_settings', {})), texture_configuration(scene.get('asset_settings', {})), conversions.together():
+    # The scene's textures are converted side by side, and all are done before the scene is handed to the session. Its
+    # own name: called _pack as the function below is, it was replaced by it (2026-11-12 to 11-14), and each texture was
+    # converted one after another, without the scene's colour settings.
+    from .graph_bake import final as final_bakes
+    # A Render's (its images at their full size): MoonShine graphs baked at a final render's sizes too (graph_bake.final).
+    with working_configuration(scene.get('asset_settings', {})), texture_configuration(scene.get('asset_settings', {})), conversions.together(),             final_bakes(bool(scene.get('_full_textures'))):
         return _pack(scene, int(width), int(height), float(environment), set(known), int(samples), bool(denoise), runtime)
 
 

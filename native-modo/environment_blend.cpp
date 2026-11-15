@@ -57,7 +57,51 @@ void gradient(int kind,const double* g,double height,double* out) {
     for(int k=0;k<3;++k) out[k]=a[k]+(b[k]-a[k])*t;
 }
 
+// daylight.color: Modo's physical sky in a direction, from the table daylight.sky blends for the sun's height and the
+// haze (16 heights by 24 angles from the sun, 3 numbers each). s: the sun's direction (3, as given), the table's clamp
+// scale, normalize (1 or 0), the sky's gamma, whether the ground's colour moves the sky (1 or 0), the ground's colour
+// (3); then the table.
+const int ALTITUDE_COUNT = 16, ANGLE_COUNT = 24;
+const double HORIZON_BLEND = 0.5, GROUND_BOUNCE[3] = {.75, .46, .49};
+
+void physical_sky(const double* direction, const double* s, double* out) {
+    const double* ground = s + 7;
+    const double* values = s + 10;
+    if (direction[1] < 0) {
+        const double below = std::asin(std::min(1.0, -direction[1]));
+        const double flat = std::hypot(direction[0], direction[2]);
+        if (below >= HORIZON_BLEND || flat <= 0) { for (int k = 0; k < 3; ++k) out[k] = ground[k]; return; }
+        const double level[3] = {direction[0] / flat, 0.0, direction[2] / flat};
+        double horizon[3];
+        physical_sky(level, s, horizon);
+        for (int k = 0; k < 3; ++k) out[k] = ground[k] + (horizon[k] - ground[k]) * (1 - below / HORIZON_BLEND);
+        return;
+    }
+    double sun[3] = {s[0], s[1], s[2]};
+    const double length = std::sqrt(sun[0] * sun[0] + sun[1] * sun[1] + sun[2] * sun[2]);
+    for (double& v : sun) v /= length;
+    const double degrees = 180.0 / PI;
+    const double altitude = std::asin(std::max(0.0, std::min(1.0, direction[1]))) * degrees;
+    const double apart = std::acos(std::max(-1.0, std::min(1.0, direction[0] * sun[0] + direction[1] * sun[1] + direction[2] * sun[2]))) * degrees;
+    const double i = (ALTITUDE_COUNT - 1) * std::sqrt(altitude / 90.0), j = (ANGLE_COUNT - 1) * std::sqrt(apart / 180.0);
+    const int i0 = std::min(ALTITUDE_COUNT - 2, int(i)), j0 = std::min(ANGLE_COUNT - 2, int(j));
+    const double fi = i - i0, fj = j - j0;
+    const int width = ANGLE_COUNT * 3, a = i0 * width + j0 * 3, b = (i0 + 1) * width + j0 * 3;
+    for (int c = 0; c < 3; ++c)
+        out[c] = (values[a + c] * (1 - fj) + values[a + 3 + c] * fj) * (1 - fi) + (values[b + c] * (1 - fj) + values[b + 3 + c] * fj) * fi;
+    if (s[6] != 0)
+        for (int c = 0; c < 3; ++c)
+            out[c] = out[c] * (1 - .5 * GROUND_BOUNCE[c]) / std::max(.05, 1 - std::min(1.0, std::max(0.0, ground[c])) * GROUND_BOUNCE[c]);
+    if (s[4] != 0 && s[3] > 0) {
+        const double gamma = std::max(.01, s[5]);
+        for (int c = 0; c < 3; ++c) out[c] = std::pow(std::max(0.0, out[c] / s[3]), 1.0 / gamma);
+    }
+}
+
 }  // namespace
+
+// procedural_bake.cpp's pattern at one point.
+void modo_procedural_point(const double* settings, double u, double v, float* rgb, float* alpha);
 
 // width x height directions, rows bottom up (the first row looks straight down), as the PFM the Python writes. For each
 // of count layers, bottom first: kinds (0 image, 1 colour, 2 gradient), modes (above), opacities, inverts (1 to invert
@@ -65,9 +109,10 @@ void gradient(int kind,const double* g,double height,double* out) {
 // its inverse placement (row-major, as coordinates.inverse gives a 4x4's top-left), or all zero for none; uv: a, b, c,
 // d, e, f, cos(rotation), sin(rotation), scale x, scale y; colours: 3 numbers; gradients: the gradient kind (as above)
 // then 14 numbers. out: width*height*3 floats. Returns 0.
-extern "C" __declspec(dllexport) int MR_environment_blend(int width,int height,int count,const int* kinds,const int* modes,
+static int blend_layers(int width,int height,int count,const int* kinds,const int* modes,
         const double* opacities,const int* inverts,const float* const* images,const float* const* alphas,const double* turns,
-        const double* uv,const double* colours,const double* gradients,float* out,int threads) {
+        const double* uv,const double* colours,const double* gradients,const double* const* skies,const double* const* patterns,
+        float* out,int threads) {
     if(threads<=0) threads=int(std::max(1u,std::thread::hardware_concurrency()));
     auto rows=[&](int begin,int end) {
         for(int y=begin;y<end;++y) {
@@ -82,6 +127,10 @@ extern "C" __declspec(dllexport) int MR_environment_blend(int width,int height,i
                         for(int k=0;k<3;++k) foreground[k]=colours[l*3+k];
                     } else if(kinds[l]==2) {
                         gradient(int(gradients[l*15]),gradients+l*15+1,direction[1],foreground);
+                    } else if(kinds[l]==3) {
+                        // As the renderers show it, its columns run the other way (environment_layers.texture).
+                        const double mirrored[3]={-direction[0],direction[1],direction[2]};
+                        physical_sky(mirrored,skies[l],foreground);
                     } else {
                         const double* m=turns+l*9;
                         double d[3]={direction[0],direction[1],direction[2]};
@@ -94,6 +143,13 @@ extern "C" __declspec(dllexport) int MR_environment_blend(int width,int height,i
                         const double* t=uv+l*10;
                         const double tx=t[0]*u0+t[1]*v0+t[2],ty=t[3]*u0+t[4]*v0+t[5];
                         double u=(tx*t[6]-ty*t[7])*t[8],v=(tx*t[7]+ty*t[6])*t[9];
+                        if(kinds[l]==4) {
+                            // A procedural: its pattern at this point of its UVs, its alpha its coverage.
+                            float rgb[3],grey[3];
+                            modo_procedural_point(patterns[l],u,v,rgb,grey);
+                            for(int k=0;k<3;++k) foreground[k]=rgb[k];
+                            coverage=grey[0];
+                        } else {
                         u=u*width-.5; v=v*height-.5;
                         const double fx=std::floor(u),fy=std::floor(v);
                         const double ax=u-fx,ay=v-fy;
@@ -111,6 +167,7 @@ extern "C" __declspec(dllexport) int MR_environment_blend(int width,int height,i
                             for(int k=0;k<3;++k) foreground[k]+=double(pixels[index*3+k])*w[2]*a;
                         }
                         if(alpha) for(int k=0;k<3;++k) foreground[k]/=std::max(1e-12,coverage);
+                        }
                     }
                     if(inverts[l]) for(int k=0;k<3;++k) foreground[k]=1-foreground[k];
                     const double opacity=std::max(0.0,std::min(1.0,opacities[l]*coverage));
@@ -130,4 +187,27 @@ extern "C" __declspec(dllexport) int MR_environment_blend(int width,int height,i
     }
     for(auto& thread:pool) thread.join();
     return 0;
+}
+
+extern "C" __declspec(dllexport) int MR_environment_blend(int width,int height,int count,const int* kinds,const int* modes,
+        const double* opacities,const int* inverts,const float* const* images,const float* const* alphas,const double* turns,
+        const double* uv,const double* colours,const double* gradients,float* out,int threads) {
+    for(int l=0;l<count;++l) if(kinds[l]<0||kinds[l]>2) return 1;
+    return blend_layers(width,height,count,kinds,modes,opacities,inverts,images,alphas,turns,uv,colours,gradients,nullptr,nullptr,out,threads);
+}
+
+// As MR_environment_blend, and two kinds more: 3 Modo's physical sky (skies[l]: daylight's numbers above, then its
+// table, 16 x 24 x 3), 4 a procedural (patterns[l]: MR_procedural_bake's 31 settings), placed as an image is. The
+// environment's layers with a physical sky or a procedural were laid in Python, pixel by pixel.
+extern "C" __declspec(dllexport) int MR_environment_layers(int width,int height,int count,const int* kinds,const int* modes,
+        const double* opacities,const int* inverts,const float* const* images,const float* const* alphas,const double* turns,
+        const double* uv,const double* colours,const double* gradients,const double* const* skies,const double* const* patterns,
+        float* out,int threads) {
+    for(int l=0;l<count;++l) {
+        if(kinds[l]<0||kinds[l]>4) return 1;
+        if(kinds[l]==3&&(!skies||!skies[l])) return 1;
+        if(kinds[l]==4&&(!patterns||!patterns[l])) return 1;
+        if(kinds[l]==0&&!images[l]) return 1;
+    }
+    return blend_layers(width,height,count,kinds,modes,opacities,inverts,images,alphas,turns,uv,colours,gradients,skies,patterns,out,threads);
 }

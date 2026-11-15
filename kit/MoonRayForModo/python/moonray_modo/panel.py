@@ -1767,7 +1767,18 @@ class Panel(Tools, QtWidgets.QWidget):
             if moving is False:return first
         from .animation import capture_current
         self._reading()
-        scene=self._configure_snapshot(capture_current(self._settings_values()['surface']==2))
+        try:
+            held=capture_current(self._settings_values()['surface']==2)
+        except ValueError as exc:
+            # Motion blur off, the shutter's ends read for MoonLightIPR's motion vectors alone: a scene they cannot be
+            # matched in still renders, as it stands, without the vectors (a tester's replicator stopped the preview
+            # with a motion blur error while blur was off everywhere).
+            if still or self._engine()!='moonlightipr' or self.preferences.get('preview_motion'):raise
+            self.changes.consume()
+            scene=self._capture()
+            self._set_notices(list(scene.get('warnings') or [])+['Motion vectors are left out: %s'%exc])
+            return scene
+        scene=self._configure_snapshot(held)
         # Stepping through the shutter is not an edit for IPR to follow.
         self.changes.consume()
         return scene

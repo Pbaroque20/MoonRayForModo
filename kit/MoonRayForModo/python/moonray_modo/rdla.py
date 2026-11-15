@@ -346,10 +346,12 @@ def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output
         # Displaced instances' scale in their mesh's points, as MoonRay displaces them in the mesh's own space
         # (instance_scale).
         from . import instance_scale
-        return _scene_text(ocean.spaced(ocean.fitted(instance_scale.baked(scene))), width, height, samples, environment, output_file)
+        return _configured_scene_text(ocean.spaced(ocean.fitted(instance_scale.baked(scene))), width, height, samples, environment, output_file)
 
 
-def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, output_file=None):
+def _configured_scene_text(scene, width=640, height=360, samples=2, environment=0.15, output_file=None):
+    # Its own name: called _scene_text as the writer below is, it was replaced by it (2026-11-12 to 11-14), and scenes
+    # were written without these settings, their textures converted one after another.
     from . import graph as graph_
     graph_.BUMP_STEP = bool(scene.get('_bump_step'))
     from .serialization import revision
@@ -465,6 +467,7 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
     from . import geometry, lighting
     from . import cryptomatte
     crypto=bool((output_file or scene.get('preview_buffer_files')) and cryptomatte.enabled(scene))
+    placed=[]
     render_meshes=list(geometry.render_meshes(scene.get('meshes',[]),expand_instances=True if scene.get('native_light_links',{}).get('lights') else {identity for identity,v in scene.get('production',{}).get('objects',{}).items() if v.get('link_enabled') or v.get('shadow_exclude') or v.get('light_filters') or v.get('mesh_light')}))
     multi_crypto=crypto and cryptomatte.multiple(scene)
     if multi_crypto and not scene.get('_crypto_categories'):
@@ -892,6 +895,8 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
                     *(['    ["mesh_resolution"] = %d,' % min(mesh.get('mesh_resolution',2 ** level), resolution_cap or 2 ** 31)] if subdivision else []),
                     '  }']
             lines += ['  RdlMeshGeometry("/modo/meshLight/geometry/%s") {' % index]+copied
+        # The mesh and the material tags it wears, for the textures' density on screen (texture_density).
+        placed.append((mesh, set(parts) if parts else {tag}))
         if parts:
             for part_index, face_tag in enumerate(parts):
                 lines.append('  assign(geometry, %s, %s, %s)' %
@@ -1134,6 +1139,17 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
     if entity_camera and entity_camera['class'] == 'BakeCamera':
         from .bake import resolve
         resolve(lines, render_meshes)
+    # How many texels across each texture its meshes can show on screen: XPU2's texture overflow mode steps each down
+    # to that before it compresses or shrinks anything (texture_density, host_texture.h).
+    # Only where XPU2 renders it (its sampling settings written above): MoonRay has no use for them.
+    if generation and (not output_file or scene.get('_xpu2')):
+        try:
+            from . import texture_density
+            # An animation's (animation.Sequence): the most over its frames, the same for each of them.
+            lines += texture_density.user_data(texture_density.needs('\n'.join(lines), placed, scene.get('dicing_camera') or scene['camera'], width,
+                                                                     scene.get('_texture_frames')))
+        except Exception:
+            pass
     return '\n'.join(shared_locals(lines)) + '\n'
 
 
