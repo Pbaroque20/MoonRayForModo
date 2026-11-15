@@ -488,11 +488,7 @@ class Panel(Tools, QtWidgets.QWidget):
                                  ('Open Image Denoise','oidn_cpu','The same, denoised on the processor.')):
             action=QtWidgets.QAction(words,safe);action.setCheckable(True);action.setChecked(engine==now);action.setToolTip(tip)
             action.triggered.connect(lambda checked=False,engine=engine:self._safe_chosen(engine));safe.addAction(action)
-        # MoonRay's: greyed while XPU2 renders the preview, which is quick enough to need it no more.
-        try:
-            from . import native
-            if self._xpu2_previews():safe.setEnabled(False);safe.setToolTip("Safe Denoising is MoonRay's; XPU2 renders the preview.")
-        except Exception:pass
+        # Under XPU2 too: its renders save between sampling generations, and Stop saves where it stands, to be continued.
         menu.addMenu(safe);self._safe_menu=safe
         menu.addSeparator()
         menu.addAction('Copy Image',self.copy_image)
