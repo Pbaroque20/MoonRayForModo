@@ -33,7 +33,7 @@ The current release is [0.5.4.3.1](https://github.com/Pbaroque20/MoonRayForModo/
   ![The same sea in MoonLightIPR: plain water (left), and its crests glowing (right)](docs/images/ocean-crest.webp)
 
 - **Oceans without black patches in MoonRay and XPU2**: the short waves MoonRay cannot dice reach it through the kit's own ocean normal map, at the strength that matches MoonLightIPR's sea and with every reflection kept above the horizon. Before, ripples facing the camera showed the dark water beneath as black patches.
-- **The Ocean Plane's horizon in MoonRay and XPU2** fades into the sky's reflection, as MoonLightIPR's does, where it went to a black line: its waves fade out only from where a pixel spans more wave than it can show, worked out from the camera.
+- **The Ocean Plane's horizon in MoonRay and XPU2** eases into a soft sheen of the sky, as MoonLightIPR's does, where it went to a black line: toward the horizon its waves fade and its water grows rougher, evenly over the rows of the picture, from a distance worked out from the camera. Its new Horizon Fade setting moves where that begins toward the horizon.
 - **Ocean Plane roughness**: Roughness and Foam Roughness settings for the water and its foam.
 - **Ocean playblasts in MoonLightIPR**: each new frame is ready in about a second, where it took 20 seconds or more, and the waves change shape from frame to frame, where they could keep the first frame's.
 

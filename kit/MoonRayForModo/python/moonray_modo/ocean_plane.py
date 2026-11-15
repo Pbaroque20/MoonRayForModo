@@ -66,22 +66,23 @@ def made(entity, camera_matrix, value):
     return vertices, faces, uvs
 
 
-# Where an Ocean Plane's waves fade out toward the horizon in MoonRay and XPU2 (fade, nodes.fade_ocean), as twice the
-# tiles of wave one pixel spans along the view there (which grows as the distance squared over the camera's height
-# above the water): only where the waves turn to dark speckle, no nearer. On a tester's sea (camera 5.6 m up, 50 mm,
-# 1280 wide) the speckle began about 12 pixels under the horizon, where a pixel spans a tile (the rows above held 7-18%
-# dark pixels, the waves' own shading; 23% at 8 pixels, 90% at 2); the fade starts just before and ends near the horizon.
-FADE_WAVES = (1.0, 32.0)
-# The fade's shape over that range: (1 - share)^3, the waves mostly gone a quarter of the way in, then a soft tail to
-# the horizon. Straight, ripples still threw dark speckle at half height and the waves ended at a line.
-FADE_EXPONENT = 3.0
+# Where an Ocean Plane's waves begin to fade toward the horizon in MoonRay and XPU2 (fade, nodes.fade_ocean), as twice
+# the tiles of wave one pixel spans along the view there (which grows as the distance squared over the camera's height
+# above the water). On a tester's sea (camera 5.6 m up, 50 mm, 1280 wide) dark speckle began about 12 pixels under the
+# horizon, where a pixel spans a tile (the rows above held 7-18% dark pixels, the waves' own shading; 23% at 8 pixels,
+# 90% at 2). The fade starts twice as many rows down (a quarter of a tile), so that it is halfway by then and eases in
+# as MoonLightIPR's far sea does; starting at the speckle, grain stayed in the last rows before the horizon.
+FADE_START_WAVES = 0.25
+# The water's roughness at the horizon, where its waves have faded: a soft sheen of the sky, as MoonLightIPR's far sea.
+FADE_ROUGHNESS = 0.15
 
 
-def fade(camera, width, height, tile):
-    """An Ocean Plane's fade toward the horizon for its sea (nodes.fade_ocean): the start and end, in world space on the
-    water, along the camera's view over the ground, at the distances where a pixel spans a quarter of a tile and two
-    tiles (FADE_WAVES): d = sqrt(wave x height / (2 x pixel angle)). None for an orthographic camera or one looking
-    straight down."""
+def fade(camera, width, height, tile, far=20000.0, toward_horizon=0.0):
+    """An Ocean Plane's fade toward the horizon for its sea (nodes.fade_ocean): the camera's place on the water
+    (origin), a point far along its view over the ground (end), and the share of that distance where the fade begins
+    (ratio): d = sqrt(FADE_START_WAVES x tile x height / (2 x pixel angle)). toward_horizon (the item's Horizon Fade,
+    0 to 1) moves the start toward the horizon by the rows of the picture: at 0.5, half as many rows under the horizon
+    (twice as far). None for an orthographic camera or one looking straight down."""
     m = camera.get('matrix') or [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
     if camera.get('projection', 'persp') != 'persp':
         return None
@@ -93,9 +94,11 @@ def fade(camera, width, height, tile):
     focal, film = float(camera.get('focal_mm') or 50.0), float(camera.get('film_mm') or 36.0)
     pixel = film / max(focal, 1e-3) / max(int(width or 1920), 1)
     above = max(m[13] - height, 0.1)
-    near, far = (math.sqrt(waves * tile * above / (2.0 * pixel)) for waves in FADE_WAVES)
-    return {'start': [m[12] + forward[0] * near, height, m[14] + forward[2] * near],
-            'end': [m[12] + forward[0] * far, height, m[14] + forward[2] * far]}
+    start = math.sqrt(FADE_START_WAVES * tile * above / (2.0 * pixel))
+    start /= max(1.0 - 0.95 * min(max(float(toward_horizon or 0.0), 0.0), 1.0), 0.05)
+    far = max(float(far or 20000.0), start * 2.0)
+    return {'origin': [m[12], height, m[14]], 'end': [m[12] + forward[0] * far, height, m[14] + forward[2] * far],
+            'ratio': start / far, 'roughness': FADE_ROUGHNESS}
 
 
 def material(value, tile):
@@ -179,7 +182,12 @@ def apply(result, warnings):
                 moonray = True
             faded = None
             if moonray:
-                faded = fade(result.get('camera') or {}, result.get('width'), vertices[0][1] if vertices else 0.0, tile)
+                try:
+                    toward = float(value('horizon_fade') or 0.0)
+                except (KeyError, TypeError, ValueError):
+                    toward = 0.0
+                faded = fade(result.get('camera') or {}, result.get('width'), vertices[0][1] if vertices else 0.0, tile,
+                             float(value('horizon') or 20000.0), toward)
             if faded:
                 materials[tag]['node_graph']['nodes']['sea']['_fade'] = faded
         mesh = {'name': entity.get('name', 'Ocean Plane'), 'identity': entity.get('identity', ''), 'vertices': vertices,

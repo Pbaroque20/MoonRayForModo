@@ -287,6 +287,10 @@ _plane['water_color'] = {'name': 'water_color', 'type': 'Rgb', 'default': [0.004
 _plane['crest_color'] = {'name': 'crest_color', 'type': 'Rgb', 'default': [0.03, 0.15, 0.12], 'group': 'Ocean Plane',
                           'label': 'crest colour', 'comment': "The water's colour where the waves stand highest and the light "
                                                               'shines through them (Crest Start); the water colour for none.'}
+_plane['horizon_fade'] = {'name': 'horizon_fade', 'type': 'Float', 'default': 0.0, 'min': 0.0, 'max': 1.0, 'group': 'Ocean Plane',
+                           'label': 'horizon fade', 'comment': 'In MoonRay and XPU2, where the far waves begin to fade into a soft sheen: 0 where '
+                                                              'a pixel spans more wave than it can show (where they would turn to dark speckle), '
+                                                              '1 at the horizon. Higher keeps the waves further out, with some speckle.'}
 _plane['roughness'] = {'name': 'roughness', 'type': 'Float', 'default': 0.03, 'min': 0.0, 'max': 1.0, 'group': 'Ocean Plane',
                         'label': 'roughness', 'comment': "How rough the water's surface is, 0 to 1: 0 mirrors the sky sharply, "
                                                          'more blurs its reflections and widens the sun\'s glitter.'}
