@@ -38,4 +38,11 @@ Triangles subdivide(Cage cage, uint32_t levels);
 // displaced mesh, which needs vertices for its displacement to move. Texture coordinates and materials go with them.
 Triangles split(Triangles mesh, uint32_t levels);
 
+// Splits each triangle as finely as it is near: while an edge is longer than angle times its distance from the camera
+// (object space), up to levels times, within budget triangles (angle widened until they fit). Crack free: a triangle a
+// neighbour's split leaves with one new point on its edges is cut in two through it, with two or three it is split in
+// four, so every edge is shared whole. extra (3 floats a vertex, may be empty) follows the positions point for point
+// (a moving mesh's place at the shutter's close).
+Triangles splitByDistance(Triangles mesh, std::vector<float>& extra, const float camera[3], float angle, uint32_t levels, size_t budget);
+
 }

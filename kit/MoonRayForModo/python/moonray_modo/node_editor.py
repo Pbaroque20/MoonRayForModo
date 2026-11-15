@@ -382,7 +382,10 @@ class Editor(QtWidgets.QDialog):
         self.undo_states=[];self.redo_states=[];self.selected_input=None;self.add_at=None
         # The nodes showing all of their inputs. A matter of the view, not of the graph.
         self.expanded=set()
-        self.setWindowTitle(('MaterialX Override - ' if materialx_override else 'MoonShine Graph - ')+item.name);self.resize(1280,800)
+        self.title_prefix='MaterialX Override - ' if materialx_override else 'MoonShine Graph - '
+        self.refresh_title();self.resize(1280,800)
+        # Renamed in the Shader Tree while the editor is open: the title follows within a second.
+        self.title_timer=QtCore.QTimer(self);self.title_timer.setInterval(1000);self.title_timer.timeout.connect(self.refresh_title);self.title_timer.start()
         layout=QtWidgets.QVBoxLayout(self);layout.setContentsMargins(6,6,6,6);layout.setSpacing(4)
         toolbar=QtWidgets.QHBoxLayout();toolbar.setSpacing(4);layout.addLayout(toolbar)
         self.kinds=QtWidgets.QComboBox(self);self.kinds.addItems(nodes.kinds());self.kinds.hide()
@@ -516,8 +519,15 @@ class Editor(QtWidgets.QDialog):
             button.setAutoDefault(False);button.setDefault(False)
         self.rebuild();self.frame_output()
         self.live=True
+    def refresh_title(self):
+        """The window's title with the material's name as Modo has it now: renamed in the Shader Tree, the title follows."""
+        try:name=self.item.name
+        except Exception:return
+        title=getattr(self,'title_prefix','MoonShine Graph - ')+name
+        if self.windowTitle()!=title:self.setWindowTitle(title)
     def fill_materials(self):
         """List the scene's graph materials, with this one chosen."""
+        self.refresh_title()
         entries=graph_materials()
         if self.item.id not in [item.id for _,item in entries]:entries.insert(0,(owner_name(self.item)+'  /  '+self.item.name,self.item))
         blocker=QtCore.QSignalBlocker(self.material_picker)

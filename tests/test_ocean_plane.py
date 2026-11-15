@@ -95,5 +95,32 @@ class OceanPlane(unittest.TestCase):
             self.assertTrue(struct.unpack_from("<I", payload, at + len(key))[0] & moonlightipr_scene.MESH_DISPLACE)
 
 
+
+class DistanceSplit(unittest.TestCase):
+    """MoonLightIPR splits a displaced mesh by its distance from the camera (moonlightipr_scene.distance_split): the
+    camera in the mesh's own space, snapped so small moves keep the cut, and the angle an edge may span."""
+
+    def mesh(self, **own):
+        return dict({'vertices': [[-400, 0, -400], [400, 0, -400], [400, 0, 400], [-400, 0, 400]], 'faces': [[0, 1, 2, 3]],
+                     'matrix': IDENTITY[:12] + [10.0, 0.0, 0.0, 1]}, **own)
+
+    def test_the_camera_in_the_meshs_space_and_the_angle_of_two_pixels(self):
+        from moonray_modo import moonlightipr_scene
+        camera = {'matrix': IDENTITY[:12] + [13.0, 3.0, 0.0, 1], 'focal_mm': 36.0, 'film_mm': 36.0}
+        place, angle = moonlightipr_scene.distance_split(self.mesh(), camera, 1000)
+        self.assertAlmostEqual(place[0], 3.0, delta=1.0)
+        self.assertAlmostEqual(place[1], 3.0, delta=1.0)
+        self.assertAlmostEqual(angle, 2.0 / 1000)
+        # A small move keeps the same cut; a larger one does not.
+        moved = moonlightipr_scene.distance_split(self.mesh(), dict(camera, matrix=IDENTITY[:12] + [13.05, 3.0, 0.0, 1]), 1000)
+        self.assertEqual(moved[0], place)
+
+    def test_instanced_meshes_and_no_camera_split_evenly(self):
+        from moonray_modo import moonlightipr_scene
+        camera = {'matrix': IDENTITY, 'focal_mm': 36.0, 'film_mm': 36.0}
+        self.assertIsNone(moonlightipr_scene.distance_split(self.mesh(instances=[IDENTITY, IDENTITY]), camera, 1000))
+        self.assertIsNone(moonlightipr_scene.distance_split(self.mesh(), None, 1000))
+
+
 if __name__ == '__main__':
     unittest.main()

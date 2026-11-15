@@ -680,7 +680,50 @@ def solid_regions(meshes, materials):
     return result
 
 
-def displaced(mesh, key, flags, payload, materials, material_index, warnings, limit=None):
+# A displaced mesh split by its distance from the camera (the session's splitByDistance): edges no longer than this many
+# pixels from where the camera is, within DISPLACED_TRIANGLES, the camera taken to steps of this share of its distance
+# from the mesh, so that a small move keeps the cut (it is part of the mesh's key, as its levels are).
+DISTANCE_PIXELS, DISTANCE_STEP = 2.0, 0.1
+
+
+def distance_split(mesh, camera, width):
+    """For a displaced mesh with no instances, (the camera in the mesh's own space, snapped, and the angle an edge may
+    span), for a split by distance; None where it is placed more than once or the camera is not known."""
+    if not camera or mesh.get('instances') or not width:
+        return None
+    try:
+        held = camera.get('matrix') or IDENTITY
+        place = [float(held[12]), float(held[13]), float(held[14])]
+        m = [float(v) for v in (mesh.get('matrix') or IDENTITY)]
+        a = [[m[0], m[4], m[8]], [m[1], m[5], m[9]], [m[2], m[6], m[10]]]
+        det = (a[0][0] * (a[1][1] * a[2][2] - a[1][2] * a[2][1]) - a[0][1] * (a[1][0] * a[2][2] - a[1][2] * a[2][0])
+               + a[0][2] * (a[1][0] * a[2][1] - a[1][1] * a[2][0]))
+        if not abs(det) > 1e-12:
+            return None
+        inverse = [[(a[(j + 1) % 3][(i + 1) % 3] * a[(j + 2) % 3][(i + 2) % 3] - a[(j + 1) % 3][(i + 2) % 3] * a[(j + 2) % 3][(i + 1) % 3]) / det
+                    for j in range(3)] for i in range(3)]
+        offset = [place[k] - m[12 + k] for k in range(3)]
+        local = [sum(inverse[r][k] * offset[k] for k in range(3)) for r in range(3)]
+        from .rows import numbers
+        points = numbers(mesh.get('vertices'), 3)
+        points = points if points is not None else [c for v in mesh.get('vertices') or () for c in v]
+        if not points:
+            return None
+        low = [min(points[k::3]) for k in range(3)]
+        high = [max(points[k::3]) for k in range(3)]
+        nearest = math.sqrt(sum(max(low[k] - local[k], 0.0, local[k] - high[k]) ** 2 for k in range(3)))
+        # Snapped to steps of a tenth of the way to the mesh (or of its size, where the camera is over it).
+        size = max(high[k] - low[k] for k in range(3))
+        step = max(DISTANCE_STEP * max(nearest, 0.05 * size), 1e-3)
+        step = 2.0 ** math.floor(math.log2(step))
+        snapped = [round(v / step) * step for v in local]
+        angle = DISTANCE_PIXELS * float(camera['film_mm']) / float(camera['focal_mm']) / float(width)
+        return snapped, angle
+    except (TypeError, ValueError, KeyError, ZeroDivisionError):
+        return None
+
+
+def displaced(mesh, key, flags, payload, materials, material_index, warnings, limit=None, camera=None, width=0):
     """A mesh as the session displaces it, where one of its materials displaces it (form 'L'): after its data, how many
     times to split each triangle into four, the material its instances give it, and each displacing material's
     program (moonlightipr_materials.displacement_tree), as its count and its operations. The key then names the
@@ -705,7 +748,13 @@ def displaced(mesh, key, flags, payload, materials, material_index, warnings, li
     # As many times as its budget allows, and no more than its size on screen needs (limit, moonlightipr_detail).
     while levels < 8 and triangles * 4 ** (levels + 1) <= DISPLACED_TRIANGLES and (limit is None or levels < limit):
         levels += 1
-    trailer = struct.pack('<3I', levels, material_index.get(mesh.get('material', ''), material_index['']), len(distances))
+    near = distance_split(mesh, camera, width)
+    if near is not None:
+        # Split by distance (form 'T'): as many levels as the budget allows the nearest of it, the farthest fewer.
+        trailer = struct.pack('<I', 0x80000000 | (min(8, limit) if limit is not None else 8)) + struct.pack('<4fI', *near[0], near[1], DISPLACED_TRIANGLES) \
+            + struct.pack('<2I', material_index.get(mesh.get('material', ''), material_index['']), len(distances))
+    else:
+        trailer = struct.pack('<3I', levels, material_index.get(mesh.get('material', ''), material_index['']), len(distances))
     for index, program in distances:
         trailer += struct.pack('<2I', index, len(program)) + b''.join(struct.pack('<I2fI', code, a, b, c) for code, a, b, c in program)
     return hashlib.blake2b(key + trailer, digest_size=8).digest(), flags | MESH_DISPLACE, payload + trailer
@@ -1111,7 +1160,7 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     # Material colours are worked out in Rec.709; the session takes them to the working space.
     working = working_enabled()
     # The letter after MLS says which form of scene this is; the session refuses any other than its own.
-    parts = [b'MLSS', struct.pack('<8I', width, height, *depths, samples, (SCENE_DENOISE if denoise else 0)
+    parts = [b'MLST', struct.pack('<8I', width, height, *depths, samples, (SCENE_DENOISE if denoise else 0)
                                   | (SCENE_WORKING_SPACE if working else 0) | (SCENE_MOTION if motion else 0)
                                   # See-through surfaces cast whole shadows unless the scene asks for lighter ones, as in MoonRay.
                                   | (SCENE_PRESENCE_SHADOWS if settings.get('enable_presence_shadows') else 0)
@@ -1251,7 +1300,8 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
             key, flags, payload, slot_map = cage_payload(mesh, material_index, compiler.slots, warnings)
         else:
             key, flags, payload, slot_map = mesh_payload(mesh, material_index, compiler.slots, cut.get('simplify') if cut else None)
-        key, flags, payload = displaced(mesh, key, flags, payload, materials, material_index, warnings, cut['splits'] if cut else None)
+        key, flags, payload = displaced(mesh, key, flags, payload, materials, material_index, warnings, cut['splits'] if cut else None,
+                                        scene.get('camera'), width)
         if key not in order:
             order[key] = len(meshes)
             # Send the data once per session; later scenes refer to it by key.
