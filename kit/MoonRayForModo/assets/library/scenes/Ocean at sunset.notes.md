@@ -63,6 +63,13 @@ The foam sits on the sharpest crests, so this 12 m/s sea has only a little. For 
 - raise **Choppiness** to about 1.8, or
 - raise **Foam Threshold** towards 1.
 
+## Roughness
+
+The water's roughness sets how sharply it mirrors the sky and how wide the sun's glitter spreads; the foam is rougher.
+
+- **In this scene**: the Mix node on Roughness. Its **BG** is the water's roughness (0.03), its **FG** the foam's (0.5), and the Ocean Foam node blends between them. Raise BG towards 0.1 for a hazier, windier sea with a broader band of glitter; lower it towards 0 for glassy water.
+- **On an Ocean Plane** (MoonRay > Add MoonRay Item > Geometry > Ocean Plane): the same two values are its **Roughness** (0.03) and **Foam Roughness** (0.5) settings, in its Ocean Plane group, with no graph to edit.
+
 ## Good to know
 
 - **The plane can be coarse.** MoonRay and XPU2 split the surface as finely as the pixels need. MoonLightIPR moves the plane's own vertices, and its shading adds the ripples that fall between them.
