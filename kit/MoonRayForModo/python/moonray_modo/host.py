@@ -574,6 +574,31 @@ def alembic_items(scene):
     return found
 
 
+import contextlib as _contextlib
+import contextvars as _contextvars
+# Whether Modo's evaluated geometry is read with its displacement (Modo's render cache cut and moved for it), as MoonRay
+# and XPU2 take it; MoonLightIPR displaces the meshes itself (its session splits and moves them at both ends of the
+# shutter), so its readings take them undisplaced, their Displacement layers kept in their materials (by_engine).
+_MODO_DISPLACES = _contextvars.ContextVar('modo_displaces', default=True)
+
+
+def modo_displaces():
+    """Whether readings now take Modo's displaced geometry (see _MODO_DISPLACES)."""
+    return _MODO_DISPLACES.get()
+
+
+@_contextlib.contextmanager
+def by_engine(engine):
+    """Readings made inside for engine: undisplaced for MoonLightIPR, which displaces the meshes itself. Read displaced,
+    a displaced mesh was displaced twice in MoonLightIPR (Modo's cut, then its own on top), and one that deforms changed
+    its faces between the shutter's ends, so it rendered sharp (probe_cl_instanced_deforming_displaced)."""
+    token = _MODO_DISPLACES.set(engine != 'moonlightipr')
+    try:
+        yield
+    finally:
+        _MODO_DISPLACES.reset(token)
+
+
 def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=False,dirty_meshes=None,shading_kept=False):
     """The scene as MoonRay is to be given it. The Shader Tree's order and its layer masks are found once for the
     reading (layers.held_tree), not again for each material's stack."""
@@ -773,14 +798,17 @@ def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fal
         if evaluated_geometry:
             from . import evaluated
             cached=reuse_geometry.get('_evaluated_data') if reuse_geometry else None
+            # A reading kept from another engine's rule (displaced or not, by_engine) is not taken again.
+            if cached and cached.get('_modo_displaced',True)!=modo_displaces():cached=None
             if cached and dirty_meshes:
                 # Edited meshes: their surfaces read again, the others' as they were (incremental.classify).
-                data=evaluated.capture(lx.service.Selection().GetTime(),only=dirty_meshes,before=cached)
+                data=evaluated.capture(lx.service.Selection().GetTime(),displaced=modo_displaces(),only=dirty_meshes,before=cached)
             else:
-                data=dict(cached,surfaces=[dict(v) for v in cached['surfaces']]) if cached else evaluated.capture(lx.service.Selection().GetTime())
+                data=dict(cached,surfaces=[dict(v) for v in cached['surfaces']]) if cached else evaluated.capture(lx.service.Selection().GetTime(),displaced=modo_displaces())
+            data['_modo_displaced']=modo_displaces()
             result['_evaluated_data']=data
             # Scene Proxies' surfaces once each, shaded by their own scenes.
-            evaluated.proxies(data, scene, lx.service.Selection().GetTime(), warnings)
+            evaluated.proxies(data, scene, lx.service.Selection().GetTime(), warnings, displaced=modo_displaces())
             native_shape_materials = result['materials']
             # An edit of meshes alone: each Shader Tree stack's material as the last reading made it (shading_kept).
             result['materials'] = evaluated.assign_materials(data, scene, warnings, shading_kept=shading_kept)
@@ -1330,6 +1358,9 @@ def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fal
         tag = entity.get('parameters', {}).get('modo_material')
         if tag in native_shape_materials:
             result['materials'].setdefault(tag, native_shape_materials[tag])
+    # The kit's Ocean Plane items made meshes, each wearing its sea (ocean_plane).
+    from . import ocean_plane
+    ocean_plane.apply(result, warnings)
     from .native_light_links import capture as capture_light_links
     result['native_light_links']=capture_light_links(scene,result,warnings)
     # Modo's light volumetrics and environment fog, as meshes of MoonRay fog: made anew at every reading, meshes kept

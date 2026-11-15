@@ -171,6 +171,7 @@ LAYER_ALPHA_MASK, LAYER_ALPHA_ONLY, LAYER_COVERAGE_U, LAYER_COVERAGE_V, LAYER_PI
 LAYER_RAMP, LAYER_CHECKER, LAYER_NOISE, LAYER_UDIM = 1 << 16, 1 << 17, 1 << 18, 1 << 19
 LAYER_PROCEDURAL = 1 << 21     # Modo's pattern through the object (modo_patterns.h, procedurals.solid)
 LAYER_WIREFRAME = 1 << 22      # Modo's Wireframe: the first colour along the polygons' edges
+LAYER_ROTATED = 1 << 24        # an image whose coordinates are turned before scaling: settings[0:2] the cosine and sine
 LAYER_SOLID = 1 << 23          # an image read where the point is in the object's own space, through its rows (a bake of
                                # a map laid out in object space over the box its meshes fill: graph_bake.solid)
 RAMP_CURVATURE = 255           # a gradient row's slot when the surface's curvature looks it up (Modo's Curvature)
@@ -327,15 +328,29 @@ def displacement_tree(material, note, runtime=None, with_layers=True):
                 program.append((OP_VECTOR, _number(values, 'factor', 1.0), 0.0, slot | space | style))
             layers = graph_layers(row, note, runtime, displacement=identity, wanted=wanted, as_effect='_disp%d' % slot) \
                 if wired and with_layers else []
-            source = graph['nodes'].get(inputs.get(wanted)) or {}
-            if layers and source.get('_slope') and kind == 'VectorDisplacement':
-                # An Ocean node's tile (nodes.expand_ocean): its slope too, by the displacement's factor, for the
-                # shading's waves finer than the mesh's vertices are apart (CHANNEL_SLOPE).
+            # An Ocean node's tiles (nodes.expand_ocean): the one, or its cascades joined by adds, each with its slope.
+            sloped = []
+
+            def gather(key, depth=0):
+                held = graph['nodes'].get(key) or {}
+                if held.get('_slope'):
+                    sloped.append(held)
+                elif held.get('type') == 'add' and depth < 8:
+                    for source_key in (held.get('inputs') or {}).values():
+                        gather(source_key, depth + 1)
+            gather(inputs.get(wanted))
+            if layers and sloped and kind == 'VectorDisplacement':
+                # Their slopes too, by the displacement's factor, added (each by its own repeats: the kernel's
+                # CHANNEL_SLOPE), for the shading's waves finer than the mesh's vertices are apart.
                 factor = _number(values, 'factor', 1.0)
-                layers.append({'kind': 'imageMap', 'path': source['_slope'], 'srgb': False, 'tile_u': 'repeat', 'tile_v': 'repeat',
-                               'scale': (source.get('parameters') or {}).get('scale', [1, 1]), 'effect': '_slope', 'blend': 'normal',
-                               'opacity': 1.0, 'identity': '%s:slope' % identity,
-                               **({} if factor == 1.0 else {'corrections': {'contrast': 1.0, 'brightness': factor, 'gamma': 1}})})
+                for index, source in enumerate(sloped):
+                    layers.append({'kind': 'imageMap', 'path': source['_slope'], 'srgb': False, 'tile_u': 'repeat', 'tile_v': 'repeat',
+                                   'scale': (source.get('parameters') or {}).get('scale', [1, 1]), 'effect': '_slope',
+                                   **({'rotation': float((source.get('parameters') or {})['rotation_angle'])}
+                                      if (source.get('parameters') or {}).get('rotation_angle') else {}),
+                                   'blend': 'normal' if index == 0 else 'add',
+                                   'opacity': 1.0, 'identity': '%s:slope%s' % (identity, '' if index == 0 else index),
+                                   **({} if factor == 1.0 else {'corrections': {'contrast': 1.0, 'brightness': factor, 'gamma': 1}})})
             leaves.append((slot, own, layers))
 
         visit(graph.get('displacement'), 0)
@@ -546,6 +561,13 @@ def graph_image(node, graph=None):
             return 'an ImageMap with no texture chosen'
         wrap = 'repeat' if values.get('wrap_around', True) else 'edge'
         layer = {'kind': 'imageMap', 'path': values['texture'], 'tile_u': wrap, 'tile_v': wrap, 'scale': values.get('scale', [1, 1])}
+        # Turned about 0 before it is scaled, as MoonRay's ImageMap turns its coordinates (LAYER_ROTATED).
+        angle = _number(values, 'rotation_angle', 0.0)
+        if angle:
+            centre = values.get('rotation_center') or [0, 0]
+            if any(abs(float(c)) > 1e-9 for c in centre):
+                return 'an ImageMap turned about another centre than 0'
+            layer['rotation'] = angle
         # 0 reads the file as it is, 1 as sRGB; 2 lets the kind of file decide.
         if values.get('gamma', 2) in (0, 1):
             layer['srgb'] = bool(values.get('gamma'))
@@ -1414,6 +1436,10 @@ class Compiler:
                     flags |= LAYER_COVERAGE_V
                 if not layer.get('coordinate_key') and effect not in ('normal', 'bump'):
                     extra = dict(scale=layer.get('scale', [1, 1]))
+                    if layer.get('rotation'):
+                        turn = math.radians(float(layer['rotation']))
+                        flags |= LAYER_ROTATED
+                        extra['settings'] = [math.cos(turn), math.sin(turn)] + [0.0] * 20 + [.5, .5]
                 if layer.get('object_projection'):
                     # Read by the point's place in the object, not by its UVs.
                     flags |= LAYER_SOLID

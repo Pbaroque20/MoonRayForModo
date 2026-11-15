@@ -131,7 +131,10 @@ def item_type(name):
 
 
 def display(name):
-    """A class as the user sees it: dwEnvLight, for DreamWorks, as the kit names its other MoonRay things."""
+    """A class as the user sees it: dwEnvLight, for DreamWorks, as the kit names its other MoonRay things; the kit's own
+    (Ocean Plane) by their own names."""
+    if catalog().get(name, {}).get('source') == 'kit':
+        return {'OceanPlaneGeometry': 'Ocean Plane'}.get(name, name)
     return 'dw' + name
 
 
@@ -941,6 +944,13 @@ def proxy(name, number):
         """Half a circle over the top: in the XY plane, or the ZY plane."""
         points = [(math.cos(math.pi * i / steps) * radius, math.sin(math.pi * i / steps) * radius) for i in range(steps + 1)]
         return [(a, b, 0.0) if plane == 'xy' else (0.0, b, a) for a, b in points]
+    if name == 'OceanPlaneGeometry':
+        # Four tiles each way, a line between each, and the up mark: the sea itself reaches the horizon.
+        size = max(number('tile_size'), 1e-3)
+        lines = []
+        for k in range(-2, 3):
+            lines += [(k * size, 0, -2 * size), (k * size, 0, 2 * size), (-2 * size, 0, k * size), (2 * size, 0, k * size)]
+        return [('lines', lines + [(0, 0, 0), (0, size * .25, 0)])]
     if name == 'SphereLight':
         r = max(number('radius'), 1e-4)
         return [('circles', [((0, 0, 0), (r, 0, 0)), ((0, 0, 0), (0, r, 0)), ((0, 0, 0), (0, 0, r))])]
@@ -1155,7 +1165,8 @@ def proxy_inputs(name):
     """The numeric attributes proxy() asks for, as (asked name, channel name)."""
     wanted = {'SphereLight': ['radius'], 'RectLight': ['width', 'height'], 'PortalLight': ['width', 'height'], 'DiskLight': ['radius'],
               'SpotLight': ['lens_radius', 'outer_cone_angle', 'inner_cone_angle'], 'CylinderLight': ['radius', 'height'], 'SphereGeometry': ['radius'],
-              'RodLightFilter': ['width', 'height', 'depth'], 'BarnDoorLightFilter': ['projector_width', 'projector_height']}.get(name, [])
+              'RodLightFilter': ['width', 'height', 'depth'], 'BarnDoorLightFilter': ['projector_width', 'projector_height'],
+              'OceanPlaneGeometry': ['tile_size']}.get(name, [])
     inputs = [(key, CHANNEL_PREFIX + key) for key in wanted]
     if name == 'BoxGeometry':
         inputs = [('size.' + axis, CHANNEL_PREFIX + 'size.' + axis) for axis in 'XYZ']

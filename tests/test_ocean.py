@@ -16,7 +16,7 @@ from moonray_modo import nodes, ocean  # noqa: E402
 
 def graph(**params):
     g = nodes.new('DwaBaseMaterial', {'albedo': [0.02, 0.05, 0.08], 'roughness': 0.05})
-    g['nodes']['sea'] = {'type': 'ocean', 'parameters': dict({'resolution': 64}, **params), 'inputs': {}, 'position': [0, 0]}
+    g['nodes']['sea'] = {'type': 'ocean', 'parameters': dict({'resolution': 64, 'cascades': False}, **params), 'inputs': {}, 'position': [0, 0]}
     g['displacement'] = 'sea'
     return g
 
@@ -152,7 +152,7 @@ class Nodes(unittest.TestCase):
 
     def test_an_ocean_wired_into_a_vector_displacement_is_its_tile(self):
         g = nodes.new('DwaBaseMaterial', {'albedo': [0.02, 0.05, 0.08]})
-        g['nodes']['sea'] = {'type': 'ocean', 'parameters': {'resolution': 64, 'repeat': [3, 3], 'wind_speed': 12}, 'inputs': {},
+        g['nodes']['sea'] = {'type': 'ocean', 'parameters': {'resolution': 64, 'repeat': [3, 3], 'wind_speed': 12, 'cascades': False}, 'inputs': {},
                              'position': [0, 0]}
         g['nodes']['push'] = {'type': 'VectorDisplacement', 'parameters': {'factor': 2.0, 'bound_padding': 0.0},
                               'inputs': {'vector': 'sea'}, 'position': [0, 0]}
@@ -193,7 +193,7 @@ class Nodes(unittest.TestCase):
 
     def test_foam_is_an_image_of_the_tiles_foam(self):
         g = graph()
-        g['nodes']['foam'] = {'type': 'ocean_foam', 'parameters': {'resolution': 64}, 'inputs': {}, 'position': [0, 0]}
+        g['nodes']['foam'] = {'type': 'ocean_foam', 'parameters': {'resolution': 64, 'cascades': False}, 'inputs': {}, 'position': [0, 0]}
         g['nodes']['surface']['inputs']['albedo'] = 'foam'
         with mock.patch.dict(os.environ, {'MOONRAY_MODO_OCEAN': '1'}), ocean.writing(1.0):
             v = nodes.validate(g)
