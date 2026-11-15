@@ -229,6 +229,8 @@ def expand_ocean(graph):
         if graph.get('displacement')!=key:
             # A vector texture: the tile itself, and room for the waves in the Vector Displacements it feeds.
             members[key]=dict(image,position=node.get('position'))
+            # An Ocean Plane's fade toward the horizon, for MoonRay's scene (fade_ocean).
+            if node.get('_fade'):members[key]['_fade']=node['_fade']
             for other in members.values():
                 if other.get('type')=='VectorDisplacement' and (other.get('inputs') or {}).get('vector')==key:
                     held=other.setdefault('parameters',{})
@@ -289,6 +291,46 @@ def split_ocean(graph,output):
                 members[mapped]={'type':'ImageNormalMap','inputs':{},'parameters':dict({'tangent_space_normal_texture':str(fine),
                                  'wrap_around':True,'normal_encoding':0,'scale':list(params.get('scale',[1.0,1.0]))},**turned)}
             root.setdefault('inputs',{})['input_normal']=mapped
+    return graph
+
+
+def _ocean_plane_fade_exponent():
+    from .ocean_plane import FADE_EXPONENT
+    return FADE_EXPONENT
+
+
+def fade_ocean(graph):
+    """An expanded graph as MoonRay takes an Ocean Plane's sea (expand_ocean's _fade, ocean_plane.fade): its waves and its
+    short waves' tilt fading out along the camera's view over the ground, from start to end (world space), where a
+    pixel spans more than the waves. MoonRay and XPU2 read the far waves whole, and the horizon went to dark speckle
+    of crests and troughs no pixel could hold; MoonLightIPR reads them at its far vertices' spacing and its sea fades
+    to the sky's reflection, as this does. A GradientMap, white near and black far, times each Vector Displacement's
+    vector and as the mix of each ocean normal map's tile toward flat. Changed in place and returned."""
+    members=graph.get('nodes',{})
+    fades=[(key,node['_fade']) for key,node in list(members.items()) if node.get('_fade')]
+    for key,fade in fades:
+        gradient=key+'__fade'
+        while gradient in members:gradient+='_'
+        members[gradient]={'type':'GradientMap','inputs':{},'parameters':{'space':2,'start':list(fade['start']),'end':list(fade['end']),
+                           'falloff_type':2,'falloff_exponent':_ocean_plane_fade_exponent(),'color_A':[1.0,1.0,1.0],'color_B':[0.0,0.0,0.0]}}
+        def reaches(source,depth=0):
+            if source==key:return True
+            held=members.get(source) or {}
+            return depth<8 and held.get('type') in ('add','multiply') and any(reaches(s,depth+1) for s in (held.get('inputs') or {}).values())
+        for name,other in list(members.items()):
+            inputs=other.get('inputs') or {}
+            if other.get('type')=='VectorDisplacement' and reaches(inputs.get('vector')):
+                faded=name+'__faded'
+                while faded in members:faded+='_'
+                members[faded]={'type':'multiply','parameters':{},'inputs':{'in1':inputs['vector'],'in2':gradient}}
+                inputs['vector']=faded
+            elif other.get('type')=='ocean_normal' and inputs.get('input'):
+                flat=name+'__faded'
+                while flat in members:flat+='_'
+                members[flat]={'type':'mix','parameters':{'bg':[0.5,0.5,1.0],'fg':[0.5,0.5,1.0],'mix':0.0},
+                               'inputs':{'fg':inputs['input'],'mix':gradient}}
+                inputs['input']=flat
+        members[key].pop('_fade',None)
     return graph
 
 
@@ -580,7 +622,7 @@ def emit(material,name,index,lines,library,output="root",validated=True):
     from .textures import prepare,missing,note_missing
     g=validate(material['node_graph']) if validated else effective(material['node_graph']);cache={}
     # MoonRay's own: an ocean split by how finely MoonRay dices it (split_ocean); MoonLightIPR keeps the tile whole.
-    if validated:g=split_ocean(g,output)
+    if validated:g=fade_ocean(split_ocean(g,output))
     # What a Bump node's height is made from: the bump reads it again at UVs a little to either side, which an image
     # follows only when it takes its UVs as the surface's own UVs move (ModoTextureMap mode 12), not as read off the mesh.
     bumped=set()

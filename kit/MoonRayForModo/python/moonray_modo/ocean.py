@@ -596,9 +596,10 @@ HORIZON = 0.02
 # How far the short waves tilt MoonRay's normal (ModoOceanNormalMap's Dial): MoonLightIPR displaces its mesh finely near
 # the camera and shades only the slope finer than its vertices, where MoonRay has every wave shorter than its dicing as
 # the normal map at full strength. Whole, the ripples facing the camera reflected little of the sky and showed the dark
-# water beneath: black patches on a tester's sea that MoonLightIPR drew smooth. At 0.35 MoonRay's sea looks as
-# MoonLightIPR's does there.
-SHORT_WAVES_DIAL = 0.35
+# water beneath: black patches on a tester's sea that MoonLightIPR drew smooth. 0.35 matched it there, but on a second
+# sea MoonLightIPR's ripples showed much more; 0.6 is near both, with the Ocean Plane's waves fading out toward the
+# horizon (ocean_plane.fade), where the dark speckle was worst.
+SHORT_WAVES_DIAL = 0.6
 
 
 def normal_map_available():
