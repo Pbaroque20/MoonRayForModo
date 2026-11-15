@@ -533,7 +533,93 @@ def capture(time, path=None, displaced=True, only=None, before=None):
                     return capture(time,path,displaced)
                 data['prototypes'][key]=taken
     _after_reading(some is None,displaced)
+    try:particle_ids(data,time)
+    except Exception:pass
     return data
+
+
+def copy_key(surface, default=0):
+    """Which copy a surface is among its item's copies: its particle's ID ('p' and the ID) where its replicator's point
+    source gives one (particle_ids), else its place among them (Modo's instance_index). Motion blur pairs a copy at the
+    shutter's ends by it: a particle's place changes as others are born and die, its ID does not."""
+    held=surface.get('particle_id')
+    return 'p'+held if held is not None else str(surface.get('instance_index',default))
+
+
+def assign_particle_ids(data, enumerated, owner=None):
+    """Give each copy of a replicator (an instanced surface of data, its source_item the replicator) its particle's ID,
+    'particle_id', from enumerated: {replicator: [(prototype item, particle ID), ...]} in Modo's replicator enumerator's
+    order. The render cache numbers a replicator's copies of each prototype in that order (instance_index, numbered on
+    across the replicators that copy the same prototype; seen in tools/probe_cl_replicator_particle_ids.py at the frame
+    and both shutter ends). owner(item, known): the prototype item among known that a surface's own item (its
+    prototype's 'item') belongs to, a group's mesh its group; by default the item itself. A replicator whose copies
+    cannot all be told apart so (not one run of places, not as many as its particles, two particles of one ID) keeps
+    its places for all its copies."""
+    if owner is None:owner=lambda item,known:item if item in known else None
+    prototypes=data.get('prototypes') or {}
+    given=0
+    for replicator,rows in enumerated.items():
+        ids={}
+        for item,number in rows:ids.setdefault(item,[]).append('%.9g'%float(number))
+        if any(len(set(values))!=len(values) for values in ids.values()):continue
+        runs={}
+        for surface in data.get('surfaces',[]):
+            if surface.get('instanced') and surface.get('source_item')==replicator:
+                runs.setdefault(surface.get('source_id'),[]).append(surface)
+        found=[]
+        for source,surfaces in runs.items():
+            item=(prototypes.get(str(source)) or {}).get('item')
+            held=owner(item,ids) if item else None
+            indices=sorted(s.get('instance_index') for s in surfaces if isinstance(s.get('instance_index'),int))
+            # Modo numbers the copies of a prototype on, from one replicator to the next that copies it: this
+            # replicator's are a run of them, as many as its particles of that prototype.
+            if held is None or len(indices)!=len(surfaces) or len(surfaces)!=len(ids[held]) or indices!=list(range(indices[0],indices[0]+len(indices))):
+                found=None;break
+            found.extend((s,ids[held][s['instance_index']-indices[0]]) for s in surfaces)
+        for surface,number in found or ():
+            surface['particle_id']=number;given+=1
+    return given
+
+
+def particle_ids(data, time):
+    """Each copy a replicator makes over particles (a particle simulation, a cache, a generator: any point source but a
+    mesh) is given its particle's ID (assign_particle_ids), as Modo's replicator enumerator tells it. Copies over a
+    mesh's points keep their places, as before: a mesh's points do not come and go."""
+    replicators={s.get('source_item') for s in data.get('surfaces',[]) if s.get('instanced')}
+    if not replicators:return 0
+    import lx,lxifc,modo
+    scene=modo.Scene()
+
+    class Visitor(lxifc.Visitor):
+        def __init__(self,enumerator):
+            self.enumerator=enumerator;self.rows=[]
+        def vis_Evaluate(self):
+            self.rows.append((lx.object.Item(self.enumerator.Item()).Ident(),self.enumerator.Id()))
+
+    enumerated={}
+    for identity in replicators:
+        try:item=scene.item(identity)
+        except LookupError:continue
+        if item.type!='replicator':continue
+        try:sources=item.itemGraph('particle').reverse()
+        except Exception:continue
+        if not sources or all(source.type in ('mesh','meshInst') for source in sources):continue
+        enumerator=lx.object.ReplicatorEnumerator(lx.service.Particle().GetReplicatorEnumerator(lx.object.Item(item)))
+        visitor=Visitor(enumerator)
+        raw=lx.object.Scene(lx.object.Item(item).Context())
+        enumerator.Enumerate(visitor,lx.object.ChannelRead(raw.Channels(None,float(time))),0)
+        enumerated[identity]=visitor.rows
+    if not enumerated:return 0
+
+    def owner(held,known):
+        # A group's meshes are copied as the group: the group is what the enumerator names.
+        try:current=scene.item(held)
+        except LookupError:return None
+        while current is not None:
+            if current.id in known:return current.id
+            current=current.parent
+        return None
+    return assign_particle_ids(data,enumerated,owner)
 
 
 def _load(path=None):
@@ -785,7 +871,7 @@ def meshes(data, materials, warnings, scene=None):
                 value = dict(mesh,uv_sets=dict(named_values),matrix=surface['matrix'])
                 if separate:
                     value['name'] = surface['source_item']
-                    value['identity'] = surface['source_item']+'|'+str(surface.get('instance_index',0))+'|'+tag+'|'+str(segment_index)
+                    value['identity'] = surface['source_item']+'|'+copy_key(surface)+'|'+tag+'|'+str(segment_index)
                     for key,descriptor in descriptors.items():
                         if descriptor.get('projection','uv') != 'uv':
                             # A projection's corners hold from one reading to the next while the mesh's points and
@@ -797,7 +883,7 @@ def meshes(data, materials, warnings, scene=None):
                                     vertices,segment['faces'],[],matrix))
                 elif len(surfaces) > 1 or any(s.get('instanced') for s in surfaces):
                     value['instances'] = [s['matrix'] for s in surfaces]
-                    value['instance_ids'] = [s['source_item']+'|'+str(s.get('instance_index',0)) for s in surfaces]
+                    value['instance_ids'] = [s['source_item']+'|'+copy_key(s) for s in surfaces]
                 result.append(value)
     return result
 
@@ -814,7 +900,7 @@ def extra_geometry(data,warnings):
             indices=[v for face in faces for v in face] if faces else list(range(len(segment['vertices'])))
             if any(v<0 or v>=len(segment['vertices']) for v in indices):raise ValueError('Invalid curve/particle vertex index')
             kind='curves' if per_face==2 else 'points'
-            item=dict(kind=kind,identity=surface['source_item']+'|'+str(surface.get('instance_index',-1))+'|'+surface['material']+'|extra|'+str(index),source_item=surface['source_item'],name=surface['source_item'],material=surface['material'],matrix=surface['matrix'],visibility=list(surface['visibility']),vertices=[segment['vertices'][i] for i in indices])
+            item=dict(kind=kind,identity=surface['source_item']+'|'+copy_key(surface,-1)+'|'+surface['material']+'|extra|'+str(index),source_item=surface['source_item'],name=surface['source_item'],material=surface['material'],matrix=surface['matrix'],visibility=list(surface['visibility']),vertices=[segment['vertices'][i] for i in indices])
             radii=segment.get('radii',[])
             item['radii']=[radii[i] for i in indices] if radii else [.001]*len(indices)
             if not radii:warnings.append('Modo did not provide curve/particle radii; using 1 mm: '+surface['source_item'])
