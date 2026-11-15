@@ -245,7 +245,10 @@ class Nodes(unittest.TestCase):
                                  'faces': [[0, 3, 2, 1]], 'material': 'sea', 'uvs': [[0, 0], [0, 1], [1, 1], [1, 0]],
                                  'subdivision': True, 'adaptive_error': 1.0}],
                      'lights': [], 'environments': [], 'time': 0.0}
-            with mock.patch.dict(os.environ, {'MOONRAY_MODO_OCEAN': '1', 'MOONRAY_MODO_OCEAN_SPLIT': switch}):
+            # A runtime without the kit's ModoOceanNormalMap, which reads the short waves with MoonRay's ImageNormalMap
+            # (the kit's map: test_ocean_normal_map).
+            with mock.patch.dict(os.environ, {'MOONRAY_MODO_OCEAN': '1', 'MOONRAY_MODO_OCEAN_SPLIT': switch}), \
+                    mock.patch('moonray_modo.ocean.normal_map_available', return_value=False):
                 return rdla.scene_text(scene, 640, 360, 1, 0.2)
 
         text = written('1')

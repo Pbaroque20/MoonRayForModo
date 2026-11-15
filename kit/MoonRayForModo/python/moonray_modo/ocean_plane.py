@@ -78,7 +78,16 @@ def material(value, tile):
         crest = [float(c) for c in value('crest_color')]
     except (KeyError, TypeError, ValueError):
         crest = list(CREST_COLOR)
-    graph = nodes.new('DwaBaseMaterial', {'albedo': water, 'roughness': 0.03, 'refractive_index': 1.33, 'metallic': 0.0})
+
+    def number(key, default):
+        # Where a plane made before the setting was added has none: as the sea was before.
+        try:
+            held = float(value(key))
+        except (KeyError, TypeError, ValueError):
+            return default
+        return min(1.0, max(0.0, held))
+    rough, foam_rough = number('roughness', 0.03), number('foam_roughness', 0.5)
+    graph = nodes.new('DwaBaseMaterial', {'albedo': water, 'roughness': rough, 'refractive_index': 1.33, 'metallic': 0.0})
     params = {key: value(key) for key in OCEAN_KEYS}
     params.update(fit_to_mesh=False, repeat=[1.0, 1.0])
     graph['nodes']['sea'] = {'type': 'ocean', 'position': [-300, 300], 'inputs': {}, 'parameters': params,
@@ -94,10 +103,10 @@ def material(value, tile):
     graph['nodes']['colour'] = {'type': 'mix', 'position': [0, 0], 'inputs': {'mix': 'foam', 'bg': 'glow'},
                                 'parameters': {'bg': water, 'fg': foam, 'mix': 0.0}}
     graph['nodes']['rough'] = {'type': 'mix', 'position': [0, 120], 'inputs': {'mix': 'foam'},
-                               'parameters': {'bg': [0.03] * 3, 'fg': [0.5] * 3, 'mix': 0.0}}
+                               'parameters': {'bg': [rough] * 3, 'fg': [foam_rough] * 3, 'mix': 0.0}}
     graph['nodes']['surface']['inputs'].update(albedo='colour', roughness='rough')
     return {'native_shader': 'DwaBaseMaterial', 'native_parameters': {}, 'node_graph': graph, 'node_override': True,
-            'color': water, 'roughness': 0.03}
+            'color': water, 'roughness': rough}
 
 
 def apply(result, warnings):

@@ -83,6 +83,9 @@ enum MapAttrType : U32 { MapAttrBool, MapAttrInt, MapAttrFloat, MapAttrRgb, MapA
     F(Int, octaves) F(Float, lacunarity) F(Float, persistence) F(Bool, use_coordinates) F(Rgb, coordinates) F(Float, distance) \
     F(Int, tile_u) F(Int, tile_v) F(Int, component) F(Vec4f, uv_affine) F(Vec2f, uv_offset)
 #define X2_MAP_MODO_NORMAL(F) F(Vec3f, input)
+// ModoOceanNormalMap (native-port/maps/ModoOceanNormal): the ocean's short waves, a tangent normal 0 to 1, and the
+// lowest a mirror reflection may point over the world's horizon.
+#define X2_MAP_MODO_OCEAN_NORMAL(F) F(Rgb, input) F(Float, dial) F(Float, horizon)
 // ModoProceduralMap: its settings, a float vector, are its 24 floats after the attributes.
 #define X2_MAP_MODO_PROCEDURAL(F) \
     F(Int, pattern) F(Int, type) F(Rgb, color1) F(Rgb, color2) F(Float, alpha1) F(Float, alpha2) F(Int, output) F(Int, space) \
@@ -238,7 +241,8 @@ enum MapAttrType : U32 { MapAttrBool, MapAttrInt, MapAttrFloat, MapAttrRgb, MapA
     X(MapList, "ListMap", X2_MAP_LIST) \
     X(MapDebug, "DebugMap", X2_MAP_DEBUG) \
     X(MapDistortNormal, "DistortNormalMap", X2_MAP_DISTORT_NORMAL) \
-    X(MapRandomNormal, "RandomNormalMap", X2_MAP_RANDOM_NORMAL)
+    X(MapRandomNormal, "RandomNormalMap", X2_MAP_RANDOM_NORMAL) \
+    X(MapModoOceanNormal, "ModoOceanNormalMap", X2_MAP_MODO_OCEAN_NORMAL)
 
 #define X2_MAP_KIND(kind, cls, list) kind,
 enum MapKind : U32 { X2_MAPS(X2_MAP_KIND) MapSwitchColor, MapSwitchFloat, MapProjectTriplanar, MapProjectCamera, MapRgbToNormal, MapSwitchNormal,
@@ -2293,6 +2297,40 @@ X2_CALL U32 sampleMapCaseModoNormal(const MapNodeHeader& h, const MapParams& P, 
     }
     return tex::Invalid;
 }
+// ModoOceanNormalMap: the tile's normal (0 to 1) toward the surface's by its dial, then each mirror reflection kept at or
+// above Horizon over the world's horizon, the normal bent as adaptNormal bends one but against the world's up. XPU2
+// shades in world space, so up is +Y (MoonRay's map turns world up into render space). As ModoOceanNormalMap.cc.
+template <class Tex>
+X2_CALL U32 sampleMapCaseModoOceanNormal(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
+    (void)h; (void)tex;
+    using Q = MapModoOceanNormalParams;
+    const Q& q = *reinterpret_cast<const Q*>(P.p);
+    if (isZero(length(st.dPds))) {
+        out = st.N;
+        return tex::Ready;
+    }
+    const Color c = P.c(X2_OFF(Q, input));
+    const float dial = fminf(fmaxf(q.dial, 0.0f), 1.0f);
+    const V3 t{(2.0f * c.x - 1.0f) * dial, (2.0f * c.y - 1.0f) * dial, 1.0f + (2.0f * c.z - 2.0f) * dial};
+    if (isZero(length(t))) {
+        out = st.N;
+        return tex::Ready;
+    }
+    V3 n = normalize(localToGlobal(frame(st.N, normalize(st.dPds)), t));
+    const V3 up{0.0f, 1.0f, 0.0f}, wo = st.wo;
+    if (dot(wo, up) > 0.0f) {
+        const V3 r = 2.0f * dot(n, wo) * n - wo;
+        const float rise = dot(r, up);
+        if (rise < q.horizon) {
+            const V3 bent = normalize(r + (q.horizon - rise) * up);
+            const V3 half = wo + bent;
+            const float l = length(half);
+            if (l > 1e-6f) n = half * (1.0f / l);
+        }
+    }
+    out = n;
+    return tex::Ready;
+}
 template <class Tex>
 X2_CALL U32 sampleMap(const MapNodeHeader& h, const MapParams& P, const State& st, const Tex& tex, Color& out) {
     switch (h.kind) {
@@ -2370,6 +2408,7 @@ X2_CALL U32 sampleMap(const MapNodeHeader& h, const MapParams& P, const State& s
     case MapLOD: return sampleMapCaseLOD(h, P, st, tex, out);
     case MapNormalToRgb: return sampleMapCaseNormalToRgb(h, P, st, tex, out);
     case MapModoNormal: return sampleMapCaseModoNormal(h, P, st, tex, out);
+    case MapModoOceanNormal: return sampleMapCaseModoOceanNormal(h, P, st, tex, out);
     default: return tex::Invalid;
     }
 }

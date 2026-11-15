@@ -589,6 +589,28 @@ def make_split(value, time, cycles):
     return split
 
 
+# The lowest a mirror reflection off the water may point in MoonRay, as the sine of its angle over the world's horizon
+# (ModoOceanNormalMap's Horizon): the short waves' normal map tipped some below it, where a real sea has another wave in
+# the way and the renderer had the environment's ground, black patches on the water.
+HORIZON = 0.02
+# How far the short waves tilt MoonRay's normal (ModoOceanNormalMap's Dial): MoonLightIPR displaces its mesh finely near
+# the camera and shades only the slope finer than its vertices, where MoonRay has every wave shorter than its dicing as
+# the normal map at full strength. Whole, the ripples facing the camera reflected little of the sky and showed the dark
+# water beneath: black patches on a tester's sea that MoonLightIPR drew smooth. At 0.35 MoonRay's sea looks as
+# MoonLightIPR's does there.
+SHORT_WAVES_DIAL = 0.35
+
+
+def normal_map_available():
+    """Whether the MoonRay runtime has the kit's ModoOceanNormalMap; an older one reads the short waves with MoonRay's
+    ImageNormalMap, as before."""
+    try:
+        from . import native
+        return (Path(native.default_runtime()) / 'ModoOceanNormalMap.so').is_file()
+    except Exception:
+        return False
+
+
 def split_tile(value, cycles):
     """The split images for the frame being written (made if need be), or for time 0 named only where no scene is
     being written."""
