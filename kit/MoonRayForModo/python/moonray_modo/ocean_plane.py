@@ -121,7 +121,7 @@ def material(value, tile):
         except (KeyError, TypeError, ValueError):
             return default
         return min(1.0, max(0.0, held))
-    rough, foam_rough = number('roughness', 0.03), number('foam_roughness', 0.5)
+    rough, foam_rough = number('roughness', 0.1), number('foam_roughness', 0.5)
     graph = nodes.new('DwaBaseMaterial', {'albedo': water, 'roughness': rough, 'refractive_index': 1.33, 'metallic': 0.0})
     params = {key: value(key) for key in OCEAN_KEYS}
     params.update(fit_to_mesh=False, repeat=[1.0, 1.0])

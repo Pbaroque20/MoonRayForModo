@@ -68,7 +68,7 @@ The foam sits on the sharpest crests, so this 12 m/s sea has only a little. For 
 The water's roughness sets how sharply it mirrors the sky and how wide the sun's glitter spreads; the foam is rougher.
 
 - **In this scene**: the Mix node on Roughness. Its **BG** is the water's roughness (0.03), its **FG** the foam's (0.5), and the Ocean Foam node blends between them. Raise BG towards 0.1 for a hazier, windier sea with a broader band of glitter; lower it towards 0 for glassy water.
-- **On an Ocean Plane** (MoonRay > Add MoonRay Item > Geometry > Ocean Plane): the same two values are its **Roughness** (0.03) and **Foam Roughness** (0.5) settings, in its Ocean Plane group, with no graph to edit.
+- **On an Ocean Plane** (MoonRay > Add MoonRay Item > Geometry > Ocean Plane): the same two values are its **Roughness** (0.1 by default; 0.03 in this scene) and **Foam Roughness** (0.5) settings, in its Ocean Plane group, with no graph to edit.
 
 ## Good to know
 
