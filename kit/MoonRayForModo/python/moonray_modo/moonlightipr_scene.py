@@ -735,7 +735,7 @@ def displacement_inputs(material):
         graph = row.get('node_graph') if isinstance(row, dict) else None
         for node in sorted(((graph or {}).get('nodes') or {}).values(), key=lambda n: json.dumps(n, sort_keys=True, default=str)):
             kind, params = node.get('type'), node.get('parameters') or {}
-            if kind in ('ocean', 'ocean_foam') and params:
+            if kind in ('ocean', 'ocean_foam', 'ocean_crest') and params:
                 try:
                     held = ocean.settings(params)
                     found.append(['ocean', ocean.key(held, ocean.CONTEXT['time'] or 0.0), [ocean.key(s, ocean.CONTEXT['time'] or 0.0) for s in ocean.swell_values(held)], node.get('_scale', 1.0)])

@@ -18,7 +18,9 @@ SNAP = 16                   # the rings' centre moves in steps of this many Deta
 MATERIAL_PREFIX = '|ocean plane|'
 OCEAN_KEYS = ('resolution', 'wind_speed', 'wind_direction', 'wave_height', 'choppiness', 'small_waves', 'wind_alignment',
               'against_wind', 'depth', 'seed', 'time_scale', 'time_offset', 'loop', 'foam_threshold', 'cascades',
-              'swell_height', 'swell_length', 'swell_direction')
+              'swell_height', 'swell_length', 'swell_direction', 'crest_start')
+# Where a plane made before Crest Colour was added has none: the crests lit a little brighter and greener than the water.
+CREST_COLOR = (0.03, 0.15, 0.12)
 
 
 def rings(detail, horizon):
@@ -66,12 +68,16 @@ def made(entity, camera_matrix, value):
 
 def material(value, tile):
     """The sea the item's settings make: MoonRay's DwaBase water with the Ocean node's waves as its Vector Displacement,
-    and foam over its colour and roughness (as the asset library's ocean). Its tiles are one UV unit each, Tile Size wide
+    the crests' glow (Ocean Crest) over its colour, then the foam over its colour and roughness (as the asset library's ocean). Its tiles are one UV unit each, Tile Size wide
     (the sea made at ocean.FITTED_SIZE and scaled whole to it)."""
     from . import nodes, node_defaults
     from .ocean import FITTED_SIZE
     water = [float(c) for c in value('water_color')]
     foam = [float(c) for c in value('foam_color')]
+    try:
+        crest = [float(c) for c in value('crest_color')]
+    except (KeyError, TypeError, ValueError):
+        crest = list(CREST_COLOR)
     graph = nodes.new('DwaBaseMaterial', {'albedo': water, 'roughness': 0.03, 'refractive_index': 1.33, 'metallic': 0.0})
     params = {key: value(key) for key in OCEAN_KEYS}
     params.update(fit_to_mesh=False, repeat=[1.0, 1.0])
@@ -81,7 +87,11 @@ def material(value, tile):
                                'parameters': node_defaults.parameters('VectorDisplacement')}
     graph['displacement'] = 'waves'
     graph['nodes']['foam'] = {'type': 'ocean_foam', 'position': [-300, 0], 'inputs': {}, 'parameters': {}}
-    graph['nodes']['colour'] = {'type': 'mix', 'position': [0, 0], 'inputs': {'mix': 'foam'},
+    # The light through the crests: the water's colour turning to Crest Colour where the waves stand highest.
+    graph['nodes']['crest'] = {'type': 'ocean_crest', 'position': [-300, -150], 'inputs': {}, 'parameters': {}}
+    graph['nodes']['glow'] = {'type': 'mix', 'position': [-150, -150], 'inputs': {'mix': 'crest'},
+                              'parameters': {'bg': water, 'fg': crest, 'mix': 0.0}}
+    graph['nodes']['colour'] = {'type': 'mix', 'position': [0, 0], 'inputs': {'mix': 'foam', 'bg': 'glow'},
                                 'parameters': {'bg': water, 'fg': foam, 'mix': 0.0}}
     graph['nodes']['rough'] = {'type': 'mix', 'position': [0, 120], 'inputs': {'mix': 'foam'},
                                'parameters': {'bg': [0.03] * 3, 'fg': [0.5] * 3, 'mix': 0.0}}
