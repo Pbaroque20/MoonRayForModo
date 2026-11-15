@@ -352,6 +352,11 @@ def register():
         """Add a new MoonRay item of the index-th class of a kind, under a name no other item has."""
         import modo
         scene=modo.Scene();name=kinds(category)[index]
+        if entities.catalog()[name].get('override')=='ocean':
+            # The kit's Ocean Plane is part of the Ocean nodes override: offered only while that is on.
+            from moonray_modo import native
+            if not native.ocean():
+                raise ValueError('The Ocean Plane is part of Ocean nodes in MoonShine graphs: turn it on in MoonRay Source Overrides first.')
         taken={item.name for item in scene.items()}
         label,count=entities.display(name),1
         while label in taken:
@@ -824,6 +829,12 @@ def register():
             import modo
             name=self.dyna_String(0)
             if name not in entities.catalog():raise ValueError('Unknown MoonRay class: '+name)
+            if entities.catalog()[name].get('override')=='ocean':
+                # The kit's Ocean Plane is part of the Ocean nodes override: offered only while that is on.
+                from moonray_modo import native
+                if not native.ocean():
+                    modo.dialogs.alert('Ocean Plane','The Ocean Plane is part of Ocean nodes in MoonShine graphs: turn it on in MoonRay Source Overrides first.','warning')
+                    return
             scene=modo.Scene()
             item=entities.make_item(scene,name,entities.display(name))
             # MoonRay's own starting values make some items do nothing visible; begin with ones that show.

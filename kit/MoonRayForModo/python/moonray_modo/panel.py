@@ -1646,6 +1646,11 @@ class Panel(Tools, QtWidgets.QWidget):
         self.status.setText(READING);self.status.setToolTip('');self.status.repaint()
 
     def _capture(self,reuse=False,transform_items=None):
+        # Read as the engine takes the scene: undisplaced for MoonLightIPR, which displaces the meshes itself.
+        with host.by_engine(self._engine()):
+            return self._capture_read(reuse,transform_items)
+
+    def _capture_read(self,reuse=False,transform_items=None):
         import modo
         if modo.Scene().renderItem.id != self._scene_id:
             self._scene_id=modo.Scene().renderItem.id;self._geometry_cache=None
@@ -1750,12 +1755,22 @@ class Panel(Tools, QtWidgets.QWidget):
         return self._engine()=='moonlightipr'
 
     def _capture_output(self):
+        # Read as the engine takes the scene: undisplaced for MoonLightIPR, which displaces the meshes itself.
+        with host.by_engine(self._engine()):
+            return self._capture_output_read()
+
+    def _capture_output_read(self):
         values=self._settings_values()
         if not self._motion_wanted():return self._capture()
         from .animation import capture_current
         return self._configure_snapshot(capture_current(values['surface']==2))
 
     def _capture_preview(self):
+        # Read as the engine takes the scene: undisplaced for MoonLightIPR, which displaces the meshes itself.
+        with host.by_engine(self._engine()):
+            return self._capture_preview_read()
+
+    def _capture_preview_read(self):
         # Render with MoonRay as the engine is the picture itself, with the scene's Motion Blur as a render to a file has it.
         # Not while realtime follows the scene, where each edit would read the shutter's ends too, nor MoonRay LS or a draft.
         still=self.preview_engine.currentData()=='moonray' and not self._following and not self.draft.isChecked() and self._motion_wanted()
@@ -2576,7 +2591,9 @@ class Panel(Tools, QtWidgets.QWidget):
                     # reading is the picture (its meshes not read a second time); else the scene is read with its motion.
                     from .animation import shutter_moves
                     scene=first=self._capture(reuse,items if reuse=='transforms' else None);blurred=True
-                    try:moving=shutter_moves(self._geometry_cache,self._settings_values()['surface']==2) if self._geometry_cache is not None else None
+                    try:
+                        with host.by_engine(self._engine()):
+                            moving=shutter_moves(self._geometry_cache,self._settings_values()['surface']==2) if self._geometry_cache is not None else None
                     except Exception:moving=None
                     self.changes.consume()
                     if moving is False:self._live_still=still

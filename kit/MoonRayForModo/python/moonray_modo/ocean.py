@@ -20,7 +20,7 @@ from pathlib import Path
 
 GRAVITY = 9.81
 LIBRARY = 'modo_ocean.dll'
-FORM = 4  # bumped whenever the model changes, so that tiles made by an older one are made again
+FORM = 5  # bumped whenever the model changes, so that tiles made by an older one are made again
 # The settings an Ocean node has, with their defaults (nodes.MAPS takes its schema from here).
 DEFAULTS = {
     'repeat': [1.0, 1.0],   # how many tiles across the surface's UVs (its first UV map), where fit_to_mesh is off
@@ -45,8 +45,23 @@ DEFAULTS = {
     # Foam where the surface is squeezed below this (1 is untouched): 0.7 shows it on the sharpest crests of a 10 m/s
     # sea at choppiness 1 (squeezed to about 0.53 there), more as the wind and the choppiness rise.
     'foam_threshold': 0.7,
+    # The sea over four tiles of unrelated sizes, its waves shared out between them by length (CASCADES), so that its
+    # pattern never repeats in sight; off, one tile, which repeats every Tile's width.
+    'cascades': True,
 }
 RESOLUTIONS = (64, 128, 256, 512, 1024)
+# The cascades: each a tile this many times the sea's tile (FITTED_SIZE), holding the waves between these many cycles
+# across the sea's tile (0: no end). The sizes are powers of the golden ratio, so no two tiles' repeats ever line up.
+# Each holds five or more of its own waves, so none shows its tile: one with two waves across showed a grid of its
+# steepest ones to the horizon. The longest waves on a tile 4.24 times as wide (80 to 40 m on the sea's 80 m tile),
+# then 2.62 (40 to 13 m), the sea's own (13 to 3 m), and ripples under 3 m on one 0.38 as wide, too fine to show a grid
+# from afar. Together they are the one tile's waves (no longer, none lost), shared out by length.
+PHI = (1 + 5 ** 0.5) / 2
+CASCADES = ((PHI ** 3, 1.0, 2.0), (PHI ** 2, 2.0, 6.0), (1.0, 6.0, 26.0), (PHI ** -2, 26.0, 0.0))
+# Each cascade's tiles turned by these many degrees on the surface (the ImageMap's rotation_angle), its wind turned back
+# by as much, so that no tile's grid lines up with another's or with the surface's U and V (a view along them saw the
+# smallest tile's grid in rows); the sea's waves still run with the wind.
+TURNS = (21.0, -38.0, 57.0, -11.0)
 # The tile every sea is made at, in metres (an Ocean node has no Size of its own): fitted to its mesh, it is then
 # scaled whole to the tiles laid on the mesh, the waves' look coming from Tiles Across alone; with Fit to Mesh off,
 # Repeat lays tiles of this size.
@@ -59,7 +74,7 @@ def settings(params):
     value = dict(DEFAULTS)
     value.update({k: v for k, v in (params or {}).items() if k in DEFAULTS})
     for key in DEFAULTS:
-        if key in ('repeat', 'resolution', 'seed', 'fit_to_mesh'):
+        if key in ('repeat', 'resolution', 'seed', 'fit_to_mesh', 'cascades'):
             continue
         value[key] = float(value[key])
         if not math.isfinite(value[key]):
@@ -69,6 +84,7 @@ def settings(params):
         raise ValueError('Ocean resolution must be one of %s' % ', '.join(map(str, RESOLUTIONS)))
     value['seed'] = int(value['seed'])
     value['fit_to_mesh'] = bool(value['fit_to_mesh'])
+    value['cascades'] = bool(value['cascades'])
     repeat = list(value['repeat'])[:2] if isinstance(value['repeat'], (list, tuple)) else [1.0, 1.0]
     value['repeat'] = [float(r) for r in repeat] + [1.0] * (2 - len(repeat))
     value['size'] = FITTED_SIZE
@@ -134,6 +150,60 @@ def phillips(value, kx, kz):
     return p * math.exp(-k2 * small * small)
 
 
+def cell_amplitude(value, kx, kz):
+    """A cell's amplitude before the heights' scale: the whole tile's sqrt(P / 2); a cascade's (fixed_scale) only within
+    its band, by its share of the spectrum over its own cells (times a cell's width in wavenumber, 2 pi over its tile)."""
+    if 'fixed_scale' not in value:
+        return math.sqrt(phillips(value, kx, kz) / 2.0)
+    k = math.hypot(kx, kz)
+    if k < value['k_low'] or (value['k_high'] > 0 and k >= value['k_high']):
+        return 0.0
+    return math.sqrt(phillips(value, kx, kz) / 2.0) * (2 * math.pi / value['size'])
+
+
+def band_variance(value):
+    """A cascade's expected variance of the heights before their scale: 2 P(k) times a cell's area in wavenumber, over
+    its band's cells (modo_ocean.dll's modo_ocean_band_variance where it is there)."""
+    held = library()
+    if held is not None and hasattr(held, 'modo_ocean_band_variance'):
+        import ctypes
+        call = held.modo_ocean_band_variance
+        call.argtypes = [ctypes.c_int, ctypes.POINTER(ctypes.c_double), ctypes.c_int, ctypes.POINTER(ctypes.c_double)]
+        call.restype = ctypes.c_int
+        numbers = values(dict(value, fixed_scale=1.0), 0.0)
+        out = ctypes.c_double(0.0)
+        if call(int(value['resolution']), (ctypes.c_double * len(numbers))(*numbers), len(numbers), ctypes.byref(out)) == 0:
+            return out.value
+    n, cell, total = value['resolution'], 2 * math.pi / value['size'], 0.0
+    for j in range(n):
+        for i in range(n):
+            kx, kz = cell * (i - n // 2), cell * (j - n // 2)
+            k = math.hypot(kx, kz)
+            if k < 1e-12 or k < value['k_low'] or (value['k_high'] > 0 and k >= value['k_high']):
+                continue
+            total += 2.0 * phillips(value, kx, kz) * cell * cell
+    return total
+
+
+def cascade_values(value):
+    """The sea's cascades (CASCADES), each the settings of its own tile: its size, its band of wavenumbers, a seed of its
+    own, and the heights' scale they share, which makes the sea's heights together a fully developed sea's for its
+    wind, as one tile's are. One, the tile itself, where cascades are off."""
+    if not value.get('cascades'):
+        return [value]
+    base = 2 * math.pi / FITTED_SIZE
+    found = []
+    for index, (ratio, low, high) in enumerate(CASCADES):
+        found.append(dict(value, size=FITTED_SIZE * ratio, k_low=low * base, k_high=high * base if high else 0.0,
+                          seed=int(value['seed']) + 1000003 * index, cascade=index, turn=TURNS[index],
+                          wind_direction=value['wind_direction'] - TURNS[index]))
+    variance = sum(band_variance(dict(c, fixed_scale=1.0)) for c in found)
+    target = value['wave_height'] * 0.21 * value['wind_speed'] ** 2 / GRAVITY / 4.0
+    scale = target / math.sqrt(variance) if variance > 0 else 0.0
+    # A sea with no waves at all (no wind energy in any band) is flat, not the whole tile's.
+    return [dict(c, fixed_scale=scale if scale > 0 else 1e-30) for c in found]
+
+
 def frequency(value, k):
     if value['depth'] > 0:
         w = math.sqrt(GRAVITY * k * math.tanh(k * value['depth']))
@@ -153,9 +223,11 @@ def initial(value):
     h0 = [[0j] * n for _ in range(n)]
     for j in range(n):
         for i in range(n):
-            amplitude = math.sqrt(phillips(value, ks[i], ks[j]) / 2.0)
+            amplitude = cell_amplitude(value, ks[i], ks[j])
             g = noise[j * n + i]
             h0[j][i] = complex(g[0] * amplitude, g[1] * amplitude)
+    if value.get('fixed_scale'):
+        return h0, value['fixed_scale']
     # Heights as a fully developed sea's for the wind (Pierson-Moskowitz: significant height 0.21 V^2 / g, four times
     # the heights' spread), whatever the tile's size and resolution: the spread a field of these waves has on average.
     variance = 0.0
@@ -234,20 +306,23 @@ def fields(value, time, slopes=False, cutoff=0.0):
     d = ifft2(pair4) if slopes else None
     displacement, foam, slope = [], [], []
     threshold = value['foam_threshold']
+    cos_turn, sin_turn = math.cos(math.radians(value.get('turn', 0.0))), math.sin(math.radians(value.get('turn', 0.0)))
     for j in range(n):
         for i in range(n):
             sign = -1.0 if (i + j) & 1 else 1.0  # the wavenumbers run from -n/2: a sign at every other point
             h, dx = a[j][i].real * sign * scale, a[j][i].imag * sign * scale
             dz, jxx = b[j][i].real * sign * scale, b[j][i].imag * sign * scale
             jzz, jxz = c[j][i].real * sign * scale, c[j][i].imag * sign * scale
-            displacement.append((chop * dx, h, chop * dz))
+            # Turned from the tile's axes into the surface's (its lookup turns surface to tile by -turn).
+            displacement.append((chop * (cos_turn * dx - sin_turn * dz), h, chop * (sin_turn * dx + cos_turn * dz)))
             jacobian = (1 + chop * jxx) * (1 + chop * jzz) - (chop * jxz) ** 2
             foam.append(min(1.0, max(0.0, (threshold - jacobian) / threshold)) if threshold > 0 else 0.0)
             if slopes:
                 hx, hz = d[j][i].real * sign * scale, d[j][i].imag * sign * scale
                 ax, bz, e = 1 + chop * jxx, 1 + chop * jzz, chop * jxz
                 held = max(jacobian, 0.05)
-                slope.append(((bz * hx - e * hz) / held * value['size'], (ax * hz - e * hx) / held * value['size'], 0.0))
+                gx, gz = (bz * hx - e * hz) / held * value['size'], (ax * hz - e * hx) / held * value['size']
+                slope.append((cos_turn * gx - sin_turn * gz, sin_turn * gx + cos_turn * gz, 0.0))
     return (displacement, foam, slope) if slopes else (displacement, foam)
 
 
@@ -256,6 +331,7 @@ def fields(value, time, slopes=False, cutoff=0.0):
 def key(value, time):
     """What a tile is made from: its settings that shape the waves, and the moment."""
     shape = {k: value[k] for k in DEFAULTS if k not in ('repeat', 'fit_to_mesh', 'tiles_across', 'time_scale', 'time_offset')}
+    shape.update({k: value[k] for k in ('size', 'k_low', 'k_high', 'fixed_scale', 'turn') if k in value})
     return hashlib.sha256(json.dumps([FORM, shape, round(seconds(value, time), 6)], sort_keys=True).encode()).hexdigest()[:24]
 
 
@@ -310,7 +386,10 @@ def values(value, time):
     """The library's numbers, in its order: size to foam threshold, then the ocean's seconds."""
     order = ('size', 'wind_speed', 'wind_direction', 'wave_height', 'choppiness', 'small_waves', 'wind_alignment', 'against_wind',
              'depth', 'seed', 'loop', 'foam_threshold')
-    return [float(value[k]) for k in order] + [seconds(value, time)]
+    numbers = [float(value[k]) for k in order] + [seconds(value, time)]
+    if 'fixed_scale' in value:
+        numbers += [float(value['k_low']), float(value['k_high']), float(value['fixed_scale']), float(value.get('turn', 0.0))]
+    return numbers
 
 
 def native_tile(value, time, displacement, foam, slope, path=None):
@@ -637,6 +716,8 @@ def fitted(scene):
         return scene
     spans = {}
     for mesh in scene.get('meshes') or []:
+        if mesh.get('_ocean_plane'):
+            continue    # its UVs are world tiles, one a unit (ocean_plane): it sizes nothing
         tags = {tag if tag in materials else '' for tag in face_tags.worn(mesh)} & wanted
         if not tags:
             continue

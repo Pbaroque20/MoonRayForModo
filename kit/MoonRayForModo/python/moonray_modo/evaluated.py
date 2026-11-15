@@ -247,7 +247,11 @@ def assign_materials(data, scene, warnings, shading_kept=False):
         return trees[key]
     materials={}
     tags={}
-    kept=_kept_stacks if shading_kept else {}
+    # Read displaced (Modo's cut and moved for it), a material's Displacement layers are in the geometry and left out of
+    # it; read undisplaced (host.by_engine, MoonLightIPR), they are kept for the renderer to displace by.
+    from .host import modo_displaces
+    baked=('displace',) if modo_displaces() else ()
+    kept=_kept_stacks.get(baked,{}) if shading_kept else {}
     made={}
     import copy
     for surface in data['surfaces']:
@@ -335,14 +339,14 @@ def assign_materials(data, scene, warnings, shading_kept=False):
             materials[tag]=material_values(base,warnings)
             if channel(base,'subsAmt',0) or channel(base,'aniso',0):
                 materials[tag]['shader']='DwaBaseMaterial'
-            collect(where,{tag:materials[tag]},warnings,baked_effects=('displace',),
+            collect(where,{tag:materials[tag]},warnings,baked_effects=baked,
                     layer_filter=set(stack),material_key=tag)
             if candidates:
                 from .layers import material_stack
                 materials[tag]['material_stack']=material_stack(where,candidates,warnings,tag,set(stack))
             made[stack]=(tag,copy.deepcopy(materials[tag]))
         surface['material']=tags[stack]
-    _kept_stacks=made
+    _kept_stacks={baked:made}
     return materials
 
 def _coordinates():
