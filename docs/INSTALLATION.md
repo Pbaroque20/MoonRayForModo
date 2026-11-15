@@ -106,6 +106,8 @@ If OptiX still fails, report the complete log and NVIDIA driver version. Automat
 
 ## Rendering across machines with Rhizome
 
+Confirmed by a user on 13 November 2026 between two computers: their main workstation (Ryzen 9 7950X, NVIDIA RTX 5090) and an AMD Ryzen Threadripper 1950X with an NVIDIA GTX 1080 Ti. The second machine found its 1080 Ti too old an architecture to compile XPU2's GPU programs for, and rendered its share on its processor.
+
 Rhizome renders a frame, or a range of frames, with XPU2 on several Windows machines at once. One machine is the
 **head**: it has the scene, finds the other machines, hands out the work and writes the pictures. Every other machine
 is a **node** that renders its share. There is no render server to set up.
