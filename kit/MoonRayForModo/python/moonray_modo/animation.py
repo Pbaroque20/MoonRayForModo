@@ -183,6 +183,13 @@ class Sequence(QtCore.QObject):
         snapshot = capture_frame(self.frame/self.fps, self.panel._settings_values()['surface']==2,
                                  self.motion, self.fps)
         snapshot['frame']=self.frame;snapshot['fps']=self.fps
+        # Where the camera and the meshes stand over the whole shot, read once: XPU2's texture overflow mode fits each
+        # texture to the most any frame shows of it (texture_density), the same for every frame, so none changes size
+        # from one frame to the next.
+        if getattr(self,'texture_frames',None) is None:
+            from .texture_density import frame_placements
+            self.texture_frames=frame_placements(snapshot,self.first,self.last,self.fps,getattr(self,'step',1)) or {}
+        if self.texture_frames:snapshot['_texture_frames']=self.texture_frames
         snapshot = self.panel._configure_snapshot(snapshot)
         if self.export_as:snapshot['_export_as']=dict(self.export_as)
         # Rendered by XPU2 where it renders the preview (render.xpu2_output).

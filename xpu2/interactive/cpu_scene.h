@@ -2999,6 +2999,8 @@ inline std::string geometryKey(const rdl::SceneObject& o,const std::vector<std::
  // Displaced from textures made smaller (texture overflow mode): not what a session with the whole textures may take.
  if(const unsigned side=texture::overflowSide().load())k.add(&side,sizeof side);
  if(texture::overflowCompress().load()){const unsigned char compressed=1;k.add(&compressed,1);}
+ // Fitted to their meshes on screen, and halved from there.
+ if(texture::overflowFitted().load()){const unsigned halvings=texture::overflowHalvings().load()+1;k.add(&halvings,sizeof halvings);}
  // The kit's MoonRay Source Overrides (their switches can change what a displacement's maps give).
  for(const char* name:{"MOONRAY_MODO_TOON_TERMINATOR","MOONRAY_MODO_TOON_ALBEDO","MOONRAY_MODO_USD_SPECULAR","MOONRAY_MODO_OPAQUE_ALPHA",
                        "MOONRAY_MODO_TRANSMISSION_ROUGHNESS"}){const char* v=std::getenv(name);k.add(std::string(name)+"="+(v?v:""));}
