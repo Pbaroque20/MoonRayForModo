@@ -66,6 +66,38 @@ def made(entity, camera_matrix, value):
     return vertices, faces, uvs
 
 
+# Where an Ocean Plane's waves fade out toward the horizon in MoonRay and XPU2 (fade, nodes.fade_ocean), as twice the
+# tiles of wave one pixel spans along the view there (which grows as the distance squared over the camera's height
+# above the water): only where the waves turn to dark speckle, no nearer. On a tester's sea (camera 5.6 m up, 50 mm,
+# 1280 wide) the speckle began about 12 pixels under the horizon, where a pixel spans a tile (the rows above held 7-18%
+# dark pixels, the waves' own shading; 23% at 8 pixels, 90% at 2); the fade starts just before and ends near the horizon.
+FADE_WAVES = (1.0, 32.0)
+# The fade's shape over that range: (1 - share)^3, the waves mostly gone a quarter of the way in, then a soft tail to
+# the horizon. Straight, ripples still threw dark speckle at half height and the waves ended at a line.
+FADE_EXPONENT = 3.0
+
+
+def fade(camera, width, height, tile):
+    """An Ocean Plane's fade toward the horizon for its sea (nodes.fade_ocean): the start and end, in world space on the
+    water, along the camera's view over the ground, at the distances where a pixel spans a quarter of a tile and two
+    tiles (FADE_WAVES): d = sqrt(wave x height / (2 x pixel angle)). None for an orthographic camera or one looking
+    straight down."""
+    m = camera.get('matrix') or [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+    if camera.get('projection', 'persp') != 'persp':
+        return None
+    forward = [-m[8], 0.0, -m[10]]
+    length = math.hypot(forward[0], forward[2])
+    if length < 1e-6:
+        return None
+    forward = [forward[0] / length, 0.0, forward[2] / length]
+    focal, film = float(camera.get('focal_mm') or 50.0), float(camera.get('film_mm') or 36.0)
+    pixel = film / max(focal, 1e-3) / max(int(width or 1920), 1)
+    above = max(m[13] - height, 0.1)
+    near, far = (math.sqrt(waves * tile * above / (2.0 * pixel)) for waves in FADE_WAVES)
+    return {'start': [m[12] + forward[0] * near, height, m[14] + forward[2] * near],
+            'end': [m[12] + forward[0] * far, height, m[14] + forward[2] * far]}
+
+
 def material(value, tile):
     """The sea the item's settings make: MoonRay's DwaBase water with the Ocean node's waves as its Vector Displacement,
     the crests' glow (Ocean Crest) over its colour, then the foam over its colour and roughness (as the asset library's ocean). Its tiles are one UV unit each, Tile Size wide
@@ -136,7 +168,20 @@ def apply(result, warnings):
                 warnings.append('Ocean Plane %s: no material is tagged %s; it is rendered with the sea its own settings make.'
                                 % (entity.get('name', ''), tag))
             tag = MATERIAL_PREFIX + str(entity.get('identity', ''))
-            materials[tag] = material(value, max(float(value('tile_size')), 1e-3))
+            tile = max(float(value('tile_size')), 1e-3)
+            materials[tag] = material(value, tile)
+            # Its waves fade out toward the horizon in MoonRay and XPU2, as MoonLightIPR's do (nodes.fade_ocean); not in
+            # MoonLightIPR's reading, where the fade would change the material at every move of the camera.
+            try:
+                from .host import modo_displaces
+                moonray = modo_displaces()
+            except ImportError:
+                moonray = True
+            faded = None
+            if moonray:
+                faded = fade(result.get('camera') or {}, result.get('width'), vertices[0][1] if vertices else 0.0, tile)
+            if faded:
+                materials[tag]['node_graph']['nodes']['sea']['_fade'] = faded
         mesh = {'name': entity.get('name', 'Ocean Plane'), 'identity': entity.get('identity', ''), 'vertices': vertices,
                 'faces': faces, 'uvs': uvs, 'material': tag, 'smooth': True, 'matrix': [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
                 '_ocean_plane': True}
