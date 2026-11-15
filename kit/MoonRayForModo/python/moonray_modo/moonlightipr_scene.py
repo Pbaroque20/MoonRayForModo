@@ -737,7 +737,8 @@ def displacement_inputs(material):
             kind, params = node.get('type'), node.get('parameters') or {}
             if kind in ('ocean', 'ocean_foam') and params:
                 try:
-                    found.append(['ocean', ocean.key(ocean.settings(params), ocean.CONTEXT['time'] or 0.0), node.get('_scale', 1.0)])
+                    held = ocean.settings(params)
+                    found.append(['ocean', ocean.key(held, ocean.CONTEXT['time'] or 0.0), [ocean.key(s, ocean.CONTEXT['time'] or 0.0) for s in ocean.swell_values(held)], node.get('_scale', 1.0)])
                 except (ValueError, TypeError, KeyError):
                     found.append(['ocean', params])
             elif kind in ('image', 'ImageMap'):

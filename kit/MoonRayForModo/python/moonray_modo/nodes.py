@@ -28,7 +28,8 @@ NORMAL_NODES=('normalmap','bump')
 from . import ocean as _ocean
 _OCEAN_TYPES={'repeat':'Vec2f','fit_to_mesh':'Bool','tiles_across':'Float','resolution':'Int','wind_speed':'Float','wind_direction':'Float',
               'wave_height':'Float','choppiness':'Float','small_waves':'Float','wind_alignment':'Float','against_wind':'Float',
-              'depth':'Float','seed':'Int','time_scale':'Float','time_offset':'Float','loop':'Float','foam_threshold':'Float','cascades':'Bool'}
+              'depth':'Float','seed':'Int','time_scale':'Float','time_offset':'Float','loop':'Float','foam_threshold':'Float','cascades':'Bool',
+              'swell_height':'Float','swell_length':'Float','swell_direction':'Float'}
 MAPS['ocean']={key:(_OCEAN_TYPES[key],value) for key,value in _ocean.DEFAULTS.items()}
 MAPS['ocean_foam']=dict(MAPS['ocean'])
 OCEAN_NODES=('ocean','ocean_foam')
@@ -50,7 +51,10 @@ OCEAN_COMMENTS={
     'time_offset':"Seconds added to the ocean's time.",
     'loop':'Seconds after which the waves repeat, for a looping animation; 0 never.',
     'foam_threshold':'Foam where the surface is squeezed below this (1 is untouched): more makes more foam.',
-    'cascades':"Breaks up the waves' repetition: the sea over four tiles of unrelated sizes, each turned its own way and holding its own lengths of wave, so that its pattern never repeats in sight. Off, one tile, which repeats."}
+    'cascades':"Breaks up the waves' repetition: the sea over four tiles of unrelated sizes, each turned its own way and holding its own lengths of wave, so that its pattern never repeats in sight. Off, one tile, which repeats.",
+    'swell_height':"A swell: one long, regular wave running through the sea, as from a storm far away, this high from trough to crest in metres; 0 for none. The sea's Choppiness sharpens its crests too.",
+    'swell_length':"The swell's length from crest to crest, in metres. Longer swells run faster, as real ones do.",
+    'swell_direction':"Where the swell runs, in degrees from U towards V, as Wind Direction: the same angle runs with the wind's waves."}
 
 from .math_nodes import SCHEMAS as MATH_SCHEMAS
 MAPS.update(MATH_SCHEMAS)
@@ -145,6 +149,9 @@ def expand_ocean(graph):
         # waves, else the one; each made for the frame (ocean.tile).
         parts=_ocean.cascade_values(value) if on else [value]
         foam_node=node['type']=='ocean_foam'
+        # The swell (ocean.swell_values), first, its tile added to the displacement; it has no foam of its own. The finest
+        # tile stays last, for the split below.
+        if on and not foam_node:parts=_ocean.swell_values(value)+parts
         images=[]
         for part in parts:
             displacement,foam,slope=_ocean.tile(part) if on else (None,None,None)

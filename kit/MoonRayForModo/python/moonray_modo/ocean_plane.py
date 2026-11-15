@@ -17,7 +17,8 @@ SEGMENTS = int(os.environ.get('MOONRAY_MODO_OCEAN_PLANE_SEGMENTS') or 64)
 SNAP = 16                   # the rings' centre moves in steps of this many Detail, so a camera move keeps them still
 MATERIAL_PREFIX = '|ocean plane|'
 OCEAN_KEYS = ('resolution', 'wind_speed', 'wind_direction', 'wave_height', 'choppiness', 'small_waves', 'wind_alignment',
-              'against_wind', 'depth', 'seed', 'time_scale', 'time_offset', 'loop', 'foam_threshold', 'cascades')
+              'against_wind', 'depth', 'seed', 'time_scale', 'time_offset', 'loop', 'foam_threshold', 'cascades',
+              'swell_height', 'swell_length', 'swell_direction')
 
 
 def rings(detail, horizon):

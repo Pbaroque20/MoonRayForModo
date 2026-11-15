@@ -24,6 +24,12 @@ The current release is [0.5.4.3.1](https://github.com/Pbaroque20/MoonRayForModo/
 
   ![The same sea from 60 m up: one tile (left), and over four turned cascades (right)](docs/images/ocean-cascades.webp)
 
+- **Ocean swell**: the Ocean node (and the Ocean Plane) has Swell Height, Length and Direction: one long, regular wave running through the sea, as from a far-off storm, at a real swell's speed, its crests sharpened by Choppiness as the wind's waves are. Height 0, the default, is no swell.
+
+  ![The same sea in MoonLightIPR from 3 m up: no swell (left), and a 2.5 m swell 150 m long (right)](docs/images/ocean-swell.webp)
+
+- **Ocean playblasts in MoonLightIPR**: each new frame is ready in about a second, where it took 20 seconds or more, and the waves change shape from frame to frame, where they could keep the first frame's.
+
 - **Displaced meshes in MoonLightIPR's realtime** are displaced once, by MoonLightIPR, where Modo's own displacement was added on top; and one that deforms, instanced or not, is motion blurred, where it rendered sharp.
 - **Sharper displacement near the camera in MoonLightIPR**: a displaced mesh is split finely where it is near and coarsely where it is far, within the same number of triangles, so waves and other displacement close to the camera keep their shape (a large sea from near the water came about twice as close to a finely split one).
 - **The MoonShine graph editor's title follows the material's name** when it is renamed in the Shader Tree.

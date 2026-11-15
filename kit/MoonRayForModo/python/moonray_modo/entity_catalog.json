@@ -3853,7 +3853,7 @@
         "type": "Float"
       },
       "cascades": {
-        "comment": "Breaks up the waves' repetition: the sea over three tiles of unrelated sizes, its long, middle and short waves on each, so that its pattern never repeats in sight. Off, one tile, which repeats.",
+        "comment": "Breaks up the waves' repetition: the sea over four tiles of unrelated sizes, each turned its own way and holding its own lengths of wave, so that its pattern never repeats in sight. Off, one tile, which repeats.",
         "default": true,
         "group": "Ocean",
         "name": "cascades",
@@ -4031,6 +4031,27 @@
         "default": true,
         "name": "static",
         "type": "Bool"
+      },
+      "swell_direction": {
+        "comment": "Where the swell runs, in degrees from U towards V, as Wind Direction: the same angle runs with the wind's waves.",
+        "default": 0.0,
+        "group": "Ocean",
+        "name": "swell_direction",
+        "type": "Float"
+      },
+      "swell_height": {
+        "comment": "A swell: one long, regular wave running through the sea, as from a storm far away, this high from trough to crest in metres; 0 for none. The sea's Choppiness sharpens its crests too.",
+        "default": 0.0,
+        "group": "Ocean",
+        "name": "swell_height",
+        "type": "Float"
+      },
+      "swell_length": {
+        "comment": "The swell's length from crest to crest, in metres. Longer swells run faster, as real ones do.",
+        "default": 120.0,
+        "group": "Ocean",
+        "name": "swell_length",
+        "type": "Float"
       },
       "tile_size": {
         "comment": "How wide one tile of the sea is, in metres: the sea is made at 80 m and scaled whole to this, its waves and their heights with it.",
