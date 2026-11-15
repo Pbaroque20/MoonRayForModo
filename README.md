@@ -14,6 +14,8 @@ The current release is [0.5.4.3.1](https://github.com/Pbaroque20/MoonRayForModo/
 - **Replicators**: a hidden prototype stays hidden, and a replicator no longer stops MoonLightIPR's preview with a motion blur error when blur is off.
 - **A plain material over everything** leaves the textures under it unloaded, as Modo renders it: such a scene no longer runs XPU2 into texture overflow.
 - **Faster scene reading** where the Shader Tree has many masks: each setting read once.
+- **XPU2 renders deforming, displaced instances**: replicated or instanced polygon meshes that are displaced and change shape over the shutter render in XPU2, where they went to MoonRay XPU. As in MoonRay, each copy shows the mesh as it is when the shutter closes; only the copy's own movement is blurred (subdivision copies now do the same).
+- **XPU2 renders can pick up where they stopped**: with Preferences > MoonRay > XPU2 > Resumable checkpoints on, a render that saves checkpoints can be continued later instead of started over, and the result is the same picture. The trade-off: such a render samples every pixel alike, so at the same samples it is noisier where the picture is hard than XPU2's usual sampling. Off by default.
 - **Fixes**: since 0.5.4.3, textures were converted one at a time and scenes were written without the scene's texture colour rules, working colour space and Scene References settings, or the "texture not found" notices; all are back, and textures convert side by side again.
 
 ## New in 0.5.4.3.1

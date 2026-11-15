@@ -84,7 +84,7 @@ KEYS = {
     # A diagnostic: renders hold MoonRay's PBR validity output (native.pbr_validity).
     'pbr_validity': (False, bool),
     # XPU2: what renders on the graphics card, and where its adaptive passes are made.
-    'xpu2/renderer': ('xpu2', str), 'xpu2/adaptive_chain': (False, bool), 'xpu2/devices': ('both', str), 'xpu2/rt_cap': ('none', str),
+    'xpu2/renderer': ('xpu2', str), 'xpu2/adaptive_chain': (False, bool), 'xpu2/resumable_checkpoints': (False, bool), 'xpu2/devices': ('both', str), 'xpu2/rt_cap': ('none', str),
     'draft/ink': ('tan', str), 'draft/width': (640.0, float), 'render_on_open': (False, bool), 'light_intensity': (10.0, float), 'working_space': ('rec709', str), 'notices_open': (False, bool),
     'ipr/width': (640, int), 'ipr/sampling': ('adaptive', str), 'ipr/samples': (32, int), 'ipr/error': (100.0, float), 'ipr/refine': (False, bool),
     # How many samples a pixel MoonLightIPR gathers before it rests, in realtime.

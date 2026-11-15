@@ -446,7 +446,7 @@ def engine_name(mode):
 def source_switches():
     """The MoonRay Source Overrides MoonRay reads as it starts: a session started with others is started again."""
     return (toon_terminator(), toon_albedo(), crypto_volumes(), fog_alpha(), crypto_once(), camera_light_lpe(), mirrored_meshes(), scalar_emission(), dso_search()) + tuple(
-        globals()[key]() for key in ('usd_specular', 'opaque_alpha', 'transmission_roughness', 'auto_xpu')) + (xpu2(), xpu2_chain(), __import__('moonray_modo.devices', fromlist=['state']).state())
+        globals()[key]() for key in ('usd_specular', 'opaque_alpha', 'transmission_roughness', 'auto_xpu')) + (xpu2(), xpu2_chain(), xpu2_resumable(), __import__('moonray_modo.devices', fromlist=['state']).state())
 
 
 def binary_geometry():
@@ -534,6 +534,12 @@ def xpu2_chain():
     return str(_setting('xpu2/adaptive_chain', 'false')).lower() in ('true', '1')
 
 
+def xpu2_resumable():
+    """Whether XPU2's checkpoint renders can be taken up where they stopped (Preferences > MoonRay > XPU2 > Resumable
+    checkpoints, off by default): every pixel sampled alike in stages, in place of XPU2's sampling generations."""
+    return str(_setting('xpu2/resumable_checkpoints', 'false')).lower() in ('true', '1')
+
+
 def xpu2_devices():
     """Which devices XPU2 renders with: 'both' (the processor and the graphics cards, the default), 'gpu' or 'cpu', by
     the devices switched on in Preferences > MoonRay > XPU2 > Device Management (devices.py)."""
@@ -555,6 +561,7 @@ def xpu2_environment(runtime):
     return {'PATH': str(root) + os.pathsep + environment(runtime)['PATH'], 'RDL2_DSO_PATH': str(root),
             'REZ_MOONRAY_ROOT': str(root), 'MOONRAY_XPU2_MOONRAY': str(Path(runtime) / 'moonray.exe'),
             'XPU2_SESSION_CHAIN': '1' if xpu2_chain() else '0',
+            'XPU2_SESSION_RESUMABLE_CHECKPOINTS': '1' if xpu2_resumable() else '0',
             # Its devices (Preferences > MoonRay > XPU2 > Device Management): 2 both, 1 the graphics cards, 0 the processor,
             # and which cards and processor groups where some are off.
             'XPU2_SESSION_MODE': {'both': '2', 'gpu': '1', 'cpu': '0'}[xpu2_devices()],
