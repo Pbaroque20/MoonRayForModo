@@ -491,7 +491,6 @@ The ones you are most likely to meet:
 - Very smooth highlights (roughness under about 0.2) are dimmer than Modo's: about three quarters as bright under GTR, less under Blinn and Ashikhmin.
 - Under Principled, Modo's diffuse gets brighter with roughness and MoonRay's does not.
 - Glass under Blinn and Ashikhmin lets through about 8% less light than Modo's, and a very strong anisotropy draws a shorter streak than Modo's.
-- MoonRay tessellates a displaced polygon mesh coarsely, so fine displacement shows little on it; subdivision surfaces show it fully.
 - Hair in MoonLightIPR is close to MoonRay's but not exact, and its subsurface can have less red than MoonRay's on a strongly coloured material.
 - A glowing VDB volume, or a light with a cookie filter, renders in MoonRay's slower scalar mode; the plugin switches for you and says so.
 - With alpha and an environment the camera sees, an EXR still holds the environment where its alpha is 0, so a plain "over" looks washed out: subtract its `environment_background` channel, or hide the environment from the camera. A MoonRay EnvLight item is not in that channel, so soft edges in front of one can still flare.
@@ -503,7 +502,7 @@ Every open issue is in the [issue tracker](https://github.com/Pbaroque20/MoonRay
 
 ## This Version's Current Limitations
 
-- **Windows and Modo 16.1v9 only.** XPU and MoonLightIPR need an NVIDIA GPU, and so does XPU2 except with its Devices preference set to the processor only; they have been exercised on an RTX 3090 only.
+- **Windows and Modo 16.1v9 only.** XPU and MoonLightIPR need an NVIDIA GPU, and so does XPU2 except with its Devices preference set to the processor only. They have been tested on an RTX 3090 and by testers on other NVIDIA cards; XPU2 renders on the processor where the card is older than an RTX 20 series.
 - **MoonLightIPR is an approximation.** It matches MoonRay closely on many scenes but not all; [moonlightipr/README.md](moonlightipr/README.md) says how closely, scene by scene, and what it leaves out.
 - **Modo parity is partial.** Only Modo's own lights and standard/Principled materials are matched. Blinn and Ashikhmin highlights are matched to Modo's by measurement (the lobe, roughness and strength that came closest to Modo's own renders), closely once the roughness is 0.2 or more and loosely below that; a roughness driven by an image is matched the same way. A Modo material's smoothing angle is followed, except on a mesh of more than 300,000 faces, which is smoothed all over and named in a notice. Under Principled, Modo's diffuse brightens with roughness and MoonRay's does not. Anisotropy runs along the material's UV map, with its strength fitted to Modo's renders. Rough environment reflections come out dimmer in MoonRay. Specular Tint, Flatness and a reflection amount apart from specular have nothing like them in MoonRay's material and are named in a notice. Modo's cylinder, dome and photometric lights are left out, with a notice; MoonRay's own lights and volume items stand in. Modo's own group light linking is translated but experimental; check it against Modo.
 - **MaterialX is a supported subset**: Standard Surface, OpenPBR and glTF surfaces made of images, maths, mixes, remaps, UV transforms and MoonRay's own maps. Nodes outside that subset are not read.
@@ -642,13 +641,12 @@ a subdivided one (left); with the override, both are smooth (right).*
 
 ## Still to implement
 
-- Fur guides, and the fur vector and width maps.
 - More of Modo's material: the Principled model's diffuse (which brightens with roughness in Modo) and smooth highlights under every model.
 - Modo's cylinder, dome and photometric lights.
 - Glass under Blinn and Ashikhmin, which lets through more light in Modo.
 - The Shader Tree effects still left out (Modo has 218).
 - Modo 17.1 on Windows, then macOS.
-- Broader validation: other GPUs and drivers, clean-machine installs, very large scenes, recovery under load, and colour matching.
+- Broader validation: more GPUs and drivers, clean-machine installs, very large scenes, recovery under load, and colour matching.
 
 Each of these, and what MoonRay documents that the plugin has no control for yet (Alembic and USD procedurals, Arras and more), is in the [issue tracker](https://github.com/Pbaroque20/MoonRayForModo/issues).
 
