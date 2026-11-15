@@ -259,15 +259,18 @@ def emit(environments, lines):
                              ('glossy_transmission','refraction'),('mirror_transmission','refraction')]:
             attributes['visible_'+lobe]='true' if environment.get(visible,True) else 'false'
         if environment['kind']=='stack':
-            from .environment_layers import held_placement,texture
+            from .environment_layers import held_placement,texture,native_layers,NATIVE_SIZE
             held=held_placement(environment) if 'matrix' not in environment else None
             if held:
                 # Baked at rest once; turning it turns the light (environment_layers.held_placement).
                 baked,placement=held
-                attributes['texture'] = string(textures.register(working_texture(texture(baked))))
+                size = NATIVE_SIZE if native_layers(baked['layers']) else (512, 256)
+                attributes['texture'] = string(textures.register(working_texture(texture(baked, *size))))
                 attributes['node_xform'] = matrix(placement)
             else:
-                attributes['texture'] = string(textures.register(working_texture(texture(environment))))
+                # Laid by the adapter, at the size a render shows (MoonRay's renders and its preview alike).
+                size = NATIVE_SIZE if native_layers(environment['layers']) else (512, 256)
+                attributes['texture'] = string(textures.register(working_texture(texture(environment, *size))))
             attributes['texture_filter'] = '1'
         elif environment['kind']=='constant':
             attributes['color']=vector(working_color(environment['zenith']),'Rgb')

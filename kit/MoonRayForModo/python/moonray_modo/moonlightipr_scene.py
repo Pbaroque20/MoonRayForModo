@@ -123,8 +123,10 @@ def environment_image(item, runtime, full=False):
     from .working_space import TO_AP1, enabled as working_enabled, matrix_argument
     if item['kind'] == 'stack':
         # The plugin composes layered environments and physical skies into one linear image.
-        from .environment_layers import texture
-        source, space, ocio = Path(texture(item, *ENVIRONMENT_BAKE)), 'linear', None
+        from .environment_layers import texture, native_layers, NATIVE_SIZE, NATIVE_REALTIME_SIZE
+        # Laid by the adapter: a Render's at a render's size, realtime's as its images are; in Python, small, for time.
+        size = (NATIVE_SIZE if full else NATIVE_REALTIME_SIZE) if native_layers(item['layers']) else ENVIRONMENT_BAKE
+        source, space, ocio = Path(texture(item, *size)), 'linear', None
     else:
         source = Path(item['path'])
         space, ocio = color_space(source, item.get('color_space', ''), item.get('srgb'))

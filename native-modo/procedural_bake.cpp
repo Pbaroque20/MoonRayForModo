@@ -104,7 +104,9 @@ struct Tables {
     std::vector<Table> px, py, vary;         // and its points' places and its cells' variation
     std::vector<double> sources;             // Ripples: each source's place, u then v
 };
-const Tables* TABLES = nullptr;              // set while MR_procedural_bake runs, read by its threads
+// The tables of the bake a thread is working for (MR_procedural_bake sets each of its threads'); none elsewhere, as for
+// the environment blend's points, which work their random numbers out as they go.
+thread_local const Tables* TABLES = nullptr;
 std::mutex BAKING;                           // one bake at a time: its tables are TABLES
 
 double noise(double x, double y, int64_t period, int64_t seed, int64_t periodY = 0) {
@@ -264,6 +266,12 @@ void sample(const double* d, double u, double v, float* rgb, float* alpha) {
 
 }  // namespace
 
+// One point of a pattern, at (u, v), for the environment blend (environment_blend.cpp): its colour, and its alpha as
+// grey. settings as MR_procedural_bake takes them.
+void modo_procedural_point(const double* settings, double u, double v, float* rgb, float* alpha) {
+    sample(settings, u, v, rgb, alpha);
+}
+
 // The pattern over a resolution by resolution square of one unit of UV, rows from v = 0, each pixel sampled at its
 // middle: its colour (3 floats a pixel) into rgb, its alpha (as grey, 3 floats a pixel) into alpha. settings holds
 // SlotCount numbers in Slot's order. 0 done; 1 settings out of range.
@@ -299,9 +307,9 @@ extern "C" __declspec(dllexport) int MR_procedural_bake(const double* settings, 
         const int64_t sources = std::max<int64_t>(1, std::min<int64_t>(64, int64_t(d[Sources])));
         for (int64_t index = 0; index < sources; ++index) { tables.sources.push_back(chance2(index, 17)); tables.sources.push_back(chance2(index, 29)); }
     }
-    TABLES = &tables;
     threads = std::max(1, std::min(threads, resolution));
     auto rows = [&](int begin, int end) {
+        TABLES = &tables;
         for (int y = begin; y < end; ++y)
             for (int x = 0; x < resolution; ++x) {
                 const size_t at = 3 * (size_t(y) * resolution + x);
@@ -315,6 +323,5 @@ extern "C" __declspec(dllexport) int MR_procedural_bake(const double* settings, 
         if (begin < end) pool.emplace_back(rows, begin, end);
     }
     for (auto& t : pool) t.join();
-    TABLES = nullptr;
     return 0;
 }
