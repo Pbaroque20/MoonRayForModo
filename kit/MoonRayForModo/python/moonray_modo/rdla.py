@@ -1141,8 +1141,9 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
         resolve(lines, render_meshes)
     # How many texels across each texture its meshes can show on screen: XPU2's texture overflow mode steps each down
     # to that before it compresses or shrinks anything (texture_density, host_texture.h).
-    # Only where XPU2 renders it (its sampling settings written above): MoonRay has no use for them.
-    if generation and (not output_file or scene.get('_xpu2')):
+    # Only where XPU2 renders it (its sampling settings written above): MoonRay has no use for them. Not for realtime,
+    # whose textures are 1024 pixels a side at most on the card as they are, whatever the view.
+    if generation and (not output_file or scene.get('_xpu2')) and not scene.get('_realtime'):
         try:
             from . import texture_density
             # An animation's (animation.Sequence): the most over its frames, the same for each of them.

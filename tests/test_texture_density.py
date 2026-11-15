@@ -90,6 +90,18 @@ class TextureDensity(unittest.TestCase):
         near = texture_density.needs(TEXT, [(mesh(8.0, 0.0), {'can'})], CAMERA, 1920)
         self.assertEqual(texture_density.needs(TEXT, [(plane, {'can'})], CAMERA, 1920, placements), near)
 
+    def test_realtime_scenes_are_left_without_needs(self):
+        # Realtime keeps XPU2's 1024 pixel cap on the card whatever the view: only a render's scene carries the needs.
+        from unittest import mock
+        from moonray_modo import rdla
+        asked = []
+        with mock.patch.object(texture_density, 'needs', side_effect=lambda *a, **k: asked.append(1) or {}):
+            for realtime in (False, True):
+                rdla.scene_text({'camera': dict(CAMERA), 'materials': {}, 'meshes': [], 'lights': [], 'environments': [],
+                                 'xpu2_generations': {'samples': 16}, '_realtime': realtime}, 64, 36, 1, 0.2)
+                asked.append('realtime' if realtime else 'render')
+        self.assertEqual(asked, [1, 'render', 'realtime'])
+
     def test_textures_no_mesh_wears_are_left_out(self):
         self.assertEqual(texture_density.needs(TEXT, [(mesh(8.0, 0.0), {'other'})], CAMERA, 1920), {})
 
