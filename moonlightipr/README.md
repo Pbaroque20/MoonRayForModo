@@ -36,10 +36,10 @@ build to an installed kit during development.
   items, curves and hair, subdivision surfaces, depth of field and motion blur.
 - It shades hair as MoonRay's hair material does, reads MoonRay's skin material, draws curves as
   curves, and draws fog: even fog in a MoonRay box or sphere, and VDB volumes from their files.
-- It produces beauty only: other buffers and Cryptomatte need MoonRay.
+- Besides the beauty it makes Diffuse, Glossy, Emission, Environment background, Alpha, Camera depth,
+  Shading normal, World position, Albedo, Motion vectors and a Shadow matte; Cryptomatte and the other buffers need MoonRay.
 - Agreement with MoonRay is measured, scene by scene, further down. It is close on
   lights and plain materials and looser on layered materials and glass.
-- It has been run on one GPU, an RTX 3090.
 
 ## What exists
 
