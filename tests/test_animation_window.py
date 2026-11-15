@@ -168,8 +168,10 @@ class Wiring(unittest.TestCase):
 
     def test_what_only_moonray_writes_stays_moonrays(self):
         rule = self.read('render.py').split('def xpu2_output')[1].split('def binary_sessions')[0]
-        for word in ("'deep'", "'recovery'", 'scalar_only', 'execution_mode'):
+        for word in ("'recovery'", 'scalar_only', 'execution_mode'):
             self.assertIn(word, rule)
+        # A deep image is XPU2's too (its session writes deep files; a scene with volumes falls back to MoonRay).
+        self.assertNotIn("'deep'", rule.split('return')[1])
 
     def test_a_saved_picture_comes_from_the_denoised_render(self):
         self.assertIn("denoised if self.phase=='postdone' and denoised.is_file() else destination", self.read('render.py'))
