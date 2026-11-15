@@ -67,6 +67,14 @@ try:
             rows = [(path.replace('\\', '/').split('/')[-1], name, nc, round(tt, 4), round(ct, 4)) for (path, _l, name), (_cc, nc, tt, ct, _c) in stats.items()]
             result[mode + '_top_own'] = sorted(rows, key=lambda r: -r[3])[:25]
             result[mode + '_top_calls'] = sorted(rows, key=lambda r: -r[2])[:15]
+            # What the Shader Tree readers spend their time in: the calls they make, by time spent inside them.
+            for reader in ('material_stack', 'material_values', 'collect', 'layer_groups', 'texture_groups'):
+                calls = []
+                for (path, _l, name), (_cc, _nc, _tt, _ct, callers) in stats.items():
+                    for (cpath, _cl, cname), timing in callers.items():
+                        if cname == reader and cpath.replace('\\', '/').endswith(('layers.py', 'host.py')):
+                            calls.append((round(timing[3], 4), timing[1], path.replace('\\', '/').split('/')[-1] + ':' + name))
+                result[mode + "_callees_" + reader] = sorted(calls, reverse=True)[:12]
             result[mode] = {'seconds': round(whole, 3), 'profiled_seconds': round(profiled, 3),
                             'readers': {k: round(v, 3) for k, v in sorted(spent.items(), key=lambda kv: -kv[1])},
                             'materials': len(scene.get('materials') or {}), 'meshes': len(scene.get('meshes') or [])}

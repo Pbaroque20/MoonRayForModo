@@ -84,6 +84,24 @@ def _layer_mask_target(layer,channel):
 
 
 def material_tag(item, texture=False):
+    """The material tag a Shader Tree item's masks give it ('' for none, None where two differ), found once for each item
+    while held_tree holds: each material's stack asked it of every layer again (1,108 times for 23 stacks on a tester's
+    scene)."""
+    if _HELD is None:
+        return _material_tag(item, texture)
+    key = ('material_tag', item.id)
+    if key not in _HELD:
+        try:
+            _HELD[key] = (True, _material_tag(item, texture))
+        except ValueError as exc:
+            _HELD[key] = (False, exc)
+    found, value = _HELD[key]
+    if not found:
+        raise value
+    return value
+
+
+def _material_tag(item, texture=False):
     from .host import channel
     tag = None
     parent = item.parent
@@ -103,7 +121,19 @@ def material_tag(item, texture=False):
     return tag if tag is not None else ''
 
 def texture_groups(layer, channel, stop_type='polyRender'):
-    """Capture outer-to-inner scopes without flattening group masks or opacity."""
+    """Capture outer-to-inner scopes without flattening group masks or opacity. Found once for each layer while held_tree
+    holds (with the plugin's own channel reader), each caller given its own copy."""
+    from . import host
+    if _HELD is None or channel is not host.channel:
+        return _texture_groups(layer, channel, stop_type)
+    key = ('texture_groups', layer.id, stop_type)
+    if key not in _HELD:
+        _HELD[key] = _texture_groups(layer, channel, stop_type)
+    held = _HELD[key]
+    return None if held is None else [dict(group) for group in held]
+
+
+def _texture_groups(layer, channel, stop_type='polyRender'):
     result = []
     parent = layer.parent
     while parent and parent.type != stop_type:
