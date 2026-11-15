@@ -26,6 +26,9 @@ The current release is [0.5.4.3.1](https://github.com/Pbaroque20/MoonRayForModo/
 - **The graph editor's own colour picker**: a popup beside the swatch in place of Windows' colour dialog (a saturation and value square, hue and lightness bars, RGB and HSV numbers dragged like the graph's, a hex code). The graph and preview follow it live; Cancel puts the colour back.
 - **Connected inputs keep their connection**: editing the number beside a connected input no longer drops the connection; the number is shown grey.
 
+![The graph editor's colour picker](docs/images/colour-picker.webp)
+
+
 ## New in 0.5.4.3
 
 - **Ocean**: Ocean and Ocean Foam nodes in the MoonShine graph make Tessendorf's FFT waves (wind, choppiness, foam where the surface folds, depth and loop) as a Vector Displacement, the same sea in MoonRay, XPU2 and MoonLightIPR. Fit to Mesh (on by default) sizes the sea to the mesh with Tiles Across. An "Ocean at sunset" demo with developer's notes is in the asset library. Switch: Ocean nodes in MoonShine graphs, in MoonRay Source Overrides.
@@ -36,6 +39,9 @@ The current release is [0.5.4.3.1](https://github.com/Pbaroque20/MoonRayForModo/
 - **Denoised fur keeps a share of its detail**: Keep Fine Detail puts back a quarter (Some) or half (More) of the render over the denoised fur, not all of it.
 - **XPU2**: light path AOVs match on the graphics card and the processor (no more squares); random-walk subsurface's crease attenuation renders in XPU2. Graphics cards older than an RTX 20 series are left out and the processor renders, so a GTX 1080 Ti no longer stays "not compiled", in previews and on Rhizome nodes.
 - **Fixes**: a mesh with all-zero vertex normals renders smoothed (XPU2 used to give it to MoonRay XPU); MoonLightIPR's Render shows the HDRI the right way up; MoonLightIPR reads PFM textures as floats; object-space maps into a Vector Displacement show in MoonLightIPR; a property changed after its scene closed no longer crashes Modo; realtime MoonRay dices displacement as the render does; library Modo scenes open as their own scene; forms open the same groups as the graph editor; the graph editor's Live preview starts on.
+
+![An ocean in the MoonShine graph, rendered by XPU2](docs/images/ocean-graph.webp)
+
 
 ## New in 0.5.4.2
 
