@@ -647,8 +647,8 @@ def graph_expression(graph, identity, effect):
                     return (layer, gain, offset + amount[0])
                 return (layer, -gain, amount[0] - offset) if flipped else (layer, gain, offset - amount[0])
             return None
-        if kind == 'lerp' and 'mix' in node.get('inputs', {}):
-            # Between two numbers by an image: the image brought into their range.
+        if kind in ('lerp', 'mix') and 'mix' in node.get('inputs', {}):
+            # Between two numbers by an image: the image brought into their range (the graph's Mix as Lerp).
             low, high = constant(node, 'bg', 0.0), constant(node, 'fg', 1.0)
             inner = leaf(node['inputs']['mix'])
             if low is None or high is None or inner is None or inner[0] is None or len(set(low)) != 1 or len(set(high)) != 1:
@@ -709,8 +709,9 @@ def graph_expression(graph, identity, effect):
                     continue
                 return below + above
             return None
-        if kind == 'lerp' and 'fg' in inputs:
-            over = leaf(inputs['fg'])
+        if kind in ('lerp', 'mix') and ('fg' in inputs or 'mix' in inputs):
+            # The graph's Mix as Lerp; a foreground that is a colour of its own, a constant row over what is below.
+            over = leaf(inputs['fg']) if 'fg' in inputs else (None, constant(node, 'fg', 1.0) or [1.0, 1.0, 1.0])
             if over is None:
                 return None
             wired, amount = source_of(node, 'mix', .5)

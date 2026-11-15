@@ -723,6 +723,32 @@ def distance_split(mesh, camera, width):
         return None
 
 
+def displacement_inputs(material):
+    """What a material's displacement reads besides its program, for the displaced mesh's key: each Ocean node's tile at
+    the frame being written (its settings and time, ocean.key), and every image its graphs and Shader Tree layers name.
+    The session displaces a mesh once, when it first has its key: an ocean's mesh kept its first frame's waves through a
+    playblast, only its shading moving, where its key left out the frame's tiles."""
+    import json
+    from . import ocean
+    found = []
+    for row in (material.get('material_stack') or [material]) if isinstance(material, dict) else ():
+        graph = row.get('node_graph') if isinstance(row, dict) else None
+        for node in sorted(((graph or {}).get('nodes') or {}).values(), key=lambda n: json.dumps(n, sort_keys=True, default=str)):
+            kind, params = node.get('type'), node.get('parameters') or {}
+            if kind in ('ocean', 'ocean_foam') and params:
+                try:
+                    held = ocean.settings(params)
+                    found.append(['ocean', ocean.key(held, ocean.CONTEXT['time'] or 0.0), [ocean.key(s, ocean.CONTEXT['time'] or 0.0) for s in ocean.swell_values(held)], node.get('_scale', 1.0)])
+                except (ValueError, TypeError, KeyError):
+                    found.append(['ocean', params])
+            elif kind in ('image', 'ImageMap'):
+                found.append([kind, params.get('texture') or params.get('filename')])
+        for layer in (row.get('layers') or []) if isinstance(row, dict) else ():
+            if isinstance(layer, dict) and layer.get('path'):
+                found.append(['layer', layer.get('path')])
+    return json.dumps(found, sort_keys=True, default=str).encode('utf-8')
+
+
 def displaced(mesh, key, flags, payload, materials, material_index, warnings, limit=None, camera=None, width=0):
     """A mesh as the session displaces it, where one of its materials displaces it (form 'L'): after its data, how many
     times to split each triangle into four, the material its instances give it, and each displacing material's
@@ -731,9 +757,12 @@ def displaced(mesh, key, flags, payload, materials, material_index, warnings, li
     from .moonlightipr_materials import displacement
     tags = face_tags.worn(mesh)
     distances = []
+    read = b''
     for tag in sorted(tags):
         held = materials.get(tag if tag in materials else '')
         program = displacement(held) if held else None
+        if program:
+            read += displacement_inputs(held)
         if program:
             distances.append((material_index.get(tag, material_index['']), program))
     if not distances:
@@ -757,7 +786,8 @@ def displaced(mesh, key, flags, payload, materials, material_index, warnings, li
         trailer = struct.pack('<3I', levels, material_index.get(mesh.get('material', ''), material_index['']), len(distances))
     for index, program in distances:
         trailer += struct.pack('<2I', index, len(program)) + b''.join(struct.pack('<I2fI', code, a, b, c) for code, a, b, c in program)
-    return hashlib.blake2b(key + trailer, digest_size=8).digest(), flags | MESH_DISPLACE, payload + trailer
+    # The key names what the displacement reads too (displacement_inputs), so that a new frame's tiles displace anew.
+    return hashlib.blake2b(key + trailer + read, digest_size=8).digest(), flags | MESH_DISPLACE, payload + trailer
 
 
 from .polygons import fan as _fan, corners as _corners, rules as _polygon_rules

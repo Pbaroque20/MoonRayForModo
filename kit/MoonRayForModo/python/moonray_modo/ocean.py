@@ -48,7 +48,17 @@ DEFAULTS = {
     # The sea over four tiles of unrelated sizes, its waves shared out between them by length (CASCADES), so that its
     # pattern never repeats in sight; off, one tile, which repeats every Tile's width.
     'cascades': True,
+    # A swell: one long, regular wave running through the sea, as from a storm far away (swell_fields), its height
+    # from trough to crest and its length in the sea's own metres (as the wind's waves are, before Tiles Across or Tile
+    # Size scale them), running towards Swell Direction (as Wind Direction: the same angle runs with the wind's waves).
+    # Height 0, none.
+    'swell_height': 0.0,
+    'swell_length': 120.0,
+    'swell_direction': 0.0,
 }
+SWELL_KEYS = ('swell_height', 'swell_length', 'swell_direction')
+# Points along the swell's tile: one wave across it, smooth, so few are needed.
+SWELL_RESOLUTION = 128
 RESOLUTIONS = (64, 128, 256, 512, 1024)
 # The cascades: each a tile this many times the sea's tile (FITTED_SIZE), holding the waves between these many cycles
 # across the sea's tile (0: no end). The sizes are powers of the golden ratio, so no two tiles' repeats ever line up.
@@ -90,7 +100,9 @@ def settings(params):
     value['size'] = FITTED_SIZE
     if value['wind_speed'] <= 0 or value['tiles_across'] <= 0:
         raise ValueError('Ocean wind speed and tiles across must be above 0')
-    for key in ('wave_height', 'choppiness', 'small_waves', 'wind_alignment', 'against_wind', 'depth', 'loop', 'foam_threshold'):
+    if value['swell_length'] <= 0:
+        raise ValueError('Ocean swell length must be above 0')
+    for key in ('wave_height', 'choppiness', 'small_waves', 'wind_alignment', 'against_wind', 'depth', 'loop', 'foam_threshold', 'swell_height'):
         if value[key] < 0:
             raise ValueError('Ocean %s cannot be negative' % key.replace('_', ' '))
     return value
@@ -202,6 +214,47 @@ def cascade_values(value):
     scale = target / math.sqrt(variance) if variance > 0 else 0.0
     # A sea with no waves at all (no wind energy in any band) is flat, not the whole tile's.
     return [dict(c, fixed_scale=scale if scale > 0 else 1e-30) for c in found]
+
+
+def swell_values(value):
+    """The swell's tile, where Swell Height is above 0: a tile one wave long (Swell Length) turned to Swell Direction
+    (the ImageMap's rotation_angle, as a cascade's), its wave running along the tile's U; none otherwise."""
+    if not value.get('swell_height', 0.0) > 0:
+        return []
+    return [dict(value, swell=True, size=float(value['swell_length']), turn=float(value['swell_direction']),
+                 resolution=SWELL_RESOLUTION)]
+
+
+def swell_frequency(value, k):
+    """The swell's angular frequency: the waves' own (frequency), but where Loop is set, the nearest whole number of
+    turns in the loop, at least one (the wind's waves round down, which could stop a long swell dead)."""
+    w = math.sqrt(GRAVITY * k * math.tanh(k * value['depth'])) if value['depth'] > 0 else math.sqrt(GRAVITY * k)
+    if value['loop'] > 0:
+        w0 = 2 * math.pi / value['loop']
+        w = max(1, round(w / w0)) * w0
+    return w
+
+
+def swell_fields(value, time):
+    """The swell's tile, as fields() gives a tile: one Gerstner wave along the tile's U, a cosine of height (Swell
+    Height from trough to crest) pushed sideways by the sea's Choppiness as the wind's waves are (Tessendorf's
+    displacement for a single wave), and its slope; no foam of its own. The same signs as fields(): the wave at +k
+    with phase k x + w t, so that it runs as the wind's waves of the same direction do."""
+    n, size = value['resolution'], value['size']
+    k = 2 * math.pi / size
+    amplitude = value['swell_height'] / 2.0
+    phase = swell_frequency(value, k) * seconds(value, time)
+    chop = value['choppiness']
+    cos_turn, sin_turn = math.cos(math.radians(value.get('turn', 0.0))), math.sin(math.radians(value.get('turn', 0.0)))
+    row_d, row_s = [], []
+    for i in range(n):
+        angle = k * (i * size / n) + phase
+        h, dx = amplitude * math.cos(angle), amplitude * math.sin(angle)
+        jxx, hx = k * amplitude * math.cos(angle), -k * amplitude * math.sin(angle)
+        row_d.append((chop * cos_turn * dx, h, chop * sin_turn * dx))
+        gx = hx / max(1 + chop * jxx, 0.05) * size
+        row_s.append((cos_turn * gx, sin_turn * gx, 0.0))
+    return row_d * n, [0.0] * (n * n), row_s * n
 
 
 def frequency(value, k):
@@ -330,8 +383,12 @@ def fields(value, time, slopes=False, cutoff=0.0):
 
 def key(value, time):
     """What a tile is made from: its settings that shape the waves, and the moment."""
-    shape = {k: value[k] for k in DEFAULTS if k not in ('repeat', 'fit_to_mesh', 'tiles_across', 'time_scale', 'time_offset')}
+    # The swell's settings shape only the swell's tile, so that the wind's tiles made before it are still the same.
+    shape = {k: value[k] for k in DEFAULTS if k not in ('repeat', 'fit_to_mesh', 'tiles_across', 'time_scale', 'time_offset') + SWELL_KEYS}
     shape.update({k: value[k] for k in ('size', 'k_low', 'k_high', 'fixed_scale', 'turn') if k in value})
+    if value.get('swell'):
+        shape = {k: value[k] for k in SWELL_KEYS + ('choppiness', 'depth', 'loop', 'size', 'turn', 'resolution')}
+        shape['swell'] = 1
     return hashlib.sha256(json.dumps([FORM, shape, round(seconds(value, time), 6)], sort_keys=True).encode()).hexdigest()[:24]
 
 
@@ -409,6 +466,12 @@ def make(value, time, runtime=None):
     """The tile's three images, made where they are not on disk yet; their paths."""
     made = paths(value, time)
     if all(p.is_file() for p in made):
+        return made
+    if value.get('swell'):
+        vectors, mask, slopes = swell_fields(value, time)
+        write_pfm(made[0], value['resolution'], vectors, 3)
+        write_pfm(made[1], value['resolution'], [(m, m, m) for m in mask], 3)
+        write_pfm(made[2], value['resolution'], slopes, 3)
         return made
     if native_tile(value, time, *made):
         return made
@@ -632,7 +695,7 @@ def tile(value):
 
 def reach(value):
     """How far the surface can move, for MoonRay's bound padding: four of the heights' spread, and the push sideways."""
-    return value['wave_height'] * 0.21 * value['wind_speed'] ** 2 / GRAVITY * (1.0 + value['choppiness'])
+    return (value['wave_height'] * 0.21 * value['wind_speed'] ** 2 / GRAVITY + value.get('swell_height', 0.0)) * (1.0 + value['choppiness'])
 
 
 # ---- Repeat fitted to the surface --------------------------------------------------------------------------------------
