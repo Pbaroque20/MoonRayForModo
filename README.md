@@ -65,9 +65,15 @@ Work on the next version goes on in the [MoonLightIPR branch](https://github.com
 
 Rhizome exports heavy scenes in seconds rather than minutes, and its nodes render on the processor when their graphics card cannot; the installation guide sets Rhizome up with the kit on every machine or with headless nodes. Ocean's small waves look the same in MoonRay and XPU2 as in MoonLightIPR, oceans work in realtime and in instanced seas again, and the graph editor has its own colour picker and keeps a connected input's connection when its number is edited. Install both ZIPs (or the .lpk); the XPU2 shaders need no new compile.
 
+![The graph editor's colour picker](docs/images/colour-picker.webp)
+
+
 ## New in 0.5.4.3
 
 Ocean and Ocean Foam nodes in the MoonShine graph (Tessendorf's FFT waves, the same sea in MoonRay, XPU2 and MoonLightIPR, with an "Ocean at sunset" demo in the asset library); the graph editor docked in a Modo viewport; Solo in the preview; Cryptomatte kept exact beside a lossy EXR; denoised fur keeps a share of its detail. XPU2's light path AOVs match on either device, and cards older than an RTX 20 series are left to the processor, Rhizome nodes too. Install both ZIPs (or the .lpk) and run Compile XPU2 Shaders again.
+
+![An ocean in the MoonShine graph, rendered by XPU2](docs/images/ocean-graph.webp)
+
 
 ## New in 0.5.4.2
 
