@@ -87,3 +87,8 @@ tile that repeats seamlessly, the crests made choppy by a sideways push, and the
 surface over (its Jacobian). The kit's implementation (`moonray_modo/ocean.py`, and `native-port/modo_ocean.cpp`,
 shipped as `bin/modo_ocean.dll`) was written for this project from the paper and is under this project's MIT License;
 it includes no code from the paper or from elsewhere. Credit and thanks to Jerry Tessendorf for the paper.
+
+The cascades, the swell and the crest glow (the Ocean Crest node) are this project's own extensions, not part of the
+paper. The crest glow was inspired by Alexander Alekseev's "Seascape" shader (2014,
+https://www.shadertoy.com/view/Ms2SD1, CC BY-NC-SA 3.0), which brightens the water where the waves stand high; the kit
+shares none of that shader's code. Credit and thanks to Alexander Alekseev for the idea.

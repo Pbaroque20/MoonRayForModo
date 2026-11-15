@@ -1,7 +1,8 @@
 # python
 """Command line: a scene for the MoonShine graph's Ocean nodes. An 800 m sea of 200 x 200 quads with a UV map from 0 to 1,
-its MoonShine material's graph displaced by an Ocean node (80 m tiles, ten across, 512 points, 12 m/s wind), white foam
-mixed into its colour and its roughness by Ocean Foam, a physical sky lit by a low sun, and a camera a few metres above
+its MoonShine material's graph displaced by an Ocean node (80 m tiles, ten across, 512 points, 12 m/s wind, a 1.5 m
+swell), the crests' glow mixed into its colour by Ocean Crest, white foam over it and into its roughness by Ocean Foam,
+a physical sky lit by a low sun, and a camera a few metres above
 the water looking towards the sun. Saved as test-results/ocean/ocean_demo.lxo (PROBE_OUT for another file)."""
 import json
 import os
@@ -61,15 +62,21 @@ try:
     graph['nodes']['sea'] = {'type': 'ocean', 'position': [-300, 300], 'inputs': {},
                              'parameters': {'tiles_across': 10.0, 'resolution': 512, 'wind_speed': 12.0,
                                             'wind_direction': 30.0, 'choppiness': 1.2, 'small_waves': 0.05,
-                                            'against_wind': 0.3, 'foam_threshold': 0.8}}
+                                            'against_wind': 0.3, 'foam_threshold': 0.8,
+                                            # A swell from a far-off storm, across the wind.
+                                            'swell_height': 1.5, 'swell_length': 140.0, 'swell_direction': 55.0}}
     # Its waves into MoonRay's Vector Displacement, tangent space and TNB as it starts, which is the displacement output.
     from moonray_modo import node_defaults
     graph['nodes']['waves'] = {'type': 'VectorDisplacement', 'position': [0, 300], 'inputs': {'vector': 'sea'},
                                'parameters': node_defaults.parameters('VectorDisplacement')}
     graph['displacement'] = 'waves'
-    # Foam, following the Ocean node: white over the water's colour, and rough where it is.
+    # The light through the crests, following the Ocean node: the water turning teal where the waves stand highest.
+    graph['nodes']['crest'] = {'type': 'ocean_crest', 'position': [-300, -150], 'inputs': {}, 'parameters': {}}
+    graph['nodes']['glow'] = {'type': 'mix', 'position': [-150, -150], 'inputs': {'mix': 'crest'},
+                              'parameters': {'bg': [0.004, 0.018, 0.026], 'fg': [0.03, 0.15, 0.12], 'mix': 0.0}}
+    # Foam, following the Ocean node: white over the glowing water, and rough where it is.
     graph['nodes']['foam'] = {'type': 'ocean_foam', 'position': [-300, 0], 'inputs': {}, 'parameters': {}}
-    graph['nodes']['colour'] = {'type': 'mix', 'position': [0, 0], 'inputs': {'mix': 'foam'},
+    graph['nodes']['colour'] = {'type': 'mix', 'position': [0, 0], 'inputs': {'mix': 'foam', 'bg': 'glow'},
                                 'parameters': {'bg': [0.004, 0.018, 0.026], 'fg': [0.85, 0.88, 0.9], 'mix': 0.0}}
     graph['nodes']['rough'] = {'type': 'mix', 'position': [0, 120], 'inputs': {'mix': 'foam'},
                                'parameters': {'bg': [0.03, 0.03, 0.03], 'fg': [0.5, 0.5, 0.5], 'mix': 0.0}}
