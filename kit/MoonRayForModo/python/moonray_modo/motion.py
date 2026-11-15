@@ -22,6 +22,43 @@ def instances(mesh):
     return dict(zip(identities,transforms))
 
 
+def same_surface(sample, original):
+    """Whether a mesh read at a shutter's end is the frame's surface, its points one for one: the same faces, or the same
+    faces listed in another order, or the same quads cut along their other diagonals. Modo's render cache can list a
+    deforming mesh's polygons in another order, or split a quad by its other diagonal, as the mesh bends during the
+    shutter; its points still match one for one, so the frame's faces serve at the ends (probe_cl_instanced_deforming_
+    displaced: a bending slab, its polygons listed in another order at the shutter's close, was refused its blur)."""
+    from collections import Counter
+    faces,held=sample['faces'],original['faces']
+    if len(sample['vertices'])!=len(original['vertices']):return False
+    if faces==held:return True
+    if len(faces)!=len(held):return False
+    rows=faces if isinstance(faces,list) else faces[:]
+    kept=held if isinstance(held,list) else held[:]
+
+    def turned(face):
+        # A face the same whichever corner it is listed from.
+        face=list(face);k=face.index(min(face)) if face else 0
+        return tuple(face[k:]+face[:k])
+    if Counter(map(turned,rows))==Counter(map(turned,kept)):return True
+    # A quad's two triangles (listed one after the other) cut along the other diagonal: the same four points.
+    if len(kept)%2 or any(len(f)!=3 for f in rows) or any(len(f)!=3 for f in kept):return False
+    def quads(faces):
+        return Counter(frozenset(faces[k])|frozenset(faces[k+1]) for k in range(0,len(faces),2))
+    found=quads(kept)
+    return all(len(q)==4 for q in found) and quads(rows)==found
+
+
+def face_values(mesh, key):
+    """Each face's value of a per-face list (face_materials), by the face itself (whichever corner it is listed from)."""
+    faces=mesh['faces'] if isinstance(mesh['faces'],list) else mesh['faces'][:]
+    out={}
+    for face,value in zip(faces,mesh.get(key) or ()):
+        face=list(face);k=face.index(min(face)) if face else 0
+        out[tuple(face[k:]+face[:k])]=value
+    return out
+
+
 def moves(scene):
     """Whether anything in a snapshot captured with motion blur moves during the shutter: the camera, a mesh, its
     instances or points, a light, a MoonRay item, curves or points."""
@@ -69,7 +106,7 @@ def apply_motion(scene, start, end, endpoints, preview=False):
         for identity,original in center.items():
             a,b=first.get(identity,original),last.get(identity,original)
             policy=scene.get('motion_policies',{}).get(str(identity).split('|')[0],'auto')
-            changing=category=='meshes' and any(v['faces']!=original['faces'] or len(v['vertices'])!=len(original['vertices']) for v in (a,b))
+            changing=category=='meshes' and any(not same_surface(v,original) for v in (a,b))
             # An Alembic mesh the kit reads (extra_geometry.alembic_scene_meshes): its file's velocities blur it, the
             # shutter's ends reading the same sample or another.
             if category=='meshes' and original.get('_alembic') and policy in ('auto','velocity'):
@@ -102,10 +139,16 @@ def apply_motion(scene, start, end, endpoints, preview=False):
                 outputs.append(node)
                 continue
             for sample in (a,b):
-                if sample['faces']!=node['faces'] or len(sample['vertices'])!=len(node['vertices']):
+                if not same_surface(sample,node):
                     raise ValueError('Motion blur requires stable topology: '+str(identity))
+                reordered=sample['faces']!=node['faces']
                 for key in ('material','face_materials','visibility','subdivision','subdivision_level'):
-                    if sample.get(key)!=node.get(key):
+                    if key=='face_materials' and reordered and sample.get(key) and node.get(key):
+                        # Faces listed in another order: each face's material looked up by the face itself.
+                        if face_values(sample,key)!=face_values(node,key):
+                            raise ValueError('Motion blur cannot change '+key+': '+str(identity))
+                        continue
+                    if sample.get(key)!=node.get(key) and not (key=='face_materials' and reordered):
                         raise ValueError('Motion blur cannot change '+key+': '+str(identity))
                 if ('instances' in sample)!=('instances' in node):
                     raise ValueError('Motion blur cannot change instance structure')

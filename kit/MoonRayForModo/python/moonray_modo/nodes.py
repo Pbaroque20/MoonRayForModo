@@ -28,7 +28,7 @@ NORMAL_NODES=('normalmap','bump')
 from . import ocean as _ocean
 _OCEAN_TYPES={'repeat':'Vec2f','fit_to_mesh':'Bool','tiles_across':'Float','resolution':'Int','wind_speed':'Float','wind_direction':'Float',
               'wave_height':'Float','choppiness':'Float','small_waves':'Float','wind_alignment':'Float','against_wind':'Float',
-              'depth':'Float','seed':'Int','time_scale':'Float','time_offset':'Float','loop':'Float','foam_threshold':'Float'}
+              'depth':'Float','seed':'Int','time_scale':'Float','time_offset':'Float','loop':'Float','foam_threshold':'Float','cascades':'Bool'}
 MAPS['ocean']={key:(_OCEAN_TYPES[key],value) for key,value in _ocean.DEFAULTS.items()}
 MAPS['ocean_foam']=dict(MAPS['ocean'])
 OCEAN_NODES=('ocean','ocean_foam')
@@ -49,7 +49,8 @@ OCEAN_COMMENTS={
     'time_scale':"The ocean's time is the scene's times this, plus the offset.",
     'time_offset':"Seconds added to the ocean's time.",
     'loop':'Seconds after which the waves repeat, for a looping animation; 0 never.',
-    'foam_threshold':'Foam where the surface is squeezed below this (1 is untouched): more makes more foam.'}
+    'foam_threshold':'Foam where the surface is squeezed below this (1 is untouched): more makes more foam.',
+    'cascades':"Breaks up the waves' repetition: the sea over four tiles of unrelated sizes, each turned its own way and holding its own lengths of wave, so that its pattern never repeats in sight. Off, one tile, which repeats."}
 
 from .math_nodes import SCHEMAS as MATH_SCHEMAS
 MAPS.update(MATH_SCHEMAS)
@@ -140,23 +141,56 @@ def expand_ocean(graph):
     for key in oceans:
         node=members[key];own=node.get('parameters') or {}
         value=_ocean.settings(leading if node['type']=='ocean_foam' and not own else own)
-        displacement,foam,slope=_ocean.tile(value) if on else (None,None,None)
-        # MoonRay's own ImageMap of the tile, read as it is (no sRGB, no alpha: the kit's image node divided by an alpha
-        # these images have not, which threw the sea out of view and put foam everywhere), repeated across the surface's
-        # first UV map.
-        path=str(foam if node['type']=='ocean_foam' else displacement or '')
-        image=({'type':'ImageMap','parameters':{'texture':path,'gamma':0,'wrap_around':True,'scale':list(value['repeat'])},'inputs':{}}
-               if on else {'type':'constant','parameters':{'value':[0.0,0.0,0.0]},'inputs':{}})
-        if node['type']=='ocean_foam':
+        # The sea's tiles: four of unrelated sizes where Cascades is on (ocean.cascade_values), each its share of the
+        # waves, else the one; each made for the frame (ocean.tile).
+        parts=_ocean.cascade_values(value) if on else [value]
+        foam_node=node['type']=='ocean_foam'
+        images=[]
+        for part in parts:
+            displacement,foam,slope=_ocean.tile(part) if on else (None,None,None)
+            # MoonRay's own ImageMap of the tile, read as it is (no sRGB, no alpha: the kit's image node divided by an alpha
+            # these images have not, which threw the sea out of view and put foam everywhere), repeated across the
+            # surface's first UV map: a cascade's tile the sea's repeats times as many of it as fit in one of the sea's.
+            ratio=_ocean.FITTED_SIZE/float(part['size'])
+            path=str(foam if foam_node else displacement or '')
+            image=({'type':'ImageMap','parameters':{'texture':path,'gamma':0,'wrap_around':True,
+                                                    'scale':[r*ratio for r in value['repeat']]},'inputs':{}}
+                   if on else {'type':'constant','parameters':{'value':[0.0,0.0,0.0]},'inputs':{}})
+            if on and part.get('turn'):
+                # The cascade's tiles turned on the surface, about 0 (ocean.TURNS); its pushes are written turned back.
+                image['parameters'].update(rotation_angle=float(part['turn']),rotation_center=[0.0,0.0])
+            # The surface's slope beside it, which MoonRay does not read (it splits the surface as finely as the pixels)
+            # and MoonLightIPR's shading does, for waves finer than a mesh's vertices are apart (moonlightipr_materials).
+            if on and not foam_node:image['_slope']=str(slope)
+            images.append((part,image))
+        if on and not foam_node:
+            # Told how finely MoonRay dices its surfaces (ocean.spaced, for MoonRay's scene only): split_ocean gives MoonRay
+            # the waves it can follow as the displacement, the rest as a normal map. Of the cascades, the finest is split
+            # (its tile is a fraction of the sea's, so its spacing is a larger share of it); the longer ones it can dice.
+            part,image=images[-1]
+            spacing=float(node.get('_spacing') or 0.0)*_ocean.FITTED_SIZE/float(part['size'])
+            cycles=_ocean.cutoff(spacing,value['resolution'])
+            if cycles:image['_split']={'value':part,'cycles':cycles}
+        if len(images)==1:
+            image=images[0][1]
+        else:
+            # The cascades together: their displacements added, their foams screened (a + (1 - a) b, never above 1).
+            names=[]
+            for index,(part,held) in enumerate(images):
+                name=key+'__cascade%d'%index
+                while name in members:name+='_'
+                members[name]=held;names.append(name)
+            top=names[0]
+            for index,name in enumerate(names[1:],1):
+                joined=key+'__together%d'%index
+                while joined in members:joined+='_'
+                members[joined]=({'type':'mix','parameters':{'bg':[0.0,0.0,0.0],'fg':[1.0,1.0,1.0],'mix':0.0},'inputs':{'bg':top,'mix':name}}
+                                 if foam_node else {'type':'add','parameters':{},'inputs':{'in1':top,'in2':name}})
+                top=joined
+            image=members.pop(top)
+        if foam_node:
             members[key]=dict(image,position=node.get('position'))
             continue
-        # The surface's slope beside it, which MoonRay does not read (it splits the surface as finely as the pixels) and
-        # MoonLightIPR's shading does, for waves finer than a mesh's vertices are apart (moonlightipr_materials).
-        if on:image['_slope']=str(slope)
-        # Told how finely MoonRay dices its surfaces (ocean.spaced, for MoonRay's scene only): split_ocean gives MoonRay
-        # the waves it can follow as the displacement, the rest as a normal map.
-        cycles=_ocean.cutoff(float(node.get('_spacing') or 0.0),value['resolution']) if on and node['type']=='ocean' else None
-        if cycles:image['_split']={'value':value,'cycles':cycles}
         # Fitted to a mesh (ocean.fitted): the sea made at its Size, scaled whole to the tiles laid on the mesh.
         scale=float(node.get('_scale',1.0)) if on else 1.0
         if not (scale>0 and math.isfinite(scale)):scale=1.0
@@ -191,12 +225,20 @@ def split_ocean(graph,output):
         held=node.get('_split')
         if not held:continue
         coarse,fine=_ocean.split_tile(held['value'],held['cycles'])
-        fed=[k for k,other in members.items() if other.get('type')=='VectorDisplacement' and (other.get('inputs') or {}).get('vector')==key]
+        # The Vector Displacements it feeds: straight, or through the adds that join an ocean's cascades.
+        def reaches(source,depth=0):
+            if source==key:return True
+            held_node=members.get(source) or {}
+            return depth<8 and held_node.get('type')=='add' and any(reaches(s,depth+1) for s in (held_node.get('inputs') or {}).values())
+        fed=[k for k,other in members.items() if other.get('type')=='VectorDisplacement' and reaches((other.get('inputs') or {}).get('vector'))]
         if graph.get('displacement') not in fed:continue
         params=dict(node.get('parameters') or {})
         long_key=key+'__long'
         members[long_key]={'type':'ImageMap','parameters':dict(params,texture=str(coarse)),'inputs':{}}
-        for k in fed:members[k]['inputs']['vector']=long_key
+        for other in list(members.values()):
+            inputs=other.get('inputs') or {}
+            for name,source in list(inputs.items()):
+                if source==key and (other.get('type')=='add' or other.get('type')=='VectorDisplacement'):inputs[name]=long_key
         root=members.get(graph.get('root'))
         if output!='displacement' and root and 'input_normal' in specs(root['type']) and not (root.get('inputs') or {}).get('input_normal'):
             # MoonRay's own ImageNormalMap, in the frame of the surface's normal and its U: the same picture as the kit's
@@ -204,6 +246,9 @@ def split_ocean(graph,output):
             mapped=key+'__short_normal'
             members[mapped]={'type':'ImageNormalMap','inputs':{},'parameters':{'tangent_space_normal_texture':str(fine),
                              'wrap_around':True,'normal_encoding':0,'scale':list(params.get('scale',[1.0,1.0]))}}
+            if params.get('rotation_angle'):
+                # Turned as its tile is: its normals are written in the surface's frame already.
+                members[mapped]['parameters'].update(rotation_angle=params['rotation_angle'],rotation_center=list(params.get('rotation_center',[0.0,0.0])))
             root.setdefault('inputs',{})['input_normal']=mapped
     return graph
 

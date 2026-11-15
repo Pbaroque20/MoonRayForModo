@@ -65,7 +65,10 @@ class Playblast(QtCore.QObject):
             return
         panel = self.panel
         # preview: what cannot be followed through the shutter is shown still, with a notice, rather than the frame refused.
-        snapshot = animation.capture_frame(self.frame/self.fps, panel._settings_values()['surface'] == 2, self.motion, self.fps, preview=True)
+        # MoonLightIPR's: undisplaced, as it displaces the meshes itself (host.by_engine).
+        from .host import by_engine
+        with by_engine('moonlightipr'):
+            snapshot = animation.capture_frame(self.frame/self.fps, panel._settings_values()['surface'] == 2, self.motion, self.fps, preview=True)
         snapshot['frame'] = self.frame
         snapshot['fps'] = self.fps
         # Not spread over the seconds a preview leaves room for edits in, and every sample of it gathered.

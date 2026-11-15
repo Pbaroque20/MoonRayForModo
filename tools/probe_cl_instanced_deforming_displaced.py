@@ -123,36 +123,78 @@ try:
     result['render_cache'] = step('render cache displaced or not', baked)
     save()
 
-    def read():
-        from moonray_modo import animation
-        return animation.capture_current(True)
-    held = step('read with motion', read)
-    if held:
+    from moonray_modo import animation, host, moonlightipr_scene
+    def ends():
+        # Each mesh at the shutter's ends and the frame, read as MoonLightIPR reads: its faces and points, alike or not.
+        fps = float(scene.fps); now = lx.service.Selection().GetTime(); rows = {}
+        try:
+            for label, moment in (('open', now - .25 / fps), ('frame', now), ('close', now + .25 / fps)):
+                lx.service.Selection().SetTime(moment)
+                with host.by_engine('moonlightipr'):
+                    snap = host.snapshot(evaluated_geometry=True)
+                for m in snap.get('meshes') or []:
+                    rows.setdefault(m.get('name'), {})[label] = {'faces': len(m.get('faces') or []), 'points': len(m.get('vertices') or []),
+                                                               'faces_hash': hash(repr(m.get('faces'))) % 100000,
+                                                               'top': round(max(v[1] for v in m['vertices']), 4) if m.get('vertices') else None}
+        finally:
+            lx.service.Selection().SetTime(now)
+        return rows
+    result['ends'] = step('shutter ends read for MoonLightIPR', ends)
+
+    def compared():
+        # What capture_frame hands apply_motion for MoonLightIPR: each mesh at the frame and the shutter's ends compared.
+        from moonray_modo import motion
+        real = motion.apply_motion; seen = {}
+        def watch(scene_, start, end, endpoints, preview=False):
+            for m in scene_.get('meshes') or []:
+                key = m.get('identity'); row = {}
+                for label, other in (('open', start), ('close', end)):
+                    o = next((x for x in other.get('meshes') or [] if x.get('identity') == key), None)
+                    row[label] = None if o is None else {'faces_equal': not (o['faces'] != m['faces']), 'points': [len(o['vertices']), len(m['vertices'])],
+                                                         'types': [type(o['faces']).__name__, type(m['faces']).__name__],
+                                                         'first': [list(o['faces'][k]) for k in range(8)], 'frame_first': [list(m['faces'][k]) for k in range(8)],
+                                                         'differing': [[k, list(o['faces'][k]), list(m['faces'][k])] for k in range(len(m['faces'])) if list(o['faces'][k]) != list(m['faces'][k])][:6],
+                                                         'same_surface': motion.same_surface(o, m)}
+                seen[str(key)] = row
+            return real(scene_, start, end, endpoints, preview=preview)
+        animation.apply_motion = watch
+        try:
+            with host.by_engine('moonlightipr'):
+                animation.capture_current(True)
+        finally:
+            animation.apply_motion = real
+        return seen
+    result['compared'] = step('frame and ends compared', compared)
+    save()
+    save()
+    # Read as MoonRay and XPU2 take it (Modo's displaced geometry), and as MoonLightIPR does (undisplaced, host.by_engine).
+    for engine in ('moonray', 'moonlightipr'):
+        held = None
+        with host.by_engine(engine):
+            held = step(engine + ': read with motion', lambda: animation.capture_current(True))
+        if not held:
+            continue
         rows = []
         for m in held.get('meshes') or []:
             close = m.get('vertices_close')
-            rows.append({'name': m.get('name'), 'identity': m.get('identity'), 'instances': len(m.get('instances') or []),
-                         'instances_close': len(m.get('instances_close') or []), 'faces': len(m.get('faces') or []),
-                         'subdivision': bool(m.get('subdivision')), 'material': m.get('material'),
-                         'deforms': close is not None and close != m.get('vertices')})
-        result['meshes'] = rows
-        result['read_warnings'] = [w for w in held.get('warnings', []) if 'renderOutput' not in w][:10]
-        save()
+            ys = [v[1] for v in m.get('vertices') or []]
+            rows.append({'name': m.get('name'), 'instances': len(m.get('instances') or []), 'faces': len(m.get('faces') or []),
+                         'material': m.get('material'), 'deforms': close is not None and close != m.get('vertices'),
+                         'top': round(max(ys), 4) if ys else None, 'bottom': round(min(ys), 4) if ys else None})
+        report = {'meshes': rows, 'read_warnings': [w for w in held.get('warnings', []) if 'renderOutput' not in w][:10]}
 
         def pack():
-            from moonray_modo import moonlightipr_scene
             payload, keys, warnings = moonlightipr_scene.pack(held, 320, 180, 0.15, (), 16, False, None)
-            result['pack_warnings'] = warnings[:10]
-            result['pack_bytes'] = len(payload)
-            # Each mesh record starts with its 8-byte key and its flags (moonlightipr_scene: key + <I flags).
             flags = []
             for key in keys:
                 at = bytes(payload).find(bytes(key))
                 if at >= 0:
                     flags.append(struct.unpack_from('<I', payload, at + len(key))[0])
-            result['mesh_flags'] = flags
-            result['displaced_meshes'] = sum(1 for f in flags if f & 1024)
-        step('pack', pack)
+            report.update(pack_warnings=warnings[:10], pack_bytes=len(payload), mesh_flags=flags,
+                          displaced_meshes=sum(1 for f in flags if f & 1024), moving_meshes=sum(1 for f in flags if f & 32))
+        step(engine + ': pack', pack)
+        result[engine] = report
+        save()
 except Exception:
     result['error'] = traceback.format_exc()
 save()

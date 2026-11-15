@@ -260,6 +260,43 @@ for category, (label, shared, classes) in CATEGORIES.items():
                                                   'F-stop, focus distance and iris) instead of the MoonRay values below.'}
         catalog[name] = {'category': category, 'category_label': label, 'attributes': attributes, 'placed': placed,
                          'source': path.relative_to(root).as_posix()}
+# The kit's own: an ocean plane, a surface MoonRay has no class for. The kit makes it a mesh at each reading (ocean_plane):
+# rings around the camera out to the horizon, its UVs fixed to the world, worn by a sea made from the Ocean node's
+# settings here (the graph editor's own, nodes.specs), or by the material its tag names. Part of the Ocean nodes override.
+import sys  # noqa: E402
+sys.path.insert(0, str(root / 'kit/MoonRayForModo/python'))
+from moonray_modo import nodes as _nodes  # noqa: E402
+_shared = {}
+for _spec in declarations(rdl2 / 'Geometry.cc'):
+    _shared[_spec['name']] = _spec
+_shared.pop('node_xform', None)
+_plane = dict(_shared)
+_plane['modo_material'] = {'name': 'modo_material', 'type': 'String', 'default': '', 'group': 'Assignment', 'label': 'material tag',
+                           'comment': "The material tag of a Modo material to render the sea with, its Ocean node's settings its own; "
+                                      'empty for the sea made from the settings here.'}
+_plane['horizon'] = {'name': 'horizon', 'type': 'Float', 'default': 20000.0, 'min': 100.0, 'group': 'Ocean Plane', 'label': 'horizon',
+                     'comment': 'How far the sea reaches from the camera, in metres. It follows the camera, so it never ends in view.'}
+_plane['detail'] = {'name': 'detail', 'type': 'Float', 'default': 1.0, 'min': 0.05, 'group': 'Ocean Plane', 'label': 'detail near the camera',
+                    'comment': "How far apart the plane's points are next to the camera, in metres; farther out they spread with "
+                               'the distance. The renderers cut it finer still for the waves.'}
+_plane['tile_size'] = {'name': 'tile_size', 'type': 'Float', 'default': 80.0, 'min': 1.0, 'group': 'Ocean Plane', 'label': 'tile size',
+                       'comment': 'How wide one tile of the sea is, in metres: the sea is made at 80 m and scaled whole to this, its '
+                                  'waves and their heights with it.'}
+_plane['water_color'] = {'name': 'water_color', 'type': 'Rgb', 'default': [0.004, 0.018, 0.026], 'group': 'Ocean Plane',
+                         'label': 'water colour', 'comment': "The water's colour, under its foam."}
+_plane['foam_color'] = {'name': 'foam_color', 'type': 'Rgb', 'default': [0.85, 0.88, 0.9], 'group': 'Ocean Plane',
+                        'label': 'foam colour', 'comment': "The foam's colour, where the surface folds over (Foam Threshold)."}
+for _key, _spec in _nodes.specs('ocean').items():
+    if _key in ('repeat', 'fit_to_mesh', 'tiles_across'):
+        continue    # the plane lays the tiles itself, Tile Size wide
+    _entry = {'name': _key, 'type': _spec['type'], 'group': 'Ocean', 'comment': ' '.join(str(_spec.get('comment', '')).split())}
+    if 'default_value' in _spec:
+        _entry['default'] = _spec['default_value']
+    if _spec.get('enum'):
+        _entry['enum'] = {str(k): int(v) for k, v in _spec['enum'].items()}
+    _plane[_key] = _entry
+catalog['OceanPlaneGeometry'] = {'category': 'geometry', 'category_label': 'Geometry', 'attributes': _plane, 'placed': True,
+                                 'source': 'kit', 'override': 'ocean'}
 target = root / 'kit/MoonRayForModo/python/moonray_modo/entity_catalog.json'
 target.write_text(json.dumps(catalog, sort_keys=True, indent=2) + '\n', encoding='utf-8')
 print('Generated', len(catalog), 'entity schemas,', sum(len(v['attributes']) for v in catalog.values()), 'attributes')
