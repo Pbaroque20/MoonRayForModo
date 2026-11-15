@@ -3099,7 +3099,7 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
   "progressive_tile_order","checkpoint_tile_order","batch_tile_order","texture_cache_size","fps","motion_steps","max_geometry_resolution",
   // The windows (rezed: the resolution divisor), the pixels rendered and the texture blur (the path tracer's camera).
   "res","aperture_window","region_window","sub_viewport","debug_pixel","texture_blur",
-  // What only deep outputs read, which are refused.
+  // What only deep outputs read (aov_plan.h reads them for deep output).
   "deep_id_attribute_names","deep_format","deep_curvature_tolerance","deep_z_tolerance","deep_vol_compression_res","deep_max_layers","deep_layer_bias"});
  // The frame: the rezed region window (SceneVariables::getRezedWidth and getRezedHeight).
  const float resolution=get<rdl::Float>(sv,"res");need(std::isfinite(resolution)&&resolution>0,"Invalid resolution divisor");

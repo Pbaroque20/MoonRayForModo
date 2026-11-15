@@ -91,9 +91,9 @@ def register():
                         from moonray_modo import xpu2_sampling
                         return xpu2_sampling.active()
                     except Exception:return True
-                # Smart Render and Safe Denoising are MoonRay's: greyed while XPU2 renders the preview, which is quick
-                # enough to need neither.
-                if entry['key'] in ('smart_render','denoise_safe'):
+                # Smart Render is MoonRay's: greyed while XPU2 renders the preview, which is quick enough to need it no more.
+                # Safe Denoising is XPU2's too: its renders save as they go and can be continued.
+                if entry['key'] in ('smart_render',):
                     try:
                         from moonray_modo import native
                         mode=scene_settings.complete(properties.scene_settings()).get('execution_mode','auto')

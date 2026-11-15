@@ -505,16 +505,18 @@ What the session does besides rendering:
   wait for the compile.
 - **Outlines** for the kit: `@@MODO_TILES` (cells being rendered), `@@MODO_WORKERS` (each CPU worker's tile) and
   `@@MODO_GPU_WORKERS` (cells the GPU's queued launches hold, drawn in their own colour).
-- **Checkpoints** (class `Checkpoints`): the frame so far, saved every `checkpoint_interval` minutes, with MoonRay's
-  "Wrote:" lines, for a scene that asks. A capability of the session: the 0.5 kit does not ask, as Safe Denoising is
-  greyed while XPU2 renders the preview (`lxserv/moonray_render_settings.py`, `panel.py`) and `render.py` writes no
-  saves under XPU2. With Resumable checkpoints on (Preferences > MoonRay > XPU2, off by default;
-  `XPU2_SESSION_RESUMABLE_CHECKPOINTS=1`), a checkpoint render (`stagedFrame`, class `StagedFilm`) goes in stages of sample indices, every
-  pixel's next ones as Rhizome's shares, merged by each output's filter; after each stage the film holds exactly every
-  pixel's first samples, and each save writes it beside the checkpoint files as `<checkpoint file>.xpu2resume`. A render
-  with `resume_render` reads it back and renders the rest; as samples are defined by their identity, the frame is the
-  uninterrupted one. The trade-off: such a render samples every pixel alike, in place of XPU2's sampling generations.
-  Off, a checkpoint render samples as any render does, its saves the frame so far, and a resume begins anew.
+- **Checkpoints and resume** (class `Checkpoints`, `Watch::resumable`, `async::ResumeState`): the kit's Safe Denoising
+  under XPU2 asks for checkpoints. A frame by sampling generations saves between two generations: once a save is due,
+  no new generation goes out (`Adaptive::hold`); when every one out has completed and been evaluated and nothing is in
+  flight (`atBoundary`), the films (beauty, odd sums and counts, the AOVs' accumulators, Cryptomatte's fragments) and
+  where the generations stand (those made, the samples planned and spent, the passes' times, uniform's time, the cellular
+  tiles) are saved beside the checkpoint files as `<checkpoint file>.xpu2resume` (`saveGenerations`), then the files
+  with their "Wrote:" lines. A drain (Stop) under checkpoints saves that way first, then drains. A render with
+  `resume_render` reads it back (`loadGenerations`, checked against the frame's size and sampling): the card's film
+  starts with the saved samples (so its passes' sample indices go on from them; the host's where no card renders), the
+  AOVs and Cryptomatte in the host's, and the generations go on from the next, sampling as any frame does. A uniform
+  frame goes in stages of sample indices instead (`stagedFrame`, class `StagedFilm`), as Rhizome's shares. A deep
+  render's saves are the frame so far.
 - **Denoiser guides.** Albedo and normal at the first hit, for the kit's denoiser. Smart Render, MoonRay's, is greyed
   while XPU2 renders the preview, and realtime asks for no guides (`denoising.py`).
 - **Realtime** (`INDEXER.md` section 13). With the kit's RT switch on, the preview follows the scene at the realtime
@@ -778,7 +780,7 @@ From the design notes. Each has more detail where it's listed.
 - On the GPU: volumes whose maps read image textures (deferred to the CPU today; VDB, heterogeneous, mapped and glowing volumes render on the card since 2026-11-07); light filters, shadow linking and lobe light sets (they keep a scene on the CPU today).
 - Deforming subdivision surfaces are checked by eye on one test scene, not yet against MoonRay (their instances are,
   2026-11-15).
-- Deep output (`FEATURE_PROGRESS.md`).
+- Deep output's volume segments and deep AOVs other than the beauty and alpha (`FEATURE_PROGRESS.md`); Rhizome's deep files.
 
 ## 22. Further reading
 

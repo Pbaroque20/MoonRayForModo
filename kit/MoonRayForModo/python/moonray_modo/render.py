@@ -40,9 +40,10 @@ def scalar_only(snapshot):
 def xpu2_output(snapshot):
     """Whether a render to files is XPU2's, in the session that renders the preview and shown as it comes: asked for by
     Render to a File and Render Animation (_xpu2_output), where XPU2 is chosen and the execution mode leaves it to the
-    graphics card. It writes the scene's outputs as MoonRay does; a deep image and checkpoints are MoonRay's alone."""
+    graphics card. It writes the scene's outputs as MoonRay does, a deep image too (one XPU2 does not make, a scene with
+    volumes', goes to MoonRay through its fall-back); checkpoints are MoonRay's alone."""
     return bool(snapshot.get('_xpu2_output') and native.xpu2() and snapshot.get('execution_mode','auto') in ('xpu','auto')
-                and scalar_only(snapshot) in (None,COOKIE,VDB_ITEM) and not (snapshot.get('deep') or {}).get('enabled') and not (snapshot.get('recovery') or {}).get('enabled'))
+                and scalar_only(snapshot) in (None,COOKIE,VDB_ITEM) and not (snapshot.get('recovery') or {}).get('enabled'))
 
 
 def binary_sessions(runtime):
@@ -308,7 +309,8 @@ class Renderer(QtCore.QObject):
         that is under way; `kept` then tells how it went, with the render stopped."""
         if (self.closed or self.canceled or not self.active or self.active.get('output') or getattr(self,'using_moonlightipr',False)
                 or not getattr(self,'using_session',False) or self.active['snapshot'].get('_ipr') or getattr(self,'phase','')!='render'
-                or not getattr(self,'denoise_guides',None) or getattr(self,'gather',None) is not None or self.buffers.progressive is None):
+                or not (getattr(self,'denoise_guides',None) or (self.active['snapshot'].get('_xpu2') and getattr(self,'safe_files',None)))
+                or getattr(self,'gather',None) is not None or self.buffers.progressive is None):
             return False
         # Each is taken five times over, and the middle value of the last three used for each pixel. A pixel MoonRay
         # is adding to as its picture is taken is caught part way, too dark, and the denoiser would smear it into a
@@ -354,6 +356,8 @@ class Renderer(QtCore.QObject):
         one. Returns whether that is under way: the render then ends as any other does, or reports stopped if
         nothing had been saved yet."""
         loaded=getattr(self,'using_session',False)
+        # XPU2 is stopped by draining instead (keep_progress): it saves where it stands first, its picture the whole of it.
+        if self.active and self.active['snapshot'].get('_xpu2'):return False
         if (self.closed or self.canceled or not self.active or getattr(self,'using_moonlightipr',False)
                 or not getattr(self,'safe_files',None) or getattr(self,'phase','')!='render'
                 or not (self.session.running() if loaded else self.process.state()!=QtCore.QProcess.NotRunning)):
@@ -627,9 +631,8 @@ class Renderer(QtCore.QObject):
                 snapshot['_recovery']=prepare_recovery(snapshot,request['output'],request['width'],request['height'],self.sample_grid,request['environment'],request['runtime'])
             # Safe denoising: MoonRay saves each file it is writing every few seconds, to be finished with on Stop.
             self.safe_files=[];snapshot.pop('_safe',None)
-            # Not while XPU2 renders the preview: it is quick enough to need no saves.
-            if denoising.settings(snapshot.get('denoising',{}))['safe'] and not snapshot.get('_ipr') and not snapshot.get('_recovery') and not request.get('linear_preview') \
-                    and not snapshot.get('_xpu2'):
+            # XPU2's too: it saves between its sampling generations and where a stop leaves it, which Continue takes up.
+            if denoising.settings(snapshot.get('denoising',{}))['safe'] and not snapshot.get('_ipr') and not snapshot.get('_recovery') and not request.get('linear_preview'):
                 data=self.current_base.with_suffix('.resume-data.exr')
                 snapshot['_safe']={'data':str(data)}
                 self.safe_written=set();self.safe_whole=False;self.safe_tail='';self.saved_at=None;self.kept_behind=None
@@ -921,6 +924,13 @@ class Renderer(QtCore.QObject):
         if self.canceled:
             self._begin_pending()
             return
+        # XPU2 stopped by hand under Safe Denoising: it saved where it stood before draining (its .xpu2resume beside its
+        # checkpoint files, which stay where they are): those are what Continue takes it up from.
+        if (getattr(self,'draining',False) and self.active and self.active['snapshot'].get('_xpu2') and not self.active.get('output')
+                and getattr(self,'safe_files',None)):
+            saved={self._safe_key(path):denoising.safe_name(path) for path in self.safe_files}
+            if any(Path(s+'.xpu2resume').is_file() for s in saved.values()) and all(Path(s).is_file() for s in saved.values()):
+                self.resumable=saved
         if getattr(self,'settling',False):
             # Stopped by hand under safe denoising: what MoonRay last saved is the render, and it ends as one.
             self.settling=False;self.settle_wanted=None
