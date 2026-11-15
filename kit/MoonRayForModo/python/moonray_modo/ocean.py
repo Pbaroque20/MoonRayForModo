@@ -55,8 +55,14 @@ DEFAULTS = {
     'swell_height': 0.0,
     'swell_length': 120.0,
     'swell_direction': 0.0,
+    # The Ocean Crest node's mask (crest_tile): 0 where the surface stands below this share of the waves' height, up
+    # to 1 at their highest, for the light that shines through the crests.
+    'crest_start': 0.3,
 }
 SWELL_KEYS = ('swell_height', 'swell_length', 'swell_direction')
+CREST_KEYS = ('crest_start',)
+# The nodes that give a mask of the sea, not its displacement: its foam, and its crests.
+MASK_NODES = ('ocean_foam', 'ocean_crest')
 # Points along the swell's tile: one wave across it, smooth, so few are needed.
 SWELL_RESOLUTION = 128
 RESOLUTIONS = (64, 128, 256, 512, 1024)
@@ -100,6 +106,8 @@ def settings(params):
     value['size'] = FITTED_SIZE
     if value['wind_speed'] <= 0 or value['tiles_across'] <= 0:
         raise ValueError('Ocean wind speed and tiles across must be above 0')
+    if not 0.0 <= value['crest_start'] < 1.0:
+        raise ValueError('Ocean crest start must be from 0 to under 1')
     if value['swell_length'] <= 0:
         raise ValueError('Ocean swell length must be above 0')
     for key in ('wave_height', 'choppiness', 'small_waves', 'wind_alignment', 'against_wind', 'depth', 'loop', 'foam_threshold', 'swell_height'):
@@ -384,7 +392,7 @@ def fields(value, time, slopes=False, cutoff=0.0):
 def key(value, time):
     """What a tile is made from: its settings that shape the waves, and the moment."""
     # The swell's settings shape only the swell's tile, so that the wind's tiles made before it are still the same.
-    shape = {k: value[k] for k in DEFAULTS if k not in ('repeat', 'fit_to_mesh', 'tiles_across', 'time_scale', 'time_offset') + SWELL_KEYS}
+    shape = {k: value[k] for k in DEFAULTS if k not in ('repeat', 'fit_to_mesh', 'tiles_across', 'time_scale', 'time_offset') + SWELL_KEYS + CREST_KEYS}
     shape.update({k: value[k] for k in ('size', 'k_low', 'k_high', 'fixed_scale', 'turn') if k in value})
     if value.get('swell'):
         shape = {k: value[k] for k in SWELL_KEYS + ('choppiness', 'depth', 'loop', 'size', 'turn', 'resolution')}
@@ -693,6 +701,62 @@ def tile(value):
     return make(value, time, CONTEXT['runtime'])
 
 
+def crest_reference(value):
+    """The height the crest mask is measured against: twice the sea's height spread (as the wind's tiles are scaled to,
+    initial and cascade_values) and half the swell's height."""
+    sigma = value['wave_height'] * 0.21 * value['wind_speed'] ** 2 / GRAVITY / 4.0
+    reference = 2.0 * sigma + value.get('swell_height', 0.0) / 2.0
+    return reference if reference > 0 else 1.0
+
+
+def crest_path(part, value, time):
+    """The crest mask of a tile (part) of the sea (value) at this moment (PFM)."""
+    shape = json.dumps([round(crest_reference(value), 6), round(value['crest_start'], 6)])
+    return folder() / ('%s.crest%s.pfm' % (key(part, time), hashlib.sha256(shape.encode()).hexdigest()[:8]))
+
+
+def read_pfm(path):
+    """A three-channel PFM as written here or by modo_ocean.dll: its width and its floats (array 'f')."""
+    import array
+    data = Path(path).read_bytes()
+    at, lines = 0, []
+    while len(lines) < 3:
+        end = data.index(b'\n', at)
+        lines.append(data[at:end])
+        at = end + 1
+    width = int(lines[1].split()[0])
+    values = array.array('f')
+    values.frombytes(data[at:at + width * width * 12])
+    return width, values
+
+
+def crest_tile(part, value):
+    """The crest mask of one of the sea's tiles for the frame being written (made if need be, from its displacement),
+    or for time 0 named only where no scene is being written: grey, 0 where the tile's height is below Crest Start's
+    share of the sea's (crest_reference), rising to 1 at it. Each tile's own heights against the whole sea's, so the
+    long waves' crests glow most and ripples little; nodes.expand_ocean screens the tiles' masks as it does their foam."""
+    import array
+    time = CONTEXT['time']
+    if time is None:
+        return crest_path(part, value, 0.0)
+    path = crest_path(part, value, time)
+    if path.is_file():
+        return path
+    displacement = make(part, time, CONTEXT['runtime'])[0]
+    width, values = read_pfm(displacement)
+    inverse, start = 1.0 / crest_reference(value), value['crest_start']
+    gain = 1.0 / (1.0 - start)
+    mask = array.array('f', [min(1.0, max(0.0, (h * inverse - start) * gain)) for h in values[1::3]])
+    out = array.array('f', bytes(len(values) * 4))
+    out[0::3] = mask
+    out[1::3] = mask
+    out[2::3] = mask
+    staged = path.with_name(path.name + '.part')
+    staged.write_bytes(('PF\n%d %d\n-1.0\n' % (width, width)).encode() + out.tobytes())
+    os.replace(staged, path)
+    return path
+
+
 def reach(value):
     """How far the surface can move, for MoonRay's bound padding: four of the heights' spread, and the push sideways."""
     return (value['wave_height'] * 0.21 * value['wind_speed'] ** 2 / GRAVITY + value.get('swell_height', 0.0)) * (1.0 + value['choppiness'])
@@ -771,7 +835,7 @@ def fitted(scene):
             graph = row.get('node_graph') if isinstance(row, dict) else None
             for node in ((graph or {}).get('nodes') or {}).values():
                 own = node.get('parameters') or {}
-                if (node.get('type') == 'ocean' or (node.get('type') == 'ocean_foam' and own)) and own.get('fit_to_mesh', DEFAULTS['fit_to_mesh']):
+                if (node.get('type') == 'ocean' or (node.get('type') in MASK_NODES and own)) and own.get('fit_to_mesh', DEFAULTS['fit_to_mesh']):
                     return True
         return False
     wanted = {tag for tag, material in materials.items() if isinstance(material, dict) and oceans(material)}
@@ -800,9 +864,9 @@ def fitted(scene):
             graph = row.get('node_graph') if isinstance(row, dict) else None
             for node in ((graph or {}).get('nodes') or {}).values():
                 params = node.get('parameters')
-                if node.get('type') not in ('ocean', 'ocean_foam') or not (params or {}).get('fit_to_mesh', DEFAULTS['fit_to_mesh']):
+                if node.get('type') not in ('ocean',) + MASK_NODES or not (params or {}).get('fit_to_mesh', DEFAULTS['fit_to_mesh']):
                     continue
-                if node['type'] == 'ocean_foam' and not params:
+                if node['type'] in MASK_NODES and not params:
                     continue    # it follows the Ocean node, which is fitted
                 tiles = float((params or {}).get('tiles_across', DEFAULTS['tiles_across']))
                 if tiles > 0 and math.isfinite(tiles) and metres[0] > 0:

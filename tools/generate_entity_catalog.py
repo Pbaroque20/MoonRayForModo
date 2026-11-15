@@ -284,6 +284,9 @@ _plane['tile_size'] = {'name': 'tile_size', 'type': 'Float', 'default': 80.0, 'm
                                   'waves and their heights with it.'}
 _plane['water_color'] = {'name': 'water_color', 'type': 'Rgb', 'default': [0.004, 0.018, 0.026], 'group': 'Ocean Plane',
                          'label': 'water colour', 'comment': "The water's colour, under its foam."}
+_plane['crest_color'] = {'name': 'crest_color', 'type': 'Rgb', 'default': [0.03, 0.15, 0.12], 'group': 'Ocean Plane',
+                          'label': 'crest colour', 'comment': "The water's colour where the waves stand highest and the light "
+                                                              'shines through them (Crest Start); the water colour for none.'}
 _plane['foam_color'] = {'name': 'foam_color', 'type': 'Rgb', 'default': [0.85, 0.88, 0.9], 'group': 'Ocean Plane',
                         'label': 'foam colour', 'comment': "The foam's colour, where the surface folds over (Foam Threshold)."}
 for _key, _spec in _nodes.specs('ocean').items():

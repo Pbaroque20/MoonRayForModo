@@ -3872,6 +3872,25 @@
         "name": "contains_camera",
         "type": "Bool"
       },
+      "crest_color": {
+        "comment": "The water's colour where the waves stand highest and the light shines through them (Crest Start); the water colour for none.",
+        "default": [
+          0.03,
+          0.15,
+          0.12
+        ],
+        "group": "Ocean Plane",
+        "label": "crest colour",
+        "name": "crest_color",
+        "type": "Rgb"
+      },
+      "crest_start": {
+        "comment": "Ocean Crest only: its mask starts where the surface stands this share of the waves' height up (0 to under 1), rising to 1 at their highest. Lower lights more of each wave.",
+        "default": 0.3,
+        "group": "Ocean",
+        "name": "crest_start",
+        "type": "Float"
+      },
       "depth": {
         "comment": "The water's depth in metres; 0 is deep water. Shallow water slows the long waves.",
         "default": 0.0,

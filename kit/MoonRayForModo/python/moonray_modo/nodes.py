@@ -29,10 +29,11 @@ from . import ocean as _ocean
 _OCEAN_TYPES={'repeat':'Vec2f','fit_to_mesh':'Bool','tiles_across':'Float','resolution':'Int','wind_speed':'Float','wind_direction':'Float',
               'wave_height':'Float','choppiness':'Float','small_waves':'Float','wind_alignment':'Float','against_wind':'Float',
               'depth':'Float','seed':'Int','time_scale':'Float','time_offset':'Float','loop':'Float','foam_threshold':'Float','cascades':'Bool',
-              'swell_height':'Float','swell_length':'Float','swell_direction':'Float'}
+              'swell_height':'Float','swell_length':'Float','swell_direction':'Float','crest_start':'Float'}
 MAPS['ocean']={key:(_OCEAN_TYPES[key],value) for key,value in _ocean.DEFAULTS.items()}
 MAPS['ocean_foam']=dict(MAPS['ocean'])
-OCEAN_NODES=('ocean','ocean_foam')
+MAPS['ocean_crest']=dict(MAPS['ocean'])
+OCEAN_NODES=('ocean',)+_ocean.MASK_NODES
 OCEAN_COMMENTS={
     'tiles_across':'How many tiles cover the mesh across its U, where Fit to Mesh is on: 10 lays ten tiles across it, whatever its size; as many along V as keep them square. The waves scale with the mesh.',
     'repeat':"How many 80 m tiles across the surface's UVs, where Fit to Mesh is off (a 400 m plane with UVs 0 to 1: 5 for waves of their true size).",
@@ -54,6 +55,7 @@ OCEAN_COMMENTS={
     'cascades':"Breaks up the waves' repetition: the sea over four tiles of unrelated sizes, each turned its own way and holding its own lengths of wave, so that its pattern never repeats in sight. Off, one tile, which repeats.",
     'swell_height':"A swell: one long, regular wave running through the sea, as from a storm far away, this high from trough to crest in metres; 0 for none. The sea's Choppiness sharpens its crests too.",
     'swell_length':"The swell's length from crest to crest, in metres. Longer swells run faster, as real ones do.",
+    'crest_start':"Ocean Crest only: its mask starts where the surface stands this share of the waves' height up (0 to under 1), rising to 1 at their highest. Lower lights more of each wave.",
     'swell_direction':"Where the swell runs, in degrees from U towards V, as Wind Direction: the same angle runs with the wind's waves."}
 
 from .math_nodes import SCHEMAS as MATH_SCHEMAS
@@ -144,13 +146,16 @@ def expand_ocean(graph):
     leading=next((members[key].get('parameters') or {} for key in sorted(oceans) if members[key].get('type')=='ocean'),{})
     for key in oceans:
         node=members[key];own=node.get('parameters') or {}
-        value=_ocean.settings(leading if node['type']=='ocean_foam' and not own else own)
+        # A mask node with no wave settings of its own (Crest Start at most) follows the Ocean node's waves.
+        mask=node['type'] in _ocean.MASK_NODES
+        crest_node=node['type']=='ocean_crest'
+        value=_ocean.settings(dict(leading,**own) if mask and not set(own)-set(_ocean.CREST_KEYS) else own)
         # The sea's tiles: four of unrelated sizes where Cascades is on (ocean.cascade_values), each its share of the
         # waves, else the one; each made for the frame (ocean.tile).
         parts=_ocean.cascade_values(value) if on else [value]
         foam_node=node['type']=='ocean_foam'
-        # The swell (ocean.swell_values), first, its tile added to the displacement; it has no foam of its own. The finest
-        # tile stays last, for the split below.
+        # The swell (ocean.swell_values), first, its tile added to the displacement and its crests to the crest mask; it
+        # has no foam of its own. The finest tile stays last, for the split below.
         if on and not foam_node:parts=_ocean.swell_values(value)+parts
         images=[]
         for part in parts:
@@ -159,7 +164,7 @@ def expand_ocean(graph):
             # these images have not, which threw the sea out of view and put foam everywhere), repeated across the
             # surface's first UV map: a cascade's tile the sea's repeats times as many of it as fit in one of the sea's.
             ratio=_ocean.FITTED_SIZE/float(part['size'])
-            path=str(foam if foam_node else displacement or '')
+            path=str(_ocean.crest_tile(part,value) if crest_node and on else foam if foam_node else displacement or '')
             image=({'type':'ImageMap','parameters':{'texture':path,'gamma':0,'wrap_around':True,
                                                     'scale':[r*ratio for r in value['repeat']]},'inputs':{}}
                    if on else {'type':'constant','parameters':{'value':[0.0,0.0,0.0]},'inputs':{}})
@@ -168,9 +173,9 @@ def expand_ocean(graph):
                 image['parameters'].update(rotation_angle=float(part['turn']),rotation_center=[0.0,0.0])
             # The surface's slope beside it, which MoonRay does not read (it splits the surface as finely as the pixels)
             # and MoonLightIPR's shading does, for waves finer than a mesh's vertices are apart (moonlightipr_materials).
-            if on and not foam_node:image['_slope']=str(slope)
+            if on and not mask:image['_slope']=str(slope)
             images.append((part,image))
-        if on and not foam_node:
+        if on and not mask:
             # Told how finely MoonRay dices its surfaces (ocean.spaced, for MoonRay's scene only): split_ocean gives MoonRay
             # the waves it can follow as the displacement, the rest as a normal map. Of the cascades, the finest is split
             # (its tile is a fraction of the sea's, so its spacing is a larger share of it); the longer ones it can dice.
@@ -192,10 +197,10 @@ def expand_ocean(graph):
                 joined=key+'__together%d'%index
                 while joined in members:joined+='_'
                 members[joined]=({'type':'mix','parameters':{'bg':[0.0,0.0,0.0],'fg':[1.0,1.0,1.0],'mix':0.0},'inputs':{'bg':top,'mix':name}}
-                                 if foam_node else {'type':'add','parameters':{},'inputs':{'in1':top,'in2':name}})
+                                 if mask else {'type':'add','parameters':{},'inputs':{'in1':top,'in2':name}})
                 top=joined
             image=members.pop(top)
-        if foam_node:
+        if mask:
             members[key]=dict(image,position=node.get('position'))
             if len(images)>1:
                 # A Mix the foam drives (the water's colour, its roughness): a Mix for each cascade's foam over the one

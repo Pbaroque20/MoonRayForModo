@@ -10,7 +10,7 @@ import math
 
 TXUV = 0x54585556
 # Graph nodes that read a mesh's UVs without a descriptor of their own (coordinates.descriptors names the others).
-UV_NODES = {'ocean', 'ocean_foam', 'image', 'texcoord', 'normalmap'}
+UV_NODES = {'ocean', 'ocean_foam', 'ocean_crest', 'image', 'texcoord', 'normalmap'}
 
 
 def wanted(material):

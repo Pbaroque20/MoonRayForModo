@@ -28,6 +28,10 @@ The current release is [0.5.4.3.1](https://github.com/Pbaroque20/MoonRayForModo/
 
   ![The same sea in MoonLightIPR from 3 m up: no swell (left), and a 2.5 m swell 150 m long (right)](docs/images/ocean-swell.webp)
 
+- **Ocean Crest node**: a mask of where the waves stand highest, for the light that shines through their crests. Mix a brighter, greener water colour in by it; Crest Start sets where it begins. The Ocean Plane comes with it set up, under its foam, with a Crest Colour of its own.
+
+  ![The same sea in MoonLightIPR: plain water (left), and its crests glowing (right)](docs/images/ocean-crest.webp)
+
 - **Ocean playblasts in MoonLightIPR**: each new frame is ready in about a second, where it took 20 seconds or more, and the waves change shape from frame to frame, where they could keep the first frame's.
 
 - **Displaced meshes in MoonLightIPR's realtime** are displaced once, by MoonLightIPR, where Modo's own displacement was added on top; and one that deforms, instanced or not, is motion blurred, where it rendered sharp.
