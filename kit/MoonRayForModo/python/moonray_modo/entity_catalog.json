@@ -4020,7 +4020,7 @@
       },
       "roughness": {
         "comment": "How rough the water's surface is, 0 to 1: 0 mirrors the sky sharply, more blurs its reflections and widens the sun's glitter.",
-        "default": 0.03,
+        "default": 0.1,
         "group": "Ocean Plane",
         "label": "roughness",
         "max": 1.0,
