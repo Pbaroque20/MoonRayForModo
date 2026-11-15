@@ -162,5 +162,35 @@ class Cascades(unittest.TestCase):
         self.assertGreater(against, 0.0)
 
 
+    def test_moonlightipr_draws_the_foams_mix_without_baking(self):
+        # A Mix the foam drives becomes a Mix for each cascade's foam over the one before (the screened foam's), which
+        # MoonLightIPR draws as masked rows: a playblast baked the graph through MoonRay at each frame, 20 s a frame.
+        from moonray_modo import moonlightipr_materials
+        g = graph(repeat=[4, 4])
+        g['nodes']['tint'] = {'type': 'mix', 'position': [0, 0], 'inputs': {'mix': 'foam'},
+                              'parameters': {'bg': [0.01, 0.02, 0.03], 'fg': [0.9, 0.9, 0.9], 'mix': 0.0}}
+        g['nodes']['surface']['inputs']['albedo'] = 'tint'
+        notes = []
+        with mock.patch.dict(os.environ, {'MOONRAY_MODO_OCEAN': '1'}), ocean.writing(2.0),                 mock.patch('moonray_modo.graph_bake.bake', side_effect=AssertionError('baked')):
+            expanded = nodes.expand_ocean(nodes.effective(g))
+            chained = [k for k in expanded['nodes'] if k.startswith('tint__foam')]
+            self.assertEqual(len(chained), 3)
+            layers = moonlightipr_materials.graph_layers({'node_graph': g, 'native_parameters': {}}, notes.append)
+        self.assertEqual(sum(1 for layer in layers if layer.get('effect') == 'layerMask'), 4)
+
+    def test_a_displaced_meshs_key_follows_its_frames_tiles(self):
+        # The session displaces a mesh once, by its key: the frame's ocean tiles are part of it, or a playblast kept its
+        # first frame's waves.
+        from moonray_modo import moonlightipr_scene
+        material = {'node_graph': graph(repeat=[4, 4])}
+        with ocean.writing(1.0):
+            first = moonlightipr_scene.displacement_inputs(material)
+            again = moonlightipr_scene.displacement_inputs(material)
+        with ocean.writing(1.5):
+            later = moonlightipr_scene.displacement_inputs(material)
+        self.assertEqual(first, again)
+        self.assertNotEqual(first, later)
+
+
 if __name__ == '__main__':
     unittest.main()

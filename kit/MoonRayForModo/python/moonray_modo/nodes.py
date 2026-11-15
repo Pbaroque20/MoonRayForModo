@@ -190,6 +190,25 @@ def expand_ocean(graph):
             image=members.pop(top)
         if foam_node:
             members[key]=dict(image,position=node.get('position'))
+            if len(images)>1:
+                # A Mix the foam drives (the water's colour, its roughness): a Mix for each cascade's foam over the one
+                # before, which is the screened foam's (bg + (fg - bg)(1 - (1-a)(1-b)...)) and what MoonLightIPR draws
+                # as rows without baking the graph; the screened node stays for anything else that reads the foam.
+                tiles=[name for name in members if name.startswith(key+'__cascade') and members[name].get('type')=='ImageMap']
+                for user_key,user in list(members.items()):
+                    if user.get('type') not in ('mix','lerp') or (user.get('inputs') or {}).get('mix')!=key:continue
+                    params=dict(user.get('parameters') or {});inputs=dict(user.get('inputs') or {})
+                    below=inputs.get('bg')
+                    for index,tile_key in enumerate(tiles):
+                        last=index==len(tiles)-1
+                        step=user_key if last else user_key+'__foam%d'%index
+                        while not last and step in members:step+='_'
+                        wired={'mix':tile_key}
+                        if below is not None:wired['bg']=below
+                        if 'fg' in inputs:wired['fg']=inputs['fg']
+                        members[step]=dict(user,parameters=dict(params,mix=0.0),inputs=wired) if last else \
+                            {'type':user['type'],'parameters':dict(params,mix=0.0),'inputs':wired}
+                        below=step
             continue
         # Fitted to a mesh (ocean.fitted): the sea made at its Size, scaled whole to the tiles laid on the mesh.
         scale=float(node.get('_scale',1.0)) if on else 1.0
