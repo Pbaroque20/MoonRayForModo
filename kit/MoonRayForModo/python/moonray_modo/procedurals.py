@@ -149,21 +149,67 @@ def sample(data,u,v):
     alpha=min(high,max(low,data['alpha1']*t+data['alpha2']*(1-t)))
     return ([a*t+b*(1-t) for a,b in zip(data['color1'],data['color2'])], max(0,min(1,alpha)))
 
+# The adapter's settings for a pattern (native-modo/procedural_bake.cpp, its Slot order), and its kinds and shapes.
+NATIVE_KINDS=('grid','dots','cellular','wood','weave','ripples')
+NATIVE_PATTERNS=('line','square','triangle','hexagon')
+NATIVE_SLOTS=('width','transition','bias','gain')
+
+
+def native_settings(data):
+    """A pattern's settings as the adapter's MR_procedural_bake takes them: 31 numbers, a missing one as 0."""
+    get=lambda key:float(data.get(key,0) or 0)
+    pattern=data.get('pattern') or ''
+    return ([float(NATIVE_KINDS.index(data['kind'])),float(NATIVE_PATTERNS.index(pattern)) if pattern in NATIVE_PATTERNS else 0.0]
+            +[get(k) for k in NATIVE_SLOTS]+[float(v) for v in data['color1'][:3]]+[float(v) for v in data['color2'][:3]]
+            +[get('alpha1'),get('alpha2'),1.0 if data.get('type')=='round' else 0.0]
+            +[get(k) for k in ('cellWidth','transWidth','freqs','freqRatio','ampRatio','variation','ringScale','wave','waveScale',
+                               'grain','grainScale','yarnWidth','roundness','sources','wavelength','phase')])
+
+
+def native_bake(data,resolution):
+    """The pattern's colour and alpha (floats, 3 a pixel, rows from v = 0) baked by the geometry adapter over every
+    thread, or None where it cannot (no adapter, or one without MR_procedural_bake)."""
+    import ctypes
+    from array import array
+    from .rows import _native
+    library=_native()
+    if library is None or not hasattr(library,'MR_procedural_bake') or data.get('kind') not in NATIVE_KINDS:return None
+    settings=native_settings(data)
+    rgb,alpha=array('f',bytes(12*resolution*resolution)),array('f',bytes(12*resolution*resolution))
+    call=library.MR_procedural_bake
+    call.argtypes=[ctypes.POINTER(ctypes.c_double),ctypes.c_int,ctypes.c_int,ctypes.c_void_p,ctypes.c_void_p,ctypes.c_int]
+    call.restype=ctypes.c_int
+    if call((ctypes.c_double*len(settings))(*settings),len(settings),resolution,rgb.buffer_info()[0],alpha.buffer_info()[0],0):return None
+    return rgb,alpha
+
+
 def bake(data,resolution=512):
-    # The later patterns take longer to work out and are sampled a little coarser.
-    if data.get('kind') in EXTRA:resolution=min(resolution,256)
+    """The pattern laid flat over one unit of UV as two PFMs (colour, alpha as grey), by the geometry adapter where it
+    can (procedural_bake.cpp, the same numbers as sample's), else here in Python, where the later patterns are held to
+    256 pixels for time. A final render's (graph_bake.final, MoonLightIPR's Render) at 2048 where the adapter bakes."""
+    from .graph_bake import _FINAL
+    from .rows import _native
+    native=_native() is not None and hasattr(_native(),'MR_procedural_bake')
+    if native and _FINAL.get():resolution=max(resolution,2048)
+    # In Python the later patterns take longer to work out and are sampled a little coarser.
+    if not native and data.get('kind') in EXTRA:resolution=min(resolution,256)
     key=hashlib.sha256(json.dumps(['procedural-v1',resolution,data],sort_keys=True).encode()).hexdigest()
     root=cache_root() / 'Procedurals';root.mkdir(parents=True,exist_ok=True)
     paths=[root/(key+suffix+'.pfm') for suffix in ('','-alpha')]
     if not all(p.is_file() for p in paths):
         temporary=[p.with_name(p.name+'.'+uuid.uuid4().hex+'.tmp') for p in paths]
         try:
-            with temporary[0].open('wb') as rgb,temporary[1].open('wb') as alpha:
-                header=('PF\n%d %d\n-1.0\n'%(resolution,resolution)).encode();rgb.write(header);alpha.write(header)
-                for y in range(resolution):
-                    for x in range(resolution):
-                        c,a=sample(data,(x+.5)/resolution,(y+.5)/resolution)
-                        rgb.write(struct.pack('<3f',*c));alpha.write(struct.pack('<3f',a,a,a))
+            header=('PF\n%d %d\n-1.0\n'%(resolution,resolution)).encode()
+            made=native_bake(data,resolution) if native else None
+            if made is not None:
+                for path,values in zip(temporary,made):path.write_bytes(header+values.tobytes())
+            else:
+                with temporary[0].open('wb') as rgb,temporary[1].open('wb') as alpha:
+                    rgb.write(header);alpha.write(header)
+                    for y in range(resolution):
+                        for x in range(resolution):
+                            c,a=sample(data,(x+.5)/resolution,(y+.5)/resolution)
+                            rgb.write(struct.pack('<3f',*c));alpha.write(struct.pack('<3f',a,a,a))
             for src,dst in zip(temporary,paths):src.replace(dst)
         finally:
             for p in temporary:
