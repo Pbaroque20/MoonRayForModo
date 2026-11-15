@@ -66,6 +66,19 @@ class EnvironmentLayersNative(unittest.TestCase):
             worst = max(abs(x - y) / max(1.0, abs(y)) for x, y in zip(native, python))
             self.assertLess(worst, 1e-5, name)
 
+    def test_moonlightipr_takes_the_composed_image_not_a_tx(self):
+        # MoonLightIPR makes its own image from the composed PFM: no .tx is asked for it, which it read before the
+        # converter had made it ("[WinError 2]", a car's environment grey in realtime).
+        layers = [{'kind': 'constant', 'effect': 'envColor', 'opacity': 1.0, 'blend': 'normal', 'invert': False, 'groups': [],
+                   'zenith': [.2, .3, .4]}]
+        with tempfile.TemporaryDirectory() as folder, \
+                mock.patch('moonray_modo.environment_layers.cache_root', return_value=pathlib.Path(folder)), \
+                mock.patch('moonray_modo.environment_layers.native_blend', return_value=None), \
+                mock.patch('moonray_modo.textures.prepare', side_effect=AssertionError('a .tx asked for')):
+            made = pathlib.Path(environment_layers.texture({'kind': 'stack', 'layers': layers}, 16, 8, renderer=False))
+            self.assertEqual(made.suffix, '.pfm')
+            self.assertTrue(made.is_file())
+
 
 if __name__ == '__main__':
     unittest.main()

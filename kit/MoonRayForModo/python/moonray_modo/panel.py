@@ -1176,7 +1176,7 @@ class Panel(Tools, QtWidgets.QWidget):
             values=self._settings_values()
             # MoonLightIPR's motion blur, off by default: each update then reads the shutter's ends too.
             # And MoonRay's realtime under XPU2, by a preference of its own.
-            if self._preview_blurred() and not (self._engine()=='moonlightipr' and not self.preferences.get('preview_motion')):words.append('Motion Blur')
+            if self._preview_blurred() and not (self._engine()=='moonlightipr' and not self._moonlightipr_blur()):words.append('Motion Blur')
             from . import native
             xpu2=native.xpu2_renders(values.get('execution_mode','auto'))
             if self.preview_engine.currentData()=='moonray' and values['denoising'].get('safe') and values['denoising'].get('engine','off')!='off' \
@@ -1731,12 +1731,17 @@ class Panel(Tools, QtWidgets.QWidget):
         """Whether what follows the scene shows motion blur, by the preview's preferences: MoonLightIPR's own switch, and
         one for MoonRay's realtime, which is XPU2's."""
         # MoonLightIPR's motion vectors read the shutter's ends as well (held at the frame's moment where blur is off).
-        if self._engine()=='moonlightipr':return bool(self.preferences.get('preview_motion')) or self._moonlightipr_vectors()
+        if self._engine()=='moonlightipr':return self._moonlightipr_blur() or self._moonlightipr_vectors()
         if self.preview_engine.currentData()!='moonray' or not self.ipr_mode.isChecked() or not self.preferences.get('xpu2_motion'):return False
         try:
             from . import native
             return bool(native.xpu2())
         except Exception:return False
+
+    def _moonlightipr_blur(self):
+        """Whether MoonLightIPR shows motion blur: where the scene asks for it in a render (Motion Blur on its Modo camera or
+        in its render settings), or MoonLightIPR's own preference has it on whatever the camera says."""
+        return bool(self.preferences.get('preview_motion')) or self._motion_wanted()
 
     def _moonlightipr_vectors(self):
         """Whether the scene is read for MoonLightIPR's motion vectors: always with MoonLightIPR, which gathers every AOV
@@ -1755,7 +1760,7 @@ class Panel(Tools, QtWidgets.QWidget):
         # Not while realtime follows the scene, where each edit would read the shutter's ends too, nor MoonRay LS or a draft.
         still=self.preview_engine.currentData()=='moonray' and not self._following and not self.draft.isChecked() and self._motion_wanted()
         if not still and not self._preview_blurred():return self._capture()
-        if not still and not self._following and self._engine()=='moonlightipr' and not self.preferences.get('preview_motion'):
+        if not still and not self._following and self._engine()=='moonlightipr' and not self._moonlightipr_blur():
             # A MoonLightIPR Render without blur, read for its motion vectors alone: once, and the shutter's ends asked of
             # where the items stand; where nothing moves, that reading is the scene (no vectors to gather, the meshes not
             # read again), else it is read with its motion. (Realtime asks the same before it comes here.)
@@ -1773,7 +1778,7 @@ class Panel(Tools, QtWidgets.QWidget):
             # Motion blur off, the shutter's ends read for MoonLightIPR's motion vectors alone: a scene they cannot be
             # matched in still renders, as it stands, without the vectors (a tester's replicator stopped the preview
             # with a motion blur error while blur was off everywhere).
-            if still or self._engine()!='moonlightipr' or self.preferences.get('preview_motion'):raise
+            if still or self._engine()!='moonlightipr' or self._moonlightipr_blur():raise
             self.changes.consume()
             scene=self._capture()
             self._set_notices(list(scene.get('warnings') or [])+['Motion vectors are left out: %s'%exc])
@@ -1904,7 +1909,7 @@ class Panel(Tools, QtWidgets.QWidget):
         # And gathers as many samples a pixel as the preferences say; a playblast has its own number.
         self.renderer.moonlightipr_preview_samples=self.preferences.get('moonlightipr/samples')
         # A scene read with the shutter's ends for the motion vectors alone (blur off) is held at the frame's moment.
-        self.renderer.moonlightipr_blur=bool(self.preferences.get('preview_motion'))
+        self.renderer.moonlightipr_blur=self._moonlightipr_blur()
         # Render with MoonLightIPR (realtime off): Render samples a pixel, as fast as the card can, and it stops.
         once=not output and not self._following and not self.draft.isChecked() and self._engine()=='moonlightipr'
         self.renderer.moonlightipr_once=moonlightipr_render_samples() if once else None
@@ -2326,7 +2331,7 @@ class Panel(Tools, QtWidgets.QWidget):
         import modo
         settings={k:v for k,v in self._settings_values().items() if k not in ('display','preview_buffer','aovs','recovery','compositor')}
         return (repr(sorted(settings.items(),key=lambda entry:entry[0])),lx.service.Selection().GetTime(),modo.Scene().renderItem.id,self._engine(),
-                self.preferences.get('preview_motion'),self.preferences.get('xpu2_motion'),self.runtime_path())
+                self.preferences.get('preview_motion'),self._motion_wanted(),self.preferences.get('xpu2_motion'),self.runtime_path())
 
     def _materials_as_rendered(self,items,channels):
         """Whether the materials edited (items, their MoonRay settings written: changes.tagged) render as they did when
@@ -2547,14 +2552,26 @@ class Panel(Tools, QtWidgets.QWidget):
             # last found to hold nothing that moves skips that: any other edit may have keyed something to move. While
             # dragging, it is followed sharp, as fast as it can be.
             blurred=False;moving=False;first=None
+            # The last scene read at the shutter's ends where something moves during it: a move of the camera alone, none
+            # of its channels animated, takes it again with the camera where it now stands (a replicator's scene, which
+            # cannot be told rigid, was read three times whole at each camera move, 0.45 s, and its meshes then again).
+            kept_motion=getattr(self,'_motion_kept',None);self._motion_kept=None
             if not held and self._preview_blurred():
                 still=(time,modo.Scene().renderItem.id,repr(sorted(settings.items(),key=lambda entry:entry[0])))
                 # A move cannot make anything move during the shutter without a key (a fur scene's three readings held
                 # Modo 0.8 s for each move).
-                from .incremental import animated
+                from .incremental import animated,camera_moves_only
                 # (reuse True: only the camera or lights were moved, the meshes kept.)
                 unkeyed=(reuse is True or reuse in ('materials','transforms')) and (reuse=='materials' or not animated(modo.Scene(),items))
-                if full or changed or not unkeyed or getattr(self,'_live_still',None)!=still:
+                camera_place=None
+                if kept_motion is not None and kept_motion[0]==still and not full and not changed and items:
+                    camera_place=camera_moves_only(modo.Scene(),kept_motion[1],items)
+                    if camera_place is not None and animated(modo.Scene(),items):camera_place=None
+                if camera_place is not None:
+                    camera=dict(kept_motion[1]['camera'],matrix=camera_place,matrix_close=list(camera_place))
+                    scene=dict(kept_motion[1],camera=camera);blurred=True;moving=None
+                    self._motion_kept=(still,scene);self._drag_count('camera moved in the motion kept')
+                elif full or changed or not unkeyed or getattr(self,'_live_still',None)!=still:
                     # Read once, and the shutter's ends asked of where the items stand: where nothing moves, that
                     # reading is the picture (its meshes not read a second time); else the scene is read with its motion.
                     from .animation import shutter_moves
@@ -2563,12 +2580,12 @@ class Panel(Tools, QtWidgets.QWidget):
                     except Exception:moving=None
                     self.changes.consume()
                     if moving is False:self._live_still=still
-                if blurred and moving is not False:
+                if blurred and moving is not False and camera_place is None:
                     from .motion import moves
                     scene=self._capture_preview()
                     if moves(scene):
                         # The meshes are read whole again on the next edit: a reading at the shutter's ends leaves none to reuse.
-                        self._geometry_cache=None;self._live_still=None
+                        self._geometry_cache=None;self._live_still=None;self._motion_kept=(still,scene)
                     else:
                         # Nothing moves: the scene as read once, the same picture, its meshes kept for the next move.
                         self._live_still=still
