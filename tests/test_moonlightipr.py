@@ -19,7 +19,7 @@ def scene():
 class PackTests(unittest.TestCase):
     def test_known_meshes_are_sent_once(self):
         first,keys,warnings=moonlightipr_scene.pack(scene(),320,180,.2)
-        self.assertEqual(first[:4],b'MLSS')
+        self.assertEqual(first[:4],b'MLST')
         self.assertEqual(struct.unpack_from('<2I',first,4),(320,180))
         self.assertEqual(len(keys),1)
         self.assertFalse(any('CylinderLight' in w for w in warnings))
@@ -97,7 +97,7 @@ class EntityTests(unittest.TestCase):
 
     def test_values_are_checked_against_the_schema(self):
         from moonray_modo import entities
-        self.assertEqual(len(entities.classes()),48)  # 30, and the 18 display filters
+        self.assertEqual(len(entities.classes()),49)  # 30, the 18 display filters, and the kit's Ocean Plane
         self.assertEqual(entities.validate('SpotLight',{'outer_cone_angle':40})['outer_cone_angle'],40.0)
         for name,parameters in (('SpotLight',{'outer_cone_angle':'wide'}),('SpotLight',{'no_such':1}),('NoSuchLight',{}),
                                 ('EnvLight',{'color':[1,1]}),('EnvLight',{'visible_in_camera':7})):

@@ -11,11 +11,20 @@ The current release is [0.5.4.3.1](https://github.com/Pbaroque20/MoonRayForModo/
 - **Texture overflow by what the screen shows**: where a scene runs out of memory, XPU2 first shrinks each texture to what its meshes show on screen (a large map on a small or distant mesh needs little), then compresses, then shrinks further, each texture by its own need. A render keeps the detail it shows; for Render Animation the sizes hold over the whole shot, so no texture changes from frame to frame. Realtime keeps its 1024 pixel cap.
 - **Sharper procedurals and skies, made far faster**: Grid, Dots, Cellular, Wood, Weave and Ripples laid on by UVs or a projection, and layered skies with a physical sky or a procedural, are made in native code, no longer pixel by pixel in Python: larger (skies four times sharper) in a fraction of the time, the same patterns as before.
 - **MoonLightIPR final renders at full size**: a Render and Render Animation bake MoonShine graphs at the size of their images (up to 8K), not realtime's.
-- **Replicators**: a hidden prototype stays hidden, and a replicator no longer stops MoonLightIPR's preview with a motion blur error when blur is off. Moving the camera in a scene of replicators that move no longer reads the whole scene again at each move.
+- **Replicators**: a hidden prototype stays hidden, and a replicator no longer stops MoonLightIPR's preview with a motion blur error when blur is off. Moving the camera in a scene of replicators that move no longer reads the whole scene again at each move. Copies over particles are blurred along their own particle's path when particles are born or die during the shutter. Before, they could streak toward another particle. Variation by Particle now stays with each particle from frame to frame.
 
   ![Replicated teapots with motion blur in MoonLightIPR](docs/images/replicators-motion-blur.webp)
 
 - **MoonLightIPR follows the camera's Motion Blur**: with Motion Blur on on the render camera, or in the render settings, MoonLightIPR blurs too. Its own preference still turns blur on for every scene.
+- **Ocean Plane** (MoonRay > Add MoonRay Item > Geometry): a sea that reaches the horizon, ready the moment it is added. It follows the camera, with the waves fixed in place, and its settings are the Ocean node's (wind, wave height, choppiness, foam and the rest), with the water and foam colours, the horizon and the tile size. Give it a material tag to use your own Ocean material instead. Part of Ocean nodes in MoonShine graphs, in MoonRay Source Overrides.
+
+  ![The Ocean Plane as added, with no other setup, rendered by MoonRay](docs/images/ocean-plane.webp)
+
+- **Oceans without repeating waves**: the Ocean node's new Cascades (on by default) shares the waves out over four tiles of unrelated sizes, each turned its own way, so a sea seen to the horizon no longer shows its tile repeating. The waves' height and look are as before; off, the one tile as before.
+
+  ![The same sea from 60 m up: one tile (left), and over four turned cascades (right)](docs/images/ocean-cascades.webp)
+
+- **Displaced meshes in MoonLightIPR's realtime** are displaced once, by MoonLightIPR, where Modo's own displacement was added on top; and one that deforms, instanced or not, is motion blurred, where it rendered sharp.
 - **A plain material over everything** leaves the textures under it unloaded, as Modo renders it: such a scene no longer runs XPU2 into texture overflow.
 - **Faster scene reading** where the Shader Tree has many masks: each setting read once.
 - **XPU2 renders deforming, displaced instances**: replicated or instanced polygon meshes that are displaced and change shape over the shutter render in XPU2, where they went to MoonRay XPU. As in MoonRay, each copy shows the mesh as it is when the shutter closes; only the copy's own movement is blurred (subdivision copies now do the same).

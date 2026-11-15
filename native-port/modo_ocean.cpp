@@ -19,6 +19,13 @@ struct Settings {
     double size, windSpeed, windDirection, waveHeight, choppiness, smallWaves, windAlignment, againstWind, depth;
     long long seed;
     double loop, foamThreshold, seconds;
+    // One cascade of a sea split over tiles of several sizes (ocean.py cascades): the waves of wavenumbers kLow up to
+    // kHigh (radians a metre; kHigh 0 for no end), each by its share of the spectrum over its own tile's cells, and the
+    // heights' scale given (the cascades' together). fixedScale 0: the whole tile, scaled to its own heights.
+    double kLow = 0.0, kHigh = 0.0, fixedScale = 0.0;
+    // A cascade looked up turned by this many degrees (the ImageMap's rotation_angle): its sideways push and its slope
+    // written turned back into the surface's U and V, so the sea moves as the waves run (count 17).
+    double turn = 0.0;
 };
 
 static uint64_t splitmix(uint64_t& state) {
@@ -50,6 +57,17 @@ static double phillips(const Settings& s, double kx, double kz) {
     double p = std::exp(-1.0 / (k2 * big * big)) / (k2 * k2) * std::pow(std::fabs(along), s.windAlignment);
     if (along < 0) p *= s.againstWind;
     return p * std::exp(-k2 * s.smallWaves * s.smallWaves);
+}
+
+// A cell's amplitude before the heights' scale: the whole tile's sqrt(P / 2); a cascade's only within its band, by its
+// share of the spectrum over its own cells (sqrt(P / 2) times a cell's width in wavenumber, 2 pi over the tile).
+static bool cascaded(const Settings& s) { return s.fixedScale > 0 || s.kLow > 0 || s.kHigh > 0; }
+
+static double cellAmplitude(const Settings& s, double kx, double kz) {
+    if (!cascaded(s)) return std::sqrt(phillips(s, kx, kz) / 2.0);
+    const double k = std::hypot(kx, kz);
+    if (k < s.kLow || (s.kHigh > 0 && k >= s.kHigh)) return 0.0;
+    return std::sqrt(phillips(s, kx, kz) / 2.0) * (2 * Pi / s.size);
 }
 
 static double frequency(const Settings& s, double k) {
@@ -148,9 +166,11 @@ static void fields(const Settings& s, const std::vector<Complex>& h0, double sca
             const double h = pair1[at].real() * sign * scale, dx = pair1[at].imag() * sign * scale;
             const double dz = pair2[at].real() * sign * scale, jxx = pair2[at].imag() * sign * scale;
             const double jzz = pair3[at].real() * sign * scale, jxz = pair3[at].imag() * sign * scale;
-            out.displacement[3 * at] = float(chop * dx);
+            // Turned from the tile's axes into the surface's (the lookup turns surface to tile by -turn: vectors back by +turn).
+            const double c = std::cos(s.turn * Pi / 180.0), sn = std::sin(s.turn * Pi / 180.0);
+            out.displacement[3 * at] = float(chop * (c * dx - sn * dz));
             out.displacement[3 * at + 1] = float(h);
-            out.displacement[3 * at + 2] = float(chop * dz);
+            out.displacement[3 * at + 2] = float(chop * (sn * dx + c * dz));
             const double jacobian = (1 + chop * jxx) * (1 + chop * jzz) - (chop * jxz) * (chop * jxz);
             const float f = threshold > 0 ? float(std::fmin(1.0, std::fmax(0.0, (threshold - jacobian) / threshold))) : 0.0f;
             out.foam[3 * at] = out.foam[3 * at + 1] = out.foam[3 * at + 2] = f;
@@ -158,8 +178,9 @@ static void fields(const Settings& s, const std::vector<Complex>& h0, double sca
                 const double hx = pair4[at].real() * sign * scale, hz = pair4[at].imag() * sign * scale;
                 const double a = 1 + chop * jxx, b = 1 + chop * jzz, e = chop * jxz;
                 const double held = std::fmax(jacobian, 0.05);
-                out.slope[3 * at] = float((b * hx - e * hz) / held * s.size);
-                out.slope[3 * at + 1] = float((a * hz - e * hx) / held * s.size);
+                const double gx = (b * hx - e * hz) / held * s.size, gz = (a * hz - e * hx) / held * s.size;
+                out.slope[3 * at] = float(c * gx - sn * gz);
+                out.slope[3 * at + 1] = float(sn * gx + c * gz);
                 out.slope[3 * at + 2] = 0.0f;
             }
         }
@@ -180,16 +201,19 @@ static int tile(const Settings& s, const char* displacementPath, const char* foa
     std::vector<Complex> h0(size_t(n) * n);
     for (int j = 0; j < n; ++j)
         for (int i = 0; i < n; ++i) {
-            const double amplitude = std::sqrt(phillips(s, ks[i], ks[j]) / 2.0);
+            const double amplitude = cellAmplitude(s, ks[i], ks[j]);
             const size_t at = size_t(j) * n + i;
             h0[at] = Complex(noise[2 * at] * amplitude, noise[2 * at + 1] * amplitude);
         }
-    double variance = 0.0;
-    for (int j = 0; j < n; ++j)
-        for (int i = 0; i < n; ++i)
-            variance += std::norm(h0[size_t(j) * n + i]) + std::norm(h0[size_t((n - j) % n) * n + (n - i) % n]);
-    const double target = s.waveHeight * 0.21 * s.windSpeed * s.windSpeed / Gravity / 4.0;
-    const double scale = variance > 0 ? target / std::sqrt(variance) : 0.0;
+    double scale = s.fixedScale;
+    if (!(scale > 0)) {
+        double variance = 0.0;
+        for (int j = 0; j < n; ++j)
+            for (int i = 0; i < n; ++i)
+                variance += std::norm(h0[size_t(j) * n + i]) + std::norm(h0[size_t((n - j) % n) * n + (n - i) % n]);
+        const double target = s.waveHeight * 0.21 * s.windSpeed * s.windSpeed / Gravity / 4.0;
+        scale = variance > 0 ? target / std::sqrt(variance) : 0.0;
+    }
 
     Fields full;
     fields(s, h0, scale, ks, 0.0, slopePath != nullptr || split, full);
@@ -226,7 +250,7 @@ extern "C" __declspec(dllexport) int modo_ocean_tile(int resolution, const doubl
 }
 
 static bool settings(int resolution, const double* values, int count, Settings& s) {
-    if (!values || count != 13) return false;
+    if (!values || (count != 13 && count != 16 && count != 17)) return false;
     s.n = resolution;
     s.size = values[0];
     s.windSpeed = values[1];
@@ -241,7 +265,32 @@ static bool settings(int resolution, const double* values, int count, Settings& 
     s.loop = values[10];
     s.foamThreshold = values[11];
     s.seconds = values[12];
+    if (count >= 16) {
+        s.kLow = values[13];
+        s.kHigh = values[14];
+        s.fixedScale = values[15];
+    }
+    if (count == 17) s.turn = values[16];
     return true;
+}
+
+// A cascade's expected variance of the heights before their scale (count 16, the scale ignored): the sum over its band's
+// cells of both halves' expected power, 2 P(k) times a cell's area in wavenumber. The cascades' sum gives the scale that
+// makes the sea's heights a fully developed sea's for its wind, as one tile's are. 0, or 2 for settings out of range.
+extern "C" __declspec(dllexport) int modo_ocean_band_variance(int resolution, const double* values, int count, double* variance) {
+    Settings s;
+    if (!settings(resolution, values, count, s) || !variance || resolution < 2 || (resolution & (resolution - 1)) || !(s.size > 0)) return 2;
+    const int n = resolution;
+    const double cell = 2 * Pi / s.size;
+    double sum = 0.0;
+    for (int j = 0; j < n; ++j)
+        for (int i = 0; i < n; ++i) {
+            const double kx = cell * (i - n / 2), kz = cell * (j - n / 2), k = std::hypot(kx, kz);
+            if (k < 1e-12 || k < s.kLow || (s.kHigh > 0 && k >= s.kHigh)) continue;
+            sum += 2.0 * phillips(s, kx, kz) * cell * cell;
+        }
+    *variance = sum;
+    return 0;
 }
 
 // As modo_ocean_tile, and the slope image too where slopePath is given.

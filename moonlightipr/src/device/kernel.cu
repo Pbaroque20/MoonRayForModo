@@ -3283,8 +3283,17 @@ ML_INLINE MappedSlots evalLayers(const DeviceMaterial& material, const DeviceMes
                 uv.c = placed[2];
             } else if (!triangleUvs(mesh, layer.uvSlot, primitive, uv)) continue;     // nothing to look the row up with
             const float w = 1.0f - barycentrics.x - barycentrics.y;
-            const float u = (uv.a.x * w + uv.b.x * barycentrics.x + uv.c.x * barycentrics.y + shift.x) * layer.scale[0];
-            const float v = (uv.a.y * w + uv.b.y * barycentrics.x + uv.c.y * barycentrics.y + shift.y) * layer.scale[1];
+            float su = uv.a.x * w + uv.b.x * barycentrics.x + uv.c.x * barycentrics.y + shift.x;
+            float sv = uv.a.y * w + uv.b.y * barycentrics.x + uv.c.y * barycentrics.y + shift.y;
+            if (layer.flags & LAYER_ROTATED) {
+                // Turned before it is scaled, as MoonRay's ImageMap turns its coordinates (rotation_angle, about 0):
+                // settings[0] and [1] the angle's cosine and sine.
+                const float c = layer.settings[0], s = layer.settings[1], x = su, y = sv;
+                su = x * c + y * s;
+                sv = -x * s + y * c;
+            }
+            const float u = su * layer.scale[0];
+            const float v = sv * layer.scale[1];
             if (patterned) {
                 // The pattern mixes the row's two colours, and how much of the row each covers.
                 const float t = applyCurves(layer, vec(pattern(layer, u, v))).x;

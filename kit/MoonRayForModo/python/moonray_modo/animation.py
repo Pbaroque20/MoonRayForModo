@@ -180,8 +180,10 @@ class Sequence(QtCore.QObject):
             values=self.panel._settings_values()
             self.panel.renderer.resume_denoise(destination,self.panel.runtime_path(),values['denoising'],alpha='alpha' in (values.get('aovs') or []))
             return
-        snapshot = capture_frame(self.frame/self.fps, self.panel._settings_values()['surface']==2,
-                                 self.motion, self.fps)
+        # Read as the engine takes the scene: undisplaced for MoonLightIPR, which displaces the meshes itself.
+        with host.by_engine(self.panel._engine()):
+            snapshot = capture_frame(self.frame/self.fps, self.panel._settings_values()['surface']==2,
+                                     self.motion, self.fps)
         snapshot['frame']=self.frame;snapshot['fps']=self.fps
         # Where the camera and the meshes stand over the whole shot, read once: XPU2's texture overflow mode fits each
         # texture to the most any frame shows of it (texture_density), the same for every frame, so none changes size

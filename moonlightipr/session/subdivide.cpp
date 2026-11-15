@@ -3,6 +3,7 @@
 #include "subdivide.h"
 
 #include <algorithm>
+#include <cmath>
 #include <stdexcept>
 #include <unordered_map>
 
@@ -358,6 +359,144 @@ Triangles split(Triangles mesh, uint32_t levels) {
         mesh.uvSets = std::move(sets);
     }
     return mesh;
+}
+
+
+namespace {
+
+// One pass of the distance split: the triangles marked to split, and those a neighbour's new points reach, refined.
+struct Refined {
+    Triangles mesh;
+    std::vector<float> extra;
+    bool changed = false;
+};
+
+float edgeLength(const std::vector<float>& p, uint32_t a, uint32_t b) {
+    const float dx = p[size_t(a) * 3] - p[size_t(b) * 3], dy = p[size_t(a) * 3 + 1] - p[size_t(b) * 3 + 1], dz = p[size_t(a) * 3 + 2] - p[size_t(b) * 3 + 2];
+    return std::sqrt(dx * dx + dy * dy + dz * dz);
+}
+
+Refined refineOnce(const Triangles& mesh, const std::vector<float>& extra, const float camera[3], float angle) {
+    const size_t triangles = mesh.indices.size() / 3;
+    auto key = [](uint32_t a, uint32_t b) { return (uint64_t(std::min(a, b)) << 32) | std::max(a, b); };
+    // Which triangles a camera this far away needs finer: an edge longer than angle times the distance to its middle.
+    std::vector<unsigned char> red(triangles, 0);
+    std::unordered_map<uint64_t, uint32_t> middles;    // edges given a middle point (the vertex made later)
+    for (size_t t = 0; t < triangles; ++t) {
+        const uint32_t* v = &mesh.indices[t * 3];
+        for (int e = 0; e < 3 && !red[t]; ++e) {
+            const uint32_t a = v[e], b = v[(e + 1) % 3];
+            float d2 = 0.0f;
+            for (int axis = 0; axis < 3; ++axis) {
+                const float mid = 0.5f * (mesh.positions[size_t(a) * 3 + axis] + mesh.positions[size_t(b) * 3 + axis]);
+                d2 += (mid - camera[axis]) * (mid - camera[axis]);
+            }
+            if (edgeLength(mesh.positions, a, b) > angle * std::sqrt(d2)) red[t] = 1;
+        }
+        if (red[t])
+            for (int e = 0; e < 3; ++e) middles.emplace(key(v[e], v[(e + 1) % 3]), 0u);
+    }
+    if (middles.empty()) return Refined{mesh, extra, false};
+    // Closure: a triangle with two or three new points on its edges is split in four as well, until none is left
+    // with two (a cut through one new point keeps the shape; through two it would not).
+    for (bool more = true; more;) {
+        more = false;
+        for (size_t t = 0; t < triangles; ++t) {
+            if (red[t]) continue;
+            const uint32_t* v = &mesh.indices[t * 3];
+            int count = 0;
+            for (int e = 0; e < 3; ++e) count += middles.count(key(v[e], v[(e + 1) % 3])) ? 1 : 0;
+            if (count >= 2) {
+                red[t] = 1;
+                more = true;
+                for (int e = 0; e < 3; ++e) middles.emplace(key(v[e], v[(e + 1) % 3]), 0u);
+            }
+        }
+    }
+    Refined out;
+    out.changed = true;
+    out.mesh.positions = mesh.positions;
+    out.extra = extra;
+    const bool moving = !extra.empty();
+    for (auto& entry : middles) {
+        const uint32_t a = uint32_t(entry.first >> 32), b = uint32_t(entry.first & 0xffffffffu);
+        entry.second = uint32_t(out.mesh.positions.size() / 3);
+        for (int axis = 0; axis < 3; ++axis) {
+            out.mesh.positions.push_back(0.5f * (mesh.positions[size_t(a) * 3 + axis] + mesh.positions[size_t(b) * 3 + axis]));
+            if (moving) out.extra.push_back(0.5f * (extra[size_t(a) * 3 + axis] + extra[size_t(b) * 3 + axis]));
+        }
+    }
+    out.mesh.uvSets.resize(mesh.uvSets.size());
+    // A child of triangle t: its corners, and where each sits in t (barycentric, for its coordinates).
+    auto emit = [&](size_t t, const uint32_t* v, const float* const* bary) {
+        out.mesh.indices.insert(out.mesh.indices.end(), v, v + 3);
+        if (!mesh.materialIds.empty()) out.mesh.materialIds.push_back(mesh.materialIds[t]);
+        for (size_t s = 0; s < mesh.uvSets.size(); ++s) {
+            const float* uv = &mesh.uvSets[s][t * 6];
+            for (int k = 0; k < 3; ++k) {
+                out.mesh.uvSets[s].push_back(bary[k][0] * uv[0] + bary[k][1] * uv[2] + bary[k][2] * uv[4]);
+                out.mesh.uvSets[s].push_back(bary[k][0] * uv[1] + bary[k][1] * uv[3] + bary[k][2] * uv[5]);
+            }
+        }
+    };
+    static const float A[3] = {1, 0, 0}, B[3] = {0, 1, 0}, C[3] = {0, 0, 1};
+    static const float AB[3] = {.5f, .5f, 0}, BC[3] = {0, .5f, .5f}, CA[3] = {.5f, 0, .5f};
+    const uint32_t none = 0xffffffffu;
+    for (size_t t = 0; t < triangles; ++t) {
+        const uint32_t a = mesh.indices[t * 3], b = mesh.indices[t * 3 + 1], c = mesh.indices[t * 3 + 2];
+        auto found = [&](uint32_t x, uint32_t y) {
+            auto it = middles.find(key(x, y));
+            return it == middles.end() ? none : it->second;
+        };
+        const uint32_t ab = found(a, b), bc = found(b, c), ca = found(c, a);
+        if (red[t]) {
+            const uint32_t kids[4][3] = {{a, ab, ca}, {ab, b, bc}, {ca, bc, c}, {ab, bc, ca}};
+            const float* where[4][3] = {{A, AB, CA}, {AB, B, BC}, {CA, BC, C}, {AB, BC, CA}};
+            for (int k = 0; k < 4; ++k) emit(t, kids[k], where[k]);
+        } else if (ab != none) {
+            // One new point: cut in two from the corner across from it, winding kept.
+            const uint32_t kids[2][3] = {{a, ab, c}, {ab, b, c}};
+            const float* where[2][3] = {{A, AB, C}, {AB, B, C}};
+            for (int k = 0; k < 2; ++k) emit(t, kids[k], where[k]);
+        } else if (bc != none) {
+            const uint32_t kids[2][3] = {{a, b, bc}, {a, bc, c}};
+            const float* where[2][3] = {{A, B, BC}, {A, BC, C}};
+            for (int k = 0; k < 2; ++k) emit(t, kids[k], where[k]);
+        } else if (ca != none) {
+            const uint32_t kids[2][3] = {{a, b, ca}, {ca, b, c}};
+            const float* where[2][3] = {{A, B, CA}, {CA, B, C}};
+            for (int k = 0; k < 2; ++k) emit(t, kids[k], where[k]);
+        } else {
+            const uint32_t same[3] = {a, b, c};
+            const float* where[3] = {A, B, C};
+            emit(t, same, where);
+        }
+    }
+    return out;
+}
+
+}
+
+Triangles splitByDistance(Triangles mesh, std::vector<float>& extra, const float camera[3], float angle, uint32_t levels, size_t budget) {
+    if (!(angle > 0.0f) || !std::isfinite(angle)) throw std::runtime_error("MoonLightIPR's distance split needs an angle above 0");
+    // Finer first; widened until the triangles fit the budget.
+    for (int attempt = 0; attempt < 12; ++attempt, angle *= 1.5f) {
+        Triangles held = mesh;
+        std::vector<float> moved = extra;
+        bool fits = true;
+        for (uint32_t level = 0; level < levels; ++level) {
+            Refined next = refineOnce(held, moved, camera, angle);
+            if (!next.changed) break;
+            held = std::move(next.mesh);
+            moved = std::move(next.extra);
+            if (held.indices.size() / 3 > budget) { fits = false; break; }
+        }
+        if (fits) {
+            extra = std::move(moved);
+            return held;
+        }
+    }
+    return mesh;    // nothing fits: as it came
 }
 
 }

@@ -41,8 +41,10 @@ def key(evaluated):
         platform = lx.service.Platform()
         version = (platform.AppVersion(), platform.AppBuild())
         moment = float(lx.service.Selection().GetTime())
+        # Read for MoonLightIPR, undisplaced (host.by_engine), it is kept apart from the displaced reading.
+        from .host import modo_displaces
         return ('scene', FORM, os.path.normcase(os.path.abspath(path)), _file_digest(path), moment, bool(evaluated), version,
-                reading_code())
+                reading_code(), modo_displaces())
     except Exception:
         return None
 
