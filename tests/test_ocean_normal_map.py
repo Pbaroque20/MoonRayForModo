@@ -80,14 +80,18 @@ class HorizonFade(unittest.TestCase):
 
     CAMERA = {'matrix': [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 5.6, 0, 1], 'focal_mm': 50.0, 'film_mm': 36.0}
 
-    def test_along_the_view_where_a_pixel_spans_the_waves(self):
+    def test_from_where_a_pixel_spans_a_tile_along_the_view(self):
         from moonray_modo import ocean_plane
-        faded = ocean_plane.fade(self.CAMERA, 1280, 0.0, 80.0)
+        faded = ocean_plane.fade(self.CAMERA, 1280, 0.0, 80.0, 20000.0)
         pixel = 36.0 / 50.0 / 1280
-        near, far = ((waves * 80.0 * 5.6 / (2 * pixel)) ** 0.5 for waves in ocean_plane.FADE_WAVES)
-        self.assertAlmostEqual(faded['start'][2], -near, places=3)
-        self.assertAlmostEqual(faded['end'][2], -far, places=3)
-        self.assertEqual(faded['start'][1], 0.0)
+        start = (ocean_plane.FADE_START_WAVES * 80.0 * 5.6 / (2 * pixel)) ** 0.5
+        self.assertEqual(faded['origin'], [0, 0.0, 0])
+        self.assertAlmostEqual(faded['end'][2], -20000.0, places=3)
+        self.assertAlmostEqual(faded['ratio'], start / 20000.0)
+        self.assertEqual(faded['roughness'], ocean_plane.FADE_ROUGHNESS)
+        # Horizon Fade moves the start toward the horizon by the rows: at 0.5, about twice as far.
+        later = ocean_plane.fade(self.CAMERA, 1280, 0.0, 80.0, 20000.0, 0.5)
+        self.assertAlmostEqual(later['ratio'] / faded['ratio'], 1.0 / (1.0 - 0.475))
         # Looking straight down, or orthographic: none.
         self.assertIsNone(ocean_plane.fade({'matrix': [1, 0, 0, 0, 0, 0, -1, 0, 0, 1, 0, 0, 0, 5, 0, 1]}, 1280, 0.0, 80.0))
         self.assertIsNone(ocean_plane.fade(dict(self.CAMERA, projection='ortho'), 1280, 0.0, 80.0))
@@ -108,9 +112,9 @@ class HorizonFade(unittest.TestCase):
         self.assertIn('_fade', sea(True))
         self.assertNotIn('_fade', sea(False))
 
-    def test_the_waves_and_the_short_waves_times_the_gradient(self):
+    def test_the_waves_short_waves_and_roughness_follow_the_rows(self):
         g = graph()
-        g['nodes']['sea']['_fade'] = {'start': [0, 0, -50], 'end': [0, 0, -900]}
+        g['nodes']['sea']['_fade'] = {'origin': [0, 0, 0], 'end': [0, 0, -20000], 'ratio': 0.03, 'roughness': 0.15}
         folder = tempfile.TemporaryDirectory()
         with mock.patch('moonray_modo.ocean.folder', return_value=pathlib.Path(folder.name)), \
                 mock.patch.dict(os.environ, {'MOONRAY_MODO_OCEAN': '1'}), ocean.writing(2.0), \
@@ -118,15 +122,19 @@ class HorizonFade(unittest.TestCase):
             v = nodes.fade_ocean(nodes.split_ocean(nodes.expand_ocean(nodes.effective(g)), 'surface'))
         folder.cleanup()
         members = v['nodes']
-        gradient = members['sea__fade']
-        self.assertEqual(gradient['type'], 'GradientMap')
-        self.assertEqual(gradient['parameters']['start'], [0, 0, -50])
+        # The start's distance over each point's, at most 1: even over the picture's rows to the horizon.
+        distance, share, fade = members['sea__distance'], members['sea__share'], members['sea__fade']
+        self.assertEqual((distance['type'], distance['parameters']['end']), ('GradientMap', [0, 0, -20000]))
+        self.assertEqual((share['type'], share['parameters']['operation'], share['parameters']['op1'], share['inputs']['op2']),
+                         ('OpMap', 3, [0.03] * 3, 'sea__distance'))
+        self.assertEqual((fade['parameters']['operation'], fade['inputs']['op1']), (5, 'sea__share'))
         faded = members[members['push']['inputs']['vector']]
-        self.assertEqual(faded['type'], 'multiply')
-        self.assertEqual(faded['inputs']['in2'], 'sea__fade')
+        self.assertEqual((faded['type'], faded['inputs']['in2']), ('multiply', 'sea__fade'))
         normal = members[members['surface']['inputs']['input_normal']]
         flat = members[normal['inputs']['input']]
         self.assertEqual((flat['type'], flat['inputs']['mix'], flat['parameters']['bg']), ('mix', 'sea__fade', [0.5, 0.5, 1.0]))
+        rough = members[members['surface']['inputs']['roughness']]
+        self.assertEqual((rough['type'], rough['inputs']['mix'], rough['parameters']['bg']), ('mix', 'sea__fade', [0.15] * 3))
         self.assertTrue(all('_fade' not in n for n in members.values()))
 
 

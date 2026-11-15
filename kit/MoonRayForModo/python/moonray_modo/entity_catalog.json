@@ -3950,6 +3950,16 @@
         "name": "horizon",
         "type": "Float"
       },
+      "horizon_fade": {
+        "comment": "In MoonRay and XPU2, where the far waves begin to fade into a soft sheen: 0 where a pixel spans more wave than it can show (where they would turn to dark speckle), 1 at the horizon. Higher keeps the waves further out, with some speckle.",
+        "default": 0.0,
+        "group": "Ocean Plane",
+        "label": "horizon fade",
+        "max": 1.0,
+        "min": 0.0,
+        "name": "horizon_fade",
+        "type": "Float"
+      },
       "label": {
         "comment": "label used in material aov expresssions",
         "default": "",

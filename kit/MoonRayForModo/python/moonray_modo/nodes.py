@@ -294,25 +294,29 @@ def split_ocean(graph,output):
     return graph
 
 
-def _ocean_plane_fade_exponent():
-    from .ocean_plane import FADE_EXPONENT
-    return FADE_EXPONENT
-
-
 def fade_ocean(graph):
-    """An expanded graph as MoonRay takes an Ocean Plane's sea (expand_ocean's _fade, ocean_plane.fade): its waves and its
-    short waves' tilt fading out along the camera's view over the ground, from start to end (world space), where a
-    pixel spans more than the waves. MoonRay and XPU2 read the far waves whole, and the horizon went to dark speckle
-    of crests and troughs no pixel could hold; MoonLightIPR reads them at its far vertices' spacing and its sea fades
-    to the sky's reflection, as this does. A GradientMap, white near and black far, times each Vector Displacement's
-    vector and as the mix of each ocean normal map's tile toward flat. Changed in place and returned."""
+    """An expanded graph as MoonRay takes an Ocean Plane's sea (expand_ocean's _fade, ocean_plane.fade): from where a
+    pixel spans more wave than it can show, toward the horizon, its waves and its short waves' tilt fading out and its
+    water growing rougher (ocean_plane.FADE_ROUGHNESS). MoonRay and XPU2 read the far waves whole, and the horizon went
+    to dark speckle and a black line; MoonLightIPR averages each pixel's waves, and its far sea is a soft sheen of the
+    sky, as this makes it. The fade follows the rows of the picture, not the metres: it is the start's distance over
+    each point's (as far down the picture as the angle under the horizon goes), so it spreads evenly over the rows to
+    the horizon; in metres it gathered in the last few rows, a band. A GradientMap gives the distance along the view
+    over the ground (a share of _fade's far), an OpMap divides the start's share by it, another keeps it at most 1.
+    Changed in place and returned."""
     members=graph.get('nodes',{})
     fades=[(key,node['_fade']) for key,node in list(members.items()) if node.get('_fade')]
+    def fresh(name):
+        while name in members:name+='_'
+        return name
     for key,fade in fades:
-        gradient=key+'__fade'
-        while gradient in members:gradient+='_'
-        members[gradient]={'type':'GradientMap','inputs':{},'parameters':{'space':2,'start':list(fade['start']),'end':list(fade['end']),
-                           'falloff_type':2,'falloff_exponent':_ocean_plane_fade_exponent(),'color_A':[1.0,1.0,1.0],'color_B':[0.0,0.0,0.0]}}
+        distance,share,faded=fresh(key+'__distance'),fresh(key+'__share'),fresh(key+'__fade')
+        # The distance along the view, as a share of far: a hair above 0 at the camera, so the share below never divides
+        # by nothing.
+        members[distance]={'type':'GradientMap','inputs':{},'parameters':{'space':2,'start':list(fade['origin']),'end':list(fade['end']),
+                           'falloff_type':2,'falloff_exponent':1.0,'color_A':[1e-4]*3,'color_B':[1.0]*3}}
+        members[share]={'type':'OpMap','inputs':{'op2':distance},'parameters':{'operation':3,'op1':[float(fade['ratio'])]*3}}
+        members[faded]={'type':'OpMap','inputs':{'op1':share},'parameters':{'operation':5,'op2':[1.0]*3}}
         def reaches(source,depth=0):
             if source==key:return True
             held=members.get(source) or {}
@@ -320,16 +324,23 @@ def fade_ocean(graph):
         for name,other in list(members.items()):
             inputs=other.get('inputs') or {}
             if other.get('type')=='VectorDisplacement' and reaches(inputs.get('vector')):
-                faded=name+'__faded'
-                while faded in members:faded+='_'
-                members[faded]={'type':'multiply','parameters':{},'inputs':{'in1':inputs['vector'],'in2':gradient}}
-                inputs['vector']=faded
+                held=fresh(name+'__faded')
+                members[held]={'type':'multiply','parameters':{},'inputs':{'in1':inputs['vector'],'in2':faded}}
+                inputs['vector']=held
             elif other.get('type')=='ocean_normal' and inputs.get('input'):
-                flat=name+'__faded'
-                while flat in members:flat+='_'
-                members[flat]={'type':'mix','parameters':{'bg':[0.5,0.5,1.0],'fg':[0.5,0.5,1.0],'mix':0.0},
-                               'inputs':{'fg':inputs['input'],'mix':gradient}}
-                inputs['input']=flat
+                held=fresh(name+'__faded')
+                members[held]={'type':'mix','parameters':{'bg':[0.5,0.5,1.0],'fg':[0.5,0.5,1.0],'mix':0.0},
+                               'inputs':{'fg':inputs['input'],'mix':faded}}
+                inputs['input']=held
+        root=members.get(graph.get('root'))
+        if root is not None and fade.get('roughness') is not None:
+            # The water rougher where its waves fade: the far sea a soft sheen, as each pixel's waves averaged are.
+            inputs=root.setdefault('inputs',{})
+            near=float((root.get('parameters') or {}).get('roughness',0.03) or 0.03)
+            held=fresh(key+'__far_roughness')
+            members[held]={'type':'mix','parameters':{'bg':[float(fade['roughness'])]*3,'fg':[near]*3,'mix':0.0},
+                           'inputs':dict({'mix':faded},**({'fg':inputs['roughness']} if inputs.get('roughness') else {}))}
+            inputs['roughness']=held
         members[key].pop('_fade',None)
     return graph
 
