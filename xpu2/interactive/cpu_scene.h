@@ -4161,7 +4161,7 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
    if(it==lighter.end())it=lighter.emplace(mesh.data.get(),coarseMesh(*mesh.data,eye,angle)).first;
    if(it->second)mesh.data=it->second;}
   for(const auto& mesh:plan->meshes)if(mesh.data&&mesh.data->coarse)++plan->coarsened;}
- // A realtime plan's shading reads each texture from its first level of 1024 pixels or less (Pyramid::view); what the
+ // A realtime plan's shading reads each texture from its first level of realtimeSide() or less where one is set (Pyramid::view); what the
  // plan worked out from the textures (displacement above) read them whole.
  if(plan->realtime){size_t capped=0;
   for(size_t i=0;i<plan->textureImages.size();++i){const auto& view=plan->textures[i]->pyramid->view(true);capped+=&view!=plan->textureImages[i];plan->textureImages[i]=&view;}

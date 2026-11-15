@@ -2591,8 +2591,9 @@ int session(const Args& args, const fs::path& directory) {
                     scene.dropForOverflow();
                     gpuPlan.reset();
                     if (gpu) gpu->dropScene();  // what it holds of the scene gone before the scene is made again, not after
-                    // Realtime's textures are 1024 pixels a side at most on the card: larger steps would free nothing there.
-                    while (scene.realtimeAsked() && texture::overflowSide().load() > 1024 && texture::nextOverflowSide()) {}
+                    // Where realtime's textures are capped (Pyramid::realtimeSide), steps above the cap would free nothing there.
+                    while (scene.realtimeAsked() && texture::Pyramid::realtimeSide() &&
+                           texture::overflowSide().load() > texture::Pyramid::realtimeSide() && texture::nextOverflowSide()) {}
                     goto renderFrame;
                 }
                 fallback(e.what());
