@@ -308,7 +308,10 @@ def held_placement(environment):
     return rested, coordinates.inverse(placement)
 
 
-def texture(environment, width=512, height=256):
+def texture(environment, width=512, height=256, renderer=True):
+    """The layered environment composed into one linear latitude-longitude image (a PFM in the Environments cache), and
+    for renderer the texture MoonRay reads made from it (textures.prepare, a .tx); MoonLightIPR, which makes its own
+    images, takes the PFM itself (renderer False)."""
     from .environments import gradient_color
     from .daylight import color as daylight_color
     from .compositing import Groups
@@ -407,4 +410,4 @@ def texture(environment, width=512, height=256):
             staged.replace(target)
         finally:
             if staged.exists(): staged.unlink()
-    return textures.prepare(target,False,mipmaps=False,light=True)
+    return textures.prepare(target,False,mipmaps=False,light=True) if renderer else str(target)

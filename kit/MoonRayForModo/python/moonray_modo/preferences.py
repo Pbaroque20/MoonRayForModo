@@ -261,7 +261,8 @@ class Dialog(QtWidgets.QDialog):
                     [('Never', 0), ('After 1 minute', 1), ('After 5 minutes', 5), ('After 15 minutes', 15), ('After 30 minutes', 30)],
                     'Keeps cached images. The next render reloads its scene; active renders are never interrupted.'))
         form.addRow(check('preview_motion', 'Motion blur in MoonLightIPR renders',
-                          'Off by default: each update then also reads the scene at shutter open and close, which adds to its wait. '
+                          "MoonLightIPR blurs whenever the render camera's Motion Blur, or Motion Blur in the render settings, is on; "
+                          'this turns it on for every scene. Off by default: each update then also reads the scene at shutter open and close, which adds to its wait. '
                           'While dragging, updates stay sharp. Said as Motion Blur at the foot of the picture while on'))
         form.addRow(check('xpu2_motion', 'Motion blur in MoonRay XPU2 realtime',
                           'Off by default. On, realtime (RT) shows motion blur once an edit is let go: where something moves during the '

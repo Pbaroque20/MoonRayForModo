@@ -362,6 +362,22 @@ def _refused(why):
     return None
 
 
+def camera_moves_only(scene,snapshot,identities):
+    """Where the camera of a snapshot now stands, when every item edited (identities) is one of its own transforms: an edit
+    that moves the camera alone, nothing else in the scene. None for any other edit, the camera's own settings too."""
+    from .host import world_matrix
+    identity=(snapshot.get('camera') or {}).get('identity')
+    if not identity or not identities:return None
+    try:
+        for held in identities:
+            item=scene.item(held)
+            if item.type not in ('translation','rotation','scale'):return None
+            owners=list(item.itemGraph('xfrmCore').forward())
+            if not owners or any(owner.id!=identity for owner in owners):return None
+        return world_matrix(scene.item(identity))
+    except (RuntimeError,LookupError,AttributeError):return None
+
+
 def move_only(scene,snapshot,identities,camera_moved=False,loose=(),camera_matrix=None):
     """The scene sent last (snapshot) with only where things stand made new, for a drag that moves the camera rendered
     through or items that hang meshes: the transforms moved (identities) and every mesh and camera they carry asked
