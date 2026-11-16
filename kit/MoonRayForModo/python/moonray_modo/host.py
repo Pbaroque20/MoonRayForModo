@@ -810,8 +810,11 @@ def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fal
             # Scene Proxies' surfaces once each, shaded by their own scenes.
             evaluated.proxies(data, scene, lx.service.Selection().GetTime(), warnings, displaced=modo_displaces())
             native_shape_materials = result['materials']
-            # An edit of meshes alone: each Shader Tree stack's material as the last reading made it (shading_kept).
-            result['materials'] = evaluated.assign_materials(data, scene, warnings, shading_kept=shading_kept)
+            # An edit of meshes alone: each Shader Tree stack's material as the last reading made it (shading_kept); so too
+            # where Modo told of nothing at all since the last reading (geometry_cache's quiet reading).
+            from . import geometry_cache
+            quiet = not cached and bool(geometry_cache.LAST.get('quiet'))
+            result['materials'] = evaluated.assign_materials(data, scene, warnings, shading_kept=shading_kept or quiet)
             result['materials'], _ = shader_library.mend(result['materials'], library, warnings, names)
             shader_library.attach_dependencies(result['materials'],library)
             result['meshes'] = evaluated.meshes(data, result['materials'], warnings, scene)

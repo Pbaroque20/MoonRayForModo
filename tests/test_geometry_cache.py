@@ -48,7 +48,9 @@ class CaptureKept(unittest.TestCase):
         patches = [mock.patch.object(evaluated, 'capture', fake), mock.patch.object(evaluated, '_load'),
                    mock.patch.object(geometry_cache, 'key', return_value=('k',)),
                    mock.patch.object(geometry_cache.threading, 'Thread', Inline),
-                   mock.patch.object(geometry_cache, 'standing', side_effect=lambda data, time: self.stood)]
+                   mock.patch.object(geometry_cache, 'standing', side_effect=lambda data, time: self.stood),
+                   mock.patch.object(geometry_cache, 'session', side_effect=lambda: self.memory)]
+        self.memory = None
         self.stood = {'places': {'a': 'here'}, 'shading': 's'}
         for each in patches:
             each.start()
@@ -89,6 +91,22 @@ class CaptureKept(unittest.TestCase):
             evaluated.capture(0.0)
             evaluated.capture(0.0)
         self.assertEqual(self.calls, [None, {evaluated.NO_ITEM}])
+
+    def test_held_in_memory_while_the_scene_is_open(self):
+        # The scene's last reading held in memory: taken again without the kept one on disk, and let go on closing.
+        self.memory = {'key': None, 'held': None, 'watched': {}}
+        with mock.patch.object(geometry_cache, 'fingerprints', return_value={'a': '1', 'b': '2'}):
+            evaluated.capture(0.0)
+            for kept in pathlib.Path(self.folder.name).rglob('*.bin'):
+                kept.unlink()
+            data = evaluated.capture(0.0)
+        self.assertTrue(geometry_cache.LAST.get('in_memory'))
+        self.assertIs(geometry_cache.LAST['render_cache'], False)
+        self.assertEqual(set(h['item'] for h in data['prototypes'].values()), {'a', 'b'})
+        self.assertEqual(self.calls, [None])
+        geometry_cache._SESSION.update(one=self.memory)
+        geometry_cache._closed('one')
+        self.assertNotIn('one', geometry_cache._SESSION)
 
     def test_no_adapter_digest_reads_whole(self):
         with mock.patch.object(geometry_cache, 'fingerprints', return_value=None):
