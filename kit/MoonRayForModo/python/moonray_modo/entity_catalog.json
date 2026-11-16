@@ -3847,7 +3847,7 @@
     "attributes": {
       "against_wind": {
         "comment": "What is left of the waves running against the wind (0 to 1).",
-        "default": 0.5,
+        "default": 0.3,
         "group": "Ocean",
         "name": "against_wind",
         "type": "Float"
@@ -3861,7 +3861,7 @@
       },
       "choppiness": {
         "comment": "How far the crests are pushed together sideways, sharpening them; 0 keeps them round.",
-        "default": 1.0,
+        "default": 1.2,
         "group": "Ocean",
         "name": "choppiness",
         "type": "Float"
@@ -3998,7 +3998,7 @@
       },
       "resolution": {
         "comment": "Points across one tile: more is finer detail. 64, 128, 256, 512 or 1024.",
-        "default": 256,
+        "default": 512,
         "enum": {
           "1024": 1024,
           "128": 128,
@@ -4239,14 +4239,14 @@
       },
       "wind_direction": {
         "comment": "Where the wind blows, in degrees from U towards V.",
-        "default": 0.0,
+        "default": 30.0,
         "group": "Ocean",
         "name": "wind_direction",
         "type": "Float"
       },
       "wind_speed": {
         "comment": "The wind, in metres a second: it sets how big the waves are and how long the longest ones are.",
-        "default": 10.0,
+        "default": 12.0,
         "group": "Ocean",
         "name": "wind_speed",
         "type": "Float"

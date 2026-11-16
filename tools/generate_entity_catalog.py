@@ -307,6 +307,11 @@ for _key, _spec in _nodes.specs('ocean').items():
     if _spec.get('enum'):
         _entry['enum'] = {str(k): int(v) for k, v in _spec['enum'].items()}
     _plane[_key] = _entry
+# The Ocean Plane's own defaults where they differ from the Ocean node's: the "Ocean at sunset" sea's, whose long,
+# sharp ridges (crests pushed together by Choppiness, lined up with a wind off U and V) a tester liked. The Ocean node
+# keeps its own, so graphs that never set them stay as they were.
+for _key, _value in {'wind_speed': 12.0, 'wind_direction': 30.0, 'choppiness': 1.2, 'against_wind': 0.3, 'resolution': 512}.items():
+    _plane[_key]['default'] = _value
 catalog['OceanPlaneGeometry'] = {'category': 'geometry', 'category_label': 'Geometry', 'attributes': _plane, 'placed': True,
                                  'source': 'kit', 'override': 'ocean'}
 target = root / 'kit/MoonRayForModo/python/moonray_modo/entity_catalog.json'
