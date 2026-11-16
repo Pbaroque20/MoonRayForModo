@@ -629,6 +629,15 @@ public:
         const bool resumable = adaptive && state.cellular && watch && watch->resumable && watch->resumableSeconds > 0;
         double nextResumable = resumable ? watch->resumableSeconds : -1;
         bool drainAfterSave = false;  // a drain asked for: the save first, at the next boundary
+        // A drain ends in a moment, whatever is still out (a stop by hand; the kit gives up on one after 16 s and ends the
+        // process): past drainBy, provisional samples are taken as they stand (a coarser texture level's), parked ones
+        // dropped, and a save not yet reached let go. The texture tiles a drain waited for could take far longer.
+        double drainBy = -1;
+        const double drainSeconds = [] {
+            const char* v = std::getenv("XPU2_SESSION_DRAIN_SECONDS");
+            const double s = v ? std::atof(v) : 0.0;
+            return s > 0 ? s : 2.0;
+        }();
         auto saveResumable = [&](Adaptive& s) {
             auto keep = std::make_shared<ResumeState>();
             if (useGpu) {
@@ -688,13 +697,19 @@ public:
                     if (resumable && !state.chain && !state.finished(useGpu ? gpu_ : nullptr)) {
                         drainAfterSave = true;
                         state.hold = true;
+                        drainBy = at() + 3.0 * drainSeconds;  // the save it waits for lets the render be taken up
                     } else if (!partial) {
                         drained = true;
                         break;
                     } else {
                         draining = true;
                         grid.close();
+                        drainBy = at() + drainSeconds;
                     }
+                }
+                if (drainBy >= 0 && at() >= drainBy) {
+                    drained = true;
+                    break;
                 }
             }
             preview();
