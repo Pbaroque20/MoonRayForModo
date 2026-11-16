@@ -9,6 +9,8 @@
 #include <atomic>
 #include <chrono>
 #include <thread>
+#include <condition_variable>
+#include <deque>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
@@ -2980,31 +2982,54 @@ inline std::shared_ptr<MeshData> loadGeometry(const std::string& key){
  sf::last_write_time(path,sf::file_time_type::clock::now(),ec);  // the most recently used, last to be let go
  geometryCacheCounts().reused++;geometryCacheCounts().reusedBytes+=size_t(size);
  return m;}
-// The cache's writers, joined before the session ends (finishGeometryCache): a session that exited while one wrote left
-// the file unfinished, and the next session tessellated again.
-inline std::mutex& cacheWritersLock(){static std::mutex m;return m;}
-inline std::vector<std::thread>& cacheWriters(){static std::vector<std::thread> w;return w;}
-inline void finishGeometryCache(){std::vector<std::thread> w;{std::lock_guard<std::mutex> g(cacheWritersLock());w.swap(cacheWriters());}for(auto& t:w)if(t.joinable())t.join();}
-// A mesh's prepared data into the cache, on a thread of its own (written under another name, then renamed, so that a
-// file the cache holds is whole), the oldest files let go past the cache's size.
+// The cache's writer: one thread taking the meshes to write in turn (saveGeometry), started with the first and joined
+// before the session ends (finishGeometryCache): a session that exited while it wrote left the file unfinished, and the
+// next session tessellated again. One thread for them all: a thread for each, and each trimming the folder after it, a
+// car's 334 plain meshes slowed the preparation that made them threefold.
+struct CacheWriter{std::mutex lock;std::condition_variable wake;std::deque<std::function<void()>> queue;
+ std::thread thread;bool stopping=false;};
+inline CacheWriter& cacheWriter(){static CacheWriter w;return w;}
+inline void writeGeometryFile(const std::string& key,const MeshData& mesh){
+ namespace sf=std::filesystem;std::error_code ec;const sf::path folder=geometryCacheFolder();sf::create_directories(folder,ec);
+ const sf::path path=folder/(key+".x2g"),part=folder/(key+".part");const MeshData* m=&mesh;
+ {std::ofstream f(part,std::ios::binary|std::ios::trunc);if(!f)return;const uint32_t head[2]={GeometryCacheMagic,GeometryCacheVersion};f.write(reinterpret_cast<const char*>(head),8);
+  const uint32_t rates[3]={m->normalRate,m->uvRate,m->instanced?1u:0u};f.write(reinterpret_cast<const char*>(rates),12);f.write(reinterpret_cast<const char*>(m->worldToObject),sizeof m->worldToObject);
+  writeVector(f,m->positions);writeVector(f,m->triangles);writeVector(f,m->normals);writeVector(f,m->uvs);writeVector(f,m->prims);writeVector(f,m->primData);
+  writeVector(f,m->polyVertices);writeVector(f,m->dpds);writeVector(f,m->dpdt);writeVector(f,std::vector<char>(m->displacementKey.begin(),m->displacementKey.end()));
+  if(!f){f.close();sf::remove(part,ec);return;}}
+ sf::rename(part,path,ec);if(ec)sf::remove(part,ec);}
+// The folder brought back within its size, the oldest files let go (once the writer has nothing more to write).
+inline void trimGeometryCache(){
+ namespace sf=std::filesystem;std::error_code ec;const sf::path folder=geometryCacheFolder();
+ double gb=20;if(const char* v=std::getenv("XPU2_SESSION_GEOMETRY_CACHE_GB"))gb=std::max(0.1,std::atof(v));
+ std::vector<std::pair<sf::file_time_type,sf::path>> files;uint64_t total=0;
+ for(const auto& e:sf::directory_iterator(folder,ec))if(e.path().extension()==".x2g"){total+=uint64_t(e.file_size(ec));files.push_back({e.last_write_time(ec),e.path()});}
+ std::sort(files.begin(),files.end());
+ for(const auto& [when,file]:files){if(double(total)<=gb*double(1ull<<30))break;total-=uint64_t(sf::file_size(file,ec));sf::remove(file,ec);}}
+inline void finishGeometryCache(){
+ CacheWriter& w=cacheWriter();{std::lock_guard<std::mutex> g(w.lock);w.stopping=true;}w.wake.notify_all();
+ if(w.thread.joinable())w.thread.join();
+ std::lock_guard<std::mutex> g(w.lock);w.stopping=false;}
+// A mesh's prepared data into the cache, by the writer (written under another name, then renamed, so that a file the
+// cache holds is whole). A mesh's data is never changed once made (a move places it by an instance's transform), so the
+// writer reads it while the session goes on.
+// A job for the writer (a file into the cache), done in turn after those before it.
+inline void cacheWrite(std::function<void()> job){
+ CacheWriter& w=cacheWriter();std::lock_guard<std::mutex> g(w.lock);
+ w.queue.push_back(std::move(job));
+ if(!w.thread.joinable())w.thread=std::thread([&w]{
+  for(;;){std::function<void()> next;
+   {std::unique_lock<std::mutex> g(w.lock);w.wake.wait(g,[&w]{return !w.queue.empty()||w.stopping;});
+    if(w.queue.empty()){break;}
+    next=std::move(w.queue.front());w.queue.pop_front();}
+   next();
+   bool idle=false;{std::lock_guard<std::mutex> g(w.lock);idle=w.queue.empty();}
+   if(idle)trimGeometryCache();}});
+ w.wake.notify_one();}
 inline void saveGeometry(const std::string& key,std::shared_ptr<const MeshData> m){
  if(!m->steps.empty()||m->points||m->curveBasis||m->gate)return;
  geometryCacheCounts().saved++;
- std::thread writer([key,m]{namespace sf=std::filesystem;std::error_code ec;const sf::path folder=geometryCacheFolder();sf::create_directories(folder,ec);
-  const sf::path path=folder/(key+".x2g"),part=folder/(key+".part");
-  {std::ofstream f(part,std::ios::binary|std::ios::trunc);if(!f)return;const uint32_t head[2]={GeometryCacheMagic,GeometryCacheVersion};f.write(reinterpret_cast<const char*>(head),8);
-   const uint32_t rates[3]={m->normalRate,m->uvRate,m->instanced?1u:0u};f.write(reinterpret_cast<const char*>(rates),12);f.write(reinterpret_cast<const char*>(m->worldToObject),sizeof m->worldToObject);
-   writeVector(f,m->positions);writeVector(f,m->triangles);writeVector(f,m->normals);writeVector(f,m->uvs);writeVector(f,m->prims);writeVector(f,m->primData);
-   writeVector(f,m->polyVertices);writeVector(f,m->dpds);writeVector(f,m->dpdt);writeVector(f,std::vector<char>(m->displacementKey.begin(),m->displacementKey.end()));
-   if(!f){f.close();sf::remove(part,ec);return;}}
-  sf::rename(part,path,ec);if(ec){sf::remove(part,ec);return;}
-  double gb=20;if(const char* v=std::getenv("XPU2_SESSION_GEOMETRY_CACHE_GB"))gb=std::max(0.1,std::atof(v));
-  std::vector<std::pair<sf::file_time_type,sf::path>> files;uint64_t total=0;
-  for(const auto& e:sf::directory_iterator(folder,ec))if(e.path().extension()==".x2g"){total+=uint64_t(e.file_size(ec));files.push_back({e.last_write_time(ec),e.path()});}
-  std::sort(files.begin(),files.end());
-  for(const auto& [when,file]:files){if(double(total)<=gb*double(1ull<<30)||file==path)break;total-=uint64_t(sf::file_size(file,ec));sf::remove(file,ec);}
- });
- std::lock_guard<std::mutex> g(cacheWritersLock());cacheWriters().push_back(std::move(writer));}
+ cacheWrite([key,m=std::move(m)]{writeGeometryFile(key,*m);});}
 // A mesh's key: what shaped its tessellation.
 inline std::string geometryKey(const rdl::SceneObject& o,const std::vector<std::shared_ptr<const ix::Buffer>>& sig,const std::string& displacementKey,
                                const Plan& plan,bool shared,const rdl::SceneVariables& sv){
@@ -3692,6 +3717,19 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
      !get<rdl::SceneObject*>(sv,"dicing_camera")&&!get<rdl::SceneObject*>(o,"dicing_camera")){
    cacheKey=geometryKey(o,sig,displacementKey,*plan,shareInstance,sv);
    if(auto m=loadGeometry(cacheKey)){m->name=meshName;m->signature=sig;m->displacementKey=displacementKey;if(shareInstance)m->instanced=true;
+    data=std::move(m);cacheHit=true;++plan->preparedMeshes;}}
+  // A plain mesh (its own, or a shared instance's reference; still, not displaced, not a subdivision surface) kept too,
+  // by the same key with its part: made, a tester's car's 334 took 3 s of every session's start (its positions are its
+  // own placed into world space, nothing of the camera's); taken from the cache, as long as reading them. Placed as
+  // making it places it (MeshData::placeable), for a later move to place it anew.
+  else if(!data&&paths&&spatial&&geometryCacheOn()&&!coarseTessellation()&&!objectDisplaced&&!subdGeometry&&!polyGeometry&&
+          o.getSceneClass().getName()=="RdlMeshGeometry"&&!get<rdl::Bool>(o,"is_subd")&&(!item.instancer||shareInstance)&&!item.moves&&
+          !meshHasMotion(o)&&&o!=bakeGeometry&&volumeIndex<0&&!volumeShader){
+   cacheKey=geometryKey(o,sig,"plain|"+piece.suffix,*plan,shareInstance,sv);
+   if(auto m=loadGeometry(cacheKey)){m->name=meshName;m->signature=sig;m->displacementKey.clear();
+    if(shareInstance)m->instanced=true;
+    else{const auto transform=affine(o);m->placeable=true;m->shape=shapeSignature(o,frame);
+     for(int i=0;i<4;++i)for(int j=0;j<4;++j)m->placedBy[4*i+j]=transform[i][j];}
     data=std::move(m);cacheHit=true;++plan->preparedMeshes;}}
   // All geometry attribute/binding identities match before validation is reused.
   // Material/light assignments are checked above for EVERY epoch.
