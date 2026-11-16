@@ -621,6 +621,25 @@ def split_tile(value, cycles):
     return make_split(value, time, cycles)
 
 
+def ocean_tags(materials):
+    """The material tags whose graph displaces by an Ocean node: the seas, as spaced and rdla.instanced_resolution
+    take them."""
+    found = set()
+    for tag, material in (materials or {}).items():
+        for row in (material.get('material_stack') or [material]) if isinstance(material, dict) else ():
+            graph = row.get('node_graph') if isinstance(row, dict) else None
+            if graph and graph.get('displacement') and any(n.get('type') == 'ocean' for n in (graph.get('nodes') or {}).values()):
+                found.add(tag)
+    return found
+
+
+def wears_ocean(mesh, materials, tags=None):
+    """Whether a mesh wears a sea (ocean_tags): a material of it whose graph displaces by an Ocean node."""
+    from . import face_tags
+    tags = ocean_tags(materials) if tags is None else tags
+    return bool(tags and ({tag if tag in (materials or {}) else '' for tag in face_tags.worn(mesh)} & tags))
+
+
 def spaced(scene):
     """The scene with each Ocean node told how far apart MoonRay dices the surfaces its material is on, as a fraction
     of a tile (_spacing, which nodes.expand_ocean splits the tile by, cutoff): each surface's mean edge over its mesh
@@ -631,12 +650,7 @@ def spaced(scene):
     import copy
     from . import face_tags, moonlightipr_detail, native
     materials = scene.get('materials') or {}
-    wanted = set()
-    for tag, material in materials.items():
-        for row in (material.get('material_stack') or [material]) if isinstance(material, dict) else ():
-            graph = row.get('node_graph') if isinstance(row, dict) else None
-            if graph and graph.get('displacement') and any(n.get('type') == 'ocean' for n in (graph.get('nodes') or {}).values()):
-                wanted.add(tag)
+    wanted = ocean_tags(materials)
     if not wanted or not native.ocean_split():
         return scene
     steps, whole, finer = {}, set(), {}

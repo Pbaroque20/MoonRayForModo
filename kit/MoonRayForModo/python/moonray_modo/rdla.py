@@ -682,6 +682,10 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
         global LAST_REFINABLE
         cuts, LAST_REFINABLE = moonlightipr_detail.plan(render_meshes, scene.get('dicing_camera') or scene['camera'], width, detail,
             lambda held: bool(({held.get('material', '')} | set(held.get('face_materials') or [])) & displacement_tags))
+    # The seas' materials (ocean.ocean_tags): an instanced sea's reference is diced for its nearest placement
+    # (instanced_resolution); any other instancer as before, at its level's.
+    from .ocean import ocean_tags, wears_ocean
+    sea_tags = ocean_tags(scene.get('materials'))
     for index, mesh in enumerate(render_meshes):
         cut = cuts.get(id(mesh))
         if cut and cut.get('simplify'):
@@ -808,10 +812,13 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
             instance_values = primitive_attributes.emit('/modo/instances/%s/attribute' % index, mesh['instance_attributes'], lines)
         elif mesh.get('attributes') and 'instances' not in mesh:
             user_data += primitive_attributes.emit('/modo/mesh/%s/attribute' % index, [mesh['attributes']], lines)
-        if displaced and mesh.get('instances') and not mesh.get('adaptive_error') and 'mesh_resolution' not in mesh:
-            # An instancer's reference is diced once, evenly, for all its placements (no screen error): as finely as
+        if displaced and mesh.get('instances') and not mesh.get('adaptive_error') and 'mesh_resolution' not in mesh \
+                and wears_ocean(mesh, scene.get('materials'), sea_tags):
+            # An instanced sea's reference is diced once, evenly, for all its placements (no screen error): as finely as
             # its nearest placement needs at the scene's displacement rate, within a budget of triangles. At the
             # level's 8 a tester's sea of sixteen instanced 27 m planes was split 0.2 m apart and its waves flattened.
+            # Only a sea: given to every displaced instancer, a tester's floor of 17 placed tiles came out at 256, past
+            # the 64 XPU2 takes, and the whole scene went to MoonRay XPU.
             mesh = dict(mesh, mesh_resolution=instanced_resolution(mesh, scene, width, 2 ** level, detail,
                         held_render['displacement_adaptive_error'] or float(scene.get('displacement_rate', 1.0))))
         lines += ['do', '  local geometry = RdlMeshGeometry("/modo/mesh/%s") {' % index,

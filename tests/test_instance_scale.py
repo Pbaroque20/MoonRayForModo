@@ -43,6 +43,33 @@ class InstanceScale(unittest.TestCase):
                      scene([scaled(1.0)])):                       # no scale
             self.assertIs(instance_scale.baked(case), case)
 
+    def test_only_a_sea_is_diced_for_its_nearest_placement(self):
+        # A displaced instancer that wears no sea keeps its level's resolution (2 to the level): given to every displaced
+        # instancer, a tester's floor of 17 placed tiles came out at 256, past the 64 XPU2 takes, and the whole scene
+        # went to MoonRay XPU. A sea (ocean.ocean_tags) is diced for its nearest placement as before.
+        import re
+        from unittest import mock
+        from moonray_modo import nodes, node_defaults
+        graph = nodes.new('DwaBaseMaterial', {'albedo': [.5, .5, .5]})
+        graph['nodes']['push'] = {'type': 'NormalDisplacement', 'position': [0, 0], 'inputs': {},
+                                  'parameters': node_defaults.parameters('NormalDisplacement')}
+        graph['displacement'] = 'push'
+        tiles = [scaled(1.0, float(x)) for x in range(17)]
+        made = {'camera': {'matrix': [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 2, 1], 'focal_mm': 35.0, 'film_mm': 36.0},
+                'materials': {'Floor': {'native_shader': 'DwaBaseMaterial', 'native_parameters': {}, 'node_graph': graph,
+                                        'node_override': True, 'color': [.5, .5, .5]}},
+                'meshes': [{'name': 'Floor', 'identity': 'floor', 'material': 'Floor', 'subdivision': True,
+                            'vertices': [[-0.5, 0, -0.5], [0.5, 0, -0.5], [0.5, 0, 0.5], [-0.5, 0, 0.5]], 'faces': [[0, 3, 2, 1]],
+                            'uvs': [[0, 0], [0, 1], [1, 1], [1, 0]], 'instances': tiles}],
+                'lights': [], 'environments': [], 'time': 0.0}
+
+        def resolution(sea):
+            with mock.patch('moonray_modo.ocean.ocean_tags', return_value={'Floor'} if sea else set()):
+                text = rdla.scene_text(made, 1920, 1080, 1, 0.2)
+            return int(re.search(r'\["mesh_resolution"\] = (\d+)', text).group(1))
+        self.assertEqual(resolution(False), 8)
+        self.assertGreater(resolution(True), 8)
+
     def test_reference_diced_for_nearest_placement(self):
         mesh = instance_scale.baked(scene([scaled(27.31)]))['meshes'][0]
         near = {'matrix': [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 2, 0, 1], 'focal_mm': 50, 'film_mm': 36}

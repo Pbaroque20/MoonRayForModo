@@ -3602,7 +3602,11 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
   int edgeVertices=0;displace::Shader displacement;
   if(displacementShader&&!polyGeometry){
    need(subdGeometry||get<rdl::Float>(o,"adaptive_error")<=0.0f,o.getName()+": adaptive tessellation is not rendered yet");
-   const float resolution=get<rdl::Float>(o,"mesh_resolution");need(std::isfinite(resolution)&&resolution<=64.0f,o.getName()+": a mesh resolution above 64");
+   const float resolution=get<rdl::Float>(o,"mesh_resolution");need(std::isfinite(resolution)&&(subdGeometry||resolution<=64.0f),o.getName()+": a mesh resolution above 64");
+   // At most 64 for XPU2's own triangles alone (mesh_displacement.h, edgeVertices): a subdivision surface is MoonRay's
+   // own tessellation (tessellateSubdivision, below) at any resolution, its size told before it tessellates. Refused for
+   // it too, a scene whose instanced sea is diced for its nearest placement (the kit's rdla.instanced_resolution, up to
+   // 256) went whole to MoonRay XPU.
    edgeVertices=std::max(0,std::max(1,int(resolution))-1);
    displacement=admitDisplacement(*displacementShader,plan->materialPool,textureContext);
    // MoonRay tessellates a displaced mesh into quads: polygon maps would read four polyvertices.
