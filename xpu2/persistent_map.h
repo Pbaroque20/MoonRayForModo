@@ -112,6 +112,23 @@ public:
         throw std::out_of_range("Missing persistent-map key");
     }
     void set(Key key,Value value){root_=insert(root_,std::make_shared<const Item>(std::move(key),std::move(value)));}
+    // An empty map given many keys at once, sorted and each once (Compare): a balanced tree made straight from them, a
+    // node a key. Set one at a time, a scene's first index of 117,000 keys made two million nodes along their paths.
+    void assignSorted(std::vector<std::pair<Key,Value>>&& items) {
+        if(root_)throw std::logic_error("assignSorted needs an empty map");
+        for(size_t i=1;i<items.size();++i)
+            if(!Compare{}(items[i-1].first,items[i].first))throw std::invalid_argument("assignSorted needs sorted, distinct keys");
+        std::vector<std::shared_ptr<const Item>> held;held.reserve(items.size());
+        for(auto& item:items)held.push_back(std::make_shared<const Item>(std::move(item.first),std::move(item.second)));
+        root_=built(held,0,held.size());
+    }
+private:
+    static Ptr built(const std::vector<std::shared_ptr<const Item>>& held,size_t lo,size_t hi) {
+        if(lo>=hi)return {};
+        const size_t mid=lo+(hi-lo)/2;
+        return node(held[mid],built(held,lo,mid),built(held,mid+1,hi));
+    }
+public:
     size_t erase(const Key& key){auto before=size();root_=remove(root_,key);return before-size();}
 };
 } // namespace xpu2::indexed

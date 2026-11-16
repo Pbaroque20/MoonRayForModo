@@ -139,6 +139,11 @@ public:
         // Build metadata and raw changes first. Encoding happens after graph validation.
         std::map<std::string, std::shared_ptr<Entity>> changed;
         std::map<std::string, std::set<Field>> dirty;
+        // A scene's first index (nothing before it): its entities, and below their consumers, made in one go from the
+        // sorted keys (PersistentMap::assignSorted), not set one at a time (two of a heavy scene's preparation's seconds).
+        const bool bulk = base->entities.empty() && removed.empty();
+        std::vector<std::pair<std::string, std::shared_ptr<const Entity>>> bulkEntities;
+        if (bulk) bulkEntities.reserve(edits.size());
         for (auto& edit : edits) {
             auto old = base->entities.find(edit.id);
             bool created = old == base->entities.end();
@@ -159,11 +164,17 @@ public:
             }
             if (different) {
                 entity->revision = next->revision;
-                next->entities.set(edit.id, entity);
+                if (bulk) bulkEntities.emplace_back(edit.id, entity);
+                else next->entities.set(edit.id, entity);
                 if (created) members(edit.kind).insert(edit.id);
                 changed[edit.id] = entity;
                 next->changes.direct.insert(edit.id);
             }
+        }
+        if (bulk && !bulkEntities.empty()) {
+            std::sort(bulkEntities.begin(), bulkEntities.end(),
+                      [](const auto& a, const auto& b) { return a.first < b.first; });
+            next->entities.assignSorted(std::move(bulkEntities));
         }
         if (next->entities.size() > limits_.entities) throw std::length_error("Entity budget exceeded");
         if (next->changes.direct.empty() && removed.empty()) return Candidate(owner_, base, base);
@@ -197,10 +208,17 @@ public:
                 next->edgeCount += consumersFor(dependency).insert(id).second;
             }
         }
-        for (const auto& [id, consumers] : changedConsumers) {
-            if (consumers.empty()) next->consumers.erase(id);
-            else next->consumers.set(id, consumers);
-        }
+        if (bulk && next->consumers.empty()) {
+            std::vector<std::pair<std::string, std::set<std::string>>> made;
+            made.reserve(changedConsumers.size());
+            for (auto& [id, consumers] : changedConsumers)
+                if (!consumers.empty()) made.emplace_back(id, std::move(consumers));
+            next->consumers.assignSorted(std::move(made));
+        } else
+            for (const auto& [id, consumers] : changedConsumers) {
+                if (consumers.empty()) next->consumers.erase(id);
+                else next->consumers.set(id, consumers);
+            }
         for (const auto& id : removed)
             if (next->consumers.count(id)) throw std::invalid_argument("Removed resource still referenced");
         if (next->edgeCount > limits_.edges) throw std::length_error("Dependency budget exceeded");
