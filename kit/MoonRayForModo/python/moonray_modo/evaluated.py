@@ -475,10 +475,14 @@ def _unpack(data,held):
             segment['uv_sets']=[_row(entry,held) if isinstance(entry,dict) else entry for entry in segment.get('uv_sets',[])]
 
 
-def capture(time, path=None, displaced=True, only=None, before=None):
+def capture(time, path=None, displaced=True, only=None, before=None, kept=True):
     """Modo's render cache read: every surface, and each surface's segments. only (item identifiers) and before (the
     reading before): the segments of those items' surfaces alone, the others' taken from before by their item, material
-    and part; read whole where any is not there to take, or the adapter cannot."""
+    and part; read whole where any is not there to take, or the adapter cannot. A whole reading takes, where it can,
+    the reading kept on disk by the Scene cache for the meshes whose fingerprints are as they were (geometry_cache),
+    and keeps itself for the next; kept=False reads whole from Modo."""
+    if only is None and before is None and kept:
+        return _capture_kept(time, path, displaced)
     bridge=_load(path)
     with tempfile.TemporaryDirectory(prefix='MoonRay-geometry-') as folder, _Catching(bridge):
         output=Path(folder)/'geometry.json'
@@ -530,11 +534,74 @@ def capture(time, path=None, displaced=True, only=None, before=None):
             if held.get('kept'):
                 taken=earlier.get((held.get('item'),held.get('material'),held.get('part')))
                 if taken is None or taken.get('kept'):
-                    return capture(time,path,displaced)
+                    return capture(time,path,displaced,kept=False)
                 data['prototypes'][key]=taken
     _after_reading(some is None,displaced)
     try:particle_ids(data,time)
     except Exception:pass
+    return data
+
+
+NO_ITEM = '<no item>'
+
+
+def _standing(geometry_cache, data, time):
+    try:
+        return geometry_cache.standing(data, time)
+    except Exception as exc:
+        geometry_cache.LAST['standing_error'] = str(exc)[:200]
+        return None
+
+
+def _capture_kept(time, path, displaced):
+    """A whole reading, by way of the one kept on disk (geometry_cache): the surfaces of meshes changed since read
+    again, the others taken from it; then kept for the next cold start. Read whole from Modo where none is kept."""
+    import time as clock
+    from . import geometry_cache
+    began = clock.perf_counter()
+    report = geometry_cache.LAST
+    report.clear()
+    _load(path)
+    held_key = prints = held = None
+    try:
+        held_key = geometry_cache.key(time, displaced)
+        prints = geometry_cache.fingerprints(time) if held_key is not None else None
+        report['fingerprint_seconds'] = round(clock.perf_counter() - began, 3)
+        report['fingerprints'] = None if prints is None else len(prints)
+        held = geometry_cache.load(held_key) if prints is not None else None
+    except Exception as exc:
+        report['refused'] = 'fingerprints: %s' % exc
+        held_key = prints = held = None
+    report['load_seconds'] = round(clock.perf_counter() - began, 3)
+    data = None
+    if held is not None:
+        again = geometry_cache.changed(held[0], prints, held[1])
+        report['read_again'] = len(again)
+        report['kept'] = len(held[1].get('prototypes', {}))
+        if not again:
+            stood = _standing(geometry_cache, held[1], time)
+            report['standing_seconds'] = round(clock.perf_counter() - began, 3)
+            if stood is not None and stood == held[2]:
+                # Nothing changed: no render cache made, the kept surfaces taken whole.
+                report['render_cache'] = False
+                report['seconds'] = round(clock.perf_counter() - began, 3)
+                return dict(held[1], surfaces=[dict(surface) for surface in held[1].get('surfaces') or ()])
+        # Nothing to read again: one name no item has, so that every surface is taken from the kept reading.
+        # (Not a NUL, which ends the adapter's text: an empty list there reads every surface.)
+        data = capture(time, path, displaced, only=again or {NO_ITEM}, before=held[1], kept=False)
+        report['render_cache'] = True
+        stood_now = _standing(geometry_cache, data, time)
+        # Kept again where a plain mesh was read anew, or where the items stand otherwise: what is not a plain mesh is
+        # read again every time.
+        if not (again & set(prints)) and stood_now == held[2]:
+            report['seconds'] = round(clock.perf_counter() - began, 3)
+            return data
+    else:
+        report.setdefault('refused', 'none kept' if held_key is not None else 'no key')
+        data = capture(time, path, displaced, kept=False)
+        stood_now = _standing(geometry_cache, data, time)
+    geometry_cache.keep(held_key, prints, data, stood_now)
+    report['seconds'] = round(clock.perf_counter() - began, 3)
     return data
 
 
