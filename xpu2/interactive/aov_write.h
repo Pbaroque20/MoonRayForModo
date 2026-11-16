@@ -8,8 +8,10 @@
 #include "aov_crypto.h"
 #include <OpenImageIO/imageio.h>
 #include <array>
+#include <atomic>
 #include <functional>
 #include <sstream>
+#include <thread>
 
 namespace xpu2::interactive::aov {
 
@@ -176,19 +178,24 @@ inline void outputValues(const Plan& plan, const Output& out, const async::Rende
 
 // RenderOutputWriter: every file of the plan, or with checkpoint each under its checkpoint name (a file without one
 // is left out). written (or none): each file's name once it is written. Returns the first error ("" when all were).
+// The files are written side by side, one a thread: a preview's dozen files one after another took 5 to 11 s at a
+// stop, beside the full geometry being prepared.
 inline std::string writeOutputs(const Plan& plan, const async::RenderResult& r, unsigned width, unsigned height,
                                 std::vector<std::string>& warnings, bool checkpoint = false,
                                 const std::function<void(const std::string&)>& written = {}) {
     static const char* const compressions[] = {"none", "zip", "rle", "zips", "piz", "pxr24", "b44", "b44a", "dwaa", "dwab"};
+    std::vector<const File*> files;
     for (const File& planned : plan.files) {
         if (checkpoint && planned.checkpoint.empty()) continue;
         // A deep file is written apart (aov_deep_write.h).
-        {
-            bool deep = false;
-            for (const Image& i : planned.images)
-                for (const Output& o : i.outputs) deep |= o.deep;
-            if (deep) continue;
-        }
+        bool deep = false;
+        for (const Image& i : planned.images)
+            for (const Output& o : i.outputs) deep |= o.deep;
+        if (!deep) files.push_back(&planned);
+    }
+    std::vector<std::string> errors(files.size());
+    std::vector<std::vector<std::string>> warned(files.size());
+    auto writeFile = [&](const File& planned, std::vector<std::string>& warnings) -> std::string {
         File file = planned;
         if (checkpoint) file.name = planned.checkpoint;
         std::vector<OIIO::ImageSpec> specs;
@@ -250,7 +257,30 @@ inline std::string writeOutputs(const Plan& plan, const async::RenderResult& r, 
         }
         if (!io->close()) return "Cannot write " + file.name + ": " + io->geterror();
         if (written) written(file.name);
+        return "";
+    };
+    auto writeAt = [&](size_t k) {
+        try {
+            errors[k] = writeFile(*files[k], warned[k]);
+        } catch (const std::exception& e) {
+            errors[k] = e.what();
+        }
+    };
+    const size_t threads = std::min<size_t>(files.size(), std::max(1u, std::thread::hardware_concurrency()));
+    if (threads <= 1) {
+        for (size_t k = 0; k < files.size(); ++k) writeAt(k);
+    } else {
+        std::atomic<size_t> next{0};
+        std::vector<std::thread> pool;
+        for (size_t t = 0; t < threads; ++t)
+            pool.emplace_back([&] {
+                for (size_t k; (k = next.fetch_add(1)) < files.size();) writeAt(k);
+            });
+        for (std::thread& t : pool) t.join();
     }
+    for (const auto& w : warned) warnings.insert(warnings.end(), w.begin(), w.end());
+    for (const std::string& e : errors)
+        if (!e.empty()) return e;
     return "";
 }
 

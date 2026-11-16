@@ -1691,6 +1691,7 @@ async::RenderResult stagedFrame(async::Renderer& renderer, const async::RenderOp
         o.region[0] = 0, o.region[1] = 0, o.region[2] = int(plan.width), o.region[3] = int(plan.height);
         o.sampleFirst = first, o.sampleCount = count;
         o.partial = false;  // every sample whole: the stages must add up to the frame
+        o.coverOnDrain = first == 0;  // a stop in a later stage keeps the film so far, which covers every pixel
         o.deviceChain = false;
         last = renderer.render(o);
         if (last.failed || last.cancelled) return last;
@@ -3192,6 +3193,7 @@ int session(const Args& args, const fs::path& directory) {
                                 });
                         } else publish(rgb, width, height);
                         if (scene.plan->aovs) {
+                            const auto writing = Clock::now();
                             std::vector<std::string> warnings;
                             if (!scene.displayFilters.empty()) {
                                 std::vector<std::vector<float>> filtered;
@@ -3204,6 +3206,9 @@ int session(const Args& args, const fs::path& directory) {
                             const std::string error = aov::writeOutputs(*scene.plan->aovs, result, width, height, warnings);
                             for (const auto& w : warnings) std::puts(("MoonRay XPU2: " + w).c_str());
                             cpu::need(error.empty(), error);
+                            // What a stop or a frame's end waits on before the kit has its files.
+                            std::printf("MoonRay XPU2: %zu output files written in %.2f s\n", scene.plan->aovs->files.size(),
+                                        std::chrono::duration<double>(Clock::now() - writing).count());
                             // Deep files (aov_deep_write.h), "Wrote deep:" as MoonRay says it.
                             if (scene.plan->aovs->deep && result.deep)
                                 for (const aov::File& f : scene.plan->aovs->files) {

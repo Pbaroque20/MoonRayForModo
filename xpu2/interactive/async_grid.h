@@ -139,6 +139,8 @@ public:
         const U32 tilesX = (width + TileSize - 1) / TileSize, tilesY = (height + TileSize - 1) / TileSize;
         const U32 tilesPerCell = options.cellSize / TileSize;
         cells_ = std::vector<Cell>(cellsX_ * cellsY_);
+        firstPass_.reset(new std::atomic<U32>[cells_.size()]);
+        for (size_t i = 0; i < cells_.size(); ++i) firstPass_[i].store(0, std::memory_order_relaxed);
         if (owners && owners->size() != cells_.size()) owners = nullptr;
         // A uniform frame's sample ranges: growing ones first in the progressive order.
         if (!empty) {
@@ -168,6 +170,7 @@ public:
                         for (U32 tx = cx * tilesPerCell; tx < std::min(tilesX, (cx + 1) * tilesPerCell); ++tx)
                             if (tilePixels(ty * tilesX + tx)) chunks.push_back({ty * tilesX + tx, range.first, range.count, index});
                 cell.tiles = ranges_.empty() ? 0 : U32(chunks.size() / ranges_.size());
+                firstPass_[index].store(cell.tiles, std::memory_order_relaxed);  // the first range's chunks, queued first
                 cell.queue.append(chunks.data(), U32(chunks.size()));
                 total_ += chunks.size();
             }
@@ -183,9 +186,17 @@ public:
     const Cell& cell(U32 index) const { return cells_[index]; }
     Device owner(U32 index) const { return cells_[index].owner; }
 
-    U32 remaining(U32 index) const { return closed() ? 0u : cells_[index].queue.remaining(); }
-    // Coordinator only: publishes more chunks of one cell.
+    U32 remaining(U32 index) const {
+        if (closed()) return 0u;
+        const ChunkQueue& q = cells_[index].queue;
+        if (!covering()) return q.remaining();
+        const U32 end = std::min(q.published(), firstPass(index)), taken = q.taken();
+        return taken >= end ? 0u : end - taken;
+    }
+    // Coordinator only: publishes more chunks of one cell. A cell's first chunks (an adaptive frame's first pass) are
+    // its first pass, for a drain that covers the picture (cover).
     void append(U32 index, const Chunk* chunks, U32 n) {
+        if (n && !cells_[index].queue.published()) firstPass_[index].store(n, std::memory_order_release);
         cells_[index].queue.append(chunks, n);
         total_ += n;
     }
@@ -219,7 +230,7 @@ public:
     // claimed (none once the grid is closed).
     U32 claim(U32 index, U32 n, Chunk* out, Device device = Device::Cpu) {
         if (closed()) return 0;
-        const U32 got = cells_[index].queue.claim(n, out, limit(index, device));
+        const U32 got = cells_[index].queue.claim(n, out, covering() ? firstPass(index) : limit(index, device));
         if (got && !ranges_.empty()) refreshFrontiers();
         return got;
     }
@@ -227,7 +238,7 @@ public:
     U32 claimable(U32 index, Device device = Device::Cpu) const {
         if (closed()) return 0;
         const ChunkQueue& q = cells_[index].queue;
-        const U32 end = std::min(q.published(), limit(index, device)), taken = q.taken();
+        const U32 end = std::min(q.published(), covering() ? firstPass(index) : limit(index, device)), taken = q.taken();
         return taken >= end ? 0 : end - taken;
     }
     // The progressive order's frontier of a device: the least-sampled range among the cells it works without a right
@@ -296,6 +307,13 @@ public:
     // A drain: no chunk is handed out any more, and the grid counts as empty; what was claimed finishes.
     void close() { closed_.store(true, std::memory_order_release); }
     bool closed() const { return closed_.load(std::memory_order_acquire); }
+    // A drain that covers the picture first (a preview stopped by hand): no chunk past each cell's first pass is handed
+    // out (a uniform frame's first sample range, an adaptive frame's first generation: one sample for every pixel), any
+    // device may take those whoever owns the cell, and the grid counts as empty once they are all out. A cell the frame
+    // had not come to gets its sample, where it was left a flat patch (or black) in the picture kept.
+    void cover() { covering_.store(true, std::memory_order_release); }
+    bool covering() const { return covering_.load(std::memory_order_acquire); }
+    U32 firstPass(U32 index) const { return firstPass_[index].load(std::memory_order_acquire); }
 
     void rendered(U32 index, Device device, U64 samples) {
         cells_[index].samples[U32(device)].fetch_add(samples, std::memory_order_relaxed);
@@ -306,7 +324,9 @@ public:
     // work), then the open ones (the most important first), then the other device's reserved ones by a right of
     // passage; in each, a neighbour before the best anywhere.
     U32 choose(Device device, U32 current, U32 salt) const {
-        auto tier = [&](U32 i) { return !reserved(i) ? 1 : owner(i) == device ? 0 : 2; };
+        // Covering the picture (cover): any cell with its first pass still out, whoever owns it, the most left first.
+        const bool anyone = covering();
+        auto tier = [&](U32 i) { return anyone ? 0 : !reserved(i) ? 1 : owner(i) == device ? 0 : 2; };
         auto claimable = [&](U32 i) { return this->claimable(i, device); };
         // The CPU's right of passage is the same in every cell: worked out once a call.
         int cpuPassage = -1;
@@ -429,7 +449,8 @@ private:
     GridOptions options_;
     std::vector<Cell> cells_;
     std::atomic<U64> total_{0};
-    std::atomic<bool> closed_{false};
+    std::atomic<bool> closed_{false}, covering_{false};
+    std::unique_ptr<std::atomic<U32>[]> firstPass_;  // each cell's first pass: its queue's first chunks (cover)
     std::vector<Range> ranges_;  // a uniform frame's sample ranges (none: adaptive)
     std::atomic<U32> frontier_[2] = {};
     std::atomic<bool> scored_{false};
