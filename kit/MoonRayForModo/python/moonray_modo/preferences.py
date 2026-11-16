@@ -25,7 +25,8 @@ KEYS = {
     # Whether the environment lights the scene always, as a path tracer has it ('moonray'), or only with Global
     # Illumination on in the Render item, as Modo's own renderer has it ('modo').
     'environment_lighting': ('moonray', str),
-    'idle_release_minutes': (5, int),
+    # 0: an idle renderer is kept until its scene closes (Panel._scene_closed), its GPU given no work meanwhile.
+    'idle_release_minutes': (0, int),
     'persistent_preview': (True, bool), 'preview_motion': (False, bool), 'xpu2_motion': (False, bool), 'memory_hud': (True, bool),
     'ipr': (False, bool), 'show_buckets': (True, bool), 'worker_tiles': (True, bool), 'clay': ('materials', str),
     'display_gamma': (1.0, float),
@@ -258,8 +259,9 @@ class Dialog(QtWidgets.QDialog):
         form.addRow(check('persistent_preview', 'Keep MoonRay loaded between previews',
                           'Faster updates; structural edits still reload the scene'))
         form.addRow('Release idle renderer memory', combo('idle_release_minutes',
-                    [('Never', 0), ('After 1 minute', 1), ('After 5 minutes', 5), ('After 15 minutes', 15), ('After 30 minutes', 30)],
-                    'Keeps cached images. The next render reloads its scene; active renders are never interrupted.'))
+                    [('When the scene closes', 0), ('After 1 minute', 1), ('After 5 minutes', 5), ('After 15 minutes', 15), ('After 30 minutes', 30)],
+                    'A stopped preview keeps its renderer loaded and idle, with no work for the graphics card, so the next one starts at once; '
+                    'it frees its memory when the scene closes, or after this long idle. Cached images are kept; active renders are never interrupted.'))
         form.addRow(check('preview_motion', 'Motion blur in MoonLightIPR renders',
                           "MoonLightIPR blurs whenever the render camera's Motion Blur, or Motion Blur in the render settings, is on; "
                           'this turns it on for every scene. Off by default: each update then also reads the scene at shutter open and close, which adds to its wait. '

@@ -447,7 +447,45 @@ class Session(QtCore.QObject):
         self.latest=None;self.sent=None;self.applied=None
         if self.running():self.stopping=True;self.process.kill()
 
+    def pause(self):
+        """The preview stopped by hand, the process kept: the frame now going ends with what it has in hand (drain), and
+        MoonRay or XPU2 waits, its scene and its GPU's structures held and no work given to the card, for the next
+        preview, which hands it only what changed since (_dispatch against applied). A scene still on its way is let
+        arrive, and nothing newer is sent after it. Returns whether the process is kept; where it cannot be (not
+        running, a scene queued to be compared on a thread, a runtime that cannot drain), stop() ends it as before."""
+        if not self.running() or self.stopping or self.closed:return False
+        frame=self.sent or self.applied
+        if frame is None:return False
+        if self.latest is not None and self.latest is not frame and self.sent is None:return False
+        self.latest=frame
+        if self.idle.since is not None:return True   # its last frame ended: idle already
+        if not drains(frame['runtime']):return False
+        try:
+            staged=self.root/'drain.tmp';staged.write_text(str(frame['id']),encoding='ascii');staged.replace(self.root/'drain.txt')
+        except OSError:return False
+        return True
+
+    def release(self,grace=10000):
+        """The process ended and its memory freed (the scene it holds closed, or the kit closing): told to quit, so that
+        it ends as it would of itself (XPU2 finishing the geometry it is writing to the Cache folder; a kill lost it), and
+        ended outright if it has not within grace milliseconds."""
+        self.idle.cancel()
+        self.xpu2_refused=None
+        self.latest=None;self.sent=None;self.applied=None
+        if not self.running():return
+        self.stopping=True
+        command='0\nquit\n\n\n'
+        try:
+            if self.command_channel:self.command_channel.send(command)
+            else:
+                staged=self.root/'command.tmp';staged.write_text(command,encoding='utf-8');staged.replace(self.root/'command.txt')
+        except (OSError,ValueError,AttributeError):
+            self.process.kill();return
+        process=self.process
+        QtCore.QTimer.singleShot(grace,lambda:process.kill() if process.state()!=QtCore.QProcess.NotRunning else None)
+
     def close(self):
-        self.closed=True;self.stop()
-        if self.running():self.process.waitForFinished(2000)
+        self.closed=True;self.release(3000)
+        if self.running():self.process.waitForFinished(3000)
+        if self.running():self.process.kill();self.process.waitForFinished(2000)
         if not self.running():self._release_mappings();self.workspace.cleanup()

@@ -2074,6 +2074,8 @@ class Panel(Tools, QtWidgets.QWidget):
         if self._following:self._follow(False)
         if self.sequence is not None:self.sequence.stop()
         if self._rendering:self.renderer.stop()
+        # The renderers kept loaded between previews hold the closed scene: their memory is freed with it.
+        self.renderer.release_engines()
         self._set_rendering(False)
         self._continuable=None;self.last_digest=None;self._draft_image=self._draft_render=None
         self.preview.clear();self.image_info.setText('');self._whole=None;self._part=None
@@ -2681,7 +2683,9 @@ class Panel(Tools, QtWidgets.QWidget):
         # MoonRay kept loaded hands over the picture as it stands, with what the denoiser needs, and is then stopped.
         if rendering and not self.draft.isChecked() and self.renderer.keep_progress():
             self.status.setText('Stopping: keeping what is rendered.');self._await_settle(16000);return
-        self.renderer.stop()
+        # MoonRay or XPU2 kept loaded and idle, its scene and GPU structures held, for the next preview to start at once
+        # (Renderer.stop keep); let go when the scene closes (_scene_closed).
+        self.renderer.stop(keep=True)
         self._set_rendering(False)
         self.status.setText('Stopped.')
         if rendering:self._settle_stopped()
