@@ -288,11 +288,13 @@ def item_matrices(scene,snapshot):
 def follow_items(scene,snapshot,before):
     """A rigid snapshot (rigid) at another moment: each mesh where its item then stands. One whose item stands where
     it did (before: item_matrices then) keeps the matrix it was read with, as reading it again would give it."""
+    from .ocean_plane import lift
     now=item_matrices(scene,snapshot)
     for mesh in snapshot['meshes']:
         if mesh.get('volumetric'):continue
         identity=mesh.get('source_item') or mesh['identity'].split('|')[0]
-        if now[identity]!=before.get(identity):mesh['matrix']=now[identity]
+        # An Ocean Plane's mesh takes its item's height alone (ocean_plane.lift).
+        if now[identity]!=before.get(identity):mesh['matrix']=lift(now[identity]) if mesh.get('_ocean_plane') else now[identity]
 
 
 def refresh_transforms(scene,snapshot,identities=None,loose=()):
@@ -300,15 +302,16 @@ def refresh_transforms(scene,snapshot,identities=None,loose=()):
     what follows a move cannot be told), an instance where its own item does. Copies that stand with no item of their
     own (loose: standing) keep the places they were read with: they are read again from Modo."""
     from .host import world_matrix
+    from .ocean_plane import lift
     targets=transform_targets(scene,identities)
     asked={}
 
-    def where(held,identity):
+    def where(held,identity,shape=None):
         # Where the item stands, or the place it was read with where that is the same: Modo's render cache and the
         # item's world matrix differ in their last digits, and every mesh given a new matrix so had the renderer
-        # prepare the whole scene again (a car's 335 objects for one part moved).
+        # prepare the whole scene again (a car's 335 objects for one part moved). shape: what of it the mesh takes.
         if identity not in asked:asked[identity]=world_matrix(scene.item(identity))
-        now=asked[identity]
+        now=shape(asked[identity]) if shape else asked[identity]
         if held and len(held)==16 and all(abs(a-b)<=1e-6*max(1.0,abs(b)) for a,b in zip(held,now)):return held
         return now
     for mesh in snapshot['meshes']:
@@ -320,7 +323,9 @@ def refresh_transforms(scene,snapshot,identities=None,loose=()):
         else:
             identity=mesh.get('source_item') or mesh['identity'].split('|')[0]
             if identity in loose:continue
-            if targets is None or identity in targets:mesh['matrix']=where(mesh.get('matrix'),identity)
+            # An Ocean Plane's mesh takes its item's height alone (ocean_plane.lift): its rings stand under the camera.
+            if targets is None or identity in targets:
+                mesh['matrix']=where(mesh.get('matrix'),identity,lift if mesh.get('_ocean_plane') else None)
     snapshot['extra_geometry']=[dict(item,matrix=where(item.get('matrix'),item.get('source_item') or item['identity'].split('|')[0])) if targets is None or (item.get('source_item') or item['identity'].split('|')[0]) in targets else item for item in snapshot.get('extra_geometry',[])]
 
 

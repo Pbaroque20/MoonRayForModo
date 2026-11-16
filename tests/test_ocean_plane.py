@@ -41,8 +41,8 @@ class OceanPlane(unittest.TestCase):
         item = plane(horizon=5000.0, detail=2.0)
         vertices, faces, uvs = ocean_plane.made(item, scene()['camera']['matrix'], lambda k: entities.value(item, k))
         centre = vertices[0]
-        # Under the camera (to the nearest 16 x Detail), at the item's height.
-        self.assertEqual(centre[1], 1.5)
+        # Under the camera (to the nearest 16 x Detail), at height 0: the item's height is the mesh's matrix (lift).
+        self.assertEqual(centre[1], 0.0)
         self.assertAlmostEqual(centre[0], 32.0)
         self.assertAlmostEqual(centre[2], 896.0)
         far = max(((v[0] - centre[0]) ** 2 + (v[2] - centre[2]) ** 2) ** .5 for v in vertices)
@@ -94,6 +94,51 @@ class OceanPlane(unittest.TestCase):
             import struct
             self.assertTrue(struct.unpack_from("<I", payload, at + len(key))[0] & moonlightipr_scene.MESH_DISPLACE)
 
+
+
+class OceanPlaneHeight(unittest.TestCase):
+    """An Ocean Plane moved up or down (ocean_plane.lift): its points at height 0 and its item's height its mesh's matrix,
+    so that a move followed in the preview moves it as any item's. It was drawn twice as high (2.5 m at 5 m) beside the
+    plane kept from before, and motion blur refused the scene for its two meshes of one name."""
+
+    LEVEL = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0]
+
+    def test_its_height_is_its_matrix_and_its_rings_stay_under_the_camera(self):
+        turned = plane()
+        # The item turned and moved aside as well: the sea stays level, its rings under the camera.
+        turned['matrix'] = [0, 0, -1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 40.0, 2.5, -7.0, 1]
+        with mock.patch.dict(os.environ, {'MOONRAY_MODO_OCEAN': '1'}):
+            mesh, = ocean_plane.apply(scene(turned), [])['meshes']
+        self.assertEqual(mesh['matrix'], self.LEVEL + [0, 2.5, 0, 1])
+        self.assertTrue(all(v[1] == 0.0 for v in mesh['vertices']))
+        self.assertAlmostEqual(mesh['vertices'][0][0], 32.0)
+
+    def test_a_kept_plane_is_made_again_one_mesh_of_its_name(self):
+        with mock.patch.dict(os.environ, {'MOONRAY_MODO_OCEAN': '1'}):
+            first = ocean_plane.apply(scene(plane()), [])
+            # A followed edit's reading keeps the meshes of the last one (host.snapshot reuse_geometry).
+            again = scene(plane())
+            again['meshes'] = [dict(mesh) for mesh in first['meshes']]
+            result = ocean_plane.apply(again, [])
+        self.assertEqual([mesh['identity'] for mesh in result['meshes']], ['plane1'])
+
+    def test_a_move_followed_or_at_the_shutters_ends_lifts_it_by_its_items_height_alone(self):
+        from types import SimpleNamespace
+        from moonray_modo import incremental
+        mesh = {'identity': 'plane1', 'matrix': ocean_plane.lift(plane()['matrix']), 'vertices': [[0, 0, 0]], '_ocean_plane': True}
+        snapshot = {'meshes': [mesh], 'extra_geometry': []}
+        there = [0, 0, -1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 40.0, -1.0, -7.0, 1]
+        host = types.ModuleType('moonray_modo.host')
+        host.world_matrix = lambda held: list(there)
+        found = SimpleNamespace(item=lambda identity: SimpleNamespace(id=identity))
+        with mock.patch.dict(sys.modules, {'moonray_modo.host': host}), \
+                mock.patch.object(incremental, 'transform_targets', return_value=None):
+            incremental.refresh_transforms(found, snapshot, None)
+        self.assertEqual(mesh['matrix'], self.LEVEL + [0, -1.0, 0, 1])
+        mesh['matrix'] = ocean_plane.lift(plane()['matrix'])
+        with mock.patch.dict(sys.modules, {'moonray_modo.host': host}):
+            incremental.follow_items(found, snapshot, {'plane1': plane()['matrix']})
+        self.assertEqual(mesh['matrix'], self.LEVEL + [0, -1.0, 0, 1])
 
 
 class DistanceSplit(unittest.TestCase):

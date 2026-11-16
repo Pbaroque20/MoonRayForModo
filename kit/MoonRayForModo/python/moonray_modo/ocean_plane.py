@@ -41,20 +41,29 @@ def rings(detail, horizon):
     return radii
 
 
+def lift(matrix):
+    """An Ocean Plane mesh's matrix: its item's height alone (the Y of the item's world matrix), its points at height 0
+    (made). The rings stand under the camera wherever the item is, and the sea stays level whatever the item's rotation.
+    Held as the mesh's matrix, the item moved up or down is the mesh moved (incremental.refresh_transforms, follow_items)
+    as any other item's; with the height in its points, the realtime preview added the move to it again (a plane at 2.5 m
+    drawn at 5 m) beside the plane kept from before, and motion blur refused the scene for its two meshes of one name."""
+    height = float(matrix[13]) if matrix and len(matrix) == 16 else 0.0
+    return [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, height, 0, 1]
+
+
 def made(entity, camera_matrix, value):
-    """The plane as a mesh's points, faces and UVs (one pair per face corner), world space. value(key) gives the item's
-    settings. Faces face up."""
+    """The plane as a mesh's points, faces and UVs (one pair per face corner): the points at height 0, the item's height
+    being the mesh's matrix (lift), their X and Z the world's. value(key) gives the item's settings. Faces face up."""
     detail, horizon = float(value('detail')), float(value('horizon'))
     tile = max(float(value('tile_size')), 1e-3)
-    height = float((entity.get('matrix') or [0] * 16)[13])
     snap = max(detail, 1e-3) * SNAP
     cx = round(float(camera_matrix[12]) / snap) * snap
     cz = round(float(camera_matrix[14]) / snap) * snap
     radii = rings(detail, horizon)
     angles = [2 * math.pi * k / SEGMENTS for k in range(SEGMENTS)]
-    vertices = [[cx, height, cz]]
+    vertices = [[cx, 0.0, cz]]
     for r in radii:
-        vertices += [[cx + r * math.cos(a), height, cz + r * math.sin(a)] for a in angles]
+        vertices += [[cx + r * math.cos(a), 0.0, cz + r * math.sin(a)] for a in angles]
 
     def ring(i, k):
         return 1 + i * SEGMENTS + k % SEGMENTS
@@ -148,6 +157,10 @@ def apply(result, warnings):
     """The scene read (host.snapshot) with each Ocean Plane item made a mesh, wearing its sea, and taken out of its MoonRay
     items, which no engine has a class for. Left out, with a notice, where the Ocean nodes override is off."""
     from . import entities, native
+    # A reading that keeps the meshes it had (an edit followed) holds the planes made at its last reading: they are made
+    # again here, where the camera now stands, and the old ones let go (two of one name refused motion blur).
+    if 'meshes' in result:
+        result['meshes'] = [mesh for mesh in result['meshes'] if not mesh.get('_ocean_plane')]
     planes = [e for e in result.get('entities') or [] if e.get('class') == CLASS]
     if not planes:
         return result
@@ -186,12 +199,12 @@ def apply(result, warnings):
                     toward = float(value('horizon_fade') or 0.0)
                 except (KeyError, TypeError, ValueError):
                     toward = 0.0
-                faded = fade(result.get('camera') or {}, result.get('width'), vertices[0][1] if vertices else 0.0, tile,
+                faded = fade(result.get('camera') or {}, result.get('width'), lift(entity.get('matrix'))[13], tile,
                              float(value('horizon') or 20000.0), toward)
             if faded:
                 materials[tag]['node_graph']['nodes']['sea']['_fade'] = faded
         mesh = {'name': entity.get('name', 'Ocean Plane'), 'identity': entity.get('identity', ''), 'vertices': vertices,
-                'faces': faces, 'uvs': uvs, 'material': tag, 'smooth': True, 'matrix': [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+                'faces': faces, 'uvs': uvs, 'material': tag, 'smooth': True, 'matrix': lift(entity.get('matrix')),
                 '_ocean_plane': True}
         result.setdefault('meshes', []).append(mesh)
     return result

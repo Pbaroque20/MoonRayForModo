@@ -22,7 +22,7 @@ The current release is [0.5.4.3.1](https://github.com/Pbaroque20/MoonRayForModo/
   ![Replicated teapots with motion blur in MoonLightIPR](docs/images/replicators-motion-blur.webp)
 
 - **MoonLightIPR follows the camera's Motion Blur**: with Motion Blur on on the render camera, or in the render settings, MoonLightIPR blurs too. Its own preference still turns blur on for every scene.
-- **Ocean Plane** (MoonRay > Add MoonRay Item > Geometry): a sea that reaches the horizon, ready the moment it is added. It follows the camera, with the waves fixed in place, and its settings are the Ocean node's (wind, wave height, choppiness, foam and the rest), with the water and foam colours, the horizon and the tile size. Give it a material tag to use your own Ocean material instead. Part of Ocean nodes in MoonShine graphs, in MoonRay Source Overrides.
+- **Ocean Plane** (MoonRay > Add MoonRay Item > Geometry): a sea that reaches the horizon, ready the moment it is added. It follows the camera, with the waves fixed in place, at the height of its item: move it up or down and the preview follows, with motion blur on too. Its settings are the Ocean node's (wind, wave height, choppiness, foam and the rest), with the water and foam colours, the horizon and the tile size. Give it a material tag to use your own Ocean material instead. Part of Ocean nodes in MoonShine graphs, in MoonRay Source Overrides.
 
   ![The Ocean Plane as added, with no other setup, rendered by MoonRay](docs/images/ocean-plane.webp)
 
