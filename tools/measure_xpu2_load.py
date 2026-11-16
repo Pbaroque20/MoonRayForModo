@@ -21,13 +21,19 @@ parser.add_argument('--mode', default='2')
 parser.add_argument('--drain-after', type=float, default=4.0)
 parser.add_argument('--xpu2', type=pathlib.Path, help="another XPU2 runtime than the installed kit's (a build's runtime-xpu2)")
 parser.add_argument('--runs', default='cold,warm')
+parser.add_argument('--keep-cache', action='store_true', help='the cache folder as it is (a warm run alone)')
+parser.add_argument('--keep-pictures', action='store_true', help='every progressive picture saved (session_harness)')
+parser.add_argument('--stop-after', type=float, default=6.0, help='seconds into a frame the next delta is sent')
+parser.add_argument('--delta', type=pathlib.Path, action='append', default=[],
+                    help='a change sent once each frame before it is done, as a preview started again sends one')
 args = parser.parse_args()
 if args.xpu2:
     xpu2 = args.xpu2
-cache = args.out / 'cache'
-if cache.exists():
+# Absolute: the session runs in a folder of its own (the harness's), where a relative path is another place each run.
+cache = (args.out / 'cache').resolve()
+if cache.exists() and not args.keep_cache:
     shutil.rmtree(cache)
-cache.mkdir(parents=True)
+cache.mkdir(parents=True, exist_ok=True)
 env = {'PATH': os.pathsep.join([str(xpu2), str(runtime)]), 'RDL2_DSO_PATH': str(xpu2), 'REZ_MOONRAY_ROOT': str(xpu2),
        'MOONRAY_XPU2_MOONRAY': str(runtime / 'moonray.exe'), 'XPU2_SESSION_CHAIN': '0', 'XPU2_SESSION_MODE': args.mode,
        'XPU2_SESSION_GEOMETRY_CACHE': '1', 'MOONRAY_MODO_CACHE': str(cache), 'MOONRAY_MODO_OPAQUE_ALPHA': '1'}
@@ -38,7 +44,11 @@ for run in args.runs.split(','):
         shutil.rmtree(out)
     command = [sys.executable, str(root / 'xpu2/interactive/session_harness.py'), '--exe', str(xpu2 / 'moonray_xpu2.exe'),
                '--scene', str(args.rdla), '--scene', str(args.rdlb), '--output', str(out), '--memory-binary',
-               '--drain-after', str(args.drain_after), '--timeout', '900']
+               '--drain-after', str(args.drain_after), '--timeout', '900'] + (['--stop-after', str(args.stop_after)] if args.delta else [])
+    if args.keep_pictures:
+        command.append('--keep-pictures')
+    for delta in args.delta:
+        command += ['--delta', str(delta)]
     for key, value in env.items():
         command += ['--env', '%s=%s' % (key, value)]
     done = subprocess.run(command, capture_output=True, text=True, timeout=1000)
@@ -49,6 +59,8 @@ for run in args.runs.split(','):
     frames = report.get('frames') or {}
     first = min((f.get('first_picture') for f in frames.values() if f.get('first_picture') is not None), default=None)
     summary[run] = {'first_picture': first, 'seconds': report.get('seconds'), 'exit_code': report.get('exit_code'),
-                    'fallback': report.get('fallback')}
+                    'fallback': report.get('fallback'),
+                    'frames': {g: f.get('first_picture') for g, f in sorted(frames.items())},
+                    'events': [e for e in report.get('events') or () if e[1] in ('APPLIED', 'DONE', 'CANCELED', 'sent', 'delta')][:12]}
     print(run, json.dumps(summary[run]))
 (args.out / 'summary.json').write_text(json.dumps(summary, indent=1), encoding='utf-8')
