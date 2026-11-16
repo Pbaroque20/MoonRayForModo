@@ -119,6 +119,16 @@ def wait_stopped(then, tries):
 def after_stop():
     session = held['panel'].renderer.session
     held['panel'].preview.image.save(str(out / 'after-stop.png'))
+    # The stopped frame's buffers as the kit keeps them (beauty, alpha, object ids...), to read what the picture holds.
+    import shutil
+    kept = out / 'stop-files'
+    shutil.rmtree(kept, ignore_errors=True)
+    kept.mkdir()
+    for key, path in ((held['panel'].renderer.buffers.frame or {}).get('files') or {}).items():
+        try:
+            shutil.copyfile(path, kept / ('%s%s' % (key, pathlib.Path(path).suffix)))
+        except OSError:
+            pass
     note('after Stop', kept=session.running() and session.process.processId() == held['pid'])
     held['before'] = image_key()
     held['restart'] = time.monotonic()
