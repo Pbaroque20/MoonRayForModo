@@ -343,8 +343,8 @@ def scene_text(scene, width=640, height=360, samples=2, environment=0.15, output
     from . import ocean
     with ocean.writing(scene.get('time') or 0.0):
         # Their repeats fitted to the meshes they are on, where Fit to Mesh is on (ocean.fitted).
-        # Displaced instances' scale in their mesh's points, as MoonRay displaces them in the mesh's own space
-        # (instance_scale).
+        # Instanced seas' scale in their mesh's points, as MoonRay displaces them in the mesh's own space (instance_scale;
+        # seas alone, meshes wearing an Ocean node).
         from . import instance_scale
         return _configured_scene_text(ocean.spaced(ocean.fitted(instance_scale.baked(scene))), width, height, samples, environment, output_file)
 
@@ -680,8 +680,12 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
     if detail:
         from . import moonlightipr_detail
         global LAST_REFINABLE
+        # Instanced meshes cut where they are seas alone (moonlightipr_detail.plan, ocean.wears_ocean).
+        from .ocean import ocean_tags as _sea_tags, wears_ocean as _wears_ocean
+        _seas = _sea_tags(scene.get('materials'))
         cuts, LAST_REFINABLE = moonlightipr_detail.plan(render_meshes, scene.get('dicing_camera') or scene['camera'], width, detail,
-            lambda held: bool(({held.get('material', '')} | set(held.get('face_materials') or [])) & displacement_tags))
+            lambda held: bool(({held.get('material', '')} | set(held.get('face_materials') or [])) & displacement_tags),
+            lambda held: _wears_ocean(held, scene.get('materials'), _seas))
     # The seas' materials (ocean.ocean_tags): an instanced sea's reference is diced for its nearest placement
     # (instanced_resolution); any other instancer as before, at its level's.
     from .ocean import ocean_tags, wears_ocean

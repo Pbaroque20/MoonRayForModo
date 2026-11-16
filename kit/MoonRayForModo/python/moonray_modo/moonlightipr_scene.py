@@ -1076,9 +1076,10 @@ def pack(scene, width, height, environment=0.15, known=(), samples=256, denoise=
     from . import ocean
     with ocean.writing(scene.get('time') or 0.0, runtime):
         # Their repeats fitted to the meshes they are on, where Fit to Mesh is on (ocean.fitted).
-        # Displaced instances' scale in their mesh's points, as MoonRay and XPU2 have them (instance_scale).
+        # Displaced instances' scale in their mesh's points, as MoonRay and XPU2 have them, and a sea's own scale too
+        # (a mesh wearing an Ocean node, no other): MoonLightIPR displaces in a mesh's own space (instance_scale).
         from . import instance_scale
-        return _configured(ocean.fitted(instance_scale.baked(scene)), width, height, environment, known, samples, denoise, runtime)
+        return _configured(ocean.fitted(instance_scale.baked(scene, single=True)), width, height, environment, known, samples, denoise, runtime)
 
 
 def _configured(scene, width, height, environment=0.15, known=(), samples=256, denoise=True, runtime=None):
@@ -1298,7 +1299,11 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     # Following the scene, its meshes are cut from a camera held through its edits (_detail_keep, the preview window):
     # cut from the camera itself, a move of it simplified and packed dense meshes anew (a car's 26 s, Modo held meanwhile).
     cutting = moonlightipr_detail.held_dicing(camera, drawn, bool(scene.get('_detail_keep'))) if scene.get('_geometry_detail') else camera
-    cuts, LAST_REFINABLE = moonlightipr_detail.plan(drawn, cutting, width, scene.get('_geometry_detail', 'fine'), displaces)
+    # Instanced meshes cut where they are seas alone (moonlightipr_detail.plan, ocean.wears_ocean).
+    from .ocean import ocean_tags, wears_ocean
+    seas = ocean_tags(materials)
+    cuts, LAST_REFINABLE = moonlightipr_detail.plan(drawn, cutting, width, scene.get('_geometry_detail', 'fine'), displaces,
+                                                    lambda mesh: wears_ocean(mesh, materials, seas))
     # The dense meshes made lighter side by side first (the adapter lets Python go meanwhile): the loop below then finds
     # them packed (a car's 30 dense meshes, 22 s one after another).
     dense = [(mesh, cuts[id(mesh)]['simplify']) for mesh in drawn

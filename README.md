@@ -26,6 +26,8 @@ The current release is [0.5.4.3.1](https://github.com/Pbaroque20/MoonRayForModo/
 
   ![The Ocean Plane as added, with no other setup, rendered by MoonRay](docs/images/ocean-plane.webp)
 
+- **A sea on a scaled plane in MoonLightIPR**: a plane scaled up to make a sea (a tester's 1 m plane at 27.31) is displaced by the metres its Ocean node says, as in MoonRay and XPU2; MoonLightIPR blew it out over the whole picture.
+- **Realtime keeps instanced parts whole**: realtime previews cut an instanced mesh for the view only where it is a sea; any other instanced mesh (a car's wheels) keeps its whole geometry, as in a render, where it could come out smaller than in Modo's viewport.
 - **Oceans without repeating waves**: the Ocean node's new Cascades (on by default) shares the waves out over four tiles of unrelated sizes, each turned its own way, so a sea seen to the horizon no longer shows its tile repeating. The waves' height and look are as before; off, the one tile as before.
 
   ![The same sea from 60 m up: one tile (left), and over four turned cascades (right)](docs/images/ocean-cascades.webp)
