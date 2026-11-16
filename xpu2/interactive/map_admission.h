@@ -273,6 +273,16 @@ struct MapProgramBuilder {
         if (path.empty()) return shade::MapNoTexture;
         need(path.find("<UDIM>") == std::string::npos && path.find("<udim>") == std::string::npos,
              o.getName() + ": UDIM textures are read by ImageMap only");
+        // A file that is not there: as MoonRay, said and rendered on, the map with no texture (its default colour where
+        // it has one, else the fatal colour). Refused, the whole scene went to MoonRay XPU ("Cannot lease immutable
+        // texture") over one image moved away.
+        std::error_code missing;
+        if (!remote::find(path) && !fs::is_regular_file(fs::path(path), missing)) {
+            std::printf("MoonRay XPU2: %s: cannot open texture \"%s\"; rendered without it, as MoonRay renders it\n",
+                        o.getName().c_str(), path.c_str());
+            std::fflush(stdout);
+            return shade::MapNoTexture;
+        }
         return fileIndex(o, path);
     }
     // UdimTexture's tiles: the files beside the pattern whose name has a number where <UDIM> is; as many tiles as
