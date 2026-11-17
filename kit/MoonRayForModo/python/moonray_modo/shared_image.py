@@ -1,7 +1,9 @@
 """Read only an existing immutable renderer mapping; acknowledge in every exit path."""
 import ctypes,re
 from ctypes import wintypes
-MAX_BYTES=64*1024*1024
+# A picture of any size is taken whole, as the renderers hand it over (modo_shared_image.h): there is no limit to its
+# bytes. It was 64 MB, so a 4K picture was not taken and the preview stayed black until the render was done. Its sides
+# are those of a render (16 to 16384, rdla.py), checked below.
 
 class Withdrawn(OSError):
  """A frame the renderer has already taken back: it waits five seconds for a frame to be read, and Modo's thread was
@@ -21,7 +23,7 @@ def receive(line,pid):
  ack=api.OpenEventW(2,False,name+'_ack');mapping=None;view=None
  try:
   size=width*height*12
-  if generation<0 or not 0<width<=16384 or not 0<height<=16384 or not 0<size<=MAX_BYTES or not re.fullmatch('[A-Za-z0-9_]{1,64}',key):raise ValueError('Invalid image dimensions or buffer key')
+  if generation<0 or not 0<width<=16384 or not 0<height<=16384 or not re.fullmatch('[A-Za-z0-9_]{1,64}',key):raise ValueError('Invalid image dimensions or buffer key')
   if not ack:raise Withdrawn('Image acknowledgment event unavailable')
   mapping=api.OpenFileMappingW(4,False,name)
   if not mapping:raise Withdrawn('Image mapping unavailable')

@@ -111,6 +111,8 @@ class SceneWriter(QtCore.QThread):
 
 class Renderer(QtCore.QObject):
     notices = QtCore.Signal(object)
+    # What the preview's pictures take in memory at the render's size: a notice, or None (picture_memory).
+    picture_memory = QtCore.Signal(object)
     buckets = QtCore.Signal(object)
     workers = QtCore.Signal(object)
     image_ready = QtCore.Signal(str)
@@ -580,6 +582,7 @@ class Renderer(QtCore.QObject):
 
     def _moonlightipr_memory(self,packet):
         if not self._moonlightipr_shown(packet):return
+        self._picture_seen(('moonlightipr',packet[0]),packet[2],packet[3])
         self.moonlightipr_frame=packet
         self._moonlightipr_flush()
 
@@ -933,11 +936,27 @@ class Renderer(QtCore.QObject):
             return # Cryptomatte requires every ID/coverage channel, not a 3-float snapshot.
         self.session.select_view(key)
 
+    def _picture_seen(self,render,width,height):
+        """A picture of a render arrived: what pictures this size take in memory said in the Terminal when the size is
+        new, and among the notices while they are large (picture_memory)."""
+        try:
+            watch=getattr(self,'picture_watch',None)
+            if watch is None:
+                from .picture_memory import Watch
+                watch=self.picture_watch=Watch()
+            line,said,changed=watch.seen(render,width,height)
+            if line:
+                from . import terminal
+                terminal.note('Preview',line)
+            if changed:self.picture_memory.emit(said)
+        except Exception:pass
+
     def _persistent_memory(self,packet):
         serial,key,width,height,pixels=packet
         # While a pass's scene is being written, what the loaded MoonRay reports is of the render that pass replaces:
         # the pass has its files named already and has not been handed over yet.
         if self.closed or self.canceled or not self.using_session or serial!=self.session_serial or getattr(self,'writer',None) is not None:return
+        self._picture_seen(('session',serial),width,height)
         gather=self.gather
         if gather is not None:
             # Being stopped: the pictures asked for are taken as they come, one after another, and not shown.

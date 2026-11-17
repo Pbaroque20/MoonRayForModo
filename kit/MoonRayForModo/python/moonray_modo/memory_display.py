@@ -27,7 +27,7 @@ class Worker(QtCore.QThread):
     data,width,height=convert(self.pixels,self.width,self.height,self.kind,self.settings,self.runtime,self.source)
     self.outcome=(data,width,height,'');return
    v=display.values({'view':'srgb'} if self.plain else self.settings);size=self.width*self.height*4
-   if len(self.pixels)!=self.width*self.height*12 or len(self.pixels)>64*1024*1024:raise ValueError('Invalid float image size')
+   if len(self.pixels)!=self.width*self.height*12:raise ValueError('Invalid float image size')
    # Loading by absolute path and scoping dependency lookup avoids Modo DLL collisions.
    with os.add_dll_directory(str(self.runtime)):
     lib=ctypes.CDLL(str(self.runtime/'modo_display.dll'))

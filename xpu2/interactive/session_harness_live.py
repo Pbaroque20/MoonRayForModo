@@ -20,7 +20,6 @@ import time
 from ctypes import wintypes
 from pathlib import Path
 
-MAX_BYTES = 64 * 1024 * 1024
 
 
 def receive(line, pid):

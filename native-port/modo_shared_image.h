@@ -1,8 +1,12 @@
 #pragma once
 #include "modo_protocol_line.h"
 #include <windows.h>
+#include <cstdint>
 #include <string>
 #include <iostream>
+// A picture of any size is handed over whole: there is no limit to its bytes (it was 64 MB, so a 4K picture, 99.5 MB,
+// was not handed over at all and the preview stayed black until the render was done). The kit takes any size too
+// (shared_image.py, modo_display.cpp, modo_display_stream.cpp).
 // A single immutable publication remains mapped until the consumer acknowledges it.
 // The bounded mailbox drops snapshots rather than blocking the render thread.
 class ModoSharedImage {
@@ -16,11 +20,12 @@ public:
     bool ready(){if(!mapping)return true;if(WaitForSingleObject(ack,0)!=WAIT_OBJECT_0 && GetTickCount64()-publishedAt<5000)return false;clear();return true;}
     template<class Sample>
     bool publish(const std::string& generation,const std::string& key,unsigned width,unsigned height,Sample sample) {
+        if(!width || !height || !ready())return false;
         const size_t count=size_t(width)*height,bytes=count*3*sizeof(float);
-        if(!width || !height || bytes>64*1024*1024 || !ready())return false;
         std::string name="Local\\MoonRayForModo_"+std::to_string(GetCurrentProcessId())+"_"+std::to_string(++serial);
         ack=CreateEventA(nullptr,TRUE,FALSE,(name+"_ack").c_str());
-        mapping=CreateFileMappingA(INVALID_HANDLE_VALUE,nullptr,PAGE_READWRITE,0,DWORD(bytes),name.c_str());
+        // The size in its two 32-bit halves: a picture past 4 GB is mapped whole too.
+        mapping=CreateFileMappingA(INVALID_HANDLE_VALUE,nullptr,PAGE_READWRITE,DWORD(uint64_t(bytes)>>32),DWORD(bytes),name.c_str());
         if(!ack || !mapping){clear();return false;}
         pixels=MapViewOfFile(mapping,FILE_MAP_WRITE,0,0,bytes);
         if(!pixels){clear();return false;}

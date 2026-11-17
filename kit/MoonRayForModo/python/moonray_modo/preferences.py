@@ -91,7 +91,7 @@ KEYS = {
     # How many samples a pixel MoonLightIPR gathers before it rests, in realtime.
     'moonlightipr/samples': (256, int),
     # How many samples a pixel a MoonLightIPR Render (realtime off) gathers before it stops.
-    'moonlightipr/render_samples': (2000, int),
+    'moonlightipr/render_samples': (300, int),
     # A MoonLightIPR Render (realtime off) is made at the active camera's resolution, not the realtime share (opt-in).
     'moonlightipr/camera_resolution': (False, bool),
 }
@@ -170,7 +170,7 @@ class Preferences:
 
 
 def moonlightipr_render_samples():
-    """MoonLightIPR's Render samples a pixel: the open scene's (MoonLightIPR in its render settings), 2000 unless changed."""
+    """MoonLightIPR's Render samples a pixel: the open scene's (MoonLightIPR in its render settings), 300 unless changed."""
     from . import scene_settings
     try:
         from . import properties

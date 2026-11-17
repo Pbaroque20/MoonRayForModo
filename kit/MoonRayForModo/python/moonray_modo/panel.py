@@ -205,6 +205,7 @@ class Panel(Tools, QtWidgets.QWidget):
         self.renderer.kept.connect(self._kept)
         self.renderer.settled_clean.connect(self._smart_settled)
         self.renderer.notices.connect(self._engine_notices)
+        self.renderer.picture_memory.connect(self._picture_memory)
         self._engine_changed(0)
         self._poll()
         self.buffer.setCurrentIndex(max(0,self.buffer.findData(self._settings_values_stored().get('preview_buffer','beauty'))))
@@ -1603,12 +1604,19 @@ class Panel(Tools, QtWidgets.QWidget):
             box.setFixedHeight(min(NOTICES_TALLEST,(lines+2)*box.fontMetrics().lineSpacing()+frame))
         except Exception:pass
 
+    def _picture_memory(self,said):
+        """What this render's pictures take in memory (picture_memory), among the notices while they are large: in a
+        place of its own, said again as the memory free changes, gone when a render's pictures are not large."""
+        self._memory_notice=said
+        self._set_notices(getattr(self,'_notices_given',[]))
+
     def _set_notices(self,messages):
-        # What was given, kept apart from what the preview adds of the room left on the drives (_watch_room), so that
-        # either can be said again without the other.
+        # What was given, kept apart from what the preview adds of the room left on the drives (_watch_room) and of the
+        # memory its pictures take (_picture_memory), so that each can be said again without the others.
         self._notices_given=list(messages)
         disk=getattr(self,'_disk_notice',None)
-        unique=list(dict.fromkeys(str(message) for message in list(messages)+([disk] if disk else []) if message))
+        memory=getattr(self,'_memory_notice',None)
+        unique=list(dict.fromkeys(str(message) for message in list(messages)+[added for added in (disk,memory) if added] if message))
         text='\n\n'.join(unique)
         if text!=self.warnings.toPlainText():self.warnings.setPlainText(text)
         self.notice_toggle.setText('Notices (%d)'%len(unique))

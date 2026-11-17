@@ -112,7 +112,7 @@ class BufferCache(QtCore.QObject):
             # Held, the newest in place of any before it, and shown when the converter is done (_release_held).
             self.held_memory=(key,width,height,pixels,runtime,snapshot,backend)
             return
-        if not 0<len(pixels)<=64*1024*1024 or len(pixels)!=width*height*12:raise ValueError('Invalid shared image size')
+        if not 0<len(pixels) or len(pixels)!=width*height*12:raise ValueError('Invalid shared image size')
         folder=self.root/uuid.uuid4().hex;folder.mkdir()
         frame={'folder':folder,'files':{},'linear':{key:(width,height,pixels)},'runtime':Path(runtime),'snapshot':snapshot,'backend':backend,'partial':True}
         if self.progressive_scene is not snapshot:self.progressive_frames.clear()
