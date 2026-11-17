@@ -6,7 +6,7 @@ This is the development branch of [MoonRay for Modo](https://github.com/Pbaroque
 
 The current release is [0.5.4.3.1](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.5.4.3.1). **Built on MoonRay [2026.29.1](https://github.com/dreamworksanimation/openmoonray/releases/tag/v2026.29.1)** (OpenMoonRay's latest release; MoonRay 18.4), with the plugin's own patches for Windows and the preview.
 
-## Coming in 0.5.5
+## New in 0.5.5
 
 - **Faster starts and edits**: heavy scenes start again in seconds, even after Modo restarts, and at once while the scene stays open: the kit and XPU2 keep what they read and prepared in the Cache folder and read again only what changed. Stop keeps the renderer loaded and idle, so the next Start renders at once (Preferences: Release idle renderer memory). Realtime no longer reads a rigged or animated scene again at each edit, nor moving replicators at each camera move, and scenes with many Shader Tree masks read faster.
 - **Stopping XPU2 keeps the picture**: a preview stopped part way keeps what it showed, whole and denoised, and stops at once, even during a heavy scene's first pass, its Safe Denoising checkpoints saved.

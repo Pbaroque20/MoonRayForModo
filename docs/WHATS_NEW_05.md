@@ -2,6 +2,40 @@
 
 0.5 is a **pre-production release**: the plugin is no longer experimental, and it brings a new GPU renderer, MoonRay XPU2.
 
+## New in 0.5.5
+
+- **Faster starts and edits**: heavy scenes start again in seconds, even after Modo restarts, and at once while the scene stays open: the kit and XPU2 keep what they read and prepared in the Cache folder and read again only what changed. Stop keeps the renderer loaded and idle, so the next Start renders at once (Preferences: Release idle renderer memory). Realtime no longer reads a rigged or animated scene again at each edit, nor moving replicators at each camera move, and scenes with many Shader Tree masks read faster.
+- **Stopping XPU2 keeps the picture**: a preview stopped part way keeps what it showed, whole and denoised, and stops at once, even during a heavy scene's first pass, its Safe Denoising checkpoints saved.
+- **XPU2 renders more scenes itself**, where they went to MoonRay XPU: instanced seas, displaced instances that change shape, scenes with a missing texture (drawn as MoonRay draws it), and deep EXRs (scenes with volumes still go to MoonRay for those). Compile XPU2 Shaders again after installing.
+- **Safe Denoising with XPU2: Pause, then Continue**: the Render button reads Pause while XPU2 renders; Pause saves the render where it stands, and Continue takes it up from there, with or without the Denoiser; a checkpoint resumes headless the same way.
+- **Textures**: out of memory, XPU2 first shrinks each texture to what the screen shows of it, sizes held over a whole Render Animation; a plain material over everything leaves the textures under it unloaded, as Modo does; Grid, Dots, Cellular, Wood, Weave, Ripples and layered skies are made far faster and sharper; MoonLightIPR's Render and Render Animation bake MoonShine graphs at full size (up to 8K).
+- **Motion blur follows the camera you render through**: Motion Blur on that camera (the Camera Sequence's for the frame, a MoonRay camera chosen, else the render camera) or in the render settings turns it on in every engine, realtime included, and in exported scenes and Rhizome. The Preview Preferences' motion blur switches are gone. Deforming displaced meshes blur in MoonLightIPR's realtime too.
+- **Car wheels at their size**: realtime no longer cuts instanced parts for the view, and MoonLightIPR shows fast-turning parts where they stand at the frame, blurred along their turn.
+- **Replicators**: a hidden prototype stays hidden, replicators no longer stop MoonLightIPR with a motion blur error, copies over particles blur along their own particle, and Variation by Particle stays with each particle from frame to frame.
+
+  ![Replicated teapots with motion blur in MoonLightIPR](images/replicators-motion-blur.webp)
+
+- **Ocean Plane** (MoonRay > Add MoonRay Item > Geometry): a sea to the horizon, ready the moment it is added. It follows the camera with the waves fixed in place, at its item's height. Its settings are the Ocean node's, with water and foam colours, Roughness and Foam Roughness, the tile size and a Horizon Fade, where the sea eases into a sheen of the sky in every engine. Give it a material tag to use your own Ocean material. Part of Ocean nodes in MoonShine graphs, in MoonRay Source Overrides.
+
+  ![The Ocean Plane as added, with no other setup, rendered by MoonRay](images/ocean-plane.webp)
+
+- **Oceans without repeating waves**: the Ocean node's Cascades (on by default) spread the waves over four turned tiles, so a sea seen to the horizon no longer shows its tile repeating.
+
+  ![The same sea from 60 m up: one tile (left), and over four turned cascades (right)](images/ocean-cascades.webp)
+
+- **Ocean swell**: Swell Height, Length and Direction on the Ocean node and the Ocean Plane: one long, regular wave running through the sea. Height 0, the default, is no swell.
+
+  ![The same sea in MoonLightIPR from 3 m up: no swell (left), and a 2.5 m swell 150 m long (right)](images/ocean-swell.webp)
+
+- **Ocean Crest node**: a mask of the highest crests, to mix in a brighter water colour where light shines through them. The Ocean Plane comes with it set up, with a Crest Colour of its own.
+
+  ![The same sea in MoonLightIPR: plain water (left), and its crests glowing (right)](images/ocean-crest.webp)
+
+- **Seas and displacement in every engine**: no more black patches on the water in MoonRay and XPU2. In MoonLightIPR, a sea on a scaled plane keeps its waves' height, a displaced mesh is displaced once and split finely near the camera, and ocean playblasts take about a second a frame, the waves changing as they should.
+- **Disk space**: the preview says when a drive it writes to is nearly full, and when a render is held up for room. The Ocean cache stays within 10 GB, and Clear Cache empties it.
+- **The MoonShine graph editor's title follows the material's name** when it is renamed in the Shader Tree.
+- **Fixes**: since 0.5.4.3, textures were converted one at a time and scenes were written without the texture colour rules, working colour space, Scene References settings or "texture not found" notices; all are back.
+
 ## New in 0.5.4.3.1
 
 - **Rhizome exports in seconds**: the scene goes to the other machines as the preview hands it to XPU2, its geometry as binary and the Scene cache's reading reused, where every point used to be written as text. A heavy car scene went from about five and a half minutes to about 15 seconds, an interior from 80 seconds to under one; the picture is the same.
