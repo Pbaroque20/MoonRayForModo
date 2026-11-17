@@ -15,6 +15,25 @@ from .panel_tools import Tools
 
 RENDER_TIP = 'Render the current scene. The previous image stays until its replacement is ready.'
 STOP_TIP = 'Stop the render in progress and stop following scene changes.'
+PAUSE_TIP = 'Pause the render: it is saved where it stands, and Continue takes it up from there.'
+# Every word the Render button says, its width set from the longest so that it keeps one width whatever it says; the
+# RT button is as wide.
+START_WORDS = ('Render', 'Continue', 'Stop', 'Pause', 'Stopping', 'Pausing', 'RT On', 'RT Off')
+
+
+def pauses(engine, xpu2, safe, realtime=False, draft=False, output=False):
+    """Whether the Render button pauses a render rather than stopping it: a preview XPU2 renders under Safe Denoising
+    saves where a stop leaves it, and Continue takes it up from there. MoonRay's own renders, MoonLightIPR's, realtime,
+    a draft and a render to files are stopped, as before."""
+    return bool(engine == 'moonray' and xpu2 and safe and not (realtime or draft or output))
+
+
+def start_word(active, again, pausing=False):
+    """What the Render button says, which is what pressing it does: Pause or Stop while a render runs, Continue for a
+    stopped render kept to be taken up again, else Render."""
+    return ('Pause' if pausing else 'Stop') if active else 'Continue' if again else 'Render'
+
+
 # What the status says while Modo's thread reads the whole scene, Modo held meanwhile (Render, and realtime alike).
 READING = "Reading Modo's scene graph..."
 # Always offered in the buffer list; choosing one adds the output to the scene if it lacks it.
@@ -358,7 +377,7 @@ class Panel(Tools, QtWidgets.QWidget):
                 # A menu's arrow, which the style leaves out of the size it gives, beside the word and not over it.
                 widget.setFixedWidth(high if len(widget.text())==1 else wide(widget,widget.text())+(16 if widget.menu() else 0))
             elif isinstance(widget,QtWidgets.QPushButton):
-                widget.setFixedWidth(wide(widget,widget.text(),'Render','Continue','Stop','RT On','RT Off'))
+                widget.setFixedWidth(wide(widget,widget.text(),*START_WORDS))
             elif isinstance(widget,QtWidgets.QDoubleSpinBox):widget.setFixedWidth(62)
         # The engines are known now: as wide as the longest. The cameras and buffers are filled later and change, so
         # those lists follow what they hold, within a bound (a long camera name is in the tip).
@@ -1058,6 +1077,15 @@ class Panel(Tools, QtWidgets.QWidget):
         from . import native
         try:return native.xpu2_renders(self._settings_values().get('execution_mode','auto'))
         except Exception:return bool(native.xpu2())
+
+    def _pauses(self,output=False):
+        """Whether a render begun now is paused by the Render button rather than stopped (pauses): XPU2 renders the
+        preview, under Safe Denoising, as the scene's settings and the preferences now stand."""
+        from . import denoising
+        try:safe=denoising.settings(self._settings_values()['denoising'])['safe']
+        except Exception:safe=False
+        return pauses(self._engine(),self._xpu2_previews(),safe,realtime=self._following or self.ipr_mode.isChecked(),
+                      draft=self.draft.isChecked(),output=bool(output) or self._output_busy())
 
     def _smart_on(self):
         """Whether Smart Render is on for the scene."""
@@ -1941,12 +1969,23 @@ class Panel(Tools, QtWidgets.QWidget):
                                   else 'Realtime is off: the preview is not following the scene. Press to switch it on.')
             return
         self.start.setChecked(False);self.start.setCheckable(False)
+        # XPU2 under Safe Denoising, as the render was begun (_submit): Pause, which saves where the render stands, and
+        # Continue takes it up. A realtime render following the scene is stopped.
+        paused=getattr(self,'_pausing',False)
         if getattr(self,'_stopping',False) and self._rendering:
             # Stopping: greyed until the render has finished with what it has, so that it is not pressed again.
-            self.start.setText('Stopping');self.start.setToolTip('The render is stopping, keeping what is rendered.');return
-        self.start.setText('Stop' if active else 'Continue' if again else 'Render')
-        self.start.setToolTip(STOP_TIP if active else 'Take the stopped render up again from where it was stopped. If the scene has changed since, it is rendered from the start. '
-                              'Right-click the picture for Restart Render.' if again else RENDER_TIP)
+            self._stopping_words(paused);return
+        self.start.setText(start_word(active,again,paused and not self._following))
+        stopped='paused' if paused else 'stopped'
+        self.start.setToolTip((PAUSE_TIP if paused and not self._following else STOP_TIP) if active else
+                              'Take the %s render up again from where it was %s. If the scene has changed since, it is rendered from the start. '
+                              'Right-click the picture for Restart Render.'%(stopped,stopped) if again else RENDER_TIP)
+
+    def _stopping_words(self,paused):
+        """The button, greyed while a render stops or pauses, saying which."""
+        self.start.setEnabled(False)
+        if paused:self.start.setText('Pausing');self.start.setToolTip('The render is pausing, saved where it stands.')
+        else:self.start.setText('Stopping');self.start.setToolTip('The render is stopping, keeping what is rendered.')
 
     def _submit(self, scene, output=None, refining=False, digest=None):
         # MoonLightIPR denoises when its denoised beauty is the buffer chosen, as of now (said again below, once the list
@@ -1996,6 +2035,10 @@ class Panel(Tools, QtWidgets.QWidget):
         if not output:
             from .incremental import surroundings
             self._surroundings=surroundings(scene)
+        # Whether the Render button pauses this render rather than stopping it, held for as long as it runs: a change
+        # of settings meanwhile is for the next render.
+        try:self._pausing=self._pauses(output)
+        except Exception:self._pausing=False
         self._set_rendering(True)
         self._ipr_refine_scene=scene if not output else None
         values=self._settings_values();get=self.preferences.get
@@ -2724,11 +2767,14 @@ class Panel(Tools, QtWidgets.QWidget):
         if rendering and self.renderer.settle():
             self.status.setText('Stopping: finishing with what is rendered.');self._await_settle(5000);return
         # MoonRay under Safe Denoising: the picture it last saved is finished with, a preview or an output alike.
+        # XPU2 under Safe Denoising is paused: it saves where it stands, for Continue to take it up (_set_rendering).
+        keeping='Pausing: saving the render where it stands.' if rendering and getattr(self,'_pausing',False) else 'Stopping: keeping what is rendered.'
         if self._rendering and not (self.sequence is not None and self.sequence.running) and self.renderer.settle_moonray():
-            self.status.setText('Stopping: keeping what is rendered.');self._await_settle(30000);return
+            self.status.setText(keeping);self._await_settle(30000);return
         # MoonRay kept loaded hands over the picture as it stands, with what the denoiser needs, and is then stopped.
+        # XPU2 paused is waited for as long as its save may take (Renderer.keep_wait).
         if rendering and not self.draft.isChecked() and self.renderer.keep_progress():
-            self.status.setText('Stopping: keeping what is rendered.');self._await_settle(16000);return
+            self.status.setText(keeping);self._await_settle(self.renderer.keep_wait());return
         # MoonRay or XPU2 kept loaded and idle, its scene and GPU structures held, for the next preview to start at once
         # (Renderer.stop keep); let go when the scene closes (_scene_closed).
         self.renderer.stop(keep=True)
@@ -2759,9 +2805,7 @@ class Panel(Tools, QtWidgets.QWidget):
         # The button is greyed while the render stops, and says so; _set_rendering gives it back.
         self._stopping=True
         self._sync_rt()
-        if True:
-            self.start.setEnabled(False);self.start.setText('Stopping')
-            self.start.setToolTip('The render is stopping, keeping what is rendered.')
+        self._stopping_words(getattr(self,'_pausing',False))
         def late():
             if self.disposed or getattr(self,'_settle_token',None) is not token or not self._rendering:return
             self._settle_token=None
@@ -2892,7 +2936,7 @@ class Panel(Tools, QtWidgets.QWidget):
         # Under Safe Denoising: how long ago MoonRay last saved, which is what a stop now would keep.
         saved=getattr(self.renderer,'saved_at',None)
         if (self._rendering and saved is not None and getattr(self.renderer,'safe_files',None) and not getattr(self.renderer,'settling',False)
-                and not label.startswith(('Complete','Stopped')) and 'Denoising' not in label):
+                and not label.startswith(('Complete','Stopped','Paused')) and 'Denoising' not in label):
             import time
             from .progress import duration
             label+=' · Saved %s ago'%duration(time.monotonic()-saved)
@@ -2903,11 +2947,14 @@ class Panel(Tools, QtWidgets.QWidget):
         some way behind what was on screen at the stop. The picture's own line says so for as long as it is shown."""
         from .progress import duration
         behind=getattr(self.renderer,'kept_behind',None)
+        # XPU2's render paused (_set_rendering) is said to be paused.
+        paused=getattr(self,'_pausing',False)
         if behind is None or behind<1.5:
-            self._kept_note='';return 'Stopped and kept. Continue takes the render up again.'
-        self._kept_note='as saved %s before the stop'%duration(behind)
+            self._kept_note='';return 'Paused. Continue takes the render up from where it stands.' if paused else 'Stopped and kept. Continue takes the render up again.'
+        stop='pause' if paused else 'stop'
+        self._kept_note='as saved %s before the %s'%(duration(behind),stop)
         self._image_note()
-        return 'Stopped: the picture is the last save, %s before the stop. Continue takes it up from there.'%duration(behind)
+        return '%s: the picture is the last save, %s before the %s. Continue takes it up from there.'%('Paused' if paused else 'Stopped',duration(behind),stop)
 
     def _image_note(self):
         """Mark the picture's line where the picture is not what was last on screen."""
@@ -2953,7 +3000,9 @@ class Panel(Tools, QtWidgets.QWidget):
             # there, so the picture is whole and has all its buffers.
             self.renderer.draining=False
             note=getattr(self,'_smart_note','');self._smart_note=''
-            self.status.setText(note+' The picture is kept with all its buffers.' if note else 'Stopped. The picture is kept with all its buffers.')
+            # XPU2 paused under Safe Denoising, saved where it stood: said as paused, with Continue (_kept_status).
+            if not (self._continuable and getattr(self,'_pausing',False)):
+                self.status.setText(note+' The picture is kept with all its buffers.' if note else 'Stopped. The picture is kept with all its buffers.')
         if not output and self._engine()!='moonlightipr' and self._playblasting() is None:
             engine=self._preview_denoiser()
             self.renderer.buffers.denoiser.request(engine)

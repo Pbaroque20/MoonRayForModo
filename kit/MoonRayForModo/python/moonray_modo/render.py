@@ -215,6 +215,9 @@ class Renderer(QtCore.QObject):
         self.progress_timer.stop()
         if self.progress_state:
             elapsed=self.progress_state.clock()-self.progress_state.started
+            # XPU2 paused under Safe Denoising, kept to be continued (_keep_xpu2_saves): paused where it stood, not complete.
+            if success and getattr(self,'pass_xpu2',False) and getattr(self,'draining',False) and getattr(self,'resumable',None):
+                self.progress.emit(int(round(self.progress_state.percent or 0)),'Paused · Elapsed '+duration(elapsed));return
             self.progress.emit(100 if success else 0,('Complete' if success else 'Stopped')+' · Elapsed '+duration(elapsed))
 
     def _started(self):
@@ -309,7 +312,7 @@ class Renderer(QtCore.QObject):
         that is under way; `kept` then tells how it went, with the render stopped."""
         if (self.closed or self.canceled or not self.active or self.active.get('output') or getattr(self,'using_moonlightipr',False)
                 or not getattr(self,'using_session',False) or self.active['snapshot'].get('_ipr') or getattr(self,'phase','')!='render'
-                or not (getattr(self,'denoise_guides',None) or (self.active['snapshot'].get('_xpu2') and getattr(self,'safe_files',None)))
+                or not (getattr(self,'denoise_guides',None) or (getattr(self,'pass_xpu2',False) and getattr(self,'safe_files',None)))
                 or getattr(self,'gather',None) is not None or self.buffers.progressive is None):
             return False
         # Each is taken five times over, and the middle value of the last three used for each pixel. A pixel MoonRay
@@ -352,13 +355,25 @@ class Renderer(QtCore.QObject):
             # The views handed over, the process kept for the next preview (Session.pause).
             self.stop(keep=True);self.kept.emit(done)
 
+    def keep_wait(self):
+        """How long a stop that keeps the picture (keep_progress) is waited for before the render is ended outright, in
+        milliseconds. XPU2 paused under Safe Denoising first finishes the work in hand and lets a save under way finish,
+        then saves where it stands: every checkpoint file and where its generations stood. Two balls at 1280 x 720 with
+        28 outputs took 17 seconds (14 of them the work in hand, on the processor's workers), past the 16 given to any
+        stop: the render was ended with its save half written, nothing kept to continue. Given two minutes, or on a big
+        picture with many outputs what three saves take, at about a quarter of a second a file and million pixels
+        (denoising.safe_minutes), and 30 seconds more."""
+        if not (self.active and getattr(self,'pass_xpu2',False) and getattr(self,'safe_files',None)):return 16000
+        pixels=int(self.active.get('width') or 0)*int(self.active.get('height') or 0)
+        return int(1000*max(120,30+3*.25*len(self.safe_files)*pixels/1e6))
+
     def settle_moonray(self):
         """Stop MoonRay where it stands and finish with the picture it last saved, where safe denoising had it save
         one. Returns whether that is under way: the render then ends as any other does, or reports stopped if
         nothing had been saved yet."""
         loaded=getattr(self,'using_session',False)
         # XPU2 is stopped by draining instead (keep_progress): it saves where it stands first, its picture the whole of it.
-        if self.active and self.active['snapshot'].get('_xpu2'):return False
+        if self.active and getattr(self,'pass_xpu2',False):return False
         if (self.closed or self.canceled or not self.active or getattr(self,'using_moonlightipr',False)
                 or not getattr(self,'safe_files',None) or getattr(self,'phase','')!='render'
                 or not (self.session.running() if loaded else self.process.state()!=QtCore.QProcess.NotRunning)):
@@ -421,6 +436,34 @@ class Renderer(QtCore.QObject):
         self.resumable=kept or None
         return True
 
+    def _keep_xpu2_saves(self):
+        """What XPU2 saved of a render paused under Safe Denoising, kept aside as MoonRay's saves are (_promote_safe):
+        each checkpoint file, and the .xpu2resume beside the one that has it. Left where XPU2 wrote them, they went
+        with the render's other files once the next render was under way (_persistent_applied), before XPU2 had read
+        them, and Continue rendered from the start. Returns the kept files by what each is (_safe_key), or None where
+        a file is missing or XPU2 saved no .xpu2resume."""
+        saved={self._safe_key(path):Path(denoising.safe_name(path)) for path in self.safe_files}
+        if not saved or not all(path.is_file() for path in saved.values()):return None
+        if not any(Path(str(path)+'.xpu2resume').is_file() for path in saved.values()):return None
+        try:
+            if getattr(self,'resume_directory',None) is None:self.resume_directory=tempfile.TemporaryDirectory(prefix='MoonRayResume-')
+            stamp=uuid.uuid4().hex[:8];kept={}
+            for key,path in saved.items():
+                aside=Path(self.resume_directory.name)/(stamp+key)
+                shutil.copyfile(str(path),str(aside))
+                # XPU2 finds where its generations stood beside the file it is told to resume from (resume_file_name).
+                resume=Path(str(path)+'.xpu2resume')
+                if resume.is_file():shutil.copyfile(str(resume),str(aside)+'.xpu2resume')
+                kept[key]=str(aside)
+        except OSError:return None
+        # What an earlier pause kept, which this render took up, is let go of now that there is something newer.
+        for old in (getattr(self,'resumable_before',None) or {}).values():
+            for path in (Path(old),Path(old+'.xpu2resume')):
+                try:path.unlink()
+                except OSError:pass
+        self.resumable_before=None
+        return kept
+
     def stop(self, keep=False):
         """keep: a preview stopped by hand (Stop, RT off, a render kept as it stands): MoonRay or XPU2 is kept loaded and
         idle, its scene and GPU structures held for the next preview (Session.pause), where Keep MoonRay loaded between
@@ -457,6 +500,8 @@ class Renderer(QtCore.QObject):
                 if path.is_file():path.unlink()
         self.canceled = False
         self.draining = False
+        # Whether XPU2 renders it is known once its pass begins (_begin_pass).
+        self.pass_xpu2 = False
         self.progress_state=Progress()
         self.progress_timer.start()
         # Smart Render watches a MoonRay preview's picture as it comes on (not one that follows the scene, nor an
@@ -598,6 +643,10 @@ class Renderer(QtCore.QObject):
         # XPU2 renders it where it is chosen, the mode is XPU or Auto and it has not left this
         # session to MoonRay.
         snapshot['_xpu2']=bool(request.get('persistent') and mode in ('xpu','auto') and self.session.xpu2_chosen() and not getattr(self.session,'xpu2_refused',None))
+        # Held for this pass: its snapshot is this copy, not the request's (self.active), which never has the mark. Read
+        # from the request, a stop under Safe Denoising never asked XPU2 to save, nor kept what it saved (keep_progress,
+        # _exited), and Continue rendered from the start.
+        self.pass_xpu2=snapshot['_xpu2']
         snapshot['_crypto_categories']=native.supports_crypto_categories(request['runtime'])
         snapshot['_bump_step']=native.supports_bump_step(request['runtime'])
         snapshot['_pixel_filters']=native.supports_pixel_filters(request['runtime'])
@@ -937,12 +986,11 @@ class Renderer(QtCore.QObject):
             self._begin_pending()
             return
         # XPU2 stopped by hand under Safe Denoising: it saved where it stood before draining (its .xpu2resume beside its
-        # checkpoint files, which stay where they are): those are what Continue takes it up from.
-        if (getattr(self,'draining',False) and self.active and self.active['snapshot'].get('_xpu2') and not self.active.get('output')
+        # checkpoint files): those are what Continue takes it up from.
+        if (getattr(self,'draining',False) and self.active and getattr(self,'pass_xpu2',False) and not self.active.get('output')
                 and getattr(self,'safe_files',None)):
-            saved={self._safe_key(path):denoising.safe_name(path) for path in self.safe_files}
-            if any(Path(s+'.xpu2resume').is_file() for s in saved.values()) and all(Path(s).is_file() for s in saved.values()):
-                self.resumable=saved
+            kept=self._keep_xpu2_saves()
+            if kept:self.resumable=kept
         if getattr(self,'settling',False):
             # Stopped by hand under safe denoising: what MoonRay last saved is the render, and it ends as one.
             self.settling=False;self.settle_wanted=None
