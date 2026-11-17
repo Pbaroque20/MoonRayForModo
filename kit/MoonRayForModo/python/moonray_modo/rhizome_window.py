@@ -575,9 +575,10 @@ class Window(QtWidgets.QWidget):
         self.swarm_head = QtWidgets.QLabel()
         row.addWidget(self.swarm_head, 1)
         layout.addLayout(row)
-        self.table = QtWidgets.QTableWidget(0, 10)
+        self.table = QtWidgets.QTableWidget(0, 11)
+        # Renders on: CPU and GPU, the GPU alone, or the CPU alone and why (its cards cannot be used, or set so).
         self.table.setHorizontalHeaderLabels(['Machine', 'Address', 'Role', 'State', 'Tier', 'Ms/s', 'Round trip', 'Pieces of work',
-                                              'Memory given', 'GPU programs'])
+                                              'Memory given', 'GPU programs', 'Renders on'])
         self.table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self.table.horizontalHeader().setStretchLastSection(True)
@@ -593,7 +594,7 @@ class Window(QtWidgets.QWidget):
             cells = [m.get('hash', '')[:12] + (' (here)' if m.get('self') else ''), m.get('address', ''), m.get('role', ''), m.get('state', ''),
                      m.get('tier', ''), '%.2f' % (float(m.get('rate', 0)) / 1e6) if m.get('rate') else '-',
                      '%.1f ms' % (float(m.get('rtt', 0)) * 1000) if float(m.get('rtt', -1)) > 0 else '-', str(m.get('chunks', 0)),
-                     '%.1f GB' % given if given else '-', m.get('gpuPrograms', '') or '-']
+                     '%.1f GB' % given if given else '-', m.get('gpuPrograms', '') or '-', m.get('devices', '') or '-']
             for c, text in enumerate(cells):
                 item = QtWidgets.QTableWidgetItem(text)
                 item.setData(QtCore.Qt.UserRole, m.get('hash', ''))
