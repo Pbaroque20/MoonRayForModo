@@ -321,13 +321,13 @@ SceneSettings SceneLoader::apply(const std::string& path) {
     // "MLS" and a letter for the form of the scene, which changes whenever what is written in it does: "C" since
     // the scene's sample clamp is written in it, "D" since a toon material's ramps are, "E" since a hair toon's highlights are,
     // "F" since the lights' poses at the shutter's close are, "G" since the volume scattering factors are, "H" since the
-    // camera's film offset is, "I" since a material's fuzz is, "J" since the light sets are, "K" since a mesh may be displaced, "L" since by a program of displacement nodes, "M" since a material's clearcoat bump strength is, "N" since whether the camera sees each light is, "O" since the subsurface scatterings a path may have are, "P" since each instance's own number is, "Q" since the roughness clamp is, "R" since what reflections and refractions see of the environment is, "S" since the kinds of rays each light is hidden from are, "T" since a displaced mesh may be split by its distance from the camera. A plugin and a session of different versions say so plainly, in
+    // camera's film offset is, "I" since a material's fuzz is, "J" since the light sets are, "K" since a mesh may be displaced, "L" since by a program of displacement nodes, "M" since a material's clearcoat bump strength is, "N" since whether the camera sees each light is, "O" since the subsurface scatterings a path may have are, "P" since each instance's own number is, "Q" since the roughness clamp is, "R" since what reflections and refractions see of the environment is, "S" since the kinds of rays each light is hidden from are, "T" since a displaced mesh may be split by its distance from the camera, "U" since where each moving instance stands at the frame is. A plugin and a session of different versions say so plainly, in
     // place of reading each other's scenes wrongly.
     const uint32_t mark = in.value<uint32_t>();
     if ((mark & 0x00ffffff) != 0x00534c4d) throw std::runtime_error("Not a MoonLightIPR scene: " + path);
-    if (mark != 0x54534c4d)
+    if (mark != 0x55534c4d)
         throw std::runtime_error("This MoonLightIPR and the plugin are of different versions (the scene is form '" + std::string(1, char(mark >> 24))
-                                 + "', this MoonLightIPR reads 'T'). Install the kit and its runtime from the same release.");
+                                 + "', this MoonLightIPR reads 'U'). Install the kit and its runtime from the same release.");
     ++generation;
     SceneSettings settings;
     settings.width = in.value<uint32_t>();
@@ -371,11 +371,14 @@ SceneSettings SceneLoader::apply(const std::string& path) {
     if (!camera.bokeh.empty()) in.floats(camera.bokeh.data(), camera.bokeh.size());
     // With motion blur, the camera again as it is when the shutter closes.
     Camera cameraClose = camera;
+    // Where the frame falls in the shutter, 0 its opening and 1 its closing (form 'U').
+    float frameMoment = 0.5f;
     if (sceneFlags & SCENE_MOTION) {
         in.floats(cameraClose.eye, 3);
         in.floats(cameraClose.target, 3);
         in.floats(cameraClose.up, 3);
         cameraClose.verticalFovDegrees = in.value<float>();
+        frameMoment = std::clamp(in.value<float>(), 0.0f, 1.0f);
     }
 
     // Read new images before the materials whose layers will refer to them.
@@ -936,7 +939,12 @@ SceneSettings SceneLoader::apply(const std::string& path) {
         in.floats(instance.transform, 12);
         if (sceneFlags & SCENE_MOTION) {
             in.floats(instance.closeTransform, 12);
-            instance.moves = !std::equal(instance.transform, instance.transform + 12, instance.closeTransform);
+            // And where it is at the frame (form 'U').
+            in.floats(instance.frameTransform, 12);
+            instance.framed = true;
+            instance.frameMoment = frameMoment;
+            instance.moves = !std::equal(instance.transform, instance.transform + 12, instance.closeTransform)
+                             || !std::equal(instance.transform, instance.transform + 12, instance.frameTransform);
         }
     }
     // In a scene with motion, where each light is when the shutter closes; everything else about it is as it opens.

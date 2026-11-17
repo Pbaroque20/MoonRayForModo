@@ -3,6 +3,7 @@
 // Host side of MoonLightIPR: CUDA buffers, OptiX acceleration structures, pipeline and denoiser.
 #include "moonlightipr/moonlightipr.h"
 #include "device/shared.h"
+#include "transform_blend.h"
 
 #include <cuda_runtime.h>
 #include <optix.h>
@@ -630,9 +631,16 @@ struct Renderer::Impl {
         std::vector<DeviceInstance> table(instances.size());
         bool mixed = false;
         for (size_t i = 0; i < instances.size(); ++i) {
-            for (int k = 0; k < 12; ++k)
-                input[i].transform[k] = instances[i].moves ? instances[i].transform[k] + (instances[i].closeTransform[k] - instances[i].transform[k]) * time
-                                                           : instances[i].transform[k];
+            const Instance& held = instances[i];
+            if (!held.moves) std::copy(held.transform, held.transform + 12, input[i].transform);
+            else if (!held.framed) blendTransform(held.transform, held.closeTransform, time, input[i].transform);
+            else if (std::fabs(time - held.frameMoment) < 1e-5f) std::copy(held.frameTransform, held.frameTransform + 12, input[i].transform);
+            // Each half of the shutter from where it stands at the frame: the frame itself where the moment is held.
+            else if (time < held.frameMoment)
+                blendTransform(held.transform, held.frameTransform, time / held.frameMoment, input[i].transform);
+            else
+                blendTransform(held.frameTransform, held.closeTransform, held.frameMoment < 1.0f ? (time - held.frameMoment) / (1.0f - held.frameMoment) : 1.0f,
+                               input[i].transform);
             input[i].instanceId = unsigned(i);
             input[i].sbtOffset = meshes[instances[i].mesh]->curves ? (meshes[instances[i].mesh]->linear ? 2 : 1) : 0;
             input[i].visibilityMask = instances[i].visibility & 255u;

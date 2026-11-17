@@ -256,6 +256,11 @@ struct Instance {
     // Where the instance is when the shutter closes, if it moves.
     bool moves = false;
     float closeTransform[12] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0};
+    // Where it is at the frame, and when the frame falls in the shutter (0 its opening, 1 its closing), where it is known:
+    // the moment held without motion blur shows it there, and each half of the shutter is blended from it.
+    bool framed = false;
+    float frameMoment = 0.5f;
+    float frameTransform[12] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0};
 };
 
 // Latitude-longitude map, +Y up, first row at the zenith, with the centre column facing -Z.

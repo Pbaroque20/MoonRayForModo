@@ -1191,7 +1191,7 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     # Material colours are worked out in Rec.709; the session takes them to the working space.
     working = working_enabled()
     # The letter after MLS says which form of scene this is; the session refuses any other than its own.
-    parts = [b'MLST', struct.pack('<8I', width, height, *depths, samples, (SCENE_DENOISE if denoise else 0)
+    parts = [b'MLSU', struct.pack('<8I', width, height, *depths, samples, (SCENE_DENOISE if denoise else 0)
                                   | (SCENE_WORKING_SPACE if working else 0) | (SCENE_MOTION if motion else 0)
                                   # See-through surfaces cast whole shadows unless the scene asks for lighter ones, as in MoonRay.
                                   | (SCENE_PRESENCE_SHADOWS if settings.get('enable_presence_shadows') else 0)
@@ -1224,9 +1224,24 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     parts.append(struct.pack('<I', BOKEH_SIZE if bokeh else 0))
     if bokeh:
         parts.append(struct.pack('<%df' % len(bokeh), *bokeh))
+    # Where the frame falls in the shutter (0 its opening, 1 its closing), and each moving placement there as well
+    # (at_frame, form 'U'): the session shows the frame itself at the moment it holds without motion blur, and blends each
+    # half of the shutter from it. Blended between the ends alone, a car's wheels, turning a third of a turn while the
+    # shutter was open, came out half their size, and their spokes beside them.
+    steps = scene.get('motion_steps') or []
+    frame_moment = 0.5
+    if len(steps) == 2 and float(steps[1]) > float(steps[0]):
+        frame_moment = min(1.0, max(0.0, -float(steps[0]) / (float(steps[1]) - float(steps[0]))))
+
+    def at_frame(opening, ending, frame):
+        """A placement at the frame, packed: where it was read there, else on the line between its ends."""
+        if frame is not None:
+            return struct.pack('<12f', *transform(frame))
+        return struct.pack('<12f', *[a + (b - a) * frame_moment for a, b in zip(transform(opening), transform(ending))])
     if motion:
         parts.append(struct.pack('<10f', *placed(camera.get('matrix_close', camera.get('matrix', IDENTITY)),
                                                  camera.get('focal_mm_close', camera['focal_mm']))))
+        parts.append(struct.pack('<f', frame_moment))
 
     materials = dict(scene.get('materials', {}))
     materials.setdefault('', {'color': [.5, .5, .5], 'roughness': .4, 'metallic': 0})
@@ -1360,17 +1375,22 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
         ending = (mesh.get('instances_close') or opening) if 'instances' in mesh else [mesh.get('matrix_close', opening[0])]
         if len(ending) != len(opening):
             raise ValueError('Instance shutter transforms of %s must match' % mesh['name'])
+        # Where each placement stands at the frame, where it was read there (motion.apply_motion).
+        framing = mesh.get('instances_frame') if 'instances' in mesh else ([mesh['matrix_frame']] if mesh.get('matrix_frame') else None)
+        if framing is not None and len(framing) != len(opening):
+            framing = None
         # A fog's box is found by every ray, and so is a mesh light, which is the light itself.
         seen = 255 if light >= 0 or mesh.get('volume') else seen_by(mesh)
         # Each placement's own number, which a Variation Texture by Particle reads (occlusion.particles), else 0.
         variation = mesh.get('instance_variation') or []
         if len(variation) != len(opening):
             variation = [0.0] * len(opening)
-        for placement, later, number in zip(opening, ending, variation):
+        for index, (placement, later, number) in enumerate(zip(opening, ending, variation)):
             linked.append((len(instances), mesh.get('source_item') or str(mesh.get('identity', '')).split('|')[0],
                            mesh.get('face_materials') or [mesh.get('material', '')]))
             instances.append(struct.pack(INSTANCE, order[key], material, light, seen, float(number), *transform(placement))
-                             + (struct.pack('<12f', *transform(later)) if motion else b''))
+                             + (struct.pack('<12f', *transform(later)) + at_frame(placement, later, framing[index] if framing else None)
+                                if motion else b''))
     # A Modo Mesh Light whose Visible to Camera is on is seen where its Prototype's shape stands: the engine shows a mesh
     # light where a camera ray meets its surface, and this light's surface is in no layer (MoonRay keeps a MeshLight's
     # geometry out of it), so it is a surface of its own that camera rays alone find, hiding nothing else (1: the
@@ -1391,8 +1411,9 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
                           else key + struct.pack('<I', flags) + slot_map)
         used.add(key)
         placement = transform(shape['matrix'])
+        # Held where it is all through the shutter: the same at its close and at the frame.
         instances.append(struct.pack(INSTANCE, order[key], material_index[''], named['local'].index(identity), 1, 0.0,
-                                     *placement) + (struct.pack('<12f', *placement) if motion else b''))
+                                     *placement) + (struct.pack('<12f', *placement) * 2 if motion else b''))
     # Curves are curves on the GPU too: each strand a run of round segments, in the strands' own material.
     from .moonlightipr_curves import payload as curve_payload
     from .moonlightipr_materials import UV_SLOTS
@@ -1421,8 +1442,10 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
         used.add(key)
         placement = transform(entry.get('matrix') or IDENTITY)
         linked.append((len(instances), entry.get('source_item') or str(entry.get('identity', '')).split('|')[0], [entry.get('material', '')]))
+        close = entry.get('matrix_close') or entry.get('matrix') or IDENTITY
         instances.append(struct.pack(INSTANCE, order[key], material_index.get(entry.get('material', ''), material_index['']), -1, seen_by(entry), 0.0, *placement)
-                         + (struct.pack('<12f', *transform(entry.get('matrix_close') or entry.get('matrix') or IDENTITY)) if motion else b''))
+                         + (struct.pack('<12f', *transform(close)) + at_frame(entry.get('matrix') or IDENTITY, close, entry.get('matrix_frame'))
+                            if motion else b''))
     if any(entry.get('kind') not in ('curves', 'vdb') for entry in scene.get('extra_geometry', [])):
         warnings.append('MoonLightIPR does not show points.')
     table = light_sets(scene, named, linked, instances, warnings)

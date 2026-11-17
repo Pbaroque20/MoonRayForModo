@@ -132,6 +132,10 @@ def apply_motion(scene, start, end, endpoints, preview=False):
                 outputs.append(dict(original));warnings.append('Frame-time topology used without deformation blur: '+str(identity));continue
             node=dict(original)
             node.update(matrix=a.get('matrix',IDENTITY),matrix_close=b.get('matrix',IDENTITY))
+            if category=='meshes' and original.get('matrix') is not None and node['matrix']!=node['matrix_close']:
+                # Where it stands at the frame as well (MoonLightIPR): a part turning about another's centre (a car's
+                # wheel's spokes) stands neither on the line between its ends nor turned halfway about its own origin.
+                node['matrix_frame']=list(original['matrix'])
             if category=='lights':
                 if a['kind']!=node['kind'] or b['kind']!=node['kind']:
                     raise ValueError('Motion blur cannot change a light type')
@@ -172,12 +176,15 @@ def apply_motion(scene, start, end, endpoints, preview=False):
                     node.update(instances=[am[key] for key in cm],instances_close=[bm[key] for key in cm],
                         instance_ids=list(cm),instance_velocities=[[(bm[key][i]-am[key][i])*fps/span for i in (12,13,14)] for key in cm],
                         instance_evaluation_frame=endpoints[0],matrix=list(IDENTITY))
-                    node.pop('matrix_close',None);outputs.append(node);continue
+                    node['instances_frame']=[list(cm[key]) for key in cm]
+                    node.pop('matrix_close',None);node.pop('matrix_frame',None);outputs.append(node);continue
                 # One small instancer per moving transform shares the same mesh
                 # prototype; parent node_xform supplies full affine shutter samples.
                 node.update(instances=[am[key] for key in cm],instances_close=[bm[key] for key in cm],
                     instance_ids=list(cm),instance_transform_motion=True,matrix=list(IDENTITY))
-                node.pop('matrix_close',None);node.pop('instance_velocities',None)
+                # Each placement at the frame as well (MoonLightIPR), as for a mesh placed alone (matrix_frame).
+                node['instances_frame']=[list(cm[key]) for key in cm]
+                node.pop('matrix_close',None);node.pop('instance_velocities',None);node.pop('matrix_frame',None)
                 outputs.append(node)
 
             else:

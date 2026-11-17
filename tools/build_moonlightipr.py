@@ -38,7 +38,9 @@ if '--build-only' not in sys.argv or not (BUILD / 'build.ninja').exists():
     run([BIN / 'cmake.exe', '-S', ROOT / 'moonlightipr', '-B', BUILD, '-G', 'Ninja',
          '-DCMAKE_BUILD_TYPE=Release', '-DCMAKE_CXX_COMPILER=' + str(BIN / 'g++.exe'),
          '-DCMAKE_MAKE_PROGRAM=' + str(BIN / 'ninja.exe')], 'configure')
-run([BIN / 'cmake.exe', '--build', BUILD, '--target', 'moonlightipr_probe', 'moonlightipr_session', 'modo_composite'], 'compile')
+run([BIN / 'cmake.exe', '--build', BUILD, '--target', 'moonlightipr_probe', 'moonlightipr_session', 'modo_composite', 'transform_blend_test'], 'compile')
+# Where a moving transform stands between the shutter's ends, checked before anything is rendered with it.
+run([BUILD / 'bin/transform_blend_test.exe'], 'transform blend')
 # The kernel without each set of its heavy features, for scenes that do not use them (compile_moonlightipr_variants.py).
 run([sys.executable, ROOT / 'tools/compile_moonlightipr_variants.py', ROOT / 'moonlightipr/src/device/kernel.cu', BUILD / 'shaders'], 'kernel variants')
 if '--probe' in sys.argv:
