@@ -29,7 +29,7 @@ DEFAULTS = {
     # MoonLightIPR's own: its Render's samples, and its firefly controls apart from MoonRay's (Noise and Filtering): its
     # Sample Clamp, the bounce it holds from (0: from what the camera sees, through clear glass too, where its fireflies
     # are) and its Roughness Clamp. A scene that has not set its Sample Clamp or Roughness Clamp takes MoonRay's (complete).
-    'moonlightipr': {'render_samples': 2000, 'sample_clamp': 10.0, 'clamp_depth': 0, 'roughness_clamp': 0.0},
+    'moonlightipr': {'render_samples': 300, 'sample_clamp': 10.0, 'clamp_depth': 0, 'roughness_clamp': 0.0},
     'execution_mode': 'auto', 'preview_buffer': 'beauty',
     # The camera MoonRay tessellates adaptive geometry for, by its item's identity; '' for the render camera.
     'dicing_camera': '',
@@ -144,7 +144,7 @@ GROUPS = [
         field('xpu2_realtime', ('xpu2_generations', 'realtime'), 'int', 'RT Sample %', 'While realtime follows the scene (RT), the share of Generation Samples XPU2 takes, in percent: lower settles sooner and noisier. 30 unless changed, and a change is saved with the scene. Previews started with Render and final renders take them all', 1, 100),
     ]),
     ('MoonLightIPR', False, [
-        field('moonlightipr_render_samples', ('moonlightipr', 'render_samples'), 'int', 'Render Samples', 'Render with MoonLightIPR (realtime off) gathers this many samples a pixel, as fast as the graphics card can, and stops; Render Animation too, each frame. The label under the picture says how many it has so far. 2000 unless changed, and a change is saved with the scene', 1, 100000),
+        field('moonlightipr_render_samples', ('moonlightipr', 'render_samples'), 'int', 'Render Samples', 'Render with MoonLightIPR (realtime off) gathers this many samples a pixel, as fast as the graphics card can, and stops; Render Animation too, each frame. The label under the picture says how many it has so far. 300 unless changed, and a change is saved with the scene', 1, 100000),
         # MoonLightIPR's own firefly controls, apart from MoonRay's under Noise and Filtering.
         field('moonlightipr_sample_clamp', ('moonlightipr', 'sample_clamp'), 'float', 'Sample Clamp', "MoonLightIPR's own: limits how bright one sample may be, which removes fireflies; 0 is no limit. Until it is set it is MoonRay's (10 unless changed), as both engines shared it before; set, it is MoonLightIPR's own, saved with the scene. MoonRay's own is under Noise and Filtering", 0.0, 1000000.0),
         field('moonlightipr_clamp_depth', ('moonlightipr', 'clamp_depth'), 'int', 'Clamp From Bounce', "MoonLightIPR's own: the Sample Clamp applies from this bounce on. 0, the default, clamps from what the camera sees, which takes away the fireflies seen through clear glass (refraction through smooth glass is not a bounce); 1 leaves what the camera sees directly or through glass alone. MoonRay's own is under Noise and Filtering. Saved with the scene", 0, 100),
