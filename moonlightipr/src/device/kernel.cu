@@ -1775,6 +1775,51 @@ ML_INLINE float3 cameraStart(float sx, float sy) {
     return eye + normalize(vec(params.cameraU)) * (sx * half) + normalize(vec(params.cameraV)) * (sy * half * float(params.height) / float(params.width));
 }
 
+// Depth of field (a perspective camera with a lens): the ray leaves a point on the lens, drawn from seed, and still
+// passes through where the pinhole ray meets the plane in focus. For the beauty's camera rays and the AOVs' alike
+// (__raygen__aovs), with the same numbers drawn, so the alpha, depth and the rest are as blurred as the picture.
+ML_INLINE void lensRay(float3& origin, float3& direction, Seed& seed) {
+    if (!(params.lensRadius > 0.0f && params.cameraProjection == 0)) return;
+    float lensX, lensY;
+    const float u = rnd(seed), v = rnd(seed);
+    if (params.bokehSize) {
+        // A bokeh image: a row by the sums down it, a place in that row by the sums across it, then a point within
+        // that cell; the image fills the square the lens fits in, its top up, turned as the blades are.
+        const unsigned n = params.bokehSize;
+        const float* sums = reinterpret_cast<const float*>(params.bokeh);
+        unsigned low = 0, high = n;
+        while (high - low > 1) { const unsigned mid = (low + high) / 2; if (sums[mid] <= v) low = mid; else high = mid; }
+        const float rowSpan = fmaxf(sums[low + 1] - sums[low], 1e-12f);
+        const float* across = sums + (n + 1) + size_t(low) * (n + 1);
+        unsigned left = 0, right = n;
+        while (right - left > 1) { const unsigned mid = (left + right) / 2; if (across[mid] <= u) left = mid; else right = mid; }
+        const float cellSpan = fmaxf(across[left + 1] - across[left], 1e-12f);
+        const float x = (float(left) + clamp((u - across[left]) / cellSpan, 0.0f, 1.0f)) / float(n);
+        const float y = (float(low) + clamp((v - sums[low]) / rowSpan, 0.0f, 1.0f)) / float(n);
+        const float sx = 2.0f * x - 1.0f, sy = 1.0f - 2.0f * y;
+        const float c = cosf(params.lensAngle), s = sinf(params.lensAngle);
+        lensX = sx * c - sy * s;
+        lensY = sx * s + sy * c;
+    } else if (params.lensBlades) {
+        // A polygon, as MoonRay's: one of its triangles, then a point spread evenly over it.
+        const float scaled = u * params.lensBlades;
+        const unsigned blade = min(unsigned(scaled), params.lensBlades - 1);
+        const float along = scaled - blade, out = sqrtf(v), step = 2.0f * ML_PI / params.lensBlades;
+        const float a0 = params.lensAngle + step * blade, a1 = a0 + step;
+        lensX = out * (cosf(a0) + (cosf(a1) - cosf(a0)) * along);
+        lensY = out * (sinf(a0) + (sinf(a1) - sinf(a0)) * along);
+    } else {
+        const float r = sqrtf(u), phi = 2.0f * ML_PI * v;
+        lensX = r * cosf(phi);
+        lensY = r * sinf(phi);
+    }
+    const float3 forward = normalize(vec(params.cameraW));
+    const float3 focus = origin + direction * (params.focusDistance / dot(direction, forward));
+    origin = origin + (normalize(vec(params.cameraU)) * lensX + normalize(vec(params.cameraV)) * lensY) * params.lensRadius;
+    direction = normalize(focus - origin);
+}
+
+
 // ---- AOVs ----------------------------------------------------------------------------------------
 // The geometry AOVs (AovSlot), gathered beside the beauty while params.aovs is set, at the first hit.
 ML_INLINE float4* aovSlot(unsigned pixel, unsigned slot) {
@@ -1894,47 +1939,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
         if (params.half) reinterpret_cast<float4*>(params.half)[pixel] = make_float4(0.0f, 0.0f, 0.0f, 1.0f);
         return;
     }
-    if (params.lensRadius > 0.0f && params.cameraProjection == 0) {
-        // Depth of field: the ray leaves a point on the lens and still passes through where the
-        // pinhole ray meets the plane in focus.
-        float lensX, lensY;
-        const float u = rnd(seed), v = rnd(seed);
-        if (params.bokehSize) {
-            // A bokeh image: a row by the sums down it, a place in that row by the sums across it, then a point within
-            // that cell; the image fills the square the lens fits in, its top up, turned as the blades are.
-            const unsigned n = params.bokehSize;
-            const float* sums = reinterpret_cast<const float*>(params.bokeh);
-            unsigned low = 0, high = n;
-            while (high - low > 1) { const unsigned mid = (low + high) / 2; if (sums[mid] <= v) low = mid; else high = mid; }
-            const float rowSpan = fmaxf(sums[low + 1] - sums[low], 1e-12f);
-            const float* across = sums + (n + 1) + size_t(low) * (n + 1);
-            unsigned left = 0, right = n;
-            while (right - left > 1) { const unsigned mid = (left + right) / 2; if (across[mid] <= u) left = mid; else right = mid; }
-            const float cellSpan = fmaxf(across[left + 1] - across[left], 1e-12f);
-            const float x = (float(left) + clamp((u - across[left]) / cellSpan, 0.0f, 1.0f)) / float(n);
-            const float y = (float(low) + clamp((v - sums[low]) / rowSpan, 0.0f, 1.0f)) / float(n);
-            const float sx = 2.0f * x - 1.0f, sy = 1.0f - 2.0f * y;
-            const float c = cosf(params.lensAngle), s = sinf(params.lensAngle);
-            lensX = sx * c - sy * s;
-            lensY = sx * s + sy * c;
-        } else if (params.lensBlades) {
-            // A polygon, as MoonRay's: one of its triangles, then a point spread evenly over it.
-            const float scaled = u * params.lensBlades;
-            const unsigned blade = min(unsigned(scaled), params.lensBlades - 1);
-            const float along = scaled - blade, out = sqrtf(v), step = 2.0f * ML_PI / params.lensBlades;
-            const float a0 = params.lensAngle + step * blade, a1 = a0 + step;
-            lensX = out * (cosf(a0) + (cosf(a1) - cosf(a0)) * along);
-            lensY = out * (sinf(a0) + (sinf(a1) - sinf(a0)) * along);
-        } else {
-            const float r = sqrtf(u), phi = 2.0f * ML_PI * v;
-            lensX = r * cosf(phi);
-            lensY = r * sinf(phi);
-        }
-        const float3 forward = normalize(vec(params.cameraW));
-        const float3 focus = origin + direction * (params.focusDistance / dot(direction, forward));
-        origin = origin + (normalize(vec(params.cameraU)) * lensX + normalize(vec(params.cameraV)) * lensY) * params.lensRadius;
-        direction = normalize(focus - origin);
-    }
+    lensRay(origin, direction, seed);
 
     const DeviceDistantLight* distantLights = reinterpret_cast<const DeviceDistantLight*>(params.distantLights);
     const DeviceLight* lights = reinterpret_cast<const DeviceLight*>(params.lights);
@@ -1983,10 +1988,16 @@ extern "C" __global__ void __raygen__moonlightipr() {
             // The camera ray as a cone a pixel wide, for the texture sizes read where it lands (Hit::footprint): a
             // pixel's angle (for MoonRay's fisheye and spherical cameras, about the same), or, for the orthographic
             // camera, its width. Rays after it read whole pictures, as a path's later bounces blur them anyway.
-            if (params.cameraProjection == 3) hit.coneWidth = params.cameraProjectionValues[0] / float(params.width);
+            // Made narrower as the samples a pixel grow, by MoonRay's rule (PathIntegrator::initPrimaryRay: its ray
+            // differentials times 1 / min(sqrt(samples a pixel), 2)): the samples spread over the pixel do the rest of its
+            // filtering, so a sample reads half a pixel's width of texture from its fourth on. A whole pixel's width for
+            // every sample read each image one smaller copy blurrier than MoonRay does: final renders, with their hundreds
+            // of samples, looked to have their textures at a lower resolution (a report).
+            const float narrower = 1.0f / fminf(sqrtf(float(params.sample + 1)), 2.0f);
+            if (params.cameraProjection == 3) hit.coneWidth = narrower * params.cameraProjectionValues[0] / float(params.width);
             else if (params.cameraProjection == 0)
-                hit.coneSpread = 2.0f * length(vec(params.cameraV)) / (float(params.height) * length(vec(params.cameraW)));
-            else hit.coneSpread = ML_PI / float(params.height);
+                hit.coneSpread = narrower * 2.0f * length(vec(params.cameraV)) / (float(params.height) * length(vec(params.cameraW)));
+            else hit.coneSpread = narrower * ML_PI / float(params.height);
         }
         traceRadiance(origin, direction, hit, reach, seen);
         // A light pass takes nothing of fog before the first surface.
@@ -2894,8 +2905,11 @@ extern "C" __global__ void __raygen__aovs() {
     const float sy = 2.0f * (index.y + rnd(seed)) / params.height - 1.0f;
     float3 origin = cameraStart(sx, sy);
     bool outside = false;
-    const float3 direction = cameraDirection(sx, sy, outside);
+    float3 direction = cameraDirection(sx, sy, outside);
     if (outside) return;
+    // Through the lens, as the beauty's ray of this sample goes (the same numbers drawn): with depth of field, the
+    // alpha and the other AOVs are blurred as the picture is. They were sharp where the picture was not (a report).
+    lensRay(origin, direction, seed);
     const float3 forward = normalize(vec(params.cameraW));
     float travelled = 0.0f;
     for (int crossing = 0; crossing < 16; ++crossing) {
