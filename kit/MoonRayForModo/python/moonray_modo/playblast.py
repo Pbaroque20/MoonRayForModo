@@ -166,9 +166,15 @@ class MoonLightIPRAnimation(Playblast):
         self.total = len(self.frames)
         self.frame = self.frames[0]
 
+    def _fresh(self):
+        """A frame's pictures not had yet: its beauty, its denoised beauty, its alpha (and the AOV looked at before)."""
+        self.beauty = self.denoised = self.alpha = self.alpha_before = self.alpha_kept = None
+        self.waited = 0
+
     def start(self):
-        # Each frame is rendered looking at the beauty; its denoised picture is asked for once it is done (_settled).
-        self.denoised_from = None
+        # Each frame is rendered looking at the beauty; its denoised picture and its alpha are asked for once it is done
+        # (_settled).
+        self._fresh()
         self._show('beauty')
         super().start()
 
@@ -183,7 +189,7 @@ class MoonLightIPRAnimation(Playblast):
         return frame.get('linear', {}).get('beauty')
 
     def next_frame(self):
-        self.denoised_from = None
+        self._fresh()
         self._show('beauty')
         super().next_frame()
 
@@ -198,35 +204,55 @@ class MoonLightIPRAnimation(Playblast):
         self.quiet += 1
         if self.quiet < 2:
             return
-        if self.denoise and self.denoised_from is None:
-            # The beauty is done: written, then its denoised picture asked for (the session denoises what it has).
-            try:
-                self.beauty_written = self._write(self._picture())
-            except Exception as exc:
-                self.poll.stop()
-                self.failed('frame %d could not be written: %s' % (self.frame, exc))
-                return
-            self.denoised_from = self._picture()
+        if self.beauty is None:
+            # The beauty is done: kept, then its denoised picture asked for where the Denoiser is on (the session
+            # denoises what it has).
+            self.beauty = self._picture()
             self.waited = 0
-            self.quiet = 0
-            self._show('denoised_beauty')
-            return
-        if self.denoise:
-            # Until the denoised picture has come (another picture than the beauty written), a minute at most.
-            if self._picture() is self.denoised_from:
+            if self.denoise:
+                self.quiet = 0
+                self._show('denoised_beauty')
+                return
+        if self.denoise and self.denoised is None:
+            # Until the denoised picture has come (another picture than the beauty), a minute at most.
+            if self._picture() is self.beauty:
                 self.waited += 1
                 if self.waited < 1500:
                     return
                 self.poll.stop()
                 self.failed('frame %d: MoonLightIPR sent no denoised picture' % self.frame)
                 return
+            self.denoised = self._picture()
+            self.waited = 0
+        if self.alpha is None:
+            # Then its alpha, MoonLightIPR's own output gathered beside the beauty (sent at once, nothing rendered
+            # again), for the EXRs' A channel as MoonRay's renders have it; the AOV looked at before is looked at again.
+            from . import moonlightipr_aovs
+            session = renderer.moonlightipr
+            if self.alpha_kept is None:
+                self.alpha_kept = session.aov_now
+                self.alpha_before = self.panel._moonlightipr_linear('alpha')
+                session.aov(moonlightipr_aovs.kind('alpha'), 'alpha')
+                self.quiet = 0
+                return
+            now = self.panel._moonlightipr_linear('alpha')
+            if now is None or now is self.alpha_before:
+                self.waited += 1
+                if self.waited < 1500:
+                    return
+                # None came in a minute: the frame is written without it, as it was before alphas were.
+                now = False
+            self.alpha = now
+            session.aov(*self.alpha_kept)
         self.poll.stop()
+        alpha = self.alpha or None
         try:
             if self.denoise:
-                denoised = self._write(self._picture(), denoised=True)
-                written = self.beauty_written if Path(self.beauty_written).is_file() else denoised
+                beauty = self._write(self.beauty, alpha=alpha)
+                denoised = self._write(self.denoised, denoised=True, alpha=alpha)
+                written = beauty if Path(beauty).is_file() else denoised
             else:
-                written = self._write(self._picture())
+                written = self._write(self.beauty, alpha=alpha)
         except Exception as exc:
             self.failed('frame %d could not be written: %s' % (self.frame, exc))
             return
@@ -245,10 +271,11 @@ class MoonLightIPRAnimation(Playblast):
         self.stop()
         self.panel.status.setText('Animation stopped (MoonLightIPR): ' + message)
 
-    def _write(self, linear, denoised=False):
+    def _write(self, linear, denoised=False, alpha=None):
         """The frame as MoonLightIPR rendered it, from its own numbers (linear): an EXR, the denoised one under its
-        sidecar name; and the picture type asked for beside it or in its place, from the denoised picture where there
-        is one. The EXR written (the beauty's name where its picture type alone is kept)."""
+        sidecar name, with its alpha (linear, MoonLightIPR's alpha output) as the A channel where it came; and the
+        picture type asked for beside it or in its place, from the denoised picture where there is one. The EXR written
+        (the beauty's name where its picture type alone is kept)."""
         import subprocess
         from . import native
         from .denoising import sidecar
@@ -265,7 +292,15 @@ class MoonLightIPRAnimation(Playblast):
             with pfm.open('wb') as stream:
                 stream.write(('PF\n%d %d\n-1.0\n' % (width, height)).encode('ascii'))
                 stream.write(pixels)
-            done = subprocess.run([str(runtime / 'oiiotool.exe'), str(pfm), '-o', str(target)], env=native.environment(runtime),
+            arguments = [str(runtime / 'oiiotool.exe'), str(pfm)]
+            if alpha and alpha[:2] == (width, height):
+                # Its alpha (grey, as the session sends it) appended as A: R, G, B and A, as MoonRay writes its beauty.
+                coverage = Path(folder) / 'alpha.pfm'
+                with coverage.open('wb') as stream:
+                    stream.write(('PF\n%d %d\n-1.0\n' % (width, height)).encode('ascii'))
+                    stream.write(alpha[2])
+                arguments += [str(coverage), '--ch', 'R', '--chnames', 'A', '--chappend']
+            done = subprocess.run(arguments + ['-o', str(target)], env=native.environment(runtime),
                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0), timeout=300)
         if done.returncode or not target.is_file():
             raise ValueError(done.stdout.decode(errors='replace').strip()[-300:] or 'oiiotool wrote no EXR')
