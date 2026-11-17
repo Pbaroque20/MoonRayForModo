@@ -2772,8 +2772,9 @@ class Panel(Tools, QtWidgets.QWidget):
         if self._rendering and not (self.sequence is not None and self.sequence.running) and self.renderer.settle_moonray():
             self.status.setText(keeping);self._await_settle(30000);return
         # MoonRay kept loaded hands over the picture as it stands, with what the denoiser needs, and is then stopped.
+        # XPU2 paused is waited for as long as its save may take (Renderer.keep_wait).
         if rendering and not self.draft.isChecked() and self.renderer.keep_progress():
-            self.status.setText(keeping);self._await_settle(16000);return
+            self.status.setText(keeping);self._await_settle(self.renderer.keep_wait());return
         # MoonRay or XPU2 kept loaded and idle, its scene and GPU structures held, for the next preview to start at once
         # (Renderer.stop keep); let go when the scene closes (_scene_closed).
         self.renderer.stop(keep=True)
@@ -2935,7 +2936,7 @@ class Panel(Tools, QtWidgets.QWidget):
         # Under Safe Denoising: how long ago MoonRay last saved, which is what a stop now would keep.
         saved=getattr(self.renderer,'saved_at',None)
         if (self._rendering and saved is not None and getattr(self.renderer,'safe_files',None) and not getattr(self.renderer,'settling',False)
-                and not label.startswith(('Complete','Stopped')) and 'Denoising' not in label):
+                and not label.startswith(('Complete','Stopped','Paused')) and 'Denoising' not in label):
             import time
             from .progress import duration
             label+=' · Saved %s ago'%duration(time.monotonic()-saved)
