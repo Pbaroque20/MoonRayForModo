@@ -6,7 +6,8 @@ extern "C" __declspec(dllexport) int modoDisplay(const float* source,uint64_t so
     unsigned width,unsigned height,unsigned char* destination,uint64_t destinationBytes,
     int kind,int view,float exposure,const float* matrix) noexcept {
     const uint64_t count=uint64_t(width)*height;
-    if(!source || !destination || !matrix || !width || !height || count>64*1024*1024/12 ||
+    // A picture of any size, as the renderers hand it over (modo_shared_image.h).
+    if(!source || !destination || !matrix || !width || !height ||
        sourceBytes!=count*12 || destinationBytes!=count*4 || kind<0 || kind>3 || view<0 || view>2 || !std::isfinite(exposure))return 0;
     const float gain=std::exp2(exposure);
     for(unsigned y=0;y<height;++y)for(unsigned x=0;x<width;++x){

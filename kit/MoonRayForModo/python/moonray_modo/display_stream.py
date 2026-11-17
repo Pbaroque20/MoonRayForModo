@@ -49,7 +49,7 @@ def convert(pixels,width,height,kind,settings,runtime,source=None):
  # Rebuild processors if the user edits the configuration or LUT in place.
  stamp=tuple((str(Path(v[k]).resolve()),Path(v[k]).stat().st_mtime_ns,Path(v[k]).stat().st_size) for k in ('lut','config') if v[k] and not display.built_in(v[k]))
  signature=(tuple(args),stamp)
- if source is None and (width<=0 or height<=0 or len(pixels)!=width*height*12 or len(pixels)>64*1024*1024):raise ValueError('Invalid float image size')
+ if source is None and (width<=0 or height<=0 or len(pixels)!=width*height*12):raise ValueError('Invalid float image size')
  with _lock:
   if _signature!=signature or _process is None or _process.poll() is not None:
    _close();_process=subprocess.Popen(args,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,env=native.environment(runtime),creationflags=subprocess.CREATE_NO_WINDOW);_signature=signature

@@ -63,7 +63,8 @@ int main(int argc,char** argv){
         rgb[i*3+c]=raw[i*input.nchannels()+std::min(c,input.nchannels()-1)];
     }
    }else{
-    if(!w || !h || uint64_t(w)*h>64*1024*1024/12)throw std::runtime_error("Invalid pixel dimensions");
+    // A picture of any size, as the renderers hand it over (modo_shared_image.h).
+    if(!w || !h)throw std::runtime_error("Invalid pixel dimensions");
     rgb.resize(size_t(w)*h*3);std::vector<float> row(size_t(w)*3);
     for(unsigned y=0;y<h;++y){if(!readBytes(row.data(),row.size()*4))return 3;
      std::copy(row.begin(),row.end(),rgb.begin()+size_t(h-1-y)*w*3);}
