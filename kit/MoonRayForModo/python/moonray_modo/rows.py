@@ -129,6 +129,17 @@ def _address(held):
     return held.buffer_info()[0] if isinstance(held, array) else ctypes.addressof(ctypes.c_char.from_buffer(held))
 
 
+def same_numbers(a, b):
+    """Whether two runs of numbers hold the same numbers: the very same run, or two arrays of one type the same byte for
+    byte (compared at C speed). Compared number by number, a car's points took 7 s of every update of a scene that moves,
+    motion.apply_motion comparing each mesh at the shutter's ends with the frame's (most of them the same run)."""
+    if a is b:
+        return True
+    if isinstance(a, array) and isinstance(b, array) and a.typecode == b.typecode:
+        return len(a) == len(b) and a.tobytes() == b.tobytes()
+    return a == b
+
+
 class Rows:
     """Rows of `width` numbers each, read as the list of lists they stand for (of numbers, for a width of 1)."""
     __slots__ = ('data', 'width', 'digest', '_rows', '__weakref__')
@@ -173,8 +184,10 @@ class Rows:
         return self.data[index * width:(index + 1) * width].tolist()
 
     def __eq__(self, other):
+        if self is other:
+            return True
         if isinstance(other, Rows):
-            return self.width == other.width and self.data == other.data
+            return self.width == other.width and same_numbers(self.data, other.data)
         return self.rows() == other
 
     def __ne__(self, other):
@@ -246,8 +259,10 @@ class Faces(Rows):
         return self.data[self._starts[index]:self._starts[index + 1]].tolist()
 
     def __eq__(self, other):
+        if self is other:
+            return True
         if isinstance(other, Faces):
-            return self.counts == other.counts and self.data == other.data
+            return same_numbers(self.counts, other.counts) and same_numbers(self.data, other.data)
         return self.rows() == other
 
     def __repr__(self):
