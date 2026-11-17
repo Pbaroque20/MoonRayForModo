@@ -250,7 +250,7 @@ GROUPS = [
         field('colors', None, 'button', 'Input Color Spaces and Texture Cache...'),
     ]),
     ('Output Renders', True, [
-        field('final_motion', ('final_motion',), 'bool', 'Motion Blur', 'Motion blur and motion vectors in MoonRay renders: Render, Render to a File and animations. Also on where Motion Blur is on on the Modo camera. Realtime has a preference of its own (Preview Preferences)'),
+        field('final_motion', ('final_motion',), 'bool', 'Motion Blur', 'Motion blur and motion vectors in MoonRay renders: Render, Render to a File and animations. Also on where Motion Blur is on on the camera rendered through (the camera keyed for the frame in the Camera Sequence, a MoonRay camera chosen, else the render camera). Realtime blurs by it too, in MoonLightIPR and XPU2'),
         field('exr_compression', ('exr', 'compression'), 'choice', 'EXR Compression', 'How Render EXR and animations compress their EXRs. The lossy ones make smaller files; they are not used with checkpoints or Safe Denoising, which take a render up again from what it saved', choices=options.EXR_COMPRESSIONS),
         field('exr_dwa_level', ('exr', 'dwa_level'), 'float', 'DWA Compression Level', 'For DWAA and DWAB: higher is smaller and loses more', 0.0, 1000.0),
         field('exr_multipart', ('exr', 'multipart'), 'bool', 'Multi-Part EXR', 'Each output in a part of its own in the EXR, which a compositor can read one at a time, not all together. The beauty, its alpha and any Cryptomatte stay in the first part'),

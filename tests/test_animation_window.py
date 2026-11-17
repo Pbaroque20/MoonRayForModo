@@ -188,15 +188,16 @@ class Wiring(unittest.TestCase):
         self.assertIn("still=self.preview_engine.currentData()=='moonray' and not self._following and not self.draft.isChecked() and self._motion_wanted()", self.read('panel.py'))
 
     def test_motion_blur_on_the_modo_camera_counts_everywhere(self):
-        self.assertIn("channel(scene.renderCamera, 'motionBlur', 0)", self.read('host.py'))
+        self.assertIn("channel(rendered_camera(scene), 'motionBlur', 0)", self.read('host.py'))
         self.assertIn('if not self._motion_wanted():return self._capture()', self.read('panel.py'))
         self.assertIn("'motion': self._motion_wanted()", self.read('panel_tools.py'))
 
-    def test_xpu2_realtime_blur_is_a_preference_off_by_default(self):
-        self.assertIn("'xpu2_motion': (False, bool)", self.read('preferences.py'))
+    def test_xpu2_realtime_blurs_by_the_camera_rendered_through(self):
+        # Since 0.5.5 by the camera (and the render settings), as every engine: no preference of its own.
+        self.assertNotIn("'xpu2_motion'", self.read('preferences.py').split('def ')[0])
         panel = self.read('panel.py')
         self.assertIn('if not held and self._preview_blurred():', panel)
-        self.assertIn("not self.ipr_mode.isChecked() or not self.preferences.get('xpu2_motion')", panel)
+        self.assertIn("not self.ipr_mode.isChecked() or not self._motion_wanted():return False", panel)
 
     def test_realtime_does_not_take_over_a_blurred_renders_reading(self):
         self.assertIn("if bool(scene.get('motion_steps'))!=self._preview_blurred():return None", self.read('panel.py'))

@@ -217,7 +217,8 @@ def export_job(directory, name, frames, progress=None):
                 progress(index, len(frames))
             if frame is not None:
                 selection.SetTime(frame / fps)
-            if held.get('final_motion'):
+            # Motion blur where the render settings or the camera rendered through at this frame ask for it, as a render.
+            if held.get('final_motion') or host.camera_motion_blur(modo.Scene()):
                 from .animation import capture_current
                 snapshot = capture_current(held['surface'] == 2)
             else:

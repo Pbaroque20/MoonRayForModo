@@ -468,10 +468,32 @@ def picture_size(scene, camera=None):
     return width, height
 
 
-def camera_motion_blur(scene):
-    """Whether Motion Blur is on on the scene's render camera, Modo's own switch."""
+def rendered_camera(scene):
+    """The camera the renderers render through now, as the reading takes it (snapshot): the one keyed for this frame in
+    the Camera Sequence, else the MoonRay camera chosen to render through (camera_choice), else Modo's render camera."""
     try:
-        return bool(int(channel(scene.renderCamera, 'motionBlur', 0)))
+        from . import camera_sequence
+        keyed = camera_sequence.keyed(scene, round(lx.service.Selection().GetTime() * float(scene.fps)))
+    except Exception:
+        keyed = None
+    if keyed is not None:
+        return keyed[0]
+    try:
+        from . import camera_choice
+        identity = camera_choice.current(scene)
+        if identity:
+            return scene.item(identity)
+    except Exception:
+        pass
+    return scene.renderCamera
+
+
+def camera_motion_blur(scene):
+    """Whether Motion Blur is on on the camera the renderers render through (rendered_camera), Modo's own switch: what
+    MoonRay, XPU2's realtime and MoonLightIPR blur by. The render camera's alone was asked, so a scene rendered through
+    another camera (a Camera Sequence's, a MoonRay camera's) blurred by a camera it was not seen through."""
+    try:
+        return bool(int(channel(rendered_camera(scene), 'motionBlur', 0)))
     except Exception:
         return False
 
