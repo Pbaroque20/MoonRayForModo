@@ -65,7 +65,8 @@ def missed():
 
 # What the kit makes in the folder, each a folder of its own: what Clear Cache empties (clear). Not Diagnostics (logs), and
 # not MoonLightIPR's compiled programs (OptixCache), which take minutes to make again and do not go stale.
-CLEARED = ('Scenes', 'MoonLightIPR', 'Simplified', 'Textures', 'Environments', 'Procedurals', 'GraphBakes', 'Fur')
+CLEARED = ('Scenes', 'Geometry', 'Alpha', 'MoonLightIPR', 'Simplified', 'Textures', 'Environments', 'Procedurals', 'GraphBakes', 'Fur',
+           'Ocean')
 
 
 def clear():

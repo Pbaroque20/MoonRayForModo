@@ -62,6 +62,10 @@ struct RenderOptions {
     // CPU lane or by the GPU once the tile has landed; false parks it until the tile lands, as before. Never in the
     // pass chain, which runs on the device alone.
     bool partial = true;
+    // A drain (a preview stopped by hand) first covers the picture: the first pass still out in each cell is rendered,
+    // by either device (Grid::cover), so that no cell the frame had not come to is left without a sample; false ends with
+    // what is in hand (a staged frame's later stages, whose film covers the picture already).
+    bool coverOnDrain = true;
     // Important parts first: the pictures so far score the cells, the important ones stay their owner's and may run a
     // range ahead, the rest are anyone's (async_grid.h).
     bool important = true;
@@ -629,6 +633,15 @@ public:
         const bool resumable = adaptive && state.cellular && watch && watch->resumable && watch->resumableSeconds > 0;
         double nextResumable = resumable ? watch->resumableSeconds : -1;
         bool drainAfterSave = false;  // a drain asked for: the save first, at the next boundary
+        // A drain ends in a moment, whatever is still out (a stop by hand; the kit gives up on one after 16 s and ends the
+        // process): past drainBy, provisional samples are taken as they stand (a coarser texture level's), parked ones
+        // dropped, and a save not yet reached let go. The texture tiles a drain waited for could take far longer.
+        double drainBy = -1;
+        const double drainSeconds = [] {
+            const char* v = std::getenv("XPU2_SESSION_DRAIN_SECONDS");
+            const double s = v ? std::atof(v) : 0.0;
+            return s > 0 ? s : 2.0;
+        }();
         auto saveResumable = [&](Adaptive& s) {
             auto keep = std::make_shared<ResumeState>();
             if (useGpu) {
@@ -685,16 +698,26 @@ public:
                 // With resumable checkpoints, a drain first finishes the generations out and saves there (below), so that the
                 // render can be taken up from where it was stopped; then it drains.
                 if (!draining && !drainAfterSave && watch->drain && watch->drain()) {
+                    // Covering the picture first (coverOnDrain): not where the pass chain runs on the device, nor in a
+                    // frame taken up from a save, whose film has every pixel sampled already.
+                    const bool cover = o.coverOnDrain && !chainFrame && !o.resumeFrom;
                     if (resumable && !state.chain && !state.finished(useGpu ? gpu_ : nullptr)) {
                         drainAfterSave = true;
                         state.hold = true;
-                    } else if (!partial) {
+                        drainBy = at() + 3.0 * drainSeconds;  // the save it waits for lets the render be taken up
+                    } else if (!partial && !cover) {
                         drained = true;
                         break;
                     } else {
                         draining = true;
-                        grid.close();
+                        if (cover) grid.cover();
+                        else grid.close();
+                        drainBy = at() + drainSeconds;
                     }
+                }
+                if (drainBy >= 0 && at() >= drainBy) {
+                    drained = true;
+                    break;
                 }
             }
             preview();

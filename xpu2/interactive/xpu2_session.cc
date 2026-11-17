@@ -1122,15 +1122,20 @@ struct Scene {
                         "%.2f s over %lld threads, spanning %.2f s\n",
                         (long long)subd.meshes, double(subd.tessellateNs) * 1e-9, (long long)subd.displaceCalls, double(subd.displaceNs) * 1e-9,
                         (long long)subd.threads, double(subd.last - subd.first) * 1e-9);
-        displayFilters = aov::DisplayFilters();
-        if (plan->aovs && !plan->aovs->displayFilters.empty())
-            displayFilters.prepare(canonical->replica(), *plan->aovs, dso.string(), plan->width, plan->height);
+        prepareDisplayFilters();
         std::error_code ignored;
         if (!lastFolder.empty()) fs::remove_all(lastFolder, ignored);
         lastFolder = folder;
         changed = false;
         if (!coarse) keepBase(plan);
         else basePlan.reset();
+    }
+    // The display filters of the plan's outputs (aov_display.h), which they point into: made again with each plan, a
+    // coarse first pass's full plan too (its own outputs; the coarse plan's are let go with it).
+    void prepareDisplayFilters() {
+        displayFilters = aov::DisplayFilters();
+        if (plan->aovs && !plan->aovs->displayFilters.empty())
+            displayFilters.prepare(canonical->replica(), *plan->aovs, dso.string(), plan->width, plan->height);
     }
     // The full plan after a coarse one (the coarse first pass): from the same canonical frame, the coarse plan's
     // materials, textures and lights taken over (its coarse meshes never are), and its CPU scene. On a thread of its own,
@@ -1248,11 +1253,13 @@ public:
         wake_.notify_all();
         thread_.join();
     }
-    // Before a frame: the plan and display filters its saves use.
-    void frame(const aov::Plan* plan, aov::DisplayFilters* filters, unsigned width, unsigned height) {
+    // Before a frame: the plan and display filters its saves use. The plan held: a coarse first pass's, given before it,
+    // was let go once the full plan took its place, and the saves read its outputs after they were freed (nothing saved,
+    // "basic_string::_M_create", or a crash at the first checkpoint, one render in five).
+    void frame(std::shared_ptr<const aov::Plan> plan, aov::DisplayFilters* filters, unsigned width, unsigned height) {
         wait();
         std::lock_guard<std::mutex> lock(mutex_);
-        plan_ = plan;
+        plan_ = std::move(plan);
         filters_ = filters;
         width_ = width;
         height_ = height;
@@ -1277,7 +1284,7 @@ private:
         for (;;) {
             async::RenderResult r;
             std::function<void()> first;
-            const aov::Plan* plan;
+            std::shared_ptr<const aov::Plan> plan;
             aov::DisplayFilters* filters;
             unsigned width, height;
             {
@@ -1322,7 +1329,7 @@ private:
     bool stop_ = false, busy_ = false;
     async::RenderResult pending_;
     std::function<void()> first_;
-    const aov::Plan* plan_ = nullptr;
+    std::shared_ptr<const aov::Plan> plan_;
     aov::DisplayFilters* filters_ = nullptr;
     unsigned width_ = 0, height_ = 0;
     std::thread thread_;
@@ -1538,6 +1545,87 @@ inline U32 stagedStep(U32 spp) {
     return std::max<U32>(1u, (spp + 15) / 16);
 }
 
+// A frame stopped by hand (drained) keeps the picture its previews showed. Its pixels no sample reached yet (cells the
+// frame had not come to) were black: in the beauty they are filled as the previews fill them (Renderer::fillGaps: from
+// the finest level of a pyramid of averages that covers them), and every other output takes the values of a pixel with
+// samples in that same block, so that neither the picture kept nor the files the kit denoises show black squares. Their
+// counts stay none: a save taken up later still renders them. Only within the sub viewport (view: min x, min y, max x,
+// max y, half open), whose outside takes no samples; a camera that makes no ray for some pixels (a fisheye's corners)
+// is left as it is.
+void fillDrained(async::RenderResult& r, const cpu::Plan& plan, U32 aovChannels) {
+    const U32 w = plan.width, h = plan.height;
+    const size_t pixels = size_t(w) * h;
+    if (!w || !h || r.counts.size() < pixels || r.rgba.size() < pixels * 4) return;
+    if (plan.camera.type == surface::CameraFisheye || plan.camera.type == surface::CameraBake) return;
+    const int* view = plan.viewport;
+    auto inView = [&](U32 x, U32 y) { return int(x) >= view[0] && int(y) >= view[1] && int(x) < view[2] && int(y) < view[3]; };
+    size_t reached = 0, gaps = 0;
+    for (U32 y = 0; y < h; ++y)
+        for (U32 x = 0; x < w; ++x) {
+            const size_t i = size_t(y) * w + x;
+            if (r.counts[i]) ++reached;
+            else gaps += inView(x, y);
+        }
+    if (!reached || !gaps) return;
+    // Level k holds blocks of 2^(k+1) pixels a side: the beauty's sums over the pixels with samples, their number, and
+    // one of them.
+    struct Level {
+        U32 w, h;
+        std::vector<float> sum;
+        std::vector<U32> n, one;
+    };
+    std::vector<Level> levels;
+    auto level = [&](U32 lw, U32 lh) {
+        Level l{(lw + 1) / 2, (lh + 1) / 2, {}, {}, {}};
+        l.sum.assign(size_t(l.w) * l.h * 4, 0.0f);
+        l.n.assign(size_t(l.w) * l.h, 0u);
+        l.one.assign(size_t(l.w) * l.h, ~0u);
+        return l;
+    };
+    {
+        Level l = level(w, h);
+        for (U32 y = 0; y < h; ++y)
+            for (U32 x = 0; x < w; ++x) {
+                const size_t i = size_t(y) * w + x;
+                if (!r.counts[i]) continue;
+                const size_t to = size_t(y / 2) * l.w + x / 2;
+                for (int c = 0; c < 4; ++c) l.sum[to * 4 + c] += std::isfinite(r.rgba[i * 4 + c]) ? r.rgba[i * 4 + c] : 0.0f;
+                if (!l.n[to]++) l.one[to] = U32(i);
+            }
+        levels.push_back(std::move(l));
+    }
+    while (levels.back().w > 1 || levels.back().h > 1) {
+        const Level& f = levels.back();
+        Level l = level(f.w, f.h);
+        for (U32 y = 0; y < f.h; ++y)
+            for (U32 x = 0; x < f.w; ++x) {
+                const size_t from = size_t(y) * f.w + x, to = size_t(y / 2) * l.w + x / 2;
+                if (!f.n[from]) continue;
+                for (int c = 0; c < 4; ++c) l.sum[to * 4 + c] += f.sum[from * 4 + c];
+                if (!l.n[to]) l.one[to] = f.one[from];
+                l.n[to] += f.n[from];
+            }
+        levels.push_back(std::move(l));
+    }
+    const bool odd = r.odd.size() >= pixels * 4, aovs = aovChannels && r.aov.size() >= pixels * aovChannels;
+    for (U32 y = 0; y < h; ++y)
+        for (U32 x = 0; x < w; ++x) {
+            const size_t i = size_t(y) * w + x;
+            if (r.counts[i] || !inView(x, y)) continue;
+            for (size_t k = 0; k < levels.size(); ++k) {
+                const Level& l = levels[k];
+                const size_t at = size_t(y >> (k + 1)) * l.w + (x >> (k + 1));
+                if (!l.n[at]) continue;
+                for (int c = 0; c < 4; ++c) r.rgba[i * 4 + c] = l.sum[at * 4 + c] / float(l.n[at]);
+                const size_t from = l.one[at];
+                if (odd)
+                    for (int c = 0; c < 4; ++c) r.odd[i * 4 + c] = r.odd[from * 4 + c];
+                if (aovs) std::copy_n(r.aov.begin() + from * aovChannels, aovChannels, r.aov.begin() + i * aovChannels);
+                break;
+            }
+        }
+}
+
 // A checkpoint render: the frame in stages (StagedFilm), its pictures the film so far with the stage under way blended
 // in, the film saved every checkpoint_interval (the checkpoint files, and the .xpu2resume beside them), and with
 // resume_render taken up from its save. Uniform: a stage samples every pixel alike, whatever the scene's sampling.
@@ -1603,6 +1691,7 @@ async::RenderResult stagedFrame(async::Renderer& renderer, const async::RenderOp
         o.region[0] = 0, o.region[1] = 0, o.region[2] = int(plan.width), o.region[3] = int(plan.height);
         o.sampleFirst = first, o.sampleCount = count;
         o.partial = false;  // every sample whole: the stages must add up to the frame
+        o.coverOnDrain = first == 0;  // a stop in a later stage keeps the film so far, which covers every pixel
         o.deviceChain = false;
         last = renderer.render(o);
         if (last.failed || last.cancelled) return last;
@@ -2357,6 +2446,7 @@ int session(const Args& args, const fs::path& directory) {
         scene.plan = full.first;
         scene.keepBase(scene.plan);
         scene.cpuScene = std::move(full.second);
+        scene.prepareDisplayFilters();
     };
     scene.beforeFullPreparation = [&] {
         if (refining) takeRefined();
@@ -2555,6 +2645,11 @@ int session(const Args& args, const fs::path& directory) {
                 double lastStatus = 0;
                 // After a coarse first pass, this frame's pictures are shown from where that pass had come to.
                 double hideBelow = 0;
+                // The last picture of a pass before this frame's own (the coarse first pass, or the frame before a moved
+                // volume's grid), and whether this frame's own have been shown since: a frame stopped while its own are
+                // held back keeps that picture, the one shown.
+                std::vector<float> heldPicture;
+                bool frameShown = false;
                 const auto frameStart = Clock::now();
                 // The film's rows are in MoonRay's order.
                 {
@@ -2723,6 +2818,7 @@ int session(const Args& args, const fs::path& directory) {
                 };
                 watch.previewResult = [&](const async::RenderResult& sofar, double fraction) {
                     if (fraction < hideBelow) return;
+                    frameShown = true;
                     if (moving(currentView) && denoiser) {
                         const U32 w = scene.plan->width, h = scene.plan->height;
                         const size_t pixels = size_t(w) * h;
@@ -2754,6 +2850,7 @@ int session(const Args& args, const fs::path& directory) {
                 watch.preview = [&](const std::vector<float>& rgb, U32 w, U32 h, double fraction) {
                     // After a coarse first pass: its pictures stay until this frame's are as far on.
                     if (fraction < hideBelow) return;
+                    frameShown = true;
                     publish(rgb, w, h);
                     std::ostringstream progress;
                     progress << "@@MODO_PROGRESS " << id << " " << fraction;
@@ -2784,7 +2881,7 @@ int session(const Args& args, const fs::path& directory) {
                 options.watch = &watch;
                 // Safe Denoising's checkpoints: the frame so far saved every checkpoint_interval minutes.
                 if (scene.plan->aovs && scene.plan->aovs->checkpoint) {
-                    checkpoints.frame(scene.plan->aovs.get(), &scene.displayFilters, width, height);
+                    checkpoints.frame(scene.plan->aovs, &scene.displayFilters, width, height);
                     watch.checkpointSeconds = std::max(1.0, scene.plan->aovs->checkpointMinutes * 60.0);
                     watch.checkpoint = [&](async::RenderResult&& sofar) { checkpoints.save(std::move(sofar)); };
                 }
@@ -2797,12 +2894,19 @@ int session(const Args& args, const fs::path& directory) {
                 // The coarse first pass (coarse_geometry.h): the frame's first samples on lighter geometry, in its pictures
                 // and never in its film, while the full geometry is prepared on this thread; then the full plan renders the
                 // frame from its start, its pictures shown once they are as far on as the coarse pass's were.
+                // A stop by hand (a drain) as the coarse pass renders, or once it is done and waits for the full geometry,
+                // ends the frame with the coarse pass's picture, the one shown; the full geometry goes on being prepared
+                // behind it for the next frame (refining outlives a frame). The stop used to wait for the full geometry (16 s
+                // on the dragon, past the kit's patience, which then killed the process), and the full frame then drained at
+                // its start: black but for its first tiles.
+                bool stoppedEarly = false;
                 if (scene.coarse && !waiting()) {
                     double reached = 0;
                     async::Watch first = watch;
                     const auto shown = watch.preview;
-                    first.preview = [&reached, shown](const std::vector<float>& rgb, U32 w, U32 h, double fraction) {
+                    first.preview = [&reached, &heldPicture, shown](const std::vector<float>& rgb, U32 w, U32 h, double fraction) {
                         reached = std::max(reached, fraction);
+                        heldPicture = rgb;
                         shown(rgb, w, h, fraction);
                     };
                     if (!refining) {
@@ -2818,20 +2922,34 @@ int session(const Args& args, const fs::path& directory) {
                         });
                     }
                     first.stop = [&] { return refining->ready.load() || waiting(); };
-                    first.drain = [] { return false; };
+                    first.drain = watch.drain;
                     first.checkpoint = nullptr;
                     first.checkpointSeconds = 0;
                     async::RenderOptions firstOptions = options;
                     firstOptions.watch = &first;
+                    async::RenderResult coarse;
                     try {
-                        renderer->render(firstOptions);
+                        coarse = renderer->render(firstOptions);
                     } catch (const std::exception& e) {
                         // The coarse pass is only pictures: the full frame follows whatever became of it.
                         std::printf("MoonRay XPU2: coarse first pass stopped: %s\n", e.what());
+                        coarse = {};
                     }
-                    // The coarse frame done before the full geometry: its last picture stays meanwhile, unless an edit comes.
-                    while (!refining->ready.load() && !waiting()) std::this_thread::sleep_for(std::chrono::milliseconds(5));
-                    if (refining->ready.load()) {
+                    // The coarse frame done before the full geometry: its last picture stays meanwhile, unless an edit comes
+                    // or the preview is stopped.
+                    const bool whole = !coarse.rgba.empty() && !coarse.failed && !coarse.cancelled;
+                    bool stopped = whole && coarse.drained;
+                    while (!stopped && !refining->ready.load() && !waiting()) {
+                        if (whole && watch.drain && watch.drain()) stopped = true;
+                        else std::this_thread::sleep_for(std::chrono::milliseconds(5));
+                    }
+                    if (stopped) {
+                        stoppedEarly = true;
+                        result = std::move(coarse);
+                        result.drained = true;
+                        std::printf("MoonRay XPU2: stopped in the coarse first pass, its picture kept; the full geometry goes on being prepared\n");
+                        std::fflush(stdout);
+                    } else if (refining->ready.load()) {
                         const unsigned lighter = scene.plan->coarsened;
                         const double fullSeconds = std::chrono::duration<double>(Clock::now() - refining->began).count();
                         // The coarse renderer holds the coarse CPU scene: let go first, the outlines' watch on it before it.
@@ -2853,6 +2971,7 @@ int session(const Args& args, const fs::path& directory) {
                         // The full frame's pictures from where the coarse pass came to, but no later than a quarter of the way: a
                         // coarse frame done before the full geometry was ready would otherwise stand for the whole render.
                         hideBelow = std::min(reached, 0.25);
+                        frameShown = false;
                         std::printf("MoonRay XPU2: coarse first pass: %u meshes lighter, rendered to %.0f%%; the full geometry ready in %.2f s\n", lighter,
                                     reached * 100.0, fullSeconds);
                         std::fflush(stdout);
@@ -2862,18 +2981,20 @@ int session(const Args& args, const fs::path& directory) {
                 // one moved along with it; once made, and nothing newer asked for, it is swapped into a copy of the plan (the
                 // CPU's scenes and the card's meshes taken over, the grids sent again) and the frame renders anew, its
                 // pictures from where they came to. A car turned whole waited 0.6 s on it before its first picture.
-                if (!scene.pendingBakes.empty() && !waiting()) {
+                if (!stoppedEarly && !scene.pendingBakes.empty() && !waiting()) {
                     const auto bakeBegan = Clock::now();
                     std::atomic<bool> bakeReady{false}, bakeCancel{false};
                     double reached = 0;
                     async::Watch first = watch;
                     const auto shown = watch.preview;
-                    first.preview = [&reached, shown](const std::vector<float>& rgb, U32 w, U32 h, double fraction) {
+                    first.preview = [&reached, &heldPicture, &hideBelow, shown](const std::vector<float>& rgb, U32 w, U32 h, double fraction) {
                         reached = std::max(reached, fraction);
+                        if (fraction >= hideBelow) heldPicture = rgb;  // shown (below)
                         shown(rgb, w, h, fraction);
                     };
                     first.stop = [&] { return bakeReady.load() || waiting(); };
-                    first.drain = [] { return false; };
+                    // A stop by hand meanwhile ends the frame with what it has, the grid let go (made again with the next).
+                    first.drain = watch.drain;
                     first.checkpoint = nullptr;
                     first.checkpointSeconds = 0;
                     async::RenderOptions firstOptions = options;
@@ -2886,13 +3007,18 @@ int session(const Args& args, const fs::path& directory) {
                         bakeReady = true;
                     });
                     try {
-                        renderer->render(firstOptions);
+                        async::RenderResult before = renderer->render(firstOptions);
+                        if (before.drained && !before.failed && !before.rgba.empty()) {
+                            stoppedEarly = true;
+                            result = std::move(before);
+                        }
                     } catch (const std::exception& e) {
                         std::printf("MoonRay XPU2: the frame before the volume's grid stopped: %s\n", e.what());
                     }
-                    if (waiting()) bakeCancel = true;
+                    if (waiting() || stoppedEarly) bakeCancel = true;
                     bakeThread.join();
-                    bool whole = !waiting() && made.size() == baking.size();
+                    if (stoppedEarly) scene.pendingBakes = baking;  // made again with the next frame
+                    bool whole = !stoppedEarly && !waiting() && made.size() == baking.size();
                     for (const auto& m : made) whole = whole && m.first != nullptr;
                     if (whole) {
                         auto next = std::make_shared<cpu::Plan>(*scene.plan);
@@ -2911,18 +3037,24 @@ int session(const Args& args, const fs::path& directory) {
                         renderer->deviceRatio(deviceRatio);
                         outlines.watch(renderer.get(), id, width, height);
                         hideBelow = std::min(reached, 0.25);
+                        frameShown = false;
                         std::printf("MoonRay XPU2: %zu moved volumes' grids made again in %.2f s on a worker; the frame rendered to %.0f%% meanwhile\n",
                                     baking.size(), std::chrono::duration<double>(Clock::now() - bakeBegan).count(), reached * 100.0);
                         std::fflush(stdout);
                     }
                 }
+                // The checkpoints write the outputs of the plan that renders now: the full plan, where a coarse first pass's
+                // (given them above) has made way for it.
+                if (scene.plan->aovs && scene.plan->aovs->checkpoint) checkpoints.frame(scene.plan->aovs, &scene.displayFilters, width, height);
                 // A checkpoint render, or one taken up from a save (Safe Denoising, Continue): every save can be taken up. A
                 // frame by sampling generations saves between two of them, its sampling as any frame's (saveGenerations); a
                 // uniform frame goes in stages of samples (stagedFrame). A deep render's saves are the frame so far.
                 const bool checkpointed = scene.plan->aovs && (scene.plan->aovs->checkpoint || scene.plan->aovs->resume) &&
                                           !scene.plan->realtime && !scene.plan->aovs->deep;
                 const bool generations = scene.plan->adaptive && (options.cellular || scene.plan->sampleBudget);
-                if (checkpointed && generations) {
+                if (stoppedEarly) {
+                    // Stopped in the coarse first pass: its picture is the frame's (above).
+                } else if (checkpointed && generations) {
                     const aov::Plan& outputs = *scene.plan->aovs;
                     const GenerationsHeader header = GenerationsHeader::of(*scene.plan, renderer->aovTables());
                     if (outputs.resume) {
@@ -2959,6 +3091,11 @@ int session(const Args& args, const fs::path& directory) {
                     result = stagedFrame(*renderer, options, watch, *scene.plan, checkpoints);
                 else
                     result = renderer->render(options);
+                // Stopped while this frame's own pictures were still held back behind an earlier pass's (the coarse first
+                // pass's): that pass's last picture was the one shown, and is the one kept below; the frame's few samples
+                // would show as flat blocks in its place.
+                const bool keepHeld = result.drained && !stoppedEarly && hideBelow > 0 && !frameShown &&
+                                      heldPicture.size() == size_t(width) * height * 3 && result.rgba.size() == size_t(width) * height * 4;
                 hideBelow = 0;
                 checkpoints.wait();  // a save under way is whole before the frame's own files, or another scene
                 if (renderer->deviceRatio() > 0) deviceRatio = renderer->deviceRatio();
@@ -3019,6 +3156,13 @@ int session(const Args& args, const fs::path& directory) {
                         std::printf("MoonRay XPU2: realtime pictures are not denoised: %s\n", error.c_str());
                     }
                 }
+                // Stopped by hand: the picture as its previews showed it, no black where the frame had not come to yet.
+                if (result.drained && !result.cancelled) fillDrained(result, *scene.plan, renderer->aovTables().channels);
+                if (keepHeld) {
+                    for (size_t i = 0; i < size_t(width) * height; ++i)
+                        for (int c = 0; c < 3; ++c) result.rgba[i * 4 + c] = heldPicture[i * 3 + c];
+                    std::printf("MoonRay XPU2: stopped before this frame's pictures came as far as the coarse first pass's: its picture kept\n");
+                }
                 if (!result.cancelled) {
                     std::vector<float> rgb(size_t(width) * height * 3);
                     for (size_t i = 0; i < size_t(width) * height; ++i)
@@ -3049,6 +3193,7 @@ int session(const Args& args, const fs::path& directory) {
                                 });
                         } else publish(rgb, width, height);
                         if (scene.plan->aovs) {
+                            const auto writing = Clock::now();
                             std::vector<std::string> warnings;
                             if (!scene.displayFilters.empty()) {
                                 std::vector<std::vector<float>> filtered;
@@ -3061,6 +3206,9 @@ int session(const Args& args, const fs::path& directory) {
                             const std::string error = aov::writeOutputs(*scene.plan->aovs, result, width, height, warnings);
                             for (const auto& w : warnings) std::puts(("MoonRay XPU2: " + w).c_str());
                             cpu::need(error.empty(), error);
+                            // What a stop or a frame's end waits on before the kit has its files.
+                            std::printf("MoonRay XPU2: %zu output files written in %.2f s\n", scene.plan->aovs->files.size(),
+                                        std::chrono::duration<double>(Clock::now() - writing).count());
                             // Deep files (aov_deep_write.h), "Wrote deep:" as MoonRay says it.
                             if (scene.plan->aovs->deep && result.deep)
                                 for (const aov::File& f : scene.plan->aovs->files) {
@@ -3224,11 +3372,60 @@ int standaloneRender(int argc, char** argv, const fs::path& folder) {
     return passThrough(int(rest.size()), rest.data());
 }
 
+// A crash said in the Render Log as the process ends (0xC0000005 alone said nothing of where): the exception and the
+// faulting thread's stack, each frame as module+offset (for this program, addr2line -f -C -e moonray_xpu2.exe with
+// 0x140000000 + the offset names the function). Written straight to the handle: a thread holding stdout's lock as
+// another crashed would leave the report waiting for ever.
+LONG WINAPI reportCrash(EXCEPTION_POINTERS* e) {
+    static std::atomic<bool> once{false};
+    if (once.exchange(true)) return EXCEPTION_CONTINUE_SEARCH;
+    char text[6144];
+    size_t n = 0;
+    auto say = [&](const char* format, auto... values) {
+        if (n >= sizeof text) return;
+        const int k = std::snprintf(text + n, sizeof text - n, format, values...);
+        if (k > 0) n = std::min(sizeof text, n + size_t(k));
+    };
+    const EXCEPTION_RECORD& r = *e->ExceptionRecord;
+    say("\nMoonRay XPU2: ended by exception 0x%08lX", (unsigned long)r.ExceptionCode);
+    if (r.ExceptionCode == EXCEPTION_ACCESS_VIOLATION && r.NumberParameters >= 2)
+        say(" (%s 0x%llx)", r.ExceptionInformation[0] == 1 ? "writing" : r.ExceptionInformation[0] == 8 ? "running" : "reading",
+            (unsigned long long)r.ExceptionInformation[1]);
+    say(" on thread %lu, at:\n", (unsigned long)GetCurrentThreadId());
+    CONTEXT c = *e->ContextRecord;
+    for (int depth = 0; depth < 48 && c.Rsp; ++depth) {
+        HMODULE m = nullptr;
+        char path[MAX_PATH] = "?";
+        if (c.Rip && GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                                        reinterpret_cast<LPCSTR>(c.Rip), &m))
+            GetModuleFileNameA(m, path, MAX_PATH);
+        const char* leaf = std::strrchr(path, '\\');
+        say("  %s+0x%llx\n", leaf ? leaf + 1 : path, (unsigned long long)(c.Rip - reinterpret_cast<DWORD64>(m)));
+        DWORD64 base = 0;
+        PRUNTIME_FUNCTION f = c.Rip ? RtlLookupFunctionEntry(c.Rip, &base, nullptr) : nullptr;
+        if (!f) {
+            // A leaf function, or a call to nowhere: the return address is where the stack points.
+            if (depth && !m) break;
+            c.Rip = *reinterpret_cast<const DWORD64*>(c.Rsp);
+            c.Rsp += 8;
+        } else {
+            void* data = nullptr;
+            DWORD64 frame = 0;
+            RtlVirtualUnwind(UNW_FLAG_NHANDLER, base, c.Rip, f, &c, &data, &frame, nullptr);
+        }
+        if (!c.Rip) break;
+    }
+    DWORD wrote = 0;
+    WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), text, DWORD(n), &wrote, nullptr);
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+
 }  // namespace
 
 #include "rhizome_session.inc"
 
 int main(int argc, char** argv) {
+    SetUnhandledExceptionFilter(reportCrash);
     const fs::path folder = executableFolder();
     if (argc >= 2 && (std::string(argv[1]) == "rhizome" || std::string(argv[1]) == "--rhizome-master" || std::string(argv[1]) == "--rhizome-node")) {
         // A node or master renders: its memory ceiling and the texture watch, as a session's. The identity verbs print

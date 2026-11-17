@@ -54,6 +54,10 @@ add_executable(moonlightipr_probe probe/moonlightipr_probe.cpp)
 target_link_libraries(moonlightipr_probe PRIVATE moonlightipr)
 target_link_options(moonlightipr_probe PRIVATE -static-libgcc -static-libstdc++)
 
+# Where a moving transform stands between the shutter's ends (src/transform_blend.h), checked on its own.
+add_executable(transform_blend_test probe/transform_blend_test.cpp)
+target_link_options(transform_blend_test PRIVATE -static -static-libgcc -static-libstdc++)
+
 # Publishes frames through the same shared-memory mailbox as the MoonRay session.
 add_executable(moonlightipr_session session/moonlightipr_session.cpp session/scene_loader.cpp session/subdivide.cpp)
 target_include_directories(moonlightipr_session PRIVATE "${ROOT}/native-port")

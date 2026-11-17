@@ -25,6 +25,7 @@ class CanonicalSession {
     Router router_;
     ri::NativeReplica replica_;
     CanonicalView active_,pendingFrame_;
+    double routeSeconds_=0,admitSeconds_=0;  // within the index lap: the router's classification, the budget
     SnapshotBudget budget_;
     std::optional<Router::Pending> pending_;
     const ri::rdl::SceneContext *source_=nullptr,*pendingSource_=nullptr;
@@ -78,10 +79,14 @@ public:
         if(classify_)classify=[&](const std::string& id,const ix::View&){
             const auto it=objects.find(id);
             return it==objects.end()?Decision{}:classify_(*it->second);};
+        const auto routeBegan=clock::now();
         auto routed=router_.prepare(candidate,epoch,0,classify);
+        routeSeconds_=std::chrono::duration<double>(clock::now()-routeBegan).count();
         // Backpressure before touching the native replica or writing any files.
         // Candidate construction is separately bounded by SceneIndex limits.
+        const auto admitBegan=clock::now();
         budget_.admit(candidate.view());
+        admitSeconds_=std::chrono::duration<double>(clock::now()-admitBegan).count();
         if(!fs::create_directory(folder))throw std::invalid_argument("Fresh staging directory required");
         try {
             took(1);
@@ -97,8 +102,8 @@ public:
                 ri::rdl::BinaryWriter(replica_.context()).toFile(temporary.string());
                 fs::rename(temporary,ready);}
             took(3);
-            std::printf("XPU2: canonical: capture %.2f s (%zu attributes, %zu MB), index %.2f s, replica %.2f s, file %.2f s\n",laps[0],
-                        size_t(captured.attributes),size_t(captured.bytes)>>20,laps[1],laps[2],laps[3]);
+            std::printf("XPU2: canonical: capture %.2f s (%zu attributes, %zu MB), index %.2f s (routing %.2f s, budget %.2f s), replica %.2f s, file %.2f s\n",laps[0],
+                        size_t(captured.attributes),size_t(captured.bytes)>>20,laps[1],routeSeconds_,admitSeconds_,laps[2],laps[3]);
             auto frame=std::make_shared<const CanonicalFrame>(CanonicalFrame{
                 routed.view(),ready,captured.attributes,captured.bytes});
             pending_.emplace(std::move(routed));

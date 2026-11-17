@@ -323,14 +323,21 @@ class Session(QtCore.QObject):
         self.release()
         self.status.emit("Idle MoonLightIPR released its GPU memory. Cached images are kept; the next render reloads the scene.")
 
-    def release(self):
-        """End the process and free the GPU, for when another renderer takes over."""
+    def release(self, grace=5000):
+        """End the process and free the GPU, for when another renderer takes over or its scene closes: told to quit,
+        and ended outright if it has not within grace milliseconds."""
         self.idle.cancel()
         self.latest = None; self.sent = None; self.current = None; self._abandon()
-        if self.running(): self.stopping = True; self.process.kill()
+        if not self.running(): return
+        self.stopping = True
+        if self.process.write(b'quit\n') < 0:
+            self.process.kill(); return
+        process = self.process
+        QtCore.QTimer.singleShot(grace, lambda: process.kill() if process.state() != QtCore.QProcess.NotRunning else None)
 
     def close(self):
-        self.closed = True; self.release()
+        self.closed = True; self.release(2000)
         if self.packer is not None: self.packer.wait(5000)
         if self.running(): self.process.waitForFinished(2000)
+        if self.running(): self.process.kill(); self.process.waitForFinished(2000)
         if not self.running(): self.workspace.cleanup()

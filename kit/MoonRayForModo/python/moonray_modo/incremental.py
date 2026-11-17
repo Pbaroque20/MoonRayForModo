@@ -172,6 +172,14 @@ def transform_targets(scene,identities):
 STEADY={'mesh','locator','groupLocator','translation','rotation','scale','transform','txtrLocator','mask','shaderFolder',
         'defaultShader','renderOutput','polyRender','render','actionclip','group','scene','videoStill','imageFolder'}|LIGHTS|MATERIALS
 
+# Items that make no mesh's geometry either, whose part in where things stand is asked again at every moment with the
+# items (world_matrix): a transform of another kind (shear), Modo's nodes for rigs (assembly, schmNode), a camera's match,
+# a target, and mesh instances, each standing where its own item does (stands_with_items) and followed by it
+# (follow_items). Channel modifiers (cm...) are taken with them: what they drive of where an item stands is read with it.
+# A tester's car, converted from another renderer, held 83 shears, 51 schematic nodes, ~110 channel modifiers and three
+# instanced tyres: each end of the shutter read it whole (8-9 s each), three readings at every edit in MoonLightIPR's realtime.
+FOLLOWED={'shear','assembly','schmNode','CameraMatch','targetLocator','meshInst'}
+
 
 def standing(scene,snapshot):
     """How the meshes of a snapshot read as Modo evaluates it stand: (whether they can be followed by their items at
@@ -210,9 +218,9 @@ def stands_with_items(scene,snapshot):
 
 
 def steady(scene):
-    """Whether nothing in the scene deforms a mesh, simulates, generates or copies one, or drives a channel: every item
-    is of a STEADY kind. A mesh's geometry is then its own, and no other's depends on it. Where Modo cannot be asked, it
-    is taken not to be so."""
+    """Whether nothing in the scene deforms a mesh, simulates, generates or copies one: every item is of a STEADY or
+    FOLLOWED kind, or a channel modifier. A mesh's geometry is then its own, and no other's depends on it: from one
+    moment to another only where items stand changes. Where Modo cannot be asked, it is taken not to be so."""
     try:
         import lx
         service=lx.service.Scene()
@@ -220,7 +228,7 @@ def steady(scene):
         if deformers(scene):return False
         for item in scene.iterItems():
             kind=item.type
-            if kind in STEADY or kind.startswith(('material.','moonray.')) or any(item.TestType(each) for each in kinds):continue
+            if kind in STEADY or kind in FOLLOWED or kind.startswith(('material.','moonray.','cm')) or any(item.TestType(each) for each in kinds):continue
             return False
         return True
     except Exception:return False
@@ -250,10 +258,10 @@ def own_geometry(scene):
 
 def rigid(scene,snapshot):
     """Whether the meshes of a snapshot hold at any other moment, only moved with their items: nothing in the scene
-    deforms a mesh, simulates, generates or copies one, or drives a channel (every item is of a STEADY kind), no
-    texture is projected from where a mesh stands, and each mesh stands where its item does. A reading at another
-    moment, for the ends of the shutter, is then a matter of asking where the items stand (refresh_transforms), as when
-    an item is moved: not of reading every mesh again. Where Modo cannot be asked, it is taken not to be so."""
+    deforms a mesh, simulates, generates or copies one (steady), no texture is projected from where a mesh stands, and
+    each mesh, and each instance, stands where its own item does. A reading at another moment, for the ends of the
+    shutter, is then a matter of asking where the items stand (follow_items), as when an item is moved: not of reading
+    every mesh again. Where Modo cannot be asked, it is taken not to be so."""
     try:
         if not steady(scene):return False
         from .coordinates import descriptors
@@ -273,26 +281,40 @@ def animated(scene,identities):
     except Exception:return True
 
 
+def _instance_items(mesh):
+    """The items an instanced mesh's instances are placed by, one for each (instance_ids: "item|0"), or none where
+    they are not each named."""
+    named=mesh.get('instance_ids') or []
+    return [name.split('|')[0] for name in named] if 'instances' in mesh and len(named)==len(mesh['instances']) else []
+
+
 def item_matrices(scene,snapshot):
-    """Where the items of a snapshot's meshes now stand, by item."""
+    """Where the items of a snapshot's meshes now stand, by item: each mesh's own, and each of its instances' own."""
     from .host import world_matrix
     where={}
     for mesh in snapshot['meshes']:
         # Volumetric fog is placed anew at every reading (volumetrics.capture), where its light and the camera stand.
         if mesh.get('volumetric'):continue
-        identity=mesh.get('source_item') or mesh['identity'].split('|')[0]
-        if identity not in where:where[identity]=world_matrix(scene.item(identity))
+        for identity in [mesh.get('source_item') or mesh['identity'].split('|')[0]]+_instance_items(mesh):
+            if identity not in where:where[identity]=world_matrix(scene.item(identity))
     return where
 
 
 def follow_items(scene,snapshot,before):
-    """A rigid snapshot (rigid) at another moment: each mesh where its item then stands. One whose item stands where
-    it did (before: item_matrices then) keeps the matrix it was read with, as reading it again would give it."""
+    """A rigid snapshot (rigid) at another moment: each mesh where its item then stands, and each instance where its
+    own item then does. One whose item stands where it did (before: item_matrices then) keeps the place it was read
+    with, as reading it again would give it."""
+    from .ocean_plane import lift
     now=item_matrices(scene,snapshot)
     for mesh in snapshot['meshes']:
         if mesh.get('volumetric'):continue
         identity=mesh.get('source_item') or mesh['identity'].split('|')[0]
-        if now[identity]!=before.get(identity):mesh['matrix']=now[identity]
+        # An Ocean Plane's mesh takes its item's height alone (ocean_plane.lift).
+        if now[identity]!=before.get(identity):mesh['matrix']=lift(now[identity]) if mesh.get('_ocean_plane') else now[identity]
+        items=_instance_items(mesh)
+        if items:
+            # A new list: the meshes of a reading at another moment are copies of the frame's, their lists the same.
+            mesh['instances']=[held if now[item]==before.get(item) else now[item] for held,item in zip(mesh['instances'],items)]
 
 
 def refresh_transforms(scene,snapshot,identities=None,loose=()):
@@ -300,15 +322,16 @@ def refresh_transforms(scene,snapshot,identities=None,loose=()):
     what follows a move cannot be told), an instance where its own item does. Copies that stand with no item of their
     own (loose: standing) keep the places they were read with: they are read again from Modo."""
     from .host import world_matrix
+    from .ocean_plane import lift
     targets=transform_targets(scene,identities)
     asked={}
 
-    def where(held,identity):
+    def where(held,identity,shape=None):
         # Where the item stands, or the place it was read with where that is the same: Modo's render cache and the
         # item's world matrix differ in their last digits, and every mesh given a new matrix so had the renderer
-        # prepare the whole scene again (a car's 335 objects for one part moved).
+        # prepare the whole scene again (a car's 335 objects for one part moved). shape: what of it the mesh takes.
         if identity not in asked:asked[identity]=world_matrix(scene.item(identity))
-        now=asked[identity]
+        now=shape(asked[identity]) if shape else asked[identity]
         if held and len(held)==16 and all(abs(a-b)<=1e-6*max(1.0,abs(b)) for a,b in zip(held,now)):return held
         return now
     for mesh in snapshot['meshes']:
@@ -320,7 +343,9 @@ def refresh_transforms(scene,snapshot,identities=None,loose=()):
         else:
             identity=mesh.get('source_item') or mesh['identity'].split('|')[0]
             if identity in loose:continue
-            if targets is None or identity in targets:mesh['matrix']=where(mesh.get('matrix'),identity)
+            # An Ocean Plane's mesh takes its item's height alone (ocean_plane.lift): its rings stand under the camera.
+            if targets is None or identity in targets:
+                mesh['matrix']=where(mesh.get('matrix'),identity,lift if mesh.get('_ocean_plane') else None)
     snapshot['extra_geometry']=[dict(item,matrix=where(item.get('matrix'),item.get('source_item') or item['identity'].split('|')[0])) if targets is None or (item.get('source_item') or item['identity'].split('|')[0]) in targets else item for item in snapshot.get('extra_geometry',[])]
 
 

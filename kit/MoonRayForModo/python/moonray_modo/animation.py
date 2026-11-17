@@ -11,7 +11,9 @@ from . import host
 active = None
 
 
-def capture_frame(time, evaluated=False, motion=False, fps=24, preview=False):
+def capture_frame(time, evaluated=False, motion=False, fps=24, preview=False, frame=None):
+    """frame: the scene as already read at this moment (the preview's reading of an edit), taken for the frame in place
+    of reading it whole again; the shutter's ends are read as ever."""
     selection = lx.service.Selection()
     original = selection.GetTime()
     try:
@@ -22,7 +24,8 @@ def capture_frame(time, evaluated=False, motion=False, fps=24, preview=False):
         asset_controls=copy.deepcopy(properties.scene_settings().get('production',{}))
         def capture():
             value=host.snapshot(evaluated_geometry=evaluated);attach(value,asset_controls);return value
-        snapshot = capture()
+        # A copy: the motion is put into the scene returned, not into the reading handed in.
+        snapshot = dict(frame) if frame is not None else capture()
         snapshot.pop('_evaluated_data',None);snapshot.pop('_full_capture',None)
         if motion:
             camera = snapshot['camera']
@@ -279,14 +282,15 @@ class Sequence(QtCore.QObject):
 single_request=None
 single_result=None
 
-def capture_current(evaluated=False):
+def capture_current(evaluated=False, frame=None):
     """The scene now, with where things are at the shutter's ends. Read here and not through moonray.captureMotion:
     Modo holds a command back while another is under way (its colour picker's, for one), and the preview waited on
-    it without end, Modo still answering (2026-10-21). capture_frame puts the time back as it found it."""
+    it without end, Modo still answering (2026-10-21). capture_frame puts the time back as it found it. frame: the scene
+    as already read now, where it was (capture_frame)."""
     global single_request
     import modo
     if single_request is not None:raise ValueError('A motion capture is already running')
     moment=lx.service.Selection().GetTime();fps=float(modo.Scene().fps)
     single_request=True
-    try:return capture_frame(moment,evaluated,True,fps,preview=True)
+    try:return capture_frame(moment,evaluated,True,fps,preview=True,frame=frame)
     finally:single_request=None

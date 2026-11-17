@@ -88,6 +88,8 @@ class ExportJob(unittest.TestCase):
         # host reads Modo through its SDK (lxu.utils), which tests do not have: a stand-in with its snapshot.
         host = types.ModuleType('moonray_modo.host')
         host.snapshot = self.snapshot
+        # The camera rendered through has its Motion Blur off: each frame read once, as the render settings say.
+        host.camera_motion_blur = lambda scene: False
         with mock.patch.dict(sys.modules, {'lx': self.lx, 'modo': self.modo, 'moonray_modo.host': host}), \
                 mock.patch.object(moonray_modo, 'host', host, create=True), \
                 mock.patch.object(scene_setup, 'values', lambda: dict(settings)), \

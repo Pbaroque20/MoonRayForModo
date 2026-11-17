@@ -349,7 +349,8 @@ class Renderer(QtCore.QObject):
             done=self.buffers.keep({key:taken[-3:] for key,taken in gather['got'].items()},self.active['runtime'],self.active['snapshot'],self.backend_status)
         self.session.select_view('beauty')
         if not self.closed:
-            self.stop();self.kept.emit(done)
+            # The views handed over, the process kept for the next preview (Session.pause).
+            self.stop(keep=True);self.kept.emit(done)
 
     def settle_moonray(self):
         """Stop MoonRay where it stands and finish with the picture it last saved, where safe denoising had it save
@@ -420,17 +421,28 @@ class Renderer(QtCore.QObject):
         self.resumable=kept or None
         return True
 
-    def stop(self):
+    def stop(self, keep=False):
+        """keep: a preview stopped by hand (Stop, RT off, a render kept as it stands): MoonRay or XPU2 is kept loaded and
+        idle, its scene and GPU structures held for the next preview (Session.pause), where Keep MoonRay loaded between
+        previews is on; else, and for a failure or a stall, it is ended as before. MoonLightIPR pauses either way."""
         self.settling=False;self.settle_wanted=None;self.gather=None
         self._progress_end(False)
         self.watchdog.stop()
         self.pending = None
-        self.session.stop()
+        from .preferences import Preferences
+        if not (keep and Preferences().get('persistent_preview') and self.session.pause()):
+            self.session.stop()
         self.moonlightipr.stop()
         self.canceled = True
         if self.process.state() != QtCore.QProcess.NotRunning:
             self.process.kill()
         self.status.emit('Stopped')
+
+    def release_engines(self):
+        """The renderers kept loaded between previews let go, their memory freed: the scene they hold is closed
+        (Panel._scene_closed). Each is told to quit and ended if it does not (Session.release)."""
+        self.session.release()
+        self.moonlightipr.release()
 
     def _begin_pending(self):
         if self.closed or not self.pending:
@@ -1094,7 +1106,8 @@ class Renderer(QtCore.QObject):
         if self.closed:
             return
         self.closed = True
-        self.stop()
+        # Kept, so that the session is let quit of itself below (Session.close), not killed first.
+        self.stop(keep=True)
         if getattr(self, 'writer', None) is not None:
             self.writer.abandoned = True;self.writer.wait(5000)
         self.session.close()

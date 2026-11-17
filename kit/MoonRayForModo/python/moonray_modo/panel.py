@@ -1085,9 +1085,39 @@ class Panel(Tools, QtWidgets.QWidget):
     def runtime_path(self):
         return self.preferences.get('runtime')
 
+    def _renderer_name(self):
+        """The renderer the preview renders with, as what it says of the room left names it."""
+        if self._engine()=='moonlightipr':return 'MoonLightIPR'
+        try:
+            from . import native
+            if native.xpu2():return 'XPU2'
+        except Exception:pass
+        return 'MoonRay'
+
+    def _watch_room(self):
+        """Room on the drives a render writes to (disk_room), looked at every few seconds while a render is on: a drive
+        nearly full is said among the notices, and where the render has also shown nothing new for a while, in the status,
+        as what holds it up. A tester's XPU2 render of a car seemed to hang on a C: drive left with 90 MB free."""
+        import time
+        from . import disk_room
+        rendering=bool(getattr(self,'_rendering',False))
+        now=time.monotonic()
+        if not rendering and getattr(self,'_disk_notice',None) is None:return
+        if rendering and now-getattr(self,'_room_checked',0.0)<disk_room.EVERY:return
+        self._room_checked=now
+        found=disk_room.short() if rendering else []
+        notice,status=disk_room.said(found,rendering,now-getattr(self,'_shown_at',now),self._renderer_name())
+        if notice!=getattr(self,'_disk_notice',None):
+            self._disk_notice=notice
+            self._set_notices(getattr(self,'_notices_given',[]))
+        if status and status!=self.status.text():
+            self.status.setText(status);self.status.setToolTip(status)
+
     def _poll(self):
         """Follow the scene's settings, which are edited in Modo's properties, not here."""
         if self.disposed:return
+        try:self._watch_room()
+        except Exception:pass
         # And the engines Preferences > MoonRay > XPU2 allows.
         self._sync_engines()
         closed,created=self.changes.closed,self.changes.created
@@ -1170,8 +1200,8 @@ class Panel(Tools, QtWidgets.QWidget):
         words=[]
         try:
             values=self._settings_values()
-            # MoonLightIPR's motion blur, off by default: each update then reads the shutter's ends too.
-            # And MoonRay's realtime under XPU2, by a preference of its own.
+            # Motion blur where the camera rendered through or the render settings ask for it: MoonLightIPR's (read for
+            # its motion vectors whatever it shows, said only where it blurs) and MoonRay's realtime under XPU2.
             if self._preview_blurred() and not (self._engine()=='moonlightipr' and not self._moonlightipr_blur()):words.append('Motion Blur')
             from . import native
             xpu2=native.xpu2_renders(values.get('execution_mode','auto'))
@@ -1546,7 +1576,11 @@ class Panel(Tools, QtWidgets.QWidget):
         except Exception:pass
 
     def _set_notices(self,messages):
-        unique=list(dict.fromkeys(str(message) for message in messages if message))
+        # What was given, kept apart from what the preview adds of the room left on the drives (_watch_room), so that
+        # either can be said again without the other.
+        self._notices_given=list(messages)
+        disk=getattr(self,'_disk_notice',None)
+        unique=list(dict.fromkeys(str(message) for message in list(messages)+([disk] if disk else []) if message))
         text='\n\n'.join(unique)
         if text!=self.warnings.toPlainText():self.warnings.setPlainText(text)
         self.notice_toggle.setText('Notices (%d)'%len(unique))
@@ -1720,7 +1754,10 @@ class Panel(Tools, QtWidgets.QWidget):
         return standing(document,scene)
 
     def _motion_wanted(self):
-        """Whether the scene asks for motion blur in a render: Motion Blur in its render settings, or on its Modo camera."""
+        """Whether the scene asks for motion blur: Motion Blur in its render settings, or on the camera rendered through
+        (host.rendered_camera: the Camera Sequence's for the frame, a MoonRay camera chosen, else the render camera).
+        Every engine blurs by it, realtime too; the preview has no switch of its own (up to 0.5.4, one for MoonLightIPR
+        and one for XPU2's realtime)."""
         if self._settings_values()['final_motion']:return True
         try:
             import modo
@@ -1729,20 +1766,19 @@ class Panel(Tools, QtWidgets.QWidget):
         except Exception:return False
 
     def _preview_blurred(self):
-        """Whether what follows the scene shows motion blur, by the preview's preferences: MoonLightIPR's own switch, and
-        one for MoonRay's realtime, which is XPU2's."""
+        """Whether what follows the scene shows motion blur: where the scene asks for it (_motion_wanted), in MoonLightIPR
+        and in MoonRay's realtime where XPU2 renders it, as a render does."""
         # MoonLightIPR's motion vectors read the shutter's ends as well (held at the frame's moment where blur is off).
         if self._engine()=='moonlightipr':return self._moonlightipr_blur() or self._moonlightipr_vectors()
-        if self.preview_engine.currentData()!='moonray' or not self.ipr_mode.isChecked() or not self.preferences.get('xpu2_motion'):return False
+        if self.preview_engine.currentData()!='moonray' or not self.ipr_mode.isChecked() or not self._motion_wanted():return False
         try:
             from . import native
             return bool(native.xpu2())
         except Exception:return False
 
     def _moonlightipr_blur(self):
-        """Whether MoonLightIPR shows motion blur: where the scene asks for it in a render (Motion Blur on its Modo camera or
-        in its render settings), or MoonLightIPR's own preference has it on whatever the camera says."""
-        return bool(self.preferences.get('preview_motion')) or self._motion_wanted()
+        """Whether MoonLightIPR shows motion blur: where the scene asks for it (_motion_wanted)."""
+        return self._motion_wanted()
 
     def _moonlightipr_vectors(self):
         """Whether the scene is read for MoonLightIPR's motion vectors: always with MoonLightIPR, which gathers every AOV
@@ -1761,37 +1797,39 @@ class Panel(Tools, QtWidgets.QWidget):
         from .animation import capture_current
         return self._configure_snapshot(capture_current(values['surface']==2))
 
-    def _capture_preview(self):
+    def _capture_preview(self,frame=None):
+        """frame: the scene as just read at this moment (_capture), where it was: the shutter's ends are asked of it, the
+        scene not read whole again."""
         # Read as the engine takes the scene: undisplaced for MoonLightIPR, which displaces the meshes itself.
         with host.by_engine(self._engine()):
-            return self._capture_preview_read()
+            return self._capture_preview_read(frame)
 
-    def _capture_preview_read(self):
+    def _capture_preview_read(self,frame=None):
         # Render with MoonRay as the engine is the picture itself, with the scene's Motion Blur as a render to a file has it.
         # Not while realtime follows the scene, where each edit would read the shutter's ends too, nor MoonRay LS or a draft.
         still=self.preview_engine.currentData()=='moonray' and not self._following and not self.draft.isChecked() and self._motion_wanted()
-        if not still and not self._preview_blurred():return self._capture()
+        if not still and not self._preview_blurred():return frame if frame is not None else self._capture()
         if not still and not self._following and self._engine()=='moonlightipr' and not self._moonlightipr_blur():
             # A MoonLightIPR Render without blur, read for its motion vectors alone: once, and the shutter's ends asked of
             # where the items stand; where nothing moves, that reading is the scene (no vectors to gather, the meshes not
             # read again), else it is read with its motion. (Realtime asks the same before it comes here.)
             from .animation import shutter_moves
-            first=self._capture()
+            first=frame=self._capture()
             try:moving=shutter_moves(self._geometry_cache,self._settings_values()['surface']==2) if self._geometry_cache is not None else None
             except Exception:moving=None
             self.changes.consume()
             if moving is False:return first
         from .animation import capture_current
-        self._reading()
+        if frame is None:self._reading()
         try:
-            held=capture_current(self._settings_values()['surface']==2)
+            held=capture_current(self._settings_values()['surface']==2,frame=frame)
         except ValueError as exc:
             # Motion blur off, the shutter's ends read for MoonLightIPR's motion vectors alone: a scene they cannot be
             # matched in still renders, as it stands, without the vectors (a tester's replicator stopped the preview
             # with a motion blur error while blur was off everywhere).
             if still or self._engine()!='moonlightipr' or self._moonlightipr_blur():raise
             self.changes.consume()
-            scene=self._capture()
+            scene=frame if frame is not None else self._capture()
             self._set_notices(list(scene.get('warnings') or [])+['Motion vectors are left out: %s'%exc])
             return scene
         scene=self._configure_snapshot(held)
@@ -1856,6 +1894,10 @@ class Panel(Tools, QtWidgets.QWidget):
         """Keep the Render button saying what pressing it will do."""
         was=getattr(self,'_rendering',False)
         self._rendering=bool(rendering)
+        if self._rendering and not was:
+            # A render begun: nothing shown of it yet, and the drives looked at with the next poll (_watch_room).
+            import time
+            self._shown_at=time.monotonic();self._room_checked=0.0
         # A stop is over once nothing renders any more: the button can be pressed again.
         if not self._rendering:self._stopping=False
         # Realtime asked for over a draft that was rendering (_rt_toggled): on now that the draft's render has stopped.
@@ -2074,6 +2116,8 @@ class Panel(Tools, QtWidgets.QWidget):
         if self._following:self._follow(False)
         if self.sequence is not None:self.sequence.stop()
         if self._rendering:self.renderer.stop()
+        # The renderers kept loaded between previews hold the closed scene: their memory is freed with it.
+        self.renderer.release_engines()
         self._set_rendering(False)
         self._continuable=None;self.last_digest=None;self._draft_image=self._draft_render=None
         self.preview.clear();self.image_info.setText('');self._whole=None;self._part=None
@@ -2342,7 +2386,7 @@ class Panel(Tools, QtWidgets.QWidget):
         import modo
         settings={k:v for k,v in self._settings_values().items() if k not in ('display','preview_buffer','aovs','recovery','compositor')}
         return (repr(sorted(settings.items(),key=lambda entry:entry[0])),lx.service.Selection().GetTime(),modo.Scene().renderItem.id,self._engine(),
-                self.preferences.get('preview_motion'),self._motion_wanted(),self.preferences.get('xpu2_motion'),self.runtime_path())
+                self._motion_wanted(),self.runtime_path())
 
     def _materials_as_rendered(self,items,channels):
         """Whether the materials edited (items, their MoonRay settings written: changes.tagged) render as they did when
@@ -2595,10 +2639,14 @@ class Panel(Tools, QtWidgets.QWidget):
                     if moving is False:self._live_still=still
                 if blurred and moving is not False and camera_place is None:
                     from .motion import moves
-                    scene=self._capture_preview()
+                    # The scene with its motion, from the reading of this edit just made (first): the shutter's ends asked
+                    # of it, the scene not read whole a second time (a tester's driving car, 8-9 s each in Modo).
+                    scene=self._capture_preview(frame=first)
                     if moves(scene):
-                        # The meshes are read whole again on the next edit: a reading at the shutter's ends leaves none to reuse.
-                        self._geometry_cache=None;self._live_still=None;self._motion_kept=(still,scene)
+                        # The meshes read at the frame (first, _geometry_cache) are kept for the next edit; the reading at
+                        # the shutter's ends leaves none of its own to reuse. Up to 0.5.4 the scene was read with its motion
+                        # without first, the meshes held then stale, and every edit after read the whole scene again.
+                        self._live_still=None;self._motion_kept=(still,scene)
                     else:
                         # Nothing moves: the scene as read once, the same picture, its meshes kept for the next move.
                         self._live_still=still
@@ -2681,7 +2729,9 @@ class Panel(Tools, QtWidgets.QWidget):
         # MoonRay kept loaded hands over the picture as it stands, with what the denoiser needs, and is then stopped.
         if rendering and not self.draft.isChecked() and self.renderer.keep_progress():
             self.status.setText('Stopping: keeping what is rendered.');self._await_settle(16000);return
-        self.renderer.stop()
+        # MoonRay or XPU2 kept loaded and idle, its scene and GPU structures held, for the next preview to start at once
+        # (Renderer.stop keep); let go when the scene closes (_scene_closed).
+        self.renderer.stop(keep=True)
         self._set_rendering(False)
         self.status.setText('Stopped.')
         if rendering:self._settle_stopped()
@@ -2753,6 +2803,12 @@ class Panel(Tools, QtWidgets.QWidget):
         self.status.setText('Stopped. The picture as it stood is kept and denoised.' if standing else 'Stopped. The last finished pass is kept and denoised.')
 
     def _failed(self, message):
+        # Where a drive it writes to is nearly full, the room left is said first: a full drive fails a render with words
+        # of its own ("basic_ios::clear: iostream error"), which say nothing of room.
+        try:
+            from . import disk_room
+            message=disk_room.failed(message,disk_room.short(),self._renderer_name())
+        except Exception:pass
         self._draft_quiet=False
         self.refine_timer.stop()
         self._following=False;self.timer.stop()
@@ -2766,6 +2822,9 @@ class Panel(Tools, QtWidgets.QWidget):
         self._set_notices(['Render unavailable: '+str(message)]+list(snapshot.get('warnings',[])))
 
     def _image(self, path):
+        # Something new shown: the render is not held up (_watch_room).
+        import time
+        self._shown_at=time.monotonic()
         try:
             if self._held:return
             if self.draft.isChecked():

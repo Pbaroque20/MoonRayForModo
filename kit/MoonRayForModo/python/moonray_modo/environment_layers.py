@@ -67,11 +67,20 @@ def has_alpha(path):
         stat = path.stat()
         key = (str(path.resolve()), stat.st_size, stat.st_mtime_ns)
         if key not in _ALPHA:
+            # Kept in the Scene cache too: asking oiiotool took a car's first reading 17 s, at every start of Modo.
+            from . import cache_folder
+            held = cache_folder.kept('Alpha', ('alpha', 1) + key)
+            if isinstance(held, bool):
+                _ALPHA[key] = held
+                return held
+        if key not in _ALPHA:
             tool = native.tool('oiiotool.exe')
             result = subprocess.run([str(tool), '--info:format=xml', '-v', str(path)], env=native.environment(tool.parent),
                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=60,
                                     creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
             _ALPHA[key] = alpha_index(result.stdout.decode(errors='replace')) >= 0
+            if result.returncode == 0:
+                cache_folder.keep('Alpha', ('alpha', 1) + key, _ALPHA[key])
         return _ALPHA[key]
     except (OSError, ValueError, subprocess.SubprocessError):
         return True

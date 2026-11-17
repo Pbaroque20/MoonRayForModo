@@ -352,8 +352,8 @@ class Tools:
             widest = 8192
         # The realtime preview's share of the picture's width to start from (Realtime preview resolution).
         size = max(16, round(widest / max(1, int(self.preferences.get('preview_fraction') or 1))))
-        # Motion blur where the scene asks for it in a render, or MoonLightIPR is set to show it.
-        motion = self._motion_wanted() or bool(self.preferences.get('preview_motion'))
+        # Motion blur where the scene asks for it (the camera rendered through, or the render settings), as a render has it.
+        motion = self._motion_wanted()
         dialog = PlayblastDialog(self.settings, size, widest, self.buffer.currentData() == 'denoised_beauty', self, motion=motion)
         if not dialog.exec_():
             return

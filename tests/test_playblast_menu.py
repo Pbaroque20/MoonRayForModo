@@ -11,7 +11,8 @@ class PlayblastMenu(unittest.TestCase):
     def test_a_playblast_blurs_where_motion_blur_is_active(self):
         root = ROOT / 'kit/MoonRayForModo/python/moonray_modo'
         tools = (root / 'panel_tools.py').read_text(encoding='utf-8')
-        self.assertIn("motion = self._motion_wanted() or bool(self.preferences.get('preview_motion'))", tools)
+        self.assertIn("motion = self._motion_wanted()\n", tools)
+        self.assertNotIn('preview_motion', tools)
         self.assertIn('samples=dialog.samples.value(), motion=motion)', tools)
         self.assertIn("self.motion, self.fps, preview=True)", (root / 'playblast.py').read_text(encoding='utf-8'))
 

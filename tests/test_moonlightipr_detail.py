@@ -84,10 +84,27 @@ class Detail(unittest.TestCase):
         self.assertFalse(detail.plan([tiny], CAMERA, 640, 'coarse')[1])
 
     def test_instances_are_judged_by_the_nearest(self):
+        # An instanced sea (a sea of placed tiles), the instanced mesh that is cut.
         mesh = grid('instanced', at=0.0, level=6)
         mesh['instances'] = [mesh['matrix'][:14] + [-500.0, 1], mesh['matrix'][:14] + [-5.0, 1]]
         alone = dict(grid('one', at=0.0, level=6), matrix=mesh['matrix'][:14] + [-5.0, 1])
-        self.assertEqual(detail.plan([mesh], CAMERA, 640)[0][id(mesh)], detail.plan([alone], CAMERA, 640)[0][id(alone)])
+        self.assertEqual(detail.plan([mesh], CAMERA, 640, sea=lambda held: True)[0][id(mesh)],
+                         detail.plan([alone], CAMERA, 640)[0][id(alone)])
+
+    def test_an_instanced_mesh_that_is_no_sea_keeps_its_geometry_whole(self):
+        # The instanced cut is the seas': a car's instanced wheels, subdivided or dense, are neither cut nor simplified
+        # (they came out smaller than in Modo's viewport); the same mesh placed alone is cut as before.
+        wheel = grid('wheel', n=160, at=200.0, subdivision=False)
+        wheel['instances'] = [wheel['matrix'], wheel['matrix'][:12] + [3.0, 0.0, -200.0, 1]]
+        rim = grid('rim', at=2.0, level=6)
+        rim['instances'] = [rim['matrix']]
+        cuts, _ = detail.plan([wheel, rim], CAMERA, 640)
+        self.assertNotIn(id(wheel), cuts)
+        self.assertNotIn(id(rim), cuts)
+        single = dict(wheel)
+        del single['instances']
+        self.assertIsNotNone(detail.plan([single], CAMERA, 640)[0][id(single)]['simplify'])
+        self.assertIn(id(wheel), detail.plan([wheel], CAMERA, 640, sea=lambda held: True)[0])
 
 
 if __name__ == '__main__':

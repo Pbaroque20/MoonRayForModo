@@ -109,15 +109,20 @@ def level(want, held):
     return needed
 
 
-def plan(meshes, camera, width, detail='fine', displaces=lambda mesh: False):
+def plan(meshes, camera, width, detail='fine', displaces=lambda mesh: False, sea=lambda mesh: False):
     """Each mesh's cut, by its id(): {'subdivision': level (a subdivision surface, at most Modo's), 'splits': at most
     this many splittings for its displacement}; and whether the coarse cut leaves any mesh coarser than the fine one
-    would (a refinement at rest would change the picture). displaces(mesh) says whether its materials displace it."""
+    would (a refinement at rest would change the picture). displaces(mesh) says whether its materials displace it.
+    An instanced mesh is cut only where it is a sea (sea(mesh): it wears an Ocean node, ocean.wears_ocean): the
+    instanced cut is the seas' (a sea of placed tiles); any other instanced mesh (a car's wheels) keeps its geometry
+    whole, uncut and unsimplified."""
     pixels = COARSE_PIXELS if detail == 'coarse' else FINE_PIXELS
     entries = []
     for mesh in meshes:
         try:
             if not mesh.get('faces') or not mesh.get('vertices'):
+                continue
+            if 'instances' in mesh and not sea(mesh):
                 continue
             # log2 of the mesh's edge over the target: how many halvings its edges need.
             size, across = edge_pixels(mesh, camera, width, True)

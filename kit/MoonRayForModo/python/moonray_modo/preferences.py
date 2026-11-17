@@ -25,8 +25,9 @@ KEYS = {
     # Whether the environment lights the scene always, as a path tracer has it ('moonray'), or only with Global
     # Illumination on in the Render item, as Modo's own renderer has it ('modo').
     'environment_lighting': ('moonray', str),
-    'idle_release_minutes': (5, int),
-    'persistent_preview': (True, bool), 'preview_motion': (False, bool), 'xpu2_motion': (False, bool), 'memory_hud': (True, bool),
+    # 0: an idle renderer is kept until its scene closes (Panel._scene_closed), its GPU given no work meanwhile.
+    'idle_release_minutes': (0, int),
+    'persistent_preview': (True, bool), 'memory_hud': (True, bool),
     'ipr': (False, bool), 'show_buckets': (True, bool), 'worker_tiles': (True, bool), 'clay': ('materials', str),
     'display_gamma': (1.0, float),
     # Set on the MoonRay page of Modo's Preferences: what Assign Material starts with, the ink of a draft, whether a
@@ -119,11 +120,11 @@ class Preferences:
             self.store.setValue('previous_runtime', self.store.value('runtime', ''))
             self.store.setValue('runtime', native.default_runtime())
             self.store.setValue('runtime_installation', installation)
-        # Motion blur in MoonLightIPR is off by default since 2026-10-27 (it adds to each update's wait): a choice stored
-        # before then is let go once, and one made since is kept.
-        if self.store.value('preview_motion_default') != 'off':
-            self.store.remove('preview_motion')
-            self.store.setValue('preview_motion_default', 'off')
+        # Motion blur in the preview follows the camera rendered through (panel._motion_wanted) since 0.5.5: the switches
+        # it had of its own (MoonLightIPR's, XPU2 realtime's) are let go.
+        for gone in ('preview_motion', 'preview_motion_default', 'xpu2_motion'):
+            if self.store.contains(gone):
+                self.store.remove(gone)
 
     def get(self, key):
         default, kind = KEYS[key]
@@ -258,16 +259,11 @@ class Dialog(QtWidgets.QDialog):
         form.addRow(check('persistent_preview', 'Keep MoonRay loaded between previews',
                           'Faster updates; structural edits still reload the scene'))
         form.addRow('Release idle renderer memory', combo('idle_release_minutes',
-                    [('Never', 0), ('After 1 minute', 1), ('After 5 minutes', 5), ('After 15 minutes', 15), ('After 30 minutes', 30)],
-                    'Keeps cached images. The next render reloads its scene; active renders are never interrupted.'))
-        form.addRow(check('preview_motion', 'Motion blur in MoonLightIPR renders',
-                          "MoonLightIPR blurs whenever the render camera's Motion Blur, or Motion Blur in the render settings, is on; "
-                          'this turns it on for every scene. Off by default: each update then also reads the scene at shutter open and close, which adds to its wait. '
-                          'While dragging, updates stay sharp. Said as Motion Blur at the foot of the picture while on'))
-        form.addRow(check('xpu2_motion', 'Motion blur in MoonRay XPU2 realtime',
-                          'Off by default. On, realtime (RT) shows motion blur once an edit is let go: where something moves during the '
-                          'shutter, each update also reads the scene at shutter open and close and XPU2 prepares it again, which adds to its wait. '
-                          'While dragging, updates stay sharp. Said as Motion Blur at the foot of the picture while on'))
+                    [('When the scene closes', 0), ('After 1 minute', 1), ('After 5 minutes', 5), ('After 15 minutes', 15), ('After 30 minutes', 30)],
+                    'A stopped preview keeps its renderer loaded and idle, with no work for the graphics card, so the next one starts at once; '
+                    'it frees its memory when the scene closes, or after this long idle. Cached images are kept; active renders are never interrupted.'))
+        # Motion blur has no switch here: every engine, realtime too, blurs where the camera rendered through or the render
+        # settings say (panel._motion_wanted).
         # The same choice as Preferences > MoonRay > XPU2 > Renderer: one setting. Greyed without XPU2's renderer in the kit.
         engine = combo('xpu2/renderer', [('XPU2', 'xpu2'), ('MoonRay XPU (standard)', 'xpu')],
                        "Which renders MoonRay's preview where it would render on the graphics card: XPU2, or the standard MoonRay "
@@ -278,7 +274,6 @@ class Dialog(QtWidgets.QDialog):
 
         def engine_chosen(_=None):
             xpu2 = engine.currentData() == 'xpu2' and engine.isEnabled()
-            self.widgets['xpu2_motion'].setEnabled(xpu2)
             self.realtime_share.setEnabled(self.realtime_held is not None and xpu2)
         engine.currentIndexChanged.connect(engine_chosen)
         engine_chosen()

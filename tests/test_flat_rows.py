@@ -79,5 +79,34 @@ class FlatRows(unittest.TestCase):
         self.assertEqual(written[0], written[1])
 
 
+class Compared(unittest.TestCase):
+    """Rows compared at C speed: the very same run at once, two runs of one type byte for byte, and as before otherwise
+    (motion.apply_motion compared a car's meshes number by number at each end of the shutter, 7 s an update)."""
+
+    def test_the_same_rows_are_the_same_without_reading_them(self):
+        points = Rows(array('f', [0.0, 1.0, 2.0] * 4), 3, None)
+        self.assertTrue(points == points)
+        self.assertFalse(points != points)
+        # Another Rows over the very same run.
+        self.assertEqual(Rows(points.data, 3, None), points)
+
+    def test_runs_of_one_type_are_compared_by_their_numbers(self):
+        a = Rows(array('f', [0.0, 1.0, 2.0, 3.0, 4.0, 5.0]), 3, None)
+        self.assertEqual(a, Rows(array('f', [0.0, 1.0, 2.0, 3.0, 4.0, 5.0]), 3, None))
+        self.assertNotEqual(a, Rows(array('f', [0.0, 1.0, 2.0, 3.0, 4.0, 5.5]), 3, None))
+        self.assertNotEqual(a, Rows(array('f', [0.0, 1.0, 2.0]), 3, None))
+        self.assertNotEqual(a, Rows(array('f', [0.0, 1.0, 2.0, 3.0, 4.0, 5.0]), 2, None))
+        # Of other types, number by number as before; and against plain lists.
+        self.assertEqual(a, Rows(array('d', [0.0, 1.0, 2.0, 3.0, 4.0, 5.0]), 3, None))
+        self.assertEqual(a, [[0.0, 1.0, 2.0], [3.0, 4.0, 5.0]])
+
+    def test_faces_are_compared_by_their_corners_and_counts(self):
+        quads = Faces(array('i', [0, 1, 2, 3, 4, 5, 6, 7]), array('i', [4, 4]), None)
+        self.assertTrue(quads == quads)
+        self.assertEqual(quads, Faces(array('i', [0, 1, 2, 3, 4, 5, 6, 7]), array('i', [4, 4]), None))
+        self.assertNotEqual(quads, Faces(array('i', [0, 1, 2, 3, 4, 5, 7, 6]), array('i', [4, 4]), None))
+        self.assertNotEqual(quads, Faces(array('i', [0, 1, 2, 3, 4, 5, 6, 7]), array('i', [3, 5]), None))
+
+
 if __name__ == '__main__':
     unittest.main()

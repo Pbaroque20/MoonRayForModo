@@ -37,5 +37,23 @@ int main(){try{
     for(int i=0;i<100000;++i)map.erase(i);
     reader.join();check(map.empty()&&reads==100000&&snapshot.size()==100000);
     bool rejected=false;try{map.at(1);}catch(const std::out_of_range&){rejected=true;}check(rejected);
+    // A map made at once from sorted keys (assignSorted, a scene's first index): the same entries, balanced, and edited
+    // as any other afterwards; unsorted or repeated keys, or a map not empty, refused.
+    {
+        std::vector<std::pair<int,int>> items;std::map<int,int> sorted;
+        for(int i=0;i<50000;++i){items.emplace_back(i*3,i);sorted[i*3]=i;}
+        PersistentMap<int,int> bulk;bulk.assignSorted(std::move(items));
+        check(bulk.size()==sorted.size()&&bulk.height()<=int(std::log2(sorted.size()))+1);
+        auto a=bulk.begin();for(const auto& p:sorted){check(a!=bulk.end()&&a->first==p.first&&a->second==p.second);++a;++checks;}check(a==bulk.end());
+        for(unsigned i=0;i<20000;++i){
+            int key=int(rng()%160000),value=int(rng());
+            if(rng()%3){bulk.set(key,value);sorted[key]=value;}else check(bulk.erase(key)==sorted.erase(key));
+        }
+        auto b=bulk.begin();for(const auto& p:sorted){check(b!=bulk.end()&&b->first==p.first&&b->second==p.second);++b;}check(b==bulk.end());
+        check(bulk.size()==sorted.size()&&bulk.height()<=int(2*std::log2(bulk.size()+1)+1));
+        bool refused=false;try{bulk.assignSorted({{1,1}});}catch(const std::logic_error&){refused=true;}check(refused);
+        PersistentMap<int,int> other;refused=false;try{other.assignSorted({{2,0},{1,0}});}catch(const std::invalid_argument&){refused=true;}check(refused&&other.empty());
+        refused=false;try{other.assignSorted({{1,0},{1,0}});}catch(const std::invalid_argument&){refused=true;}check(refused&&other.empty());
+    }
     std::cout<<"{\"passed\":true,\"random_operations\":30000,\"checked_entries\":"<<checks<<",\"retained_reader_entries\":"<<reads<<"}\n";return 0;
 }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
