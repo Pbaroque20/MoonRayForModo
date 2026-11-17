@@ -407,6 +407,62 @@ def folder():
     return path
 
 
+# How many tiles were made since the folder was last looked over (trim): looked over at the first made in a session,
+# then every TRIM_EVERY.
+_MADE = [0]
+TRIM_EVERY = 16
+
+
+def kept_bytes():
+    """What the Ocean folder may come to (the cache folder's own limit for each of its kinds), the least lately used let
+    go beyond it."""
+    from .cache_folder import KEPT_BYTES
+    return KEPT_BYTES
+
+
+def used(made):
+    """Tiles found on disk and used again: marked as lately used, so that trim lets go of older ones first, with what
+    MoonLightIPR made ready of each beside it (its name and ".mlt", session/scene_loader.cpp)."""
+    for path in made:
+        for each in (Path(path), Path(str(path) + '.mlt')):
+            try:
+                os.utime(each)
+            except OSError:
+                pass
+    return made
+
+
+def trim(path=None, limit=None):
+    """The Ocean folder brought back under its limit (kept_bytes), the least lately used files let go first. A sea's
+    tiles are made for each moment it is rendered at (key), each moment's some 50 MB: a tester's animated seas came to
+    32 GB in a day, with nothing let go, and filled the disk. Returns the bytes freed."""
+    path = Path(path) if path else folder()
+    limit = kept_bytes() if limit is None else limit
+    try:
+        files = sorted((entry.stat().st_mtime, entry.stat().st_size, entry) for entry in path.iterdir() if entry.is_file())
+    except OSError:
+        return 0
+    total = sum(size for _, size, _ in files)
+    freed = 0
+    for _, size, entry in files:
+        if total <= limit:
+            break
+        try:
+            entry.unlink()
+            total -= size
+            freed += size
+        except OSError:
+            pass    # One a render has open is left.
+    return freed
+
+
+def _made():
+    """A tile just made: the folder looked over now and then (trim)."""
+    _MADE[0] += 1
+    if _MADE[0] % TRIM_EVERY == 1:
+        trim()
+
+
 def paths(value, time):
     """The tile's displacement, foam and slope images (PFM) for these settings and this moment."""
     stem = folder() / key(value, time)
@@ -474,7 +530,8 @@ def make(value, time, runtime=None):
     """The tile's three images, made where they are not on disk yet; their paths."""
     made = paths(value, time)
     if all(p.is_file() for p in made):
-        return made
+        return used(made)
+    _made()
     if value.get('swell'):
         vectors, mask, slopes = swell_fields(value, time)
         write_pfm(made[0], value['resolution'], vectors, 3)
@@ -488,7 +545,7 @@ def make(value, time, runtime=None):
         value = dict(value, resolution=PYTHON_LIMIT)
         made = paths(value, time)
         if all(p.is_file() for p in made):
-            return made
+            return used(made)
     vectors, mask, slopes = fields(value, time, slopes=True)
     write_pfm(made[0], value['resolution'], vectors, 3)
     write_pfm(made[1], value['resolution'], [(m, m, m) for m in mask], 3)
@@ -575,13 +632,14 @@ def make_split(value, time, cycles):
         value = dict(value, resolution=PYTHON_LIMIT)
     split = split_paths(value, time, cycles)
     if all(p.is_file() for p in split):
-        return split
+        return used(split)
+    _made()
     if native_split(value, time, cycles, paths(value, time), split):
         return split
     value = dict(value, resolution=min(value['resolution'], PYTHON_LIMIT))
     split = split_paths(value, time, cycles)
     if all(p.is_file() for p in split):
-        return split
+        return used(split)
     _, _, full = fields(value, time, slopes=True)
     vectors, _, coarse = fields(value, time, slopes=True, cutoff=cycles)
     write_pfm(split[0], value['resolution'], vectors, 3)
@@ -778,7 +836,7 @@ def crest_tile(part, value):
         return crest_path(part, value, 0.0)
     path = crest_path(part, value, time)
     if path.is_file():
-        return path
+        return used([path])[0]
     displacement = make(part, time, CONTEXT['runtime'])[0]
     width, values = read_pfm(displacement)
     inverse, start = 1.0 / crest_reference(value), value['crest_start']
