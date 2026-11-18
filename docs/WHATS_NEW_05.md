@@ -44,7 +44,10 @@ Install it, and **Compile XPU2 Shaders once more**.
   ![Procedural bumps in MoonLightIPR: Noise, Checker, Noise on a finely divided cube and Noise on a cube without UVs](images/procedural-bumps.png)
 
 - **Previews of any size** show as they render, 4K and 8K among them (a 4K preview stayed black until done, or said "Cannot display buffer"). What a picture takes in memory is said in the MoonRay Terminal, and among the notices when it is large.
-- **Show Buckets shows where XPU2 hands work over**: orange, half see-through, on the tiles whose samples the GPU handed to the processor, and blue on those holding provisional samples (drawn from a coarser texture while its detail loads); each tile clears once its samples are final.
+- **Show Handoff Tiles** (the preview window's Options, under Show Worker Tiles) shows where XPU2 hands work over: orange, half see-through, on the tiles whose samples the GPU handed to the processor, and blue on those holding provisional samples (drawn from a coarser texture while its detail loads); each tile clears once its samples are final.
+
+  ![Show Handoff Tiles under XPU2: orange on the tiles whose samples the GPU handed to the processor (the two spheres, left to it), blue on provisional samples, each clearing once its samples are final](images/xpu2-handoff-tiles.png)
+
 - **XPU2 renders scenes with many large textures to the end**: scenes with dozens of 4K textures no longer stall after XPU2's first passes and go over to MoonRay XPU, and they are ready to render sooner.
 - **Rhizome shows what each machine renders on**: CPU and GPU, the GPU alone, or the CPU alone and why, in the Rhizome window's Renders on column. A machine that falls back to its processor gets a share it can do from its first frame.
 - **Headless renders look as they do in Modo**: `moonray.exe` and XPU2 started by hand, on a farm or on a Rhizome node, have the MoonRay Source Overrides on, as Modo has them by default; set a variable to `0` to turn one off. [INSTALLATION](INSTALLATION.md#rendering-headless-no-modo-window) shows `-info`, which writes the render's progress to a log, and what `-res` does.

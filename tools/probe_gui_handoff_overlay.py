@@ -138,9 +138,9 @@ def first():
         if panel._rendering or panel._following:
             panel.stop()
         panel.preview_engine.setCurrentIndex(panel.preview_engine.findData('moonray'))
-        panel.show_buckets.setChecked(True)
+        panel.handoff_tiles.setChecked(True)
         panel.worker_tiles.setChecked(True)
-        result['buckets_tip'] = panel.show_buckets.toolTip()
+        result['handoff_tip'] = panel.handoff_tiles.toolTip()
         entries = terminal.entries()
         held['mark'] = entries[-1][0] if entries else 0
         held['t0'] = time.monotonic()
