@@ -23,6 +23,9 @@ Install it, and **Compile XPU2 Shaders once more**.
   ![Preview Preferences: Follow drags under MoonLightIPR quality](docs/images/preview-preferences-follow-drags.png)
 
 - **Render Settings decide the buffers**: in XPU and XPU2 Outputs (AOVs), which MoonRay XPU and XPU2 share, and in the new MoonLightIPR Outputs (AOVs), a tick turns a buffer on. It is rendered, listed among the preview window's buffers and written to the EXR. Alpha alone is ticked in a new scene, so MoonRay's previews no longer render every AOV each time; tick the ones you want to look at.
+
+  ![Render Settings: XPU and XPU2 Outputs (AOVs), Alpha alone ticked](docs/images/render-settings-aovs-xpu.png) ![Render Settings: MoonLightIPR Outputs (AOVs), Alpha alone ticked](docs/images/render-settings-aovs-moonlightipr.png)
+
 - **MoonLightIPR's Render Animation frames keep their alpha**: each frame's EXR and its denoised EXR have MoonLightIPR's alpha, and so do the PNG, TIFF and Targa pictures saved from them, while Alpha is ticked in MoonLightIPR Outputs (AOVs).
 - **MoonLightIPR's Render looks more like MoonRay's**: textures as sharp as MoonRay reads them, and the alpha and other AOVs blurred by depth of field as the picture is (they were sharp). Render Samples now default to 300, where they were 2000.
 
@@ -39,6 +42,7 @@ Install it, and **Compile XPU2 Shaders once more**.
 
 - **Orthographic cameras frame as Modo's**: as wide as Modo shows them at their Focus Distance (they went by the Target Distance, and came out zoomed), and MoonLightIPR follows their film offset.
 - **Shift-drag a colour swatch** in the MoonShine graph editor for brighter or darker, as in Modo: dragged up to white and back, it keeps its colour.
+- **Solo is in the picture's right-click menu**, out of the Options menu: Solo Selected Meshes, Solo Selected Material and Stop Solo, its title saying what is soloed.
 - **Procedural bumps show**: Modo's Noise, Checker and the other procedural textures set to Bump draw their bump in MoonRay, XPU2 and MoonLightIPR, as in Modo (they drew flat, on any mesh).
 
   ![Procedural bumps in MoonLightIPR: Noise, Checker, Noise on a finely divided cube and Noise on a cube without UVs](docs/images/procedural-bumps.png)
