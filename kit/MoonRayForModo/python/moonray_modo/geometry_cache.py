@@ -252,27 +252,11 @@ def key(time, displaced):
         if not path:
             return None
         platform = lx.service.Platform()
-        from .scene_reading import reading_code
+        from .scene_reading import adapter_mark, reading_code
         return ('geometry', FORM, os.path.normcase(os.path.abspath(path)), bool(displaced),
-                (platform.AppVersion(), platform.AppBuild()), _adapter_mark(), reading_code(), _settings(time, displaced))
+                (platform.AppVersion(), platform.AppBuild()), adapter_mark(), reading_code(), _settings(time, displaced))
     except Exception:
         return None
-
-
-_ADAPTER = []
-
-
-def _adapter_mark():
-    if not _ADAPTER:
-        from . import evaluated
-        from pathlib import Path
-        path = Path(evaluated.__file__).resolve().parents[2] / 'bin/MoonRayGeometry.lx'
-        try:
-            stat = path.stat()
-            _ADAPTER.append('%d:%d' % (stat.st_size, stat.st_mtime_ns))
-        except OSError:
-            _ADAPTER.append('-')
-    return _ADAPTER[0]
 
 
 def standing(data, time):
