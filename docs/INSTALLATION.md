@@ -53,9 +53,11 @@ A headless render takes two steps: write the Modo scene as a MoonRay scene, then
 
 ### 1. Write the MoonRay scene
 
-From Modo: **MoonRay > Export as MoonRay Scene** (RDLA, RDLB or both; one scene per frame if you like).
+From Modo: **MoonRay > Convert LXO to RDL** (also in the preview window's Options) takes the scene open now (**Add Open Scene**, which offers to save it first), `.lxo` files, or folders of them, and converts them in the background with Modo's command-line engine, a few at a time, while you go on working: RDLA, RDLB or both, one scene per frame if you like. RDLB and RDLA + RDLB are the quickest, their geometry written straight to binary: a heavy car takes 8 s as RDLA + RDLB and 16 s as RDLB, where RDLA, all text, takes about 40 s.
 
-Many scenes at once, from their files: **MoonRay > Convert LXO to RDL** takes a list of `.lxo` files, or folders of them, and converts them in the background with Modo's command-line engine, a few at a time, while you go on working; the scene open in Modo is not touched. Outside Modo, drop scenes or folders on the kit's `bin\lxo2rdl.exe`, or run it:
+![Convert LXO to RDL: two scenes converted to RDLB, two at once, and what the first wrote](images/convert-lxo-to-rdl.png)
+
+Outside Modo, drop scenes or folders on the kit's `bin\lxo2rdl.exe`, or run it:
 
 ```powershell
 & "$env:APPDATA\Luxology\Kits\MoonRayForModo\bin\lxo2rdl.exe" --rdlb --jobs 2 --out 'D:\rdl' 'C:\scenes'

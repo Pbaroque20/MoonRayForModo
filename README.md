@@ -6,6 +6,22 @@ This is the development branch of [MoonRay for Modo](https://github.com/Pbaroque
 
 The current release is [0.5.5](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.5.5). **Built on MoonRay [2026.29.1](https://github.com/dreamworksanimation/openmoonray/releases/tag/v2026.29.1)** (OpenMoonRay's latest release; MoonRay 18.4), with the plugin's own patches for Windows and the preview.
 
+## In the next release
+
+- **Convert LXO to RDL** (MoonRay menu, and the preview's Options), in place of Export as MoonRay Scene: the scene open now (Add Open Scene), `.lxo` files or folders of them, written as MoonRay scenes in the background by Modo's command-line engine, a few at a time, while Modo goes on working. RDLB and RDLA + RDLB are written several times quicker, their geometry straight to binary (a heavy car: 8 s as RDLA + RDLB). Outside Modo, drop scenes or folders on the kit's `bin\lxo2rdl.exe`.
+
+  ![Convert LXO to RDL: two scenes converted to RDLB, two at once](docs/images/convert-lxo-to-rdl.png)
+
+- **Render Animation chooses its engine**: MoonRay (XPU), MoonRay (XPU2) or MoonLightIPR, whichever renders the preview.
+
+  ![The Render Animation window with MoonRay (XPU2) chosen](docs/images/render-animation-engine.png)
+
+- **MoonLightIPR follows drags, if you like** (Preview Preferences, Follow drags, off by default): the picture stops sampling when the mouse is pressed, each step of the drag is shown at one sample a pixel, and it samples to the end once the mouse is let go. Keyed items in scenes with motion blur are followed too, a sea about seven times quicker than before, and the preview says when Modo keeps it from following a drag.
+
+  ![Preview Preferences: Follow drags under MoonLightIPR quality](docs/images/preview-preferences-follow-drags.png)
+
+- **Previews of any size** show as they render, 4K and 8K among them.
+
 ## New in 0.5.5
 
 - **Faster starts and edits**: heavy scenes start again in seconds, even after Modo restarts, and at once while the scene stays open: the kit and XPU2 keep what they read and prepared in the Cache folder and read again only what changed. Stop keeps the renderer loaded and idle, so the next Start renders at once (Preferences: Release idle renderer memory). Realtime no longer reads a rigged or animated scene again at each edit, nor moving replicators at each camera move, and scenes with many Shader Tree masks read faster.
