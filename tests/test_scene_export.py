@@ -99,5 +99,50 @@ class Binary(unittest.TestCase):
             self.assertFalse(read[0][0].exists())
 
 
+@unittest.skipIf(scene_export is None, 'needs Qt')
+class GeometryAsBinary(unittest.TestCase):
+    """The geometry's heavy lists collected as binary as the scene is written (write_binary, as Rhizome's export): RDLA +
+    RDLB written as they are, one RDLB or one RDLA made of the two by MoonRay's converter."""
+
+    def convert(self, made):
+        from unittest import mock
+
+        def run(command, **_):
+            inputs = [Path(command[i + 1]) for i, word in enumerate(command) if word == '-i']
+            made.append([(p.suffix, p.read_bytes()) for p in inputs])
+            Path(command[command.index('-o') + 1]).write_bytes(b'merged \\ "x"' if command[command.index('-o') + 1].endswith('.rdla') else b'merged')
+            return mock.Mock(returncode=0, stdout=b'')
+        return run
+
+    def test_split_is_written_as_it_is(self):
+        with tempfile.TemporaryDirectory() as folder:
+            folder = Path(folder)
+            written = scene_export.write_binary('SceneVariables {}', b'RDLB', folder / 'scene.rdla', 'split', folder)
+            self.assertEqual(written, [folder / 'scene.rdla', folder / 'scene.rdlb'])
+            self.assertEqual(((folder / 'scene.rdla').read_text(encoding='utf-8'), (folder / 'scene.rdlb').read_bytes()), ('SceneVariables {}', b'RDLB'))
+
+    def test_rdla_is_written_by_the_kit_as_text(self):
+        # MoonRay's converter writes the lists as text slower than the kit (a car: 41 s to 120 s): RDLA is not collected.
+        source = (Path(__file__).resolve().parents[1] / 'kit/MoonRayForModo/python/moonray_modo/scene_export.py').read_text(encoding='utf-8')
+        self.assertIn("if native.binary_geometry() and choices['format'] in ('rdlb', 'split'):", source)
+
+    def test_one_file_is_made_of_the_two(self):
+        from unittest import mock
+        for kind in ('rdlb', 'rdla'):
+            made = []
+            with tempfile.TemporaryDirectory() as folder:
+                folder = Path(folder)
+                with mock.patch.object(scene_export, 'converter', return_value=Path('rdl2_convert.exe')), \
+                        mock.patch.object(scene_export.subprocess, 'run', self.convert(made)), \
+                        mock.patch('moonray_modo.native.environment', return_value={}), \
+                        mock.patch.object(scene_export, 'escaped') as escaped:
+                    written = scene_export.write_binary('SceneVariables {}', b'RDLB', folder / 'scene.rdla', kind, folder)
+                self.assertEqual(written, [folder / ('scene.' + kind)])
+                self.assertEqual(sorted(p.name for p in folder.iterdir()), ['scene.' + kind])
+                self.assertEqual(made, [[('.rdla', b'SceneVariables {}'), ('.rdlb', b'RDLB')]])
+                # The converter's text has its strings escaped again.
+                self.assertEqual(escaped.called, kind == 'rdla')
+
+
 if __name__ == '__main__':
     unittest.main()

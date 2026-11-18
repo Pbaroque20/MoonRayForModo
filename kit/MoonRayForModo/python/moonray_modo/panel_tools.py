@@ -244,13 +244,13 @@ class Tools:
             self._failed(str(exc))
 
     def export_moonray_scene(self):
-        """Export as MoonRay Scene, as the MoonRay menu has it: its window, then the export. ('export', the page an
-        older MoonRay menu names, comes here too.)"""
+        """Convert LXO to RDL, which took the place of Export as MoonRay Scene: its window, where the scene open now is
+        added with Add Open Scene and converted in the background as any other. Export as MoonRay Scene wrote the scene
+        on Modo's own thread, which held Modo up for minutes on a very heavy scene. ('export', the page an older MoonRay
+        menu names, comes here too.)"""
         try:
-            from .scene_export import run
-            written = run(self)
-            if written:
-                self.status.setText('Exported ' + str(written[0]) + (' and %d more' % (len(written) - 1) if len(written) > 1 else ''))
+            from .lxo_convert_window import show
+            show()
         except Exception as exc:
             self._failed(str(exc))
 
