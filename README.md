@@ -25,12 +25,24 @@ Install it, and **Compile XPU2 Shaders once more**.
 - **Render Settings decide the buffers**: in XPU and XPU2 Outputs (AOVs), which MoonRay XPU and XPU2 share, and in the new MoonLightIPR Outputs (AOVs), a tick turns a buffer on. It is rendered, listed among the preview window's buffers and written to the EXR. Alpha alone is ticked in a new scene, so MoonRay's previews no longer render every AOV each time; tick the ones you want to look at.
 - **MoonLightIPR's Render Animation frames keep their alpha**: each frame's EXR and its denoised EXR have MoonLightIPR's alpha, and so do the PNG, TIFF and Targa pictures saved from them, while Alpha is ticked in MoonLightIPR Outputs (AOVs).
 - **MoonLightIPR's Render looks more like MoonRay's**: textures as sharp as MoonRay reads them, and the alpha and other AOVs blurred by depth of field as the picture is (they were sharp). Render Samples now default to 300, where they were 2000.
+
+  ![MoonLightIPR's Render with depth of field: the picture and its alpha, blurred alike](docs/images/moonlightipr-alpha-dof.png)
+
 - **MoonLightIPR lays a MoonRay light's picture as MoonRay does**: Texture Reps U and V, Mirror U and V, Rotation, Translation, Coverage and Border Color now apply on every light kind (they did nothing in MoonLightIPR). Rect and disc lights show their picture the right way up, and a distant light's disc seen by the camera shows its picture.
+
+  ![Four rect lights with one picture in MoonLightIPR: as it is, Texture Reps U 2 and V 3, Reps 2 and 2 with Mirror U, and Rotation, Translation and Coverage with a Border Color](docs/images/moonlightipr-light-pictures.png)
+
 - **Shader Tree groups masked to a Group** (of the Groups list) shade that group's members only, as in Modo, in every engine: such a group's material went over everything.
 - **MoonLightIPR: a material covers the bumps below it**, as Modo and MoonRay do: the bump and normal maps of the materials under it no longer show through.
+
+  ![MoonLightIPR before (above) and now (below): a striped bump under the blue and red materials no longer shows through them; the bare cube keeps it](docs/images/material-covers-bumps.png)
+
 - **Orthographic cameras frame as Modo's**: as wide as Modo shows them at their Focus Distance (they went by the Target Distance, and came out zoomed), and MoonLightIPR follows their film offset.
 - **Shift-drag a colour swatch** in the MoonShine graph editor for brighter or darker, as in Modo: dragged up to white and back, it keeps its colour.
 - **Procedural bumps show**: Modo's Noise, Checker and the other procedural textures set to Bump draw their bump in MoonRay, XPU2 and MoonLightIPR, as in Modo (they drew flat, on any mesh).
+
+  ![Procedural bumps in MoonLightIPR: Noise, Checker, Noise on a finely divided cube and Noise on a cube without UVs](docs/images/procedural-bumps.png)
+
 - **Previews of any size** show as they render, 4K and 8K among them (a 4K preview stayed black until done, or said "Cannot display buffer"). What a picture takes in memory is said in the MoonRay Terminal, and among the notices when it is large.
 - **XPU2 renders scenes with many large textures to the end**: scenes with dozens of 4K textures no longer stall after XPU2's first passes and go over to MoonRay XPU, and they are ready to render sooner.
 - **Rhizome shows what each machine renders on**: CPU and GPU, the GPU alone, or the CPU alone and why, in the Rhizome window's Renders on column. A machine that falls back to its processor gets a share it can do from its first frame.
