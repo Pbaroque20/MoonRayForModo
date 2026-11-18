@@ -61,7 +61,8 @@ def lens(camera, kind):
     aperture_x, moonray_pixel_aspect = framing(width, height, float(channel(camera, 'apertureX', .036)),
                                                float(channel(camera, 'apertureY', .024)), pixel_aspect, channel(camera, 'filmFit', 'fill'))
     focal = float(channel(camera, 'focalLen', .05))
-    ortho_width = float(properties.read(camera).get('ortho_width', aperture_x * float(channel(camera, 'target', 1)) / max(1e-9, focal)))
+    from .camera import ortho_width as seen_across
+    ortho_width = float(properties.read(camera).get('ortho_width', seen_across(aperture_x, channel(camera, 'focusDist', 4), focal)))
     film_offset = offsets(float(channel(camera, 'offsetX', 0)), float(channel(camera, 'offsetY', 0)), projection, aperture_x,
                           ortho_width, pixel_aspect)
     blades = int(channel(camera, 'irisBlades', 0))
