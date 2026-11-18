@@ -93,8 +93,21 @@ class Wiring(unittest.TestCase):
     def test_the_menu_entry(self):
         layout = (KIT / 'layout.cfg').read_text(encoding='utf-8')
         self.assertIn('val="cmd moonray.lxo.convert"><atom type="Label">Convert LXO to RDL...</atom>', layout)
-        self.assertLess(layout.index('cmd moonray.scene.export'), layout.index('cmd moonray.lxo.convert'))
         self.assertIn("lx.bless(ConvertLxo, 'moonray.lxo.convert')", (KIT / 'lxserv/moonray_commands.py').read_text(encoding='utf-8'))
+
+    def test_it_takes_the_place_of_export_as_moonray_scene(self):
+        import moonray_menu
+        layout = (KIT / 'layout.cfg').read_text(encoding='utf-8')
+        self.assertNotIn('cmd moonray.scene.export', layout)
+        # An installed menu is written again from the menu's list (moonray_menu.tidy): the converter where the export was.
+        rows = [entry[0] for entry in moonray_menu.MENU if entry]
+        self.assertIn('cmd moonray.lxo.convert', rows)
+        self.assertNotIn('cmd moonray.scene.export', rows)
+        self.assertEqual(rows.index('cmd moonray.lxo.convert'), rows.index('cmd moonray.material.importMaterialX') + 1)
+        # The preview's Options, and the old command for a keymap or a script, open the converter.
+        self.assertIn("menu.addAction('Convert LXO to RDL...',self.export_moonray_scene)", (KIT / 'python/moonray_modo/panel.py').read_text(encoding='utf-8'))
+        self.assertIn('from moonray_modo.lxo_convert_window import show', (KIT / 'lxserv/moonray_scene_export.py').read_text(encoding='utf-8'))
+        self.assertIn('def add_open_scene(self):', (KIT / 'python/moonray_modo/lxo_convert_window.py').read_text(encoding='utf-8'))
 
     def test_an_installed_menu_gains_it_once(self):
         import moonray_menu

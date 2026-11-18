@@ -25,12 +25,16 @@ try:
     kind = named.get('format', '').lower() or ('rdlb' if args[1].lower().endswith('.rdlb') else 'rdla')
     if kind not in ('rdla', 'rdlb', 'split'):
         raise ValueError('format must be rdla, rdlb or split, not ' + kind)
+    import time
+    began = time.perf_counter()
     # Opened without its dialogs (a missing colour configuration, an unknown item): no one is there to answer them.
     lx.eval('!scene.open {%s}' % args[0])
+    opened = time.perf_counter()
     warnings = []
     written = scene_export.export({'path': args[1], 'format': kind, 'frames': 'frames' in [w.lower() for w in words],
                                    'outputs': named.get('outputs', '1') != '0', 'collect': named.get('collect', '0') == '1'}, warnings)
     said = [('wrote', str(p)) for p in written] + [('notice', w) for w in warnings]
+    said.append(('timing', 'opened in %.1f s, written in %.1f s' % (opened - began, time.perf_counter() - opened)))
 except Exception as exc:
     said.append(('error', '%s: %s' % (type(exc).__name__, exc)))
     lx.out(traceback.format_exc())

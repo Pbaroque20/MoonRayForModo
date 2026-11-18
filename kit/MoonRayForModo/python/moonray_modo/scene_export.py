@@ -1,7 +1,8 @@
-"""Export as MoonRay Scene (the MoonRay menu, and the preview window's Options): the Modo scene written as MoonRay reads it, to render with moonray.exe or on a
-farm, without the preview window.
+"""The Modo scene written as MoonRay reads it, to render with moonray.exe or on a farm (export), as Convert LXO to RDL
+and the kit's bin/lxo2rdl.exe write scenes through scripts/export_moonray.py in Modo's command-line engine. Up to 0.5.5
+Export as MoonRay Scene wrote the open scene with it on Modo's own thread; Convert LXO to RDL took its place.
 
-Its window asks for the file, the format and what to put in:
+The choices:
 - RDLA: one text file, which MoonRay reads and a person can read too.
 - RDLB: one binary file: smaller (about a third), quicker to load, the same picture.
 - RDLA + RDLB: MoonRay's split scene, its settings as text and its geometry binary; MoonRay is given both.
@@ -9,8 +10,8 @@ Its window asks for the file, the format and what to put in:
 - Collect textures: every picture the scene reads copied into a folder beside it, named from the scene, the scene
   pointing to them there (paths relative to the scene's folder: render from that folder).
 - Every frame of the frame range: one scene for each frame, numbered, as Render Animation would render them.
-RDLB is MoonRay's own binary format, written by MoonRay's own converter (rdl2_convert) from the scene text the
-plugin makes; that text goes through a temporary folder, not beside the scene."""
+The geometry's heavy lists are written as binary as the scene is written (write_binary, as Rhizome's export does);
+one RDLB or one RDLA is made of the two by MoonRay's own converter (rdl2_convert), through a temporary folder."""
 import hashlib
 import re
 import shutil
@@ -18,62 +19,11 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from PySide2 import QtCore, QtWidgets
-
 FORMATS = (('rdla', 'RDLA: one text file'), ('rdlb', 'RDLB: one binary file (smaller, quicker to load)'),
            ('split', 'RDLA + RDLB: settings as text, geometry binary (MoonRay\'s split scene)'))
 # What a scene names that is a file to collect.
 COLLECTED = {'.tx', '.exr', '.hdr', '.png', '.jpg', '.jpeg', '.tif', '.tiff', '.tga', '.bmp', '.vdb', '.pfm', '.cube', '.ies'}
 STRING = re.compile(r'"((?:[^"\\]|\\.)*)"')
-
-
-class ExportDialog(QtWidgets.QDialog):
-    def __init__(self, default_path, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle('Export as MoonRay Scene')
-        self.settings = QtCore.QSettings('MoonRayForModo', 'SceneExport')
-        layout = QtWidgets.QVBoxLayout(self)
-        form = QtWidgets.QFormLayout()
-        layout.addLayout(form)
-        row = QtWidgets.QHBoxLayout()
-        self.path = QtWidgets.QLineEdit(str(default_path))
-        browse = QtWidgets.QPushButton('Browse...')
-        browse.clicked.connect(self.browse)
-        row.addWidget(self.path, 1)
-        row.addWidget(browse)
-        form.addRow('File', row)
-        self.format = QtWidgets.QComboBox()
-        for key, label in FORMATS:
-            self.format.addItem(label, key)
-        self.format.setCurrentIndex(max(0, self.format.findData(self.settings.value('format', 'rdla'))))
-        form.addRow('Format', self.format)
-        self.outputs = QtWidgets.QCheckBox('Render outputs: AOVs, Cryptomatte and deep beside the beauty')
-        self.outputs.setChecked(str(self.settings.value('outputs', 'true')).lower() == 'true')
-        self.collect = QtWidgets.QCheckBox('Collect textures into a folder beside the scene')
-        self.collect.setChecked(str(self.settings.value('collect', 'false')).lower() == 'true')
-        self.collect.setToolTip('Every picture the scene reads is copied beside it, and the scene points there: render from the scene\'s folder.')
-        self.frames = QtWidgets.QCheckBox('Every frame of the frame range, one scene each')
-        self.frames.setChecked(str(self.settings.value('frames', 'false')).lower() == 'true')
-        for box in (self.outputs, self.collect, self.frames):
-            layout.addWidget(box)
-        buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
-        buttons.button(QtWidgets.QDialogButtonBox.Ok).setText('Export')
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
-        self.setMinimumWidth(520)
-
-    def browse(self):
-        chosen, _ = QtWidgets.QFileDialog.getSaveFileName(self, 'Export as MoonRay Scene', self.path.text(), 'MoonRay scene (*.rdla *.rdlb)')
-        if chosen:
-            self.path.setText(chosen)
-
-    def choices(self):
-        held = {'path': Path(self.path.text()), 'format': self.format.currentData(), 'outputs': self.outputs.isChecked(),
-                'collect': self.collect.isChecked(), 'frames': self.frames.isChecked()}
-        for key in ('format', 'outputs', 'collect', 'frames'):
-            self.settings.setValue(key, held[key] if key == 'format' else ('true' if held[key] else 'false'))
-        return held
 
 
 def converter(runtime):
@@ -171,6 +121,38 @@ def write(text, target, kind, runtime):
         shutil.rmtree(str(folder), ignore_errors=True)
 
 
+def write_binary(text, payload, target, kind, runtime):
+    """The scene as written with its geometry's heavy lists collected as binary (rdlb.collecting, as Rhizome's export_job
+    writes it): RDLA + RDLB as they are; one RDLB made of the two by MoonRay's converter, which reads the binary lists at
+    once. Formatting every point as text, then reading it all back to make RDLB, took minutes on a heavy scene (a car's
+    RDLB 82 s to 16 s; Rhizome's export of another, 5.5 min to 15 s). One RDLA is not made here (export). Returns the
+    files written."""
+    target = Path(target)
+    if kind == 'split':
+        held = target.with_suffix('.rdla'), target.with_suffix('.rdlb')
+        held[0].write_text(text, encoding='utf-8')
+        held[1].write_bytes(payload)
+        return list(held)
+    folder = Path(tempfile.mkdtemp(prefix='moonray-export-'))
+    try:
+        light, heavy = folder / (target.stem + '.rdla'), folder / (target.stem + '.rdlb')
+        light.write_text(text, encoding='utf-8')
+        heavy.write_bytes(payload)
+        from . import native
+        output = target.with_suffix('.rdlb' if kind == 'rdlb' else '.rdla')
+        done = subprocess.run([str(converter(runtime)), '-d', str(runtime), '-i', str(light), '-i', str(heavy), '-o', str(output)],
+                              env=native.environment(Path(runtime)), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                              creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+        if done.returncode:
+            raise ValueError('MoonRay could not convert the scene: ' + done.stdout.decode(errors='replace')[-600:])
+        if kind == 'rdla':
+            # The converter writes strings as they are (escaped).
+            escaped(output)
+        return [output]
+    finally:
+        shutil.rmtree(str(folder), ignore_errors=True)
+
+
 def export(choices, warnings):
     """Write the scene (or each frame of the range) as chosen; returns the files written."""
     import lx
@@ -203,41 +185,41 @@ def export(choices, warnings):
                 from .animation import capture_current
                 snapshot = capture_current(held['surface'] == 2)
             else:
-                snapshot = host.snapshot(evaluated_geometry=held['surface'] == 2)
+                # A whole reading the Scene cache kept for this frame (the preview's, scene_reading), where the scene has
+                # no unsaved changes, as Rhizome's export takes it; else read from Modo, and kept for the next.
+                from . import scene_reading
+                evaluated = held['surface'] == 2
+                held_key = scene_reading.key(evaluated)
+                snapshot = scene_reading.load(held_key)
+                if snapshot is None:
+                    snapshot = host.snapshot(evaluated_geometry=evaluated)
+                    if held_key is not None:
+                        scene_reading.keep(held_key, scene_reading.freeze(snapshot), snapshot)
+                snapshot.pop('_full_capture', None)
+                snapshot.pop('_evaluated_data', None)
             configure(snapshot, held)
             if not choices['outputs']:
                 snapshot['custom_aovs'] = []
                 snapshot.pop('deep', None)
-            text = rdla.scene_text(snapshot, snapshot['width'], snapshot['height'], held['samples'], held['environment'],
-                                   str(target.with_suffix('.exr')))
+            arguments = (snapshot, snapshot['width'], snapshot['height'], held['samples'], held['environment'],
+                         str(target.with_suffix('.exr')))
+            # For RDLB and RDLA + RDLB, the geometry's heavy lists collected as binary as the scene is written
+            # (write_binary), where the kit writes binary geometry (native.binary_geometry, on unless switched off): a car
+            # as RDLB 82 s to 16 s, as RDLA + RDLB 8 s. RDLA, all text, is written here as before: MoonRay's converter
+            # writes the lists as text slower than the kit does (41 s to 120 s).
+            payload = None
+            if native.binary_geometry() and choices['format'] in ('rdlb', 'split'):
+                from . import rdlb
+                with rdlb.collecting(fingerprints=False) as sink:
+                    text = rdla.scene_text(*arguments)
+                payload = sink.payload() if sink.objects else None
+            else:
+                text = rdla.scene_text(*arguments)
             if choices['collect']:
                 text, count = collect_textures(text, target)
-            written += write(text, target, choices['format'], runtime)
+            written += (write_binary(text, payload, target, choices['format'], runtime) if payload is not None
+                        else write(text, target, choices['format'], runtime))
             warnings.extend(w for w in snapshot.get('warnings', []) if w not in warnings)
     finally:
         selection.SetTime(now)
-    return written
-
-
-def run(parent=None):
-    """Export as MoonRay Scene: the window, then the export."""
-    import modo
-    scene = modo.Scene()
-    folder = Path(scene.filename).parent if getattr(scene, 'filename', None) else Path.home()
-    name = Path(scene.filename).stem if getattr(scene, 'filename', None) else 'scene'
-    held = QtCore.QSettings('MoonRayForModo', 'SceneExport').value('folder', '')
-    default = Path(held) / (name + '.rdla') if held else folder / (name + '.rdla')
-    dialog = ExportDialog(default, parent)
-    if dialog.exec_() != QtWidgets.QDialog.Accepted:
-        return None
-    choices = dialog.choices()
-    QtCore.QSettings('MoonRayForModo', 'SceneExport').setValue('folder', str(Path(choices['path']).parent))
-    warnings = []
-    written = export(choices, warnings)
-    message = 'Exported %d file%s:\n%s' % (len(written), '' if len(written) == 1 else 's', '\n'.join(str(p) for p in written[:6]))
-    if len(written) > 6:
-        message += '\n...'
-    if warnings:
-        message += '\n\nNotices:\n' + '\n'.join(warnings[:8])
-    QtWidgets.QMessageBox.information(parent, 'Export as MoonRay Scene', message)
     return written

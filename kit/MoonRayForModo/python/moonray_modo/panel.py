@@ -460,7 +460,7 @@ class Panel(Tools, QtWidgets.QWidget):
         menu.addAction('Render EXR...',self.render_final)
         menu.addAction('Render Animation...',self.render_animation)
         menu.addAction('MoonLightIPR Playblast...',self.render_playblast)
-        menu.addAction('Export as MoonRay Scene...',self.export_moonray_scene)
+        menu.addAction('Convert LXO to RDL...',self.export_moonray_scene)
         menu.addSeparator()
         menu.addAction('Render Log...',self.show_log)
         return menu

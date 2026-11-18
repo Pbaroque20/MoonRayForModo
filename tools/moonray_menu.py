@@ -40,7 +40,8 @@ MENU = (
     # Bringing things in and sending them out.
     ('cmd moonray.rdl.import', 'Import MoonRay Scene (RDL)...', 'rdl_import'),
     ('cmd moonray.material.importMaterialX', 'Import MaterialX Material...', 'materialx'),
-    ('cmd moonray.scene.export', 'Export as MoonRay Scene...', 'export'),
+    # Convert LXO to RDL, where Export as MoonRay Scene was: installed menus have the one swapped for the other here.
+    ('cmd moonray.lxo.convert', 'Convert LXO to RDL...', 'lxo_convert'),
     None,
     # The scene's files.
     ('cmd moonray.page report', 'Report Scene Assets...', 'report'),

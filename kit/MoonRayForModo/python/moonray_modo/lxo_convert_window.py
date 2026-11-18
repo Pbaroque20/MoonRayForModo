@@ -19,8 +19,8 @@ class Window(QtWidgets.QWidget):
         self.batch = None
         layout = QtWidgets.QVBoxLayout(self)
         note = QtWidgets.QLabel("Modo scenes on disk are written as MoonRay scenes by Modo's command-line engine, in the "
-                                'background: the scene open here is not touched, and Modo goes on working. Each scene is '
-                                'written as Export as MoonRay Scene writes it, by its own MoonRay render settings.')
+                                'background, the scene open here among them (Add Open Scene), and Modo goes on working. Each scene is '
+                                'written as MoonRay reads it, by its own MoonRay render settings.')
         note.setWordWrap(True)
         layout.addWidget(note)
         self.scenes = QtWidgets.QTreeWidget()
@@ -33,7 +33,8 @@ class Window(QtWidgets.QWidget):
         self.scenes.itemSelectionChanged.connect(self._show_log)
         layout.addWidget(self.scenes, 1)
         row = QtWidgets.QHBoxLayout()
-        for label, call in (('Add Scenes...', self.add_scenes), ('Add Folder...', self.add_folder), ('Remove', self.remove), ('Clear', self.clear)):
+        for label, call in (('Add Open Scene', self.add_open_scene), ('Add Scenes...', self.add_scenes), ('Add Folder...', self.add_folder),
+                            ('Remove', self.remove), ('Clear', self.clear)):
             button = QtWidgets.QPushButton(label)
             button.clicked.connect(call)
             row.addWidget(button)
@@ -94,6 +95,45 @@ class Window(QtWidgets.QWidget):
         self._said()
 
     # The list of scenes.
+    def add_open_scene(self):
+        """The scene open in Modo, from its file, as Export as MoonRay Scene took it before the converter took its place:
+        the converter reads scenes from disk. One never saved is saved first (its file asked for); one with changes not
+        saved yet is saved, or converted as it was last saved, as chosen."""
+        if self._busy():
+            return
+        try:
+            import lx
+            import modo
+            path = modo.Scene().filename
+            changed = bool(int(lx.eval1('query sceneservice scene.changed ? current')))
+        except Exception as exc:
+            self.status.setText('The open scene could not be found: %s' % exc)
+            return
+        try:
+            if not path:
+                if QtWidgets.QMessageBox.question(self, 'Convert LXO to RDL', 'The open scene has not been saved yet, and the '
+                                                  'converter reads scenes from their files. Save it now?') != QtWidgets.QMessageBox.Yes:
+                    return
+                lx.eval('scene.saveAs')
+                path = modo.Scene().filename
+                if not path:
+                    return
+            elif changed:
+                ask = QtWidgets.QMessageBox(QtWidgets.QMessageBox.Question, 'Convert LXO to RDL',
+                                            '%s has changes not saved yet, and the converter reads scenes from their files.' % Path(path).name, parent=self)
+                save = ask.addButton('Save and Add', QtWidgets.QMessageBox.AcceptRole)
+                saved = ask.addButton('Add as Last Saved', QtWidgets.QMessageBox.DestructiveRole)
+                ask.addButton(QtWidgets.QMessageBox.Cancel)
+                ask.exec_()
+                if ask.clickedButton() is save:
+                    lx.eval('scene.save')
+                elif ask.clickedButton() is not saved:
+                    return
+        except Exception as exc:
+            self.status.setText('The open scene was not saved: %s' % exc)
+            return
+        self.add([path])
+
     def add_scenes(self):
         chosen, _ = QtWidgets.QFileDialog.getOpenFileNames(self, 'Modo scenes to convert', str(self.settings.value('scenes', '')), 'Modo scene (*.lxo)')
         if chosen:
