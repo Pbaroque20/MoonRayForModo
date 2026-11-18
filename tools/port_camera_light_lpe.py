@@ -5,8 +5,8 @@ code asks is always null, and lpeStateId in that code's case 1, so that the stat
 every other light output has nothing where a camera ray sees a light past every surface. Scalar mode
 (PathIntegrator::computeRadiance) has it right. The kit's Environment background output was black because of this.
 
-Only when MoonRay is started with MOONRAY_MODO_CAMERA_LIGHT_LPE=1 (the plugin's preference), the light and its state are
-kept. Without the variable MoonRay is as its source has it."""
+Unless MoonRay is started with MOONRAY_MODO_CAMERA_LIGHT_LPE=0 (the plugin's preference off), the light and its state are
+kept; unset, as in a moonray.exe started by hand, it is on. With 0 MoonRay is as its source has it."""
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -40,7 +40,7 @@ USED_NEW = '''                        lpeStateId = rs->mPathVertex.lpeStateIdLig
                     // Modo: what the two branches above lose as they end.
                     static const bool modoCameraLightOn = [] {
                         const char *value = std::getenv("MOONRAY_MODO_CAMERA_LIGHT_LPE");
-                        return value && value[0] == '1';
+                        return !value || value[0] != '0';
                     }();
                     if (modoCameraLightOn && modoCameraLight && rs->mPathVertex.lpeStateId >= 0) {
                         lpeStateId = lightAovs.lightEventTransition(pbrTls, rs->mPathVertex.lpeStateId, modoCameraLight);

@@ -1328,7 +1328,7 @@ index a1979c9..dc78f69 100644
          return false;
      }
 diff --git a/lib/scene/rdl2/DsoFinder.cc b/lib/scene/rdl2/DsoFinder.cc
-index badb0dc..2d6fda0 100644
+index badb0dc..5432f7c 100644
 --- a/lib/scene/rdl2/DsoFinder.cc
 +++ b/lib/scene/rdl2/DsoFinder.cc
 @@ -25,6 +25,34 @@ static const std::string sOsPathSep(":");
@@ -1341,7 +1341,7 @@ index badb0dc..2d6fda0 100644
 +{
 +    static const bool on = [] {
 +        const char *value = std::getenv("MOONRAY_MODO_DSO_SEARCH");
-+        return value && value[0] == '1';
++        return !value || value[0] != '0';
 +    }();
 +    return on;
 +}
@@ -1502,7 +1502,7 @@ index 442132d..d1e1ef7 100644
      static AttributeKey<Bool> sAttrCryptomatteOutputP0;
      static AttributeKey<Bool> sAttrCryptomatteOutputNormals;
 diff --git a/lib/scene/rdl2/SceneContext.cc b/lib/scene/rdl2/SceneContext.cc
-index c380cf4..542d72c 100644
+index c380cf4..1d8bd67 100644
 --- a/lib/scene/rdl2/SceneContext.cc
 +++ b/lib/scene/rdl2/SceneContext.cc
 @@ -2,6 +2,7 @@
@@ -1528,7 +1528,7 @@ index c380cf4..542d72c 100644
 +        // Modo: an entry that is not a readable folder passed over (tools/port_dso_search.py).
 +        static const bool modoDsoSearch = [] {
 +            const char *value = std::getenv("MOONRAY_MODO_DSO_SEARCH");
-+            return value && value[0] == '1';
++            return !value || value[0] != '0';
 +        }();
 +        std::error_code modoError;
 +        if (modoDsoSearch && !std::filesystem::is_directory(p, modoError)) {

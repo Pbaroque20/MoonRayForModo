@@ -6,12 +6,12 @@ transpose and keep pointing out. At a hit the two disagree; MoonRay turns both t
 geometric one, and the shading normal ends up facing away from the camera: black. Without normals of its own the mesh is
 right, its normals made from the same turned-over winding. A tester's Modo scenes with mirrored meshes rendered black.
 
-Only when MoonRay is started with MOONRAY_MODO_MIRRORED_MESHES=1 (the plugin's preference), PolyMesh and OpenSubdivMesh
+Unless MoonRay is started with MOONRAY_MODO_MIRRORED_MESHES=0 (the plugin's preference off), PolyMesh and OpenSubdivMesh
 reverse the orientation of a mirrored mesh as they tessellate (reverseOrientation, which reverse_normals uses), so its
 winding is outward again; a mesh both mirrored and set to reverse_normals is not reversed. Its own normals are negated
 for reverse_normals alone, as before; smooth normals PolyMesh makes from a mirrored mesh's faces (before the reversal) are
 negated as they are made. Measured on a cube: mirrored with normals 0.0 (black) and without 32.5, against 62.0 and 42.4
-for the same cube unmirrored; 62.0 and 42.4 with the switch. Without the variable MoonRay is as its source has it."""
+for the same cube unmirrored; 62.0 and 42.4 with the switch. With it 0 MoonRay is as its source has it; unset, it is on."""
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -20,12 +20,12 @@ PRIM = ROOT / 'upstream/openmoonray/moonray/moonray/lib/rendering/geom/prim'
 HELPER = '''
 namespace {
 // Modo: a mesh its placement mirrors (tools/port_mirrored_meshes.py): its winding is turned over by the mirror, its own
-// normals are not. Only with MOONRAY_MODO_MIRRORED_MESHES=1.
+// normals are not. Unless MOONRAY_MODO_MIRRORED_MESHES=0.
 bool modoMirrored(const moonray::shading::XformSamples& xforms)
 {
     static const bool on = [] {
         const char *value = std::getenv("MOONRAY_MODO_MIRRORED_MESHES");
-        return value && value[0] == '1';
+        return !value || value[0] != '0';
     }();
     return on && !xforms.empty() && xforms[0].l.det() < 0.0f;
 }

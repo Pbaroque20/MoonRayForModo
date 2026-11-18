@@ -5,7 +5,7 @@ MoonRay's Cryptomatte records the surface a camera ray (or a presence continuati
 that ray, and never the volumes on the way: a cloud has no matte, and the surface behind a thick cloud has as much
 matte as one in the clear, so the mattes in a pixel add up to more than its alpha.
 
-Only when MoonRay is started with MOONRAY_MODO_CRYPTO_VOLUMES=1 (the plugin's preference):
+Unless MoonRay is started with MOONRAY_MODO_CRYPTO_VOLUMES=0 (the plugin's preference off; unset is on):
 
 1. As the frame starts, each assignment that holds a volume shader is looked up in the layer, and its geometry's
    "primitive_attributes" UserData read for the Cryptomatte IDs the plugin gives surfaces: the first deep ID attribute
@@ -20,7 +20,7 @@ Only when MoonRay is started with MOONRAY_MODO_CRYPTO_VOLUMES=1 (the plugin's pr
    volumes before them: per thread for a scalar camera sample, and in the ray's CryptomatteData for vector and XPU,
    where it takes 16 bits of the presence depth (which is never more than a few hundred).
 
-Without the variable, MoonRay renders exactly as its source does."""
+With it 0, MoonRay renders exactly as its source does."""
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -40,12 +40,12 @@ HEADER_TEXT = '''// Modo: fog in Cryptomatte (tools/port_crypto_volumes.py).
 namespace moonray {
 namespace pbr {
 
-/// True when MoonRay was started with MOONRAY_MODO_CRYPTO_VOLUMES=1. Read once.
+/// True unless MoonRay was started with MOONRAY_MODO_CRYPTO_VOLUMES=0. Read once.
 inline bool modoCryptoVolumes()
 {
     static const bool on = [] {
         const char *value = std::getenv("MOONRAY_MODO_CRYPTO_VOLUMES");
-        return value && value[0] == '1';
+        return !value || value[0] != '0';
     }();
     return on;
 }

@@ -77,14 +77,20 @@ The script writes RDLB if the name ends in `.rdlb` and RDLA otherwise. Add `"fra
 ### 2. Render it with MoonRay
 
 ```powershell
-& 'C:\path\MoonRayForModo\runtime\moonray.exe' -in 'C:\scenes\shot.rdlb' -out 'C:\renders\shot.exr' -exec_mode xpu 2>&1 | Tee-Object "$env:USERPROFILE\Desktop\moonray-log.txt"
+& 'C:\path\MoonRayForModo\runtime\moonray.exe' -in 'C:\scenes\shot.rdlb' -out 'C:\renders\shot.exr' -exec_mode xpu -info 2>&1 | Tee-Object "$env:USERPROFILE\Desktop\moonray-log.txt"
 ```
 
 `-exec_mode` is `xpu` (graphics card and processor), `vector` or `scalar` (processor only). A glowing VDB volume, or a light with a cookie filter, needs `scalar` in this build. For a sequence, render each frame's scene:
 
 ```powershell
-Get-ChildItem 'C:\scenes\shot.*.rdlb' | ForEach-Object { & 'C:\path\MoonRayForModo\runtime\moonray.exe' -in $_.FullName -out ('C:\renders\' + $_.BaseName + '.exr') -exec_mode xpu }
+Get-ChildItem 'C:\scenes\shot.*.rdlb' | ForEach-Object { & 'C:\path\MoonRayForModo\runtime\moonray.exe' -in $_.FullName -out ('C:\renders\' + $_.BaseName + '.exr') -exec_mode xpu -info }
 ```
+
+`-info` writes the render's progress (`Rendering [ 12%]`) to the log. Without it, MoonRay shows progress only in a console window of its own: piped to a log or a file, it says "Starting render prep..." and then nothing until the picture is written, which looks like a hang.
+
+`-res` divides the picture's size: `-res 2` renders at half the width and height, a quick test; `-res 0.5` doubles them, four times the pixels and the time. `-res 0.25` renders sixteen times the pixels.
+
+The switches of **MoonRay Source Overrides** (Preferences) are on in `moonray.exe` started by hand, as they are in Modo by default. To turn one off as in your preferences, set its variable to `0` first, for example `$env:MOONRAY_MODO_OPAQUE_ALPHA = '0'`.
 
 The runtime finds `shaders/OptixGPUPrograms.ptx` and the shader libraries in the folder that holds `moonray.exe`, so keep the runtime folder whole. The bundled layout needs no environment setup. If `REZ_MOONRAY_ROOT`, `RDL2_DSO_PATH` or `TMPDIR` is already set, it takes precedence; clear it if it points to another installation.
 

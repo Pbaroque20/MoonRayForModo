@@ -6,7 +6,7 @@ multiplies by the volume's transmittance alpha as well. In vector and XPU modes 
 by entry; a surface after fog counts its weight in full and the fog's opacity is counted only for a ray that misses.
 So fog of 0.60 in front of a pane of presence 0.4 against the sky gives an alpha of 0.40, where the two hide 0.76.
 
-Only when MoonRay is started with MOONRAY_MODO_FOG_ALPHA=1 (the plugin's preference):
+Unless MoonRay is started with MOONRAY_MODO_FOG_ALPHA=0 (the plugin's preference off; unset is on):
 
 1. Scalar: the presence transparency is multiplied by the transmittance alpha of the volumes before the surface.
 2. Vector and XPU: each camera ray carries, in two new PathVertex floats, how much of what lies behind the volumes it
@@ -18,7 +18,7 @@ Only when MoonRay is started with MOONRAY_MODO_FOG_ALPHA=1 (the plugin's prefere
    when the surface it leaves was not counted (presence 0). A cutout counts what is pending and nothing behind it.
    RayState's ISPC padding gives up the 8 bytes.
 
-Without the variable both floats stay 1 and 0, and MoonRay's alpha is its own."""
+With it 0 both floats stay 1 and 0, and MoonRay's alpha is its own."""
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -33,12 +33,12 @@ HEADER_TEXT = '''// Modo: fog in a camera ray's alpha past a see-through surface
 namespace moonray {
 namespace pbr {
 
-/// True when MoonRay was started with MOONRAY_MODO_FOG_ALPHA=1. Read once.
+/// True unless MoonRay was started with MOONRAY_MODO_FOG_ALPHA=0. Read once.
 inline bool modoFogAlpha()
 {
     static const bool on = [] {
         const char *value = std::getenv("MOONRAY_MODO_FOG_ALPHA");
-        return value && value[0] == '1';
+        return !value || value[0] != '0';
     }();
     return on;
 }
@@ -135,7 +135,7 @@ EDITS = {
         ('''    const varying float alpha = (depth ? 0.f : pathPixelWeight) - transparency * pathPixelWeight;
 ''', '''    varying float alpha = (depth ? 0.f : pathPixelWeight) - transparency * pathPixelWeight;
     // Modo: a camera ray's alpha counts the volumes it passed once, and the rest as much as shows through them
-    // (tools/port_fog_alpha.py); without MOONRAY_MODO_FOG_ALPHA these are 0 and 1.
+    // (tools/port_fog_alpha.py); with MOONRAY_MODO_FOG_ALPHA=0 these are 0 and 1.
     if (depth == 0) {
         alpha = rayState.mPathVertex.modoFogPending + rayState.mPathVertex.modoFogFront * alpha;
     }

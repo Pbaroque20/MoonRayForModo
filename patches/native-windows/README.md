@@ -4,6 +4,15 @@ These patches are applied to OpenMoonRay's own source (`sources.json` names each
 patch) to build MoonRay natively on Windows with MinGW-w64 (UCRT64) for the MoonRay for Modo plugin. Most of them
 are portability changes. This file explains the ones whose reason is not obvious from the diff.
 
+## How MoonRay reads the switches of MoonRay Source Overrides
+
+Each change below whose heading names a `MOONRAY_MODO_<NAME>` variable is behind that switch, which MoonRay (or
+`denoise.exe`) reads once as it starts. A switch is off only when its variable is `0`; unset, it is on. The kit always
+sets each one to `1` or `0` from its preference (`native.environment`), so in Modo the preferences decide; a
+`moonray.exe` started by hand, for a headless render or on a farm, renders as Modo does by default. Off, MoonRay does
+as its source does. Before 2026-11-17 a switch was on only when set to `1`, so a render started by hand had every one
+off; `tools/port_switches_default_on.py` turns that reading into the new one in a tree patched before then.
+
 ## Switches on the Source Overrides page that change no source
 
 Nine switches on Preferences > MoonRay Source Overrides are the plugin's own, with no patch behind them. Each is on
@@ -91,8 +100,8 @@ to mean anything there.
 
 ## `moonray.patch`: toon materials on coarse smooth-shaded meshes (`MOONRAY_MODO_TOON_TERMINATOR`)
 
-Applied by `tools/port_toon_terminator.py`. Only active when MoonRay is started with `MOONRAY_MODO_TOON_TERMINATOR=1`
-(the plugin's preference, on by default); without it MoonRay renders exactly as its source does.
+Applied by `tools/port_toon_terminator.py`. Active unless MoonRay is started with `MOONRAY_MODO_TOON_TERMINATOR=0`
+(the plugin's preference, on by default); with it 0 MoonRay renders exactly as its source does.
 
 ### What MoonRay does
 
@@ -131,7 +140,7 @@ the self-shadowing.
 ### How it was checked
 
 A torus of 24 × 12 quads with `DwaToonMaterial` under a low distant light (`test-results/issue-129/make_repro.py`):
-stepped without the variable, smooth with it, in scalar, vector and XPU modes. The same scene with `DwaBaseMaterial`
+stepped with the switch off, smooth with it on, in scalar, vector and XPU modes. The same scene with `DwaBaseMaterial`
 renders identically with the variable on and off in scalar mode, and within the run-to-run variation of vector and XPU
 modes (two renders with it off differ as much).
 
