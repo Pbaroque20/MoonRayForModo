@@ -560,7 +560,10 @@ class VectorField(QtWidgets.QWidget):
         self.swatch=None
         if self.is_color:
             self.swatch=QtWidgets.QPushButton();self.swatch.setFixedSize(28,20);self.swatch.setAutoDefault(False);self.swatch.setDefault(False)
-            self.swatch.setToolTip('Choose a colour');self.swatch.clicked.connect(self.choose);layout.addWidget(self.swatch)
+            self.swatch.setToolTip('Choose a colour\nShift-drag: brighter or darker');self.swatch.clicked.connect(self.choose);layout.addWidget(self.swatch)
+            # A Shift-drag on it: (where it began, the colour then as shown, whether it has moved yet).
+            self.brightening=None
+            self.swatch.installEventFilter(self)
         self.spins=[]
         values=list(value) if isinstance(value,(list,tuple)) else []
         low=float(str(spec['min']).rstrip('f')) if 'min' in spec else -1e12
@@ -578,10 +581,48 @@ class VectorField(QtWidgets.QWidget):
             tint_value(spin,value,spec,kind,key,connected)
         self.paint_swatch()
     def eventFilter(self,watched,event):
+        if watched is self.swatch and self.swatch is not None:
+            return self.shift_drag(event)
         # Scrolling the list of properties must not change the numbers the pointer passes over.
         if event.type()==QtCore.QEvent.Wheel and not watched.hasFocus():
             event.ignore();return True
         return False
+    def shift_drag(self,event):
+        """Shift held, a drag on the swatch makes the colour brighter (right or up) or darker, all its parts together, as
+        Modo's Shift-drag on a colour does, one step to undo. Each step is worked out from the colour the drag began
+        with (parameter_state.brightened), so a drag up to white and back gives that colour again, not a grey. A Shift
+        click that does not drag opens the picker, as a click does."""
+        from .scrub_field import begin_drag,end_drag,_Scrub
+        kind=event.type()
+        if kind==QtCore.QEvent.MouseButtonPress and event.button()==QtCore.Qt.LeftButton and event.modifiers()&QtCore.Qt.ShiftModifier:
+            self.brightening=(event.globalPos(),[spin.value() for spin in self.spins],False)
+            return True
+        if self.brightening is None:
+            return False
+        if kind==QtCore.QEvent.MouseMove:
+            moved=event.globalPos()-self.brightening[0]
+            pixels=moved.x() if abs(moved.x())>=abs(moved.y()) else -moved.y()
+            if not self.brightening[2]:
+                if abs(pixels)<_Scrub.THRESHOLD:return True
+                begin_drag();self.brightening=self.brightening[:2]+(True,)
+            for spin,part in zip(self.spins,parameter_state.brightened(self.brightening[1],pixels)):
+                blocker=QtCore.QSignalBlocker(spin);spin.setValue(part);del blocker
+            self.publish()
+            return True
+        if kind==QtCore.QEvent.MouseButtonRelease and event.button()==QtCore.Qt.LeftButton:
+            dragged=self.brightening[2];self.brightening=None
+            if dragged:end_drag()
+            else:QtCore.QTimer.singleShot(0,self.choose)
+            return True
+        return False
+    def hideEvent(self,event):
+        # Taken away mid-drag (another node chosen): the drag ends, so that nothing waits on its release.
+        if getattr(self,'brightening',None) is not None:
+            if self.brightening[2]:
+                from .scrub_field import end_drag
+                end_drag()
+            self.brightening=None
+        super().hideEvent(event)
     def value(self):
         if not self.is_color:return [spin.value() for spin in self.spins]
         result=[]
