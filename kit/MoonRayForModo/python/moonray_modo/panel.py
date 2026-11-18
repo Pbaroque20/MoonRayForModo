@@ -183,6 +183,7 @@ class Panel(Tools, QtWidgets.QWidget):
         self.preview.set_gamma(self.preferences.get('display_gamma'))
         self.preview.set_worker_overlay(self.preferences.get('worker_tiles'))
         self.preview.set_show_buckets(self.preferences.get('show_buckets'))
+        self.preview.set_show_handoff(self.preferences.get('handoff_tiles'))
         layout.addWidget(self.preview, 1)
         self.render_progress=QtWidgets.QProgressBar()
         self.render_progress.setRange(0,100);self.render_progress.setValue(0)
@@ -444,14 +445,19 @@ class Panel(Tools, QtWidgets.QWidget):
         from . import solo
         solo.LISTENERS.append(self._solo_changed)
         self.show_buckets=checkable(menu,'Show Buckets')
-        self.show_buckets.setToolTip('Outline the tiles being rendered. Under XPU2, orange tiles are samples the GPU handed to the CPU '
-                                     'and blue tiles are provisional samples (textures still loading); each clears once its samples '
-                                     'are rendered in full.')
+        self.show_buckets.setToolTip('Outline the tiles being rendered.')
         self.show_buckets.setChecked(self.preferences.get('show_buckets'))
         self.show_buckets.toggled.connect(self._overlay_changed)
         self.worker_tiles=checkable(menu,'Show Worker Tiles')
         self.worker_tiles.setChecked(self.preferences.get('worker_tiles'))
         self.worker_tiles.toggled.connect(self._overlay_changed)
+        # XPU2's hand-offs (viewer.handoff_rects), a switch of their own as asked, under the other two.
+        self.handoff_tiles=checkable(menu,'Show Handoff Tiles')
+        self.handoff_tiles.setToolTip('Under XPU2, fill the tiles where the GPU handed samples on, half see-through: orange where it '
+                                      'handed them to the CPU, blue where its samples are provisional (textures still loading). Each '
+                                      'clears once its samples are rendered in full.')
+        self.handoff_tiles.setChecked(self.preferences.get('handoff_tiles'))
+        self.handoff_tiles.toggled.connect(self._overlay_changed)
         menu.addSeparator()
         menu.addAction('Compositor...',self.open_compositor)
         menu.addSeparator()
@@ -772,7 +778,9 @@ class Panel(Tools, QtWidgets.QWidget):
     def _overlay_changed(self,*args):
         self.preferences.set('show_buckets',self.show_buckets.isChecked())
         self.preferences.set('worker_tiles',self.worker_tiles.isChecked())
+        self.preferences.set('handoff_tiles',self.handoff_tiles.isChecked())
         self.preview.set_worker_overlay(self.worker_tiles.isChecked())
+        self.preview.set_show_handoff(self.handoff_tiles.isChecked())
         self.preview.set_show_buckets(self.show_buckets.isChecked() and not self._following)
 
     def _preferences_followed_now(self):

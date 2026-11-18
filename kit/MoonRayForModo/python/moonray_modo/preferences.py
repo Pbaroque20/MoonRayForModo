@@ -28,7 +28,7 @@ KEYS = {
     # 0: an idle renderer is kept until its scene closes (Panel._scene_closed), its GPU given no work meanwhile.
     'idle_release_minutes': (0, int),
     'persistent_preview': (True, bool), 'memory_hud': (True, bool),
-    'ipr': (False, bool), 'show_buckets': (True, bool), 'worker_tiles': (True, bool), 'clay': ('materials', str),
+    'ipr': (False, bool), 'show_buckets': (True, bool), 'worker_tiles': (True, bool), 'handoff_tiles': (True, bool), 'clay': ('materials', str),
     'display_gamma': (1.0, float),
     # Set on the MoonRay page of Modo's Preferences: what Assign Material starts with, the ink of a draft, whether a
     # preview starts as its window opens, how bright a new MoonRay light is, and whether notices open by themselves.

@@ -95,11 +95,16 @@ class HandoffDrawing(unittest.TestCase):
         # The deferred kind gone, the provisional kind stays where it was.
         self.tell('deferred',[])
         self.assertTrue(self.near(self.pixel(4,self.H-4),blue))
-    def test_hidden_with_buckets_off(self):
+    def test_hidden_with_handoff_tiles_off(self):
+        # Options > Show Handoff Tiles, a switch of its own (the user's ask): off, nothing is filled.
+        self.tell('deferred',[(0,0,8,8)])
+        self.view.set_show_handoff(False)
+        self.assertEqual(self.pixel(4,self.H-4),self.GREY)
+        self.view.set_show_handoff(True)
+        self.assertNotEqual(self.pixel(4,self.H-4),self.GREY)
+    def test_shown_with_buckets_off(self):
         self.tell('deferred',[(0,0,8,8)])
         self.view.set_show_buckets(False)
-        self.assertEqual(self.pixel(4,self.H-4),self.GREY)
-        self.view.set_show_buckets(True)
         self.assertNotEqual(self.pixel(4,self.H-4),self.GREY)
     def test_not_drawn_over_another_size(self):
         self.tell('deferred',[(0,0,8,8)],size=(128,96))

@@ -18,6 +18,7 @@ class _PreviewBody:
         self.handoff={}
         self.show_workers=True
         self.show_buckets=True
+        self.show_handoff=True     # Options > Show Handoff Tiles
         self.bucket_timeout=QtCore.QTimer(self)
         self.bucket_timeout.setSingleShot(True)
         self.bucket_timeout.timeout.connect(lambda:self.set_buckets(None))
@@ -320,7 +321,7 @@ class _PreviewBody:
             had=kind in self.handoff
             if rectangles:self.handoff[kind]=(width,height,tuple(rectangles))
             else:self.handoff.pop(kind,None)
-            if (had or rectangles) and self.show_buckets:self.update()
+            if (had or rectangles) and self.show_handoff:self.update()
             return
         if packet and packet[0]=='gpu':
             # XPU2: the GPU's cells, beside the CPU's workers.
@@ -331,9 +332,9 @@ class _PreviewBody:
         if self._outlines() is self.workers:self._note_outlines()
 
     def handoff_rects(self):
-        """The handed-on tiles to fill, as (colour, widget rectangles), where buckets are shown and the picture is the
-        size they were told of."""
-        if not self.show_buckets or not self.handoff:return []
+        """The handed-on tiles to fill, as (colour, widget rectangles), where Show Handoff Tiles is on and the picture is
+        the size they were told of."""
+        if not self.show_handoff or not self.handoff:return []
         out=[]
         for kind in ('provisional','deferred'):
             told=self.handoff.get(kind)
@@ -350,6 +351,11 @@ class _PreviewBody:
 
     def set_worker_overlay(self,enabled):
         self.show_workers=enabled
+        self.update()
+
+    def set_show_handoff(self,enabled):
+        """Options > Show Handoff Tiles: XPU2's hand-offs filled over the picture, or not."""
+        self.show_handoff=bool(enabled)
         self.update()
 
     def set_show_buckets(self,enabled):
