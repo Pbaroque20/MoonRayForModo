@@ -84,6 +84,16 @@ def holds(runtime):
     except (OSError,ValueError,TypeError,AttributeError):return False
 
 
+def xpu2_chosen(session):
+    """Whether XPU2 is a session's to try: chosen in the preferences, or, for the material widget (always_xpu2),
+    whatever the preview's choice, where its shaders are compiled (else MoonRay renders the widget, as before). A
+    Render Animation with MoonRay (XPU2) as its engine (output_xpu2, render.py) is XPU2's where the kit holds it. Part
+    of the session's signature too: a change of it starts the session again with the other renderer."""
+    if getattr(session,'output_xpu2',False):return native.xpu2_available()
+    if native.xpu2():return True
+    return bool(getattr(session,'always_xpu2',False) and (native.xpu2_devices()=='cpu' or native.xpu2_shaders_compiled()))
+
+
 class Session(QtCore.QObject):
     output=QtCore.Signal(str)
     ready=QtCore.Signal(int)
@@ -154,10 +164,7 @@ class Session(QtCore.QObject):
     def running(self):return self.process.state()!=QtCore.QProcess.NotRunning
 
     def xpu2_chosen(self):
-        """Whether XPU2 is this session's to try: chosen in the preferences, or, for the material widget (always_xpu2),
-        whatever the preview's choice, where its shaders are compiled (else MoonRay renders the widget, as before)."""
-        if native.xpu2():return True
-        return bool(getattr(self,'always_xpu2',False) and (native.xpu2_devices()=='cpu' or native.xpu2_shaders_compiled()))
+        return xpu2_chosen(self)
 
     def retry_xpu2(self):
         """A render started by hand (Render, or RT switched on) gives XPU2 another try: where it left this session to
@@ -176,7 +183,9 @@ class Session(QtCore.QObject):
         request=dict(text=text,runtime=Path(runtime),threads=threads,mode=mode,id=generation,bucket_size=bucket_size,prepared=prepared,
                      again=(prepared or {}).get('again'),moonray_mode=moonray_mode)
         # A change of the toon preference is read by MoonRay only as it starts: it starts again.
-        signature=(str(runtime),threads,mode,bucket_size,moonray_mode)+native.source_switches()
+        # An animation asking for XPU2 by name (output_xpu2) where MoonRay XPU renders the preview, or the preview after
+        # it, starts it again with the other; where XPU2 renders the preview, nothing changes.
+        signature=(str(runtime),threads,mode,bucket_size,moonray_mode)+native.source_switches()+(xpu2_chosen(self),)
         self.latest=request
         retry=getattr(self,'_retry_xpu2',False);self._retry_xpu2=False
         if self.running() and (signature!=self.signature or (retry and getattr(self,'xpu2_refused',None))):
@@ -252,7 +261,7 @@ class Session(QtCore.QObject):
             if path.is_file():path.unlink()
         self.select_view(self.view)
         self.partial='';self.applied=None;self.sent=request
-        self.signature=(str(request['runtime']),request['threads'],request['mode'],request['bucket_size'],request.get('moonray_mode'))+native.source_switches()
+        self.signature=(str(request['runtime']),request['threads'],request['mode'],request['bucket_size'],request.get('moonray_mode'))+native.source_switches()+(xpu2_chosen(self),)
         metadata=json.loads((request['runtime']/'modo-session.json').read_text(encoding='utf-8'))
         self.scene_memory=metadata.get('scene_memory',False)
         prepared=request.get('prepared') or {}

@@ -324,10 +324,11 @@ class Tools:
                                                   digits=dialog.digits.value(), export_as=dialog.export_as(), missing=dialog.missing.isChecked(),
                                                   denoise=denoise)
             else:
+                # MoonRay (XPU) or MoonRay (XPU2), chosen in the window.
                 candidate = Sequence(self, directory, dialog.first.value(), dialog.last.value(),
                                      dialog.fps.value(), dialog.motion.isChecked(),
                                      step=dialog.step.value(), prefix=dialog.prefix.text(), missing=dialog.missing.isChecked(),
-                                     export_as=dialog.export_as(), digits=dialog.digits.value())
+                                     export_as=dialog.export_as(), digits=dialog.digits.value(), engine=dialog.engine.currentData())
             self.settings.setValue('output/animation', directory)
             if self.ipr_mode.isChecked():
                 self.ipr_mode.setChecked(False)
