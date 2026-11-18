@@ -535,10 +535,11 @@ void leafBlocks(const openvdb::FloatTree& tree, X2VdbGrid* out) {
 }
 
 // MOONRAY_MODO_SCALAR_EMISSION (MoonRay's patched VdbVolume, tools/port_scalar_emission.py): a float emission grid glows grey.
+// On unless the variable is 0, as MoonRay reads it (unset, as the kit's preference).
 bool modoScalarEmission() {
     static const bool on = [] {
         const char* value = std::getenv("MOONRAY_MODO_SCALAR_EMISSION");
-        return value && value[0] == '1';
+        return !value || value[0] != '0';
     }();
     return on;
 }

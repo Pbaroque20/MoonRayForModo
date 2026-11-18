@@ -47,8 +47,8 @@ inline void admittedPath(const std::filesystem::path& path,const std::filesystem
  need(!rel.empty()&&!rel.is_absolute()&&*rel.begin()!="..","Texture outside frozen asset root");
 }
 // MOONRAY_MODO_OPAQUE_ALPHA (BasicTexture, UdimTexture): a missing channel is filled with one (opaque), else with
-// OpenImageIO's fill, zero. Read once, as MoonRay reads it.
-inline bool modoOpaqueAlpha(){static const bool on=[]{const char* v=std::getenv("MOONRAY_MODO_OPAQUE_ALPHA");return v&&v[0]=='1';}();return on;}
+// OpenImageIO's fill, zero. Read once, as MoonRay reads it: on unless the variable is 0 (unset, as the kit's preference).
+inline bool modoOpaqueAlpha(){static const bool on=[]{const char* v=std::getenv("MOONRAY_MODO_OPAQUE_ALPHA");return !v||v[0]!='0';}();return on;}
 // A texel as MoonRay's TextureSampler looks up four channels (gray_to_rgb): a grey image's channel in red, green and
 // blue, a grey and alpha image's (alpha channel 1) grey in all three and its alpha fourth, and any channel the file
 // lacks the fill.

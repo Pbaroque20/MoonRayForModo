@@ -405,7 +405,7 @@ against MoonRay renders (section 15). MoonRay XPU is also the fallback for scene
 | `map_admission.h` | Material bindings into `MapBinding`s and each material's map program, in dependency order |
 | `mesh_displacement.h` | MoonRay's PolyMesh tessellation and displacement for triangle meshes |
 | `light_tree_build.h`, `light_image_build.h`, `light_mesh_build.h` | Light tree, light textures and mesh lights, built on the host |
-| `xpu2_geom.cc`, `xpu2_geom.h` (`xpu2_geom.dll`) | MoonRay's own OpenSubdiv tessellation, displacement callbacks and OpenVDB reading, built separately with MoonRay's flags so XPU2's build never sees MoonRay's internal headers. An emission grid of single values (temperature or flames, as EmberGen, Houdini and Blender write fire) is read as grey RGB where `MOONRAY_MODO_SCALAR_EMISSION=1` (`emissionAsRgb`), as the kit's patched MoonRay reads it; otherwise it is refused as MoonRay refuses it |
+| `xpu2_geom.cc`, `xpu2_geom.h` (`xpu2_geom.dll`) | MoonRay's own OpenSubdiv tessellation, displacement callbacks and OpenVDB reading, built separately with MoonRay's flags so XPU2's build never sees MoonRay's internal headers. An emission grid of single values (temperature or flames, as EmberGen, Houdini and Blender write fire) is read as grey RGB (`emissionAsRgb`), as the kit's patched MoonRay reads it, unless `MOONRAY_MODO_SCALAR_EMISSION=0`; then it is refused as MoonRay refuses it |
 | `xpu2/indexed_scene.h`, `xpu2/rdl_scene_index.h`, `xpu2/rdl_replica.h`, `canonical_session.h` | The RDL capture under the indexer (section 4) |
 
 **Outputs**
@@ -486,8 +486,9 @@ Modo ── MoonRay for Modo kit ───────────────�
   no coarse first pass and no pictures published, ended when the frame is (`Standalone`). The scene's render outputs
   are written as at a frame's end, and `-out` writes the beauty with its alpha (`writeBeauty`, rows from the top). What
   the kit sets when it starts XPU2 is set where the shell has not (`RDL2_DSO_PATH`, `REZ_MOONRAY_ROOT`, MoonRay from
-  `runtime` beside `runtime-xpu2`). A fallback hands the same arguments to MoonRay, with MoonRay's own library paths
-  back. Exit code 0 when the picture is written, 1 otherwise.
+  `runtime` beside `runtime-xpu2`). The Source Overrides need nothing set: each is on unless its variable is `0`, so
+  the picture is Modo's, and its MoonRay fallback's. A fallback hands the same arguments to MoonRay, with MoonRay's own
+  library paths back. Exit code 0 when the picture is written, 1 otherwise.
 
 What the session does besides rendering:
 
@@ -529,7 +530,9 @@ What the session does besides rendering:
   Halt at Noise, First Look, Most Samples, CPU Workers) reach the scene as UserData `/modo/xpu2/generations`. Its
   form 2 says they rule: a scene's adaptive sampling is then MoonRay's alone, and XPU2 samples from Pixel Samples and
   these settings (form 1 left an adaptive scene its own minimum, maximum and target error). The kit's Device
-  Management page (`devices.py`) sets `XPU2_SESSION_MODE`, `XPU2_CARD_LIST` and `XPU2_GROUP_LIST`. The kit's Source Overrides (`MOONRAY_MODO_*`) apply to XPU2 as to MoonRay.
+  Management page (`devices.py`) sets `XPU2_SESSION_MODE`, `XPU2_CARD_LIST` and `XPU2_GROUP_LIST`. The kit's Source
+  Overrides (`MOONRAY_MODO_*`) apply to XPU2 as to MoonRay, read as MoonRay reads them: on unless the variable is `0`
+  (`cpu::modoSourceOverride`). The kit sets each to `1` or `0` from its preference.
 - **Limits.** Prepared geometry up to what the machine has room for, measured from the free RAM as each scene is
   prepared, between 256 MB and 64 GB (`geometryBudget`; `XPU2_SESSION_GEOMETRY_MB` fixes it), and a memory ceiling.
 - **The frame report** in the log: when the grid ran out of chunks, the GPU's launches and rate, parked samples,
@@ -588,9 +591,11 @@ Run each script with `--help` for its full arguments. Notes:
 | A real Modo scene | `xpu2/tools/modo-cl/` exports headless; `compare.py <scene> <w> <h> --moonray --xpu2 <session>` |
 | Speed | `run_async_benchmark.py`, `run_async_adaptive_benchmark.py`, `run_material_benchmark.py` |
 
-Test with the host's environment where it matters: without the kit's Source Overrides some scenes render
-differently in both renderers (for example `MOONRAY_MODO_OPAQUE_ALPHA`), and `compare.py` takes `--env`. Never render
-anything else while a benchmark is timing.
+The kit's Source Overrides are on in XPU2 and in the kit's MoonRay when their variables are unset, as in Modo; set one
+to `0` for MoonRay as its source has it (`compare.py` takes `--env`). A pinned reference runtime
+(`XPU2_REFERENCE_RUNTIME`, `interactive-reference-042`) is older and reads an unset switch as off: against it, set
+the switches to `1` or `0` in both renderers (for example `MOONRAY_MODO_OPAQUE_ALPHA`, which changes 9 Spheres). Never
+render anything else while a benchmark is timing.
 
 ## 16. Porting a feature
 
@@ -651,7 +656,7 @@ Environment variables read by the session or the renderer. The defaults are the 
 | `XPU2_GPU_VOLUME_MAPS_OFF=1` | Mapped volumes' samples to the CPU lane, and a glowing mapped one sends the scene there, as before the card ran their maps (added 2026-11-07) |
 | `XPU2_COMPILE_NEED_GB`, `XPU2_COMPILE_ANYWAY=1` | The free RAM the shader compile wants before it begins (default 8), or no check (added 2026-11-07) |
 | `XPU2_COMPILE_RESERVE_GB`, `XPU2_COMPILE_THREADS` | The RAM a compile task leaves free before another starts (default an eighth of the machine's, at least 4); the tasks at once (default up to 16) |
-| `MOONRAY_MODO_SCALAR_EMISSION` | `1`: an emission grid of single values read as grey (`xpu2_geom.dll`; the kit sets it from its preference, on by default); unset or `0`, refused as MoonRay itself refuses it |
+| `MOONRAY_MODO_SCALAR_EMISSION` | `0`: an emission grid of single values refused, as MoonRay itself refuses it; unset or `1`, read as grey (`xpu2_geom.dll`; the kit sets it from its preference, on by default). Every `MOONRAY_MODO_*` Source Override is read this way |
 | `XPU2_SESSION_FAIL_TILE=N` | The Nth texture tile read fails, to test what follows one |
 | `XPU2_SESSION_RT_SPARSE=1` | Realtime's sparse first passes (a quarter of the pixels, then the rest) back |
 | `XPU2_SESSION_RT_UPSCALE=0` | Realtime denoises at full size while moving (the kit's Lower Resolution While Moving off) |

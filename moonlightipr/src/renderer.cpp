@@ -1021,8 +1021,9 @@ Renderer::Renderer(const std::string& ptxPath) : impl(new Impl) {
     impl->params.volumeAttenuation = impl->params.volumeContribution = 0.65f;
     impl->params.volumePhaseAttenuation = 0.5f;
     {
+        // On unless the variable is 0, as MoonRay reads it (the kit sets it from its preference, on by default).
         const char* toon = std::getenv("MOONRAY_MODO_TOON_TERMINATOR");
-        impl->params.toonTerminator = toon && toon[0] == '1';
+        impl->params.toonTerminator = !toon || toon[0] != '0';
     }
     std::vector<float> albedo = albedoTable(false);
     const std::vector<float> beckmann = albedoTable(true);

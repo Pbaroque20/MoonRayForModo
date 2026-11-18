@@ -46,6 +46,10 @@ using Tri=surface::Triangle;
 enum class Domain {Planar,DiffuseMesh,PlanarTextures,SurfaceTextures};
 inline bool isSpatial(Domain d){return d==Domain::DiffuseMesh||d==Domain::SurfaceTextures;}
 inline bool gpuTextures(Domain d){return d==Domain::PlanarTextures||d==Domain::SurfaceTextures;}
+// One of the kit's MoonRay Source Overrides (MOONRAY_MODO_*), read as the kit's patched MoonRay reads it: on unless its
+// variable is 0. The kit sets each to 1 or 0 from its preference, on by default; a session started by hand (moonray_xpu2
+// render, a farm's) has none set, and renders as Modo does, as its MoonRay fallback does.
+inline bool modoSourceOverride(const char* name){const char* v=std::getenv(name);return !v||v[0]!='0';}
 struct MeshData {std::string name;std::vector<V3> positions;std::vector<Tri> triangles;std::vector<std::shared_ptr<const ix::Buffer>> signature;
  // A plain polygon mesh (its own, still, not displaced): its signature without its node_xform (shape) and the node_xform
  // it was made at (placedBy, row vectors): a later preparation where only its node_xform changed takes it over, placed
@@ -3041,9 +3045,10 @@ inline std::string geometryKey(const rdl::SceneObject& o,const std::vector<std::
  if(texture::overflowCompress().load()){const unsigned char compressed=1;k.add(&compressed,1);}
  // Fitted to their meshes on screen, and halved from there.
  if(texture::overflowFitted().load()){const unsigned halvings=texture::overflowHalvings().load()+1;k.add(&halvings,sizeof halvings);}
- // The kit's MoonRay Source Overrides (their switches can change what a displacement's maps give).
+ // The kit's MoonRay Source Overrides (their switches can change what a displacement's maps give), as each is read:
+ // unset and 1 the same tessellation, and the kit's 1 and 0 keyed as before.
  for(const char* name:{"MOONRAY_MODO_TOON_TERMINATOR","MOONRAY_MODO_TOON_ALBEDO","MOONRAY_MODO_USD_SPECULAR","MOONRAY_MODO_OPAQUE_ALPHA",
-                       "MOONRAY_MODO_TRANSMISSION_ROUGHNESS"}){const char* v=std::getenv(name);k.add(std::string(name)+"="+(v?v:""));}
+                       "MOONRAY_MODO_TRANSMISSION_ROUGHNESS"})k.add(std::string(name)+"="+(modoSourceOverride(name)?"1":"0"));
  // The textures' files as they are now (a file changed under the same name is another tessellation).
  for(const auto& f:plan.textures){std::error_code ec;const std::string n=f->name.string();k.add(n);
   const auto size=std::filesystem::file_size(n,ec);const auto when=std::filesystem::last_write_time(n,ec).time_since_epoch().count();k.add(&size,sizeof size);k.add(&when,sizeof when);}
@@ -3371,8 +3376,7 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
    auto n=get<rdl::Vec3f>(o,"normal");q.normal={n.x,n.y,n.z};need(surface::finite(q.normal),o.getName()+": invalid normal");
    shade::MaterialRecord rec;rec.kind=shade::MatUsdPreviewSurface;rec.offset=unsigned(plan->materialPool.size());rec.count=shade::UsdPreviewSurfaceFloats;
    // MoonRay reads MOONRAY_MODO_USD_SPECULAR (UsdPreviewSurface.cc) from its environment; so does the renderer here.
-   const char* modoSpecular=std::getenv("MOONRAY_MODO_USD_SPECULAR");
-   if(modoSpecular&&modoSpecular[0]==49)rec.flags|=shade::MatModoUsdSpecular;
+   if(modoSourceOverride("MOONRAY_MODO_USD_SPECULAR"))rec.flags|=shade::MatModoUsdSpecular;
    const float* qf=reinterpret_cast<const float*>(&q);plan->materialPool.insert(plan->materialPool.end(),qf,qf+shade::UsdPreviewSurfaceFloats);
    // Its bound attributes and the maps behind them (map_admission.h).
    {MapProgramBuilder program{plan->materialPool,textureContext};std::vector<shade::MapBinding> bindings;using U=shade::UsdPreviewSurfaceParams;
@@ -3478,9 +3482,9 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
     for(auto* light:ls->asA<rdl::LightSet>()->getLights()){auto it=lightIds.find(light);if(it!=lightIds.end())bits[it->second>>5]|=1u<<(it->second&31);}
     plan->lobeLightSetBits.insert(plan->lobeLightSetBits.end(),bits.begin(),bits.end());}}
   for(size_t k=0;k<plan->lights.size();++k)plan->lights[k].index=unsigned(k);}
- // The kit's MoonRay source switches (MoonRay Source Overrides), read from the environment as MoonRay reads them:
- // every material record carries the shading ones, a DwaToonMaterial's its smooth shadow origins.
- {auto on=[](const char* n){const char* v=std::getenv(n);return v&&v[0]=='1';};
+ // The kit's MoonRay source switches (MoonRay Source Overrides), read from the environment as MoonRay reads them (on
+ // unless 0): every material record carries the shading ones, a DwaToonMaterial's its smooth shadow origins.
+ {auto on=[](const char* n){return modoSourceOverride(n);};
   const unsigned global=(on("MOONRAY_MODO_TOON_TERMINATOR")?unsigned(shade::MatModoToonTerminator):0u)|
                         (on("MOONRAY_MODO_TRANSMISSION_ROUGHNESS")?unsigned(shade::MatModoTransmissionRoughness):0u);
   for(const auto& [name,index]:materialIds){auto& rec=plan->materialRecords[index];rec.flags|=global;
@@ -3611,8 +3615,8 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
    plan->volumes.back().surfaceOpacityThreshold=get<rdl::Float>(*volumeShader,"surface_opacity_threshold");
    // MOONRAY_MODO_CRYPTO_VOLUMES (modoCryptoVolumesBuild): the geometry's IDs from its primitive attributes, the object's
    // from the first deep ID name (modo_object_id without one).
-   {const char* sw=std::getenv("MOONRAY_MODO_CRYPTO_VOLUMES");
-    if(sw&&sw[0]=='1'){
+   {const bool sw=modoSourceOverride("MOONRAY_MODO_CRYPTO_VOLUMES");
+    if(sw){
      const std::string key=plan->aovs&&!plan->aovs->cryptoIdAttribute.empty()?plan->aovs->cryptoIdAttribute:std::string("modo_object_id");
      auto read=[&](const std::string& k,float& value){
       for(auto i=o.getSceneClass().beginAttributes();i!=o.getSceneClass().endAttributes();++i)if((*i)->getName()=="primitive_attributes"){
