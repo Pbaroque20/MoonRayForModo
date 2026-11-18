@@ -2,6 +2,26 @@
 
 0.5 is a **pre-production release**: the plugin is no longer experimental, and it brings a new GPU renderer, MoonRay XPU2.
 
+## New in 0.5.5.1
+
+- **Convert LXO to RDL** (MoonRay menu, and the preview's Options), in place of Export as MoonRay Scene: the scene open now (Add Open Scene), `.lxo` files or folders of them, written as MoonRay scenes in the background by Modo's command-line engine, a few at a time, while Modo goes on working. RDLB and RDLA + RDLB are written several times quicker, their geometry straight to binary (a heavy car: 8 s as RDLA + RDLB). Outside Modo, drop scenes or folders on the kit's `bin\lxo2rdl.exe`.
+
+  ![Convert LXO to RDL: two scenes converted to RDLB, two at once](images/convert-lxo-to-rdl.png)
+
+- **Render Animation chooses its engine**: MoonRay (XPU), MoonRay (XPU2) or MoonLightIPR, whichever renders the preview.
+
+  ![The Render Animation window with MoonRay (XPU2) chosen](images/render-animation-engine.png)
+
+- **MoonLightIPR follows drags, if you like** (Preview Preferences, Follow drags, off by default): the picture stops sampling when the mouse is pressed, each step of the drag is shown at one sample a pixel, and it samples to the end once the mouse is let go. Keyed items in scenes with motion blur are followed too, a sea about seven times quicker than before, and the preview says when Modo keeps it from following a drag.
+
+  ![Preview Preferences: Follow drags under MoonLightIPR quality](images/preview-preferences-follow-drags.png)
+
+- **MoonLightIPR's Render Animation frames keep their alpha**: each frame's EXR and its denoised EXR have MoonLightIPR's alpha, and so do the PNG, TIFF and Targa pictures saved from them.
+- **MoonLightIPR's Render looks more like MoonRay's**: textures as sharp as MoonRay reads them, and the alpha and other AOVs blurred by depth of field as the picture is (they were sharp). Render Samples now default to 300, where they were 2000.
+- **Previews of any size** show as they render, 4K and 8K among them (a 4K preview stayed black until done, or said "Cannot display buffer"). What a picture takes in memory is said in the MoonRay Terminal, and among the notices when it is large.
+- **Rhizome shows what each machine renders on**: CPU and GPU, the GPU alone, or the CPU alone and why, in the Rhizome window's Renders on column. A machine that falls back to its processor gets a share it can do from its first frame.
+- **Headless renders look as they do in Modo**: `moonray.exe` and XPU2 started by hand, on a farm or on a Rhizome node, have the MoonRay Source Overrides on, as Modo has them by default; set a variable to `0` to turn one off. [INSTALLATION](INSTALLATION.md#rendering-headless-no-modo-window) shows `-info`, which writes the render's progress to a log, and what `-res` does.
+
 ## New in 0.5.5
 
 - **Faster starts and edits**: heavy scenes start again in seconds, even after Modo restarts, and at once while the scene stays open: the kit and XPU2 keep what they read and prepared in the Cache folder and read again only what changed. Stop keeps the renderer loaded and idle, so the next Start renders at once (Preferences: Release idle renderer memory). Realtime no longer reads a rigged or animated scene again at each edit, nor moving replicators at each camera move, and scenes with many Shader Tree masks read faster.
