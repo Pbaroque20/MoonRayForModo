@@ -1619,7 +1619,9 @@ class Panel(Tools, QtWidgets.QWidget):
         self._notices_given=list(messages)
         disk=getattr(self,'_disk_notice',None)
         memory=getattr(self,'_memory_notice',None)
-        unique=list(dict.fromkeys(str(message) for message in list(messages)+[added for added in (disk,memory) if added] if message))
+        # And a drag the preview could not follow (_drag_unfollowed_notice), until one it follows.
+        drag=getattr(self,'_drag_notice',None)
+        unique=list(dict.fromkeys(str(message) for message in list(messages)+[added for added in (disk,memory,drag) if added] if message))
         text='\n\n'.join(unique)
         if text!=self.warnings.toPlainText():self.warnings.setPlainText(text)
         self.notice_toggle.setText('Notices (%d)'%len(unique))
@@ -2487,6 +2489,76 @@ class Panel(Tools, QtWidgets.QWidget):
         except Exception:return None
         return scene
 
+    def _drag_settle_later(self,tries=8):
+        """Where a followed drag left things looked at once its release has been sent (_drag_settled), a moment after the
+        mouse is let go."""
+        timer=getattr(self,'_drag_settle_timer',None)
+        if timer is None:
+            timer=self._drag_settle_timer=QtCore.QTimer(self);timer.setSingleShot(True);timer.setInterval(400)
+            timer.timeout.connect(self._drag_settled)
+        self._drag_settle_tries=tries
+        timer.start()
+
+    def _drag_settled(self):
+        """The last transforms of a followed MoonLightIPR drag: the camera and every mesh of the scene last sent
+        (_kept_capture), against where Modo has them now that the mouse is let go (incremental.out_of_place). Any left
+        behind (a last step not sent, a move Modo did not tell of) are sent where they now stand, sampled to the end, and
+        the reading kept is brought to the same places, so that the next edit starts from them. A drag sometimes left
+        the preview where its last step was."""
+        from .interaction import dragging
+        if self.disposed or not self._following or self._engine()!='moonlightipr':return
+        if dragging() or getattr(self,'_drag_held',False) or self.changes.full or self.changes.items:
+            # Another drag, or the release not yet sent: looked at again once it has been.
+            tries=getattr(self,'_drag_settle_tries',0)
+            if tries>0:self._drag_settle_later(tries-1)
+            else:self._drag_settle_said('not looked at: the release was not sent in time')
+            return
+        kept=getattr(self,'_kept_capture',None)
+        cache=self._geometry_cache or {}
+        # A scene read with the shutter's ends (its release read whole with them), or read as Modo evaluates it where its
+        # meshes were not found to stand with their items, is not one its items' places can be checked against.
+        if kept is None or (self._settings_values()['surface']==2 and not cache.get('_item_transforms')):
+            self._drag_settle_said('not looked at: '+('no scene sent' if kept is None else 'evaluated meshes not found to stand with their items'))
+            return
+        import time as clock
+        import modo
+        from .incremental import out_of_place
+        began=clock.perf_counter()
+        if kept.get('motion_steps'):
+            # Read with the shutter's ends, the scene sent holds where things stand at them, not at the frame: the reading
+            # kept at the frame (_geometry_cache) is the one looked at, and what is out of place in it read again as an
+            # edit of it is, the shutter's ends with it.
+            found=out_of_place(modo.Scene(),cache,loose=cache.get('_loose_items') or ()) if cache.get('meshes') else None
+            took=clock.perf_counter()-began
+            if found is None:
+                self._drag_settle_said('in place at the frame (with motion blur), looked at in %.0f ms'%(1000*took));return
+            self._drag_settle_said('%d left behind at the frame (with motion blur), read again'%len(found[1]))
+            self.changes.items.update(found[1]);return
+        found=out_of_place(modo.Scene(),kept,loose=cache.get('_loose_items') or ())
+        took=clock.perf_counter()-began
+        self._drag_settle_said('in place, looked at in %.0f ms'%(1000*took) if found is None else
+                               '%d left behind, sent where they stand (looked at in %.0f ms)'%(len(found[1]),1000*took))
+        if found is None:return
+        scene,moved=found
+        scene.pop('_drag',None)
+        if cache.get('meshes'):
+            # The reading kept, at the same places.
+            placed={mesh.get('identity'):mesh for mesh in scene['meshes']}
+            cache['meshes']=[dict(mesh,**{key:placed[mesh.get('identity')][key] for key in ('matrix','instances') if key in placed.get(mesh.get('identity'),{})})
+                             if mesh.get('identity') in placed else mesh for mesh in cache['meshes']]
+            if scene.get('camera') and cache.get('camera'):cache['camera']=dict(cache['camera'],matrix=scene['camera']['matrix'])
+        self._submit(scene,digest=self._digest(scene,timeless=True))
+
+    def _drag_settle_said(self,text):
+        """What the look at a drag's last transforms found, in the drag report (test-results/drag-report.log)."""
+        try:
+            from pathlib import Path
+            import time as clock
+            folder=Path(r'C:\Users\Raphael Tobar\MoonRayForModo\test-results')
+            if folder.is_dir():
+                with open(folder/'drag-report.log','a',encoding='utf-8') as log:log.write(clock.strftime('%H:%M:%S ')+'MoonLightIPR drag settled: '+text+'\n')
+        except Exception:pass
+
     def _drag_count(self,what):
         report=getattr(self,'_drag_steps',None)
         if report is not None:report[what]=report.get(what,0)+1
@@ -2503,6 +2575,41 @@ class Panel(Tools, QtWidgets.QWidget):
                 report[kind]=report.get(kind,0)+1
         except Exception:pass
 
+    def _what_changed(self,settings,time):
+        """For the drag report: what made a step of a drag count as a change of settings or time, by name."""
+        try:
+            import modo
+            said=[]
+            if time!=self._last_time:said.append('time %s to %s'%(self._last_time,time))
+            if modo.Scene().renderItem.id!=self._scene_id:said.append('render item')
+            held=self._live_settings or {}
+            said+=[key for key in sorted(set(settings)|set(held)) if settings.get(key)!=held.get(key)][:4]
+            return ', '.join(said) or 'nothing found'
+        except Exception as exc:return 'not found: %s'%exc
+
+    def _drag_unfollowed_notice(self,items):
+        """Said in the preview window, as the status and among the notices, of a drag it could not follow: what was
+        dragged, and whether it is keyed. An item dragged on its keyframe (Auto Key on, its key red) kept Modo too busy for
+        the preview to look until the mouse was let go: the picture stood where the drag began while OpenGL followed it."""
+        names,keyed=[],False
+        try:
+            import modo
+            from .incremental import animated
+            scene=modo.Scene()
+            for identity in sorted(items):
+                item=scene.item(identity)
+                owners=list(item.itemGraph('xfrmCore').forward()) if item.type in ('translation','rotation','scale','transform') else [item]
+                names+=[owner.name for owner in owners if owner.name not in names]
+            keyed=bool(items) and animated(scene,items)
+        except Exception:pass
+        what=', '.join(names[:3])+(' and more' if len(names)>3 else '') if names else 'what was dragged'
+        self._drag_notice=(('Drag not followed: %s is keyed, and Modo moved it on its keyframe without letting the preview '
+                            'look until the mouse was let go. The picture shows where it was let go.')%what if keyed else
+                           ('Drag not followed: Modo was too busy moving %s for the preview to look until the mouse was let '
+                            'go. The picture shows where it was let go.')%what)
+        self.status.setText(self._drag_notice)
+        self._set_notices(getattr(self,'_notices_given',[]))
+
     def _drag_note(self,held):
         """What following a MoonLightIPR drag came to, said in the Render Log once the mouse is let go (and in
         test-results/drag-report.log where the plugin's source folder is on this machine): how often it was looked at,
@@ -2517,6 +2624,11 @@ class Panel(Tools, QtWidgets.QWidget):
         self._drag_steps=None
         seconds=clock.monotonic()-report.pop('began');frames=getattr(self.renderer,'frames_shown',0)-report.pop('frames')
         if seconds<0.15:return
+        # Looked at fewer than twice a second (16 times a second when Modo lets it): the preview was kept from following
+        # the drag, said once Modo has told what was moved (_drag_unfollowed_notice). A drag followed takes the notice away.
+        if seconds>=0.6 and report.get('looked',0)<2*seconds:self._drag_unfollowed=True
+        elif getattr(self,'_drag_notice',None):
+            self._drag_notice=None;self._set_notices(getattr(self,'_notices_given',[]))
         text='MoonLightIPR drag of %.1f s: %s; %d frames shown during it.'%(seconds,', '.join('%s %d'%(k,v) for k,v in sorted(report.items())) or 'nothing looked at',frames)
         from . import terminal
         terminal.note('Preview',text)
@@ -2599,6 +2711,9 @@ class Panel(Tools, QtWidgets.QWidget):
             # Let go having moved nothing: sampled on from where it stopped. A drag that moved something has its last
             # step sampled to the end anew (released, below).
             if not getattr(self,'_drag_held',False):self.renderer.moonlightipr_resume()
+            # And where it left things is looked at once the release is sent (_drag_settled).
+            if getattr(self,'_drag_followed',False):
+                self._drag_followed=False;self._drag_settle_later()
         import time as clock
         began=clock.monotonic()
         if began<getattr(self,'_live_rest',0.0):
@@ -2613,6 +2728,9 @@ class Panel(Tools, QtWidgets.QWidget):
             # once the mouse is let go, so where it stands is looked at while MoonLightIPR follows a drag.
             polled=self._camera_moved() if held and ipr and not full else set()
             items|=polled
+            # A drag the preview was kept from following, said now that Modo has told what it moved (_drag_note).
+            if not held and getattr(self,'_drag_unfollowed',False):
+                self._drag_unfollowed=False;self._drag_unfollowed_notice(items)
             # A drag followed by move_only (below) is read the usual way once the mouse is let go, which checks it.
             moved=self.__dict__.setdefault('_drag_moved',set())
             if not held and moved:
@@ -2670,7 +2788,7 @@ class Panel(Tools, QtWidgets.QWidget):
                 # place of its own), which needs the scene read whole. That is done once in a drag, so that the rest
                 # of it can be followed; a drag that goes on needing it waits for the release, as below.
                 self._live_drag_read=True
-                self._drag_count('read whole once: '+('told whole' if full else 'settings or time changed' if changed
+                self._drag_count('read whole once: '+('told whole' if full else 'settings or time changed (%s)'%self._what_changed(settings,time) if changed
                                                       else 'no reading kept' if self._geometry_cache is None
                                                       else 'edit is %s'%(type(reuse).__name__ if isinstance(reuse,dict) else reuse)))
             elif held and reuse not in (True,'transforms','materials'):
@@ -2744,13 +2862,17 @@ class Panel(Tools, QtWidgets.QWidget):
                 scene = self._capture(reuse,items if reuse=='transforms' else None)
             # The meshes as they were: their cut is kept (_submit).
             self._detail_kept=not full and not changed and (reuse is True or reuse in ('materials','transforms'))
+            # The settings and the moment the scene was just read at are those seen, whether it is sent now or held for the
+            # release below. Kept only once it was sent, a step held back left them unseen, and the next drag read the
+            # whole scene again as though they had changed: the first two drags after RT came on, on a test dragon.
+            self._last_time=time;self._live_settings=settings
             if held and fast is None:
                 # Whatever was dragged, if it changed what lights the scene from all around (an environment, one of
                 # its layers or where that sits, a sky's sun, a MoonRay environment light), it is shown on release.
                 from .incremental import surroundings
                 if self._surroundings is not None and surroundings(scene)!=self._surroundings:
+                    self._drag_count('waited: what lights the scene from around it changed')
                     self.changes.items.update(items);self.release_timer.start();return
-            self._last_time=time;self._live_settings=settings
             if held and self.preview_engine.currentData()=='moonray_ls':
                 # Host notices already establish a drag edit. Hash once after release, not on every move.
                 self._live_digest_pending=True
@@ -2761,7 +2883,7 @@ class Panel(Tools, QtWidgets.QWidget):
                 # Something moved, or Modo would not have told of it: sent without hashing the whole scene again (a
                 # car's materials and settings, ~16 ms a step). The last of the drag is hashed once it is let go. A step
                 # is rendered to its first sample alone and held there (render.DRAG_SAMPLES).
-                self._drag_scene=fast;self._drag_held=True
+                self._drag_scene=fast;self._drag_held=True;self._drag_followed=True
                 self._submit(dict(scene,_drag=True),digest=('live-drag',object()))
             else:
                 self._drag_scene=None
@@ -2771,7 +2893,7 @@ class Panel(Tools, QtWidgets.QWidget):
                     # A step of a drag read the usual way (its first, which reads the scene whole): held at its first
                     # sample as the others are.
                     if digest != self.last_digest:
-                        self._drag_held=True
+                        self._drag_held=True;self._drag_followed=True
                         self._submit(dict(scene,_drag=True),digest=digest)
                 elif getattr(self,'_drag_held',False):
                     # A drag followed, let go: its scene sampled to the end, even where it is the drag's last step, which

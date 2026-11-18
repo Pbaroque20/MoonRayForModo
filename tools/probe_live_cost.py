@@ -30,6 +30,34 @@ def save():
     (out / 'report.json').write_text(json.dumps(result, indent=1, default=str))
 
 
+def keyed_item():
+    """The first locator-like item whose position is keyed, with which of its channels are."""
+    for item in modo.Scene().items(superType=True):
+        try:
+            if item.type not in ('mesh', 'locator', 'groupLocator', 'meshInst'):
+                continue
+            position = modo.LocatorSuperType(item).position
+            keyed = [channel.name for channel in position.channels() if channel.isAnimated]
+            if keyed:
+                result['keyed channels'] = {'item': item.name, 'id': item.id, 'channels': keyed}
+                return item.id
+        except Exception:
+            continue
+    return None
+
+
+def shoot(label):
+    """The preview's picture now (MOONRAY_PROBE_SHOTS=1), to see where it draws what was dragged."""
+    if os.environ.get('MOONRAY_PROBE_SHOTS') != '1':
+        return
+    try:
+        image = panel_widget().preview.image
+        if not image.isNull():
+            image.save(str(out / ('shot_%s.png' % label)))
+    except Exception:
+        pass
+
+
 def panel_widget():
     from moonray_modo.panel import Panel
     return next(w for w in QtWidgets.QApplication.allWidgets() if isinstance(w, Panel))
@@ -88,8 +116,19 @@ def begin():
 
         def timed_pack(*a, **k):
             started = time.perf_counter()
+            # The first two packs of each drag profiled, on the packer's own thread.
+            profiled = held.get('in_drag') and held.get('pack_profiled', 0) < 2
             try:
-                return pack(*a, **k)
+                if not profiled:
+                    return pack(*a, **k)
+                profile = cProfile.Profile()
+                try:
+                    return profile.runcall(pack, *a, **k)
+                finally:
+                    text = io.StringIO()
+                    pstats.Stats(profile, stream=text).sort_stats('cumulative').print_stats(40)
+                    held['pack_profiled'] = held.get('pack_profiled', 0) + 1
+                    (out / ('pack_profile_%s_%d.txt' % (held.get('in_drag'), held['pack_profiled']))).write_text(text.getvalue())
             finally:
                 held.setdefault('packs', []).append(time.perf_counter() - started)
         moonlightipr_scene.pack = timed_pack
@@ -141,7 +180,16 @@ def begin():
         panel.timer.timeout.disconnect()
         panel.timer.timeout.connect(timed)
         named = os.environ.get('MOONRAY_PROBE_MESH')
-        held['mesh'] = next((m.id for m in modo.Scene().items('mesh') if not named or m.name == named), None)
+        if named == 'keyed':
+            # The item whose place is keyed (MOONRAY_PROBE_MESH=keyed): an item dragged on its key, Auto Key on.
+            held['mesh'] = keyed_item()
+            try:
+                result['auto key'] = lx.eval('anim.autoKey mode:?')
+            except Exception as exc:
+                result['auto key'] = 'not asked: %s' % exc
+            result['keyed item'] = held['mesh']
+        else:
+            held['mesh'] = next((m.id for m in modo.Scene().items('mesh') if not named or m.name == named), None)
         held['camera'] = modo.Scene().renderCamera.id
         result['interval_ms'] = panel.timer.interval()
         # Realtime on, as the RT button is pressed (Render is a render of its own).
@@ -185,6 +233,26 @@ def standing_check():
         except Exception:
             camera_off = None
         found[label] = {'meshes_elsewhere': len(wrong), 'first': wrong[:6], 'camera_off_by': None if camera_off is None else round(camera_off, 4)}
+    # By the rule the drag's last-transforms look uses (incremental.out_of_place): copies that stand with no item of their
+    # own (loose) left out.
+    try:
+        from moonray_modo.incremental import out_of_place
+        kept = getattr(panel, '_kept_capture', None)
+        held = out_of_place(scene, kept, loose=(panel._geometry_cache or {}).get('_loose_items') or ()) if kept else None
+        found['sent_out_of_place'] = sorted(held[1])[:8] if held else []
+        # What the scene sent holds of its shutter, and of each mesh out of place: its matrices, and its item's now.
+        found['motion_steps'] = (kept or {}).get('motion_steps')
+        found['preview_blurred'] = panel._preview_blurred()
+        found['surface'] = panel._settings_values().get('surface')
+        from moonray_modo.host import world_matrix as now_at
+        for mesh in (kept or {}).get('meshes', []):
+            identity = mesh.get('source_item') or mesh['identity'].split('|')[0]
+            if held and identity in held[1]:
+                found.setdefault('out_of_place_detail', []).append({'identity': mesh['identity'], 'matrix_x': (mesh.get('matrix') or [0] * 16)[12],
+                    'matrix_close_x': (mesh.get('matrix_close') or [None] * 16)[12], 'now_x': now_at(scene.item(identity))[12],
+                    'keys': sorted(key for key in mesh if 'close' in key or 'motion' in key)})
+    except Exception as exc:
+        found['sent_out_of_place'] = 'not looked at: %s' % exc
     renderer = panel.renderer
     session = getattr(renderer, 'moonlightipr', None)
     found.update(newest_frame_scene=getattr(renderer, 'moonlightipr_newest', None), newest_scene_asked=getattr(renderer, 'moonlightipr_serial', None),
@@ -228,6 +296,7 @@ def begin_phase(index):
     if index:
         # A second after the last phase ended, the mouse let go: where the kit has things, and what was shown.
         result.setdefault('after_release', {})[NAMES[index - 1]] = standing_check()
+        shoot('%s_after_release' % NAMES[index - 1].split()[0])
     held['ticks'], held['moves'], held['submits'], held['update_ticks'] = [], [], 0, []
     held['frame_samples'] = []
     held['frames'] = getattr(panel_widget().renderer, 'frames_shown', 0)
@@ -247,8 +316,10 @@ def begin_phase(index):
 
 
 def drag(index):
+    held['in_drag'] = None
     if NAMES[index]=='release settle':return
     if index:
+        held['in_drag'], held['pack_profiled'] = NAMES[index].split()[0], 0
         from moonray_modo import interaction
         interaction.dragging = lambda: True
         if NAMES[index].startswith('view'):
@@ -283,16 +354,44 @@ def drag(index):
             first = next((m for m in kept['meshes'] if not m.get('volumetric') and 'instances' not in m), None)
             if first is not None:
                 what = first.get('source_item') or first['identity'].split('|')[0]
+        elif not NAMES[index].startswith('camera') and os.environ.get('MOONRAY_PROBE_MESH') == 'keyed' and kept:
+            # A rendered mesh whose place is keyed, before any other keyed item.
+            for mesh in kept['meshes']:
+                identity = mesh.get('source_item') or mesh['identity'].split('|')[0]
+                try:
+                    position = modo.LocatorSuperType(modo.Scene().item(identity)).position
+                    if any(channel.isAnimated for channel in position.channels()):
+                        what = identity
+                        result['keyed rendered'] = identity
+                        break
+                except Exception:
+                    continue
         result.setdefault('dragged', []).append(what)
         lx.eval('select.item {%s} set' % what)
         held['here'] = lx.eval('transform.channel pos.X ?')
+        # Where Modo has what is dragged, before the drag and (close) after it, and the meshes of the scene last sent.
+        held['dragged_item'] = what
+        try:
+            from moonray_modo.host import world_matrix
+            result.setdefault('placed', []).append({'phase': NAMES[index], 'pos.X before': held['here'],
+                                                    'world X before': world_matrix(modo.Scene().item(what))[12]})
+            if kept and 'meshes listed' not in result:
+                result['meshes listed'] = [[m['identity'], m.get('name'), len(m.get('vertices') or [])] for m in kept['meshes']][:20]
+        except Exception as exc:
+            result['placed error'] = str(exc)
         held['offset'] = 0.0
+        # MOONRAY_PROBE_STEP: how far each move goes (0.002); larger to see the move in the pictures.
+        step = float(os.environ.get('MOONRAY_PROBE_STEP', '0.002'))
+        phase_name = NAMES[index].split()[0]
+        shoot('%s_before' % phase_name)
 
         def move():
             started = time.perf_counter()
-            held['offset'] += 0.002
+            held['offset'] += step
             lx.eval('transform.channel pos.X %s' % (held['here'] + held['offset']))
             held['moves'].append(time.perf_counter() - started)
+            if len(held['moves']) % 16 == 0:
+                shoot('%s_during_%02d' % (phase_name, len(held['moves']) // 16))
         held['mover'] = QtCore.QTimer()
         held['mover'].setInterval(30)
         held['mover'].timeout.connect(move)
@@ -307,6 +406,13 @@ def close(name):
         held['mover'] = None
     from moonray_modo import interaction
     interaction.dragging = lambda: False
+    if held.get('dragged_item') and result.get('placed') and 'pos.X after' not in result['placed'][-1]:
+        try:
+            from moonray_modo.host import world_matrix
+            result['placed'][-1].update({'pos.X after': lx.eval('transform.channel pos.X ?'),
+                                         'world X after': world_matrix(modo.Scene().item(held['dragged_item']))[12]})
+        except Exception as exc:
+            result['placed'][-1]['after error'] = str(exc)
     span = time.perf_counter() - held['began']
     ticks = sorted(held['ticks'])
     text = io.StringIO()
