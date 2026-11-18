@@ -2,6 +2,62 @@
 
 0.5 is a **pre-production release**: the plugin is no longer experimental, and it brings a new GPU renderer, MoonRay XPU2.
 
+## New in 0.5.5.1
+
+Install it, and **Compile XPU2 Shaders once more**.
+
+- **Convert LXO to RDL** (MoonRay menu, and the preview's Options), in place of Export as MoonRay Scene: the scene open now (Add Open Scene), `.lxo` files or folders of them, written as MoonRay scenes in the background by Modo's command-line engine, a few at a time, while Modo goes on working. RDLB and RDLA + RDLB are written several times quicker, their geometry straight to binary (a heavy car: 8 s as RDLA + RDLB). Outside Modo, drop scenes or folders on the kit's `bin\lxo2rdl.exe`.
+
+  ![Convert LXO to RDL: two scenes converted to RDLB, two at once](images/convert-lxo-to-rdl.png)
+
+- **Render Animation chooses its engine**: MoonRay (XPU), MoonRay (XPU2) or MoonLightIPR, whichever renders the preview.
+
+  ![The Render Animation window with MoonRay (XPU2) chosen](images/render-animation-engine.png)
+
+- **MoonLightIPR follows drags, if you like** (Preview Preferences, Follow drags, off by default): the picture stops sampling when the mouse is pressed, each step of the drag is shown at one sample a pixel, and it samples to the end once the mouse is let go. Keyed items in scenes with motion blur are followed too, a sea about seven times quicker than before, and the preview says when Modo keeps it from following a drag.
+
+  ![Preview Preferences: Follow drags under MoonLightIPR quality](images/preview-preferences-follow-drags.png)
+
+- **Render Settings decide the buffers**: in XPU and XPU2 Outputs (AOVs), which MoonRay XPU and XPU2 share, and in the new MoonLightIPR Outputs (AOVs), a tick turns a buffer on. It is rendered, listed among the preview window's buffers and written to the EXR. Alpha alone is ticked in a new scene, so MoonRay's previews no longer render every AOV each time; tick the ones you want to look at.
+
+  ![Render Settings: XPU and XPU2 Outputs (AOVs), Alpha alone ticked](images/render-settings-aovs-xpu.png) ![Render Settings: MoonLightIPR Outputs (AOVs), Alpha alone ticked](images/render-settings-aovs-moonlightipr.png)
+
+- **MoonLightIPR's Render Animation frames keep their alpha**: each frame's EXR and its denoised EXR have MoonLightIPR's alpha, and so do the PNG, TIFF and Targa pictures saved from them, while Alpha is ticked in MoonLightIPR Outputs (AOVs).
+- **MoonLightIPR's Render looks more like MoonRay's**: textures as sharp as MoonRay reads them, and the alpha and other AOVs blurred by depth of field as the picture is (they were sharp). Render Samples now default to 300, where they were 2000.
+
+  ![MoonLightIPR's Render with depth of field: the picture and its alpha, blurred alike](images/moonlightipr-alpha-dof.png)
+
+- **MoonLightIPR lays a MoonRay light's picture as MoonRay does**: Texture Reps U and V, Mirror U and V, Rotation, Translation, Coverage and Border Color now apply on every light kind (they did nothing in MoonLightIPR). Rect and disc lights show their picture the right way up, and a distant light's disc seen by the camera shows its picture.
+
+  ![Four rect lights with one picture in MoonLightIPR: as it is, Texture Reps U 2 and V 3, Reps 2 and 2 with Mirror U, and Rotation, Translation and Coverage with a Border Color](images/moonlightipr-light-pictures.png)
+
+- **Shader Tree groups masked to a Group** (of the Groups list) shade that group's members only, as in Modo, in every engine: such a group's material went over everything.
+- **MoonLightIPR: a material covers the bumps below it**, as Modo and MoonRay do: the bump and normal maps of the materials under it no longer show through.
+
+  ![MoonLightIPR before (above) and now (below): a striped bump under the blue and red materials no longer shows through them; the bare cube keeps it](images/material-covers-bumps.png)
+
+- **Orthographic cameras frame as Modo's**: as wide as Modo shows them at their Focus Distance (they went by the Target Distance, and came out zoomed), and MoonLightIPR follows their film offset.
+- **Shift-drag a colour swatch** in the MoonShine graph editor for brighter or darker, as in Modo: dragged up to white and back, it keeps its colour.
+- **Solo is in the picture's right-click menu**, out of the Options menu: Solo Selected Meshes, Solo Selected Material and Stop Solo, its title saying what is soloed.
+- **Procedural bumps show**: Modo's Noise, Checker and the other procedural textures set to Bump draw their bump in MoonRay, XPU2 and MoonLightIPR, as in Modo (they drew flat, on any mesh).
+
+  ![Procedural bumps in MoonLightIPR: Noise, Checker, Noise on a finely divided cube and Noise on a cube without UVs](images/procedural-bumps.png)
+
+- **Previews of any size** show as they render, 4K and 8K among them (a 4K preview stayed black until done, or said "Cannot display buffer"). What a picture takes in memory is said in the MoonRay Terminal, and among the notices when it is large.
+- **Show Handoff Tiles** (the preview window's Options, under Show Worker Tiles) shows where XPU2 hands work over: orange, half see-through, on the tiles whose samples the GPU handed to the processor, and blue on those holding provisional samples (drawn from a coarser texture while its detail loads); each tile clears once its samples are final.
+
+  ![Show Handoff Tiles under XPU2: orange on the tiles whose samples the GPU handed to the processor (the two spheres, left to it), blue on provisional samples, each clearing once its samples are final](images/xpu2-handoff-tiles.png)
+
+  Reading them:
+  - A little orange that clears quickly is normal.
+  - Large patches that stay orange mean the GPU keeps waiting on the CPU for part of the scene. Often that's geometry too big for the card's budget, and that's where a render slows down.
+  - Blue that flickers early in a render is normal, as textures stream in.
+  - Lots of blue that hangs around means texture loading is holding things up, for example in a scene with many large textures, or a nearly full card.
+
+- **XPU2 renders scenes with many large textures to the end**: scenes with dozens of 4K textures no longer stall after XPU2's first passes and go over to MoonRay XPU, and they are ready to render sooner.
+- **Rhizome shows what each machine renders on**: CPU and GPU, the GPU alone, or the CPU alone and why, in the Rhizome window's Renders on column. A machine that falls back to its processor gets a share it can do from its first frame.
+- **Headless renders look as they do in Modo**: `moonray.exe` and XPU2 started by hand, on a farm or on a Rhizome node, have the MoonRay Source Overrides on, as Modo has them by default; set a variable to `0` to turn one off. [INSTALLATION](INSTALLATION.md#rendering-headless-no-modo-window) shows `-info`, which writes the render's progress to a log, and what `-res` does.
+
 ## New in 0.5.5
 
 - **Faster starts and edits**: heavy scenes start again in seconds, even after Modo restarts, and at once while the scene stays open: the kit and XPU2 keep what they read and prepared in the Cache folder and read again only what changed. Stop keeps the renderer loaded and idle, so the next Start renders at once (Preferences: Release idle renderer memory). Realtime no longer reads a rigged or animated scene again at each edit, nor moving replicators at each camera move, and scenes with many Shader Tree masks read faster.
