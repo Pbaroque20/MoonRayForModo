@@ -81,7 +81,7 @@ def panel_open():
 
 def panel_check():
     from moonray_modo import solo
-    panels = [w for w in QtWidgets.QApplication.allWidgets() if hasattr(w, 'solo_menu') and hasattr(w, '_solo_meshes')]
+    panels = [w for w in QtWidgets.QApplication.allWidgets() if hasattr(w, '_solo_menu') and hasattr(w, '_solo_meshes')]
     result['panels'] = len(panels)
     result['windows'] = [w.windowTitle() for w in QtWidgets.QApplication.topLevelWidgets() if w.isVisible()][:20]
     result['panel-like'] = sorted({type(w).__module__ + '.' + type(w).__name__ for w in QtWidgets.QApplication.allWidgets() if 'moonray' in type(w).__module__})[:30]
@@ -92,15 +92,17 @@ def panel_check():
         panels = [held['panel']]
         result['panel made by the probe'] = True
     panel = panels[0]
-    result['solo menu'] = [a.text() for a in panel.solo_menu.actions()]
+    # Solo is in the picture's right-click menu (panel._image_menu), made as each right-click makes it.
+    menu = lambda: next(a.menu() for a in panel._image_menu().actions() if a.menu() and a.menu().title().startswith('Solo'))
+    result['solo menu'] = [a.text() for a in menu().actions()]
     lx.eval('select.item {%s} set' % held['mesh'].id)
     panel._solo_meshes()
     result['soloed'] = solo.current()
-    result['menu title while soloed'] = panel.solo_menu.title()
+    result['menu title while soloed'] = menu().title()
     panel._solo_stop()
     result['after stop'] = solo.current()
     result['panel ok'] = ((result['soloed'] or {}).get('meshes') == [held['mesh'].id] and result['after stop'] is None
-                          and panel.solo_menu.title() == 'Solo')
+                          and menu().title() == 'Solo')
     save()
     later(lambda: lx.eval('!app.quit'), 300)
 
