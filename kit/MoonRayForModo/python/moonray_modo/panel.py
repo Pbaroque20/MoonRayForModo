@@ -439,13 +439,8 @@ class Panel(Tools, QtWidgets.QWidget):
             action.setChecked(key==self.preferences.get('clay'));self.clay_group.addAction(action)
         if self.clay_group.checkedAction() is None:self.clay_group.actions()[0].setChecked(True)
         self.clay_group.triggered.connect(self._clay_changed)
-        # Solo (solo.py): one node of a graph, one material's meshes or the selected meshes, in the preview alone.
-        self.solo_menu=QtWidgets.QMenu('Solo',self);self.solo_menu.setStyleSheet(MENU_STYLE);menu.addMenu(self.solo_menu)
-        self.solo_menu.setToolTipsVisible(True)
-        for label,call,tip in (('Solo Selected Meshes',self._solo_meshes,'Preview only the selected meshes; the rest of the scene is left out of the preview.'),
-                               ('Solo Selected Material',self._solo_material,'Preview only the meshes that wear the selected material.'),
-                               ('Stop Solo',self._solo_stop,'Preview the whole scene again.')):
-            action=QtWidgets.QAction(label,self);action.setToolTip(tip);action.triggered.connect(call);self.solo_menu.addAction(action)
+        # Solo (solo.py) is in the picture's right-click menu (_solo_menu), where it was asked for; the window still
+        # renders again whenever what is soloed changes.
         from . import solo
         solo.LISTENERS.append(self._solo_changed)
         self.show_buckets=checkable(menu,'Show Buckets')
@@ -481,6 +476,8 @@ class Panel(Tools, QtWidgets.QWidget):
             menu.addAction('Select Mesh Here',lambda:self.mesh_at(point))
             menu.addAction('Select Volume Here',lambda:self.volume_at(point))
             menu.addSeparator()
+        menu.addMenu(self._solo_menu(menu))
+        menu.addSeparator()
         menu.addAction('Fit',self.preview.fit)
         menu.addAction('Actual Size',self.preview.actual_size)
         menu.addSeparator()
@@ -745,13 +742,26 @@ class Panel(Tools, QtWidgets.QWidget):
         from . import solo
         solo.clear()
 
+    def _solo_menu(self,parent):
+        """Solo (solo.py), in the picture's right-click menu: one node of a graph, one material's meshes or the selected
+        meshes, in the preview alone. Its title says what is soloed. (The menu and its actions are made first and then
+        added: what a menu makes for a label cannot be used afterwards in Modo's Qt.)"""
+        from . import solo
+        state=solo.current()
+        menu=QtWidgets.QMenu('Solo: '+state['label'] if state else 'Solo',parent);menu.setStyleSheet(MENU_STYLE);menu.setToolTipsVisible(True)
+        for label,call,tip in (('Solo Selected Meshes',self._solo_meshes,'Preview only the selected meshes; the rest of the scene is left out of the preview.'),
+                               ('Solo Selected Material',self._solo_material,'Preview only the meshes that wear the selected material.'),
+                               ('Stop Solo',self._solo_stop,'Preview the whole scene again.')):
+            action=QtWidgets.QAction(label,menu);action.setToolTip(tip);action.triggered.connect(call);menu.addAction(action)
+            if label=='Stop Solo':action.setEnabled(bool(state))
+        return menu
+
     def _solo_changed(self):
         if self.disposed:return
         from . import solo
         state=solo.current()
-        self.solo_menu.setTitle('Solo: '+state['label'] if state else 'Solo')
         self._preview_changed(0)
-        if state:self.status.setText('Solo: '+state['label']+'. Stop Solo in the menu shows the whole scene again.')
+        if state:self.status.setText('Solo: '+state['label']+'. Right-click the picture, Solo > Stop Solo, for the whole scene again.')
 
     def _clay_changed(self,action):
         self.preferences.set('clay',action.data());self._preview_changed(0)
