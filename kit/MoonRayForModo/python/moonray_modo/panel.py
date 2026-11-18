@@ -2732,6 +2732,19 @@ class Panel(Tools, QtWidgets.QWidget):
         self._camera_seen=(identity,matrix);self._camera_place=matrix
         return {identity} if before is not None and before[0]==identity and not near(before[1],matrix) else set()
 
+    def _camera_watch(self):
+        """While the mouse is up (Follow drags on): the camera rendered through, where it stands and the viewports that
+        look through it, taken again twice a second, for a drag's first step to set its moves against. Taken at that
+        first step instead, a drag the preview first looked at once Modo had already moved its viewport (a heavy scene,
+        Modo busy) found no viewport looking through the camera, and none of its steps moved it: "Drag not followed",
+        and drags after it went on unfollowed (a report: Follow drags had to be switched off and on)."""
+        import time as clock
+        now=clock.monotonic()
+        if now<getattr(self,'_camera_watched',0.0):return
+        self._camera_watched=now+0.5
+        self._camera_seen=None
+        self._camera_moved()
+
     def _live_tick(self):
         if self.disposed or not self._following:return
         from .interaction import dragging
@@ -2748,7 +2761,10 @@ class Panel(Tools, QtWidgets.QWidget):
         if held and ipr and not self._ipr_drags():
             # Drags not followed (Follow drags off, the default): what Modo tells of waits for the release.
             self.release_timer.start();return
-        if not (held and ipr):self._camera_seen=None
+        if not (held and ipr):
+            # The camera kept watched between drags (_camera_watch), where drags are followed; else forgotten.
+            if ipr and self._ipr_drags():self._camera_watch()
+            else:self._camera_seen=None
         self._drag_note(held and ipr)
         if held and ipr and not getattr(self,'_drag_frozen',False):
             # The mouse pressed: MoonLightIPR stops sampling where it stands, from then to the release no step of the
