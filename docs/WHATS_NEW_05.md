@@ -2,7 +2,7 @@
 
 0.5 is a **pre-production release**: the plugin is no longer experimental, and it brings a new GPU renderer, MoonRay XPU2.
 
-## New in 0.5.5.1 (coming)
+## New in 0.5.5.1
 
 Install it, and **Compile XPU2 Shaders once more**.
 
