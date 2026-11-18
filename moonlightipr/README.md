@@ -28,7 +28,9 @@ build to an installed kit during development.
 
 - It is used inside Modo: choose MoonLightIPR in the preview window's engine list and press
   RT Off, which then reads RT On. It follows light, transform and material edits, updating
-  when a drag is let go. Press the button again to switch realtime off.
+  when a drag is let go; with Follow drags on in the Preview Preferences it follows a drag of
+  the camera or of items as it happens, each step at one sample a pixel, and samples to the end
+  once the mouse is let go. Press the button again to switch realtime off.
 - The buffer list offers Beauty, which is the default, and Denoised Beauty; it holds both, so
   changing between them renders nothing again.
 - It draws Modo's standard and Principled materials, MoonRay's Dwa surface materials,

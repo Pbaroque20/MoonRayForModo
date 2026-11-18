@@ -6,6 +6,7 @@
 // Commands arrive on standard input, one per line:
 //   scene <generation> <path>   load a packed scene and restart accumulation
 //   pause                       stop sampling but keep everything loaded
+//   continue <generation>       sample on from where a pause left that scene (a mouse pressed that moved nothing)
 //   finish <generation>         stop sampling and send what is rendered so far as the finished picture
 //   quit
 // Events leave on standard output, in the form the MoonRay session already uses:
@@ -116,6 +117,8 @@ int main(int argc, char** argv) {
         // Which picture is sent of a scene that is denoised: the denoised one, or the beauty as it is rendered.
         // Both are there all the while; the host says which it is looking at, and may change its mind at any time.
         bool showDenoised = true, viewChanged = false;
+        // A render taken up again after a pause (continue): its pace counted from where it stood, not from nothing.
+        bool resumed = false;
         // The AOV looked at (its AovSlot, or -1 for the beauty), or the light pass (1 to 4, else 0), by the host's name for
         // it, which its frames are sent under.
         int aovShown = -1;
@@ -206,6 +209,14 @@ int main(int argc, char** argv) {
                 continue;
             }
             if (verb == "pause") continue;      // stop sampling; the loaded scene stays for the next one
+            if (verb == "continue") {
+                // The mouse pressed for a drag stopped the render (pause) and was let go having moved nothing: the
+                // scene is sampled on from the samples it has, unless another has come since.
+                if (lastGeneration.empty() || generation != lastGeneration || commands.waiting()) continue;
+                settings = lastSettings;
+                resumed = true;
+                goto render;
+            }
             if (verb == "view") {
                 // Between renders: the picture there is, sent again as the one now looked at.
                 const bool denoised = path != "beauty";
@@ -244,7 +255,12 @@ int main(int argc, char** argv) {
 
         render:
             pixels.resize(size_t(settings.width) * settings.height * 3);
-            const auto began = std::chrono::steady_clock::now();
+            // Taken up again (continue): begun as long ago as its samples took at the pace, so that it goes on at that pace.
+            const auto began = std::chrono::steady_clock::now() - (resumed
+                ? std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+                      pace * (double(renderer.sampleCount()) / double(std::max<uint32_t>(1u, settings.targetSamples))))
+                : std::chrono::steady_clock::duration::zero());
+            resumed = false;
             auto lastFrame = began;
             uint32_t published = 0;
             auto publish = [&]() {

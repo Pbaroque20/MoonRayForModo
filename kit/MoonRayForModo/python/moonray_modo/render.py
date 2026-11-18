@@ -15,6 +15,10 @@ from .moonlightipr_session import Session as MoonLightIPRSession, supported as m
 
 MOONLIGHTIPR_STATUS = 'MoonLightIPR (GPU preview, approximate)'
 MOONLIGHTIPR_SAMPLES = 256
+# A step of a drag MoonLightIPR follows (panel._live_tick, the scene marked _drag): its first sample alone, flat out, and
+# then nothing more until the next step, so that each step is shown at once and Modo is left its drag; once the mouse is
+# let go, the scene is sampled to the end as any other.
+DRAG_SAMPLES = 1
 
 
 COOKIE='A light with a cookie filter'
@@ -308,6 +312,19 @@ class Renderer(QtCore.QObject):
         self.pending = None
         return True
 
+    def moonlightipr_hold(self):
+        """The mouse pressed while MoonLightIPR samples a preview: it stops where it stands (a drag goes no further
+        than the first samples of each of its steps). Returns whether a render was held."""
+        if self.closed or self.canceled or not self.active or self.active.get('output') or not getattr(self,'using_moonlightipr',False):
+            return False
+        return self.moonlightipr.hold()
+
+    def moonlightipr_resume(self):
+        """The mouse let go having moved nothing: the preview held is sampled on from where it stopped."""
+        if self.closed or self.canceled or not self.active or not getattr(self,'using_moonlightipr',False):
+            return False
+        return self.moonlightipr.resume()
+
     def keep_progress(self):
         """Before a MoonRay preview is stopped: have MoonRay, kept loaded, hand over the beauty and the denoiser's
         two guides as they stand, so that a render stopped part way is kept and can be denoised. Returns whether
@@ -553,11 +570,14 @@ class Renderer(QtCore.QObject):
         self.moonlightipr_denoises=bool(getattr(self,'moonlightipr_wanted',False))
         # Kept for the label beside the picture, which says how many samples a pixel it gathers.
         once=getattr(self,'moonlightipr_once',None)
-        self.moonlightipr_gathering=(getattr(self,'moonlightipr_samples',None) or once
+        # A step of a drag: its first samples alone (DRAG_SAMPLES), flat out, the picture then held until the next step.
+        drag=bool(request['snapshot'].get('_drag'))
+        self.moonlightipr_gathering=DRAG_SAMPLES if drag else (getattr(self,'moonlightipr_samples',None) or once
                                      or getattr(self,'moonlightipr_preview_samples',None) or MOONLIGHTIPR_SAMPLES)
         # A Render (realtime off) gathers all its samples, flat out: neither paced nor stopped once clean.
         # And has each image at its full size, where realtime's are fitted to 1024 (moonlightipr_materials).
-        snapshot=dict(request['snapshot'],_flat_out=True,_full_textures=True) if once and not getattr(self,'moonlightipr_samples',None) else request['snapshot']
+        if drag:snapshot=dict(request['snapshot'],_flat_out=True)
+        else:snapshot=dict(request['snapshot'],_flat_out=True,_full_textures=True) if once and not getattr(self,'moonlightipr_samples',None) else request['snapshot']
         self.moonlightipr.submit(snapshot,directory,request['width'],request['height'],request['environment'],self.moonlightipr_serial,self.moonlightipr_gathering,
                                  denoise=self.moonlightipr_denoises,runtime=request['runtime'])
         # The picture sent: the denoised one where the list names Denoised Beauty (moonlightipr_wanted, said by the panel

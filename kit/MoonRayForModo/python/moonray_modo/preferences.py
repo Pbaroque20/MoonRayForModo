@@ -94,6 +94,9 @@ KEYS = {
     'moonlightipr/render_samples': (300, int),
     # A MoonLightIPR Render (realtime off) is made at the active camera's resolution, not the realtime share (opt-in).
     'moonlightipr/camera_resolution': (False, bool),
+    # MoonLightIPR follows a drag step by step, each step at its first sample, the picture still from the mouse pressed to
+    # the release (opt-in); off, a drag is rendered once the mouse is let go.
+    'moonlightipr/follow_drags': (False, bool),
 }
 # Realtime with the standard XPU: off, on the processor (MoonRay's vector mode), or on the graphics card (XPU).
 XPU_REALTIME_MODES = ('off', 'vector', 'xpu')
@@ -291,6 +294,10 @@ class Dialog(QtWidgets.QDialog):
         form.addRow(check('moonlightipr/camera_resolution', "Render at the camera's resolution",
                           "Render with MoonLightIPR (RT off) makes the picture at the active camera's resolution, as MoonRay's "
                           'Render does. Realtime keeps Realtime preview resolution, as XPU2 realtime does'))
+        form.addRow(check('moonlightipr/follow_drags', 'Follow drags',
+                          'Realtime (RT on) follows a drag of the camera or of items as it happens: the picture stops sampling '
+                          'when the mouse is pressed, shows each step of the drag at one sample a pixel, and samples to the end '
+                          'once the mouse is let go. Off, the picture is rendered once the mouse is let go'))
         heading = QtWidgets.QLabel('MoonRay LS quality')
         heading.setStyleSheet('font-weight: bold; margin-top: 8px')
         form.addRow(heading)
