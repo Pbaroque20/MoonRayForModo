@@ -676,6 +676,15 @@ class RhizomeWindow(lxu.command.BasicCommand):
         from moonray_modo.rhizome_window import show
         show()
 lx.bless(RhizomeWindow, 'moonray.rhizome')
+
+
+class ConvertLxo(lxu.command.BasicCommand):
+    """MoonRay > Convert LXO to RDL: Modo scenes on disk written as MoonRay scenes in the background (lxo_convert_window.py)."""
+    def cmd_Flags(self): return lx.symbol.fCMD_UI
+    def basic_Execute(self, msg, flags):
+        from moonray_modo.lxo_convert_window import show
+        show()
+lx.bless(ConvertLxo, 'moonray.lxo.convert')
 lx.bless(AssignLibraryMaterial,'moonray.library.assign')
 
 class AssignMaterialBundle(lxu.command.BasicCommand):

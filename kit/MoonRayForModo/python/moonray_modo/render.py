@@ -45,8 +45,12 @@ def xpu2_output(snapshot):
     """Whether a render to files is XPU2's, in the session that renders the preview and shown as it comes: asked for by
     Render to a File and Render Animation (_xpu2_output), where XPU2 is chosen and the execution mode leaves it to the
     graphics card. It writes the scene's outputs as MoonRay does, a deep image too (one XPU2 does not make, a scene with
-    volumes', goes to MoonRay through its fall-back); checkpoints are MoonRay's alone."""
-    return bool(snapshot.get('_xpu2_output') and native.xpu2() and snapshot.get('execution_mode','auto') in ('xpu','auto')
+    volumes', goes to MoonRay through its fall-back); checkpoints are MoonRay's alone. A Render Animation with MoonRay
+    (XPU2) as its engine (_xpu2_output 'chosen') is XPU2's whatever renders the preview and whatever the execution mode,
+    where the kit holds XPU2; with MoonRay (XPU) it asks for none (animation.Sequence)."""
+    chosen=snapshot.get('_xpu2_output')=='chosen'
+    return bool(snapshot.get('_xpu2_output') and (native.xpu2_available() if chosen else native.xpu2())
+                and (chosen or snapshot.get('execution_mode','auto') in ('xpu','auto'))
                 and scalar_only(snapshot) in (None,COOKIE,VDB_ITEM) and not (snapshot.get('recovery') or {}).get('enabled'))
 
 
@@ -648,6 +652,11 @@ class Renderer(QtCore.QObject):
             self.cpu_fallback=False
         if self.cpu_fallback and mode in ('auto','xpu'):
             mode='vectorized'
+        # A Render Animation that asked for XPU2 by name (xpu2_output, 'chosen'): this session's, whatever renders the
+        # preview (persistent.Session.xpu2_chosen), and in XPU2's mode whatever the execution mode says.
+        named=bool(request.get('persistent') and request['output'] and request['snapshot'].get('_xpu2_output')=='chosen')
+        self.session.output_xpu2=named
+        if named and mode not in ('xpu','auto'):mode='auto'
         # Two things this build of MoonRay draws rightly in its scalar mode only.
         slow=scalar_only(request['snapshot'])
         self.moonray_mode=None

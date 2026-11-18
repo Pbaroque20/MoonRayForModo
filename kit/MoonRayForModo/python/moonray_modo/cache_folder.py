@@ -99,6 +99,12 @@ def clear():
         moonlightipr_scene._packed.clear()
     except Exception:
         pass
+    # And the ocean tiles it has seen on disk (ocean.make).
+    try:
+        from . import ocean
+        ocean.forget_seen()
+    except Exception:
+        pass
     return removed, freed, left
 
 

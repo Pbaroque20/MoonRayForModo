@@ -142,7 +142,15 @@ def surroundings(snapshot):
     whole environment again, which a drag cannot keep up with."""
     import json
     lights=[entity for entity in snapshot.get('entities') or [] if entity.get('class') in ('EnvLight','PortalLight')]
-    return json.dumps([snapshot.get('environments') or [],lights],sort_keys=True,default=str)
+
+    def still(value):
+        # Where they stand at the shutter's close left out: a scene read with motion blur (realtime switched on) and one
+        # read sharp (a step of a drag) are the same surroundings. Compared with it, the first drag after RT came on
+        # waited for the release, as though its environment had changed.
+        if isinstance(value,dict):return {key:still(held) for key,held in value.items() if not key.endswith('_close')}
+        if isinstance(value,list):return [still(held) for held in value]
+        return value
+    return json.dumps(still([snapshot.get('environments') or [],lights]),sort_keys=True,default=str)
 
 
 def transform_targets(scene,identities):
@@ -334,19 +342,89 @@ def refresh_transforms(scene,snapshot,identities=None,loose=()):
         now=shape(asked[identity]) if shape else asked[identity]
         if held and len(held)==16 and all(abs(a-b)<=1e-6*max(1.0,abs(b)) for a,b in zip(held,now)):return held
         return now
+    def still(held,keys,placed,index=None):
+        # A placement moved in a scene read with motion blur (a step of a drag from it): where it stands at the shutter's
+        # close and at the frame (motion.apply_motion) made the same, the move shown sharp where it now is. Left as they
+        # were, a drag of a keyed dragon was drawn from its frame placement, where the drag began, until the release.
+        for key in keys:
+            if key not in held:continue
+            if index is None:held[key]=list(placed)
+            elif isinstance(held[key],list) and index<len(held[key]):
+                held[key]=list(held[key]);held[key][index]=list(placed)
     for mesh in snapshot['meshes']:
         if mesh.get('volumetric'):continue
         if 'instances' in mesh:
             # An evaluated instance is named by its item and its place among that item's copies ("item|0").
+            before=mesh['instances']
             mesh['instances']=[held if identity.split('|')[0] in loose else where(held,identity.split('|')[0])
                                for held,identity in zip(mesh['instances'],mesh['instance_ids'])]
+            for index,(held,now) in enumerate(zip(before,mesh['instances'])):
+                if now is not held:still(mesh,('instances_close','instances_frame'),now,index)
         else:
             identity=mesh.get('source_item') or mesh['identity'].split('|')[0]
             if identity in loose:continue
             # An Ocean Plane's mesh takes its item's height alone (ocean_plane.lift): its rings stand under the camera.
             if targets is None or identity in targets:
-                mesh['matrix']=where(mesh.get('matrix'),identity,lift if mesh.get('_ocean_plane') else None)
-    snapshot['extra_geometry']=[dict(item,matrix=where(item.get('matrix'),item.get('source_item') or item['identity'].split('|')[0])) if targets is None or (item.get('source_item') or item['identity'].split('|')[0]) in targets else item for item in snapshot.get('extra_geometry',[])]
+                held=mesh.get('matrix')
+                mesh['matrix']=where(held,identity,lift if mesh.get('_ocean_plane') else None)
+                if mesh['matrix'] is not held:still(mesh,('matrix_close','matrix_frame'),mesh['matrix'])
+    placed=[]
+    for item in snapshot.get('extra_geometry',[]):
+        identity=item.get('source_item') or item['identity'].split('|')[0]
+        if targets is None or identity in targets:
+            held=item.get('matrix');item=dict(item,matrix=where(held,identity))
+            if item['matrix'] is not held:still(item,('matrix_close','matrix_frame'),item['matrix'])
+        placed.append(item)
+    snapshot['extra_geometry']=placed
+
+
+def out_of_place(scene,snapshot,loose=()):
+    """The last transforms of a followed drag looked at (panel._drag_settled): every mesh, instance and the camera of the
+    scene sent last (snapshot) that stands with its item, against where its item now stands in Modo. None where all are
+    in place; else (the scene with each of them where its item now stands, the identities moved), for a drag whose last
+    step was not sent, or that moved what Modo did not tell of. An Ocean Plane's mesh is held at its item's height alone
+    (ocean_plane.lift). Left as they are: volumes, copies that stand where no item does (loose), and what Modo cannot say."""
+    from .host import world_matrix
+    from .ocean_plane import lift
+    asked={}
+
+    def now(identity):
+        if identity not in asked:asked[identity]=world_matrix(scene.item(identity))
+        return asked[identity]
+
+    def off(held,where):
+        return not held or len(held)!=16 or any(abs(a-b)>1e-5*max(1.0,abs(b)) for a,b in zip(held,where))
+    moved,meshes=set(),[]
+    for mesh in snapshot.get('meshes') or []:
+        try:
+            if mesh.get('volumetric'):pass
+            elif mesh.get('_ocean_plane'):
+                identity=mesh.get('source_item') or mesh['identity'].split('|')[0]
+                if mesh.get('matrix') and off(mesh['matrix'],lift(now(identity))):
+                    moved.add(identity);mesh=dict(mesh,matrix=lift(now(identity)))
+            elif 'instances' in mesh:
+                named=mesh.get('instance_ids') or []
+                if len(named)==len(mesh['instances']):
+                    placed=[held if identity.split('|')[0] in loose or not off(held,now(identity.split('|')[0])) else now(identity.split('|')[0])
+                            for held,identity in zip(mesh['instances'],named)]
+                    if placed!=list(mesh['instances']):
+                        moved.update(identity.split('|')[0] for held,identity,new in zip(mesh['instances'],named,placed) if new is not held)
+                        mesh=dict(mesh,instances=placed)
+            elif mesh.get('matrix'):
+                identity=mesh.get('source_item') or mesh['identity'].split('|')[0]
+                if identity not in loose and off(mesh['matrix'],now(identity)):
+                    moved.add(identity);mesh=dict(mesh,matrix=now(identity))
+        except (RuntimeError,LookupError,AttributeError,TypeError):pass
+        meshes.append(mesh)
+    camera=snapshot.get('camera') or {}
+    try:
+        if camera.get('identity') and camera.get('matrix') and off(camera['matrix'],now(camera['identity'])):
+            moved.add(camera['identity'])
+            camera=dict(camera,matrix=now(camera['identity']))
+            if 'matrix_close' in camera:camera['matrix_close']=list(camera['matrix'])
+    except (RuntimeError,LookupError,AttributeError,TypeError):pass
+    if not moved:return None
+    return dict(snapshot,meshes=meshes,camera=camera),moved
 
 
 # What a scene sent holds that may name an item, beside its meshes, its extra geometry and its camera (move_only).
@@ -436,7 +514,10 @@ def move_only(scene,snapshot,identities,camera_moved=False,loose=(),camera_matri
         if any(mesh.get('volumetric') and (mesh.get('source_item') or mesh['identity'].split('|')[0]) in targets for mesh in meshes):return _refused('a volume')
         result=dict(snapshot)
         # camera_matrix: where a viewport navigated through the camera looks from, before Modo moves the camera itself.
-        if camera_moved:result['camera']=dict(camera,matrix=list(camera_matrix) if camera_matrix else world_matrix(scene.item(identity)))
+        if camera_moved:
+            result['camera']=dict(camera,matrix=list(camera_matrix) if camera_matrix else world_matrix(scene.item(identity)))
+            # Read with motion blur, it stands there at the shutter's close too: the step is shown sharp (refresh_transforms).
+            if 'matrix_close' in camera:result['camera']['matrix_close']=list(result['camera']['matrix'])
         if targets:
             result['meshes']=[dict(mesh) for mesh in meshes]
             refresh_transforms(scene,result,identities,loose=loose)

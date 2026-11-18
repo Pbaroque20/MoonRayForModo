@@ -107,8 +107,11 @@ def shutter_moves(snapshot, evaluated=False):
 
 
 class Sequence(QtCore.QObject):
-    def __init__(self, panel, directory, first, last, fps, motion=False, step=1, prefix="frame", missing=False, export_as=None, digits=None):
+    def __init__(self, panel, directory, first, last, fps, motion=False, step=1, prefix="frame", missing=False, export_as=None, digits=None, engine=None):
         super().__init__(panel)
+        # The Render Animation window's engine: 'xpu' (MoonRay, never XPU2), 'xpu2' (XPU2 by name, render.xpu2_output),
+        # or None, as the preferences say.
+        self.engine = engine
         # Each frame in another picture type as well, beside its EXR (image_formats): {'type', 'quality'}, or None. With
         # 'only' it is saved in that type alone, and the type is what the sequence is planned by.
         self.export_as = export_as
@@ -197,8 +200,10 @@ class Sequence(QtCore.QObject):
         if self.texture_frames:snapshot['_texture_frames']=self.texture_frames
         snapshot = self.panel._configure_snapshot(snapshot)
         if self.export_as:snapshot['_export_as']=dict(self.export_as)
-        # Rendered by XPU2 where it renders the preview (render.xpu2_output).
-        snapshot['_xpu2_output']=True
+        # Rendered by XPU2 where it renders the preview (render.xpu2_output); by XPU2 whatever renders the preview with
+        # MoonRay (XPU2) as the engine, and by MoonRay with MoonRay (XPU).
+        engine=getattr(self,'engine',None)
+        if engine!='xpu':snapshot['_xpu2_output']='chosen' if engine=='xpu2' else True
         self.expected_output = destination.resolve()
         self.panel._submit(snapshot,str(destination))
 

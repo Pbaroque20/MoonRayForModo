@@ -162,7 +162,8 @@ class Wiring(unittest.TestCase):
         return (self.root / name).read_text(encoding='utf-8')
 
     def test_only_stills_and_animations_ask_for_xpu2(self):
-        self.assertIn("snapshot['_xpu2_output']=True", self.read('animation.py'))
+        # Animations as their engine says (MoonRay (XPU2) by name, MoonRay (XPU) none): test_animation_engine.
+        self.assertIn("snapshot['_xpu2_output']='chosen' if engine=='xpu2' else True", self.read('animation.py'))
         self.assertIn('_xpu2_output=True', self.read('panel_tools.py'))
         self.assertNotIn('_xpu2_output', self.read('bake.py'))
 

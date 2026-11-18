@@ -181,9 +181,29 @@ def cell_amplitude(value, kx, kz):
     return math.sqrt(phillips(value, kx, kz) / 2.0) * (2 * math.pi / value['size'])
 
 
+# Each band's variance, by the numbers it is made from (band_variance): the same sea, packed again at each step of a
+# drag, summed its 48 bands again each time, half a second of a step on a test dragon's sea.
+_VARIANCES = {}
+
+
 def band_variance(value):
     """A cascade's expected variance of the heights before their scale: 2 P(k) times a cell's area in wavenumber, over
-    its band's cells (modo_ocean.dll's modo_ocean_band_variance where it is there)."""
+    its band's cells (modo_ocean.dll's modo_ocean_band_variance where it is there). Worked out once for the same numbers."""
+    try:
+        known = (int(value['resolution']), tuple(values(dict(value, fixed_scale=1.0), 0.0)))
+    except (KeyError, TypeError, ValueError):
+        known = None
+    if known is not None and known in _VARIANCES:
+        return _VARIANCES[known]
+    found = _band_variance(value)
+    if known is not None:
+        if len(_VARIANCES) > 512:
+            _VARIANCES.clear()
+        _VARIANCES[known] = found
+    return found
+
+
+def _band_variance(value):
     held = library()
     if held is not None and hasattr(held, 'modo_ocean_band_variance'):
         import ctypes
@@ -400,10 +420,17 @@ def key(value, time):
     return hashlib.sha256(json.dumps([FORM, shape, round(seconds(value, time), 6)], sort_keys=True).encode()).hexdigest()[:24]
 
 
+# The Ocean folder as made: made once, not for each of a sea's tiles at each pack (48 a step of a drag). Made again after
+# the folder is trimmed or the cache cleared (forget_seen), or the cache folder chosen is another.
+_FOLDER = {}
+
+
 def folder():
     from .cache_folder import root as cache_root
     path = cache_root() / 'Ocean'
-    path.mkdir(parents=True, exist_ok=True)
+    if _FOLDER.get('made') != path:
+        path.mkdir(parents=True, exist_ok=True)
+        _FOLDER['made'] = path
     return path
 
 
@@ -438,6 +465,8 @@ def trim(path=None, limit=None):
     32 GB in a day, with nothing let go, and filled the disk. Returns the bytes freed."""
     path = Path(path) if path else folder()
     limit = kept_bytes() if limit is None else limit
+    # What it lets go is no longer there to be trusted (make).
+    forget_seen()
     try:
         files = sorted((entry.stat().st_mtime, entry.stat().st_size, entry) for entry in path.iterdir() if entry.is_file())
     except OSError:
@@ -526,10 +555,27 @@ def native_tile(value, time, displacement, foam, slope, path=None):
     return done == 0 and all(Path(p).is_file() for p in (displacement, foam, slope))
 
 
+# Tiles found on disk, and when (time.monotonic): trusted as there, and marked used, for SEEN_FOR seconds. Each step of a
+# drag packs the sea again, which looked for its tiles and marked them used each time (288 files, a sixth of a second).
+# Forgotten as the folder is trimmed or the cache cleared (forget_seen).
+_SEEN = {}
+SEEN_FOR = 30.0
+
+
+def forget_seen():
+    _SEEN.clear()
+    _FOLDER.clear()
+
+
 def make(value, time, runtime=None):
     """The tile's three images, made where they are not on disk yet; their paths."""
     made = paths(value, time)
+    import time as clock
+    now = clock.monotonic()
+    if now - _SEEN.get(made, -SEEN_FOR - 1.0) <= SEEN_FOR:
+        return made
     if all(p.is_file() for p in made):
+        _SEEN[made] = now
         return used(made)
     _made()
     if value.get('swell'):

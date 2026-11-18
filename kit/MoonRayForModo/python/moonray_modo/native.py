@@ -516,10 +516,15 @@ def _setting(key, default):
     return QtCore.QSettings('MoonRayForModo', settings_name()).value(key, default)
 
 
+def xpu2_available():
+    """Whether the kit holds XPU2's renderer, whichever renders the preview: a Render Animation can ask for it by name."""
+    return (xpu2_runtime() / 'moonray_xpu2.exe').is_file()
+
+
 def xpu2():
     """Whether XPU2 renders the preview where MoonRay would render on the graphics card: on by default (release 0.5,
     asked 2026-10-28); a choice of MoonRay XPU in the preferences is kept."""
-    return str(_setting('xpu2/renderer', 'xpu2')) == 'xpu2' and (xpu2_runtime() / 'moonray_xpu2.exe').is_file()
+    return str(_setting('xpu2/renderer', 'xpu2')) == 'xpu2' and xpu2_available()
 
 
 def xpu2_renders(mode='auto'):

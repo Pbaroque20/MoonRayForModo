@@ -55,7 +55,15 @@ A headless render takes two steps: write the Modo scene as a MoonRay scene, then
 
 From Modo: **MoonRay > Export as MoonRay Scene** (RDLA, RDLB or both; one scene per frame if you like).
 
-Without a window, from Modo's command-line version `modo_cl.exe` and the kit's `scripts/export_moonray.py`. Put the commands in a text file and give it to `modo_cl` as its input. A plain PowerShell pipe does not work: `modo_cl` misreads its first line. Put quotes, not braces, around the two paths. In PowerShell, adjust these paths:
+Coming in the next release, many scenes at once, from their files: **MoonRay > Convert LXO to RDL** takes a list of `.lxo` files, or folders of them, and converts them in the background with Modo's command-line engine, a few at a time, while you go on working; the scene open in Modo is not touched. Outside Modo, drop scenes or folders on the kit's `bin\lxo2rdl.exe`, or run it:
+
+```powershell
+& "$env:APPDATA\Luxology\Kits\MoonRayForModo\bin\lxo2rdl.exe" --rdlb --jobs 2 --out 'D:\rdl' 'C:\scenes'
+```
+
+`--rdla` (the default), `--rdlb` or `--split` choose the format, `--frames` writes one scene for each frame, `--no-outputs` leaves the AOVs out, `--collect` copies the textures beside each scene, and `--modo` names `modo_cl.exe` where it is not in `Program Files\Modo...\modo`. Without `--out`, each MoonRay scene is written beside its Modo scene.
+
+By hand, with no window, from Modo's command-line version `modo_cl.exe` and the kit's `scripts/export_moonray.py`. Put the commands in a text file and give it to `modo_cl` as its input. A plain PowerShell pipe does not work: `modo_cl` misreads its first line. Put quotes, not braces, around the two paths. In PowerShell, adjust these paths:
 
 ```powershell
 Set-Content -Encoding ascii "$env:TEMP\export.txt" '@{kit_MoonRayForModo:scripts/export_moonray.py} "C:\scenes\shot.lxo" "C:\scenes\shot.rdlb"', 'app.quit'

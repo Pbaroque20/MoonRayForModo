@@ -135,6 +135,21 @@ if reader.is_file() and (kit / 'runtime').is_dir():
 ocean = root / 'build/native-avx/bin/modo_ocean.dll'
 if ocean.is_file() and (kit / 'bin').is_dir():
     shutil.copyfile(ocean, kit / 'bin' / ocean.name)
+# The display processors the preview hands each picture to (native-port/modo_display*.cpp, built with the renderer):
+# a 4K picture went to the one of the runtime installed, which still refused pictures past 64 MB, and the preview said
+# "Cannot display buffer; render continues: [Errno 32] Broken pipe".
+for name in ('modo_display.dll', 'modo_display_stream.exe'):
+    built = root / 'build/native-renderer-avx/bin' / name
+    held = kit / 'runtime' / name
+    if built.is_file() and (kit / 'runtime').is_dir() and (not held.is_file() or held.read_bytes() != built.read_bytes()):
+        if held.is_file():
+            backup.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(held, backup / name)
+        shutil.copyfile(built, held)
+# The command-line LXO to RDL converter, in the kit's bin folder beside its scripts folder (tools/build_lxo2rdl.py).
+converter_cli = root / 'build/native-avx/bin/lxo2rdl.exe'
+if converter_cli.is_file() and (kit / 'bin').is_dir():
+    shutil.copyfile(converter_cli, kit / 'bin' / converter_cli.name)
 # What grows hair, where it has been built (tools/build_hair_grower.py).
 grower = root / 'build/native-avx/bin/modo_hair_grow.exe'
 if grower.is_file() and (kit / 'runtime').is_dir():
@@ -158,7 +173,7 @@ sys.path.insert(0, str(root / 'tools'))
 import moonray_menu
 layout = kit / 'layout.cfg'
 text = layout.read_bytes().decode('utf-8')
-tidied = moonray_menu.graph_dock_entry(moonray_menu.area_light_entries(moonray_menu.rhizome_entry(moonray_menu.camera_revert_entry(moonray_menu.camera_sequence_entry(moonray_menu.terminal_entry(moonray_menu.context_menus(moonray_menu.viewport_title(moonray_menu.playblast_entry(moonray_menu.rdl_entry(moonray_menu.curve_controls(moonray_menu.tidy(text))))))))))))
+tidied = moonray_menu.lxo_convert_entry(moonray_menu.graph_dock_entry(moonray_menu.area_light_entries(moonray_menu.rhizome_entry(moonray_menu.camera_revert_entry(moonray_menu.camera_sequence_entry(moonray_menu.terminal_entry(moonray_menu.context_menus(moonray_menu.viewport_title(moonray_menu.playblast_entry(moonray_menu.rdl_entry(moonray_menu.curve_controls(moonray_menu.tidy(text)))))))))))))
 if 'MoonRayEntityMenu' not in tidied:
     print('Could not find where to add "Add MoonRay Item" in', layout)
 if tidied != text:

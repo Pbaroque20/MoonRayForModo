@@ -15,12 +15,23 @@ class AnimationDialog(QtWidgets.QDialog):
         values=values or {}
         self.setWindowTitle('Render animation');self.resize(520,300)
         form=QtWidgets.QFormLayout(self)
-        # Which engine renders the frames: MoonRay, by Render Settings and the preferences (XPU2, XPU or the processor),
-        # or MoonLightIPR, to Render Samples a pixel (Render Settings, MoonLightIPR).
+        # Which engine renders the frames: MoonRay (XPU), MoonRay itself in Render Settings' execution mode; MoonRay (XPU2),
+        # XPU2 whatever renders the preview (render.xpu2_output); or MoonLightIPR, to Render Samples a pixel (Render
+        # Settings, MoonLightIPR). 'moonray', kept before there were two, is the one the preferences render the preview with.
+        from . import native
         self.engine=QtWidgets.QComboBox()
-        self.engine.addItem('MoonRay','moonray');self.engine.addItem('MoonLightIPR','moonlightipr')
-        self.engine.setCurrentIndex(max(0,self.engine.findData(values.get('engine','moonray'))))
-        self.engine.setToolTip('MoonRay renders each frame as Render Settings and Preferences say (XPU2, XPU or the processor). '
+        self.engine.addItem('MoonRay (XPU)','xpu');self.engine.addItem('MoonRay (XPU2)','xpu2');self.engine.addItem('MoonLightIPR','moonlightipr')
+        held=values.get('engine') or 'moonray'
+        if held=='moonray':held='xpu2' if native.xpu2() else 'xpu'
+        if not native.xpu2_available():
+            # No XPU2 in the kit: its entry is there, greyed.
+            self.engine.model().item(1).setEnabled(False)
+            if held=='xpu2':held='xpu'
+        self.engine.setCurrentIndex(max(0,self.engine.findData(held)))
+        self.engine.setToolTip("MoonRay (XPU) renders each frame with MoonRay itself, in Render Settings' Execution Mode (Auto: the graphics card "
+                               'first, then the processor), with every output, checkpoints among them. '
+                               "MoonRay (XPU2) renders each frame with XPU2, the graphics card and the processor together as Preferences > MoonRay > XPU2 "
+                               "says, whatever renders the preview; what XPU2 does not write (checkpoints, a scene's deep image with volumes) goes to MoonRay. "
                                "MoonLightIPR renders each frame on the graphics card to its Render Samples a pixel (Render Settings, MoonLightIPR), "
                                'written as an EXR of its own picture, the beauty, with its denoised beauty beside it (frame.denoised.0001.exr) where the Denoiser is on, as MoonRay writes it; no other outputs.')
         self.engine.currentIndexChanged.connect(self.update_summary)
@@ -73,7 +84,7 @@ class AnimationDialog(QtWidgets.QDialog):
             held=self.type.currentData()
             if held.startswith(ONLY):extension=find(held[len(ONLY):])[2]
             else:also=' and .%s'%find(held)[2]
-        by=' · MoonLightIPR' if getattr(self,'engine',None) is not None and self.engine.currentData()=='moonlightipr' else ' · MoonRay'
+        by=' · '+(self.engine.currentText() if getattr(self,'engine',None) is not None else 'MoonRay')
         self.summary.setText('%d frames · %s%s%s\nExisting frames are never overwritten. Enable Render missing frames to keep the frames already there and render the others.'%(count,frame_name(self.prefix.text(),self.first.value(),self.digits.value(),extension),also,by))
 
     def kept(self):
