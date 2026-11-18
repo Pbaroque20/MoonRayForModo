@@ -48,6 +48,12 @@ Install it, and **Compile XPU2 Shaders once more**.
 
   ![Show Handoff Tiles under XPU2: orange on the tiles whose samples the GPU handed to the processor (the two spheres, left to it), blue on provisional samples, each clearing once its samples are final](images/xpu2-handoff-tiles.png)
 
+  Reading them:
+  - A little orange that clears quickly is normal.
+  - Large patches that stay orange mean the GPU keeps waiting on the CPU for part of the scene. Often that's geometry too big for the card's budget, and that's where a render slows down.
+  - Blue that flickers early in a render is normal, as textures stream in.
+  - Lots of blue that hangs around means texture loading is holding things up, for example in a scene with many large textures, or a nearly full card.
+
 - **XPU2 renders scenes with many large textures to the end**: scenes with dozens of 4K textures no longer stall after XPU2's first passes and go over to MoonRay XPU, and they are ready to render sooner.
 - **Rhizome shows what each machine renders on**: CPU and GPU, the GPU alone, or the CPU alone and why, in the Rhizome window's Renders on column. A machine that falls back to its processor gets a share it can do from its first frame.
 - **Headless renders look as they do in Modo**: `moonray.exe` and XPU2 started by hand, on a farm or on a Rhizome node, have the MoonRay Source Overrides on, as Modo has them by default; set a variable to `0` to turn one off. [INSTALLATION](INSTALLATION.md#rendering-headless-no-modo-window) shows `-info`, which writes the render's progress to a log, and what `-res` does.
