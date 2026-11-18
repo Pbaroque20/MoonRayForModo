@@ -38,11 +38,12 @@ static Color sample(const uniform Map* uniform me,uniform ShadingTLState* unifor
         float sx=n.x/n.z,sy=n.y/n.z;
         if(getAttrBumpStrength(me)!=0) {
             uniform float e=max(1.e-7f,getAttrBumpStep(me));
+            // The point moves with the coordinates, as in ModoTextureMap.cc: a procedural layer reads the point.
             State other=state;
-            other.mSt.x=state.mSt.x+e;float right=evalAttrHeight(me,tls,other);
-            other.mSt.x=state.mSt.x-e;float left=evalAttrHeight(me,tls,other);
-            other.mSt.x=state.mSt.x;other.mSt.y=state.mSt.y+e;float up=evalAttrHeight(me,tls,other);
-            other.mSt.y=state.mSt.y-e;float down=evalAttrHeight(me,tls,other);
+            other.mSt.x=state.mSt.x+e;other.mP=state.mP+state.mdPds*e;float right=evalAttrHeight(me,tls,other);
+            other.mSt.x=state.mSt.x-e;other.mP=state.mP-state.mdPds*e;float left=evalAttrHeight(me,tls,other);
+            other.mSt.x=state.mSt.x;other.mSt.y=state.mSt.y+e;other.mP=state.mP+state.mdPdt*e;float up=evalAttrHeight(me,tls,other);
+            other.mSt.y=state.mSt.y-e;other.mP=state.mP-state.mdPdt*e;float down=evalAttrHeight(me,tls,other);
             Vec3f N=getN(state);Vec3f T=state.mdPds-N*dot(N,state.mdPds);
             float lengthT=length(T);
             if(lengthT>1.e-9f) {

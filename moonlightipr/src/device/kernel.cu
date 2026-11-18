@@ -3107,6 +3107,8 @@ ML_INLINE bool triangleUvs(const DeviceMesh& mesh, unsigned slot, unsigned primi
 // Which coordinate slots the last normal map and the last bump row used; UV_SLOTS for none.
 struct MappedSlots {
     unsigned normal, bump, slope;
+    // A bump read through the object (a Solid procedural, a projection), which has no UV map of its own.
+    bool solidBump;
 };
 
 // How far apart a mesh's vertices are about this triangle, in the mesh's units: as a footprint (evalLayers), the texture
@@ -3221,6 +3223,7 @@ ML_INLINE MappedSlots evalLayers(const DeviceMaterial& material, const DeviceMes
     channel[CHANNEL_SLOPE] = vec(0.0f);
     MappedSlots slots;
     slots.normal = slots.bump = slots.slope = UV_SLOTS;
+    slots.solidBump = false;
 
     float3 saved[GROUP_DEPTH][CHANNEL_COUNT];
     unsigned savedUsed[GROUP_DEPTH];
@@ -3282,6 +3285,7 @@ ML_INLINE MappedSlots evalLayers(const DeviceMaterial& material, const DeviceMes
                 value = lerp(vec(layer.color2), vec(layer.value), t);
                 mask *= layer.alpha2 + (layer.alpha1 - layer.alpha2) * t;
             }
+            if (layer.channel == CHANNEL_BUMP) slots.solidBump = true;
         } else if (layer.flags & LAYER_WIREFRAME) {
             // Modo's Wireframe: the first colour along the polygons' edges. The plugin lays each polygon down as a fan
             // of triangles, (0, 1, 2), (0, 2, 3) and so on, so a triangle's edge is inside its polygon where the
@@ -3370,7 +3374,10 @@ ML_INLINE MappedSlots evalLayers(const DeviceMaterial& material, const DeviceMes
                     mask = 0.0f;
             }
             if (layer.channel == CHANNEL_NORMAL) slots.normal = layer.uvSlot;
-            if (layer.channel == CHANNEL_BUMP) slots.bump = layer.uvSlot;
+            if (layer.channel == CHANNEL_BUMP) {
+                if (layer.flags & LAYER_SOLID) slots.solidBump = true;
+                else slots.bump = layer.uvSlot;
+            }
             if (layer.channel == CHANNEL_SLOPE) slots.slope = layer.uvSlot;
         } else if (layer.flags & LAYER_RAMP) {
             // A gradient: 257 colours from 0 to 1, looked up by the first component of another channel; by its own
@@ -3492,10 +3499,32 @@ extern "C" __global__ void __anyhit__curve() {
 
 // How the surface runs along texture u and v in one coordinate slot, in world space; false
 // without usable coordinates.
-ML_INLINE bool surfaceAxes(const DeviceMesh& mesh, unsigned slot, unsigned primitive, float3 e1, float3 e2,
-                           float3& alongU, float3& alongV) {
+// A triangle's own coordinates where nothing else gives it any: laid flat in its plane along its first edge, a unit
+// of the scene to a unit of the coordinates, so that a bump's step (0.001) is the same length on a small triangle as on
+// a large one.
+ML_INLINE Corners flatCorners(float3 e1, float3 e2) {
+    const float l1 = length(e1);
+    const float3 x = e1 * (1.0f / fmaxf(l1, 1e-20f));
+    const float3 across = e2 - x * dot(e2, x);
+    const float3 y = across * (1.0f / fmaxf(length(across), 1e-20f));
     Corners corners;
-    if (slot >= UV_SLOTS || !triangleUvs(mesh, slot, primitive, corners)) return false;
+    corners.a = make_float2(0.0f, 0.0f);
+    corners.b = make_float2(l1, 0.0f);
+    corners.c = make_float2(dot(e2, x), dot(e2, y));
+    return corners;
+}
+
+// The step across the triangle, in its barycentric coordinates, that moves these coordinates by (du, dv).
+ML_INLINE float2 stepAcross(const Corners& corners, float du, float dv) {
+    const float2 d1 = make_float2(corners.b.x - corners.a.x, corners.b.y - corners.a.y);
+    const float2 d2 = make_float2(corners.c.x - corners.a.x, corners.c.y - corners.a.y);
+    const float determinant = d1.x * d2.y - d1.y * d2.x;
+    if (fabsf(determinant) <= 1e-20f) return make_float2(0.0f, 0.0f);
+    return make_float2((d2.y * du - d2.x * dv) / determinant, (d1.x * dv - d1.y * du) / determinant);
+}
+
+// The directions coordinates u and v run across the triangle, from its edges (e1, e2) and the coordinates at its corners.
+ML_INLINE bool axesFrom(const Corners& corners, float3 e1, float3 e2, float3& alongU, float3& alongV) {
     const float2 d1 = make_float2(corners.b.x - corners.a.x, corners.b.y - corners.a.y);
     const float2 d2 = make_float2(corners.c.x - corners.a.x, corners.c.y - corners.a.y);
     const float determinant = d1.x * d2.y - d1.y * d2.x;
@@ -3503,6 +3532,13 @@ ML_INLINE bool surfaceAxes(const DeviceMesh& mesh, unsigned slot, unsigned primi
     alongU = (e1 * d2.y - e2 * d1.y) * (1.0f / determinant);
     alongV = (e2 * d1.x - e1 * d2.x) * (1.0f / determinant);
     return true;
+}
+
+ML_INLINE bool surfaceAxes(const DeviceMesh& mesh, unsigned slot, unsigned primitive, float3 e1, float3 e2,
+                           float3& alongU, float3& alongV) {
+    Corners corners;
+    if (slot >= UV_SLOTS || !triangleUvs(mesh, slot, primitive, corners)) return false;
+    return axesFrom(corners, e1, e2, alongU, alongV);
 }
 
 // Material colours are worked out in Rec.709 and shaded in the working space.
@@ -3526,7 +3562,8 @@ ML_INLINE MappedSlots resolveMaterial(Hit* hit, const DeviceMaterial& material, 
     hit->hair = material.hair;
     hit->abbe = material.abbe;
     hit->absorptionDistance = material.absorptionDistance;
-    slots.normal = slots.bump = UV_SLOTS;
+    slots.normal = slots.bump = slots.slope = UV_SLOTS;
+    slots.solidBump = false;
     if (material.layerCount) {
         // The ray's width where it lands, in the mesh's own units (the triangle's area there to its area in the world),
         // and wider where it meets the surface aslant: the texture sizes read are worked out from it (evalLayers).
@@ -3670,10 +3707,22 @@ extern "C" __global__ void __closesthit__radiance() {
     // Normal and bump maps tilt the shading normal in the frame the plugin's ModoTextureMap and
     // ModoNormalMap use: the direction texture u runs across the surface, the normal, and their
     // cross product.
-    const bool bumped = (material.flags & MATERIAL_HAS_BUMP) && slots.bump < UV_SLOTS;
+    // A bump read through the object (a Solid procedural, a projection) has no UV map of its own: the bump's directions
+    // are then the first UV map the mesh has, else the triangle's own (flatCorners).
+    const bool solidBump = (material.flags & MATERIAL_HAS_BUMP) && slots.solidBump && !mesh.curves;
+    const bool bumped = (material.flags & MATERIAL_HAS_BUMP) && (slots.bump < UV_SLOTS || solidBump);
     const bool sloped = (material.flags & MATERIAL_HAS_SLOPE) && slots.slope < UV_SLOTS;
-    const unsigned axes = bumped ? slots.bump : slots.normal < UV_SLOTS ? slots.normal : slots.slope;
-    if ((bumped || sloped || slots.normal < UV_SLOTS) && surfaceAxes(mesh, axes, primitive, e1, e2, alongU, alongV)) {
+    unsigned axes = bumped ? slots.bump : slots.normal < UV_SLOTS ? slots.normal : slots.slope;
+    Corners frame;
+    bool framed = (bumped || sloped || slots.normal < UV_SLOTS) && axes < UV_SLOTS && triangleUvs(mesh, axes, primitive, frame);
+    if (!framed && bumped && slots.bump >= UV_SLOTS) {
+        for (unsigned slot = 0; slot < UV_SLOTS && !framed; ++slot) framed = triangleUvs(mesh, slot, primitive, frame);
+        if (!framed) {
+            frame = flatCorners(e1, e2);
+            framed = true;
+        }
+    }
+    if (framed && axesFrom(frame, e1, e2, alongU, alongV)) {
         const float3 n = hit->ns;
         const float3 tangent = alongU - n * dot(alongU, n);
         const float lengthT = length(tangent);
@@ -3684,15 +3733,24 @@ extern "C" __global__ void __closesthit__radiance() {
             const float nz = fmaxf(0.001f, encoded.z);
             float sx = encoded.x / nz, sy = encoded.y / nz;
             if (bumped) {
+                // A step of the bump's coordinates, taken as a step across the triangle and of the point with it: every
+                // layer reads where the step takes it, an image by its own UV map, a projection by its corners and a
+                // Solid procedural by the point (which read only shifted coordinates, and drew no bump).
                 const float step = 0.001f;
+                const float2 alongStepU = stepAcross(frame, step, 0.0f), alongStepV = stepAcross(frame, 0.0f, step);
+                const float2 zero = make_float2(0.0f, 0.0f);
                 float3 other[CHANNEL_COUNT];
-                evalLayers(material, mesh, primitive, uv, other, make_float2(step, 0.0f), hit->p, hit->footprint, hit);
+                evalLayers(material, mesh, primitive, make_float2(uv.x + alongStepU.x, uv.y + alongStepU.y), other, zero,
+                           hit->p + alongU * step, hit->footprint, hit);
                 const float right = average(other[CHANNEL_BUMP]);
-                evalLayers(material, mesh, primitive, uv, other, make_float2(-step, 0.0f), hit->p, hit->footprint, hit);
+                evalLayers(material, mesh, primitive, make_float2(uv.x - alongStepU.x, uv.y - alongStepU.y), other, zero,
+                           hit->p - alongU * step, hit->footprint, hit);
                 const float left = average(other[CHANNEL_BUMP]);
-                evalLayers(material, mesh, primitive, uv, other, make_float2(0.0f, step), hit->p, hit->footprint, hit);
+                evalLayers(material, mesh, primitive, make_float2(uv.x + alongStepV.x, uv.y + alongStepV.y), other, zero,
+                           hit->p + alongV * step, hit->footprint, hit);
                 const float up = average(other[CHANNEL_BUMP]);
-                evalLayers(material, mesh, primitive, uv, other, make_float2(0.0f, -step), hit->p, hit->footprint, hit);
+                evalLayers(material, mesh, primitive, make_float2(uv.x - alongStepV.x, uv.y - alongStepV.y), other, zero,
+                           hit->p - alongV * step, hit->footprint, hit);
                 const float down = average(other[CHANNEL_BUMP]);
                 const float dx = (right - left) / (2.0f * step * lengthT), dy = (up - down) / (2.0f * step);
                 const float crossT = dot(alongV, t), crossB = dot(alongV, b);

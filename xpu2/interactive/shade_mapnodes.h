@@ -2505,6 +2505,9 @@ X2_CALL U32 runMapProgram(const float* pool, U32 program, const State& st, const
                 State other = st;
                 other.s = st.s + ds[k];
                 other.t = st.t + dt[k];
+                // The point moves with the coordinates, as in ModoTextureMap: a procedural layer reads the point
+                // (Modo's Noise or Checker as a bump drew flat). Written as MoonRay's is, each shift on its own axis.
+                other.P = k < 2 ? (k == 0 ? st.P + st.dPds * e : st.P - st.dPds * e) : (k == 2 ? st.P + st.dPdt * e : st.P - st.dPdt * e);
                 X2_MAP_REGISTERS(shifted, tex, 1);
                 const U32 status = runMapList(pool, program, list, listLength, other, tex, shifted);
                 if (status != tex::Ready) return status;

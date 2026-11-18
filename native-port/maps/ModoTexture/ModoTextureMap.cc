@@ -62,13 +62,17 @@ public:
                 // image where it is laid on once, and as much less as it is tiled, so that an image repeated
                 // thirty times is still read a texel or so apart and its fine grain is not stepped over.
                 const float e=max(1.e-7f,me->get(attrBumpStep));
+                // The point moves with the coordinates, as far along the surface as they move: a procedural layer
+                // (ModoProceduralMap) reads the point, not the coordinates, and read only at shifted coordinates it
+                // gave four equal heights and no bump (Modo's Noise or Checker as a bump drew flat).
                 Intersection shifted=*state.getIntersection();
                 State other(&shifted);
                 Vec2f uv=state.getSt();
-                shifted.setSt(uv+Vec2f(e,0)); float right=evalFloat(me,attrHeight,tls,other);
-                shifted.setSt(uv-Vec2f(e,0)); float left=evalFloat(me,attrHeight,tls,other);
-                shifted.setSt(uv+Vec2f(0,e)); float up=evalFloat(me,attrHeight,tls,other);
-                shifted.setSt(uv-Vec2f(0,e)); float down=evalFloat(me,attrHeight,tls,other);
+                const Vec3f P=state.getP(),dPds=state.getdPds(),dPdt=state.getdPdt();
+                shifted.setSt(uv+Vec2f(e,0)); shifted.setP(P+dPds*e); float right=evalFloat(me,attrHeight,tls,other);
+                shifted.setSt(uv-Vec2f(e,0)); shifted.setP(P-dPds*e); float left=evalFloat(me,attrHeight,tls,other);
+                shifted.setSt(uv+Vec2f(0,e)); shifted.setP(P+dPdt*e); float up=evalFloat(me,attrHeight,tls,other);
+                shifted.setSt(uv-Vec2f(0,e)); shifted.setP(P-dPdt*e); float down=evalFloat(me,attrHeight,tls,other);
                 const Vec3f N=state.getN();Vec3f T=state.getdPds()-N*dot(N,state.getdPds());
                 const float lengthT=length(T);
                 if(lengthT>1.e-9f) {
