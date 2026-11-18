@@ -4,6 +4,8 @@
 
 ## New in 0.5.5.1 (coming)
 
+Install it, and **Compile XPU2 Shaders once more**.
+
 - **Convert LXO to RDL** (MoonRay menu, and the preview's Options), in place of Export as MoonRay Scene: the scene open now (Add Open Scene), `.lxo` files or folders of them, written as MoonRay scenes in the background by Modo's command-line engine, a few at a time, while Modo goes on working. RDLB and RDLA + RDLB are written several times quicker, their geometry straight to binary (a heavy car: 8 s as RDLA + RDLB). Outside Modo, drop scenes or folders on the kit's `bin\lxo2rdl.exe`.
 
   ![Convert LXO to RDL: two scenes converted to RDLB, two at once](images/convert-lxo-to-rdl.png)
@@ -24,6 +26,7 @@
 - **MoonLightIPR: a material covers the bumps below it**, as Modo and MoonRay do: the bump and normal maps of the materials under it no longer show through.
 - **Orthographic cameras frame as Modo's**: as wide as Modo shows them at their Focus Distance (they went by the Target Distance, and came out zoomed), and MoonLightIPR follows their film offset.
 - **Shift-drag a colour swatch** in the MoonShine graph editor for brighter or darker, as in Modo: dragged up to white and back, it keeps its colour.
+- **Procedural bumps show**: Modo's Noise, Checker and the other procedural textures set to Bump draw their bump in MoonRay, XPU2 and MoonLightIPR, as in Modo (they drew flat, on any mesh).
 - **Previews of any size** show as they render, 4K and 8K among them (a 4K preview stayed black until done, or said "Cannot display buffer"). What a picture takes in memory is said in the MoonRay Terminal, and among the notices when it is large.
 - **XPU2 renders scenes with many large textures to the end**: scenes with dozens of 4K textures no longer stall after XPU2's first passes and go over to MoonRay XPU, and they are ready to render sooner.
 - **Rhizome shows what each machine renders on**: CPU and GPU, the GPU alone, or the CPU alone and why, in the Rhizome window's Renders on column. A machine that falls back to its processor gets a share it can do from its first frame.
