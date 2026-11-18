@@ -2,7 +2,8 @@
 car's reading held Modo for most of a minute, to give the same lists as last time when nothing had changed.
 
 A reading is kept under a hash of what it was made from: the scene file's content and path, the frame, whether
-Modo's evaluated geometry was read, Modo's version and the kit's code that makes a reading (reading_code). It is taken again only while the open
+Modo's evaluated geometry was read, Modo's version, the kit's code that makes a reading (reading_code) and the geometry
+adapter that makes it with that code (adapter_mark). It is taken again only while the open
 scene has no unsaved changes (Modo's scene.changed), and only where the files the scene names (its images among them)
 stand as they did when it was read (assets.signature); otherwise the scene is read from Modo as before."""
 import hashlib
@@ -44,9 +45,29 @@ def key(evaluated):
         # Read for MoonLightIPR, undisplaced (host.by_engine), it is kept apart from the displaced reading.
         from .host import modo_displaces
         return ('scene', FORM, os.path.normcase(os.path.abspath(path)), _file_digest(path), moment, bool(evaluated), version,
-                reading_code(), modo_displaces())
+                reading_code(), adapter_mark(), modo_displaces())
     except Exception:
         return None
+
+
+_ADAPTER = []
+
+
+def adapter_mark():
+    """The geometry adapter the kit reads with (bin/MoonRayGeometry.lx, where evaluated._load finds it), by its size
+    and time. It makes a reading as much as the kit's code does (the Shader Tree layers each surface takes, the meshes
+    handed over), so a reading kept by another adapter is not taken: a reading kept by the adapter before 0.5.5.1 was
+    taken by 0.5.5.1's, and showed a Group mask's material on every surface where 0.5.5.1 puts it on the group's
+    members. The evaluated geometry kept mesh by mesh (geometry_cache) goes by it too. '-' where there is none."""
+    if not _ADAPTER:
+        here = os.path.dirname(os.path.realpath(__file__))
+        path = os.path.join(os.path.dirname(os.path.dirname(here)), 'bin', 'MoonRayGeometry.lx')
+        try:
+            stat = os.stat(path)
+            _ADAPTER.append('%d:%d' % (stat.st_size, stat.st_mtime_ns))
+        except OSError:
+            _ADAPTER.append('-')
+    return _ADAPTER[0]
 
 
 _READING_CODE = []
