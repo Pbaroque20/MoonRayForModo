@@ -116,6 +116,19 @@ void scaleTo(float* v, float length) {
     if (!(current > 0.0f)) throw std::runtime_error("MoonLightIPR was given a zero-length camera or light direction");
     for (int i = 0; i < 3; ++i) v[i] *= length / current;
 }
+// A light's picture transform as the device reads it; a transform that is not finite reads the picture once, as before.
+DevicePicture devicePicture(const PictureTransform& in) {
+    DevicePicture out{};
+    std::copy(in.m, in.m + 6, out.m);
+    out.repsU = in.repsU;
+    out.repsV = in.repsV;
+    std::copy(in.border, in.border + 3, out.border);
+    out.flags = in.flags & (PICTURE_TRANSFORMED | PICTURE_MIRROR_U | PICTURE_MIRROR_V);
+    bool finite = std::isfinite(out.repsU) && std::isfinite(out.repsV);
+    for (float v : out.m) finite = finite && std::isfinite(v);
+    if (!finite) out.flags &= ~PICTURE_TRANSFORMED;
+    return out;
+}
 
 struct Texture {
     cudaArray_t array = nullptr;
@@ -1760,8 +1773,13 @@ void Renderer::setDistantLights(const DistantLight* lights, size_t count) {
             scaleTo(table[i].v, 1.0f);
             // MoonRay's DistantLight: half the square root of a half, over the sine of half the disc's radius.
             table[i].uvScale = 0.5f * std::sqrt(0.5f) / sinHalf;
-            distributionStart[i] = distributions.size();
-            appendDistribution(*impl->textures[lights[i].texture], true, distributions);
+            table[i].picture = devicePicture(lights[i].picture);
+            // Directions drawn where the picture is bright, unless it is repeated, turned or moved: the brightness the
+            // distribution holds is then not where the picture shows, and directions are drawn evenly instead.
+            if (!(table[i].picture.flags & PICTURE_TRANSFORMED)) {
+                distributionStart[i] = distributions.size();
+                appendDistribution(*impl->textures[lights[i].texture], true, distributions);
+            }
         }
     }
     impl->distantDistributions.upload(distributions);
@@ -1799,9 +1817,14 @@ void Renderer::setLights(const Light* lights, size_t count) {
         out = DeviceLight{};
         out.type = light.kind;
         std::copy(light.radiance, light.radiance + 3, out.radiance);
-        if (light.texture >= 0 && light.kind != Light::Portal && light.kind != Light::Mesh) out.texture = object(light.texture);
-        // The flat lights and the cylinder are sampled where their picture is bright; a sphere's and a spot's evenly.
-        if (out.texture && (light.kind == Light::Rect || light.kind == Light::Disk || light.kind == Light::Cylinder)) {
+        if (light.texture >= 0 && light.kind != Light::Portal && light.kind != Light::Mesh) {
+            out.texture = object(light.texture);
+            out.picture = devicePicture(light.picture);
+        }
+        // The flat lights and the cylinder are sampled where their picture is bright; a sphere's and a spot's evenly, and
+        // any whose picture is repeated, turned or moved (the distribution is of the picture laid once across the light).
+        if (out.texture && !(out.picture.flags & PICTURE_TRANSFORMED)
+            && (light.kind == Light::Rect || light.kind == Light::Disk || light.kind == Light::Cylinder)) {
             distributionStart[i] = distributions.size();
             appendDistribution(*impl->textures[light.texture], light.kind == Light::Disk, distributions);
         }

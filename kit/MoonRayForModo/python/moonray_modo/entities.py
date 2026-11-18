@@ -507,6 +507,26 @@ def value(entity, key):
     return catalog()[entity['class']]['attributes'].get(key, {}).get('default')
 
 
+def texture_transform(entity):
+    """A MoonRay light's texture settings beside its picture, MoonRay's defaults where left alone: rotation (degrees),
+    translation and coverage (u, v), repeats and mirroring in u and v, and the border colour (white)."""
+    def pair(key, default):
+        held = value(entity, key)
+        try:
+            return [float(held[0]), float(held[1])]
+        except (TypeError, ValueError, IndexError):
+            return list(default)
+    border = value(entity, 'texture_border_color')
+    try:
+        border = [float(c) for c in border][:3]
+    except (TypeError, ValueError):
+        border = [1.0, 1.0, 1.0]
+    return {'rotation': float(value(entity, 'texture_rotation') or 0.0), 'translation': pair('texture_translation', (0.0, 0.0)),
+            'coverage': pair('texture_coverage', (1.0, 1.0)), 'reps_u': float(value(entity, 'texture_reps_u') or 1.0),
+            'reps_v': float(value(entity, 'texture_reps_v') or 1.0), 'mirror_u': bool(value(entity, 'texture_mirror_u')),
+            'mirror_v': bool(value(entity, 'texture_mirror_v')), 'border': border if len(border) == 3 else [1.0, 1.0, 1.0]}
+
+
 def checked(scene):
     """The scene's entities, validated again: a snapshot may come from a file or another version. A light's own Presence
     Shadows is not written while Automatic Presence Shadows decides them (presence_shadows)."""
@@ -1879,6 +1899,9 @@ def preview(scene, warnings):
                 light['camera_visible'] = int(value(entity, 'visible_in_camera')) == 1
             if name != 'PortalLight' and value(entity, 'texture'):
                 light['texture'] = value(entity, 'texture')
+                # How MoonRay lays that picture across the light: its repeats, mirroring, turn, offset, coverage and
+                # the colour past its edge (Light.cc's texture_* attributes, ImageDistribution).
+                light['texture_transform'] = texture_transform(entity)
             if filters and name == 'DistantLight':
                 warnings.append('MoonLightIPR applies only intensity filters to distant light %s.' % label)
             light.update({target: float(value(entity, key)) for key, target in PREVIEW_LIGHTS[name].items()})

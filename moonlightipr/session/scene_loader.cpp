@@ -321,13 +321,13 @@ SceneSettings SceneLoader::apply(const std::string& path) {
     // "MLS" and a letter for the form of the scene, which changes whenever what is written in it does: "C" since
     // the scene's sample clamp is written in it, "D" since a toon material's ramps are, "E" since a hair toon's highlights are,
     // "F" since the lights' poses at the shutter's close are, "G" since the volume scattering factors are, "H" since the
-    // camera's film offset is, "I" since a material's fuzz is, "J" since the light sets are, "K" since a mesh may be displaced, "L" since by a program of displacement nodes, "M" since a material's clearcoat bump strength is, "N" since whether the camera sees each light is, "O" since the subsurface scatterings a path may have are, "P" since each instance's own number is, "Q" since the roughness clamp is, "R" since what reflections and refractions see of the environment is, "S" since the kinds of rays each light is hidden from are, "T" since a displaced mesh may be split by its distance from the camera, "U" since where each moving instance stands at the frame is. A plugin and a session of different versions say so plainly, in
+    // camera's film offset is, "I" since a material's fuzz is, "J" since the light sets are, "K" since a mesh may be displaced, "L" since by a program of displacement nodes, "M" since a material's clearcoat bump strength is, "N" since whether the camera sees each light is, "O" since the subsurface scatterings a path may have are, "P" since each instance's own number is, "Q" since the roughness clamp is, "R" since what reflections and refractions see of the environment is, "S" since the kinds of rays each light is hidden from are, "T" since a displaced mesh may be split by its distance from the camera, "U" since where each moving instance stands at the frame is, "W" since how each light's picture is repeated, turned and moved across it is. A plugin and a session of different versions say so plainly, in
     // place of reading each other's scenes wrongly.
     const uint32_t mark = in.value<uint32_t>();
     if ((mark & 0x00ffffff) != 0x00534c4d) throw std::runtime_error("Not a MoonLightIPR scene: " + path);
-    if (mark != 0x55534c4d)
+    if (mark != 0x57534c4d)
         throw std::runtime_error("This MoonLightIPR and the plugin are of different versions (the scene is form '" + std::string(1, char(mark >> 24))
-                                 + "', this MoonLightIPR reads 'U'). Install the kit and its runtime from the same release.");
+                                 + "', this MoonLightIPR reads 'W'). Install the kit and its runtime from the same release.");
     ++generation;
     SceneSettings settings;
     settings.width = in.value<uint32_t>();
@@ -685,6 +685,15 @@ SceneSettings SceneLoader::apply(const std::string& path) {
         if (texture >= int32_t(textureIndices.size())) throw std::runtime_error("MoonLightIPR scene light refers to a missing texture");
         return texture < 0 ? -1 : int32_t(textureIndices[texture]);
     };
+    // How a light's picture is laid across it (form W): MoonRay's texture transform, its repeats, its border colour and
+    // its flags (PictureTransform).
+    auto readPicture = [&in](PictureTransform& picture) {
+        in.floats(picture.m, 6);
+        picture.repsU = in.value<float>();
+        picture.repsV = in.value<float>();
+        in.floats(picture.border, 3);
+        picture.flags = in.value<uint32_t>();
+    };
     std::vector<DistantLight> lights(in.value<uint32_t>());
     for (DistantLight& light : lights) {
         in.floats(light.direction, 3);
@@ -699,6 +708,7 @@ SceneSettings SceneLoader::apply(const std::string& path) {
         light.texture = image(in.value<int32_t>());
         in.floats(light.seenRadiance, 3);
         light.seenExtentDegrees = in.value<float>();
+        readPicture(light.picture);
     }
 
     std::vector<Light> localLights(in.value<uint32_t>());
@@ -726,6 +736,7 @@ SceneSettings SceneLoader::apply(const std::string& path) {
         light.visibleInCamera = (seen & 1u) != 0;
         light.alone = (seen & 2u) != 0;
         light.hiddenFrom = (seen >> 2) & 7u;
+        readPicture(light.picture);
         lightFilters[l].resize(in.value<uint32_t>());
         for (LightFilter& filter : lightFilters[l]) {
             const uint32_t filterKind = in.value<uint32_t>();

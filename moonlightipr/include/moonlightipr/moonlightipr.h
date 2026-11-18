@@ -282,6 +282,17 @@ struct Environment {
     float throughRotation[9] = {1, 0, 0, 0, 1, 0, 0, 0, 1};
 };
 
+// How a light's picture is laid across it, as MoonRay lays it (ImageDistribution's texture transform): the light's own
+// (u, v) taken into the picture's by the first two columns of MoonRay's row-vector matrix (u' = u m[0] + v m[2] + m[4],
+// v' = u m[1] + v m[3] + m[5]), the border colour shown past the repeats, and flags: 1 transformed, 2 and 4 mirrored in
+// u and in v (the device's PICTURE_*). Untransformed, the picture is read once across the light, as before.
+struct PictureTransform {
+    float m[6] = {1, 0, 0, 1, 0, 0};
+    float repsU = 1.0f, repsV = 1.0f;
+    float border[3] = {1, 1, 1};
+    uint32_t flags = 0;
+};
+
 // A uniform disc at infinity, as MoonRay's DistantLight.
 struct DistantLight {
     float direction[3] = {0, 1, 0};     // from the scene towards the light
@@ -296,6 +307,7 @@ struct DistantLight {
     float seenExtentDegrees = 0.5f;
     // A picture across the disc, from addTexture, laid out along the light's own x and y axes as MoonRay lays it.
     int32_t texture = -1;
+    PictureTransform picture;           // how that picture is repeated, turned and moved across the disc
     float axisX[3] = {1, 0, 0};
     float axisY[3] = {0, 1, 0};
 };
@@ -342,6 +354,7 @@ struct Light {
     const float* triangles = nullptr;   // mesh: three world-space corners, 9 floats per triangle
     size_t triangleCount = 0;
     int32_t texture = -1;               // a picture across the light, from addTexture; not for a portal or a mesh
+    PictureTransform picture;           // how that picture is repeated, turned and moved across the light
     bool visibleInCamera = false;       // whether the camera sees it shining where it stands; never a portal
     // The kinds of rays it is hidden from: 1 diffuse, 2 reflections, 4 refractions (MoonRay's visible_* lobes off).
     uint32_t hiddenFrom = 0;
