@@ -338,7 +338,9 @@ def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, mat
                     from .host import world_matrix
                     node['locator_matrix'] = world_matrix(locator)
                     node['axis'] = channel(locator,'projAxis','z')
-                    warnings.append('Locator projection is baked at polygon corners; curved projections require sufficient mesh detail: '+layer.name)
+                    # A Solid pattern is drawn at each point (solid_map), not from the corners' coordinates.
+                    if not solid_map:
+                        warnings.append('Locator projection is baked at polygon corners; curved projections require sufficient mesh detail: '+layer.name)
                 from .group_scale import texture as scale_texture
                 scale_texture(layer,node,channel)
                 from .coordinates import key
@@ -407,7 +409,8 @@ def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, mat
                             warnings.append('Noise %s: Flow Noise, Angle and Smooth Tops are not drawn.'%layer.name)
                         node.update(octaves=int(channel(layer,'freqs',4)),lacunarity=float(channel(layer,'freqRatio',2)),
                                     persistence=float(channel(layer,'ampRatio',.5)))
-                        warnings.append('Noise uses a MoonRay UV fractal approximation, not the exact Modo pattern: '+layer.name)
+                        if not solid_map:
+                            warnings.append('Noise uses a MoonRay UV fractal approximation, not the exact Modo pattern: '+layer.name)
             material = materials[tag]
             uv = node['uv_map']
             if uv and (effect in ('normal','normalCoat','bump','coatBump') or not material.get('uv_map')):
