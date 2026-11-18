@@ -1548,6 +1548,57 @@ private:
     std::atomic<size_t> size_{0};
 };
 
+// Where the GPU has handed samples on and they still wait, each 8-pixel tile's count, for a host's outlines of the work
+// (the kit draws them over the picture): the samples it deferred to the CPU lane (stand-ins) not yet rendered there,
+// and its provisional samples (partial shading) not yet rendered again in full, by the CPU lane or by the GPU once
+// their texture tiles have landed. Counted up by the feeder as it takes them from a launch, before they are queued,
+// and down as each is rendered; read from any thread.
+struct HandoffTiles {
+    enum Kind : U32 { Deferred = 0, Provisional = 1 };
+    // A frame's start, before any sample is handed on: every count back to none.
+    void reset(U32 width, U32 height) {
+        const U32 tilesX = (width + TileSize - 1) / TileSize, tiles = tilesX * ((height + TileSize - 1) / TileSize);
+        if (tiles != tiles_)
+            for (auto& c : counts_) c.reset(new std::atomic<U32>[tiles]);
+        tiles_ = tiles;
+        width_ = width;
+        tilesX_ = tilesX;
+        for (auto& c : counts_)
+            for (U32 t = 0; t < tiles; ++t) c[t].store(0, std::memory_order_relaxed);
+        for (auto& w : waiting_) w.store(0, std::memory_order_release);
+    }
+    U32 tileOf(U32 pixel) const { return (pixel / width_ / TileSize) * tilesX_ + (pixel % width_) / TileSize; }
+    // One sample of a pixel handed on (+1), or rendered (-1).
+    void handed(Kind kind, U32 pixel) { change(kind, pixel, 1); }
+    void rendered(Kind kind, U32 pixel) { change(kind, pixel, -1); }
+    // The tiles where samples of a kind wait, in ascending order.
+    void tiles(Kind kind, std::vector<U32>& out) const {
+        out.clear();
+        if (!waiting_[kind].load(std::memory_order_acquire)) return;
+        for (U32 t = 0; t < tiles_; ++t)
+            if (counts_[kind][t].load(std::memory_order_relaxed)) out.push_back(t);
+    }
+    U64 waiting(Kind kind) const { return waiting_[kind].load(std::memory_order_acquire); }
+
+private:
+    void change(Kind kind, U32 pixel, int by) {
+        const U32 t = tileOf(pixel);
+        if (t >= tiles_) return;
+        if (by > 0) {
+            counts_[kind][t].fetch_add(1, std::memory_order_relaxed);
+            waiting_[kind].fetch_add(1, std::memory_order_release);
+            return;
+        }
+        // Never below none (a sample rendered that was never counted: none should be). The total is the tiles' sum.
+        U32 v = counts_[kind][t].load(std::memory_order_relaxed);
+        while (v && !counts_[kind][t].compare_exchange_weak(v, v - 1, std::memory_order_relaxed)) {}
+        if (v) waiting_[kind].fetch_sub(1, std::memory_order_release);
+    }
+    std::unique_ptr<std::atomic<U32>[]> counts_[2];
+    std::atomic<U64> waiting_[2] = {};
+    U32 tiles_ = 0, width_ = 1, tilesX_ = 1;
+};
+
 struct CpuCounters {
     std::atomic<U64> samples{0}, chunks{0}, retried{0}, steals{0}, moves{0}, idleSpins{0}, refined{0};
     std::atomic<U32> failures{0};
@@ -1702,8 +1753,9 @@ public:
     CpuLane(const CpuLane&) = delete;
 
     // Starts a frame. Workers from the last frame are parked first.
+    // handoff: where the GPU's deferred and provisional samples wait, counted down as the workers render them (null: not counted).
     void begin(const mixed::Config& config, Grid& grid, HostFilm& film, RetryQueue& retries, PassTables* tables = nullptr,
-               RefineQueue* refines = nullptr) {
+               RefineQueue* refines = nullptr, HandoffTiles* handoff = nullptr) {
         while (parked_.load(std::memory_order_acquire) != workers_.size()) std::this_thread::yield();
         counters.samples = counters.chunks = counters.retried = counters.steals = counters.moves = counters.idleSpins = 0;
         counters.refined = 0;
@@ -1722,6 +1774,7 @@ public:
             film_ = &film;
             retries_ = &retries;
             refines_ = refines;
+            handoff_ = handoff;
             tables_ = tables;
             idle_.store(unsigned(workers_.size()), std::memory_order_release);
             closing_.store(false, std::memory_order_release);
@@ -1819,6 +1872,7 @@ private:
                             r.aovBackup = retryBackup.data();
                         }
                         const SampleStatus status = integrateCpu(config_, retry[i].pixel, retry[i].index, backend, r);
+                        if (handoff_) handoff_->rendered(HandoffTiles::Deferred, retry[i].pixel);
                         if (status == SampleStatus::Skip) continue;
                         if (status != SampleStatus::Done) {
                             counters.failed(status, retry[i].pixel);
@@ -1858,6 +1912,7 @@ private:
                         }
                         const SampleStatus status = integrateCpu(config_, refine[i].pixel, refine[i].index, backend, r);
                         film.settle(refine[i].pixel, refine[i].rgba);
+                        if (handoff_) handoff_->rendered(HandoffTiles::Provisional, refine[i].pixel);
                         if (status == SampleStatus::Skip) continue;
                         if (status != SampleStatus::Done) {
                             counters.failed(status, refine[i].pixel);
@@ -1920,6 +1975,7 @@ private:
     HostFilm* film_ = nullptr;
     RetryQueue* retries_ = nullptr;
     RefineQueue* refines_ = nullptr;
+    HandoffTiles* handoff_ = nullptr;
     PassTables* tables_ = nullptr;
     std::chrono::steady_clock::time_point started_ = std::chrono::steady_clock::now();
     std::atomic<bool> closing_{false}, cancelled_{false};

@@ -305,6 +305,17 @@ public:
         std::sort(gpuCells.begin(), gpuCells.end());
         gpuCells.erase(std::unique(gpuCells.begin(), gpuCells.end()), gpuCells.end());
     }
+    // Where the GPU has handed samples on and they still wait (HandoffTiles), 8-pixel tiles in ascending order, from any
+    // thread: those it deferred to the CPU lane, and its provisional samples not yet rendered again in full. Empty
+    // between frames.
+    void handoff(std::vector<U32>& deferred, std::vector<U32>& provisional) const {
+        std::lock_guard<std::mutex> lock(activityMutex_);
+        deferred.clear();
+        provisional.clear();
+        if (!activeLane_) return;
+        handoff_.tiles(HandoffTiles::Deferred, deferred);
+        handoff_.tiles(HandoffTiles::Provisional, provisional);
+    }
     U32 cellSize() const { return cellSize_; }
     // The GPU lane's samples a second over the CPU lane's, measured by the last frame on both (0: none yet); a new
     // renderer of the session's next scene starts from its predecessor's.
@@ -485,7 +496,11 @@ public:
         CpuLane& cpuLane = *cpu_;
         const auto start = Clock::now();
         auto at = [&] { return std::chrono::duration<double>(Clock::now() - start).count(); };
-        cpuLane.begin(config, grid, film, retries, adaptive ? &state.tables : nullptr, partial ? &refines : nullptr);
+        {
+            std::lock_guard<std::mutex> lock(activityMutex_);
+            handoff_.reset(plan_->width, plan_->height);
+        }
+        cpuLane.begin(config, grid, film, retries, adaptive ? &state.tables : nullptr, partial ? &refines : nullptr, &handoff_);
         {
             std::lock_guard<std::mutex> lock(activityMutex_);
             activeLane_ = &cpuLane;
@@ -686,6 +701,9 @@ public:
         // them (the queue no lower over many launches that took them whether or not their tiles had landed).
         std::vector<Refine> refineBatch(partial ? GpuLane::RefineInCapacity : 0);
         std::vector<Refine> made;
+        // The pixels of the provisional samples the GPU's queued launches render again, oldest first: each launch's are
+        // counted off where they wait (HandoffTiles) once it completes, as its Completion's refinesRun says.
+        std::deque<U32> refinesOut;
         size_t refineLow = ~size_t(0);
         U32 refineStalls = 0;
         std::string failure;
@@ -735,6 +753,7 @@ public:
                                 moved[k] = Retry{deferred[k].pixel, deferred[k].index, deferred[k].pass};
                                 const U32 x = deferred[k].pixel % plan_->width, y = deferred[k].pixel / plan_->width;
                                 grid.deferredToCpu((y / TileSize) * tilesX + x / TileSize);
+                                handoff_.handed(HandoffTiles::Deferred, deferred[k].pixel);
                             }
                             retries.push(moved.data(), moved.size());
                             result.deferred += deferred.size();
@@ -744,9 +763,16 @@ public:
                     if (partial) {
                         made.clear();
                         gpu_->takeRefines(made);
+                        for (const Refine& m : made) handoff_.handed(HandoffTiles::Provisional, m.pixel);
                         refines.push(made.data(), made.size());
                         result.provisional += made.size();
                         result.refinedGpu += c.refinesRun;
+                        // Those it rendered again (counted after the ones it made again, so a tile still provisional
+                        // never reads as done in between).
+                        for (U64 k = 0; k < c.refinesRun && !refinesOut.empty(); ++k) {
+                            handoff_.rendered(HandoffTiles::Provisional, refinesOut.front());
+                            refinesOut.pop_front();
+                        }
                     }
                     queuedSamples -= std::min(queuedSamples, c.samples);
                     // Every launch's rate, kept across frames for realtime's launch sizes (launchSize).
@@ -837,6 +863,7 @@ public:
                         }
                     const double launchStart = at();
                     if (!gpu_->launch(claim.data(), got, refineBatch.data(), refineCount, launchSamples)) break;
+                    for (U32 k = 0; k < refineCount; ++k) refinesOut.push_back(refineBatch[k].pixel);
                     flights(claim.data(), got);
                     if (result.timeline.firstLaunch < 0) result.timeline.firstLaunch = at();
                     result.launchTrace.push_back({at(), -1, 0, accountStart - claimStart, launchStart - accountStart,
@@ -867,6 +894,7 @@ public:
                             moved[k] = Retry{deferred[k].pixel, deferred[k].index, deferred[k].pass};
                             const U32 x = deferred[k].pixel % plan_->width, y = deferred[k].pixel / plan_->width;
                             grid.deferredToCpu((y / TileSize) * tilesX + x / TileSize);
+                            handoff_.handed(HandoffTiles::Deferred, deferred[k].pixel);
                         }
                         retries.push(moved.data(), moved.size());
                         result.deferred += deferred.size();
@@ -1759,6 +1787,7 @@ private:
     std::deque<std::vector<U32>> gpuFlights_;
     std::vector<U32> live_;  // liveTiles()
     U32 cellSize_ = 64;
+    HandoffTiles handoff_;  // handoff(): where the GPU's deferred and provisional samples wait
 };
 
 }  // namespace xpu2::interactive::async

@@ -513,7 +513,9 @@ What the session does besides rendering:
   is gone (a driver update, the cache's size limit), the session hands the scene to MoonRay after a minute rather than
   wait for the compile.
 - **Outlines** for the kit: `@@MODO_TILES` (cells being rendered), `@@MODO_WORKERS` (each CPU worker's tile) and
-  `@@MODO_GPU_WORKERS` (cells the GPU's queued launches hold, drawn in their own colour).
+  `@@MODO_GPU_WORKERS` (cells the GPU's queued launches hold, drawn in their own colour); and the tiles where the GPU
+  handed samples on, filled half see-through by Show Buckets until they are rendered in full: `@@MODO_DEFERRED_TILES`
+  (deferred to the CPU lane, orange) and `@@MODO_PROVISIONAL_TILES` (provisional samples, textures still loading, blue).
 - **Checkpoints and resume** (class `Checkpoints`, `Watch::resumable`, `async::ResumeState`): the kit's Safe Denoising
   under XPU2 asks for checkpoints. A frame by sampling generations saves between two generations: once a save is due,
   no new generation goes out (`Adaptive::hold`); when every one out has completed and been evaluated and nothing is in

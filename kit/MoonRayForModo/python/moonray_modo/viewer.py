@@ -13,6 +13,9 @@ class _PreviewBody:
         self.buckets=None
         self.workers=None
         self.gpu_workers=None  # XPU2: the cells the GPU's launches hold
+        # XPU2: where the GPU has handed samples on and they still wait, by kind ('deferred' to the CPU, 'provisional'):
+        # (width, height, rectangles) as last told, filled over the picture until they are rendered (HANDOFF_COLOURS).
+        self.handoff={}
         self.show_workers=True
         self.show_buckets=True
         self.bucket_timeout=QtCore.QTimer(self)
@@ -298,13 +301,27 @@ class _PreviewBody:
     @QtCore.Slot(object)
     def set_buckets(self,packet):
         self.buckets=packet
-        if packet is None:self.workers=self.gpu_workers=None
+        if packet is None:
+            self.workers=self.gpu_workers=None
+            if self.handoff:self.handoff={};self.update()
         if packet:self.bucket_timeout.start(1500)
         else:self.bucket_timeout.stop()
         # Only what is new is taken in: while the workers' squares are shown, that is not the tiles.
         if self._outlines() is self.buckets:self._note_outlines()
 
+    # XPU2's tiles where the GPU has handed samples on, filled half seen through until the samples are rendered:
+    # orange where it deferred them to the CPU, blue where its provisional samples wait to be rendered again in full.
+    HANDOFF_COLOURS={'deferred':(255,140,0,128),'provisional':(40,120,255,128)}
+
     def set_workers(self,packet):
+        if packet and packet[0] in self.HANDOFF_COLOURS:
+            # Exactly what was last told: a tile not in it any more has been rendered, and goes.
+            kind,(_,width,height,rectangles)=packet[0],packet[1:]
+            had=kind in self.handoff
+            if rectangles:self.handoff[kind]=(width,height,tuple(rectangles))
+            else:self.handoff.pop(kind,None)
+            if (had or rectangles) and self.show_buckets:self.update()
+            return
         if packet and packet[0]=='gpu':
             # XPU2: the GPU's cells, beside the CPU's workers.
             self.gpu_workers=packet[1:]
@@ -312,6 +329,24 @@ class _PreviewBody:
             return
         self.workers=packet
         if self._outlines() is self.workers:self._note_outlines()
+
+    def handoff_rects(self):
+        """The handed-on tiles to fill, as (colour, widget rectangles), where buckets are shown and the picture is the
+        size they were told of."""
+        if not self.show_buckets or not self.handoff:return []
+        out=[]
+        for kind in ('provisional','deferred'):
+            told=self.handoff.get(kind)
+            if not told:continue
+            width,height,rectangles=told
+            if not (self.image.isNull() or (self.image.width(),self.image.height())==(width,height)):continue
+            scale=min(self.width()/width,self.height()/height)*self.zoom
+            left=(self.width()-width*scale)/2+self.pan.x()
+            top=(self.height()-height*scale)/2+self.pan.y()
+            colour=QtGui.QColor(*self.HANDOFF_COLOURS[kind])
+            out.extend((colour,QtCore.QRectF(left+x0*scale,top+(height-y1)*scale,(x1-x0)*scale,(y1-y0)*scale))
+                       for x0,y0,x1,y1 in rectangles)
+        return out
 
     def set_worker_overlay(self,enabled):
         self.show_workers=enabled
@@ -400,6 +435,8 @@ class _PreviewBody:
                         painter.fillRect(plate, QtGui.QColor(0, 0, 0, 190))
                         painter.setPen(QtGui.QColor(255, 255, 255))
                         painter.drawText(plate, QtCore.Qt.AlignCenter, text)
+            # XPU2's tiles where the GPU has handed samples on, half seen through, under the outlines.
+            for colour,box in self.handoff_rects():painter.fillRect(box,colour)
             # Each outline with how strongly it is drawn.
             drawn=[]
             if self.show_buckets and self._fading:

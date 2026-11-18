@@ -887,7 +887,7 @@ class Renderer(QtCore.QObject):
         self._consume_log(text)
 
     def _consume_log(self,text):
-        from .buckets import parse
+        from .buckets import parse,route
         self.bucket_partial += text
         while '\n' in self.bucket_partial:
             line,self.bucket_partial=self.bucket_partial.split('\n',1)
@@ -895,8 +895,9 @@ class Renderer(QtCore.QObject):
             if packet and not self.closed and not self.canceled and self.phase=='render':
                 expected=self.session_serial if self.using_session else 0
                 if packet[0]==expected:
-                    if line.startswith('@@MODO_GPU_WORKERS '):self.workers.emit(('gpu',)+tuple(packet))
-                    else:(self.workers if line.startswith('@@MODO_WORKERS ') else self.buckets).emit(packet)
+                    # The tiles, the workers' squares, XPU2's GPU cells and its handed-on tiles (buckets.route).
+                    signal,value=route(line,packet)
+                    getattr(self,signal).emit(value)
         self.bucket_partial=self.bucket_partial[-65536:]
 
         self.log = (self.log + text)[-65536:]
