@@ -18,7 +18,9 @@
 // place. The picture goes out through shared memory with its rows in MoonRay's film order, and the outlines of
 // the work as @@MODO_TILES, the work grid's cells being rendered (its cellular rules move the CPU's workers from cell
 // to cell), @@MODO_WORKERS: each CPU worker's 8-pixel tile, and @@MODO_GPU_WORKERS: the cells the GPU's queued
-// launches hold (the private kit draws them in a colour of their own).
+// launches hold (the private kit draws them in a colour of their own). Where the GPU has handed samples on and they
+// still wait: @@MODO_DEFERRED_TILES, those it deferred to the CPU lane, and @@MODO_PROVISIONAL_TILES, its provisional
+// samples not yet rendered again in full (the kit fills them orange and blue until they are).
 // Winsock before windows.h (Rhizome, rhizome_session.inc).
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -26,6 +28,7 @@
 #undef far
 #include <OpenImageDenoise/oidn.h>  // types only: the library is loaded at run time (CpuDenoiser)
 #include "async_render.h"
+#include "outline_blocks.h"
 #include "../../native-port/modo_protocol_line.h"
 #include "../../native-port/modo_scene_memory.h"
 #include "../../native-port/modo_shared_image.h"
@@ -1873,7 +1876,7 @@ public:
 
 private:
     void loop() {
-        std::vector<U32> tiles, cells, live;
+        std::vector<U32> tiles, cells, live, deferred, provisional;
         while (!stop_.load()) {
             {
                 std::lock_guard<std::mutex> lock(mutex_);
@@ -1881,11 +1884,49 @@ private:
                     renderer_->activity(tiles, cells);
                     renderer_->liveTiles(live);
                     tell(tiles, cells, renderer_->cellSize(), live);
+                    renderer_->handoff(deferred, provisional);
+                    handoff(deferred, provisional);
+                } else {
+                    // Between frames nothing waits: what was shown is taken away.
+                    handoffEnded();
                 }
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(33));
         }
     }
+    // Where the GPU has handed samples on and they still wait (Renderer::handoff, async_cpu.h HandoffTiles), which the kit
+    // fills over the picture: @@MODO_DEFERRED_TILES, the samples it deferred to the CPU lane, and
+    // @@MODO_PROVISIONAL_TILES, its provisional samples not yet rendered again in full. A line of each when what it holds
+    // changes, and again every half second while it holds any (in case the kit missed one); one with none once they
+    // are all rendered or the frame has ended.
+    void handoff(const std::vector<U32>& deferred, const std::vector<U32>& provisional) {
+        const std::vector<U32>* kinds[2] = {&deferred, &provisional};
+        const auto now = Clock::now();
+        for (int k = 0; k < 2; ++k) {
+            std::ostringstream s;
+            s << HandoffNames[k] << " " << id_ << " " << width_ << " " << height_;
+            const std::string head = s.str();
+            for (const auto& r : outline::tileBlocks(*kinds[k], width_, height_))
+                s << " " << r.x0 << "," << r.y0 << "," << r.x1 << "," << r.y1;
+            const std::string text = s.str();
+            const bool any = text.size() > head.size();
+            if (text == handoffSent_[k] && (!any || now - handoffAt_[k] < std::chrono::milliseconds(500))) continue;
+            modoProtocolLine(text);
+            handoffSent_[k] = text;
+            handoffHead_[k] = head;
+            handoffAt_[k] = now;
+        }
+    }
+    void handoffEnded() {
+        for (int k = 0; k < 2; ++k)
+            if (handoffSent_[k].size() > handoffHead_[k].size()) {
+                modoProtocolLine(handoffHead_[k]);
+                handoffSent_[k] = handoffHead_[k];
+            }
+    }
+    static constexpr const char* HandoffNames[2] = {"@@MODO_DEFERRED_TILES", "@@MODO_PROVISIONAL_TILES"};
+    std::string handoffSent_[2], handoffHead_[2];
+    Clock::time_point handoffAt_[2];
     struct Rect {
         U32 x0, y0, x1, y1;
         bool operator<(const Rect& o) const { return std::tie(x0, y0, x1, y1) < std::tie(o.x0, o.y0, o.x1, o.y1); }

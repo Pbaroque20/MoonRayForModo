@@ -444,6 +444,9 @@ class Panel(Tools, QtWidgets.QWidget):
         from . import solo
         solo.LISTENERS.append(self._solo_changed)
         self.show_buckets=checkable(menu,'Show Buckets')
+        self.show_buckets.setToolTip('Outline the tiles being rendered. Under XPU2, orange tiles are samples the GPU handed to the CPU '
+                                     'and blue tiles are provisional samples (textures still loading); each clears once its samples '
+                                     'are rendered in full.')
         self.show_buckets.setChecked(self.preferences.get('show_buckets'))
         self.show_buckets.toggled.connect(self._overlay_changed)
         self.worker_tiles=checkable(menu,'Show Worker Tiles')
