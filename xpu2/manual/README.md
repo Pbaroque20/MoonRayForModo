@@ -325,7 +325,12 @@ differ: presence shadows, shadow linking, volumes, a minimum shadow distance and
   (`Pyramid::loadTile`, through an OpenImageIO ImageCache), and since 2026-11-14 every level larger than 128 pixels
   a side as well (`residentSide`, `XPU2_SESSION_RESIDENT_TEXTURE_SIDE`); only the levels of 128 or less are decoded as
   the scene is prepared, and only those count toward the decoded-texture budgets, so a scene of large textures seen
-  from afar no longer goes to texture overflow mode. `XPU2_SESSION_EAGER_TEXTURES=1` decodes them all at once. Texels are kept small (`tex::Mip::format`, `texture_core.h`):
+  from afar no longer goes to texture overflow mode. `XPU2_SESSION_EAGER_TEXTURES=1` decodes them all at once.
+  Since 2026-11-18 a read decodes the file's own tile that holds the tile asked for (a `.tx` file's 64 x 64, four of
+  ours) and keeps all of ours in it (`Pyramid::region`), each such region read once however many threads ask for its
+  tiles. One at a time, each file tile was decoded again for every one of ours in it through a cache too small to keep
+  it in between: Sponza's 92 float textures at 4096 pixels read 19 GB from 8.8 GB of files, at a few thousand tiles a
+  second. Texels are kept small (`tex::Mip::format`, `texture_core.h`):
   8-bit files as bytes, float files in half floats (each value rounded to the nearest; a tile with a value past their
   range, such as a sun, stays in floats), grey files in one channel, and a tile of one value as that value alone. A
   scene's textures take about a third of the memory they did as floats.
@@ -333,7 +338,10 @@ differ: presence shadows, shadow linking, volumes, a minimum shadow distance and
   of every larger level (fine-detail tiles, the finest level's and the coarser ones'), loaded on demand as frames
   sample them and evicted least recently used when the cache is full: a texture seen from afar sends up only its
   coarser levels' tiles, one not seen none. Until 2026-11-14 levels 1 and up were all sent as the scene was prepared.
-  A lookup that lacks tiles asks for all of them at once. Final frames and Render Animation frames do not finish
+  A lookup that lacks tiles asks for all of them at once. Each launch sends up to 1 GB of the tiles asked for, oldest
+  first (`GpuLane::commitTiles`, `XPU2_SESSION_COMMIT_MB`), copied a run of neighbouring cache slots at a time; the rest
+  go with the next launches. Until 2026-11-18 every tile asked for went at once, one copy each: Sponza, whose bounces
+  ask for 1.65 million tiles after its fourth generation, asked for 10 GB of pinned staging and went to MoonRay. Final frames and Render Animation frames do not finish
   before the tiles they asked for have landed and their samples were rendered again in full, so the picture equals the
   render with every texture whole; realtime frames may show a coarser texture until its tiles land. Realtime keeps
   its textures to 1024 pixels a side (`XPU2_SESSION_RT_TEXTURE_SIDE`; 0 reads every level on demand, close-up normal and
@@ -405,7 +413,7 @@ against MoonRay renders (section 15). MoonRay XPU is also the fallback for scene
 | `map_admission.h` | Material bindings into `MapBinding`s and each material's map program, in dependency order |
 | `mesh_displacement.h` | MoonRay's PolyMesh tessellation and displacement for triangle meshes |
 | `light_tree_build.h`, `light_image_build.h`, `light_mesh_build.h` | Light tree, light textures and mesh lights, built on the host |
-| `xpu2_geom.cc`, `xpu2_geom.h` (`xpu2_geom.dll`) | MoonRay's own OpenSubdiv tessellation, displacement callbacks and OpenVDB reading, built separately with MoonRay's flags so XPU2's build never sees MoonRay's internal headers. An emission grid of single values (temperature or flames, as EmberGen, Houdini and Blender write fire) is read as grey RGB where `MOONRAY_MODO_SCALAR_EMISSION=1` (`emissionAsRgb`), as the kit's patched MoonRay reads it; otherwise it is refused as MoonRay refuses it |
+| `xpu2_geom.cc`, `xpu2_geom.h` (`xpu2_geom.dll`) | MoonRay's own OpenSubdiv tessellation, displacement callbacks and OpenVDB reading, built separately with MoonRay's flags so XPU2's build never sees MoonRay's internal headers. An emission grid of single values (temperature or flames, as EmberGen, Houdini and Blender write fire) is read as grey RGB (`emissionAsRgb`), as the kit's patched MoonRay reads it, unless `MOONRAY_MODO_SCALAR_EMISSION=0`; then it is refused as MoonRay refuses it |
 | `xpu2/indexed_scene.h`, `xpu2/rdl_scene_index.h`, `xpu2/rdl_replica.h`, `canonical_session.h` | The RDL capture under the indexer (section 4) |
 
 **Outputs**
@@ -486,8 +494,9 @@ Modo ── MoonRay for Modo kit ───────────────�
   no coarse first pass and no pictures published, ended when the frame is (`Standalone`). The scene's render outputs
   are written as at a frame's end, and `-out` writes the beauty with its alpha (`writeBeauty`, rows from the top). What
   the kit sets when it starts XPU2 is set where the shell has not (`RDL2_DSO_PATH`, `REZ_MOONRAY_ROOT`, MoonRay from
-  `runtime` beside `runtime-xpu2`). A fallback hands the same arguments to MoonRay, with MoonRay's own library paths
-  back. Exit code 0 when the picture is written, 1 otherwise.
+  `runtime` beside `runtime-xpu2`). The Source Overrides need nothing set: each is on unless its variable is `0`, so
+  the picture is Modo's, and its MoonRay fallback's. A fallback hands the same arguments to MoonRay, with MoonRay's own
+  library paths back. Exit code 0 when the picture is written, 1 otherwise.
 
 What the session does besides rendering:
 
@@ -529,7 +538,9 @@ What the session does besides rendering:
   Halt at Noise, First Look, Most Samples, CPU Workers) reach the scene as UserData `/modo/xpu2/generations`. Its
   form 2 says they rule: a scene's adaptive sampling is then MoonRay's alone, and XPU2 samples from Pixel Samples and
   these settings (form 1 left an adaptive scene its own minimum, maximum and target error). The kit's Device
-  Management page (`devices.py`) sets `XPU2_SESSION_MODE`, `XPU2_CARD_LIST` and `XPU2_GROUP_LIST`. The kit's Source Overrides (`MOONRAY_MODO_*`) apply to XPU2 as to MoonRay.
+  Management page (`devices.py`) sets `XPU2_SESSION_MODE`, `XPU2_CARD_LIST` and `XPU2_GROUP_LIST`. The kit's Source
+  Overrides (`MOONRAY_MODO_*`) apply to XPU2 as to MoonRay, read as MoonRay reads them: on unless the variable is `0`
+  (`cpu::modoSourceOverride`). The kit sets each to `1` or `0` from its preference.
 - **Limits.** Prepared geometry up to what the machine has room for, measured from the free RAM as each scene is
   prepared, between 256 MB and 64 GB (`geometryBudget`; `XPU2_SESSION_GEOMETRY_MB` fixes it), and a memory ceiling.
 - **The frame report** in the log: when the grid ran out of chunks, the GPU's launches and rate, parked samples,
@@ -588,9 +599,11 @@ Run each script with `--help` for its full arguments. Notes:
 | A real Modo scene | `xpu2/tools/modo-cl/` exports headless; `compare.py <scene> <w> <h> --moonray --xpu2 <session>` |
 | Speed | `run_async_benchmark.py`, `run_async_adaptive_benchmark.py`, `run_material_benchmark.py` |
 
-Test with the host's environment where it matters: without the kit's Source Overrides some scenes render
-differently in both renderers (for example `MOONRAY_MODO_OPAQUE_ALPHA`), and `compare.py` takes `--env`. Never render
-anything else while a benchmark is timing.
+The kit's Source Overrides are on in XPU2 and in the kit's MoonRay when their variables are unset, as in Modo; set one
+to `0` for MoonRay as its source has it (`compare.py` takes `--env`). A pinned reference runtime
+(`XPU2_REFERENCE_RUNTIME`, `interactive-reference-042`) is older and reads an unset switch as off: against it, set
+the switches to `1` or `0` in both renderers (for example `MOONRAY_MODO_OPAQUE_ALPHA`, which changes 9 Spheres). Never
+render anything else while a benchmark is timing.
 
 ## 16. Porting a feature
 
@@ -651,7 +664,7 @@ Environment variables read by the session or the renderer. The defaults are the 
 | `XPU2_GPU_VOLUME_MAPS_OFF=1` | Mapped volumes' samples to the CPU lane, and a glowing mapped one sends the scene there, as before the card ran their maps (added 2026-11-07) |
 | `XPU2_COMPILE_NEED_GB`, `XPU2_COMPILE_ANYWAY=1` | The free RAM the shader compile wants before it begins (default 8), or no check (added 2026-11-07) |
 | `XPU2_COMPILE_RESERVE_GB`, `XPU2_COMPILE_THREADS` | The RAM a compile task leaves free before another starts (default an eighth of the machine's, at least 4); the tasks at once (default up to 16) |
-| `MOONRAY_MODO_SCALAR_EMISSION` | `1`: an emission grid of single values read as grey (`xpu2_geom.dll`; the kit sets it from its preference, on by default); unset or `0`, refused as MoonRay itself refuses it |
+| `MOONRAY_MODO_SCALAR_EMISSION` | `0`: an emission grid of single values refused, as MoonRay itself refuses it; unset or `1`, read as grey (`xpu2_geom.dll`; the kit sets it from its preference, on by default). Every `MOONRAY_MODO_*` Source Override is read this way |
 | `XPU2_SESSION_FAIL_TILE=N` | The Nth texture tile read fails, to test what follows one |
 | `XPU2_SESSION_RT_SPARSE=1` | Realtime's sparse first passes (a quarter of the pixels, then the rest) back |
 | `XPU2_SESSION_RT_UPSCALE=0` | Realtime denoises at full size while moving (the kit's Lower Resolution While Moving off) |
@@ -666,6 +679,7 @@ Environment variables read by the session or the renderer. The defaults are the 
 | `XPU2_SESSION_RT_TEXTURE_SIDE` | Realtime's largest texture side (default 1024; 0: whole, read on demand) (added 2026-10-27) |
 | `XPU2_SESSION_PREFETCH_TEXTURES=1` | A final render's first frame loads ahead, into free cache slots, each texture's level its meshes need (the kit's texture needs) and the coarser ones; off by default, as it was slower on the scenes tried (added 2026-11-14) |
 | `XPU2_SESSION_RESIDENT_TEXTURE_SIDE` | The largest texture level decoded whole and held on the card for the session; larger ones load on demand (default 128; 65536: every level but the finest whole, as before 2026-11-14) |
+| `XPU2_SESSION_COMMIT_MB` | The most texture tiles one launch's commit sends to the card, in MB of staging (default 1024, and never past a quarter of the pinned memory left); the rest go with the next launches (added 2026-11-18) |
 | `XPU2_SESSION_CANONICAL_FILE=1` | The canonical replica also written as an RDLB file, to inspect (added 2026-10-26) |
 | `XPU2_SESSION_RT_DENOISE=0`, `_RT_GUIDES`, `_RT_SHOW`, `_RT_DEBUG`, `_RT_PRIORITY=0` | Diagnostics of the session's realtime denoiser, unused by the 0.5 kit (`INDEXER.md` section 13) |
 | `XPU2_SESSION_DEBUG_FAILURES` | Names the CPU lane's first failed shadings and texture lookups |

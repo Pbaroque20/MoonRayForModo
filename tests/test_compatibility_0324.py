@@ -18,6 +18,7 @@ class Preview0324(unittest.TestCase):
         self.assertIn('["cryptomatte_support_resume_render"] = true',text)
     def test_environment_outputs_and_labels(self):
         scene=self.scene();scene['preview_buffer_files'].update({key:key+'.exr' for key in ('environment_background','environment_lighting')})
+        scene['aovs']=['environment_background','environment_lighting']
         text=rdla.scene_text(scene,32,32,1,.15)
         self.assertIn('["label"] = "modo_environment"',text)
         for name in ('environment_background','environment_lighting'):

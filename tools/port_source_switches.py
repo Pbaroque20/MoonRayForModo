@@ -12,7 +12,8 @@ preferences, each on by default); off, MoonRay behaves as its source does.
    support (upstream's own commented branch). MoonRay's source starts Auto in vector mode.
 
 Each switch is read once, from MoonRay's environment, in the file that uses it; the vector (ISPC) code is told as its
-library loads. Rerunning this script leaves edited files alone."""
+library loads. Each is on unless its variable is 0, so a moonray.exe started by hand, without the kit's environment,
+renders as Modo does. Rerunning this script leaves edited files alone."""
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -21,12 +22,12 @@ MOONSHINE = ROOT / 'upstream/openmoonray/moonray/moonshine'
 
 
 def switch_function(name, variable, comment):
-    return '''// Modo: %s (tools/port_source_switches.py). True when MoonRay was started with %s=1; read once.
+    return '''// Modo: %s (tools/port_source_switches.py). True unless MoonRay was started with %s=0; read once.
 inline bool %s()
 {
     static const bool on = [] {
         const char *value = std::getenv("%s");
-        return value && value[0] == '1';
+        return !value || value[0] != '0';
     }();
     return on;
 }
@@ -137,7 +138,7 @@ namespace {
             // where the scene has what XPU does not support: XPU > Vector > Scalar. Off, as MoonRay's source.
             static const bool modoAutoXpu = [] {
                 const char *value = std::getenv("MOONRAY_MODO_AUTO_XPU");
-                return value && value[0] == '1';
+                return !value || value[0] != '0';
             }();
             if (modoAutoXpu) {
                 executionModeString = "Executing an XPU render since execution mode was set to auto.";

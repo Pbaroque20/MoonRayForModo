@@ -93,6 +93,9 @@ class Animation:
     def _picture(self):
         return self.pictures['beauty']
 
+    def _alpha_ticked(self):
+        return True
+
     def _show(self, wanted):
         self.shown.append(wanted)
 
@@ -141,6 +144,14 @@ class Settling(unittest.TestCase):
         a.settle(self.playblast)
         self.assertEqual(a.written, [(('b',), False, ('a',)), (('d',), True, ('a',))])
 
+    def test_alpha_unticked_in_render_settings_is_not_asked_for(self):
+        # Render Settings' MoonLightIPR Outputs (AOVs): Alpha unticked, the frames are written without it.
+        a = self.fresh(False)
+        a._alpha_ticked = lambda: False
+        a.settle(self.playblast)
+        self.assertEqual(a.session.asked, [])
+        self.assertEqual(a.written, [(('b',), False, None)])
+
     def test_no_alpha_in_a_minute_writes_the_frame_without_it(self):
         a = self.fresh(False)
         a.settle(self.playblast)
@@ -163,6 +174,23 @@ class Writing(unittest.TestCase):
             info = subprocess.run([str(RUNTIME / 'oiiotool.exe'), '--info', '-v', written], env=native.environment(RUNTIME),
                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT).stdout.decode(errors='replace')
             self.assertIn('R, G, B, A', info)
+
+    def test_a_png_beside_it_keeps_the_alpha_the_exr_has(self):
+        # A GUI check found the PNG of "OpenEXR, and PNG" written without its alpha, the EXR beside it with it.
+        playblast = _playblast(self)
+        from moonray_modo import native
+        width, height = 4, 2
+        for alpha, channels in (((width, height, struct.pack('<%df' % (width * height * 3), *([0.25] * width * height * 3))), 'R, G, B, A'),
+                                (None, 'R, G, B')):
+            with tempfile.TemporaryDirectory() as folder:
+                beauty = (width, height, struct.pack('<%df' % (width * height * 3), *([0.5] * width * height * 3)))
+                a = types.SimpleNamespace(directory=Path(folder), prefix='frame', frame=1, digits=4, export_as={'type': 'png8'}, denoise=False,
+                                          panel=types.SimpleNamespace(renderer=types.SimpleNamespace(active={'runtime': str(RUNTIME)}, buffers=None)))
+                playblast.MoonLightIPRAnimation._write(a, beauty, alpha=alpha)
+                png = next(Path(folder).glob('*.png'))
+                info = subprocess.run([str(RUNTIME / 'oiiotool.exe'), '--info', '-v', str(png)], env=native.environment(RUNTIME),
+                                      stdout=subprocess.PIPE, stderr=subprocess.STDOUT).stdout.decode(errors='replace').replace('\r', '')
+                self.assertIn('channel list: ' + channels + '\n', info, channels)
 
 
 if __name__ == '__main__':

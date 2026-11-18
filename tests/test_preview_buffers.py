@@ -8,7 +8,9 @@ from moonray_modo import rdla, options
 class PreviewBuffersTests(unittest.TestCase):
     def scene(self):
         return {'camera':{'matrix':rdla.IDENTITY,'focal_mm':50,'film_mm':36},'meshes':[],
-                'preview_buffer_files':{key:key+'.exr' for key in ('beauty',*options.AOVS)}}
+                'preview_buffer_files':{key:key+'.exr' for key in ('beauty',*options.AOVS)},
+                # Every AOV ticked in Render Settings (XPU and XPU2 Outputs (AOVs)): a preview renders the ticked ones.
+                'aovs':list(options.AOVS)}
 
     def test_all_buffers_have_separate_outputs(self):
         text=rdla.scene_text(self.scene())

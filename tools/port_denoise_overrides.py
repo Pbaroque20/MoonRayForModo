@@ -12,7 +12,8 @@ fireflies before denoising helped only by flattening bright highlights' edges, w
 giving OptiX's HDR model the picture's brightness (optixDenoiserComputeIntensity) and OptiX's AOV model each gave a
 picture identical to MoonRay's own, as OptiX measures the brightness itself when it is not given.
 
-The switch is read once, from the denoiser's environment (the plugin starts denoise.exe as it starts MoonRay).
+The switch is read once, from the denoiser's environment (the plugin starts denoise.exe as it starts MoonRay): on
+unless it is 0, so a denoise.exe started by hand cleans its guides as Modo's does.
 Rerunning this script leaves edited files alone; the files keep their line endings."""
 from pathlib import Path
 
@@ -22,13 +23,13 @@ MARK = 'MOONRAY_MODO_DENOISE_CLEAN_GUIDES'
 
 SWITCH = '''
 // Modo: Open Image Denoise cleans the albedo and normal guides first and is told they are clean (cleanAux)
-// (tools/port_denoise_overrides.py). True when the denoiser was started with MOONRAY_MODO_DENOISE_CLEAN_GUIDES=1; read
+// (tools/port_denoise_overrides.py). True unless the denoiser was started with MOONRAY_MODO_DENOISE_CLEAN_GUIDES=0; read
 // once. Off, the denoiser is MoonRay's own.
 inline bool modoCleanGuides()
 {
     static const bool on = [] {
         const char *value = std::getenv("MOONRAY_MODO_DENOISE_CLEAN_GUIDES");
-        return value && value[0] == '1';
+        return !value || value[0] != '0';
     }();
     return on;
 }

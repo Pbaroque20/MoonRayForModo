@@ -266,6 +266,17 @@ struct DeviceInstance {
 };
 
 // A uniform spherical cap at infinity, as MoonRay's DistantLight.
+// How a light's picture is laid across it, as MoonRay lays it (moonlightipr::PictureTransform): the light's own (u, v)
+// taken into the picture's by m (u' = u m[0] + v m[2] + m[4], v' = u m[1] + v m[3] + m[5]), past the repeats the border
+// colour, and flags (PICTURE_*). Without PICTURE_TRANSFORMED the picture is read once across the light, as before.
+struct DevicePicture {
+    float m[6];
+    float repsU, repsV;
+    float border[3];
+    unsigned flags;
+};
+const unsigned PICTURE_TRANSFORMED = 1, PICTURE_MIRROR_U = 2, PICTURE_MIRROR_V = 4;
+
 struct DeviceDistantLight {
     float direction[3];     // unit vector towards the centre of the cap
     float versine;          // 1 - cos(angular radius)
@@ -279,6 +290,7 @@ struct DeviceDistantLight {
     DevicePtr distribution;         // where that picture is bright, to draw directions from; see DeviceLight
     float seen[3];          // the disc the camera sees, which may differ from the one that lights the scene
     float seenVersine;
+    DevicePicture picture;  // how the picture is repeated, turned and moved across the disc
 };
 
 // Sphere, rectangle, disc and spot lights, as MoonRay's lights of the same names.
@@ -317,6 +329,7 @@ struct DeviceLight {
     // running total over its rows (height + 1), then one over each row's columns (height rows of width + 1), all
     // in the picture's own coordinates. Points on the light are drawn from it. 0 for none.
     DevicePtr distribution;
+    DevicePicture picture;  // how the picture is repeated, turned and moved across the light
 };
 
 // What a light filter does to the light arriving at a point, as MoonRay's DecayLightFilter, ColorRampLightFilter,

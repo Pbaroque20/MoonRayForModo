@@ -7,9 +7,9 @@ directory", before any preview or scene load. It compares each name without its 
 never matches on Windows, so it always goes through the whole of PATH. SceneContext::loadAllSceneClasses reads the
 entries of RDL2_DSO_PATH the same way.
 
-Only when MoonRay is started with MOONRAY_MODO_DSO_SEARCH=1 (the plugin's preference), entries that are not folders, or
+Unless MoonRay is started with MOONRAY_MODO_DSO_SEARCH=0 (the plugin's preference off), entries that are not folders, or
 cannot be read, are passed over, and moonray.exe is matched by its whole name, so the look stops at the first folder
-holding it. Without the variable MoonRay is as its source has it."""
+holding it. With it 0 MoonRay is as its source has it; unset, it is on."""
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -22,7 +22,7 @@ modoDsoSearch()
 {
     static const bool on = [] {
         const char *value = std::getenv("MOONRAY_MODO_DSO_SEARCH");
-        return value && value[0] == '1';
+        return !value || value[0] != '0';
     }();
     return on;
 }
@@ -74,7 +74,7 @@ CONTEXT = (
         // Modo: an entry that is not a readable folder passed over (tools/port_dso_search.py).
         static const bool modoDsoSearch = [] {
             const char *value = std::getenv("MOONRAY_MODO_DSO_SEARCH");
-            return value && value[0] == '1';
+            return !value || value[0] != '0';
         }();
         std::error_code modoError;
         if (modoDsoSearch && !std::filesystem::is_directory(p, modoError)) {

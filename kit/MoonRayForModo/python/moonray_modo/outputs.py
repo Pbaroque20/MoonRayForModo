@@ -124,10 +124,40 @@ def attributes(entry,multiple=False):
     if kind=='cryptomatte' and multiple:attrs['cryptomatte_id_channel']=('object','material','asset').index(entry['category'])
     return attrs
 
+def rendered(scene):
+    """The AOVs a MoonRay XPU or XPU2 preview renders: those ticked in Render Settings (XPU and XPU2 Outputs (AOVs);
+    Alpha alone in a new scene). Besides them, what other things need: with Alpha, the Environment background, which a
+    picture saved with straight alpha takes out first (image_formats.with_alpha); the buffers the compositor's graph is
+    made from; PBR validity while the diagnostic is on; and the buffer looked at, where it is one."""
+    held=scene.get('aovs')
+    ticked=set(held if isinstance(held,(list,tuple)) else ['alpha'])
+    result=set(ticked)
+    if 'alpha' in ticked:result.add('environment_background')
+    graph=scene.get('compositor')
+    if graph:
+        try:
+            from .compositor import buffers
+            result.update(buffers(graph))
+        except Exception:pass
+    try:
+        from .native import pbr_validity
+        if pbr_validity():result.add('pbr_validity')
+    except Exception:pass
+    result.add(scene.get('preview_buffer','beauty'))
+    return result
+
+
+def listed(scene):
+    """The AOVs the preview window lists for MoonRay XPU and XPU2: those ticked, and PBR validity (its own rule)."""
+    held=scene.get('aovs')
+    return set(held if isinstance(held,(list,tuple)) else ['alpha'])|{'pbr_validity'}
+
+
 def preview(scene):
     # A quick low-sample look (MoonRay LS) is the beauty alone: no other buffer is rendered for it.
     if scene.get('_ipr'):return {'beauty':{'result':0}}
-    result={key:dict(value[1]) for key,value in options.AOVS.items()};result['beauty']={'result':0}
+    on=rendered(scene)
+    result={key:dict(value[1]) for key,value in options.AOVS.items() if key in on};result['beauty']={'result':0}
     for entry in values(scene.get('custom_aovs',[])):
         attrs=attributes(entry,sum(v.get('kind')=='cryptomatte' for v in scene.get('custom_aovs',[]))>1);attrs.pop('file_part',None);attrs.pop('channel_name',None);attrs['channel_format']=0
         result[entry['name']]=attrs

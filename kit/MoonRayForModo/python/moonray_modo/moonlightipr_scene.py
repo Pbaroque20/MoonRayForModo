@@ -293,6 +293,31 @@ def multiplied(records):
     return result
 
 
+def picture_transform(light):
+    """How a light's picture is laid across it, as MoonRay lays it (ImageDistribution's texture transform, form W): the
+    transform from the light's own (u, v) into the picture's, translate(-t) * scale(reps / coverage) * rotate(angle) as
+    MoonRay's row vectors (its first two columns, six numbers), the repeats in u and v past which the border colour shows,
+    the border colour, and flags: 1 transformed (any of rotation, translation, coverage or repeats not its default), 2 and
+    4 mirrored in u and in v. Untransformed, the picture is read as it was before (once across the light)."""
+    held = light.get('texture_transform') or {}
+    rotation = float(held.get('rotation', 0.0))
+    tx, ty = (float(v) for v in (held.get('translation') or (0.0, 0.0))[:2])
+    cu, cv = (float(v) for v in (held.get('coverage') or (1.0, 1.0))[:2])
+    reps_u, reps_v = float(held.get('reps_u', 1.0)), float(held.get('reps_v', 1.0))
+    border = [float(c) for c in (held.get('border') or (1.0, 1.0, 1.0))[:3]]
+    transformed = rotation != 0.0 or tx != 0.0 or ty != 0.0 or cu != 1.0 or cv != 1.0 or reps_u != 1.0 or reps_v != 1.0
+    if transformed:
+        sx, sy = reps_u / (cu if abs(cu) > 1e-9 else 1e-9), reps_v / (cv if abs(cv) > 1e-9 else 1e-9)
+        theta = math.radians(rotation)
+        c, s = math.cos(theta), math.sin(theta)
+        tx, ty = -tx, -ty
+        matrix = [c * sx, s * sx, -s * sy, c * sy, c * sx * tx - s * sy * ty, s * sx * tx + c * sy * ty]
+    else:
+        matrix = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
+    flags = (1 if transformed else 0) | (2 if held.get('mirror_u') else 0) | (4 if held.get('mirror_v') else 0)
+    return matrix + [reps_u, reps_v] + border + [flags]
+
+
 def packed_filters(records, compiler, light_matrix=None, warnings=None):
     """Decay and ramp filters as the session reads them; a ramp's colours go into a small image."""
     parts = filter_parts(records, compiler, light_matrix, warnings)
@@ -453,7 +478,7 @@ def lights(scene, warnings, environment=0.0, compiler=None, closing=None, named=
             seen = light.get('disc')
             shown = working_color(finite(seen['radiance'])) + [float(seen['angle'])] if seen else [c * scale for c in color] + [angle]
             distant.append(unit(matrix[8:11]) + [c * scale for c in color] + [angle, (1 if seen or light.get('camera_visible') else 0) | (int(light.get('hidden_from', 0)) & 7) << 2]
-                           + unit(matrix[0:3]) + unit(matrix[4:7]) + [texture] + shown)
+                           + unit(matrix[0:3]) + unit(matrix[4:7]) + [texture] + shown + picture_transform(light if texture >= 0 else {}))
             if closing is not None:
                 closing.setdefault('distant', []).append(unit(ending[8:11]) + unit(ending[0:3]) + unit(ending[4:7]))
             if named is not None:
@@ -494,6 +519,7 @@ def lights(scene, warnings, environment=0.0, compiler=None, closing=None, named=
         local.append(struct.pack('<I20fiI', LOCAL_LIGHTS[kind], *(matrix[12:15] + unit(matrix[0:3]) + unit(matrix[4:7])
             + [-v for v in unit(matrix[8:11])] + [width, height, radius] + [c * normalization for c in color]
             + [cone, max(0.0, cone - 2 * float(light.get('soft_edge', 0)))]), texture, seen)
+            + struct.pack('<11fI', *picture_transform(light if texture >= 0 else {}))
             + (packed_filters(filters, compiler, matrix, warnings) if compiler is not None else struct.pack('<I', 0)))
     return distant, local
 
@@ -541,8 +567,8 @@ def emitter(mesh, settings, warnings):
     from .lighting import mesh_camera
     shown, surface = mesh_camera(settings) if 'mesh_camera_mode' in settings else (settings.get('light_seen', True), True)
     seen = (1 if shown else 0) | (2 if settings.get('light_alone') or not (shown or surface) else 0) | (int(settings.get('light_hidden', 0)) & 7) << 2
-    return (struct.pack('<I20fiII', MESH_LIGHT, *([0.0] * 12 + [1.0, 1.0, 1.0] + [c / (math.pi * cached[1]) for c in color] + [0.0, 0.0]), -1, seen, 0)
-            + cached[0])
+    return (struct.pack('<I20fiI', MESH_LIGHT, *([0.0] * 12 + [1.0, 1.0, 1.0] + [c / (math.pi * cached[1]) for c in color] + [0.0, 0.0]), -1, seen)
+            + struct.pack('<11fI', *picture_transform({})) + struct.pack('<I', 0) + cached[0])
 
 
 def seen_by(item):
@@ -1191,7 +1217,7 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     # Material colours are worked out in Rec.709; the session takes them to the working space.
     working = working_enabled()
     # The letter after MLS says which form of scene this is; the session refuses any other than its own.
-    parts = [b'MLSU', struct.pack('<8I', width, height, *depths, samples, (SCENE_DENOISE if denoise else 0)
+    parts = [b'MLSW', struct.pack('<8I', width, height, *depths, samples, (SCENE_DENOISE if denoise else 0)
                                   | (SCENE_WORKING_SPACE if working else 0) | (SCENE_MOTION if motion else 0)
                                   # See-through surfaces cast whole shadows unless the scene asks for lighter ones, as in MoonRay.
                                   | (SCENE_PRESENCE_SHADOWS if settings.get('enable_presence_shadows') else 0)
@@ -1450,7 +1476,7 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
         warnings.append('MoonLightIPR does not show points.')
     table = light_sets(scene, named, linked, instances, warnings)
     parts.append(struct.pack('<I', len(distant)))
-    parts += [struct.pack('<7fI6fi4f', *light) for light in distant]
+    parts += [struct.pack('<7fI6fi4f11fI', *light) for light in distant]
     parts += [struct.pack('<I', len(local))] + local
     parts += [struct.pack('<I', len(meshes))] + meshes + [struct.pack('<I', len(instances))] + instances
     if motion:

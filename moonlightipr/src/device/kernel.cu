@@ -66,6 +66,24 @@ ML_INLINE float4 sampleImage(unsigned long long handle, float u, float v, float 
     return across > 0.0f ? tex2DGrad<float4>(handle, u, v, make_float2(across, 0.0f), make_float2(0.0f, across)) : tex2D<float4>(handle, u, v);
 }
 
+// A light's picture at (x, y) across it as it is read once (x along, y down the picture), laid as MoonRay lays it
+// (textureLookupTransformed): MoonRay's (u, v), v up the picture, taken through the light's transform, the border colour
+// past its repeats, each repeat mirrored where asked. Untransformed, the picture is read once, as it always was.
+ML_INLINE float4 lightPicture(unsigned long long texture, const DevicePicture& picture, float x, float y) {
+    if (!(picture.flags & PICTURE_TRANSFORMED)) return sampleImage(texture, x, y);
+    const float u = x, v = 1.0f - y;
+    float tu = u * picture.m[0] + v * picture.m[2] + picture.m[4];
+    float tv = u * picture.m[1] + v * picture.m[3] + picture.m[5];
+    if (tu < 0.0f || tu > picture.repsU || tv < 0.0f || tv > picture.repsV)
+        return make_float4(picture.border[0], picture.border[1], picture.border[2], 1.0f);
+    const float uFloor = floorf(tu), vFloor = floorf(tv);
+    tu -= uFloor;
+    tv -= vFloor;
+    if ((picture.flags & PICTURE_MIRROR_U) && (int(uFloor) & 1)) tu = 1.0f - tu;
+    if ((picture.flags & PICTURE_MIRROR_V) && (int(vFloor) & 1)) tv = 1.0f - tv;
+    return sampleImage(texture, tu, 1.0f - tv);
+}
+
 ML_INLINE Hit* hitPayload() {
     return reinterpret_cast<Hit*>((static_cast<unsigned long long>(optixGetPayload_0()) << 32) | optixGetPayload_1());
 }
@@ -311,7 +329,8 @@ ML_INLINE float2 distantCoordinates(const DeviceDistantLight& light, float3 dire
     // In the light's frame, which MoonRay turns half way about x: the light stands along -z there.
     const float x = dot(direction, vec(light.u)), y = -dot(direction, vec(light.v)), z = -dot(direction, vec(light.direction));
     const float scale = -light.uvScale / sqrtf(fmaxf(1.0f - z, 1e-20f));
-    return make_float2(1.0f - clamp(x * scale + 0.5f, 0.0f, 1.0f), 1.0f - clamp(y * scale + 0.5f, 0.0f, 1.0f));
+    // Across the picture as MoonRay reads it (it was mirrored left to right before 0.5.5.1).
+    return make_float2(clamp(x * scale + 0.5f, 0.0f, 1.0f), 1.0f - clamp(y * scale + 0.5f, 0.0f, 1.0f));
 }
 // How likely sampleDistant is to choose a direction inside the disc.
 ML_INLINE float distantPdf(const DeviceDistantLight& light, float3 direction) {
@@ -321,15 +340,16 @@ ML_INLINE float distantPdf(const DeviceDistantLight& light, float3 direction) {
     return gridDensity(light.distribution, at.x, at.y) * 0.125f / light.versine;
 }
 
-// A picture across the disc of a distant light, by MoonRay's equal-area mapping of the directions inside it.
+// A picture across the disc of a distant light, by MoonRay's equal-area mapping of the directions inside it: what it
+// multiplies the light by along a direction (1 without a picture).
+ML_INLINE float3 distantPicture(const DeviceDistantLight& light, float3 direction) {
+    if (!light.texture) return vec(1.0f);
+    const float2 at = distantCoordinates(light, direction);
+    const float4 texel = lightPicture(light.texture, light.picture, at.x, at.y);
+    return make_float3(texel.x, texel.y, texel.z);
+}
 ML_INLINE float3 distantRadiance(const DeviceDistantLight& light, float3 direction) {
-    float3 radiance = vec(light.radiance);
-    if (light.texture) {
-        const float2 at = distantCoordinates(light, direction);
-        const float4 texel = sampleImage(light.texture, at.x, at.y);
-        radiance = radiance * make_float3(texel.x, texel.y, texel.z);
-    }
-    return radiance;
+    return vec(light.radiance) * distantPicture(light, direction);
 }
 
 // Uniform over the cap. The versine form stays accurate for the small angles a sun uses.
@@ -338,7 +358,8 @@ ML_INLINE float3 sampleDistant(const DeviceDistantLight& light, float u1, float 
         // Where the picture is bright, turned back into a direction as MoonRay's own inverse mapping does.
         float density;
         const float2 at = sampleGrid(light.distribution, u1, u2, density);
-        const float s = 0.5f - at.x, t = 0.5f - at.y, spread = 4.0f * light.versine;
+        // distantCoordinates turned back: across as it reads the picture, down as before.
+        const float s = at.x - 0.5f, t = 0.5f - at.y, spread = 4.0f * light.versine;
         const float z = -1.0f + spread * (s * s + t * t), scale = -sqrtf(fmaxf(0.0f, spread * (1.0f - z)));
         return normalize(vec(light.u) * (s * scale) - vec(light.v) * (t * scale) - vec(light.direction) * z);
     }
@@ -440,7 +461,8 @@ ML_INLINE bool sampleLightShape(const DeviceLight& light, float3 p, float u1, fl
     float density = 1.0f, spread = light.area;
     if (light.distribution) {
         const float2 at = sampleGrid(light.distribution, u1, u2, density);
-        const float a = 1.0f - 2.0f * at.x, b = 2.0f * at.y - 1.0f;
+        // The picture's top row at the light's top (+v), as lightTint reads it.
+        const float a = 1.0f - 2.0f * at.x, b = 1.0f - 2.0f * at.y;
         if (!(density > 0.0f) || (light.type == LIGHT_DISK && a * a + b * b > 1.0f)) return false;
         const float reach = light.type == LIGHT_DISK ? light.radius : 1.0f;
         onLight = centre + (vec(light.u) * a + vec(light.v) * b) * reach;
@@ -527,7 +549,7 @@ ML_INLINE bool hitLightShape(const DeviceLight& light, float3 p, float3 directio
         const float3 u = vec(light.u), v = vec(light.v);
         const float across = light.type == LIGHT_DISK ? light.radius : dot(u, u), up = light.type == LIGHT_DISK ? light.radius : dot(v, v);
         const float spread = light.type == LIGHT_DISK ? 4.0f * light.radius * light.radius : light.area;
-        pdf = gridDensity(light.distribution, 0.5f - 0.5f * dot(offset, u) / across, 0.5f + 0.5f * dot(offset, v) / up)
+        pdf = gridDensity(light.distribution, 0.5f - 0.5f * dot(offset, u) / across, 0.5f - 0.5f * dot(offset, v) / up)
             * distance * distance / (spread * cosine);
     }
     if (light.type == LIGHT_SPOT) radiance = radiance * spotFalloff(light, p, onLight);
@@ -696,12 +718,13 @@ ML_INLINE float3 lightTint(const DeviceLight& light, float3 p, float3 wi, float 
             s = 0.5f - 0.5f * dot(focal, u) * light.rcpFocalRadius;
             t = 0.5f + 0.5f * dot(focal, v) * light.rcpFocalRadius;
         } else {
-            // A rectangle or a disc: across its width and its height, which for a disc are its diameter.
+            // A rectangle or a disc: across its width and its height, which for a disc are its diameter; the picture's
+            // top row at the light's top (+v), as MoonRay shows it (it was read upside down before 0.5.5.1).
             const float across = light.type == LIGHT_DISK ? light.radius : dot(u, u), up = light.type == LIGHT_DISK ? light.radius : dot(v, v);
             s = 0.5f + 0.5f * dot(offset, u) / across;
-            t = 0.5f - 0.5f * dot(offset, v) / up;
+            t = 0.5f + 0.5f * dot(offset, v) / up;
         }
-        const float4 texel = sampleImage(light.texture, 1.0f - s, 1.0f - t);
+        const float4 texel = lightPicture(light.texture, light.picture, 1.0f - s, 1.0f - t);
         tint = make_float3(texel.x, texel.y, texel.z);
     }
     const DeviceFilter* filters = reinterpret_cast<const DeviceFilter*>(params.lightFilters) + light.filterStart;
@@ -2270,7 +2293,8 @@ extern "C" __global__ void __raygen__moonlightipr() {
                     // lights the scene.
                     if (light.visible > 0.0f && dot(direction, vec(light.direction)) >= 1.0f - light.seenVersine
                         && (!camera || !params.aovPass || params.aovPass == PASS_BACKGROUND))
-                        radiance += clampSample(throughput * lightWeight * vec(light.seen) * open, clampFound);
+                        // With its picture across it, as MoonRay shows a textured disc (it was plain before 0.5.5.1).
+                        radiance += clampSample(throughput * lightWeight * vec(light.seen) * distantPicture(light, direction) * open, clampFound);
                     continue;
                 }
                 if (dot(direction, vec(light.direction)) >= 1.0f - light.versine)

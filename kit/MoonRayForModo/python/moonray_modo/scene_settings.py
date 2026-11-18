@@ -6,7 +6,7 @@ and groups the form shows them. lxserv/moonray_render_settings.py makes a comman
 tools/generate_render_forms.py lays them out.
 """
 import copy
-from . import options
+from . import moonlightipr_aovs, options
 
 # Preview-only choices are kept with the window, not the scene.
 DEFAULTS = {
@@ -16,6 +16,8 @@ DEFAULTS = {
     'production': {}, 'asset_settings': {}, 'scene_variables': {},
     # A new scene outputs the object Cryptomatte, so the first render already has the mattes to look at.
     'custom_aovs': [{'name': 'crypto_object', 'kind': 'cryptomatte', 'category': 'object', 'depth': 6, 'precision': 0, 'filter': 0, 'part': '', 'expression': ''}], 'aovs': ['alpha'],
+    # The AOVs MoonLightIPR's buffer list offers (moonlightipr_aovs), Alpha alone until others are ticked, as MoonRay's.
+    'moonlightipr_aovs': ['alpha'],
     'recovery': {'enabled': False, 'resume': True, 'minutes': 1.0},
     # A deep EXR written beside the render: every surface and volume a pixel sees, each at its own depth.
     'deep': {'enabled': False, 'format': 0, 'curvature': 45.0, 'z': 2.0, 'volume': 10},
@@ -112,7 +114,8 @@ MODES = [('Auto (XPU, Vector, Scalar)', 'auto'), ('XPU (NVIDIA GPU + CPU)', 'xpu
 
 # Groups whose sheet in the Render item's form has a name of its own (tools/generate_render_forms.py); the others are
 # numbered in order, these left out of the count.
-SHEET_KEYS = {'XPU2 Sampling': 'MoonRayRenderXPU2', 'MoonLightIPR': 'MoonRayRenderMoonLightIPR'}
+SHEET_KEYS = {'XPU2 Sampling': 'MoonRayRenderXPU2', 'MoonLightIPR': 'MoonRayRenderMoonLightIPR',
+              'MoonLightIPR Outputs (AOVs)': 'MoonRayRenderMoonLightIPRAOVs'}
 # Settings kept as commands but shown elsewhere, not in the Render item's form: PBR Validity is a diagnostic in the
 # MoonRay preferences (moonray.pref.pbrValidity).
 NOT_IN_FORM = {'aov_pbr_validity'}
@@ -234,10 +237,15 @@ GROUPS = [
         field('region_right', ('region', 2), 'float', 'Right', 'Percent of the frame', 0.0, 100.0, scale=100.0),
         field('region_bottom', ('region', 3), 'float', 'Bottom', 'Percent of the frame', 0.0, 100.0, scale=100.0),
     ]),
-    ('Outputs (AOVs)', True,
+    # MoonRay XPU and XPU2 share their outputs: a tick turns a buffer on, rendered, listed among the preview window's
+    # buffers and written to the EXR; Alpha alone is on in a new scene.
+    ('XPU and XPU2 Outputs (AOVs)', True,
      # The tip names a channel as an artist would (alpha, depth), not by its EXR name (A, depth.Z).
-     [field('aov_' + key, ('aovs',), 'member', label, 'Adds the ' + {'A': 'alpha', 'depth.Z': 'depth'}.get(channel, channel) + ' channel to the EXR' + (', and to a PNG, TIFF or Targa saved from the render' if key == 'alpha' else ''), member=key)
+     [field('aov_' + key, ('aovs',), 'member', label, 'On: MoonRay XPU and XPU2 render it, the preview window lists it among its buffers, and the EXR has its ' + {'A': 'alpha', 'depth.Z': 'depth'}.get(channel, channel) + ' channel' + (', as does a PNG, TIFF or Targa saved from the render. On in a new scene' if key == 'alpha' else ''), member=key)
       for key, (label, _, channel) in options.AOVS.items()]),
+    ('MoonLightIPR Outputs (AOVs)', True,
+     [field('moonlightipr_aov_' + key, ('moonlightipr_aovs',), 'member', label, tip, member=key)
+      for label, key, tip in moonlightipr_aovs.LISTED]),
     ('Display', True, [
         field('view', ('display', 'view'), 'choice', 'View Transform', 'How the preview is shown; EXRs stay linear. Modo color management follows the OCIO configuration and color spaces in Modo\'s system preferences; what is chosen here is remembered for new scenes; OCIO display / view uses the configuration, source, display and view named below', choices=VIEWS),
         field('exposure', ('display', 'exposure'), 'float', 'Exposure', 'Stops', -20.0, 20.0),

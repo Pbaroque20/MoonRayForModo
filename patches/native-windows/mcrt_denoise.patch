@@ -88,7 +88,7 @@ index 144533d..1095c41 100644
  
      const char* oidnErrorMessage;
 diff --git a/lib/denoiser/OIDNDenoiserImpl.h b/lib/denoiser/OIDNDenoiserImpl.h
-index 55c7841..1283451 100644
+index 55c7841..39b61a0 100644
 --- a/lib/denoiser/OIDNDenoiserImpl.h
 +++ b/lib/denoiser/OIDNDenoiserImpl.h
 @@ -6,12 +6,25 @@
@@ -103,13 +103,13 @@ index 55c7841..1283451 100644
  namespace denoiser {
  
 +// Modo: Open Image Denoise cleans the albedo and normal guides first and is told they are clean (cleanAux)
-+// (tools/port_denoise_overrides.py). True when the denoiser was started with MOONRAY_MODO_DENOISE_CLEAN_GUIDES=1; read
++// (tools/port_denoise_overrides.py). True unless the denoiser was started with MOONRAY_MODO_DENOISE_CLEAN_GUIDES=0; read
 +// once. Off, the denoiser is MoonRay's own.
 +inline bool modoCleanGuides()
 +{
 +    static const bool on = [] {
 +        const char *value = std::getenv("MOONRAY_MODO_DENOISE_CLEAN_GUIDES");
-+        return value && value[0] == '1';
++        return !value || value[0] != '0';
 +    }();
 +    return on;
 +}

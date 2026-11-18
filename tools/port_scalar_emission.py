@@ -4,12 +4,12 @@ MoonRay's VdbVolume takes only an RGB (vector) grid as its emission grid: any ot
 "temperature" is not an RGB grid." and the volume gives off no light. EmberGen, Houdini and Blender write their
 temperature, flames and heat grids as single values (float grids), so none of their fire or explosions glows in MoonRay.
 
-Only when MoonRay is started with MOONRAY_MODO_SCALAR_EMISSION=1 (the plugin's preference), a float emission grid is
+Unless MoonRay is started with MOONRAY_MODO_SCALAR_EMISSION=0 (the plugin's preference off), a float emission grid is
 read and made into an RGB grid of the same shape (its topology copied, tiles kept as tiles) with each value v as
 (v, v, v), its background and transform kept; from there MoonRay goes on as with an RGB grid (the emission sampler, its
 distribution, the emission sample rate). The volume's incandescence gain mult gives the glow its colour and strength.
-XPU2's xpu2_geom.dll makes the same grid by the same steps (modoGreyGrid). Without the variable MoonRay is as its source has
-it."""
+XPU2's xpu2_geom.dll makes the same grid by the same steps (modoGreyGrid). With it 0 MoonRay is as its source has it;
+unset, it is on."""
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -17,12 +17,12 @@ SOURCE = ROOT / 'upstream/openmoonray/moonray/moonray/lib/rendering/geom/prim/Vd
 
 HELPER = '''
 namespace {
-// Modo: a single-value emission grid glows grey (tools/port_scalar_emission.py). Only with MOONRAY_MODO_SCALAR_EMISSION=1.
+// Modo: a single-value emission grid glows grey (tools/port_scalar_emission.py). Unless MOONRAY_MODO_SCALAR_EMISSION=0.
 bool modoScalarEmission()
 {
     static const bool on = [] {
         const char *value = std::getenv("MOONRAY_MODO_SCALAR_EMISSION");
-        return value && value[0] == '1';
+        return !value || value[0] != '0';
     }();
     return on;
 }

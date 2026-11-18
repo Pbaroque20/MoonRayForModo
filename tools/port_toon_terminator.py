@@ -6,7 +6,8 @@ fix mode). And its shadow rays start on the flat face, so near the terminator th
 diffuse is nearly black there and hides both; a toon ramp is lit to its edge, and its edge comes out in steps, one per
 face, finer under subdivision but still there.
 
-Only when MoonRay is started with MOONRAY_MODO_TOON_TERMINATOR=1 (the plugin's preference), and only for DwaToonMaterial:
+Unless MoonRay is started with MOONRAY_MODO_TOON_TERMINATOR=0 (the plugin's preference off; unset is on), and only for
+DwaToonMaterial:
 
 1. The toon diffuse lobe is "spherical", as the material's own prevent_light_culling makes it, so light is not culled by
    the geometric normal; the lobe cuts light off itself where its shading normal turns from the light, and is not
@@ -18,9 +19,9 @@ Only when MoonRay is started with MOONRAY_MODO_TOON_TERMINATOR=1 (the plugin's p
    by the time it is 0.1 (in cosine) above it. Other materials record nothing, and their shadow rays are MoonRay's.
    Instanced copies are left as MoonRay has them.
 
-Without the variable, MoonRay renders exactly as its source does.
+With it 0, MoonRay renders exactly as its source does.
 
-And, only with MOONRAY_MODO_TOON_ALBEDO=1 (a preference of its own): the "albedo" material AOV, which the denoisers take
+And, unless MOONRAY_MODO_TOON_ALBEDO=0 (a preference of its own): the "albedo" material AOV, which the denoisers take
 as their albedo guide, gives a toon diffuse lobe its own albedo. MoonRay's averages f / pdf over the lobe's samples,
 which is the albedo for a lobe with the cosine in f, but the toon lobe is flat (no cosine) and sampled by the cosine,
 so each sample is albedo / (2 cos) and the AOV is full of fireflies far above 1: the denoiser takes them for detail and
@@ -39,23 +40,23 @@ HEADER_TEXT = '''// Modo: toon materials lit by their smooth shading normals, no
 namespace moonray {
 namespace shading {
 
-/// True when MoonRay was started with MOONRAY_MODO_TOON_TERMINATOR=1. Read once.
+/// True unless MoonRay was started with MOONRAY_MODO_TOON_TERMINATOR=0. Read once.
 inline bool modoToonTerminator()
 {
     static const bool on = [] {
         const char *value = std::getenv("MOONRAY_MODO_TOON_TERMINATOR");
-        return value && value[0] == '1';
+        return !value || value[0] != '0';
     }();
     return on;
 }
 
-/// True when MoonRay was started with MOONRAY_MODO_TOON_ALBEDO=1: the albedo AOV gives a toon diffuse lobe its own
+/// True unless MoonRay was started with MOONRAY_MODO_TOON_ALBEDO=0: the albedo AOV gives a toon diffuse lobe its own
 /// albedo, a clean guide for the denoisers. Read once.
 inline bool modoToonAlbedo()
 {
     static const bool on = [] {
         const char *value = std::getenv("MOONRAY_MODO_TOON_ALBEDO");
-        return value && value[0] == '1';
+        return !value || value[0] != '0';
     }();
     return on;
 }

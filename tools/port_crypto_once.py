@@ -6,8 +6,8 @@ with the first of them: it reads the path's mIsFirstSample, adds the sample, the
 the flag before either clears it both add the coverage, and the pixel's mattes add up to twice its alpha. About one
 pixel in eight renders of 480 x 270 at 16 samples showed it, the same with or without the fog patch.
 
-Only when MoonRay is started with MOONRAY_MODO_CRYPTO_ONCE=1 (the plugin's preference): the flag is read and cleared in
-one atomic exchange, so one entry alone adds the coverage. Without the variable, MoonRay's own read-then-clear."""
+Unless MoonRay is started with MOONRAY_MODO_CRYPTO_ONCE=0 (the plugin's preference off; unset is on): the flag is read
+and cleared in one atomic exchange, so one entry alone adds the coverage. With it 0, MoonRay's own read-then-clear."""
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -23,12 +23,12 @@ HEADER_TEXT = '''// Modo: each Cryptomatte sample counted once in vector and XPU
 namespace moonray {
 namespace pbr {
 
-/// True when MoonRay was started with MOONRAY_MODO_CRYPTO_ONCE=1. Read once.
+/// True unless MoonRay was started with MOONRAY_MODO_CRYPTO_ONCE=0. Read once.
 inline bool modoCryptoOnce()
 {
     static const bool on = [] {
         const char *value = std::getenv("MOONRAY_MODO_CRYPTO_ONCE");
-        return value && value[0] == '1';
+        return !value || value[0] != '0';
     }();
     return on;
 }

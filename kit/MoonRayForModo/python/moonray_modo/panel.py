@@ -1022,7 +1022,7 @@ class Panel(Tools, QtWidgets.QWidget):
 
     def _settled(self):
         """Take the scene's settings as they now are for seen, so that following does not render for them."""
-        self._live_settings={k:v for k,v in self._settings_values().items() if k not in ('display','preview_buffer','aovs','recovery','denoising','compositor')}
+        self._live_settings={k:v for k,v in self._settings_values().items() if k not in ('display','preview_buffer','aovs','moonlightipr_aovs','recovery','denoising','compositor')}
 
     def _paste(self):
         """Show the last whole frame with the last region rendered laid in it, and keep it until something is rendered."""
@@ -1166,14 +1166,17 @@ class Panel(Tools, QtWidgets.QWidget):
             scene_id=modo.Scene().renderItem.id
             values=self._settings_values()
         except Exception:return
-        if scene_id!=self._scene_id:
+        opened=scene_id!=self._scene_id
+        if opened:
             self._scene_id=scene_id;self._geometry_cache=None;self._shown=None
         self._sync_cameras()
         self._hud_update()
+        self._planned_follows(opened)
         from . import modo_color
         # With what was read of Modo's own colour management: changed in Modo, the picture is shown again by it.
         filters=self._display_filter_buffers()
-        watched=(values['display'],values['denoising'],values['custom_aovs'],values['asset_settings'].get('working_space'),values['region_enabled'],repr(values['compositor']),repr(modo_color.RESOLVED),filters)
+        watched=(values['display'],values['denoising'],values['custom_aovs'],values['asset_settings'].get('working_space'),values['region_enabled'],repr(values['compositor']),repr(modo_color.RESOLVED),filters,
+                 (tuple(values.get('aovs') or ()),tuple(values.get('moonlightipr_aovs') or ())))
         if watched==self._shown:return
         previous,self._shown=self._shown,watched
         self._sync_output_menu(values['custom_aovs'],filters)
@@ -1189,6 +1192,8 @@ class Panel(Tools, QtWidgets.QWidget):
         self.preview.set_region(values['region'] if values['region_enabled'] else None,armed)
         if previous is None:return
         if previous[1]!=watched[1]:self._denoising_changed()
+        # An AOV ticked or unticked in Render Settings: listed, or not, at once (rendered from the next render).
+        if previous[8]!=watched[8]:self._limit_buffers()
         # The graph changed while the Composite is the buffer chosen: it is shown, or said to be nothing yet.
         if previous[0]!=watched[0] or previous[3]!=watched[3] or previous[6]!=watched[6] or (previous[5]!=watched[5] and self.buffer.currentData()=='composite'):self._buffer_changed(0)
 
@@ -1478,16 +1483,39 @@ class Panel(Tools, QtWidgets.QWidget):
         if hasattr(view,'setRowHidden'):view.setRowHidden(index,not offered)
         if not offered and self.buffer.currentData()=='denoised_beauty':self.buffer.setCurrentIndex(self.buffer.findData('beauty'))
 
+    def _planned_size(self):
+        """The size the scene renders at: its render camera's (the Camera Sequence's for the frame), as Modo has it."""
+        import modo
+        from .host import picture_size
+        from . import camera_sequence
+        scene=modo.Scene();keyed=camera_sequence.keyed(scene,round(lx.service.Selection().GetTime()*float(scene.fps)))
+        return picture_size(scene,keyed[0] if keyed and not keyed[1] else None)
+
+    def _planned_follows(self,opened):
+        """While nothing is rendering, the label says the size the scene now renders at: a scene opened says its own
+        camera's at once (it kept the one before, or the window's first), and a resolution or camera changed says the
+        new one. Looked at twice a second, and at once when a scene is opened."""
+        # A scene opened is said once nothing renders, whatever was said before (a render still stopping holds it).
+        if opened:self._planned_said=None
+        if self.disposed or self._rendering or getattr(self,'_following',False) or self.draft.isChecked():return
+        try:
+            if self._output_busy():return
+        except Exception:return
+        import time
+        now=time.monotonic()
+        if not opened and now-getattr(self,'_planned_looked',0.0)<0.5:return
+        self._planned_looked=now
+        try:size=tuple(self._planned_size())
+        except Exception:return
+        if opened or size!=getattr(self,'_planned_said',None):self._show_planned()
+
     def _show_planned(self):
         """The size and samples the engine chosen renders at, said beside the picture as soon as it is chosen, before
         anything is rendered with it. A draft says what it is, and keeps saying it."""
         if self.disposed or self.draft.isChecked():return
         try:
-            import modo
-            from .host import picture_size
-            from . import camera_sequence
-            scene=modo.Scene();keyed=camera_sequence.keyed(scene,round(lx.service.Selection().GetTime()*float(scene.fps)))
-            scene_w,scene_h=picture_size(scene,keyed[0] if keyed and not keyed[1] else None)
+            scene_w,scene_h=self._planned_size()
+            self._planned_said=(scene_w,scene_h)
             values=self._settings_values();get=self.preferences.get
             width,height=self._dimensions({'width':scene_w,'height':scene_h})
             engine=self._engine()
@@ -1549,19 +1577,29 @@ class Panel(Tools, QtWidgets.QWidget):
         # MoonRay XPU's realtime and XPU2's alike.
         from . import native
         xpu2_realtime=self._engine()=='moonray' and getattr(self,'_following',False) and native.xpu2()
+        # The AOVs ticked in Render Settings, each engine's own: XPU and XPU2 Outputs (AOVs), MoonLightIPR Outputs (AOVs).
+        # A buffer not ticked is not listed (nor rendered, outputs.rendered); Alpha alone in a new scene.
+        from . import moonlightipr_aovs,outputs
+        try:values=scene_settings.complete(self._settings_values_stored())
+        except Exception:values={}
+        ticked=moonlightipr_aovs.listed(values) if only else outputs.listed(values)
         for row in range(1,self.buffer.count()):
             key=self.buffer.itemData(row)
             denoised=key=='denoised_beauty'
             if checking:hidden=key!='pbr_validity'
             elif xpu2_realtime:hidden=not denoised or not on
             else:hidden=(low or (denoised and not on) or (only and not ((denoises and denoised) or key in MOONLIGHTIPR_AOVS))
-                         or (not only and key in OWN_KEYS) or (key=='pbr_validity' and not validity))
+                         or (not only and key in OWN_KEYS) or (key=='pbr_validity' and not validity)
+                         or ((key in MOONLIGHTIPR_AOVS if only else key in options.AOVS) and key not in ticked))
             self.buffer.view().setRowHidden(row,hidden)
         was=getattr(self,'_validity_checked',False);self._validity_checked=checking
         if checking:
             if not was or self.buffer.currentData() not in ('beauty','pbr_validity'):
                 self.buffer.setCurrentIndex(self.buffer.findData('pbr_validity'))
             return
+        # A buffer no longer listed (its tick taken off) gives way to the beauty.
+        row=self.buffer.currentIndex()
+        if row>0 and self.buffer.view().isRowHidden(row):self.buffer.setCurrentIndex(self.buffer.findData('beauty'))
         if was and self.buffer.currentData()=='pbr_validity':self.buffer.setCurrentIndex(self.buffer.findData('beauty'))
         if not on and self.buffer.currentData()=='denoised_beauty':self.buffer.setCurrentIndex(self.buffer.findData('beauty'))
         if xpu2_realtime and self.buffer.currentData() not in ('beauty','denoised_beauty'):
@@ -2201,7 +2239,7 @@ class Panel(Tools, QtWidgets.QWidget):
         # An ocean's waves move with the time (nodes.expand_ocean): another frame is another sea.
         from .nodes import has_ocean
         if timeless and has_ocean(scene):timeless=False
-        dropped=('preview_buffer','display','aovs','recovery','_geometry_revision','denoising','compositor')+(('time','frame') if timeless else ())
+        dropped=('preview_buffer','display','aovs','moonlightipr_aovs','recovery','_geometry_revision','denoising','compositor')+(('time','frame') if timeless else ())
         render_scene={key:value for key,value in scene.items() if key not in dropped}
         stored=self._settings_values();get=self.preferences.get
         values = [render_scene, self._clay(), self.runtime_path(), get('preview_fraction'), stored['samples'], stored['environment'], stored['threads'], get('persistent_preview'), self._following, get('ipr/samples'), get('ipr/error'), get('moonlightipr/samples'), self._engine()]
@@ -2450,7 +2488,7 @@ class Panel(Tools, QtWidgets.QWidget):
     def _capture_key(self):
         """What, beside the scene's own contents, a reading of the scene depends on."""
         import modo
-        settings={k:v for k,v in self._settings_values().items() if k not in ('display','preview_buffer','aovs','recovery','compositor')}
+        settings={k:v for k,v in self._settings_values().items() if k not in ('display','preview_buffer','aovs','moonlightipr_aovs','recovery','compositor')}
         return (repr(sorted(settings.items(),key=lambda entry:entry[0])),lx.service.Selection().GetTime(),modo.Scene().renderItem.id,self._engine(),
                 self._motion_wanted(),self.runtime_path())
 
@@ -2753,7 +2791,7 @@ class Panel(Tools, QtWidgets.QWidget):
             if not held and now-self._asset_check_time>=1 and self._asset_signature is not None and not getattr(self,'_asset_busy',False):
                 self._asset_check_time=now;self._assets_signed(self._asset_scene,False)
             full=full or asset_changed
-            settings={k:v for k,v in self._settings_values().items() if k not in ('display','preview_buffer','aovs','recovery','denoising','compositor')}
+            settings={k:v for k,v in self._settings_values().items() if k not in ('display','preview_buffer','aovs','moonlightipr_aovs','recovery','denoising','compositor')}
             changed=settings!=self._live_settings or time!=self._last_time or modo.Scene().renderItem.id!=self._scene_id
             settling=not held and getattr(self,'_live_digest_pending',False)
             # A drag held at its first samples, let go with nothing more told: its scene is sampled to the end all the same.

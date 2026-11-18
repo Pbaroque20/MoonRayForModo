@@ -226,7 +226,7 @@ index c3c63b7..5b1c9cc 100644
  RDL2_DSO_ATTR_END
  
 diff --git a/dso/material/UsdPreviewSurface/UsdPreviewSurface.cc b/dso/material/UsdPreviewSurface/UsdPreviewSurface.cc
-index 598a705..6026e8b 100644
+index 598a705..18c4d11 100644
 --- a/dso/material/UsdPreviewSurface/UsdPreviewSurface.cc
 +++ b/dso/material/UsdPreviewSurface/UsdPreviewSurface.cc
 @@ -9,9 +9,24 @@
@@ -239,12 +239,12 @@ index 598a705..6026e8b 100644
  
  namespace {
 +
-+// Modo: UsdPreviewSurface's specular workflow reflects its specularColor (tools/port_source_switches.py). True when MoonRay was started with MOONRAY_MODO_USD_SPECULAR=1; read once.
++// Modo: UsdPreviewSurface's specular workflow reflects its specularColor (tools/port_source_switches.py). True unless MoonRay was started with MOONRAY_MODO_USD_SPECULAR=0; read once.
 +inline bool modoUsdSpecular()
 +{
 +    static const bool on = [] {
 +        const char *value = std::getenv("MOONRAY_MODO_USD_SPECULAR");
-+        return value && value[0] == '1';
++        return !value || value[0] != '0';
 +    }();
 +    return on;
 +}
@@ -750,7 +750,7 @@ index 808dbdd..3814962 100644
      template<typename T> void
      computeVaryingAttributeDerivatives(shading::TypedAttributeKey<T> key,
 diff --git a/lib/rendering/geom/prim/OpenSubdivMesh.cc b/lib/rendering/geom/prim/OpenSubdivMesh.cc
-index 3f7e1a1..851de1f 100644
+index 3f7e1a1..84b4da6 100644
 --- a/lib/rendering/geom/prim/OpenSubdivMesh.cc
 +++ b/lib/rendering/geom/prim/OpenSubdivMesh.cc
 @@ -5,6 +5,7 @@
@@ -768,12 +768,12 @@ index 3f7e1a1..851de1f 100644
 +
 +namespace {
 +// Modo: a mesh its placement mirrors (tools/port_mirrored_meshes.py): its winding is turned over by the mirror, its own
-+// normals are not. Only with MOONRAY_MODO_MIRRORED_MESHES=1.
++// normals are not. Unless MOONRAY_MODO_MIRRORED_MESHES=0.
 +bool modoMirrored(const moonray::shading::XformSamples& xforms)
 +{
 +    static const bool on = [] {
 +        const char *value = std::getenv("MOONRAY_MODO_MIRRORED_MESHES");
-+        return value && value[0] == '1';
++        return !value || value[0] != '0';
 +    }();
 +    return on && !xforms.empty() && xforms[0].l.det() < 0.0f;
 +}
@@ -840,7 +840,7 @@ index 3f7e1a1..851de1f 100644
                                           N,
                                           St,
 diff --git a/lib/rendering/geom/prim/PolyMesh.cc b/lib/rendering/geom/prim/PolyMesh.cc
-index f542c19..49a8dbb 100644
+index f542c19..f0608a4 100644
 --- a/lib/rendering/geom/prim/PolyMesh.cc
 +++ b/lib/rendering/geom/prim/PolyMesh.cc
 @@ -6,6 +6,7 @@
@@ -858,12 +858,12 @@ index f542c19..49a8dbb 100644
 +
 +namespace {
 +// Modo: a mesh its placement mirrors (tools/port_mirrored_meshes.py): its winding is turned over by the mirror, its own
-+// normals are not. Only with MOONRAY_MODO_MIRRORED_MESHES=1.
++// normals are not. Unless MOONRAY_MODO_MIRRORED_MESHES=0.
 +bool modoMirrored(const moonray::shading::XformSamples& xforms)
 +{
 +    static const bool on = [] {
 +        const char *value = std::getenv("MOONRAY_MODO_MIRRORED_MESHES");
-+        return value && value[0] == '1';
++        return !value || value[0] != '0';
 +    }();
 +    return on && !xforms.empty() && xforms[0].l.det() < 0.0f;
 +}
@@ -1700,7 +1700,7 @@ index 2e41df1..d23180f 100644
  
  #define RAY_STATE_MEMBERS                                                   \
 diff --git a/lib/rendering/pbr/handlers/RayHandlers.cc b/lib/rendering/pbr/handlers/RayHandlers.cc
-index a031d6d..89e0f0d 100644
+index a031d6d..8c8b96d 100644
 --- a/lib/rendering/pbr/handlers/RayHandlers.cc
 +++ b/lib/rendering/pbr/handlers/RayHandlers.cc
 @@ -3,6 +3,7 @@
@@ -1779,7 +1779,7 @@ index a031d6d..89e0f0d 100644
 +                    // Modo: what the two branches above lose as they end.
 +                    static const bool modoCameraLightOn = [] {
 +                        const char *value = std::getenv("MOONRAY_MODO_CAMERA_LIGHT_LPE");
-+                        return value && value[0] == '1';
++                        return !value || value[0] != '0';
 +                    }();
 +                    if (modoCameraLightOn && modoCameraLight && rs->mPathVertex.lpeStateId >= 0) {
 +                        lpeStateId = lightAovs.lightEventTransition(pbrTls, rs->mPathVertex.lpeStateId, modoCameraLight);
@@ -1856,7 +1856,7 @@ index 0b0687c..a9ed134 100644
                          // update cryptomatte info for current ray
                          cryptomatteData->mPresenceDepth = rs->mPathVertex.presenceDepth;
 diff --git a/lib/rendering/pbr/handlers/XPURayHandlers.cc b/lib/rendering/pbr/handlers/XPURayHandlers.cc
-index 1cc70f8..8a090ad 100644
+index 1cc70f8..38583f8 100644
 --- a/lib/rendering/pbr/handlers/XPURayHandlers.cc
 +++ b/lib/rendering/pbr/handlers/XPURayHandlers.cc
 @@ -1,6 +1,7 @@
@@ -1935,7 +1935,7 @@ index 1cc70f8..8a090ad 100644
 +                    // Modo: what the two branches above lose as they end.
 +                    static const bool modoCameraLightOn = [] {
 +                        const char *value = std::getenv("MOONRAY_MODO_CAMERA_LIGHT_LPE");
-+                        return value && value[0] == '1';
++                        return !value || value[0] != '0';
 +                    }();
 +                    if (modoCameraLightOn && modoCameraLight && rs->mPathVertex.lpeStateId >= 0) {
 +                        lpeStateId = lightAovs.lightEventTransition(pbrTls, rs->mPathVertex.lpeStateId, modoCameraLight);
@@ -2012,7 +2012,7 @@ index 227c68e..8a2f078 100644
  }
  
 diff --git a/lib/rendering/pbr/integrator/PathIntegratorBundled.ispc b/lib/rendering/pbr/integrator/PathIntegratorBundled.ispc
-index 05df5b0..8c9a69e 100644
+index 05df5b0..1520ae1 100644
 --- a/lib/rendering/pbr/integrator/PathIntegratorBundled.ispc
 +++ b/lib/rendering/pbr/integrator/PathIntegratorBundled.ispc
 @@ -120,7 +120,12 @@ fillBundledRadiance(       uniform PbrTLState *     uniform pbrTls,
@@ -2022,7 +2022,7 @@ index 05df5b0..8c9a69e 100644
 -    const varying float alpha = (depth ? 0.f : pathPixelWeight) - transparency * pathPixelWeight;
 +    varying float alpha = (depth ? 0.f : pathPixelWeight) - transparency * pathPixelWeight;
 +    // Modo: a camera ray's alpha counts the volumes it passed once, and the rest as much as shows through them
-+    // (tools/port_fog_alpha.py); without MOONRAY_MODO_FOG_ALPHA these are 0 and 1.
++    // (tools/port_fog_alpha.py); with MOONRAY_MODO_FOG_ALPHA=0 these are 0 and 1.
 +    if (depth == 0) {
 +        alpha = rayState.mPathVertex.modoFogPending + rayState.mPathVertex.modoFogFront * alpha;
 +    }
@@ -3051,7 +3051,7 @@ index f88d871..6d33635 100644
  
      // Non-copyable
 diff --git a/lib/rendering/rndr/RenderContext.cc b/lib/rendering/rndr/RenderContext.cc
-index 0a864ad..7153b98 100644
+index 0a864ad..a17e738 100644
 --- a/lib/rendering/rndr/RenderContext.cc
 +++ b/lib/rendering/rndr/RenderContext.cc
 @@ -1,3 +1,4 @@
@@ -3168,7 +3168,7 @@ index 0a864ad..7153b98 100644
 +            // where the scene has what XPU does not support: XPU > Vector > Scalar. Off, as MoonRay's source.
 +            static const bool modoAutoXpu = [] {
 +                const char *value = std::getenv("MOONRAY_MODO_AUTO_XPU");
-+                return value && value[0] == '1';
++                return !value || value[0] != '0';
 +            }();
 +            if (modoAutoXpu) {
 +                executionModeString = "Executing an XPU render since execution mode was set to auto.";
@@ -3929,7 +3929,7 @@ index 01d5ef8..ee71322 100644
  
      int numDevices = 0;
 diff --git a/lib/rendering/shading/BasicTexture.cc b/lib/rendering/shading/BasicTexture.cc
-index 31c070c..7d53286 100644
+index 31c070c..51f20f2 100644
 --- a/lib/rendering/shading/BasicTexture.cc
 +++ b/lib/rendering/shading/BasicTexture.cc
 @@ -23,6 +23,20 @@
@@ -3939,12 +3939,12 @@ index 31c070c..7d53286 100644
 +#include <cstdlib>
 +
 +namespace {
-+// Modo: an image with no alpha channel reads as opaque (tools/port_source_switches.py). True when MoonRay was started with MOONRAY_MODO_OPAQUE_ALPHA=1; read once.
++// Modo: an image with no alpha channel reads as opaque (tools/port_source_switches.py). True unless MoonRay was started with MOONRAY_MODO_OPAQUE_ALPHA=0; read once.
 +inline bool modoOpaqueAlpha()
 +{
 +    static const bool on = [] {
 +        const char *value = std::getenv("MOONRAY_MODO_OPAQUE_ALPHA");
-+        return value && value[0] == '1';
++        return !value || value[0] != '0';
 +    }();
 +    return on;
 +}
@@ -4146,7 +4146,7 @@ index 26d6e7b..2be3ae0 100644
  
      moonray::util::InclusiveExclusiveAverage<int64> mShaderCallStat;
 diff --git a/lib/rendering/shading/UdimTexture.cc b/lib/rendering/shading/UdimTexture.cc
-index 9af3ab0..3436db1 100644
+index 9af3ab0..5d0118d 100644
 --- a/lib/rendering/shading/UdimTexture.cc
 +++ b/lib/rendering/shading/UdimTexture.cc
 @@ -22,13 +22,32 @@
@@ -4156,12 +4156,12 @@ index 9af3ab0..3436db1 100644
 +#include <cstdlib>
 +
 +namespace {
-+// Modo: an image with no alpha channel reads as opaque (tools/port_source_switches.py). True when MoonRay was started with MOONRAY_MODO_OPAQUE_ALPHA=1; read once.
++// Modo: an image with no alpha channel reads as opaque (tools/port_source_switches.py). True unless MoonRay was started with MOONRAY_MODO_OPAQUE_ALPHA=0; read once.
 +inline bool modoOpaqueAlpha()
 +{
 +    static const bool on = [] {
 +        const char *value = std::getenv("MOONRAY_MODO_OPAQUE_ALPHA");
-+        return value && value[0] == '1';
++        return !value || value[0] != '0';
 +    }();
 +    return on;
 +}
@@ -4818,12 +4818,12 @@ new file mode 100644
 +namespace moonray {
 +namespace pbr {
 +
-+/// True when MoonRay was started with MOONRAY_MODO_CRYPTO_ONCE=1. Read once.
++/// True unless MoonRay was started with MOONRAY_MODO_CRYPTO_ONCE=0. Read once.
 +inline bool modoCryptoOnce()
 +{
 +    static const bool on = [] {
 +        const char *value = std::getenv("MOONRAY_MODO_CRYPTO_ONCE");
-+        return value && value[0] == '1';
++        return !value || value[0] != '0';
 +    }();
 +    return on;
 +}
@@ -4853,12 +4853,12 @@ new file mode 100644
 +namespace moonray {
 +namespace pbr {
 +
-+/// True when MoonRay was started with MOONRAY_MODO_FOG_ALPHA=1. Read once.
++/// True unless MoonRay was started with MOONRAY_MODO_FOG_ALPHA=0. Read once.
 +inline bool modoFogAlpha()
 +{
 +    static const bool on = [] {
 +        const char *value = std::getenv("MOONRAY_MODO_FOG_ALPHA");
-+        return value && value[0] == '1';
++        return !value || value[0] != '0';
 +    }();
 +    return on;
 +}
@@ -4882,12 +4882,12 @@ new file mode 100644
 +namespace moonray {
 +namespace pbr {
 +
-+/// True when MoonRay was started with MOONRAY_MODO_CRYPTO_VOLUMES=1. Read once.
++/// True unless MoonRay was started with MOONRAY_MODO_CRYPTO_VOLUMES=0. Read once.
 +inline bool modoCryptoVolumes()
 +{
 +    static const bool on = [] {
 +        const char *value = std::getenv("MOONRAY_MODO_CRYPTO_VOLUMES");
-+        return value && value[0] == '1';
++        return !value || value[0] != '0';
 +    }();
 +    return on;
 +}
@@ -4984,23 +4984,23 @@ new file mode 100644
 +namespace moonray {
 +namespace shading {
 +
-+/// True when MoonRay was started with MOONRAY_MODO_TOON_TERMINATOR=1. Read once.
++/// True unless MoonRay was started with MOONRAY_MODO_TOON_TERMINATOR=0. Read once.
 +inline bool modoToonTerminator()
 +{
 +    static const bool on = [] {
 +        const char *value = std::getenv("MOONRAY_MODO_TOON_TERMINATOR");
-+        return value && value[0] == '1';
++        return !value || value[0] != '0';
 +    }();
 +    return on;
 +}
 +
-+/// True when MoonRay was started with MOONRAY_MODO_TOON_ALBEDO=1: the albedo AOV gives a toon diffuse lobe its own
++/// True unless MoonRay was started with MOONRAY_MODO_TOON_ALBEDO=0: the albedo AOV gives a toon diffuse lobe its own
 +/// albedo, a clean guide for the denoisers. Read once.
 +inline bool modoToonAlbedo()
 +{
 +    static const bool on = [] {
 +        const char *value = std::getenv("MOONRAY_MODO_TOON_ALBEDO");
-+        return value && value[0] == '1';
++        return !value || value[0] != '0';
 +    }();
 +    return on;
 +}
@@ -5008,7 +5008,7 @@ new file mode 100644
 +} // namespace shading
 +} // namespace moonray
 diff --git a/lib/rendering/geom/prim/VdbVolume.cc b/lib/rendering/geom/prim/VdbVolume.cc
-index 011b580..e98109c 100644
+index 011b580..d3162ca 100644
 --- a/lib/rendering/geom/prim/VdbVolume.cc
 +++ b/lib/rendering/geom/prim/VdbVolume.cc
 @@ -17,6 +17,7 @@
@@ -5025,12 +5025,12 @@ index 011b580..e98109c 100644
  
 +
 +namespace {
-+// Modo: a single-value emission grid glows grey (tools/port_scalar_emission.py). Only with MOONRAY_MODO_SCALAR_EMISSION=1.
++// Modo: a single-value emission grid glows grey (tools/port_scalar_emission.py). Unless MOONRAY_MODO_SCALAR_EMISSION=0.
 +bool modoScalarEmission()
 +{
 +    static const bool on = [] {
 +        const char *value = std::getenv("MOONRAY_MODO_SCALAR_EMISSION");
-+        return value && value[0] == '1';
++        return !value || value[0] != '0';
 +    }();
 +    return on;
 +}

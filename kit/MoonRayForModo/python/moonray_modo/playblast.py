@@ -166,6 +166,14 @@ class MoonLightIPRAnimation(Playblast):
         self.total = len(self.frames)
         self.frame = self.frames[0]
 
+    def _alpha_ticked(self):
+        """Whether Alpha is ticked in Render Settings' MoonLightIPR Outputs (AOVs) (on in a new scene)."""
+        try:
+            from . import moonlightipr_aovs, scene_settings
+            return 'alpha' in moonlightipr_aovs.listed(scene_settings.complete(self.panel._settings_values_stored()))
+        except Exception:
+            return True
+
     def _fresh(self):
         """A frame's pictures not had yet: its beauty, its denoised beauty, its alpha (and the AOV looked at before)."""
         self.beauty = self.denoised = self.alpha = self.alpha_before = self.alpha_kept = None
@@ -229,21 +237,25 @@ class MoonLightIPRAnimation(Playblast):
             # again), for the EXRs' A channel as MoonRay's renders have it; the AOV looked at before is looked at again.
             from . import moonlightipr_aovs
             session = renderer.moonlightipr
-            if self.alpha_kept is None:
-                self.alpha_kept = session.aov_now
-                self.alpha_before = self.panel._moonlightipr_linear('alpha')
-                session.aov(moonlightipr_aovs.kind('alpha'), 'alpha')
-                self.quiet = 0
-                return
-            now = self.panel._moonlightipr_linear('alpha')
-            if now is None or now is self.alpha_before:
-                self.waited += 1
-                if self.waited < 1500:
+            if self.alpha_kept is None and not self._alpha_ticked():
+                # Alpha not ticked in Render Settings' MoonLightIPR Outputs (AOVs): the frame is written without it.
+                self.alpha = False
+            else:
+                if self.alpha_kept is None:
+                    self.alpha_kept = session.aov_now
+                    self.alpha_before = self.panel._moonlightipr_linear('alpha')
+                    session.aov(moonlightipr_aovs.kind('alpha'), 'alpha')
+                    self.quiet = 0
                     return
-                # None came in a minute: the frame is written without it, as it was before alphas were.
-                now = False
-            self.alpha = now
-            session.aov(*self.alpha_kept)
+                now = self.panel._moonlightipr_linear('alpha')
+                if now is None or now is self.alpha_before:
+                    self.waited += 1
+                    if self.waited < 1500:
+                        return
+                    # None came in a minute: the frame is written without it, as it was before alphas were.
+                    now = False
+                self.alpha = now
+                session.aov(*self.alpha_kept)
         self.poll.stop()
         alpha = self.alpha or None
         try:
@@ -310,7 +322,10 @@ class MoonLightIPRAnimation(Playblast):
         from .image_formats import convert, find
         only = self.export_as.get('only')
         shown = beauty.with_suffix('.' + find(self.export_as['type'])[2])
-        convert(runtime, self.export_as['type'], target, shown, getattr(renderer.buffers, 'display', None), self.export_as.get('quality', 92))
+        # With the EXR's alpha, which it has where Alpha is ticked in Render Settings (MoonLightIPR Outputs (AOVs)), as
+        # MoonRay's frames have theirs (render.py).
+        convert(runtime, self.export_as['type'], target, shown, getattr(renderer.buffers, 'display', None), self.export_as.get('quality', 92),
+                alpha=bool(alpha), background=target)
         if only:
             target.unlink()
             if denoised and beauty.is_file():

@@ -521,19 +521,19 @@ index b08f827..cb4ec3d 100644
      }
  }
 diff --git a/lib/material/dwabase/DwaBaseLayerable.cc b/lib/material/dwabase/DwaBaseLayerable.cc
-index 9787e02..99dbda4 100644
+index 9787e02..f7d4e18 100644
 --- a/lib/material/dwabase/DwaBaseLayerable.cc
 +++ b/lib/material/dwabase/DwaBaseLayerable.cc
 @@ -17,6 +17,19 @@
  
  namespace {
  
-+// Modo: DwaBase's independent transmission roughness kept under a mirror smooth surface (tools/port_source_switches.py). True when MoonRay was started with MOONRAY_MODO_TRANSMISSION_ROUGHNESS=1; read once.
++// Modo: DwaBase's independent transmission roughness kept under a mirror smooth surface (tools/port_source_switches.py). True unless MoonRay was started with MOONRAY_MODO_TRANSMISSION_ROUGHNESS=0; read once.
 +inline bool modoTransmissionRoughness()
 +{
 +    static const bool on = [] {
 +        const char *value = std::getenv("MOONRAY_MODO_TRANSMISSION_ROUGHNESS");
-+        return value && value[0] == '1';
++        return !value || value[0] != '0';
 +    }();
 +    return on;
 +}
