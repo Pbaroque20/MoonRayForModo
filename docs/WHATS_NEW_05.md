@@ -16,7 +16,8 @@
 
   ![Preview Preferences: Follow drags under MoonLightIPR quality](images/preview-preferences-follow-drags.png)
 
-- **MoonLightIPR's Render Animation frames keep their alpha**: each frame's EXR and its denoised EXR have MoonLightIPR's alpha, and so do the PNG, TIFF and Targa pictures saved from them.
+- **Render Settings decide the buffers**: in XPU and XPU2 Outputs (AOVs), which MoonRay XPU and XPU2 share, and in the new MoonLightIPR Outputs (AOVs), a tick turns a buffer on. It is rendered, listed among the preview window's buffers and written to the EXR. Alpha alone is ticked in a new scene, so MoonRay's previews no longer render every AOV each time; tick the ones you want to look at.
+- **MoonLightIPR's Render Animation frames keep their alpha**: each frame's EXR and its denoised EXR have MoonLightIPR's alpha, and so do the PNG, TIFF and Targa pictures saved from them, while Alpha is ticked in MoonLightIPR Outputs (AOVs).
 - **MoonLightIPR's Render looks more like MoonRay's**: textures as sharp as MoonRay reads them, and the alpha and other AOVs blurred by depth of field as the picture is (they were sharp). Render Samples now default to 300, where they were 2000.
 - **Previews of any size** show as they render, 4K and 8K among them (a 4K preview stayed black until done, or said "Cannot display buffer"). What a picture takes in memory is said in the MoonRay Terminal, and among the notices when it is large.
 - **Rhizome shows what each machine renders on**: CPU and GPU, the GPU alone, or the CPU alone and why, in the Rhizome window's Renders on column. A machine that falls back to its processor gets a share it can do from its first frame.

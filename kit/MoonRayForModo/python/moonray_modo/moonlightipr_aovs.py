@@ -40,6 +40,30 @@ OWN = (('Diffuse', 'moonlightipr_diffuse'), ('Glossy', 'moonlightipr_glossy'), (
 OWN_KEYS = frozenset(key for _, key in OWN)
 
 
+# Render Settings' MoonLightIPR Outputs (AOVs), in the buffer list's order: a tick lists the buffer while MoonLightIPR
+# is the engine (Alpha alone in a new scene, scene_settings). (label, key, tip)
+_ON = 'On: the preview window lists it among its buffers while MoonLightIPR is the engine'
+LISTED = (
+    ('Diffuse', 'moonlightipr_diffuse', _ON + '. Diffuse light, subsurface with it: one of the four passes that add up to the beauty'),
+    ('Glossy', 'moonlightipr_glossy', _ON + '. Highlights from lights, glossy and mirror reflections, refraction and hair: one of the four passes that add up to the beauty'),
+    ('Shadow', 'moonlightipr_shadow', _ON + '. A shadow matte: 0 lit, 1 where the direct light is blocked'),
+    ('Emission', 'emission', _ON + '. One of the four passes that add up to the beauty'),
+    ('Environment background', 'environment_background', _ON + '. The environment seen past everything: one of the four passes that add up to the beauty'),
+    ('Albedo', 'albedo', _ON),
+    ('Camera depth', 'depth', _ON),
+    ('Shading normal', 'normal', _ON),
+    ('World position', 'position', _ON),
+    ('Alpha', 'alpha', _ON + ', and Render Animation writes it into each frame (the EXR, and a PNG, TIFF or Targa saved beside it). On in a new scene'),
+    ('Motion vectors', 'motion_vectors', _ON + '. How far what the camera sees moves, in pixels, over the shutter'),
+)
+
+
+def listed(settings):
+    """The MoonLightIPR AOVs ticked in a scene's Render Settings."""
+    held = settings.get('moonlightipr_aovs') if isinstance(settings, dict) else None
+    return set(held if isinstance(held, (list, tuple)) else ['alpha'])
+
+
 def kind(key):
     """The session's number for a buffer, 0 for the beauty or a buffer MoonLightIPR does not make."""
     return AOVS.get(key, 0)
