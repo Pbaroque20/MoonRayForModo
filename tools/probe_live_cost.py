@@ -44,6 +44,11 @@ def begin():
         panel = panel_widget()
         panel.preferences.set('runtime', str(root / os.environ.get('MOONRAY_PROBE_RUNTIME', 'runtime/steady-0351-tiles')))
         panel.preview_engine.setCurrentIndex(panel.preview_engine.findData(os.environ.get('MOONRAY_PROBE_ENGINE', 'moonlightipr')))
+        # MOONRAY_PROBE_DRAGS=0: MoonLightIPR waits for the release (Follow drags off), to compare with drags followed. The
+        # test preferences' own value is put back as the probe ends (restore_follow).
+        held['follow_kept'] = panel.preferences.store.value('moonlightipr/follow_drags')
+        panel.preferences.set('moonlightipr/follow_drags', os.environ.get('MOONRAY_PROBE_DRAGS', '1') != '0')
+        result['drags_followed'] = panel._ipr_drags()
         QtWidgets.QApplication.processEvents()
         tick, submit = panel._live_tick, panel.renderer.submit
 
@@ -63,8 +68,18 @@ def begin():
                 held['ticks'].append(elapsed)
                 if held['submits']>submissions_before:held.setdefault('update_ticks',[]).append(elapsed)
 
+        # MOONRAY_PROBE_DRAG_MODE=sampling: a drag's steps sampled on at the usual pace as MoonLightIPR did up to 0.5.5,
+        # nothing held at the press, to compare with each step frozen at its first samples (frozen, the default).
+        sampling = os.environ.get('MOONRAY_PROBE_DRAG_MODE', 'frozen') == 'sampling'
+        result['drag_mode'] = 'sampling' if sampling else 'frozen'
+        if sampling:
+            panel.renderer.moonlightipr_hold = lambda: False
+
         def counted(*a, **k):
             held['submits'] += 1
+            if sampling and a and isinstance(a[0], dict) and a[0].get('_drag'):
+                a = (dict(a[0]),) + a[1:]
+                del a[0]['_drag']
             return submit(*a, **k)
         panel._live_tick, panel.renderer.submit = timed, counted
         # How long each scene takes to make ready for MoonLightIPR, on its own thread (which holds Python's lock).
@@ -86,6 +101,15 @@ def begin():
                 held.setdefault('told', []).append([round(time.perf_counter() - held.get('began', 0), 2), bool(full), sorted(str(i) for i in items)[:6]])
             return full, items
         panel.changes.consume = told
+        # The samples a pixel of every frame MoonLightIPR sends, and when: a drag shows none past its first samples.
+        session = getattr(panel.renderer, 'moonlightipr', None)
+
+        def frame_seen(packet):
+            now = getattr(session, 'samples_now', None)
+            held.setdefault('frame_samples', []).append([round(time.perf_counter() - held.get('began', 0), 2), packet[0],
+                                                         now[1] if now and now[0] == packet[0] else None])
+        if session is not None:
+            session.memory_image.connect(frame_seen)
         # What a render's beginning costs Modo's thread when it is begun from outside the tick (one render ending
         # and the next taking its place).
         begin_pass = panel.renderer._begin_pass
@@ -126,7 +150,47 @@ def begin():
     except Exception:
         result['error'] = traceback.format_exc()
     save()
-    QtCore.QTimer.singleShot(18000, lambda: phase(0))
+    # MOONRAY_PROBE_WARMUP: seconds from RT on to the first phase (18); a few, to drag as the first picture comes.
+    QtCore.QTimer.singleShot(int(1000 * float(os.environ.get('MOONRAY_PROBE_WARMUP', '18'))), lambda: phase(0))
+
+
+def standing_check():
+    """Where the kit has the meshes and the camera, against where Modo has them: in the reading kept (_geometry_cache)
+    and in the scene last sent (_kept_capture), with which scene the newest frame shown is of."""
+    panel = panel_widget()
+    from moonray_modo.host import world_matrix
+    scene = modo.Scene()
+    found = {}
+    for label, kept in (('kept_reading', panel._geometry_cache), ('scene_sent', getattr(panel, '_kept_capture', None))):
+        wrong = []
+        for mesh in (kept or {}).get('meshes', []):
+            if mesh.get('volumetric') or 'instances' in mesh or not mesh.get('matrix'):
+                continue
+            identity = mesh.get('source_item') or mesh['identity'].split('|')[0]
+            try:
+                item = scene.item(identity)
+                actual = world_matrix(item)
+            except Exception:
+                continue
+            off = max(abs(a - b) for a, b in zip(actual, mesh['matrix']))
+            if off > 1e-5:
+                chain, parent = [], item.parent
+                while parent is not None and len(chain) < 6:
+                    chain.append(parent.id)
+                    parent = parent.parent
+                wrong.append({'item': identity, 'name': item.name, 'parents': chain, 'off_by': round(off, 4)})
+        camera = (kept or {}).get('camera') or {}
+        try:
+            camera_off = max(abs(a - b) for a, b in zip(world_matrix(scene.item(camera['identity'])), camera['matrix']))
+        except Exception:
+            camera_off = None
+        found[label] = {'meshes_elsewhere': len(wrong), 'first': wrong[:6], 'camera_off_by': None if camera_off is None else round(camera_off, 4)}
+    renderer = panel.renderer
+    session = getattr(renderer, 'moonlightipr', None)
+    found.update(newest_frame_scene=getattr(renderer, 'moonlightipr_newest', None), newest_scene_asked=getattr(renderer, 'moonlightipr_serial', None),
+                 samples_asked_last=getattr(renderer, 'moonlightipr_gathering', None), session_current=getattr(session, 'current', None),
+                 session_held=getattr(session, 'held', None), session_done=getattr(session, 'done', None))
+    return found
 
 
 def phase(index):
@@ -145,11 +209,27 @@ def phase(index):
                 actual=world_matrix(modo.Scene().item(identity))
                 if any(abs(a-b)>1e-5 for a,b in zip(actual,mesh['matrix'])):mismatches.append(identity)
             result['transform_mismatches']=mismatches
+        result.setdefault('after_release', {})['end'] = standing_check()
         panel_widget().stop()
+        # Follow drags as the test preferences held it.
+        store = panel_widget().preferences.store
+        if held.get('follow_kept') is None:
+            store.remove('moonlightipr/follow_drags')
+        else:
+            store.setValue('moonlightipr/follow_drags', held['follow_kept'])
         save()
         lx.eval('!app.quit')
         return
+    # A second between phases, the mouse let go: each drag ends as a drag does, its release rendered.
+    QtCore.QTimer.singleShot(1000 if index else 0, lambda: begin_phase(index))
+
+
+def begin_phase(index):
+    if index:
+        # A second after the last phase ended, the mouse let go: where the kit has things, and what was shown.
+        result.setdefault('after_release', {})[NAMES[index - 1]] = standing_check()
     held['ticks'], held['moves'], held['submits'], held['update_ticks'] = [], [], 0, []
+    held['frame_samples'] = []
     held['frames'] = getattr(panel_widget().renderer, 'frames_shown', 0)
     held['fast'] = getattr(panel_widget(), '_moves_only', 0)
     # Should Modo's thread stop answering, where every thread stands is written down.
@@ -245,7 +325,13 @@ def close(name):
                              'moonray_passes_begun': held.pop('passes', 0), 'pass_begin_seconds': round(held.pop('pass_time', 0.0), 3), 'of_which_outside_ticks': round(held.pop('outside', 0.0), 3),
                              'whole_asked_by': held.pop('whole', [])[:12],
                              'told_of': held.pop('told', [])[:12], 'time_now': lx.service.Selection().GetTime(),
+                             # [seconds into the phase, scene, samples a pixel] of each frame sent; past_first counts those
+                             # of a drag with more than the first samples (render.DRAG_SAMPLES) after its first tick, none expected.
+                             'frames_sent': held.get('frame_samples', [])[:40],
+                             'past_first': sum(1 for f in held.get('frame_samples', []) if name.endswith('dragged') and f[0] > 0.15 and (f[2] or 0) > 1),
                              'moves_made': len(held['moves']), 'moves_expected': int(span / 0.03),
+                             # The samples MoonLightIPR was last asked to gather: render.DRAG_SAMPLES for a step of a drag.
+                             'samples_asked_last': getattr(panel_widget().renderer, 'moonlightipr_gathering', None),
                              'move_command_median_ms': round(1000 * sorted(held['moves'])[len(held['moves']) // 2], 1) if held['moves'] else None})
     save()
 

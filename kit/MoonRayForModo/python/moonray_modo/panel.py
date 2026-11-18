@@ -69,10 +69,13 @@ DRAFT_MOST=4500000
 # How long Modo's thread is left alone after an update of a followed scene, in lengths of that update.
 LIVE_REST=2.0
 # Whether MoonLightIPR follows a drag that only moves things (the camera, a viewport looking through it, items' places)
-# step by step, from the scene sent last (incremental.move_only); off, a drag is rendered once the mouse is let go.
-# Off since 2026-11-06: it follows, but a heavy scene's viewport lags behind while it does (a car: Modo made 40 of 100
-# moves a drag asked for, 85 with it off). The drag report (_drag_note) says what each followed drag came to.
-IPR_DRAGS=False
+# step by step is the Preview preference Follow drags (moonlightipr/follow_drags, _ipr_drags), off by default: a drag is
+# rendered once the mouse is let go. Followed from 2026-11-06 and switched off as a heavy scene's viewport lagged behind
+# (a car, 40 of 100 moves made, 85 not followed); an option since 2026-11-17, each step held at its first sample
+# (render.DRAG_SAMPLES): the session renders one sample of a step, shows it and waits for the next, where it used to
+# sample on and send up to 30 pictures a second for Modo to show; let go, the scene is sampled to the end. Sampling on
+# during a drag, and one sample a pixel drawn again and again while the mouse is held, both tried 2026-11-17, were
+# slower and noisier. The drag report (_drag_note) says what each followed drag came to.
 
 
 class ElidedLabel(QtWidgets.QLabel):
@@ -1812,6 +1815,11 @@ class Panel(Tools, QtWidgets.QWidget):
             return bool(native.xpu2())
         except Exception:return False
 
+    def _ipr_drags(self):
+        """Whether MoonLightIPR follows a drag step by step, each step at its first sample (Preview preferences, Follow
+        drags, opt-in); off, a drag is rendered once the mouse is let go."""
+        return bool(self.preferences.get('moonlightipr/follow_drags'))
+
     def _moonlightipr_blur(self):
         """Whether MoonLightIPR shows motion blur: where the scene asks for it (_motion_wanted)."""
         return self._motion_wanted()
@@ -1856,7 +1864,12 @@ class Panel(Tools, QtWidgets.QWidget):
             self.changes.consume()
             if moving is False:return first
         from .animation import capture_current
-        if frame is None:self._reading()
+        if frame is None:
+            self._reading()
+            # Realtime: the scene at the frame's moment read the usual way and kept (_geometry_cache), the shutter's ends
+            # asked of it, as an edit does (_live_tick). Read here whole, the first drag after RT was switched on found
+            # no reading kept and read a tester's car again in its first step, 5 s with the picture stale.
+            if self._following:frame=self._capture()
         try:
             held=capture_current(self._settings_values()['surface']==2,frame=frame)
         except ValueError as exc:
@@ -2572,11 +2585,20 @@ class Panel(Tools, QtWidgets.QWidget):
         # scene's meshes are kept and packed away from Modo's thread; anything else dragged is rendered once the mouse is
         # let go (below). Up to 0.5.3.1 every drag waited for the release: following one held Modo up more than it showed.
         ipr=self._engine()=='moonlightipr'
-        if held and ipr and not IPR_DRAGS:
-            # Drags followed by MoonLightIPR are set aside (IPR_DRAGS): what Modo tells of waits for the release.
+        if held and ipr and not self._ipr_drags():
+            # Drags not followed (Follow drags off, the default): what Modo tells of waits for the release.
             self.release_timer.start();return
         if not (held and ipr):self._camera_seen=None
         self._drag_note(held and ipr)
+        if held and ipr and not getattr(self,'_drag_frozen',False):
+            # The mouse pressed: MoonLightIPR stops sampling where it stands, from then to the release no step of the
+            # drag goes further than its first samples (render.DRAG_SAMPLES), nor the picture before its first move.
+            self._drag_frozen=True;self.renderer.moonlightipr_hold()
+        elif not held and getattr(self,'_drag_frozen',False):
+            self._drag_frozen=False
+            # Let go having moved nothing: sampled on from where it stopped. A drag that moved something has its last
+            # step sampled to the end anew (released, below).
+            if not getattr(self,'_drag_held',False):self.renderer.moonlightipr_resume()
         import time as clock
         began=clock.monotonic()
         if began<getattr(self,'_live_rest',0.0):
@@ -2616,10 +2638,12 @@ class Panel(Tools, QtWidgets.QWidget):
             settings={k:v for k,v in self._settings_values().items() if k not in ('display','preview_buffer','aovs','recovery','denoising','compositor')}
             changed=settings!=self._live_settings or time!=self._last_time or modo.Scene().renderItem.id!=self._scene_id
             settling=not held and getattr(self,'_live_digest_pending',False)
-            if not (full or items or changed or settling):
+            # A drag held at its first samples, let go with nothing more told: its scene is sampled to the end all the same.
+            released=not held and getattr(self,'_drag_held',False)
+            if not (full or items or changed or settling or released):
                 self._drag_count('nothing told');return
             self._drag_told(items)
-            reuse=not full and not changed and bool(items or settling) and self._geometry_cache is not None
+            reuse=not full and not changed and bool(items or settling or released) and self._geometry_cache is not None
             if reuse:
                 from .incremental import classify
                 reuse=classify(modo.Scene(),items,self._geometry_cache) if items else True
@@ -2646,6 +2670,9 @@ class Panel(Tools, QtWidgets.QWidget):
                 # place of its own), which needs the scene read whole. That is done once in a drag, so that the rest
                 # of it can be followed; a drag that goes on needing it waits for the release, as below.
                 self._live_drag_read=True
+                self._drag_count('read whole once: '+('told whole' if full else 'settings or time changed' if changed
+                                                      else 'no reading kept' if self._geometry_cache is None
+                                                      else 'edit is %s'%(type(reuse).__name__ if isinstance(reuse,dict) else reuse)))
             elif held and reuse not in (True,'transforms','materials'):
                 # Modo reports some drags as they happen (the transform tool) and others only on
                 # release (viewport navigation). Of those it reports, only light, transform and
@@ -2732,18 +2759,26 @@ class Panel(Tools, QtWidgets.QWidget):
             elif fast is not None:
                 self._drag_count('sent')
                 # Something moved, or Modo would not have told of it: sent without hashing the whole scene again (a
-                # car's materials and settings, ~16 ms a step). The last of the drag is hashed once it is let go.
-                self._drag_scene=fast
-                self._submit(scene,digest=('live-drag',object()))
+                # car's materials and settings, ~16 ms a step). The last of the drag is hashed once it is let go. A step
+                # is rendered to its first sample alone and held there (render.DRAG_SAMPLES).
+                self._drag_scene=fast;self._drag_held=True
+                self._submit(dict(scene,_drag=True),digest=('live-drag',object()))
             else:
-                drag=getattr(self,'_drag_scene',None);self._drag_scene=None
-                if drag is not None and isinstance(self.last_digest,tuple):
-                    # A drag followed by moves alone, now read the usual way: unchanged since its last step, nothing is sent.
-                    try:self.last_digest=self._digest(drag,timeless=self._engine()=='moonlightipr')
-                    except Exception:pass
+                self._drag_scene=None
                 digest=self._digest(scene,timeless=self._engine()=='moonlightipr')
                 self._live_digest_pending=False
-                if digest != self.last_digest:self._submit(scene,digest=digest)
+                if held and ipr:
+                    # A step of a drag read the usual way (its first, which reads the scene whole): held at its first
+                    # sample as the others are.
+                    if digest != self.last_digest:
+                        self._drag_held=True
+                        self._submit(dict(scene,_drag=True),digest=digest)
+                elif getattr(self,'_drag_held',False):
+                    # A drag followed, let go: its scene sampled to the end, even where it is the drag's last step, which
+                    # was held at its first sample.
+                    self._drag_held=False
+                    self._submit(scene,digest=digest)
+                elif digest != self.last_digest:self._submit(scene,digest=digest)
         except Exception as exc:
             self.changes.invalidate();self._failed(str(exc))
         finally:

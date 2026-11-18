@@ -209,6 +209,12 @@ class Session(QtCore.QObject):
         self.process.write(('scene %d %s\n' % (request['id'], path)).encode('utf-8'))
         self.sent = dict(request, keys=keys, path=path)
         self.current = request['id']
+        # A step of a drag (render.DRAG_SAMPLES): its one frame comes after the next step is sent, so it is shown even
+        # though replaced (_read), never older than a frame shown already.
+        if (request.get('snapshot') or {}).get('_drag'):
+            steps = self.__dict__.setdefault('drag_steps', [])
+            steps.append(request['id'])
+            del steps[:-8]
         # The picture looked at is said again with every scene: a session newly started has not been told.
         self.process.write(b'view 0 denoised\n' if getattr(self, 'denoised_view', True) else b'view 0 beauty\n')
 
@@ -223,8 +229,14 @@ class Session(QtCore.QObject):
                 try:
                     from .shared_image import receive
                     packet = receive(line, self.process.processId())
-                    # A frame of a scene that has since been replaced is acknowledged but not shown.
-                    if not self.stopping and not self.closed and packet[0] == self.current: self.memory_image.emit(packet)
+                    # A frame of a scene that has since been replaced is acknowledged but not shown, but for a step of a
+                    # drag's, its only frame, sent once the next step is on its way (drag_steps): shown unless a newer
+                    # frame has been.
+                    shown = getattr(self, 'frame_shown', -1)
+                    fresh = packet[0] == self.current or (packet[0] in getattr(self, 'drag_steps', ()) and packet[0] > shown)
+                    if not self.stopping and not self.closed and fresh:
+                        self.frame_shown = max(shown, packet[0])
+                        self.memory_image.emit(packet)
                 except (ValueError, OSError) as exc:
                     # A frame already taken back (shared_image.Withdrawn) is passed over without a word: newer ones follow.
                     from .shared_image import Withdrawn
@@ -259,6 +271,8 @@ class Session(QtCore.QObject):
                 else: self.failed.emit(rejected(getattr(self, 'rejection', '')))
                 self._dispatch()
             elif parts[1] == 'DONE' and not self.latest and generation == self.current:
+                # A render done has nothing to hold (hold).
+                self.done = generation
                 self.idle.arm()
                 self.ready.emit(generation)
         self.partial = self.partial[-65536:]
@@ -302,6 +316,27 @@ class Session(QtCore.QObject):
         """Hold the scenes that follow at one moment of the shutter (0 its opening, 1 its closing): the motion vectors
         without motion blur. Said with the next scene."""
         self.vectors_now = (1 if held else 0, float(moment))
+
+    def hold(self):
+        """Stop sampling where the render stands, its picture kept: the mouse is pressed, and a drag is shown at its
+        first samples alone (render.DRAG_SAMPLES). resume takes it up again where nothing was moved. Returns whether
+        a render under way was held: none is where none was sent, or the last one is done or still waits its turn."""
+        if (not self.running() or self.stopping or self.closed or self.current is None or self.latest is not None
+                or self.packer is not None or getattr(self, 'done', None) == self.current):
+            return False
+        self.held = self.current
+        self.process.write(b'pause\n')
+        return True
+
+    def resume(self):
+        """Sample on from where hold stopped, the scene unchanged (the mouse let go having moved nothing). Returns
+        whether it did: not where another scene has been asked for since, which is sampled to the end of its own."""
+        held, self.held = getattr(self, 'held', None), None
+        if (held is None or held != self.current or not self.running() or self.stopping or self.closed
+                or self.latest is not None or self.packer is not None):
+            return False
+        self.process.write(('continue %d\n' % held).encode('utf-8'))
+        return True
 
     def finish(self):
         """Stop sampling and have what is rendered so far sent as the finished picture. Returns whether there is a

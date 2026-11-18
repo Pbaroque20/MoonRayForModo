@@ -137,6 +137,71 @@ def mean(pixels):
     return sum(values) / len(values)
 
 
+def hold_and_continue(session, scene):
+    """A render held where it stands (pause: the mouse pressed for a drag, Follow drags on) sends nothing more, and taken
+    up again (continue: let go having moved nothing) goes on from the samples it has to the end, at the pace it had. The
+    last check of a session: its output is read on another thread from here on."""
+    import queue
+    import threading
+    payload, keys, warnings = moonlightipr_scene.pack(scene, WIDTH, HEIGHT, environment=0, known=session.known, samples=SAMPLES)
+    session.send(payload)
+    lines = queue.Queue()
+
+    def read():
+        for raw in session.process.stdout:
+            lines.put(raw.decode('utf-8', errors='replace').strip())
+        lines.put(None)
+    threading.Thread(target=read, daemon=True).start()
+    state = {'samples': 0, 'done': False, 'frames': []}
+
+    def take(seconds, until=lambda: False):
+        """Events of this scene for up to seconds, or until until(); the samples said of the frames among them."""
+        end = time.perf_counter() + seconds
+        said = []
+        while time.perf_counter() < end and not until():
+            try:
+                line = lines.get(timeout=max(0.0, end - time.perf_counter()))
+            except queue.Empty:
+                break
+            if line is None:
+                raise RuntimeError('Session exited early')
+            if line.startswith('@@MODO_SHARED '):
+                generation, key, width, height, pixels = receive(line, session.process.pid)
+                if generation == session.generation:
+                    state['frames'] = (state['frames'] + [pixels])[-3:]
+            elif line.startswith('@@MODO_SESSION '):
+                words = line.split()
+                if int(words[2]) != session.generation:
+                    continue
+                if words[1] == 'SAMPLES':
+                    state['samples'] = int(words[3]); said.append(state['samples'])
+                elif words[1] == 'DONE':
+                    state['done'] = True
+        return said
+
+    take(30, lambda: state['samples'] >= 40)
+    if state['done'] or state['samples'] < 40:
+        raise RuntimeError('The scene to hold did not get under way')
+    session.process.stdin.write(b'pause\n'); session.process.stdin.flush()
+    take(0.3)       # a frame already on its way
+    paused = state['samples']
+    after = take(1.5)
+    if after or state['done']:
+        raise RuntimeError('A held render went on sampling: %s' % after)
+    session.process.stdin.write(('continue %d\n' % session.generation).encode()); session.process.stdin.flush()
+    began = time.perf_counter()
+    went_on = take(30, lambda: state['done'])
+    seconds = time.perf_counter() - began
+    if not state['done'] or not went_on or went_on[0] <= paused or state['samples'] != SAMPLES:
+        raise RuntimeError('A render taken up again did not go on from %d samples to %d: %s' % (paused, SAMPLES, went_on[:5]))
+    # The pace is 8 s for the whole render: what was left of it, not all of it again.
+    left = 8.0 * (SAMPLES - paused) / SAMPLES
+    if os.environ.get('MOONLIGHTIPR_PACE') is None and seconds > left + 2.0:
+        raise RuntimeError('A render taken up again began its pace again: %.1f s for %.1f s left' % (seconds, left))
+    print('%-22s held at %d samples, nothing sent for 1.5 s; went on from %d to %d in %.1f s (%.1f s left at its pace)'
+          % ('Held and taken up', paused, went_on[0], SAMPLES, seconds, left))
+
+
 def main():
     folder = BUILD / 'session'
     folder.mkdir(parents=True, exist_ok=True)
@@ -194,6 +259,8 @@ def main():
         report('Still again', still)
         if abs(mean(still['pixels']) - mean(recovered['pixels'])) > .02 * mean(recovered['pixels']):
             raise RuntimeError('The scene did not return to rest after motion blur')
+
+        hold_and_continue(session, scene)
 
         session.process.stdin.write(b'quit\n')
         session.process.stdin.flush()
