@@ -649,10 +649,10 @@ def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fal
         # Alembic streamed in as its own items (Alembic Mesh, Curves, Point Cloud): their surfaces are Modo's render
         # cache's, frame by frame from the file, with no mesh channel to read.
         evaluated_geometry = True
-    from .mask_types import needs_cache
+    from .mask_types import needs_cache, mask_items
     for mask in scene.items('mask',superType=False):
-        targets = mask.itemGraph('shadeLoc').forward()
-        if needs_cache(channel(mask,'ptyp',''),channel(mask,'ptag',''),any(item.type in ('mesh','meshInst','replicator','groupLocator') for item in targets)) or channel(mask,'submask',False):
+        # A mask for items (a Group of the Groups list among them) is told apart surface by surface in Modo's render cache.
+        if needs_cache(channel(mask,'ptyp',''),channel(mask,'ptag',''),bool(mask_items(mask))) or channel(mask,'submask',False):
             evaluated_geometry = True
     camera = scene.renderCamera
     # The camera keyed for this frame in the Camera Sequence, where one is: one of Modo's renders in place of the
