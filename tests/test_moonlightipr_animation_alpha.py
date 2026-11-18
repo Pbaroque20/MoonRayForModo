@@ -164,6 +164,26 @@ class Writing(unittest.TestCase):
                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT).stdout.decode(errors='replace')
             self.assertIn('R, G, B, A', info)
 
+    def test_a_png_beside_it_keeps_the_alpha_where_alpha_is_on(self):
+        # A GUI check found the PNG of "OpenEXR, and PNG" written without its alpha, the EXR beside it with it.
+        playblast = _playblast(self)
+        from moonray_modo import native
+        for aovs, channels in ((['alpha'], 'R, G, B, A'), ([], 'R, G, B\n')):
+            with tempfile.TemporaryDirectory() as folder:
+                width, height = 4, 2
+                beauty = (width, height, struct.pack('<%df' % (width * height * 3), *([0.5] * width * height * 3)))
+                alpha = (width, height, struct.pack('<%df' % (width * height * 3), *([0.25] * width * height * 3)))
+                a = types.SimpleNamespace(directory=Path(folder), prefix='frame', frame=1, digits=4, export_as={'type': 'png8'}, denoise=False,
+                                          panel=types.SimpleNamespace(renderer=types.SimpleNamespace(active={'runtime': str(RUNTIME)}, buffers=None),
+                                                                      _settings_values=lambda: {'aovs': aovs}))
+                playblast.MoonLightIPRAnimation._write(a, beauty, alpha=alpha)
+                png = next(Path(folder).glob('*.png'))
+                info = subprocess.run([str(RUNTIME / 'oiiotool.exe'), '--info', '-v', str(png)], env=native.environment(RUNTIME),
+                                      stdout=subprocess.PIPE, stderr=subprocess.STDOUT).stdout.decode(errors='replace')
+                self.assertIn('channel list: ' + channels.strip(), info.replace('\r', ''), aovs)
+                if aovs:
+                    self.assertNotIn('channel list: R, G, B\n', info.replace('\r', ''))
+
 
 if __name__ == '__main__':
     unittest.main()

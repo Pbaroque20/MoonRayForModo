@@ -310,7 +310,13 @@ class MoonLightIPRAnimation(Playblast):
         from .image_formats import convert, find
         only = self.export_as.get('only')
         shown = beauty.with_suffix('.' + find(self.export_as['type'])[2])
-        convert(runtime, self.export_as['type'], target, shown, getattr(renderer.buffers, 'display', None), self.export_as.get('quality', 92))
+        # With the EXR's alpha where Alpha is on in Render Settings, as MoonRay's frames have it (render.py).
+        try:
+            alpha_on = bool(alpha) and 'alpha' in (self.panel._settings_values().get('aovs') or [])
+        except Exception:
+            alpha_on = bool(alpha)
+        convert(runtime, self.export_as['type'], target, shown, getattr(renderer.buffers, 'display', None), self.export_as.get('quality', 92),
+                alpha=alpha_on, background=target)
         if only:
             target.unlink()
             if denoised and beauty.is_file():
