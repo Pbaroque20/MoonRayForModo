@@ -57,6 +57,10 @@ def main():
     ocean=ROOT/'build/native-avx/bin/modo_ocean.dll'
     if not ocean.is_file():raise ValueError('Build modo_ocean.dll first: tools/build_ocean.py')
     kit[prefix+'bin/modo_ocean.dll']=ocean
+    # The command-line LXO to RDL converter (tools/build_lxo2rdl.py), which finds the kit's export script from bin.
+    lxo2rdl=ROOT/'build/native-avx/bin/lxo2rdl.exe'
+    if not lxo2rdl.is_file():raise ValueError('Build lxo2rdl.exe first: tools/build_lxo2rdl.py')
+    kit[prefix+'bin/lxo2rdl.exe']=lxo2rdl
     for source,name in [('LICENSE','LICENSE.txt'),('THIRD_PARTY.md','THIRD_PARTY.txt'),('docs/INSTALLATION.md','INSTALLATION.md'),('README.md','README.md')]:kit[prefix+name]=ROOT/source
     # The About window's build number, stamped as the package is made.
     from build_number import FILE,number

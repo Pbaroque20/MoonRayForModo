@@ -133,6 +133,18 @@ def rdl_entry(text):
     return text[:end] + eol + '      <list type="Control" val="cmd moonray.rdl.import"><atom type="Label">Import MoonRay Scene (RDL)...</atom></list>' + text[end:]
 
 
+def lxo_convert_entry(text):
+    """Convert LXO to RDL in the MoonRay menu, after Export as MoonRay Scene; unchanged if it is there, or there is no
+    Export as MoonRay Scene."""
+    anchor = '<list type="Control" val="cmd moonray.scene.export">'
+    if 'cmd moonray.lxo.convert' in text or text.count(anchor) != 1:
+        return text
+    end = text.index('</list>', text.index(anchor)) + len('</list>')
+    eol = '\r\n' if '\r\n' in text else '\n'
+    return (text[:end] + eol + '      <list type="Control" val="cmd moonray.lxo.convert"><atom type="Label">Convert LXO to RDL...</atom>'
+            '<atom type="Hash">MoonRayMenu_lxo_convert:control</atom></list>' + text[end:])
+
+
 def context_menus(text):
     """The kit's right-click entries in Modo's Item List (a camera made into a MoonRay camera, a MoonRay material for a
     mesh), as the checkout's layout.cfg has them, at the head of the attributes; unchanged if they are there."""
