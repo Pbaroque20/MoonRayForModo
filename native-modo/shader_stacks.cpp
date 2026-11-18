@@ -2,8 +2,10 @@
 // assign_materials). Modo's render cache gives each surface the layers of its host stack; a layer applies where every
 // group above it, up to the render item, is enabled and rendered, and every mask above it names this surface's
 // material and part (when it names one) and, when it is limited to items, one of them is this surface's item (its
-// prototypes' too, with Apply to Instances), or a group holding it. The same rule as Python's, a channel read at a
-// time: from Python it was 30,000 channel reads and 1.6 s for a car's 334 surfaces at every reading.
+// prototypes' too, with Apply to Instances), or a group holding it: a Group Locator it is under, or a Group of the
+// Groups list it is a member of (of a Group inside it too, and under a Group Locator that is a member), as Modo renders
+// it. The same rule as Python's (mask_types.covered), a channel read at a time: from Python it was 30,000 channel reads
+// and 1.6 s for a car's 334 surfaces at every reading.
 // Read-only. Runs on Modo's main thread, where Python called it.
 #include <lx_action.hpp>
 #include <lx_value.hpp>
@@ -20,11 +22,11 @@
 
 namespace {
 struct Types {
-    LXtItemType mask=0,polyRender=0,mesh=0,meshInst=0,replicator=0,groupLocator=0;
+    LXtItemType mask=0,polyRender=0,mesh=0,meshInst=0,replicator=0,groupLocator=0,group=0;
     explicit Types(CLxUser_SceneService& service) {
         auto lookup=[&](const char* name){LXtItemType type=0;service.ItemTypeLookup(name,&type);return type;};
         mask=lookup("mask");polyRender=lookup("polyRender");mesh=lookup("mesh");meshInst=lookup("meshInst");
-        replicator=lookup("replicator");groupLocator=lookup("groupLocator");
+        replicator=lookup("replicator");groupLocator=lookup("groupLocator");group=lookup("group");
     }
 };
 
@@ -92,7 +94,7 @@ class Stacks {
 public:
     Stacks(CLxUser_Scene& scene,double time):scene(scene),types(service) {
         if(!scene.GetChannels(reader.chan,time)) throw std::runtime_error("Scene channels");
-        scene.GetGraph("shadeLoc",shadeLoc);scene.GetGraph("source",source);
+        scene.GetGraph("shadeLoc",shadeLoc);scene.GetGraph("source",source);scene.GetGraph("itemGroups",itemGroups);
     }
     std::vector<std::string> applying(const Surface& surface) {
         // The surface's item and the prototypes its instances come from (an instance of an instance among them).
@@ -118,14 +120,39 @@ public:
     }
 
 private:
-    bool contains(CLxUser_Item& target,const std::set<std::string>& applicable) {
-        if(applicable.count(ident(target))) return true;
-        if(target.Type()!=types.groupLocator) return false;
+    // The items a mask's item covers, worked out once a reading: itself, the items under a Group Locator (the Group
+    // Locators among them followed further), and a Group's members and the groups inside it. A Group holding a plain
+    // Locator does not reach what is under the locator, as Modo renders it.
+    void cover(CLxUser_Item& target,std::set<std::string>& into) {
+        const std::string id=ident(target);
+        if(!into.insert(id).second) return;
+        const LXtItemType type=target.Type();
+        if(type!=types.groupLocator && type!=types.group) return;
         unsigned count=0;target.SubCount(&count);
         for(unsigned i=0;i<count;++i) {
             CLxUser_Item child;
-            if(target.GetSubItem(i,child) && contains(child,applicable)) return true;
+            if(!target.GetSubItem(i,child)) continue;
+            // Under a Group, only the groups inside it: its members are linked to it, not parented.
+            if(type==types.group && child.Type()!=types.group) continue;
+            if(type==types.groupLocator && child.Type()!=types.groupLocator) {into.insert(ident(child));continue;}
+            cover(child,into);
         }
+        if(type==types.group && itemGroups.test()) {
+            const unsigned members=itemGroups.Forward(target);
+            for(unsigned i=0;i<members;++i) {
+                CLxUser_Item member;
+                if(itemGroups.Forward(target,i,member)) cover(member,into);
+            }
+        }
+    }
+    bool contains(CLxUser_Item& target,const std::set<std::string>& applicable) {
+        const std::string id=ident(target);
+        auto found=covers.find(id);
+        if(found==covers.end()) {
+            found=covers.emplace(id,std::set<std::string>()).first;
+            cover(target,found->second);
+        }
+        for(const auto& item:applicable) if(found->second.count(item)) return true;
         return false;
     }
     bool matches(CLxUser_Item& item,const Surface& surface,const std::set<std::string>& sources) {
@@ -145,7 +172,7 @@ private:
                         CLxUser_Item target;
                         if(!shadeLoc.Forward(parent,i,target)) continue;
                         const LXtItemType type=target.Type();
-                        if(type==types.mesh || type==types.meshInst || type==types.replicator || type==types.groupLocator) targets.push_back(target);
+                        if(type==types.mesh || type==types.meshInst || type==types.replicator || type==types.groupLocator || type==types.group) targets.push_back(target);
                     }
                 }
                 const std::set<std::string> applicable=reader.truth(parent,"instApply",false)?sources:std::set<std::string>{surface.item};
@@ -165,7 +192,8 @@ private:
     CLxUser_SceneService service;
     Types types;
     Reader reader;
-    CLxUser_ItemGraph shadeLoc,source;
+    CLxUser_ItemGraph shadeLoc,source,itemGroups;
+    std::map<std::string,std::set<std::string>> covers;
 };
 
 std::vector<std::string> split(const std::string& text,char by) {

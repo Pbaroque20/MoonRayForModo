@@ -441,9 +441,9 @@ def fur_entries(scene,item,mesh,polygons,points,warnings):
             if channel(mask,'ptyp','') not in ('Material',''):continue
             wanted=channel(mask,'ptag','') or ''
             if wanted=='(all)':wanted=''
-            try:targets=list(mask.itemGraph('shadeLoc').forward())
-            except (LookupError,RuntimeError,AttributeError):targets=[]
-            if targets and all(target.id!=item.id for target in targets):continue
+            from .mask_types import mask_items, covered
+            targets=mask_items(mask)
+            if targets and all(item.id not in covered(target) for target in targets):continue
         read=lambda key,layer=layer:layer.channel(key).get()
         # The surface, its maps and its guides read by the geometry adapter in one call (fur_reader); where it cannot,
         # a polygon and a point at a time here.

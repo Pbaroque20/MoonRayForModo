@@ -16,6 +16,13 @@ def framing(width, height, aperture_x, aperture_y, pixel_aspect=1, fit='fill'):
     return aperture_x,pixel_aspect
 
 
+def ortho_width(aperture_x, focus_distance, focal):
+    """How wide, in the scene's units, an orthographic Modo camera sees: as wide as its film (as fitted, framing) seen at
+    its Focus Distance through its lens, as Modo renders it (tools/probe_cl_ortho_camera.py). Its Target Distance plays
+    no part: the plugin went by it, and a camera whose two distances differ came out zoomed (a report)."""
+    return aperture_x * float(focus_distance) / max(1e-9, float(focal))
+
+
 def offsets(x, y, projection, aperture_x, ortho_width, pixel_aspect=1):
     if not all(math.isfinite(float(v)) for v in (x,y,aperture_x,ortho_width,pixel_aspect)) or aperture_x<=0 or pixel_aspect<=0:
         raise ValueError('Invalid camera film offset or film width')

@@ -46,6 +46,18 @@ def shown_colour(value):
     return 12.92 * value if value <= 0.0031308 else 1.055 * value ** (1.0 / 2.4) - 0.055
 
 
+BRIGHTER_PER_PIXEL = .005   # a Shift-drag on a colour's swatch: from black to white in 200 pixels
+
+
+def brightened(start, pixels):
+    """A colour as a Shift-drag on its swatch leaves it, as Modo's Shift-drag on a colour does: its parts, as shown, all
+    up (right or up) or down by the same amount, each kept between 0 and 1. Worked out from the colour as it was when
+    the drag began, never from where the drag has got to: dragged up to white and back, it is its own colour again,
+    not a grey."""
+    change = float(pixels) * BRIGHTER_PER_PIXEL
+    return [min(1.0, max(0.0, float(part) + change)) for part in start]
+
+
 def kept_colour(value):
     """A colour part as shown back to the linear value a material keeps."""
     value = float(value)

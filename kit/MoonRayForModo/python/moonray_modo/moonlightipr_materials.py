@@ -1217,6 +1217,7 @@ class Compiler:
         path = []           # the groups the current row sits in, outermost first
         pending = {}        # target identity -> mask register, written by a mask row before its target
         bumped = False
+        shaped = set()      # 'bump' and 'normal', once a row below has set them
 
         def masked(identity):
             """Flags for a row or group whose mask was written earlier; the register is then free."""
@@ -1275,6 +1276,12 @@ class Compiler:
                     if layer.get('invert') and effect_name in textures.COLOR_EFFECTS:
                         value = [1 - v for v in value]
                     put(effect_name, channel, blend, BLENDS.get(blend, 0), mask, value, layer.get('opacity', 1), constant=True)
+                # Nor does it leave the bumps and normal maps of the rows below it, as Modo renders it (MoonRay's graph
+                # too, graph.bindings): where a row below set them, they go back to flat, blended as the row is. A
+                # material in a group over others showed the bumps of those under it (a report).
+                for effect_name, flat in (('bump', [0.0, 0.0, 0.0]), ('normal', [0.5, 0.5, 1.0])):
+                    if effect_name in shaped:
+                        put(effect_name, CHANNELS[effect_name], blend, BLENDS.get(blend, 0), mask, flat, layer.get('opacity', 1), constant=True)
                 continue
             if effect == 'layerMask':
                 # Held in a register until the row or group it masks comes up.
@@ -1453,6 +1460,8 @@ class Compiler:
             corrections = layer.get('corrections') or {}
             contrast, brightness = float(corrections.get('contrast', 1)), float(corrections.get('brightness', 1))
             bumped = bumped or effect == 'bump'
+            if effect in ('bump', 'normal'):
+                shaped.add(effect)
             # Low Value and High Value come after the rest: a gain and an offset over what contrast and brightness give.
             from .texture_controls import remap
             span, low = remap(corrections)

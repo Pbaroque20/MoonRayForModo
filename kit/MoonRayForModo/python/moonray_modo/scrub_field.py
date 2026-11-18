@@ -20,6 +20,18 @@ def scrub_in_progress():
     return _drag['number'] if _drag['active'] else None
 
 
+def begin_drag():
+    """A drag of something other than these fields (a colour swatch's Shift-drag): its steps are one undo, as a field's."""
+    if not _drag['held']:
+        _drag['number'] += 1
+        _drag['active'] = True
+
+
+def end_drag():
+    if not _drag['held']:
+        _drag['active'] = False
+
+
 class _Scrub:
     """The dragging, shared by the field for decimals and the one for whole numbers."""
     PIXELS = 4          # pixels of drag to a step

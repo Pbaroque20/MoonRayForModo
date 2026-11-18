@@ -235,8 +235,9 @@ def assign_materials(data, scene, warnings, shading_kept=False):
     from .host import material_values, channel
     from .materials import active as material_active
     from .layers import ordered_items, collect
-    from .mask_types import tag_kind
+    from .mask_types import tag_kind, mask_items, covered
     global _kept_stacks
+    coverage={}
     # Each Shader Tree's items, their order and themselves by identifier: the scene's, and a Scene Proxy's own (proxies).
     trees={}
     def tree(surface):
@@ -308,12 +309,10 @@ def assign_materials(data, scene, warnings, shading_kept=False):
                     # Other tag/selection mask types are resolved by the native
                     # Render Cache. Only candidates in this surface's host stack
                     # reach this function; never widen membership to all layers.
-                    targets=parent.itemGraph('shadeLoc').forward()
-                    targets=[i for i in targets if i.type in ('mesh','meshInst','replicator','groupLocator')]
+                    # A mask for items: one of them is this surface's, or holds it (mask_types.covered).
+                    targets=mask_items(parent)
                     applicable_ids=source_ids if channel(parent,'instApply',False) else {surface['source_item'],_as_in_own_scene(surface,scene)['source_item']}
-                    def contains(target):
-                        return target.id in applicable_ids or (target.type=='groupLocator' and any(contains(child) for child in target.children()))
-                    if targets and not any(contains(i) for i in targets): return False
+                    if targets and not any(applicable_ids & covered(i,coverage) for i in targets): return False
                 parent=parent.parent
             return True
         # In 16.1 the returned stack may include item masks that still need to

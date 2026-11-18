@@ -197,10 +197,10 @@ def dicing_view(scene, identity, width, height, pixel_aspect, warnings, time=Non
     if projection not in ('persp', 'ortho'):
         warnings.append('The dicing camera %s has a projection MoonRay does not dice for; the render camera is used.' % item.name)
         return None
-    from .camera import framing, offsets
+    from .camera import framing, offsets, ortho_width as seen_across
     aperture_x, moonray_pixel_aspect = framing(width, height, float(channel(item, 'apertureX', .036)), float(channel(item, 'apertureY', .024)),
                                                pixel_aspect, channel(item, 'filmFit', 'fill'))
-    ortho_width = float(properties.read(item).get('ortho_width', aperture_x * float(channel(item, 'target', 1)) / max(1e-9, float(channel(item, 'focalLen', .05)))))
+    ortho_width = float(properties.read(item).get('ortho_width', seen_across(aperture_x, channel(item, 'focusDist', 4), channel(item, 'focalLen', .05))))
     return {'matrix': world_matrix(item, time), 'identity': item.id, 'projection': projection, 'ortho_width': ortho_width,
             'film_offset': offsets(float(channel(item, 'offsetX', 0)), float(channel(item, 'offsetY', 0)), projection, aperture_x, ortho_width, pixel_aspect),
             'pixel_aspect': moonray_pixel_aspect, 'focal_mm': float(channel(item, 'focalLen', .05)) * 1000, 'film_mm': aperture_x * 1000}
@@ -649,10 +649,10 @@ def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fal
         # Alembic streamed in as its own items (Alembic Mesh, Curves, Point Cloud): their surfaces are Modo's render
         # cache's, frame by frame from the file, with no mesh channel to read.
         evaluated_geometry = True
-    from .mask_types import needs_cache
+    from .mask_types import needs_cache, mask_items
     for mask in scene.items('mask',superType=False):
-        targets = mask.itemGraph('shadeLoc').forward()
-        if needs_cache(channel(mask,'ptyp',''),channel(mask,'ptag',''),any(item.type in ('mesh','meshInst','replicator','groupLocator') for item in targets)) or channel(mask,'submask',False):
+        # A mask for items (a Group of the Groups list among them) is told apart surface by surface in Modo's render cache.
+        if needs_cache(channel(mask,'ptyp',''),channel(mask,'ptag',''),bool(mask_items(mask))) or channel(mask,'submask',False):
             evaluated_geometry = True
     camera = scene.renderCamera
     # The camera keyed for this frame in the Camera Sequence, where one is: one of Modo's renders in place of the
@@ -676,9 +676,9 @@ def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fal
     if channel(camera,'resOverride',0):
         pixel_aspect = float(channel(camera,'pAspect',pixel_aspect))
     fit = channel(camera, 'filmFit', 'fill')
-    from .camera import framing, offsets
+    from .camera import framing, offsets, ortho_width as seen_across
     aperture_x, moonray_pixel_aspect = framing(width,height,aperture_x,aperture_y,pixel_aspect,fit)
-    ortho_width=float(properties.read(camera).get('ortho_width',aperture_x*float(channel(camera,'target',1))/max(1e-9,float(channel(camera,'focalLen',.05)))))
+    ortho_width=float(properties.read(camera).get('ortho_width',seen_across(aperture_x,channel(camera,'focusDist',4),channel(camera,'focalLen',.05))))
     film_offset=offsets(float(channel(camera,'offsetX',0)),float(channel(camera,'offsetY',0)),projection,aperture_x,ortho_width,pixel_aspect)
     for name, default in [('filmRoll', 0), ('distort', 0), ('squeeze', 1)]:
         if channel(camera, name, default) != default:
@@ -736,8 +736,6 @@ def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fal
         if not (0<=bounds[0]<bounds[2]<=1 and 0<=bounds[1]<bounds[3]<=1):
             raise ValueError('Modo render region is not a valid normalized rectangle')
         result['region'] = bounds
-    if projection=='ortho':
-        warnings.append('Orthographic width uses target distance and film/focal ratio; reference parity is unverified.')
     result['_full_capture']=reuse_geometry is None
     native_shape_materials = {}
     from .layers import ordered_items, material_tag

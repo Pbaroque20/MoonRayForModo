@@ -1194,8 +1194,20 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     if projection == 'persp':
         half = float(camera['film_mm']) / 2.0
         film_shift = [float(v) / half for v in camera.get('film_offset', [0, 0])]
+    elif projection == 'ortho' and any(camera.get('film_offset', [0, 0])):
+        # An orthographic camera's film offset slides its window, in the scene's units, as MoonRay's does. Its rays
+        # stay side by side, so the eye moves instead, along the camera's own right and up (it was left out, and an
+        # offset Modo orthographic camera's picture sat away from where Modo's is: a report).
+        offset = [float(v) for v in camera['film_offset']]
+
+        def slid(matrix):
+            matrix = [float(v) for v in matrix]
+            right, up = unit(matrix[0:3]), unit(matrix[4:7])
+            matrix[12:15] = [t + r * offset[0] + u * offset[1] for t, r, u in zip(matrix[12:15], right, up)]
+            return matrix
+        camera = dict(camera, **{key: slid(camera[key]) for key in ('matrix', 'matrix_close') if camera.get(key)})
     elif any(camera.get('film_offset', [0, 0])):
-        warnings.append('MoonLightIPR ignores the film offset of a camera other than a perspective one.')
+        warnings.append('MoonLightIPR ignores the film offset of a fisheye or spherical camera.')
     if camera.get('pixel_aspect', 1) != 1:
         warnings.append('MoonLightIPR ignores pixel aspect.')
     def placed(matrix, focal):
