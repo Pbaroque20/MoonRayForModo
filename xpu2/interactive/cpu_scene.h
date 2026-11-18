@@ -3049,13 +3049,14 @@ inline std::string geometryKey(const rdl::SceneObject& o,const std::vector<std::
  // unset and 1 the same tessellation, and the kit's 1 and 0 keyed as before.
  for(const char* name:{"MOONRAY_MODO_TOON_TERMINATOR","MOONRAY_MODO_TOON_ALBEDO","MOONRAY_MODO_USD_SPECULAR","MOONRAY_MODO_OPAQUE_ALPHA",
                        "MOONRAY_MODO_TRANSMISSION_ROUGHNESS"})k.add(std::string(name)+"="+(modoSourceOverride(name)?"1":"0"));
- // The textures' files as they are now (a file changed under the same name is another tessellation).
- for(const auto& f:plan.textures){std::error_code ec;const std::string n=f->name.string();k.add(n);
-  const auto size=std::filesystem::file_size(n,ec);const auto when=std::filesystem::last_write_time(n,ec).time_since_epoch().count();k.add(&size,sizeof size);k.add(&when,sizeof when);}
- // MoonRay's tessellation itself (xpu2_geom.dll beside the session).
- {wchar_t self[32768];const DWORD n=GetModuleFileNameW(nullptr,self,32768);std::error_code ec;
-  const auto dll=std::filesystem::path(std::wstring(self,n)).parent_path()/"xpu2_geom.dll";const auto size=std::filesystem::file_size(dll,ec);
-  const auto when=std::filesystem::last_write_time(dll,ec).time_since_epoch().count();k.add(&size,sizeof size);k.add(&when,sizeof when);}
+ // The textures' files as they are now (a file changed under the same name is another tessellation): each read once while
+ // the session holds it (texture::File::stamp), the same bytes as read here for every piece before.
+ for(const auto& f:plan.textures){k.add(f->name.string());const auto& s=f->stamp();k.add(&s.size,sizeof s.size);k.add(&s.when,sizeof s.when);}
+ // MoonRay's tessellation itself (xpu2_geom.dll beside the session): read once, the process loads it once (subdLibrary).
+ static const auto dll=[]{wchar_t self[32768];const DWORD n=GetModuleFileNameW(nullptr,self,32768);std::error_code ec;
+  const auto path=std::filesystem::path(std::wstring(self,n)).parent_path()/"xpu2_geom.dll";const auto size=std::filesystem::file_size(path,ec);
+  const auto when=std::filesystem::last_write_time(path,ec).time_since_epoch().count();return std::make_pair(size,when);}();
+ k.add(&dll.first,sizeof dll.first);k.add(&dll.second,sizeof dll.second);
  // Adaptive tessellation follows the camera: its frustums and render space.
  if(get<rdl::Float>(o,"adaptive_error")>0.0f){k.add(plan.frustumC2S.data(),plan.frustumC2S.size()*sizeof(float));k.add(plan.frustumPlanes.data(),plan.frustumPlanes.size()*sizeof(float));
   k.add(plan.frustumViewports.data(),plan.frustumViewports.size()*sizeof(int));k.add(plan.world2render,sizeof plan.world2render);}
