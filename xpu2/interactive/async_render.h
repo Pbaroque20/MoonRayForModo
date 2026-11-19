@@ -1083,7 +1083,9 @@ public:
                 result.gpuSamples += gc;
                 continue;
             }
-            if (dropsRays ? count > expected : count != expected || (inView && !count)) {
+            // A pixel planned no sample (a per-pixel count of 0, which no plan of XPU2's own makes: the pixel sample map
+            // gives every pixel one at least) may take none: the Bregman engine's probe frames (bregman/DESIGN.md).
+            if (dropsRays ? count > expected : count != expected || (inView && !count && expected)) {
                 result.failed = true;
                 result.error = "Sample audit failure at pixel " + std::to_string(i) + ": " + std::to_string(count);
                 return result;

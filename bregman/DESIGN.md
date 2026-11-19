@@ -167,9 +167,28 @@ probes). Options:
 - (c) **Control variate.** Phase 2 also evaluates phase 1's prediction for each of its own samples and adds the
   difference: unbiased everywhere it samples, at the price of a phase 2 sample in every pixel.
 
-The prototype starts with (a), and reports the bias against XPU2 at equal and at matched time.
+**Decided by the user, 2026-11-19:** A1 (the inverse-depth lift), B1 (shading reuse), and for the bias: "the indirect
+light is where I want phase 1's bias to transform into an unbiased convergence". Also: "this subdivision into regions
+can be stored/based on Z-depth information from the radial topological scan".
 
-**Readings that need the user's choice** (asked before building on one):
+What the prototype does with them:
+
+- **The region buffer is the scans' depths.** Each probe's patch is rasterized over its window as lifted depth (w is
+  affine over a lifted triangle, so the blend is exact). Per pixel: the visible inverse depth W(x) (the nearest patch
+  surface), the probes whose patch is that surface there (same depth), the cell's probe (smallest |W(x) - H_i(x)|, the
+  divergence of 3.2 read exactly, not bounded) and the Bregman Delaunay triangle of those probes. Region borders are
+  where the measured depths of the scanned surfaces part, never where probes merely look alike.
+- **The combination** (a reading of the user's words, to confirm):
+
+      final(x) = B(x) + m(x) / (m(x) + n(x)) * (R1(x) - D(x))
+
+  B and D are phase 2's beauty and first-hit direct light at x (n(x) samples), R1 phase 1's reconstruction, m(x) the
+  samples phase 1 counts as (0 where the region buffer does not trust it). The indirect light, B - D, is phase 2's
+  alone and unbiased from its first sample; the direct light is phase 1's where trusted, its bias falling as
+  m / (m + n) while phase 2's paths, which carry the indirect light, accumulate: biased at a finite count, consistent.
+  Every pixel gets n(x) >= 1, so nothing phase 1 missed stays unsampled.
+
+**The readings that were offered** (kept for the record):
 
 - **A. The hyperplane.** (A1, recommended) the camera frame is the domain, the lift is inverse depth (3.1), each probe's
   tangent plane is H_i and the generator is the visible surface itself, signed by local convexity (3.2): exact for planes,
@@ -220,11 +239,16 @@ Does not hold yet, and what the design does about it:
 
 ## 7. Prototype and measurements
 
-Test scene: `MoonRayForModo-xpu2/test-results/overflow/scene.rdla` (320 x 240, 8 samples a pixel, floor, wall, three
-displaced UV spheres with DwaBase materials and a 2 MB `.tx`, an environment light and a rect light, `max_depth` 5,
-`max_diffuse_depth` 0). Its `max_diffuse_depth` 0 leaves no diffuse indirect light, so phase 2 there is glossy bounces
-only; a second run raises it to 2 (an override `.rdla`) to test secondary bounces.
+Test scene: `MoonRayForModo-xpu2/test-results/overflow/scene.rdla` (320 x 240, `pixel_samples` 8, which is 64 samples a
+pixel; floor, wall, three displaced UV spheres with DwaBase materials and a 2 MB `.tx`, an environment light and a rect
+light, `max_depth` 5, `max_diffuse_depth` 0), and the same with `max_diffuse_depth` 2.
 
-Baseline: XPU2's benchmark worker (`async_probe.exe` of build `async-build-handoff1`, whose GPU program sources match this
-branch exactly, so OptiX's cache already holds it) at 12 threads, CPU and GPU, three timed repeats
-(`bregman/tools/run_xpu2_baseline.py`). Results and pictures go in `bregman/RESULTS.md` as they come.
+The prototype, `bregman_engine.cc` with `bvd.h` (the lift, hyperplanes, Bregman Delaunay triangulation) and `scan.h`
+(topology, scan, patch depths), built by `build_bregman.py` against XPU2's headers, runs both phases as XPU2 frames on
+the unchanged CPU and GPU lanes: no GPU program change. Its one change to XPU2 is host-side: the sample audit lets a
+pixel planned no sample take none (`async_render.h`), which no plan of XPU2's own makes.
+
+Results, pictures and what they say: `RESULTS.md`. In short, on this scene it does not beat XPU2 at equal time (12%
+slower without diffuse bounces, about 1.7 times with them); the trusted reconstruction is as good as XPU2 at 36 to 64
+samples a pixel and the bias vanishes on average; the losses are sparse-frame overhead on XPU2's grid and, with
+indirect light, the noise phase 1 does not touch. Open items are listed there.

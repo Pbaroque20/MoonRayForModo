@@ -34,14 +34,20 @@ def main():
     p.add_argument('--repeats', type=int, default=3)
     p.add_argument('--mode', type=int, default=2)
     p.add_argument('--override', type=Path)
+    p.add_argument('--seed', type=int, help="the frame's seed (default: the scene's)")
     a = p.parse_args()
+    run(a)
+
+
+def run(a):
     build = json.loads((a.build / 'build.json').read_text(encoding='utf-8'))
     out = a.output.resolve()
     out.mkdir(parents=True, exist_ok=False)
     # The asset root: every texture the scene reads must be under it (host_texture.h admittedPath); read only.
     args = [build['exe'], a.scene.resolve(), a.runtime, build['ptx'], a.scene.resolve().parent, out, a.threads, a.repeats, a.mode]
-    if a.override:
-        args += ['-', '-', '-', '-', '-', a.override.resolve()]
+    if a.override or a.seed is not None:
+        # cellSize, samplesPerChunk and windowMs are read as numbers (no "-"): their defaults (async_grid.h, RenderOptions).
+        args += [64, 4, 10, '-' if a.seed is None else a.seed, '-', a.override.resolve() if a.override else '-']
     env = environment(a.runtime)
     # Exact uniform sampling (the scene's pixel_samples), not uniform's budget spent by generations: the engine's
     # phases sample by per-pixel counts, which turn generations off, so the baseline must too.
@@ -62,9 +68,11 @@ def main():
     w, h = report['width'], report['height']
     rgba = read_rgba(Path(report['runs'][0]['raw_file']), w, h)
     write_png(out / 'run-0.png', rgba, w, h)
-    print(json.dumps({'prepare_seconds': report['prepare_seconds'],
-                      'sampling_seconds': [run['sampling_seconds'] for run in report['runs']],
-                      'gpu_share': [run['gpu_share'] for run in report['runs']]}, indent=2))
+    summary = {'prepare_seconds': report['prepare_seconds'], 'spp': report['spp'],
+               'sampling_seconds': [r['sampling_seconds'] for r in report['runs']],
+               'gpu_share': [r['gpu_share'] for r in report['runs']]}
+    print(json.dumps(summary, indent=2))
+    return report
 
 
 if __name__ == '__main__':
