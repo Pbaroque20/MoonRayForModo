@@ -6,6 +6,13 @@ This is the development branch of [MoonRay for Modo](https://github.com/Pbaroque
 
 The current release is [0.5.5.1](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.5.5.1). **Built on MoonRay [2026.29.1](https://github.com/dreamworksanimation/openmoonray/releases/tag/v2026.29.1)** (OpenMoonRay's latest release; MoonRay 18.4), with the plugin's own patches for Windows and the preview.
 
+## New in 0.5.5.1.1
+
+Two crashes fixed. Only the kit changed: coming from 0.5.5.1, there is no need to compile XPU2 Shaders again.
+
+- **Clicking a camera during a MoonLightIPR realtime preview no longer crashes Modo**: Python's tidying of what it no longer needs now happens on Modo's own thread only, never on one of the kit's background threads, where it could run Modo code Modo was not ready for.
+- **Modo quits without crashing after the asset library was opened**: the kit's windows, open or only hidden, are closed while Python is still running, and the kit lets go of what it gave Modo to hold before Modo quits.
+
 ## New in 0.5.5.1
 
 Install it, and **Compile XPU2 Shaders once more**.
