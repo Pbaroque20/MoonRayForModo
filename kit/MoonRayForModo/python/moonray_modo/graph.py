@@ -18,6 +18,10 @@ def bindings(material, index, lines, glass=False, absorption=False, separate_mas
     def rgb(value):
         return vector(value if isinstance(value,(list,tuple)) else [value]*3,'Rgb')
     defaults = defaults_for(material)
+    # Each material row's glow whole where no layer sets the luminous colour or amount on its own (glow_whole).
+    whole_glow = glows_whole(material.get('layers') if material.get('layers') is not None else
+                             [{'effect':key} for key in material.get('textures',{})])
+    if whole_glow:glow_whole(defaults)
     if absorption:defaults.update(absorption_values(material))
     current = {key:rgb(value) for key,value in defaults.items()}
     from .compositing import Groups
@@ -60,6 +64,7 @@ def bindings(material, index, lines, glass=False, absorption=False, separate_mas
             source=layer['material']
             row_mask=pending_masks.pop(layer.get('identity'),None)
             base_values=defaults_for(source)
+            if whole_glow:glow_whole(base_values)
             if absorption:base_values.update(absorption_values(source))
             for target,foreground in base_values.items():
                 if target in {'groupMask','layerMask'}|textures.INTERNAL_EFFECTS:continue
@@ -382,6 +387,29 @@ def defaults_for(material):
         gain = material.get(amount, 1)
         defaults[effect] = material.get(raw, [v/gain if gain else 0 for v in defaults[effect]])
     defaults["ior"] = material.get("ior",1.5)
+    return defaults
+
+
+LUMINOUS = ('lumiCol', 'lumiAmt')
+
+
+def glows_whole(layers):
+    """Whether a material's (or a stack's) rows can be blended by their glow whole: no layer sets the Luminous Color
+    or the Luminous Amount on its own, which would need the two apart."""
+    from . import textures
+    return not any(textures.EFFECT_ALIASES.get(layer.get('effect'),layer.get('effect')) in LUMINOUS
+                   for layer in layers or () if layer.get('kind')!='materialBase')
+
+
+def glow_whole(defaults):
+    """A material row's glow as one colour, its Luminous Color times its Luminous Intensity, at an amount of 1: the
+    same glow on its own, and blended by a mask or an opacity as Modo blends it. Blended apart and multiplied after,
+    Modo's own material (white at Intensity 0) under one of the car's imported ones (black at Intensity 1) glowed a
+    quarter white where a Group Mask was half on (a tester's tyre: a white border along a soft mask's edge)."""
+    amount=defaults.get('lumiAmt',1)
+    colour=defaults.get('lumiCol',[0,0,0])
+    defaults['lumiCol']=[c*amount for c in colour] if isinstance(colour,(list,tuple)) else colour*amount
+    defaults['lumiAmt']=1
     return defaults
 
 

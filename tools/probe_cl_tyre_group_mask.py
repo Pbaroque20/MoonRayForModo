@@ -1,19 +1,28 @@
 # python
-"""Command line: the tester's Group Mask set-up rebuilt on the car's own tyre. Opens test-results/rt-car/car_aces.lxo,
+"""Command line: the tester's Group Mask set-up rebuilt on the car's own tyre. Opens the Hyundai (MOONRAY_PROBE_SCENE),
 keeps one tyre (the first mesh named Reifen*) and deletes the other meshes, and in the tread's material group
 (Reifen_Laufflaeche) adds a group on top holding a purple Material, masked by the 'tire dirt mask' image on the UV map
 Laufflaeche (a white band with soft edges): purple where the mask is white, the tread's own material where it is
 black. A camera is put looking at the tyre's tread. Saved as test-results/tyre-group-mask/tyre_group_mask.lxo and
-rendered by Modo (modo.*.exr); report.json has the Shader Tree."""
+rendered by Modo (modo.*.exr), and exported as the plugin writes it (tyre_group_mask.rdla); report.json has the
+Shader Tree."""
 import json
 import math
+import os
 import pathlib
 import traceback
 import lx
 import modo
 
 out = pathlib.Path(r'C:\Users\Raphael Tobar\MoonRayForModo\test-results\tyre-group-mask')
+# PROBE_AS_SAVED: the scene as saved, its own tread untouched (no purple group), into tyre-as-saved.
+AS_SAVED = bool(__import__('os').environ.get('PROBE_AS_SAVED'))
+NORMAL = bool(__import__('os').environ.get('PROBE_MASK_NORMAL'))
+if AS_SAVED:
+    out = out.parent / ('tyre-as-saved' + ('-normal' if NORMAL else ''))
 out.mkdir(parents=True, exist_ok=True)
+# The car: the Hyundai since the old test copy went.
+SCENE = os.environ.get('MOONRAY_PROBE_SCENE', r'C:\Users\Raphael Tobar\Downloads\Hyundai N Vision 74\Hyundai N Vision 74_Studio_MoonRay.lxo')
 report = {}
 
 
@@ -48,7 +57,7 @@ def tree(item, depth=0):
 
 
 try:
-    lx.eval('scene.open {%s} normal' % r'C:\Users\Raphael Tobar\MoonRayForModo\test-results\rt-car\car_aces.lxo')
+    lx.eval('scene.open {%s} normal' % SCENE)
     scene = modo.Scene()
     meshes = list(scene.items('mesh'))
     report['reifen'] = [m.name for m in meshes if m.name.lower().startswith('reifen')]
@@ -90,27 +99,37 @@ try:
         render.channel(name).set(value)
     save('camera')
     tread = next(m for m in scene.items('mask', superType=False) if m.channel('ptag').get() == 'Reifen_Laufflaeche')
-    # The group on top of the tread's material group, holding a purple Material, masked by the dirt mask image.
-    before = {i.id for i in scene.iterItems()}
-    lx.eval('select.item {%s} set' % tread.id)
-    lx.eval('shader.create mask')
-    group = new_item('mask', before)
-    group.name = 'Purple Group'
-    save('group')
-    purple = create('advancedMaterial', group)
-    purple.name = 'Purple'
-    save('purple')
-    for axis, value in zip('RGB', (0.6, 0.0, 0.9)):
-        purple.channel('diffCol.' + axis).set(value)
-    # As the tester did: the tread's own 'tire dirt mask' layer moved into the group, made its Group Mask at Normal, 100%.
-    image = next(i for i in scene.iterItems() if i.type == 'imageMap' and i.name.startswith('tire dirt mask'))
-    lx.eval('select.item {%s} set' % image.id)
-    lx.eval('texture.parent {%s} -1' % group.id)
-    save('moved')
-    image.channel('effect').set('groupMask')
-    image.channel('blend').set('normal')
-    image.channel('opacity').set(1.0)
-    save('imap')
+    if not AS_SAVED:
+        # The group on top of the tread's material group, holding a purple Material, masked by the dirt mask image.
+        before = {i.id for i in scene.iterItems()}
+        lx.eval('select.item {%s} set' % tread.id)
+        lx.eval('shader.create mask')
+        group = new_item('mask', before)
+        group.name = 'Purple Group'
+        save('group')
+        purple = create('advancedMaterial', group)
+        purple.name = 'Purple'
+        save('purple')
+        for axis, value in zip('RGB', (0.6, 0.0, 0.9)):
+            purple.channel('diffCol.' + axis).set(value)
+        # As the tester did: the tread's own 'tire dirt mask' layer moved into the group, made its Group Mask at Normal, 100%.
+        masks = [i for i in scene.iterItems() if i.type == 'imageMap' and i.name.startswith('tire dirt mask')]
+        image = next((i for i in masks if '_checkHere' in i.name), masks[0])
+        report['mask_layer'] = image.name
+        lx.eval('select.item {%s} set' % image.id)
+        lx.eval('texture.parent {%s} -1' % group.id)
+        save('moved')
+        image.channel('effect').set('groupMask')
+        image.channel('blend').set('normal')
+        image.channel('opacity').set(1.0)
+        save('imap')
+    if AS_SAVED:
+        image = next(i for i in scene.iterItems() if i.type == 'imageMap' and '_checkHere' in i.name)
+        report['mask_layer'] = image.name
+        if NORMAL:
+            # The same Group Mask at Normal, 100%: the tread group thinned where the mask image is dark.
+            image.channel('blend').set('normal')
+            image.channel('opacity').set(1.0)
     report['shader_tree'] = tree(tread)
     save('built')
     report['image_parent'] = image.parent.name if image.parent is not None else None
@@ -118,6 +137,13 @@ try:
     save('saved')
     lx.eval('!render.animation {%s} openexr' % str(out / 'modo'))
     report['rendered'] = [p.name for p in out.glob('modo*')]
+    # As the plugin writes it for MoonRay.
+    from moonray_modo import scene_export
+    warnings = []
+    scene_export.export({'path': out / 'tyre_group_mask.rdla', 'format': 'rdla', 'outputs': False, 'collect': False,
+                         'frames': False}, warnings)
+    report['export_warnings'] = [str(w) for w in warnings]
+    save('exported')
 except Exception:
     report['error'] = traceback.format_exc()
 (out / 'report.json').write_text(json.dumps(report, indent=1, default=str), encoding='utf-8')
