@@ -88,3 +88,29 @@ class GlowWhole(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class NoDisplacementOfNothing(unittest.TestCase):
+    """Materials stacked in the Shader Tree (a Group-masked material over another) gave MoonRay a displacement of
+    nothing: each material row wrote its Displacement, 0, and MoonRay subdivided the mesh for it, rounding the surface
+    and shading it unlike the same material alone (tools/probe_cl_group_override.py, PROBE_PLAIN for the reference)."""
+
+    def displacements(self, stack):
+        held = graph.DISPLACEMENT
+        graph.DISPLACEMENT = []
+        try:
+            graph.bindings(material_groups.merged(stack), 1, [])
+            return list(graph.DISPLACEMENT)
+        finally:
+            graph.DISPLACEMENT = held
+
+    def test_rows_without_displacement_make_none(self):
+        stack = [row('Base', (1, 1, 1), 0.0), row('Rubber', (0, 0, 0), 1.0, [GROUP], [HALF])]
+        self.assertEqual(self.displacements(stack), [])
+
+    def test_a_row_with_displacement_still_makes_one(self):
+        upper = dict(row('Raised', (0, 0, 0), 1.0, [GROUP], [HALF]), displacement_value=0.5)
+        self.assertEqual(len(self.displacements([row('Base', (1, 1, 1), 0.0), upper])), 1)
+        lower = dict(row('Raised', (0, 0, 0), 1.0), displacement_value=0.5)
+        # A displaced row under one with none: the upper row's 0 still covers it where the mask lets it.
+        self.assertEqual(len(self.displacements([lower, row('Flat', (0, 0, 0), 1.0, [GROUP], [HALF])])), 1)

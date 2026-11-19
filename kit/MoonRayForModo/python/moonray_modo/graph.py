@@ -68,6 +68,11 @@ def bindings(material, index, lines, glass=False, absorption=False, separate_mas
             if absorption:base_values.update(absorption_values(source))
             for target,foreground in base_values.items():
                 if target in {'groupMask','layerMask'}|textures.INTERNAL_EFFECTS:continue
+                if target=='displace' and target not in used and not any(foreground if isinstance(foreground,(list,tuple)) else [foreground]):
+                    # A row of no displacement over a stack with none yet starts none. Written, it gave MoonRay a
+                    # displacement of nothing, and MoonRay subdivided the mesh for it: every surface with materials
+                    # stacked in the Shader Tree rendered rounded and shaded unlike the same material alone.
+                    continue
                 if layer.get('invert') and target in textures.COLOR_EFFECTS:
                     foreground=[1-v for v in foreground] if isinstance(foreground,list) else 1-foreground
                 current[target]=node('ModoTextureMap',{'background':current[target],'foreground':rgb(foreground),'blend':str(BLENDS[layer.get('blend','normal')]),'opacity':number(layer.get('opacity',1)),**({'mask':row_mask} if row_mask else {})})

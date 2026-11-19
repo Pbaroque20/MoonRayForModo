@@ -8,11 +8,12 @@ The current release is [0.5.5.1](https://github.com/Pbaroque20/MoonRayForModo/re
 
 ## New in 0.5.5.1.1
 
-Two crashes and a Group Mask's white border fixed, and Show Handoff Tiles over renders only. Only the kit changed: coming from 0.5.5.1, there is no need to compile XPU2 Shaders again.
+Two crashes, a Group Mask's white border and stacked materials rendered rounded fixed, and Show Handoff Tiles over renders only. Only the kit changed: coming from 0.5.5.1, there is no need to compile XPU2 Shaders again.
 
 - **Clicking a camera during a MoonLightIPR realtime preview no longer crashes Modo**: Python's tidying of what it no longer needs now happens on Modo's own thread only, never on one of the kit's background threads, where it could run Modo code Modo was not ready for.
 - **Modo quits without crashing after the asset library was opened**: the kit's windows, open or only hidden, are closed while Python is still running, and the kit lets go of what it gave Modo to hold before Modo quits.
 - **A soft Group Mask blends without a white border**: where a mask was partly on, a material group glowed white along its edge in MoonRay, XPU2 and MoonLightIPR, between Modo's own materials (Luminous Color white at Intensity 0) and imported ones (black at Intensity 1); each material's glow is now blended whole, as Modo blends it.
+- **Materials stacked in the Shader Tree keep their shape**: a surface with more than one material on it (a Group-masked material over another, say) was subdivided by MoonRay and XPU2 for a displacement of nothing, which rounded its edges and shaded it unlike the same material alone.
 - **Show Handoff Tiles shows over renders only**: realtime starts again at every edit, and its orange and blue tiles flickered over the picture; while RT is on they stay hidden.
 
 ## New in 0.5.5.1
