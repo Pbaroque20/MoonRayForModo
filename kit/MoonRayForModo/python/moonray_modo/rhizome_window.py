@@ -762,7 +762,10 @@ _quit_hooked = [False]
 def _close_on_quit():
     """Modo quitting closes the window first, its timer stopped, while Qt still stands: left open, Modo crashed on the
     way out (0xC0000005, tools/probe_rhizome_window.py), as the graph editors did (node_editor._close_on_quit). The
-    master and the node it started go on."""
+    master and the node it started go on. Reference cycles are collected on Modo's main thread from the first window
+    on (main_thread_gc)."""
+    from . import main_thread_gc
+    main_thread_gc.install()
     if _quit_hooked[0]:
         return
     application = QtCore.QCoreApplication.instance()

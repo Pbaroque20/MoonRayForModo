@@ -24,6 +24,10 @@ class Followed:
     def cmd_NotifyRemoveClient(self,client):
         for notifier in getattr(self,'_notifications',None) or ():notifier.RemoveClient(client)
 
+# Its table of Modo's events emptied as Modo quits, while Python still stands (quit_release).
+from . import quit_release
+quit_release.forget(Notifier.clients.clear)
+
 # Windows of the kit's own that show a material, such as the graph editor, asked to look again.
 watchers=[]
 

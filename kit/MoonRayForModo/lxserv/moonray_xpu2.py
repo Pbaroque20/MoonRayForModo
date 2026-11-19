@@ -144,6 +144,11 @@ class ShadersNotifier(lxifc.Notifier):
     def noti_RemoveClient(self, event): self.clients.pop(event.__peekobj__(), None)
 
 
+# Its table of Modo's events emptied as Modo quits, while Python still stands (quit_release).
+from moonray_modo import quit_release
+quit_release.forget(ShadersNotifier.clients.clear)
+
+
 def _notify():
     for event in list(ShadersNotifier.clients.values()):
         try: lx.object.CommandEvent(event).Event(lx.symbol.fCMDNOTIFY_CHANGE_ALL)
@@ -302,6 +307,9 @@ class MemoryNotifier(lxifc.Notifier):
     def noti_Args(self): return ''
     def noti_AddClient(self, event): self.clients[event.__peekobj__()] = event
     def noti_RemoveClient(self, event): self.clients.pop(event.__peekobj__(), None)
+
+
+quit_release.forget(MemoryNotifier.clients.clear)
 
 
 # The meter is read again every few seconds while a form shows it: each reading asks the form to look again, and a form

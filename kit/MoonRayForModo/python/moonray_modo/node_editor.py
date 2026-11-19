@@ -316,7 +316,9 @@ _quit_hooked=[False]
 def _close_on_quit():
     """Modo quitting closes every open graph editor first, as its Close button does: its node previews, its MoonRay
     Widget's session and its scene watcher stopped while Qt still stands. Left open, Modo crashed on the way out
-    (0xC0000005, tools/probe_quit_graph_editor.py); closed first, it quit cleanly."""
+    (0xC0000005, tools/probe_quit_graph_editor.py); closed first, it quit cleanly. Reference cycles are collected on
+    Modo's main thread from the first graph editor on (main_thread_gc)."""
+    from . import main_thread_gc;main_thread_gc.install()
     if _quit_hooked[0]:return
     application=QtCore.QCoreApplication.instance()
     if application is None:return

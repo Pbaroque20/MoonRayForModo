@@ -278,6 +278,8 @@ class Panel(Tools, QtWidgets.QWidget):
         # (0xC0000005, tools/probe_quit_preview.py).
         application=QtCore.QCoreApplication.instance()
         if application is not None:application.aboutToQuit.connect(self.dispose)
+        # Reference cycles are collected on Modo's main thread from now on, never on one of the kit's worker threads.
+        from . import main_thread_gc;main_thread_gc.install()
         row.addWidget(self.rt)
         row.addWidget(self.preview_engine)
         # The camera rendered through: Modo's, or a MoonRay camera item such as a fisheye.

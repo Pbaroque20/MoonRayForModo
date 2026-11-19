@@ -41,9 +41,10 @@ def watch(listener):
     if 'com' not in _held:
         # One COM object kept for the listener, as Modo's SDK asks (changes.Changes).
         held = _Listener()
-        com = lx.object.Unknown(held)
         try:
-            lx.service.Listener().AddListener(com)
+            # Taken out as Modo quits, while Python still stands (quit_release).
+            from . import quit_release
+            com = quit_release.listen(held)
             _held.update(listener=held, com=com)
         except (RuntimeError, LookupError):
             return

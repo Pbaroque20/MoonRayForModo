@@ -24,6 +24,11 @@ class DevicesNotifier(lxifc.Notifier):
     def noti_RemoveClient(self, event): self.clients.pop(event.__peekobj__(), None)
 
 
+# Its table of Modo's events emptied as Modo quits, while Python still stands (quit_release).
+from moonray_modo import quit_release
+quit_release.forget(DevicesNotifier.clients.clear)
+
+
 def _notify():
     for event in list(DevicesNotifier.clients.values()):
         try: lx.object.CommandEvent(event).Event(lx.symbol.fCMDNOTIFY_CHANGE_ALL)

@@ -159,9 +159,10 @@ class _Heard:
             sil_ItemPostDelete = sil_SceneClear = sil_ItemAddChannel = sil_ItemRemoveChannel = _any
             sil_ItemLocal = sil_ItemSource = sil_ItemPackage = _any
         made = Listener()
-        com = lx.object.Unknown(made)
         try:
-            lx.service.Listener().AddListener(com)
+            # Taken out as Modo quits, while Python still stands (quit_release).
+            from . import quit_release
+            com = quit_release.listen(made)
         except (RuntimeError, LookupError):
             return
         self.listener = (made, com)
