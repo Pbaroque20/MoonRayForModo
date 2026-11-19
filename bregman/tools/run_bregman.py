@@ -33,6 +33,11 @@ def run(engine, ptx_build, scene, out, options, extra=None, reference=None, runt
     args = [exe, Path(scene).resolve(), runtime, ptx, Path(scene).resolve().parent, out] + list(options) + ['override=' + str(override)]
     env = environment(runtime)
     env['XPU2_SESSION_UNIFORM_BUDGET'] = '0'
+    # OptiX's disk cache of its own beside the runs: the engine's GPU program (its own build, with OpenQMC) must not
+    # crowd the kit's compiled XPU2 programs out of the shared cache (%LOCALAPPDATA%/NVIDIA/OptixCache, pruned by size).
+    cache = out.parent / 'optix-cache'
+    cache.mkdir(exist_ok=True)
+    env['OPTIX_CACHE_PATH'] = str(cache)
     r = subprocess.run(list(map(str, args)), cwd=out, env=env, capture_output=True, text=True, encoding='utf-8',
                        errors='replace', timeout=3600)
     (out / 'engine.log').write_text(r.stdout + r.stderr, encoding='utf-8')

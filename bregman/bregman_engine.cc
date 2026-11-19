@@ -41,6 +41,11 @@ struct Options {
     std::string override_;
     unsigned repeats = 3;            // timed runs after one warm-up
     std::vector<unsigned> xpu2Spp;  // XPU2 frames to time in the same process (samples a pixel)
+    // Phase 2's frame cache (mixed::Config::frameCache): on, the chance a bounce that reaches it goes on, the depth
+    // tolerance; OpenQMC past the first hit (qmc_depth: vertices of nonMirrorDepth below it), and in XPU2's frames too.
+    bool cache = false;  // off by default: it needs the engine's own GPU program (build_bregman.py --gpu)
+    double cacheP = 0.25, cacheTol = 0.02;
+    unsigned qmcDepth = 0, xpu2Qmc = 0;
 };
 
 // A probe: its pixel, its hit, its patch's depth over its window, its site.
@@ -128,6 +133,11 @@ int main(int argc, char** argv) {
             else if (k == "overlap") op.overlap = v != "0";
             else if (k == "override") op.override_ = v;
             else if (k == "repeats") op.repeats = unsigned(std::stoul(v));
+            else if (k == "cache") op.cache = v != "0";
+            else if (k == "cache_p") op.cacheP = std::stod(v);
+            else if (k == "cache_tol") op.cacheTol = std::stod(v);
+            else if (k == "qmc_depth") op.qmcDepth = unsigned(std::stoul(v));
+            else if (k == "xpu2_qmc") op.xpu2Qmc = unsigned(std::stoul(v));
             else if (k == "xpu2_spp") {
                 for (size_t a = 0, b; a < v.size(); a = b + 1) {
                     b = v.find(',', a);
@@ -194,6 +204,10 @@ int main(int argc, char** argv) {
         const unsigned BX = (W + S - 1) / S, BY = (H + S - 1) / S;
         bregman::Frame frame;
         cpu::need(frame.init(plan->camera), "Camera frame");
+        // The frame cache's lift on the device takes the camera transform as affine (three columns and a translation).
+        cpu::need(std::fabs(frame.toCamera[0][3]) < 1e-9 && std::fabs(frame.toCamera[1][3]) < 1e-9 && std::fabs(frame.toCamera[2][3]) < 1e-9 &&
+                      std::fabs(frame.toCamera[3][3] - 1) < 1e-9,
+                  "An affine camera transform");
         const size_t N = size_t(W) * H;
 
         // Each mesh's topology, made the first time a probe hits it and kept (as XPU2 keeps a mesh's tessellation).
@@ -510,6 +524,25 @@ int main(int argc, char** argv) {
         auto p2 = std::make_shared<cpu::Plan>(*plan);
         p2->pixelSamples = nCount;
         p2->spp = *std::max_element(nCount.begin(), nCount.end());
+        // The frame cache: phase 1's radiance and the visible inverse depth where phase 1 is trusted (the cell's or the
+        // triangle's), for phase 2's bounces (async_integrator.h frameCacheAt), and OpenQMC past the first hit.
+        if (op.cache) {
+            auto cache = std::make_shared<std::vector<float>>(N * 4, 0.0f);
+            for (size_t i = 0; i < N; ++i) {
+                if (cls[i] != Trusted && cls[i] != CellOnly) continue;
+                for (int k = 0; k < 3; ++k) (*cache)[i * 4 + k] = recon[i * 4 + k];
+                (*cache)[i * 4 + 3] = wvis[i];
+            }
+            p2->frameCache = cache;
+            p2->cacheContinue = float(op.cacheP);
+            p2->cacheDepthTolerance = float(op.cacheTol);
+            for (int i = 0; i < 4; ++i)
+                for (int j = 0; j < 3; ++j) p2->cacheToCamera[i * 3 + j] = float(frame.toCamera[i][j]);
+            const float raster[8] = {float(frame.o.x), float(frame.o.y), float(frame.o.z), float(frame.ex.x), float(frame.ex.y),
+                                     float(frame.ey.x), float(frame.ey.y), float(frame.det)};
+            std::copy(raster, raster + 8, p2->cacheRaster);
+        }
+        p2->qmcDepth = op.qmcDepth;
         const int offEmit = aovOffset(*p2, "/bregman_emission"), offDirect = aovOffset(*p2, "/bregman_direct");
         cpu::need(offEmit >= 0 && offDirect >= 0, "The scene needs the outputs /bregman_emission and /bregman_direct (run_bregman.py adds them)");
         async::RenderOptions o2;
@@ -596,6 +629,7 @@ int main(int argc, char** argv) {
         o["stride"] = S, o["probe_spp"] = op.probeSpp, o["n_lo"] = op.nLo, o["n_mid"] = op.nMid, o["n_hi"] = op.nHi, o["n_bg"] = op.nBg;
         o["m0"] = op.m0, o["tau_d"] = op.tauD, o["tau_r"] = op.tauR, o["rings"] = op.rings, o["tris"] = op.tris;
         o["mode"] = op.mode, o["p1mode"] = op.p1mode, o["overlap"] = op.overlap, o["threads"] = op.threads;
+        o["cache"] = op.cache, o["cache_p"] = op.cacheP, o["cache_tol"] = op.cacheTol, o["qmc_depth"] = op.qmcDepth, o["xpu2_qmc"] = op.xpu2Qmc;
         report["options"] = o;
         report["probes"] = Json::UInt64(probes.size());
         report["probes_hit"] = Json::UInt64(hit);
@@ -627,6 +661,7 @@ int main(int argc, char** argv) {
             cpu::need(n >= 1 && n <= 16384, "xpu2_spp");
             auto px = std::make_shared<cpu::Plan>(*plan);
             px->spp = n;
+            px->qmcDepth = op.xpu2Qmc;
             Json::Value times(Json::arrayValue);
             async::RenderResult rx;
             for (unsigned rep = 0; rep <= op.repeats; ++rep) {

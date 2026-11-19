@@ -17,6 +17,10 @@ good as XPU2 at 36 to 64 samples a pixel, and phase 2 removes the bias on averag
 sparse frames on XPU2's grid, and, with diffuse bounces, the indirect light's noise, which phase 1 does nothing for
 (section 4).
 
+The second step (section 5) made phase 1 a cache for phase 2's bounces, unbiased by Russian roulette, and added OpenQMC
+past the first hit. Both work and stay unbiased, but each takes about 1% off the error on this scene: few bounces land on
+what the camera sees, XPU2 already stratifies the dimensions that matter most, and the cache's lookup costs the GPU 18%.
+
 ## 1. How it was measured
 
 - Scene: `MoonRayForModo-xpu2/test-results/overflow/scene.rdla`, 320 x 240. Its `pixel_samples` 8 is MoonRay's square
@@ -122,13 +126,48 @@ XPU2: 4 spp 0.12 s (3.07e-3), 9 spp 0.25 s (1.24e-3), 16 spp 0.44 s (5.9e-4), 36
    part with phase 1's smooth estimate leaves the indirect part's whole noise. Phase 1 saves light samples, and on this
    scene they are not where the noise is.
 
-## 5. Open
+## 5. Second step: phase 1 as a cache for phase 2's bounces, and OpenQMC (2026-11-19)
 
-- **Phase 1 for the indirect light.** The other reading of "the indirect light is where phase 1's bias transforms into
-  an unbiased convergence": phase 2's bounces that land on a trusted, visible surface take phase 1's radiance there and
-  stop (a screen-space radiance cache), with Russian roulette or a control variate keeping it unbiased. That is where a
-  real saving would be on scenes with global illumination. It changes the integrator (a GPU program change, one shader
-  compile).
+What was built is in DESIGN.md (the "second step"): a bounce landing on a surface phase 1 reconstructed takes phase 1's
+radiance and stops with probability 1 - p, else goes on carrying 1 / p less C (1 - p) / p (unbiased for any C); and
+OpenQMC's Owen-scrambled Sobol sampler for the light and BSDF samples past the first hit. Both in XPU2's shared
+integrator, off unless the engine sets them. The GPU program is the engine's own build (`build_bregman.py --gpu`,
+`XPU2_OPENQMC`), compiled by OptiX once (about 13 minutes) into a cache of its own (`OPTIX_CACHE_PATH`, 93 MB); the
+kit's shared OptiX cache was not written. With both switches off it gives the earlier numbers exactly.
+
+Overflow scene with `max_diffuse_depth` 2; engine at stride 2, 16 samples a probe, phase 2 8/16/32; CPU and GPU:
+
+| Phase 2 | Phase 2 time | Engine time | Relative MSE (phase 2's own) | Mean ratio |
+|---|---|---|---|---|
+| neither | 0.285 s | 0.383 s | 1.428e-3 (1.243e-3) | 1.00007 |
+| frame cache, p = 0.25 | 0.337 s | 0.447 s | 1.409e-3 (1.221e-3) | 1.00005 |
+| OpenQMC, nonMirrorDepth 1 to 3 | 0.284 s | 0.378 s | 1.412e-3 (1.230e-3) | 0.99992 |
+| both | 0.338 s | 0.431 s | 1.394e-3 (1.211e-3) | 0.99988 |
+| frame cache, p = 1 (looks up, never stops) | 0.351 s | 0.444 s | 1.428e-3, the same image as neither | 1.00007 |
+| frame cache, p = 0.05 | 0.333 s | 0.426 s | 1.533e-3 (1.351e-3) | 0.99973 |
+
+XPU2 in the same process: 4, 9, 16 spp in 0.119, 0.248, 0.421 s at 3.07e-3, 1.24e-3, 5.93e-4; with OpenQMC past the
+first hit 0.117, 0.247, 0.423 s at 3.04e-3, 1.23e-3, 5.85e-4.
+
+1. **Both are unbiased,** as built: every mean ratio within 0.03%, and the cache's p = 1 run is the plain image exactly.
+2. **OpenQMC gains about 1%,** in the engine and in XPU2 alike, at no cost. XPU2 already stratifies the camera and the
+   first hit's light and BSDF samples (its own Owen-scrambled Sobol); what is left to OpenQMC is the secondary bounces,
+   whose integrands are high-dimensional at 8 samples a pixel. MoonLightIPR's 35-40% came from the dimensions XPU2 already
+   has.
+3. **The frame cache seldom applies on this scene.** On the CPU alone (where the time is the work), stopping 95% of the
+   cache's hits (p = 0.05) saved 6% of phase 2. The camera sees the wall and the balls' tops; bounces from the wall reach
+   the balls' backs, bounces from the balls go to the sky or the floor below the frame. Only ball-to-wall bounces land on
+   what phase 1 reconstructed. The cache also holds phase 1's direct light only, so the stopped paths' missing indirect
+   light comes back through the 1 / p correction as variance.
+4. **The lookup costs the GPU 18% of phase 2's sampling** even when every lookup fails (GPU alone: 0.320 s without,
+   0.378 s with every lookup rejected at its depth test, 0.396 s with lookups that go on). Not yet explained: the lookup
+   is a few divisions and one read of a 1.2 MB table per bounce. It needs a GPU profile.
+
+## 6. Open
+
+- **The frame cache where the camera sees what bounces reach.** An interior (a room, the camera inside) is where it
+  should pay; this scene is close to its worst case. Its content should also carry indirect light (a previous frame's
+  result, as a realtime preview has one), and its GPU lookup cost needs a profile (section 5).
 - **Dense launches.** Probes as their own launch (a probe list, or a camera at 1/s the resolution with a 1-pixel filter
   on a second GPU lane), and phase 2's refine pixels as a pixel list, instead of per-pixel counts on the full grid.
 - **Skip what phase 1 knows.** Phase 2 still computes the first hit's direct light it then discards in trusted pixels.
@@ -138,16 +177,21 @@ XPU2: 4 spp 0.12 s (3.07e-3), 9 spp 0.25 s (1.24e-3), 16 spp 0.44 s (5.9e-4), 36
   Sponza (23 lights, 69% of the GPU's time in shadow rays) is where light sample reuse has the most to save.
 - The lift assumes a still perspective camera without depth of field; patches lose triangles crossing the near plane.
 
-## 6. Reproduce
+## 7. Reproduce
 
 ```bash
-python bregman/build_bregman.py --source . --runtime <MoonRayForModo-xpu2>/test-results/interactive-reference-042 --output test-results/bregman/build-N
+python bregman/build_bregman.py --gpu --source . --runtime <MoonRayForModo-xpu2>/test-results/interactive-reference-042 --output test-results/bregman/build-N
 cd bregman/tools
-python make_reference.py --build <MoonRayForModo-xpu2>/test-results/async-build-handoff1 --scene <overflow>/scene.rdla --output <new folder>
-python run_bregman.py --engine <build-N> --ptx-build <async-build-handoff1> --scene <overflow>/scene.rdla --output <new folder> --reference <reference.rgba> stride=2 probe_spp=32 n_lo=4 n_mid=16 n_hi=32 xpu2_spp=9,16,36
+python make_reference.py --build <MoonRayForModo-xpu2>/test-results/async-build-handoff1 --scene <overflow>/scene.rdla --output <new folder> [--extra <.rdla>]
+python run_bregman.py --engine <build-N> --ptx-build <build-N> --scene <overflow>/scene.rdla --output <new folder> --reference <reference.rgba> stride=2 probe_spp=32 n_lo=4 n_mid=16 n_hi=32 cache=1 cache_p=0.25 qmc_depth=4 xpu2_spp=9,16,36
 python class_errors.py <that folder> <reference.rgba>
+python summarize.py <run folders...>
 ```
 
 `python` is `pythoncore-3.15` (not the Store one). The worktree needs `toolchain`, `build` and `upstream` junctioned from
-the main checkout. The XPU2 build must be one whose GPU program sources match this tree (`async-build-handoff1` does);
-the engine changes no GPU code, so OptiX's cache already holds its programs.
+the main checkout. `--gpu` builds the engine's own GPU program (with OpenQMC); its first run compiles it with OptiX
+(about 13 minutes), into the `optix-cache` folder beside the run folders (`run_bregman.py` sets `OPTIX_CACHE_PATH`), never
+into the kit's. Without `--gpu`, `--ptx-build` must be an XPU2 build whose GPU program sources match this tree's, and the
+frame cache and OpenQMC are then not in the GPU program (sections 2 to 4 were measured that way, with
+`async-build-handoff1`). The engine's options: `cache` (default off), `cache_p` (0.25), `cache_tol` (0.02), `qmc_depth`
+(0: off), `xpu2_qmc` (XPU2's comparison frames with OpenQMC).

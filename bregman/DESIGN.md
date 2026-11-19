@@ -188,6 +188,24 @@ What the prototype does with them:
   m / (m + n) while phase 2's paths, which carry the indirect light, accumulate: biased at a finite count, consistent.
   Every pixel gets n(x) >= 1, so nothing phase 1 missed stays unsampled.
 
+**Second step, asked for on 2026-11-19 after the first results:** phase 1 as a cache for phase 2's bounces, and OpenQMC in
+phase 2. Both are in XPU2's shared integrator (`async_integrator.h`), so they run on the CPU and the GPU alike, and both
+are off unless the engine's phase 2 sets them (`mixed::Config::frameCache`, `qmcDepth`):
+
+- **The frame cache.** A bounce (depth 1 or more) whose hit P lifts onto a pixel phase 1 trusts, at that pixel's
+  visible inverse depth (within 2%) and on the side the camera sees, takes phase 1's radiance C there and stops with
+  probability 1 - p; with probability p it goes on as before, its throughput divided by p, and adds -C (1 - p) / p.
+  The expectation is the continued path's for any C (a control variate chosen by Russian roulette), so the cache adds
+  no bias: a poor C (a glossy surface seen from elsewhere, indirect light C lacks)
+  costs variance only. This is the reading of "the indirect light is where phase 1's bias transforms into an unbiased
+  convergence" that the first results pointed to: phase 1's biased radiance serves the indirect light, and the roulette
+  makes its use unbiased. Bounces into what the frame does not see (the floor under the camera, the back of a ball) go
+  on as plain paths: "secondary bounces to reach objects outside the camera's frame".
+- **OpenQMC.** Past the first hit (where XPU2 already stratifies with its own Owen-scrambled Sobol), a vertex's light and
+  BSDF samples' two directions come from OpenQMC's Owen-scrambled Sobol sampler (the headers MoonLightIPR vendors), one
+  domain a branch and bounce, the branch being XPU2's deterministic tree address, so the same choice in every sample of
+  a pixel is stratified across them. Built only with `XPU2_OPENQMC` (the engine's build); XPU2's own builds are unchanged.
+
 **The readings that were offered** (kept for the record):
 
 - **A. The hyperplane.** (A1, recommended) the camera frame is the domain, the lift is inverse depth (3.1), each probe's

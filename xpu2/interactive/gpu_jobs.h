@@ -41,7 +41,17 @@ struct Config {path::Epoch epoch;surface::Camera camera;surface::V3 sky;U32 widt
     U32 modoSwitches=0;
     // Bounce-ray reuse (async_integrator.h): the ray visibility bits (rdl2 VisibilityType) of the bounces whose rays
     // meet exactly the occluders a shadow ray meets, every mesh visible to both or to neither; 0: no reuse.
-    U32 shadowReuse=0;};
+    U32 shadowReuse=0;
+    // The Bregman engine's phase 2 (bregman/DESIGN.md), off in XPU2's own frames. frameCache: phase 1's radiance over
+    // the camera frame, four floats a pixel (its rgb, and the visible surface's inverse depth there, 0 where phase 1 is
+    // not trusted). A bounce that lands on that visible surface ends there, taking it, with probability
+    // 1 - cacheContinue; else it goes on carrying 1 / cacheContinue and adds -C (1 - p) / p: unbiased whatever the
+    // cache holds. cacheToCamera (3x4 rows) and cacheRaster (o.x, o.y, o.z, ex.x, ex.y, ey.x, ey.y, the determinant) lift
+    // a point onto the frame (bregman/bvd.h's Frame).
+    const float* frameCache=nullptr;float cacheToCamera[12]={};float cacheRaster[8]={};float cacheContinue=1.0f,cacheDepthTolerance=0.02f;
+    // OpenQMC (built with XPU2_OPENQMC): vertices past the first, nonMirrorDepth in [1, qmcDepth), draw their light and
+    // BSDF samples' directions from OpenQMC's Owen-scrambled Sobol sampler; 0, or a build without it: Philox as before.
+    U32 qmcDepth=0;};
 struct Job {path::Epoch epoch{};U64 sequence=0;U32 count=0,first=0,samples=0,fault=0;U64 delay=0;U32 pixels[Capacity]{};};
 struct Pixel {double sum[4]{};U32 count=0,status=0,pixel=0,pad=0;};
 struct Result {path::Epoch epoch{};U64 sequence=0;U32 count=0,pad=0;Pixel pixels[Capacity]{};};

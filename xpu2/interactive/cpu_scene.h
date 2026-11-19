@@ -229,6 +229,9 @@ struct Plan {
     float textureDiffScale=1;
     // The camera's pixel sample map (uniform sampling): each pixel's sample count, rows from the bottom; empty: none.
     std::vector<unsigned> pixelSamples;
+    // The Bregman engine's phase 2 (mixed::Config's frameCache ... qmcDepth; bregman/DESIGN.md): none in XPU2's own plans.
+    std::shared_ptr<const std::vector<float>> frameCache;float cacheToCamera[12]={};float cacheRaster[8]={};
+    float cacheContinue=1.0f,cacheDepthTolerance=0.02f;unsigned qmcDepth=0;
     // Motion blur (meshMotionSteps, camera_core.h's cameraAtTime) and the camera's shutter bias (the samples' times).
     MotionParams motion;float shutterBias=0;
     // The lights moving under motion blur (light_core.h's LightMotion, by light index), and each light's record at the
