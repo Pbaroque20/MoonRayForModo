@@ -124,3 +124,28 @@ class HandoffDrawing(unittest.TestCase):
 
 if __name__=='__main__':
     unittest.main()
+
+
+class HandoffOverRealtime(unittest.TestCase):
+    """Show Handoff Tiles over renders; over realtime only where the kit's own handoff_tiles_realtime asks
+    (panel._handoff_shown, preferences)."""
+    def shown(self,checked,realtime,setting):
+        import types
+        source=(Path(__file__).resolve().parents[1]/'kit/MoonRayForModo/python/moonray_modo/panel.py').read_text(encoding='utf-8')
+        start=source.index('    def _handoff_shown(self):');end=source.index('    def _overlay_changed(self,*args):')
+        space={};exec('import textwrap\n'+'\n'.join(line[4:] for line in source[start:end].split('\n')),space)
+        panel=types.SimpleNamespace(handoff_tiles=types.SimpleNamespace(isChecked=lambda:checked),rt=types.SimpleNamespace(isChecked=lambda:realtime),
+                                    preferences=types.SimpleNamespace(get=lambda key:{'handoff_tiles_realtime':setting}[key]))
+        return space['_handoff_shown'](panel)
+    def test_over_renders(self):
+        self.assertTrue(self.shown(True,False,False))
+        self.assertFalse(self.shown(False,False,True))
+    def test_not_over_realtime_by_default(self):
+        self.assertFalse(self.shown(True,True,False))
+    def test_over_realtime_where_the_setting_asks(self):
+        self.assertTrue(self.shown(True,True,True))
+        self.assertFalse(self.shown(False,True,True))
+    def test_the_setting_is_off_by_default(self):
+        sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'kit/MoonRayForModo/python'))
+        source=(Path(__file__).resolve().parents[1]/'kit/MoonRayForModo/python/moonray_modo/preferences.py').read_text(encoding='utf-8')
+        self.assertIn("'handoff_tiles_realtime': (False, bool)",source)

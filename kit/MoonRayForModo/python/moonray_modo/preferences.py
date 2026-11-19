@@ -29,6 +29,9 @@ KEYS = {
     'idle_release_minutes': (0, int),
     'persistent_preview': (True, bool), 'memory_hud': (True, bool),
     'ipr': (False, bool), 'show_buckets': (True, bool), 'worker_tiles': (True, bool), 'handoff_tiles': (True, bool), 'clay': ('materials', str),
+    # The kit's own, with no control: XPU2's hand-off tiles (Show Handoff Tiles) drawn over a realtime preview too.
+    # Off, they show over renders only: realtime starts again at every edit, and its hand-offs flicker over the picture.
+    'handoff_tiles_realtime': (False, bool),
     'display_gamma': (1.0, float),
     # Set on the MoonRay page of Modo's Preferences: what Assign Material starts with, the ink of a draft, whether a
     # preview starts as its window opens, how bright a new MoonRay light is, and whether notices open by themselves.

@@ -9,9 +9,9 @@ The plugin includes CPU, XPU and XPU2 rendering, a dockable live preview with a 
 
 **Built on MoonRay [2026.29.1](https://github.com/dreamworksanimation/openmoonray/releases/tag/v2026.29.1)** (OpenMoonRay's latest release; MoonRay 18.4), with the plugin's own patches for Windows and the preview.
 
-**Current version: 0.5.5.1 — pre-production release.** The plugin is no longer experimental. 0.5 brought **MoonRay XPU2**, a new GPU renderer for previews in which the processor and the graphics card work on the same picture at once, now the default; realtime that keeps up with heavy scenes and a Scene cache; Modo's procedural textures worked out through the object, 145 of Modo's Enhance textures among them; Modo's light volumetrics and fog; and MoonLightIPR starting in seconds. Install the new runtime with it.
+**Current version: 0.5.5.1.1 — pre-production release.** The plugin is no longer experimental. 0.5 brought **MoonRay XPU2**, a new GPU renderer for previews in which the processor and the graphics card work on the same picture at once, now the default; realtime that keeps up with heavy scenes and a Scene cache; Modo's procedural textures worked out through the object, 145 of Modo's Enhance textures among them; Modo's light volumetrics and fog; and MoonLightIPR starting in seconds. Install the new runtime with it.
 
-· [Download 0.5.5.1: the kit, the Windows runtime and the MoonRay content](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.5.5.1)
+· [Download 0.5.5.1.1: the kit, the Windows runtime and the MoonRay content](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.5.5.1.1)
 
 · [Installation instructions](docs/INSTALLATION.md) 
 
@@ -60,6 +60,10 @@ Work on the next version goes on in the [MoonLightIPR branch](https://github.com
 | **The graph editor**, with a MoonRay material | **Modo's Fur material** rendered by MoonRay |
 | ![The compositor](docs/images/compositor-editor.png) | ![Modern Hall, imported from MoonRay's scene files](docs/images/rdl-modern_hall.jpg) |
 | **The compositor**: the beauty graded, vignetted and sharpened | **An imported MoonRay scene**: its own render (left), after the trip through Modo (right). Modern Hall by NewSee2l035, CC BY |
+
+## New in 0.5.5.1.1
+
+Two crashes fixed: clicking a camera during a MoonLightIPR realtime preview, and quitting Modo after the asset library was opened. Show Handoff Tiles shows over renders only, not over realtime. Only the kit changed: coming from 0.5.5.1, there is no need to compile XPU2 Shaders again.
 
 ## New in 0.5.5.1
 
@@ -492,7 +496,7 @@ In each pair, MoonRay's render of the scene from its own files is on the left; o
 - Render outputs: configurable AOVs, Cryptomatte surface categories, buffer switching, deep EXR, texture baking, a compositor over the finished buffers, and denoising (OptiX or Open Image Denoise) that survives a stopped render.
 - Workflow tools: ACES/sRGB/OCIO view transforms and LUTs, animation output and recovery controls, an asset library with MoonRay's example scenes, and RDL scene import.
 
-## Known issues in 0.5.5.1
+## Known issues in 0.5.5.1.1
 
 The ones you are most likely to meet:
 
@@ -527,7 +531,7 @@ Comparison audit between MoonRay 2026.29.1's source and the current plugin.
 |---|:---:|---|
 | CPU rendering (scalar and vector) | ![yes](docs/images/feature-yes.svg) | AVX build |
 | XPU rendering on the graphics card | ![yes](docs/images/feature-yes.svg) | NVIDIA only. XPU2, the plugin's own GPU renderer (new in 0.5), renders previews by default, and Render to a File and animations; new in 0.5.5, it renders deep EXRs and Safe Denoising with Continue itself (deep EXRs of scenes with volumes stay with MoonRay). XPU2 takes about half the graphics card memory it did before 0.5.2.1. XPU2 needs a third of the texture memory, and less of the card; it renders on every NVIDIA card in the machine and every processor, past 64 threads, with each card and processor switched on or off in Preferences > MoonRay > XPU2 > Device Management, and its workers and texture memory placed by NUMA node on two-socket and many-die machines. Compile XPU2 Shaders compiles only the kinds of card that are not up to date, and names a new one. New in 0.5.5.1: Render Animation chooses MoonRay (XPU), MoonRay (XPU2) or MoonLightIPR for its frames, whichever renders the preview; and XPU2 renders scenes with dozens of 4K textures to the end, where they stalled after its first passes and went over to MoonRay XPU, and readies them sooner. With it, Compile XPU2 Shaders once more. |
-| Progressive rendering, and region rendering | ![yes](docs/images/feature-yes.svg) | The preview window, and the graph editor's MoonRay Widget. The widget renders under MoonRay LS, which is quicker. The widget renders with XPU2, at 1024 to 4096 samples, with a Scale for the ball. New in 0.5.5.1: a preview of any size shows as it renders (4K ones stayed black until done), its pictures' memory said in the MoonRay Terminal and, when large, among the notices; and MoonLightIPR's realtime can follow a drag of the camera or of items as it happens (Preview Preferences, Follow drags, off by default), each step at one sample a pixel, keyed items in scenes with motion blur among them, the preview saying so when Modo keeps it from following; a preview of any size is shown in the window itself too (a 4K one said "Cannot display buffer"). New in 0.5.5.1: under XPU2, Show Handoff Tiles (the preview window's Options) fills the tiles the GPU handed to the processor (orange) and those holding provisional samples (blue), half see-through, until they are rendered in full. |
+| Progressive rendering, and region rendering | ![yes](docs/images/feature-yes.svg) | The preview window, and the graph editor's MoonRay Widget. The widget renders under MoonRay LS, which is quicker. The widget renders with XPU2, at 1024 to 4096 samples, with a Scale for the ball. New in 0.5.5.1: a preview of any size shows as it renders (4K ones stayed black until done), its pictures' memory said in the MoonRay Terminal and, when large, among the notices; and MoonLightIPR's realtime can follow a drag of the camera or of items as it happens (Preview Preferences, Follow drags, off by default), each step at one sample a pixel, keyed items in scenes with motion blur among them, the preview saying so when Modo keeps it from following; a preview of any size is shown in the window itself too (a 4K one said "Cannot display buffer"). New in 0.5.5.1: under XPU2, Show Handoff Tiles (the preview window's Options) fills the tiles the GPU handed to the processor (orange) and those holding provisional samples (blue), half see-through, until they are rendered in full. New in 0.5.5.1.1: over renders only, not over realtime. |
 | Cameras: perspective, orthographic, fisheye, spherical, dome | ![yes](docs/images/feature-yes.svg) | MoonRay camera items, or Modo's camera. A Modo camera converted to any of them in its place (animation kept), and changed back to a Modo camera; a Camera Sequence keying cameras to ranges of frames, and MoonRay cameras that are Modo cameras, looked through in the viewport by their lens with Modo's resolution gate. A MoonRay camera sees as near as a Modo camera unless Near is set, and a new one starts where the render camera stands. dw Perspective and Orthographic cameras take the Modo camera's lens, edited in its own tabs. |
 | Stereo cameras | ![yes](docs/images/feature-yes.svg) | Modo's camera Stereo: one eye, or both with a red/cyan picture in Render EXR; MoonLightIPR shows the eye chosen, and the left for both |
 | Overscan (rendering past the frame edge) | ![yes](docs/images/feature-yes.svg) | Modo's camera Overscan, or a MoonRay camera's own when it is rendered through, in final renders |
