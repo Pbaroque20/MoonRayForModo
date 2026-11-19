@@ -6,6 +6,13 @@ This is the development branch of [MoonRay for Modo](https://github.com/Pbaroque
 
 The current release is [0.5.5.1.1](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.5.5.1.1). **Built on MoonRay [2026.29.1](https://github.com/dreamworksanimation/openmoonray/releases/tag/v2026.29.1)** (OpenMoonRay's latest release; MoonRay 18.4), with the plugin's own patches for Windows and the preview.
 
+## New in 0.5.5.1.2
+
+Draft View is interactive again. Only the kit changed: coming from 0.5.5.1 or 0.5.5.1.1, there is no need to compile XPU2 Shaders again.
+
+- **Draft View draws at once and follows drags**: an edit or a camera move shows in a fraction of a second, where it could take eight, and moving an item or the camera is drawn while the mouse button is still held, also in a viewport that looks through the camera.
+- **Oceans no longer slow Draft down**: a sea is shaped once when Draft starts, not again at every step of a camera move.
+
 ## New in 0.5.5.1.1
 
 Two crashes, a Group Mask's white border and stacked materials rendered rounded fixed, and Show Handoff Tiles over renders only. Only the kit changed: coming from 0.5.5.1, there is no need to compile XPU2 Shaders again.
