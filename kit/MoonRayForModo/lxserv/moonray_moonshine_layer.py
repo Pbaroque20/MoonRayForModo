@@ -143,7 +143,9 @@ def register():
             except Exception:pass
     # Kept, or the listener is let go of as soon as this function returns.
     register.watcher=Watcher()
-    lx.service.Listener().AddListener(register.watcher)
+    # Taken out as Modo quits, while Python still stands (quit_release).
+    from moonray_modo import quit_release
+    quit_release.listen(register.watcher)
 
 
 # A fault here must not keep the rest of the kit from loading.

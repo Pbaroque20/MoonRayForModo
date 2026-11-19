@@ -734,7 +734,9 @@ def register():
             except Exception:pass
     # Kept, or the listener is let go of as soon as this function returns.
     register.watcher=Watcher()
-    lx.service.Listener().AddListener(register.watcher)
+    # Taken out as Modo quits, while Python still stands (quit_release).
+    from moonray_modo import quit_release
+    quit_release.listen(register.watcher)
 
     # ---- Scaling a MoonRay light (or a sized MoonRay item) with Modo's scale tool -----------------------------------
     # The renderers follow an item's scale, but its Width and Height (or Radius) kept the numbers typed. Once a scale
@@ -808,7 +810,8 @@ def register():
     try:
         register.scale_type=lx.service.Scene().ItemTypeLookup(lx.symbol.sITYPE_SCALE)
         register.scale_watcher=ScaleWatcher()
-        lx.service.Listener().AddListener(register.scale_watcher)
+        from moonray_modo import quit_release
+        quit_release.listen(register.scale_watcher)
     except Exception as exc:
         lx.out('MoonRay lights will not take their scale into their size: %s'%exc)
 

@@ -381,6 +381,8 @@ class _DiffuseWatcher(lxifc.SceneItemListener):
 try:
     _DiffuseWatcher.material_type=lx.service.Scene().ItemTypeLookup('advancedMaterial')
     _diffuse_watcher=_DiffuseWatcher()
-    lx.service.Listener().AddListener(_diffuse_watcher)
+    # Taken out as Modo quits, while Python still stands (quit_release).
+    from moonray_modo import quit_release
+    quit_release.listen(_diffuse_watcher)
 except Exception as exc:
     lx.out('MoonRay materials will not follow their diffuse: %s'%exc)

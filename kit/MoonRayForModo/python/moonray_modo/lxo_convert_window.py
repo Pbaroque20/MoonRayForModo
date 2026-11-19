@@ -270,7 +270,10 @@ _quit_hooked = [False]
 
 def _close_on_quit():
     """Modo quitting closes the window first, ending what it converts, while Qt still stands (as the Rhizome window
-    does, rhizome_window._close_on_quit)."""
+    does, rhizome_window._close_on_quit). Reference cycles are collected on Modo's main thread from the first window on
+    (main_thread_gc)."""
+    from . import main_thread_gc
+    main_thread_gc.install()
     if _quit_hooked[0]:
         return
     application = QtCore.QCoreApplication.instance()

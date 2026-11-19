@@ -155,6 +155,8 @@ class Renderer(QtCore.QObject):
         # Modo ending while a scene is being written: the thread is let finish, not cut off under it.
         application=QtCore.QCoreApplication.instance()
         if application is not None:application.aboutToQuit.connect(self._quitting)
+        # Reference cycles are collected on Modo's main thread from now on, never on one of the kit's worker threads.
+        from . import main_thread_gc;main_thread_gc.install()
         self.session.failed.connect(self._session_failed)
         self.session.status.connect(self.status.emit)
         # A fallback to MoonRay XPU, or XPU2 taking the scene again: the render settings form looks again, for MoonRay's
