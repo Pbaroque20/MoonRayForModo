@@ -1388,8 +1388,13 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
             key, flags, payload, slot_map = cage_payload(mesh, material_index, compiler.slots, warnings)
         else:
             key, flags, payload, slot_map = mesh_payload(mesh, material_index, compiler.slots, cut.get('simplify') if cut else None)
+        # A draft splits a sea (wears_ocean) by its distance from the camera its meshes are cut from, held through its
+        # edits (_draft, moonlightipr_detail.held_dicing): split from the camera itself, each step of a camera drag gave
+        # the sea a new key, and the session displaced it again (2.4 s a step on the dragon test scene). Other displaced
+        # meshes, realtime and renders split from the camera as before.
         key, flags, payload = displaced(mesh, key, flags, payload, materials, material_index, warnings, cut['splits'] if cut else None,
-                                        scene.get('camera'), width)
+                                        cutting if scene.get('_draft') and wears_ocean(mesh, materials, seas) else scene.get('camera'),
+                                        width)
         if key not in order:
             order[key] = len(meshes)
             # Send the data once per session; later scenes refer to it by key.

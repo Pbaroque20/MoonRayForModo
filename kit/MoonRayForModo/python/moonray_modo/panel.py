@@ -895,6 +895,9 @@ class Panel(Tools, QtWidgets.QWidget):
             except Exception:self._draft_time=None
             self._draft_hasty=True
             self._draft_render=None
+            # The meshes cut from the camera as it stands now, and held so while Draft is on (_submit).
+            from . import moonlightipr_detail
+            moonlightipr_detail._DICING['camera']=None
             self.draft_timer.start()
         else:self.draft_timer.stop()
         if enabled:
@@ -932,28 +935,35 @@ class Panel(Tools, QtWidgets.QWidget):
         if self._following or self.preview_lock.isChecked() or self._output_busy() or not self.changes.registered:return
         try:
             from .interaction import dragging
-            # A drag is waited out, and the scene drawn as it is when the button comes up: what is shown is then always
-            # the outcome of an edit, never something part way through one.
-            if dragging():return
-            held=False
-            if not held:self._draft_drag_read=False
+            # Draft is the interactive view: a drag (the camera navigated, an item moved, points pulled) is drawn step
+            # by step as it goes, whatever Follow drags says for realtime. Up to 0.5.5.1.1 a drag was waited out and
+            # drawn once the button came up.
+            held=dragging()
+            if not held:
+                self._draft_drag_read=False
+                # The camera looked through, kept watched while the mouse is up, for a drag's steps to be set against:
+                # Modo tells of a camera navigated in a viewport only once the mouse is let go (_camera_watch).
+                self._camera_watch()
             # One picture at a time: the next is begun when this one is shown, so that each is seen and none piles up
-            # behind another.
+            # behind another. A draft is drawn flat out (_submit), so this is the time the lines take to draw.
             if self._rendering:return
-            # Nor is an animation playing in Modo drawn frame by frame: the frame it stops on is.
-            if not self._time_settled():return
+            # Nor is an animation playing in Modo drawn frame by frame: the frame it stops on is. A time dragged by hand
+            # is followed as any drag is.
+            if not self._time_settled() and not held:return
             time=lx.service.Selection().GetTime()
             moved=time!=getattr(self,'_draft_time',time)
+            # Where the camera looked through now stands, while a drag may be moving it.
+            polled=self._camera_moved() if held and not self.changes.full else set()
+            if polled:self.changes.items.update(polled)
             if not (self.changes.full or self.changes.items or moved):
                 # Nothing new. Outlines drawn in haste during a drag are drawn again with care once it is over.
                 if not held and getattr(self,'_draft_hasty',False) and getattr(self,'_kept_capture',None) is not None:
                     self._draft_hasty=False
                     self._draft_submit(self._kept_capture)
                 return
-            if self._preview_blurred():
-                if held:return
-                self._draft_time=time
-                self.render_once();return
+            # A draft's lines show no motion blur, whatever the preview's blur and motion vectors are set to: they are not
+            # read at the shutter's ends. (Up to 0.5.5.1.1 a blurred preview sent every draft redraw through a whole
+            # render read, and none was drawn while a drag went on.)
             # Reading every mesh out of Modo again is most of what a redraw takes (a second of 1.3 on a scene of 266
             # meshes), and most edits leave the meshes as they are. As when a scene is followed, only what the
             # edit touched is read again: where things stand, a material, the meshes named, or all of it.
@@ -963,22 +973,33 @@ class Panel(Tools, QtWidgets.QWidget):
             if reuse:
                 from .incremental import classify
                 reuse=classify(modo.Scene(),items,self._geometry_cache)
-            if held and reuse not in (True,'transforms','materials'):
+            if held and reuse is False:
                 if getattr(self,'_draft_drag_read',False):
-                    # A drag is followed as it goes, picture after picture, where that takes only asking where things
-                    # now stand or how they are shaded. One that needs the meshes read again waits for the button
-                    # to come up: what Modo told of is put back to be looked at then.
+                    # A drag is followed as it goes, picture after picture: where things now stand, how they are shaded,
+                    # or the meshes it changed read again (a draft's lines are of their shapes alone, and points pulled
+                    # are drawn as they move). One that needs the whole scene read again waits for the button to come
+                    # up: what Modo told of is put back to be looked at then.
                     self.changes.full=self.changes.full or full;self.changes.items.update(items);return
                 # But the first step of a drag often makes something new in the scene (an item's first move gives it
                 # a place of its own), which needs the scene read whole. That is done once in a drag, so that the
                 # rest of it can be followed.
                 self._draft_drag_read=True
             self._draft_time=time
+            scene=None
+            if held and reuse in (True,'transforms') and getattr(self,'_kept_capture',None) is not None:
+                # A step of a drag that only moves things: the scene drawn last with where things stand made new, as
+                # realtime's drags are (incremental.move_only). The camera navigated in a viewport that looks through it
+                # stands where that viewport looks from (_camera_moved): Modo moves the camera item itself only once the
+                # mouse is let go, and read from Modo every step was drawn from where the drag began.
+                from .incremental import move_only
+                scene=move_only(modo.Scene(),self._kept_capture,[identity for identity in items if identity not in polled],
+                                camera_moved=bool(polled),camera_matrix=getattr(self,'_camera_place',None) if polled else None,
+                                loose=(self._geometry_cache or {}).get('_loose_items') or ())
             # In the middle of a drag the outlines are drawn in fewer passes, so that more pictures of it are shown.
             # A change is shown first in a quick, small picture, and then, once that is up and nothing more has
             # changed, in a fine one.
             self._draft_hasty=True
-            self._draft_submit(self._capture(reuse))
+            self._draft_submit(scene if scene is not None else self._capture(reuse))
         except Exception as exc:
             self._draft_quiet=False
             self.status.setText('Draft could not follow the scene: '+str(exc))
@@ -2165,7 +2186,16 @@ class Panel(Tools, QtWidgets.QWidget):
             scene=dict(scene,_geometry_detail=detail,_detail_keep=not recut)
             if not (kept and self.detail_timer.isActive()):self.detail_timer.start()
         else:self.detail_timer.stop()
-        if self._draft_engine:scene=dict(scene,_draft=2,_draft_samples=3 if (getattr(self,'_draft_hasty',False) and not self._following) else 12)
+        # A draft's lines are drawn flat out (_flat_out): MoonLightIPR spreads a render's samples over its pace, eight
+        # seconds, to leave the card room for realtime's edits, and Draft, which takes the next edit once the lines are
+        # drawn, waited those eight seconds for twelve samples of a cube.
+        if self._draft_engine:scene=dict(scene,_draft=2,_flat_out=True,_draft_samples=3 if (getattr(self,'_draft_hasty',False) and not self._following) else 12)
+        if self._draft_engine and not self._following:
+            # A draft's lines are of shapes alone: its subdivided and displaced meshes (an ocean, a displaced dragon) are
+            # cut coarse, from the camera held since Draft came on (_draft_toggled), and kept so through every edit and
+            # every move of the view. Cut anew from each step of a camera drag, the sea was displaced again on the card
+            # each time, and a step of the drag took 2.5 s to draw (the dragon test scene).
+            scene=dict(scene,_geometry_detail='coarse',_detail_keep=True)
         if not output and self.draft.isChecked():
             # The picture is spoken of at the size the camera renders it, however finely its lines are drawn.
             self._draft_size=(width,height);self.preview.nominal=(width,height)

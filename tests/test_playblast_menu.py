@@ -19,7 +19,12 @@ class PlayblastMenu(unittest.TestCase):
     def test_a_playblast_renders_flat_out_and_a_preview_does_not(self):
         root = ROOT / 'kit/MoonRayForModo/python/moonray_modo'
         self.assertIn("snapshot['_flat_out'] = True", (root / 'playblast.py').read_text(encoding='utf-8'))
-        self.assertNotIn('_flat_out', (root / 'panel.py').read_text(encoding='utf-8'))
+        # A realtime preview stays paced; the one flat-out request in the panel is Draft's lines (they were drawn over
+        # MoonLightIPR's eight-second pace, and Draft waited that long for each edit).
+        panel = (root / 'panel.py').read_text(encoding='utf-8')
+        asks = [line for line in panel.splitlines() if '_flat_out=True' in line]
+        self.assertEqual(len(asks), 1)
+        self.assertTrue(asks[0].strip().startswith('if self._draft_engine:scene=dict(scene,_draft=2,_flat_out=True'))
         scene = (root / 'moonlightipr_scene.py').read_text(encoding='utf-8')
         self.assertIn("SCENE_FLAT_OUT if scene.get('_flat_out')", scene)
         self.assertIn('SCENE_FLAT_OUT = 1, 2, 4, 8, 16', scene)
