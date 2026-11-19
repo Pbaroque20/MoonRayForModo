@@ -167,5 +167,42 @@ class DistanceSplit(unittest.TestCase):
         self.assertIsNone(moonlightipr_scene.distance_split(self.mesh(), None, 1000))
 
 
+class DraftSplit(unittest.TestCase):
+    """In Draft (_draft) a sea is split from the camera its meshes are cut from, held through its edits: split from the
+    camera itself, each step of a camera drag gave the sea a new key and the session displaced it again. Any other mesh,
+    and a realtime preview's sea, is split from the camera itself as before."""
+
+    def split_from(self, **flags):
+        from moonray_modo import moonlightipr_scene, moonlightipr_detail, ocean
+        held = {'matrix': IDENTITY[:12] + [0.0, 4.0, 0.0, 1], 'focal_mm': 35.0, 'film_mm': 36.0}
+        seen = {}
+        real = moonlightipr_scene.displaced
+
+        def displaced(mesh, *args):
+            seen[mesh['name']] = args[-2]
+            return real(mesh, *args)
+        with tempfile.TemporaryDirectory() as folder, mock.patch.object(ocean, 'folder', return_value=pathlib.Path(folder)), \
+                mock.patch.dict(os.environ, {'MOONRAY_MODO_OCEAN': '1'}), \
+                mock.patch.object(moonlightipr_detail, 'held_dicing', lambda *a, **k: held), \
+                mock.patch.object(moonlightipr_scene, 'displaced', displaced):
+            result = ocean_plane.apply(scene(plane(resolution=64, horizon=400.0, detail=4.0)), [])
+            sea = result['meshes'][0]
+            floor = dict(DistanceSplit().mesh(), name='Floor', material='floor')
+            result = dict(result, meshes=[sea, floor], materials=dict(result['materials'], floor={}),
+                          _geometry_detail='coarse', _detail_keep=True, **flags)
+            moonlightipr_scene.pack(result, 64, 36, 0.15, (), 4, False, None)
+        return seen[sea['name']], seen['Floor'], held, result['camera']
+
+    def test_a_drafts_sea_from_the_held_camera_and_the_rest_from_the_camera(self):
+        sea, floor, held, camera = self.split_from(_draft=2)
+        self.assertIs(sea, held)
+        self.assertIs(floor, camera)
+
+    def test_a_realtime_sea_from_the_camera(self):
+        sea, floor, held, camera = self.split_from()
+        self.assertIs(sea, camera)
+        self.assertIs(floor, camera)
+
+
 if __name__ == '__main__':
     unittest.main()

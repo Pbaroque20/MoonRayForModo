@@ -2,6 +2,13 @@
 
 0.5 is a **pre-production release**: the plugin is no longer experimental, and it brings a new GPU renderer, MoonRay XPU2.
 
+## New in 0.5.5.1.2
+
+Draft View is interactive again. Only the kit changed: coming from 0.5.5.1 or 0.5.5.1.1, there is no need to compile XPU2 Shaders again.
+
+- **Draft View draws at once and follows drags**: an edit or a camera move shows in a fraction of a second, where it could take eight, and moving an item or the camera is drawn while the mouse button is still held, also in a viewport that looks through the camera.
+- **Oceans no longer slow Draft down**: a sea is shaped once when Draft starts, not again at every step of a camera move.
+
 ## New in 0.5.5.1.1
 
 Two crashes, a Group Mask's white border and stacked materials rendered rounded fixed, and Show Handoff Tiles over renders only. Only the kit changed: coming from 0.5.5.1, there is no need to compile XPU2 Shaders again.
