@@ -1183,6 +1183,11 @@ class Compiler:
         if source.get('opacity', 1) < 1:
             self.note('opacity', name)
         effects = {textures.EFFECT_ALIASES.get(layer['effect'], layer['effect']) for layer in layers}
+        # Each row's glow whole, as MoonRay's material has it (graph.glow_whole), where no layer sets the luminous
+        # colour or amount on its own.
+        whole_glow = graph.glows_whole(layers)
+        if whole_glow:
+            graph.glow_whole(defaults)
 
         start = len(self.layers)
         # A displaced material's height starts from its Displacement Value, as Modo's does, under its displacement layers;
@@ -1262,6 +1267,8 @@ class Compiler:
             if kind == 'materialBase':
                 # A material row sets every channel at once, blended over the rows below it.
                 base = graph.defaults_for(layer['material'])
+                if whole_glow:
+                    graph.glow_whole(base)
                 mask = masked(layer.get('identity'))
                 for effect_name, channel in CHANNELS.items():
                     if effect_name in UNSET_BY_ROWS:
