@@ -4,10 +4,11 @@
 
 ## New in 0.5.5.1.1
 
-Two crashes fixed. Only the kit changed: coming from 0.5.5.1, there is no need to compile XPU2 Shaders again.
+Two crashes fixed, and Show Handoff Tiles over renders only. Only the kit changed: coming from 0.5.5.1, there is no need to compile XPU2 Shaders again.
 
 - **Clicking a camera during a MoonLightIPR realtime preview no longer crashes Modo**: Python's tidying of what it no longer needs now happens on Modo's own thread only, never on one of the kit's background threads, where it could run Modo code Modo was not ready for.
 - **Modo quits without crashing after the asset library was opened**: the kit's windows, open or only hidden, are closed while Python is still running, and the kit lets go of what it gave Modo to hold before Modo quits.
+- **Show Handoff Tiles shows over renders only**: realtime starts again at every edit, and its orange and blue tiles flickered over the picture; while RT is on they stay hidden.
 
 ## New in 0.5.5.1
 

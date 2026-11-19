@@ -266,6 +266,8 @@ class Panel(Tools, QtWidgets.QWidget):
         self.rt=QtWidgets.QPushButton('RT Off');self.rt.setCheckable(True)
         self.rt.setStyleSheet('QPushButton:checked{background-color:#f49c1c;color:#1a1a1a;border:1px solid #ffb84d;border-radius:3px;font-weight:bold;}')
         self.rt.toggled.connect(self._rt_toggled)
+        # XPU2's hand-off tiles hidden over realtime, unless the kit's own handoff_tiles_realtime asks (_handoff_shown).
+        self.rt.toggled.connect(lambda *_:None if getattr(self,'disposed',False) else self.preview.set_show_handoff(self._handoff_shown()))
         # The preferences RT hangs on (the engine, Realtime with MoonRay XPU) are changed in Modo's Preferences as well as
         # in Preview Preferences: either says so (property_notifications), and RT follows at once.
         from . import property_notifications
@@ -457,7 +459,7 @@ class Panel(Tools, QtWidgets.QWidget):
         self.handoff_tiles=checkable(menu,'Show Handoff Tiles')
         self.handoff_tiles.setToolTip('Under XPU2, fill the tiles where the GPU handed samples on, half see-through: orange where it '
                                       'handed them to the CPU, blue where its samples are provisional (textures still loading). Each '
-                                      'clears once its samples are rendered in full.')
+                                      'clears once its samples are rendered in full. Over renders; not over realtime.')
         self.handoff_tiles.setChecked(self.preferences.get('handoff_tiles'))
         self.handoff_tiles.toggled.connect(self._overlay_changed)
         menu.addSeparator()
@@ -777,12 +779,19 @@ class Panel(Tools, QtWidgets.QWidget):
     def _clay_changed(self,action):
         self.preferences.set('clay',action.data());self._preview_changed(0)
 
+    def _handoff_shown(self):
+        """Show Handoff Tiles where it applies: over a render, and over realtime only where the kit's own setting
+        handoff_tiles_realtime asks (preferences: off, as a realtime preview starts again at every edit)."""
+        shown=self.handoff_tiles.isChecked() if hasattr(self,'handoff_tiles') else self.preferences.get('handoff_tiles')
+        realtime=hasattr(self,'rt') and self.rt.isChecked()
+        return bool(shown) and (not realtime or bool(self.preferences.get('handoff_tiles_realtime')))
+
     def _overlay_changed(self,*args):
         self.preferences.set('show_buckets',self.show_buckets.isChecked())
         self.preferences.set('worker_tiles',self.worker_tiles.isChecked())
         self.preferences.set('handoff_tiles',self.handoff_tiles.isChecked())
         self.preview.set_worker_overlay(self.worker_tiles.isChecked())
-        self.preview.set_show_handoff(self.handoff_tiles.isChecked())
+        self.preview.set_show_handoff(self._handoff_shown())
         self.preview.set_show_buckets(self.show_buckets.isChecked() and not self._following)
 
     def _preferences_followed_now(self):
