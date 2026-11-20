@@ -23,7 +23,8 @@ class EnvironmentImages(unittest.TestCase):
         source = (KIT / 'moonray_modo/environment_layers.py').read_text(encoding='utf-8')
         self.assertIn("source=str(textures.asset_path(layer['path']))", source)
         self.assertIn("args=[source]+grey+colour+['--resize'", source)
-        self.assertIn("run(args+['-d','float','-o',str(target)])", source)
+        # Through an uncompressed TIFF made a PFM (pfm_files), not oiiotool's own PFM writer.
+        self.assertIn("through_tiff(lambda tiff:run(args+['-d','float','--compression','none','-o',str(tiff)]),target)", source)
         self.assertIn('ThreadPoolExecutor(max_workers=min(4, len(images)))', source)
 
     def test_grey_images_read_as_grey(self):

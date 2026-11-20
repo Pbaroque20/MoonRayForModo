@@ -134,7 +134,9 @@ def environment_image(item, runtime, full=False):
         space, ocio = color_space(source, item.get('color_space', ''), item.get('srgb'))
     stat = source.stat()
     working = working_enabled()
-    digest = hashlib.sha256(repr((str(source.resolve()), stat.st_size, stat.st_mtime_ns, space, ocio, working, 'full' if full else ENVIRONMENT_IMAGE,
+    # A Render's full-size environment is named anew ('full-rows'): one made before pfm_files had its bands out of order
+    # (an 8K HDRI's ceiling lights below its floor); realtime's, made smaller, was right.
+    digest = hashlib.sha256(repr((str(source.resolve()), stat.st_size, stat.st_mtime_ns, space, ocio, working, 'full-rows' if full else ENVIRONMENT_IMAGE,
                                   'moonlightipr-env-v3')).encode()).hexdigest()
     target = cache_folder() / (digest + '.pfm')
     if not target.is_file() or not target.stat().st_size:
