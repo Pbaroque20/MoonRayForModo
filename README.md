@@ -8,6 +8,7 @@ The current release is [0.5.5.1.2](https://github.com/Pbaroque20/MoonRayForModo/
 
 ## In the next release (0.5.6)
 
+- **Oceans are shaped once in realtime**: XPU2's and MoonLightIPR's realtime no longer work a sea out again at every camera move or edit (XPU2 rebuilt it several times a minute, even with nothing touched). In MoonLightIPR a sea keeps the detail cut for the view where realtime came on: switch RT off and on to cut it anew after flying far across it.
 - **Clean alpha edges in After Effects and Nuke**: a render saved as OpenEXR with alpha no longer keeps the visible sky in its soft edges, which showed as a light halo, plainest over black. Read the file as Premultiplied; the sky is still in it, as its Environment background layer. MoonRay, XPU2 and MoonLightIPR renders alike, and OpenEXRs saved from the preview window. Switch: MoonRay Source Overrides, Premultiplied OpenEXR alpha (on).
 - **PNG and TIFF saved from the preview window with alpha** no longer have bright soft edges over a visible sky, as renders' already did not.
 
