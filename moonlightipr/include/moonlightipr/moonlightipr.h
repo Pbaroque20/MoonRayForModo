@@ -114,6 +114,15 @@ struct Material {
     // into its own unit cube: the grid of a fire need not cover what the grid of its smoke does. -1 for none.
     int32_t volumeGlowGrid = -1;
     float volumeGlowRows[12] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0};
+    // MoonRay's iridescence (DwaBaseMaterial's): the specular reflection, or with iridescenceCoat the clear coat's,
+    // multiplied by a colour that depends on the angle. Its index, |1 - cos|^exponent * thickness wrapped into 0 to 1,
+    // picks the colour from iridescenceColors (IRIDESCENCE_STEPS colours from index 0 to 1, three numbers each), which
+    // is then blended from white by strength times a blend from its strength at 90 degrees to that at 0.
+    bool iridescent = false;
+    bool iridescenceCoat = false;
+    float iridescenceStrength = 0.0f, iridescenceExponent = 1.0f, iridescenceThickness = 1.0f;
+    float iridescenceAt0 = 1.0f, iridescenceAt90 = 1.0f;
+    std::vector<float> iridescenceColors;
 };
 
 // A block of numbers on the GPU, x fastest, read between its cells.
