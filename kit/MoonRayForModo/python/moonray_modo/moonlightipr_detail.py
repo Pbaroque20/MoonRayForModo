@@ -199,8 +199,10 @@ def plan(meshes, camera, width, detail='fine', displaces=lambda mesh: False, sea
     return chosen, refinable
 
 
-# The camera a realtime MoonRay preview's meshes are cut for (its dicing camera), held while the view moves little.
-_DICING = {'camera': None}
+# The camera a realtime MoonRay preview's meshes are cut for (its dicing camera), held while the view moves little;
+# and the one its seas are cut for (held_sea), held for as long as the preview follows the scene.
+_DICING = {'camera': None, 'sea': None}
+_HELD_CAMERA = ('matrix', 'projection', 'ortho_width', 'film_offset', 'pixel_aspect', 'focal_mm', 'film_mm')
 
 
 def _eye(camera):
@@ -246,9 +248,35 @@ def held_dicing(camera, meshes, keep=False):
     whatever the view (MoonRay's realtime through a move of the camera: cut anew, every mesh is a reload, until rested)."""
     held = _DICING['camera']
     if held is None or (not keep and moved(held, camera, meshes)):
-        held = _DICING['camera'] = {k: v for k, v in camera.items() if k in ('matrix', 'projection', 'ortho_width', 'film_offset',
-                                                                             'pixel_aspect', 'focal_mm', 'film_mm')}
+        held = _DICING['camera'] = {k: v for k, v in camera.items() if k in _HELD_CAMERA}
     return held
+
+
+def held_sea(camera, mesh):
+    """The camera a realtime preview's sea (a mesh wearing an Ocean node, ocean.wears_ocean) is cut and split for: the
+    view as it stood when the preview came on (RT, panel._follow, which forgets the ones held), kept through every edit
+    and every move of the view, so that the sea is displaced once for as long as the preview follows the scene. Cut
+    from the camera itself, each move of the view gave a sea new splits, and its waves were displaced again (the dragon
+    test scene: five times in a minute's moves). An Ocean Plane's rings stand under the camera, moved in steps
+    (ocean_plane.SNAP): its camera is taken again where they moved, its mesh being new. Renders cut it from their own
+    camera."""
+    seas = _DICING.get('sea')
+    if not isinstance(seas, dict):
+        seas = _DICING['sea'] = {}
+    name = str(mesh.get('identity') or mesh.get('name'))
+    try:
+        where = tuple(mesh['vertices'][0]) if mesh.get('_ocean_plane') else None
+    except (TypeError, IndexError, KeyError):
+        where = None
+    held = seas.get(name)
+    if held is None or held[0] != where:
+        held = seas[name] = (where, {k: v for k, v in camera.items() if k in _HELD_CAMERA})
+    return held[1]
+
+
+def forget_sea():
+    """The seas cut anew from the next view (held_sea): realtime switched on, or another scene opened."""
+    _DICING['sea'] = None
 
 
 def _middle(eye, meshes):

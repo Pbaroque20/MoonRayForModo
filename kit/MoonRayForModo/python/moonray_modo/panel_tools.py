@@ -628,6 +628,25 @@ class Tools:
             return None
         return None
 
+    def _background_of(self, frame, source):
+        """The Environment background a picture saved with straight alpha takes out first (image_formats.with_alpha), as
+        (file, its three channels): in the picture's own file, or the render's Environment background output. None where
+        the render has none. Without it, a picture saved here over a visible environment flared at its soft edges (a
+        grey sky: red 7.5 where the surface is 2.2, at alpha 0.1), as renders' pictures did before they took it out."""
+        from .composite_output import channel_names
+        from .image_formats import BACKGROUND
+        runtime = frame['runtime']
+        try:
+            if source and BACKGROUND[0] in channel_names(runtime, source):
+                return (source, ','.join(BACKGROUND))
+            held = frame['files'].get('environment_background')
+            if held and Path(held).is_file():
+                names = channel_names(runtime, held)
+                return (held, ','.join(names[:3])) if len(names) >= 3 else None
+        except (OSError, RuntimeError, ValueError, IndexError):
+            return None
+        return None
+
     def _run_image_tool(self, frame, args, target):
         import subprocess
         from . import native
@@ -661,12 +680,29 @@ class Tools:
             return self._run_image_tool(frame, image_formats.lines_with_alpha(kind, source, ink, target, display), target)
         alpha = self._alpha_of(frame, key)
         if alpha and image_formats.holds_alpha(kind):
-            args = image_formats.with_alpha(kind, source, target, display, alpha=None if alpha[0] == source and alpha[1] == 'A' else alpha)
+            # Straight alpha: the colour divided by it, with the visible environment taken out first, as a render's are.
+            args = image_formats.with_alpha(kind, source, target, display, background=self._background_of(frame, source),
+                                            alpha=None if alpha[0] == source and alpha[1] == 'A' else alpha)
         elif alpha and image_formats.find(kind)[2] == 'exr' and alpha[0] != source:
             args = image_formats.exr_with_alpha(kind, source, alpha, target)
         else:
             args = image_formats.arguments(kind, outputs.display_kind(frame['snapshot'], key), source, target, display, quality)
-        return self._run_image_tool(frame, args, target)
+        written = self._run_image_tool(frame, args, target)
+        if alpha and image_formats.find(kind)[2] == 'exr':
+            self._premultiplied(frame, source, written)
+        return written
+
+    def _premultiplied(self, frame, source, target):
+        """An OpenEXR saved here with a beauty and its alpha made premultiplied, as a render's is (MoonRay Source Override
+        "Premultiplied OpenEXR alpha", image_formats.take_out_environment): the visible environment taken out of its
+        colour, from its own Environment background channels or else the render's output. Where that cannot be done the
+        file stays as written."""
+        from . import image_formats
+        sky = self._background_of(frame, source)
+        try:
+            image_formats.take_out_environment(frame['runtime'], target, (sky[0], 0, sky[1]) if sky else None)
+        except (OSError, RuntimeError, ValueError):
+            pass
 
     def _cryptomatte_layer(self, frame, key):
         """A Cryptomatte buffer as it is saved: its channels under the layer's name (cryptomatte.export_channels) and
@@ -713,9 +749,13 @@ class Tools:
         if not layers:
             return [], failed
         try:
-            return [str(self._run_image_tool(frame, image_formats.multilayer(kind, layers, target, header), target))], failed
+            written = self._run_image_tool(frame, image_formats.multilayer(kind, layers, target, header), target)
         except RuntimeError:
             return [], [key for key in ordered]
+        if 'beauty' in ordered and 'beauty' not in failed and self._alpha_of(frame, 'beauty'):
+            # Its beauty and alpha premultiplied, as a render's OpenEXR is.
+            self._premultiplied(frame, frame['files']['beauty'], written)
+        return [str(written)], failed
 
     def show_log(self):
         dialog = QtWidgets.QDialog(self)

@@ -51,6 +51,8 @@ MATERIAL_RANDOM_WALK = 2048
 MATERIAL_TOON_DIFFUSE, MATERIAL_TOON_SPECULAR = 4096, 8192
 # What MoonRay renders through DwaBaseMaterial (or another Dwa material): the materials its Roughness Clamp roughens.
 MATERIAL_ROUGHNESS_CLAMPED = 16384
+# MoonRay's iridescence: the material's record is followed by its colour table (iridescence.py).
+MATERIAL_IRIDESCENT = 1 << 16
 TOON_STEPS = 256
 
 
@@ -431,19 +433,26 @@ def native_surface(shader, parameters, note):
         # Switched on but with none of it, a lobe is nothing to leave out.
         if get(switch, False) and float(get(label, 1.0) or 0.0) > 0:
             note(label)
-    if float(get('iridescence', 0.0)) > 0:
-        note('iridescence')
     coat, coat_roughness = (float(get('clearcoat', 1.0)) if get('show_clearcoat', False) else 0.0), float(get('clearcoat_roughness', .1))
     if shader == 'DwaSkinMaterial':
         # Skin's moisture is a clear layer over it, which is what the coat is.
         coat = float(get('moisture_mask', 1.0)) if get('show_moisture', False) else 0.0
         coat_roughness = float(get('moisture_roughness', .25))
+    toon = toon_surface(get, note) if shader == 'DwaToonMaterial' else None
+    # MoonRay's iridescence: the specular reflection, or the clear coat's (or skin's moisture's), tinted by angle.
+    # A toon highlight is not a lobe MoonRay tints.
+    from . import iridescence
+    has_specular = bool(get('show_specular', True)) and not velvet and float(get('specular', 1.0)) > 0
+    if has_specular and toon and toon['specular'] and float(get('iridescence', 0.0)) > 0 and int(get('iridescence_apply_to', 0)) == 0:
+        note('iridescence on a toon highlight')
+        has_specular = False
+    shimmer = iridescence.surface(get, note, has_specular, coat > 0)
     # Diffuse light that passes through to the far side, and what MoonRay then takes from the lit side: the same of
     # each colour, or as much of every colour as of the strongest.
     passed = [min(1.0, max(0.0, float(v))) * min(1.0, max(0.0, float(get('diffuse_transmission', 1.0)))) for v in get('diffuse_transmission_color', black)]
     kept = [1.0 - v for v in passed] if int(get('diffuse_transmission_blending_behavior', 1)) == 0 else [1.0 - max(passed)] * 3
     return {
-        '_toon': toon_surface(get, note) if shader == 'DwaToonMaterial' else None,
+        '_toon': toon, '_iridescence': shimmer,
         '_back': passed, '_front_keep': kept,
         'shader': 'DwaBaseMaterial', 'standard_material': False, 'color': color, 'raw_color': color, 'diffuse_amount': 1.0,
         'roughness': roughness, 'metallic': metallic, 'ior': ior,
@@ -854,50 +863,6 @@ def graph_layers(source, note, runtime=None, displacement=None, wanted='height',
     return layers
 
 
-# Float images larger than this (on their longer side) are checked for which way up oiiotool wrote them (Compiler.upright).
-UPRIGHT_FROM = 2048
-
-
-def _pfm_bands(path):
-    """A colour PFM's brightness over its lowest and its highest thirty-second of rows, (bottom, top) as the picture
-    stands (a PFM keeps its rows bottom first); None where it is not one."""
-    with open(path, 'rb') as held:
-        head = b''
-        while head.count(b'\n') < 3:
-            byte = held.read(1)
-            if not byte:
-                return None
-            head += byte
-        kind, size, scale = head.split(b'\n')[:3]
-        if kind.strip() != b'PF':
-            return None
-        width, height = (int(v) for v in size.split())
-        rows = max(1, height // 32)
-        row = width * 12
-        start = held.tell()
-        means = []
-        for first in (0, height - rows):
-            held.seek(start + first * row)
-            values = struct.unpack(('<' if float(scale) < 0 else '>') + '%df' % (width * 3 * rows), held.read(row * rows))
-            means.append(sum(values) / len(values))
-        return means[0], means[1]
-
-
-def _turn_pfm(path):
-    """A colour PFM's rows turned over, top to bottom, in place."""
-    with open(path, 'rb') as held:
-        data = held.read()
-    head_end = 0
-    for _ in range(3):
-        head_end = data.index(b'\n', head_end) + 1
-    width, height = (int(v) for v in data[:head_end].split(b'\n')[1].split())
-    row = width * 12
-    body = data[head_end:head_end + row * height]
-    turned = b''.join(body[(height - 1 - y) * row:(height - y) * row] for y in range(height))
-    with open(path, 'wb') as out:
-        out.write(data[:head_end] + turned + data[head_end + row * height:])
-
-
 class Compiler:
     """Collects the materials of one scene; textures and coordinate slots are shared between them."""
 
@@ -946,7 +911,9 @@ class Compiler:
         stat = source.stat()
         hdr = source.suffix.lower() in HDR_SUFFIXES
         space, ocio = color_space(source, layer.get('color_space', ''), layer.get('srgb'))
-        digest = hashlib.sha256(repr((str(source.resolve()), stat.st_size, stat.st_mtime_ns, self.side or 'full', 'moonlightipr-v4', ocio and (space, ocio))).encode()).hexdigest()
+        # A Render's full-size images are named anew ('full-rows'): those made before pfm_files had their bands out of
+        # order wherever they were larger than one block of oiiotool's rows. Realtime's, made smaller, were right.
+        digest = hashlib.sha256(repr((str(source.resolve()), stat.st_size, stat.st_mtime_ns, self.side or 'full-rows', 'moonlightipr-v4', ocio and (space, ocio))).encode()).hexdigest()
         target = cache_folder() / (digest + ('.pfm' if hdr else '.tga'))
         if not ocio and self.plain_pfm(source):
             # Already what the session reads (an Ocean tile, a new one each frame): no conversion, which ran oiiotool
@@ -1017,40 +984,17 @@ class Compiler:
         target.parent.mkdir(parents=True, exist_ok=True)
         staged = target.with_name(target.stem + '-' + uuid.uuid4().hex + target.suffix)
         try:
-            self.run(args + (['-d', 'float'] if hdr else ['-d', 'uint8', '--compression', 'none']) + ['-o', str(staged)], source.name)
-            if hdr and max(width, height) > UPRIGHT_FROM:
-                self.upright(source, staged, args[1:])
+            if hdr:
+                # Through an uncompressed float TIFF (pfm_files): oiiotool's own PFM writer put the bands of any picture
+                # larger than one block of rows out of order (a Render's 8K environment, its full-size float textures).
+                from .pfm_files import through_tiff
+                through_tiff(lambda tiff: self.run(args + ['-d', 'float', '--compression', 'none', '-o', str(tiff)], source.name), staged)
+            else:
+                self.run(args + ['-d', 'uint8', '--compression', 'none', '-o', str(staged)], source.name)
             staged.replace(target)
         finally:
             if staged.exists():
                 staged.unlink()
-
-    def upright(self, source, made, steps):
-        """A large float image written the right way up. oiiotool wrote an 8K EXR's PFM upside down where the picture
-        went through unchanged (a Render's environment at its full size), and the right way where it was made smaller
-        (realtime's): the HDRI flipped between them. The image's top and bottom are compared with a small copy's, made
-        smaller and so the right way up, and its rows turned over where they are the wrong way round."""
-        import tempfile
-        from pathlib import Path
-        held = Path(tempfile.mkdtemp()) / 'upright.pfm'
-        try:
-            self.run([str(source)] + [s for s in steps if s != str(source)][:2] + ['--resize', '64x32!', '-d', 'float', '-o', str(held)], source.name)
-            small = _pfm_bands(held)
-            big = _pfm_bands(made)
-        except (OSError, ValueError, subprocess.SubprocessError):
-            return
-        finally:
-            try:
-                held.unlink()
-                held.parent.rmdir()
-            except OSError:
-                pass
-        if small is None or big is None:
-            return
-        straight = abs(big[0] - small[0]) + abs(big[1] - small[1])
-        turned = abs(big[0] - small[1]) + abs(big[1] - small[0])
-        if turned < straight * 0.5:
-            _turn_pfm(made)
 
     def convert_space(self, source, target, hdr, space, ocio):
         """Take an image from an OCIO colour space to linear first, as the plugin's maketx step does."""
@@ -1594,6 +1538,10 @@ class Compiler:
         toon = source.get('_toon') if not source.get('_hair') and not fog else None
         if toon:
             flags |= (MATERIAL_TOON_DIFFUSE if toon['diffuse'] else 0) | (MATERIAL_TOON_SPECULAR if toon['specular'] else 0)
+        # MoonRay's iridescence (iridescence.surface): its record follows the others (form 'X').
+        shimmer = source.get('_iridescence') if not source.get('_hair') and not fog else None
+        if shimmer:
+            flags |= MATERIAL_IRIDESCENT
         record = struct.pack('<46f4I', *values, flags | (MATERIAL_HAIR if source.get('_hair') else 0) | (MATERIAL_VOLUME if fog else 0), start, len(self.layers) - start,
                              UV_SLOTS if tangent_slot is None else tangent_slot)
         if toon:
@@ -1631,4 +1579,12 @@ class Compiler:
                 raise ValueError('Material %s has an invalid volume transform' % name)
             record += struct.pack('<10fi12fi12f', *numbers, self.grid(fog['grid']) if fog.get('grid') else -1, *rows,
                                   self.grid(fog['glow']) if fog.get('glow') and fog.get('grid') else -1, *glow)
+        if shimmer:
+            # The lobe it tints (0 the specular, 1 the coat), its strength, exponent, thickness and its strength at 0 and
+            # 90 degrees, then its colours from index 0 to 1.
+            from .iridescence import IRIDESCENCE_STEPS
+            numbers = [float(shimmer[key]) for key in ('strength', 'exponent', 'thickness', 'at0', 'at90')] + [float(v) for v in shimmer['table']]
+            if len(shimmer['table']) != IRIDESCENCE_STEPS * 3 or not all(math.isfinite(v) for v in numbers):
+                raise ValueError('Material %s has an iridescence that cannot be read' % name)
+            record += struct.pack('<I%df' % len(numbers), int(shimmer['apply']), *numbers)
         return record

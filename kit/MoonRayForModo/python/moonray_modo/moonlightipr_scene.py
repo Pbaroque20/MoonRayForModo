@@ -134,7 +134,9 @@ def environment_image(item, runtime, full=False):
         space, ocio = color_space(source, item.get('color_space', ''), item.get('srgb'))
     stat = source.stat()
     working = working_enabled()
-    digest = hashlib.sha256(repr((str(source.resolve()), stat.st_size, stat.st_mtime_ns, space, ocio, working, 'full' if full else ENVIRONMENT_IMAGE,
+    # A Render's full-size environment is named anew ('full-rows'): one made before pfm_files had its bands out of order
+    # (an 8K HDRI's ceiling lights below its floor); realtime's, made smaller, was right.
+    digest = hashlib.sha256(repr((str(source.resolve()), stat.st_size, stat.st_mtime_ns, space, ocio, working, 'full-rows' if full else ENVIRONMENT_IMAGE,
                                   'moonlightipr-env-v3')).encode()).hexdigest()
     target = cache_folder() / (digest + '.pfm')
     if not target.is_file() or not target.stat().st_size:
@@ -1229,7 +1231,7 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     # Material colours are worked out in Rec.709; the session takes them to the working space.
     working = working_enabled()
     # The letter after MLS says which form of scene this is; the session refuses any other than its own.
-    parts = [b'MLSW', struct.pack('<8I', width, height, *depths, samples, (SCENE_DENOISE if denoise else 0)
+    parts = [b'MLSX', struct.pack('<8I', width, height, *depths, samples, (SCENE_DENOISE if denoise else 0)
                                   | (SCENE_WORKING_SPACE if working else 0) | (SCENE_MOTION if motion else 0)
                                   # See-through surfaces cast whole shadows unless the scene asks for lighter ones, as in MoonRay.
                                   | (SCENE_PRESENCE_SHADOWS if settings.get('enable_presence_shadows') else 0)
@@ -1357,6 +1359,17 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     seas = ocean_tags(materials)
     cuts, LAST_REFINABLE = moonlightipr_detail.plan(drawn, cutting, width, scene.get('_geometry_detail', 'fine'), displaces,
                                                     lambda mesh: wears_ocean(mesh, materials, seas))
+    # Realtime's seas (wears_ocean) cut fine from the first, from the camera held since the preview came on
+    # (moonlightipr_detail.held_sea), and split by their distance from it (below): a sea is displaced once while
+    # realtime follows the scene. Split from the camera itself, each move of the view gave a sea a new key and the session
+    # displaced it again (the dragon test scene: five times in a minute's moves). Their own plan ('sea'), so that its
+    # held levels are not the other meshes'. A draft keeps its own coarse cut; other meshes are cut as before.
+    sea_cameras = {}
+    if scene.get('_geometry_detail') and not scene.get('_draft') and camera and seas:
+        for mesh in drawn:
+            if wears_ocean(mesh, materials, seas):
+                held = sea_cameras[id(mesh)] = moonlightipr_detail.held_sea(camera, mesh)
+                cuts.update(moonlightipr_detail.plan([mesh], held, width, 'sea', displaces, lambda mesh: True)[0])
     # The dense meshes made lighter side by side first (the adapter lets Python go meanwhile): the loop below then finds
     # them packed (a car's 30 dense meshes, 22 s one after another).
     dense = [(mesh, cuts[id(mesh)]['simplify']) for mesh in drawn
@@ -1375,7 +1388,7 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     for mesh in drawn:
         if not mesh['faces']:
             continue
-        cut = cuts.get(id(mesh))
+        cut, sea_camera = cuts.get(id(mesh)), sea_cameras.get(id(mesh))
         if cut is not None and mesh.get('subdivision'):
             mesh = dict(mesh, subdivision_level=cut['subdivision'])
         if face_tags.worn(mesh) <= alone:
@@ -1390,11 +1403,12 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
             key, flags, payload, slot_map = mesh_payload(mesh, material_index, compiler.slots, cut.get('simplify') if cut else None)
         # A draft splits a sea (wears_ocean) by its distance from the camera its meshes are cut from, held through its
         # edits (_draft, moonlightipr_detail.held_dicing): split from the camera itself, each step of a camera drag gave
-        # the sea a new key, and the session displaced it again (2.4 s a step on the dragon test scene). Other displaced
-        # meshes, realtime and renders split from the camera as before.
+        # the sea a new key, and the session displaced it again (2.4 s a step on the dragon test scene). Realtime splits
+        # it from the camera held since it came on (sea_cameras, above). Other displaced meshes and renders split from
+        # the camera as before.
         key, flags, payload = displaced(mesh, key, flags, payload, materials, material_index, warnings, cut['splits'] if cut else None,
-                                        cutting if scene.get('_draft') and wears_ocean(mesh, materials, seas) else scene.get('camera'),
-                                        width)
+                                        cutting if scene.get('_draft') and wears_ocean(mesh, materials, seas)
+                                        else sea_camera if sea_camera is not None else scene.get('camera'), width)
         if key not in order:
             order[key] = len(meshes)
             # Send the data once per session; later scenes refer to it by key.

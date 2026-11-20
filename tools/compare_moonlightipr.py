@@ -187,6 +187,18 @@ def textured(folder):
                               toon_specular_values=[1.0, .75, .25, 1.0], toon_specular_ramp_input_scale=.5),
                        native('cube', 'DwaToonMaterial', albedo=[.3, .6, .9], diffuse_model=1, specular_model=2,
                               toon_specular_values=[1.0, .75, .25, 1.0], toon_specular_ramp_input_scale=.5))
+    # MoonRay's iridescence: the hue wheel between two colours over a dark metal's highlight on the ball, and the default
+    # rainbow ramp, blended in HSV, over the cube's clear coat; then a dielectric's highlight with the hue turned the other
+    # way and weaker face on, and glass.
+    iridescent = lobes(native('ball', 'DwaMetalMaterial', metallic_color=[.15, .15, .2], roughness=.25, iridescence=1.0,
+                              iridescence_primary_color=[0.0, .2, 1.0], iridescence_secondary_color=[1.0, .3, 0.0],
+                              iridescence_thickness=2.0, iridescence_exponent=1.5),
+                       native('cube', 'DwaBaseMaterial', albedo=[.05, .05, .08], roughness=.5, show_clearcoat=True, clearcoat_roughness=.1,
+                              iridescence=.8, iridescence_apply_to=1, iridescence_color_control=1, iridescence_ramp_interpolation_mode=1))
+    iridescent_dielectric = lobes(native('ball', 'DwaBaseMaterial', albedo=[.05, .05, .05], roughness=.15, iridescence=1.0,
+                                         iridescence_flip_hue_direction=True, iridescence_primary_color=[1.0, 0.0, .5],
+                                         iridescence_secondary_color=[0.0, 1.0, .5], iridescence_at_0_incidence=.2),
+                                  native('cube', 'DwaRefractiveMaterial', roughness=.05, iridescence=1.0, iridescence_thickness=3.0))
     # Skin thin enough for light to come through: the ball lit mostly from behind lets it pass, with and without scattering.
     thin = lobes(native('ball', 'DwaSkinMaterial', albedo=[.8, .55, .45], roughness=.5, diffuse_transmission_color=[.9, .35, .25]),
                  native('cube', 'DwaSkinMaterial', albedo=[.8, .55, .45], roughness=.5, diffuse_transmission_color=[.6, .6, .6],
@@ -317,7 +329,7 @@ def textured(folder):
                       row('cube', [.1, .3, .7], .4, [layer('s2', 'stencil', 'stripes', False)]))
     return {'stenciled': stenciled, 'displaced': displaced, 'displaced_moving': moving, 'graph_displaced': graph_displaced,
             'displacement_nodes': displacement_nodes, 'displacement_object': displacement_object, 'rough_image_blinn': blinn, 'graph_baked': baked, 'graph_baked_uv': baked_uv, 'graph_maps': mapped, 'layer_maps': layered_maps, 'native_layer_maps': native_layer_maps, 'native_materials': natives, 'dwa_skin': skins, 'modo_models': models, 'dwa_skin_thin': thin, 'textures_simple': simple, 'dwa_plain': dict(stacked, materials=plain), 'dwa_layers': dict(stacked, materials=layered),
-            'dwa_glass_coat': glass, 'dwa_thin_presence': sheer, 'dwa_masks': masks, 'dwa_subsurface': skin, 'velvet': velvet, 'toon_diffuse': toon_flat, 'toon': toon, 'toon_broad': toon_broad, 'sss_far': far, 'sss_backlit': behind, 'sss_dipole': dipole, 'sss_random_walk': walk,
+            'dwa_glass_coat': glass, 'dwa_thin_presence': sheer, 'dwa_masks': masks, 'dwa_subsurface': skin, 'velvet': velvet, 'iridescence': iridescent, 'iridescence_dielectric': iridescent_dielectric, 'toon_diffuse': toon_flat, 'toon': toon, 'toon_broad': toon_broad, 'sss_far': far, 'sss_backlit': behind, 'sss_dipole': dipole, 'sss_random_walk': walk,
             'dwa_anisotropy': brushed, 'dwa_absorption': deep, 'dwa_dispersion': prism, 'dwa_patterns': patterns, 'udim': tiled}
 
 

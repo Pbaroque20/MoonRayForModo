@@ -169,12 +169,14 @@ class DistanceSplit(unittest.TestCase):
 
 class DraftSplit(unittest.TestCase):
     """In Draft (_draft) a sea is split from the camera its meshes are cut from, held through its edits: split from the
-    camera itself, each step of a camera drag gave the sea a new key and the session displaced it again. Any other mesh,
-    and a realtime preview's sea, is split from the camera itself as before."""
+    camera itself, each step of a camera drag gave the sea a new key and the session displaced it again. A realtime
+    preview's sea is split from the camera held since it came on (moonlightipr_detail.held_sea). Any other mesh, and a
+    render's sea, is split from the camera itself as before."""
 
-    def split_from(self, **flags):
+    def split_from(self, detail=True, **flags):
         from moonray_modo import moonlightipr_scene, moonlightipr_detail, ocean
         held = {'matrix': IDENTITY[:12] + [0.0, 4.0, 0.0, 1], 'focal_mm': 35.0, 'film_mm': 36.0}
+        sea_held = {'matrix': IDENTITY[:12] + [0.0, 6.0, 0.0, 1], 'focal_mm': 35.0, 'film_mm': 36.0}
         seen = {}
         real = moonlightipr_scene.displaced
 
@@ -184,24 +186,82 @@ class DraftSplit(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder, mock.patch.object(ocean, 'folder', return_value=pathlib.Path(folder)), \
                 mock.patch.dict(os.environ, {'MOONRAY_MODO_OCEAN': '1'}), \
                 mock.patch.object(moonlightipr_detail, 'held_dicing', lambda *a, **k: held), \
+                mock.patch.object(moonlightipr_detail, 'held_sea', lambda *a, **k: sea_held), \
                 mock.patch.object(moonlightipr_scene, 'displaced', displaced):
             result = ocean_plane.apply(scene(plane(resolution=64, horizon=400.0, detail=4.0)), [])
             sea = result['meshes'][0]
             floor = dict(DistanceSplit().mesh(), name='Floor', material='floor')
-            result = dict(result, meshes=[sea, floor], materials=dict(result['materials'], floor={}),
-                          _geometry_detail='coarse', _detail_keep=True, **flags)
+            result = dict(result, meshes=[sea, floor], materials=dict(result['materials'], floor={}), **flags)
+            if detail:
+                result = dict(result, _geometry_detail='coarse', _detail_keep=True)
             moonlightipr_scene.pack(result, 64, 36, 0.15, (), 4, False, None)
-        return seen[sea['name']], seen['Floor'], held, result['camera']
+        return seen[sea['name']], seen['Floor'], held, sea_held, result['camera']
 
     def test_a_drafts_sea_from_the_held_camera_and_the_rest_from_the_camera(self):
-        sea, floor, held, camera = self.split_from(_draft=2)
+        sea, floor, held, _, camera = self.split_from(_draft=2)
         self.assertIs(sea, held)
         self.assertIs(floor, camera)
 
-    def test_a_realtime_sea_from_the_camera(self):
-        sea, floor, held, camera = self.split_from()
+    def test_a_realtime_sea_from_the_camera_held_since_realtime_came_on(self):
+        sea, floor, _, sea_held, camera = self.split_from()
+        self.assertIs(sea, sea_held)
+        self.assertIs(floor, camera)
+
+    def test_a_renders_sea_from_the_camera(self):
+        sea, floor, _, _, camera = self.split_from(detail=False)
         self.assertIs(sea, camera)
         self.assertIs(floor, camera)
+
+
+class RealtimeSeaOnce(unittest.TestCase):
+    """A realtime preview displaces a sea once (moonlightipr_detail.held_sea): its key stays the same through moves of the
+    view, until realtime comes on again (forget_sea). An Ocean Plane, whose rings stand under the camera, takes it again
+    where its rings moved."""
+
+    def sea_key(self, place, meshes=None):
+        from moonray_modo import moonlightipr_scene, ocean
+        keys = {}
+        real = moonlightipr_scene.displaced
+
+        def displaced(mesh, key, *args):
+            made = real(mesh, key, *args)
+            if made[0] != key:
+                keys[mesh['name']] = made[0]
+            return made
+        with tempfile.TemporaryDirectory() as folder, mock.patch.object(ocean, 'folder', return_value=pathlib.Path(folder)), \
+                mock.patch.dict(os.environ, {'MOONRAY_MODO_OCEAN': '1'}), \
+                mock.patch.object(moonlightipr_scene, 'displaced', displaced):
+            held = scene(plane(resolution=64, horizon=400.0, detail=4.0))
+            held['camera'] = dict(held['camera'], matrix=IDENTITY[:12] + [place, 4.0, 30.0, 1])
+            result = ocean_plane.apply(held, [])
+            if meshes is not None:
+                # A mesh of the scene's own wearing the plane's sea.
+                sea = dict(DistanceSplit().mesh(), name='Sea', material=result['meshes'][0]['material'])
+                result = dict(result, meshes=[sea])
+            moonlightipr_scene.pack(dict(result, _geometry_detail='fine', _detail_keep=True), 64, 36, 0.15, (), 4, False, None)
+        return keys
+
+    def setUp(self):
+        from moonray_modo import moonlightipr_detail
+        moonlightipr_detail.forget_sea()
+        self.addCleanup(moonlightipr_detail.forget_sea)
+
+    def test_a_sea_keeps_its_key_through_moves_of_the_view(self):
+        from moonray_modo import moonlightipr_detail
+        first = self.sea_key(13.0, meshes=True)
+        self.assertEqual(list(first), ['Sea'])
+        self.assertEqual(self.sea_key(40.0, meshes=True), first)
+        self.assertEqual(self.sea_key(90.0, meshes=True), first)
+        moonlightipr_detail.forget_sea()
+        self.assertNotEqual(self.sea_key(90.0, meshes=True), first)
+
+    def test_an_ocean_planes_camera_taken_again_where_its_rings_moved(self):
+        first = self.sea_key(30.0)
+        self.assertEqual(len(first), 1)
+        # Within a step of its rings (ocean_plane.SNAP, 16 x Detail = 64): the same.
+        self.assertEqual(self.sea_key(31.0), first)
+        # Its rings moved: a new mesh, cut from where the camera now stands.
+        self.assertNotEqual(self.sea_key(200.0), first)
 
 
 if __name__ == '__main__':

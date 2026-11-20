@@ -74,15 +74,25 @@ def ranks(frame, key):
     found, size = [], None
     with tempfile.TemporaryDirectory(prefix='MoonRayCrypto-') as folder:
         # Every rank in one run: the file is read once, and each rank written as (ID, coverage, coverage).
+        # Each written as an uncompressed float TIFF and made a PFM here (pfm_files): oiiotool's own PFM writer put the
+        # bands of a picture larger than one block of rows out of order (a 3840 x 2160 render's halves swapped), and a
+        # pick there found the matte of the pixel half a picture away.
+        from .pfm_files import tiff_to_pfm
         command, targets = [str(runtime / 'oiiotool.exe'), '--no-autopremult'], []
         for layer in layers:
             for id_channel, amount in (('R', 'G'), ('B', 'A')):
                 target = Path(folder) / ('%s%s.pfm' % (layer, id_channel))
-                command += ['-i', str(path)] + chosen + ['--ch', '%s.%s,%s.%s,%s.%s' % (layer, id_channel, layer, amount, layer, amount), '-d', 'float', '-o', str(target)]
-                targets.append(target)
+                tiff = target.with_suffix('.tif')
+                command += ['-i', str(path)] + chosen + ['--ch', '%s.%s,%s.%s,%s.%s' % (layer, id_channel, layer, amount, layer, amount), '-d', 'float',
+                                                         '--compression', 'none', '-o', str(tiff)]
+                targets.append((tiff, target))
         subprocess.run(command, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=120, creationflags=flags)
-        for target in targets:
-            if not target.is_file():
+        for tiff, target in targets:
+            if not tiff.is_file():
+                continue
+            try:
+                tiff_to_pfm(tiff, target)
+            except (OSError, ValueError):
                 continue
             width, height, values = _read_pfm(target)
             size = (width, height)

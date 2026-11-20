@@ -4,6 +4,8 @@ from pathlib import Path
 from . import shader_library
 CATEGORIES={'.rdla':'Example scenes','.rdlb':'Example scenes','.lxo':'Modo scenes','.usd':'USD / models','.usda':'USD / models','.usdc':'USD / models','.obj':'Models','.fbx':'Models','.abc':'Models','.vdb':'Volumes','.mtlx':'MaterialX','.exr':'Textures / environments','.hdr':'Textures / environments','.tx':'Textures / environments','.png':'Textures / environments','.jpg':'Textures / environments','.jpeg':'Textures / environments','.tif':'Textures / environments','.tiff':'Textures / environments','.cube':'Color / LUT','.3dl':'Color / LUT'}
 SOURCE='https://docs.openmoonray.org/getting-started/test-scenes/'
+# The folder of the Links panel's stand-ins (standins.py), and their category here.
+STANDINS,STANDIN_CATEGORY='standins','Proxy stand-ins'
 def bundled():return Path(__file__).resolve().parents[2]/'assets/library'
 def builtins():
  rows=[]
@@ -31,7 +33,10 @@ def scan(roots):
      identity=os.path.normcase(str(path.absolute()))
      if identity not in seen:
       seen.add(identity)
-      batch.append({'name':path.stem,'category':'Saved materials' if name.endswith('.moonmat.json') else CATEGORIES[ext],'path':str(path),'source':str(root),'license':'See accompanying LICENSE / credits','description':str(path.relative_to(root))})
+      if ext=='.obj' and path.parent.name.lower()==STANDINS:
+       # The Links panel's stand-ins (standins.py): low-res everyday objects a linked mesh is drawn as in the viewport.
+       batch.append({'name':path.stem.replace('_',' ').capitalize(),'category':STANDIN_CATEGORY,'path':str(path),'source':str(root),'license':"The kit's own (tools/make_standins.py)",'description':'Stand-in for MoonRay > Links: a linked mesh is drawn as this in the viewport, stretched to its size, while the mesh itself renders. Choose it there with Stand-in....'})
+      else:batch.append({'name':path.stem,'category':'Saved materials' if name.endswith('.moonmat.json') else CATEGORIES[ext],'path':str(path),'source':str(root),'license':'See accompanying LICENSE / credits','description':str(path.relative_to(root))})
     if count%256==0:yield batch;batch=[]
     if count>=100000:
      yield batch

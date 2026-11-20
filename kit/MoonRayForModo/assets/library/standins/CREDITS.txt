@@ -1,0 +1,1 @@
+Stand-ins for the Links panel: low-res everyday objects a linked mesh is drawn as in Modo's viewport. Made by tools/make_standins.py; the kit's own work, under the kit's licence.

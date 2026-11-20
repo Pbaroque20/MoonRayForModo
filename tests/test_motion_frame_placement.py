@@ -59,7 +59,7 @@ class PackedForMoonLightIPR(unittest.TestCase):
 
     def test_each_instance_carries_its_place_at_the_frame_after_its_close(self):
         payload, _, _ = moonlightipr_scene.pack(self.moving(), 320, 180)
-        self.assertEqual(payload[:4], b'MLSW')
+        self.assertEqual(payload[:4], b'MLSX')
         for opening, closing, frame in ((turned(-60), turned(60), turned(0)), (turned(-60, 3.0), turned(60, 3.0), turned(0, 3.0))):
             record = struct.pack('<12f', *moonlightipr_scene.transform(opening)) + struct.pack('<12f', *moonlightipr_scene.transform(closing)) \
                 + struct.pack('<12f', *moonlightipr_scene.transform(frame))

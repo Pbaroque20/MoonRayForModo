@@ -685,6 +685,44 @@ class ConvertLxo(lxu.command.BasicCommand):
         from moonray_modo.lxo_convert_window import show
         show()
 lx.bless(ConvertLxo, 'moonray.lxo.convert')
+
+
+class LinksWindow(lxu.command.BasicCommand):
+    """MoonRay > Links: the scene's meshes linked to .lxo files of their own (Scene Proxies), edited in the scene and
+    written back on save, as Illustrator's Links panel lists placed images (links_window.py)."""
+    def cmd_Flags(self): return lx.symbol.fCMD_UI
+    def basic_Execute(self, msg, flags):
+        from moonray_modo.links_window import show
+        show()
+lx.bless(LinksWindow, 'moonray.links')
+
+
+class LinksAct(lxu.command.BasicCommand):
+    """What the Links panel does (links.ACTIONS: link, edit, update, done, relink, embed, standin, saved), as one
+    command: Modo lets a script change an item (its link record, a tag) only inside a command, and the action is one step
+    to undo. ids: the items, as JSON; path: the folder linked to (link), the file relinked to (relink) or the stand-in
+    (standin)."""
+    def __init__(self):
+        super().__init__()
+        self.dyna_Add('action', lx.symbol.sTYPE_STRING)
+        self.dyna_Add('ids', lx.symbol.sTYPE_STRING)
+        self.dyna_Add('path', lx.symbol.sTYPE_STRING)
+        self.basic_SetFlags(1, lx.symbol.fCMDARG_OPTIONAL)
+        self.basic_SetFlags(2, lx.symbol.fCMDARG_OPTIONAL)
+    def cmd_Flags(self): return lx.symbol.fCMD_MODEL | lx.symbol.fCMD_UNDO
+    def basic_Execute(self, msg, flags):
+        from moonray_modo import links
+        links.act(self.dyna_String(0), self.dyna_String(1) if self.dyna_IsSet(1) else '', self.dyna_String(2) if self.dyna_IsSet(2) else '')
+lx.bless(LinksAct, 'moonray.links.act')
+
+
+# Saving a scene writes its meshes being edited from their links to their files (links.after_save), whether the Links
+# window has been opened or not.
+try:
+    from moonray_modo import links as _links
+    _links.watch_saves()
+except Exception as _exc:
+    lx.out('MoonRay Links will not write edited meshes on save: %s' % _exc)
 lx.bless(AssignLibraryMaterial,'moonray.library.assign')
 
 class AssignMaterialBundle(lxu.command.BasicCommand):

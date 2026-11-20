@@ -671,8 +671,10 @@ def gaussian_taps(across):
 
 def program_jobs(graph, files, kinds, folder, channels, composite):
     """The same picture as jobs(), made by the compositor program: the buffers read as the image tool reads them, the
-    graph run by the program, its picture written as an EXR. Returns (steps, the output's file) as jobs() does."""
+    graph run by the program, its picture written as an EXR. Returns (steps, the output's file) as jobs() does; a step
+    (['@pfm', TIFF], PFM) is the runner's to do (pfm_files.run_step)."""
     from pathlib import Path
+    from .pfm_files import steps as pfm_steps
     graph = validate(graph)
     folder = Path(folder)
     steps, lines = [], []
@@ -720,8 +722,10 @@ def program_jobs(graph, files, kinds, folder, channels, composite):
             if key not in files or kinds.get(key) in UNUSABLE:
                 raise ValueError('The render has no %s buffer for the compositor to take' % key)
             target = folder / (identity + '.pfm')
-            steps.append((['--no-autopremult', str(files[key]), '--fixnan', 'black'] + ((channels or {}).get(key) or _channels(kinds.get(key, key)))
-                          + ['-d', 'float', '-o', str(target)], target))
+            # Through a TIFF (pfm_files): oiiotool's own PFM writer put the bands of a picture larger than one block of
+            # rows out of order, a 3840 x 2160 render's halves swapped.
+            steps += pfm_steps(['--no-autopremult', str(files[key]), '--fixnan', 'black'] + ((channels or {}).get(key) or _channels(kinds.get(key, key)))
+                               + ['-d', 'float', '-o', str(target)], target)
             slot_of[identity] = slot()
             loads.append('load %d %s' % (slot_of[identity], target))
             continue
@@ -836,7 +840,7 @@ def program_jobs(graph, files, kinds, folder, channels, composite):
     result = slot_of[graph['root']]
     if not loads:
         # A graph of made pictures only: a buffer is read all the same, for the render's size.
-        steps.append((['--no-autopremult', str(size_source), '--ch', '0,1,2', '-d', 'float', '-o', str(folder / 'size.pfm')], folder / 'size.pfm'))
+        steps += pfm_steps(['--no-autopremult', str(size_source), '--ch', '0,1,2', '-d', 'float', '-o', str(folder / 'size.pfm')], folder / 'size.pfm')
         loads.append('load %d %s' % (slot(), folder / 'size.pfm'))
     plan = folder / 'composite.txt'
     picture, final = folder / 'composite.pfm', folder / 'composite.exr'

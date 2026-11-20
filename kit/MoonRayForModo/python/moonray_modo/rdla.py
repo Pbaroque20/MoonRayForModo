@@ -415,7 +415,8 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
     detail = scene.get('_geometry_detail')
     if detail and not scene.get('dicing_camera') and scene.get('camera'):
         from .moonlightipr_detail import held_dicing
-        scene = dict(scene, dicing_camera=held_dicing(scene['camera'], scene.get('meshes', []), bool(scene.get('_detail_keep'))))
+        scene = dict(scene, dicing_camera=held_dicing(scene['camera'], scene.get('meshes', []), bool(scene.get('_detail_keep'))),
+                     _dicing_held=True)
     if entities.replaces_environment(scene):
         # A MoonRay environment light set to replace Modo's: neither the Modo environments nor
         # the preview environment light are written; the camera background chosen in Render Settings is.
@@ -688,7 +689,7 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
             lambda held: _wears_ocean(held, scene.get('materials'), _seas))
     # The seas' materials (ocean.ocean_tags): an instanced sea's reference is diced for its nearest placement
     # (instanced_resolution); any other instancer as before, at its level's.
-    from .ocean import ocean_tags, wears_ocean
+    from .ocean import ocean_tags, wears_ocean, OCEAN_TRIANGLES
     sea_tags = ocean_tags(scene.get('materials'))
     for index, mesh in enumerate(render_meshes):
         cut = cuts.get(id(mesh))
@@ -773,6 +774,14 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
             # An ocean diced by the screen, a little finer than the level's 8 (ocean.spaced, ocean_resolution): its waves
             # too short for it reach MoonRay as a normal map (nodes.split_ocean).
             mesh = dict(mesh, mesh_resolution=mesh['ocean_resolution'])
+            if scene.get('_dicing_held') and 'instances' not in mesh and wears_ocean(mesh, scene.get('materials'), sea_tags) \
+                    and len(faces) * mesh['ocean_resolution'] ** 2 * 2 <= OCEAN_TRIANGLES:
+                # Realtime's sea (wears_ocean, from a dicing camera held through its moves): diced evenly at that
+                # resolution, within the seas' budget. Diced by the screen, it was tessellated anew each time realtime took
+                # a new dicing camera at rest (moonlightipr_detail.rested); evenly, it is the same from every view, and
+                # shaped once while realtime follows the scene. As fine as the screen's dicing comes near the camera,
+                # where it stops at that resolution. Renders dice it by the screen as before.
+                mesh = dict(mesh, adaptive_error=0.0)
         user_data = cryptomatte.userdata_set(mesh,lines,scene) if crypto else []
         named_uvs=dict(mesh.get('uv_sets',{}))
         if named_uvs:

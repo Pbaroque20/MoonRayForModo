@@ -27,8 +27,9 @@ class FullTexturesForRender(unittest.TestCase):
 
     def test_full_size_is_cached_apart(self):
         source = (KIT / 'moonray_modo/moonlightipr_materials.py').read_text(encoding='utf-8')
-        # 1024 keeps the cache key it had; a Render's full size has its own.
-        self.assertIn("stat.st_mtime_ns, self.side or 'full', 'moonlightipr-v4'", source)
+        # 1024 keeps the cache key it had; a Render's full size has its own, named anew ('full-rows') once its rows
+        # were written in order (pfm_files): the full-size copies made before had their bands out of order.
+        self.assertIn("stat.st_mtime_ns, self.side or 'full-rows', 'moonlightipr-v4'", source)
         self.assertIn("elif self.side and max(width, height) > self.side:", source)
 
 

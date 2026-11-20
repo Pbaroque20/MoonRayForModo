@@ -296,7 +296,7 @@ struct Renderer::Impl {
     std::vector<int32_t> distantTextures;
     std::vector<Instance> instances;
     size_t materialCount = 0, layerCount = 0, lightCount = 0;
-    Buffer meshTable, instanceTable, materialTable, layerTable, tileTable, hairTable, volumeTable, toonTable, albedoTables, instanceInput, instanceAccel, accelTemp;
+    Buffer meshTable, instanceTable, materialTable, layerTable, tileTable, hairTable, volumeTable, toonTable, iridescenceTable, albedoTables, instanceInput, instanceAccel, accelTemp;
     Buffer envReflected, envThrough, envReflectedMarginal, envReflectedConditional;
     Buffer envPixels, envBackground, envMarginal, envConditional, distantLights, lights, lightTriangles, lightFilters;
     Buffer lightDistributions, distantDistributions;
@@ -1426,6 +1426,7 @@ void Renderer::setMaterials(const Material* materials, size_t count, const Layer
         if (m.subsurface > 0.0f && m.subsurfaceRadius > 0.0f) features |= FEATURE_SUBSURFACE;
         if (m.toonDiffuse || m.toonSpecular) features |= FEATURE_TOON;
         if (m.fuzz > 0.0f) features |= FEATURE_FUZZ;
+        if (m.iridescent && m.iridescenceStrength > 0.0f && !m.hair && !m.volume) features |= FEATURE_IRIDESCENCE;
     }
     for (size_t i = 0; i < layerCount; ++i) {
         if (layers[i].channel == CHANNEL_SUBSURFACE || layers[i].channel == CHANNEL_SUBSURFACE_COLOR) features |= FEATURE_SUBSURFACE;
@@ -1489,6 +1490,25 @@ void Renderer::setMaterials(const Material* materials, size_t count, const Layer
     }
     impl->toonTable.upload(toons);
     impl->params.toons = impl->toonTable.ptr;
+    // MoonRay's iridescence: each material's colours by angle, and the numbers that read them.
+    std::vector<DeviceIridescence> iridescences;
+    for (size_t i = 0; i < count; ++i) {
+        const Material& m = materials[i];
+        if (!m.iridescent || m.hair || m.volume || !(m.iridescenceStrength > 0.0f) || m.iridescenceColors.size() != IRIDESCENCE_STEPS * 3) continue;
+        DeviceIridescence d{};
+        d.strength = std::clamp(m.iridescenceStrength, 0.0f, 1.0f);
+        d.exponent = std::max(m.iridescenceExponent, 0.0f);
+        d.thickness = std::max(m.iridescenceThickness, 0.0f);
+        d.at0 = std::clamp(m.iridescenceAt0, 0.0f, 1.0f);
+        d.at90 = std::clamp(m.iridescenceAt90, 0.0f, 1.0f);
+        d.coat = m.iridescenceCoat ? 1u : 0u;
+        std::copy(m.iridescenceColors.begin(), m.iridescenceColors.end(), d.colors);
+        table[i].flags |= MATERIAL_IRIDESCENT;
+        table[i].iridescence = unsigned(iridescences.size());
+        iridescences.push_back(d);
+    }
+    impl->iridescenceTable.upload(iridescences);
+    impl->params.iridescences = impl->iridescenceTable.ptr;
     std::vector<DeviceVolume> volumes;
     std::vector<int32_t> usedGrids;
     for (size_t i = 0; i < count; ++i) {

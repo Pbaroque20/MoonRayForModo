@@ -18,12 +18,40 @@ def beside(path):
     return named(path, 'composite')
 
 
-def channel_parts(runtime, path):
-    """The names of the channels of each part of an EXR, in the file's order: one list where it is not multi-part."""
+def layout(info):
+    """Each part's channels as (name, data type), in the file's order, from the image tool's --info -v of an EXR. Where
+    its channels are not all of one type, the tool writes each one's after its name ("R (half)"): left on, the names of a
+    16-bit render with a Cryptomatte were never found (its Environment background among them)."""
+    import re
+    parts, kinds = [], []
+    for line in info.splitlines():
+        if 'channel list:' in line:
+            part = []
+            for index, held in enumerate(name.strip() for name in line.split('channel list:', 1)[1].split(',') if name.strip()):
+                typed = re.match(r'^(.*?)\s*\((\w+)\)$', held)
+                if typed:
+                    part.append((typed.group(1), typed.group(2)))
+                else:
+                    part.append((held, kinds[index] if index < len(kinds) else (kinds[0] if kinds else 'float')))
+            parts.append(part)
+            continue
+        # A part's size line: "160 x 120, 8 channel, half/half/float/... openexr", or one type for them all.
+        found = re.search(r'\b\d+ channels?, ([\w/]+) ', line)
+        if found:
+            kinds = found.group(1).split('/')
+    return parts
+
+
+def channel_layout(runtime, path):
+    """Each part of an EXR as its channels' (name, data type), in the file's order: one list where it is not multi-part."""
     done = subprocess.run([str(Path(runtime) / 'oiiotool.exe'), '-a', '--info', '-v', str(path)], env=native.environment(runtime),
                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=60, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
-    return [[name.strip() for name in line.split('channel list:', 1)[1].split(',') if name.strip()]
-            for line in done.stdout.decode('utf-8', errors='replace').splitlines() if 'channel list:' in line]
+    return layout(done.stdout.decode('utf-8', errors='replace'))
+
+
+def channel_parts(runtime, path):
+    """The names of the channels of each part of an EXR, in the file's order: one list where it is not multi-part."""
+    return [[name for name, _ in part] for part in channel_layout(runtime, path)]
 
 
 def channel_names(runtime, path):
@@ -98,6 +126,14 @@ def write(runtime, graph, rendered, denoised=None, scene=None):
         steps, result = compositor.jobs(graph, files, {key: 'beauty' for key in files}, held, channels=channels,
                                         composite=compositor.program(runtime))
         for args, target in steps:
+            if args and args[0] == '@pfm':
+                # A TIFF the image tool just wrote, made the PFM the compositor program reads (pfm_files).
+                from .pfm_files import run_step
+                try:
+                    run_step(args, target)
+                except (OSError, ValueError) as exc:
+                    raise RuntimeError('The image tool could not make the composite: ' + str(exc))
+                continue
             command = args[1:] if args and args[0] == '@run' else [str(runtime / 'oiiotool.exe')] + args
             done = subprocess.run(command, env=native.environment(runtime), stdout=subprocess.PIPE,
                                   stderr=subprocess.STDOUT, timeout=600, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))

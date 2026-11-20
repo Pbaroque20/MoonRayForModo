@@ -10,8 +10,9 @@ typedef unsigned long long DevicePtr;
 // The heavy features a kernel can be made without (ML_FEATURES in kernel.cu): a scene that uses none of them is rendered
 // by a kernel without their code, a third faster or more. All of them is FEATURE_ALL, the kernel as it is built.
 // Procedural layers (Modo's patterns, modo_patterns.h) are one too: a kernel without them is a quarter quicker to compile.
+// So is MoonRay's iridescence, which every specular and coat reflection would otherwise look up.
 const unsigned FEATURE_FOG = 1, FEATURE_HAIR = 2, FEATURE_SUBSURFACE = 4, FEATURE_TOON = 8, FEATURE_FUZZ = 16, FEATURE_PROCEDURAL = 32,
-               FEATURE_ALL = 63;
+               FEATURE_IRIDESCENCE = 64, FEATURE_ALL = 127;
 
 // Material channels a layer can drive; they are the plugin's Shader Tree effects.
 const unsigned CHANNEL_COLOR = 0, CHANNEL_COLOR_AMOUNT = 1, CHANNEL_ROUGHNESS = 2, CHANNEL_METALLIC = 3,
@@ -60,6 +61,9 @@ const unsigned MATERIAL_THIN = 1, MATERIAL_COAT_DIMS = 2, MATERIAL_HAS_PRESENCE 
                // A layer gives the displaced surface's slope (CHANNEL_SLOPE): the shading normal takes the detail finer
                // than the mesh's vertices.
                MATERIAL_HAS_SLOPE = 1u << 15,
+               // MoonRay's iridescence tints the specular or the coat's reflection by angle: this material's entry in
+               // LaunchParams::iridescences is DeviceMaterial::iridescence.
+               MATERIAL_IRIDESCENT = 1u << 16,
                MATERIAL_MATTE = 1u << 30;   // set by the kernel alone, where light leaves from beneath a surface
 const unsigned LAYER_IMAGE = 1, LAYER_INVERT = 2, LAYER_FLIP_RED = 4, LAYER_FLIP_GREEN = 8, LAYER_FLIP_BLUE = 16,
                LAYER_ALPHA_MASK = 32, LAYER_ALPHA_ONLY = 64, LAYER_COVERAGE_U = 128, LAYER_COVERAGE_V = 256,
@@ -161,6 +165,7 @@ struct DeviceMaterial {
     float fuzzColor[3];
     float fuzzRoughness;        // 0.05 to 1
     float fuzzDims;             // how much it takes from the lobes beneath: fuzz, by its colour unless its fibres absorb
+    unsigned iridescence;       // with MATERIAL_IRIDESCENT, this material's entry in LaunchParams::iridescences
 };
 
 // A fog: how much light it stops in a unit of distance, how much of what it stops is scattered on rather than
@@ -208,6 +213,17 @@ struct DeviceToon {
     float specularBeyond;
 };
 const unsigned TOON_SURFACE = 0, TOON_HAIR = 1;
+
+// MoonRay's iridescence (IridescenceBsdfLobe): the reflection it wraps multiplied by a colour that depends on the angle
+// alone. The index |1 - cos|^exponent * thickness, wrapped into 0 to 1, reads the colour from the table, IRIDESCENCE_STEPS
+// colours from index 0 to 1 worked out by the plugin from MoonRay's hue wheel or ramp (iridescence.py); the colour is
+// then blended from white by strength times a blend from at90 to at0 by the cosine.
+const unsigned IRIDESCENCE_STEPS = 512;
+struct DeviceIridescence {
+    float strength, exponent, thickness, at0, at90;
+    unsigned coat;              // tints the clear coat's reflection (MoonRay's outer specular), not the specular's
+    float colors[IRIDESCENCE_STEPS * 3];
+};
 
 // A hair fibre, as MoonRay's HairMaterial: light reflected off it (R), passed through it (TT), reflected once
 // inside it (TRT), and everything after that (TRRT). The fibre's colour is the material's own.
@@ -407,6 +423,7 @@ struct LaunchParams {
     DevicePtr hairs;        // DeviceHair, indexed by DeviceMaterial::hair
     DevicePtr volumes;      // DeviceVolume, likewise
     DevicePtr toons;        // DeviceToon, likewise
+    DevicePtr iridescences; // DeviceIridescence, indexed by DeviceMaterial::iridescence
     unsigned volumeCount;
     unsigned volumePad;
 
