@@ -1152,6 +1152,18 @@ class Renderer(QtCore.QObject):
             except Exception as exc:
                 self.status.emit('The Toon lines were not given their alpha: '+str(exc))
             self._show_output(destination)
+            # Premultiplied, as OpenEXR is read (MoonRay Source Override "Premultiplied OpenEXR alpha"): the sky seen past
+            # the surfaces taken out of the beauty's colour, and its denoised copy's, once the composite, the copies and the
+            # preview above have what MoonRay wrote. Over a visible sky After Effects showed a halo at soft edges.
+            try:
+                from .image_formats import take_out_environment,background_of
+                runtime=self.active['runtime'];denoised=denoising.sidecar(destination)
+                if take_out_environment(runtime,destination):self.log+='The environment taken out of the beauty: premultiplied alpha\n'
+                if denoised.is_file():
+                    sky=background_of(runtime,destination)
+                    if sky and take_out_environment(runtime,denoised,sky):self.log+='The environment taken out of the denoised beauty\n'
+            except Exception as exc:
+                self.status.emit('The OpenEXR was left with the environment in its colour: '+str(exc))
             self.finished.emit(str(destination))
             return
         self.image_ready.emit(str(self.image_path))
