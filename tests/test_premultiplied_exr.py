@@ -91,6 +91,13 @@ class Wired(unittest.TestCase):
         tools = (ROOT / 'kit/MoonRayForModo/python/moonray_modo/panel_tools.py').read_text(encoding='utf-8')
         self.assertIn('self._premultiplied(frame, source, written)', tools)
         self.assertIn("self._premultiplied(frame, frame['files']['beauty'], written)", tools)
+        # MoonLightIPR's renders to files (Render Animation): its Environment background asked for after the alpha, written
+        # as the EXR's environment_background channels, and taken out once the picture type beside it is made.
+        playblast = (ROOT / 'kit/MoonRayForModo/python/moonray_modo/playblast.py').read_text(encoding='utf-8')
+        self.assertIn("session.aov(moonlightipr_aovs.kind('environment_background'), 'environment_background')", playblast)
+        self.assertIn("'--chnames', ','.join(BACKGROUND), '--chappend'", playblast)
+        self.assertLess(playblast.index('alpha=bool(alpha), background=target)'), playblast.rindex('_premultiplied(runtime, target)'))
+        self.assertIn('take_out_environment(runtime, target)', playblast)
         prefs = (ROOT / 'kit/MoonRayForModo/preferences.cfg').read_text(encoding='utf-8')
         self.assertIn('cmd moonray.pref.premultipliedExr ?', prefs)
         self.assertIn("'premultiplied_exr': (True, bool)", (ROOT / 'kit/MoonRayForModo/python/moonray_modo/preferences.py').read_text(encoding='utf-8'))
