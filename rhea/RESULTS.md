@@ -663,7 +663,12 @@ A frame: Rhea 0.085 s, XPU2 2 spp 0.074 s with diffuse bounces; the denoiser 3.4
   `xpu2_session.cc` (realtimePicture) does, at 0.978 and 0.943: the cosines of those cameras' own rotations. XPU2's
   render space is the camera's, so the normal output is in camera space already and the kit turns it a second time.
   On this scene the denoiser hardly minds (the scores above move by 1%); a camera turned far from the world's axes
-  hands OptiX normals turned as far.
+  hands OptiX normals turned as far. With the camera orbited 70 degrees about the scene (`--extra
+  camera-orbit70.rdla`, four still frames) the output agrees at 0.999 and the kit's guide at 0.335 (cos 70
+  degrees), yet XPU2's denoised frames score the same either way (relative MSE 1.07 to 1.10e-3 with the kit's guide,
+  1.08 to 1.14e-3 with the output as it is; block error 5.0 to 5.8e-4 both): on this scene OptiX goes by the colour
+  and the albedo. The session now hands the output over in camera space (render2Camera's rotation, the identity
+  without motion blur), a commit of its own on this branch for MoonLightIPR.
 - Not measured: flicker. Rhea's blotches stay on the surfaces from frame to frame, a denoised 2-sample frame's residue
   does not; per-frame scores cannot show which looks steadier in motion.
 
