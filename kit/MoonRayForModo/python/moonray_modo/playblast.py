@@ -175,8 +175,10 @@ class MoonLightIPRAnimation(Playblast):
             return True
 
     def _fresh(self):
-        """A frame's pictures not had yet: its beauty, its denoised beauty, its alpha (and the AOV looked at before)."""
+        """A frame's pictures not had yet: its beauty, its denoised beauty, its alpha, its Environment background (and the
+        AOV looked at before)."""
         self.beauty = self.denoised = self.alpha = self.alpha_before = self.alpha_kept = None
+        self.sky = self.sky_before = None
         self.waited = 0
 
     def start(self):
@@ -255,16 +257,41 @@ class MoonLightIPRAnimation(Playblast):
                     # None came in a minute: the frame is written without it, as it was before alphas were.
                     now = False
                 self.alpha = now
-                session.aov(*self.alpha_kept)
+                self.waited = 0
+        if self.alpha and self.sky is None:
+            # With the alpha, the Environment background (the environment seen past everything, gathered with it, sent
+            # at once): written beside the beauty as MoonRay's renders have it, and taken out of the colour so that the
+            # EXR is premultiplied as theirs are (image_formats.take_out_environment). Without it a soft edge over a
+            # visible sky held the sky, and After Effects showed a halo there.
+            from . import moonlightipr_aovs
+            session = renderer.moonlightipr
+            if self.sky_before is None:
+                self.sky_before = self.panel._moonlightipr_linear('environment_background') or False
+                session.aov(moonlightipr_aovs.kind('environment_background'), 'environment_background')
+                self.quiet = 0
+                return
+            now = self.panel._moonlightipr_linear('environment_background')
+            if now is None or now is self.sky_before:
+                self.waited += 1
+                if self.waited < 1500:
+                    return
+                # None came in a minute: the frame is written with the environment in its colour, as before.
+                now = False
+            self.sky = now
+        if self.alpha_kept is not None:
+            # The AOV looked at before, looked at again.
+            renderer.moonlightipr.aov(*self.alpha_kept)
+            self.alpha_kept = None
         self.poll.stop()
         alpha = self.alpha or None
+        sky = self.sky or None
         try:
             if self.denoise:
-                beauty = self._write(self.beauty, alpha=alpha)
-                denoised = self._write(self.denoised, denoised=True, alpha=alpha)
+                beauty = self._write(self.beauty, alpha=alpha, sky=sky)
+                denoised = self._write(self.denoised, denoised=True, alpha=alpha, sky=sky)
                 written = beauty if Path(beauty).is_file() else denoised
             else:
-                written = self._write(self.beauty, alpha=alpha)
+                written = self._write(self.beauty, alpha=alpha, sky=sky)
         except Exception as exc:
             self.failed('frame %d could not be written: %s' % (self.frame, exc))
             return
@@ -283,11 +310,13 @@ class MoonLightIPRAnimation(Playblast):
         self.stop()
         self.panel.status.setText('Animation stopped (MoonLightIPR): ' + message)
 
-    def _write(self, linear, denoised=False, alpha=None):
+    def _write(self, linear, denoised=False, alpha=None, sky=None):
         """The frame as MoonLightIPR rendered it, from its own numbers (linear): an EXR, the denoised one under its
-        sidecar name, with its alpha (linear, MoonLightIPR's alpha output) as the A channel where it came; and the
-        picture type asked for beside it or in its place, from the denoised picture where there is one. The EXR written
-        (the beauty's name where its picture type alone is kept)."""
+        sidecar name, with its alpha (linear, MoonLightIPR's alpha output) as the A channel where it came, and its
+        Environment background (sky, linear) as environment_background.R, G and B, as MoonRay's renders have them; and
+        the picture type asked for beside it or in its place, from the denoised picture where there is one. The EXR is
+        then made premultiplied (image_formats.take_out_environment). The EXR written (the beauty's name where its
+        picture type alone is kept)."""
         import subprocess
         from . import native
         from .denoising import sidecar
@@ -312,18 +341,26 @@ class MoonLightIPRAnimation(Playblast):
                     stream.write(('PF\n%d %d\n-1.0\n' % (width, height)).encode('ascii'))
                     stream.write(alpha[2])
                 arguments += [str(coverage), '--ch', 'R', '--chnames', 'A', '--chappend']
+                if sky and sky[:2] == (width, height):
+                    seen = Path(folder) / 'environment.pfm'
+                    with seen.open('wb') as stream:
+                        stream.write(('PF\n%d %d\n-1.0\n' % (width, height)).encode('ascii'))
+                        stream.write(sky[2])
+                    from .image_formats import BACKGROUND
+                    arguments += [str(seen), '--ch', '0,1,2', '--chnames', ','.join(BACKGROUND), '--chappend']
             done = subprocess.run(arguments + ['-o', str(target)], env=native.environment(runtime),
                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0), timeout=300)
         if done.returncode or not target.is_file():
             raise ValueError(done.stdout.decode(errors='replace').strip()[-300:] or 'oiiotool wrote no EXR')
         # The picture type from the last picture of the frame: the denoised one where the Denoiser is on.
         if not self.export_as or (self.denoise and not denoised):
+            _premultiplied(runtime, target)
             return str(target)
         from .image_formats import convert, find
         only = self.export_as.get('only')
         shown = beauty.with_suffix('.' + find(self.export_as['type'])[2])
         # With the EXR's alpha, which it has where Alpha is ticked in Render Settings (MoonLightIPR Outputs (AOVs)), as
-        # MoonRay's frames have theirs (render.py).
+        # MoonRay's frames have theirs (render.py): straight, the Environment background taken out first.
         convert(runtime, self.export_as['type'], target, shown, getattr(renderer.buffers, 'display', None), self.export_as.get('quality', 92),
                 alpha=bool(alpha), background=target)
         if only:
@@ -331,7 +368,20 @@ class MoonLightIPRAnimation(Playblast):
             if denoised and beauty.is_file():
                 beauty.unlink()
             return str(shown)
+        _premultiplied(runtime, target)
         return str(target)
+
+
+
+def _premultiplied(runtime, target):
+    """A MoonLightIPR frame's EXR made premultiplied, as a MoonRay render's is (MoonRay Source Override "Premultiplied
+    OpenEXR alpha", image_formats.take_out_environment), once the picture type beside it has been made from it as it was;
+    left as written where it cannot be."""
+    from .image_formats import take_out_environment
+    try:
+        take_out_environment(runtime, target)
+    except (OSError, RuntimeError, ValueError):
+        pass
 
 
 def scene_range():

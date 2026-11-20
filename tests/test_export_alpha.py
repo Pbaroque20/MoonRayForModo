@@ -21,6 +21,18 @@ class Alpha(unittest.TestCase):
         self.assertEqual(args[:6], ['--no-autopremult', 'render.exr', '--fixnan', 'black', '--ch', 'R,G,B,A'])
         self.assertIn('render.exr', args[6:])
 
+    def test_a_picture_saved_from_the_preview_takes_the_environment_out(self):
+        # The preview window's Save (panel_tools.write_buffer) hands with_alpha the Environment background, as a render's
+        # pictures are (image_formats.convert): over a visible grey sky its soft edges flared without it (red 7.5 where the
+        # surface is 2.2, at alpha 0.1; tools/check_alpha_edges.py).
+        tools = (ROOT / 'kit/MoonRayForModo/python/moonray_modo/panel_tools.py').read_text(encoding='utf-8')
+        self.assertIn('background=self._background_of(frame, source)', tools)
+        args = image_formats.with_alpha('png8', 'beauty.exr', 'out.png', {}, background=('sky.exr', '0,1,2'), alpha=('alpha.exr', 'R'))
+        taken_out = args.index('--sub')
+        self.assertIn('sky.exr', args[:taken_out])
+        # Taken out before the colour is divided by the alpha.
+        self.assertLess(taken_out, args.index('--unpremult'))
+
     def test_an_exr_beauty_gets_an_a_channel(self):
         args = image_formats.exr_with_alpha('exr16', 'beauty.exr', ('alpha.exr', 'R'), 'out.exr')
         self.assertEqual(args, ['beauty.exr', '--ch', '0,1,2', '--chnames', 'R,G,B', 'alpha.exr', '--ch', 'R', '--chnames', 'A', '--chappend',

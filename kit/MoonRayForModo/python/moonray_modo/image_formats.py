@@ -82,6 +82,80 @@ def convert(runtime, key, source, target, display=None, quality=92, alpha=False,
 
 
 BACKGROUND = ('environment_background.R', 'environment_background.G', 'environment_background.B')
+BEAUTY = ('R', 'G', 'B')
+
+
+def without_environment(parts, source, target, background=None):
+    """The image tool's arguments that rewrite a render's OpenEXR premultiplied, as the type is read (After Effects, Nuke):
+    in the part that holds the beauty with its alpha (R, G, B and A), its colour less the Environment background, at
+    least 0, so that its colour goes to 0 with its alpha. Every other channel, part, data type, the header and the
+    compression stay as they were; the Environment background stays as its own channels, for a compositor to lay the sky
+    back. parts: each part's (name, data type) (composite_output.channel_layout). background: where the Environment
+    background is when the file has none of its own (a denoised copy holds R, G, B and A alone), as (file, part, its three
+    channels). None where there is nothing to take out.
+
+    MoonRay's beauty holds the environment the camera sees past every surface, and its alpha the surfaces alone: over a
+    visible sky a soft edge's colour was part sky (a grey sky: red 7.5 over alpha where the surface's is 2.2), and After
+    Effects reading it premultiplied laid that sky over whatever was beneath, a light halo plainest over black."""
+    args, changed = ['--no-autopremult'], False
+    kinds = []
+    for index, part in enumerate(parts):
+        names = [name for name, _ in part]
+        here = all(name in names for name in BEAUTY + ('A',))
+        own = all(name in names for name in BACKGROUND)
+        if here and (own or background is not None) and not changed:
+            changed = True
+            sky = [str(source), '--subimage', str(index), '--ch', ','.join(BACKGROUND)] if own else \
+                [str(background[0]), '--subimage', str(background[1]), '--ch', background[2]]
+            rest = [name for name in names if name not in BEAUTY]
+            args += [str(source), '--subimage', str(index), '--ch', ','.join(BEAUTY)] + sky + ['--chnames', ','.join(BEAUTY), '--sub',
+                     '--clamp:min=0', str(source), '--subimage', str(index), '--ch', ','.join(rest), '--chappend', '--ch', ','.join(names)]
+            # The colour's channels as they were: worked out, they would be written as 32-bit float.
+            kinds = [item for name, kind in part for item in ('-d', '%s=%s' % (name, kind))]
+        else:
+            args += [str(source), '--subimage', str(index)]
+        if index:
+            args += ['--siappend']
+    if not changed:
+        return None
+    return args + kinds + ['-o', str(target)]
+
+
+def take_out_environment(runtime, path, background=None):
+    """A render's OpenEXR saved at path made premultiplied in place (without_environment), where the MoonRay Source
+    Override "Premultiplied OpenEXR alpha" is on. Returns whether it was changed. Raises RuntimeError where the image
+    tool could not; the file is then left as it was."""
+    import subprocess
+    import uuid
+    from . import native
+    from .composite_output import channel_layout
+    if not native.premultiplied_exr():
+        return False
+    path = Path(path)
+    staged = path.with_name(path.name + '.' + uuid.uuid4().hex + '.tmp.exr')
+    args = without_environment(channel_layout(runtime, path), path, staged, background)
+    if args is None:
+        return False
+    try:
+        done = subprocess.run([str(Path(runtime) / 'oiiotool.exe')] + args, env=native.environment(runtime), stdout=subprocess.PIPE,
+                              stderr=subprocess.STDOUT, timeout=600, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+        if done.returncode or not staged.is_file():
+            raise RuntimeError(done.stdout.decode('utf-8', errors='replace')[-300:])
+        staged.replace(path)
+    finally:
+        if staged.exists():
+            staged.unlink()
+    return True
+
+
+def background_of(runtime, path):
+    """Where a render's OpenEXR holds its Environment background, as (file, part, its three channels), for a copy of it
+    that holds none (without_environment's background); None where it has none."""
+    from .composite_output import channel_parts
+    for index, names in enumerate(channel_parts(runtime, path)):
+        if all(name in names for name in BACKGROUND):
+            return (str(path), index, ','.join(BACKGROUND))
+    return None
 
 
 def with_alpha(key, source, target, display=None, background=None, alpha=None):
