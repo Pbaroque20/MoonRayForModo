@@ -16,7 +16,7 @@ PURPOSES={'Assign material':('Assign to Selected Meshes','A saved material. Sele
           'Import RDL scene':('Open in the Import Dialog','A MoonRay scene. The import dialog opens on it, to choose what comes in.')}
 SIZE=112
 # The colour a file type's tile is drawn in, where it has no picture of its own.
-TILES={'Models':'#5b7fa6','Modo scenes':'#5b7fa6','USD / models':'#4f8f8a','Example scenes':'#7a6aa8','Volumes':'#8a8f98','MaterialX':'#a8794f','Color / LUT':'#a35d7c','Textures / environments':'#6d8f55'}
+TILES={'Proxy stand-ins':'#8f7a4f','Models':'#5b7fa6','Modo scenes':'#5b7fa6','USD / models':'#4f8f8a','Example scenes':'#7a6aa8','Volumes':'#8a8f98','MaterialX':'#a8794f','Color / LUT':'#a35d7c','Textures / environments':'#6d8f55'}
 PICTURES=('.png','.jpg','.jpeg','.tif','.tiff','.bmp','.tga')
 
 

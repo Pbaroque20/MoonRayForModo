@@ -1,0 +1,443 @@
+{
+ "standins": [
+  {
+   "name": "Box",
+   "file": "box.obj",
+   "words": [
+    "box",
+    "crate",
+    "cube",
+    "carton",
+    "block"
+   ],
+   "polygons": 6,
+   "points": 8,
+   "proportions": [
+    1.0,
+    1.0,
+    1.0
+   ]
+  },
+  {
+   "name": "Ball",
+   "file": "ball.obj",
+   "words": [
+    "ball",
+    "sphere",
+    "globe",
+    "orb"
+   ],
+   "polygons": 112,
+   "points": 100,
+   "proportions": [
+    1.0,
+    1.0,
+    0.975
+   ]
+  },
+  {
+   "name": "Column",
+   "file": "column.obj",
+   "words": [
+    "column",
+    "pillar",
+    "cylinder",
+    "post",
+    "pole",
+    "can",
+    "tube",
+    "pipe"
+   ],
+   "polygons": 18,
+   "points": 32,
+   "proportions": [
+    1.0,
+    1.0,
+    1.0
+   ]
+  },
+  {
+   "name": "Chair",
+   "file": "chair.obj",
+   "words": [
+    "chair",
+    "seat",
+    "armchair"
+   ],
+   "polygons": 48,
+   "points": 64,
+   "proportions": [
+    0.45,
+    0.95,
+    0.45
+   ]
+  },
+  {
+   "name": "Stool",
+   "file": "stool.obj",
+   "words": [
+    "stool"
+   ],
+   "polygons": 42,
+   "points": 64,
+   "proportions": [
+    0.36,
+    0.67,
+    0.36
+   ]
+  },
+  {
+   "name": "Table",
+   "file": "table.obj",
+   "words": [
+    "table",
+    "desk",
+    "bench"
+   ],
+   "polygons": 30,
+   "points": 40,
+   "proportions": [
+    1.4,
+    0.755,
+    0.8
+   ]
+  },
+  {
+   "name": "Sofa",
+   "file": "sofa.obj",
+   "words": [
+    "sofa",
+    "couch",
+    "settee"
+   ],
+   "polygons": 30,
+   "points": 40,
+   "proportions": [
+    2.02,
+    0.775,
+    0.91
+   ]
+  },
+  {
+   "name": "Bed",
+   "file": "bed.obj",
+   "words": [
+    "bed",
+    "mattress"
+   ],
+   "polygons": 30,
+   "points": 40,
+   "proportions": [
+    1.6,
+    1.08,
+    2.11
+   ]
+  },
+  {
+   "name": "Bookshelf",
+   "file": "bookshelf.obj",
+   "words": [
+    "shelf",
+    "shelves",
+    "bookcase",
+    "bookshelf",
+    "rack"
+   ],
+   "polygons": 48,
+   "points": 64,
+   "proportions": [
+    0.99,
+    1.8,
+    0.35
+   ]
+  },
+  {
+   "name": "Cabinet",
+   "file": "cabinet.obj",
+   "words": [
+    "cabinet",
+    "cupboard",
+    "drawer",
+    "drawers",
+    "dresser",
+    "wardrobe",
+    "closet",
+    "sideboard",
+    "fridge"
+   ],
+   "polygons": 30,
+   "points": 40,
+   "proportions": [
+    0.94,
+    0.9,
+    0.54
+   ]
+  },
+  {
+   "name": "Floor lamp",
+   "file": "floor_lamp.obj",
+   "words": [
+    "floorlamp",
+    "lamp",
+    "light",
+    "lantern"
+   ],
+   "polygons": 61,
+   "points": 81,
+   "proportions": [
+    0.44,
+    1.65,
+    0.44
+   ]
+  },
+  {
+   "name": "Table lamp",
+   "file": "table_lamp.obj",
+   "words": [
+    "tablelamp",
+    "desklamp",
+    "nightlight"
+   ],
+   "polygons": 98,
+   "points": 98,
+   "proportions": [
+    0.34,
+    0.45,
+    0.34
+   ]
+  },
+  {
+   "name": "Bottle",
+   "file": "bottle.obj",
+   "words": [
+    "bottle",
+    "wine",
+    "beer",
+    "flask"
+   ],
+   "polygons": 112,
+   "points": 98,
+   "proportions": [
+    0.074,
+    0.31,
+    0.074
+   ]
+  },
+  {
+   "name": "Mug",
+   "file": "mug.obj",
+   "words": [
+    "mug",
+    "cup"
+   ],
+   "polygons": 114,
+   "points": 106,
+   "proportions": [
+    0.111,
+    0.1,
+    0.086
+   ]
+  },
+  {
+   "name": "Vase",
+   "file": "vase.obj",
+   "words": [
+    "vase",
+    "jar",
+    "urn"
+   ],
+   "polygons": 112,
+   "points": 98,
+   "proportions": [
+    0.22,
+    0.36,
+    0.22
+   ]
+  },
+  {
+   "name": "Potted plant",
+   "file": "potted_plant.obj",
+   "words": [
+    "plant",
+    "pot",
+    "flower",
+    "fern",
+    "succulent",
+    "bush",
+    "shrub"
+   ],
+   "polygons": 148,
+   "points": 124,
+   "proportions": [
+    0.493,
+    0.74,
+    0.457
+   ]
+  },
+  {
+   "name": "Tree",
+   "file": "tree.obj",
+   "words": [
+    "tree",
+    "oak",
+    "maple",
+    "palm"
+   ],
+   "polygons": 94,
+   "points": 90,
+   "proportions": [
+    1.462,
+    2.438,
+    1.462
+   ]
+  },
+  {
+   "name": "Pine",
+   "file": "pine.obj",
+   "words": [
+    "pine",
+    "fir",
+    "spruce",
+    "conifer",
+    "christmas"
+   ],
+   "polygons": 49,
+   "points": 55,
+   "proportions": [
+    1.2,
+    2.05,
+    1.2
+   ]
+  },
+  {
+   "name": "Person",
+   "file": "person.obj",
+   "words": [
+    "person",
+    "human",
+    "man",
+    "woman",
+    "character",
+    "body",
+    "figure",
+    "girl",
+    "boy",
+    "people",
+    "mannequin"
+   ],
+   "polygons": 100,
+   "points": 108,
+   "proportions": [
+    0.59,
+    1.776,
+    0.22
+   ]
+  },
+  {
+   "name": "Car",
+   "file": "car.obj",
+   "words": [
+    "car",
+    "vehicle",
+    "truck",
+    "van",
+    "suv",
+    "sedan",
+    "auto",
+    "lambo",
+    "lamborghini",
+    "ferrari",
+    "porsche",
+    "taxi"
+   ],
+   "polygons": 76,
+   "points": 128,
+   "proportions": [
+    1.94,
+    1.21,
+    4.4
+   ]
+  },
+  {
+   "name": "Door",
+   "file": "door.obj",
+   "words": [
+    "door",
+    "gate"
+   ],
+   "polygons": 34,
+   "points": 48,
+   "proportions": [
+    1.02,
+    2.12,
+    0.17
+   ]
+  },
+  {
+   "name": "Window",
+   "file": "window.obj",
+   "words": [
+    "window",
+    "pane"
+   ],
+   "polygons": 42,
+   "points": 56,
+   "proportions": [
+    1.26,
+    1.2,
+    0.08
+   ]
+  },
+  {
+   "name": "Screen",
+   "file": "screen.obj",
+   "words": [
+    "tv",
+    "television",
+    "monitor",
+    "screen",
+    "display"
+   ],
+   "polygons": 18,
+   "points": 24,
+   "proportions": [
+    1.0,
+    0.8,
+    0.22
+   ]
+  },
+  {
+   "name": "Barrel",
+   "file": "barrel.obj",
+   "words": [
+    "barrel",
+    "drum",
+    "keg"
+   ],
+   "polygons": 96,
+   "points": 82,
+   "proportions": [
+    0.62,
+    0.86,
+    0.62
+   ]
+  },
+  {
+   "name": "Rock",
+   "file": "rock.obj",
+   "words": [
+    "rock",
+    "stone",
+    "boulder",
+    "pebble"
+   ],
+   "polygons": 45,
+   "points": 38,
+   "proportions": [
+    0.805,
+    0.597,
+    0.817
+   ]
+  }
+ ]
+}

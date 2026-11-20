@@ -698,9 +698,10 @@ lx.bless(LinksWindow, 'moonray.links')
 
 
 class LinksAct(lxu.command.BasicCommand):
-    """What the Links panel does (links.ACTIONS: link, edit, update, done, relink, embed, saved), as one command: Modo
-    lets a script change an item (its link record, a tag) only inside a command, and the action is one step to undo.
-    ids: the items, as JSON; path: the folder linked to (link) or the file relinked to (relink)."""
+    """What the Links panel does (links.ACTIONS: link, edit, update, done, relink, embed, standin, saved), as one
+    command: Modo lets a script change an item (its link record, a tag) only inside a command, and the action is one step
+    to undo. ids: the items, as JSON; path: the folder linked to (link), the file relinked to (relink) or the stand-in
+    (standin)."""
     def __init__(self):
         super().__init__()
         self.dyna_Add('action', lx.symbol.sTYPE_STRING)

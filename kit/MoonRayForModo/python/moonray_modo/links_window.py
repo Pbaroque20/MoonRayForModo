@@ -1,13 +1,14 @@
 """MoonRay > Links: the Links panel's window (links.py), as Adobe Illustrator's Links panel lists placed images: each
 mesh of the scene with its state (Linked, Editing, Embedded), its status and its file, and what can be done with it.
 The list is looked at again every few seconds while the window is open, and after each save."""
+import json
 from pathlib import Path
 
 from PySide2 import QtCore, QtGui, QtWidgets
 
 from . import links
 
-COLUMNS = ('Name', 'State', 'Status', 'File')
+COLUMNS = ('Name', 'State', 'Status', 'Stand-in', 'File')
 # A status's colour: up to date in yellow (his choice), what needs looking at in orange, a missing file in red.
 COLOURS = {links.OK: '#e8d44d', links.EDITED: '#f0902e', links.CHANGED: '#f0902e', links.BOTH: '#e8601c',
            links.MISSING: '#e05050'}
@@ -24,6 +25,8 @@ TIPS = {
     'select': 'Select the selected rows\' items in Modo.',
     'embed': 'Make each selected linked mesh a mesh of the scene again, no longer tied to its file (the file stays '
              'on disk). A mesh you are editing is untied from its file.',
+    'standin': 'Choose what each selected linked mesh is drawn as in the viewport: a low-res everyday object from the '
+               "Asset Library's stand-ins, stretched to the mesh's size, or the mesh itself. Renders always use the mesh.",
 }
 
 
@@ -31,7 +34,7 @@ class Window(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent, QtCore.Qt.Window)
         self.setWindowTitle('Links')
-        self.resize(820, 480)
+        self.resize(900, 480)
         self.settings = QtCore.QSettings('MoonRayForModo', 'Links')
         layout = QtWidgets.QVBoxLayout(self)
         note = QtWidgets.QLabel('Meshes linked to .lxo files of their own are Scene Proxies, light in the scene. Edit one in '
@@ -47,17 +50,18 @@ class Window(QtWidgets.QWidget):
         # A long path cut in its middle: its folder's start and the file's name stay in sight.
         self.tree.setTextElideMode(QtCore.Qt.ElideMiddle)
         self.tree.header().setStretchLastSection(True)
-        for column, width in enumerate((190, 80, 210)):
+        for column, width in enumerate((190, 80, 200, 110)):
             self.tree.setColumnWidth(column, width)
         self.tree.itemSelectionChanged.connect(self._enable)
         self.tree.itemDoubleClicked.connect(lambda *_: self._select_items())
         layout.addWidget(self.tree, 1)
         self.buttons = {}
-        for keys in (('link', 'edit', 'update', 'done'), ('relink', 'reveal', 'select', 'embed')):
+        for keys in (('link', 'edit', 'update', 'done'), ('relink', 'standin', 'reveal', 'select', 'embed')):
             row = QtWidgets.QHBoxLayout()
             for key in keys:
                 label = {'link': 'Link...', 'edit': 'Edit in Scene', 'update': 'Update File', 'done': 'Done Editing',
-                         'relink': 'Relink...', 'reveal': 'Reveal in Explorer', 'select': 'Select Item', 'embed': 'Embed'}[key]
+                         'relink': 'Relink...', 'standin': 'Stand-in...', 'reveal': 'Reveal in Explorer', 'select': 'Select Item',
+                         'embed': 'Embed'}[key]
                 button = QtWidgets.QPushButton(label)
                 button.setToolTip(TIPS[key])
                 button.clicked.connect(getattr(self, '_' + key))
@@ -65,6 +69,14 @@ class Window(QtWidgets.QWidget):
                 self.buttons[key] = button
             row.addStretch(1)
             layout.addLayout(row)
+        # Link draws each mesh as a stand-in from the Asset Library, chosen by its name (standins.choose), unless off.
+        self.with_standins = QtWidgets.QCheckBox('Link with stand-ins from the Asset Library')
+        self.with_standins.setToolTip('Each mesh linked is drawn in the viewport as a low-res everyday object from the '
+                                      "Asset Library's stand-ins, chosen by its name (a box where none fits) and stretched to "
+                                      'its size. Renders use the mesh itself.')
+        self.with_standins.setChecked(str(self.settings.value('standins', 'true')).lower() == 'true')
+        self.with_standins.toggled.connect(lambda on: self.settings.setValue('standins', 'true' if on else 'false'))
+        layout.addWidget(self.with_standins)
         foot = QtWidgets.QHBoxLayout()
         self.embedded = QtWidgets.QCheckBox('Show embedded meshes')
         self.embedded.setChecked(str(self.settings.value('embedded', 'true')).lower() == 'true')
@@ -96,9 +108,10 @@ class Window(QtWidgets.QWidget):
         self.tree.clear()
         for row in self.rows:
             item = QtWidgets.QTreeWidgetItem([row['name'], links.STATE_TEXT[row['state']], links.STATUS_TEXT[row['status']],
+                                              (row.get('standin') or 'None') if row['state'] != links.EMBEDDED else '',
                                               row['file'] or ''])
             item.setData(0, QtCore.Qt.UserRole, row['id'])
-            item.setToolTip(3, row['file'] or 'Embedded: a mesh of the scene, no file.')
+            item.setToolTip(4, row['file'] or 'Embedded: a mesh of the scene, no file.')
             colour = COLOURS.get(row['status'])
             if colour:
                 item.setForeground(2, QtGui.QBrush(QtGui.QColor(colour)))
@@ -132,6 +145,7 @@ class Window(QtWidgets.QWidget):
         one = self._chosen()
         self.buttons['relink'].setEnabled(len(one) == 1 and one[0]['state'] in (links.LINKED, links.EDITING))
         self.buttons['reveal'].setEnabled(len(one) == 1 and bool(one[0]['file']))
+        self.buttons['standin'].setEnabled(bool(self._chosen(links.LINKED, links.EDITING)))
         self.buttons['select'].setEnabled(bool(one))
 
     def _updatable(self):
@@ -200,7 +214,8 @@ class Window(QtWidgets.QWidget):
         if not chosen:
             return
         self.settings.setValue('folder', chosen)
-        made = self._act('Link', 'link', [row['id'] for row in rows], chosen)
+        how = json.dumps({'folder': chosen, 'standin': 'auto' if self.with_standins.isChecked() else 'none'})
+        made = self._act('Link', 'link', [row['id'] for row in rows], how)
         if made is not None:
             self.status.setText('%d linked. %s' % (len(made), self.status.text()))
 
@@ -223,6 +238,23 @@ class Window(QtWidgets.QWidget):
         chosen, _ = QtWidgets.QFileDialog.getOpenFileName(self, 'File %s is linked to' % rows[0]['name'], start, 'Modo scene (*.lxo)')
         if chosen:
             self._act('Relink', 'relink', [rows[0]['id']], chosen)
+
+    def _standin(self):
+        """A menu of the Asset Library's stand-ins: the one chosen is what each selected linked mesh is drawn as."""
+        rows = self._chosen(links.LINKED, links.EDITING)
+        if not rows:
+            return
+        from . import standins
+        menu = QtWidgets.QMenu(self)
+        menu.addAction('By its name (from the library)').setData(standins.AUTO)
+        menu.addSeparator()
+        for entry in standins.catalog():
+            menu.addAction(entry['name']).setData(entry['name'])
+        menu.addSeparator()
+        menu.addAction('None: the mesh itself').setData(standins.NONE)
+        chosen = menu.exec_(self.buttons['standin'].mapToGlobal(QtCore.QPoint(0, self.buttons['standin'].height())))
+        if chosen is not None:
+            self._act('Stand-in', 'standin', [row['id'] for row in rows], chosen.data())
 
     def _reveal(self):
         rows = self._chosen()

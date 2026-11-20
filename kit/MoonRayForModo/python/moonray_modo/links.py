@@ -234,19 +234,21 @@ def rows(embedded=True, time=None):
                 pass
         now = stamp(path)
         found.append({'id': item.id, 'name': item.name, 'state': LINKED, 'file': record['file'], 'record': record,
-                      'status': status(LINKED, record, now)})
+                      'status': status(LINKED, record, now), 'standin': record.get('standin')})
     for item in scene.items('mesh'):
         record = read_tag(item)
         if record is not None:
             editing.append(item)
-            found.append({'id': item.id, 'name': item.name, 'state': EDITING, 'file': record['file'], 'record': record})
+            found.append({'id': item.id, 'name': item.name, 'state': EDITING, 'file': record['file'], 'record': record,
+                          'standin': record.get('standin')})
         elif embedded:
             try:
                 polygons = item.geometry.numPolygons
             except Exception:
                 polygons = 0
             if polygons:
-                found.append({'id': item.id, 'name': item.name, 'state': EMBEDDED, 'file': '', 'record': None, 'status': NONE})
+                found.append({'id': item.id, 'name': item.name, 'state': EMBEDDED, 'file': '', 'record': None, 'status': NONE,
+                              'standin': None})
     marks = prints(editing, time) if editing else {}
     for row in found:
         if row['state'] == EDITING:
@@ -303,12 +305,13 @@ def _only(ident):
     lx.eval('select.item {%s} set' % ident)
 
 
-def _convert(mesh, path):
+def _convert(mesh, path, standin=None):
     """proxy.convert: the mesh written to path, a proxy in its place, named as the mesh was; the proxy (None where none
     was made). The file's mesh is then put at the origin (settle) and the proxy told to read it again: as proxy.convert
     leaves them, the file's mesh keeps its place as well as the proxy, and Modo's renderer, and its render cache the kit
     reads, drew the mesh away from where it stood (at its own origin; tools/probe_cl_links_layout.py). A proxy whose
-    file holds its mesh at the origin is drawn where the proxy stands."""
+    file holds its mesh at the origin is drawn where the proxy stands. standin: the library's stand-in (its name) the
+    proxy is drawn as in the viewport (settle, show_as), or None."""
     lx, modo = _modo()
     scene = modo.Scene()
     name = mesh.name
@@ -327,9 +330,20 @@ def _convert(mesh, path):
         except Exception:
             pass
     record = read_tag(proxy) or {'file': str(path)}
-    settle(Path(path), dict(record, file=str(path)), name, scene)
+    settled = settle(Path(path), dict(record, file=str(path)), name, scene, standin)
     reload(proxy, path)
+    show_as(proxy, name, standin if settled else None)
     return proxy
+
+
+def show_as(proxy, name, standin):
+    """The proxy drawn in the viewport as its stand-in (proxy.previewItem: '<name> Stand-in' in its file), or as its mesh
+    where it has none; it renders its mesh (proxy.renderItem) either way."""
+    lx, modo = _modo()
+    from .standins import LABEL
+    _only(proxy.id)
+    lx.eval('!proxy.renderItem item:{%s} name:{%s}' % (proxy.id, name))
+    lx.eval('!proxy.previewItem item:{%s} name:{%s}' % (proxy.id, name + LABEL if standin else name))
 
 
 # The spellings of each link file (by its path, compared without case) Modo has loaded in this Modo session (spelled).
@@ -352,6 +366,41 @@ def reload(proxy, path):
     return form
 
 
+def _world_place(item):
+    """An item's place in the world as position, rotation (radians, in the item's own rotation order) and scale: what an
+    item at the top of another scene is given to stand where it stands."""
+    import modo
+    matrix = modo.Matrix4(item.channel('worldMatrix').get())
+    scale = list(matrix.scale())
+    position = list(matrix.position)
+    turned = modo.Matrix4(matrix)
+    for row in range(3):
+        for column in range(3):
+            turned.m[row][column] = matrix.m[row][column] / (scale[row] or 1.0)
+    try:
+        order = str(item.rotation.channel('order').get()) if item.rotation is not None else 'xyz'
+    except Exception:
+        order = 'xyz'
+    order = order.lower() if len(order) == 3 and set(order.lower()) == set('xyz') else 'xyz'
+    return position, list(turned.asEuler(order=order)), scale, order
+
+
+def _place_at(item, place):
+    """An item put where _world_place says (out of any parent), its rotation order as there."""
+    lx, modo = _modo()
+    position, rotation, scale, order = place
+    if item.parent is not None:
+        lx.eval('select.item {%s} set' % item.id)
+        lx.eval('!item.parent {%s} {} 0 inPlace:0' % item.id)
+    try:
+        item.rotation.channel('order').set(order)
+    except Exception:
+        pass
+    item.position.set(position)
+    item.rotation.set(rotation)
+    item.scale.set(scale)
+
+
 def _at_origin(item):
     """An item of a link file put at the world's origin: out of any parent, no move, turn or scale of its own."""
     lx, modo = _modo()
@@ -367,8 +416,9 @@ def _at_origin(item):
             pass
 
 
-def settle(path, record, name, main):
-    """A link file's mesh put at the origin (_at_origin), the file saved and closed, main made current again. False
+def settle(path, record, name, main, standin=None, keep=False):
+    """A link file's mesh put at the origin (_at_origin) and given its stand-in (place_standin; none where standin is
+    None, unless keep, which leaves the one the file has), the file saved and closed, main made current again. False
     where the file has no mesh to stand for name."""
     lx, modo = _modo()
     with _unseen_scenes():
@@ -378,12 +428,56 @@ def settle(path, record, name, main):
             if target is None:
                 return False
             _at_origin(target)
+            if standin or not keep:
+                place_standin(target, name, standin)
             lx.eval('!scene.save')
             return True
         finally:
             if modo.Scene().filename and same_file(modo.Scene().filename, path):
                 lx.eval('!scene.close')
             _back_to(main)
+
+
+def _standin_items(scene):
+    """The stand-ins in a link file (opened as scene): meshes carrying a stand-in's tag."""
+    from .standins import TAG as STANDIN
+    found = []
+    for item in scene.items('mesh'):
+        try:
+            if item.readTag(STANDIN):
+                found.append(item)
+        except (LookupError, RuntimeError, AttributeError):
+            continue
+    return found
+
+
+def place_standin(target, name, standin):
+    """In a link file (the scene open now), the stand-in for its mesh target (standin: the library's name, or None for
+    none): the one there taken out, the library's built anew as '<name> Stand-in', stretched to target's bounds (at the
+    origin, as the file holds it). False where the library has no such stand-in."""
+    lx, modo = _modo()
+    from . import standins
+    scene = modo.Scene()
+    for old in _standin_items(scene):
+        lx.eval('select.item {%s} set' % old.id)
+        lx.eval('!item.delete')
+    entry = standins.find(standin) if standin else None
+    if entry is None:
+        return False
+    low, high = target.geometry.boundingBox
+    points, faces = standins.read(entry['file'])
+    placed = standins.fitted(points, low, high)
+    lx.eval('item.create mesh {%s}' % (name + standins.LABEL))
+    made = [item for item in scene.items('mesh') if item.name == name + standins.LABEL]
+    if not made:
+        return False
+    mesh = made[-1]
+    with mesh.geometry as geometry:
+        corners = [geometry.vertices.new(point) for point in placed]
+        for face in faces:
+            geometry.polygons.new([corners[i] for i in face])
+    mesh.setTag(standins.TAG, entry['name'])
+    return True
 
 
 SHADER_TYPES = ('mask', 'advancedMaterial', 'imageMap', 'constant', 'shaderFolder', 'shader')
@@ -445,6 +539,16 @@ def _restore(proxy):
     _only(proxy.id)
     lx.eval('!proxy.restore item:{%s}' % proxy.id)
     made = [item for item in scene.items('mesh') if item.id not in meshes]
+    # A stand-in the restore brought along is the file's, for the proxy's viewport alone: let go of.
+    from .standins import TAG as STANDIN
+    for item in list(made):
+        try:
+            if item.readTag(STANDIN):
+                made.remove(item)
+                _only(item.id)
+                lx.eval('!item.delete')
+        except (LookupError, RuntimeError, AttributeError):
+            continue
     mesh = made[0] if made else None
     added = _shaders() - shaders
     if mesh is not None and added and _material_tags(mesh) <= (_masked_tags(shaders) | {'Default', ''}):
@@ -459,7 +563,9 @@ def _restore(proxy):
 def _file_mesh(scene, record, name):
     """The mesh of a link file (opened as scene) that stands for the mesh named name: the one tagged with the same
     file, else the one of that name, else the only one with polygons; None where it cannot be told."""
-    meshes = list(scene.items('mesh'))
+    # Not its stand-in (place_standin), which the file holds beside it.
+    aside = {item.id for item in _standin_items(scene)}
+    meshes = [m for m in scene.items('mesh') if m.id not in aside]
     tagged = [m for m in meshes if (read_tag(m) or {}).get('file') and same_file(read_tag(m)['file'], record['file'])]
     if len(tagged) == 1:
         return tagged[0]
@@ -542,6 +648,10 @@ def write_geometry(mesh, record):
         return False
     lx.eval('select.copy')
     lx.eval('select.drop polygon')
+    # Pasted polygons keep where they stand in the world: the file's mesh is put where this one stands first, so they
+    # come in at the same points of its own, and back at the origin after (_at_origin), which does not move them. Pasted
+    # into the mesh at the origin, they came in moved by this one's place (the Links stand-ins probe: by its -2 in X).
+    place = _world_place(mesh)
     main = modo.Scene()
     with _unseen_scenes():
         lx.eval('!scene.open {%s} normal' % path)
@@ -550,6 +660,7 @@ def write_geometry(mesh, record):
             target = _file_mesh(held, record, mesh.name)
             if target is None:
                 return False
+            _place_at(target, place)
             lx.eval('select.drop item')
             lx.eval('select.item {%s} set' % target.id)
             lx.eval('select.type polygon')
@@ -560,6 +671,9 @@ def write_geometry(mesh, record):
             lx.eval('select.type item')
             # The file holds the mesh's shape at the origin; where it stands is the proxy's (Done Editing gives it).
             _at_origin(target)
+            # Its stand-in stretched to its bounds as they now are.
+            if record.get('standin'):
+                place_standin(target, mesh.name, record['standin'])
             lx.eval('!scene.save')
         finally:
             if modo.Scene().filename and same_file(modo.Scene().filename, path):
@@ -580,8 +694,22 @@ def write_geometry(mesh, record):
 _WRITING = [False]
 
 
-def link(ids, folder):
-    """Each mesh written to its own file in folder and a proxy put in its place (Linked). The proxies' ids."""
+def standin_for(name, choice):
+    """The stand-in a mesh named name is linked with: choice the library's name of one, standins.AUTO (the library's
+    by the name, standins.choose) or standins.NONE (or empty: none). Its name in the library, or None."""
+    from . import standins
+    if not choice or choice == standins.NONE:
+        return None
+    if choice == standins.AUTO:
+        entry = standins.choose(name)
+    else:
+        entry = standins.find(choice)
+    return entry['name'] if entry else None
+
+
+def link(ids, folder, standin='auto'):
+    """Each mesh written to its own file in folder and a proxy put in its place (Linked), drawn in the viewport as a
+    stand-in from the Asset Library (standin: standin_for's choice; by the mesh's name unless said). The proxies' ids."""
     lx, modo = _modo()
     renamed, made, taken = {}, [], []
     with kept_selection(renamed):
@@ -592,13 +720,39 @@ def link(ids, folder):
             path = file_name(folder, mesh.name, taken)
             taken.append(path)
             mark = prints([mesh]).get(mesh.id)
-            proxy = _convert(mesh, path)
+            chosen = standin_for(mesh.name, standin)
+            proxy = _convert(mesh, path, chosen)
             if proxy is None:
                 continue
-            write_tag(proxy, {'file': str(path), 'stamp': stamp(path), 'print': mark, 'standin': None})
+            write_tag(proxy, {'file': str(path), 'stamp': stamp(path), 'print': mark, 'standin': chosen})
             renamed[ident] = proxy.id
             made.append(proxy.id)
     return made
+
+
+def set_standin(ids, choice):
+    """Each linked mesh drawn as another stand-in (standin_for's choice; none for NONE): its file given it, the proxy
+    reading the file again. A mesh being edited takes it when it is made a proxy again. The ids changed."""
+    lx, modo = _modo()
+    renamed, changed = {}, []
+    with kept_selection(renamed):
+        for ident in ids:
+            item = _item(ident)
+            record = read_tag(item) if item is not None else None
+            if item is None or record is None:
+                continue
+            chosen = standin_for(item.name, choice)
+            if item.type == 'proxy':
+                path = os.path.normpath(proxy_file(item)) or record['file']
+                if not settle(Path(path), dict(record, file=path), item.name, modo.Scene(), chosen):
+                    continue
+                reload(item, path)
+                show_as(item, item.name, chosen)
+                record.update(file=path, stamp=stamp(path))
+            record['standin'] = chosen
+            write_tag(item, record)
+            changed.append(item.id)
+    return changed
 
 
 def edit(ids):
@@ -650,7 +804,7 @@ def update(ids, only_changed=False):
                     if status(EDITING, record, stamp(record['file']), mark) not in NEEDS_WRITE:
                         continue
                 if not write_geometry(mesh, record):
-                    proxy = _convert(mesh, record['file'])
+                    proxy = _convert(mesh, record['file'], record.get('standin'))
                     mesh = _restore(proxy) if proxy is not None else None
                     if mesh is None:
                         continue
@@ -673,7 +827,7 @@ def done(ids):
             if record is None:
                 continue
             mark = prints([mesh]).get(mesh.id)
-            proxy = _convert(mesh, record['file'])
+            proxy = _convert(mesh, record['file'], record.get('standin'))
             if proxy is None:
                 continue
             record.update(stamp=stamp(record['file']), print=mark)
@@ -744,17 +898,21 @@ def reveal(path):
 # What moonray.links.act does. Modo lets a script change an item (a tag, a channel) only inside a command: from a
 # button's click (a Qt event) the link record could not be written ('bad result'). Run as a command, each action is
 # also one step to undo.
-ACTIONS = ('link', 'edit', 'update', 'done', 'relink', 'embed', 'saved')
+ACTIONS = ('link', 'edit', 'update', 'done', 'relink', 'embed', 'standin', 'saved')
 LAST = {'action': None, 'result': None, 'error': None}
 
 
 def act(action, ids='', path=''):
-    """moonray.links.act's work: ids as JSON, path the folder (link) or file (relink). What it did is in LAST."""
+    """moonray.links.act's work: ids as JSON; path the folder (link: or JSON {"folder", "standin"}), the file (relink) or
+    the stand-in (standin: a library name, 'auto' or 'none'). What it did is in LAST."""
     LAST.update(action=action, result=None, error=None)
     try:
         chosen = json.loads(ids) if ids else []
         if action == 'link':
-            LAST['result'] = link(chosen, Path(path))
+            held = json.loads(path) if str(path).lstrip().startswith('{') else {'folder': path}
+            LAST['result'] = link(chosen, Path(held['folder']), held.get('standin', 'auto'))
+        elif action == 'standin':
+            LAST['result'] = set_standin(chosen, path or 'none')
         elif action == 'edit':
             LAST['result'] = edit(chosen)
         elif action == 'update':

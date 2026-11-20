@@ -151,7 +151,7 @@ class Wiring(unittest.TestCase):
         self.assertIn('links.run(action, ids, path)', window)
         for direct in ('links.link(', 'links.edit(', 'links.update(', 'links.done(', 'links.relink(', 'links.embed('):
             self.assertNotIn(direct, window)
-        self.assertEqual(links.ACTIONS, ('link', 'edit', 'update', 'done', 'relink', 'embed', 'saved'))
+        self.assertEqual(links.ACTIONS, ('link', 'edit', 'update', 'done', 'relink', 'embed', 'standin', 'saved'))
 
     def test_an_unknown_action_says_so(self):
         with self.assertRaises(ValueError):
