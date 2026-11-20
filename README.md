@@ -15,6 +15,9 @@ The current release is [0.5.5.1.2](https://github.com/Pbaroque20/MoonRayForModo/
 - **Links** (MoonRay > Links...): meshes linked to .lxo files of their own, listed as Illustrator's Links panel lists placed images, each Linked, Editing or Embedded, with its file and whether it is up to date. Link a mesh and it becomes a light Scene Proxy; Edit in Scene brings it back to change it, saving the scene writes your edits to its file, and Done Editing makes it a proxy again. Renders are the same linked or not, in MoonRay, XPU2 and MoonLightIPR.
 - **Stand-ins** in the Asset Library: 25 low-res everyday objects (a chair, a table, a lamp, a plant, a person, a car...) a linked mesh is drawn as in the viewport, chosen by its name and stretched to its size, while the mesh itself renders. Change one with Stand-in... in the Links window.
 - **Iridescence in MoonLightIPR**: a MoonRay material's iridescence (DwaBaseMaterial's, and the other Dwa materials') shows in MoonLightIPR as in MoonRay, the highlight or the clear coat changing colour with the angle, round the hue wheel between its two colours or along its ramp. Before, MoonLightIPR left it out and said so in Notices. Scenes without iridescence render as fast as before.
+
+  ![A dragon with an iridescent sheen and an iridescent bubble over the sea](docs/images/iridescence-dragon.webp)
+
 - Known: Modo can crash as it quits with Scene Proxies in the scene (its own Convert to Proxy does the same); your work and settings are saved first.
 
 ## New in 0.5.5.1.2
