@@ -32,7 +32,8 @@ static double since(Clock::time_point t) { return std::chrono::duration<double>(
 namespace {
 
 struct Options {
-    unsigned threads = 12, probeSpp = 64, nLo = 4, nHi = 32, nBg = 1;
+    // nLo, nHi 0: by the probes' light (4 and 32 with direct-light probes, 2 and 16 with whole-light ones).
+    unsigned threads = 12, probeSpp = 64, nLo = 0, nHi = 0, nBg = 1;
     int mode = 1, p1mode = 1;  // the GPU shades, the CPU does the geometry (the CPU lane in a gathered frame holds its end up)
     double m0 = 128, tauR = 0.25, margin = -1;  // margin -1: from the pixel filter
     rhea::SurfaceOptions surface;
@@ -43,7 +44,14 @@ struct Options {
     // tolerance; OpenQMC past the first hit (qmc_depth: vertices of nonMirrorDepth below it), and in XPU2's frames too.
     bool gather = true;  // probe frames over gather tiles (Plan::gather; needs a GPU program with them)
     bool oneFrame = true;  // probes and phase 2 in one frame (a depth limit per pixel, Plan::fullSamples)
-    bool gather2 = false;  // phase 2 over gather tiles, its pixels sorted by their samples (no gain over per-tile depth)
+    // Probes carry the whole light (full paths), not the direct light alone: phase 1 reconstructs the beauty and phase 2
+    // corrects it, final = B + k (R1 - B). One frame only.
+    int probeFull = -1;  // -1: when the scene has diffuse bounces (max_diffuse_depth > 0), whose light is smooth
+    int gather2 = -1;  // phase 2 over gather tiles, its pixels sorted by their samples (-1: in one frame only)
+    // XPU2's grid for Rhea's frame: the progressive order (ranges handed out no further than the least-sampled cell's)
+    // and the sample indices a chunk holds.
+    bool progressive = true;
+    unsigned chunkSamples = 4;
     bool curvature = true;   // the reconstruction's second-order term (VirtualSurface::curvature)
     int curvSpan = 4;       // its second differences across neighbours this many strides away
     bool cache = false;  // off by default: it needs the engine's own GPU program (build_rhea.py --gpu)
@@ -122,7 +130,10 @@ int main(int argc, char** argv) {
             else if (k == "light_tol") op.surface.lightTol = std::stod(v);
             else if (k == "light_passes") op.surface.lightPasses = unsigned(std::stoul(v));
             else if (k == "gather") op.gather = v != "0";
-            else if (k == "gather2") op.gather2 = v != "0";
+            else if (k == "gather2") op.gather2 = std::stoi(v);
+            else if (k == "progressive") op.progressive = v != "0";
+            else if (k == "probe_full") op.probeFull = std::stoi(v);
+            else if (k == "chunk") op.chunkSamples = unsigned(std::stoul(v));
             else if (k == "one_frame") op.oneFrame = v != "0";
             else if (k == "frames") op.frames = unsigned(std::stoul(v));
             else if (k == "orbit") op.orbit = std::stod(v);
@@ -201,6 +212,12 @@ int main(int argc, char** argv) {
         report["prepare_seconds"] = since(began);
 
         const unsigned W = plan->width, H = plan->height, spp = plan->spp;
+        // Probes carry the whole light where the scene bounces diffusely (the smooth light probes reconstruct best),
+        // else its direct light alone; phase 2's samples follow.
+        if (op.probeFull < 0) op.probeFull = plan->maxDiffuseDepth > 0 ? 1 : 0;
+        if (!op.oneFrame || op.surface.lightPasses || op.cache) op.probeFull = 0;  // whole-light probes ride in phase 2's frame
+        if (!op.nLo) op.nLo = op.probeFull ? 2 : 4;
+        if (!op.nHi) op.nHi = op.probeFull ? 16 : 32;
         cpu::need(op.probeSpp >= 1 && op.probeSpp <= spp && op.nHi <= spp && op.nLo <= spp && op.nBg >= 1 && op.nLo >= 1,
                   "Sample counts must lie in [1, the scene's samples a pixel]");
         if (op.margin < 0) op.margin = std::max(1.0, 0.5 * plan->filterWidth + 0.5);
@@ -335,14 +352,14 @@ int main(int argc, char** argv) {
         std::vector<unsigned> total = nCount;
         if (oneFrame) {
             for (const auto& s : vs.sites) total[size_t(s.py) * W + s.px] += op.probeSpp;
-            p2->fullSamples = nCount;
+            if (!op.probeFull) p2->fullSamples = nCount;  // probe samples stop at the first hit
         }
         p2->pixelSamples = total;
         p2->spp = *std::max_element(total.begin(), total.end());
         // Phase 2's pixels gathered by their samples (Plan::gather): sorted by count, most first, 64 to a tile in image
         // order, so a tile's pixels take the same samples and none waits on a deeper neighbour. The tiles are spread over
         // the grid's cells (a stride prime to their number), so the deep ones are not all in the first cells.
-        if (op.gather2 || oneFrame) {
+        if (op.gather2 > 0 || (op.gather2 < 0 && oneFrame)) {
             std::vector<unsigned> order(N);
             for (size_t i = 0; i < N; ++i) order[i] = unsigned(i);
             std::stable_sort(order.begin(), order.end(), [&](unsigned a, unsigned b) { return total[a] > total[b]; });
@@ -378,6 +395,8 @@ int main(int argc, char** argv) {
         async::RenderOptions o2;
         o2.threads = op.threads;
         o2.mode = op.mode;
+        o2.grid.progressive = op.progressive;
+        o2.grid.samplesPerChunk = std::max(1u, op.chunkSamples);
         stamp = Clock::now();
         if (gpu) gpu->updateCamera(p2);
         async::RenderResult r2;
@@ -402,7 +421,7 @@ int main(int argc, char** argv) {
             stamp = Clock::now();
             std::vector<int> all(vs.sites.size());
             for (size_t i = 0; i < all.size(); ++i) all[i] = int(i);
-            vs.takeRadiance(direct2, all);
+            vs.takeRadiance(op.probeFull ? r2.rgba : direct2, all);
             regionPass();
             for (size_t i = 0; i < N; ++i)
                 if (cls[i] == rhea::Edge) mWeight[i] = 0;
@@ -423,8 +442,10 @@ int main(int argc, char** argv) {
             const float n = float(nCount[i]), Nt = float(total[i]), m = mWeight[i], k = m / (m + Nt);
             samples2 += n, probeSamples += Nt - n;
             for (int c = 0; c < 3; ++c) {
-                const float d = direct2[i * 4 + c], indirect = Nt / n * (r2.rgba[i * 4 + c] - d);
-                final[i * 4 + c] = indirect + (1 - k) * d + k * recon[i * 4 + c];
+                const float d = direct2[i * 4 + c], b = r2.rgba[i * 4 + c];
+                // Probes with the whole light: R1 is the beauty's reconstruction, B over all N samples its correction.
+                final[i * 4 + c] = oneFrame && op.probeFull ? b + k * (recon[i * 4 + c] - b)
+                                                            : Nt / n * (b - d) + (1 - k) * d + k * recon[i * 4 + c];
             }
             final[i * 4 + 3] = r2.rgba[i * 4 + 3];
         }
@@ -606,7 +627,7 @@ int main(int argc, char** argv) {
         o["s0"] = op.surface.s0, o["min_stride"] = op.surface.minStride, o["tol"] = op.surface.tol, o["margin"] = op.margin;
         o["probe_spp"] = op.probeSpp, o["n_lo"] = op.nLo, o["n_hi"] = op.nHi, o["n_bg"] = op.nBg;
         o["m0"] = op.m0, o["tau_r"] = op.tauR, o["rings"] = op.surface.rings, o["tris"] = op.surface.tris;
-        o["light_tol"] = op.surface.lightTol, o["light_passes"] = op.surface.lightPasses, o["gather"] = op.gather, o["gather2"] = op.gather2, o["one_frame"] = op.oneFrame, o["frames"] = op.frames, o["orbit"] = op.orbit, o["curvature"] = op.curvature, o["curv_span"] = op.curvSpan;
+        o["light_tol"] = op.surface.lightTol, o["light_passes"] = op.surface.lightPasses, o["gather"] = op.gather, o["gather2"] = op.gather2, o["progressive"] = op.progressive, o["probe_full"] = op.probeFull, o["chunk"] = op.chunkSamples, o["one_frame"] = op.oneFrame, o["frames"] = op.frames, o["orbit"] = op.orbit, o["curvature"] = op.curvature, o["curv_span"] = op.curvSpan;
         o["mode"] = op.mode, o["p1mode"] = op.p1mode, o["threads"] = op.threads;
         o["cache"] = op.cache, o["cache_p"] = op.cacheP, o["cache_tol"] = op.cacheTol, o["qmc_depth"] = op.qmcDepth, o["xpu2_qmc"] = op.xpu2Qmc;
         report["options"] = o;
@@ -642,6 +663,13 @@ int main(int argc, char** argv) {
         report["phase1_cpu_samples"] = Json::UInt64(p1Cpu);
         report["phase2_gpu_samples"] = Json::UInt64(r2.gpuSamples);
         report["phase2_cpu_samples"] = Json::UInt64(r2.cpuSamples);
+        // The frame's GPU launches: queued and collected (seconds from the frame's start), time on the device, chunks.
+        report["phase2_launches"] = Json::UInt64(r2.launches);
+        for (const auto& l : r2.launchTrace) {
+            Json::Value j(Json::arrayValue);
+            j.append(l.queued), j.append(l.collected), j.append(l.deviceSeconds), j.append(Json::UInt64(l.chunks));
+            report["phase2_launch_trace"].append(j);
+        }
         }  // runs
         report["runs"] = runs;
 
@@ -711,7 +739,7 @@ int main(int argc, char** argv) {
                 s.total = s.nCount;
                 for (const auto& site : s.vs.sites) s.total[size_t(site.py) * W + site.px] += op.probeSpp;
                 s.plan->pixelSamples = s.total;
-                s.plan->fullSamples = s.nCount;
+                if (!op.probeFull) s.plan->fullSamples = s.nCount;
                 s.plan->spp = *std::max_element(s.total.begin(), s.total.end());
                 s.plan->qmcDepth = op.qmcDepth;
                 std::vector<unsigned> order(N);
@@ -745,7 +773,7 @@ int main(int argc, char** argv) {
                     for (int c = 0; c < 3; ++c) s.direct[i * 4 + c] = s.r.aov[i * stride + offE + c] + s.r.aov[i * stride + offD + c];
                 std::vector<int> all(s.vs.sites.size());
                 for (size_t i = 0; i < all.size(); ++i) all[i] = int(i);
-                s.vs.takeRadiance(s.direct, all);
+                s.vs.takeRadiance(op.probeFull ? s.r.rgba : s.direct, all);
                 regionInto(s);
                 s.final.assign(N * 4, 0.0f);
                 for (size_t i = 0; i < N; ++i) {
@@ -753,7 +781,8 @@ int main(int argc, char** argv) {
                     const float n = float(s.nCount[i]), Nt = float(s.total[i]), k = m / (m + Nt);
                     for (int c = 0; c < 3; ++c) {
                         const float d = s.direct[i * 4 + c];
-                        s.final[i * 4 + c] = Nt / n * (s.r.rgba[i * 4 + c] - d) + (1 - k) * d + k * s.recon[i * 4 + c];
+                        const float b = s.r.rgba[i * 4 + c];
+                        s.final[i * 4 + c] = op.probeFull ? b + k * (s.recon[i * 4 + c] - b) : Nt / n * (b - d) + (1 - k) * d + k * s.recon[i * 4 + c];
                     }
                     s.final[i * 4 + 3] = s.r.rgba[i * 4 + 3];
                 }
@@ -872,6 +901,12 @@ int main(int argc, char** argv) {
                 times.append(row);
             }
             writeFloats(out / ("xpu2-" + std::to_string(n) + ".rgba"), rx.rgba);
+            report["xpu2_launches"][std::to_string(n)] = Json::UInt64(rx.launches);
+            for (const auto& l : rx.launchTrace) {
+                Json::Value j(Json::arrayValue);
+                j.append(l.queued), j.append(l.collected), j.append(l.deviceSeconds), j.append(Json::UInt64(l.chunks));
+                report["xpu2_launch_trace"][std::to_string(n)].append(j);
+            }
             report["xpu2"][std::to_string(n)] = times;
         }
         report["status"] = "passed";

@@ -463,3 +463,29 @@ as XPU2's camera-only updates keep it).
 `LowPriorityWork`, one pool for each thread count and priority). On all 12 threads at normal priority it slowed the
 GPU's frames by 7 to 35 ms (the renderer's own host work shares the cores; its feeder already runs at the highest
 priority), and the pipeline lost on the scene with diffuse bounces.
+
+## 12. Diffuse bounces: probes that carry the whole light (2026-11-19)
+
+The user: "find out and fix it" (why Rhea trailed XPU2 with diffuse bounces).
+
+**What it was not.** Not the frame's shape: XPU2's launch trace (now in the report, `phase2_launch_trace`) shows Rhea's
+frame in 5 large launches, as XPU2's 9 spp frame, with the GPU busy throughout; the progressive order off, larger
+chunks, or no gathering all made it slower.
+
+**What it was.** The samples' economics. Rhea's samples cost about what XPU2's do, but it did not save enough of them:
+with diffuse bounces the error is the indirect light's noise, which only phase 2 reduced, so trusted pixels needed 8
+full paths against XPU2's 9, and the probes (64 samples each) and silhouettes (32) cost more than the sample saved.
+
+**The fix.** Diffuse indirect light is smooth, what interpolating probes handles best (irradiance caching's
+observation). With `probe_full` the probes' extra samples are full paths: phase 1 reconstructs the beauty, and phase 2
+corrects it,
+    final = B + k (R1 - B),   k = m / (m + N),
+B the pixel's beauty over its N samples. It stays consistent as before: k falls as phase 2's samples grow, and the
+reconstruction's bias with it. Default: whole-light probes where the scene bounces diffusely (`max_diffuse_depth` > 0),
+with phase 2 at 2 samples in converged pixels and 16 elsewhere; direct-light probes otherwise, at 4 and 32 (without
+diffuse bounces whole-light probes cost about 10% more and gain nothing). This changes the split chosen at the start
+(phase 2 alone carrying the indirect light) where diffuse bounces exist; `probe_full=0` restores it.
+
+What it trades: per-pixel noise for low-frequency error. The reconstruction's error is smooth (faint blotches at the
+probes' spacing, ten times magnified in the error image), so the relative MSE falls twelve-fold while the 8 x 8 block
+error stays about XPU2's at 9 samples a pixel.
