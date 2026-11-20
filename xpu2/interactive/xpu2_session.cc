@@ -2779,13 +2779,16 @@ int session(const Args& args, const fs::path& directory) {
                     p.normal.assign(pixels * 3, 0.0f);
                     std::vector<unsigned char> covered(pixels, 0);
                     bool gaps = false;
-                    // The normals in camera space, as OptiX's denoiser takes them: render space's (the state variable N)
-                    // onto the camera's axes, the rows of its camera-to-render matrix.
-                    const auto& toRender = scene.plan->camera.cameraToRender.m;
-                    float axes[3][3];
+                    // The normals in camera space, as OptiX's denoiser takes them. The normal output (the state variable
+                    // N) is in render space, which is the camera's own space at the first motion step (plan.worldToRender
+                    // is the camera's inverse, cpu_scene.h): camera space already, turned to the camera at the shutter's
+                    // open by render2Camera's rotation (the identity without motion blur). It was once projected onto the
+                    // camera's axes in world space, which turned the guide by the camera's rotation a second time.
+                    const auto& toCamera = scene.plan->camera.render2Camera.m;
+                    float turn[3][3];
                     for (int a = 0; a < 3; ++a) {
-                        const float length = std::sqrt(toRender[a][0] * toRender[a][0] + toRender[a][1] * toRender[a][1] + toRender[a][2] * toRender[a][2]);
-                        for (int c = 0; c < 3; ++c) axes[a][c] = length > 0 ? toRender[a][c] / length : float(a == c);
+                        const float length = std::sqrt(toCamera[a][0] * toCamera[a][0] + toCamera[a][1] * toCamera[a][1] + toCamera[a][2] * toCamera[a][2]);
+                        for (int c = 0; c < 3; ++c) turn[a][c] = length > 0 ? toCamera[a][c] / length : float(a == c);
                     }
                     cpu::parallelRange(pixels, [&](size_t begin, size_t end) {
                         std::vector<float> v(16);
@@ -2800,8 +2803,8 @@ int session(const Args& args, const fs::path& directory) {
                             for (int c = 0; c < 3; ++c) p.albedo[i * 3 + c] = std::isfinite(v[c]) ? std::clamp(v[c], 0.0f, 1.0f) : 0.0f;
                             aov::outputValues(*scene.plan->aovs, *rtNormal, r, i, v.data());
                             for (int c = 0; c < 3; ++c) v[c] = std::isfinite(v[c]) ? v[c] : 0.0f;
-                            for (int a = 0; a < 3; ++a)
-                                p.normal[i * 3 + a] = std::clamp(v[0] * axes[a][0] + v[1] * axes[a][1] + v[2] * axes[a][2], -1.0f, 1.0f);
+                            for (int c = 0; c < 3; ++c)  // row vectors, as surface::vector: n turn
+                                p.normal[i * 3 + c] = std::clamp(v[0] * turn[0][c] + v[1] * turn[1][c] + v[2] * turn[2][c], -1.0f, 1.0f);
                         }
                     });
                     for (unsigned char c : covered)
