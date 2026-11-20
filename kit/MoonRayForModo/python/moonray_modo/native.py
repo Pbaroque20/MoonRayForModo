@@ -223,6 +223,9 @@ def execution_status(log):
         if 'gpu: setup complete' in line: result='XPU active (%s + %s)'%(_gpu() or 'NVIDIA GPU',_cpu() or 'CPU')
         if 'falling back to cpu' in line: result='Vector active (CPU fallback — see Render Log)'
         if 'xpu2 preview session' in line: result='XPU2 active (%s + %s)'%(_gpu() or 'NVIDIA GPU',_cpu() or 'CPU')
+        # XPU2 RT (Rhea): the session says which renders each frame when it changes (xpu2_session.cc rheaFits).
+        if 'moonray xpu2: realtime by rhea' in line: result='XPU2 Rhea active (%s + %s)'%(_gpu() or 'NVIDIA GPU',_cpu() or 'CPU')
+        elif "moonray xpu2: frames by xpu2 alone" in line: result='XPU2 active (%s + %s)'%(_gpu() or 'NVIDIA GPU',_cpu() or 'CPU')
     return result
 
 
@@ -561,6 +564,17 @@ def xpu2_rt_cap():
     return int(value) if value in ('30', '60') else 0
 
 
+def xpu2_rt_engine():
+    """XPU2 RT's engine (Preferences: XPU2 RT engine): 'rhea' (the default) or 'xpu2'."""
+    value = str(_setting('xpu2/rt_engine', 'rhea')).lower()
+    return value if value in ('rhea', 'xpu2') else 'rhea'
+
+
+def xpu2_follow_drags():
+    """Whether XPU2 RT follows a drag of the viewport's camera step by step (Preferences: XPU2 RT follows drags)."""
+    return str(_setting('xpu2/follow_drags', 'false')).lower() in ('true', '1')
+
+
 def xpu2_environment(runtime):
     """What XPU2's session starts with over environment(runtime): its own libraries and scene classes first, and the
     kit's MoonRay named for what XPU2 leaves to it."""
@@ -568,6 +582,8 @@ def xpu2_environment(runtime):
     return {'PATH': str(root) + os.pathsep + environment(runtime)['PATH'], 'RDL2_DSO_PATH': str(root),
             'REZ_MOONRAY_ROOT': str(root), 'MOONRAY_XPU2_MOONRAY': str(Path(runtime) / 'moonray.exe'),
             'XPU2_SESSION_CHAIN': '1' if xpu2_chain() else '0',
+            # XPU2 RT's engine: Rhea's frames where the scene lets them (rhea/rhea_realtime.h), else XPU2's.
+            'XPU2_SESSION_RT_ENGINE': xpu2_rt_engine(),
             # Its devices (Preferences > MoonRay > XPU2 > Device Management): 2 both, 1 the graphics cards, 0 the processor,
             # and which cards and processor groups where some are off.
             'XPU2_SESSION_MODE': {'both': '2', 'gpu': '1', 'cpu': '0'}[xpu2_devices()],

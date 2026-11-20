@@ -1135,6 +1135,8 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
                   '  ["file_name"] = %s,' % string(path), *kept(path), '  ["channel_format"] = 0,', '  ["compression"] = 1,']
         for attr,value in attributes.items(): lines.append('  [%s] = %s,' % (string(attr),(value if isinstance(value,outputs.Raw) else string(value)) if isinstance(value,str) else ('true' if value else 'false') if isinstance(value,bool) else number(value)))
         lines.append('}')
+    if scene.get('_rhea_outputs') and not output_file:
+        lines += rhea_lines(scene['_rhea_outputs'])
     # XPU2's sampling generations: its render settings in a preview or a render to files it makes, as a UserData that XPU2
     # reads (cpu_scene.h: 1, on, samples, spend exactly, noise target, first generation, most samples, CPU workers,
     # realtime: the preview following the scene with RT on, panel.py) and MoonRay leaves alone.
@@ -1190,3 +1192,24 @@ def shared_locals(lines):
                 names.append(found.group(2))
             lines[index] = found.group(1) + found.group(2) + found.group(3)
     return (['local ' + ', '.join(names)] if names else []) + lines
+
+
+# XPU2 RT (Rhea)'s outputs (rhea/rhea_realtime.h): the light emitted and the direct light at the first hit (light path
+# expressions), the first hit's albedo, and the nearest and farthest first-hit depths among a pixel's samples (the state
+# variable depth, math filters min and max), which verify its probes. In one file of their own, written at a realtime
+# frame's end as every output is.
+RHEA_OUTPUTS = (('rhea_emission', {'result': 8, 'lpe': 'C[<L.>O]'}),
+                ('rhea_direct', {'result': 8, 'lpe': 'C[DGS][<L.>O]'}),
+                ('rhea_albedo', {'result': 7, 'material_aov': 'albedo'}),
+                ('rhea_depth_min', {'result': 3, 'state_variable': 11, 'math_filter': 2}),
+                ('rhea_depth_max', {'result': 3, 'state_variable': 11, 'math_filter': 3}))
+
+
+def rhea_lines(path):
+    lines = []
+    for name, attributes in RHEA_OUTPUTS:
+        lines += ['RenderOutput(%s) {' % string('/' + name), '  ["file_name"] = %s,' % string(str(path)),
+                  '  ["channel_name"] = %s,' % string(name), '  ["channel_format"] = 0,', '  ["compression"] = 1,']
+        lines += ['  [%s] = %s,' % (string(k), string(v) if isinstance(v, str) else number(v)) for k, v in attributes.items()]
+        lines.append('}')
+    return lines

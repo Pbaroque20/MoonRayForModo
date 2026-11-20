@@ -63,13 +63,15 @@ def build_session(source, runtime, async_build, out, cpu_test=False):
     files = list(HERE.glob('*.h')) + [HERE / n for n in ('xpu2_session.cc', 'xpu2_scene.cc', 'xpu2_cpu.cc', 'xpu2_meshopt.cc', 'xpu2_bc6h.cc', 'build_session.py', 'native_build.py',
                                                          'xpu2_geom.cc', 'build_geom.py')]
     files += sorted((HERE.parents[1] / 'native-port').glob('modo_*.h'))
+    files += sorted((HERE.parents[1] / 'rhea').glob('*.h'))  # XPU2 RT (Rhea): rhea_realtime.h and what it includes
     held = {str(p): sha(p) for p in files}
     report = {'status': 'incomplete', 'source_hashes': held, 'async_build': str(async_build),
               'cpu_test_only': bool(cpu_test and drift), 'program_drift': drift}
     try:
         # MoonRay's light path expression state machine (librendering_lpe) for the light AOVs (aov_plan.h).
         # MoonRay's display filter input buffers (librendering_displayfilter) for the display filters (aov_display.h).
-        include = [source / 'toolchain/xpu/optix-dev/include',
+        include = [HERE, source / 'rhea',  # XPU2 RT (Rhea)'s headers, which include XPU2's by name
+                   source / 'toolchain/xpu/optix-dev/include',
                    source / 'toolchain/xpu/cuda_cudart-windows-x86_64-12.8.90-archive/include',
                    source / 'upstream/openmoonray/moonray/moonray/lib/rendering/lpe',
                    source / 'upstream/openmoonray/moonray/moonray/lib/rendering/displayfilter',

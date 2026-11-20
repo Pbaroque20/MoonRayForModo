@@ -681,6 +681,11 @@ class Renderer(QtCore.QObject):
         # from the request, a stop under Safe Denoising never asked XPU2 to save, nor kept what it saved (keep_progress,
         # _exited), and Continue rendered from the start.
         self.pass_xpu2=snapshot['_xpu2']
+        # XPU2 RT (Rhea): realtime that XPU2 renders with Rhea chosen takes Rhea's outputs (rdla.rhea_lines) in a file
+        # of their own beside the preview's; anything else has none.
+        snapshot.pop('_rhea_outputs',None)
+        if snapshot['_xpu2'] and snapshot.get('_realtime') and not request['output'] and native.xpu2_rt_engine()=='rhea':
+            snapshot['_rhea_outputs']=str(self.current_base.with_suffix('.rhea.exr'))
         snapshot['_crypto_categories']=native.supports_crypto_categories(request['runtime'])
         snapshot['_bump_step']=native.supports_bump_step(request['runtime'])
         snapshot['_pixel_filters']=native.supports_pixel_filters(request['runtime'])

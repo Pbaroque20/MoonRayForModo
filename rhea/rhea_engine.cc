@@ -17,6 +17,7 @@
 // Writes raw float32 RGBA films and prints one JSON report. No Modo API.
 #include "async_render.h"
 #include "persistent.h"
+#include "rhea_realtime.h"
 #include "virtual_surface.h"
 #include <fstream>
 #include <iostream>
@@ -93,6 +94,9 @@ struct Options {
     // denoiser (OptiX's HDR model, its guides as XPU2_SESSION_RT_GUIDES says, clean by default), with the normal guide
     // as the kit hands it over, in camera space, and (persistent probes) the virtual surface's.
     bool denoise = false;
+    // Rhea as XPU2's realtime engine (realtime=1, with persist): the sequence run frame by frame through rhea::Realtime,
+    // the class the XPU2 session runs (rhea_realtime.h), in place of the engine's own sequence runs.
+    bool realtime = false;
     double orbit = 0;
 };
 
@@ -175,6 +179,7 @@ int main(int argc, char** argv) {
             else if (k == "seq_ref") op.seqRef = unsigned(std::stoul(v));
             else if (k == "clean_absorb") op.cleanAbsorb = v != "0";
             else if (k == "denoise") op.denoise = v != "0";
+            else if (k == "realtime") op.realtime = v != "0";
             else if (k == "jitter") op.jitter = v != "0";
             else if (k == "accumulate") op.accumulate = v != "0";
             else if (k == "accum_power") op.accumPower = std::stod(v);
@@ -703,7 +708,7 @@ int main(int argc, char** argv) {
         o["s0"] = op.surface.s0, o["min_stride"] = op.surface.minStride, o["tol"] = op.surface.tol, o["margin"] = op.margin;
         o["probe_spp"] = op.probeSpp, o["n_lo"] = op.nLo, o["n_hi"] = op.nHi, o["n_bg"] = op.nBg;
         o["m0"] = op.m0, o["tau_r"] = op.tauR, o["rings"] = op.surface.rings, o["tris"] = op.surface.tris, o["coverage"] = op.surface.coverage;
-        o["light_tol"] = op.surface.lightTol, o["light_passes"] = op.surface.lightPasses, o["gather"] = op.gather, o["gather2"] = op.gather2, o["progressive"] = op.progressive, o["probe_full"] = op.probeFull, o["chunk"] = op.chunkSamples, o["one_frame"] = op.oneFrame, o["frames"] = op.frames, o["orbit"] = op.orbit, o["jitter"] = op.jitter, o["accumulate"] = op.accumulate, o["accum_power"] = op.accumPower, o["seed"] = op.seed, o["floor_area"] = op.surface.floorArea, o["floor_spp"] = op.floorSpp, o["demod"] = op.demod, o["phase2_max"] = op.phase2Max, o["persist"] = op.persist, o["keep_spp"] = op.keepSpp, o["seq_ref"] = op.seqRef, o["clean_absorb"] = op.cleanAbsorb, o["denoise"] = op.denoise, o["cell"] = op.cell,
+        o["light_tol"] = op.surface.lightTol, o["light_passes"] = op.surface.lightPasses, o["gather"] = op.gather, o["gather2"] = op.gather2, o["progressive"] = op.progressive, o["probe_full"] = op.probeFull, o["chunk"] = op.chunkSamples, o["one_frame"] = op.oneFrame, o["frames"] = op.frames, o["orbit"] = op.orbit, o["jitter"] = op.jitter, o["accumulate"] = op.accumulate, o["accum_power"] = op.accumPower, o["seed"] = op.seed, o["floor_area"] = op.surface.floorArea, o["floor_spp"] = op.floorSpp, o["demod"] = op.demod, o["phase2_max"] = op.phase2Max, o["persist"] = op.persist, o["keep_spp"] = op.keepSpp, o["seq_ref"] = op.seqRef, o["clean_absorb"] = op.cleanAbsorb, o["denoise"] = op.denoise, o["realtime"] = op.realtime, o["cell"] = op.cell,
         o["gap_passes"] = op.gapPasses, o["fade"] = op.fade, o["curvature"] = op.curvature, o["curv_span"] = op.curvSpan;
         o["mode"] = op.mode, o["p1mode"] = op.p1mode, o["threads"] = op.threads;
         o["cache"] = op.cache, o["cache_p"] = op.cacheP, o["cache_tol"] = op.cacheTol, o["qmc_depth"] = op.qmcDepth, o["xpu2_qmc"] = op.xpu2Qmc;
@@ -1205,8 +1210,54 @@ int main(int argc, char** argv) {
                 }
                 writeFloats(out / ("accum-" + std::to_string(K) + ".rgba"), img);
             };
+            // Rhea as XPU2's realtime engine (realtime=1): rhea::Realtime, the class the session runs, frame by frame in turn
+            // on the same camera path; the scored frames kept, a still camera's pictures written at 1, 2, 4, ... frames.
+            cpu::need(!(op.realtime && op.denoise), "realtime=1 does not denoise");
+            if (op.realtime) {
+                rhea::Realtime rt;
+                rt.op.phase2Max = op.phase2Max ? op.phase2Max : 2, rt.op.probeSpp = op.probeSpp, rt.op.keepSpp = op.keepSpp, rt.op.nBg = op.nBg;
+                rt.op.cell = op.cell, rt.op.gapPasses = op.gapPasses, rt.op.m0 = op.m0, rt.op.tauR = op.tauR, rt.op.tol = op.surface.tol;
+                rt.op.fade = op.fade, rt.op.demod = op.demod, rt.op.cleanAbsorb = op.cleanAbsorb, rt.op.probeFull = op.probeFull;
+                rt.op.threads = op.threads;
+                const std::string why = rhea::unsupported(*plan);
+                cpu::need(why.empty(), "Rhea realtime: " + why);
+                std::vector<double> period;
+                Json::Value log(Json::arrayValue);
+                const auto t = Clock::now();
+                for (unsigned k = 0; k < F; ++k) {
+                    const auto t0 = Clock::now();
+                    auto base = std::make_shared<cpu::Plan>(*plan);
+                    placeCamera(*base, k);
+                    auto p = rt.prepare(base, cpuScene);
+                    if (gpu) gpu->updateCamera(p);
+                    async::RenderOptions o;
+                    o.threads = op.threads;
+                    o.mode = op.mode;
+                    async::RenderResult r;
+                    {
+                        async::Renderer renderer(p, cpuScene, gpu.get());
+                        r = renderer.render(o);
+                    }
+                    cpu::need(!r.failed, r.error.empty() ? "Realtime frame failed" : r.error);
+                    async::RenderResult shown;
+                    rt.finish(r, shown);
+                    period.push_back(since(t0));
+                    if (isScored(k)) rheaKept[k] = shown.rgba;
+                    if (k == 0) first = shown.rgba;
+                    const unsigned K = rt.framesAtRest();
+                    if (op.accumulate && !(K & (K - 1))) writeFloats(out / ("accum-" + std::to_string(K) + ".rgba"), shown.rgba);
+                    Json::Value j;
+                    j["frame"] = k, j["probes"] = Json::UInt64(rt.probes), j["spawned"] = Json::UInt64(rt.spawned);
+                    j["verified"] = rt.verified, j["trusted"] = rt.trusted, j["at_rest"] = K, j["field_seconds"] = rt.fieldSeconds;
+                    log.append(j);
+                }
+                Json::Value j;
+                j["seconds"] = since(t), j["frame_median"] = median(period);
+                seq["realtime"] = j, seq["realtime_frames"] = log;
+                seq["pipelined"]["frame_median"] = median(period);  // where the summaries read a frame's time
+            }
             // One after the other.
-            {
+            if (!op.realtime) {
                 std::vector<double> period, pr, re, fi;
                 const auto t = Clock::now();
                 field = rhea::ProbeField{};
@@ -1224,7 +1275,7 @@ int main(int argc, char** argv) {
                 seq["serial"] = j;
             }
             // Pipelined.
-            {
+            if (!op.realtime) {
                 std::vector<double> period, pr, re, fi;
                 const auto t = Clock::now();
                 rheaStart = t;

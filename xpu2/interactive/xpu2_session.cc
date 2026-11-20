@@ -37,6 +37,7 @@
 #include "aov_deep_write.h"
 #include "entity_classes.h"
 #include "aov_display.h"
+#include "../../rhea/rhea_realtime.h"
 #include <scene_rdl2/scene/rdl2/RenderOutput.h>
 #include <scene_rdl2/scene/rdl2/rdl2.h>
 #include <scene_rdl2/scene/rdl2/BinaryReader.h>
@@ -2445,6 +2446,15 @@ int session(const Args& args, const fs::path& directory) {
     const bool realtimeDenoise = envOn("XPU2_SESSION_RT_DENOISE", true);
     std::unique_ptr<RealtimeDenoiser> denoiser;
     std::string denoiserError;
+    // XPU2 RT (Rhea) (rhea/rhea_realtime.h, rhea/DESIGN.md 21): realtime by persistent probes where the scene lets it
+    // (XPU2_SESSION_RT_ENGINE=rhea, the kit's default), XPU2's own realtime frame elsewhere. Its probes live from frame to
+    // frame: a moved camera keeps them (their light fades), any other edit forgets them. Where they do not hold, a pixel
+    // is XPU2's samples alone, and at rest XPU2's samples pile up until phase 1 weighs nothing: no restart either way.
+    const char* rtEngine = std::getenv("XPU2_SESSION_RT_ENGINE");
+    const bool rheaWanted = rtEngine && std::string(rtEngine) == "rhea";
+    rhea::Realtime rheaView;
+    std::string rheaRefused = "-";  // why the last realtime scene was XPU2's ("": Rhea's), said when it changes
+    const void* rheaGeometry = nullptr;
     // The full plan being made behind a coarse first pass. It outlives a frame: a camera moved meanwhile is followed on the
     // coarse geometry (Scene's camera path) while it goes on, where the view used to stand still until it was done (8 to 15 s
     // on a heavy scene). Anything else that prepares the scene waits for it first (it reads the canonical copy).
@@ -2515,6 +2525,8 @@ int session(const Args& args, const fs::path& directory) {
                     renderer.reset();
                 }
                 scene.prepare();
+                // XPU2 RT (Rhea): an edit other than the camera alone forgets the probes (their meshes or light may differ).
+                if (rheaWanted && fresh && !scene.cameraFrom) rheaView.reset();
                 // Said for every scene sent while it holds, the preview's notices being each scene's.
                 if (const std::string overflow = texture::overflowWords(); !overflow.empty())
                     modoProtocolLine("@@MODO_XPU2 NOTICE Texture Overflow: memory ran short, so textures are " + overflow +
@@ -3087,6 +3099,91 @@ int session(const Args& args, const fs::path& directory) {
                         std::fflush(stdout);
                     }
                 }
+                // XPU2 RT (Rhea): whether this realtime frame is Rhea's (said when it changes), and its frames: short frames of
+                // persistent probes, each through XPU2's renderer with Rhea's samples a pixel, its picture published as the
+                // frame's previews are, until a command comes (a camera move, an edit), a stop, or phase 2's samples reach
+                // the frame's samples a pixel (as XPU2's realtime frame ends).
+                // The kit's status reads these lines (native.execution_status): "XPU2 Rhea active" while Rhea renders realtime,
+                // "XPU2 active" once a frame is XPU2's alone again.
+                auto rheaFits = [&] {
+                    const std::string why = !scene.plan->realtime ? std::string("not realtime")
+                                            : !rheaWanted         ? std::string("XPU2 RT's engine is XPU2")
+                                                                  : rhea::unsupported(*scene.plan);
+                    if (why != rheaRefused) {
+                        rheaRefused = why;
+                        if (why.empty())
+                            std::printf("MoonRay XPU2: realtime by Rhea (persistent probes; XPU2's samples where they do not hold)\n");
+                        else
+                            std::printf("MoonRay XPU2: frames by XPU2 alone, not Rhea's: %s\n", why.c_str());
+                        std::fflush(stdout);
+                    }
+                    return why.empty();
+                };
+                const bool rheaNow = rheaFits();
+                auto rheaFrames = [&](const async::RenderOptions& base) {
+                    async::RenderResult shown;
+                    // Other geometry than the probes were found on (the full plan after a coarse first pass): forgotten.
+                    const void* geometry = scene.plan->meshes.empty() ? nullptr : static_cast<const void*>(scene.plan->meshes.front().data.get());
+                    if (geometry != rheaGeometry) rheaView.reset();
+                    rheaGeometry = geometry;
+                    rheaView.op.threads = std::max(1u, std::min(8u, unsigned(base.threads)));
+                    const double target = std::max(1u, scene.plan->spp);
+                    const auto began = Clock::now();
+                    async::GpuLane* lane = gpu && gpuUsable ? gpu.get() : nullptr;
+                    unsigned frames = 0;
+                    for (;;) {
+                        if (watch.stop && watch.stop()) {
+                            shown.cancelled = true;
+                            break;
+                        }
+                        if (frames > 0 && watch.drain && watch.drain()) {
+                            shown.drained = true;
+                            break;
+                        }
+                        auto plan = rheaView.prepare(scene.plan, *scene.cpuScene);
+                        if (lane) lane->updateCamera(plan);
+                        async::RenderOptions o = base;
+                        async::Watch inner;
+                        inner.stop = watch.stop;
+                        o.watch = &inner;
+                        async::RenderResult r;
+                        {
+                            async::Renderer frame(plan, *scene.cpuScene, lane);
+                            r = frame.render(o);
+                        }
+                        if (r.failed) {
+                            if (lane) lane->updateCamera(scene.plan);
+                            return r;
+                        }
+                        if (r.cancelled) {
+                            shown.cancelled = true;
+                            break;
+                        }
+                        rheaView.finish(r, shown);
+                        ++frames;
+                        const double least = rheaView.leastSamples(), fraction = std::min(1.0, least / target);
+                        if (watch.previewAov && watch.previewAov() && watch.previewResult) {
+                            watch.previewResult(shown, fraction);
+                        } else if (watch.preview) {
+                            std::vector<float> rgb(size_t(width) * height * 3);
+                            for (size_t i = 0; i < size_t(width) * height; ++i)
+                                for (int c = 0; c < 3; ++c) {
+                                    const float x = shown.rgba[i * 4 + c];
+                                    rgb[i * 3 + c] = std::isfinite(x) ? x : 0.0f;
+                                }
+                            watch.preview(rgb, width, height, fraction);
+                        }
+                        if (least >= target) break;
+                    }
+                    // The GPU's configuration back to the scene's own plan (no sample map) for whatever renders next.
+                    if (lane) lane->updateCamera(scene.plan);
+                    shown.seconds = std::chrono::duration<double>(Clock::now() - began).count();
+                    std::printf("MoonRay XPU2: realtime by Rhea: %u frames in %.2f s, %zu probes, %.0f%% of the picture verified, "
+                                "phase 1 in %.0f%%, %u frames at rest\n",
+                                frames, shown.seconds, rheaView.probes, rheaView.verified * 100.0, rheaView.trusted * 100.0, rheaView.framesAtRest());
+                    std::fflush(stdout);
+                    return shown;
+                };
                 // The checkpoints write the outputs of the plan that renders now: the full plan, where a coarse first pass's
                 // (given them above) has made way for it.
                 if (scene.plan->aovs && scene.plan->aovs->checkpoint) checkpoints.frame(scene.plan->aovs, &scene.displayFilters, width, height);
@@ -3133,6 +3230,8 @@ int session(const Args& args, const fs::path& directory) {
                     options.resumeFrom.reset();
                 } else if (checkpointed)
                     result = stagedFrame(*renderer, options, watch, *scene.plan, checkpoints);
+                else if (rheaNow)
+                    result = rheaFrames(options);
                 else
                     result = renderer->render(options);
                 // Stopped while this frame's own pictures were still held back behind an earlier pass's (the coarse first

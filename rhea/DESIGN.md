@@ -654,3 +654,35 @@ The user: "the virtual surface should work as a denoiser's guide as well".
   blotches the size of its triangles, which a denoiser keeps as picture. A guide that only marks edges cannot change
   that; where the virtual surface can serve a denoiser is in time: telling which of the last frames' samples still
   belong to a pixel (RESULTS.md 18, Open).
+
+## 21. XPU2 RT (Rhea) in the kit (2026-11-20)
+
+The user: "let's now bring Rhea into the kit for testing. We'll use it as the default XPU2 RT engine, as we noted it'll
+gracefully switch to old XPU2 in areas that Rhea has issues with. It should have "follow drag" option like
+MoonLightIPR, and like old XPU2 realtime it should only have beauty and denoised beauty"; "the status indicator should
+say XPU2 Rhea active when realtime is on".
+
+- **The engine** (`rhea/rhea_realtime.h`, `rhea::Realtime`): section 18's persistent probes as a class the XPU2 session
+  runs. `prepare` makes a frame's plan from the session's (its camera current): the field's probes, the sample map (the
+  cap's phase 2, probes' extra samples), gather tiles, the first hit alone past phase 2's samples, sampling generations
+  off (a sample map is read only without them). `finish` makes the frame's picture and sums it with the frames since the
+  camera last moved, as XPU2's result (rgba, counts, AOV values the sums'), so the session publishes, denoises and writes
+  it as its own. At rest phase 2's samples a frame double each frame up to 32, so the sums gather at XPU2's pace.
+  `rhea_engine.cc realtime=1` runs the class on the test paths: the same scores as the engine's own runs (RESULTS.md).
+- **In the session** (`xpu2_session.cc`): with `XPU2_SESSION_RT_ENGINE=rhea` a realtime frame (the kit's RT) is Rhea's
+  frames in place of XPU2's one render: short frames until a command comes (each drag step, each edit), a stop (Pause:
+  the picture in hand), or phase 2's samples reach the frame's samples a pixel. The probes live across frames: a camera
+  move keeps them, any other edit, or other geometry (a coarse first pass's full plan), forgets them. A scene Rhea does
+  not take (`rhea::unsupported`: not a perspective camera, depth of field, motion blur, a sample map, the outputs
+  missing) is XPU2's frame as before, and so is anything not realtime. The session says which renders each frame when
+  it changes; the kit's status reads it: "XPU2 Rhea active" or "XPU2 active".
+- **In the kit:** Preferences, under XPU2 RT Sample %: XPU2 RT engine (Rhea, the default, or XPU2) and XPU2 RT follows
+  drags (off by default, as MoonLightIPR's Follow drags). `render.py` gives a realtime scene XPU2 renders with Rhea
+  chosen Rhea's five outputs (`rdla.rhea_lines`, a file of their own). The views are XPU2 RT's: Beauty and Denoised
+  Beauty (`panel._limit_buffers`, unchanged). Followed drags poll the viewport's camera as MoonLightIPR's do and send
+  each step as a move of the camera alone (`incremental.move_only`), rendered as it comes; the drag's end is read the
+  usual way at the release.
+- **Its XPU2:** Rhea's frames need XPU2's per-tile depth, gather tiles and first-hit-only samples (section 9, 10), so
+  the kit's XPU2 GPU programs are this branch's: Compile XPU2 Shaders once more after installing.
+- Not yet: the CPU's part pipelined under the GPU's frame (section 11; here it runs in turn), the probes kept by mesh
+  across edits (the session-only cache), the cameras of section 19.

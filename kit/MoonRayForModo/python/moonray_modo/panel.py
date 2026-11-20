@@ -1918,6 +1918,17 @@ class Panel(Tools, QtWidgets.QWidget):
         drags, opt-in); off, a drag is rendered once the mouse is let go."""
         return bool(self.preferences.get('moonlightipr/follow_drags'))
 
+    def _xpu2_drags(self):
+        """Whether XPU2 RT follows a drag of the viewport's camera step by step (Preview preferences, XPU2 RT follows
+        drags, opt-in): realtime with MoonRay's engine where XPU2 renders it. Each step is rendered as it comes, Rhea's
+        persistent probes carrying from one to the next; nothing is held at a first sample as MoonLightIPR holds it."""
+        if not self.preferences.get('xpu2/follow_drags'):return False
+        if self.preview_engine.currentData()!='moonray' or not self.ipr_mode.isChecked():return False
+        try:
+            from . import native
+            return bool(native.xpu2())
+        except Exception:return False
+
     def _moonlightipr_blur(self):
         """Whether MoonLightIPR shows motion blur: where the scene asks for it (_motion_wanted)."""
         return self._motion_wanted()
@@ -2815,12 +2826,15 @@ class Panel(Tools, QtWidgets.QWidget):
         # scene's meshes are kept and packed away from Modo's thread; anything else dragged is rendered once the mouse is
         # let go (below). Up to 0.5.3.1 every drag waited for the release: following one held Modo up more than it showed.
         ipr=self._engine()=='moonlightipr'
+        # XPU2 RT with Follow drags (_xpu2_drags): the viewport's camera is looked at during a drag as MoonLightIPR's is,
+        # and each step sent as a move of the camera alone.
+        xdrag=not ipr and self._xpu2_drags()
         if held and ipr and not self._ipr_drags():
             # Drags not followed (Follow drags off, the default): what Modo tells of waits for the release.
             self.release_timer.start();return
-        if not (held and ipr):
+        if not (held and (ipr or xdrag)):
             # The camera kept watched between drags (_camera_watch), where drags are followed; else forgotten.
-            if ipr and self._ipr_drags():self._camera_watch()
+            if (ipr and self._ipr_drags()) or xdrag:self._camera_watch()
             else:self._camera_seen=None
         self._drag_note(held and ipr)
         if held and ipr and not getattr(self,'_drag_frozen',False):
@@ -2847,7 +2861,7 @@ class Panel(Tools, QtWidgets.QWidget):
             full,items=self.changes.consume();time=lx.service.Selection().GetTime()
             # The camera looked through, moved by navigating a viewport that looks through it: Modo tells of that only
             # once the mouse is let go, so where it stands is looked at while MoonLightIPR follows a drag.
-            polled=self._camera_moved() if held and ipr and not full else set()
+            polled=self._camera_moved() if held and (ipr or xdrag) and not full else set()
             items|=polled
             # A drag the preview was kept from following, said now that Modo has told what it moved (_drag_note).
             if not held and getattr(self,'_drag_unfollowed',False):
@@ -2969,7 +2983,7 @@ class Panel(Tools, QtWidgets.QWidget):
                         self._live_still=still
                         scene=first if first is not None else self._capture()
             fast=None
-            if held and ipr and reuse in (True,'transforms') and getattr(self,'_kept_capture',None) is not None:
+            if held and (ipr or xdrag) and reuse in (True,'transforms') and getattr(self,'_kept_capture',None) is not None:
                 # Only where things stand made new in the scene sent last: the camera and meshes a drag moves.
                 from .incremental import move_only
                 fast=move_only(modo.Scene(),self._kept_capture,[identity for identity in items if identity not in polled],
@@ -2998,6 +3012,12 @@ class Panel(Tools, QtWidgets.QWidget):
                 # Host notices already establish a drag edit. Hash once after release, not on every move.
                 self._live_digest_pending=True
                 self.release_timer.start()
+                self._submit(scene,digest=('live-drag',object()))
+            elif fast is not None and xdrag:
+                # XPU2 RT: a step of the drag rendered as it comes (Rhea's frames), not held at a first sample; the drag's
+                # end is read the usual way once the mouse is let go (its moved items, below).
+                self._drag_count('sent')
+                self._drag_scene=fast
                 self._submit(scene,digest=('live-drag',object()))
             elif fast is not None:
                 self._drag_count('sent')
