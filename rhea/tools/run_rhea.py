@@ -21,7 +21,13 @@ LPE = ('RenderOutput("/rhea_emission") { ["file_name"]="rhea.exr", ["result"]=8,
        '["channel_name"]="rhea_direct", ["channel_format"]=0 }\n'
        # The surface's colour at the first hit, for demodulated light (rhea_engine.cc demod).
        'RenderOutput("/rhea_albedo") { ["file_name"]="rhea.exr", ["result"]=7, ["material_aov"]="albedo", '
-       '["channel_name"]="rhea_albedo", ["channel_format"]=0 }\n')
+       '["channel_name"]="rhea_albedo", ["channel_format"]=0 }\n'
+       # The nearest and farthest first-hit camera depths at each pixel (state variable 11, math filters min and max):
+       # the GPU's verification of persistent probes (persistent.h verify).
+       'RenderOutput("/rhea_depth_min") { ["file_name"]="rhea.exr", ["result"]=3, ["state_variable"]=11, ["math_filter"]=2, '
+       '["channel_name"]="rhea_depth_min", ["channel_format"]=0 }\n'
+       'RenderOutput("/rhea_depth_max") { ["file_name"]="rhea.exr", ["result"]=3, ["state_variable"]=11, ["math_filter"]=3, '
+       '["channel_name"]="rhea_depth_max", ["channel_format"]=0 }\n')
 
 FILMS = ('phase1', 'recon', 'phase2', 'direct2', 'final', 'classes', 'cells', 'samples2', 'leaves', 'geomerr')
 
@@ -79,6 +85,14 @@ def run(engine, ptx_build, scene, out, options, extra=None, reference=None, runt
         for prefix in ('accum-', 'naive-', 'xpu2-accum-'):
             names += sorted((f.stem for f in out.glob(prefix + '*.rgba') if f.stem[len(prefix):].isdigit()), key=lambda n: int(n.split('-')[-1]))
         report['errors'] = {n: errors(read_rgba(out / (n + '.rgba'), w, h), ref, w, h) for n in names}
+    # A moving camera's frames (seq_ref): Rhea's and XPU2's against an XPU2 frame of that camera at many samples.
+    for k in report.get('sequence', {}).get('scored', []):
+        mref = read_rgba(out / f'move-ref-{k}.rgba', w, h)
+        for who in ('rhea', 'xpu2'):
+            f = read_rgba(out / f'move-{who}-{k}.rgba', w, h)
+            report.setdefault('errors', {})[f'move-{who}-{k}'] = errors(f, mref, w, h)
+            write_png(out / f'move-{who}-{k}.png', f, w, h)
+        write_png(out / f'move-ref-{k}.png', mref, w, h)
     (out / 'report.json').write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
     return report
 

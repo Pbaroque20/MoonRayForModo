@@ -16,10 +16,12 @@
 //
 // Writes raw float32 RGBA films and prints one JSON report. No Modo API.
 #include "async_render.h"
+#include "persistent.h"
 #include "virtual_surface.h"
 #include <fstream>
 #include <iostream>
 #include <json/json.h>
+#include <map>
 #include <numeric>
 #include <thread>
 
@@ -35,7 +37,7 @@ struct Options {
     // nLo, nHi 0: by the probes' light (4 and 32 with direct-light probes, 2 and 16 with whole-light ones).
     unsigned threads = 12, probeSpp = 64, nLo = 0, nHi = 0, nBg = 1;
     int mode = 1, p1mode = 1;  // the GPU shades, the CPU does the geometry (the CPU lane in a gathered frame holds its end up)
-    double m0 = 128, tauR = 0.25, margin = -1;  // margin -1: from the pixel filter
+    double m0 = -1, tauR = 0.25, margin = -1;  // m0 -1: by the mode (accumPower below); margin -1: from the pixel filter
     rhea::SurfaceOptions surface;
     std::string override_;
     unsigned repeats = 3;            // timed runs after one warm-up
@@ -60,16 +62,33 @@ struct Options {
     // A sequence of frames along a camera path (DESIGN.md 11): frames, the camera's yaw swing in degrees (frame k at
     // swing sin(2 pi k / frames)), and XPU2's samples a pixel on the same path. Run in sequence, then pipelined (the CPU
     // prepares the next frame's geometry and finishes the last while the GPU renders this one).
-    unsigned frames = 0, seqXpu2 = 36, seqThreads = 4;
+    unsigned frames = 0, seqXpu2 = 36, seqThreads = 4;  // seqThreads: the pipelined CPU work's threads, below normal
+    // Moving frames scored (seq_ref, samples a pixel; 0 off): frames F/4, F/2 and F - 1 of the pipelined run, Rhea's and
+    // XPU2's, written beside an XPU2 frame of that camera at these samples (move-rhea-k, move-xpu2-k, move-ref-k).
+    unsigned seqRef = 0;
     // Jittered frames (DESIGN.md 13): each frame's probe lattice offset by the R2 sequence within a stride, and its
     // samples drawn afresh (the seed); accumulate: the still camera's running average written at 1, 2, 4, ... frames.
     bool jitter = false, accumulate = false;  // jitter: measured, off (RESULTS.md 11: costs 5-8% for a sliver of bias)
     // Accumulated frames: phase 1 counts as m K^accumPower samples over K frames against phase 2's sum of samples, so its
     // weight (and its bias) fades as phase 2's samples pile up (power < 1); 1 keeps a frame's weight, as averaging frames.
-    double accumPower = 0.5;
-    unsigned seed = 0;
-    unsigned floorSpp = 9;
-    bool demod = true;  // demodulated light (DESIGN.md 16): needs the albedo output (run_rhea.py adds it); one frame  // the floor's frame: XPU2's samples a pixel, every pixel (DESIGN.md 15)  // added to the scene's seed: every frame's samples drawn afresh (a reference independent of a run)  // seqThreads: the pipelined CPU work's threads, below normal
+    // -1: by the mode, 0.5 (and m0 128) for the quadtree's frames, 0 (and m0 32) for persistent probes, whose sums already
+    // hold the frames before (RESULTS.md 16).
+    double accumPower = -1;
+    unsigned seed = 0;       // added to the scene's seed: every frame's samples drawn afresh (a reference independent of a run)
+    unsigned floorSpp = 9;   // the floor's frame: XPU2's samples a pixel, every pixel (DESIGN.md 15)
+    bool demod = true;       // demodulated light (DESIGN.md 16): needs the albedo output (run_rhea.py adds it)
+    // Phase 2's samples a pixel in a frame, at most (DESIGN.md 17): frames stay cheap while the camera moves, and the
+    // picture converges at rest as frames accumulate. 0: no cap. The floor's frame too.
+    unsigned phase2Max = 2;
+    // Persistent probes in sequences (DESIGN.md 18): probes that live from frame to frame, triangulated each frame, the
+    // GPU's samples verifying the reconstruction; new probes only where asked for. keepSpp: a known probe's samples a
+    // frame (a new one takes probe_spp); fade: its light's sums times this when the camera has moved.
+    bool persist = false;
+    unsigned keepSpp = 4, cell = 8, gapPasses = 2;
+    // fade 0.8 held a moving camera's probes at about 20 samples, whose noise showed as blotches (RESULTS.md 16).
+    double fade = 0.95;
+    // A probe takes its pixel's light only where the frame's depths say every sample met its surface (ProbeField::absorb).
+    bool cleanAbsorb = true;
     double orbit = 0;
 };
 
@@ -149,6 +168,8 @@ int main(int argc, char** argv) {
             else if (k == "orbit") op.orbit = std::stod(v);
             else if (k == "seq_xpu2") op.seqXpu2 = unsigned(std::stoul(v));
             else if (k == "seq_threads") op.seqThreads = unsigned(std::stoul(v));
+            else if (k == "seq_ref") op.seqRef = unsigned(std::stoul(v));
+            else if (k == "clean_absorb") op.cleanAbsorb = v != "0";
             else if (k == "jitter") op.jitter = v != "0";
             else if (k == "accumulate") op.accumulate = v != "0";
             else if (k == "accum_power") op.accumPower = std::stod(v);
@@ -156,6 +177,12 @@ int main(int argc, char** argv) {
             else if (k == "floor_area") op.surface.floorArea = std::stod(v);
             else if (k == "floor_spp") op.floorSpp = unsigned(std::stoul(v));
             else if (k == "demod") op.demod = v != "0";
+            else if (k == "phase2_max") op.phase2Max = unsigned(std::stoul(v));
+            else if (k == "persist") op.persist = v != "0";
+            else if (k == "keep_spp") op.keepSpp = unsigned(std::stoul(v));
+            else if (k == "cell") op.cell = unsigned(std::stoul(v));
+            else if (k == "gap_passes") op.gapPasses = unsigned(std::stoul(v));
+            else if (k == "fade") op.fade = std::stod(v);
             else if (k == "curvature") op.curvature = v != "0";
             else if (k == "curv_span") op.curvSpan = std::stoi(v);
             else if (k == "override") op.override_ = v;
@@ -236,6 +263,13 @@ int main(int argc, char** argv) {
         if (!op.oneFrame || op.surface.lightPasses || op.cache) op.probeFull = 0;  // whole-light probes ride in phase 2's frame
         if (!op.nLo) op.nLo = op.probeFull ? 2 : 4;
         if (!op.nHi) op.nHi = op.probeFull ? 16 : 32;
+        const bool persistent = op.persist && op.frames;
+        if (op.m0 < 0) op.m0 = persistent ? 32 : 128;
+        if (op.accumPower < 0) op.accumPower = persistent ? 0 : 0.5;
+        if (op.phase2Max) {
+            op.nLo = std::min(op.nLo, op.phase2Max), op.nHi = std::min(op.nHi, op.phase2Max), op.nBg = std::min(op.nBg, op.phase2Max);
+            op.floorSpp = std::min(op.floorSpp, op.phase2Max);
+        }
         cpu::need(op.probeSpp >= 1 && op.probeSpp <= spp && op.nHi <= spp && op.nLo <= spp && op.nBg >= 1 && op.nLo >= 1,
                   "Sample counts must lie in [1, the scene's samples a pixel]");
         if (op.margin < 0) op.margin = std::max(1.0, 0.5 * plan->filterWidth + 0.5);
@@ -664,7 +698,8 @@ int main(int argc, char** argv) {
         o["s0"] = op.surface.s0, o["min_stride"] = op.surface.minStride, o["tol"] = op.surface.tol, o["margin"] = op.margin;
         o["probe_spp"] = op.probeSpp, o["n_lo"] = op.nLo, o["n_hi"] = op.nHi, o["n_bg"] = op.nBg;
         o["m0"] = op.m0, o["tau_r"] = op.tauR, o["rings"] = op.surface.rings, o["tris"] = op.surface.tris, o["coverage"] = op.surface.coverage;
-        o["light_tol"] = op.surface.lightTol, o["light_passes"] = op.surface.lightPasses, o["gather"] = op.gather, o["gather2"] = op.gather2, o["progressive"] = op.progressive, o["probe_full"] = op.probeFull, o["chunk"] = op.chunkSamples, o["one_frame"] = op.oneFrame, o["frames"] = op.frames, o["orbit"] = op.orbit, o["jitter"] = op.jitter, o["accumulate"] = op.accumulate, o["accum_power"] = op.accumPower, o["seed"] = op.seed, o["floor_area"] = op.surface.floorArea, o["floor_spp"] = op.floorSpp, o["demod"] = op.demod, o["curvature"] = op.curvature, o["curv_span"] = op.curvSpan;
+        o["light_tol"] = op.surface.lightTol, o["light_passes"] = op.surface.lightPasses, o["gather"] = op.gather, o["gather2"] = op.gather2, o["progressive"] = op.progressive, o["probe_full"] = op.probeFull, o["chunk"] = op.chunkSamples, o["one_frame"] = op.oneFrame, o["frames"] = op.frames, o["orbit"] = op.orbit, o["jitter"] = op.jitter, o["accumulate"] = op.accumulate, o["accum_power"] = op.accumPower, o["seed"] = op.seed, o["floor_area"] = op.surface.floorArea, o["floor_spp"] = op.floorSpp, o["demod"] = op.demod, o["phase2_max"] = op.phase2Max, o["persist"] = op.persist, o["keep_spp"] = op.keepSpp, o["seq_ref"] = op.seqRef, o["clean_absorb"] = op.cleanAbsorb, o["cell"] = op.cell,
+        o["gap_passes"] = op.gapPasses, o["fade"] = op.fade, o["curvature"] = op.curvature, o["curv_span"] = op.curvSpan;
         o["mode"] = op.mode, o["p1mode"] = op.p1mode, o["threads"] = op.threads;
         o["cache"] = op.cache, o["cache_p"] = op.cacheP, o["cache_tol"] = op.cacheTol, o["qmc_depth"] = op.qmcDepth, o["xpu2_qmc"] = op.xpu2Qmc;
         report["options"] = o;
@@ -719,19 +754,65 @@ int main(int argc, char** argv) {
             const unsigned F = op.frames, tilesAll = ((W + 7) / 8) * ((H + 7) / 8);
             const int offE = aovOffset(*plan, "/rhea_emission"), offD = aovOffset(*plan, "/rhea_direct");
             cpu::need(offE >= 0 && offD >= 0, "The scene needs the outputs /rhea_emission and /rhea_direct");
-            auto cameraAt = [&](unsigned k) {
-                surface::Camera c = plan->camera;
+            // Frame k's camera: the run's turned by a yaw in its own space (row vectors, so R on the left). XPU2's
+            // camera-only update (cpu_scene.h's camera update) moves more than the node transform: render space is the
+            // camera's (render2World, and worldToRender / world2render its inverse, which the depth output and the
+            // perspective rays' directions go through), and camera2Render / render2Camera turn with it. The yaw keeps
+            // the camera's place, so the render origin stays.
+            auto yawAt = [&](unsigned k, double R[4][4]) {
                 const double pi = 3.14159265358979323846;
                 const double a = op.orbit * pi / 180.0 * std::sin(2 * pi * double(k) / double(F));
                 const double cs = std::cos(a), sn = std::sin(a);
-                const double R[4][4] = {{cs, 0, -sn, 0}, {0, 1, 0, 0}, {sn, 0, cs, 0}, {0, 0, 0, 1}};  // yaw, camera space
+                const double r[4][4] = {{cs, 0, -sn, 0}, {0, 1, 0, 0}, {sn, 0, cs, 0}, {0, 0, 0, 1}};
+                for (int i = 0; i < 4; ++i)
+                    for (int j = 0; j < 4; ++j) R[i][j] = r[i][j];
+            };
+            auto turned = [](const double R[4][4], const surface::Matrix& m, bool conjugate) {
+                // R m, or R m R^T (conjugate: a matrix from camera space to camera space).
+                double a[4][4], b[4][4];
                 for (int i = 0; i < 4; ++i)
                     for (int j = 0; j < 4; ++j) {
-                        double v = 0;
-                        for (int q = 0; q < 4; ++q) v += R[i][q] * plan->camera.cameraToRender.m[q][j];
-                        c.cameraToRender.m[i][j] = float(v);
+                        a[i][j] = 0;
+                        for (int q = 0; q < 4; ++q) a[i][j] += R[i][q] * double(m.m[q][j]);
                     }
+                for (int i = 0; i < 4; ++i)
+                    for (int j = 0; j < 4; ++j) {
+                        b[i][j] = a[i][j];
+                        if (conjugate) {
+                            b[i][j] = 0;
+                            for (int q = 0; q < 4; ++q) b[i][j] += a[i][q] * R[j][q];
+                        }
+                    }
+                surface::Matrix out = m;
+                for (int i = 0; i < 4; ++i)
+                    for (int j = 0; j < 4; ++j) out.m[i][j] = float(b[i][j]);
+                return out;
+            };
+            auto cameraAt = [&](unsigned k) {
+                double R[4][4];
+                yawAt(k, R);
+                surface::Camera c = plan->camera;
+                c.cameraToRender = turned(R, plan->camera.cameraToRender, false);
+                c.render2World = turned(R, plan->camera.render2World, false);
+                c.camera2Render = turned(R, plan->camera.camera2Render, true);
+                c.render2Camera = turned(R, plan->camera.render2Camera, true);
                 return c;
+            };
+            auto placeCamera = [&](cpu::Plan& p, unsigned k) {
+                p.camera = cameraAt(k);
+                double R[4][4];
+                yawAt(k, R);
+                // world2render' = world2render R^T; worldToRender holds its 3 x 4 transpose (column vectors).
+                double w[4][4];
+                for (int i = 0; i < 4; ++i)
+                    for (int j = 0; j < 4; ++j) {
+                        w[i][j] = 0;
+                        for (int q = 0; q < 4; ++q) w[i][j] += plan->world2render[4 * i + q] * R[j][q];
+                    }
+                for (int i = 0; i < 4; ++i)
+                    for (int j = 0; j < 4; ++j) p.world2render[4 * i + j] = w[i][j];
+                for (int r = 0; r < 3; ++r)
+                    for (int c = 0; c < 4; ++c) p.worldToRender[4 * r + c] = float(w[c][r]);
             };
             struct Slot {
                 std::shared_ptr<cpu::Plan> plan;
@@ -739,10 +820,24 @@ int main(int argc, char** argv) {
                 rhea::VirtualSurface vs;
                 std::vector<unsigned> nCount, total;
                 std::vector<float> mWeight, recon, direct, final, albedo;
+                rhea::FieldFrame field;  // the persistent path's frame of probes (persist)
+                std::vector<float> depthMin, depthMax, wrec;
+                std::vector<uint8_t> fstate, verified;
+                bool moved = false;
+                double verifiedShare = 0, trustedShare = 0;
                 std::vector<uint8_t> cls;
                 async::RenderResult r;
                 double prepare = 0, render = 0, finish = 0;
+                unsigned k = 0;  // the frame
             };
+            // The moving frames scored (seq_ref): F/4, F/2 and F - 1, the pipelined run's finals and XPU2's frames kept.
+            std::vector<unsigned> scored;
+            if (op.seqRef)
+                for (unsigned k : {F / 4, F / 2, F - 1})
+                    if (k > 0 && std::find(scored.begin(), scored.end(), k) == scored.end()) scored.push_back(k);
+            auto isScored = [&](unsigned k) { return std::find(scored.begin(), scored.end(), k) != scored.end(); };
+            std::map<unsigned, std::vector<float>> rheaKept, xpu2Kept;
+            bool keepFinals = false;
             unsigned threads = op.threads;  // the CPU work's threads: all of them in sequence, seq_threads when pipelined
             auto regionInto = [&](Slot& s) {
                 const std::vector<uint8_t> bytes = rhea::pack(s.vs, float(op.tauR), op.curvature, op.curvSpan);
@@ -761,7 +856,7 @@ int main(int argc, char** argv) {
             auto prepare = [&](Slot& s, unsigned k) {
                 const auto t0 = Clock::now();
                 s.plan = std::make_shared<cpu::Plan>(*plan);
-                s.plan->camera = cameraAt(k);
+                placeCamera(*s.plan, k);
                 cpu::need(s.frame.init(s.plan->camera), "Camera frame");
                 rhea::SurfaceOptions so = op.surface;
                 so.threads = threads;
@@ -853,6 +948,114 @@ int main(int argc, char** argv) {
                 }
                 s.finish = since(t0);
             };
+            // The persistent path (persist): one field of probes for the whole sequence.
+            rhea::ProbeField field;
+            const int offDmin = aovOffset(*plan, "/rhea_depth_min"), offDmax = aovOffset(*plan, "/rhea_depth_max");
+            const int offAlb = aovOffset(*plan, "/rhea_albedo");
+            cpu::need(!op.persist || (offDmin >= 0 && offDmax >= 0), "Persistent probes need the outputs /rhea_depth_min and /rhea_depth_max");
+            auto fieldOptions = [&] {
+                rhea::FieldOptions fo;
+                fo.cell = std::max(2u, op.cell), fo.gapPasses = op.gapPasses, fo.tol = op.surface.tol;
+                fo.footprint = 0.5 * std::max(1.0, double(plan->filterWidth)), fo.tauR = op.tauR, fo.demod = op.demod, fo.threads = threads;
+                return fo;
+            };
+            Json::Value fieldLog(Json::arrayValue);
+            auto preparePersist = [&](Slot& s, unsigned k) {
+                const auto t0 = Clock::now();
+                s.plan = std::make_shared<cpu::Plan>(*plan);
+                placeCamera(*s.plan, k);
+                s.plan->seed = plan->seed + k * 7919u;
+                cpu::need(s.frame.init(s.plan->camera), "Camera frame");
+                s.moved = false;
+                if (k > 0) {
+                    const surface::Camera before = cameraAt(k - 1);
+                    for (int i = 0; i < 4; ++i)
+                        for (int j = 0; j < 4; ++j) s.moved = s.moved || before.cameraToRender.m[i][j] != s.plan->camera.cameraToRender.m[i][j];
+                }
+                field.prepare(*s.plan, cpuScene, fieldOptions(), k, s.field);
+                // Phase 2's samples: the cap's; the sky the last frame met, the background's.
+                s.nCount.assign(N, op.nHi);
+                for (size_t i = 0; i < N; ++i) {
+                    const int t = s.field.triOf[i];
+                    const unsigned x = unsigned(i % W), y = unsigned(i / W);
+                    if (t >= 0 && !s.field.triGap[t]) s.nCount[i] = op.nLo;
+                    else if (t < 0 && field.sky[size_t(y / std::max(2u, op.cell)) * field.cellsX + x / std::max(2u, op.cell)]) s.nCount[i] = op.nBg;
+                }
+                s.mWeight.assign(N, 0.0f);
+                s.total = s.nCount;
+                std::vector<unsigned> extra(N, 0);
+                for (size_t j = 0; j < s.field.ids.size(); ++j) {
+                    const size_t px = size_t(s.field.pixel[j]);
+                    extra[px] = std::max(extra[px], s.field.fresh[j] ? op.probeSpp : op.keepSpp);
+                }
+                for (size_t i = 0; i < N; ++i) s.total[i] += extra[i];
+                s.plan->pixelSamples = s.total;
+                if (!op.probeFull) s.plan->fullSamples = s.nCount;
+                s.plan->spp = *std::max_element(s.total.begin(), s.total.end());
+                s.plan->qmcDepth = op.qmcDepth;
+                std::vector<unsigned> order(N);
+                for (size_t i = 0; i < N; ++i) order[i] = unsigned(i);
+                std::stable_sort(order.begin(), order.end(), [&](unsigned a, unsigned b) { return s.total[a] > s.total[b]; });
+                s.plan->gather.assign(size_t(tilesAll) * 64, ~0u);
+                size_t step = 397;
+                while (std::gcd(step, size_t(tilesAll)) != 1) ++step;
+                for (size_t q = 0; q * 64 < N; ++q)
+                    for (size_t j = 0; j < 64 && q * 64 + j < N; ++j) s.plan->gather[((q * step) % tilesAll) * 64 + j] = order[q * 64 + j];
+                s.prepare = since(t0);
+            };
+            auto finishPersist = [&](Slot& s) {
+                const auto t0 = Clock::now();
+                const size_t stride = s.r.aov.size() / N;
+                s.direct.assign(N * 4, 0.0f), s.depthMin.assign(N, 0.0f), s.depthMax.assign(N, 0.0f);
+                const bool demod = op.demod && offAlb >= 0;
+                s.albedo.assign(demod ? N * 3 : 0, 0.0f);
+                for (size_t i = 0; i < N; ++i) {
+                    const float* av = &s.r.aov[i * stride];
+                    for (int c = 0; c < 3; ++c) s.direct[i * 4 + c] = av[offE + c] + av[offD + c];
+                    s.direct[i * 4 + 3] = 1;
+                    if (demod)
+                        for (int c = 0; c < 3; ++c) s.albedo[i * 3 + c] = av[offAlb + c];
+                    s.depthMin[i] = av[offDmin], s.depthMax[i] = av[offDmax];
+                }
+                const rhea::FieldOptions fo = fieldOptions();
+                field.absorb(s.field, op.probeFull ? s.r.rgba : s.direct, demod ? &s.albedo : nullptr, s.total, s.moved, op.fade,
+                             op.cleanAbsorb ? &s.depthMin : nullptr, op.cleanAbsorb ? &s.depthMax : nullptr, &fo);
+                field.reconstruct(s.field, fo, demod ? &s.albedo : nullptr, s.recon, s.wrec, s.fstate);
+                s.verifiedShare = field.verify(s.field, fo, s.depthMin, s.depthMax, s.verified);
+                size_t trusted = 0;
+                s.final.assign(N * 4, 0.0f);
+                for (size_t i = 0; i < N; ++i) {
+                    const bool use = s.fstate[i] == rhea::FieldTrusted && s.verified[i];
+                    trusted += use;
+                    const float m = use ? float(op.m0) : 0.0f;
+                    s.mWeight[i] = m;
+                    const float n = float(s.nCount[i]), Nt = float(s.total[i]), k = m / (m + Nt);
+                    for (int c = 0; c < 3; ++c) {
+                        const float d = s.direct[i * 4 + c], b = s.r.rgba[i * 4 + c];
+                        s.final[i * 4 + c] = op.probeFull ? b + k * (s.recon[i * 4 + c] - b) : Nt / n * (b - d) + (1 - k) * d + k * s.recon[i * 4 + c];
+                    }
+                    s.final[i * 4 + 3] = s.r.rgba[i * 4 + 3];
+                }
+                s.trustedShare = double(trusted) / double(N);
+                s.finish = since(t0);
+                Json::Value j;
+                j["frame"] = s.field.index, j["moved"] = s.moved, j["probes"] = Json::UInt64(s.field.ids.size());
+                j["visible"] = Json::UInt64(s.field.visible), j["spawned"] = Json::UInt64(s.field.spawned);
+                j["gap_spawned"] = Json::UInt64(s.field.gapSpawned), j["triangles"] = Json::UInt64(s.field.tris.size() / 3);
+                j["flips"] = Json::UInt64(s.field.flips), j["field_seconds"] = s.field.seconds, j["verified"] = s.verifiedShare;
+                j["trusted"] = s.trustedShare, j["field_total"] = Json::UInt64(field.probes.size()), j["mixed"] = Json::UInt64(field.mixed);
+                fieldLog.append(j);
+            };
+            auto prep = [&](Slot& s, unsigned k) {
+                s.k = k;
+                if (op.persist) preparePersist(s, k);
+                else prepare(s, k);
+            };
+            auto fin = [&](Slot& s) {
+                if (op.persist) finishPersist(s);
+                else finish(s);
+                if (keepFinals && isScored(s.k)) rheaKept[s.k] = s.final;
+            };
             auto median = [](std::vector<double> v) {
                 std::sort(v.begin(), v.end());
                 return v.empty() ? 0.0 : v[v.size() / 2];
@@ -874,6 +1077,8 @@ int main(int argc, char** argv) {
                     writeFloats(out / (prefix + std::to_string(count) + ".rgba"), avg);
                 };
             };
+            Clock::time_point rheaStart, xpu2Start;
+            Json::Value rheaMarks(Json::arrayValue), xpu2Marks(Json::arrayValue);  // [frames, seconds] at each written average
             auto naive = accumulator("naive-");
             auto accumulateXpu2 = accumulator("xpu2-accum-");
             // The convergent accumulation: each pixel's sums over the frames of its beauty and direct light (times their
@@ -894,12 +1099,17 @@ int main(int argc, char** argv) {
                     for (int c = 0; c < 3; ++c) {
                         acc.nb[i * 3 + c] += Nt * s.r.rgba[i * 4 + c];
                         acc.nd[i * 3 + c] += Nt * s.direct[i * 4 + c];
-                        acc.r1[i * 3 + c] += s.recon[i * 4 + c];
+                        acc.r1[i * 3 + c] = op.persist ? s.recon[i * 4 + c] * (acc.frames + 1) : acc.r1[i * 3 + c] + s.recon[i * 4 + c];
                     }
                     acc.n[i] += Nt, acc.nfull[i] += s.nCount[i], acc.m[i] += s.mWeight[i];
                 }
                 const unsigned K = ++acc.frames;
                 if (K & (K - 1)) return;
+                {
+                    Json::Value m(Json::arrayValue);
+                    m.append(K), m.append(since(rheaStart));
+                    rheaMarks.append(m);
+                }
                 const double grow = std::pow(double(K), op.accumPower);
                 std::vector<float> img(N * 4, 1.0f);
                 for (size_t i = 0; i < N; ++i) {
@@ -917,12 +1127,13 @@ int main(int argc, char** argv) {
             {
                 std::vector<double> period, pr, re, fi;
                 const auto t = Clock::now();
+                field = rhea::ProbeField{};
                 for (unsigned k = 0; k < F; ++k) {
                     const auto t0 = Clock::now();
                     Slot& s = slots[0];
-                    prepare(s, k);
+                    prep(s, k);
                     render(s);
-                    finish(s);
+                    fin(s);
                     period.push_back(since(t0)), pr.push_back(s.prepare), re.push_back(s.render), fi.push_back(s.finish);
                 }
                 Json::Value j;
@@ -934,18 +1145,22 @@ int main(int argc, char** argv) {
             {
                 std::vector<double> period, pr, re, fi;
                 const auto t = Clock::now();
-                prepare(slots[0], 0);
+                rheaStart = t;
+                field = rhea::ProbeField{};
+                fieldLog = Json::Value(Json::arrayValue);
+                keepFinals = true;
+                prep(slots[0], 0);
                 threads = std::max(1u, op.seqThreads);
                 auto mark = Clock::now();
                 for (unsigned k = 0; k < F; ++k) {
                     std::thread cpuWork([&] {
                         const rhea::LowPriorityWork low;  // below the renderer's threads, on its own pool
                         if (k > 0) {
-                            finish(slots[(k - 1) % 3]);
+                            fin(slots[(k - 1) % 3]);
                             if (k == 1) first = slots[0].final;
                             if (op.accumulate) accumulate(slots[(k - 1) % 3]);
                         }
-                        if (k + 1 < F) prepare(slots[(k + 1) % 3], k + 1);
+                        if (k + 1 < F) prep(slots[(k + 1) % 3], k + 1);
                     });
                     render(slots[k % 3]);
                     cpuWork.join();
@@ -956,8 +1171,9 @@ int main(int argc, char** argv) {
                     period.push_back(since(mark));
                     mark = Clock::now();
                 }
-                finish(slots[(F - 1) % 3]);
+                fin(slots[(F - 1) % 3]);
                 if (op.accumulate) accumulate(slots[(F - 1) % 3]);
+                keepFinals = false;
                 threads = op.threads;
                 if (F == 1) first = slots[0].final;
                 Json::Value j;
@@ -971,10 +1187,11 @@ int main(int argc, char** argv) {
             {
                 std::vector<double> period;
                 const auto t = Clock::now();
+                xpu2Start = t;
                 for (unsigned k = 0; k < F; ++k) {
                     const auto t0 = Clock::now();
                     auto px = std::make_shared<cpu::Plan>(*plan);
-                    px->camera = cameraAt(k);
+                    placeCamera(*px, k);
                     px->spp = op.seqXpu2;
                     px->seed = plan->seed + k * 7919u;
                     if (gpu) gpu->updateCamera(px);
@@ -985,7 +1202,15 @@ int main(int argc, char** argv) {
                     const async::RenderResult rx = renderer.render(o);
                     cpu::need(!rx.failed, rx.error.empty() ? "XPU2 sequence frame failed" : rx.error);
                     period.push_back(since(t0));
-                    if (op.accumulate) accumulateXpu2(rx.rgba);
+                    if (isScored(k)) xpu2Kept[k] = rx.rgba;
+                    if (op.accumulate) {
+                        accumulateXpu2(rx.rgba);
+                        if (!((k + 1) & k)) {
+                            Json::Value m(Json::arrayValue);
+                            m.append(k + 1), m.append(since(xpu2Start));
+                            xpu2Marks.append(m);
+                        }
+                    }
                 }
                 Json::Value j;
                 j["spp"] = op.seqXpu2;
@@ -993,6 +1218,28 @@ int main(int argc, char** argv) {
                 j["frame_median"] = median(period);
                 seq["xpu2"] = j;
             }
+            // The scored frames' references: XPU2 at seq_ref samples a pixel, seeded apart from both runs.
+            for (unsigned k : scored) {
+                auto px = std::make_shared<cpu::Plan>(*plan);
+                placeCamera(*px, k);
+                px->spp = op.seqRef;
+                px->seed = plan->seed + 1000003u + k * 7919u;
+                if (gpu) gpu->updateCamera(px);
+                async::RenderOptions o;
+                o.threads = op.threads;
+                o.mode = op.mode;
+                async::Renderer renderer(px, cpuScene, gpu.get());
+                const async::RenderResult rx = renderer.render(o);
+                cpu::need(!rx.failed, rx.error.empty() ? "XPU2 reference frame failed" : rx.error);
+                const std::string tag = std::to_string(k);
+                writeFloats(out / ("move-ref-" + tag + ".rgba"), rx.rgba);
+                writeFloats(out / ("move-rhea-" + tag + ".rgba"), rheaKept.at(k));
+                writeFloats(out / ("move-xpu2-" + tag + ".rgba"), xpu2Kept.at(k));
+                seq["scored"].append(k);
+            }
+            if (!scored.empty()) seq["reference_spp"] = op.seqRef;
+            if (op.accumulate) seq["rhea_marks"] = rheaMarks, seq["xpu2_marks"] = xpu2Marks;
+            if (op.persist) seq["field"] = fieldLog;
             report["sequence"] = seq;
         }
 

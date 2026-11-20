@@ -553,3 +553,60 @@ The user: "divide out the surface colour" (irradiance caching's practice): probe
 - **Option `demod`** (on): one frame and sequences. What it does not do: a surface whose light is not its colour times
   an irradiance (specular, emission) is scaled by the colour ratio between probes; the weight m / (m + N) is what
   corrects it.
+
+## 17. Phase 2 capped: convergence at rest (2026-11-20)
+
+The user: "the convergence should happen at rest, and phase 2 dominates, so then we should make phase two limited to
+1-2 samples".
+
+- **The cap** (`phase2_max`, 2): phase 2's samples a pixel in a frame, at most, whatever the probes say (`n_lo`, `n_hi`,
+  `n_bg` and the floor's `floor_spp` all clipped to it). A frame then costs about what XPU2's 2 samples cost, while the
+  camera moves.
+- **At rest** the frames accumulate (section 13): phase 2's samples pile up and phase 1's weight fades as
+  mean(m) K^p against them. With frames this cheap the weight phase 1 starts with (`m0`) and how it fades (`accum_power`)
+  decide the picture: a weight that stays too long keeps the interpolation's bias after the noise has gone.
+
+## 18. Persistent probes (2026-11-20)
+
+The user: "it would also be faster if the probes are persistent instead of recomputing each frame", "since the probes
+are persistent and reconstruct the geometry, there shouldnt be extra probes where geometry has already been discovered"
+(frame by frame). The reconstruction triangulates the persistent probes; a probe's light fades older samples when the
+camera moves; the GPU's own camera rays verify the reconstruction (`persist`, `rhea/persistent.h`).
+
+- **A probe** is a point on a plan mesh's triangle (mesh, triangle, barycentrics, its point) with its light and colour
+  summed over the frames it was sampled in, times their samples.
+- **Each frame, before the GPU** (the CPU, pipelined under the last frame): the known probes are lifted onto the new
+  camera's frame and kept where a camera ray at their raster point still meets their own triangle (a CPU ray each: what
+  lies in front of a probe is what hides it). New probes go only where the last frame asked for them: an 8 x 8 cell
+  (`cell`) whose verification failed, or one that holds no probe and did not meet sky. One a cell a frame, at a pixel
+  jittered by the frame, never within 2 pixels (`spacing`) of another.
+- **The triangulation:** the frame's probes by their raster points, Delaunay (`rhea/delaunay.h`: Delaunator's sweep-hull
+  insertion with Lawson flips, ISC license), then flipped to the Bregman Delaunay triangulation of the
+  inverse-depth lift: a convex quad takes the diagonal of the lower hull (`quadDiagonal`), a few passes. Where a
+  triangle's sandwich gap over its pixels passes the tolerance, a probe goes at its centre and the triangulation is made
+  again (`gap_passes`, 2). This is the quadtree's geometric convergence (section 2) on points that stay: a surface
+  already resolved takes no new probe.
+- **Samples:** a new probe's pixel takes `probe_spp` samples, a known one's `keep_spp` (4); phase 2 the cap's (section
+  17): `n_lo` inside triangles whose gap passed, `n_hi` elsewhere, `n_bg` in sky cells.
+- **After the frame:** each probe in it takes its pixel's light and colour, the sums first faded by `fade` (0.95) when
+  the camera has moved, so light that depends on the view follows. 0.8 was tried first: a moving camera's probes then
+  hold about 20 samples, and their noise showed as block error (RESULTS.md 16). A probe takes nothing where its pixel's
+  depths say the samples met more than its own surface (`clean_absorb`: the probe's tangent plane holds the pixel's
+  depth min and max, as in the verification below): a kept probe can come to lie in a pixel across an edge. The
+  reconstruction interpolates each pixel's light over its triangle, demodulated as section 16, and its inverse depth is
+  the triangle's plane.
+- **Verification on the GPU:** phase 2's own camera rays carry it. Two depth outputs (`/rhea_depth_min`,
+  `/rhea_depth_max`: the state variable depth with the min and max math filters) hold the nearest and farthest first hit
+  among the pixel's samples. A pixel passes where both lie within the triangle's plane over the pixel's footprint,
+  widened by the tolerance, or where no triangle is and no sample hit. A pixel that fails takes no phase 1 this frame
+  (m 0) and asks for a probe in its cell for the next. The radial scans and the CPU's exactness tests (coverage,
+  creases, occluders) have no part: what a pixel sees is what the GPU's samples meet.
+- **The combination** is section 12's or 7's with the latest reconstruction as phase 1; accumulated frames take it as it
+  stands now (its probes' sums already hold the frames before).
+- **A moving camera** is a yaw in the camera's own space: XPU2's camera holds render space beside its node transform
+  (`render2World`, `world2render` and its 3 x 4 form, which the depth outputs and the perspective rays' directions go
+  through), and the sequence turns all of them, as XPU2's camera-only update does.
+- **Defaults by mode:** with persistent probes phase 1 counts as `m0` 32 samples and its weight does not grow over
+  accumulated frames (`accum_power` 0): a probe's sums already hold the frames before (RESULTS.md 16).
+- What it does not do yet: a fade by how far a probe's light departs from its mean (not a fixed rate), pruning probes
+  that have left the frame for good, a floor, moving geometry (a probe is a point on a triangle at rest).

@@ -1,9 +1,16 @@
 # Rhea: results
 
-Machine: RTX 3090, i7-4930K (6 cores, 12 threads), 64 GB. Nothing else rendering during timed runs. All runs 2026-11-19.
+Machine: RTX 3090, i7-4930K (6 cores, 12 threads), 64 GB. Nothing else rendering during timed runs. Runs 2026-11-19 and 20.
 Rhea was named Sol, and before that "Bregman", earlier the same day; sections 2 to 5 are its first two steps.
 
 ## In short
+
+**Phase 2 capped, persistent probes (section 16).** Phase 2 takes at most 2 samples a pixel a frame; probes live from
+frame to frame, triangulated each frame (Delaunay, then Bregman flips), and phase 2's own camera rays verify the
+reconstruction. At rest a frame costs what XPU2's 2 samples cost, and after 32 frames the picture has XPU2's block
+error at 1.7 times less per-pixel error. Moving, **a frame every 0.041 s against XPU2's 0.037 to 0.040 s** (2 spp) at 3.4 to 4 times
+less per-pixel error and half the block error, and 20% faster than rebuilding the quadtree each frame at the same
+error.
 
 **The floor (section 14).** Where the first geometric pass converges little of the frame (Sponza: 8%), Rhea renders it
 as XPU2 does: on Sponza the same picture, and along a moving camera 5.71 s a frame against XPU2's 6.00 s. On the test
@@ -390,6 +397,8 @@ XPU2 renders the same path, a camera-only update each frame.
 - Frame 0 of every sequence is the single frame's picture exactly (relative MSE 2.379e-5, 1.399e-3): the pipeline
   changes nothing in what is rendered.
 - Still camera, 12 threads (`frames=24 orbit=0`): 0.127 s one after the other, 0.113 s pipelined.
+- These sequences turned only the camera's node transform, and the GPU kept frame 0's view (found and fixed in
+  section 16). Measured again with the camera turned whole: 0.103 s against 0.277 s, the timings stand.
 
 ## 10. Seventh step: diffuse bounces (2026-11-19)
 
@@ -554,7 +563,62 @@ DESIGN.md section 16. Medians of 3 timed runs on the test scene, 1 on Sponza (sc
   against XPU2's 6 s, and specular light scaled by the colour ratio shows as +0.16%. On Sponza the floor stays the
   default's choice.
 
-## 16. Open
+## 16. Phase 2 capped, persistent probes (2026-11-20)
+
+DESIGN.md sections 17 and 18. The test scene without diffuse bounces, phase 2 capped at 2 samples a pixel
+(`phase2_max`, the default), pipelined; relative MSE / block error. Medians of the frames' periods.
+
+**At rest** (32 still frames, `persist=1 frames=32 accumulate=1`), against the test scene's reference:
+
+| | Frames: 1 | 4 | 32 | Mean ratio, 32 | A frame |
+|---|---|---|---|---|---|
+| persistent, m0 128, power 0.5 | 9.36e-4 / 7.41e-4 | 2.54e-4 / 6.24e-4 | 6.92e-5 / 4.54e-4 | 0.99946 | 0.040 s |
+| m0 128, power 0 | | | 5.07e-5 / 3.50e-4 | 0.99962 | |
+| m0 32, power 0.5 | | | 5.18e-5 / 3.76e-4 | 0.99957 | |
+| **m0 32, power 0 (the persistent defaults)** | 9.43e-4 / 7.28e-4 | 2.70e-4 / 5.67e-4 | 6.74e-5 / **2.67e-4** | **0.99983** | 0.041 s |
+| XPU2, 2 spp a frame | 3.66e-3 / 1.39e-3 | 9.25e-4 / 7.41e-4 | 1.15e-4 / 2.70e-4 | 1.00006 | 0.038 s |
+
+- A frame costs what XPU2's 2 samples cost (the probes' extra samples, 4 a known probe, are a few thousand a frame).
+- After 32 frames Rhea's block error is XPU2's and its per-pixel error 1.7 times less. A persistent probe's sums
+  already hold every frame before, so phase 1 needs no growing weight: power 0 and a smaller m0 let phase 2's samples
+  take over the bias sooner. Frame 0 trusts 71.3% of the frame and verifies 97.6%; frame 31 72.5% and 98.5%. New
+  probes after frame 0 taper from 50 to 4 a frame (1,855 in all): the cells along silhouettes, where verification keeps
+  failing, fill in.
+
+**Moving** (24 frames, 10 degrees of yaw, `persist=1 frames=24 orbit=10 seq_ref=1024`): frames 6, 12 and 23 against
+XPU2 frames of the same cameras at 1024 samples a pixel.
+
+| | A frame | Relative MSE (6, 12, 23) | Block error (6, 12, 23) |
+|---|---|---|---|
+| persistent, keep_spp 4, fade 0.8 | 0.040 s | 1.16e-3, 8.9e-4, 9.4e-4 | 8.4e-4, 1.01e-3, 1.10e-3 |
+| keep_spp 16, fade 0.8 | 0.042 s | 1.14e-3, 8.6e-4, 9.0e-4 | 7.3e-4, 7.9e-4, 7.8e-4 |
+| keep_spp 8, fade 0.9 | 0.042 s | 1.14e-3, 8.7e-4, 9.1e-4 | 7.5e-4, 8.3e-4, 8.2e-4 |
+| **keep_spp 4, fade 0.95, clean absorb (the defaults)** | **0.041 s** | 1.15e-3, 8.8e-4, 9.1e-4 | **7.7e-4, 8.4e-4, 8.5e-4** |
+| the quadtree's frames (`persist=0`), capped | 0.050 s | 1.0e-3, 9.6e-4, 1.06e-3 | 7.0e-4, 8.3e-4, 8.1e-4 |
+| XPU2, 2 spp | 0.037-0.040 s | 3.96e-3, 3.63e-3, 3.68e-3 | 1.44e-3, 1.55e-3, 1.52e-3 |
+
+- **The camera fix first.** Sequences before build-35 turned only the camera's node transform. XPU2's perspective rays
+  take their directions through render space, and its depth output measures depth there too, so the GPU kept frame 0's
+  view. With the camera turned as XPU2's camera-only update turns it, the GPU verification passes 97.6 to 99.1% of
+  the pixels in every frame (27% before), and new probes fall from about 500 a frame to a median of 60.
+- **Persistent against the quadtree:** 20% less a frame (0.041 s against 0.050 s). The CPU's part is 20 ms against
+  43 ms, hidden under the GPU's frame either way; the GPU's render is 41 ms against 47 ms (no 64 samples for every
+  probe every frame). Same per-pixel error. The block error matches once the probes keep enough samples.
+- **Why fade 0.95:** at 0.8 a probe's sums settle at about 4 / (1 - 0.8) = 20 samples while the camera moves, and that
+  noise, spread across the probe's triangles, is block error (grown to 1.1e-3 by frame 23, spread over the frame, of
+  either sign). More samples a probe or a slower fade both bring it to the quadtree's. The slower fade costs nothing,
+  but light that depends on the view follows over about 20 frames instead of 5. This scene cannot measure that lag.
+- **Clean absorb** (`clean_absorb`, on): a probe takes its pixel's light only where the frame's depth min and max lie
+  on the probe's own plane. About 80 probes a frame (4%) sit in pixels across an edge. It changes the scores by under
+  1%; it is kept because it is right, and free.
+- Frame 12 reads 0.9991 against 0.9997 for the quadtree, but frame 0 (the same camera) reads 0.9994 for both, and the
+  quadtree's own frames 0 and 12 differ by 3.5e-4: the ratio's noise, not a drift.
+- **Pipelined sequences re-measured** with the fixed camera, uncapped (`persist=0 phase2_max=0`, section 9's
+  configuration): 0.103 s a frame against XPU2's 0.277 s (36 spp), the moving frames at relative MSE 2.5e-5 and block
+  error 3.8 to 4.2e-4 against XPU2's 4.7e-5 and 1.7 to 1.9e-4. With two diffuse bounces 0.142 s against 0.270 s
+  (9 spp), 1.2e-4 and 1.22 to 1.26e-3 against 1.23e-3 and 0.95 to 1.0e-3. Section 9's timings stand.
+
+## 17. Open
 
 - **The CPU's part, further:** suitability seeding for gathered frames, so the CPU lane could take the shading work
   that cannot hold the frame's end; on heavy scenes, the samples the GPU defers (as in XPU2).
@@ -565,6 +629,12 @@ DESIGN.md section 16. Medians of 3 timed runs on the test scene, 1 on Sponza (sc
   (the last frame's light in a sequence, or a probe frame of its own when frames are long); specular light kept apart
   from demodulation; patch limits that follow the window and cheaper crease and occluder tests (3.6 s on Sponza); a
   partial floor (probes only where the first pass converges, XPU2's samples elsewhere).
+- **Persistent probes, further** (section 16): a fade by how far a probe's new light departs from its mean beyond its
+  noise, not a fixed rate (view-dependent light would then follow at once, and diffuse light keep its samples); probes
+  pruned once they have left the frame for good; the floor and Sponza in persistent mode; diffuse bounces in
+  persistent mode (whole-light probes); moving geometry (a probe is a point on a triangle at rest).
+- **The denoiser's guide** (asked for): the virtual surface's normals and depth, with the albedo, as the guides of
+  XPU2's OptiX denoiser (`GpuLane::Denoiser`), against XPU2 denoised with its own guides.
 
 - **Silhouettes:** the largest share of the error is phase 2's noise in the 5% of pixels that never converge.
 - **The passes on the GPU,** the piece on the GPU, and T-junctions between leaves of different levels (DESIGN.md 8.5).
@@ -579,7 +649,7 @@ DESIGN.md section 16. Medians of 3 timed runs on the test scene, 1 on Sponza (sc
   Sponza (23 lights, 69% of the GPU's time in shadow rays) is where light sample reuse has the most to save.
 - The lift assumes a still perspective camera without depth of field; patches lose triangles crossing the near plane.
 
-## 17. Reproduce
+## 18. Reproduce
 
 ```bash
 python rhea/build_rhea.py [--gpu] --source . --runtime <MoonRayForModo-xpu2>/test-results/interactive-reference-042 --output test-results/rhea/build-N
@@ -588,6 +658,7 @@ python make_reference.py --build <MoonRayForModo-xpu2>/test-results/async-build-
 python run_rhea.py --engine <build-N> --ptx-build <a --gpu build> --scene <overflow>/scene.rdla --output <new folder> --reference <reference.rgba> repeats=5 xpu2_spp=16,36
 python class_errors.py <that folder> <reference.rgba>
 python summarize.py <run folders...>
+python build_delaunay_test.py <worktree> <new folder>   # then run the test it prints: the checks of rhea/delaunay.h
 ```
 
 `python` is `pythoncore-3.15` (not the Store one). The worktree needs `toolchain`, `build` and `upstream` junctioned from
@@ -595,11 +666,11 @@ the main checkout. `--gpu` builds the engine's own GPU program (with OpenQMC); i
 (about 13 minutes), into the `optix-cache` folder beside the run folders (`run_rhea.py` sets `OPTIX_CACHE_PATH`), never
 into the kit's. A host-only build can take an earlier `--gpu` build's program while the XPU2 sources it was built from
 are unchanged (section 6 used `build-4`, section 7 `build-9`). The engine's options and defaults: `s0` (8), `min_stride`
-(2), `tol` (0.002), `margin` (the pixel filter's reach), `probe_spp` (64), `probe_full` (-1: with diffuse bounces), `n_lo`, `n_hi` (by the probes: 2 and 16 whole-light, 4 and 32 direct), `n_bg` (1), `m0` (128),
+(2), `tol` (0.002), `margin` (the pixel filter's reach), `probe_spp` (64), `probe_full` (-1: with diffuse bounces), `n_lo`, `n_hi` (by the probes: 2 and 16 whole-light, 4 and 32 direct), `n_bg` (1), `m0` (128; 32 with persistent probes),
 `tau_r` (0.25), `rings`, `tris`, `curvature` (1), `curv_span` (4), `light_passes` (0), `light_tol` (0.02), `gather` (1),
-`gather2` (0), `one_frame` (1), `mode` (1: the GPU alone shades), `frames` (0: none), `orbit` (0), `seq_threads` (4), `seq_xpu2` (36), `accumulate` (0), `accum_power` (0.5), `jitter` (0), `floor_area` (0.3), `floor_spp` (9), `seed` (0), `coverage` (1), `demod` (1), `cache` (default off),
+`gather2` (0), `one_frame` (1), `mode` (1: the GPU alone shades), `frames` (0: none), `orbit` (0), `seq_threads` (4), `seq_xpu2` (36), `accumulate` (0), `accum_power` (0.5; 0 with persistent probes), `jitter` (0), `floor_area` (0.3), `floor_spp` (9), `seed` (0), `coverage` (1), `demod` (1), `phase2_max` (2: phase 2's samples a pixel at most, the floor's too; 0 no cap), `persist` (0), `keep_spp` (4), `cell` (8), `gap_passes` (2), `fade` (0.95), `clean_absorb` (1), `seq_ref` (0: the moving frames unscored), `cache` (default off),
 `cache_p` (0.25), `cache_tol` (0.02), `qmc_depth` (0: off), `xpu2_qmc` (XPU2's comparison frames with OpenQMC). Each run
 writes the films, `leaves.png`, `geomerr.png`, `depth.png` and `depth-true.png`, and the piece as `surface.rhea`.
 
-Sections 2 to 5 were measured with the first two steps' engine (fixed lattice, options `stride` and `n_mid`), at
+Sections 6 to 15 were measured before the phase 2 cap: `phase2_max=0` gives their configuration back. Sections 2 to 5 were measured with the first two steps' engine (fixed lattice, options `stride` and `n_mid`), at
 commits 861a81a0 and dbbcac7b.
