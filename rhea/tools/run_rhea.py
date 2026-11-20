@@ -69,6 +69,8 @@ def run(engine, ptx_build, scene, out, options, extra=None, reference=None, runt
     if reference:
         ref = read_rgba(reference, w, h)
         names = ['final', 'phase2', 'recon'] + [f'xpu2-{n}' for n in xpu2]
+        if (out / 'sequence-final.rgba').exists():
+            names.append('sequence-final')
         report['errors'] = {n: errors(read_rgba(out / (n + '.rgba'), w, h), ref, w, h) for n in names}
     (out / 'report.json').write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
     return report

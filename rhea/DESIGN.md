@@ -443,3 +443,23 @@ The user's choice: "go with the per-pixel depth limit". The engine was renamed R
   XPU2 itself is fastest on the GPU alone too.
 - **Kept for what needs the probes' light first:** light passes and the frame cache still run phase 1 in frames of its
   own (`one_frame=0` forces it).
+
+## 11. The CPU's part: pipelined frames (2026-11-19)
+
+The user asked what the CPU can contribute, since Rhea is built on XPU2 (whose CPU lane shares the picture with the
+GPU), and then: "build the pipelining". On the test scene the CPU lane renders a sample about ten times slower than
+the RTX 3090 (section 10), so sharing pixels gains little and can hold a frame's end up. Its part is the work that suits
+it: the geometry (the indexer, the probes' traces, the scans, the quads' tests: irregular, branching walks) and the
+frame's bookkeeping (the region pass, the combination). XPU2's deferral path (samples the GPU cannot render) stays as it
+is, for scenes that need it.
+
+**The pipeline** (`rhea_engine.cc`, option `frames`; `orbit` swings the camera's yaw over the run, `seq_xpu2` times XPU2
+on the same path): three frame slots turn round. While the GPU renders frame k, one CPU thread finishes frame k - 1
+(the probes' light from its direct-light outputs, the region pass, the combination) and prepares frame k + 1 (its
+geometric passes, states, samples and plan). The camera moves by its own transform each frame (render space stays,
+as XPU2's camera-only updates keep it).
+
+**Threads.** The pipelined CPU work runs on a pool of its own, 4 threads below normal priority (`seq_threads`,
+`LowPriorityWork`, one pool for each thread count and priority). On all 12 threads at normal priority it slowed the
+GPU's frames by 7 to 35 ms (the renderer's own host work shares the cores; its feeder already runs at the highest
+priority), and the pipeline lost on the scene with diffuse bounces.

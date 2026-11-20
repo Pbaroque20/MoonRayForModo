@@ -5,6 +5,10 @@ Rhea was named Sol, and before that "Bregman", earlier the same day; sections 2 
 
 ## In short
 
+**Sixth step, pipelined frames (section 9).** The CPU prepares the next frame's geometry and finishes the last on 4
+background threads while the GPU renders: along a moving camera, **a frame every 0.106 s against XPU2's 0.253 s** (36
+spp, at twice Rhea's error). With diffuse bounces 0.358 s against 0.271 s.
+
 **Fifth step, one frame (section 8).** Probes ride in phase 2's frame, their pixels taking extra samples that stop at the
 first hit (a depth limit per pixel in XPU2). Without diffuse bounces, on the GPU alone: **Rhea 0.13 s at relative MSE
 2.4e-5, mean ratio 0.9998; XPU2 0.27 s at 4.8e-5** (36 spp), in the same process. With diffuse bounces Rhea still trails
@@ -351,11 +355,33 @@ default is now the GPU alone for shading; the CPU does the geometry.
 **Two diffuse bounces** (n_lo 8): 0.364 to 0.372 s at 1.40e-3 (mean ratio 0.9998); XPU2 9 spp 0.253 to 0.265 s at 1.24e-3.
 Still behind: phase 2 takes 0.35 s for 7.5 full paths a pixel plus the probes, more than XPU2's dense 9.
 
-## 9. Open
+## 9. Sixth step: the CPU's part, pipelined frames (2026-11-19)
 
-- **The CPU's part:** the geometry of the next frame while the GPU shades this one (realtime pipelining), the samples
-  the GPU defers (as in XPU2), and suitability seeding for gathered frames so the CPU only takes work that cannot hold
-  the frame's end.
+DESIGN.md section 11. 24 frames along a camera path swinging 10 degrees of yaw, the defaults, the GPU alone shading;
+medians of the frames' periods. "One after the other" is the same frames with geometry, frame and bookkeeping in turn.
+XPU2 renders the same path, a camera-only update each frame.
+
+| | One after the other | Pipelined | The GPU's render in it | XPU2, same path |
+|---|---|---|---|---|
+| No diffuse bounces, 4 background threads | 0.128 s | **0.106 s** | 0.107 s, 0.106 s | 0.253 s (36 spp) |
+| the same, 2 threads | 0.136 s | 0.112 s | 0.111 s, 0.112 s | 0.266 s |
+| the same, 8 threads | 0.132 s | 0.113 s | 0.111 s, 0.113 s | 0.269 s |
+| the same, 12 threads at normal priority | 0.143 s | 0.135 s | 0.119 s, 0.129 s | 0.274 s |
+| Two diffuse bounces, 4 background threads | 0.380 s | **0.358 s** | 0.356 s, 0.358 s | 0.271 s (9 spp) |
+| the same, 12 threads at normal priority | 0.352 s | 0.364 s | 0.329 s, 0.364 s | 0.276 s |
+
+- With 4 background threads the frame's period is the GPU's render: the geometry (31 ms there, 19 ms on 12 threads)
+  and the bookkeeping (4 ms) are hidden, and the render is not slowed. 17% off a frame without diffuse bounces, 6% with.
+- Against XPU2 on the same path at equal error: 0.106 s against 0.253 s a frame, 2.4 times faster, at half the error.
+  With diffuse bounces Rhea still trails (0.358 s against 0.271 s).
+- Frame 0 of every sequence is the single frame's picture exactly (relative MSE 2.379e-5, 1.399e-3): the pipeline
+  changes nothing in what is rendered.
+- Still camera, 12 threads (`frames=24 orbit=0`): 0.127 s one after the other, 0.113 s pipelined.
+
+## 10. Open
+
+- **The CPU's part, further:** suitability seeding for gathered frames, so the CPU lane could take the shading work
+  that cannot hold the frame's end; on heavy scenes, the samples the GPU defers (as in XPU2).
 - **Diffuse bounces:** phase 2's full paths cost more in Rhea's gathered frame than XPU2's dense ones; to find out why
   (gathered tiles' coherence, the deep tiles' tail).
 
@@ -372,7 +398,7 @@ Still behind: phase 2 takes 0.35 s for 7.5 full paths a pixel plus the probes, m
   Sponza (23 lights, 69% of the GPU's time in shadow rays) is where light sample reuse has the most to save.
 - The lift assumes a still perspective camera without depth of field; patches lose triangles crossing the near plane.
 
-## 10. Reproduce
+## 11. Reproduce
 
 ```bash
 python rhea/build_rhea.py [--gpu] --source . --runtime <MoonRayForModo-xpu2>/test-results/interactive-reference-042 --output test-results/rhea/build-N
@@ -390,7 +416,7 @@ into the kit's. A host-only build can take an earlier `--gpu` build's program wh
 are unchanged (section 6 used `build-4`, section 7 `build-9`). The engine's options and defaults: `s0` (8), `min_stride`
 (2), `tol` (0.002), `margin` (the pixel filter's reach), `probe_spp` (64), `n_lo` (4), `n_hi` (32), `n_bg` (1), `m0` (128),
 `tau_r` (0.25), `rings`, `tris`, `curvature` (1), `curv_span` (4), `light_passes` (0), `light_tol` (0.02), `gather` (1),
-`gather2` (0), `one_frame` (1), `mode` (1: the GPU alone shades), `cache` (default off),
+`gather2` (0), `one_frame` (1), `mode` (1: the GPU alone shades), `frames` (0: none), `orbit` (0), `seq_threads` (4), `seq_xpu2` (36), `cache` (default off),
 `cache_p` (0.25), `cache_tol` (0.02), `qmc_depth` (0: off), `xpu2_qmc` (XPU2's comparison frames with OpenQMC). Each run
 writes the films, `leaves.png`, `geomerr.png`, `depth.png` and `depth-true.png`, and the piece as `surface.rhea`.
 

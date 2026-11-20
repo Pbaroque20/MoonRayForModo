@@ -49,6 +49,11 @@ struct Options {
     bool cache = false;  // off by default: it needs the engine's own GPU program (build_rhea.py --gpu)
     double cacheP = 0.25, cacheTol = 0.02;
     unsigned qmcDepth = 0, xpu2Qmc = 0;
+    // A sequence of frames along a camera path (DESIGN.md 11): frames, the camera's yaw swing in degrees (frame k at
+    // swing sin(2 pi k / frames)), and XPU2's samples a pixel on the same path. Run in sequence, then pipelined (the CPU
+    // prepares the next frame's geometry and finishes the last while the GPU renders this one).
+    unsigned frames = 0, seqXpu2 = 36, seqThreads = 4;  // seqThreads: the pipelined CPU work's threads, below normal
+    double orbit = 0;
 };
 
 uint32_t mix(uint32_t a) {
@@ -119,6 +124,10 @@ int main(int argc, char** argv) {
             else if (k == "gather") op.gather = v != "0";
             else if (k == "gather2") op.gather2 = v != "0";
             else if (k == "one_frame") op.oneFrame = v != "0";
+            else if (k == "frames") op.frames = unsigned(std::stoul(v));
+            else if (k == "orbit") op.orbit = std::stod(v);
+            else if (k == "seq_xpu2") op.seqXpu2 = unsigned(std::stoul(v));
+            else if (k == "seq_threads") op.seqThreads = unsigned(std::stoul(v));
             else if (k == "curvature") op.curvature = v != "0";
             else if (k == "curv_span") op.curvSpan = std::stoi(v);
             else if (k == "override") op.override_ = v;
@@ -597,7 +606,7 @@ int main(int argc, char** argv) {
         o["s0"] = op.surface.s0, o["min_stride"] = op.surface.minStride, o["tol"] = op.surface.tol, o["margin"] = op.margin;
         o["probe_spp"] = op.probeSpp, o["n_lo"] = op.nLo, o["n_hi"] = op.nHi, o["n_bg"] = op.nBg;
         o["m0"] = op.m0, o["tau_r"] = op.tauR, o["rings"] = op.surface.rings, o["tris"] = op.surface.tris;
-        o["light_tol"] = op.surface.lightTol, o["light_passes"] = op.surface.lightPasses, o["gather"] = op.gather, o["gather2"] = op.gather2, o["one_frame"] = op.oneFrame, o["curvature"] = op.curvature, o["curv_span"] = op.curvSpan;
+        o["light_tol"] = op.surface.lightTol, o["light_passes"] = op.surface.lightPasses, o["gather"] = op.gather, o["gather2"] = op.gather2, o["one_frame"] = op.oneFrame, o["frames"] = op.frames, o["orbit"] = op.orbit, o["curvature"] = op.curvature, o["curv_span"] = op.curvSpan;
         o["mode"] = op.mode, o["p1mode"] = op.p1mode, o["threads"] = op.threads;
         o["cache"] = op.cache, o["cache_p"] = op.cacheP, o["cache_tol"] = op.cacheTol, o["qmc_depth"] = op.qmcDepth, o["xpu2_qmc"] = op.xpu2Qmc;
         report["options"] = o;
@@ -635,6 +644,208 @@ int main(int argc, char** argv) {
         report["phase2_cpu_samples"] = Json::UInt64(r2.cpuSamples);
         }  // runs
         report["runs"] = runs;
+
+        // A sequence of frames along a camera path, one frame each (probes in phase 2's frame), first one after the other,
+        // then pipelined: while the GPU renders frame k, a CPU thread finishes frame k - 1 (the probes' light, the region
+        // pass, the combination) and prepares frame k + 1 (its geometric passes, states, samples and plan). Three slots
+        // turn round. Frame 0 is the run's own camera; its final picture is written to check the pipeline changes nothing.
+        if (op.frames) {
+            cpu::need(!op.surface.lightPasses && !op.cache, "A sequence renders one frame each: no light passes, no frame cache");
+            const unsigned F = op.frames, tilesAll = ((W + 7) / 8) * ((H + 7) / 8);
+            const int offE = aovOffset(*plan, "/rhea_emission"), offD = aovOffset(*plan, "/rhea_direct");
+            cpu::need(offE >= 0 && offD >= 0, "The scene needs the outputs /rhea_emission and /rhea_direct");
+            auto cameraAt = [&](unsigned k) {
+                surface::Camera c = plan->camera;
+                const double pi = 3.14159265358979323846;
+                const double a = op.orbit * pi / 180.0 * std::sin(2 * pi * double(k) / double(F));
+                const double cs = std::cos(a), sn = std::sin(a);
+                const double R[4][4] = {{cs, 0, -sn, 0}, {0, 1, 0, 0}, {sn, 0, cs, 0}, {0, 0, 0, 1}};  // yaw, camera space
+                for (int i = 0; i < 4; ++i)
+                    for (int j = 0; j < 4; ++j) {
+                        double v = 0;
+                        for (int q = 0; q < 4; ++q) v += R[i][q] * plan->camera.cameraToRender.m[q][j];
+                        c.cameraToRender.m[i][j] = float(v);
+                    }
+                return c;
+            };
+            struct Slot {
+                std::shared_ptr<cpu::Plan> plan;
+                rhea::Frame frame;
+                rhea::VirtualSurface vs;
+                std::vector<unsigned> nCount, total;
+                std::vector<float> mWeight, recon, direct, final;
+                std::vector<uint8_t> cls;
+                async::RenderResult r;
+                double prepare = 0, render = 0, finish = 0;
+            };
+            unsigned threads = op.threads;  // the CPU work's threads: all of them in sequence, seq_threads when pipelined
+            auto regionInto = [&](Slot& s) {
+                const std::vector<uint8_t> bytes = rhea::pack(s.vs, float(op.tauR), op.curvature, op.curvSpan);
+                const rhea::SurfaceView view(bytes);
+                s.recon.assign(N * 4, 0.0f);
+                s.cls.assign(N, rhea::Truncated);
+                rhea::parallel(threads, H, [&](size_t y) {
+                    for (unsigned x = 0; x < W; ++x) {
+                        const size_t i = y * W + x;
+                        const rhea::PixelSurface ps = rhea::evaluate(view, int(x), int(y));
+                        for (int c = 0; c < 3; ++c) s.recon[i * 4 + c] = ps.rgb[c];
+                        s.cls[i] = ps.state;
+                    }
+                });
+            };
+            auto prepare = [&](Slot& s, unsigned k) {
+                const auto t0 = Clock::now();
+                s.plan = std::make_shared<cpu::Plan>(*plan);
+                s.plan->camera = cameraAt(k);
+                cpu::need(s.frame.init(s.plan->camera), "Camera frame");
+                rhea::SurfaceOptions so = op.surface;
+                so.threads = threads;
+                s.vs.build(*s.plan, cpuScene, s.frame, index, so);
+                regionInto(s);
+                s.nCount.assign(N, op.nHi);
+                s.mWeight.assign(N, 0.0f);
+                for (size_t i = 0; i < N; ++i) {
+                    if (s.cls[i] == rhea::Background) s.nCount[i] = op.nBg, s.mWeight[i] = float(op.m0);
+                    else if (s.cls[i] == rhea::Trusted) s.nCount[i] = op.nLo, s.mWeight[i] = float(op.m0);
+                }
+                s.total = s.nCount;
+                for (const auto& site : s.vs.sites) s.total[size_t(site.py) * W + site.px] += op.probeSpp;
+                s.plan->pixelSamples = s.total;
+                s.plan->fullSamples = s.nCount;
+                s.plan->spp = *std::max_element(s.total.begin(), s.total.end());
+                s.plan->qmcDepth = op.qmcDepth;
+                std::vector<unsigned> order(N);
+                for (size_t i = 0; i < N; ++i) order[i] = unsigned(i);
+                std::stable_sort(order.begin(), order.end(), [&](unsigned a, unsigned b) { return s.total[a] > s.total[b]; });
+                s.plan->gather.assign(size_t(tilesAll) * 64, ~0u);
+                size_t step = 397;
+                while (std::gcd(step, size_t(tilesAll)) != 1) ++step;
+                for (size_t q = 0; q * 64 < N; ++q)
+                    for (size_t j = 0; j < 64 && q * 64 + j < N; ++j) s.plan->gather[((q * step) % tilesAll) * 64 + j] = order[q * 64 + j];
+                s.prepare = since(t0);
+            };
+            auto render = [&](Slot& s) {
+                const auto t0 = Clock::now();
+                if (gpu) gpu->updateCamera(s.plan);
+                async::RenderOptions o;
+                o.threads = op.threads;
+                o.mode = op.mode;
+                {
+                    async::Renderer renderer(s.plan, cpuScene, gpu.get());
+                    s.r = renderer.render(o);
+                }
+                cpu::need(!s.r.failed, s.r.error.empty() ? "Sequence frame failed" : s.r.error);
+                s.render = since(t0);
+            };
+            auto finish = [&](Slot& s) {
+                const auto t0 = Clock::now();
+                const size_t stride = s.r.aov.size() / N;
+                s.direct.assign(N * 4, 0.0f);
+                for (size_t i = 0; i < N; ++i)
+                    for (int c = 0; c < 3; ++c) s.direct[i * 4 + c] = s.r.aov[i * stride + offE + c] + s.r.aov[i * stride + offD + c];
+                std::vector<int> all(s.vs.sites.size());
+                for (size_t i = 0; i < all.size(); ++i) all[i] = int(i);
+                s.vs.takeRadiance(s.direct, all);
+                regionInto(s);
+                s.final.assign(N * 4, 0.0f);
+                for (size_t i = 0; i < N; ++i) {
+                    const float m = s.cls[i] == rhea::Edge ? 0.0f : s.mWeight[i];
+                    const float n = float(s.nCount[i]), Nt = float(s.total[i]), k = m / (m + Nt);
+                    for (int c = 0; c < 3; ++c) {
+                        const float d = s.direct[i * 4 + c];
+                        s.final[i * 4 + c] = Nt / n * (s.r.rgba[i * 4 + c] - d) + (1 - k) * d + k * s.recon[i * 4 + c];
+                    }
+                    s.final[i * 4 + 3] = s.r.rgba[i * 4 + 3];
+                }
+                s.finish = since(t0);
+            };
+            auto median = [](std::vector<double> v) {
+                std::sort(v.begin(), v.end());
+                return v.empty() ? 0.0 : v[v.size() / 2];
+            };
+            Json::Value seq;
+            seq["frames"] = F;
+            seq["orbit_degrees"] = op.orbit;
+            std::vector<Slot> slots(3);
+            std::vector<float> first;
+            // One after the other.
+            {
+                std::vector<double> period, pr, re, fi;
+                const auto t = Clock::now();
+                for (unsigned k = 0; k < F; ++k) {
+                    const auto t0 = Clock::now();
+                    Slot& s = slots[0];
+                    prepare(s, k);
+                    render(s);
+                    finish(s);
+                    period.push_back(since(t0)), pr.push_back(s.prepare), re.push_back(s.render), fi.push_back(s.finish);
+                }
+                Json::Value j;
+                j["seconds"] = since(t);
+                j["frame_median"] = median(period), j["prepare_median"] = median(pr), j["render_median"] = median(re), j["finish_median"] = median(fi);
+                seq["serial"] = j;
+            }
+            // Pipelined.
+            {
+                std::vector<double> period, pr, re, fi;
+                const auto t = Clock::now();
+                prepare(slots[0], 0);
+                threads = std::max(1u, op.seqThreads);
+                auto mark = Clock::now();
+                for (unsigned k = 0; k < F; ++k) {
+                    std::thread cpuWork([&] {
+                        const rhea::LowPriorityWork low;  // below the renderer's threads, on its own pool
+                        if (k > 0) {
+                            finish(slots[(k - 1) % 3]);
+                            if (k == 1) first = slots[0].final;
+                        }
+                        if (k + 1 < F) prepare(slots[(k + 1) % 3], k + 1);
+                    });
+                    render(slots[k % 3]);
+                    cpuWork.join();
+                    const Slot& done = slots[k % 3];
+                    re.push_back(done.render);
+                    if (k + 1 < F) pr.push_back(slots[(k + 1) % 3].prepare);
+                    if (k > 0) fi.push_back(slots[(k - 1) % 3].finish);
+                    period.push_back(since(mark));
+                    mark = Clock::now();
+                }
+                finish(slots[(F - 1) % 3]);
+                threads = op.threads;
+                if (F == 1) first = slots[0].final;
+                Json::Value j;
+                j["seconds"] = since(t);
+                j["frame_median"] = median(period), j["prepare_median"] = median(pr), j["render_median"] = median(re), j["finish_median"] = median(fi);
+                j["threads"] = std::max(1u, op.seqThreads);
+                seq["pipelined"] = j;
+            }
+            writeFloats(out / "sequence-final.rgba", first);
+            // XPU2 on the same path: a camera move each frame (its camera-only update) and seq_xpu2 samples a pixel.
+            {
+                std::vector<double> period;
+                const auto t = Clock::now();
+                for (unsigned k = 0; k < F; ++k) {
+                    const auto t0 = Clock::now();
+                    auto px = std::make_shared<cpu::Plan>(*plan);
+                    px->camera = cameraAt(k);
+                    px->spp = op.seqXpu2;
+                    if (gpu) gpu->updateCamera(px);
+                    async::RenderOptions o;
+                    o.threads = op.threads;
+                    o.mode = op.mode;
+                    async::Renderer renderer(px, cpuScene, gpu.get());
+                    const async::RenderResult rx = renderer.render(o);
+                    cpu::need(!rx.failed, rx.error.empty() ? "XPU2 sequence frame failed" : rx.error);
+                    period.push_back(since(t0));
+                }
+                Json::Value j;
+                j["spp"] = op.seqXpu2;
+                j["seconds"] = since(t);
+                j["frame_median"] = median(period);
+                seq["xpu2"] = j;
+            }
+            report["sequence"] = seq;
+        }
 
         // XPU2 itself, in this process, timed as the phases are (the lane's configuration, the renderer, the frame):
         // the scene with n samples a pixel, for each n of xpu2_spp, warmed up once and then repeats times.

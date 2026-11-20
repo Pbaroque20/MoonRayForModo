@@ -26,11 +26,18 @@
 #pragma once
 #include "async_cpu.h"
 #include "scan.h"
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cstring>
 #include <functional>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <thread>
@@ -44,8 +51,18 @@ namespace resume = xpu2::interactive::resume;
 // of a pass's steps cost more than the steps' work (about 4 ms a step on Windows).
 class Pool {
 public:
-    explicit Pool(unsigned workers) {
-        for (unsigned i = 0; i < workers; ++i) threads.emplace_back([this] { loop(); });
+    // low: its workers below the normal priority (background work beside a GPU frame, sequence pipelining).
+    explicit Pool(unsigned workers, bool low = false) {
+        for (unsigned i = 0; i < workers; ++i)
+            threads.emplace_back([this, low] {
+                if (low) lowerPriority();
+                loop();
+            });
+    }
+    static void lowerPriority() {
+#if defined(_WIN32)
+        SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
+#endif
     }
     ~Pool() {
         {
@@ -101,10 +118,30 @@ private:
     }
 };
 
+// Work on a thread marked as background (LowPriorityWork) goes to pools of low priority. One pool per thread count and
+// priority, made when first asked for.
+inline thread_local bool backgroundWork = false;
+struct LowPriorityWork {
+    bool was = backgroundWork;
+    LowPriorityWork() {
+        backgroundWork = true;
+        Pool::lowerPriority();
+    }
+    ~LowPriorityWork() { backgroundWork = was; }
+};
+
 template <class F>
 void parallel(unsigned threads, size_t n, F f) {
-    static Pool pool(std::max(1u, threads) - 1);
-    pool.run(n, std::function<void(size_t)>(f));
+    static std::mutex m;
+    static std::map<std::pair<unsigned, bool>, std::unique_ptr<Pool>> pools;
+    Pool* pool;
+    {
+        std::lock_guard<std::mutex> l(m);
+        auto& slot = pools[{threads, backgroundWork}];
+        if (!slot) slot = std::make_unique<Pool>(std::max(1u, threads) - 1, backgroundWork);
+        pool = slot.get();
+    }
+    pool->run(n, std::function<void(size_t)>(f));
 }
 
 inline double secondsSince(std::chrono::steady_clock::time_point t) {
