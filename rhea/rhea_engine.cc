@@ -1,8 +1,8 @@
-// Sol: a probe tracer over XPU2's asynchronous renderer (sol/DESIGN.md).
+// Rhea: a probe tracer over XPU2's asynchronous renderer (rhea/DESIGN.md).
 //
-// sol_engine scene runtime ptx assets output [key=value ...]
+// rhea_engine scene runtime ptx assets output [key=value ...]
 //
-// Geometry. Sol's indexer (virtual_surface.h) reconstructs the frame's visible surface from probes in geometric passes:
+// Geometry. Rhea's indexer (virtual_surface.h) reconstructs the frame's visible surface from probes in geometric passes:
 //   a coarse quadtree of probes (stride s0), each probe's camera ray traced on the CPU (Embree) and its mesh scanned
 //   ring by ring (scan.h); a quad that has not converged within the tolerance (sandwich gap, the scans' topology, other
 //   geometry in front) splits for the next pass, down to min_stride. The result is the virtual surface: sites and quads,
@@ -33,19 +33,20 @@ namespace {
 
 struct Options {
     unsigned threads = 12, probeSpp = 64, nLo = 4, nHi = 32, nBg = 1;
-    int mode = 2, p1mode = 1;
+    int mode = 1, p1mode = 1;  // the GPU shades, the CPU does the geometry (the CPU lane in a gathered frame holds its end up)
     double m0 = 128, tauR = 0.25, margin = -1;  // margin -1: from the pixel filter
-    sol::SurfaceOptions surface;
+    rhea::SurfaceOptions surface;
     std::string override_;
     unsigned repeats = 3;            // timed runs after one warm-up
     std::vector<unsigned> xpu2Spp;  // XPU2 frames to time in the same process (samples a pixel)
     // Phase 2's frame cache (mixed::Config::frameCache): on, the chance a bounce that reaches it goes on, the depth
     // tolerance; OpenQMC past the first hit (qmc_depth: vertices of nonMirrorDepth below it), and in XPU2's frames too.
     bool gather = true;  // probe frames over gather tiles (Plan::gather; needs a GPU program with them)
+    bool oneFrame = true;  // probes and phase 2 in one frame (a depth limit per pixel, Plan::fullSamples)
     bool gather2 = false;  // phase 2 over gather tiles, its pixels sorted by their samples (no gain over per-tile depth)
     bool curvature = true;   // the reconstruction's second-order term (VirtualSurface::curvature)
     int curvSpan = 4;       // its second differences across neighbours this many strides away
-    bool cache = false;  // off by default: it needs the engine's own GPU program (build_sol.py --gpu)
+    bool cache = false;  // off by default: it needs the engine's own GPU program (build_rhea.py --gpu)
     double cacheP = 0.25, cacheTol = 0.02;
     unsigned qmcDepth = 0, xpu2Qmc = 0;
 };
@@ -78,8 +79,8 @@ int aovOffset(const cpu::Plan& plan, const std::string& name) {
     return -1;
 }
 
-// The states' colours in classes.png (sol::State order).
-const float palette[sol::States][3] = {{0.1f, 0.1f, 0.1f}, {0.2f, 0.8f, 0.3f}, {0.2f, 0.5f, 1.0f}, {0.0f, 0.8f, 0.8f}, {0.9f, 0.2f, 0.2f},
+// The states' colours in classes.png (rhea::State order).
+const float palette[rhea::States][3] = {{0.1f, 0.1f, 0.1f}, {0.2f, 0.8f, 0.3f}, {0.2f, 0.5f, 1.0f}, {0.0f, 0.8f, 0.8f}, {0.9f, 0.2f, 0.2f},
                                        {1.0f, 1.0f, 1.0f}, {0.8f, 0.2f, 0.9f}, {1.0f, 0.5f, 0.1f}, {0.9f, 0.8f, 0.2f}, {0.5f, 0.5f, 0.5f}};
 // A quadtree level's colour in leaves.png (coarse dark blue to fine yellow).
 const float levels[6][3] = {{0.10f, 0.15f, 0.45f}, {0.15f, 0.40f, 0.65f}, {0.20f, 0.60f, 0.55f}, {0.55f, 0.75f, 0.30f}, {0.95f, 0.85f, 0.25f},
@@ -117,6 +118,7 @@ int main(int argc, char** argv) {
             else if (k == "light_passes") op.surface.lightPasses = unsigned(std::stoul(v));
             else if (k == "gather") op.gather = v != "0";
             else if (k == "gather2") op.gather2 = v != "0";
+            else if (k == "one_frame") op.oneFrame = v != "0";
             else if (k == "curvature") op.curvature = v != "0";
             else if (k == "curv_span") op.curvSpan = std::stoi(v);
             else if (k == "override") op.override_ = v;
@@ -194,7 +196,7 @@ int main(int argc, char** argv) {
                   "Sample counts must lie in [1, the scene's samples a pixel]");
         if (op.margin < 0) op.margin = std::max(1.0, 0.5 * plan->filterWidth + 0.5);
         op.surface.margin = op.margin;
-        sol::Frame frame;
+        rhea::Frame frame;
         cpu::need(frame.init(plan->camera), "Camera frame");
         // The frame cache's lift on the device takes the camera transform as affine (three columns and a translation).
         cpu::need(std::fabs(frame.toCamera[0][3]) < 1e-9 && std::fabs(frame.toCamera[1][3]) < 1e-9 && std::fabs(frame.toCamera[2][3]) < 1e-9 &&
@@ -202,14 +204,14 @@ int main(int argc, char** argv) {
                   "An affine camera transform");
         const size_t N = size_t(W) * H;
 
-        // Sol's indexer: the geometry index, kept across frames (clusters now, topologies when a probe needs them).
-        sol::GeometryIndex index;
+        // Rhea's indexer: the geometry index, kept across frames (clusters now, topologies when a probe needs them).
+        rhea::GeometryIndex index;
         stamp = Clock::now();
         index.index(*plan, op.threads);
         report["index_seconds"] = since(stamp);
         report["index_clusters"] = Json::UInt64(index.clusterCount);
         Json::Value runs(Json::arrayValue);
-        sol::VirtualSurface vs;
+        rhea::VirtualSurface vs;
 
         // Run 0 warms up (texture tiles reach the card, topologies are made); runs 1..repeats are timed.
         for (unsigned rep = 0; rep <= op.repeats; ++rep) {
@@ -220,7 +222,10 @@ int main(int argc, char** argv) {
         vs.build(*plan, cpuScene, frame, index, op.surface);
         const double geometrySeconds = since(stamp);
 
-        // Phase 1: probe frames, the probes' direct light (max_depth 0, probe_spp samples a probe), each frame lighting
+        // One frame (DESIGN.md 10) unless light passes or the frame cache need the probes' light before phase 2.
+        const bool oneFrame = op.oneFrame && !op.surface.lightPasses && !op.cache;
+
+        // Phase 1 in frames of its own: probe frames, the probes' direct light (max_depth 0, probe_spp samples a probe), each frame lighting
         // the probes that have no light yet; between them, light passes split the quads whose light bends too much
         // (VirtualSurface::refineLight), whose new probes the next frame lights. A probe frame's pixels are gathered
         // into tiles (Plan::gather), spread over the grid's cells, so that its chunks hold probes and not empty pixels.
@@ -229,7 +234,7 @@ int main(int argc, char** argv) {
         unsigned probeFrames = 0;
         uint64_t p1Gpu = 0, p1Cpu = 0;
         std::vector<float> phase1(N * 4, 0.0f);
-        for (unsigned pass = 0;; ++pass) {
+        for (unsigned pass = 0; !oneFrame; ++pass) {
             const std::vector<int> which = vs.unlit();
             if (!which.empty()) {
                 auto p1 = std::make_shared<cpu::Plan>(*plan);
@@ -276,51 +281,62 @@ int main(int argc, char** argv) {
             if (!splits) break;
         }
 
-        // The piece: the virtual surface with the probes' light, packed; each pixel evaluated from it alone.
+        // The piece: the virtual surface with the probes' light, packed; each pixel evaluated from it alone. In one frame
+        // the first pass has the geometry alone (the states, and so phase 2's samples); the probes' light comes with the
+        // frame, and the region pass runs again.
         stamp = Clock::now();
-        const std::vector<uint8_t> piece = sol::pack(vs, float(op.tauR), op.curvature, op.curvSpan);
-        const sol::SurfaceView view(piece);
+        std::vector<uint8_t> piece;
         std::vector<float> recon(N * 4, 0.0f), wvis(N, 0.0f);
-        std::vector<uint8_t> cls(N, sol::Truncated), level(N, 0);
+        std::vector<uint8_t> cls(N, rhea::Truncated), level(N, 0);
         std::vector<int> ownerOf(N, -1), leafOf(N, -1);
-        sol::parallel(op.threads, H, [&](size_t y) {
-            for (unsigned x = 0; x < W; ++x) {
-                const size_t i = y * W + x;
-                const sol::PixelSurface p = sol::evaluate(view, int(x), int(y));
-                for (int c = 0; c < 3; ++c) recon[i * 4 + c] = p.rgb[c];
-                recon[i * 4 + 3] = 1;
-                wvis[i] = p.w;
-                cls[i] = p.state;
-                level[i] = uint8_t(std::min(p.level, 5));
-                ownerOf[i] = p.owner;
-                leafOf[i] = p.leaf;
-            }
-        });
+        auto regionPass = [&] {
+            piece = rhea::pack(vs, float(op.tauR), op.curvature, op.curvSpan);
+            const rhea::SurfaceView view(piece);
+            rhea::parallel(op.threads, H, [&](size_t y) {
+                for (unsigned x = 0; x < W; ++x) {
+                    const size_t i = y * W + x;
+                    const rhea::PixelSurface p = rhea::evaluate(view, int(x), int(y));
+                    for (int c = 0; c < 3; ++c) recon[i * 4 + c] = p.rgb[c];
+                    recon[i * 4 + 3] = 1;
+                    wvis[i] = p.w;
+                    cls[i] = p.state;
+                    level[i] = uint8_t(std::min(p.level, 5));
+                    ownerOf[i] = p.owner;
+                    leafOf[i] = p.leaf;
+                }
+            });
+        };
+        regionPass();
         // Each state's phase 2 samples and phase 1's weight.
         std::vector<float> mWeight(N, 0.0f);
         std::vector<unsigned> nCount(N, op.nHi);
-        uint64_t classCount[sol::States] = {};
         for (size_t i = 0; i < N; ++i) {
-            ++classCount[cls[i]];
             switch (cls[i]) {
-                case sol::Background: nCount[i] = op.nBg, mWeight[i] = float(op.m0); break;
-                case sol::Trusted: nCount[i] = op.nLo, mWeight[i] = float(op.m0); break;
+                case rhea::Background: nCount[i] = op.nBg, mWeight[i] = float(op.m0); break;
+                case rhea::Trusted: nCount[i] = op.nLo, mWeight[i] = float(op.m0); break;
                 default: nCount[i] = op.nHi, mWeight[i] = 0; break;
             }
         }
-        const double regionSeconds = since(stamp);
+        double regionSeconds = since(stamp);
 
-        // Phase 2: full paths, n(x) a pixel, with the direct light's two expressions.
+        // Phase 2: full paths, n(x) a pixel, with the direct light's two expressions. In one frame each probe's pixel
+        // also takes probe_spp samples past its n(x) full paths that stop at the first hit (Plan::fullSamples, a depth
+        // limit per pixel): its direct light output, over all its samples, is the probe's light.
         auto p2 = std::make_shared<cpu::Plan>(*plan);
-        p2->pixelSamples = nCount;
-        p2->spp = *std::max_element(nCount.begin(), nCount.end());
+        std::vector<unsigned> total = nCount;
+        if (oneFrame) {
+            for (const auto& s : vs.sites) total[size_t(s.py) * W + s.px] += op.probeSpp;
+            p2->fullSamples = nCount;
+        }
+        p2->pixelSamples = total;
+        p2->spp = *std::max_element(total.begin(), total.end());
         // Phase 2's pixels gathered by their samples (Plan::gather): sorted by count, most first, 64 to a tile in image
         // order, so a tile's pixels take the same samples and none waits on a deeper neighbour. The tiles are spread over
         // the grid's cells (a stride prime to their number), so the deep ones are not all in the first cells.
-        if (op.gather2) {
+        if (op.gather2 || oneFrame) {
             std::vector<unsigned> order(N);
             for (size_t i = 0; i < N; ++i) order[i] = unsigned(i);
-            std::stable_sort(order.begin(), order.end(), [&](unsigned a, unsigned b) { return nCount[a] > nCount[b]; });
+            std::stable_sort(order.begin(), order.end(), [&](unsigned a, unsigned b) { return total[a] > total[b]; });
             p2->gather.assign(size_t(tilesAll) * 64, ~0u);
             size_t step = 397;
             while (std::gcd(step, size_t(tilesAll)) != 1) ++step;
@@ -334,7 +350,7 @@ int main(int argc, char** argv) {
         if (op.cache) {
             auto cache = std::make_shared<std::vector<float>>(N * 4, 0.0f);
             for (size_t i = 0; i < N; ++i) {
-                if (cls[i] != sol::Trusted) continue;
+                if (cls[i] != rhea::Trusted) continue;
                 for (int k = 0; k < 3; ++k) (*cache)[i * 4 + k] = recon[i * 4 + k];
                 (*cache)[i * 4 + 3] = wvis[i];
             }
@@ -348,8 +364,8 @@ int main(int argc, char** argv) {
             std::copy(raster, raster + 8, p2->cacheRaster);
         }
         p2->qmcDepth = op.qmcDepth;
-        const int offEmit = aovOffset(*p2, "/sol_emission"), offDirect = aovOffset(*p2, "/sol_direct");
-        cpu::need(offEmit >= 0 && offDirect >= 0, "The scene needs the outputs /sol_emission and /sol_direct (run_sol.py adds them)");
+        const int offEmit = aovOffset(*p2, "/rhea_emission"), offDirect = aovOffset(*p2, "/rhea_direct");
+        cpu::need(offEmit >= 0 && offDirect >= 0, "The scene needs the outputs /rhea_emission and /rhea_direct (run_rhea.py adds them)");
         async::RenderOptions o2;
         o2.threads = op.threads;
         o2.mode = op.mode;
@@ -362,26 +378,56 @@ int main(int argc, char** argv) {
         }
         cpu::need(!r2.failed, r2.error.empty() ? "Phase 2 failed" : r2.error);
         const double phase2Seconds = since(stamp);
-
-        // The combination.
-        stamp = Clock::now();
         const size_t stride = r2.aov.size() / N;
         cpu::need(stride * N == r2.aov.size(), "AOV layout");
-        std::vector<float> direct2(N * 4, 0.0f), final(N * 4, 0.0f);
-        double samples2 = 0;
+        // The direct light over each pixel's samples (its full paths' first hits and its probe samples alike).
+        std::vector<float> direct2(N * 4, 0.0f);
         for (size_t i = 0; i < N; ++i) {
             const float* av = &r2.aov[i * stride];
-            const float n = float(nCount[i]), m = mWeight[i], k = m / (m + n);
-            samples2 += n;
-            for (int c = 0; c < 3; ++c) {
-                const float d = av[offEmit + c] + av[offDirect + c];
-                direct2[i * 4 + c] = d;
-                final[i * 4 + c] = r2.rgba[i * 4 + c] + k * (recon[i * 4 + c] - d);
-            }
+            for (int c = 0; c < 3; ++c) direct2[i * 4 + c] = av[offEmit + c] + av[offDirect + c];
             direct2[i * 4 + 3] = 1;
+        }
+        if (oneFrame) {
+            // The probes' light, then the region pass again with it (the radiance-edge rule can now judge, and lowers
+            // phase 1's weight there; phase 2's samples were set by the geometry).
+            stamp = Clock::now();
+            std::vector<int> all(vs.sites.size());
+            for (size_t i = 0; i < all.size(); ++i) all[i] = int(i);
+            vs.takeRadiance(direct2, all);
+            regionPass();
+            for (size_t i = 0; i < N; ++i)
+                if (cls[i] == rhea::Edge) mWeight[i] = 0;
+            regionSeconds += since(stamp);
+        }
+
+        // The combination. N(x) samples in all, n(x) of them full paths: the beauty's mean is (n (D + I) + (N - n) D) / N
+        // over the samples' direct light D and indirect light I, so I = N (beauty - D) / n from the full paths alone,
+        // and the direct light, D from all N, takes phase 1's reconstruction as before:
+        //   final = I + (1 - k) D + k R1,   k = m / (m + N).
+        // Without probe samples (N = n) it is B + k (R1 - D), the two-frame combination.
+        stamp = Clock::now();
+        std::vector<float> final(N * 4, 0.0f);
+        double samples2 = 0, probeSamples = 0;
+        uint64_t classCount[rhea::States] = {};
+        for (size_t i = 0; i < N; ++i) {
+            ++classCount[cls[i]];
+            const float n = float(nCount[i]), Nt = float(total[i]), m = mWeight[i], k = m / (m + Nt);
+            samples2 += n, probeSamples += Nt - n;
+            for (int c = 0; c < 3; ++c) {
+                const float d = direct2[i * 4 + c], indirect = Nt / n * (r2.rgba[i * 4 + c] - d);
+                final[i * 4 + c] = indirect + (1 - k) * d + k * recon[i * 4 + c];
+            }
             final[i * 4 + 3] = r2.rgba[i * 4 + 3];
         }
         const double combineSeconds = since(stamp);
+        if (oneFrame) {
+            ++probeFrames;  // the probes rode in phase 2's frame
+            for (const auto& s : vs.sites) {
+                const size_t px = size_t(s.py) * W + s.px;
+                for (int c = 0; c < 3; ++c) phase1[px * 4 + c] = direct2[px * 4 + c];
+                phase1[px * 4 + 3] = 1;
+            }
+        }
 
         {
             Json::Value t;
@@ -390,6 +436,7 @@ int main(int argc, char** argv) {
             t["phase1_sampling_seconds"] = phase1Sampling;
             t["light_seconds"] = lightSeconds;
             t["probe_frames"] = probeFrames;
+            t["one_frame"] = oneFrame;
             t["region_seconds"] = regionSeconds;
             t["phase2_seconds"] = phase2Seconds;
             t["phase2_sampling_seconds"] = r2.seconds;
@@ -405,8 +452,8 @@ int main(int argc, char** argv) {
                 j["new_sites"] = Json::UInt64(p.newSites);
                 j["sites"] = Json::UInt64(p.sites);
                 j["refined"] = Json::UInt64(p.refined);
-                for (int s = 0; s < sol::States; ++s)
-                    if (p.states[s]) j["leaves"][sol::stateName(s)] = Json::UInt64(p.states[s]);
+                for (int s = 0; s < rhea::States; ++s)
+                    if (p.states[s]) j["leaves"][rhea::stateName(s)] = Json::UInt64(p.states[s]);
                 j["trace_seconds"] = p.traceSeconds;
                 j["scan_seconds"] = p.scanSeconds;
                 j["test_seconds"] = p.testSeconds;
@@ -423,7 +470,7 @@ int main(int argc, char** argv) {
         // inverse depth and mesh against the reconstruction's where it converged.
         std::vector<float> wTrue(N, 0.0f);
         std::vector<uint32_t> gTrue(N, ~0u);
-        sol::parallel(op.threads, H, [&](size_t y) {
+        rhea::parallel(op.threads, H, [&](size_t y) {
             async::CpuBackend backend{cpuScene};
             for (unsigned x = 0; x < W; ++x) {
                 surface::Ray ray;
@@ -432,7 +479,7 @@ int main(int argc, char** argv) {
                 const resume::Hit h = backend.trace(ray);
                 if (h.geom == ~0u) continue;
                 const surface::V3 p{ray.origin.x + h.t * ray.direction.x, ray.origin.y + h.t * ray.direction.y, ray.origin.z + h.t * ray.direction.z};
-                const sol::D3 c = frame.camera(p);
+                const rhea::D3 c = frame.camera(p);
                 if (c.z < 0) wTrue[y * W + x] = float(1.0 / -c.z);
                 gTrue[y * W + x] = h.geom;
             }
@@ -442,14 +489,14 @@ int main(int argc, char** argv) {
         std::vector<float> geomerr(N * 4, 0.0f);
         for (size_t i = 0; i < N; ++i) {
             geomerr[i * 4 + 3] = 1;
-            if (cls[i] == sol::Background) {
+            if (cls[i] == rhea::Background) {
                 if (gTrue[i] != ~0u) {
                     ++backgroundWrong;
                     geomerr[i * 4 + 2] = 1;
                 }
                 continue;
             }
-            if (cls[i] != sol::Trusted && cls[i] != sol::Edge) continue;
+            if (cls[i] != rhea::Trusted && cls[i] != rhea::Edge) continue;
             ++trusted;
             const uint32_t g = vs.sites[ownerOf[i]].geom;
             if (gTrue[i] != g) {
@@ -508,11 +555,11 @@ int main(int argc, char** argv) {
         writeFloats(out / "geomerr.rgba", geomerr);
         writeFloats(out / "samples2.rgba", nmap);
         {
-            std::ofstream o(out / "surface.sol", std::ios::binary);
+            std::ofstream o(out / "surface.rhea", std::ios::binary);
             o.write(reinterpret_cast<const char*>(piece.data()), std::streamsize(piece.size()));
         }
 
-        uint64_t hit = 0, truncated = 0, trisSum = 0, ringsMax = 0, leafStates[sol::States] = {}, leavesTotal = 0;
+        uint64_t hit = 0, truncated = 0, trisSum = 0, ringsMax = 0, leafStates[rhea::States] = {}, leavesTotal = 0;
         for (const auto& s : vs.sites) {
             hit += s.hit;
             truncated += s.patch.truncated;
@@ -520,7 +567,7 @@ int main(int argc, char** argv) {
             ringsMax = std::max<uint64_t>(ringsMax, s.patch.rings);
         }
         // Why quads split (a split quad keeps the test it failed), and how much of the frame each pass left converged.
-        uint64_t refinedBy[sol::States] = {};
+        uint64_t refinedBy[rhea::States] = {};
         int deepest = 0;
         for (const auto& q : vs.quads) deepest = std::max(deepest, q.level);
         std::vector<double> convergedArea(size_t(deepest) + 1, 0.0);
@@ -530,11 +577,11 @@ int main(int argc, char** argv) {
                 continue;
             }
             ++leafStates[q.state], ++leavesTotal;
-            if (q.state != sol::Trusted && q.state != sol::Background) continue;
+            if (q.state != rhea::Trusted && q.state != rhea::Background) continue;
             for (size_t p = size_t(q.level); p < convergedArea.size(); ++p) convergedArea[p] += double(q.x1 - q.x0) * double(q.y1 - q.y0);
         }
-        for (int s = 0; s < sol::States; ++s)
-            if (refinedBy[s]) report["refined_by"][sol::stateName(s)] = Json::UInt64(refinedBy[s]);
+        for (int s = 0; s < rhea::States; ++s)
+            if (refinedBy[s]) report["refined_by"][rhea::stateName(s)] = Json::UInt64(refinedBy[s]);
         for (double a : convergedArea) report["converged_area_by_level"].append(a / (double(W - 1) * double(H - 1)));
         uint64_t welded = 0, borders = 0, nonManifold = 0, topoTris = 0, topologies = 0, meshBytes = 0;
         for (const auto& mi : index.meshes) {
@@ -550,7 +597,7 @@ int main(int argc, char** argv) {
         o["s0"] = op.surface.s0, o["min_stride"] = op.surface.minStride, o["tol"] = op.surface.tol, o["margin"] = op.margin;
         o["probe_spp"] = op.probeSpp, o["n_lo"] = op.nLo, o["n_hi"] = op.nHi, o["n_bg"] = op.nBg;
         o["m0"] = op.m0, o["tau_r"] = op.tauR, o["rings"] = op.surface.rings, o["tris"] = op.surface.tris;
-        o["light_tol"] = op.surface.lightTol, o["light_passes"] = op.surface.lightPasses, o["gather"] = op.gather, o["gather2"] = op.gather2, o["curvature"] = op.curvature, o["curv_span"] = op.curvSpan;
+        o["light_tol"] = op.surface.lightTol, o["light_passes"] = op.surface.lightPasses, o["gather"] = op.gather, o["gather2"] = op.gather2, o["one_frame"] = op.oneFrame, o["curvature"] = op.curvature, o["curv_span"] = op.curvSpan;
         o["mode"] = op.mode, o["p1mode"] = op.p1mode, o["threads"] = op.threads;
         o["cache"] = op.cache, o["cache_p"] = op.cacheP, o["cache_tol"] = op.cacheTol, o["qmc_depth"] = op.qmcDepth, o["xpu2_qmc"] = op.xpu2Qmc;
         report["options"] = o;
@@ -568,7 +615,7 @@ int main(int argc, char** argv) {
             report["light_passes"].append(j);
         }
         report["leaves"] = Json::UInt64(leavesTotal);
-        for (int s = 0; s < sol::States; ++s) report["leaf_states"][sol::stateName(s)] = Json::UInt64(leafStates[s]);
+        for (int s = 0; s < rhea::States; ++s) report["leaf_states"][rhea::stateName(s)] = Json::UInt64(leafStates[s]);
         report["topology"]["meshes"] = Json::UInt64(topologies);
         report["topology"]["triangles"] = Json::UInt64(topoTris);
         report["topology"]["welded_vertices"] = Json::UInt64(welded);
@@ -577,8 +624,9 @@ int main(int argc, char** argv) {
         report["piece_bytes"] = Json::UInt64(piece.size());
         report["frame_cache_bytes"] = Json::UInt64(N * 16);
         report["mesh_bytes"] = Json::UInt64(meshBytes);
-        for (int c = 0; c < sol::States; ++c) report["classes"][sol::stateName(c)] = double(classCount[c]) / double(N);
+        for (int c = 0; c < rhea::States; ++c) report["classes"][rhea::stateName(c)] = double(classCount[c]) / double(N);
         report["phase2_samples_per_pixel"] = samples2 / double(N);
+        report["probe_samples_in_phase2_per_pixel"] = probeSamples / double(N);
         report["phase1_probe_samples_per_pixel"] = double(vs.sites.size()) * op.probeSpp / double(N);
         report["timing"] = runs[rep];
         report["phase1_gpu_samples"] = Json::UInt64(p1Gpu);

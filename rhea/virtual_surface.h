@@ -1,7 +1,7 @@
-// Sol's indexer: geometry, not shading (sol/DESIGN.md, "Sol's indexer").
+// Rhea's indexer: geometry, not shading (rhea/DESIGN.md, "Rhea's indexer").
 //
 // XPU2's indexer classifies a scene's objects by the shading families they need and seeds each cell on the device
-// that renders them best. Sol's indexer does the same work for geometry:
+// that renders them best. Rhea's indexer does the same work for geometry:
 //
 //   - The geometry index (GeometryIndex): every plan mesh as clusters of 128 consecutive triangles with their bounds,
 //     and, once a probe stands on a mesh, its welded topology (scan.h). Kept across frames while the plan's mesh is
@@ -35,7 +35,7 @@
 #include <mutex>
 #include <thread>
 
-namespace sol {
+namespace rhea {
 
 namespace async = xpu2::interactive::async;
 namespace resume = xpu2::interactive::resume;
@@ -939,4 +939,4 @@ inline PixelSurface evaluate(const SurfaceView& v, int px, int py) {
     return out;
 }
 
-}  // namespace sol
+}  // namespace rhea

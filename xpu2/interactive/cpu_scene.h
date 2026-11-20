@@ -229,12 +229,15 @@ struct Plan {
     float textureDiffScale=1;
     // The camera's pixel sample map (uniform sampling): each pixel's sample count, rows from the bottom; empty: none.
     std::vector<unsigned> pixelSamples;
-    // Sol's phase 2 (mixed::Config's frameCache ... qmcDepth; sol/DESIGN.md): none in XPU2's own plans.
+    // Rhea's phase 2 (mixed::Config's frameCache ... qmcDepth; rhea/DESIGN.md): none in XPU2's own plans.
     std::shared_ptr<const std::vector<float>> frameCache;float cacheToCamera[12]={};float cacheRaster[8]={};
     float cacheContinue=1.0f,cacheDepthTolerance=0.02f;unsigned qmcDepth=0;
-    // Gather tiles (Sol, sol/DESIGN.md 9): each 8x8 tile's 64 pixels listed (~0u: none), so that a frame of scattered
+    // Gather tiles (Rhea, rhea/DESIGN.md 9): each 8x8 tile's 64 pixels listed (~0u: none), so that a frame of scattered
     // pixels (probes, or the pixels of one sample count) fills its tiles; empty: the image's own tiles, as always.
     std::vector<unsigned> gather;
+    // A depth limit per pixel (Rhea's one frame, rhea/DESIGN.md 10): each pixel's samples that are full paths, the rest
+    // stopping at the first hit (max_depth 0); empty: every sample a full path, as always.
+    std::vector<unsigned> fullSamples;
     // Motion blur (meshMotionSteps, camera_core.h's cameraAtTime) and the camera's shutter bias (the samples' times).
     MotionParams motion;float shutterBias=0;
     // The lights moving under motion blur (light_core.h's LightMotion, by light index), and each light's record at the

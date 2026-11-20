@@ -1,4 +1,4 @@
-// The radial topological scan (sol/DESIGN.md, section 2.3).
+// The radial topological scan (rhea/DESIGN.md, section 2.3).
 //
 // A plan mesh (cpu::MeshData) is positions and triangles that share vertices by index, after MoonRay's tessellation and
 // displacement. Its topology is built once: vertices welded by position (the tessellation splits a vertex where its
@@ -19,7 +19,7 @@
 #include <deque>
 #include <unordered_map>
 
-namespace sol {
+namespace rhea {
 
 namespace cpu = xpu2::interactive::cpu;
 
@@ -207,4 +207,4 @@ inline Patch scan(const Frame& f, const cpu::Plan& plan, const Topology& topo, u
     return p;
 }
 
-}  // namespace sol
+}  // namespace rhea

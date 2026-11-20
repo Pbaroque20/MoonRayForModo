@@ -1,4 +1,4 @@
-// Bregman Voronoi diagrams over the camera frame (sol/DESIGN.md, section 3).
+// Bregman Voronoi diagrams over the camera frame (rhea/DESIGN.md, section 3).
 //
 // The camera frame is the domain X of Boissonnat, Nielsen and Nock's Bregman Voronoi diagrams (DCG 2010, "the paper").
 // A camera-space point P lifts to (x, y, w): its raster position and its inverse depth w = 1 / depth. The lift is
@@ -19,7 +19,7 @@
 #include <cmath>
 #include <vector>
 
-namespace sol {
+namespace rhea {
 
 namespace surface = xpu2::interactive::surface;
 
@@ -170,4 +170,4 @@ inline double sandwichGap(double x, double y, double t, const Plane* h, int n, i
     return hi - lo;
 }
 
-}  // namespace sol
+}  // namespace rhea

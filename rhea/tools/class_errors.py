@@ -1,6 +1,6 @@
 """Where an engine run's error lies: signed error maps and the error by region class.
 
-class_errors.py <run_sol output> <reference.rgba>
+class_errors.py <run_rhea output> <reference.rgba>
 
 Writes err-recon.png, err-final.png and err-phase2.png (red: brighter than the reference, blue: darker, 10x) and prints,
 for each region class, its pixels, phase 1's mean signed error there and its share of the final image's relative MSE."""
@@ -11,7 +11,7 @@ from pathlib import Path
 
 from images import read_rgba, write_png_rgb
 
-# sol_engine.cc's palette, in sol::State order.
+# rhea_engine.cc's palette, in rhea::State order.
 CLASSES = {(0.1, 0.1, 0.1): 'background', (0.2, 0.8, 0.3): 'trusted', (0.2, 0.5, 1.0): 'gap', (0.0, 0.8, 0.8): 'crease',
            (0.9, 0.2, 0.2): 'disconnected', (1.0, 1.0, 1.0): 'boundary', (0.8, 0.2, 0.9): 'occluded', (1.0, 0.5, 0.1): 'edge',
            (0.9, 0.8, 0.2): 'miss', (0.5, 0.5, 0.5): 'truncated'}

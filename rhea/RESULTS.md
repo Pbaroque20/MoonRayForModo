@@ -1,21 +1,26 @@
-# Sol: results
+# Rhea: results
 
 Machine: RTX 3090, i7-4930K (6 cores, 12 threads), 64 GB. Nothing else rendering during timed runs. All runs 2026-11-19.
-Sol was the "Bregman" engine in sections 2 to 5 (its first two steps).
+Rhea was named Sol, and before that "Bregman", earlier the same day; sections 2 to 5 are its first two steps.
 
 ## In short
 
+**Fifth step, one frame (section 8).** Probes ride in phase 2's frame, their pixels taking extra samples that stop at the
+first hit (a depth limit per pixel in XPU2). Without diffuse bounces, on the GPU alone: **Rhea 0.13 s at relative MSE
+2.4e-5, mean ratio 0.9998; XPU2 0.27 s at 4.8e-5** (36 spp), in the same process. With diffuse bounces Rhea still trails
+(0.37 s at 1.4e-3 against 0.26 s at 1.24e-3).
+
 **Fourth step, shading (section 7).** Dense frames on XPU2's grid (each tile only as deep as its deepest pixel; probes
 packed 64 to a tile), 64 samples a probe, and the light's curvature in the reconstruction. On the overflow scene
-without diffuse bounces, in the same process: **Sol 0.156 s at relative MSE 2.7e-5, mean ratio 0.9998**, against XPU2's
+without diffuse bounces, in the same process: **Rhea 0.156 s at relative MSE 2.7e-5, mean ratio 0.9998**, against XPU2's
 0.255 s at 4.8e-5 (36 samples a pixel) and 0.135 s at 1.2e-4 (16): about 1.6 times faster at less error, or 4.4 times
 less error for 15% more time. Light passes (probes split where the light bends) were built and measured; on this
-scene they chase the probes' noise, and more samples a probe pay better. With diffuse bounces Sol still trails XPU2
+scene they chase the probes' noise, and more samples a probe pay better. With diffuse bounces Rhea still trails XPU2
 (0.38 s at 1.4e-3 against 0.25 s at 1.24e-3).
 
-**Third step, Sol's indexer (section 6).** Probes in geometric passes, coarse to fine, reconstruct the visible surface
+**Third step, Rhea's indexer (section 6).** Probes in geometric passes, coarse to fine, reconstruct the visible surface
 exactly within the tolerance: no converged pixel's depth is off by more than it, no converged pixel shows another mesh,
-no background pixel hides geometry. On the overflow scene without diffuse bounces Sol now beats XPU2 at equal error:
+no background pixel hides geometry. On the overflow scene without diffuse bounces Rhea now beats XPU2 at equal error:
 0.19 s at relative MSE 3.6e-5, against XPU2's 0.28 s at 4.8e-5 (36 samples a pixel), in the same process, with 2,528
 probes where the first step had 19,200. Its bias is higher than XPU2's (mean ratio 0.9994, block error 5.6e-4 against
 1.0001 and 1.8e-4): the light between coarse probes, which is the shading step's work. With diffuse bounces it still
@@ -45,7 +50,7 @@ what the camera sees, XPU2 already stratifies the dimensions that matter most, a
 - **Reference**: XPU2 at the scene's own 64 samples a pixel, 16 seeds averaged (`tools/make_reference.py`). Not a
   1024-sample render: MoonRay and XPU2 narrow a texture's filter as the samples a pixel grow, so a 1024-sample frame is
   sharper than the converged 64-sample one.
-- **Engine and XPU2 in one process** (the engine, `bregman_engine.exe` then, `sol_engine.exe` now: `... xpu2_spp=4,9,16,36,64`, driven by `tools/run_sol.py`):
+- **Engine and XPU2 in one process** (the engine, `bregman_engine.exe` then, `rhea_engine.exe` now: `... xpu2_spp=4,9,16,36,64`, driven by `tools/run_rhea.py`):
   the same lanes, the same clock (configuration upload, renderer, frame), one warm-up run then three timed, medians
   reported. XPU2's frames carry the engine's two light path outputs too, so they pay the same AOV cost.
 - Errors against the reference: relative MSE (MoonRay's: (t - r)^2 / (r^2 + 0.01)), 8 x 8 block error (bias shows
@@ -148,7 +153,7 @@ XPU2: 4 spp 0.12 s (3.07e-3), 9 spp 0.25 s (1.24e-3), 16 spp 0.44 s (5.9e-4), 36
 What was built is in DESIGN.md (the "second step"): a bounce landing on a surface phase 1 reconstructed takes phase 1's
 radiance and stops with probability 1 - p, else goes on carrying 1 / p less C (1 - p) / p (unbiased for any C); and
 OpenQMC's Owen-scrambled Sobol sampler for the light and BSDF samples past the first hit. Both in XPU2's shared
-integrator, off unless the engine sets them. The GPU program is the engine's own build (`build_sol.py --gpu`,
+integrator, off unless the engine sets them. The GPU program is the engine's own build (`build_rhea.py --gpu`,
 `XPU2_OPENQMC`), compiled by OptiX once (about 13 minutes) into a cache of its own (`OPTIX_CACHE_PATH`, 93 MB); the
 kit's shared OptiX cache was not written. With both switches off it gives the earlier numbers exactly.
 
@@ -180,9 +185,9 @@ first hit 0.117, 0.247, 0.423 s at 3.04e-3, 1.23e-3, 5.85e-4.
    0.378 s with every lookup rejected at its depth test, 0.396 s with lookups that go on). Not yet explained: the lookup
    is a few divisions and one read of a 1.2 MB table per bounce. It needs a GPU profile.
 
-## 6. Third step: Sol's indexer and geometric passes (2026-11-19)
+## 6. Third step: Rhea's indexer and geometric passes (2026-11-19)
 
-What was built is in DESIGN.md section 8: Sol's indexer handles geometry (mesh clusters and topology), and the probes
+What was built is in DESIGN.md section 8: Rhea's indexer handles geometry (mesh clusters and topology), and the probes
 reconstruct the visible surface in passes, a quadtree from the root stride s0 down to 2 pixels, a quad splitting until
 its reconstruction is the visible surface within the tolerance (sandwich gap 0.002 in relative inverse depth, the scans'
 connectivity and boundaries, no crease, nothing in front). Shading is unchanged from the first step: probe frame, then
@@ -246,13 +251,13 @@ XPU2: 4, 9, 16 spp in 0.12, 0.26, 0.44 s at 3.07e-3, 1.24e-3, 5.93e-4. Better th
 the indirect light's noise is phase 2's, and phase 2 on XPU2's grid pays for its sparse counts (8.1 samples a pixel on
 average cost more than XPU2's dense 9).
 
-| Leaves by level (s0 32: dark blue coarse to yellow fine) | States (s0 16) | Sol, s0 8 | Its error (x10) | Converged depth error (red: the tolerance) |
+| Leaves by level (s0 32: dark blue coarse to yellow fine) | States (s0 16) | Rhea, s0 8 | Its error (x10) | Converged depth error (red: the tolerance) |
 |---|---|---|---|---|
-| ![](images/sol-leaves-s32.png) | ![](images/sol-states-s16.png) | ![](images/sol-final-s8.png) | ![](images/sol-error-s8.png) | ![](images/sol-geomerr-s8.png) |
+| ![](images/rhea-leaves-s32.png) | ![](images/rhea-states-s16.png) | ![](images/rhea-final-s8.png) | ![](images/rhea-error-s8.png) | ![](images/rhea-geomerr-s8.png) |
 
-| The virtual surface's inverse depth | The truth | Sol with diffuse bounces (s0 16, n_lo 8) |
+| The virtual surface's inverse depth | The truth | Rhea with diffuse bounces (s0 16, n_lo 8) |
 |---|---|---|
-| ![](images/sol-depth-s8.png) | ![](images/sol-depth-true.png) | ![](images/sol-diffuse2-final-s16.png) |
+| ![](images/rhea-depth-s8.png) | ![](images/rhea-depth-true.png) | ![](images/rhea-diffuse2-final-s16.png) |
 
 State colours: green trusted, orange radiance edge, dark grey background, red probes on different surfaces, white a
 scan's boundary inside, purple other geometry in front, yellow some probes missed, blue the sandwich gap, cyan a crease,
@@ -314,15 +319,46 @@ there was; it stays off.
 
 **Two diffuse bounces** (defaults, n_lo 8): 0.378 s at 1.40e-3, mean ratio 0.9999; XPU2 9 spp 0.245 s at 1.24e-3.
 n_lo 4: 0.263 s at 3.27e-3 (XPU2 4 spp 0.117 s at 3.07e-3). The indirect light is phase 2's, and phase 2's samples cost
-Sol about what they cost XPU2.
+Rhea about what they cost XPU2.
 
-| Sol, the defaults | Its error (x10) | States | Leaves with light passes at 0.002 (s0 16) |
+| Rhea, the defaults | Its error (x10) | States | Leaves with light passes at 0.002 (s0 16) |
 |---|---|---|---|
-| ![](images/sol-shading-final.png) | ![](images/sol-shading-error.png) | ![](images/sol-shading-states.png) | ![](images/sol-light-leaves-l002.png) |
+| ![](images/rhea-shading-final.png) | ![](images/rhea-shading-error.png) | ![](images/rhea-shading-states.png) | ![](images/rhea-light-leaves-l002.png) |
 
-## 8. Open
+## 8. Fifth step: one frame (2026-11-19)
 
-- **One frame for both phases** (DESIGN.md 9.3): about 15 to 20 ms, a frame's fixed cost.
+DESIGN.md section 10: probes and phase 2 in one XPU2 frame, a probe's pixel taking 64 more samples that stop at the first
+hit (a depth limit per pixel, GPU program `build-15`, compiled once in 15 minutes into the private cache). Overflow
+scene without diffuse bounces, the defaults, medians of 5 timed runs, XPU2 on the GPU alone in the same process:
+
+| | Engine | Relative MSE | Mean ratio | Block error |
+|---|---|---|---|---|
+| Rhea, two frames (the fourth step) | 0.147 to 0.152 s | 2.71e-5 | 0.9998 | 4.1e-4 |
+| **Rhea, one frame** | **0.129 to 0.132 s** | **2.38e-5** | **0.9998** | 4.2e-4 |
+| XPU2 9 spp | 0.077 to 0.079 s | 3.50e-4 | | |
+| XPU2 16 spp | 0.122 to 0.126 s | 1.20e-4 | | |
+| XPU2 36 spp | 0.263 to 0.276 s | 4.82e-5 | 1.0001 | 1.8e-4 |
+
+About twice as fast as XPU2 at half its error. One frame saves the probe frame's fixed cost (about 19 ms), and its error
+is lower because a probe's pixel now combines all its samples' direct light. The probes stay unbiased (probe/direct
+1.0001 against the direct reference), the reconstruction as before (0.9996).
+
+**The CPU in the frame.** With the CPU lane on (`mode=2`), one frame took 0.182 to 0.190 s and two frames 0.164 to
+0.172 s: the CPU took about 40,000 deep probe and silhouette samples (a gathered frame's cells start as a checkerboard)
+and the frame waited for it. XPU2's own 16 spp frames were 0.150 to 0.180 s with the CPU against 0.13 s without. The
+default is now the GPU alone for shading; the CPU does the geometry.
+
+**Two diffuse bounces** (n_lo 8): 0.364 to 0.372 s at 1.40e-3 (mean ratio 0.9998); XPU2 9 spp 0.253 to 0.265 s at 1.24e-3.
+Still behind: phase 2 takes 0.35 s for 7.5 full paths a pixel plus the probes, more than XPU2's dense 9.
+
+## 9. Open
+
+- **The CPU's part:** the geometry of the next frame while the GPU shades this one (realtime pipelining), the samples
+  the GPU defers (as in XPU2), and suitability seeding for gathered frames so the CPU only takes work that cannot hold
+  the frame's end.
+- **Diffuse bounces:** phase 2's full paths cost more in Rhea's gathered frame than XPU2's dense ones; to find out why
+  (gathered tiles' coherence, the deep tiles' tail).
+
 - **Silhouettes:** the largest share of the error is phase 2's noise in the 5% of pixels that never converge.
 - **The passes on the GPU,** the piece on the GPU, and T-junctions between leaves of different levels (DESIGN.md 8.5).
 - **The frame cache where the camera sees what bounces reach.** An interior (a room, the camera inside) is where it
@@ -336,27 +372,27 @@ Sol about what they cost XPU2.
   Sponza (23 lights, 69% of the GPU's time in shadow rays) is where light sample reuse has the most to save.
 - The lift assumes a still perspective camera without depth of field; patches lose triangles crossing the near plane.
 
-## 9. Reproduce
+## 10. Reproduce
 
 ```bash
-python sol/build_sol.py [--gpu] --source . --runtime <MoonRayForModo-xpu2>/test-results/interactive-reference-042 --output test-results/sol/build-N
-cd sol/tools
+python rhea/build_rhea.py [--gpu] --source . --runtime <MoonRayForModo-xpu2>/test-results/interactive-reference-042 --output test-results/rhea/build-N
+cd rhea/tools
 python make_reference.py --build <MoonRayForModo-xpu2>/test-results/async-build-handoff1 --scene <overflow>/scene.rdla --output <new folder> [--extra <.rdla>]
-python run_sol.py --engine <build-N> --ptx-build <a --gpu build> --scene <overflow>/scene.rdla --output <new folder> --reference <reference.rgba> repeats=5 xpu2_spp=16,36
+python run_rhea.py --engine <build-N> --ptx-build <a --gpu build> --scene <overflow>/scene.rdla --output <new folder> --reference <reference.rgba> repeats=5 xpu2_spp=16,36
 python class_errors.py <that folder> <reference.rgba>
 python summarize.py <run folders...>
 ```
 
 `python` is `pythoncore-3.15` (not the Store one). The worktree needs `toolchain`, `build` and `upstream` junctioned from
 the main checkout. `--gpu` builds the engine's own GPU program (with OpenQMC); its first run compiles it with OptiX
-(about 13 minutes), into the `optix-cache` folder beside the run folders (`run_sol.py` sets `OPTIX_CACHE_PATH`), never
+(about 13 minutes), into the `optix-cache` folder beside the run folders (`run_rhea.py` sets `OPTIX_CACHE_PATH`), never
 into the kit's. A host-only build can take an earlier `--gpu` build's program while the XPU2 sources it was built from
 are unchanged (section 6 used `build-4`, section 7 `build-9`). The engine's options and defaults: `s0` (8), `min_stride`
 (2), `tol` (0.002), `margin` (the pixel filter's reach), `probe_spp` (64), `n_lo` (4), `n_hi` (32), `n_bg` (1), `m0` (128),
 `tau_r` (0.25), `rings`, `tris`, `curvature` (1), `curv_span` (4), `light_passes` (0), `light_tol` (0.02), `gather` (1),
-`gather2` (0), `cache` (default off),
+`gather2` (0), `one_frame` (1), `mode` (1: the GPU alone shades), `cache` (default off),
 `cache_p` (0.25), `cache_tol` (0.02), `qmc_depth` (0: off), `xpu2_qmc` (XPU2's comparison frames with OpenQMC). Each run
-writes the films, `leaves.png`, `geomerr.png`, `depth.png` and `depth-true.png`, and the piece as `surface.sol`.
+writes the films, `leaves.png`, `geomerr.png`, `depth.png` and `depth-true.png`, and the piece as `surface.rhea`.
 
 Sections 2 to 5 were measured with the first two steps' engine (fixed lattice, options `stride` and `n_mid`), at
 commits 861a81a0 and dbbcac7b.

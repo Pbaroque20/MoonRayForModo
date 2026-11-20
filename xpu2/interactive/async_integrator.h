@@ -2028,6 +2028,8 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
     // A pixel sample map gives each pixel its own count: its samples past it are not taken (computeTotalNumSamples).
     const U32 pixelSpp = c.pixelSamples ? c.pixelSamples[pixel] : c.spp;
     if (c.pixelSamples && index >= pixelSpp) return SampleStatus::Skip;
+    // A depth limit per pixel (Plan::fullSamples): a sample past the pixel's full paths stops at the first hit.
+    const U32 maxDepth = c.fullSamples && index >= c.fullSamples[pixel] ? 0u : c.maxDepth;
     const sample::Identity root{pixel, index, c.seed, 0};
     float x, y;
     surface::Ray camera;
@@ -2485,7 +2487,7 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
 
         // indirectFlags: the lobe types whose depth limits still allow a bounce.
         U32 indirectFlags = 0;
-        if (c.bsdfSamples > 0 && c.maxDepth > 0 && pv.depth < c.maxDepth) {
+        if (c.bsdfSamples > 0 && maxDepth > 0 && pv.depth < maxDepth) {
             if (pv.diffuseDepth < c.maxDiffuseDepth) indirectFlags |= shade::AllDiffuse;
             if (pv.glossyDepth < c.maxGlossyDepth) indirectFlags |= shade::AllGlossy;
             if (pv.mirrorDepth < c.maxMirrorDepth) indirectFlags |= shade::AllMirror;

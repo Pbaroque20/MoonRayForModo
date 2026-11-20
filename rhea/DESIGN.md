@@ -1,9 +1,9 @@
-# Sol: a probe tracer on XPU2
+# Rhea: a probe tracer on XPU2
 
-*Research note, 2026-11-19. Local branch only. Named Sol by the user on 2026-11-19 (the working name was "Bregman").*
+*Research note, 2026-11-19. Local branch only. Named Rhea by the user on 2026-11-19 (it was Sol earlier that day, and the working name "Bregman" before).*
 
 **Where it stands.** Sections 1 to 7 are the first two steps (the two phases, the frame cache, OpenQMC). Section 8 is
-the third: Sol's indexer, which handles geometry instead of shading, and reconstructs the visible surface in geometric
+the third: Rhea's indexer, which handles geometry instead of shading, and reconstructs the visible surface in geometric
 passes that converge within a tolerance. It replaces the fixed probe lattice of 2.1 and the rasterized region buffer of
 section 5. The shading changes come next.
 
@@ -39,7 +39,7 @@ new GPU program is needed for the first prototype:
 
 - **Phase 1, direct light at the probes:** an XPU2 frame whose plan has `maxDepth = 0` and `pixelSamples` = k at the
   probe pixels, 0 elsewhere. The CPU and GPU share it by cells as usual.
-- **Phase 1, scan and reconstruction:** new host code (`sol/`), run on the CPU lane's pool while the frame's GPU
+- **Phase 1, scan and reconstruction:** new host code (`rhea/`), run on the CPU lane's pool while the frame's GPU
   work drains; the reconstruction is per pixel arithmetic (section 3.3), cheap on either device.
 - **Phase 2:** an XPU2 frame with the scene's own depth limits and `pixelSamples` = n inside phase 2's regions, 0
   outside, with an LPE AOV for the first hit's direct light so the indirect part is `beauty - direct` per sample.
@@ -276,7 +276,7 @@ slower without diffuse bounces, about 1.7 times with them); the trusted reconstr
 samples a pixel and the bias vanished on average; the losses were sparse-frame overhead on XPU2's grid and, with
 indirect light, the noise phase 1 does not touch.
 
-## 8. Sol's indexer: geometry, not shading (third step, 2026-11-19)
+## 8. Rhea's indexer: geometry, not shading (third step, 2026-11-19)
 
 The user's direction: "repurpose the indexer to handle not shading, but geometry". Two observations: the indexer is
 "responsible to virtualize the geometry between the devices", and "the virtual geometry is reconstructed by the radial
@@ -287,16 +287,16 @@ on the topological/geometric level". Then the shading changes.
 structures, so paths and their bounces stay exact), and the geometric variance is the **sandwich gap**, with the radial
 scans deciding connectivity, silhouettes and saddles, where the bound does not hold.
 
-### 8.1 What XPU2's indexer does, and what Sol's does instead
+### 8.1 What XPU2's indexer does, and what Rhea's does instead
 
 XPU2's indexer (`xpu2/interactive/INDEXER.md`) classifies every scene object by the shading families it needs
 (`entity_classes.h`), routes it to the devices that can render it (`routing_index.h`), and seeds each cell of the work
 grid on the device that renders what it sees best, from a first-hit probe (`device_suit.h`). Its unit is the
 material; its question is "which device shades this?".
 
-Sol's indexer (`virtual_surface.h`) asks "what surface does the camera see, and how well do the probes know it?":
+Rhea's indexer (`virtual_surface.h`) asks "what surface does the camera see, and how well do the probes know it?":
 
-| | XPU2's indexer | Sol's indexer |
+| | XPU2's indexer | Rhea's indexer |
 |---|---|---|
 | Index | objects by shading family and device class | meshes as clusters of 128 triangles with their bounds, and their welded topology once a probe stands on them (`GeometryIndex`) |
 | First-hit probe | four camera rays a tile, to weigh devices | the probes themselves: a quadtree of camera rays, each with its radial scan |
@@ -415,5 +415,31 @@ A sample is still defined by its pixel and index, so these frames render exactly
   limit per pixel in the integrator (probe pixels direct only; a GPU program change) or probe pixels rendered as
   ordinary full paths whose direct-light outputs are the probes. Expected saving: a frame's fixed cost, about 15 to 20 ms.
 - **Silhouettes** now hold the largest share of the error: phase 2's own noise in the 5% of pixels that never converge.
-- **Indirect light** is still phase 2's alone, and with diffuse bounces Sol still trails XPU2.
+- **Indirect light** is still phase 2's alone, and with diffuse bounces Rhea still trails XPU2.
 - T-junctions between leaves of different levels; the piece on the GPU; the passes on the GPU.
+
+## 10. One frame: a depth limit per pixel (2026-11-19)
+
+The user's choice: "go with the per-pixel depth limit". The engine was renamed Rhea the same day.
+
+- **XPU2** (`Plan::fullSamples`, `mixed::Config::fullSamples`, `integratePaths`): each pixel's samples that are full
+  paths; a sample past them stops at the first hit (max_depth 0 for that sample alone). The one place the integrator
+  reads the depth limit now reads the sample's own. XPU2's plans have none.
+- **The frame.** The geometric passes give every pixel its state, and so its n(x) full paths (the radiance-edge rule,
+  the one rule that needs light, moved after the frame, where it only lowers phase 1's weight). A probe's pixel takes
+  probe_spp more samples past its n(x), first hit only. The frame's pixels are gathered by their total samples
+  (Plan::gather), so a tile's pixels take the same number.
+- **What comes back.** The direct-light outputs (C[<L.>O] + C[DGS][<L.>O]) average all N(x) samples of a pixel: D, from
+  the full paths' first hits and the probe samples alike. That is the probe's light at its pixel. The beauty's mean is
+  (n (D + I) + (N - n) D) / N, so the indirect light I = N (beauty - D) / n comes from the full paths alone. Then the
+  region pass runs with the probes' light, and
+      final = I + (1 - k) D + k R1,   k = m / (m + N),
+  which without probe samples (N = n) is the two-frame combination. It holds while a first-hit-only sample's beauty is
+  its direct-light outputs (true on the test scene: probe/direct 1.0001); subsurface or volume light at the first hit
+  would need its own expression in D.
+- **Devices.** A gathered frame skips the indexer's suitability seeding (its tiles are not the image's), so cells start
+  as a checkerboard and the CPU lane takes deep probe and silhouette tiles at about ten times the GPU's cost a sample:
+  the frame waits for it. The default is the GPU alone for shading (`mode=1`); the CPU does the geometry. On this scene
+  XPU2 itself is fastest on the GPU alone too.
+- **Kept for what needs the probes' light first:** light passes and the frame cache still run phase 1 in frames of its
+  own (`one_frame=0` forces it).

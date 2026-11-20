@@ -33,6 +33,9 @@ struct Config {path::Epoch epoch;surface::Camera camera;surface::V3 sky;U32 widt
     const U32* pixelSamples=nullptr;
     // Gather tiles (Plan::gather): a tile's 64 pixels listed, or none (the image's own tiles).
     const U32* gather=nullptr;
+    // A depth limit per pixel (Plan::fullSamples): each pixel's samples that are full paths; those past it stop at the
+    // first hit (max_depth 0, the direct light alone). None: every sample a full path.
+    const U32* fullSamples=nullptr;
     // Motion blur (enable_motion_blur): each sample at a time in the shutter (0 open, 1 close), bent by the camera's
     // mb_shutter_bias as Sampler::getPrimarySample bends it.
     U32 motionBlur=0;float shutterBias=0;

@@ -22,8 +22,8 @@ inline Config config(const cpu::PlanView& p){auto e=p->source->routing->epoch;Co
   c.invVolumeQuality=1.0f/p->volumeQuality;c.invVolumeShadowQuality=1.0f/p->volumeShadowQuality;
   for(int i=0;i<4;++i)c.viewport[i]=p->viewport[i];c.textureDiffScale=p->textureDiffScale;
   c.pixelSamples=p->pixelSamples.empty()?nullptr:p->pixelSamples.data();
-  c.gather=p->gather.empty()?nullptr:p->gather.data();
-  // Sol's phase 2 (host memory here; the GPU lane uploads the cache and the gather tiles, async_gpu.h uploadConfig).
+  c.gather=p->gather.empty()?nullptr:p->gather.data();c.fullSamples=p->fullSamples.empty()?nullptr:p->fullSamples.data();
+  // Rhea's phase 2 (host memory here; the GPU lane uploads the cache and the gather tiles, async_gpu.h uploadConfig).
   c.frameCache=p->frameCache&&!p->frameCache->empty()?p->frameCache->data():nullptr;
   for(int i=0;i<12;++i)c.cacheToCamera[i]=p->cacheToCamera[i];for(int i=0;i<8;++i)c.cacheRaster[i]=p->cacheRaster[i];
   c.cacheContinue=p->cacheContinue;c.cacheDepthTolerance=p->cacheDepthTolerance;c.qmcDepth=p->qmcDepth;

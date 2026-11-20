@@ -1,10 +1,10 @@
-"""Run Sol on a scene, write its films as PNGs and score them.
+"""Run Rhea on a scene, write its films as PNGs and score them.
 
-run_sol.py --engine <build_sol output> --ptx-build <async build> --scene <scene.rdla> --output <new folder>
+run_rhea.py --engine <build_rhea output> --ptx-build <async build> --scene <scene.rdla> --output <new folder>
                [--extra <.rdla over the scene>] [--reference <reference.rgba>] [--runtime <pinned reference>]
                [key=value ...]   (the engine's options: s0, min_stride, tol, probe_spp, n_lo, n_hi, n_bg, m0, tau_r, ...)
 
-The scene gets two light path outputs (/sol_emission C[<L.>O] and /sol_direct C[DGS][<L.>O], whose sum is a
+The scene gets two light path outputs (/rhea_emission C[<L.>O] and /rhea_direct C[DGS][<L.>O], whose sum is a
 path's direct light at its first hit) in an override written into the output folder, after --extra. Never installs or
 publishes anything."""
 import argparse
@@ -15,10 +15,10 @@ from pathlib import Path
 from images import errors, read_rgba, write_png
 from run_xpu2_baseline import REFERENCE, environment
 
-LPE = ('RenderOutput("/sol_emission") { ["file_name"]="sol.exr", ["result"]=8, ["lpe"]="C[<L.>O]", '
-       '["channel_name"]="sol_emission", ["channel_format"]=0 }\n'
-       'RenderOutput("/sol_direct") { ["file_name"]="sol.exr", ["result"]=8, ["lpe"]="C[DGS][<L.>O]", '
-       '["channel_name"]="sol_direct", ["channel_format"]=0 }\n')
+LPE = ('RenderOutput("/rhea_emission") { ["file_name"]="rhea.exr", ["result"]=8, ["lpe"]="C[<L.>O]", '
+       '["channel_name"]="rhea_emission", ["channel_format"]=0 }\n'
+       'RenderOutput("/rhea_direct") { ["file_name"]="rhea.exr", ["result"]=8, ["lpe"]="C[DGS][<L.>O]", '
+       '["channel_name"]="rhea_direct", ["channel_format"]=0 }\n')
 
 FILMS = ('phase1', 'recon', 'phase2', 'direct2', 'final', 'classes', 'cells', 'samples2', 'leaves', 'geomerr')
 
@@ -26,7 +26,7 @@ FILMS = ('phase1', 'recon', 'phase2', 'direct2', 'final', 'classes', 'cells', 's
 def run(engine, ptx_build, scene, out, options, extra=None, reference=None, runtime=REFERENCE):
     out = Path(out).resolve()
     out.mkdir(parents=True, exist_ok=False)
-    override = out / 'sol-override.rdla'
+    override = out / 'rhea-override.rdla'
     override.write_text((Path(extra).read_text(encoding='utf-8') if extra else '') + LPE, encoding='utf-8')
     exe = json.loads((Path(engine) / 'build.json').read_text(encoding='utf-8'))['exe']
     ptx = json.loads((Path(ptx_build) / 'build.json').read_text(encoding='utf-8'))['ptx']
@@ -43,7 +43,7 @@ def run(engine, ptx_build, scene, out, options, extra=None, reference=None, runt
     (out / 'engine.log').write_text(r.stdout + r.stderr, encoding='utf-8')
     lines = [l for l in r.stdout.splitlines() if l.startswith('{')]
     if not lines:
-        raise SystemExit('sol_engine failed: ' + r.stderr[-3000:])
+        raise SystemExit('rhea_engine failed: ' + r.stderr[-3000:])
     report = json.loads(lines[-1])
     report['exit_code'] = r.returncode
     w, h = report['width'], report['height']

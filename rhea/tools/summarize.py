@@ -1,6 +1,6 @@
 """One line per engine run: median times, errors against the reference, XPU2's frames beside it.
 
-summarize.py <run_sol output> [...]"""
+summarize.py <run_rhea output> [...]"""
 import json
 import sys
 from pathlib import Path

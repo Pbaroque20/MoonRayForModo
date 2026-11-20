@@ -326,7 +326,9 @@ public:
                 config.pixelSamples = reinterpret_cast<const U32*>(keep(plan->pixelSamples.data(), plan->pixelSamples.size() * sizeof(U32)));
             if (!plan->gather.empty())
                 config.gather = reinterpret_cast<const U32*>(keep(plan->gather.data(), plan->gather.size() * sizeof(U32)));
-            // Sol's phase 1 radiance over the frame (mixed::Config::frameCache).
+            if (!plan->fullSamples.empty())
+                config.fullSamples = reinterpret_cast<const U32*>(keep(plan->fullSamples.data(), plan->fullSamples.size() * sizeof(U32)));
+            // Rhea's phase 1 radiance over the frame (mixed::Config::frameCache).
             if (config.frameCache)
                 config.frameCache = reinterpret_cast<const float*>(keep(plan->frameCache->data(), plan->frameCache->size() * sizeof(float)));
             if (plan->cameraMap && config.camera.map) {
