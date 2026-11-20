@@ -88,6 +88,7 @@ class Animation:
         self.panel = types.SimpleNamespace(renderer=types.SimpleNamespace(moonlightipr_frame=None, buffers=buffers, moonlightipr=self.session),
                                            status=mock.MagicMock())
         self.shown, self.pictures, self.alphas, self.written = [], {'beauty': ('b',)}, {}, []
+        self.skies = []
         self.panel._moonlightipr_linear = lambda key: self.alphas.get(key)
 
     def _picture(self):
@@ -99,8 +100,9 @@ class Animation:
     def _show(self, wanted):
         self.shown.append(wanted)
 
-    def _write(self, linear, denoised=False, alpha=None):
+    def _write(self, linear, denoised=False, alpha=None, sky=None):
         self.written.append((linear, denoised, alpha))
+        self.skies.append(sky)
         return 'frame.exr' if not denoised else 'frame.denoised.exr'
 
     def stop(self):
@@ -130,7 +132,13 @@ class Settling(unittest.TestCase):
         self.assertEqual(a.written, [], 'nothing written before it comes')
         a.alphas['alpha'] = ('a',)
         a.settle(self.playblast)
+        # Then its Environment background, written beside it and taken out of its colour (premultiplied, as MoonRay's).
+        self.assertEqual(a.session.asked, [(9, 'alpha'), (4, 'environment_background')])
+        self.assertEqual(a.written, [], 'nothing written before it comes')
+        a.alphas['environment_background'] = ('s',)
+        a.settle(self.playblast)
         self.assertEqual(a.written, [(('b',), False, ('a',))])
+        self.assertEqual(a.skies, [('s',)])
         self.assertEqual(a.session.aov_now, (0, 'none'), 'the beauty looked at again')
 
     def test_with_the_denoiser_both_exrs_take_the_alpha(self):
@@ -142,7 +150,10 @@ class Settling(unittest.TestCase):
         self.assertEqual(a.session.asked, [(9, 'alpha')])
         a.alphas['alpha'] = ('a',)
         a.settle(self.playblast)
+        a.alphas['environment_background'] = ('s',)
+        a.settle(self.playblast)
         self.assertEqual(a.written, [(('b',), False, ('a',)), (('d',), True, ('a',))])
+        self.assertEqual(a.skies, [('s',), ('s',)])
 
     def test_alpha_unticked_in_render_settings_is_not_asked_for(self):
         # Render Settings' MoonLightIPR Outputs (AOVs): Alpha unticked, the frames are written without it.
@@ -157,6 +168,16 @@ class Settling(unittest.TestCase):
         a.settle(self.playblast)
         a.settle(self.playblast, times=1600)
         self.assertEqual(a.written, [(('b',), False, None)])
+
+    def test_no_environment_background_in_a_minute_writes_the_frame_with_the_sky_in_it(self):
+        a = self.fresh(False)
+        a.settle(self.playblast)
+        a.alphas['alpha'] = ('a',)
+        a.settle(self.playblast)
+        a.settle(self.playblast, times=1600)
+        self.assertEqual(a.written, [(('b',), False, ('a',))])
+        self.assertEqual(a.skies, [None])
+        self.assertEqual(a.session.aov_now, (0, 'none'))
 
 
 @unittest.skipUnless((RUNTIME / 'oiiotool.exe').is_file(), 'the staged runtime')
@@ -174,6 +195,29 @@ class Writing(unittest.TestCase):
             info = subprocess.run([str(RUNTIME / 'oiiotool.exe'), '--info', '-v', written], env=native.environment(RUNTIME),
                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT).stdout.decode(errors='replace')
             self.assertIn('R, G, B, A', info)
+
+    def test_its_sky_is_kept_beside_the_beauty_and_taken_out_of_it(self):
+        # A soft edge over a visible sky: beauty 0.5 = surface 0.3 + sky 0.2, alpha 0.25. The EXR is premultiplied as
+        # MoonRay's are (its colour 0.3, the sky its own channels); the PNG beside it straight (0.3 / 0.25, past white).
+        playblast = _playblast(self)
+        from moonray_modo import native
+        width, height = 4, 2
+
+        def grey(value):
+            return (width, height, struct.pack('<%df' % (width * height * 3), *([value] * width * height * 3)))
+        with tempfile.TemporaryDirectory() as folder:
+            a = types.SimpleNamespace(directory=Path(folder), prefix='frame', frame=1, digits=4, export_as={'type': 'tif32'}, denoise=False,
+                                      panel=types.SimpleNamespace(renderer=types.SimpleNamespace(active={'runtime': str(RUNTIME)}, buffers=None)))
+            written = playblast.MoonLightIPRAnimation._write(a, grey(0.5), alpha=grey(0.25), sky=grey(0.2))
+
+            def stats(path, channels):
+                done = subprocess.run([str(RUNTIME / 'oiiotool.exe'), '--no-autopremult', str(path), '--ch', channels, '--printstats'],
+                                      env=native.environment(RUNTIME), stdout=subprocess.PIPE, stderr=subprocess.STDOUT).stdout.decode(errors='replace')
+                return [float(v) for v in done.split('Stats Avg:', 1)[1].split('(float)')[0].split()]
+            self.assertEqual([round(v, 4) for v in stats(written, 'R,G,B,A')], [0.3, 0.3, 0.3, 0.25])
+            self.assertEqual([round(v, 4) for v in stats(written, ','.join('environment_background.' + c for c in 'RGB'))], [0.2, 0.2, 0.2])
+            tif = next(Path(folder).glob('*.tif'))
+            self.assertEqual([round(v, 4) for v in stats(tif, 'R,G,B,A')], [1.2, 1.2, 1.2, 0.25])
 
     def test_a_png_beside_it_keeps_the_alpha_the_exr_has(self):
         # A GUI check found the PNG of "OpenEXR, and PNG" written without its alpha, the EXR beside it with it.
