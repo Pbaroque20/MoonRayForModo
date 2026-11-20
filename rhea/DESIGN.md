@@ -685,4 +685,41 @@ say XPU2 Rhea active when realtime is on".
 - **Its XPU2:** Rhea's frames need XPU2's per-tile depth, gather tiles and first-hit-only samples (section 9, 10), so
   the kit's XPU2 GPU programs are this branch's: Compile XPU2 Shaders once more after installing.
 - Not yet: the CPU's part pipelined under the GPU's frame (section 11; here it runs in turn), the probes kept by mesh
-  across edits (the session-only cache), the cameras of section 19.
+  across edits (the session-only cache). The cameras: section 22.
+
+## 22. Rhea's cameras (2026-11-20)
+
+The user: "work on getting camera features compatible with rhea" (as MoonLightIPR draws them: perspective with depth of
+field and bokeh, orthographic, spherical, fisheye and dome, and motion blur).
+
+- **The view** (`rhea/view.h`, `rhea::View`, the persistent probes' camera; the quadtree keeps bvd.h's Frame): where a
+  trace-space point lands in the picture and its lifted depth w, the chief ray through a pixel (XPU2's own
+  `cameraSampleAt` at the lens' centre and the shutter's open), and a probe's tangent plane in the lifted space.
+  - Perspective: Frame's lift, from the camera's focal point (a stereo eye's, where perspectiveRay starts), w = 1 / depth.
+  - Orthographic: the picture is affine in camera space, so a plane stays a plane in (x, y, depth); w = 1 - depth / K,
+    K twice the farthest depth the scene's bounds reach from the camera, so w falls as depth grows and stays in (0, 1].
+  - Spherical, fisheye and dome (directional): a point's place is found from the camera's own rays by Gauss-Newton,
+    from where the probe was last seen (or a coarse grid of the picture's rays); w = 1 / distance; tangent planes by
+    the lifts of points a pixel apart on the probe's triangle. No plane stays a plane here: the GPU's verification is
+    what holds the reconstruction to the picture.
+  - Raster places are the picture's own: a render region's offset is taken out, as XPU2's rays put it in.
+- **Depth of field and motion blur** keep the pinhole at the lens' centre and the shutter's open. Where a pixel's
+  samples meet more than the triangle's plane holds (out of focus on a slanted surface, moving), its verification fails
+  and it is XPU2's samples alone; in focus and still, it is Rhea's.
+- **Verification** compares the depth outputs through the camera's own w (1 / depth, or 1 - depth / K).
+- **Cells that keep failing** (out of focus, moving, an edge) take no new probe once they hold four (`maxPerCell`):
+  more probes do not help there, and depth of field otherwise filled the frame with them.
+- **Phase 1's light summed by its weight.** At rest each frame adds phase 1's weight and its light times that weight;
+  the combination's light is their ratio. With the latest reconstruction and the weight of all frames, a pixel that
+  verified in some frames and not the latest took the weight of those frames and the latest reconstruction's light, 0
+  where it does not verify: out of focus, where verification comes and goes, the picture went 1.2% dark.
+- **One sequence at rest** (`Plan::sampleBase`, XPU2): each pixel's samples in a frame at rest continue those it had
+  (the frame's index plus its base, the seed held), so that the frames' samples stratify together as one frame's
+  would. Drawn afresh each frame (a new seed, indices from 0), five frames of 2, 4, 8, 16 and 32 samples were noisier
+  than XPU2's 32 in one go wherever phase 1 is not used. The sample map and the depth limit still read the frame's own
+  index. Empty, XPU2's frames are as they were.
+- **Directional cameras' phase 1 counts 8 samples** (`m0Directional`), not 32: their light interpolated over triangles
+  the lens bends carries a one-signed bias that at 32 showed against XPU2's at the same samples (RESULTS.md 18).
+- Refused (XPU2's frames as before): a bake camera, a dome's stereo eyes, an inside-out spherical camera.
+- Tried and left off: a pixel verifies only where its alpha is whole (misses leave no depth). It held back probes that
+  were right on the wide cameras, and the out-of-focus bias it was meant for was the summing above.

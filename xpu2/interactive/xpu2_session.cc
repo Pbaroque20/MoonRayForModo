@@ -3127,6 +3127,12 @@ int session(const Args& args, const fs::path& directory) {
                     if (geometry != rheaGeometry) rheaView.reset();
                     rheaGeometry = geometry;
                     rheaView.op.threads = std::max(1u, std::min(8u, unsigned(base.threads)));
+                    // Investigation switches: phase 1's weight (XPU2_SESSION_RHEA_M0; 0, Rhea's sample map with XPU2's
+                    // samples alone), the coverage rule (XPU2_SESSION_RHEA_COVERAGE=1: on), each frame's reconstruction
+                    // and masks written into a folder (XPU2_SESSION_RHEA_DEBUG).
+                    if (const char* m0 = std::getenv("XPU2_SESSION_RHEA_M0")) rheaView.op.m0 = rheaView.op.m0Directional = std::atof(m0);
+                    rheaView.op.coverage = envOn("XPU2_SESSION_RHEA_COVERAGE", false);
+                    if (const char* debug = std::getenv("XPU2_SESSION_RHEA_DEBUG")) rheaView.op.debugFolder = debug;
                     const double target = std::max(1u, scene.plan->spp);
                     const auto began = Clock::now();
                     async::GpuLane* lane = gpu && gpuUsable ? gpu.get() : nullptr;

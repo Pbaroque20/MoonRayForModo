@@ -13,7 +13,9 @@
 #pragma once
 #include "persistent.h"
 #include "async_render.h"
+#include <cstdio>
 #include <numeric>
+#include <string>
 
 namespace rhea {
 
@@ -29,10 +31,19 @@ struct RealtimeOptions {
     unsigned restMax = 32;
     unsigned cell = 8, gapPasses = 2;
     double m0 = 32;           // phase 1 counts as this many samples (accumulated: not growing, DESIGN.md 18)
+    // Spherical, fisheye and dome cameras: their light interpolated over triangles the lens bends, phase 1 counts for
+    // less (DESIGN.md 22: at 32 its one-signed bias showed against XPU2 at 32 samples; at 8 neither measure did).
+    double m0Directional = 8;
     double tauR = 0.25, tol = 0.002, fade = 0.95;
     bool demod = true, cleanAbsorb = true;
+    // A pixel verifies, or gives its probe light, only where its alpha is whole (off: on the test scene it held back
+    // probes that were right, and the out of focus bias it was meant for was not misses; DESIGN.md 22).
+    bool coverage = false;
     int probeFull = -1;       // -1: whole-light probes where the scene bounces diffusely
     unsigned threads = 4;     // the CPU's part (the field)
+    // An investigation: each frame's reconstruction, phase 1's mask (0 XPU2's alone, 0.5 verified, 1 phase 1 used) and
+    // the picture, written into this folder as raw floats (four a pixel, film order) by finish.
+    std::string debugFolder;
 };
 
 // Where Rhea's outputs lie in a pixel's AOV values (-1: missing).
@@ -62,12 +73,13 @@ inline RealtimeOutputs outputsOf(const cpu::Plan& plan) {
 inline std::string unsupported(const cpu::Plan& plan) {
     if (!plan.paths) return "not the path tracer";
     if (!plan.pixelSamples.empty()) return "a pixel sample map";
-    if (plan.camera.type != surface::CameraPerspective) return "not a perspective camera";
-    if (plan.camera.dof) return "depth of field";
-    if (plan.camera.motion) return "motion blur";
+    const surface::Camera& c = plan.camera;
+    if (c.type == surface::CameraBake) return "a bake camera";
+    if (c.type == surface::CameraDome && c.k[surface::DomeInterocular] != 0.0f) return "a dome's stereo eyes";
+    if (c.type == surface::CameraSpherical && (c.flags & surface::SphInsideOut)) return "an inside-out spherical camera";
     if (!outputsOf(plan).complete()) return "the scene lacks Rhea's outputs";
-    Frame f;
-    if (!f.init(plan.camera)) return "the camera's frame";
+    View v;
+    if (!v.init(c, plan.width, plan.height)) return "the camera's view";
     return "";
 }
 
@@ -119,7 +131,17 @@ public:
         outputs = outputsOf(b);
         filterWidth = b.filterWidth;
         auto plan = std::make_shared<cpu::Plan>(b);
-        plan->seed = b.seed + frame * 7919u;
+        // A moved camera starts each pixel's sequence anew (its own seed); at rest the frames go on with the seed and
+        // each pixel's samples past those it holds (Plan::sampleBase), so that the frames' samples stratify together as
+        // one frame's would: drawn afresh each frame, they did not, and pixels phase 1 does not take were noisier than
+        // XPU2's at the same samples (DESIGN.md 22).
+        if (moved) ++moves;
+        plan->seed = b.seed + moves * 7919u;
+        plan->sampleBase.clear();
+        if (!moved && !acc.n.empty()) {
+            plan->sampleBase.resize(N);
+            for (size_t i = 0; i < N; ++i) plan->sampleBase[i] = static_cast<unsigned>(std::min(acc.n[i], 4.0e9));
+        }
         field.prepare(*plan, scene, fieldOptions(), frame, f);
         fieldSeconds = f.seconds, probes = f.ids.size(), spawned = f.spawned + f.gapSpawned;
         // Phase 2's samples: the cap's; the sky the last frame met, the background's.
@@ -175,18 +197,25 @@ public:
             depthMin[i] = av[outputs.depthMin], depthMax[i] = av[outputs.depthMax];
         }
         const FieldOptions fo = fieldOptions();
+        // Each pixel's coverage, the beauty's alpha: misses leave no depth (ProbeField::verify).
+        coverage.assign(N, 1.0f);
+        for (size_t i = 0; i < N; ++i) coverage[i] = o.coverage ? r.rgba[i * 4 + 3] : 1.0f;
         field.absorb(f, o.probeFull ? r.rgba : direct, demod ? &albedo : nullptr, total, moved, o.fade, o.cleanAbsorb ? &depthMin : nullptr,
-                     o.cleanAbsorb ? &depthMax : nullptr, &fo);
+                     o.cleanAbsorb ? &depthMax : nullptr, &fo, &coverage);
         field.reconstruct(f, fo, demod ? &albedo : nullptr, recon, wrec, fstate);
-        verified = field.verify(f, fo, depthMin, depthMax, ok);
+        verified = field.verify(f, fo, depthMin, depthMax, ok, &coverage);
         // The sums since the camera last moved: the beauty and direct light times their samples, the samples (all, and
-        // full paths), phase 1's weight; the reconstruction is the latest (its probes' sums hold the frames before).
+        // full paths), phase 1's weight and its light times that weight. Phase 1's light is each frame's own where it
+        // was used, weighted as it was: the latest reconstruction with the weight of all frames darkened pixels that
+        // verified in some frames and not the latest (out of focus, where verification comes and goes), its light
+        // there the reconstruction's nothing (DESIGN.md 22).
         if (acc.nb.empty()) {
             acc.nb.assign(N * 3, 0.0), acc.nd.assign(N * 3, 0.0);
-            acc.n.assign(N, 0.0), acc.nfull.assign(N, 0.0), acc.m.assign(N, 0.0), acc.alpha.assign(N, 0.0);
+            acc.n.assign(N, 0.0), acc.nfull.assign(N, 0.0), acc.m.assign(N, 0.0), acc.alpha.assign(N, 0.0), acc.r1.assign(N * 3, 0.0);
             acc.aov.assign(r.aov.size(), 0.0);
         }
         size_t used = 0;
+        const double m0 = f.view.kind == View::Directional ? o.m0Directional : o.m0;
         for (size_t i = 0; i < N; ++i) {
             const bool use = fstate[i] == FieldTrusted && ok[i];
             used += use;
@@ -196,11 +225,25 @@ public:
                 acc.nd[i * 3 + c] += Nt * direct[i * 4 + c];
             }
             acc.alpha[i] += Nt * r.rgba[i * 4 + 3];
-            acc.n[i] += Nt, acc.nfull[i] += nCount[i], acc.m[i] += use ? o.m0 : 0.0;
+            acc.n[i] += Nt, acc.nfull[i] += nCount[i], acc.m[i] += use ? m0 : 0.0;
+            if (use)
+                for (int c = 0; c < 3; ++c) acc.r1[i * 3 + c] += m0 * recon[i * 4 + c];
             if (acc.aov.size() == r.aov.size())
                 for (size_t c = 0; c < stride; ++c) acc.aov[i * stride + c] += Nt * r.aov[i * stride + c];
         }
         trusted = N ? double(used) / double(N) : 0;
+        if (!o.debugFolder.empty()) {
+            std::vector<float> mask(N * 4, 1.0f);
+            for (size_t i = 0; i < N; ++i) {
+                const float v = (fstate[i] == FieldTrusted && ok[i]) ? 1.0f : ok[i] ? 0.5f : 0.0f;
+                mask[i * 4] = mask[i * 4 + 1] = mask[i * 4 + 2] = v;
+            }
+            auto put = [&](const char* name, const std::vector<float>& v) {
+                std::FILE* fh = std::fopen((o.debugFolder + "/" + name).c_str(), "wb");
+                if (fh) std::fwrite(v.data(), sizeof(float), v.size(), fh), std::fclose(fh);
+            };
+            put("recon.rgba", recon), put("mask.rgba", mask), put("direct.rgba", direct);
+        }
         const unsigned K = ++acc.frames;
         out = r;
         out.rgba.assign(N * 4, 0.0f);
@@ -211,7 +254,7 @@ public:
             if (n <= 0) continue;
             const double m = acc.m[i] / K, k = m / (m + n);
             for (int c = 0; c < 3; ++c) {
-                const double b = acc.nb[i * 3 + c] / n, d = acc.nd[i * 3 + c] / n, rec = recon[i * 4 + c];
+                const double b = acc.nb[i * 3 + c] / n, d = acc.nd[i * 3 + c] / n, rec = acc.m[i] > 0 ? acc.r1[i * 3 + c] / acc.m[i] : 0.0;
                 const double v = o.probeFull ? b + k * (rec - b) : (acc.nb[i * 3 + c] - acc.nd[i * 3 + c]) / std::max(acc.nfull[i], 1.0) + (1 - k) * d + k * rec;
                 out.rgba[i * 4 + c] = std::isfinite(v) ? float(v) : 0.0f;
             }
@@ -223,7 +266,7 @@ public:
 
 private:
     struct Sums {
-        std::vector<double> nb, nd, n, nfull, m, alpha, aov;
+        std::vector<double> nb, nd, n, nfull, m, alpha, aov, r1;
         unsigned frames = 0;
     };
     ProbeField field;
@@ -231,12 +274,12 @@ private:
     Sums acc;
     surface::Camera camera{};
     bool haveCamera = false, moved = true;
-    unsigned frame = 0, W = 0, H = 0, nLo = 2, nHi = 2, nBg = 1;
+    unsigned frame = 0, moves = 0, W = 0, H = 0, nLo = 2, nHi = 2, nBg = 1;
     float filterWidth = 1.0f;
     size_t N = 0;
     RealtimeOutputs outputs;
     std::vector<unsigned> nCount, total;
-    std::vector<float> direct, albedo, depthMin, depthMax, recon, wrec;
+    std::vector<float> direct, albedo, depthMin, depthMax, recon, wrec, coverage;
     std::vector<uint8_t> fstate, ok;
 
     FieldOptions fieldOptions() const {
@@ -245,10 +288,18 @@ private:
         fo.footprint = 0.5 * std::max(1.0, double(filterWidth)), fo.tauR = op.tauR, fo.demod = op.demod, fo.threads = op.threads;
         return fo;
     }
+    // The same picture's camera: its place, projection, lens and the settings of its kind (a focus or a fisheye's field of
+    // view changed is a moved camera: the sums start again).
     static bool sameCamera(const surface::Camera& a, const surface::Camera& b) {
         for (int i = 0; i < 4; ++i)
             for (int j = 0; j < 4; ++j)
                 if (a.cameraToRender.m[i][j] != b.cameraToRender.m[i][j] || a.rasterToCamera.m[i][j] != b.rasterToCamera.m[i][j]) return false;
+        if (a.type != b.type || a.dof != b.dof || a.lensRadius != b.lensRadius || a.focusDistance != b.focusDistance || a.bokeh != b.bokeh ||
+            a.bokehSides != b.bokehSides || a.bokehAngle != b.bokehAngle || a.flags != b.flags || a.mode != b.mode || a.motion != b.motion ||
+            a.regionX != b.regionX || a.regionY != b.regionY || a.nearClip != b.nearClip || a.farClip != b.farClip)
+            return false;
+        for (int k = 0; k < 12; ++k)
+            if (a.k[k] != b.k[k]) return false;
         return true;
     }
 };

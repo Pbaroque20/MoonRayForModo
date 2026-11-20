@@ -5,6 +5,11 @@ Rhea was named Sol, and before that "Bregman", earlier the same day; sections 2 
 
 ## In short
 
+**Rhea in XPU2's session, every camera (section 18).** Rhea runs as the kit's XPU2 RT on perspective, depth of
+field, motion blur, orthographic, spherical, fisheye and dome cameras; at the realtime frame's 32 samples a pixel its
+picture has less per-pixel and block error than XPU2's on each (perspective 1.32e-5 against 4.50e-5), taking about
+twice as long to end.
+
 **The denoiser (section 17).** Through the kit's realtime denoiser (OptiX), XPU2's 2-sample frames catch up with
 Rhea's, and with diffuse bounces pass them (block error 0.9e-3 against 1.2e-3): Rhea's error is blotches, which a
 denoiser keeps. The virtual surface's normals guide no better than the normal output. Found on the way: the kit's
@@ -672,7 +677,51 @@ A frame: Rhea 0.085 s, XPU2 2 spp 0.074 s with diffuse bounces; the denoiser 3.4
 - Not measured: flicker. Rhea's blotches stay on the surfaces from frame to frame, a denoised 2-sample frame's residue
   does not; per-frame scores cannot show which looks steadier in motion.
 
-## 18. Open
+## 18. Rhea in XPU2's session: the cameras (2026-11-20)
+
+DESIGN.md sections 21 and 22. The test scene with each camera, a realtime frame (32 samples a pixel, the kit's
+generations with realtime on) rendered by XPU2's session alone on the GPU (`moonray_xpu2 render`,
+`rhea/tools/camera_cases.py`), with Rhea and with XPU2's own frames, against XPU2 at 1,024 samples a pixel. Relative
+MSE / block error; Rhea's log: the picture verified, and phase 1's share of it.
+
+| Camera | Rhea | Verified, phase 1 | XPU2 |
+|---|---|---|---|
+| perspective | **1.32e-5 / 1.42e-4** | 97%, 72% | 4.50e-5 / 1.66e-4 |
+| depth of field (f/11, focus on the balls) | **4.27e-5 / 1.54e-4** | 54%, 21% | 9.01e-5 / 2.49e-4 |
+| motion blur (the camera 0.25 across the shutter) | **3.22e-5 / 1.73e-4** | 95%, 71% | 7.27e-5 / 2.20e-4 |
+| orthographic | **2.64e-5 / 1.57e-4** | 98%, 69% | 6.44e-5 / 1.81e-4 |
+| spherical (150 x 100 degrees) | **2.59e-5 / 9.08e-5** | 92%, 30% | 3.40e-5 / 1.21e-4 |
+| fisheye (equidistant, 140 degrees) | **6.94e-5 / 9.64e-5** | 95%, 17% | 1.32e-4 / 1.37e-4 |
+| dome (160 degrees) | **1.99e-5 / 6.59e-5** | 94%, 17% | 2.20e-5 / 6.73e-5 |
+
+Mean ratios 0.9996 to 1.0000. Rhea's frame ends in 0.9 to 1.2 s against XPU2's 0.25 to 0.65 s (the CPU's part between
+the GPU's frames; DESIGN.md 21).
+
+How it got there:
+
+| Step | Depth of field | Spherical | Dome |
+|---|---|---|---|
+| first (persistent probes on each camera) | 1.04e-3 / 2.73e-3, ratio 0.988 | 3.95e-5 / 1.56e-4 | 2.98e-5 / 1.01e-4 |
+| phase 1's light summed by its weight | 4.96e-5 / 1.71e-4, ratio 1.000 | 3.95e-5 / 1.58e-4 | 2.97e-5 / 1.01e-4 |
+| one sequence at rest (`Plan::sampleBase`) | 4.27e-5 / 1.54e-4 | 2.56e-5 / 1.40e-4 | 1.97e-5 / 9.32e-5 |
+| phase 1 counting 8 samples on directional cameras | | 2.59e-5 / 9.08e-5 | 1.99e-5 / 6.59e-5 |
+
+- **Out of focus went 1.2% dark** where verification came and went from frame to frame: those pixels took the weight
+  of the frames they verified in and the latest reconstruction's light, 0 there. Phase 1 switched off
+  (`XPU2_SESSION_RHEA_M0=0`) the same frame was unbiased (5.08e-5, ratio 1.0000), and split by mask, the pixels phase 1
+  used were (-3e-5) and those it did not were not (-0.005): the summing, not the probes.
+- **Frames drawn afresh** (a new seed, indices from 0) were twice as noisy as XPU2 wherever phase 1 is not used, though
+  they held about twice the samples: five short sequences do not stratify as one. Continued, every camera's per-pixel
+  error fell 13 to 35%.
+- **Directional cameras' light** interpolated over triangles the lens bends carries a one-signed bias (ratios 0.9991 to
+  0.9996 at m0 32); at m0 8 it is gone (0.9996 to 0.9999) and both measures beat XPU2's.
+- A pixel verified only where its alpha is whole (misses leave no depth) was tried: it changed nothing out of focus and
+  made the wide cameras worse (spherical 8.4e-5 / 3.5e-4); left off (`XPU2_SESSION_RHEA_COVERAGE`).
+- **Moving, on the GPU:** six turns of the camera sent to the session as the kit sends them (`session_harness.py`, a
+  delta 0.3 s into each frame): each the camera alone (prepared in 0.1 ms), 2 to 3 Rhea frames in 0.31 to 0.34 s
+  before the next, the probes kept (1,247 to 1,960), 98 to 99% verified.
+
+## 19. Open
 
 - **The CPU's part, further:** suitability seeding for gathered frames, so the CPU lane could take the shading work
   that cannot hold the frame's end; on heavy scenes, the samples the GPU defers (as in XPU2).
@@ -705,7 +754,7 @@ A frame: Rhea 0.085 s, XPU2 2 spp 0.074 s with diffuse bounces; the denoiser 3.4
   Sponza (23 lights, 69% of the GPU's time in shadow rays) is where light sample reuse has the most to save.
 - The lift assumes a still perspective camera without depth of field; patches lose triangles crossing the near plane.
 
-## 19. Reproduce
+## 20. Reproduce
 
 ```bash
 python rhea/build_rhea.py [--gpu] --source . --runtime <MoonRayForModo-xpu2>/test-results/interactive-reference-042 --output test-results/rhea/build-N
@@ -715,6 +764,7 @@ python run_rhea.py --engine <build-N> --ptx-build <a --gpu build> --scene <overf
 python class_errors.py <that folder> <reference.rgba>
 python summarize.py <run folders...>
 python build_delaunay_test.py <worktree> <new folder>   # then run the test it prints: the checks of rhea/delaunay.h
+python camera_cases.py --exe <session build>/runtime-xpu2/moonray_xpu2.exe --scene <overflow>/scene.rdla --output <new folder> [--optix-cache <private> --shader-marks <private>]
 ```
 
 `python` is `pythoncore-3.15` (not the Store one). The worktree needs `toolchain`, `build` and `upstream` junctioned from

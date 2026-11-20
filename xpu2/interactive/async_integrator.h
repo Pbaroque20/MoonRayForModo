@@ -2020,16 +2020,18 @@ X2_HD inline V3 volumeTransmittanceCall(const mixed::Config& c, Backend& backend
 }
 
 template <class Backend>
-X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 index, Backend& backend, Radiance& out) {
+X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 frameIndex, Backend& backend, Radiance& out) {
     using namespace paths;
     using shade::Color;
     if (pixel >= c.width * c.height || c.bsdfSamples == 0 || c.bsdfSamples > 64 || c.lightSamples == 0 || c.lightSamples > 64)
         return SampleStatus::Error;
     // A pixel sample map gives each pixel its own count: its samples past it are not taken (computeTotalNumSamples).
     const U32 pixelSpp = c.pixelSamples ? c.pixelSamples[pixel] : c.spp;
-    if (c.pixelSamples && index >= pixelSpp) return SampleStatus::Skip;
+    if (c.pixelSamples && frameIndex >= pixelSpp) return SampleStatus::Skip;
     // A depth limit per pixel (Plan::fullSamples): a sample past the pixel's full paths stops at the first hit.
-    const U32 maxDepth = c.fullSamples && index >= c.fullSamples[pixel] ? 0u : c.maxDepth;
+    const U32 maxDepth = c.fullSamples && frameIndex >= c.fullSamples[pixel] ? 0u : c.maxDepth;
+    // The sample's place in its pixel's sequence (Plan::sampleBase): the frame's index past the samples the pixel had.
+    const U32 index = c.sampleBase ? frameIndex + c.sampleBase[pixel] : frameIndex;
     const sample::Identity root{pixel, index, c.seed, 0};
     float x, y;
     surface::Ray camera;

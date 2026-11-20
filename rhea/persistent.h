@@ -19,6 +19,7 @@
 // pixel sees is what the GPU's samples meet.
 #pragma once
 #include "delaunay.h"
+#include "view.h"
 #include "virtual_surface.h"
 
 namespace rhea {
@@ -29,6 +30,8 @@ struct WorldProbe {
     surface::V3 P{};     // the point (trace space)
     double sum[3] = {0, 0, 0}, sumAlbedo[3] = {0, 0, 0}, weight = 0;  // light and colour times samples, faded on moves
     unsigned born = 0, seen = 0;
+    double lx = 0, ly = 0;  // where it was last seen in the picture (where a directional camera's lift starts looking)
+    bool placed = false;
 };
 
 struct FieldOptions {
@@ -41,13 +44,16 @@ struct FieldOptions {
     float demodFloor = 0.02f;
     bool demod = true;
     unsigned threads = 12;
+    // At most this many probes a cell before a failed verification asks for another: where the frame's samples meet
+    // more than one surface whatever the probes (out of focus, moving, an edge), more probes do not help.
+    unsigned maxPerCell = 4;
 };
 
 enum FieldState : uint8_t { FieldNone = 0, FieldTrusted = 1, FieldGap = 2, FieldEdge = 3 };
 
 // One frame's view of the field.
 struct FieldFrame {
-    Frame frame;
+    View view;  // the camera (view.h)
     unsigned index = 0;
     std::vector<int> ids;          // the field's probes in the frame
     std::vector<double> xy, w;     // their raster points and inverse depths
@@ -80,13 +86,14 @@ public:
         }
         f = FieldFrame{};
         f.index = frameIndex;
-        cpu::need(f.frame.init(plan.camera), "Camera frame");
+        cpu::need(f.view.init(plan.camera, plan.width, plan.height), "Camera view");
+        if (f.view.needsDepthScale()) f.view.setDepthScale(depthScale(plan, f.view));
         // The known probes lifted onto the frame, kept where a camera ray still meets their triangle.
         std::vector<int> cand;
         std::vector<double> cx, cy, cw;
         for (int i = 0; i < int(probes.size()); ++i) {
-            double x, y, w;
-            if (!f.frame.lift(probes[i].P, x, y, w)) continue;
+            double x = probes[i].lx, y = probes[i].ly, w;
+            if (!f.view.lift(probes[i].P, x, y, w, probes[i].placed)) continue;
             if (x < 0 || y < 0 || x >= width || y >= height) continue;
             cand.push_back(i), cx.push_back(x), cy.push_back(y), cw.push_back(w);
         }
@@ -94,7 +101,7 @@ public:
         std::vector<uint8_t> seen(cand.size(), 0);
         parallel(op.threads, cand.size(), [&](size_t k) {
             surface::Ray ray;
-            if (!surface::cameraRay(plan.camera, float(cx[k]), float(cy[k]), ray)) return;
+            if (!f.view.ray(cx[k], cy[k], ray)) return;
             ray.mask = 1u;
             async::CpuBackend backend{scene};
             const resume::Hit hit = backend.trace(ray);
@@ -104,11 +111,10 @@ public:
         // A grid of the frame's probes by pixel, for the spacing of new ones.
         std::vector<std::vector<int>> grid(size_t(cellsX) * cellsY);
         auto add = [&](int id, double x, double y, double w, bool isFresh) {
-            const WorldProbe& p = probes[id];
+            WorldProbe& p = probes[id];
+            p.lx = x, p.ly = y, p.placed = true;
             const cpu::Mesh& e = plan.meshes[p.geom];
-            LiftedTri t;
-            Plane h;
-            if (liftTriangle(f.frame, e, *e.data, p.prim, t)) h = planeThrough(t.x, t.y, t.w);
+            const Plane h = f.view.tangent(e, *e.data, p.prim, p.P, x, y);
             const int px = std::min(int(width) - 1, std::max(0, int(x))), py = std::min(int(height) - 1, std::max(0, int(y)));
             f.ids.push_back(id), f.xy.push_back(x), f.xy.push_back(y), f.w.push_back(w), f.h.push_back(h);
             f.pixel.push_back(py * int(width) + px), f.fresh.push_back(isFresh);
@@ -140,7 +146,7 @@ public:
             parallel(op.threads, at.size(), [&](size_t k) {
                 surface::Ray ray;
                 hits[k].geom = ~0u;
-                if (!surface::cameraRay(plan.camera, at[k].first + 0.5f, at[k].second + 0.5f, ray)) return;
+                if (!f.view.ray(at[k].first + 0.5, at[k].second + 0.5, ray)) return;
                 ray.mask = 1u;
                 async::CpuBackend backend{scene};
                 hits[k] = backend.trace(ray);
@@ -160,8 +166,8 @@ public:
                 const surface::Ray& r = rays[k];
                 p.P = {r.origin.x + hit.t * r.direction.x, r.origin.y + hit.t * r.direction.y, r.origin.z + hit.t * r.direction.z};
                 p.born = p.seen = frameIndex;
-                double x, y, w;
-                if (!f.frame.lift(p.P, x, y, w)) continue;
+                double x = at[k].first + 0.5, y = at[k].second + 0.5, w;
+                if (!f.view.lift(p.P, x, y, w, true)) continue;
                 probes.push_back(p);
                 add(int(probes.size()) - 1, x, y, w, true);
                 ++count;
@@ -174,6 +180,7 @@ public:
                     const size_t cell = size_t(cyi) * cellsX + cxi;
                     const bool empty = grid[cell].empty();
                     if (!need[cell] && !(empty && !sky[cell])) continue;
+                    if (!empty && grid[cell].size() >= op.maxPerCell) continue;
                     // A pixel of the cell, jittered by the frame: the cell's centre region.
                     const uint32_t hsh = hash(uint32_t(cell) * 0x9e3779b9u ^ frameIndex * 0x85ebca6bu);
                     const int x0 = int(cxi * op.cell), y0 = int(cyi * op.cell);
@@ -204,14 +211,14 @@ public:
 
     // A plane holds a pixel's samples: their nearest and farthest first-hit depths (depthMin, depthMax) lie within the
     // plane's inverse depths over the pixel's footprint, widened by the tolerance.
-    static bool planeHolds(const Plane& pl, unsigned x, unsigned y, float depthMin, float depthMax, const FieldOptions& op) {
+    static bool planeHolds(const View& view, const Plane& pl, unsigned x, unsigned y, float depthMin, float depthMax, const FieldOptions& op) {
         if (!(std::isfinite(depthMin) && depthMin > 0) || !pl.ok) return false;
         double lo = 1e300, hi = -1e300;
         for (int k = 0; k < 4; ++k) {
             const double v = pl.at(x + 0.5 + ((k & 1) ? op.footprint : -op.footprint), y + 0.5 + ((k & 2) ? op.footprint : -op.footprint));
             lo = std::min(lo, v), hi = std::max(hi, v);
         }
-        const double wNear = 1.0 / depthMin, wFar = 1.0 / std::max(depthMax, depthMin);
+        const double wNear = view.wOf(depthMin), wFar = view.wOf(std::max(depthMax, depthMin));
         return wFar >= lo * (1 - op.tol) && wNear <= hi * (1 + op.tol);
     }
 
@@ -219,9 +226,12 @@ public:
     // samples its pixel took; its sums faded first when the camera has moved. With the frame's depths (depthMin and
     // depthMax), only where every sample of the pixel met the probe's own surface (its tangent plane holds them): a
     // probe that has come to lie in a pixel across an edge would otherwise take in the light beyond it.
+    // And only where every sample of the pixel met something (its alpha, the beauty's, is whole): misses leave no
+    // depth, and a pixel some of whose samples went past an edge to the sky (a wide lens' out of focus edge) would
+    // otherwise pass the depths and give its probe the sky's darkness.
     void absorb(const FieldFrame& f, const std::vector<float>& rgba, const std::vector<float>* albedo, const std::vector<unsigned>& samples,
                 bool moved, double fade, const std::vector<float>* depthMin = nullptr, const std::vector<float>* depthMax = nullptr,
-                const FieldOptions* op = nullptr) {
+                const FieldOptions* op = nullptr, const std::vector<float>* coverage = nullptr) {
         mixed = 0;
         std::vector<uint8_t> done(probes.size(), 0);
         for (size_t k = 0; k < f.ids.size(); ++k) {
@@ -233,7 +243,7 @@ public:
             if (n <= 0) continue;
             if (depthMin && depthMax && op) {
                 const unsigned x = unsigned(px % width), y = unsigned(px / width);
-                if (!planeHolds(f.h[k], x, y, (*depthMin)[px], (*depthMax)[px], *op)) {
+                if (!planeHolds(f.view, f.h[k], x, y, (*depthMin)[px], (*depthMax)[px], *op) || (coverage && !whole((*coverage)[px]))) {
                     ++mixed;
                     continue;
                 }
@@ -298,8 +308,10 @@ public:
     // The GPU's verification: ok[i] where the frame's samples met what the reconstruction says (depthMin and depthMax:
     // the nearest and farthest first-hit camera depths at the pixel, +inf and -inf where none hit). Asks for probes in
     // the cells that failed and notes the cells that met nothing. Returns the share of pixels verified.
+    // coverage (the beauty's alpha, each pixel's share of samples that met something): a pixel under a triangle passes
+    // only where it is whole, its samples' depths alone saying nothing of those that missed.
     double verify(const FieldFrame& f, const FieldOptions& op, const std::vector<float>& depthMin, const std::vector<float>& depthMax,
-                  std::vector<uint8_t>& ok) {
+                  std::vector<uint8_t>& ok, const std::vector<float>* coverage = nullptr) {
         const size_t N = size_t(width) * height;
         ok.assign(N, 0);
         std::fill(need.begin(), need.end(), 0);
@@ -314,10 +326,10 @@ public:
             bool pass;
             if (t < 0) {
                 pass = !any;  // no triangle: right only where the samples met nothing
-            } else if (!any) {
+            } else if (!any || (coverage && !whole((*coverage)[i]))) {
                 pass = false;
             } else {
-                pass = planeHolds(f.triPlane[t], x, y, depthMin[i], depthMax[i], op);  // the triangle's plane holds every sample
+                pass = planeHolds(f.view, f.triPlane[t], x, y, depthMin[i], depthMax[i], op);  // the triangle's plane holds every sample
             }
             ok[i] = pass;
             good += pass;
@@ -327,7 +339,35 @@ public:
         return double(good) / double(N);
     }
 
+    // A pixel's coverage whole: every sample met something.
+    static bool whole(float alpha) { return alpha >= 0.999f; }
+
 private:
+    // The scene's bounds (trace space), once a field: an orthographic camera's depth scale is twice the farthest depth
+    // they reach from it (view.h).
+    bool bounded = false;
+    D3 lo{0, 0, 0}, hi{0, 0, 0};
+    double depthScale(const cpu::Plan& plan, const View& view) {
+        if (!bounded) {
+            bounded = true;
+            lo = {1e300, 1e300, 1e300}, hi = {-1e300, -1e300, -1e300};
+            for (const cpu::Mesh& e : plan.meshes) {
+                if (!e.data) continue;
+                for (uint32_t i = 0; i < uint32_t(e.data->positions.size()); ++i) {
+                    const surface::V3 p = vertexOf(e, *e.data, i);
+                    lo = {std::min(lo.x, double(p.x)), std::min(lo.y, double(p.y)), std::min(lo.z, double(p.z))};
+                    hi = {std::max(hi.x, double(p.x)), std::max(hi.y, double(p.y)), std::max(hi.z, double(p.z))};
+                }
+            }
+        }
+        double most = 1e-3;
+        if (lo.x <= hi.x)
+            for (int k = 0; k < 8; ++k) {
+                const surface::V3 c{float(k & 1 ? hi.x : lo.x), float(k & 2 ? hi.y : lo.y), float(k & 4 ? hi.z : lo.z)};
+                most = std::max(most, view.depthOf(view.camera(c)));
+            }
+        return 2.0 * most;
+    }
     static uint32_t hash(uint32_t a) {
         a ^= a >> 16, a *= 0x7feb352du, a ^= a >> 15, a *= 0x846ca68bu, a ^= a >> 16;
         return a;

@@ -238,6 +238,9 @@ struct Plan {
     // A depth limit per pixel (Rhea's one frame, rhea/DESIGN.md 10): each pixel's samples that are full paths, the rest
     // stopping at the first hit (max_depth 0); empty: every sample a full path, as always.
     std::vector<unsigned> fullSamples;
+    // Each pixel's first sample in its sequence (rhea/rhea_realtime.h: a frame at rest continues the samples its pixels
+    // had, so that the frames' samples together stratify as one frame's would); empty: from the first, as always.
+    std::vector<unsigned> sampleBase;
     // Motion blur (meshMotionSteps, camera_core.h's cameraAtTime) and the camera's shutter bias (the samples' times).
     MotionParams motion;float shutterBias=0;
     // The lights moving under motion blur (light_core.h's LightMotion, by light index), and each light's record at the
