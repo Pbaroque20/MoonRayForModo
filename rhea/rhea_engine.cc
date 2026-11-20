@@ -134,6 +134,7 @@ int main(int argc, char** argv) {
             else if (k == "tau_r") op.tauR = std::stod(v);
             else if (k == "rings") op.surface.rings = unsigned(std::stoul(v));
             else if (k == "tris") op.surface.tris = unsigned(std::stoul(v));
+            else if (k == "coverage") op.surface.coverage = v != "0";
             else if (k == "light_tol") op.surface.lightTol = std::stod(v);
             else if (k == "light_passes") op.surface.lightPasses = unsigned(std::stoul(v));
             else if (k == "gather") op.gather = v != "0";
@@ -363,7 +364,10 @@ int main(int argc, char** argv) {
         auto p2 = std::make_shared<cpu::Plan>(*plan);
         std::vector<unsigned> total = nCount;
         if (oneFrame) {
-            for (const auto& s : vs.sites) total[size_t(s.py) * W + s.px] += op.probeSpp;
+            // Probe samples only where a converged leaf reads them.
+            const std::vector<uint8_t> used = vs.usedSites();
+            for (size_t i = 0; i < vs.sites.size(); ++i)
+                if (used[i]) total[size_t(vs.sites[i].py) * W + vs.sites[i].px] += op.probeSpp;
             if (!op.probeFull) p2->fullSamples = nCount;  // probe samples stop at the first hit
         }
         p2->pixelSamples = total;
@@ -638,7 +642,7 @@ int main(int argc, char** argv) {
         Json::Value o;
         o["s0"] = op.surface.s0, o["min_stride"] = op.surface.minStride, o["tol"] = op.surface.tol, o["margin"] = op.margin;
         o["probe_spp"] = op.probeSpp, o["n_lo"] = op.nLo, o["n_hi"] = op.nHi, o["n_bg"] = op.nBg;
-        o["m0"] = op.m0, o["tau_r"] = op.tauR, o["rings"] = op.surface.rings, o["tris"] = op.surface.tris;
+        o["m0"] = op.m0, o["tau_r"] = op.tauR, o["rings"] = op.surface.rings, o["tris"] = op.surface.tris, o["coverage"] = op.surface.coverage;
         o["light_tol"] = op.surface.lightTol, o["light_passes"] = op.surface.lightPasses, o["gather"] = op.gather, o["gather2"] = op.gather2, o["progressive"] = op.progressive, o["probe_full"] = op.probeFull, o["chunk"] = op.chunkSamples, o["one_frame"] = op.oneFrame, o["frames"] = op.frames, o["orbit"] = op.orbit, o["jitter"] = op.jitter, o["accumulate"] = op.accumulate, o["accum_power"] = op.accumPower, o["seed"] = op.seed, o["curvature"] = op.curvature, o["curv_span"] = op.curvSpan;
         o["mode"] = op.mode, o["p1mode"] = op.p1mode, o["threads"] = op.threads;
         o["cache"] = op.cache, o["cache_p"] = op.cacheP, o["cache_tol"] = op.cacheTol, o["qmc_depth"] = op.qmcDepth, o["xpu2_qmc"] = op.xpu2Qmc;
@@ -755,7 +759,9 @@ int main(int argc, char** argv) {
                     else if (s.cls[i] == rhea::Trusted) s.nCount[i] = op.nLo, s.mWeight[i] = float(op.m0);
                 }
                 s.total = s.nCount;
-                for (const auto& site : s.vs.sites) s.total[size_t(site.py) * W + site.px] += op.probeSpp;
+                const std::vector<uint8_t> used = s.vs.usedSites();
+                for (size_t i = 0; i < s.vs.sites.size(); ++i)
+                    if (used[i]) s.total[size_t(s.vs.sites[i].py) * W + s.vs.sites[i].px] += op.probeSpp;
                 s.plan->pixelSamples = s.total;
                 if (!op.probeFull) s.plan->fullSamples = s.nCount;
                 s.plan->spp = *std::max_element(s.total.begin(), s.total.end());

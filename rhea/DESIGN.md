@@ -509,3 +509,17 @@ The user: "jitter the probes across frames", so that the reconstruction's blotch
   up (p = 0.5 by default: p = 0 removes the bias fastest but leaves phase 2's noise).
 - Jitter and the convergent accumulation together take a little more of the darkening (0.99989 against 0.99981 at 64
   frames with diffuse bounces) for 5 to 8% of a frame and a third more per-pixel error: jitter stays an option, off.
+
+## 14. Scenes of many meshes: convergence by coverage (2026-11-20)
+
+The user: "start with fix 1" (after Sponza, RESULTS.md section 12).
+
+- **Coverage** (`VirtualSurface::covered`, option `coverage`, on): a quad whose probes are not on one connected mesh, or
+  whose patches stopped short or are crossed by a mesh's border, still converges where the four patches together cover
+  every pixel centre of it and its margin, whatever their meshes. The tests after it hold the covering triangles to the
+  reconstruction (each patch on its own mesh now) and allow nothing else in front, so the covering surface is the
+  visible one: one connected mesh was sufficient, never necessary.
+- **Probe samples where they are read** (`VirtualSurface::usedSites`): in one frame, only the corners of converged
+  leaves take a probe's extra samples; a probe that stands where nothing converged gets its pixel's samples alone. On
+  Sponza that halved the frame; on the test scene it saved a fifth (silhouette probes' pixels lose their extra direct
+  samples, a little noise).

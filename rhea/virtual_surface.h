@@ -408,6 +408,7 @@ struct SurfaceOptions {
     // The root lattice's offset in pixels, [0, s0) on each axis: a frame's probes on a lattice shifted from the last
     // one's (jittered frames, DESIGN.md 13), so that what the reconstruction misses between probes moves each frame.
     int ox = 0, oy = 0;
+    bool coverage = true;      // quads on many meshes or open borders converge where their patches cover them (test())
     double lightTol = 0.02;    // the light's tolerance: its interpolation error relative to the quad's light (refineLight)
     unsigned lightPasses = 0;  // light passes after the geometric ones (0: none; they chase the probes' noise, RESULTS.md 7)
 };
@@ -482,6 +483,16 @@ public:
         ls.passSeconds = secondsSince(t);
         lights.push_back(ls);
         return ls.split;
+    }
+
+    // The sites a converged leaf reads its light from (its corners): only these need a probe's samples; the others
+    // stand where nothing converged, and their pixels' own samples are all they get.
+    std::vector<uint8_t> usedSites() const {
+        std::vector<uint8_t> used(sites.size(), 0);
+        for (const Quad& q : quads)
+            if (q.child < 0 && (q.state == Trusted || q.state == Background))
+                for (int k = 0; k < 4; ++k) used[q.corner[k]] = 1;
+        return used;
     }
 
     // The sites without light yet (for the next probe frame).
@@ -707,6 +718,41 @@ private:
         return false;
     }
 
+    // Whether the four corners' patches together cover every pixel centre of the rectangle r (the quad and its
+    // margin), whichever meshes they are on: each patch triangle lifted onto the frame and its pixel centres marked.
+    bool covered(const cpu::Plan& plan, const Frame& frame, const Site* const c[4], const double r[4]) const {
+        const int x0 = std::max(0, int(std::ceil(r[0] - 0.5))), x1 = std::min(int(width) - 1, int(std::floor(r[2] - 0.5)));
+        const int y0 = std::max(0, int(std::ceil(r[1] - 0.5))), y1 = std::min(int(height) - 1, int(std::floor(r[3] - 0.5)));
+        if (x1 < x0 || y1 < y0) return true;
+        const int bw = x1 - x0 + 1, bh = y1 - y0 + 1;
+        std::vector<uint8_t> mark(size_t(bw) * bh, 0);
+        size_t left = mark.size();
+        for (int k = 0; k < 4 && left; ++k) {
+            const Site* s = c[k];
+            bool repeat = false;  // a corner standing on another's patch adds nothing new
+            for (int j = 0; j < k; ++j) repeat = repeat || (c[j]->geom == s->geom && c[j]->patch.seed == s->patch.seed);
+            if (repeat) continue;
+            const cpu::Mesh& e = plan.meshes[s->geom];
+            for (uint32_t prim : s->patch.prims) {
+                LiftedTri t;
+                if (!liftTriangle(frame, e, *e.data, prim, t)) continue;
+                const int tx0 = std::max(x0, int(std::ceil(std::min({t.x[0], t.x[1], t.x[2]}) - 0.5)));
+                const int tx1 = std::min(x1, int(std::floor(std::max({t.x[0], t.x[1], t.x[2]}) - 0.5)));
+                const int ty0 = std::max(y0, int(std::ceil(std::min({t.y[0], t.y[1], t.y[2]}) - 0.5)));
+                const int ty1 = std::min(y1, int(std::floor(std::max({t.y[0], t.y[1], t.y[2]}) - 0.5)));
+                for (int py = ty0; py <= ty1; ++py)
+                    for (int px = tx0; px <= tx1; ++px) {
+                        uint8_t& m = mark[size_t(py - y0) * bw + (px - x0)];
+                        double b[3];
+                        if (m || !barycentric(px + 0.5, py + 0.5, t.x, t.y, b, 1e-7)) continue;
+                        m = 1;
+                        if (!--left) return true;
+                    }
+            }
+        }
+        return left == 0;
+    }
+
     static bool segmentMeetsRect(const Segment& s, const double r[4]) {
         // Liang-Barsky.
         double t0 = 0, t1 = 1;
@@ -761,24 +807,27 @@ private:
             return;
         }
         for (const Site* s : c)
-            if (!s->scannable || s->patch.truncated || s->patch.behind) {
-                q.state = Truncated;
+            if (!s->scannable) {
+                q.state = Truncated;  // a surface that is not a mesh: no scan
                 return;
             }
-        // 1. One connected surface.
-        for (int i = 0; i < 4; ++i)
-            for (int j = 0; j < 4; ++j)
-                if (i != j && (c[i]->geom != c[j]->geom || !c[i]->patch.contains(c[j]->prim))) {
-                    q.state = Disconnected;
-                    return;
-                }
-        // 2. No end of the surface inside.
+        // 1-2. One connected surface with no end inside; or else (many meshes meeting, open borders, a scan cut short)
+        // the four patches together covering the quad and its margin, whatever their meshes. Either way the tests
+        // below then hold the covering triangles to the reconstruction and nothing else may lie in front: the
+        // covering surface is the visible one.
+        uint8_t topology = 0;  // the first test the quad fails on one connected surface (0: none)
+        for (const Site* s : c)
+            if (!topology && (s->patch.truncated || s->patch.behind)) topology = Truncated;
+        for (int i = 0; i < 4 && !topology; ++i)
+            for (int j = 0; j < 4 && !topology; ++j)
+                if (i != j && (c[i]->geom != c[j]->geom || !c[i]->patch.contains(c[j]->prim))) topology = Disconnected;
         for (const Site* s : c)
             for (const Segment& g : s->patch.bounds)
-                if (segmentMeetsRect(g, r)) {
-                    q.state = Boundary;
-                    return;
-                }
+                if (!topology && segmentMeetsRect(g, r)) topology = Boundary;
+        if (topology && !(op.coverage && covered(plan, frame, c, r))) {
+            q.state = topology;
+            return;
+        }
         // 3. The Bregman Delaunay triangulation of the four probes and its sandwich gap.
         double x[4], y[4], w[4];
         Plane h[4];
@@ -808,14 +857,13 @@ private:
             q.state = Gap;
             return;
         }
-        const cpu::Mesh& e = plan.meshes[c[0]->geom];
-        const cpu::MeshData& m = *e.data;
         const double nearClip = plan.camera.nearClip;
-        // 4. The scanned surface over it within the tolerance of the reconstruction.
+        // 4. The scanned surface over it within the tolerance of the reconstruction (each patch on its own mesh).
         for (const Site* s : c)
             for (uint32_t prim : s->patch.prims) {
                 Poly p;
-                if (liftClipped(frame, e, m, prim, nearClip, p) && departs(q, c, p, r, op.tol, true)) {
+                const cpu::Mesh& e = plan.meshes[s->geom];
+                if (liftClipped(frame, e, *e.data, prim, nearClip, p) && departs(q, c, p, r, op.tol, true)) {
                     q.state = Crease;
                     return;
                 }
@@ -838,9 +886,9 @@ private:
             const cpu::Mesh& oe = plan.meshes[k.mesh];
             const cpu::MeshData& om = *oe.data;
             for (uint32_t prim = cl.first; prim < cl.first + cl.count; ++prim) {
-                if (k.mesh == c[0]->geom && (c[0]->patch.contains(prim) || c[1]->patch.contains(prim) || c[2]->patch.contains(prim) ||
-                                             c[3]->patch.contains(prim)))
-                    continue;  // its own surface, checked above
+                bool own = false;  // a patch's triangle: the quad's own surface, checked above
+                for (const Site* s : c) own = own || (k.mesh == s->geom && s->patch.contains(prim));
+                if (own) continue;
                 Poly p;
                 if (liftClipped(frame, oe, om, prim, nearClip, p) && departs(q, c, p, r, op.tol, false)) {
                     occluded = true;

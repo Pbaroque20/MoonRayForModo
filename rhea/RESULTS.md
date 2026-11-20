@@ -485,17 +485,48 @@ kit's texture cache as the asset root (`--assets`).
 
 ![](images/rhea-sponza-states.png)
 
-## 13. Open
+## 13. Sponza with coverage (2026-11-20)
+
+DESIGN.md section 14. **The textures came back mid-run:** the kit's texture cache was refilled at 00:01 (by the Modo
+session then open), so the runs before it (`sp-A`, `sp-B`) drew 41 textures as missing and every run after it
+(`sp-C` on, and the reference) has the whole textured scene. Reference: XPU2 at 8 seeds x 64 spp, an independent seed
+(`ref-sponza-small`, `seed=1000 frames=8 accumulate=1 seq_xpu2=64`), scored with `tools/score.py`.
+
+| Sponza 192 x 108 | Geometry converged | Trusted | Geometric passes | Frame | XPU2 9 spp |
+|---|---|---|---|---|---|
+| connected meshes only (textures missing) | 17% | 7% | 2.9 s | 27.2 s | 7.7 s |
+| coverage (textures missing) | 20% | 9% | 4.3 s | 29.5 s | 7.6 s |
+| coverage, tolerance 1% | 25% | 6% | 4.2 s | 22.4 s | 6.0 s |
+| coverage, 384 x 216 | 38% | 10% | 18 s | 79 s | 22.5 s |
+| **coverage, probe samples where read** | 20% | 5% | 3.6 s | **14.3 s** | **5.8 s** |
+
+Error of the last against the reference: **Rhea relative MSE 0.246, block error 1.69e-2, mean ratio 0.9961; XPU2 9 spp
+0.188, 1.53e-2, 1.0002.** Rhea is slower and less accurate on Sponza.
+
+- Coverage converges a little more of Sponza (17% to 20%; at twice the resolution 38%), and the converged pixels stay
+  exact. The test scene is unchanged by it (the same 55,324 converged pixels and picture).
+- **Probe samples only where a converged leaf reads them** halved Sponza's frame (probes' samples 14.4 to 2.4 a pixel)
+  and took a fifth off the test scene's (0.144 to 0.116 s without diffuse bounces, 0.196 to 0.159 s with; relative MSE
+  2.4e-5 to 2.7e-5 and 1.0e-4 to 1.2e-4: the silhouette probes' pixels lose their extra samples).
+- **Where Sponza's error is:** pixels whose geometry converged but whose light does not interpolate (textures, the
+  shadows of 23 lights: the radiance-edge rule, 15% of the frame) hold 37% of it. In one frame their samples are
+  set from the geometry, before the light is known, so they get the converged count, 2 full paths. Then the 6% the
+  scans could not take (`truncated`, 24%), the pixels on different surfaces (18%).
+- Sponza's detail is about a pixel at this size (ornaments, bricks, column flutes, separate meshes): the gap, crease and
+  coverage tests fail at the finest stride on most of the frame, and the passes cost 3.6 s on 1.6 M triangles.
+
+## 14. Open
 
 - **The CPU's part, further:** suitability seeding for gathered frames, so the CPU lane could take the shading work
   that cannot hold the frame's end; on heavy scenes, the samples the GPU defers (as in XPU2).
 - **The one-signed bias** (interpolation of light that bends): the curvature term over a span that fits the light,
   measured again with whole-light probes; or probes refined where their neighbours' second differences say it pays,
   once a probe's noise is known (XPU2's odd-sample sums on the GPU).
-- **Scenes of many meshes** (Sponza, section 12): convergence by coverage (the corners' patches, of any meshes, covering
-  the quad and lying on its reconstruction) instead of one connected mesh; patch limits that follow the window; cheaper
-  crease and occluder tests (cluster bounds first); and, once textures are back, the reconstruction of lighting divided
-  by the albedo (multiplied back at each pixel) so that probes do not blur textures.
+- **Textured, detailed scenes** (Sponza, sections 12 and 13): the reconstruction of lighting divided by the albedo
+  (multiplied back at each pixel), so that textures stop counting as light edges; the samples of light-edge pixels
+  known before the frame (from the albedo's variation, or the last frame's light); patch limits that follow the window
+  and cheaper crease and occluder tests (3.6 s on Sponza); and a floor: where little of the frame converges, render as
+  XPU2 does, without geometric passes or probes.
 
 - **Silhouettes:** the largest share of the error is phase 2's noise in the 5% of pixels that never converge.
 - **The passes on the GPU,** the piece on the GPU, and T-junctions between leaves of different levels (DESIGN.md 8.5).
@@ -510,7 +541,7 @@ kit's texture cache as the asset root (`--assets`).
   Sponza (23 lights, 69% of the GPU's time in shadow rays) is where light sample reuse has the most to save.
 - The lift assumes a still perspective camera without depth of field; patches lose triangles crossing the near plane.
 
-## 14. Reproduce
+## 15. Reproduce
 
 ```bash
 python rhea/build_rhea.py [--gpu] --source . --runtime <MoonRayForModo-xpu2>/test-results/interactive-reference-042 --output test-results/rhea/build-N
