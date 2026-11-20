@@ -89,6 +89,10 @@ struct Options {
     double fade = 0.95;
     // A probe takes its pixel's light only where the frame's depths say every sample met its surface (ProbeField::absorb).
     bool cleanAbsorb = true;
+    // The denoiser (DESIGN.md 20; needs seq_ref): each scored frame, Rhea's and XPU2's, through the kit's realtime
+    // denoiser (OptiX's HDR model, its guides as XPU2_SESSION_RT_GUIDES says, clean by default), with the normal guide
+    // as the kit hands it over, in camera space, and (persistent probes) the virtual surface's.
+    bool denoise = false;
     double orbit = 0;
 };
 
@@ -170,6 +174,7 @@ int main(int argc, char** argv) {
             else if (k == "seq_threads") op.seqThreads = unsigned(std::stoul(v));
             else if (k == "seq_ref") op.seqRef = unsigned(std::stoul(v));
             else if (k == "clean_absorb") op.cleanAbsorb = v != "0";
+            else if (k == "denoise") op.denoise = v != "0";
             else if (k == "jitter") op.jitter = v != "0";
             else if (k == "accumulate") op.accumulate = v != "0";
             else if (k == "accum_power") op.accumPower = std::stod(v);
@@ -698,7 +703,7 @@ int main(int argc, char** argv) {
         o["s0"] = op.surface.s0, o["min_stride"] = op.surface.minStride, o["tol"] = op.surface.tol, o["margin"] = op.margin;
         o["probe_spp"] = op.probeSpp, o["n_lo"] = op.nLo, o["n_hi"] = op.nHi, o["n_bg"] = op.nBg;
         o["m0"] = op.m0, o["tau_r"] = op.tauR, o["rings"] = op.surface.rings, o["tris"] = op.surface.tris, o["coverage"] = op.surface.coverage;
-        o["light_tol"] = op.surface.lightTol, o["light_passes"] = op.surface.lightPasses, o["gather"] = op.gather, o["gather2"] = op.gather2, o["progressive"] = op.progressive, o["probe_full"] = op.probeFull, o["chunk"] = op.chunkSamples, o["one_frame"] = op.oneFrame, o["frames"] = op.frames, o["orbit"] = op.orbit, o["jitter"] = op.jitter, o["accumulate"] = op.accumulate, o["accum_power"] = op.accumPower, o["seed"] = op.seed, o["floor_area"] = op.surface.floorArea, o["floor_spp"] = op.floorSpp, o["demod"] = op.demod, o["phase2_max"] = op.phase2Max, o["persist"] = op.persist, o["keep_spp"] = op.keepSpp, o["seq_ref"] = op.seqRef, o["clean_absorb"] = op.cleanAbsorb, o["cell"] = op.cell,
+        o["light_tol"] = op.surface.lightTol, o["light_passes"] = op.surface.lightPasses, o["gather"] = op.gather, o["gather2"] = op.gather2, o["progressive"] = op.progressive, o["probe_full"] = op.probeFull, o["chunk"] = op.chunkSamples, o["one_frame"] = op.oneFrame, o["frames"] = op.frames, o["orbit"] = op.orbit, o["jitter"] = op.jitter, o["accumulate"] = op.accumulate, o["accum_power"] = op.accumPower, o["seed"] = op.seed, o["floor_area"] = op.surface.floorArea, o["floor_spp"] = op.floorSpp, o["demod"] = op.demod, o["phase2_max"] = op.phase2Max, o["persist"] = op.persist, o["keep_spp"] = op.keepSpp, o["seq_ref"] = op.seqRef, o["clean_absorb"] = op.cleanAbsorb, o["denoise"] = op.denoise, o["cell"] = op.cell,
         o["gap_passes"] = op.gapPasses, o["fade"] = op.fade, o["curvature"] = op.curvature, o["curv_span"] = op.curvSpan;
         o["mode"] = op.mode, o["p1mode"] = op.p1mode, o["threads"] = op.threads;
         o["cache"] = op.cache, o["cache_p"] = op.cacheP, o["cache_tol"] = op.cacheTol, o["qmc_depth"] = op.qmcDepth, o["xpu2_qmc"] = op.xpu2Qmc;
@@ -951,8 +956,78 @@ int main(int argc, char** argv) {
             // The persistent path (persist): one field of probes for the whole sequence.
             rhea::ProbeField field;
             const int offDmin = aovOffset(*plan, "/rhea_depth_min"), offDmax = aovOffset(*plan, "/rhea_depth_max");
-            const int offAlb = aovOffset(*plan, "/rhea_albedo");
+            const int offAlb = aovOffset(*plan, "/rhea_albedo"), offN = aovOffset(*plan, "/rhea_normal");
             cpu::need(!op.persist || (offDmin >= 0 && offDmax >= 0), "Persistent probes need the outputs /rhea_depth_min and /rhea_depth_max");
+            cpu::need(!op.denoise || (offAlb >= 0 && offN >= 0 && !scored.empty() && gpu),
+                      "Denoising needs the outputs /rhea_albedo and /rhea_normal, seq_ref and the GPU");
+            // The denoiser's inputs of a scored frame (denoise): its picture, the albedo and normal outputs (three floats
+            // a pixel, cleaned as the kit's realtime cleans them, xpu2_session.cc realtimePicture), the camera's axes
+            // (the kit projects the normal output onto them), the virtual surface's normals, and where phase 1 held.
+            struct Guides {
+                std::vector<float> color, albedo, normal, surface;
+                std::vector<uint8_t> held;
+                float axes[3][3] = {};
+            };
+            std::map<unsigned, Guides> rheaGuides, xpu2Guides;
+            auto guidesOf = [&](const async::RenderResult& r, const std::vector<float>& rgba, const surface::Camera& cam, Guides& g) {
+                const size_t stride = r.aov.size() / N;
+                g.color.assign(N * 3, 0.0f), g.albedo.assign(N * 3, 0.0f), g.normal.assign(N * 3, 0.0f);
+                for (size_t i = 0; i < N; ++i) {
+                    const float* av = &r.aov[i * stride];
+                    for (int c = 0; c < 3; ++c) {
+                        const float x = rgba[i * 4 + c], a = av[offAlb + c], n = av[offN + c];
+                        g.color[i * 3 + c] = std::isfinite(x) ? std::max(0.0f, x) : 0.0f;
+                        g.albedo[i * 3 + c] = std::isfinite(a) ? std::clamp(a, 0.0f, 1.0f) : 0.0f;
+                        g.normal[i * 3 + c] = std::isfinite(n) ? n : 0.0f;
+                    }
+                }
+                for (int a = 0; a < 3; ++a) {
+                    const auto& m = cam.cameraToRender.m;
+                    const float length = std::sqrt(m[a][0] * m[a][0] + m[a][1] * m[a][1] + m[a][2] * m[a][2]);
+                    for (int c = 0; c < 3; ++c) g.axes[a][c] = length > 0 ? m[a][c] / length : float(a == c);
+                }
+            };
+            // The virtual surface's normals (persistent probes): each probe's triangle's normal in camera space (render
+            // space, as the normal output's), facing the camera, interpolated over the reconstruction's triangle where
+            // the frame's verification held; elsewhere the normal output's.
+            auto surfaceNormals = [&](const Slot& s, Guides& g) {
+                g.surface = g.normal;
+                g.held.assign(N, 0);
+                const float* w = s.plan->worldToRender;
+                auto vec = [&](double x, double y, double z, double t, double out[3]) {
+                    for (int r = 0; r < 3; ++r) out[r] = w[4 * r] * x + w[4 * r + 1] * y + w[4 * r + 2] * z + t * w[4 * r + 3];
+                };
+                const rhea::FieldFrame& f = s.field;
+                std::vector<double> pn(f.ids.size() * 3, 0.0);
+                for (size_t k = 0; k < f.ids.size(); ++k) {
+                    const rhea::WorldProbe& p = field.probes[f.ids[k]];
+                    const cpu::Mesh& e = s.plan->meshes[p.geom];
+                    const auto& t = e.data->triangles[p.prim];
+                    const surface::V3 a = rhea::vertexOf(e, *e.data, t.a), b = rhea::vertexOf(e, *e.data, t.b), c = rhea::vertexOf(e, *e.data, t.c);
+                    const double u[3] = {b.x - a.x, b.y - a.y, b.z - a.z}, v[3] = {c.x - a.x, c.y - a.y, c.z - a.z};
+                    double n[3], P[3];
+                    vec(u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0], 0, n);
+                    vec(p.P.x, p.P.y, p.P.z, 1, P);
+                    const double facing = n[0] * P[0] + n[1] * P[1] + n[2] * P[2], length = std::sqrt(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
+                    if (length > 0)
+                        for (int j = 0; j < 3; ++j) pn[3 * k + j] = (facing > 0 ? -n[j] : n[j]) / length;
+                }
+                for (size_t i = 0; i < N; ++i) {
+                    const int t = f.triOf[i];
+                    if (t < 0 || !s.verified[i]) continue;
+                    g.held[i] = s.fstate[i] == rhea::FieldTrusted;
+                    const int k[3] = {f.tris[3 * t], f.tris[3 * t + 1], f.tris[3 * t + 2]};
+                    double tx[3], ty[3], bc[3];
+                    for (int j = 0; j < 3; ++j) tx[j] = f.xy[2 * k[j]], ty[j] = f.xy[2 * k[j] + 1];
+                    if (!rhea::barycentric(double(i % W) + 0.5, double(i / W) + 0.5, tx, ty, bc, 1e-6)) bc[0] = 1, bc[1] = bc[2] = 0;
+                    double n[3] = {0, 0, 0};
+                    for (int j = 0; j < 3; ++j)
+                        for (int c = 0; c < 3; ++c) n[c] += bc[j] * pn[3 * k[j] + c];
+                    const double length = std::sqrt(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
+                    if (length > 1e-6)
+                        for (int c = 0; c < 3; ++c) g.surface[i * 3 + c] = float(n[c] / length);
+                }
+            };
             auto fieldOptions = [&] {
                 rhea::FieldOptions fo;
                 fo.cell = std::max(2u, op.cell), fo.gapPasses = op.gapPasses, fo.tol = op.surface.tol;
@@ -1054,7 +1129,14 @@ int main(int argc, char** argv) {
             auto fin = [&](Slot& s) {
                 if (op.persist) finishPersist(s);
                 else finish(s);
-                if (keepFinals && isScored(s.k)) rheaKept[s.k] = s.final;
+                if (keepFinals && isScored(s.k)) {
+                    rheaKept[s.k] = s.final;
+                    if (op.denoise) {
+                        Guides& g = rheaGuides[s.k];
+                        guidesOf(s.r, s.final, s.plan->camera, g);
+                        if (op.persist) surfaceNormals(s, g);
+                    }
+                }
             };
             auto median = [](std::vector<double> v) {
                 std::sort(v.begin(), v.end());
@@ -1202,7 +1284,10 @@ int main(int argc, char** argv) {
                     const async::RenderResult rx = renderer.render(o);
                     cpu::need(!rx.failed, rx.error.empty() ? "XPU2 sequence frame failed" : rx.error);
                     period.push_back(since(t0));
-                    if (isScored(k)) xpu2Kept[k] = rx.rgba;
+                    if (isScored(k)) {
+                        xpu2Kept[k] = rx.rgba;
+                        if (op.denoise) guidesOf(rx, rx.rgba, px->camera, xpu2Guides[k]);
+                    }
                     if (op.accumulate) {
                         accumulateXpu2(rx.rgba);
                         if (!((k + 1) & k)) {
@@ -1218,6 +1303,67 @@ int main(int argc, char** argv) {
                 j["frame_median"] = median(period);
                 seq["xpu2"] = j;
             }
+            // The scored frame k through the kit's realtime denoiser, each variant written as dn-<variant>-k: XPU2's frame
+            // and Rhea's, the normal guide as the kit hands it over (the normal output projected onto the camera's axes,
+            // xpu2_session.cc realtimePicture) and as the output gives it (render space, the camera's at the shutter's
+            // open); Rhea's with the virtual surface's normals, and Rhea's left as it is where phase 1 held.
+            std::unique_ptr<async::GpuLane::Denoiser> denoiser;
+            auto denoiseFrame = [&](unsigned k, const std::string& tag) {
+                if (!denoiser) denoiser = std::make_unique<async::GpuLane::Denoiser>(*gpu);
+                auto kitNormals = [&](const Guides& g) {
+                    std::vector<float> n(N * 3);
+                    for (size_t i = 0; i < N; ++i)
+                        for (int a = 0; a < 3; ++a) {
+                            const float* v = &g.normal[i * 3];
+                            n[i * 3 + a] = std::clamp(v[0] * g.axes[a][0] + v[1] * g.axes[a][1] + v[2] * g.axes[a][2], -1.0f, 1.0f);
+                        }
+                    return n;
+                };
+                auto run = [&](const std::string& name, const Guides& g, const std::vector<float>& normal, const std::vector<float>* keep) {
+                    std::vector<float> o3(N * 3), o4(N * 4, 1.0f);
+                    std::string error;
+                    const auto t0 = Clock::now();
+                    cpu::need(denoiser->run(g.color.data(), g.albedo.data(), normal.data(), o3.data(), W, H, error), error);
+                    seq["denoise_seconds"][name].append(since(t0));
+                    for (size_t i = 0; i < N; ++i)
+                        for (int c = 0; c < 3; ++c) o4[i * 4 + c] = keep && g.held[i] ? (*keep)[i * 4 + c] : o3[i * 3 + c];
+                    writeFloats(out / ("dn-" + name + "-" + tag + ".rgba"), o4);
+                };
+                const Guides& x = xpu2Guides.at(k);
+                const Guides& r = rheaGuides.at(k);
+                run("xpu2-kit", x, kitNormals(x), nullptr);
+                run("xpu2-cam", x, x.normal, nullptr);
+                run("rhea-kit", r, kitNormals(r), nullptr);
+                run("rhea-cam", r, r.normal, nullptr);
+                if (op.persist) {
+                    run("rhea-surface", r, r.surface, nullptr);
+                    run("rhea-held", r, r.normal, &rheaKept.at(k));
+                }
+                // The normal output's mean z over pixels that met something: near +1 where it is in camera space (the
+                // surfaces face the camera), anything in world space.
+                double z = 0, count = 0;
+                for (size_t i = 0; i < N; ++i) {
+                    const float* v = &x.normal[i * 3];
+                    if (v[0] != 0 || v[1] != 0 || v[2] != 0) z += v[2], ++count;
+                }
+                seq["normal_mean_z"][tag] = count > 0 ? z / count : 0.0;
+                // The space of the normal output, against the virtual surface's normals (camera space, made through the
+                // frame's worldToRender): their mean agreement where phase 1 held, the output as it is and as the kit
+                // projects it.
+                if (op.persist) {
+                    const std::vector<float> kit = kitNormals(r);
+                    double asIs = 0, projected = 0, held = 0;
+                    for (size_t i = 0; i < N; ++i) {
+                        if (!r.held[i]) continue;
+                        const float* s = &r.surface[i * 3];
+                        asIs += s[0] * r.normal[i * 3] + s[1] * r.normal[i * 3 + 1] + s[2] * r.normal[i * 3 + 2];
+                        projected += s[0] * kit[i * 3] + s[1] * kit[i * 3 + 1] + s[2] * kit[i * 3 + 2];
+                        ++held;
+                    }
+                    seq["normal_agreement"][tag]["output"] = held > 0 ? asIs / held : 0.0;
+                    seq["normal_agreement"][tag]["kit"] = held > 0 ? projected / held : 0.0;
+                }
+            };
             // The scored frames' references: XPU2 at seq_ref samples a pixel, seeded apart from both runs.
             for (unsigned k : scored) {
                 auto px = std::make_shared<cpu::Plan>(*plan);
@@ -1236,6 +1382,7 @@ int main(int argc, char** argv) {
                 writeFloats(out / ("move-rhea-" + tag + ".rgba"), rheaKept.at(k));
                 writeFloats(out / ("move-xpu2-" + tag + ".rgba"), xpu2Kept.at(k));
                 seq["scored"].append(k);
+                if (op.denoise) denoiseFrame(k, tag);
             }
             if (!scored.empty()) seq["reference_spp"] = op.seqRef;
             if (op.accumulate) seq["rhea_marks"] = rheaMarks, seq["xpu2_marks"] = xpu2Marks;

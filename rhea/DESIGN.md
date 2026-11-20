@@ -610,3 +610,47 @@ camera moves; the GPU's own camera rays verify the reconstruction (`persist`, `r
   accumulated frames (`accum_power` 0): a probe's sums already hold the frames before (RESULTS.md 16).
 - What it does not do yet: a fade by how far a probe's light departs from its mean (not a fixed rate), pruning probes
   that have left the frame for good, a floor, moving geometry (a probe is a point on a triangle at rest).
+
+## 19. Falling back to XPU2: gracefully (2026-11-20)
+
+The user: "the fallback from Rhea to XPU2 RT should be graceful, not restarts", and Rhea may "serve biased-dominant at
+first since that can be cheap on gpu".
+
+- Biased-dominant first is what the combination does: in one frame phase 1 counts as `m0` samples against phase 2's 2,
+  and as phase 2's samples pile up at rest its weight m / (m + N) falls, the picture converging to the unbiased one.
+- Phase 2's samples are XPU2's own samples. A fallback, of a pixel, a region or the frame, is phase 1's weight going
+  to 0, faded over frames, while phase 2's sample sums carry on: never a buffer reset or a frame-wide switch of engines.
+  Coming back fades the weight in.
+- Persistent probes already fall back so, pixel by pixel: a pixel the verification fails, or whose triangle is not
+  trusted, takes m 0 that frame, and the accumulated weight is the mean over frames. The quadtree mode's whole-frame
+  floor (section 15) is the abrupt kind: the floor that ships fades instead.
+- **In the kit** (the user, for when it goes in): an opt-in in the preview preferences under XPU2 RT, "XPU2 RT
+  (Rhea)", XPU2 RT staying the default; it follows drags; probes live in a session-only cache (never on disk) keyed by
+  mesh: on a light or material edit their light fades and their places stay, on a mesh's geometry edit its probes go,
+  a memory budget evicts the probes unseen longest, and a probe's point is made again each frame from its triangle and
+  barycentrics, so moving and deforming meshes carry their probes.
+- **Cameras** (the user: "rhea should practically support all camera features as in moonlightIPR"). Today the lift is
+  a still pinhole perspective camera's. Depth of field and motion blur already fall back pixel by pixel (the
+  verification fails where lens or shutter samples meet different surfaces) and gain nothing there until phase 1 is
+  blurred by the circle of confusion or the motion; an orthographic camera needs its own lift (depth, not inverse
+  depth, is linear across a plane); spherical and dome cameras keep the triangulation but rest on the verification
+  alone, planes no longer staying planes in the picture.
+
+## 20. The denoiser (2026-11-20)
+
+The user: "the virtual surface should work as a denoiser's guide as well".
+
+- **The denoiser** is the kit's realtime one: XPU2's `GpuLane::Denoiser`, OptiX's HDR model with albedo and normal
+  guides, the albedo cleaned first (the kit's default), its inputs prepared as `xpu2_session.cc`'s realtime picture
+  prepares them (colour clamped at 0, albedo to [0, 1]). Option `denoise` (with `seq_ref`): each scored frame, Rhea's
+  and XPU2's, written as `dn-<variant>-<frame>`.
+- **The guides:** the albedo output; the normal output (`/rhea_normal`, the state variable N, as the kit's
+  `denoise_normal`) as it is, and projected onto the camera's axes as the kit's realtime does; and the virtual surface's
+  normals: each probe's mesh triangle's normal in camera space, facing the camera, interpolated over the
+  reconstruction's triangle where the frame's verification held, the normal output's elsewhere.
+- **Variants:** XPU2's frame and Rhea's with each normal guide; Rhea's with the virtual surface's normals; Rhea's left as
+  it is where phase 1 held (trusted and verified), denoised elsewhere.
+- What the measurements say (RESULTS.md 17): a denoiser removes fine noise, and Rhea's interpolation turns noise into
+  blotches the size of its triangles, which a denoiser keeps as picture. A guide that only marks edges cannot change
+  that; where the virtual surface can serve a denoiser is in time: telling which of the last frames' samples still
+  belong to a pixel (RESULTS.md 18, Open).

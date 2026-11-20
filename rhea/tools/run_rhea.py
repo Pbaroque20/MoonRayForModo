@@ -29,6 +29,11 @@ LPE = ('RenderOutput("/rhea_emission") { ["file_name"]="rhea.exr", ["result"]=8,
        'RenderOutput("/rhea_depth_max") { ["file_name"]="rhea.exr", ["result"]=3, ["state_variable"]=11, ["math_filter"]=3, '
        '["channel_name"]="rhea_depth_max", ["channel_format"]=0 }\n')
 
+# The first hits' normals (state variable 2, N, in render space), the denoiser's normal guide as the kit's realtime
+# takes it: added with denoise=1 (rhea_engine.cc), so that other runs' timings stay as they were.
+NORMAL = ('RenderOutput("/rhea_normal") { ["file_name"]="rhea.exr", ["result"]=3, ["state_variable"]=2, '
+          '["channel_name"]="rhea_normal", ["channel_format"]=0 }\n')
+
 FILMS = ('phase1', 'recon', 'phase2', 'direct2', 'final', 'classes', 'cells', 'samples2', 'leaves', 'geomerr')
 
 
@@ -36,7 +41,8 @@ def run(engine, ptx_build, scene, out, options, extra=None, reference=None, runt
     out = Path(out).resolve()
     out.mkdir(parents=True, exist_ok=False)
     override = out / 'rhea-override.rdla'
-    override.write_text((Path(extra).read_text(encoding='utf-8') if extra else '') + LPE, encoding='utf-8')
+    denoise = any(o.split('=', 1)[0] == 'denoise' and o.split('=', 1)[-1] != '0' for o in options)
+    override.write_text((Path(extra).read_text(encoding='utf-8') if extra else '') + LPE + (NORMAL if denoise else ''), encoding='utf-8')
     exe = json.loads((Path(engine) / 'build.json').read_text(encoding='utf-8'))['exe']
     ptx = json.loads((Path(ptx_build) / 'build.json').read_text(encoding='utf-8'))['ptx']
     # The asset root: textures must lie under it (the scene's folder unless --assets names another).
@@ -93,6 +99,11 @@ def run(engine, ptx_build, scene, out, options, extra=None, reference=None, runt
             report.setdefault('errors', {})[f'move-{who}-{k}'] = errors(f, mref, w, h)
             write_png(out / f'move-{who}-{k}.png', f, w, h)
         write_png(out / f'move-ref-{k}.png', mref, w, h)
+        # Denoised (denoise=1): each variant of frame k against the same reference.
+        for f in sorted(out.glob(f'dn-*-{k}.rgba')):
+            img = read_rgba(f, w, h)
+            report['errors'][f.stem] = errors(img, mref, w, h)
+            write_png(out / (f.stem + '.png'), img, w, h)
     (out / 'report.json').write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
     return report
 

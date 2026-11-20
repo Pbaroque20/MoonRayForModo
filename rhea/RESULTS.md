@@ -5,6 +5,11 @@ Rhea was named Sol, and before that "Bregman", earlier the same day; sections 2 
 
 ## In short
 
+**The denoiser (section 17).** Through the kit's realtime denoiser (OptiX), XPU2's 2-sample frames catch up with
+Rhea's, and with diffuse bounces pass them (block error 0.9e-3 against 1.2e-3): Rhea's error is blotches, which a
+denoiser keeps. The virtual surface's normals guide no better than the normal output. Found on the way: the kit's
+realtime normal guide is turned by the camera's rotation.
+
 **Phase 2 capped, persistent probes (section 16).** Phase 2 takes at most 2 samples a pixel a frame; probes live from
 frame to frame, triangulated each frame (Delaunay, then Bregman flips), and phase 2's own camera rays verify the
 reconstruction. At rest a frame costs what XPU2's 2 samples cost, and after 32 frames the picture has XPU2's block
@@ -618,7 +623,51 @@ XPU2 frames of the same cameras at 1024 samples a pixel.
   error 3.8 to 4.2e-4 against XPU2's 4.7e-5 and 1.7 to 1.9e-4. With two diffuse bounces 0.142 s against 0.270 s
   (9 spp), 1.2e-4 and 1.22 to 1.26e-3 against 1.23e-3 and 0.95 to 1.0e-3. Section 9's timings stand.
 
-## 17. Open
+## 17. The denoiser (2026-11-20)
+
+DESIGN.md section 20. Persistent probes, 24 frames along the moving camera (10 degrees), frames 6, 12 and 23 against
+XPU2 frames of the same cameras at 1024 samples a pixel; relative MSE / block error, each frame's three.
+
+**The test scene without diffuse bounces** (`persist=1 frames=24 orbit=10 seq_ref=1024 denoise=1`):
+
+| | Relative MSE | Block error |
+|---|---|---|
+| Rhea, as it is | 1.15e-3, 8.8e-4, 9.1e-4 | 7.7e-4, 8.4e-4, 8.5e-4 |
+| XPU2 2 spp, as it is | 3.96e-3, 3.63e-3, 3.68e-3 | 1.44e-3, 1.55e-3, 1.52e-3 |
+| XPU2, denoised (the kit's normal guide) | 4.4e-4, 4.2e-4, 4.6e-4 | 6.9e-4, 7.4e-4, 8.5e-4 |
+| Rhea, denoised (the normal output) | 5.1e-4, 4.4e-4, 4.9e-4 | 7.1e-4, 7.8e-4, 7.7e-4 |
+| Rhea, denoised (the virtual surface's normals) | 5.0e-4, 4.6e-4, 5.2e-4 | 7.0e-4, 7.9e-4, 7.7e-4 |
+| Rhea, as it is where phase 1 held, denoised elsewhere | 5.8e-4, 4.6e-4, 5.6e-4 | 7.8e-4, 8.4e-4, 8.2e-4 |
+
+**With two diffuse bounces** (the same, `--extra diffuse2.rdla`; Rhea's probes carry the whole light):
+
+| | Relative MSE | Block error |
+|---|---|---|
+| Rhea, as it is | 1.37e-3, 9.1e-4, 1.03e-3 | 1.36e-3, 1.38e-3, 1.26e-3 |
+| XPU2 2 spp, as it is | 7.59e-3, 7.20e-3, 7.34e-3 | 2.23e-3, 2.46e-3, 2.45e-3 |
+| **XPU2, denoised** | **3.7e-4, 3.5e-4, 4.0e-4** | **8.3e-4, 9.8e-4, 1.00e-3** |
+| Rhea, denoised (the normal output) | 4.6e-4, 3.7e-4, 4.5e-4 | 1.21e-3, 1.26e-3, 1.12e-3 |
+| Rhea, denoised (the virtual surface's normals) | 4.6e-4, 3.9e-4, 4.8e-4 | 1.21e-3, 1.25e-3, 1.11e-3 |
+
+A frame: Rhea 0.085 s, XPU2 2 spp 0.074 s with diffuse bounces; the denoiser 3.4 ms at 320 x 240 (its first call
+0.09 to 0.14 s, setting up).
+
+- **Denoised, XPU2 catches up, and with diffuse bounces passes Rhea.** XPU2's error at 2 samples is fine noise, which
+  the denoiser takes out; Rhea's is the interpolation's, blotches as large as its triangles, which the denoiser keeps
+  as picture: Rhea's block error barely moves (1.3e-3 to 1.2e-3), XPU2's falls from 2.4e-3 to 0.9e-3.
+- **The virtual surface's normals guide as the normal output does** (within 5%): at 2 samples the normal output is
+  already clean on these surfaces, and edges are all a normal guide gives. They cost no output, which is all they save.
+- **Keeping Rhea where phase 1 held** is worse than denoising it too: Rhea's own pixels are noisier than denoised ones.
+- **The kit's realtime normal guide is turned by the camera.** The normal output agrees with the virtual surface's
+  camera-space normals at 0.9999 (frames 12 and 23 of a 60-degree swing); projected onto the camera's axes as
+  `xpu2_session.cc` (realtimePicture) does, at 0.978 and 0.943: the cosines of those cameras' own rotations. XPU2's
+  render space is the camera's, so the normal output is in camera space already and the kit turns it a second time.
+  On this scene the denoiser hardly minds (the scores above move by 1%); a camera turned far from the world's axes
+  hands OptiX normals turned as far.
+- Not measured: flicker. Rhea's blotches stay on the surfaces from frame to frame, a denoised 2-sample frame's residue
+  does not; per-frame scores cannot show which looks steadier in motion.
+
+## 18. Open
 
 - **The CPU's part, further:** suitability seeding for gathered frames, so the CPU lane could take the shading work
   that cannot hold the frame's end; on heavy scenes, the samples the GPU defers (as in XPU2).
@@ -633,8 +682,10 @@ XPU2 frames of the same cameras at 1024 samples a pixel.
   noise, not a fixed rate (view-dependent light would then follow at once, and diffuse light keep its samples); probes
   pruned once they have left the frame for good; the floor and Sponza in persistent mode; diffuse bounces in
   persistent mode (whole-light probes); moving geometry (a probe is a point on a triangle at rest).
-- **The denoiser's guide** (asked for): the virtual surface's normals and depth, with the albedo, as the guides of
-  XPU2's OptiX denoiser (`GpuLane::Denoiser`), against XPU2 denoised with its own guides.
+- **The denoiser, further** (section 17): flicker in motion, measured (a camera that only turns maps one frame onto the
+  next exactly, a homography); and the virtual surface as the denoiser's guide in time: phase 2's samples of the last
+  frames reprojected through it and kept where the frame's verification holds (as realtime path tracers accumulate
+  history before denoising), so that the denoiser sees many samples' fine noise, not the interpolation's blotches.
 
 - **Silhouettes:** the largest share of the error is phase 2's noise in the 5% of pixels that never converge.
 - **The passes on the GPU,** the piece on the GPU, and T-junctions between leaves of different levels (DESIGN.md 8.5).
@@ -649,7 +700,7 @@ XPU2 frames of the same cameras at 1024 samples a pixel.
   Sponza (23 lights, 69% of the GPU's time in shadow rays) is where light sample reuse has the most to save.
 - The lift assumes a still perspective camera without depth of field; patches lose triangles crossing the near plane.
 
-## 18. Reproduce
+## 19. Reproduce
 
 ```bash
 python rhea/build_rhea.py [--gpu] --source . --runtime <MoonRayForModo-xpu2>/test-results/interactive-reference-042 --output test-results/rhea/build-N
@@ -668,7 +719,7 @@ into the kit's. A host-only build can take an earlier `--gpu` build's program wh
 are unchanged (section 6 used `build-4`, section 7 `build-9`). The engine's options and defaults: `s0` (8), `min_stride`
 (2), `tol` (0.002), `margin` (the pixel filter's reach), `probe_spp` (64), `probe_full` (-1: with diffuse bounces), `n_lo`, `n_hi` (by the probes: 2 and 16 whole-light, 4 and 32 direct), `n_bg` (1), `m0` (128; 32 with persistent probes),
 `tau_r` (0.25), `rings`, `tris`, `curvature` (1), `curv_span` (4), `light_passes` (0), `light_tol` (0.02), `gather` (1),
-`gather2` (0), `one_frame` (1), `mode` (1: the GPU alone shades), `frames` (0: none), `orbit` (0), `seq_threads` (4), `seq_xpu2` (36), `accumulate` (0), `accum_power` (0.5; 0 with persistent probes), `jitter` (0), `floor_area` (0.3), `floor_spp` (9), `seed` (0), `coverage` (1), `demod` (1), `phase2_max` (2: phase 2's samples a pixel at most, the floor's too; 0 no cap), `persist` (0), `keep_spp` (4), `cell` (8), `gap_passes` (2), `fade` (0.95), `clean_absorb` (1), `seq_ref` (0: the moving frames unscored), `cache` (default off),
+`gather2` (0), `one_frame` (1), `mode` (1: the GPU alone shades), `frames` (0: none), `orbit` (0), `seq_threads` (4), `seq_xpu2` (36), `accumulate` (0), `accum_power` (0.5; 0 with persistent probes), `jitter` (0), `floor_area` (0.3), `floor_spp` (9), `seed` (0), `coverage` (1), `demod` (1), `phase2_max` (2: phase 2's samples a pixel at most, the floor's too; 0 no cap), `persist` (0), `keep_spp` (4), `cell` (8), `gap_passes` (2), `fade` (0.95), `clean_absorb` (1), `seq_ref` (0: the moving frames unscored), `denoise` (0: with `seq_ref`, the scored frames denoised), `cache` (default off),
 `cache_p` (0.25), `cache_tol` (0.02), `qmc_depth` (0: off), `xpu2_qmc` (XPU2's comparison frames with OpenQMC). Each run
 writes the films, `leaves.png`, `geomerr.png`, `depth.png` and `depth-true.png`, and the piece as `surface.rhea`.
 
