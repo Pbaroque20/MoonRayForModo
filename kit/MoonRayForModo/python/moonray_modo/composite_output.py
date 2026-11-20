@@ -98,6 +98,14 @@ def write(runtime, graph, rendered, denoised=None, scene=None):
         steps, result = compositor.jobs(graph, files, {key: 'beauty' for key in files}, held, channels=channels,
                                         composite=compositor.program(runtime))
         for args, target in steps:
+            if args and args[0] == '@pfm':
+                # A TIFF the image tool just wrote, made the PFM the compositor program reads (pfm_files).
+                from .pfm_files import run_step
+                try:
+                    run_step(args, target)
+                except (OSError, ValueError) as exc:
+                    raise RuntimeError('The image tool could not make the composite: ' + str(exc))
+                continue
             command = args[1:] if args and args[0] == '@run' else [str(runtime / 'oiiotool.exe')] + args
             done = subprocess.run(command, env=native.environment(runtime), stdout=subprocess.PIPE,
                                   stderr=subprocess.STDOUT, timeout=600, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
