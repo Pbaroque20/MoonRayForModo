@@ -345,7 +345,7 @@ inline const char* stateName(int s) {
 
 struct Site {
     int px = 0, py = 0, level = 0;
-    bool hit = false, scannable = false;
+    bool hit = false, scannable = false, lit = false;
     uint32_t geom = ~0u, prim = 0;
     Plane h;
     double w = 0;
@@ -365,9 +365,11 @@ struct Quad {
 };
 
 struct SurfaceOptions {
-    unsigned s0 = 16, minStride = 2, rings = 128, tris = 16384, threads = 12;
+    unsigned s0 = 8, minStride = 2, rings = 128, tris = 16384, threads = 12;
     double tol = 0.002;   // the geometric tolerance: relative inverse depth (relative depth)
     double margin = 1.0;  // pixels around a quad its reconstruction must also hold (the pixel filter's reach)
+    double lightTol = 0.02;    // the light's tolerance: its interpolation error relative to the quad's light (refineLight)
+    unsigned lightPasses = 0;  // light passes after the geometric ones (0: none; they chase the probes' noise, RESULTS.md 7)
 };
 
 struct PassStats {
@@ -386,13 +388,14 @@ public:
     size_t visited = 0;
     double clusterSeconds = 0, topologySeconds = 0;
 
+    // The geometric passes from the coarse lattice until every quad has converged or reached the finest stride.
     void build(const cpu::Plan& plan, const async::CpuScene& scene, const Frame& frame, GeometryIndex& index, const SurfaceOptions& op) {
         width = plan.width, height = plan.height, s0 = op.s0;
-        sites.clear(), quads.clear(), passes.clear();
+        sites.clear(), quads.clear(), passes.clear(), lights.clear(), pending.clear();
         siteAt.assign(size_t(width) * height, -1);
-        visited = 0;
-        auto t = std::chrono::steady_clock::now();
-        const FrameClusters clusters = liftClusters(index, frame, width, height, op.margin);
+        visited = 0, scanned = 0;
+        const auto t = std::chrono::steady_clock::now();
+        clusters = liftClusters(index, frame, width, height, op.margin);
         clusterSeconds = secondsSince(t);
         topologySeconds = 0;
         std::vector<int> xs, ys;
@@ -401,17 +404,125 @@ public:
         for (int y = 0; y < int(height) - 1; y += int(s0)) ys.push_back(y);
         ys.push_back(int(height) - 1);
         rootX = unsigned(xs.size() - 1), rootY = unsigned(ys.size() - 1);
-        std::vector<int> pending;
         for (unsigned j = 0; j < rootY; ++j)
             for (unsigned i = 0; i < rootX; ++i) {
                 pending.push_back(int(quads.size()));
                 quads.push_back(makeQuad(xs[i], ys[j], xs[i + 1], ys[j + 1], 0));
             }
-        size_t scanned = 0;
-        for (int level = 0; !pending.empty(); ++level) {
+        geometricPasses(plan, scene, frame, index, op);
+    }
+
+    // The light passes' test (DESIGN.md 9.2): a quad whose geometry has converged splits where its probes' light bends
+    // more than the tolerance between them. Linear interpolation's error over a span s is about s^2 |L''| / 8, and the
+    // light's second difference across a corner's neighbours at the quad's stride, |L(x-s) - 2 L(x) + L(x+s)|, is about
+    // s^2 |L''|: the light's own sandwich gap. Neighbours count only on the corner's own mesh. The children's probes are
+    // traced, scanned and tested as a geometric pass (geometricPasses), then lit by the next probe frame.
+    size_t refineLight(const cpu::Plan& plan, const async::CpuScene& scene, const Frame& frame, GeometryIndex& index, const SurfaceOptions& op) {
+        LightStats ls;
+        const auto began = std::chrono::steady_clock::now();
+        const size_t count = quads.size();
+        for (size_t qi = 0; qi < count; ++qi) {
+            const Quad c = quads[qi];
+            if (c.child >= 0 || c.state != Trusted || c.x1 - c.x0 <= int(op.minStride) || c.y1 - c.y0 <= int(op.minStride)) continue;
+            ++ls.tested;
+            const double e = lightError(c);
+            ls.largest = std::max(ls.largest, e);
+            if (e <= op.lightTol) continue;
+            split(int(qi), c.level + 1, pending);
+            ++ls.split;
+        }
+        ls.testSeconds = secondsSince(began);
+        const auto t = std::chrono::steady_clock::now();
+        if (!pending.empty()) geometricPasses(plan, scene, frame, index, op);
+        ls.passSeconds = secondsSince(t);
+        lights.push_back(ls);
+        return ls.split;
+    }
+
+    // The sites without light yet (for the next probe frame).
+    std::vector<int> unlit() const {
+        std::vector<int> out;
+        for (int i = 0; i < int(sites.size()); ++i)
+            if (!sites[i].lit) out.push_back(i);
+        return out;
+    }
+
+    struct LightStats {
+        size_t tested = 0, split = 0;
+        double largest = 0, testSeconds = 0, passSeconds = 0;
+    };
+    std::vector<LightStats> lights;
+
+    // The light's curvature over a quad (per channel, d2L/dx2 and d2L/dy2 in pixels), from its corners' second
+    // differences across their neighbours span strides away on the corner's own mesh, averaged; false where no corner
+    // has both neighbours on an axis. A wider span measures the same curvature with less of the probes' noise (the
+    // difference grows as the span squared, its noise does not). For the reconstruction's second-order term.
+    bool curvature(const Quad& q, float out[2][3], int span = 1) const {
+        const int step[2] = {(q.x1 - q.x0) * span, (q.y1 - q.y0) * span};
+        double sum[2][3] = {}, n[2] = {};
+        for (int k = 0; k < 4; ++k) {
+            const Site& s = sites[q.corner[k]];
+            for (int a = 0; a < 2; ++a) {
+                const int dx = a == 0 ? step[0] : 0, dy = a == 1 ? step[1] : 0;
+                const int ax = s.px - dx, ay = s.py - dy, bx = s.px + dx, by = s.py + dy;
+                if (ax < 0 || ay < 0 || bx >= int(width) || by >= int(height)) continue;
+                const int i = siteAt[size_t(ay) * width + ax], j = siteAt[size_t(by) * width + bx];
+                if (i < 0 || j < 0 || !sites[i].lit || !sites[j].lit || sites[i].geom != s.geom || sites[j].geom != s.geom) continue;
+                for (int c = 0; c < 3; ++c) sum[a][c] += (sites[i].rgb[c] - 2.0 * s.rgb[c] + sites[j].rgb[c]) / (double(step[a]) * step[a]);
+                n[a] += 1;
+            }
+        }
+        for (int a = 0; a < 2; ++a)
+            for (int c = 0; c < 3; ++c) out[a][c] = n[a] ? float(sum[a][c] / n[a]) : 0.0f;
+        return n[0] || n[1];
+    }
+
+private:
+    std::vector<int> pending;
+    FrameClusters clusters;
+    size_t scanned = 0;
+
+    // A quad's four new children, their new probes to be traced at the next geometric pass.
+    void split(int q, int level, std::vector<int>& next) {
+        const Quad c = quads[q];
+        const int xm = (c.x0 + c.x1) / 2, ym = (c.y0 + c.y1) / 2;
+        const int first = int(quads.size());
+        quads[q].child = first;
+        quads.push_back(makeQuad(c.x0, c.y0, xm, ym, level));
+        quads.push_back(makeQuad(xm, c.y0, c.x1, ym, level));
+        quads.push_back(makeQuad(xm, ym, c.x1, c.y1, level));
+        quads.push_back(makeQuad(c.x0, ym, xm, c.y1, level));
+        for (int k = 0; k < 4; ++k) next.push_back(first + k);
+    }
+
+    double luminance(const Site& s) const { return 0.2126 * s.rgb[0] + 0.7152 * s.rgb[1] + 0.0722 * s.rgb[2]; }
+
+    // The light's relative interpolation error over a quad, from its corners' second differences (refineLight).
+    double lightError(const Quad& q) const {
+        const int sx = q.x1 - q.x0, sy = q.y1 - q.y0;
+        double mean = 0, e = 0;
+        for (int k = 0; k < 4; ++k) mean += luminance(sites[q.corner[k]]) / 4;
+        for (int k = 0; k < 4; ++k) {
+            const Site& s = sites[q.corner[k]];
+            const double L = luminance(s);
+            const int along[2][2] = {{sx, 0}, {0, sy}};
+            for (const auto& d : along) {
+                const int ax = s.px - d[0], ay = s.py - d[1], bx = s.px + d[0], by = s.py + d[1];
+                if (ax < 0 || ay < 0 || bx >= int(width) || by >= int(height)) continue;
+                const int a = siteAt[size_t(ay) * width + ax], b = siteAt[size_t(by) * width + bx];
+                if (a < 0 || b < 0 || !sites[a].lit || !sites[b].lit || sites[a].geom != s.geom || sites[b].geom != s.geom) continue;
+                e = std::max(e, std::fabs(luminance(sites[a]) - 2 * L + luminance(sites[b])) / 8);
+            }
+        }
+        return e / (mean + 1e-3);
+    }
+
+    void geometricPasses(const cpu::Plan& plan, const async::CpuScene& scene, const Frame& frame, GeometryIndex& index, const SurfaceOptions& op) {
+        auto t = std::chrono::steady_clock::now();
+        while (!pending.empty()) {
             const auto began = std::chrono::steady_clock::now();
             PassStats ps;
-            ps.level = level;
+            ps.level = quads[pending.front()].level;
             ps.quads = pending.size();
             ps.newSites = sites.size() - scanned;
             // The new probes: their camera rays, then their meshes' topologies, then their scans.
@@ -425,10 +536,11 @@ public:
             index.topologies(plan, geoms, op.threads);
             topologySeconds += secondsSince(t);
             t = std::chrono::steady_clock::now();
-            const double window = double(s0 >> std::min(level, 30)) + op.margin + 1.0;
             parallel(op.threads, sites.size() - scanned, [&](size_t i) {
                 Site& s = sites[scanned + i];
                 if (!s.scannable) return;
+                // The window of the quads a probe was made for: its level's stride.
+                const double window = double(s0 >> std::min(s.level, 30)) + op.margin + 1.0;
                 const double cx = s.px + 0.5, cy = s.py + 0.5;
                 s.patch = scan(frame, plan, *index.meshes[s.geom].topology, s.geom, s.prim, cx - window, cy - window, cx + window, cy + window,
                                op.rings, op.tris);
@@ -453,14 +565,7 @@ public:
                     ++ps.states[c.state];
                     continue;
                 }
-                const int xm = (c.x0 + c.x1) / 2, ym = (c.y0 + c.y1) / 2;
-                const int first = int(quads.size());
-                quads[q].child = first;
-                quads.push_back(makeQuad(c.x0, c.y0, xm, ym, level + 1));
-                quads.push_back(makeQuad(xm, c.y0, c.x1, ym, level + 1));
-                quads.push_back(makeQuad(xm, ym, c.x1, c.y1, level + 1));
-                quads.push_back(makeQuad(c.x0, ym, xm, c.y1, level + 1));
-                for (int k = 0; k < 4; ++k) next.push_back(first + k);
+                split(q, c.level + 1, next);
                 ++ps.refined;
             }
             ps.sites = sites.size();
@@ -470,10 +575,14 @@ public:
         }
     }
 
-    // Each site's pixel (for a probe frame) and its radiance taken from that frame's picture.
-    void takeRadiance(const std::vector<float>& rgba) {
-        for (auto& s : sites)
+public:
+    // The light of these sites, read at their pixels from a probe frame's picture.
+    void takeRadiance(const std::vector<float>& rgba, const std::vector<int>& which) {
+        for (int i : which) {
+            Site& s = sites[i];
             for (int c = 0; c < 3; ++c) s.rgb[c] = rgba[(size_t(s.py) * width + s.px) * 4 + c];
+            s.lit = true;
+        }
     }
 
 private:
@@ -705,7 +814,8 @@ private:
 struct PackedHeader {
     uint32_t magic = 0x31534f4c;  // "LOS1"
     uint32_t width = 0, height = 0, s0 = 0, rootX = 0, rootY = 0, sites = 0, quads = 0;
-    float tauR = 0.25f, pad = 0;
+    float tauR = 0.25f;
+    uint32_t curvature = 0;  // the reconstruction's second-order term on (PackedQuad::curv)
 };
 struct PackedSite {
     uint16_t px, py;
@@ -721,12 +831,13 @@ struct PackedQuad {
     uint8_t pad;
     uint32_t corner[4];
     float half[2][3];
+    float curv[2][3];  // the light's d2L/dx2 and d2L/dy2 over it, per channel (VirtualSurface::curvature; 0: none)
 };
 
-inline std::vector<uint8_t> pack(const VirtualSurface& v, float tauR) {
+inline std::vector<uint8_t> pack(const VirtualSurface& v, float tauR, bool curvature = false, int span = 1) {
     PackedHeader hd;
     hd.width = v.width, hd.height = v.height, hd.s0 = v.s0, hd.rootX = v.rootX, hd.rootY = v.rootY;
-    hd.sites = uint32_t(v.sites.size()), hd.quads = uint32_t(v.quads.size()), hd.tauR = tauR;
+    hd.sites = uint32_t(v.sites.size()), hd.quads = uint32_t(v.quads.size()), hd.tauR = tauR, hd.curvature = curvature;
     std::vector<uint8_t> out(sizeof(PackedHeader) + v.sites.size() * sizeof(PackedSite) + v.quads.size() * sizeof(PackedQuad));
     std::memcpy(out.data(), &hd, sizeof hd);
     auto* ps = reinterpret_cast<PackedSite*>(out.data() + sizeof hd);
@@ -741,6 +852,7 @@ inline std::vector<uint8_t> pack(const VirtualSurface& v, float tauR) {
         PackedQuad o{uint16_t(q.x0), uint16_t(q.y0), uint16_t(q.x1), uint16_t(q.y1), q.child, q.state, uint8_t(q.diagAC), q.sign, 0,
                      {uint32_t(q.corner[0]), uint32_t(q.corner[1]), uint32_t(q.corner[2]), uint32_t(q.corner[3])}, {}};
         for (int k = 0; k < 2; ++k) o.half[k][0] = float(q.half[k].a), o.half[k][1] = float(q.half[k].b), o.half[k][2] = float(q.half[k].c);
+        if (curvature && q.child < 0 && (q.state == Trusted || q.state == Background)) v.curvature(q, o.curv, span);
         pq[i] = o;
     }
     return out;
@@ -796,6 +908,16 @@ inline PixelSurface evaluate(const SurfaceView& v, int px, int py) {
         bw[0] = 1, bw[1] = bw[2] = 0;
     }
     for (int ch = 0; ch < 3; ++ch) out.rgb[ch] = float(bw[0] * c[t[0]]->rgb[ch] + bw[1] * c[t[1]]->rgb[ch] + bw[2] * c[t[2]]->rgb[ch]);
+    // The second-order term: linear interpolation of a light that bends sits on its chords, off it by
+    // 1/2 sum_k b_k d_k^T H d_k (d_k from the pixel to corner k, H the light's curvature, its cross term left out).
+    if (hd.curvature && (q.state == Trusted || q.state == Background)) {
+        double dx2 = 0, dy2 = 0;
+        for (int k = 0; k < 3; ++k) {
+            const double dx = c[t[k]]->px + 0.5 - x, dy = c[t[k]]->py + 0.5 - y;
+            dx2 += bw[k] * dx * dx, dy2 += bw[k] * dy * dy;
+        }
+        for (int ch = 0; ch < 3; ++ch) out.rgb[ch] = std::max(0.0f, out.rgb[ch] - float(0.5 * (q.curv[0][ch] * dx2 + q.curv[1][ch] * dy2)));
+    }
     // The cell: the corner whose plane predicts the reconstruction best (nearest on a tie).
     float best = 3.4e38f, bestDist = 3.4e38f;
     if (q.state == Trusted) {

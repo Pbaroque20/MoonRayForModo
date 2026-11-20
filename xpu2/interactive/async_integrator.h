@@ -3202,5 +3202,9 @@ X2_HD inline U32 tilePixel(U32 tile, U32 position, U32 width, U32 height, const 
     const int x = int(p % width), y = int(p / width);
     return x >= viewport[0] && y >= viewport[1] && x < viewport[2] && y < viewport[3] ? p : ~0u;
 }
+// A uniform chunk's pixel: from the gather tiles where the plan lists them (Plan::gather), else the image's tile.
+X2_HD inline U32 chunkPixel(const U32* gather, U32 tile, U32 position, U32 width, U32 height, const int* viewport) {
+    return gather ? gather[tile * TilePixels + position] : tilePixel(tile, position, width, height, viewport);
+}
 
 }  // namespace xpu2::interactive::async

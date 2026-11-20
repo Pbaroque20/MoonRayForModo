@@ -20,6 +20,7 @@
 #include <fstream>
 #include <iostream>
 #include <json/json.h>
+#include <numeric>
 #include <thread>
 
 using namespace xpu2::interactive;
@@ -31,15 +32,19 @@ static double since(Clock::time_point t) { return std::chrono::duration<double>(
 namespace {
 
 struct Options {
-    unsigned threads = 12, probeSpp = 16, nLo = 8, nHi = 32, nBg = 1;
+    unsigned threads = 12, probeSpp = 64, nLo = 4, nHi = 32, nBg = 1;
     int mode = 2, p1mode = 1;
-    double m0 = 64, tauR = 0.25, margin = -1;  // margin -1: from the pixel filter
+    double m0 = 128, tauR = 0.25, margin = -1;  // margin -1: from the pixel filter
     sol::SurfaceOptions surface;
     std::string override_;
     unsigned repeats = 3;            // timed runs after one warm-up
     std::vector<unsigned> xpu2Spp;  // XPU2 frames to time in the same process (samples a pixel)
     // Phase 2's frame cache (mixed::Config::frameCache): on, the chance a bounce that reaches it goes on, the depth
     // tolerance; OpenQMC past the first hit (qmc_depth: vertices of nonMirrorDepth below it), and in XPU2's frames too.
+    bool gather = true;  // probe frames over gather tiles (Plan::gather; needs a GPU program with them)
+    bool gather2 = false;  // phase 2 over gather tiles, its pixels sorted by their samples (no gain over per-tile depth)
+    bool curvature = true;   // the reconstruction's second-order term (VirtualSurface::curvature)
+    int curvSpan = 4;       // its second differences across neighbours this many strides away
     bool cache = false;  // off by default: it needs the engine's own GPU program (build_sol.py --gpu)
     double cacheP = 0.25, cacheTol = 0.02;
     unsigned qmcDepth = 0, xpu2Qmc = 0;
@@ -108,6 +113,12 @@ int main(int argc, char** argv) {
             else if (k == "tau_r") op.tauR = std::stod(v);
             else if (k == "rings") op.surface.rings = unsigned(std::stoul(v));
             else if (k == "tris") op.surface.tris = unsigned(std::stoul(v));
+            else if (k == "light_tol") op.surface.lightTol = std::stod(v);
+            else if (k == "light_passes") op.surface.lightPasses = unsigned(std::stoul(v));
+            else if (k == "gather") op.gather = v != "0";
+            else if (k == "gather2") op.gather2 = v != "0";
+            else if (k == "curvature") op.curvature = v != "0";
+            else if (k == "curv_span") op.curvSpan = std::stoi(v);
             else if (k == "override") op.override_ = v;
             else if (k == "repeats") op.repeats = unsigned(std::stoul(v));
             else if (k == "cache") op.cache = v != "0";
@@ -209,30 +220,65 @@ int main(int argc, char** argv) {
         vs.build(*plan, cpuScene, frame, index, op.surface);
         const double geometrySeconds = since(stamp);
 
-        // Phase 1's frame: the probes' direct light (max_depth 0), probe_spp samples a probe pixel, none elsewhere.
-        auto p1 = std::make_shared<cpu::Plan>(*plan);
-        p1->maxDepth = 0;
-        p1->pixelSamples.assign(N, 0u);
-        for (const auto& s : vs.sites) p1->pixelSamples[size_t(s.py) * W + s.px] = op.probeSpp;
-        // The grid hands out sample indices up to the plan's spp for every pixel: no more than any pixel takes.
-        p1->spp = op.probeSpp;
-        async::RenderOptions o1;
-        o1.threads = op.threads;
-        o1.mode = op.p1mode;
-        stamp = Clock::now();
-        if (gpu) gpu->updateCamera(p1);
-        async::RenderResult r1;
-        {
-            async::Renderer renderer(p1, cpuScene, gpu.get());
-            r1 = renderer.render(o1);
+        // Phase 1: probe frames, the probes' direct light (max_depth 0, probe_spp samples a probe), each frame lighting
+        // the probes that have no light yet; between them, light passes split the quads whose light bends too much
+        // (VirtualSurface::refineLight), whose new probes the next frame lights. A probe frame's pixels are gathered
+        // into tiles (Plan::gather), spread over the grid's cells, so that its chunks hold probes and not empty pixels.
+        const unsigned tilesX = (W + 7) / 8, tilesY = (H + 7) / 8, tilesAll = tilesX * tilesY;
+        double phase1Seconds = 0, lightSeconds = 0, phase1Sampling = 0;
+        unsigned probeFrames = 0;
+        uint64_t p1Gpu = 0, p1Cpu = 0;
+        std::vector<float> phase1(N * 4, 0.0f);
+        for (unsigned pass = 0;; ++pass) {
+            const std::vector<int> which = vs.unlit();
+            if (!which.empty()) {
+                auto p1 = std::make_shared<cpu::Plan>(*plan);
+                p1->maxDepth = 0;
+                p1->pixelSamples.assign(N, 0u);
+                p1->spp = op.probeSpp;
+                if (op.gather) {
+                    p1->gather.assign(size_t(tilesAll) * 64, ~0u);
+                    const size_t used = (which.size() + 63) / 64;
+                    for (size_t k = 0; k < used; ++k) {
+                        const size_t tile = (k * tilesAll) / used;
+                        for (size_t j = 0; j < 64 && k * 64 + j < which.size(); ++j) {
+                            const auto& s = vs.sites[which[k * 64 + j]];
+                            p1->gather[tile * 64 + j] = unsigned(size_t(s.py) * W + s.px);
+                        }
+                    }
+                }
+                for (int i : which) p1->pixelSamples[size_t(vs.sites[i].py) * W + vs.sites[i].px] = op.probeSpp;
+                async::RenderOptions o1;
+                o1.threads = op.threads;
+                o1.mode = op.p1mode;
+                stamp = Clock::now();
+                if (gpu) gpu->updateCamera(p1);
+                async::RenderResult r1;
+                {
+                    async::Renderer renderer(p1, cpuScene, gpu.get());
+                    r1 = renderer.render(o1);
+                }
+                cpu::need(!r1.failed, r1.error.empty() ? "Phase 1 failed" : r1.error);
+                phase1Seconds += since(stamp);
+                phase1Sampling += r1.seconds;
+                p1Gpu += r1.gpuSamples, p1Cpu += r1.cpuSamples;
+                ++probeFrames;
+                vs.takeRadiance(r1.rgba, which);
+                for (int i : which) {
+                    const size_t px = size_t(vs.sites[i].py) * W + vs.sites[i].px;
+                    for (int c = 0; c < 4; ++c) phase1[px * 4 + c] = r1.rgba[px * 4 + c];
+                }
+            }
+            if (pass >= op.surface.lightPasses) break;
+            stamp = Clock::now();
+            const size_t splits = vs.refineLight(*plan, cpuScene, frame, index, op.surface);
+            lightSeconds += since(stamp);
+            if (!splits) break;
         }
-        cpu::need(!r1.failed, r1.error.empty() ? "Phase 1 failed" : r1.error);
-        const double phase1Seconds = since(stamp);
 
         // The piece: the virtual surface with the probes' light, packed; each pixel evaluated from it alone.
         stamp = Clock::now();
-        vs.takeRadiance(r1.rgba);
-        const std::vector<uint8_t> piece = sol::pack(vs, float(op.tauR));
+        const std::vector<uint8_t> piece = sol::pack(vs, float(op.tauR), op.curvature, op.curvSpan);
         const sol::SurfaceView view(piece);
         std::vector<float> recon(N * 4, 0.0f), wvis(N, 0.0f);
         std::vector<uint8_t> cls(N, sol::Truncated), level(N, 0);
@@ -268,6 +314,21 @@ int main(int argc, char** argv) {
         auto p2 = std::make_shared<cpu::Plan>(*plan);
         p2->pixelSamples = nCount;
         p2->spp = *std::max_element(nCount.begin(), nCount.end());
+        // Phase 2's pixels gathered by their samples (Plan::gather): sorted by count, most first, 64 to a tile in image
+        // order, so a tile's pixels take the same samples and none waits on a deeper neighbour. The tiles are spread over
+        // the grid's cells (a stride prime to their number), so the deep ones are not all in the first cells.
+        if (op.gather2) {
+            std::vector<unsigned> order(N);
+            for (size_t i = 0; i < N; ++i) order[i] = unsigned(i);
+            std::stable_sort(order.begin(), order.end(), [&](unsigned a, unsigned b) { return nCount[a] > nCount[b]; });
+            p2->gather.assign(size_t(tilesAll) * 64, ~0u);
+            size_t step = 397;
+            while (std::gcd(step, size_t(tilesAll)) != 1) ++step;
+            for (size_t k = 0; k * 64 < N; ++k) {
+                const size_t tile = (k * step) % tilesAll;
+                for (size_t j = 0; j < 64 && k * 64 + j < N; ++j) p2->gather[tile * 64 + j] = order[k * 64 + j];
+            }
+        }
         // The frame cache: phase 1's radiance and the visible inverse depth where the virtual surface converged, for
         // phase 2's bounces (async_integrator.h frameCacheAt), and OpenQMC past the first hit.
         if (op.cache) {
@@ -326,12 +387,14 @@ int main(int argc, char** argv) {
             Json::Value t;
             t["geometry_seconds"] = geometrySeconds;
             t["phase1_seconds"] = phase1Seconds;
-            t["phase1_sampling_seconds"] = r1.seconds;
+            t["phase1_sampling_seconds"] = phase1Sampling;
+            t["light_seconds"] = lightSeconds;
+            t["probe_frames"] = probeFrames;
             t["region_seconds"] = regionSeconds;
             t["phase2_seconds"] = phase2Seconds;
             t["phase2_sampling_seconds"] = r2.seconds;
             t["combine_seconds"] = combineSeconds;
-            t["total_seconds"] = geometrySeconds + phase1Seconds + regionSeconds + phase2Seconds + combineSeconds;
+            t["total_seconds"] = geometrySeconds + phase1Seconds + lightSeconds + regionSeconds + phase2Seconds + combineSeconds;
             t["clusters_seconds"] = vs.clusterSeconds;
             t["topology_seconds"] = vs.topologySeconds;
             Json::Value ps(Json::arrayValue);
@@ -432,7 +495,7 @@ int main(int argc, char** argv) {
             for (int k = 0; k < 3; ++k) leaves[i * 4 + k] = levels[level[i]][k] * (border ? 0.35f : 1.0f);
             for (int k = 0; k < 3; ++k) nmap[i * 4 + k] = float(nCount[i]) / float(op.nHi);
         }
-        writeFloats(out / "phase1.rgba", r1.rgba);
+        writeFloats(out / "phase1.rgba", phase1);
         writeFloats(out / "recon.rgba", recon);
         writeFloats(out / "phase2.rgba", r2.rgba);
         writeFloats(out / "direct2.rgba", direct2);
@@ -458,7 +521,9 @@ int main(int argc, char** argv) {
         }
         // Why quads split (a split quad keeps the test it failed), and how much of the frame each pass left converged.
         uint64_t refinedBy[sol::States] = {};
-        std::vector<double> convergedArea(vs.passes.size(), 0.0);
+        int deepest = 0;
+        for (const auto& q : vs.quads) deepest = std::max(deepest, q.level);
+        std::vector<double> convergedArea(size_t(deepest) + 1, 0.0);
         for (const auto& q : vs.quads) {
             if (q.child >= 0) {
                 ++refinedBy[q.state];
@@ -470,7 +535,7 @@ int main(int argc, char** argv) {
         }
         for (int s = 0; s < sol::States; ++s)
             if (refinedBy[s]) report["refined_by"][sol::stateName(s)] = Json::UInt64(refinedBy[s]);
-        for (double a : convergedArea) report["converged_area_by_pass"].append(a / (double(W - 1) * double(H - 1)));
+        for (double a : convergedArea) report["converged_area_by_level"].append(a / (double(W - 1) * double(H - 1)));
         uint64_t welded = 0, borders = 0, nonManifold = 0, topoTris = 0, topologies = 0, meshBytes = 0;
         for (const auto& mi : index.meshes) {
             if (mi.data) meshBytes += mi.data->positions.size() * 12 + mi.data->triangles.size() * 12;
@@ -485,6 +550,7 @@ int main(int argc, char** argv) {
         o["s0"] = op.surface.s0, o["min_stride"] = op.surface.minStride, o["tol"] = op.surface.tol, o["margin"] = op.margin;
         o["probe_spp"] = op.probeSpp, o["n_lo"] = op.nLo, o["n_hi"] = op.nHi, o["n_bg"] = op.nBg;
         o["m0"] = op.m0, o["tau_r"] = op.tauR, o["rings"] = op.surface.rings, o["tris"] = op.surface.tris;
+        o["light_tol"] = op.surface.lightTol, o["light_passes"] = op.surface.lightPasses, o["gather"] = op.gather, o["gather2"] = op.gather2, o["curvature"] = op.curvature, o["curv_span"] = op.curvSpan;
         o["mode"] = op.mode, o["p1mode"] = op.p1mode, o["threads"] = op.threads;
         o["cache"] = op.cache, o["cache_p"] = op.cacheP, o["cache_tol"] = op.cacheTol, o["qmc_depth"] = op.qmcDepth, o["xpu2_qmc"] = op.xpu2Qmc;
         report["options"] = o;
@@ -495,6 +561,12 @@ int main(int argc, char** argv) {
         report["patches_truncated"] = Json::UInt64(truncated);
         report["scan_triangles_visited"] = Json::UInt64(vs.visited);
         report["quads"] = Json::UInt64(vs.quads.size());
+        for (const auto& l : vs.lights) {
+            Json::Value j;
+            j["tested"] = Json::UInt64(l.tested), j["split"] = Json::UInt64(l.split), j["largest_error"] = l.largest;
+            j["test_seconds"] = l.testSeconds, j["pass_seconds"] = l.passSeconds;
+            report["light_passes"].append(j);
+        }
         report["leaves"] = Json::UInt64(leavesTotal);
         for (int s = 0; s < sol::States; ++s) report["leaf_states"][sol::stateName(s)] = Json::UInt64(leafStates[s]);
         report["topology"]["meshes"] = Json::UInt64(topologies);
@@ -509,8 +581,8 @@ int main(int argc, char** argv) {
         report["phase2_samples_per_pixel"] = samples2 / double(N);
         report["phase1_probe_samples_per_pixel"] = double(vs.sites.size()) * op.probeSpp / double(N);
         report["timing"] = runs[rep];
-        report["phase1_gpu_samples"] = Json::UInt64(r1.gpuSamples);
-        report["phase1_cpu_samples"] = Json::UInt64(r1.cpuSamples);
+        report["phase1_gpu_samples"] = Json::UInt64(p1Gpu);
+        report["phase1_cpu_samples"] = Json::UInt64(p1Cpu);
         report["phase2_gpu_samples"] = Json::UInt64(r2.gpuSamples);
         report["phase2_cpu_samples"] = Json::UInt64(r2.cpuSamples);
         }  // runs

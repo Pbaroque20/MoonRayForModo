@@ -1669,7 +1669,7 @@ inline U64 renderChunk(const CpuScene& scene, const mixed::Config& config, const
         first = chunkOffset(chunk);
     }
     for (U32 p = 0; p < TilePixels; ++p) {
-        pixels[p] = (mask >> p & 1) ? tilePixel(chunk.tile, p, config.width, config.height, config.viewport) : ~0u;
+        pixels[p] = (mask >> p & 1) ? chunkPixel(tables ? nullptr : config.gather, chunk.tile, p, config.width, config.height, config.viewport) : ~0u;
         if (tables && pixels[p] != ~0u) base[p] = tables->bases[chunkPass(chunk) % PassSlots][pixels[p]];
     }
     U64 skipped = 0;

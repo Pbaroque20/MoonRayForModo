@@ -366,3 +366,54 @@ light over 16 pixels: the geometry is right, the shadow gradient is not quite); 
 probe frame's and phase 2's fixed costs; the piece on the GPU. Also open: T-junctions between leaves of different
 levels (a coarse leaf's edge interpolates only its own corners, so its light can step against the finer neighbours'),
 and the passes running on the GPU.
+
+## 9. The shading step (2026-11-19)
+
+The user's go: "start the shading step". After the geometry (section 8), the time was in the frames' shape on XPU2's
+grid, and the error in the light between coarse probes.
+
+### 9.1 Dense frames: per-tile depth and gather tiles (XPU2)
+
+XPU2's grid published every 8 x 8 tile's chunks up to the frame's samples a pixel; a sample past a pixel's own count
+was a claim the GPU skipped. Two changes, each used only where a plan asks for it:
+
+- **Per-tile depth** (`async_grid.h` `GridOptions::tileSpp`, set by `async_render.h` whenever a plan has its own counts
+  per pixel): a tile's chunks stop at the most any of its pixels takes, so a few 32-sample silhouette pixels no longer
+  make every tile 32 deep. Cells no longer hold the same chunks in every range, so the progressive frontier reads each
+  cell's ranges from where they start in its queue (`Cell::rangeStart`); for XPU2's own frames that is where it read
+  them before. Host only. `async_grid_test.cc` checks it (every pixel gets exactly its tile's samples, tiles with none).
+- **Gather tiles** (`Plan::gather`, `mixed::Config::gather`, `chunkPixel`): a plan may list each tile's 64 pixels. A
+  probe frame packs its probes 64 to a tile, the tiles spread over the grid's cells. One line in the GPU's feed and one
+  in the CPU lane read the list (a GPU program change); XPU2's own plans have none. The indexer's first-hit seeding is
+  skipped for gathered frames, whose tiles are not the image's.
+
+A sample is still defined by its pixel and index, so these frames render exactly the samples they did before.
+
+### 9.2 Light passes, the light's curvature, and what paid
+
+- **Light passes** (`VirtualSurface::refineLight`, option `light_passes`): after the probe frame, a quad whose geometry
+  converged splits where its light bends more than `light_tol` between its probes, estimated from the light's second
+  difference across each corner's neighbours at the quad's stride (an eighth of it, relative to the quad's light, is
+  linear interpolation's error). Its children go through a geometric pass and the next probe frame lights their new
+  probes alone, up to `light_passes` times. Built and measured: at a tolerance that catches the bias (0.2%) the test
+  mostly chases the probes' own noise (a probe's second difference carries about a third of its noise), so it costs
+  five times the probes and extra frames for what more samples a probe give cheaper. Off by default.
+- **The curvature term** (`VirtualSurface::curvature`, options `curvature`, `curv_span`): measured against a converged
+  direct-light reference, the probes are unbiased and the reconstruction is darker by 0.07% at s0 8 and 0.2% at s0 16:
+  linear interpolation sits on the chords of a light that bends. The piece now carries each quad's curvature (d2L/dx2,
+  d2L/dy2, from its corners' second differences) and `evaluate` adds the second-order term,
+  -1/2 sum_k b_k (Lxx dx_k^2 + Lyy dy_k^2). Measured over neighbours one stride away it triples the reconstruction's
+  noise; over four strides (32 pixels at s0 8) it halves the bias at the same noise. On by default, span 4.
+- **More samples a probe.** Probes are few and a probe frame is dense now, so 64 samples a probe (and m0 128, phase 1
+  counted as 128 samples) cost 12 ms and take a quarter off the error.
+- **Phase 2 gathered by sample count** (option `gather2`): no gain over per-tile depth. Off.
+
+### 9.3 What is left
+
+- **One frame.** Geometry (15 ms, CPU) and two frames (41 ms probes, 94 ms phase 2). With the radiance-edge rule moved
+  to the combination, phase 2's counts depend on geometry alone, so probes and phase 2 can be one frame: either a depth
+  limit per pixel in the integrator (probe pixels direct only; a GPU program change) or probe pixels rendered as
+  ordinary full paths whose direct-light outputs are the probes. Expected saving: a frame's fixed cost, about 15 to 20 ms.
+- **Silhouettes** now hold the largest share of the error: phase 2's own noise in the 5% of pixels that never converge.
+- **Indirect light** is still phase 2's alone, and with diffuse bounces Sol still trails XPU2.
+- T-junctions between leaves of different levels; the piece on the GPU; the passes on the GPU.

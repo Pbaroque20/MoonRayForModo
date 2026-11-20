@@ -431,7 +431,7 @@ struct Feed {
                 const Chunk chunk = params.ring[chunkIndex % params.ringCapacity];
                 const U32 s = offset / TilePixels, position = offset % TilePixels;
                 if (s >= chunk.count) continue;
-                const U32 at = tilePixel(chunk.tile, position, c.width, c.height, c.viewport);
+                const U32 at = chunkPixel(c.gather, chunk.tile, position, c.width, c.height, c.viewport);
                 if (at == ~0u) continue;
                 U32 sampleIndex = chunk.first + s, samplePass = 0;
                 if (params.adaptive) {

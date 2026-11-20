@@ -363,7 +363,8 @@ public:
         // A grid's first frame on both devices: its cells start on the device suited to what they see (device_suit.h).
         const std::vector<Device>* owners = ownership_.owners(cells);
         suit::Seeded seeded;
-        if (!owners && gridOptions.mode == 2) {
+        // Gather tiles (Plan::gather) hold scattered pixels: the indexer's first-hit probe by tile would look at others.
+        if (!owners && gridOptions.mode == 2 && plan_->gather.empty()) {
             seeded = suit::seed(config, *plan_, cpuScene_, gridOptions.cellSize, deviceRatio_);
             if (seeded.owners.size() == cells) {
                 owners = &seeded.owners;
@@ -373,6 +374,20 @@ public:
                 result.seededRatio = seeded.ratio;
                 result.seedSeconds = seeded.seconds;
             }
+        }
+        // Each tile's samples, where pixels have their own counts or the tiles are gathered: its chunks stop there.
+        std::vector<U32> tileSpp;
+        if (!adaptive && (!plan_->pixelSamples.empty() || !plan_->gather.empty())) {
+            const U32 tilesX = (plan_->width + TileSize - 1) / TileSize, tilesY = (plan_->height + TileSize - 1) / TileSize;
+            if (!plan_->gather.empty()) cpu::need(plan_->gather.size() == size_t(tilesX) * tilesY * TilePixels, "Gather tiles");
+            tileSpp.assign(size_t(tilesX) * tilesY, 0u);
+            for (U32 t = 0; t < tileSpp.size(); ++t)
+                for (U32 q = 0; q < TilePixels; ++q) {
+                    const U32 px = chunkPixel(plan_->gather.empty() ? nullptr : plan_->gather.data(), t, q, plan_->width, plan_->height, frameView);
+                    if (px == ~0u) continue;
+                    tileSpp[t] = std::max(tileSpp[t], plan_->pixelSamples.empty() ? plan_->spp : std::min(plan_->spp, plan_->pixelSamples[px]));
+                }
+            gridOptions.tileSpp = tileSpp.data();
         }
         Grid grid(plan_->width, plan_->height, plan_->spp, gridOptions, owners, adaptive, frameView);
         // The indexer's probabilities, kept for the later frames of the same grid.
