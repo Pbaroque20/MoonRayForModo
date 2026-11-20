@@ -16,7 +16,7 @@ The current release is [0.5.5.1.2](https://github.com/Pbaroque20/MoonRayForModo/
 - **Stand-ins** in the Asset Library: 25 low-res everyday objects (a chair, a table, a lamp, a plant, a person, a car...) a linked mesh is drawn as in the viewport, chosen by its name and stretched to its size, while the mesh itself renders. Change one with Stand-in... in the Links window.
 - **Iridescence in MoonLightIPR**: a MoonRay material's iridescence (DwaBaseMaterial's, and the other Dwa materials') shows in MoonLightIPR as in MoonRay, the highlight or the clear coat changing colour with the angle, round the hue wheel between its two colours or along its ramp. Before, MoonLightIPR left it out and said so in Notices. Scenes without iridescence render as fast as before.
 
-  ![A dragon with an iridescent sheen and an iridescent bubble over the sea](docs/images/iridescence-dragon.webp)
+  ![A dragon with an iridescent sheen and an iridescent bubble over the sea, rendered by MoonLightIPR](docs/images/moonlightipr-iridescence.webp)
 
 - Known: Modo can crash as it quits with Scene Proxies in the scene (its own Convert to Proxy does the same); your work and settings are saved first.
 
