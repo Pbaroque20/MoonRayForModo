@@ -1,10 +1,10 @@
-"""Run the Bregman engine's prototype on a scene, write its films as PNGs and score them.
+"""Run Sol on a scene, write its films as PNGs and score them.
 
-run_bregman.py --engine <build_bregman output> --ptx-build <async build> --scene <scene.rdla> --output <new folder>
+run_sol.py --engine <build_sol output> --ptx-build <async build> --scene <scene.rdla> --output <new folder>
                [--extra <.rdla over the scene>] [--reference <reference.rgba>] [--runtime <pinned reference>]
-               [key=value ...]   (the engine's options: stride, probe_spp, n_lo, n_mid, n_hi, n_bg, m0, tau_d, tau_r, ...)
+               [key=value ...]   (the engine's options: s0, min_stride, tol, probe_spp, n_lo, n_hi, n_bg, m0, tau_r, ...)
 
-The scene gets two light path outputs (/bregman_emission C[<L.>O] and /bregman_direct C[DGS][<L.>O], whose sum is a
+The scene gets two light path outputs (/sol_emission C[<L.>O] and /sol_direct C[DGS][<L.>O], whose sum is a
 path's direct light at its first hit) in an override written into the output folder, after --extra. Never installs or
 publishes anything."""
 import argparse
@@ -15,18 +15,18 @@ from pathlib import Path
 from images import errors, read_rgba, write_png
 from run_xpu2_baseline import REFERENCE, environment
 
-LPE = ('RenderOutput("/bregman_emission") { ["file_name"]="bregman.exr", ["result"]=8, ["lpe"]="C[<L.>O]", '
-       '["channel_name"]="bregman_emission", ["channel_format"]=0 }\n'
-       'RenderOutput("/bregman_direct") { ["file_name"]="bregman.exr", ["result"]=8, ["lpe"]="C[DGS][<L.>O]", '
-       '["channel_name"]="bregman_direct", ["channel_format"]=0 }\n')
+LPE = ('RenderOutput("/sol_emission") { ["file_name"]="sol.exr", ["result"]=8, ["lpe"]="C[<L.>O]", '
+       '["channel_name"]="sol_emission", ["channel_format"]=0 }\n'
+       'RenderOutput("/sol_direct") { ["file_name"]="sol.exr", ["result"]=8, ["lpe"]="C[DGS][<L.>O]", '
+       '["channel_name"]="sol_direct", ["channel_format"]=0 }\n')
 
-FILMS = ('phase1', 'recon', 'phase2', 'direct2', 'final', 'classes', 'cells', 'samples2')
+FILMS = ('phase1', 'recon', 'phase2', 'direct2', 'final', 'classes', 'cells', 'samples2', 'leaves', 'geomerr')
 
 
 def run(engine, ptx_build, scene, out, options, extra=None, reference=None, runtime=REFERENCE):
     out = Path(out).resolve()
     out.mkdir(parents=True, exist_ok=False)
-    override = out / 'bregman-override.rdla'
+    override = out / 'sol-override.rdla'
     override.write_text((Path(extra).read_text(encoding='utf-8') if extra else '') + LPE, encoding='utf-8')
     exe = json.loads((Path(engine) / 'build.json').read_text(encoding='utf-8'))['exe']
     ptx = json.loads((Path(ptx_build) / 'build.json').read_text(encoding='utf-8'))['ptx']
@@ -43,17 +43,16 @@ def run(engine, ptx_build, scene, out, options, extra=None, reference=None, runt
     (out / 'engine.log').write_text(r.stdout + r.stderr, encoding='utf-8')
     lines = [l for l in r.stdout.splitlines() if l.startswith('{')]
     if not lines:
-        raise SystemExit('bregman_engine failed: ' + r.stderr[-3000:])
+        raise SystemExit('sol_engine failed: ' + r.stderr[-3000:])
     report = json.loads(lines[-1])
     report['exit_code'] = r.returncode
     w, h = report['width'], report['height']
     for name in FILMS:
         f = read_rgba(out / (name + '.rgba'), w, h)
-        linear = name in ('classes', 'cells', 'samples2')
+        linear = name in ('classes', 'cells', 'samples2', 'leaves', 'geomerr')
         write_png(out / (name + '.png'), f, w, h, linear=linear)
-    d = read_rgba(out / 'depth.rgba', w, h)
-    top = max(d[i * 4] for i in range(w * h)) or 1.0
-    write_png(out / 'depth.png', d, w, h, scale=1.0 / top, linear=True)
+    for name in ('depth', 'depth-true'):
+        write_png(out / (name + '.png'), read_rgba(out / (name + '.rgba'), w, h), w, h, linear=True)
     xpu2 = sorted(report.get('xpu2', {}), key=int)
     for n in xpu2:
         write_png(out / f'xpu2-{n}.png', read_rgba(out / f'xpu2-{n}.rgba', w, h), w, h)
@@ -63,7 +62,8 @@ def run(engine, ptx_build, scene, out, options, extra=None, reference=None, runt
     report['median_seconds'] = {'engine': median([r['total_seconds'] for r in timed]),
                                 'phase1': median([r['phase1_seconds'] for r in timed]),
                                 'phase2': median([r['phase2_seconds'] for r in timed]),
-                                'region': median([r['region_seconds'] for r in timed])}
+                                'region': median([r['region_seconds'] for r in timed]),
+                                'geometry': median([r['geometry_seconds'] for r in timed])}
     for n in xpu2:
         report['median_seconds'][f'xpu2-{n}'] = median([r['seconds'] for r in report['xpu2'][n] if not r.get('warm_up')])
     if reference:
@@ -86,7 +86,7 @@ def main():
     p.add_argument('options', nargs='*')
     a = p.parse_args()
     report = run(a.engine, a.ptx_build, a.scene, a.output, a.options, a.extra, a.reference, a.runtime)
-    keep = {k: report[k] for k in ('median_seconds', 'classes', 'phase2_samples_per_pixel', 'phase1_probe_samples_per_pixel') if k in report}
+    keep = {k: report[k] for k in ('median_seconds', 'probes', 'leaf_states', 'geometric_error', 'piece_bytes', 'classes', 'phase2_samples_per_pixel', 'phase1_probe_samples_per_pixel') if k in report}
     keep['relative_mse'] = {n: round(e['relative_mse'], 7) for n, e in report.get('errors', {}).items()}
     keep['block_error'] = {n: round(e['block_error'], 6) for n, e in report.get('errors', {}).items()}
     keep['mean_ratio'] = {n: round(e['mean_ratio'], 5) for n, e in report.get('errors', {}).items()}

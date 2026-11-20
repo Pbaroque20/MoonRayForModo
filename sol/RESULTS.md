@@ -1,11 +1,20 @@
-# Bregman (working name): results
+# Sol: results
 
 Machine: RTX 3090, i7-4930K (6 cores, 12 threads), 64 GB. Nothing else rendering during timed runs. All runs 2026-11-19.
+Sol was the "Bregman" engine in sections 2 to 5 (its first two steps).
 
 ## In short
 
-The prototype works end to end on XPU2's unchanged CPU and GPU lanes. **On the overflow test scene it does not beat
-XPU2 at equal time:**
+**Third step, Sol's indexer (section 6).** Probes in geometric passes, coarse to fine, reconstruct the visible surface
+exactly within the tolerance: no converged pixel's depth is off by more than it, no converged pixel shows another mesh,
+no background pixel hides geometry. On the overflow scene without diffuse bounces Sol now beats XPU2 at equal error:
+0.19 s at relative MSE 3.6e-5, against XPU2's 0.28 s at 4.8e-5 (36 samples a pixel), in the same process, with 2,528
+probes where the first step had 19,200. Its bias is higher than XPU2's (mean ratio 0.9994, block error 5.6e-4 against
+1.0001 and 1.8e-4): the light between coarse probes, which is the shading step's work. With diffuse bounces it still
+trails XPU2 (0.35 s at 1.3e-3 against 0.26 s at 1.24e-3).
+
+**First step (sections 2 to 4).** The prototype works end to end on XPU2's unchanged CPU and GPU lanes. **On the
+overflow test scene it did not beat XPU2 at equal time:**
 
 | Scene | Engine | XPU2 at the same error | Engine's bias |
 |---|---|---|---|
@@ -28,7 +37,7 @@ what the camera sees, XPU2 already stratifies the dimensions that matter most, a
 - **Reference**: XPU2 at the scene's own 64 samples a pixel, 16 seeds averaged (`tools/make_reference.py`). Not a
   1024-sample render: MoonRay and XPU2 narrow a texture's filter as the samples a pixel grow, so a 1024-sample frame is
   sharper than the converged 64-sample one.
-- **Engine and XPU2 in one process** (`bregman_engine.exe ... xpu2_spp=4,9,16,36,64`, driven by `tools/run_bregman.py`):
+- **Engine and XPU2 in one process** (the engine, `bregman_engine.exe` then, `sol_engine.exe` now: `... xpu2_spp=4,9,16,36,64`, driven by `tools/run_sol.py`):
   the same lanes, the same clock (configuration upload, renderer, frame), one warm-up run then three timed, medians
   reported. XPU2's frames carry the engine's two light path outputs too, so they pay the same AOV cost.
 - Errors against the reference: relative MSE (MoonRay's: (t - r)^2 / (r^2 + 0.01)), 8 x 8 block error (bias shows
@@ -81,11 +90,11 @@ non-manifold edge; 162,971 Bregman Delaunay faces made, 301 saddle windows. Host
 
 | Engine (stride 2, 32, 4/16/32) | Phase 1 reconstruction | Region classes | XPU2, 36 spp | Reference |
 |---|---|---|---|---|
-| ![](images/overflow-bregman-final.png) | ![](images/overflow-phase1-recon.png) | ![](images/overflow-regions.png) | ![](images/overflow-xpu2-36spp.png) | ![](images/overflow-reference.png) |
+| ![](images/overflow-step1-final.png) | ![](images/overflow-phase1-recon.png) | ![](images/overflow-regions.png) | ![](images/overflow-xpu2-36spp.png) | ![](images/overflow-reference.png) |
 
 | Engine's error (x10, red brighter, blue darker) | Bregman Voronoi cells | Region buffer (scans' inverse depth) | Phase 2's samples |
 |---|---|---|---|
-| ![](images/overflow-bregman-error.png) | ![](images/overflow-bvd-cells.png) | ![](images/overflow-scan-depth.png) | ![](images/overflow-phase2-samples.png) |
+| ![](images/overflow-step1-error.png) | ![](images/overflow-bvd-cells.png) | ![](images/overflow-scan-depth.png) | ![](images/overflow-phase2-samples.png) |
 
 Region colours: green trusted, yellow cell only, white silhouette, blue saddle, orange radiance edge, purple uncovered,
 red untrusted, dark grey background. On the wall every tangent plane is the same plane, so the cells are the probes'
@@ -106,7 +115,7 @@ XPU2: 4 spp 0.12 s (3.07e-3), 9 spp 0.25 s (1.24e-3), 16 spp 0.44 s (5.9e-4), 36
 
 | Engine (stride 2, 16, 8/16/32) | XPU2, 9 spp | Reference |
 |---|---|---|
-| ![](images/diffuse2-bregman-final.png) | ![](images/diffuse2-xpu2-9spp.png) | ![](images/diffuse2-reference.png) |
+| ![](images/diffuse2-step1-final.png) | ![](images/diffuse2-xpu2-9spp.png) | ![](images/diffuse2-reference.png) |
 
 ## 4. What the numbers say
 
@@ -131,7 +140,7 @@ XPU2: 4 spp 0.12 s (3.07e-3), 9 spp 0.25 s (1.24e-3), 16 spp 0.44 s (5.9e-4), 36
 What was built is in DESIGN.md (the "second step"): a bounce landing on a surface phase 1 reconstructed takes phase 1's
 radiance and stops with probability 1 - p, else goes on carrying 1 / p less C (1 - p) / p (unbiased for any C); and
 OpenQMC's Owen-scrambled Sobol sampler for the light and BSDF samples past the first hit. Both in XPU2's shared
-integrator, off unless the engine sets them. The GPU program is the engine's own build (`build_bregman.py --gpu`,
+integrator, off unless the engine sets them. The GPU program is the engine's own build (`build_sol.py --gpu`,
 `XPU2_OPENQMC`), compiled by OptiX once (about 13 minutes) into a cache of its own (`OPTIX_CACHE_PATH`, 93 MB); the
 kit's shared OptiX cache was not written. With both switches off it gives the earlier numbers exactly.
 
@@ -163,8 +172,90 @@ first hit 0.117, 0.247, 0.423 s at 3.04e-3, 1.23e-3, 5.85e-4.
    0.378 s with every lookup rejected at its depth test, 0.396 s with lookups that go on). Not yet explained: the lookup
    is a few divisions and one read of a 1.2 MB table per bounce. It needs a GPU profile.
 
-## 6. Open
+## 6. Third step: Sol's indexer and geometric passes (2026-11-19)
 
+What was built is in DESIGN.md section 8: Sol's indexer handles geometry (mesh clusters and topology), and the probes
+reconstruct the visible surface in passes, a quadtree from the root stride s0 down to 2 pixels, a quad splitting until
+its reconstruction is the visible surface within the tolerance (sandwich gap 0.002 in relative inverse depth, the scans'
+connectivity and boundaries, no crease, nothing in front). Shading is unchanged from the first step: probe frame, then
+phase 2 with n_lo where the surface converged and n_hi elsewhere, combined as before. Host-only build (`build-8`); the GPU
+program is the second step's (`build-4`), whose XPU2 sources are unchanged.
+
+**The geometry.** Every run, against every pixel's centre traced afterwards (for the report only):
+
+| | Value |
+|---|---|
+| Converged pixels (trusted or radiance edge) | 55,324 (72%) |
+| Their inverse depth against the truth | mean 2.7e-6, 99th percentile 1.0e-6, largest 1.3e-3 (tolerance 2e-3) |
+| Converged pixels over the tolerance | 0 |
+| Converged pixels that see another mesh than their probes' | 0 |
+| Background pixels where geometry is | 0 |
+
+**Why quads split** (s0 16, 383 splits): probes on different surfaces 148, some probes missing 140, other geometry in
+front 34, a scan's boundary inside 27, a scan stopped short 24, **the sandwich gap 7**, a crease 3. On this scene the
+geometric variance is almost all topology (silhouettes against the wall and the sky); curvature hardly splits anything,
+and the tolerance barely matters (0.01 in place of 0.002: 1,729 probes in place of 1,754).
+
+**Convergence by pass** (s0 32): 73.2%, 86.6%, 91.9%, 94.8% and 95.3% of the frame converged after passes 0 to 4. The
+4.7% left at the finest stride are the silhouette bands; phase 2 renders them whole.
+
+**Overflow scene, no diffuse bounces** (probe_spp 32, n_lo 4, n_hi 32; medians of 5 timed runs, 3 for s0 4):
+
+| s0 | Probes | Geometry | Phase 1 | Region | Phase 2 | Engine | Relative MSE | Block error | Mean ratio |
+|---|---|---|---|---|---|---|---|---|---|
+| 4 | 5,829 | 0.016 s | 0.046 s | 0.002 s | 0.136 s | 0.202 s | 3.60e-5 | 4.3e-4 | 0.9998 |
+| **8** | 2,528 | 0.014 s | 0.040 s | 0.002 s | 0.135 s | **0.193 s** | **3.56e-5** | 5.6e-4 | 0.9994 |
+| 16 | 1,754 | 0.017 s | 0.035 s | 0.002 s | 0.133 s | 0.187 s | 3.94e-5 | 7.4e-4 | 0.9983 |
+| 32 | 1,599 | 0.022 s | 0.035 s | 0.002 s | 0.157 s | 0.216 s | 6.73e-5 | 1.18e-3 | 0.9959 |
+| first step, stride 2 | 19,200 | (under phase 1) | 0.094 s | 0.037 s | 0.122 s | 0.26 s | 6.3e-5 | 4.0e-4 | 1.0000 |
+
+XPU2 in the same processes: 16 spp 0.135 to 0.155 s at 1.20e-4 (block error 3.0e-4), 36 spp 0.28 s at 4.82e-5 (block
+error 1.8e-4, mean ratio 1.0001). Phase 2's time varies from run to run by up to a third (0.12 to 0.23 s for one
+setting), as XPU2's frames do between processes (36 spp took 0.36 s in one): compare within a row, and read the totals
+as about ±15%.
+
+- **Probes and the region pass.** 2,528 probes at s0 8 against 19,200; the region pass 2 ms against 37 ms (the piece
+  evaluated per pixel, section 8.4); geometry 14 to 22 ms on the host, before phase 1, most of it the scans. Before
+  the passes shared one pool of threads, starting a dozen threads three times a pass made it 66 ms.
+- **The light between coarse probes.** Phase 1's mean signed error over trusted pixels: -0.00024 at s0 8, -0.00064 at
+  s0 16, -0.00016 in the first step. A wall quad converges at 16 or 32 pixels because the wall is flat, but the light on it
+  is not: the shadow gradients are interpolated over the quad, and the radiance-edge rule (section 2) only catches the
+  sharp ones (none of the converged pixels at s0 8, 5% at s0 16, 24% at s0 32). That is the shading step's work; geometry is not where the error
+  is.
+- **The piece** is 166 KB at s0 16 and 235 KB at s0 8 (sites and quads), against the per-pixel frame cache's 1.2 MB at
+  320 x 240 and the meshes' 2.7 MB. It grows with the probes, not the pixels.
+
+**Overflow scene, two diffuse bounces** (probe_spp 16, n_hi 32):
+
+| s0 | n_lo | Engine | Relative MSE | Mean ratio |
+|---|---|---|---|---|
+| 16 | 4 | 0.293 s | 3.04e-3 | 0.9989 |
+| 8 | 4 | 0.302 s | 3.27e-3 | 0.9997 |
+| 16 | 8 | 0.350 s | 1.32e-3 | 0.9989 |
+| first step, stride 2 | 8 | 0.383 s | 1.43e-3 | 1.0001 |
+
+XPU2: 4, 9, 16 spp in 0.12, 0.26, 0.44 s at 3.07e-3, 1.24e-3, 5.93e-4. Better than the first step, still behind XPU2:
+the indirect light's noise is phase 2's, and phase 2 on XPU2's grid pays for its sparse counts (8.1 samples a pixel on
+average cost more than XPU2's dense 9).
+
+| Leaves by level (s0 32: dark blue coarse to yellow fine) | States (s0 16) | Sol, s0 8 | Its error (x10) | Converged depth error (red: the tolerance) |
+|---|---|---|---|---|
+| ![](images/sol-leaves-s32.png) | ![](images/sol-states-s16.png) | ![](images/sol-final-s8.png) | ![](images/sol-error-s8.png) | ![](images/sol-geomerr-s8.png) |
+
+| The virtual surface's inverse depth | The truth | Sol with diffuse bounces (s0 16, n_lo 8) |
+|---|---|---|
+| ![](images/sol-depth-s8.png) | ![](images/sol-depth-true.png) | ![](images/sol-diffuse2-final-s16.png) |
+
+State colours: green trusted, orange radiance edge, dark grey background, red probes on different surfaces, white a
+scan's boundary inside, purple other geometry in front, yellow some probes missed, blue the sandwich gap, cyan a crease,
+grey a scan stopped short.
+
+## 7. Open
+
+- **The shading step.** Refine probes by the light as well as the geometry (the light between coarse probes, above);
+  one frame for both phases, or dense launches, so phase 2's sparse counts stop paying for the grid; the piece on the
+  GPU in place of the per-pixel frame cache.
+- **The passes on the GPU,** and T-junctions between leaves of different levels (DESIGN.md 8.5).
 - **The frame cache where the camera sees what bounces reach.** An interior (a room, the camera inside) is where it
   should pay; this scene is close to its worst case. Its content should also carry indirect light (a previous frame's
   result, as a realtime preview has one), and its GPU lookup cost needs a profile (section 5).
@@ -172,26 +263,29 @@ first hit 0.117, 0.247, 0.423 s at 3.04e-3, 1.23e-3, 5.85e-4.
   on a second GPU lane), and phase 2's refine pixels as a pixel list, instead of per-pixel counts on the full grid.
 - **Skip what phase 1 knows.** Phase 2 still computes the first hit's direct light it then discards in trusted pixels.
 - **One frame, not two.** Per cell, phase 2 may start once its 3 x 3 window's probes are in (DESIGN.md section 6).
-- **The region buffer on the GPU** (37 ms on the host at stride 2).
 - **Bigger, heavier scenes.** 320 x 240 with two lights is where fixed costs weigh most and light samples are cheapest;
   Sponza (23 lights, 69% of the GPU's time in shadow rays) is where light sample reuse has the most to save.
 - The lift assumes a still perspective camera without depth of field; patches lose triangles crossing the near plane.
 
-## 7. Reproduce
+## 8. Reproduce
 
 ```bash
-python bregman/build_bregman.py --gpu --source . --runtime <MoonRayForModo-xpu2>/test-results/interactive-reference-042 --output test-results/bregman/build-N
-cd bregman/tools
+python sol/build_sol.py [--gpu] --source . --runtime <MoonRayForModo-xpu2>/test-results/interactive-reference-042 --output test-results/sol/build-N
+cd sol/tools
 python make_reference.py --build <MoonRayForModo-xpu2>/test-results/async-build-handoff1 --scene <overflow>/scene.rdla --output <new folder> [--extra <.rdla>]
-python run_bregman.py --engine <build-N> --ptx-build <build-N> --scene <overflow>/scene.rdla --output <new folder> --reference <reference.rgba> stride=2 probe_spp=32 n_lo=4 n_mid=16 n_hi=32 cache=1 cache_p=0.25 qmc_depth=4 xpu2_spp=9,16,36
+python run_sol.py --engine <build-N> --ptx-build <a --gpu build> --scene <overflow>/scene.rdla --output <new folder> --reference <reference.rgba> s0=8 min_stride=2 tol=0.002 probe_spp=32 n_lo=4 n_hi=32 repeats=5 xpu2_spp=16,36
 python class_errors.py <that folder> <reference.rgba>
 python summarize.py <run folders...>
 ```
 
 `python` is `pythoncore-3.15` (not the Store one). The worktree needs `toolchain`, `build` and `upstream` junctioned from
 the main checkout. `--gpu` builds the engine's own GPU program (with OpenQMC); its first run compiles it with OptiX
-(about 13 minutes), into the `optix-cache` folder beside the run folders (`run_bregman.py` sets `OPTIX_CACHE_PATH`), never
-into the kit's. Without `--gpu`, `--ptx-build` must be an XPU2 build whose GPU program sources match this tree's, and the
-frame cache and OpenQMC are then not in the GPU program (sections 2 to 4 were measured that way, with
-`async-build-handoff1`). The engine's options: `cache` (default off), `cache_p` (0.25), `cache_tol` (0.02), `qmc_depth`
-(0: off), `xpu2_qmc` (XPU2's comparison frames with OpenQMC).
+(about 13 minutes), into the `optix-cache` folder beside the run folders (`run_sol.py` sets `OPTIX_CACHE_PATH`), never
+into the kit's. A host-only build can take an earlier `--gpu` build's program while the XPU2 sources it was built from
+are unchanged (section 6 used `build-4`). The engine's options: `s0` (16), `min_stride` (2), `tol` (0.002), `margin` (the
+pixel filter's reach), `probe_spp`, `n_lo`, `n_hi`, `n_bg`, `m0`, `tau_r`, `rings`, `tris`, `cache` (default off),
+`cache_p` (0.25), `cache_tol` (0.02), `qmc_depth` (0: off), `xpu2_qmc` (XPU2's comparison frames with OpenQMC). Each run
+writes the films, `leaves.png`, `geomerr.png`, `depth.png` and `depth-true.png`, and the piece as `surface.sol`.
+
+Sections 2 to 5 were measured with the first two steps' engine (fixed lattice, options `stride` and `n_mid`), at
+commits 861a81a0 and dbbcac7b.

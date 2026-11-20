@@ -1,7 +1,7 @@
-"""Build the Bregman engine's prototype: bregman_engine.exe and, with --gpu, its own copy of XPU2's GPU program.
+"""Build Sol, the probe tracer: sol_engine.exe and, with --gpu, its own copy of XPU2's GPU program.
 
-build_bregman.py --source <MoonRayForModo development tree: toolchain, build, upstream> --runtime <pinned reference>
-                 --output <new folder> [--gpu]
+build_sol.py --source <MoonRayForModo development tree: toolchain, build, upstream> --runtime <pinned reference>
+            --output <new folder> [--gpu]
 
 With --gpu the GPU program (async_gpu.ptx and its modules, laid out as build_async.py lays them out) is compiled from
 this tree with XPU2_OPENQMC: phase 2's frame cache and OpenQMC draws (async_integrator.h) are in it, off unless the
@@ -64,7 +64,7 @@ def build(source, runtime, out, gpu=False):
     source, runtime, out = (Path(p).resolve() for p in (source, runtime, out))
     out.mkdir(parents=True, exist_ok=False)
     files = list(XPU2.glob('*.h')) + list(XPU2.glob('async_*.cu')) + list(HERE.glob('*.h')) + list(OPENQMC.rglob('*.h')) + \
-        [HERE / 'bregman_engine.cc', HERE / 'build_bregman.py']
+        [HERE / 'sol_engine.cc', HERE / 'build_sol.py']
     held = {str(p): sha(p) for p in files}
     report = {'status': 'incomplete', 'source_hashes': held, 'gpu': gpu}
     try:
@@ -78,11 +78,11 @@ def build(source, runtime, out, gpu=False):
                    source / 'build/native-renderer-avx/moonray/lib/rendering/displayfilter']
         kernels, kernel_flags = bc6h_kernels(source, out / 'bc6h')
         exe, report['native_build'] = build_units(
-            source, [HERE / 'bregman_engine.cc', XPU2 / 'xpu2_meshopt.cc', XPU2 / 'xpu2_bc6h.cc'], out / 'native',
+            source, [HERE / 'sol_engine.cc', XPU2 / 'xpu2_meshopt.cc', XPU2 / 'xpu2_bc6h.cc'], out / 'native',
             [runtime / 'libembree4.dll', runtime / 'librendering_lpe.dll', runtime / 'librendering_displayfilter.dll',
              *kernels, '-lcfgmgr32', '-lwinmm'],
             ['-I' + str(v) for v in include] + ['-I' + str(source / 'upstream/meshoptimizer/src'), '-DXPU2_OPENQMC=1'] + kernel_flags)
-        target = out / 'bregman_engine.exe'
+        target = out / 'sol_engine.exe'
         target.write_bytes(Path(exe).read_bytes())
         if any(sha(Path(k)) != v for k, v in held.items()):
             raise RuntimeError('Build source drift')

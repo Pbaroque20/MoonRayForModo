@@ -1,4 +1,4 @@
-// Bregman Voronoi diagrams over the camera frame (bregman/DESIGN.md, section 3).
+// Bregman Voronoi diagrams over the camera frame (sol/DESIGN.md, section 3).
 //
 // The camera frame is the domain X of Boissonnat, Nielsen and Nock's Bregman Voronoi diagrams (DCG 2010, "the paper").
 // A camera-space point P lifts to (x, y, w): its raster position and its inverse depth w = 1 / depth. The lift is
@@ -6,20 +6,20 @@
 // the paper's tangent hyperplane H_p (eq. 5) of the generator F = s W, where W is the visible surface's inverse depth
 // over the frame and s = +1 or -1 its local convexity. Then
 //   - D_F(x || p) = s (W(x) - H_p(x)) (Lemma 1): the inverse-depth gap at pixel x between the visible surface and p's
-//     plane;
-//   - the first-type diagram is the maximization diagram of the s H_p (paper section 4.2), here taken as the arg min of
-//     |W(x) - H_p(x)| with W(x) read exactly from the radial scans' depths (scan.h);
-//   - the Bregman Delaunay triangulation is the lower convex hull of the lifted sites (p, s W(p)), projected (section
-//     5.1), computed here by brute force over the few sites of a probe window, with F made strictly convex by
-//     eps |x|^2 (an affine part changes no diagram, Property 4, so on a plane it is the Euclidean Delaunay one).
+//     plane; the Bregman Voronoi cell of p holds the pixels whose surface p's plane predicts best;
+//   - the Bregman Delaunay triangulation is the lower convex hull of the lifted sites (p, s W(p)) (section 5.1). On four
+//     sites of a lattice quad it is one of the quad's two diagonals, chosen by one orientation test (quadDiagonal);
+//   - the sandwich (section 4.2 with 5.1): for convex F, max_p H_p <= F <= the Delaunay interpolation, so the gap
+//     between them bounds the reconstruction's error from the sites alone (sandwichGap).
 // Host code; double precision.
 #pragma once
 #include "surface_core.h"
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <vector>
 
-namespace bregman {
+namespace sol {
 
 namespace surface = xpu2::interactive::surface;
 
@@ -117,45 +117,6 @@ inline Plane planeThrough(const double x[3], const double y[3], const double w[3
     return p;
 }
 
-// A site of a window's diagram: a probe's frame position, its lifted height W(p) and its tangent hyperplane.
-struct Site {
-    double x = 0, y = 0, w = 0;
-    Plane h;
-    int probe = -1;
-};
-
-// The Bregman Delaunay triangulation of a few sites (paper section 5.1): the lower hull of (X, Y, s W / wc + eps |X|^2)
-// in coordinates normalized about (cx, cy) by spacing, faces counter-clockwise in the frame.
-inline std::vector<std::array<int, 3>> bregmanDelaunay(const std::vector<Site>& s, int sign, double cx, double cy, double spacing,
-                                                       double wc, double eps = 1e-6) {
-    const int n = int(s.size());
-    std::vector<double> X(n), Y(n), Z(n);
-    for (int i = 0; i < n; ++i) {
-        X[i] = (s[i].x - cx) / spacing;
-        Y[i] = (s[i].y - cy) / spacing;
-        Z[i] = sign * s[i].w / wc + eps * (X[i] * X[i] + Y[i] * Y[i]);
-    }
-    std::vector<std::array<int, 3>> faces;
-    for (int i = 0; i < n; ++i)
-        for (int j = i + 1; j < n; ++j)
-            for (int k = j + 1; k < n; ++k) {
-                const double ux = X[j] - X[i], uy = Y[j] - Y[i], vx = X[k] - X[i], vy = Y[k] - Y[i];
-                const double area = ux * vy - uy * vx;
-                if (std::fabs(area) < 1e-9) continue;
-                const double uz = Z[j] - Z[i], vz = Z[k] - Z[i];
-                const double al = (uz * vy - uy * vz) / area, be = (ux * vz - uz * vx) / area, ga = Z[i] - al * X[i] - be * Y[i];
-                bool lower = true;
-                for (int l = 0; l < n && lower; ++l) {
-                    if (l == i || l == j || l == k) continue;
-                    if (Z[l] - (al * X[l] + be * Y[l] + ga) < -1e-12) lower = false;
-                }
-                if (!lower) continue;
-                // Co-circular sites (a tie the perturbation left) give overlapping faces: keep the first that covers.
-                faces.push_back(area > 0 ? std::array<int, 3>{i, j, k} : std::array<int, 3>{i, k, j});
-            }
-    return faces;
-}
-
 // Barycentric coordinates of (x, y) in a frame triangle; false when outside (by more than tol).
 inline bool barycentric(double x, double y, const double tx[3], const double ty[3], double b[3], double tol = 1e-9) {
     const double d = (ty[1] - ty[2]) * (tx[0] - tx[2]) + (tx[2] - tx[1]) * (ty[0] - ty[2]);
@@ -166,4 +127,47 @@ inline bool barycentric(double x, double y, const double tx[3], const double ty[
     return b[0] >= -tol && b[1] >= -tol && b[2] >= -tol;
 }
 
-}  // namespace bregman
+// The local convexity of a few sites (x, y, w, H): +1 where every site's plane lies under the others' heights (F = W
+// convex there), -1 where over (concave), 0 a saddle (both, past eps relative). D_F(b || a) = s (w_b - H_a(b)).
+inline int convexity(const double* x, const double* y, const double* w, const Plane* h, int n, double eps = 1e-7) {
+    int pos = 0, neg = 0;
+    for (int i = 0; i < n; ++i)
+        for (int j = 0; j < n; ++j) {
+            if (i == j) continue;
+            const double e = (w[j] - h[i].at(x[j], y[j])) / w[j];
+            pos += e > eps;
+            neg += e < -eps;
+        }
+    return pos && neg ? 0 : (neg ? -1 : 1);
+}
+
+// The Bregman Delaunay triangulation of a quad's four corners a, b, c, d (counter-clockwise in the frame): true for the
+// diagonal ac (triangles abc, acd), false for bd (abd, bcd). The lower hull of (x, y, s w): ac is a hull edge when d lies
+// on or over the plane through a, b and c. A tie (four sites on one plane) keeps ac.
+inline bool quadDiagonal(const double* x, const double* y, const double* w, int sign) {
+    double z[4];
+    for (int i = 0; i < 4; ++i) z[i] = (sign < 0 ? -1.0 : 1.0) * w[i];
+    const double xs[3] = {x[0], x[1], x[2]}, ys[3] = {y[0], y[1], y[2]}, zs[3] = {z[0], z[1], z[2]};
+    const Plane p = planeThrough(xs, ys, zs);
+    if (!p.ok) return true;
+    const double scale = std::max({std::fabs(z[0]), std::fabs(z[1]), std::fabs(z[2]), std::fabs(z[3])});
+    return z[3] - p.at(x[3], y[3]) >= -1e-12 * scale;
+}
+
+// The sandwich gap at (x, y): how far apart the bounds on the true inverse depth are there, given the Delaunay
+// interpolation t and the sites' planes h. Convex (sign +1): max H <= W <= t; concave (-1): t <= W <= min H; a saddle
+// (0) has no bound, and its gap is the spread of everything (t and every plane). Bounds that cross (t under a plane of
+// a convex piece) are evidence against the convexity: their crossing counts as the gap.
+inline double sandwichGap(double x, double y, double t, const Plane* h, int n, int sign) {
+    double lo = t, hi = t, top = -1e300, bottom = 1e300;
+    for (int i = 0; i < n; ++i) {
+        const double v = h[i].at(x, y);
+        lo = std::min(lo, v), hi = std::max(hi, v);
+        top = std::max(top, v), bottom = std::min(bottom, v);
+    }
+    if (sign > 0) return std::fabs(t - top);
+    if (sign < 0) return std::fabs(bottom - t);
+    return hi - lo;
+}
+
+}  // namespace sol

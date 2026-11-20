@@ -1,6 +1,11 @@
-# Bregman (working name): a two-phase realtime engine on XPU2
+# Sol: a probe tracer on XPU2
 
-*Research note, 2026-11-19. Local branch only. "Bregman" is a placeholder name: rename the folder and this title freely.*
+*Research note, 2026-11-19. Local branch only. Named Sol by the user on 2026-11-19 (the working name was "Bregman").*
+
+**Where it stands.** Sections 1 to 7 are the first two steps (the two phases, the frame cache, OpenQMC). Section 8 is
+the third: Sol's indexer, which handles geometry instead of shading, and reconstructs the visible surface in geometric
+passes that converge within a tolerance. It replaces the fixed probe lattice of 2.1 and the rasterized region buffer of
+section 5. The shading changes come next.
 
 XPU2 renders every pixel by full Monte Carlo paths. This engine keeps XPU2's asynchronous architecture (CPU and GPU on
 one picture, cells, broker, identity-derived samples) and its port of MoonRay's shaders, and changes the light
@@ -34,7 +39,7 @@ new GPU program is needed for the first prototype:
 
 - **Phase 1, direct light at the probes:** an XPU2 frame whose plan has `maxDepth = 0` and `pixelSamples` = k at the
   probe pixels, 0 elsewhere. The CPU and GPU share it by cells as usual.
-- **Phase 1, scan and reconstruction:** new host code (`bregman/`), run on the CPU lane's pool while the frame's GPU
+- **Phase 1, scan and reconstruction:** new host code (`sol/`), run on the CPU lane's pool while the frame's GPU
   work drains; the reconstruction is per pixel arithmetic (section 3.3), cheap on either device.
 - **Phase 2:** an XPU2 frame with the scene's own depth limits and `pixelSamples` = n inside phase 2's regions, 0
   outside, with an LPE AOV for the first hit's direct light so the indirect part is `beauty - direct` per sample.
@@ -261,12 +266,103 @@ Test scene: `MoonRayForModo-xpu2/test-results/overflow/scene.rdla` (320 x 240, `
 pixel; floor, wall, three displaced UV spheres with DwaBase materials and a 2 MB `.tx`, an environment light and a rect
 light, `max_depth` 5, `max_diffuse_depth` 0), and the same with `max_diffuse_depth` 2.
 
-The prototype, `bregman_engine.cc` with `bvd.h` (the lift, hyperplanes, Bregman Delaunay triangulation) and `scan.h`
-(topology, scan, patch depths), built by `build_bregman.py` against XPU2's headers, runs both phases as XPU2 frames on
-the unchanged CPU and GPU lanes: no GPU program change. Its one change to XPU2 is host-side: the sample audit lets a
-pixel planned no sample take none (`async_render.h`), which no plan of XPU2's own makes.
+The prototype's first two steps (the fixed lattice, rasterized patches, a brute-force Bregman Delaunay triangulation
+per window), built against XPU2's headers, ran both phases as XPU2 frames on the unchanged CPU and GPU lanes: no GPU
+program change. Its one change to XPU2 is host-side: the sample audit lets a pixel planned no sample take none
+(`async_render.h`), which no plan of XPU2's own makes.
 
-Results, pictures and what they say: `RESULTS.md`. In short, on this scene it does not beat XPU2 at equal time (12%
-slower without diffuse bounces, about 1.7 times with them); the trusted reconstruction is as good as XPU2 at 36 to 64
-samples a pixel and the bias vanishes on average; the losses are sparse-frame overhead on XPU2's grid and, with
-indirect light, the noise phase 1 does not touch. Open items are listed there.
+Results, pictures and what they say: `RESULTS.md`. In short, the first step did not beat XPU2 at equal time (12%
+slower without diffuse bounces, about 1.7 times with them); the trusted reconstruction was as good as XPU2 at 36 to 64
+samples a pixel and the bias vanished on average; the losses were sparse-frame overhead on XPU2's grid and, with
+indirect light, the noise phase 1 does not touch.
+
+## 8. Sol's indexer: geometry, not shading (third step, 2026-11-19)
+
+The user's direction: "repurpose the indexer to handle not shading, but geometry". Two observations: the indexer is
+"responsible to virtualize the geometry between the devices", and "the virtual geometry is reconstructed by the radial
+topology in geometric passes ... it will start coarse, then it will refine itself within a variance ... convergence but
+on the topological/geometric level". Then the shading changes.
+
+**Decided by the user:** the virtual geometry is the **visible surface only** (the meshes stay in each device's ray
+structures, so paths and their bounces stay exact), and the geometric variance is the **sandwich gap**, with the radial
+scans deciding connectivity, silhouettes and saddles, where the bound does not hold.
+
+### 8.1 What XPU2's indexer does, and what Sol's does instead
+
+XPU2's indexer (`xpu2/interactive/INDEXER.md`) classifies every scene object by the shading families it needs
+(`entity_classes.h`), routes it to the devices that can render it (`routing_index.h`), and seeds each cell of the work
+grid on the device that renders what it sees best, from a first-hit probe (`device_suit.h`). Its unit is the
+material; its question is "which device shades this?".
+
+Sol's indexer (`virtual_surface.h`) asks "what surface does the camera see, and how well do the probes know it?":
+
+| | XPU2's indexer | Sol's indexer |
+|---|---|---|
+| Index | objects by shading family and device class | meshes as clusters of 128 triangles with their bounds, and their welded topology once a probe stands on them (`GeometryIndex`) |
+| First-hit probe | four camera rays a tile, to weigh devices | the probes themselves: a quadtree of camera rays, each with its radial scan |
+| Output | a device owner per cell | the virtual surface: sites (probes) and quads, one small piece |
+| Shared between devices | decisions; every card holds every mesh | the piece, which any device evaluates per pixel without the meshes (`pack`, `SurfaceView`, `evaluate`) |
+
+Both indexes are kept across frames by the plan's mesh objects, as XPU2 keeps tessellations: clusters are made once
+(0.003 s for the test scene's 1,177 clusters), topologies the first time a probe stands on a mesh.
+
+### 8.2 Geometric passes
+
+1. **Pass 0, coarse.** Probes at the corners of a lattice of stride s0 (8, 16 or 32 pixels). Each probe's camera ray is
+   traced on the CPU (Embree, `CpuBackend`), and its mesh scanned ring by ring (`scan.h`) over a window of its quads'
+   size: the patch's triangles and the patch's **boundary**, the edges where the surface ends inside the window (a
+   border of the mesh, or a silhouette where it turns away from the camera).
+2. **Each quad is tested** (below). A quad that converged is a leaf. One that has not splits in four: new probes at its
+   edges' middles and its centre, shared with its neighbours, traced and scanned in the next pass.
+3. **Down to the finest stride** (min_stride, 2 pixels). What has not converged there stays untrusted: phase 2 renders
+   it whole.
+
+Like sampling, the passes converge: each pass resolves more of the frame (section 8.5's numbers), and a realtime preview
+could show the surface after each pass.
+
+### 8.3 When a quad has converged
+
+Its reconstruction is the Bregman Delaunay interpolation of its four probes: one of the quad's two diagonals, the one
+whose lifted edge is lower (`quadDiagonal`, the lower hull of section 3.3 on four sites), and the plane of each half.
+It has converged within the tolerance when the reconstruction is the visible surface over the quad and a margin of
+the pixel filter's reach:
+
+1. **Connected.** Every probe's scan reached every other probe's triangle: one connected surface.
+2. **No end inside.** No probe's patch boundary crosses the quad: no silhouette, border or hole.
+3. **The sandwich gap** under the tolerance (relative inverse depth) at every pixel: for a convex piece the surface
+   lies between the probes' tangent planes and the Delaunay interpolation (`sandwichGap`); a saddle, where the bound
+   does not hold, counts the spread of all of them.
+4. **No crease.** The scanned triangles over the quad, clipped to each half, lie within the tolerance of its plane on
+   either side: a crease or a saddle's relief between the probes. A mesh is piecewise planar, so checking the clipped
+   triangles' corners is exact.
+5. **Nothing in front.** No other geometry lies in front of the reconstruction over the quad: the indexer's clusters
+   whose bounds reach the quad nearer than its farthest point, then their triangles, clipped at the camera's near plane
+   and to each half (`liftClipped`, `departs`). This is what catches an object smaller than the quad that no probe hit.
+
+A quad whose four probes all missed has converged as background when no cluster's triangles reach it.
+
+### 8.4 The piece
+
+`pack` writes the virtual surface as one block: a header, the sites (pixel, hit, tangent plane, inverse depth, phase 1's
+radiance; 36 bytes each) and the quads (corners, children, state, diagonal, the halves' planes; 56 bytes each).
+`evaluate` reads only that block: it walks the quadtree from the root grid to the pixel's leaf and returns the leaf's
+state, inverse depth, Bregman Voronoi cell (the corner whose plane predicts the pixel best) and phase 1's radiance
+interpolated over the Delaunay half. It is plain code over arrays, as a GPU thread would run it. The engine's region
+pass is exactly this, from the packed bytes, which makes the per-pixel buffers of the first steps unnecessary.
+
+Today the piece is evaluated on the host and the frame cache handed to the GPU is still made per pixel from it; the GPU
+evaluating the piece itself (and a Rhizome node receiving it as one more piece of the swarm's memory, named by its hash)
+belongs to the shading step.
+
+### 8.5 What it replaced, and what is open
+
+Gone from the engine: the fixed lattice, the nine overlapping depth tiles per pixel, the brute-force triangulation per
+window and mask behind locks, the per-pixel silhouette pass, and eight classes folded into the leaf states. The region
+pass went from 37 ms to 2 ms, the probes from 19,200 to 1,754 (s0 16), and geometry is exact within the tolerance on
+every converged pixel. Numbers and pictures: `RESULTS.md` section 6.
+
+Open, for the shading step: the radiance between coarse probes (a converged wall quad of 16 pixels interpolates its
+light over 16 pixels: the geometry is right, the shadow gradient is not quite); dense launches for both phases; the
+probe frame's and phase 2's fixed costs; the piece on the GPU. Also open: T-junctions between leaves of different
+levels (a coarse leaf's edge interpolates only its own corners, so its light can step against the finer neighbours'),
+and the passes running on the GPU.
