@@ -265,6 +265,49 @@ class Nodes(unittest.TestCase):
         self.assertNotIn('__long', text)
         self.assertNotIn('__short_normal', text)
 
+    def test_realtime_dices_a_sea_evenly_and_a_render_by_the_screen(self):
+        # Realtime's sea, from a dicing camera held through its moves: diced evenly at the ocean's resolution (no screen
+        # error), the same from every view; by the screen it was tessellated anew each time realtime took a new dicing
+        # camera at rest. A render dices it by the screen; another mesh is cut as before.
+        import re
+        from moonray_modo import moonlightipr_detail, rdla
+        self.addCleanup(moonlightipr_detail._DICING.update, camera=None)
+
+        def written(**flags):
+            moonlightipr_detail._DICING['camera'] = None
+            scene = {'camera': {'matrix': [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 2, 30, 1], 'focal_mm': 35.0, 'film_mm': 36.0},
+                     'materials': {'sea': {'native_shader': 'DwaBaseMaterial', 'native_parameters': {},
+                                           'node_graph': graph(resolution=256, fit_to_mesh=False, repeat=[4, 4]),
+                                           'node_override': True, 'color': [.1, .1, .1]},
+                                   'ball': {'color': [.5, .5, .5]}},
+                     'meshes': [{'name': 'Sea', 'identity': 'sea', 'vertices': [[-160, 0, -160], [160, 0, -160], [160, 0, 160], [-160, 0, 160]],
+                                 'faces': [[0, 3, 2, 1]], 'material': 'sea', 'uvs': [[0, 0], [0, 1], [1, 1], [1, 0]],
+                                 'subdivision': True, 'adaptive_error': 1.0},
+                                {'name': 'Ball', 'identity': 'ball', 'vertices': [[-1, 1, -1], [1, 1, -1], [1, 1, 1], [-1, 1, 1]],
+                                 'faces': [[0, 3, 2, 1]], 'material': 'ball', 'uvs': [[0, 0], [0, 1], [1, 1], [1, 0]],
+                                 'subdivision': True}],
+                     'lights': [], 'environments': [], 'time': 0.0}
+            scene.update(flags)
+            with mock.patch.dict(os.environ, {'MOONRAY_MODO_OCEAN': '1', 'MOONRAY_MODO_OCEAN_SPLIT': '1'}), \
+                    mock.patch('moonray_modo.ocean.normal_map_available', return_value=False):
+                text = rdla.scene_text(scene, 640, 360, 1, 0.2)
+            found = {}
+            for index in (0, 1):
+                block = text.split('RdlMeshGeometry("/modo/mesh/%d")' % index, 1)[1].split('table.insert', 1)[0]
+                error = re.search(r'\["adaptive_error"\] = ([0-9.e-]+)', block)
+                found[index] = (int(re.search(r'\["mesh_resolution"\] = (\d+)', block).group(1)), float(error.group(1)) if error else None)
+            return found
+
+        realtime = written(_geometry_detail='fine', _detail_keep=True)
+        self.assertEqual(realtime[0], (ocean.OCEAN_RESOLUTION, 0.0))
+        self.assertGreater(realtime[1][1], 0.0)
+        rendered = written()
+        self.assertEqual(rendered[0], (ocean.OCEAN_RESOLUTION, 1.0))
+        # A dicing camera the scene names itself (Render Settings) stays the sea's: its dicing by the screen holds.
+        chosen = written(_geometry_detail='fine', _detail_keep=True,
+                         dicing_camera={'matrix': [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 2, 30, 1], 'focal_mm': 35.0, 'film_mm': 36.0})
+        self.assertEqual(chosen[0], (ocean.OCEAN_RESOLUTION, 1.0))
+
     def test_moonlightipr_keeps_the_tile_whole(self):
         # A sea told how MoonRay dices it (_spacing) is split only in MoonRay's scene writer (nodes.emit): MoonLightIPR's
         # displacement reads the whole tile and its slope.

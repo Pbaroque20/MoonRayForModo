@@ -62,7 +62,16 @@ class OceanCache(unittest.TestCase):
                 os.utime(path, (1.0, 1.0))
             with mock.patch('moonray_modo.ocean.native_tile', side_effect=AssertionError('made again')):
                 self.assertEqual(ocean.make(value, 1.0), made)
-        self.assertTrue(all(path.stat().st_mtime > 1000 for path in made))
+        self.assertTrue(all(ocean.lately(path) > 1000 for path in made))
+
+    def test_a_tile_used_again_keeps_its_time_of_making(self):
+        # The texture copies renderers read a tile through are named by that time (textures._prepare): touched as used,
+        # it was copied anew and XPU2's realtime shaped its sea anew at every edit.
+        used = self.file('a.displacement.pfm', 400, 900)
+        made = used.stat().st_mtime_ns
+        ocean.used([used])
+        self.assertEqual(used.stat().st_mtime_ns, made)
+        self.assertGreater(ocean.lately(used), time.time() - 60)
 
     def test_making_a_tile_looks_the_folder_over(self):
         with mock.patch('moonray_modo.ocean.trim') as trimmed:

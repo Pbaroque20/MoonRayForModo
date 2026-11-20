@@ -1221,7 +1221,8 @@ class Panel(Tools, QtWidgets.QWidget):
         except Exception:return
         opened=scene_id!=self._scene_id
         if opened:
-            self._scene_id=scene_id;self._geometry_cache=None;self._shown=None
+            from .moonlightipr_detail import forget_sea
+            self._scene_id=scene_id;self._geometry_cache=None;self._shown=None;forget_sea()
         self._sync_cameras()
         self._hud_update()
         self._planned_follows(opened)
@@ -1751,6 +1752,9 @@ class Panel(Tools, QtWidgets.QWidget):
         self._pending_preview=False;self.release_timer.stop()
         self.preview.set_show_buckets(self.show_buckets.isChecked() and not self._following)
         if self._following:
+            # Its seas cut once, from the view as it stands now (moonlightipr_detail.held_sea).
+            from .moonlightipr_detail import forget_sea
+            forget_sea()
             self.renderer.buffers.denoiser.close()
             if self.buffer.currentData()=='denoised_beauty' and self._engine()!='moonlightipr' and not (self.ipr_mode.isChecked() and self._rt_capable()):
                 self.buffer.setCurrentIndex(self.buffer.findData('beauty'))
@@ -1815,7 +1819,8 @@ class Panel(Tools, QtWidgets.QWidget):
     def _capture_read(self,reuse=False,transform_items=None):
         import modo
         if modo.Scene().renderItem.id != self._scene_id:
-            self._scene_id=modo.Scene().renderItem.id;self._geometry_cache=None
+            from .moonlightipr_detail import forget_sea
+            self._scene_id=modo.Scene().renderItem.id;self._geometry_cache=None;forget_sea()
         # The whole scene read (realtime starting, or an edit that is not one mesh, a move or a material), with RT on as
         # with Render: what the wait is said first. A move or a material reads little, and says nothing.
         if not reuse or self._geometry_cache is None:self._reading()
