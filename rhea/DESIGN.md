@@ -538,3 +538,18 @@ worse than XPU2.
   frame: the floor then costs nothing.
 - What it does not do: give the floored frame what Rhea could have reconstructed in its 8%. A partial floor (probes
   only in the regions that converge) would; the first pass's quads say where.
+
+## 16. Demodulated light: dividing out the surface's colour (2026-11-20)
+
+The user: "divide out the surface colour" (irradiance caching's practice): probes interpolate light, not texture.
+
+- **Colour:** the frame's albedo output (MoonRay's material AOV `albedo`, `RenderOutput("/rhea_albedo")`, added by
+  `run_rhea.py`) at the first hit, averaged over each pixel's samples, probes' included. In one frame it is known for
+  every pixel when the reconstruction runs.
+- **The light interpolated** (`evaluate`): each corner's light divided by its colour (per channel, never by less than the
+  floor 0.02), interpolated, and multiplied by the pixel's colour; plain radiance where a corner or the pixel is darker
+  than the floor (metal, emitters, the sky). The curvature term and the radiance-edge rule read the same demodulated
+  light (`VirtualSurface::lightOf`), so a texture's edge is not a light edge.
+- **Option `demod`** (on): one frame and sequences. What it does not do: a surface whose light is not its colour times
+  an irradiance (specular, emission) is scaled by the colour ratio between probes; the weight m / (m + N) is what
+  corrects it.

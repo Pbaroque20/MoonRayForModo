@@ -18,7 +18,10 @@ from run_xpu2_baseline import REFERENCE, environment
 LPE = ('RenderOutput("/rhea_emission") { ["file_name"]="rhea.exr", ["result"]=8, ["lpe"]="C[<L.>O]", '
        '["channel_name"]="rhea_emission", ["channel_format"]=0 }\n'
        'RenderOutput("/rhea_direct") { ["file_name"]="rhea.exr", ["result"]=8, ["lpe"]="C[DGS][<L.>O]", '
-       '["channel_name"]="rhea_direct", ["channel_format"]=0 }\n')
+       '["channel_name"]="rhea_direct", ["channel_format"]=0 }\n'
+       # The surface's colour at the first hit, for demodulated light (rhea_engine.cc demod).
+       'RenderOutput("/rhea_albedo") { ["file_name"]="rhea.exr", ["result"]=7, ["material_aov"]="albedo", '
+       '["channel_name"]="rhea_albedo", ["channel_format"]=0 }\n')
 
 FILMS = ('phase1', 'recon', 'phase2', 'direct2', 'final', 'classes', 'cells', 'samples2', 'leaves', 'geomerr')
 

@@ -383,6 +383,7 @@ inline const char* stateName(int s) {
 struct Site {
     int px = 0, py = 0, level = 0;
     bool hit = false, scannable = false, lit = false;
+    float albedo[3] = {0, 0, 0};  // its surface's colour (the frame's albedo output at its pixel), for demodulation
     uint32_t geom = ~0u, prim = 0;
     Plane h;
     double w = 0;
@@ -474,6 +475,19 @@ public:
         geometricPasses(plan, scene, frame, index, op);
     }
 
+    // Demodulation (DESIGN.md 16): the light between probes interpolated divided by the surface's colour and multiplied
+    // by each pixel's own, so that textures neither blur nor read as light edges. Off: the radiance itself.
+    bool demodulate = false;
+    float demodFloor = 0.02f;  // a colour darker than this (its luminance) is not divided by: metal, emitters, the sky
+    static float luminanceOf(const float* c) { return 0.2126f * c[0] + 0.7152f * c[1] + 0.0722f * c[2]; }
+    // A site's light as the reconstruction interpolates it: divided by its colour when demodulating; false where it
+    // cannot be (a dark surface).
+    bool lightOf(const Site& s, double out[3]) const {
+        if (demodulate && !(luminanceOf(s.albedo) >= demodFloor)) return false;
+        for (int c = 0; c < 3; ++c) out[c] = demodulate ? s.rgb[c] / std::max(s.albedo[c], demodFloor) : s.rgb[c];
+        return true;
+    }
+
     // The floor: the first pass converged too little of the frame to pay for the rest (SurfaceOptions::floorArea).
     bool floored = false;
     double firstPassArea = 0;
@@ -544,7 +558,9 @@ public:
                 if (ax < 0 || ay < 0 || bx >= int(width) || by >= int(height)) continue;
                 const int i = siteAt[size_t(ay) * width + ax], j = siteAt[size_t(by) * width + bx];
                 if (i < 0 || j < 0 || !sites[i].lit || !sites[j].lit || sites[i].geom != s.geom || sites[j].geom != s.geom) continue;
-                for (int c = 0; c < 3; ++c) sum[a][c] += (sites[i].rgb[c] - 2.0 * s.rgb[c] + sites[j].rgb[c]) / (double(step[a]) * step[a]);
+                double li[3], ls[3], lj[3];  // their light as the reconstruction interpolates it (lightOf)
+                if (!lightOf(sites[i], li) || !lightOf(s, ls) || !lightOf(sites[j], lj)) continue;
+                for (int c = 0; c < 3; ++c) sum[a][c] += (li[c] - 2.0 * ls[c] + lj[c]) / (double(step[a]) * step[a]);
                 n[a] += 1;
             }
         }
@@ -654,10 +670,12 @@ private:
 
 public:
     // The light of these sites, read at their pixels from a probe frame's picture.
-    void takeRadiance(const std::vector<float>& rgba, const std::vector<int>& which) {
+    // albedo: the frame's albedo output, three a pixel (null: none).
+    void takeRadiance(const std::vector<float>& rgba, const std::vector<int>& which, const std::vector<float>* albedo = nullptr) {
         for (int i : which) {
             Site& s = sites[i];
-            for (int c = 0; c < 3; ++c) s.rgb[c] = rgba[(size_t(s.py) * width + s.px) * 4 + c];
+            const size_t px = size_t(s.py) * width + s.px;
+            for (int c = 0; c < 3; ++c) s.rgb[c] = rgba[px * 4 + c], s.albedo[c] = albedo ? (*albedo)[px * 3 + c] : 0.0f;
             s.lit = true;
         }
     }
@@ -931,12 +949,15 @@ struct PackedHeader {
     int32_t ox = 0, oy = 0;  // the root lattice's offset
     float tauR = 0.25f;
     uint32_t curvature = 0;  // the reconstruction's second-order term on (PackedQuad::curv)
+    uint32_t demod = 0;      // demodulated light (VirtualSurface::demodulate); its floor
+    float demodFloor = 0.02f;
 };
 struct PackedSite {
     uint16_t px, py;
     uint32_t hit;
     float a, b, c, w;
     float rgb[3];
+    float albedo[3];
 };
 struct PackedQuad {
     uint16_t x0, y0, x1, y1;
@@ -953,13 +974,14 @@ inline std::vector<uint8_t> pack(const VirtualSurface& v, float tauR, bool curva
     PackedHeader hd;
     hd.width = v.width, hd.height = v.height, hd.s0 = v.s0, hd.rootX = v.rootX, hd.rootY = v.rootY, hd.ox = v.ox, hd.oy = v.oy;
     hd.sites = uint32_t(v.sites.size()), hd.quads = uint32_t(v.quads.size()), hd.tauR = tauR, hd.curvature = curvature;
+    hd.demod = v.demodulate, hd.demodFloor = v.demodFloor;
     std::vector<uint8_t> out(sizeof(PackedHeader) + v.sites.size() * sizeof(PackedSite) + v.quads.size() * sizeof(PackedQuad));
     std::memcpy(out.data(), &hd, sizeof hd);
     auto* ps = reinterpret_cast<PackedSite*>(out.data() + sizeof hd);
     for (size_t i = 0; i < v.sites.size(); ++i) {
         const Site& s = v.sites[i];
         ps[i] = PackedSite{uint16_t(s.px), uint16_t(s.py), uint32_t(s.hit), float(s.h.a), float(s.h.b), float(s.h.c), float(s.w),
-                           {s.rgb[0], s.rgb[1], s.rgb[2]}};
+                           {s.rgb[0], s.rgb[1], s.rgb[2]}, {s.albedo[0], s.albedo[1], s.albedo[2]}};
     }
     auto* pq = reinterpret_cast<PackedQuad*>(ps + v.sites.size());
     for (size_t i = 0; i < v.quads.size(); ++i) {
@@ -992,7 +1014,8 @@ struct PixelSurface {
     float rgb[3] = {0, 0, 0};
 };
 
-inline PixelSurface evaluate(const SurfaceView& v, int px, int py) {
+// pixelAlbedo: the pixel's own colour (the frame's albedo output), for demodulated light (null: none).
+inline PixelSurface evaluate(const SurfaceView& v, int px, int py, const float* pixelAlbedo = nullptr) {
     PixelSurface out;
     const PackedHeader& hd = *v.hd;
     // The root quad: the first column (or row) runs from the image's edge to the offset, then every s0.
@@ -1024,25 +1047,36 @@ inline PixelSurface evaluate(const SurfaceView& v, int px, int py) {
         // On the quad's border, past a clamped corner: the nearest corner's.
         bw[0] = 1, bw[1] = bw[2] = 0;
     }
-    for (int ch = 0; ch < 3; ++ch) out.rgb[ch] = float(bw[0] * c[t[0]]->rgb[ch] + bw[1] * c[t[1]]->rgb[ch] + bw[2] * c[t[2]]->rgb[ch]);
+    // The light interpolated: divided by each corner's colour and multiplied by the pixel's where all of them have one
+    // (demodulation), else the radiance itself.
+    auto lum = [](const float* a) { return 0.2126f * a[0] + 0.7152f * a[1] + 0.0722f * a[2]; };
+    bool demod = hd.demod && pixelAlbedo && lum(pixelAlbedo) >= hd.demodFloor;
+    for (int k = 0; k < 3; ++k) demod = demod && lum(c[t[k]]->albedo) >= hd.demodFloor;
+    float light[3][3];
+    for (int k = 0; k < 3; ++k)
+        for (int ch = 0; ch < 3; ++ch)
+            light[k][ch] = demod ? c[t[k]]->rgb[ch] / std::max(c[t[k]]->albedo[ch], hd.demodFloor) : c[t[k]]->rgb[ch];
+    float mixed[3];
+    for (int ch = 0; ch < 3; ++ch) mixed[ch] = float(bw[0] * light[0][ch] + bw[1] * light[1][ch] + bw[2] * light[2][ch]);
     // The second-order term: linear interpolation of a light that bends sits on its chords, off it by
-    // 1/2 sum_k b_k d_k^T H d_k (d_k from the pixel to corner k, H the light's curvature, its cross term left out).
-    if (hd.curvature && (q.state == Trusted || q.state == Background)) {
+    // 1/2 sum_k b_k d_k^T H d_k (d_k from the pixel to corner k, H the light's curvature, its cross term left out). The
+    // curvature was measured on the light as the piece interpolates it (demodulated or not): only that light takes it.
+    if (hd.curvature && (q.state == Trusted || q.state == Background) && demod == (hd.demod != 0)) {
         double dx2 = 0, dy2 = 0;
         for (int k = 0; k < 3; ++k) {
             const double dx = c[t[k]]->px + 0.5 - x, dy = c[t[k]]->py + 0.5 - y;
             dx2 += bw[k] * dx * dx, dy2 += bw[k] * dy * dy;
         }
-        for (int ch = 0; ch < 3; ++ch) out.rgb[ch] = std::max(0.0f, out.rgb[ch] - float(0.5 * (q.curv[0][ch] * dx2 + q.curv[1][ch] * dy2)));
+        for (int ch = 0; ch < 3; ++ch) mixed[ch] = std::max(0.0f, mixed[ch] - float(0.5 * (q.curv[0][ch] * dx2 + q.curv[1][ch] * dy2)));
     }
+    for (int ch = 0; ch < 3; ++ch) out.rgb[ch] = demod ? pixelAlbedo[ch] * mixed[ch] : mixed[ch];
     // The cell: the corner whose plane predicts the reconstruction best (nearest on a tie).
     float best = 3.4e38f, bestDist = 3.4e38f;
     if (q.state == Trusted) {
         out.w = q.half[half][0] * x + q.half[half][1] * y + q.half[half][2];
         float lo = 3.4e38f, hi = -3.4e38f, mean = 0;
-        for (int k = 0; k < 3; ++k) {
-            const float* L = c[t[k]]->rgb;
-            const float l = 0.2126f * L[0] + 0.7152f * L[1] + 0.0722f * L[2];
+        for (int k = 0; k < 3; ++k) {  // the light the reconstruction interpolates (demodulated: textures are not edges)
+            const float l = lum(light[k]);
             lo = std::min(lo, l), hi = std::max(hi, l), mean += l / 3;
         }
         if ((hi - lo) / (mean + 1e-3f) > hd.tauR) out.state = Edge;

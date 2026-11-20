@@ -68,7 +68,8 @@ struct Options {
     // weight (and its bias) fades as phase 2's samples pile up (power < 1); 1 keeps a frame's weight, as averaging frames.
     double accumPower = 0.5;
     unsigned seed = 0;
-    unsigned floorSpp = 9;  // the floor's frame: XPU2's samples a pixel, every pixel (DESIGN.md 15)  // added to the scene's seed: every frame's samples drawn afresh (a reference independent of a run)  // seqThreads: the pipelined CPU work's threads, below normal
+    unsigned floorSpp = 9;
+    bool demod = true;  // demodulated light (DESIGN.md 16): needs the albedo output (run_rhea.py adds it); one frame  // the floor's frame: XPU2's samples a pixel, every pixel (DESIGN.md 15)  // added to the scene's seed: every frame's samples drawn afresh (a reference independent of a run)  // seqThreads: the pipelined CPU work's threads, below normal
     double orbit = 0;
 };
 
@@ -154,6 +155,7 @@ int main(int argc, char** argv) {
             else if (k == "seed") op.seed = unsigned(std::stoul(v));
             else if (k == "floor_area") op.surface.floorArea = std::stod(v);
             else if (k == "floor_spp") op.floorSpp = unsigned(std::stoul(v));
+            else if (k == "demod") op.demod = v != "0";
             else if (k == "curvature") op.curvature = v != "0";
             else if (k == "curv_span") op.curvSpan = std::stoi(v);
             else if (k == "override") op.override_ = v;
@@ -331,13 +333,14 @@ int main(int argc, char** argv) {
         std::vector<float> recon(N * 4, 0.0f), wvis(N, 0.0f);
         std::vector<uint8_t> cls(N, rhea::Truncated), level(N, 0);
         std::vector<int> ownerOf(N, -1), leafOf(N, -1);
+        std::vector<float> albedo;  // the pixels' colours (the frame's albedo output), once the frame has them
         auto regionPass = [&] {
             piece = rhea::pack(vs, float(op.tauR), op.curvature, op.curvSpan);
             const rhea::SurfaceView view(piece);
             rhea::parallel(op.threads, H, [&](size_t y) {
                 for (unsigned x = 0; x < W; ++x) {
                     const size_t i = y * W + x;
-                    const rhea::PixelSurface p = rhea::evaluate(view, int(x), int(y));
+                    const rhea::PixelSurface p = rhea::evaluate(view, int(x), int(y), albedo.empty() ? nullptr : &albedo[i * 3]);
                     for (int c = 0; c < 3; ++c) recon[i * 4 + c] = p.rgb[c];
                     recon[i * 4 + 3] = 1;
                     wvis[i] = p.w;
@@ -446,7 +449,14 @@ int main(int argc, char** argv) {
             stamp = Clock::now();
             std::vector<int> all(vs.sites.size());
             for (size_t i = 0; i < all.size(); ++i) all[i] = int(i);
-            vs.takeRadiance(op.probeFull ? r2.rgba : direct2, all);
+            const int offAlbedo = aovOffset(*p2, "/rhea_albedo");
+            vs.demodulate = op.demod && offAlbedo >= 0;
+            if (vs.demodulate) {
+                albedo.assign(N * 3, 0.0f);
+                for (size_t i = 0; i < N; ++i)
+                    for (int c = 0; c < 3; ++c) albedo[i * 3 + c] = r2.aov[i * stride + offAlbedo + c];
+            }
+            vs.takeRadiance(op.probeFull ? r2.rgba : direct2, all, vs.demodulate ? &albedo : nullptr);
             regionPass();
             for (size_t i = 0; i < N; ++i)
                 if (cls[i] == rhea::Edge) mWeight[i] = 0;
@@ -654,7 +664,7 @@ int main(int argc, char** argv) {
         o["s0"] = op.surface.s0, o["min_stride"] = op.surface.minStride, o["tol"] = op.surface.tol, o["margin"] = op.margin;
         o["probe_spp"] = op.probeSpp, o["n_lo"] = op.nLo, o["n_hi"] = op.nHi, o["n_bg"] = op.nBg;
         o["m0"] = op.m0, o["tau_r"] = op.tauR, o["rings"] = op.surface.rings, o["tris"] = op.surface.tris, o["coverage"] = op.surface.coverage;
-        o["light_tol"] = op.surface.lightTol, o["light_passes"] = op.surface.lightPasses, o["gather"] = op.gather, o["gather2"] = op.gather2, o["progressive"] = op.progressive, o["probe_full"] = op.probeFull, o["chunk"] = op.chunkSamples, o["one_frame"] = op.oneFrame, o["frames"] = op.frames, o["orbit"] = op.orbit, o["jitter"] = op.jitter, o["accumulate"] = op.accumulate, o["accum_power"] = op.accumPower, o["seed"] = op.seed, o["floor_area"] = op.surface.floorArea, o["floor_spp"] = op.floorSpp, o["curvature"] = op.curvature, o["curv_span"] = op.curvSpan;
+        o["light_tol"] = op.surface.lightTol, o["light_passes"] = op.surface.lightPasses, o["gather"] = op.gather, o["gather2"] = op.gather2, o["progressive"] = op.progressive, o["probe_full"] = op.probeFull, o["chunk"] = op.chunkSamples, o["one_frame"] = op.oneFrame, o["frames"] = op.frames, o["orbit"] = op.orbit, o["jitter"] = op.jitter, o["accumulate"] = op.accumulate, o["accum_power"] = op.accumPower, o["seed"] = op.seed, o["floor_area"] = op.surface.floorArea, o["floor_spp"] = op.floorSpp, o["demod"] = op.demod, o["curvature"] = op.curvature, o["curv_span"] = op.curvSpan;
         o["mode"] = op.mode, o["p1mode"] = op.p1mode, o["threads"] = op.threads;
         o["cache"] = op.cache, o["cache_p"] = op.cacheP, o["cache_tol"] = op.cacheTol, o["qmc_depth"] = op.qmcDepth, o["xpu2_qmc"] = op.xpu2Qmc;
         report["options"] = o;
@@ -728,7 +738,7 @@ int main(int argc, char** argv) {
                 rhea::Frame frame;
                 rhea::VirtualSurface vs;
                 std::vector<unsigned> nCount, total;
-                std::vector<float> mWeight, recon, direct, final;
+                std::vector<float> mWeight, recon, direct, final, albedo;
                 std::vector<uint8_t> cls;
                 async::RenderResult r;
                 double prepare = 0, render = 0, finish = 0;
@@ -742,7 +752,7 @@ int main(int argc, char** argv) {
                 rhea::parallel(threads, H, [&](size_t y) {
                     for (unsigned x = 0; x < W; ++x) {
                         const size_t i = y * W + x;
-                        const rhea::PixelSurface ps = rhea::evaluate(view, int(x), int(y));
+                        const rhea::PixelSurface ps = rhea::evaluate(view, int(x), int(y), s.albedo.empty() ? nullptr : &s.albedo[i * 3]);
                         for (int c = 0; c < 3; ++c) s.recon[i * 4 + c] = ps.rgb[c];
                         s.cls[i] = ps.state;
                     }
@@ -762,6 +772,7 @@ int main(int argc, char** argv) {
                 }
                 s.plan->seed = plan->seed + k * 7919u;
                 s.vs.build(*s.plan, cpuScene, s.frame, index, so);
+                s.albedo.clear();  // the geometry's pass: no colours yet
                 regionInto(s);
                 s.nCount.assign(N, op.nHi);
                 s.mWeight.assign(N, 0.0f);
@@ -817,7 +828,15 @@ int main(int argc, char** argv) {
                 std::vector<int> all(s.vs.sites.size());
                 for (size_t i = 0; i < all.size(); ++i) all[i] = int(i);
                 if (!s.vs.floored) {
-                    s.vs.takeRadiance(op.probeFull ? s.r.rgba : s.direct, all);
+                    const int offA = aovOffset(*s.plan, "/rhea_albedo");
+                    s.vs.demodulate = op.demod && offA >= 0;
+                    s.albedo.clear();
+                    if (s.vs.demodulate) {
+                        s.albedo.assign(N * 3, 0.0f);
+                        for (size_t i = 0; i < N; ++i)
+                            for (int c = 0; c < 3; ++c) s.albedo[i * 3 + c] = s.r.aov[i * stride + offA + c];
+                    }
+                    s.vs.takeRadiance(op.probeFull ? s.r.rgba : s.direct, all, s.vs.demodulate ? &s.albedo : nullptr);
                     regionInto(s);
                 }
                 s.final.assign(N * 4, 0.0f);
