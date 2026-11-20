@@ -43,6 +43,7 @@ struct Hit {
     int valid;
     int curve;                  // the hit is on a curve, which curveTangent runs along
     unsigned hair;              // with MATERIAL_HAIR, the material's entry among the hairs
+    unsigned iridescence;       // with MATERIAL_IRIDESCENT, the material's entry among the iridescences
     float curveCos;             // how squarely the ray met the strand: 1 on its middle, 0 at its edge
     float curveAlong, curveChance;  // how far along its strand the hit is, and the strand's own number
     float3 curveTangent;
@@ -816,6 +817,8 @@ struct Surface {
     bool toonDiffuse, toonSpecular;
     float3 toonAlong;       // the way a strand runs (a surface's u direction), in the shading frame: a hair toon's highlight
     bool smoothToon;        // a toon lit by its smooth normals, not its faces' (params.toonTerminator)
+    // MoonRay's iridescence over the specular or the coat's reflection (iridescenceTint), or none.
+    const DeviceIridescence* iridescence;
 };
 
 ML_INLINE Surface surfaceFrom(const Hit& hit) {
@@ -868,6 +871,8 @@ ML_INLINE Surface surfaceFrom(const Hit& hit) {
     s.smoothToon = s.toonDiffuse && params.toonTerminator;
     s.toonSpecular = toon && (hit.flags & MATERIAL_TOON_SPECULAR);
     s.toonAlong = make_float3(1.0f, 0.0f, 0.0f);
+    s.iridescence = ML_HAS(FEATURE_IRIDESCENCE) && (hit.flags & MATERIAL_IRIDESCENT) && !(hit.flags & (MATERIAL_HAIR | MATERIAL_VOLUME))
+                    ? reinterpret_cast<const DeviceIridescence*>(params.iridescences) + hit.iridescence : nullptr;
     return s;
 }
 // Where along a toon ramp a value falls: past its end, the end.
@@ -910,6 +915,19 @@ ML_INLINE float conductorChannel(float reflectance, float cosine) {
 }
 ML_INLINE float3 conductorFresnel(float3 reflectance, float cosine) {
     return make_float3(conductorChannel(reflectance.x, cosine), conductorChannel(reflectance.y, cosine), conductorChannel(reflectance.z, cosine));
+}
+// MoonRay's iridescence for a reflection whose half vector makes this cosine with the view (IridescenceBsdfLobe's
+// tintWithIridescence): its index, |1 - cos|^exponent * thickness wrapped into 0 to 1, reads the colour from the table;
+// the colour is blended from white by its strength, times a blend from its strength at 90 degrees to that at 0.
+ML_INLINE float3 iridescenceTint(const DeviceIridescence& d, float cosine) {
+    const float index = fmodf(powf(fabsf(1.0f - cosine), d.exponent) * d.thickness, 1.0f);
+    const float x = clamp(index, 0.0f, 1.0f) * float(IRIDESCENCE_STEPS - 1);
+    const unsigned i = min(unsigned(x), IRIDESCENCE_STEPS - 2);
+    const float f = x - float(i);
+    const float* c = d.colors + i * 3;
+    const float3 colour = make_float3(c[0] + (c[3] - c[0]) * f, c[1] + (c[4] - c[1]) * f, c[2] + (c[5] - c[2]) * f);
+    const float at = clamp(d.at90 + (d.at0 - d.at90) * cosine, 0.0f, 1.0f);
+    return lerp(vec(1.0f), colour, at * d.strength);
 }
 // A conductor of the base colour weighted by metallic, over a dielectric.
 ML_INLINE float3 specularFresnel(const Surface& s, float cosine) {
@@ -1125,6 +1143,13 @@ ML_INLINE BsdfEval evalBsdf(const Surface& s, const Lobes& lobes, float3 wo, flo
     const float3 h = normalize(wo + wi);
     const float cosine = dot(wo, h);
     float passed = 1.0f;    // what the highlights let through to what is under them
+    // MoonRay's iridescence: the specular lobe's or the coat's reflection multiplied by its colour at this half vector.
+    float3 shine = vec(1.0f), coatShine = vec(1.0f);
+    if (ML_HAS(FEATURE_IRIDESCENCE) && s.iridescence) {
+        const float3 tint = iridescenceTint(*s.iridescence, cosine);
+        if (s.iridescence->coat) coatShine = tint;
+        else shine = tint;
+    }
     if (s.toonSpecular) {
         // MoonRay's toon highlights (BsdfToon.cc): one, or a hair toon's up to three, each found from the lights alone,
         // each under the ones before it.
@@ -1168,17 +1193,17 @@ ML_INLINE BsdfEval evalBsdf(const Surface& s, const Lobes& lobes, float3 wo, flo
     if (s.beckmann) {
         // Sampled from the distribution of facets itself, so its density follows the half vector.
         const float d = beckmannD(s.alphaX, s.alphaY, h);
-        e.specular = specularFresnel(s, cosine) * (underCoat(s, wo) * d * beckmannG1(s.alphaX, s.alphaY, wo)
+        e.specular = specularFresnel(s, cosine) * shine * (underCoat(s, wo) * d * beckmannG1(s.alphaX, s.alphaY, wo)
                                                    * beckmannG1(s.alphaX, s.alphaY, wi) / (4.0f * wo.z));
         e.specularPdf = (1.0f - lobes.coat) * d * h.z / (4.0f * fmaxf(cosine, 1e-6f));
     } else {
         const float d = ggxD(s.alpha, h.z), g1o = smithG1(s.alpha, wo.z), g1i = smithG1(s.alpha, wi.z);
-        e.specular = specularFresnel(s, cosine) * (underCoat(s, wo) * d * g1o * g1i / (4.0f * wo.z));
+        e.specular = specularFresnel(s, cosine) * shine * (underCoat(s, wo) * d * g1o * g1i / (4.0f * wo.z));
         e.specularPdf = (1.0f - lobes.coat) * g1o * d / (4.0f * wo.z);
     }
     if (!s.toonSpecular) {
         const float broad = broadShare(s);
-        e.specular += multipleScattering(s, wo, wi) * underCoat(s, wo);
+        e.specular += multipleScattering(s, wo, wi) * shine * underCoat(s, wo);
         e.specularPdf = e.specularPdf * (1.0f - broad) + (1.0f - lobes.coat) * broad * wi.z / ML_PI;
     }
     if (s.coat > 0.0f) {
@@ -1187,7 +1212,7 @@ ML_INLINE BsdfEval evalBsdf(const Surface& s, const Lobes& lobes, float3 wo, flo
         const float co = dot(cn, wo), ci = dot(cn, wi), ch = dot(cn, h);
         if (co > 0.0f && ci > 0.0f && ch > 0.0f) {
             const float cd = ggxD(s.coatAlpha, ch), cg1o = smithG1(s.coatAlpha, co), cg1i = smithG1(s.coatAlpha, ci);
-            e.specular += vec(s.coat * dielectricFresnel(cosine, COAT_IOR) * cd * cg1o * cg1i / (4.0f * co));
+            e.specular += coatShine * (s.coat * dielectricFresnel(cosine, COAT_IOR) * cd * cg1o * cg1i / (4.0f * co));
             e.specularPdf += lobes.coat * cg1o * cd / (4.0f * co);
         }
     }
@@ -2479,6 +2504,9 @@ extern "C" __global__ void __raygen__moonlightipr() {
             if (mirrored) tint = vec(1.0f);
             const bool kept = mirrored || !refractThrough(wo, h, ior, 1.0f, wi);   // thrown back inside
             if (kept) wi = reflectAbout(wo, h);
+            // MoonRay's iridescence wraps the dielectric's reflection on the way out as on the way in.
+            if (ML_HAS(FEATURE_IRIDESCENCE) && kept && surface.iridescence && !surface.iridescence->coat)
+                tint = tint * iridescenceTint(*surface.iridescence, clamp(dot(wo, h), 0.0f, 1.0f));
             direction = frame.toWorld(wi);
             seen = kept ? SEEN_REFLECTED : SEEN_THROUGH;
             // MoonRay's material tints the light at every crossing of the surface, in as out: its transmission colour
@@ -3560,6 +3588,7 @@ ML_INLINE MappedSlots resolveMaterial(Hit* hit, const DeviceMaterial& material, 
     hit->transmissionIor = material.transmissionIor;
     hit->flags = material.flags;
     hit->hair = material.hair;
+    hit->iridescence = material.iridescence;
     hit->abbe = material.abbe;
     hit->absorptionDistance = material.absorptionDistance;
     slots.normal = slots.bump = slots.slope = UV_SLOTS;

@@ -46,6 +46,8 @@ MENU = (
     # The scene's files.
     ('cmd moonray.page report', 'Report Scene Assets...', 'report'),
     ('cmd moonray.assets.relink', 'Relink Missing Images...', 'relink'),
+    # The Links panel: meshes linked to .lxo files of their own (Scene Proxies).
+    ('cmd moonray.links', 'Links...', 'links'),
     ('cmd moonray.page package', 'Package Render Scene...', 'package'),
     ('cmd moonray.page package_sequence', 'Package Animation...', 'package_sequence'),
     None,

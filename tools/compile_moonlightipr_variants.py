@@ -1,6 +1,6 @@
 """Compile MoonLightIPR's kernel once for each set of its heavy features, beside the full kernel.
 
-A scene that uses no fog, hair, subsurface scattering, toon or fuzz is rendered by a kernel made without them, which
+A scene that uses no fog, hair, subsurface scattering, toon, fuzz or iridescence is rendered by a kernel made without them, which
 is a third faster or more (each feature's code and state cost every ray, used or not). The renderer chooses the kernel
 for the features its materials use (renderer.cpp, Impl::specialize), from MoonLightIPRKernel_fNN.ptx, NN being the
 features (shared.h, FEATURE_*) as a number; MoonLightIPRKernel.ptx is all of them.
@@ -13,9 +13,10 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-# Variants 0 to 63: every set of the heavy features, procedural layers (FEATURE_PROCEDURAL, 32) among them, so that a
-# scene is compiled with only the code it uses (the full kernel took a minute and a half to compile the first time).
-ALL = 64
+# Variants 0 to 127: every set of the heavy features, procedural layers (FEATURE_PROCEDURAL, 32) and MoonRay's iridescence
+# (FEATURE_IRIDESCENCE, 64) among them, so that a scene is compiled with only the code it uses (the full kernel took a
+# minute and a half to compile the first time).
+ALL = 128
 
 
 def main():
