@@ -104,12 +104,17 @@ class RealtimeDicing(unittest.TestCase):
                                  uvs=[[(x + dx) / 20, (z + dz) / 20] for z in range(20) for x in range(20) for dx, dz in ((0, 0), (1, 0), (1, 1), (0, 1))])
         made.update(camera={'matrix': [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 14, 300, 1], 'focal_mm': 35.0, 'film_mm': 36.0},
                     lights=[], environments=[])
-        found = {}
+        # Since realtime's seas are diced evenly at the ocean's resolution (rdla, _dicing_held), never coarser than a
+        # render, whose dicing by the screen stops at that resolution: the render's error, or none at its resolution.
+        found, resolution = {}, {}
         with mock.patch.dict(os.environ, {'MOONRAY_MODO_OCEAN': '0'}):
             for label, extra in (('render', {}), ('fine', {'_geometry_detail': 'fine'}), ('coarse', {'_geometry_detail': 'coarse'})):
                 text = rdla.scene_text(dict(made, **extra), 960, 540, 1, 0.0)
                 found[label] = float(re.search(r'\["adaptive_error"\] = ([0-9.e+-]+)', text).group(1))
-        self.assertEqual(found['fine'], found['render'])
+                resolution[label] = int(re.search(r'\["mesh_resolution"\] = (\d+)', text).group(1))
+        for label in ('fine', 'coarse'):
+            self.assertIn(found[label], (found['render'], 0.0))
+            self.assertEqual(resolution[label], resolution['render'])
         self.assertLessEqual(found['coarse'], 2.0)
 
 

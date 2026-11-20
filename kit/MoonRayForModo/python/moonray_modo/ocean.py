@@ -449,14 +449,26 @@ def kept_bytes():
 
 def used(made):
     """Tiles found on disk and used again: marked as lately used, so that trim lets go of older ones first, with what
-    MoonLightIPR made ready of each beside it (its name and ".mlt", session/scene_loader.cpp)."""
+    MoonLightIPR made ready of each beside it (its name and ".mlt", session/scene_loader.cpp). Marked by the time they
+    were last read (lately), their time of making left as it was: the texture copies MoonRay, XPU2 and MoonLightIPR read
+    a tile through are named by that time (textures._prepare, moonlightipr_materials), and a tile marked by it was copied
+    anew, and XPU2's realtime shaped its sea anew, at every edit it followed (the dragon test scene: nine times in a
+    minute)."""
+    import time
+    now = time.time_ns()
     for path in made:
         for each in (Path(path), Path(str(path) + '.mlt')):
             try:
-                os.utime(each)
+                os.utime(each, ns=(now, each.stat().st_mtime_ns))
             except OSError:
                 pass
     return made
+
+
+def lately(entry):
+    """When a file of the Ocean folder was last made or used (used): the later of its two times."""
+    stat = entry.stat()
+    return max(stat.st_atime, stat.st_mtime)
 
 
 def trim(path=None, limit=None):
@@ -468,7 +480,7 @@ def trim(path=None, limit=None):
     # What it lets go is no longer there to be trusted (make).
     forget_seen()
     try:
-        files = sorted((entry.stat().st_mtime, entry.stat().st_size, entry) for entry in path.iterdir() if entry.is_file())
+        files = sorted((lately(entry), entry.stat().st_size, entry) for entry in path.iterdir() if entry.is_file())
     except OSError:
         return 0
     total = sum(size for _, size, _ in files)
