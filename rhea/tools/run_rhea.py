@@ -23,14 +23,15 @@ LPE = ('RenderOutput("/rhea_emission") { ["file_name"]="rhea.exr", ["result"]=8,
 FILMS = ('phase1', 'recon', 'phase2', 'direct2', 'final', 'classes', 'cells', 'samples2', 'leaves', 'geomerr')
 
 
-def run(engine, ptx_build, scene, out, options, extra=None, reference=None, runtime=REFERENCE):
+def run(engine, ptx_build, scene, out, options, extra=None, reference=None, runtime=REFERENCE, assets=None):
     out = Path(out).resolve()
     out.mkdir(parents=True, exist_ok=False)
     override = out / 'rhea-override.rdla'
     override.write_text((Path(extra).read_text(encoding='utf-8') if extra else '') + LPE, encoding='utf-8')
     exe = json.loads((Path(engine) / 'build.json').read_text(encoding='utf-8'))['exe']
     ptx = json.loads((Path(ptx_build) / 'build.json').read_text(encoding='utf-8'))['ptx']
-    args = [exe, Path(scene).resolve(), runtime, ptx, Path(scene).resolve().parent, out] + list(options) + ['override=' + str(override)]
+    # The asset root: textures must lie under it (the scene's folder unless --assets names another).
+    args = [exe, Path(scene).resolve(), runtime, ptx, Path(assets).resolve() if assets else Path(scene).resolve().parent, out] + list(options) + ['override=' + str(override)]
     env = environment(runtime)
     env['XPU2_SESSION_UNIFORM_BUDGET'] = '0'
     # OptiX's disk cache of its own beside the runs: the engine's GPU program (its own build, with OpenQMC) must not
@@ -88,9 +89,10 @@ def main():
     p.add_argument('--extra', type=Path)
     p.add_argument('--reference', type=Path)
     p.add_argument('--runtime', type=Path, default=REFERENCE)
+    p.add_argument('--assets', type=Path, help='the asset root, where the textures are (default: the folder of the scene)')
     p.add_argument('options', nargs='*')
     a = p.parse_args()
-    report = run(a.engine, a.ptx_build, a.scene, a.output, a.options, a.extra, a.reference, a.runtime)
+    report = run(a.engine, a.ptx_build, a.scene, a.output, a.options, a.extra, a.reference, a.runtime, a.assets)
     keep = {k: report[k] for k in ('median_seconds', 'probes', 'leaf_states', 'geometric_error', 'piece_bytes', 'classes', 'phase2_samples_per_pixel', 'phase1_probe_samples_per_pixel') if k in report}
     keep['relative_mse'] = {n: round(e['relative_mse'], 7) for n, e in report.get('errors', {}).items()}
     keep['block_error'] = {n: round(e['block_error'], 6) for n, e in report.get('errors', {}).items()}

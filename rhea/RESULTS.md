@@ -460,14 +460,42 @@ the frames' sums with phase 1 counting as mean(m) K^p samples.
   of the per-pixel error. Without diffuse bounces XPU2's 9 spp frames are quicker than Rhea's (0.08 s against 0.11 s)
   and reach the same block error sooner: Rhea's lead there is the single frame's (section 9).
 
-## 12. Open
+## 12. Sponza, a first look (2026-11-19)
+
+`test-results/sponza/rdl/sponza.rdlb` (the export of 2026-11-18, 1.64 M triangles, 23 lights, about 265 shadow rays a
+sample) at 192 x 108 and 64 spp (`scenes/sponza-small.rdla`), the defaults (whole-light probes: the scene bounces
+diffusely), one frame on the GPU; geometry cached in a private folder (`MOONRAY_MODO_CACHE`), textures read from the
+kit's texture cache as the asset root (`--assets`).
+
+| | Pixels converged | Probes | Geometric passes | Frame |
+|---|---|---|---|---|
+| overflow (for scale) | 72% | 2,528 | 0.015 s | 0.20 s (XPU2 0.27 s at 9 spp) |
+| **Sponza** | **7%** | 4,843 | 2.9 s | **27.2 s** (XPU2 7.7 s at 9 spp) |
+
+- **The convergence rule fails on Sponza.** Quads split because their probes stood on different meshes (743), patches
+  stopped at the scan's ring limit (309), mesh borders crossed them (203). Sponza is many separate meshes with open
+  borders (40,418 border edges, 80 meshes under the probes), so "four probes on one connected mesh" seldom holds even
+  where the surface is one plane. 93% of the pixels go to phase 2 at 16 samples, plus the probes: about three times
+  XPU2's samples, at the same GPU rate (about 24,000 samples a second).
+- What it trusted stays exact (no converged pixel over the tolerance).
+- The geometric passes take 2.9 s, mostly the crease and occluder tests over dense patches (556 triangles a patch).
+- **Textures:** 41 of the scene's textures are no longer in the kit's texture cache (252 "cannot open texture" lines),
+  so both renderers drew those surfaces without them (magenta). The comparison is fair, but texture detail, which
+  interpolating probes blurs, is understated; a fresh export is needed for a faithful test.
+
+![](images/rhea-sponza-states.png)
+
+## 13. Open
 
 - **The CPU's part, further:** suitability seeding for gathered frames, so the CPU lane could take the shading work
   that cannot hold the frame's end; on heavy scenes, the samples the GPU defers (as in XPU2).
 - **The one-signed bias** (interpolation of light that bends): the curvature term over a span that fits the light,
   measured again with whole-light probes; or probes refined where their neighbours' second differences say it pays,
   once a probe's noise is known (XPU2's odd-sample sums on the GPU).
-- **Heavier scenes** (Sponza, the car): many lights, textures, and geometry passes that cost more.
+- **Scenes of many meshes** (Sponza, section 12): convergence by coverage (the corners' patches, of any meshes, covering
+  the quad and lying on its reconstruction) instead of one connected mesh; patch limits that follow the window; cheaper
+  crease and occluder tests (cluster bounds first); and, once textures are back, the reconstruction of lighting divided
+  by the albedo (multiplied back at each pixel) so that probes do not blur textures.
 
 - **Silhouettes:** the largest share of the error is phase 2's noise in the 5% of pixels that never converge.
 - **The passes on the GPU,** the piece on the GPU, and T-junctions between leaves of different levels (DESIGN.md 8.5).
@@ -482,7 +510,7 @@ the frames' sums with phase 1 counting as mean(m) K^p samples.
   Sponza (23 lights, 69% of the GPU's time in shadow rays) is where light sample reuse has the most to save.
 - The lift assumes a still perspective camera without depth of field; patches lose triangles crossing the near plane.
 
-## 13. Reproduce
+## 14. Reproduce
 
 ```bash
 python rhea/build_rhea.py [--gpu] --source . --runtime <MoonRayForModo-xpu2>/test-results/interactive-reference-042 --output test-results/rhea/build-N

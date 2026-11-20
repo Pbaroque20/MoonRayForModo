@@ -66,7 +66,8 @@ struct Options {
     bool jitter = false, accumulate = false;  // jitter: measured, off (RESULTS.md 11: costs 5-8% for a sliver of bias)
     // Accumulated frames: phase 1 counts as m K^accumPower samples over K frames against phase 2's sum of samples, so its
     // weight (and its bias) fades as phase 2's samples pile up (power < 1); 1 keeps a frame's weight, as averaging frames.
-    double accumPower = 0.5;  // seqThreads: the pipelined CPU work's threads, below normal
+    double accumPower = 0.5;
+    unsigned seed = 0;  // added to the scene's seed: every frame's samples drawn afresh (a reference independent of a run)  // seqThreads: the pipelined CPU work's threads, below normal
     double orbit = 0;
 };
 
@@ -148,6 +149,7 @@ int main(int argc, char** argv) {
             else if (k == "jitter") op.jitter = v != "0";
             else if (k == "accumulate") op.accumulate = v != "0";
             else if (k == "accum_power") op.accumPower = std::stod(v);
+            else if (k == "seed") op.seed = unsigned(std::stoul(v));
             else if (k == "curvature") op.curvature = v != "0";
             else if (k == "curv_span") op.curvSpan = std::stoi(v);
             else if (k == "override") op.override_ = v;
@@ -202,6 +204,7 @@ int main(int argc, char** argv) {
         cpu::sequenceDirectory() = ptxDir;
         cpu::PlanView plan = cpu::prepare(canonical, frameKey, {}, cpu::Limits{}, argv[4], cpu::Domain::SurfaceTextures, true, true);
         cpu::need(canonical.acknowledge(frameKey) && canonical.publish(frameKey), "Canonical publish");
+        const_cast<cpu::Plan&>(*plan).seed += op.seed;  // the engine's own plan, before the lanes take it
         cpu::need(!plan->adaptive, "The engine samples uniformly: set XPU2_SESSION_UNIFORM_BUDGET=0 and a uniform scene");
         cpu::need(plan->pixelSamples.empty(), "A scene with its own pixel sample map");
         cpu::need(plan->camera.type == surface::CameraPerspective && !plan->camera.dof && !plan->motion.on,
@@ -636,7 +639,7 @@ int main(int argc, char** argv) {
         o["s0"] = op.surface.s0, o["min_stride"] = op.surface.minStride, o["tol"] = op.surface.tol, o["margin"] = op.margin;
         o["probe_spp"] = op.probeSpp, o["n_lo"] = op.nLo, o["n_hi"] = op.nHi, o["n_bg"] = op.nBg;
         o["m0"] = op.m0, o["tau_r"] = op.tauR, o["rings"] = op.surface.rings, o["tris"] = op.surface.tris;
-        o["light_tol"] = op.surface.lightTol, o["light_passes"] = op.surface.lightPasses, o["gather"] = op.gather, o["gather2"] = op.gather2, o["progressive"] = op.progressive, o["probe_full"] = op.probeFull, o["chunk"] = op.chunkSamples, o["one_frame"] = op.oneFrame, o["frames"] = op.frames, o["orbit"] = op.orbit, o["jitter"] = op.jitter, o["accumulate"] = op.accumulate, o["accum_power"] = op.accumPower, o["curvature"] = op.curvature, o["curv_span"] = op.curvSpan;
+        o["light_tol"] = op.surface.lightTol, o["light_passes"] = op.surface.lightPasses, o["gather"] = op.gather, o["gather2"] = op.gather2, o["progressive"] = op.progressive, o["probe_full"] = op.probeFull, o["chunk"] = op.chunkSamples, o["one_frame"] = op.oneFrame, o["frames"] = op.frames, o["orbit"] = op.orbit, o["jitter"] = op.jitter, o["accumulate"] = op.accumulate, o["accum_power"] = op.accumPower, o["seed"] = op.seed, o["curvature"] = op.curvature, o["curv_span"] = op.curvSpan;
         o["mode"] = op.mode, o["p1mode"] = op.p1mode, o["threads"] = op.threads;
         o["cache"] = op.cache, o["cache_p"] = op.cacheP, o["cache_tol"] = op.cacheTol, o["qmc_depth"] = op.qmcDepth, o["xpu2_qmc"] = op.xpu2Qmc;
         report["options"] = o;
