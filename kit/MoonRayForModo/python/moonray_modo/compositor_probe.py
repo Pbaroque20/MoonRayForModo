@@ -47,10 +47,21 @@ def _picture(frame, key):
     kind = outputs.display_kind(frame.get('snapshot', {}), key)
     with tempfile.TemporaryDirectory(prefix='MoonRayProbe-') as folder:
         target = Path(folder) / 'probe.pfm'
-        done = subprocess.run([str(runtime / 'oiiotool.exe'), '--no-autopremult', str(path), '--fixnan', 'black'] + compositor._channels(kind)
-                              + ['-d', 'float', '-o', str(target)], env=native.environment(runtime), stdout=subprocess.PIPE,
-                              stderr=subprocess.STDOUT, timeout=120, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
-        picture = _read_pfm(target) if done.returncode == 0 and target.is_file() else None
+        # Through a TIFF (pfm_files): oiiotool's own PFM writer put the bands of a picture larger than one block of rows
+        # out of order, and a value read at a pixel of a 3840 x 2160 render came from half a picture away.
+        from .pfm_files import through_tiff
+
+        def write(tiff):
+            done = subprocess.run([str(runtime / 'oiiotool.exe'), '--no-autopremult', str(path), '--fixnan', 'black'] + compositor._channels(kind)
+                                  + ['-d', 'float', '--compression', 'none', '-o', str(tiff)], env=native.environment(runtime), stdout=subprocess.PIPE,
+                                  stderr=subprocess.STDOUT, timeout=120, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+            if done.returncode:
+                raise ValueError('the image tool could not read the buffer')
+        try:
+            through_tiff(write, target)
+            picture = _read_pfm(target)
+        except (OSError, ValueError, subprocess.SubprocessError):
+            picture = None
     # Only the newest picture of each buffer is kept.
     for held in [held for held in _pictures if held[0] == stamp[0] and held[2] == key]:
         del _pictures[held]

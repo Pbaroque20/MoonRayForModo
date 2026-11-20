@@ -315,6 +315,14 @@ def camera_light_lpe():
     return _switch('camera_light_lpe', 'MOONRAY_MODO_CAMERA_LIGHT_LPE')
 
 
+def premultiplied_exr():
+    """Whether a render's OpenEXR with alpha is written premultiplied, as the type is read (After Effects, Nuke): the
+    environment seen past every surface taken out of the beauty's colour (image_formats.take_out_environment), and kept
+    as the Environment background channels. Off is MoonRay's own: the sky stays in the colour where alpha is 0, and
+    soft edges over it come out with a light halo in a compositor."""
+    return _switch('premultiplied_exr', 'MOONRAY_MODO_PREMULTIPLIED_EXR')
+
+
 def pbr_validity():
     """Whether renders hold MoonRay's PBR validity output (Preferences > MoonRay > Diagnostics, off by default): green where
     a material's albedo, glass index or metal reflectivity is physically plausible, red where it is not."""

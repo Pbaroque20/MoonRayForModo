@@ -108,8 +108,11 @@ def image_pixels(layer, folder, width, height):
     def read(args):
         target=folder/(uuid.uuid4().hex+'.pfm')
         try:
-            # Floats, whatever the image holds: an 8-bit image, read straight, was written as an 8-bit PPM.
-            run(args+['-d','float','-o',str(target)])
+            # Floats, whatever the image holds: an 8-bit image, read straight, was written as an 8-bit PPM. Through a
+            # TIFF (pfm_files): oiiotool's own PFM writer put the bands of a picture larger than one block of rows out
+            # of order (an 8K HDRI); at the sizes laid here it is one block, but nothing here should hang on that.
+            from .pfm_files import through_tiff
+            through_tiff(lambda tiff:run(args+['-d','float','--compression','none','-o',str(tiff)]),target)
             with target.open('rb') as stream:
                 if stream.readline().strip()!=b'PF':raise ValueError('Expected RGB PFM')
                 w,h=map(int,stream.readline().split());scale=float(stream.readline());data=stream.read()

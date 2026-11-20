@@ -83,6 +83,18 @@ class CachedComposite(QtCore.QObject):
 
     def next(self):
         args, self.expected = self.steps.pop(0)
+        if args and args[0] == '@pfm':
+            # ['@pfm', TIFF]: the TIFF the image tool just wrote, made the PFM the compositor program reads (pfm_files),
+            # here; the next step taken as a process's end is.
+            from .pfm_files import run_step
+            try:
+                run_step(args, self.expected)
+                code = 0
+            except (OSError, ValueError) as exc:
+                self.log = (self.log + str(exc))[-2048:]
+                code = 1
+            QtCore.QTimer.singleShot(0, lambda: self.finished(code, QtCore.QProcess.NormalExit))
+            return
         # ['@run', program, ...]: a step for another program than the image tool (the compositor program).
         if args and args[0] == '@run':
             self.process.setProgram(args[1]); args = args[2:]

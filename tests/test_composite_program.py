@@ -32,7 +32,13 @@ class CompositeProgram(unittest.TestCase):
         self.assertAlmostEqual(sum(weights), 1.0, places=6)
         self.assertEqual([line.split()[1] for line in text if line.startswith('step')], ['10', '11'])
         self.assertEqual(steps[0][0][:2], ['--no-autopremult', 'B.exr'])        # the buffer read by the image tool
-        self.assertEqual(steps[1][0][:2], ['@run', 'modo_composite.exe'])       # then the program
+        # Written as an uncompressed TIFF, made the PFM the program reads by the runner (pfm_files): oiiotool's own PFM
+        # writer put the bands of a picture larger than one block of rows out of order.
+        self.assertEqual(steps[0][0][-4:-1], ['--compression', 'none', '-o'])
+        self.assertTrue(steps[0][1].name.endswith('.tif'))
+        self.assertEqual(steps[1][0], ['@pfm', str(steps[0][1])])
+        self.assertEqual(steps[1][1].suffix, '.pfm')
+        self.assertEqual(steps[2][0][:2], ['@run', 'modo_composite.exe'])       # then the program
         self.assertTrue(str(result).endswith('composite.exr'))                 # its picture made an EXR
 
     def test_the_image_tools_kernel_matches_what_was_measured(self):
