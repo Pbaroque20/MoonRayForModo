@@ -71,6 +71,9 @@ def run(engine, ptx_build, scene, out, options, extra=None, reference=None, runt
         names = ['final', 'phase2', 'recon'] + [f'xpu2-{n}' for n in xpu2]
         if (out / 'sequence-final.rgba').exists():
             names.append('sequence-final')
+        # A still camera's running averages (accumulate=1): Rhea's and XPU2's, at 1, 2, 4, ... frames.
+        for prefix in ('accum-', 'naive-', 'xpu2-accum-'):
+            names += sorted((f.stem for f in out.glob(prefix + '*.rgba') if f.stem[len(prefix):].isdigit()), key=lambda n: int(n.split('-')[-1]))
         report['errors'] = {n: errors(read_rgba(out / (n + '.rgba'), w, h), ref, w, h) for n in names}
     (out / 'report.json').write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
     return report

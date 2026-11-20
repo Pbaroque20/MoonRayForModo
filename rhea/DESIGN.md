@@ -489,3 +489,23 @@ diffuse bounces whole-light probes cost about 10% more and gain nothing). This c
 What it trades: per-pixel noise for low-frequency error. The reconstruction's error is smooth (faint blotches at the
 probes' spacing, ten times magnified in the error image), so the relative MSE falls twelve-fold while the 8 x 8 block
 error stays about XPU2's at 9 samples a pixel.
+
+## 13. Frames that accumulate: jitter, and phase 1's weight over frames (2026-11-19)
+
+The user: "jitter the probes across frames", so that the reconstruction's blotches become noise that frames average.
+
+- **Jitter** (`jitter`, `SurfaceOptions::ox, oy`, the piece's header): each frame's root lattice offset within a stride
+  by the R2 sequence, and its samples drawn afresh (`Plan::seed` + 7919 k); frame 0 keeps both, so it is the single
+  frame's picture. `evaluate` finds the root quad from the offset.
+- **What it showed.** Averaging finished frames, jittered or not, gave the same error at every count to 64 frames: the
+  blotches were the probes' noise, which fresh seeds already average, and what stayed (a darkening of 0.02%) is
+  one-signed: linear interpolation of light that bends sits on the same side of it wherever the probes are, so moving
+  them cannot average it away.
+- **What was wrong instead:** averaging finished frames keeps phase 1's weight m / (m + N) at every count, so its bias
+  never fades, against the bias policy chosen at the start. **The convergent accumulation** (`accumulate`): each
+  pixel's beauty and direct light (times their samples), its samples (all, and full paths), phase 1's reconstruction
+  and weight summed over K frames and combined once, as one frame is, with phase 1 counting as mean(m) K^p samples
+  against phase 2's sum. p = 1 is averaging; p < 1 lets phase 1's weight, and its bias, fall as phase 2's samples pile
+  up (p = 0.5 by default: p = 0 removes the bias fastest but leaves phase 2's noise).
+- Jitter and the convergent accumulation together take a little more of the darkening (0.99989 against 0.99981 at 64
+  frames with diffuse bounces) for 5 to 8% of a frame and a third more per-pixel error: jitter stays an option, off.

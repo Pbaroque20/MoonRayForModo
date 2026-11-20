@@ -405,6 +405,9 @@ struct SurfaceOptions {
     unsigned s0 = 8, minStride = 2, rings = 128, tris = 16384, threads = 12;
     double tol = 0.002;   // the geometric tolerance: relative inverse depth (relative depth)
     double margin = 1.0;  // pixels around a quad its reconstruction must also hold (the pixel filter's reach)
+    // The root lattice's offset in pixels, [0, s0) on each axis: a frame's probes on a lattice shifted from the last
+    // one's (jittered frames, DESIGN.md 13), so that what the reconstruction misses between probes moves each frame.
+    int ox = 0, oy = 0;
     double lightTol = 0.02;    // the light's tolerance: its interpolation error relative to the quad's light (refineLight)
     unsigned lightPasses = 0;  // light passes after the geometric ones (0: none; they chase the probes' noise, RESULTS.md 7)
 };
@@ -419,6 +422,7 @@ struct PassStats {
 class VirtualSurface {
 public:
     unsigned width = 0, height = 0, s0 = 16, rootX = 0, rootY = 0;
+    int ox = 0, oy = 0;  // the root lattice's offset (SurfaceOptions::ox, oy)
     std::vector<Site> sites;
     std::vector<Quad> quads;  // the roots first, row by row
     std::vector<PassStats> passes;
@@ -428,6 +432,7 @@ public:
     // The geometric passes from the coarse lattice until every quad has converged or reached the finest stride.
     void build(const cpu::Plan& plan, const async::CpuScene& scene, const Frame& frame, GeometryIndex& index, const SurfaceOptions& op) {
         width = plan.width, height = plan.height, s0 = op.s0;
+        ox = ((op.ox % int(s0)) + int(s0)) % int(s0), oy = ((op.oy % int(s0)) + int(s0)) % int(s0);
         sites.clear(), quads.clear(), passes.clear(), lights.clear(), pending.clear();
         siteAt.assign(size_t(width) * height, -1);
         visited = 0, scanned = 0;
@@ -436,9 +441,12 @@ public:
         clusterSeconds = secondsSince(t);
         topologySeconds = 0;
         std::vector<int> xs, ys;
-        for (int x = 0; x < int(width) - 1; x += int(s0)) xs.push_back(x);
+        // Corners at the offset and every s0 after it; the image's first and last columns close the lattice.
+        if (ox) xs.push_back(0);
+        for (int x = ox; x < int(width) - 1; x += int(s0)) xs.push_back(x);
         xs.push_back(int(width) - 1);
-        for (int y = 0; y < int(height) - 1; y += int(s0)) ys.push_back(y);
+        if (oy) ys.push_back(0);
+        for (int y = oy; y < int(height) - 1; y += int(s0)) ys.push_back(y);
         ys.push_back(int(height) - 1);
         rootX = unsigned(xs.size() - 1), rootY = unsigned(ys.size() - 1);
         for (unsigned j = 0; j < rootY; ++j)
@@ -849,8 +857,9 @@ private:
 // The piece the devices take: the virtual surface without the meshes, and its evaluation at a pixel.
 
 struct PackedHeader {
-    uint32_t magic = 0x31534f4c;  // "LOS1"
+    uint32_t magic = 0x32454852;  // "RHE2"
     uint32_t width = 0, height = 0, s0 = 0, rootX = 0, rootY = 0, sites = 0, quads = 0;
+    int32_t ox = 0, oy = 0;  // the root lattice's offset
     float tauR = 0.25f;
     uint32_t curvature = 0;  // the reconstruction's second-order term on (PackedQuad::curv)
 };
@@ -873,7 +882,7 @@ struct PackedQuad {
 
 inline std::vector<uint8_t> pack(const VirtualSurface& v, float tauR, bool curvature = false, int span = 1) {
     PackedHeader hd;
-    hd.width = v.width, hd.height = v.height, hd.s0 = v.s0, hd.rootX = v.rootX, hd.rootY = v.rootY;
+    hd.width = v.width, hd.height = v.height, hd.s0 = v.s0, hd.rootX = v.rootX, hd.rootY = v.rootY, hd.ox = v.ox, hd.oy = v.oy;
     hd.sites = uint32_t(v.sites.size()), hd.quads = uint32_t(v.quads.size()), hd.tauR = tauR, hd.curvature = curvature;
     std::vector<uint8_t> out(sizeof(PackedHeader) + v.sites.size() * sizeof(PackedSite) + v.quads.size() * sizeof(PackedQuad));
     std::memcpy(out.data(), &hd, sizeof hd);
@@ -917,7 +926,9 @@ struct PixelSurface {
 inline PixelSurface evaluate(const SurfaceView& v, int px, int py) {
     PixelSurface out;
     const PackedHeader& hd = *v.hd;
-    const int ix = std::min(px / int(hd.s0), int(hd.rootX) - 1), iy = std::min(py / int(hd.s0), int(hd.rootY) - 1);
+    // The root quad: the first column (or row) runs from the image's edge to the offset, then every s0.
+    const int ix = std::min(px < hd.ox ? 0 : (hd.ox ? 1 : 0) + (px - hd.ox) / int(hd.s0), int(hd.rootX) - 1);
+    const int iy = std::min(py < hd.oy ? 0 : (hd.oy ? 1 : 0) + (py - hd.oy) / int(hd.s0), int(hd.rootY) - 1);
     int qi = iy * int(hd.rootX) + ix;
     while (v.quads[qi].child >= 0) {
         const PackedQuad& c0 = v.quads[v.quads[qi].child];

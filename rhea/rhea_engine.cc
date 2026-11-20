@@ -60,7 +60,13 @@ struct Options {
     // A sequence of frames along a camera path (DESIGN.md 11): frames, the camera's yaw swing in degrees (frame k at
     // swing sin(2 pi k / frames)), and XPU2's samples a pixel on the same path. Run in sequence, then pipelined (the CPU
     // prepares the next frame's geometry and finishes the last while the GPU renders this one).
-    unsigned frames = 0, seqXpu2 = 36, seqThreads = 4;  // seqThreads: the pipelined CPU work's threads, below normal
+    unsigned frames = 0, seqXpu2 = 36, seqThreads = 4;
+    // Jittered frames (DESIGN.md 13): each frame's probe lattice offset by the R2 sequence within a stride, and its
+    // samples drawn afresh (the seed); accumulate: the still camera's running average written at 1, 2, 4, ... frames.
+    bool jitter = false, accumulate = false;  // jitter: measured, off (RESULTS.md 11: costs 5-8% for a sliver of bias)
+    // Accumulated frames: phase 1 counts as m K^accumPower samples over K frames against phase 2's sum of samples, so its
+    // weight (and its bias) fades as phase 2's samples pile up (power < 1); 1 keeps a frame's weight, as averaging frames.
+    double accumPower = 0.5;  // seqThreads: the pipelined CPU work's threads, below normal
     double orbit = 0;
 };
 
@@ -139,6 +145,9 @@ int main(int argc, char** argv) {
             else if (k == "orbit") op.orbit = std::stod(v);
             else if (k == "seq_xpu2") op.seqXpu2 = unsigned(std::stoul(v));
             else if (k == "seq_threads") op.seqThreads = unsigned(std::stoul(v));
+            else if (k == "jitter") op.jitter = v != "0";
+            else if (k == "accumulate") op.accumulate = v != "0";
+            else if (k == "accum_power") op.accumPower = std::stod(v);
             else if (k == "curvature") op.curvature = v != "0";
             else if (k == "curv_span") op.curvSpan = std::stoi(v);
             else if (k == "override") op.override_ = v;
@@ -627,7 +636,7 @@ int main(int argc, char** argv) {
         o["s0"] = op.surface.s0, o["min_stride"] = op.surface.minStride, o["tol"] = op.surface.tol, o["margin"] = op.margin;
         o["probe_spp"] = op.probeSpp, o["n_lo"] = op.nLo, o["n_hi"] = op.nHi, o["n_bg"] = op.nBg;
         o["m0"] = op.m0, o["tau_r"] = op.tauR, o["rings"] = op.surface.rings, o["tris"] = op.surface.tris;
-        o["light_tol"] = op.surface.lightTol, o["light_passes"] = op.surface.lightPasses, o["gather"] = op.gather, o["gather2"] = op.gather2, o["progressive"] = op.progressive, o["probe_full"] = op.probeFull, o["chunk"] = op.chunkSamples, o["one_frame"] = op.oneFrame, o["frames"] = op.frames, o["orbit"] = op.orbit, o["curvature"] = op.curvature, o["curv_span"] = op.curvSpan;
+        o["light_tol"] = op.surface.lightTol, o["light_passes"] = op.surface.lightPasses, o["gather"] = op.gather, o["gather2"] = op.gather2, o["progressive"] = op.progressive, o["probe_full"] = op.probeFull, o["chunk"] = op.chunkSamples, o["one_frame"] = op.oneFrame, o["frames"] = op.frames, o["orbit"] = op.orbit, o["jitter"] = op.jitter, o["accumulate"] = op.accumulate, o["accum_power"] = op.accumPower, o["curvature"] = op.curvature, o["curv_span"] = op.curvSpan;
         o["mode"] = op.mode, o["p1mode"] = op.p1mode, o["threads"] = op.threads;
         o["cache"] = op.cache, o["cache_p"] = op.cacheP, o["cache_tol"] = op.cacheTol, o["qmc_depth"] = op.qmcDepth, o["xpu2_qmc"] = op.xpu2Qmc;
         report["options"] = o;
@@ -728,6 +737,12 @@ int main(int argc, char** argv) {
                 cpu::need(s.frame.init(s.plan->camera), "Camera frame");
                 rhea::SurfaceOptions so = op.surface;
                 so.threads = threads;
+                // Frame k's lattice offset (R2: the plastic number's fractions) and seed; frame 0 keeps both.
+                if (op.jitter) {
+                    so.ox = int(std::floor(std::fmod(0.7548776662466927 * k, 1.0) * op.surface.s0));
+                    so.oy = int(std::floor(std::fmod(0.5698402909980532 * k, 1.0) * op.surface.s0));
+                }
+                s.plan->seed = plan->seed + k * 7919u;
                 s.vs.build(*s.plan, cpuScene, s.frame, index, so);
                 regionInto(s);
                 s.nCount.assign(N, op.nHi);
@@ -778,6 +793,7 @@ int main(int argc, char** argv) {
                 s.final.assign(N * 4, 0.0f);
                 for (size_t i = 0; i < N; ++i) {
                     const float m = s.cls[i] == rhea::Edge ? 0.0f : s.mWeight[i];
+                    s.mWeight[i] = m;
                     const float n = float(s.nCount[i]), Nt = float(s.total[i]), k = m / (m + Nt);
                     for (int c = 0; c < 3; ++c) {
                         const float d = s.direct[i * 4 + c];
@@ -797,6 +813,57 @@ int main(int argc, char** argv) {
             seq["orbit_degrees"] = op.orbit;
             std::vector<Slot> slots(3);
             std::vector<float> first;
+            cpu::need(!op.accumulate || op.orbit == 0, "Accumulating needs a still camera (orbit=0)");
+            // The running average of frames, written at 1, 2, 4, ... frames (accumulate).
+            auto accumulator = [&](const std::string& prefix) {
+                return [&, prefix, sum = std::vector<double>(N * 4, 0.0), count = 0u](const std::vector<float>& f) mutable {
+                    for (size_t i = 0; i < N * 4; ++i) sum[i] += f[i];
+                    ++count;
+                    if (count & (count - 1)) return;  // a power of two
+                    std::vector<float> avg(N * 4);
+                    for (size_t i = 0; i < N * 4; ++i) avg[i] = float(sum[i] / count);
+                    writeFloats(out / (prefix + std::to_string(count) + ".rgba"), avg);
+                };
+            };
+            auto naive = accumulator("naive-");
+            auto accumulateXpu2 = accumulator("xpu2-accum-");
+            // The convergent accumulation: each pixel's sums over the frames of its beauty and direct light (times their
+            // samples), its samples (all, and full paths), phase 1's reconstruction and weight; at 1, 2, 4, ... frames
+            // they combine as one frame does, with phase 1 counting as mean(m) K^accumPower samples.
+            struct Sums {
+                std::vector<double> nb, nd, n, nfull, r1, m;
+                unsigned frames = 0;
+            } acc;
+            auto accumulate = [&](const Slot& s) {
+                if (acc.nb.empty()) {
+                    acc.nb.assign(N * 3, 0.0), acc.nd.assign(N * 3, 0.0), acc.r1.assign(N * 3, 0.0);
+                    acc.n.assign(N, 0.0), acc.nfull.assign(N, 0.0), acc.m.assign(N, 0.0);
+                }
+                naive(s.final);
+                for (size_t i = 0; i < N; ++i) {
+                    const double Nt = s.total[i];
+                    for (int c = 0; c < 3; ++c) {
+                        acc.nb[i * 3 + c] += Nt * s.r.rgba[i * 4 + c];
+                        acc.nd[i * 3 + c] += Nt * s.direct[i * 4 + c];
+                        acc.r1[i * 3 + c] += s.recon[i * 4 + c];
+                    }
+                    acc.n[i] += Nt, acc.nfull[i] += s.nCount[i], acc.m[i] += s.mWeight[i];
+                }
+                const unsigned K = ++acc.frames;
+                if (K & (K - 1)) return;
+                const double grow = std::pow(double(K), op.accumPower);
+                std::vector<float> img(N * 4, 1.0f);
+                for (size_t i = 0; i < N; ++i) {
+                    const double m = acc.m[i] / K * grow, k = m / (m + acc.n[i]);
+                    for (int c = 0; c < 3; ++c) {
+                        const double b = acc.nb[i * 3 + c] / acc.n[i], d = acc.nd[i * 3 + c] / acc.n[i], r = acc.r1[i * 3 + c] / K;
+                        const double v = op.probeFull ? b + k * (r - b)
+                                                      : (acc.nb[i * 3 + c] - acc.nd[i * 3 + c]) / acc.nfull[i] + (1 - k) * d + k * r;
+                        img[i * 4 + c] = float(v);
+                    }
+                }
+                writeFloats(out / ("accum-" + std::to_string(K) + ".rgba"), img);
+            };
             // One after the other.
             {
                 std::vector<double> period, pr, re, fi;
@@ -827,6 +894,7 @@ int main(int argc, char** argv) {
                         if (k > 0) {
                             finish(slots[(k - 1) % 3]);
                             if (k == 1) first = slots[0].final;
+                            if (op.accumulate) accumulate(slots[(k - 1) % 3]);
                         }
                         if (k + 1 < F) prepare(slots[(k + 1) % 3], k + 1);
                     });
@@ -840,6 +908,7 @@ int main(int argc, char** argv) {
                     mark = Clock::now();
                 }
                 finish(slots[(F - 1) % 3]);
+                if (op.accumulate) accumulate(slots[(F - 1) % 3]);
                 threads = op.threads;
                 if (F == 1) first = slots[0].final;
                 Json::Value j;
@@ -858,6 +927,7 @@ int main(int argc, char** argv) {
                     auto px = std::make_shared<cpu::Plan>(*plan);
                     px->camera = cameraAt(k);
                     px->spp = op.seqXpu2;
+                    px->seed = plan->seed + k * 7919u;
                     if (gpu) gpu->updateCamera(px);
                     async::RenderOptions o;
                     o.threads = op.threads;
@@ -866,6 +936,7 @@ int main(int argc, char** argv) {
                     const async::RenderResult rx = renderer.render(o);
                     cpu::need(!rx.failed, rx.error.empty() ? "XPU2 sequence frame failed" : rx.error);
                     period.push_back(since(t0));
+                    if (op.accumulate) accumulateXpu2(rx.rgba);
                 }
                 Json::Value j;
                 j["spp"] = op.seqXpu2;

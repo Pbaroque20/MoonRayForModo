@@ -5,6 +5,10 @@ Rhea was named Sol, and before that "Bregman", earlier the same day; sections 2 
 
 ## In short
 
+**Eighth step, accumulating frames (section 11).** Jittering the probes across frames did not help: the blotches were
+probe noise, which fresh seeds already average, and the 0.02% that remains is one-signed. What did: accumulating frames
+so that phase 1's weight falls as phase 2's samples pile up, as the bias policy chosen at the start asks.
+
 **Seventh step, diffuse bounces (section 10).** Not the frame's shape but the samples: with diffuse bounces the error
 was indirect light, which phase 2 alone reduced. The probes now carry the whole light where the scene bounces
 diffusely: **0.20 s at relative MSE 1.0e-4 against XPU2's 0.27 s at 1.24e-3** (9 spp, the same block error), and along
@@ -426,12 +430,43 @@ error): 0.113 s a frame against XPU2's 0.270 s (36 spp).
 |---|---|---|
 | ![](images/rhea-diffuse-final.png) | ![](images/rhea-diffuse-error.png) | ![](images/rhea-diffuse-xpu2-9spp.png) |
 
-## 11. Open
+## 11. Eighth step: accumulating frames, jitter (2026-11-19)
+
+DESIGN.md section 13. A still camera, frames accumulated (`frames=64 orbit=0 accumulate=1`), pipelined; XPU2
+accumulating its own 9 spp frames, each with fresh seeds. "Averaged" averages finished frames; "converging" combines
+the frames' sums with phase 1 counting as mean(m) K^p samples.
+
+| 64 frames | Relative MSE at 1 / 16 / 64 | Block error at 1 / 16 / 64 | Mean ratio at 64 | Frame |
+|---|---|---|---|---|
+| **Two diffuse bounces** | | | | |
+| averaged, fixed lattice | 1.0e-4 / 1.4e-5 / 9.1e-6 | 1.16e-3 / 3.3e-4 / 1.90e-4 | 0.99979 | 0.17 s |
+| averaged, jittered | 1.0e-4 / 1.4e-5 / 9.0e-6 | 1.16e-3 / 3.5e-4 / 1.95e-4 | 0.99981 | 0.18 s |
+| converging p 0.5, fixed (the default) | 1.0e-4 / 1.5e-5 / 1.0e-5 | 1.16e-3 / 3.2e-4 / 1.77e-4 | 0.99981 | 0.17 s |
+| converging p 0.5, jittered | 1.0e-4 / 2.0e-5 / 1.1e-5 | 1.16e-3 / 3.5e-4 / 1.88e-4 | 0.99989 | 0.18 s |
+| converging p 0, jittered | 1.0e-4 / 2.9e-5 / 2.7e-5 | 1.16e-3 / 3.1e-4 / 1.77e-4 | 0.99993 | 0.18 s |
+| XPU2 9 spp a frame | 1.2e-3 / 8.4e-5 / 2.6e-5 | 1.0e-3 / 2.7e-4 / 1.50e-4 | 0.99998 | 0.25 s |
+| **No diffuse bounces** | | | | |
+| averaged, fixed lattice | 2.4e-5 / 2.8e-6 / 1.8e-6 | 4.2e-4 / 1.3e-4 / 8.8e-5 | 0.99983 | 0.11 s |
+| converging p 0.5, fixed (the default) | 2.4e-5 / 3.1e-6 / 2.0e-6 | 4.2e-4 / 1.2e-4 / 7.7e-5 | 0.99985 | 0.11 s |
+| converging p 0.5, jittered | 2.4e-5 / 6.2e-6 / 2.7e-6 | 4.2e-4 / 1.2e-4 / 7.3e-5 | 0.99992 | 0.11 s |
+| XPU2 9 spp a frame | 3.5e-4 / 2.3e-5 / 6.7e-6 | 4.8e-4 / 1.2e-4 / 7.0e-5 | 0.99998 | 0.08 s |
+
+- **Jitter alone changes nothing:** the blotches were the probes' noise, which fresh seeds average; the 0.02% that
+  stays is one-signed (interpolation of light that bends), wherever the probes are.
+- **The convergent accumulation** lowers the block error and moves the mean ratio towards 1; the lower p, the faster the
+  bias goes and the more of phase 2's noise stays. With jitter it takes a little more of the darkening, for 5 to 8% of
+  a frame and more per-pixel error: off by default.
+- **At equal time with diffuse bounces** (64 Rhea frames against about 46 of XPU2's): about the same block error, a third
+  of the per-pixel error. Without diffuse bounces XPU2's 9 spp frames are quicker than Rhea's (0.08 s against 0.11 s)
+  and reach the same block error sooner: Rhea's lead there is the single frame's (section 9).
+
+## 12. Open
 
 - **The CPU's part, further:** suitability seeding for gathered frames, so the CPU lane could take the shading work
   that cannot hold the frame's end; on heavy scenes, the samples the GPU defers (as in XPU2).
-- **Low-frequency error with diffuse bounces:** the reconstruction's blotches at the probes' spacing set the block error
-  (about XPU2's at 9 spp); probes jittered between frames would turn them into noise that frames average.
+- **The one-signed bias** (interpolation of light that bends): the curvature term over a span that fits the light,
+  measured again with whole-light probes; or probes refined where their neighbours' second differences say it pays,
+  once a probe's noise is known (XPU2's odd-sample sums on the GPU).
 - **Heavier scenes** (Sponza, the car): many lights, textures, and geometry passes that cost more.
 
 - **Silhouettes:** the largest share of the error is phase 2's noise in the 5% of pixels that never converge.
@@ -447,7 +482,7 @@ error): 0.113 s a frame against XPU2's 0.270 s (36 spp).
   Sponza (23 lights, 69% of the GPU's time in shadow rays) is where light sample reuse has the most to save.
 - The lift assumes a still perspective camera without depth of field; patches lose triangles crossing the near plane.
 
-## 12. Reproduce
+## 13. Reproduce
 
 ```bash
 python rhea/build_rhea.py [--gpu] --source . --runtime <MoonRayForModo-xpu2>/test-results/interactive-reference-042 --output test-results/rhea/build-N
@@ -465,7 +500,7 @@ into the kit's. A host-only build can take an earlier `--gpu` build's program wh
 are unchanged (section 6 used `build-4`, section 7 `build-9`). The engine's options and defaults: `s0` (8), `min_stride`
 (2), `tol` (0.002), `margin` (the pixel filter's reach), `probe_spp` (64), `probe_full` (-1: with diffuse bounces), `n_lo`, `n_hi` (by the probes: 2 and 16 whole-light, 4 and 32 direct), `n_bg` (1), `m0` (128),
 `tau_r` (0.25), `rings`, `tris`, `curvature` (1), `curv_span` (4), `light_passes` (0), `light_tol` (0.02), `gather` (1),
-`gather2` (0), `one_frame` (1), `mode` (1: the GPU alone shades), `frames` (0: none), `orbit` (0), `seq_threads` (4), `seq_xpu2` (36), `cache` (default off),
+`gather2` (0), `one_frame` (1), `mode` (1: the GPU alone shades), `frames` (0: none), `orbit` (0), `seq_threads` (4), `seq_xpu2` (36), `accumulate` (0), `accum_power` (0.5), `jitter` (0), `cache` (default off),
 `cache_p` (0.25), `cache_tol` (0.02), `qmc_depth` (0: off), `xpu2_qmc` (XPU2's comparison frames with OpenQMC). Each run
 writes the films, `leaves.png`, `geomerr.png`, `depth.png` and `depth-true.png`, and the piece as `surface.rhea`.
 
