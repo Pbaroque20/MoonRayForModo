@@ -5,6 +5,10 @@ Rhea was named Sol, and before that "Bregman", earlier the same day; sections 2 
 
 ## In short
 
+**The floor (section 14).** Where the first geometric pass converges little of the frame (Sponza: 8%), Rhea renders it
+as XPU2 does: on Sponza the same picture, and along a moving camera 5.71 s a frame against XPU2's 6.00 s. On the test
+scene nothing changes (its first pass converges 92%).
+
 **Eighth step, accumulating frames (section 11).** Jittering the probes across frames did not help: the blotches were
 probe noise, which fresh seeds already average, and the 0.02% that remains is one-signed. What did: accumulating frames
 so that phase 1's weight falls as phase 2's samples pile up, as the bias policy chosen at the start asks.
@@ -515,7 +519,22 @@ Error of the last against the reference: **Rhea relative MSE 0.246, block error 
 - Sponza's detail is about a pixel at this size (ornaments, bricks, column flutes, separate meshes): the gap, crease and
   coverage tests fail at the finest stride on most of the frame, and the passes cost 3.6 s on 1.6 M triangles.
 
-## 14. Open
+## 14. The floor (2026-11-20)
+
+DESIGN.md section 15 (`floor_area` 0.3, `floor_spp` 9). Medians of 3 timed runs, XPU2 on the GPU in the same process.
+
+| | First pass converged | Floored | Rhea | XPU2 |
+|---|---|---|---|---|
+| test scene, no diffuse bounces | 92% | no | 0.117 s, relative MSE 2.7e-5 | 0.127 s at 16 spp, 1.2e-4 |
+| test scene, two diffuse bounces | 92% | no | 0.159 s, 1.2e-4 | 0.257 s at 9 spp, 1.24e-3 |
+| Sponza 192 x 108, one frame | 8% | yes | 6.06 to 6.35 s (first pass 0.29 s) | 5.98 to 6.11 s at 9 spp |
+| **Sponza, 8 frames along the moving camera, pipelined** | 8% | yes | **5.71 s a frame** | 6.00 s a frame |
+
+Sponza's floored frames are XPU2's: the same samples, the same picture (relative MSE 0.1875 against the reference, as
+XPU2's), and the same render time (5.77 to 6.05 s against 5.98 to 6.11 s) once the frame carries no sample map (with one,
+it was 6% slower). Pipelined, the first pass hides under the GPU's frame and Rhea is no slower than XPU2 on Sponza.
+
+## 15. Open
 
 - **The CPU's part, further:** suitability seeding for gathered frames, so the CPU lane could take the shading work
   that cannot hold the frame's end; on heavy scenes, the samples the GPU defers (as in XPU2).
@@ -525,8 +544,8 @@ Error of the last against the reference: **Rhea relative MSE 0.246, block error 
 - **Textured, detailed scenes** (Sponza, sections 12 and 13): the reconstruction of lighting divided by the albedo
   (multiplied back at each pixel), so that textures stop counting as light edges; the samples of light-edge pixels
   known before the frame (from the albedo's variation, or the last frame's light); patch limits that follow the window
-  and cheaper crease and occluder tests (3.6 s on Sponza); and a floor: where little of the frame converges, render as
-  XPU2 does, without geometric passes or probes.
+  and cheaper crease and occluder tests (3.6 s on Sponza); a partial floor (probes only where the first pass converges,
+  XPU2's samples elsewhere).
 
 - **Silhouettes:** the largest share of the error is phase 2's noise in the 5% of pixels that never converge.
 - **The passes on the GPU,** the piece on the GPU, and T-junctions between leaves of different levels (DESIGN.md 8.5).
@@ -541,7 +560,7 @@ Error of the last against the reference: **Rhea relative MSE 0.246, block error 
   Sponza (23 lights, 69% of the GPU's time in shadow rays) is where light sample reuse has the most to save.
 - The lift assumes a still perspective camera without depth of field; patches lose triangles crossing the near plane.
 
-## 15. Reproduce
+## 16. Reproduce
 
 ```bash
 python rhea/build_rhea.py [--gpu] --source . --runtime <MoonRayForModo-xpu2>/test-results/interactive-reference-042 --output test-results/rhea/build-N
@@ -559,7 +578,7 @@ into the kit's. A host-only build can take an earlier `--gpu` build's program wh
 are unchanged (section 6 used `build-4`, section 7 `build-9`). The engine's options and defaults: `s0` (8), `min_stride`
 (2), `tol` (0.002), `margin` (the pixel filter's reach), `probe_spp` (64), `probe_full` (-1: with diffuse bounces), `n_lo`, `n_hi` (by the probes: 2 and 16 whole-light, 4 and 32 direct), `n_bg` (1), `m0` (128),
 `tau_r` (0.25), `rings`, `tris`, `curvature` (1), `curv_span` (4), `light_passes` (0), `light_tol` (0.02), `gather` (1),
-`gather2` (0), `one_frame` (1), `mode` (1: the GPU alone shades), `frames` (0: none), `orbit` (0), `seq_threads` (4), `seq_xpu2` (36), `accumulate` (0), `accum_power` (0.5), `jitter` (0), `cache` (default off),
+`gather2` (0), `one_frame` (1), `mode` (1: the GPU alone shades), `frames` (0: none), `orbit` (0), `seq_threads` (4), `seq_xpu2` (36), `accumulate` (0), `accum_power` (0.5), `jitter` (0), `floor_area` (0.3), `floor_spp` (9), `seed` (0), `coverage` (1), `cache` (default off),
 `cache_p` (0.25), `cache_tol` (0.02), `qmc_depth` (0: off), `xpu2_qmc` (XPU2's comparison frames with OpenQMC). Each run
 writes the films, `leaves.png`, `geomerr.png`, `depth.png` and `depth-true.png`, and the piece as `surface.rhea`.
 

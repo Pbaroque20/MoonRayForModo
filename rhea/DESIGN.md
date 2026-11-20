@@ -523,3 +523,18 @@ The user: "start with fix 1" (after Sponza, RESULTS.md section 12).
   leaves take a probe's extra samples; a probe that stands where nothing converged gets its pixel's samples alone. On
   Sponza that halved the frame; on the test scene it saved a fifth (silhouette probes' pixels lose their extra direct
   samples, a little noise).
+
+## 15. The floor (2026-11-20)
+
+The user: "start with the floor": where little of the frame converges, Rhea renders as XPU2 does, so that it is never
+worse than XPU2.
+
+- **The test:** after the first geometric pass, the share of the frame its root quads converged
+  (`VirtualSurface::firstPassArea`). Below `floor_area` (30%) the passes stop (`floored`), no probe takes samples, and
+  the frame is XPU2's own: `floor_spp` samples every pixel (9 by default, the counts these tests compare XPU2 at), no
+  sample map, no gather tiles, phase 1's weight 0. The first pass separates the scenes plainly: 92% on the test scene,
+  8% on Sponza.
+- **In a sequence** the test runs each frame, and pipelined the first pass is the CPU's work under the GPU's previous
+  frame: the floor then costs nothing.
+- What it does not do: give the floored frame what Rhea could have reconstructed in its 8%. A partial floor (probes
+  only in the regions that converge) would; the first pass's quads say where.

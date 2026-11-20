@@ -67,7 +67,8 @@ struct Options {
     // Accumulated frames: phase 1 counts as m K^accumPower samples over K frames against phase 2's sum of samples, so its
     // weight (and its bias) fades as phase 2's samples pile up (power < 1); 1 keeps a frame's weight, as averaging frames.
     double accumPower = 0.5;
-    unsigned seed = 0;  // added to the scene's seed: every frame's samples drawn afresh (a reference independent of a run)  // seqThreads: the pipelined CPU work's threads, below normal
+    unsigned seed = 0;
+    unsigned floorSpp = 9;  // the floor's frame: XPU2's samples a pixel, every pixel (DESIGN.md 15)  // added to the scene's seed: every frame's samples drawn afresh (a reference independent of a run)  // seqThreads: the pipelined CPU work's threads, below normal
     double orbit = 0;
 };
 
@@ -151,6 +152,8 @@ int main(int argc, char** argv) {
             else if (k == "accumulate") op.accumulate = v != "0";
             else if (k == "accum_power") op.accumPower = std::stod(v);
             else if (k == "seed") op.seed = unsigned(std::stoul(v));
+            else if (k == "floor_area") op.surface.floorArea = std::stod(v);
+            else if (k == "floor_spp") op.floorSpp = unsigned(std::stoul(v));
             else if (k == "curvature") op.curvature = v != "0";
             else if (k == "curv_span") op.curvSpan = std::stoi(v);
             else if (k == "override") op.override_ = v;
@@ -273,7 +276,7 @@ int main(int argc, char** argv) {
         unsigned probeFrames = 0;
         uint64_t p1Gpu = 0, p1Cpu = 0;
         std::vector<float> phase1(N * 4, 0.0f);
-        for (unsigned pass = 0; !oneFrame; ++pass) {
+        for (unsigned pass = 0; !oneFrame && !vs.floored; ++pass) {
             const std::vector<int> which = vs.unlit();
             if (!which.empty()) {
                 auto p1 = std::make_shared<cpu::Plan>(*plan);
@@ -356,6 +359,11 @@ int main(int argc, char** argv) {
                 default: nCount[i] = op.nHi, mWeight[i] = 0; break;
             }
         }
+        if (vs.floored) {
+            // The floor: the frame as XPU2 renders it, floor_spp samples every pixel, no reconstruction.
+            nCount.assign(N, op.floorSpp);
+            mWeight.assign(N, 0.0f);
+        }
         double regionSeconds = since(stamp);
 
         // Phase 2: full paths, n(x) a pixel, with the direct light's two expressions. In one frame each probe's pixel
@@ -363,7 +371,7 @@ int main(int argc, char** argv) {
         // limit per pixel): its direct light output, over all its samples, is the probe's light.
         auto p2 = std::make_shared<cpu::Plan>(*plan);
         std::vector<unsigned> total = nCount;
-        if (oneFrame) {
+        if (oneFrame && !vs.floored) {
             // Probe samples only where a converged leaf reads them.
             const std::vector<uint8_t> used = vs.usedSites();
             for (size_t i = 0; i < vs.sites.size(); ++i)
@@ -372,10 +380,11 @@ int main(int argc, char** argv) {
         }
         p2->pixelSamples = total;
         p2->spp = *std::max_element(total.begin(), total.end());
+        if (vs.floored) p2->pixelSamples.clear();  // the floor: XPU2's own frame, floor_spp every pixel
         // Phase 2's pixels gathered by their samples (Plan::gather): sorted by count, most first, 64 to a tile in image
         // order, so a tile's pixels take the same samples and none waits on a deeper neighbour. The tiles are spread over
         // the grid's cells (a stride prime to their number), so the deep ones are not all in the first cells.
-        if (op.gather2 > 0 || (op.gather2 < 0 && oneFrame)) {
+        if (!vs.floored && (op.gather2 > 0 || (op.gather2 < 0 && oneFrame))) {
             std::vector<unsigned> order(N);
             for (size_t i = 0; i < N; ++i) order[i] = unsigned(i);
             std::stable_sort(order.begin(), order.end(), [&](unsigned a, unsigned b) { return total[a] > total[b]; });
@@ -431,7 +440,7 @@ int main(int argc, char** argv) {
             for (int c = 0; c < 3; ++c) direct2[i * 4 + c] = av[offEmit + c] + av[offDirect + c];
             direct2[i * 4 + 3] = 1;
         }
-        if (oneFrame) {
+        if (oneFrame && !vs.floored) {
             // The probes' light, then the region pass again with it (the radiance-edge rule can now judge, and lowers
             // phase 1's weight there; phase 2's samples were set by the geometry).
             stamp = Clock::now();
@@ -483,6 +492,8 @@ int main(int argc, char** argv) {
             t["light_seconds"] = lightSeconds;
             t["probe_frames"] = probeFrames;
             t["one_frame"] = oneFrame;
+            t["floored"] = vs.floored;
+            t["first_pass_area"] = vs.firstPassArea;
             t["region_seconds"] = regionSeconds;
             t["phase2_seconds"] = phase2Seconds;
             t["phase2_sampling_seconds"] = r2.seconds;
@@ -643,7 +654,7 @@ int main(int argc, char** argv) {
         o["s0"] = op.surface.s0, o["min_stride"] = op.surface.minStride, o["tol"] = op.surface.tol, o["margin"] = op.margin;
         o["probe_spp"] = op.probeSpp, o["n_lo"] = op.nLo, o["n_hi"] = op.nHi, o["n_bg"] = op.nBg;
         o["m0"] = op.m0, o["tau_r"] = op.tauR, o["rings"] = op.surface.rings, o["tris"] = op.surface.tris, o["coverage"] = op.surface.coverage;
-        o["light_tol"] = op.surface.lightTol, o["light_passes"] = op.surface.lightPasses, o["gather"] = op.gather, o["gather2"] = op.gather2, o["progressive"] = op.progressive, o["probe_full"] = op.probeFull, o["chunk"] = op.chunkSamples, o["one_frame"] = op.oneFrame, o["frames"] = op.frames, o["orbit"] = op.orbit, o["jitter"] = op.jitter, o["accumulate"] = op.accumulate, o["accum_power"] = op.accumPower, o["seed"] = op.seed, o["curvature"] = op.curvature, o["curv_span"] = op.curvSpan;
+        o["light_tol"] = op.surface.lightTol, o["light_passes"] = op.surface.lightPasses, o["gather"] = op.gather, o["gather2"] = op.gather2, o["progressive"] = op.progressive, o["probe_full"] = op.probeFull, o["chunk"] = op.chunkSamples, o["one_frame"] = op.oneFrame, o["frames"] = op.frames, o["orbit"] = op.orbit, o["jitter"] = op.jitter, o["accumulate"] = op.accumulate, o["accum_power"] = op.accumPower, o["seed"] = op.seed, o["floor_area"] = op.surface.floorArea, o["floor_spp"] = op.floorSpp, o["curvature"] = op.curvature, o["curv_span"] = op.curvSpan;
         o["mode"] = op.mode, o["p1mode"] = op.p1mode, o["threads"] = op.threads;
         o["cache"] = op.cache, o["cache_p"] = op.cacheP, o["cache_tol"] = op.cacheTol, o["qmc_depth"] = op.qmcDepth, o["xpu2_qmc"] = op.xpu2Qmc;
         report["options"] = o;
@@ -758,17 +769,25 @@ int main(int argc, char** argv) {
                     if (s.cls[i] == rhea::Background) s.nCount[i] = op.nBg, s.mWeight[i] = float(op.m0);
                     else if (s.cls[i] == rhea::Trusted) s.nCount[i] = op.nLo, s.mWeight[i] = float(op.m0);
                 }
+                if (s.vs.floored) s.nCount.assign(N, op.floorSpp), s.mWeight.assign(N, 0.0f);  // the floor
                 s.total = s.nCount;
-                const std::vector<uint8_t> used = s.vs.usedSites();
-                for (size_t i = 0; i < s.vs.sites.size(); ++i)
-                    if (used[i]) s.total[size_t(s.vs.sites[i].py) * W + s.vs.sites[i].px] += op.probeSpp;
+                if (!s.vs.floored) {
+                    const std::vector<uint8_t> used = s.vs.usedSites();
+                    for (size_t i = 0; i < s.vs.sites.size(); ++i)
+                        if (used[i]) s.total[size_t(s.vs.sites[i].py) * W + s.vs.sites[i].px] += op.probeSpp;
+                }
                 s.plan->pixelSamples = s.total;
-                if (!op.probeFull) s.plan->fullSamples = s.nCount;
+                if (!op.probeFull && !s.vs.floored) s.plan->fullSamples = s.nCount;
                 s.plan->spp = *std::max_element(s.total.begin(), s.total.end());
                 s.plan->qmcDepth = op.qmcDepth;
                 std::vector<unsigned> order(N);
                 for (size_t i = 0; i < N; ++i) order[i] = unsigned(i);
                 std::stable_sort(order.begin(), order.end(), [&](unsigned a, unsigned b) { return s.total[a] > s.total[b]; });
+                if (s.vs.floored) {
+                    s.plan->pixelSamples.clear();  // the floor: XPU2's own frame, its own tiles
+                    s.prepare = since(t0);
+                    return;
+                }
                 s.plan->gather.assign(size_t(tilesAll) * 64, ~0u);
                 size_t step = 397;
                 while (std::gcd(step, size_t(tilesAll)) != 1) ++step;
@@ -797,8 +816,10 @@ int main(int argc, char** argv) {
                     for (int c = 0; c < 3; ++c) s.direct[i * 4 + c] = s.r.aov[i * stride + offE + c] + s.r.aov[i * stride + offD + c];
                 std::vector<int> all(s.vs.sites.size());
                 for (size_t i = 0; i < all.size(); ++i) all[i] = int(i);
-                s.vs.takeRadiance(op.probeFull ? s.r.rgba : s.direct, all);
-                regionInto(s);
+                if (!s.vs.floored) {
+                    s.vs.takeRadiance(op.probeFull ? s.r.rgba : s.direct, all);
+                    regionInto(s);
+                }
                 s.final.assign(N * 4, 0.0f);
                 for (size_t i = 0; i < N; ++i) {
                     const float m = s.cls[i] == rhea::Edge ? 0.0f : s.mWeight[i];

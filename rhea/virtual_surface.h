@@ -408,6 +408,9 @@ struct SurfaceOptions {
     // The root lattice's offset in pixels, [0, s0) on each axis: a frame's probes on a lattice shifted from the last
     // one's (jittered frames, DESIGN.md 13), so that what the reconstruction misses between probes moves each frame.
     int ox = 0, oy = 0;
+    // The floor (DESIGN.md 15): if the first pass converges less than this share of the frame, the passes stop and
+    // the engine renders the frame as XPU2 does (VirtualSurface::floored). 0: never.
+    double floorArea = 0.3;
     bool coverage = true;      // quads on many meshes or open borders converge where their patches cover them (test())
     double lightTol = 0.02;    // the light's tolerance: its interpolation error relative to the quad's light (refineLight)
     unsigned lightPasses = 0;  // light passes after the geometric ones (0: none; they chase the probes' noise, RESULTS.md 7)
@@ -455,8 +458,25 @@ public:
                 pending.push_back(int(quads.size()));
                 quads.push_back(makeQuad(xs[i], ys[j], xs[i + 1], ys[j + 1], 0));
             }
+        // The first pass, then the floor's test: the share of the frame its root quads converged.
+        floored = false;
+        geometricPasses(plan, scene, frame, index, op, 1);
+        double area = 0;
+        for (unsigned i = 0; i < rootX * rootY; ++i) {
+            const Quad& q = quads[i];
+            if (q.child < 0 && (q.state == Trusted || q.state == Background)) area += double(q.x1 - q.x0) * double(q.y1 - q.y0);
+        }
+        firstPassArea = area / std::max(1.0, double(width - 1) * double(height - 1));
+        if (firstPassArea < op.floorArea) {
+            floored = true;  // too little converges: no more passes, no probes
+            return;
+        }
         geometricPasses(plan, scene, frame, index, op);
     }
+
+    // The floor: the first pass converged too little of the frame to pay for the rest (SurfaceOptions::floorArea).
+    bool floored = false;
+    double firstPassArea = 0;
 
     // The light passes' test (DESIGN.md 9.2): a quad whose geometry has converged splits where its probes' light bends
     // more than the tolerance between them. Linear interpolation's error over a span s is about s^2 |L''| / 8, and the
@@ -573,9 +593,10 @@ private:
         return e / (mean + 1e-3);
     }
 
-    void geometricPasses(const cpu::Plan& plan, const async::CpuScene& scene, const Frame& frame, GeometryIndex& index, const SurfaceOptions& op) {
+    void geometricPasses(const cpu::Plan& plan, const async::CpuScene& scene, const Frame& frame, GeometryIndex& index, const SurfaceOptions& op,
+                         int most = 1 << 30) {
         auto t = std::chrono::steady_clock::now();
-        while (!pending.empty()) {
+        for (int done = 0; !pending.empty() && done < most; ++done) {
             const auto began = std::chrono::steady_clock::now();
             PassStats ps;
             ps.level = quads[pending.front()].level;
