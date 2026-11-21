@@ -746,3 +746,50 @@ create another virtualized plane to triangulate the angle".
 - **Each Rhea frame in the MoonRay Terminal**: its probes' time and count, the renderer's, the render's (launches, GPU
   samples, fine-detail tiles, provisional samples), the finish's. On Sponza the CPU's part is 0.02 s a frame; the first
   frame carries the new probes' 64 samples and the textures' first reads.
+
+## 24. XPU2 renders the camera at rest (2026-11-21)
+
+The user: "let XPU2 handle the camera at rest, and Rhea handle drags and camera moves".
+
+- **A camera move** (a camera-only edit, probes in hand): one frame of Rhea's for where the camera now is, shown as soon
+  as it lands (`rhea::Realtime::prepare`, `finish`).
+- **Then, the camera at rest:** XPU2's own realtime frame (its sampling generations: its samples where the noise is),
+  each of its pictures folded into Rhea's sums as it comes (`merge`): its samples full paths, its direct light its
+  outputs'. Rhea's part (phase 1 and its own samples) fades as (1 - fraction)^2, so the frame begins as Rhea's picture
+  and ends as XPU2's own, exactly (kept whole, Rhea's few even samples stood beside XPU2's in pixels its generations had
+  left early, and the frame ended a little noisier). No restart either way: a move during XPU2's frame stops it and the
+  next frame is Rhea's.
+- **The probes learn from XPU2** (`absorbRest`): its frame's light as far as it came (a move may stop it; on a heavy
+  scene the first may never end before a drag), each pixel's samples its weight, goes into the probes, so the next move
+  begins with probes lit by many samples at no cost of the GPU's. A probe with no light yet takes a new probe's samples
+  in Rhea's next frame.
+- **A new scene, or an edit other than the camera** (the probes forgotten): the probes placed for the camera on the CPU
+  (`place`, no frame of Rhea's), XPU2's frame, and the probes lit by it.
+
+## 25. Rhea's virtual planes: three perpetual layers (planned, 2026-11-21)
+
+The user: "there should be a virtual plane that is camera resolution size that is behind any geometry. This can be
+calculated by the z-buffer"; "so Rhea concerning the virtualized planes, theres the back plane, and the slanted plane
+(s) (to capture left-right grazing angles), and the front hyperplane. these need to be perpetual components to capture
+any scene for its first pass".
+
+Rhea's virtual geometry becomes three layers, each there from a scene's first pass, each pixel taken by the one that
+holds for it (the GPU's verification decides):
+
+- **The front hyperplane:** the lifted space (x, y, w) where the probes' tangent planes are hyperplanes and their
+  Bregman Delaunay triangulation lives (sections 2, 18): surfaces facing the camera, near and middle.
+- **The slanted planes:** surfaces at grazing angles, left and right (walls running away from the camera), each
+  triangulated in its own plane's coordinates, where its probes are not foreshortened: a pixel's ray meets the plane,
+  its light interpolated over the plane's triangles in world space. On Sponza the front hyperplane's gap holds back half
+  of the edge-on pixels it verifies (section 23).
+- **The back plane:** camera resolution, behind all geometry, made from the z-buffer (the depth outputs): each pixel's
+  depth and light. On a camera move each pixel is reprojected by its depth into the new view and kept where the new
+  frame's depths say it is still what the pixel sees: distant objects and the background, too small or too far for
+  probes, have per-pixel light from the first frame on.
+- **Probes, how many** (the user: "would it be performant if the probes were culled if at most one probe reached a mesh,
+  so that there aren't redundant reconstructions from each probe hitting the same mesh?"). A probe is a sample of
+  light as much as of geometry, and light varies over a mesh (shadows, falloff): one a mesh would light each mesh
+  evenly. Their cost: about 0.02 s of the CPU's a frame and 5 to 10% of a moving frame's GPU samples on the test scene;
+  on Sponza's first frame, before XPU2 lit them, 111k of the frame's 152k samples (1,734 new probes at 64). Planned:
+  probes pruned where their neighbours already predict their light (flat, evenly lit regions keep few), and fewer
+  samples for probes born in a move now that XPU2's frames at rest light the rest.

@@ -276,6 +276,76 @@ public:
         }
     }
 
+    // XPU2 at rest (DESIGN.md 24): Rhea renders the camera's moves, XPU2 the camera at rest.
+    // Whether the probes are there, and whether the plan's camera is another than the last frame's (a camera move).
+    bool hasProbes() const { return !field.probes.empty(); }
+    bool cameraChanged(const cpu::Plan& b) const {
+        return !haveCamera || !sameCamera(camera, b.camera) || field.width != b.width || field.height != b.height;
+    }
+    // The probes placed for the plan's camera without a frame of Rhea's (a new scene, an edit): lit by XPU2's frame at
+    // rest when it is done (absorbRest).
+    void place(const std::shared_ptr<const cpu::Plan>& base, const async::CpuScene& scene) { (void)prepare(base, scene); }
+    // How much the field holds of an XPU2 frame's light: its probes' summed weight (a test of absorbRest).
+    double fieldWeight() const {
+        double w = 0;
+        for (const auto& p : field.probes) w += p.weight;
+        return w;
+    }
+    // XPU2's frame at rest (x: its film so far, fraction: how far it has come) folded into Rhea's sums: its samples are
+    // full paths, its direct light its outputs'. Rhea's part (phase 1 and its own samples) fades as (1 - fraction)^2, so
+    // that the frame begins as Rhea's picture and ends as XPU2's own: kept at full weight, Rhea's few even samples
+    // stood beside XPU2's in pixels its generations had left early, and the frame ended a little noisier than XPU2's.
+    void merge(const async::RenderResult& x, double fraction, async::RenderResult& out) const {
+        out = x;
+        if (acc.n.empty() || x.rgba.size() != N * 4 || N == 0) return;
+        const size_t stride = x.aov.size() / N;
+        const bool aovs = stride > 0 && outputs.emission >= 0 && outputs.direct >= 0;
+        const unsigned K = std::max(1u, acc.frames);
+        const double fade = std::pow(std::max(0.0, 1.0 - fraction), 2.0);
+        out.rgba.assign(N * 4, 0.0f);
+        out.counts.assign(N, 0);
+        for (size_t i = 0; i < N; ++i) {
+            const double c = i < x.counts.size() ? double(x.counts[i]) : 0.0;
+            const float* av = aovs ? &x.aov[i * stride] : nullptr;
+            const double s = c > 0 ? fade : 1.0;  // Rhea's part's weight: whole where XPU2 has nothing yet
+            const double n = s * acc.n[i] + c, nfull = s * acc.nfull[i] + c;
+            out.counts[i] = static_cast<std::uint32_t>(std::min(n, 4.0e9));
+            if (n <= 0) continue;
+            const double m = acc.m[i] / K * s, k = m / (m + n);
+            for (int ch = 0; ch < 3; ++ch) {
+                const double bx = x.rgba[i * 4 + ch], dx = av ? double(av[outputs.emission + ch]) + av[outputs.direct + ch] : bx;
+                const double nb = s * acc.nb[i * 3 + ch] + c * bx, nd = s * acc.nd[i * 3 + ch] + c * dx;
+                const double rec = acc.m[i] > 0 ? acc.r1[i * 3 + ch] / acc.m[i] : 0.0;
+                const double v = op.probeFull ? nb / n + k * (rec - nb / n) : (nb - nd) / std::max(nfull, 1.0) + (1 - k) * nd / n + k * rec;
+                out.rgba[i * 4 + ch] = std::isfinite(v) ? float(v) : 0.0f;
+            }
+            out.rgba[i * 4 + 3] = float((s * acc.alpha[i] + c * x.rgba[i * 4 + 3]) / n);
+            if (acc.aov.size() == x.aov.size())
+                for (size_t ch = 0; ch < stride; ++ch) out.aov[i * stride + ch] = float((s * acc.aov[i * stride + ch] + c * x.aov[i * stride + ch]) / n);
+        }
+    }
+    // The probes take the light of XPU2's frame at rest (its samples a pixel their weight, as a frame of Rhea's): the next
+    // camera move begins with probes lit by many samples, at no cost of the GPU's.
+    void absorbRest(const async::RenderResult& x) {
+        if (f.ids.empty() || x.rgba.size() != N * 4 || x.counts.size() != N || N == 0) return;
+        const size_t stride = x.aov.size() / N;
+        if (!stride || outputs.emission < 0 || outputs.direct < 0 || outputs.depthMin < 0 || outputs.depthMax < 0) return;
+        const bool demod = op.demod && outputs.albedo >= 0;
+        std::vector<float> d(N * 4, 1.0f), a(demod ? N * 3 : 0, 0.0f), dmin(N), dmax(N);
+        std::vector<unsigned> samples(N);
+        for (size_t i = 0; i < N; ++i) {
+            const float* av = &x.aov[i * stride];
+            for (int c = 0; c < 3; ++c) d[i * 4 + c] = av[outputs.emission + c] + av[outputs.direct + c];
+            if (demod)
+                for (int c = 0; c < 3; ++c) a[i * 3 + c] = av[outputs.albedo + c];
+            dmin[i] = av[outputs.depthMin], dmax[i] = av[outputs.depthMax];
+            samples[i] = x.counts[i];
+        }
+        const FieldOptions fo = fieldOptions();
+        field.absorb(f, op.probeFull ? x.rgba : d, demod ? &a : nullptr, samples, false, op.fade, op.cleanAbsorb ? &dmin : nullptr,
+                     op.cleanAbsorb ? &dmax : nullptr, &fo);
+    }
+
 private:
     struct Sums {
         std::vector<double> nb, nd, n, nfull, m, alpha, aov, r1;

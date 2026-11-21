@@ -743,7 +743,28 @@ How it got there:
   delta 0.3 s into each frame): each the camera alone (prepared in 0.1 ms), 2 to 3 Rhea frames in 0.31 to 0.34 s
   before the next, the probes kept (1,247 to 1,960), 98 to 99% verified.
 
-## 19. Open
+## 19. XPU2 at rest, Rhea in motion (2026-11-21)
+
+DESIGN.md section 24. XPU2's session on the GPU, the test scene, a realtime frame of 32 samples a pixel; six turns of
+the camera sent as the kit sends them (`session_harness.py`, each 0.3 s into the frame before), and the last left to
+end. Each camera's picture as last shown against XPU2 at 1,024 samples a pixel for that camera; relative MSE / block
+error.
+
+| Turn | Rhea (a frame of Rhea's, then XPU2's merged) | XPU2 RT |
+|---|---|---|
+| 1 | (no picture: the scene's probes placed, its frame stopped) | 1.40e-4 / 3.02e-4 |
+| 2 | 1.79e-4 / 9.27e-4 | 7.41e-5 / 2.13e-4 |
+| 3 to 5 | 8.1 to 8.9e-5 / 2.5 to 3.2e-4 | 7.5 to 8.0e-5 / 2.1 to 2.2e-4 |
+| 6, at rest | **XPU2's picture exactly** (7.75e-5 / 1.95e-4) | 7.75e-5 / 1.95e-4 |
+
+- **At rest the frame is XPU2's own**, to the last bit: a still scene's first frame (the probes placed, no frame of
+  Rhea's) and a frame after a move alike.
+- **Rhea's frame lands about 0.1 s after a move** (the probes 0.02 s, the GPU 0.04 s, the finish 0.02 s; 98% verified,
+  phase 1 in 72%). On this scene XPU2's own frame gathers so many samples in 0.3 s that its picture is the better one
+  by then: Rhea's case is the scene whose XPU2 frame is still a few samples a pixel when the next move comes (Sponza:
+  32 a pixel in 26 s).
+
+## 20. Open
 
 - **The CPU's part, further:** suitability seeding for gathered frames, so the CPU lane could take the shading work
   that cannot hold the frame's end; on heavy scenes, the samples the GPU defers (as in XPU2).
@@ -776,7 +797,7 @@ How it got there:
   Sponza (23 lights, 69% of the GPU's time in shadow rays) is where light sample reuse has the most to save.
 - The lift assumes a still perspective camera without depth of field; patches lose triangles crossing the near plane.
 
-## 20. Reproduce
+## 21. Reproduce
 
 ```bash
 python rhea/build_rhea.py [--gpu] --source . --runtime <MoonRayForModo-xpu2>/test-results/interactive-reference-042 --output test-results/rhea/build-N

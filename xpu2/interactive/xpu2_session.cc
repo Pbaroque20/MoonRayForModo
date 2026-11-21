@@ -3135,20 +3135,14 @@ int session(const Args& args, const fs::path& directory) {
                     rheaView.op.slant = envOn("XPU2_SESSION_RHEA_SLANT", true);
                     rheaView.op.planeLight = envOn("XPU2_SESSION_RHEA_PLANE_LIGHT", true);
                     if (const char* debug = std::getenv("XPU2_SESSION_RHEA_DEBUG")) rheaView.op.debugFolder = debug;
-                    const double target = std::max(1u, scene.plan->spp);
-                    rheaView.op.target = unsigned(target);
                     const auto began = Clock::now();
                     async::GpuLane* lane = gpu && gpuUsable ? gpu.get() : nullptr;
-                    unsigned frames = 0;
-                    for (;;) {
-                        if (watch.stop && watch.stop()) {
-                            shown.cancelled = true;
-                            break;
-                        }
-                        if (frames > 0 && watch.drain && watch.drain()) {
-                            shown.drained = true;
-                            break;
-                        }
+                    // Rhea renders the camera's moves, XPU2 the camera at rest (rhea/DESIGN.md 24). A camera move with
+                    // probes in hand: one frame of Rhea's for where the camera now is, shown as soon as it lands. Else (a
+                    // new scene, an edit): the probes placed for the camera, lit by XPU2's frame below once it is done.
+                    const bool moving = rheaView.hasProbes() && rheaView.cameraChanged(*scene.plan);
+                    double rheaSeconds = 0;
+                    if (moving) {
                         const auto frameBegan = Clock::now();
                         auto plan = rheaView.prepare(scene.plan, *scene.cpuScene);
                         if (lane) lane->updateCamera(plan);
@@ -3158,34 +3152,29 @@ int session(const Args& args, const fs::path& directory) {
                         inner.stop = watch.stop;
                         o.watch = &inner;
                         async::RenderResult r;
-                        double made = 0;
                         {
                             async::Renderer frame(plan, *scene.cpuScene, lane);
-                            made = std::chrono::duration<double>(Clock::now() - prepared).count();
                             r = frame.render(o);
                         }
                         const auto rendered = Clock::now();
-                        if (r.failed) {
-                            if (lane) lane->updateCamera(scene.plan);
-                            return r;
-                        }
+                        // The GPU's configuration back to the scene's own plan (no sample map) for XPU2's frame.
+                        if (lane) lane->updateCamera(scene.plan);
+                        if (r.failed) return r;
                         if (r.cancelled) {
                             shown.cancelled = true;
-                            break;
+                            return shown;
                         }
                         rheaView.finish(r, shown);
-                        ++frames;
-                        // Each Rhea frame in the MoonRay Terminal: where its time went.
-                        std::printf("MoonRay XPU2: Rhea frame %u: probes %.3f s (%zu, %zu new), renderer made %.3f s, render %.3f s (%llu GPU "
-                                    "launches, %llu GPU samples, %llu CPU, fine-detail tiles loaded %llu, provisional %llu), finish %.3f s\n",
-                                    frames, std::chrono::duration<double>(prepared - frameBegan).count(), rheaView.probes, rheaView.spawned, made,
-                                    std::chrono::duration<double>(rendered - prepared).count() - made, (unsigned long long)r.launches,
-                                    (unsigned long long)r.gpuSamples, (unsigned long long)r.cpuSamples, (unsigned long long)r.fineLoaded,
-                                    (unsigned long long)r.provisional, std::chrono::duration<double>(Clock::now() - rendered).count());
+                        rheaSeconds = std::chrono::duration<double>(Clock::now() - frameBegan).count();
+                        std::printf("MoonRay XPU2: Rhea frame: probes %.3f s (%zu, %zu new), render %.3f s (%llu GPU samples, %llu CPU), finish %.3f s; "
+                                    "%.0f%% of the picture verified, phase 1 in %.0f%%\n",
+                                    std::chrono::duration<double>(prepared - frameBegan).count(), rheaView.probes, rheaView.spawned,
+                                    std::chrono::duration<double>(rendered - prepared).count(), (unsigned long long)r.gpuSamples,
+                                    (unsigned long long)r.cpuSamples, std::chrono::duration<double>(Clock::now() - rendered).count(),
+                                    rheaView.verified * 100.0, rheaView.trusted * 100.0);
                         std::fflush(stdout);
-                        const double least = rheaView.leastSamples(), fraction = std::min(1.0, least / target);
                         if (watch.previewAov && watch.previewAov() && watch.previewResult) {
-                            watch.previewResult(shown, fraction);
+                            watch.previewResult(shown, 0.0);
                         } else if (watch.preview) {
                             std::vector<float> rgb(size_t(width) * height * 3);
                             for (size_t i = 0; i < size_t(width) * height; ++i)
@@ -3193,16 +3182,64 @@ int session(const Args& args, const fs::path& directory) {
                                     const float x = shown.rgba[i * 4 + c];
                                     rgb[i * 3 + c] = std::isfinite(x) ? x : 0.0f;
                                 }
+                            watch.preview(rgb, width, height, 0.0);
+                        }
+                        if (watch.stop && watch.stop()) {
+                            shown.cancelled = true;
+                            return shown;
+                        }
+                    } else {
+                        rheaView.place(scene.plan, *scene.cpuScene);
+                    }
+                    // The camera at rest: XPU2's own frame (its sampling generations, its samples where the noise is),
+                    // each of its pictures folded into Rhea's sums as it comes, phase 1 fading out as the frame goes on.
+                    async::Watch rest = watch;
+                    bool wanted = false;  // the session's previews want the outputs (a denoised or other view)
+                    double lastFraction = 0;
+                    rest.previewAov = [&] {
+                        wanted = watch.previewAov && watch.previewAov();
+                        return true;  // the outputs resolved in every picture: Rhea's direct light is among them
+                    };
+                    rest.previewResult = [&](const async::RenderResult& sofar, double fraction) {
+                        lastFraction = fraction;
+                        async::RenderResult merged;
+                        rheaView.merge(sofar, fraction, merged);
+                        if (wanted && watch.previewResult) {
+                            watch.previewResult(merged, fraction);
+                        } else if (watch.preview) {
+                            std::vector<float> rgb(size_t(width) * height * 3);
+                            for (size_t i = 0; i < size_t(width) * height; ++i)
+                                for (int c = 0; c < 3; ++c) {
+                                    const float x = merged.rgba[i * 4 + c];
+                                    rgb[i * 3 + c] = std::isfinite(x) ? x : 0.0f;
+                                }
                             watch.preview(rgb, width, height, fraction);
                         }
-                        if (least >= target) break;
+                    };
+                    async::RenderOptions o = base;
+                    o.watch = &rest;
+                    const async::RenderResult x = renderer->render(o);
+                    if (x.failed) return x;
+                    rheaView.merge(x, x.cancelled || x.drained ? lastFraction : 1.0, shown);
+                    shown.cancelled = x.cancelled, shown.drained = x.drained;
+                    // The probes learn from XPU2's frame, as far as it came (a move stopped it, or it ended): on a heavy
+                    // scene the first frame at rest may never end before a drag.
+                    rheaView.absorbRest(x);
+                    if (!rheaView.op.debugFolder.empty()) {
+                        // An investigation: the camera, its name and node transform, for scripted moves.
+                        const rdl::SceneObject* cam = scene.source ? scene.source->getSceneVariables().get(rdl::SceneVariables::sCamera) : nullptr;
+                        if (std::FILE* fh = std::fopen((rheaView.op.debugFolder + "/camera.txt").c_str(), "w")) {
+                            std::fprintf(fh, "%s\n", cam ? cam->getName().c_str() : "");
+                            for (int i = 0; i < 4; ++i)
+                                for (int j = 0; j < 4; ++j) std::fprintf(fh, "%.9g%s", double(scene.plan->camera.cameraToRender.m[i][j]), i == 3 && j == 3 ? "\n" : " ");
+                            std::fprintf(fh, "probe weight %.6g\n", rheaView.fieldWeight());
+                            std::fclose(fh);
+                        }
                     }
-                    // The GPU's configuration back to the scene's own plan (no sample map) for whatever renders next.
-                    if (lane) lane->updateCamera(scene.plan);
                     shown.seconds = std::chrono::duration<double>(Clock::now() - began).count();
-                    std::printf("MoonRay XPU2: realtime by Rhea: %u frames in %.2f s, %zu probes, %.0f%% of the picture verified, "
-                                "phase 1 in %.0f%%, %u frames at rest\n",
-                                frames, shown.seconds, rheaView.probes, rheaView.verified * 100.0, rheaView.trusted * 100.0, rheaView.framesAtRest());
+                    std::printf("MoonRay XPU2: realtime by Rhea: %s, then XPU2's frame at rest %s in %.2f s; %zu probes\n",
+                                moving ? "a frame for the camera's move" : "the probes placed", x.cancelled ? "stopped" : x.drained ? "drained" : "done",
+                                shown.seconds - rheaSeconds, rheaView.probes);
                     std::fflush(stdout);
                     return shown;
                 };

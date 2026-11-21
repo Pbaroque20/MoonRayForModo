@@ -129,7 +129,7 @@ public:
                 const double ux = b.x - a.x, uy = b.y - a.y, uz = b.z - a.z, vx = c.x - a.x, vy = c.y - a.y, vz = c.z - a.z;
                 f.facing.push_back(f.view.facing(D3{uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx}, p.P));
             }
-            f.pixel.push_back(py * int(width) + px), f.fresh.push_back(isFresh);
+            f.pixel.push_back(py * int(width) + px), f.fresh.push_back(isFresh || p.weight <= 0);
             grid[size_t(py / op.cell) * cellsX + px / op.cell].push_back(int(f.ids.size()) - 1);
         };
         for (size_t k = 0; k < cand.size(); ++k)
