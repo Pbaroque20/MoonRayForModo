@@ -39,6 +39,9 @@ struct Config {path::Epoch epoch;surface::Camera camera;surface::V3 sky;U32 widt
     // Each pixel's first sample in its sequence (Plan::sampleBase): a frame's samples continue those its pixel had
     // before (Rhea's frames at rest); none, every frame's samples from the first.
     const U32* sampleBase=nullptr;
+    // Textures read only from what the card holds (Plan::residentTextures, Rhea's frames): no fine-detail tile asked
+    // for, a missing one read from the nearest level up the card has, as the sample's own (not provisional).
+    U32 residentTextures=0;
     // Motion blur (enable_motion_blur): each sample at a time in the shutter (0 open, 1 close), bent by the camera's
     // mb_shutter_bias as Sampler::getPrimarySample bends it.
     U32 motionBlur=0;float shutterBias=0;

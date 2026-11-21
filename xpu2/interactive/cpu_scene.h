@@ -241,6 +241,9 @@ struct Plan {
     // Each pixel's first sample in its sequence (rhea/rhea_realtime.h: a frame at rest continues the samples its pixels
     // had, so that the frames' samples together stratify as one frame's would); empty: from the first, as always.
     std::vector<unsigned> sampleBase;
+    // Textures read only from what the card holds (rhea/rhea_realtime.h: a camera move's frame reads the coarse levels
+    // and whatever tiles XPU2's frames at rest brought, streams none, and re-renders nothing); false: as always.
+    bool residentTextures = false;
     // Motion blur (meshMotionSteps, camera_core.h's cameraAtTime) and the camera's shutter bias (the samples' times).
     MotionParams motion;float shutterBias=0;
     // The lights moving under motion blur (light_core.h's LightMotion, by light index), and each light's record at the

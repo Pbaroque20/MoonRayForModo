@@ -328,6 +328,7 @@ public:
                 config.gather = reinterpret_cast<const U32*>(keep(plan->gather.data(), plan->gather.size() * sizeof(U32)));
             if (!plan->fullSamples.empty())
                 config.fullSamples = reinterpret_cast<const U32*>(keep(plan->fullSamples.data(), plan->fullSamples.size() * sizeof(U32)));
+            config.residentTextures = plan->residentTextures ? 1u : 0u;
             if (!plan->sampleBase.empty())
                 config.sampleBase = reinterpret_cast<const U32*>(keep(plan->sampleBase.data(), plan->sampleBase.size() * sizeof(U32)));
             // Rhea's phase 1 radiance over the frame (mixed::Config::frameCache).

@@ -3134,6 +3134,7 @@ int session(const Args& args, const fs::path& directory) {
                     rheaView.op.coverage = envOn("XPU2_SESSION_RHEA_COVERAGE", false);
                     rheaView.op.slant = envOn("XPU2_SESSION_RHEA_SLANT", true);
                     rheaView.op.planeLight = envOn("XPU2_SESSION_RHEA_PLANE_LIGHT", true);
+                    rheaView.op.residentTextures = envOn("XPU2_SESSION_RHEA_RESIDENT_TEXTURES", true);
                     if (const char* debug = std::getenv("XPU2_SESSION_RHEA_DEBUG")) rheaView.op.debugFolder = debug;
                     const auto began = Clock::now();
                     async::GpuLane* lane = gpu && gpuUsable ? gpu.get() : nullptr;

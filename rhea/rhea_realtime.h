@@ -25,6 +25,8 @@ struct RealtimeOptions {
     unsigned phase2Max = 2;   // phase 2's samples a pixel a frame, at most (DESIGN.md 17)
     unsigned probeSpp = 64;   // a new probe's pixel's samples
     unsigned keepSpp = 4;     // a known probe's pixel's samples a frame
+    bool residentTextures = true;  // a frame's textures read only from what the card holds (Plan::residentTextures)
+    double probeShare = 0.5;  // the probes' samples a frame at most this share of phase 2's (new ones share what is left)
     unsigned nBg = 1;         // the sky's samples a frame
     // At rest phase 2's samples a frame double each frame (the cap's, twice, four times... up to restMax): the sums are
     // XPU2's samples, and longer frames spend less on each frame's fixed costs, so the picture converges at XPU2's pace.
@@ -164,14 +166,27 @@ public:
             }
         }
         total = nCount;
+        // The probes' samples within a budget: at most probeShare of phase 2's, the known probes' keepSpp first, the new
+        // (or unlit) ones sharing the rest, never fewer than keepSpp nor more than probeSpp. Unlit, 2,114 probes at 64 had
+        // taken 135k of a Sponza frame's 176k samples (DESIGN.md 24).
+        size_t fresh = 0, kept = 0;
+        for (size_t j = 0; j < f.ids.size(); ++j) (f.fresh[j] ? fresh : kept) += 1;
+        double phase2 = 0;
+        for (size_t i = 0; i < N; ++i) phase2 += nCount[i];
+        const double budget = op.probeShare * phase2 - double(kept) * op.keepSpp;
+        const unsigned freshSpp = fresh ? unsigned(std::max(double(op.keepSpp), std::min(double(op.probeSpp), budget / double(fresh)))) : op.probeSpp;
         std::vector<unsigned> extra(N, 0);
         for (size_t j = 0; j < f.ids.size(); ++j) {
             const size_t px = size_t(f.pixel[j]);
-            extra[px] = std::max(extra[px], f.fresh[j] ? op.probeSpp : op.keepSpp);
+            extra[px] = std::max(extra[px], f.fresh[j] ? freshSpp : op.keepSpp);
         }
         for (size_t i = 0; i < N; ++i) total[i] += extra[i];
         // Rhea's samples a pixel, uniform within it: no sampling generations (a sample map is only read without them).
         plan->adaptive = false, plan->sampleBudget = 0;
+        // Textures as the card holds them: the coarse levels, and whatever tiles XPU2's frames at rest brought; a camera
+        // move's frame streams none and renders nothing again (the user: "the textures on first phase is too heavy, it
+        // should just get the average color ... then the textures can stream in once standard XPU2 realtime kicks in").
+        plan->residentTextures = op.residentTextures;
         plan->pixelSamples = total;
         plan->fullSamples.clear();
         if (!op.probeFull) plan->fullSamples = nCount;

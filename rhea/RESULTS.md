@@ -5,6 +5,11 @@ Rhea was named Sol, and before that "Bregman", earlier the same day; sections 2 
 
 ## In short
 
+**XPU2 at rest, Rhea in motion (section 19).** Rhea renders a frame for each camera move and XPU2 the camera at
+rest, the two merged, Rhea's part fading: at rest the picture is XPU2's exactly; on Sponza, 4 s after each move, Rhea's
+picture has half XPU2's per-pixel error and a third less block error (its probes within a sample budget, its textures as
+the card holds them). On the small test scene XPU2's own frame is the better one by 0.3 s.
+
 **Rhea in XPU2's session, every camera (section 18).** Rhea runs as the kit's XPU2 RT on perspective, depth of
 field, motion blur, orthographic, spherical, fisheye and dome cameras. At the end of a realtime frame, at equal
 samples, its picture is behind XPU2's (XPU2's samples go where the noise is, and phase 1 still weighs half); an
@@ -763,6 +768,21 @@ error.
   phase 1 in 72%). On this scene XPU2's own frame gathers so many samples in 0.3 s that its picture is the better one
   by then: Rhea's case is the scene whose XPU2 frame is still a few samples a pixel when the next move comes (Sponza:
   32 a pixel in 26 s).
+
+**Sponza** (192 x 108, its camera turned six times by 2 degrees, each turn 4 s into the frame before; XPU2 at 128
+samples a pixel for each camera the reference): at first a frame of Rhea's took 8.5 s (2,114 unlit probes at 64
+samples, 135k of its 176k samples, and 147k texture tiles streamed), longer than the steps, and none was shown. With
+the probes' budget and textures as the card holds them (DESIGN.md 24) a frame of Rhea's takes 62k samples and lands in
+2.8 to 3.3 s:
+
+| Sponza, 4 s after each move | Rhea | XPU2 RT |
+|---|---|---|
+| turns 1 to 5 | **0.89 to 1.33 / 0.058 to 0.073** | 1.97 to 2.51 / 0.100 to 0.108 |
+| turn 6, at rest | 0.0456 / 0.0143 (XPU2's picture) | 0.0456 / 0.0143 |
+
+Half XPU2's per-pixel error and a third less block error while the camera moves (92 to 94% verified, phase 1 in 3
+to 10%), the same picture at rest. The probes placed on the scene's first frame took no samples: its XPU2 frame was
+stopped 0.08 s in, and the probes' budget lit them in the first move's frame.
 
 ## 20. Open
 

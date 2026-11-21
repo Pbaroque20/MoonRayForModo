@@ -766,6 +766,26 @@ The user: "let XPU2 handle the camera at rest, and Rhea handle drags and camera 
 - **A new scene, or an edit other than the camera** (the probes forgotten): the probes placed for the camera on the CPU
   (`place`, no frame of Rhea's), XPU2's frame, and the probes lit by it.
 
+- **Probes, how many** (the user: "would it be performant if the probes were culled if at most one probe reached a mesh,
+  so that there aren't redundant reconstructions from each probe hitting the same mesh?"). A probe is a sample of
+  light as much as of geometry, and light varies over a mesh (shadows, falloff): one a mesh would light each mesh
+  evenly. Their cost: about 0.02 s of the CPU's a frame and 5 to 10% of a moving frame's GPU samples on the test scene;
+  on Sponza's first frame, before XPU2 lit them, 111k of the frame's 152k samples (1,734 new probes at 64). Planned:
+  probes pruned where their neighbours already predict their light (flat, evenly lit regions keep few), and fewer
+  samples for probes born in a move now that XPU2's frames at rest light the rest.
+- **The probes' budget** (`RealtimeOptions::probeShare`, 0.5): a frame's probe samples at most half of phase 2's, the
+  known probes' keepSpp first, the new or unlit ones sharing the rest (never fewer than keepSpp nor more than probeSpp).
+  On Sponza a drag begun before XPU2's first frame at rest had lit the probes found 2,114 of them unlit, at 64 samples
+  each: 135k of the frame's 176k samples, 8.5 s, longer than the drag's steps, so no frame of Rhea's was ever shown.
+- **Textures as the card holds them** (`Plan::residentTextures`, XPU2): a camera move's frame asks for no fine-detail
+  tile; a texel whose tile is not on the card is read from the nearest level up that is (the coarse levels always
+  are: a texture's average colour, or a few dozen texels across), as the sample's own, nothing rendered again. Once
+  XPU2's frames at rest have brought a texture's tiles, a move shows them. The user: "the textures on first phase is too
+  heavy, it should just get the average color of the texture which would be of lower quality, then the textures can
+  stream in once standard XPU2 realtime kicks in". On Sponza's first frame 147k tiles had streamed and 153k provisional
+  samples were rendered again. The demodulated light keeps the probes right whichever detail lit them: a move's frame
+  divides out the coarse colour, XPU2's the fine.
+
 ## 25. Rhea's virtual planes: three perpetual layers (planned, 2026-11-21)
 
 The user: "there should be a virtual plane that is camera resolution size that is behind any geometry. This can be
@@ -786,10 +806,3 @@ holds for it (the GPU's verification decides):
   depth and light. On a camera move each pixel is reprojected by its depth into the new view and kept where the new
   frame's depths say it is still what the pixel sees: distant objects and the background, too small or too far for
   probes, have per-pixel light from the first frame on.
-- **Probes, how many** (the user: "would it be performant if the probes were culled if at most one probe reached a mesh,
-  so that there aren't redundant reconstructions from each probe hitting the same mesh?"). A probe is a sample of
-  light as much as of geometry, and light varies over a mesh (shadows, falloff): one a mesh would light each mesh
-  evenly. Their cost: about 0.02 s of the CPU's a frame and 5 to 10% of a moving frame's GPU samples on the test scene;
-  on Sponza's first frame, before XPU2 lit them, 111k of the frame's 152k samples (1,734 new probes at 64). Planned:
-  probes pruned where their neighbours already predict their light (flat, evenly lit regions keep few), and fewer
-  samples for probes born in a move now that XPU2's frames at rest light the rest.
