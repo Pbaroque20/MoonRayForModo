@@ -784,7 +784,61 @@ Half XPU2's per-pixel error and a third less block error while the camera moves 
 to 10%), the same picture at rest. The probes placed on the scene's first frame took no samples: its XPU2 frame was
 stopped 0.08 s in, and the probes' budget lit them in the first move's frame.
 
-## 20. Open
+## 20. The virtual planes (2026-11-21)
+
+DESIGN.md section 25: the slanted planes and the back plane past the probes' front triangulation. Sponza as in section
+19 (192 x 108, six turns 4 s apart, XPU2 at 128 samples a pixel for each camera the reference); relative MSE / block
+error 4 s after each move:
+
+| Sponza | Rhea, the three planes | Rhea, probes alone (section 19) | XPU2 RT |
+|---|---|---|---|
+| turn 2 | **1.20 / 0.068** | 1.33 / 0.073 | 2.19 / 0.102 |
+| turn 3 | **0.82 / 0.061** | 1.00 / 0.067 | 2.04 / 0.100 |
+| turn 4 | **0.76 / 0.064** | 0.92 / 0.069 | 2.51 / 0.107 |
+| turn 5 | **0.72 / 0.055** | 0.89 / 0.058 | 1.97 / 0.108 |
+| turn 6, at rest | 0.0456 / 0.0143 (XPU2's picture) | the same | the same |
+
+Phase 1 covers 28 to 33% of the picture from the second move on (the probes 5 to 10%, the slanted planes 1%, the back
+plane 22%), against 3 to 10% with the probes alone. Each layer's light against the reference over the pixels it took
+(relative MSE; the pixels' own samples in brackets), turns 3 to 6:
+
+| Layer | Light / its pixels' samples | Brightness (ratio) |
+|---|---|---|
+| probes | 0.066 to 0.077 (0.73 to 0.93) | 0.98 to 1.01 |
+| slanted planes | 0.30 to 0.38 (0.56 to 0.84) | 1.02 to 1.22 |
+| back plane, looked up from the frame's depths | 0.16 to 0.28 (0.77 to 0.90) | 0.97 to 1.00 |
+| back plane, first version (each point lifted to a pixel) | 0.38 to 0.46 (0.77 to 0.86) | 0.97 to 0.98 |
+
+How it got there:
+
+- **A light seen directly.** The first back plane made turn 5 3% bright (relative MSE 2.52 against 0.89): ten pixels
+  about a light seen in front of a curtain held 14 to 44 where the reference had 0.1 to 2. The depth outputs there were the
+  curtain's, and the light's glow, kept as the curtain's light and divided by its dark colour (0.05), went with the
+  curtain on the move. The back plane now keeps reflected light only (the beauty less the emission output) and adds each
+  pixel's own emission when used.
+- **Glossy light and colour.** Pixels whose light was mostly glossy (beauty 5.7, direct 1.9, colour 0.05) came back 2
+  to 3 times too bright once divided by one colour and multiplied by another: the back plane keeps light as it was.
+- **Half a pixel.** Lifting each stored point to the pixel it lands in put texture and edges up to half a pixel off;
+  looking each pixel's own point up in the stored view, blended over the four stored pixels that saw its surface, halved
+  the back plane's error and covers 22% instead of 18% (no holes where the camera comes closer).
+- **The slanted planes** at first took pixels the probes had refused for their light (a shadow's border), where a
+  plane's larger triangles had corners that agree across the shadow. They now take only those refused for geometry, with
+  triangles of at most 4 cells a side, and count for a quarter of the probes' weight: their light is still 2 to 22%
+  bright in some Sponza frames, on 1% of the picture.
+
+**The test scene** (section 19's 0.3 s turns; perspective, spherical and orthographic cameras, each turn's camera against
+XPU2 at 256 or 1,024 samples): the planes on and off, two runs each, agree to the run-to-run spread of the timing (a turn's
+error doubles in either when XPU2's frame is stopped earlier). By 0.3 s XPU2's own samples outweigh Rhea's part there,
+as in section 19. The back plane's light was as good as its pixels' samples or better (0.010 to 0.051 against 0.013 to
+0.132). The planes cost the CPU about 7 ms a frame (Rhea's finish 0.025 s against 0.018 s at 320 x 240).
+
+## 21. Open
+
+- **Probes pruned where their neighbours on the same surface predict their light** within its noise (the user's
+  question: "would it be better if that single probe would set the resolution of the direct lighting for that mesh it
+  hit, and cull the other probes hitting that same mesh?"), on the slanted planes' regions.
+- **The slanted planes' brightness** on Sponza (2 to 22% in some frames): which pixels, and whether a plane's light
+  should be verified against the frame's own samples before it counts.
 
 - **The CPU's part, further:** suitability seeding for gathered frames, so the CPU lane could take the shading work
   that cannot hold the frame's end; on heavy scenes, the samples the GPU defers (as in XPU2).
@@ -817,7 +871,7 @@ stopped 0.08 s in, and the probes' budget lit them in the first move's frame.
   Sponza (23 lights, 69% of the GPU's time in shadow rays) is where light sample reuse has the most to save.
 - The lift assumes a still perspective camera without depth of field; patches lose triangles crossing the near plane.
 
-## 21. Reproduce
+## 22. Reproduce
 
 ```bash
 python rhea/build_rhea.py [--gpu] --source . --runtime <MoonRayForModo-xpu2>/test-results/interactive-reference-042 --output test-results/rhea/build-N

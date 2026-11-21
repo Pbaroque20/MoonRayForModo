@@ -25,7 +25,7 @@ class View {
 public:
     enum Kind { Perspective, Orthographic, Directional };
     Kind kind = Perspective;
-    double toCamera[4][4] = {};
+    double toCamera[4][4] = {}, toTrace[4][4] = {};  // trace space to camera space, and back (row vectors)
     unsigned width = 0, height = 0;
 
     // False for a camera Rhea's probes cannot follow (bake), or a degenerate one.
@@ -33,10 +33,9 @@ public:
         cam = c, width = w, height = h;
         cam.dof = 0;  // the chief ray: the lens' centre
         regionX = c.regionX, regionY = c.regionY;
-        double m[4][4];
         for (int i = 0; i < 4; ++i)
-            for (int j = 0; j < 4; ++j) m[i][j] = c.cameraToRender.m[i][j];
-        if (!invert4(m, toCamera)) return false;
+            for (int j = 0; j < 4; ++j) toTrace[i][j] = c.cameraToRender.m[i][j];
+        if (!invert4(toTrace, toCamera)) return false;
         local = cam;
         for (int i = 0; i < 4; ++i)
             for (int j = 0; j < 4; ++j) local.cameraToRender.m[i][j] = local.camera2Render.m[i][j] = local.render2World.m[i][j] = float(i == j);
@@ -105,8 +104,67 @@ public:
         const double nl = std::sqrt(nc.x * nc.x + nc.y * nc.y + nc.z * nc.z), vl = std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
         return nl > 0 && vl > 0 ? std::fabs(nc.x * v.x + nc.y * v.y + nc.z * v.z) / (nl * vl) : 1.0;
     }
+    // A surface's unit normal (trace space) at a point, turned to face the camera (planes.h compares neighbours' normals,
+    // whatever the meshes' winding).
+    D3 toward(const D3& n, const surface::V3& p) const {
+        const double l = std::sqrt(n.x * n.x + n.y * n.y + n.z * n.z);
+        if (!(l > 0)) return D3{0, 0, 0};
+        D3 u{n.x / l, n.y / l, n.z / l};
+        const D3 nc{u.x * toCamera[0][0] + u.y * toCamera[1][0] + u.z * toCamera[2][0], u.x * toCamera[0][1] + u.y * toCamera[1][1] + u.z * toCamera[2][1],
+                    u.x * toCamera[0][2] + u.y * toCamera[1][2] + u.z * toCamera[2][2]};
+        D3 v{0, 0, -1};
+        if (kind != Orthographic) {
+            const D3 c = camera(p);
+            v = {c.x - (kind == Perspective ? fp.x : 0.0), c.y - (kind == Perspective ? fp.y : 0.0), c.z - (kind == Perspective ? fp.z : 0.0)};
+        }
+        if (nc.x * v.x + nc.y * v.y + nc.z * v.z > 0) u = {-u.x, -u.y, -u.z};
+        return u;
+    }
     // The lifted depth of a depth (the verification's, from the depth output).
     double wOf(double depth) const { return kind == Orthographic ? 1.0 - depth / K : 1.0 / depth; }
+    // The point (trace space) the chief ray through raster (x, y) meets at a depth as the depth output measures it (the
+    // back plane's points, from the z-buffer). False where the camera has no ray there.
+    bool pointAt(double x, double y, double depth, surface::V3& out) const {
+        if (!(depth > 0) || !std::isfinite(depth)) return false;
+        if (kind != Directional) {
+            // The raster plane's point (as lift reads it back), then along the chief ray (from the focal point, or
+            // straight for an orthographic camera) to the depth: no camera ray made (a frame's every pixel, twice).
+            const double rx = x + regionX, ry = y + regionY;
+            const D3 q{o.x + ex.x * rx + ey.x * ry, o.y + ex.y * rx + ey.y * ry, o.z + ex.z * rx + ey.z * ry};
+            D3 c{q.x, q.y, -depth};
+            if (kind == Perspective) {
+                const D3 d{q.x - fp.x, q.y - fp.y, q.z - fp.z};
+                if (!(d.z < 0)) return false;
+                const double t = (-depth - fp.z) / d.z;
+                c = {fp.x + t * d.x, fp.y + t * d.y, -depth};
+            }
+            const double v[4] = {c.x, c.y, c.z, 1.0};
+            double r[4];
+            for (int j = 0; j < 4; ++j) r[j] = v[0] * toTrace[0][j] + v[1] * toTrace[1][j] + v[2] * toTrace[2][j] + v[3] * toTrace[3][j];
+            if (!(std::fabs(r[3]) > 1e-30)) return false;
+            out = {float(r[0] / r[3]), float(r[1] / r[3]), float(r[2] / r[3])};
+            return true;
+        }
+        surface::Ray r;
+        if (!ray(x, y, r)) return false;
+        const surface::V3 o0{r.origin.x, r.origin.y, r.origin.z};
+        const surface::V3 o1{r.origin.x + r.direction.x, r.origin.y + r.direction.y, r.origin.z + r.direction.z};
+        double t;
+        if (kind == Directional) {
+            const double l = std::sqrt(double(r.direction.x) * r.direction.x + double(r.direction.y) * r.direction.y + double(r.direction.z) * r.direction.z);
+            if (!(l > 0)) return false;
+            const D3 c0 = camera(o0);
+            // The depth is the distance from the camera's centre; the ray starts there (or about it, a lens' offset).
+            t = (depth - std::sqrt(c0.x * c0.x + c0.y * c0.y + c0.z * c0.z)) / l;
+        } else {
+            const double z0 = camera(o0).z, z1 = camera(o1).z;
+            if (!(std::fabs(z1 - z0) > 1e-30)) return false;
+            t = (-depth - z0) / (z1 - z0);
+        }
+        if (!(t > 0) || !std::isfinite(t)) return false;
+        out = {float(r.origin.x + t * r.direction.x), float(r.origin.y + t * r.direction.y), float(r.origin.z + t * r.direction.z)};
+        return true;
+    }
 
     // Where a trace-space point lands (raster x, y of the picture) and its lifted depth; hinted: x, y hold where to start
     // looking (directional cameras). False where the camera does not see it.

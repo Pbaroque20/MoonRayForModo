@@ -12,6 +12,7 @@
 // depths (the state variable depth, math filters min and max).
 #pragma once
 #include "persistent.h"
+#include "planes.h"
 #include "async_render.h"
 #include <cstdio>
 #include <numeric>
@@ -45,6 +46,25 @@ struct RealtimeOptions {
     bool coverage = false;
     // The surface's own plane for slanted surfaces (FieldOptions::slant, planeLight; DESIGN.md 23).
     bool slant = true, planeLight = true;
+    // The virtual planes past the front hyperplane (planes.h, DESIGN.md 25): a pixel the probes' triangulation does not
+    // hold is taken by its surface's slanted plane (planar), else by the back plane's reprojected light (backPlane),
+    // the frame's own depths deciding each. quietNeed: a pixel either holds asks for no probe.
+    bool planar = true, backPlane = true, quietNeed = true;
+    double planarEdge = 4;    // a slanted plane's triangle's sides at most this many cells (PlanarLayer::build)
+    double backCap = 1024;    // the back plane's weight a pixel at most (samples)
+    // The back plane's light divided by its pixel's colour, and multiplied by the new pixel's (off: kept as it was, its
+    // texture with it): on Sponza glossy light divided by a dark colour came back 2-3 times too bright, and a frame at
+    // rest's fine texture beats a camera move's coarse one (DESIGN.md 25).
+    bool backDemod = false;
+    // The back plane looked up from each frame's own depths, its light blended from the stored pixels about each point
+    // (BackPlane::gather; off: each stored point lifted to the pixel it lands in, BackPlane::reproject).
+    bool backGather = true;
+    // The planes' light counts as this share of the probes' (m0, the back plane's samples at most m0): measured against
+    // the reference their light was 2 to 8 times better than their pixels' own few samples where the probes' was 10 times
+    // (DESIGN.md 25).
+    // On Sponza the back plane looked up from the frame's depths was 3 to 5 times better: its whole weight.
+    double planarWeight = 0.25, backWeight = 1.0;
+    double backTol = 0.01;    // a reprojected point's reach past the pixel's depths: at most this (relative), or the depths' slope
     int probeFull = -1;       // -1: whole-light probes where the scene bounces diffusely
     unsigned threads = 4;     // the CPU's part (the field)
     // An investigation: each frame's reconstruction, phase 1's mask (0 XPU2's alone, 0.5 verified, 1 phase 1 used) and
@@ -100,6 +120,7 @@ public:
         frame = 0;
         clearSums();
         haveCamera = false;
+        back.clear(), haveBack = false;
     }
     // The picture's sums forgotten, the probes kept: the camera has moved.
     void clearSums() {
@@ -111,8 +132,13 @@ public:
         if (acc.nfull.empty()) return 0;
         return *std::min_element(acc.nfull.begin(), acc.nfull.end());
     }
-    // The last frame's shares: the pixels verified, and those whose phase 1 counted.
-    double verified = 0, trusted = 0;
+    // The last frame's shares: the pixels verified, and those whose phase 1 counted (all layers), and phase 1's pixels
+    // by layer: the probes' triangulation (front), the slanted planes, the back plane; the planar regions.
+    double verified = 0, trusted = 0, shareFront = 0, sharePlanar = 0, shareBack = 0;
+    // The last frame's CPU time in the planes: building and looking up (with the pixels' layers), storing the back plane;
+    // and the last store after XPU2's frame at rest.
+    double planesSeconds = 0, storeSeconds = 0, restStoreSeconds = 0;
+    size_t regions = 0;
     size_t probes = 0, spawned = 0;
     double fieldSeconds = 0;
 
@@ -239,37 +265,120 @@ public:
             acc.n.assign(N, 0.0), acc.nfull.assign(N, 0.0), acc.m.assign(N, 0.0), acc.alpha.assign(N, 0.0), acc.r1.assign(N * 3, 0.0);
             acc.aov.assign(r.aov.size(), 0.0);
         }
-        size_t used = 0;
         const double m0 = f.view.kind == View::Directional ? o.m0Directional : o.m0;
+        // The virtual planes (planes.h, DESIGN.md 25): the slanted planes from the frame's probes, the back plane as the
+        // last picture left it, lifted into this frame. A pixel takes the first layer whose surface its depths hold:
+        // the front triangulation (trusted and verified), its surface's slanted plane, the back plane.
+        const auto planesBegan = std::chrono::steady_clock::now();
+        if (o.planar && f.view.kind != View::Directional) planar.build(f, field.probes, W, H, fo.tol, fo.tauR, fo.demodFloor, o.planarEdge * fo.cell);
+        else planar.none(W, H);
+        if (!o.backPlane) back.clear(), haveBack = false;
+        // Looked up from this frame's depths (gather), or each stored point lifted into it (reproject: the first way).
+        if (o.backGather) back.gather(f.view, W, H, o.threads, depthMin, 2 * fo.tol + o.backTol, seen);
+        else back.reproject(f.view, W, H, o.threads, seen);
+        // The pixels' lifted depths (the nearest), for the back plane's reach: a slanted surface's depths change across
+        // a pixel, and a point lands anywhere in it.
+        std::vector<double> wn(N, 0.0);
+        for (size_t i = 0; i < N; ++i)
+            if (std::isfinite(depthMin[i]) && depthMin[i] > 0) wn[i] = f.view.wOf(depthMin[i]);
+        layer.assign(N, 0);
+        std::vector<float> light1(o.debugFolder.empty() ? 0 : N * 4, 0.0f);  // an investigation: phase 1's light by whichever layer
+        size_t used = 0, usedPlanar = 0, usedBack = 0;
         for (size_t i = 0; i < N; ++i) {
-            const bool use = fstate[i] == FieldTrusted && ok[i];
-            used += use;
+            const unsigned x = unsigned(i % W), y = unsigned(i / W);
+            double w1 = 0, L1[3] = {0, 0, 0};
+            if (fstate[i] == FieldTrusted && ok[i]) {
+                w1 = m0, layer[i] = 1, ++used;
+                for (int c = 0; c < 3; ++c) L1[c] = recon[i * 4 + c];
+            }
+            // A slanted plane only where the probes' triangle failed for its geometry (a gap, the verification, none):
+            // one the probes refused for its light (a light edge, a shadow's border) is no plane's either, a plane's
+            // larger triangles there having corners that agree across the shadow.
+            if (!w1 && planar.triOf[i] >= 0 && fstate[i] != FieldEdge) {
+                const Plane* pl = planar.planeAt(x, y, W);
+                double L[3];
+                if (pl && ProbeField::planeHolds(f.view, *pl, x, y, depthMin[i], depthMax[i], fo) &&
+                    planar.lightAt(f, field.probes, x, y, W, demod ? &albedo[i * 3] : nullptr, fo.demodFloor, demod, L)) {
+                    w1 = o.planarWeight * m0, layer[i] = 2, ++usedPlanar;
+                    for (int c = 0; c < 3; ++c) L1[c] = L[c];
+                }
+            }
+            if (seen.w[i] > 0 && wn[i] > 0) {
+                // The back plane: one surface at the pixel (its depths close), the reprojected point on it, and its light
+                // demodulated only where the pixel's colour can take it back. Held, it gathers this frame's samples
+                // (store), whichever layer the pixel takes.
+                const double w0 = wn[i], wf = f.view.wOf(std::max(depthMax[i], depthMin[i]));
+                double slope = 0;
+                if (x > 0 && x + 1 < W && wn[i - 1] > 0 && wn[i + 1] > 0) slope = std::max(slope, 0.5 * std::fabs(wn[i + 1] - wn[i - 1]));
+                if (y > 0 && y + 1 < H && wn[i - W] > 0 && wn[i + W] > 0) slope = std::max(slope, 0.5 * std::fabs(wn[i + W] - wn[i - W]));
+                const double reach = w0 * (2 * fo.tol + std::min(o.backTol, slope / w0));
+                const bool one = (w0 - wf) <= 2 * fo.tol * w0 && ProbeField::whole(r.rgba[i * 4 + 3]);
+                const double bw = seen.w[i];
+                const bool pixelDemod = demod && 0.2126 * albedo[i * 3] + 0.7152 * albedo[i * 3 + 1] + 0.0722 * albedo[i * 3 + 2] >= fo.demodFloor;
+                seen.held[i] = one && (seen.gathered ? seen.held[i] != 0 : bw >= wf - reach && bw <= w0 + reach);
+                if (!w1 && seen.held[i] && (!seen.demod[i] || pixelDemod)) {
+                    // Its light the surface's reflected light (reflectedOf), and what the pixel sees emitted this frame.
+                    w1 = o.backWeight * std::min(m0, double(seen.weight[i])), layer[i] = 3, ++usedBack;
+                    for (int c = 0; c < 3; ++c)
+                        L1[c] = std::max(0.0, double(seen.L[i * 3 + c]) * (seen.demod[i] ? albedo[i * 3 + c] : 1.0f)) +
+                                (outputs.emission >= 0 ? double(r.aov[i * stride + outputs.emission + c]) : 0.0);
+                }
+            }
             const double Nt = total[i];
             for (int c = 0; c < 3; ++c) {
                 acc.nb[i * 3 + c] += Nt * r.rgba[i * 4 + c];
                 acc.nd[i * 3 + c] += Nt * direct[i * 4 + c];
             }
             acc.alpha[i] += Nt * r.rgba[i * 4 + 3];
-            acc.n[i] += Nt, acc.nfull[i] += nCount[i], acc.m[i] += use ? m0 : 0.0;
-            if (use)
-                for (int c = 0; c < 3; ++c) acc.r1[i * 3 + c] += m0 * recon[i * 4 + c];
+            acc.n[i] += Nt, acc.nfull[i] += nCount[i], acc.m[i] += w1;
+            if (w1 > 0)
+                for (int c = 0; c < 3; ++c) acc.r1[i * 3 + c] += w1 * L1[c];
+            if (!light1.empty())
+                for (int c = 0; c < 3; ++c) light1[i * 4 + c] = float(L1[c]);
             if (acc.aov.size() == r.aov.size())
                 for (size_t c = 0; c < stride; ++c) acc.aov[i * stride + c] += Nt * r.aov[i * stride + c];
         }
-        trusted = N ? double(used) / double(N) : 0;
+        shareFront = N ? double(used) / double(N) : 0, sharePlanar = N ? double(usedPlanar) / double(N) : 0;
+        shareBack = N ? double(usedBack) / double(N) : 0, regions = planar.regions;
+        trusted = shareFront + sharePlanar + shareBack;
+        // A pixel another layer holds asks for no probe: the probes go where no layer holds (the user: "would it be
+        // performant if the probes were culled ...").
+        if (o.quietNeed && field.cellsX) {
+            const unsigned cell = std::max(2u, o.cell);
+            std::vector<uint8_t> open(field.need.size(), 0);
+            for (size_t i = 0; i < N; ++i)
+                if (!ok[i] && !layer[i]) open[size_t((i / W) / cell) * field.cellsX + (i % W) / cell] = 1;
+            for (size_t c = 0; c < field.need.size(); ++c) field.need[c] = field.need[c] && open[c];
+        }
+        // The back plane takes this frame's samples, the light it held folded in (faded: the camera has moved).
+        const auto storeBegan = std::chrono::steady_clock::now();
+        if (o.backPlane) {
+            back.store(f.view, W, H, o.threads, reflectedOf(o.probeFull ? r.rgba : direct, r), demod && o.backDemod ? &albedo : nullptr, depthMin,
+                       depthMax, total, fo.tol, fo.demodFloor, &seen, moved ? o.fade : 1.0, o.backCap);
+            backCamera = camera, haveBack = true;
+        }
+        planesSeconds = std::chrono::duration<double>(storeBegan - planesBegan).count();
+        storeSeconds = secondsSince(storeBegan);
         if (!o.debugFolder.empty()) {
-            std::vector<float> mask(N * 4, 1.0f);
+            std::vector<float> mask(N * 4, 1.0f), layers(N * 4, 1.0f);
             for (size_t i = 0; i < N; ++i) {
                 const float v = (fstate[i] == FieldTrusted && ok[i]) ? 1.0f : ok[i] ? 0.5f : 0.0f;
                 // Red: phase 1 used (1), verified (0.5), neither (0); green: the field's state (none 0, trusted 1/3, a
                 // gap 2/3, a light edge 1); blue: phase 2's samples this frame over 64.
                 mask[i * 4] = v, mask[i * 4 + 1] = float(fstate[i]) / 3.0f, mask[i * 4 + 2] = float(nCount[i]) / 64.0f;
+                // The layer phase 1 came from: red the front, green a slanted plane, blue the back plane.
+                layers[i * 4] = layer[i] == 1, layers[i * 4 + 1] = layer[i] == 2, layers[i * 4 + 2] = layer[i] == 3;
             }
             auto put = [&](const char* name, const std::vector<float>& v) {
                 std::FILE* fh = std::fopen((o.debugFolder + "/" + name).c_str(), "wb");
                 if (fh) std::fwrite(v.data(), sizeof(float), v.size(), fh), std::fclose(fh);
             };
-            put("recon.rgba", recon), put("mask.rgba", mask), put("direct.rgba", direct);
+            put("recon.rgba", recon), put("mask.rgba", mask), put("direct.rgba", direct), put("layers.rgba", layers);
+            put("light1.rgba", light1);
+            // Each Rhea frame's own, kept (frame k: the field's frame count): the layers and their light frame by frame.
+            const std::string k = std::to_string(frame);
+            put(("layers-" + k + ".rgba").c_str(), layers), put(("light1-" + k + ".rgba").c_str(), light1);
+            put(("beauty-" + k + ".rgba").c_str(), r.rgba);
         }
         const unsigned K = ++acc.frames;
         out = r;
@@ -359,6 +468,37 @@ public:
         const FieldOptions fo = fieldOptions();
         field.absorb(f, op.probeFull ? x.rgba : d, demod ? &a : nullptr, samples, false, op.fade, op.cleanAbsorb ? &dmin : nullptr,
                      op.cleanAbsorb ? &dmax : nullptr, &fo);
+        // The back plane takes XPU2's frame too: the camera unmoved since Rhea's frame, its points stay where they are and
+        // XPU2's samples fold into them (a frame stopped early keeps the pixels it never reached).
+        const auto restBegan = std::chrono::steady_clock::now();
+        if (op.backPlane) {
+            BackPlane::Seen same;
+            const bool unmoved = haveBack && sameCamera(backCamera, camera);
+            if (unmoved) back.asSeen(same);
+            back.store(f.view, W, H, op.threads, reflectedOf(op.probeFull ? x.rgba : d, x), demod && op.backDemod ? &a : nullptr, dmin, dmax, samples,
+                       fo.tol, fo.demodFloor, unmoved ? &same : nullptr, 1.0, op.backCap);
+            backCamera = camera, haveBack = true;
+        }
+        restStoreSeconds = secondsSince(restBegan);
+    }
+    // A picture's light (four a pixel) less what its pixels see emitted (the emission output: lights seen directly and
+    // emissive surfaces), for the back plane: a light seen in front of a wall has no depth of its own (the depth outputs
+    // are the wall's), and kept as the wall's light it went with the wall on a move, a white blob where the light no
+    // longer was (Sponza, DESIGN.md 25). The frame that uses the back plane adds its own pixels' emission.
+    std::vector<float> reflectedOf(const std::vector<float>& light, const async::RenderResult& r) const {
+        std::vector<float> out(light);
+        const size_t stride = N ? r.aov.size() / N : 0;
+        if (!stride || outputs.emission < 0 || light.size() != N * 4) return out;
+        for (size_t i = 0; i < N; ++i)
+            for (int c = 0; c < 3; ++c) out[i * 4 + c] = std::max(0.0f, light[i * 4 + c] - r.aov[i * stride + outputs.emission + c]);
+        return out;
+    }
+    // The back plane's pixels (a share of the picture): what the next camera move can lift.
+    double backShare() const {
+        if (back.valid.empty()) return 0;
+        size_t n = 0;
+        for (uint8_t v : back.valid) n += v;
+        return double(n) / double(back.valid.size());
     }
 
 private:
@@ -369,8 +509,12 @@ private:
     ProbeField field;
     FieldFrame f;
     Sums acc;
-    surface::Camera camera{};
-    bool haveCamera = false, moved = true;
+    PlanarLayer planar;
+    BackPlane back;
+    BackPlane::Seen seen;
+    std::vector<uint8_t> layer;  // the layer each pixel's phase 1 came from: 0 none, 1 the front, 2 a slanted plane, 3 the back plane
+    surface::Camera camera{}, backCamera{};
+    bool haveCamera = false, moved = true, haveBack = false;
     unsigned frame = 0, moves = 0, W = 0, H = 0, nLo = 2, nHi = 2, nBg = 1;
     float filterWidth = 1.0f;
     size_t N = 0;

@@ -64,6 +64,7 @@ struct FieldFrame {
     std::vector<double> xy, w;     // their raster points and inverse depths
     std::vector<Plane> h;          // their tangent planes
     std::vector<double> facing;    // how squarely their surfaces face the camera (View::facing)
+    std::vector<D3> normal;        // their surfaces' unit normals (trace space), turned to face the camera (planes.h)
     std::vector<int> pixel;        // their pixels
     std::vector<uint8_t> fresh;    // new this frame
     std::vector<int> tris;         // triangles, three indices into ids
@@ -127,7 +128,9 @@ public:
                 const auto& tr = e.data->triangles[p.prim];
                 const surface::V3 a = vertexOf(e, *e.data, tr.a), b = vertexOf(e, *e.data, tr.b), c = vertexOf(e, *e.data, tr.c);
                 const double ux = b.x - a.x, uy = b.y - a.y, uz = b.z - a.z, vx = c.x - a.x, vy = c.y - a.y, vz = c.z - a.z;
-                f.facing.push_back(f.view.facing(D3{uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx}, p.P));
+                const D3 n{uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx};
+                f.facing.push_back(f.view.facing(n, p.P));
+                f.normal.push_back(f.view.toward(n, p.P));
             }
             f.pixel.push_back(py * int(width) + px), f.fresh.push_back(isFresh || p.weight <= 0);
             grid[size_t(py / op.cell) * cellsX + px / op.cell].push_back(int(f.ids.size()) - 1);

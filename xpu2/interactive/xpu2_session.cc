@@ -3135,6 +3135,15 @@ int session(const Args& args, const fs::path& directory) {
                     rheaView.op.slant = envOn("XPU2_SESSION_RHEA_SLANT", true);
                     rheaView.op.planeLight = envOn("XPU2_SESSION_RHEA_PLANE_LIGHT", true);
                     rheaView.op.residentTextures = envOn("XPU2_SESSION_RHEA_RESIDENT_TEXTURES", true);
+                    // The virtual planes past the probes (rhea/planes.h): slanted planes, the back plane, and whether a pixel
+                    // either holds still asks for a probe.
+                    rheaView.op.planar = envOn("XPU2_SESSION_RHEA_PLANAR", true);
+                    rheaView.op.backPlane = envOn("XPU2_SESSION_RHEA_BACK_PLANE", true);
+                    rheaView.op.quietNeed = envOn("XPU2_SESSION_RHEA_QUIET_NEED", true);
+                    rheaView.op.backDemod = envOn("XPU2_SESSION_RHEA_BACK_DEMOD", false);
+                    rheaView.op.backGather = envOn("XPU2_SESSION_RHEA_BACK_GATHER", true);
+                    if (const char* v = std::getenv("XPU2_SESSION_RHEA_PLANAR_WEIGHT")) rheaView.op.planarWeight = std::atof(v);
+                    if (const char* v = std::getenv("XPU2_SESSION_RHEA_BACK_WEIGHT")) rheaView.op.backWeight = std::atof(v);
                     if (const char* debug = std::getenv("XPU2_SESSION_RHEA_DEBUG")) rheaView.op.debugFolder = debug;
                     const auto began = Clock::now();
                     async::GpuLane* lane = gpu && gpuUsable ? gpu.get() : nullptr;
@@ -3168,11 +3177,13 @@ int session(const Args& args, const fs::path& directory) {
                         rheaView.finish(r, shown);
                         rheaSeconds = std::chrono::duration<double>(Clock::now() - frameBegan).count();
                         std::printf("MoonRay XPU2: Rhea frame: probes %.3f s (%zu, %zu new), render %.3f s (%llu GPU samples, %llu CPU), finish %.3f s; "
-                                    "%.0f%% of the picture verified, phase 1 in %.0f%%\n",
+                                    "%.0f%% of the picture verified, phase 1 in %.0f%% (probes %.0f%%, slanted planes %.0f%% of %zu, back plane %.0f%%; "
+                                    "planes %.3f s, back plane kept %.3f s)\n",
                                     std::chrono::duration<double>(prepared - frameBegan).count(), rheaView.probes, rheaView.spawned,
                                     std::chrono::duration<double>(rendered - prepared).count(), (unsigned long long)r.gpuSamples,
                                     (unsigned long long)r.cpuSamples, std::chrono::duration<double>(Clock::now() - rendered).count(),
-                                    rheaView.verified * 100.0, rheaView.trusted * 100.0);
+                                    rheaView.verified * 100.0, rheaView.trusted * 100.0, rheaView.shareFront * 100.0, rheaView.sharePlanar * 100.0,
+                                    rheaView.regions, rheaView.shareBack * 100.0, rheaView.planesSeconds, rheaView.storeSeconds);
                         std::fflush(stdout);
                         if (watch.previewAov && watch.previewAov() && watch.previewResult) {
                             watch.previewResult(shown, 0.0);
@@ -3238,9 +3249,9 @@ int session(const Args& args, const fs::path& directory) {
                         }
                     }
                     shown.seconds = std::chrono::duration<double>(Clock::now() - began).count();
-                    std::printf("MoonRay XPU2: realtime by Rhea: %s, then XPU2's frame at rest %s in %.2f s; %zu probes\n",
+                    std::printf("MoonRay XPU2: realtime by Rhea: %s, then XPU2's frame at rest %s in %.2f s; %zu probes, back plane %.0f%% (kept in %.3f s)\n",
                                 moving ? "a frame for the camera's move" : "the probes placed", x.cancelled ? "stopped" : x.drained ? "drained" : "done",
-                                shown.seconds - rheaSeconds, rheaView.probes);
+                                shown.seconds - rheaSeconds, rheaView.probes, rheaView.backShare() * 100.0, rheaView.restStoreSeconds);
                     std::fflush(stdout);
                     return shown;
                 };

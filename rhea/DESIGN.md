@@ -786,7 +786,7 @@ The user: "let XPU2 handle the camera at rest, and Rhea handle drags and camera 
   samples were rendered again. The demodulated light keeps the probes right whichever detail lit them: a move's frame
   divides out the coarse colour, XPU2's the fine.
 
-## 25. Rhea's virtual planes: three perpetual layers (planned, 2026-11-21)
+## 25. Rhea's virtual planes: three perpetual layers (2026-11-21)
 
 The user: "there should be a virtual plane that is camera resolution size that is behind any geometry. This can be
 calculated by the z-buffer"; "so Rhea concerning the virtualized planes, theres the back plane, and the slanted plane
@@ -806,3 +806,36 @@ holds for it (the GPU's verification decides):
   depth and light. On a camera move each pixel is reprojected by its depth into the new view and kept where the new
   frame's depths say it is still what the pixel sees: distant objects and the background, too small or too far for
   probes, have per-pixel light from the first frame on.
+
+**As built** (`rhea/planes.h`, wired into `Realtime::finish` and `absorbRest`; RESULTS.md section 20). A pixel of a camera
+move's frame takes phase 1 from the first layer that holds for it, front, then slanted, then back, each judged by the
+frame's own depths:
+
+- **The front hyperplane:** as before (trusted and verified).
+- **The slanted planes** (`PlanarLayer`): the frame's probes joined along the front triangulation's edges where their
+  normals agree within 3 degrees and each lies on the other's plane (within the tolerance times its depth); a region of
+  three probes or more is triangulated in its own plane's coordinates (two axes in the plane), its triangles kept to
+  sides of at most 4 cells (a region's triangulation spans its convex hull, whose long sides cross what the region does
+  not hold), drawn into the picture nearest first. A pixel takes its plane where the front triangle failed for its
+  geometry (a gap, the verification, none), never where it was refused for its light (a light edge: a plane's larger
+  triangle has corners that agree across the shadow), and only where its depths lie on the plane (`planeHolds`). Its light
+  is the corners', demodulated, perspective-correct over the plane. None for spherical, fisheye and dome cameras (a
+  plane does not lift to a plane). Its light counts for a quarter of the probes' (`planarWeight`): against the
+  reference it was 2 to 3 times better than the pixels' own samples, and on Sponza 4 to 22% bright in some frames.
+- **The back plane** (`BackPlane`): camera resolution, a pixel each where the picture met one surface (its nearest and
+  farthest depths within twice the tolerance): the light its surface reflects (the beauty less the emission output: a
+  light seen in front of a wall has no depth of its own, and kept as the wall's it went with the wall on a move, a
+  white blob where the light no longer was), not demodulated (glossy light divided by a dark colour and multiplied by
+  another came back 2 to 3 times too bright, and the frame at rest's fine texture beats a move's coarse one), its weight
+  the samples behind it. A camera move's frame looks it up from its own depths (`gather`): each pixel's point found
+  where it lay in the stored view, its light blended bilinearly from the four stored pixels about it that saw that
+  surface (lifted depths within reach), with the pixel's own emission added; the first version lifted each stored point
+  to the pixel it landed in, its texture and edges up to half a pixel off, and its light was half as good. The frame's
+  samples then fold into what it found (faded by 0.95 for the move), and XPU2's frame at rest folds its samples into the
+  same camera's: the back plane gathers samples over the frames as the probes do. Weight: its samples, at most m0.
+- **Fewer probes:** a cell any layer holds asks for no new probe (`quietNeed`), the start of the user's culling question
+  (section 24): the planes take over where the front triangulation would have asked for more probes.
+
+The CPU's part grows by the planes (about 20 ms a frame on the test scene at 320 x 240): on a scene whose moves come 0.3
+s apart that is XPU2's samples given up; on Sponza (4 s) nothing. The perspective and orthographic cameras find a
+pixel's point from its depth without a camera ray.
