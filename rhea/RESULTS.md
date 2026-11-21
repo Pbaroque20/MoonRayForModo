@@ -6,9 +6,9 @@ Rhea was named Sol, and before that "Bregman", earlier the same day; sections 2 
 ## In short
 
 **Rhea in XPU2's session, every camera (section 18).** Rhea runs as the kit's XPU2 RT on perspective, depth of
-field, motion blur, orthographic, spherical, fisheye and dome cameras; at the realtime frame's 32 samples a pixel its
-picture has less per-pixel and block error than XPU2's on each (perspective 1.32e-5 against 4.50e-5), taking about
-twice as long to end.
+field, motion blur, orthographic, spherical, fisheye and dome cameras. At the end of a realtime frame, at equal
+samples, its picture is behind XPU2's (XPU2's samples go where the noise is, and phase 1 still weighs half); an
+earlier table that had it ahead compared about 62 samples a pixel with 32 (corrected in section 18).
 
 **The denoiser (section 17).** Through the kit's realtime denoiser (OptiX), XPU2's 2-sample frames catch up with
 Rhea's, and with diffuse bounces pass them (block error 0.9e-3 against 1.2e-3): Rhea's error is blotches, which a
@@ -696,6 +696,28 @@ MSE / block error; Rhea's log: the picture verified, and phase 1's share of it.
 
 Mean ratios 0.9996 to 1.0000. Rhea's frame ends in 0.9 to 1.2 s against XPU2's 0.25 to 0.65 s (the CPU's part between
 the GPU's frames; DESIGN.md 21).
+
+**Correction (the same day): those frames were not of equal samples.** Rhea's frames at rest doubled their phase 2
+samples until the least pixel had the frame's 32, which took five frames of 2, 4, 8, 16 and 32: about 62 a pixel
+(and the probes' own) against XPU2's 32. With the last frame taking only what each pixel lacks (`RealtimeOptions::
+target`, DESIGN.md 23), both at 32 a pixel:
+
+| Camera | Rhea | XPU2 |
+|---|---|---|
+| perspective | 3.25e-5 / 2.69e-4 | 4.50e-5 / **1.66e-4** |
+| depth of field | 1.14e-4 / 3.27e-4 | **9.01e-5 / 2.49e-4** |
+| motion blur | 8.15e-5 / 2.69e-4 | **7.27e-5 / 2.20e-4** |
+| orthographic | 4.87e-5 / 2.50e-4 | 6.44e-5 / **1.81e-4** |
+| spherical | 9.43e-5 / 1.97e-4 | **3.40e-5 / 1.21e-4** |
+| fisheye | 1.61e-4 / 1.98e-4 | **1.32e-4 / 1.37e-4** |
+| dome | 6.64e-5 / 1.42e-4 | **2.20e-5 / 6.73e-5** |
+
+Rhea's frame then ends in 0.6 to 0.8 s against XPU2's 0.25 to 0.65 s. At the end of a realtime frame Rhea is behind:
+XPU2's 32 a pixel are its sampling generations' average, spent where the picture is noisy (little on the sky the wide
+cameras see), where Rhea's frames turn generations off and spend them evenly; and phase 1 still weighs about half at
+the end (32 against the pixel's 32 and the probes'), its triangles' noise showing as block error. Rhea's case is the
+moving picture (2 samples a frame: section 16), not the one at rest.
+
 
 How it got there:
 

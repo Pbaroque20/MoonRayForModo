@@ -723,3 +723,26 @@ field and bokeh, orthographic, spherical, fisheye and dome, and motion blur).
 - Refused (XPU2's frames as before): a bake camera, a dome's stereo eyes, an inside-out spherical camera.
 - Tried and left off: a pixel verifies only where its alpha is whole (misses leave no depth). It held back probes that
   were right on the wide cameras, and the out-of-focus bias it was meant for was the summing above.
+
+## 23. Slanted surfaces, and the frame's samples at rest (2026-11-20)
+
+The user: "i think with the issue with Sponza is that Rhea needs another plane that can handle slanted planes. We can
+create another virtualized plane to triangulate the angle".
+
+- **Sponza in XPU2's session** (192 x 108, a realtime frame of 32): Rhea runs on it now (the quadtree's first pass had
+  converged 8% and floored): 93% of the picture verified, phase 1 in 13%. Of the pixels verified, a triangle's
+  sandwich gap held back 46 to 51% edge on (|N.z| under 0.1) and 22% face on; a light edge, 5 to 10% edge on and 37%
+  face on (`rhea/tools/slant_study.py`).
+- **The surface's own plane** (`FieldOptions::slant`, `planeLight`): a triangle's geometric fit judged along its
+  surface's normal, the gap's tolerance in the lifted depth tol / cos (the surface's angle to the camera, at most 20
+  times); and its light interpolated over the surface, each corner weighted by its w (perspective-correct). On Sponza
+  the gap's share edge on fell from 51% to 46%, the rest as it was; on the cameras it is neutral but for the spherical
+  camera's block error (1.69e-4 to 1.62e-4 with the light over the surface). Kept: they are right, and cost nothing.
+  The gaps that remain on Sponza's slanted surfaces are geometry (bricks, tiles, arches meeting), not the lift's
+  magnification.
+- **The frame's samples at rest** (`RealtimeOptions::target`): at rest no pixel takes more phase 2 samples than it lacks
+  of the frame's. The doubling frames had overshot to about 62 a pixel (the last of five doubling the cost for 2), so
+  the cameras' table (RESULTS.md 18) compared Rhea at about 62 with XPU2 at 32; corrected there.
+- **Each Rhea frame in the MoonRay Terminal**: its probes' time and count, the renderer's, the render's (launches, GPU
+  samples, fine-detail tiles, provisional samples), the finish's. On Sponza the CPU's part is 0.02 s a frame; the first
+  frame carries the new probes' 64 samples and the textures' first reads.

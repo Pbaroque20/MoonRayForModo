@@ -39,6 +39,11 @@ struct FieldOptions {
     double spacing = 2;      // no new probe nearer than this (pixels) to another
     unsigned gapPasses = 2;  // sandwich-gap refinement passes a frame
     double tol = 0.002;      // the geometric tolerance (relative inverse depth)
+    // The surface's own plane (DESIGN.md 23): a triangle's geometric fit judged along its surface's normal, so that the
+    // sandwich gap's tolerance in the lifted depth is tol / cos of the surface's angle to the camera (at most 20 times:
+    // cos 0.05), and its light interpolated over the surface (each corner weighted by its w) rather than linearly over
+    // the picture, which perspective skews on a slanted surface.
+    bool slant = true, planeLight = true;
     double footprint = 0.5;  // the pixel filter's reach about a pixel's centre (pixels), for the verification
     double tauR = 0.25;      // the radiance-edge rule (bvd: the corners' light spread over their mean)
     float demodFloor = 0.02f;
@@ -58,6 +63,7 @@ struct FieldFrame {
     std::vector<int> ids;          // the field's probes in the frame
     std::vector<double> xy, w;     // their raster points and inverse depths
     std::vector<Plane> h;          // their tangent planes
+    std::vector<double> facing;    // how squarely their surfaces face the camera (View::facing)
     std::vector<int> pixel;        // their pixels
     std::vector<uint8_t> fresh;    // new this frame
     std::vector<int> tris;         // triangles, three indices into ids
@@ -117,6 +123,12 @@ public:
             const Plane h = f.view.tangent(e, *e.data, p.prim, p.P, x, y);
             const int px = std::min(int(width) - 1, std::max(0, int(x))), py = std::min(int(height) - 1, std::max(0, int(y)));
             f.ids.push_back(id), f.xy.push_back(x), f.xy.push_back(y), f.w.push_back(w), f.h.push_back(h);
+            {
+                const auto& tr = e.data->triangles[p.prim];
+                const surface::V3 a = vertexOf(e, *e.data, tr.a), b = vertexOf(e, *e.data, tr.b), c = vertexOf(e, *e.data, tr.c);
+                const double ux = b.x - a.x, uy = b.y - a.y, uz = b.z - a.z, vx = c.x - a.x, vy = c.y - a.y, vz = c.z - a.z;
+                f.facing.push_back(f.view.facing(D3{uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx}, p.P));
+            }
             f.pixel.push_back(py * int(width) + px), f.fresh.push_back(isFresh);
             grid[size_t(py / op.cell) * cellsX + px / op.cell].push_back(int(f.ids.size()) - 1);
         };
@@ -275,6 +287,13 @@ public:
                 double tx[3], ty[3], b[3];
                 for (int j = 0; j < 3; ++j) tx[j] = f.xy[2 * k[j]], ty[j] = f.xy[2 * k[j] + 1];
                 if (!barycentric(x + 0.5, y + 0.5, tx, ty, b, 1e-6)) b[0] = 1, b[1] = b[2] = 0;
+                // Over the surface, not the picture: the corners weighted by their w (perspective-correct; an
+                // orthographic picture is affine, its weights already the surface's).
+                if (op.planeLight && f.view.kind != View::Orthographic) {
+                    const double s = b[0] * f.w[k[0]] + b[1] * f.w[k[1]] + b[2] * f.w[k[2]];
+                    if (s > 0)
+                        for (int j = 0; j < 3; ++j) b[j] = b[j] * f.w[k[j]] / s;
+                }
                 double L[3][3], A[3][3];
                 bool lit = true;
                 for (int j = 0; j < 3; ++j) {
@@ -416,7 +435,11 @@ private:
                 }
         }
         for (size_t t = 0; t < T; ++t)
-            if (gap[t] > op.tol) f.triGap[t] = 1;
+            {
+                const int* k = &f.tris[3 * t];
+                const double cosine = op.slant && !f.facing.empty() ? std::max(0.05, (f.facing[k[0]] + f.facing[k[1]] + f.facing[k[2]]) / 3.0) : 1.0;
+                if (gap[t] > op.tol / cosine) f.triGap[t] = 1;
+            }
     }
 };
 

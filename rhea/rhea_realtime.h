@@ -29,6 +29,8 @@ struct RealtimeOptions {
     // At rest phase 2's samples a frame double each frame (the cap's, twice, four times... up to restMax): the sums are
     // XPU2's samples, and longer frames spend less on each frame's fixed costs, so the picture converges at XPU2's pace.
     unsigned restMax = 32;
+    // The frame's samples a pixel (the session's realtime frame: its plan's spp), phase 2's at rest never past it; 0: none.
+    unsigned target = 0;
     unsigned cell = 8, gapPasses = 2;
     double m0 = 32;           // phase 1 counts as this many samples (accumulated: not growing, DESIGN.md 18)
     // Spherical, fisheye and dome cameras: their light interpolated over triangles the lens bends, phase 1 counts for
@@ -39,6 +41,8 @@ struct RealtimeOptions {
     // A pixel verifies, or gives its probe light, only where its alpha is whole (off: on the test scene it held back
     // probes that were right, and the out of focus bias it was meant for was not misses; DESIGN.md 22).
     bool coverage = false;
+    // The surface's own plane for slanted surfaces (FieldOptions::slant, planeLight; DESIGN.md 23).
+    bool slant = true, planeLight = true;
     int probeFull = -1;       // -1: whole-light probes where the scene bounces diffusely
     unsigned threads = 4;     // the CPU's part (the field)
     // An investigation: each frame's reconstruction, phase 1's mask (0 XPU2's alone, 0.5 verified, 1 phase 1 used) and
@@ -152,6 +156,12 @@ public:
             const unsigned x = unsigned(i % W), y = unsigned(i / W);
             if (t >= 0 && !f.triGap[t]) nCount[i] = nLo;
             else if (t < 0 && field.sky[size_t(y / cell) * field.cellsX + x / cell]) nCount[i] = nBg;
+            // At rest no pixel takes more than it lacks of the frame's samples (op.target): the last frame of a run
+            // doubled its cost for the two samples it lacked (DESIGN.md 23).
+            if (!moved && op.target > 0 && !acc.nfull.empty()) {
+                const double lacking = double(op.target) - acc.nfull[i];
+                nCount[i] = unsigned(std::max(1.0, std::min(double(nCount[i]), std::ceil(lacking))));
+            }
         }
         total = nCount;
         std::vector<unsigned> extra(N, 0);
@@ -236,7 +246,9 @@ public:
             std::vector<float> mask(N * 4, 1.0f);
             for (size_t i = 0; i < N; ++i) {
                 const float v = (fstate[i] == FieldTrusted && ok[i]) ? 1.0f : ok[i] ? 0.5f : 0.0f;
-                mask[i * 4] = mask[i * 4 + 1] = mask[i * 4 + 2] = v;
+                // Red: phase 1 used (1), verified (0.5), neither (0); green: the field's state (none 0, trusted 1/3, a
+                // gap 2/3, a light edge 1); blue: phase 2's samples this frame over 64.
+                mask[i * 4] = v, mask[i * 4 + 1] = float(fstate[i]) / 3.0f, mask[i * 4 + 2] = float(nCount[i]) / 64.0f;
             }
             auto put = [&](const char* name, const std::vector<float>& v) {
                 std::FILE* fh = std::fopen((o.debugFolder + "/" + name).c_str(), "wb");
@@ -286,6 +298,7 @@ private:
         FieldOptions fo;
         fo.cell = std::max(2u, op.cell), fo.gapPasses = op.gapPasses, fo.tol = op.tol;
         fo.footprint = 0.5 * std::max(1.0, double(filterWidth)), fo.tauR = op.tauR, fo.demod = op.demod, fo.threads = op.threads;
+        fo.slant = op.slant, fo.planeLight = op.planeLight;
         return fo;
     }
     // The same picture's camera: its place, projection, lens and the settings of its kind (a focus or a fisheye's field of

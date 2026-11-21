@@ -3132,8 +3132,11 @@ int session(const Args& args, const fs::path& directory) {
                     // and masks written into a folder (XPU2_SESSION_RHEA_DEBUG).
                     if (const char* m0 = std::getenv("XPU2_SESSION_RHEA_M0")) rheaView.op.m0 = rheaView.op.m0Directional = std::atof(m0);
                     rheaView.op.coverage = envOn("XPU2_SESSION_RHEA_COVERAGE", false);
+                    rheaView.op.slant = envOn("XPU2_SESSION_RHEA_SLANT", true);
+                    rheaView.op.planeLight = envOn("XPU2_SESSION_RHEA_PLANE_LIGHT", true);
                     if (const char* debug = std::getenv("XPU2_SESSION_RHEA_DEBUG")) rheaView.op.debugFolder = debug;
                     const double target = std::max(1u, scene.plan->spp);
+                    rheaView.op.target = unsigned(target);
                     const auto began = Clock::now();
                     async::GpuLane* lane = gpu && gpuUsable ? gpu.get() : nullptr;
                     unsigned frames = 0;
@@ -3146,17 +3149,22 @@ int session(const Args& args, const fs::path& directory) {
                             shown.drained = true;
                             break;
                         }
+                        const auto frameBegan = Clock::now();
                         auto plan = rheaView.prepare(scene.plan, *scene.cpuScene);
                         if (lane) lane->updateCamera(plan);
+                        const auto prepared = Clock::now();
                         async::RenderOptions o = base;
                         async::Watch inner;
                         inner.stop = watch.stop;
                         o.watch = &inner;
                         async::RenderResult r;
+                        double made = 0;
                         {
                             async::Renderer frame(plan, *scene.cpuScene, lane);
+                            made = std::chrono::duration<double>(Clock::now() - prepared).count();
                             r = frame.render(o);
                         }
+                        const auto rendered = Clock::now();
                         if (r.failed) {
                             if (lane) lane->updateCamera(scene.plan);
                             return r;
@@ -3167,6 +3175,14 @@ int session(const Args& args, const fs::path& directory) {
                         }
                         rheaView.finish(r, shown);
                         ++frames;
+                        // Each Rhea frame in the MoonRay Terminal: where its time went.
+                        std::printf("MoonRay XPU2: Rhea frame %u: probes %.3f s (%zu, %zu new), renderer made %.3f s, render %.3f s (%llu GPU "
+                                    "launches, %llu GPU samples, %llu CPU, fine-detail tiles loaded %llu, provisional %llu), finish %.3f s\n",
+                                    frames, std::chrono::duration<double>(prepared - frameBegan).count(), rheaView.probes, rheaView.spawned, made,
+                                    std::chrono::duration<double>(rendered - prepared).count() - made, (unsigned long long)r.launches,
+                                    (unsigned long long)r.gpuSamples, (unsigned long long)r.cpuSamples, (unsigned long long)r.fineLoaded,
+                                    (unsigned long long)r.provisional, std::chrono::duration<double>(Clock::now() - rendered).count());
+                        std::fflush(stdout);
                         const double least = rheaView.leastSamples(), fraction = std::min(1.0, least / target);
                         if (watch.previewAov && watch.previewAov() && watch.previewResult) {
                             watch.previewResult(shown, fraction);

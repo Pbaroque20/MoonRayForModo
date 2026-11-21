@@ -92,6 +92,19 @@ public:
     // A camera-space point's depth as the depth output measures it: -z for perspective and orthographic cameras, the
     // ray's length for the others (Camera::computeZDistance).
     double depthOf(const D3& c) const { return kind == Directional ? std::sqrt(c.x * c.x + c.y * c.y + c.z * c.z) : -c.z; }
+    // How squarely a surface faces the camera at a point: |cos| of the angle between its normal (trace space) and the
+    // ray to the point (1 face on, 0 edge on).
+    double facing(const D3& n, const surface::V3& p) const {
+        const D3 nc{n.x * toCamera[0][0] + n.y * toCamera[1][0] + n.z * toCamera[2][0], n.x * toCamera[0][1] + n.y * toCamera[1][1] + n.z * toCamera[2][1],
+                    n.x * toCamera[0][2] + n.y * toCamera[1][2] + n.z * toCamera[2][2]};
+        D3 v{0, 0, -1};
+        if (kind != Orthographic) {
+            const D3 c = camera(p);
+            v = {c.x - (kind == Perspective ? fp.x : 0.0), c.y - (kind == Perspective ? fp.y : 0.0), c.z - (kind == Perspective ? fp.z : 0.0)};
+        }
+        const double nl = std::sqrt(nc.x * nc.x + nc.y * nc.y + nc.z * nc.z), vl = std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+        return nl > 0 && vl > 0 ? std::fabs(nc.x * v.x + nc.y * v.y + nc.z * v.z) / (nl * vl) : 1.0;
+    }
     // The lifted depth of a depth (the verification's, from the depth output).
     double wOf(double depth) const { return kind == Orthographic ? 1.0 - depth / K : 1.0 / depth; }
 
