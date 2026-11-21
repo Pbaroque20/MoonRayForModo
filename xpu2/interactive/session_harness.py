@@ -89,6 +89,8 @@ def main():
     p.add_argument('--env', action='append', default=[])
     p.add_argument('--timeout', type=float, default=600)
     p.add_argument('--stop-after', type=float, default=0, help='send the next delta this many seconds into a frame')
+    p.add_argument('--first-done', action='store_true',
+                   help="with --stop-after: let the scene's first frame end before the first delta (a drag begun from a picture at rest)")
     p.add_argument('--drain-after', type=float, default=0, help='ask the last frame to finish with what it has after this many seconds')
     p.add_argument('--keep-pictures', action='store_true', help='save every progressive picture, as frame-<id>-<seconds>.pfm')
     p.add_argument('--memory-binary', action='store_true', help="hand a .rdlb scene over in shared memory, as the kit does for XPU2 "
@@ -188,7 +190,7 @@ def main():
     identity = 1
     try:
         for delta in a.delta:
-            if a.stop_after:
+            if a.stop_after and not (a.first_done and identity == 1):
                 time.sleep(a.stop_after)
             else:
                 wait(lambda: state['done'] and state['done'][1] == identity, a.timeout)

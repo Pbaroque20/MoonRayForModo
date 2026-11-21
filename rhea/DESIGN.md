@@ -839,3 +839,50 @@ frame's own depths:
 The CPU's part grows by the planes (about 20 ms a frame on the test scene at 320 x 240): on a scene whose moves come 0.3
 s apart that is XPU2's samples given up; on Sponza (4 s) nothing. The perspective and orthographic cameras find a
 pixel's point from its depth without a camera ray.
+
+## 26. Drags (2026-11-21)
+
+The user: "right now on camera drag, xpu2 realtime sometimes fails and falls back to XPU. Rhea just doesn't update fast
+enough even on simple scenes".
+
+**The fallback** was a crash of Rhea's: the back plane's store read its prior light through a null pointer where there
+was none (XPU2's first frame of a scene, or the first after an edit, run to its end before any camera move), and the
+session ended (0xC0000005 reading 0x30); the kit then renders the preview with MoonRay XPU. The harness had never let
+such a frame end (each test's first move stopped it); a drag begun from a picture at rest does.
+
+**Too slow.** A frame of Rhea's is shown only once it has landed: on the test scene 0.2 s at 640 x 360 and 1.15 s at
+1280 x 720 (22,000 probes at 8-pixel cells), while the kit sends a drag's steps about 60 ms apart (panel.py's timer), so
+during a drag no frame of Rhea's was ever shown; a step's first picture came 2.5 to 5 times later than XPU2's alone.
+Three changes:
+
+- **The warp** (`Realtime::warpTo`): each camera move first shows the last picture moved into the new view, each pixel
+  lifted by its own depth output and the nearest kept, the holes a move opens filled from the farthest neighbour (what
+  lay behind), its outputs moved with it and its depth outputs the new view's (so that it can be moved again). No GPU
+  work: 17 to 23 ms at 640 x 360, 64 to 75 ms at 1280 x 720. Not for spherical, fisheye and dome cameras (their lift is a
+  search a pixel). XPU2's pictures of the move fold into it (`mergeWarp`) where their depths hold its points, the warp
+  counting as 8 samples (a filled hole as 2) and fading as XPU2's frame goes on. A frame a move stops gives no picture
+  of its own: the session keeps the last one it published.
+- **No frame of Rhea's while dragging:** a move that comes before Rhea's last frame would have landed (or whose frame
+  the move stopped) goes to XPU2's frame at once, with the warp; the probes and the back plane still learn from XPU2's
+  frames. Rhea's own frame stays for moves far enough apart that it lands (Sponza's).
+- **The drag's next step looked for before the GPU** (`dragHold`, 80 ms): within a drag (Rhea's frame for the last move
+  stopped by this one, until XPU2's frame ends or runs longer than Rhea's would; or a move begun within 0.15 s of the
+  last) the warp is shown and the next step waited for a moment; when it comes, nothing of the GPU's has begun, where a
+  frame begun took 0.2 s to stop at 720p. Steps then go through every 80 ms at 640 x 360 and at 1280 x 720 alike (the
+  kit's 60 ms and the session's own), each with its picture 10 ms (640 x 360) or 37 ms (720p) after it. A move on its own
+  goes to the GPU at once: held, the test scene's moves 0.33 s apart lost a quarter of XPU2's time and doubled their
+  error. The time between moves alone does not tell a drag: once one step goes to the GPU its stop spaces the next
+  past any threshold, and the drag stays slow (0.22 s a step at 720p).
+- **Probe cells by the picture's size** (`cellsByPicture`): the cell grows with the square root of the pixels over 320 x
+  240's, so 1,100 probes at 1280 x 720 where there had been 22,000 (placing them 0.06 s, not 0.12).
+- **No copies of the picture:** the warp's picture and the last one published are Realtime's own vectors, swapped, not
+  copied (70 MB a picture at 720p with its outputs).
+
+**Pruning** (the user's culling question; `ProbeField::prune`): after a move's frame, a probe whose neighbours all lie on
+its plane (its star closed) goes dormant where their light, fitted linearly over the picture, gives its own within its
+noise (twice the standard error from the spread of the lights it took), never past 10% nor short of 3%; its neighbours
+wait for the next frame. A dormant probe takes no samples and no place in the triangulation but holds its cell (no new
+probe there), and wakes where its cell's verification fails or the reconstruction at its point departs from its light.
+On the test scene it puts 130 to 250 probes to sleep a frame, on Sponza 0 to 12 (its probes' light too noisy to judge);
+the pictures are the same with it and without (RESULTS.md section 21): at these sizes the probes' samples are a few
+thousand of a frame's hundreds of thousands, so it saves little yet.

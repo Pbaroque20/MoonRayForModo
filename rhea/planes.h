@@ -20,13 +20,7 @@ namespace rhea {
 
 // A probe's light and colour as summed (persistent.h's WorldProbe), demodulated where both are bright enough.
 inline bool probeLight(const WorldProbe& p, float demodFloor, double light[3], bool& demod) {
-    if (!(p.weight > 0)) return false;
-    double a[3];
-    for (int c = 0; c < 3; ++c) light[c] = p.sum[c] / p.weight, a[c] = p.sumAlbedo[c] / p.weight;
-    demod = 0.2126 * a[0] + 0.7152 * a[1] + 0.0722 * a[2] >= demodFloor;
-    if (demod)
-        for (int c = 0; c < 3; ++c) light[c] /= std::max(a[c], double(demodFloor));
-    return true;
+    return ProbeField::probeLightOf(p, demodFloor, light, demod);
 }
 
 class PlanarLayer {
@@ -35,6 +29,8 @@ public:
         int k[3];       // the frame's probes (FieldFrame indices)
         Plane plane;    // its lifted plane (the verification's)
         bool edge = false;  // its corners' light too far apart (the radiance-edge rule)
+        bool bridged = false;  // it spans what does not lie on its plane (support)
+        int covered = 0;       // its pixels (their centres inside it)
     };
     std::vector<Tri> tris;
     std::vector<int> triOf;  // each pixel's nearest planar triangle, -1 none
@@ -59,16 +55,7 @@ public:
             while (parent[a] != a) a = parent[a] = parent[parent[a]];
             return a;
         };
-        auto samePlane = [&](int a, int b) {
-            const D3& na = f.normal[a];
-            const D3& nb = f.normal[b];
-            if (na.x * nb.x + na.y * nb.y + na.z * nb.z < 0.9986) return false;  // within 3 degrees
-            const surface::V3& pa = probes[f.ids[a]].P;
-            const surface::V3& pb = probes[f.ids[b]].P;
-            const D3 d{double(pb.x) - pa.x, double(pb.y) - pa.y, double(pb.z) - pa.z};
-            const double da = f.view.depthOf(f.view.camera(pa)), db = f.view.depthOf(f.view.camera(pb));
-            return std::fabs(na.x * d.x + na.y * d.y + na.z * d.z) <= tol * da && std::fabs(nb.x * d.x + nb.y * d.y + nb.z * d.z) <= tol * db;
-        };
+        auto samePlane = [&](int a, int b) { return ProbeField::samePlane(f, probes, a, b, tol); };
         for (size_t t = 0; t * 3 < f.tris.size(); ++t)
             for (int e = 0; e < 3; ++e) {
                 const int a = f.tris[3 * t + e], b = f.tris[3 * t + (e + 1) % 3];
@@ -142,6 +129,7 @@ public:
                         if (!barycentric(px + 0.5, py + 0.5, x, y, b, 1e-9)) continue;
                         const double here = tri.plane.at(px + 0.5, py + 0.5);
                         const size_t i = size_t(py) * W + px;
+                        ++tris[size_t(id)].covered;
                         if (here > best[i]) best[i] = here, triOf[i] = id;
                     }
             }
@@ -153,7 +141,7 @@ public:
     bool lightAt(const FieldFrame& f, const std::vector<WorldProbe>& probes, unsigned x, unsigned y, unsigned W, const float* pixelAlbedo,
                  float demodFloor, bool demodOn, double out[3]) const {
         const int t = triOf[size_t(y) * W + x];
-        if (t < 0 || tris[size_t(t)].edge) return false;
+        if (t < 0 || tris[size_t(t)].edge || tris[size_t(t)].bridged) return false;
         const Tri& tri = tris[size_t(t)];
         double tx[3], ty[3], b[3], light[3][3];
         bool dm[3], demod = demodOn && pixelAlbedo && 0.2126 * pixelAlbedo[0] + 0.7152 * pixelAlbedo[1] + 0.0722 * pixelAlbedo[2] >= demodFloor;
@@ -181,7 +169,26 @@ public:
     }
     const Plane* planeAt(unsigned x, unsigned y, unsigned W) const {
         const int t = triOf[size_t(y) * W + x];
-        return t < 0 ? nullptr : &tris[size_t(t)].plane;
+        return t < 0 || tris[size_t(t)].bridged ? nullptr : &tris[size_t(t)].plane;
+    }
+
+    // The frame's own depths over each triangle: one whose pixels do not lie on its plane, at least share of them, spans
+    // something nearer (an object standing on the plane, its foot and its shadow) or a hole, and is not used. Its corners
+    // lit and the plane in shadow under the object, its light had been 28 to 44% bright about Sponza's columns (DESIGN.md
+    // 25); the corners' light rule cannot see a shadow wholly inside a triangle. Returns the triangles kept.
+    size_t support(const View& view, const std::vector<float>& depthMin, const std::vector<float>& depthMax, const FieldOptions& fo, unsigned W,
+                   double share) {
+        std::vector<int> held(tris.size(), 0);
+        for (size_t i = 0; i < triOf.size(); ++i) {
+            const int t = triOf[i];
+            if (t >= 0 && ProbeField::planeHolds(view, tris[size_t(t)].plane, unsigned(i % W), unsigned(i / W), depthMin[i], depthMax[i], fo)) ++held[size_t(t)];
+        }
+        size_t kept = 0;
+        for (size_t t = 0; t < tris.size(); ++t) {
+            tris[t].bridged = double(held[t]) < share * double(tris[t].covered);
+            kept += !tris[t].bridged;
+        }
+        return kept;
     }
 };
 
@@ -320,7 +327,9 @@ public:
                 const double pw = had && prior->demod[i] == dm ? fade * prior->weight[i] : 0.0;
                 for (int c = 0; c < 3; ++c) {
                     const double v = dm ? light[i * 4 + c] / std::max(a[c], demodFloor) : light[i * 4 + c];
-                    const double mixed = (n * v + pw * prior->L[i * 3 + c]) / (n + pw);
+                    // prior->L only where there is a prior: XPU2's first frame of a scene ended with none, and read through
+                    // the null pointer it ended the session (0xC0000005 reading 0x30), the kit falling back to MoonRay XPU.
+                    const double mixed = pw > 0 ? (n * v + pw * prior->L[i * 3 + c]) / (n + pw) : v;
                     L[i * 3 + c] = std::isfinite(mixed) ? float(mixed) : 0.0f;
                 }
                 P[i * 3] = p.x, P[i * 3 + 1] = p.y, P[i * 3 + 2] = p.z;

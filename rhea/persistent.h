@@ -32,6 +32,14 @@ struct WorldProbe {
     unsigned born = 0, seen = 0;
     double lx = 0, ly = 0;  // where it was last seen in the picture (where a directional camera's lift starts looking)
     bool placed = false;
+    // Its noise: the luminance of each light it took, squared, times that light's samples (faded with the sums), and how
+    // many lights it took (ProbeField::noise).
+    double sumSq = 0;
+    unsigned absorbs = 0;
+    // Dormant (ProbeField::prune): its neighbours on its plane predict its light; it takes no samples and no part in the
+    // triangulation, but holds its cell (no new probe there) and wakes where the frame's verification fails in its cell
+    // or the reconstruction at its point departs from its light.
+    bool dormant = false;
 };
 
 struct FieldOptions {
@@ -52,6 +60,11 @@ struct FieldOptions {
     // At most this many probes a cell before a failed verification asks for another: where the frame's samples meet
     // more than one surface whatever the probes (out of focus, moving, an edge), more probes do not help.
     unsigned maxPerCell = 4;
+    // Pruning (ProbeField::prune): a probe with at least pruneWeight samples over at least 3 lights goes dormant where
+    // its neighbours' light, fitted over the picture, predicts its own within its noise (twice the deviation's standard
+    // error), never past pruneMax nor short of pruneMin (relative to its luminance).
+    bool prune = true;
+    double pruneWeight = 32, pruneMin = 0.03, pruneMax = 0.10;
 };
 
 enum FieldState : uint8_t { FieldNone = 0, FieldTrusted = 1, FieldGap = 2, FieldEdge = 3 };
@@ -72,6 +85,9 @@ struct FieldFrame {
     std::vector<Plane> triPlane;   // a triangle's plane (its interpolation)
     std::vector<int> triOf;        // each pixel's triangle, -1 none
     size_t candidates = 0, visible = 0, spawned = 0, gapSpawned = 0, flips = 0;
+    std::vector<int> dormantIds;   // the dormant probes the frame sees (ProbeField::prune)
+    std::vector<double> dormantXY;  // their raster points
+    size_t woken = 0;              // dormant probes woken by the last verification (their cell asked for a probe)
     double seconds = 0;
 };
 
@@ -135,10 +151,24 @@ public:
             f.pixel.push_back(py * int(width) + px), f.fresh.push_back(isFresh || p.weight <= 0);
             grid[size_t(py / op.cell) * cellsX + px / op.cell].push_back(int(f.ids.size()) - 1);
         };
+        std::vector<uint8_t> occupied(size_t(cellsX) * cellsY, 0);  // cells a dormant probe holds
         for (size_t k = 0; k < cand.size(); ++k)
             if (seen[k]) {
+                WorldProbe& p = probes[cand[k]];
+                p.seen = frameIndex;
+                if (p.dormant) {
+                    const int px = std::min(int(width) - 1, std::max(0, int(cx[k]))), py = std::min(int(height) - 1, std::max(0, int(cy[k])));
+                    const size_t cell = size_t(py / op.cell) * cellsX + px / op.cell;
+                    if (need[cell]) {
+                        p.dormant = false, ++f.woken;  // the verification failed in its cell: it serves again
+                    } else {
+                        p.lx = cx[k], p.ly = cy[k];
+                        occupied[cell] = 1;
+                        f.dormantIds.push_back(cand[k]), f.dormantXY.push_back(cx[k]), f.dormantXY.push_back(cy[k]);
+                        continue;
+                    }
+                }
                 add(cand[k], cx[k], cy[k], cw[k], false);
-                probes[cand[k]].seen = frameIndex;
             }
         f.visible = f.ids.size();
         auto near = [&](double x, double y) {
@@ -193,7 +223,7 @@ public:
             for (unsigned cyi = 0; cyi < cellsY; ++cyi)
                 for (unsigned cxi = 0; cxi < cellsX; ++cxi) {
                     const size_t cell = size_t(cyi) * cellsX + cxi;
-                    const bool empty = grid[cell].empty();
+                    const bool empty = grid[cell].empty() && !occupied[cell];
                     if (!need[cell] && !(empty && !sky[cell])) continue;
                     if (!empty && grid[cell].size() >= op.maxPerCell) continue;
                     // A pixel of the cell, jittered by the frame: the cell's centre region.
@@ -265,10 +295,14 @@ public:
             }
             if (moved)
                 for (int c = 0; c < 3; ++c) p.sum[c] *= fade, p.sumAlbedo[c] *= fade;
-            if (moved) p.weight *= fade;
+            if (moved) p.weight *= fade, p.sumSq *= fade;
             for (int c = 0; c < 3; ++c) {
                 p.sum[c] += n * rgba[px * 4 + c];
                 p.sumAlbedo[c] += n * (albedo ? (*albedo)[px * 3 + c] : 0.0f);
+            }
+            {
+                const double l = 0.2126 * rgba[px * 4] + 0.7152 * rgba[px * 4 + 1] + 0.0722 * rgba[px * 4 + 2];
+                p.sumSq += n * l * l, ++p.absorbs;
             }
             p.weight += n;
         }
@@ -363,6 +397,137 @@ public:
 
     // A pixel's coverage whole: every sample met something.
     static bool whole(float alpha) { return alpha >= 0.999f; }
+
+    // Two of a frame's probes on one plane: their normals within 3 degrees, each on the other's plane (within the
+    // tolerance times its depth). The slanted planes' regions (planes.h) and pruning.
+    static bool samePlane(const FieldFrame& f, const std::vector<WorldProbe>& probes, int a, int b, double tol) {
+        if (f.normal.size() != f.ids.size()) return false;
+        const D3& na = f.normal[a];
+        const D3& nb = f.normal[b];
+        if (na.x * nb.x + na.y * nb.y + na.z * nb.z < 0.9986) return false;
+        const surface::V3& pa = probes[f.ids[a]].P;
+        const surface::V3& pb = probes[f.ids[b]].P;
+        const D3 d{double(pb.x) - pa.x, double(pb.y) - pa.y, double(pb.z) - pa.z};
+        const double da = f.view.depthOf(f.view.camera(pa)), db = f.view.depthOf(f.view.camera(pb));
+        return std::fabs(na.x * d.x + na.y * d.y + na.z * d.z) <= tol * da && std::fabs(nb.x * d.x + nb.y * d.y + nb.z * d.z) <= tol * db;
+    }
+
+    // A probe's light's standard error relative to its luminance (from the spread of the lights it took about their
+    // mean); -1 where it has taken fewer than 3.
+    static double noise(const WorldProbe& p) {
+        if (p.absorbs < 3 || !(p.weight > 0)) return -1;
+        const double mu = (0.2126 * p.sum[0] + 0.7152 * p.sum[1] + 0.0722 * p.sum[2]) / p.weight;
+        if (!(mu > 1e-6)) return -1;
+        const double var = std::max(0.0, (p.sumSq - p.weight * mu * mu) / double(p.absorbs - 1));
+        return std::sqrt(var / p.weight) / mu;
+    }
+
+    // The probes the frame's triangulation can do without (the user: "would it be better if that single probe would set
+    // the resolution of the direct lighting for that mesh it hit, and cull the other probes hitting that same mesh?"): a
+    // probe whose neighbours all lie on its plane (its star closed, so it is inside its surface) goes dormant where their
+    // light, fitted linearly over the picture about it, gives its own within its noise; its neighbours wait for the next
+    // frame, so that each judgement stands on probes that stay. A dormant probe the frame sees wakes where the
+    // reconstruction at its point (its triangle's light, demodulated) departs from its own past the same reach. Returns
+    // the probes made dormant; woken: those woken.
+    size_t prune(const FieldFrame& f, const FieldOptions& op, const std::vector<float>* albedo, const std::vector<float>& recon,
+                 const std::vector<uint8_t>& state, size_t& woken) {
+        woken = 0;
+        if (!op.prune) return 0;
+        const size_t n = f.ids.size();
+        auto lit = [&](int k, double out[3], bool& demod) { return probeLightOf(probes[f.ids[k]], op.demodFloor, out, demod); };
+        // Each probe's neighbours and how many of its triangles each borders (two each: its star is closed).
+        std::vector<std::vector<std::pair<int, int>>> star(n);
+        auto meet = [&](int a, int b) {
+            for (auto& e : star[a])
+                if (e.first == b) return void(++e.second);
+            star[a].push_back({b, 1});
+        };
+        for (size_t t = 0; t * 3 < f.tris.size(); ++t)
+            for (int e = 0; e < 3; ++e) {
+                const int a = f.tris[3 * t + e], b = f.tris[3 * t + (e + 1) % 3], c = f.tris[3 * t + (e + 2) % 3];
+                meet(a, b), meet(a, c);
+            }
+        std::vector<uint8_t> locked(n, 0);
+        size_t pruned = 0;
+        for (size_t k = 0; k < n; ++k) {
+            WorldProbe& p = probes[f.ids[k]];
+            if (locked[k] || f.fresh[k] || p.weight < op.pruneWeight || star[k].size() < 3) continue;
+            const double sk = noise(p);
+            if (sk < 0) continue;
+            double Lk[3];
+            bool dk;
+            if (!lit(int(k), Lk, dk)) continue;
+            // Its neighbours: each on its plane, lit, of its kind of light; its star closed.
+            bool fit = true;
+            double s00 = 0, s01 = 0, s02 = 0, s11 = 0, s12 = 0, s22 = 0, r0[3] = {0, 0, 0}, r1[3] = {0, 0, 0}, r2[3] = {0, 0, 0}, sn = 0;
+            for (const auto& e : star[k]) {
+                const int j = e.first;
+                double Lj[3];
+                bool dj;
+                const double sj = noise(probes[f.ids[j]]);
+                if (e.second != 2 || !samePlane(f, probes, int(k), j, op.tol) || !lit(j, Lj, dj) || dj != dk || sj < 0) {
+                    fit = false;
+                    break;
+                }
+                const double dx = f.xy[2 * j] - f.xy[2 * k], dy = f.xy[2 * j + 1] - f.xy[2 * k + 1];
+                s00 += 1, s01 += dx, s02 += dy, s11 += dx * dx, s12 += dx * dy, s22 += dy * dy, sn += sj * sj;
+                for (int c = 0; c < 3; ++c) r0[c] += Lj[c], r1[c] += dx * Lj[c], r2[c] += dy * Lj[c];
+            }
+            if (!fit) continue;
+            // The fit's value at the probe: the plane's constant term (Cramer), the mean where the neighbours are in line.
+            const double det = s00 * (s11 * s22 - s12 * s12) - s01 * (s01 * s22 - s12 * s02) + s02 * (s01 * s12 - s11 * s02);
+            double pred[3];
+            for (int c = 0; c < 3; ++c) {
+                if (std::fabs(det) > 1e-9 * std::max(1.0, s11 * s22)) {
+                    pred[c] = (r0[c] * (s11 * s22 - s12 * s12) - s01 * (r1[c] * s22 - s12 * r2[c]) + s02 * (r1[c] * s12 - s11 * r2[c])) / det;
+                } else {
+                    pred[c] = r0[c] / s00;
+                }
+            }
+            const double lum = 0.2126 * Lk[0] + 0.7152 * Lk[1] + 0.0722 * Lk[2];
+            if (!(lum > 1e-4)) continue;
+            double dev = 0;
+            for (int c = 0; c < 3; ++c) dev = std::max(dev, std::fabs(Lk[c] - pred[c]) / lum);
+            const double sd = std::sqrt(sk * sk + sn / (s00 * s00));
+            if (dev > std::min(op.pruneMax, std::max(2 * sd, op.pruneMin))) continue;
+            p.dormant = true, ++pruned;
+            for (const auto& e : star[k]) locked[size_t(e.first)] = 1;
+        }
+        // The dormant probes the frame sees, against the reconstruction at their points.
+        for (size_t d = 0; d < f.dormantIds.size(); ++d) {
+            WorldProbe& p = probes[f.dormantIds[d]];
+            const int px = std::min(int(width) - 1, std::max(0, int(f.dormantXY[2 * d]))), py = std::min(int(height) - 1, std::max(0, int(f.dormantXY[2 * d + 1])));
+            const size_t i = size_t(py) * width + px;
+            if (state[i] != FieldTrusted) continue;
+            double L[3];
+            bool dm;
+            if (!probeLightOf(p, op.demodFloor, L, dm)) continue;
+            const float* a = albedo ? &(*albedo)[i * 3] : nullptr;
+            const bool pixelDemod = a && 0.2126 * a[0] + 0.7152 * a[1] + 0.0722 * a[2] >= op.demodFloor;
+            if (dm != pixelDemod) continue;
+            const double lum = 0.2126 * L[0] + 0.7152 * L[1] + 0.0722 * L[2];
+            if (!(lum > 1e-4)) continue;
+            double dev = 0;
+            for (int c = 0; c < 3; ++c) {
+                const double r = dm ? recon[i * 4 + c] / std::max(a[c], op.demodFloor) : recon[i * 4 + c];
+                dev = std::max(dev, std::fabs(L[c] - r) / lum);
+            }
+            const double sk = std::max(0.0, noise(p));
+            if (dev > std::min(op.pruneMax, std::max(2 * sk, op.pruneMin)) * 1.5) p.dormant = false, ++woken;
+        }
+        return pruned;
+    }
+
+    // A probe's light and colour as summed, demodulated where its colour is bright enough (planes.h's probeLight).
+    static bool probeLightOf(const WorldProbe& p, float demodFloor, double light[3], bool& demod) {
+        if (!(p.weight > 0)) return false;
+        double a[3];
+        for (int c = 0; c < 3; ++c) light[c] = p.sum[c] / p.weight, a[c] = p.sumAlbedo[c] / p.weight;
+        demod = 0.2126 * a[0] + 0.7152 * a[1] + 0.0722 * a[2] >= demodFloor;
+        if (demod)
+            for (int c = 0; c < 3; ++c) light[c] /= std::max(a[c], double(demodFloor));
+        return true;
+    }
 
 private:
     // The scene's bounds (trace space), once a field: an orthographic camera's depth scale is twice the farthest depth

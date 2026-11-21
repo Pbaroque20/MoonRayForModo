@@ -832,7 +832,37 @@ error doubles in either when XPU2's frame is stopped earlier). By 0.3 s XPU2's o
 as in section 19. The back plane's light was as good as its pixels' samples or better (0.010 to 0.051 against 0.013 to
 0.132). The planes cost the CPU about 7 ms a frame (Rhea's finish 0.025 s against 0.018 s at 320 x 240).
 
-## 21. Open
+## 21. Drags (2026-11-21)
+
+DESIGN.md section 26. The test scene at 640 x 360 and 1280 x 720 through the session, its camera turned 0.3 degrees a step
+40 times, each step sent 60 ms into the frame before (the kit's pace), from a picture at rest
+(`session_harness.py --first-done`); each step's first picture after it, and the steps with none:
+
+| A drag of 40 steps | Rhea, before | Rhea, now | XPU2 alone |
+|---|---|---|---|
+| 640 x 360, first picture | 0.21 s | **10 ms** (9 to 19) | 81 ms |
+| 640 x 360, steps with no picture | all | **none** | 35 of 39 |
+| 1280 x 720, first picture | 0.8 s | **37 ms** (35 to 43) | 178 ms |
+| 1280 x 720, steps with no picture | all | **none** | 38 of 39 |
+| 1280 x 720, a step every | 0.27 s | **80 ms** | |
+
+Before, a frame of Rhea's was only shown when it had landed (0.2 s at 640 x 360, 1.15 s at 720p: 22,000 probes and 0.7 s
+of the GPU's), and each step stopped the last: during a drag nothing of Rhea's was shown, and XPU2's own first picture
+(80 to 180 ms) came after the kit's next step too.
+
+**The crash.** A frame of XPU2's run to its end before any camera move (the first of a scene, or after an edit) ended the
+session: the back plane's store read its prior light through a null pointer where there was none (0xC0000005 reading
+0x30), and the kit renders such a preview with MoonRay XPU. It was in the test kit staged before (session-rhea-19). The
+harness had never let such a frame end: its first move always came first.
+
+**Sponza and the test scene's separate moves** are as in section 20 (Sponza: the same to the third digit; the test
+scene's moves 0.33 s apart: within the timing's spread). Holding every move for the next step (the first version) had
+doubled the test scene's error, its moves losing 80 ms of XPU2's 0.3 s.
+
+**Pruning** (DESIGN.md 26): with it and without, two runs each, the pictures agree (Sponza to the third digit; the test
+scene within the timing's spread); it puts 130 to 250 probes a frame to sleep on the test scene, 0 to 12 on Sponza.
+
+## 22. Open
 
 - **Probes pruned where their neighbours on the same surface predict their light** within its noise (the user's
   question: "would it be better if that single probe would set the resolution of the direct lighting for that mesh it
@@ -871,7 +901,7 @@ as in section 19. The back plane's light was as good as its pixels' samples or b
   Sponza (23 lights, 69% of the GPU's time in shadow rays) is where light sample reuse has the most to save.
 - The lift assumes a still perspective camera without depth of field; patches lose triangles crossing the near plane.
 
-## 22. Reproduce
+## 23. Reproduce
 
 ```bash
 python rhea/build_rhea.py [--gpu] --source . --runtime <MoonRayForModo-xpu2>/test-results/interactive-reference-042 --output test-results/rhea/build-N

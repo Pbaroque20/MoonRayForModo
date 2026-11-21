@@ -50,7 +50,20 @@ struct RealtimeOptions {
     // hold is taken by its surface's slanted plane (planar), else by the back plane's reprojected light (backPlane),
     // the frame's own depths deciding each. quietNeed: a pixel either holds asks for no probe.
     bool planar = true, backPlane = true, quietNeed = true;
+    bool prune = true;  // probes their neighbours on their plane predict, dormant (ProbeField::prune)
+    // A camera move's first picture (DESIGN.md 26): the last picture shown moved into the new view by its depths (warp),
+    // at once, before any of the GPU's work; XPU2's pictures folded into it where their depths hold its points, the warp
+    // counting as warpWeight samples (a hole filled from a neighbour, a quarter) and fading as XPU2's frame goes on.
+    bool warp = true;
+    double warpWeight = 8;
+    // After a move's warp, the next move looked for this long before any of the GPU's work (seconds; the kit sends a
+    // drag's steps about 60 ms apart): a drag then goes at the warp's pace, not the GPU frame's stop (0.2 s at 720p).
+    double dragHold = 0.08;
+    // The probes' screen cells grow with the picture (cell times the square root of its pixels over 320 x 240's): as many
+    // probes at 1280 x 720 as at 320 x 240, where 22,000 had taken 0.12 s to place and 0.7 s of the GPU's (DESIGN.md 26).
+    bool cellsByPicture = true;
     double planarEdge = 4;    // a slanted plane's triangle's sides at most this many cells (PlanarLayer::build)
+    double planarSupport = 0.85;  // a slanted plane's triangle used where this share of its pixels lie on it (PlanarLayer::support)
     double backCap = 1024;    // the back plane's weight a pixel at most (samples)
     // The back plane's light divided by its pixel's colour, and multiplied by the new pixel's (off: kept as it was, its
     // texture with it): on Sponza glossy light divided by a dark colour came back 2-3 times too bright, and a frame at
@@ -121,6 +134,7 @@ public:
         clearSums();
         haveCamera = false;
         back.clear(), haveBack = false;
+        last = Shown{}, warped = Warped{}, lastKind = 0;
     }
     // The picture's sums forgotten, the probes kept: the camera has moved.
     void clearSums() {
@@ -138,6 +152,8 @@ public:
     // The last frame's CPU time in the planes: building and looking up (with the pixels' layers), storing the back plane;
     // and the last store after XPU2's frame at rest.
     double planesSeconds = 0, storeSeconds = 0, restStoreSeconds = 0;
+    // The last frame's pruning: the probes it made dormant, those it woke, the dormant ones it saw.
+    size_t pruned = 0, woken = 0, dormant = 0;
     size_t regions = 0;
     size_t probes = 0, spawned = 0;
     double fieldSeconds = 0;
@@ -177,7 +193,7 @@ public:
         field.prepare(*plan, scene, fieldOptions(), frame, f);
         fieldSeconds = f.seconds, probes = f.ids.size(), spawned = f.spawned + f.gapSpawned;
         // Phase 2's samples: the cap's; the sky the last frame met, the background's.
-        const unsigned cell = std::max(2u, op.cell);
+        const unsigned cell = cellNow();
         nCount.assign(N, nHi);
         for (size_t i = 0; i < N; ++i) {
             const int t = f.triOf[i];
@@ -255,6 +271,10 @@ public:
                      o.cleanAbsorb ? &depthMax : nullptr, &fo, &coverage);
         field.reconstruct(f, fo, demod ? &albedo : nullptr, recon, wrec, fstate);
         verified = field.verify(f, fo, depthMin, depthMax, ok, &coverage);
+        // The probes the triangulation can do without, made dormant for the next frame; dormant ones the reconstruction no
+        // longer gives, woken (ProbeField::prune).
+        pruned = field.prune(f, fo, demod ? &albedo : nullptr, recon, fstate, woken);
+        woken += f.woken, dormant = f.dormantIds.size();
         // The sums since the camera last moved: the beauty and direct light times their samples, the samples (all, and
         // full paths), phase 1's weight and its light times that weight. Phase 1's light is each frame's own where it
         // was used, weighted as it was: the latest reconstruction with the weight of all frames darkened pixels that
@@ -270,8 +290,12 @@ public:
         // last picture left it, lifted into this frame. A pixel takes the first layer whose surface its depths hold:
         // the front triangulation (trusted and verified), its surface's slanted plane, the back plane.
         const auto planesBegan = std::chrono::steady_clock::now();
-        if (o.planar && f.view.kind != View::Directional) planar.build(f, field.probes, W, H, fo.tol, fo.tauR, fo.demodFloor, o.planarEdge * fo.cell);
-        else planar.none(W, H);
+        if (o.planar && f.view.kind != View::Directional) {
+            planar.build(f, field.probes, W, H, fo.tol, fo.tauR, fo.demodFloor, o.planarEdge * fo.cell);
+            planar.support(f.view, depthMin, depthMax, fo, W, o.planarSupport);
+        } else {
+            planar.none(W, H);
+        }
         if (!o.backPlane) back.clear(), haveBack = false;
         // Looked up from this frame's depths (gather), or each stored point lifted into it (reproject: the first way).
         if (o.backGather) back.gather(f.view, W, H, o.threads, depthMin, 2 * fo.tol + o.backTol, seen);
@@ -344,7 +368,7 @@ public:
         // A pixel another layer holds asks for no probe: the probes go where no layer holds (the user: "would it be
         // performant if the probes were culled ...").
         if (o.quietNeed && field.cellsX) {
-            const unsigned cell = std::max(2u, o.cell);
+            const unsigned cell = cellNow();
             std::vector<uint8_t> open(field.need.size(), 0);
             for (size_t i = 0; i < N; ++i)
                 if (!ok[i] && !layer[i]) open[size_t((i / W) / cell) * field.cellsX + (i % W) / cell] = 1;
@@ -493,6 +517,195 @@ public:
             for (int c = 0; c < 3; ++c) out[i * 4 + c] = std::max(0.0f, light[i * 4 + c] - r.aov[i * stride + outputs.emission + c]);
         return out;
     }
+    // A camera move's first picture (DESIGN.md 26): the last picture shown (keepShown) moved into the plan's camera,
+    // each pixel lifted by its depth and the nearest kept, the holes a move opens (what lay behind) filled from the
+    // farthest neighbour, three passes; its outputs moved with it. False where there is no picture to move (a new scene,
+    // an edit, another size), the camera is a lens camera's (spherical, fisheye, dome: each pixel's lift a search), or the
+    // warp is off.
+    const async::RenderResult* warpTo(const cpu::Plan& b) { return warpInto(b, warpPicture) ? &warpPicture : nullptr; }
+    bool warpInto(const cpu::Plan& b, async::RenderResult& out) {
+        warped.valid = false;
+        if (!op.warp || !last.valid || last.W != b.width || last.H != b.height || last.view.kind == View::Directional) return false;
+        View nv;
+        if (!nv.init(b.camera, b.width, b.height) || nv.kind == View::Directional) return false;
+        if (nv.needsDepthScale()) nv.setDepthScale(last.view.depthScale());
+        const unsigned w = b.width, h = b.height, threads = std::max(1u, op.threads);
+        const size_t n = size_t(w) * h;
+        const size_t stride = last.result.aov.size() / n;
+        std::vector<long long>& at = warped.scratchAt;
+        std::vector<double>& lw = warped.scratchW;
+        std::vector<float>& ld = warped.scratchD;
+        at.assign(n, -1), lw.resize(n), ld.resize(n);
+        parallel(threads, h, [&](size_t y) {
+            for (unsigned x = 0; x < w; ++x) {
+                const size_t i = y * w + x;
+                const float d = last.depth[i];
+                if (!(d > 0)) continue;
+                surface::V3 p;
+                if (!last.view.pointAt(x + 0.5, y + 0.5, d, p)) continue;
+                double px, py, ww;
+                if (!nv.lift(p, px, py, ww) || !(px >= 0 && py >= 0 && px < w && py < h) || !(ww > 0)) continue;
+                at[i] = (long long)(size_t(py) * w + size_t(px)), lw[i] = ww, ld[i] = float(nv.depthOf(nv.camera(p)));
+            }
+        });
+        warped.w.assign(n, -1.0), warped.depth.assign(n, 0.0f), warped.state.assign(n, 0), warped.from.assign(n, -1);
+        for (size_t i = 0; i < n; ++i) {
+            if (at[i] < 0) continue;
+            const size_t t = size_t(at[i]);
+            if (lw[i] <= warped.w[t]) continue;
+            warped.w[t] = lw[i], warped.depth[t] = ld[i], warped.state[t] = 1, warped.from[t] = (long long)i;
+        }
+        // The holes: a pixel's farthest landed (or filled) neighbour, three passes; a pass reads only what the passes
+        // before it set (their state), so that it writes in place.
+        std::vector<uint8_t>& before = warped.scratchState;
+        for (int pass = 0; pass < 3; ++pass) {
+            before = warped.state;
+            parallel(threads, h, [&](size_t y) {
+                for (unsigned x = 0; x < w; ++x) {
+                    const size_t i = y * w + x;
+                    if (before[i]) continue;
+                    long long best = -1;
+                    for (int dy = -1; dy <= 1; ++dy)
+                        for (int dx = -1; dx <= 1; ++dx) {
+                            const int xx = int(x) + dx, yy = int(y) + dy;
+                            if ((!dx && !dy) || xx < 0 || yy < 0 || xx >= int(w) || yy >= int(h)) continue;
+                            const size_t j = size_t(yy) * w + size_t(xx);
+                            if (before[j] && (best < 0 || warped.w[j] < warped.w[size_t(best)])) best = (long long)j;
+                        }
+                    if (best < 0) continue;
+                    const size_t j = size_t(best);
+                    warped.state[i] = 2, warped.w[i] = warped.w[j], warped.depth[i] = warped.depth[j], warped.from[i] = warped.from[j];
+                }
+            });
+        }
+        // The picture: the last one's pixels where they came to, its outputs with them, its depth outputs the new view's
+        // (the warped points', so that a picture made of it can be moved again). Only what a picture shows: its colour,
+        // samples and outputs.
+        const RealtimeOutputs o = outputsOf(b);
+        // Its vectors kept from move to move (no allocation, no page faults: at 720p a picture and its outputs are 70 MB).
+        out.cancelled = out.drained = out.failed = false;
+        out.rgba.resize(n * 4), out.aov.resize(n * stride), out.counts.resize(n);
+        parallel(threads, h, [&](size_t y) {
+            for (unsigned x = 0; x < w; ++x) {
+                const size_t i = y * w + x;
+                const long long s = warped.from[i];
+                if (s < 0) {
+                    std::fill_n(&out.rgba[i * 4], 4, 0.0f);
+                    if (stride) std::fill_n(&out.aov[i * stride], stride, 0.0f);
+                    out.counts[i] = 0;
+                    continue;
+                }
+                std::copy_n(&last.result.rgba[size_t(s) * 4], 4, &out.rgba[i * 4]);
+                if (stride) {
+                    std::copy_n(&last.result.aov[size_t(s) * stride], stride, &out.aov[i * stride]);
+                    if (o.depthMin >= 0) out.aov[i * stride + size_t(o.depthMin)] = warped.depth[i];
+                    if (o.depthMax >= 0) out.aov[i * stride + size_t(o.depthMax)] = warped.depth[i];
+                }
+                out.counts[i] = 1;
+            }
+        });
+        size_t landed = 0;
+        for (size_t i = 0; i < n; ++i) landed += warped.state[i] == 1;
+        warped.stride = stride, warped.view = nv, warped.outputs = o;
+        warped.valid = true;
+        warpShare = n ? double(landed) / double(n) : 0;
+        return true;
+    }
+    // XPU2's picture of the camera's move (x, fraction: how far its frame has come) with the warp folded in: where its
+    // samples' depths hold the warped point (the nearest within the reach), the warp counts as warpWeight samples (a
+    // filled hole a quarter) fading as (1 - fraction)^2; where it has no samples yet, the warp alone; elsewhere XPU2's.
+    void mergeWarp(const async::RenderResult& x, double fraction, async::RenderResult& out) const {
+        out = x;
+        const size_t n = size_t(W) * H;
+        if (!warped.valid || !last.valid || x.rgba.size() != n * 4 || warped.state.size() != n || last.result.rgba.size() != n * 4) return;
+        const size_t stride = n ? x.aov.size() / n : 0;
+        const int dmin = warped.outputs.depthMin, dmax = warped.outputs.depthMax;
+        const double fade = std::pow(std::max(0.0, 1.0 - fraction), 2.0);
+        const double reach = 2 * op.tol + op.backTol;
+        const bool sameAovs = stride == warped.stride && last.result.aov.size() == n * stride;
+        parallel(std::max(1u, op.threads), H, [&](size_t y) {
+            for (unsigned px = 0; px < W; ++px) {
+                const size_t i = y * W + px;
+                const uint8_t st = warped.state[i];
+                if (!st) continue;
+                const size_t s = size_t(warped.from[i]);
+                const float* wc = &last.result.rgba[s * 4];
+                const double c = i < x.counts.size() ? double(x.counts[i]) : 0.0;
+                if (c <= 0) {
+                    std::copy_n(wc, 4, &out.rgba[i * 4]);
+                    if (sameAovs && stride) {
+                        std::copy_n(&last.result.aov[s * stride], stride, &out.aov[i * stride]);
+                        if (dmin >= 0) out.aov[i * stride + size_t(dmin)] = warped.depth[i];
+                        if (dmax >= 0) out.aov[i * stride + size_t(dmax)] = warped.depth[i];
+                    }
+                    continue;
+                }
+                if (dmin < 0 || stride == 0) continue;
+                const double d = x.aov[i * stride + size_t(dmin)];
+                if (!(std::isfinite(d) && d > 0)) continue;
+                const double wx = warped.view.wOf(d);
+                if (!(std::fabs(warped.w[i] - wx) <= reach * wx)) continue;
+                const double m = op.warpWeight * (st == 1 ? 1.0 : 0.25) * fade, k = m / (m + c);
+                for (int ch = 0; ch < 3; ++ch) out.rgba[i * 4 + ch] = float(x.rgba[i * 4 + ch] + k * (wc[ch] - x.rgba[i * 4 + ch]));
+            }
+        });
+    }
+    bool hasWarp() const { return warped.valid; }
+    // The pictures the session publishes, the last kept for the next move's warp (keepLast): the warp's own (it is
+    // Realtime's), or another taken by swapping its vectors (the session's merged pictures, which it no longer needs).
+    void publishedWarp() { lastKind = 1; }
+    void published(async::RenderResult&& r) {
+        shownCopy.rgba.swap(r.rgba), shownCopy.counts.swap(r.counts), shownCopy.aov.swap(r.aov);
+        lastKind = 2;
+    }
+    void publishedCopy(const async::RenderResult& r) {
+        shownCopy.rgba = r.rgba, shownCopy.counts = r.counts, shownCopy.aov = r.aov;
+        lastKind = 2;
+    }
+    // The last picture published becomes the next move's source (its vectors swapped in, the old ones kept for reuse).
+    void keepLast(const cpu::Plan& b) {
+        async::RenderResult& from = lastKind == 1 ? warpPicture : shownCopy;
+        if (!lastKind) {
+            last.valid = false;
+            return;
+        }
+        last.result.rgba.swap(from.rgba), last.result.counts.swap(from.counts), last.result.aov.swap(from.aov);
+        lastKind = 0;
+        depthsOf(b);
+    }
+    void dropWarp() { warped.valid = false; }
+    double warpShare = 0;  // the last warp's pixels that landed (not filled)
+    // The last picture shown, kept for the next camera move's warp, its depths its own nearest first-hit depth output
+    // (XPU2's where its samples reached, Rhea's frame's, or the warp's own: warpTo writes the new view's). A frame a move
+    // stops gives no picture of its own: the session keeps the last it published.
+    void keepShown(const cpu::Plan& b, const async::RenderResult& shown) {
+        last.valid = false;
+        const size_t n = size_t(b.width) * b.height;
+        if (!op.warp || shown.rgba.size() != n * 4) return;
+        // Only what a picture shows (its colour, samples and outputs), into the vectors it had (no allocation a move).
+        last.result.rgba = shown.rgba, last.result.counts = shown.counts, last.result.aov = shown.aov;
+        lastKind = 0;
+        depthsOf(b);
+    }
+    // The kept picture's depths (its nearest first-hit depth output) and view.
+    void depthsOf(const cpu::Plan& b) {
+        last.valid = false;
+        const size_t n = size_t(b.width) * b.height;
+        const RealtimeOutputs o = outputsOf(b);
+        const size_t stride = n ? last.result.aov.size() / n : 0;
+        if (!op.warp || last.result.rgba.size() != n * 4 || o.depthMin < 0 || !stride || !last.view.init(b.camera, b.width, b.height)) return;
+        if (last.view.needsDepthScale()) last.view.setDepthScale(f.view.kind == View::Orthographic ? f.view.depthScale() : 1.0);
+        last.W = b.width, last.H = b.height;
+        last.depth.resize(n);
+        parallel(std::max(1u, op.threads), b.height, [&](size_t y) {
+            for (size_t i = y * b.width; i < (y + 1) * b.width; ++i) {
+                const float d = last.result.aov[i * stride + size_t(o.depthMin)];
+                last.depth[i] = std::isfinite(d) && d > 0 ? d : 0.0f;
+            }
+        });
+        last.valid = true;
+    }
+
     // The back plane's pixels (a share of the picture): what the next camera move can lift.
     double backShare() const {
         if (back.valid.empty()) return 0;
@@ -511,6 +724,39 @@ private:
     Sums acc;
     PlanarLayer planar;
     BackPlane back;
+    // The last picture shown (keepShown) and its warp into the current camera (warpTo).
+    struct Shown {
+        View view;
+        unsigned W = 0, H = 0;
+        async::RenderResult result;
+        std::vector<float> depth;  // a pixel's nearest first-hit depth (0 none)
+        bool valid = false;
+    };
+    struct Warped {
+        View view;
+        std::vector<double> w;          // the warped point's lifted depth (-1 none)
+        std::vector<float> depth;       // its depth (the depth outputs' measure)
+        std::vector<uint8_t> state;     // 0 none, 1 landed, 2 a hole filled from a neighbour
+        std::vector<long long> from;    // the last picture's pixel it came from (its colour and outputs read there)
+        size_t stride = 0;
+        RealtimeOutputs outputs;
+        bool valid = false;
+        std::vector<long long> scratchAt;  // kept between moves: no allocation a move
+        std::vector<double> scratchW;
+        std::vector<float> scratchD;
+        std::vector<uint8_t> scratchState;
+    };
+    Shown last;
+    Warped warped;
+    async::RenderResult warpPicture, shownCopy;  // the warp's picture and the last other one published, kept for reuse
+    int lastKind = 0;                            // the last published: 0 none kept, 1 the warp's, 2 shownCopy
+    // The probes' screen cell for the picture (cellsByPicture).
+    unsigned cellNow() const {
+        const unsigned c = std::max(2u, op.cell);
+        if (!op.cellsByPicture || !W || !H) return c;
+        const double s = std::sqrt(double(W) * double(H) / (320.0 * 240.0));
+        return std::max(c, unsigned(std::lround(double(c) * s)));
+    }
     BackPlane::Seen seen;
     std::vector<uint8_t> layer;  // the layer each pixel's phase 1 came from: 0 none, 1 the front, 2 a slanted plane, 3 the back plane
     surface::Camera camera{}, backCamera{};
@@ -525,9 +771,9 @@ private:
 
     FieldOptions fieldOptions() const {
         FieldOptions fo;
-        fo.cell = std::max(2u, op.cell), fo.gapPasses = op.gapPasses, fo.tol = op.tol;
+        fo.cell = cellNow(), fo.gapPasses = op.gapPasses, fo.tol = op.tol;
         fo.footprint = 0.5 * std::max(1.0, double(filterWidth)), fo.tauR = op.tauR, fo.demod = op.demod, fo.threads = op.threads;
-        fo.slant = op.slant, fo.planeLight = op.planeLight;
+        fo.slant = op.slant, fo.planeLight = op.planeLight, fo.prune = op.prune;
         return fo;
     }
     // The same picture's camera: its place, projection, lens and the settings of its kind (a focus or a fisheye's field of

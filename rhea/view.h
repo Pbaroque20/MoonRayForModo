@@ -80,6 +80,7 @@ public:
     }
     // An orthographic camera's depth scale K (twice the farthest depth the scene reaches from it).
     void setDepthScale(double k) { K = k > 0 ? k : 1.0; }
+    double depthScale() const { return K; }
     bool needsDepthScale() const { return kind == Orthographic; }
 
     D3 camera(const surface::V3& p) const {

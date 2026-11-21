@@ -2455,6 +2455,11 @@ int session(const Args& args, const fs::path& directory) {
     rhea::Realtime rheaView;
     std::string rheaRefused = "-";  // why the last realtime scene was XPU2's ("": Rhea's), said when it changes
     const void* rheaGeometry = nullptr;
+    // A drag (rheaFrames): when the last camera move came, whether Rhea's frame for it was stopped by the next, and what
+    // Rhea's frame last cost.
+    std::chrono::steady_clock::time_point rheaLastMove{};
+    bool rheaMoveSeen = false, rheaFrameStopped = false;
+    double rheaFrameCost = 0;
     // The full plan being made behind a coarse first pass. It outlives a frame: a camera moved meanwhile is followed on the
     // coarse geometry (Scene's camera path) while it goes on, where the view used to stand still until it was done (8 to 15 s
     // on a heavy scene). Anything else that prepares the scene waits for it first (it reads the canonical copy).
@@ -3142,8 +3147,12 @@ int session(const Args& args, const fs::path& directory) {
                     rheaView.op.quietNeed = envOn("XPU2_SESSION_RHEA_QUIET_NEED", true);
                     rheaView.op.backDemod = envOn("XPU2_SESSION_RHEA_BACK_DEMOD", false);
                     rheaView.op.backGather = envOn("XPU2_SESSION_RHEA_BACK_GATHER", true);
+                    rheaView.op.prune = envOn("XPU2_SESSION_RHEA_PRUNE", true);
                     if (const char* v = std::getenv("XPU2_SESSION_RHEA_PLANAR_WEIGHT")) rheaView.op.planarWeight = std::atof(v);
                     if (const char* v = std::getenv("XPU2_SESSION_RHEA_BACK_WEIGHT")) rheaView.op.backWeight = std::atof(v);
+                    if (const char* v = std::getenv("XPU2_SESSION_RHEA_PLANAR_SUPPORT")) rheaView.op.planarSupport = std::atof(v);
+                    if (const char* v = std::getenv("XPU2_SESSION_RHEA_DRAG_HOLD")) rheaView.op.dragHold = std::atof(v);
+                    rheaView.op.warp = envOn("XPU2_SESSION_RHEA_WARP", true);
                     if (const char* debug = std::getenv("XPU2_SESSION_RHEA_DEBUG")) rheaView.op.debugFolder = debug;
                     const auto began = Clock::now();
                     async::GpuLane* lane = gpu && gpuUsable ? gpu.get() : nullptr;
@@ -3152,7 +3161,59 @@ int session(const Args& args, const fs::path& directory) {
                     // new scene, an edit): the probes placed for the camera, lit by XPU2's frame below once it is done.
                     const bool moving = rheaView.hasProbes() && rheaView.cameraChanged(*scene.plan);
                     double rheaSeconds = 0;
+                    auto publish = [&](const async::RenderResult& r, double fraction) {
+                        if (watch.previewAov && watch.previewAov() && watch.previewResult) {
+                            watch.previewResult(r, fraction);
+                        } else if (watch.preview) {
+                            std::vector<float> rgb(size_t(width) * height * 3);
+                            for (size_t i = 0; i < size_t(width) * height; ++i)
+                                for (int c = 0; c < 3; ++c) {
+                                    const float v = r.rgba[i * 4 + c];
+                                    rgb[i * 3 + c] = std::isfinite(v) ? v : 0.0f;
+                                }
+                            watch.preview(rgb, width, height, fraction);
+                        }
+                    };
+                    // A camera move's first picture (rhea/DESIGN.md 26): the last one moved into the new view at once, before
+                    // any of the GPU's work, so that a drag follows the mouse step by step whatever a frame costs.
+                    bool warpedNow = false;
+                    // How long since the last camera move began (each stamped as it begins): a drag's steps come about 60 to
+                    // 80 ms apart, the test scene's separate moves 0.33 s.
+                    const auto moveBegan = Clock::now();
+                    const double sinceLastMove = rheaMoveSeen ? std::chrono::duration<double>(moveBegan - rheaLastMove).count() : 1e9;
+                    if (moving) rheaLastMove = moveBegan, rheaMoveSeen = true;
+                    // A drag: moves faster than Rhea's frame lands (the last one stopped by this move, or this move sooner
+                    // after the last than that frame took) take no frame of Rhea's: XPU2's frame at once, the warp folded in.
+                    // It lasts until XPU2's frame ends or runs longer than Rhea's would (rheaFrameStopped cleared below).
+                    const bool dragging = moving && (rheaFrameStopped || sinceLastMove < 1.2 * rheaFrameCost);
                     if (moving) {
+                        const auto warpBegan = Clock::now();
+                        if (const async::RenderResult* first = rheaView.warpTo(*scene.plan)) {
+                            publish(*first, 0.0);
+                            rheaView.publishedWarp();
+                            warpedNow = true;
+                            std::printf("MoonRay XPU2: Rhea: the last picture moved to the camera in %.3f s (%.0f%% of it landed)\n",
+                                        std::chrono::duration<double>(Clock::now() - warpBegan).count(), rheaView.warpShare * 100.0);
+                            std::fflush(stdout);
+                        }
+                        // In a drag (dragging, or this move within 0.15 s of the last), the next step looked for a moment before
+                        // any of the GPU's work: it comes about 60 ms after this one, and a GPU frame begun takes longer to stop
+                        // than the warp takes (0.2 s at 720p). A move on its own goes to the GPU at once: held, the test
+                        // scene's moves 0.3 s apart lost a quarter of XPU2's time and doubled their error.
+                        if (warpedNow && rheaView.op.dragHold > 0 && (dragging || sinceLastMove < 0.15)) {
+                            const auto held = Clock::now();
+                            while (std::chrono::duration<double>(Clock::now() - held).count() < rheaView.op.dragHold) {
+                                if (watch.stop && watch.stop()) {
+                                    rheaView.keepLast(*scene.plan);
+                                    shown.cancelled = true;
+                                    return shown;
+                                }
+                                std::this_thread::sleep_for(std::chrono::milliseconds(2));
+                            }
+                        }
+                    }
+                    bool rheaFramed = false;
+                    if (moving && !dragging) {
                         const auto frameBegan = Clock::now();
                         auto plan = rheaView.prepare(scene.plan, *scene.cpuScene);
                         if (lane) lane->updateCamera(plan);
@@ -3171,38 +3232,39 @@ int session(const Args& args, const fs::path& directory) {
                         if (lane) lane->updateCamera(scene.plan);
                         if (r.failed) return r;
                         if (r.cancelled) {
+                            // Stopped by the next move: the moves come faster than this frame lands (a drag).
+                            rheaFrameStopped = true;
+                            rheaFrameCost = std::max(rheaFrameCost, std::chrono::duration<double>(Clock::now() - frameBegan).count());
                             shown.cancelled = true;
                             return shown;
                         }
                         rheaView.finish(r, shown);
+                        rheaFramed = true;
+                        rheaView.publishedCopy(shown);
                         rheaSeconds = std::chrono::duration<double>(Clock::now() - frameBegan).count();
+                        rheaFrameStopped = false, rheaFrameCost = rheaSeconds;
                         std::printf("MoonRay XPU2: Rhea frame: probes %.3f s (%zu, %zu new), render %.3f s (%llu GPU samples, %llu CPU), finish %.3f s; "
                                     "%.0f%% of the picture verified, phase 1 in %.0f%% (probes %.0f%%, slanted planes %.0f%% of %zu, back plane %.0f%%; "
-                                    "planes %.3f s, back plane kept %.3f s)\n",
+                                    "planes %.3f s, back plane kept %.3f s); probes made dormant %zu, woken %zu, dormant in view %zu\n",
                                     std::chrono::duration<double>(prepared - frameBegan).count(), rheaView.probes, rheaView.spawned,
                                     std::chrono::duration<double>(rendered - prepared).count(), (unsigned long long)r.gpuSamples,
                                     (unsigned long long)r.cpuSamples, std::chrono::duration<double>(Clock::now() - rendered).count(),
                                     rheaView.verified * 100.0, rheaView.trusted * 100.0, rheaView.shareFront * 100.0, rheaView.sharePlanar * 100.0,
-                                    rheaView.regions, rheaView.shareBack * 100.0, rheaView.planesSeconds, rheaView.storeSeconds);
+                                    rheaView.regions, rheaView.shareBack * 100.0, rheaView.planesSeconds, rheaView.storeSeconds, rheaView.pruned,
+                                    rheaView.woken, rheaView.dormant);
                         std::fflush(stdout);
-                        if (watch.previewAov && watch.previewAov() && watch.previewResult) {
-                            watch.previewResult(shown, 0.0);
-                        } else if (watch.preview) {
-                            std::vector<float> rgb(size_t(width) * height * 3);
-                            for (size_t i = 0; i < size_t(width) * height; ++i)
-                                for (int c = 0; c < 3; ++c) {
-                                    const float x = shown.rgba[i * 4 + c];
-                                    rgb[i * 3 + c] = std::isfinite(x) ? x : 0.0f;
-                                }
-                            watch.preview(rgb, width, height, 0.0);
-                        }
+                        publish(shown, 0.0);
                         if (watch.stop && watch.stop()) {
                             shown.cancelled = true;
                             return shown;
                         }
                     } else {
+                        // The probes placed for the camera (a drag's step, a new scene, an edit), lit by XPU2's frame.
                         rheaView.place(scene.plan, *scene.cpuScene);
+                        if (!moving) rheaFrameStopped = false, rheaView.dropWarp();
                     }
+                    // The pictures of XPU2's frame: with Rhea's frame folded in where there was one, else the warp.
+                    const bool warpOnly = !rheaFramed && rheaView.hasWarp();
                     // The camera at rest: XPU2's own frame (its sampling generations, its samples where the noise is),
                     // each of its pictures folded into Rhea's sums as it comes, phase 1 fading out as the frame goes on.
                     async::Watch rest = watch;
@@ -3215,7 +3277,13 @@ int session(const Args& args, const fs::path& directory) {
                     rest.previewResult = [&](const async::RenderResult& sofar, double fraction) {
                         lastFraction = fraction;
                         async::RenderResult merged;
-                        rheaView.merge(sofar, fraction, merged);
+                        if (warpOnly) rheaView.mergeWarp(sofar, fraction, merged);
+                        else rheaView.merge(sofar, fraction, merged);
+                        struct Kept {
+                            rhea::Realtime& view;
+                            async::RenderResult& from;
+                            ~Kept() { view.published(std::move(from)); }  // after it is shown: kept for the next move's warp
+                        } kept{rheaView, merged};
                         if (wanted && watch.previewResult) {
                             watch.previewResult(merged, fraction);
                         } else if (watch.preview) {
@@ -3230,10 +3298,17 @@ int session(const Args& args, const fs::path& directory) {
                     };
                     async::RenderOptions o = base;
                     o.watch = &rest;
+                    const auto restBegan = Clock::now();
                     const async::RenderResult x = renderer->render(o);
                     if (x.failed) return x;
-                    rheaView.merge(x, x.cancelled || x.drained ? lastFraction : 1.0, shown);
+                    // The drag over: XPU2's frame ended, or ran longer than Rhea's frame takes (the moves have paused).
+                    if (!x.cancelled || std::chrono::duration<double>(Clock::now() - restBegan).count() > 1.2 * rheaFrameCost) rheaFrameStopped = false;
+                    if (warpOnly) rheaView.mergeWarp(x, x.cancelled || x.drained ? lastFraction : 1.0, shown);
+                    else rheaView.merge(x, x.cancelled || x.drained ? lastFraction : 1.0, shown);
                     shown.cancelled = x.cancelled, shown.drained = x.drained;
+                    // The picture as shown, for the next move's warp: the frame's own, or the last it published.
+                    if (shown.rgba.size() == size_t(width) * height * 4) rheaView.keepShown(*scene.plan, shown);
+                    else rheaView.keepLast(*scene.plan);
                     // The probes learn from XPU2's frame, as far as it came (a move stopped it, or it ended): on a heavy
                     // scene the first frame at rest may never end before a drag.
                     rheaView.absorbRest(x);
@@ -3250,7 +3325,8 @@ int session(const Args& args, const fs::path& directory) {
                     }
                     shown.seconds = std::chrono::duration<double>(Clock::now() - began).count();
                     std::printf("MoonRay XPU2: realtime by Rhea: %s, then XPU2's frame at rest %s in %.2f s; %zu probes, back plane %.0f%% (kept in %.3f s)\n",
-                                moving ? "a frame for the camera's move" : "the probes placed", x.cancelled ? "stopped" : x.drained ? "drained" : "done",
+                                rheaFramed ? "a frame for the camera's move" : moving ? "a drag's step (the last picture moved)" : "the probes placed",
+                                x.cancelled ? "stopped" : x.drained ? "drained" : "done",
                                 shown.seconds - rheaSeconds, rheaView.probes, rheaView.backShare() * 100.0, rheaView.restStoreSeconds);
                     std::fflush(stdout);
                     return shown;
