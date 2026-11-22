@@ -1,8 +1,59 @@
 """Deterministic per-layer UV coordinates, including baked locator projections."""
+import contextvars
 import hashlib
 import json
 import math
+from contextlib import contextmanager
 from . import rows
+
+# The mesh's own UVs as a primitive attribute (rdla), beside its uv_list: what ModoTextureMap's named sets are measured
+# from where a bump moves the surface's st.
+PRIMARY_UV = 'modo_primary_uv'
+_ALIASED = contextvars.ContextVar('coordinates_aliased', default=frozenset())
+
+
+def aliased_keys(meshes):
+    """The named sets (a mesh's uv_sets, by coordinate key) that hold the mesh's own UVs (its uvs, written as uv_list
+    and as modo_primary_uv) on every mesh that has them: a layer laid on with its mesh's UV map as it is, untiled and
+    unturned. They are read from modo_primary_uv instead (attribute), and not written a third time: the same numbers
+    under another name, so the same picture. A tester's dragon carried each mesh's UVs three times, 6 MB a copy as
+    text. Equal only as the very same numbers (rows.Rows compares its bytes): numbers held otherwise are written as
+    they were."""
+    found = {}
+    for mesh in meshes:
+        uvs = mesh.get('uvs')
+        for key, values in (mesh.get('uv_sets') or {}).items():
+            if found.get(key) is False:
+                continue
+            found[key] = bool(uvs) and len(values) == len(uvs) and (values is uvs or values == uvs)
+    return frozenset(key for key, same in found.items() if same)
+
+
+def alias(meshes):
+    """The scene being written reads these meshes' sets that are their own UVs from modo_primary_uv (aliased_keys),
+    until aliasing's end."""
+    _ALIASED.set(aliased_keys(meshes))
+
+
+def aliased():
+    """The coordinate keys read from modo_primary_uv in the scene being written."""
+    return _ALIASED.get()
+
+
+@contextmanager
+def aliasing():
+    """A scene's writing: none read from modo_primary_uv until alias says which, and none after it."""
+    token = _ALIASED.set(frozenset())
+    try:
+        yield
+    finally:
+        _ALIASED.reset(token)
+
+
+def attribute(key):
+    """The primitive attribute a layer's coordinates are read from (graph, nodes): its own named set, or modo_primary_uv
+    where its set is the mesh's own UVs on every mesh (aliased_keys)."""
+    return PRIMARY_UV if key in _ALIASED.get() else key
 
 
 def key(layer):

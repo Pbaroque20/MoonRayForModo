@@ -42,6 +42,10 @@ The current release is [0.5.5.1.2](https://github.com/Pbaroque20/MoonRayForModo/
 
   ![An Ocean Plane in Modo's viewport, looking through the render camera 6 m above the water: its waves as points, deep blue in the troughs and light blue on the crests](docs/images/ocean-viewport-points.png)
 
+- **Rigged meshes no longer slow MoonRay down**: only the weight and colour maps a material reads go to MoonRay, XPU2 and MoonLightIPR, not a rig's hundreds of bone weights.
+- **Modo's own UDIM sets render**: textures laid on through an Image Folder of UDIM tiles, as an FBX import brings them in, now render in MoonRay, XPU2 and MoonLightIPR. They were left out.
+- **Textured meshes are lighter for MoonRay and XPU2**: a mesh's UVs are sent once where an image uses its UV map as it is.
+- **Modo evaluated geometry is displaced once**: with Surfaces set to Modo evaluated geometry, MoonRay and XPU2 no longer displace Modo's displaced meshes a second time.
 - **MoonRay's realtime no longer says "Buffers will be available after the first preview pass completes."** under XPU or XPU2: its picture comes on as it renders. A Render with no finished pass yet still says it.
 
 - Known: Modo can crash as it quits with Scene Proxies in the scene (its own Convert to Proxy does the same); your work and settings are saved first.

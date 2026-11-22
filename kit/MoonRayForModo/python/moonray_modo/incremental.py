@@ -1,7 +1,7 @@
 """Conservative edit classification; unknown dependencies force a full capture."""
 LIGHTS={'camera','sunLight','pointLight','areaLight','spotLight','lightMaterial','environment','envMaterial'}
 from . import face_tags
-MATERIALS={'advancedMaterial','material.moonrayMoonShine','material.moonrayMaterialX','imageMap','constant','checker','noise','grid','dots','cellular','wood','weave','ripples','gradient','videoStill'}
+MATERIALS={'advancedMaterial','material.moonrayMoonShine','material.moonrayMaterialX','imageMap','constant','checker','noise','grid','dots','cellular','wood','weave','ripples','gradient','videoStill','imageFolder'}
 
 def deformers(scene):
     """Whether the scene has anything that deforms a mesh. Where Modo cannot be asked, it is taken to have."""
