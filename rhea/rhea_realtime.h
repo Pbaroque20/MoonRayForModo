@@ -17,6 +17,7 @@
 #include "object_warp.h"
 #include "async_render.h"
 #include <cstdio>
+#include <thread>
 #include <numeric>
 #include <string>
 
@@ -81,6 +82,7 @@ struct RealtimeOptions {
     size_t objectRays = 60000;
     unsigned objectRings = 3;
     bool objectAntialias = true;  // phase one's finished picture through FXAA (object_warp.h Fxaa)
+    bool objectPackets = true;    // its rays four at a time, where the scene is triangles alone (ObjectWarp::Options::packets)
     // The store's light and albedo apart (ObjectStore::Options::albedo): the albedo in cells half as wide, multiplied by
     // the cells' light (the user's composite from the outputs the pictures carry). Off: the colours as they are.
     bool storeAlbedo = false;
@@ -619,6 +621,7 @@ public:
     const async::RenderResult* warpTo(const cpu::Plan& b) { return warpInto(b, warpPicture) ? &warpPicture : nullptr; }
     bool warpInto(const cpu::Plan& b, async::RenderResult& out) {
         warped.valid = false, objectDrawn = false;
+        if (&out == &warpPicture) objectLaid = false;  // written below by another warp, unless objectInto lays it again
         warped.screen.rgba.clear(), warped.screen.aov.clear(), warped.screen.counts.clear();
         if (!op.warp || !last.valid || last.W != b.width || last.H != b.height || last.view.kind == View::Directional) return false;
         View nv;
@@ -732,9 +735,14 @@ public:
         const RealtimeOutputs o = outputsOf(b);
         ObjectWarp::Options& wo = objectWarp.op;
         wo.rays = op.objectRays, wo.jump = op.warpJump;
-        wo.rings = op.objectRings, wo.threads = threads, wo.antialias = op.objectAntialias;
+        // Every processor: phase one comes before XPU2's frame (Rhea's own cap, 8, is the probes' beside XPU2's frame).
+        wo.rings = op.objectRings, wo.antialias = op.objectAntialias, wo.packets = op.objectPackets;
+        wo.threads = std::max(threads, std::thread::hardware_concurrency());
         out.cancelled = out.drained = out.failed = false;
-        out.rgba.resize(n * 4), out.aov.assign(n * stride, 0.0f), out.counts.assign(n, 1u);
+        // Its outputs are none but the depths (written below each time): zeroed only where something else wrote them since
+        // the last such picture (18 MB a step at 640 x 360).
+        if (!objectLaid || out.aov.size() != n * stride) out.aov.assign(n * stride, 0.0f);
+        out.rgba.resize(n * 4), out.counts.assign(n, 1u);
         auto fill = [&] {
             parallel(threads, h, [&](size_t y) {
                 for (size_t i = y * w; i < (y + 1) * w; ++i) {
@@ -758,6 +766,7 @@ public:
         if (!objectWarp.draw(nv, *traceScene, store, w, h, warped.color, warped.w, warped.depth, warped.state, warped.doubt, stage)) return false;
         objectDrawn = true;
         fill();
+        objectLaid = &out == &warpPicture;
         size_t landed = 0;
         for (size_t i = 0; i < n; ++i) landed += warped.state[i] == 1;
         warped.valid = true;
@@ -931,6 +940,7 @@ public:
             return;
         }
         last.result.rgba.swap(from.rgba), last.result.counts.swap(from.counts), last.result.aov.swap(from.aov);
+        if (&from == &warpPicture) objectLaid = false;  // the old source's outputs swapped into it
         lastKind = 0;
         depthsOf(b);
     }
@@ -1115,6 +1125,7 @@ public:
     const async::CpuScene* traceScene = nullptr;
     std::function<bool(const async::RenderResult&)> onStage;
     bool objectDrawn = false;  // the last warp was drawn from the store
+    bool objectLaid = false;   // warpPicture's outputs are an objectInto's (zero but the depths)
     struct KeptScreen {
         async::RenderResult picture;
         surface::Camera camera{};

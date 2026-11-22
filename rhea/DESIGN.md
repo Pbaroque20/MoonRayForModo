@@ -1100,3 +1100,15 @@ any XPU2 picture shown as it is has its unsampled pixels filled from those aroun
 rest only where its last scene diced a mesh by the screen (`rdla.LAST_CUT_BY_VIEW`): a realtime sea is diced evenly from
 the held camera, the same from every view, so on the dragon scene a release sends nothing and the ocean is worked out
 once. On the dragon a whole scene sent again faded four times from the picture on screen, no pixel dark.
+
+**Phase one's speed (2026-11-22).** "Wouldn't it make the first phase more efficient if the direct lighting contribution
+were flattened into a 256-color index?": the colours are a small part of its time (the store is about 5 MB on the
+dragon), and a palette of HDR light would band the smooth sea and sky; the time was in the rays, the store's lookups
+and the passes over the picture. Phase one now has every processor (it comes before XPU2's frame; Rhea's cap of 8 was the
+probes' beside it), counts its rays a row at a time (an atomic a ray had every thread on one cache line), keeps its grids
+and buffers from step to step, and zeroes the warp picture's outputs only where another warp wrote them. Rays go four at a
+time (Embree's packets) where the scene is triangles alone (`XPU2_SESSION_RHEA_PACKETS=0`: one at a time); on the dragon
+that made no difference, the rays' time being mostly the store's lookups. On the dragon (640 x 360) a move's picture took
+0.056 s (0.079 before), its first picture 0.007 s (0.019): coarse rays 1.2 ms, coarse picture 5.4 ms, the rings' rays
+13.6 ms, their pictures 9.2 ms, FXAA 2.3 ms, and 16 ms the session's showing the three pictures before the last. The first
+move after a scene's load took 0.086 s (its buffers made).

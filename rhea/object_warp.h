@@ -539,12 +539,17 @@ public:
         double jump = 0.03;      // corners whose depths differ by more (relative) are another surface: a ray a pixel
         unsigned rings = 3;      // the fine grid's stages, rings of equal area from the centre out (streamed)
         bool antialias = true;   // the finished picture through FXAA (Fxaa)
+        bool packets = true;     // rays four at a time (Embree's packets), where the scene is triangles alone
         unsigned threads = 8;
     };
     Options op;
     size_t rays = 0, edgeRays = 0;
     unsigned stride = 0, stages = 0;
     double seconds = 0, firstSeconds = 0, unknown = 0;  // the view's time, its first picture's, the rays the store had nothing for
+    // Where the time went (seconds): the coarse grid's rays, its picture (sampled, blurred, written), the rings' grid rays,
+    // their pictures (the edges' own rays among them), FXAA, and the stages shown (stage(): the session's part).
+    double coarseRaySeconds = 0, coarsePictureSeconds = 0, ringRaySeconds = 0, ringPictureSeconds = 0, fxaaSeconds = 0, stageSeconds = 0;
+    bool packetsUsed = false;
 
     // A view of the store through camera nv, by the scene's first hits: each pixel's colour (rgb), lifted depth w (-1 the
     // environment), depth (0 none), state (1 drawn, 2 filled from around it) and doubt (0 to 1). Streamed (the user,
@@ -554,58 +559,97 @@ public:
     bool draw(const View& nv, const async::CpuScene& scene, const ObjectStore& store, unsigned w, unsigned h, std::vector<float>& color,
               std::vector<double>& outW, std::vector<float>& outDepth, std::vector<std::uint8_t>& state, std::vector<float>& doubt,
               const std::function<bool()>& stage = {}) {
-        const auto began = std::chrono::steady_clock::now();
+        using Clock = std::chrono::steady_clock;
+        const auto began = Clock::now();
+        auto since = [](Clock::time_point t) { return std::chrono::duration<double>(Clock::now() - t).count(); };
         const size_t n = size_t(w) * h;
         rays = edgeRays = 0, stages = 0, unknown = 0, firstSeconds = 0;
+        coarseRaySeconds = coarsePictureSeconds = ringRaySeconds = ringPictureSeconds = fxaaSeconds = stageSeconds = 0;
         if (!w || !h) return false;
         const double angle = ObjectStore::pixelAngle(nv);
         if (!(angle > 0)) return false;
+        const unsigned threads = std::max(1u, op.threads);
         const double cx = 0.5 * w, cy = 0.5 * h, half = std::sqrt(cx * cx + cy * cy);
         stride = unsigned(std::max(1.0, std::ceil(std::sqrt(double(n) / double(std::max<size_t>(op.rays, 1000))))));
         const unsigned S = stride * 4;
         color.assign(n * 3, 0.0f), outW.assign(n, -1.0), outDepth.assign(n, 0.0f), state.assign(n, 2), doubt.assign(n, 1.0f);
+        // Packets where every mesh is triangles: the curves' and points' own intersectors take one ray at a time.
+        packetsUsed = op.packets && trianglesAlone(scene);
         std::atomic<size_t> traced{0}, empty{0}, edge{0};
-        auto shadeRay = [&](double x, double y, Node& o) {
-            surface::Ray ray;
-            if (!nv.ray(x, y, ray)) {
-                o.kind = 3;
-                return;
-            }
-            ray.mask = 1u;
-            async::CpuBackend backend{scene};
-            const resume::Hit hit = backend.trace(ray);
-            traced.fetch_add(1, std::memory_order_relaxed);
+        // A hit's colour from the store (or the environment's), into a node.
+        auto shade = [&](const surface::Ray& ray, const resume::Hit& hit, Node& o) {
             if (hit.geom == ~0u) {
                 o.kind = 2;
                 o.known = store.skyAt(D3{ray.direction.x, ray.direction.y, ray.direction.z}, o.rgb);
                 o.conf = o.known ? 1.0f : 0.0f;
-            } else {
-                o.kind = 1;
-                const double d = nv.depthOf(nv.camera(hit.point));
-                o.depth = float(d), o.w = nv.wOf(d);
-                const D3 nn = nv.toward(D3{hit.normal.x, hit.normal.y, hit.normal.z}, hit.point);
-                o.known = store.lookup(hit.point, nn, D3{ray.direction.x, ray.direction.y, ray.direction.z}, ObjectStore::footprint(nv, angle, d), o.rgb, o.conf);
+                return;
             }
-            if (!o.known) empty.fetch_add(1, std::memory_order_relaxed);
+            o.kind = 1;
+            const double d = nv.depthOf(nv.camera(hit.point));
+            o.depth = float(d), o.w = nv.wOf(d);
+            const D3 nn = nv.toward(D3{hit.normal.x, hit.normal.y, hit.normal.z}, hit.point);
+            o.known = store.lookup(hit.point, nn, D3{ray.direction.x, ray.direction.y, ray.direction.z}, ObjectStore::footprint(nv, angle, d), o.rgb, o.conf);
+        };
+        // Rays through raster places (x, y), each node shaded: four at a time where packets may be used. Adds the rays and
+        // those the store had nothing for to the counts (once a row: one atomic each, not one a ray).
+        struct Batch {
+            std::vector<double> x, y;
+            std::vector<Node*> to;
+            void clear() { x.clear(), y.clear(), to.clear(); }
+            void add(double px, double py, Node* o) { x.push_back(px), y.push_back(py), to.push_back(o); }
+        };
+        auto shadeAll = [&](Batch& b) {
+            async::CpuBackend backend{scene};
+            surface::Ray ray4[4];
+            Node* to4[4];
+            int k = 0;
+            size_t made = 0, unknownHere = 0;
+            auto flush = [&] {
+                resume::Hit hits[4];
+                if (packetsUsed && k > 1) trace4(scene, backend, ray4, k, hits);
+                else
+                    for (int q = 0; q < k; ++q) hits[q] = backend.trace(ray4[q]);
+                for (int q = 0; q < k; ++q) {
+                    shade(ray4[q], hits[q], *to4[q]);
+                    ++made;
+                    if (!to4[q]->known) ++unknownHere;
+                }
+                k = 0;
+            };
+            for (size_t i = 0; i < b.to.size(); ++i) {
+                surface::Ray ray;
+                if (!nv.ray(b.x[i], b.y[i], ray)) {
+                    b.to[i]->kind = 3;
+                    continue;
+                }
+                ray.mask = 1u;
+                ray4[k] = ray, to4[k] = b.to[i], ++k;
+                if (k == 4) flush();
+            }
+            if (k) flush();
+            traced.fetch_add(made, std::memory_order_relaxed);
+            empty.fetch_add(unknownHere, std::memory_order_relaxed);
         };
         auto radius = [&](double x, double y) { return std::sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy)); };
-        // A grid's nodes traced between two radii, then those the store had nothing for filled from the known around them.
+        // A grid's nodes traced between two radii, a row at a time, then those the store had nothing for filled from the
+        // known around them.
         auto trace = [&](Grid& g, double from, double to) {
-            parallel(std::max(1u, op.threads), g.gh, [&](size_t j) {
+            parallel(threads, g.gh, [&](size_t j) {
+                Batch b;
                 for (unsigned i = 0; i < g.gw; ++i) {
                     const double x = std::min<double>(double(i) * g.step, w - 1) + 0.5, y = std::min<double>(double(j) * g.step, h - 1) + 0.5;
                     const double r = radius(x, y);
                     if (r < from || r >= to) continue;
-                    shadeRay(x, y, g.nodes[j * g.gw + i]);
+                    b.add(x, y, &g.nodes[j * g.gw + i]);
                 }
+                shadeAll(b);
             });
             fillNodes(g);
         };
         // Each pixel's colour from a grid: bilinear between its cell's corners; smooth: they are one smooth surface.
         auto sample = [&](const Grid& g, unsigned x, unsigned y, Pixel& p, bool* smoothOut) {
+            const auto c = corners(g, x, y);
             const unsigned i = x / g.step, j = y / g.step;
-            const Node* c[4] = {&g.nodes[size_t(j) * g.gw + i], &g.nodes[size_t(j) * g.gw + i + 1], &g.nodes[size_t(j + 1) * g.gw + i],
-                                &g.nodes[size_t(j + 1) * g.gw + i + 1]};
             const double x0 = double(i) * g.step, x1 = std::min<double>(double(i + 1) * g.step, w - 1);
             const double y0 = double(j) * g.step, y1 = std::min<double>(double(j + 1) * g.step, h - 1);
             const double tx = x1 > x0 ? std::clamp((x - x0) / (x1 - x0), 0.0, 1.0) : 0.0, ty = y1 > y0 ? std::clamp((y - y0) / (y1 - y0), 0.0, 1.0) : 0.0;
@@ -642,86 +686,110 @@ public:
             state[i] = p.conf > 0 ? 1 : 2;
             doubt[i] = std::clamp(1.0f - p.conf, 0.0f, 1.0f);
         };
+        auto showStage = [&] {
+            if (!stage) return true;
+            const auto t = Clock::now();
+            const bool go = stage();
+            stageSeconds += since(t);
+            return go;
+        };
         // The coarse grid over the whole picture: the first picture.
-        Grid coarse = makeGrid(S, w, h);
+        auto t0 = Clock::now();
+        layGrid(coarse, S, w, h);
         trace(coarse, 0.0, 1e30);
-        std::vector<Pixel> outside(n);
-        parallel(std::max(1u, op.threads), h, [&](size_t yy) {
+        coarseRaySeconds = since(t0);
+        t0 = Clock::now();
+        outside.resize(n);
+        parallel(threads, h, [&](size_t yy) {
             const unsigned y = unsigned(yy);
             for (unsigned x = 0; x < w; ++x) sample(coarse, x, y, outside[size_t(y) * w + x], nullptr);
         });
         // Blurred over about its step (two box passes each way): bilinear alone left the grid's steps along silhouettes.
-        blur(outside, w, h, std::max(1u, S / 2), op.threads);
-        parallel(std::max(1u, op.threads), h, [&](size_t yy) {
+        blur(outside, blurred, w, h, std::max(1u, S / 2), threads);
+        parallel(threads, h, [&](size_t yy) {
             for (size_t i = yy * w; i < (yy + 1) * w; ++i) write(i, outside[i]);
         });
-        firstSeconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - began).count();
+        coarsePictureSeconds = since(t0);
+        firstSeconds = since(began);
         ++stages;
         auto finish = [&] {
             edgeRays = edge.load();
             rays = traced.load();
             unknown = rays ? double(empty.load()) / double(rays) : 0.0;
-            seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - began).count();
+            seconds = since(began);
         };
-        if (stage && !stage()) {
+        if (!showStage()) {
             finish();
             return true;
         }
         // The fine grid ring by ring, rings of equal area out to the picture's corners: each ring's pixels from the fine
-        // grid (a ray a pixel in a cell its corners are not one smooth surface of), its outer band going over to the coarse
-        // grid's until the next ring comes.
-        Grid fine = makeGrid(stride, w, h);
+        // grid (a ray a pixel in a cell its corners are not one smooth surface of, those rays a row's together), its outer
+        // band going over to the coarse grid's until the next ring comes.
+        layGrid(fine, stride, w, h);
         const double reach = half + 2.0 * stride;
         const unsigned rings = std::max(1u, op.rings);
         const double band = std::max(4.0 * stride, 0.08 * half);
-        std::vector<Pixel> inner(n);
-        std::vector<std::uint8_t> have(n, 0);
+        inner.resize(n);
+        have.assign(n, 0);
         double tracedTo = 0, validTo = 0;
         for (unsigned k = 1; k <= rings; ++k) {
             const bool last = k == rings;
             const double to = last ? reach : reach * std::sqrt(double(k) / rings);
+            t0 = Clock::now();
             trace(fine, tracedTo, to);
+            ringRaySeconds += since(t0);
+            t0 = Clock::now();
             tracedTo = to;
             // A pixel's fine colour once its cell's corners are all traced: up to a cell and a half inside the ring.
             const double valid = last ? reach : std::max(0.0, to - 1.5 * stride);
             const double from = validTo;
-            parallel(std::max(1u, op.threads), h, [&](size_t yy) {
+            parallel(threads, h, [&](size_t yy) {
                 const unsigned y = unsigned(yy);
+                // The pixels newly in reach: bilinear from the fine grid; a cell that is not one smooth surface, a ray of the
+                // pixel's own (the row's such rays traced together).
+                std::vector<unsigned> edges;
                 for (unsigned x = 0; x < w; ++x) {
                     const size_t i = size_t(y) * w + x;
                     const double r = radius(x + 0.5, y + 0.5);
-                    if (r >= valid) continue;
-                    if (!have[i] && r >= from - 1.0) {
-                        Pixel& p = inner[i];
-                        bool smooth = false;
-                        sample(fine, x, y, p, &smooth);
-                        if (!smooth) {
-                            // A silhouette or a crease in the cell: the pixel's own ray.
-                            Node own;
-                            shadeRay(x + 0.5, y + 0.5, own);
-                            edge.fetch_add(1, std::memory_order_relaxed);
-                            if (own.kind == 1 || own.kind == 2) {
-                                if (own.known) {
-                                    for (int ch = 0; ch < 3; ++ch) p.rgb[ch] = own.rgb[ch];
-                                    p.conf = own.conf;
-                                } else {
-                                    // Nothing in the store: the colour of the cell's corner nearest it on its own surface
-                                    // (or the environment's), not the cell's mix across the edge (the environment bled into
-                                    // a silhouette the lens had blurred).
-                                    const Node* best = nullptr;
-                                    for (const Node* c : corners(fine, x, y))
-                                        if (c->kind == own.kind && (!best || (own.kind == 1 && std::fabs(c->w - own.w) < std::fabs(best->w - own.w))))
-                                            best = c;
-                                    if (best)
-                                        for (int ch = 0; ch < 3; ++ch) p.rgb[ch] = best->rgb[ch];
-                                    p.conf = 0;
-                                }
-                                p.w = own.kind == 1 ? own.w : -1.0, p.depth = own.kind == 1 ? own.depth : 0.0f;
-                            }
+                    if (r >= valid || have[i] || r < from - 1.0) continue;
+                    bool smooth = false;
+                    sample(fine, x, y, inner[i], &smooth);
+                    if (!smooth) edges.push_back(x);
+                    have[i] = 1;
+                }
+                if (!edges.empty()) {
+                    std::vector<Node> own(edges.size());
+                    Batch b;
+                    for (size_t e = 0; e < edges.size(); ++e) b.add(edges[e] + 0.5, y + 0.5, &own[e]);
+                    shadeAll(b);
+                    edge.fetch_add(edges.size(), std::memory_order_relaxed);
+                    for (size_t e = 0; e < edges.size(); ++e) {
+                        const unsigned x = edges[e];
+                        Pixel& p = inner[size_t(y) * w + x];
+                        const Node& o = own[e];
+                        if (o.kind != 1 && o.kind != 2) continue;
+                        if (o.known) {
+                            for (int ch = 0; ch < 3; ++ch) p.rgb[ch] = o.rgb[ch];
+                            p.conf = o.conf;
+                        } else {
+                            // Nothing in the store: the colour of the cell's corner nearest it on its own surface (or the
+                            // environment's), not the cell's mix across the edge (the environment bled into a silhouette
+                            // the lens had blurred).
+                            const Node* best = nullptr;
+                            for (const Node* c : corners(fine, x, y))
+                                if (c->kind == o.kind && (!best || (o.kind == 1 && std::fabs(c->w - o.w) < std::fabs(best->w - o.w)))) best = c;
+                            if (best)
+                                for (int ch = 0; ch < 3; ++ch) p.rgb[ch] = best->rgb[ch];
+                            p.conf = 0;
                         }
-                        have[i] = 1;
+                        p.w = o.kind == 1 ? o.w : -1.0, p.depth = o.kind == 1 ? o.depth : 0.0f;
                     }
+                }
+                for (unsigned x = 0; x < w; ++x) {
+                    const size_t i = size_t(y) * w + x;
                     if (!have[i]) continue;
+                    const double r = radius(x + 0.5, y + 0.5);
+                    if (r >= valid) continue;
                     // Over to the coarse grid in this ring's outer band, until the next ring comes (the last: none).
                     const double t = last ? 0.0 : std::clamp((r - (valid - band)) / band, 0.0, 1.0);
                     const double b = t * t * (3 - 2 * t);
@@ -734,11 +802,16 @@ public:
                     write(i, m);
                 }
             });
+            ringPictureSeconds += since(t0);
             validTo = valid;
             ++stages;
             // The finished picture's silhouettes smoothed (the rings before it are on screen for a moment only).
-            if (last && op.antialias) Fxaa{}.apply(color, w, h, op.threads);
-            if (!last && stage && !stage()) break;
+            if (last && op.antialias) {
+                t0 = Clock::now();
+                Fxaa{}.apply(color, w, h, threads);
+                fxaaSeconds = since(t0);
+            }
+            if (!last && !showStage()) break;
         }
         finish();
         return true;
@@ -761,10 +834,57 @@ private:
         unsigned step = 1, gw = 0, gh = 0;
         std::vector<Node> nodes;
     };
-    // A box blur of the pixels' colour and confidence, radius r, twice each way (about a Gaussian).
-    static void blur(std::vector<Pixel>& px, unsigned w, unsigned h, unsigned r, unsigned threads) {
+    // Kept from view to view (a drag's steps): no allocation a step.
+    Grid coarse, fine;
+    std::vector<Pixel> outside, inner, blurred;
+    std::vector<std::uint8_t> have;
+
+    // Whether every mesh of the scene is triangles (no curves, no points): Embree's packets meet them all.
+    static bool trianglesAlone(const async::CpuScene& scene) {
+        if (!scene.plan) return false;
+        for (const auto& m : scene.plan->meshes)
+            if (!m.data || m.data->points || m.data->curveBasis) return false;
+        return true;
+    }
+    // Up to four rays at once (Embree's packets), each hit made as CpuBackend::trace makes a triangle's.
+    static void trace4(const async::CpuScene& scene, const async::CpuBackend& backend, const surface::Ray* rays, int count, resume::Hit* hits) {
+        alignas(16) RTCRayHit4 rh;
+        alignas(16) int valid[4];
+        for (int k = 0; k < 4; ++k) {
+            const bool on = k < count;
+            const surface::Ray& r = rays[on ? k : 0];
+            valid[k] = on ? -1 : 0;
+            rh.ray.org_x[k] = r.origin.x, rh.ray.org_y[k] = r.origin.y, rh.ray.org_z[k] = r.origin.z;
+            rh.ray.dir_x[k] = r.direction.x, rh.ray.dir_y[k] = r.direction.y, rh.ray.dir_z[k] = r.direction.z;
+            rh.ray.tnear[k] = r.nearT, rh.ray.tfar[k] = r.farT, rh.ray.time[k] = backend.time;
+            rh.ray.mask[k] = r.mask, rh.ray.id[k] = unsigned(k), rh.ray.flags[k] = 0;
+            rh.hit.geomID[k] = RTC_INVALID_GEOMETRY_ID;
+            for (unsigned l = 0; l < RTC_MAX_INSTANCE_LEVEL_COUNT; ++l) rh.hit.instID[l][k] = RTC_INVALID_GEOMETRY_ID;
+        }
+        RTCIntersectArguments args;
+        rtcInitIntersectArguments(&args);
+        rtcIntersect4(valid, scene.scene, &rh, &args);
+        for (int k = 0; k < count; ++k) {
+            resume::Hit& out = hits[k];
+            out = resume::Hit{};
+            if (rh.hit.geomID[k] == RTC_INVALID_GEOMETRY_ID) continue;
+            out.geom = rh.hit.instID[0][k] != RTC_INVALID_GEOMETRY_ID ? rh.hit.instID[0][k] : rh.hit.geomID[k];
+            out.prim = rh.hit.primID[k];
+            const auto& mesh = *scene.plan->meshes[out.geom].data;
+            if (mesh.points || mesh.curveBasis) {  // not met: such scenes take one ray at a time
+                out = backend.trace(rays[k]);
+                continue;
+            }
+            const auto t = mesh.triangles[out.prim];
+            if (!resume::geometryHit(out, rays[k], backend.vertexOf(out.geom, mesh, t.a), backend.vertexOf(out.geom, mesh, t.b),
+                                     backend.vertexOf(out.geom, mesh, t.c)))
+                out.normal = {};
+        }
+    }
+    // A box blur of the pixels' colour and confidence, radius r, twice each way (about a Gaussian); tmp its scratch.
+    static void blur(std::vector<Pixel>& px, std::vector<Pixel>& tmp, unsigned w, unsigned h, unsigned r, unsigned threads) {
         if (!r || px.size() != size_t(w) * h) return;
-        std::vector<Pixel> tmp(px.size());
+        tmp.resize(px.size());
         auto pass = [&](const std::vector<Pixel>& from, std::vector<Pixel>& to, bool across) {
             const unsigned lines = across ? h : w, len = across ? w : h;
             parallel(std::max(1u, threads), lines, [&](size_t line) {
@@ -796,12 +916,10 @@ private:
             pass(tmp, px, false);
         }
     }
-    // Nodes at multiples of the step, the last row and column at the picture's edge.
-    static Grid makeGrid(unsigned step, unsigned w, unsigned h) {
-        Grid g;
+    // Nodes at multiples of the step, the last row and column at the picture's edge (the vectors kept, cleared).
+    static void layGrid(Grid& g, unsigned step, unsigned w, unsigned h) {
         g.step = step, g.gw = (w - 1) / step + 2, g.gh = (h - 1) / step + 2;
         g.nodes.assign(size_t(g.gw) * g.gh, Node{});
-        return g;
     }
     // The traced nodes the store had nothing for, from the known around them (push-pull over the grid): a surface's from
     // the surfaces', the environment's from the environment's, so that neither bleeds into the other at a silhouette.

@@ -3220,6 +3220,8 @@ int session(const Args& args, const fs::path& directory) {
                     rheaView.op.storeAlbedo = envOn("XPU2_SESSION_RHEA_STORE_ALBEDO", false);
                     // Phase one's finished picture through screen-space anti-aliasing (FXAA; the user, 2026-11-22).
                     rheaView.op.objectAntialias = envOn("XPU2_SESSION_RHEA_AA", true);
+                    // Its rays four at a time where the scene is triangles alone (Embree's packets).
+                    rheaView.op.objectPackets = envOn("XPU2_SESSION_RHEA_PACKETS", true);
                     if (const char* debug = std::getenv("XPU2_SESSION_RHEA_DEBUG")) rheaView.op.debugFolder = debug;
                     const auto began = Clock::now();
                     async::GpuLane* lane = gpu && gpuUsable ? gpu.get() : nullptr;
@@ -3293,10 +3295,13 @@ int session(const Args& args, const fs::path& directory) {
                         if (rheaView.objectDrawn) {
                             const rhea::ObjectWarp& ow = rheaView.objectWarp;
                             std::printf("MoonRay XPU2: Rhea: %s from the surfaces' colours in %.3f s (first picture %.3f s, %u pictures%s; %zu rays, "
-                                        "%zu of them at edges, every %u pixels; %.0f%% of rays unknown to the store, %zu cells in it)\n",
+                                        "%zu of them at edges, every %u pixels%s; %.0f%% of rays unknown to the store, %zu cells in it; coarse rays %.1f ms, "
+                                        "coarse picture %.1f ms, rings' rays %.1f ms, rings' pictures %.1f ms, FXAA %.1f ms, shown %.1f ms)\n",
                                         finishing ? "the stopped picture finished" : "the camera's picture", took, ow.firstSeconds, ow.stages,
-                                        rheaPhaseOneDone ? "" : ", stopped by the next move", ow.rays, ow.edgeRays, ow.stride, ow.unknown * 100.0,
-                                        rheaView.store.cells());
+                                        rheaPhaseOneDone ? "" : ", stopped by the next move", ow.rays, ow.edgeRays, ow.stride,
+                                        ow.packetsUsed ? ", four at a time" : "", ow.unknown * 100.0, rheaView.store.cells(),
+                                        ow.coarseRaySeconds * 1e3, ow.coarsePictureSeconds * 1e3, ow.ringRaySeconds * 1e3, ow.ringPictureSeconds * 1e3,
+                                        ow.fxaaSeconds * 1e3, ow.stageSeconds * 1e3);
                         } else {
                             const rhea::MeshWarp& mw = rheaView.warpMeshInfo();
                             std::printf("MoonRay XPU2: Rhea: the last picture moved to the camera in %.3f s (%.0f%% of it landed; mesh %zu points, "
