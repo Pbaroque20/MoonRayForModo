@@ -2877,6 +2877,10 @@ int session(const Args& args, const fs::path& directory) {
                         });
                     });
                 std::string currentView = "beauty";
+                // Rhea's first pictures in the Beauty view (rheaFrames sets it): its frame and XPU2's first pictures folded
+                // into it, denoised as the pictures with gaps are (XPU2_SESSION_RHEA_DENOISE; a picture XPU2's samples
+                // have mostly made is shown as it is).
+                bool rheaDenoiseNow = false;
                 watch.previewAov = [&] {
                     currentView = viewKey();
                     if (denoiser && denoiserError.empty()) denoiserError = denoiser->error();
@@ -2890,7 +2894,7 @@ int session(const Args& args, const fs::path& directory) {
                         const size_t pixels = size_t(w) * h;
                         bool gaps = sofar.counts.size() < pixels;
                         for (size_t i = 0; !gaps && i < pixels; ++i) gaps = !sofar.counts[i];
-                        if (gaps) {
+                        if (gaps || rheaDenoiseNow) {
                             auto p = realtimePicture(sofar);
                             p.view = "beauty";
                             denoiser->submit(std::move(p));
@@ -3159,6 +3163,13 @@ int session(const Args& args, const fs::path& directory) {
                     if (const char* v = std::getenv("XPU2_SESSION_RHEA_DRAG_HOLD")) rheaView.op.dragHold = std::atof(v);
                     if (const char* v = std::getenv("XPU2_SESSION_RHEA_TRUSTED_SPP")) rheaView.op.trustedSpp = unsigned(std::atoi(v));
                     rheaView.op.warp = envOn("XPU2_SESSION_RHEA_WARP", true);
+                    // The warp as a mesh gradient (rhea/mesh_warp.h), its cells, depth jump and soft share; whether a warp may
+                    // be the next warp's source (it was: a long drag went black).
+                    rheaView.op.warpMesh = envOn("XPU2_SESSION_RHEA_WARP_MESH", true);
+                    if (const char* v = std::getenv("XPU2_SESSION_RHEA_WARP_CELL")) rheaView.op.warpCell = std::atof(v);
+                    if (const char* v = std::getenv("XPU2_SESSION_RHEA_WARP_JUMP")) rheaView.op.warpJump = std::atof(v);
+                    if (const char* v = std::getenv("XPU2_SESSION_RHEA_WARP_SOFT")) rheaView.op.warpSoft = std::atof(v);
+                    rheaView.op.warpChain = envOn("XPU2_SESSION_RHEA_WARP_CHAIN", false);
                     if (const char* debug = std::getenv("XPU2_SESSION_RHEA_DEBUG")) rheaView.op.debugFolder = debug;
                     const auto began = Clock::now();
                     async::GpuLane* lane = gpu && gpuUsable ? gpu.get() : nullptr;
@@ -3167,9 +3178,17 @@ int session(const Args& args, const fs::path& directory) {
                     // new scene, an edit): the probes placed for the camera, lit by XPU2's frame below once it is done.
                     const bool moving = rheaView.hasProbes() && rheaView.cameraChanged(*scene.plan);
                     double rheaSeconds = 0;
-                    auto publish = [&](const async::RenderResult& r, double fraction) {
+                    // Rhea's first pictures denoised in the Beauty view (rheaDenoiseNow): its frame, and XPU2's pictures folded
+                    // into it or into the warp while XPU2's frame is short of rheaDenoiseBelow; the warp (a mesh gradient,
+                    // already smooth) and XPU2's frame at rest as they are.
+                    const bool rheaDenoise = envOn("XPU2_SESSION_RHEA_DENOISE", true);
+                    double rheaDenoiseBelow = 0.5;
+                    if (const char* v = std::getenv("XPU2_SESSION_RHEA_DENOISE_BELOW")) rheaDenoiseBelow = std::atof(v);
+                    auto publish = [&](const async::RenderResult& r, double fraction, bool denoise) {
                         if (watch.previewAov && watch.previewAov() && watch.previewResult) {
+                            rheaDenoiseNow = rheaDenoise && denoise;
                             watch.previewResult(r, fraction);
+                            rheaDenoiseNow = false;
                         } else if (watch.preview) {
                             std::vector<float> rgb(size_t(width) * height * 3);
                             for (size_t i = 0; i < size_t(width) * height; ++i)
@@ -3195,11 +3214,14 @@ int session(const Args& args, const fs::path& directory) {
                     if (moving) {
                         const auto warpBegan = Clock::now();
                         if (const async::RenderResult* first = rheaView.warpTo(*scene.plan)) {
-                            publish(*first, 0.0);
+                            publish(*first, 0.0, false);
                             rheaView.publishedWarp();
                             warpedNow = true;
-                            std::printf("MoonRay XPU2: Rhea: the last picture moved to the camera in %.3f s (%.0f%% of it landed)\n",
-                                        std::chrono::duration<double>(Clock::now() - warpBegan).count(), rheaView.warpShare * 100.0);
+                            const rhea::MeshWarp& mw = rheaView.warpMeshInfo();
+                            std::printf("MoonRay XPU2: Rhea: the last picture moved to the camera in %.3f s (%.0f%% of it landed; mesh %zu points, "
+                                        "%zu triangles, cells of %u, built in %.3f s)\n",
+                                        std::chrono::duration<double>(Clock::now() - warpBegan).count(), rheaView.warpShare * 100.0,
+                                        mw.valid() ? mw.vertexCount : size_t(0), mw.valid() ? mw.triangleCount : size_t(0), mw.cellSize, mw.buildSeconds);
                             std::fflush(stdout);
                         }
                         // In a drag (dragging, or this move within 0.15 s of the last), the next step looked for a moment before
@@ -3259,7 +3281,7 @@ int session(const Args& args, const fs::path& directory) {
                                     rheaView.regions, rheaView.shareBack * 100.0, rheaView.planesSeconds, rheaView.storeSeconds, rheaView.pruned,
                                     rheaView.woken, rheaView.dormant);
                         std::fflush(stdout);
-                        publish(shown, 0.0);
+                        publish(shown, 0.0, true);
                         if (watch.stop && watch.stop()) {
                             shown.cancelled = true;
                             return shown;
@@ -3283,15 +3305,19 @@ int session(const Args& args, const fs::path& directory) {
                     rest.previewResult = [&](const async::RenderResult& sofar, double fraction) {
                         lastFraction = fraction;
                         async::RenderResult merged;
-                        if (warpOnly) rheaView.mergeWarp(sofar, fraction, merged);
+                        double coverage = 1.0;  // the share of pixels XPU2's samples reached (a picture mostly a warp is no source)
+                        if (warpOnly) coverage = rheaView.mergeWarp(sofar, fraction, merged);
                         else rheaView.merge(sofar, fraction, merged);
                         struct Kept {
                             rhea::Realtime& view;
                             async::RenderResult& from;
-                            ~Kept() { view.published(std::move(from)); }  // after it is shown: kept for the next move's warp
-                        } kept{rheaView, merged};
+                            double coverage;
+                            ~Kept() { view.published(std::move(from), coverage); }  // after it is shown: kept for the next move's warp
+                        } kept{rheaView, merged, coverage};
                         if (wanted && watch.previewResult) {
+                            rheaDenoiseNow = rheaDenoise && (rheaFramed || warpOnly) && fraction < rheaDenoiseBelow;
                             watch.previewResult(merged, fraction);
+                            rheaDenoiseNow = false;
                         } else if (watch.preview) {
                             std::vector<float> rgb(size_t(width) * height * 3);
                             for (size_t i = 0; i < size_t(width) * height; ++i)
@@ -3316,11 +3342,12 @@ int session(const Args& args, const fs::path& directory) {
                     if (x.failed) return x;
                     // The drag over: XPU2's frame ended, or ran longer than Rhea's frame takes (the moves have paused).
                     if (!x.cancelled || std::chrono::duration<double>(Clock::now() - restBegan).count() > 1.2 * rheaFrameCost) rheaFrameStopped = false;
-                    if (warpOnly) rheaView.mergeWarp(x, x.cancelled || x.drained ? lastFraction : 1.0, shown);
+                    double coverage = 1.0;
+                    if (warpOnly) coverage = rheaView.mergeWarp(x, x.cancelled || x.drained ? lastFraction : 1.0, shown);
                     else rheaView.merge(x, x.cancelled || x.drained ? lastFraction : 1.0, shown);
                     shown.cancelled = x.cancelled, shown.drained = x.drained;
                     // The picture as shown, for the next move's warp: the frame's own, or the last it published.
-                    if (shown.rgba.size() == size_t(width) * height * 4) rheaView.keepShown(*scene.plan, shown);
+                    if (shown.rgba.size() == size_t(width) * height * 4) rheaView.keepShown(*scene.plan, shown, coverage);
                     else rheaView.keepLast(*scene.plan);
                     // The probes learn from XPU2's frame, as far as it came (a move stopped it, or it ended): on a heavy
                     // scene the first frame at rest may never end before a drag.

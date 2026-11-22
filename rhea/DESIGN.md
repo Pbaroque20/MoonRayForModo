@@ -927,3 +927,46 @@ Not done: the GPU programs (3.5 to 4.4 s of a start in Modo, after the scene's p
 another thread: their lane must be made by the thread that feeds it (made so, the session fell back: "GPU context
 requires feeder owner"); the preparation would have to move instead, and MoonRay's tessellation takes few threads it did
 not start.
+
+## 28. Drag pictures as a mesh gradient (2026-11-21)
+
+The user's video of a drag (a glass dragon over a sea, Denoised Beauty): the first phase "does look visually awful". The
+pictures showed three faults of the warp (section 26), each its own:
+
+- **The environment went black.** A pixel that met nothing has no depth, and the warp moved pixels by their depths.
+- **Each warp was the next one's source.** A drag's steps come faster than XPU2's frame stops, so nearly every picture
+  of a drag was a warp of a warp: what one step lost (the environment, what a move uncovered, a hole the three passes
+  left) the next could not move again, and a long drag ended black with a few strips of XPU2's samples.
+- **Blocks and facets.** Pixels moved one by one leave gaps where a surface grows; the farthest neighbour filled them, a
+  warp of that again, into a mosaic. And the session's denoiser took the pixels XPU2 had not sampled yet as gaps and
+  filled them from XPU2's few samples around (`realtimePicture`), throwing the warp away there.
+
+The user's direction: the blotches "could be even more sparse, and look more like a mesh gradient, since we are now
+accepting that textures should be represented as averaged colors on first phase"; "color interpolations between the
+direct light information, and the thresholds between elevations determine how much a color should interpolate to its
+next point" - "cleaner first phases, approximating vector mesh gradients".
+
+So the warp now moves a mesh (`mesh_warp.h`), made once from the picture it moves:
+
+- **Points, sparse where the picture is smooth.** Cells of 16 pixels at 1280 x 720 (scaled with the picture, a power of
+  two), halved wherever the depth jumps inside, down to a pixel. A jump between neighbours: the lifted depth (inverse
+  depth: affine across a plane, so a grazing floor is no jump) off the line through the two pixels before it by more
+  than `warpJump` (3%) of itself, from both sides; the environment against a surface, always.
+- **Each point the colour around it, over its own surface.** As far as its coarsest cell reaches (half a 16-pixel cell
+  for a coarse corner, a pixel or two at an edge), tent-weighted; a neighbour counts fully while its depth is within
+  `warpSoft` (1%) of the point's plane, less and less up to `warpJump`, not at all past it: the elevations' threshold
+  deciding how far a colour reaches toward the next point. Textures come out averaged, as phase 1 has them.
+- **Drawn as triangles into the new view**, the colours interpolated across them (Gouraud: a mesh gradient), the
+  nearest surface winning. The environment's points move as directions (far past the scene), so a turn moves the sky.
+- **What no triangle covers** (what lay behind a surface, past the picture's edges, a crack between cells of two sizes)
+  is filled from the farthest around it, coarse to fine (push-pull: each coarser level keeps the farthest of its four and
+  the mean colour of those as far; then a pixel still empty takes the coarser level's colour bilinearly).
+
+The warp's source is the last picture rendered: Rhea's frame, or XPU2's picture once its samples reach 95% of the pixels
+(`warpKeepCoverage`); a warp, or a picture mostly made of one, never is (`warpChain` off). A pixel the warp shows in a
+picture of XPU2's is no gap to the denoiser. In the Beauty view Rhea's frame and XPU2's pictures folded into Rhea's or
+into the warp, while its frame is short of half, are denoised as pictures with gaps are (`XPU2_SESSION_RHEA_DENOISE`);
+the warp, already smooth, and XPU2's frame at rest are shown as they are.
+
+Switches: `XPU2_SESSION_RHEA_WARP_MESH` (0: pixel by pixel), `_WARP_CELL`, `_WARP_JUMP`, `_WARP_SOFT`, `_WARP_CHAIN`
+(1: as before), `_DENOISE`, `_DENOISE_BELOW`.
