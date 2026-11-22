@@ -3277,17 +3277,41 @@ int session(const Args& args, const fs::path& directory) {
                         rheaView.traceScene = scene.cpuScene.get();
                         unsigned stage = 0;
                         const unsigned already = finishing ? rheaStagesShown : 0;
+                        // The view the kit shows, looked up once (each lookup reads its view.txt): its outputs, or the beauty.
+                        const bool viaResult = watch.previewAov && watch.previewAov() && watch.previewResult;
+                        std::vector<float> rgb;
+                        auto show = [&](const async::RenderResult& r) {
+                            if (viaResult) watch.previewResult(r, 0.0);
+                            else if (watch.preview) {
+                                rgb.resize(size_t(width) * height * 3);
+                                for (size_t i = 0; i < size_t(width) * height; ++i)
+                                    for (int c = 0; c < 3; ++c) {
+                                        const float v = r.rgba[i * 4 + c];
+                                        rgb[i * 3 + c] = std::isfinite(v) ? v : 0.0f;
+                                    }
+                                watch.preview(rgb, width, height, 0.0);
+                            }
+                        };
+                        bool shownStage = false;
                         rheaView.onStage = [&](const async::RenderResult& picture) {
-                            if (++stage > already) {
-                                publish(picture, 0.0, false);
+                            // A ring's picture the kit has no room for yet (it takes one at a time) is left out, not made.
+                            if (++stage > already && !(useShared && !sharedReady())) {
+                                show(picture);
                                 rheaView.publishedWarp();
+                                shownStage = true;
                             }
                             return !(watch.stop && watch.stop());
                         };
                         const async::RenderResult* first = rheaView.warpTo(*scene.plan);
                         rheaView.onStage = nullptr, rheaView.traceScene = nullptr;  // the CPU scene is the session's, made again on edits
                         if (!first) return false;
-                        publish(*first, 0.0, false);
+                        // The finished picture shown whatever: the kit takes one picture at a time, and one it had not taken yet
+                        // kept the next out (a ring's picture stayed on screen in its place). It waits for the kit, 50 ms at most.
+                        if (shownStage) {
+                            const auto until = Clock::now() + std::chrono::milliseconds(50);
+                            while (useShared && !sharedReady() && Clock::now() < until) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                        }
+                        show(*first);
                         rheaView.publishedWarp();
                         rheaPhaseOneDone = rheaView.warpComplete();
                         rheaStagesShown = std::max(already, rheaPhaseOneDone ? stage + 1 : stage);

@@ -71,6 +71,7 @@ public:
     void clear() {
         light.clear(), fine.clear();
         sky.assign(SkyW * SkyH * 4, 0.0f), skyFilled.clear();
+        ++generation;
     }
     bool empty() const { return light.used == 0 && skyFilled.empty(); }
     size_t cells() const { return light.used + fine.used; }
@@ -101,6 +102,7 @@ public:
         const auto began = std::chrono::steady_clock::now();
         const size_t n = size_t(w) * h;
         added = 0;
+        ++generation;  // the cells about to change: the lookups' memo (means) starts again
         if (rgba.size() != n * 4 || depth.size() != n || counts.size() != n) return;
         if (cells() > op.maxCells) clear();
         if (sky.empty()) sky.assign(SkyW * SkyH * 4, 0.0f);
@@ -311,9 +313,20 @@ private:
         }
     };
     Table light, fine;  // the colours (with albedo and emission), and the albedo in cells half as wide (op.albedo)
+    std::uint64_t generation = 0;  // changed with the cells (add, clear): the lookups' memo holds for one generation
     std::vector<float> sky, skyFilled;  // rgb and weight a direction: summed, and its holes filled (fillSky)
 
     static int levelOf(double side) { return side > 0 ? int(std::floor(std::log2(side))) : -60; }
+    // A thread's last eight cells at a size (means): neighbouring rays meet the same cells.
+    struct Memo {
+        const ObjectStore* store = nullptr;
+        const Table* table = nullptr;
+        std::uint64_t generation = ~0ull;
+        int level = 0;
+        std::uint8_t bins[2] = {0, 0};
+        long long x0 = 0, y0 = 0, z0 = 0;
+        const Table::Entry* e[8] = {};
+    };
     // The side a normal faces: its largest axis and sign, and the next where it is nearly as large (the boundary's
     // cells kept in both, so that a surface at 45 degrees finds its colour from either).
     static void binsOf(const D3& n, std::uint8_t out[2]) {
@@ -338,15 +351,30 @@ private:
             const double fx = p.x / size - 0.5, fy = p.y / size - 0.5, fz = p.z / size - 0.5;
             const long long x0 = (long long)std::floor(fx), y0 = (long long)std::floor(fy), z0 = (long long)std::floor(fz);
             const double tx = fx - x0, ty = fy - y0, tz = fz - z0;
+            // The eight cells about the point: found again only where the last lookup at this size (this thread's, a
+            // neighbouring ray's, most often) was about other cells.
+            static thread_local Memo memo[8];
+            Memo& m = memo[unsigned(level) & 7u];
+            if (m.store != this || m.table != &t || m.generation != generation || m.level != level || m.bins[0] != bins[0] ||
+                m.bins[1] != bins[1] || m.x0 != x0 || m.y0 != y0 || m.z0 != z0) {
+                for (int corner = 0; corner < 8; ++corner) {
+                    const int dx = corner & 1, dy = corner >> 1 & 1, dz = corner >> 2 & 1;
+                    const Table::Entry* e = t.find(x0 + dx, y0 + dy, z0 + dz, level, bins[0]);
+                    if (!e && bins[1] != NoBin) e = t.find(x0 + dx, y0 + dy, z0 + dz, level, bins[1]);
+                    m.e[corner] = e && e->v[9] > 0 ? e : nullptr;
+                }
+                m.store = this, m.table = &t, m.generation = generation, m.level = level, m.bins[0] = bins[0], m.bins[1] = bins[1];
+                m.x0 = x0, m.y0 = y0, m.z0 = z0;
+            }
             double c[9] = {}, wsum = 0;
             for (int corner = 0; corner < 8; ++corner) {
+                const Table::Entry* e = m.e[corner];
+                if (!e) continue;
                 const int dx = corner & 1, dy = corner >> 1 & 1, dz = corner >> 2 & 1;
                 const double tri = (dx ? tx : 1 - tx) * (dy ? ty : 1 - ty) * (dz ? tz : 1 - tz);
                 if (tri <= 0) continue;
-                const Table::Entry* e = t.find(x0 + dx, y0 + dy, z0 + dz, level, bins[0]);
-                if (!e && bins[1] != NoBin) e = t.find(x0 + dx, y0 + dy, z0 + dz, level, bins[1]);
-                if (!e || !(e->v[9] > 0)) continue;
-                for (int q = 0; q < 9; ++q) c[q] += tri * e->v[q] / e->v[9];
+                const double k = tri / e->v[9];
+                for (int q = 0; q < 9; ++q) c[q] += k * e->v[q];
                 wsum += tri;
             }
             if (wsum <= 0) continue;

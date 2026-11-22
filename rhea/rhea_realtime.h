@@ -743,13 +743,15 @@ public:
         // the last such picture (18 MB a step at 640 x 360).
         if (!objectLaid || out.aov.size() != n * stride) out.aov.assign(n * stride, 0.0f);
         out.rgba.resize(n * 4), out.counts.assign(n, 1u);
-        auto fill = [&] {
+        // The picture from the drawing: its colour and alpha; its depth outputs once it is finished (a ring's picture is on
+        // screen for a moment, as the beauty: writing them was half its cost, strided through 18 MB).
+        auto fill = [&](bool outputs) {
             parallel(threads, h, [&](size_t y) {
                 for (size_t i = y * w; i < (y + 1) * w; ++i) {
                     std::copy_n(&warped.color[i * 3], 3, &out.rgba[i * 4]);
                     const float d = warped.depth[i];
                     out.rgba[i * 4 + 3] = d > 0 ? 1.0f : 0.0f;
-                    if (stride) {
+                    if (outputs && stride) {
                         if (o.depthMin >= 0) out.aov[i * stride + size_t(o.depthMin)] = d;
                         if (o.depthMax >= 0) out.aov[i * stride + size_t(o.depthMax)] = d;
                     }
@@ -760,12 +762,12 @@ public:
         warped.from.assign(n, -1);
         std::function<bool()> stage;
         if (onStage) stage = [&] {
-            fill();
+            fill(false);
             return onStage(out);
         };
         if (!objectWarp.draw(nv, *traceScene, store, w, h, warped.color, warped.w, warped.depth, warped.state, warped.doubt, stage)) return false;
         objectDrawn = true;
-        fill();
+        fill(true);
         objectLaid = &out == &warpPicture;
         size_t landed = 0;
         for (size_t i = 0; i < n; ++i) landed += warped.state[i] == 1;

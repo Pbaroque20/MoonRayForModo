@@ -1112,3 +1112,11 @@ that made no difference, the rays' time being mostly the store's lookups. On the
 0.056 s (0.079 before), its first picture 0.007 s (0.019): coarse rays 1.2 ms, coarse picture 5.4 ms, the rings' rays
 13.6 ms, their pictures 9.2 ms, FXAA 2.3 ms, and 16 ms the session's showing the three pictures before the last. The first
 move after a scene's load took 0.086 s (its buffers made).
+Then: a ring's picture carries its colour alone (its depth outputs, strided through 18 MB, only in the finished one); the
+view the kit shows is looked up once a phase one (each lookup read its view.txt); a ring's picture the kit has no room
+for yet is left out; and the finished picture waits for the kit, 50 ms at most - it takes one picture at a time, and a
+ring's picture not yet taken had kept the finished one out (one move in a run showed three of its four). The store's
+lookups keep a thread's last eight cells at each size (neighbouring rays meet them again). On the dragon a move's
+picture took 0.051 to 0.056 s (0.056 before): the lookups' memo gave nothing measurable; showing the three ring pictures
+12 to 16 ms, mostly the hand-over itself (a new shared mapping each picture, written whole). Every picture of each move
+reached the kit.
