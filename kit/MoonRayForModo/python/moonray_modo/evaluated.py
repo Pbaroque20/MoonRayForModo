@@ -976,6 +976,13 @@ def meshes(data, materials, warnings, scene=None):
                         uvs=_gather(uv_sets[uv_index], segment['faces'], indices, segment.get('face_varying')) if uv_index < len(uv_sets) else [],
                         subdivision=False, subdivision_level=1, smooth=True,
                         object_override=True, evaluated_geometry=True, geometry_settings=dict(settings), visibility=list(visibility))
+            if 'displace' in (material.get('baked_effects') or ()):
+                # Displaced by Modo (host.by_engine): Modo's render cache gives the normals of the surface before it was
+                # displaced, which lit its bumps flat (they showed only in its outline). Worked out from the displaced
+                # points instead, smooth across them (rows.joined_normals); where the adapter cannot, MoonRay's own.
+                from .rows import joined_normals
+                mesh['normals'] = _derived('displaced-normals', (vertices, segment['faces']),
+                                           lambda: joined_normals(vertices, segment['faces'])) or []
             # Its points' velocities, where Modo gives them (an Alembic mesh's .velocities): what blurs a mesh whose
             # points and faces change during the shutter, as a fluid mesher's do (motion.py, policy auto).
             if segment.get('velocities') and len(segment['velocities']) == len(vertices):
