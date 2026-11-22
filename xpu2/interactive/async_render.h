@@ -62,6 +62,11 @@ struct RenderOptions {
     // once Renderer::retiredPasses() passes its index.
     std::vector<std::uint16_t> regionalBatch;
     U32 regionalCount = 0;
+    // Pictures of whole passes alone (Rhea's completion fade, rhea/DESIGN.md 29): an adaptive frame's pictures are taken
+    // only once every pass sent out has completed (the seed's regions, then each adaptive pass), the next pass held back
+    // until that picture is taken, so that none shows a pass part way (its cells, the devices' squares). The watch is
+    // told which passes each holds (Renderer::picturedPasses). No pictures between them.
+    bool passPictures = false;
     // A preview session's watch over the frame (none: the frame runs to its end).
     struct Watch* watch = nullptr;
     // Partial shading: a GPU sample whose fine-detail tile is not resident finishes from the texture's next level up
@@ -296,6 +301,10 @@ public:
     // An adaptive frame's passes completed so far (every sample of each in the film), from any thread: a regional
     // frame's regions are finished as it passes them (RenderOptions::regionalBatch).
     U32 retiredPasses() const { return retired_.load(std::memory_order_acquire); }
+    // Under RenderOptions::passPictures, the passes the picture being handed to the watch holds, all of each and nothing
+    // of any after them; NotPictured for a picture taken mid-pass. Read inside Watch::previewResult or Watch::preview.
+    static constexpr U32 NotPictured = ~0u;
+    U32 picturedPasses() const { return pictured_.load(std::memory_order_acquire); }
     // An adaptive frame's live tiles, the pass being sampled (cellular frames: its generation's cells). Empty
     // between frames and in uniform frames.
     void liveTiles(std::vector<U32>& tiles) const {
@@ -579,6 +588,11 @@ public:
         bool draining = false;
         // Without a watch they are made for important parts first alone.
         const bool shown = watch && watch->preview;
+        // Pictures of whole passes alone (RenderOptions::passPictures): where they are shown, else no pass would wait.
+        state.passPictures = o.passPictures && adaptive && !chainFrame && shown;
+        pictured_.store(NotPictured, std::memory_order_release);
+        bool passPicture = false;  // the picture under way is of whole passes: passesPictured of them
+        U32 passesPictured = 0;
         double nextPreview = shown ? watch->previewSeconds : o.important && !adaptive ? 0.2 : -1;
         std::vector<float> previewRgb;
         std::vector<unsigned char> covered;
@@ -590,10 +604,13 @@ public:
         bool previewOfAov = false;
         auto preview = [&] {
             const bool checkpointDue = nextCheckpoint >= 0 && at() >= nextCheckpoint && !draining;
-            if (previewState == PreviewIdle && !checkpointDue && (nextPreview < 0 || at() < nextPreview)) return;
+            // Pictures of whole passes alone: one as soon as every pass out has completed, none between.
+            const bool passDue = state.passPictures && !draining && state.pictureDue();
+            if (previewState == PreviewIdle && !checkpointDue && !passDue && (state.passPictures || nextPreview < 0 || at() < nextPreview)) return;
             if (previewState == PreviewIdle) {
                 previewOfAov = shown && watch->previewAov && watch->previewResult && watch->previewAov();
                 checkpointNow = checkpointDue;
+                passPicture = passDue, passesPictured = state.retired;
             }
             if (previewState == PreviewIdle && useGpu) {
                 gpu_->downloadPreview(previewOfAov || checkpointNow);
@@ -605,7 +622,12 @@ public:
                 if (useGpu) addCardAovs(film);
                 RenderResult sofar;
                 const U64 seen = snapshotResult(film, sofar, adaptive, useGpu ? gpu_ : nullptr, checkpointNow);
-                if (previewOfAov) watch->previewResult(sofar, std::min(1.0, double(seen) / plannedSamples));
+                if (previewOfAov) {
+                    pictured_.store(passPicture ? passesPictured : NotPictured, std::memory_order_release);
+                    watch->previewResult(sofar, std::min(1.0, double(seen) / plannedSamples));
+                    pictured_.store(NotPictured, std::memory_order_release);
+                    if (passPicture) state.pictured = std::max(state.pictured, passesPictured), passPicture = false;
+                }
                 if (checkpointNow) {
                     watch->checkpoint(std::move(sofar));
                     nextCheckpoint = at() + watch->checkpointSeconds;
@@ -639,7 +661,10 @@ public:
             if (plan_->sampleBudget && plan_->budgetBySamples) fraction = std::min(1.0, double(seen) / double(plan_->sampleBudget));
             else if (plan_->sampleBudget && state.budgetSeconds > 0) fraction = std::min(1.0, state.at() / state.budgetSeconds);
             fillUncovered(previewRgb, covered, plan_->width, plan_->height);
+            pictured_.store(passPicture ? passesPictured : NotPictured, std::memory_order_release);
             watch->preview(previewRgb, plan_->width, plan_->height, fraction);
+            pictured_.store(NotPictured, std::memory_order_release);
+            if (passPicture) state.pictured = std::max(state.pictured, passesPictured), passPicture = false;
             nextPreview = at() + watch->previewSeconds;
         };
 
@@ -1319,6 +1344,15 @@ private:
         // A regional seed (RenderOptions::regionalBatch): each tile's region, and how many regions lead the passes.
         std::vector<std::uint16_t> regionalBatch;
         U32 regionalCount = 0;
+        // Pictures of whole passes (RenderOptions::passPictures): an adaptive pass goes out only once the picture of every
+        // pass before it has been taken; pictured: the passes the last such picture held.
+        bool passPictures = false;
+        U32 pictured = 0;
+        // Every pass sent out completed, none after them out, and no picture of them yet: one is due.
+        bool pictureDue() const {
+            return passPictures && retired == generated && retired > pictured && retired >= std::max(1u, regionalCount) &&
+                   (retired >= passes.size() || !uniformStage(retired));
+        }
         // The same pass in numbers, for the log (Watch::generationLog): its index, its samples, its live tiles and
         // the samples generated in all, so far.
         std::function<void(U32 generation, U64 samples, size_t live, double spent)> onGenerationLog;
@@ -1457,6 +1491,7 @@ private:
             // Realtime: the seed's passes one at a time, each over the whole picture before the next (gone out together,
             // a GPU worker finished its cell's four passes while the next cells waited).
             if (plan.realtime && uniformStage(j) && j > retired + (j < regionalCount ? 1u : 0u)) return false;
+            if (passPictures && j < passes.size() && !uniformStage(j) && j > pictured) return false;  // its picture first
             return j < passes.size() && j < retired + PassSlots && (uniformStage(j) || (!stop && !budgetSpent() && evaluated == j));
         }
         // One pass at a time, so the feeder launches each as soon as it exists.
@@ -1840,6 +1875,7 @@ private:
     std::deque<std::vector<U32>> gpuFlights_;
     std::vector<U32> live_;  // liveTiles()
     std::atomic<U32> retired_{0};  // retiredPasses()
+    std::atomic<U32> pictured_{NotPictured};  // picturedPasses()
     U32 cellSize_ = 64;
     HandoffTiles handoff_;  // handoff(): where the GPU's deferred and provisional samples wait
 };

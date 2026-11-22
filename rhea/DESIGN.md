@@ -1022,3 +1022,45 @@ when XPU2's grid has been fully loaded so the fade is seamless" - then, with tha
   at each step: XPU2's picture is now denoised once, held (`Picture::hold`), and the denoised picture on screen
   cross-faded into it every 30 ms. On the dragon (640 x 360): Beauty 4 pictures across the fade, Denoised Beauty 6
   (relMSE to the frame's end 0.129, 0.112, 0.073, 0.035, 0.011, 0.002), where one picture had stood between before.
+
+**Pictures of whole passes (2026-11-22).** "There shouldn't be black grid XPU2 iterations, that should be hidden until
+they're done and there's another fade." XPU2 hands over a picture only once every pass sent out has completed
+(`RenderOptions::passPictures`, `Renderer::picturedPasses`): the next adaptive pass waits until the picture of the ones
+before it is taken, so none shows a pass part way. The first (the seed's regions all in) fades in over the warp, each
+later one over the one before, on the fades' own thread; Denoised Beauty denoises each once and cross-fades. On the
+dragon (640 x 360) a frame faded four times, nothing between. `XPU2_SESSION_RHEA_PASS_PICTURES=0`: XPU2's pictures as
+they come.
+
+**The release.** "The fade should also occur on mouse release as well when XPU2 realtime takes over." Modo tells of a
+viewport's camera once the mouse is let go: the kit sends the camera where it already stands. That edit changed nothing,
+but the session took it as a new scene and Rhea's picture went with it. An edit that changes no object now leaves the
+scene as it was (`Scene::apply`); a frame with no move after one stopped short (`rheaUnfinished`) keeps the warp, its fade
+starting from what is on screen (`Realtime::screenAsWarp`), and a phase one the release stopped part way is finished
+first ("rhea should finish its phase one then have xpu2 gracefully follow").
+
+## 30. Drag pictures from colours on the surfaces (2026-11-22)
+
+The user: "currently the color interpolations are screen-space, but it would be better if the interpolations are
+object-space, so that there aren't any gaps when the user tries to look behind the model. i'm thinking whichever
+projection occurs is done is a radial vignette view, so that the computation is only where the user cares, and the
+reprojection gracefully ends outside of this vignette"; and "during drag, the reconstructions should be streamed. the
+user should be able to see the radial topology updating in realtime". `rhea/object_warp.h`:
+
+- **The store** (`ObjectStore`): every picture kept as the warp's source adds its colours to cubes on the surfaces it
+  shows (trace space, a sparse hash; a finest cube three of that picture's pixels wide, and three coarser sizes; kept by
+  the side the surface faces), weighted by the pixel's samples. Positions from the picture's own depth output: no rays.
+  Silhouette pixels (the environment, or two depths, in them) add nothing; the environment's pixels go to a map of
+  directions. Pictures from other views add to it, so the far side of the model is there once a picture has shown it.
+- **A move's picture** (`ObjectWarp`): the CPU lane's scene (Embree) gives each ray its first hit on the meshes as they
+  are, coloured from the store (trilinear between cubes, coarser where the finer have none). A grid of rays, its stride
+  from a budget inside the vignette (60,000), interpolated where its four corners are one smooth surface; a cell that is
+  not takes a ray a pixel. Outside the vignette (75% of the half diagonal, its soft edge a quarter of that) a grid four
+  times sparser, its light falling to 0.6 at the corners. What the store has nothing for is filled from the grid around
+  it, its doubt 1 (the completion fade's regions take it first).
+- **Streamed**: the coarse grid's picture first, then the fine grid in three rings of equal area from the centre out,
+  each shown as it lands; the next move stops it.
+- On the dragon (640 x 360): the picture in 0.061 s, the first in 0.009 s, 65,857 rays (15,368 at edges, every two pixels
+  in the vignette), 12% of them unknown to the store. The coarse picture and the vignette's outside show the coarse grid's
+  steps at silhouettes, and the sea seen at a grazing angle comes out in blocks (cubes sized by the old view's pixels).
+- `XPU2_SESSION_RHEA_OBJECT_SPACE=0`: the mesh gradient. `XPU2_SESSION_RHEA_VIGNETTE` (0: the whole picture),
+  `_VIGNETTE_SOFT`, `_VIGNETTE_DIM`, `_RAYS`, `_RINGS`, `_STORE_SCALE`.

@@ -14,6 +14,7 @@
 #include "persistent.h"
 #include "planes.h"
 #include "mesh_warp.h"
+#include "object_warp.h"
 #include "async_render.h"
 #include <cstdio>
 #include <numeric>
@@ -72,6 +73,14 @@ struct RealtimeOptions {
     // lost more each step, down to black).
     double warpKeepCoverage = 0.95;
     bool warpChain = false;
+    // The drag's picture from colours kept on the surfaces (object_warp.h, DESIGN.md 30): every picture kept as the
+    // warp's source adds to the store, and a move's picture is the CPU scene's first hits coloured from it, in a radial
+    // vignette (its radius a share of the half diagonal, its soft edge, the corners' light outside it), streamed in rings.
+    // Off: the mesh gradient (warpMesh).
+    bool objectSpace = true;
+    double vignette = 0.75, vignetteSoft = 0.25, vignetteDim = 0.6, storeScale = 3;
+    size_t objectRays = 60000;
+    unsigned objectRings = 3;
     // After a move's warp, the next move looked for this long before any of the GPU's work (seconds; the kit sends a
     // drag's steps about 60 ms apart): a drag then goes at the warp's pace, not the GPU frame's stop (0.2 s at 720p).
     // 0.15 s: in Modo the kit makes a step at each of its 60 ms ticks, with its own 18 ms or so, and sends it once the
@@ -151,6 +160,7 @@ public:
         resetProbes();
         last = Shown{}, warped = Warped{}, lastKind = 0;
         mesh.clear();
+        store.clear();
     }
     // The probes, sums and planes forgotten, the last picture kept for the next move's warp: other geometry for the same
     // scene (the full plan after a coarse first pass; a camera move that tessellates camera-dependent geometry again, a
@@ -605,7 +615,8 @@ public:
     // warp is off.
     const async::RenderResult* warpTo(const cpu::Plan& b) { return warpInto(b, warpPicture) ? &warpPicture : nullptr; }
     bool warpInto(const cpu::Plan& b, async::RenderResult& out) {
-        warped.valid = false;
+        warped.valid = false, objectDrawn = false;
+        warped.screen.rgba.clear(), warped.screen.aov.clear(), warped.screen.counts.clear();
         if (!op.warp || !last.valid || last.W != b.width || last.H != b.height || last.view.kind == View::Directional) return false;
         View nv;
         if (!nv.init(b.camera, b.width, b.height) || nv.kind == View::Directional) return false;
@@ -613,6 +624,7 @@ public:
         const unsigned w = b.width, h = b.height, threads = std::max(1u, op.threads);
         const size_t n = size_t(w) * h;
         const size_t stride = last.result.aov.size() / n;
+        if (op.objectSpace && traceScene && !store.empty() && nv.kind != View::Directional) return objectInto(b, nv, out, stride);
         // The mesh gradient (mesh_warp.h), built from the picture when it was kept; else pixel by pixel.
         bool meshed = false;
         if (op.warpMesh && mesh.valid()) {
@@ -704,6 +716,47 @@ public:
         size_t landed = 0;
         for (size_t i = 0; i < n; ++i) landed += warped.state[i] == 1;
         warped.stride = stride, warped.view = nv, warped.outputs = o;
+        warped.valid = true;
+        warpShare = n ? double(landed) / double(n) : 0;
+        return true;
+    }
+    // A move's picture from the colours on the surfaces (objectSpace, object_warp.h): the CPU scene's first hits through
+    // the new camera, coloured from the store, streamed to onStage (the coarse grid's picture, then each ring's). Its
+    // outputs: none but its depths (the warp's), its alpha whole where a surface is.
+    bool objectInto(const cpu::Plan& b, const View& nv, async::RenderResult& out, size_t stride) {
+        const unsigned w = b.width, h = b.height, threads = std::max(1u, op.threads);
+        const size_t n = size_t(w) * h;
+        const RealtimeOutputs o = outputsOf(b);
+        ObjectWarp::Options& wo = objectWarp.op;
+        wo.vignette = op.vignette, wo.soft = op.vignetteSoft, wo.dim = op.vignetteDim, wo.rays = op.objectRays, wo.jump = op.warpJump;
+        wo.rings = op.objectRings, wo.threads = threads;
+        out.cancelled = out.drained = out.failed = false;
+        out.rgba.resize(n * 4), out.aov.assign(n * stride, 0.0f), out.counts.assign(n, 1u);
+        auto fill = [&] {
+            parallel(threads, h, [&](size_t y) {
+                for (size_t i = y * w; i < (y + 1) * w; ++i) {
+                    std::copy_n(&warped.color[i * 3], 3, &out.rgba[i * 4]);
+                    const float d = warped.depth[i];
+                    out.rgba[i * 4 + 3] = d > 0 ? 1.0f : 0.0f;
+                    if (stride) {
+                        if (o.depthMin >= 0) out.aov[i * stride + size_t(o.depthMin)] = d;
+                        if (o.depthMax >= 0) out.aov[i * stride + size_t(o.depthMax)] = d;
+                    }
+                }
+            });
+        };
+        warped.stride = stride, warped.view = nv, warped.outputs = o, warped.meshed = false;
+        warped.from.assign(n, -1);
+        std::function<bool()> stage;
+        if (onStage) stage = [&] {
+            fill();
+            return onStage(out);
+        };
+        if (!objectWarp.draw(nv, *traceScene, store, w, h, warped.color, warped.w, warped.depth, warped.state, warped.doubt, stage)) return false;
+        objectDrawn = true;
+        fill();
+        size_t landed = 0;
+        for (size_t i = 0; i < n; ++i) landed += warped.state[i] == 1;
         warped.valid = true;
         warpShare = n ? double(landed) / double(n) : 0;
         return true;
@@ -810,6 +863,10 @@ public:
         const size_t stride = n ? x.aov.size() / n : 0;
         const int dmin = warped.outputs.depthMin, dmax = warped.outputs.depthMax;
         const bool sameAovs = stride == warped.stride && last.result.aov.size() == n * stride;
+        // From what was on screen (screenAsWarp): its alpha and outputs, pixel for pixel.
+        const async::RenderResult& screen = warped.screen;
+        const bool fromScreen = screen.rgba.size() == n * 4;
+        const bool screenAovs = fromScreen && stride && screen.aov.size() == n * stride;
         if (out.counts.size() != n) out.counts.assign(n, 0);
         std::vector<size_t> whole(H, 0);
         parallel(std::max(1u, op.threads), H, [&](size_t y) {
@@ -824,7 +881,12 @@ public:
                 const long long s = warped.from[i];
                 const float* wc = &warped.color[i * 3];
                 for (int ch = 0; ch < 3; ++ch) out.rgba[i * 4 + ch] = float(wc[ch] + a * (double(x.rgba[i * 4 + ch]) - wc[ch]));
-                if (a < 0.5 && s >= 0) {
+                if (fromScreen) {
+                    if (a < 0.5) {
+                        out.rgba[i * 4 + 3] = screen.rgba[i * 4 + 3];
+                        if (screenAovs) std::copy_n(&screen.aov[i * stride], stride, &out.aov[i * stride]);
+                    }
+                } else if (a < 0.5 && s >= 0) {
                     out.rgba[i * 4 + 3] = last.result.rgba[size_t(s) * 4 + 3];
                     if (sameAovs && stride) {
                         std::copy_n(&last.result.aov[size_t(s) * stride], stride, &out.aov[i * stride]);
@@ -870,6 +932,18 @@ public:
         depthsOf(b);
     }
     void dropWarp() { warped.valid = false; }
+    // A frame stopped with more than the warp on screen (XPU2's pictures faded in over it): that picture, for the same
+    // camera, becomes the next frame's starting point (the mouse let go: Modo tells of the camera where the drag left it,
+    // a frame with no move, whose fade starts from what is on screen). Before keepLast, which may take shownCopy's vectors.
+    void screenAsWarp() {
+        const size_t n = size_t(W) * H;
+        if (!warped.valid || lastKind != 2 || shownCopy.rgba.size() != n * 4 || warped.color.size() != n * 3) return;
+        warped.screen.rgba = shownCopy.rgba, warped.screen.counts = shownCopy.counts, warped.screen.aov = shownCopy.aov;
+        parallel(std::max(1u, op.threads), H, [&](size_t y) {
+            for (size_t i = y * W; i < (y + 1) * W; ++i)
+                for (int c = 0; c < 3; ++c) warped.color[i * 3 + c] = shownCopy.rgba[i * 4 + c];
+        });
+    }
     double warpShare = 0;  // the last warp's pixels that landed (not filled)
     // The last picture shown, kept for the next camera move's warp, its depths its own nearest first-hit depth output
     // (XPU2's where its samples reached, Rhea's frame's, or the warp's own: warpTo writes the new view's). A frame a move
@@ -925,7 +999,10 @@ public:
         });
         last.valid = true;
         mesh.clear();
-        if (op.warpMesh) {
+        if (op.objectSpace) {
+            store.op.scale = op.storeScale, store.op.jump = op.warpJump, store.op.threads = std::max(1u, op.threads);
+            store.add(last.view, b.width, b.height, last.result.rgba, last.result.counts, last.depth, last.depthFar);
+        } else if (op.warpMesh) {
             mesh.op.cell = op.warpCell, mesh.op.jump = op.warpJump, mesh.op.soft = op.warpSoft, mesh.op.threads = std::max(1u, op.threads);
             mesh.build(last.view, b.width, b.height, last.result.rgba, last.result.counts, last.depth, last.depthFar);
         }
@@ -970,6 +1047,9 @@ private:
         std::vector<float> color;       // its colour (rgb)
         bool meshed = false;            // drawn from the mesh (mesh_warp.h)
         std::vector<float> doubt;       // how far the mesh is likely off (0 to 1; what the fill made, 1; empty: pixel by pixel)
+        // What was on screen for this camera when a frame stopped past the warp (screenAsWarp): the next frame's fade
+        // starts from it (colour above, alpha and outputs here) instead of the warp. Empty: the warp's own.
+        async::RenderResult screen;
         size_t stride = 0;
         RealtimeOutputs outputs;
         bool valid = false;
@@ -984,6 +1064,18 @@ private:
     int lastKind = 0;                            // the last published: 0 none kept, 1 the warp's, 2 shownCopy
     double shownCoverage = 1.0;                  // shownCopy's share of pixels XPU2's samples reached
     MeshWarp mesh;                               // the kept picture's mesh (warpMesh)
+public:
+    // The colours on the surfaces (objectSpace), and the drawing of a view from them; the scene its rays meet (the
+    // session's CPU scene for the plan the move renders: null, no such picture), and what to do with each of its streamed
+    // pictures (false: stop, the next move has come).
+    ObjectStore store;
+    ObjectWarp objectWarp;
+    const async::CpuScene* traceScene = nullptr;
+    std::function<bool(const async::RenderResult&)> onStage;
+    bool objectDrawn = false;  // the last warp was drawn from the store
+    // Whether the last warp was drawn to its end (a stream the next move stopped was not).
+    bool warpComplete() const { return !objectDrawn || objectWarp.stages > objectWarp.op.rings; }
+private:
     // The probes' screen cell for the picture (cellsByPicture).
     unsigned cellNow() const {
         const unsigned c = std::max(2u, op.cell);
