@@ -99,6 +99,9 @@ struct Camera {Matrix rasterToCamera,cameraToRender; float nearClip,farClip;
     unsigned type=CameraPerspective;float regionX=0,regionY=0,apertureWidth=0,apertureHeight=0;
     V3 focalPoint{0,0,0};
     unsigned dof=0,bokeh=0;int bokehSides=0;float lensRadius=0,focusDistance=0,bokehAngle=0;
+    // The kit's TiltShiftCamera (tools/port_tilt_shift.py): its tilted lens's plane of focus, its normal in camera space;
+    // (0, 0, 1), square to the view, for any other camera and an untilted one.
+    V3 focusNormal{0,0,1};
     const void* bokehImage=nullptr;
     unsigned flags=0;int mode=0;float k[12]={0,0,0,0,0,0,0,0,0,0,0,0};
     const void* map=nullptr;

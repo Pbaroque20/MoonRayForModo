@@ -99,6 +99,61 @@ def source_tiles(source):
             if path.is_file() for match in [pattern.match(path.name)] if match}
 
 
+def folder_tiles(clips, scene_filename=None):
+    """Modo's own UDIM set: an Image Folder whose images each carry their tile's number (udim), laid on by a layer
+    whose Texture Locator has Use UDIM on (as an FBX import makes them). clips: (number, filename) for each image.
+    Returns the set as the kit names a set everywhere, one path with <UDIM> in it, and its {number: path}. Where the
+    images are not named by their numbers in one folder of their own (body_a.png at 1003, or more tiles of that name
+    beside them than the set has), links to them named by their numbers are made in the cache (copies where a link
+    cannot be made)."""
+    tiles = {}
+    for number, filename in clips:
+        if not 1001 <= int(number) <= 1999:
+            raise ValueError('a UDIM tile is numbered from 1001 to 1999, not %d' % int(number))
+        path, _ = resolve_scene_source(filename, scene_filename)
+        if not path.is_file():
+            raise ValueError('missing image ' + str(path))
+        tiles.setdefault(int(number), path)
+    if not tiles:
+        raise ValueError('the Image Folder has no images')
+    patterns = {}
+    for number, path in tiles.items():
+        # The tile's number where it stands on its own in the name (not within a longer number).
+        found = [m.start() for m in re.finditer('(?<![0-9])%d(?![0-9])' % number, path.name)]
+        if len(found) != 1:
+            patterns = None
+            break
+        k = found[0]
+        pattern = path.parent.resolve() / (path.name[:k] + '<UDIM>' + path.name[k + 4:])
+        patterns.setdefault(str(pattern).casefold(), pattern)
+    if patterns and len(patterns) == 1:
+        pattern = next(iter(patterns.values()))
+        if set(source_tiles(pattern)) == set(tiles):
+            return pattern, tiles
+    suffixes = {path.suffix.lower() for path in tiles.values()}
+    if len(suffixes) != 1:
+        raise ValueError('the images of a UDIM set are of different file types')
+    signature = sorted((n, str(p.resolve()), p.stat().st_size, p.stat().st_mtime_ns) for n, p in tiles.items())
+    folder = cache_root() / 'Image Folders' / hashlib.sha256(repr(signature).encode()).hexdigest()[:32]
+    folder.mkdir(parents=True, exist_ok=True)
+    suffix = suffixes.pop()
+    for number, path in tiles.items():
+        target = folder / ('tile.%d%s' % (number, suffix))
+        if target.is_file():
+            continue
+        staged = target.with_name(target.name + '.' + uuid.uuid4().hex + '.tmp')
+        try:
+            try:
+                os.link(path, staged)
+            except OSError:
+                shutil.copyfile(path, staged)
+            staged.replace(target)
+        finally:
+            if staged.exists():
+                staged.unlink()
+    return folder / ('tile.<UDIM>' + suffix), {n: folder / ('tile.%d%s' % (n, suffix)) for n in tiles}
+
+
 def color_conversion(source, srgb=False, color_space=""):
     """How an image's colours are taken to the renderer's linear space, as prepare takes them: (its colour space, the
     converter's arguments for it, a key for what decides it). The same arguments serve maketx and oiiotool."""

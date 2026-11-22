@@ -21,7 +21,7 @@ PATCHES = ROOT / 'patches/native-windows'
 
 SWITCHES = ('TOON_TERMINATOR', 'TOON_ALBEDO', 'DENOISE_CLEAN_GUIDES', 'CRYPTO_VOLUMES', 'CRYPTO_ONCE', 'FOG_ALPHA',
             'CAMERA_LIGHT_LPE', 'MIRRORED_MESHES', 'SCALAR_EMISSION', 'DSO_SEARCH', 'USD_SPECULAR', 'OPAQUE_ALPHA',
-            'TRANSMISSION_ROUGHNESS', 'AUTO_XPU')
+            'TRANSMISSION_ROUGHNESS', 'AUTO_XPU', 'TILT_SHIFT')
 VARIABLE = '(MOONRAY_MODO_(?:%s))' % '|'.join(SWITCHES)
 
 # Where MoonRay reads each switch, and how many times.
@@ -33,6 +33,8 @@ READS = {
     'moonray/lib/rendering/geom/prim/VdbVolume.cc': 1,
     'moonray/lib/rendering/pbr/core/ModoCryptoOnce.h': 1,
     'moonray/lib/rendering/pbr/core/ModoFogAlpha.h': 1,
+    # The kit's tilt-shift camera (tools/port_tilt_shift.py), written with the new reading from the start.
+    'moonray/lib/rendering/pbr/camera/TiltShiftCamera.cc': 1,
     'moonray/lib/rendering/pbr/handlers/RayHandlers.cc': 1,
     'moonray/lib/rendering/pbr/handlers/XPURayHandlers.cc': 1,
     'moonray/lib/rendering/pbr/integrator/ModoCryptoVolumes.h': 1,

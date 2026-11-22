@@ -1,6 +1,7 @@
 """Serialize an ordered texture graph into native MoonRay maps."""
 from . import textures
 from .layers import BLENDS
+from .coordinates import attribute as coordinate_attribute
 
 def bindings(material, index, lines, glass=False, absorption=False, separate_masks=False, mask_state=None, group_mask=None):
     from .rdla import string, number, vector
@@ -87,7 +88,7 @@ def bindings(material, index, lines, glass=False, absorption=False, separate_mas
         mask = None
         coordinates = None
         if layer.get('coordinate_key') and effect not in ('normal','normalCoat','bump','coatBump'):
-            coordinates = node('AttributeMap', {'primitive_attribute_name':string(layer['coordinate_key']),
+            coordinates = node('AttributeMap', {'primitive_attribute_name':string(coordinate_attribute(layer['coordinate_key'])),
                 'primitive_attribute_type':'1', 'warn_when_unavailable':'true', 'default_value':'Rgb(0,0,0)'})
         normal_basis=None
         named_basis=layer.get('coordinate_key') if effect in ('normal','normalCoat','bump','coatBump') else None
@@ -95,7 +96,7 @@ def bindings(material, index, lines, glass=False, absorption=False, separate_mas
             # With the layer's own placement of the UVs (its tiling and turn): on a subdivision surface MoonRay
             # does not say how a named map changes across the surface, and this is what it changes by.
             from .coordinates import affine as placed
-            coordinates=node('ModoTextureMap',{'mode':'12','uv_name':string(named_basis),
+            coordinates=node('ModoTextureMap',{'mode':'12','uv_name':string(coordinate_attribute(named_basis)),
                                                **({'uv_affine':vector(placed(layer)[0],'Vec4')} if layer.get('projection','uv')=='uv' else {})})
         if effect in ('normal','normalCoat','bump','coatBump') and kind!='constant' and not coordinates:
             from .coordinates import affine
@@ -203,7 +204,7 @@ def bindings(material, index, lines, glass=False, absorption=False, separate_mas
         if layer.get('invert'):
             foreground = node('ModoTextureMap',{'background':rgb(1),'foreground':foreground,'blend':'3'})
         if effect in ('normal','normalCoat') and named_basis:
-            foreground=node('ModoTextureMap',{'mode':'13','foreground':foreground,'uv_name':string(named_basis),'tile_u':str({'repeat':0,'edge':1,'mirror':2,'reset':3}.get(layer.get('tile_u'),0)),'tile_v':str({'repeat':0,'edge':1,'mirror':2,'reset':3}.get(layer.get('tile_v'),0))})
+            foreground=node('ModoTextureMap',{'mode':'13','foreground':foreground,'uv_name':string(coordinate_attribute(named_basis)),'tile_u':str({'repeat':0,'edge':1,'mirror':2,'reset':3}.get(layer.get('tile_u'),0)),'tile_v':str({'repeat':0,'edge':1,'mirror':2,'reset':3}.get(layer.get('tile_v'),0))})
         elif effect in ('normal','normalCoat') and normal_basis is not None:
             foreground=node('ModoTextureMap',{'mode':'13','foreground':foreground,'uv_affine':vector(normal_basis,'Vec4'),'uv_offset':vector(offset,'Vec2'),'tile_u':str({'repeat':0,'edge':1,'mirror':2,'reset':3}.get(layer.get('tile_u'),0)),'tile_v':str({'repeat':0,'edge':1,'mirror':2,'reset':3}.get(layer.get('tile_v'),0))})
         blend = layer.get('blend','normal')

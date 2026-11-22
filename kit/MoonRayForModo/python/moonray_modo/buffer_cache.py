@@ -60,6 +60,9 @@ class BufferCache(QtCore.QObject):
         from .cached_composite import CachedComposite
         self.compositor=CachedComposite(self)
         self.key='beauty';self.display={};self.serial=0;self.closed=False;self.log=''
+        # A realtime preview's (render.submit): its picture comes on as it renders, so there is nothing to say while no
+        # pass has finished yet ("Buffers will be available..." stood in the status line all through MoonRay's realtime).
+        self.quiet=False
 
     def select(self,key,display):
         if not isinstance(key,str) or not key or not all(c.isalnum() or c=='_' for c in key):raise ValueError('Unknown preview buffer')
@@ -154,7 +157,8 @@ class BufferCache(QtCore.QObject):
             # Only stop our display converter; never stop the renderer or denoiser.
             self.process.kill();return
         if self.frame is None and self.progressive is None:
-            self.notice.emit('Buffers will be available after the first preview pass completes.');return
+            if not self.quiet:self.notice.emit('Buffers will be available after the first preview pass completes.')
+            return
         self._start()
 
     def _start(self):

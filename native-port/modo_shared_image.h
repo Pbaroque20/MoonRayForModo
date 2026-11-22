@@ -10,8 +10,8 @@
 // A single publication remains mapped until the consumer acknowledges it.
 // The bounded mailbox drops snapshots rather than blocking the render thread.
 // Once acknowledged, the same mapping takes the next picture of its size (written in place, announced again under its
-// name): a new mapping each picture made its pages anew, about 4 ms of a 640 x 360 picture's hand-over, and Rhea shows
-// several pictures a camera move (rhea/DESIGN.md 30). The consumer reads a publication whole before it acknowledges it
+// name): a new mapping each picture made its pages anew, about 4 ms of a 640 x 360 picture's hand-over, more at 4K, and
+// realtime shows several pictures a camera move. The consumer reads a publication whole before it acknowledges it
 // (shared_image.py), so nothing it reads is written over. One withdrawn (not taken in five seconds) is never written
 // again: the next picture is a new mapping.
 class ModoSharedImage {

@@ -8,7 +8,11 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
+#include <memory>
+#include <mutex>
 #include <string>
+#include <utility>
 #include <vector>
 
 using Complex = std::complex<double>;
@@ -310,4 +314,138 @@ extern "C" __declspec(dllexport) int modo_ocean_tile_split(int resolution, const
     if (!settings(resolution, values, count, s) || !displacementPath || !foamPath || !slopePath || !(cutoff > 0) || !coarsePath || !finePath)
         return 2;
     return tile(s, displacementPath, foamPath, slopePath, cutoff, coarsePath, finePath);
+}
+
+// ---- The sea's long waves, for a viewport ---------------------------------------------------------------------------
+// The kit's ocean_viewport.py draws an Ocean Plane's waves in Modo's viewport as points, each where the sea puts it. It
+// wants the same sea the renders get, but only its long waves (points a metre or more apart cannot show ripples), and
+// at every frame of a scrub, so not written to disk at the full resolution. The tile's waves of fewer than preview / 2
+// cycles across it are summed alone, at preview x preview points: each wave with the random numbers the full tile
+// gives it (gaussianAt finds a cell's numbers without drawing those before), so the points stand where the full tile's
+// long waves put them; the shorter waves are left out.
+
+// The number splitmix gives at its k-th call (from 0) on a state begun at start: each call adds the same step, so the
+// k-th is the step k + 1 times past the start, mixed.
+static uint64_t splitmixAt(uint64_t start, uint64_t k) {
+    uint64_t z = start + (k + 1) * 0x9E3779B97F4A7C15ull;
+    z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ull;
+    z = (z ^ (z >> 27)) * 0x94D049BB133111EBull;
+    return z ^ (z >> 31);
+}
+
+// The pair gaussians(seed, count) gives cell at, worked out alone.
+static Complex gaussianAt(uint64_t start, size_t at) {
+    const uint64_t a = splitmixAt(start, 2 * uint64_t(at)), b = splitmixAt(start, 2 * uint64_t(at) + 1);
+    const double u1 = double((a >> 11) + 1) / double(1ull << 53), u2 = double(b >> 11) / double(1ull << 53);
+    const double r = std::sqrt(-2.0 * std::log(u1));
+    return Complex(r * std::cos(2 * Pi * u2), r * std::sin(2 * Pi * u2));
+}
+
+// A preview's spectrum, which the time does not change: for each of its cells, h0 of its wave and of the wave opposite
+// (the full tile's h0[k] and h0[-k]), and the heights' scale. Kept for the latest few settings, so that a scrub works
+// out only the waves' movement.
+struct PreviewSpectrum {
+    std::vector<Complex> h, opposite;
+    double scale = 0.0;
+};
+static std::mutex previewLock;
+static std::vector<std::pair<std::string, std::shared_ptr<const PreviewSpectrum>>> previewKept;
+static const size_t PreviewKeep = 32;
+
+static std::shared_ptr<const PreviewSpectrum> previewSpectrum(const Settings& s, int m) {
+    std::string key;
+    auto add = [&](const void* data, size_t size) { key.append(static_cast<const char*>(data), size); };
+    add(&s.n, sizeof s.n);
+    add(&m, sizeof m);
+    add(&s.seed, sizeof s.seed);
+    for (double v : {s.size, s.windSpeed, s.windDirection, s.waveHeight, s.choppiness, s.smallWaves, s.windAlignment, s.againstWind,
+                     s.depth, s.loop, s.foamThreshold, s.kLow, s.kHigh, s.fixedScale, s.turn})
+        add(&v, sizeof v);
+    {
+        std::lock_guard<std::mutex> held(previewLock);
+        for (const auto& kept : previewKept)
+            if (kept.first == key) return kept.second;
+    }
+    const int n = s.n;
+    const double cell = 2 * Pi / s.size;
+    const uint64_t start = uint64_t(s.seed) * 0x2545F4914F6CDD1Dull + 1ull;
+    // h0 of the wave a cells along x and b along z (each -n/2 to n/2 - 1), as tile() makes it.
+    auto amplitudeAt = [&](int a, int b) {
+        const size_t at = size_t(b + n / 2) * n + size_t(a + n / 2);
+        const Complex g = gaussianAt(start, at);
+        const double amplitude = cellAmplitude(s, cell * a, cell * b);
+        return Complex(g.real() * amplitude, g.imag() * amplitude);
+    };
+    // The wave opposite: -a, but the full tile's -n/2 is its own (tile's (n - i) % n).
+    auto opposite = [&](int a) { return a == -n / 2 ? a : -a; };
+    auto made = std::make_shared<PreviewSpectrum>();
+    made->h.assign(size_t(m) * m, Complex(0.0));
+    made->opposite.assign(size_t(m) * m, Complex(0.0));
+    for (int j = 0; j < m; ++j)
+        for (int i = 0; i < m; ++i) {
+            const int a = i - m / 2, b = j - m / 2;
+            // A smaller grid's -m/2 has no opposite of its own in it (the full tile's +m/2): left out.
+            if (m < n && (a == -m / 2 || b == -m / 2)) continue;
+            const size_t at = size_t(j) * m + i;
+            made->h[at] = amplitudeAt(a, b);
+            made->opposite[at] = amplitudeAt(opposite(a), opposite(b));
+        }
+    made->scale = s.fixedScale;
+    if (!(made->scale > 0)) {
+        // A sea of one tile is scaled to its own heights, all its waves counted, as tile() scales it.
+        double variance = 0.0;
+        for (int b = -n / 2; b < n / 2; ++b)
+            for (int a = -n / 2; a < n / 2; ++a) variance += 2.0 * std::norm(amplitudeAt(a, b));
+        const double target = s.waveHeight * 0.21 * s.windSpeed * s.windSpeed / Gravity / 4.0;
+        made->scale = variance > 0 ? target / std::sqrt(variance) : 0.0;
+    }
+    std::lock_guard<std::mutex> held(previewLock);
+    previewKept.emplace_back(key, made);
+    if (previewKept.size() > PreviewKeep) previewKept.erase(previewKept.begin());
+    return made;
+}
+
+// The tile's long waves at preview x preview points across it (preview a power of two, at most the resolution): the
+// displacement image's (dx, height, dz) at each, choppiness and turn as tile() writes them, rows by z, into out
+// (preview x preview x 3 floats). The values as modo_ocean_tile's, the moment among them. 0; 2 for settings out of range.
+extern "C" __declspec(dllexport) int modo_ocean_preview(int resolution, const double* values, int count, int preview, float* out) {
+    Settings s;
+    if (!settings(resolution, values, count, s) || !out) return 2;
+    const int n = s.n, m = preview;
+    if (n < 2 || (n & (n - 1)) || n > 4096 || !(s.size > 0) || !(s.windSpeed > 0) || m < 2 || (m & (m - 1)) || m > n) return 2;
+    try {
+        const std::shared_ptr<const PreviewSpectrum> spectrum = previewSpectrum(s, m);
+        const double cell = 2 * Pi / s.size;
+        const Complex I(0, 1);
+        std::vector<Complex> pair1(size_t(m) * m), pair2(size_t(m) * m);
+        for (int j = 0; j < m; ++j)
+            for (int i = 0; i < m; ++i) {
+                const double kx = cell * (i - m / 2), kz = cell * (j - m / 2), k = std::hypot(kx, kz);
+                if (k < 1e-12) continue;
+                const size_t at = size_t(j) * m + i;
+                const double w = frequency(s, k) * s.seconds;
+                const Complex e(std::cos(w), std::sin(w));
+                const Complex h = spectrum->h[at] * e + std::conj(spectrum->opposite[at]) * std::conj(e);
+                const Complex dx = -I * (kx / k) * h, dz = -I * (kz / k) * h;
+                pair1[at] = h + I * dx;
+                pair2[at] = dz;
+            }
+        ifft2(pair1, m);
+        ifft2(pair2, m);
+        const double scale = spectrum->scale, chop = s.choppiness;
+        const double c = std::cos(s.turn * Pi / 180.0), sn = std::sin(s.turn * Pi / 180.0);
+        for (int j = 0; j < m; ++j)
+            for (int i = 0; i < m; ++i) {
+                const size_t at = size_t(j) * m + i;
+                const double sign = ((i + j) & 1) ? -1.0 : 1.0;
+                const double h = pair1[at].real() * sign * scale, dx = pair1[at].imag() * sign * scale;
+                const double dz = pair2[at].real() * sign * scale;
+                out[3 * at] = float(chop * (c * dx - sn * dz));
+                out[3 * at + 1] = float(h);
+                out[3 * at + 2] = float(chop * (sn * dx + c * dz));
+            }
+    } catch (...) {
+        return 1;
+    }
+    return 0;
 }

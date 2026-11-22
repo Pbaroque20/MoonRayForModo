@@ -30,6 +30,30 @@ The current release is [0.5.5.1.2](https://github.com/Pbaroque20/MoonRayForModo/
 
   ![A dragon with an iridescent sheen and an iridescent bubble over the sea, rendered by MoonLightIPR](docs/images/moonlightipr-iridescence.webp)
 
+- **Clear coats in MoonLightIPR match MoonRay where a surface turns away from the view**: the shine beneath a coat is seen through the coat, bent, as MoonRay sees it, where it was too bright before. A material with Clearcoat Bending off keeps it straight, as in MoonRay.
+
+  ![Dark car paint under a clear coat: MoonRay (left), MoonLightIPR before (middle), the shine beneath the coat too bright and broad, and now (right)](docs/images/moonlightipr-clear-coat.jpg)
+
+- **A tilt-shift camera** (MoonRay > Add MoonRay Item > Cameras > dwTiltShiftCamera, or Convert to MoonRay Camera... on a camera): a perspective camera whose lens tilts, leaning the plane of focus as a tilt-shift lens does. Tilt it one way to keep a whole receding ground sharp; tilt it the other way to blur everything but a band, the miniature look. Lens Tilt and Tilt Direction (in degrees) are in its Tilt-Shift group; it needs its Depth of Field on. Its Shift is the horizontal and vertical film offset. MoonRay, XPU2 and MoonLightIPR render it alike. Switch: MoonRay Source Overrides, Tilt-shift camera (on).
+
+  ![The same street of blocks through a tilt-shift camera at f/1.4: no tilt (left), tilted so the whole ground is sharp (middle), and tilted the other way for the miniature look (right)](docs/images/tilt-shift-camera.jpg)
+
+- **An Ocean Plane's waves in the viewport**: where it was a flat grid, an Ocean Plane now shows its sea in Modo's viewport as points where the water's surface stands, deep blue in the troughs to light blue on the crests, moving with the timeline. They are the long waves the renders make, so the size of the waves, their run with the wind and the swell show before you render. The points gather around the viewport you look through, sparser farther off, and stop at Point Distance (250 m), so a sea to the horizon costs the viewport no more than a pond. Its Viewport settings: Waves in the Viewport, Point Spacing, Point Distance. A plane whose material tag names a Modo material still shows its grid only.
+
+  ![An Ocean Plane in Modo's viewport, looking through the render camera 6 m above the water: its waves as points, deep blue in the troughs and light blue on the crests](docs/images/ocean-viewport-points.png)
+
+- **Rigged meshes no longer slow MoonRay down**: only the weight and colour maps a material reads go to MoonRay, XPU2 and MoonLightIPR, not a rig's hundreds of bone weights.
+- **Modo's own UDIM sets render**: textures laid on through an Image Folder of UDIM tiles, as an FBX import brings them in, now render in MoonRay, XPU2 and MoonLightIPR. They were left out.
+
+  ![A cube in MoonRay whose faces each lie in their own UDIM tile, 1001, 1002 and 1003 showing, from an Image Folder of numbered images as an FBX import makes it](docs/images/udim-image-folder.jpg)
+
+- **Textured meshes are lighter for MoonRay and XPU2**: a mesh's UVs are sent once where an image uses its UV map as it is.
+- **Modo evaluated geometry is displaced once, its bumps lit**: with Surfaces set to Modo evaluated geometry, MoonRay and XPU2 no longer displace Modo's displaced meshes a second time, and light their bumps rather than shading them as the smooth surface.
+
+  ![A bumped sphere in MoonRay: displaced by MoonRay itself (left), Modo's displaced mesh as it was handed over before, displaced again and cracked (middle), and as it is now, matching the first (right)](docs/images/evaluated-displacement-once.jpg)
+
+- **MoonRay's realtime no longer says "Buffers will be available after the first preview pass completes."** under XPU or XPU2: its picture comes on as it renders. A Render with no finished pass yet still says it.
+
 - Known: Modo can crash as it quits with Scene Proxies in the scene (its own Convert to Proxy does the same); your work and settings are saved first.
 
 ## New in 0.5.5.1.2

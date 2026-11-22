@@ -366,7 +366,8 @@ def _configured_scene_text(scene, width=640, height=360, samples=2, environment=
         found=[]
         from . import conversions
         # The scene's textures are converted side by side, and all are done before the scene is handed on.
-        with textures.noting_missing(found),conversions.together():
+        from .coordinates import aliasing
+        with textures.noting_missing(found),conversions.together(),aliasing():
             text=_scene_text(scene,width,height,samples,environment,output_file)
         if found:
             # Said once for each texture, with the scene's other notices.
@@ -468,12 +469,20 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
     if entity_camera:
         # A MoonRay camera item set to render takes the place of the Modo camera.
         lines[1:lines.index('}')+1]=entities.camera_lines(scene,entity_camera)
+        # Its own depth of field switches MoonRay's on (enable_dof), as the Modo camera's does: a camera item with its
+        # lens its own (modo_lens off) rendered sharp, and a tilt-shift camera's tilt shows only with it.
+        if entity_camera['class'] in entities.PERSPECTIVE_CAMERAS + ('OrthographicCamera',) and entities.value(entity_camera, 'dof'):
+            dof=True
     dicing=dicing_lines(scene,entity_camera,lines)
     from . import geometry, lighting
     from . import cryptomatte
     crypto=bool((output_file or scene.get('preview_buffer_files')) and cryptomatte.enabled(scene))
     placed=[]
     render_meshes=list(geometry.render_meshes(scene.get('meshes',[]),expand_instances=True if scene.get('native_light_links',{}).get('lights') else {identity for identity,v in scene.get('production',{}).get('objects',{}).items() if v.get('link_enabled') or v.get('shadow_exclude') or v.get('light_filters') or v.get('mesh_light')}))
+    # Named UV sets that are their meshes' own UVs: read from modo_primary_uv by the materials written below, and not
+    # written again with the meshes (coordinates.aliased_keys).
+    from . import coordinates as coordinates_
+    coordinates_.alias(render_meshes)
     multi_crypto=crypto and cryptomatte.multiple(scene)
     if multi_crypto and not scene.get('_crypto_categories'):
         raise ValueError('Multiple Cryptomatte categories require a matching category-enabled runtime')
@@ -793,7 +802,11 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
             if not mesh.get('uvs'):
                 from .coordinates import fallback_uvs
                 mesh=dict(mesh,uvs=fallback_uvs(faces))
-            named_uvs['modo_primary_uv']=mesh['uvs']
+            # A set that is the mesh's own UVs is read from modo_primary_uv (coordinates.aliased_keys): written once.
+            from .coordinates import aliased, PRIMARY_UV
+            left_out=aliased()
+            named_uvs={key:values for key,values in named_uvs.items() if key not in left_out}
+            named_uvs[PRIMARY_UV]=mesh['uvs']
         for uv_index, (uv_name, values) in enumerate(sorted(named_uvs.items())):
             if len(values) != rows.corner_count(faces):
                 raise ValueError('Named UV set must match polygon corners: '+uv_name)

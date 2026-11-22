@@ -13,6 +13,9 @@ from pathlib import Path
 ITEM_TYPE = 'moonray.entity'      # the first, generic item; kept so that scenes holding it still load
 TYPE_PREFIX = 'moonray.'           # each class has its own item type: moonray.EnvLight, ...
 CHANNEL_PREFIX = 'mr_'             # keeps MoonRay's attribute names clear of the locator's own channels
+# The last fault in drawing each kind of MoonRay item in the viewport (lxserv/moonray_entities, vitm_Draw), for probes:
+# drawing never raises, so a fault would otherwise only show as a shape missing.
+DRAW_FAULTS = {}
 VECTORS = {'Rgb': ('color', '.R', '.G', '.B'), 'Vec2f': ('xy', '.X', '.Y'), 'Vec3f': ('xyz', '.X', '.Y', '.Z')}
 CLASS_KEY, PARAMETERS_KEY = 'entity_class', 'entity_parameters'
 IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
@@ -34,9 +37,14 @@ STARTING = {'EnvLight': {'modo_replace_environment': True, 'visible_in_camera': 
             'CylinderLight': {'intensity': 50.0, 'radius': .05}, 'MeshLight': {'intensity': 50.0},
             # A new camera is edited as any Modo camera is, in its own Camera tab. Off, as in scenes from before, it
             # renders by the MoonRay lens values in its dw tab.
-            'PerspectiveCamera': {'modo_lens': True}, 'OrthographicCamera': {'modo_lens': True}}
+            'PerspectiveCamera': {'modo_lens': True}, 'OrthographicCamera': {'modo_lens': True}, 'TiltShiftCamera': {'modo_lens': True}}
 # The MoonRay cameras that can take their lens from the Modo camera they are (modo_lens).
-MODO_LENS_CAMERAS = ('PerspectiveCamera', 'OrthographicCamera')
+MODO_LENS_CAMERAS = ('PerspectiveCamera', 'OrthographicCamera', 'TiltShiftCamera')
+# The perspective cameras: MoonRay's own, and the tilt-shift camera the plugin adds to it (tools/port_tilt_shift.py),
+# which is one with a lens that can tilt (lens_tilt, tilt_direction) and the film offset as its shift.
+PERSPECTIVE_CAMERAS = ('PerspectiveCamera', 'TiltShiftCamera')
+# What the tilt-shift camera has that a perspective camera has not, left out where it is written as one (camera_lines).
+TILT_ATTRIBUTES = ('lens_tilt', 'tilt_direction')
 
 
 def uses_modo_lens(item, name):
@@ -813,7 +821,7 @@ def filter_records(entities, names, owner, warnings, within=()):
                                                  float(value(entity, 'projector_pixel_aspect_ratio')), int(value(entity, 'projector_type')) == 1)
             named = entity['parameters'].get('projector')
             if named:
-                cameras = [e for e in entities if named in (e['name'], e['identity']) and e['class'] in ('PerspectiveCamera', 'OrthographicCamera')]
+                cameras = [e for e in entities if named in (e['name'], e['identity']) and e['class'] in PERSPECTIVE_CAMERAS + ('OrthographicCamera',)]
                 if len(cameras) != 1:
                     warnings.append('MoonLightIPR does not apply %s: its projector %s is not one perspective or orthographic camera item (%s on %s).' % (kind, named, entity['name'], owner))
                     continue
@@ -1036,7 +1044,7 @@ def proxy(name, number):
 # The MoonRay cameras that are Modo cameras: Modo's own camera item with the class's attributes added as a package
 # (camera_package), so that Modo's viewport lists them, looks through them by their lens and draws their resolution
 # gate as it does for any camera. The bake camera is not: it renders from a mesh's UVs and has no view.
-VIEWED_CAMERAS = ('DomeMaster3DCamera', 'FisheyeCamera', 'OrthographicCamera', 'PerspectiveCamera', 'SphericalCamera')
+VIEWED_CAMERAS = ('DomeMaster3DCamera', 'FisheyeCamera', 'OrthographicCamera', 'PerspectiveCamera', 'SphericalCamera', 'TiltShiftCamera')
 CAMERA_PACKAGE_PREFIX = 'moonray.cameraKind.'
 CAMERA_NEAR = 0.001
 
@@ -1120,6 +1128,7 @@ MODO_FILM = .036
 def lens_inputs(name):
     """The attributes modo_lens() reads for a camera class."""
     return {'PerspectiveCamera': ('focal', 'film_width_aperture', 'horizontal_film_offset', 'vertical_film_offset'),
+            'TiltShiftCamera': ('focal', 'film_width_aperture', 'horizontal_film_offset', 'vertical_film_offset'),
             'OrthographicCamera': ('film_width_aperture', 'horizontal_film_offset', 'vertical_film_offset'),
             'FisheyeCamera': ('fov',), 'SphericalCamera': ('min_longitude', 'max_longitude'),
             'DomeMaster3DCamera': ('FOV_horizontal_angle',)}.get(name, ())
@@ -1135,7 +1144,7 @@ def modo_lens(name, number, target=1.0):
     WIDEST_VIEW: Modo's viewport cannot bend the picture as they do. Returns focalLen, apertureX, offsetX and offsetY
     in metres, filmFit and projType, as Modo names them."""
     lens = {'filmFit': 'horizontal', 'projType': 'persp', 'offsetX': 0.0, 'offsetY': 0.0}
-    if name == 'PerspectiveCamera':
+    if name in PERSPECTIVE_CAMERAS:
         film = max(1e-3, number('film_width_aperture'))
         lens.update(focalLen=max(1e-3, number('focal')) / 1000.0, apertureX=film / 1000.0,
                     offsetX=number('horizontal_film_offset') / 1000.0, offsetY=number('vertical_film_offset') / 1000.0)
@@ -1677,10 +1686,22 @@ def camera_lines(scene, entity):
         # none; left with none, it reads one that is not there and stops. A name with no file behind it is asked
         # for, not found, and the surface's own normals are used, which is what no normal map means.
         shutter = shutter + [('normal_map', string('modo-no-normal-map'))]
+    kind = entity['class']
+    if kind == 'TiltShiftCamera' and not tilt_shift():
+        # The MoonRay Source Override off: MoonRay as its source has it, which has no tilt-shift camera. A perspective
+        # camera in its place, with the same lens and shift, its plane of focus square to the view.
+        kind = 'PerspectiveCamera'
+        entity = dict(entity, parameters={key: held for key, held in entity['parameters'].items() if key not in TILT_ATTRIBUTES})
     lines = block(entities, entity, shutter)[1]
     # The rest of the scene file knows the camera by this name.
-    lines[0] = 'local camera = %s(%s) {' % (entity['class'], string('/modo/camera'))
+    lines[0] = 'local camera = %s(%s) {' % (kind, string('/modo/camera'))
     return lines
+
+
+def tilt_shift():
+    """Whether a tilt-shift camera renders as one: the MoonRay Source Override (native.tilt_shift), on unless switched off."""
+    from .native import tilt_shift as switched
+    return switched()
 
 
 # ---- MoonLightIPR ------------------------------------------------------------------------------
@@ -1693,7 +1714,7 @@ def camera_view(camera, entity, matrix, note):
     view = dict(camera, matrix=matrix, dof=False, film_offset=[0.0, 0.0], pixel_aspect=1.0, projection_values=[0.0, 0.0, 0.0, 0.0])
     view.pop('matrix_close', None)
     view.pop('focal_mm_close', None)
-    if name in ('PerspectiveCamera', 'OrthographicCamera'):
+    if name in PERSPECTIVE_CAMERAS + ('OrthographicCamera',):
         film = float(value(entity, 'film_width_aperture'))
         offset = [float(value(entity, 'horizontal_film_offset')), float(value(entity, 'vertical_film_offset'))]
         view.update(film_offset=offset, pixel_aspect=float(value(entity, 'pixel_aspect_ratio')))
@@ -1710,6 +1731,9 @@ def camera_view(camera, entity, matrix, note):
             if value(entity, 'bokeh') and entity['parameters'].get('bokeh_image'):
                 # Its shape is the image's (moonlightipr_scene.bokeh_values), turned as the blades are.
                 view['bokeh_image'] = str(entity['parameters']['bokeh_image'])
+            if name == 'TiltShiftCamera' and float(value(entity, 'lens_tilt')) and tilt_shift():
+                # Its tilted lens: the plane of focus leans as MoonRay's TiltShiftCamera leans it (moonlightipr_scene).
+                view.update(lens_tilt=float(value(entity, 'lens_tilt')), tilt_direction=float(value(entity, 'tilt_direction')))
         eye = int(value(entity, 'stereo_view') or 0)
         if eye in (1, 2):
             # The eye it renders, moved to as MoonRay moves it (stereo.placed).

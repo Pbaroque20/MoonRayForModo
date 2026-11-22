@@ -172,6 +172,12 @@ def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, mat
         if not channel(layer,'enable',1) or not channel(layer,'render',1):
             continue
         if channel(layer,'effect','') in baked_effects:
+            # In the geometry already: Modo's displacement, in meshes Modo displaced (evaluated). Noted on the material,
+            # whose meshes then take their normals from the displaced points (evaluated.meshes).
+            if material_key in materials:
+                noted = materials[material_key].setdefault('baked_effects', [])
+                if channel(layer,'effect','') not in noted:
+                    noted.append(channel(layer,'effect',''))
             continue
         from .procedurals import ENHANCE, SURFACE_KINDS
         # Modo's Gabor and Poisson noise are drawn through the object as Enhance: Modo's patterns are.
@@ -347,6 +353,19 @@ def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, mat
                 node['coordinate_key'] = key(node)
                 if layer.type == 'imageMap':
                     clip = next((i for i in connected if i.type=='videoStill'),None)
+                    folder = None if clip else next((i for i in connected if i.type=='imageFolder'),None)
+                    tile_set = None
+                    if folder is not None:
+                        # Modo's own UDIM set (an FBX import's): an Image Folder of one image a tile, each with its
+                        # tile's number. Without Use UDIM, its first image alone is laid on, with a note.
+                        clips = sorted((i for i in folder.children() if i.type=='videoStill'),key=lambda i:int(channel(i,'udim',1001)))
+                        if not clips:
+                            raise ValueError('the Image Folder '+folder.name+' has no images')
+                        clip = clips[0]
+                        if channel(locator,'useUDIM',0):
+                            tile_set = textures.folder_tiles([(int(channel(i,'udim',1001)),channel(i,'filename','')) for i in clips],getattr(scene,'filename',None))
+                        elif len(clips)>1:
+                            warnings.append('Layer %s: Use UDIM is off; only the first image of %s is laid on.'%(layer.name,folder.name))
                     if not clip:
                         raise ValueError('requires a still image or a <UDIM> filename')
                     from .texture_controls import capture
@@ -360,10 +379,17 @@ def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, mat
                     node['flip_green'] = bool(channel(layer,'greenInv',0))
                     tile = channel(locator,'tileU','repeat')
                     tile_v = channel(locator,'tileV','repeat')
+                    if tile_set:
+                        # Each tile lies in its own square of the UVs; the layer's repeat modes play no part (an FBX
+                        # import leaves them on Reset).
+                        tile = tile_v = 'repeat'
                     if tile not in ('repeat','edge','mirror','reset') or tile_v not in ('repeat','edge','mirror','reset'):
                         raise ValueError('unsupported image repeat mode')
                     node.update(tile_u=tile,tile_v=tile_v,repeat=tile==tile_v=='repeat')
-                    path,recovered = textures.resolve_scene_source(channel(clip,'filename',''),getattr(scene,'filename',None))
+                    if tile_set:
+                        path,recovered = tile_set[0],False
+                    else:
+                        path,recovered = textures.resolve_scene_source(channel(clip,'filename',''),getattr(scene,'filename',None))
                     if recovered:
                         warnings.append('Relocated texture resolved for '+layer.name+': '+str(path))
                     if '<UDIM>' in path.name and (tile!='repeat' or tile_v!='repeat'):
@@ -372,7 +398,7 @@ def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, mat
                     if not sources:
                         raise ValueError('missing image '+str(path))
                     space = channel(clip,'colorspace','(default)')
-                    node.update(color_space=space if effect in textures.COLOR_EFFECTS else 'raw',path=str(path.resolve()),mtime=max(p.stat().st_mtime_ns for p in sources.values()),size=sum(p.stat().st_size for p in sources.values()),
+                    node.update(color_space=space if effect in textures.COLOR_EFFECTS else 'raw',path=str(textures.asset_path(path)),mtime=max(p.stat().st_mtime_ns for p in sources.values()),size=sum(p.stat().st_size for p in sources.values()),
                         tile_signature=[(n,p.stat().st_size,p.stat().st_mtime_ns) for n,p in sorted(sources.items())],
                         srgb=effect not in ('normal','normalCoat','bump','coatBump') and (space=='sRGB' or
                             (space=='(default)' and effect in textures.COLOR_EFFECTS and path.suffix.lower() not in ('.exr','.hdr','.tx'))),
@@ -422,8 +448,9 @@ def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, mat
             warnings.append('Layer %s: %s.' % (layer.name,exc))
 
 
-def material_stack(scene, candidates, warnings, tag, membership=None):
-    """Partition channel layers at material boundaries, then emit bottom to top."""
+def material_stack(scene, candidates, warnings, tag, membership=None, baked_effects=()):
+    """Partition channel layers at material boundaries, then emit bottom to top. baked_effects: layers whose effect is
+    already in the geometry (Modo's displacement, in meshes Modo displaced), left out as collect leaves them."""
     from .host import material_values, channel
     tree = ordered(scene.renderItem)
     positions = {item.id:i for i,item in enumerate(tree)}
@@ -452,7 +479,7 @@ def material_stack(scene, candidates, warnings, tag, membership=None):
             elif target in scope_ids and layer.id not in captured_group_masks:
                 allowed.add(layer.id);captured_group_masks.add(layer.id)
             elif layer.id in captured_group_masks:allowed.discard(layer.id)
-        collect(scene, {tag:value}, warnings, layer_filter=allowed, material_key=tag)
+        collect(scene, {tag:value}, warnings, baked_effects=baked_effects, layer_filter=allowed, material_key=tag)
         graph_material=value.get("node_override") and (value.get("node_graph") or value.get("native_shader"))
         if not graph_material and result and value.get('layer_opacity',1)==1 and value.get('layer_blend','normal')=='normal' \
                 and not value['material_groups'] and not any(layer.get('effect') in ('groupMask','layerMask') for layer in value.get('layers',[])) \

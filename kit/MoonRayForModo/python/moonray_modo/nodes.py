@@ -683,8 +683,8 @@ def emit(material,name,index,lines,library,output="root",validated=True):
                 descriptor=image_descriptor(item)
                 uv=refs.get('texcoord')
                 if uv is None and authored_texcoord(params):uv=definition('ConstantColorMap',path+'/authored_uv',{'color_value':vector(params['texcoord'],'Rgb')})
-                if uv is None and identity in bumped:uv=definition('ModoTextureMap',path+'/uv',{'mode':'12','uv_name':string(descriptor['coordinate_key'])})
-                if uv is None:uv=definition('AttributeMap',path+'/uv',{'primitive_attribute_name':string(descriptor['coordinate_key']),'primitive_attribute_type':'1','warn_when_unavailable':'true'})
+                if uv is None and identity in bumped:uv=definition('ModoTextureMap',path+'/uv',{'mode':'12','uv_name':string(coordinates.attribute(descriptor['coordinate_key']))})
+                if uv is None:uv=definition('AttributeMap',path+'/uv',{'primitive_attribute_name':string(coordinates.attribute(descriptor['coordinate_key'])),'primitive_attribute_type':'1','warn_when_unavailable':'true'})
                 address={'periodic':0,'clamp':1,'mirror':2,'constant':3}
                 u,v=params.get('uaddressmode','periodic'),params.get('vaddressmode','periodic')
                 if u not in address or v not in address:raise ValueError('Unknown image address mode')
@@ -715,7 +715,7 @@ def emit(material,name,index,lines,library,output="root",validated=True):
                 if params.get('invert'):ref=definition('ModoTextureMap',path+'/invert',{'background':'Rgb(1,1,1)','foreground':binding(ref,'Rgb'),'blend':'3'})
                 if coverage:ref=definition('ModoTextureMap',path+'/default',{'background':values['default'],'foreground':binding(ref,'Rgb'),'mask':binding(coverage,'Float')})
             elif kind=='texcoord':
-                ref=definition('AttributeMap',path,{'primitive_attribute_name':string(image_descriptor(item)['coordinate_key']),'primitive_attribute_type':'1','warn_when_unavailable':'true'})
+                ref=definition('AttributeMap',path,{'primitive_attribute_name':string(coordinates.attribute(image_descriptor(item)['coordinate_key'])),'primitive_attribute_type':'1','warn_when_unavailable':'true'})
             elif kind=='swizzle':
                 channels=params.get('channels','rgb')
                 if len(channels) not in (1,2,3) or any(c not in 'rgbxyz01' for c in channels):raise ValueError('Invalid component swizzle')
@@ -754,7 +754,7 @@ def emit(material,name,index,lines,library,output="root",validated=True):
                 descriptor=None if flat else normal_descriptor(item,g)
                 if descriptor:
                     p=source.get('parameters',{});address={'periodic':0,'clamp':1,'mirror':2,'constant':3}
-                    corrected=definition('ModoTextureMap',path+'/uv_basis',{'mode':'13','foreground':normal,'uv_name':string(descriptor['coordinate_key']),'tile_u':str(address[p.get('uaddressmode','periodic')]),'tile_v':str(address[p.get('vaddressmode','periodic')])})
+                    corrected=definition('ModoTextureMap',path+'/uv_basis',{'mode':'13','foreground':normal,'uv_name':string(coordinates.attribute(descriptor['coordinate_key'])),'tile_u':str(address[p.get('uaddressmode','periodic')]),'tile_v':str(address[p.get('vaddressmode','periodic')])})
                     normal=binding(corrected,'Rgb')
                 mapped=definition('ModoTextureMap',path+'/tangent',{'mode':'1','normal':normal,'normal_strength':values['scale']})
                 ref=definition('ModoNormalMap',path,{'input':binding(mapped,'Vec3f')})

@@ -154,7 +154,8 @@ class Textures(unittest.TestCase):
 
     def test_named_uv_sets_keep_distinct_corner_values(self):
         value = scene()
-        value['meshes'][0]['uv_sets']={'front':[[0,0],[1,0],[1,1],[0,1]],
+        # 'front' tiled twice: a set that is the mesh's own UVs is written once, as modo_primary_uv (test_uv_sets_once).
+        value['meshes'][0]['uv_sets']={'front':[[0,0],[2,0],[2,2],[0,2]],
                                     'back':[[1,0],[0,0],[0,1],[1,1]]}
         text = rdla.scene_text(value)
         self.assertIn('"front"',text); self.assertIn('"back"',text)
