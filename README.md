@@ -44,6 +44,9 @@ The current release is [0.5.5.1.2](https://github.com/Pbaroque20/MoonRayForModo/
 
 - **Rigged meshes no longer slow MoonRay down**: only the weight and colour maps a material reads go to MoonRay, XPU2 and MoonLightIPR, not a rig's hundreds of bone weights.
 - **Modo's own UDIM sets render**: textures laid on through an Image Folder of UDIM tiles, as an FBX import brings them in, now render in MoonRay, XPU2 and MoonLightIPR. They were left out.
+
+  ![A cube in MoonRay whose faces each lie in their own UDIM tile, 1001, 1002 and 1003 showing, from an Image Folder of numbered images as an FBX import makes it](docs/images/udim-image-folder.jpg)
+
 - **Textured meshes are lighter for MoonRay and XPU2**: a mesh's UVs are sent once where an image uses its UV map as it is.
 - **Modo evaluated geometry is displaced once**: with Surfaces set to Modo evaluated geometry, MoonRay and XPU2 no longer displace Modo's displaced meshes a second time.
 - **MoonRay's realtime no longer says "Buffers will be available after the first preview pass completes."** under XPU or XPU2: its picture comes on as it renders. A Render with no finished pass yet still says it.
