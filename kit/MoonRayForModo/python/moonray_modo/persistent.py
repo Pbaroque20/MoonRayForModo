@@ -172,16 +172,18 @@ class Session(QtCore.QObject):
         held for the whole session, its cause passed or not, until a preference changed."""
         if getattr(self,'xpu2_refused',None):self._retry_xpu2=True
 
-    def submit(self,text,runtime,threads,mode,generation,bucket_size=0,prepared=None,important=False,moonray_mode=None):
+    def submit(self,text,runtime,threads,mode,generation,bucket_size=0,prepared=None,important=False,moonray_mode=None,drag=False):
         """moonray_mode: the mode MoonRay starts in where XPU2 does not render the scene (left to MoonRay, or not chosen),
-        in place of mode: scalar for a scene that XPU2 draws rightly and this build of MoonRay only in scalar (a cookie)."""
+        in place of mode: scalar for a scene that XPU2 draws rightly and this build of MoonRay only in scalar (a cookie).
+        drag: a step of a drag XPU2 RT follows, told XPU2 as such (the command's fifth line): Rhea's first phase alone, XPU2
+        waiting for the release."""
         self.idle.cancel()
         # Whether the render takes the tiles with the most in them first: read by MoonRay as each render begins.
         try:
             staged=self.root/'important.tmp';staged.write_text('1' if important else '0',encoding='ascii');staged.replace(self.root/'important.txt')
         except (OSError,AttributeError):pass
         request=dict(text=text,runtime=Path(runtime),threads=threads,mode=mode,id=generation,bucket_size=bucket_size,prepared=prepared,
-                     again=(prepared or {}).get('again'),moonray_mode=moonray_mode)
+                     again=(prepared or {}).get('again'),moonray_mode=moonray_mode,drag=bool(drag))
         # A change of the toon preference is read by MoonRay only as it starts: it starts again.
         # An animation asking for XPU2 by name (output_xpu2) where MoonRay XPU renders the preview, or the preview after
         # it, starts it again with the other; where XPU2 renders the preview, nothing changes.
@@ -351,6 +353,8 @@ class Session(QtCore.QObject):
         mode='delta' if delta is not None else 'full'
         staged=self.root/'command.tmp'
         command='%d\n%s\n%s\n%s\n'%(request['id'],mode,str(path).replace('\\','/') if not self.scene_memory else str(path),str(full).replace('\\','/') if not self.scene_memory else str(full))
+        # A drag's step XPU2 follows: a fifth line XPU2's session reads (MoonRay's reads four lines; it is never sent there).
+        if request.get('drag') and getattr(self,'xpu2_active',False) and mode=='delta':command+='drag\n'
         if self.command_channel:self.command_channel.send(command)
         else:
             staged.write_text(command,encoding='utf-8');staged.replace(self.root/'command.txt')

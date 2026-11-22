@@ -620,6 +620,14 @@ public:
     // their pictures (the edges' own rays among them), FXAA, and the stages shown (stage(): the session's part).
     double coarseRaySeconds = 0, coarsePictureSeconds = 0, ringRaySeconds = 0, ringPictureSeconds = 0, fxaaSeconds = 0, stageSeconds = 0;
     bool packetsUsed = false;
+    // The graphics card's first hits (the session's, XPU2's launch mode 5): count rays at once into hits, each as the path
+    // tracer's own; false where the card does not take them now (a frame's launches out), the CPU tracing them. A stage's
+    // rays go to it together (the coarse grid, a ring, a ring's edges), the store's lookups staying on the CPU's threads
+    // (the user, 2026-11-22: "have Rhea phase 1 use both gpu/cpu"). Empty: the CPU alone.
+    std::function<bool(const surface::Ray*, size_t, resume::Hit*)> cardTrace;
+    // The last view's rays the card traced, and the time its calls took (rays out, launch, hits back).
+    size_t cardRays = 0;
+    double cardSeconds = 0;
 
     // A view of the store through camera nv, by the scene's first hits: each pixel's colour (rgb), lifted depth w (-1 the
     // environment), depth (0 none), state (1 drawn, 2 filled from around it) and doubt (0 to 1). Streamed (the user,
@@ -635,6 +643,7 @@ public:
         const size_t n = size_t(w) * h;
         rays = edgeRays = 0, stages = 0, unknown = 0, firstSeconds = 0;
         coarseRaySeconds = coarsePictureSeconds = ringRaySeconds = ringPictureSeconds = fxaaSeconds = stageSeconds = 0;
+        cardRays = 0, cardSeconds = 0;
         if (!w || !h) return false;
         const double angle = ObjectStore::pixelAngle(nv);
         if (!(angle > 0)) return false;
@@ -685,12 +694,6 @@ public:
         };
         // Rays through raster places (x, y), each node shaded: four at a time where packets may be used. Adds the rays and
         // those the store had nothing for to the counts (once a row: one atomic each, not one a ray).
-        struct Batch {
-            std::vector<double> x, y;
-            std::vector<Node*> to;
-            void clear() { x.clear(), y.clear(), to.clear(); }
-            void add(double px, double py, Node* o) { x.push_back(px), y.push_back(py), to.push_back(o); }
-        };
         auto shadeAll = [&](Batch& b) {
             async::CpuBackend backend{scene};
             surface::Ray ray4[4];
@@ -723,20 +726,67 @@ public:
             traced.fetch_add(made, std::memory_order_relaxed);
             empty.fetch_add(unknownHere, std::memory_order_relaxed);
         };
+        // Every row's rays on the card at once (cardTrace), each row then shaded on a CPU thread (the store's lookups). False
+        // where the card did not take them: the caller's rows then traced on the CPU (shadeAll), as before.
+        auto shadeOnCard = [&](std::vector<Batch>& rowsOf) -> bool {
+            if (!cardTrace || rowsOf.empty()) return false;
+            parallel(threads, rowsOf.size(), [&](size_t r) {
+                Batch& b = rowsOf[r];
+                b.rays.clear(), b.rto.clear();
+                for (size_t i = 0; i < b.to.size(); ++i) {
+                    surface::Ray ray;
+                    if (!nv.ray(b.x[i], b.y[i], ray)) {
+                        b.to[i]->kind = 3;
+                        continue;
+                    }
+                    ray.mask = 1u;
+                    b.rays.push_back(ray), b.rto.push_back(b.to[i]);
+                }
+            });
+            rowAt_.assign(rowsOf.size() + 1, 0);
+            for (size_t r = 0; r < rowsOf.size(); ++r) rowAt_[r + 1] = rowAt_[r] + rowsOf[r].rays.size();
+            const size_t count = rowAt_.back();
+            if (!count) return true;
+            cardRays_.resize(count), cardHits_.resize(count);
+            parallel(threads, rowsOf.size(), [&](size_t r) { std::copy(rowsOf[r].rays.begin(), rowsOf[r].rays.end(), cardRays_.begin() + rowAt_[r]); });
+            const auto sent = Clock::now();
+            if (!cardTrace(cardRays_.data(), count, cardHits_.data())) return false;
+            cardSeconds += since(sent);
+            cardRays += count;
+            parallel(threads, rowsOf.size(), [&](size_t r) {
+                async::CpuBackend backend{scene};
+                size_t unknownHere = 0;
+                for (size_t k = rowAt_[r]; k < rowAt_[r + 1]; ++k) {
+                    Node& o = *rowsOf[r].rto[k - rowAt_[r]];
+                    shade(backend, cardRays_[k], cardHits_[k], o);
+                    if (!o.known) ++unknownHere;
+                }
+                traced.fetch_add(rowAt_[r + 1] - rowAt_[r], std::memory_order_relaxed);
+                empty.fetch_add(unknownHere, std::memory_order_relaxed);
+            });
+            return true;
+        };
+        // Each row's rays traced and shaded: on the card where it takes them, else on the CPU a row a thread.
+        auto shadeRows = [&](std::vector<Batch>& rowsOf) {
+            if (shadeOnCard(rowsOf)) return;
+            parallel(threads, rowsOf.size(), [&](size_t r) { shadeAll(rowsOf[r]); });
+        };
         auto radius = [&](double x, double y) { return std::sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy)); };
         // A grid's nodes traced between two radii, a row at a time, then those the store had nothing for filled from the
         // known around them.
         auto trace = [&](Grid& g, double from, double to) {
+            rows_.resize(g.gh);
             parallel(threads, g.gh, [&](size_t j) {
-                Batch b;
+                Batch& b = rows_[j];
+                b.clear();
                 for (unsigned i = 0; i < g.gw; ++i) {
                     const double x = std::min<double>(double(i) * g.step, w - 1) + 0.5, y = std::min<double>(double(j) * g.step, h - 1) + 0.5;
                     const double r = radius(x, y);
                     if (r < from || r >= to) continue;
                     b.add(x, y, &g.nodes[j * g.gw + i]);
                 }
-                shadeAll(b);
             });
+            shadeRows(rows_);
             fillNodes(g);
         };
         // Each pixel's colour from a grid: bilinear between its cell's corners; smooth: they are one smooth surface.
@@ -836,11 +886,14 @@ public:
             // A pixel's fine colour once its cell's corners are all traced: up to a cell and a half inside the ring.
             const double valid = last ? reach : std::max(0.0, to - 1.5 * stride);
             const double from = validTo;
+            // The pixels newly in reach: bilinear from the fine grid; a cell that is not one smooth surface, a ray of the
+            // pixel's own. Those rays found a row at a time, then traced all together (the card's, or a row a CPU thread),
+            // then each row's pixels made.
+            edgeX_.resize(h), edgeNodes_.resize(h), edgeRows_.resize(h);
             parallel(threads, h, [&](size_t yy) {
                 const unsigned y = unsigned(yy);
-                // The pixels newly in reach: bilinear from the fine grid; a cell that is not one smooth surface, a ray of the
-                // pixel's own (the row's such rays traced together).
-                std::vector<unsigned> edges;
+                std::vector<unsigned>& edges = edgeX_[y];
+                edges.clear();
                 for (unsigned x = 0; x < w; ++x) {
                     const size_t i = size_t(y) * w + x;
                     const double r = radius(x + 0.5, y + 0.5);
@@ -850,12 +903,19 @@ public:
                     if (!smooth) edges.push_back(x);
                     have[i] = 1;
                 }
+                std::vector<Node>& own = edgeNodes_[y];
+                own.assign(edges.size(), Node{});
+                Batch& b = edgeRows_[y];
+                b.clear();
+                for (size_t e = 0; e < edges.size(); ++e) b.add(edges[e] + 0.5, y + 0.5, &own[e]);
+                edge.fetch_add(edges.size(), std::memory_order_relaxed);
+            });
+            shadeRows(edgeRows_);
+            parallel(threads, h, [&](size_t yy) {
+                const unsigned y = unsigned(yy);
+                const std::vector<unsigned>& edges = edgeX_[y];
                 if (!edges.empty()) {
-                    std::vector<Node> own(edges.size());
-                    Batch b;
-                    for (size_t e = 0; e < edges.size(); ++e) b.add(edges[e] + 0.5, y + 0.5, &own[e]);
-                    shadeAll(b);
-                    edge.fetch_add(edges.size(), std::memory_order_relaxed);
+                    const std::vector<Node>& own = edgeNodes_[y];
                     for (size_t e = 0; e < edges.size(); ++e) {
                         const unsigned x = edges[e];
                         Pixel& p = inner[size_t(y) * w + x];
@@ -928,10 +988,25 @@ private:
         unsigned step = 1, gw = 0, gh = 0;
         std::vector<Node> nodes;
     };
+    // A row's rays to trace: raster places and the nodes they shade; on the card's way, the rays made and their nodes.
+    struct Batch {
+        std::vector<double> x, y;
+        std::vector<Node*> to;
+        std::vector<surface::Ray> rays;
+        std::vector<Node*> rto;
+        void clear() { x.clear(), y.clear(), to.clear(); }
+        void add(double px, double py, Node* o) { x.push_back(px), y.push_back(py), to.push_back(o); }
+    };
     // Kept from view to view (a drag's steps): no allocation a step.
     Grid coarse, fine;
     std::vector<Pixel> outside, inner, blurred;
     std::vector<std::uint8_t> have;
+    std::vector<Batch> rows_, edgeRows_;              // a grid's rows, a ring's edge pixels' rows
+    std::vector<std::vector<unsigned>> edgeX_;        // each row's edge pixels
+    std::vector<std::vector<Node>> edgeNodes_;        // and their nodes
+    std::vector<size_t> rowAt_;                       // each row's first ray on the card's way
+    std::vector<surface::Ray> cardRays_;
+    std::vector<resume::Hit> cardHits_;
 
     // Whether every mesh of the scene is triangles (no curves, no points): Embree's packets meet them all.
     static bool trianglesAlone(const async::CpuScene& scene) {

@@ -250,6 +250,12 @@ struct LaunchParams {
     Refine* refines;
     const Refine* refineIn;
     U32 refineInCount, pad2;
+
+    // mode 5, Rhea's phase one (rhea/object_warp.h, realtime only): the first hits of firstHitCount rays the host gives
+    // (firstHitRays), each as the path tracer's own (GpuBackend::trace), into firstHits. No film, no sample.
+    const surface::Ray* firstHitRays;
+    resume::Hit* firstHits;
+    U32 firstHitCount, pad4;
 };
 
 }  // namespace xpu2::interactive::async

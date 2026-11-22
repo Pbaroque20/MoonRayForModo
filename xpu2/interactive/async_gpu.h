@@ -1867,6 +1867,41 @@ public:
             errorsPooled_ = false;
         }
     }
+    // Rhea's phase one (rhea/object_warp.h, realtime alone): the first hits of count rays on this card at once, each as the
+    // path tracer's own (GpuBackend::trace, launch mode 5), the card's traversal flat in the scene's size where the CPU's
+    // grows with it. Only with nothing of a frame's out (inFlight() 0: a drag's steps, XPU2 held to the release) and a frame
+    // begun on this scene before (its buffers made); false otherwise, the caller's CPU tracing them.
+    bool firstHits(const surface::Ray* rays, size_t count, resume::Hit* out) {
+        if (!count) return true;
+        if (!inFlight_.empty() || !paramsFree() || !program_ || !plan_ || !scene_.config || !scene_.materials || !scene_.aovTables || !scene_.geometry ||
+            !ring_ || !state_ || !parked_ || !lowFlags_ || !refines_ || !scene_.provSums || !scene_.provCounts || !scene_.sums ||
+            !scene_.counts || !scene_.odd || count > 0xffffffffull)
+            return false;
+        for (U32 s = 0; s < PassSlots; ++s)
+            if (!scene_.passMask[s] || !scene_.passBase[s]) return false;
+        const size_t rayBytes = count * sizeof(surface::Ray), hitBytes = count * sizeof(resume::Hit);
+        ensure(firstRaysHost_, rayBytes);
+        ensure(firstHitsHost_, hitBytes);
+        if (!firstRaysDevice_ || firstRaysDevice_->bytes < rayBytes) firstRaysDevice_ = device(rayBytes);
+        if (!firstHitsDevice_ || firstHitsDevice_->bytes < hitBytes) firstHitsDevice_ = device(hitBytes);
+        if (!firstHitsDone_) firstHitsDone_ = std::make_shared<gpu::Event>(driver);
+        std::memcpy(firstRaysHost_->host(), rays, rayBytes);
+        copyIn(firstRaysDevice_, firstRaysHost_->host(), rayBytes);
+        LaunchParams p = baseParams();
+        p.mode = 5;
+        p.firstHitRays = reinterpret_cast<const surface::Ray*>(firstRaysDevice_->pointer);
+        p.firstHits = reinterpret_cast<resume::Hit*>(firstHitsDevice_->pointer);
+        p.firstHitCount = U32(count);
+        auto& slot = takeParams(p);
+        ox(optixLaunch(program_->pipeline, stream_, slot.device->pointer, sizeof(LaunchParams), &program_->sbt, unsigned(count), 1, 1));
+        copyOut(firstHitsHost_, firstHitsDevice_, hitBytes);
+        gpu::Driver::check(driver.cuEventRecord_p(firstHitsDone_->value, stream_));
+        slot.done = firstHitsDone_;
+        while (!firstHitsDone_->ready()) std::this_thread::yield();
+        std::memcpy(out, firstHitsHost_->host(), hitBytes);
+        return true;
+    }
+
     bool errorsReady() {
         if (!scene_.errorsDone->ready()) return false;
         if (followers_.empty() || errorsPooled_) return true;
@@ -3583,6 +3618,9 @@ private:
     bool exceptionLogged_ = false;  // the diagnostic's first exception logged
     U64L profile_[ProfileStages] = {};
     B lowFlags_, refines_;
+    // Rhea's first hits (firstHits): the rays and hits each way, and the copy's end.
+    B firstRaysHost_, firstRaysDevice_, firstHitsHost_, firstHitsDevice_;
+    std::shared_ptr<gpu::Event> firstHitsDone_;
     U32 refineCapacity_ = 1u << 22;
     U64 refineHead_ = 0;
     std::vector<Refine> refinesOut_;

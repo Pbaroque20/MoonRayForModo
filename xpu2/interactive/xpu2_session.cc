@@ -2509,6 +2509,23 @@ int session(const Args& args, const fs::path& directory) {
         }
         if (!gpu->followers().empty()) gpu->use();
     };
+    // The command now applied is a step of a drag the kit follows (its fifth line "drag": XPU2 RT, the mouse still held). Rhea
+    // shows its phase one alone for it and XPU2 waits for the release (the user, 2026-11-22: "if we remove phase 2, and have
+    // Rhea phase 1 use both gpu/cpu, i think that's where we need to go": no XPU2 during drags, XPU2 after the release).
+    bool rheaDragStep = false;
+    // Phase one's first hits on the graphics card (async::GpuLane::firstHits, rhea::ObjectWarp::cardTrace): where the card's
+    // scene is the CPU's (the same meshes: a camera move), it renders all of it (nothing left to the CPU alone), and it has
+    // nothing of a frame's out; else the CPU traces them. XPU2_SESSION_RHEA_GPU_HITS=0: the CPU always.
+    const bool rheaCardHits = envOn("XPU2_SESSION_RHEA_GPU_HITS", true);
+    auto rheaCard = [&]() -> std::function<bool(const surface::Ray*, size_t, resume::Hit*)> {
+        if (!rheaCardHits || !gpu || !gpuUsable || !gpuPlan || !scene.plan || !scene.cpuScene || scene.plan->cpuOnlyMeshes != 0 ||
+            sceneHasCpuAloneObjects || !async::CpuScene::sameGeometry(*gpuPlan, *scene.plan))
+            return {};
+        return [&](const surface::Ray* rays, size_t count, resume::Hit* hits) {
+            gpu->use();
+            return gpu->firstHits(rays, count, hits);
+        };
+    };
     // Rhea's phase one for a camera move before any of the GPU's work (the user's car, 2026-11-22: "a camera move in that
     // car scene takes about 2-3 seconds to update": the stopped frame's GPU launches, 0.25 to 1.3 s there, had come first,
     // then the GPU's new camera, and only then the picture). From the CPU's scene and the surfaces' colours alone, in the
@@ -2557,8 +2574,9 @@ int session(const Args& args, const fs::path& directory) {
             }
             return !waiting();  // the next message come: stopped where it is
         };
+        rheaView.objectWarp.cardTrace = rheaCard();
         const async::RenderResult* first = rheaView.warpTo(*scene.plan);
-        rheaView.onStage = nullptr, rheaView.traceScene = nullptr;
+        rheaView.onStage = nullptr, rheaView.traceScene = nullptr, rheaView.objectWarp.cardTrace = nullptr;
         if (!first) return false;
         if (shownStage) {
             const auto until = std::chrono::steady_clock::now() + std::chrono::milliseconds(50);
@@ -2574,9 +2592,10 @@ int session(const Args& args, const fs::path& directory) {
         rheaStagesShown = rheaPhaseOneDone ? stage + 1 : stage;
         const rhea::ObjectWarp& ow = rheaView.objectWarp;
         std::printf("MoonRay XPU2: Rhea: the camera's picture ahead of the GPU in %.3f s (first picture %.3f s, %u pictures, %zu rays, "
-                    "%.0f%% of them unknown to the store)\n",
+                    "%zu of them on the graphics card in %.1f ms, %.0f%% of them unknown to the store%s; coarse rays %.1f ms, rings' rays %.1f ms)\n",
                     std::chrono::duration<double>(std::chrono::steady_clock::now() - began).count(), ow.firstSeconds, ow.stages, ow.rays,
-                    ow.unknown * 100.0);
+                    ow.cardRays, ow.cardSeconds * 1e3, ow.unknown * 100.0, rheaDragStep ? "; a drag's step" : "", ow.coarseRaySeconds * 1e3,
+                    ow.ringRaySeconds * 1e3);
         std::fflush(stdout);
         return true;
     };
@@ -3398,8 +3417,10 @@ int session(const Args& args, const fs::path& directory) {
                             }
                             return !(watch.stop && watch.stop());
                         };
+                        rheaView.objectWarp.cardTrace = rheaCard();
                         const async::RenderResult* first = rheaView.warpTo(*scene.plan);
-                        rheaView.onStage = nullptr, rheaView.traceScene = nullptr;  // the CPU scene is the session's, made again on edits
+                        // The CPU scene is the session's, made again on edits; the card's hits are for this view alone.
+                        rheaView.onStage = nullptr, rheaView.traceScene = nullptr, rheaView.objectWarp.cardTrace = nullptr;
                         if (!first) return false;
                         // The finished picture shown whatever: the kit takes one picture at a time, and one it had not taken yet
                         // kept the next out (a ring's picture stayed on screen in its place). It waits for the kit, 50 ms at most.
@@ -3415,11 +3436,12 @@ int session(const Args& args, const fs::path& directory) {
                         if (rheaView.objectDrawn) {
                             const rhea::ObjectWarp& ow = rheaView.objectWarp;
                             std::printf("MoonRay XPU2: Rhea: %s from the surfaces' colours in %.3f s (first picture %.3f s, %u pictures%s; %zu rays, "
-                                        "%zu of them at edges, every %u pixels%s; %.0f%% of rays unknown to the store, %zu cells in it; coarse rays %.1f ms, "
+                                        "%zu of them at edges, every %u pixels%s, %zu on the graphics card in %.1f ms; %.0f%% of rays unknown to the store, "
+                                        "%zu cells in it; coarse rays %.1f ms, "
                                         "coarse picture %.1f ms, rings' rays %.1f ms, rings' pictures %.1f ms, FXAA %.1f ms, shown %.1f ms)\n",
                                         finishing ? "the stopped picture finished" : "the camera's picture", took, ow.firstSeconds, ow.stages,
                                         rheaPhaseOneDone ? "" : ", stopped by the next move", ow.rays, ow.edgeRays, ow.stride,
-                                        ow.packetsUsed ? ", four at a time" : "", ow.unknown * 100.0, rheaView.store.cells(),
+                                        ow.packetsUsed ? ", four at a time" : "", ow.cardRays, ow.cardSeconds * 1e3, ow.unknown * 100.0, rheaView.store.cells(),
                                         ow.coarseRaySeconds * 1e3, ow.coarsePictureSeconds * 1e3, ow.ringRaySeconds * 1e3, ow.ringPictureSeconds * 1e3,
                                         ow.fxaaSeconds * 1e3, ow.stageSeconds * 1e3);
                         } else {
@@ -3439,9 +3461,19 @@ int session(const Args& args, const fs::path& directory) {
                         // any of the GPU's work: it comes about 60 ms after this one, and a GPU frame begun takes longer to stop
                         // than the warp takes (0.2 s at 720p). A move on its own goes to the GPU at once: held, the test
                         // scene's moves 0.3 s apart lost a quarter of XPU2's time and doubled their error.
-                        if (warpedNow && rheaView.op.dragHold > 0 && (dragging || sinceLastMove < 0.15)) {
+                        // A step of a drag the kit follows (rheaDragStep): phase one alone, XPU2 held until the next command, the
+                        // next step or the release (the user, 2026-11-22: no XPU2 during drags), the card left to phase one's
+                        // first hits. Held XPU2_SESSION_RHEA_DRAG_WAIT seconds at most (5): the mouse held still that long is a
+                        // camera at rest, and XPU2's frame begins.
+                        static const double dragWait = [] {
+                            const char* v = std::getenv("XPU2_SESSION_RHEA_DRAG_WAIT");
+                            return v ? std::max(0.0, std::atof(v)) : 5.0;
+                        }();
+                        const bool dragAlone = warpedNow && rheaDragStep && !probesOn && envOn("XPU2_SESSION_RHEA_DRAG_ALONE", true);
+                        if (dragAlone || (warpedNow && rheaView.op.dragHold > 0 && (dragging || sinceLastMove < 0.15))) {
+                            const double holdFor = dragAlone ? dragWait : rheaView.op.dragHold;
                             const auto held = Clock::now();
-                            while (std::chrono::duration<double>(Clock::now() - held).count() < rheaView.op.dragHold) {
+                            while (std::chrono::duration<double>(Clock::now() - held).count() < holdFor) {
                                 if (watch.stop && watch.stop()) {
                                     rheaView.keepLast(*scene.plan);
                                     rheaUnfinished = true;  // the warp on screen
@@ -4164,6 +4196,9 @@ int session(const Args& args, const fs::path& directory) {
                 fallback("an incomplete Modo session command");
                 return 1;
             }
+            // A fifth line, "drag": a step of a drag the kit follows (rheaDragStep); none (older kits, the release): not one.
+            std::string more;
+            rheaDragStep = std::getline(input, more) && (more == "drag" || more == "drag\r");
         }
         if (!command.enabled()) fs::remove(mailbox, ignored);
         if (mode_ == "quit") return 0;

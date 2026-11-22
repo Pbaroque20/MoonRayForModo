@@ -2144,7 +2144,8 @@ class Panel(Tools, QtWidgets.QWidget):
             # The newest reading of the scene, whichever way it was come by (a render asked for, or an edit
             # followed): the one that may be used again while nothing changes. Kept only from here, so that it is
             # never an older one than the picture on screen was made from.
-            try:self._kept_capture=scene;self._kept_key=self._capture_key()
+            # (Without a drag step's mark: the scenes made from it later are not steps.)
+            try:self._kept_capture={key:value for key,value in scene.items() if key!='_xpu2_drag'} if '_xpu2_drag' in scene else scene;self._kept_key=self._capture_key()
             except Exception:self._kept_capture=None
         # A render to files is shown as it comes, over a picture that was being held as well.
         if output:self._held=False
@@ -3018,7 +3019,9 @@ class Panel(Tools, QtWidgets.QWidget):
                 # end is read the usual way once the mouse is let go (its moved items, below).
                 self._drag_count('sent')
                 self._drag_scene=fast
-                self._submit(scene,digest=('live-drag',object()))
+                # Marked a drag's step (_xpu2_drag): Rhea shows its first phase alone for it, XPU2 waiting for the
+                # release (the user, 2026-11-22: no XPU2 during drags).
+                self._submit(dict(scene,_xpu2_drag=True),digest=('live-drag',object()))
             elif fast is not None:
                 self._drag_count('sent')
                 # Something moved, or Modo would not have told of it: sent without hashing the whole scene again (a

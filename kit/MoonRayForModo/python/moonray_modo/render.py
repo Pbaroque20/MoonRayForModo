@@ -838,7 +838,7 @@ class Renderer(QtCore.QObject):
                 self._started()
                 self.session.submit(text,request['runtime'],request['threads'],mode,self.session_serial,bucket_size,prepared=prepared,
                                     important=bool(options.render_values(snapshot.get('render_settings',{}))['important_first']),
-                                    moonray_mode=getattr(self,'moonray_mode',None))
+                                    moonray_mode=getattr(self,'moonray_mode',None),drag=bool(snapshot.get('_xpu2_drag')))
             else:
                 self.process.start()
         except Exception as exc:
