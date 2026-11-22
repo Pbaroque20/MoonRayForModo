@@ -7,11 +7,19 @@
 // Here the picture becomes a mesh first (build): its points sparse where the picture is smooth, denser where its depth
 // jumps, each point the picture's colour around it averaged over its own surface - a neighbour counts fully while its
 // depth is within `soft` of the point's plane, less and less up to `jump`, not at all past it (the elevations' threshold
-// decides how far a colour reaches toward the next point). The environment's points are directions. The mesh's triangles
-// are drawn into the new view (warp), their points' colours interpolated across them - a mesh gradient - the nearest
-// surface winning; what no triangle covers (what lay behind a surface, past the picture's edges, a crack between cells
-// of two sizes) is filled from the farthest around it, coarse to fine (push-pull). Textures come out as averaged colour,
-// as phase 1 has them; a drag's picture costs a few thousand points' moves and one pass over the pixels.
+// decides how far a colour reaches toward the next point). The environment's points are directions. The picture's edges
+// go on as skirts (its border points pushed out a picture's width at their own depth), so that a turn shows the sky and
+// the ground going on rather than a smear. The mesh's triangles are drawn into the new view (warp), their points' colours
+// interpolated across them - a mesh gradient - the nearest surface winning; what no triangle covers (what lay behind a
+// surface, a crack between cells of two sizes) is closed from its own surface or filled from the farthest around it,
+// coarse to fine (push-pull). Textures come out as averaged colour, as phase 1 has them.
+//
+// Edges (the user, 2026-11-21: the gradients "splotch between the dragon and the sky"): a pixel at a silhouette holds
+// both sides' samples, but the depth outputs leave the environment's out (a miss puts no depth), so it reads as the
+// surface's with the sky's colour in it - and with depth of field that band is several pixels wide. A pixel is mixed
+// where its alpha says the environment is in it (alpha that holds the environment at 0) or its depth outputs' nearest and
+// farthest are a jump apart: mixed pixels give their colour to no point but their own, and one mostly the environment's
+// (alpha under a half) is left out of the mesh (filled from the farthest around it, as what lay behind).
 #pragma once
 #include "view.h"
 #include "virtual_surface.h"
@@ -29,20 +37,22 @@ public:
         double cell = 16;    // the coarsest cell, pixels of a 1280 x 720 picture (scaled by the picture's size, a power of two)
         double jump = 0.03;  // a depth jump between neighbouring pixels: the lifted depth off its neighbours' line by this share
         double soft = 0.01;  // a point's colour takes its neighbours within this share of depth off its plane, less up to jump
+        bool skirts = true;  // the picture's edges pushed out a picture's width, at their depth (the environment's as directions)
+        bool mixed = true;   // silhouette pixels (alpha, depth range) kept out of other points' colour
         unsigned threads = 8;
     };
     Options op;
-    size_t vertexCount = 0, triangleCount = 0;
+    size_t vertexCount = 0, triangleCount = 0, mixedCount = 0, droppedCount = 0;
     unsigned cellSize = 0;  // the coarsest cell this picture's mesh was built with
     double buildSeconds = 0, warpSeconds = 0, drawnShare = 0;
 
     bool valid() const { return ok; }
     void clear() { ok = false; }
 
-    // The mesh of a picture seen through `view`: its colour (rgba), samples and nearest first-hit depth a pixel (0 none: the
-    // environment where the pixel has colour). False where it has nothing to move.
+    // The mesh of a picture seen through `view`: its colour (rgba), samples, and its nearest first-hit depth a pixel (0
+    // none: the environment where the pixel has colour) and farthest (empty: not known). False where it has nothing to move.
     bool build(const View& view, unsigned w, unsigned h, const std::vector<float>& rgba, const std::vector<std::uint32_t>& counts,
-               const std::vector<float>& depth) {
+               const std::vector<float>& depth, const std::vector<float>& depthFar) {
         const auto began = std::chrono::steady_clock::now();
         ok = false;
         const size_t n = size_t(w) * h;
@@ -50,28 +60,67 @@ public:
         src = view, W = w, H = h;
         const unsigned threads = std::max(1u, op.threads);
         // Each pixel: a surface (its lifted depth), the environment (colour, no depth: lifted depth 0), or nothing.
-        kind.resize(n), lw.resize(n), color.resize(n * 3);
+        kind.resize(n), lw.resize(n), color.resize(n * 3), mixed.assign(n, 0);
         std::vector<double> farthest(H, 0.0);
+        std::vector<size_t> skyClear(H, 0), skyAll(H, 0), solid(H, 0), surfaces(H, 0);
         parallel(threads, H, [&](size_t y) {
             double far = 0;
             for (size_t i = y * W; i < (y + 1) * W; ++i) {
-                float c[3];
                 bool lit = i < counts.size() && counts[i] > 0;
                 for (int k = 0; k < 3; ++k) {
                     const float v = rgba[i * 4 + k];
-                    c[k] = std::isfinite(v) ? std::max(0.0f, v) : 0.0f;
-                    lit = lit || c[k] > 0;
-                    color[i * 3 + k] = c[k];
+                    const float c = std::isfinite(v) ? std::max(0.0f, v) : 0.0f;
+                    lit = lit || c > 0;
+                    color[i * 3 + k] = c;
                 }
                 const float d = depth[i];
-                if (lit && d > 0 && std::isfinite(d)) kind[i] = 1, lw[i] = view.wOf(d), far = std::max(far, double(d));
-                else if (lit && !(d > 0)) kind[i] = 2, lw[i] = 0;
-                else kind[i] = 0, lw[i] = -1;
+                const float a = rgba[i * 4 + 3];
+                if (lit && d > 0 && std::isfinite(d)) {
+                    kind[i] = 1, lw[i] = view.wOf(d), far = std::max(far, double(d));
+                    ++surfaces[y];
+                    solid[y] += a >= 0.9f;
+                } else if (lit && !(d > 0)) {
+                    kind[i] = 2, lw[i] = 0;
+                    ++skyAll[y];
+                    skyClear[y] += std::isfinite(a) && a <= 0.05f;
+                } else kind[i] = 0, lw[i] = -1;
             }
             farthest[y] = far;
         });
         far = 1;
         for (double f : farthest) far = std::max(far, f);
+        // Alpha tells the environment apart where the environment's pixels have none and most of the surfaces' are whole.
+        size_t sc = 0, sa = 0, so = 0, su = 0;
+        for (size_t y = 0; y < H; ++y) sc += skyClear[y], sa += skyAll[y], so += solid[y], su += surfaces[y];
+        const bool alphaSays = op.mixed && su > 0 && so * 2 >= su && (sa == 0 || sc * 10 >= sa * 9);
+        const bool farSays = op.mixed && depthFar.size() == n;
+        std::vector<size_t> mixedIn(H, 0), droppedIn(H, 0);
+        if (alphaSays || farSays)
+            parallel(threads, H, [&](size_t y) {
+                for (size_t i = y * W; i < (y + 1) * W; ++i) {
+                    if (kind[i] != 1) continue;
+                    const float a = rgba[i * 4 + 3];
+                    bool m = false;
+                    if (alphaSays && std::isfinite(a) && a < 0.98f) {
+                        // Mostly the environment's: out of the mesh (filled as what lay behind).
+                        if (a < 0.5f) {
+                            kind[i] = 0, lw[i] = -1, ++droppedIn[y];
+                            continue;
+                        }
+                        m = true;
+                    }
+                    if (farSays && !m) {
+                        const float df = depthFar[i];
+                        if (std::isfinite(df) && df > 0) {
+                            const double wf = view.wOf(df);
+                            m = std::fabs(lw[i] - wf) > op.jump * std::max(lw[i], wf);
+                        }
+                    }
+                    if (m) mixed[i] = 1, ++mixedIn[y];
+                }
+            });
+        mixedCount = droppedCount = 0;
+        for (size_t y = 0; y < H; ++y) mixedCount += mixedIn[y], droppedCount += droppedIn[y];
         // The jumps between neighbours (horizontal: a pixel and the next; vertical: a pixel and the one below).
         eh.assign(n, 0), ev.assign(n, 0);
         auto jumpBetween = [&](size_t a, size_t b, long long beforeA, long long afterB) -> uint8_t {
@@ -117,20 +166,66 @@ public:
             out.clear();
             for (unsigned x0 = 0; x0 + 1 < W; x0 += S) cell(x0, unsigned(r) * S, S, out);
         });
+        // The skirts: along each edge, segments of the border smooth between their ends (halved where not, as cells
+        // are), each a quad from the border out to a picture's width beyond it. Their corners: the border pixels (as
+        // points of the mesh) and their pushed-out twins (virtual points, numbered past the pixels).
+        std::vector<std::uint32_t> skirt;
+        twins.clear();
+        if (op.skirts) {
+            const unsigned M = std::max(W, H);
+            auto side = [&](int which) {
+                // which: 0 left, 1 right (along y), 2 top, 3 bottom (along x).
+                const bool vertical = which < 2;
+                const unsigned length = vertical ? H : W;
+                for (unsigned s0 = 0; s0 + 1 < length; s0 += S) segment(which, s0, std::min(s0 + S, length - 1), S, M, skirt);
+            };
+            for (int which = 0; which < 4; ++which) side(which);
+        }
         tris.clear();
         for (auto& f : found) tris.insert(tris.end(), f.begin(), f.end());
+        tris.insert(tris.end(), skirt.begin(), skirt.end());
         if (tris.empty()) return false;
-        // The points: each pixel a corner uses, once.
+        // The points: each pixel a corner uses, once; a twin, after them.
         at.assign(n, -1);
         verts.clear();
-        for (std::uint32_t p : tris)
-            if (at[p] < 0) at[p] = (long long)verts.size(), verts.push_back(Vertex{p});
-        for (std::uint32_t& p : tris) p = std::uint32_t(at[p]);
+        for (std::uint32_t& p : tris) {
+            if (p < n) {
+                if (at[p] < 0) {
+                    at[p] = (long long)verts.size();
+                    Vertex v;
+                    v.pixel = p, v.x = float(p % W) + 0.5f, v.y = float(p / W) + 0.5f;
+                    verts.push_back(v);
+                }
+                p = std::uint32_t(at[p]);
+            }
+        }
+        const size_t firstTwin = verts.size();
+        for (const Twin& t : twins) {
+            Vertex v;
+            v.pixel = t.pixel, v.x = t.x, v.y = t.y, v.twin = true;
+            verts.push_back(v);
+        }
+        for (std::uint32_t& p : tris)
+            if (p >= n && p != std::uint32_t(-1)) p = std::uint32_t(firstTwin + (p - n));
         // Each point's colour: the picture around it over its own surface, as far as its cell reaches (a coarse cell's
-        // corner half that cell, a fine one's a pixel or two), the nearer pixels counting more.
-        parallel(threads, (verts.size() + 255) / 256, [&](size_t chunk) {
-            for (size_t v = chunk * 256; v < std::min(verts.size(), (chunk + 1) * 256); ++v) shade(verts[v]);
+        // corner half that cell, a fine one's a pixel or two), the nearer pixels counting more; a twin, its border pixel's.
+        parallel(threads, (firstTwin + 255) / 256, [&](size_t chunk) {
+            for (size_t v = chunk * 256; v < std::min(firstTwin, (chunk + 1) * 256); ++v) shade(verts[v]);
         });
+        for (size_t v = firstTwin; v < verts.size(); ++v) {
+            const long long b = at[verts[v].pixel];
+            if (b >= 0) {
+                const Vertex& from = verts[size_t(b)];
+                std::copy_n(from.c, 3, verts[v].c);
+                verts[v].depth = from.depth, verts[v].sky = from.sky;
+            } else {
+                Vertex tmp;
+                tmp.pixel = verts[v].pixel;
+                shade(tmp);
+                std::copy_n(tmp.c, 3, verts[v].c);
+                verts[v].depth = tmp.depth, verts[v].sky = tmp.sky;
+            }
+        }
         vertexCount = verts.size(), triangleCount = tris.size() / 3;
         buildSeconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - began).count();
         ok = true;
@@ -154,9 +249,8 @@ public:
                 const Vertex& q = verts[v];
                 Moved& m = proj[v];
                 m.seen = false;
-                const double x = double(q.pixel % W) + 0.5, y = double(q.pixel / W) + 0.5;
                 surface::V3 p;
-                if (!src.pointAt(x, y, q.sky ? away : double(q.depth), p)) continue;
+                if (!src.pointAt(double(q.x), double(q.y), q.sky ? away : double(q.depth), p)) continue;
                 double px, py, ww;
                 if (!nv.lift(p, px, py, ww)) continue;
                 if (!std::isfinite(px) || !std::isfinite(py) || std::fabs(px) > 1e7 || std::fabs(py) > 1e7) continue;
@@ -231,17 +325,25 @@ public:
         for (size_t i = 0; i < n; ++i) drawn += outState[i] != 0;
         drawnShare = n ? double(drawn) / double(n) : 0;
         if (!drawn) return false;
-        if (drawn < n) fill(outColor, outW, outDepth, outFrom, outState, ortho, K);
+        if (drawn < n) {
+            close(outColor, outW, outDepth, outFrom, outState, ortho, K);
+            fill(outColor, outW, outDepth, outFrom, outState, ortho, K);
+        }
         warpSeconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - began).count();
         return true;
     }
 
 private:
     struct Vertex {
-        std::uint32_t pixel = 0;
+        std::uint32_t pixel = 0;  // the picture's pixel (a twin's: its border pixel)
+        float x = 0, y = 0;       // where it is in the picture (raster, a pixel's centre at +0.5; a twin's past the edge)
         float c[3] = {};
         float depth = 0;
-        bool sky = false;
+        bool sky = false, twin = false;
+    };
+    struct Twin {
+        std::uint32_t pixel;
+        float x, y;
     };
     struct Moved {
         double x = 0, y = 0, w = 0;
@@ -258,18 +360,20 @@ private:
     View src;
     unsigned W = 0, H = 0;
     double far = 1;
-    std::vector<uint8_t> kind, eh, ev, empty;
+    std::vector<uint8_t> kind, eh, ev, empty, mixed;
     std::vector<double> lw;
     std::vector<float> color;
     std::vector<int> seh, sev, sempty;
     std::vector<std::uint32_t> tris;
     std::vector<long long> at;
     std::vector<Vertex> verts;
+    std::vector<Twin> twins;
     std::vector<Moved> proj;
     std::vector<std::pair<unsigned, unsigned>> span;
     std::vector<size_t> bandStart;
     std::vector<std::uint32_t> bandTris;
     std::vector<Level> levels;
+    std::vector<uint8_t> closeState;
 
     void sumOf(const std::vector<uint8_t>& v, std::vector<int>& s) const {
         const size_t sw = size_t(W) + 1;
@@ -319,18 +423,51 @@ private:
         const unsigned h = s / 2;
         cell(x0, y0, h, out), cell(x0 + h, y0, h, out), cell(x0, y0 + h, h, out), cell(x0 + h, y0 + h, h, out);
     }
+    // A skirt's segment along one edge (which: 0 left, 1 right, 2 top, 3 bottom) from s0 to s1: smooth (one kind, no
+    // jump, nothing empty), a quad out to M pixels past the edge; else halved, down to a pixel's step.
+    void segment(int which, unsigned s0, unsigned s1, unsigned s, unsigned M, std::vector<std::uint32_t>& out) {
+        if (s1 <= s0) return;
+        const bool vertical = which < 2;
+        const unsigned fixed = which == 0 ? 0 : which == 1 ? W - 1 : which == 2 ? 0 : H - 1;
+        auto pixelAt = [&](unsigned along) -> std::uint32_t { return vertical ? along * W + fixed : fixed * W + along; };
+        const long long ex0 = vertical ? fixed : s0, ey0 = vertical ? s0 : fixed, ex1 = vertical ? fixed : s1, ey1 = vertical ? s1 : fixed;
+        const bool emptyHere = rect(sempty, ex0, ey0, ex1, ey1) > 0;
+        const bool jumps = vertical ? rect(sev, fixed, s0, fixed, (long long)s1 - 1) > 0 : rect(seh, s0, fixed, (long long)s1 - 1, fixed) > 0;
+        if (emptyHere || jumps) {
+            if (s <= 1) return;
+            const unsigned h = s / 2;
+            segment(which, s0, std::min(s0 + h, s1), h, M, out);
+            segment(which, s0 + h, s1, h, M, out);
+            return;
+        }
+        const std::uint32_t a = pixelAt(s0), b = pixelAt(s1);
+        const size_t n = size_t(W) * H;
+        auto twinOf = [&](std::uint32_t p, unsigned along) -> std::uint32_t {
+            const float c = float(along) + 0.5f;
+            Twin t{p, 0, 0};
+            if (which == 0) t.x = -float(M) + 0.5f, t.y = c;
+            else if (which == 1) t.x = float(W - 1 + M) + 0.5f, t.y = c;
+            else if (which == 2) t.x = c, t.y = -float(M) + 0.5f;
+            else t.x = c, t.y = float(H - 1 + M) + 0.5f;
+            twins.push_back(t);
+            return std::uint32_t(n + twins.size() - 1);
+        };
+        const std::uint32_t ta = twinOf(a, s0), tb = twinOf(b, s1);
+        out.insert(out.end(), {a, b, tb, a, tb, ta});
+    }
     // A point's colour: its surface's pixels around it (the environment's, if it is the environment's), as far as the
     // coarsest cell it is a corner of reaches, tent-weighted, a neighbour off the point's plane by soft to jump less and
-    // less, past jump not at all.
+    // less, past jump not at all; a mixed pixel (a silhouette's) counts for no point but its own.
     void shade(Vertex& v) const {
         const size_t i = v.pixel;
         const unsigned x = unsigned(i % W), y = unsigned(i / W);
         unsigned p = cellSize;
         while (p > 1 && ((x % p) || (y % p))) p >>= 1;
-        const int r = std::max(1, int(p / 2));
         const uint8_t kv = kind[i];
+        const bool mv = mixed[i] != 0;
+        const int r = mv ? 0 : std::max(1, int(p / 2));
         v.sky = kv == 2;
-        v.depth = kv == 1 ? float(1.0) : 0.0f;
+        v.depth = 0.0f;
         const double wv = lw[i];
         double gx = 0, gy = 0;
         if (kv == 1) {
@@ -346,7 +483,7 @@ private:
         for (int yy = yl; yy <= yh; ++yy)
             for (int xx = xl; xx <= xh; ++xx) {
                 const size_t j = size_t(yy) * W + size_t(xx);
-                if (kind[j] != kv) continue;
+                if (kind[j] != kv || (j != i && mixed[j])) continue;
                 const int dx = xx - int(x), dy = yy - int(y);
                 double a = double(r + 1 - std::abs(dx)) * double(r + 1 - std::abs(dy));
                 if (kv == 1) {
@@ -360,11 +497,40 @@ private:
                 for (int k = 0; k < 3; ++k) sum[k] += a * color[j * 3 + k];
                 weight += a;
             }
-        for (int k = 0; k < 3; ++k) v.c[k] = weight > 0 ? float(sum[k] / weight) : color[i * 3 + k];
+        for (int k = 0; k < 3; ++k) v.c[k] = weight > 0 ? float(sum[k] / weight) : (i < color.size() / 3 ? color[i * 3 + k] : 0.0f);
     }
-    // The pixels no triangle drew: from the farthest around them, coarse to fine. Each coarser level keeps, of its four
+    // Cracks (a pixel no triangle drew between two of one surface, left and right or above and below: where cells of two
+    // sizes meet, or a magnified surface's seam), closed from those two.
+    void close(std::vector<float>& c0, std::vector<double>& w0, std::vector<float>& d0, std::vector<long long>& f0, std::vector<uint8_t>& s0,
+               bool ortho, double K) {
+        const unsigned threads = std::max(1u, op.threads);
+        closeState = s0;
+        parallel(threads, H, [&](size_t y) {
+            for (unsigned x = 0; x < W; ++x) {
+                const size_t i = y * W + x;
+                if (closeState[i]) continue;
+                long long a = -1, b = -1;
+                auto same = [&](size_t p, size_t q) {
+                    if (closeState[p] != 1 || closeState[q] != 1) return false;
+                    const double wp = w0[p], wq = w0[q];
+                    if (wp == 0 || wq == 0) return wp == wq;
+                    return std::fabs(wp - wq) <= 2 * op.jump * std::max(wp, wq);
+                };
+                if (x > 0 && x + 1 < W && same(i - 1, i + 1)) a = (long long)(i - 1), b = (long long)(i + 1);
+                else if (y > 0 && y + 1 < H && same(i - W, i + W)) a = (long long)(i - W), b = (long long)(i + W);
+                if (a < 0) continue;
+                for (int k = 0; k < 3; ++k) c0[i * 3 + k] = 0.5f * (c0[size_t(a) * 3 + k] + c0[size_t(b) * 3 + k]);
+                w0[i] = 0.5 * (w0[size_t(a)] + w0[size_t(b)]);
+                f0[i] = f0[size_t(a)];
+                d0[i] = w0[i] > 0 ? float(ortho ? K * (1.0 - w0[i]) : 1.0 / w0[i]) : 0.0f;
+                s0[i] = 2;
+            }
+        });
+    }
+    // The pixels still empty: from the farthest around them, coarse to fine. Each coarser level keeps, of its four
     // pixels, the farthest's lifted depth and outputs and the mean colour of those as far (within a sixth); then, finest
-    // last, a pixel still empty takes the coarser level's colour, bilinearly, and its parent's depth and outputs.
+    // last, a pixel still empty takes the coarser level's colour, bilinearly over those of its four nearest that are as
+    // far as the farthest of them (no blend of a surface into what lay behind it), and that one's depth and outputs.
     void fill(std::vector<float>& c0, std::vector<double>& w0, std::vector<float>& d0, std::vector<long long>& f0, std::vector<uint8_t>& s0,
               bool ortho, double K) {
         const unsigned threads = std::max(1u, op.threads);
@@ -422,25 +588,33 @@ private:
                 for (unsigned x = 0; x < lw2; ++x) {
                     const size_t i = size_t(y) * lw2 + x;
                     if (okAt(k, i)) continue;
-                    // The coarser level at this pixel's centre: bilinear over its four nearest (all filled by now).
+                    // The coarser level at this pixel's centre: its four nearest (all filled by now), bilinearly, over those
+                    // as far as the farthest of them.
                     const double u = (x + 0.5) / 2.0 - 0.5, v = (double(y) + 0.5) / 2.0 - 0.5;
                     const int ux = std::clamp(int(std::floor(u)), 0, int(P.w) - 1), vy = std::clamp(int(std::floor(v)), 0, int(P.h) - 1);
                     const int ux1 = std::min(ux + 1, int(P.w) - 1), vy1 = std::min(vy + 1, int(P.h) - 1);
                     const double fx = std::clamp(u - ux, 0.0, 1.0), fy = std::clamp(v - vy, 0.0, 1.0);
-                    float c[3];
-                    for (int ch = 0; ch < 3; ++ch) {
-                        const double top = (1 - fx) * P.c[(size_t(vy) * P.w + ux) * 3 + ch] + fx * P.c[(size_t(vy) * P.w + ux1) * 3 + ch];
-                        const double bot = (1 - fx) * P.c[(size_t(vy1) * P.w + ux) * 3 + ch] + fx * P.c[(size_t(vy1) * P.w + ux1) * 3 + ch];
-                        c[ch] = float((1 - fy) * top + fy * bot);
+                    const size_t q[4] = {size_t(vy) * P.w + ux, size_t(vy) * P.w + ux1, size_t(vy1) * P.w + ux, size_t(vy1) * P.w + ux1};
+                    const double bw[4] = {(1 - fx) * (1 - fy), fx * (1 - fy), (1 - fx) * fy, fx * fy};
+                    double wmin = 1e300;
+                    int farthest = 0;
+                    for (int j = 0; j < 4; ++j)
+                        if (P.lw[q[j]] < wmin) wmin = P.lw[q[j]], farthest = j;
+                    double c[3] = {}, total = 0;
+                    for (int j = 0; j < 4; ++j) {
+                        if (P.lw[q[j]] > wmin + wmin / 6.0 + 1e-12) continue;
+                        const double t = bw[j] + 1e-6;
+                        for (int ch = 0; ch < 3; ++ch) c[ch] += t * P.c[q[j] * 3 + ch];
+                        total += t;
                     }
-                    const size_t parent = size_t(std::min(unsigned(y) / 2, P.h - 1)) * P.w + std::min(x / 2, P.w - 1);
+                    const size_t parent = q[farthest];
                     if (k == 0) {
-                        for (int ch = 0; ch < 3; ++ch) c0[i * 3 + ch] = c[ch];
+                        for (int ch = 0; ch < 3; ++ch) c0[i * 3 + ch] = float(c[ch] / total);
                         w0[i] = P.lw[parent], f0[i] = P.from[parent], s0[i] = 2;
                         d0[i] = P.lw[parent] > 0 ? float(ortho ? K * (1.0 - P.lw[parent]) : 1.0 / P.lw[parent]) : 0.0f;
                     } else {
                         Level& L = levels[k];
-                        for (int ch = 0; ch < 3; ++ch) L.c[i * 3 + ch] = c[ch];
+                        for (int ch = 0; ch < 3; ++ch) L.c[i * 3 + ch] = float(c[ch] / total);
                         L.lw[i] = P.lw[parent], L.from[i] = P.from[parent], L.ok[i] = 1;
                     }
                 }

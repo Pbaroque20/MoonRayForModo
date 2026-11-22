@@ -600,6 +600,7 @@ public:
             if (!mesh.warp(nv, warped.color, warped.w, warped.depth, warped.from, warped.state)) return false;
             meshed = true;
         }
+        warped.meshed = meshed;
         if (!meshed) {
             std::vector<long long>& at = warped.scratchAt;
             std::vector<double>& lw = warped.scratchW;
@@ -702,7 +703,9 @@ public:
         const size_t stride = n ? x.aov.size() / n : 0;
         const int dmin = warped.outputs.depthMin, dmax = warped.outputs.depthMax;
         const double fade = std::pow(std::max(0.0, 1.0 - fraction), 2.0);
-        const double reach = 2 * op.tol + op.backTol;
+        // A mesh's depths are its cells' planes, not the surface's own (a wave, a dragon's scales): XPU2's samples agree
+        // with it within three depth jumps (it took XPU2's lone samples for another surface: dark specks on the sea).
+        const double reach = warped.meshed ? std::max(2 * op.tol + op.backTol, 3 * op.warpJump) : 2 * op.tol + op.backTol;
         const bool sameAovs = stride == warped.stride && last.result.aov.size() == n * stride;
         parallel(std::max(1u, op.threads), H, [&](size_t y) {
             for (unsigned px = 0; px < W; ++px) {
@@ -802,17 +805,24 @@ public:
         if (last.view.needsDepthScale()) last.view.setDepthScale(f.view.kind == View::Orthographic ? f.view.depthScale() : 1.0);
         last.W = b.width, last.H = b.height;
         last.depth.resize(n);
+        // The farthest first-hit depth too (the mesh's silhouette pixels: nearest and farthest a jump apart).
+        if (o.depthMax >= 0) last.depthFar.resize(n);
+        else last.depthFar.clear();
         parallel(std::max(1u, op.threads), b.height, [&](size_t y) {
             for (size_t i = y * b.width; i < (y + 1) * b.width; ++i) {
                 const float d = last.result.aov[i * stride + size_t(o.depthMin)];
                 last.depth[i] = std::isfinite(d) && d > 0 ? d : 0.0f;
+                if (o.depthMax >= 0) {
+                    const float f = last.result.aov[i * stride + size_t(o.depthMax)];
+                    last.depthFar[i] = std::isfinite(f) && f > 0 ? f : 0.0f;
+                }
             }
         });
         last.valid = true;
         mesh.clear();
         if (op.warpMesh) {
             mesh.op.cell = op.warpCell, mesh.op.jump = op.warpJump, mesh.op.soft = op.warpSoft, mesh.op.threads = std::max(1u, op.threads);
-            mesh.build(last.view, b.width, b.height, last.result.rgba, last.result.counts, last.depth);
+            mesh.build(last.view, b.width, b.height, last.result.rgba, last.result.counts, last.depth, last.depthFar);
         }
     }
     // The warp's mesh (vertices, triangles, seconds to build and to draw, the share its triangles drew).
@@ -842,7 +852,8 @@ private:
         View view;
         unsigned W = 0, H = 0;
         async::RenderResult result;
-        std::vector<float> depth;  // a pixel's nearest first-hit depth (0 none)
+        std::vector<float> depth;     // a pixel's nearest first-hit depth (0 none)
+        std::vector<float> depthFar;  // its farthest (empty: no such output)
         bool valid = false;
     };
     struct Warped {
@@ -852,6 +863,7 @@ private:
         std::vector<uint8_t> state;     // 0 none, 1 landed, 2 a hole filled from a neighbour
         std::vector<long long> from;    // the last picture's pixel its outputs are read from
         std::vector<float> color;       // its colour (rgb)
+        bool meshed = false;            // drawn from the mesh (mesh_warp.h)
         size_t stride = 0;
         RealtimeOutputs outputs;
         bool valid = false;
