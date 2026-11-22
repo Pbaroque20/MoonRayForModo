@@ -3,7 +3,9 @@
 // values). Python asked Modo a point, and a corner, at a time (seconds a map on a heavy mesh, Modo's thread held).
 // The same maps in the same order (by name, then kind, then ID), the same test for values set apart (the map's
 // discontinuous values enumerated), a point or corner without a value 0; an RGBA map a colour and, as name_alpha, a
-// number. Read-only. Runs on Modo's main thread, where Python called it.
+// number. Read-only. Runs on Modo's main thread, where Python called it. MR_vertex_maps_named reads only the maps of
+// the names it is given (an RGBA map by its own name or name_alpha): a rigged mesh's dozens of weight maps that no
+// material reads were each read at every point or corner, and went to MoonRay as values it kept there.
 //
 // The file is "MVM1"; the number of points; the number of surface polygons and each one's number of corners (32-bit); the number of entries;
 // for each its name (a 32-bit length and its bytes), its kind (0 a number, 1 a colour), its size (1 or 3), whether it is
@@ -15,6 +17,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <tuple>
@@ -53,7 +56,7 @@ bool surface(LXtID4 type) {
            type != LXxID4('L','I','N','E') && type != LXxID4('O','P','N','T');
 }
 
-void write(void* object, const char* path) {
+void write(void* object, const char* path, const std::set<std::string>* wanted = nullptr) {
     CLxUser_Mesh mesh;
     mesh.set(static_cast<ILxUnknownID>(object));
     if (!mesh.test()) throw std::runtime_error("Not a mesh");
@@ -70,6 +73,12 @@ void write(void* object, const char* path) {
         if (std::get<1>(a) != std::get<1>(b)) return std::get<1>(a) < std::get<1>(b);
         return reinterpret_cast<std::uintptr_t>(std::get<2>(a)) < reinterpret_cast<std::uintptr_t>(std::get<2>(b));
     });
+    if (wanted) {
+        listed.found.erase(std::remove_if(listed.found.begin(), listed.found.end(), [&](const auto& map) {
+            const std::string& name = std::get<0>(map);
+            return !wanted->count(name) && !(std::get<1>(map) == LXi_VMAP_RGBA && wanted->count(name + "_alpha"));
+        }), listed.found.end());
+    }
     const int pointCount = mesh.NPoints(), polygonCount = mesh.NPolygons();
     // The surface polygons, as the scene reader counts them: each one's corners.
     std::vector<std::int32_t> counts;
@@ -159,6 +168,29 @@ extern "C" __declspec(dllexport) const char* MR_vertex_maps(void* object, const 
     try {
         if (!object || !path || !*path) throw std::runtime_error("Missing mesh or output path");
         write(object, path);
+        return nullptr;
+    } catch (const std::exception& failure) { error = failure.what(); }
+      catch (...) { error = "Unknown vertex map reader error"; }
+    return error.c_str();
+}
+
+// As MR_vertex_maps, only the maps named in names (each name on a line of its own).
+extern "C" __declspec(dllexport) const char* MR_vertex_maps_named(void* object, const char* path, const char* names) {
+    static thread_local std::string error;
+    try {
+        if (!object || !path || !*path || !names) throw std::runtime_error("Missing mesh, output path or names");
+        std::set<std::string> wanted;
+        std::string name;
+        for (const char* c = names;; ++c) {
+            if (*c == '\n' || *c == '\0') {
+                if (!name.empty()) wanted.insert(name);
+                name.clear();
+                if (!*c) break;
+            } else {
+                name += *c;
+            }
+        }
+        write(object, path, &wanted);
         return nullptr;
     } catch (const std::exception& failure) { error = failure.what(); }
       catch (...) { error = "Unknown vertex map reader error"; }

@@ -8,7 +8,12 @@ polygon, so that each face keeps its own. Polygons are counted as the scene read
 three corners or more.
 
 Reading a map's points is quick; its polygons are only read where it holds values set apart, as that costs a call for
-each corner."""
+each corner.
+
+Only the maps something in the scene reads are taken (named_in, read's names): those a material names (a Weight Map
+Texture layer, a graph's AttributeMap or primvar reader, a MoonRay material brought in from a scene file). A tester's
+rigged model carried dozens of weight maps that nothing read, each sent to MoonRay as a value at every point or corner
+of its meshes, and MoonRay, its realtime and the machine with it slowed to a crawl."""
 import ctypes
 import os
 import struct
@@ -37,6 +42,41 @@ def listed(mesh):
                 found.append((accessor.Name(), kind, int(accessor.ID())))
     accessor.Enumerate(lx.symbol.iMARK_ANY, Maps(), 0)
     return sorted(found)
+
+
+def chosen(maps, names):
+    """Of listed()'s maps, those of these names: an RGBA map by its own name or as name_alpha; all where names is None."""
+    if names is None:
+        return list(maps)
+    return [(name, kind, map_id) for name, kind, map_id in maps
+            if name in names or (kind == lx.symbol.i_VMAP_RGBA and name + '_alpha' in names)]
+
+
+def names_of(mesh):
+    """The names a mesh's maps go to MoonRay under (an RGBA map's alpha as name_alpha), in order."""
+    found = []
+    for name, kind, _ in listed(mesh):
+        found.append(name)
+        if kind == lx.symbol.i_VMAP_RGBA:
+            found.append(name + '_alpha')
+    return found
+
+
+def named_in(*values):
+    """Every word in the given scene data (materials, their graphs and native parameters, however deep): what a map
+    must be called to be read by anything in it."""
+    found = set()
+    todo = list(values)
+    while todo:
+        value = todo.pop()
+        if isinstance(value, str):
+            found.add(value)
+        elif isinstance(value, dict):
+            todo.extend(value.keys())
+            todo.extend(value.values())
+        elif isinstance(value, (list, tuple, set)):
+            todo.extend(value)
+    return found
 
 
 def set_apart(mesh, map_id):
@@ -100,12 +140,12 @@ def corner_values(mesh, map_id, size):
     return result
 
 
-def read_by_python(mesh):
-    """Every weight and colour map of the mesh: {name: {'kind', 'points': [value at each point]} or
-    {'kind', 'corners': [[value at each corner] for each surface polygon]}}, a value being a list of numbers. An RGBA
-    map is a colour and its alpha, each under a name of its own."""
+def read_by_python(mesh, names=None):
+    """Every weight and colour map of the mesh (only those of names, where given: chosen): {name: {'kind', 'points':
+    [value at each point]} or {'kind', 'corners': [[value at each corner] for each surface polygon]}}, a value being a
+    list of numbers. An RGBA map is a colour and its alpha, each under a name of its own."""
     result = {}
-    for name, kind, map_id in listed(mesh):
+    for name, kind, map_id in chosen(listed(mesh), names):
         word, size = KINDS[kind]
         apart = set_apart(mesh, map_id)
         values = corner_values(mesh, map_id, size) if apart else point_values(mesh, map_id, size)
@@ -144,22 +184,26 @@ class Corners:
         return (self[face] for face in range(len(self.counts)))
 
 
-def _library():
+def _library(named=False):
+    """The adapter's reader of every map (MR_vertex_maps), or of the maps named (MR_vertex_maps_named); None where the
+    adapter has none (an older adapter has no named one)."""
     from . import mesh_reader
     library = mesh_reader.bridge()
     if library is None:
         return None
     try:
-        reader = library.MR_vertex_maps
+        reader = library.MR_vertex_maps_named if named else library.MR_vertex_maps
     except AttributeError:
         return None
-    reader.argtypes, reader.restype = [ctypes.c_void_p, ctypes.c_char_p], ctypes.c_char_p
+    reader.argtypes = [ctypes.c_void_p, ctypes.c_char_p] + ([ctypes.c_char_p] if named else [])
+    reader.restype = ctypes.c_char_p
     return reader
 
 
-def read_natively(mesh):
+def read_natively(mesh, names=None):
     """read() by the geometry adapter in one call (native-modo/vertex_maps.cpp); None where it cannot."""
-    reader = _library()
+    named = names is not None and _library(True) is not None
+    reader = _library(named)
     if reader is None:
         return None
     try:
@@ -169,10 +213,16 @@ def read_natively(mesh):
     handle, name = tempfile.mkstemp(prefix='MoonRay-maps-', suffix='.bin')
     os.close(handle)
     try:
-        if reader(ctypes.c_void_p(address), name.encode('utf-8')):
+        given = (ctypes.c_void_p(address), name.encode('utf-8')) + (('\n'.join(sorted(names)).encode('utf-8'),) if named else ())
+        if reader(*given):
             return None
         with open(name, 'rb') as stream:
-            return _parse(stream.read())
+            found = _parse(stream.read())
+        if names is not None and not named:
+            # An adapter that reads every map: those not chosen let go of here (an RGBA map's colour and alpha together).
+            bases = {base for base, _, _ in chosen(listed(mesh), names)}
+            found = {key: held for key, held in found.items() if key in bases or (key.endswith('_alpha') and key[:-len('_alpha')] in bases)}
+        return found
     except (OSError, ValueError, struct.error):
         return None
     finally:
@@ -226,11 +276,16 @@ def _parse(data):
 NATIVE_POINTS = 100
 
 
-def read(mesh):
+def read(mesh, names=None):
     """read_by_python()'s maps, read by the geometry adapter where it can be (a point's values as rows.Rows, a
-    corner's as Corners), else by Python."""
-    held = read_natively(mesh) if mesh.PointCount() >= NATIVE_POINTS else None
-    return held if held is not None else read_by_python(mesh)
+    corner's as Corners), else by Python. With names, only the maps of those names (chosen), and none read at all where
+    the mesh has none of them."""
+    if names is not None:
+        names = set(names)
+        if not names or not chosen(listed(mesh), names):
+            return {}
+    held = read_natively(mesh, names) if mesh.PointCount() >= NATIVE_POINTS else None
+    return held if held is not None else read_by_python(mesh, names)
 
 
 def strings(maps, held, polygon_sizes, point_count):

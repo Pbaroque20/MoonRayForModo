@@ -342,7 +342,7 @@ def assign_materials(data, scene, warnings, shading_kept=False):
                     layer_filter=set(stack),material_key=tag)
             if candidates:
                 from .layers import material_stack
-                materials[tag]['material_stack']=material_stack(where,candidates,warnings,tag,set(stack))
+                materials[tag]['material_stack']=material_stack(where,candidates,warnings,tag,set(stack),baked_effects=baked)
             made[stack]=(tag,copy.deepcopy(materials[tag]))
         surface['material']=tags[stack]
     _kept_stacks={baked:made}

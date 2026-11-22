@@ -206,6 +206,28 @@ def dicing_view(scene, identity, width, height, pixel_aspect, warnings, time=Non
             'pixel_aspect': moonray_pixel_aspect, 'focal_mm': float(channel(item, 'focalLen', .05)) * 1000, 'film_mm': aperture_x * 1000}
 
 
+def painted_wanted(result):
+    """The names of the weight and colour maps something in the scene reads (vertex_maps.named_in): a material's (a
+    Weight Map Texture, a graph's attribute reader, a MoonRay material brought in from a scene file) or a primitive
+    attribute output's. Only those maps are read from the meshes and sent to the engines."""
+    from . import vertex_maps
+    try:
+        outputs = [entry.get('expression') for entry in properties.scene_settings().get('custom_aovs') or [] if isinstance(entry, dict)]
+    except Exception:
+        outputs = []
+    return vertex_maps.named_in(result.get('materials') or {}, result.get('native_materials') or {}, outputs)
+
+
+def maps_newly_wanted(wanted, meshes):
+    """Whether the scene now reads a map (wanted, painted_wanted) that a mesh has but was read without: its meshes are
+    to be read again."""
+    for mesh in meshes or []:
+        has = set(mesh.get('_vertex_maps') or ()) & wanted
+        if has and has - set(mesh.get('point_attributes') or {}) - set(mesh.get('corner_attributes') or {}):
+            return True
+    return False
+
+
 def tension_maps(materials):
     """The Tension layers' weight maps the materials read (tension.wanted), and whether a Variation by Mesh Part is read:
     what has a mesh read with more than its points (its base points, its polygons' Parts)."""
@@ -853,7 +875,9 @@ def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fal
             # Rest positions come with the meshes: a material that now asks for them (glitter turned on) reads them again.
             if (coordinates.descriptors(result['materials']) != coordinates.descriptors(reuse_geometry['materials'])
                     or reference_points.wanted(result['materials']) != reference_points.wanted(reuse_geometry['materials'])
-                    or tension_maps(result['materials']) != tension_maps(reuse_geometry['materials'])):
+                    or tension_maps(result['materials']) != tension_maps(reuse_geometry['materials'])
+                    # A material that now reads a weight or colour map its mesh was read without (painted_wanted).
+                    or maps_newly_wanted(painted_wanted(result), reuse_geometry['meshes'])):
                 return snapshot(evaluated_geometry=False)
             result['meshes']=[dict(mesh) for mesh in reuse_geometry['meshes'] if not dirty_meshes or mesh['identity'].split('|')[0] not in dirty_meshes]
         # Resolve each visible instance to one mesh prototype, including hidden sources.
@@ -890,6 +914,10 @@ def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fal
         from . import occlusion as point_numbers
         from .procedurals import VARIATION_PART_MAP
         parts_wanted = point_numbers.reads(result['materials'], VARIATION_PART_MAP)
+        # The weight and colour maps the scene reads (painted_wanted): only those read from each mesh. A tester's rigged
+        # model's dozens of weight maps, read by nothing, went to MoonRay as values at every point and slowed it, its
+        # realtime and the machine to a crawl.
+        wanted_maps = painted_wanted(result)
         # Fresh read-only evaluated meshes; never change selection, time or scene geometry.
         for item in ([] if evaluated_geometry or (reuse_geometry is not None and not dirty_meshes) else scene.items('mesh', superType=False)):
             if dirty_meshes and item.id not in dirty_meshes:continue
@@ -905,9 +933,11 @@ def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fal
             # Worked out once for each material, not for each polygon: a node graph's is found by following its nodes.
             tag_descriptors = {}
             transform = world_matrix(item)
-            # The mesh's weight and colour maps, for its materials to read (vertex_maps).
+            # The mesh's weight and colour maps that the scene reads (vertex_maps, wanted_maps); and the names of all it
+            # has, so that a material that comes to read one has the mesh read again (maps_newly_wanted).
             from . import vertex_maps
-            painted = vertex_maps.read(mesh)
+            painted = vertex_maps.read(mesh, wanted_maps)
+            map_names = vertex_maps.names_of(mesh)
             parts = vertex_maps.part_tags(mesh) if parts_wanted else None
             # Colour maps that hold vectors, as a MoonRay scene brought in had them: given back as vectors.
             kept = properties.read(item)
@@ -1201,6 +1231,8 @@ def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fal
                         declared[face_tag] = said
                 if declared:
                     result['meshes'][-1]['material_smoothing'] = declared
+                if map_names:
+                    result['meshes'][-1]['_vertex_maps'] = map_names
                 if painted:
                     point_maps, corner_maps = vertex_maps.for_faces(painted, ordinals.get((subdivision, uv_name), []))
                     if point_maps:
