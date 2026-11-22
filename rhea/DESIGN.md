@@ -1120,3 +1120,9 @@ lookups keep a thread's last eight cells at each size (neighbouring rays meet th
 picture took 0.051 to 0.056 s (0.056 before): the lookups' memo gave nothing measurable; showing the three ring pictures
 12 to 16 ms, mostly the hand-over itself (a new shared mapping each picture, written whole). Every picture of each move
 reached the kit.
+The hand-over itself (native-port/modo_shared_image.h, the XPU2 session's and MoonRay's): once the kit has taken a
+picture, the next of its size goes into the same mapping, announced again under its name, where each picture had a new
+mapping, its pages made anew. The kit reads a picture whole before it acknowledges it, so none is written over while it
+reads; one not taken in five seconds is never written again. On the dragon every one of a run's 82 pictures went through
+one mapping, each move's four pictures all different, and showing the ring pictures took 9.4 to 10.6 ms (12 to 16 ms):
+a move's picture 0.047 to 0.051 s.
