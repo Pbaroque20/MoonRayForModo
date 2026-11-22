@@ -1077,3 +1077,14 @@ The user's composite ("re-use those buffers, like z-depth and albedo, with a com
 wide; a hit's colour is the fine albedo times the cube's light (colour less emission, over albedo), emission added back.
 On the dragon it looked all but the same as the colours alone and took 0.196 s (first picture 0.075 s), the store three
 times the cells: off by default, to try where textures carry the detail.
+
+**No vignette, no camera effects, FXAA (2026-11-22).** "Much cleaner, we can remove vignette": the fine grid now covers
+the whole picture (its stride from the same ray budget), the coarse grid's blurred picture first, then the rings out to
+the corners; the vignette's switches are gone. "Rhea phase one should also bypass camera effects ... just depth of field
+turned off": phase one's rays are the chief rays (the lens' centre, the shutter's open), so its edges are sharp whatever
+XPU2's lens does; where the store has nothing for a hit (a silhouette the lens blurred adds nothing to it), the gap is
+filled from its own kind only (surfaces from surfaces, the environment from the environment) and an edge pixel takes the
+nearest corner on its own surface, where the environment had bled into the dragon's blurred head as a glow. A lookup
+also tries six sizes up before it gives up (two before). "Is it possible for rhea phase 1 to have screen-space
+anti-aliasing?": the finished picture goes through FXAA's quality pass (Fxaa, object_warp.h), about 12 ms on the dragon at
+640 x 360 (0.091 s against 0.079 s for the picture, 79,535 rays); `XPU2_SESSION_RHEA_AA=0` turns it off.

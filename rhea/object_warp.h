@@ -5,8 +5,7 @@
 // its triangles into spikes, and its cost grows with the picture's edges (the user's dragon, 2026-11-22: "it struggles
 // to drag because it's geometrically complex"). Here the colours live on the surfaces instead (the user: "it would be
 // better if the interpolations are object-space, so that there aren't any gaps when the user tries to look behind the
-// model"), and a drag's picture is made only where the eye is (a radial vignette: "the computation is only where the user
-// cares, and the reprojection gracefully ends outside of this vignette").
+// model").
 //
 // ObjectStore: every picture XPU2 finishes (each kept as the warp's source) adds its colours to cells on the surfaces it
 // shows - a sparse hash of cubes in trace space, each a few of that picture's pixels wide, kept at four sizes, by the side
@@ -17,14 +16,15 @@
 // ObjectWarp: a view drawn from the store. The CPU lane's own scene (Embree) gives each ray its first hit, on the meshes
 // as they are, whatever the last picture held; the hit's colour is the store's at that point, interpolated between its
 // cells (trilinear), a coarser size where the finer has none. Rays go out on a grid, sparser the more the picture holds
-// (a budget of rays inside the vignette), and between them the colours are interpolated (bilinear) where the four corners
-// are one smooth surface; a cell they are not (a silhouette, a crease) takes a ray every pixel. Outside the vignette a grid
-// four times sparser, blurred, its light falling off toward the corners. What no picture has shown yet is filled from the
-// grid around it (its doubt 1: XPU2's completion fade takes those regions first).
+// (a budget of rays), and between them the colours are interpolated (bilinear) where the four corners are one smooth
+// surface; a cell they are not (a silhouette, a crease) takes a ray every pixel. What no picture has shown yet is filled
+// from the grid around it (its doubt 1: XPU2's completion fade takes those regions first). A radial vignette (the fine
+// grid in the middle alone, a coarse one outside) came first; with the cells along grazing surfaces the whole picture was
+// clean and cheap enough (the user, 2026-11-22: "much cleaner, we can remove vignette").
 //
 // Streamed (the user: "the reconstructions should be streamed. the user should be able to see the radial topology
-// updating in realtime"): the coarse grid's picture first, over all of it, then the fine grid ring by ring from the
-// centre out (rings of equal area, so of about equal time), each shown as it lands; the next move stops it where it is.
+// updating in realtime"): a grid four times sparser first, blurred, over all of it, then the fine grid ring by ring from
+// the centre out (rings of equal area, so of about equal time), each shown as it lands; the next move stops it where it is.
 #pragma once
 #include "view.h"
 #include "virtual_surface.h"
@@ -216,12 +216,12 @@ public:
         binsOf(n, bins);
         const int first = levelOf(foot * stretch(n, dir, op.grazing) * op.scale);
         double m[9];
-        if (!means(light, p, bins, first, op.levels + 2, m, confidence)) return false;
+        if (!means(light, p, bins, first, op.levels + 6, m, confidence)) return false;
         for (int ch = 0; ch < 3; ++ch) rgb[ch] = float(std::max(0.0, m[ch]));
         if (op.albedo && fine.used) {
             double a[9];
             float fineConfidence;
-            if (means(fine, p, bins, first - 1, op.levels + 3, a, fineConfidence))
+            if (means(fine, p, bins, first - 1, op.levels + 7, a, fineConfidence))
                 for (int ch = 0; ch < 3; ++ch)
                     if (m[3 + ch] > 0.02) rgb[ch] = float(std::max(0.0, a[ch] * (m[ch] - m[6 + ch]) / m[3 + ch] + m[6 + ch]));
         }
@@ -425,15 +425,120 @@ private:
     }
 };
 
+// Screen-space anti-aliasing of phase one's picture (the user, 2026-11-22: "is it possible for rhea phase 1 to have
+// screen-space anti-aliasing? if it's cheap and makes the image nice and smooth would be good"): FXAA's quality pass
+// (Lottes, 2011), on the picture's luma (HDR values brought to [0, 1) by l / (1 + l)). A pixel whose neighbourhood's
+// luma range is small is left as it is; else its edge's direction is found from the 3x3 around it, the edge followed both
+// ways to its ends, and the pixel blended across it by how far it lies from the nearer end, at least by the 3x3's
+// low-pass share (sub-pixel aliasing). Phase one's silhouettes are a ray a pixel, hard: this smooths their steps.
+struct Fxaa {
+    double edgeThreshold = 0.125, edgeThresholdMin = 0.0312, subpix = 0.75;
+
+    void apply(std::vector<float>& rgb, unsigned w, unsigned h, unsigned threads) const {
+        const size_t n = size_t(w) * h;
+        if (rgb.size() != n * 3 || w < 3 || h < 3) return;
+        std::vector<float> luma(n);
+        parallel(std::max(1u, threads), h, [&](size_t y) {
+            for (size_t i = y * w; i < (y + 1) * w; ++i) {
+                const double l = 0.299 * rgb[i * 3] + 0.587 * rgb[i * 3 + 1] + 0.114 * rgb[i * 3 + 2];
+                luma[i] = std::isfinite(l) && l > 0 ? float(l / (1.0 + l)) : 0.0f;
+            }
+        });
+        std::vector<float> out(rgb);
+        auto L = [&](int x, int y) {
+            x = std::clamp(x, 0, int(w) - 1), y = std::clamp(y, 0, int(h) - 1);
+            return double(luma[size_t(y) * w + size_t(x)]);
+        };
+        // The picture's colour at a place between pixels (bilinear; pixel centres at integers).
+        auto colourAt = [&](double fx, double fy, float o[3]) {
+            fx = std::clamp(fx, 0.0, double(w - 1)), fy = std::clamp(fy, 0.0, double(h - 1));
+            const int x0 = int(std::floor(fx)), y0 = int(std::floor(fy));
+            const int x1 = std::min(x0 + 1, int(w) - 1), y1 = std::min(y0 + 1, int(h) - 1);
+            const double tx = fx - x0, ty = fy - y0;
+            for (int c = 0; c < 3; ++c) {
+                const double a = rgb[(size_t(y0) * w + x0) * 3 + c], b = rgb[(size_t(y0) * w + x1) * 3 + c];
+                const double d = rgb[(size_t(y1) * w + x0) * 3 + c], e = rgb[(size_t(y1) * w + x1) * 3 + c];
+                o[c] = float((a + tx * (b - a)) + ty * ((d + tx * (e - d)) - (a + tx * (b - a))));
+            }
+        };
+        // FXAA's search steps along the edge (its quality preset 12).
+        static constexpr double steps[] = {1.0, 1.5, 2.0, 2.0, 2.0, 2.0, 4.0, 8.0};
+        parallel(std::max(1u, threads), h, [&](size_t yy) {
+            const int y = int(yy);
+            for (int x = 0; x < int(w); ++x) {
+                const double m = L(x, y), nn = L(x, y - 1), s = L(x, y + 1), e = L(x + 1, y), ww = L(x - 1, y);
+                const double most = std::max({m, nn, s, e, ww}), least = std::min({m, nn, s, e, ww});
+                const double range = most - least;
+                if (range < std::max(edgeThresholdMin, most * edgeThreshold)) continue;
+                const double nw = L(x - 1, y - 1), ne = L(x + 1, y - 1), sw = L(x - 1, y + 1), se = L(x + 1, y + 1);
+                // The low-pass share: how far the pixel stands from its neighbours' mean, for sub-pixel aliasing.
+                const double mean = (2.0 * (nn + s + e + ww) + (nw + ne + sw + se)) / 12.0;
+                const double sub0 = std::clamp(std::fabs(mean - m) / range, 0.0, 1.0);
+                const double sub1 = (-2.0 * sub0 + 3.0) * sub0 * sub0;
+                const double subBlend = sub1 * sub1 * subpix;
+                // The edge's direction: horizontal where the luma changes more from row to row.
+                const double edgeH = std::fabs(nw - 2 * ww + sw) + 2 * std::fabs(nn - 2 * m + s) + std::fabs(ne - 2 * e + se);
+                const double edgeV = std::fabs(nw - 2 * nn + ne) + 2 * std::fabs(ww - 2 * m + e) + std::fabs(sw - 2 * s + se);
+                const bool horizontal = edgeH >= edgeV;
+                // Which side of the pixel the edge is on (the steeper gradient), and the step across it.
+                const double l1 = horizontal ? nn : ww, l2 = horizontal ? s : e;
+                const double g1 = std::fabs(l1 - m), g2 = std::fabs(l2 - m);
+                const bool first = g1 >= g2;
+                const double gradient = 0.25 * std::max(g1, g2);
+                double across = first ? -1.0 : 1.0;
+                const double side = first ? l1 : l2;
+                const double edgeLuma = 0.5 * (m + side);
+                // Follow the edge both ways, half a pixel across toward that side, to where its luma leaves the edge's.
+                const double ox = horizontal ? 0.0 : 0.5 * across, oy = horizontal ? 0.5 * across : 0.0;
+                const double dx = horizontal ? 1.0 : 0.0, dy = horizontal ? 0.0 : 1.0;
+                auto lumaAt = [&](double fx, double fy) {
+                    fx = std::clamp(fx, 0.0, double(w - 1)), fy = std::clamp(fy, 0.0, double(h - 1));
+                    const int x0 = int(std::floor(fx)), y0 = int(std::floor(fy));
+                    const int x1 = std::min(x0 + 1, int(w) - 1), y1 = std::min(y0 + 1, int(h) - 1);
+                    const double tx = fx - x0, ty = fy - y0;
+                    const double a = luma[size_t(y0) * w + x0], b = luma[size_t(y0) * w + x1], c = luma[size_t(y1) * w + x0], d = luma[size_t(y1) * w + x1];
+                    return (a + tx * (b - a)) + ty * ((c + tx * (d - c)) - (a + tx * (b - a)));
+                };
+                double px = x + ox, py = y + oy, qx = px, qy = py, dn = 0, dp = 0;
+                bool doneN = false, doneP = false;
+                double endN = 0, endP = 0;
+                for (double step : steps) {
+                    if (!doneN) {
+                        px -= dx * step, py -= dy * step, dn += step;
+                        endN = lumaAt(px, py) - edgeLuma;
+                        doneN = std::fabs(endN) >= gradient;
+                    }
+                    if (!doneP) {
+                        qx += dx * step, qy += dy * step, dp += step;
+                        endP = lumaAt(qx, qy) - edgeLuma;
+                        doneP = std::fabs(endP) >= gradient;
+                    }
+                    if (doneN && doneP) break;
+                }
+                // The nearer end decides: the pixel blends across the edge only if the luma there goes the other way
+                // from its own (it is on the edge's step), by how far it is from that end.
+                const bool nearerN = dn < dp;
+                const double endLuma = nearerN ? endN : endP;
+                const bool step = (m - edgeLuma < 0) != (endLuma < 0);
+                const double edgeBlend = step ? 0.5 - std::min(dn, dp) / (dn + dp) : 0.0;
+                const double blend = std::max(edgeBlend, subBlend);
+                if (blend <= 0) continue;
+                float o[3];
+                colourAt(x + (horizontal ? 0.0 : across * blend), y + (horizontal ? across * blend : 0.0), o);
+                for (int c = 0; c < 3; ++c) out[(size_t(y) * w + x) * 3 + c] = o[c];
+            }
+        });
+        rgb.swap(out);
+    }
+};
+
 class ObjectWarp {
 public:
     struct Options {
-        double vignette = 0.75;  // the vignette's radius, a share of the picture's half diagonal (0: the whole picture)
-        double soft = 0.25;      // its edge: the share of the radius over which it goes to the coarse grid outside
-        double dim = 0.6;        // the light at the picture's corners, outside the vignette (1: as inside)
-        size_t rays = 60000;     // the grid's rays inside the vignette, at most (the stride from it)
+        size_t rays = 60000;     // the fine grid's rays, at most (its stride from it)
         double jump = 0.03;      // corners whose depths differ by more (relative) are another surface: a ray a pixel
         unsigned rings = 3;      // the fine grid's stages, rings of equal area from the centre out (streamed)
+        bool antialias = true;   // the finished picture through FXAA (Fxaa)
         unsigned threads = 8;
     };
     Options op;
@@ -456,10 +561,7 @@ public:
         const double angle = ObjectStore::pixelAngle(nv);
         if (!(angle > 0)) return false;
         const double cx = 0.5 * w, cy = 0.5 * h, half = std::sqrt(cx * cx + cy * cy);
-        const bool whole = !(op.vignette > 0);
-        const double R = whole ? half + 1.0 : op.vignette * half, R0 = whole ? R : R * (1.0 - std::clamp(op.soft, 0.0, 0.99));
-        const double inside = std::min(double(n), 3.14159265358979 * R * R);
-        stride = unsigned(std::max(1.0, std::ceil(std::sqrt(inside / double(std::max<size_t>(op.rays, 1000))))));
+        stride = unsigned(std::max(1.0, std::ceil(std::sqrt(double(n) / double(std::max<size_t>(op.rays, 1000))))));
         const unsigned S = stride * 4;
         color.assign(n * 3, 0.0f), outW.assign(n, -1.0), outDepth.assign(n, 0.0f), state.assign(n, 2), doubt.assign(n, 1.0f);
         std::atomic<size_t> traced{0}, empty{0}, edge{0};
@@ -534,15 +636,13 @@ public:
                 *smoothOut = ok;
             }
         };
-        // The light outside the vignette, falling off toward the corners.
-        auto fall = [&](double r) { return r <= R ? 1.0 : 1.0 - (1.0 - op.dim) * std::clamp((r - R) / std::max(1.0, half - R), 0.0, 1.0); };
         auto write = [&](size_t i, const Pixel& p) {
             for (int ch = 0; ch < 3; ++ch) color[i * 3 + ch] = p.rgb[ch];
             outW[i] = p.w, outDepth[i] = p.depth;
             state[i] = p.conf > 0 ? 1 : 2;
             doubt[i] = std::clamp(1.0f - p.conf, 0.0f, 1.0f);
         };
-        // The coarse grid over the whole picture: its first picture.
+        // The coarse grid over the whole picture: the first picture.
         Grid coarse = makeGrid(S, w, h);
         trace(coarse, 0.0, 1e30);
         std::vector<Pixel> outside(n);
@@ -553,14 +653,7 @@ public:
         // Blurred over about its step (two box passes each way): bilinear alone left the grid's steps along silhouettes.
         blur(outside, w, h, std::max(1u, S / 2), op.threads);
         parallel(std::max(1u, op.threads), h, [&](size_t yy) {
-            const unsigned y = unsigned(yy);
-            for (unsigned x = 0; x < w; ++x) {
-                const size_t i = size_t(y) * w + x;
-                Pixel& p = outside[i];
-                const double f = fall(radius(x + 0.5, y + 0.5));
-                for (int ch = 0; ch < 3; ++ch) p.rgb[ch] = float(p.rgb[ch] * f);
-                write(i, p);
-            }
+            for (size_t i = yy * w; i < (yy + 1) * w; ++i) write(i, outside[i]);
         });
         firstSeconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - began).count();
         ++stages;
@@ -574,13 +667,13 @@ public:
             finish();
             return true;
         }
-        // The fine grid ring by ring, rings of equal area out to the vignette's edge: each ring's pixels from the fine grid
-        // (a ray a pixel in a cell its corners are not one smooth surface of), its outer band going over to the coarse grid's
-        // until the next ring comes.
+        // The fine grid ring by ring, rings of equal area out to the picture's corners: each ring's pixels from the fine
+        // grid (a ray a pixel in a cell its corners are not one smooth surface of), its outer band going over to the coarse
+        // grid's until the next ring comes.
         Grid fine = makeGrid(stride, w, h);
-        const double reach = R + 2.0 * stride;
+        const double reach = half + 2.0 * stride;
         const unsigned rings = std::max(1u, op.rings);
-        const double band = std::max(4.0 * stride, 0.08 * R);
+        const double band = std::max(4.0 * stride, 0.08 * half);
         std::vector<Pixel> inner(n);
         std::vector<std::uint8_t> have(n, 0);
         double tracedTo = 0, validTo = 0;
@@ -611,17 +704,26 @@ public:
                                 if (own.known) {
                                     for (int ch = 0; ch < 3; ++ch) p.rgb[ch] = own.rgb[ch];
                                     p.conf = own.conf;
-                                } else p.conf = 0;  // nothing in the store: the cell's colours, as filled
+                                } else {
+                                    // Nothing in the store: the colour of the cell's corner nearest it on its own surface
+                                    // (or the environment's), not the cell's mix across the edge (the environment bled into
+                                    // a silhouette the lens had blurred).
+                                    const Node* best = nullptr;
+                                    for (const Node* c : corners(fine, x, y))
+                                        if (c->kind == own.kind && (!best || (own.kind == 1 && std::fabs(c->w - own.w) < std::fabs(best->w - own.w))))
+                                            best = c;
+                                    if (best)
+                                        for (int ch = 0; ch < 3; ++ch) p.rgb[ch] = best->rgb[ch];
+                                    p.conf = 0;
+                                }
                                 p.w = own.kind == 1 ? own.w : -1.0, p.depth = own.kind == 1 ? own.depth : 0.0f;
                             }
                         }
                         have[i] = 1;
                     }
                     if (!have[i]) continue;
-                    // Over to the coarse grid: at the vignette's edge in the last ring, else in this ring's outer band.
-                    double t = last ? (r <= R0 ? 0.0 : r >= R ? 1.0 : (r - R0) / std::max(1e-9, R - R0))
-                                    : std::clamp((r - (valid - band)) / band, 0.0, 1.0);
-                    if (whole && last) t = 0;
+                    // Over to the coarse grid in this ring's outer band, until the next ring comes (the last: none).
+                    const double t = last ? 0.0 : std::clamp((r - (valid - band)) / band, 0.0, 1.0);
                     const double b = t * t * (3 - 2 * t);
                     const Pixel& a = inner[i];
                     const Pixel& o = outside[i];
@@ -634,6 +736,8 @@ public:
             });
             validTo = valid;
             ++stages;
+            // The finished picture's silhouettes smoothed (the rings before it are on screen for a moment only).
+            if (last && op.antialias) Fxaa{}.apply(color, w, h, op.threads);
             if (!last && stage && !stage()) break;
         }
         finish();
@@ -699,16 +803,31 @@ private:
         g.nodes.assign(size_t(g.gw) * g.gh, Node{});
         return g;
     }
-    // The traced nodes the store had nothing for, from the known around them (push-pull over the grid).
+    // The traced nodes the store had nothing for, from the known around them (push-pull over the grid): a surface's from
+    // the surfaces', the environment's from the environment's, so that neither bleeds into the other at a silhouette.
     static void fillNodes(Grid& g) {
-        std::vector<float> c(size_t(g.gw) * g.gh * 4, 0.0f);
-        for (size_t k = 0; k < g.nodes.size(); ++k)
-            if (g.nodes[k].known) c[k * 4] = g.nodes[k].rgb[0], c[k * 4 + 1] = g.nodes[k].rgb[1], c[k * 4 + 2] = g.nodes[k].rgb[2], c[k * 4 + 3] = 1;
-        fillGrid(c, g.gw, g.gh);
-        for (size_t k = 0; k < g.nodes.size(); ++k) {
-            Node& o = g.nodes[k];
-            if ((o.kind == 1 || o.kind == 2) && !o.known && c[k * 4 + 3] > 0) o.rgb[0] = c[k * 4], o.rgb[1] = c[k * 4 + 1], o.rgb[2] = c[k * 4 + 2];
+        for (std::uint8_t kind = 1; kind <= 2; ++kind) {
+            std::vector<float> c(size_t(g.gw) * g.gh * 4, 0.0f);
+            bool any = false, needed = false;
+            for (size_t k = 0; k < g.nodes.size(); ++k) {
+                const Node& o = g.nodes[k];
+                if (o.kind != kind) continue;
+                if (o.known) c[k * 4] = o.rgb[0], c[k * 4 + 1] = o.rgb[1], c[k * 4 + 2] = o.rgb[2], c[k * 4 + 3] = 1, any = true;
+                else needed = true;
+            }
+            if (!any || !needed) continue;
+            fillGrid(c, g.gw, g.gh);
+            for (size_t k = 0; k < g.nodes.size(); ++k) {
+                Node& o = g.nodes[k];
+                if (o.kind == kind && !o.known && c[k * 4 + 3] > 0) o.rgb[0] = c[k * 4], o.rgb[1] = c[k * 4 + 1], o.rgb[2] = c[k * 4 + 2];
+            }
         }
+    }
+    // A pixel's cell's four corners in a grid.
+    static std::array<const Node*, 4> corners(const Grid& g, unsigned x, unsigned y) {
+        const unsigned i = x / g.step, j = y / g.step;
+        return {&g.nodes[size_t(j) * g.gw + i], &g.nodes[size_t(j) * g.gw + i + 1], &g.nodes[size_t(j + 1) * g.gw + i],
+                &g.nodes[size_t(j + 1) * g.gw + i + 1]};
     }
     // Push-pull: rgba a node (a 0 or 1), the empty nodes from the known around them, coarse to fine.
     static void fillGrid(std::vector<float>& c, unsigned w, unsigned h) {

@@ -74,13 +74,13 @@ struct RealtimeOptions {
     double warpKeepCoverage = 0.95;
     bool warpChain = false;
     // The drag's picture from colours kept on the surfaces (object_warp.h, DESIGN.md 30): every picture kept as the
-    // warp's source adds to the store, and a move's picture is the CPU scene's first hits coloured from it, in a radial
-    // vignette (its radius a share of the half diagonal, its soft edge, the corners' light outside it), streamed in rings.
-    // Off: the mesh gradient (warpMesh).
+    // warp's source adds to the store, and a move's picture is the CPU scene's first hits coloured from it, streamed in
+    // rings from the centre out. Off: the mesh gradient (warpMesh).
     bool objectSpace = true;
-    double vignette = 0.75, vignetteSoft = 0.25, vignetteDim = 0.6, storeScale = 2, storeGrazing = 8;
+    double storeScale = 2, storeGrazing = 8;
     size_t objectRays = 60000;
     unsigned objectRings = 3;
+    bool objectAntialias = true;  // phase one's finished picture through FXAA (object_warp.h Fxaa)
     // The store's light and albedo apart (ObjectStore::Options::albedo): the albedo in cells half as wide, multiplied by
     // the cells' light (the user's composite from the outputs the pictures carry). Off: the colours as they are.
     bool storeAlbedo = false;
@@ -731,8 +731,8 @@ public:
         const size_t n = size_t(w) * h;
         const RealtimeOutputs o = outputsOf(b);
         ObjectWarp::Options& wo = objectWarp.op;
-        wo.vignette = op.vignette, wo.soft = op.vignetteSoft, wo.dim = op.vignetteDim, wo.rays = op.objectRays, wo.jump = op.warpJump;
-        wo.rings = op.objectRings, wo.threads = threads;
+        wo.rays = op.objectRays, wo.jump = op.warpJump;
+        wo.rings = op.objectRings, wo.threads = threads, wo.antialias = op.objectAntialias;
         out.cancelled = out.drained = out.failed = false;
         out.rgba.resize(n * 4), out.aov.assign(n * stride, 0.0f), out.counts.assign(n, 1u);
         auto fill = [&] {

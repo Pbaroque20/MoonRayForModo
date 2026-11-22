@@ -3210,18 +3210,16 @@ int session(const Args& args, const fs::path& directory) {
                     if (const char* v = std::getenv("XPU2_SESSION_RHEA_WARP_SOFT")) rheaView.op.warpSoft = std::atof(v);
                     rheaView.op.warpChain = envOn("XPU2_SESSION_RHEA_WARP_CHAIN", false);
                     // The drag's picture from colours kept on the surfaces (rhea/object_warp.h, DESIGN.md 30): on by default;
-                    // its vignette (radius as a share of the half diagonal, 0 the whole picture), soft edge, corners' light,
-                    // rays, rings and the store's cells (pixels a side). Off: the mesh gradient.
+                    // its rays, rings and the store's cells (pixels a side). Off: the mesh gradient.
                     rheaView.op.objectSpace = envOn("XPU2_SESSION_RHEA_OBJECT_SPACE", true);
-                    if (const char* v = std::getenv("XPU2_SESSION_RHEA_VIGNETTE")) rheaView.op.vignette = std::max(0.0, std::atof(v));
-                    if (const char* v = std::getenv("XPU2_SESSION_RHEA_VIGNETTE_SOFT")) rheaView.op.vignetteSoft = std::clamp(std::atof(v), 0.0, 0.99);
-                    if (const char* v = std::getenv("XPU2_SESSION_RHEA_VIGNETTE_DIM")) rheaView.op.vignetteDim = std::clamp(std::atof(v), 0.0, 1.0);
                     if (const char* v = std::getenv("XPU2_SESSION_RHEA_RAYS")) rheaView.op.objectRays = size_t(std::max(1000.0, std::atof(v)));
                     if (const char* v = std::getenv("XPU2_SESSION_RHEA_RINGS")) rheaView.op.objectRings = unsigned(std::max(1, std::atoi(v)));
                     if (const char* v = std::getenv("XPU2_SESSION_RHEA_STORE_SCALE")) rheaView.op.storeScale = std::max(0.5, std::atof(v));
                     if (const char* v = std::getenv("XPU2_SESSION_RHEA_GRAZING")) rheaView.op.storeGrazing = std::max(1.0, std::atof(v));
                     // The user's composite (2026-11-22): light and albedo apart in the store, the albedo finer.
                     rheaView.op.storeAlbedo = envOn("XPU2_SESSION_RHEA_STORE_ALBEDO", false);
+                    // Phase one's finished picture through screen-space anti-aliasing (FXAA; the user, 2026-11-22).
+                    rheaView.op.objectAntialias = envOn("XPU2_SESSION_RHEA_AA", true);
                     if (const char* debug = std::getenv("XPU2_SESSION_RHEA_DEBUG")) rheaView.op.debugFolder = debug;
                     const auto began = Clock::now();
                     async::GpuLane* lane = gpu && gpuUsable ? gpu.get() : nullptr;
@@ -3295,7 +3293,7 @@ int session(const Args& args, const fs::path& directory) {
                         if (rheaView.objectDrawn) {
                             const rhea::ObjectWarp& ow = rheaView.objectWarp;
                             std::printf("MoonRay XPU2: Rhea: %s from the surfaces' colours in %.3f s (first picture %.3f s, %u pictures%s; %zu rays, "
-                                        "%zu of them at edges, every %u pixels in the vignette; %.0f%% of rays unknown to the store, %zu cells in it)\n",
+                                        "%zu of them at edges, every %u pixels; %.0f%% of rays unknown to the store, %zu cells in it)\n",
                                         finishing ? "the stopped picture finished" : "the camera's picture", took, ow.firstSeconds, ow.stages,
                                         rheaPhaseOneDone ? "" : ", stopped by the next move", ow.rays, ow.edgeRays, ow.stride, ow.unknown * 100.0,
                                         rheaView.store.cells());
