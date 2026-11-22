@@ -175,15 +175,26 @@ def tool(name, first=None):
 _INSTALLATION=[]
 
 
+_KIT_ROOT=[]
+
+
+def kit_root():
+    """The kit's folder, resolved once: resolving it was a fifth of what a drag's steps cost Modo's thread (XPU2 RT's
+    drags in Modo, 2026-11-21: 395 path resolutions in 44 ticks), and a kit is installed with Modo closed."""
+    if not _KIT_ROOT:_KIT_ROOT.append(Path(__file__).resolve().parents[2])
+    return _KIT_ROOT[0]
+
+
 def installation_id():
     """The installed kit's own mark (runtime.json), read once: a kit is installed with Modo closed. Read at every
-    Preferences made, it was a file opened a few times at each step of a drag."""
+    Preferences made, it was a file opened a few times at each step of a drag. A kit without the file (one installed
+    by copying, as the personal kit is) is marked '' once, not looked for again at every step."""
     if _INSTALLATION:return _INSTALLATION[0]
-    path=Path(__file__).resolve().parents[2]/'runtime.json'
+    path=kit_root()/'runtime.json'
     try:
         found=json.loads(path.read_text(encoding='utf-8')).get('installation_id','')
     except (OSError,ValueError,TypeError,AttributeError):
-        return ''
+        found=''
     _INSTALLATION.append(found)
     return found
 
@@ -516,7 +527,7 @@ def _crypto_capability(directory,signature):
 # XPU2: its own runtime beside the kit's, chosen in Preferences > MoonRay > XPU2.
 def xpu2_runtime():
     """XPU2's runtime: its preview session (moonray_xpu2.exe), GPU programs and the libraries it was built with."""
-    return Path(__file__).resolve().parents[2] / 'runtime-xpu2'
+    return kit_root() / 'runtime-xpu2'
 
 
 def _setting(key, default):
@@ -527,9 +538,14 @@ def _setting(key, default):
     return QtCore.QSettings('MoonRayForModo', settings_name()).value(key, default)
 
 
+_XPU2_AVAILABLE=[]
+
+
 def xpu2_available():
-    """Whether the kit holds XPU2's renderer, whichever renders the preview: a Render Animation can ask for it by name."""
-    return (xpu2_runtime() / 'moonray_xpu2.exe').is_file()
+    """Whether the kit holds XPU2's renderer, whichever renders the preview: a Render Animation can ask for it by name.
+    Looked at once (a kit is installed with Modo closed): asked at every tick of a drag."""
+    if not _XPU2_AVAILABLE:_XPU2_AVAILABLE.append((xpu2_runtime() / 'moonray_xpu2.exe').is_file())
+    return _XPU2_AVAILABLE[0]
 
 
 def xpu2():

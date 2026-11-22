@@ -62,6 +62,10 @@ using U32 = unsigned int;
 
 namespace {
 
+// Whether the scene's routing left objects to the CPU alone (logClasses, at each scene's preparation): a drag's frames
+// then keep the CPU lane (rheaFrames).
+bool sceneHasCpuAloneObjects = false;
+
 fs::path executableFolder() {
     std::wstring path(32768, L'\0');
     const DWORD n = GetModuleFileNameW(nullptr, path.data(), DWORD(path.size()));
@@ -1207,6 +1211,7 @@ struct Scene {
             if (d.support == Support::Cpu) cpuOnly |= d.families & ~classes::GpuFamilies;
             if (d.support == Support::Fallback && fallbacks.size() < 4) fallbacks.push_back(d.evidence);
         }
+        sceneHasCpuAloneObjects = counts[1] > 0;
         std::printf("MoonRay XPU2 routing: %zu objects on either device, %zu on the CPU alone, %zu MoonRay's; %s\n", counts[2], counts[1], counts[0],
                     s.mode == Mode::Fallback ? "the scene goes to MoonRay" : s.mode == Mode::NativeCpu ? "rendered on the CPU" : "rendered on the CPU and GPU");
         std::printf("MoonRay XPU2 routing: the GPU runs %s\n", familyNames(gpu).c_str());
@@ -3152,6 +3157,7 @@ int session(const Args& args, const fs::path& directory) {
                     if (const char* v = std::getenv("XPU2_SESSION_RHEA_BACK_WEIGHT")) rheaView.op.backWeight = std::atof(v);
                     if (const char* v = std::getenv("XPU2_SESSION_RHEA_PLANAR_SUPPORT")) rheaView.op.planarSupport = std::atof(v);
                     if (const char* v = std::getenv("XPU2_SESSION_RHEA_DRAG_HOLD")) rheaView.op.dragHold = std::atof(v);
+                    if (const char* v = std::getenv("XPU2_SESSION_RHEA_TRUSTED_SPP")) rheaView.op.trustedSpp = unsigned(std::atoi(v));
                     rheaView.op.warp = envOn("XPU2_SESSION_RHEA_WARP", true);
                     if (const char* debug = std::getenv("XPU2_SESSION_RHEA_DEBUG")) rheaView.op.debugFolder = debug;
                     const auto began = Clock::now();
@@ -3298,6 +3304,13 @@ int session(const Args& args, const fs::path& directory) {
                     };
                     async::RenderOptions o = base;
                     o.watch = &rest;
+                    // A drag's frame on the GPU alone, where the GPU renders the whole scene (no mesh left to the CPU lane,
+                    // no object the routing left to the CPU alone): in Modo, its CPU lane on (the kit's Auto), XPU2's frame
+                    // took 0.5 to 2.4 s to stop for the next step, waiting for the CPU's chunks; a launch of the GPU's stops
+                    // in its window. At rest the frame is XPU2's own, both devices.
+                    const bool gpuDrag = dragging && lane && o.mode == 2 && scene.plan->cpuOnlyMeshes == 0 && !sceneHasCpuAloneObjects &&
+                                         envOn("XPU2_SESSION_RHEA_DRAG_GPU_ONLY", true);
+                    if (gpuDrag) o.mode = 1;
                     const auto restBegan = Clock::now();
                     const async::RenderResult x = renderer->render(o);
                     if (x.failed) return x;

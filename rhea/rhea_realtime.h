@@ -24,6 +24,10 @@ namespace async = xpu2::interactive::async;
 
 struct RealtimeOptions {
     unsigned phase2Max = 2;   // phase 2's samples a pixel a frame, at most (DESIGN.md 17)
+    // Phase 2's samples where the probes' triangle holds, at most (0: as phase2Max gives). 1: on Sponza Rhea's frame
+    // took 2.0 s, not 3.1 (46,000 samples, not 62,000), and the moves' pictures were as good on the whole (XPU2's
+    // frame after it had the time it saved); at 720p on the test scene, 0.95 million samples, not 1.7 (DESIGN.md 26).
+    unsigned trustedSpp = 1;
     unsigned probeSpp = 64;   // a new probe's pixel's samples
     unsigned keepSpp = 4;     // a known probe's pixel's samples a frame
     bool residentTextures = true;  // a frame's textures read only from what the card holds (Plan::residentTextures)
@@ -58,7 +62,9 @@ struct RealtimeOptions {
     double warpWeight = 8;
     // After a move's warp, the next move looked for this long before any of the GPU's work (seconds; the kit sends a
     // drag's steps about 60 ms apart): a drag then goes at the warp's pace, not the GPU frame's stop (0.2 s at 720p).
-    double dragHold = 0.08;
+    // 0.15 s: in Modo the kit makes a step at each of its 60 ms ticks, with its own 18 ms or so, and sends it once the
+    // last is applied: steps came 80 to 100 ms apart, past an 80 ms hold (RESULTS.md section 21).
+    double dragHold = 0.15;
     // The probes' screen cells grow with the picture (cell times the square root of its pixels over 320 x 240's): as many
     // probes at 1280 x 720 as at 320 x 240, where 22,000 had taken 0.12 s to place and 0.7 s of the GPU's (DESIGN.md 26).
     bool cellsByPicture = true;
@@ -138,12 +144,12 @@ public:
     }
     // The picture's sums forgotten, the probes kept: the camera has moved.
     void clearSums() {
-        acc = Sums{};
+        acc.frames = 0;  // the vectors kept for the next frame, which writes them (no allocation a move)
     }
     unsigned framesAtRest() const { return acc.frames; }
     // The least of phase 2's samples a pixel holds since the camera last moved (XPU2's samples: the frame's end).
     double leastSamples() const {
-        if (acc.nfull.empty()) return 0;
+        if (acc.frames == 0) return 0;
         return *std::min_element(acc.nfull.begin(), acc.nfull.end());
     }
     // The last frame's shares: the pixels verified, and those whose phase 1 counted (all layers), and phase 1's pixels
@@ -169,6 +175,7 @@ public:
         camera = b.camera, haveCamera = true;
         if (op.probeFull < 0) op.probeFull = b.maxDiffuseDepth > 0 ? 1 : 0;
         nLo = std::min(op.phase2Max, op.probeFull ? 2u : 4u), nHi = std::min(op.phase2Max, op.probeFull ? 16u : 32u);
+        if (op.trustedSpp > 0) nLo = std::min(nLo, op.trustedSpp);
         nBg = std::min(op.nBg, op.phase2Max);
         if (!moved && acc.frames > 0) {
             const unsigned grow = std::min(acc.frames, 6u);
@@ -186,7 +193,7 @@ public:
         if (moved) ++moves;
         plan->seed = b.seed + moves * 7919u;
         plan->sampleBase.clear();
-        if (!moved && !acc.n.empty()) {
+        if (!moved && acc.frames > 0) {
             plan->sampleBase.resize(N);
             for (size_t i = 0; i < N; ++i) plan->sampleBase[i] = static_cast<unsigned>(std::min(acc.n[i], 4.0e9));
         }
@@ -202,7 +209,7 @@ public:
             else if (t < 0 && field.sky[size_t(y / cell) * field.cellsX + x / cell]) nCount[i] = nBg;
             // At rest no pixel takes more than it lacks of the frame's samples (op.target): the last frame of a run
             // doubled its cost for the two samples it lacked (DESIGN.md 23).
-            if (!moved && op.target > 0 && !acc.nfull.empty()) {
+            if (!moved && op.target > 0 && acc.frames > 0) {
                 const double lacking = double(op.target) - acc.nfull[i];
                 nCount[i] = unsigned(std::max(1.0, std::min(double(nCount[i]), std::ceil(lacking))));
             }
@@ -235,9 +242,16 @@ public:
         plan->spp = *std::max_element(total.begin(), total.end());
         // Gather tiles: the pixels sorted by their samples, 64 to a tile, spread over the frame's tiles.
         const size_t tiles = ((W + 7) / 8) * ((H + 7) / 8);
+        // The order by a counting sort, most samples first and each count's pixels in their order (as the stable sort
+        // had it): samples a pixel are small numbers, and the sort had been n log n over every pixel.
         std::vector<unsigned> order(N);
-        std::iota(order.begin(), order.end(), 0u);
-        std::stable_sort(order.begin(), order.end(), [&](unsigned a, unsigned c) { return total[a] > total[c]; });
+        {
+            const unsigned most = N ? *std::max_element(total.begin(), total.end()) : 0;
+            std::vector<size_t> start(size_t(most) + 2, 0);
+            for (size_t i = 0; i < N; ++i) ++start[size_t(most - total[i]) + 1];
+            for (size_t k = 1; k < start.size(); ++k) start[k] += start[k - 1];
+            for (size_t i = 0; i < N; ++i) order[start[most - total[i]]++] = unsigned(i);
+        }
         plan->gather.assign(tiles * 64, ~0u);
         size_t step = 397;
         while (std::gcd(step, tiles) != 1) ++step;
@@ -252,21 +266,24 @@ public:
     void finish(const async::RenderResult& r, async::RenderResult& out) {
         const size_t stride = N ? r.aov.size() / N : 0;
         const RealtimeOptions& o = op;
-        direct.assign(N * 4, 0.0f), depthMin.assign(N, 0.0f), depthMax.assign(N, 0.0f);
+        direct.resize(N * 4), depthMin.resize(N), depthMax.resize(N), coverage.resize(N);
         const bool demod = o.demod && outputs.albedo >= 0;
-        albedo.assign(demod ? N * 3 : 0, 0.0f);
-        for (size_t i = 0; i < N; ++i) {
-            const float* av = &r.aov[i * stride];
-            for (int c = 0; c < 3; ++c) direct[i * 4 + c] = av[outputs.emission + c] + av[outputs.direct + c];
-            direct[i * 4 + 3] = 1;
-            if (demod)
-                for (int c = 0; c < 3; ++c) albedo[i * 3 + c] = av[outputs.albedo + c];
-            depthMin[i] = av[outputs.depthMin], depthMax[i] = av[outputs.depthMax];
-        }
+        albedo.resize(demod ? N * 3 : 0);
+        const unsigned threads = std::max(1u, o.threads);
+        // The frame's outputs a pixel each, in parallel (rows); each pixel's coverage, the beauty's alpha: misses leave no
+        // depth (ProbeField::verify).
+        parallel(threads, H, [&](size_t y) {
+            for (size_t i = y * W; i < (y + 1) * W; ++i) {
+                const float* av = &r.aov[i * stride];
+                for (int c = 0; c < 3; ++c) direct[i * 4 + c] = av[outputs.emission + c] + av[outputs.direct + c];
+                direct[i * 4 + 3] = 1;
+                if (demod)
+                    for (int c = 0; c < 3; ++c) albedo[i * 3 + c] = av[outputs.albedo + c];
+                depthMin[i] = av[outputs.depthMin], depthMax[i] = av[outputs.depthMax];
+                coverage[i] = o.coverage ? r.rgba[i * 4 + 3] : 1.0f;
+            }
+        });
         const FieldOptions fo = fieldOptions();
-        // Each pixel's coverage, the beauty's alpha: misses leave no depth (ProbeField::verify).
-        coverage.assign(N, 1.0f);
-        for (size_t i = 0; i < N; ++i) coverage[i] = o.coverage ? r.rgba[i * 4 + 3] : 1.0f;
         field.absorb(f, o.probeFull ? r.rgba : direct, demod ? &albedo : nullptr, total, moved, o.fade, o.cleanAbsorb ? &depthMin : nullptr,
                      o.cleanAbsorb ? &depthMax : nullptr, &fo, &coverage);
         field.reconstruct(f, fo, demod ? &albedo : nullptr, recon, wrec, fstate);
@@ -280,10 +297,14 @@ public:
         // was used, weighted as it was: the latest reconstruction with the weight of all frames darkened pixels that
         // verified in some frames and not the latest (out of focus, where verification comes and goes), its light
         // there the reconstruction's nothing (DESIGN.md 22).
-        if (acc.nb.empty()) {
-            acc.nb.assign(N * 3, 0.0), acc.nd.assign(N * 3, 0.0);
-            acc.n.assign(N, 0.0), acc.nfull.assign(N, 0.0), acc.m.assign(N, 0.0), acc.alpha.assign(N, 0.0), acc.r1.assign(N * 3, 0.0);
-            acc.aov.assign(r.aov.size(), 0.0);
+        // The first frame of a camera (since XPU2 renders the camera at rest, the only one) writes the sums into the
+        // vectors the last camera's left; the outputs are kept as the frames' mean in floats (the frame's own for the
+        // first), not as sums in doubles (at 720p 110 MB, summed and divided again a frame).
+        const bool first = acc.frames == 0;
+        if (first) {
+            acc.nb.resize(N * 3), acc.nd.resize(N * 3), acc.r1.resize(N * 3);
+            acc.n.resize(N), acc.nfull.resize(N), acc.m.resize(N), acc.alpha.resize(N);
+            acc.aov = r.aov;
         }
         const double m0 = f.view.kind == View::Directional ? o.m0Directional : o.m0;
         // The virtual planes (planes.h, DESIGN.md 25): the slanted planes from the frame's probes, the back plane as the
@@ -303,13 +324,20 @@ public:
         // The pixels' lifted depths (the nearest), for the back plane's reach: a slanted surface's depths change across
         // a pixel, and a point lands anywhere in it.
         std::vector<double> wn(N, 0.0);
-        for (size_t i = 0; i < N; ++i)
-            if (std::isfinite(depthMin[i]) && depthMin[i] > 0) wn[i] = f.view.wOf(depthMin[i]);
+        parallel(threads, H, [&](size_t y) {
+            for (size_t i = y * W; i < (y + 1) * W; ++i)
+                if (std::isfinite(depthMin[i]) && depthMin[i] > 0) wn[i] = f.view.wOf(depthMin[i]);
+        });
         layer.assign(N, 0);
         std::vector<float> light1(o.debugFolder.empty() ? 0 : N * 4, 0.0f);  // an investigation: phase 1's light by whichever layer
-        size_t used = 0, usedPlanar = 0, usedBack = 0;
-        for (size_t i = 0; i < N; ++i) {
-            const unsigned x = unsigned(i % W), y = unsigned(i / W);
+        std::vector<size_t> usedRows(size_t(H) * 3, 0);
+        const bool sumAovs = !first && acc.aov.size() == r.aov.size();
+        parallel(threads, H, [&](size_t row) {
+          size_t& used = usedRows[row * 3];
+          size_t& usedPlanar = usedRows[row * 3 + 1];
+          size_t& usedBack = usedRows[row * 3 + 2];
+          for (size_t i = row * W; i < (row + 1) * W; ++i) {
+            const unsigned x = unsigned(i % W), y = unsigned(row);
             double w1 = 0, L1[3] = {0, 0, 0};
             if (fstate[i] == FieldTrusted && ok[i]) {
                 w1 = m0, layer[i] = 1, ++used;
@@ -349,19 +377,34 @@ public:
                 }
             }
             const double Nt = total[i];
-            for (int c = 0; c < 3; ++c) {
-                acc.nb[i * 3 + c] += Nt * r.rgba[i * 4 + c];
-                acc.nd[i * 3 + c] += Nt * direct[i * 4 + c];
+            if (first) {
+                for (int c = 0; c < 3; ++c) {
+                    acc.nb[i * 3 + c] = Nt * r.rgba[i * 4 + c];
+                    acc.nd[i * 3 + c] = Nt * direct[i * 4 + c];
+                    acc.r1[i * 3 + c] = w1 > 0 ? w1 * L1[c] : 0.0;
+                }
+                acc.alpha[i] = Nt * r.rgba[i * 4 + 3];
+                acc.n[i] = Nt, acc.nfull[i] = nCount[i], acc.m[i] = w1;
+            } else {
+                const double before = acc.n[i];
+                for (int c = 0; c < 3; ++c) {
+                    acc.nb[i * 3 + c] += Nt * r.rgba[i * 4 + c];
+                    acc.nd[i * 3 + c] += Nt * direct[i * 4 + c];
+                }
+                acc.alpha[i] += Nt * r.rgba[i * 4 + 3];
+                acc.n[i] += Nt, acc.nfull[i] += nCount[i], acc.m[i] += w1;
+                if (w1 > 0)
+                    for (int c = 0; c < 3; ++c) acc.r1[i * 3 + c] += w1 * L1[c];
+                if (sumAovs && before + Nt > 0)
+                    for (size_t c = 0; c < stride; ++c)
+                        acc.aov[i * stride + c] = float((before * acc.aov[i * stride + c] + Nt * r.aov[i * stride + c]) / (before + Nt));
             }
-            acc.alpha[i] += Nt * r.rgba[i * 4 + 3];
-            acc.n[i] += Nt, acc.nfull[i] += nCount[i], acc.m[i] += w1;
-            if (w1 > 0)
-                for (int c = 0; c < 3; ++c) acc.r1[i * 3 + c] += w1 * L1[c];
             if (!light1.empty())
                 for (int c = 0; c < 3; ++c) light1[i * 4 + c] = float(L1[c]);
-            if (acc.aov.size() == r.aov.size())
-                for (size_t c = 0; c < stride; ++c) acc.aov[i * stride + c] += Nt * r.aov[i * stride + c];
-        }
+          }
+        });
+        size_t used = 0, usedPlanar = 0, usedBack = 0;
+        for (size_t row = 0; row < H; ++row) used += usedRows[row * 3], usedPlanar += usedRows[row * 3 + 1], usedBack += usedRows[row * 3 + 2];
         shareFront = N ? double(used) / double(N) : 0, sharePlanar = N ? double(usedPlanar) / double(N) : 0;
         shareBack = N ? double(usedBack) / double(N) : 0, regions = planar.regions;
         trusted = shareFront + sharePlanar + shareBack;
@@ -408,7 +451,8 @@ public:
         out = r;
         out.rgba.assign(N * 4, 0.0f);
         out.counts.assign(N, 0);
-        for (size_t i = 0; i < N; ++i) {
+        parallel(threads, H, [&](size_t row) {
+          for (size_t i = row * W; i < (row + 1) * W; ++i) {
             const double n = acc.n[i];
             out.counts[i] = static_cast<std::uint32_t>(std::min(n, 4.0e9));
             if (n <= 0) continue;
@@ -419,9 +463,11 @@ public:
                 out.rgba[i * 4 + c] = std::isfinite(v) ? float(v) : 0.0f;
             }
             out.rgba[i * 4 + 3] = float(acc.alpha[i] / n);
-            if (acc.aov.size() == out.aov.size())
-                for (size_t c = 0; c < stride; ++c) out.aov[i * stride + c] = float(acc.aov[i * stride + c] / n);
-        }
+            // The outputs: the frame's own where it is the first (out = r), else the frames' mean.
+            if (K > 1 && acc.aov.size() == out.aov.size())
+                std::copy_n(&acc.aov[i * stride], stride, &out.aov[i * stride]);
+          }
+        });
     }
 
     // XPU2 at rest (DESIGN.md 24): Rhea renders the camera's moves, XPU2 the camera at rest.
@@ -445,7 +491,7 @@ public:
     // stood beside XPU2's in pixels its generations had left early, and the frame ended a little noisier than XPU2's.
     void merge(const async::RenderResult& x, double fraction, async::RenderResult& out) const {
         out = x;
-        if (acc.n.empty() || x.rgba.size() != N * 4 || N == 0) return;
+        if (acc.frames == 0 || x.rgba.size() != N * 4 || N == 0) return;
         const size_t stride = x.aov.size() / N;
         const bool aovs = stride > 0 && outputs.emission >= 0 && outputs.direct >= 0;
         const unsigned K = std::max(1u, acc.frames);
@@ -469,7 +515,8 @@ public:
             }
             out.rgba[i * 4 + 3] = float((s * acc.alpha[i] + c * x.rgba[i * 4 + 3]) / n);
             if (acc.aov.size() == x.aov.size())
-                for (size_t ch = 0; ch < stride; ++ch) out.aov[i * stride + ch] = float((s * acc.aov[i * stride + ch] + c * x.aov[i * stride + ch]) / n);
+                for (size_t ch = 0; ch < stride; ++ch)
+                    out.aov[i * stride + ch] = float((s * acc.n[i] * acc.aov[i * stride + ch] + c * x.aov[i * stride + ch]) / n);
         }
     }
     // The probes take the light of XPU2's frame at rest (its samples a pixel their weight, as a frame of Rhea's): the next
@@ -513,8 +560,10 @@ public:
         std::vector<float> out(light);
         const size_t stride = N ? r.aov.size() / N : 0;
         if (!stride || outputs.emission < 0 || light.size() != N * 4) return out;
-        for (size_t i = 0; i < N; ++i)
-            for (int c = 0; c < 3; ++c) out[i * 4 + c] = std::max(0.0f, light[i * 4 + c] - r.aov[i * stride + outputs.emission + c]);
+        parallel(std::max(1u, op.threads), H, [&](size_t y) {
+            for (size_t i = y * W; i < (y + 1) * W; ++i)
+                for (int c = 0; c < 3; ++c) out[i * 4 + c] = std::max(0.0f, light[i * 4 + c] - r.aov[i * stride + outputs.emission + c]);
+        });
         return out;
     }
     // A camera move's first picture (DESIGN.md 26): the last picture shown (keepShown) moved into the plan's camera,
@@ -716,7 +765,8 @@ public:
 
 private:
     struct Sums {
-        std::vector<double> nb, nd, n, nfull, m, alpha, aov, r1;
+        std::vector<double> nb, nd, n, nfull, m, alpha, r1;
+        std::vector<float> aov;  // the frames' outputs, their mean by samples (the first frame's own)
         unsigned frames = 0;
     };
     ProbeField field;

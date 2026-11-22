@@ -886,3 +886,20 @@ probe there), and wakes where its cell's verification fails or the reconstructio
 On the test scene it puts 130 to 250 probes to sleep a frame, on Sponza 0 to 12 (its probes' light too noisy to judge);
 the pictures are the same with it and without (RESULTS.md section 21): at these sizes the probes' samples are a few
 thousand of a frame's hundreds of thousands, so it saves little yet.
+
+**Rhea's own frame, cheaper** (a separate move's: drags take none). At 1280 x 720 it had taken 0.73 to 0.82 s (0.1 s
+placing probes, 0.35 s of the GPU's, 0.32 s of the CPU's after), now 0.53 s; on Sponza 3.1 s, now 2.0:
+
+- the CPU's passes over the pixels a row at a time on the field's threads (the outputs read, the verification a cell
+  row a task, the layers, the reflected light, the picture), where they had been one thread's;
+- the sums since the camera moved kept from move to move (written by the first frame, not allocated and zeroed: 200 MB
+  a move at 720p), the outputs kept as the frame's own floats, not summed in doubles and divided again;
+- the gather tiles' order by a counting sort (samples a pixel are small numbers), not n log n over every pixel;
+- one sample a pixel where the probes' triangle holds (`trustedSpp`, two before): 0.95 million samples, not 1.7, at
+  720p; on Sponza 46,000, not 62,000, and the frame landing a second sooner gave XPU2's frame after it the time.
+
+**The kit on Modo's thread** (XPU2 RT's drags in Modo, `tools/probe_rhea_drag.py`): each step's render asked for took
+45 ms of Modo's thread, a third of it finding the kit's folder again and again (395 path resolutions in 44 ticks: the
+kit's mark, `runtime.json`, looked for at every Preferences made where the kit has none, as the personal kit has none;
+XPU2's runtime looked for at every tick). Both are now found once (`native.kit_root`, `installation_id`,
+`xpu2_available`): a kit is installed with Modo closed.

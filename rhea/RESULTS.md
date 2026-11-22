@@ -862,6 +862,34 @@ doubled the test scene's error, its moves losing 80 ms of XPU2's 0.3 s.
 **Pruning** (DESIGN.md 26): with it and without, two runs each, the pictures agree (Sponza to the third digit; the test
 scene within the timing's spread); it puts 130 to 250 probes a frame to sleep on the test scene, 0 to 12 on Sponza.
 
+**Rhea's own frame** (separate moves, 1.5 s apart, the test scene): at 1280 x 720 probes 0.08 to 0.11 s, render 0.35 s
+(1.7 million samples), finish 0.31 to 0.33 s before; now 0.05 s, 0.32 s (0.95 million), 0.15 to 0.17 s. At 640 x 360 the
+finish 0.08 s, now 0.05. Sponza: Rhea's frame 3.1 s (62,000 samples), now 2.0 s (46,000); 4 s after each move:
+
+| Sponza | Rhea now | Rhea before (section 20) | XPU2 RT |
+|---|---|---|---|
+| turn 1 | 1.44 / 0.080 | 1.03 / 0.065 | 2.06 / 0.104 |
+| turn 2 | **0.94 / 0.061** | 1.20 / 0.068 | 2.19 / 0.102 |
+| turn 3 | **0.55 / 0.055** | 0.82 / 0.060 | 2.04 / 0.100 |
+| turn 4 | **0.53 / 0.054** | 0.76 / 0.064 | 2.51 / 0.107 |
+| turn 5 | **0.52 / 0.057** | 0.72 / 0.055 | 1.97 / 0.108 |
+
+With the CPU's passes in parallel the pictures are the same as before, to the last digit; with the sums kept, the same
+on four turns of five (turn 3: 0.83 then 0.55, its frame a little sooner and XPU2's after it a little longer). The
+change is the one sample where the probes hold: its frame lands a second sooner, and XPU2's frame after it has that
+second. Turn 1 is worse (1.44 against 1.03), not looked into: likely its probes, the scene's first, lit only by an
+XPU2 frame stopped early, gaining less from their one sample than from two.
+
+**In Modo** (`tools/probe_rhea_drag.py` in a test Modo, 9Spheres at 1280 x 960, the render camera moved every 30 ms for
+4 s): the kit's tick took 21 to 36 ms of Modo's thread at each step (a third of it finding the kit's folder again and
+again, now found once: 18 ms), and it asked for a render every 150 to 200 ms. There the session's frames stopped for the
+next step in 0.5 to 2.4 s, not the harness's 0.2: the kit's Auto runs XPU2's CPU lane beside the GPU, and a frame waits
+for the CPU's chunks; and the kit's steps came 80 to 100 ms apart, past the 80 ms hold. A drag's XPU2 frames now run on
+the GPU alone where it renders the whole scene, and the hold is 0.15 s. Through the harness with both devices on (the
+kit's way, steps 90 ms apart, 640 x 360): every step its picture in 10 ms, steps through every 110 ms at most 216 (with
+the CPU lane in a drag's frames: once 977). XPU2's own frame on 9Spheres in Modo is slow (2% of its first pass in 5.7 s),
+so that a step's warp found depths for only 11% of the picture: XPU2's, not Rhea's, to look into.
+
 ## 22. Open
 
 - **Probes pruned where their neighbours on the same surface predict their light** within its noise (the user's

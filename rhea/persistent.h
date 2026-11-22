@@ -369,28 +369,38 @@ public:
     double verify(const FieldFrame& f, const FieldOptions& op, const std::vector<float>& depthMin, const std::vector<float>& depthMax,
                   std::vector<uint8_t>& ok, const std::vector<float>* coverage = nullptr) {
         const size_t N = size_t(width) * height;
-        ok.assign(N, 0);
+        ok.resize(N);
         std::fill(need.begin(), need.end(), 0);
         std::vector<uint32_t> hits(need.size(), 0);
+        std::vector<size_t> goodRows(cellsY, 0);
+        // A cell row at a time (its rows of pixels), in parallel: each cell is one task's (at 720p this pass was 921,600
+        // pixels on one thread).
+        parallel(op.threads, cellsY, [&](size_t cy) {
+            const unsigned y0 = unsigned(cy) * op.cell, y1 = std::min(height, y0 + op.cell);
+            size_t good = 0;
+            for (unsigned y = y0; y < y1; ++y)
+                for (unsigned x = 0; x < width; ++x) {
+                    const size_t i = size_t(y) * width + x;
+                    const size_t cell = size_t(y / op.cell) * cellsX + x / op.cell;
+                    const bool any = std::isfinite(depthMin[i]) && depthMin[i] > 0;
+                    if (any) ++hits[cell];
+                    const int t = f.triOf[i];
+                    bool pass;
+                    if (t < 0) {
+                        pass = !any;  // no triangle: right only where the samples met nothing
+                    } else if (!any || (coverage && !whole((*coverage)[i]))) {
+                        pass = false;
+                    } else {
+                        pass = planeHolds(f.view, f.triPlane[t], x, y, depthMin[i], depthMax[i], op);  // the triangle's plane holds every sample
+                    }
+                    ok[i] = pass;
+                    good += pass;
+                    if (!pass) need[cell] = 1;
+                }
+            goodRows[cy] = good;
+        });
         size_t good = 0;
-        for (size_t i = 0; i < N; ++i) {
-            const unsigned x = unsigned(i % width), y = unsigned(i / width);
-            const size_t cell = size_t(y / op.cell) * cellsX + x / op.cell;
-            const bool any = std::isfinite(depthMin[i]) && depthMin[i] > 0;
-            if (any) ++hits[cell];
-            const int t = f.triOf[i];
-            bool pass;
-            if (t < 0) {
-                pass = !any;  // no triangle: right only where the samples met nothing
-            } else if (!any || (coverage && !whole((*coverage)[i]))) {
-                pass = false;
-            } else {
-                pass = planeHolds(f.view, f.triPlane[t], x, y, depthMin[i], depthMax[i], op);  // the triangle's plane holds every sample
-            }
-            ok[i] = pass;
-            good += pass;
-            if (!pass) need[cell] = 1;
-        }
+        for (size_t g : goodRows) good += g;
         for (size_t c = 0; c < need.size(); ++c) sky[c] = hits[c] == 0;
         return double(good) / double(N);
     }
