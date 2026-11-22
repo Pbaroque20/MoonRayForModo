@@ -1088,3 +1088,15 @@ nearest corner on its own surface, where the environment had bled into the drago
 also tries six sizes up before it gives up (two before). "Is it possible for rhea phase 1 to have screen-space
 anti-aliasing?": the finished picture goes through FXAA's quality pass (Fxaa, object_warp.h), about 12 ms on the dragon at
 640 x 360 (0.091 s against 0.079 s for the picture, 79,535 rays); `XPU2_SESSION_RHEA_AA=0` turns it off.
+
+**Black blocks after a release, the ocean once (2026-11-22).** The user's video: after a drag and its release XPU2's first
+pictures showed, black where its first pass had not come yet, and the ocean was worked out again. The kit's realtime for
+MoonRay cuts its meshes anew once the view rests far enough from the dicing camera it held through the drag
+(moonlightipr_detail.rested: a turn of 60 degrees, or a quarter nearer or farther), and a cut anew is the whole scene sent
+again: XPU2 prepared it all, the sea's ocean with it, and Rhea, taking it as a new scene, had nothing to fade from. Two
+fixes: Rhea keeps what it last showed through a reset (`Realtime::keepScreen`), and a frame with nothing to warp fades
+XPU2's frame in over it for that camera (`screenWarp`; `XPU2_SESSION_RHEA_EDIT_FADE=0`: XPU2's pictures as they come);
+any XPU2 picture shown as it is has its unsampled pixels filled from those around (never black). And the kit cuts anew at
+rest only where its last scene diced a mesh by the screen (`rdla.LAST_CUT_BY_VIEW`): a realtime sea is diced evenly from
+the held camera, the same from every view, so on the dragon scene a release sends nothing and the ocean is worked out
+once. On the dragon a whole scene sent again faded four times from the picture on screen, no pixel dark.

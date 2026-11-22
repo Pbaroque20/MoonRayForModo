@@ -11,6 +11,10 @@ from itertools import chain
 # Whether the last realtime preview's scene had a mesh cut coarser than at rest (moonlightipr_detail): the preview
 # window then sends it again with fine detail once it is left alone.
 LAST_REFINABLE = False
+# Whether the last realtime preview's scene (cut from a held dicing camera, _dicing_held) diced any mesh by the screen
+# (an adaptive error): only then does a view at rest far from that camera need its meshes cut anew (panel._refine_detail).
+# A sea is diced evenly from the held camera, the same from every view.
+LAST_CUT_BY_VIEW = False
 
 IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
 
@@ -691,6 +695,7 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
     # (instanced_resolution); any other instancer as before, at its level's.
     from .ocean import ocean_tags, wears_ocean, OCEAN_TRIANGLES
     sea_tags = ocean_tags(scene.get('materials'))
+    by_view = False  # a mesh diced by the screen (LAST_CUT_BY_VIEW)
     for index, mesh in enumerate(render_meshes):
         cut = cuts.get(id(mesh))
         if cut and cut.get('simplify'):
@@ -834,6 +839,8 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
             # the 64 XPU2 takes, and the whole scene went to MoonRay XPU.
             mesh = dict(mesh, mesh_resolution=instanced_resolution(mesh, scene, width, 2 ** level, detail,
                         held_render['displacement_adaptive_error'] or float(scene.get('displacement_rate', 1.0))))
+        if (subdivision or displaced) and mesh.get('adaptive_error'):
+            by_view = True
         lines += ['do', '  local geometry = RdlMeshGeometry("/modo/mesh/%s") {' % index,
                   '    ["node_xform"] = %s,' % node_matrix(mesh),
                   *_heavy_line('/modo/mesh/%s' % index, 'vertex_list_0', 'vec3', vertices, lambda: vector_array(vertices)),
@@ -943,6 +950,9 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
         else:
             lines.append('  table.insert(geometries, geometry)')
         lines.append('end')
+    if scene.get('_dicing_held'):
+        global LAST_CUT_BY_VIEW
+        LAST_CUT_BY_VIEW = by_view
     from .extra_geometry import emit as emit_extra
     emit_extra(scene,materials,lines,crypto)
     entities.emit_geometry(scene,materials,lines,crypto)

@@ -860,15 +860,15 @@ public:
     double completeWarp(const async::RenderResult& x, const std::vector<float>& alpha, async::RenderResult& out) const {
         out = x;
         const size_t n = size_t(W) * H;
-        if (!warped.valid || !last.valid || x.rgba.size() != n * 4 || alpha.size() != n || warped.color.size() != n * 3 ||
-            last.result.rgba.size() != n * 4)
-            return 1.0;
-        const size_t stride = n ? x.aov.size() / n : 0;
-        const int dmin = warped.outputs.depthMin, dmax = warped.outputs.depthMax;
-        const bool sameAovs = stride == warped.stride && last.result.aov.size() == n * stride;
-        // From what was on screen (screenAsWarp): its alpha and outputs, pixel for pixel.
+        // From what was on screen (screenAsWarp, screenWarp): its alpha and outputs, pixel for pixel; else the warp's, from
+        // the last picture kept.
         const async::RenderResult& screen = warped.screen;
         const bool fromScreen = screen.rgba.size() == n * 4;
+        if (!warped.valid || x.rgba.size() != n * 4 || alpha.size() != n || warped.color.size() != n * 3) return 1.0;
+        if (!fromScreen && (!last.valid || last.result.rgba.size() != n * 4)) return 1.0;
+        const size_t stride = n ? x.aov.size() / n : 0;
+        const int dmin = warped.outputs.depthMin, dmax = warped.outputs.depthMax;
+        const bool sameAovs = last.valid && stride == warped.stride && last.result.aov.size() == n * stride;
         const bool screenAovs = fromScreen && stride && screen.aov.size() == n * stride;
         if (out.counts.size() != n) out.counts.assign(n, 0);
         std::vector<size_t> whole(H, 0);
@@ -935,6 +935,42 @@ public:
         depthsOf(b);
     }
     void dropWarp() { warped.valid = false; }
+    // What a frame left on screen (the session's last picture of it, for its camera), kept through an edit's reset: a frame
+    // with nothing to warp (an edit, the kit telling of the scene again) fades XPU2's frame in over it (screenWarp) rather
+    // than showing XPU2's first pictures, black where its samples have not reached (the user's video, 2026-11-22).
+    void keepScreen(const cpu::Plan& b, const async::RenderResult& r) {
+        const size_t n = size_t(b.width) * b.height;
+        if (r.rgba.size() != n * 4) return;
+        keptScreen.picture.rgba = r.rgba, keptScreen.picture.counts = r.counts, keptScreen.picture.aov = r.aov;
+        keptScreen.camera = b.camera, keptScreen.w = b.width, keptScreen.h = b.height, keptScreen.valid = true;
+    }
+    // The last picture published as what is on screen (a frame stopped): the warp's, or the last other one.
+    void keepScreenPublished(const cpu::Plan& b) {
+        if (lastKind == 1) keepScreen(b, warpPicture);
+        else if (lastKind == 2) keepScreen(b, shownCopy);
+    }
+    // The kept screen as this frame's warp, where it is of this camera and size: true where it is.
+    bool screenWarp(const cpu::Plan& b) {
+        const size_t n = size_t(b.width) * b.height;
+        if (!keptScreen.valid || keptScreen.w != b.width || keptScreen.h != b.height || !sameCamera(keptScreen.camera, b.camera) || keptScreen.picture.rgba.size() != n * 4) return false;
+        View nv;
+        if (!nv.init(b.camera, b.width, b.height)) return false;
+        W = b.width, H = b.height, N = n;
+        const RealtimeOutputs o = outputsOf(b);
+        const size_t stride = keptScreen.picture.aov.size() / n;
+        warped.color.resize(n * 3), warped.w.assign(n, -1.0), warped.depth.assign(n, 0.0f), warped.state.assign(n, 1);
+        warped.from.assign(n, -1), warped.doubt.assign(n, 0.5f);
+        for (size_t i = 0; i < n; ++i) {
+            for (int c = 0; c < 3; ++c) warped.color[i * 3 + c] = keptScreen.picture.rgba[i * 4 + c];
+            const float d = stride && o.depthMin >= 0 ? keptScreen.picture.aov[i * stride + size_t(o.depthMin)] : 0.0f;
+            if (d > 0 && std::isfinite(d)) warped.depth[i] = d, warped.w[i] = nv.wOf(d);
+        }
+        warped.screen = keptScreen.picture;
+        warped.stride = stride, warped.view = nv, warped.outputs = o, warped.meshed = false;
+        objectDrawn = false;
+        warped.valid = true;
+        return true;
+    }
     // A frame stopped with more than the warp on screen (XPU2's pictures faded in over it): that picture, for the same
     // camera, becomes the next frame's starting point (the mouse let go: Modo tells of the camera where the drag left it,
     // a frame with no move, whose fade starts from what is on screen). Before keepLast, which may take shownCopy's vectors.
@@ -1079,6 +1115,12 @@ public:
     const async::CpuScene* traceScene = nullptr;
     std::function<bool(const async::RenderResult&)> onStage;
     bool objectDrawn = false;  // the last warp was drawn from the store
+    struct KeptScreen {
+        async::RenderResult picture;
+        surface::Camera camera{};
+        unsigned w = 0, h = 0;
+        bool valid = false;
+    } keptScreen;  // keepScreen
     // Whether the last warp was drawn to its end (a stream the next move stopped was not).
     bool warpComplete() const { return !objectDrawn || objectWarp.stages > objectWarp.op.rings; }
 private:

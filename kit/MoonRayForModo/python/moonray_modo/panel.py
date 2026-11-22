@@ -3335,6 +3335,13 @@ class Panel(Tools, QtWidgets.QWidget):
         # At rest: the meshes cut anew, once, where the view came far enough from the camera held through its moves
         # (moonlightipr_detail.rested); MoonLightIPR's coarse cut made fine besides.
         moved=not scene.get('dicing_camera') and rested(scene.get('camera') or {},scene.get('meshes',[]),60.0 if self._engine()=='moonray' else None)
+        if moved and self._engine()=='moonray':
+            # MoonRay's realtime cuts anew only where its last scene diced a mesh by the screen (rdla.LAST_CUT_BY_VIEW). A
+            # sea is diced evenly from the held camera, the same from every view: a reload for it alone had XPU2 prepare the
+            # whole scene and its ocean again after a drag, and Rhea's picture start over (the user, 2026-11-22: "make sure
+            # that Rhea computes the ocean shader once, not several times, similar to moonlightIPR realtime").
+            from . import rdla
+            moved=rdla.LAST_CUT_BY_VIEW
         refinable=self._engine()=='moonlightipr' and moonlightipr_scene.LAST_REFINABLE
         if not (moved or refinable):return
         self._detail_fine=True;self._detail_recut=moved

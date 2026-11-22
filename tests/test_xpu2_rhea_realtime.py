@@ -116,7 +116,13 @@ class Session(unittest.TestCase):
         text = (ROOT / 'xpu2/interactive/xpu2_session.cc').read_text(encoding='utf-8')
         self.assertIn('#include "../../rhea/rhea_realtime.h"', text)
         self.assertIn('else if (rheaNow)', text)
-        self.assertIn('if (rheaWanted && fresh && !scene.cameraFrom) rheaView.reset();', text)
+        # An edit forgets Rhea's picture; the camera alone whose plan was made again (geometry tessellated for the camera)
+        # forgets only the probes, the last picture kept to move.
+        self.assertIn('if (rheaWanted && fresh && !scene.cameraFrom) {', text)
+        self.assertIn('if (scene.cameraEdit) rheaView.resetProbes();', text)
+        self.assertIn('else rheaView.reset();', text)
+        # What it last showed is kept through the reset: a frame with nothing to warp fades XPU2 in over it.
+        self.assertIn('rheaView.screenWarp(*scene.plan);', text)
         self.assertIn('MoonRay XPU2: realtime by Rhea (', text)
         self.assertIn("MoonRay XPU2: frames by XPU2 alone, not Rhea's: ", text)
 

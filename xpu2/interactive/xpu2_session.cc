@@ -3382,7 +3382,14 @@ int session(const Args& args, const fs::path& directory) {
                         if (!moving) {
                             rheaFrameStopped = false;
                             const bool release = rheaUnfinished && !probesOn && rheaView.hasWarp();
-                            if (!release) rheaView.dropWarp();
+                            if (!release) {
+                                rheaView.dropWarp();
+                                // Nothing to warp (an edit, the scene told again): XPU2's frame fades in over what is on screen
+                                // for this camera, as after a move, not its first pictures black where its samples have not
+                                // reached (the user, 2026-11-22: "there are moments when black blocks start generating from
+                                // xpu2, which shouldn't occur").
+                                if (!probesOn && envOn("XPU2_SESSION_RHEA_EDIT_FADE", true)) rheaView.screenWarp(*scene.plan);
+                            }
                             // Phase one stopped part way by the release: it finishes first (the user, 2026-11-22: "rhea should
                             // finish its phase one then have xpu2 gracefully follow"), then XPU2's frame fades in over it.
                             else if (!rheaPhaseOneDone && phaseOne(true)) warpedNow = true;
@@ -3511,12 +3518,19 @@ int session(const Args& args, const fs::path& directory) {
                             watch.previewResult(merged, fraction);
                             rheaDenoiseNow = false;
                         } else if (watch.preview) {
-                            std::vector<float> rgb(size_t(width) * height * 3);
-                            for (size_t i = 0; i < size_t(width) * height; ++i)
+                            const size_t pixels = size_t(width) * height;
+                            std::vector<float> rgb(pixels * 3);
+                            std::vector<unsigned char> covered(pixels, 1);
+                            bool gaps = false;
+                            for (size_t i = 0; i < pixels; ++i) {
                                 for (int c = 0; c < 3; ++c) {
                                     const float x = merged.rgba[i * 4 + c];
                                     rgb[i * 3 + c] = std::isfinite(x) ? x : 0.0f;
                                 }
+                                if (merged.counts.size() == pixels && !merged.counts[i]) covered[i] = 0, gaps = true;
+                            }
+                            // Pixels no sample has reached, from those that have (as XPU2 RT's own pictures): never black.
+                            if (gaps) async::Renderer::fillGaps(rgb, covered, width, height);
                             watch.preview(rgb, width, height, fraction);
                         }
                     };
@@ -3762,6 +3776,9 @@ int session(const Args& args, const fs::path& directory) {
                     shown.cancelled = x.cancelled, shown.drained = x.drained;
                     // The picture as shown, for the next move's warp: the frame's own, or the last it published (a frame of
                     // whole passes' pictures stopped: the last it showed, not its film part way through a pass).
+                    // What is on screen, kept through an edit's reset (Realtime::screenWarp).
+                    if (cut) rheaView.keepScreenPublished(*scene.plan);
+                    else if (shown.rgba.size() == size_t(width) * height * 4) rheaView.keepScreen(*scene.plan, shown);
                     if (passMode && cut) rheaView.keepLast(*scene.plan);
                     else if (shown.rgba.size() == size_t(width) * height * 4) rheaView.keepShown(*scene.plan, shown, coverage);
                     else rheaView.keepLast(*scene.plan);

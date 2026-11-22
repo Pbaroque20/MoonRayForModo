@@ -117,6 +117,33 @@ class RealtimeDicing(unittest.TestCase):
             self.assertEqual(resolution[label], resolution['render'])
         self.assertLessEqual(found['coarse'], 2.0)
 
+    def test_a_realtime_sea_alone_is_not_cut_again_at_rest(self):
+        # MoonRay's realtime cuts its meshes anew at rest only where its last scene diced one by the screen
+        # (rdla.LAST_CUT_BY_VIEW, panel._refine_detail): a sea diced evenly from the held camera is the same from every
+        # view, and a reload for it alone had XPU2 work the ocean out again after each drag (the user, 2026-11-22); a
+        # subdivided mesh diced by the screen still is.
+        import os
+        from unittest import mock
+        from moonray_modo import rdla
+        made = scene([plane(800, 800)])
+        graph = made['materials']['sea']['node_graph']
+        graph['nodes']['push'] = {'type': 'VectorDisplacement', 'parameters': {}, 'inputs': {'vector': 'sea'}, 'position': [0, 0]}
+        graph['displacement'] = 'push'
+        made['materials']['sea'].update(native_shader='DwaBaseMaterial', node_override=True)
+        made['meshes'][0].update(identity='sea', vertices=[[x * 40.0 - 400, 0.0, z * 40.0 - 400] for z in range(21) for x in range(21)],
+                                 faces=[[z * 21 + x, z * 21 + x + 1, (z + 1) * 21 + x + 1, (z + 1) * 21 + x] for z in range(20) for x in range(20)],
+                                 uvs=[[(x + dx) / 20, (z + dz) / 20] for z in range(20) for x in range(20) for dx, dz in ((0, 0), (1, 0), (1, 1), (0, 1))])
+        made.update(camera={'matrix': [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 14, 300, 1], 'focal_mm': 35.0, 'film_mm': 36.0},
+                    lights=[], environments=[])
+        with mock.patch.dict(os.environ, {'MOONRAY_MODO_OCEAN': '0'}):
+            rdla.scene_text(dict(made, _geometry_detail='fine'), 960, 540, 1, 0.0)
+            self.assertFalse(rdla.LAST_CUT_BY_VIEW)
+            ball = dict(plane(20, 20, material='plain'), name='Ball', identity='ball', subdivision=True)
+            with_ball = dict(made, meshes=made['meshes'] + [ball],
+                             materials=dict(made['materials'], plain={'node_graph': nodes.new('DwaBaseMaterial', {})}))
+            rdla.scene_text(dict(with_ball, _geometry_detail='fine'), 960, 540, 1, 0.0)
+            self.assertTrue(rdla.LAST_CUT_BY_VIEW)
+
 
 if __name__ == '__main__':
     unittest.main()
