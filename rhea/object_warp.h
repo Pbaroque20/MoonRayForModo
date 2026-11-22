@@ -42,6 +42,70 @@ namespace rhea {
 
 namespace async = xpu2::interactive::async;
 
+// The weighted pull-push of a grid (Gortler and others, The Lumigraph, 1996): rgb and a weight (0 to 1) a texel. The
+// weights' averages go up level by level (a parent's weight its children's, at most whole); coming back down, a texel short
+// of a whole weight takes the rest from the coarser level's estimate, interpolated (bilinear): a smooth colour interpolation
+// from the texels that hold their colour, where copying the coarser texel made blocks of its size (the user, 2026-11-22:
+// the "splotchy backgrounds").
+inline void pullPush(std::vector<float>& c, unsigned w, unsigned h) {
+    struct Level {
+        unsigned w, h;
+        std::vector<float> m;
+    };
+    std::vector<Level> lv;
+    lv.push_back({w, h, c});
+    while (lv.back().w > 1 || lv.back().h > 1) {
+        const Level& f = lv.back();
+        Level q{std::max(1u, (f.w + 1) / 2), std::max(1u, (f.h + 1) / 2), {}};
+        q.m.assign(size_t(q.w) * q.h * 4, 0.0f);
+        for (unsigned y = 0; y < f.h; ++y)
+            for (unsigned x = 0; x < f.w; ++x) {
+                const float* s = &f.m[(size_t(y) * f.w + x) * 4];
+                if (!(s[3] > 0)) continue;
+                float* d = &q.m[(size_t(y / 2) * q.w + x / 2) * 4];
+                for (int k = 0; k < 3; ++k) d[k] += s[k] * s[3];
+                d[3] += s[3];
+            }
+        for (size_t i = 0; i < size_t(q.w) * q.h; ++i) {
+            float* d = &q.m[i * 4];
+            if (d[3] > 0)
+                for (int k = 0; k < 3; ++k) d[k] /= d[3];
+            d[3] = std::min(1.0f, d[3]);
+        }
+        lv.push_back(std::move(q));
+    }
+    // The coarsest: whatever it holds, whole (nothing coarser to take the rest from).
+    if (lv.back().m[3] > 0) lv.back().m[3] = 1.0f;
+    for (size_t k = lv.size() - 1; k-- > 0;) {
+        Level& f = lv[k];
+        const Level& q = lv[k + 1];
+        for (unsigned y = 0; y < f.h; ++y)
+            for (unsigned x = 0; x < f.w; ++x) {
+                float* d = &f.m[(size_t(y) * f.w + x) * 4];
+                if (d[3] >= 1.0f) continue;
+                // The coarser level at this texel's centre, bilinear between the texels that hold anything.
+                const double qx = std::clamp((x + 0.5) * 0.5 - 0.5, 0.0, double(q.w - 1)), qy = std::clamp((y + 0.5) * 0.5 - 0.5, 0.0, double(q.h - 1));
+                const unsigned x0 = unsigned(qx), y0 = unsigned(qy), x1 = std::min(x0 + 1, q.w - 1), y1 = std::min(y0 + 1, q.h - 1);
+                const double tx = qx - x0, ty = qy - y0;
+                const double wt[4] = {(1 - tx) * (1 - ty), tx * (1 - ty), (1 - tx) * ty, tx * ty};
+                const float* s[4] = {&q.m[(size_t(y0) * q.w + x0) * 4], &q.m[(size_t(y0) * q.w + x1) * 4], &q.m[(size_t(y1) * q.w + x0) * 4],
+                                     &q.m[(size_t(y1) * q.w + x1) * 4]};
+                double up[3] = {0, 0, 0}, sw = 0;
+                for (int j = 0; j < 4; ++j) {
+                    const double a = wt[j] * s[j][3];
+                    if (!(a > 0)) continue;
+                    for (int ch = 0; ch < 3; ++ch) up[ch] += a * s[j][ch];
+                    sw += a;
+                }
+                if (!(sw > 0)) continue;
+                const double own = std::max(0.0f, d[3]);
+                for (int ch = 0; ch < 3; ++ch) d[ch] = float(own * d[ch] + (1.0 - own) * up[ch] / sw);
+                d[3] = 1.0f;
+            }
+    }
+    c.swap(lv[0].m);
+}
+
 class ObjectStore {
 public:
     struct Options {
@@ -211,19 +275,23 @@ public:
     // The colour at a surface's point (trace space; n its normal facing the camera, dir the ray to it, foot a pixel's
     // width there): true where the store holds it (confidence: the share of the neighbouring cells it has, at the finest
     // size it has).
-    bool lookup(const surface::V3& p, const D3& n, const D3& dir, double foot, float rgb[3], float& confidence) const {
+    // up: how many sizes coarser than the point's own its colour came from.
+    bool lookup(const surface::V3& p, const D3& n, const D3& dir, double foot, float rgb[3], float& confidence, int* up = nullptr) const {
         confidence = 0;
+        if (up) *up = 0;
         if (!light.used) return false;
         std::uint8_t bins[2];
         binsOf(n, bins);
         const int first = levelOf(foot * stretch(n, dir, op.grazing) * op.scale);
         double m[9];
-        if (!means(light, p, bins, first, op.levels + 6, m, confidence)) return false;
+        int sizesUp = 0;
+        if (!means(light, p, bins, first, op.levels + 6, m, confidence, &sizesUp)) return false;
+        if (up) *up = sizesUp;
         for (int ch = 0; ch < 3; ++ch) rgb[ch] = float(std::max(0.0, m[ch]));
         if (op.albedo && fine.used) {
             double a[9];
             float fineConfidence;
-            if (means(fine, p, bins, first - 1, op.levels + 7, a, fineConfidence))
+            if (means(fine, p, bins, first - 1, op.levels + 7, a, fineConfidence, nullptr))
                 for (int ch = 0; ch < 3; ++ch)
                     if (m[3 + ch] > 0.02) rgb[ch] = float(std::max(0.0, a[ch] * (m[ch] - m[6 + ch]) / m[3 + ch] + m[6 + ch]));
         }
@@ -342,7 +410,8 @@ private:
     }
     // Table t's means (v[0..8] over its weight) at p: trilinear between the cells about it at the first size that has
     // any, the coarser sizes filling what the finer leave (a size's share by the cells it has).
-    bool means(const Table& t, const surface::V3& p, const std::uint8_t bins[2], int first, int levels, double out[9], float& confidence) const {
+    bool means(const Table& t, const surface::V3& p, const std::uint8_t bins[2], int first, int levels, double out[9], float& confidence,
+               int* up) const {
         double acc[9] = {}, have = 0;
         confidence = 0;
         for (int k = 0; k < levels; ++k) {
@@ -380,7 +449,10 @@ private:
             if (wsum <= 0) continue;
             const double take = (1.0 - have) * std::min(1.0, wsum / 0.5);
             for (int q = 0; q < 9; ++q) acc[q] += take * c[q] / wsum;
-            if (have == 0) confidence = float(std::min(1.0, wsum));
+            if (have == 0) {
+                confidence = float(std::min(1.0, wsum));
+                if (up) *up = k;
+            }
             have += take;
             if (have > 0.999) break;
         }
@@ -401,55 +473,17 @@ private:
         const int x = std::clamp(int(u * SkyW), 0, int(SkyW) - 1), y = std::clamp(int(v * SkyH), 0, int(SkyH) - 1);
         return y * int(SkyW) + x;
     }
-    // The directions no picture has shown, from those around them (push-pull, the map wrapping round in u).
+    // The directions no picture has shown, from those around them (pullPush: smooth, no blocks).
     void fillSky() {
-        struct Level {
-            unsigned w, h;
-            std::vector<float> m;
-        };
-        std::vector<Level> lv;
-        lv.push_back({unsigned(SkyW), unsigned(SkyH), std::vector<float>(SkyW * SkyH * 4)});
+        std::vector<float> c(SkyW * SkyH * 4, 0.0f);
         for (size_t i = 0; i < SkyW * SkyH; ++i) {
-            const float* s = &sky[i * 4];
-            float* m = &lv[0].m[i * 4];
-            if (s[3] > 0)
-                for (int c = 0; c < 3; ++c) m[c] = s[c] / s[3];
-            m[3] = s[3] > 0 ? 1.0f : 0.0f;
+            const float* m = &sky[i * 4];
+            if (!(m[3] > 0)) continue;
+            for (int k = 0; k < 3; ++k) c[i * 4 + k] = m[k] / m[3];
+            c[i * 4 + 3] = 1.0f;
         }
-        while (lv.back().w > 1 || lv.back().h > 1) {
-            const Level& f = lv.back();
-            Level c{std::max(1u, (f.w + 1) / 2), std::max(1u, (f.h + 1) / 2), {}};
-            c.m.assign(size_t(c.w) * c.h * 4, 0.0f);
-            for (unsigned y = 0; y < f.h; ++y)
-                for (unsigned x = 0; x < f.w; ++x) {
-                    const float* s = &f.m[(size_t(y) * f.w + x) * 4];
-                    if (!(s[3] > 0)) continue;
-                    float* d = &c.m[(size_t(y / 2) * c.w + x / 2) * 4];
-                    for (int k = 0; k < 3; ++k) d[k] += s[k] * s[3];
-                    d[3] += s[3];
-                }
-            for (size_t i = 0; i < size_t(c.w) * c.h; ++i) {
-                float* d = &c.m[i * 4];
-                if (d[3] > 0)
-                    for (int k = 0; k < 3; ++k) d[k] /= d[3];
-                d[3] = d[3] > 0 ? 1.0f : 0.0f;
-            }
-            lv.push_back(std::move(c));
-        }
-        for (size_t k = lv.size() - 1; k-- > 0;) {
-            Level& f = lv[k];
-            const Level& c = lv[k + 1];
-            for (unsigned y = 0; y < f.h; ++y)
-                for (unsigned x = 0; x < f.w; ++x) {
-                    float* d = &f.m[(size_t(y) * f.w + x) * 4];
-                    if (d[3] > 0) continue;
-                    const float* s = &c.m[(size_t(std::min(y / 2, c.h - 1)) * c.w + std::min(x / 2, c.w - 1)) * 4];
-                    if (!(s[3] > 0)) continue;
-                    for (int q = 0; q < 3; ++q) d[q] = s[q];
-                    d[3] = 1.0f;
-                }
-        }
-        skyFilled.swap(lv[0].m);
+        pullPush(c, unsigned(SkyW), unsigned(SkyH));
+        skyFilled.swap(c);
     }
 };
 
@@ -568,6 +602,14 @@ public:
         unsigned rings = 3;      // the fine grid's stages, rings of equal area from the centre out (streamed)
         bool antialias = true;   // the finished picture through FXAA (Fxaa)
         bool packets = true;     // rays four at a time (Embree's packets), where the scene is triangles alone
+        // The store's answer trusted where it came from the point's own size or the next (a curved scale's few cells are
+        // its detail), or from up to trustUp sizes coarser with at least this share of the cells about the point holding
+        // colour; else the colour interpolated from the trusted (fillNodes): a coarse answer from a few cells is a block.
+        double trust = 0.15;
+        int trustUp = 3;
+        // With nothing in the store (the first frame of realtime): each hit's material colour (the CPU's), lit from the
+        // camera, so that phase one has a first look before XPU2's first pictures fade in.
+        bool firstLook = true;
         unsigned threads = 8;
     };
     Options op;
@@ -604,19 +646,42 @@ public:
         // Packets where every mesh is triangles: the curves' and points' own intersectors take one ray at a time.
         packetsUsed = op.packets && trianglesAlone(scene);
         std::atomic<size_t> traced{0}, empty{0}, edge{0};
-        // A hit's colour from the store (or the environment's), into a node.
-        auto shade = [&](const surface::Ray& ray, const resume::Hit& hit, Node& o) {
+        // A hit's colour from the store (or the environment's), into a node: trusted where the store's cells about it hold
+        // it (op.trust, op.trustUp), else weighed little in the interpolation. The store empty (realtime's first frame):
+        // the first look, the hit's material colour lit from the camera.
+        const bool firstLook = op.firstLook && store.empty();
+        auto shade = [&](const async::CpuBackend& backend, const surface::Ray& ray, const resume::Hit& hit, Node& o) {
             if (hit.geom == ~0u) {
                 o.kind = 2;
                 o.known = store.skyAt(D3{ray.direction.x, ray.direction.y, ray.direction.z}, o.rgb);
-                o.conf = o.known ? 1.0f : 0.0f;
+                o.conf = o.known ? 1.0f : 0.0f, o.weight = o.known ? 1.0f : 0.0f;
+                if (!o.known && firstLook) o.rgb[0] = o.rgb[1] = o.rgb[2] = 0.5f, o.known = true, o.weight = 1.0f;
                 return;
             }
             o.kind = 1;
             const double d = nv.depthOf(nv.camera(hit.point));
             o.depth = float(d), o.w = nv.wOf(d);
             const D3 nn = nv.toward(D3{hit.normal.x, hit.normal.y, hit.normal.z}, hit.point);
-            o.known = store.lookup(hit.point, nn, D3{ray.direction.x, ray.direction.y, ray.direction.z}, ObjectStore::footprint(nv, angle, d), o.rgb, o.conf);
+            int up = 0;
+            const bool found = store.lookup(hit.point, nn, D3{ray.direction.x, ray.direction.y, ray.direction.z},
+                                            ObjectStore::footprint(nv, angle, d), o.rgb, o.conf, &up);
+            o.known = found && (up <= 1 || (up <= op.trustUp && o.conf >= op.trust));
+            o.weight = o.known ? 1.0f : found ? float(0.25 * std::max(0.0f, o.conf) / (1.0 + std::max(0, up - op.trustUp))) : 0.0f;
+            if (!found && firstLook) {
+                surface::Lambert l{};
+                backend.material(hit, ray, l);
+                const double dl = std::sqrt(double(ray.direction.x) * ray.direction.x + double(ray.direction.y) * ray.direction.y +
+                                            double(ray.direction.z) * ray.direction.z);
+                const double nl = std::sqrt(nn.x * nn.x + nn.y * nn.y + nn.z * nn.z);
+                const double facing = dl > 0 && nl > 0 ? std::fabs(nn.x * ray.direction.x + nn.y * ray.direction.y + nn.z * ray.direction.z) / (dl * nl) : 1.0;
+                const double lit = 0.35 + 0.65 * facing;
+                // A material with next to no diffuse colour (glass, water, metal: black in it), clay.
+                double base[3] = {l.albedo.x, l.albedo.y, l.albedo.z};
+                if (0.2126 * base[0] + 0.7152 * base[1] + 0.0722 * base[2] < 0.02) base[0] = base[1] = base[2] = 0.55;
+                o.rgb[0] = float(base[0] * lit + l.emission.x), o.rgb[1] = float(base[1] * lit + l.emission.y),
+                o.rgb[2] = float(base[2] * lit + l.emission.z);
+                o.known = true, o.weight = 1.0f, o.conf = 0.0f;
+            }
         };
         // Rays through raster places (x, y), each node shaded: four at a time where packets may be used. Adds the rays and
         // those the store had nothing for to the counts (once a row: one atomic each, not one a ray).
@@ -638,7 +703,7 @@ public:
                 else
                     for (int q = 0; q < k; ++q) hits[q] = backend.trace(ray4[q]);
                 for (int q = 0; q < k; ++q) {
-                    shade(ray4[q], hits[q], *to4[q]);
+                    shade(backend, ray4[q], hits[q], *to4[q]);
                     ++made;
                     if (!to4[q]->known) ++unknownHere;
                 }
@@ -851,7 +916,8 @@ private:
         float conf = 0, depth = 0;
         double w = -1;
         std::uint8_t kind = 0;  // 0 not traced, 1 a surface, 2 the environment, 3 nothing (no ray there)
-        bool known = false;
+        bool known = false;     // its colour trusted
+        float weight = 0;       // its colour's weight in the interpolation (fillNodes): 1 trusted, less from coarse cells, 0 none
     };
     struct Pixel {
         float rgb[3] = {0, 0, 0};
@@ -949,8 +1015,12 @@ private:
         g.step = step, g.gw = (w - 1) / step + 2, g.gh = (h - 1) / step + 2;
         g.nodes.assign(size_t(g.gw) * g.gh, Node{});
     }
-    // The traced nodes the store had nothing for, from the known around them (push-pull over the grid): a surface's from
-    // the surfaces', the environment's from the environment's, so that neither bleeds into the other at a silhouette.
+    // The colours of the nodes the store did not answer for with confidence, interpolated from those it did (pullPush, each
+    // node by its weight: whole where trusted, a little where the store's answer came from coarse cells, none where it had
+    // nothing): a surface's from the surfaces', the environment's from the environment's, so that neither bleeds into the
+    // other at a silhouette. The colour interpolation first, the coarse cells only where no trusted node is near (the user,
+    // 2026-11-22: "in coarse areas where the shading is unpredictable, that should just be handed over to an auto-color
+    // interpolation"; "it should be first a color interpolation then generate the coarse-smooth area").
     static void fillNodes(Grid& g) {
         for (std::uint8_t kind = 1; kind <= 2; ++kind) {
             std::vector<float> c(size_t(g.gw) * g.gh * 4, 0.0f);
@@ -958,14 +1028,17 @@ private:
             for (size_t k = 0; k < g.nodes.size(); ++k) {
                 const Node& o = g.nodes[k];
                 if (o.kind != kind) continue;
-                if (o.known) c[k * 4] = o.rgb[0], c[k * 4 + 1] = o.rgb[1], c[k * 4 + 2] = o.rgb[2], c[k * 4 + 3] = 1, any = true;
-                else needed = true;
+                if (o.weight > 0) {
+                    c[k * 4] = o.rgb[0], c[k * 4 + 1] = o.rgb[1], c[k * 4 + 2] = o.rgb[2], c[k * 4 + 3] = std::min(1.0f, o.weight);
+                    any = true;
+                }
+                if (o.weight < 1) needed = true;
             }
             if (!any || !needed) continue;
-            fillGrid(c, g.gw, g.gh);
+            pullPush(c, g.gw, g.gh);
             for (size_t k = 0; k < g.nodes.size(); ++k) {
                 Node& o = g.nodes[k];
-                if (o.kind == kind && !o.known && c[k * 4 + 3] > 0) o.rgb[0] = c[k * 4], o.rgb[1] = c[k * 4 + 1], o.rgb[2] = c[k * 4 + 2];
+                if (o.kind == kind && o.weight < 1 && c[k * 4 + 3] > 0) o.rgb[0] = c[k * 4], o.rgb[1] = c[k * 4 + 1], o.rgb[2] = c[k * 4 + 2];
             }
         }
     }
@@ -974,49 +1047,6 @@ private:
         const unsigned i = x / g.step, j = y / g.step;
         return {&g.nodes[size_t(j) * g.gw + i], &g.nodes[size_t(j) * g.gw + i + 1], &g.nodes[size_t(j + 1) * g.gw + i],
                 &g.nodes[size_t(j + 1) * g.gw + i + 1]};
-    }
-    // Push-pull: rgba a node (a 0 or 1), the empty nodes from the known around them, coarse to fine.
-    static void fillGrid(std::vector<float>& c, unsigned w, unsigned h) {
-        struct Level {
-            unsigned w, h;
-            std::vector<float> m;
-        };
-        std::vector<Level> lv;
-        lv.push_back({w, h, c});
-        while (lv.back().w > 1 || lv.back().h > 1) {
-            const Level& f = lv.back();
-            Level q{std::max(1u, (f.w + 1) / 2), std::max(1u, (f.h + 1) / 2), {}};
-            q.m.assign(size_t(q.w) * q.h * 4, 0.0f);
-            for (unsigned y = 0; y < f.h; ++y)
-                for (unsigned x = 0; x < f.w; ++x) {
-                    const float* s = &f.m[(size_t(y) * f.w + x) * 4];
-                    if (!(s[3] > 0)) continue;
-                    float* d = &q.m[(size_t(y / 2) * q.w + x / 2) * 4];
-                    for (int k = 0; k < 3; ++k) d[k] += s[k];
-                    d[3] += 1;
-                }
-            for (size_t i = 0; i < size_t(q.w) * q.h; ++i) {
-                float* d = &q.m[i * 4];
-                if (d[3] > 0)
-                    for (int k = 0; k < 3; ++k) d[k] /= d[3];
-                d[3] = d[3] > 0 ? 1.0f : 0.0f;
-            }
-            lv.push_back(std::move(q));
-        }
-        for (size_t k = lv.size() - 1; k-- > 0;) {
-            Level& f = lv[k];
-            const Level& q = lv[k + 1];
-            for (unsigned y = 0; y < f.h; ++y)
-                for (unsigned x = 0; x < f.w; ++x) {
-                    float* d = &f.m[(size_t(y) * f.w + x) * 4];
-                    if (d[3] > 0) continue;
-                    const float* s = &q.m[(size_t(std::min(y / 2, q.h - 1)) * q.w + std::min(x / 2, q.w - 1)) * 4];
-                    if (!(s[3] > 0)) continue;
-                    for (int r = 0; r < 3; ++r) d[r] = s[r];
-                    d[3] = 1.0f;
-                }
-        }
-        c.swap(lv[0].m);
     }
 };
 

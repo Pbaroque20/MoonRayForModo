@@ -3222,6 +3222,9 @@ int session(const Args& args, const fs::path& directory) {
                     rheaView.op.objectAntialias = envOn("XPU2_SESSION_RHEA_AA", true);
                     // Its rays four at a time where the scene is triangles alone (Embree's packets).
                     rheaView.op.objectPackets = envOn("XPU2_SESSION_RHEA_PACKETS", true);
+                    // Realtime's first frame: a first look from the hits' material colours (the user, 2026-11-22: "when RT
+                    // gets turned on first, it doesn't use Rhea, it goes straight to standard RT XPU2").
+                    rheaView.op.objectFirstLook = envOn("XPU2_SESSION_RHEA_FIRST_LOOK", true);
                     if (const char* debug = std::getenv("XPU2_SESSION_RHEA_DEBUG")) rheaView.op.debugFolder = debug;
                     const auto began = Clock::now();
                     async::GpuLane* lane = gpu && gpuUsable ? gpu.get() : nullptr;

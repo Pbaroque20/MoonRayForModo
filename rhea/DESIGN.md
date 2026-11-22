@@ -1126,3 +1126,20 @@ mapping, its pages made anew. The kit reads a picture whole before it acknowledg
 reads; one not taken in five seconds is never written again. On the dragon every one of a run's 82 pictures went through
 one mapping, each move's four pictures all different, and showing the ring pictures took 9.4 to 10.6 ms (12 to 16 ms):
 a move's picture 0.047 to 0.051 s.
+
+**Smooth fills, coarse answers interpolated, the first look (2026-11-22).** The user's video of a car on a studio
+backdrop: "clean up much of the splotchy backgrounds ... in coarse areas where the shading is unpredictable, that should
+just be handed over to an auto-color interpolation ... it should be first a color interpolation then generate the
+coarse-smooth area". The blocks were the push-pull's: a gap took its coarser texel's colour whole. The grid's nodes and the
+sky's map now fill by a weighted pull-push (`pullPush`, after The Lumigraph's): each texel short of a whole weight takes
+the rest from the coarser level, interpolated bilinearly. And the store's answer is trusted where it came from the
+point's own size or the next (a curved scale's few cells are its detail), or from up to three sizes coarser with at least
+15% of the cells about the point holding colour; a coarse answer from fewer cells (a block) weighs little, the colour
+interpolated from the trusted nodes around it first, the coarse cells counting only where none is near. Trusting only
+answers with 30% of their cells (build 53) took a third of the dragon's rays and softened its scales. On the dragon 9 to 11%
+of the rays went to the interpolation, the picture as detailed as before, 0.049 s a move.
+"When RT gets turned on first, it doesn't use Rhea": the first frame had no picture to move, and XPU2's first pictures
+showed as they came. Phase one now has a first look with the store empty: the hits' material colours (the CPU's material,
+`CpuBackend::material`), lit from the camera, clay where a material has next to no diffuse colour (glass, water, metal:
+black in it), the environment mid grey; XPU2's passes fade in over it as after a move (`XPU2_SESSION_RHEA_FIRST_LOOK=0`:
+off). On the dragon it came in 0.022 s, the dragon and the sea in clay.

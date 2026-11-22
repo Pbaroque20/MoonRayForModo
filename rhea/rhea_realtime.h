@@ -83,6 +83,7 @@ struct RealtimeOptions {
     unsigned objectRings = 3;
     bool objectAntialias = true;  // phase one's finished picture through FXAA (object_warp.h Fxaa)
     bool objectPackets = true;    // its rays four at a time, where the scene is triangles alone (ObjectWarp::Options::packets)
+    bool objectFirstLook = true;  // realtime's first frame: the hits' material colours lit from the camera (ObjectWarp)
     // The store's light and albedo apart (ObjectStore::Options::albedo): the albedo in cells half as wide, multiplied by
     // the cells' light (the user's composite from the outputs the pictures carry). Off: the colours as they are.
     bool storeAlbedo = false;
@@ -623,6 +624,14 @@ public:
         warped.valid = false, objectDrawn = false;
         if (&out == &warpPicture) objectLaid = false;  // written below by another warp, unless objectInto lays it again
         warped.screen.rgba.clear(), warped.screen.aov.clear(), warped.screen.counts.clear();
+        // No picture kept yet (realtime's first frame): the surfaces' colours (store) or, the store empty, the first look.
+        if (op.warp && !last.valid && op.objectSpace && op.objectFirstLook && traceScene) {
+            View nv;
+            if (!nv.init(b.camera, b.width, b.height) || nv.kind == View::Directional) return false;
+            if (nv.needsDepthScale()) nv.setDepthScale(1e7);
+            const size_t stride = traceScene->aovTables.channels;
+            return objectInto(b, nv, out, stride);
+        }
         if (!op.warp || !last.valid || last.W != b.width || last.H != b.height || last.view.kind == View::Directional) return false;
         View nv;
         if (!nv.init(b.camera, b.width, b.height) || nv.kind == View::Directional) return false;
@@ -736,7 +745,7 @@ public:
         ObjectWarp::Options& wo = objectWarp.op;
         wo.rays = op.objectRays, wo.jump = op.warpJump;
         // Every processor: phase one comes before XPU2's frame (Rhea's own cap, 8, is the probes' beside XPU2's frame).
-        wo.rings = op.objectRings, wo.antialias = op.objectAntialias, wo.packets = op.objectPackets;
+        wo.rings = op.objectRings, wo.antialias = op.objectAntialias, wo.packets = op.objectPackets, wo.firstLook = op.objectFirstLook;
         wo.threads = std::max(threads, std::thread::hardware_concurrency());
         out.cancelled = out.drained = out.failed = false;
         // Its outputs are none but the depths (written below each time): zeroed only where something else wrote them since
@@ -876,7 +885,7 @@ public:
         const async::RenderResult& screen = warped.screen;
         const bool fromScreen = screen.rgba.size() == n * 4;
         if (!warped.valid || x.rgba.size() != n * 4 || alpha.size() != n || warped.color.size() != n * 3) return 1.0;
-        if (!fromScreen && (!last.valid || last.result.rgba.size() != n * 4)) return 1.0;
+        if (!fromScreen && !objectDrawn && (!last.valid || last.result.rgba.size() != n * 4)) return 1.0;
         const size_t stride = n ? x.aov.size() / n : 0;
         const int dmin = warped.outputs.depthMin, dmax = warped.outputs.depthMax;
         const bool sameAovs = last.valid && stride == warped.stride && last.result.aov.size() == n * stride;
