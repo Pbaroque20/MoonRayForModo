@@ -53,6 +53,9 @@ MATERIAL_TOON_DIFFUSE, MATERIAL_TOON_SPECULAR = 4096, 8192
 MATERIAL_ROUGHNESS_CLAMPED = 16384
 # MoonRay's iridescence: the material's record is followed by its colour table (iridescence.py).
 MATERIAL_IRIDESCENT = 1 << 16
+# DwaBaseMaterial's clearcoat_bending off: what is under the coat is seen straight through it, not bent (MoonRay bends it
+# unless told not to).
+MATERIAL_COAT_STRAIGHT = 1 << 17
 TOON_STEPS = 256
 
 
@@ -467,7 +470,7 @@ def native_surface(shader, parameters, note):
                                  if get('use_independent_transmission_roughness', False) and (roughness > 0 or native.transmission_roughness())
                                  else roughness),
         'transmission_ior': float(get('independent_transmission_refractive_index', 1.5)) if get('use_independent_transmission_refractive_index', False) else ior,
-        'clearcoat': coat, 'clearcoat_roughness': coat_roughness,
+        'clearcoat': coat, 'clearcoat_roughness': coat_roughness, '_coat_straight': not get('clearcoat_bending', True),
         'emission': emission, 'raw_emission': emission, 'emission_amount': 1.0, 'presence': float(get('presence', 1.0)),
         'anisotropy': float(get('anisotropy', 0.0)), 'thin_geometry': bool(get('thin_geometry', False)),
         'subsurface_amount': 1.0 if radius > 0 else 0.0, 'subsurface_distance': radius, 'subsurface_model': int(get('bssrdf', 0)), 'subsurface_color': get('scattering_color', white),
@@ -1458,6 +1461,8 @@ class Compiler:
         weight *= float(source.get('_specular_strength', 1.0))
         # A stack's coat is DwaBaseMaterial's outer specular, which shades what is beneath it.
         flags = (MATERIAL_THIN if source.get('thin_geometry') else 0) | (MATERIAL_COAT_DIMS if stack else 0)
+        if stack and source.get('_coat_straight'):
+            flags |= MATERIAL_COAT_STRAIGHT
         # A metal rendered through DwaBaseMaterial reflects by its own curve, with a white edge.
         if dwa or str(native or '').startswith('Dwa'):
             flags |= MATERIAL_ROUGHNESS_CLAMPED

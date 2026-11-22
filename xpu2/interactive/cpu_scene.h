@@ -436,6 +436,10 @@ inline void admitCamera(const rdl::SceneObject& camera,const rdl::SceneVariables
   {"PerspectiveCamera",{"focal","film_width_aperture","horizontal_film_offset","vertical_film_offset","pixel_aspect_ratio","dof","dof_aperture",
    "dof_focus_distance","bokeh","bokeh_sides","bokeh_image","bokeh_angle","bokeh_weight_location","bokeh_weight_strength","stereo_view",
    "stereo_interocular_distance","stereo_convergence_distance"}},
+  // The kit's tilt-shift camera (tools/port_tilt_shift.py): a perspective camera, and its lens's tilt.
+  {"TiltShiftCamera",{"focal","film_width_aperture","horizontal_film_offset","vertical_film_offset","pixel_aspect_ratio","dof","dof_aperture",
+   "dof_focus_distance","bokeh","bokeh_sides","bokeh_image","bokeh_angle","bokeh_weight_location","bokeh_weight_strength","stereo_view",
+   "stereo_interocular_distance","stereo_convergence_distance","lens_tilt","tilt_direction"}},
   {"OrthographicCamera",{"film_width_aperture","horizontal_film_offset","vertical_film_offset","pixel_aspect_ratio","dof","dof_aperture",
    "dof_focus_distance","bokeh","bokeh_sides","bokeh_image","bokeh_angle","bokeh_weight_location","bokeh_weight_strength"}},
   {"SphericalCamera",{"min_latitude","max_latitude","latitude_zoom_offset","min_longitude","max_longitude","longitude_zoom_offset","focal",
@@ -478,8 +482,8 @@ inline void admitCamera(const rdl::SceneObject& camera,const rdl::SceneVariables
  cam.nearClip=get<rdl::Float>(camera,"near");cam.farClip=get<rdl::Float>(camera,"far");
  need(std::isfinite(cam.nearClip)&&std::isfinite(cam.farClip),name+": invalid clipping planes");
  auto fin=[&](float v,const char* what){need(std::isfinite(v),name+": invalid "+std::string(what));return v;};
- if(cls=="PerspectiveCamera"||cls=="OrthographicCamera"){
-  const bool perspective=cls=="PerspectiveCamera";
+ if(cls=="PerspectiveCamera"||cls=="OrthographicCamera"||cls=="TiltShiftCamera"){
+  const bool perspective=cls!="OrthographicCamera";
   cam.type=perspective?surface::CameraPerspective:surface::CameraOrthographic;
   // ProjectiveCamera::updateImpl: the aperture window, screen to raster, raster to camera.
   const float invAspect=cam.apertureHeight/cam.apertureWidth;
@@ -539,6 +543,17 @@ inline void admitCamera(const rdl::SceneObject& camera,const rdl::SceneVariables
       if(opened){need(data!=nullptr,name+": the bokeh image has no level MoonRay can sample");plan.bokehImage=data;cam.bokeh=2;cam.bokehImage=&data->view;imaged=true;}
      }
      if(!imaged&&sides>=3){cam.bokeh=1;cam.bokehSides=sides;}
+    }
+    // The kit's TiltShiftCamera (tools/port_tilt_shift.py): its tilted lens's plane of focus, leaned as its updateImpl
+    // leans it, by the same sums, unless MOONRAY_MODO_TILT_SHIFT=0.
+    if(cls=="TiltShiftCamera"&&modoSourceOverride("MOONRAY_MODO_TILT_SHIFT")){
+     const float tilt=sm::deg2rad(get<rdl::Float>(camera,"lens_tilt"));
+     if(tilt!=0.0f){
+      const float focal=sm::max(focalLength,0.00001f)/worldToMm,direction=sm::deg2rad(get<rdl::Float>(camera,"tilt_direction"));
+      const float slope=cam.focusDistance*sm::sin(tilt)/focal;
+      const sm::Vec3f n=sm::normalize(sm::Vec3f(-slope*sm::sin(direction),slope*sm::cos(direction),1.0f));
+      cam.focusNormal=V3{fin(n.x,"lens tilt"),fin(n.y,"lens tilt"),fin(n.z,"lens tilt")};
+     }
     }
    }
   }
@@ -3448,7 +3463,7 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
    // Paths: every output as MoonRay's output driver reads it (aov_plan.h; the session leaves what XPU2 lacks to MoonRay).
    if(paths){++outputCount;continue;}
    attributes(o,{"file_name","result","channel_format","compression"});int result=get<rdl::Int>(o,"result");need(result==0||result==1,"Unsupported AOV");need(get<rdl::Int>(o,"channel_format")==0,"Only float32 outputs supported");++outputCount;(result?alpha:beauty)=true;
-  }else if(paths&&(cls=="PerspectiveCamera"||cls=="OrthographicCamera")){
+  }else if(paths&&(cls=="PerspectiveCamera"||cls=="OrthographicCamera"||cls=="TiltShiftCamera")){
    // Another camera: a projector, read by the maps that name it (ProjectCameraMap_v2).
   }else if(paths&&(cls=="BaseVolume"||cls=="VdbVolume"||cls=="CutoutVolume")){
    // Admitted with the assignment that binds it (admitVolume, admitMappedVolume, admitVdbVolume).

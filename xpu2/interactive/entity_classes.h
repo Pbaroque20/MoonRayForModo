@@ -100,8 +100,9 @@ inline Class classify(const rdl::SceneObject& o) {
         if (cls == "ShadowSet" || cls == "ShadowReceiverSet") return Class{Support::Cpu, FamilyStructure, "xpu2:" + cls};
         return both(FamilyStructure);
     }
+    // TiltShiftCamera: the kit's tilt-shift camera (tools/port_tilt_shift.py), a perspective camera with a tilting lens.
     static const std::set<std::string> cameras = {"PerspectiveCamera", "OrthographicCamera", "SphericalCamera", "FisheyeCamera",
-                                                  "DomeMaster3DCamera", "BakeCamera"};
+                                                  "DomeMaster3DCamera", "BakeCamera", "TiltShiftCamera"};
     if (cameras.count(cls)) return both(FamilyCamera | (moves(o) ? FamilyMotion : 0));
     if (cls == "RdlMeshGeometry") {
         uint64_t f = attributeOr<rdl::Bool>(o, "is_subd", false) ? FamilySubdivision : FamilyTriangles;

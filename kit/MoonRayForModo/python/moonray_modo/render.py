@@ -263,6 +263,8 @@ class Renderer(QtCore.QObject):
             from .moonlightipr_aovs import AOVS as MOONLIGHTIPR_AOVS
             if snapshot.get('preview_buffer','beauty') not in MOONLIGHTIPR_AOVS:snapshot=dict(snapshot,preview_buffer='beauty')
         if not output and not linear_preview:
+            # MoonRay's realtime (CPU, XPU or XPU2) shows its picture as it renders: no word on buffers to come.
+            self.buffers.quiet=bool(snapshot.get('_realtime') or snapshot.get('_ipr'))
             chosen,shown=snapshot.get('preview_buffer','beauty'),snapshot.get('display',{})
             # A draft redrawn with the same buffer shown the same way has nothing to choose: choosing converts the
             # picture already up once more, and the new one then waits behind that.

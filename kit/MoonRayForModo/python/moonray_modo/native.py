@@ -61,6 +61,8 @@ def environment(directory):
     env['MOONRAY_MODO_MIRRORED_MESHES'] = '1' if mirrored_meshes() else '0'
     # A VDB's emission grid of single values (temperature, flames) glowing grey (scalar_emission).
     env['MOONRAY_MODO_SCALAR_EMISSION'] = '1' if scalar_emission() else '0'
+    # A tilt-shift camera's lens tilted, its plane of focus leaning (tilt_shift).
+    env['MOONRAY_MODO_TILT_SHIFT'] = '1' if tilt_shift() else '0'
     # PATH entries that are not folders passed over as MoonRay looks for itself (dso_search).
     env['MOONRAY_MODO_DSO_SEARCH'] = '1' if dso_search() else '0'
     # The four overrides of tools/port_source_switches.py, each read by MoonRay as it starts.
@@ -347,6 +349,14 @@ def scalar_emission():
     return _switch('scalar_emission', 'MOONRAY_MODO_SCALAR_EMISSION')
 
 
+def tilt_shift():
+    """Whether MoonRay has a tilt-shift camera (tools/port_tilt_shift.py): TiltShiftCamera, a perspective camera whose lens
+    tilts, so that its plane of focus leans (Scheimpflug's rule), and shifts. Off is MoonRay as its source has it, which
+    has none: the camera is written as a PerspectiveCamera with the same lens and shift, focused square to the view.
+    XPU2 and MoonLightIPR follow it."""
+    return _switch('tilt_shift', 'MOONRAY_MODO_TILT_SHIFT')
+
+
 def dso_search():
     """Whether MoonRay, looking along PATH for moonray.exe as it starts (tools/port_dso_search.py), passes over entries
     that are files or cannot be read, and stops at the first folder holding it. MoonRay's own goes through all of PATH,
@@ -453,7 +463,7 @@ def engine_name(mode):
 
 def source_switches():
     """The MoonRay Source Overrides MoonRay reads as it starts: a session started with others is started again."""
-    return (toon_terminator(), toon_albedo(), crypto_volumes(), fog_alpha(), crypto_once(), camera_light_lpe(), mirrored_meshes(), scalar_emission(), dso_search()) + tuple(
+    return (toon_terminator(), toon_albedo(), crypto_volumes(), fog_alpha(), crypto_once(), camera_light_lpe(), mirrored_meshes(), scalar_emission(), tilt_shift(), dso_search()) + tuple(
         globals()[key]() for key in ('usd_specular', 'opaque_alpha', 'transmission_roughness', 'auto_xpu')) + (xpu2(), xpu2_chain(), __import__('moonray_modo.devices', fromlist=['state']).state())
 
 

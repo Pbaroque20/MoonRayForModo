@@ -1201,7 +1201,7 @@ index 7b6cc82..ac62788 100644
      mutex.unlock();
  }
 diff --git a/lib/rendering/pbr/CMakeLists.txt b/lib/rendering/pbr/CMakeLists.txt
-index 3101e16..8266d94 100644
+index 3101e16..e683ae3 100644
 --- a/lib/rendering/pbr/CMakeLists.txt
 +++ b/lib/rendering/pbr/CMakeLists.txt
 @@ -9,11 +9,16 @@ list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
@@ -1290,7 +1290,15 @@ index 3101e16..8266d94 100644
      endif()
  
      # build a list of the results
-@@ -396,7 +407,6 @@ target_link_libraries(${component}
+@@ -313,6 +324,7 @@ target_sources(${component}
+         camera/FisheyeCamera.cc
+         camera/OrthographicCamera.cc
+         camera/PerspectiveCamera.cc
++        camera/TiltShiftCamera.cc
+         camera/ProjectiveCamera.cc
+         camera/SphericalCamera.cc
+         camera/LensDistribution.cc
+@@ -396,7 +408,6 @@ target_link_libraries(${component}
          ${PROJECT_NAME}::rendering_geom
          ${PROJECT_NAME}::rendering_lpe
          ${PROJECT_NAME}::rendering_mcrt_common
@@ -1298,7 +1306,7 @@ index 3101e16..8266d94 100644
          ${PROJECT_NAME}::rendering_shading
          ${PROJECT_NAME}::shading_eval_ispc
          ${PROJECT_NAME}::shading_ispc
-@@ -503,3 +513,17 @@ install(TARGETS ${component}
+@@ -503,3 +514,17 @@ install(TARGETS ${component}
  #     NAMESPACE ${PROJECT_NAME}::
  #     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}-${PROJECT_VERSION}
  # )
@@ -5076,3 +5084,790 @@ index 011b580..d3162ca 100644
      } else {
          rdlGeometry.error("Emission grid: \"", emissionGridName, "\" does not exist.");
          return false;
+diff --git a/dso/camera/CMakeLists.txt b/dso/camera/CMakeLists.txt
+index 796526e..5b10255 100644
+--- a/dso/camera/CMakeLists.txt
++++ b/dso/camera/CMakeLists.txt
+@@ -7,3 +7,4 @@ add_subdirectory(FisheyeCamera)
+ add_subdirectory(OrthographicCamera)
+ add_subdirectory(PerspectiveCamera)
+ add_subdirectory(SphericalCamera)
++add_subdirectory(TiltShiftCamera)
+diff --git a/lib/rendering/pbr/core/Scene.cc b/lib/rendering/pbr/core/Scene.cc
+index 78e5d50..f4559c6 100644
+--- a/lib/rendering/pbr/core/Scene.cc
++++ b/lib/rendering/pbr/core/Scene.cc
+@@ -17,6 +17,7 @@
+ #include <moonray/rendering/pbr/camera/OrthographicCamera.h>
+ #include <moonray/rendering/pbr/camera/PerspectiveCamera.h>
+ #include <moonray/rendering/pbr/camera/SphericalCamera.h>
++#include <moonray/rendering/pbr/camera/TiltShiftCamera.h>
+ #include <moonray/rendering/pbr/integrator/PathIntegratorUtil.h>
+ #include <moonray/rendering/pbr/light/CylinderLight.h>
+ #include <moonray/rendering/pbr/light/DiskLight.h>
+@@ -86,6 +87,9 @@ std::unique_ptr<Camera> cameraFactory(const rdl2::Camera* rdlCamera)
+         return std::unique_ptr<Camera>(new BakeCamera(rdlCamera));
+     } else if (className == "FisheyeCamera") {
+         return std::unique_ptr<Camera>(new FisheyeCamera(rdlCamera));
++    } else if (className == "TiltShiftCamera") {
++        // Modo: a perspective camera with a tilting lens (tools/port_tilt_shift.py).
++        return std::unique_ptr<Camera>(new TiltShiftCamera(rdlCamera));
+     } else {
+         MNRY_ASSERT(!"Should not get here");
+         throw std::runtime_error("No valid camera type specified");
+diff --git a/dso/camera/TiltShiftCamera/CMakeLists.txt b/dso/camera/TiltShiftCamera/CMakeLists.txt
+new file mode 100644
+--- /dev/null
++++ b/dso/camera/TiltShiftCamera/CMakeLists.txt
+@@ -0,0 +1,5 @@
++# Copyright 2023-2024 DreamWorks Animation LLC
++# SPDX-License-Identifier: Apache-2.0
++
++
++moonray_dso_simple(TiltShiftCamera DEPENDENCIES SceneRdl2::scene_rdl2)
+diff --git a/dso/camera/TiltShiftCamera/TiltShiftCamera.cc b/dso/camera/TiltShiftCamera/TiltShiftCamera.cc
+new file mode 100644
+--- /dev/null
++++ b/dso/camera/TiltShiftCamera/TiltShiftCamera.cc
+@@ -0,0 +1,103 @@
++// Copyright 2023-2024 DreamWorks Animation LLC
++// SPDX-License-Identifier: Apache-2.0
++
++#include <scene_rdl2/common/math/Math.h>
++#include <scene_rdl2/scene/rdl2/rdl2.h>
++
++#include "attributes.cc"
++
++using namespace scene_rdl2;
++using namespace scene_rdl2::math;
++
++RDL2_DSO_CLASS_BEGIN(TiltShiftCamera, rdl2::Camera)
++
++public:
++    RDL2_DSO_DEFAULT_CTOR(TiltShiftCamera)
++
++    void setFocalLength(float length) override
++    {
++        this->set<rdl2::Float>(attrFocalKey, length);
++    }
++
++    bool doesSupportProjectionMatrix() const override
++    {
++        return true;
++    }
++
++    math::Mat4f computeProjectionMatrix(float t, const std::array<float, 4>& window, float interocularOffset) const override
++    {
++        // Get focal length (mm)
++        float focal = get(attrFocalKey, t);
++        focal = max(focal, 0.00001f);
++
++        // Get film-back width (mm)
++        float filmWidth = get(attrFilmWidthApertureKey);
++        filmWidth = max(filmWidth, 0.00001f);
++        float halfFilmWidth = filmWidth * 0.5f;
++
++        // Get near plane
++        float near = get(rdl2::Camera::sNearKey);
++        near = max(near, 0.00001f);
++
++        // Get far plane
++        float far = get(rdl2::Camera::sFarKey);
++        far = max(far, 0.00001f);
++
++        // Get film back offset
++        float filmOffsetX = get(attrHorizontalFilmOffset);
++        float filmOffsetY = get(attrVerticalFilmOffset);
++
++        // Get pixel aspect ratio
++        float par = get(attrPixelAspectRatio);
++        if (isEqual(par, 0.0f)) {
++            par = 1.0f;
++        }
++
++        // Compute additional horizontal film offset and translation due to stereo
++        // See diagram pbr/doc/stereo_projection_top_view.jpg for details.
++        float convergenceDistance = get(attrStereoConvergenceDistance);
++        convergenceDistance = max(convergenceDistance, 0.00001f);
++
++        float stereoFilmOffsetX = interocularOffset * focal / convergenceDistance;
++        filmOffsetX += stereoFilmOffsetX;
++
++        // Compute window corners on the near plane
++        float factor = near / focal;
++        float windowNear[4];
++        windowNear[0] = (window[0] * halfFilmWidth + filmOffsetX) * factor;
++        windowNear[1] = (window[1] * halfFilmWidth + filmOffsetY) * factor / par;
++        windowNear[2] = (window[2] * halfFilmWidth + filmOffsetX) * factor;
++        windowNear[3] = (window[3] * halfFilmWidth + filmOffsetY) * factor / par;
++
++        // Center view to stereo view camera translation
++        Mat4f stereoTranslation = Mat4f::translate(
++            Vec4f(interocularOffset, 0.0f, 0.0f, 1.0f));
++
++        // See Appendix C.5 of the SGI Graphics Library Programming Guide
++        // for format of projection matrix.
++        Mat4f c2s;
++        c2s[0][0] = (2.0f * near) / (windowNear[2] - windowNear[0]);
++        c2s[0][1] = 0.0f;
++        c2s[0][2] = 0.0f;
++        c2s[0][3] = 0.0f;
++
++        c2s[1][0] = 0.0f;
++        c2s[1][1] = (2.0f * near) / (windowNear[3] - windowNear[1]);
++        c2s[1][2] = 0.0f;
++        c2s[1][3] = 0.0f;
++
++        c2s[2][0] = (windowNear[2] + windowNear[0]) / (windowNear[2] - windowNear[0]);
++        c2s[2][1] = (windowNear[3] + windowNear[1]) / (windowNear[3] - windowNear[1]);
++        c2s[2][2] = -(far + near) / (far - near);
++        c2s[2][3] = -1.0f;
++
++        c2s[3][0] = 0.0f;
++        c2s[3][1] = 0.0f;
++        c2s[3][2] = -(2.0f * far * near) / (far - near);
++        c2s[3][3] = 0.0f;
++
++        return stereoTranslation * c2s;
++    }
++
++RDL2_DSO_CLASS_END(TiltShiftCamera)
++
+diff --git a/dso/camera/TiltShiftCamera/attributes.cc b/dso/camera/TiltShiftCamera/attributes.cc
+new file mode 100644
+--- /dev/null
++++ b/dso/camera/TiltShiftCamera/attributes.cc
+@@ -0,0 +1,162 @@
++// Copyright 2023-2024 DreamWorks Animation LLC
++// SPDX-License-Identifier: Apache-2.0
++
++#include <scene_rdl2/scene/rdl2/rdl2.h>
++
++using namespace scene_rdl2;
++
++RDL2_DSO_ATTR_DECLARE
++
++    rdl2::AttributeKey<rdl2::Float> attrFocalKey;
++
++    rdl2::AttributeKey<rdl2::Int>   attrStereoView;
++    rdl2::AttributeKey<rdl2::Float> attrStereoInterocularDistance;
++    rdl2::AttributeKey<rdl2::Float> attrStereoConvergenceDistance;
++
++    rdl2::AttributeKey<rdl2::Float> attrHorizontalFilmOffset;
++    rdl2::AttributeKey<rdl2::Float> attrVerticalFilmOffset;
++    rdl2::AttributeKey<rdl2::Float> attrFilmWidthApertureKey;
++    rdl2::AttributeKey<rdl2::Float> attrPixelAspectRatio;
++
++    rdl2::AttributeKey<rdl2::Bool>  attrDofKey;
++    rdl2::AttributeKey<rdl2::Float> attrDofApertureKey;
++    rdl2::AttributeKey<rdl2::Float> attrDofFocusDistance;
++
++    rdl2::AttributeKey<rdl2::Bool>   attrBokehKey;
++
++    // Shape
++    rdl2::AttributeKey<rdl2::Int>    attrBokehSides;
++    rdl2::AttributeKey<rdl2::String> attrBokehImage;
++
++    // Control
++    rdl2::AttributeKey<rdl2::Float>  attrBokehAngle;
++    rdl2::AttributeKey<rdl2::Float>  attrBokehWeightLocation;
++    rdl2::AttributeKey<rdl2::Float>  attrBokehWeightStrength;
++
++    // Modo: the tilt of the lens (tools/port_tilt_shift.py).
++    rdl2::AttributeKey<rdl2::Float>  attrLensTilt;
++    rdl2::AttributeKey<rdl2::Float>  attrTiltDirection;
++
++RDL2_DSO_ATTR_DEFINE(rdl2::Camera)
++
++    attrFocalKey = sceneClass.declareAttribute<rdl2::Float>("focal", 30.0f, rdl2::FLAGS_BLURRABLE);
++    sceneClass.setMetadata(attrFocalKey, rdl2::SceneClass::sComment, "Focal length");
++
++    attrStereoView = sceneClass.declareAttribute<rdl2::Int>("stereo_view", 0, rdl2::FLAGS_ENUMERABLE, rdl2::INTERFACE_GENERIC, { "stereo view" });
++    sceneClass.setMetadata(attrStereoView, "label", "stereo view");
++    sceneClass.setEnumValue(attrStereoView, 0, "center view");
++    sceneClass.setEnumValue(attrStereoView, 1, "left view");
++    sceneClass.setEnumValue(attrStereoView, 2, "right view");
++    sceneClass.setMetadata(attrStereoView, rdl2::SceneClass::sComment, "Render from the center, left, or right stereo view.");
++    attrStereoInterocularDistance = sceneClass.declareAttribute<rdl2::Float>("stereo_interocular_distance", 6.3f, { "stereo interocular distance" });
++    sceneClass.setMetadata(attrStereoInterocularDistance, "label", "stereo interocular distance");
++    sceneClass.setMetadata(attrStereoInterocularDistance, rdl2::SceneClass::sComment, "Distance between the left and right "
++                                                                                "'eyes'");
++    attrStereoConvergenceDistance = sceneClass.declareAttribute<rdl2::Float>("stereo_convergence_distance", 100.0f, { "stereo convergence distance" });
++    sceneClass.setMetadata(attrStereoConvergenceDistance, "label", "stereo convergence distance");
++    sceneClass.setMetadata(attrStereoConvergenceDistance, rdl2::SceneClass::sComment, "Distance at which all the stereo "
++                                                                                "views converge.");
++
++    attrHorizontalFilmOffset = sceneClass.declareAttribute<rdl2::Float>("horizontal_film_offset", 0.0f, { "horizontal film offset" });
++    sceneClass.setMetadata(attrHorizontalFilmOffset, "label", "horizontal shift");
++    sceneClass.setMetadata(attrHorizontalFilmOffset, rdl2::SceneClass::sComment, "Shift of the lens across the film, in the film's units (mm), as on a tilt-shift lens: the picture moves without the camera turning, so upright lines stay upright.");
++    attrVerticalFilmOffset = sceneClass.declareAttribute<rdl2::Float>("vertical_film_offset", 0.0f, { "vertical film offset" });
++    sceneClass.setMetadata(attrVerticalFilmOffset, "label", "vertical shift");
++    sceneClass.setMetadata(attrVerticalFilmOffset, rdl2::SceneClass::sComment, "Shift of the lens up and down the film, in the film's units (mm), as on a tilt-shift lens: the picture moves without the camera turning, so upright lines stay upright.");
++    attrFilmWidthApertureKey = sceneClass.declareAttribute<rdl2::Float>("film_width_aperture", 24.0f, { "film width aperture" });
++    sceneClass.setMetadata(attrFilmWidthApertureKey, "label", "film width aperture");
++    sceneClass.setMetadata(attrFilmWidthApertureKey, rdl2::SceneClass::sComment, "Scale the aperture of the camera "
++                                                                                 "(i.e., the frustum) by this value.");
++    attrPixelAspectRatio = sceneClass.declareAttribute<rdl2::Float>("pixel_aspect_ratio", 1.0, { "pixel aspect ratio" });
++    sceneClass.setMetadata(attrPixelAspectRatio, "label", "pixel aspect ratio");
++    sceneClass.setMetadata(attrPixelAspectRatio, rdl2::SceneClass::sComment, "ratio of pixel size y / x");
++
++    attrDofKey = sceneClass.declareAttribute<rdl2::Bool>("dof", false);
++    sceneClass.setMetadata(attrDofKey, rdl2::SceneClass::sComment, "Whether to enable depth of field");
++    attrDofApertureKey = sceneClass.declareAttribute<rdl2::Float>("dof_aperture", 8.0f, { "dof aperture" });
++    sceneClass.setMetadata(attrDofApertureKey, "label", "dof aperture");
++    sceneClass.setMetadata(attrDofApertureKey, rdl2::SceneClass::sComment, "Depth of field aperture width");
++    attrDofFocusDistance = sceneClass.declareAttribute<rdl2::Float>("dof_focus_distance", 0.0f, { "dof focus distance" });
++    sceneClass.setMetadata(attrDofFocusDistance, "label", "dof focus distance");
++    sceneClass.setMetadata(attrDofApertureKey, rdl2::SceneClass::sComment, "Depth of field focus distance");
++
++    attrBokehKey = sceneClass.declareAttribute<rdl2::Bool>("bokeh", false);
++    sceneClass.setMetadata(attrBokehKey, "label", "bokeh enable");
++    sceneClass.setMetadata(attrBokehKey, rdl2::SceneClass::sComment, "Enable Bokeh. Requires DOF to be enabled.");
++
++    // Shape
++    attrBokehSides = sceneClass.declareAttribute<rdl2::Int>("bokeh_sides", 0, { "bokeh sides" });
++    sceneClass.setMetadata(attrBokehSides, "label", "bokeh sides");
++    sceneClass.setMetadata(attrBokehSides, 
++                           rdl2::SceneClass::sComment,
++                           "Number of sides of the iris. Specifying less than 3 sides will default to a disk.");
++
++    attrBokehImage = sceneClass.declareAttribute<rdl2::String>("bokeh_image", "", { "bokeh image" });
++    sceneClass.setMetadata(attrBokehImage, "label", "bokeh image");
++    sceneClass.setMetadata(attrBokehImage, rdl2::SceneClass::sComment, "Path to image file to be used for the iris");
++
++    // Control
++    attrBokehAngle = sceneClass.declareAttribute<rdl2::Float>("bokeh_angle", 0.0f, { "bokeh angle" });
++    sceneClass.setMetadata(attrBokehAngle, "label", "bokeh angle");
++    sceneClass.setMetadata(attrBokehAngle, rdl2::SceneClass::sComment, "Angle of iris rotation");
++
++    attrBokehWeightLocation = sceneClass.declareAttribute<rdl2::Float>("bokeh_weight_location",
++                                                                  0.0f,
++                                                                  { "bokeh weight location" });
++    sceneClass.setMetadata(attrBokehWeightLocation, "label", "bokeh weight location");
++    sceneClass.setMetadata(attrBokehWeightLocation,
++                           rdl2::SceneClass::sComment,
++                           "Distance from the origin of Bokeh shape");
++
++    attrBokehWeightStrength = sceneClass.declareAttribute<rdl2::Float>("bokeh_weight_strength",
++                                                                        0.0f,
++                                                                        { "bokeh weight strength" });
++    sceneClass.setMetadata(attrBokehWeightStrength, "label", "bokeh weight location");
++    sceneClass.setMetadata(attrBokehWeightStrength,
++                           rdl2::SceneClass::sComment,
++                           "Controls the strength of weights as samples approach the weight location");
++
++
++    attrLensTilt = sceneClass.declareAttribute<rdl2::Float>("lens_tilt", 0.0f, { "lens tilt" });
++    sceneClass.setMetadata(attrLensTilt, "label", "lens tilt");
++    sceneClass.setMetadata(attrLensTilt, rdl2::SceneClass::sComment, "How far the lens is tilted against the film, in "
++        "degrees, as on a tilt-shift lens. The plane of focus swings about a line beside the camera (Scheimpflug's rule): "
++        "with the tilt direction at 0, a positive tilt lays it down toward what is below the view, so that the ground is "
++        "sharp from near to far, and a negative one stands it up, so that only a narrow band is (the miniature look). "
++        "Shows with depth of field on.");
++    attrTiltDirection = sceneClass.declareAttribute<rdl2::Float>("tilt_direction", 0.0f, { "tilt direction" });
++    sceneClass.setMetadata(attrTiltDirection, "label", "tilt direction");
++    sceneClass.setMetadata(attrTiltDirection, rdl2::SceneClass::sComment, "Which way the lens tilts, in degrees round the "
++        "view: 0 tilts it up and down, so the plane of focus swings about a line below the camera; 90 swings it sideways, "
++        "about a line to its right.");
++
++    // Grouping the attributes for Torch - the order of
++    // the attributes should be the same as how they are defined.
++    sceneClass.setGroup("Frustum", attrFocalKey);
++
++    sceneClass.setGroup("Stereo", attrStereoView);
++    sceneClass.setGroup("Stereo", attrStereoInterocularDistance);
++    sceneClass.setGroup("Stereo", attrStereoConvergenceDistance);
++
++    sceneClass.setGroup("Frustum", attrFilmWidthApertureKey);
++    sceneClass.setGroup("Frustum", attrHorizontalFilmOffset);
++    sceneClass.setGroup("Frustum", attrVerticalFilmOffset);
++    sceneClass.setGroup("Frustum", attrPixelAspectRatio);
++
++    sceneClass.setGroup("Depth of Field", attrDofKey);
++    sceneClass.setGroup("Depth of Field", attrDofApertureKey);
++    sceneClass.setGroup("Depth of Field", attrDofFocusDistance);
++
++    sceneClass.setGroup("Depth of Field", attrBokehKey);
++    sceneClass.setGroup("Depth of Field", attrBokehSides);
++    sceneClass.setGroup("Depth of Field", attrBokehImage);
++
++    sceneClass.setGroup("Depth of Field", attrBokehAngle);
++    sceneClass.setGroup("Depth of Field", attrBokehWeightLocation);
++    sceneClass.setGroup("Depth of Field", attrBokehWeightStrength);
++
++    sceneClass.setGroup("Tilt-Shift", attrLensTilt);
++    sceneClass.setGroup("Tilt-Shift", attrTiltDirection);
++
++RDL2_DSO_ATTR_END
++
+diff --git a/lib/rendering/pbr/camera/TiltShiftCamera.cc b/lib/rendering/pbr/camera/TiltShiftCamera.cc
+new file mode 100644
+--- /dev/null
++++ b/lib/rendering/pbr/camera/TiltShiftCamera.cc
+@@ -0,0 +1,384 @@
++// Copyright 2023-2024 DreamWorks Animation LLC
++// SPDX-License-Identifier: Apache-2.0
++
++#include "Camera.h"
++#include "TiltShiftCamera.h"
++
++#include <cstdlib>
++
++#include <moonray/common/mcrt_macros/moonray_static_check.h>
++#include <scene_rdl2/scene/rdl2/rdl2.h>
++
++namespace moonray {
++namespace pbr {
++
++using namespace scene_rdl2;
++using namespace scene_rdl2::math;
++
++bool                            TiltShiftCamera::sAttributeKeyInitialized = false;
++rdl2::AttributeKey<rdl2::Float> TiltShiftCamera::sFocalKey;
++
++rdl2::AttributeKey<rdl2::Int>   TiltShiftCamera::sStereoView;
++rdl2::AttributeKey<rdl2::Float> TiltShiftCamera::sStereoInterocularDistance;
++rdl2::AttributeKey<rdl2::Float> TiltShiftCamera::sStereoConvergenceDistance;
++rdl2::AttributeKey<rdl2::Float> TiltShiftCamera::sLensTiltKey;
++rdl2::AttributeKey<rdl2::Float> TiltShiftCamera::sTiltDirectionKey;
++
++namespace {
++// focalPoint is the eye position, not to be confused with a point on the focal
++// plane.
++finline Vec3f
++getFocusPlaneHitPoint(const Vec3f& focalPoint, const Vec3f& raster, const Mat4f& rt2c,
++                      float focusDistance)
++{
++    const Vec3f dir = normalize(transformH(rt2c, raster) - focalPoint);
++
++    // We want to take our initial ray (origin at mFocalPoint) and find its
++    // intersection with the focal plane. All work is done in camera space.
++#if 0
++    const Vec3f focalPlaneNormal(0, 0, +1);
++    const Vec3f focalPlanePoint(0, 0, -focusDistance);
++
++    // Ray/plane intersection
++    const float t = dot(focalPlanePoint - focalPoint, focalPlaneNormal) / dot(dir, focalPlaneNormal);
++#else
++    // Since we have a bunch of one-component vectors, the above code simplifies
++    // to some one-dimensional math. Yay!
++    // Since 'focalPoint' is in camera space, it only has 'x' set, so we don't
++    // have to subtract the z value when simplifying the above vector
++    // subtraction.
++    const float n = -focusDistance;
++    const float d = dir.z;
++    const float t = n/d;
++#endif
++    const Vec3f pFocus = focalPoint + dir * t;
++    return pFocus;
++}
++
++// Modo: whether the lens is tilted (tools/port_tilt_shift.py). Unless MOONRAY_MODO_TILT_SHIFT=0, as the plugin sets it
++// from its preference: off, the camera focuses as PerspectiveCamera does.
++bool
++modoTiltShift()
++{
++    static const bool on = [] {
++        const char *value = std::getenv("MOONRAY_MODO_TILT_SHIFT");
++        return !value || value[0] != '0';
++    }();
++    return on;
++}
++
++// Where a ray from the camera's focal point meets the plane of focus through the point focusDistance down the view,
++// square to normal: the tilted lens's plane (TiltShiftCamera::updateImpl). With normal (0, 0, 1) this is
++// getFocusPlaneHitPoint's sum, operation for operation. A ray that meets the plane behind the camera, or never, is in
++// focus far off.
++finline Vec3f
++getTiltedFocusPlaneHitPoint(const Vec3f& focalPoint, const Vec3f& raster, const Mat4f& rt2c,
++                            float focusDistance, const Vec3f& normal)
++{
++    const Vec3f dir = normalize(transformH(rt2c, raster) - focalPoint);
++    float t = dot(normal, Vec3f(0.0f, 0.0f, -focusDistance) - focalPoint) / dot(normal, dir);
++    const float farOff = 1.0e6f * max(focusDistance, 1.0f);
++    if (!(t > 0.0f) || t > farOff) {
++        t = farOff;
++    }
++    return focalPoint + dir * t;
++}
++
++finline float
++getClipPlaneT(float dist, const Vec3f& rayOrigin, const Vec3f& rayDirection)
++{
++#if 0
++    // Again, here's the math for the ray/plane intersection, but because of
++    // some assumptions about our coordinate space, the math simplifies.
++    const Vec3f normal(0, 0, +1);
++    const Vec3f planePoint(0, 0, -dist);
++
++    // Ray/plane intersection
++    const float t = dot(planePoint - rayOrigin, normal) / dot(rayDirection, normal);
++    return t;
++#else
++    const float t = (-dist - rayOrigin.z) / rayDirection.z;
++    return t;
++#endif
++}
++
++// Compute signed interocular offset due to stereo (translation in camera
++// space along x axis).
++// Warning: This function doesn't work in CENTER mode.
++finline float
++computeInterocularOffset(StereoView stereoView,
++                         float interocularDistance)
++{
++    MNRY_ASSERT(stereoView != StereoView::CENTER);
++
++    float interocularOffset =
++        (stereoView == StereoView::LEFT ? 0.5f : -0.5f) *
++        interocularDistance;
++
++    return interocularOffset;
++}
++} // namespace
++
++void TiltShiftCamera::initAttributeKeys(const rdl2::SceneClass& sceneClass)
++{
++    if (sAttributeKeyInitialized) {
++        return;
++    }
++
++    MOONRAY_START_NON_THREADSAFE_STATIC_WRITE
++
++    sAttributeKeyInitialized = true;
++
++    sFocalKey = sceneClass.getAttributeKey<rdl2::Float>("focal");
++
++    sStereoView = sceneClass.getAttributeKey<rdl2::Int>("stereo_view");
++    sStereoInterocularDistance = sceneClass.getAttributeKey<rdl2::Float>("stereo_interocular_distance");
++    sStereoConvergenceDistance = sceneClass.getAttributeKey<rdl2::Float>("stereo_convergence_distance");
++    sLensTiltKey = sceneClass.getAttributeKey<rdl2::Float>("lens_tilt");
++    sTiltDirectionKey = sceneClass.getAttributeKey<rdl2::Float>("tilt_direction");
++
++    MOONRAY_FINISH_NON_THREADSAFE_STATIC_WRITE
++}
++
++void
++TiltShiftCamera::createDOFRay(mcrt_common::RayDifferential *dstRay,
++                                const Vec3f &raster,
++                                float lensX,
++                                float lensY,
++                                float time) const
++{
++    // TODO: adjust ray differentials for non-zero origin due to dof
++
++    const Mat4f ct2render = computeCamera2Render(time);
++    const Mat4f rt2ct     = computeRaster2Camera(time);
++
++    // Transform camera origin on the lens, from camera-space at time t to
++    // camera-space at t=0
++
++    // mFocalPoint is in camera space
++    const Vec3f nx(1.0f, 0.0f, 0.0f);
++    const Vec3f ny(0.0f, 1.0f, 0.0f);
++    const Vec3f ctHitPoint      = getTiltedFocusPlaneHitPoint(mFocalPoint,
++                                                        raster,
++                                                        rt2ct,
++                                                        getDofFocusDistance(), mFocusNormal);
++    const Vec3f ctHitPointAuxX  = getTiltedFocusPlaneHitPoint(mFocalPoint,
++                                                        raster + nx,
++                                                        rt2ct,
++                                                        getDofFocusDistance(), mFocusNormal);
++    const Vec3f ctHitPointAuxY  = getTiltedFocusPlaneHitPoint(mFocalPoint,
++                                                        raster + ny,
++                                                        rt2ct,
++                                                        getDofFocusDistance(), mFocusNormal);
++
++    // Change the origin to that of the lens sample + mFocalPoint
++    const Vec3f ctLensPoint = mFocalPoint + Vec3f(lensX, lensY, 0.0f);
++    const Vec3f renderLensPoint = transformPoint(ct2render, ctLensPoint);
++
++    const Vec3f ctDirPrimary = ctHitPoint - ctLensPoint;
++    const Vec3f dirPrimaryNormalized = normalize(ctDirPrimary);
++    const float tNear = getClipPlaneT(getNear(), mFocalPoint,
++                                     dirPrimaryNormalized);
++    const float tFar  = getClipPlaneT(getFar(), mFocalPoint,
++                                     dirPrimaryNormalized);
++
++    // Change the direction to the point intersected at the focal plane - the new
++    // origin.
++    *dstRay = mcrt_common::RayDifferential(
++        renderLensPoint, normalize(transformVector(ct2render, ctDirPrimary)),
++        renderLensPoint, normalize(transformVector(ct2render, ctHitPointAuxX - ctLensPoint)),
++        renderLensPoint, normalize(transformVector(ct2render, ctHitPointAuxY - ctLensPoint)),
++        tNear, tFar, time, 0);
++}
++
++void
++TiltShiftCamera::createSimpleRay(mcrt_common::RayDifferential *dstRay,
++                                   const Vec3f &raster,
++                                   float time) const
++{
++    const Mat4f ct2render = computeCamera2Render(time);
++    const Mat4f rt2ct     = computeRaster2Camera(time);
++
++    const Vec3f renderStart  = transformPoint(ct2render, mFocalPoint);
++    const Vec3f ctDirPrimary = transformH(rt2ct, raster) - mFocalPoint;
++    const Vec3f ctDirAuxX    = transformH(rt2ct, raster + Vec3f(1.0f, 0.0f, 0.0f)) - mFocalPoint;
++    const Vec3f ctDirAuxy    = transformH(rt2ct, raster + Vec3f(0.0f, 1.0f, 0.0f)) - mFocalPoint;
++
++    const Vec3f dirPrimaryNormalized = normalize(ctDirPrimary);
++    const float tNear = getClipPlaneT(getNear(), mFocalPoint,
++                                     dirPrimaryNormalized);
++    const float tFar  = getClipPlaneT(getFar(), mFocalPoint,
++                                     dirPrimaryNormalized);
++
++    *dstRay = mcrt_common::RayDifferential(
++        renderStart, normalize(transformVector(ct2render, ctDirPrimary)),
++        renderStart, normalize(transformVector(ct2render, ctDirAuxX)),
++        renderStart, normalize(transformVector(ct2render, ctDirAuxy)),
++        tNear, tFar, time, 0);
++}
++
++TiltShiftCamera::TiltShiftCamera(const rdl2::Camera* rdlCamera) :
++    ProjectiveCamera(rdlCamera)
++{
++    initAttributeKeys(rdlCamera->getSceneClass());
++}
++
++void
++TiltShiftCamera::updateImpl(const Mat4d &world2render)
++{
++    ProjectiveCamera::updateImpl(world2render);
++
++    // Compute camera focal point in camera space
++    // See diagram pbr/doc/stereo_projection_top_view.jpg for details.
++    mFocalPoint = Vec3f(zero);
++    const StereoView stereoView = getStereoViewImpl();
++    if (stereoView != StereoView::CENTER) {
++        mFocalPoint.x = -computeInterocularOffset(stereoView,
++                                                  getRdlCamera()->get(
++                                                      sStereoInterocularDistance));
++    }
++
++    // Modo: the plane of focus of the tilted lens (tools/port_tilt_shift.py). It crosses the view at the focus distance
++    // and leans about a hinge line f / sin(tilt) from the axis, on the side the tilt direction points to (below the
++    // camera at 0, to its right at 90), so that its slope from the camera is focus distance * sin(tilt) / f, f in the
++    // scene's units (as ProjectiveCamera turns the focal length's millimetres into them).
++    mFocusNormal = Vec3f(0.0f, 0.0f, 1.0f);
++    const float tilt = deg2rad(getRdlCamera()->get(sLensTiltKey));
++    if (modoTiltShift() && getIsDofEnabled() && tilt != 0.0f) {
++        const scene_rdl2::rdl2::SceneVariables& vars =
++            getRdlCamera()->getSceneClass().getSceneContext()->getSceneVariables();
++        const float worldToMm = vars.get(scene_rdl2::rdl2::SceneVariables::sSceneScaleKey) * 1000.0f;
++        const float focal = max(getFocalDistance(), 0.00001f) / worldToMm;
++        const float direction = deg2rad(getRdlCamera()->get(sTiltDirectionKey));
++        const float slope = getDofFocusDistance() * sin(tilt) / focal;
++        mFocusNormal = normalize(Vec3f(-slope * sin(direction), slope * cos(direction), 1.0f));
++    }
++}
++
++// Compute projection matrix
++Mat4f
++TiltShiftCamera::computeC2S(float t) const
++{
++    const auto cam = getRdlCamera();
++
++    // Compute additional horizontal film offset and translation due to stereo
++    // See diagram pbr/doc/stereo_projection_top_view.jpg for details.
++    float interocularOffset = 0.0f;
++    const StereoView stereoView = getStereoViewImpl();
++    if (stereoView != StereoView::CENTER) {
++        // Get stereo properties
++        interocularOffset = computeInterocularOffset(stereoView,
++                                                     cam->get(sStereoInterocularDistance));
++    }
++
++    return cam->computeProjectionMatrix(t, getWindow(), interocularOffset);
++}
++
++// Compute projection matrix
++Mat4f
++TiltShiftCamera::computeRegionC2S(float t) const
++{
++    const auto cam = getRdlCamera();
++
++    // Compute additional horizontal film offset and translation due to stereo
++    // See diagram pbr/doc/stereo_projection_top_view.jpg for details.
++    float interocularOffset = 0.0f;
++    const StereoView stereoView = getStereoViewImpl();
++    if (stereoView != StereoView::CENTER) {
++        // Get stereo properties
++        interocularOffset = computeInterocularOffset(stereoView,
++                                                     cam->get(sStereoInterocularDistance));
++    }
++
++    return cam->computeProjectionMatrix(t, getRenderRegion(), interocularOffset);
++}
++
++float
++TiltShiftCamera::getFocalDistance() const
++{
++    return getRdlCamera()->get(sFocalKey);
++}
++
++void
++TiltShiftCamera::computeFrustumImpl(mcrt_common::Frustum *f, float t,
++                                      bool useRenderRegion) const
++{
++    // C2S is an OpenGL-style projection matrix so we can just extract the
++    //  clip plane coefficients (Ax+By+Cz+D=0) by adding/subtracting matrix columns.
++    //
++    // Derivation: Let v = [x y z w=1] a point in camera space,
++    //               C2S = 4x4 column-major projection matrix with 4 columns col0..3
++    // Then v' = v * C2S = [v dot col0, v dot col1, v dot col2, v dot col3]
++    //                   = [x', y', z', w']
++    // For v' to be in the frustum:
++    //      -w' < x' < w'
++    //      -w' < y' < w'
++    //      -w' < z' < w'
++    // To test x' against left clipping plane, use the inequality:
++    //      -w' < x'
++    //      -(v dot col3) < (v dot col0)
++    //      0 < (v dot col0) + (v dot col3)
++    //      0 < v dot (col0 + col3)
++    //      0 < x * (col0.x + col3.x) + y * (col0.y + col3.y) + z * (col0.z + col3.z) + w * (col0.w + col3.w)
++    //      ... but w=1:
++    //      0 < x * (col0.x + col3.x) + y * (col0.y + col3.y) + z * (col0.z + col3.z) + (col0.w + col3.w)
++    //      ... this is a plane equation of the form:
++    //      0 < x * A + y * B + c * Z + D
++    //      ... just add col0 and col3 to get the ABCD coefficients
++    //      ... similar derivation for the other planes
++
++    if (useRenderRegion) {
++        f->mC2S = computeRegionC2S(t);
++        f->mViewport[0] = (int)getRegionToApertureOffsetX();
++        f->mViewport[1] = (int)getRegionToApertureOffsetY();
++        f->mViewport[2] = f->mViewport[0] + (int)getRegionWindowWidth();
++        f->mViewport[3] = f->mViewport[1] + (int)getRegionWindowHeight();
++    } else {
++        f->mC2S = computeC2S(t);
++        f->mViewport[0] = 0;
++        f->mViewport[1] = 0;
++        f->mViewport[2] = (int)getApertureWindowWidth();
++        f->mViewport[3] = (int)getApertureWindowHeight();
++    }
++
++    // right: col 3 - col 0
++    f->mClipPlanes[0][0] = f->mC2S[0][3] - f->mC2S[0][0];
++    f->mClipPlanes[0][1] = f->mC2S[1][3] - f->mC2S[1][0];
++    f->mClipPlanes[0][2] = f->mC2S[2][3] - f->mC2S[2][0];
++    f->mClipPlanes[0][3] = f->mC2S[3][3] - f->mC2S[3][0];
++    // left: col 3 + col 0
++    f->mClipPlanes[1][0] = f->mC2S[0][3] + f->mC2S[0][0];
++    f->mClipPlanes[1][1] = f->mC2S[1][3] + f->mC2S[1][0];
++    f->mClipPlanes[1][2] = f->mC2S[2][3] + f->mC2S[2][0];
++    f->mClipPlanes[1][3] = f->mC2S[3][3] + f->mC2S[3][0];
++    // bottom: col 3 + col 1
++    f->mClipPlanes[2][0] = f->mC2S[0][3] + f->mC2S[0][1];
++    f->mClipPlanes[2][1] = f->mC2S[1][3] + f->mC2S[1][1];
++    f->mClipPlanes[2][2] = f->mC2S[2][3] + f->mC2S[2][1];
++    f->mClipPlanes[2][3] = f->mC2S[3][3] + f->mC2S[3][1];
++    // top: col 3 - col 1
++    f->mClipPlanes[3][0] = f->mC2S[0][3] - f->mC2S[0][1];
++    f->mClipPlanes[3][1] = f->mC2S[1][3] - f->mC2S[1][1];
++    f->mClipPlanes[3][2] = f->mC2S[2][3] - f->mC2S[2][1];
++    f->mClipPlanes[3][3] = f->mC2S[3][3] - f->mC2S[3][1];
++    // far: col3 - col 2
++    f->mClipPlanes[4][0] = f->mC2S[0][3] - f->mC2S[0][2];
++    f->mClipPlanes[4][1] = f->mC2S[1][3] - f->mC2S[1][2];
++    f->mClipPlanes[4][2] = f->mC2S[2][3] - f->mC2S[2][2];
++    f->mClipPlanes[4][3] = f->mC2S[3][3] - f->mC2S[3][2];
++    // near: col3 + col2
++    f->mClipPlanes[5][0] = f->mC2S[0][3] + f->mC2S[0][2];
++    f->mClipPlanes[5][1] = f->mC2S[1][3] + f->mC2S[1][2];
++    f->mClipPlanes[5][2] = f->mC2S[2][3] + f->mC2S[2][2];
++    f->mClipPlanes[5][3] = f->mC2S[3][3] + f->mC2S[3][2];
++}
++
++StereoView TiltShiftCamera::getStereoViewImpl() const
++{
++    return static_cast<StereoView>(getRdlCamera()->get(sStereoView));
++}
++
++} // namespace pbr
++} // namespace moonray
++
++
+diff --git a/lib/rendering/pbr/camera/TiltShiftCamera.h b/lib/rendering/pbr/camera/TiltShiftCamera.h
+new file mode 100644
+--- /dev/null
++++ b/lib/rendering/pbr/camera/TiltShiftCamera.h
+@@ -0,0 +1,77 @@
++// Copyright 2023-2024 DreamWorks Animation LLC
++// SPDX-License-Identifier: Apache-2.0
++
++#pragma once
++
++#include "ProjectiveCamera.h"
++
++#include <scene_rdl2/common/math/Mat4.h>
++#include <scene_rdl2/common/math/Vec3.h>
++#include <scene_rdl2/scene/rdl2/AttributeKey.h>
++
++namespace scene_rdl2 {
++namespace rdl2 {
++class ProjectiveCamera;
++class SceneClass;
++}
++}
++namespace moonray {
++namespace pbr {
++
++///
++/// @class TiltShiftCamera Camera.h <pbr/Camera.h>
++/// @brief Gets camera properties from an scene_rdl2::rdl2::Camera, and informs other libs
++/// about them as needed.
++///
++class TiltShiftCamera : public ProjectiveCamera
++{
++public:
++    /// Constructor
++    explicit TiltShiftCamera(const scene_rdl2::rdl2::Camera* rdlCamera);
++
++
++private:
++    void initAttributeKeys(const scene_rdl2::rdl2::SceneClass& sceneClass);
++
++    bool hasFrustumImpl() const override { return true; }
++    void computeFrustumImpl(mcrt_common::Frustum *frust, float t,
++                            bool useRenderRegion) const override;
++    void updateImpl(const scene_rdl2::math::Mat4d &world2render) override;
++    StereoView getStereoViewImpl() const override;
++
++    void createDOFRay(mcrt_common::RayDifferential* dstRay,
++                      const scene_rdl2::math::Vec3f& Pr,
++                      float lensX,
++                      float lensY,
++                      float time) const override;
++
++    void createSimpleRay(mcrt_common::RayDifferential* dstRay,
++                         const scene_rdl2::math::Vec3f& Pr,
++                         float time) const override;
++
++    scene_rdl2::math::Mat4f computeC2S(float t) const override;
++    scene_rdl2::math::Mat4f computeRegionC2S(float t) const;
++    float getFocalDistance() const override;
++
++    // Camera focal point in camera space (non-zero for stereo views L/R)
++    scene_rdl2::math::Vec3f mFocalPoint;
++    // Modo: the normal of the tilted lens's plane of focus, in camera space; (0, 0, 1) untilted.
++    scene_rdl2::math::Vec3f mFocusNormal = scene_rdl2::math::Vec3f(0.0f, 0.0f, 1.0f);
++
++    static bool                            sAttributeKeyInitialized;
++
++    // Both focal length and film width should be in the same units. They
++    // can both be in mm, even though the scene scale default is cm.
++    static scene_rdl2::rdl2::AttributeKey<scene_rdl2::rdl2::Float> sFocalKey;
++
++    static scene_rdl2::rdl2::AttributeKey<scene_rdl2::rdl2::Int>   sStereoView;
++    static scene_rdl2::rdl2::AttributeKey<scene_rdl2::rdl2::Float> sStereoInterocularDistance;
++    static scene_rdl2::rdl2::AttributeKey<scene_rdl2::rdl2::Float> sStereoConvergenceDistance;
++    static scene_rdl2::rdl2::AttributeKey<scene_rdl2::rdl2::Float> sLensTiltKey;
++    static scene_rdl2::rdl2::AttributeKey<scene_rdl2::rdl2::Float> sTiltDirectionKey;
++};
++
++} // namespace pbr
++} // namespace moonray
++
++

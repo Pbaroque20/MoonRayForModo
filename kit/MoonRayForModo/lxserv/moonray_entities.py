@@ -122,10 +122,26 @@ def register():
             import modo
             return modo.Vector3(float(values[0]),float(values[1]),float(values[2]))
         defaults={key:(value if not isinstance(value,list) else None) for key,_,_,value,_ in entities.channels(name)}
+        # An Ocean Plane is drawn in the world's space: its waves' points stand where the sea is (ocean_viewport), around
+        # the viewport's eye, and its grid is placed by its matrix here.
+        world=name=='OceanPlaneGeometry'
+        kinds={key:(channel,kind) for key,channel,kind,_,_ in entities.channels(name)}
+        def placed(point,matrix):
+            x,y,z=(float(v) for v in point)
+            return (x*matrix[0]+y*matrix[4]+z*matrix[8]+matrix[12],x*matrix[1]+y*matrix[5]+z*matrix[9]+matrix[13],
+                    x*matrix[2]+y*matrix[6]+z*matrix[10]+matrix[14])
         class Drawn(lxu.package.BasicPackageInstance, lxifc.ViewItem3D):
             def vitm_WorldSpace(self):
-                # Drawn in the item's own space, so the shape moves, turns and scales with it.
-                return False
+                # Drawn in the item's own space, so the shape moves, turns and scales with it; an Ocean Plane in the world's.
+                return world
+            def world_matrix(self,read):
+                """The item's world matrix, 16 numbers, the rows of Modo's (its place the last)."""
+                try:
+                    rows=lx.object.Matrix(read.ValueObj(self.item,self.item.ChannelLookup('worldMatrix'))).Get4()
+                except Exception:
+                    import modo
+                    rows=lx.object.Matrix(modo.Item(self.item).channel('worldMatrix').get()).Get4()
+                return [float(value) for row in rows for value in row]
             def vitm_Draw(self,chanRead,strokeDraw,selectionFlags,itemColor):
                 # Nothing here may raise: a fault while drawing would repeat on every redraw.
                 try:
@@ -134,7 +150,9 @@ def register():
                     for key,channel in inputs:
                         try:values[key]=float(read.Double(self.item,self.item.ChannelLookup(channel)))
                         except Exception:values[key]=float(defaults.get(key.split('.')[0]) or 1.0)
+                    matrix=self.world_matrix(read) if world else None
                     for kind,data in entities.proxy(name,lambda key:values.get(key,1.0)):
+                        if matrix is not None and kind in ('lines','strip'):data=[placed(point,matrix) for point in data]
                         if kind=='circles':
                             stroke.Begin(lx.symbol.iSTROKE_CIRCLES,itemColor,1.0)
                             for centre,normal in data:
@@ -149,7 +167,29 @@ def register():
                             stroke.Begin(lx.symbol.iSTROKE_LINES if kind=='lines' else lx.symbol.iSTROKE_LINE_STRIP,itemColor,1.0)
                             for point in data:stroke.Vertex(point3(point),lx.symbol.iSTROKE_ABSOLUTE)
                     if name=='VdbGeometry':self.draw_grid(read,stroke,itemColor)
-                except Exception:pass
+                    if world:self.draw_sea(read,stroke,itemColor,matrix)
+                except Exception:
+                    # Kept for probes (entities.DRAW_FAULTS), the last of each kind of item; never shown, never raised.
+                    try:
+                        import traceback
+                        entities.DRAW_FAULTS[name]=traceback.format_exc()[-1500:]
+                    except Exception:pass
+            def draw_sea(self,read,stroke,itemColor,matrix):
+                """An Ocean Plane's waves: points where the sea's surface stands at the timeline's moment (ocean_viewport),
+                at the item's height, around the viewport's eye. None where Waves in the Viewport is off, where the Ocean
+                nodes override is off (the plane is left out of renders then), or where a material tag names the sea's
+                material."""
+                from moonray_modo import native, ocean_plane, ocean_viewport
+                def value(key):
+                    channel,kind=kinds[key]
+                    index=self.item.ChannelLookup(channel)
+                    if kind=='string':return read.String(self.item,index) or ''
+                    if kind in ('boolean','integer'):return int(read.Integer(self.item,index))
+                    return float(read.Double(self.item,index))
+                if not value('viewport_points') or value('modo_material') or not native.ocean():return
+                params={key:value(key) for key in ocean_plane.OCEAN_KEYS if key in kinds}
+                ocean_viewport.draw(stroke,self.item.Ident(),params,lx.service.Selection().GetTime(),matrix[13],
+                                    max(value('tile_size'),1e-3),max(value('viewport_spacing'),0.05),max(value('viewport_distance'),1.0),itemColor)
             def draw_grid(self,read,stroke,itemColor):
                 """A VDB shape's grid: the box it fills and points where it is thick (vdb_preview), of the frame's own
                 file in a sequence; nothing until they are ready."""

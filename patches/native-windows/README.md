@@ -575,6 +575,39 @@ distribution); its average matches MoonRay's within 0.001%, the card's and the p
 The MoonLightIPR preview follows it too: its single-number grid is expanded to grey colours once (`moonlightipr_volumes.py`).
 Off, MoonRay is as its source has it.
 
+## `moonray.patch`: a tilt-shift camera (`MOONRAY_MODO_TILT_SHIFT`)
+
+Applied by `tools/port_tilt_shift.py`, behind a switch of its own (the plugin's preference, on by default).
+
+### What MoonRay does
+
+MoonRay has no tilt-shift camera. `PerspectiveCamera` focuses on a plane square to the view, `dof_focus_distance` away
+(`getFocusPlaneHitPoint`), and its film offset moves the picture without turning the camera, which is a tilt-shift
+lens's shift. A tilt-shift lens can also tilt against the film, which swings the plane of focus (Scheimpflug's rule):
+a slanting street sharp from near to far, or only a narrow band of the picture sharp, the miniature look.
+
+### The change
+
+A new camera class, `TiltShiftCamera`, written by the port from `PerspectiveCamera` itself, so the two stay alike:
+
+- `dso/camera/TiltShiftCamera`: `PerspectiveCamera`'s DSO, with `lens_tilt` and `tilt_direction` (degrees) declared
+  after every attribute the two share (so those are laid out as in `PerspectiveCamera`), and the film offsets labelled
+  as the lens's shift.
+- `lib/rendering/pbr/camera/TiltShiftCamera.{h,cc}`: `PerspectiveCamera`'s code with its own attribute keys. Its depth of
+  field rays meet a tilted plane of focus (`getTiltedFocusPlaneHitPoint`): through the point the focus distance down the
+  view, leaning about a hinge line f / sin(tilt) from the axis on the side `tilt_direction` points to (below the camera
+  at 0, to its right at 90), so that its slope from the camera is focus distance * sin(tilt) / f (Merklinger's hinge
+  rule), f in the scene's units as `ProjectiveCamera` turns the focal length's millimetres into them.
+- `pbr/core/Scene.cc` makes one for the class; the build lists both.
+
+With no tilt, or with the switch off (`MOONRAY_MODO_TILT_SHIFT=0`), the plane's sum is `getFocusPlaneHitPoint`'s, step
+for step: a tilt-shift camera's picture is byte for byte its perspective camera's (640 x 400 renders of rows of boxes,
+checked). Off, the plugin also writes the camera as a `PerspectiveCamera` (same lens and shift, no tilt), which is
+MoonRay as its source has it. The tilt shows only with depth of field on. XPU2 tilts the plane by the same sums
+(`cpu_scene.h` reads the class and works its plane out as `updateImpl` does; `camera_core.h`'s `perspectiveRay` meets
+it), and MoonLightIPR too (`moonlightipr_scene.lens_focus_tilt`, the kernel's `lensRay`). Its runtime holds
+`TiltShiftCamera.dll` and `TiltShiftCamera.so.proxy`, and the rebuilt `librendering_rndr.dll`.
+
 ## `moonshine.patch`: toon lines without gaps (`close_line_gaps`)
 
 A new attribute of `ToonDisplayFilter`, behind the preference "Toon lines without gaps", on by default; with it off the

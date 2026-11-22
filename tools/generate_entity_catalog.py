@@ -21,7 +21,9 @@ CATEGORIES = {
         'IntensityLightFilter', 'DecayLightFilter', 'RodLightFilter', 'BarnDoorLightFilter', 'CookieLightFilter', 'CookieLightFilter_v2',
         'ColorRampLightFilter', 'VdbLightFilter', 'CombineLightFilter')}),
     'camera': ('Cameras', [rdl2 / 'Camera.cc'], {name: dso / 'camera' / name / 'attributes.cc' for name in (
-        'PerspectiveCamera', 'OrthographicCamera', 'FisheyeCamera', 'SphericalCamera', 'DomeMaster3DCamera', 'BakeCamera')}),
+        'PerspectiveCamera', 'OrthographicCamera', 'FisheyeCamera', 'SphericalCamera', 'DomeMaster3DCamera', 'BakeCamera',
+        # The plugin's own (tools/port_tilt_shift.py).
+        'TiltShiftCamera')}),
     'geometry': ('Geometry', [rdl2 / 'Geometry.cc'], {
         'BoxGeometry': base / 'moonshine/dso/geometry/Box/attributes.cc',
         'SphereGeometry': base / 'moonshine/dso/geometry/Sphere/attributes.cc',
@@ -254,7 +256,7 @@ for category, (label, shared, classes) in CATEGORIES.items():
             attributes['modo_render_camera'] = {'name': 'modo_render_camera', 'type': 'Bool', 'default': False, 'group': 'Assignment',
                                                 'label': 'render through this camera',
                                                 'comment': 'Render through this camera, from where this item stands, instead of the Modo camera.'}
-        if name in ('PerspectiveCamera', 'OrthographicCamera'):
+        if name in ('PerspectiveCamera', 'OrthographicCamera', 'TiltShiftCamera'):
             attributes['modo_lens'] = {'name': 'modo_lens', 'type': 'Bool', 'default': False, 'group': 'Lens', 'label': "use the Modo camera's lens",
                                        'comment': "Take the lens from this camera's own Modo properties (focal length, film, offsets, depth of field, "
                                                   'F-stop, focus distance and iris) instead of the MoonRay values below.'}
@@ -298,6 +300,16 @@ _plane['foam_roughness'] = {'name': 'foam_roughness', 'type': 'Float', 'default'
                             'label': 'foam roughness', 'comment': "How rough the foam is, 0 to 1, where the surface folds over."}
 _plane['foam_color'] = {'name': 'foam_color', 'type': 'Rgb', 'default': [0.85, 0.88, 0.9], 'group': 'Ocean Plane',
                         'label': 'foam colour', 'comment': "The foam's colour, where the surface folds over (Foam Threshold)."}
+# Its waves in the viewport (ocean_viewport): points where the sea's surface stands, around the viewport's eye.
+_plane['viewport_points'] = {'name': 'viewport_points', 'type': 'Bool', 'default': True, 'group': 'Viewport', 'label': 'waves in the viewport',
+                             'comment': "Shows the sea's waves in Modo's viewport as points where its surface stands, moving with the "
+                                        'timeline: its long waves, as the renders make them. Off, the plane is a flat grid.'}
+_plane['viewport_spacing'] = {'name': 'viewport_spacing', 'type': 'Float', 'default': 0.5, 'min': 0.05, 'group': 'Viewport',
+                              'label': 'point spacing', 'comment': "How far apart the points are next to the viewport's eye, in metres; "
+                                                                   'each step farther out, twice as far apart.'}
+_plane['viewport_distance'] = {'name': 'viewport_distance', 'type': 'Float', 'default': 250.0, 'min': 1.0, 'group': 'Viewport',
+                               'label': 'point distance', 'comment': "How far from the viewport's eye the points reach, in metres: "
+                                                                    'none beyond, so the viewport never works the sea out to the horizon.'}
 for _key, _spec in _nodes.specs('ocean').items():
     if _key in ('repeat', 'fit_to_mesh', 'tiles_across'):
         continue    # the plane lays the tiles itself, Tile Size wide

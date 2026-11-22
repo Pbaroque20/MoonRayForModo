@@ -234,7 +234,7 @@ DeviceMaterial toDevice(const Material& m) {
     d.flags = (m.thin ? MATERIAL_THIN : 0) | (m.clearcoatDims ? MATERIAL_COAT_DIMS : 0) | (m.dissolve > 0.0f ? MATERIAL_HAS_PRESENCE : 0)
             | (m.beckmann ? MATERIAL_BECKMANN : 0) | ((unsigned(m.roughnessCurve) & 3u) << MATERIAL_ROUGH_SHIFT)
             | (m.noCaustics ? MATERIAL_NO_CAUSTICS : 0) | (m.randomWalk ? MATERIAL_RANDOM_WALK : 0)
-            | (m.roughnessClamped ? MATERIAL_ROUGHNESS_CLAMPED : 0);
+            | (m.roughnessClamped ? MATERIAL_ROUGHNESS_CLAMPED : 0) | (m.clearcoatStraight ? MATERIAL_COAT_STRAIGHT : 0);
     d.layerStart = m.layerStart;
     d.layerCount = m.layerCount;
     return d;
@@ -831,6 +831,8 @@ struct Renderer::Impl {
         // The film offset is in halves of the film's width; up the picture, a half of its height is less by its shape.
         params.cameraShift[0] = camera.filmShift[0];
         params.cameraShift[1] = camera.filmShift[1] * float(params.width) / float(params.height);
+        params.focusTilt[0] = std::isfinite(camera.focusTilt[0]) ? camera.focusTilt[0] : 0.0f;
+        params.focusTilt[1] = std::isfinite(camera.focusTilt[1]) ? camera.focusTilt[1] : 0.0f;
         params.region[0] = edge(camera.region[0], params.width);
         params.region[2] = edge(camera.region[2], params.width);
         params.region[1] = edge(1.0f - camera.region[3], params.height);

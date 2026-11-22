@@ -464,6 +464,10 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
     if entity_camera:
         # A MoonRay camera item set to render takes the place of the Modo camera.
         lines[1:lines.index('}')+1]=entities.camera_lines(scene,entity_camera)
+        # Its own depth of field switches MoonRay's on (enable_dof), as the Modo camera's does: a camera item with its
+        # lens its own (modo_lens off) rendered sharp, and a tilt-shift camera's tilt shows only with it.
+        if entity_camera['class'] in entities.PERSPECTIVE_CAMERAS + ('OrthographicCamera',) and entities.value(entity_camera, 'dof'):
+            dof=True
     dicing=dicing_lines(scene,entity_camera,lines)
     from . import geometry, lighting
     from . import cryptomatte

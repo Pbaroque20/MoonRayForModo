@@ -132,6 +132,8 @@ def build_session(source, runtime, async_build, out, cpu_test=False):
         proxies.append(source / 'build/native-renderer-avx/bin/ModoProceduralMap.so.proxy')
         # And the ocean's short waves (native-port/maps/ModoOceanNormal), which XPU2 shades itself (shade_mapnodes.h).
         proxies.append(source / 'build/native-renderer-avx/bin/ModoOceanNormalMap.so.proxy')
+        # And the kit's tilt-shift camera (tools/port_tilt_shift.py), which no MoonRay of the reference's has.
+        proxies.append(source / 'build/native-renderer-avx/bin/TiltShiftCamera.so.proxy')
         for p in proxies:
             shutil.copyfile(p, rt / p.name)
         # The display filters run as MoonRay's own, from their DSOs (aov_display.h).

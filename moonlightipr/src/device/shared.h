@@ -64,6 +64,9 @@ const unsigned MATERIAL_THIN = 1, MATERIAL_COAT_DIMS = 2, MATERIAL_HAS_PRESENCE 
                // MoonRay's iridescence tints the specular or the coat's reflection by angle: this material's entry in
                // LaunchParams::iridescences is DeviceMaterial::iridescence.
                MATERIAL_IRIDESCENT = 1u << 16,
+               // DwaBaseMaterial's clearcoat_bending switched off: what is under the coat is seen straight through it,
+               // not bent toward the coat's normal (coatBends in kernel.cu).
+               MATERIAL_COAT_STRAIGHT = 1u << 17,
                MATERIAL_MATTE = 1u << 30;   // set by the kernel alone, where light leaves from beneath a surface
 const unsigned LAYER_IMAGE = 1, LAYER_INVERT = 2, LAYER_FLIP_RED = 4, LAYER_FLIP_GREEN = 8, LAYER_FLIP_BLUE = 16,
                LAYER_ALPHA_MASK = 32, LAYER_ALPHA_ONLY = 64, LAYER_COVERAGE_U = 128, LAYER_COVERAGE_V = 256,
@@ -499,6 +502,7 @@ struct LaunchParams {
     unsigned cameraProjection;      // 0 perspective, 1 fisheye, 2 spherical, 3 orthographic
     float cameraProjectionValues[4];
     float cameraShift[2];           // a perspective camera's film offset, in halves of the picture across and up
+    float focusTilt[2];             // a tilted lens's plane of focus: its normal is the view plus these much of right and up
     unsigned region[4];     // the pixels to render: from column, from row, to column, to row; the rest are black
     unsigned draft;         // 0 none, 1 lines outside the region, 2 lines everywhere
     unsigned mixedVisibility;   // some instance is hidden from one kind of ray and not from another
