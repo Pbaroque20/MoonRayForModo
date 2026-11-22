@@ -1143,3 +1143,17 @@ showed as they came. Phase one now has a first look with the store empty: the hi
 `CpuBackend::material`), lit from the camera, clay where a material has next to no diffuse colour (glass, water, metal:
 black in it), the environment mid grey; XPU2's passes fade in over it as after a move (`XPU2_SESSION_RHEA_FIRST_LOOK=0`:
 off). On the dragon it came in 0.022 s, the dragon and the sea in clay.
+
+**A camera move's first picture ahead of the GPU (2026-11-22).** "It's supposed to be realtime ... a camera move in that
+car scene takes about 2-3 seconds to update." On the Hyundai test car (1.9M polygons, 640 x 360, both devices,
+headless) the session took a camera move in 0.5 ms and Rhea drew it in 0.05 s, but only after XPU2's running frame had
+stopped: a stop waited for the GPU's launches out (a launch is at least a sample for each of its 65,536 threads, about
+0.9 s on that scene at 72,000 samples a second), 0.25 to 1.3 s; the CPU's workers stopped at once. Launches of an eighth
+stopped in 0.18 to 0.3 s but halved the scene's throughput (its frame 71 -> 153 s): left as they were. Instead a Rhea
+frame's stop leaves its GPU launches to finish behind it (`RenderOptions::abandonOnCancel`); the next camera move's phase one
+is drawn from the CPU's scene right after the move is applied, before any of the GPU's work (`rheaEarlyPhaseOne`, shown as it
+is in the beauty or the denoised beauty: the denoiser is the GPU's); then the GPU's launches out are drained (`drainGpu`) and
+it takes the new camera. A move sent to its first picture: 0.30 to 1.36 s before, 0.037 to 0.049 s after.
+Realtime frames' CPU workers also stop between two samples (renderChunk's cancel); renders finish their chunks as before,
+and no XPU2 render's sampling or speed changes. `XPU2_SESSION_RHEA_EARLY=0`: phase one after the GPU again.
+XPU2's seed on that scene takes 29 s: Rhea's picture stands that long after a move before XPU2's first fade.

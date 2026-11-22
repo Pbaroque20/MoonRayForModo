@@ -2494,6 +2494,92 @@ int session(const Args& args, const fs::path& directory) {
     bool rheaPhaseOneDone = true;
     unsigned rheaStagesShown = 0;
     double rheaFrameCost = 0;
+    // Rhea's phase one shown ahead of the GPU this frame (rheaEarlyPhaseOne): rheaFrames does not make it again.
+    bool rheaEarlyDone = false;
+    // The GPU's launches out (a stopped frame's, abandoned: RenderOptions::abandonOnCancel) finished, every card's.
+    auto drainGpu = [&] {
+        if (!gpu) return;
+        async::Completion c;
+        while (gpu->inFlight())
+            if (!gpu->poll(c)) std::this_thread::yield();
+        for (const auto& f : gpu->followers()) {
+            f->use();
+            while (f->inFlight())
+                if (!f->poll(c)) std::this_thread::yield();
+        }
+        if (!gpu->followers().empty()) gpu->use();
+    };
+    // Rhea's phase one for a camera move before any of the GPU's work (the user's car, 2026-11-22: "a camera move in that
+    // car scene takes about 2-3 seconds to update": the stopped frame's GPU launches, 0.25 to 1.3 s there, had come first,
+    // then the GPU's new camera, and only then the picture). From the CPU's scene and the surfaces' colours alone, in the
+    // view the kit shows where it is the beauty or the denoised beauty: shown as it is (the surfaces' colours are smooth;
+    // the denoiser is the GPU's), and in the denoised view the picture later fades start from. False: not shown here.
+    auto rheaEarlyPhaseOne = [&]() -> bool {
+        if (!useShared || !scene.plan || !scene.cpuScene) return false;
+        std::string key = "beauty", selected;
+        {
+            std::ifstream view(directory / "view.txt");
+            if (std::getline(view, selected) && !selected.empty()) key = selected;
+        }
+        if (key != "beauty" && key != "denoised_beauty") return false;
+        const U32 w = scene.plan->width, h = scene.plan->height;
+        const size_t n = size_t(w) * h;
+        std::vector<float> rgb;
+        auto show = [&](const async::RenderResult& r) {
+            if (r.rgba.size() != n * 4) return;
+            rgb.resize(n * 3);
+            for (size_t i = 0; i < n; ++i)
+                for (int c = 0; c < 3; ++c) {
+                    const float v = r.rgba[i * 4 + c];
+                    rgb[i * 3 + c] = std::isfinite(v) ? v : 0.0f;
+                }
+            std::lock_guard<std::mutex> lock(sharedMutex);
+            shared.publish(id, key, w, h, [&](size_t i, float* px) {
+                px[0] = rgb[i * 3];
+                px[1] = rgb[i * 3 + 1];
+                px[2] = rgb[i * 3 + 2];
+            });
+        };
+        auto ready = [&] {
+            std::lock_guard<std::mutex> lock(sharedMutex);
+            return shared.ready();
+        };
+        const auto began = std::chrono::steady_clock::now();
+        rheaView.traceScene = scene.cpuScene.get();
+        unsigned stage = 0;
+        bool shownStage = false;
+        rheaView.onStage = [&](const async::RenderResult& picture) {
+            ++stage;
+            if (ready()) {  // a ring's picture the kit has no room for yet is left out
+                show(picture);
+                rheaView.publishedWarp();
+                shownStage = true;
+            }
+            return !waiting();  // the next message come: stopped where it is
+        };
+        const async::RenderResult* first = rheaView.warpTo(*scene.plan);
+        rheaView.onStage = nullptr, rheaView.traceScene = nullptr;
+        if (!first) return false;
+        if (shownStage) {
+            const auto until = std::chrono::steady_clock::now() + std::chrono::milliseconds(50);
+            while (!ready() && std::chrono::steady_clock::now() < until) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        show(*first);
+        rheaView.publishedWarp();
+        if (key == "denoised_beauty" && rgb.size() == n * 3) {
+            std::lock_guard<std::mutex> lock(denoisedMutex);
+            lastDenoised.rgb = rgb, lastDenoised.w = w, lastDenoised.h = h, lastDenoised.id = id, lastDenoised.ready = true;
+        }
+        rheaPhaseOneDone = rheaView.warpComplete();
+        rheaStagesShown = rheaPhaseOneDone ? stage + 1 : stage;
+        const rhea::ObjectWarp& ow = rheaView.objectWarp;
+        std::printf("MoonRay XPU2: Rhea: the camera's picture ahead of the GPU in %.3f s (first picture %.3f s, %u pictures, %zu rays, "
+                    "%.0f%% of them unknown to the store)\n",
+                    std::chrono::duration<double>(std::chrono::steady_clock::now() - began).count(), ow.firstSeconds, ow.stages, ow.rays,
+                    ow.unknown * 100.0);
+        std::fflush(stdout);
+        return true;
+    };
     // The full plan being made behind a coarse first pass. It outlives a frame: a camera moved meanwhile is followed on the
     // coarse geometry (Scene's camera path) while it goes on, where the view used to stand still until it was done (8 to 15 s
     // on a heavy scene). Anything else that prepares the scene waits for it first (it reads the canonical copy).
@@ -2571,6 +2657,13 @@ int session(const Args& args, const fs::path& directory) {
                     if (scene.cameraEdit) rheaView.resetProbes();
                     else rheaView.reset();
                 }
+                // Rhea's phase one for a camera move ahead of the GPU (rheaEarlyPhaseOne), then the stopped frame's GPU
+                // launches finished before the GPU takes the new camera (XPU2_SESSION_RHEA_EARLY=0: phase one after them).
+                rheaEarlyDone = false;
+                if (rheaWanted && scene.plan && scene.plan->realtime && envOn("XPU2_SESSION_RHEA_EARLY", true) &&
+                    !envOn("XPU2_SESSION_RHEA_PROBES", false) && rheaView.movedSince(*scene.plan) && rhea::unsupported(*scene.plan).empty())
+                    rheaEarlyDone = rheaEarlyPhaseOne();
+                drainGpu();
                 // Said for every scene sent while it holds, the preview's notices being each scene's.
                 if (const std::string overflow = texture::overflowWords(); !overflow.empty())
                     modoProtocolLine("@@MODO_XPU2 NOTICE Texture Overflow: memory ran short, so textures are " + overflow +
@@ -3340,7 +3433,8 @@ int session(const Args& args, const fs::path& directory) {
                         return true;
                     };
                     if (moving) {
-                        if (phaseOne(false)) warpedNow = true;
+                        if (rheaEarlyDone) warpedNow = rheaView.hasWarp();  // shown ahead of the GPU
+                        else if (phaseOne(false)) warpedNow = true;
                         // In a drag (dragging, or this move within 0.15 s of the last), the next step looked for a moment before
                         // any of the GPU's work: it comes about 60 ms after this one, and a GPU frame begun takes longer to stop
                         // than the warp takes (0.2 s at 720p). A move on its own goes to the GPU at once: held, the test
@@ -3741,6 +3835,8 @@ int session(const Args& args, const fs::path& directory) {
                     if (gpuDrag) o.mode = 1;
                     if (completion && fade.regions) o.regionalBatch = fade.tileBatch, o.regionalCount = fade.regions;
                     o.passPictures = passMode;
+                    // A stop leaves the GPU's launches out behind it: the next move's phase one comes first (drainGpu after).
+                    o.abandonOnCancel = envOn("XPU2_SESSION_RHEA_EARLY", true);
                     const auto restBegan = Clock::now();
                     const async::RenderResult x = renderer->render(o);
                     const size_t pixels = size_t(width) * height;
@@ -3829,6 +3925,9 @@ int session(const Args& args, const fs::path& directory) {
                         }
                     }
                     shown.seconds = std::chrono::duration<double>(Clock::now() - began).count();
+                    if (x.cancelled)
+                        std::printf("MoonRay XPU2: Rhea: XPU2's frame stopped in %.3f s (the CPU's workers %.3f s, the GPU's launches out %.3f s)\n",
+                                    x.stopCpuSeconds + x.stopGpuSeconds, x.stopCpuSeconds, x.stopGpuSeconds);
                     std::printf("MoonRay XPU2: realtime by Rhea: %s, then XPU2's frame at rest %s in %.2f s; %zu probes, back plane %.0f%% (kept in %.3f s)\n",
                                 rheaFramed ? "a frame for the camera's move" : moving ? (warpedNow ? "a move (the last picture moved)" : "a move (no picture to move)") : probesOn ? "the probes placed" : "the camera at rest",
                                 x.cancelled ? "stopped" : x.drained ? "drained" : "done",

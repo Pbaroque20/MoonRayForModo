@@ -1632,8 +1632,12 @@ struct CpuCounters {
 // Renders one claimed chunk on the CPU into the host film and returns the samples
 // rendered. With pass tables (adaptive frames) only the tile's active pixels are
 // rendered, each from its own sample-index base.
+// cancel: the frame given up (the next camera move has come): the chunk stops between two samples, the samples it has
+// into the film as any (each pixel's mean over those it holds). Finished whole, a heavy scene's chunk had kept the next move
+// waiting 0.5 to 2.4 s for the CPU's workers (the user's car, 2026-11-22: "a camera move in that car scene takes about 2-3
+// seconds to update").
 inline U64 renderChunk(const CpuScene& scene, const mixed::Config& config, const Chunk& chunk, HostFilm& film,
-                       CpuCounters& counters, PassTables* tables = nullptr) {
+                       CpuCounters& counters, PassTables* tables = nullptr, const std::atomic<bool>* cancel = nullptr) {
     CpuBackend backend{scene};
     U32 pixels[TilePixels], counts[TilePixels] = {}, base[TilePixels] = {};
     double sums[TilePixels][4] = {}, odd[TilePixels][4] = {};
@@ -1673,9 +1677,14 @@ inline U64 renderChunk(const CpuScene& scene, const mixed::Config& config, const
         if (tables && pixels[p] != ~0u) base[p] = tables->bases[chunkPass(chunk) % PassSlots][pixels[p]];
     }
     U64 skipped = 0;
-    for (U32 s = 0; s < chunk.count; ++s)
+    bool stopped = false;
+    for (U32 s = 0; s < chunk.count && !stopped; ++s)
         for (U32 p = 0; p < TilePixels; ++p) {
             if (pixels[p] == ~0u) continue;
+            if (cancel && cancel->load(std::memory_order_relaxed)) {
+                stopped = true;
+                break;
+            }
             Radiance r;
             if (C) {
                 r.aov = sampleAov.data();
@@ -1754,8 +1763,11 @@ public:
 
     // Starts a frame. Workers from the last frame are parked first.
     // handoff: where the GPU's deferred and provisional samples wait, counted down as the workers render them (null: not counted).
+    // stopMidChunk: a stop leaves the workers' chunks part way (realtime frames alone, renderChunk's cancel); else they
+    // finish the chunks in hand, as renders always have.
     void begin(const mixed::Config& config, Grid& grid, HostFilm& film, RetryQueue& retries, PassTables* tables = nullptr,
-               RefineQueue* refines = nullptr, HandoffTiles* handoff = nullptr) {
+               RefineQueue* refines = nullptr, HandoffTiles* handoff = nullptr, bool stopMidChunk = false) {
+        stopMidChunk_ = stopMidChunk;
         while (parked_.load(std::memory_order_acquire) != workers_.size()) std::this_thread::yield();
         counters.samples = counters.chunks = counters.retried = counters.steals = counters.moves = counters.idleSpins = 0;
         counters.refined = 0;
@@ -1853,6 +1865,7 @@ private:
                 if (size_t n = retries.pop(retry, 64)) {
                     CpuBackend backend{scene_};
                     for (size_t i = 0; i < n; ++i) {
+                        if (stopMidChunk_ && cancelled_.load(std::memory_order_relaxed)) break;  // given up: the rest left
                         // An adaptive frame counts the sample in its pass, rendered or not (as the GPU counts its own).
                         if (tables_) tables_->cpuDone[retry[i].pass].fetch_add(1, std::memory_order_relaxed);
                         Radiance r;
@@ -1893,6 +1906,7 @@ private:
                 if (size_t n = refines_->pop(refine, 16)) {
                     CpuBackend backend{scene_};
                     for (size_t i = 0; i < n; ++i) {
+                        if (stopMidChunk_ && cancelled_.load(std::memory_order_relaxed)) break;  // given up: the rest left
                         if (tables_) tables_->cpuDone[refine[i].pass].fetch_add(1, std::memory_order_relaxed);
                         Radiance r;
                         thread_local std::vector<float> refineAov, refineDepth, refineBackup;
@@ -1952,7 +1966,7 @@ private:
             for (U64 v = counters.firstClaimMicros.load(); claimed < v && !counters.firstClaimMicros.compare_exchange_weak(v, claimed);) {}
             for (U64 v = counters.lastClaimMicros.load(); claimed > v && !counters.lastClaimMicros.compare_exchange_weak(v, claimed);) {}
             active_[w].store(chunk.tile, std::memory_order_relaxed);
-            const U64 samples = renderChunk(scene_, config_, chunk, film, counters, tables_);
+            const U64 samples = renderChunk(scene_, config_, chunk, film, counters, tables_, stopMidChunk_ ? &cancelled_ : nullptr);
             active_[w].store(~0u, std::memory_order_relaxed);
             const U64 took = U64(std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - begun).count());
             counters.busyMicros.fetch_add(took, std::memory_order_relaxed);
@@ -1979,6 +1993,7 @@ private:
     PassTables* tables_ = nullptr;
     std::chrono::steady_clock::time_point started_ = std::chrono::steady_clock::now();
     std::atomic<bool> closing_{false}, cancelled_{false};
+    bool stopMidChunk_ = false;  // begin's: realtime frames' workers stop between two samples
     std::atomic<unsigned> idle_{0}, parked_{0};
 };
 

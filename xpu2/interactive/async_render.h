@@ -67,6 +67,10 @@ struct RenderOptions {
     // until that picture is taken, so that none shows a pass part way (its cells, the devices' squares). The watch is
     // told which passes each holds (Renderer::picturedPasses). No pictures between them.
     bool passPictures = false;
+    // A stop (the watch's) returns at once, the GPU's launches out left to finish behind it: the caller wants nothing of a
+    // stopped frame (Rhea: the next camera move's picture comes from the CPU's scene, ahead of the GPU) and drains the lane
+    // before the GPU takes anything new (GpuLane::inFlight, poll). On the user's car the launches out took 0.25 to 1.3 s.
+    bool abandonOnCancel = false;
     // A preview session's watch over the frame (none: the frame runs to its end).
     struct Watch* watch = nullptr;
     // Partial shading: a GPU sample whose fine-detail tile is not resident finishes from the texture's next level up
@@ -158,6 +162,8 @@ struct ResumeState {
 
 
 struct RenderResult {
+    // A stopped frame: how long its stop took, the CPU's workers leaving their chunks and the GPU's launches out finishing.
+    double stopCpuSeconds = 0, stopGpuSeconds = 0;
     std::vector<float> rgba;
     std::vector<U32> counts;  // samples each pixel received
     std::vector<float> odd;   // adaptive frames and aux outputs: odd-index sums over all samples (MoonRay's beauty aux)
@@ -537,7 +543,8 @@ public:
             std::lock_guard<std::mutex> lock(activityMutex_);
             handoff_.reset(plan_->width, plan_->height);
         }
-        cpuLane.begin(config, grid, film, retries, adaptive ? &state.tables : nullptr, partial ? &refines : nullptr, &handoff_);
+        // Realtime: a stop leaves the CPU's chunks part way (a camera move waits for no chunk); renders finish theirs.
+        cpuLane.begin(config, grid, film, retries, adaptive ? &state.tables : nullptr, partial ? &refines : nullptr, &handoff_, plan_->realtime);
         {
             std::lock_guard<std::mutex> lock(activityMutex_);
             activeLane_ = &cpuLane;
@@ -1053,15 +1060,17 @@ public:
         }
         // Stopped or drained: no more work is handed out; the workers' chunks in hand and the GPU's queued
         // launches finish (their parked samples are dropped).
+        const double stopBegan = at();
         if (!failure.empty() || cancelled || drained) cpuLane.cancel();
         cpuLane.finish();
         cpuLane.waitParked();  // the frame's grid and film outlive every worker's use
+        result.stopCpuSeconds = at() - stopBegan;
         if (!failure.empty()) {
             result.failed = true;
             result.error = failure;
             return result;
         }
-        if ((cancelled || drained) && useGpu) {
+        if ((cancelled || drained) && useGpu && !(cancelled && o.abandonOnCancel)) {
             Completion c;
             while (gpu_->inFlight())
                 if (!gpu_->poll(c)) std::this_thread::yield();
@@ -1071,6 +1080,7 @@ public:
                     if (!card.lane->poll(c)) std::this_thread::yield();
             }
             if (!cards.empty()) gpu_->use();
+            result.stopGpuSeconds = at() - stopBegan - result.stopCpuSeconds;
         }
         if (cancelled) {
             result.cancelled = true;
