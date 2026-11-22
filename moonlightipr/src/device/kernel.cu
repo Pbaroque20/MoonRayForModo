@@ -798,6 +798,7 @@ struct Surface {
     float coat;
     float coatAlpha;
     bool coatDims;          // the coat takes its reflection out of what is beneath it
+    bool coatBends;         // and what is beneath it is seen through it, bent (coatBends())
     bool thin;
     bool beckmann;          // the specular lobe's distribution; the coat is always GGX
     bool conductor;         // a metal's reflection follows DwaBaseMaterial's curve
@@ -838,6 +839,7 @@ ML_INLINE Surface surfaceFrom(const Hit& hit) {
     s.coatAlpha = fmaxf(hit.coatRoughness * hit.coatRoughness, 0.002f);
     s.coatNormal = make_float3(0.0f, 0.0f, 1.0f);
     s.coatDims = (hit.flags & MATERIAL_COAT_DIMS) != 0;
+    s.coatBends = s.coatDims && !(hit.flags & MATERIAL_COAT_STRAIGHT);
     s.thin = (hit.flags & MATERIAL_THIN) != 0;
     s.beckmann = (hit.flags & MATERIAL_BECKMANN) != 0;
     s.conductor = (hit.flags & MATERIAL_CONDUCTOR) != 0;
@@ -947,6 +949,24 @@ ML_INLINE float underCoat(const Surface& s, float3 wo) {
     const float reflected = dielectricFresnel(wo.z, COAT_IOR);
     return (1.0f - s.coat * reflected) * (s.coat > 0.0f ? 1.0f - reflected : 1.0f);
 }
+// MoonRay's clearcoat bending (DwaBaseMaterial's clearcoat_bending, on unless switched off; UnderClearcoatBsdfLobe): what
+// is under a coat is seen through it, the view and the light bent toward the coat's normal on their way in, so that seen
+// at a grazing angle the highlight beneath is that of a steeper one. bendAbout bends a direction away from the surface
+// across an interface of relative index eta (1 / COAT_IOR into the coat, COAT_IOR out of it); one that cannot cross (it
+// is behind the interface, or beyond the critical angle) is left as it is, and ok says so.
+ML_INLINE bool coatBends(const Surface& s) { return s.coatBends && s.coat > 0.0f; }
+ML_INLINE float3 bendAbout(float3 w, float3 n, float eta, bool& ok) {
+    const float c = dot(n, w);
+    const float k = 1.0f - eta * eta * (1.0f - c * c);
+    ok = c > 0.0f && k >= 0.0f;
+    return ok ? w * eta + n * (sqrtf(k) - eta * c) : w;
+}
+// A direction as the layers under the coat see it.
+ML_INLINE float3 throughCoat(const Surface& s, float3 w) {
+    if (!coatBends(s)) return w;
+    bool ok;
+    return bendAbout(w, s.coatNormal, 1.0f / COAT_IOR, ok);
+}
 // The light the coat turns back goes down to what is under it again, and some of that comes out at the next try, and
 // so on: MoonRay adds the series up, by the share of light the lobe beneath sends back.
 ML_INLINE float3 coatBounces(const Surface& s, float3 wo, float3 albedo) {
@@ -983,7 +1003,7 @@ ML_INLINE float3 fuzzLobe(const Surface& s, float3 wo, float3 wi) {
 // What the dielectric lets through to whatever is beneath it. MoonRay evaluates this on the
 // view direction and blends towards normal incidence as the lobe above gets rougher.
 ML_INLINE float entering(const Surface& s, float3 wo) {
-    const float grazing = 1.0f - s.specular * dielectricFresnel(wo.z, s.ior), facing = 1.0f - s.specular * dielectricFresnel(1.0f, s.ior);
+    const float grazing = 1.0f - s.specular * dielectricFresnel(throughCoat(s, wo).z, s.ior), facing = 1.0f - s.specular * dielectricFresnel(1.0f, s.ior);
     return (1.0f - s.metallic) * (grazing + (facing - grazing) * s.underBlend) * underCoat(s, wo) * underFuzz(s, wo);
 }
 // What a hair toon's highlight lets through to the layers under it: one less its glass-like reflection, blended towards
@@ -1074,7 +1094,7 @@ struct Lobes {
 ML_INLINE Lobes lobeWeights(const Surface& s, float3 wo) {
     const float fuzz = underFuzz(s, wo);
     const float coat = s.coat * dielectricFresnel(wo.z, COAT_IOR) * fuzz;
-    const float specular = luminance(specularFresnel(s, wo.z)) * underCoat(s, wo) * fuzz;
+    const float specular = luminance(specularFresnel(s, throughCoat(s, wo).z)) * underCoat(s, wo) * fuzz;
     const float sheen = s.fuzz > 0.0f ? luminance(s.fuzzColor) * s.fuzz * velvetAlbedo(wo.z, s.fuzzRoughness) : 0.0f;
     const float front = luminance(diffuseColor(s, wo)) + sheen;
     const float behind = s.passes ? luminance(backColor(s, wo)) : 0.0f;
@@ -1143,12 +1163,28 @@ ML_INLINE BsdfEval evalBsdf(const Surface& s, const Lobes& lobes, float3 wo, flo
     const float3 h = normalize(wo + wi);
     const float cosine = dot(wo, h);
     float passed = 1.0f;    // what the highlights let through to what is under them
-    // MoonRay's iridescence: the specular lobe's or the coat's reflection multiplied by its colour at this half vector.
+    // Under a coat that bends, the highlight is worked out between the view and the light bent into the coat (uo, ui),
+    // and its spread widened on the way back out by MoonRay's factor: the light's cosine outside over inside, over the
+    // coat's index squared (squeeze). Its samples are drawn the same way (sampling the glossy lobe in the path).
+    float3 uo = wo, ui = wi;
+    float squeeze = 1.0f;
+    bool under = true;
+    if (coatBends(s)) {
+        bool seenO, seenI;
+        uo = bendAbout(wo, s.coatNormal, 1.0f / COAT_IOR, seenO);
+        ui = bendAbout(wi, s.coatNormal, 1.0f / COAT_IOR, seenI);
+        under = seenO && seenI;
+        squeeze = dot(s.coatNormal, wi) / fmaxf(dot(s.coatNormal, ui), 0.01f) / (COAT_IOR * COAT_IOR);
+    }
+    under = under && uo.z > 0.0f && ui.z > 0.0f;
+    const float3 uh = normalize(uo + ui);
+    const float underCosine = dot(uo, uh);
+    // MoonRay's iridescence: the specular lobe's or the coat's reflection multiplied by its colour at its own half vector,
+    // the specular's as seen under the coat.
     float3 shine = vec(1.0f), coatShine = vec(1.0f);
     if (ML_HAS(FEATURE_IRIDESCENCE) && s.iridescence) {
-        const float3 tint = iridescenceTint(*s.iridescence, cosine);
-        if (s.iridescence->coat) coatShine = tint;
-        else shine = tint;
+        if (s.iridescence->coat) coatShine = iridescenceTint(*s.iridescence, cosine);
+        else shine = iridescenceTint(*s.iridescence, underCosine);
     }
     if (s.toonSpecular) {
         // MoonRay's toon highlights (BsdfToon.cc): one, or a hair toon's up to three, each found from the lights alone,
@@ -1190,20 +1226,22 @@ ML_INLINE BsdfEval evalBsdf(const Surface& s, const Lobes& lobes, float3 wo, flo
             }
         }
     } else
-    if (s.beckmann) {
+    if (!under) {
+        // Seen through the coat, the view or the light does not reach what is under it: no highlight.
+    } else if (s.beckmann) {
         // Sampled from the distribution of facets itself, so its density follows the half vector.
-        const float d = beckmannD(s.alphaX, s.alphaY, h);
-        e.specular = specularFresnel(s, cosine) * shine * (underCoat(s, wo) * d * beckmannG1(s.alphaX, s.alphaY, wo)
-                                                   * beckmannG1(s.alphaX, s.alphaY, wi) / (4.0f * wo.z));
-        e.specularPdf = (1.0f - lobes.coat) * d * h.z / (4.0f * fmaxf(cosine, 1e-6f));
+        const float d = beckmannD(s.alphaX, s.alphaY, uh);
+        e.specular = specularFresnel(s, underCosine) * shine * (underCoat(s, wo) * squeeze * d * beckmannG1(s.alphaX, s.alphaY, uo)
+                                                        * beckmannG1(s.alphaX, s.alphaY, ui) / (4.0f * uo.z));
+        e.specularPdf = (1.0f - lobes.coat) * squeeze * d * uh.z / (4.0f * fmaxf(underCosine, 1e-6f));
     } else {
-        const float d = ggxD(s.alpha, h.z), g1o = smithG1(s.alpha, wo.z), g1i = smithG1(s.alpha, wi.z);
-        e.specular = specularFresnel(s, cosine) * shine * (underCoat(s, wo) * d * g1o * g1i / (4.0f * wo.z));
-        e.specularPdf = (1.0f - lobes.coat) * g1o * d / (4.0f * wo.z);
+        const float d = ggxD(s.alpha, uh.z), g1o = smithG1(s.alpha, uo.z), g1i = smithG1(s.alpha, ui.z);
+        e.specular = specularFresnel(s, underCosine) * shine * (underCoat(s, wo) * squeeze * d * g1o * g1i / (4.0f * uo.z));
+        e.specularPdf = (1.0f - lobes.coat) * squeeze * g1o * d / (4.0f * uo.z);
     }
     if (!s.toonSpecular) {
         const float broad = broadShare(s);
-        e.specular += multipleScattering(s, wo, wi) * shine * underCoat(s, wo);
+        if (under) e.specular += multipleScattering(s, uo, ui) * shine * (underCoat(s, wo) * squeeze);
         e.specularPdf = e.specularPdf * (1.0f - broad) + (1.0f - lobes.coat) * broad * wi.z / ML_PI;
     }
     if (s.coat > 0.0f) {
@@ -1862,7 +1900,19 @@ ML_INLINE void lensRay(float3& origin, float3& direction, Seed& seed) {
         lensY = r * sinf(phi);
     }
     const float3 forward = normalize(vec(params.cameraW));
-    const float3 focus = origin + direction * (params.focusDistance / dot(direction, forward));
+    float3 focus;
+    if (params.focusTilt[0] == 0.0f && params.focusTilt[1] == 0.0f) {
+        focus = origin + direction * (params.focusDistance / dot(direction, forward));
+    } else {
+        // A tilted lens (a tilt-shift camera, MoonRay's TiltShiftCamera): the plane of focus still crosses the view at
+        // the focus distance, but leans; a ray that meets it behind the camera, or never, is in focus far off.
+        const float3 normal = normalize(forward + normalize(vec(params.cameraU)) * params.focusTilt[0]
+                                        + normalize(vec(params.cameraV)) * params.focusTilt[1]);
+        float t = params.focusDistance * dot(normal, forward) / dot(direction, normal);
+        const float farOff = 1.0e6f * fmaxf(params.focusDistance, 1.0f);
+        if (!(t > 0.0f) || t > farOff) t = farOff;
+        focus = origin + direction * t;
+    }
     origin = origin + (normalize(vec(params.cameraU)) * lensX + normalize(vec(params.cameraV)) * lensY) * params.lensRadius;
     direction = normalize(focus - origin);
 }
@@ -2856,7 +2906,14 @@ extern "C" __global__ void __raygen__moonlightipr() {
         }
         else if (rnd(seed) < broadShare(surface)) wi = sampleDiffuse(u1, u2);
         else {
-            wi = reflectAbout(wo, surface.beckmann ? sampleBeckmann(surface.alphaX, surface.alphaY, u1, u2) : sampleFacet(surface.alpha, wo, u1, u2));
+            // Under a coat that bends, drawn from the highlight as seen through it, and bent out again; a direction that
+            // cannot leave the coat is passed through as it is, as MoonRay passes it (UnderClearcoatBsdfLobe::sample).
+            const float3 uo = throughCoat(surface, wo);
+            wi = reflectAbout(uo, surface.beckmann ? sampleBeckmann(surface.alphaX, surface.alphaY, u1, u2) : sampleFacet(surface.alpha, uo, u1, u2));
+            if (coatBends(surface)) {
+                bool out;
+                wi = bendAbout(wi, surface.coatNormal, COAT_IOR, out);
+            }
             lobeRough = hit.roughness;
         }
         if (params.roughnessClamp > 0.0f)

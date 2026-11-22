@@ -30,6 +30,14 @@ The current release is [0.5.5.1.2](https://github.com/Pbaroque20/MoonRayForModo/
 
   ![A dragon with an iridescent sheen and an iridescent bubble over the sea, rendered by MoonLightIPR](docs/images/moonlightipr-iridescence.webp)
 
+- **Clear coats in MoonLightIPR match MoonRay where a surface turns away from the view**: the shine beneath a coat is seen through the coat, bent, as MoonRay sees it, where it was too bright before. A material with Clearcoat Bending off keeps it straight, as in MoonRay.
+- **A tilt-shift camera** (MoonRay > Add MoonRay Item > Cameras > dwTiltShiftCamera, or Convert to MoonRay Camera... on a camera): a perspective camera whose lens tilts, leaning the plane of focus as a tilt-shift lens does. Tilt it one way to keep a whole receding ground sharp; tilt it the other way to blur everything but a band, the miniature look. Lens Tilt and Tilt Direction (in degrees) are in its Tilt-Shift group; it needs its Depth of Field on. Its Shift is the horizontal and vertical film offset. MoonRay, XPU2 and MoonLightIPR render it alike. Switch: MoonRay Source Overrides, Tilt-shift camera (on).
+
+  ![The same street of blocks through a tilt-shift camera at f/1.4: no tilt (left), tilted so the whole ground is sharp (middle), and tilted the other way for the miniature look (right)](docs/images/tilt-shift-camera.jpg)
+
+- **An Ocean Plane's waves in the viewport**: where it was a flat grid, an Ocean Plane now shows its sea in Modo's viewport as points where the water's surface stands, deep blue in the troughs to light blue on the crests, moving with the timeline. They are the long waves the renders make, so the size of the waves, their run with the wind and the swell show before you render. The points gather around the viewport you look through, sparser farther off, and stop at Point Distance (250 m), so a sea to the horizon costs the viewport no more than a pond. Its Viewport settings: Waves in the Viewport, Point Spacing, Point Distance. A plane whose material tag names a Modo material still shows its grid only.
+- **MoonRay's realtime no longer says "Buffers will be available after the first preview pass completes."** under XPU or XPU2: its picture comes on as it renders. A Render with no finished pass yet still says it.
+
 - Known: Modo can crash as it quits with Scene Proxies in the scene (its own Convert to Proxy does the same); your work and settings are saved first.
 
 ## New in 0.5.5.1.2

@@ -1110,6 +1110,21 @@ def pack(scene, width, height, environment=0.15, known=(), samples=256, denoise=
         return _configured(ocean.fitted(instance_scale.baked(scene, single=True)), width, height, environment, known, samples, denoise, runtime)
 
 
+def lens_focus_tilt(camera, scene_scale=1.0):
+    """A tilt-shift camera's plane of focus for the kernel (entities.camera_view gives a camera its lens_tilt): its
+    normal is the view direction plus these much of the picture's right and up. The plane leans as MoonRay's
+    TiltShiftCamera leans it (tools/port_tilt_shift.py): about a hinge line f / sin(tilt) from the view, on the side the
+    tilt direction points to, its slope from the camera focus distance * sin(tilt) / f, f in the scene's units (a unit
+    being scene_scale metres). [0, 0], square to the view, for any other camera and without depth of field."""
+    if not (camera.get('dof') and camera.get('lens_tilt')):
+        return [0.0, 0.0]
+    focal = max(float(camera['focal_mm']), 1e-5) / 1000.0 / scene_scale
+    slope = float(camera.get('focus_distance', 4)) * math.sin(math.radians(float(camera['lens_tilt']))) / focal
+    turn = math.radians(float(camera.get('tilt_direction', 0.0)))
+    tilt = [slope * math.sin(turn), -slope * math.cos(turn)]
+    return tilt if all(math.isfinite(v) for v in tilt) else [0.0, 0.0]
+
+
 def _configured(scene, width, height, environment=0.15, known=(), samples=256, denoise=True, runtime=None):
     """Serialize a snapshot. Return (bytes, mesh keys, warnings).
 
@@ -1231,7 +1246,10 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     # Material colours are worked out in Rec.709; the session takes them to the working space.
     working = working_enabled()
     # The letter after MLS says which form of scene this is; the session refuses any other than its own.
-    parts = [b'MLSX', struct.pack('<8I', width, height, *depths, samples, (SCENE_DENOISE if denoise else 0)
+    # A tilt-shift camera's tilted lens (entities.camera_view, lens_focus_tilt): its plane of focus leans as MoonRay's
+    # TiltShiftCamera leans it (tools/port_tilt_shift.py).
+    focus_tilt = lens_focus_tilt(camera, scene_scale) if projection == 'persp' else [0.0, 0.0]
+    parts = [b'MLSY', struct.pack('<8I', width, height, *depths, samples, (SCENE_DENOISE if denoise else 0)
                                   | (SCENE_WORKING_SPACE if working else 0) | (SCENE_MOTION if motion else 0)
                                   # See-through surfaces cast whole shadows unless the scene asks for lighter ones, as in MoonRay.
                                   | (SCENE_PRESENCE_SHADOWS if settings.get('enable_presence_shadows') else 0)
@@ -1251,8 +1269,8 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
              struct.pack('<I4f', PROJECTIONS[projection], *[float(v) for v in (camera.get('projection_values') or [0, 0, 0, 0])]),
              # Draft: 1 draws what is outside the region as lines, 2 the whole picture.
              struct.pack('<4fI', *region, int(scene.get('_draft') or 0)),
-             # The film offset (form 'H').
-             struct.pack('<2f', *film_shift)]
+             # The film offset (form 'H'), and the tilt of the plane of focus (form 'Y').
+             struct.pack('<2f', *film_shift), struct.pack('<2f', *focus_tilt)]
     # A bokeh image: its size and its brightnesses, top row first (form 'B'); 0 for none.
     import subprocess
     bokeh = None

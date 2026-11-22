@@ -224,10 +224,20 @@ X2_HD inline CameraResult perspectiveRay(const Camera& c, V3 raster, float lensX
         dirY = camSub(transformH(c.rasterToCamera, add(raster, {0, 1, 0})), fp);
         v.origin = transformPoint(c.cameraToRender, fp);
     } else {
-        // getFocusPlaneHitPoint: each ray through the pinhole meets the focus plane.
+        // getFocusPlaneHitPoint: each ray through the pinhole meets the focus plane. A tilt-shift camera's tilted lens
+        // leans it (the kit's TiltShiftCamera, tools/port_tilt_shift.py getTiltedFocusPlaneHitPoint): the plane through the
+        // point focusDistance down the view, square to focusNormal; a ray that meets it behind the camera, or never, is in
+        // focus far off.
         auto focus = [&](V3 r) {
             const V3 d = camNormalize(camSub(transformH(c.rasterToCamera, r), fp));
-            const float t = -c.focusDistance / d.z;
+            if (c.focusNormal.x == 0.0f && c.focusNormal.y == 0.0f) {
+                const float t = -c.focusDistance / d.z;
+                return add(fp, mul(d, t));
+            }
+            const V3 n = c.focusNormal, q = camSub({0.0f, 0.0f, -c.focusDistance}, fp);
+            float t = ((n.x * q.x + n.y * q.y) + n.z * q.z) / ((n.x * d.x + n.y * d.y) + n.z * d.z);
+            const float farOff = 1.0e6f * fmaxf(c.focusDistance, 1.0f);
+            if (!(t > 0.0f) || t > farOff) t = farOff;
             return add(fp, mul(d, t));
         };
         const V3 hit = focus(raster), hitX = focus(add(raster, {1, 0, 0})), hitY = focus(add(raster, {0, 1, 0}));

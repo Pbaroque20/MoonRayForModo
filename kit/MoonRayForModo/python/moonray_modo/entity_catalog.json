@@ -4139,6 +4139,32 @@
         "name": "use_local_motion_blur",
         "type": "Bool"
       },
+      "viewport_distance": {
+        "comment": "How far from the viewport's eye the points reach, in metres: none beyond, so the viewport never works the sea out to the horizon.",
+        "default": 250.0,
+        "group": "Viewport",
+        "label": "point distance",
+        "min": 1.0,
+        "name": "viewport_distance",
+        "type": "Float"
+      },
+      "viewport_points": {
+        "comment": "Shows the sea's waves in Modo's viewport as points where its surface stands, moving with the timeline: its long waves, as the renders make them. Off, the plane is a flat grid.",
+        "default": true,
+        "group": "Viewport",
+        "label": "waves in the viewport",
+        "name": "viewport_points",
+        "type": "Bool"
+      },
+      "viewport_spacing": {
+        "comment": "How far apart the points are next to the viewport's eye, in metres; each step farther out, twice as far apart.",
+        "default": 0.5,
+        "group": "Viewport",
+        "label": "point spacing",
+        "min": 0.05,
+        "name": "viewport_spacing",
+        "type": "Float"
+      },
       "visible_diffuse_reflection": {
         "comment": "whether the geometry is visible in diffuse reflection",
         "default": true,
@@ -7127,6 +7153,244 @@
     "category_label": "Display Filters",
     "placed": false,
     "source": "upstream/openmoonray/moonray/moonshine/dso/displayfilter/TangentSpaceDisplayFilter/TangentSpaceDisplayFilter.json"
+  },
+  "TiltShiftCamera": {
+    "attributes": {
+      "bokeh": {
+        "comment": "Enable Bokeh. Requires DOF to be enabled.",
+        "default": false,
+        "group": "Depth of Field",
+        "label": "bokeh enable",
+        "name": "bokeh",
+        "type": "Bool"
+      },
+      "bokeh_angle": {
+        "comment": "Angle of iris rotation",
+        "default": 0.0,
+        "group": "Depth of Field",
+        "label": "bokeh angle",
+        "name": "bokeh_angle",
+        "type": "Float"
+      },
+      "bokeh_image": {
+        "comment": "Path to image file to be used for the iris",
+        "default": "",
+        "group": "Depth of Field",
+        "label": "bokeh image",
+        "name": "bokeh_image",
+        "type": "String"
+      },
+      "bokeh_sides": {
+        "comment": "Number of sides of the iris. Specifying less than 3 sides will default to a disk.",
+        "default": 0,
+        "group": "Depth of Field",
+        "label": "bokeh sides",
+        "name": "bokeh_sides",
+        "type": "Int"
+      },
+      "bokeh_weight_location": {
+        "comment": "Distance from the origin of Bokeh shape",
+        "default": 0.0,
+        "group": "Depth of Field",
+        "label": "bokeh weight location",
+        "name": "bokeh_weight_location",
+        "type": "Float"
+      },
+      "bokeh_weight_strength": {
+        "comment": "Controls the strength of weights as samples approach the weight location",
+        "default": 0.0,
+        "group": "Depth of Field",
+        "label": "bokeh weight location",
+        "name": "bokeh_weight_strength",
+        "type": "Float"
+      },
+      "dof": {
+        "comment": "Whether to enable depth of field",
+        "default": false,
+        "group": "Depth of Field",
+        "name": "dof",
+        "type": "Bool"
+      },
+      "dof_aperture": {
+        "comment": "Depth of field focus distance",
+        "default": 8.0,
+        "group": "Depth of Field",
+        "label": "dof aperture",
+        "name": "dof_aperture",
+        "type": "Float"
+      },
+      "dof_focus_distance": {
+        "default": 0.0,
+        "group": "Depth of Field",
+        "label": "dof focus distance",
+        "name": "dof_focus_distance",
+        "type": "Float"
+      },
+      "far": {
+        "comment": "Far clipping plane",
+        "default": 10000.0,
+        "group": "Frustum",
+        "name": "far",
+        "type": "Float"
+      },
+      "film_width_aperture": {
+        "comment": "Scale the aperture of the camera (i.e., the frustum) by this value.",
+        "default": 24.0,
+        "group": "Frustum",
+        "label": "film width aperture",
+        "name": "film_width_aperture",
+        "type": "Float"
+      },
+      "focal": {
+        "comment": "Focal length",
+        "default": 30.0,
+        "group": "Frustum",
+        "name": "focal",
+        "type": "Float"
+      },
+      "horizontal_film_offset": {
+        "comment": "Shift of the lens across the film, in the film's units (mm), as on a tilt-shift lens: the picture moves without the camera turning, so upright lines stay upright.",
+        "default": 0.0,
+        "group": "Frustum",
+        "label": "horizontal shift",
+        "name": "horizontal_film_offset",
+        "type": "Float"
+      },
+      "lens_tilt": {
+        "comment": "How far the lens is tilted against the film, in degrees, as on a tilt-shift lens. The plane of focus swings about a line beside the camera (Scheimpflug's rule): with the tilt direction at 0, a positive tilt lays it down toward what is below the view, so that the ground is sharp from near to far, and a negative one stands it up, so that only a narrow band is (the miniature look). Shows with depth of field on.",
+        "default": 0.0,
+        "group": "Tilt-Shift",
+        "label": "lens tilt",
+        "name": "lens_tilt",
+        "type": "Float"
+      },
+      "mb_shutter_bias": {
+        "comment": "Biases the motion blur samples toward one end of the shutter interval.",
+        "default": 0.0,
+        "group": "Motion Blur",
+        "label": "mb shutter bias",
+        "name": "mb_shutter_bias",
+        "type": "Float"
+      },
+      "mb_shutter_close": {
+        "comment": "Frame at which the shutter closes, i.e., the end of the motion blur interval.",
+        "default": 0.25,
+        "group": "Motion Blur",
+        "label": "mb shutter close",
+        "name": "mb_shutter_close",
+        "type": "Float"
+      },
+      "mb_shutter_open": {
+        "comment": "Frame at which the shutter opens, i.e., the beginning of the motion blur interval.",
+        "default": -0.25,
+        "group": "Motion Blur",
+        "label": "mb shutter open",
+        "name": "mb_shutter_open",
+        "type": "Float"
+      },
+      "medium_geometry": {
+        "comment": "The geometry the camera is 'inside' to which you'd like the medium_material applied. (The use case for this is typically partially-submerged cameras)",
+        "group": "Medium",
+        "label": "medium geometry",
+        "name": "medium_geometry",
+        "type": "SceneObject*"
+      },
+      "medium_material": {
+        "comment": "The material the camera is 'inside'. If no medium_geometry is specified, ALL rays will have this initial index of refraction applied.",
+        "group": "Medium",
+        "label": "medium material",
+        "name": "medium_material",
+        "type": "SceneObject*"
+      },
+      "modo_lens": {
+        "comment": "Take the lens from this camera's own Modo properties (focal length, film, offsets, depth of field, F-stop, focus distance and iris) instead of the MoonRay values below.",
+        "default": false,
+        "group": "Lens",
+        "label": "use the Modo camera's lens",
+        "name": "modo_lens",
+        "type": "Bool"
+      },
+      "modo_render_camera": {
+        "comment": "Render through this camera, from where this item stands, instead of the Modo camera.",
+        "default": false,
+        "group": "Assignment",
+        "label": "render through this camera",
+        "name": "modo_render_camera",
+        "type": "Bool"
+      },
+      "near": {
+        "comment": "Near clipping plane",
+        "default": 1.0,
+        "group": "Frustum",
+        "name": "near",
+        "type": "Float"
+      },
+      "pixel_aspect_ratio": {
+        "comment": "ratio of pixel size y / x",
+        "default": 1.0,
+        "group": "Frustum",
+        "label": "pixel aspect ratio",
+        "name": "pixel_aspect_ratio",
+        "type": "Float"
+      },
+      "pixel_sample_map": {
+        "comment": "Map indicating the number of pixel samples that should be used per pixel (in uniform sampling mode). This is a multiplier on the global pixel sample count specified in SceneVariables. If the provided map has incompatible dimensions, it will be resized.",
+        "default": "",
+        "group": "Render Masks",
+        "label": "pixel sample map",
+        "name": "pixel_sample_map",
+        "type": "String"
+      },
+      "stereo_convergence_distance": {
+        "comment": "Distance at which all the stereo views converge.",
+        "default": 100.0,
+        "group": "Stereo",
+        "label": "stereo convergence distance",
+        "name": "stereo_convergence_distance",
+        "type": "Float"
+      },
+      "stereo_interocular_distance": {
+        "comment": "Distance between the left and right 'eyes'",
+        "default": 6.3,
+        "group": "Stereo",
+        "label": "stereo interocular distance",
+        "name": "stereo_interocular_distance",
+        "type": "Float"
+      },
+      "stereo_view": {
+        "comment": "Render from the center, left, or right stereo view.",
+        "default": 0,
+        "enum": {
+          "center view": 0,
+          "left view": 1,
+          "right view": 2
+        },
+        "group": "Stereo",
+        "label": "stereo view",
+        "name": "stereo_view",
+        "type": "Int"
+      },
+      "tilt_direction": {
+        "comment": "Which way the lens tilts, in degrees round the view: 0 tilts it up and down, so the plane of focus swings about a line below the camera; 90 swings it sideways, about a line to its right.",
+        "default": 0.0,
+        "group": "Tilt-Shift",
+        "label": "tilt direction",
+        "name": "tilt_direction",
+        "type": "Float"
+      },
+      "vertical_film_offset": {
+        "comment": "Shift of the lens up and down the film, in the film's units (mm), as on a tilt-shift lens: the picture moves without the camera turning, so upright lines stay upright.",
+        "default": 0.0,
+        "group": "Frustum",
+        "label": "vertical shift",
+        "name": "vertical_film_offset",
+        "type": "Float"
+      }
+    },
+    "category": "camera",
+    "category_label": "Cameras",
+    "placed": true,
+    "source": "upstream/openmoonray/moonray/moonray/dso/camera/TiltShiftCamera/attributes.cc"
   },
   "ToonDisplayFilter": {
     "attributes": {

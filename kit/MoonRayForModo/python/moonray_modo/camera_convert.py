@@ -8,7 +8,7 @@ Settings, Camera, as before."""
 import math
 
 # (MoonRay class, what the popup says).
-KINDS = (('PerspectiveCamera', 'Perspective'), ('OrthographicCamera', 'Orthographic'), ('FisheyeCamera', 'Fisheye'),
+KINDS = (('PerspectiveCamera', 'Perspective'), ('TiltShiftCamera', 'Tilt-Shift'), ('OrthographicCamera', 'Orthographic'), ('FisheyeCamera', 'Fisheye'),
          ('SphericalCamera', 'Spherical'), ('DomeMaster3DCamera', 'Dome (DomeMaster3D)'))
 
 
@@ -33,11 +33,11 @@ def suited(camera):
 def taken(kind):
     """The attributes of a MoonRay camera that lens() takes from the Modo camera, and the shutter, which is the scene's:
     greyed in its dw tab while it uses the Modo camera's lens (lxserv/moonray_entities.py, cui_Enabled)."""
-    if kind not in ('PerspectiveCamera', 'OrthographicCamera'):
+    if kind not in ('PerspectiveCamera', 'TiltShiftCamera', 'OrthographicCamera'):
         return frozenset()
     common = {'horizontal_film_offset', 'vertical_film_offset', 'pixel_aspect_ratio', 'dof', 'dof_aperture', 'dof_focus_distance',
               'bokeh', 'bokeh_sides', 'bokeh_angle', 'film_width_aperture', 'mb_shutter_open', 'mb_shutter_close'}
-    if kind == 'PerspectiveCamera':
+    if kind in ('PerspectiveCamera', 'TiltShiftCamera'):
         common |= {'focal', 'stereo_view', 'stereo_interocular_distance', 'stereo_convergence_distance'}
     return frozenset(common)
 
@@ -48,7 +48,7 @@ def lens(camera, kind):
     from . import properties
     from .camera import framing, offsets
     from .host import channel
-    if kind not in ('PerspectiveCamera', 'OrthographicCamera'):
+    if kind not in ('PerspectiveCamera', 'TiltShiftCamera', 'OrthographicCamera'):
         return {}
     render = modo.Scene().renderItem
     width, height = int(channel(render, 'resX', 1280)), int(channel(render, 'resY', 720))
@@ -70,7 +70,7 @@ def lens(camera, kind):
               'pixel_aspect_ratio': moonray_pixel_aspect, 'dof': bool(channel(camera, 'dof', 0)),
               'dof_aperture': float(channel(camera, 'fStop', 4)), 'dof_focus_distance': float(channel(camera, 'focusDist', 4)),
               'bokeh': blades >= 3, 'bokeh_sides': max(0, blades), 'bokeh_angle': math.degrees(float(channel(camera, 'irisRot', 0)))}
-    if kind == 'PerspectiveCamera':
+    if kind in ('PerspectiveCamera', 'TiltShiftCamera'):
         result.update(focal=focal * 1000, film_width_aperture=aperture_x * 1000)
         # Modo's stereo: one eye, how far apart and where they meet. Both eyes at once is the middle view here.
         eye = str(channel(camera, 'stereoEye', 'both')) if channel(camera, 'stereo', 0) else ''

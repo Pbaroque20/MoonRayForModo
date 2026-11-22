@@ -137,6 +137,29 @@ class Surfaces(unittest.TestCase):
         self.assertFalse(struct.unpack_from('<I', plain, 46 * 4)[0] & materials.MATERIAL_IRIDESCENT)
 
 
+class CoatBending(unittest.TestCase):
+    def material(self, **parameters):
+        albedo = [.06, .06, .07]
+        row = {'name': 'c', 'base_layer_id': 'c', 'shader': 'DwaBaseMaterial', 'color': albedo, 'raw_color': albedo, 'roughness': .25,
+               'layer_opacity': 1.0, 'layer_blend': 'normal', 'material_groups': [], 'layers': []}
+        record = materials.Compiler().material({'material_stack': [dict(row, native_shader='DwaBaseMaterial', native_parameters=dict(
+            albedo=albedo, show_clearcoat=True, **parameters))]}, 'coat')
+        return struct.unpack_from('<I', record, 46 * 4)[0]
+
+    def test_a_coat_bends_unless_told_not_to(self):
+        # MoonRay's clearcoat_bending is on unless switched off: only then is the coat marked straight.
+        bent = self.material()
+        self.assertTrue(bent & materials.MATERIAL_COAT_DIMS)
+        self.assertFalse(bent & materials.MATERIAL_COAT_STRAIGHT)
+        self.assertTrue(self.material(clearcoat_bending=False) & materials.MATERIAL_COAT_STRAIGHT)
+
+    def test_in_step_with_the_gpu(self):
+        shared = (ROOT / 'moonlightipr/src/device/shared.h').read_text(encoding='utf-8')
+        self.assertIn('MATERIAL_COAT_STRAIGHT = 1u << 17', shared)
+        self.assertEqual(materials.MATERIAL_COAT_STRAIGHT, 1 << 17)
+        self.assertIn('materialFlags & (1u << 17)', (ROOT / 'moonlightipr/session/scene_loader.cpp').read_text(encoding='utf-8'))
+
+
 class InStep(unittest.TestCase):
     def test_numbers_agree_with_the_gpu_and_the_session(self):
         shared = (ROOT / 'moonlightipr/src/device/shared.h').read_text(encoding='utf-8')

@@ -142,7 +142,7 @@ Three more scenes cover textures and the two ways a material reaches MoonRay:
 | Textures on plain materials (`UsdPreviewSurface`): colour, roughness and normal maps | 1.000 | 98% |
 | Material stacks without textures (`DwaBaseMaterial`) | 0.995 | 91% |
 | Material stacks with layers (`DwaBaseMaterial`): multiply blend, a half-opaque material row | 1.001 | 98% |
-| A glass ball and a clearcoated cube under a sun and sky | 1.043 | 92% |
+| A glass ball and a clearcoated cube under a sun and sky | 1.043 (0.979 with coat bending, 2026-11-21) | 92% (95%) |
 | A thin tinted ball and a half-present cube | 1.013 | 93% |
 | Nine sphere and rect lights of different power | 0.998 | 98% |
 | A masked material row, a half-opaque group and a bump map | 1.003 | 97% |
@@ -233,6 +233,17 @@ light going in and again of the light coming out, less what the coat turns back 
 the layer beneath sends up again (`UnderClearcoatBsdfLobe`); MoonLightIPR had the first of
 those only. A coated cube was 9% brighter than MoonRay's and is now 7%: the rest is not
 accounted for. Before, the glass and coat scene had 66% of its tiles within 10%.
+
+The rest was the bending itself (2026-11-21): MoonRay works the lobes under a bending coat
+out between the view and the light bent into the coat, and widens what comes back out by
+the light's cosine outside over inside, over the coat's index squared. Seen at a grazing
+angle, the highlight beneath is that of a steeper one, and much dimmer. MoonLightIPR now
+does the same (`bendAbout`, `throughCoat` in kernel.cu), and draws that highlight's samples
+bent too; the face of a dark coated cube seen edge-on had been 24% brighter than MoonRay's
+and is now within 1%, with or without iridescence on the coat. `clearcoat_bending` off
+keeps the coat straight (`MATERIAL_COAT_STRAIGHT`). What is still short: the highlight of a
+small sun on a smooth surface, coated or not (on a gold ball of roughness 0.2, a sixth of
+MoonRay's), which 0.5.5.1 had too.
 
 What is left in the full scenes is mostly near shadow edges and in glass, where the
 two renderers resolve noise and clamped bounce light differently, and has not been
@@ -475,6 +486,13 @@ Added to what is translated since the table was written:
   half times the focal length over the convergence distance; a camera set to both eyes shows the left. Each eye against
   MoonRay's: 0.0047 mean difference in tiles, against 0.018 for the other eye.
   ![An orthographic camera item, MoonRay left and MoonLightIPR right](../docs/images/moonlightipr-camera_ortho.png)
+- **The tilt-shift camera** (2026-11-21): the kit's `TiltShiftCamera` (`tools/port_tilt_shift.py`, a MoonRay Source
+  Override) leans the plane of focus by Merklinger's hinge rule. The packer sends the lean as two numbers, the focus
+  plane's slope along the camera's right and up (`lens_focus_tilt`, focus distance times the sine of the tilt over the
+  focal length in scene units, turned by the tilt direction; scene form `Y`), and `lensRay` meets each ray with that
+  plane, through the point the focus distance down the view, in place of the square one. At 50 mm f/1.4 on a table-top
+  street, untilted, tilted to lay the plane along the ground, tilted the other way for a miniature band, and turned
+  sideways, MoonRay, XPU2 and MoonLightIPR draw the same plane of focus, and their means agree to 0.0002.
 
 ## Build
 

@@ -33,6 +33,7 @@ struct Material {
     float clearcoat = 0.0f;
     float clearcoatRoughness = 0.01f;
     bool clearcoatDims = false;     // the coat takes its reflection out of the layers beneath
+    bool clearcoatStraight = false; // and with that, those layers are seen straight through it, not bent (clearcoat_bending off)
     float dissolve = 0.0f;          // 1 - presence: how much of the surface is absent
     float bumpStrength = 0.0f;      // height of a bump layer's full range, in scene units
     bool randomWalk = false;        // light beneath the surface is followed through the solid, MoonRay's random walk model
@@ -404,6 +405,9 @@ struct Camera {
     // A perspective camera's film offset: how far the middle of the picture moves, right and up, in halves of the
     // film's width, as MoonRay's window moves it. A stereo eye's convergence is one.
     float filmShift[2] = {0, 0};
+    // A tilted lens's plane of focus (a tilt-shift camera, as MoonRay's TiltShiftCamera): its normal is the view
+    // direction plus these much of the picture's right and up. {0, 0} is square to the view.
+    float focusTilt[2] = {0, 0};
 };
 
 // Every setter restarts accumulation. Errors are reported as std::runtime_error.
