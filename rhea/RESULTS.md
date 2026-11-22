@@ -890,7 +890,22 @@ kit's way, steps 90 ms apart, 640 x 360): every step its picture in 10 ms, steps
 the CPU lane in a drag's frames: once 977). XPU2's own frame on 9Spheres in Modo is slow (2% of its first pass in 5.7 s),
 so that a step's warp found depths for only 11% of the picture: XPU2's, not Rhea's, to look into.
 
-## 22. Open
+## 22. The geometry cache (2026-11-21)
+
+DESIGN.md section 27. 9Spheres in Modo (a test Modo, XPU2 RT, 1280 x 960), three preview starts one after another:
+
+| Start | Meshes from the cache / saved | Tessellation | Scene ready |
+|---|---|---|---|
+| first | 0 / 9 | 1.56 s | 12.9 s |
+| second | 8 / 1 | 0.66 s | 8.7 s |
+| third | 8 / 1 | 0.46 s | 10.8 s |
+
+Before, one mesh was kept and the eight subdivision surfaces tessellated at every start (1.6 to 3.2 s). The starts' other
+stages vary by seconds from run to run with what Modo and the kit do meanwhile (the scene's index 0.4 to 2.9 s, the GPU
+programs 0.7 to 4.4 s), so that the start's whole time is the measure least to trust. The cache's pictures: the same to
+the bit as without it, from it and the build before (the exported scene with a dicing camera added).
+
+## 23. Open
 
 - **Probes pruned where their neighbours on the same surface predict their light** within its noise (the user's
   question: "would it be better if that single probe would set the resolution of the direct lighting for that mesh it
@@ -929,7 +944,7 @@ so that a step's warp found depths for only 11% of the picture: XPU2's, not Rhea
   Sponza (23 lights, 69% of the GPU's time in shadow rays) is where light sample reuse has the most to save.
 - The lift assumes a still perspective camera without depth of field; patches lose triangles crossing the near plane.
 
-## 23. Reproduce
+## 24. Reproduce
 
 ```bash
 python rhea/build_rhea.py [--gpu] --source . --runtime <MoonRayForModo-xpu2>/test-results/interactive-reference-042 --output test-results/rhea/build-N

@@ -903,3 +903,27 @@ placing probes, 0.35 s of the GPU's, 0.32 s of the CPU's after), now 0.53 s; on 
 kit's mark, `runtime.json`, looked for at every Preferences made where the kit has none, as the personal kit has none;
 XPU2's runtime looked for at every tick). Both are now found once (`native.kit_root`, `installation_id`,
 `xpu2_available`): a kit is installed with Modo closed.
+
+## 27. The geometry cache for realtime (2026-11-21)
+
+The user: "there should be a geometry cache so that realtime is improved". XPU2 had one (`cpu_scene.h`: a tessellated
+mesh kept on disk in the Cache folder's `xpu2-geometry`, by a key of what shaped it), for displaced meshes and plain ones.
+Modo's realtime preview kept almost none of a scene's subdivision surfaces: 9Spheres' nine meshes were tessellated again
+at every start, one kept. Two rules had left them out:
+
+- **Subdivision without displacement** was in neither rule (the first asked for displacement, the second refused
+  subdivision): now in the first, keyed apart (`subdivision|` and its piece).
+- **A dicing camera** refused every mesh: Modo's preview names one wherever the scene's displacement tessellation is
+  fixed (`host.py`: the render camera, or the one chosen, held at the dicing frame), and the key held only the render
+  camera's frustums. The dicing camera shapes only adaptive tessellation; an adaptive mesh's key now holds its frustums
+  too, made by the same function the tessellation takes them from (`dicingFrustums`), so that the two cannot differ.
+
+The pictures with the cache, without it, and from it (a dicing camera added to the exported 9Spheres, 16 samples,
+640 x 480) are the same to the bit. In Modo the second start reuses 8 of 9 meshes (the first had saved 9), tessellation
+1.6 -> 0.5 s; one displaced mesh is saved again at every start (something in its key changes between runs: not looked
+into). `XPU2_SESSION_GEOMETRY_CACHE_SAY=1` says each mesh's way past the cache.
+
+Not done: the GPU programs (3.5 to 4.4 s of a start in Modo, after the scene's preparation) cannot be made beside it on
+another thread: their lane must be made by the thread that feeds it (made so, the session fell back: "GPU context
+requires feeder owner"); the preparation would have to move instead, and MoonRay's tessellation takes few threads it did
+not start.
