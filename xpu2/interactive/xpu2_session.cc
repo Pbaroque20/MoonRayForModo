@@ -701,6 +701,11 @@ struct Scene {
     std::map<std::string, size_t> baseInstances;
     // And the lights edited since the base plan (any of their settings), admitted again (cpu::updateLights).
     std::vector<const rdl::SceneObject*> editedLights;
+    // Work for this thread while the next full preparation's plan and CPU scene are made on a worker (the session's first
+    // GPU lane, which only the thread that feeds it may make: async::GpuLane): run once by that preparation, which then
+    // clears it, and it must not throw. A preparation that makes no plan (no edit, the camera or placements alone) leaves
+    // it set for the caller.
+    std::function<void()> alongside;
     // All that was made of the scene let go, for it to be made again (texture overflow mode), its edits kept.
     void dropForOverflow() {
         cpuScene.reset();
@@ -1080,12 +1085,54 @@ struct Scene {
         // The outputs in the order the scene declared them (the canonical copy holds them by name).
         aov::outputOrder().clear();
         for (const rdl::RenderOutput* ro : source->getAllRenderOutputs()) aov::outputOrder().push_back(ro->getName());
+        std::unique_ptr<async::CpuScene> madeAlongside;  // the CPU's scene the worker made (alongside), if it did
+        double madeAlongsideSeconds = 0;
         try {
             cpu::Limits limits;
             limits.bytes = geometryBudget();
             limits.gpuBytes = gpuGeometryBudget();
             limits.coarse = coarseFirst && (!realtimeAsked() || !plan) && heavyTessellation();
-            plan = cpu::prepare(*canonical, frame, plan, limits, assetRoot(), cpu::Domain::SurfaceTextures, true, true);
+            if (alongside) {
+                // The plan, and the CPU's scene where there is none to take over, on a worker from the canonical replica (as
+                // the full plan behind a coarse first pass is: refine), while this thread does its own work. The canonical
+                // copy answers on this thread alone (inspectPrepared's check is made here). What the plan leaves in its
+                // thread's own state comes back with it: the outputs' order goes in, the scene's shutter times out.
+                const std::function<void()> work = std::move(alongside);
+                alongside = nullptr;
+                const cpu::PlanView previous = plan;
+                const bool whole = !cpuScene;
+                plan = canonical->inspectPrepared(frame, [&](const rdl::SceneContext& replica, CanonicalView exact) {
+                    cpu::PlanView made;
+                    std::exception_ptr failed;
+                    cpu::TimeRescale shutter;
+                    const std::vector<std::string> order = aov::outputOrder();
+                    std::thread worker([&] {
+                        try {
+                            aov::outputOrder() = order;
+                            made = cpu::prepare(replica, exact, previous, limits, assetRoot(), cpu::Domain::SurfaceTextures, true, true);
+                            shutter = cpu::sceneTimeRescale;
+                            if (whole) {
+                                const auto sceneBegan = std::chrono::steady_clock::now();
+                                madeAlongside = std::make_unique<async::CpuScene>(made);
+                                madeAlongsideSeconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - sceneBegan).count();
+                            }
+                        } catch (...) {
+                            failed = std::current_exception();
+                        }
+                    });
+                    try {
+                        work();
+                    } catch (...) {
+                        worker.join();
+                        throw;
+                    }
+                    worker.join();
+                    if (failed) std::rethrow_exception(failed);
+                    cpu::sceneTimeRescale = shutter;
+                    return made;
+                });
+            } else
+                plan = cpu::prepare(*canonical, frame, plan, limits, assetRoot(), cpu::Domain::SurfaceTextures, true, true);
             coarse = limits.coarse && plan->coarsened > 0;
             frameHeld = frame;
         } catch (...) {
@@ -1103,7 +1150,10 @@ struct Scene {
         {
             const auto cpuBegan = std::chrono::steady_clock::now();
             std::vector<unsigned> replaced;
-            if (cpuScene && cpuScene->plan && async::CpuScene::sameGeometry(*cpuScene->plan, *plan))
+            if (madeAlongside) {
+                cpuScene = std::move(madeAlongside);
+                std::printf("MoonRay XPU2: the CPU's scene made whole in %.2f s (beside the GPU lane)\n", madeAlongsideSeconds);
+            } else if (cpuScene && cpuScene->plan && async::CpuScene::sameGeometry(*cpuScene->plan, *plan))
                 cpuScene = std::make_unique<async::CpuScene>(plan, std::move(*cpuScene));
             else if (cpuScene && cpuScene->plan && async::CpuScene::replacedMeshes(*cpuScene->plan, *plan, replaced)) {
                 cpuScene = std::make_unique<async::CpuScene>(plan, std::move(*cpuScene), replaced);
@@ -2512,6 +2562,76 @@ int session(const Args& args, const fs::path& directory) {
     scene.beforeFullPreparation = [&] {
         if (refining) takeRefined();
     };
+    // The GPU lane, the first chosen graphics card's, then the others' following it (multi_device.h), made by this thread,
+    // the one that feeds them. Empty once made; else why it cannot be, nothing made, for the scene to fall back with.
+    // Throws where making it failed.
+    auto makeLane = [&]() -> std::string {
+        const Programs p = programs(folder);
+        if (!fs::exists(shaderMark(p)))
+            return "XPU2's GPU programs are not compiled yet: System > Preferences > MoonRay > XPU2 > "
+                   "Device Management > Compile XPU2 Shaders (about an hour, once)";
+        // The chosen cards whose kind the programs were compiled for: one of a kind not compiled for (a card
+        // added since) is left out, said, and would otherwise compile for an hour here.
+        std::vector<int> cards;
+        {
+            const std::set<std::string> held = compiledKinds(shaderMark(p));
+            std::string left;
+            for (int card : multi::cardOrdinals(gpu::cardCount())) {
+                if (!gpu::supported(card)) continue;  // too old for XPU2's programs: left out
+                if (held.count(cardKind(card))) cards.push_back(card);
+                else left += (left.empty() ? "" : ", ") + cardKind(card);
+            }
+            if (cards.empty())
+                return "XPU2's GPU programs are not compiled for " + left + ": System > Preferences > MoonRay > XPU2 > "
+                       "Device Management > Compile XPU2 Shaders";
+            if (!left.empty())
+                std::printf("MoonRay XPU2: left out, its shaders not compiled (Compile XPU2 Shaders): %s\n", left.c_str());
+        }
+        // Taken from OptiX's cache in a second or two. Its cache emptied (a driver update, its size limit),
+        // they would compile for an hour here: past a minute the session leaves the scene to MoonRay.
+        const auto made = Clock::now();
+        std::atomic<bool> loaded{false};
+        std::thread guard([&] {
+            for (int i = 0; i < 600 && !loaded.load(); ++i) std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            if (loaded.load()) return;
+            std::error_code gone;
+            fs::remove(shaderMark(p), gone);
+            fallback("OptiX's shader cache no longer holds XPU2's GPU programs (a new graphics driver?): "
+                     "Compile XPU2 Shaders again");
+            std::fflush(stdout);
+            TerminateProcess(GetCurrentProcess(), 0);
+        });
+        try {
+            gpu = gpuLane(p, {}, cards[0]);
+            for (size_t k = 1; k < cards.size(); ++k) {
+                try {
+                    gpu->follow(gpuLane(p, {}, cards[k], int(k)));
+                    std::printf("MoonRay XPU2: graphics card %d (lane %zu) renders with the first%s\n", cards[k], k,
+                                cards[k] == cards[0] ? " (simulated, XPU2_SIMULATE_CARDS)" : "");
+                    if (gpu->followers().back()->node() >= 0)
+                        std::printf("MoonRay XPU2: graphics card %d (lane %zu) near node %d\n", cards[k], k, gpu->followers().back()->node());
+                } catch (const std::exception& e) {
+                    gpu->use();
+                    std::printf("MoonRay XPU2: graphics card %d left out: %s\n", cards[k], e.what());
+                }
+            }
+            if (multi::spread())
+                std::printf("MoonRay XPU2: %zu processor groups, %u logical processors%s\n", multi::groups().size(),
+                            multi::logicalProcessors(), multi::simulated("XPU2_SIMULATE_GROUPS") > 1 ? " (simulated, XPU2_SIMULATE_GROUPS)" : "");
+            if (multi::numa())
+                std::printf("MoonRay XPU2: %zu NUMA nodes, the first graphics card near node %d%s\n", multi::nodes().size(), gpu->node(),
+                            multi::simulated("XPU2_SIMULATE_NODES") > 1 ? " (simulated, XPU2_SIMULATE_NODES)" : "");
+        } catch (...) {
+            loaded.store(true);
+            guard.join();
+            throw;
+        }
+        loaded.store(true);
+        guard.join();
+        std::printf("MoonRay XPU2: GPU programs loaded from the cache in %.2f s\n", std::chrono::duration<double>(Clock::now() - made).count());
+        std::printf("MoonRay XPU2: memory with the GPU lane made: %s\n", memoryText().c_str());
+        return {};
+    };
     try {
         scene.load(args.scenes);
         scene.readTextureNeeds();
@@ -2534,7 +2654,28 @@ int session(const Args& args, const fs::path& directory) {
                     outlines.watch(nullptr, id, 0, 0);
                     renderer.reset();
                 }
+                // The first GPU lane is made while the scene's plan is (Scene::alongside): loading its programs from OptiX's
+                // cache took 2.5 to 4.4 s of a preview's start in Modo, after the plan's 3 to 5 s. What becomes of it is
+                // answered where it was made before, after the plan: the plan's own refusal first. XPU2_SESSION_LANE_AFTER_PLAN=1
+                // makes it after the plan as before (measurements).
+                bool laneTried = false;
+                std::string laneRefused;
+                std::exception_ptr laneFailed;
+                struct AlongsideCleared {
+                    Scene& scene;
+                    ~AlongsideCleared() { scene.alongside = nullptr; }
+                } alongsideCleared{scene};
+                if (mode != 0 && !gpu && fresh && !envOn("XPU2_SESSION_LANE_AFTER_PLAN", false))
+                    scene.alongside = [&] {
+                        laneTried = true;
+                        try {
+                            laneRefused = makeLane();
+                        } catch (...) {
+                            laneFailed = std::current_exception();
+                        }
+                    };
                 scene.prepare();
+                scene.alongside = nullptr;
                 // XPU2 RT (Rhea): an edit other than the camera alone forgets the probes (their meshes or light may differ).
                 if (rheaWanted && fresh && !scene.cameraFrom) rheaView.reset();
                 // Said for every scene sent while it holds, the preview's notices being each scene's.
@@ -2542,80 +2683,14 @@ int session(const Args& args, const fs::path& directory) {
                     modoProtocolLine("@@MODO_XPU2 NOTICE Texture Overflow: memory ran short, so textures are " + overflow +
                                      ". Free memory, or use fewer or smaller textures, then start the preview again for full detail.");
                 if (scene.plan->aovs) checkOutputs(*scene.plan->aovs, mode != 0, !scene.plan->volumes.empty());
+                if (laneFailed) std::rethrow_exception(laneFailed);
                 if (mode != 0 && !gpu) {
-                    const Programs p = programs(folder);
-                    if (!fs::exists(shaderMark(p))) {
+                    const std::string refused = laneTried ? laneRefused : makeLane();
+                    if (!refused.empty()) {
                         outlines.watch(nullptr, id, 0, 0);
-                        fallback("XPU2's GPU programs are not compiled yet: System > Preferences > MoonRay > XPU2 > "
-                                 "Device Management > Compile XPU2 Shaders (about an hour, once)");
+                        fallback(refused);
                         return 0;
                     }
-                    // The chosen cards whose kind the programs were compiled for: one of a kind not compiled for (a card
-                    // added since) is left out, said, and would otherwise compile for an hour here.
-                    std::vector<int> cards;
-                    {
-                        const std::set<std::string> held = compiledKinds(shaderMark(p));
-                        std::string left;
-                        for (int card : multi::cardOrdinals(gpu::cardCount())) {
-                            if (!gpu::supported(card)) continue;  // too old for XPU2's programs: left out
-                            if (held.count(cardKind(card))) cards.push_back(card);
-                            else left += (left.empty() ? "" : ", ") + cardKind(card);
-                        }
-                        if (cards.empty()) {
-                            outlines.watch(nullptr, id, 0, 0);
-                            fallback("XPU2's GPU programs are not compiled for " + left + ": System > Preferences > MoonRay > XPU2 > "
-                                     "Device Management > Compile XPU2 Shaders");
-                            return 0;
-                        }
-                        if (!left.empty())
-                            std::printf("MoonRay XPU2: left out, its shaders not compiled (Compile XPU2 Shaders): %s\n", left.c_str());
-                    }
-                    // Taken from OptiX's cache in a second or two. Its cache emptied (a driver update, its size limit),
-                    // they would compile for an hour here: past a minute the session leaves the scene to MoonRay.
-                    const auto made = Clock::now();
-                    std::atomic<bool> loaded{false};
-                    std::thread guard([&] {
-                        for (int i = 0; i < 600 && !loaded.load(); ++i) std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                        if (loaded.load()) return;
-                        std::error_code gone;
-                        fs::remove(shaderMark(p), gone);
-                        fallback("OptiX's shader cache no longer holds XPU2's GPU programs (a new graphics driver?): "
-                                 "Compile XPU2 Shaders again");
-                        std::fflush(stdout);
-                        TerminateProcess(GetCurrentProcess(), 0);
-                    });
-                    try {
-                        // The first chosen graphics card's lane, then the others (multi_device.h), each a lane
-                        // following the first; a card that cannot make one is left out.
-                        gpu = gpuLane(p, {}, cards[0]);
-                        for (size_t k = 1; k < cards.size(); ++k) {
-                            try {
-                                gpu->follow(gpuLane(p, {}, cards[k], int(k)));
-                                std::printf("MoonRay XPU2: graphics card %d (lane %zu) renders with the first%s\n", cards[k], k,
-                                            cards[k] == cards[0] ? " (simulated, XPU2_SIMULATE_CARDS)" : "");
-                                if (gpu->followers().back()->node() >= 0)
-                                    std::printf("MoonRay XPU2: graphics card %d (lane %zu) near node %d\n", cards[k], k, gpu->followers().back()->node());
-                            } catch (const std::exception& e) {
-                                gpu->use();
-                                std::printf("MoonRay XPU2: graphics card %d left out: %s\n", cards[k], e.what());
-                            }
-                        }
-                        if (multi::spread())
-                            std::printf("MoonRay XPU2: %zu processor groups, %u logical processors%s\n", multi::groups().size(),
-                                        multi::logicalProcessors(), multi::simulated("XPU2_SIMULATE_GROUPS") > 1 ? " (simulated, XPU2_SIMULATE_GROUPS)" : "");
-                        if (multi::numa())
-                            std::printf("MoonRay XPU2: %zu NUMA nodes, the first graphics card near node %d%s\n", multi::nodes().size(), gpu->node(),
-                                        multi::simulated("XPU2_SIMULATE_NODES") > 1 ? " (simulated, XPU2_SIMULATE_NODES)" : "");
-                    } catch (...) {
-                        loaded.store(true);
-                        guard.join();
-                        throw;
-                    }
-                    loaded.store(true);
-                    guard.join();
-                    std::printf("MoonRay XPU2: GPU programs loaded from the cache in %.2f s\n",
-                                std::chrono::duration<double>(Clock::now() - made).count());
-                    std::printf("MoonRay XPU2: memory with the GPU lane made: %s\n", memoryText().c_str());
                 }
                 if (fresh) {
                     // The card has come to hold less than the fine-detail cache was sized for: made again to fit.
