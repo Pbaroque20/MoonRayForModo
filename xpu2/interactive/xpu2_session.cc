@@ -3176,10 +3176,10 @@ int session(const Args& args, const fs::path& directory) {
                     // Rhea renders the camera's moves, XPU2 the camera at rest (rhea/DESIGN.md 24). A camera move with
                     // probes in hand: one frame of Rhea's for where the camera now is, shown as soon as it lands. Else (a
                     // new scene, an edit): the probes placed for the camera, lit by XPU2's frame below once it is done.
-                    // The ablation (rhea/RESULTS.md 25): XPU2_SESSION_RHEA_PROBES=0 is the warp and XPU2 alone - no probes
-                    // placed, no frame of Rhea's, nothing learnt from XPU2's frames; a move is the camera's change since the
-                    // last frame.
-                    const bool probesOn = envOn("XPU2_SESSION_RHEA_PROBES", true);
+                    // Probes off by default (the user tried both in Modo, 2026-11-22: "probes off is better"): the warp and
+                    // XPU2 alone - no probes placed, no frame of Rhea's, nothing learnt from XPU2's frames; a move is the
+                    // camera's change since the last frame. XPU2_SESSION_RHEA_PROBES=1: the probes, Rhea's frame, the planes.
+                    const bool probesOn = envOn("XPU2_SESSION_RHEA_PROBES", false);
                     const bool moving = probesOn ? rheaView.hasProbes() && rheaView.cameraChanged(*scene.plan) : rheaView.movedSince(*scene.plan);
                     rheaView.see(*scene.plan);
                     double rheaSeconds = 0;
@@ -3305,8 +3305,12 @@ int session(const Args& args, const fs::path& directory) {
                     // that never show (no squares of the devices' progress). The frame ends as XPU2's own picture.
                     // XPU2_SESSION_RHEA_COMPLETION=0: XPU2's samples blended into the warp as they come (mergeWarp).
                     const bool completion = warpOnly && envOn("XPU2_SESSION_RHEA_COMPLETION", true);
-                    double fadeSeconds = 0.15;
+                    double fadeSeconds = 0.2;
                     if (const char* v = std::getenv("XPU2_SESSION_RHEA_FADE_SECONDS")) fadeSeconds = std::max(0.0, std::atof(v));
+                    // The fade once XPU2's whole grid is in (every region's seed: the user, 2026-11-22, "the fade in should
+                    // know when XPU2's grid has been fully loaded so the fade is seamless"), the picture all at once; 0, each
+                    // region as it finishes, feathered.
+                    const bool fadeWhole = envOn("XPU2_SESSION_RHEA_FADE_WHOLE", true);
                     struct Fade {
                         std::vector<std::uint16_t> tileBatch;  // each 8-pixel tile's region
                         unsigned regions = 0, tilesX = 0, tilesY = 0;
@@ -3331,6 +3335,19 @@ int session(const Args& args, const fs::path& directory) {
                     auto fadeAlpha = [&](bool ended) -> bool {
                         const double now = fadeNow();
                         const unsigned passed = ended ? fade.regions : std::min<unsigned>(renderer->retiredPasses(), fade.regions);
+                        if (fadeWhole) {
+                            // Every region finished: one fade over the whole picture, from the moment the last one did.
+                            const size_t pixels = size_t(width) * height;
+                            fade.alpha.resize(pixels);
+                            if (passed < fade.regions) {
+                                std::fill(fade.alpha.begin(), fade.alpha.end(), 0.0f);
+                                return true;
+                            }
+                            if (fade.doneAt[0] < 0) std::fill(fade.doneAt.begin(), fade.doneAt.end(), now);
+                            const double t = fadeSeconds > 0 ? std::clamp((now - fade.doneAt[0]) / fadeSeconds, 0.0, 1.0) : 1.0;
+                            std::fill(fade.alpha.begin(), fade.alpha.end(), float(t * t * (3 - 2 * t)));
+                            return t < 1;
+                        }
                         bool going = false;
                         std::vector<float> regionAlpha(fade.regions, 0.0f);
                         for (unsigned b = 0; b < fade.regions; ++b) {
