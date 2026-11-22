@@ -678,6 +678,9 @@ struct Scene {
     // the plan the last camera-only one was made from (the GPU's configuration alone goes again, GpuLane::updateCamera).
     bool cameraOnly = false;
     cpu::PlanView cameraFrom;
+    // Whether the last preparation's changes were the camera's alone, even where the plan had to be made again for it
+    // (geometry tessellated for the camera: "not the camera alone"): XPU2 RT (Rhea) then keeps its last picture to warp.
+    bool cameraEdit = false;
     // The plan the last placement-only one was made from (the card's instances, mesh records and lights go again,
     // GpuLane::updatePlacements).
     cpu::PlanView placedFrom;
@@ -952,6 +955,7 @@ struct Scene {
         cpuScene.reset();
         plan.reset();
         canonical.reset();
+        cameraOnly = false;  // a whole scene: no camera-alone edit carried over (cameraEdit)
         source = std::make_unique<rdl::SceneContext>();
         source->setProxyModeEnabled(true);
         source->setDsoPath(dso.string());
@@ -978,6 +982,7 @@ struct Scene {
     // The plan for the scene as it stands; refusals throw cpu::Unsupported.
     void prepare() {
         if (!changed) return;
+        cameraEdit = cameraOnly;
         cameraFrom.reset();
         placedFrom.reset();
         pendingBakes.clear();
@@ -2234,6 +2239,8 @@ public:
         // The view it is published as: the denoised beauty chosen, or the beauty itself while the view or the scene moves
         // (Lower Resolution While Moving: a picture from a quarter of its pixels, denoised and upscaled by OptiX).
         std::string view = "denoised_beauty";
+        // Rhea's completion fade (rhea/DESIGN.md 29): denoised for the fade to cross-fade into, kept, not published.
+        bool hold = false;
     };
     using Publish = std::function<void(const Picture&, const std::vector<float>&)>;
     // The half-size pictures denoised by OptiX's upscaling model, made at their own size (Denoiser upscale).
@@ -2449,6 +2456,17 @@ int session(const Args& args, const fs::path& directory) {
     std::mutex sharedMutex;
     std::string liveId;
     const bool realtimeDenoise = envOn("XPU2_SESSION_RT_DENOISE", true);
+    // Rhea's completion fade in Denoised Beauty (rhea/DESIGN.md 29): the last denoised picture published (where the fade
+    // starts) and XPU2's picture denoised for it (Picture::hold): the fade cross-fades the two, the denoiser run once.
+    // (Before the denoiser: its thread's callback writes them until it is gone.)
+    struct DenoisedPicture {
+        std::vector<float> rgb;
+        U32 w = 0, h = 0;
+        std::string id;
+        bool ready = false;
+    };
+    std::mutex denoisedMutex;
+    DenoisedPicture lastDenoised, heldDenoised;
     std::unique_ptr<RealtimeDenoiser> denoiser;
     std::string denoiserError;
     // XPU2 RT (Rhea) (rhea/rhea_realtime.h, rhea/DESIGN.md 21): realtime by persistent probes where the scene lets it
@@ -2536,7 +2554,12 @@ int session(const Args& args, const fs::path& directory) {
                 }
                 scene.prepare();
                 // XPU2 RT (Rhea): an edit other than the camera alone forgets the probes (their meshes or light may differ).
-                if (rheaWanted && fresh && !scene.cameraFrom) rheaView.reset();
+                // The camera alone whose plan had to be made again (geometry tessellated for the camera: the user's dragon
+                // over a displaced sea, 2026-11-22, "there's no fade"): the probes forgotten, the last picture kept to warp.
+                if (rheaWanted && fresh && !scene.cameraFrom) {
+                    if (scene.cameraEdit) rheaView.resetProbes();
+                    else rheaView.reset();
+                }
                 // Said for every scene sent while it holds, the preview's notices being each scene's.
                 if (const std::string overflow = texture::overflowWords(); !overflow.empty())
                     modoProtocolLine("@@MODO_XPU2 NOTICE Texture Overflow: memory ran short, so textures are " + overflow +
@@ -2867,14 +2890,23 @@ int session(const Args& args, const fs::path& directory) {
                 // is denoised on a card all the same, and a machine with none, on the processor.
                 if (rtAlbedo && rtNormal && !denoiser)
                     denoiser = std::make_unique<RealtimeDenoiser>(gpu.get(), [&](const RealtimeDenoiser::Picture& p, const std::vector<float>& out) {
+                        const U32 w = p.shownWidth ? p.shownWidth : p.width, h = p.shownWidth ? p.shownHeight : p.height;
+                        if (p.hold) {
+                            std::lock_guard<std::mutex> held(denoisedMutex);
+                            heldDenoised.rgb = out, heldDenoised.w = w, heldDenoised.h = h, heldDenoised.id = p.id, heldDenoised.ready = true;
+                            return;
+                        }
                         std::lock_guard<std::mutex> lock(sharedMutex);
                         if (p.id != liveId || !useShared) return;
-                        shared.publish(p.id, p.view, p.shownWidth ? p.shownWidth : p.width, p.shownWidth ? p.shownHeight : p.height,
-                                       [&](size_t i, float* px) {
+                        shared.publish(p.id, p.view, w, h, [&](size_t i, float* px) {
                             px[0] = out[i * 3];
                             px[1] = out[i * 3 + 1];
                             px[2] = out[i * 3 + 2];
                         });
+                        if (p.view == "denoised_beauty") {
+                            std::lock_guard<std::mutex> held(denoisedMutex);
+                            lastDenoised.rgb = out, lastDenoised.w = w, lastDenoised.h = h, lastDenoised.id = p.id, lastDenoised.ready = true;
+                        }
                     });
                 std::string currentView = "beauty";
                 // Rhea's first pictures in the Beauty view (rheaFrames sets it): its frame and XPU2's first pictures folded
@@ -3136,9 +3168,10 @@ int session(const Args& args, const fs::path& directory) {
                 const bool rheaNow = rheaFits();
                 auto rheaFrames = [&](const async::RenderOptions& base) {
                     async::RenderResult shown;
-                    // Other geometry than the probes were found on (the full plan after a coarse first pass): forgotten.
+                    // Other geometry than the probes were found on (the full plan after a coarse first pass, a camera move that
+                    // tessellates camera-dependent geometry again): the probes forgotten, the last picture kept for the warp.
                     const void* geometry = scene.plan->meshes.empty() ? nullptr : static_cast<const void*>(scene.plan->meshes.front().data.get());
-                    if (geometry != rheaGeometry) rheaView.reset();
+                    if (geometry != rheaGeometry) rheaView.resetProbes();
                     rheaGeometry = geometry;
                     rheaView.op.threads = std::max(1u, std::min(8u, unsigned(base.threads)));
                     // Investigation switches: phase 1's weight (XPU2_SESSION_RHEA_M0; 0, Rhea's sample map with XPU2's
@@ -3409,21 +3442,8 @@ int session(const Args& args, const fs::path& directory) {
                         wanted = watch.previewAov && watch.previewAov();
                         return true;  // the outputs resolved in every picture: Rhea's direct light is among them
                     };
-                    rest.previewResult = [&](const async::RenderResult& sofar, double fraction) {
-                        lastFraction = fraction;
-                        async::RenderResult merged;
-                        double coverage = 1.0;  // the share of pixels XPU2's samples reached (a picture mostly a warp is no source)
-                        if (completion && fade.regions) {
-                            fadeAlpha(false);
-                            coverage = rheaView.completeWarp(sofar, fade.alpha, merged);  // the share wholly XPU2's
-                        } else if (warpOnly) coverage = rheaView.mergeWarp(sofar, fraction, merged);
-                        else rheaView.merge(sofar, fraction, merged);
-                        struct Kept {
-                            rhea::Realtime& view;
-                            async::RenderResult& from;
-                            double coverage;
-                            ~Kept() { view.published(std::move(from), coverage); }  // after it is shown: kept for the next move's warp
-                        } kept{rheaView, merged, coverage};
+                    // A picture to the view the kit shows (the session's own path: denoised, an output, or the beauty).
+                    auto showPicture = [&](async::RenderResult& merged, double fraction) {
                         if (wanted && watch.previewResult) {
                             // Under the completion fade, the Beauty view shows XPU2's finished regions as XPU2 RT does (raw):
                             // denoised while they fade in and raw after, they would pop noisy; Denoised Beauty denoises it all.
@@ -3440,6 +3460,153 @@ int session(const Args& args, const fs::path& directory) {
                             watch.preview(rgb, width, height, fraction);
                         }
                     };
+                    // The whole picture's fade on a clock of its own (fadeWhole): XPU2 hands a picture over every 0.25 to
+                    // 0.4 s on a heavy scene (the user's dragon), and a 0.2 s fade went from one to the next in a step
+                    // (2026-11-22, "there's no fade"). Once XPU2's grid is in, a thread shows the warp blended into XPU2's
+                    // latest picture every 30 ms until it is whole; XPU2's pictures meanwhile only update that latest one.
+                    enum : int { FadeIdle, FadeRunning, FadeDone };
+                    std::atomic<int> fadeState{FadeIdle};
+                    std::atomic<bool> fadeQuit{false};
+                    std::mutex fadeMutex;
+                    std::shared_ptr<const async::RenderResult> fadeTop;
+                    std::thread fadeThread;
+                    struct FadeJoin {
+                        std::atomic<bool>& quit;
+                        std::thread& thread;
+                        ~FadeJoin() {
+                            if (thread.joinable()) {
+                                quit = true;
+                                thread.join();
+                            }
+                        }
+                    } fadeJoin{fadeQuit, fadeThread};
+                    // While the fade's thread shows pictures, the view the kit shows is not looked up again (the session's
+                    // previewAov writes what its previewResult, on that thread, reads).
+                    rest.previewAov = [&] {
+                        if (fadeState.load() != FadeRunning) wanted = watch.previewAov && watch.previewAov();
+                        return true;  // the outputs resolved in every picture: Rhea's direct light is among them
+                    };
+                    bool fadeDenoised = false;  // Denoised Beauty: the fade between denoised pictures (the user's point 5)
+                    auto runFade = [&] {
+                        if (fadeDenoised) {
+                            // XPU2's picture denoised once (held), then the denoised picture on screen cross-faded into it
+                            // every 30 ms: through the denoiser at each step, a fade got one picture between (its pace,
+                            // with XPU2's frame on the card, about 0.25 s a picture).
+                            DenoisedPicture base, top;
+                            {
+                                std::lock_guard<std::mutex> lock(denoisedMutex);
+                                base = lastDenoised;
+                            }
+                            const auto waitBegan = Clock::now();
+                            while (!fadeQuit && std::chrono::duration<double>(Clock::now() - waitBegan).count() < 2.0) {
+                                {
+                                    std::lock_guard<std::mutex> lock(denoisedMutex);
+                                    if (heldDenoised.ready && heldDenoised.id == id) {  // this frame's (not an earlier fade's)
+                                        top = heldDenoised;
+                                        break;
+                                    }
+                                }
+                                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+                            }
+                            if (top.ready) {
+                                const bool blend = base.ready && base.w == top.w && base.h == top.h && base.rgb.size() == top.rgb.size();
+                                const double began = fadeNow();
+                                for (;;) {
+                                    const double t = blend && fadeSeconds > 0 ? std::clamp((fadeNow() - began) / fadeSeconds, 0.0, 1.0) : 1.0;
+                                    const float a = float(t * t * (3 - 2 * t));
+                                    {
+                                        std::lock_guard<std::mutex> lock(sharedMutex);
+                                        if (top.id == liveId && useShared)
+                                            shared.publish(top.id, "denoised_beauty", top.w, top.h, [&](size_t i, float* px) {
+                                                for (int c = 0; c < 3; ++c)
+                                                    px[c] = blend ? base.rgb[i * 3 + c] + a * (top.rgb[i * 3 + c] - base.rgb[i * 3 + c]) : top.rgb[i * 3 + c];
+                                            });
+                                    }
+                                    if (t >= 1 || fadeQuit) break;
+                                    std::this_thread::sleep_for(std::chrono::milliseconds(30));
+                                }
+                                std::lock_guard<std::mutex> lock(denoisedMutex);
+                                lastDenoised = top;
+                            }
+                            // XPU2's picture as shown, for the next move's warp.
+                            std::shared_ptr<const async::RenderResult> shownTop;
+                            {
+                                std::lock_guard<std::mutex> lock(fadeMutex);
+                                shownTop = fadeTop;
+                            }
+                            if (shownTop) {
+                                const std::vector<float> one(size_t(width) * height, 1.0f);
+                                async::RenderResult merged;
+                                const double whole = rheaView.completeWarp(*shownTop, one, merged);
+                                rheaView.published(std::move(merged), whole);
+                            }
+                            fadeState = FadeDone;
+                            return;
+                        }
+                        for (;;) {
+                            const double t = fadeSeconds > 0 ? std::clamp((fadeNow() - fade.doneAt[0]) / fadeSeconds, 0.0, 1.0) : 1.0;
+                            std::shared_ptr<const async::RenderResult> top;
+                            {
+                                std::lock_guard<std::mutex> lock(fadeMutex);
+                                top = fadeTop;
+                            }
+                            if (top) {
+                                const std::vector<float> alpha(size_t(width) * height, float(t * t * (3 - 2 * t)));
+                                async::RenderResult merged;
+                                const double whole = rheaView.completeWarp(*top, alpha, merged);
+                                showPicture(merged, lastFraction);
+                                rheaView.published(std::move(merged), whole);
+                            }
+                            if (t >= 1 || fadeQuit) break;
+                            std::this_thread::sleep_for(std::chrono::milliseconds(30));
+                        }
+                        fadeState = FadeDone;
+                    };
+                    rest.previewResult = [&](const async::RenderResult& sofar, double fraction) {
+                        lastFraction = fraction;
+                        if (completion && fade.regions && fadeWhole) {
+                            const int state = fadeState.load();
+                            if (state == FadeRunning) {
+                                // The fade's thread shows it.
+                                auto top = std::make_shared<const async::RenderResult>(sofar);
+                                std::lock_guard<std::mutex> lock(fadeMutex);
+                                fadeTop = std::move(top);
+                                return;
+                            }
+                            if (state == FadeIdle && std::min<unsigned>(renderer->retiredPasses(), fade.regions) >= fade.regions) {
+                                std::fill(fade.doneAt.begin(), fade.doneAt.end(), fadeNow());
+                                fadeTop = std::make_shared<const async::RenderResult>(sofar);
+                                // Denoised Beauty: XPU2's picture to the denoiser once, held for the fade.
+                                fadeDenoised = denoiser && wanted && denoising(currentView);
+                                if (fadeDenoised) {
+                                    {
+                                        std::lock_guard<std::mutex> lock(denoisedMutex);
+                                        heldDenoised.ready = false;
+                                    }
+                                    auto p = realtimePicture(sofar);
+                                    p.hold = true;
+                                    denoiser->submit(std::move(p));
+                                }
+                                fadeState = FadeRunning;
+                                fadeThread = std::thread(runFade);
+                                return;
+                            }
+                        }
+                        async::RenderResult merged;
+                        double coverage = 1.0;  // the share of pixels XPU2's samples reached (a picture mostly a warp is no source)
+                        if (completion && fade.regions) {
+                            fadeAlpha(false);
+                            coverage = rheaView.completeWarp(sofar, fade.alpha, merged);  // the share wholly XPU2's
+                        } else if (warpOnly) coverage = rheaView.mergeWarp(sofar, fraction, merged);
+                        else rheaView.merge(sofar, fraction, merged);
+                        struct Kept {
+                            rhea::Realtime& view;
+                            async::RenderResult& from;
+                            double coverage;
+                            ~Kept() { view.published(std::move(from), coverage); }  // after it is shown: kept for the next move's warp
+                        } kept{rheaView, merged, coverage};
+                        showPicture(merged, fraction);
+                    };
                     async::RenderOptions o = base;
                     o.watch = &rest;
                     // A drag's frame on the GPU alone, where the GPU renders the whole scene (no mesh left to the CPU lane,
@@ -3452,6 +3619,11 @@ int session(const Args& args, const fs::path& directory) {
                     if (completion && fade.regions) o.regionalBatch = fade.tileBatch, o.regionalCount = fade.regions;
                     const auto restBegan = Clock::now();
                     const async::RenderResult x = renderer->render(o);
+                    // The fade's thread: let finish where the frame ended (at most fadeSeconds more), stopped by a move.
+                    if (fadeThread.joinable()) {
+                        if (x.cancelled || x.failed) fadeQuit = true;
+                        fadeThread.join();
+                    }
                     if (x.failed) return x;
                     // The drag over: XPU2's frame ended, or ran longer than Rhea's frame takes (the moves have paused).
                     if (!x.cancelled || std::chrono::duration<double>(Clock::now() - restBegan).count() > 1.2 * rheaFrameCost) rheaFrameStopped = false;
@@ -3508,7 +3680,7 @@ int session(const Args& args, const fs::path& directory) {
                     }
                     shown.seconds = std::chrono::duration<double>(Clock::now() - began).count();
                     std::printf("MoonRay XPU2: realtime by Rhea: %s, then XPU2's frame at rest %s in %.2f s; %zu probes, back plane %.0f%% (kept in %.3f s)\n",
-                                rheaFramed ? "a frame for the camera's move" : moving ? "a drag's step (the last picture moved)" : "the probes placed",
+                                rheaFramed ? "a frame for the camera's move" : moving ? (warpedNow ? "a move (the last picture moved)" : "a move (no picture to move)") : probesOn ? "the probes placed" : "the camera at rest",
                                 x.cancelled ? "stopped" : x.drained ? "drained" : "done",
                                 shown.seconds - rheaSeconds, rheaView.probes, rheaView.backShare() * 100.0, rheaView.restStoreSeconds);
                     std::fflush(stdout);

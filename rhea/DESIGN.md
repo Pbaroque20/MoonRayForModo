@@ -1005,3 +1005,20 @@ different times.
 
 `XPU2_SESSION_RHEA_COMPLETION=0`: XPU2's samples blended into the warp as they come (mergeWarp, section 28). The
 completion fade applies where the warp is the picture's first phase (no frame of Rhea's: a drag, or no probes).
+
+**In Modo (2026-11-22).** The user tried it: "probes off is better and the fade works, though the fade in should know
+when XPU2's grid has been fully loaded so the fade is seamless" - then, with that, "there's no fade". Three things:
+
+- **Once the grid is in** (`XPU2_SESSION_RHEA_FADE_WHOLE`, on): one fade over the whole picture once every region's
+  seed is in, from the warp to XPU2's picture, 0.2 s. Probes are off by default (`XPU2_SESSION_RHEA_PROBES=1` brings
+  them back).
+- **A camera move that makes the plan again** (the user's dragon over a displaced sea: "not the camera alone: geometry
+  tessellated for the camera") had reset Rhea as any edit does, the warp's last picture with it: no warp, so no first
+  phase to fade from. The session now knows the edit was the camera's alone (`Scene::cameraEdit`) and forgets only the
+  probes (`Realtime::resetProbes`); Rhea's own reset on other geometry keeps the picture too.
+- **The fade's own clock.** XPU2 hands a picture over every 0.25 to 0.4 s on that scene, and a 0.2 s fade went from one
+  to the next in a step. Once the grid is in, a thread shows the blend every 30 ms, XPU2's pictures only updating the
+  latest it blends into. In Denoised Beauty the denoiser (one picture in about 0.25 s with XPU2's frame on the card) ran
+  at each step: XPU2's picture is now denoised once, held (`Picture::hold`), and the denoised picture on screen
+  cross-faded into it every 30 ms. On the dragon (640 x 360): Beauty 4 pictures across the fade, Denoised Beauty 6
+  (relMSE to the frame's end 0.129, 0.112, 0.073, 0.035, 0.011, 0.002), where one picture had stood between before.

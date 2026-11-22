@@ -146,13 +146,22 @@ public:
     RealtimeOptions op;
 
     // Everything forgotten: an edit to the scene (anything but the camera alone), or a new scene.
+    // Everything forgotten: a new scene, an edit.
     void reset() {
+        resetProbes();
+        last = Shown{}, warped = Warped{}, lastKind = 0;
+        mesh.clear();
+    }
+    // The probes, sums and planes forgotten, the last picture kept for the next move's warp: other geometry for the same
+    // scene (the full plan after a coarse first pass; a camera move that tessellates camera-dependent geometry again, a
+    // displaced sea's) - the warp needs only the picture and its depths. Forgetting it there, a move of the user's dragon
+    // over a sea had no warp, so no first phase for the completion fade (2026-11-22: "there's no fade").
+    void resetProbes() {
         field = ProbeField{};
         frame = 0;
         clearSums();
         haveCamera = false;
         back.clear(), haveBack = false;
-        last = Shown{}, warped = Warped{}, lastKind = 0;
     }
     // The picture's sums forgotten, the probes kept: the camera has moved.
     void clearSums() {
