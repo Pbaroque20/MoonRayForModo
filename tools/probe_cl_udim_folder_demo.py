@@ -29,12 +29,20 @@ FACES = [((0, 0, 1), (1, 0, 0), (0, 1, 0)), ((1, 0, 0), (0, 0, -1), (0, 1, 0)), 
          ((0, 0, -1), (-1, 0, 0), (0, 1, 0)), ((-1, 0, 0), (0, 0, 1), (0, 1, 0)), ((0, -1, 0), (1, 0, 0), (0, 0, 1))]
 
 
+def step(name):
+    report.setdefault('steps', []).append(name)
+    save()
+
+
 try:
     scene = modo.Scene()
+    step('start')
     lx.eval('layer.new')
+    step('layer')
     mesh = scene.selected[-1]
     geometry = mesh.geometry
     uv = geometry.vmaps.addMap(lx.symbol.i_VMAP_TEXTUREUV, 'Texture')
+    step('uv map')
     for tile, (normal, right, up) in enumerate(FACES):
         corners = []
         for a, b in ((-1, -1), (1, -1), (1, 1), (-1, 1)):
@@ -42,11 +50,14 @@ try:
         polygon = geometry.polygons.new(corners)
         for corner, (a, b) in zip(corners, ((0, 0), (1, 0), (1, 1), (0, 1))):
             polygon.setUV((tile + a, b), corner, uv)
+    step('polygons')
     geometry.setMeshEdits()
+    step('mesh edits')
     report['mesh'] = {'points': geometry.numVertices, 'polygons': geometry.numPolygons}
 
     # The images, each with its tile's number, in an Image Folder.
     folder = scene.addItem('imageFolder', name='demo')
+    step('folder')
     numbers = []
     for path in sorted(tiles.glob('demo.*.png')):
         number = int(path.stem.split('.')[-1])
@@ -56,21 +67,30 @@ try:
         clip.setParent(folder)
         numbers.append(number)
     report['tiles'] = numbers
+    step('clips')
 
-    # An image layer at the top of the Shader Tree, laid on through the folder, as an FBX import makes it.
-    scene.select(scene.renderItem)
-    lx.eval('shader.create imageMap')
-    layer = next(i for i in scene.items('imageMap'))
+    # An image layer just above the base material, laid on through the folder by its texture locator, as an FBX import
+    # links them (shadeLoc: the layer to its locator and to the folder). Made as items: shader.create crashes the
+    # command-line Modo.
+    shader = next(i for i in scene.renderItem.children() if i.type == 'defaultShader')
+    layer = scene.addItem('imageMap', name='demo (Image)')
+    # Children run bottom row first; setParent puts it one after the index given: so between the Base Material and the
+    # Base Shader, the row just below the shader.
+    layer.setParent(scene.renderItem, max(0, shader.parentIndex - 1))
+    layer.channel('effect').set('diffColor')
+    report['tree'] = [(i.type, i.name) for i in scene.renderItem.children()]
     graph = lx.object.ItemGraph(lx.object.Scene(layer._item.Context()).GraphLookup('shadeLoc'))
     graph.AddLink(layer._item, folder._item)
+    # Its texture locator, made with it.
     locator = next(i for i in layer.itemGraph('shadeLoc').forward() if i.type == 'txtrLocator')
+    step('image layer')
     for name, value in (('projType', 'uv'), ('uvMap', 'Texture'), ('useUDIM', 1), ('tileU', 'reset'), ('tileV', 'reset')):
         locator.channel(name).set(value)
     report['layer_links'] = [(i.type, i.name) for i in layer.itemGraph('shadeLoc').forward()]
 
     # The camera at three quarters, looking at the cube's middle.
     camera = scene.renderCamera
-    eye = (1.75, 1.35, 2.05)
+    eye = (2.3, 1.75, 2.7)
     camera.position.set(eye)
     camera.rotation.set((-math.atan2(eye[1], math.hypot(eye[0], eye[2])), math.atan2(eye[0], eye[2]), 0.0))
     save()
