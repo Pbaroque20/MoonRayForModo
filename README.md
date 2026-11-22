@@ -48,7 +48,10 @@ The current release is [0.5.5.1.2](https://github.com/Pbaroque20/MoonRayForModo/
   ![A cube in MoonRay whose faces each lie in their own UDIM tile, 1001, 1002 and 1003 showing, from an Image Folder of numbered images as an FBX import makes it](docs/images/udim-image-folder.jpg)
 
 - **Textured meshes are lighter for MoonRay and XPU2**: a mesh's UVs are sent once where an image uses its UV map as it is.
-- **Modo evaluated geometry is displaced once**: with Surfaces set to Modo evaluated geometry, MoonRay and XPU2 no longer displace Modo's displaced meshes a second time.
+- **Modo evaluated geometry is displaced once, its bumps lit**: with Surfaces set to Modo evaluated geometry, MoonRay and XPU2 no longer displace Modo's displaced meshes a second time, and light their bumps rather than shading them as the smooth surface.
+
+  ![A bumped sphere in MoonRay: displaced by MoonRay itself (left), Modo's displaced mesh as it was handed over before, displaced again and cracked (middle), and as it is now, matching the first (right)](docs/images/evaluated-displacement-once.jpg)
+
 - **MoonRay's realtime no longer says "Buffers will be available after the first preview pass completes."** under XPU or XPU2: its picture comes on as it renders. A Render with no finished pass yet still says it.
 
 - Known: Modo can crash as it quits with Scene Proxies in the scene (its own Convert to Proxy does the same); your work and settings are saved first.

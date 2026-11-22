@@ -399,6 +399,24 @@ def smooth_normals(vertices, faces, limits=None, threshold=-1.0):
     return Rows(out, 3, 'smooth:' + blake2b(memoryview(out), digest_size=16).hexdigest()), bend.value
 
 
+def joined_normals(vertices, faces):
+    """Smooth normals for each corner (smooth_normals, joined across every edge), the points that lie at one place taken
+    as one: a surface Modo has diced and displaced comes with its points apart along its seams, which would show as
+    creases. Rows of 3, or None where the adapter cannot be asked."""
+    points = numbers(vertices, 3)
+    flat = points.tolist() if points is not None else [float(v) for point in vertices for v in point[:3]]
+    places = {}
+    joined = [places.setdefault(place, len(places)) for place in zip(flat[0::3], flat[1::3], flat[2::3])]
+    # A dict keeps its keys in the order they came: the joined points in the order of their numbers.
+    unique = array('f', [v for place in places for v in place])
+    flat_corners, sizes = corners(faces), counts(faces)
+    if flat_corners is None or sizes is None:
+        flat_corners = [int(v) for face in faces for v in face]
+        sizes = array('i', [len(face) for face in faces])
+    found = smooth_normals(Rows(unique, 3, None), Faces(array('i', [joined[i] for i in flat_corners]), array('i', sizes), None), None, -1.0)
+    return found[0] if found else None
+
+
 def smoothing_available():
     """Whether the geometry adapter can smooth normals (smooth_normals)."""
     native = _native()

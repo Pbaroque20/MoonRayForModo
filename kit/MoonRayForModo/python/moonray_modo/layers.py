@@ -172,6 +172,12 @@ def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, mat
         if not channel(layer,'enable',1) or not channel(layer,'render',1):
             continue
         if channel(layer,'effect','') in baked_effects:
+            # In the geometry already: Modo's displacement, in meshes Modo displaced (evaluated). Noted on the material,
+            # whose meshes then take their normals from the displaced points (evaluated.meshes).
+            if material_key in materials:
+                noted = materials[material_key].setdefault('baked_effects', [])
+                if channel(layer,'effect','') not in noted:
+                    noted.append(channel(layer,'effect',''))
             continue
         from .procedurals import ENHANCE, SURFACE_KINDS
         # Modo's Gabor and Poisson noise are drawn through the object as Enhance: Modo's patterns are.
