@@ -78,9 +78,12 @@ struct RealtimeOptions {
     // vignette (its radius a share of the half diagonal, its soft edge, the corners' light outside it), streamed in rings.
     // Off: the mesh gradient (warpMesh).
     bool objectSpace = true;
-    double vignette = 0.75, vignetteSoft = 0.25, vignetteDim = 0.6, storeScale = 3;
+    double vignette = 0.75, vignetteSoft = 0.25, vignetteDim = 0.6, storeScale = 2, storeGrazing = 8;
     size_t objectRays = 60000;
     unsigned objectRings = 3;
+    // The store's light and albedo apart (ObjectStore::Options::albedo): the albedo in cells half as wide, multiplied by
+    // the cells' light (the user's composite from the outputs the pictures carry). Off: the colours as they are.
+    bool storeAlbedo = false;
     // After a move's warp, the next move looked for this long before any of the GPU's work (seconds; the kit sends a
     // drag's steps about 60 ms apart): a drag then goes at the warp's pace, not the GPU frame's stop (0.2 s at 720p).
     // 0.15 s: in Modo the kit makes a step at each of its 60 ms ticks, with its own 18 ms or so, and sends it once the
@@ -1001,7 +1004,10 @@ public:
         mesh.clear();
         if (op.objectSpace) {
             store.op.scale = op.storeScale, store.op.jump = op.warpJump, store.op.threads = std::max(1u, op.threads);
-            store.add(last.view, b.width, b.height, last.result.rgba, last.result.counts, last.depth, last.depthFar);
+            store.op.grazing = op.storeGrazing, store.op.albedo = op.storeAlbedo;
+            ObjectStore::Outputs outs;
+            outs.aov = &last.result.aov, outs.stride = stride, outs.albedo = o.albedo, outs.emission = o.emission;
+            store.add(last.view, b.width, b.height, last.result.rgba, last.result.counts, last.depth, last.depthFar, &outs);
         } else if (op.warpMesh) {
             mesh.op.cell = op.warpCell, mesh.op.jump = op.warpJump, mesh.op.soft = op.warpSoft, mesh.op.threads = std::max(1u, op.threads);
             mesh.build(last.view, b.width, b.height, last.result.rgba, last.result.counts, last.depth, last.depthFar);

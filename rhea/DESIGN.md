@@ -1064,3 +1064,16 @@ user should be able to see the radial topology updating in realtime". `rhea/obje
   steps at silhouettes, and the sea seen at a grazing angle comes out in blocks (cubes sized by the old view's pixels).
 - `XPU2_SESSION_RHEA_OBJECT_SPACE=0`: the mesh gradient. `XPU2_SESSION_RHEA_VIGNETTE` (0: the whole picture),
   `_VIGNETTE_SOFT`, `_VIGNETTE_DIM`, `_RAYS`, `_RINGS`, `_STORE_SCALE`.
+
+**Grazing surfaces, finer cells, a soft coarse grid, the albedo composite (2026-11-22).** Build 45 showed the coarse
+grid's steps along silhouettes, and the sea seen toward the horizon in blocks: a pixel there is far longer along the
+surface than across it, and cubes sized by its width left gaps between them. A cube's size now follows a pixel's length
+along its surface (one over the cosine between the normal and the ray, at most 8: `_GRAZING`), at the store and at the
+lookup; the finest cube is two pixels wide, not three; the coarse grid's picture is blurred over about its step. On the
+dragon (640 x 360) the store then knew every ray (12% unknown before), the picture took 0.077 s (first 0.020 s), and it
+came close to XPU2's own: the sea's waves, the scales, clean silhouettes.
+The user's composite ("re-use those buffers, like z-depth and albedo, with a composite to get cleaner first phases"):
+`XPU2_SESSION_RHEA_STORE_ALBEDO=1` keeps each cube's colour, albedo and emission, and the albedo again in cubes half as
+wide; a hit's colour is the fine albedo times the cube's light (colour less emission, over albedo), emission added back.
+On the dragon it looked all but the same as the colours alone and took 0.196 s (first picture 0.075 s), the store three
+times the cells: off by default, to try where textures carry the detail.

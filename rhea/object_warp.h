@@ -45,22 +45,35 @@ namespace async = xpu2::interactive::async;
 class ObjectStore {
 public:
     struct Options {
-        double scale = 3;      // a finest cell's side, in pixels of the picture that adds to it
-        int levels = 4;        // the sizes kept: the finest and three, each twice the one before
-        double jump = 0.03;    // a neighbour whose depth differs by more (relative) is another surface
+        double scale = 2;       // a finest cell's side, in pixels of the picture that adds to it (along its surface)
+        int levels = 4;         // the sizes kept: the finest and three, each twice the one before
+        double jump = 0.03;     // a neighbour whose depth differs by more (relative) is another surface
+        double grazing = 8;     // a surface seen edge on: a pixel's length along it counted at most this many times its width
+        // The light and the albedo apart (the user, 2026-11-22: "re-use those buffers, like z-depth and albedo, with a
+        // composite to get cleaner first phases"): each cell holds the picture's colour, albedo and emission, cells half as
+        // wide its albedo alone; a hit's colour is the fine albedo times the cell's light (its colour less emission over
+        // its albedo), its emission added back. Off: the colour as it was.
+        bool albedo = false;
         size_t maxCells = size_t(1) << 22;  // past this the store starts again from the next picture
         unsigned threads = 8;
+    };
+    // A picture's outputs for the composite: its AOV values, a pixel's count of them, and where the first hit's albedo
+    // and the light emitted at it are among them (-1: none).
+    struct Outputs {
+        const std::vector<float>* aov = nullptr;
+        size_t stride = 0;
+        int albedo = -1, emission = -1;
     };
     Options op;
     double addSeconds = 0;
     size_t added = 0;  // pixels the last picture added
 
     void clear() {
-        table.clear(), used = 0;
+        light.clear(), fine.clear();
         sky.assign(SkyW * SkyH * 4, 0.0f), skyFilled.clear();
     }
-    bool empty() const { return used == 0 && skyFilled.empty(); }
-    size_t cells() const { return used; }
+    bool empty() const { return light.used == 0 && skyFilled.empty(); }
+    size_t cells() const { return light.used + fine.used; }
 
     // A picture's pixel size at depth 1 (perspective and directional: a pixel's footprint is this times its depth;
     // orthographic: this, at every depth).
@@ -71,27 +84,37 @@ public:
         return std::sqrt(double(b.x - a.x) * (b.x - a.x) + double(b.y - a.y) * (b.y - a.y) + double(b.z - a.z) * (b.z - a.z));
     }
     static double footprint(const View& v, double angle, double depth) { return v.kind == View::Orthographic ? angle : angle * depth; }
+    // How much longer a pixel is along a surface than across it: one over the cosine between the surface's normal and
+    // the ray, at most `most` (a surface seen edge on, the sea toward the horizon).
+    static double stretch(const D3& n, const D3& d, double most) {
+        const double nl = std::sqrt(n.x * n.x + n.y * n.y + n.z * n.z), dl = std::sqrt(d.x * d.x + d.y * d.y + d.z * d.z);
+        if (!(nl > 0) || !(dl > 0)) return 1.0;
+        const double c = std::fabs(n.x * d.x + n.y * d.y + n.z * d.z) / (nl * dl);
+        return 1.0 / std::max(c, 1.0 / std::max(1.0, most));
+    }
 
     // A picture's colours onto the surfaces it shows: depth its nearest first-hit depth (0 none), depthFar its farthest
-    // (empty: none).
+    // (empty: none); outs its albedo and emission, for the composite.
     void add(const View& view, unsigned w, unsigned h, const std::vector<float>& rgba, const std::vector<std::uint32_t>& counts,
-             const std::vector<float>& depth, const std::vector<float>& depthFar) {
+             const std::vector<float>& depth, const std::vector<float>& depthFar, const Outputs* outputs = nullptr) {
+        const Outputs outs = outputs ? *outputs : Outputs{};
         const auto began = std::chrono::steady_clock::now();
         const size_t n = size_t(w) * h;
         added = 0;
         if (rgba.size() != n * 4 || depth.size() != n || counts.size() != n) return;
-        if (used > op.maxCells) clear();
-        if (table.empty()) grow(size_t(1) << 16);
+        if (cells() > op.maxCells) clear();
         if (sky.empty()) sky.assign(SkyW * SkyH * 4, 0.0f);
         const double angle = pixelAngle(view);
         if (!(angle > 0)) return;
+        const bool parts = outs.aov && outs.stride && outs.aov->size() == n * outs.stride && outs.albedo >= 0 &&
+                           size_t(outs.albedo) + 3 <= outs.stride && (outs.emission < 0 || size_t(outs.emission) + 3 <= outs.stride);
         // Every pixel at a large picture would cost more than it adds: a stride keeps it under a third of a million.
         const unsigned stride = unsigned(std::max(1.0, std::floor(std::sqrt(double(n) / 330000.0))));
         struct Add {
             surface::V3 p;
             int level;
             std::uint8_t bins[2];
-            float rgb[3], weight;
+            float v[9], weight;  // colour, albedo, emission
         };
         const unsigned rows = (h + stride - 1) / stride;
         std::vector<std::vector<Add>> perRow(rows);
@@ -106,11 +129,11 @@ public:
                 const float* c = &rgba[i * 4];
                 if (!(std::isfinite(c[0]) && std::isfinite(c[1]) && std::isfinite(c[2]))) continue;
                 const float weight = float(std::min<std::uint32_t>(counts[i], 64u)) / 64.0f;
+                surface::Ray ray;
+                if (!view.ray(x + 0.5, y + 0.5, ray)) continue;
                 if (!(d > 0)) {
                     // The environment: by direction (alpha little: no surface's coverage in it).
                     if (c[3] > 0.02f && c[3] < 0.98f) continue;
-                    surface::Ray ray;
-                    if (!view.ray(x + 0.5, y + 0.5, ray)) continue;
                     skyRow[r].push_back({ray.direction.x, ray.direction.y, ray.direction.z, c[0], c[1], c[2]});
                     continue;
                 }
@@ -135,23 +158,38 @@ public:
                 if (!(nn.x != 0 || nn.y != 0 || nn.z != 0)) continue;
                 Add e;
                 e.p = p;
-                e.level = levelOf(footprint(view, angle, d) * op.scale * stride);
+                const double along = stretch(nn, D3{ray.direction.x, ray.direction.y, ray.direction.z}, op.grazing);
+                e.level = levelOf(footprint(view, angle, d) * along * op.scale * stride);
                 binsOf(nn, e.bins);
-                e.rgb[0] = c[0], e.rgb[1] = c[1], e.rgb[2] = c[2], e.weight = weight;
+                for (int k = 0; k < 9; ++k) e.v[k] = 0;
+                for (int k = 0; k < 3; ++k) e.v[k] = c[k];
+                if (parts) {
+                    const float* o = &(*outs.aov)[i * outs.stride];
+                    for (int k = 0; k < 3; ++k) {
+                        e.v[3 + k] = std::isfinite(o[outs.albedo + k]) ? std::max(0.0f, o[outs.albedo + k]) : 0.0f;
+                        e.v[6 + k] = outs.emission >= 0 && std::isfinite(o[outs.emission + k]) ? std::max(0.0f, o[outs.emission + k]) : 0.0f;
+                    }
+                }
+                e.weight = weight;
                 perRow[r].push_back(e);
             }
         });
         for (auto& row : perRow)
             for (const Add& e : row) {
-                for (int k = 0; k < op.levels; ++k) {
-                    const int level = e.level + k;
-                    const double size = std::ldexp(1.0, level);
-                    const long long cx = (long long)std::floor(e.p.x / size), cy = (long long)std::floor(e.p.y / size), cz = (long long)std::floor(e.p.z / size);
-                    for (int b = 0; b < 2; ++b) {
-                        if (e.bins[b] == NoBin) continue;
-                        Entry& t = slot(cx, cy, cz, level, e.bins[b]);
-                        t.r += e.rgb[0] * e.weight, t.g += e.rgb[1] * e.weight, t.b += e.rgb[2] * e.weight, t.w += e.weight;
+                for (int b = 0; b < 2; ++b) {
+                    if (e.bins[b] == NoBin) continue;
+                    for (int k = 0; k < op.levels; ++k) {
+                        Table::Entry& t = light.slot(e.p, e.level + k, e.bins[b]);
+                        for (int q = 0; q < 9; ++q) t.v[q] += e.v[q] * e.weight;
+                        t.v[9] += e.weight;
                     }
+                    // The albedo alone, in cells half as wide.
+                    if (op.albedo && parts)
+                        for (int k = 0; k < op.levels + 1; ++k) {
+                            Table::Entry& t = fine.slot(e.p, e.level - 1 + k, e.bins[b]);
+                            for (int q = 0; q < 3; ++q) t.v[q] += e.v[3 + q] * e.weight;
+                            t.v[9] += e.weight;
+                        }
                 }
                 ++added;
             }
@@ -168,41 +206,25 @@ public:
         addSeconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - began).count();
     }
 
-    // The colour at a surface's point (trace space; n its normal facing the camera), the cells' sides footprint's level:
-    // true where the store holds it (confidence the share of the neighbouring cells it has, at the finest level it has).
-    bool lookup(const surface::V3& p, const D3& n, double foot, float rgb[3], float& confidence) const {
+    // The colour at a surface's point (trace space; n its normal facing the camera, dir the ray to it, foot a pixel's
+    // width there): true where the store holds it (confidence: the share of the neighbouring cells it has, at the finest
+    // size it has).
+    bool lookup(const surface::V3& p, const D3& n, const D3& dir, double foot, float rgb[3], float& confidence) const {
         confidence = 0;
-        if (!used) return false;
+        if (!light.used) return false;
         std::uint8_t bins[2];
         binsOf(n, bins);
-        const int first = levelOf(foot * op.scale);
-        double acc[3] = {0, 0, 0}, have = 0;
-        for (int k = 0; k < op.levels + 2; ++k) {
-            const int level = first + k;
-            const double size = std::ldexp(1.0, level);
-            const double fx = p.x / size - 0.5, fy = p.y / size - 0.5, fz = p.z / size - 0.5;
-            const long long x0 = (long long)std::floor(fx), y0 = (long long)std::floor(fy), z0 = (long long)std::floor(fz);
-            const double tx = fx - x0, ty = fy - y0, tz = fz - z0;
-            double c[3] = {0, 0, 0}, wsum = 0;
-            for (int corner = 0; corner < 8; ++corner) {
-                const int dx = corner & 1, dy = corner >> 1 & 1, dz = corner >> 2 & 1;
-                const double tri = (dx ? tx : 1 - tx) * (dy ? ty : 1 - ty) * (dz ? tz : 1 - tz);
-                if (tri <= 0) continue;
-                const Entry* e = find(x0 + dx, y0 + dy, z0 + dz, level, bins[0]);
-                if (!e && bins[1] != NoBin) e = find(x0 + dx, y0 + dy, z0 + dz, level, bins[1]);
-                if (!e || !(e->w > 0)) continue;
-                c[0] += tri * e->r / e->w, c[1] += tri * e->g / e->w, c[2] += tri * e->b / e->w, wsum += tri;
-            }
-            if (wsum <= 0) continue;
-            // This level's share of what the finer ones left.
-            const double take = (1.0 - have) * std::min(1.0, wsum / 0.5);
-            for (int ch = 0; ch < 3; ++ch) acc[ch] += take * c[ch] / wsum;
-            if (have == 0) confidence = float(std::min(1.0, wsum));
-            have += take;
-            if (have > 0.999) break;
+        const int first = levelOf(foot * stretch(n, dir, op.grazing) * op.scale);
+        double m[9];
+        if (!means(light, p, bins, first, op.levels + 2, m, confidence)) return false;
+        for (int ch = 0; ch < 3; ++ch) rgb[ch] = float(std::max(0.0, m[ch]));
+        if (op.albedo && fine.used) {
+            double a[9];
+            float fineConfidence;
+            if (means(fine, p, bins, first - 1, op.levels + 3, a, fineConfidence))
+                for (int ch = 0; ch < 3; ++ch)
+                    if (m[3 + ch] > 0.02) rgb[ch] = float(std::max(0.0, a[ch] * (m[ch] - m[6 + ch]) / m[3 + ch] + m[6 + ch]));
         }
-        if (have <= 0) return false;
-        for (int ch = 0; ch < 3; ++ch) rgb[ch] = float(acc[ch] / have);
         return true;
     }
     // The environment's colour in a direction (trace space): false where no picture has shown it.
@@ -230,14 +252,65 @@ public:
 private:
     static constexpr std::uint8_t NoBin = 255;
     static constexpr size_t SkyW = 256, SkyH = 128;
-    struct Entry {
-        long long x = 0, y = 0, z = 0;
-        std::int16_t level = 0;
-        std::uint8_t bin = 0, full = 0;
-        float r = 0, g = 0, b = 0, w = 0;
+    // A sparse hash of cubes: by their place at their size (2^level a side) and the side their surface faces; each the
+    // weighted sums of what was added to it (colour, albedo, emission) and the weights.
+    struct Table {
+        struct Entry {
+            long long x = 0, y = 0, z = 0;
+            std::int16_t level = 0;
+            std::uint8_t bin = 0, full = 0;
+            float v[10] = {};
+        };
+        std::vector<Entry> slots;
+        size_t used = 0;
+        void clear() { slots.clear(), used = 0; }
+        static std::uint64_t hashOf(long long x, long long y, long long z, int level, int bin) {
+            std::uint64_t h = std::uint64_t(x) * 0x9E3779B97F4A7C15ull;
+            h ^= std::uint64_t(y) * 0xC2B2AE3D27D4EB4Full + (h << 6) + (h >> 2);
+            h ^= std::uint64_t(z) * 0x165667B19E3779F9ull + (h << 6) + (h >> 2);
+            h ^= (std::uint64_t(std::uint16_t(level)) << 8 | std::uint64_t(bin)) * 0x27D4EB2F165667C5ull;
+            h ^= h >> 31, h *= 0xBF58476D1CE4E5B9ull, h ^= h >> 29;
+            return h;
+        }
+        const Entry* find(long long x, long long y, long long z, int level, int bin) const {
+            if (slots.empty()) return nullptr;
+            const size_t mask = slots.size() - 1;
+            for (size_t i = hashOf(x, y, z, level, bin) & mask;; i = (i + 1) & mask) {
+                const Entry& e = slots[i];
+                if (!e.full) return nullptr;
+                if (e.x == x && e.y == y && e.z == z && e.level == level && e.bin == bin) return &e;
+            }
+        }
+        Entry& slot(const surface::V3& p, int level, int bin) {
+            const double size = std::ldexp(1.0, level);
+            const long long x = (long long)std::floor(p.x / size), y = (long long)std::floor(p.y / size), z = (long long)std::floor(p.z / size);
+            if ((used + 1) * 2 > slots.size()) grow(std::max<size_t>(slots.size() * 2, size_t(1) << 16));
+            const size_t mask = slots.size() - 1;
+            for (size_t i = hashOf(x, y, z, level, bin) & mask;; i = (i + 1) & mask) {
+                Entry& e = slots[i];
+                if (!e.full) {
+                    e = Entry{};
+                    e.x = x, e.y = y, e.z = z, e.level = std::int16_t(level), e.bin = std::uint8_t(bin), e.full = 1;
+                    ++used;
+                    return e;
+                }
+                if (e.x == x && e.y == y && e.z == z && e.level == level && e.bin == bin) return e;
+            }
+        }
+        void grow(size_t size) {
+            std::vector<Entry> old;
+            old.swap(slots);
+            slots.assign(size, Entry{});
+            const size_t mask = slots.size() - 1;
+            for (const Entry& e : old) {
+                if (!e.full) continue;
+                size_t i = hashOf(e.x, e.y, e.z, e.level, e.bin) & mask;
+                while (slots[i].full) i = (i + 1) & mask;
+                slots[i] = e;
+            }
+        }
     };
-    std::vector<Entry> table;
-    size_t used = 0;
+    Table light, fine;  // the colours (with albedo and emission), and the albedo in cells half as wide (op.albedo)
     std::vector<float> sky, skyFilled;  // rgb and weight a direction: summed, and its holes filled (fillSky)
 
     static int levelOf(double side) { return side > 0 ? int(std::floor(std::log2(side))) : -60; }
@@ -254,48 +327,38 @@ private:
         out[0] = std::uint8_t(i0 * 2 + (s[i0] < 0));
         out[1] = a[i1] > 0.75 * a[i0] ? std::uint8_t(i1 * 2 + (s[i1] < 0)) : NoBin;
     }
-    static std::uint64_t hashOf(long long x, long long y, long long z, int level, int bin) {
-        std::uint64_t h = std::uint64_t(x) * 0x9E3779B97F4A7C15ull;
-        h ^= std::uint64_t(y) * 0xC2B2AE3D27D4EB4Full + (h << 6) + (h >> 2);
-        h ^= std::uint64_t(z) * 0x165667B19E3779F9ull + (h << 6) + (h >> 2);
-        h ^= (std::uint64_t(std::uint16_t(level)) << 8 | std::uint64_t(bin)) * 0x27D4EB2F165667C5ull;
-        h ^= h >> 31, h *= 0xBF58476D1CE4E5B9ull, h ^= h >> 29;
-        return h;
-    }
-    const Entry* find(long long x, long long y, long long z, int level, int bin) const {
-        if (table.empty()) return nullptr;
-        const size_t mask = table.size() - 1;
-        for (size_t i = hashOf(x, y, z, level, bin) & mask;; i = (i + 1) & mask) {
-            const Entry& e = table[i];
-            if (!e.full) return nullptr;
-            if (e.x == x && e.y == y && e.z == z && e.level == level && e.bin == bin) return &e;
-        }
-    }
-    Entry& slot(long long x, long long y, long long z, int level, int bin) {
-        if ((used + 1) * 2 > table.size()) grow(table.size() * 2);
-        const size_t mask = table.size() - 1;
-        for (size_t i = hashOf(x, y, z, level, bin) & mask;; i = (i + 1) & mask) {
-            Entry& e = table[i];
-            if (!e.full) {
-                e = Entry{};
-                e.x = x, e.y = y, e.z = z, e.level = std::int16_t(level), e.bin = std::uint8_t(bin), e.full = 1;
-                ++used;
-                return e;
+    // Table t's means (v[0..8] over its weight) at p: trilinear between the cells about it at the first size that has
+    // any, the coarser sizes filling what the finer leave (a size's share by the cells it has).
+    bool means(const Table& t, const surface::V3& p, const std::uint8_t bins[2], int first, int levels, double out[9], float& confidence) const {
+        double acc[9] = {}, have = 0;
+        confidence = 0;
+        for (int k = 0; k < levels; ++k) {
+            const int level = first + k;
+            const double size = std::ldexp(1.0, level);
+            const double fx = p.x / size - 0.5, fy = p.y / size - 0.5, fz = p.z / size - 0.5;
+            const long long x0 = (long long)std::floor(fx), y0 = (long long)std::floor(fy), z0 = (long long)std::floor(fz);
+            const double tx = fx - x0, ty = fy - y0, tz = fz - z0;
+            double c[9] = {}, wsum = 0;
+            for (int corner = 0; corner < 8; ++corner) {
+                const int dx = corner & 1, dy = corner >> 1 & 1, dz = corner >> 2 & 1;
+                const double tri = (dx ? tx : 1 - tx) * (dy ? ty : 1 - ty) * (dz ? tz : 1 - tz);
+                if (tri <= 0) continue;
+                const Table::Entry* e = t.find(x0 + dx, y0 + dy, z0 + dz, level, bins[0]);
+                if (!e && bins[1] != NoBin) e = t.find(x0 + dx, y0 + dy, z0 + dz, level, bins[1]);
+                if (!e || !(e->v[9] > 0)) continue;
+                for (int q = 0; q < 9; ++q) c[q] += tri * e->v[q] / e->v[9];
+                wsum += tri;
             }
-            if (e.x == x && e.y == y && e.z == z && e.level == level && e.bin == bin) return e;
+            if (wsum <= 0) continue;
+            const double take = (1.0 - have) * std::min(1.0, wsum / 0.5);
+            for (int q = 0; q < 9; ++q) acc[q] += take * c[q] / wsum;
+            if (have == 0) confidence = float(std::min(1.0, wsum));
+            have += take;
+            if (have > 0.999) break;
         }
-    }
-    void grow(size_t size) {
-        std::vector<Entry> old;
-        old.swap(table);
-        table.assign(std::max<size_t>(size, 1024), Entry{});
-        const size_t mask = table.size() - 1;
-        for (const Entry& e : old) {
-            if (!e.full) continue;
-            size_t i = hashOf(e.x, e.y, e.z, e.level, e.bin) & mask;
-            while (table[i].full) i = (i + 1) & mask;
-            table[i] = e;
-        }
+        if (have <= 0) return false;
+        for (int q = 0; q < 9; ++q) out[q] = acc[q] / have;
+        return true;
     }
     static bool skyUV(const D3& d, double& u, double& v) {
         const double l = std::sqrt(d.x * d.x + d.y * d.y + d.z * d.z);
@@ -419,7 +482,7 @@ public:
                 const double d = nv.depthOf(nv.camera(hit.point));
                 o.depth = float(d), o.w = nv.wOf(d);
                 const D3 nn = nv.toward(D3{hit.normal.x, hit.normal.y, hit.normal.z}, hit.point);
-                o.known = store.lookup(hit.point, nn, ObjectStore::footprint(nv, angle, d), o.rgb, o.conf);
+                o.known = store.lookup(hit.point, nn, D3{ray.direction.x, ray.direction.y, ray.direction.z}, ObjectStore::footprint(nv, angle, d), o.rgb, o.conf);
             }
             if (!o.known) empty.fetch_add(1, std::memory_order_relaxed);
         };
@@ -485,10 +548,15 @@ public:
         std::vector<Pixel> outside(n);
         parallel(std::max(1u, op.threads), h, [&](size_t yy) {
             const unsigned y = unsigned(yy);
+            for (unsigned x = 0; x < w; ++x) sample(coarse, x, y, outside[size_t(y) * w + x], nullptr);
+        });
+        // Blurred over about its step (two box passes each way): bilinear alone left the grid's steps along silhouettes.
+        blur(outside, w, h, std::max(1u, S / 2), op.threads);
+        parallel(std::max(1u, op.threads), h, [&](size_t yy) {
+            const unsigned y = unsigned(yy);
             for (unsigned x = 0; x < w; ++x) {
                 const size_t i = size_t(y) * w + x;
                 Pixel& p = outside[i];
-                sample(coarse, x, y, p, nullptr);
                 const double f = fall(radius(x + 0.5, y + 0.5));
                 for (int ch = 0; ch < 3; ++ch) p.rgb[ch] = float(p.rgb[ch] * f);
                 write(i, p);
@@ -589,6 +657,41 @@ private:
         unsigned step = 1, gw = 0, gh = 0;
         std::vector<Node> nodes;
     };
+    // A box blur of the pixels' colour and confidence, radius r, twice each way (about a Gaussian).
+    static void blur(std::vector<Pixel>& px, unsigned w, unsigned h, unsigned r, unsigned threads) {
+        if (!r || px.size() != size_t(w) * h) return;
+        std::vector<Pixel> tmp(px.size());
+        auto pass = [&](const std::vector<Pixel>& from, std::vector<Pixel>& to, bool across) {
+            const unsigned lines = across ? h : w, len = across ? w : h;
+            parallel(std::max(1u, threads), lines, [&](size_t line) {
+                auto at = [&](unsigned k) -> size_t { return across ? size_t(line) * w + k : size_t(k) * w + line; };
+                double s[4] = {0, 0, 0, 0};
+                int count = 0;
+                for (unsigned k = 0; k <= std::min(r, len - 1); ++k) {
+                    const Pixel& p = from[at(k)];
+                    s[0] += p.rgb[0], s[1] += p.rgb[1], s[2] += p.rgb[2], s[3] += p.conf, ++count;
+                }
+                for (unsigned k = 0; k < len; ++k) {
+                    Pixel& o = to[at(k)];
+                    o = from[at(k)];
+                    for (int ch = 0; ch < 3; ++ch) o.rgb[ch] = float(s[ch] / count);
+                    o.conf = float(s[3] / count);
+                    if (k + r + 1 < len) {
+                        const Pixel& p = from[at(k + r + 1)];
+                        s[0] += p.rgb[0], s[1] += p.rgb[1], s[2] += p.rgb[2], s[3] += p.conf, ++count;
+                    }
+                    if (k >= r) {
+                        const Pixel& p = from[at(k - r)];
+                        s[0] -= p.rgb[0], s[1] -= p.rgb[1], s[2] -= p.rgb[2], s[3] -= p.conf, --count;
+                    }
+                }
+            });
+        };
+        for (int it = 0; it < 2; ++it) {
+            pass(px, tmp, true);
+            pass(tmp, px, false);
+        }
+    }
     // Nodes at multiples of the step, the last row and column at the picture's edge.
     static Grid makeGrid(unsigned step, unsigned w, unsigned h) {
         Grid g;
