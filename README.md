@@ -36,6 +36,9 @@ The current release is [0.5.5.1.2](https://github.com/Pbaroque20/MoonRayForModo/
   ![The same street of blocks through a tilt-shift camera at f/1.4: no tilt (left), tilted so the whole ground is sharp (middle), and tilted the other way for the miniature look (right)](docs/images/tilt-shift-camera.jpg)
 
 - **An Ocean Plane's waves in the viewport**: where it was a flat grid, an Ocean Plane now shows its sea in Modo's viewport as points where the water's surface stands, deep blue in the troughs to light blue on the crests, moving with the timeline. They are the long waves the renders make, so the size of the waves, their run with the wind and the swell show before you render. The points gather around the viewport you look through, sparser farther off, and stop at Point Distance (250 m), so a sea to the horizon costs the viewport no more than a pond. Its Viewport settings: Waves in the Viewport, Point Spacing, Point Distance. A plane whose material tag names a Modo material still shows its grid only.
+
+  ![An Ocean Plane in Modo's viewport, looking through the render camera 6 m above the water: its waves as points, deep blue in the troughs and light blue on the crests](docs/images/ocean-viewport-points.png)
+
 - **MoonRay's realtime no longer says "Buffers will be available after the first preview pass completes."** under XPU or XPU2: its picture comes on as it renders. A Render with no finished pass yet still says it.
 
 - Known: Modo can crash as it quits with Scene Proxies in the scene (its own Convert to Proxy does the same); your work and settings are saved first.
