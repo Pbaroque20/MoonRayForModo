@@ -31,6 +31,9 @@ The current release is [0.5.5.1.2](https://github.com/Pbaroque20/MoonRayForModo/
   ![A dragon with an iridescent sheen and an iridescent bubble over the sea, rendered by MoonLightIPR](docs/images/moonlightipr-iridescence.webp)
 
 - **Clear coats in MoonLightIPR match MoonRay where a surface turns away from the view**: the shine beneath a coat is seen through the coat, bent, as MoonRay sees it, where it was too bright before. A material with Clearcoat Bending off keeps it straight, as in MoonRay.
+
+  ![Dark car paint under a clear coat: MoonRay (left), MoonLightIPR before (middle), the shine beneath the coat too bright and broad, and now (right)](docs/images/moonlightipr-clear-coat.jpg)
+
 - **A tilt-shift camera** (MoonRay > Add MoonRay Item > Cameras > dwTiltShiftCamera, or Convert to MoonRay Camera... on a camera): a perspective camera whose lens tilts, leaning the plane of focus as a tilt-shift lens does. Tilt it one way to keep a whole receding ground sharp; tilt it the other way to blur everything but a band, the miniature look. Lens Tilt and Tilt Direction (in degrees) are in its Tilt-Shift group; it needs its Depth of Field on. Its Shift is the horizontal and vertical film offset. MoonRay, XPU2 and MoonLightIPR render it alike. Switch: MoonRay Source Overrides, Tilt-shift camera (on).
 
   ![The same street of blocks through a tilt-shift camera at f/1.4: no tilt (left), tilted so the whole ground is sharp (middle), and tilted the other way for the miniature look (right)](docs/images/tilt-shift-camera.jpg)
