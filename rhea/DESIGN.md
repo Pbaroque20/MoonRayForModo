@@ -970,3 +970,38 @@ the warp, already smooth, and XPU2's frame at rest are shown as they are.
 
 Switches: `XPU2_SESSION_RHEA_WARP_MESH` (0: pixel by pixel), `_WARP_CELL`, `_WARP_JUMP`, `_WARP_SOFT`, `_WARP_CHAIN`
 (1: as before), `_DENOISE`, `_DENOISE_BELOW`.
+
+## 29. The completion fade (2026-11-22)
+
+The user's design: "whatever is completed in XPU2 shading, that finished buffer should fade in, not show gpu/cpu
+squares, but composite into the first phase", with five conditions - a completion signal (finished means a region has
+its target samples, not some samples; pixels with few stay as the preview), a feathered fade of 100 to 200 ms, a move
+invalidating what the old camera had in flight, the regions where the warp is worst finished first, and a decision on
+denoising. And: if the warp with the completion fade looks good, most of sections 3, 8, 18 and 25 (the probes, their
+indexer, their persistence, the planes) are off the critical path - the ablation's question.
+
+What XPU2 gave: its realtime frame lays its samples over the whole picture in rounds (the seed, 16 to 19 samples a
+pixel in four or five passes, then adaptive passes over the tiles still noisy), and with no noise target no tile drops
+out early. "Finished" was the frame's end, everywhere at once; the squares were the devices' cells landing a pass at
+different times.
+
+- **Regions** (`Realtime::warpRegions`): the picture's 64-pixel cells (the work grid's) ranked by the warp's doubt over them
+  - a pixel the fill made counts 1, an edge or a mixed pixel 0.5, the detail the mesh's average took away (the taps'
+  luminance spread over their mean) up to 0.5 - and split into regions of as many cells each (a sixth of the cells, 4 to
+  16 regions; `XPU2_SESSION_RHEA_REGIONS`).
+- **XPU2's regional seed** (`RenderOptions::regionalBatch`, `async_render.h`): the seed's passes become one pass a region,
+  each the whole seed over that region's tiles, in order, at most two out at once; the adaptive passes after them as
+  ever. A region is finished when its pass retires - every sample of its seed in the film (`Renderer::retiredPasses`).
+  Host code only: the GPU programs are unchanged.
+- **The fade** (the session): a finished region's alpha rises over `fadeSeconds` (0.15 s, smoothstep;
+  `XPU2_SESSION_RHEA_FADE_SECONDS`); the tiles' alphas blurred twice by [1 2 1] each way and spread bilinearly, an
+  unfinished tile's pixels held at 0 (the feather goes inward: no unfinished sample shows). Pictures every 40 ms while
+  the frame runs, every 30 ms after it until the last region has faded in. XPU2's picture over the warp by alpha
+  (`Realtime::completeWarp`); the end is XPU2's own picture, exactly.
+- **A move** stops the frame (its regions and samples in flight with it); the fade is the frame's own; a picture is the
+  next warp's source only once 95% of it is wholly XPU2's.
+- **Denoising**: in the Beauty view the finished regions fade in raw, as XPU2 RT shows them (denoised while fading and
+  raw after, they would pop noisy); in Denoised Beauty the whole picture, warp and regions, goes through the denoiser.
+
+`XPU2_SESSION_RHEA_COMPLETION=0`: XPU2's samples blended into the warp as they come (mergeWarp, section 28). The
+completion fade applies where the warp is the picture's first phase (no frame of Rhea's: a drag, or no probes).

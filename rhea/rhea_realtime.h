@@ -485,6 +485,16 @@ public:
     // XPU2 at rest (DESIGN.md 24): Rhea renders the camera's moves, XPU2 the camera at rest.
     // Whether the probes are there, and whether the plan's camera is another than the last frame's (a camera move).
     bool hasProbes() const { return !field.probes.empty(); }
+    // The camera as last seen, apart from the probes' (the warp alone, no probes: XPU2_SESSION_RHEA_PROBES=0, the
+    // ablation's first step, RESULTS.md 25).
+    bool movedSince(const cpu::Plan& b) const {
+        return !haveSeen || !sameCamera(seenCamera, b.camera) || seenW != b.width || seenH != b.height;
+    }
+    // (The picture's size too: with no probes nothing else sets it; prepare resets the probes on a change of size.)
+    void see(const cpu::Plan& b) {
+        seenCamera = b.camera, haveSeen = true, seenW = b.width, seenH = b.height;
+        W = b.width, H = b.height, N = size_t(W) * H;
+    }
     bool cameraChanged(const cpu::Plan& b) const {
         return !haveCamera || !sameCamera(camera, b.camera) || field.width != b.width || field.height != b.height;
     }
@@ -597,7 +607,7 @@ public:
         // The mesh gradient (mesh_warp.h), built from the picture when it was kept; else pixel by pixel.
         bool meshed = false;
         if (op.warpMesh && mesh.valid()) {
-            if (!mesh.warp(nv, warped.color, warped.w, warped.depth, warped.from, warped.state)) return false;
+            if (!mesh.warp(nv, warped.color, warped.w, warped.depth, warped.from, warped.state, &warped.doubt)) return false;
             meshed = true;
         }
         warped.meshed = meshed;
@@ -748,6 +758,80 @@ public:
         return n ? double(all) / double(n) : 1.0;
     }
     bool hasWarp() const { return warped.valid; }
+    // The completion fade (DESIGN.md 29): XPU2's frame after a move finishes its seed region by region, the regions where
+    // the warp is likely worst first. The regions: the picture's cells (cellSize pixels a side, the work grid's), ranked by
+    // the warp's doubt over them (a pixel the fill made counts 1; an edge or detail averaged away, up to 1), split into
+    // count regions of as many cells each; each 8-pixel tile given its cell's region (tileBatch, the image's tile order).
+    // False where there is no warp.
+    bool warpRegions(unsigned count, unsigned cellSize, std::vector<std::uint16_t>& tileBatch) const {
+        const size_t n = size_t(W) * H;
+        if (!warped.valid || !count || !cellSize || warped.state.size() != n) return false;
+        const unsigned cx = (W + cellSize - 1) / cellSize, cy = (H + cellSize - 1) / cellSize;
+        std::vector<std::pair<double, unsigned>> cells(size_t(cx) * cy);
+        for (unsigned j = 0; j < cy; ++j)
+            for (unsigned i = 0; i < cx; ++i) {
+                double sum = 0;
+                size_t m = 0;
+                for (unsigned y = j * cellSize; y < std::min(H, (j + 1) * cellSize); ++y)
+                    for (unsigned x = i * cellSize; x < std::min(W, (i + 1) * cellSize); ++x, ++m) {
+                        const size_t p = size_t(y) * W + x;
+                        sum += warped.state[p] != 1 ? 1.0 : (warped.doubt.size() == n ? double(warped.doubt[p]) : 0.0);
+                    }
+                cells[size_t(j) * cx + i] = {m ? sum / double(m) : 0.0, j * cx + i};
+            }
+        std::stable_sort(cells.begin(), cells.end(), [](const auto& a, const auto& b) { return a.first > b.first; });
+        std::vector<std::uint16_t> cellBatch(cells.size());
+        const unsigned regionsWanted = std::min<unsigned>(count, unsigned(cells.size()));
+        for (size_t r = 0; r < cells.size(); ++r) cellBatch[cells[r].second] = std::uint16_t(r * regionsWanted / cells.size());
+        const unsigned tx = (W + 7) / 8, ty = (H + 7) / 8, per = cellSize / 8;
+        tileBatch.assign(size_t(tx) * ty, 0);
+        for (unsigned j = 0; j < ty; ++j)
+            for (unsigned i = 0; i < tx; ++i) tileBatch[size_t(j) * tx + i] = cellBatch[size_t(j / per) * cx + i / per];
+        return true;
+    }
+    // XPU2's picture (x) over the warp by each pixel's alpha (its finished region's fade, feathered: 0 the warp, 1 XPU2's
+    // own): the warp's colour and outputs where alpha is 0 (no gap there), XPU2's where it is 1, the colours blended
+    // between. Returns the share of pixels wholly XPU2's.
+    double completeWarp(const async::RenderResult& x, const std::vector<float>& alpha, async::RenderResult& out) const {
+        out = x;
+        const size_t n = size_t(W) * H;
+        if (!warped.valid || !last.valid || x.rgba.size() != n * 4 || alpha.size() != n || warped.color.size() != n * 3 ||
+            last.result.rgba.size() != n * 4)
+            return 1.0;
+        const size_t stride = n ? x.aov.size() / n : 0;
+        const int dmin = warped.outputs.depthMin, dmax = warped.outputs.depthMax;
+        const bool sameAovs = stride == warped.stride && last.result.aov.size() == n * stride;
+        if (out.counts.size() != n) out.counts.assign(n, 0);
+        std::vector<size_t> whole(H, 0);
+        parallel(std::max(1u, op.threads), H, [&](size_t y) {
+            for (unsigned px = 0; px < W; ++px) {
+                const size_t i = y * W + px;
+                const bool sampled = i < x.counts.size() && x.counts[i] > 0;
+                const double a = sampled ? std::clamp(double(alpha[i]), 0.0, 1.0) : 0.0;
+                if (a >= 1.0) {
+                    ++whole[y];
+                    continue;
+                }
+                const long long s = warped.from[i];
+                const float* wc = &warped.color[i * 3];
+                for (int ch = 0; ch < 3; ++ch) out.rgba[i * 4 + ch] = float(wc[ch] + a * (double(x.rgba[i * 4 + ch]) - wc[ch]));
+                if (a < 0.5 && s >= 0) {
+                    out.rgba[i * 4 + 3] = last.result.rgba[size_t(s) * 4 + 3];
+                    if (sameAovs && stride) {
+                        std::copy_n(&last.result.aov[size_t(s) * stride], stride, &out.aov[i * stride]);
+                        if (warped.w[i] > 0) {
+                            if (dmin >= 0) out.aov[i * stride + size_t(dmin)] = warped.depth[i];
+                            if (dmax >= 0) out.aov[i * stride + size_t(dmax)] = warped.depth[i];
+                        }
+                    }
+                }
+                out.counts[i] = std::max<std::uint32_t>(out.counts[i], 1u);
+            }
+        });
+        size_t all = 0;
+        for (size_t r : whole) all += r;
+        return n ? double(all) / double(n) : 1.0;
+    }
     // The pictures the session publishes, the last kept for the next move's warp (keepLast): the warp's own (it is
     // Realtime's), or another taken by swapping its vectors (the session's merged pictures, which it no longer needs).
     void publishedWarp() { lastKind = 1; }
@@ -802,7 +886,19 @@ public:
         const RealtimeOutputs o = outputsOf(b);
         const size_t stride = n ? last.result.aov.size() / n : 0;
         if (!op.warp || last.result.rgba.size() != n * 4 || o.depthMin < 0 || !stride || !last.view.init(b.camera, b.width, b.height)) return;
-        if (last.view.needsDepthScale()) last.view.setDepthScale(f.view.kind == View::Orthographic ? f.view.depthScale() : 1.0);
+        if (last.view.needsDepthScale()) {
+            // The probes' scale; without probes (XPU2_SESSION_RHEA_PROBES=0), twice the picture's farthest depth.
+            double K = f.view.kind == View::Orthographic ? f.view.depthScale() : 0.0;
+            if (!(K > 0)) {
+                double farthest = 0;
+                for (size_t i = 0; i < n; ++i) {
+                    const float d = last.result.aov[i * stride + size_t(o.depthMin)];
+                    if (std::isfinite(d) && d > farthest) farthest = d;
+                }
+                K = 2.0 * std::max(1.0, farthest);
+            }
+            last.view.setDepthScale(K);
+        }
         last.W = b.width, last.H = b.height;
         last.depth.resize(n);
         // The farthest first-hit depth too (the mesh's silhouette pixels: nearest and farthest a jump apart).
@@ -864,6 +960,7 @@ private:
         std::vector<long long> from;    // the last picture's pixel its outputs are read from
         std::vector<float> color;       // its colour (rgb)
         bool meshed = false;            // drawn from the mesh (mesh_warp.h)
+        std::vector<float> doubt;       // how far the mesh is likely off (0 to 1; what the fill made, 1; empty: pixel by pixel)
         size_t stride = 0;
         RealtimeOutputs outputs;
         bool valid = false;
@@ -887,8 +984,9 @@ private:
     }
     BackPlane::Seen seen;
     std::vector<uint8_t> layer;  // the layer each pixel's phase 1 came from: 0 none, 1 the front, 2 a slanted plane, 3 the back plane
-    surface::Camera camera{}, backCamera{};
-    bool haveCamera = false, moved = true, haveBack = false;
+    surface::Camera camera{}, backCamera{}, seenCamera{};
+    bool haveCamera = false, moved = true, haveBack = false, haveSeen = false;
+    unsigned seenW = 0, seenH = 0;
     unsigned frame = 0, moves = 0, W = 0, H = 0, nLo = 2, nHi = 2, nBg = 1;
     float filterWidth = 1.0f;
     size_t N = 0;

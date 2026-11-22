@@ -3176,7 +3176,12 @@ int session(const Args& args, const fs::path& directory) {
                     // Rhea renders the camera's moves, XPU2 the camera at rest (rhea/DESIGN.md 24). A camera move with
                     // probes in hand: one frame of Rhea's for where the camera now is, shown as soon as it lands. Else (a
                     // new scene, an edit): the probes placed for the camera, lit by XPU2's frame below once it is done.
-                    const bool moving = rheaView.hasProbes() && rheaView.cameraChanged(*scene.plan);
+                    // The ablation (rhea/RESULTS.md 25): XPU2_SESSION_RHEA_PROBES=0 is the warp and XPU2 alone - no probes
+                    // placed, no frame of Rhea's, nothing learnt from XPU2's frames; a move is the camera's change since the
+                    // last frame.
+                    const bool probesOn = envOn("XPU2_SESSION_RHEA_PROBES", true);
+                    const bool moving = probesOn ? rheaView.hasProbes() && rheaView.cameraChanged(*scene.plan) : rheaView.movedSince(*scene.plan);
+                    rheaView.see(*scene.plan);
                     double rheaSeconds = 0;
                     // Rhea's first pictures denoised in the Beauty view (rheaDenoiseNow): its frame, and XPU2's pictures folded
                     // into it or into the warp while XPU2's frame is short of rheaDenoiseBelow; the warp (a mesh gradient,
@@ -3241,7 +3246,7 @@ int session(const Args& args, const fs::path& directory) {
                         }
                     }
                     bool rheaFramed = false;
-                    if (moving && !dragging) {
+                    if (moving && !dragging && probesOn) {
                         const auto frameBegan = Clock::now();
                         auto plan = rheaView.prepare(scene.plan, *scene.cpuScene);
                         if (lane) lane->updateCamera(plan);
@@ -3288,14 +3293,99 @@ int session(const Args& args, const fs::path& directory) {
                         }
                     } else {
                         // The probes placed for the camera (a drag's step, a new scene, an edit), lit by XPU2's frame.
-                        rheaView.place(scene.plan, *scene.cpuScene);
+                        if (probesOn) rheaView.place(scene.plan, *scene.cpuScene);
                         if (!moving) rheaFrameStopped = false, rheaView.dropWarp();
                     }
                     // The pictures of XPU2's frame: with Rhea's frame folded in where there was one, else the warp.
                     const bool warpOnly = !rheaFramed && rheaView.hasWarp();
+                    // The completion fade (rhea/DESIGN.md 29, the user's design, 2026-11-22): after a move XPU2's frame
+                    // finishes its seed region by region, the regions where the warp is likely worst first
+                    // (RenderOptions::regionalBatch, Realtime::warpRegions); a region shows only once finished (every sample of
+                    // its seed in), fading in over fadeSeconds, feathered inward from its edges; XPU2's samples short of
+                    // that never show (no squares of the devices' progress). The frame ends as XPU2's own picture.
+                    // XPU2_SESSION_RHEA_COMPLETION=0: XPU2's samples blended into the warp as they come (mergeWarp).
+                    const bool completion = warpOnly && envOn("XPU2_SESSION_RHEA_COMPLETION", true);
+                    double fadeSeconds = 0.15;
+                    if (const char* v = std::getenv("XPU2_SESSION_RHEA_FADE_SECONDS")) fadeSeconds = std::max(0.0, std::atof(v));
+                    struct Fade {
+                        std::vector<std::uint16_t> tileBatch;  // each 8-pixel tile's region
+                        unsigned regions = 0, tilesX = 0, tilesY = 0;
+                        std::vector<double> doneAt;            // when each region was first seen finished (-1: not yet)
+                        std::vector<float> tileAlpha, blurred, alpha;
+                    } fade;
+                    const auto fadeBegan = Clock::now();
+                    auto fadeNow = [&] { return std::chrono::duration<double>(Clock::now() - fadeBegan).count(); };
+                    if (completion) {
+                        const unsigned cells = ((width + 63) / 64) * ((height + 63) / 64);
+                        unsigned want = std::clamp(cells / 6, 4u, 16u);
+                        if (const char* v = std::getenv("XPU2_SESSION_RHEA_REGIONS")) want = unsigned(std::max(1, std::atoi(v)));
+                        if (rheaView.warpRegions(want, 64, fade.tileBatch)) {
+                            for (std::uint16_t b : fade.tileBatch) fade.regions = std::max<unsigned>(fade.regions, b + 1u);
+                            fade.tilesX = (width + 7) / 8, fade.tilesY = (height + 7) / 8;
+                            fade.doneAt.assign(fade.regions, -1.0);
+                        }
+                    }
+                    // Each pixel's alpha now: a region finished (XPU2 past its pass, or the frame ended) fades in smoothly
+                    // over fadeSeconds; the tiles' alphas blurred twice by [1 2 1] each way and spread bilinearly over the
+                    // pixels, an unfinished tile's pixels kept at 0 (the feather goes inward). Whether a fade is under way.
+                    auto fadeAlpha = [&](bool ended) -> bool {
+                        const double now = fadeNow();
+                        const unsigned passed = ended ? fade.regions : std::min<unsigned>(renderer->retiredPasses(), fade.regions);
+                        bool going = false;
+                        std::vector<float> regionAlpha(fade.regions, 0.0f);
+                        for (unsigned b = 0; b < fade.regions; ++b) {
+                            if (b < passed && fade.doneAt[b] < 0) fade.doneAt[b] = now;
+                            if (fade.doneAt[b] < 0) {
+                                going = true;
+                                continue;
+                            }
+                            const double t = fadeSeconds > 0 ? std::clamp((now - fade.doneAt[b]) / fadeSeconds, 0.0, 1.0) : 1.0;
+                            regionAlpha[b] = float(t * t * (3 - 2 * t));
+                            going = going || t < 1;
+                        }
+                        const unsigned tx = fade.tilesX, ty = fade.tilesY;
+                        const size_t tiles = size_t(tx) * ty;
+                        fade.tileAlpha.resize(tiles), fade.blurred.resize(tiles);
+                        for (size_t t = 0; t < tiles; ++t) fade.tileAlpha[t] = regionAlpha[fade.tileBatch[t]];
+                        for (int pass = 0; pass < 2; ++pass) {
+                            for (unsigned j = 0; j < ty; ++j)
+                                for (unsigned i = 0; i < tx; ++i) {
+                                    const size_t c = size_t(j) * tx + i;
+                                    fade.blurred[c] = 0.25f * fade.tileAlpha[i > 0 ? c - 1 : c] + 0.5f * fade.tileAlpha[c] + 0.25f * fade.tileAlpha[i + 1 < tx ? c + 1 : c];
+                                }
+                            for (unsigned j = 0; j < ty; ++j)
+                                for (unsigned i = 0; i < tx; ++i) {
+                                    const size_t c = size_t(j) * tx + i;
+                                    fade.tileAlpha[c] = 0.25f * fade.blurred[j > 0 ? c - tx : c] + 0.5f * fade.blurred[c] + 0.25f * fade.blurred[j + 1 < ty ? c + tx : c];
+                                }
+                        }
+                        const size_t pixels = size_t(width) * height;
+                        fade.alpha.resize(pixels);
+                        for (U32 y = 0; y < height; ++y) {
+                            const double v = (double(y) + 0.5 - 4.0) / 8.0;
+                            const int j0 = std::clamp(int(std::floor(v)), 0, int(ty) - 1), j1 = std::min(j0 + 1, int(ty) - 1);
+                            const float fy = float(std::clamp(v - j0, 0.0, 1.0));
+                            for (U32 x = 0; x < width; ++x) {
+                                const size_t own = size_t(y / 8) * tx + x / 8;
+                                if (regionAlpha[fade.tileBatch[own]] <= 0) {
+                                    fade.alpha[size_t(y) * width + x] = 0;
+                                    continue;
+                                }
+                                const double u = (double(x) + 0.5 - 4.0) / 8.0;
+                                const int i0 = std::clamp(int(std::floor(u)), 0, int(tx) - 1), i1 = std::min(i0 + 1, int(tx) - 1);
+                                const float fx = float(std::clamp(u - i0, 0.0, 1.0));
+                                const float* a = fade.tileAlpha.data();
+                                const float top = (1 - fx) * a[size_t(j0) * tx + i0] + fx * a[size_t(j0) * tx + i1];
+                                const float bot = (1 - fx) * a[size_t(j1) * tx + i0] + fx * a[size_t(j1) * tx + i1];
+                                fade.alpha[size_t(y) * width + x] = (1 - fy) * top + fy * bot;
+                            }
+                        }
+                        return going;
+                    };
                     // The camera at rest: XPU2's own frame (its sampling generations, its samples where the noise is),
                     // each of its pictures folded into Rhea's sums as it comes, phase 1 fading out as the frame goes on.
                     async::Watch rest = watch;
+                    if (completion && fade.regions) rest.previewSeconds = std::min(rest.previewSeconds, 0.04);  // the fades' pace
                     bool wanted = false;  // the session's previews want the outputs (a denoised or other view)
                     double lastFraction = 0;
                     rest.previewAov = [&] {
@@ -3306,7 +3396,10 @@ int session(const Args& args, const fs::path& directory) {
                         lastFraction = fraction;
                         async::RenderResult merged;
                         double coverage = 1.0;  // the share of pixels XPU2's samples reached (a picture mostly a warp is no source)
-                        if (warpOnly) coverage = rheaView.mergeWarp(sofar, fraction, merged);
+                        if (completion && fade.regions) {
+                            fadeAlpha(false);
+                            coverage = rheaView.completeWarp(sofar, fade.alpha, merged);  // the share wholly XPU2's
+                        } else if (warpOnly) coverage = rheaView.mergeWarp(sofar, fraction, merged);
                         else rheaView.merge(sofar, fraction, merged);
                         struct Kept {
                             rhea::Realtime& view;
@@ -3315,7 +3408,9 @@ int session(const Args& args, const fs::path& directory) {
                             ~Kept() { view.published(std::move(from), coverage); }  // after it is shown: kept for the next move's warp
                         } kept{rheaView, merged, coverage};
                         if (wanted && watch.previewResult) {
-                            rheaDenoiseNow = rheaDenoise && (rheaFramed || warpOnly) && fraction < rheaDenoiseBelow;
+                            // Under the completion fade, the Beauty view shows XPU2's finished regions as XPU2 RT does (raw):
+                            // denoised while they fade in and raw after, they would pop noisy; Denoised Beauty denoises it all.
+                            rheaDenoiseNow = rheaDenoise && !completion && (rheaFramed || warpOnly) && fraction < rheaDenoiseBelow;
                             watch.previewResult(merged, fraction);
                             rheaDenoiseNow = false;
                         } else if (watch.preview) {
@@ -3337,13 +3432,44 @@ int session(const Args& args, const fs::path& directory) {
                     const bool gpuDrag = dragging && lane && o.mode == 2 && scene.plan->cpuOnlyMeshes == 0 && !sceneHasCpuAloneObjects &&
                                          envOn("XPU2_SESSION_RHEA_DRAG_GPU_ONLY", true);
                     if (gpuDrag) o.mode = 1;
+                    if (completion && fade.regions) o.regionalBatch = fade.tileBatch, o.regionalCount = fade.regions;
                     const auto restBegan = Clock::now();
                     const async::RenderResult x = renderer->render(o);
                     if (x.failed) return x;
                     // The drag over: XPU2's frame ended, or ran longer than Rhea's frame takes (the moves have paused).
                     if (!x.cancelled || std::chrono::duration<double>(Clock::now() - restBegan).count() > 1.2 * rheaFrameCost) rheaFrameStopped = false;
                     double coverage = 1.0;
-                    if (warpOnly) coverage = rheaView.mergeWarp(x, x.cancelled || x.drained ? lastFraction : 1.0, shown);
+                    if (completion && fade.regions && !x.cancelled && x.rgba.size() == size_t(width) * height * 4) {
+                        // The regions the frame's end finished, faded in after it (pictures every 30 ms until each is whole,
+                        // unless a move comes): the last picture is XPU2's own.
+                        while (fadeAlpha(true) && !(watch.stop && watch.stop())) {
+                            async::RenderResult merged;
+                            const double whole = rheaView.completeWarp(x, fade.alpha, merged);
+                            if (wanted && watch.previewResult) watch.previewResult(merged, 1.0);
+                            else if (watch.preview) {
+                                std::vector<float> rgb(size_t(width) * height * 3);
+                                for (size_t i = 0; i < size_t(width) * height; ++i)
+                                    for (int c = 0; c < 3; ++c) {
+                                        const float v = merged.rgba[i * 4 + c];
+                                        rgb[i * 3 + c] = std::isfinite(v) ? v : 0.0f;
+                                    }
+                                watch.preview(rgb, width, height, 1.0);
+                            }
+                            rheaView.published(std::move(merged), whole);
+                            std::this_thread::sleep_for(std::chrono::milliseconds(30));
+                        }
+                        fadeAlpha(true);
+                        coverage = rheaView.completeWarp(x, fade.alpha, shown);
+                        std::string when;
+                        for (unsigned b = 0; b < fade.regions; ++b) {
+                            char s[24];
+                            std::snprintf(s, sizeof s, "%s%.2f", b ? " " : "", fade.doneAt[b]);
+                            when += s;
+                        }
+                        std::printf("MoonRay XPU2: Rhea: completion fade, %u regions finished at %s s\n", fade.regions, when.c_str());
+                        std::fflush(stdout);
+                    } else if (completion && fade.regions) coverage = rheaView.completeWarp(x, fade.alpha, shown);
+                    else if (warpOnly) coverage = rheaView.mergeWarp(x, x.cancelled || x.drained ? lastFraction : 1.0, shown);
                     else rheaView.merge(x, x.cancelled || x.drained ? lastFraction : 1.0, shown);
                     shown.cancelled = x.cancelled, shown.drained = x.drained;
                     // The picture as shown, for the next move's warp: the frame's own, or the last it published.
@@ -3351,7 +3477,7 @@ int session(const Args& args, const fs::path& directory) {
                     else rheaView.keepLast(*scene.plan);
                     // The probes learn from XPU2's frame, as far as it came (a move stopped it, or it ended): on a heavy
                     // scene the first frame at rest may never end before a drag.
-                    rheaView.absorbRest(x);
+                    if (probesOn) rheaView.absorbRest(x);
                     if (!rheaView.op.debugFolder.empty()) {
                         // An investigation: the camera, its name and node transform, for scripted moves.
                         const rdl::SceneObject* cam = scene.source ? scene.source->getSceneVariables().get(rdl::SceneVariables::sCamera) : nullptr;

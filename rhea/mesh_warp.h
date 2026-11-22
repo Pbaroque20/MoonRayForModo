@@ -217,13 +217,13 @@ public:
             if (b >= 0) {
                 const Vertex& from = verts[size_t(b)];
                 std::copy_n(from.c, 3, verts[v].c);
-                verts[v].depth = from.depth, verts[v].sky = from.sky;
+                verts[v].depth = from.depth, verts[v].sky = from.sky, verts[v].doubt = from.doubt;
             } else {
                 Vertex tmp;
                 tmp.pixel = verts[v].pixel;
                 shade(tmp);
                 std::copy_n(tmp.c, 3, verts[v].c);
-                verts[v].depth = tmp.depth, verts[v].sky = tmp.sky;
+                verts[v].depth = tmp.depth, verts[v].sky = tmp.sky, verts[v].doubt = tmp.doubt;
             }
         }
         vertexCount = verts.size(), triangleCount = tris.size() / 3;
@@ -236,7 +236,7 @@ public:
     // depth (0 the environment), the picture's pixel its outputs come from, and whether a triangle drew it (1) or the
     // fill did (2). False where nothing of the mesh is seen.
     bool warp(const View& nv, std::vector<float>& outColor, std::vector<double>& outW, std::vector<float>& outDepth,
-              std::vector<long long>& outFrom, std::vector<uint8_t>& outState) {
+              std::vector<long long>& outFrom, std::vector<uint8_t>& outState, std::vector<float>* outDoubt = nullptr) {
         const auto began = std::chrono::steady_clock::now();
         if (!ok || nv.kind == View::Directional) return false;
         const size_t n = size_t(W) * H;
@@ -260,6 +260,7 @@ public:
             }
         });
         outColor.assign(n * 3, 0.0f), outW.assign(n, -1.0), outDepth.assign(n, 0.0f), outFrom.assign(n, -1), outState.assign(n, 0);
+        if (outDoubt) outDoubt->assign(n, 1.0f);  // what the fill makes stays 1
         // The triangles into bands of rows (each band drawn by one thread, nearest first), each where its rows are.
         const unsigned bands = std::max(1u, std::min(H, threads * 8));
         const unsigned bandRows = (H + bands - 1) / bands;
@@ -316,6 +317,7 @@ public:
                         const Vertex& near = l0 >= l1 && l0 >= l2 ? va : (l1 >= l2 ? vb : vc);
                         outFrom[i] = (long long)near.pixel;
                         outState[i] = 1;
+                        if (outDoubt) (*outDoubt)[i] = float(l0 * va.doubt + l1 * vb.doubt + l2 * vc.doubt);
                         outDepth[i] = sky ? 0.0f : float(ortho ? K * (1.0 - ww) : 1.0 / ww);
                     }
                 }
@@ -339,6 +341,7 @@ private:
         float x = 0, y = 0;       // where it is in the picture (raster, a pixel's centre at +0.5; a twin's past the edge)
         float c[3] = {};
         float depth = 0;
+        float doubt = 0;  // how far the warp is likely off here: the detail averaged away, an edge (0 to 1)
         bool sky = false, twin = false;
     };
     struct Twin {
@@ -477,7 +480,7 @@ private:
             gx = left && right ? (lw[i + 1] - lw[i - 1]) / 2 : right ? lw[i + 1] - wv : left ? wv - lw[i - 1] : 0.0;
             gy = up && down ? (lw[i + W] - lw[i - W]) / 2 : down ? lw[i + W] - wv : up ? wv - lw[i - W] : 0.0;
         }
-        double sum[3] = {}, weight = 0;
+        double sum[3] = {}, weight = 0, l1 = 0, l2 = 0;
         const int yl = std::max(0, int(y) - r), yh = std::min(int(H) - 1, int(y) + r);
         const int xl = std::max(0, int(x) - r), xh = std::min(int(W) - 1, int(x) + r);
         for (int yy = yl; yy <= yh; ++yy)
@@ -496,8 +499,19 @@ private:
                 }
                 for (int k = 0; k < 3; ++k) sum[k] += a * color[j * 3 + k];
                 weight += a;
+                const double l = 0.2126 * color[j * 3] + 0.7152 * color[j * 3 + 1] + 0.0722 * color[j * 3 + 2];
+                l1 += a * l, l2 += a * l * l;
             }
         for (int k = 0; k < 3; ++k) v.c[k] = weight > 0 ? float(sum[k] / weight) : (i < color.size() / 3 ? color[i * 3 + k] : 0.0f);
+        // Its doubt: the detail the average took away (the taps' luminance spread over their mean), half; an edge (a
+        // jump beside it, or a mixed pixel), half.
+        double spread = 0;
+        if (weight > 0) {
+            const double m = l1 / weight, var = std::max(0.0, l2 / weight - m * m);
+            spread = std::min(1.0, std::sqrt(var) / (m + 0.02));
+        }
+        const bool edge = mixed[i] || eh[i] || ev[i] || (x > 0 && eh[i - 1]) || (y > 0 && ev[i - W]);
+        v.doubt = float(0.5 * spread + (edge ? 0.5 : 0.0));
     }
     // Cracks (a pixel no triangle drew between two of one surface, left and right or above and below: where cells of two
     // sizes meet, or a magnified surface's seam), closed from those two.
