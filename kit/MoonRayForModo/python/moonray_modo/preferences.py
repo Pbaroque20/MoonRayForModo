@@ -100,8 +100,8 @@ KEYS = {
     # MoonLightIPR follows a drag step by step, each step at its first sample, the picture still from the mouse pressed to
     # the release (opt-in); off, a drag is rendered once the mouse is let go.
     'moonlightipr/follow_drags': (False, bool),
-    # XPU2 RT's engine: Rhea (persistent probes, XPU2's own samples wherever they do not hold; the default, asked
-    # 2026-11-20), or XPU2's realtime frames as before.
+    # XPU2 RT's engine: XPU2 Rhea (a camera move shown at once from XPU2's light kept on the surfaces, XPU2's own picture
+    # fading in over it; the default, asked 2026-11-20), or XPU2's realtime frames as before.
     'xpu2/rt_engine': ('rhea', str),
     # XPU2 RT follows a camera drag in the viewport step by step (opt-in, as MoonLightIPR's Follow drags); off, a drag of
     # the viewport's camera is rendered once the mouse is let go.
@@ -286,9 +286,9 @@ class Dialog(QtWidgets.QDialog):
 
         # XPU2 RT's engine and drags, below XPU2 RT Sample %.
         rt_engine = combo('xpu2/rt_engine', [('Rhea', 'rhea'), ('XPU2', 'xpu2')],
-                          'MoonRay XPU2 only. What renders realtime (RT on): Rhea, persistent probes that reuse what they found '
-                          'from frame to frame and hand every pixel they cannot vouch for to XPU2\'s own samples (the default), '
-                          'or XPU2\'s realtime frames as before. Render is XPU2\'s either way')
+                          'MoonRay XPU2 only. What renders realtime (RT on): XPU2 Rhea (the default), which shows a camera move '
+                          'at once from the light XPU2 has already rendered on the surfaces, XPU2\'s own picture fading in over '
+                          'it; or XPU2\'s realtime frames as before. Render is XPU2\'s either way')
         rt_drags = check('xpu2/follow_drags', 'XPU2 RT follows drags',
                          'MoonRay XPU2 only. Realtime (RT on) follows a drag of the viewport\'s camera as it happens, each step '
                          'rendered as it comes. Off, the picture is rendered once the mouse is let go')
