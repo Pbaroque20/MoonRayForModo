@@ -3461,6 +3461,7 @@ int session(const Args& args, const fs::path& directory) {
                     if (const char* v = std::getenv("XPU2_SESSION_RHEA_RINGS")) rheaView.op.objectRings = unsigned(std::max(1, std::atoi(v)));
                     if (const char* v = std::getenv("XPU2_SESSION_RHEA_LOOKUP_UP")) rheaView.op.objectLookupUp = std::max(-1, std::atoi(v));
                     rheaView.op.learnRaw = envOn("XPU2_SESSION_RHEA_LEARN_RAW", true);
+                    if (const char* v = std::getenv("XPU2_SESSION_RHEA_DEPTH_FILL")) rheaView.op.objectFillDepth = std::max(0.0, std::atof(v));
                     if (const char* v = std::getenv("XPU2_SESSION_RHEA_STORE_SCALE")) rheaView.op.storeScale = std::max(0.5, std::atof(v));
                     if (const char* v = std::getenv("XPU2_SESSION_RHEA_GRAZING")) rheaView.op.storeGrazing = std::max(1.0, std::atof(v));
                     // The user's composite (2026-11-22): light and albedo apart in the store, the albedo finer.

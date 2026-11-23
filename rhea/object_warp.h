@@ -47,6 +47,91 @@ namespace async = xpu2::interactive::async;
 // of a whole weight takes the rest from the coarser level's estimate, interpolated (bilinear): a smooth colour interpolation
 // from the texels that hold their colour, where copying the coarser texel made blocks of its size (the user, 2026-11-22:
 // the "splotchy backgrounds").
+// pullPush taking depth into account (the user, 2026-11-22: "do the depth-aware fill"; the Bregman divergence of Rhea's
+// research, its lifted inverse depth): z is each texel's lifted inverse depth (> 0, the surface there; 0 none). A texel
+// short of colour takes it from the coarser level's texels about it weighed by how near their colour's depth is to its
+// own (relative, exp(-(d / sigma)^2)): a tyre's colour no longer runs onto the floor beside it, nor a wall's onto the
+// object before it. Where none near in depth holds colour, the plain weights (pullPush's), so nothing is left unfilled.
+// Each coarser texel carries the depth of the colour it holds (its known texels', averaged by their weight) and the
+// depth of its region's surface (every texel's with a depth, for one that held no colour and was filled).
+inline void pullPushDepth(std::vector<float>& c, const std::vector<float>& z, unsigned w, unsigned h, double sigma) {
+    struct Level {
+        unsigned w, h;
+        std::vector<float> m;      // rgb, weight
+        std::vector<float> zc, zg;  // the colour's depth, the surface's depth (0: none)
+    };
+    std::vector<Level> lv;
+    lv.push_back({w, h, c, z, z});
+    while (lv.back().w > 1 || lv.back().h > 1) {
+        const Level& f = lv.back();
+        Level q{std::max(1u, (f.w + 1) / 2), std::max(1u, (f.h + 1) / 2), {}, {}, {}};
+        const size_t qn = size_t(q.w) * q.h;
+        q.m.assign(qn * 4, 0.0f), q.zc.assign(qn, 0.0f), q.zg.assign(qn, 0.0f);
+        std::vector<float> zcw(qn, 0.0f), zgn(qn, 0.0f);
+        for (unsigned y = 0; y < f.h; ++y)
+            for (unsigned x = 0; x < f.w; ++x) {
+                const size_t fi = size_t(y) * f.w + x, qi = size_t(y / 2) * q.w + x / 2;
+                if (f.zg[fi] > 0) q.zg[qi] += f.zg[fi], zgn[qi] += 1.0f;
+                const float* s = &f.m[fi * 4];
+                if (!(s[3] > 0)) continue;
+                float* d = &q.m[qi * 4];
+                for (int k = 0; k < 3; ++k) d[k] += s[k] * s[3];
+                d[3] += s[3];
+                if (f.zc[fi] > 0) q.zc[qi] += f.zc[fi] * s[3], zcw[qi] += s[3];
+            }
+        for (size_t i = 0; i < qn; ++i) {
+            float* d = &q.m[i * 4];
+            if (d[3] > 0)
+                for (int k = 0; k < 3; ++k) d[k] /= d[3];
+            d[3] = std::min(1.0f, d[3]);
+            q.zc[i] = zcw[i] > 0 ? q.zc[i] / zcw[i] : 0.0f;
+            q.zg[i] = zgn[i] > 0 ? q.zg[i] / zgn[i] : 0.0f;
+        }
+        lv.push_back(std::move(q));
+    }
+    if (lv.back().m[3] > 0) lv.back().m[3] = 1.0f;
+    const double inv = sigma > 0 ? 1.0 / sigma : 0.0;
+    auto near = [&](float a, float b) {
+        if (!(a > 0) || !(b > 0) || !(inv > 0)) return 1.0;
+        const double d = std::fabs(double(a) - b) / std::max(a, b) * inv;
+        return std::exp(-d * d);
+    };
+    for (size_t k = lv.size() - 1; k-- > 0;) {
+        Level& f = lv[k];
+        const Level& q = lv[k + 1];
+        for (unsigned y = 0; y < f.h; ++y)
+            for (unsigned x = 0; x < f.w; ++x) {
+                const size_t fi = size_t(y) * f.w + x;
+                float* d = &f.m[fi * 4];
+                if (d[3] >= 1.0f) continue;
+                const double qx = std::clamp((x + 0.5) * 0.5 - 0.5, 0.0, double(q.w - 1)), qy = std::clamp((y + 0.5) * 0.5 - 0.5, 0.0, double(q.h - 1));
+                const unsigned x0 = unsigned(qx), y0 = unsigned(qy), x1 = std::min(x0 + 1, q.w - 1), y1 = std::min(y0 + 1, q.h - 1);
+                const double tx = qx - x0, ty = qy - y0;
+                const double wt[4] = {(1 - tx) * (1 - ty), tx * (1 - ty), (1 - tx) * ty, tx * ty};
+                const size_t at[4] = {size_t(y0) * q.w + x0, size_t(y0) * q.w + x1, size_t(y1) * q.w + x0, size_t(y1) * q.w + x1};
+                const float own = f.zg[fi];
+                double up[3] = {0, 0, 0}, sw = 0, plain[3] = {0, 0, 0}, pw = 0;
+                for (int j = 0; j < 4; ++j) {
+                    const float* s = &q.m[at[j] * 4];
+                    const double a = wt[j] * s[3];
+                    if (!(a > 0)) continue;
+                    const double b = a * near(own, q.zc[at[j]]);
+                    for (int ch = 0; ch < 3; ++ch) plain[ch] += a * s[ch], up[ch] += b * s[ch];
+                    pw += a, sw += b;
+                }
+                if (!(pw > 0)) continue;
+                // Near in depth where any is (a hundredth of the plain weight at least), else the plain fill.
+                const bool deep = sw > 1e-2 * pw;
+                const double own3 = std::max(0.0f, d[3]);
+                for (int ch = 0; ch < 3; ++ch) d[ch] = float(own3 * d[ch] + (1.0 - own3) * (deep ? up[ch] / sw : plain[ch] / pw));
+                d[3] = 1.0f;
+                // Its colour is now its own surface's.
+                if (!(f.zc[fi] > 0)) f.zc[fi] = own;
+            }
+    }
+    c.swap(lv.front().m);
+}
+
 inline void pullPush(std::vector<float>& c, unsigned w, unsigned h) {
     struct Level {
         unsigned w, h;
@@ -614,6 +699,9 @@ public:
         // The most sizes up a lookup climbs (ObjectStore::lookup's maxUp): an answer past trustUp weighs little in the
         // interpolation, and the climb through empty sizes was the dearest part of a drag step. -1: every size.
         int lookupUp = 5;
+        // The fill of what the store did not answer for, by depth (pullPushDepth): sources whose depth is off by about this
+        // share (relative, in lifted inverse depth) weigh little. 0: the plain fill (pullPush).
+        double fillDepth = 0.06;
         // With nothing in the store (the first frame of realtime): each hit's material colour (the CPU's), lit from the
         // camera, so that phase one has a first look before XPU2's first pictures fade in.
         bool firstLook = true;
@@ -894,7 +982,7 @@ public:
             } else
                 shadeRows(rows_);
             const auto t = Clock::now();
-            fillNodes(g);
+            fillNodes(g, op.fillDepth);
             fillSeconds += since(t);
         };
         // Each pixel's colour from a grid: bilinear between its cell's corners; smooth: they are one smooth surface.
@@ -1212,13 +1300,18 @@ private:
     // other at a silhouette. The colour interpolation first, the coarse cells only where no trusted node is near (the user,
     // 2026-11-22: "in coarse areas where the shading is unpredictable, that should just be handed over to an auto-color
     // interpolation"; "it should be first a color interpolation then generate the coarse-smooth area").
-    static void fillNodes(Grid& g) {
+    // The surfaces' by depth (pullPushDepth, depth > 0: its tolerance), the environment's plainly.
+    static void fillNodes(Grid& g, double depth) {
         for (std::uint8_t kind = 1; kind <= 2; ++kind) {
             std::vector<float> c(size_t(g.gw) * g.gh * 4, 0.0f);
+            std::vector<float> z;
+            const bool byDepth = kind == 1 && depth > 0;
+            if (byDepth) z.assign(size_t(g.gw) * g.gh, 0.0f);
             bool any = false, needed = false;
             for (size_t k = 0; k < g.nodes.size(); ++k) {
                 const Node& o = g.nodes[k];
                 if (o.kind != kind) continue;
+                if (byDepth && o.w > 0) z[k] = float(o.w);
                 if (o.weight > 0) {
                     c[k * 4] = o.rgb[0], c[k * 4 + 1] = o.rgb[1], c[k * 4 + 2] = o.rgb[2], c[k * 4 + 3] = std::min(1.0f, o.weight);
                     any = true;
@@ -1226,7 +1319,8 @@ private:
                 if (o.weight < 1) needed = true;
             }
             if (!any || !needed) continue;
-            pullPush(c, g.gw, g.gh);
+            if (byDepth) pullPushDepth(c, z, g.gw, g.gh, depth);
+            else pullPush(c, g.gw, g.gh);
             for (size_t k = 0; k < g.nodes.size(); ++k) {
                 Node& o = g.nodes[k];
                 if (o.kind == kind && o.weight < 1 && c[k * 4 + 3] > 0) o.rgb[0] = c[k * 4], o.rgb[1] = c[k * 4 + 1], o.rgb[2] = c[k * 4 + 2];

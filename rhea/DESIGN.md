@@ -1186,3 +1186,27 @@ during drags, XPU2 after the release), then "we need to make this drag-fast now 
   the CPU's hits 49-52 ms there. Its first picture 8 to 9 ms, 12 to 13 ms after the step was applied. Where it goes now:
   rays made 3 ms, the card 4 ms, shading 8 ms, fills 1.4 ms, coarse picture 6 ms, finished picture 5 ms, FXAA 2.5 ms,
   shown 2.4 ms.
+
+## 32. Regions, the head start, learning while dragging, the depth-aware fill (2026-11-22)
+
+- **Regions as they finish** (the user: "the fade in should be smarter, filling in batches of areas instead of waiting for
+  the buckets to refine"): XPU2's seed regions, least sure first, fade in as each finishes (`XPU2_SESSION_RHEA_FADE_WHOLE=1`:
+  the whole grid at once). On the car the first came 2.9 s after the release (the whole seed: 13 to 29 s).
+- **The head start** (`Realtime::headStart`): XPU2's picture with phase one's colour counted as up to 8 samples where
+  phase one is sure, dropped where the two part by more than XPU2's noise allows over 3 x 3 pixels; let go over the fade
+  at the frame's end, which is XPU2's own. On the glossy car it switched itself off almost everywhere (the store holds
+  reflections seen from elsewhere): no gain there; it is for matte surfaces.
+- **Learning as samples come** (`Realtime::learn`; "it learns but it does it slowly"): each pixel's new samples at every
+  pass, twice a second, and as a frame stops or ends, whatever share they cover; no longer from the kept picture at the
+  next move (95% coverage asked, phase one's own colours in it). A drag's step whose view the store knew too little of
+  (`XPU2_SESSION_RHEA_FILL_UNKNOWN`, 0.3) starts XPU2's frame at once; a launch on the car (0.9 s) outlasts a 0.25 s step,
+  so the stopped frame's GPU samples are harvested by the next command (`rheaHarvest`: the card's film read back after the
+  drain, resolved as XPU2 resolves it, learned with that frame's camera). Behind the car and back: the view known on the
+  way back 74-77%, 50-53% without the harvest.
+- **The status line:** `@@MODO_XPU2 RHEA <known%> <learning>`; the kit says "Rhea · 81% of the view known · learning" in
+  place of XPU2's status, and the picture's line "Rhea" in place of XPU2's sampling.
+- **A camera drag's release** is a move alone in the kit (no scene read, hash or text), as its steps were.
+- **The depth-aware fill** (`pullPushDepth`, from the research's Bregman divergence in lifted inverse depth): the surfaces'
+  unknown nodes take colour only from sources near their own depth (`XPU2_SESSION_RHEA_DEPTH_FILL`, 0.06; 0 the plain fill),
+  falling back to the plain fill where none is near. Behind the car the body's silhouette stays sharp against the floor
+  and the spoiler stays apart from the body, where the plain fill smeared them; fills 2 -> 5 ms a step.
