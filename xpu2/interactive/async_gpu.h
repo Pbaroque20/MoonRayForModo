@@ -1873,6 +1873,12 @@ public:
     // begun on this scene before (its buffers made); false otherwise, the caller's CPU tracing them.
     bool firstHits(const surface::Ray* rays, size_t count, resume::Hit* out) {
         if (!count) return true;
+        return firstHitsBegin(rays, count) && firstHitsEnd(out);
+    }
+    // firstHits in two: the launch queued (false: not taken, as firstHits), then its hits waited for and copied out (false:
+    // none queued). Between them the caller works on (Rhea's coarse picture while the card traces the fine grid).
+    bool firstHitsBegin(const surface::Ray* rays, size_t count) {
+        if (!count || firstPending_) return false;
         if (!inFlight_.empty() || !paramsFree() || !program_ || !plan_ || !scene_.config || !scene_.materials || !scene_.aovTables || !scene_.geometry ||
             !ring_ || !state_ || !parked_ || !lowFlags_ || !refines_ || !scene_.provSums || !scene_.provCounts || !scene_.sums ||
             !scene_.counts || !scene_.odd || count > 0xffffffffull)
@@ -1897,8 +1903,14 @@ public:
         copyOut(firstHitsHost_, firstHitsDevice_, hitBytes);
         gpu::Driver::check(driver.cuEventRecord_p(firstHitsDone_->value, stream_));
         slot.done = firstHitsDone_;
+        firstPending_ = count;
+        return true;
+    }
+    bool firstHitsEnd(resume::Hit* out) {
+        if (!firstPending_) return false;
         while (!firstHitsDone_->ready()) std::this_thread::yield();
-        std::memcpy(out, firstHitsHost_->host(), hitBytes);
+        std::memcpy(out, firstHitsHost_->host(), firstPending_ * sizeof(resume::Hit));
+        firstPending_ = 0;
         return true;
     }
 
@@ -3621,6 +3633,7 @@ private:
     // Rhea's first hits (firstHits): the rays and hits each way, and the copy's end.
     B firstRaysHost_, firstRaysDevice_, firstHitsHost_, firstHitsDevice_;
     std::shared_ptr<gpu::Event> firstHitsDone_;
+    size_t firstPending_ = 0;  // the rays of a firstHitsBegin not yet ended
     U32 refineCapacity_ = 1u << 22;
     U64 refineHead_ = 0;
     std::vector<Refine> refinesOut_;

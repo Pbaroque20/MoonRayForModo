@@ -81,6 +81,7 @@ struct RealtimeOptions {
     double storeScale = 2, storeGrazing = 8;
     size_t objectRays = 60000;
     unsigned objectRings = 3;
+    int objectLookupUp = 5;  // ObjectWarp::Options::lookupUp
     bool objectAntialias = true;  // phase one's finished picture through FXAA (object_warp.h Fxaa)
     bool objectPackets = true;    // its rays four at a time, where the scene is triangles alone (ObjectWarp::Options::packets)
     bool objectFirstLook = true;  // realtime's first frame: the hits' material colours lit from the camera (ObjectWarp)
@@ -746,6 +747,7 @@ public:
         wo.rays = op.objectRays, wo.jump = op.warpJump;
         // Every processor: phase one comes before XPU2's frame (Rhea's own cap, 8, is the probes' beside XPU2's frame).
         wo.rings = op.objectRings, wo.antialias = op.objectAntialias, wo.packets = op.objectPackets, wo.firstLook = op.objectFirstLook;
+        wo.lookupUp = op.objectLookupUp;
         wo.threads = std::max(threads, std::thread::hardware_concurrency());
         out.cancelled = out.drained = out.failed = false;
         // Its outputs are none but the depths (written below each time): zeroed only where something else wrote them since

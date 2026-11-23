@@ -276,7 +276,10 @@ public:
     // width there): true where the store holds it (confidence: the share of the neighbouring cells it has, at the finest
     // size it has).
     // up: how many sizes coarser than the point's own its colour came from.
-    bool lookup(const surface::V3& p, const D3& n, const D3& dir, double foot, float rgb[3], float& confidence, int* up = nullptr) const {
+    // maxUp: the most sizes up from the point's own the lookup climbs (-1: up to op.levels + 6). A point no picture has
+    // shown climbed every size, up to 16 hash probes each, the most of a drag step's lookups on the user's car.
+    bool lookup(const surface::V3& p, const D3& n, const D3& dir, double foot, float rgb[3], float& confidence, int* up = nullptr,
+                int maxUp = -1) const {
         confidence = 0;
         if (up) *up = 0;
         if (!light.used) return false;
@@ -285,7 +288,8 @@ public:
         const int first = levelOf(foot * stretch(n, dir, op.grazing) * op.scale);
         double m[9];
         int sizesUp = 0;
-        if (!means(light, p, bins, first, op.levels + 6, m, confidence, &sizesUp)) return false;
+        const int levels = maxUp >= 0 ? std::min(op.levels + 6, maxUp + 1) : op.levels + 6;
+        if (!means(light, p, bins, first, levels, m, confidence, &sizesUp)) return false;
         if (up) *up = sizesUp;
         for (int ch = 0; ch < 3; ++ch) rgb[ch] = float(std::max(0.0, m[ch]));
         if (op.albedo && fine.used) {
@@ -607,6 +611,9 @@ public:
         // colour; else the colour interpolated from the trusted (fillNodes): a coarse answer from a few cells is a block.
         double trust = 0.15;
         int trustUp = 3;
+        // The most sizes up a lookup climbs (ObjectStore::lookup's maxUp): an answer past trustUp weighs little in the
+        // interpolation, and the climb through empty sizes was the dearest part of a drag step. -1: every size.
+        int lookupUp = 5;
         // With nothing in the store (the first frame of realtime): each hit's material colour (the CPU's), lit from the
         // camera, so that phase one has a first look before XPU2's first pictures fade in.
         bool firstLook = true;
@@ -625,9 +632,17 @@ public:
     // rays go to it together (the coarse grid, a ring, a ring's edges), the store's lookups staying on the CPU's threads
     // (the user, 2026-11-22: "have Rhea phase 1 use both gpu/cpu"). Empty: the CPU alone.
     std::function<bool(const surface::Ray*, size_t, resume::Hit*)> cardTrace;
-    // The last view's rays the card traced, and the time its calls took (rays out, launch, hits back).
+    // cardTrace in two (the card's launch queued, then its hits waited for): the fine grid's rays, every ring's, sent once
+    // the coarse grid is traced and traced while the coarse picture is made and shown. Either empty: the rings' rays as
+    // they come.
+    std::function<bool(const surface::Ray*, size_t)> cardBegin;
+    std::function<bool(resume::Hit*)> cardEnd;
+    // The last view's rays the card traced, and the time its calls took (rays out, launch, hits back; a begun launch's from
+    // its end's wait alone).
     size_t cardRays = 0;
     double cardSeconds = 0;
+    // The last view's CPU time in the rays' making (rows, rays), the hits' shading (the store's lookups), the fills.
+    double rowsSeconds = 0, shadeSeconds = 0, fillSeconds = 0;
 
     // A view of the store through camera nv, by the scene's first hits: each pixel's colour (rgb), lifted depth w (-1 the
     // environment), depth (0 none), state (1 drawn, 2 filled from around it) and doubt (0 to 1). Streamed (the user,
@@ -643,7 +658,7 @@ public:
         const size_t n = size_t(w) * h;
         rays = edgeRays = 0, stages = 0, unknown = 0, firstSeconds = 0;
         coarseRaySeconds = coarsePictureSeconds = ringRaySeconds = ringPictureSeconds = fxaaSeconds = stageSeconds = 0;
-        cardRays = 0, cardSeconds = 0;
+        cardRays = 0, cardSeconds = 0, rowsSeconds = shadeSeconds = fillSeconds = 0;
         if (!w || !h) return false;
         const double angle = ObjectStore::pixelAngle(nv);
         if (!(angle > 0)) return false;
@@ -673,7 +688,7 @@ public:
             const D3 nn = nv.toward(D3{hit.normal.x, hit.normal.y, hit.normal.z}, hit.point);
             int up = 0;
             const bool found = store.lookup(hit.point, nn, D3{ray.direction.x, ray.direction.y, ray.direction.z},
-                                            ObjectStore::footprint(nv, angle, d), o.rgb, o.conf, &up);
+                                            ObjectStore::footprint(nv, angle, d), o.rgb, o.conf, &up, op.lookupUp);
             o.known = found && (up <= 1 || (up <= op.trustUp && o.conf >= op.trust));
             o.weight = o.known ? 1.0f : found ? float(0.25 * std::max(0.0f, o.conf) / (1.0 + std::max(0, up - op.trustUp))) : 0.0f;
             if (!found && firstLook) {
@@ -744,8 +759,9 @@ public:
         };
         // Every row's rays on the card at once (cardTrace), each row then shaded on a CPU thread (the store's lookups). False
         // where the card did not take them: the caller's rows then traced on the CPU (shadeAll), as before.
-        auto shadeOnCard = [&](std::vector<Batch>& rowsOf) -> bool {
-            if (!cardTrace || rowsOf.empty()) return false;
+        // Each row's rays made (nv.ray; a place with none, kind 3), all of them into one list (flat), each row's first at at.
+        auto makeRays = [&](std::vector<Batch>& rowsOf, std::vector<surface::Ray>& flat, std::vector<size_t>& at) -> size_t {
+            const auto t = Clock::now();
             parallel(threads, rowsOf.size(), [&](size_t r) {
                 Batch& b = rowsOf[r];
                 b.rays.clear(), b.rto.clear();
@@ -759,41 +775,56 @@ public:
                     b.rays.push_back(ray), b.rto.push_back(b.to[i]);
                 }
             });
-            rowAt_.assign(rowsOf.size() + 1, 0);
-            for (size_t r = 0; r < rowsOf.size(); ++r) rowAt_[r + 1] = rowAt_[r] + rowsOf[r].rays.size();
-            const size_t count = rowAt_.back();
+            at.assign(rowsOf.size() + 1, 0);
+            for (size_t r = 0; r < rowsOf.size(); ++r) at[r + 1] = at[r] + rowsOf[r].rays.size();
+            flat.resize(at.back());
+            parallel(threads, rowsOf.size(), [&](size_t r) { std::copy(rowsOf[r].rays.begin(), rowsOf[r].rays.end(), flat.begin() + at[r]); });
+            rowsSeconds += since(t);
+            return at.back();
+        };
+        // Each row's nodes shaded from their hits (a row a CPU thread): the store's lookups.
+        auto shadeHits = [&](std::vector<Batch>& rowsOf, const std::vector<surface::Ray>& rays, const std::vector<resume::Hit>& hits,
+                             const std::vector<size_t>& at) {
+            const auto t = Clock::now();
+            parallel(threads, rowsOf.size(), [&](size_t r) {
+                async::CpuBackend backend{scene};
+                size_t unknownHere = 0;
+                for (size_t k = at[r]; k < at[r + 1]; ++k) {
+                    Node& o = *rowsOf[r].rto[k - at[r]];
+                    shade(backend, rays[k], hits[k], o);
+                    if (!o.known) ++unknownHere;
+                }
+                traced.fetch_add(at[r + 1] - at[r], std::memory_order_relaxed);
+                empty.fetch_add(unknownHere, std::memory_order_relaxed);
+            });
+            shadeSeconds += since(t);
+        };
+        auto shadeOnCard = [&](std::vector<Batch>& rowsOf) -> bool {
+            if (!cardTrace || rowsOf.empty()) return false;
+            const size_t count = makeRays(rowsOf, cardRays_, rowAt_);
             if (!count) return true;
-            cardRays_.resize(count), cardHits_.resize(count);
-            parallel(threads, rowsOf.size(), [&](size_t r) { std::copy(rowsOf[r].rays.begin(), rowsOf[r].rays.end(), cardRays_.begin() + rowAt_[r]); });
+            cardHits_.resize(count);
             const auto sent = Clock::now();
             if (!cardTrace(cardRays_.data(), count, cardHits_.data())) return false;
             cardSeconds += since(sent);
             cardRays += count;
-            parallel(threads, rowsOf.size(), [&](size_t r) {
-                async::CpuBackend backend{scene};
-                size_t unknownHere = 0;
-                for (size_t k = rowAt_[r]; k < rowAt_[r + 1]; ++k) {
-                    Node& o = *rowsOf[r].rto[k - rowAt_[r]];
-                    shade(backend, cardRays_[k], cardHits_[k], o);
-                    if (!o.known) ++unknownHere;
-                }
-                traced.fetch_add(rowAt_[r + 1] - rowAt_[r], std::memory_order_relaxed);
-                empty.fetch_add(unknownHere, std::memory_order_relaxed);
-            });
+            shadeHits(rowsOf, cardRays_, cardHits_, rowAt_);
             return true;
         };
         // Each row's rays traced and shaded: on the card where it takes them, else on the CPU a row a thread.
         auto shadeRows = [&](std::vector<Batch>& rowsOf) {
             if (shadeOnCard(rowsOf)) return;
+            const auto t = Clock::now();
             parallel(threads, rowsOf.size(), [&](size_t r) { shadeAll(rowsOf[r]); });
+            shadeSeconds += since(t);  // the CPU's tracing with its shading
         };
         auto radius = [&](double x, double y) { return std::sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy)); };
-        // A grid's nodes traced between two radii, a row at a time, then those the store had nothing for filled from the
-        // known around them.
-        auto trace = [&](Grid& g, double from, double to) {
-            rows_.resize(g.gh);
+        // A grid's nodes between two radii into rows (rowsOf, a batch each).
+        auto ringRows = [&](Grid& g, double from, double to, std::vector<Batch>& rowsOf) {
+            const auto t = Clock::now();
+            rowsOf.resize(g.gh);
             parallel(threads, g.gh, [&](size_t j) {
-                Batch& b = rows_[j];
+                Batch& b = rowsOf[j];
                 b.clear();
                 for (unsigned i = 0; i < g.gw; ++i) {
                     const double x = std::min<double>(double(i) * g.step, w - 1) + 0.5, y = std::min<double>(double(j) * g.step, h - 1) + 0.5;
@@ -802,8 +833,69 @@ public:
                     b.add(x, y, &g.nodes[j * g.gw + i]);
                 }
             });
-            shadeRows(rows_);
+            rowsSeconds += since(t);
+        };
+        // The fine grid's rays, every ring's, on the card ahead (cardBegin): sent once the coarse grid is traced, traced
+        // while the coarse picture is made and shown, waited for at the first ring (fineEnd). fineAt_: each fine node's
+        // ray and hit in fineRays_ and fineHits_ (-1: none, its kind 3).
+        bool fineAhead = false, fineWaiting = false;
+        auto fineEnd = [&]() -> bool {
+            if (fineWaiting) {
+                const auto t = Clock::now();
+                fineWaiting = false;
+                if (!cardEnd(fineHits_.data())) fineAhead = false;
+                cardSeconds += since(t);
+            }
+            return fineAhead;
+        };
+        // (A view stopped before the first ring still waits for the card's launch: its buffers are the next one's.)
+        struct WaitForCard {
+            const std::function<bool()> end;
+            ~WaitForCard() { end(); }
+        } waitForCard{[&] { return fineEnd(); }};
+        auto sendFine = [&] {
+            if (!cardBegin || !cardEnd) return;
+            layGrid(fine, stride, w, h);
+            ringRows(fine, 0.0, 1e30, fineRows_);
+            const size_t count = makeRays(fineRows_, fineRays_, fineRowAt_);
+            if (!count) return;
+            fineHits_.resize(count);
+            const auto sent = Clock::now();
+            if (!cardBegin(fineRays_.data(), count)) return;
+            cardSeconds += since(sent);
+            cardRays += count;
+            fineAt_.assign(fine.nodes.size(), -1);
+            parallel(threads, fineRows_.size(), [&](size_t r) {
+                const Batch& b = fineRows_[r];
+                for (size_t k = 0; k < b.rto.size(); ++k) fineAt_[size_t(b.rto[k] - fine.nodes.data())] = std::int64_t(fineRowAt_[r] + k);
+            });
+            fineAhead = fineWaiting = true;
+        };
+        // A grid's nodes traced between two radii, a row at a time, then those the store had nothing for filled from the
+        // known around them. The fine grid's from the card's hits ahead where they were sent (sendFine).
+        auto trace = [&](Grid& g, double from, double to) {
+            ringRows(g, from, to, rows_);
+            if (&g == &fine && fineAhead && fineEnd()) {
+                const auto t = Clock::now();
+                parallel(threads, rows_.size(), [&](size_t r) {
+                    async::CpuBackend backend{scene};
+                    size_t made = 0, unknownHere = 0;
+                    for (Node* o : rows_[r].to) {
+                        const std::int64_t k = fineAt_[size_t(o - fine.nodes.data())];
+                        if (k < 0) continue;  // no ray there (its kind 3)
+                        shade(backend, fineRays_[size_t(k)], fineHits_[size_t(k)], *o);
+                        ++made;
+                        if (!o->known) ++unknownHere;
+                    }
+                    traced.fetch_add(made, std::memory_order_relaxed);
+                    empty.fetch_add(unknownHere, std::memory_order_relaxed);
+                });
+                shadeSeconds += since(t);
+            } else
+                shadeRows(rows_);
+            const auto t = Clock::now();
             fillNodes(g);
+            fillSeconds += since(t);
         };
         // Each pixel's colour from a grid: bilinear between its cell's corners; smooth: they are one smooth surface.
         auto sample = [&](const Grid& g, unsigned x, unsigned y, Pixel& p, bool* smoothOut) {
@@ -881,10 +973,13 @@ public:
             finish();
             return true;
         }
+        // The fine grid's rays, every ring's, to the card in one launch once the first picture is out (sent before it, their
+        // making, 3 ms on the user's car, held the first picture back); each ring shaded from their hits.
+        sendFine();
         // The fine grid ring by ring, rings of equal area out to the picture's corners: each ring's pixels from the fine
         // grid (a ray a pixel in a cell its corners are not one smooth surface of, those rays a row's together), its outer
         // band going over to the coarse grid's until the next ring comes.
-        layGrid(fine, stride, w, h);
+        if (!fineAhead) layGrid(fine, stride, w, h);  // (laid already where its rays went to the card ahead)
         const double reach = half + 2.0 * stride;
         const unsigned rings = std::max(1u, op.rings);
         const double band = std::max(4.0 * stride, 0.08 * half);
@@ -1023,6 +1118,11 @@ private:
     std::vector<size_t> rowAt_;                       // each row's first ray on the card's way
     std::vector<surface::Ray> cardRays_;
     std::vector<resume::Hit> cardHits_;
+    std::vector<Batch> fineRows_;                     // the fine grid's rows, traced ahead on the card
+    std::vector<size_t> fineRowAt_;
+    std::vector<surface::Ray> fineRays_;
+    std::vector<resume::Hit> fineHits_;
+    std::vector<std::int64_t> fineAt_;                // each fine node's ray in fineRays_ (-1: none)
 
     // Whether every mesh of the scene is triangles (no curves, no points): Embree's packets meet them all.
     static bool trianglesAlone(const async::CpuScene& scene) {

@@ -1157,3 +1157,32 @@ it takes the new camera. A move sent to its first picture: 0.30 to 1.36 s before
 Realtime frames' CPU workers also stop between two samples (renderChunk's cancel); renders finish their chunks as before,
 and no XPU2 render's sampling or speed changes. `XPU2_SESSION_RHEA_EARLY=0`: phase one after the GPU again.
 XPU2's seed on that scene takes 29 s: Rhea's picture stands that long after a move before XPU2's first fade.
+
+## 31. Drags: phase one alone, its first hits on the card (2026-11-22)
+
+The user: "if we remove phase 2, and have Rhea phase 1 use both gpu/cpu, i think that's where we need to go" (no XPU2
+during drags, XPU2 after the release), then "we need to make this drag-fast now that we have both cpu/gpu working in phase 1".
+
+- **The drag's steps marked:** the kit sends each step of a drag XPU2 RT follows with a fifth command line, "drag"
+  (`panel` marks the scene `_xpu2_drag`, `persistent` writes the line for XPU2 alone); the release comes without it.
+  For a step, the session shows phase one ahead of the GPU and holds there until the next command, no XPU2 renderer made
+  (dropping and making one cost about 20 ms each way a step on the car); the card's camera alone follows. The release
+  (an edit that changed nothing) makes the renderer, and XPU2's frame fades in over phase one's picture. Held at most
+  `XPU2_SESSION_RHEA_DRAG_WAIT` (5 s): the mouse held still that long is a camera at rest. `XPU2_SESSION_RHEA_DRAG_ALONE=0`:
+  XPU2's frame after each step as before.
+- **First hits on the card:** XPU2's launch mode 5 (`async_gpu.cu` `firstHit`, `GpuLane::firstHits`, its begin and end)
+  traces the host's rays, each hit the path tracer's own (`GpuBackend::trace`); the store's lookups stay on the CPU's
+  threads. Used where the card's scene is the CPU's (the same meshes), it renders all of it, and nothing of a frame is
+  out; else the CPU traces as before. The fine grid's rays, every ring's, go in one launch once the first picture is out.
+  `XPU2_SESSION_RHEA_GPU_HITS=0`: the CPU's hits. XPU2's own renders are the same speed (the dragon at 640 x 360, two
+  rounds: realtime 15.2-16.5 s against build 59's 15.2-16.8 s, a render 5.65-6.40 s against 5.52-5.74 s).
+- **A drag's step's pictures:** its coarse picture and its finished one, the fine grid drawn as one ring (the rings unseen:
+  one fill, one picture pass). `XPU2_SESSION_RHEA_DRAG_RINGS=1`: the rings, shown, as before.
+- **Lookups:** a lookup climbs at most `lookupUp` (5) sizes from the point's own (`XPU2_SESSION_RHEA_LOOKUP_UP`, -1 all).
+  A per-thread cache of the cubes found (empty ones too) made the shading slower, not faster: the cost is the eight
+  corners' averaging at two or three sizes, not the table's probes. Not kept.
+- The car (1.9M polygons, 640 x 360), a drag of 30 steps 0.6 degrees apart, 50 ms between: phase one 51 ms a step (build
+  62, the card or not alike: its rays were not the cost) -> 35 ms (build 66: the card's hits, one ring, two pictures);
+  the CPU's hits 49-52 ms there. Its first picture 8 to 9 ms, 12 to 13 ms after the step was applied. Where it goes now:
+  rays made 3 ms, the card 4 ms, shading 8 ms, fills 1.4 ms, coarse picture 6 ms, finished picture 5 ms, FXAA 2.5 ms,
+  shown 2.4 ms.
