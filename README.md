@@ -8,13 +8,16 @@ The current release is [0.5.5.1.2](https://github.com/Pbaroque20/MoonRayForModo/
 
 ## New in 0.5.6
 
-0.5.6 brings **XPU2 Rhea**, the realtime part of MoonRay XPU2: move the camera and the new view is there at once, lit by what XPU2 has already rendered. Install it, and **Compile XPU2 Shaders once more**.
+0.5.6 brings **XPU2 Rhea**, the realtime part of MoonRay XPU2, made to keep XPU2 smooth in any dense scene: the picture starts from a biased render and becomes XPU2's unbiased one, without avoiding MoonRay's expensive shaders. Install it, and **Compile XPU2 Shaders once more**.
 
 ### XPU2 Rhea
 
 *XPU2 Rhea: a surface radiance cache projector designed by Raphael Tobar. Not affiliated with or endorsed by DreamWorks Animation.*
 
-- **A camera move shows at once**: with RT on under MoonRay XPU2, Rhea keeps the light XPU2 has rendered on the scene's surfaces and shows it from the new view, so the picture moves with the camera instead of starting over in noise. XPU2's own picture then fades in over it and finishes as XPU2 alone would render it. A surface XPU2 has not reached yet shows its own colour, lit from the camera, until it does.
+**What it is.** Rhea keeps the light XPU2 renders on the scene's surfaces, and projects it into each new view as the camera moves.
+
+**What it does.** In a dense scene, a camera move under XPU2's realtime used to start the picture over in noise. With Rhea, the new view is there at once as a biased render, made from the light XPU2 has already rendered. XPU2's own samples then take over, and the picture ends unbiased, exactly as XPU2 alone renders it. Rhea does not swap MoonRay's expensive shaders for cheaper ones: the light it shows is the light those shaders made in XPU2. A surface XPU2 has not reached yet shows its own colour, lit from the camera, until it does.
+
 - **Drags drawn as they happen** (Preview Preferences, XPU2 RT follows drags, off by default): every step of a viewport camera drag shows a Rhea picture right away; XPU2 renders once the mouse is let go.
 - **XPU2 RT engine** (Preview Preferences): Rhea, the default, or XPU2's realtime as before. The status under the picture reads XPU2 Rhea active. Realtime shows the Beauty; renders are XPU2's as always.
 - **XPU2 previews start sooner**: XPU2 keeps Modo's subdivision surfaces from one preview to the next rather than cutting them again, and loads its GPU programs while it prepares the scene.
