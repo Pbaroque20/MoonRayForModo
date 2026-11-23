@@ -681,6 +681,11 @@ struct Scene {
     // Whether the last preparation's changes were the camera's alone, even where the plan had to be made again for it
     // (geometry tessellated for the camera: "not the camera alone"): XPU2 RT (Rhea) then keeps its last picture to warp.
     bool cameraEdit = false;
+    // XPU2 RT's drag steps (the session's, for each command): a camera move keeps geometry tessellated for the camera as
+    // it is (cpu::updateCamera's keepCameraGeometry), the user's sea re-tessellated at every step otherwise (0.7 s each,
+    // and phase one's picture stopped at its coarse stage). cameraGeometryStale: kept so since the last full preparation;
+    // the next command not a drag's step tessellates it again for its camera (apply, prepare).
+    bool keepCameraGeometry = false, cameraGeometryStale = false;
     // The plan the last placement-only one was made from (the card's instances, mesh records and lights go again,
     // GpuLane::updatePlacements).
     cpu::PlanView placedFrom;
@@ -981,6 +986,13 @@ struct Scene {
         bool any = false;
         for (auto it = source->beginSceneObject(); it != source->endSceneObject() && !any; ++it) any = it->second->isDirty();
         if (!any && plan && !changed) {
+            // Geometry tessellated for the camera that a drag's steps kept (keepCameraGeometry): tessellated again for the
+            // camera where the drag left it, as a camera edit (Rhea's store kept).
+            if (cameraGeometryStale && !keepCameraGeometry) {
+                std::printf("MoonRay XPU2: the geometry tessellated for the camera made again where the drag left it\n");
+                changed = cameraOnly = true;
+                return;
+            }
             std::printf("MoonRay XPU2: an edit that changed nothing: the scene as it was\n");
             return;
         }
@@ -1012,7 +1024,9 @@ struct Scene {
                 }
             }
             std::string refused;
-            const bool moved = renamed && cpu::updateCamera(*next, *source, &refused);
+            // A drag's step (keepCameraGeometry): geometry tessellated for the camera kept as it is, made again later.
+            const bool keep = keepCameraGeometry && next->cameraDependent;
+            const bool moved = renamed && cpu::updateCamera(*next, *source, &refused, keep);
             if (!moved)
                 std::printf("MoonRay XPU2: not the camera alone: %s\n",
                             renamed ? ("the plan cannot take a camera alone: " + refused).c_str() : "the outputs changed besides their files");
@@ -1021,9 +1035,11 @@ struct Scene {
                 plan = next;
                 cpuScene = std::make_unique<async::CpuScene>(plan, std::move(*cpuScene));
                 changed = cameraOnly = false;
+                if (keep) cameraGeometryStale = true;
                 if (coarse) coarseCamera = true;
-                std::printf("MoonRay XPU2: the camera alone changed: prepared in %.1f ms\n",
-                            std::chrono::duration<double>(std::chrono::steady_clock::now() - began).count() * 1000.0);
+                std::printf("MoonRay XPU2: the camera alone changed: prepared in %.1f ms%s\n",
+                            std::chrono::duration<double>(std::chrono::steady_clock::now() - began).count() * 1000.0,
+                            keep ? " (the geometry tessellated for the camera kept for the drag)" : "");
                 return;
             }
         }
@@ -1149,6 +1165,7 @@ struct Scene {
         if (!lastFolder.empty()) fs::remove_all(lastFolder, ignored);
         lastFolder = folder;
         changed = false;
+        cameraGeometryStale = false;  // tessellated for the camera as it now is
         if (!coarse) keepBase(plan);
         else basePlan.reset();
     }
@@ -2516,6 +2533,10 @@ int session(const Args& args, const fs::path& directory) {
     // XPU2_SESSION_RHEA_DRAG_ALONE=0: XPU2's frame after each step as before. XPU2_SESSION_RHEA_DRAG_WAIT: the longest a step
     // holds XPU2 back (5 s): the mouse held still that long is a camera at rest, and XPU2's frame begins.
     const bool rheaDragAlone = envOn("XPU2_SESSION_RHEA_DRAG_ALONE", true);
+    // A drag's step draws its phase one to the end (about 30 ms) though the next step has come: stopped at its coarse
+    // picture, a step slower to come than the next (the user's sea, re-tessellated) showed only that blur, its silhouettes
+    // in steps ("a batch of spikes around the dragon"). XPU2_SESSION_RHEA_DRAG_FINISH=0: stopped where the next comes.
+    const bool rheaDragFinish = envOn("XPU2_SESSION_RHEA_DRAG_FINISH", true);
     // A drag's view the store hardly knows (the user, 2026-11-22: "when the user spins the camera towards behind the object,
     // Rhea should detect when it gets blotchy and immediately accumulate the cache"): past this share of phase one's rays
     // unknown to the store, the step does not wait for the next with the card idle: XPU2's frame begins at once, its least
@@ -2661,7 +2682,7 @@ int session(const Args& args, const fs::path& directory) {
                 rheaView.publishedWarp();
                 shownStage = true;
             }
-            return !waiting();  // the next message come: stopped where it is
+            return (rheaDragStep && rheaDragFinish) || !waiting();  // the next message come: stopped where it is (not a drag's step)
         };
         rheaUseCard(true);
         // Its rings unseen, a drag's step draws the fine grid as one ring: one fill and one picture pass, not three.
@@ -3561,7 +3582,7 @@ int session(const Args& args, const fs::path& directory) {
                                 rheaView.publishedWarp();
                                 shownStage = true;
                             }
-                            return !(watch.stop && watch.stop());
+                            return (rheaDragStep && rheaDragFinish) || !(watch.stop && watch.stop());  // (rheaDragFinish)
                         };
                         rheaUseCard(true);
                         const unsigned ringsWas = rheaView.op.objectRings;
@@ -4446,6 +4467,9 @@ int session(const Args& args, const fs::path& directory) {
             std::string more;
             rheaDragStep = std::getline(input, more) && (more == "drag" || more == "drag\r");
         }
+        // A drag's step under Rhea keeps geometry tessellated for the camera (Scene::keepCameraGeometry); the release, any
+        // other command, tessellates it again. XPU2_SESSION_RHEA_DRAG_KEEP_TESSELLATION=0: each step tessellates it.
+        scene.keepCameraGeometry = rheaDragStep && rheaWanted && envOn("XPU2_SESSION_RHEA_DRAG_KEEP_TESSELLATION", true);
         if (!command.enabled()) fs::remove(mailbox, ignored);
         if (mode_ == "quit") return 0;
         try {

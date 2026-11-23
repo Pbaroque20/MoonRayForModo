@@ -2808,13 +2808,16 @@ inline bool admitMeshLight(const rdl::SceneObject& o,float sceneScale,const rdl:
 // tessellation (cameraDependent). A mapped volume's settings are worked out again at the new render origin.
 inline void admitCamera(const rdl::SceneObject& camera,const rdl::SceneVariables& sv,Plan& plan,const Plan* previous);
 // why, where given: what kept the camera from being taken alone (the session's log).
-inline bool updateCamera(Plan& plan,const rdl::SceneContext& context,std::string* why=nullptr){
+// keepCameraGeometry: geometry tessellated for the camera (cameraDependent) kept as it was tessellated, for the camera it
+// was made for (XPU2 RT's drag steps: the user's sea re-tessellated at every step, 0.7 s each; the release tessellates it
+// again for its camera).
+inline bool updateCamera(Plan& plan,const rdl::SceneContext& context,std::string* why=nullptr,bool keepCameraGeometry=false){
  const auto& sv=context.getSceneVariables();
  auto* camera=get<rdl::SceneObject*>(sv,"camera");
  auto refuse=[&](const char* reason){if(why)*why=reason;return false;};
  if(!camera||!plan.paths)return refuse("no camera, or not the path tracer");
  if(plan.camera.type==surface::CameraBake)return refuse("a bake camera");
- if(plan.cameraDependent)return refuse("geometry tessellated for the camera (adaptive tessellation)");
+ if(plan.cameraDependent&&!keepCameraGeometry)return refuse("geometry tessellated for the camera (adaptive tessellation)");
  if(!plan.filterLists.empty())return refuse("light filters");
  if(!plan.pixelSamples.empty()||!get<rdl::String>(*camera,"pixel_sample_map").empty())return refuse("a pixel sample map");
  if(!(motionParams(sv,camera)==plan.motion))return refuse("the camera's motion blur changed");

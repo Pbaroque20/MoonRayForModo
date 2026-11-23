@@ -2748,7 +2748,10 @@ class Panel(Tools, QtWidgets.QWidget):
         import time as clock
         report=getattr(self,'_drag_steps',None)
         if held:
-            if report is None:self._drag_steps={'began':clock.monotonic(),'frames':getattr(self.renderer,'frames_shown',0)};self._drag_ticks=[];self._drag_kind=kind
+            if report is None:
+                self._drag_steps={'began':clock.monotonic(),'frames':getattr(self.renderer,'frames_shown',0)};self._drag_ticks=[];self._drag_kind=kind
+                from . import drag_timing
+                drag_timing.begin()
             else:report['looked']=report.get('looked',0)+1
             return
         if report is None:return
@@ -2767,6 +2770,10 @@ class Panel(Tools, QtWidgets.QWidget):
         ticks=sorted(getattr(self,'_drag_ticks',None) or [])
         if ticks:text=text[:-1]+'; the kit\'s work a look: median %.0f ms, most %.0f ms.'%(ticks[len(ticks)//2],ticks[-1])
         self._drag_ticks=[]
+        # Where that work went, part by part, and each picture's way to the screen (drag_timing).
+        from . import drag_timing
+        parts=drag_timing.end()
+        if parts:text=text[:-1]+'. Timings: '+parts+'.'
         from . import terminal
         terminal.note('Preview',text)
         try:
@@ -2882,7 +2889,10 @@ class Panel(Tools, QtWidgets.QWidget):
             full,items=self.changes.consume();time=lx.service.Selection().GetTime()
             # The camera looked through, moved by navigating a viewport that looks through it: Modo tells of that only
             # once the mouse is let go, so where it stands is looked at while MoonLightIPR follows a drag.
+            from . import drag_timing
+            looked=drag_timing.now()
             polled=self._camera_moved() if held and (ipr or xdrag) and not full else set()
+            if held:drag_timing.add('look',drag_timing.now()-looked)
             items|=polled
             # A drag the preview was kept from following, said now that Modo has told what it moved (_drag_note).
             if not held and getattr(self,'_drag_unfollowed',False):
@@ -3004,6 +3014,7 @@ class Panel(Tools, QtWidgets.QWidget):
                         self._live_still=still
                         scene=first if first is not None else self._capture()
             fast=None;camera_alone=False
+            stepping=drag_timing.now()
             if held and (ipr or xdrag) and reuse in (True,'transforms') and getattr(self,'_kept_capture',None) is not None:
                 # Only where things stand made new in the scene sent last: the camera and meshes a drag moves.
                 from .incremental import move_only
@@ -3069,7 +3080,10 @@ class Panel(Tools, QtWidgets.QWidget):
                     from . import rdla
                     delta=rdla.camera_delta(scene)
                     if delta:step['_camera_delta']=delta;self._drag_count('camera alone')
+                drag_timing.add('step',drag_timing.now()-stepping)
+                sending=drag_timing.now()
                 self._submit(step,digest=('live-drag',object()))
+                drag_timing.add('send',drag_timing.now()-sending)
             elif fast is not None:
                 self._drag_count('sent')
                 # Something moved, or Modo would not have told of it: sent without hashing the whole scene again (a
@@ -3228,6 +3242,14 @@ class Panel(Tools, QtWidgets.QWidget):
         # Something new shown: the render is not held up (_watch_room).
         import time
         self._shown_at=time.monotonic()
+        from . import drag_timing
+        drawing=drag_timing.now()
+        try:
+            self._image_shown(path)
+        finally:
+            drag_timing.add('draw',drag_timing.now()-drawing)
+
+    def _image_shown(self, path):
         try:
             if self._held:return
             if self.draft.isChecked():

@@ -196,7 +196,11 @@ class Session(QtCore.QObject):
             self.stopping=True;self.process.kill();return
         if self.stopping:return
         if not self.running():self._launch()
-        elif self.sent is None:self._dispatch()
+        elif self.sent is None:
+            from . import drag_timing
+            sending=drag_timing.now()
+            self._dispatch()
+            drag_timing.add('dispatch',drag_timing.now()-sending)
 
     def _write_scene(self,request,suffix,text,payload=None):
         if self.scene_memory:
@@ -376,7 +380,10 @@ class Session(QtCore.QObject):
             if line.startswith('@@MODO_SHARED '):
                 try:
                     from .shared_image import receive
+                    from . import drag_timing
+                    reading=drag_timing.now()
                     packet=receive(line,self.process.processId())
+                    drag_timing.add('read',drag_timing.now()-reading)
                     if not self.stopping and not self.closed and self.latest and packet[0]==self.latest['id']:self.memory_image.emit(packet)
                 except (ValueError,OSError) as exc:
                     # A frame already taken back (shared_image.Withdrawn) is passed over without a word: newer ones follow.

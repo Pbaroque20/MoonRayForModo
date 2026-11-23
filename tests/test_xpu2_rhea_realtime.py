@@ -115,6 +115,25 @@ class Status(unittest.TestCase):
 
 
 class Drags(unittest.TestCase):
+    def test_a_camera_drag_step_is_the_cameras_place_alone(self):
+        # rdla.camera_delta: the camera block's node_xform as the whole scene's text writes it, nothing else.
+        import sys
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from test_compatibility_035 import scene
+        from moonray_modo import rdla
+        s = scene()
+        delta = rdla.camera_delta(s)
+        self.assertTrue(delta.startswith('PerspectiveCamera("/modo/camera") {\n'))
+        self.assertEqual(delta.count('\n'), 3)
+        line = [l for l in rdla.scene_text(s, 64, 36, 1, 0, None).splitlines() if '["node_xform"]' in l][0]
+        self.assertIn(line.strip(), delta)
+        # Sent as it is (absolute), no whole scene written beside it; the step marked so in the kit.
+        persistent = (SOURCE / 'persistent.py').read_text(encoding='utf-8')
+        self.assertIn("absolute=bool(prepared and prepared.get('absolute') and self.applied)", persistent)
+        self.assertIn("full='none' if absolute else self._write_scene(", persistent)
+        render = (SOURCE / 'render.py').read_text(encoding='utf-8')
+        self.assertIn("snapshot.get('_camera_delta') and applied and getattr(self.session,'xpu2_active',False)", render)
+
     def test_an_xpu2_drags_release_is_a_move_alone(self):
         # Its steps went as moves alone: the release too, the scene not read, hashed or written whole again; unmarked, so
         # XPU2's frame follows. Anything else edited (full, changed settings, a blurred preview) reads it the usual way.
