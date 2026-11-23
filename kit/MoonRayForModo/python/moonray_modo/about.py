@@ -6,15 +6,21 @@ from . import __version__, build_number, MOONRAY_RELEASE, MOONRAY_VERSION
 
 def show(parent=None):
     root=Path(__file__).resolve().parents[2]
-    dialog=QtWidgets.QDialog(parent);dialog.setWindowTitle('About MoonRay for Modo');dialog.resize(760,570)
+    dialog=QtWidgets.QDialog(parent);dialog.setWindowTitle('About MoonRay for Modo');dialog.resize(760,590)
     layout=QtWidgets.QVBoxLayout(dialog);layout.setContentsMargins(0,0,0,0);layout.setSpacing(0)
     artwork=QtWidgets.QLabel();artwork.setAlignment(QtCore.Qt.AlignCenter);artwork.setStyleSheet('background:black;')
     pixmap=QtGui.QPixmap(str(root/'assets/about-moonray.png'))
-    if not pixmap.isNull(): artwork.setPixmap(pixmap.scaledToWidth(760,QtCore.Qt.SmoothTransformation))
+    if not pixmap.isNull():
+        artwork.setPixmap(pixmap.scaledToWidth(760,QtCore.Qt.SmoothTransformation))
+        # The picture keeps its own height, so that a taller window goes to the credits below it.
+        artwork.setFixedHeight(artwork.pixmap().height())
     layout.addWidget(artwork)
-    credits=QtWidgets.QLabel('MoonRay for Modo\nDeveloped by Raphael Tobar w/ AI-Assistance\nVersion '+__version__+' · Build '+build_number()+' — Pre-production release\n\nMIT License · Copyright © 2026 Raphael Tobar\nMoonRay renderer: OpenMoonRay '+MOONRAY_RELEASE+' (MoonRay '+MOONRAY_VERSION+'), compiled for Windows\nMoonRay license: Apache License 2.0 · DreamWorks Animation / OpenMoonRay\nMoonLightIPR GPU preview: created by Raphael Tobar · MIT License · not affiliated with DreamWorks Animation\nXPU2: Asynchronous Monte Carlo Path Tracer designed by Raphael Tobar · not affiliated with or endorsed by DreamWorks Animation\nRhizome: Decentralized Rendering designed by Raphael Tobar · MIT License · not affiliated with or endorsed by DreamWorks Animation\nModo 16.1v9 · Windows x64 · CPU / AVX + NVIDIA XPU\n\nIndependent integration. MaterialX translation is a supported subset.\nRendering and compatibility validation are ongoing.')
+    credits=QtWidgets.QLabel('MoonRay for Modo\nDeveloped by Raphael Tobar w/ AI-Assistance\nVersion '+__version__+' · Build '+build_number()+' — Pre-production release\n\nMIT License · Copyright © 2026 Raphael Tobar\nMoonRay renderer: OpenMoonRay '+MOONRAY_RELEASE+' (MoonRay '+MOONRAY_VERSION+'), compiled for Windows\nMoonRay license: Apache License 2.0 · DreamWorks Animation / OpenMoonRay\nMoonLightIPR GPU preview: created by Raphael Tobar · MIT License · not affiliated with DreamWorks Animation\nXPU2: Asynchronous Monte Carlo Path Tracer designed by Raphael Tobar · not affiliated with or endorsed by DreamWorks Animation\nXPU2 Rhea: Surface Radiance Cache Projector designed by Raphael Tobar · not affiliated with or endorsed by DreamWorks Animation\nRhizome: Decentralized Rendering designed by Raphael Tobar · MIT License · not affiliated with or endorsed by DreamWorks Animation\nModo 16.1v9 · Windows x64 · CPU / AVX + NVIDIA XPU\n\nIndependent integration. MaterialX translation is a supported subset.\nRendering and compatibility validation are ongoing.')
     credits.setWordWrap(True);credits.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
     credits.setStyleSheet('background:#000000;color:#ffffff;padding:20px;font-size:13px;')
+    # A wrapped label does not tell the layout how tall its lines make it: without this its last lines were cut off
+    # once a credit wrapped.
+    credits.ensurePolished();credits.setMinimumHeight(credits.heightForWidth(760))
     layout.addWidget(credits)
     buttons=QtWidgets.QWidget();buttons.setStyleSheet('background:#000000;color:white;');row=QtWidgets.QHBoxLayout(buttons)
     def license_text(filename,title):
