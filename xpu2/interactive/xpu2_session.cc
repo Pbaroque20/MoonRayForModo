@@ -2693,6 +2693,11 @@ int session(const Args& args, const fs::path& directory) {
                     ow.cardRays, ow.cardSeconds * 1e3, ow.unknown * 100.0, rheaDragStep ? "; a drag's step" : "", ow.coarseRaySeconds * 1e3,
                     ow.ringRaySeconds * 1e3, ow.rowsSeconds * 1e3, ow.shadeSeconds * 1e3, ow.fillSeconds * 1e3, ow.coarsePictureSeconds * 1e3,
                     ow.ringPictureSeconds * 1e3, ow.fxaaSeconds * 1e3, ow.stageSeconds * 1e3, ow.interpolated, ow.adaptSeconds * 1e3);
+        // (Short, the harness keeps 400 characters a line.)
+        std::printf("MoonRay XPU2: Rhea: phase one %.1f ms: coarse picture %.1f ms, %zu rays, %zu fine nodes interpolated (chosen in %.1f ms), "
+                    "shaded %.1f ms, fills %.1f ms, finished picture %.1f ms, FXAA %.1f ms, shown %.1f ms\n",
+                    ow.seconds * 1e3, ow.coarsePictureSeconds * 1e3, ow.rays, ow.interpolated, ow.adaptSeconds * 1e3, ow.shadeSeconds * 1e3,
+                    ow.fillSeconds * 1e3, ow.ringPictureSeconds * 1e3, ow.fxaaSeconds * 1e3, ow.stageSeconds * 1e3);
         std::fflush(stdout);
         return true;
     };

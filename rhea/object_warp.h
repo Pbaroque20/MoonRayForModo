@@ -132,6 +132,16 @@ inline void pullPushDepth(std::vector<float>& c, const std::vector<float>& z, un
     c.swap(lv.front().m);
 }
 
+// The uniform cubic B-spline's four weights at t in [0, 1] (the nodes at -1, 0, 1, 2): smooth to the second derivative,
+// a blur and an interpolation in one.
+inline void cubicBSpline(double t, double wt[4]) {
+    const double t2 = t * t, t3 = t2 * t, u = 1.0 - t;
+    wt[0] = u * u * u / 6.0;
+    wt[1] = (3.0 * t3 - 6.0 * t2 + 4.0) / 6.0;
+    wt[2] = (-3.0 * t3 + 3.0 * t2 + 3.0 * t + 1.0) / 6.0;
+    wt[3] = t3 / 6.0;
+}
+
 inline void pullPush(std::vector<float>& c, unsigned w, unsigned h) {
     struct Level {
         unsigned w, h;
@@ -1049,14 +1059,46 @@ public:
         coarseRaySeconds = since(t0);
         t0 = Clock::now();
         outside.resize(n);
+        // Each pixel a cubic B-spline over the 4 x 4 coarse nodes about it (the user, 2026-11-22: the pictures were most of a
+        // drag's step): smooth, with no grid steps along silhouettes, in one pass. It was bilinear then blurred over about a
+        // step by two box passes each way at the picture's size, 5 ms of the car's 34. Its depth the nearest surface corner's.
         parallel(threads, h, [&](size_t yy) {
             const unsigned y = unsigned(yy);
-            for (unsigned x = 0; x < w; ++x) sample(coarse, x, y, outside[size_t(y) * w + x], nullptr);
-        });
-        // Blurred over about its step (two box passes each way): bilinear alone left the grid's steps along silhouettes.
-        blur(outside, blurred, w, h, std::max(1u, S / 2), threads);
-        parallel(threads, h, [&](size_t yy) {
-            for (size_t i = yy * w; i < (yy + 1) * w; ++i) write(i, outside[i]);
+            const unsigned gw = coarse.gw, gh = coarse.gh;
+            const unsigned j = std::min(y / S, gh - 2);
+            const double y0 = double(j) * S, y1 = std::min<double>(double(j + 1) * S, h - 1);
+            const double ty = y1 > y0 ? std::clamp((y - y0) / (y1 - y0), 0.0, 1.0) : 0.0;
+            double wy[4];
+            cubicBSpline(ty, wy);
+            for (unsigned x = 0; x < w; ++x) {
+                const unsigned i = std::min(x / S, gw - 2);
+                const double x0 = double(i) * S, x1 = std::min<double>(double(i + 1) * S, w - 1);
+                const double tx = x1 > x0 ? std::clamp((x - x0) / (x1 - x0), 0.0, 1.0) : 0.0;
+                double wx[4];
+                cubicBSpline(tx, wx);
+                double rgb[3] = {0, 0, 0}, conf = 0, sw = 0;
+                for (int b = 0; b < 4; ++b) {
+                    const unsigned jj = unsigned(std::clamp(int(j) - 1 + b, 0, int(gh) - 1));
+                    for (int a = 0; a < 4; ++a) {
+                        const Node& o = coarse.nodes[size_t(jj) * gw + unsigned(std::clamp(int(i) - 1 + a, 0, int(gw) - 1))];
+                        if (o.kind == 0 || o.kind == 3) continue;
+                        const double k = wx[a] * wy[b];
+                        for (int ch = 0; ch < 3; ++ch) rgb[ch] += k * o.rgb[ch];
+                        conf += k * (o.known ? o.conf : 0.0f);
+                        sw += k;
+                    }
+                }
+                Pixel p;
+                if (sw > 0) {
+                    for (int ch = 0; ch < 3; ++ch) p.rgb[ch] = float(rgb[ch] / sw);
+                    p.conf = float(conf / sw);
+                }
+                const Node* near = &coarse.nodes[size_t(j + (ty >= 0.5)) * gw + i + (tx >= 0.5)];
+                p.w = near->kind == 1 ? near->w : -1.0, p.depth = near->kind == 1 ? near->depth : 0.0f;
+                const size_t at = size_t(y) * w + x;
+                outside[at] = p;
+                write(at, p);
+            }
         });
         coarsePictureSeconds = since(t0);
         firstSeconds = since(began);
@@ -1112,12 +1154,17 @@ public:
                 }
                 return true;
             };
-            // The nodes of [i0, i1] x [j0, j1] not yet made, bilinear from its corners.
+            // The nodes [i0, i1] x [j0, j1] owns not yet made, bilinear from its corners. A part owns its inside and its top
+            // and left sides, its right and bottom too at the grid's edge: the parts of a level never share a node, so they
+            // are interpolated in parallel (a smooth neighbour's side is the same line between the same two corners).
+            std::atomic<size_t> madeHere{0};
             auto interpolate = [&](unsigned i0, unsigned j0, unsigned i1, unsigned j1) {
                 const Node* c[4] = {&node(i0, j0), &node(i1, j0), &node(i0, j1), &node(i1, j1)};
                 const bool known = c[0]->known && c[1]->known && c[2]->known && c[3]->known;
-                for (unsigned j = j0; j <= j1; ++j)
-                    for (unsigned i = i0; i <= i1; ++i) {
+                const unsigned iEnd = i1 == fw - 1 ? i1 : i1 - 1, jEnd = j1 == fh - 1 ? j1 : j1 - 1;
+                size_t made = 0;
+                for (unsigned j = j0; j <= jEnd; ++j)
+                    for (unsigned i = i0; i <= iEnd; ++i) {
                         if (setAt(i, j)) continue;
                         const double tx = i1 > i0 ? double(i - i0) / (i1 - i0) : 0.0, ty = j1 > j0 ? double(j - j0) / (j1 - j0) : 0.0;
                         const double wt[4] = {(1 - tx) * (1 - ty), tx * (1 - ty), (1 - tx) * ty, tx * ty};
@@ -1132,8 +1179,20 @@ public:
                         o.kind = c[0]->kind, o.known = known;
                         node(i, j) = o;
                         setAt(i, j) = 2;
-                        ++interpolated;
+                        ++made;
                     }
+                madeHere.fetch_add(made, std::memory_order_relaxed);
+            };
+            using Part = std::array<unsigned, 4>;
+            auto interpolateAll = [&](const std::vector<Part>& parts) {
+                parallel(threads, parts.size(), [&](size_t k) { interpolate(parts[k][0], parts[k][1], parts[k][2], parts[k][3]); });
+            };
+            // The nodes [i0, i1] x [j0, j1] owns not yet made (as interpolate's), asked for.
+            auto askOwned = [&](unsigned i0, unsigned j0, unsigned i1, unsigned j1, std::vector<std::pair<unsigned, unsigned>>& to) {
+                const unsigned iEnd = i1 == fw - 1 ? i1 : i1 - 1, jEnd = j1 == fh - 1 ? j1 : j1 - 1;
+                for (unsigned j = j0; j <= jEnd; ++j)
+                    for (unsigned i = i0; i <= iEnd; ++i)
+                        if (!setAt(i, j)) to.emplace_back(i, j);
             };
             // The nodes asked for, traced together (the card's or the CPU's), a row at a time.
             auto traceAsked = [&](const std::vector<std::pair<unsigned, unsigned>>& asked) {
@@ -1147,13 +1206,13 @@ public:
                 }
                 shadeRows(rows_);
             };
-            std::vector<std::array<unsigned, 4>> refine;
+            std::vector<Part> refine, smoothParts;
             std::vector<std::pair<unsigned, unsigned>> asked;
             for (unsigned j0 = 0; j0 + 1 < fh; j0 += 4)
                 for (unsigned i0 = 0; i0 + 1 < fw; i0 += 4) {
                     const unsigned i1 = std::min(i0 + 4, fw - 1), j1 = std::min(j0 + 4, fh - 1);
                     if (smooth(i0, j0, i1, j1)) {
-                        interpolate(i0, j0, i1, j1);
+                        smoothParts.push_back({i0, j0, i1, j1});
                         continue;
                     }
                     refine.push_back({i0, j0, i1, j1});
@@ -1162,23 +1221,29 @@ public:
                                           std::make_pair(im, j1)})
                         asked.push_back(p);
                 }
+            interpolateAll(smoothParts);
             const double choosing = std::chrono::duration<double>(Clock::now() - began).count();
             traceAsked(asked);
             const auto second = Clock::now();
-            asked.clear();
+            asked.clear(), smoothParts.clear();
             for (const auto& [i0, j0, i1, j1] : refine) {
                 const unsigned im = std::min(i0 + 2, i1), jm = std::min(j0 + 2, j1);
                 const unsigned part[4][4] = {{i0, j0, im, jm}, {im, j0, i1, jm}, {i0, jm, im, j1}, {im, jm, i1, j1}};
                 for (const auto& p : part) {
                     if (p[2] <= p[0] || p[3] <= p[1]) continue;
-                    if (smooth(p[0], p[1], p[2], p[3])) interpolate(p[0], p[1], p[2], p[3]);
-                    else
-                        for (unsigned j = p[1]; j <= p[3]; ++j)
-                            for (unsigned i = p[0]; i <= p[2]; ++i)
-                                if (!setAt(i, j)) asked.emplace_back(i, j);
+                    if (smooth(p[0], p[1], p[2], p[3])) smoothParts.push_back({p[0], p[1], p[2], p[3]});
+                    else askOwned(p[0], p[1], p[2], p[3], asked);
                 }
             }
+            interpolateAll(smoothParts);
             adaptSeconds = choosing + std::chrono::duration<double>(Clock::now() - second).count();
+            traceAsked(asked);
+            interpolated = madeHere.load();
+            // Any node no part owned (none should be): traced.
+            asked.clear();
+            for (unsigned j = 0; j < fh; ++j)
+                for (unsigned i = 0; i < fw; ++i)
+                    if (!setAt(i, j)) asked.emplace_back(i, j);
             traceAsked(asked);
             const auto t = Clock::now();
             fillNodes(fine, op.fillDepth);

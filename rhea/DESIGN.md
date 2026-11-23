@@ -1218,3 +1218,7 @@ during drags, XPU2 after the release), then "we need to make this drag-fast now 
   interpolated), the store's lookups 7.9 -> 5.7 ms, the picture the same (relative difference 0.00001 to 0.00003); the
   step itself 35 -> 34 ms, the rest of the saving spent on its second batch of rays and its choosing (one thread). What a
   step costs now is mostly its pictures: coarse 5 ms, finished 4.7 ms, FXAA 2.2 ms, handing over 2.3 ms.
+- **The coarse picture in one pass:** each pixel a cubic B-spline over the 4 x 4 coarse nodes about it, where it was
+  bilinear then two box blurs each way at the picture's size (5 -> 3.5 ms on the car); the adaptive pass's interpolation in
+  parallel, each part owning its inside and its top and left sides. The car's drag: the first picture 11 ms after the step,
+  phase one 27.5 to 30 ms by its own clock (33.5 ms the session's median), the pictures as build 72's (1e-5).
