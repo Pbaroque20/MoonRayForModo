@@ -431,7 +431,7 @@ struct Feed {
                 const Chunk chunk = params.ring[chunkIndex % params.ringCapacity];
                 const U32 s = offset / TilePixels, position = offset % TilePixels;
                 if (s >= chunk.count) continue;
-                const U32 at = tilePixel(chunk.tile, position, c.width, c.height, c.viewport);
+                const U32 at = chunkPixel(c.gather, chunk.tile, position, c.width, c.height, c.viewport);
                 if (at == ~0u) continue;
                 U32 sampleIndex = chunk.first + s, samplePass = 0;
                 if (params.adaptive) {
@@ -481,7 +481,20 @@ extern "C" __global__ void __exception__report() {
     atomicAdd(&params.state->errors, 1u);
 }
 
+// mode 5, Rhea's phase one (realtime only): a ray of the host's a thread, its first hit as the path tracer makes it. Out of
+// line, so the path tracer's raygen keeps its registers.
+static __device__ __noinline__ void firstHit() {
+    const U32 i = optixGetLaunchIndex().x;
+    if (i >= params.firstHitCount) return;
+    GpuBackend backend;
+    params.firstHits[i] = backend.trace(params.firstHitRays[i]);
+}
+
 extern "C" __global__ void __raygen__async() {
+    if (params.mode == 5) {
+        firstHit();
+        return;
+    }
     if (params.mode == 1) {
         commit();
         return;

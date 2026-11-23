@@ -36,7 +36,7 @@ struct RequestSink {
     mutable unsigned missed = 0;
     __device__ void operator()(unsigned tile) const {
         missed = tile;
-        if (!tile) return;
+        if (!tile || params.config->residentTextures) return;  // Rhea's frames ask for no tile
         if (atomicCAS(&params.tileState[tile], 0u, 1u) == 0u) {
             const U64L at = atomicAdd(&params.state->requestTail, 1ull);
             params.requests[at % params.requestCapacity] = tile;
@@ -45,7 +45,7 @@ struct RequestSink {
     __device__ void touch(unsigned tile) const {
         if (!params.touched[tile]) params.touched[tile] = 1;
     }
-    __device__ bool coarse() const { return mark != nullptr; }
+    __device__ bool coarse() const { return mark != nullptr || params.config->residentTextures; }
     // A texel's parent on the nearest level up that is on the card (tex::parentTexel): the next where its tile is there,
     // else further up, to the coarsest levels, which always are (async_gpu.h's prepareTextures). Out of line (each of the
     // filter's fetches calls it on a miss). Read, it marks the launch thread's sample provisional with the tile it missed.
@@ -53,7 +53,8 @@ struct RequestSink {
         unsigned status = tex::Miss;
         for (; level < image.count; ++level, x /= 2, y /= 2)
             if ((status = tex::parentTexel(image, level, x, y, out)) != tex::Miss) break;
-        if (status == tex::Ready) *mark = missed ? missed : ~0u;
+        // Rhea's frames (Config::residentTextures) take the coarser texel as their own: nothing to render again.
+        if (status == tex::Ready && mark && !params.config->residentTextures) *mark = missed ? missed : ~0u;
         return status;
     }
 };

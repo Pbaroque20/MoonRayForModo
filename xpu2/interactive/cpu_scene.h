@@ -229,6 +229,21 @@ struct Plan {
     float textureDiffScale=1;
     // The camera's pixel sample map (uniform sampling): each pixel's sample count, rows from the bottom; empty: none.
     std::vector<unsigned> pixelSamples;
+    // Rhea's phase 2 (mixed::Config's frameCache ... qmcDepth; rhea/DESIGN.md): none in XPU2's own plans.
+    std::shared_ptr<const std::vector<float>> frameCache;float cacheToCamera[12]={};float cacheRaster[8]={};
+    float cacheContinue=1.0f,cacheDepthTolerance=0.02f;unsigned qmcDepth=0;
+    // Gather tiles (Rhea, rhea/DESIGN.md 9): each 8x8 tile's 64 pixels listed (~0u: none), so that a frame of scattered
+    // pixels (probes, or the pixels of one sample count) fills its tiles; empty: the image's own tiles, as always.
+    std::vector<unsigned> gather;
+    // A depth limit per pixel (Rhea's one frame, rhea/DESIGN.md 10): each pixel's samples that are full paths, the rest
+    // stopping at the first hit (max_depth 0); empty: every sample a full path, as always.
+    std::vector<unsigned> fullSamples;
+    // Each pixel's first sample in its sequence (rhea/rhea_realtime.h: a frame at rest continues the samples its pixels
+    // had, so that the frames' samples together stratify as one frame's would); empty: from the first, as always.
+    std::vector<unsigned> sampleBase;
+    // Textures read only from what the card holds (rhea/rhea_realtime.h: a camera move's frame reads the coarse levels
+    // and whatever tiles XPU2's frames at rest brought, streams none, and re-renders nothing); false: as always.
+    bool residentTextures = false;
     // Motion blur (meshMotionSteps, camera_core.h's cameraAtTime) and the camera's shutter bias (the samples' times).
     MotionParams motion;float shutterBias=0;
     // The lights moving under motion blur (light_core.h's LightMotion, by light index), and each light's record at the
@@ -699,6 +714,35 @@ inline V3 xformPointF(const float m[4][3],const rdl::Vec3f& p){
  V3 r;for(int c=0;c<3;++c){const float yz=p.y*m[1][c]+p.z*m[2][c];(&r.x)[c]=(p.x*m[0][c]+yz)+m[3][c];}return r;}
 // A displacement for the tessellation (SubdDisplacement): the DLL's callback and its user data.
 struct SubdDisplaceCall{X2SubdDisplaceFn fn=nullptr;void* user=nullptr;X2SubdDisplaceAttrFn with=nullptr;};
+// A dicing camera's frustums as MoonRay's tessellation reads them (GeometryManager::getDicingCameraFrustums): the
+// scene's dicing camera, else the geometry's, if a PerspectiveCamera: its own frustums over the render region, their clip
+// planes moved into the main camera's render space (w2r) by its node transform, and its world to render. False where
+// there is none (any other camera class leaves the main camera's: MoonRay warns). The tessellation's input and the
+// tessellation cache's key (geometryKey) both take them from here, so that a cached mesh's key holds what shaped it.
+inline bool dicingFrustums(const rdl::SceneObject& o,const rdl::Mat4d& w2r,std::vector<float>& outC2S,std::vector<float>& outPlanes,
+                           std::vector<int>& outViewports,double world2render[16]){
+ outC2S.clear(),outPlanes.clear(),outViewports.clear();
+ {const rdl::SceneVariables& sv=o.getSceneClass().getSceneContext()->getSceneVariables();
+  const rdl::SceneObject* dc=get<rdl::SceneObject*>(sv,"dicing_camera");if(!dc)dc=get<rdl::SceneObject*>(o,"dicing_camera");
+  if(dc&&dc->getSceneClass().getName()=="PerspectiveCamera"){namespace sm=scene_rdl2::math;
+   const auto ap=sv.getRezedApertureWindow(),rg=sv.getRezedRegionWindow();
+   const float apW=float(ap.width()),apH=float(ap.height()),regionX=float(rg.min().x-ap.min().x),regionY=float(rg.min().y-ap.min().y),invAspect=apH/apW;
+   float interocular=0.0f;const int view=get<rdl::Int>(*dc,"stereo_view");if(view!=0)interocular=(view==1?0.5f:-0.5f)*get<rdl::Float>(*dc,"stereo_interocular_distance");
+   const float offX=2*regionX/apW,offY=2*regionY/apH,wR=2*float(rg.width())/apW,hR=2*float(rg.height())/apH;
+   const std::array<float,4> region{-1.0f+offX,invAspect*(-1.0f+offY),-1.0f+offX+wR,invAspect*(-1.0f+offY+hR)};
+   const rdl::Mat4d dicingRender2World=dc->get<rdl::Mat4d>("node_xform");
+   const rdl::Mat4d moveInverse=(dicingRender2World*w2r).inverse();
+   for(int close=0;close<2;++close){const sm::Mat4f c=cameraProjection(*dc,true,region,interocular,close==1);
+    for(int i=0;i<4;++i)for(int j=0;j<4;++j)outC2S.push_back(c[i][j]);
+    const float planes[6][4]={{c[0][3]-c[0][0],c[1][3]-c[1][0],c[2][3]-c[2][0],c[3][3]-c[3][0]},{c[0][3]+c[0][0],c[1][3]+c[1][0],c[2][3]+c[2][0],c[3][3]+c[3][0]},
+                              {c[0][3]+c[0][1],c[1][3]+c[1][1],c[2][3]+c[2][1],c[3][3]+c[3][1]},{c[0][3]-c[0][1],c[1][3]-c[1][1],c[2][3]-c[2][1],c[3][3]-c[3][1]},
+                              {c[0][3]-c[0][2],c[1][3]-c[1][2],c[2][3]-c[2][2],c[3][3]-c[3][2]},{c[0][3]+c[0][2],c[1][3]+c[1][2],c[2][3]+c[2][2],c[3][3]+c[3][2]}};
+    // Frustum::transformClipPlanes: each plane times the transform's inverse (as a column).
+    for(const auto& pl:planes)for(int i=0;i<4;++i)outPlanes.push_back(float(moveInverse[i][0]*pl[0]+moveInverse[i][1]*pl[1]+moveInverse[i][2]*pl[2]+moveInverse[i][3]*pl[3]));
+    const int vx=int(regionX),vy=int(regionY);outViewports.insert(outViewports.end(),{vx,vy,vx+int(rg.width()),vy+int(rg.height())});}
+   const rdl::Mat4d dicingWorld2Render=dicingRender2World.inverse();for(int i=0;i<4;++i)for(int j=0;j<4;++j)world2render[4*i+j]=dicingWorld2Render[i][j];
+   return true;}}
+ return false;}
 // A mesh as the DLL takes it (X2SubdInput, render space), handed to call with its primitive attributes (control, in
 // the input's order) and world to render.
 template<class Call> inline auto withMeshInput(const rdl::SceneObject& o,const rdl::Layer& layer,const Plan& plan,const rdl::Mat4d& objectToWorld,
@@ -752,30 +796,12 @@ template<class Call> inline auto withMeshInput(const rdl::SceneObject& o,const r
  in.frustumCount=unsigned(plan.frustumViewports.size()/4);in.frustumC2S=plan.frustumC2S.data();in.frustumPlanes=plan.frustumPlanes.data();in.frustumViewports=plan.frustumViewports.data();
  in.hasFishtum=plan.fishtum?1:0;for(int i=0;i<9;++i)in.fishtum[i]=plan.fishtumData[i];
  for(int i=0;i<16;++i)in.world2render[i]=plan.world2render[i];
- // A dicing camera (the scene's, else the geometry's; GeometryManager::getDicingCameraFrustums): a PerspectiveCamera's
- // own frustums over the render region, their clip planes moved into the main camera's render space by its node
- // transform, and its world to render; any other camera class leaves the main camera's (MoonRay warns).
- std::vector<float> dicingC2S,dicingPlanes;std::vector<int> dicingViewports;
- {const rdl::SceneVariables& sv=o.getSceneClass().getSceneContext()->getSceneVariables();
-  const rdl::SceneObject* dc=get<rdl::SceneObject*>(sv,"dicing_camera");if(!dc)dc=get<rdl::SceneObject*>(o,"dicing_camera");
-  if(dc&&dc->getSceneClass().getName()=="PerspectiveCamera"){namespace sm=scene_rdl2::math;
-   const auto ap=sv.getRezedApertureWindow(),rg=sv.getRezedRegionWindow();
-   const float apW=float(ap.width()),apH=float(ap.height()),regionX=float(rg.min().x-ap.min().x),regionY=float(rg.min().y-ap.min().y),invAspect=apH/apW;
-   float interocular=0.0f;const int view=get<rdl::Int>(*dc,"stereo_view");if(view!=0)interocular=(view==1?0.5f:-0.5f)*get<rdl::Float>(*dc,"stereo_interocular_distance");
-   const float offX=2*regionX/apW,offY=2*regionY/apH,wR=2*float(rg.width())/apW,hR=2*float(rg.height())/apH;
-   const std::array<float,4> region{-1.0f+offX,invAspect*(-1.0f+offY),-1.0f+offX+wR,invAspect*(-1.0f+offY+hR)};
-   const rdl::Mat4d dicingRender2World=dc->get<rdl::Mat4d>("node_xform");
-   const rdl::Mat4d moveInverse=(dicingRender2World*w2r).inverse();
-   for(int close=0;close<2;++close){const sm::Mat4f c=cameraProjection(*dc,true,region,interocular,close==1);
-    for(int i=0;i<4;++i)for(int j=0;j<4;++j)dicingC2S.push_back(c[i][j]);
-    const float planes[6][4]={{c[0][3]-c[0][0],c[1][3]-c[1][0],c[2][3]-c[2][0],c[3][3]-c[3][0]},{c[0][3]+c[0][0],c[1][3]+c[1][0],c[2][3]+c[2][0],c[3][3]+c[3][0]},
-                              {c[0][3]+c[0][1],c[1][3]+c[1][1],c[2][3]+c[2][1],c[3][3]+c[3][1]},{c[0][3]-c[0][1],c[1][3]-c[1][1],c[2][3]-c[2][1],c[3][3]-c[3][1]},
-                              {c[0][3]-c[0][2],c[1][3]-c[1][2],c[2][3]-c[2][2],c[3][3]-c[3][2]},{c[0][3]+c[0][2],c[1][3]+c[1][2],c[2][3]+c[2][2],c[3][3]+c[3][2]}};
-    // Frustum::transformClipPlanes: each plane times the transform's inverse (as a column).
-    for(const auto& pl:planes)for(int i=0;i<4;++i)dicingPlanes.push_back(float(moveInverse[i][0]*pl[0]+moveInverse[i][1]*pl[1]+moveInverse[i][2]*pl[2]+moveInverse[i][3]*pl[3]));
-    const int vx=int(regionX),vy=int(regionY);dicingViewports.insert(dicingViewports.end(),{vx,vy,vx+int(rg.width()),vy+int(rg.height())});}
-   const rdl::Mat4d dicingWorld2Render=dicingRender2World.inverse();for(int i=0;i<4;++i)for(int j=0;j<4;++j)in.world2render[4*i+j]=dicingWorld2Render[i][j];
-   in.frustumCount=2;in.frustumC2S=dicingC2S.data();in.frustumPlanes=dicingPlanes.data();in.frustumViewports=dicingViewports.data();in.hasFishtum=0;}}
+ // A dicing camera (the scene's, else the geometry's; GeometryManager::getDicingCameraFrustums): its frustums
+ // (dicingFrustums), else the main camera's.
+ std::vector<float> dicingC2S,dicingPlanes;std::vector<int> dicingViewports;double dicingW2R[16];
+ if(dicingFrustums(o,w2r,dicingC2S,dicingPlanes,dicingViewports,dicingW2R)){
+  for(int i=0;i<16;++i)in.world2render[i]=dicingW2R[i];
+  in.frustumCount=2;in.frustumC2S=dicingC2S.data();in.frustumPlanes=dicingPlanes.data();in.frustumViewports=dicingViewports.data();in.hasFishtum=0;}
  in.enableDisplacement=displaceCall.fn||displaceCall.with?1:0;in.displace=displaceCall.fn;in.displaceUser=displaceCall.user;in.displaceWith=displaceCall.with;
  // Primitive attributes (UserData, processArbitraryData at the control mesh's rate counts: a face uniform, a vertex
  // varying or vertex, a face-vertex face varying), interpolated by MoonRay's tessellation.
@@ -2782,13 +2808,16 @@ inline bool admitMeshLight(const rdl::SceneObject& o,float sceneScale,const rdl:
 // tessellation (cameraDependent). A mapped volume's settings are worked out again at the new render origin.
 inline void admitCamera(const rdl::SceneObject& camera,const rdl::SceneVariables& sv,Plan& plan,const Plan* previous);
 // why, where given: what kept the camera from being taken alone (the session's log).
-inline bool updateCamera(Plan& plan,const rdl::SceneContext& context,std::string* why=nullptr){
+// keepCameraGeometry: geometry tessellated for the camera (cameraDependent) kept as it was tessellated, for the camera it
+// was made for (XPU2 RT's drag steps: the user's sea re-tessellated at every step, 0.7 s each; the release tessellates it
+// again for its camera).
+inline bool updateCamera(Plan& plan,const rdl::SceneContext& context,std::string* why=nullptr,bool keepCameraGeometry=false){
  const auto& sv=context.getSceneVariables();
  auto* camera=get<rdl::SceneObject*>(sv,"camera");
  auto refuse=[&](const char* reason){if(why)*why=reason;return false;};
  if(!camera||!plan.paths)return refuse("no camera, or not the path tracer");
  if(plan.camera.type==surface::CameraBake)return refuse("a bake camera");
- if(plan.cameraDependent)return refuse("geometry tessellated for the camera (adaptive tessellation)");
+ if(plan.cameraDependent&&!keepCameraGeometry)return refuse("geometry tessellated for the camera (adaptive tessellation)");
  if(!plan.filterLists.empty())return refuse("light filters");
  if(!plan.pixelSamples.empty()||!get<rdl::String>(*camera,"pixel_sample_map").empty())return refuse("a pixel sample map");
  if(!(motionParams(sv,camera)==plan.motion))return refuse("the camera's motion blur changed");
@@ -3074,7 +3103,14 @@ inline std::string geometryKey(const rdl::SceneObject& o,const std::vector<std::
  k.add(&dll.first,sizeof dll.first);k.add(&dll.second,sizeof dll.second);
  // Adaptive tessellation follows the camera: its frustums and render space.
  if(get<rdl::Float>(o,"adaptive_error")>0.0f){k.add(plan.frustumC2S.data(),plan.frustumC2S.size()*sizeof(float));k.add(plan.frustumPlanes.data(),plan.frustumPlanes.size()*sizeof(float));
-  k.add(plan.frustumViewports.data(),plan.frustumViewports.size()*sizeof(int));k.add(plan.world2render,sizeof plan.world2render);}
+  k.add(plan.frustumViewports.data(),plan.frustumViewports.size()*sizeof(int));k.add(plan.world2render,sizeof plan.world2render);
+  // A dicing camera's frustums too, as the tessellation takes them (dicingFrustums): Modo's preview names one wherever the
+  // scene's displacement tessellation is fixed, and its adaptive meshes had not been kept.
+  rdl::Mat4d w2r;for(int i=0;i<4;++i)for(int j=0;j<4;++j)w2r[i][j]=plan.world2render[4*i+j];
+  std::vector<float> c2s,planes;std::vector<int> viewports;double dicingW2R[16];
+  const unsigned char dicing=dicingFrustums(o,w2r,c2s,planes,viewports,dicingW2R)?1:0;k.add(&dicing,1);
+  if(dicing){k.add(c2s.data(),c2s.size()*sizeof(float));k.add(planes.data(),planes.size()*sizeof(float));k.add(viewports.data(),viewports.size()*sizeof(int));
+   k.add(dicingW2R,sizeof dicingW2R);}}
  return k.hex();}
 // A mesh MoonRay tessellates on a worker of its own (the tessellation handler, INDEXER.md section 16): the scene's other
 // meshes are prepared meanwhile, and its plan mesh (index mesh) takes the result after the loop, with its budget and
@@ -3732,10 +3768,24 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
   // session, the scene opened again). Not one that moves, an instance with data of its own, the bake camera's mesh, a
   // volume's bound or one with a dicing camera of its own.
   std::string cacheKey;bool cacheHit=false;
-  if(!data&&paths&&geometryCacheOn()&&!coarseTessellation()&&objectDisplaced&&(subdGeometry||polyGeometry)&&o.getSceneClass().getName()=="RdlMeshGeometry"&&
+  // A subdivision surface without displacement too (MoonRay's subdivision, the same tessellation as a displaced one's),
+  // keyed apart and by its piece: 9Spheres' undisplaced spheres were tessellated again at every session's start (2.1 s
+  // of its 9.7), only its displaced mesh kept (2026-11-21).
+  const bool subdivisionOnly=!objectDisplaced&&subdGeometry;
+  // XPU2_SESSION_GEOMETRY_CACHE_SAY=1: each mesh's way past the cache, and why (an investigation).
+  {static const bool say=[]{const char* v=std::getenv("XPU2_SESSION_GEOMETRY_CACHE_SAY");return v&&v[0]=='1';}();
+   if(say&&!data)std::printf("MoonRay XPU2: geometry cache: %s%s: displaced %d subdivision %d poly %d paths %d coarse %d instancer %d shared %d moves %d motion %d volume %d dicing %d adaptive %g%c",
+                            o.getName().c_str(),piece.suffix.c_str(),int(objectDisplaced),int(subdGeometry),int(polyGeometry),int(bool(paths)),int(coarseTessellation()),
+                            int(item.instancer!=nullptr),int(shareInstance),int(bool(item.moves)),int(meshHasMotion(o)),int(volumeIndex>=0),
+                            int(get<rdl::SceneObject*>(sv,"dicing_camera")||get<rdl::SceneObject*>(o,"dicing_camera")),double(get<rdl::Float>(o,"adaptive_error")),char(10));}
+  if(!data&&paths&&geometryCacheOn()&&!coarseTessellation()&&((objectDisplaced&&(subdGeometry||polyGeometry))||subdivisionOnly)&&
+     o.getSceneClass().getName()=="RdlMeshGeometry"&&
      (!item.instancer||shareInstance)&&!item.moves&&!meshHasMotion(o)&&&o!=bakeGeometry&&volumeIndex<0&&
-     !get<rdl::SceneObject*>(sv,"dicing_camera")&&!get<rdl::SceneObject*>(o,"dicing_camera")){
-   cacheKey=geometryKey(o,sig,displacementKey,*plan,shareInstance,sv);
+     // A dicing camera too: it shapes only adaptive tessellation, and an adaptive mesh's key holds its frustums
+     // (geometryKey). Modo's preview names one wherever the scene's displacement tessellation is fixed, and no
+     // subdivision surface or displaced mesh of such a scene had been kept (9Spheres, 2026-11-21).
+     true){
+   cacheKey=geometryKey(o,sig,subdivisionOnly?"subdivision|"+piece.suffix:displacementKey,*plan,shareInstance,sv);
    if(auto m=loadGeometry(cacheKey)){m->name=meshName;m->signature=sig;m->displacementKey=displacementKey;if(shareInstance)m->instanced=true;
     data=std::move(m);cacheHit=true;++plan->preparedMeshes;}}
   // A plain mesh (its own, or a shared instance's reference; still, not displaced, not a subdivision surface) kept too,

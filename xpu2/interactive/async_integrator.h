@@ -22,6 +22,9 @@
 #include "aov_deep.h"
 #include "aov_state.h"
 #include "camera_core.h"
+#if defined(XPU2_OPENQMC)
+#include <oqmc/sobol.h>  // OpenQMC (Apache-2.0), vendored in moonlightipr/third_party/openqmc: the Bregman engine's phase 2
+#endif
 
 namespace xpu2::interactive::async {
 
@@ -284,6 +287,40 @@ X2_HD inline U64 childBranch(U64 parent, U32 a, U32 b) {
     z = (z ^ (z >> 27)) * 0x94d049bb133111ebull;
     return z ^ (z >> 31);
 }
+// The Bregman engine's phase 2 (bregman/DESIGN.md; mixed::Config::frameCache): phase 1's radiance at a surface point P a
+// bounce reached, where P is the visible surface of a pixel phase 1 trusts (P's inverse depth that pixel's, within
+// cacheDepthTolerance) and the path reached it on the side the camera sees (N faces the ray, as resume::Hit's normal).
+X2_HD inline bool frameCacheAt(const mixed::Config& c, V3 P, V3 N, V3& C) {
+    const float* m = c.cacheToCamera;
+    const float cx = P.x * m[0] + P.y * m[3] + P.z * m[6] + m[9], cy = P.x * m[1] + P.y * m[4] + P.z * m[7] + m[10],
+                cz = P.x * m[2] + P.y * m[5] + P.z * m[8] + m[11];
+    if (!(cz < -1e-6f)) return false;
+    const float* r = c.cacheRaster;  // o.x, o.y, o.z, ex.x, ex.y, ey.x, ey.y, det
+    const float t = r[2] / cz, qx = t * cx - r[0], qy = t * cy - r[1];
+    const float fx = (qx * r[6] - qy * r[5]) / r[7], fy = (r[3] * qy - r[4] * qx) / r[7];
+    if (!(fx >= 0.0f && fy >= 0.0f && fx < float(c.width) && fy < float(c.height))) return false;
+    const float* v = c.frameCache + 4 * (size_t(U32(fy)) * c.width + U32(fx));
+    const float w = v[3];
+    if (!(w > 0.0f) || fabsf(-1.0f / cz - w) > c.cacheDepthTolerance * w) return false;
+    const surface::Matrix& e = c.camera.cameraToRender;
+    const V3 eye{e.m[3][0] / e.m[3][3], e.m[3][1] / e.m[3][3], e.m[3][2] / e.m[3][3]};
+    if (!(surface::dot(N, surface::add(eye, surface::mul(P, -1.0f))) > 0.0f)) return false;
+    C = V3{v[0], v[1], v[2]};
+    return true;
+}
+#if defined(XPU2_OPENQMC)
+// OpenQMC's Owen-scrambled Sobol sampler for a vertex past the first: a pixel's samples (index) stratified over one
+// domain a branch and bounce. The branch is a deterministic tree address (childBranch), so the same choice in every
+// sample of the pixel draws from the same domain, as MoonLightIPR's qmc.h keys its domains by the part of a bounce.
+X2_HD inline void qmcPair(const mixed::Config& c, U32 pixel, U64 index, U64 branch, U32 depth, float& a, float& b) {
+    const oqmc::SobolSampler s(int(pixel % c.width), int(pixel / c.width), int(c.seed), int(U32(index)), nullptr);
+    const U64 k = (branch ^ (U64(depth) << 48)) * 0x9e3779b97f4a7c15ull;
+    float v[2];
+    s.newDomain(int(U32(k ^ (k >> 32)) & 0x7fffffffu)).drawSample<2>(v);
+    a = fminf(fmaxf(v[0], 0.0f), 0x1.fffffep-1f);
+    b = fminf(fmaxf(v[1], 0.0f), 0x1.fffffep-1f);
+}
+#endif
 }  // namespace paths
 
 
@@ -1983,14 +2020,18 @@ X2_HD inline V3 volumeTransmittanceCall(const mixed::Config& c, Backend& backend
 }
 
 template <class Backend>
-X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 index, Backend& backend, Radiance& out) {
+X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 frameIndex, Backend& backend, Radiance& out) {
     using namespace paths;
     using shade::Color;
     if (pixel >= c.width * c.height || c.bsdfSamples == 0 || c.bsdfSamples > 64 || c.lightSamples == 0 || c.lightSamples > 64)
         return SampleStatus::Error;
     // A pixel sample map gives each pixel its own count: its samples past it are not taken (computeTotalNumSamples).
     const U32 pixelSpp = c.pixelSamples ? c.pixelSamples[pixel] : c.spp;
-    if (c.pixelSamples && index >= pixelSpp) return SampleStatus::Skip;
+    if (c.pixelSamples && frameIndex >= pixelSpp) return SampleStatus::Skip;
+    // A depth limit per pixel (Plan::fullSamples): a sample past the pixel's full paths stops at the first hit.
+    const U32 maxDepth = c.fullSamples && frameIndex >= c.fullSamples[pixel] ? 0u : c.maxDepth;
+    // The sample's place in its pixel's sequence (Plan::sampleBase): the frame's index past the samples the pixel had.
+    const U32 index = c.sampleBase ? frameIndex + c.sampleBase[pixel] : frameIndex;
     const sample::Identity root{pixel, index, c.seed, 0};
     float x, y;
     surface::Ray camera;
@@ -2215,6 +2256,25 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
             }
             continue;  // a miss adds nothing more: lights are reached through the BSDF samples
         }
+        // The Bregman engine's phase 2 (bregman/DESIGN.md): a bounce that reached a surface phase 1 reconstructed ends there
+        // with probability 1 - p, taking phase 1's radiance C; else it goes on carrying 1 / p and adds -C (1 - p) / p.
+        // The expectation is the path's own whatever C is (a control variate decided by Russian roulette): a poor C costs
+        // variance, never bias. Off in XPU2's own frames (no frameCache).
+        if (c.frameCache && pv.depth > 0 && c.volumeCount == 0) {
+            V3 C;
+            if (frameCacheAt(c, hit.point, hit.normal, C)) {
+                sample::Identity cid = root;
+                cid.branch = childBranch(pv.branch, 0xfa00, 0);
+                Stream cs(cid, pv.depth, 0);
+                const float p = c.cacheContinue;
+                if (cs.next() >= p) {
+                    radiance += pv.T * C;
+                    continue;
+                }
+                radiance += pv.T * C * (1.0f - 1.0f / p);
+                pv.T = pv.T * (1.0f / p);
+            }
+        }
 
         shade::State st;
         st.minRoughness[0] = pv.minRoughness[0];
@@ -2429,7 +2489,7 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
 
         // indirectFlags: the lobe types whose depth limits still allow a bounce.
         U32 indirectFlags = 0;
-        if (c.bsdfSamples > 0 && c.maxDepth > 0 && pv.depth < c.maxDepth) {
+        if (c.bsdfSamples > 0 && maxDepth > 0 && pv.depth < maxDepth) {
             if (pv.diffuseDepth < c.maxDiffuseDepth) indirectFlags |= shade::AllDiffuse;
             if (pv.glossyDepth < c.maxGlossyDepth) indirectFlags |= shade::AllGlossy;
             if (pv.mirrorDepth < c.maxMirrorDepth) indirectFlags |= shade::AllMirror;
@@ -2645,6 +2705,10 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
                     r[0] = sample::draw(strat, sample::CameraDimensions + 2, c.sampling);
                     r[1] = sample::draw(strat, sample::CameraDimensions + 3, c.sampling);
                 }
+#if defined(XPU2_OPENQMC)
+                // Past the first hit, in the Bregman engine's phase 2: OpenQMC's stratified pair for this light here.
+                else if (pv.nonMirrorDepth < c.qmcDepth) qmcPair(c, pixel, U64(index) * nl + s, lightAddress, pv.depth, r[0], r[1]);
+#endif
                 V3 wi;
                 lights::Hit lh;
                 if (!lights::sample(L, st.P, cullN, r, wi, lh, footprint)) {
@@ -2819,6 +2883,10 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
                     r1 = sample::draw(strat, sample::CameraDimensions, c.sampling);
                     r2 = sample::draw(strat, sample::CameraDimensions + 1, c.sampling);
                 }
+#if defined(XPU2_OPENQMC)
+                // Past the first hit, in the Bregman engine's phase 2: OpenQMC's stratified pair for this lobe here.
+                else if (!mirror && pv.nonMirrorDepth < c.qmcDepth) qmcPair(c, pixel, U64(index) * nk + i, lobeBranch, pv.depth, r1, r2);
+#endif
                 V3 wi;
                 float pdf;
                 const Color f = shade::lobeSample(bsdf, record, slice, r1, r2, wi, pdf);
@@ -3137,6 +3205,10 @@ X2_HD inline U32 tilePixel(U32 tile, U32 position, U32 width, U32 height, const 
     if (p == ~0u) return p;
     const int x = int(p % width), y = int(p / width);
     return x >= viewport[0] && y >= viewport[1] && x < viewport[2] && y < viewport[3] ? p : ~0u;
+}
+// A uniform chunk's pixel: from the gather tiles where the plan lists them (Plan::gather), else the image's tile.
+X2_HD inline U32 chunkPixel(const U32* gather, U32 tile, U32 position, U32 width, U32 height, const int* viewport) {
+    return gather ? gather[tile * TilePixels + position] : tilePixel(tile, position, width, height, viewport);
 }
 
 }  // namespace xpu2::interactive::async

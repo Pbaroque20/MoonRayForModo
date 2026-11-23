@@ -15,8 +15,10 @@ static void check(bool ok, const char* what) {
     }
 }
 
-// Every (pixel, sample index) of the image is covered by exactly one claimed chunk.
-static void exactlyOnce(U32 width, U32 height, U32 spp, GridOptions options, unsigned workers) {
+// Every (pixel, sample index) of the image is covered by exactly one claimed chunk. With need, each tile's own depth
+// (GridOptions::tileSpp): every pixel gets exactly its tile's samples.
+static void exactlyOnce(U32 width, U32 height, U32 spp, GridOptions options, unsigned workers, const std::vector<U32>* need = nullptr) {
+    if (need) options.tileSpp = need->data();
     Grid grid(width, height, spp, options);
     std::vector<std::vector<Chunk>> claimed(workers + 1);
     std::vector<std::thread> threads;
@@ -59,8 +61,9 @@ static void exactlyOnce(U32 width, U32 height, U32 spp, GridOptions options, uns
     check(unique, "no chunk is claimed twice");
     check(chunks == grid.totalChunks(), "every chunk is claimed");
     bool full = true;
-    for (U32 s : samples) full &= s == spp;
-    check(full, "every pixel gets exactly spp samples");
+    const U32 tilesX = (width + TileSize - 1) / TileSize;
+    for (U32 i = 0; i < samples.size(); ++i) full &= samples[i] == (need ? (*need)[((i / width) / TileSize) * tilesX + (i % width) / TileSize] : spp);
+    check(full, need ? "every pixel gets exactly its tile's samples" : "every pixel gets exactly spp samples");
 }
 
 // Adaptive frames: the coordinator appends passes to an empty grid while the
@@ -120,6 +123,14 @@ int main() {
     exactlyOnce(1920, 1080, 16, {64, 4, 2}, 12);
     exactlyOnce(100, 37, 9, {32, 4, 2}, 5);  // ragged edges, a partial last chunk
     exactlyOnce(64, 64, 7, {64, 3, 0}, 3);   // CPU only
+    // Tiles of their own depths (Sol's frames), none for some: the frontier reads each cell's ranges where they start.
+    {
+        const U32 w = 384, h = 288, tiles = (w / TileSize) * (h / TileSize);
+        std::vector<U32> need(tiles);
+        for (U32 t = 0; t < tiles; ++t) need[t] = (t * 7u) % 13u;  // 0 to 12, of 12 samples a pixel at most
+        exactlyOnce(w, h, 12, {64, 4, 2}, 12, &need);
+        exactlyOnce(w, h, 12, {64, 4, 0}, 5, &need);
+    }
 
     // Checkerboard seeding (GRD-02) and the cellular rules (CA rules, spec §8).
     Grid grid(256, 256, 4, {64, 4, 2});

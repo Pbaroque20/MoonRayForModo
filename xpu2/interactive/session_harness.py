@@ -89,10 +89,16 @@ def main():
     p.add_argument('--env', action='append', default=[])
     p.add_argument('--timeout', type=float, default=600)
     p.add_argument('--stop-after', type=float, default=0, help='send the next delta this many seconds into a frame')
+    p.add_argument('--first-done', action='store_true',
+                   help="with --stop-after: let the scene's first frame end before the first delta (a drag begun from a picture at rest)")
     p.add_argument('--drain-after', type=float, default=0, help='ask the last frame to finish with what it has after this many seconds')
     p.add_argument('--keep-pictures', action='store_true', help='save every progressive picture, as frame-<id>-<seconds>.pfm')
     p.add_argument('--memory-binary', action='store_true', help="hand a .rdlb scene over in shared memory, as the kit does for XPU2 "
                    "(modo-memory-rdlb:<length>:<name>)")
+    p.add_argument('--drag', action='store_true', help="send the deltas as the steps of a drag the kit follows (XPU2 RT): the "
+                   "command's fifth line 'drag', XPU2 held until the next command")
+    p.add_argument('--release', type=Path, default=None, help="with --drag: a delta sent after the steps as the mouse's release (no "
+                   "fifth line), --stop-after seconds after the last step")
     p.add_argument('--view', default='', help="the buffer the kit shows (its view.txt), e.g. denoised_beauty for realtime's denoised pictures")
     a = p.parse_args()
     out = a.output.resolve()
@@ -180,22 +186,30 @@ def main():
         with lock:
             return pred()
 
-    def send(identity, mode, delta='', full=''):
+    def send(identity, mode, delta='', full='', drag=False):
         staged = session / 'command.tmp'
-        staged.write_text('%d\n%s\n%s\n%s\n' % (identity, mode, delta, full), encoding='utf-8')
+        staged.write_text('%d\n%s\n%s\n%s\n%s' % (identity, mode, delta, full, 'drag\n' if drag else ''), encoding='utf-8')
         staged.replace(session / 'command.txt')
 
     identity = 1
     try:
         for delta in a.delta:
-            if a.stop_after:
+            if a.stop_after and not (a.first_done and identity == 1):
                 time.sleep(a.stop_after)
             else:
                 wait(lambda: state['done'] and state['done'][1] == identity, a.timeout)
             identity += 1
             with lock:
                 state['done'] = None
-            send(identity, 'delta', str(delta.resolve()).replace('\\', '/'), str(a.scene[0].resolve()).replace('\\', '/'))
+            send(identity, 'delta', str(delta.resolve()).replace('\\', '/'), str(a.scene[0].resolve()).replace('\\', '/'), drag=a.drag)
+            wait(lambda: state['applied'] == identity, a.timeout)
+        if a.release:
+            # The mouse let go: the release's delta, no fifth line.
+            time.sleep(a.stop_after or 0.5)
+            identity += 1
+            with lock:
+                state['done'] = None
+            send(identity, 'delta', str(a.release.resolve()).replace('\\', '/'), str(a.scene[0].resolve()).replace('\\', '/'))
             wait(lambda: state['applied'] == identity, a.timeout)
         for whole in a.reload:
             wait(lambda: state['done'] and state['done'][1] == identity, a.timeout)

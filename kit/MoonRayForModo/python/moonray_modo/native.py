@@ -177,15 +177,26 @@ def tool(name, first=None):
 _INSTALLATION=[]
 
 
+_KIT_ROOT=[]
+
+
+def kit_root():
+    """The kit's folder, resolved once: resolving it was a fifth of what a drag's steps cost Modo's thread (XPU2 RT's
+    drags in Modo, 2026-11-21: 395 path resolutions in 44 ticks), and a kit is installed with Modo closed."""
+    if not _KIT_ROOT:_KIT_ROOT.append(Path(__file__).resolve().parents[2])
+    return _KIT_ROOT[0]
+
+
 def installation_id():
     """The installed kit's own mark (runtime.json), read once: a kit is installed with Modo closed. Read at every
-    Preferences made, it was a file opened a few times at each step of a drag."""
+    Preferences made, it was a file opened a few times at each step of a drag. A kit without the file (one installed
+    by copying, as the personal kit is) is marked '' once, not looked for again at every step."""
     if _INSTALLATION:return _INSTALLATION[0]
-    path=Path(__file__).resolve().parents[2]/'runtime.json'
+    path=kit_root()/'runtime.json'
     try:
         found=json.loads(path.read_text(encoding='utf-8')).get('installation_id','')
     except (OSError,ValueError,TypeError,AttributeError):
-        return ''
+        found=''
     _INSTALLATION.append(found)
     return found
 
@@ -225,6 +236,18 @@ def execution_status(log):
         if 'gpu: setup complete' in line: result='XPU active (%s + %s)'%(_gpu() or 'NVIDIA GPU',_cpu() or 'CPU')
         if 'falling back to cpu' in line: result='Vector active (CPU fallback — see Render Log)'
         if 'xpu2 preview session' in line: result='XPU2 active (%s + %s)'%(_gpu() or 'NVIDIA GPU',_cpu() or 'CPU')
+        # XPU2 RT (Rhea): the session says which renders each frame when it changes (xpu2_session.cc rheaFits).
+        if 'moonray xpu2: realtime by rhea' in line and not (result or '').startswith('Rhea'):
+            result='XPU2 Rhea active (%s + %s)'%(_gpu() or 'NVIDIA GPU',_cpu() or 'CPU')
+        elif "moonray xpu2: frames by xpu2 alone" in line: result='XPU2 active (%s + %s)'%(_gpu() or 'NVIDIA GPU',_cpu() or 'CPU')
+        # Rhea's own line (xpu2_session.cc rheaStatus), in place of XPU2's status while Rhea renders realtime (the user,
+        # 2026-11-22: "there should be an indicator in the status bar. This would replace the XPU2 render status"): how much
+        # of the view its store knew, and whether XPU2 is teaching it now.
+        elif line.startswith('@@modo_xpu2 rhea '):
+            parts=line.split()
+            try:known,learning=int(parts[2]),parts[3]=='1'
+            except (IndexError,ValueError):continue
+            result='Rhea · %d%% of the view known%s'%(known,' · learning' if learning else '')
     return result
 
 
@@ -523,7 +546,7 @@ def _crypto_capability(directory,signature):
 # XPU2: its own runtime beside the kit's, chosen in Preferences > MoonRay > XPU2.
 def xpu2_runtime():
     """XPU2's runtime: its preview session (moonray_xpu2.exe), GPU programs and the libraries it was built with."""
-    return Path(__file__).resolve().parents[2] / 'runtime-xpu2'
+    return kit_root() / 'runtime-xpu2'
 
 
 def _setting(key, default):
@@ -534,9 +557,14 @@ def _setting(key, default):
     return QtCore.QSettings('MoonRayForModo', settings_name()).value(key, default)
 
 
+_XPU2_AVAILABLE=[]
+
+
 def xpu2_available():
-    """Whether the kit holds XPU2's renderer, whichever renders the preview: a Render Animation can ask for it by name."""
-    return (xpu2_runtime() / 'moonray_xpu2.exe').is_file()
+    """Whether the kit holds XPU2's renderer, whichever renders the preview: a Render Animation can ask for it by name.
+    Looked at once (a kit is installed with Modo closed): asked at every tick of a drag."""
+    if not _XPU2_AVAILABLE:_XPU2_AVAILABLE.append((xpu2_runtime() / 'moonray_xpu2.exe').is_file())
+    return _XPU2_AVAILABLE[0]
 
 
 def xpu2():
@@ -571,6 +599,17 @@ def xpu2_rt_cap():
     return int(value) if value in ('30', '60') else 0
 
 
+def xpu2_rt_engine():
+    """XPU2 RT's engine (Preferences: XPU2 RT engine): 'rhea' (the default) or 'xpu2'."""
+    value = str(_setting('xpu2/rt_engine', 'rhea')).lower()
+    return value if value in ('rhea', 'xpu2') else 'rhea'
+
+
+def xpu2_follow_drags():
+    """Whether XPU2 RT follows a drag of the viewport's camera step by step (Preferences: XPU2 RT follows drags)."""
+    return str(_setting('xpu2/follow_drags', 'false')).lower() in ('true', '1')
+
+
 def xpu2_environment(runtime):
     """What XPU2's session starts with over environment(runtime): its own libraries and scene classes first, and the
     kit's MoonRay named for what XPU2 leaves to it."""
@@ -578,6 +617,8 @@ def xpu2_environment(runtime):
     return {'PATH': str(root) + os.pathsep + environment(runtime)['PATH'], 'RDL2_DSO_PATH': str(root),
             'REZ_MOONRAY_ROOT': str(root), 'MOONRAY_XPU2_MOONRAY': str(Path(runtime) / 'moonray.exe'),
             'XPU2_SESSION_CHAIN': '1' if xpu2_chain() else '0',
+            # XPU2 RT's engine: Rhea's frames where the scene lets them (rhea/rhea_realtime.h), else XPU2's.
+            'XPU2_SESSION_RT_ENGINE': xpu2_rt_engine(),
             # Its devices (Preferences > MoonRay > XPU2 > Device Management): 2 both, 1 the graphics cards, 0 the processor,
             # and which cards and processor groups where some are off.
             'XPU2_SESSION_MODE': {'both': '2', 'gpu': '1', 'cpu': '0'}[xpu2_devices()],

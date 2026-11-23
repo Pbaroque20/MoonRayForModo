@@ -117,7 +117,9 @@ class BufferCache(QtCore.QObject):
             return
         if not 0<len(pixels) or len(pixels)!=width*height*12:raise ValueError('Invalid shared image size')
         folder=self.root/uuid.uuid4().hex;folder.mkdir()
-        frame={'folder':folder,'files':{},'linear':{key:(width,height,pixels)},'runtime':Path(runtime),'snapshot':snapshot,'backend':backend,'partial':True}
+        from . import drag_timing
+        frame={'folder':folder,'files':{},'linear':{key:(width,height,pixels)},'runtime':Path(runtime),'snapshot':snapshot,'backend':backend,'partial':True,
+               'arrived':drag_timing.now()}
         if self.progressive_scene is not snapshot:self.progressive_frames.clear()
         self.progressive_scene=snapshot;self.progressive=frame
         self.progressive_frames.pop(key,None);self.progressive_frames[key]=frame
@@ -243,6 +245,11 @@ class BufferCache(QtCore.QObject):
             else:
                 self.displayed=dict(job['frame'],key=job['key'])
                 image=QtGui.QImage(data,width,height,width*4,QtGui.QImage.Format_RGBA8888).copy()
+                # A drag's picture from its arrival to ready to draw (drag_timing): its folder, the display process, the polls.
+                arrived=job['frame'].get('arrived')
+                if arrived is not None:
+                    from . import drag_timing
+                    drag_timing.add('ready',drag_timing.now()-arrived)
                 self.image_object.emit(image)
         else:self._request()
         self._prune()

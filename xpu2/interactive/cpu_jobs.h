@@ -22,6 +22,11 @@ inline Config config(const cpu::PlanView& p){auto e=p->source->routing->epoch;Co
   c.invVolumeQuality=1.0f/p->volumeQuality;c.invVolumeShadowQuality=1.0f/p->volumeShadowQuality;
   for(int i=0;i<4;++i)c.viewport[i]=p->viewport[i];c.textureDiffScale=p->textureDiffScale;
   c.pixelSamples=p->pixelSamples.empty()?nullptr:p->pixelSamples.data();
+  c.gather=p->gather.empty()?nullptr:p->gather.data();c.fullSamples=p->fullSamples.empty()?nullptr:p->fullSamples.data();c.sampleBase=p->sampleBase.empty()?nullptr:p->sampleBase.data();
+  // Rhea's phase 2 (host memory here; the GPU lane uploads the cache and the gather tiles, async_gpu.h uploadConfig).
+  c.frameCache=p->frameCache&&!p->frameCache->empty()?p->frameCache->data():nullptr;
+  for(int i=0;i<12;++i)c.cacheToCamera[i]=p->cacheToCamera[i];for(int i=0;i<8;++i)c.cacheRaster[i]=p->cacheRaster[i];
+  c.cacheContinue=p->cacheContinue;c.cacheDepthTolerance=p->cacheDepthTolerance;c.qmcDepth=p->qmcDepth;
   c.motionBlur=p->motion.on?1u:0u;c.shutterBias=p->shutterBias;c.lightFilters=p->filterLists.empty()?0u:1u;c.modoSwitches=p->modoSwitches;
   // Bounce-ray reuse: the bounce ray types each mesh is as visible to as to shadow rays (2); none with shadow linking,
   // whose occluders depend on the light.

@@ -683,6 +683,11 @@ class Renderer(QtCore.QObject):
         # from the request, a stop under Safe Denoising never asked XPU2 to save, nor kept what it saved (keep_progress,
         # _exited), and Continue rendered from the start.
         self.pass_xpu2=snapshot['_xpu2']
+        # XPU2 RT (Rhea): realtime that XPU2 renders with Rhea chosen takes Rhea's outputs (rdla.rhea_lines) in a file
+        # of their own beside the preview's; anything else has none.
+        snapshot.pop('_rhea_outputs',None)
+        if snapshot['_xpu2'] and snapshot.get('_realtime') and not request['output'] and native.xpu2_rt_engine()=='rhea':
+            snapshot['_rhea_outputs']=str(self.current_base.with_suffix('.rhea.exr'))
         snapshot['_crypto_categories']=native.supports_crypto_categories(request['runtime'])
         snapshot['_bump_step']=native.supports_bump_step(request['runtime'])
         snapshot['_pixel_filters']=native.supports_pixel_filters(request['runtime'])
@@ -745,6 +750,17 @@ class Renderer(QtCore.QObject):
                 self.resumable_before,self.resumable=getattr(self,'resumable',None),None
             arguments = (snapshot, request['width'], request['height'], self.sample_grid, request['environment'],
                          str(self.image_path) if request['output'] else None)
+            applied=getattr(self.session,'applied',None)
+            if (self.using_session and snapshot.get('_camera_delta') and applied and getattr(self.session,'xpu2_active',False)
+                    and self.session.running() and not request['output']):
+                # An XPU2 RT drag's step that moved the camera alone (panel, rdla.camera_delta): its edit is the camera's
+                # place, handed over as it is (persistent: absolute), the scene neither written again nor compared with the
+                # last (the user, 2026-11-22: "it's not drag fast in modo"). The scene text kept as the one applied: the
+                # release, written whole, brings it up to date (and anything that follows the camera, a dicing camera).
+                prepared=dict(base=applied,delta=snapshot['_camera_delta'],delta_bytes=None,full_bytes=None,heavy=None,binary=None,
+                              again=arguments,absolute=True)
+                self._pass_ready(request,snapshot,scene,mode,applied['text'],prepared=prepared)
+                return
             if self.using_session:
                 # A render by the MoonRay kept loaded, which is what follows a scene: its text is written on a
                 # thread of its own, and the pass goes on from _written when that is done.
@@ -833,7 +849,7 @@ class Renderer(QtCore.QObject):
                 self._started()
                 self.session.submit(text,request['runtime'],request['threads'],mode,self.session_serial,bucket_size,prepared=prepared,
                                     important=bool(options.render_values(snapshot.get('render_settings',{}))['important_first']),
-                                    moonray_mode=getattr(self,'moonray_mode',None))
+                                    moonray_mode=getattr(self,'moonray_mode',None),drag=bool(snapshot.get('_xpu2_drag')))
             else:
                 self.process.start()
         except Exception as exc:

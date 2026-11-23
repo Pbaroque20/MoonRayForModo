@@ -37,6 +37,7 @@
 #include "aov_deep_write.h"
 #include "entity_classes.h"
 #include "aov_display.h"
+#include "../../rhea/rhea_realtime.h"
 #include <scene_rdl2/scene/rdl2/RenderOutput.h>
 #include <scene_rdl2/scene/rdl2/rdl2.h>
 #include <scene_rdl2/scene/rdl2/BinaryReader.h>
@@ -60,6 +61,10 @@ using async::TileSize;
 using U32 = unsigned int;
 
 namespace {
+
+// Whether the scene's routing left objects to the CPU alone (logClasses, at each scene's preparation): a drag's frames
+// then keep the CPU lane (rheaFrames).
+bool sceneHasCpuAloneObjects = false;
 
 fs::path executableFolder() {
     std::wstring path(32768, L'\0');
@@ -673,6 +678,14 @@ struct Scene {
     // the plan the last camera-only one was made from (the GPU's configuration alone goes again, GpuLane::updateCamera).
     bool cameraOnly = false;
     cpu::PlanView cameraFrom;
+    // Whether the last preparation's changes were the camera's alone, even where the plan had to be made again for it
+    // (geometry tessellated for the camera: "not the camera alone"): XPU2 RT (Rhea) then keeps its last picture to warp.
+    bool cameraEdit = false;
+    // XPU2 RT's drag steps (the session's, for each command): a camera move keeps geometry tessellated for the camera as
+    // it is (cpu::updateCamera's keepCameraGeometry), the user's sea re-tessellated at every step otherwise (0.7 s each,
+    // and phase one's picture stopped at its coarse stage). cameraGeometryStale: kept so since the last full preparation;
+    // the next command not a drag's step tessellates it again for its camera (apply, prepare).
+    bool keepCameraGeometry = false, cameraGeometryStale = false;
     // The plan the last placement-only one was made from (the card's instances, mesh records and lights go again,
     // GpuLane::updatePlacements).
     cpu::PlanView placedFrom;
@@ -696,6 +709,11 @@ struct Scene {
     std::map<std::string, size_t> baseInstances;
     // And the lights edited since the base plan (any of their settings), admitted again (cpu::updateLights).
     std::vector<const rdl::SceneObject*> editedLights;
+    // Work for this thread while the next full preparation's plan and CPU scene are made on a worker (the session's first
+    // GPU lane, which only the thread that feeds it may make: async::GpuLane): run once by that preparation, which then
+    // clears it, and it must not throw. A preparation that makes no plan (no edit, the camera or placements alone) leaves
+    // it set for the caller.
+    std::function<void()> alongside;
     // All that was made of the scene let go, for it to be made again (texture overflow mode), its edits kept.
     void dropForOverflow() {
         cpuScene.reset();
@@ -947,6 +965,7 @@ struct Scene {
         cpuScene.reset();
         plan.reset();
         canonical.reset();
+        cameraOnly = false;  // a whole scene: no camera-alone edit carried over (cameraEdit)
         source = std::make_unique<rdl::SceneContext>();
         source->setProxyModeEnabled(true);
         source->setDsoPath(dso.string());
@@ -966,6 +985,22 @@ struct Scene {
     }
     void apply(const std::string& delta) {
         readInto(*source, delta);
+        // An edit that changed nothing (the kit telling of the camera again where it stands: a drag's release, Modo telling
+        // of a viewport's camera only once the mouse is let go): the scene as it was, prepared as it is, nothing forgotten
+        // (Rhea's picture and its colours kept, its phase one finished and XPU2's frame fading in after it).
+        bool any = false;
+        for (auto it = source->beginSceneObject(); it != source->endSceneObject() && !any; ++it) any = it->second->isDirty();
+        if (!any && plan && !changed) {
+            // Geometry tessellated for the camera that a drag's steps kept (keepCameraGeometry): tessellated again for the
+            // camera where the drag left it, as a camera edit (Rhea's store kept).
+            if (cameraGeometryStale && !keepCameraGeometry) {
+                std::printf("MoonRay XPU2: the geometry tessellated for the camera made again where the drag left it\n");
+                changed = cameraOnly = true;
+                return;
+            }
+            std::printf("MoonRay XPU2: an edit that changed nothing: the scene as it was\n");
+            return;
+        }
         changed = true;
         cameraOnly = plan && onlyCameraDirty();
         placementOnly = !cameraOnly && basePlan && !coarse && onlyPlacementsDirty();
@@ -973,6 +1008,7 @@ struct Scene {
     // The plan for the scene as it stands; refusals throw cpu::Unsupported.
     void prepare() {
         if (!changed) return;
+        cameraEdit = cameraOnly;
         cameraFrom.reset();
         placedFrom.reset();
         pendingBakes.clear();
@@ -993,7 +1029,9 @@ struct Scene {
                 }
             }
             std::string refused;
-            const bool moved = renamed && cpu::updateCamera(*next, *source, &refused);
+            // A drag's step (keepCameraGeometry): geometry tessellated for the camera kept as it is, made again later.
+            const bool keep = keepCameraGeometry && next->cameraDependent;
+            const bool moved = renamed && cpu::updateCamera(*next, *source, &refused, keep);
             if (!moved)
                 std::printf("MoonRay XPU2: not the camera alone: %s\n",
                             renamed ? ("the plan cannot take a camera alone: " + refused).c_str() : "the outputs changed besides their files");
@@ -1002,9 +1040,11 @@ struct Scene {
                 plan = next;
                 cpuScene = std::make_unique<async::CpuScene>(plan, std::move(*cpuScene));
                 changed = cameraOnly = false;
+                if (keep) cameraGeometryStale = true;
                 if (coarse) coarseCamera = true;
-                std::printf("MoonRay XPU2: the camera alone changed: prepared in %.1f ms\n",
-                            std::chrono::duration<double>(std::chrono::steady_clock::now() - began).count() * 1000.0);
+                std::printf("MoonRay XPU2: the camera alone changed: prepared in %.1f ms%s\n",
+                            std::chrono::duration<double>(std::chrono::steady_clock::now() - began).count() * 1000.0,
+                            keep ? " (the geometry tessellated for the camera kept for the drag)" : "");
                 return;
             }
         }
@@ -1075,12 +1115,54 @@ struct Scene {
         // The outputs in the order the scene declared them (the canonical copy holds them by name).
         aov::outputOrder().clear();
         for (const rdl::RenderOutput* ro : source->getAllRenderOutputs()) aov::outputOrder().push_back(ro->getName());
+        std::unique_ptr<async::CpuScene> madeAlongside;  // the CPU's scene the worker made (alongside), if it did
+        double madeAlongsideSeconds = 0;
         try {
             cpu::Limits limits;
             limits.bytes = geometryBudget();
             limits.gpuBytes = gpuGeometryBudget();
             limits.coarse = coarseFirst && (!realtimeAsked() || !plan) && heavyTessellation();
-            plan = cpu::prepare(*canonical, frame, plan, limits, assetRoot(), cpu::Domain::SurfaceTextures, true, true);
+            if (alongside) {
+                // The plan, and the CPU's scene where there is none to take over, on a worker from the canonical replica (as
+                // the full plan behind a coarse first pass is: refine), while this thread does its own work. The canonical
+                // copy answers on this thread alone (inspectPrepared's check is made here). What the plan leaves in its
+                // thread's own state comes back with it: the outputs' order goes in, the scene's shutter times out.
+                const std::function<void()> work = std::move(alongside);
+                alongside = nullptr;
+                const cpu::PlanView previous = plan;
+                const bool whole = !cpuScene;
+                plan = canonical->inspectPrepared(frame, [&](const rdl::SceneContext& replica, CanonicalView exact) {
+                    cpu::PlanView made;
+                    std::exception_ptr failed;
+                    cpu::TimeRescale shutter;
+                    const std::vector<std::string> order = aov::outputOrder();
+                    std::thread worker([&] {
+                        try {
+                            aov::outputOrder() = order;
+                            made = cpu::prepare(replica, exact, previous, limits, assetRoot(), cpu::Domain::SurfaceTextures, true, true);
+                            shutter = cpu::sceneTimeRescale;
+                            if (whole) {
+                                const auto sceneBegan = std::chrono::steady_clock::now();
+                                madeAlongside = std::make_unique<async::CpuScene>(made);
+                                madeAlongsideSeconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - sceneBegan).count();
+                            }
+                        } catch (...) {
+                            failed = std::current_exception();
+                        }
+                    });
+                    try {
+                        work();
+                    } catch (...) {
+                        worker.join();
+                        throw;
+                    }
+                    worker.join();
+                    if (failed) std::rethrow_exception(failed);
+                    cpu::sceneTimeRescale = shutter;
+                    return made;
+                });
+            } else
+                plan = cpu::prepare(*canonical, frame, plan, limits, assetRoot(), cpu::Domain::SurfaceTextures, true, true);
             coarse = limits.coarse && plan->coarsened > 0;
             frameHeld = frame;
         } catch (...) {
@@ -1098,7 +1180,10 @@ struct Scene {
         {
             const auto cpuBegan = std::chrono::steady_clock::now();
             std::vector<unsigned> replaced;
-            if (cpuScene && cpuScene->plan && async::CpuScene::sameGeometry(*cpuScene->plan, *plan))
+            if (madeAlongside) {
+                cpuScene = std::move(madeAlongside);
+                std::printf("MoonRay XPU2: the CPU's scene made whole in %.2f s (beside the GPU lane)\n", madeAlongsideSeconds);
+            } else if (cpuScene && cpuScene->plan && async::CpuScene::sameGeometry(*cpuScene->plan, *plan))
                 cpuScene = std::make_unique<async::CpuScene>(plan, std::move(*cpuScene));
             else if (cpuScene && cpuScene->plan && async::CpuScene::replacedMeshes(*cpuScene->plan, *plan, replaced)) {
                 cpuScene = std::make_unique<async::CpuScene>(plan, std::move(*cpuScene), replaced);
@@ -1130,6 +1215,7 @@ struct Scene {
         if (!lastFolder.empty()) fs::remove_all(lastFolder, ignored);
         lastFolder = folder;
         changed = false;
+        cameraGeometryStale = false;  // tessellated for the camera as it now is
         if (!coarse) keepBase(plan);
         else basePlan.reset();
     }
@@ -1206,6 +1292,7 @@ struct Scene {
             if (d.support == Support::Cpu) cpuOnly |= d.families & ~classes::GpuFamilies;
             if (d.support == Support::Fallback && fallbacks.size() < 4) fallbacks.push_back(d.evidence);
         }
+        sceneHasCpuAloneObjects = counts[1] > 0;
         std::printf("MoonRay XPU2 routing: %zu objects on either device, %zu on the CPU alone, %zu MoonRay's; %s\n", counts[2], counts[1], counts[0],
                     s.mode == Mode::Fallback ? "the scene goes to MoonRay" : s.mode == Mode::NativeCpu ? "rendered on the CPU" : "rendered on the CPU and GPU");
         std::printf("MoonRay XPU2 routing: the GPU runs %s\n", familyNames(gpu).c_str());
@@ -2443,8 +2530,248 @@ int session(const Args& args, const fs::path& directory) {
     std::mutex sharedMutex;
     std::string liveId;
     const bool realtimeDenoise = envOn("XPU2_SESSION_RT_DENOISE", true);
+    // Rhea's completion fade in Denoised Beauty (rhea/DESIGN.md 29): the last denoised picture published, where a fade
+    // starts; the fade cross-fades it into the next, denoised once. (Before the denoiser: its callback writes it.)
+    struct DenoisedPicture {
+        std::vector<float> rgb;
+        U32 w = 0, h = 0;
+        std::string id;
+        bool ready = false;
+    };
+    std::mutex denoisedMutex;
+    DenoisedPicture lastDenoised;
     std::unique_ptr<RealtimeDenoiser> denoiser;
     std::string denoiserError;
+    // XPU2 RT (Rhea) (rhea/rhea_realtime.h, rhea/DESIGN.md 21): realtime by persistent probes where the scene lets it
+    // (XPU2_SESSION_RT_ENGINE=rhea, the kit's default), XPU2's own realtime frame elsewhere. Its probes live from frame to
+    // frame: a moved camera keeps them (their light fades), any other edit forgets them. Where they do not hold, a pixel
+    // is XPU2's samples alone, and at rest XPU2's samples pile up until phase 1 weighs nothing: no restart either way.
+    const char* rtEngine = std::getenv("XPU2_SESSION_RT_ENGINE");
+    const bool rheaWanted = rtEngine && std::string(rtEngine) == "rhea";
+    rhea::Realtime rheaView;
+    std::string rheaRefused = "-";  // why the last realtime scene was XPU2's ("": Rhea's), said when it changes
+    const void* rheaGeometry = nullptr;
+    // A drag (rheaFrames): when the last camera move came, whether Rhea's frame for it was stopped by the next, and what
+    // Rhea's frame last cost.
+    std::chrono::steady_clock::time_point rheaLastMove{};
+    bool rheaMoveSeen = false, rheaFrameStopped = false;
+    // The last frame stopped before XPU2's picture had faded in whole: its warp, or the fade part way, still on screen.
+    bool rheaUnfinished = false;
+    // Whether the last phase one picture (the drag's, streamed) was drawn to its end, and how many of its pictures were shown.
+    bool rheaPhaseOneDone = true;
+    unsigned rheaStagesShown = 0;
+    double rheaFrameCost = 0;
+    // Rhea's phase one shown ahead of the GPU this frame (rheaEarlyPhaseOne): rheaFrames does not make it again.
+    bool rheaEarlyDone = false;
+    // The GPU's launches out (a stopped frame's, abandoned: RenderOptions::abandonOnCancel) finished, every card's.
+    auto drainGpu = [&] {
+        if (!gpu) return;
+        async::Completion c;
+        while (gpu->inFlight())
+            if (!gpu->poll(c)) std::this_thread::yield();
+        for (const auto& f : gpu->followers()) {
+            f->use();
+            while (f->inFlight())
+                if (!f->poll(c)) std::this_thread::yield();
+        }
+        if (!gpu->followers().empty()) gpu->use();
+    };
+    // The command now applied is a step of a drag the kit follows (its fifth line "drag": XPU2 RT, the mouse still held). Rhea
+    // shows its phase one alone for it and XPU2 waits for the release (the user, 2026-11-22: "if we remove phase 2, and have
+    // Rhea phase 1 use both gpu/cpu, i think that's where we need to go": no XPU2 during drags, XPU2 after the release).
+    bool rheaDragStep = false;
+    // XPU2_SESSION_RHEA_DRAG_ALONE=0: XPU2's frame after each step as before. XPU2_SESSION_RHEA_DRAG_WAIT: the longest a step
+    // holds XPU2 back (5 s): the mouse held still that long is a camera at rest, and XPU2's frame begins.
+    const bool rheaDragAlone = envOn("XPU2_SESSION_RHEA_DRAG_ALONE", true);
+    // A drag's step draws its phase one to the end (about 30 ms) though the next step has come: stopped at its coarse
+    // picture, a step slower to come than the next (the user's sea, re-tessellated) showed only that blur, its silhouettes
+    // in steps ("a batch of spikes around the dragon"). XPU2_SESSION_RHEA_DRAG_FINISH=0: stopped where the next comes.
+    const bool rheaDragFinish = envOn("XPU2_SESSION_RHEA_DRAG_FINISH", true);
+    // A drag's view the store hardly knows (the user, 2026-11-22: "when the user spins the camera towards behind the object,
+    // Rhea should detect when it gets blotchy and immediately accumulate the cache"): past this share of phase one's rays
+    // unknown to the store, the step does not wait for the next with the card idle: XPU2's frame begins at once, its least
+    // known regions first, and the store learns from its samples (Realtime::learn) until the next step stops it.
+    // XPU2_SESSION_RHEA_FILL_UNKNOWN (0.3; 1: never).
+    const double rheaFillUnknown = [] {
+        const char* v = std::getenv("XPU2_SESSION_RHEA_FILL_UNKNOWN");
+        return v ? std::clamp(std::atof(v), 0.0, 1.0) : 0.3;
+    }();
+    bool rheaFilling = false;  // this frame: a drag's step filling the store
+    // The plan of the last Rhea frame a command stopped with its GPU launches left out (RenderOptions::abandonOnCancel):
+    // they finish behind it and their samples stay in the card's film until its next frame begins. Harvested once the
+    // next command's phase one is out and the launches are drained (rheaHarvest): on the user's car a launch outlasted a
+    // drag's step, and every fill step's samples were thrown away.
+    cpu::PlanView rheaHarvestPlan;
+    size_t rheaHarvested = 0;  // pixels learned from harvests, since the session began
+    auto rheaHarvest = [&]() -> size_t {
+        const cpu::PlanView hp = std::move(rheaHarvestPlan);
+        rheaHarvestPlan.reset();
+        if (!hp || !gpu || !gpuUsable || !gpu->followers().empty() || gpu->inFlight() || !rheaView.op.learnRaw || !scene.plan ||
+            !scene.cpuScene || hp->aovs != scene.plan->aovs || hp->width != scene.plan->width || hp->height != scene.plan->height)
+            return 0;
+        const aov::Tables& t = scene.cpuScene->aovTables;
+        const size_t n = size_t(hp->width) * hp->height;
+        gpu->use();
+        gpu->downloadFilm();
+        while (!gpu->filmReady()) std::this_thread::yield();
+        const double* sums = gpu->sums();
+        const U32* counts = gpu->counts();
+        const float* aovs = gpu->aovs();
+        if (!sums || !counts || !aovs || !t.channels) return 0;
+        // The film resolved as XPU2's frames resolve it (Renderer::resolveAovValues): the beauty and each output's
+        // average over the pixel's samples, the min and max as they are.
+        async::RenderResult h;
+        h.rgba.assign(n * 4, 0.0f), h.counts.assign(counts, counts + n), h.aov.assign(n * t.channels, 0.0f);
+        const unsigned consistent = hp->adaptive ? std::max(2u, hp->minSamples) : hp->spp;
+        size_t any = 0;
+        for (size_t i = 0; i < n; ++i) {
+            const double w = double(counts[i]);
+            if (!(w > 0)) continue;
+            ++any;
+            for (int c = 0; c < 4; ++c) h.rgba[i * 4 + c] = float(sums[i * 4 + c] / w);
+            const float* a = aovs + i * t.channels;
+            float* o = h.aov.data() + i * t.channels;
+            for (U32 k = 0; k < t.count; ++k) {
+                const aov::Entry& e = t.entries[k];
+                for (U32 c = 0; c < e.channels; ++c) {
+                    const double v = a[e.offset + c];
+                    double r = v;
+                    if (e.type != aov::TypeVisibility && std::isfinite(v)) {
+                        if (e.filter == aov::FilterAvg) r = v / w;
+                        else if (e.filter == aov::FilterConsistent) r = v / double(consistent);
+                    }
+                    o[e.offset + c] = float(r);
+                }
+            }
+        }
+        if (!any) return 0;
+        rheaView.learnBegin();
+        const size_t learned = rheaView.learn(*hp, h);
+        rheaHarvested += learned;
+        return learned;
+    };
+    double rheaKnown = 0;      // the share of the last phase one's rays the store knew
+    // Rhea's state for the kit's status line (native.execution_status, in place of XPU2's): how much of the view the store
+    // knew, and whether XPU2 is teaching it now. "@@MODO_XPU2 RHEA <known percent> <learning 0|1>".
+    auto rheaStatus = [&](double known, bool learning) {
+        char line[64];
+        std::snprintf(line, sizeof line, "@@MODO_XPU2 RHEA %d %d", int(std::lround(std::clamp(known, 0.0, 1.0) * 100.0)), learning ? 1 : 0);
+        modoProtocolLine(line);
+    };
+    const double rheaDragWait = [] {
+        const char* v = std::getenv("XPU2_SESSION_RHEA_DRAG_WAIT");
+        return v ? std::max(0.0, std::atof(v)) : 5.0;
+    }();
+    // Phase one's first hits on the graphics card (async::GpuLane::firstHits, rhea::ObjectWarp::cardTrace): where the card's
+    // scene is the CPU's (the same meshes: a camera move), it renders all of it (nothing left to the CPU alone), and it has
+    // nothing of a frame's out; else the CPU traces them. XPU2_SESSION_RHEA_GPU_HITS=0: the CPU always.
+    const bool rheaCardHits = envOn("XPU2_SESSION_RHEA_GPU_HITS", true);
+    // Phase one given the card (on, where it may), or not (its view done): its three ways in (rhea::ObjectWarp).
+    auto rheaUseCard = [&](bool on) {
+        rhea::ObjectWarp& ow = rheaView.objectWarp;
+        ow.cardTrace = nullptr, ow.cardBegin = nullptr, ow.cardEnd = nullptr;
+        if (!on || !rheaCardHits || !gpu || !gpuUsable || !gpuPlan || !scene.plan || !scene.cpuScene || scene.plan->cpuOnlyMeshes != 0 ||
+            sceneHasCpuAloneObjects || !async::CpuScene::sameGeometry(*gpuPlan, *scene.plan))
+            return;
+        ow.cardTrace = [&](const surface::Ray* rays, size_t count, resume::Hit* hits) {
+            gpu->use();
+            return gpu->firstHits(rays, count, hits);
+        };
+        ow.cardBegin = [&](const surface::Ray* rays, size_t count) {
+            gpu->use();
+            return gpu->firstHitsBegin(rays, count);
+        };
+        ow.cardEnd = [&](resume::Hit* hits) { return gpu->firstHitsEnd(hits); };
+    };
+    // Rhea's phase one for a camera move before any of the GPU's work (the user's car, 2026-11-22: "a camera move in that
+    // car scene takes about 2-3 seconds to update": the stopped frame's GPU launches, 0.25 to 1.3 s there, had come first,
+    // then the GPU's new camera, and only then the picture). From the CPU's scene and the surfaces' colours alone, in the
+    // view the kit shows where it is the beauty or the denoised beauty: shown as it is (the surfaces' colours are smooth;
+    // the denoiser is the GPU's), and in the denoised view the picture later fades start from. False: not shown here.
+    auto rheaEarlyPhaseOne = [&]() -> bool {
+        if (!useShared || !scene.plan || !scene.cpuScene) return false;
+        std::string key = "beauty", selected;
+        {
+            std::ifstream view(directory / "view.txt");
+            if (std::getline(view, selected) && !selected.empty()) key = selected;
+        }
+        if (key != "beauty" && key != "denoised_beauty") return false;
+        const U32 w = scene.plan->width, h = scene.plan->height;
+        const size_t n = size_t(w) * h;
+        std::vector<float> rgb;
+        auto show = [&](const async::RenderResult& r) {
+            if (r.rgba.size() != n * 4) return;
+            rgb.resize(n * 3);
+            for (size_t i = 0; i < n; ++i)
+                for (int c = 0; c < 3; ++c) {
+                    const float v = r.rgba[i * 4 + c];
+                    rgb[i * 3 + c] = std::isfinite(v) ? v : 0.0f;
+                }
+            std::lock_guard<std::mutex> lock(sharedMutex);
+            shared.publish(id, key, w, h, [&](size_t i, float* px) {
+                px[0] = rgb[i * 3];
+                px[1] = rgb[i * 3 + 1];
+                px[2] = rgb[i * 3 + 2];
+            });
+        };
+        auto ready = [&] {
+            std::lock_guard<std::mutex> lock(sharedMutex);
+            return shared.ready();
+        };
+        const auto began = std::chrono::steady_clock::now();
+        rheaView.traceScene = scene.cpuScene.get();
+        unsigned stage = 0;
+        bool shownStage = false;
+        // A drag's step shows its coarse picture and its finished one, not the rings between (each one the kit's to read
+        // and draw while the drag goes on). XPU2_SESSION_RHEA_DRAG_RINGS=1: the rings too.
+        const bool ringsShown = !rheaDragStep || envOn("XPU2_SESSION_RHEA_DRAG_RINGS", false);
+        rheaView.onStage = [&](const async::RenderResult& picture) {
+            ++stage;
+            if ((stage == 1 || ringsShown) && ready()) {  // a ring's picture the kit has no room for yet is left out
+                show(picture);
+                rheaView.publishedWarp();
+                shownStage = true;
+            }
+            return (rheaDragStep && rheaDragFinish) || !waiting();  // the next message come: stopped where it is (not a drag's step)
+        };
+        rheaUseCard(true);
+        // Its rings unseen, a drag's step draws the fine grid as one ring: one fill and one picture pass, not three.
+        const unsigned ringsWas = rheaView.op.objectRings;
+        if (!ringsShown) rheaView.op.objectRings = 1;
+        const async::RenderResult* first = rheaView.warpTo(*scene.plan);
+        rheaView.op.objectRings = ringsWas;
+        rheaView.onStage = nullptr, rheaView.traceScene = nullptr;
+        rheaUseCard(false);
+        if (!first) return false;
+        if (shownStage) {
+            const auto until = std::chrono::steady_clock::now() + std::chrono::milliseconds(50);
+            while (!ready() && std::chrono::steady_clock::now() < until) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        show(*first);
+        rheaView.publishedWarp();
+        if (key == "denoised_beauty" && rgb.size() == n * 3) {
+            std::lock_guard<std::mutex> lock(denoisedMutex);
+            lastDenoised.rgb = rgb, lastDenoised.w = w, lastDenoised.h = h, lastDenoised.id = id, lastDenoised.ready = true;
+        }
+        rheaPhaseOneDone = rheaView.warpComplete();
+        rheaStagesShown = rheaPhaseOneDone ? stage + 1 : stage;
+        const rhea::ObjectWarp& ow = rheaView.objectWarp;
+        std::printf("MoonRay XPU2: Rhea: the camera's picture ahead of the GPU in %.3f s (first picture %.3f s, %u pictures, %zu rays, "
+                    "%zu of them on the graphics card in %.1f ms, %.0f%% of them unknown to the store%s; coarse rays %.1f ms, rings' rays %.1f ms; "
+                    "rays made %.1f ms, shaded %.1f ms, fills %.1f ms; coarse picture %.1f ms, rings' pictures %.1f ms, FXAA %.1f ms, shown %.1f ms; "
+                    "%zu fine nodes interpolated, chosen in %.1f ms)\n",
+                    std::chrono::duration<double>(std::chrono::steady_clock::now() - began).count(), ow.firstSeconds, ow.stages, ow.rays,
+                    ow.cardRays, ow.cardSeconds * 1e3, ow.unknown * 100.0, rheaDragStep ? "; a drag's step" : "", ow.coarseRaySeconds * 1e3,
+                    ow.ringRaySeconds * 1e3, ow.rowsSeconds * 1e3, ow.shadeSeconds * 1e3, ow.fillSeconds * 1e3, ow.coarsePictureSeconds * 1e3,
+                    ow.ringPictureSeconds * 1e3, ow.fxaaSeconds * 1e3, ow.stageSeconds * 1e3, ow.interpolated, ow.adaptSeconds * 1e3);
+        // (Short, the harness keeps 400 characters a line.)
+        std::printf("MoonRay XPU2: Rhea: phase one %.1f ms: coarse picture %.1f ms, %zu rays, %zu fine nodes interpolated (chosen in %.1f ms), "
+                    "shaded %.1f ms, fills %.1f ms, finished picture %.1f ms, FXAA %.1f ms, shown %.1f ms\n",
+                    ow.seconds * 1e3, ow.coarsePictureSeconds * 1e3, ow.rays, ow.interpolated, ow.adaptSeconds * 1e3, ow.shadeSeconds * 1e3,
+                    ow.fillSeconds * 1e3, ow.ringPictureSeconds * 1e3, ow.fxaaSeconds * 1e3, ow.stageSeconds * 1e3);
+        std::fflush(stdout);
+        return true;
+    };
     // The full plan being made behind a coarse first pass. It outlives a frame: a camera moved meanwhile is followed on the
     // coarse geometry (Scene's camera path) while it goes on, where the view used to stand still until it was done (8 to 15 s
     // on a heavy scene). Anything else that prepares the scene waits for it first (it reads the canonical copy).
@@ -2492,6 +2819,76 @@ int session(const Args& args, const fs::path& directory) {
     scene.beforeFullPreparation = [&] {
         if (refining) takeRefined();
     };
+    // The GPU lane, the first chosen graphics card's, then the others' following it (multi_device.h), made by this thread,
+    // the one that feeds them. Empty once made; else why it cannot be, nothing made, for the scene to fall back with.
+    // Throws where making it failed.
+    auto makeLane = [&]() -> std::string {
+        const Programs p = programs(folder);
+        if (!fs::exists(shaderMark(p)))
+            return "XPU2's GPU programs are not compiled yet: System > Preferences > MoonRay > XPU2 > "
+                   "Device Management > Compile XPU2 Shaders (about an hour, once)";
+        // The chosen cards whose kind the programs were compiled for: one of a kind not compiled for (a card
+        // added since) is left out, said, and would otherwise compile for an hour here.
+        std::vector<int> cards;
+        {
+            const std::set<std::string> held = compiledKinds(shaderMark(p));
+            std::string left;
+            for (int card : multi::cardOrdinals(gpu::cardCount())) {
+                if (!gpu::supported(card)) continue;  // too old for XPU2's programs: left out
+                if (held.count(cardKind(card))) cards.push_back(card);
+                else left += (left.empty() ? "" : ", ") + cardKind(card);
+            }
+            if (cards.empty())
+                return "XPU2's GPU programs are not compiled for " + left + ": System > Preferences > MoonRay > XPU2 > "
+                       "Device Management > Compile XPU2 Shaders";
+            if (!left.empty())
+                std::printf("MoonRay XPU2: left out, its shaders not compiled (Compile XPU2 Shaders): %s\n", left.c_str());
+        }
+        // Taken from OptiX's cache in a second or two. Its cache emptied (a driver update, its size limit),
+        // they would compile for an hour here: past a minute the session leaves the scene to MoonRay.
+        const auto made = Clock::now();
+        std::atomic<bool> loaded{false};
+        std::thread guard([&] {
+            for (int i = 0; i < 600 && !loaded.load(); ++i) std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            if (loaded.load()) return;
+            std::error_code gone;
+            fs::remove(shaderMark(p), gone);
+            fallback("OptiX's shader cache no longer holds XPU2's GPU programs (a new graphics driver?): "
+                     "Compile XPU2 Shaders again");
+            std::fflush(stdout);
+            TerminateProcess(GetCurrentProcess(), 0);
+        });
+        try {
+            gpu = gpuLane(p, {}, cards[0]);
+            for (size_t k = 1; k < cards.size(); ++k) {
+                try {
+                    gpu->follow(gpuLane(p, {}, cards[k], int(k)));
+                    std::printf("MoonRay XPU2: graphics card %d (lane %zu) renders with the first%s\n", cards[k], k,
+                                cards[k] == cards[0] ? " (simulated, XPU2_SIMULATE_CARDS)" : "");
+                    if (gpu->followers().back()->node() >= 0)
+                        std::printf("MoonRay XPU2: graphics card %d (lane %zu) near node %d\n", cards[k], k, gpu->followers().back()->node());
+                } catch (const std::exception& e) {
+                    gpu->use();
+                    std::printf("MoonRay XPU2: graphics card %d left out: %s\n", cards[k], e.what());
+                }
+            }
+            if (multi::spread())
+                std::printf("MoonRay XPU2: %zu processor groups, %u logical processors%s\n", multi::groups().size(),
+                            multi::logicalProcessors(), multi::simulated("XPU2_SIMULATE_GROUPS") > 1 ? " (simulated, XPU2_SIMULATE_GROUPS)" : "");
+            if (multi::numa())
+                std::printf("MoonRay XPU2: %zu NUMA nodes, the first graphics card near node %d%s\n", multi::nodes().size(), gpu->node(),
+                            multi::simulated("XPU2_SIMULATE_NODES") > 1 ? " (simulated, XPU2_SIMULATE_NODES)" : "");
+        } catch (...) {
+            loaded.store(true);
+            guard.join();
+            throw;
+        }
+        loaded.store(true);
+        guard.join();
+        std::printf("MoonRay XPU2: GPU programs loaded from the cache in %.2f s\n", std::chrono::duration<double>(Clock::now() - made).count());
+        std::printf("MoonRay XPU2: memory with the GPU lane made: %s\n", memoryText().c_str());
+        return {};
+    };
     try {
         scene.load(args.scenes);
         scene.readTextureNeeds();
@@ -2514,88 +2911,94 @@ int session(const Args& args, const fs::path& directory) {
                     outlines.watch(nullptr, id, 0, 0);
                     renderer.reset();
                 }
+                // The first GPU lane is made while the scene's plan is (Scene::alongside): loading its programs from OptiX's
+                // cache took 2.5 to 4.4 s of a preview's start in Modo, after the plan's 3 to 5 s. What becomes of it is
+                // answered where it was made before, after the plan: the plan's own refusal first. XPU2_SESSION_LANE_AFTER_PLAN=1
+                // makes it after the plan as before (measurements).
+                bool laneTried = false;
+                std::string laneRefused;
+                std::exception_ptr laneFailed;
+                struct AlongsideCleared {
+                    Scene& scene;
+                    ~AlongsideCleared() { scene.alongside = nullptr; }
+                } alongsideCleared{scene};
+                if (mode != 0 && !gpu && fresh && !envOn("XPU2_SESSION_LANE_AFTER_PLAN", false))
+                    scene.alongside = [&] {
+                        laneTried = true;
+                        try {
+                            laneRefused = makeLane();
+                        } catch (...) {
+                            laneFailed = std::current_exception();
+                        }
+                    };
                 scene.prepare();
+                scene.alongside = nullptr;
+                // XPU2 RT (Rhea): an edit other than the camera alone forgets the probes (their meshes or light may differ).
+                // The camera alone whose plan had to be made again (geometry tessellated for the camera: the user's dragon
+                // over a displaced sea, 2026-11-22, "there's no fade"): the probes forgotten, the last picture kept to warp.
+                if (rheaWanted && fresh && !scene.cameraFrom) {
+                    if (scene.cameraEdit) rheaView.resetProbes();
+                    else rheaView.reset();
+                }
+                // Rhea's phase one for a camera move ahead of the GPU (rheaEarlyPhaseOne), then the stopped frame's GPU
+                // launches finished before the GPU takes the new camera (XPU2_SESSION_RHEA_EARLY=0: phase one after them).
+                rheaEarlyDone = false;
+                if (rheaWanted && scene.plan && scene.plan->realtime && envOn("XPU2_SESSION_RHEA_EARLY", true) &&
+                    !envOn("XPU2_SESSION_RHEA_PROBES", false) && rheaView.movedSince(*scene.plan) && rhea::unsupported(*scene.plan).empty())
+                    rheaEarlyDone = rheaEarlyPhaseOne();
+                drainGpu();
+                // The stopped frame's samples the card finished behind it, into the store (rheaHarvest): after this
+                // command's first picture, before the card takes anything new.
+                if (rheaHarvestPlan) {
+                    const auto harvestBegan = Clock::now();
+                    const size_t harvested = rheaHarvest();
+                    if (harvested)
+                        std::printf("MoonRay XPU2: Rhea: the stopped frame's samples from the graphics card learned: %zu pixels in %.1f ms "
+                                    "(%zu since the session began)\n",
+                                    harvested, std::chrono::duration<double>(Clock::now() - harvestBegan).count() * 1000.0, rheaHarvested);
+                }
+                // A drag's step (rheaDragStep) with its phase one on screen: nothing of XPU2's made for it. XPU2's renderer,
+                // made after phase one and dropped by the next step, took about 20 ms to drop before every step's phase one
+                // on the user's car, and more to make after it. The card's camera alone follows (cheap), and the step is
+                // held here until the next command, the next step or the release (the renderer made then), or for
+                // rheaDragWait: past it, the frame goes on to XPU2's.
+                rheaFilling = false;
+                if (rheaEarlyDone && rheaView.objectDrawn) rheaKnown = 1.0 - rheaView.objectWarp.unknown;
+                // A view the store hardly knows: XPU2's frame at once, the store learning from it (rheaFillUnknown).
+                if (rheaEarlyDone && rheaDragStep && rheaView.objectDrawn && rheaView.objectWarp.unknown > rheaFillUnknown) rheaFilling = true;
+                if (rheaEarlyDone) rheaStatus(rheaKnown, rheaFilling);
+                if (rheaEarlyDone && rheaDragStep && rheaDragAlone && !rheaFilling) {
+                    if (gpu && gpuUsable && gpuPlan != scene.plan && scene.cameraFrom && gpuPlan == scene.cameraFrom) {
+                        gpu->updateCamera(scene.plan);
+                        gpuPlan = scene.plan;
+                    }
+                    if (!gpu || !gpuUsable || gpuPlan == scene.plan) {
+                        const auto held = Clock::now();
+                        while (!waiting() && std::chrono::duration<double>(Clock::now() - held).count() < rheaDragWait)
+                            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+                        if (waiting()) {
+                            rheaView.keepLast(*scene.plan);
+                            rheaUnfinished = true;  // the drag's picture on screen: the release fades XPU2's frame in over it
+                            goto frameEnd;
+                        }
+                    }
+                }
                 // Said for every scene sent while it holds, the preview's notices being each scene's.
                 if (const std::string overflow = texture::overflowWords(); !overflow.empty())
                     modoProtocolLine("@@MODO_XPU2 NOTICE Texture Overflow: memory ran short, so textures are " + overflow +
                                      ". Free memory, or use fewer or smaller textures, then start the preview again for full detail.");
                 if (scene.plan->aovs) checkOutputs(*scene.plan->aovs, mode != 0, !scene.plan->volumes.empty());
+                if (laneFailed) std::rethrow_exception(laneFailed);
                 if (mode != 0 && !gpu) {
-                    const Programs p = programs(folder);
-                    if (!fs::exists(shaderMark(p))) {
+                    const std::string refused = laneTried ? laneRefused : makeLane();
+                    if (!refused.empty()) {
                         outlines.watch(nullptr, id, 0, 0);
-                        fallback("XPU2's GPU programs are not compiled yet: System > Preferences > MoonRay > XPU2 > "
-                                 "Device Management > Compile XPU2 Shaders (about an hour, once)");
+                        fallback(refused);
                         return 0;
                     }
-                    // The chosen cards whose kind the programs were compiled for: one of a kind not compiled for (a card
-                    // added since) is left out, said, and would otherwise compile for an hour here.
-                    std::vector<int> cards;
-                    {
-                        const std::set<std::string> held = compiledKinds(shaderMark(p));
-                        std::string left;
-                        for (int card : multi::cardOrdinals(gpu::cardCount())) {
-                            if (!gpu::supported(card)) continue;  // too old for XPU2's programs: left out
-                            if (held.count(cardKind(card))) cards.push_back(card);
-                            else left += (left.empty() ? "" : ", ") + cardKind(card);
-                        }
-                        if (cards.empty()) {
-                            outlines.watch(nullptr, id, 0, 0);
-                            fallback("XPU2's GPU programs are not compiled for " + left + ": System > Preferences > MoonRay > XPU2 > "
-                                     "Device Management > Compile XPU2 Shaders");
-                            return 0;
-                        }
-                        if (!left.empty())
-                            std::printf("MoonRay XPU2: left out, its shaders not compiled (Compile XPU2 Shaders): %s\n", left.c_str());
-                    }
-                    // Taken from OptiX's cache in a second or two. Its cache emptied (a driver update, its size limit),
-                    // they would compile for an hour here: past a minute the session leaves the scene to MoonRay.
-                    const auto made = Clock::now();
-                    std::atomic<bool> loaded{false};
-                    std::thread guard([&] {
-                        for (int i = 0; i < 600 && !loaded.load(); ++i) std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                        if (loaded.load()) return;
-                        std::error_code gone;
-                        fs::remove(shaderMark(p), gone);
-                        fallback("OptiX's shader cache no longer holds XPU2's GPU programs (a new graphics driver?): "
-                                 "Compile XPU2 Shaders again");
-                        std::fflush(stdout);
-                        TerminateProcess(GetCurrentProcess(), 0);
-                    });
-                    try {
-                        // The first chosen graphics card's lane, then the others (multi_device.h), each a lane
-                        // following the first; a card that cannot make one is left out.
-                        gpu = gpuLane(p, {}, cards[0]);
-                        for (size_t k = 1; k < cards.size(); ++k) {
-                            try {
-                                gpu->follow(gpuLane(p, {}, cards[k], int(k)));
-                                std::printf("MoonRay XPU2: graphics card %d (lane %zu) renders with the first%s\n", cards[k], k,
-                                            cards[k] == cards[0] ? " (simulated, XPU2_SIMULATE_CARDS)" : "");
-                                if (gpu->followers().back()->node() >= 0)
-                                    std::printf("MoonRay XPU2: graphics card %d (lane %zu) near node %d\n", cards[k], k, gpu->followers().back()->node());
-                            } catch (const std::exception& e) {
-                                gpu->use();
-                                std::printf("MoonRay XPU2: graphics card %d left out: %s\n", cards[k], e.what());
-                            }
-                        }
-                        if (multi::spread())
-                            std::printf("MoonRay XPU2: %zu processor groups, %u logical processors%s\n", multi::groups().size(),
-                                        multi::logicalProcessors(), multi::simulated("XPU2_SIMULATE_GROUPS") > 1 ? " (simulated, XPU2_SIMULATE_GROUPS)" : "");
-                        if (multi::numa())
-                            std::printf("MoonRay XPU2: %zu NUMA nodes, the first graphics card near node %d%s\n", multi::nodes().size(), gpu->node(),
-                                        multi::simulated("XPU2_SIMULATE_NODES") > 1 ? " (simulated, XPU2_SIMULATE_NODES)" : "");
-                    } catch (...) {
-                        loaded.store(true);
-                        guard.join();
-                        throw;
-                    }
-                    loaded.store(true);
-                    guard.join();
-                    std::printf("MoonRay XPU2: GPU programs loaded from the cache in %.2f s\n",
-                                std::chrono::duration<double>(Clock::now() - made).count());
-                    std::printf("MoonRay XPU2: memory with the GPU lane made: %s\n", memoryText().c_str());
                 }
-                if (fresh) {
+                // (No renderer: the drag's steps held without one; the release, an edit that changed nothing, makes it.)
+                if (fresh || !renderer) {
                     // The card has come to hold less than the fine-detail cache was sized for: made again to fit.
                     if (gpu && gpuUsable && gpuPlan && gpu->fineCacheTooBig()) {
                         std::printf("MoonRay XPU2: the card is fuller than it was: its fine-detail texture cache made again to fit\n");
@@ -2779,13 +3182,16 @@ int session(const Args& args, const fs::path& directory) {
                     p.normal.assign(pixels * 3, 0.0f);
                     std::vector<unsigned char> covered(pixels, 0);
                     bool gaps = false;
-                    // The normals in camera space, as OptiX's denoiser takes them: render space's (the state variable N)
-                    // onto the camera's axes, the rows of its camera-to-render matrix.
-                    const auto& toRender = scene.plan->camera.cameraToRender.m;
-                    float axes[3][3];
+                    // The normals in camera space, as OptiX's denoiser takes them. The normal output (the state variable
+                    // N) is in render space, which is the camera's own space at the first motion step (plan.worldToRender
+                    // is the camera's inverse, cpu_scene.h): camera space already, turned to the camera at the shutter's
+                    // open by render2Camera's rotation (the identity without motion blur). It was once projected onto the
+                    // camera's axes in world space, which turned the guide by the camera's rotation a second time.
+                    const auto& toCamera = scene.plan->camera.render2Camera.m;
+                    float turn[3][3];
                     for (int a = 0; a < 3; ++a) {
-                        const float length = std::sqrt(toRender[a][0] * toRender[a][0] + toRender[a][1] * toRender[a][1] + toRender[a][2] * toRender[a][2]);
-                        for (int c = 0; c < 3; ++c) axes[a][c] = length > 0 ? toRender[a][c] / length : float(a == c);
+                        const float length = std::sqrt(toCamera[a][0] * toCamera[a][0] + toCamera[a][1] * toCamera[a][1] + toCamera[a][2] * toCamera[a][2]);
+                        for (int c = 0; c < 3; ++c) turn[a][c] = length > 0 ? toCamera[a][c] / length : float(a == c);
                     }
                     cpu::parallelRange(pixels, [&](size_t begin, size_t end) {
                         std::vector<float> v(16);
@@ -2800,8 +3206,8 @@ int session(const Args& args, const fs::path& directory) {
                             for (int c = 0; c < 3; ++c) p.albedo[i * 3 + c] = std::isfinite(v[c]) ? std::clamp(v[c], 0.0f, 1.0f) : 0.0f;
                             aov::outputValues(*scene.plan->aovs, *rtNormal, r, i, v.data());
                             for (int c = 0; c < 3; ++c) v[c] = std::isfinite(v[c]) ? v[c] : 0.0f;
-                            for (int a = 0; a < 3; ++a)
-                                p.normal[i * 3 + a] = std::clamp(v[0] * axes[a][0] + v[1] * axes[a][1] + v[2] * axes[a][2], -1.0f, 1.0f);
+                            for (int c = 0; c < 3; ++c)  // row vectors, as surface::vector: n turn
+                                p.normal[i * 3 + c] = std::clamp(v[0] * turn[0][c] + v[1] * turn[1][c] + v[2] * turn[2][c], -1.0f, 1.0f);
                         }
                     });
                     for (unsigned char c : covered)
@@ -2842,16 +3248,24 @@ int session(const Args& args, const fs::path& directory) {
                 // is denoised on a card all the same, and a machine with none, on the processor.
                 if (rtAlbedo && rtNormal && !denoiser)
                     denoiser = std::make_unique<RealtimeDenoiser>(gpu.get(), [&](const RealtimeDenoiser::Picture& p, const std::vector<float>& out) {
+                        const U32 w = p.shownWidth ? p.shownWidth : p.width, h = p.shownWidth ? p.shownHeight : p.height;
                         std::lock_guard<std::mutex> lock(sharedMutex);
                         if (p.id != liveId || !useShared) return;
-                        shared.publish(p.id, p.view, p.shownWidth ? p.shownWidth : p.width, p.shownWidth ? p.shownHeight : p.height,
-                                       [&](size_t i, float* px) {
+                        shared.publish(p.id, p.view, w, h, [&](size_t i, float* px) {
                             px[0] = out[i * 3];
                             px[1] = out[i * 3 + 1];
                             px[2] = out[i * 3 + 2];
                         });
+                        if (p.view == "denoised_beauty") {
+                            std::lock_guard<std::mutex> held(denoisedMutex);
+                            lastDenoised.rgb = out, lastDenoised.w = w, lastDenoised.h = h, lastDenoised.id = p.id, lastDenoised.ready = true;
+                        }
                     });
                 std::string currentView = "beauty";
+                // Rhea's first pictures in the Beauty view (rheaFrames sets it): its frame and XPU2's first pictures folded
+                // into it, denoised as the pictures with gaps are (XPU2_SESSION_RHEA_DENOISE; a picture XPU2's samples
+                // have mostly made is shown as it is).
+                bool rheaDenoiseNow = false;
                 watch.previewAov = [&] {
                     currentView = viewKey();
                     if (denoiser && denoiserError.empty()) denoiserError = denoiser->error();
@@ -2865,7 +3279,7 @@ int session(const Args& args, const fs::path& directory) {
                         const size_t pixels = size_t(w) * h;
                         bool gaps = sofar.counts.size() < pixels;
                         for (size_t i = 0; !gaps && i < pixels; ++i) gaps = !sofar.counts[i];
-                        if (gaps) {
+                        if (gaps || rheaDenoiseNow) {
                             auto p = realtimePicture(sofar);
                             p.view = "beauty";
                             denoiser->submit(std::move(p));
@@ -3084,6 +3498,816 @@ int session(const Args& args, const fs::path& directory) {
                         std::fflush(stdout);
                     }
                 }
+                // XPU2 RT (Rhea): whether this realtime frame is Rhea's (said when it changes), and its frames: short frames of
+                // persistent probes, each through XPU2's renderer with Rhea's samples a pixel, its picture published as the
+                // frame's previews are, until a command comes (a camera move, an edit), a stop, or phase 2's samples reach
+                // the frame's samples a pixel (as XPU2's realtime frame ends).
+                // The kit's status reads these lines (native.execution_status): "XPU2 Rhea active" while Rhea renders realtime,
+                // "XPU2 active" once a frame is XPU2's alone again.
+                auto rheaFits = [&] {
+                    const std::string why = !scene.plan->realtime ? std::string("not realtime")
+                                            : !rheaWanted         ? std::string("XPU2 RT's engine is XPU2")
+                                                                  : rhea::unsupported(*scene.plan);
+                    if (why != rheaRefused) {
+                        rheaRefused = why;
+                        if (why.empty())
+                            std::printf("MoonRay XPU2: realtime by Rhea (persistent probes; XPU2's samples where they do not hold)\n");
+                        else
+                            std::printf("MoonRay XPU2: frames by XPU2 alone, not Rhea's: %s\n", why.c_str());
+                        std::fflush(stdout);
+                    }
+                    return why.empty();
+                };
+                const bool rheaNow = rheaFits();
+                auto rheaFrames = [&](const async::RenderOptions& base) {
+                    async::RenderResult shown;
+                    // Other geometry than the probes were found on (the full plan after a coarse first pass, a camera move that
+                    // tessellates camera-dependent geometry again): the probes forgotten, the last picture kept for the warp.
+                    const void* geometry = scene.plan->meshes.empty() ? nullptr : static_cast<const void*>(scene.plan->meshes.front().data.get());
+                    if (geometry != rheaGeometry) rheaView.resetProbes();
+                    rheaGeometry = geometry;
+                    rheaView.op.threads = std::max(1u, std::min(8u, unsigned(base.threads)));
+                    // Investigation switches: phase 1's weight (XPU2_SESSION_RHEA_M0; 0, Rhea's sample map with XPU2's
+                    // samples alone), the coverage rule (XPU2_SESSION_RHEA_COVERAGE=1: on), each frame's reconstruction
+                    // and masks written into a folder (XPU2_SESSION_RHEA_DEBUG).
+                    if (const char* m0 = std::getenv("XPU2_SESSION_RHEA_M0")) rheaView.op.m0 = rheaView.op.m0Directional = std::atof(m0);
+                    rheaView.op.coverage = envOn("XPU2_SESSION_RHEA_COVERAGE", false);
+                    rheaView.op.slant = envOn("XPU2_SESSION_RHEA_SLANT", true);
+                    rheaView.op.planeLight = envOn("XPU2_SESSION_RHEA_PLANE_LIGHT", true);
+                    rheaView.op.residentTextures = envOn("XPU2_SESSION_RHEA_RESIDENT_TEXTURES", true);
+                    // The virtual planes past the probes (rhea/planes.h): slanted planes, the back plane, and whether a pixel
+                    // either holds still asks for a probe.
+                    rheaView.op.planar = envOn("XPU2_SESSION_RHEA_PLANAR", true);
+                    rheaView.op.backPlane = envOn("XPU2_SESSION_RHEA_BACK_PLANE", true);
+                    rheaView.op.quietNeed = envOn("XPU2_SESSION_RHEA_QUIET_NEED", true);
+                    rheaView.op.backDemod = envOn("XPU2_SESSION_RHEA_BACK_DEMOD", false);
+                    rheaView.op.backGather = envOn("XPU2_SESSION_RHEA_BACK_GATHER", true);
+                    rheaView.op.prune = envOn("XPU2_SESSION_RHEA_PRUNE", true);
+                    if (const char* v = std::getenv("XPU2_SESSION_RHEA_PLANAR_WEIGHT")) rheaView.op.planarWeight = std::atof(v);
+                    if (const char* v = std::getenv("XPU2_SESSION_RHEA_BACK_WEIGHT")) rheaView.op.backWeight = std::atof(v);
+                    if (const char* v = std::getenv("XPU2_SESSION_RHEA_PLANAR_SUPPORT")) rheaView.op.planarSupport = std::atof(v);
+                    if (const char* v = std::getenv("XPU2_SESSION_RHEA_DRAG_HOLD")) rheaView.op.dragHold = std::atof(v);
+                    if (const char* v = std::getenv("XPU2_SESSION_RHEA_TRUSTED_SPP")) rheaView.op.trustedSpp = unsigned(std::atoi(v));
+                    rheaView.op.warp = envOn("XPU2_SESSION_RHEA_WARP", true);
+                    // The warp as a mesh gradient (rhea/mesh_warp.h), its cells, depth jump and soft share; whether a warp may
+                    // be the next warp's source (it was: a long drag went black).
+                    rheaView.op.warpMesh = envOn("XPU2_SESSION_RHEA_WARP_MESH", true);
+                    if (const char* v = std::getenv("XPU2_SESSION_RHEA_WARP_CELL")) rheaView.op.warpCell = std::atof(v);
+                    if (const char* v = std::getenv("XPU2_SESSION_RHEA_WARP_JUMP")) rheaView.op.warpJump = std::atof(v);
+                    if (const char* v = std::getenv("XPU2_SESSION_RHEA_WARP_SOFT")) rheaView.op.warpSoft = std::atof(v);
+                    rheaView.op.warpChain = envOn("XPU2_SESSION_RHEA_WARP_CHAIN", false);
+                    // The drag's picture from colours kept on the surfaces (rhea/object_warp.h, DESIGN.md 30): on by default;
+                    // its rays, rings and the store's cells (pixels a side). Off: the mesh gradient.
+                    rheaView.op.objectSpace = envOn("XPU2_SESSION_RHEA_OBJECT_SPACE", true);
+                    if (const char* v = std::getenv("XPU2_SESSION_RHEA_RAYS")) rheaView.op.objectRays = size_t(std::max(1000.0, std::atof(v)));
+                    if (const char* v = std::getenv("XPU2_SESSION_RHEA_RINGS")) rheaView.op.objectRings = unsigned(std::max(1, std::atoi(v)));
+                    if (const char* v = std::getenv("XPU2_SESSION_RHEA_LOOKUP_UP")) rheaView.op.objectLookupUp = std::max(-1, std::atoi(v));
+                    rheaView.op.learnRaw = envOn("XPU2_SESSION_RHEA_LEARN_RAW", true);
+                    if (const char* v = std::getenv("XPU2_SESSION_RHEA_DEPTH_FILL")) rheaView.op.objectFillDepth = std::max(0.0, std::atof(v));
+                    rheaView.op.objectAdaptive = envOn("XPU2_SESSION_RHEA_ADAPTIVE", true);
+                    if (const char* v = std::getenv("XPU2_SESSION_RHEA_ADAPT_COLOUR")) rheaView.op.objectAdaptColour = std::max(0.0, std::atof(v));
+                    if (const char* v = std::getenv("XPU2_SESSION_RHEA_STORE_SCALE")) rheaView.op.storeScale = std::max(0.5, std::atof(v));
+                    if (const char* v = std::getenv("XPU2_SESSION_RHEA_GRAZING")) rheaView.op.storeGrazing = std::max(1.0, std::atof(v));
+                    // The user's composite (2026-11-22): light and albedo apart in the store, the albedo finer.
+                    rheaView.op.storeAlbedo = envOn("XPU2_SESSION_RHEA_STORE_ALBEDO", false);
+                    // Phase one's finished picture through screen-space anti-aliasing (FXAA; the user, 2026-11-22).
+                    rheaView.op.objectAntialias = envOn("XPU2_SESSION_RHEA_AA", true);
+                    // Its rays four at a time where the scene is triangles alone (Embree's packets).
+                    rheaView.op.objectPackets = envOn("XPU2_SESSION_RHEA_PACKETS", true);
+                    // Realtime's first frame: a first look from the hits' material colours (the user, 2026-11-22: "when RT
+                    // gets turned on first, it doesn't use Rhea, it goes straight to standard RT XPU2").
+                    rheaView.op.objectFirstLook = envOn("XPU2_SESSION_RHEA_FIRST_LOOK", true);
+                    if (const char* debug = std::getenv("XPU2_SESSION_RHEA_DEBUG")) rheaView.op.debugFolder = debug;
+                    const auto began = Clock::now();
+                    async::GpuLane* lane = gpu && gpuUsable ? gpu.get() : nullptr;
+                    // Rhea renders the camera's moves, XPU2 the camera at rest (rhea/DESIGN.md 24). A camera move with
+                    // probes in hand: one frame of Rhea's for where the camera now is, shown as soon as it lands. Else (a
+                    // new scene, an edit): the probes placed for the camera, lit by XPU2's frame below once it is done.
+                    // Probes off by default (the user tried both in Modo, 2026-11-22: "probes off is better"): the warp and
+                    // XPU2 alone - no probes placed, no frame of Rhea's, nothing learnt from XPU2's frames; a move is the
+                    // camera's change since the last frame. XPU2_SESSION_RHEA_PROBES=1: the probes, Rhea's frame, the planes.
+                    const bool probesOn = envOn("XPU2_SESSION_RHEA_PROBES", false);
+                    const bool moving = probesOn ? rheaView.hasProbes() && rheaView.cameraChanged(*scene.plan) : rheaView.movedSince(*scene.plan);
+                    rheaView.see(*scene.plan);
+                    double rheaSeconds = 0;
+                    // Rhea's first pictures denoised in the Beauty view (rheaDenoiseNow): its frame, and XPU2's pictures folded
+                    // into it or into the warp while XPU2's frame is short of rheaDenoiseBelow; the warp (a mesh gradient,
+                    // already smooth) and XPU2's frame at rest as they are.
+                    const bool rheaDenoise = envOn("XPU2_SESSION_RHEA_DENOISE", true);
+                    double rheaDenoiseBelow = 0.5;
+                    if (const char* v = std::getenv("XPU2_SESSION_RHEA_DENOISE_BELOW")) rheaDenoiseBelow = std::atof(v);
+                    auto publish = [&](const async::RenderResult& r, double fraction, bool denoise) {
+                        if (watch.previewAov && watch.previewAov() && watch.previewResult) {
+                            rheaDenoiseNow = rheaDenoise && denoise;
+                            watch.previewResult(r, fraction);
+                            rheaDenoiseNow = false;
+                        } else if (watch.preview) {
+                            std::vector<float> rgb(size_t(width) * height * 3);
+                            for (size_t i = 0; i < size_t(width) * height; ++i)
+                                for (int c = 0; c < 3; ++c) {
+                                    const float v = r.rgba[i * 4 + c];
+                                    rgb[i * 3 + c] = std::isfinite(v) ? v : 0.0f;
+                                }
+                            watch.preview(rgb, width, height, fraction);
+                        }
+                    };
+                    // A camera move's first picture (rhea/DESIGN.md 26): the last one moved into the new view at once, before
+                    // any of the GPU's work, so that a drag follows the mouse step by step whatever a frame costs.
+                    bool warpedNow = false;
+                    // How long since the last camera move began (each stamped as it begins): a drag's steps come about 60 to
+                    // 80 ms apart, the test scene's separate moves 0.33 s.
+                    const auto moveBegan = Clock::now();
+                    const double sinceLastMove = rheaMoveSeen ? std::chrono::duration<double>(moveBegan - rheaLastMove).count() : 1e9;
+                    if (moving) rheaLastMove = moveBegan, rheaMoveSeen = true;
+                    // A drag: moves faster than Rhea's frame lands (the last one stopped by this move, or this move sooner
+                    // after the last than that frame took) take no frame of Rhea's: XPU2's frame at once, the warp folded in.
+                    // It lasts until XPU2's frame ends or runs longer than Rhea's would (rheaFrameStopped cleared below).
+                    const bool dragging = moving && (rheaFrameStopped || sinceLastMove < 1.2 * rheaFrameCost);
+                    // Phase one for the camera: the drag's picture, streamed (the colours on the surfaces, rhea/object_warp.h:
+                    // the coarse grid's picture, then ring by ring), each picture shown as it lands, the next move stopping it.
+                    // finishing: the stream the last frame did not finish, for the camera where it stopped (the mouse let go),
+                    // its pictures shown only past those already on screen.
+                    auto phaseOne = [&](bool finishing) {
+                        const auto warpBegan = Clock::now();
+                        rheaView.traceScene = scene.cpuScene.get();
+                        unsigned stage = 0;
+                        const unsigned already = finishing ? rheaStagesShown : 0;
+                        // The view the kit shows, looked up once (each lookup reads its view.txt): its outputs, or the beauty.
+                        const bool viaResult = watch.previewAov && watch.previewAov() && watch.previewResult;
+                        std::vector<float> rgb;
+                        auto show = [&](const async::RenderResult& r) {
+                            if (viaResult) watch.previewResult(r, 0.0);
+                            else if (watch.preview) {
+                                rgb.resize(size_t(width) * height * 3);
+                                for (size_t i = 0; i < size_t(width) * height; ++i)
+                                    for (int c = 0; c < 3; ++c) {
+                                        const float v = r.rgba[i * 4 + c];
+                                        rgb[i * 3 + c] = std::isfinite(v) ? v : 0.0f;
+                                    }
+                                watch.preview(rgb, width, height, 0.0);
+                            }
+                        };
+                        bool shownStage = false;
+                        // A drag's step: its coarse picture and its finished one alone (rheaEarlyPhaseOne's ringsShown).
+                        const bool ringsShown = !rheaDragStep || envOn("XPU2_SESSION_RHEA_DRAG_RINGS", false);
+                        rheaView.onStage = [&](const async::RenderResult& picture) {
+                            // A ring's picture the kit has no room for yet (it takes one at a time) is left out, not made.
+                            if (++stage > already && (stage == 1 || ringsShown) && !(useShared && !sharedReady())) {
+                                show(picture);
+                                rheaView.publishedWarp();
+                                shownStage = true;
+                            }
+                            return (rheaDragStep && rheaDragFinish) || !(watch.stop && watch.stop());  // (rheaDragFinish)
+                        };
+                        rheaUseCard(true);
+                        const unsigned ringsWas = rheaView.op.objectRings;
+                        if (!ringsShown) rheaView.op.objectRings = 1;  // its rings unseen: one ring (rheaEarlyPhaseOne)
+                        const async::RenderResult* first = rheaView.warpTo(*scene.plan);
+                        rheaView.op.objectRings = ringsWas;
+                        // The CPU scene is the session's, made again on edits; the card's hits are for this view alone.
+                        rheaView.onStage = nullptr, rheaView.traceScene = nullptr;
+                        rheaUseCard(false);
+                        if (!first) return false;
+                        // The finished picture shown whatever: the kit takes one picture at a time, and one it had not taken yet
+                        // kept the next out (a ring's picture stayed on screen in its place). It waits for the kit, 50 ms at most.
+                        if (shownStage) {
+                            const auto until = Clock::now() + std::chrono::milliseconds(50);
+                            while (useShared && !sharedReady() && Clock::now() < until) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                        }
+                        show(*first);
+                        rheaView.publishedWarp();
+                        rheaPhaseOneDone = rheaView.warpComplete();
+                        rheaStagesShown = std::max(already, rheaPhaseOneDone ? stage + 1 : stage);
+                        const double took = std::chrono::duration<double>(Clock::now() - warpBegan).count();
+                        if (rheaView.objectDrawn) {
+                            const rhea::ObjectWarp& ow = rheaView.objectWarp;
+                            rheaKnown = 1.0 - ow.unknown;
+                            rheaStatus(rheaKnown, false);
+                            std::printf("MoonRay XPU2: Rhea: %s from the surfaces' colours in %.3f s (first picture %.3f s, %u pictures%s; %zu rays, "
+                                        "%zu of them at edges, every %u pixels%s, %zu on the graphics card in %.1f ms; %.0f%% of rays unknown to the store, "
+                                        "%zu cells in it; coarse rays %.1f ms, "
+                                        "coarse picture %.1f ms, rings' rays %.1f ms, rings' pictures %.1f ms, FXAA %.1f ms, shown %.1f ms)\n",
+                                        finishing ? "the stopped picture finished" : "the camera's picture", took, ow.firstSeconds, ow.stages,
+                                        rheaPhaseOneDone ? "" : ", stopped by the next move", ow.rays, ow.edgeRays, ow.stride,
+                                        ow.packetsUsed ? ", four at a time" : "", ow.cardRays, ow.cardSeconds * 1e3, ow.unknown * 100.0, rheaView.store.cells(),
+                                        ow.coarseRaySeconds * 1e3, ow.coarsePictureSeconds * 1e3, ow.ringRaySeconds * 1e3, ow.ringPictureSeconds * 1e3,
+                                        ow.fxaaSeconds * 1e3, ow.stageSeconds * 1e3);
+                        } else {
+                            const rhea::MeshWarp& mw = rheaView.warpMeshInfo();
+                            std::printf("MoonRay XPU2: Rhea: the last picture moved to the camera in %.3f s (%.0f%% of it landed; mesh %zu points, "
+                                        "%zu triangles, cells of %u, built in %.3f s)\n",
+                                        took, rheaView.warpShare * 100.0, mw.valid() ? mw.vertexCount : size_t(0),
+                                        mw.valid() ? mw.triangleCount : size_t(0), mw.cellSize, mw.buildSeconds);
+                        }
+                        std::fflush(stdout);
+                        return true;
+                    };
+                    if (moving) {
+                        if (rheaEarlyDone) warpedNow = rheaView.hasWarp();  // shown ahead of the GPU
+                        else if (phaseOne(false)) warpedNow = true;
+                        // In a drag (dragging, or this move within 0.15 s of the last), the next step looked for a moment before
+                        // any of the GPU's work: it comes about 60 ms after this one, and a GPU frame begun takes longer to stop
+                        // than the warp takes (0.2 s at 720p). A move on its own goes to the GPU at once: held, the test
+                        // scene's moves 0.3 s apart lost a quarter of XPU2's time and doubled their error.
+                        // A step of a drag the kit follows (rheaDragStep): phase one alone, XPU2 held until the next command, the
+                        // next step or the release (the user, 2026-11-22: no XPU2 during drags), the card left to phase one's
+                        // first hits. Held XPU2_SESSION_RHEA_DRAG_WAIT seconds at most (5): the mouse held still that long is a
+                        // camera at rest, and XPU2's frame begins.
+                        // (Not where the store is filling: XPU2's frame begins at once, rheaFillUnknown.)
+                        const bool dragAlone = warpedNow && rheaDragStep && !probesOn && rheaDragAlone && !rheaFilling;
+                        if (dragAlone || (!rheaFilling && warpedNow && rheaView.op.dragHold > 0 && (dragging || sinceLastMove < 0.15))) {
+                            const double holdFor = dragAlone ? rheaDragWait : rheaView.op.dragHold;
+                            const auto held = Clock::now();
+                            while (std::chrono::duration<double>(Clock::now() - held).count() < holdFor) {
+                                if (watch.stop && watch.stop()) {
+                                    rheaView.keepLast(*scene.plan);
+                                    rheaUnfinished = true;  // the warp on screen
+                                    shown.cancelled = true;
+                                    return shown;
+                                }
+                                std::this_thread::sleep_for(std::chrono::milliseconds(2));
+                            }
+                        }
+                    }
+                    bool rheaFramed = false;
+                    if (moving && !dragging && probesOn) {
+                        const auto frameBegan = Clock::now();
+                        auto plan = rheaView.prepare(scene.plan, *scene.cpuScene);
+                        if (lane) lane->updateCamera(plan);
+                        const auto prepared = Clock::now();
+                        async::RenderOptions o = base;
+                        async::Watch inner;
+                        inner.stop = watch.stop;
+                        o.watch = &inner;
+                        async::RenderResult r;
+                        {
+                            async::Renderer frame(plan, *scene.cpuScene, lane);
+                            r = frame.render(o);
+                        }
+                        const auto rendered = Clock::now();
+                        // The GPU's configuration back to the scene's own plan (no sample map) for XPU2's frame.
+                        if (lane) lane->updateCamera(scene.plan);
+                        if (r.failed) return r;
+                        if (r.cancelled) {
+                            // Stopped by the next move: the moves come faster than this frame lands (a drag).
+                            rheaFrameStopped = true;
+                            rheaFrameCost = std::max(rheaFrameCost, std::chrono::duration<double>(Clock::now() - frameBegan).count());
+                            shown.cancelled = true;
+                            return shown;
+                        }
+                        rheaView.finish(r, shown);
+                        rheaFramed = true;
+                        rheaView.publishedCopy(shown);
+                        rheaSeconds = std::chrono::duration<double>(Clock::now() - frameBegan).count();
+                        rheaFrameStopped = false, rheaFrameCost = rheaSeconds;
+                        std::printf("MoonRay XPU2: Rhea frame: probes %.3f s (%zu, %zu new), render %.3f s (%llu GPU samples, %llu CPU), finish %.3f s; "
+                                    "%.0f%% of the picture verified, phase 1 in %.0f%% (probes %.0f%%, slanted planes %.0f%% of %zu, back plane %.0f%%; "
+                                    "planes %.3f s, back plane kept %.3f s); probes made dormant %zu, woken %zu, dormant in view %zu\n",
+                                    std::chrono::duration<double>(prepared - frameBegan).count(), rheaView.probes, rheaView.spawned,
+                                    std::chrono::duration<double>(rendered - prepared).count(), (unsigned long long)r.gpuSamples,
+                                    (unsigned long long)r.cpuSamples, std::chrono::duration<double>(Clock::now() - rendered).count(),
+                                    rheaView.verified * 100.0, rheaView.trusted * 100.0, rheaView.shareFront * 100.0, rheaView.sharePlanar * 100.0,
+                                    rheaView.regions, rheaView.shareBack * 100.0, rheaView.planesSeconds, rheaView.storeSeconds, rheaView.pruned,
+                                    rheaView.woken, rheaView.dormant);
+                        std::fflush(stdout);
+                        publish(shown, 0.0, true);
+                        if (watch.stop && watch.stop()) {
+                            shown.cancelled = true;
+                            return shown;
+                        }
+                    } else {
+                        // The probes placed for the camera (a drag's step, a new scene, an edit), lit by XPU2's frame.
+                        if (probesOn) rheaView.place(scene.plan, *scene.cpuScene);
+                        // No move, while the last frame stopped short with its warp (or its fade) on screen for this camera:
+                        // the mouse let go, Modo telling of the camera once more where the drag left it (the user,
+                        // 2026-11-22, "the fade should also occur on mouse release as well when XPU2 realtime takes over").
+                        // XPU2's frame fades in over what is on screen, as after a move; else it is XPU2's own.
+                        if (!moving) {
+                            rheaFrameStopped = false;
+                            const bool release = rheaUnfinished && !probesOn && rheaView.hasWarp();
+                            if (!release) {
+                                rheaView.dropWarp();
+                                // Nothing to warp (an edit, the scene told again): XPU2's frame fades in over what is on screen
+                                // for this camera, as after a move, not its first pictures black where its samples have not
+                                // reached (the user, 2026-11-22: "there are moments when black blocks start generating from
+                                // xpu2, which shouldn't occur").
+                                if (!probesOn && envOn("XPU2_SESSION_RHEA_EDIT_FADE", true)) rheaView.screenWarp(*scene.plan);
+                            }
+                            // Phase one stopped part way by the release: it finishes first (the user, 2026-11-22: "rhea should
+                            // finish its phase one then have xpu2 gracefully follow"), then XPU2's frame fades in over it.
+                            else if (!rheaPhaseOneDone && phaseOne(true)) warpedNow = true;
+                        }
+                    }
+                    rheaUnfinished = false;
+                    // The pictures of XPU2's frame: with Rhea's frame folded in where there was one, else the warp.
+                    const bool warpOnly = !rheaFramed && rheaView.hasWarp();
+                    // The completion fade (rhea/DESIGN.md 29, the user's design, 2026-11-22): after a move XPU2's frame
+                    // finishes its seed region by region, the regions where the warp is likely worst first
+                    // (RenderOptions::regionalBatch, Realtime::warpRegions); a region shows only once finished (every sample of
+                    // its seed in), fading in over fadeSeconds, feathered inward from its edges; XPU2's samples short of
+                    // that never show (no squares of the devices' progress). The frame ends as XPU2's own picture.
+                    // XPU2_SESSION_RHEA_COMPLETION=0: XPU2's samples blended into the warp as they come (mergeWarp).
+                    const bool completion = warpOnly && envOn("XPU2_SESSION_RHEA_COMPLETION", true);
+                    double fadeSeconds = 0.2;
+                    if (const char* v = std::getenv("XPU2_SESSION_RHEA_FADE_SECONDS")) fadeSeconds = std::max(0.0, std::atof(v));
+                    // Each region as it finishes, feathered, blended with phase one by the head start (Realtime::headStart):
+                    // the user, 2026-11-22, "the fade in should be smarter, filling in batches of areas instead of waiting
+                    // for the buckets to refine" (the car's whole seed took 29 s). XPU2_SESSION_RHEA_FADE_WHOLE=1: the fade
+                    // once XPU2's whole grid is in, the picture all at once (earlier: "the fade in should know when XPU2's
+                    // grid has been fully loaded so the fade is seamless", when the regions came in raw and noisy).
+                    const bool fadeWhole = envOn("XPU2_SESSION_RHEA_FADE_WHOLE", false);
+                    struct Fade {
+                        std::vector<std::uint16_t> tileBatch;  // each 8-pixel tile's region
+                        unsigned regions = 0, tilesX = 0, tilesY = 0;
+                        std::vector<double> doneAt;            // when each region was first seen finished (-1: not yet)
+                        std::vector<float> tileAlpha, blurred, alpha;
+                    } fade;
+                    const auto fadeBegan = Clock::now();
+                    auto fadeNow = [&] { return std::chrono::duration<double>(Clock::now() - fadeBegan).count(); };
+                    if (completion) {
+                        const unsigned cells = ((width + 63) / 64) * ((height + 63) / 64);
+                        unsigned want = std::clamp(cells / 6, 4u, 16u);
+                        if (const char* v = std::getenv("XPU2_SESSION_RHEA_REGIONS")) want = unsigned(std::max(1, std::atoi(v)));
+                        if (rheaView.warpRegions(want, 64, fade.tileBatch)) {
+                            for (std::uint16_t b : fade.tileBatch) fade.regions = std::max<unsigned>(fade.regions, b + 1u);
+                            fade.tilesX = (width + 7) / 8, fade.tilesY = (height + 7) / 8;
+                            fade.doneAt.assign(fade.regions, -1.0);
+                        }
+                    }
+                    // Each pixel's alpha now: a region finished (XPU2 past its pass, or the frame ended) fades in smoothly
+                    // over fadeSeconds; the tiles' alphas blurred twice by [1 2 1] each way and spread bilinearly over the
+                    // pixels, an unfinished tile's pixels kept at 0 (the feather goes inward). Whether a fade is under way.
+                    auto fadeAlpha = [&](bool ended) -> bool {
+                        const double now = fadeNow();
+                        const unsigned passed = ended ? fade.regions : std::min<unsigned>(renderer->retiredPasses(), fade.regions);
+                        if (fadeWhole) {
+                            // Every region finished: one fade over the whole picture, from the moment the last one did.
+                            const size_t pixels = size_t(width) * height;
+                            fade.alpha.resize(pixels);
+                            if (passed < fade.regions) {
+                                std::fill(fade.alpha.begin(), fade.alpha.end(), 0.0f);
+                                return true;
+                            }
+                            if (fade.doneAt[0] < 0) std::fill(fade.doneAt.begin(), fade.doneAt.end(), now);
+                            const double t = fadeSeconds > 0 ? std::clamp((now - fade.doneAt[0]) / fadeSeconds, 0.0, 1.0) : 1.0;
+                            std::fill(fade.alpha.begin(), fade.alpha.end(), float(t * t * (3 - 2 * t)));
+                            return t < 1;
+                        }
+                        bool going = false;
+                        std::vector<float> regionAlpha(fade.regions, 0.0f);
+                        for (unsigned b = 0; b < fade.regions; ++b) {
+                            if (b < passed && fade.doneAt[b] < 0) fade.doneAt[b] = now;
+                            if (fade.doneAt[b] < 0) {
+                                going = true;
+                                continue;
+                            }
+                            const double t = fadeSeconds > 0 ? std::clamp((now - fade.doneAt[b]) / fadeSeconds, 0.0, 1.0) : 1.0;
+                            regionAlpha[b] = float(t * t * (3 - 2 * t));
+                            going = going || t < 1;
+                        }
+                        const unsigned tx = fade.tilesX, ty = fade.tilesY;
+                        const size_t tiles = size_t(tx) * ty;
+                        fade.tileAlpha.resize(tiles), fade.blurred.resize(tiles);
+                        for (size_t t = 0; t < tiles; ++t) fade.tileAlpha[t] = regionAlpha[fade.tileBatch[t]];
+                        for (int pass = 0; pass < 2; ++pass) {
+                            for (unsigned j = 0; j < ty; ++j)
+                                for (unsigned i = 0; i < tx; ++i) {
+                                    const size_t c = size_t(j) * tx + i;
+                                    fade.blurred[c] = 0.25f * fade.tileAlpha[i > 0 ? c - 1 : c] + 0.5f * fade.tileAlpha[c] + 0.25f * fade.tileAlpha[i + 1 < tx ? c + 1 : c];
+                                }
+                            for (unsigned j = 0; j < ty; ++j)
+                                for (unsigned i = 0; i < tx; ++i) {
+                                    const size_t c = size_t(j) * tx + i;
+                                    fade.tileAlpha[c] = 0.25f * fade.blurred[j > 0 ? c - tx : c] + 0.5f * fade.blurred[c] + 0.25f * fade.blurred[j + 1 < ty ? c + tx : c];
+                                }
+                        }
+                        const size_t pixels = size_t(width) * height;
+                        fade.alpha.resize(pixels);
+                        for (U32 y = 0; y < height; ++y) {
+                            const double v = (double(y) + 0.5 - 4.0) / 8.0;
+                            const int j0 = std::clamp(int(std::floor(v)), 0, int(ty) - 1), j1 = std::min(j0 + 1, int(ty) - 1);
+                            const float fy = float(std::clamp(v - j0, 0.0, 1.0));
+                            for (U32 x = 0; x < width; ++x) {
+                                const size_t own = size_t(y / 8) * tx + x / 8;
+                                if (regionAlpha[fade.tileBatch[own]] <= 0) {
+                                    fade.alpha[size_t(y) * width + x] = 0;
+                                    continue;
+                                }
+                                const double u = (double(x) + 0.5 - 4.0) / 8.0;
+                                const int i0 = std::clamp(int(std::floor(u)), 0, int(tx) - 1), i1 = std::min(i0 + 1, int(tx) - 1);
+                                const float fx = float(std::clamp(u - i0, 0.0, 1.0));
+                                const float* a = fade.tileAlpha.data();
+                                const float top = (1 - fx) * a[size_t(j0) * tx + i0] + fx * a[size_t(j0) * tx + i1];
+                                const float bot = (1 - fx) * a[size_t(j1) * tx + i0] + fx * a[size_t(j1) * tx + i1];
+                                fade.alpha[size_t(y) * width + x] = (1 - fy) * top + fy * bot;
+                            }
+                        }
+                        return going;
+                    };
+                    // The camera at rest: XPU2's own frame (its sampling generations, its samples where the noise is),
+                    // each of its pictures folded into Rhea's sums as it comes, phase 1 fading out as the frame goes on.
+                    async::Watch rest = watch;
+                    if (completion && fade.regions) rest.previewSeconds = std::min(rest.previewSeconds, 0.04);  // the fades' pace
+                    bool wanted = false;  // the session's previews want the outputs (a denoised or other view)
+                    double lastFraction = 0;
+                    rest.previewAov = [&] {
+                        wanted = watch.previewAov && watch.previewAov();
+                        return true;  // the outputs resolved in every picture: Rhea's direct light is among them
+                    };
+                    // A picture to the view the kit shows (the session's own path: denoised, an output, or the beauty).
+                    auto showPicture = [&](async::RenderResult& merged, double fraction) {
+                        if (wanted && watch.previewResult) {
+                            // Under the completion fade, the Beauty view shows XPU2's finished regions as XPU2 RT does (raw):
+                            // denoised while they fade in and raw after, they would pop noisy; Denoised Beauty denoises it all.
+                            rheaDenoiseNow = rheaDenoise && !completion && (rheaFramed || warpOnly) && fraction < rheaDenoiseBelow;
+                            watch.previewResult(merged, fraction);
+                            rheaDenoiseNow = false;
+                        } else if (watch.preview) {
+                            const size_t pixels = size_t(width) * height;
+                            std::vector<float> rgb(pixels * 3);
+                            std::vector<unsigned char> covered(pixels, 1);
+                            bool gaps = false;
+                            for (size_t i = 0; i < pixels; ++i) {
+                                for (int c = 0; c < 3; ++c) {
+                                    const float x = merged.rgba[i * 4 + c];
+                                    rgb[i * 3 + c] = std::isfinite(x) ? x : 0.0f;
+                                }
+                                if (merged.counts.size() == pixels && !merged.counts[i]) covered[i] = 0, gaps = true;
+                            }
+                            // Pixels no sample has reached, from those that have (as XPU2 RT's own pictures): never black.
+                            if (gaps) async::Renderer::fillGaps(rgb, covered, width, height);
+                            watch.preview(rgb, width, height, fraction);
+                        }
+                    };
+                    // Pictures of whole passes alone (async::RenderOptions::passPictures; the user, 2026-11-22: "there
+                    // shouldn't be black grid XPU2 iterations, that should be hidden until they're done and there's another
+                    // fade"): XPU2 hands over a picture only once every pass sent out has completed (the seed's regions, then
+                    // each of its generations), none part way. The first fades in over the warp, each after it over the one
+                    // before. The fades run on a thread of their own, a picture every 30 ms: XPU2 hands one over every 0.25
+                    // to 0.4 s on a heavy scene (the user's dragon), and a 0.2 s fade on its pictures went from one to the
+                    // next in a step ("there's no fade"). XPU2_SESSION_RHEA_PASS_PICTURES=0: its pictures as they come.
+                    const bool passMode = completion && fade.regions && fadeWhole && envOn("XPU2_SESSION_RHEA_PASS_PICTURES", true);
+                    enum : int { FadeIdle, FadeRunning, FadeDone };
+                    std::atomic<int> fadeState{FadeIdle};
+                    std::atomic<bool> fadeQuit{false};
+                    std::mutex fadeMutex;
+                    // A picture to fade to: shown (with the head start, Realtime::headStart), and XPU2's own (raw), which the
+                    // store learns from (the same where no head start): phase one's colours never fed back into it.
+                    struct FadePicture {
+                        std::shared_ptr<const async::RenderResult> shown, raw;
+                    };
+                    FadePicture fadeNext;                                     // the next picture to fade to (fadeMutex)
+                    std::shared_ptr<const async::RenderResult> fadeBase;     // the picture the last fade ended on (null: the warp)
+                    std::shared_ptr<const async::RenderResult> fadeBaseRaw;  // and its XPU2's own
+                    // XPU2_SESSION_RHEA_HEAD_START: phase one's colour counted as so many samples (8; 0: no head start).
+                    if (const char* v = std::getenv("XPU2_SESSION_RHEA_HEAD_START")) rheaView.op.headStart = std::max(0.0, std::atof(v));
+                    unsigned headStarted = 0;  // pictures shown with the head start this frame
+                    auto withHeadStart = [&](const async::RenderResult& r, bool last) {
+                        FadePicture p;
+                        p.raw = std::make_shared<const async::RenderResult>(r);
+                        p.shown = p.raw;
+                        if (!last) {
+                            auto h = std::make_shared<async::RenderResult>();
+                            if (rheaView.headStart(r, *h)) p.shown = std::move(h), ++headStarted;
+                        }
+                        return p;
+                    };
+                    std::thread fadeThread;
+                    U32 shownPasses = 0;  // the passes of the last picture handed to the fades
+                    unsigned fades = 0;   // the fades this frame
+                    struct FadeJoin {
+                        std::atomic<bool>& quit;
+                        std::thread& thread;
+                        ~FadeJoin() {
+                            if (thread.joinable()) {
+                                quit = true;
+                                thread.join();
+                            }
+                        }
+                    } fadeJoin{fadeQuit, fadeThread};
+                    // While the fades' thread shows pictures, the view the kit shows is not looked up again (the session's
+                    // previewAov writes what its previewResult, on that thread, reads).
+                    rest.previewAov = [&] {
+                        if (fadeState.load() != FadeRunning) wanted = watch.previewAov && watch.previewAov();
+                        return true;  // the outputs resolved in every picture: Rhea's direct light is among them
+                    };
+                    // One picture faded into another by a: top's pixels where it has samples, else base's (no pixel without one).
+                    auto crossFade = [&](const async::RenderResult& from, const async::RenderResult& top, float a, async::RenderResult& out) {
+                        out = top;
+                        const size_t n = size_t(width) * height;
+                        if (from.rgba.size() != n * 4 || top.rgba.size() != n * 4) return;
+                        const size_t stride = n ? top.aov.size() / n : 0;
+                        const bool aovs = stride && from.aov.size() == top.aov.size();
+                        out.counts.resize(n);
+                        cpu::parallelRange(n, [&](size_t begin, size_t end) {
+                            for (size_t i = begin; i < end; ++i) {
+                                const bool sampled = i < top.counts.size() && top.counts[i] > 0;
+                                const float k = sampled ? a : 0.0f;
+                                if (k >= 1.0f) continue;
+                                for (int c = 0; c < 4; ++c) out.rgba[i * 4 + c] = from.rgba[i * 4 + c] + k * (top.rgba[i * 4 + c] - from.rgba[i * 4 + c]);
+                                if (k < 0.5f && aovs) std::copy_n(&from.aov[i * stride], stride, &out.aov[i * stride]);
+                                out.counts[i] = std::max<std::uint32_t>(sampled ? top.counts[i] : 0u, 1u);
+                            }
+                        });
+                    };
+                    // One fade, from the picture the last ended on (or the warp) to top, over fadeSeconds.
+                    auto fadeTo = [&](const FadePicture& picture) {
+                        const async::RenderResult& top = *picture.shown;
+                        const double began = fadeNow();
+                        const std::vector<float> ones(size_t(width) * height, 1.0f);
+                        // The picture it ends on, raw: kept for the next fade and the next move's warp.
+                        async::RenderResult end;
+                        double endCoverage = 1.0;
+                        if (fadeBase) crossFade(*fadeBase, top, 1.0f, end);
+                        else endCoverage = rheaView.completeWarp(top, ones, end);
+                        // Denoised Beauty: the picture it ends on denoised once, the denoised picture on screen cross-faded
+                        // into it (through the denoiser at each step, a fade got one picture between).
+                        std::vector<float> clean;
+                        DenoisedPicture from;
+                        bool denoised = false;
+                        if (wanted && denoiser && denoising(currentView)) {
+                            {
+                                std::lock_guard<std::mutex> lock(denoisedMutex);
+                                from = lastDenoised;
+                            }
+                            denoised = denoiser->denoise(realtimePicture(end), clean) && clean.size() == size_t(width) * height * 3;
+                        }
+                        float shownA = 0;  // how far the fade on screen has come
+                        for (;;) {
+                            const double t = fadeSeconds > 0 ? std::clamp((fadeNow() - began) / fadeSeconds, 0.0, 1.0) : 1.0;
+                            const float a = float(t * t * (3 - 2 * t));
+                            shownA = t >= 1 ? 1.0f : a;
+                            if (denoised) {
+                                const bool blend = from.ready && from.w == width && from.h == height && from.rgb.size() == clean.size();
+                                std::lock_guard<std::mutex> lock(sharedMutex);
+                                if (id == liveId && useShared)
+                                    shared.publish(id, "denoised_beauty", width, height, [&](size_t i, float* px) {
+                                        for (int c = 0; c < 3; ++c)
+                                            px[c] = blend ? from.rgb[i * 3 + c] + a * (clean[i * 3 + c] - from.rgb[i * 3 + c]) : clean[i * 3 + c];
+                                    });
+                            } else if (t < 1) {
+                                async::RenderResult merged;
+                                if (fadeBase) crossFade(*fadeBase, top, a, merged);
+                                else rheaView.completeWarp(top, std::vector<float>(size_t(width) * height, a), merged);
+                                showPicture(merged, lastFraction);
+                            } else {
+                                showPicture(end, lastFraction);
+                            }
+                            if (t >= 1 || fadeQuit) break;
+                            std::this_thread::sleep_for(std::chrono::milliseconds(30));
+                        }
+                        if (denoised) {
+                            std::lock_guard<std::mutex> lock(denoisedMutex);
+                            lastDenoised.rgb = clean, lastDenoised.w = width, lastDenoised.h = height, lastDenoised.id = id, lastDenoised.ready = true;
+                        }
+                        if (shownA >= 1) {
+                            auto kept = std::make_shared<const async::RenderResult>(end);
+                            if (picture.raw != picture.shown) {
+                                // The store's source: XPU2's own picture as it would have ended the fade.
+                                async::RenderResult endRaw;
+                                double rawCoverage = 1.0;
+                                if (fadeBaseRaw) crossFade(*fadeBaseRaw, *picture.raw, 1.0f, endRaw);
+                                else rawCoverage = rheaView.completeWarp(*picture.raw, ones, endRaw);
+                                fadeBaseRaw = std::make_shared<const async::RenderResult>(endRaw);
+                                rheaView.published(std::move(endRaw), rawCoverage);
+                            } else {
+                                fadeBaseRaw = kept;
+                                rheaView.published(std::move(end), endCoverage);
+                            }
+                            fadeBase = std::move(kept);
+                            return;
+                        }
+                        // Stopped part way by a move: the picture as on screen, between the two (Realtime::screenAsWarp reads
+                        // it). Between two of XPU2's it is XPU2's; from the warp, no source for the next move's warp.
+                        async::RenderResult now;
+                        if (fadeBase) crossFade(*fadeBase, top, shownA, now);
+                        else rheaView.completeWarp(top, std::vector<float>(size_t(width) * height, shownA), now);
+                        rheaView.published(std::move(now), fadeBase ? 1.0 : 0.0);
+                    };
+                    // The fades' thread: each picture handed to it faded to in turn, the newest where several came meanwhile.
+                    auto runFades = [&] {
+                        for (;;) {
+                            FadePicture top;
+                            {
+                                std::lock_guard<std::mutex> lock(fadeMutex);
+                                if (!fadeNext.shown || fadeQuit) {
+                                    fadeState = FadeDone;
+                                    return;
+                                }
+                                top = std::move(fadeNext);
+                                fadeNext = FadePicture{};
+                            }
+                            fadeTo(top);
+                        }
+                    };
+                    // A picture to fade to: to the fades' thread, started where it is not running.
+                    auto handToFades = [&](FadePicture top) {
+                        std::lock_guard<std::mutex> lock(fadeMutex);
+                        fadeNext = std::move(top);
+                        if (fadeState.load() == FadeRunning) return;
+                        if (fadeThread.joinable()) fadeThread.join();  // done: it set FadeDone under this lock and returned
+                        fadeState = FadeRunning;
+                        fadeThread = std::thread(runFades);
+                    };
+                    // The store learns from XPU2's samples as they come (Realtime::learn): at each pass's end, twice a second
+                    // meanwhile, and as the frame ends or stops (below).
+                    U32 learnedPasses = 0;
+                    auto lastLearn = Clock::now();
+                    size_t learnedPixels = 0;
+                    rheaView.learnBegin();
+                    rest.previewResult = [&](const async::RenderResult& sofar, double fraction) {
+                        lastFraction = fraction;
+                        if (rheaView.op.learnRaw) {
+                            const U32 retired = renderer->retiredPasses();
+                            if (retired > learnedPasses || std::chrono::duration<double>(Clock::now() - lastLearn).count() > 0.5) {
+                                learnedPasses = retired, lastLearn = Clock::now();
+                                learnedPixels += rheaView.learn(*scene.plan, sofar);
+                            }
+                        }
+                        if (passMode) {
+                            // Only pictures of whole passes, the seed's first (every region of it in): XPU2's grid whole.
+                            const U32 passes = renderer->picturedPasses();
+                            if (passes == async::Renderer::NotPictured || passes < fade.regions || passes <= shownPasses) return;
+                            shownPasses = passes;
+                            if (!fades++) std::fill(fade.doneAt.begin(), fade.doneAt.end(), fadeNow());
+                            handToFades(withHeadStart(sofar, false));
+                            return;
+                        }
+                        async::RenderResult merged, source;
+                        bool started = false;   // merged has the head start; source is the same picture without it
+                        double coverage = 1.0;  // the share of pixels XPU2's samples reached (a picture mostly a warp is no source)
+                        if (completion && fade.regions) {
+                            fadeAlpha(false);
+                            // The regions finished, with phase one's head start; the store's source without it.
+                            async::RenderResult withStart;
+                            started = rheaView.headStart(sofar, withStart);
+                            if (started) {
+                                ++headStarted;
+                                rheaView.completeWarp(withStart, fade.alpha, merged);
+                                coverage = rheaView.completeWarp(sofar, fade.alpha, source);
+                            } else
+                                coverage = rheaView.completeWarp(sofar, fade.alpha, merged);  // the share wholly XPU2's
+                        } else if (warpOnly) coverage = rheaView.mergeWarp(sofar, fraction, merged);
+                        else rheaView.merge(sofar, fraction, merged);
+                        struct Kept {
+                            rhea::Realtime& view;
+                            async::RenderResult& from;
+                            double coverage;
+                            ~Kept() { view.published(std::move(from), coverage); }  // after it is shown: kept for the next move's warp
+                        } kept{rheaView, started ? source : merged, coverage};
+                        showPicture(merged, fraction);
+                    };
+                    async::RenderOptions o = base;
+                    o.watch = &rest;
+                    // A drag's frame on the GPU alone, where the GPU renders the whole scene (no mesh left to the CPU lane,
+                    // no object the routing left to the CPU alone): in Modo, its CPU lane on (the kit's Auto), XPU2's frame
+                    // took 0.5 to 2.4 s to stop for the next step, waiting for the CPU's chunks; a launch of the GPU's stops
+                    // in its window. At rest the frame is XPU2's own, both devices.
+                    const bool gpuDrag = dragging && lane && o.mode == 2 && scene.plan->cpuOnlyMeshes == 0 && !sceneHasCpuAloneObjects &&
+                                         envOn("XPU2_SESSION_RHEA_DRAG_GPU_ONLY", true);
+                    if (gpuDrag) o.mode = 1;
+                    if (completion && fade.regions) o.regionalBatch = fade.tileBatch, o.regionalCount = fade.regions;
+                    o.passPictures = passMode;
+                    // A stop leaves the GPU's launches out behind it: the next move's phase one comes first (drainGpu after).
+                    o.abandonOnCancel = envOn("XPU2_SESSION_RHEA_EARLY", true);
+                    const auto restBegan = Clock::now();
+                    rheaStatus(rheaKnown, true);  // XPU2 teaching the store
+                    const async::RenderResult x = renderer->render(o);
+                    const size_t pixels = size_t(width) * height;
+                    // What XPU2 rendered, to its end or its stop (a drag's next step: whatever its samples reached).
+                    if (rheaView.op.learnRaw && !x.failed) learnedPixels += rheaView.learn(*scene.plan, x);
+                    // Stopped with its GPU launches left out: their samples harvested by the next command (rheaHarvest).
+                    if (x.cancelled && o.abandonOnCancel && lane && envOn("XPU2_SESSION_RHEA_HARVEST", true)) rheaHarvestPlan = scene.plan;
+                    if (!x.cancelled && !x.failed) {
+                        size_t reached = 0;
+                        for (size_t i = 0; i < x.counts.size(); ++i) reached += x.counts[i] > 0;
+                        rheaKnown = std::max(rheaKnown, pixels ? double(reached) / double(pixels) : 0.0);
+                        rheaStatus(rheaKnown, false);
+                    }
+                    if (passMode && !x.cancelled && !x.failed && x.rgba.size() == pixels * 4 && (!fades || shownPasses < renderer->retiredPasses())) {
+                        // The frame's end: its picture (its last passes, which ended it before a picture of them) faded to too,
+                        // XPU2's own (no head start: the frame ends as XPU2's picture).
+                        shownPasses = renderer->retiredPasses();
+                        if (!fades++) std::fill(fade.doneAt.begin(), fade.doneAt.end(), fadeNow());
+                        handToFades(withHeadStart(x, true));
+                    }
+                    // The fades' thread: let finish where the frame ended (a fade or two more), stopped by a move.
+                    if (fadeThread.joinable()) {
+                        if (x.cancelled || x.failed) fadeQuit = true;
+                        while (passMode && fadeState.load() == FadeRunning && !fadeQuit) {
+                            if (watch.stop && watch.stop()) fadeQuit = true;
+                            else std::this_thread::sleep_for(std::chrono::milliseconds(5));
+                        }
+                        fadeThread.join();
+                    }
+                    if (x.failed) return x;
+                    // The drag over: XPU2's frame ended, or ran longer than Rhea's frame takes (the moves have paused).
+                    if (!x.cancelled || std::chrono::duration<double>(Clock::now() - restBegan).count() > 1.2 * rheaFrameCost) rheaFrameStopped = false;
+                    double coverage = 1.0;
+                    // Stopped before XPU2's picture had faded in whole: what is on screen, for a frame with no move after it.
+                    const bool cut = completion && (x.cancelled || fadeQuit);
+                    if (cut) rheaView.screenAsWarp();
+                    rheaUnfinished = cut;
+                    if (passMode) {
+                        const std::vector<float> ones(pixels, 1.0f);
+                        coverage = rheaView.completeWarp(x, ones, shown);
+                        std::printf("MoonRay XPU2: Rhea: pass pictures, %u fades (the first at %.2f s), %u of them with phase one's head start%s\n",
+                                    fades, fades ? fade.doneAt[0] : -1.0, headStarted, cut ? ", stopped" : "");
+                        std::fflush(stdout);
+                    } else if (completion && fade.regions && !x.cancelled && x.rgba.size() == size_t(width) * height * 4) {
+                        // The regions the frame's end finished, faded in after it (pictures every 30 ms until each is whole,
+                        // unless a move comes): the last picture is XPU2's own.
+                        // With the head start while they fade in (the store's source without it), then phase one's share let
+                        // go over fadeSeconds: the frame's last picture is XPU2's own, reached without a jump.
+                        async::RenderResult xs;
+                        const bool xStarted = rheaView.headStart(x, xs);
+                        auto showEnd = [&](async::RenderResult& merged) {
+                            if (wanted && watch.previewResult) watch.previewResult(merged, 1.0);
+                            else if (watch.preview) {
+                                std::vector<float> rgb(size_t(width) * height * 3);
+                                for (size_t i = 0; i < size_t(width) * height; ++i)
+                                    for (int c = 0; c < 3; ++c) {
+                                        const float v = merged.rgba[i * 4 + c];
+                                        rgb[i * 3 + c] = std::isfinite(v) ? v : 0.0f;
+                                    }
+                                watch.preview(rgb, width, height, 1.0);
+                            }
+                        };
+                        while (fadeAlpha(true) && !(watch.stop && watch.stop())) {
+                            async::RenderResult merged, raw;
+                            const double whole = rheaView.completeWarp(x, fade.alpha, raw);
+                            if (xStarted) rheaView.completeWarp(xs, fade.alpha, merged);
+                            showEnd(xStarted ? merged : raw);
+                            rheaView.published(std::move(raw), whole);
+                            std::this_thread::sleep_for(std::chrono::milliseconds(30));
+                        }
+                        fadeAlpha(true);
+                        if (xStarted) {
+                            const auto letGo = Clock::now();
+                            while (!(watch.stop && watch.stop())) {
+                                const double t = fadeSeconds > 0 ? std::clamp(std::chrono::duration<double>(Clock::now() - letGo).count() / fadeSeconds, 0.0, 1.0) : 1.0;
+                                // XPU2's own picture with the head start's share let go by a: its samples' counts kept (an
+                                // unsampled pixel stays unsampled, the warp's: crossFade's counts of 1 showed them black).
+                                const float a = float(t * t * (3 - 2 * t));
+                                async::RenderResult blend = x, merged;
+                                for (size_t i = 0; i < pixels && blend.rgba.size() == pixels * 4 && xs.rgba.size() == pixels * 4; ++i)
+                                    if (i < x.counts.size() && x.counts[i] > 0)
+                                        for (int c = 0; c < 3; ++c) blend.rgba[i * 4 + c] = xs.rgba[i * 4 + c] + a * (x.rgba[i * 4 + c] - xs.rgba[i * 4 + c]);
+                                rheaView.completeWarp(blend, fade.alpha, merged);
+                                showEnd(merged);
+                                if (t >= 1) break;
+                                std::this_thread::sleep_for(std::chrono::milliseconds(30));
+                            }
+                        }
+                        coverage = rheaView.completeWarp(x, fade.alpha, shown);
+                        std::string when;
+                        for (unsigned b = 0; b < fade.regions; ++b) {
+                            char s[24];
+                            std::snprintf(s, sizeof s, "%s%.2f", b ? " " : "", fade.doneAt[b]);
+                            when += s;
+                        }
+                        std::printf("MoonRay XPU2: Rhea: completion fade, %u regions finished at %s s; %u pictures with phase one's head start\n",
+                                    fade.regions, when.c_str(), headStarted);
+                        std::fflush(stdout);
+                    } else if (completion && fade.regions) coverage = rheaView.completeWarp(x, fade.alpha, shown);
+                    else if (warpOnly) coverage = rheaView.mergeWarp(x, x.cancelled || x.drained ? lastFraction : 1.0, shown);
+                    else rheaView.merge(x, x.cancelled || x.drained ? lastFraction : 1.0, shown);
+                    shown.cancelled = x.cancelled, shown.drained = x.drained;
+                    // The picture as shown, for the next move's warp: the frame's own, or the last it published (a frame of
+                    // whole passes' pictures stopped: the last it showed, not its film part way through a pass).
+                    // What is on screen, kept through an edit's reset (Realtime::screenWarp).
+                    if (cut) rheaView.keepScreenPublished(*scene.plan);
+                    else if (shown.rgba.size() == size_t(width) * height * 4) rheaView.keepScreen(*scene.plan, shown);
+                    if (passMode && cut) rheaView.keepLast(*scene.plan);
+                    else if (shown.rgba.size() == size_t(width) * height * 4) rheaView.keepShown(*scene.plan, shown, coverage);
+                    else rheaView.keepLast(*scene.plan);
+                    // The probes learn from XPU2's frame, as far as it came (a move stopped it, or it ended): on a heavy
+                    // scene the first frame at rest may never end before a drag.
+                    if (probesOn) rheaView.absorbRest(x);
+                    if (!rheaView.op.debugFolder.empty()) {
+                        // An investigation: the camera, its name and node transform, for scripted moves.
+                        const rdl::SceneObject* cam = scene.source ? scene.source->getSceneVariables().get(rdl::SceneVariables::sCamera) : nullptr;
+                        if (std::FILE* fh = std::fopen((rheaView.op.debugFolder + "/camera.txt").c_str(), "w")) {
+                            std::fprintf(fh, "%s\n", cam ? cam->getName().c_str() : "");
+                            for (int i = 0; i < 4; ++i)
+                                for (int j = 0; j < 4; ++j) std::fprintf(fh, "%.9g%s", double(scene.plan->camera.cameraToRender.m[i][j]), i == 3 && j == 3 ? "\n" : " ");
+                            std::fprintf(fh, "probe weight %.6g\n", rheaView.fieldWeight());
+                            std::fclose(fh);
+                        }
+                    }
+                    shown.seconds = std::chrono::duration<double>(Clock::now() - began).count();
+                    if (x.cancelled)
+                        std::printf("MoonRay XPU2: Rhea: XPU2's frame stopped in %.3f s (the CPU's workers %.3f s, the GPU's launches out %.3f s)\n",
+                                    x.stopCpuSeconds + x.stopGpuSeconds, x.stopCpuSeconds, x.stopGpuSeconds);
+                    std::printf("MoonRay XPU2: realtime by Rhea: %s, then XPU2's frame at rest %s in %.2f s; %zu probes, back plane %.0f%% (kept in %.3f s); "
+                                "the store learned from %zu pixels' new samples%s (%zu cells, %.3f s learning so far)\n",
+                                rheaFramed ? "a frame for the camera's move" : moving ? (warpedNow ? "a move (the last picture moved)" : "a move (no picture to move)") : probesOn ? "the probes placed" : "the camera at rest",
+                                x.cancelled ? "stopped" : x.drained ? "drained" : "done",
+                                shown.seconds - rheaSeconds, rheaView.probes, rheaView.backShare() * 100.0, rheaView.restStoreSeconds, learnedPixels,
+                                rheaFilling ? ", a drag's step filling it" : "", rheaView.store.cells(), rheaView.learnSeconds);
+                    std::fflush(stdout);
+                    return shown;
+                };
                 // The checkpoints write the outputs of the plan that renders now: the full plan, where a coarse first pass's
                 // (given them above) has made way for it.
                 if (scene.plan->aovs && scene.plan->aovs->checkpoint) checkpoints.frame(scene.plan->aovs, &scene.displayFilters, width, height);
@@ -3130,6 +4354,8 @@ int session(const Args& args, const fs::path& directory) {
                     options.resumeFrom.reset();
                 } else if (checkpointed)
                     result = stagedFrame(*renderer, options, watch, *scene.plan, checkpoints);
+                else if (rheaNow)
+                    result = rheaFrames(options);
                 else
                     result = renderer->render(options);
                 // Stopped while this frame's own pictures were still held back behind an earlier pass's (the coarse first
@@ -3296,6 +4522,7 @@ int session(const Args& args, const fs::path& directory) {
                 return 0;
             }
         }
+    frameEnd:
         event(complete ? "DONE" : "CANCELED", id);
         // A render on its own ends with its frame.
         if (standalone().on) return complete ? 0 : 1;
@@ -3311,7 +4538,13 @@ int session(const Args& args, const fs::path& directory) {
                 fallback("an incomplete Modo session command");
                 return 1;
             }
+            // A fifth line, "drag": a step of a drag the kit follows (rheaDragStep); none (older kits, the release): not one.
+            std::string more;
+            rheaDragStep = std::getline(input, more) && (more == "drag" || more == "drag\r");
         }
+        // A drag's step under Rhea keeps geometry tessellated for the camera (Scene::keepCameraGeometry); the release, any
+        // other command, tessellates it again. XPU2_SESSION_RHEA_DRAG_KEEP_TESSELLATION=0: each step tessellates it.
+        scene.keepCameraGeometry = rheaDragStep && rheaWanted && envOn("XPU2_SESSION_RHEA_DRAG_KEEP_TESSELLATION", true);
         if (!command.enabled()) fs::remove(mailbox, ignored);
         if (mode_ == "quit") return 0;
         try {
