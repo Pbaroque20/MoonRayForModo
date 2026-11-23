@@ -2526,6 +2526,59 @@ int session(const Args& args, const fs::path& directory) {
         return v ? std::clamp(std::atof(v), 0.0, 1.0) : 0.3;
     }();
     bool rheaFilling = false;  // this frame: a drag's step filling the store
+    // The plan of the last Rhea frame a command stopped with its GPU launches left out (RenderOptions::abandonOnCancel):
+    // they finish behind it and their samples stay in the card's film until its next frame begins. Harvested once the
+    // next command's phase one is out and the launches are drained (rheaHarvest): on the user's car a launch outlasted a
+    // drag's step, and every fill step's samples were thrown away.
+    cpu::PlanView rheaHarvestPlan;
+    size_t rheaHarvested = 0;  // pixels learned from harvests, since the session began
+    auto rheaHarvest = [&]() -> size_t {
+        const cpu::PlanView hp = std::move(rheaHarvestPlan);
+        rheaHarvestPlan.reset();
+        if (!hp || !gpu || !gpuUsable || !gpu->followers().empty() || gpu->inFlight() || !rheaView.op.learnRaw || !scene.plan ||
+            !scene.cpuScene || hp->aovs != scene.plan->aovs || hp->width != scene.plan->width || hp->height != scene.plan->height)
+            return 0;
+        const aov::Tables& t = scene.cpuScene->aovTables;
+        const size_t n = size_t(hp->width) * hp->height;
+        gpu->use();
+        gpu->downloadFilm();
+        while (!gpu->filmReady()) std::this_thread::yield();
+        const double* sums = gpu->sums();
+        const U32* counts = gpu->counts();
+        const float* aovs = gpu->aovs();
+        if (!sums || !counts || !aovs || !t.channels) return 0;
+        // The film resolved as XPU2's frames resolve it (Renderer::resolveAovValues): the beauty and each output's
+        // average over the pixel's samples, the min and max as they are.
+        async::RenderResult h;
+        h.rgba.assign(n * 4, 0.0f), h.counts.assign(counts, counts + n), h.aov.assign(n * t.channels, 0.0f);
+        const unsigned consistent = hp->adaptive ? std::max(2u, hp->minSamples) : hp->spp;
+        size_t any = 0;
+        for (size_t i = 0; i < n; ++i) {
+            const double w = double(counts[i]);
+            if (!(w > 0)) continue;
+            ++any;
+            for (int c = 0; c < 4; ++c) h.rgba[i * 4 + c] = float(sums[i * 4 + c] / w);
+            const float* a = aovs + i * t.channels;
+            float* o = h.aov.data() + i * t.channels;
+            for (U32 k = 0; k < t.count; ++k) {
+                const aov::Entry& e = t.entries[k];
+                for (U32 c = 0; c < e.channels; ++c) {
+                    const double v = a[e.offset + c];
+                    double r = v;
+                    if (e.type != aov::TypeVisibility && std::isfinite(v)) {
+                        if (e.filter == aov::FilterAvg) r = v / w;
+                        else if (e.filter == aov::FilterConsistent) r = v / double(consistent);
+                    }
+                    o[e.offset + c] = float(r);
+                }
+            }
+        }
+        if (!any) return 0;
+        rheaView.learnBegin();
+        const size_t learned = rheaView.learn(*hp, h);
+        rheaHarvested += learned;
+        return learned;
+    };
     double rheaKnown = 0;      // the share of the last phase one's rays the store knew
     // Rhea's state for the kit's status line (native.execution_status, in place of XPU2's): how much of the view the store
     // knew, and whether XPU2 is teaching it now. "@@MODO_XPU2 RHEA <known percent> <learning 0|1>".
@@ -2726,6 +2779,16 @@ int session(const Args& args, const fs::path& directory) {
                     !envOn("XPU2_SESSION_RHEA_PROBES", false) && rheaView.movedSince(*scene.plan) && rhea::unsupported(*scene.plan).empty())
                     rheaEarlyDone = rheaEarlyPhaseOne();
                 drainGpu();
+                // The stopped frame's samples the card finished behind it, into the store (rheaHarvest): after this
+                // command's first picture, before the card takes anything new.
+                if (rheaHarvestPlan) {
+                    const auto harvestBegan = Clock::now();
+                    const size_t harvested = rheaHarvest();
+                    if (harvested)
+                        std::printf("MoonRay XPU2: Rhea: the stopped frame's samples from the graphics card learned: %zu pixels in %.1f ms "
+                                    "(%zu since the session began)\n",
+                                    harvested, std::chrono::duration<double>(Clock::now() - harvestBegan).count() * 1000.0, rheaHarvested);
+                }
                 // A drag's step (rheaDragStep) with its phase one on screen: nothing of XPU2's made for it. XPU2's renderer,
                 // made after phase one and dropped by the next step, took about 20 ms to drop before every step's phase one
                 // on the user's car, and more to make after it. The card's camera alone follows (cheap), and the step is
@@ -4008,6 +4071,8 @@ int session(const Args& args, const fs::path& directory) {
                     const size_t pixels = size_t(width) * height;
                     // What XPU2 rendered, to its end or its stop (a drag's next step: whatever its samples reached).
                     if (rheaView.op.learnRaw && !x.failed) learnedPixels += rheaView.learn(*scene.plan, x);
+                    // Stopped with its GPU launches left out: their samples harvested by the next command (rheaHarvest).
+                    if (x.cancelled && o.abandonOnCancel && lane && envOn("XPU2_SESSION_RHEA_HARVEST", true)) rheaHarvestPlan = scene.plan;
                     if (!x.cancelled && !x.failed) {
                         size_t reached = 0;
                         for (size_t i = 0; i < x.counts.size(); ++i) reached += x.counts[i] > 0;
