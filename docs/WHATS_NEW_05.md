@@ -2,6 +2,71 @@
 
 0.5 is a **pre-production release**: the plugin is no longer experimental, and it brings a new GPU renderer, MoonRay XPU2.
 
+## New in 0.5.6
+
+0.5.6 brings **XPU2 Rhea**, the realtime part of MoonRay XPU2: move the camera and the new view is there at once, lit by what XPU2 has already rendered. Install it, and **Compile XPU2 Shaders once more**.
+
+### XPU2 Rhea
+
+*XPU2 Rhea: a surface radiance cache projector designed by Raphael Tobar. Not affiliated with or endorsed by DreamWorks Animation.*
+
+- **A camera move shows at once**: with RT on under MoonRay XPU2, Rhea keeps the light XPU2 has rendered on the scene's surfaces and shows it from the new view, so the picture moves with the camera instead of starting over in noise. XPU2's own picture then fades in over it and finishes as XPU2 alone would render it. A surface XPU2 has not reached yet shows its own colour, lit from the camera, until it does.
+- **Drags drawn as they happen** (Preview Preferences, XPU2 RT follows drags, off by default): every step of a viewport camera drag shows a Rhea picture right away; XPU2 renders once the mouse is let go.
+- **XPU2 RT engine** (Preview Preferences): Rhea, the default, or XPU2's realtime as before. The status under the picture reads XPU2 Rhea active. Realtime shows the Beauty; renders are XPU2's as always.
+- **XPU2 previews start sooner**: XPU2 keeps Modo's subdivision surfaces from one preview to the next rather than cutting them again, and loads its GPU programs while it prepares the scene.
+
+### Also new
+
+- **Oceans are shaped once in realtime**: XPU2's and MoonLightIPR's realtime no longer work a sea out again at every camera move or edit (XPU2 rebuilt it several times a minute, even with nothing touched). In MoonLightIPR a sea keeps the detail cut for the view where realtime came on: switch RT off and on to cut it anew after flying far across it.
+- **Clean alpha edges in After Effects and Nuke**: a render saved as OpenEXR with alpha no longer keeps the visible sky in its soft edges, which showed as a light halo, plainest over black. Read the file as Premultiplied; the sky is still in it, as its Environment background layer. MoonRay, XPU2 and MoonLightIPR renders alike, and OpenEXRs saved from the preview window. Switch: MoonRay Source Overrides, Premultiplied OpenEXR alpha (on).
+
+  ![A render's soft edges before (left), keeping the sky and showing a light halo over black and blue, and now (right), clean](images/exr-alpha-before-after.png)
+
+- **PNG and TIFF saved from the preview window with alpha** no longer have bright soft edges over a visible sky, as renders' already did not.
+- **MoonLightIPR's Render lit as realtime is**: under a large HDRI (an 8K one, for example) a MoonLightIPR Render came out far darker than realtime, the HDRI's bands put out of order as it was read. The compositor and Cryptomatte picking had the same fault on renders of 4K and larger (a composite's halves swapped); all three are right now.
+
+  ![A MoonLightIPR Render under an 8K HDRI: before, far darker than realtime (left), and now lit as realtime is (right)](images/moonlightipr-render-lighting.jpg)
+
+- **Links** (MoonRay > Links...): meshes linked to .lxo files of their own, listed as Illustrator's Links panel lists placed images, each Linked, Editing or Embedded, with its file and whether it is up to date. Link a mesh and it becomes a light Scene Proxy; Edit in Scene brings it back to change it, saving the scene writes your edits to its file, and Done Editing makes it a proxy again. Renders are the same linked or not, in MoonRay, XPU2 and MoonLightIPR.
+
+  ![The Links window: a mesh being edited, one linked and one embedded, with the stand-in each is drawn as](images/links-window.png)
+
+- **Stand-ins** in the Asset Library: 25 low-res everyday objects (a chair, a table, a lamp, a plant, a person, a car...) a linked mesh is drawn as in the viewport, chosen by its name and stretched to its size, while the mesh itself renders. Change one with Stand-in... in the Links window.
+
+  ![The 25 stand-ins, each fitted to the same space, rendered by MoonLightIPR](images/standins.jpg)
+
+- **Iridescence in MoonLightIPR**: a MoonRay material's iridescence (DwaBaseMaterial's, and the other Dwa materials') shows in MoonLightIPR as in MoonRay, the highlight or the clear coat changing colour with the angle, round the hue wheel between its two colours or along its ramp. Before, MoonLightIPR left it out and said so in Notices. Scenes without iridescence render as fast as before.
+
+  ![A dragon with an iridescent sheen and an iridescent bubble over the sea, rendered by MoonLightIPR](images/moonlightipr-iridescence.webp)
+
+- **Clear coats in MoonLightIPR match MoonRay where a surface turns away from the view**: the shine beneath a coat is seen through the coat, bent, as MoonRay sees it, where it was too bright before. A material with Clearcoat Bending off keeps it straight, as in MoonRay.
+
+  ![Dark car paint under a clear coat: MoonRay (left), MoonLightIPR before (middle), the shine beneath the coat too bright and broad, and now (right)](images/moonlightipr-clear-coat.jpg)
+
+- **A tilt-shift camera** (MoonRay > Add MoonRay Item > Cameras > dwTiltShiftCamera, or Convert to MoonRay Camera... on a camera): a perspective camera whose lens tilts, leaning the plane of focus as a tilt-shift lens does. Tilt it one way to keep a whole receding ground sharp; tilt it the other way to blur everything but a band, the miniature look. Lens Tilt and Tilt Direction (in degrees) are in its Tilt-Shift group; it needs its Depth of Field on. Its Shift is the horizontal and vertical film offset. MoonRay, XPU2 and MoonLightIPR render it alike. Switch: MoonRay Source Overrides, Tilt-shift camera (on).
+
+  ![The same street of blocks through a tilt-shift camera at f/1.4: no tilt (left), tilted so the whole ground is sharp (middle), and tilted the other way for the miniature look (right)](images/tilt-shift-camera.jpg)
+
+- **An Ocean Plane's waves in the viewport**: where it was a flat grid, an Ocean Plane now shows its sea in Modo's viewport as points where the water's surface stands, deep blue in the troughs to light blue on the crests, moving with the timeline. They are the long waves the renders make, so the size of the waves, their run with the wind and the swell show before you render. The points gather around the viewport you look through, sparser farther off, and stop at Point Distance (250 m), so a sea to the horizon costs the viewport no more than a pond. Its Viewport settings: Waves in the Viewport, Point Spacing, Point Distance.
+
+  ![An Ocean Plane in Modo's viewport, looking through the render camera 6 m above the water: its waves as points, deep blue in the troughs and light blue on the crests](images/ocean-viewport-points.png)
+
+- **Waves on your own planes in the viewport**: a flat mesh wearing a material with an Ocean node shows its waves as the same blue points, over its own shape; so does an Ocean Plane whose material tag names such a material.
+
+- **Rigged meshes no longer slow MoonRay down**: only the weight and colour maps a material reads go to MoonRay, XPU2 and MoonLightIPR, not a rig's hundreds of bone weights.
+- **Modo's own UDIM sets render**: textures laid on through an Image Folder of UDIM tiles, as an FBX import brings them in, now render in MoonRay, XPU2 and MoonLightIPR. They were left out.
+
+  ![A cube in MoonRay whose faces each lie in their own UDIM tile, 1001, 1002 and 1003 showing, from an Image Folder of numbered images as an FBX import makes it](images/udim-image-folder.jpg)
+
+- **Textured meshes are lighter for MoonRay and XPU2**: a mesh's UVs are sent once where an image uses its UV map as it is.
+- **Modo evaluated geometry is displaced once, its bumps lit**: with Surfaces set to Modo evaluated geometry, MoonRay and XPU2 no longer displace Modo's displaced meshes a second time, and light their bumps rather than shading them as the smooth surface.
+
+  ![A bumped sphere in MoonRay: displaced by MoonRay itself (left), Modo's displaced mesh as it was handed over before, displaced again and cracked (middle), and as it is now, matching the first (right)](images/evaluated-displacement-once.jpg)
+
+- **MoonRay's realtime no longer says "Buffers will be available after the first preview pass completes."** under XPU or XPU2: its picture comes on as it renders. A Render with no finished pass yet still says it.
+
+- Known: Modo can crash as it quits with Scene Proxies in the scene (its own Convert to Proxy does the same); your work and settings are saved first.
+
 ## New in 0.5.5.1.2
 
 Draft View is interactive again. Only the kit changed: coming from 0.5.5.1 or 0.5.5.1.1, there is no need to compile XPU2 Shaders again.
