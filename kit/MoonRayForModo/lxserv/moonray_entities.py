@@ -176,9 +176,9 @@ def register():
                     except Exception:pass
             def draw_sea(self,read,stroke,itemColor,matrix):
                 """An Ocean Plane's waves: points where the sea's surface stands at the timeline's moment (ocean_viewport),
-                at the item's height, around the viewport's eye. None where Waves in the Viewport is off, where the Ocean
-                nodes override is off (the plane is left out of renders then), or where a material tag names the sea's
-                material."""
+                at the item's height, around the viewport's eye. None where Waves in the Viewport is off, or where the
+                Ocean nodes override is off (the plane is left out of renders then). Where its material tag names a Modo
+                material, that material's sea (ocean_meshes.draw_level)."""
                 from moonray_modo import native, ocean_plane, ocean_viewport
                 def value(key):
                     channel,kind=kinds[key]
@@ -186,7 +186,15 @@ def register():
                     if kind=='string':return read.String(self.item,index) or ''
                     if kind in ('boolean','integer'):return int(read.Integer(self.item,index))
                     return float(read.Double(self.item,index))
-                if not value('viewport_points') or value('modo_material') or not native.ocean():return
+                if not value('viewport_points') or not native.ocean():return
+                tag=value('modo_material')
+                if tag:
+                    # The sea of the Modo material its tag names, as the renders give it that material's (ocean_meshes);
+                    # its own where no material has the tag, as the renders do too.
+                    from moonray_modo import ocean_meshes
+                    if ocean_meshes.draw_level(stroke,self.item.Ident(),tag,matrix[13],max(value('tile_size'),1e-3),
+                                               max(value('viewport_spacing'),0.05),max(value('viewport_distance'),1.0),
+                                               lx.service.Selection().GetTime()) is not None:return
                 params={key:value(key) for key in ocean_plane.OCEAN_KEYS if key in kinds}
                 ocean_viewport.draw(stroke,self.item.Ident(),params,lx.service.Selection().GetTime(),matrix[13],
                                     max(value('tile_size'),1e-3),max(value('viewport_spacing'),0.05),max(value('viewport_distance'),1.0),itemColor)
@@ -754,14 +762,58 @@ def register():
                 upgrade(item.id)
         except Exception:pass
 
+    # ---- Seas on Modo's own meshes in the viewport (ocean_meshes) ---------------------------------------------------
+    # A mesh wearing a material whose graph displaces by an Ocean node carries this package, whose drawing is the points
+    # of its sea; it is added as that material's settings are written, and to such meshes of a scene as it is opened.
+    class OceanPointsDrawn(lxu.package.BasicPackageInstance, lxifc.ViewItem3D):
+        def vitm_WorldSpace(self):return True
+        def vitm_Draw(self,chanRead,strokeDraw,selectionFlags,itemColor):
+            # Nothing here may raise: a fault while drawing would repeat on every redraw.
+            try:
+                from moonray_modo import ocean_meshes
+                ocean_meshes.CALLS['vitm']+=1
+                read=lx.object.ChannelRead(chanRead);stroke=lx.object.StrokeDraw(strokeDraw)
+                rows=lx.object.Matrix(read.ValueObj(self.item,self.item.ChannelLookup('worldMatrix'))).Get4()
+                ocean_meshes.draw(self.item,stroke,[float(v) for row in rows for v in row],lx.service.Selection().GetTime())
+            except Exception:
+                try:
+                    import traceback
+                    from moonray_modo import ocean_meshes
+                    ocean_meshes.FAULTS['draw']=traceback.format_exc()[-1500:]
+                except Exception:pass
+
+    class OceanPoints(lxu.package.BasicPackage):
+        def pkg_Attach(self):return OceanPointsDrawn(self.acts)
+        def pkg_TestInterface(self,guid):return guid==lx.symbol.u_PACKAGEINSTANCE or guid==lx.symbol.u_VIEWITEM3D
+    from moonray_modo import ocean_meshes
+    lx.bless(OceanPoints,ocean_meshes.PACKAGE,{lx.symbol.sSRV_USERNAME:'MoonRay Ocean Points'})
+
+    class AttachOceanPoints(lxu.command.BasicCommand):
+        """The meshes wearing a material whose graph displaces by an Ocean node given the package that draws their sea."""
+        def cmd_Flags(self):return lx.symbol.fCMD_MODEL|lx.symbol.fCMD_UNDO
+        def basic_Execute(self,msg,flags):
+            from moonray_modo import ocean_meshes
+            try:ocean_meshes.attach()
+            except Exception:pass
+    lx.bless(AttachOceanPoints,'moonray.ocean.attachPoints')
+
+    def attach_ocean_points():
+        """Once a scene is open: its meshes wearing a sea get the package that draws it, where one does not have it. A
+        scene with none is left as it is (no step is added to its undo)."""
+        try:
+            from moonray_modo import ocean_meshes
+            if ocean_meshes.lacking():lx.eval('moonray.ocean.attachPoints')
+        except Exception:pass
+
     class Watcher(lxifc.SceneItemListener):
         """Sees MoonRay cameras of the type from before come in, and has them made Modo cameras once Modo has finished:
         a scene may not be changed from inside the making of an item. A scene being opened tells of no items as they
-        are read, so the whole scene is looked through once it is open."""
+        are read, so the whole scene is looked through once it is open (and its seas given their points, above)."""
         def sil_SceneCreate(self,scene):
             try:
                 from PySide2 import QtCore
                 QtCore.QTimer.singleShot(0,upgrade_all)
+                QtCore.QTimer.singleShot(0,attach_ocean_points)
             except Exception:pass
         def sil_ItemAdd(self,item):
             try:
@@ -777,6 +829,18 @@ def register():
     # Taken out as Modo quits, while Python still stands (quit_release).
     from moonray_modo import quit_release
     quit_release.listen(register.watcher)
+
+    class OceanTime(lxifc.SelectionListener):
+        """The timeline moved: the meshes showing a sea drawn again at the new moment (ocean_meshes.redraw; Modo keeps a
+        mesh's drawing until the mesh itself changes)."""
+        def selevent_Time(self,time):
+            try:
+                from moonray_modo import ocean_meshes
+                ocean_meshes.redraw()
+            except Exception:pass
+    register.ocean_time=OceanTime()
+    try:quit_release.listen(register.ocean_time)
+    except Exception as exc:lx.out('MoonRay: seas on meshes will not move with the timeline in the viewport: %s'%exc)
 
     # ---- Scaling a MoonRay light (or a sized MoonRay item) with Modo's scale tool -----------------------------------
     # The renderers follow an item's scale, but its Width and Height (or Radius) kept the numbers typed. Once a scale

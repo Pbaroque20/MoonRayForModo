@@ -224,6 +224,12 @@ def write(item, values):
         pass
     item.setTag(TAG, encoded)
     mark_shader(item, values)
+    # A material whose graph displaces by an Ocean node: the meshes it is on show its sea in the viewport from now on.
+    try:
+        from .ocean_meshes import written
+        written(item, values)
+    except Exception:
+        pass
     from .property_notifications import notify
     notify()
 
