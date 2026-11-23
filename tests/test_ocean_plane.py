@@ -56,6 +56,23 @@ class OceanPlane(unittest.TestCase):
         # The UVs are the world's, a tile (80 m) a unit: the waves stay put as the rings follow the camera.
         self.assertAlmostEqual(uvs[0][0], vertices[faces[0][0]][0] / 80.0)
 
+    def test_quads_alone_for_moonrays_even_tessellation(self):
+        # The centre too, two wedges a quad: MoonRay's even tessellation (realtime's sea) broke a triangle among quads
+        # into walls and shards (the user's dragon, 2026-11-23). Every point of the first ring still in the centre's quads.
+        item = plane(horizon=5000.0, detail=2.0)
+        vertices, faces, uvs = ocean_plane.made(item, scene()['camera']['matrix'], lambda k: entities.value(item, k))
+        self.assertEqual({len(f) for f in faces}, {4})
+        centre = [f for f in faces if f[0] == 0]
+        self.assertEqual(len(centre), ocean_plane.SEGMENTS // 2)
+        self.assertEqual({i for f in centre for i in f[1:]}, set(range(1, ocean_plane.SEGMENTS + 1)))
+        from moonray_modo import rdla
+        self.assertTrue(rdla.quads_alone(faces))
+        self.assertFalse(rdla.quads_alone(faces + [[0, 1, 2]]))
+
+    def test_realtime_dices_a_sea_evenly_only_where_it_is_quads(self):
+        text = (ROOT / 'kit/MoonRayForModo/python/moonray_modo/rdla.py').read_text(encoding='utf-8')
+        self.assertIn("<= OCEAN_TRIANGLES and (subdivision or quads_alone(faces)):", text)
+
     def test_it_becomes_a_mesh_wearing_its_own_sea(self):
         with mock.patch.dict(os.environ, {'MOONRAY_MODO_OCEAN': '1'}):
             result = ocean_plane.apply(scene(plane(wind_speed=14.0)), [])

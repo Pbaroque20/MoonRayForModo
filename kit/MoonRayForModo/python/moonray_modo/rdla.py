@@ -129,6 +129,17 @@ _PARTS = {}
 INSTANCED_SPLITS, INSTANCED_TRIANGLES, INSTANCED_COARSE_SPLITS = 256, 4000000, 32
 
 
+def quads_alone(faces):
+    """Whether every face has four corners. MoonRay's even tessellation (adaptive_error 0) gives a triangle among quads a
+    degenerate edge as many points as the others, and its displacement there came out as walls and shards metres high (an
+    Ocean Plane's centre, before it was made of quads: the user's dragon, 2026-11-23); diced by the screen, the same
+    mesh is whole."""
+    held = rows.counts(faces)
+    if held is not None:
+        return not len(held) or (min(held) == 4 and max(held) == 4)
+    return all(len(face) == 4 for face in faces)
+
+
 def instanced_resolution(mesh, scene, width, held, detail, error):
     """The even mesh_resolution of a displaced instancer's reference: its mean edge, at its nearest placement, cut to
     about error pixels; never under the level's own (held), within INSTANCED_SPLITS and INSTANCED_TRIANGLES."""
@@ -804,12 +815,13 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
             # too short for it reach MoonRay as a normal map (nodes.split_ocean).
             mesh = dict(mesh, mesh_resolution=mesh['ocean_resolution'])
             if scene.get('_dicing_held') and 'instances' not in mesh and wears_ocean(mesh, scene.get('materials'), sea_tags) \
-                    and len(faces) * mesh['ocean_resolution'] ** 2 * 2 <= OCEAN_TRIANGLES:
+                    and len(faces) * mesh['ocean_resolution'] ** 2 * 2 <= OCEAN_TRIANGLES and (subdivision or quads_alone(faces)):
                 # Realtime's sea (wears_ocean, from a dicing camera held through its moves): diced evenly at that
                 # resolution, within the seas' budget. Diced by the screen, it was tessellated anew each time realtime took
                 # a new dicing camera at rest (moonlightipr_detail.rested); evenly, it is the same from every view, and
                 # shaped once while realtime follows the scene. As fine as the screen's dicing comes near the camera,
-                # where it stops at that resolution. Renders dice it by the screen as before.
+                # where it stops at that resolution. Renders dice it by the screen as before. A polygon mesh with triangles
+                # among its quads stays diced by the screen (quads_alone).
                 mesh = dict(mesh, adaptive_error=0.0)
         user_data = cryptomatte.userdata_set(mesh,lines,scene) if crypto else []
         named_uvs=dict(mesh.get('uv_sets',{}))

@@ -67,8 +67,13 @@ def made(entity, camera_matrix, value):
 
     def ring(i, k):
         return 1 + i * SEGMENTS + k % SEGMENTS
-    # The centre's fan, then quads between each ring and the next; each wound to face up.
-    faces = [[0, ring(0, k + 1), ring(0, k)] for k in range(SEGMENTS)]
+    # The centre's fan, two of its wedges a quad (centre, then three points of the first ring), then quads between each
+    # ring and the next; each wound to face up. Quads throughout: MoonRay's even tessellation (realtime's sea, rdla) gives
+    # a triangle among quads a degenerate edge as many points as the others, and the waves on them came out as walls and
+    # shards metres high (the user's dragon over an Ocean Plane, 2026-11-23: "a batch of spikes around the dragon").
+    faces = [[0, ring(0, k + 2), ring(0, k + 1), ring(0, k)] for k in range(0, SEGMENTS - 1, 2)]
+    if SEGMENTS % 2:
+        faces.append([0, ring(0, SEGMENTS), ring(0, SEGMENTS - 1)])
     for i in range(len(radii) - 1):
         faces += [[ring(i, k), ring(i, k + 1), ring(i + 1, k + 1), ring(i + 1, k)] for k in range(SEGMENTS)]
     uvs = [[vertices[v][0] / tile, vertices[v][2] / tile] for face in faces for v in face]
