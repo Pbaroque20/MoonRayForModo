@@ -38,9 +38,11 @@ The current release is [0.5.5.1.2](https://github.com/Pbaroque20/MoonRayForModo/
 
   ![The same street of blocks through a tilt-shift camera at f/1.4: no tilt (left), tilted so the whole ground is sharp (middle), and tilted the other way for the miniature look (right)](docs/images/tilt-shift-camera.jpg)
 
-- **An Ocean Plane's waves in the viewport**: where it was a flat grid, an Ocean Plane now shows its sea in Modo's viewport as points where the water's surface stands, deep blue in the troughs to light blue on the crests, moving with the timeline. They are the long waves the renders make, so the size of the waves, their run with the wind and the swell show before you render. The points gather around the viewport you look through, sparser farther off, and stop at Point Distance (250 m), so a sea to the horizon costs the viewport no more than a pond. Its Viewport settings: Waves in the Viewport, Point Spacing, Point Distance. A plane whose material tag names a Modo material still shows its grid only.
+- **An Ocean Plane's waves in the viewport**: where it was a flat grid, an Ocean Plane now shows its sea in Modo's viewport as points where the water's surface stands, deep blue in the troughs to light blue on the crests, moving with the timeline. They are the long waves the renders make, so the size of the waves, their run with the wind and the swell show before you render. The points gather around the viewport you look through, sparser farther off, and stop at Point Distance (250 m), so a sea to the horizon costs the viewport no more than a pond. Its Viewport settings: Waves in the Viewport, Point Spacing, Point Distance.
 
   ![An Ocean Plane in Modo's viewport, looking through the render camera 6 m above the water: its waves as points, deep blue in the troughs and light blue on the crests](docs/images/ocean-viewport-points.png)
+
+- **Waves on your own planes in the viewport**: a flat mesh wearing a material with an Ocean node shows its waves as the same blue points, over its own shape; so does an Ocean Plane whose material tag names such a material.
 
 - **Rigged meshes no longer slow MoonRay down**: only the weight and colour maps a material reads go to MoonRay, XPU2 and MoonLightIPR, not a rig's hundreds of bone weights.
 - **Modo's own UDIM sets render**: textures laid on through an Image Folder of UDIM tiles, as an FBX import brings them in, now render in MoonRay, XPU2 and MoonLightIPR. They were left out.
