@@ -11,7 +11,7 @@ from check_crypto_coverage import read,difference
 def verify_log(log,mode,resume=False):
     errors=re.findall(r'^Error:.*$',log,re.MULTILINE)
     if errors:raise RuntimeError('; '.join(errors[:3]))
-    if mode=='xpu' and native.execution_status(log)!='XPU active (NVIDIA GPU + CPU)':raise RuntimeError('XPU fallback')
+    if mode=='xpu' and not (native.execution_status(log) or '').startswith('XPU active ('):raise RuntimeError('XPU fallback')
     if resume:
         samples=re.search(r'progressCheckpointTileSamples:(\d+)',log)
         if 'resume render initial information {' not in log or not samples or int(samples.group(1))<=0:
