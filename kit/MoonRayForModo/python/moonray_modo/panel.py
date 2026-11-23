@@ -1606,6 +1606,11 @@ class Panel(Tools, QtWidgets.QWidget):
         model=self.buffer.model();items=model.takeRow(row);model.insertRow(target,items)
         self.buffer.setCurrentIndex(max(0,self.buffer.findData(key)));del blocker
 
+    def _xpu2_realtime(self):
+        """Whether the preview is XPU2's realtime: MoonRay chosen, realtime following the scene, XPU2 rendering it."""
+        from . import native
+        return self._engine()=='moonray' and getattr(self,'_following',False) and native.xpu2()
+
     def _limit_buffers(self):
         """MoonLightIPR makes the beauty and, where it is asked for, a denoised beauty, and the AOVs of its own
         (moonlightipr_aovs): the list then holds those. It shows the beauty unless another is chosen by hand, and choosing
@@ -1626,11 +1631,11 @@ class Panel(Tools, QtWidgets.QWidget):
         # and it is what is shown from the moment it is switched on, the beauty again once it is off. MoonLightIPR does
         # not make it.
         checking=validity and not only
-        # XPU2's realtime: the beauty and the denoised beauty alone, as it renders them; the other buffers are a render's.
-        # PBR validity is the exception: while it is on, realtime renders it beside the beauty (outputs.preview), in
-        # MoonRay XPU's realtime and XPU2's alike.
-        from . import native
-        xpu2_realtime=self._engine()=='moonray' and getattr(self,'_following',False) and native.xpu2()
+        # XPU2's realtime: the beauty alone; the other buffers are a render's. No denoised beauty (the user, 2026-11-22:
+        # "we should remove denoised beauty in realtime XPU2": its first passes, a few samples a pixel, came out of the
+        # denoiser as blotches). PBR validity is the exception: while it is on, realtime renders it beside the beauty
+        # (outputs.preview), in MoonRay XPU's realtime and XPU2's alike.
+        xpu2_realtime=self._xpu2_realtime()
         # The AOVs ticked in Render Settings, each engine's own: XPU and XPU2 Outputs (AOVs), MoonLightIPR Outputs (AOVs).
         # A buffer not ticked is not listed (nor rendered, outputs.rendered); Alpha alone in a new scene.
         from . import moonlightipr_aovs,outputs
@@ -1641,7 +1646,7 @@ class Panel(Tools, QtWidgets.QWidget):
             key=self.buffer.itemData(row)
             denoised=key=='denoised_beauty'
             if checking:hidden=key!='pbr_validity'
-            elif xpu2_realtime:hidden=not denoised or not on
+            elif xpu2_realtime:hidden=True
             else:hidden=(low or (denoised and not on) or (only and not ((denoises and denoised) or key in MOONLIGHTIPR_AOVS))
                          or (not only and key in OWN_KEYS) or (key=='pbr_validity' and not validity)
                          or ((key in MOONLIGHTIPR_AOVS if only else key in options.AOVS) and key not in ticked))
@@ -1656,7 +1661,7 @@ class Panel(Tools, QtWidgets.QWidget):
         if row>0 and self.buffer.view().isRowHidden(row):self.buffer.setCurrentIndex(self.buffer.findData('beauty'))
         if was and self.buffer.currentData()=='pbr_validity':self.buffer.setCurrentIndex(self.buffer.findData('beauty'))
         if not on and self.buffer.currentData()=='denoised_beauty':self.buffer.setCurrentIndex(self.buffer.findData('beauty'))
-        if xpu2_realtime and self.buffer.currentData() not in ('beauty','denoised_beauty'):
+        if xpu2_realtime and self.buffer.currentData()!='beauty':
             self.buffer.setCurrentIndex(self.buffer.findData('beauty'))
             return
         if low:
@@ -2350,7 +2355,9 @@ class Panel(Tools, QtWidgets.QWidget):
             return
         self.renderer.buffers.denoiser.request(engine)
         realtime=self.ipr_mode.isChecked() and self._rt_capable() and self._denoiser_on()
-        self.buffer.setCurrentIndex(self.buffer.findData('beauty' if engine=='off' and not realtime else 'denoised_beauty'))
+        # XPU2's realtime has no denoised beauty (_limit_buffers): the beauty stays.
+        denoised=(engine!='off' or realtime) and not self._xpu2_realtime()
+        self.buffer.setCurrentIndex(self.buffer.findData('denoised_beauty' if denoised else 'beauty'))
 
     # ---- Cryptomatte in the preview ----
     def _crypto_buffer(self):
@@ -3317,7 +3324,8 @@ class Panel(Tools, QtWidgets.QWidget):
             self.renderer.buffers.denoiser.request(engine)
             # The finished picture shown is the beauty: the denoised one is made and is there in the list to choose.
             # Smart Render alone turns to it, unless Beauty was chosen by hand.
-            if engine!='off' and self._smart_on() and self.buffer.currentData()=='beauty' and self._buffer_picked!='beauty':
+            if (engine!='off' and self._smart_on() and self.buffer.currentData()=='beauty' and self._buffer_picked!='beauty' and
+                    not self._xpu2_realtime()):
                 self.buffer.setCurrentIndex(self.buffer.findData('denoised_beauty'))
             snapshot=(self.renderer.active or {}).get('snapshot',{})
             if self._following and self.preferences.get('ipr/refine') and snapshot.get('_ipr') and not snapshot.get('_ipr_refined') and snapshot.get('render_settings',{}).get('max_adaptive_samples',1)<16:

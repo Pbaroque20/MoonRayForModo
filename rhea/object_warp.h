@@ -684,11 +684,27 @@ public:
                 const double nl = std::sqrt(nn.x * nn.x + nn.y * nn.y + nn.z * nn.z);
                 const double facing = dl > 0 && nl > 0 ? std::fabs(nn.x * ray.direction.x + nn.y * ray.direction.y + nn.z * ray.direction.z) / (dl * nl) : 1.0;
                 const double lit = 0.35 + 0.65 * facing;
-                // A material with next to no diffuse colour (glass, water, metal: black in it), clay.
-                double base[3] = {l.albedo.x, l.albedo.y, l.albedo.z};
-                if (0.2126 * base[0] + 0.7152 * base[1] + 0.0722 * base[2] < 0.02) base[0] = base[1] = base[2] = 0.55;
-                o.rgb[0] = float(base[0] * lit + l.emission.x), o.rgb[1] = float(base[1] * lit + l.emission.y),
-                o.rgb[2] = float(base[2] * lit + l.emission.z);
+                const double base[3] = {l.albedo.x, l.albedo.y, l.albedo.z};
+                // A dark material (black paint, glass, water, metal: next to no diffuse colour) keeps its own darkness, its
+                // shape read from the sky reflected at grazing angles (Schlick's Fresnel from a dielectric's 4%): the
+                // store's sky in the mirror direction where it has it, else a pale grey. It was clay grey, which "doesn't
+                // look good" (the user, 2026-11-22, of a black car). Light materials as they were: a floor's far
+                // grazing part kept its own colour, not the sky's.
+                const double lum = 0.2126 * base[0] + 0.7152 * base[1] + 0.0722 * base[2];
+                const double dark = std::clamp((0.3 - lum) / 0.2, 0.0, 1.0);
+                double sheen[3] = {0, 0, 0};
+                if (dark > 0 && dl > 0 && nl > 0) {
+                    const double c = 1.0 - std::min(1.0, facing), c2 = c * c;
+                    const double fresnel = 0.04 + 0.96 * c2 * c2 * c;
+                    const D3 d{ray.direction.x / dl, ray.direction.y / dl, ray.direction.z / dl}, nh{nn.x / nl, nn.y / nl, nn.z / nl};
+                    const double dn = d.x * nh.x + d.y * nh.y + d.z * nh.z;
+                    const D3 mirror{d.x - 2 * dn * nh.x, d.y - 2 * dn * nh.y, d.z - 2 * dn * nh.z};
+                    float sky[3] = {0.6f, 0.6f, 0.62f};
+                    store.skyAt(mirror, sky);
+                    for (int ch = 0; ch < 3; ++ch) sheen[ch] = dark * fresnel * sky[ch];
+                }
+                o.rgb[0] = float(base[0] * lit + sheen[0] + l.emission.x), o.rgb[1] = float(base[1] * lit + sheen[1] + l.emission.y),
+                o.rgb[2] = float(base[2] * lit + sheen[2] + l.emission.z);
                 o.known = true, o.weight = 1.0f, o.conf = 0.0f;
             }
         };
