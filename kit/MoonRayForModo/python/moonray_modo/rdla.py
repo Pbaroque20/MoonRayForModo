@@ -77,6 +77,21 @@ def node_matrix(node):
     return 'blur(%s, %s)' % (first,matrix(node['matrix_close'])) if 'matrix_close' in node else first
 
 
+def camera_delta(scene):
+    """The render camera's place alone as a scene edit (its node_xform, as scene_text writes it): for a drag step that
+    moves only the camera, the edit sent without writing the whole scene again and comparing it with the last (the
+    user, 2026-11-22: "it's not drag fast in modo"; a car's steps wrote its whole text, its meshes' fingerprints, each
+    time). None where a MoonRay camera item renders in the Modo camera's place (entities.render_camera)."""
+    from . import entities
+    try:
+        if entities.render_camera(scene):return None
+    except Exception:return None
+    camera=scene.get('camera') or {}
+    if 'matrix' not in camera:return None
+    orthographic=camera.get('projection','persp')=='ortho'
+    return '%s("/modo/camera") {\n  ["node_xform"] = %s,\n}\n'%('OrthographicCamera' if orthographic else 'PerspectiveCamera',node_matrix(camera))
+
+
 def array(values):
     return '{' + ', '.join(values) + '}'
 

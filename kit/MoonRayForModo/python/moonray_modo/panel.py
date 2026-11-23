@@ -2157,7 +2157,7 @@ class Panel(Tools, QtWidgets.QWidget):
             # followed): the one that may be used again while nothing changes. Kept only from here, so that it is
             # never an older one than the picture on screen was made from.
             # (Without a drag step's mark: the scenes made from it later are not steps.)
-            try:self._kept_capture={key:value for key,value in scene.items() if key!='_xpu2_drag'} if '_xpu2_drag' in scene else scene;self._kept_key=self._capture_key()
+            try:self._kept_capture={key:value for key,value in scene.items() if key not in ('_xpu2_drag','_camera_delta')} if '_xpu2_drag' in scene else scene;self._kept_key=self._capture_key()
             except Exception:self._kept_capture=None
         # A render to files is shown as it comes, over a picture that was being held as well.
         if output:self._held=False
@@ -2741,14 +2741,14 @@ class Panel(Tools, QtWidgets.QWidget):
         self.status.setText(self._drag_notice)
         self._set_notices(getattr(self,'_notices_given',[]))
 
-    def _drag_note(self,held):
+    def _drag_note(self,held,kind='MoonLightIPR'):
         """What following a MoonLightIPR drag came to, said in the Render Log once the mouse is let go (and in
         test-results/drag-report.log where the plugin's source folder is on this machine): how often it was looked at,
         what Modo told of, what was sent, and what made a step wait for the release."""
         import time as clock
         report=getattr(self,'_drag_steps',None)
         if held:
-            if report is None:self._drag_steps={'began':clock.monotonic(),'frames':getattr(self.renderer,'frames_shown',0)}
+            if report is None:self._drag_steps={'began':clock.monotonic(),'frames':getattr(self.renderer,'frames_shown',0)};self._drag_ticks=[];self._drag_kind=kind
             else:report['looked']=report.get('looked',0)+1
             return
         if report is None:return
@@ -2757,10 +2757,16 @@ class Panel(Tools, QtWidgets.QWidget):
         if seconds<0.15:return
         # Looked at fewer than twice a second (16 times a second when Modo lets it): the preview was kept from following
         # the drag, said once Modo has told what was moved (_drag_unfollowed_notice). A drag followed takes the notice away.
-        if seconds>=0.6 and report.get('looked',0)<2*seconds:self._drag_unfollowed=True
-        elif getattr(self,'_drag_notice',None):
-            self._drag_notice=None;self._set_notices(getattr(self,'_notices_given',[]))
-        text='MoonLightIPR drag of %.1f s: %s; %d frames shown during it.'%(seconds,', '.join('%s %d'%(k,v) for k,v in sorted(report.items())) or 'nothing looked at',frames)
+        kind=getattr(self,'_drag_kind','MoonLightIPR')
+        if kind=='MoonLightIPR':
+            if seconds>=0.6 and report.get('looked',0)<2*seconds:self._drag_unfollowed=True
+            elif getattr(self,'_drag_notice',None):
+                self._drag_notice=None;self._set_notices(getattr(self,'_notices_given',[]))
+        text='%s drag of %.1f s: %s; %d frames shown during it.'%(kind,seconds,', '.join('%s %d'%(k,v) for k,v in sorted(report.items())) or 'nothing looked at',frames)
+        # The kit's own work each time it looked at the drag (on Modo's thread, which then rests twice as long: LIVE_REST).
+        ticks=sorted(getattr(self,'_drag_ticks',None) or [])
+        if ticks:text=text[:-1]+'; the kit\'s work a look: median %.0f ms, most %.0f ms.'%(ticks[len(ticks)//2],ticks[-1])
+        self._drag_ticks=[]
         from . import terminal
         terminal.note('Preview',text)
         try:
@@ -2851,7 +2857,7 @@ class Panel(Tools, QtWidgets.QWidget):
             # The camera kept watched between drags (_camera_watch), where drags are followed; else forgotten.
             if (ipr and self._ipr_drags()) or xdrag:self._camera_watch()
             else:self._camera_seen=None
-        self._drag_note(held and ipr)
+        self._drag_note(held and (ipr or xdrag),'MoonLightIPR' if ipr else 'XPU2 RT')
         if held and ipr and not getattr(self,'_drag_frozen',False):
             # The mouse pressed: MoonLightIPR stops sampling where it stands, from then to the release no step of the
             # drag goes further than its first samples (render.DRAG_SAMPLES), nor the picture before its first move.
@@ -2997,12 +3003,16 @@ class Panel(Tools, QtWidgets.QWidget):
                         # Nothing moves: the scene as read once, the same picture, its meshes kept for the next move.
                         self._live_still=still
                         scene=first if first is not None else self._capture()
-            fast=None
+            fast=None;camera_alone=False
             if held and (ipr or xdrag) and reuse in (True,'transforms') and getattr(self,'_kept_capture',None) is not None:
                 # Only where things stand made new in the scene sent last: the camera and meshes a drag moves.
                 from .incremental import move_only
-                fast=move_only(modo.Scene(),self._kept_capture,[identity for identity in items if identity not in polled],
+                others=[identity for identity in items if identity not in polled]
+                fast=move_only(modo.Scene(),self._kept_capture,others,
                                camera_moved=bool(polled),camera_matrix=getattr(self,'_camera_place',None) if polled else None,loose=(self._geometry_cache or {}).get('_loose_items') or ())
+                # The viewport's camera alone moved, nothing else Modo told of: XPU2 RT's step is the camera's place alone
+                # (rdla.camera_delta), the scene not written again.
+                camera_alone=fast is not None and not others and bool(polled)
                 if fast is not None:moved.update(items);self._moves_only=getattr(self,'_moves_only',0)+1;self._drag_count('moves only')
                 else:
                     from .incremental import REFUSED
@@ -3054,7 +3064,12 @@ class Panel(Tools, QtWidgets.QWidget):
                 self._drag_scene=fast
                 # Marked a drag's step (_xpu2_drag): Rhea shows its first phase alone for it, XPU2 waiting for the
                 # release (the user, 2026-11-22: no XPU2 during drags).
-                self._submit(dict(scene,_xpu2_drag=True),digest=('live-drag',object()))
+                step=dict(scene,_xpu2_drag=True)
+                if camera_alone:
+                    from . import rdla
+                    delta=rdla.camera_delta(scene)
+                    if delta:step['_camera_delta']=delta;self._drag_count('camera alone')
+                self._submit(step,digest=('live-drag',object()))
             elif fast is not None:
                 self._drag_count('sent')
                 # Something moved, or Modo would not have told of it: sent without hashing the whole scene again (a
@@ -3085,6 +3100,8 @@ class Panel(Tools, QtWidgets.QWidget):
             # update the thread is left to Modo for twice as long as the update took, so that a drag stays Modo's.
             done=clock.monotonic()
             if done-began>0.004:self._live_rest=done+min(LIVE_REST*(done-began),0.2)
+            # During a drag, the kit's own work for the drag report (_drag_note).
+            if getattr(self,'_drag_steps',None) is not None:self.__dict__.setdefault('_drag_ticks',[]).append(1000.0*(done-began))
 
     def stop(self):
         self._draft_quiet=False

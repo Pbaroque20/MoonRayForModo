@@ -318,7 +318,11 @@ class Session(QtCore.QObject):
         if not request or (self.applied and request['id']==self.applied['id']):return
         prepared=request.get('prepared')
         delta_bytes=(prepared or {}).get('delta_bytes')
-        if prepared is not None and prepared['base'] is self.applied:delta=prepared['delta']
+        # An edit that holds whatever it sets whole (render.py: an XPU2 RT drag's camera alone): sent as it is, whatever
+        # was applied since it was made, and no whole scene written beside it (the session reads that only to load a scene).
+        absolute=bool(prepared and prepared.get('absolute') and self.applied)
+        if absolute:delta=prepared['delta']
+        elif prepared is not None and prepared['base'] is self.applied:delta=prepared['delta']
         else:
             # APPLIED may advance while the writer runs, as it does through a drag of the camera: a delta made against
             # another scene is unsafe. It is made again against the one applied: here where the scene's text is small
@@ -344,8 +348,9 @@ class Session(QtCore.QObject):
             told.finished.connect(lambda told=told:None if self.closed else self.output.emit(
                 'MoonRay session: the whole scene is loaded again: %s\n'%(told.why[0] if told.why else 'its text is the one loaded')))
             self._told=told;told.start()
-        full=self._write_scene(request,'full',request['text'],(prepared or {}).get('full_bytes'))
-        if (prepared or {}).get('binary'):
+        # (An absolute edit: no whole scene written; XPU2's session reads it only for a 'full' command.)
+        full='none' if absolute else self._write_scene(request,'full',request['text'],(prepared or {}).get('full_bytes'))
+        if (prepared or {}).get('binary') and not absolute:
             # Its geometry's binary file, read after the text when MoonRay reloads (rdlb.py).
             binary=self._write_binary(request,prepared['binary'],getattr(self,'xpu2_active',False))
             full='%s|%s'%(full,binary)
