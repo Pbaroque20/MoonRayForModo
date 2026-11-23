@@ -1,6 +1,6 @@
 # Installing MoonRay for Modo
 
-These instructions are for **0.5.5.1.2**, **Modo 16.1v9**, and **Windows x64**. The runtime is MoonRay [2026.29.1](https://github.com/dreamworksanimation/openmoonray/releases/tag/v2026.29.1) (MoonRay 18.4), built for Windows with the plugin's own patches. This is a pre-production release, not a production-certified build.
+These instructions are for **0.5.6**, **Modo 16.1v9**, and **Windows x64**. The runtime is MoonRay [2026.29.1](https://github.com/dreamworksanimation/openmoonray/releases/tag/v2026.29.1) (MoonRay 18.4), built for Windows with the plugin's own patches. This is a pre-production release, not a production-certified build.
 
 ## Requirements
 
@@ -10,12 +10,12 @@ These instructions are for **0.5.5.1.2**, **Modo 16.1v9**, and **Windows x64**. 
 
 ## Download and install
 
-1. Open the [0.5.5.1.2 release](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.5.5.1.2). Download **MoonRayForModo-0.5.5.1.2-kit.zip** and **MoonRayForModo-0.5.5.1.2-windows-runtime.zip** from Assets, and, if you want MoonRay's ten example scenes in the asset library, **MoonRayForModo-0.5.5.1.2-content.zip** (about 300 MB). GitHub's automatic Source code ZIP does not include the runtime.
+1. Open the [0.5.6 release](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.5.6). Download **MoonRayForModo-0.5.6-kit.zip** and **MoonRayForModo-0.5.6-windows-runtime.zip** from Assets, and, if you want MoonRay's ten example scenes in the asset library, **MoonRayForModo-0.5.6-content.zip** (about 300 MB). GitHub's automatic Source code ZIP does not include the runtime.
 2. Save your scene and close all Modo instances.
 3. Extract the ZIPs into the **same temporary folder**. Merge their `MoonRayForModo` folders (the content ZIP adds to `assets/library`). The resulting folder must contain `index.cfg`, `bin/MoonRayGeometry.lx`, `runtime/moonray.exe` and `runtime-xpu2`.
 4. In Windows Explorer, enter `%APPDATA%\Luxology\Kits`. Create the `Kits` folder if needed. If a `MoonRayForModo` folder already exists, move it to a backup location **outside Kits**; do not merge a new release into the old installation.
 5. Copy the combined `MoonRayForModo` folder into `Kits`. Avoid an extra nested folder: `index.cfg` should be directly inside `Kits\MoonRayForModo`.
-6. Start **Modo 16.1v9**. Open **MoonRay > Open Preview** (or enter `moonray.open`). The plugin discovers its bundled `runtime` folder automatically. For XPU2, the default GPU renderer for previews, choose **Compile XPU2 Shaders** once in System > Preferences > MoonRay > XPU2; until then the preview says so instead of rendering, or choose MoonRay XPU on that page.
+6. Start **Modo 16.1v9**. Open **MoonRay > Open Preview** (or enter `moonray.open`). The plugin discovers its bundled `runtime` folder automatically. For XPU2, the default GPU renderer for previews, choose **Compile XPU2 Shaders** once in System > Preferences > MoonRay > XPU2; until then the preview says so instead of rendering, or choose MoonRay XPU on that page. Coming from an earlier release, compile them once more: XPU2's GPU programs changed for XPU2 Rhea.
 7. If upgrading from a development installation, check the runtime path in MoonRay settings. If it still points to an older folder, select `%APPDATA%\Luxology\Kits\MoonRayForModo\runtime`. Use Auto execution for XPU → Vector → Scalar fallback, or choose a CPU mode explicitly.
 
 Do not install the runtime ZIP alone: the kit ZIP contains the Modo integration and geometry adapter. Keep the runtime files, shaders, and licenses together. Do not install or copy the Modo SDK.
@@ -53,7 +53,7 @@ A headless render takes two steps: write the Modo scene as a MoonRay scene, then
 
 ### 1. Write the MoonRay scene
 
-From Modo: **MoonRay > Convert LXO to RDL** (also in the preview window's Options) takes the scene open now (**Add Open Scene**, which offers to save it first), `.lxo` files, or folders of them, and converts them in the background with Modo's command-line engine, a few at a time, while you go on working: RDLA, RDLB or both, one scene per frame if you like. RDLB and RDLA + RDLB are the quickest, their geometry written straight to binary: a heavy car takes 8 s as RDLA + RDLB and 16 s as RDLB, where RDLA, all text, takes about 40 s.
+From Modo: **MoonRay > Convert LXO to RDL** (also in the preview window's Options; new in 0.5.5.1, in the place of Export as MoonRay Scene): it takes the scene open now (**Add Open Scene**, which offers to save it first), `.lxo` files, or folders of them, and converts them in the background with Modo's command-line engine, a few at a time, while you go on working: RDLA, RDLB or both, one scene per frame if you like. RDLB and RDLA + RDLB are the quickest, their geometry written straight to binary: a heavy car takes 8 s as RDLA + RDLB and 16 s as RDLB, where RDLA, all text, takes about 40 s.
 
 ![Convert LXO to RDL: two scenes converted to RDLB, two at once, and what the first wrote](images/convert-lxo-to-rdl.png)
 
@@ -90,7 +90,7 @@ Get-ChildItem 'C:\scenes\shot.*.rdlb' | ForEach-Object { & 'C:\path\MoonRayForMo
 
 `-res` divides the picture's size: `-res 2` renders at half the width and height, a quick test; `-res 0.5` doubles them, four times the pixels and the time. `-res 0.25` renders sixteen times the pixels.
 
-The switches of **MoonRay Source Overrides** (Preferences) are on in `moonray.exe` started by hand, as they are in Modo by default. To turn one off as in your preferences, set its variable to `0` first, for example `$env:MOONRAY_MODO_OPAQUE_ALPHA = '0'`.
+New in 0.5.5.1, the switches of **MoonRay Source Overrides** (Preferences) are on in `moonray.exe` started by hand, as they are in Modo by default. To turn one off as in your preferences, set its variable to `0` first, for example `$env:MOONRAY_MODO_OPAQUE_ALPHA = '0'`.
 
 The runtime finds `shaders/OptixGPUPrograms.ptx` and the shader libraries in the folder that holds `moonray.exe`, so keep the runtime folder whole. The bundled layout needs no environment setup. If `REZ_MOONRAY_ROOT`, `RDL2_DSO_PATH` or `TMPDIR` is already set, it takes precedence; clear it if it points to another installation.
 
