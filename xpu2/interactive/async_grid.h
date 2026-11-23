@@ -104,6 +104,9 @@ struct GridOptions {
     // A share of a uniform frame (Rhizome, RHIZOME.md: a node's chunk): its sample indices [sampleFirst, sampleFirst +
     // sampleCount) of the frame's spp, each pixel's samples the ones a whole frame gives it (0: all of them).
     U32 sampleFirst = 0, sampleCount = 0;
+    // Each tile's samples (the most any of its pixels takes, Plan::pixelSamples; null: the frame's spp in every tile with
+    // pixels): a tile's chunks stop there, so a few pixels with many samples no longer make every tile as deep.
+    const U32* tileSpp = nullptr;
 };
 
 class Grid {
@@ -113,8 +116,9 @@ public:
         Device owner = Device::Cpu;
         ChunkQueue queue;
         std::atomic<U64> samples[2] = {};  // rendered per device, for ownership flips
-        U32 tiles = 0;                     // its tiles with pixels in the frame: the chunks of one sample range
-        float gpu = 0.5f;                  // the GPU's probability of being its efficient owner (device_suit.h)
+        U32 tiles = 0;                     // its tiles with pixels in the frame: the chunks of its first sample range
+        std::vector<U32> rangeStart;       // where each sample range's chunks start in its queue, and its end
+        float gpu = 0.5f;                // the GPU's probability of being its efficient owner (device_suit.h)
         std::atomic<U32> score{0};         // important parts first: what is in it (setScores), a float's bits
         std::atomic<bool> important{false};
     };
@@ -165,11 +169,17 @@ public:
                                                  : ((cx + cy) % 2 == 0 ? Device::Gpu : Device::Cpu);  // GRD-02
                 if (empty) continue;
                 std::vector<Chunk> chunks;
-                for (const Range& range : ranges_)
+                for (const Range& range : ranges_) {
+                    cell.rangeStart.push_back(U32(chunks.size()));
                     for (U32 ty = cy * tilesPerCell; ty < std::min(tilesY, (cy + 1) * tilesPerCell); ++ty)
-                        for (U32 tx = cx * tilesPerCell; tx < std::min(tilesX, (cx + 1) * tilesPerCell); ++tx)
-                            if (tilePixels(ty * tilesX + tx)) chunks.push_back({ty * tilesX + tx, range.first, range.count, index});
-                cell.tiles = ranges_.empty() ? 0 : U32(chunks.size() / ranges_.size());
+                        for (U32 tx = cx * tilesPerCell; tx < std::min(tilesX, (cx + 1) * tilesPerCell); ++tx) {
+                            const U32 t = ty * tilesX + tx;
+                            const U32 need = options.tileSpp ? options.tileSpp[t] : (tilePixels(t) ? spp : 0u);
+                            if (range.first < need) chunks.push_back({t, range.first, std::min(range.count, need - range.first), index});
+                        }
+                }
+                cell.rangeStart.push_back(U32(chunks.size()));
+                cell.tiles = ranges_.empty() ? 0 : cell.rangeStart[1] - cell.rangeStart[0];
                 firstPass_[index].store(cell.tiles, std::memory_order_relaxed);  // the first range's chunks, queued first
                 cell.queue.append(chunks.data(), U32(chunks.size()));
                 total_ += chunks.size();
@@ -376,7 +386,7 @@ private:
         if (ranges_.empty()) return ~0u;
         const U64 lead = scored() && important(index) ? 1 : 0;
         const U64 upTo = std::min<U64>(U64(frontier(device)) + lead + 1, ranges_.size());
-        return U32(std::min<U64>(upTo * cells_[index].tiles, ~0u));
+        return cells_[index].rangeStart[size_t(upTo)];
     }
     // Each device's frontier, from where every cell's queue stands: the least range still to hand out among its own
     // reserved cells and the open ones (where none is left there, among all).
@@ -386,7 +396,8 @@ private:
         for (U32 i = 0; i < cells_.size(); ++i) {
             const Cell& c = cells_[i];
             if (!c.tiles || !c.queue.remaining()) continue;
-            const U32 at = c.queue.taken() / c.tiles;
+            // The range the next chunk belongs to (a range a cell has no chunks in starts where the next one does).
+            const U32 at = U32(std::upper_bound(c.rangeStart.begin(), c.rangeStart.end(), c.queue.taken()) - c.rangeStart.begin()) - 1u;
             const bool open = !reserved(i);
             for (U32 dev = 0; dev < 2; ++dev)
                 if (open || U32(c.owner) == dev) least[dev] = std::min(least[dev], at);

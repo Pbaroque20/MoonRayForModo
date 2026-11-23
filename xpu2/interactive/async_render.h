@@ -55,6 +55,22 @@ struct RenderOptions {
     // Frames by sampling generations (cellular, uniform or adaptive) with a GPU: the CPU lane takes chunks too, by the
     // grid's rights of passage, and its samples join the GPU's errors (Adaptive::merged); false, the GPU takes them all.
     bool generationsCpu = true;
+    // A camera move's frame under Rhea's completion fade (rhea/DESIGN.md 29): the seed (the uniform stage of an adaptive
+    // frame) rendered region by region rather than pass by pass over the picture - regionalBatch[tile] (8-pixel tiles, the
+    // image's tile order; empty: off) the region each tile is in, regions 0 .. regionalCount - 1 in order, each with the
+    // seed's samples in one pass, at most two out at once; the adaptive passes after them as ever. A region is finished
+    // once Renderer::retiredPasses() passes its index.
+    std::vector<std::uint16_t> regionalBatch;
+    U32 regionalCount = 0;
+    // Pictures of whole passes alone (Rhea's completion fade, rhea/DESIGN.md 29): an adaptive frame's pictures are taken
+    // only once every pass sent out has completed (the seed's regions, then each adaptive pass), the next pass held back
+    // until that picture is taken, so that none shows a pass part way (its cells, the devices' squares). The watch is
+    // told which passes each holds (Renderer::picturedPasses). No pictures between them.
+    bool passPictures = false;
+    // A stop (the watch's) returns at once, the GPU's launches out left to finish behind it: the caller wants nothing of a
+    // stopped frame (Rhea: the next camera move's picture comes from the CPU's scene, ahead of the GPU) and drains the lane
+    // before the GPU takes anything new (GpuLane::inFlight, poll). On the user's car the launches out took 0.25 to 1.3 s.
+    bool abandonOnCancel = false;
     // A preview session's watch over the frame (none: the frame runs to its end).
     struct Watch* watch = nullptr;
     // Partial shading: a GPU sample whose fine-detail tile is not resident finishes from the texture's next level up
@@ -146,6 +162,8 @@ struct ResumeState {
 
 
 struct RenderResult {
+    // A stopped frame: how long its stop took, the CPU's workers leaving their chunks and the GPU's launches out finishing.
+    double stopCpuSeconds = 0, stopGpuSeconds = 0;
     std::vector<float> rgba;
     std::vector<U32> counts;  // samples each pixel received
     std::vector<float> odd;   // adaptive frames and aux outputs: odd-index sums over all samples (MoonRay's beauty aux)
@@ -286,6 +304,13 @@ public:
     }
     ~Renderer() { timeEndPeriod(1); }
 
+    // An adaptive frame's passes completed so far (every sample of each in the film), from any thread: a regional
+    // frame's regions are finished as it passes them (RenderOptions::regionalBatch).
+    U32 retiredPasses() const { return retired_.load(std::memory_order_acquire); }
+    // Under RenderOptions::passPictures, the passes the picture being handed to the watch holds, all of each and nothing
+    // of any after them; NotPictured for a picture taken mid-pass. Read inside Watch::previewResult or Watch::preview.
+    static constexpr U32 NotPictured = ~0u;
+    U32 picturedPasses() const { return pictured_.load(std::memory_order_acquire); }
     // An adaptive frame's live tiles, the pass being sampled (cellular frames: its generation's cells). Empty
     // between frames and in uniform frames.
     void liveTiles(std::vector<U32>& tiles) const {
@@ -363,7 +388,8 @@ public:
         // A grid's first frame on both devices: its cells start on the device suited to what they see (device_suit.h).
         const std::vector<Device>* owners = ownership_.owners(cells);
         suit::Seeded seeded;
-        if (!owners && gridOptions.mode == 2) {
+        // Gather tiles (Plan::gather) hold scattered pixels: the indexer's first-hit probe by tile would look at others.
+        if (!owners && gridOptions.mode == 2 && plan_->gather.empty()) {
             seeded = suit::seed(config, *plan_, cpuScene_, gridOptions.cellSize, deviceRatio_);
             if (seeded.owners.size() == cells) {
                 owners = &seeded.owners;
@@ -373,6 +399,20 @@ public:
                 result.seededRatio = seeded.ratio;
                 result.seedSeconds = seeded.seconds;
             }
+        }
+        // Each tile's samples, where pixels have their own counts or the tiles are gathered: its chunks stop there.
+        std::vector<U32> tileSpp;
+        if (!adaptive && (!plan_->pixelSamples.empty() || !plan_->gather.empty())) {
+            const U32 tilesX = (plan_->width + TileSize - 1) / TileSize, tilesY = (plan_->height + TileSize - 1) / TileSize;
+            if (!plan_->gather.empty()) cpu::need(plan_->gather.size() == size_t(tilesX) * tilesY * TilePixels, "Gather tiles");
+            tileSpp.assign(size_t(tilesX) * tilesY, 0u);
+            for (U32 t = 0; t < tileSpp.size(); ++t)
+                for (U32 q = 0; q < TilePixels; ++q) {
+                    const U32 px = chunkPixel(plan_->gather.empty() ? nullptr : plan_->gather.data(), t, q, plan_->width, plan_->height, frameView);
+                    if (px == ~0u) continue;
+                    tileSpp[t] = std::max(tileSpp[t], plan_->pixelSamples.empty() ? plan_->spp : std::min(plan_->spp, plan_->pixelSamples[px]));
+                }
+            gridOptions.tileSpp = tileSpp.data();
         }
         Grid grid(plan_->width, plan_->height, plan_->spp, gridOptions, owners, adaptive, frameView);
         // The indexer's probabilities, kept for the later frames of the same grid.
@@ -409,6 +449,9 @@ public:
         if (useGpu) gpu_->begin(gridOptions.samplesPerChunk, adaptive, partial);
         Adaptive state(*plan_, gridOptions.samplesPerChunk, o.cellular);
         state.cpuSamples = adaptive && useGpu && useCpu;
+        retired_.store(0, std::memory_order_release);
+        if (adaptive && !o.regionalBatch.empty()) state.regional(o.regionalBatch, o.regionalCount);
+        state.onRetired = [this](U32 passes) { retired_.store(passes, std::memory_order_release); };
         state.onGeneration = [this](const std::vector<U32>& tiles) {
             std::lock_guard<std::mutex> lock(activityMutex_);
             live_ = tiles;
@@ -500,7 +543,8 @@ public:
             std::lock_guard<std::mutex> lock(activityMutex_);
             handoff_.reset(plan_->width, plan_->height);
         }
-        cpuLane.begin(config, grid, film, retries, adaptive ? &state.tables : nullptr, partial ? &refines : nullptr, &handoff_);
+        // Realtime: a stop leaves the CPU's chunks part way (a camera move waits for no chunk); renders finish theirs.
+        cpuLane.begin(config, grid, film, retries, adaptive ? &state.tables : nullptr, partial ? &refines : nullptr, &handoff_, plan_->realtime);
         {
             std::lock_guard<std::mutex> lock(activityMutex_);
             activeLane_ = &cpuLane;
@@ -551,6 +595,11 @@ public:
         bool draining = false;
         // Without a watch they are made for important parts first alone.
         const bool shown = watch && watch->preview;
+        // Pictures of whole passes alone (RenderOptions::passPictures): where they are shown, else no pass would wait.
+        state.passPictures = o.passPictures && adaptive && !chainFrame && shown;
+        pictured_.store(NotPictured, std::memory_order_release);
+        bool passPicture = false;  // the picture under way is of whole passes: passesPictured of them
+        U32 passesPictured = 0;
         double nextPreview = shown ? watch->previewSeconds : o.important && !adaptive ? 0.2 : -1;
         std::vector<float> previewRgb;
         std::vector<unsigned char> covered;
@@ -562,10 +611,13 @@ public:
         bool previewOfAov = false;
         auto preview = [&] {
             const bool checkpointDue = nextCheckpoint >= 0 && at() >= nextCheckpoint && !draining;
-            if (previewState == PreviewIdle && !checkpointDue && (nextPreview < 0 || at() < nextPreview)) return;
+            // Pictures of whole passes alone: one as soon as every pass out has completed, none between.
+            const bool passDue = state.passPictures && !draining && state.pictureDue();
+            if (previewState == PreviewIdle && !checkpointDue && !passDue && (state.passPictures || nextPreview < 0 || at() < nextPreview)) return;
             if (previewState == PreviewIdle) {
                 previewOfAov = shown && watch->previewAov && watch->previewResult && watch->previewAov();
                 checkpointNow = checkpointDue;
+                passPicture = passDue, passesPictured = state.retired;
             }
             if (previewState == PreviewIdle && useGpu) {
                 gpu_->downloadPreview(previewOfAov || checkpointNow);
@@ -577,7 +629,12 @@ public:
                 if (useGpu) addCardAovs(film);
                 RenderResult sofar;
                 const U64 seen = snapshotResult(film, sofar, adaptive, useGpu ? gpu_ : nullptr, checkpointNow);
-                if (previewOfAov) watch->previewResult(sofar, std::min(1.0, double(seen) / plannedSamples));
+                if (previewOfAov) {
+                    pictured_.store(passPicture ? passesPictured : NotPictured, std::memory_order_release);
+                    watch->previewResult(sofar, std::min(1.0, double(seen) / plannedSamples));
+                    pictured_.store(NotPictured, std::memory_order_release);
+                    if (passPicture) state.pictured = std::max(state.pictured, passesPictured), passPicture = false;
+                }
                 if (checkpointNow) {
                     watch->checkpoint(std::move(sofar));
                     nextCheckpoint = at() + watch->checkpointSeconds;
@@ -611,7 +668,10 @@ public:
             if (plan_->sampleBudget && plan_->budgetBySamples) fraction = std::min(1.0, double(seen) / double(plan_->sampleBudget));
             else if (plan_->sampleBudget && state.budgetSeconds > 0) fraction = std::min(1.0, state.at() / state.budgetSeconds);
             fillUncovered(previewRgb, covered, plan_->width, plan_->height);
+            pictured_.store(passPicture ? passesPictured : NotPictured, std::memory_order_release);
             watch->preview(previewRgb, plan_->width, plan_->height, fraction);
+            pictured_.store(NotPictured, std::memory_order_release);
+            if (passPicture) state.pictured = std::max(state.pictured, passesPictured), passPicture = false;
             nextPreview = at() + watch->previewSeconds;
         };
 
@@ -1000,15 +1060,17 @@ public:
         }
         // Stopped or drained: no more work is handed out; the workers' chunks in hand and the GPU's queued
         // launches finish (their parked samples are dropped).
+        const double stopBegan = at();
         if (!failure.empty() || cancelled || drained) cpuLane.cancel();
         cpuLane.finish();
         cpuLane.waitParked();  // the frame's grid and film outlive every worker's use
+        result.stopCpuSeconds = at() - stopBegan;
         if (!failure.empty()) {
             result.failed = true;
             result.error = failure;
             return result;
         }
-        if ((cancelled || drained) && useGpu) {
+        if ((cancelled || drained) && useGpu && !(cancelled && o.abandonOnCancel)) {
             Completion c;
             while (gpu_->inFlight())
                 if (!gpu_->poll(c)) std::this_thread::yield();
@@ -1018,6 +1080,7 @@ public:
                     if (!card.lane->poll(c)) std::this_thread::yield();
             }
             if (!cards.empty()) gpu_->use();
+            result.stopGpuSeconds = at() - stopBegan - result.stopCpuSeconds;
         }
         if (cancelled) {
             result.cancelled = true;
@@ -1083,7 +1146,9 @@ public:
                 result.gpuSamples += gc;
                 continue;
             }
-            if (dropsRays ? count > expected : count != expected || (inView && !count)) {
+            // A pixel planned no sample (a per-pixel count of 0, which no plan of XPU2's own makes: the pixel sample map
+            // gives every pixel one at least) may take none: the Bregman engine's probe frames (bregman/DESIGN.md).
+            if (dropsRays ? count > expected : count != expected || (inView && !count && expected)) {
                 result.failed = true;
                 result.error = "Sample audit failure at pixel " + std::to_string(i) + ": " + std::to_string(count);
                 return result;
@@ -1284,6 +1349,20 @@ private:
         adaptive::Cellular cells;
         // Each generated pass's live tiles (cellular frames: the cells; trees: the tiles with samples).
         std::function<void(const std::vector<U32>&)> onGeneration;
+        // The passes completed so far, as they complete (Renderer::retiredPasses).
+        std::function<void(U32)> onRetired;
+        // A regional seed (RenderOptions::regionalBatch): each tile's region, and how many regions lead the passes.
+        std::vector<std::uint16_t> regionalBatch;
+        U32 regionalCount = 0;
+        // Pictures of whole passes (RenderOptions::passPictures): an adaptive pass goes out only once the picture of every
+        // pass before it has been taken; pictured: the passes the last such picture held.
+        bool passPictures = false;
+        U32 pictured = 0;
+        // Every pass sent out completed, none after them out, and no picture of them yet: one is due.
+        bool pictureDue() const {
+            return passPictures && retired == generated && retired > pictured && retired >= std::max(1u, regionalCount) &&
+                   (retired >= passes.size() || !uniformStage(retired));
+        }
         // The same pass in numbers, for the log (Watch::generationLog): its index, its samples, its live tiles and
         // the samples generated in all, so far.
         std::function<void(U32 generation, U64 samples, size_t live, double spent)> onGenerationLog;
@@ -1356,6 +1435,21 @@ private:
         bool complete(U32 pass, GpuLane* gpu) const { return done(pass, gpu) == expected[pass]; }
 
         bool uniformStage(U32 j) const { return passes[j].start < plan.minSamples; }
+        // The seed region by region (RenderOptions::regionalBatch): the uniform stage's passes become one pass a region,
+        // each the whole seed (its samples [0, the first adaptive pass's start)) over that region's tiles alone.
+        void regional(const std::vector<std::uint16_t>& batch, U32 count) {
+            if (!plan.adaptive || batch.size() != tiles || count == 0 || passes.empty()) return;
+            size_t k = 0;
+            while (k < passes.size() && uniformStage(U32(k))) ++k;
+            if (k == 0) return;
+            const U32 seedEnd = k < passes.size() ? passes[k].start : passes.back().end;
+            if (count + (passes.size() - k) > MaxPasses) return;
+            std::vector<adaptive::Pass> regional(count, adaptive::Pass{0, seedEnd});
+            regional.insert(regional.end(), passes.begin() + std::ptrdiff_t(k), passes.end());
+            passes.swap(regional);
+            regionalBatch = batch;
+            regionalCount = count;
+        }
         // A frame by sampling generations ends once uniform's time is up (at most twice uniform's samples).
         bool budgetSpent() const {
             if (!plan.sampleBudget) return false;
@@ -1406,7 +1500,8 @@ private:
             if (hold) return false;  // a resumable checkpoint waits for the generations out to finish
             // Realtime: the seed's passes one at a time, each over the whole picture before the next (gone out together,
             // a GPU worker finished its cell's four passes while the next cells waited).
-            if (plan.realtime && uniformStage(j) && j > retired) return false;
+            if (plan.realtime && uniformStage(j) && j > retired + (j < regionalCount ? 1u : 0u)) return false;
+            if (passPictures && j < passes.size() && !uniformStage(j) && j > pictured) return false;  // its picture first
             return j < passes.size() && j < retired + PassSlots && (uniformStage(j) || (!stop && !budgetSpent() && evaluated == j));
         }
         // One pass at a time, so the feeder launches each as soon as it exists.
@@ -1447,8 +1542,10 @@ private:
             }
             for (U32 tile = 0; tile < tiles; ++tile) {
                 std::uint64_t active = inImage[tile];
+                // A regional seed's pass: its region's tiles alone.
+                if (j < regionalCount) active = regionalBatch[tile] == j ? active : 0;
                 // Realtime's first two passes (above): a pixel in each 2x2, then the rest.
-                if (sparseStart(plan) && j < 2) {
+                else if (sparseStart(plan) && j < 2) {
                     constexpr std::uint64_t sparse = 0x0055005500550055ull;  // even rows' even columns
                     active &= j == 0 ? sparse : ~sparse;
                 }
@@ -1551,6 +1648,7 @@ private:
                 return;
             }
             while (retired < generated && complete(retired, gpu)) trace[retired++].completed = at();
+            if (onRetired) onRetired(retired);
             priceBudget();
             const bool needTrees = !stop && generated < passes.size() && !uniformStage(generated) && evaluated < generated;
             if (needTrees && gpu) {
@@ -1786,6 +1884,8 @@ private:
     const CpuLane* activeLane_ = nullptr;
     std::deque<std::vector<U32>> gpuFlights_;
     std::vector<U32> live_;  // liveTiles()
+    std::atomic<U32> retired_{0};  // retiredPasses()
+    std::atomic<U32> pictured_{NotPictured};  // picturedPasses()
     U32 cellSize_ = 64;
     HandoffTiles handoff_;  // handoff(): where the GPU's deferred and provisional samples wait
 };

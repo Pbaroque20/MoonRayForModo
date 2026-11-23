@@ -1523,7 +1523,14 @@ class Panel(Tools, QtWidgets.QWidget):
         # XPU2 renders the preview: how it samples it (xpu2_sampling), not MoonRay's Uniform or Adaptive.
         from . import xpu2_sampling
         if engine=='moonray' and xpu2_sampling.active():
-            try:return xpu2_sampling.words(self._settings_values(),realtime=bool(getattr(self,'_following',False)))
+            # XPU2 RT with Rhea: Rhea's own words (its store, learning, in the status line: native.execution_status), not
+            # XPU2's sampling (the user, 2026-11-22: the indicator "would replace the XPU2 render status, like its sampling").
+            from . import native
+            realtime=bool(getattr(self,'_following',False))
+            if realtime and native.xpu2_rt_engine()=='rhea':
+                said=str(getattr(self.renderer,'backend_status','') or '')
+                return said if said.startswith('Rhea') else 'Rhea'
+            try:return xpu2_sampling.words(self._settings_values(),realtime=realtime)
             except Exception:pass
         return ('LS ' if engine=='ls' else '')+('Adaptive %d-%d ps'%(settings['min_adaptive_samples'],settings['max_adaptive_samples'])
                                                if settings['sampling_mode']==2 else 'Uniform %d ps'%pixel_samples)
@@ -1606,6 +1613,11 @@ class Panel(Tools, QtWidgets.QWidget):
         model=self.buffer.model();items=model.takeRow(row);model.insertRow(target,items)
         self.buffer.setCurrentIndex(max(0,self.buffer.findData(key)));del blocker
 
+    def _xpu2_realtime(self):
+        """Whether the preview is XPU2's realtime: MoonRay chosen, realtime following the scene, XPU2 rendering it."""
+        from . import native
+        return self._engine()=='moonray' and getattr(self,'_following',False) and native.xpu2()
+
     def _limit_buffers(self):
         """MoonLightIPR makes the beauty and, where it is asked for, a denoised beauty, and the AOVs of its own
         (moonlightipr_aovs): the list then holds those. It shows the beauty unless another is chosen by hand, and choosing
@@ -1626,11 +1638,11 @@ class Panel(Tools, QtWidgets.QWidget):
         # and it is what is shown from the moment it is switched on, the beauty again once it is off. MoonLightIPR does
         # not make it.
         checking=validity and not only
-        # XPU2's realtime: the beauty and the denoised beauty alone, as it renders them; the other buffers are a render's.
-        # PBR validity is the exception: while it is on, realtime renders it beside the beauty (outputs.preview), in
-        # MoonRay XPU's realtime and XPU2's alike.
-        from . import native
-        xpu2_realtime=self._engine()=='moonray' and getattr(self,'_following',False) and native.xpu2()
+        # XPU2's realtime: the beauty alone; the other buffers are a render's. No denoised beauty (the user, 2026-11-22:
+        # "we should remove denoised beauty in realtime XPU2": its first passes, a few samples a pixel, came out of the
+        # denoiser as blotches). PBR validity is the exception: while it is on, realtime renders it beside the beauty
+        # (outputs.preview), in MoonRay XPU's realtime and XPU2's alike.
+        xpu2_realtime=self._xpu2_realtime()
         # The AOVs ticked in Render Settings, each engine's own: XPU and XPU2 Outputs (AOVs), MoonLightIPR Outputs (AOVs).
         # A buffer not ticked is not listed (nor rendered, outputs.rendered); Alpha alone in a new scene.
         from . import moonlightipr_aovs,outputs
@@ -1641,7 +1653,7 @@ class Panel(Tools, QtWidgets.QWidget):
             key=self.buffer.itemData(row)
             denoised=key=='denoised_beauty'
             if checking:hidden=key!='pbr_validity'
-            elif xpu2_realtime:hidden=not denoised or not on
+            elif xpu2_realtime:hidden=True
             else:hidden=(low or (denoised and not on) or (only and not ((denoises and denoised) or key in MOONLIGHTIPR_AOVS))
                          or (not only and key in OWN_KEYS) or (key=='pbr_validity' and not validity)
                          or ((key in MOONLIGHTIPR_AOVS if only else key in options.AOVS) and key not in ticked))
@@ -1656,7 +1668,7 @@ class Panel(Tools, QtWidgets.QWidget):
         if row>0 and self.buffer.view().isRowHidden(row):self.buffer.setCurrentIndex(self.buffer.findData('beauty'))
         if was and self.buffer.currentData()=='pbr_validity':self.buffer.setCurrentIndex(self.buffer.findData('beauty'))
         if not on and self.buffer.currentData()=='denoised_beauty':self.buffer.setCurrentIndex(self.buffer.findData('beauty'))
-        if xpu2_realtime and self.buffer.currentData() not in ('beauty','denoised_beauty'):
+        if xpu2_realtime and self.buffer.currentData()!='beauty':
             self.buffer.setCurrentIndex(self.buffer.findData('beauty'))
             return
         if low:
@@ -1918,6 +1930,17 @@ class Panel(Tools, QtWidgets.QWidget):
         drags, opt-in); off, a drag is rendered once the mouse is let go."""
         return bool(self.preferences.get('moonlightipr/follow_drags'))
 
+    def _xpu2_drags(self):
+        """Whether XPU2 RT follows a drag of the viewport's camera step by step (Preview preferences, XPU2 RT follows
+        drags, opt-in): realtime with MoonRay's engine where XPU2 renders it. Each step is rendered as it comes, Rhea's
+        persistent probes carrying from one to the next; nothing is held at a first sample as MoonLightIPR holds it."""
+        if not self.preferences.get('xpu2/follow_drags'):return False
+        if self.preview_engine.currentData()!='moonray' or not self.ipr_mode.isChecked():return False
+        try:
+            from . import native
+            return bool(native.xpu2())
+        except Exception:return False
+
     def _moonlightipr_blur(self):
         """Whether MoonLightIPR shows motion blur: where the scene asks for it (_motion_wanted)."""
         return self._motion_wanted()
@@ -2133,7 +2156,8 @@ class Panel(Tools, QtWidgets.QWidget):
             # The newest reading of the scene, whichever way it was come by (a render asked for, or an edit
             # followed): the one that may be used again while nothing changes. Kept only from here, so that it is
             # never an older one than the picture on screen was made from.
-            try:self._kept_capture=scene;self._kept_key=self._capture_key()
+            # (Without a drag step's mark: the scenes made from it later are not steps.)
+            try:self._kept_capture={key:value for key,value in scene.items() if key not in ('_xpu2_drag','_camera_delta')} if '_xpu2_drag' in scene else scene;self._kept_key=self._capture_key()
             except Exception:self._kept_capture=None
         # A render to files is shown as it comes, over a picture that was being held as well.
         if output:self._held=False
@@ -2338,7 +2362,9 @@ class Panel(Tools, QtWidgets.QWidget):
             return
         self.renderer.buffers.denoiser.request(engine)
         realtime=self.ipr_mode.isChecked() and self._rt_capable() and self._denoiser_on()
-        self.buffer.setCurrentIndex(self.buffer.findData('beauty' if engine=='off' and not realtime else 'denoised_beauty'))
+        # XPU2's realtime has no denoised beauty (_limit_buffers): the beauty stays.
+        denoised=(engine!='off' or realtime) and not self._xpu2_realtime()
+        self.buffer.setCurrentIndex(self.buffer.findData('denoised_beauty' if denoised else 'beauty'))
 
     # ---- Cryptomatte in the preview ----
     def _crypto_buffer(self):
@@ -2715,14 +2741,17 @@ class Panel(Tools, QtWidgets.QWidget):
         self.status.setText(self._drag_notice)
         self._set_notices(getattr(self,'_notices_given',[]))
 
-    def _drag_note(self,held):
+    def _drag_note(self,held,kind='MoonLightIPR'):
         """What following a MoonLightIPR drag came to, said in the Render Log once the mouse is let go (and in
         test-results/drag-report.log where the plugin's source folder is on this machine): how often it was looked at,
         what Modo told of, what was sent, and what made a step wait for the release."""
         import time as clock
         report=getattr(self,'_drag_steps',None)
         if held:
-            if report is None:self._drag_steps={'began':clock.monotonic(),'frames':getattr(self.renderer,'frames_shown',0)}
+            if report is None:
+                self._drag_steps={'began':clock.monotonic(),'frames':getattr(self.renderer,'frames_shown',0)};self._drag_ticks=[];self._drag_kind=kind
+                from . import drag_timing
+                drag_timing.begin()
             else:report['looked']=report.get('looked',0)+1
             return
         if report is None:return
@@ -2731,10 +2760,20 @@ class Panel(Tools, QtWidgets.QWidget):
         if seconds<0.15:return
         # Looked at fewer than twice a second (16 times a second when Modo lets it): the preview was kept from following
         # the drag, said once Modo has told what was moved (_drag_unfollowed_notice). A drag followed takes the notice away.
-        if seconds>=0.6 and report.get('looked',0)<2*seconds:self._drag_unfollowed=True
-        elif getattr(self,'_drag_notice',None):
-            self._drag_notice=None;self._set_notices(getattr(self,'_notices_given',[]))
-        text='MoonLightIPR drag of %.1f s: %s; %d frames shown during it.'%(seconds,', '.join('%s %d'%(k,v) for k,v in sorted(report.items())) or 'nothing looked at',frames)
+        kind=getattr(self,'_drag_kind','MoonLightIPR')
+        if kind=='MoonLightIPR':
+            if seconds>=0.6 and report.get('looked',0)<2*seconds:self._drag_unfollowed=True
+            elif getattr(self,'_drag_notice',None):
+                self._drag_notice=None;self._set_notices(getattr(self,'_notices_given',[]))
+        text='%s drag of %.1f s: %s; %d frames shown during it.'%(kind,seconds,', '.join('%s %d'%(k,v) for k,v in sorted(report.items())) or 'nothing looked at',frames)
+        # The kit's own work each time it looked at the drag (on Modo's thread, which then rests twice as long: LIVE_REST).
+        ticks=sorted(getattr(self,'_drag_ticks',None) or [])
+        if ticks:text=text[:-1]+'; the kit\'s work a look: median %.0f ms, most %.0f ms.'%(ticks[len(ticks)//2],ticks[-1])
+        self._drag_ticks=[]
+        # Where that work went, part by part, and each picture's way to the screen (drag_timing).
+        from . import drag_timing
+        parts=drag_timing.end()
+        if parts:text=text[:-1]+'. Timings: '+parts+'.'
         from . import terminal
         terminal.note('Preview',text)
         try:
@@ -2815,14 +2854,17 @@ class Panel(Tools, QtWidgets.QWidget):
         # scene's meshes are kept and packed away from Modo's thread; anything else dragged is rendered once the mouse is
         # let go (below). Up to 0.5.3.1 every drag waited for the release: following one held Modo up more than it showed.
         ipr=self._engine()=='moonlightipr'
+        # XPU2 RT with Follow drags (_xpu2_drags): the viewport's camera is looked at during a drag as MoonLightIPR's is,
+        # and each step sent as a move of the camera alone.
+        xdrag=not ipr and self._xpu2_drags()
         if held and ipr and not self._ipr_drags():
             # Drags not followed (Follow drags off, the default): what Modo tells of waits for the release.
             self.release_timer.start();return
-        if not (held and ipr):
+        if not (held and (ipr or xdrag)):
             # The camera kept watched between drags (_camera_watch), where drags are followed; else forgotten.
-            if ipr and self._ipr_drags():self._camera_watch()
+            if (ipr and self._ipr_drags()) or xdrag:self._camera_watch()
             else:self._camera_seen=None
-        self._drag_note(held and ipr)
+        self._drag_note(held and (ipr or xdrag),'MoonLightIPR' if ipr else 'XPU2 RT')
         if held and ipr and not getattr(self,'_drag_frozen',False):
             # The mouse pressed: MoonLightIPR stops sampling where it stands, from then to the release no step of the
             # drag goes further than its first samples (render.DRAG_SAMPLES), nor the picture before its first move.
@@ -2847,7 +2889,10 @@ class Panel(Tools, QtWidgets.QWidget):
             full,items=self.changes.consume();time=lx.service.Selection().GetTime()
             # The camera looked through, moved by navigating a viewport that looks through it: Modo tells of that only
             # once the mouse is let go, so where it stands is looked at while MoonLightIPR follows a drag.
-            polled=self._camera_moved() if held and ipr and not full else set()
+            from . import drag_timing
+            looked=drag_timing.now()
+            polled=self._camera_moved() if held and (ipr or xdrag) and not full else set()
+            if held:drag_timing.add('look',drag_timing.now()-looked)
             items|=polled
             # A drag the preview was kept from following, said now that Modo has told what it moved (_drag_note).
             if not held and getattr(self,'_drag_unfollowed',False):
@@ -2968,16 +3013,40 @@ class Panel(Tools, QtWidgets.QWidget):
                         # Nothing moves: the scene as read once, the same picture, its meshes kept for the next move.
                         self._live_still=still
                         scene=first if first is not None else self._capture()
-            fast=None
-            if held and ipr and reuse in (True,'transforms') and getattr(self,'_kept_capture',None) is not None:
+            fast=None;camera_alone=False
+            stepping=drag_timing.now()
+            if held and (ipr or xdrag) and reuse in (True,'transforms') and getattr(self,'_kept_capture',None) is not None:
                 # Only where things stand made new in the scene sent last: the camera and meshes a drag moves.
                 from .incremental import move_only
-                fast=move_only(modo.Scene(),self._kept_capture,[identity for identity in items if identity not in polled],
+                others=[identity for identity in items if identity not in polled]
+                fast=move_only(modo.Scene(),self._kept_capture,others,
                                camera_moved=bool(polled),camera_matrix=getattr(self,'_camera_place',None) if polled else None,loose=(self._geometry_cache or {}).get('_loose_items') or ())
+                # The viewport's camera alone moved, nothing else Modo told of: XPU2 RT's step is the camera's place alone
+                # (rdla.camera_delta), the scene not written again.
+                camera_alone=fast is not None and not others and bool(polled)
                 if fast is not None:moved.update(items);self._moves_only=getattr(self,'_moves_only',0)+1;self._drag_count('moves only')
                 else:
                     from .incremental import REFUSED
                     self._drag_count('read the usual way: '+(REFUSED[0] if REFUSED else '?'))
+            # The release of an XPU2 RT drag whose steps went as moves alone (_drag_scene): itself a move alone, the scene
+            # not read again (the user, 2026-11-22: "scene complexity should not be recomputed after first load, since
+            # it's a reprojection"): where things now stand made new in the scene its last step sent, the camera where Modo
+            # put it at the release. Anything else edited meanwhile, a blurred preview, or move_only refusing: read the
+            # usual way, as before.
+            release_move=False
+            # Not where an Ocean Plane is in the scene: its rings are made around the camera at each reading of the scene
+            # (ocean_plane.apply) and a move alone keeps them where the drag began; read the usual way, they are made again
+            # where the camera now stands (the user's dragon over an Ocean Plane, 2026-11-22: past a turn round it, the
+            # sea in front of the view was the far rings, its waves "a batch of spikes around the dragon").
+            ocean_plane=any(mesh.get('_ocean_plane') for mesh in ((getattr(self,'_kept_capture',None) or {}).get('meshes') or []))
+            if (fast is None and not held and xdrag and not blurred and not full and not changed and reuse in (True,'transforms') and items
+                    and not ocean_plane and getattr(self,'_drag_scene',None) is not None and getattr(self,'_kept_capture',None) is not None):
+                from .incremental import move_only
+                fast=move_only(modo.Scene(),self._kept_capture,list(items),loose=(self._geometry_cache or {}).get('_loose_items') or ())
+                if fast is not None:release_move=True;moved.update(items);self._drag_count('released as a move alone')
+                else:
+                    from .incremental import REFUSED
+                    self._drag_count('released, read the usual way: '+(REFUSED[0] if REFUSED else '?'))
             if fast is not None:scene=fast
             elif not blurred:
                 scene = self._capture(reuse,items if reuse=='transforms' else None)
@@ -2999,6 +3068,27 @@ class Panel(Tools, QtWidgets.QWidget):
                 self._live_digest_pending=True
                 self.release_timer.start()
                 self._submit(scene,digest=('live-drag',object()))
+            elif release_move:
+                # The release, unmarked: XPU2's frame follows Rhea's phase one (the session's rheaDragStep is off for it).
+                self._drag_count('sent at the release')
+                self._drag_scene=None
+                self._submit(scene,digest=('live-drag',object()))
+            elif fast is not None and xdrag:
+                # XPU2 RT: a step of the drag rendered as it comes (Rhea's frames), not held at a first sample; the drag's
+                # end is read the usual way once the mouse is let go (its moved items, below).
+                self._drag_count('sent')
+                self._drag_scene=fast
+                # Marked a drag's step (_xpu2_drag): Rhea shows its first phase alone for it, XPU2 waiting for the
+                # release (the user, 2026-11-22: no XPU2 during drags).
+                step=dict(scene,_xpu2_drag=True)
+                if camera_alone:
+                    from . import rdla
+                    delta=rdla.camera_delta(scene)
+                    if delta:step['_camera_delta']=delta;self._drag_count('camera alone')
+                drag_timing.add('step',drag_timing.now()-stepping)
+                sending=drag_timing.now()
+                self._submit(step,digest=('live-drag',object()))
+                drag_timing.add('send',drag_timing.now()-sending)
             elif fast is not None:
                 self._drag_count('sent')
                 # Something moved, or Modo would not have told of it: sent without hashing the whole scene again (a
@@ -3029,6 +3119,8 @@ class Panel(Tools, QtWidgets.QWidget):
             # update the thread is left to Modo for twice as long as the update took, so that a drag stays Modo's.
             done=clock.monotonic()
             if done-began>0.004:self._live_rest=done+min(LIVE_REST*(done-began),0.2)
+            # During a drag, the kit's own work for the drag report (_drag_note).
+            if getattr(self,'_drag_steps',None) is not None:self.__dict__.setdefault('_drag_ticks',[]).append(1000.0*(done-began))
 
     def stop(self):
         self._draft_quiet=False
@@ -3155,6 +3247,14 @@ class Panel(Tools, QtWidgets.QWidget):
         # Something new shown: the render is not held up (_watch_room).
         import time
         self._shown_at=time.monotonic()
+        from . import drag_timing
+        drawing=drag_timing.now()
+        try:
+            self._image_shown(path)
+        finally:
+            drag_timing.add('draw',drag_timing.now()-drawing)
+
+    def _image_shown(self, path):
         try:
             if self._held:return
             if self.draft.isChecked():
@@ -3294,7 +3394,8 @@ class Panel(Tools, QtWidgets.QWidget):
             self.renderer.buffers.denoiser.request(engine)
             # The finished picture shown is the beauty: the denoised one is made and is there in the list to choose.
             # Smart Render alone turns to it, unless Beauty was chosen by hand.
-            if engine!='off' and self._smart_on() and self.buffer.currentData()=='beauty' and self._buffer_picked!='beauty':
+            if (engine!='off' and self._smart_on() and self.buffer.currentData()=='beauty' and self._buffer_picked!='beauty' and
+                    not self._xpu2_realtime()):
                 self.buffer.setCurrentIndex(self.buffer.findData('denoised_beauty'))
             snapshot=(self.renderer.active or {}).get('snapshot',{})
             if self._following and self.preferences.get('ipr/refine') and snapshot.get('_ipr') and not snapshot.get('_ipr_refined') and snapshot.get('render_settings',{}).get('max_adaptive_samples',1)<16:
@@ -3315,6 +3416,13 @@ class Panel(Tools, QtWidgets.QWidget):
         # At rest: the meshes cut anew, once, where the view came far enough from the camera held through its moves
         # (moonlightipr_detail.rested); MoonLightIPR's coarse cut made fine besides.
         moved=not scene.get('dicing_camera') and rested(scene.get('camera') or {},scene.get('meshes',[]),60.0 if self._engine()=='moonray' else None)
+        if moved and self._engine()=='moonray':
+            # MoonRay's realtime cuts anew only where its last scene diced a mesh by the screen (rdla.LAST_CUT_BY_VIEW). A
+            # sea is diced evenly from the held camera, the same from every view: a reload for it alone had XPU2 prepare the
+            # whole scene and its ocean again after a drag, and Rhea's picture start over (the user, 2026-11-22: "make sure
+            # that Rhea computes the ocean shader once, not several times, similar to moonlightIPR realtime").
+            from . import rdla
+            moved=rdla.LAST_CUT_BY_VIEW
         refinable=self._engine()=='moonlightipr' and moonlightipr_scene.LAST_REFINABLE
         if not (moved or refinable):return
         self._detail_fine=True;self._detail_recut=moved

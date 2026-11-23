@@ -172,16 +172,18 @@ class Session(QtCore.QObject):
         held for the whole session, its cause passed or not, until a preference changed."""
         if getattr(self,'xpu2_refused',None):self._retry_xpu2=True
 
-    def submit(self,text,runtime,threads,mode,generation,bucket_size=0,prepared=None,important=False,moonray_mode=None):
+    def submit(self,text,runtime,threads,mode,generation,bucket_size=0,prepared=None,important=False,moonray_mode=None,drag=False):
         """moonray_mode: the mode MoonRay starts in where XPU2 does not render the scene (left to MoonRay, or not chosen),
-        in place of mode: scalar for a scene that XPU2 draws rightly and this build of MoonRay only in scalar (a cookie)."""
+        in place of mode: scalar for a scene that XPU2 draws rightly and this build of MoonRay only in scalar (a cookie).
+        drag: a step of a drag XPU2 RT follows, told XPU2 as such (the command's fifth line): Rhea's first phase alone, XPU2
+        waiting for the release."""
         self.idle.cancel()
         # Whether the render takes the tiles with the most in them first: read by MoonRay as each render begins.
         try:
             staged=self.root/'important.tmp';staged.write_text('1' if important else '0',encoding='ascii');staged.replace(self.root/'important.txt')
         except (OSError,AttributeError):pass
         request=dict(text=text,runtime=Path(runtime),threads=threads,mode=mode,id=generation,bucket_size=bucket_size,prepared=prepared,
-                     again=(prepared or {}).get('again'),moonray_mode=moonray_mode)
+                     again=(prepared or {}).get('again'),moonray_mode=moonray_mode,drag=bool(drag))
         # A change of the toon preference is read by MoonRay only as it starts: it starts again.
         # An animation asking for XPU2 by name (output_xpu2) where MoonRay XPU renders the preview, or the preview after
         # it, starts it again with the other; where XPU2 renders the preview, nothing changes.
@@ -194,7 +196,11 @@ class Session(QtCore.QObject):
             self.stopping=True;self.process.kill();return
         if self.stopping:return
         if not self.running():self._launch()
-        elif self.sent is None:self._dispatch()
+        elif self.sent is None:
+            from . import drag_timing
+            sending=drag_timing.now()
+            self._dispatch()
+            drag_timing.add('dispatch',drag_timing.now()-sending)
 
     def _write_scene(self,request,suffix,text,payload=None):
         if self.scene_memory:
@@ -316,7 +322,11 @@ class Session(QtCore.QObject):
         if not request or (self.applied and request['id']==self.applied['id']):return
         prepared=request.get('prepared')
         delta_bytes=(prepared or {}).get('delta_bytes')
-        if prepared is not None and prepared['base'] is self.applied:delta=prepared['delta']
+        # An edit that holds whatever it sets whole (render.py: an XPU2 RT drag's camera alone): sent as it is, whatever
+        # was applied since it was made, and no whole scene written beside it (the session reads that only to load a scene).
+        absolute=bool(prepared and prepared.get('absolute') and self.applied)
+        if absolute:delta=prepared['delta']
+        elif prepared is not None and prepared['base'] is self.applied:delta=prepared['delta']
         else:
             # APPLIED may advance while the writer runs, as it does through a drag of the camera: a delta made against
             # another scene is unsafe. It is made again against the one applied: here where the scene's text is small
@@ -342,8 +352,9 @@ class Session(QtCore.QObject):
             told.finished.connect(lambda told=told:None if self.closed else self.output.emit(
                 'MoonRay session: the whole scene is loaded again: %s\n'%(told.why[0] if told.why else 'its text is the one loaded')))
             self._told=told;told.start()
-        full=self._write_scene(request,'full',request['text'],(prepared or {}).get('full_bytes'))
-        if (prepared or {}).get('binary'):
+        # (An absolute edit: no whole scene written; XPU2's session reads it only for a 'full' command.)
+        full='none' if absolute else self._write_scene(request,'full',request['text'],(prepared or {}).get('full_bytes'))
+        if (prepared or {}).get('binary') and not absolute:
             # Its geometry's binary file, read after the text when MoonRay reloads (rdlb.py).
             binary=self._write_binary(request,prepared['binary'],getattr(self,'xpu2_active',False))
             full='%s|%s'%(full,binary)
@@ -351,6 +362,8 @@ class Session(QtCore.QObject):
         mode='delta' if delta is not None else 'full'
         staged=self.root/'command.tmp'
         command='%d\n%s\n%s\n%s\n'%(request['id'],mode,str(path).replace('\\','/') if not self.scene_memory else str(path),str(full).replace('\\','/') if not self.scene_memory else str(full))
+        # A drag's step XPU2 follows: a fifth line XPU2's session reads (MoonRay's reads four lines; it is never sent there).
+        if request.get('drag') and getattr(self,'xpu2_active',False) and mode=='delta':command+='drag\n'
         if self.command_channel:self.command_channel.send(command)
         else:
             staged.write_text(command,encoding='utf-8');staged.replace(self.root/'command.txt')
@@ -367,7 +380,10 @@ class Session(QtCore.QObject):
             if line.startswith('@@MODO_SHARED '):
                 try:
                     from .shared_image import receive
+                    from . import drag_timing
+                    reading=drag_timing.now()
                     packet=receive(line,self.process.processId())
+                    drag_timing.add('read',drag_timing.now()-reading)
                     if not self.stopping and not self.closed and self.latest and packet[0]==self.latest['id']:self.memory_image.emit(packet)
                 except (ValueError,OSError) as exc:
                     # A frame already taken back (shared_image.Withdrawn) is passed over without a word: newer ones follow.

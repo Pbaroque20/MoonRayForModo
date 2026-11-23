@@ -8,6 +8,8 @@ The current release is [0.5.5.1.2](https://github.com/Pbaroque20/MoonRayForModo/
 
 ## In the next release (0.5.6)
 
+- **XPU2 RT keeps up with the camera**: realtime under XPU2 now draws a camera move at once with Rhea, from what XPU2 has already rendered of the scene, and XPU2's own picture fades in over it as it renders. With XPU2 RT follows drags on (Preview Preferences, off by default), every step of a drag shows a picture too. XPU2 RT engine (Rhea or XPU2) chooses; XPU2 RT shows Beauty only. Compile XPU2 Shaders once more after installing.
+- **XPU2 previews start sooner**: XPU2 keeps Modo's subdivision surfaces from one preview to the next rather than cutting them again, and loads its GPU programs while it prepares the scene.
 - **Oceans are shaped once in realtime**: XPU2's and MoonLightIPR's realtime no longer work a sea out again at every camera move or edit (XPU2 rebuilt it several times a minute, even with nothing touched). In MoonLightIPR a sea keeps the detail cut for the view where realtime came on: switch RT off and on to cut it anew after flying far across it.
 - **Clean alpha edges in After Effects and Nuke**: a render saved as OpenEXR with alpha no longer keeps the visible sky in its soft edges, which showed as a light halo, plainest over black. Read the file as Premultiplied; the sky is still in it, as its Environment background layer. MoonRay, XPU2 and MoonLightIPR renders alike, and OpenEXRs saved from the preview window. Switch: MoonRay Source Overrides, Premultiplied OpenEXR alpha (on).
 

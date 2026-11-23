@@ -31,6 +31,17 @@ struct Config {path::Epoch epoch;surface::Camera camera;surface::V3 sky;U32 widt
     int viewport[4]={0,0,0x7fffffff,0x7fffffff};float textureDiffScale=1;
     // The camera's pixel sample map (RenderDriver::computeTotalNumSamples): each pixel's own sample count, or none.
     const U32* pixelSamples=nullptr;
+    // Gather tiles (Plan::gather): a tile's 64 pixels listed, or none (the image's own tiles).
+    const U32* gather=nullptr;
+    // A depth limit per pixel (Plan::fullSamples): each pixel's samples that are full paths; those past it stop at the
+    // first hit (max_depth 0, the direct light alone). None: every sample a full path.
+    const U32* fullSamples=nullptr;
+    // Each pixel's first sample in its sequence (Plan::sampleBase): a frame's samples continue those its pixel had
+    // before (Rhea's frames at rest); none, every frame's samples from the first.
+    const U32* sampleBase=nullptr;
+    // Textures read only from what the card holds (Plan::residentTextures, Rhea's frames): no fine-detail tile asked
+    // for, a missing one read from the nearest level up the card has, as the sample's own (not provisional).
+    U32 residentTextures=0;
     // Motion blur (enable_motion_blur): each sample at a time in the shutter (0 open, 1 close), bent by the camera's
     // mb_shutter_bias as Sampler::getPrimarySample bends it.
     U32 motionBlur=0;float shutterBias=0;
@@ -41,7 +52,17 @@ struct Config {path::Epoch epoch;surface::Camera camera;surface::V3 sky;U32 widt
     U32 modoSwitches=0;
     // Bounce-ray reuse (async_integrator.h): the ray visibility bits (rdl2 VisibilityType) of the bounces whose rays
     // meet exactly the occluders a shadow ray meets, every mesh visible to both or to neither; 0: no reuse.
-    U32 shadowReuse=0;};
+    U32 shadowReuse=0;
+    // The Bregman engine's phase 2 (bregman/DESIGN.md), off in XPU2's own frames. frameCache: phase 1's radiance over
+    // the camera frame, four floats a pixel (its rgb, and the visible surface's inverse depth there, 0 where phase 1 is
+    // not trusted). A bounce that lands on that visible surface ends there, taking it, with probability
+    // 1 - cacheContinue; else it goes on carrying 1 / cacheContinue and adds -C (1 - p) / p: unbiased whatever the
+    // cache holds. cacheToCamera (3x4 rows) and cacheRaster (o.x, o.y, o.z, ex.x, ex.y, ey.x, ey.y, the determinant) lift
+    // a point onto the frame (bregman/bvd.h's Frame).
+    const float* frameCache=nullptr;float cacheToCamera[12]={};float cacheRaster[8]={};float cacheContinue=1.0f,cacheDepthTolerance=0.02f;
+    // OpenQMC (built with XPU2_OPENQMC): vertices past the first, nonMirrorDepth in [1, qmcDepth), draw their light and
+    // BSDF samples' directions from OpenQMC's Owen-scrambled Sobol sampler; 0, or a build without it: Philox as before.
+    U32 qmcDepth=0;};
 struct Job {path::Epoch epoch{};U64 sequence=0;U32 count=0,first=0,samples=0,fault=0;U64 delay=0;U32 pixels[Capacity]{};};
 struct Pixel {double sum[4]{};U32 count=0,status=0,pixel=0,pad=0;};
 struct Result {path::Epoch epoch{};U64 sequence=0;U32 count=0,pad=0;Pixel pixels[Capacity]{};};

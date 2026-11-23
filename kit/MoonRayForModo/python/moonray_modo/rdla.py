@@ -11,6 +11,10 @@ from itertools import chain
 # Whether the last realtime preview's scene had a mesh cut coarser than at rest (moonlightipr_detail): the preview
 # window then sends it again with fine detail once it is left alone.
 LAST_REFINABLE = False
+# Whether the last realtime preview's scene (cut from a held dicing camera, _dicing_held) diced any mesh by the screen
+# (an adaptive error): only then does a view at rest far from that camera need its meshes cut anew (panel._refine_detail).
+# A sea is diced evenly from the held camera, the same from every view.
+LAST_CUT_BY_VIEW = False
 
 IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
 
@@ -73,6 +77,21 @@ def node_matrix(node):
     return 'blur(%s, %s)' % (first,matrix(node['matrix_close'])) if 'matrix_close' in node else first
 
 
+def camera_delta(scene):
+    """The render camera's place alone as a scene edit (its node_xform, as scene_text writes it): for a drag step that
+    moves only the camera, the edit sent without writing the whole scene again and comparing it with the last (the
+    user, 2026-11-22: "it's not drag fast in modo"; a car's steps wrote its whole text, its meshes' fingerprints, each
+    time). None where a MoonRay camera item renders in the Modo camera's place (entities.render_camera)."""
+    from . import entities
+    try:
+        if entities.render_camera(scene):return None
+    except Exception:return None
+    camera=scene.get('camera') or {}
+    if 'matrix' not in camera:return None
+    orthographic=camera.get('projection','persp')=='ortho'
+    return '%s("/modo/camera") {\n  ["node_xform"] = %s,\n}\n'%('OrthographicCamera' if orthographic else 'PerspectiveCamera',node_matrix(camera))
+
+
 def array(values):
     return '{' + ', '.join(values) + '}'
 
@@ -108,6 +127,17 @@ _PARTS = {}
 # An instancer's displaced reference: at most this many splits of a face's edge, and this many triangles in all (shared
 # by every placement); a moving realtime preview at most the coarse splits.
 INSTANCED_SPLITS, INSTANCED_TRIANGLES, INSTANCED_COARSE_SPLITS = 256, 4000000, 32
+
+
+def quads_alone(faces):
+    """Whether every face has four corners. MoonRay's even tessellation (adaptive_error 0) gives a triangle among quads a
+    degenerate edge as many points as the others, and its displacement there came out as walls and shards metres high (an
+    Ocean Plane's centre, before it was made of quads: the user's dragon, 2026-11-23); diced by the screen, the same
+    mesh is whole."""
+    held = rows.counts(faces)
+    if held is not None:
+        return not len(held) or (min(held) == 4 and max(held) == 4)
+    return all(len(face) == 4 for face in faces)
 
 
 def instanced_resolution(mesh, scene, width, held, detail, error):
@@ -700,6 +730,7 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
     # (instanced_resolution); any other instancer as before, at its level's.
     from .ocean import ocean_tags, wears_ocean, OCEAN_TRIANGLES
     sea_tags = ocean_tags(scene.get('materials'))
+    by_view = False  # a mesh diced by the screen (LAST_CUT_BY_VIEW)
     for index, mesh in enumerate(render_meshes):
         cut = cuts.get(id(mesh))
         if cut and cut.get('simplify'):
@@ -784,12 +815,13 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
             # too short for it reach MoonRay as a normal map (nodes.split_ocean).
             mesh = dict(mesh, mesh_resolution=mesh['ocean_resolution'])
             if scene.get('_dicing_held') and 'instances' not in mesh and wears_ocean(mesh, scene.get('materials'), sea_tags) \
-                    and len(faces) * mesh['ocean_resolution'] ** 2 * 2 <= OCEAN_TRIANGLES:
+                    and len(faces) * mesh['ocean_resolution'] ** 2 * 2 <= OCEAN_TRIANGLES and (subdivision or quads_alone(faces)):
                 # Realtime's sea (wears_ocean, from a dicing camera held through its moves): diced evenly at that
                 # resolution, within the seas' budget. Diced by the screen, it was tessellated anew each time realtime took
                 # a new dicing camera at rest (moonlightipr_detail.rested); evenly, it is the same from every view, and
                 # shaped once while realtime follows the scene. As fine as the screen's dicing comes near the camera,
-                # where it stops at that resolution. Renders dice it by the screen as before.
+                # where it stops at that resolution. Renders dice it by the screen as before. A polygon mesh with triangles
+                # among its quads stays diced by the screen (quads_alone).
                 mesh = dict(mesh, adaptive_error=0.0)
         user_data = cryptomatte.userdata_set(mesh,lines,scene) if crypto else []
         named_uvs=dict(mesh.get('uv_sets',{}))
@@ -847,6 +879,8 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
             # the 64 XPU2 takes, and the whole scene went to MoonRay XPU.
             mesh = dict(mesh, mesh_resolution=instanced_resolution(mesh, scene, width, 2 ** level, detail,
                         held_render['displacement_adaptive_error'] or float(scene.get('displacement_rate', 1.0))))
+        if (subdivision or displaced) and mesh.get('adaptive_error'):
+            by_view = True
         lines += ['do', '  local geometry = RdlMeshGeometry("/modo/mesh/%s") {' % index,
                   '    ["node_xform"] = %s,' % node_matrix(mesh),
                   *_heavy_line('/modo/mesh/%s' % index, 'vertex_list_0', 'vec3', vertices, lambda: vector_array(vertices)),
@@ -956,6 +990,9 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
         else:
             lines.append('  table.insert(geometries, geometry)')
         lines.append('end')
+    if scene.get('_dicing_held'):
+        global LAST_CUT_BY_VIEW
+        LAST_CUT_BY_VIEW = by_view
     from .extra_geometry import emit as emit_extra
     emit_extra(scene,materials,lines,crypto)
     entities.emit_geometry(scene,materials,lines,crypto)
@@ -1148,6 +1185,8 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
                   '  ["file_name"] = %s,' % string(path), *kept(path), '  ["channel_format"] = 0,', '  ["compression"] = 1,']
         for attr,value in attributes.items(): lines.append('  [%s] = %s,' % (string(attr),(value if isinstance(value,outputs.Raw) else string(value)) if isinstance(value,str) else ('true' if value else 'false') if isinstance(value,bool) else number(value)))
         lines.append('}')
+    if scene.get('_rhea_outputs') and not output_file:
+        lines += rhea_lines(scene['_rhea_outputs'])
     # XPU2's sampling generations: its render settings in a preview or a render to files it makes, as a UserData that XPU2
     # reads (cpu_scene.h: 1, on, samples, spend exactly, noise target, first generation, most samples, CPU workers,
     # realtime: the preview following the scene with RT on, panel.py) and MoonRay leaves alone.
@@ -1203,3 +1242,24 @@ def shared_locals(lines):
                 names.append(found.group(2))
             lines[index] = found.group(1) + found.group(2) + found.group(3)
     return (['local ' + ', '.join(names)] if names else []) + lines
+
+
+# XPU2 RT (Rhea)'s outputs (rhea/rhea_realtime.h): the light emitted and the direct light at the first hit (light path
+# expressions), the first hit's albedo, and the nearest and farthest first-hit depths among a pixel's samples (the state
+# variable depth, math filters min and max), which verify its probes. In one file of their own, written at a realtime
+# frame's end as every output is.
+RHEA_OUTPUTS = (('rhea_emission', {'result': 8, 'lpe': 'C[<L.>O]'}),
+                ('rhea_direct', {'result': 8, 'lpe': 'C[DGS][<L.>O]'}),
+                ('rhea_albedo', {'result': 7, 'material_aov': 'albedo'}),
+                ('rhea_depth_min', {'result': 3, 'state_variable': 11, 'math_filter': 2}),
+                ('rhea_depth_max', {'result': 3, 'state_variable': 11, 'math_filter': 3}))
+
+
+def rhea_lines(path):
+    lines = []
+    for name, attributes in RHEA_OUTPUTS:
+        lines += ['RenderOutput(%s) {' % string('/' + name), '  ["file_name"] = %s,' % string(str(path)),
+                  '  ["channel_name"] = %s,' % string(name), '  ["channel_format"] = 0,', '  ["compression"] = 1,']
+        lines += ['  [%s] = %s,' % (string(k), string(v) if isinstance(v, str) else number(v)) for k, v in attributes.items()]
+        lines.append('}')
+    return lines
