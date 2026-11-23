@@ -3034,8 +3034,13 @@ class Panel(Tools, QtWidgets.QWidget):
             # put it at the release. Anything else edited meanwhile, a blurred preview, or move_only refusing: read the
             # usual way, as before.
             release_move=False
+            # Not where an Ocean Plane is in the scene: its rings are made around the camera at each reading of the scene
+            # (ocean_plane.apply) and a move alone keeps them where the drag began; read the usual way, they are made again
+            # where the camera now stands (the user's dragon over an Ocean Plane, 2026-11-22: past a turn round it, the
+            # sea in front of the view was the far rings, its waves "a batch of spikes around the dragon").
+            ocean_plane=any(mesh.get('_ocean_plane') for mesh in ((getattr(self,'_kept_capture',None) or {}).get('meshes') or []))
             if (fast is None and not held and xdrag and not blurred and not full and not changed and reuse in (True,'transforms') and items
-                    and getattr(self,'_drag_scene',None) is not None and getattr(self,'_kept_capture',None) is not None):
+                    and not ocean_plane and getattr(self,'_drag_scene',None) is not None and getattr(self,'_kept_capture',None) is not None):
                 from .incremental import move_only
                 fast=move_only(modo.Scene(),self._kept_capture,list(items),loose=(self._geometry_cache or {}).get('_loose_items') or ())
                 if fast is not None:release_move=True;moved.update(items);self._drag_count('released as a move alone')

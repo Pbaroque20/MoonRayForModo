@@ -139,6 +139,9 @@ class Drags(unittest.TestCase):
         # XPU2's frame follows. Anything else edited (full, changed settings, a blurred preview) reads it the usual way.
         text = (SOURCE / 'panel.py').read_text(encoding='utf-8')
         self.assertIn("if (fast is None and not held and xdrag and not blurred and not full and not changed and reuse in (True,'transforms') and items", text)
+        # Not with an Ocean Plane: its rings are made around the camera only by a reading of the scene.
+        self.assertIn("and not ocean_plane and getattr(self,'_drag_scene',None) is not None", text)
+        self.assertIn("ocean_plane=any(mesh.get('_ocean_plane') for mesh in", text)
         self.assertIn("if fast is not None:release_move=True;moved.update(items);self._drag_count('released as a move alone')", text)
         self.assertIn("elif release_move:", text)
         release = text.split('elif release_move:', 1)[1].split('elif fast is not None and xdrag:', 1)[0]
