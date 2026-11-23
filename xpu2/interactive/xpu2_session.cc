@@ -2516,6 +2516,24 @@ int session(const Args& args, const fs::path& directory) {
     // XPU2_SESSION_RHEA_DRAG_ALONE=0: XPU2's frame after each step as before. XPU2_SESSION_RHEA_DRAG_WAIT: the longest a step
     // holds XPU2 back (5 s): the mouse held still that long is a camera at rest, and XPU2's frame begins.
     const bool rheaDragAlone = envOn("XPU2_SESSION_RHEA_DRAG_ALONE", true);
+    // A drag's view the store hardly knows (the user, 2026-11-22: "when the user spins the camera towards behind the object,
+    // Rhea should detect when it gets blotchy and immediately accumulate the cache"): past this share of phase one's rays
+    // unknown to the store, the step does not wait for the next with the card idle: XPU2's frame begins at once, its least
+    // known regions first, and the store learns from its samples (Realtime::learn) until the next step stops it.
+    // XPU2_SESSION_RHEA_FILL_UNKNOWN (0.3; 1: never).
+    const double rheaFillUnknown = [] {
+        const char* v = std::getenv("XPU2_SESSION_RHEA_FILL_UNKNOWN");
+        return v ? std::clamp(std::atof(v), 0.0, 1.0) : 0.3;
+    }();
+    bool rheaFilling = false;  // this frame: a drag's step filling the store
+    double rheaKnown = 0;      // the share of the last phase one's rays the store knew
+    // Rhea's state for the kit's status line (native.execution_status, in place of XPU2's): how much of the view the store
+    // knew, and whether XPU2 is teaching it now. "@@MODO_XPU2 RHEA <known percent> <learning 0|1>".
+    auto rheaStatus = [&](double known, bool learning) {
+        char line[64];
+        std::snprintf(line, sizeof line, "@@MODO_XPU2 RHEA %d %d", int(std::lround(std::clamp(known, 0.0, 1.0) * 100.0)), learning ? 1 : 0);
+        modoProtocolLine(line);
+    };
     const double rheaDragWait = [] {
         const char* v = std::getenv("XPU2_SESSION_RHEA_DRAG_WAIT");
         return v ? std::max(0.0, std::atof(v)) : 5.0;
@@ -2713,7 +2731,12 @@ int session(const Args& args, const fs::path& directory) {
                 // on the user's car, and more to make after it. The card's camera alone follows (cheap), and the step is
                 // held here until the next command, the next step or the release (the renderer made then), or for
                 // rheaDragWait: past it, the frame goes on to XPU2's.
-                if (rheaEarlyDone && rheaDragStep && rheaDragAlone) {
+                rheaFilling = false;
+                if (rheaEarlyDone && rheaView.objectDrawn) rheaKnown = 1.0 - rheaView.objectWarp.unknown;
+                // A view the store hardly knows: XPU2's frame at once, the store learning from it (rheaFillUnknown).
+                if (rheaEarlyDone && rheaDragStep && rheaView.objectDrawn && rheaView.objectWarp.unknown > rheaFillUnknown) rheaFilling = true;
+                if (rheaEarlyDone) rheaStatus(rheaKnown, rheaFilling);
+                if (rheaEarlyDone && rheaDragStep && rheaDragAlone && !rheaFilling) {
                     if (gpu && gpuUsable && gpuPlan != scene.plan && scene.cameraFrom && gpuPlan == scene.cameraFrom) {
                         gpu->updateCamera(scene.plan);
                         gpuPlan = scene.plan;
@@ -3374,6 +3397,7 @@ int session(const Args& args, const fs::path& directory) {
                     if (const char* v = std::getenv("XPU2_SESSION_RHEA_RAYS")) rheaView.op.objectRays = size_t(std::max(1000.0, std::atof(v)));
                     if (const char* v = std::getenv("XPU2_SESSION_RHEA_RINGS")) rheaView.op.objectRings = unsigned(std::max(1, std::atoi(v)));
                     if (const char* v = std::getenv("XPU2_SESSION_RHEA_LOOKUP_UP")) rheaView.op.objectLookupUp = std::max(-1, std::atoi(v));
+                    rheaView.op.learnRaw = envOn("XPU2_SESSION_RHEA_LEARN_RAW", true);
                     if (const char* v = std::getenv("XPU2_SESSION_RHEA_STORE_SCALE")) rheaView.op.storeScale = std::max(0.5, std::atof(v));
                     if (const char* v = std::getenv("XPU2_SESSION_RHEA_GRAZING")) rheaView.op.storeGrazing = std::max(1.0, std::atof(v));
                     // The user's composite (2026-11-22): light and albedo apart in the store, the albedo finer.
@@ -3489,6 +3513,8 @@ int session(const Args& args, const fs::path& directory) {
                         const double took = std::chrono::duration<double>(Clock::now() - warpBegan).count();
                         if (rheaView.objectDrawn) {
                             const rhea::ObjectWarp& ow = rheaView.objectWarp;
+                            rheaKnown = 1.0 - ow.unknown;
+                            rheaStatus(rheaKnown, false);
                             std::printf("MoonRay XPU2: Rhea: %s from the surfaces' colours in %.3f s (first picture %.3f s, %u pictures%s; %zu rays, "
                                         "%zu of them at edges, every %u pixels%s, %zu on the graphics card in %.1f ms; %.0f%% of rays unknown to the store, "
                                         "%zu cells in it; coarse rays %.1f ms, "
@@ -3519,8 +3545,9 @@ int session(const Args& args, const fs::path& directory) {
                         // next step or the release (the user, 2026-11-22: no XPU2 during drags), the card left to phase one's
                         // first hits. Held XPU2_SESSION_RHEA_DRAG_WAIT seconds at most (5): the mouse held still that long is a
                         // camera at rest, and XPU2's frame begins.
-                        const bool dragAlone = warpedNow && rheaDragStep && !probesOn && rheaDragAlone;
-                        if (dragAlone || (warpedNow && rheaView.op.dragHold > 0 && (dragging || sinceLastMove < 0.15))) {
+                        // (Not where the store is filling: XPU2's frame begins at once, rheaFillUnknown.)
+                        const bool dragAlone = warpedNow && rheaDragStep && !probesOn && rheaDragAlone && !rheaFilling;
+                        if (dragAlone || (!rheaFilling && warpedNow && rheaView.op.dragHold > 0 && (dragging || sinceLastMove < 0.15))) {
                             const double holdFor = dragAlone ? rheaDragWait : rheaView.op.dragHold;
                             const auto held = Clock::now();
                             while (std::chrono::duration<double>(Clock::now() - held).count() < holdFor) {
@@ -3615,10 +3642,12 @@ int session(const Args& args, const fs::path& directory) {
                     const bool completion = warpOnly && envOn("XPU2_SESSION_RHEA_COMPLETION", true);
                     double fadeSeconds = 0.2;
                     if (const char* v = std::getenv("XPU2_SESSION_RHEA_FADE_SECONDS")) fadeSeconds = std::max(0.0, std::atof(v));
-                    // The fade once XPU2's whole grid is in (every region's seed: the user, 2026-11-22, "the fade in should
-                    // know when XPU2's grid has been fully loaded so the fade is seamless"), the picture all at once; 0, each
-                    // region as it finishes, feathered.
-                    const bool fadeWhole = envOn("XPU2_SESSION_RHEA_FADE_WHOLE", true);
+                    // Each region as it finishes, feathered, blended with phase one by the head start (Realtime::headStart):
+                    // the user, 2026-11-22, "the fade in should be smarter, filling in batches of areas instead of waiting
+                    // for the buckets to refine" (the car's whole seed took 29 s). XPU2_SESSION_RHEA_FADE_WHOLE=1: the fade
+                    // once XPU2's whole grid is in, the picture all at once (earlier: "the fade in should know when XPU2's
+                    // grid has been fully loaded so the fade is seamless", when the regions came in raw and noisy).
+                    const bool fadeWhole = envOn("XPU2_SESSION_RHEA_FADE_WHOLE", false);
                     struct Fade {
                         std::vector<std::uint16_t> tileBatch;  // each 8-pixel tile's region
                         unsigned regions = 0, tilesX = 0, tilesY = 0;
@@ -3754,8 +3783,27 @@ int session(const Args& args, const fs::path& directory) {
                     std::atomic<int> fadeState{FadeIdle};
                     std::atomic<bool> fadeQuit{false};
                     std::mutex fadeMutex;
-                    std::shared_ptr<const async::RenderResult> fadeNext;  // the next picture to fade to (fadeMutex)
-                    std::shared_ptr<const async::RenderResult> fadeBase;  // the picture the last fade ended on (null: the warp)
+                    // A picture to fade to: shown (with the head start, Realtime::headStart), and XPU2's own (raw), which the
+                    // store learns from (the same where no head start): phase one's colours never fed back into it.
+                    struct FadePicture {
+                        std::shared_ptr<const async::RenderResult> shown, raw;
+                    };
+                    FadePicture fadeNext;                                     // the next picture to fade to (fadeMutex)
+                    std::shared_ptr<const async::RenderResult> fadeBase;     // the picture the last fade ended on (null: the warp)
+                    std::shared_ptr<const async::RenderResult> fadeBaseRaw;  // and its XPU2's own
+                    // XPU2_SESSION_RHEA_HEAD_START: phase one's colour counted as so many samples (8; 0: no head start).
+                    if (const char* v = std::getenv("XPU2_SESSION_RHEA_HEAD_START")) rheaView.op.headStart = std::max(0.0, std::atof(v));
+                    unsigned headStarted = 0;  // pictures shown with the head start this frame
+                    auto withHeadStart = [&](const async::RenderResult& r, bool last) {
+                        FadePicture p;
+                        p.raw = std::make_shared<const async::RenderResult>(r);
+                        p.shown = p.raw;
+                        if (!last) {
+                            auto h = std::make_shared<async::RenderResult>();
+                            if (rheaView.headStart(r, *h)) p.shown = std::move(h), ++headStarted;
+                        }
+                        return p;
+                    };
                     std::thread fadeThread;
                     U32 shownPasses = 0;  // the passes of the last picture handed to the fades
                     unsigned fades = 0;   // the fades this frame
@@ -3795,7 +3843,8 @@ int session(const Args& args, const fs::path& directory) {
                         });
                     };
                     // One fade, from the picture the last ended on (or the warp) to top, over fadeSeconds.
-                    auto fadeTo = [&](const async::RenderResult& top) {
+                    auto fadeTo = [&](const FadePicture& picture) {
+                        const async::RenderResult& top = *picture.shown;
                         const double began = fadeNow();
                         const std::vector<float> ones(size_t(width) * height, 1.0f);
                         // The picture it ends on, raw: kept for the next fade and the next move's warp.
@@ -3845,7 +3894,18 @@ int session(const Args& args, const fs::path& directory) {
                         }
                         if (shownA >= 1) {
                             auto kept = std::make_shared<const async::RenderResult>(end);
-                            rheaView.published(std::move(end), endCoverage);
+                            if (picture.raw != picture.shown) {
+                                // The store's source: XPU2's own picture as it would have ended the fade.
+                                async::RenderResult endRaw;
+                                double rawCoverage = 1.0;
+                                if (fadeBaseRaw) crossFade(*fadeBaseRaw, *picture.raw, 1.0f, endRaw);
+                                else rawCoverage = rheaView.completeWarp(*picture.raw, ones, endRaw);
+                                fadeBaseRaw = std::make_shared<const async::RenderResult>(endRaw);
+                                rheaView.published(std::move(endRaw), rawCoverage);
+                            } else {
+                                fadeBaseRaw = kept;
+                                rheaView.published(std::move(end), endCoverage);
+                            }
                             fadeBase = std::move(kept);
                             return;
                         }
@@ -3859,20 +3919,21 @@ int session(const Args& args, const fs::path& directory) {
                     // The fades' thread: each picture handed to it faded to in turn, the newest where several came meanwhile.
                     auto runFades = [&] {
                         for (;;) {
-                            std::shared_ptr<const async::RenderResult> top;
+                            FadePicture top;
                             {
                                 std::lock_guard<std::mutex> lock(fadeMutex);
-                                if (!fadeNext || fadeQuit) {
+                                if (!fadeNext.shown || fadeQuit) {
                                     fadeState = FadeDone;
                                     return;
                                 }
                                 top = std::move(fadeNext);
+                                fadeNext = FadePicture{};
                             }
-                            fadeTo(*top);
+                            fadeTo(top);
                         }
                     };
                     // A picture to fade to: to the fades' thread, started where it is not running.
-                    auto handToFades = [&](std::shared_ptr<const async::RenderResult> top) {
+                    auto handToFades = [&](FadePicture top) {
                         std::lock_guard<std::mutex> lock(fadeMutex);
                         fadeNext = std::move(top);
                         if (fadeState.load() == FadeRunning) return;
@@ -3880,22 +3941,44 @@ int session(const Args& args, const fs::path& directory) {
                         fadeState = FadeRunning;
                         fadeThread = std::thread(runFades);
                     };
+                    // The store learns from XPU2's samples as they come (Realtime::learn): at each pass's end, twice a second
+                    // meanwhile, and as the frame ends or stops (below).
+                    U32 learnedPasses = 0;
+                    auto lastLearn = Clock::now();
+                    size_t learnedPixels = 0;
+                    rheaView.learnBegin();
                     rest.previewResult = [&](const async::RenderResult& sofar, double fraction) {
                         lastFraction = fraction;
+                        if (rheaView.op.learnRaw) {
+                            const U32 retired = renderer->retiredPasses();
+                            if (retired > learnedPasses || std::chrono::duration<double>(Clock::now() - lastLearn).count() > 0.5) {
+                                learnedPasses = retired, lastLearn = Clock::now();
+                                learnedPixels += rheaView.learn(*scene.plan, sofar);
+                            }
+                        }
                         if (passMode) {
                             // Only pictures of whole passes, the seed's first (every region of it in): XPU2's grid whole.
                             const U32 passes = renderer->picturedPasses();
                             if (passes == async::Renderer::NotPictured || passes < fade.regions || passes <= shownPasses) return;
                             shownPasses = passes;
                             if (!fades++) std::fill(fade.doneAt.begin(), fade.doneAt.end(), fadeNow());
-                            handToFades(std::make_shared<const async::RenderResult>(sofar));
+                            handToFades(withHeadStart(sofar, false));
                             return;
                         }
-                        async::RenderResult merged;
+                        async::RenderResult merged, source;
+                        bool started = false;   // merged has the head start; source is the same picture without it
                         double coverage = 1.0;  // the share of pixels XPU2's samples reached (a picture mostly a warp is no source)
                         if (completion && fade.regions) {
                             fadeAlpha(false);
-                            coverage = rheaView.completeWarp(sofar, fade.alpha, merged);  // the share wholly XPU2's
+                            // The regions finished, with phase one's head start; the store's source without it.
+                            async::RenderResult withStart;
+                            started = rheaView.headStart(sofar, withStart);
+                            if (started) {
+                                ++headStarted;
+                                rheaView.completeWarp(withStart, fade.alpha, merged);
+                                coverage = rheaView.completeWarp(sofar, fade.alpha, source);
+                            } else
+                                coverage = rheaView.completeWarp(sofar, fade.alpha, merged);  // the share wholly XPU2's
                         } else if (warpOnly) coverage = rheaView.mergeWarp(sofar, fraction, merged);
                         else rheaView.merge(sofar, fraction, merged);
                         struct Kept {
@@ -3903,7 +3986,7 @@ int session(const Args& args, const fs::path& directory) {
                             async::RenderResult& from;
                             double coverage;
                             ~Kept() { view.published(std::move(from), coverage); }  // after it is shown: kept for the next move's warp
-                        } kept{rheaView, merged, coverage};
+                        } kept{rheaView, started ? source : merged, coverage};
                         showPicture(merged, fraction);
                     };
                     async::RenderOptions o = base;
@@ -3920,13 +4003,23 @@ int session(const Args& args, const fs::path& directory) {
                     // A stop leaves the GPU's launches out behind it: the next move's phase one comes first (drainGpu after).
                     o.abandonOnCancel = envOn("XPU2_SESSION_RHEA_EARLY", true);
                     const auto restBegan = Clock::now();
+                    rheaStatus(rheaKnown, true);  // XPU2 teaching the store
                     const async::RenderResult x = renderer->render(o);
                     const size_t pixels = size_t(width) * height;
+                    // What XPU2 rendered, to its end or its stop (a drag's next step: whatever its samples reached).
+                    if (rheaView.op.learnRaw && !x.failed) learnedPixels += rheaView.learn(*scene.plan, x);
+                    if (!x.cancelled && !x.failed) {
+                        size_t reached = 0;
+                        for (size_t i = 0; i < x.counts.size(); ++i) reached += x.counts[i] > 0;
+                        rheaKnown = std::max(rheaKnown, pixels ? double(reached) / double(pixels) : 0.0);
+                        rheaStatus(rheaKnown, false);
+                    }
                     if (passMode && !x.cancelled && !x.failed && x.rgba.size() == pixels * 4 && (!fades || shownPasses < renderer->retiredPasses())) {
-                        // The frame's end: its picture (its last passes, which ended it before a picture of them) faded to too.
+                        // The frame's end: its picture (its last passes, which ended it before a picture of them) faded to too,
+                        // XPU2's own (no head start: the frame ends as XPU2's picture).
                         shownPasses = renderer->retiredPasses();
                         if (!fades++) std::fill(fade.doneAt.begin(), fade.doneAt.end(), fadeNow());
-                        handToFades(std::make_shared<const async::RenderResult>(x));
+                        handToFades(withHeadStart(x, true));
                     }
                     // The fades' thread: let finish where the frame ended (a fade or two more), stopped by a move.
                     if (fadeThread.joinable()) {
@@ -3948,15 +4041,17 @@ int session(const Args& args, const fs::path& directory) {
                     if (passMode) {
                         const std::vector<float> ones(pixels, 1.0f);
                         coverage = rheaView.completeWarp(x, ones, shown);
-                        std::printf("MoonRay XPU2: Rhea: pass pictures, %u fades (the first at %.2f s)%s\n", fades,
-                                    fades ? fade.doneAt[0] : -1.0, cut ? ", stopped" : "");
+                        std::printf("MoonRay XPU2: Rhea: pass pictures, %u fades (the first at %.2f s), %u of them with phase one's head start%s\n",
+                                    fades, fades ? fade.doneAt[0] : -1.0, headStarted, cut ? ", stopped" : "");
                         std::fflush(stdout);
                     } else if (completion && fade.regions && !x.cancelled && x.rgba.size() == size_t(width) * height * 4) {
                         // The regions the frame's end finished, faded in after it (pictures every 30 ms until each is whole,
                         // unless a move comes): the last picture is XPU2's own.
-                        while (fadeAlpha(true) && !(watch.stop && watch.stop())) {
-                            async::RenderResult merged;
-                            const double whole = rheaView.completeWarp(x, fade.alpha, merged);
+                        // With the head start while they fade in (the store's source without it), then phase one's share let
+                        // go over fadeSeconds: the frame's last picture is XPU2's own, reached without a jump.
+                        async::RenderResult xs;
+                        const bool xStarted = rheaView.headStart(x, xs);
+                        auto showEnd = [&](async::RenderResult& merged) {
                             if (wanted && watch.previewResult) watch.previewResult(merged, 1.0);
                             else if (watch.preview) {
                                 std::vector<float> rgb(size_t(width) * height * 3);
@@ -3967,10 +4062,33 @@ int session(const Args& args, const fs::path& directory) {
                                     }
                                 watch.preview(rgb, width, height, 1.0);
                             }
-                            rheaView.published(std::move(merged), whole);
+                        };
+                        while (fadeAlpha(true) && !(watch.stop && watch.stop())) {
+                            async::RenderResult merged, raw;
+                            const double whole = rheaView.completeWarp(x, fade.alpha, raw);
+                            if (xStarted) rheaView.completeWarp(xs, fade.alpha, merged);
+                            showEnd(xStarted ? merged : raw);
+                            rheaView.published(std::move(raw), whole);
                             std::this_thread::sleep_for(std::chrono::milliseconds(30));
                         }
                         fadeAlpha(true);
+                        if (xStarted) {
+                            const auto letGo = Clock::now();
+                            while (!(watch.stop && watch.stop())) {
+                                const double t = fadeSeconds > 0 ? std::clamp(std::chrono::duration<double>(Clock::now() - letGo).count() / fadeSeconds, 0.0, 1.0) : 1.0;
+                                // XPU2's own picture with the head start's share let go by a: its samples' counts kept (an
+                                // unsampled pixel stays unsampled, the warp's: crossFade's counts of 1 showed them black).
+                                const float a = float(t * t * (3 - 2 * t));
+                                async::RenderResult blend = x, merged;
+                                for (size_t i = 0; i < pixels && blend.rgba.size() == pixels * 4 && xs.rgba.size() == pixels * 4; ++i)
+                                    if (i < x.counts.size() && x.counts[i] > 0)
+                                        for (int c = 0; c < 3; ++c) blend.rgba[i * 4 + c] = xs.rgba[i * 4 + c] + a * (x.rgba[i * 4 + c] - xs.rgba[i * 4 + c]);
+                                rheaView.completeWarp(blend, fade.alpha, merged);
+                                showEnd(merged);
+                                if (t >= 1) break;
+                                std::this_thread::sleep_for(std::chrono::milliseconds(30));
+                            }
+                        }
                         coverage = rheaView.completeWarp(x, fade.alpha, shown);
                         std::string when;
                         for (unsigned b = 0; b < fade.regions; ++b) {
@@ -3978,7 +4096,8 @@ int session(const Args& args, const fs::path& directory) {
                             std::snprintf(s, sizeof s, "%s%.2f", b ? " " : "", fade.doneAt[b]);
                             when += s;
                         }
-                        std::printf("MoonRay XPU2: Rhea: completion fade, %u regions finished at %s s\n", fade.regions, when.c_str());
+                        std::printf("MoonRay XPU2: Rhea: completion fade, %u regions finished at %s s; %u pictures with phase one's head start\n",
+                                    fade.regions, when.c_str(), headStarted);
                         std::fflush(stdout);
                     } else if (completion && fade.regions) coverage = rheaView.completeWarp(x, fade.alpha, shown);
                     else if (warpOnly) coverage = rheaView.mergeWarp(x, x.cancelled || x.drained ? lastFraction : 1.0, shown);
@@ -4010,10 +4129,12 @@ int session(const Args& args, const fs::path& directory) {
                     if (x.cancelled)
                         std::printf("MoonRay XPU2: Rhea: XPU2's frame stopped in %.3f s (the CPU's workers %.3f s, the GPU's launches out %.3f s)\n",
                                     x.stopCpuSeconds + x.stopGpuSeconds, x.stopCpuSeconds, x.stopGpuSeconds);
-                    std::printf("MoonRay XPU2: realtime by Rhea: %s, then XPU2's frame at rest %s in %.2f s; %zu probes, back plane %.0f%% (kept in %.3f s)\n",
+                    std::printf("MoonRay XPU2: realtime by Rhea: %s, then XPU2's frame at rest %s in %.2f s; %zu probes, back plane %.0f%% (kept in %.3f s); "
+                                "the store learned from %zu pixels' new samples%s (%zu cells, %.3f s learning so far)\n",
                                 rheaFramed ? "a frame for the camera's move" : moving ? (warpedNow ? "a move (the last picture moved)" : "a move (no picture to move)") : probesOn ? "the probes placed" : "the camera at rest",
                                 x.cancelled ? "stopped" : x.drained ? "drained" : "done",
-                                shown.seconds - rheaSeconds, rheaView.probes, rheaView.backShare() * 100.0, rheaView.restStoreSeconds);
+                                shown.seconds - rheaSeconds, rheaView.probes, rheaView.backShare() * 100.0, rheaView.restStoreSeconds, learnedPixels,
+                                rheaFilling ? ", a drag's step filling it" : "", rheaView.store.cells(), rheaView.learnSeconds);
                     std::fflush(stdout);
                     return shown;
                 };

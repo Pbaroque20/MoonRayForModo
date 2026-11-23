@@ -1523,7 +1523,14 @@ class Panel(Tools, QtWidgets.QWidget):
         # XPU2 renders the preview: how it samples it (xpu2_sampling), not MoonRay's Uniform or Adaptive.
         from . import xpu2_sampling
         if engine=='moonray' and xpu2_sampling.active():
-            try:return xpu2_sampling.words(self._settings_values(),realtime=bool(getattr(self,'_following',False)))
+            # XPU2 RT with Rhea: Rhea's own words (its store, learning, in the status line: native.execution_status), not
+            # XPU2's sampling (the user, 2026-11-22: the indicator "would replace the XPU2 render status, like its sampling").
+            from . import native
+            realtime=bool(getattr(self,'_following',False))
+            if realtime and native.xpu2_rt_engine()=='rhea':
+                said=str(getattr(self.renderer,'backend_status','') or '')
+                return said if said.startswith('Rhea') else 'Rhea'
+            try:return xpu2_sampling.words(self._settings_values(),realtime=realtime)
             except Exception:pass
         return ('LS ' if engine=='ls' else '')+('Adaptive %d-%d ps'%(settings['min_adaptive_samples'],settings['max_adaptive_samples'])
                                                if settings['sampling_mode']==2 else 'Uniform %d ps'%pixel_samples)
@@ -3000,6 +3007,20 @@ class Panel(Tools, QtWidgets.QWidget):
                 else:
                     from .incremental import REFUSED
                     self._drag_count('read the usual way: '+(REFUSED[0] if REFUSED else '?'))
+            # The release of an XPU2 RT drag whose steps went as moves alone (_drag_scene): itself a move alone, the scene
+            # not read again (the user, 2026-11-22: "scene complexity should not be recomputed after first load, since
+            # it's a reprojection"): where things now stand made new in the scene its last step sent, the camera where Modo
+            # put it at the release. Anything else edited meanwhile, a blurred preview, or move_only refusing: read the
+            # usual way, as before.
+            release_move=False
+            if (fast is None and not held and xdrag and not blurred and not full and not changed and reuse in (True,'transforms') and items
+                    and getattr(self,'_drag_scene',None) is not None and getattr(self,'_kept_capture',None) is not None):
+                from .incremental import move_only
+                fast=move_only(modo.Scene(),self._kept_capture,list(items),loose=(self._geometry_cache or {}).get('_loose_items') or ())
+                if fast is not None:release_move=True;moved.update(items);self._drag_count('released as a move alone')
+                else:
+                    from .incremental import REFUSED
+                    self._drag_count('released, read the usual way: '+(REFUSED[0] if REFUSED else '?'))
             if fast is not None:scene=fast
             elif not blurred:
                 scene = self._capture(reuse,items if reuse=='transforms' else None)
@@ -3020,6 +3041,11 @@ class Panel(Tools, QtWidgets.QWidget):
                 # Host notices already establish a drag edit. Hash once after release, not on every move.
                 self._live_digest_pending=True
                 self.release_timer.start()
+                self._submit(scene,digest=('live-drag',object()))
+            elif release_move:
+                # The release, unmarked: XPU2's frame follows Rhea's phase one (the session's rheaDragStep is off for it).
+                self._drag_count('sent at the release')
+                self._drag_scene=None
                 self._submit(scene,digest=('live-drag',object()))
             elif fast is not None and xdrag:
                 # XPU2 RT: a step of the drag rendered as it comes (Rhea's frames), not held at a first sample; the drag's

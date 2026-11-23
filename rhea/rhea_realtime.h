@@ -78,6 +78,9 @@ struct RealtimeOptions {
     // warp's source adds to the store, and a move's picture is the CPU scene's first hits coloured from it, streamed in
     // rings from the centre out. Off: the mesh gradient (warpMesh).
     bool objectSpace = true;
+    // The store learns from XPU2's own samples as they come (Realtime::learn, the session's), not from the picture kept at
+    // the next move (keepShown, depthsOf). XPU2_SESSION_RHEA_LEARN_RAW=0: from the kept picture, as before.
+    bool learnRaw = true;
     double storeScale = 2, storeGrazing = 8;
     size_t objectRays = 60000;
     unsigned objectRings = 3;
@@ -93,6 +96,9 @@ struct RealtimeOptions {
     // 0.15 s: in Modo the kit makes a step at each of its 60 ms ticks, with its own 18 ms or so, and sends it once the
     // last is applied: steps came 80 to 100 ms apart, past an 80 ms hold (RESULTS.md section 21).
     double dragHold = 0.15;
+    // The head start (Realtime::headStart): phase one's colour counted as this many of XPU2's samples where it is sure of
+    // it (0: none), and how far apart, relative and over XPU2's noise (1 / sqrt(samples)), the two may be for it to count.
+    double headStart = 8.0, headStartPart = 3.0;
     // The probes' screen cells grow with the picture (cell times the square root of its pixels over 320 x 240's): as many
     // probes at 1280 x 720 as at 320 x 240, where 22,000 had taken 0.12 s to place and 0.7 s of the GPU's (DESIGN.md 26).
     bool cellsByPicture = true;
@@ -928,6 +934,105 @@ public:
         for (size_t r : whole) all += r;
         return n ? double(all) / double(n) : 1.0;
     }
+    // The head start (the user, 2026-11-22: "yes, build the head start"): XPU2's picture x with phase one's colour R
+    // counted as samples of its own. Each sampled pixel (m R + n X) / (m + n): X XPU2's colour, n its samples there, m
+    // op.headStart times phase one's confidence there (1 - doubt; none where nothing landed). No head start where XPU2 and
+    // phase one part by more than XPU2's noise allows (op.headStartPart / sqrt(n), relative, over 3 x 3 pixels): a
+    // reflection or highlight the store holds as seen from elsewhere. As n grows phase one's share falls; the frame's last
+    // picture is XPU2's own (the session's). False: no warp to start from (out untouched).
+    bool headStart(const async::RenderResult& x, async::RenderResult& out) const {
+        const size_t n = size_t(W) * H;
+        if (!(op.headStart > 0) || !warped.valid || x.rgba.size() != n * 4 || warped.color.size() != n * 3 || warped.state.size() != n)
+            return false;
+        const unsigned threads = std::max(1u, op.threads);
+        const bool doubts = warped.doubt.size() == n;
+        auto lum = [](const float* c) { return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; };
+        // The two pictures' luminance summed over each pixel's 3 x 3 (XPU2's over its sampled pixels alone).
+        std::vector<float> lx(n), lr(n), sampled(n), sx(n), sr(n), ss(n);
+        parallel(threads, H, [&](size_t y) {
+            for (size_t i = y * W; i < (y + 1) * W; ++i) {
+                const bool s = i < x.counts.size() && x.counts[i] > 0;
+                lx[i] = s ? float(lum(&x.rgba[i * 4])) : 0.0f, lr[i] = float(lum(&warped.color[i * 3])), sampled[i] = s ? 1.0f : 0.0f;
+            }
+        });
+        auto box = [&](const std::vector<float>& from, std::vector<float>& to) {
+            std::vector<float> across(n);
+            parallel(threads, H, [&](size_t y) {
+                for (unsigned px = 0; px < W; ++px) {
+                    const size_t i = y * W + px;
+                    across[i] = from[i] + (px > 0 ? from[i - 1] : 0.0f) + (px + 1 < W ? from[i + 1] : 0.0f);
+                }
+            });
+            parallel(threads, H, [&](size_t y) {
+                for (unsigned px = 0; px < W; ++px) {
+                    const size_t i = y * W + px;
+                    to[i] = across[i] + (y > 0 ? across[i - W] : 0.0f) + (y + 1 < H ? across[i + W] : 0.0f);
+                }
+            });
+        };
+        box(lx, sx), box(lr, sr), box(sampled, ss);
+        out = x;
+        parallel(threads, H, [&](size_t y) {
+            for (size_t i = y * W; i < (y + 1) * W; ++i) {
+                const std::uint32_t c = i < x.counts.size() ? x.counts[i] : 0u;
+                if (!c || !warped.state[i]) continue;
+                const double confidence = doubts ? std::clamp(1.0 - double(warped.doubt[i]), 0.0, 1.0) : (warped.state[i] == 1 ? 1.0 : 0.5);
+                double m = op.headStart * confidence;
+                if (!(m > 0)) continue;
+                // Over the 3 x 3: XPU2's mean over its sampled pixels against phase one's mean over the same nine.
+                const double meanX = ss[i] > 0 ? sx[i] / ss[i] : lx[i], meanR = sr[i] / 9.0;
+                const double part = std::fabs(meanX - meanR) / std::max(0.02, 0.5 * (meanX + meanR));
+                if (part > op.headStartPart / std::sqrt(double(c) * std::max(1.0, double(ss[i])))) continue;
+                const double k = m / (m + double(c));
+                for (int ch = 0; ch < 3; ++ch) out.rgba[i * 4 + ch] = float(x.rgba[i * 4 + ch] + k * (double(warped.color[i * 3 + ch]) - x.rgba[i * 4 + ch]));
+            }
+        });
+        return true;
+    }
+    // XPU2's own samples into the store as they come (the user, 2026-11-22: "it learns but it does it slowly after a few
+    // drag refreshes"; "the learning should also be in realtime during drag"): each pixel's samples new since this frame
+    // was last learned from, whatever share of the picture they cover. The store had learned only from the picture on
+    // screen at the next move, and not at all where XPU2 covered less than 95% of it (keepShown), as a drag's frames
+    // never do; phase one's own colours went in with it (now never: an unsampled pixel adds nothing). learnBegin at each
+    // frame's start. Returns the pixels learned from.
+    void learnBegin() { learned.clear(); }
+    size_t learn(const cpu::Plan& b, const async::RenderResult& film) {
+        const size_t n = size_t(b.width) * b.height;
+        if (!op.objectSpace || !op.warp || film.rgba.size() != n * 4 || film.counts.size() != n) return 0;
+        const RealtimeOutputs o = outputsOf(b);
+        const size_t stride = n ? film.aov.size() / n : 0;
+        if (o.depthMin < 0 || !stride || film.aov.size() != n * stride) return 0;
+        View v;
+        if (!v.init(b.camera, b.width, b.height) || v.needsDepthScale()) return 0;
+        if (learned.size() != n) learned.assign(n, 0u);
+        const auto began = std::chrono::steady_clock::now();
+        learnCounts.resize(n), learnDepth.resize(n), learnFar.resize(n);
+        std::atomic<size_t> fresh{0};
+        parallel(std::max(1u, op.threads), b.height, [&](size_t y) {
+            size_t here = 0;
+            for (size_t i = y * b.width; i < (y + 1) * b.width; ++i) {
+                const std::uint32_t c = film.counts[i];
+                learnCounts[i] = c > learned[i] ? c - learned[i] : 0u;
+                if (learnCounts[i]) ++here, learned[i] = c;
+                const float d = film.aov[i * stride + size_t(o.depthMin)];
+                learnDepth[i] = std::isfinite(d) && d > 0 ? d : 0.0f;
+                const float f = o.depthMax >= 0 ? film.aov[i * stride + size_t(o.depthMax)] : 0.0f;
+                learnFar[i] = std::isfinite(f) && f > 0 ? f : 0.0f;
+            }
+            fresh.fetch_add(here, std::memory_order_relaxed);
+        });
+        if (!fresh.load()) return 0;
+        store.op.scale = op.storeScale, store.op.jump = op.warpJump, store.op.threads = std::max(1u, op.threads);
+        store.op.grazing = op.storeGrazing, store.op.albedo = op.storeAlbedo;
+        ObjectStore::Outputs outs;
+        outs.aov = &film.aov, outs.stride = stride, outs.albedo = o.albedo, outs.emission = o.emission;
+        store.add(v, b.width, b.height, film.rgba, learnCounts, learnDepth, learnFar, &outs);
+        learnSeconds += std::chrono::duration<double>(std::chrono::steady_clock::now() - began).count();
+        ++learnings;
+        return fresh.load();
+    }
+    double learnSeconds = 0;  // the time learning took, and how many times it did, since the session began
+    size_t learnings = 0;
     // The pictures the session publishes, the last kept for the next move's warp (keepLast): the warp's own (it is
     // Realtime's), or another taken by swapping its vectors (the session's merged pictures, which it no longer needs).
     void publishedWarp() { lastKind = 1; }
@@ -1031,6 +1136,9 @@ public:
         const RealtimeOutputs o = outputsOf(b);
         const size_t stride = n ? last.result.aov.size() / n : 0;
         if (!op.warp || last.result.rgba.size() != n * 4 || o.depthMin < 0 || !stride || !last.view.init(b.camera, b.width, b.height)) return;
+        // The store learns from XPU2's samples as they come (learn) where the view allows it (perspective cameras); then
+        // not from the kept picture besides (the same samples twice, and phase one's colours with them).
+        const bool learnedRaw = op.learnRaw && !last.view.needsDepthScale();
         if (last.view.needsDepthScale()) {
             // The probes' scale; without probes (XPU2_SESSION_RHEA_PROBES=0), twice the picture's farthest depth.
             double K = f.view.kind == View::Orthographic ? f.view.depthScale() : 0.0;
@@ -1062,6 +1170,7 @@ public:
         last.valid = true;
         mesh.clear();
         if (op.objectSpace) {
+            if (learnedRaw) return;  // the store learned from XPU2's own samples (learn)
             store.op.scale = op.storeScale, store.op.jump = op.warpJump, store.op.threads = std::max(1u, op.threads);
             store.op.grazing = op.storeGrazing, store.op.albedo = op.storeAlbedo;
             ObjectStore::Outputs outs;
@@ -1126,6 +1235,9 @@ private:
     Shown last;
     Warped warped;
     async::RenderResult warpPicture, shownCopy;  // the warp's picture and the last other one published, kept for reuse
+    // learn's: each pixel's samples the store has from this frame, and the counts, depths it adds (kept: no allocation).
+    std::vector<std::uint32_t> learned, learnCounts;
+    std::vector<float> learnDepth, learnFar;
     int lastKind = 0;                            // the last published: 0 none kept, 1 the warp's, 2 shownCopy
     double shownCoverage = 1.0;                  // shownCopy's share of pixels XPU2's samples reached
     MeshWarp mesh;                               // the kept picture's mesh (warpMesh)

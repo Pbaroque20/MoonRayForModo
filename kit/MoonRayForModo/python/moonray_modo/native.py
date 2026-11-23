@@ -237,8 +237,17 @@ def execution_status(log):
         if 'falling back to cpu' in line: result='Vector active (CPU fallback — see Render Log)'
         if 'xpu2 preview session' in line: result='XPU2 active (%s + %s)'%(_gpu() or 'NVIDIA GPU',_cpu() or 'CPU')
         # XPU2 RT (Rhea): the session says which renders each frame when it changes (xpu2_session.cc rheaFits).
-        if 'moonray xpu2: realtime by rhea' in line: result='XPU2 Rhea active (%s + %s)'%(_gpu() or 'NVIDIA GPU',_cpu() or 'CPU')
+        if 'moonray xpu2: realtime by rhea' in line and not (result or '').startswith('Rhea'):
+            result='XPU2 Rhea active (%s + %s)'%(_gpu() or 'NVIDIA GPU',_cpu() or 'CPU')
         elif "moonray xpu2: frames by xpu2 alone" in line: result='XPU2 active (%s + %s)'%(_gpu() or 'NVIDIA GPU',_cpu() or 'CPU')
+        # Rhea's own line (xpu2_session.cc rheaStatus), in place of XPU2's status while Rhea renders realtime (the user,
+        # 2026-11-22: "there should be an indicator in the status bar. This would replace the XPU2 render status"): how much
+        # of the view its store knew, and whether XPU2 is teaching it now.
+        elif line.startswith('@@modo_xpu2 rhea '):
+            parts=line.split()
+            try:known,learning=int(parts[2]),parts[3]=='1'
+            except (IndexError,ValueError):continue
+            result='Rhea · %d%% of the view known%s'%(known,' · learning' if learning else '')
     return result
 
 

@@ -100,8 +100,32 @@ class Status(unittest.TestCase):
         log = 'MoonRay XPU2 preview session: CPU and GPU, adaptive passes on the host\n'
         self.assertEqual(native.execution_status(log), 'XPU2 active (GPU + CPU)')
 
+    def test_rheas_own_line_replaces_xpu2s_status(self):
+        # The session's rheaStatus: how much of the view the store knew, and whether XPU2 is teaching it now; the frame's
+        # summary line after it ("realtime by Rhea: ...") leaves it.
+        log = ('MoonRay XPU2 preview session: CPU and GPU, adaptive passes on the host\n'
+               "MoonRay XPU2: realtime by Rhea (persistent probes; XPU2's samples where they do not hold)\n"
+               '@@MODO_XPU2 RHEA 81 1\n'
+               "MoonRay XPU2: realtime by Rhea: a move (the last picture moved), then XPU2's frame at rest stopped in 0.20 s\n")
+        self.assertEqual(native.execution_status(log), 'Rhea · 81% of the view known · learning')
+        self.assertEqual(native.execution_status(log + '@@MODO_XPU2 RHEA 97 0\n'), 'Rhea · 97% of the view known')
+        # A scene Rhea does not take after it: XPU2's own status again.
+        self.assertEqual(native.execution_status(log + "MoonRay XPU2: frames by XPU2 alone, not Rhea's: not realtime\n"),
+                         'XPU2 active (GPU + CPU)')
+
 
 class Drags(unittest.TestCase):
+    def test_an_xpu2_drags_release_is_a_move_alone(self):
+        # Its steps went as moves alone: the release too, the scene not read, hashed or written whole again; unmarked, so
+        # XPU2's frame follows. Anything else edited (full, changed settings, a blurred preview) reads it the usual way.
+        text = (SOURCE / 'panel.py').read_text(encoding='utf-8')
+        self.assertIn("if (fast is None and not held and xdrag and not blurred and not full and not changed and reuse in (True,'transforms') and items", text)
+        self.assertIn("if fast is not None:release_move=True;moved.update(items);self._drag_count('released as a move alone')", text)
+        self.assertIn("elif release_move:", text)
+        release = text.split('elif release_move:', 1)[1].split('elif fast is not None and xdrag:', 1)[0]
+        self.assertIn('self._submit(scene,', release)
+        self.assertNotIn('_xpu2_drag', release)
+
     def test_the_live_tick_follows_xpu2_drags(self):
         text = (SOURCE / 'panel.py').read_text(encoding='utf-8')
         self.assertIn('xdrag=not ipr and self._xpu2_drags()', text)
