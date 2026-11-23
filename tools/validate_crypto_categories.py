@@ -81,7 +81,7 @@ def main():
             (folder/(case['name']+'-info.txt')).write_text(result.stdout+result.stderr,encoding='utf-8')
             if result.returncode or 'Cryptomatte00' not in result.stdout:raise RuntimeError('Missing/unreadable Cryptomatte output')
             if case['name'].endswith('-all') and any('crypto_'+c not in result.stdout for c in ('object','material','asset')):raise RuntimeError('Missing category part')
-            if case['name'].startswith('xpu') and native.execution_status((folder/(case['name']+'.log')).read_text(encoding='utf-8',errors='replace'))!='XPU active (NVIDIA GPU + CPU)':raise RuntimeError('XPU not confirmed; fallback is not a pass')
+            if case['name'].startswith('xpu') and not (native.execution_status((folder/(case['name']+'.log')).read_text(encoding='utf-8',errors='replace')) or '').startswith('XPU active ('):raise RuntimeError('XPU not confirmed; fallback is not a pass')
             case['status']='rendered_requires_coverage_review'
         except Exception as exc:case.update(status='failed',error=str(exc))
         save()

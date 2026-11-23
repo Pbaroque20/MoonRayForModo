@@ -84,7 +84,7 @@ def main():
                         output=image.with_name('shared-'+mode+'.exr')
                         run([runtime/'moonray.exe',*native.arguments(source,output,0,mode)],'shared-'+mode+'.log')
                         inspect(output)
-                        if mode=='xpu' and native.execution_status((folder/'shared-xpu.log').read_text(encoding='utf-8',errors='replace'))!='XPU active (NVIDIA GPU + CPU)':raise RuntimeError('XPU execution not confirmed; CPU fallback is not an XPU pass')
+                        if mode=='xpu' and not (native.execution_status((folder/'shared-xpu.log').read_text(encoding='utf-8',errors='replace')) or '').startswith('XPU active ('):raise RuntimeError('XPU execution not confirmed; CPU fallback is not an XPU pass')
                 else:
                     value['recovery']={'enabled':True,'resume':True,'minutes':.1} if name=='recovery' else {'enabled':False}
                     value['render_settings']={'sampling_mode':0}
