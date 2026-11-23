@@ -2687,11 +2687,12 @@ int session(const Args& args, const fs::path& directory) {
         const rhea::ObjectWarp& ow = rheaView.objectWarp;
         std::printf("MoonRay XPU2: Rhea: the camera's picture ahead of the GPU in %.3f s (first picture %.3f s, %u pictures, %zu rays, "
                     "%zu of them on the graphics card in %.1f ms, %.0f%% of them unknown to the store%s; coarse rays %.1f ms, rings' rays %.1f ms; "
-                    "rays made %.1f ms, shaded %.1f ms, fills %.1f ms; coarse picture %.1f ms, rings' pictures %.1f ms, FXAA %.1f ms, shown %.1f ms)\n",
+                    "rays made %.1f ms, shaded %.1f ms, fills %.1f ms; coarse picture %.1f ms, rings' pictures %.1f ms, FXAA %.1f ms, shown %.1f ms; "
+                    "%zu fine nodes interpolated, chosen in %.1f ms)\n",
                     std::chrono::duration<double>(std::chrono::steady_clock::now() - began).count(), ow.firstSeconds, ow.stages, ow.rays,
                     ow.cardRays, ow.cardSeconds * 1e3, ow.unknown * 100.0, rheaDragStep ? "; a drag's step" : "", ow.coarseRaySeconds * 1e3,
                     ow.ringRaySeconds * 1e3, ow.rowsSeconds * 1e3, ow.shadeSeconds * 1e3, ow.fillSeconds * 1e3, ow.coarsePictureSeconds * 1e3,
-                    ow.ringPictureSeconds * 1e3, ow.fxaaSeconds * 1e3, ow.stageSeconds * 1e3);
+                    ow.ringPictureSeconds * 1e3, ow.fxaaSeconds * 1e3, ow.stageSeconds * 1e3, ow.interpolated, ow.adaptSeconds * 1e3);
         std::fflush(stdout);
         return true;
     };
@@ -3462,6 +3463,8 @@ int session(const Args& args, const fs::path& directory) {
                     if (const char* v = std::getenv("XPU2_SESSION_RHEA_LOOKUP_UP")) rheaView.op.objectLookupUp = std::max(-1, std::atoi(v));
                     rheaView.op.learnRaw = envOn("XPU2_SESSION_RHEA_LEARN_RAW", true);
                     if (const char* v = std::getenv("XPU2_SESSION_RHEA_DEPTH_FILL")) rheaView.op.objectFillDepth = std::max(0.0, std::atof(v));
+                    rheaView.op.objectAdaptive = envOn("XPU2_SESSION_RHEA_ADAPTIVE", true);
+                    if (const char* v = std::getenv("XPU2_SESSION_RHEA_ADAPT_COLOUR")) rheaView.op.objectAdaptColour = std::max(0.0, std::atof(v));
                     if (const char* v = std::getenv("XPU2_SESSION_RHEA_STORE_SCALE")) rheaView.op.storeScale = std::max(0.5, std::atof(v));
                     if (const char* v = std::getenv("XPU2_SESSION_RHEA_GRAZING")) rheaView.op.storeGrazing = std::max(1.0, std::atof(v));
                     // The user's composite (2026-11-22): light and albedo apart in the store, the albedo finer.

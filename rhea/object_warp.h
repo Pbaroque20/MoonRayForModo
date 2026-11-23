@@ -702,6 +702,13 @@ public:
         // The fill of what the store did not answer for, by depth (pullPushDepth): sources whose depth is off by about this
         // share (relative, in lifted inverse depth) weigh little. 0: the plain fill (pullPush).
         double fillDepth = 0.06;
+        // The fine grid coarse to fine (the user, 2026-11-22: "do the adaptive sampling"; Rhea's research refined "within a
+        // variance"), where it is drawn as one ring (a drag's step): a block of 4 x 4 fine cells whose corners (the coarse
+        // grid's nodes) are one smooth surface of about one colour is interpolated, not traced; another is split once in
+        // four, each part again interpolated or traced whole. Colours alike: each channel's spread under adaptColour of
+        // their mean brightness.
+        bool adaptive = true;
+        double adaptColour = 0.06;
         // With nothing in the store (the first frame of realtime): each hit's material colour (the CPU's), lit from the
         // camera, so that phase one has a first look before XPU2's first pictures fade in.
         bool firstLook = true;
@@ -731,6 +738,9 @@ public:
     double cardSeconds = 0;
     // The last view's CPU time in the rays' making (rows, rays), the hits' shading (the store's lookups), the fills.
     double rowsSeconds = 0, shadeSeconds = 0, fillSeconds = 0;
+    // The last view's fine nodes interpolated, not traced (Options::adaptive), and its time choosing them.
+    size_t interpolated = 0;
+    double adaptSeconds = 0;
 
     // A view of the store through camera nv, by the scene's first hits: each pixel's colour (rgb), lifted depth w (-1 the
     // environment), depth (0 none), state (1 drawn, 2 filled from around it) and doubt (0 to 1). Streamed (the user,
@@ -746,7 +756,7 @@ public:
         const size_t n = size_t(w) * h;
         rays = edgeRays = 0, stages = 0, unknown = 0, firstSeconds = 0;
         coarseRaySeconds = coarsePictureSeconds = ringRaySeconds = ringPictureSeconds = fxaaSeconds = stageSeconds = 0;
-        cardRays = 0, cardSeconds = 0, rowsSeconds = shadeSeconds = fillSeconds = 0;
+        cardRays = 0, cardSeconds = 0, rowsSeconds = shadeSeconds = fillSeconds = 0, interpolated = 0, adaptSeconds = 0;
         if (!w || !h) return false;
         const double angle = ObjectStore::pixelAngle(nv);
         if (!(angle > 0)) return false;
@@ -1061,9 +1071,119 @@ public:
             finish();
             return true;
         }
+        // Coarse to fine (op.adaptive) where the fine grid is drawn as one ring (a drag's step): its nodes chosen as the
+        // blocks ask, so its rays are not sent ahead.
+        const bool adaptiveNow = op.adaptive && std::max(1u, op.rings) == 1 && S == 4 * stride;
         // The fine grid's rays, every ring's, to the card in one launch once the first picture is out (sent before it, their
         // making, 3 ms on the user's car, held the first picture back); each ring shaded from their hits.
-        sendFine();
+        if (!adaptiveNow) sendFine();
+        // The fine grid coarse to fine: the coarse grid's nodes are the fine grid's every fourth; a block of 4 x 4 fine cells
+        // whose corners are one smooth surface of about one colour interpolated, another split once in four (its middle
+        // nodes traced), each part interpolated or traced whole; then the fill (as trace's).
+        auto adaptiveFine = [&] {
+            const auto began = Clock::now();
+            const unsigned fw = fine.gw, fh = fine.gh;
+            fineSet_.assign(size_t(fw) * fh, 0);
+            auto node = [&](unsigned i, unsigned j) -> Node& { return fine.nodes[size_t(j) * fw + i]; };
+            auto setAt = [&](unsigned i, unsigned j) -> std::uint8_t& { return fineSet_[size_t(j) * fw + i]; };
+            for (unsigned cj = 0; cj < coarse.gh; ++cj)
+                for (unsigned ci = 0; ci < coarse.gw; ++ci) {
+                    const unsigned i = std::min(4 * ci, fw - 1), j = std::min(4 * cj, fh - 1);
+                    node(i, j) = coarse.nodes[size_t(cj) * coarse.gw + ci];
+                    setAt(i, j) = 1;
+                }
+            // One smooth surface (or the environment) of about one colour at the four corners of [i0, i1] x [j0, j1].
+            auto smooth = [&](unsigned i0, unsigned j0, unsigned i1, unsigned j1) {
+                const Node* c[4] = {&node(i0, j0), &node(i1, j0), &node(i0, j1), &node(i1, j1)};
+                const std::uint8_t kind = c[0]->kind;
+                if (kind != 1 && kind != 2) return false;
+                double lo = c[0]->w, hi = c[0]->w, mean = 0;
+                for (const Node* o : c) {
+                    if (o->kind != kind) return false;
+                    lo = std::min(lo, o->w), hi = std::max(hi, o->w);
+                    mean += 0.25 * (0.2126 * o->rgb[0] + 0.7152 * o->rgb[1] + 0.0722 * o->rgb[2]);
+                }
+                if (kind == 1 && !(lo > 0 && (hi - lo) <= op.jump * hi)) return false;
+                const double tolerance = op.adaptColour * std::max(0.02, mean);
+                for (int ch = 0; ch < 3; ++ch) {
+                    float a = c[0]->rgb[ch], b = a;
+                    for (const Node* o : c) a = std::min(a, o->rgb[ch]), b = std::max(b, o->rgb[ch]);
+                    if (b - a > tolerance) return false;
+                }
+                return true;
+            };
+            // The nodes of [i0, i1] x [j0, j1] not yet made, bilinear from its corners.
+            auto interpolate = [&](unsigned i0, unsigned j0, unsigned i1, unsigned j1) {
+                const Node* c[4] = {&node(i0, j0), &node(i1, j0), &node(i0, j1), &node(i1, j1)};
+                const bool known = c[0]->known && c[1]->known && c[2]->known && c[3]->known;
+                for (unsigned j = j0; j <= j1; ++j)
+                    for (unsigned i = i0; i <= i1; ++i) {
+                        if (setAt(i, j)) continue;
+                        const double tx = i1 > i0 ? double(i - i0) / (i1 - i0) : 0.0, ty = j1 > j0 ? double(j - j0) / (j1 - j0) : 0.0;
+                        const double wt[4] = {(1 - tx) * (1 - ty), tx * (1 - ty), (1 - tx) * ty, tx * ty};
+                        Node o;
+                        double w = 0, depth = 0, conf = 0, weight = 0, rgb[3] = {0, 0, 0};
+                        for (int q = 0; q < 4; ++q) {
+                            for (int ch = 0; ch < 3; ++ch) rgb[ch] += wt[q] * c[q]->rgb[ch];
+                            w += wt[q] * c[q]->w, depth += wt[q] * c[q]->depth, conf += wt[q] * c[q]->conf, weight += wt[q] * c[q]->weight;
+                        }
+                        for (int ch = 0; ch < 3; ++ch) o.rgb[ch] = float(rgb[ch]);
+                        o.w = w, o.depth = float(depth), o.conf = float(conf), o.weight = float(weight);
+                        o.kind = c[0]->kind, o.known = known;
+                        node(i, j) = o;
+                        setAt(i, j) = 2;
+                        ++interpolated;
+                    }
+            };
+            // The nodes asked for, traced together (the card's or the CPU's), a row at a time.
+            auto traceAsked = [&](const std::vector<std::pair<unsigned, unsigned>>& asked) {
+                if (asked.empty()) return;
+                rows_.resize(fh);
+                for (auto& b : rows_) b.clear();
+                for (const auto& [i, j] : asked) {
+                    if (setAt(i, j)) continue;
+                    setAt(i, j) = 1;
+                    rows_[j].add(std::min<double>(double(i) * stride, w - 1) + 0.5, std::min<double>(double(j) * stride, h - 1) + 0.5, &node(i, j));
+                }
+                shadeRows(rows_);
+            };
+            std::vector<std::array<unsigned, 4>> refine;
+            std::vector<std::pair<unsigned, unsigned>> asked;
+            for (unsigned j0 = 0; j0 + 1 < fh; j0 += 4)
+                for (unsigned i0 = 0; i0 + 1 < fw; i0 += 4) {
+                    const unsigned i1 = std::min(i0 + 4, fw - 1), j1 = std::min(j0 + 4, fh - 1);
+                    if (smooth(i0, j0, i1, j1)) {
+                        interpolate(i0, j0, i1, j1);
+                        continue;
+                    }
+                    refine.push_back({i0, j0, i1, j1});
+                    const unsigned im = std::min(i0 + 2, i1), jm = std::min(j0 + 2, j1);
+                    for (const auto& p : {std::make_pair(im, j0), std::make_pair(i0, jm), std::make_pair(im, jm), std::make_pair(i1, jm),
+                                          std::make_pair(im, j1)})
+                        asked.push_back(p);
+                }
+            const double choosing = std::chrono::duration<double>(Clock::now() - began).count();
+            traceAsked(asked);
+            const auto second = Clock::now();
+            asked.clear();
+            for (const auto& [i0, j0, i1, j1] : refine) {
+                const unsigned im = std::min(i0 + 2, i1), jm = std::min(j0 + 2, j1);
+                const unsigned part[4][4] = {{i0, j0, im, jm}, {im, j0, i1, jm}, {i0, jm, im, j1}, {im, jm, i1, j1}};
+                for (const auto& p : part) {
+                    if (p[2] <= p[0] || p[3] <= p[1]) continue;
+                    if (smooth(p[0], p[1], p[2], p[3])) interpolate(p[0], p[1], p[2], p[3]);
+                    else
+                        for (unsigned j = p[1]; j <= p[3]; ++j)
+                            for (unsigned i = p[0]; i <= p[2]; ++i)
+                                if (!setAt(i, j)) asked.emplace_back(i, j);
+                }
+            }
+            adaptSeconds = choosing + std::chrono::duration<double>(Clock::now() - second).count();
+            traceAsked(asked);
+            const auto t = Clock::now();
+            fillNodes(fine, op.fillDepth);
+            fillSeconds += since(t);
+        };
         // The fine grid ring by ring, rings of equal area out to the picture's corners: each ring's pixels from the fine
         // grid (a ray a pixel in a cell its corners are not one smooth surface of, those rays a row's together), its outer
         // band going over to the coarse grid's until the next ring comes.
@@ -1078,7 +1198,8 @@ public:
             const bool last = k == rings;
             const double to = last ? reach : reach * std::sqrt(double(k) / rings);
             t0 = Clock::now();
-            trace(fine, tracedTo, to);
+            if (adaptiveNow) adaptiveFine();  // one ring: the whole fine grid, coarse to fine
+            else trace(fine, tracedTo, to);
             ringRaySeconds += since(t0);
             t0 = Clock::now();
             tracedTo = to;
@@ -1211,6 +1332,7 @@ private:
     std::vector<surface::Ray> fineRays_;
     std::vector<resume::Hit> fineHits_;
     std::vector<std::int64_t> fineAt_;                // each fine node's ray in fineRays_ (-1: none)
+    std::vector<std::uint8_t> fineSet_;               // adaptive: each fine node made (1 traced or the coarse grid's, 2 interpolated)
 
     // Whether every mesh of the scene is triangles (no curves, no points): Embree's packets meet them all.
     static bool trianglesAlone(const async::CpuScene& scene) {

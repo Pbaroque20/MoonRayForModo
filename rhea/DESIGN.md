@@ -1210,3 +1210,11 @@ during drags, XPU2 after the release), then "we need to make this drag-fast now 
   unknown nodes take colour only from sources near their own depth (`XPU2_SESSION_RHEA_DEPTH_FILL`, 0.06; 0 the plain fill),
   falling back to the plain fill where none is near. Behind the car the body's silhouette stays sharp against the floor
   and the spoiler stays apart from the body, where the plain fill smeared them; fills 2 -> 5 ms a step.
+- **Coarse to fine** (`ObjectWarp::Options::adaptive`; "do the adaptive sampling", the research's refinement within a
+  variance): where the fine grid is drawn as one ring (a drag's step), a block of 4 x 4 fine cells whose corners (the coarse
+  grid's nodes) are one smooth surface of about one colour (each channel within 6% of their mean brightness) is
+  interpolated, another split once in four, each part interpolated or traced whole (`XPU2_SESSION_RHEA_ADAPTIVE=0`: off;
+  `XPU2_SESSION_RHEA_ADAPT_COLOUR`). The car's drag: 40,400 rays a step where there were 69,400 (25,000 nodes
+  interpolated), the store's lookups 7.9 -> 5.7 ms, the picture the same (relative difference 0.00001 to 0.00003); the
+  step itself 35 -> 34 ms, the rest of the saving spent on its second batch of rays and its choosing (one thread). What a
+  step costs now is mostly its pictures: coarse 5 ms, finished 4.7 ms, FXAA 2.2 ms, handing over 2.3 ms.
