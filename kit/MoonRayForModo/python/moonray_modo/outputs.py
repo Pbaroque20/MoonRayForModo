@@ -94,6 +94,30 @@ def values(entries):
                 raise ValueError('Each Cryptomatte category needs its own EXR part')
     return result
 
+def has_cryptomatte(entries,category):
+    """Whether the outputs hold a Cryptomatte of a category (object, material, asset): what its tick in Render Settings'
+    XPU and XPU2 Outputs (AOVs) shows."""
+    return any(v.get('kind')=='cryptomatte' and v.get('category','object')==category for v in entries or ())
+
+
+def with_cryptomatte(entries,category,on):
+    """The outputs with a category's Cryptomatte added (crypto_<category>, six ranks deep, as the preview window's buffer
+    list adds one) or taken away, checked as values() checks them. The Cryptomatte is one of the outputs as any other:
+    MoonRay (Vector, XPU) and XPU2 write it beside the beauty, in the EXR and in the preview's buffers. Taking one away
+    where two were puts the other back in the first part, where it was before the two needed parts of their own."""
+    entries=[dict(v) for v in entries or ()]
+    if on:
+        if has_cryptomatte(entries,category):return values(entries)
+        taken={v.get('name','').casefold() for v in entries}
+        name='crypto_'+category;number=1
+        while name.casefold() in taken:name='crypto_%s_%d'%(category,number);number+=1
+        return values(entries+[{'name':name,'kind':'cryptomatte','category':category,'depth':6}])
+    entries=[v for v in entries if not (v.get('kind')=='cryptomatte' and v.get('category','object')==category)]
+    left=[v for v in entries if v.get('kind')=='cryptomatte']
+    if len(left)==1 and left[0].get('part')=='crypto_'+left[0].get('category','object'):left[0]['part']=''
+    return values(entries)
+
+
 FIRST_PART='rgba'
 
 def in_parts(render_outputs,cryptomattes=()):
