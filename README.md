@@ -574,7 +574,7 @@ Comparison audit between MoonRay 2026.29.1's source and the current plugin.
 | Depth, normal, position, UV, motion vector, wireframe and sample count outputs | ![yes](docs/images/feature-yes.svg) | Render Settings; each a preview buffer and an EXR channel |
 | Visibility outputs (how much of each light reaches a point) | ![yes](docs/images/feature-yes.svg) | Every light or one light group, in the Outputs window |
 | Primitive attribute outputs | ![yes](docs/images/feature-yes.svg) | A number or a colour, by the attribute's name, in the Outputs window |
-| Cryptomatte | ![yes](docs/images/feature-yes.svg) | Fog, from a VDB or in a MoonRay box or sphere, has mattes of its own, and each sample is counted once in vector and XPU modes; names and IDs given on objects and materials; picking in the preview; a Cryptomatte node in the compositor |
+| Cryptomatte | ![yes](docs/images/feature-yes.svg) | Fog, from a VDB or in a MoonRay box or sphere, has mattes of its own, and each sample is counted once in vector and XPU modes; names and IDs given on objects and materials; picking in the preview; a Cryptomatte node in the compositor. Coming in 0.5.6.1: Cryptomatte Objects and Materials ticks in Render Settings' XPU and XPU2 Outputs (AOVs) |
 | Deep EXR | ![yes](docs/images/feature-yes.svg) | New in 0.5.5: from XPU2 too, on the processor and the graphics card alike, as MoonRay writes them |
 | Checkpoints and resuming a render | ![yes](docs/images/feature-yes.svg) | Recovery, Safe Denoising and Continue. New in 0.5.5: Safe Denoising works when XPU2 renders: the Render button reads Pause, and Continue takes the render up from XPU2's own checkpoints |
 | EXR metadata | ![yes](docs/images/feature-yes.svg) | |
