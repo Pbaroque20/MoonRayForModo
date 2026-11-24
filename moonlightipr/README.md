@@ -512,6 +512,14 @@ Added to what is translated since the table was written:
   0.5 0.76 (0.75), solid 1; background = 1 - alpha and background + the other passes = beauty. Transmission 0.5 comes to
   0.58 against MoonRay's 0.77: MoonLightIPR leaves a solid through a plain interface, where MoonRay's material scatters
   half of it diffusely again. Off, glass is opaque as before; scenes without glass render byte for byte as before.
+- **Displacement as fine as MoonRay's** (2026-11-24, kit only): a displaced mesh is split no finer than MoonRay dices it,
+  at most `mesh_resolution` pieces an edge (2 to the Subdivision Level; a subdivided cage has its level's share already;
+  seas as before), where it was split to 2 pixels an edge: a skin's pores and a jaw's outline came out strong and sharp
+  where MoonRay's were soft (a tester's DwaSkinMaterial head). And a MoonShine material's (a native row's) Shader Tree
+  displacement layers are read, as MoonRay reads them: before, such a skin was not displaced at all. On a made-up head
+  (`test-results/moonlightipr-displacement-skin`): the outline's shift along the jaw within 0.1-0.3 px of MoonRay's
+  (16.1 against 16.2 px), and the fine relief over the cheek 0.003-0.015 against MoonRay's 0.004-0.017, where it was
+  0.06-0.10.
 - **64 coordinate slots** (2026-11-24, scene form `b`): every Shader Tree image's own repeat, offset, turn or projection
   is a coordinate set of its own (`coordinates.key`), and the scene had 8 for all its materials; the 9th on was left out
   with a notice. The Cobra's texture locators make about a dozen, and its tyre sidewalls (offset u -1) went untextured

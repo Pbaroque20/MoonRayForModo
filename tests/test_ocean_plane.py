@@ -198,7 +198,7 @@ class DraftSplit(unittest.TestCase):
         real = moonlightipr_scene.displaced
 
         def displaced(mesh, *args):
-            seen[mesh['name']] = args[-2]
+            seen[mesh['name']] = args[7]    # the camera: after key, flags, payload, materials, index, warnings, limit
             return real(mesh, *args)
         with tempfile.TemporaryDirectory() as folder, mock.patch.object(ocean, 'folder', return_value=pathlib.Path(folder)), \
                 mock.patch.dict(os.environ, {'MOONRAY_MODO_OCEAN': '1'}), \

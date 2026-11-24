@@ -229,9 +229,11 @@ for i, name in enumerate(sorted(catalog)):
         if shown == 'choice':
             # Named values: a popup drawn by a command.
             control(groups[group], 'moonray.entity.choice%d_%d ?' % (i, j), label, tip)
-        elif shown in ('file', 'grid', 'label', 'material', 'uv'):
+        elif shown in ('file', 'clip', 'grid', 'label', 'material', 'uv'):
             # What used to be typed: a file from a dialog, or a choice of what the scene or the file holds.
-            how = {'file': 'Choose a file, or none', 'grid': "One of the grids in this item's volume file",
+            how = {'file': 'Choose a file, or none',
+                   'clip': "One of Modo's loaded images, or Load image... to choose a file, which is added to Modo's images",
+                   'grid': "One of the grids in this item's volume file",
                    'label': 'A name already in use in the scene, or a new one', 'material': 'One of the materials of the scene',
                    'uv': 'One of the UV maps of the scene'}[shown]
             control(groups[group], 'moonray.entity.option%d_%d ?' % (i, j), label, '. '.join(part for part in (tip, how) if part))

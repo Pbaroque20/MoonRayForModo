@@ -35,6 +35,16 @@ class ShadowCatcherRecordTests(unittest.TestCase):
         self.assertTrue(struct.unpack_from('<I', matte, 46 * 4)[0] & materials.MATERIAL_CATCHER_MATTE)
         self.assertEqual(struct.unpack_from('<f', matte, len(matte) - 4)[0], 1.0)
 
+    def test_backplate_photo_reaches_moonlightipr_as_emission(self):
+        # The card and the catcher's ground wear the photo as emission: MoonLightIPR reads the switch from
+        # native_parameters, which are the graph root's (it showed neither, the card left out and the ground black).
+        from moonray_modo import backplate
+        for emissive, catcher, effects in ((True, False, {'lumiCol'}), (False, True, {'diffCol', 'lumiCol'})):
+            made = backplate.plate_material('photo.jpg', emissive, catcher)
+            self.assertTrue(made['native_parameters']['show_emission'])
+            self.assertEqual(made['native_parameters'], made['node_graph']['nodes']['surface']['parameters'])
+            self.assertEqual({layer['effect'] for layer in materials.graph_layers(made, lambda what: None)}, effects)
+
     def test_session_and_kernel_agree(self):
         self.assertEqual((materials.MATERIAL_SHADOW_CATCHER, materials.MATERIAL_CATCHER_MATTE), (1 << 18, 1 << 19))
         self.assertIn('MATERIAL_SHADOW_CATCHER = 1u << 18, MATERIAL_CATCHER_MATTE = 1u << 19', text('moonlightipr/src/device/shared.h'))

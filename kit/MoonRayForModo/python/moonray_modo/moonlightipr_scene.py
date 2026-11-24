@@ -778,7 +778,7 @@ def displacement_inputs(material):
     return json.dumps(found, sort_keys=True, default=str).encode('utf-8')
 
 
-def displaced(mesh, key, flags, payload, materials, material_index, warnings, limit=None, camera=None, width=0):
+def displaced(mesh, key, flags, payload, materials, material_index, warnings, limit=None, camera=None, width=0, moonray_cap=True):
     """A mesh as the session displaces it, where one of its materials displaces it (form 'L'): after its data, how many
     times to split each triangle into four, the material its instances give it, and each displacing material's
     program (moonlightipr_materials.displacement_tree), as its count and its operations. The key then names the
@@ -800,8 +800,23 @@ def displaced(mesh, key, flags, payload, materials, material_index, warnings, li
     if mesh.get('subdivision'):
         level = max(0, min(6, int(mesh.get('subdivision_level', 3))))
         triangles = 2 * sum(map(len, faces)) * 4 ** max(0, level - 1) if level else sum(len(f) - 2 for f in faces)
+        # As cage_payload subdivides it, its quads within SUBDIVISION_QUADS.
+        corner_count = sum(map(len, faces))
+        while level > 0 and corner_count * 4 ** (level - 1) > SUBDIVISION_QUADS:
+            level -= 1
     else:
         triangles = sum(len(f) - 2 for f in faces)
+    if moonray_cap:
+        # No finer than MoonRay dices it (rdla): at most mesh_resolution pieces along each of the cage's (or the polygons')
+        # edges, 2 to the Subdivision Level unless the mesh says, however fine its screen error asks. Split to 2 pixels
+        # an edge, a skin's pores and a jaw's outline came out sharp and strong where MoonRay's were soft (a tester's
+        # DwaSkinMaterial head). A subdivided cage has its level's share already. Seas keep their own (ocean.py).
+        try:
+            resolution = float(mesh.get('mesh_resolution') or 2 ** int(mesh.get('subdivision_level', 3)))
+        except (TypeError, ValueError):
+            resolution = 8.0
+        allowed = max(0, int(round(math.log2(max(1.0, resolution)))) - (level if mesh.get('subdivision') else 0))
+        limit = allowed if limit is None else min(limit, allowed)
     levels = 0
     # As many times as its budget allows, and no more than its size on screen needs (limit, moonlightipr_detail).
     while levels < 8 and triangles * 4 ** (levels + 1) <= DISPLACED_TRIANGLES and (limit is None or levels < limit):
@@ -1429,7 +1444,8 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
         # the camera as before.
         key, flags, payload = displaced(mesh, key, flags, payload, materials, material_index, warnings, cut['splits'] if cut else None,
                                         cutting if scene.get('_draft') and wears_ocean(mesh, materials, seas)
-                                        else sea_camera if sea_camera is not None else scene.get('camera'), width)
+                                        else sea_camera if sea_camera is not None else scene.get('camera'), width,
+                                        not wears_ocean(mesh, materials, seas))
         if key not in order:
             order[key] = len(meshes)
             # Send the data once per session; later scenes refer to it by key.

@@ -291,7 +291,8 @@ def unworn(scene, result, warnings):
                 continue
             for child in mask.children():
                 if child.type == 'advancedMaterial' and properties.read(child).get('native_shader') and channel(child, 'enable', 1):
-                    named = sorted(tag for tag in carried if tag)
+                    # The kit's own (a Backplate's ground and backdrop, an Ocean Plane's sea) are no polygons' tags.
+                    named = sorted(tag for tag in carried if tag and not tag.startswith('|'))
                     if not named:
                         # Modo's own account of the surfaces names no tag where no group took them: the meshes are asked.
                         found = set()
@@ -686,6 +687,11 @@ def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fal
     if camera is None:
         raise ValueError('The scene needs a render camera.')
     projection = channel(camera,'projType','persp')
+    # Modo's Spherical Map and Spherical VR: MoonRay's spherical camera, put in its place below (spherical_camera); the
+    # rest of the camera is read as a perspective one's, for what a spherical camera shares with it.
+    spherical = projection in ('spherical','sphericalvr')
+    if spherical:
+        projection = 'persp'
     if projection not in ('persp','ortho'):
         raise ValueError('Unsupported camera projection: '+projection)
     warnings = []
@@ -1394,6 +1400,8 @@ def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fal
             if entity_catalog().get(entity.get('class'), {}).get('category') == 'camera':
                 entity.setdefault('parameters', {})['modo_render_camera'] = bool(keyed[1]) and entity.get('identity') == keyed[0].id
         result['camera_keyed'] = keyed[0].id
+    if spherical:
+        spherical_camera(result, camera, channel(camera, 'projType', '') == 'sphericalvr', warnings)
     # A MoonRay camera rendered through is a Modo camera too: its own Overscan holds, not the render camera's.
     through = next((entity for entity in result['entities'] if entity.get('parameters', {}).get('modo_render_camera')), None)
     if through is not None:
@@ -1456,6 +1464,27 @@ def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fal
     texture_uv.apply(result, warnings)
     result['warnings'] = sorted(set(warnings))
     return result
+
+
+def spherical_camera(result, camera, vr, warnings):
+    """A Modo camera of Spherical Map or Spherical VR projection rendered through MoonRay's spherical camera, the whole
+    sphere about its place (latitude-longitude, the view's direction in the middle of the picture), in every engine,
+    where no MoonRay camera item is chosen to render through already. Spherical VR renders one picture, from the camera's
+    place, with a notice. The scene stopped with "Unsupported camera projection" before."""
+    from .entities import catalog as entity_catalog, CAMERA_NEAR
+    cameras = [entity for entity in result.get('entities') or [] if entity_catalog().get(entity.get('class'), {}).get('category') == 'camera']
+    if any(entity.get('parameters', {}).get('modo_render_camera') for entity in cameras):
+        return
+    # MoonRay's whole sphere has the view's direction three quarters across the picture (SphericalCamera's longitude
+    # from -270 to 90 degrees); Modo's in the middle: its camera turned a quarter about its own up axis for it.
+    m = world_matrix(camera)
+    x, y, z = m[0:3], m[4:7], m[8:11]
+    turned = list(z) + [m[3]] + list(y) + [m[7]] + [-v for v in x] + [m[11]] + list(m[12:16])
+    result.setdefault('entities', []).append({
+        'identity': camera.id + '|spherical', 'name': camera.name, 'class': 'SphericalCamera', 'matrix': turned,
+        'parameters': {'modo_render_camera': True, 'near': CAMERA_NEAR}, 'attributes': {}})
+    if vr:
+        warnings.append('Camera %s: Spherical VR renders as one spherical picture from the camera, not a pair of eyes.' % camera.name)
 
 
 def backplate_cameras(scene):
