@@ -2939,10 +2939,14 @@ extern "C" __global__ void __raygen__moonlightipr() {
             const float3 made = make_float3(measured.x > 0.01f ? albedo.x / measured.x : 1.0f, measured.y > 0.01f ? albedo.y / measured.y : 1.0f,
                                             measured.z > 0.01f ? albedo.z / measured.z : 1.0f);
             for (int i = 0; i < count; ++i) found[i] = found[i] * made;
-            // Through the solid: a way in, anywhere within 85 degrees of straight down, to a far side that faces away.
+            // Through the solid: a way in, anywhere within 45 degrees of straight down, to a far side that faces away.
+            // Within 85 degrees, as it was, a way in nearly along the surface came out again through the next fold of
+            // it, a ridge or a jaw, and added that light to what the probes across the surface had already found and
+            // made up to a flat surface's: a bright line along every ridge of a skin, where MoonRay's was smooth. Ears,
+            // leaves and lit-from-behind shapes are as before (sss_far, sss_backlit, dwa_skin_thin against MoonRay).
             for (int i = 0; i < tries && count < 8; ++i) {
                 seedPhase(seed, QMC_DIFFUSION_FAR, i, 4);
-                const float lowest = 0.0871557f;   // cos 85 degrees
+                const float lowest = 0.70710678f;  // cos 45 degrees
                 const float z = 1.0f - rnd(seed) * (1.0f - lowest), ring = sqrtf(fmaxf(0.0f, 1.0f - z * z)), turn = 2.0f * ML_PI * rnd(seed);
                 const float3 in = -(frame.t * (ring * cosf(turn)) + frame.b * (ring * sinf(turn)) + ns * z);
                 const float3 start = offsetOrigin(hit.p, ng, in);
