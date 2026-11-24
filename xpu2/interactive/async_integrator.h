@@ -2493,12 +2493,29 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
                        aov::lpeNext(at, pv.lpe, aov::LpeEmission, shade::labelLpeId(bsdf.materialLabels)));
         // A shadow catcher seen past the camera is what it wears (its emission), unlit, and the path ends there. Seen
         // by the camera, (1 - strength) of its emission is taken outright and the rest comes back through its light
-        // samples, each its share (below); as a matte, no colour, and the shadows in alpha.
+        // samples, each its share (below); as a matte, the background in place of the emission (what the camera sees
+        // past it: the lights it sees along the ray beyond the hit, as a camera ray that hits nothing sees them,
+        // modoCatcherBackground), and the shadows in alpha. Its light path state: the camera's straight event through
+        // the catcher, then the light's (Environment background holds it); the catcher's own lighting in none.
         const bool catcherHere = catcher >= 0.0f && pv.depth == 0;
-        const Color catcherShown = pv.T * bsdf.selfEmission;
+        Color catcherShown = pv.T * bsdf.selfEmission;
+        int catcherLpe = -1;
         if (catcher >= 0.0f) {
             if (pv.depth > 0) continue;
             radiance -= catcherMatte ? catcherShown : catcherShown * catcher;
+            if (catcherMatte) {
+                catcherShown = Color{0, 0, 0};
+                if (c.visibleLights) {
+                    U32 seenLight = ~0u;
+                    catcherShown = pv.T * visibleLightRadiance(c, root, backend, hit.point, ray.direction, 3.4028234663852886e+38f,
+                                                               false, footprint, pv.presenceDepth, &seenLight);
+                    if (lpeOn && seenLight != ~0u && pv.lpe >= 0)
+                        catcherLpe = aov::lpeNext(at, aov::lpeStraight(at, pv.lpe), aov::LpeLight, backend.light(seenLight).lpeLabel);
+                }
+                const Color outright = catcherShown * (1.0f - catcher);
+                radiance += outright;
+                if (catcherLpe >= 0 && !shade::isBlack(outright)) aov::light(at, aovs, aovDepths, outright, nullptr, 0, catcherLpe);
+            }
         }
         const bool subsurface = bsdf.bssrdf.type != shade::BssrdfNone;
         if (subsurface && hit.epsilon > 0.0f) return SampleStatus::Error;  // subsurface scattering on curves is not ported
@@ -2804,17 +2821,22 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
                     const float whole = shade::luminance(catcherTotal);
                     if (whole > 0.0f) {
                         const float part = shade::luminance(t) / whole;
-                        if (catcherMatte) {
-                            catcherAlpha = -catcher * pv.pixelWeight * part;
-                            t = Color{0, 0, 0};
-                        } else {
-                            const Color share{catcherTotal.x > 0.0f ? t.x / catcherTotal.x : part,
-                                              catcherTotal.y > 0.0f ? t.y / catcherTotal.y : part,
-                                              catcherTotal.z > 0.0f ? t.z / catcherTotal.z : part};
-                            t = catcherShown * share * catcher;
-                        }
+                        const Color share{catcherTotal.x > 0.0f ? t.x / catcherTotal.x : part,
+                                          catcherTotal.y > 0.0f ? t.y / catcherTotal.y : part,
+                                          catcherTotal.z > 0.0f ? t.z / catcherTotal.z : part};
+                        t = catcherShown * share * catcher;
+                        if (catcherMatte) catcherAlpha = -catcher * pv.pixelWeight * part;
                     } else {
                         t = Color{0, 0, 0};
+                    }
+                    // A matte's light path expressions (modoCatcherLpe): its share of the background, under the background's
+                    // state, as the first lobe's, and nothing of the catcher's own lighting.
+                    if (catcherMatte && lpeOn) {
+                        for (U32 k = 0; k < bsdf.topCount; ++k) lobeLpe[k] = -1;
+                        if (bsdf.topCount && whole > 0.0f && catcherLpe >= 0) {
+                            lobeLpe[0] = catcherLpe;
+                            lobeT[0] = t;
+                        }
                     }
                 }
                 const V3 shadowOrigin = toonShadowOrigin(st, curveEpsilon > 0.0f ? st.P : (shade::dot(wi, st.Ng) >= 0.0f ? above : below), wi);
@@ -3078,7 +3100,8 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
                 }
                 // LPE: the light the sample reached (addDirectVisibleBsdfLobeSampleContributionBundled; held: when the
                 // bounce is traced).
-                if (lpeOn && !held && lightHit && !shade::isBlack(directBefore) && shade::finite3(directBefore)) {
+                // A matte shadow catcher's lighting is in none (modoCatcherLpe): it shows the background.
+                if (lpeOn && !held && lightHit && !catcherMatte && !shade::isBlack(directBefore) && shade::finite3(directBefore)) {
                     const int state = aov::lpeNext(at, aov::lpeScatter(at, pv.lpe, lobe.type, lobeLpeLabel(lobe)), aov::LpeLight,
                                                    backend.light(lightIndex).lpeLabel);
                     const bool presenceShadows = backend.light(lightIndex).presenceShadows;

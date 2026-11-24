@@ -249,8 +249,10 @@ def own_file_wanted(scene,safe=False,recovery=False):
 
 
 def metadata(geometries,lines,crypto=False,scene=None,category_override=None):
-    from .working_space import label
-    names=['MoonRayForModo/workingSpace'];types=['string'];values=[label((scene or {}).get('asset_settings',{}))]
+    from .working_space import label, chromaticities
+    asset_settings=(scene or {}).get('asset_settings',{})
+    names=['MoonRayForModo/workingSpace','chromaticities'];types=['string','chromaticities']
+    values=[label(asset_settings),chromaticities(asset_settings)]
     if crypto:
         cat=category_override or category(scene or {})
         for key,value in header('Cryptomatte',manifest(geometries,cat,scene)):names.append(key);types.append('string');values.append(value)

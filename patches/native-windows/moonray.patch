@@ -2123,7 +2123,7 @@ index 1cc70f8..0888812 100644
                      if (lpeStateId >= 0) {
                          // accumulate results. As this has to do with directly hitting a light, we don't have
 diff --git a/lib/rendering/pbr/integrator/PathIntegrator.cc b/lib/rendering/pbr/integrator/PathIntegrator.cc
-index 227c68e..edd144c 100644
+index 227c68e..c6f0b18 100644
 --- a/lib/rendering/pbr/integrator/PathIntegrator.cc
 +++ b/lib/rendering/pbr/integrator/PathIntegrator.cc
 @@ -16,6 +16,10 @@
@@ -2154,19 +2154,22 @@ index 227c68e..edd144c 100644
  
      //---------------------------------------------------------------------
      // Add contribution from light hit by the primary ray
-@@ -739,10 +746,37 @@ PathIntegrator::computeRadianceRecurse0(pbr::TLState *pbrTls, mcrt_common::RayDi
+@@ -739,10 +746,71 @@ PathIntegrator::computeRadianceRecurse0(pbr::TLState *pbrTls, mcrt_common::RayDi
  
      //---------------------------------------------------------------------
      // Do bsdf sampling and light sampling
 +    // Modo: a shadow catcher seen by the camera (tools/port_shadow_catcher.py): (1 - strength) of its emission
-+    // outright, the rest as much as its light samples are not shadowed; as a matte, no colour and the shadows in alpha.
++    // outright, the rest as much as its light samples are not shadowed; as a matte, the background in its place, darkened
++    // the same way, and the shadows in alpha.
 +    if (modoShadowCatcher() && material->getModoShadowCatcher()) {
++        const bool modoMatte = material->getModoShadowMatte();
 +        ModoCatcherTally &tally = modoCatcherTally();
 +        tally = ModoCatcherTally();
 +        tally.on = true;
++        // A matte's own lighting is in no light path output: what it shows is the background (below).
 +        computeRadianceBsdfMultiSampler(pbrTls, sp, pv, ray, isect, *bsdf, slice,
 +            false, shading::BsdfLobe::Type::NONE, newPriorityList, newPriorityListCount, activeLightSet, normalPtr,
-+            rayEpsilon, shadowRayEpsilon, ssAov, sequenceID, aovs, cryptomatteFlags,
++            rayEpsilon, shadowRayEpsilon, ssAov, sequenceID, modoMatte ? nullptr : aovs, cryptomatteFlags,
 +            parentLobeLightSets);
 +        tally.on = false;
 +        const float strength = scene_rdl2::math::clamp(material->getModoShadowStrength(), 0.f, 1.f);
@@ -2178,8 +2181,39 @@ index 227c68e..edd144c 100644
 +                                            total.g > 0.f ? lit.g / total.g : part,
 +                                            total.b > 0.f ? lit.b / total.b : part);
 +        radiance -= selfEmission;
-+        if (material->getModoShadowMatte()) {
++        if (modoMatte) {
 +            transparency = 1.f - strength * (1.f - part);
++            // What the camera would see past it: the lights it sees along the ray beyond the hit, as a camera ray that
++            // hits nothing sees them; in the light path outputs through the camera's straight event at the catcher.
++            scene_rdl2::math::Color modoBackground(0.f);
++            int modoBgLpe = -1;
++            mcrt_common::Ray modoPast(isect.getP(), ray.getDirection(), 0.f, sInfiniteLightDistance, ray.getTime(),
++                                      ray.getDepth());
++            LightIntersection modoPastIsect;
++            int modoHits = 0;
++            SequenceIDIntegrator modoSid(0, sp.mPixel, sp.mSubpixelIndex, SequenceType::IndexSelection, sequenceID);
++            IntegratorSample1D modoChoice(modoSid);
++            const Light *modoLight = scene->intersectVisibleLight(modoPast, sInfiniteLightDistance, modoChoice,
++                                                                  modoPastIsect, modoHits);
++            if (modoLight) {
++                LightFilterRandomValues modoFilterR = {
++                    scene_rdl2::math::Vec2f(0.f, 0.f), scene_rdl2::math::Vec3f(0.f, 0.f, 0.f)};
++                modoBackground = pv.pathThroughput * modoHits *
++                    modoLight->eval(pbrTls->mTopLevelTls, ray.getDirection(), isect.getP(), modoFilterR, ray.getTime(),
++                                    modoPastIsect, true, nullptr, nullptr, ray.getDirFootprint(), nullptr, nullptr);
++                if (aovs && pv.lpeStateId >= 0) {
++                    const int straight = lightAovs.straightEventTransition(pbrTls, pv.lpeStateId);
++                    if (straight >= 0) {
++                        modoBgLpe = lightAovs.lightEventTransition(pbrTls, straight, modoLight);
++                    }
++                }
++            }
++            const scene_rdl2::math::Color modoSeen = modoBackground * ((1.f - strength) + strength * share);
++            radiance += modoSeen;
++            if (aovs && modoBgLpe >= 0 && !isBlack(modoSeen)) {
++                aovAccumLightAovs(pbrTls, aovSchema, lightAovs, modoSeen, nullptr, AovSchema::sLpePrefixNone,
++                                  modoBgLpe, aovs);
++            }
 +        } else {
 +            radiance += selfEmission * ((1.f - strength) + strength * share);
 +        }
@@ -2192,7 +2226,7 @@ index 227c68e..edd144c 100644
  
      // -------------------------------------------------------------------
      // Cryptomatte handling
-@@ -763,7 +797,7 @@ PathIntegrator::computeRadianceRecurse0(pbr::TLState *pbrTls, mcrt_common::RayDi
+@@ -763,7 +831,7 @@ PathIntegrator::computeRadianceRecurse0(pbr::TLState *pbrTls, mcrt_common::RayDi
              float reciprocalWeight = 1.0f / scene_rdl2::math::max(pv.pathPixelWeight, 0.01f);
              scene_rdl2::math::Color beauty = (radiance - presenceRadiance) * reciprocalWeight;
  
@@ -2201,7 +2235,7 @@ index 227c68e..edd144c 100644
                                                                            cryptomatteResults,
                                                                            beauty,
                                                                            pv.presenceDepth,
-@@ -851,6 +885,10 @@ PathIntegrator::computeRadianceRecurse1(pbr::TLState *pbrTls, mcrt_common::RayDi
+@@ -851,6 +919,10 @@ PathIntegrator::computeRadianceRecurse1(pbr::TLState *pbrTls, mcrt_common::RayDi
              aovAccumBackgroundExtraAovs(pbrTls, fs, pv, aovs);
          }
          transparency = reduceTransparency(vt.mTransmittanceAlpha);
@@ -2212,7 +2246,7 @@ index 227c68e..edd144c 100644
          return radiance;
      }
  
-@@ -1037,6 +1075,11 @@ PathIntegrator::computeRadianceRecurse1(pbr::TLState *pbrTls, mcrt_common::RayDi
+@@ -1037,6 +1109,11 @@ PathIntegrator::computeRadianceRecurse1(pbr::TLState *pbrTls, mcrt_common::RayDi
      // determined by comparing the various depths to their max allowed values.
      // Note: hair lobes are also glossy lobes. So their max depth is max(mMaxGlossyDepth, mMaxHairDepth).
      // Also note we check there's a lobe, to limit indirect lighting on volumes to a single bounce
@@ -2224,7 +2258,7 @@ index 227c68e..edd144c 100644
      shading::BsdfLobe::Type indirectFlags = shading::BsdfLobe::Type::NONE;
      if ((mBsdfSamples > 0) && (ray.getDepth() < mMaxDepth) && lobe) {
          if (pv.diffuseDepth < mMaxDiffuseDepth) setFlag(indirectFlags, shading::BsdfLobe::Type::ALL_DIFFUSE);
-@@ -1184,6 +1227,9 @@ PathIntegrator::initPrimaryRay(pbr::TLState *pbrTls,
+@@ -1184,6 +1261,9 @@ PathIntegrator::initPrimaryRay(pbr::TLState *pbrTls,
      pv.hairDepth = 0;
      pv.volumeDepth = 0;
      pv.accumOpacity = 0;
@@ -2234,7 +2268,7 @@ index 227c68e..edd144c 100644
      pv.lpeStateId = 0;
      pv.lobeType = 0;
  
-@@ -1326,6 +1372,7 @@ PathIntegrator::computeRadiance(pbr::TLState *pbrTls, int pixelX, int pixelY,
+@@ -1326,6 +1406,7 @@ PathIntegrator::computeRadiance(pbr::TLState *pbrTls, int pixelX, int pixelY,
      VolumeTransmittance vt;
  
      sp.mCryptomatteBuffer = (void *)cryptomatteBuffer;
@@ -2242,7 +2276,7 @@ index 227c68e..edd144c 100644
      CryptomatteResults cryptomatteResultsArray[NUM_CRYPTOMATTE_TYPES];
      sp.mCryptomatteResultsArray = (void *)cryptomatteResultsArray;
  
-@@ -1437,6 +1484,7 @@ PathIntegrator::computeRadiance(pbr::TLState *pbrTls, int pixelX, int pixelY,
+@@ -1437,6 +1518,7 @@ PathIntegrator::computeRadiance(pbr::TLState *pbrTls, int pixelX, int pixelY,
  
          // not deep render
          float transparency;
@@ -2250,7 +2284,7 @@ index 227c68e..edd144c 100644
          radiance = computeRadianceRecurse0(pbrTls, ray, sp, pv, /* lobe = */ nullptr,
                                             transparency, vt,
                                             sequenceID, aovs, depth,
-@@ -1444,6 +1492,10 @@ PathIntegrator::computeRadiance(pbr::TLState *pbrTls, int pixelX, int pixelY,
+@@ -1444,6 +1526,10 @@ PathIntegrator::computeRadiance(pbr::TLState *pbrTls, int pixelX, int pixelY,
                                             Rdl2LightSetList());
  
          alpha = 1.f - transparency;
@@ -2261,7 +2295,7 @@ index 227c68e..edd144c 100644
          pathPixelWeight = pv.pathPixelWeight;
  
          if (checkForNanSimple(radiance, "Path integrator", sp)) {
-@@ -1559,7 +1611,10 @@ PathIntegrator::computeRadiancePresence(pbr::TLState *pbrTls, mcrt_common::RayDi
+@@ -1559,7 +1645,10 @@ PathIntegrator::computeRadiancePresence(pbr::TLState *pbrTls, mcrt_common::RayDi
      }
  
      vt.mTransmittanceE *= vtPresence.mTransmittanceE;
@@ -2274,10 +2308,10 @@ index 227c68e..edd144c 100644
  }
  
 diff --git a/lib/rendering/pbr/integrator/PathIntegrator.isph b/lib/rendering/pbr/integrator/PathIntegrator.isph
-index eab3669..620e973 100644
+index eab3669..3301381 100644
 --- a/lib/rendering/pbr/integrator/PathIntegrator.isph
 +++ b/lib/rendering/pbr/integrator/PathIntegrator.isph
-@@ -49,7 +49,14 @@ void computeRadianceBsdfMultiSampler(const uniform PathIntegrator * uniform this
+@@ -49,7 +49,15 @@ void computeRadianceBsdfMultiSampler(const uniform PathIntegrator * uniform this
                                       varying float shadowRayEpsilon,
                                       const varying Color &ssAov,
                                       varying uint32_t &sequenceID,
@@ -2285,7 +2319,8 @@ index eab3669..620e973 100644
 +                                     const varying Rdl2LightSetList * uniform parentLobeLightSets,
 +                                     const varying float modoCatcher,
 +                                     const varying Color &modoShown,
-+                                     const varying bool modoMatte);
++                                     const varying bool modoMatte,
++                                     const varying int modoBgLpe);
 +
 +// Modo: shadow catchers (tools/port_shadow_catcher.py)
 +extern "C" void
@@ -2294,10 +2329,18 @@ index eab3669..620e973 100644
  extern "C" void
  CPP_addOcclusionQueueEntries(           uniform PbrTLState *     uniform pbrTls,
 diff --git a/lib/rendering/pbr/integrator/PathIntegratorBundled.ispc b/lib/rendering/pbr/integrator/PathIntegratorBundled.ispc
-index 05df5b0..8a260e0 100644
+index 05df5b0..d56339a 100644
 --- a/lib/rendering/pbr/integrator/PathIntegratorBundled.ispc
 +++ b/lib/rendering/pbr/integrator/PathIntegratorBundled.ispc
-@@ -92,6 +92,25 @@ CPP_applyVolumeTransmittance(const uniform PathIntegrator * uniform pathIntegrat
+@@ -53,6 +53,7 @@
+ #include "PathIntegrator.isph"
+ 
+ #include <moonray/rendering/pbr/core/Aov.isph>
++#include <moonray/rendering/lpe/StateMachine.isph>   // Modo: tools/port_shadow_catcher.py
+ #include <moonray/rendering/pbr/core/RayState.isph>
+ #include <moonray/rendering/pbr/light/LightSet.isph>
+ #include <moonray/rendering/shading/ispc/Intersection.isph>
+@@ -92,6 +93,25 @@ CPP_applyVolumeTransmittance(const uniform PathIntegrator * uniform pathIntegrat
      uniform PbrTLState * uniform pbrTls, const uniform uint32_t * uniform rayStateIndices,
      uniform int32_t laneMask);
  
@@ -2323,7 +2366,7 @@ index 05df5b0..8a260e0 100644
  extern "C" void
  CPP_addRadianceQueueEntries(            uniform PbrTLState *     uniform pbrTls,
                                    const varying BundledRadiance *uniform radiances,
-@@ -120,7 +139,12 @@ fillBundledRadiance(       uniform PbrTLState *     uniform pbrTls,
+@@ -120,7 +140,12 @@ fillBundledRadiance(       uniform PbrTLState *     uniform pbrTls,
      // For each primary ray which takes this code path, we want to initialize
      // the frame buffer alpha to the pathPixelWeight. Rays at higher depths only
      // subtract transparency from this value.
@@ -2337,7 +2380,60 @@ index 05df5b0..8a260e0 100644
  
      if (!isBlack(radiance) || !isEqual(pathPixelWeight, 0.f) || !isEqual(alpha, 0.f)) {
  
-@@ -294,6 +318,10 @@ integrateBundled( const uniform PathIntegrator * uniform this,
+@@ -157,6 +182,52 @@ fillBundledRadiance(       uniform PbrTLState *     uniform pbrTls,
+ 
+ //-----------------------------------------------------------------------------
+ 
++// Modo: what the camera would see past a matte shadow catcher (tools/port_shadow_catcher.py): the lights it sees along
++// the ray beyond the hit, as a camera ray that hits nothing sees them (RayHandlers.cc), one chosen among those it meets,
++// times their number; black where it sees none. lpeStateId: the light path state of that, the camera's straight event
++// through the catcher then the light's (-1 for none), with which Environment background (C<Ts>*<L>) holds it.
++inline varying Color
++modoCatcherBackground(      uniform PbrTLState *     uniform pbrTls,
++                            uniform ShadingTLState * uniform shadingTls,
++                      const uniform LightSet *       uniform visibleLightSet,
++                      const uniform LightAovs &              lightAovs,
++                      const uniform bool                     aovs,
++                      const varying RayState &               rs,
++                      const varying RayDifferential &        ray,
++                      const varying Intersection &           isect,
++                            varying int &                    lpeStateId)
++{
++    lpeStateId = -1;
++    const uniform FrameState &fs = *pbrTls->mFs;
++    varying SequenceID sid;
++    SequenceID_init(sid, rs.mSubpixel.mPixel, rs.mSubpixel.mSubpixelIndex, fs.mInitialSeed);
++    varying IntegratorSample1D lightChoiceSamples;
++    IntegratorSample1D_init(lightChoiceSamples, sid);
++    varying Vec3f cullingNormal;
++    setInvalidCullingNormal(&cullingNormal);
++    const varying Vec3f origin = getP(isect);
++    varying LightIntersection hitLightIsect;
++    varying int numHits = 0;
++    const varying int lightIdx = LightSet_intersect(pbrTls, visibleLightSet, origin, cullingNormal,
++                                                    Ray_getDirection(ray), Ray_getTime(ray), sInfiniteLightDistance,
++                                                    false, lightChoiceSamples, 0, -1, hitLightIsect, numHits, 0, 0);
++    varying Color background = sBlack;
++    if (lightIdx >= 0) {
++        const uniform Light * varying hitLight = LightSet_getLight(visibleLightSet, lightIdx);
++        // light filters don't apply to camera rays
++        varying LightFilterRandomValues lightFilterR = { Vec2f_ctor(0.f, 0.f), Vec3f_ctor(0.f, 0.f, 0.f) };
++        background = rs.mPathVertex.pathThroughput * numHits *
++            Light_eval(hitLight, shadingTls, Ray_getDirection(ray), origin, lightFilterR, Ray_getTime(ray),
++                       hitLightIsect, true, nullptr, nullptr, Ray_getDirFootprint(ray), nullptr, nullptr);
++        if (aovs && LightAovs_hasEntries(&lightAovs) && rs.mPathVertex.lpeStateId >= 0) {
++            const varying int straight = LpeStateMachine_transition(&lightAovs.mLpeStateMachine,
++                rs.mPathVertex.lpeStateId, LPE_EVENT_TYPE_TRANSMISSION, LPE_EVENT_SCATTERING_TYPE_STRAIGHT, LPE_noLabel);
++            lpeStateId = LightAovs_lightEventTransition(&lightAovs, straight, hitLight);
++        }
++    }
++    return background;
++}
++
+ void
+ integrateBundled( const uniform PathIntegrator * uniform this,
+                         uniform PbrTLState *     uniform pbrTls,
+@@ -294,6 +365,10 @@ integrateBundled( const uniform PathIntegrator * uniform this,
          if ((1 << programIndex) & bsdf->mEarlyTerminationMask) {
              if (rayDepth == 0) {
                  transparency = reduceTransparency(rs->mVolTalpha);
@@ -2348,7 +2444,7 @@ index 05df5b0..8a260e0 100644
              } else {
                  transparency = reduceTransparency(pv.pathThroughput);
              }
-@@ -357,6 +385,37 @@ integrateBundled( const uniform PathIntegrator * uniform this,
+@@ -357,6 +432,47 @@ integrateBundled( const uniform PathIntegrator * uniform this,
                                    sp.mPixel, rs->mDeepDataHandle);
              }
          }
@@ -2356,11 +2452,13 @@ index 05df5b0..8a260e0 100644
 +        // Modo: a shadow catcher (tools/port_shadow_catcher.py). Seen past the camera, it is what it wears (its
 +        // emission) unlit, and the path ends. Seen by the camera, (1 - strength) of its emission is taken outright and
 +        // the rest comes back through its light samples' shadow rays, each its share (modoCatcherShare); as a matte,
-+        // no colour and an alpha of strength, which the unshadowed samples take back off.
++        // the background in place of the emission (modoCatcherBackground) and an alpha of strength, which the
++        // unshadowed samples take back off.
 +        varying float modoCatcher = -1.f;
 +        varying bool modoMatte = false;
 +        modoShadowCatcherOf(isect, modoCatcher, modoMatte);
 +        varying Color modoShown = sBlack;
++        varying int modoBgLpe = -1;
 +        if (modoCatcher >= 0.f) {
 +            if (rayDepth > 0) {
 +                numRadiances += fillBundledRadiance(pbrTls,
@@ -2378,6 +2476,14 @@ index 05df5b0..8a260e0 100644
 +            if (modoMatte) {
 +                radiance = radiance - selfEmission;
 +                transparency = 1.f - modoCatcher;
++                modoShown = modoCatcherBackground(pbrTls, shadingTls, visibleLightSet, lightAovs, aovs, *rs, ray, isect,
++                                                  modoBgLpe);
++                const varying Color modoOutright = modoShown * (1.f - modoCatcher);
++                radiance = radiance + modoOutright;
++                if (aovs && modoBgLpe > 0 && !isBlack(modoOutright)) {
++                    aovAccumLightAovs(pbrTls, aovSchema, lightAovs, modoOutright, modoBgLpe, sp.mPixel,
++                                      rs->mDeepDataHandle);
++                }
 +            } else {
 +                radiance = radiance - selfEmission * modoCatcher;
 +            }
@@ -2386,7 +2492,7 @@ index 05df5b0..8a260e0 100644
          //---------------------------------------------------------------------
          // Early out if we don't have any Bsdf lobes nor Bssrdf
          if (Bsdf_getLobeCount(bsdf) == 0  &&  Bsdf_hasSubsurface(bsdf) == false) {
-@@ -595,7 +654,7 @@ integrateBundled( const uniform PathIntegrator * uniform this,
+@@ -595,7 +711,7 @@ integrateBundled( const uniform PathIntegrator * uniform this,
                                          isect,
                                          *bsdf,
                                          slice,
@@ -2395,7 +2501,7 @@ index 05df5b0..8a260e0 100644
                                          indirectFlags,
                                          activeLightSet,
                                          cullingNormal,
-@@ -603,7 +662,10 @@ integrateBundled( const uniform PathIntegrator * uniform this,
+@@ -603,7 +719,11 @@ integrateBundled( const uniform PathIntegrator * uniform this,
                                          shadowRayEpsilon,
                                          ssAov,
                                          sequenceID,
@@ -2403,7 +2509,8 @@ index 05df5b0..8a260e0 100644
 +                                        parentLobeLightSets,
 +                                        modoCatcher,
 +                                        modoShown,
-+                                        modoMatte);
++                                        modoMatte,
++                                        modoBgLpe);
      }
  
      MNRY_ASSERT(numRadiances <= numEntries);
@@ -2504,7 +2611,7 @@ index 6c7d5e7..73da630 100644
              // LPE
              if (aovs) {
 diff --git a/lib/rendering/pbr/integrator/PathIntegratorMultiSampler.ispc b/lib/rendering/pbr/integrator/PathIntegratorMultiSampler.ispc
-index f9aed75..8f52779 100644
+index f9aed75..2cdb39e 100644
 --- a/lib/rendering/pbr/integrator/PathIntegratorMultiSampler.ispc
 +++ b/lib/rendering/pbr/integrator/PathIntegratorMultiSampler.ispc
 @@ -94,6 +94,24 @@ fillOcclRay(       uniform PbrTLState *      uniform pbrTls,
@@ -2561,7 +2668,51 @@ index f9aed75..8f52779 100644
              rayEpsilon, maxT,
              tDirect, rayState, bundledOcclRayData, occlTestType, assignmentId, lsmpVisibility);
      }
-@@ -677,6 +699,10 @@ addIndirectOrDirectVisibleContributionsBundled( const uniform PathIntegrator * u
+@@ -308,6 +330,23 @@ addDirectVisibleBsdfSampleContributionsBundled( const uniform PathIntegrator * u
+     }
+ }
+ 
++// Modo: whether a hit is on a matte shadow catcher (tools/port_shadow_catcher.py).
++static varying bool
++modoMatteCatcherAt(const varying Intersection &isect)
++{
++    varying bool matte = false;
++    const varying intptr_t address = Address64_get(isect.mMaterial);
++    foreach_unique (material in address) {
++        uniform float held = -1.f;
++        uniform int asMatte = 0;
++        if (material != 0) {
++            CPP_modoShadowCatcher((uniform int64)material, &held, &asMatte);
++        }
++        matte = held >= 0.f && asMatte != 0;
++    }
++    return matte;
++}
++
+ void addDirectVisibleLightSampleContributionsBundled(       uniform PbrTLState *     uniform pbrTls,
+                                                       const varying LightSetSampler &        lSampler,
+                                                             varying LightSample *    uniform lsmp,
+@@ -384,8 +423,17 @@ void addDirectVisibleLightSampleContributionsBundled(       uniform PbrTLState *
+                     ++numItems;
+                 }
+ 
+-                if (numItems > 0) {
+-                    data = PbrTLState_allocList(pbrTls, sizeof(uniform BundledOcclRayData), numItems);
++                // Modo: a matte shadow catcher's samples keep a block with no expression of their own to carry, for
++                // the background they bring (modoCatcherLpe, tools/port_shadow_catcher.py).
++                const varying bool modoKeep = numItems == 0 && modoMatteCatcherAt(isect);
++                if (numItems > 0 || modoKeep) {
++                    data = PbrTLState_allocList(pbrTls, sizeof(uniform BundledOcclRayData), numItems > 0 ? numItems : 1);
++                }
++                if (modoKeep) {
++                    uniform BundledOcclRayData * varying b =
++                        (uniform BundledOcclRayData * varying) PbrTLState_getListItem(pbrTls, data, 0);
++                    b->mFlags = LPE | LIGHT_SAMPLE;
++                    b->mLpeStateId = 0;
+                 }
+ 
+                 varying int next = 0;
+@@ -677,6 +725,10 @@ addIndirectOrDirectVisibleContributionsBundled( const uniform PathIntegrator * u
              pv.subsurfaceDepth = parentPv.subsurfaceDepth;
              pv.accumOpacity = newAccumOpacity;
              pv.lobeType = BsdfLobe_getType(lobe);
@@ -2572,14 +2723,15 @@ index f9aed75..8f52779 100644
  
              // LPE
              const uniform AovSchema &aovSchema = *((const uniform AovSchema * uniform) fs.mAovSchema);
-@@ -809,6 +835,54 @@ addIndirectOrDirectVisibleContributionsBundled( const uniform PathIntegrator * u
+@@ -809,6 +861,82 @@ addIndirectOrDirectVisibleContributionsBundled( const uniform PathIntegrator * u
      Arena_setPtr(arena, memoryBookmark1);
  }
  
 +// Modo: a shadow catcher seen by the camera (tools/port_shadow_catcher.py). Its light samples' shadow rays (slots below
 +// lightSlots; above them, its bsdf samples') carry, between them, what it would gather unshadowed (modoCatcherTotal);
 +// each is given instead the catcher's emission x strength x its share of that, so that unshadowed they add up to the
-+// emission and a blocked one leaves its share out. As a matte, no colour, and its share of the alpha taken back off.
++// emission and a blocked one leaves its share out. As a matte, the same of the background (shown), its share of the
++// alpha taken back off, and in the light path outputs that share of the background (modoCatcherLpe).
 +static void
 +modoCatcherTotal(const varying BundledOcclRay * uniform rays, const uniform uint32_t * uniform indices,
 +                 uniform uint32_t count, uniform int lightSlots, varying Color &total)
@@ -2593,11 +2745,35 @@ index f9aed75..8f52779 100644
 +    }
 +}
 +
++// A matte's shadow ray: its light path expressions carry the share of the background it brings (value), under bgLpe
++// (modoCatcherBackground's state; none for -1), in place of the catcher's own lighting.
 +static void
-+modoCatcherShare(varying BundledOcclRay * uniform rays, const uniform uint32_t * uniform indices,
++modoCatcherLpe(uniform PbrTLState * uniform pbrTls, varying BundledOcclRay &ray, const varying int bgLpe,
++               const varying Color &value)
++{
++    if (ray.mDataPtrHandle == PBR_nullHandle) {
++        return;
++    }
++    const varying unsigned int items = PbrTLState_getNumListItems(pbrTls, ray.mDataPtrHandle);
++    for (varying unsigned int j = 0; j < items; ++j) {
++        uniform BundledOcclRayData * varying b =
++            (uniform BundledOcclRayData * varying) PbrTLState_getListItem(pbrTls, ray.mDataPtrHandle, j);
++        if (j == 0 && bgLpe > 0) {
++            b->mFlags |= LPE;
++            b->mLpeStateId = bgLpe;
++            b->mLpeRadiance = value;
++        } else if (b->mFlags & LPE) {
++            b->mLpeStateId = 0;     // no more valid items in the list
++        }
++    }
++}
++
++static void
++modoCatcherShare(uniform PbrTLState * uniform pbrTls,
++                 varying BundledOcclRay * uniform rays, const uniform uint32_t * uniform indices,
 +                 uniform uint32_t count, uniform int lightSlots, const varying float catcher,
 +                 const varying Color &shown, const varying Color &total, const varying bool matte,
-+                 const varying float pathPixelWeight)
++                 const varying float pathPixelWeight, const varying int bgLpe)
 +{
 +    const varying float whole = luminance(total);
 +    for (uniform uint32_t k = 0; k < count; ++k) {
@@ -2607,18 +2783,21 @@ index f9aed75..8f52779 100644
 +            if (slot < lightSlots && whole > 0.f) {
 +                const varying Color r = rays[slot].mRadiance;
 +                const varying float part = luminance(r) / whole;
++                varying Color share;
++                share.r = total.r > 0.f ? r.r / total.r : part;
++                share.g = total.g > 0.f ? r.g / total.g : part;
++                share.b = total.b > 0.f ? r.b / total.b : part;
++                rays[slot].mRadiance = shown * share * catcher;
 +                if (matte) {
 +                    rays[slot].mModoAlpha = -catcher * pathPixelWeight * part;
-+                    rays[slot].mRadiance = sBlack;
-+                } else {
-+                    varying Color share;
-+                    share.r = total.r > 0.f ? r.r / total.r : part;
-+                    share.g = total.g > 0.f ? r.g / total.g : part;
-+                    share.b = total.b > 0.f ? r.b / total.b : part;
-+                    rays[slot].mRadiance = shown * share * catcher;
++                    modoCatcherLpe(pbrTls, rays[slot], bgLpe, rays[slot].mRadiance);
 +                }
 +            } else {
 +                rays[slot].mRadiance = sBlack;
++                if (matte) {
++                    const varying Color none = sBlack;
++                    modoCatcherLpe(pbrTls, rays[slot], -1, none);
++                }
 +            }
 +        }
 +    }
@@ -2627,7 +2806,7 @@ index f9aed75..8f52779 100644
  void
  computeRadianceBsdfMultiSampler(const uniform PathIntegrator * uniform this,
                                  uniform PbrTLState * uniform pbrTls,
-@@ -825,7 +899,10 @@ computeRadianceBsdfMultiSampler(const uniform PathIntegrator * uniform this,
+@@ -825,7 +953,11 @@ computeRadianceBsdfMultiSampler(const uniform PathIntegrator * uniform this,
                                  varying float shadowRayEpsilon,
                                  const varying Color &ssAov,
                                  varying uint32_t &sequenceID,
@@ -2635,11 +2814,12 @@ index f9aed75..8f52779 100644
 +                                const varying Rdl2LightSetList * uniform parentLobeLightSets,
 +                                const varying float modoCatcher,
 +                                const varying Color &modoShown,
-+                                const varying bool modoMatte)
++                                const varying bool modoMatte,
++                                const varying int modoBgLpe)
  {
      // We use a BsdfSampler object to keep track of sampling strategies and
      // sample budget per lobe.
-@@ -964,6 +1041,18 @@ computeRadianceBsdfMultiSampler(const uniform PathIntegrator * uniform this,
+@@ -964,6 +1096,19 @@ computeRadianceBsdfMultiSampler(const uniform PathIntegrator * uniform this,
                                                         isect);
      }
  
@@ -2649,10 +2829,11 @@ index f9aed75..8f52779 100644
 +        modoCatcherTotal(occlRays, occlRayIndices, numOcclRaysFilled, lightSetSampleCount, modoTotal);
 +        modoCatcherTotal(presenceShadowsRays, presenceShadowsRayIndices, numPresenceShadowsRaysFilled,
 +                         lightSetSampleCount, modoTotal);
-+        modoCatcherShare(occlRays, occlRayIndices, numOcclRaysFilled, lightSetSampleCount, modoCatcher, modoShown,
-+                         modoTotal, modoMatte, pv.pathPixelWeight);
-+        modoCatcherShare(presenceShadowsRays, presenceShadowsRayIndices, numPresenceShadowsRaysFilled,
-+                         lightSetSampleCount, modoCatcher, modoShown, modoTotal, modoMatte, pv.pathPixelWeight);
++        modoCatcherShare(pbrTls, occlRays, occlRayIndices, numOcclRaysFilled, lightSetSampleCount, modoCatcher,
++                         modoShown, modoTotal, modoMatte, pv.pathPixelWeight, modoBgLpe);
++        modoCatcherShare(pbrTls, presenceShadowsRays, presenceShadowsRayIndices, numPresenceShadowsRaysFilled,
++                         lightSetSampleCount, modoCatcher, modoShown, modoTotal, modoMatte, pv.pathPixelWeight,
++                         modoBgLpe);
 +    }
 +
      MNRY_ASSERT(numOcclRaysFilled <= numOcclRaysToAlloc * VLEN);

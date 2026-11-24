@@ -1496,6 +1496,36 @@ ML_INLINE float3 catcherShare(const Hit& hit, float3 direction, Seed& seed, unsi
                        tally[0].z > 0.0f ? clamp(tally[1].z / tally[0].z, 0.0f, 1.0f) : part);
 }
 
+// What the camera would see past a matte shadow catcher at p, as MoonRay's (tools/port_shadow_catcher.py,
+// modoCatcherBackground): what a camera ray that hits nothing sees along direction, the background (the environment
+// the camera sees and the discs of the distant lights it is told to show), or a light the camera sees beyond the
+// catcher (light: that light's radiance, the background then 0). Geometry past it is not traced.
+ML_INLINE float3 catcherBackground(float3 p, float3 direction, float3& light) {
+    const DeviceDistantLight* distantLights = reinterpret_cast<const DeviceDistantLight*>(params.distantLights);
+    const DeviceLight* lights = reinterpret_cast<const DeviceLight*>(params.lights);
+    light = vec(0.0f);
+    float nearest = 1e30f;
+    bool seenLight = false;
+    for (unsigned i = 0; i < params.lightCount; ++i) {
+        if (!(lights[i].pad & LIGHT_SEEN) || lights[i].type == LIGHT_MESH) continue;
+        float pdf, reached = 0.0f;
+        float3 emitted;
+        if (!hitLightShape(lights[i], p, direction, nearest, pdf, emitted, reached)) continue;
+        if (lights[i].texture || lights[i].filterCount) emitted = emitted * lightTint(lights[i], p, direction, reached);
+        nearest = reached;
+        light = emitted;
+        seenLight = true;
+    }
+    if (seenLight) return vec(0.0f);
+    float3 sky = envLookup(reinterpret_cast<const float4*>(params.envBackground), params.envBackgroundRotation, direction);
+    for (unsigned i = 0; i < params.distantLightCount; ++i) {
+        const DeviceDistantLight& distant = distantLights[i];
+        if (distant.visible > 0.0f && dot(direction, vec(distant.direction)) >= 1.0f - distant.seenVersine)
+            sky += vec(distant.seen) * distantPicture(distant, direction);
+    }
+    return sky;
+}
+
 // ---- Hair --------------------------------------------------------------------------------------
 // A fibre's four ways of scattering light, as MoonRay's HairMaterial has them: its formulas are those of d'Eon et
 // al. 2011 and Chiang et al. 2016, taken here from MoonRay's HairUtil, HairState and BsdfHairLobes.
@@ -2492,8 +2522,9 @@ extern "C" __global__ void __raygen__moonlightipr() {
         if ((hit.flags & MATERIAL_SHADOW_CATCHER) && !emerged) {
             // The kit's shadow catcher, as MoonRay's (tools/port_shadow_catcher.py): past the camera, what it wears (its
             // emission) unlit, and the path ends. Seen by the camera, (1 - strength) of its emission outright and the rest
-            // as much as its light samples are not shadowed (catcherShare); nothing bounces off it. A matte shows no
-            // colour: its shadows are in the alpha (__raygen__aovs).
+            // as much as its light samples are not shadowed (catcherShare); nothing bounces off it. A matte is not seen
+            // itself: in place of its emission, what the camera would see past it (catcherBackground), darkened alike,
+            // in the Environment background pass; its shadows are in the alpha (__raygen__aovs).
             PASS_NOW(PASS_EMISSION);
             if (!camera) {
                 radiance += clampSample(throughput * lightWeight * hit.emission, clampFound);
@@ -2505,7 +2536,24 @@ extern "C" __global__ void __raygen__moonlightipr() {
                 const float3 share = catcherShare(hit, direction, seed, fromSet, part);
                 radiance += throughput * lightWeight * hit.emission * (vec(1.0f - hit.catcher) + share * hit.catcher);
             }
-            const float3 shown = matte ? vec(0.0f) : hit.emission;
+            float3 behind = vec(0.0f);
+            if (matte) {
+                float3 seenLight = vec(0.0f);
+                behind = catcherBackground(hit.p, direction, seenLight);
+                const bool asked = !params.aovPass || params.aovPass == PASS_BACKGROUND;
+                if (maxComponent(behind + seenLight) > 0.0f && (asked || params.aovPass == PASS_EMISSION)) {
+                    float part;
+                    const float3 share = catcherShare(hit, direction, seed, fromSet, part);
+                    const float3 kept = vec(1.0f - hit.catcher) + share * hit.catcher;
+                    // A light seen past it is the light's (Emission), as a camera ray that hits nothing sees it.
+                    if (maxComponent(seenLight) > 0.0f && (!params.aovPass || params.aovPass == PASS_EMISSION))
+                        radiance += throughput * lightWeight * seenLight * kept;
+                    PASS_NOW(PASS_BACKGROUND);
+                    if (asked) radiance += throughput * lightWeight * behind * kept;
+                }
+                behind += seenLight;
+            }
+            const float3 shown = matte ? behind : hit.emission;
             guideAlbedo = make_float3(fminf(shown.x, 1.0f), fminf(shown.y, 1.0f), fminf(shown.z, 1.0f));
             const float3 facing = dot(hit.ns, direction) > 0.0f ? -hit.ns : hit.ns;
             guideNormal = make_float3(dot(facing, normalize(vec(params.cameraU))), dot(facing, normalize(vec(params.cameraV))),

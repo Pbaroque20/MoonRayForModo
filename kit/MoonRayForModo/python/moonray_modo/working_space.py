@@ -44,6 +44,11 @@ def configuration(settings):
     finally:_settings.reset(token)
 def enabled():return _settings.get().get('working_space','rec709')=='acescg'
 def label(settings):return 'ACEScg' if settings.get('working_space','rec709')=='acescg' else 'linear Rec.709'
+# OpenEXR's standard chromaticities attribute (red, green, blue, white x y) for the primaries the pixels are in, so an
+# application that reads it (Nuke, Resolve, Affinity, EXR plug-ins) need not assume Rec.709.
+CHROMATICITIES={'rec709':(.64,.33,.30,.60,.15,.06,.3127,.3290),'acescg':(.713,.293,.165,.830,.128,.044,.32168,.33767)}
+def chromaticities(settings):
+    return ' '.join('%g'%v for v in CHROMATICITIES['acescg' if settings.get('working_space','rec709')=='acescg' else 'rec709'])
 def color(value):return product(TO_AP1,value) if enabled() else value
 
 def expression(value,path,lines):
