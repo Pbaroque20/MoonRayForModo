@@ -381,7 +381,10 @@ def displacement(material):
         return found[1] if any(op[0] in (OP_NORMAL, OP_VECTOR) for op in found[1]) else None
     from .material_groups import merged, supported
     stack = material.get('material_stack')
-    source = merged(stack) if stack and supported(stack) else material
+    # As Compiler.material reads it: a stack of native rows (a MoonShine material, DwaSkinMaterial and the rest) by its
+    # top row, whose Shader Tree layers are its own. Read off the stack's outer dictionary, which holds no layers, its
+    # displacement layers were never seen: MoonRay displaced a skin, MoonLightIPR left it smooth.
+    source = merged(stack) if stack and supported(stack) else (stack[-1] if stack else material)
     layers = source.get('layers')
     effects = {textures.EFFECT_ALIASES.get(layer['effect'], layer['effect']) for layer in layers} if layers is not None else \
         {textures.EFFECT_ALIASES.get(key, key) for key in source.get('textures', {})}

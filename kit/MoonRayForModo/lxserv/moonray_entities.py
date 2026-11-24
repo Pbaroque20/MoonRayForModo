@@ -606,16 +606,16 @@ def register():
     def option_command(name,channel,mode,label):
         """A popup in place of a box to type in: a file from a dialog, a grid of the volume file, a name
         already in use (or a new one), a material or a UV map of the scene."""
-        action={'file':'Choose file...','label':'New label...'}.get(mode)
+        action={'file':'Choose file...','clip':'Load image...','label':'New label...'}.get(mode)
         class Option(Listed):
             def values(self):
                 items=chosen(name)
                 if not items:return []
                 current=text(items[0],channel)
-                found=[] if mode=='file' else scene_names(mode,items[0],channel)
+                found=[] if mode=='file' else loaded_images() if mode=='clip' else scene_names(mode,items[0],channel)
                 return found+([current] if current and current not in found else [])
             def shown(self,value):
-                return value.replace('\\','/').rsplit('/',1)[-1] if mode=='file' else value
+                return value.replace('\\','/').rsplit('/',1)[-1] if mode in ('file','clip') else value
             def arg_UIValueHints(self,index):
                 values=self.values()
                 return _same(Popup,[('none','(none)')]+[('value%d'%i,self.shown(v)) for i,v in enumerate(values)]+([('action',action)] if action else []))
@@ -630,6 +630,13 @@ def register():
                 if not items or index<0:return
                 if index==0:value=''
                 elif index<=len(values):value=values[index-1]
+                elif mode=='clip':
+                    import modo
+                    try:path=modo.dialogs.customFile('fileOpen','Choose '+label,('images','all'),('Images','All files'),
+                                                      ('*.exr;*.hdr;*.tx;*.tif;*.tiff;*.png;*.jpg;*.jpeg;*.tga','*.*'))
+                    except RuntimeError:return
+                    if not path:return
+                    value=str(path).replace('\\','/')
                 elif mode=='file':
                     import modo
                     # Images or volume files by what the attribute is for, with every file as the other choice.
@@ -647,8 +654,29 @@ def register():
                     typed,accepted=QtWidgets.QInputDialog.getText(None,'New '+label,'Letters, numbers and underscores:')
                     value=''.join(c for c in str(typed).strip().replace(' ','_') if c.isalnum() or c=='_')
                     if not accepted or not value:return
+                if mode=='clip' and value:add_image(value)
                 for item in items:item.channel(channel).set(value)
         return Option
+
+    def loaded_images():
+        """The files of Modo's loaded still images (its Clips), as the Backplate's image fields offer them."""
+        import modo
+        found=[]
+        try:
+            for clip in modo.Scene().items('videoStill'):
+                try:path=str(clip.channel('filename').get() or '').replace('\\','/')
+                except (TypeError,ValueError,AttributeError,LookupError,RuntimeError):continue
+                if path and path not in found:found.append(path)
+        except (LookupError,RuntimeError,TypeError):pass
+        return found
+
+    def add_image(path):
+        """An image chosen for the Backplate loaded into Modo's images (Clips) where it is not already, so that it is
+        there with the scene's other images (saved, packed and relinked with them)."""
+        wanted=path.replace('\\','/').lower()
+        if any(held.lower()==wanted for held in loaded_images()):return
+        try:lx.eval('!clip.addStill {%s}'%path)
+        except Exception:pass
 
     def ramp_command(name,label,keys):
         """Opens the ramp editor on the three lists that make one ramp."""
@@ -675,7 +703,7 @@ def register():
         attributes=entities.catalog()[name]['attributes']
         for j,(key,channel,kind,default,choices) in enumerate(entities.channels(name)):
             spec=attributes[key];category=entities.reference_category(spec);shown=entities.presentation(name,key)
-            if shown in ('file','grid','label','material','uv'):
+            if shown in ('file','clip','grid','label','material','uv'):
                 lx.bless(option_command(name,channel,shown,spec.get('label',key.replace('_',' '))),'moonray.entity.option%d_%d'%(i,j))
             elif shown in ('hidden','ramp'):pass
             elif choices:lx.bless(choice_command(name,key,channel),'moonray.entity.choice%d_%d'%(i,j))

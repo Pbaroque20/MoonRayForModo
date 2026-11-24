@@ -99,6 +99,26 @@ class Packing(unittest.TestCase):
         self.assertEqual(struct.unpack_from('<2I', payload, 16), (1, 1))
         self.assertEqual(struct.unpack_from('<I2fI', payload, 24), (OP_NORMAL, 0.0, .25, 0))
 
+    def test_a_native_rows_displacement_layers_are_read(self):
+        # A MoonShine material (DwaSkinMaterial) in a stack, its Shader Tree displacement on its own row: MoonRay
+        # displaces it, so MoonLightIPR does (it was left smooth).
+        held = {'material_stack': [{'native_shader': 'DwaSkinMaterial', 'native_parameters': {},
+                                    'layers': [{'effect': 'displace'}], 'displacement_distance': .06}]}
+        self.assertEqual(materials.displacement(held), [(OP_NORMAL, 0.0, .06, 0)])
+
+    def test_split_no_finer_than_moonray_dices(self):
+        # MoonRay's mesh_resolution, 2 to the Subdivision Level, is the most pieces it cuts an edge into: a polygon mesh at
+        # level 3 is split 3 times at most, a cage subdivided twice at level 2 not at all, a sea as before.
+        held = {'lifted': {'layers': [{'effect': 'displace'}], 'displacement_distance': .25}, '': {}}
+        index = {'': 0, 'lifted': 1}
+        levels = lambda mesh, **k: struct.unpack_from('<I', scene.displaced(mesh, b'k' * 8, 0, b'data', held, index, [], **k)[2], 4)[0]
+        plane = {'name': 'Plane', 'faces': [[0, 1, 2, 3]], 'material': 'lifted'}
+        self.assertEqual(levels(plane), 3)
+        self.assertEqual(levels(dict(plane, subdivision_level=1)), 1)
+        self.assertEqual(levels(dict(plane, mesh_resolution=16)), 4)
+        self.assertEqual(levels(dict(plane, subdivision=True, subdivision_level=2)), 0)
+        self.assertGreater(levels(plane, moonray_cap=False), 3)
+
     def test_an_undisplaced_mesh_is_left_alone(self):
         mesh = {'name': 'Plane', 'faces': [[0, 1, 2]], 'material': ''}
         self.assertEqual(scene.displaced(mesh, b'k' * 8, 0, b'data', {'': {}}, {'': 0}, []), (b'k' * 8, 0, b'data'))

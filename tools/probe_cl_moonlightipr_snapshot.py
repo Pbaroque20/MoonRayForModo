@@ -15,6 +15,10 @@ report = {}
 try:
     lx.eval('!scene.open {%s} normal' % os.environ['PROBE_SCENE'])
     from moonray_modo import host
+    if os.environ.get('PROBE_CATCHER'):
+        # As read with a runtime that has shadow catchers (the test profile's may not): a Backplate's ground a catcher.
+        from moonray_modo import native
+        native.shadow_catcher_runtime = lambda *args, **kwargs: True
     with host.by_engine('moonlightipr'):
         snap = host.snapshot()
     snap.setdefault('time', float(lx.eval('select.time ?')))

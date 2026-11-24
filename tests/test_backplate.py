@@ -127,6 +127,29 @@ class Environments(unittest.TestCase):
         self.assertFalse(hdri['reflection'])
         self.assertFalse(hdri['camera'])
 
+    def test_each_switch_is_its_own(self):
+        """Each kind of ray sees one environment: the photo over the HDRI where both are on for it, the photo over black
+        where only it is, the HDRI where only it is. "HDRI lights the scene" off lit the scene all the same, through the
+        photo's environment, which held the HDRI under it."""
+        def seen(result, kind):
+            return [e['name'] for e in result['environments'] if e.get(kind)]
+        # The photo lights the scene, the HDRI does not: the photo alone, over black.
+        result = self.run_apply({}, self.entity(plate=str(self.plate), hdri=str(self.hdri), plate_lighting=True, hdri_lighting=False))
+        self.assertEqual(seen(result, 'indirect'), ['Backplate backplate'])
+        # Both light it: the photo over the HDRI.
+        result = self.run_apply({}, self.entity(plate=str(self.plate), hdri=str(self.hdri), plate_lighting=True))
+        self.assertEqual(seen(result, 'indirect'), ['Backplate backplate over HDRI'])
+        # Neither: nothing lights it.
+        result = self.run_apply({}, self.entity(plate=str(self.plate), hdri=str(self.hdri), hdri_lighting=False))
+        self.assertEqual(seen(result, 'indirect'), [])
+        # Reflections: the HDRI alone where only it is on; the camera sees the HDRI where asked.
+        result = self.run_apply({}, self.entity(plate=str(self.plate), hdri=str(self.hdri), plate_reflection=False, hdri_reflection=True,
+                                                hdri_camera=True))
+        self.assertEqual(seen(result, 'reflection'), ['Backplate HDRI'])
+        self.assertEqual(seen(result, 'camera'), ['Backplate HDRI'])
+        for kind in ('indirect', 'reflection', 'refraction', 'camera'):
+            self.assertLessEqual(len(seen(result, kind)), 1, kind)
+
     def test_override_and_add(self):
         modo = [{'name': 'gradient', 'camera': True, 'indirect': True, 'reflection': True, 'refraction': True}]
         over = self.run_apply({'environments': [dict(m) for m in modo]}, self.entity(hdri=str(self.hdri), other_environments=1))
@@ -222,6 +245,15 @@ class Catalog(unittest.TestCase):
             self.assertIn('Source Overrides', entities.override_off(backplate.CLASS))
         with mock.patch('moonray_modo.native.backplate', return_value=True):
             self.assertIsNone(entities.override_off(backplate.CLASS))
+
+    def test_its_images_are_modos(self):
+        # Chosen among Modo's loaded images, a file chosen being loaded into them (lxserv moonray_entities add_image).
+        self.assertEqual(entities.presentation(backplate.CLASS, 'hdri'), 'clip')
+        self.assertEqual(entities.presentation(backplate.CLASS, 'plate'), 'clip')
+        source = (ROOT / 'kit/MoonRayForModo/lxserv/moonray_entities.py').read_text(encoding='utf-8')
+        self.assertIn("lx.eval('!clip.addStill {%s}'%path)", source)
+        forms = (ROOT / 'kit/MoonRayForModo/entities.cfg').read_text(encoding='utf-8')
+        self.assertEqual(forms.count("Modo's loaded images"), 2)
 
     def test_front_projection_from_the_render_camera(self):
         from moonray_modo import coordinates

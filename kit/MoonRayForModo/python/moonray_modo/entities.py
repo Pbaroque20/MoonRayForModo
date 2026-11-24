@@ -240,6 +240,10 @@ LABELS = ('label', 'shadow_receiver_label')
 UNSHOWN = ('medium_geometry', 'medium_material', 'map_shader', 'texture_map', 'parts', 'shadow_exclusion_mappings')
 
 
+# Image attributes chosen among Modo's images (Clips), a file chosen being loaded there too.
+CLIP_IMAGES = {('BackplateEnvironment', 'hdri'), ('BackplateEnvironment', 'plate')}
+
+
 def presentation(name, key):
     """How an attribute is shown in its item's properties, so that none is a box to type in.
 
@@ -263,6 +267,10 @@ def presentation(name, key):
     if kind.startswith('SceneObject') or kind.endswith('Vector'):
         return 'hidden'
     if kind == 'String':
+        # The Backplate's photo and HDRI: one of Modo's loaded images, or a file loaded into Modo's images as it is
+        # chosen ('clip').
+        if (name, key) in CLIP_IMAGES:
+            return 'clip'
         # MoonRay marks most of its file attributes as such, but not all.
         if spec.get('filename') or key.endswith(('_image', '_map', '_file_name')):
             return 'file'

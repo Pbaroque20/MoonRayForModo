@@ -323,8 +323,11 @@ def plate_material(plate, emissive, catcher=False):
     if emissive or catcher:
         # DwaBase shows no emission unless told to.
         graph['nodes']['surface'].setdefault('parameters', {}).update(emission=[1.0, 1.0, 1.0], show_emission=True)
-    return {'native_shader': 'DwaBaseMaterial', 'native_parameters': {}, 'node_graph': graph, 'node_override': True,
-            'color': [0.5, 0.5, 0.5], 'roughness': 1.0}
+    # Its parameters as a material from Modo's graph has them (host: native_parameters are the root's): MoonLightIPR reads
+    # its emission switch and values there. Left empty, the card and the catcher's ground had no emission in MoonLightIPR
+    # (the backdrop not drawn, the catcher black) where MoonRay, which reads the graph, showed the photo.
+    return {'native_shader': 'DwaBaseMaterial', 'native_parameters': dict(graph['nodes']['surface']['parameters']), 'node_graph': graph,
+            'node_override': True, 'color': [0.5, 0.5, 0.5], 'roughness': 1.0}
 
 
 # ---- The scene ----------------------------------------------------------------------------------------------------
@@ -362,7 +365,8 @@ def catchers(result, warnings):
         tag = '%smatte/%g' % (MATERIAL_PREFIX, strength)
         if tag not in materials:
             graph = nodes.new('DwaBaseMaterial', {'albedo': [0.5, 0.5, 0.5], 'roughness': 1.0, 'specular': 0.0, 'metallic': 0.0})
-            materials[tag] = {'native_shader': 'DwaBaseMaterial', 'native_parameters': {}, 'node_graph': graph, 'node_override': True,
+            materials[tag] = {'native_shader': 'DwaBaseMaterial', 'native_parameters': dict(graph['nodes']['surface']['parameters']),
+                              'node_graph': graph, 'node_override': True,
                               'color': [0.5, 0.5, 0.5], 'roughness': 1.0, 'shadow_catcher': {'strength': strength, 'matte': True}}
         mesh['material'] = tag
         mesh.pop('face_materials', None)
@@ -379,38 +383,66 @@ def _path(text, warnings, name, what):
     return path
 
 
+# The kinds of ray a Backplate's images are each switched on or off for, as its switches name them; the camera's is
+# apart (the backdrop plane shows the photo to the camera, the HDRI its own entry).
+RAY_KINDS = (('indirect', 'lighting'), ('reflection', 'reflection'), ('refraction', 'refraction'))
+
+
+def ray_split(value):
+    """Which kinds of ray (environments' indirect, reflection, refraction) see the photo laid over the HDRI (both switched
+    on for that kind), the photo alone over black (only the photo), and the HDRI alone (only the HDRI). With one
+    environment of the photo over the HDRI for every kind, the HDRI's switches did nothing where the photo's were on:
+    "HDRI lights the scene" off still lit it, through the photo's environment."""
+    both, photo, sky = set(), set(), set()
+    for kind, switch in RAY_KINDS:
+        p, h = bool(value('plate_' + switch)), bool(value('hdri_' + switch))
+        (both if p and h else photo if p else sky if h else set()).add(kind)
+    return both, photo, sky
+
+
 def environment_entries(entity, value, plate, hdri, projector, warnings):
-    """The environments a Backplate gives (environments.collect's entries), top first."""
+    """The environments a Backplate gives (environments.collect's entries), top first: the photo over the HDRI for the
+    kinds of ray both are switched on for, the photo over black for those only it is, and the HDRI for those only it is
+    (and for the camera, where switched on). Each kind of ray sees exactly one of them."""
     name = entity.get('name', 'Backplate')
     rotation = float(value('hdri_rotation') or 0.0)
+    both, photo, sky = ray_split(value)
+    if not hdri:
+        # No HDRI: the photo over black for every kind of ray it is switched on for.
+        photo, both, sky = photo | both, set(), set()
+    if not plate:
+        sky, both, photo = sky | both, set(), set()
     found = []
-    if plate:
+
+    def flags(kinds, camera=False):
+        held = {kind: kind in kinds for kind, _ in RAY_KINDS}
+        return dict(held, camera=camera, indirect_seen=held['indirect'])
+    for kinds, under, label in ((both, hdri, 'backplate over HDRI'), (photo, None, 'backplate')):
+        if not kinds:
+            continue
         try:
-            made = reflection_environment(projector, plate, hdri, rotation, float(value('plate_intensity')),
+            made = reflection_environment(projector, plate, under, rotation, float(value('plate_intensity')),
                                           float(value('hdri_intensity')), (projector.projection, entity.get('_projection_key')))
         except (OSError, ValueError) as exc:
-            warnings.append('Backplate %s: the reflections of its backplate could not be made (%s).' % (name, exc))
-        else:
-            stat = made.stat()
-            # Laid over the HDRI and turned with it, in the space of Modo's spherical projection (latlong_direction):
-            # placed at rest, as an unturned HDRI is, so that emit turns it as Modo's images are turned for MoonRay.
-            found.append({'identity': entity.get('identity', '') + '/plate', 'name': name + ' backplate', 'kind': 'image',
-                          'matrix': list(IDENTITY),
-                          'intensity': 1.0, 'path': str(made), 'mtime': stat.st_mtime_ns, 'size': stat.st_size, 'srgb': False,
-                          'color_space': 'linear', 'effect': 'envColor', 'opacity': 1, 'blend': 'normal', 'invert': False,
-                          'camera': False, 'indirect': bool(value('plate_lighting')), 'indirect_seen': bool(value('plate_lighting')),
-                          'reflection': bool(value('plate_reflection')), 'refraction': bool(value('plate_refraction')), 'backplate': True})
-    if hdri:
+            warnings.append('Backplate %s: the environment of its backplate could not be made (%s).' % (name, exc))
+            continue
+        stat = made.stat()
+        # In the space of Modo's spherical projection (latlong_direction), turned with the HDRI where laid over it:
+        # placed at rest, as an unturned HDRI is, so that emit turns it as Modo's images are turned for MoonRay.
+        found.append(dict({'identity': '%s/%s' % (entity.get('identity', ''), 'plate-hdri' if under else 'plate'), 'name': '%s %s' % (name, label),
+                           'kind': 'image', 'matrix': list(IDENTITY), 'intensity': 1.0, 'path': str(made), 'mtime': stat.st_mtime_ns,
+                           'size': stat.st_size, 'srgb': False, 'color_space': 'linear', 'effect': 'envColor', 'opacity': 1,
+                           'blend': 'normal', 'invert': False, 'backplate': True}, **flags(kinds)))
+    if hdri and (sky or value('hdri_camera')):
         angle = math.radians(rotation)
         c, s = math.cos(angle), math.sin(angle)
         stat = hdri.stat()
-        found.append({'identity': entity.get('identity', '') + '/hdri', 'name': name + ' HDRI', 'kind': 'image',
-                      'intensity': float(value('hdri_intensity')), 'path': str(hdri.resolve()), 'mtime': stat.st_mtime_ns,
-                      'size': stat.st_size, 'srgb': hdri.suffix.lower() not in ('.exr', '.hdr', '.tx'), 'color_space': '(default)',
-                      'effect': 'envColor', 'opacity': 1, 'blend': 'normal', 'invert': False,
-                      'matrix': [c, 0, -s, 0, 0, 1, 0, 0, s, 0, c, 0, 0, 0, 0, 1],
-                      'camera': bool(value('hdri_camera')), 'indirect': bool(value('hdri_lighting')), 'indirect_seen': bool(value('hdri_lighting')),
-                      'reflection': bool(value('hdri_reflection')), 'refraction': bool(value('hdri_refraction')), 'backplate': True})
+        found.append(dict({'identity': entity.get('identity', '') + '/hdri', 'name': name + ' HDRI', 'kind': 'image',
+                           'intensity': float(value('hdri_intensity')), 'path': str(hdri.resolve()), 'mtime': stat.st_mtime_ns,
+                           'size': stat.st_size, 'srgb': hdri.suffix.lower() not in ('.exr', '.hdr', '.tx'), 'color_space': '(default)',
+                           'effect': 'envColor', 'opacity': 1, 'blend': 'normal', 'invert': False,
+                           'matrix': [c, 0, -s, 0, 0, 1, 0, 0, s, 0, c, 0, 0, 0, 0, 1], 'backplate': True},
+                          **flags(sky, camera=bool(value('hdri_camera')))))
     return found
 
 
