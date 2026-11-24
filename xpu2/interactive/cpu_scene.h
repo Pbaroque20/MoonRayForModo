@@ -3417,7 +3417,9 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
   if(paths&&o.isA<rdl::Displacement>())continue;
   if(cls=="UsdPreviewSurface"&&paths){
    // The whole material (shade_material.h); maps on its diffuse and emissive colours.
-   attributes(o,{"diffuseColor","emissiveColor","useSpecularWorkflow","specularColor","metallic","roughness","clearcoat","clearcoatRoughness","opacity","opacityThreshold","ior","normal","displacement","occlusion"},{"diffuseColor","emissiveColor","specularColor","metallic","roughness","clearcoat","clearcoatRoughness","opacity","ior","normal"});
+   attributes(o,{"diffuseColor","emissiveColor","useSpecularWorkflow","specularColor","metallic","roughness","clearcoat","clearcoatRoughness","opacity","opacityThreshold","ior","normal","displacement","occlusion",
+                 "modo_shadow_catcher","modo_shadow_strength","modo_shadow_matte"},  // the shadow catcher: read with the material records below
+              {"diffuseColor","emissiveColor","specularColor","metallic","roughness","clearcoat","clearcoatRoughness","opacity","ior","normal"});
    shade::UsdPreviewSurfaceParams q{};
    auto c3=[&](const char* n){auto c=get<rdl::Rgb>(o,n);V3 v{c.r,c.g,c.b};need(surface::finite(v),o.getName()+": invalid colour");return v;};
    auto f1=[&](const char* n){float f=get<rdl::Float>(o,n);need(std::isfinite(f),o.getName()+": invalid value");return f;};
@@ -3542,7 +3544,8 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
   for(const auto& [name,index]:materialIds){auto& rec=plan->materialRecords[index];rec.flags|=global;
    const auto found=sorted.find(name);
    if(found!=sorted.end()&&found->second->getSceneClass().getName()=="DwaToonMaterial"&&on("MOONRAY_MODO_TOON_TERMINATOR"))rec.flags|=shade::MatModoToonMaterial;}
-  plan->modoSwitches=(on("MOONRAY_MODO_TOON_ALBEDO")?1u:0u)|(on("MOONRAY_MODO_FOG_ALPHA")?2u:0u)|(on("MOONRAY_MODO_CRYPTO_VOLUMES")?4u:0u)|(on("MOONRAY_MODO_CAMERA_LIGHT_LPE")?8u:0u)|(on("MOONRAY_MODO_MIRRORED_MESHES")?16u:0u);}
+  plan->modoSwitches=(on("MOONRAY_MODO_TOON_ALBEDO")?1u:0u)|(on("MOONRAY_MODO_FOG_ALPHA")?2u:0u)|(on("MOONRAY_MODO_CRYPTO_VOLUMES")?4u:0u)|(on("MOONRAY_MODO_CAMERA_LIGHT_LPE")?8u:0u)|(on("MOONRAY_MODO_MIRRORED_MESHES")?16u:0u)|
+                     (on("MOONRAY_MODO_GLASS_ALPHA")?32u:0u);}  // glass in alpha (tools/port_glass_alpha.py)
  // The switches' records: copies of their materials' (a switch's switch first; a material not shaded fails the scene).
  {std::map<const rdl::SceneObject*,int> state;
   std::function<void(const rdl::SceneObject*)> fill=[&](const rdl::SceneObject* s){
@@ -3562,6 +3565,17 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
    const float* f=reinterpret_cast<const float*>(&r);plan->materialPool.insert(plan->materialPool.end(),f,f+shade::SwitchRecordFloats);
    plan->materialRecords[materialIds.at(s->getName())]=rec;st=2;};
   for(auto* s:switches)fill(s);}
+ // The kit's shadow catcher (tools/port_shadow_catcher.py: every Material's modo_shadow_catcher, modo_shadow_strength,
+ // modo_shadow_matte, from the kit's scene library), unless MOONRAY_MODO_SHADOW_CATCHER=0: each material's own (a
+ // switch's too, as MoonRay reads the hit's layer material), its strength clamped as CPP_modoShadowCatcher clamps it.
+ // The integrator acts on it (async_integrator.h).
+ if(modoSourceOverride("MOONRAY_MODO_SHADOW_CATCHER"))
+  for(const auto& [name,index]:materialIds){const auto found=sorted.find(name);
+   if(found==sorted.end()||!aov::attribute<rdl::Bool>(*found->second,"modo_shadow_catcher",false))continue;
+   const float strength=aov::attribute<rdl::Float>(*found->second,"modo_shadow_strength",1.0f);
+   need(std::isfinite(strength),name+": invalid shadow strength");
+   auto& rec=plan->materialRecords[index];rec.modoCatcher=std::min(std::max(strength,0.0f),1.0f);
+   if(aov::attribute<rdl::Bool>(*found->second,"modo_shadow_matte",false))rec.flags|=shade::MatModoCatcherMatte;}
  // The path tracer's caller writes the outputs it asks for: a beauty, an alpha, or both.
  need((paths||sky)&&(paths?outputCount>=1:outputCount==2&&beauty&&alpha),"One environment and beauty/alpha outputs required");
  for(auto* g:meshLightGeometry)setGeometry.erase(g);

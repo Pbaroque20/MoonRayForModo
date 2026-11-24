@@ -77,6 +77,20 @@ class Mesh:
                             at = held.find(empty, at + 12)
                         else:
                             at = held.find(empty, at + 1)
+            # Nor is a normal that is not a number: a degenerate polygon's (a tester's car interior, intPictoMeter_geo,
+            # until Modo's Mesh Cleanup) sent XPU2 to MoonRay XPU ("invalid normal"). Its face is smoothed as one
+            # without a map. Asked of the adapter all at once; looked for only where it says there is one.
+            if self.normal_valid is not None:
+                from .rows import finite
+                if finite(flat) is not True:
+                    from bisect import bisect_right
+                    from itertools import accumulate
+                    import math
+                    starts = list(accumulate(self.counts, initial=0))
+                    for corner in range(corners):
+                        x, y, z = flat[3 * corner], flat[3 * corner + 1], flat[3 * corner + 2]
+                        if not (math.isfinite(x) and math.isfinite(y) and math.isfinite(z)):
+                            self.normal_valid[bisect_right(starts, corner) - 1] = 0
         self.tags = [self.text() for _ in range(tag_count)]
         del self.data
 

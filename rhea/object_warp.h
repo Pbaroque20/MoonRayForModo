@@ -35,6 +35,8 @@
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
+#include <cstring>
 #include <functional>
 #include <vector>
 
@@ -230,10 +232,78 @@ public:
     void clear() {
         light.clear(), fine.clear();
         sky.assign(SkyW * SkyH * 4, 0.0f), skyFilled.clear();
-        ++generation;
+        generation = freshGeneration();
     }
     bool empty() const { return light.used == 0 && skyFilled.empty(); }
     size_t cells() const { return light.used + fine.used; }
+    // What the store holds in memory, in bytes (its tables' slots and the environment's).
+    size_t bytes() const {
+        return (light.slots.size() + fine.slots.size()) * sizeof(Table::Entry) + (sky.size() + skyFilled.size()) * sizeof(float);
+    }
+    // A store taken in from elsewhere (rhea_cache.h: kept between realtime's runs, or read from a file): the lookups'
+    // memo, keyed by the store's place and generation, must not take it for the one that stood there before.
+    void renewed() { generation = freshGeneration(); }
+
+    // The store written out and read back (rhea_cache.h, the radiance cache on disk): its options that shape the cells
+    // (a store made under others is not read), each table's cells, and the environment. False where it cannot be.
+    static constexpr std::uint32_t FileForm = 1;
+    bool save(std::FILE* f) const {
+        auto put = [&](const void* p, size_t n) { return n == 0 || std::fwrite(p, 1, n, f) == n; };
+        const std::uint32_t form = FileForm, entry = sizeof(Table::Entry);
+        const double shape[3] = {op.scale, op.grazing, op.jump};
+        const std::int32_t levels = op.levels, albedo = op.albedo ? 1 : 0;
+        bool ok = put("RHEASTOR", 8) && put(&form, 4) && put(&entry, 4) && put(shape, sizeof shape) && put(&levels, 4) && put(&albedo, 4);
+        for (const Table* t : {&light, &fine}) {
+            const std::uint64_t used = t->used;
+            ok = ok && put(&used, 8);
+            for (const Table::Entry& e : t->slots)
+                if (e.full) ok = ok && put(&e, sizeof e);
+        }
+        for (const std::vector<float>* v : {&sky, &skyFilled}) {
+            const std::uint64_t n = v->size();
+            ok = ok && put(&n, 8) && put(v->data(), v->size() * sizeof(float));
+        }
+        return ok;
+    }
+    bool load(std::FILE* f) {
+        auto get = [&](void* p, size_t n) { return n == 0 || std::fread(p, 1, n, f) == n; };
+        char magic[8];
+        std::uint32_t form = 0, entry = 0;
+        double shape[3];
+        std::int32_t levels = 0, albedo = 0;
+        if (!get(magic, 8) || std::memcmp(magic, "RHEASTOR", 8) != 0 || !get(&form, 4) || form != FileForm || !get(&entry, 4) ||
+            entry != sizeof(Table::Entry) || !get(shape, sizeof shape) || !get(&levels, 4) || !get(&albedo, 4))
+            return false;
+        if (shape[0] != op.scale || shape[1] != op.grazing || shape[2] != op.jump || levels != op.levels || (albedo != 0) != op.albedo) return false;
+        Table tables[2];
+        for (Table& t : tables) {
+            std::uint64_t used = 0;
+            if (!get(&used, 8) || used > op.maxCells * 4) return false;
+            size_t size = size_t(1) << 16;
+            while ((used + 1) * 2 > size) size *= 2;
+            t.slots.assign(used ? size : 0, Table::Entry{});
+            const size_t mask = t.slots.size() - 1;
+            for (std::uint64_t k = 0; k < used; ++k) {
+                Table::Entry e;
+                if (!get(&e, sizeof e) || !e.full) return false;
+                size_t i = Table::hashOf(e.x, e.y, e.z, e.level, e.bin) & mask;
+                while (t.slots[i].full) i = (i + 1) & mask;
+                t.slots[i] = e;
+            }
+            t.used = size_t(used);
+        }
+        std::vector<float> held[2];
+        for (std::vector<float>& v : held) {
+            std::uint64_t n = 0;
+            if (!get(&n, 8) || (n != 0 && n != SkyW * SkyH * 4)) return false;
+            v.resize(size_t(n));
+            if (!get(v.data(), v.size() * sizeof(float))) return false;
+        }
+        light = std::move(tables[0]), fine = std::move(tables[1]);
+        sky = std::move(held[0]), skyFilled = std::move(held[1]);
+        renewed();
+        return true;
+    }
 
     // A picture's pixel size at depth 1 (perspective and directional: a pixel's footprint is this times its depth;
     // orthographic: this, at every depth).
@@ -261,7 +331,7 @@ public:
         const auto began = std::chrono::steady_clock::now();
         const size_t n = size_t(w) * h;
         added = 0;
-        ++generation;  // the cells about to change: the lookups' memo (means) starts again
+        generation = freshGeneration();  // the cells about to change: the lookups' memo (means) starts again
         if (rgba.size() != n * 4 || depth.size() != n || counts.size() != n) return;
         if (cells() > op.maxCells) clear();
         if (sky.empty()) sky.assign(SkyW * SkyH * 4, 0.0f);
@@ -480,7 +550,13 @@ private:
         }
     };
     Table light, fine;  // the colours (with albedo and emission), and the albedo in cells half as wide (op.albedo)
-    std::uint64_t generation = 0;  // changed with the cells (add, clear): the lookups' memo holds for one generation
+    // Changed with the cells (add, clear, renewed): the lookups' memo holds for one generation. Drawn from one count for
+    // every store, so that a store moved into another's place (rhea_cache.h) never meets the memo of the one before.
+    std::uint64_t generation = freshGeneration();
+    static std::uint64_t freshGeneration() {
+        static std::atomic<std::uint64_t> next{1};
+        return next.fetch_add(1);
+    }
     std::vector<float> sky, skyFilled;  // rgb and weight a direction: summed, and its holes filled (fillSky)
 
     static int levelOf(double side) { return side > 0 ? int(std::floor(std::log2(side))) : -60; }
@@ -728,6 +804,9 @@ public:
     size_t rays = 0, edgeRays = 0;
     unsigned stride = 0, stages = 0;
     double seconds = 0, firstSeconds = 0, unknown = 0;  // the view's time, its first picture's, the rays the store had nothing for
+    // The rays given the first look (the store empty: the material's colour lit from the camera, or the environment's grey):
+    // the store knew 1 - unknown - firstLooks of the view (rhea_cache.h's measure of a store taken back).
+    double firstLooks = 0;
     // Where the time went (seconds): the coarse grid's rays, its picture (sampled, blurred, written), the rings' grid rays,
     // their pictures (the edges' own rays among them), FXAA, and the stages shown (stage(): the session's part).
     double coarseRaySeconds = 0, coarsePictureSeconds = 0, ringRaySeconds = 0, ringPictureSeconds = 0, fxaaSeconds = 0, stageSeconds = 0;
@@ -764,7 +843,7 @@ public:
         const auto began = Clock::now();
         auto since = [](Clock::time_point t) { return std::chrono::duration<double>(Clock::now() - t).count(); };
         const size_t n = size_t(w) * h;
-        rays = edgeRays = 0, stages = 0, unknown = 0, firstSeconds = 0;
+        rays = edgeRays = 0, stages = 0, unknown = 0, firstSeconds = 0, firstLooks = 0;
         coarseRaySeconds = coarsePictureSeconds = ringRaySeconds = ringPictureSeconds = fxaaSeconds = stageSeconds = 0;
         cardRays = 0, cardSeconds = 0, rowsSeconds = shadeSeconds = fillSeconds = 0, interpolated = 0, adaptSeconds = 0;
         if (!w || !h) return false;
@@ -777,7 +856,7 @@ public:
         color.assign(n * 3, 0.0f), outW.assign(n, -1.0), outDepth.assign(n, 0.0f), state.assign(n, 2), doubt.assign(n, 1.0f);
         // Packets where every mesh is triangles: the curves' and points' own intersectors take one ray at a time.
         packetsUsed = op.packets && trianglesAlone(scene);
-        std::atomic<size_t> traced{0}, empty{0}, edge{0};
+        std::atomic<size_t> traced{0}, empty{0}, edge{0}, looked{0};
         // A hit's colour from the store (or the environment's), into a node: trusted where the store's cells about it hold
         // it (op.trust, op.trustUp), else weighed little in the interpolation. The store empty (realtime's first frame):
         // the first look, the hit's material colour lit from the camera.
@@ -787,7 +866,7 @@ public:
                 o.kind = 2;
                 o.known = store.skyAt(D3{ray.direction.x, ray.direction.y, ray.direction.z}, o.rgb);
                 o.conf = o.known ? 1.0f : 0.0f, o.weight = o.known ? 1.0f : 0.0f;
-                if (!o.known && firstLook) o.rgb[0] = o.rgb[1] = o.rgb[2] = 0.5f, o.known = true, o.weight = 1.0f;
+                if (!o.known && firstLook) o.rgb[0] = o.rgb[1] = o.rgb[2] = 0.5f, o.known = true, o.weight = 1.0f, looked.fetch_add(1, std::memory_order_relaxed);
                 return;
             }
             o.kind = 1;
@@ -829,6 +908,7 @@ public:
                 o.rgb[0] = float(base[0] * lit + sheen[0] + l.emission.x), o.rgb[1] = float(base[1] * lit + sheen[1] + l.emission.y),
                 o.rgb[2] = float(base[2] * lit + sheen[2] + l.emission.z);
                 o.known = true, o.weight = 1.0f, o.conf = 0.0f;
+                looked.fetch_add(1, std::memory_order_relaxed);
             }
         };
         // Rays through raster places (x, y), each node shaded: four at a time where packets may be used. Adds the rays and
@@ -1107,6 +1187,7 @@ public:
             edgeRays = edge.load();
             rays = traced.load();
             unknown = rays ? double(empty.load()) / double(rays) : 0.0;
+            firstLooks = rays ? double(looked.load()) / double(rays) : 0.0;
             seconds = since(began);
         };
         if (!showStage()) {

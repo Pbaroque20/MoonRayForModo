@@ -322,13 +322,13 @@ SceneSettings SceneLoader::apply(const std::string& path) {
     // "MLS" and a letter for the form of the scene, which changes whenever what is written in it does: "C" since
     // the scene's sample clamp is written in it, "D" since a toon material's ramps are, "E" since a hair toon's highlights are,
     // "F" since the lights' poses at the shutter's close are, "G" since the volume scattering factors are, "H" since the
-    // camera's film offset is, "I" since a material's fuzz is, "J" since the light sets are, "K" since a mesh may be displaced, "L" since by a program of displacement nodes, "M" since a material's clearcoat bump strength is, "N" since whether the camera sees each light is, "O" since the subsurface scatterings a path may have are, "P" since each instance's own number is, "Q" since the roughness clamp is, "R" since what reflections and refractions see of the environment is, "S" since the kinds of rays each light is hidden from are, "T" since a displaced mesh may be split by its distance from the camera, "U" since where each moving instance stands at the frame is, "W" since how each light's picture is repeated, turned and moved across it is, "X" since a material's iridescence is, "Y" since a tilted lens's plane of focus is. A plugin and a session of different versions say so plainly, in
+    // camera's film offset is, "I" since a material's fuzz is, "J" since the light sets are, "K" since a mesh may be displaced, "L" since by a program of displacement nodes, "M" since a material's clearcoat bump strength is, "N" since whether the camera sees each light is, "O" since the subsurface scatterings a path may have are, "P" since each instance's own number is, "Q" since the roughness clamp is, "R" since what reflections and refractions see of the environment is, "S" since the kinds of rays each light is hidden from are, "T" since a displaced mesh may be split by its distance from the camera, "U" since where each moving instance stands at the frame is, "W" since how each light's picture is repeated, turned and moved across it is, "X" since a material's iridescence is, "Y" since a tilted lens's plane of focus is, "Z" since a material's shadow catcher is, "a" since a mesh's slot map is 32 long, "b" since it is 64 long. A plugin and a session of different versions say so plainly, in
     // place of reading each other's scenes wrongly.
     const uint32_t mark = in.value<uint32_t>();
     if ((mark & 0x00ffffff) != 0x00534c4d) throw std::runtime_error("Not a MoonLightIPR scene: " + path);
-    if (mark != 0x59534c4d)
+    if (mark != 0x62534c4d)
         throw std::runtime_error("This MoonLightIPR and the plugin are of different versions (the scene is form '" + std::string(1, char(mark >> 24))
-                                 + "', this MoonLightIPR reads 'Y'). Install the kit and its runtime from the same release.");
+                                 + "', this MoonLightIPR reads 'b'). Install the kit and its runtime from the same release.");
     ++generation;
     SceneSettings settings;
     settings.width = in.value<uint32_t>();
@@ -476,9 +476,34 @@ SceneSettings SceneLoader::apply(const std::string& path) {
             if (!outOfCore) desc.prepared = &prepared;
             uint32_t made = 0;
             try {
+                // MOONLIGHTIPR_TEXTURES_REFUSED=1, for tests: the card refuses every new image, as a full one does.
+                const char* refusing = std::getenv("MOONLIGHTIPR_TEXTURES_REFUSED");
+                if (!outOfCore && refusing && *refusing == '1')
+                    throw std::runtime_error("cudaMallocMipmappedArray: out of memory (MOONLIGHTIPR_TEXTURES_REFUSED)");
                 made = renderer.addTexture(desc);
             } catch (const std::exception& refused) {
-                if (!outOfCore) throw;
+                if (!outOfCore) {
+                    // The card refused it after all (the room was reckoned before the geometry, and other programs may
+                    // have taken memory since): kept whole in the computer's memory instead, never left out. Said, as
+                    // the others kept there are.
+                    std::cerr << "MoonLightIPR textures: " << file << " kept whole in the computer's memory, the graphics card refusing it ("
+                              << refused.what() << ")" << std::endl;
+                    if (reused) {
+                        image = readImage(file);
+                        desc.pixels = image.floatData ? static_cast<const void*>(image.floats.data()) : image.bytes.data();
+                        desc.width = image.width;
+                        desc.height = image.height;
+                        desc.floatData = image.floatData;
+                    }
+                    desc.hostResident = true;
+                    desc.prepared = nullptr;
+                    desc.maxSize = 0;
+                    made = renderer.addTexture(desc);
+                    cached = textures.emplace(key, CachedMesh{made, 0}).first;
+                    cached->second.lastUsed = generation;
+                    textureIndex = cached->second.index;
+                    continue;
+                }
                 // The computer's memory would not hold it either: on the card, made smaller, as before.
                 std::cerr << "MoonLightIPR textures: at most " << limit << " pixels across for " << file
                           << ", the computer's memory refusing it (" << refused.what() << ")" << std::endl;
@@ -624,6 +649,11 @@ SceneSettings SceneLoader::apply(const std::string& path) {
             material.iridescenceAt90 = in.value<float>();
             material.iridescenceColors.resize(IRIDESCENCE_STEPS * 3);
             in.floats(material.iridescenceColors.data(), IRIDESCENCE_STEPS * 3);
+        }
+        if (materialFlags & (1u << 18)) {
+            // The kit's shadow catcher (form 'Z'): its strength; a matte with 1 << 19.
+            material.shadowCatcher = std::min(std::max(in.value<float>(), 0.0f), 1.0f);
+            material.shadowMatte = (materialFlags & (1u << 19)) != 0;
         }
     }
     std::vector<Layer> layers(in.value<uint32_t>());

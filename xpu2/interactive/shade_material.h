@@ -299,7 +299,8 @@ enum MaterialFlags : U32 {
     MatPolyVertices = 2,
     MatModoToonTerminator = 4,
     MatModoTransmissionRoughness = 8,
-    MatModoToonMaterial = 16
+    MatModoToonMaterial = 16,
+    MatModoCatcherMatte = 32  // a shadow catcher's modo_shadow_matte (tools/port_shadow_catcher.py)
 };  // MatPolyVertices: its maps read the hit polygon
 // maps: the material's map program (shade_maps.h), NoMapProgram for none; bindings: its own bound
 // attributes (UsdPreviewSurface; a DwaBase tree's are on its nodes).
@@ -310,6 +311,10 @@ struct MaterialRecord {
     // Its extra AOVs' pool offset (none: NoExtraAovs): their map program, their count, then each one's label, whether
     // post scatter, the register of the map its colour is bound to (MapNoRegister: none) and its colour.
     U32 extras = 0xffffffffu;
+    // The kit's shadow catcher (tools/port_shadow_catcher.py: Material's modo_shadow_catcher, modo_shadow_strength):
+    // its strength clamped to 0..1, -1 for a material that is none (or MOONRAY_MODO_SHADOW_CATCHER=0). As MoonRay reads
+    // it from the hit's own material (Intersection::mMaterial), the root's: a switch's chosen material's is not read.
+    float modoCatcher = -1.0f;
 };
 constexpr U32 NoExtraAovs = 0xffffffffu, ExtraAovFloats = 6;
 
@@ -786,6 +791,9 @@ X2_CALL U32 extraAovValues(const MaterialRecord& m, const float* pool, const Sta
 template <class Tex>
 X2_CALL U32 shadeMaterial(const MaterialRecord& m, const float* pool, const State& st, const Tex& tex, Bsdf& bsdf, float& presence,
                           DwaParams* slots, GlitterScratch* glitter = nullptr) {
+    // A shadow catcher, read from the hit's (root) material (tools/port_shadow_catcher.py; the integrator acts on it).
+    bsdf.modoCatcher = m.modoCatcher;
+    bsdf.modoMatte = (m.flags & MatModoCatcherMatte) != 0;
     const U32 status = shadeRootMaterial(m, pool, st, tex, bsdf, presence, slots, glitter);
     if (status != tex::Ready || m.extras == NoExtraAovs || bsdf.fatal || bsdf.earlyTermination) return status;
     return extraAovValues(m, pool, st, tex, bsdf);

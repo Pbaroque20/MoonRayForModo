@@ -859,7 +859,26 @@ def casts_shadow(scene, layers, known):
     """Whether the Shader over a surface has Cast Shadows on. Modo's own six switches for a surface have none for
     shadows (the last is for occlusion rays), so the Shader is asked: of those among the surface's layers, the one
     highest in the Shader Tree, which is the one Modo goes by."""
-    if layers not in known:
+    return shader_switches(scene, layers, known)[4]
+
+
+# The Shader's own visibility switches, as the evaluated surface's flags are laid out (camera, indirect, reflection,
+# refraction), and its Cast Shadows: a Shader put above a surface's base Shader with Visible to Camera off hides the
+# surface from the camera and keeps it in reflections, as Modo renders it (a tester's report: the surface flags Modo
+# hands over do not carry them).
+SHADER_SWITCHES = ('visCam', 'visInd', 'visRefl', 'visRefr', 'shadCast')
+
+
+# Which of a Shader's Control switches lets it decide each of SHADER_SWITCHES: a Shader with Control Visibility off
+# leaves the visibility to the Shaders under it, one with Control Lighting off its Cast Shadows.
+SHADER_CONTROLS = ('visEnable', 'visEnable', 'visEnable', 'visEnable', 'lgtEnable')
+
+
+def shader_switches(scene, layers, known):
+    """Each of a surface's switches (SHADER_SWITCHES) as the Shader highest in the Shader Tree among its layers that
+    controls it (SHADER_CONTROLS) has it, on where no Shader says otherwise."""
+    key = ('switches', layers)
+    if key not in known:
         if 'order' not in known:
             order = known['order'] = {}
 
@@ -871,19 +890,33 @@ def casts_shadow(scene, layers, known):
                 walk(scene.renderItem)
             except Exception:
                 pass
-        cast, best = True, -1
+        switches, best = [True] * len(SHADER_SWITCHES), [-1] * len(SHADER_SWITCHES)
+
+        def read(layer, name, default=True):
+            try:
+                return bool(layer.channel(name).get())
+            except Exception:
+                return default
+        top, top_place = None, -1
         for identity in layers:
             try:
                 layer = scene.item(identity)
                 if layer.type != 'defaultShader':
                     continue
                 place = known['order'].get(layer.id, 0)
-                if place > best:
-                    best, cast = place, bool(layer.channel('shadCast').get())
+                if place > top_place:
+                    top, top_place = layer, place
+                for index, (name, control) in enumerate(zip(SHADER_SWITCHES, SHADER_CONTROLS)):
+                    if place > best[index] and read(layer, control, False):
+                        best[index], switches[index] = place, read(layer, name)
             except Exception:
                 continue
-        known[layers] = cast
-    return known[layers]
+        # Where no Shader over the surface controls a switch, the highest Shader's own, as Cast Shadows was read before.
+        for index, name in enumerate(SHADER_SWITCHES):
+            if best[index] < 0 and top is not None:
+                switches[index] = read(top, name)
+        known[key] = tuple(switches)
+    return known[key]
 
 
 def meshes(data, materials, warnings, scene=None):
@@ -903,9 +936,12 @@ def meshes(data, materials, warnings, scene=None):
         if not any(visibility):
             continue
         if scene is not None:
-            # The sixth is what shadow rays go by; Modo's own sixth, for occlusion rays, is not that.
-            visibility = visibility[:5] + (casts_shadow(shading_scene(surface, scene), tuple(surface['layers']),
-                                                        shadows.setdefault(_shading_key(surface), {})),)
+            # The sixth is what shadow rays go by; Modo's own sixth, for occlusion rays, is not that. The first four are
+            # also the Shader's own (shader_switches): Modo's surface flags do not carry them.
+            camera, indirect, reflection, refraction, cast = shader_switches(shading_scene(surface, scene), tuple(surface['layers']),
+                                                                             shadows.setdefault(_shading_key(surface), {}))
+            visibility = (visibility[0] and camera, visibility[1] and indirect, visibility[2] and reflection,
+                          visibility[3] and refraction, visibility[4], cast)
         if not any(visibility):
             continue
         tag = surface['material']

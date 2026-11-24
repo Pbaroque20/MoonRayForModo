@@ -240,6 +240,10 @@ struct Bsdf {
     // The material's own label ids (encodedLabel of label 0: Bsdf::getMaterialLabelId, getLpeMaterialLabelId).
     U32 materialLabels = 0;
     Color selfEmission{0, 0, 0};
+    // The hit's material as a shadow catcher (MaterialRecord::modoCatcher, tools/port_shadow_catcher.py): its strength
+    // (-1: none) and whether it is a matte.
+    float modoCatcher = -1.0f;
+    bool modoMatte = false;
     FresnelPool fresnels;
     ColorRamp ramps[MaxRamps];
     U32 rampCount = 0;
@@ -261,6 +265,8 @@ X2_HD inline void reset(Bsdf& b) {
     b.spherical = b.earlyTermination = b.fatal = false;
     b.materialLabels = 0;
     b.selfEmission = Color{0, 0, 0};
+    b.modoCatcher = -1.0f;
+    b.modoMatte = false;
     b.fresnels.count = 0;
     b.rampCount = 0;
     b.bssrdf.type = BssrdfNone;

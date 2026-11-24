@@ -166,7 +166,8 @@ class Session(unittest.TestCase):
         # forgets only the probes, the last picture kept to move.
         self.assertIn('if (rheaWanted && fresh && !scene.cameraFrom) {', text)
         self.assertIn('if (scene.cameraEdit) rheaView.resetProbes();', text)
-        self.assertIn('else rheaView.reset();', text)
+        # (Its store set aside under the scene's key first: Rhea's radiance cache, rhea/rhea_cache.h, test_rhea_cache.)
+        self.assertIn('rheaCache.park(rheaView.store);\n                        rheaView.reset();', text)
         # What it last showed is kept through the reset: a frame with nothing to warp fades XPU2 in over it.
         self.assertIn('rheaView.screenWarp(*scene.plan);', text)
         self.assertIn('MoonRay XPU2: realtime by Rhea (', text)

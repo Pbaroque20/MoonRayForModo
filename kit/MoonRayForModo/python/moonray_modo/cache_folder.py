@@ -66,7 +66,11 @@ def missed():
 # What the kit makes in the folder, each a folder of its own: what Clear Cache empties (clear). Not Diagnostics (logs), and
 # not MoonLightIPR's compiled programs (OptixCache), which take minutes to make again and do not go stale.
 CLEARED = ('Scenes', 'Geometry', 'Alpha', 'MoonLightIPR', 'Simplified', 'Textures', 'Environments', 'Procedurals', 'GraphBakes', 'Fur',
-           'Ocean')
+           'Ocean', 'Rhea')
+# XPU2 RT (Rhea)'s radiance cache (rhea/rhea_cache.h): its files (<scene key>.rhea) and the stamp the running XPU2 reads to
+# drop what it holds (rhea_flush).
+RHEA = 'Rhea'
+RHEA_STAMP = 'flush.stamp'
 
 
 def clear():
@@ -75,6 +79,7 @@ def clear():
     own in it. A file a render has open is left. Returns (files removed, bytes freed, files left)."""
     removed = freed = left = 0
     base = root()
+    rhea_kept = (base / RHEA).is_dir()
     for kind in CLEARED:
         folder = base / kind
         if not folder.is_dir():
@@ -105,6 +110,64 @@ def clear():
         ocean.forget_seen()
     except Exception:
         pass
+    # And Rhea's radiance cache a running XPU2 holds: dropped, not written again (its files went with the folder). Where
+    # there was a Rhea folder (an XPU2 may have kept one there): the stamp is all that is left in it.
+    if rhea_kept:
+        rhea_flush('clear')
+    return removed, freed, left
+
+
+def rhea_folder():
+    """Where XPU2 RT (Rhea) keeps its radiance cache on disk, a file a scene, and its flush stamp (XPU2_SESSION_RHEA_CACHE_FOLDER)."""
+    return root() / RHEA
+
+
+def rhea_flush(kind='memory'):
+    """Tell a running XPU2 to drop Rhea's radiance cache (rhea/rhea_cache.h reads the stamp as each frame starts and as it
+    quits): 'memory' drops what it holds (on disk, written first), 'clear' drops it without writing. True where told."""
+    import time
+    folder = rhea_folder()
+    staged = folder / (RHEA_STAMP + '.' + uuid.uuid4().hex[:8] + '.tmp')
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+        staged.write_text('%d %s\n' % (time.time_ns(), 'clear' if kind == 'clear' else 'memory'), encoding='ascii')
+        os.replace(staged, folder / RHEA_STAMP)
+    except OSError:
+        try:
+            staged.unlink()
+        except OSError:
+            pass
+        return False
+    return True
+
+
+def rhea_files():
+    """Rhea's radiance cache files and their size in bytes: (count, bytes)."""
+    count = size = 0
+    try:
+        for entry in rhea_folder().glob('*.rhea'):
+            try:
+                size += entry.stat().st_size
+                count += 1
+            except OSError:
+                pass
+    except OSError:
+        pass
+    return count, size
+
+
+def rhea_clear():
+    """Clear Radiance Cache: Rhea's files removed and a running XPU2 told to drop what it holds without writing it again.
+    Returns (files removed, bytes freed, files left)."""
+    removed = freed = left = 0
+    rhea_flush('clear')
+    for entry in sorted(rhea_folder().glob('*.rhea*')) if rhea_folder().is_dir() else []:
+        try:
+            size = entry.stat().st_size
+            entry.unlink()
+            removed, freed = removed + 1, freed + size
+        except OSError:
+            left += 1
     return removed, freed, left
 
 

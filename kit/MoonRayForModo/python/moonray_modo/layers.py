@@ -328,7 +328,7 @@ def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, mat
                     if not solid_map:warnings.append('Layer %s: Solid projection laid on as Cubic.'%layer.name)
                 if (layer.type in ENHANCE or layer.type in SOLID_ONLY) and not solid_map:
                     raise ValueError(('Gabor and Poisson noise are' if layer.type in SOLID_ONLY else 'Enhance: Modo textures are')+' drawn with a Solid projection')
-                if projection not in ('uv','planar','spherical','cylindrical','cubic'):
+                if projection not in ('uv','planar','spherical','cylindrical','cubic','front'):
                     raise ValueError('unsupported projection '+projection)
                 node['projection'] = projection
                 node['uv_map'] = channel(locator,'uvMap','') if projection=='uv' else ''

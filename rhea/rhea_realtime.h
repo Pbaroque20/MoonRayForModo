@@ -525,6 +525,9 @@ public:
     bool movedSince(const cpu::Plan& b) const {
         return !haveSeen || !sameCamera(seenCamera, b.camera) || seenW != b.width || seenH != b.height;
     }
+    // The camera as last seen forgotten: the next frame counts as a camera move, so that phase one draws it from the store
+    // (rhea_cache.h: a store taken back for realtime turned on again, the camera where it was).
+    void forgetSeen() { haveSeen = false; }
     // (The picture's size too: with no probes nothing else sets it; prepare resets the probes on a change of size.)
     void see(const cpu::Plan& b) {
         seenCamera = b.camera, haveSeen = true, seenW = b.width, seenH = b.height;
@@ -1000,6 +1003,11 @@ public:
     // never do; phase one's own colours went in with it (now never: an unsampled pixel adds nothing). learnBegin at each
     // frame's start. Returns the pixels learned from.
     void learnBegin() { learned.clear(); }
+    // The store's options as learning sets them (the radiance cache reads a kept store only where they agree).
+    void storeOptions() {
+        store.op.scale = op.storeScale, store.op.jump = op.warpJump, store.op.threads = std::max(1u, op.threads);
+        store.op.grazing = op.storeGrazing, store.op.albedo = op.storeAlbedo;
+    }
     size_t learn(const cpu::Plan& b, const async::RenderResult& film) {
         const size_t n = size_t(b.width) * b.height;
         if (!op.objectSpace || !op.warp || film.rgba.size() != n * 4 || film.counts.size() != n) return 0;
@@ -1026,8 +1034,7 @@ public:
             fresh.fetch_add(here, std::memory_order_relaxed);
         });
         if (!fresh.load()) return 0;
-        store.op.scale = op.storeScale, store.op.jump = op.warpJump, store.op.threads = std::max(1u, op.threads);
-        store.op.grazing = op.storeGrazing, store.op.albedo = op.storeAlbedo;
+        storeOptions();
         ObjectStore::Outputs outs;
         outs.aov = &film.aov, outs.stride = stride, outs.albedo = o.albedo, outs.emission = o.emission;
         store.add(v, b.width, b.height, film.rgba, learnCounts, learnDepth, learnFar, &outs);

@@ -44,7 +44,8 @@ struct Hit {
     int curve;                  // the hit is on a curve, which curveTangent runs along
     unsigned hair;              // with MATERIAL_HAIR, the material's entry among the hairs
     unsigned iridescence;       // with MATERIAL_IRIDESCENT, the material's entry among the iridescences
-    float curveCos;             // how squarely the ray met the strand: 1 on its middle, 0 at its edge
+    float catcher;              // with MATERIAL_SHADOW_CATCHER, its strength (DeviceMaterial::catcher)
+    float curveCos;            // how squarely the ray met the strand: 1 on its middle, 0 at its edge
     float curveAlong, curveChance;  // how far along its strand the hit is, and the strand's own number
     float3 curveTangent;
     float3 lift;                // a toon surface's way up to the smooth surface its corner normals describe, or 0
@@ -1390,10 +1391,12 @@ ML_INLINE float3 seenBy(unsigned hidden, bool sharp, unsigned seen, float3 gloss
 }
 
 // Next event estimation at one surface point: the environment, the distant lights, then the
-// local lights. weight is the path's weight on arriving at the surface.
+// local lights. weight is the path's weight on arriving at the surface. tally, for a shadow catcher: what its light
+// samples bring unshadowed and unclamped ([0]), and what of that their shadow rays let through ([1]).
 ML_INLINE float3 directLight(const Surface& surface, const Lobes& lobes, float3 wo, const Frame& frame,
                              float3 p, float3 ng, float3 weight, bool lit, Seed& seed, float3 lift = make_float3(0.0f, 0.0f, 0.0f),
-                             unsigned set = 0, unsigned only = 0, float3* diffuseShare = nullptr, float2* shaded = nullptr) {
+                             unsigned set = 0, unsigned only = 0, float3* diffuseShare = nullptr, float2* shaded = nullptr,
+                             float3* tally = nullptr) {
     const DeviceDistantLight* distantLights = reinterpret_cast<const DeviceDistantLight*>(params.distantLights);
     const DeviceLight* lights = reinterpret_cast<const DeviceLight*>(params.lights);
     float3 radiance = vec(0.0f);
@@ -1412,7 +1415,9 @@ ML_INLINE float3 directLight(const Surface& surface, const Lobes& lobes, float3 
             const float3 found = litBy(e, pdf, lightPdf);
             if (maxComponent(found) > 0.0f) {
                 const float3 open = weight * found * envRadiance(toLight, map);
-                const float3 c = clampSample(open * shadow(shadowFrom(surface, p, lift, ng, frame.n, toLight), toLight, seed), lit);
+                const float3 passed = shadow(shadowFrom(surface, p, lift, ng, frame.n, toLight), toLight, seed);
+                const float3 c = clampSample(open * passed, lit);
+                if (tally) { tally[0] += open; tally[1] += open * passed; }
                 radiance += c;
                 if (shaded) { shaded->x += luminance(c); shaded->y += luminance(clampSample(open, lit)); }
                 if (diffuseShare) *diffuseShare += c * diffusePartOf(e, pdf, lightPdf, found);
@@ -1432,7 +1437,9 @@ ML_INLINE float3 directLight(const Surface& surface, const Lobes& lobes, float3 
         const float3 found = litBy(e, pdf, sunPdf);
         if (maxComponent(found) > 0.0f) {
             const float3 open = weight * found * distantRadiance(light, toSun);
-            const float3 c = clampSample(open * shadow(shadowFrom(surface, p, lift, ng, frame.n, toSun), toSun, seed), lit);
+            const float3 passed = shadow(shadowFrom(surface, p, lift, ng, frame.n, toSun), toSun, seed);
+            const float3 c = clampSample(open * passed, lit);
+            if (tally) { tally[0] += open; tally[1] += open * passed; }
             radiance += c;
             if (shaded) { shaded->x += luminance(c); shaded->y += luminance(clampSample(open, lit)); }
             if (diffuseShare) *diffuseShare += c * diffusePartOf(e, pdf, sunPdf, found);
@@ -1454,13 +1461,39 @@ ML_INLINE float3 directLight(const Surface& surface, const Lobes& lobes, float3 
         const float3 found = litBy(e, pdf, lampPdf);
         if (maxComponent(found) > 0.0f) {
             const float3 open = weight * found * emitted;
-            const float3 c = clampSample(open * shadow(shadowFrom(surface, p, lift, ng, frame.n, toLamp), toLamp, seed, distance * 0.999f), lit);
+            const float3 passed = shadow(shadowFrom(surface, p, lift, ng, frame.n, toLamp), toLamp, seed, distance * 0.999f);
+            const float3 c = clampSample(open * passed, lit);
+            if (tally) { tally[0] += open; tally[1] += open * passed; }
             radiance += c;
             if (shaded) { shaded->x += luminance(c); shaded->y += luminance(clampSample(open, lit)); }
             if (diffuseShare) *diffuseShare += c * diffusePartOf(e, pdf, lampPdf, found);
         }
     }
     return radiance;
+}
+
+// ---- Shadow catchers ---------------------------------------------------------------------------
+// The kit's shadow catcher seen by the camera, as MoonRay's (tools/port_shadow_catcher.py): how much of what its light
+// samples would bring it gets past whatever stands between, per channel (each sample's share r_i / sum r_j, summed over
+// the samples not shadowed), and by luminance in part (where a channel brings nothing, that channel's share too). Lit by
+// nothing, it is not shadowed: 1, so that a catcher in the open is its emission exactly.
+ML_INLINE float3 catcherShare(const Hit& hit, float3 direction, Seed& seed, unsigned set, float& part) {
+    Surface surface = surfaceFrom(hit);
+    const float3 toViewer = -direction;
+    const float3 ng = dot(hit.ng, toViewer) < 0.0f ? -hit.ng : hit.ng;
+    const float3 ns = dot(hit.ns, ng) < 0.0f ? -hit.ns : hit.ns;
+    const Frame frame(ns);
+    const float3 wo = frame.toLocal(toViewer);
+    surface.diffuseNormal = make_float3(0.0f, 0.0f, 1.0f);
+    surface.coatNormal = make_float3(0.0f, 0.0f, 1.0f);
+    const Lobes lobes = lobeWeights(surface, wo);
+    float3 tally[2] = {make_float3(0.0f, 0.0f, 0.0f), make_float3(0.0f, 0.0f, 0.0f)};
+    directLight(surface, lobes, wo, frame, hit.p, ng, make_float3(1.0f, 1.0f, 1.0f), false, seed, hit.lift, set, 0u, nullptr, nullptr, tally);
+    const float whole = luminance(tally[0]);
+    part = whole > 0.0f ? clamp(luminance(tally[1]) / whole, 0.0f, 1.0f) : 1.0f;
+    return make_float3(tally[0].x > 0.0f ? clamp(tally[1].x / tally[0].x, 0.0f, 1.0f) : part,
+                       tally[0].y > 0.0f ? clamp(tally[1].y / tally[0].y, 0.0f, 1.0f) : part,
+                       tally[0].z > 0.0f ? clamp(tally[1].z / tally[0].z, 0.0f, 1.0f) : part);
 }
 
 // ---- Hair --------------------------------------------------------------------------------------
@@ -1924,6 +1957,21 @@ ML_INLINE float4* aovSlot(unsigned pixel, unsigned slot) {
     return reinterpret_cast<float4*>(params.aovs) + size_t(pixel) * AOV_SLOTS + slot;
 }
 
+// Glass in alpha (params.glassAlpha, tools/port_glass_alpha.py): how much of this sample's camera path went through glass
+// alone and out of the scene, left by the beauty's program in the fourth number of the pixel's alpha slot (which nothing
+// reads) for __raygen__aovs, launched after it, to take off the alpha: 1 + that amount, negative once the pixel has seen
+// glass in any sample (so that where the beauty takes no more samples, its alpha is held as the beauty is).
+ML_INLINE void seenThroughGlass(unsigned pixel, float amount) {
+    if (!params.aovs || !params.glassAlpha) return;
+    float4* slot = aovSlot(pixel, AOV_ALPHA);
+    const bool marked = params.sample > 0 && slot->w < 0.0f;
+    slot->w = (marked ? -1.0f : 1.0f) * (1.0f + amount);
+}
+// Keeps that mark through the AOV program's writes of the slot (aovBegin and aovAdd set its fourth number to 1).
+ML_INLINE void markGlass(unsigned pixel, bool marked) {
+    if (marked) aovSlot(pixel, AOV_ALPHA)->w = -1.0f;
+}
+
 // A sample begins: each mean made room for it (sample 0 begins them).
 ML_INLINE void aovBegin(unsigned pixel) {
     const float keep = float(params.sample) / float(params.sample + 1);
@@ -1979,6 +2027,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
     const uint3 index = optixGetLaunchIndex();
     const unsigned pixel = index.y * params.width + index.x;
     const bool beyond = index.x < params.region[0] || index.x >= params.region[2] || index.y < params.region[1] || index.y >= params.region[3];
+    seenThroughGlass(pixel, 0.0f);
     if (params.draft == 2 || (params.draft == 1 && beyond)) {
         // Draft: three rays, to here and to the pixels beside and above, and a line where what they find parts.
         // Nothing is lit or shaded, so it costs next to nothing however heavy the scene, and what is behind the
@@ -2076,6 +2125,10 @@ extern "C" __global__ void __raygen__moonlightipr() {
     // The fog the ray is in, as its entry among the volumes, and how many edges of fog the path has crossed.
     int medium = -1;
     unsigned crossings = 0;
+    // Glass in alpha (params.glassAlpha): whether the path has gone only through glossy or mirror transmission (and past
+    // cut-outs) so far, and how much of it has left the scene that way (seenThroughGlass).
+    bool seeThrough = params.glassAlpha != 0;
+    float glassSeen = 0.0f;
 
     // The light set of the surface the ray last left, which the lights it comes upon are held to.
     unsigned fromSet = 0;
@@ -2353,8 +2406,17 @@ extern "C" __global__ void __raygen__moonlightipr() {
                     weighed = 1.0f;
                 }
             }
+            // Glass in alpha: the sky seen through glass alone is see-through, and goes to the Environment background pass
+            // (MoonRay's C(<TS>|<TG>|<Ts>)*<L.'modo_environment'>) rather than the pass of the glass.
+            const bool throughGlass = seeThrough && depth > 0;
+            if (throughGlass) {
+                const float3 carried = throughput * lightWeight;
+                glassSeen += (carried.x + carried.y + carried.z) * (1.0f / 3.0f);
+                if (params.passes) passTo(pixel, passNow, radiance, passMark, passShare);
+            }
             if ((camera || reaches(fromSet, 0)) && (!camera || !params.aovPass || params.aovPass == PASS_BACKGROUND))
                 radiance += clampSample(throughput * lightWeight * sky * weighed, clampFound);
+            if (throughGlass && params.passes) passTo(pixel, PASS_BACKGROUND, radiance, passMark, passShare);
             if (camera) guideAlbedo = make_float3(fminf(sky.x, 1.0f), fminf(sky.y, 1.0f), fminf(sky.z, 1.0f));
             // Distant lights are found by scattered rays; the camera sees only the discs that ask to be seen, as a sun does.
             for (unsigned i = 0; i < params.distantLightCount; ++i) {
@@ -2427,6 +2489,29 @@ extern "C" __global__ void __raygen__moonlightipr() {
         }
 
         fromSet = reinterpret_cast<const DeviceInstance*>(params.instances)[hit.instance].lightSet;
+        if ((hit.flags & MATERIAL_SHADOW_CATCHER) && !emerged) {
+            // The kit's shadow catcher, as MoonRay's (tools/port_shadow_catcher.py): past the camera, what it wears (its
+            // emission) unlit, and the path ends. Seen by the camera, (1 - strength) of its emission outright and the rest
+            // as much as its light samples are not shadowed (catcherShare); nothing bounces off it. A matte shows no
+            // colour: its shadows are in the alpha (__raygen__aovs).
+            PASS_NOW(PASS_EMISSION);
+            if (!camera) {
+                radiance += clampSample(throughput * lightWeight * hit.emission, clampFound);
+                break;
+            }
+            const bool matte = (hit.flags & MATERIAL_CATCHER_MATTE) != 0;
+            if (!matte && (!params.aovPass || params.aovPass == PASS_EMISSION)) {
+                float part;
+                const float3 share = catcherShare(hit, direction, seed, fromSet, part);
+                radiance += throughput * lightWeight * hit.emission * (vec(1.0f - hit.catcher) + share * hit.catcher);
+            }
+            const float3 shown = matte ? vec(0.0f) : hit.emission;
+            guideAlbedo = make_float3(fminf(shown.x, 1.0f), fminf(shown.y, 1.0f), fminf(shown.z, 1.0f));
+            const float3 facing = dot(hit.ns, direction) > 0.0f ? -hit.ns : hit.ns;
+            guideNormal = make_float3(dot(facing, normalize(vec(params.cameraU))), dot(facing, normalize(vec(params.cameraV))),
+                                      -dot(facing, normalize(vec(params.cameraW))));
+            break;
+        }
         if (leastRough > 0.0f && (hit.flags & MATERIAL_ROUGHNESS_CLAMPED)) {
             // MoonRay's roughness clamp, as DwaBase applies it: its specular, outer specular and transmission lobes made
             // at least as rough as the path has already scattered (fireflies from indirect caustics). MoonRay's
@@ -2465,6 +2550,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
         if (ML_HAS(FEATURE_HAIR) && hit.curve && (hit.flags & MATERIAL_HAIR)) {
             // A hair fibre scatters light all round itself, so nothing here asks which side the light is on.
             const Fibre fibre = fibreFrom(hit, reinterpret_cast<const DeviceHair*>(params.hairs)[hit.hair], -direction, leastRough);
+            seeThrough = false;
             if (camera) {
                 guideAlbedo = hit.albedo;
                 guideNormal = make_float3(dot(hit.ns, normalize(vec(params.cameraU))), dot(hit.ns, normalize(vec(params.cameraV))),
@@ -2554,6 +2640,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
             if (mirrored) tint = vec(1.0f);
             const bool kept = mirrored || !refractThrough(wo, h, ior, 1.0f, wi);   // thrown back inside
             if (kept) wi = reflectAbout(wo, h);
+            if (kept) seeThrough = false;   // a reflection, inside or not, is opaque (glass in alpha)
             // MoonRay's iridescence wraps the dielectric's reflection on the way out as on the way in.
             if (ML_HAS(FEATURE_IRIDESCENCE) && kept && surface.iridescence && !surface.iridescence->coat)
                 tint = tint * iridescenceTint(*surface.iridescence, clamp(dot(wo, h), 0.0f, 1.0f));
@@ -2618,7 +2705,10 @@ extern "C" __global__ void __raygen__moonlightipr() {
                 const float ior = spectralIor(surface.transmissionIor, hit.abbe, rnd(seed), tint);
                 const float3 h = surface.transmissionAlpha > 0.0f ? sampleFacet(surface.transmissionAlpha, wo, u1, u2)
                                                                   : make_float3(0.0f, 0.0f, 1.0f);
-                if (!refractThrough(wo, h, 1.0f, ior, wi)) wi = reflectAbout(wo, h);
+                if (!refractThrough(wo, h, 1.0f, ior, wi)) {
+                    wi = reflectAbout(wo, h);
+                    seeThrough = false;
+                }
             }
             direction = frame.toWorld(wi);
             seen = SEEN_THROUGH;
@@ -2630,6 +2720,8 @@ extern "C" __global__ void __raygen__moonlightipr() {
             origin = offsetOrigin(hit.p, ng, direction);
             continue;
         }
+        // From here the path leaves by a reflection, diffuse light or light beneath the surface: no longer see-through.
+        seeThrough = false;
 
         if (scatters && (hit.flags & MATERIAL_RANDOM_WALK) && rnd(seed) < beneath) {
             if (params.roughnessClamp > 0.0f) leastRough = clamp(params.roughnessClamp, leastRough, 1.0f);
@@ -2953,6 +3045,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
     }
     if (!finite(radiance)) radiance = vec(0.0f);
     else if (params.passes) passTo(pixel, passNow, radiance, passMark, passShare);
+    if (glassSeen > 0.0f && isfinite(glassSeen)) seenThroughGlass(pixel, glassSeen);
 
     // Sample 0 overwrites, so a reset needs no clear.
     const float weight = 1.0f / float(params.sample + 1);
@@ -3008,7 +3101,24 @@ extern "C" __global__ void __raygen__aovs() {
     if (!params.aovs) return;
     const uint3 index = optixGetLaunchIndex();
     const unsigned pixel = index.y * params.width + index.x;
-    aovBegin(pixel);
+    // Glass in alpha: what the beauty's path of this sample saw through glass alone (seenThroughGlass), taken off the
+    // alpha. Where the beauty took no sample (a part of the picture already clean) the alpha is held as it is, as the
+    // beauty is.
+    float throughGlass = 0.0f;
+    bool alphaHeld = false, glassMarked = false;
+    if (params.glassAlpha) {
+        const float4 held = *aovSlot(pixel, AOV_ALPHA);
+        throughGlass = fmaxf(fabsf(held.w) - 1.0f, 0.0f);
+        glassMarked = held.w < 0.0f || throughGlass > 0.0f;
+        if (glassMarked && params.done && params.sample > 0
+            && reinterpret_cast<const unsigned char*>(params.done)[(index.y / CLEAN_TILE) * params.doneColumns + index.x / CLEAN_TILE]) {
+            aovBegin(pixel);
+            aovAdd(pixel, AOV_ALPHA, make_float3(held.x, held.y, held.z));
+            alphaHeld = true;
+        }
+    }
+    if (!alphaHeld) aovBegin(pixel);
+    markGlass(pixel, glassMarked);
     Seed seed = startSeed(index.x, index.y, pixel, params.sample);
     const float sx = 2.0f * (index.x + rnd(seed)) / params.width - 1.0f;
     const float sy = 2.0f * (index.y + rnd(seed)) / params.height - 1.0f;
@@ -3037,7 +3147,22 @@ extern "C" __global__ void __raygen__aovs() {
         aovAdd(pixel, AOV_DEPTH, make_float3(depth, depth, depth));
         aovAdd(pixel, AOV_NORMAL, ns);
         aovAdd(pixel, AOV_POSITION, hit.p);
-        aovAdd(pixel, AOV_ALPHA, make_float3(1.0f, 1.0f, 1.0f));
+        if (alphaHeld) {
+        } else if ((hit.flags & MATERIAL_SHADOW_CATCHER) && (hit.flags & MATERIAL_CATCHER_MATTE)) {
+            // A shadow catcher as a matte (MoonRay's modo_shadow_matte): its alpha holds its shadows alone, strength times
+            // the share of its light samples that are shadowed, by luminance; drawn as the beauty's first hit draws them.
+            bounceSeed(seed, 0);
+            seedPhase(seed, QMC_LIGHTS, 0, 12);
+            float part;
+            catcherShare(hit, direction, seed, reinterpret_cast<const DeviceInstance*>(params.instances)[hit.instance].lightSet, part);
+            const float alpha = clamp(hit.catcher * (1.0f - part) - throughGlass, 0.0f, 1.0f);
+            aovAdd(pixel, AOV_ALPHA, make_float3(alpha, alpha, alpha));
+        } else if (throughGlass > 0.0f) {
+            // Seen through glass alone to the sky: as see-through as the light that came through (tools/port_glass_alpha.py).
+            const float alpha = clamp(1.0f - throughGlass, 0.0f, 1.0f);
+            aovAdd(pixel, AOV_ALPHA, make_float3(alpha, alpha, alpha));
+        } else aovAdd(pixel, AOV_ALPHA, make_float3(1.0f, 1.0f, 1.0f));
+        markGlass(pixel, glassMarked);
         // The motion vector: the point at the shutter's opening and closing, each seen through the camera then.
         float3 opening = hit.p, closing = hit.p;
         if (params.instanceMotion) {
@@ -3646,6 +3771,7 @@ ML_INLINE MappedSlots resolveMaterial(Hit* hit, const DeviceMaterial& material, 
     hit->flags = material.flags;
     hit->hair = material.hair;
     hit->iridescence = material.iridescence;
+    hit->catcher = material.catcher;
     hit->abbe = material.abbe;
     hit->absorptionDistance = material.absorptionDistance;
     slots.normal = slots.bump = slots.slope = UV_SLOTS;

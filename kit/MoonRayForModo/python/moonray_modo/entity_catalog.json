@@ -8058,5 +8058,221 @@
     "category_label": "Volumes",
     "placed": false,
     "source": "upstream/openmoonray/moonray/moonray/dso/volume/Vdb/attributes.cc"
+  },
+  "BackplateEnvironment": {
+    "attributes": {
+      "hdri": {
+        "name": "hdri",
+        "type": "String",
+        "default": "",
+        "group": "HDRI",
+        "comment": "The HDRI shot with the backplate, latitude-longitude: it lights the scene.",
+        "label": "HDRI image",
+        "filename": true
+      },
+      "hdri_intensity": {
+        "name": "hdri_intensity",
+        "type": "Float",
+        "default": 1.0,
+        "group": "HDRI",
+        "comment": "How bright the HDRI is.",
+        "label": "HDRI intensity"
+      },
+      "hdri_rotation": {
+        "name": "hdri_rotation",
+        "type": "Float",
+        "default": 0.0,
+        "group": "HDRI",
+        "comment": "The HDRI turned about the vertical, in degrees, to line its sun up with the backplate.",
+        "label": "HDRI rotation"
+      },
+      "hdri_lighting": {
+        "name": "hdri_lighting",
+        "type": "Bool",
+        "default": true,
+        "group": "HDRI",
+        "comment": "The HDRI lights the scene (diffuse light).",
+        "label": "HDRI lights the scene"
+      },
+      "hdri_camera": {
+        "name": "hdri_camera",
+        "type": "Bool",
+        "default": false,
+        "group": "HDRI",
+        "comment": "The camera sees the HDRI behind the scene. Off, it sees the backplate (or nothing where there is none).",
+        "label": "HDRI seen by the camera"
+      },
+      "hdri_reflection": {
+        "name": "hdri_reflection",
+        "type": "Bool",
+        "default": false,
+        "group": "HDRI",
+        "comment": "Reflections show the HDRI. Off, they show the backplate where it is set to be reflected.",
+        "label": "HDRI in reflections"
+      },
+      "hdri_refraction": {
+        "name": "hdri_refraction",
+        "type": "Bool",
+        "default": false,
+        "group": "HDRI",
+        "comment": "Refractions show the HDRI. Off, they show the backplate where it is set to be refracted.",
+        "label": "HDRI in refractions"
+      },
+      "plate": {
+        "name": "plate",
+        "type": "String",
+        "default": "",
+        "group": "Backplate",
+        "comment": "The backplate photo, shot from where the camera stands, together with the HDRI.",
+        "label": "backplate image",
+        "filename": true
+      },
+      "plate_intensity": {
+        "name": "plate_intensity",
+        "type": "Float",
+        "default": 1.0,
+        "group": "Backplate",
+        "comment": "How bright the backplate is.",
+        "label": "backplate intensity"
+      },
+      "projection": {
+        "name": "projection",
+        "type": "Int",
+        "default": 0,
+        "group": "Backplate",
+        "comment": "How the backplate is laid on the ground and around the scene. Camera: thrown from the projection camera, as the photo was shot. Front: from the render camera, so the camera always sees the photo as it is. Planar, Box (cubic), Cylindrical and Spherical: from this item, Ground Size across.",
+        "label": "projection",
+        "enum": {
+          "camera": 0,
+          "front": 1,
+          "planar": 2,
+          "spherical": 3,
+          "cylindrical": 4,
+          "box": 5
+        }
+      },
+      "projection_camera": {
+        "name": "projection_camera",
+        "type": "String",
+        "default": "",
+        "group": "Backplate",
+        "comment": "The camera the backplate is thrown from (Camera projection): the one that stands where the photo was shot. Empty, the render camera.",
+        "label": "projection camera"
+      },
+      "plate_camera": {
+        "name": "plate_camera",
+        "type": "Bool",
+        "default": true,
+        "group": "Backplate",
+        "comment": "The camera sees the backplate behind the scene.",
+        "label": "backplate seen by the camera"
+      },
+      "backdrop_distance": {
+        "name": "backdrop_distance",
+        "type": "Float",
+        "default": 0.0,
+        "group": "Backplate",
+        "comment": "How far from the camera the backdrop stands, the plane behind the scene wearing the photo (as LightWave's backdrop). 0 stands it behind everything; nearer, refractions through glass show the photo as it would be seen from there.",
+        "label": "backdrop distance"
+      },
+      "backdrop_refraction": {
+        "name": "backdrop_refraction",
+        "type": "Bool",
+        "default": true,
+        "group": "Backplate",
+        "comment": "Refractions show the backdrop plane: the photo through the windows and glass, from where it stands (Backdrop Distance).",
+        "label": "backdrop in refractions"
+      },
+      "plate_reflection": {
+        "name": "plate_reflection",
+        "type": "Bool",
+        "default": true,
+        "group": "Backplate",
+        "comment": "Reflections show the backplate, as if the scene stood where it was shot.",
+        "label": "backplate in reflections"
+      },
+      "plate_refraction": {
+        "name": "plate_refraction",
+        "type": "Bool",
+        "default": true,
+        "group": "Backplate",
+        "comment": "Refractions show the backplate.",
+        "label": "backplate in refractions"
+      },
+      "plate_lighting": {
+        "name": "plate_lighting",
+        "type": "Bool",
+        "default": false,
+        "group": "Backplate",
+        "comment": "The backplate lights the scene too. Usually off: the HDRI lights it.",
+        "label": "backplate lights the scene"
+      },
+      "ground": {
+        "name": "ground",
+        "type": "Bool",
+        "default": true,
+        "group": "Ground",
+        "comment": "A ground of the kit's own, at the height of this item, Ground Size across, wearing the backplate. Off, Ground Mesh is the ground, or there is none.",
+        "label": "make a ground"
+      },
+      "ground_size": {
+        "name": "ground_size",
+        "type": "Float",
+        "default": 20.0,
+        "group": "Ground",
+        "comment": "How wide the ground is, and the projection's size for Planar, Box, Cylindrical and Spherical.",
+        "label": "ground size"
+      },
+      "ground_mesh": {
+        "name": "ground_mesh",
+        "type": "String",
+        "default": "",
+        "group": "Ground",
+        "comment": "A mesh of the scene to be the ground (a backdrop, a road) instead of the kit's own: it wears the backplate.",
+        "label": "ground mesh"
+      },
+      "shadow_catcher": {
+        "name": "shadow_catcher",
+        "type": "Bool",
+        "default": true,
+        "group": "Ground",
+        "comment": "The ground catches the shadows and reflections of the scene: the camera sees it as the backplate, darkened where shadows fall on it.",
+        "label": "shadow catcher"
+      },
+      "shadow_strength": {
+        "name": "shadow_strength",
+        "type": "Float",
+        "default": 1.0,
+        "group": "Ground",
+        "comment": "How dark the caught shadows are, 0 to 1.",
+        "label": "shadow strength"
+      },
+      "catcher_shows_plate": {
+        "name": "catcher_shows_plate",
+        "type": "Bool",
+        "default": true,
+        "group": "Ground",
+        "comment": "The render shows the backplate on the ground and behind the scene. Off, they are left out of the render, its alpha holding the shadows alone, to be laid over the photo in compositing.",
+        "label": "backplate in the render"
+      },
+      "other_environments": {
+        "name": "other_environments",
+        "type": "Int",
+        "default": 0,
+        "group": "Backplate",
+        "comment": "What becomes of the scene's Modo environments. Replace: this item stands in for them. Override: they stay under it, each kind of ray seeing the topmost environment it is let see, so they show only where this item's images are not seen. Add: they add their light to this item's.",
+        "label": "other environments",
+        "enum": {
+          "replace": 0,
+          "override": 1,
+          "add": 2
+        }
+      }
+    },
+    "category": "light",
+    "category_label": "Lights",
+    "placed": true,
+    "source": "kit",
+    "override": "backplate"
   }
 }

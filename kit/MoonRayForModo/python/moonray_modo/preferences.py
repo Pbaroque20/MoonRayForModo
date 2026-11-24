@@ -25,6 +25,8 @@ KEYS = {
     # Whether the environment lights the scene always, as a path tracer has it ('moonray'), or only with Global
     # Illumination on in the Render item, as Modo's own renderer has it ('modo').
     'environment_lighting': ('moonray', str),
+    # Environments one above another: each ray sees the topmost it is let see ('override', as Modo), or all add ('add').
+    'environment_stacking': ('override', str),
     # 0: an idle renderer is kept until its scene closes (Panel._scene_closed), its GPU given no work meanwhile.
     'idle_release_minutes': (0, int),
     'persistent_preview': (True, bool), 'memory_hud': (True, bool),
@@ -45,7 +47,7 @@ KEYS = {
     # Open Image Denoise cleans the albedo and normal guides first and trusts them (native.denoise_clean_guides).
     'denoise_clean_guides': (True, bool),
     # Presence shadows on where a material is cut out by a map, and off where none is (presence_shadows).
-    'presence_shadows_auto': (False, bool),
+    'presence_shadows_auto': (True, bool),
     # Moving lights blur: MoonRay's mb switch set on a light that moves during the shutter (native.light_motion).
     'light_motion': (True, bool),
     # Fog in Cryptomatte, with mattes of its own (native.crypto_volumes).
@@ -72,6 +74,10 @@ KEYS = {
     'bump_node': (True, bool),
     # The MoonShine graph's Ocean nodes make waves (native.ocean).
     'ocean': (True, bool),
+    # The Backplate item: an HDRI and a backplate photo in one, the ground a shadow catcher (native.backplate).
+    'backplate': (True, bool),
+    # Glass in alpha: the sky seen through glass alone is see-through in the alpha (native.glass_alpha).
+    'glass_alpha': (True, bool),
     # MoonRay given an ocean's shorter waves as a normal map (native.ocean_split).
     'ocean_split': (True, bool),
     # VDB fire coloured by its temperature (native.vdb_blackbody).
@@ -88,7 +94,7 @@ KEYS = {
     # A diagnostic: renders hold MoonRay's PBR validity output (native.pbr_validity).
     'pbr_validity': (False, bool),
     # XPU2: what renders on the graphics card, and where its adaptive passes are made.
-    'xpu2/renderer': ('xpu2', str), 'xpu2/adaptive_chain': (False, bool), 'xpu2/devices': ('both', str), 'xpu2/rt_cap': ('none', str),
+    'xpu2/renderer': ('xpu2', str), 'xpu2/adaptive_chain': (True, bool), 'xpu2/devices': ('both', str), 'xpu2/rt_cap': ('30', str),
     'draft/ink': ('tan', str), 'draft/width': (640.0, float), 'render_on_open': (False, bool), 'light_intensity': (10.0, float), 'working_space': ('rec709', str), 'notices_open': (False, bool),
     'ipr/width': (640, int), 'ipr/sampling': ('adaptive', str), 'ipr/samples': (32, int), 'ipr/error': (100.0, float), 'ipr/refine': (False, bool),
     # How many samples a pixel MoonLightIPR gathers before it rests, in realtime.
@@ -103,6 +109,9 @@ KEYS = {
     # XPU2 RT's engine: XPU2 Rhea (a camera move shown at once from XPU2's light kept on the surfaces, XPU2's own picture
     # fading in over it; the default, asked 2026-11-20), or XPU2's realtime frames as before.
     'xpu2/rt_engine': ('rhea', str),
+    # Where XPU2 RT (Rhea) keeps what it has learned of a scene for realtime turned on again (native.xpu2_rhea_cache): in
+    # memory (gone when the scene closes, or flushed by hand) or on disk (a file a scene in the Cache folder).
+    'xpu2/rhea_cache': ('memory', str),
     # XPU2 RT follows a camera drag in the viewport step by step (opt-in, as MoonLightIPR's Follow drags); off, a drag of
     # the viewport's camera is rendered once the mouse is let go.
     'xpu2/follow_drags': (False, bool),
@@ -116,6 +125,8 @@ XPU_REALTIME_TIP = ("RT with MoonRay and MoonRay LS where XPU2 does not render t
                     "MoonRay follows the scene in XPU, which is somewhat quicker to render but slower to restart, as each change of "
                     "geometry is built on the card again, and shares the card with Modo's viewport. Renders, Render and animations "
                     "keep the scene's Rendering Mode either way")
+# Where XPU2 RT (Rhea) keeps its radiance cache (xpu2/rhea_cache).
+RHEA_CACHE_CHOICES = (('In memory', 'memory'), ('On disk', 'disk'))
 # The samples a pixel each realtime engine may be set to stop at.
 LS_SAMPLES = (32, 64, 128)
 MOONLIGHTIPR_SAMPLES = (128, 256, 512, 1024)
@@ -148,8 +159,8 @@ class Preferences:
                 if key == 'ipr/sampling' and value not in ('adaptive', 'uniform'):
                     return default
                 if key == 'xpu_realtime_mode' and value not in XPU_REALTIME_MODES:
-                    # Not chosen yet: as the switch it replaces said, on the processor where it was on.
-                    return 'vector' if self.get('xpu_realtime') else 'off'
+                    # Not chosen yet: on the processor where the switch it replaces was on, else on the graphics card.
+                    return 'vector' if self.get('xpu_realtime') else 'xpu'
                 if key == 'preview_engine' and value == 'moonlight':
                     # The engine's name as 0.3.50.1 and 0.3.50.2 stored it.
                     return 'moonlightipr'
@@ -243,7 +254,7 @@ class Dialog(QtWidgets.QDialog):
         browse_cache.clicked.connect(self._browse_cache)
         clear_cache = QtWidgets.QPushButton('Clear Cache')
         clear_cache.setToolTip('Removes what the kit keeps in the cache folder: kept scenes and meshes, converted textures and '
-                               "environments, MoonLightIPR's images and baked patterns. Each is made again when next needed, so the "
+                               "environments, MoonLightIPR's images, baked patterns and Rhea's radiance cache. Each is made again when next needed, so the "
                                "next render of a scene takes longer. Nothing else in the folder is touched, nor MoonLightIPR's "
                                'compiled programs.')
         clear_cache.clicked.connect(self._clear_cache)
@@ -295,13 +306,42 @@ class Dialog(QtWidgets.QDialog):
         at = form.getWidgetPosition(self.realtime_share)[0] + 1
         form.insertRow(at, 'XPU2 RT engine', rt_engine)
         form.insertRow(at + 1, rt_drags)
+        # Rhea's radiance cache (rhea/rhea_cache.h): in memory or on disk, and its button beside it, Flush (in memory) or
+        # Clear (on disk) Radiance Cache.
+        rhea_cache = combo('xpu2/rhea_cache', RHEA_CACHE_CHOICES,
+                           'MoonRay XPU2 RT (Rhea) only. What Rhea has learned of a scene (the light XPU2 has rendered on its surfaces) is '
+                           'kept for the next time realtime is turned on for the same scene, unchanged, so that it starts from what it knew. '
+                           'In memory: kept while the scene is open, dropped when it closes, or by Flush Radiance Cache. On disk: also '
+                           'written as a file a scene in the cache folder (Rhea), read again when the same scene is opened later, also '
+                           'after Modo is restarted; Clear Radiance Cache removes the files, as Clear Cache does. An edit to a light, a '
+                           'material or a mesh starts afresh (undone, it finds what it knew)')
+        self.rhea_button = QtWidgets.QPushButton()
+        self.rhea_button.clicked.connect(lambda: self._rhea_cache_button(rhea_cache.currentData()))
+        rhea_row = QtWidgets.QHBoxLayout()
+        rhea_row.addWidget(rhea_cache, 1)
+        rhea_row.addWidget(self.rhea_button)
+        form.insertRow(at + 2, 'Rhea radiance cache', rhea_row)
+
+        def rhea_cache_chosen(_=None):
+            on_disk = rhea_cache.currentData() == 'disk'
+            self.rhea_button.setText('Clear Radiance Cache' if on_disk else 'Flush Radiance Cache')
+            self.rhea_button.setToolTip(
+                "Removes Rhea's radiance cache files from the cache folder (and what a running XPU2 holds): the next realtime "
+                "of each scene starts with nothing learned." if on_disk else
+                'Drops what Rhea has learned that a running XPU2 holds in memory: the next realtime starts with nothing learned.')
+        rhea_cache.currentIndexChanged.connect(rhea_cache_chosen)
+        rhea_cache_chosen()
 
         def engine_chosen(_=None):
             xpu2 = engine.currentData() == 'xpu2' and engine.isEnabled()
             self.realtime_share.setEnabled(self.realtime_held is not None and xpu2)
             rt_engine.setEnabled(xpu2)
             rt_drags.setEnabled(xpu2)
+            rhea = xpu2 and rt_engine.currentData() == 'rhea'
+            rhea_cache.setEnabled(rhea)
+            self.rhea_button.setEnabled(rhea)
         engine.currentIndexChanged.connect(engine_chosen)
+        rt_engine.currentIndexChanged.connect(engine_chosen)
         engine_chosen()
         # The same choice as Preferences > MoonRay > XPU (graphics card): one setting.
         form.addRow('Realtime with standard XPU', combo('xpu_realtime_mode', [(label, value) for value, label in XPU_REALTIME_CHOICES],
@@ -380,6 +420,27 @@ class Dialog(QtWidgets.QDialog):
         if left:
             said += '\n%d files in use by a render were left; clear again once it is done.' % left
         QtWidgets.QMessageBox.information(self, 'Clear Cache', said)
+
+    def _rhea_cache_button(self, where):
+        """Flush Radiance Cache (in memory) or Clear Radiance Cache (on disk), and said (cache_folder.rhea_flush, rhea_clear)."""
+        from . import cache_folder
+        if where == 'disk':
+            count, size = cache_folder.rhea_files()
+            asked = QtWidgets.QMessageBox.question(self, 'Clear Radiance Cache',
+                "Remove Rhea's radiance cache from %s?\n\n%d files, %.0f MB. Realtime with Rhea starts with nothing learned for "
+                'each scene.' % (cache_folder.rhea_folder(), count, size / 1024 ** 2),
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No, QtWidgets.QMessageBox.No)
+            if asked != QtWidgets.QMessageBox.Yes:
+                return
+            removed, freed, left = cache_folder.rhea_clear()
+            said = '%d files removed, %.0f MB freed.' % (removed, freed / 1024 ** 2)
+            if left:
+                said += '\n%d files in use were left; clear again once realtime is off.' % left
+            QtWidgets.QMessageBox.information(self, 'Clear Radiance Cache', said)
+            return
+        said = ("Rhea's radiance cache is flushed: a running XPU2 drops what it has learned as its next frame starts."
+                if cache_folder.rhea_flush('memory') else "Rhea's radiance cache could not be flushed: the cache folder cannot be written.")
+        QtWidgets.QMessageBox.information(self, 'Flush Radiance Cache', said)
 
     def _browse_cache(self):
         path = QtWidgets.QFileDialog.getExistingDirectory(self, 'Choose the cache folder', self.cache.text())

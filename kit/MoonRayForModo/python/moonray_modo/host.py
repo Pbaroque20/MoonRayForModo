@@ -724,6 +724,9 @@ def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fal
                          'iris_blades': int(channel(camera, 'irisBlades', 0)),
                          'iris_rotation': float(channel(camera, 'irisRot', 0))},
               'width': width, 'height': height, 'materials': {}, 'meshes': [], 'lights': []}
+    # The camera a Front projection throws its textures from (coordinates.front_corners), read before the meshes are.
+    from . import coordinates
+    coordinates.FRONT.update(camera=result['camera'], aspect=float(width) / float(height or 1))
     # Modo's stereo: which eye or eyes, how far apart, where they converge, and the composite of the two.
     if channel(camera, 'stereo', 0):
         result['camera']['stereo'] = {'eye': str(channel(camera, 'stereoEye', 'both')),
@@ -1416,6 +1419,12 @@ def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fal
     # The kit's Ocean Plane items made meshes, each wearing its sea (ocean_plane).
     from . import ocean_plane
     ocean_plane.apply(result, warnings)
+    # The kit's Backplate item made its environments, the camera's card and its ground (backplate).
+    from . import backplate
+    if any(entity.get('class') == backplate.CLASS for entity in result.get('entities') or []):
+        backplate.apply(result, warnings, backplate_cameras(scene))
+    # Objects made shadow catchers on their MoonRay Object tab, where no Backplate gave them its photo.
+    backplate.catchers(result, warnings)
     from .native_light_links import capture as capture_light_links
     result['native_light_links']=capture_light_links(scene,result,warnings)
     # Modo's light volumetrics and environment fog, as meshes of MoonRay fog: made anew at every reading, meshes kept
@@ -1447,6 +1456,25 @@ def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fal
     texture_uv.apply(result, warnings)
     result['warnings'] = sorted(set(warnings))
     return result
+
+
+def backplate_cameras(scene):
+    """The scene's cameras by name, as a Backplate's Projection Camera throws the photo from one: where it stands, its
+    lens and film (the film's width as its Film Width says; its height from the render's picture)."""
+    found = {}
+    try:
+        cameras = list(scene.items('camera', superType=True))
+    except (LookupError, RuntimeError, TypeError):
+        return found
+    for camera in cameras:
+        try:
+            found[camera.name] = {'matrix': world_matrix(camera), 'focal_mm': float(channel(camera, 'focalLen', .05)) * 1000,
+                                  'film_mm': float(channel(camera, 'apertureX', .036)) * 1000, 'film_offset': [0.0, 0.0],
+                                  'pixel_aspect': 1.0, 'projection': 'ortho' if channel(camera, 'projType', 'persp') == 'ortho' else 'persp',
+                                  'ortho_width': float(channel(camera, 'apertureX', .036))}
+        except (LookupError, RuntimeError, TypeError, ValueError):
+            continue
+    return found
 
 
 def cryptomatte_objects(scene):

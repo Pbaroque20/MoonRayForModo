@@ -12,14 +12,14 @@
       "commit": "1229d3eaa1ee41dc1ddefbe781c623edceafbac8",
       "origin": "https://github.com/OpenMoonRay/scene_rdl2",
       "patch": "patches/native-windows/scene_rdl2.patch",
-      "patch_sha256": "6dd5eb5ec4bb4cbe293183b722982563ee871e4e180dbe189a9e1efe3066188d"
+      "patch_sha256": "614304ee32ba167dc46567e8ef09daca44caec2be70dae53d1ba7016936ae89a"
     },
     "moonray": {
       "path": "upstream/openmoonray/moonray/moonray",
       "commit": "eef67ae992b5037943a7716cca96ed443c36dcec",
       "origin": "https://github.com/OpenMoonRay/moonray",
       "patch": "patches/native-windows/moonray.patch",
-      "patch_sha256": "8cb408875a10ed58239eb9870e6601e148a32772c4e57914a4a1e5b451df5cce"
+      "patch_sha256": "7c26ab35ef39a3ec33d6f230da7df2b9cb7f67ff03492832a5f1bb076c8010c6"
     },
     "mcrt_denoise": {
       "path": "upstream/openmoonray/moonray/mcrt_denoise",
