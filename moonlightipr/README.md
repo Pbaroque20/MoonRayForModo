@@ -520,6 +520,13 @@ Added to what is translated since the table was written:
   (`test-results/moonlightipr-displacement-skin`): the outline's shift along the jaw within 0.1-0.3 px of MoonRay's
   (16.1 against 16.2 px), and the fine relief over the cheek 0.003-0.015 against MoonRay's 0.004-0.017, where it was
   0.06-0.10.
+- **No bright lines along a skin's ridges** (2026-11-24): the diffusion's look through the solid for a far side (an ear's
+  back, a leaf's) goes within 45 degrees of straight down, where it went within 85: nearly along the surface, it came out
+  through the next fold, a jaw or a ridge, and added that light to what the probes across the surface had already made
+  up to a flat surface's. On the made-up head lit by the sky, MoonLightIPR stood up to 9% (subdivided) and 35%
+  (polygons) above MoonRay in thin lines along the ridge; now 2.5% and 5%. sss_far, sss_backlit, dwa_skin,
+  dwa_skin_thin and dwa_subsurface against MoonRay are as before (sss_far 94.4% of tiles within 10%, sss_backlit 91.1%);
+  scenes without subsurface render byte for byte as before.
 - **64 coordinate slots** (2026-11-24, scene form `b`): every Shader Tree image's own repeat, offset, turn or projection
   is a coordinate set of its own (`coordinates.key`), and the scene had 8 for all its materials; the 9th on was left out
   with a notice. The Cobra's texture locators make about a dozen, and its tyre sidewalls (offset u -1) went untextured
