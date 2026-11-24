@@ -8159,6 +8159,14 @@
         "comment": "The camera the backplate is thrown from (Camera projection): the one that stands where the photo was shot. Empty, the render camera.",
         "label": "projection camera"
       },
+      "catcher_shows_plate": {
+        "name": "catcher_shows_plate",
+        "type": "Bool",
+        "default": true,
+        "group": "Backplate",
+        "comment": "The render shows the backplate on the ground and behind the scene. Off, they are left out of the render, its alpha holding the shadows alone, to be laid over the photo in compositing.",
+        "label": "backplate in the render"
+      },
       "plate_camera": {
         "name": "plate_camera",
         "type": "Bool",
@@ -8246,14 +8254,6 @@
         "group": "Ground",
         "comment": "How dark the caught shadows are, 0 to 1.",
         "label": "shadow strength"
-      },
-      "catcher_shows_plate": {
-        "name": "catcher_shows_plate",
-        "type": "Bool",
-        "default": true,
-        "group": "Ground",
-        "comment": "The render shows the backplate on the ground and behind the scene. Off, they are left out of the render, its alpha holding the shadows alone, to be laid over the photo in compositing.",
-        "label": "backplate in the render"
       },
       "other_environments": {
         "name": "other_environments",
