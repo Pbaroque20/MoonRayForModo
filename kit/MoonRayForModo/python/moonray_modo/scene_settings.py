@@ -110,6 +110,8 @@ SURFACES = [('As modeled', 0), ('Smooth subdivision', 1), ('Modo evaluated geome
 VIEWS = [('Modo color management', 'modo'), ('ACES 1.3 (sRGB display)', 'aces'), ('ACES 2.0 (sRGB display)', 'aces2'), ('sRGB', 'srgb'), ('Highlight compression + sRGB', 'reinhard'), ('Raw linear', 'raw'), ('OCIO display / view', 'ocio')]
 LUT_SPACES = [('After display transform', 'display'), ('Scene-linear, before view', 'linear')]
 DEEP_FORMATS = [('OpenEXR 2', 0), ('OpenDCX 2', 1)]
+# Where a Cryptomatte tick of XPU and XPU2 Outputs (AOVs) is kept: among the scene's outputs, a member by its category.
+CRYPTOMATTE_PATH = ('custom_aovs',)
 MODES = [('Auto (XPU, Vector, Scalar)', 'auto'), ('XPU (NVIDIA GPU + CPU)', 'xpu'), ('Vector (CPU / AVX)', 'vectorized'), ('Scalar (CPU)', 'scalar')]
 
 # Groups whose sheet in the Render item's form has a name of its own (tools/generate_render_forms.py); the others are
@@ -242,7 +244,11 @@ GROUPS = [
     ('XPU and XPU2 Outputs (AOVs)', True,
      # The tip names a channel as an artist would (alpha, depth), not by its EXR name (A, depth.Z).
      [field('aov_' + key, ('aovs',), 'member', label, 'On: MoonRay XPU and XPU2 render it, the preview window lists it among its buffers, and the EXR has its ' + {'A': 'alpha', 'depth.Z': 'depth'}.get(channel, channel) + ' channel' + (', as does a PNG, TIFF or Targa saved from the render. On in a new scene' if key == 'alpha' else ''), member=key)
-      for key, (label, _, channel) in options.AOVS.items()]),
+      for key, (label, _, channel) in options.AOVS.items()] +
+     # The Cryptomatte of each category, beside the beauty: one of the scene's outputs (custom_aovs, CRYPTOMATTE_PATH),
+     # the same one the Light Path Expressions window lists, which MoonRay's Vector mode writes too.
+     [field('aov_crypto_' + category, CRYPTOMATTE_PATH, 'member', label, 'On: MoonRay XPU and XPU2 (and Vector) write the ' + what + ' Cryptomatte beside the beauty: its mattes in the EXR, as Nuke, Fusion and After Effects pick them, and the preview window lists it among its buffers' + (' (on in a new scene)' if category == 'object' else ''), member=category)
+      for category, label, what in (('object', 'Cryptomatte: Objects', 'object'), ('material', 'Cryptomatte: Materials', 'material'))]),
     ('MoonLightIPR Outputs (AOVs)', True,
      [field('moonlightipr_aov_' + key, ('moonlightipr_aovs',), 'member', label, tip, member=key)
       for label, key, tip in moonlightipr_aovs.LISTED]),
@@ -312,6 +318,9 @@ def get(values, entry):
     for step in entry['path']:
         held = held[step]
     kind = entry['kind']
+    if kind == 'member' and entry['path'] == CRYPTOMATTE_PATH:
+        from .outputs import has_cryptomatte
+        return has_cryptomatte(held, entry['member'])
     if kind == 'member':
         return entry['member'] in held
     if kind == 'choice':
@@ -331,6 +340,10 @@ def get(values, entry):
 def put(stored, entry, value):
     """Set a field in a scene's stored settings from what its control gives."""
     kind, path = entry['kind'], entry['path']
+    if kind == 'member' and path == CRYPTOMATTE_PATH:
+        from .outputs import with_cryptomatte
+        stored[path[0]] = with_cryptomatte(complete(stored)[path[0]], entry['member'], bool(value))
+        return
     if kind == 'member':
         held = list(complete(stored)[path[0]])
         if value and entry['member'] not in held:

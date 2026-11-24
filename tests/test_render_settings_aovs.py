@@ -21,9 +21,10 @@ def group(name):
 
 class Sections(unittest.TestCase):
     def test_xpu_and_xpu2_share_one_section(self):
-        entries = group('XPU and XPU2 Outputs (AOVs)')
+        # MoonRay's AOVs, then the Cryptomatte of each category (kept among the scene's outputs: test_cryptomatte_aov_ticks).
+        entries = [e for e in group('XPU and XPU2 Outputs (AOVs)') if e['path'] == ('aovs',)]
         self.assertEqual([e['member'] for e in entries], list(options.AOVS))
-        self.assertTrue(all(e['path'] == ('aovs',) for e in entries))
+        self.assertEqual([e['member'] for e in group('XPU and XPU2 Outputs (AOVs)') if e['path'] != ('aovs',)], ['object', 'material'])
         self.assertIn('XPU and XPU2', next(e for e in entries if e['member'] == 'depth')['tip'])
 
     def test_moonlightipr_has_its_own_section_with_every_aov_it_makes(self):
