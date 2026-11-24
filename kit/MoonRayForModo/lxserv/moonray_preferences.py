@@ -165,6 +165,7 @@ class RuntimeBrowse(lxu.command.BasicCommand):
 
 lx.bless(choice('open_engine',(('moonray','MoonRay'),('moonray_ls','MoonRay LS'),('moonlightipr','MoonLightIPR'))),'moonray.pref.engine')
 lx.bless(choice('environment_lighting',(('moonray','MoonRay: always'),('modo','Follow Modo: with Global Illumination on'))),'moonray.pref.environmentLighting')
+lx.bless(choice('environment_stacking',(('override','Override: each ray sees the topmost'),('add','Add: each adds to those under it'))),'moonray.pref.environmentStacking')
 lx.bless(switch('ipr'),'moonray.pref.live')
 lx.bless(switch('render_on_open'),'moonray.pref.renderOnOpen')
 lx.bless(switch('notices_open'),'moonray.pref.noticesOpen')
@@ -205,6 +206,8 @@ lx.bless(choice('xpu2/rt_cap',(('none','None'),('30','30'),('60','60'))),'moonra
 lx.bless(switch('ngon_ears'),'moonray.pref.ngonEars')
 lx.bless(switch('bump_node'),'moonray.pref.bumpNode')
 lx.bless(switch('ocean'),'moonray.pref.ocean')
+lx.bless(switch('backplate'),'moonray.pref.backplate')
+lx.bless(switch('glass_alpha'),'moonray.pref.glassAlpha')
 lx.bless(switch('ocean_split'),'moonray.pref.oceanSplit')
 lx.bless(switch('vdb_blackbody'),'moonray.pref.vdbBlackbody')
 lx.bless(switch('vdb_sequences'),'moonray.pref.vdbSequences')

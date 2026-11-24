@@ -53,7 +53,7 @@ struct Material {
     // given as (cos, sin) of its angle from texture u in the coordinates of tangentSlot.
     float anisotropy = 0.0f;
     float tangent[2] = {1.0f, 0.0f};
-    uint32_t tangentSlot = 8;       // UV_SLOT_COUNT for none
+    uint32_t tangentSlot = 64;      // UV_SLOT_COUNT for none
     // The share of the diffuse light that scatters beneath the surface, and how far it goes:
     // a distance, scaled per channel by a colour.
     float subsurface = 0.0f;
@@ -124,6 +124,11 @@ struct Material {
     float iridescenceStrength = 0.0f, iridescenceExponent = 1.0f, iridescenceThickness = 1.0f;
     float iridescenceAt0 = 1.0f, iridescenceAt90 = 1.0f;
     std::vector<float> iridescenceColors;
+    // The kit's shadow catcher, as MoonRay's (tools/port_shadow_catcher.py): its strength, 0 to 1, or -1 for none. Seen
+    // past the camera it is its emission alone, unlit; seen by the camera, (1 - strength) of its emission and the rest as
+    // much as its light samples are not shadowed. A matte shows no colour and holds the shadows in its alpha.
+    float shadowCatcher = -1.0f;
+    bool shadowMatte = false;
 };
 
 // A block of numbers on the GPU, x fastest, read between its cells.
@@ -249,7 +254,8 @@ struct CurveDesc {
     bool linear = false;                    // straight segments rather than cubic ones
 };
 
-const uint32_t UV_SLOT_COUNT = 8;
+// The scene's coordinate slots (UV_SLOTS in src/device/shared.h), and the most coordinate sets a mesh may carry.
+const uint32_t UV_SLOT_COUNT = 64;
 
 struct Instance {
     uint32_t mesh = 0;

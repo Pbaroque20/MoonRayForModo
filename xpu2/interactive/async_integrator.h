@@ -224,6 +224,10 @@ struct Pending {
     // The kit's volume switches along a camera path: how much shows through the volumes passed (CryptomatteData's
     // volumeFront, sixteen bits), and MOONRAY_MODO_FOG_ALPHA's alpha pending and front (PathVertex::modoFog*).
     float cryptoFront = 1.0f, fogPending = 0.0f, fogFront = 1.0f;
+    // MOONRAY_MODO_GLASS_ALPHA (tools/port_glass_alpha.py, PathVertex::modoSeeThrough): 1 while the camera path has gone
+    // only through glossy or mirror transmission (and presence); a miss past the camera then takes its throughput out
+    // of the alpha. Set on every child as it is made (a BSDF sample's by its lobe, a subsurface exit's 0).
+    U32 seeThrough = 1;
     // The light sets of the lobes it came through (Rdl2LightSetList, at most eight: appendLobeLightSet), which a light
     // must be in to light it.
     U32 parentSets[8];
@@ -1510,6 +1514,7 @@ X2_CALL V3 subsurfaceExitRadiance(const mixed::Config& c, const sample::Identity
             child.subsurfaceDepth = subsurfaceDepth;
             child.accumOpacity = pv.accumOpacity;
             child.lobeType = shade::Diffuse | shade::Reflection;  // the exit's Lambertian lobe
+            child.seeThrough = 0;  // scattered beneath the surface (PathIntegratorSubsurface: nextPv.modoSeeThrough = 0)
             inheritLobeSets(child, pv, backend.exitLightSet);
             child.lpe = lpeOn ? lpe->state : -1;
             child.aovPixelWeight = pv.pixelWeight;
@@ -2209,6 +2214,10 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
         // average of the alpha transmittance).
         if (hit.geom == ~0u && pv.depth == 0)
             alpha += (c.modoSwitches & 2u) ? pv.fogPending : pv.pixelWeight * (1.0f - (volumeAlphaT.x + volumeAlphaT.y + volumeAlphaT.z) / 3.0f);
+        // MOONRAY_MODO_GLASS_ALPHA (tools/port_glass_alpha.py, the miss handlers): a path past the camera that has gone
+        // through glass alone and hits nothing takes its throughput (reduceTransparency) out of the alpha.
+        if (hit.geom == ~0u && pv.depth > 0 && pv.seeThrough && (c.modoSwitches & 32u))
+            alpha -= (pv.T.x + pv.T.y + pv.T.z) / 3.0f;
         // This ray's footprint, for the mip levels of textured lights (the camera's, or its differentials').
         const float footprint = fromCamera ? cameraFootprint : pv.diff.valid ? dirFootprint(pv.diff.dDx, pv.diff.dDy) : lights::NoFootprint;
         // The lights the camera sees, along a primary ray (presence continuations included).
@@ -2471,13 +2480,26 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
             continue;
         }
         if (fabsf(presence) <= lights::Epsilon) continue;  // only the continuation counts
-        if (pv.depth == 0) alpha += pv.pixelWeight * hitAlpha;
+        // The kit's shadow catcher (tools/port_shadow_catcher.py, PathIntegratorBundled.ispc): catcher >= 0, its strength.
+        const float catcher = bsdf.modoCatcher;
+        const bool catcherMatte = catcher >= 0.0f && bsdf.modoMatte;
+        // A matte catcher seen by the camera starts with an alpha of strength (its transparency 1 - strength).
+        if (pv.depth == 0) alpha += pv.pixelWeight * (catcherMatte ? hitAlpha * catcher : hitAlpha);
         if (cryptoOn && pv.crypto >= 0) out.crypto[pv.crypto].used = 1;  // the path's radiance reaches the film
         radiance += pv.T * bsdf.selfEmission;  // self-emission
         // LPE: an emission event, with the material's label.
         if (lpeOn && !shade::isBlack(bsdf.selfEmission))
             aov::light(at, aovs, aovDepths, pv.T * bsdf.selfEmission, nullptr, 0,
                        aov::lpeNext(at, pv.lpe, aov::LpeEmission, shade::labelLpeId(bsdf.materialLabels)));
+        // A shadow catcher seen past the camera is what it wears (its emission), unlit, and the path ends there. Seen
+        // by the camera, (1 - strength) of its emission is taken outright and the rest comes back through its light
+        // samples, each its share (below); as a matte, no colour, and the shadows in alpha.
+        const bool catcherHere = catcher >= 0.0f && pv.depth == 0;
+        const Color catcherShown = pv.T * bsdf.selfEmission;
+        if (catcher >= 0.0f) {
+            if (pv.depth > 0) continue;
+            radiance -= catcherMatte ? catcherShown : catcherShown * catcher;
+        }
         const bool subsurface = bsdf.bssrdf.type != shade::BssrdfNone;
         if (subsurface && hit.epsilon > 0.0f) return SampleStatus::Error;  // subsurface scattering on curves is not ported
         if (bsdf.topCount == 0 && !subsurface) {
@@ -2690,6 +2712,12 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
         };
         // A camera-depth hit's samples count toward the visibility AOVs even when they carry nothing.
         const bool visibilityHits = lpeOn && pv.depth == 0 && (at.types & aov::TypeVisibility);
+        // A shadow catcher seen by the camera (modoCatcherTotal, modoCatcherShare): its light samples are drawn twice,
+        // first (pass 1) to sum what they carry unshadowed, then (pass 2) traced, each carrying instead the catcher's
+        // emission x strength x its share of that sum (as a matte, no colour, and its share of the alpha taken back
+        // off where it is not shadowed). Pass 0: any other hit.
+        U32 catcherPass = catcherHere ? 1u : 0u;
+        Color catcherTotal{0, 0, 0};
         auto lightSamples = [&](U32 i, float selection) {
             const lights::Light& L = backend.light(i);
             const U64 lightAddress = childBranch(lightBranch, i, 0);
@@ -2712,7 +2740,7 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
                 V3 wi;
                 lights::Hit lh;
                 if (!lights::sample(L, st.P, cullN, r, wi, lh, footprint)) {
-                    if (visibilityMisses) visibilityMiss(L, 1.0f);
+                    if (visibilityMisses && catcherPass != 1) visibilityMiss(L, 1.0f);
                     continue;
                 }
                 float pdfL;
@@ -2723,7 +2751,7 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
                     Li = filterRadiance(backend, hit.geom, i, L, st.P, wi, lh.distance, pv, fid, Li);
                 }
                 if (shade::isSampleInvalid(Li, pdfL) || !(fabsf(pdfL) < 3.4e38f) || !shade::finite3(Li)) {
-                    if (visibilityMisses) visibilityMiss(L, 1.0f);
+                    if (visibilityMisses && catcherPass != 1) visibilityMiss(L, 1.0f);
                     continue;
                 }
                 const Color factor = pv.T * Li * (1.0f / (float(nl) * pdfL * selection));
@@ -2765,6 +2793,30 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
                         for (U32 k = 0; k < bsdf.topCount; ++k) lobeT[k] = lobeT[k] * scale;
                 }
                 if (!shade::finite3(t) || (shade::isExactlyZero(t) && !visibilityHits)) continue;
+                // A shadow catcher (modoCatcherTotal, modoCatcherShare): pass 1 sums the samples' contributions; pass 2
+                // gives each its share of the emission, or, as a matte, its share of the alpha (catcherAlpha) instead.
+                float catcherAlpha = 0.0f;
+                if (catcherPass == 1) {
+                    catcherTotal += t;
+                    continue;
+                }
+                if (catcherPass == 2) {
+                    const float whole = shade::luminance(catcherTotal);
+                    if (whole > 0.0f) {
+                        const float part = shade::luminance(t) / whole;
+                        if (catcherMatte) {
+                            catcherAlpha = -catcher * pv.pixelWeight * part;
+                            t = Color{0, 0, 0};
+                        } else {
+                            const Color share{catcherTotal.x > 0.0f ? t.x / catcherTotal.x : part,
+                                              catcherTotal.y > 0.0f ? t.y / catcherTotal.y : part,
+                                              catcherTotal.z > 0.0f ? t.z / catcherTotal.z : part};
+                            t = catcherShown * share * catcher;
+                        }
+                    } else {
+                        t = Color{0, 0, 0};
+                    }
+                }
                 const V3 shadowOrigin = toonShadowOrigin(st, curveEpsilon > 0.0f ? st.P : (shade::dot(wi, st.Ng) >= 0.0f ? above : below), wi);
                 float shadowNear = curveEpsilon > 0.0f ? curveEpsilon : 0.0f, shadowFar;
                 lightShadowSpan(L, lh.distance, shadowNear, shadowFar);
@@ -2796,6 +2848,9 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
                     }
                     radiance += t;
                 }
+                // A matte catcher's sample that reaches its light takes its share of the alpha back off (the occlusion
+                // handlers' BundledOcclRay::mModoAlpha; a presence shadow ray's always, as the presence queue fills it).
+                if (catcherAlpha != 0.0f && (kept > 0.0f || L.presenceShadows)) alpha += catcherAlpha;
                 // LPE (the occlusion queue's accumLightAovs and accumVisibilityAovs): unoccluded, each lobe's share through
                 // the volumes to its expressions, and to the unoccluded ones as it is; occluded, to the unoccluded ones only.
                 // A camera-depth hit's sample counts toward the visibility AOVs once, through the first lobe whose state
@@ -2823,12 +2878,14 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
         // computeActiveLights: the set's lights that can light the hit, the culling eased by the subsurface's reach;
         // the rest are not sampled (and count as the visibility AOVs' misses, a light's samples each).
         const float activeRadius = subsurface ? bsdf.bssrdf.maxRadius : 0.0f;
+        // Twice for a shadow catcher seen by the camera (catcherPass 1, then 2); once otherwise.
+        for (;;) {
         for (U32 i = 0; i < c.lightCount; ++i) {
             if (!backend.inSet(lightSet, i)) continue;
             const lights::Light& L = backend.light(i);
             if (!lights::canIlluminate(L, st.P, cullN, activeRadius) ||
                 (c.lightFilters && !filterAllows(backend, hit.geom, i, L, st.P, activeRadius, pv))) {
-                if (visibilityMisses) visibilityMiss(L, float(c.lightSamples));
+                if (visibilityMisses && catcherPass != 1) visibilityMiss(L, float(c.lightSamples));
                 continue;
             }
             if (treeRoot >= 0 && lights::inTree(L)) continue;
@@ -2847,11 +2904,17 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
                                        lightSamples(U32(light), pdf);
                                });
         }
+        if (catcherPass != 1) break;
+        catcherPass = 2;
+        }
 
         // BSDF samples (drawBsdfSamples, integrateBsdfSample, addIndirectAndDirectVisibleContributions).
         float albedo[3 * shade::MaxLobes];
         X2_IN_MEMORY(albedo);
         for (U32 k = 0; k < 3 * shade::MaxLobes; ++k) albedo[k] = 0.0f;
+        // A shadow catcher seen by the camera spawns no bounces (doIndirect off for its samples), and its BSDF samples'
+        // shadow rays carry nothing (modoCatcherShare); their light path expressions are as they were.
+        const bool bsdfIndirect = doIndirect && !catcherHere;
         // The BSDF samples out of line (X2_OUT_OF_LINE); a full stack of pending paths ends the sample as before.
         [&]() X2_OUT_OF_LINE {
         for (U32 k = 0; k < bsdf.topCount; ++k) {
@@ -2942,7 +3005,7 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
                 // A ray termination light reached with no bounce left lights a (non-hair) transmission lobe alone,
                 // unoccluded (addDirectVisibleBsdfLobeSampleContribution).
                 bool forceUnoccluded = false;
-                if (lightHit && !doIndirect && backend.light(lightIndex).rayTerminator) {
+                if (lightHit && !bsdfIndirect && backend.light(lightIndex).rayTerminator) {
                     if (!shade::matchesFlags(lobe.type, shade::AllTransmission) || hair) {
                         lightHit = false;
                         direct = Color{0, 0, 0};
@@ -2950,9 +3013,9 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
                         forceUnoccluded = true;
                     }
                 }
-                if (!lightHit && !doIndirect) continue;  // an invalid sample (integrateBsdfSample)
+                if (!lightHit && !bsdfIndirect) continue;  // an invalid sample (integrateBsdfSample)
                 if (clampHere) direct = smartClamp(direct, c.clampValue);
-                Color indirect = doIndirect ? pt : Color{0, 0, 0};
+                Color indirect = bsdfIndirect ? pt : Color{0, 0, 0};
                 if (rr) {
                     float scale;
                     if (!roulette(fmaxf(shade::luminance(direct), shade::luminance(indirect)), c.rrThreshold, u, scale)) continue;
@@ -3011,7 +3074,7 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
                         tr = volumeTransmittanceCall(c, backend, vs, shadowFrom, wi, shadowNear, shadowFar, 1.0f, int(pv.depth) + 1);
                         direct = direct * tr;
                     }
-                    radiance += direct;
+                    if (!catcherHere) radiance += direct;
                 }
                 // LPE: the light the sample reached (addDirectVisibleBsdfLobeSampleContributionBundled; held: when the
                 // bounce is traced).
@@ -3068,6 +3131,8 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
                 child.volumeDepth = pv.volumeDepth + 1;
                 child.accumOpacity = opacity;
                 child.lobeType = lobe.type;
+                // MOONRAY_MODO_GLASS_ALPHA: still seen through glass alone (a glossy or mirror transmission lobe).
+                child.seeThrough = pv.seeThrough && (lobe.type & shade::Transmission) && (lobe.type & (shade::Glossy | shade::Mirror)) ? 1u : 0u;
                 inheritLobeSets(child, pv, lobe.lightSet);
                 // computeMinRoughness: the path's roughness floor for later hair lobes.
                 child.minRoughness[0] = child.minRoughness[1] = 0.0f;

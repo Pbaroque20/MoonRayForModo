@@ -202,6 +202,7 @@ class Panel(Tools, QtWidgets.QWidget):
         self.renderer.progress.connect(self._render_progress)
         self.renderer.status.connect(self._renderer_status)
         self.renderer.failed.connect(self._failed)
+        self.renderer.xpu2_fell_back.connect(self._xpu2_fell_back)
         self.renderer.image_ready.connect(self._image)
         self.renderer.image_object.connect(self._image)
         self.renderer.finished.connect(self._finished)
@@ -634,7 +635,6 @@ class Panel(Tools, QtWidgets.QWidget):
             lx.eval('channel.value %.6f channel:{%s:focusDist}'%(distance,camera['identity']))
             message='Focus distance %.3f m.'%distance
             if not camera.get('dof'):message+=' Depth of field is off on this camera.'
-            elif not self._following:message+=' Render to see it.'
             self.status.setText(message)
         except Exception as exc:
             self.status.setText('Cannot set focus: '+str(exc))
@@ -1717,15 +1717,24 @@ class Panel(Tools, QtWidgets.QWidget):
         self._memory_notice=said
         self._set_notices(getattr(self,'_notices_given',[]))
 
+    def _xpu2_fell_back(self,reason):
+        """Why XPU2 left the preview to MoonRay XPU, among the notices until it takes the preview again: a tester could not
+        read the line that flashed by in the status, nor find it in the Render Log."""
+        self._fallback_notice=('XPU2 left this scene to MoonRay XPU: %s. Fix that and the preview goes back to XPU2.'%reason.rstrip('.')
+                               if reason else None)
+        self._set_notices(getattr(self,'_notices_given',[]))
+
     def _set_notices(self,messages):
         # What was given, kept apart from what the preview adds of the room left on the drives (_watch_room) and of the
         # memory its pictures take (_picture_memory), so that each can be said again without the others.
         self._notices_given=list(messages)
         disk=getattr(self,'_disk_notice',None)
         memory=getattr(self,'_memory_notice',None)
-        # And a drag the preview could not follow (_drag_unfollowed_notice), until one it follows.
+        # And a drag the preview could not follow (_drag_unfollowed_notice), until one it follows; and why XPU2 left the
+        # scene to MoonRay XPU (_xpu2_fell_back), first, while it has.
         drag=getattr(self,'_drag_notice',None)
-        unique=list(dict.fromkeys(str(message) for message in list(messages)+[added for added in (disk,memory,drag) if added] if message))
+        fell=getattr(self,'_fallback_notice',None)
+        unique=list(dict.fromkeys(str(message) for message in ([fell] if fell else [])+list(messages)+[added for added in (disk,memory,drag) if added] if message))
         text='\n\n'.join(unique)
         if text!=self.warnings.toPlainText():self.warnings.setPlainText(text)
         self.notice_toggle.setText('Notices (%d)'%len(unique))
@@ -2313,6 +2322,13 @@ class Panel(Tools, QtWidgets.QWidget):
         if self._rendering:self.renderer.stop()
         # The renderers kept loaded between previews hold the closed scene: their memory is freed with it.
         self.renderer.release_engines()
+        # And Rhea's radiance cache held in memory by any XPU2 left running (rhea/rhea_cache.h): flushed with the scene. On
+        # disk its file stays, for the scene opened again (Clear Radiance Cache removes it).
+        try:
+            from . import cache_folder, native
+            if native.xpu2_available():cache_folder.rhea_flush('memory')
+        except Exception:
+            pass
         self._set_rendering(False)
         self._continuable=None;self.last_digest=None;self._draft_image=self._draft_render=None
         self.preview.clear();self.image_info.setText('');self._whole=None;self._part=None
@@ -2532,7 +2548,13 @@ class Panel(Tools, QtWidgets.QWidget):
         if not native.supports_crypto_categories(self.runtime_path()):
             # This runtime writes one Cryptomatte at a time.
             entries=[v for v in entries if v['kind']!='cryptomatte']
-        entries=outputs.values(entries+[{'name':key,'kind':'cryptomatte','category':category,'depth':6}])
+            added=[{'name':key,'kind':'cryptomatte','category':category,'depth':6}]
+        else:
+            # Objects and Materials together where the runtime writes both at once: each is then there to save with
+            # the EXR (Export AOVs), where a tester found Materials only after choosing it here and rendering again.
+            added=[{'name':'crypto_'+c,'kind':'cryptomatte','category':c,'depth':6} for c,_ in CRYPTOMATTES
+                   if not any(v['name']=='crypto_'+c for v in entries)]
+        entries=outputs.values(entries+added)
         if not self._store(custom_aovs=entries):return True
         self.renderer.buffers.select(key,scene_display(stored))
         self.status.setText('Cryptomatte added to the scene outputs. Rendering.')

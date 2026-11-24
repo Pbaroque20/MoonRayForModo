@@ -1459,6 +1459,64 @@ index 14d874b..e3c6f4f 100644
  #endif
  
  
+diff --git a/lib/scene/rdl2/Material.cc b/lib/scene/rdl2/Material.cc
+index 1d26673..fbb4487 100644
+--- a/lib/scene/rdl2/Material.cc
++++ b/lib/scene/rdl2/Material.cc
+@@ -17,6 +17,9 @@ AttributeKey<String> Material::sLabel;
+ AttributeKey<Int> Material::sPriority;
+ AttributeKey<Bool> Material::sRecordReflectedCryptomatte;
+ AttributeKey<Bool> Material::sRecordRefractedCryptomatte;
++AttributeKey<Bool> Material::sModoShadowCatcher;
++AttributeKey<Float> Material::sModoShadowStrength;
++AttributeKey<Bool> Material::sModoShadowMatte;
+ 
+ Material::Material(const SceneClass& sceneClass, const std::string& name) :
+     Parent(sceneClass, name),
+@@ -79,6 +82,16 @@ Material::declare(SceneClass& sceneClass)
+     sceneClass.setMetadata(sRecordRefractedCryptomatte, "comment", "Indicates whether the next refracted surface should "
+                                                                      "appear in the refracted cryptomatte layers");
+ 
++    // Modo: shadow catchers (tools/port_shadow_catcher.py)
++    sModoShadowCatcher = sceneClass.declareAttribute<Bool>("modo_shadow_catcher", false);
++    sceneClass.setMetadata(sModoShadowCatcher, "comment", "Modo: the surface is a shadow catcher. The camera sees what "
++        "it wears (its emission) darkened where the scene shades it; other rays see it unlit.");
++    sModoShadowStrength = sceneClass.declareAttribute<Float>("modo_shadow_strength", 1.0f);
++    sceneClass.setMetadata(sModoShadowStrength, "comment", "Modo: how dark a shadow catcher's shadows are, 0 to 1.");
++    sModoShadowMatte = sceneClass.declareAttribute<Bool>("modo_shadow_matte", false);
++    sceneClass.setMetadata(sModoShadowMatte, "comment", "Modo: a shadow catcher shows no colour to the camera, its "
++        "alpha holding the shadows alone.");
++
+     return interface | INTERFACE_MATERIAL;
+ }
+ 
+diff --git a/lib/scene/rdl2/Material.h b/lib/scene/rdl2/Material.h
+index 865006e..13cebe6 100644
+--- a/lib/scene/rdl2/Material.h
++++ b/lib/scene/rdl2/Material.h
+@@ -34,6 +34,10 @@ public:
+     static AttributeKey<Int> sPriority;
+     static AttributeKey<Bool> sRecordReflectedCryptomatte;
+     static AttributeKey<Bool> sRecordRefractedCryptomatte;
++    // Modo: shadow catchers (tools/port_shadow_catcher.py)
++    static AttributeKey<Bool> sModoShadowCatcher;
++    static AttributeKey<Float> sModoShadowStrength;
++    static AttributeKey<Bool> sModoShadowMatte;
+ 
+     Material(const SceneClass& sceneClass, const std::string& name);
+     virtual ~Material();
+@@ -96,6 +100,11 @@ public:
+         return get(sRecordRefractedCryptomatte);
+     }
+ 
++    // Modo: shadow catchers (tools/port_shadow_catcher.py)
++    finline bool getModoShadowCatcher() const { return get(sModoShadowCatcher); }
++    finline float getModoShadowStrength() const { return get(sModoShadowStrength); }
++    finline bool getModoShadowMatte() const { return get(sModoShadowMatte); }
++
+     // Unfortunately, this member has been made public to allow
+     //  for computing its offset into the binary
+     ShadeFunc mShadeFunc;
 diff --git a/lib/scene/rdl2/RenderOutput.cc b/lib/scene/rdl2/RenderOutput.cc
 index ede9a6c..11ae49d 100644
 --- a/lib/scene/rdl2/RenderOutput.cc

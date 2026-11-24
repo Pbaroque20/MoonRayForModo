@@ -120,6 +120,9 @@ OBJECT = {
     # Cryptomatte: items given the same name share one matte; a number other than 0 is the matte's ID itself.
     'crypto_name': ('', 'Cryptomatte name (empty: the item\'s own)'),
     'crypto_id': (0, 'Cryptomatte ID (0: worked out from the name)'),
+    # A shadow catcher (backplate.catchers): with a Backplate, it wears the photo; without, its shadows alone, in alpha.
+    'shadow_catcher': (False, 'Make as shadow catcher'),
+    'shadow_strength': (1.0, 'Shadow strength (0 to 1)'),
 }
 # The largest Cryptomatte ID that can be typed: Modo's whole numbers stop at 2147483647.
 CRYPTO_ID_MAX = 2147483647
@@ -143,8 +146,11 @@ AOVS = {
     'subsurface': ('Subsurface and translucency', {'result': 8, 'lpe': 'translucent'}, 'subsurface'),
     'emission': ('Emission', {'result': 8, 'lpe': 'emission'}, 'emission'),
     'unshadowed_diffuse': ('Diffuse without shadows (shadow pass)', {'result': 8, 'lpe': 'unoccluded;CD[<L.>O]'}, 'unshadowed_diffuse'),
-    'environment_lighting': ('Environment lighting', {'result':8,'lpe':"C.+<L.'modo_environment'>"}, 'environment_lighting'),
-    'environment_background': ('Environment background', {'result':8,'lpe':"C<L.'modo_environment'>"}, 'environment_background'),
+    # Past at least one bounce: what is past cut-outs alone is the Environment background's (below).
+    'environment_lighting': ('Environment lighting', {'result':8,'lpe':"C<Ts>*(<R.>|<TD>|<TG>|<TS>|<V.>).*<L.'modo_environment'>"}, 'environment_lighting'),
+    # The environment seen past every surface, cut-outs (presence, a straight <Ts> event) included: a picture with
+    # straight alpha takes it out (image_formats); without the cut-outs, After Effects showed a halo past them.
+    'environment_background': ('Environment background', {'result':8,'lpe':"C<Ts>*<L.'modo_environment'>"}, 'environment_background'),
     'alpha': ('Alpha', {'result': 1}, 'A'),
     'depth': ('Camera depth', {'result': 2}, 'depth.Z'),
     'normal': ('Shading normal', {'result': 3, 'state_variable': 2}, 'normal'),

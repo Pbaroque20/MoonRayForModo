@@ -538,7 +538,31 @@ class Tools:
         if not frame or not frame.get('files'):
             self.status.setText('Let a MoonRay preview finish first; its outputs are what is exported.')
             return
+        if self._render_missing_cryptomattes():
+            return
         self._export_buffers(frame, self.buffer_names(frame))
+
+    def _render_missing_cryptomattes(self):
+        """Where the scene outputs one Cryptomatte and the runtime writes Objects and Materials at once, the other is added
+        to the scene's outputs and rendered, to be exported after: a tester found Cryptomatte Materials missing from the
+        EXR's choices until chosen in the buffer list and rendered. True where a render was started for it."""
+        from . import native, outputs
+        from .panel import CRYPTOMATTES
+        try:
+            stored = self._settings_values()
+            entries = list(stored.get('custom_aovs') or [])
+            if not any(v.get('kind') == 'cryptomatte' for v in entries) or not native.supports_crypto_categories(self.runtime_path()):
+                return False
+            added = [{'name': 'crypto_' + c, 'kind': 'cryptomatte', 'category': c, 'depth': 6} for c, _ in CRYPTOMATTES
+                     if not any(v.get('name') == 'crypto_' + c for v in entries)]
+            if not added or not self._store(custom_aovs=outputs.values(entries + added)):
+                return False
+        except Exception:
+            return False
+        self.status.setText('%s added to the scene outputs. Rendering; export again once it is done.'
+                            % ', '.join(label for c, label in CRYPTOMATTES if any(a['category'] == c for a in added)))
+        self.render_once()
+        return True
 
     def _export_buffers(self, frame, names, fetch=None):
         """The Export AOVs window for these outputs, and the files written of those chosen in it. fetch, where given,

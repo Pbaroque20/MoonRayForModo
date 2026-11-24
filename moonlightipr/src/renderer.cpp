@@ -12,6 +12,7 @@
 #include <optix_stubs.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -39,6 +40,13 @@ void check(OptixResult result, const char* call) {
     if (result != OPTIX_SUCCESS) throw std::runtime_error(std::string(call) + ": " + optixGetErrorName(result));
 }
 #define ML_CHECK(call) check(call, #call)
+
+// A mesh's sets for the scene-wide coordinate slots: none until the scene says.
+std::array<int32_t, UV_SLOTS> noUvSlots() {
+    std::array<int32_t, UV_SLOTS> slots;
+    slots.fill(-1);
+    return slots;
+}
 
 // Device allocation that only grows, so repeated edits reuse it.
 struct Buffer {
@@ -88,7 +96,7 @@ struct Mesh {
     // be blended for each sample, and what refitting its acceleration structure needs.
     std::vector<float> open, close;
     size_t vertexCount = 0, updateBytes = 0, accelBytes = 0;
-    int32_t uvSlots[UV_SLOTS] = {-1, -1, -1, -1, -1, -1, -1, -1};
+    std::array<int32_t, UV_SLOTS> uvSlots = noUvSlots();
     bool ownsMaterials = false;
     uint32_t maxMaterial = 0;
 };
@@ -235,6 +243,11 @@ DeviceMaterial toDevice(const Material& m) {
             | (m.beckmann ? MATERIAL_BECKMANN : 0) | ((unsigned(m.roughnessCurve) & 3u) << MATERIAL_ROUGH_SHIFT)
             | (m.noCaustics ? MATERIAL_NO_CAUSTICS : 0) | (m.randomWalk ? MATERIAL_RANDOM_WALK : 0)
             | (m.roughnessClamped ? MATERIAL_ROUGHNESS_CLAMPED : 0) | (m.clearcoatStraight ? MATERIAL_COAT_STRAIGHT : 0);
+    // The kit's shadow catcher (MATERIAL_SHADOW_CATCHER); not on a fog or a hair.
+    if (m.shadowCatcher >= 0.0f && !m.volume && !m.hair) {
+        d.flags |= MATERIAL_SHADOW_CATCHER | (m.shadowMatte ? MATERIAL_CATCHER_MATTE : 0u);
+        d.catcher = std::clamp(m.shadowCatcher, 0.0f, 1.0f);
+    }
     d.layerStart = m.layerStart;
     d.layerCount = m.layerCount;
     return d;
@@ -1039,6 +1052,9 @@ Renderer::Renderer(const std::string& ptxPath) : impl(new Impl) {
         // On unless the variable is 0, as MoonRay reads it (the kit sets it from its preference, on by default).
         const char* toon = std::getenv("MOONRAY_MODO_TOON_TERMINATOR");
         impl->params.toonTerminator = !toon || toon[0] != '0';
+        // Glass in alpha (tools/port_glass_alpha.py): likewise on unless the variable is 0.
+        const char* glass = std::getenv("MOONRAY_MODO_GLASS_ALPHA");
+        impl->params.glassAlpha = !glass || glass[0] != '0';
     }
     std::vector<float> albedo = albedoTable(false);
     const std::vector<float> beckmann = albedoTable(true);
@@ -1153,8 +1169,9 @@ void Renderer::setInstances(const Instance* instances, size_t count) {
 
 void Renderer::setMeshUvSlots(uint32_t mesh, const int32_t slots[UV_SLOT_COUNT]) {
     if (mesh >= impl->meshes.size() || !impl->meshes[mesh]) throw std::runtime_error("MoonLightIPR mesh does not exist");
-    if (std::equal(slots, slots + UV_SLOTS, impl->meshes[mesh]->uvSlots)) return;
-    std::copy(slots, slots + UV_SLOTS, impl->meshes[mesh]->uvSlots);
+    static_assert(UV_SLOT_COUNT == UV_SLOTS, "the scene's coordinate slots are the kernel's");
+    if (std::equal(slots, slots + UV_SLOTS, impl->meshes[mesh]->uvSlots.begin())) return;
+    std::copy(slots, slots + UV_SLOTS, impl->meshes[mesh]->uvSlots.begin());
     impl->uploadMeshTable();
     impl->restart();
 }

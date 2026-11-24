@@ -34,7 +34,9 @@ def collect(scene, warnings):
                 'camera':bool(channel(environment,'visCam',1)),
                 'indirect':bool(channel(environment,'visInd',1)) and lights,
                 'reflection':bool(channel(environment,'visRefl',1)),
-                'refraction':bool(channel(environment,'visRefr',1))}
+                'refraction':bool(channel(environment,'visRefr',1)),
+                # Whether it is Visible to Indirect at all, Global Illumination on or off: it still hides the ones under it.
+                'indirect_seen':bool(channel(environment,'visInd',1))}
         from .layers import ordered_items,texture_groups
         children = [i for i in ordered_items(environment) if i.type!='mask'
                     and channel(i,'enable',1) and channel(i,'render',1) and channel(i,'opacity',1)>0]
@@ -164,7 +166,45 @@ def collect(scene, warnings):
                 result.append(stack[0])
             else:
                 result.append(dict(item,kind='stack',layers=stack))
-    return result
+    if getattr(scene,'renderItem',None) is not None:
+        from .layers import ordered_items
+        try:
+            order=[i.id for i in ordered_items(scene.renderItem) if i.type=='environment']
+        except Exception:
+            order=[]
+        result.sort(key=lambda env:order.index(env['identity']) if env['identity'] in order else len(order))
+    return occlude(result) if stacking()=='override' else result
+
+
+def stacking():
+    """How Modo environments one above another are rendered (Preferences > MoonRay > Stacked Environments): 'override',
+    each ray seeing the topmost one it is let see, as Modo renders them; or 'add', each adding its light to those under
+    it, as the kit rendered them until 0.5.6."""
+    try:
+        from .preferences import Preferences
+        return 'add' if Preferences().get('environment_stacking')=='add' else 'override'
+    except Exception:
+        return 'override'
+
+
+RAYS = ('camera', 'indirect', 'reflection', 'refraction')
+
+
+def occlude(environments):
+    """Each kind of ray sees the topmost environment it is let see, as in Modo: one environment for the camera and another
+    for lighting and reflections is how a backplate is set up. Every environment was its own EnvLight and they added up, so
+    a gradient environment over an HDRI one brightened it everywhere instead of hiding it. environments are top first."""
+    taken, kept = set(), []
+    for environment in environments:
+        for ray in RAYS:
+            seen = environment.get('indirect_seen', environment.get('indirect', True)) if ray == 'indirect' else environment.get(ray, True)
+            if ray in taken:
+                environment[ray] = False
+            elif seen:
+                taken.add(ray)
+        if any(environment.get(ray) for ray in RAYS):
+            kept.append(environment)
+    return kept
 
 
 def flipped_across(entry):

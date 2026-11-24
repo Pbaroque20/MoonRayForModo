@@ -127,6 +127,9 @@ class Renderer(QtCore.QObject):
     image_object = QtCore.Signal(object)
     status = QtCore.Signal(str)
     failed = QtCore.Signal(str)
+    # Why XPU2 left the preview to MoonRay XPU, '' once it takes it again: kept among the notices (panel), where a
+    # tester could not read the line that flashed by nor find it in the Render Log.
+    xpu2_fell_back = QtCore.Signal(str)
     finished = QtCore.Signal(str)
     # A render stopped by hand that had nothing saved to finish with.
     stopped = QtCore.Signal()
@@ -840,7 +843,13 @@ class Renderer(QtCore.QObject):
             if (not request.get('output') or snapshot.get('_xpu2')) and mode in ('xpu','auto') and xpu2_sampling.active():
                 try:label='Rendering · '+xpu2_sampling.words({'samples':self.sample_grid,'render':sampling,'xpu2_generations':snapshot.get('xpu2_generations') or {}},realtime=bool(snapshot.get('_realtime')))
                 except Exception:pass
-            self.status.emit(label+' · '+self.backend_status)
+                # Realtime by Rhea: Rhea's own line alone (how much of the view it knows, whether it is learning), not
+                # XPU2's sampling (the user, 2026-11-24: during drags, only the Rhea learning percentage).
+                if snapshot.get('_realtime') and native.xpu2_rt_engine()=='rhea':
+                    said=str(self.backend_status or '')
+                    self.status.emit(said if said.startswith('Rhea') else 'XPU2 Rhea')
+                    label=None
+            if label is not None:self.status.emit(label+' · '+self.backend_status)
             if self.using_session:
                 self.session_serial+=1
                 # Only this render's own progress lines count towards its estimate.
@@ -862,6 +871,10 @@ class Renderer(QtCore.QObject):
             from . import property_notifications
             property_notifications.notify()
         except Exception:pass
+        # Said where it can be read: among the notices, and as a line of its own at the end of the Render Log.
+        if reason:
+            self.backend_log+='\n\n=== XPU2 left this scene to MoonRay XPU: %s ===\n'%reason
+        self.xpu2_fell_back.emit(reason or '')
 
     def _session_failed(self,message):
         """The preview's MoonRay ended. Where its GPU mode failed (MoonRay's GPU tracing now and then reads memory it
@@ -960,7 +973,8 @@ class Renderer(QtCore.QObject):
             selected=native.execution_status(self.backend_log)
             if selected and selected!=self.backend_status:
                 self.backend_status=selected
-                self.status.emit('Rendering · '+selected)
+                # Rhea's line alone: how much of the view it knows, whether it is learning.
+                self.status.emit(selected if selected.startswith('Rhea') else 'Rendering · '+selected)
 
     def _persistent_applied(self,serial):
         # Acknowledgement means older native output files are no longer in use.
@@ -1121,6 +1135,11 @@ class Renderer(QtCore.QObject):
                 self.buffers.publish(files,self.active['runtime'],self.active['snapshot'],self.backend_status)
                 if self.phase=='postdone':self.buffers.frame['denoise_engine']=denoising.settings(self.active['snapshot']['denoising'])['engine']
             except Exception as exc:
+                if self.active['snapshot'].get('_realtime') and 'missing rendered buffer' in str(exc).lower():
+                    # A realtime frame overtaken before it was written (a fast drag under XPU2 Rhea said "missing
+                    # rendered buffer: beauty" and the preview stopped): the last picture stays and realtime goes on.
+                    self._preview_pass_finished()
+                    return
                 self.failed.emit('Cannot retain preview buffers: '+str(exc));return
             self._preview_pass_finished()
             return

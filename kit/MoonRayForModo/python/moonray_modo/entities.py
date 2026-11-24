@@ -142,8 +142,24 @@ def display(name):
     """A class as the user sees it: dwEnvLight, for DreamWorks, as the kit names its other MoonRay things; the kit's own
     (Ocean Plane) by their own names."""
     if catalog().get(name, {}).get('source') == 'kit':
-        return {'OceanPlaneGeometry': 'Ocean Plane'}.get(name, name)
+        return {'OceanPlaneGeometry': 'Ocean Plane', 'BackplateEnvironment': 'Backplate'}.get(name, name)
     return 'dw' + name
+
+
+# The Source Overrides the kit's own items are part of, by the catalog's "override": the switch and its name in
+# MoonRay Source Overrides.
+OVERRIDES = {'ocean': ('ocean', 'Ocean nodes in MoonShine graphs'), 'backplate': ('backplate', 'Backplate environments')}
+
+
+def override_off(name):
+    """Why an item of a class cannot be added, where the Source Override it is part of is off; None where it can."""
+    held = OVERRIDES.get(catalog().get(name, {}).get('override'))
+    if not held:
+        return None
+    from . import native
+    if getattr(native, held[0])():
+        return None
+    return 'The %s is part of %s: turn it on in MoonRay Source Overrides first.' % (display(name), held[1])
 
 
 def replaces_environment(scene):
@@ -979,6 +995,12 @@ def proxy(name, number):
         for k in range(-2, 3):
             lines += [(k * size, 0, -2 * size), (k * size, 0, 2 * size), (-2 * size, 0, k * size), (2 * size, 0, k * size)]
         return [('lines', lines + [(0, 0, 0), (0, size * .25, 0)])]
+    if name == 'BackplateEnvironment':
+        # Its ground, Ground Size across, under a dome for the HDRI, and a mark for up.
+        half = max(number('ground_size'), 1e-3) / 2
+        ground = [(-half, 0, -half), (half, 0, -half), (half, 0, half), (-half, 0, half), (-half, 0, -half)]
+        return [('strip', ground), ('circles', [((0, 0, 0), (0, half, 0))]), ('strip', arc(half, 'xy')), ('strip', arc(half, 'zy')),
+                ('lines', [(0, 0, 0), (0, half * .25, 0)])]
     if name == 'SphereLight':
         r = max(number('radius'), 1e-4)
         return [('circles', [((0, 0, 0), (r, 0, 0)), ((0, 0, 0), (0, r, 0)), ((0, 0, 0), (0, 0, r))])]
@@ -1195,7 +1217,7 @@ def proxy_inputs(name):
     wanted = {'SphereLight': ['radius'], 'RectLight': ['width', 'height'], 'PortalLight': ['width', 'height'], 'DiskLight': ['radius'],
               'SpotLight': ['lens_radius', 'outer_cone_angle', 'inner_cone_angle'], 'CylinderLight': ['radius', 'height'], 'SphereGeometry': ['radius'],
               'RodLightFilter': ['width', 'height', 'depth'], 'BarnDoorLightFilter': ['projector_width', 'projector_height'],
-              'OceanPlaneGeometry': ['tile_size']}.get(name, [])
+              'OceanPlaneGeometry': ['tile_size'], 'BackplateEnvironment': ['ground_size']}.get(name, [])
     inputs = [(key, CHANNEL_PREFIX + key) for key in wanted]
     if name == 'BoxGeometry':
         inputs = [('size.' + axis, CHANNEL_PREFIX + 'size.' + axis) for axis in 'XYZ']

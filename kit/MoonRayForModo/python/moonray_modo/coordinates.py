@@ -10,6 +10,30 @@ from . import rows
 # from where a bump moves the surface's st.
 PRIMARY_UV = 'modo_primary_uv'
 _ALIASED = contextvars.ContextVar('coordinates_aliased', default=frozenset())
+# The render camera a Front projection throws its texture from, as the scene's reading has it (host sets it): (camera, the
+# picture's width over its height).
+FRONT = {'camera': None, 'aspect': 16 / 9.0}
+
+
+def front_projector():
+    from .backplate import Projector
+    if not FRONT['camera']:
+        raise ValueError('Front projection needs the render camera')
+    return Projector('front', FRONT['camera'], FRONT['aspect'])
+
+
+def front_corners(points_by_face, world_matrix, object_space=False):
+    """Each corner's place on the render camera's picture (Modo's Front projection), for faces given as lists of points in
+    the mesh's space: 0 to 1 across the frame, beyond it outside, as a repeated texture. Behind the camera, 0."""
+    from .backplate import transform
+    projector = front_projector()
+    values = []
+    for corners in points_by_face:
+        for p in corners:
+            # Where it stands in the world always counts: the camera sees it there.
+            held = projector.point(p if world_matrix is None else transform(world_matrix, p), clip=False)
+            values.append(held if held else (0.0, 0.0))
+    return values
 
 
 def aliased_keys(meshes):
@@ -62,6 +86,11 @@ def key(layer):
     if layer.get('object_space'):
         # Laid out in each mesh's own space rather than the world's.
         fields['object_space'] = True
+    if layer.get('projection') == 'front':
+        # Thrown from the render camera: another place of it is another set of UVs.
+        camera = FRONT['camera'] or {}
+        fields['front'] = [camera.get('matrix'), camera.get('focal_mm'), camera.get('film_mm'), camera.get('film_offset'),
+                           round(float(FRONT['aspect']), 6)]
     return 'modo_uv_' + hashlib.sha256(json.dumps(fields, sort_keys=True).encode()).hexdigest()[:24]
 
 
@@ -106,6 +135,8 @@ def face(layer, positions, uv, world_matrix):
         if len(uv) != len(positions):
             raise ValueError('Missing UV values for ' + layer.get('uv_map', ''))
         values = uv
+    elif projection == 'front':
+        values = front_corners([positions], world_matrix, layer.get('object_space'))
     else:
         inv = inverse(layer['locator_matrix'])
         if layer.get('object_space'):
@@ -177,6 +208,10 @@ def mesh_corners(layer, vertices, faces, uv, world_matrix):
     # As face() for each polygon, with the locator's inverse found once and each point put into the locator's space
     # once, not at every corner: the same numbers, in a small part of the time (a 324,706-face mesh took 53 s).
     projection = layer['projection']
+    if projection == 'front':
+        # From the render camera, as Modo's Front projection: each corner where it falls in the frame.
+        return transform_uv(layer, front_corners([[vertices[i] for i in polygon] for polygon in faces if polygon],
+                                                 world_matrix, layer.get('object_space')))
     if projection not in ('planar','cubic','cylindrical','spherical'):
         raise ValueError('Unsupported texture projection: ' + projection)
     inv = inverse(layer['locator_matrix'])

@@ -63,7 +63,7 @@ class MirroredMeshes(unittest.TestCase):
     def test_the_switch_reaches_moonray_and_the_preferences(self):
         native = (KIT / 'moonray_modo/native.py').read_text(encoding='utf-8')
         self.assertIn("env['MOONRAY_MODO_MIRRORED_MESHES'] = '1' if mirrored_meshes() else '0'", native)
-        self.assertIn("camera_light_lpe(), mirrored_meshes(), scalar_emission(), tilt_shift(), dso_search())", native)
+        self.assertIn("camera_light_lpe(), mirrored_meshes(), scalar_emission(), tilt_shift(), dso_search(), backplate(), glass_alpha())", native)
         cfg = (ROOT / 'kit/MoonRayForModo/preferences.cfg').read_text(encoding='utf-8')
         self.assertIn('cmd moonray.pref.mirroredMeshes ?', cfg)
 
@@ -125,8 +125,8 @@ class XpuRealtime(unittest.TestCase):
         source = (KIT / 'moonray_modo/preferences.py').read_text(encoding='utf-8')
         self.assertIn("'xpu_realtime_mode': ('', str)", source)
         self.assertIn("XPU_REALTIME_MODES = ('off', 'vector', 'xpu')", source)
-        # The switch it replaces gives the default: on was the processor.
-        self.assertIn("return 'vector' if self.get('xpu_realtime') else 'off'", source)
+        # The switch it replaces gives the default: on was the processor; otherwise the graphics card (2026-11-24).
+        self.assertIn("return 'vector' if self.get('xpu_realtime') else 'xpu'", source)
         self.assertIn("combo('xpu_realtime_mode'", source)
         cfg = (KIT.parent / 'preferences.cfg').read_text(encoding='utf-8')
         self.assertIn('cmd moonray.pref.xpuRealtime ?', cfg)

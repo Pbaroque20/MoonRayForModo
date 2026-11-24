@@ -6,6 +6,25 @@ This is the development branch of [MoonRay for Modo](https://github.com/Pbaroque
 
 The current release is [0.5.6](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.5.6). **Built on MoonRay [2026.29.1](https://github.com/dreamworksanimation/openmoonray/releases/tag/v2026.29.1)** (OpenMoonRay's latest release; MoonRay 18.4), with the plugin's own patches for Windows and the preview.
 
+## In the next release (0.5.6.1)
+
+- **Backplate** (Add MoonRay Item > Lights): the HDRI and the backplate photo shot with it, in one item. The HDRI lights the scene; the photo is seen behind it, in reflections and through glass, thrown by a camera, front, planar, box, cylindrical or spherical projection. Its ground wears the photo, so the car's reflection of the road is the road, and catches the scene's shadows. A backdrop plane (Backdrop Distance) shows the photo through windows from where it stands. The scene's Modo environments are replaced, overridden or added to, as chosen.
+- **Shadow catchers**: the camera sees the ground as the photo, darkened only where shadows fall; with "backplate in the render" off, the alpha holds the shadows alone, for compositing. Any mesh can be one: **Make as Shadow Catcher** and Shadow Strength on its MoonRay tab. MoonRay, XPU2 and MoonLightIPR alike. Switch: MoonRay Source Overrides, Backplate environments and shadow catchers (on).
+
+  ![A ball over a plain ground (left, lit as any surface), the ground as a shadow catcher (middle: its colour exactly, darkened only by the shadow) and as a matte (right: the shadow alone in the alpha, laid over a checkerboard)](docs/images/shadow-catcher.png)
+- **Glass in alpha**: the sky seen through glass (clear, thin, frosted, water) is see-through in the alpha, as much as the glass lets through; what it reflects stays. MoonRay counted glass as opaque as paint. MoonRay, XPU2 and MoonLightIPR alike. Switch: MoonRay Source Overrides, Glass in alpha (on).
+
+  ![Paint, glass, thin glass, frosted glass, a half-present ball and a half-transmitting one, each laid over a checkerboard by its alpha: before (top), the glass as opaque as paint; now (bottom), see-through](docs/images/glass-alpha.png)
+- **No halo past cut-outs**: in OpenEXRs read as Premultiplied, the sky past presence cut-outs and through glass is taken out of the colour too (the Environment background layer holds it).
+- **Stacked environments**: each kind of ray sees the topmost environment it is let see, as in Modo, so a gradient environment over an HDRI one hides it instead of adding to it (Preferences, Stacked environments; Add as before).
+- **Front projection** for Shader Tree textures, from the render camera.
+- **A Shader layer's visibility**: a Shader above the base one with Visible to Camera, Reflection, Refraction or Indirect off hides the surface from those rays (Control Visibility on), as in Modo: invisible to the camera, still in reflections.
+- **Cryptomatte Materials** comes with Cryptomatte Objects, and Export AOVs renders a missing one first, so both are there to save with the EXR.
+- **XPU2 Rhea remembers**: what Rhea has learned of a scene is kept when RT is switched off and on again, and after an edit is undone, so it starts from what it knew. Preview Preferences, Rhea radiance cache: In memory (Flush Radiance Cache), or On disk, in the Cache folder, kept across Modo sessions (Clear Radiance Cache; Clear Cache clears it too). Closing the scene lets go of what is in memory.
+- **MoonLightIPR shows up to 64 texture placements** (repeats, offsets, projections) in a scene, where it left out any texture past 8: a car's tyre sidewalls showed only once its chassis was hidden. A texture the graphics card has no room for is kept in the computer's memory instead.
+- **XPU2 says why it leaves a scene to MoonRay XPU**: the reason stays among the Notices and ends the Render Log. A mesh with normals that are not numbers (as before Modo's Mesh Cleanup) no longer sends it there.
+- **New defaults**: adaptive passes on the graphics card, realtime with the standard XPU on the graphics card, Automatic Presence Shadows on, and XPU2's realtime adaptive sampling cap 30.
+
 ## New in 0.5.6
 
 0.5.6 brings **XPU2 Rhea**, the realtime part of MoonRay XPU2, made to keep XPU2 smooth in any dense scene: the picture starts from a biased render and becomes XPU2's unbiased one, without avoiding MoonRay's expensive shaders. Install it, and **Compile XPU2 Shaders once more**.

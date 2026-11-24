@@ -49,7 +49,8 @@ _packed = {}
 # A mesh of this many faces or more is kept by the Scene cache once packed (cache_folder); and the form of a packed mesh,
 # so that one kept in another form is not taken.
 LASTING_FACES = 20000
-PACKED_FORM = 1
+# 2: its slot map 32 long (moonlightipr_materials.UV_SLOTS, form 'a'); 3: 64 long (form 'b').
+PACKED_FORM = 3
 _emitters = {}
 
 
@@ -1249,7 +1250,9 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     # A tilt-shift camera's tilted lens (entities.camera_view, lens_focus_tilt): its plane of focus leans as MoonRay's
     # TiltShiftCamera leans it (tools/port_tilt_shift.py).
     focus_tilt = lens_focus_tilt(camera, scene_scale) if projection == 'persp' else [0.0, 0.0]
-    parts = [b'MLSY', struct.pack('<8I', width, height, *depths, samples, (SCENE_DENOISE if denoise else 0)
+    # Form 'Z': a material may be a shadow catcher (moonlightipr_materials, MATERIAL_SHADOW_CATCHER). Form 'b': each
+    # mesh's slot map is 64 long (moonlightipr_materials.UV_SLOTS), where it was 8, then 32 (form 'a').
+    parts = [b'MLSb',struct.pack('<8I', width, height, *depths, samples, (SCENE_DENOISE if denoise else 0)
                                   | (SCENE_WORKING_SPACE if working else 0) | (SCENE_MOTION if motion else 0)
                                   # See-through surfaces cast whole shadows unless the scene asks for lighter ones, as in MoonRay.
                                   | (SCENE_PRESENCE_SHADOWS if settings.get('enable_presence_shadows') else 0)

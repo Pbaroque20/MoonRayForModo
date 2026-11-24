@@ -67,6 +67,10 @@ const unsigned MATERIAL_THIN = 1, MATERIAL_COAT_DIMS = 2, MATERIAL_HAS_PRESENCE 
                // DwaBaseMaterial's clearcoat_bending switched off: what is under the coat is seen straight through it,
                // not bent toward the coat's normal (coatBends in kernel.cu).
                MATERIAL_COAT_STRAIGHT = 1u << 17,
+               // The kit's shadow catcher, as MoonRay's (tools/port_shadow_catcher.py): seen past the camera, its emission
+               // alone, unlit; seen by the camera, (1 - strength) of its emission and the rest as much as its light samples
+               // are not shadowed (DeviceMaterial::catcher the strength). As a matte, no colour, and the shadows in alpha.
+               MATERIAL_SHADOW_CATCHER = 1u << 18, MATERIAL_CATCHER_MATTE = 1u << 19,
                MATERIAL_MATTE = 1u << 30;   // set by the kernel alone, where light leaves from beneath a surface
 const unsigned LAYER_IMAGE = 1, LAYER_INVERT = 2, LAYER_FLIP_RED = 4, LAYER_FLIP_GREEN = 8, LAYER_FLIP_BLUE = 16,
                LAYER_ALPHA_MASK = 32, LAYER_ALPHA_ONLY = 64, LAYER_COVERAGE_U = 128, LAYER_COVERAGE_V = 256,
@@ -97,7 +101,10 @@ const unsigned SAMPLE_INCIDENCE = 0, SAMPLE_LOCATOR_INCIDENCE = 1, SAMPLE_SLOPE 
                SAMPLE_DISTANCE_Y = 9, SAMPLE_DISTANCE_Z = 10, SAMPLE_BACK_FACING = 11,
                SAMPLE_TEXTURE_LOCAL = 12,   // settings[7..9] the locator's axis over its length squared, settings[10] 1 to wrap (Planar)
                SAMPLE_INSTANCE_VALUE = 13;  // the hit instance's own number (DeviceInstance::value)
-const unsigned UV_SLOTS = 8;
+// The scene's coordinate sets a material's layers may read, each a UV map with its own repeat, offset or turn, or a
+// projection (the kit's coordinates.key): 64, as a car's Shader Tree has a dozen or more (it was 8, and the Cobra's
+// tyre sidewalls went untextured until its chassis was hidden; then 32).
+const unsigned UV_SLOTS = 64;
 
 // One row of a material's layer stack: a constant or an image blended over what is below it.
 struct DeviceLayer {
@@ -169,6 +176,7 @@ struct DeviceMaterial {
     float fuzzRoughness;        // 0.05 to 1
     float fuzzDims;             // how much it takes from the lobes beneath: fuzz, by its colour unless its fibres absorb
     unsigned iridescence;       // with MATERIAL_IRIDESCENT, this material's entry in LaunchParams::iridescences
+    float catcher;              // with MATERIAL_SHADOW_CATCHER, its strength, 0 to 1
 };
 
 // A fog: how much light it stops in a unit of distance, how much of what it stops is scattered on rather than
@@ -262,11 +270,13 @@ struct DeviceMesh {
     DevicePtr materialIds;  // unsigned per triangle, or 0 to use the instance material
     DevicePtr uvs;          // float[2] per triangle corner, one run of triangleCount * 3 per set; for curves, one set, per control point
     unsigned triangleCount;
-    int uvSet[UV_SLOTS];    // which of this mesh's sets serves each scene-wide slot, or -1
     unsigned curves;        // curves rather than triangles: 1 round cubic B-spline segments, 2 round straight ones;
                             // with 4 added they are lit as flat ribbons facing the ray, MoonRay's default
     DevicePtr motion;       // for a mesh that changes shape during the shutter, float[3] per vertex: how far it moves from
                             // the shutter's opening to its closing, in the mesh's own space (the motion vectors); else 0
+    // Which of this mesh's sets serves each scene-wide slot, or -1. Last, as it is long (UV_SLOTS): the fields every hit
+    // reads stay together at the front.
+    int uvSet[UV_SLOTS];
 };
 
 // A vertex of a displaced mesh, as a place on one triangle that has it (OptiX's barycentrics).
@@ -483,6 +493,10 @@ struct LaunchParams {
     // A toon material lit by its smooth normals on a coarse mesh, not cut into steps along its faces: MoonRay patched
     // for it, under the same MOONRAY_MODO_TOON_TERMINATOR (tools/port_toon_terminator.py).
     unsigned toonTerminator;
+    // Glass in alpha, as MoonRay patched (tools/port_glass_alpha.py, MOONRAY_MODO_GLASS_ALPHA): a camera path gone through
+    // glossy or mirror transmission alone that leaves the scene takes its throughput out of the alpha, and the sky it
+    // finds goes to the Environment background pass.
+    unsigned glassAlpha;
 
     unsigned long long traversable;
 

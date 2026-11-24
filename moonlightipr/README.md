@@ -493,6 +493,35 @@ Added to what is translated since the table was written:
   plane, through the point the focus distance down the view, in place of the square one. At 50 mm f/1.4 on a table-top
   street, untilted, tilted to lay the plane along the ground, tilted the other way for a miniature band, and turned
   sideways, MoonRay, XPU2 and MoonLightIPR draw the same plane of focus, and their means agree to 0.0002.
+- **Shadow catchers** (2026-11-24): a material the kit marks `shadow_catcher` (`backplate.py`; MoonRay's
+  `tools/port_shadow_catcher.py`) carries `MATERIAL_SHADOW_CATCHER` and its strength (scene form `Z`). Met past the
+  camera it is its emission alone, unlit, and the path ends. Met by the camera it is (1 - strength) of its emission plus
+  strength times its emission times the share of its light samples' unshadowed contributions that their shadow rays let
+  through, per channel (`catcherShare`, from `directLight`'s samples, unclamped; lit by nothing, 1), and nothing bounces
+  off it. As a matte (`MATERIAL_CATCHER_MATTE`) it shows no colour, and the alpha AOV holds strength times the shadowed
+  share by luminance. A ground of emission (0.2, 0.4, 0.6) under a red ball and a sun: 0.1999, 0.3996, 0.5988 in the
+  open, 0.001 to 0.012 in the ball's shadow (0.10, 0.20, 0.31 at half strength); the matte's alpha 0.001 open, 0.989
+  in shadow. Scenes without a catcher render byte for byte as before.
+- **Glass in alpha** (2026-11-24): as MoonRay's (`tools/port_glass_alpha.py`, `MOONRAY_MODO_GLASS_ALPHA`, unset on; the
+  kit passes it as it starts the session, and starts it again when it changes). A camera path that has gone only
+  through glossy or mirror transmission (glass, thin, frosted; cut-outs as before) and leaves the scene takes its
+  throughput (mean of its colours) off the alpha, and the sky it finds goes to the Environment background pass rather
+  than the glass's; reflections stay opaque. The beauty's program leaves the amount in the alpha slot's fourth number for
+  the AOV program, launched after it, to take off (`seenThroughGlass`); a pixel that has seen glass keeps its alpha where
+  the beauty takes no more samples. Against a sky of 1: glass 0.071 (MoonRay 0.078), thin 0.081, frosted 0.088, presence
+  0.5 0.76 (0.75), solid 1; background = 1 - alpha and background + the other passes = beauty. Transmission 0.5 comes to
+  0.58 against MoonRay's 0.77: MoonLightIPR leaves a solid through a plain interface, where MoonRay's material scatters
+  half of it diffusely again. Off, glass is opaque as before; scenes without glass render byte for byte as before.
+- **64 coordinate slots** (2026-11-24, scene form `b`): every Shader Tree image's own repeat, offset, turn or projection
+  is a coordinate set of its own (`coordinates.key`), and the scene had 8 for all its materials; the 9th on was left out
+  with a notice. The Cobra's texture locators make about a dozen, and its tyre sidewalls (offset u -1) went untextured
+  until the chassis, whose materials took slots first, was hidden: what a tester read as the card running out of memory.
+  Now 64 (`UV_SLOTS`, `UV_SLOT_COUNT`, the kit's `UV_SLOTS`; form `a` had 32; packed meshes `PACKED_FORM` 3); the notice
+  for any past them names what a set is. Each mesh's slot table is the last field of `DeviceMesh` (256 bytes of it on the
+  card, and 256 bytes a mesh in each scene sent), so the fields every hit reads stay together. Of 70 layers each with its
+  own repeat, 64 show and the other 6 are named in the notice. Separately, an image the card refuses on upload, which the room reckoned before
+  the geometry did not foresee, is kept whole in the computer's memory with a line said for it, where the scene used to
+  be refused (`MOONLIGHTIPR_TEXTURES_REFUSED=1` simulates it for tests). Scenes otherwise render byte for byte as before.
 
 ## Build
 

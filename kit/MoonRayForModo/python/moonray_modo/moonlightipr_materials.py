@@ -56,6 +56,9 @@ MATERIAL_IRIDESCENT = 1 << 16
 # DwaBaseMaterial's clearcoat_bending off: what is under the coat is seen straight through it, not bent (MoonRay bends it
 # unless told not to).
 MATERIAL_COAT_STRAIGHT = 1 << 17
+# The kit's shadow catcher (backplate.py, MoonRay's tools/port_shadow_catcher.py): the material's record is followed by its
+# strength (form 'Z'); a matte shows no colour, its shadows in the alpha.
+MATERIAL_SHADOW_CATCHER, MATERIAL_CATCHER_MATTE = 1 << 18, 1 << 19
 TOON_STEPS = 256
 
 
@@ -193,7 +196,13 @@ IDENTITY_ROWS = ((1.0, 0.0, 0.0, 0.0), (0.0, 1.0, 0.0, 0.0), (0.0, 0.0, 1.0, 0.0
 BLEND_REORIENTED_NORMAL = 15
 WRAP = {'repeat': 0, 'edge': 1, 'mirror': 2, 'reset': 3}
 TEXTURE_FLOAT, TEXTURE_SRGB, TEXTURE_WRAP_U_SHIFT, TEXTURE_WRAP_V_SHIFT = 1, 2, 2, 4
-UV_SLOTS = 8
+# The scene's coordinate sets layers may read (coordinates.key: each UV map with its own repeat, offset or turn, and each
+# projection), as moonlightipr/src/device/shared.h has them: 64 (form 'b'). At 8, the Cobra's tyre sidewalls were left
+# out until its chassis, and the coordinate sets its materials took, was hidden; then 32 (form 'a').
+UV_SLOTS = 64
+# What the notices say of image layers past them: each image's own UV map, repeat, offset, turn or projection is one set.
+SLOTS_NOTE = ('image layers past its %d texture coordinate sets (each UV map, repeat, offset, turn or projection is one; '
+              'MoonRay renders them)' % UV_SLOTS)
 # The largest side of an image MoonLightIPR's realtime is given (larger ones are fitted within it as they are converted):
 # 1024, perceptually enough at realtime's sizes, with far less for the card to hold and read (it was 4096, then 1280).
 # A Render, and Render Animation, are given each image at its full size (Compiler's side 0, the scene's _full_textures):
@@ -1322,7 +1331,7 @@ class Compiler:
                 # (moonlightipr_scene.with_weights), and the row looks the gradient up by it.
                 held = self.slot('@vmap:' + layer['gradient'].get('vmap', ''))
                 if held is None:
-                    self.note('textures beyond %d UV projections' % UV_SLOTS, name)
+                    self.note(SLOTS_NOTE, name)
                     abandon()
                     continue
                 try:
@@ -1357,7 +1366,7 @@ class Compiler:
             elif kind in ('checker', 'noise'):
                 slot = self.slot(layer.get('coordinate_key') or '')
                 if slot is None:
-                    self.note('textures beyond %d UV projections' % UV_SLOTS, name)
+                    self.note(SLOTS_NOTE, name)
                     abandon()
                     continue
                 flags |= LAYER_CHECKER if kind == 'checker' else LAYER_NOISE
@@ -1381,7 +1390,7 @@ class Compiler:
                 # Named coordinates are baked per mesh with their transform; otherwise the primary UVs.
                 slot = self.slot(layer.get('coordinate_key') or '')
                 if slot is None:
-                    self.note('textures beyond %d UV projections' % UV_SLOTS, name)
+                    self.note(SLOTS_NOTE, name)
                     abandon()
                     continue
                 if tiled:
@@ -1547,6 +1556,11 @@ class Compiler:
         shimmer = source.get('_iridescence') if not source.get('_hair') and not fog else None
         if shimmer:
             flags |= MATERIAL_IRIDESCENT
+        # The kit's shadow catcher (backplate.py): seen by the camera, its emission (the backplate photo) as much as it is
+        # not shadowed; elsewhere its emission alone, unlit (form 'Z').
+        catcher = material.get('shadow_catcher') if not source.get('_hair') and not fog else None
+        if catcher:
+            flags |= MATERIAL_SHADOW_CATCHER | (MATERIAL_CATCHER_MATTE if catcher.get('matte') else 0)
         record = struct.pack('<46f4I', *values, flags | (MATERIAL_HAIR if source.get('_hair') else 0) | (MATERIAL_VOLUME if fog else 0), start, len(self.layers) - start,
                              UV_SLOTS if tangent_slot is None else tangent_slot)
         if toon:
@@ -1592,4 +1606,10 @@ class Compiler:
             if len(shimmer['table']) != IRIDESCENCE_STEPS * 3 or not all(math.isfinite(v) for v in numbers):
                 raise ValueError('Material %s has an iridescence that cannot be read' % name)
             record += struct.pack('<I%df' % len(numbers), int(shimmer['apply']), *numbers)
+        if catcher:
+            try:
+                strength = min(max(float(catcher.get('strength', 1.0)), 0.0), 1.0)
+            except (TypeError, ValueError):
+                strength = 1.0
+            record += struct.pack('<f', strength if math.isfinite(strength) else 1.0)
         return record

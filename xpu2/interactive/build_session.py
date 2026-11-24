@@ -149,6 +149,11 @@ def build_session(source, runtime, async_build, out, cpu_test=False):
         libraries = closure(objdump, runtime, [exe] + proxies + filters + [out / 'geom' / 'xpu2_geom.dll'])
         for p in libraries:
             shutil.copyfile(p, rt / p.name)
+        # The scene library as the kit's MoonRay has it (build/native-renderer-avx): the reference's declares none of the
+        # attributes the kit has added since (every Material's modo_shadow_catcher, tools/port_shadow_catcher.py; a
+        # RenderOutput's cryptomatte_id_channel), so it read a scene setting them with a warning and dropped them, and
+        # XPU2 rendered a shadow catcher as a plain emissive surface. The same exports, a superset of the reference's.
+        shutil.copyfile(source / 'build/native-renderer-avx/bin/libscene_rdl2.dll', rt / 'libscene_rdl2.dll')
         for name in ('MOONRAY_LICENSE.txt', 'LICENSE', 'THIRD_PARTY_NOTICES.md', 'RANDOM123_LICENSE.txt', 'ISPC_MATH_LICENSE.txt'):
             if (HERE / name).is_file():
                 shutil.copyfile(HERE / name, rt / name)

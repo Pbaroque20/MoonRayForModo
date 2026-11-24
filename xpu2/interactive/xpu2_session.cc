@@ -38,6 +38,7 @@
 #include "entity_classes.h"
 #include "aov_display.h"
 #include "../../rhea/rhea_realtime.h"
+#include "../../rhea/rhea_cache.h"
 #include <scene_rdl2/scene/rdl2/RenderOutput.h>
 #include <scene_rdl2/scene/rdl2/rdl2.h>
 #include <scene_rdl2/scene/rdl2/BinaryReader.h>
@@ -2549,6 +2550,10 @@ int session(const Args& args, const fs::path& directory) {
     const char* rtEngine = std::getenv("XPU2_SESSION_RT_ENGINE");
     const bool rheaWanted = rtEngine && std::string(rtEngine) == "rhea";
     rhea::Realtime rheaView;
+    // Rhea's radiance cache (rhea/rhea_cache.h): what the store learned of a scene kept for realtime turned on again on it,
+    // in memory or on disk (XPU2_SESSION_RHEA_CACHE), flushed by the kit (flush.stamp).
+    rhea::StoreCache rheaCache;
+    bool rheaCacheSaid = false;
     std::string rheaRefused = "-";  // why the last realtime scene was XPU2's ("": Rhea's), said when it changes
     const void* rheaGeometry = nullptr;
     // A drag (rheaFrames): when the last camera move came, whether Rhea's frame for it was stopped by the next, and what
@@ -2764,6 +2769,10 @@ int session(const Args& args, const fs::path& directory) {
                     ow.cardRays, ow.cardSeconds * 1e3, ow.unknown * 100.0, rheaDragStep ? "; a drag's step" : "", ow.coarseRaySeconds * 1e3,
                     ow.ringRaySeconds * 1e3, ow.rowsSeconds * 1e3, ow.shadeSeconds * 1e3, ow.fillSeconds * 1e3, ow.coarsePictureSeconds * 1e3,
                     ow.ringPictureSeconds * 1e3, ow.fxaaSeconds * 1e3, ow.stageSeconds * 1e3, ow.interpolated, ow.adaptSeconds * 1e3);
+        // What of the view the store knew (the radiance cache's measure, rhea/rhea_cache.h): its own colours, the first look's
+        // (the store empty), and none.
+        std::printf("MoonRay XPU2: Rhea: phase one's view: %.1f%% from the store, %.1f%% first look, %.1f%% unknown (%zu cells)\n",
+                    std::max(0.0, 1.0 - ow.unknown - ow.firstLooks) * 100.0, ow.firstLooks * 100.0, ow.unknown * 100.0, rheaView.store.cells());
         // (Short, the harness keeps 400 characters a line.)
         std::printf("MoonRay XPU2: Rhea: phase one %.1f ms: coarse picture %.1f ms, %zu rays, %zu fine nodes interpolated (chosen in %.1f ms), "
                     "shaded %.1f ms, fills %.1f ms, finished picture %.1f ms, FXAA %.1f ms, shown %.1f ms\n",
@@ -2936,9 +2945,42 @@ int session(const Args& args, const fs::path& directory) {
                 // XPU2 RT (Rhea): an edit other than the camera alone forgets the probes (their meshes or light may differ).
                 // The camera alone whose plan had to be made again (geometry tessellated for the camera: the user's dragon
                 // over a displaced sea, 2026-11-22, "there's no fade"): the probes forgotten, the last picture kept to warp.
+                // The kit's flush first (rhea/rhea_cache.h: Flush / Clear Radiance Cache), then the store forgotten at an edit
+                // set aside under its scene's key, and a realtime scene's store taken back where its key was kept.
+                if (rheaWanted && rheaCache.on() && rheaCache.flushAsked(rheaView.store))
+                    std::printf("MoonRay XPU2: Rhea: radiance cache flushed\n");
                 if (rheaWanted && fresh && !scene.cameraFrom) {
                     if (scene.cameraEdit) rheaView.resetProbes();
-                    else rheaView.reset();
+                    else {
+                        rheaCache.park(rheaView.store);
+                        rheaView.reset();
+                        rheaCache.liveKey.clear();
+                    }
+                    if (rheaCache.on() && scene.plan && scene.plan->realtime && scene.plan->source && scene.plan->source->routing) {
+                        if (!rheaCacheSaid) {
+                            rheaCacheSaid = true;
+                            std::printf("MoonRay XPU2: Rhea: radiance cache %s%s%s\n", rheaCache.modeName(), rheaCache.mode == rhea::StoreCache::Disk ? " in " : "",
+                                        rheaCache.mode == rhea::StoreCache::Disk ? rheaCache.folder.u8string().c_str() : "");
+                        }
+                        const auto keyBegan = Clock::now();
+                        const double hashedBefore = rheaCache.keys.hashedBytes;
+                        // The canonical copy as last published, and the objects the fast paths edited since read from the scene.
+                        const std::string key = rheaCache.keys.of(scene.plan->source->routing->scene, scene.source.get());
+                        const double keySeconds = std::chrono::duration<double>(Clock::now() - keyBegan).count();
+                        rheaView.storeOptions();
+                        const std::string from = rheaCache.restore(key, rheaView.store);
+                        rheaCache.liveKey = key;
+                        if (!from.empty()) {
+                            // Drawn by phase one from the store at the first frame, the camera where it was or not.
+                            rheaView.forgetSeen();
+                            std::printf("MoonRay XPU2: Rhea: radiance cache taken back from %s: %zu cells (scene key %s in %.3f s, %.0f MB hashed%s)\n",
+                                        from.c_str(), rheaView.store.cells(), key.c_str(), keySeconds, (rheaCache.keys.hashedBytes - hashedBefore) / 1048576.0,
+                                        from == "disk" ? (", read in " + std::to_string(rheaCache.lastSeconds) + " s").c_str() : "");
+                        } else {
+                            std::printf("MoonRay XPU2: Rhea: radiance cache has nothing for this scene (scene key %s in %.3f s, %.0f MB hashed)\n", key.c_str(),
+                                        keySeconds, (rheaCache.keys.hashedBytes - hashedBefore) / 1048576.0);
+                        }
+                    }
                 }
                 // Rhea's phase one for a camera move ahead of the GPU (rheaEarlyPhaseOne), then the stopped frame's GPU
                 // launches finished before the GPU takes the new camera (XPU2_SESSION_RHEA_EARLY=0: phase one after them).
@@ -3692,6 +3734,9 @@ int session(const Args& args, const fs::path& directory) {
                                         ow.packetsUsed ? ", four at a time" : "", ow.cardRays, ow.cardSeconds * 1e3, ow.unknown * 100.0, rheaView.store.cells(),
                                         ow.coarseRaySeconds * 1e3, ow.coarsePictureSeconds * 1e3, ow.ringRaySeconds * 1e3, ow.ringPictureSeconds * 1e3,
                                         ow.fxaaSeconds * 1e3, ow.stageSeconds * 1e3);
+                            std::printf("MoonRay XPU2: Rhea: phase one's view: %.1f%% from the store, %.1f%% first look, %.1f%% unknown (%zu cells)\n",
+                                        std::max(0.0, 1.0 - ow.unknown - ow.firstLooks) * 100.0, ow.firstLooks * 100.0, ow.unknown * 100.0,
+                                        rheaView.store.cells());
                         } else {
                             const rhea::MeshWarp& mw = rheaView.warpMeshInfo();
                             std::printf("MoonRay XPU2: Rhea: the last picture moved to the camera in %.3f s (%.0f%% of it landed; mesh %zu points, "
@@ -4524,6 +4569,8 @@ int session(const Args& args, const fs::path& directory) {
         }
     frameEnd:
         event(complete ? "DONE" : "CANCELED", id);
+        // Rhea's radiance cache on disk: the store written as a realtime frame ends, at most every 30 s while it learns.
+        if (complete && rheaWanted) rheaCache.saveLive(rheaView.store, 30.0);
         // A render on its own ends with its frame.
         if (standalone().on) return complete ? 0 : 1;
         while (!waiting()) std::this_thread::sleep_for(std::chrono::milliseconds(20));
@@ -4546,7 +4593,16 @@ int session(const Args& args, const fs::path& directory) {
         // other command, tessellates it again. XPU2_SESSION_RHEA_DRAG_KEEP_TESSELLATION=0: each step tessellates it.
         scene.keepCameraGeometry = rheaDragStep && rheaWanted && envOn("XPU2_SESSION_RHEA_DRAG_KEEP_TESSELLATION", true);
         if (!command.enabled()) fs::remove(mailbox, ignored);
-        if (mode_ == "quit") return 0;
+        if (mode_ == "quit") {
+            // Rhea's radiance cache: a flush the kit asked for first (Clear Radiance Cache leaves nothing to write), then
+            // on disk what is not written yet (rhea/rhea_cache.h).
+            if (rheaWanted && rheaCache.on()) {
+                if (rheaCache.flushAsked(rheaView.store)) std::printf("MoonRay XPU2: Rhea: radiance cache flushed\n");
+                rheaCache.saveAll(rheaView.store);
+                std::fflush(stdout);
+            }
+            return 0;
+        }
         try {
             if (mode_ == "full") {
                 std::vector<std::string> list;

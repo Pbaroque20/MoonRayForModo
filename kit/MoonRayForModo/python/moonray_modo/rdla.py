@@ -17,6 +17,12 @@ LAST_REFINABLE = False
 LAST_CUT_BY_VIEW = False
 
 IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+# The environment seen from the camera directly, past cut-outs (straight <Ts>) or through glass alone (mirror or glossy
+# transmission), the part of a render's colour that its alpha leaves out where glass is see-through
+# (tools/port_glass_alpha.py).
+GLASS_SKY_LPE = "C(<TS>|<TG>|<Ts>)*<L.'modo_environment'>"
+# And the Environment lighting beside it: past at least one bounce that is not through glass or a cut-out.
+GLASS_LIT_LPE = "C(<TS>|<TG>|<Ts>)*(<R.>|<TD>|<V.>).*<L.'modo_environment'>"
 
 
 def number(value):
@@ -710,6 +716,16 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
         if found:
             lines.append('materials[%s] { ["sss_trace_set"] = TraceSet(%s)(%s) }' % (string(tag), string('/modo/traceSet/' + tag),
                          array('{RdlMeshGeometry("/modo/mesh/%d"), ""}' % place for place in found)))
+    # Shadow catchers (backplate.py, Make as Shadow Catcher): the material a catcher wears says so, for MoonRay's integrator
+    # (tools/port_shadow_catcher.py). Only to a MoonRay that knows the attributes: one that does not refuses the scene.
+    from .native import shadow_catcher_runtime
+    catching = sorted((tag, material['shadow_catcher']) for tag, material in materials.items()
+                      if isinstance(material, dict) and material.get('shadow_catcher'))
+    if catching and shadow_catcher_runtime():
+        for tag, held in catching:
+            lines.append('if materials[%s] then materials[%s] { ["modo_shadow_catcher"] = true, ["modo_shadow_strength"] = %s, '
+                         '["modo_shadow_matte"] = %s } end' % (string(tag), string(tag), number(float(held.get('strength', 1.0))),
+                                                              'true' if held.get('matte') else 'false'))
     # MoonRay's limit to geometry resolution, which it leaves to whatever makes the geometry: here, the plugin, for the
     # resolution it tessellates subdivision surfaces and displacement at.
     held_render = options.render_values(scene.get('render_settings', {}))
@@ -1095,6 +1111,13 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
             selected = ['pbr_validity']
         render_outputs = [('beauty', {'result': 0}, '')]
         render_outputs += [(key, options.AOVS[key][1], options.AOVS[key][2]) for key in dict.fromkeys(selected)]
+        from .native import glass_alpha
+        if glass_alpha():
+            # With glass see-through in the alpha (tools/port_glass_alpha.py), the sky seen through glass alone is
+            # environment background too, which a picture with straight alpha takes out as the sky seen directly.
+            glass = {'environment_background': GLASS_SKY_LPE, 'environment_lighting': GLASS_LIT_LPE}
+            render_outputs = [(key, dict(attrs, lpe=glass[key]) if key in glass else attrs, name)
+                              for key, attrs, name in render_outputs]
         if crypto:render_outputs.append(('object_id',{'result':4,'primitive_attribute':'modo_object_id','primitive_attribute_type':0},'modo_object_id'))
         render_outputs += [(v['name'],outputs.attributes(v,multi_crypto),v['name']) for v in outputs.values(scene.get('custom_aovs',[]))]
         # Each display filter's picture is a channel of the EXR, named after its item; what the filters take in goes

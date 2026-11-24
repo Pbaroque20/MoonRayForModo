@@ -61,6 +61,10 @@ def environment(directory):
     env['MOONRAY_MODO_MIRRORED_MESHES'] = '1' if mirrored_meshes() else '0'
     # A VDB's emission grid of single values (temperature, flames) glowing grey (scalar_emission).
     env['MOONRAY_MODO_SCALAR_EMISSION'] = '1' if scalar_emission() else '0'
+    # Shadow catchers: a surface that shows the backplate darkened by the shadows on it (backplate).
+    env['MOONRAY_MODO_SHADOW_CATCHER'] = '1' if backplate() else '0'
+    # Glass in alpha: the sky seen through glass alone is see-through (glass_alpha).
+    env['MOONRAY_MODO_GLASS_ALPHA'] = '1' if glass_alpha() else '0'
     # A tilt-shift camera's lens tilted, its plane of focus leaning (tilt_shift).
     env['MOONRAY_MODO_TILT_SHIFT'] = '1' if tilt_shift() else '0'
     # PATH entries that are not folders passed over as MoonRay looks for itself (dso_search).
@@ -439,6 +443,13 @@ def ocean():
     return _switch('ocean', 'MOONRAY_MODO_OCEAN')
 
 
+def backplate():
+    """Whether the kit's Backplate item renders (backplate.py): an HDRI lighting the scene and a backplate photo seen by the
+    camera and in reflections, projected onto a ground that catches the shadows (MOONRAY_MODO_SHADOW_CATCHER in MoonRay).
+    Off, Backplate items are left out of renders, and Make as Shadow Catcher does nothing."""
+    return _switch('backplate', 'MOONRAY_MODO_SHADOW_CATCHER')
+
+
 def ocean_split():
     """Whether MoonRay is given an Ocean node's waves split (ocean.spaced, nodes.split_ocean): the waves its dicing can
     follow as the displacement, the shorter ones as a normal map over them, as MoonLightIPR shades what its vertices
@@ -486,8 +497,10 @@ def engine_name(mode):
 
 def source_switches():
     """The MoonRay Source Overrides MoonRay reads as it starts: a session started with others is started again."""
-    return (toon_terminator(), toon_albedo(), crypto_volumes(), fog_alpha(), crypto_once(), camera_light_lpe(), mirrored_meshes(), scalar_emission(), tilt_shift(), dso_search()) + tuple(
-        globals()[key]() for key in ('usd_specular', 'opaque_alpha', 'transmission_roughness', 'auto_xpu')) + (xpu2(), xpu2_chain(), __import__('moonray_modo.devices', fromlist=['state']).state())
+    return (toon_terminator(), toon_albedo(), crypto_volumes(), fog_alpha(), crypto_once(), camera_light_lpe(), mirrored_meshes(), scalar_emission(), tilt_shift(), dso_search(), backplate(), glass_alpha()) + tuple(
+        globals()[key]() for key in ('usd_specular', 'opaque_alpha', 'transmission_roughness', 'auto_xpu')) + (xpu2(), xpu2_chain(), __import__('moonray_modo.devices', fromlist=['state']).state(),
+        # XPU2 started again with another Rhea radiance cache (Preferences), which it reads as it starts.
+        xpu2_rhea_cache())
 
 
 def binary_geometry():
@@ -520,6 +533,48 @@ def display_filter_classes(directory):
     """The display filters this runtime's MoonRay has: each is a plugin of its own, and an older runtime has one or none."""
     from . import entities
     return sorted(name for name in entities.classes('displayfilter') if (Path(directory)/(name+'.so')).is_file())
+
+def glass_alpha():
+    """Whether what the camera sees through glass alone to the sky is see-through in the alpha (tools/port_glass_alpha.py):
+    a car's windows against the sky. MoonRay counts glass as opaque as paint; off, it does so again."""
+    return _switch('glass_alpha', 'MOONRAY_MODO_GLASS_ALPHA')
+
+
+def shadow_catcher_runtime(directory=None):
+    """Whether the runtime's MoonRay has shadow catchers (tools/port_shadow_catcher.py): its scene library declares
+    modo_shadow_catcher on every material, and one without it refuses a scene that sets it. Off with the switch."""
+    if not backplate():
+        return False
+    try:
+        library = tool('libscene_rdl2.dll', directory)
+        stat = library.stat()
+    except (ValueError, OSError):
+        return False
+    if not _declares(str(library), stat.st_size, stat.st_mtime_ns, b'modo_shadow_catcher'):
+        return False
+    # XPU2 reads the same scene with its own runtime's scene library (runtime-xpu2, xpu2/interactive/build_session.py):
+    # one older than the catchers drops the attributes with a warning and renders the ground as a plain emissive
+    # surface. While XPU2 renders, both must have them.
+    if directory is None and xpu2():
+        library = xpu2_runtime() / 'libscene_rdl2.dll'
+        try:
+            stat = library.stat()
+        except OSError:
+            return False
+        return _declares(str(library), stat.st_size, stat.st_mtime_ns, b'modo_shadow_catcher')
+    return True
+
+
+@lru_cache(maxsize=8)
+def _declares(path, size, mtime, word):
+    """Whether a library holds a name. The compiler may keep a long name in 16-byte pieces (modo_shadow_catcher as
+    'modo_shadow_catc' and its last bytes stored apart), so its first 16 bytes count too."""
+    try:
+        data = Path(path).read_bytes()
+    except OSError:
+        return False
+    return word in data or (len(word) > 16 and word[:16] in data)
+
 
 def supports_bump_step(directory):
     """Whether this runtime's texture plugin reads a tiled bump image as finely as it is tiled (its bump_step)."""
@@ -581,8 +636,8 @@ def xpu2_renders(mode='auto'):
 
 def xpu2_chain():
     """Whether XPU2 makes an adaptive render's passes on the graphics card: quicker, without the outlines of the work,
-    which are known only where the passes are made on the processor."""
-    return str(_setting('xpu2/adaptive_chain', 'false')).lower() in ('true', '1')
+    which are known only where the passes are made on the processor. On unless the user has turned it off."""
+    return str(_setting('xpu2/adaptive_chain', 'true')).lower() in ('true', '1')
 
 
 def xpu2_devices():
@@ -594,8 +649,8 @@ def xpu2_devices():
 
 def xpu2_rt_cap():
     """Realtime Adaptive Sampling Cap (Preferences > MoonRay > Preview Window): the most samples a pixel realtime takes
-    under XPU2, 0 for none (the default)."""
-    value = str(_setting('xpu2/rt_cap', 'none'))
+    under XPU2, 0 for none; 30 unless the user has chosen otherwise."""
+    value = str(_setting('xpu2/rt_cap', '30'))
     return int(value) if value in ('30', '60') else 0
 
 
@@ -603,6 +658,14 @@ def xpu2_rt_engine():
     """XPU2 RT's engine (Preferences: XPU2 RT engine): 'rhea' (the default) or 'xpu2'."""
     value = str(_setting('xpu2/rt_engine', 'rhea')).lower()
     return value if value in ('rhea', 'xpu2') else 'rhea'
+
+
+def xpu2_rhea_cache():
+    """Where XPU2 RT (Rhea) keeps what it has learned of a scene for realtime turned on again (Preferences: Rhea radiance
+    cache): 'memory' (the default; gone when the scene closes) or 'disk' (a file a scene in the Cache folder's Rhea
+    folder, read again after Modo is restarted)."""
+    value = str(_setting('xpu2/rhea_cache', 'memory')).lower()
+    return value if value in ('memory', 'disk') else 'memory'
 
 
 def xpu2_follow_drags():
@@ -619,6 +682,9 @@ def xpu2_environment(runtime):
             'XPU2_SESSION_CHAIN': '1' if xpu2_chain() else '0',
             # XPU2 RT's engine: Rhea's frames where the scene lets them (rhea/rhea_realtime.h), else XPU2's.
             'XPU2_SESSION_RT_ENGINE': xpu2_rt_engine(),
+            # Rhea's radiance cache (rhea/rhea_cache.h): in memory or on disk, in the Cache folder's Rhea folder.
+            'XPU2_SESSION_RHEA_CACHE': xpu2_rhea_cache(),
+            'XPU2_SESSION_RHEA_CACHE_FOLDER': str(__import__('moonray_modo.cache_folder', fromlist=['rhea_folder']).rhea_folder()),
             # Its devices (Preferences > MoonRay > XPU2 > Device Management): 2 both, 1 the graphics cards, 0 the processor,
             # and which cards and processor groups where some are off.
             'XPU2_SESSION_MODE': {'both': '2', 'gpu': '1', 'cpu': '0'}[xpu2_devices()],
