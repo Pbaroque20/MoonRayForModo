@@ -28,6 +28,7 @@ class ShadowCatcherBackgroundTests(unittest.TestCase):
         self.assertEqual(material['shadow_catcher'], {'strength': 0.5, 'matte': True})
 
     def test_moonray_port_shows_the_background(self):
+        import port_glass_alpha as glass
         import port_shadow_catcher as port
         self.assertIn('modoCatcherBackground(', port.BACKGROUND_HELPER)
         self.assertIn('LPE_EVENT_SCATTERING_TYPE_STRAIGHT', port.BACKGROUND_HELPER)
@@ -36,17 +37,41 @@ class ShadowCatcherBackgroundTests(unittest.TestCase):
         # Scalar: the camera-visible lights past the hit, through the camera's straight event in the outputs.
         self.assertIn('intersectVisibleLight(modoPast', port.PRIMARY_NEW)
         self.assertIn('straightEventTransition', port.PRIMARY_NEW)
-        # The sources built are those the port writes (where they are checked out).
-        for name, block in (('PathIntegratorBundled.ispc', port.BACKGROUND_HELPER), ('PathIntegratorBundled.ispc', port.CATCHER_BLOCK),
+        # The sources built are those the ports write (where they are checked out): the catcher's camera code as
+        # tools/port_glass_alpha.py, which runs after it, leaves it.
+        block = glass.patch_text('catcher', port.CATCHER_BLOCK, glass.CATCHER_EDITS['pbr/integrator/PathIntegratorBundled.ispc'][:2])
+        helper = port.BACKGROUND_HELPER.split('void\nintegrateBundled(')[0]   # glass's helper goes in after it
+        for name, block in (('PathIntegratorBundled.ispc', helper), ('PathIntegratorBundled.ispc', block),
                             ('PathIntegratorMultiSampler.ispc', port.SHARE_HELPERS), ('PathIntegratorMultiSampler.ispc', port.KEEP_NEW),
                             ('PathIntegrator.cc', port.PRIMARY_NEW)):
             source = port.RENDERING / 'pbr/integrator' / name
             if source.exists():
                 self.assertIn(block, source.read_bytes().decode('utf-8').replace('\r\n', '\n'), name)
 
+    def test_seen_through_glass(self):
+        # A matte seen through glass alone: in tools/port_glass_alpha.py, which runs after the catcher's port and
+        # anchors on its code; the same in XPU2 and MoonLightIPR.
+        import port_glass_alpha as glass
+        import port_shadow_catcher as catcher
+        self.assertIn(glass.CATCHER_DEPTH_OLD, catcher.CATCHER_BLOCK)
+        self.assertIn(glass.CATCHER_ALPHA_OLD, catcher.CATCHER_BLOCK)
+        self.assertIn(glass.SHARE_SCALE_OLD, catcher.SHARE_CALL)
+        self.assertIn(glass.SCALAR_EARLY_OLD, catcher.RECURSE_NEW)
+        self.assertIn('rs->mPathVertex.modoSeeThrough != 0', glass.CATCHER_DEPTH_NEW)
+        self.assertIn('modoTakeAlpha(pbrTls, *rs, -reduceTransparency(pv.pathThroughput) * (1.f - modoCatcher))', glass.CATCHER_ALPHA_NEW)
+        self.assertIn('modoSeenThrough() += reduceTransparency(pv.pathThroughput) * (1.f - strength * (1.f - part))',
+                      glass.SCALAR_SAMPLE_NEW)
+        for name in glass.CATCHER_EDITS:
+            self.assertIn(name, glass.EDITS)
+        integrator = text('xpu2/interactive/async_integrator.h')
+        self.assertIn('const bool catcherThrough = catcherMatte && pv.depth > 0 && pv.seeThrough;', integrator)
+        self.assertIn('catcherAlpha = -catcher * catcherAlphaScale * part;', integrator)
+        kernel = text('moonlightipr/src/device/kernel.cu')
+        self.assertIn('if (!camera && matte && seeThrough && depth > 0) {', kernel)
+
     def test_patch_exported(self):
         patch = text('patches/native-windows/moonray.patch')
-        self.assertTrue('modoCatcherBackground' in patch and 'modoMatteCatcherAt' in patch,
+        self.assertTrue('modoCatcherBackground' in patch and 'modoMatteCatcherAt' in patch and 'modoTakeAlpha' in patch,
                         'moonray.patch is to be exported again (tools/export_native_patches.py)')
 
     def test_xpu2_and_moonlightipr_show_the_background(self):
