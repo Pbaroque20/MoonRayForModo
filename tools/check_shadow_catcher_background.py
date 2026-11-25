@@ -33,20 +33,27 @@ EYE, TARGET = [0.0, 2.0, 8.0], [0.0, 1.2, 0.0]   # the horizon in the upper part
 SUN = [-0.5, -0.8, 0.4]
 SKY = {'kind': 'grad4', 'name': 'Sky', 'intensity': 1.0, 'zenith': [0.2, 0.4, 0.9], 'sky': [0.6, 0.75, 1.0],
        'ground': [0.3, 0.25, 0.2], 'nadir': [0.1, 0.1, 0.1], 'sky_exponent': 4, 'ground_exponent': 4}
-# name: (ground a catcher of this strength, or None for no ground; the camera sees the sky; the ball is glass)
-CASES = {'reference': (None, True, False), 'sky': (1.0, True, False), 'sky_half': (0.5, True, False),
-         'hidden': (1.0, False, False), 'hidden_half': (0.5, False, False)}
+# name: (ground a catcher of this strength, or None for no ground; the camera sees the sky; the ball's material)
+CASES = {'reference': (None, True, 'red'), 'sky': (1.0, True, 'red'), 'sky_half': (0.5, True, 'red'),
+         'hidden': (1.0, False, 'red'), 'hidden_half': (0.5, False, 'red')}
 # --glass: a clear glass ball in the red one's place, the red one behind it, its shadow seen through the glass.
-GLASS_CASES = {'glass_reference': (None, True, True), 'glass_sky': (1.0, True, True), 'glass_sky_half': (0.5, True, True),
-               'glass_hidden': (1.0, False, True)}
+GLASS_CASES = {'glass_reference': (None, True, 'glass'), 'glass_sky': (1.0, True, 'glass'), 'glass_sky_half': (0.5, True, 'glass'),
+               'glass_hidden': (1.0, False, 'glass')}
+# --reflection: a mirror ball and a glossy one (metal) in its place, the red one behind, the ground and the shadows seen
+# in them.
+REFLECTION_CASES = {'mirror_reference': (None, True, 'mirror'), 'mirror_sky': (1.0, True, 'mirror'),
+                    'mirror_sky_half': (0.5, True, 'mirror'), 'mirror_hidden': (1.0, False, 'mirror'),
+                    'glossy_reference': (None, True, 'glossy'), 'glossy_sky': (1.0, True, 'glossy')}
 CASES.update(GLASS_CASES)
+CASES.update(REFLECTION_CASES)
+FAMILY_REFERENCE = {'red': 'reference', 'glass': 'glass_reference', 'mirror': 'mirror_reference', 'glossy': 'glossy_reference'}
 GLASS_CENTRE, GLASS_RADIUS = (0.0, 0.8, 0.0), 0.8
 
 
-def row(identity, color, roughness, **extra):
+def row(identity, color, roughness, metallic=0.0, **extra):
     """A Shader Tree material row, as the kit reads one (DwaBaseMaterial)."""
     return {**extra, 'name': identity, 'base_layer_id': identity, 'shader': 'DwaBaseMaterial', 'standard_material': True,
-            'color': color, 'raw_color': color, 'diffuse_amount': 1.0, 'roughness': roughness, 'metallic': 0.0,
+            'color': color, 'raw_color': color, 'diffuse_amount': 1.0, 'roughness': roughness, 'metallic': metallic,
             'specular': [.04] * 3, 'raw_specular': [1, 1, 1], 'specular_amount': .04, 'emission': [0, 0, 0],
             'raw_emission': [1, 1, 1], 'emission_amount': 0.0, 'ior': 1.5, 'layer_opacity': 1.0, 'layer_blend': 'normal',
             'material_groups': [], 'layers': []}
@@ -75,10 +82,10 @@ def ball(segments=64, rings=32, radius=0.8, centre=(0.0, 0.8, 0.0)):
 
 def scene(case):
     from moonray_modo import backplate
-    strength, seen, glass = CASES[case]
+    strength, seen, kind = CASES[case]
     vertices, faces = ball()
-    meshes = [{'name': 'Ball', 'identity': 'ball', 'vertices': vertices, 'faces': faces, 'material': 'glass' if glass else 'red'}]
-    if glass:
+    meshes = [{'name': 'Ball', 'identity': 'ball', 'vertices': vertices, 'faces': faces, 'material': kind}]
+    if kind != 'red':
         behind, behind_faces = ball(radius=0.5, centre=(0.6, 0.5, -2.5))
         meshes.append({'name': 'Behind', 'identity': 'behind', 'vertices': behind, 'faces': behind_faces, 'material': 'red'})
     if strength is not None:
@@ -89,11 +96,16 @@ def scene(case):
         'camera': {'matrix': look_at(EYE, TARGET), 'focal_mm': 50.0, 'film_mm': 36.0},
         'materials': {'grey': {'color': [0.5, 0.5, 0.5], 'roughness': 1.0}, 'red': {'color': [0.8, 0.08, 0.06], 'roughness': 0.6},
                       'glass': {'material_stack': [row('glass', [0.8, 0.8, 0.8], 0.0, transmission=1.0,
-                                                       transmission_color=[1.0, 1.0, 1.0], refraction_roughness=0.0)]}},
+                                                       transmission_color=[1.0, 1.0, 1.0], refraction_roughness=0.0)]},
+                      'mirror': {'material_stack': [row('mirror', [0.9, 0.9, 0.9], 0.0, metallic=1.0)]},
+                      'glossy': {'material_stack': [row('glossy', [0.9, 0.9, 0.9], 0.25, metallic=1.0)]}},
         'meshes': meshes,
         'lights': [{'kind': 'DistantLight', 'identity': 'sun', 'name': 'Sun', 'color': [1, 1, 1], 'intensity': 3.0, 'angle': 2.0,
                     'matrix': look_at([0, 0, 0], SUN)}],
-        'environments': [dict(SKY, camera=seen)]}
+        'environments': [dict(SKY, camera=seen)],
+        # MoonLightIPR's Clamp From Bounce as the kit's scene setup gives it (1, as MoonRay's sample_clamping_depth): a
+        # scene without it clamps from bounce 0, and a sun seen in a mirror came out 80 times dimmer than MoonRay's.
+        '_moonlightipr_clamp_depth': 1}
     warnings = []
     backplate.catchers(result, warnings)
     return result
@@ -322,6 +334,40 @@ def through_glass(pictures, reference, ball_mask, centre_at, hidden_sky=False):
     return entry
 
 
+def in_reflection(pictures, reference, ball_mask, centre_at, hidden_sky=False):
+    """Seen in the mirror or glossy ball: the catcher's against the same scene's without the ground, pixel by pixel over
+    the ball. What it reflects of the open ground is to be what the scene without the ground reflects there (the sky
+    past the ground); the shadows darker. 'matching' is the share of the ball's pixels within 3% of the reference's,
+    'darker' of those darker by more than 10% (the shadows seen in it), 'brighter' of those brighter by more than 3%
+    (which should be none); 'ratio' the mean beauty over the ball beside the reference's. The alpha is to be the
+    reference's: a reflection does not change it."""
+    b, rb = pictures['beauty'], reference['beauty']
+    a, ra = pictures.get('alpha'), reference.get('alpha')
+    matching = darker = brighter = n = 0
+    total = rtotal = 0.0
+    for i in ball_mask:
+        v, rv = sum(b[i * 3:i * 3 + 3]), sum(rb[i * 3:i * 3 + 3])
+        if not (math.isfinite(v) and math.isfinite(rv)) or rv <= 1e-4:
+            continue
+        n += 1
+        total, rtotal = total + v, rtotal + rv
+        if abs(v - rv) <= 0.03 * rv:
+            matching += 1
+        elif v < 0.9 * rv:
+            darker += 1
+        elif v > 1.03 * rv:
+            brighter += 1
+    entry = {'pixels': n, 'matching': round(matching / n, 4) if n else None, 'darker': round(darker / n, 4) if n else None,
+             'brighter': round(brighter / n, 4) if n else None, 'ratio': round(total / rtotal, 4) if rtotal else None,
+             'centre': [round(v, 4) for v in region(b, centre_at)], 'centre_reference': [round(v, 4) for v in region(rb, centre_at)]}
+    if a and ra:
+        entry['alpha_ball'] = round(sum(a[i * 3] for i in ball_mask) / len(ball_mask), 4)
+        entry['alpha_ball_reference'] = round(sum(ra[i * 3] for i in ball_mask) / len(ball_mask), 4)
+    if hidden_sky:
+        entry['note'] = 'the sky hidden from the camera: reflections still see it (its reflection switch), so the ground in them too'
+    return entry
+
+
 def difference(a, b, mask):
     """Mean of |a - b| over the pixels of mask, beside the mean of b there."""
     total, base, n, skipped = 0.0, 0.0, 0, 0
@@ -347,8 +393,9 @@ def main():
     p.add_argument('--xpu2', type=pathlib.Path)
     p.add_argument('--xpu2-mode', default='2', help='XPU2_SESSION_MODE: 0 CPU, 1 GPU, 2 both')
     p.add_argument('--engines', default='moonray-vector,moonray-xpu,xpu2,moonlightipr')
-    p.add_argument('--cases', default=','.join(c for c in CASES if c not in GLASS_CASES))
+    p.add_argument('--cases', default=','.join(c for c in CASES if CASES[c][2] == 'red'))
     p.add_argument('--glass', action='store_true', help='the glass ball cases (glass_*) in place of the default ones')
+    p.add_argument('--reflection', action='store_true', help='the mirror and glossy ball cases, with the glass ones')
     p.add_argument('--samples', type=int, default=8)
     p.add_argument('--moonlightipr-samples', type=int, default=1024)
     p.add_argument('--moonlightipr-build', type=pathlib.Path, help='a MoonLightIPR build other than build/moonlightipr')
@@ -361,10 +408,10 @@ def main():
     native.shadow_catcher_runtime = lambda *a, **k: True   # as a runtime with shadow catchers reads the scene
     out = args.out.resolve()
     out.mkdir(parents=True, exist_ok=True)
-    cases = list(GLASS_CASES) if args.glass else [c for c in args.cases.split(',') if c]
-    for needed in ('glass_reference' if any(c in GLASS_CASES for c in cases) else None,
-                   'reference' if any(c not in GLASS_CASES for c in cases) else None):
-        if needed and needed not in cases:
+    cases = (list(REFLECTION_CASES) + list(GLASS_CASES) if args.reflection else list(GLASS_CASES) if args.glass
+             else [c for c in args.cases.split(',') if c])
+    for needed in {FAMILY_REFERENCE[CASES[c][2]] for c in cases}:
+        if needed not in cases:
             cases.insert(0, needed)
     # The glass ball's pixels: those within its outline as the camera sees it.
     centre_at = project(list(GLASS_CENTRE))
@@ -399,21 +446,25 @@ def main():
     for engine in engines:
         r = report['engines'][engine] = {}
         for case in cases:
-            glass = case in GLASS_CASES
-            ref_name = 'glass_reference' if glass else 'reference'
+            kind = CASES[case][2]
+            glass = kind == 'glass'
+            ref_name = FAMILY_REFERENCE[kind]
             reference = found[engine].get(ref_name)
             pictures = found[engine][case]
             e = r[case] = measure(pictures, reference['beauty'] if reference and case != ref_name else None,
                                   shadow_at, open_at, sky_at)
+            e['non_finite_pixels'] = sum(1 for i in range(W * H) if not all(math.isfinite(v) for v in pictures['beauty'][i * 3:i * 3 + 3]))
             if glass and reference and case != ref_name:
                 e['through_glass'] = through_glass(pictures, reference, ball_mask, centre_at, hidden_sky=not CASES[case][1])
+            if kind in ('mirror', 'glossy') and reference and case != ref_name:
+                e['in_reflection'] = in_reflection(pictures, reference, ball_mask, centre_at, hidden_sky=not CASES[case][1])
             if pictures.get('fallback'):
                 e['fallback'] = pictures['fallback']
             if engine != base and case in found[base]:
                 e['vs_' + base] = {'beauty': difference(pictures['beauty'], found[base][case]['beauty'], mask)}
                 if pictures.get('alpha') and found[base][case].get('alpha'):
                     e['vs_' + base]['alpha'] = difference(pictures['alpha'], found[base][case]['alpha'], mask)
-                if glass:
+                if kind != 'red':
                     e['vs_' + base]['ball_beauty'] = difference(pictures['beauty'], found[base][case]['beauty'], ball_mask)
                     if pictures.get('alpha') and found[base][case].get('alpha'):
                         e['vs_' + base]['ball_alpha'] = difference(pictures['alpha'], found[base][case]['alpha'], ball_mask)

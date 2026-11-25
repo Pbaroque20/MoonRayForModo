@@ -56,11 +56,12 @@ class ShadowCatcherBackgroundTests(unittest.TestCase):
         self.assertIn(glass.CATCHER_DEPTH_OLD, catcher.CATCHER_BLOCK)
         self.assertIn(glass.CATCHER_ALPHA_OLD, catcher.CATCHER_BLOCK)
         self.assertIn(glass.SHARE_SCALE_OLD, catcher.SHARE_CALL)
-        self.assertIn(glass.SCALAR_EARLY_OLD, catcher.RECURSE_NEW)
+        self.assertIn(glass.SCALAR_SEES_OLD, catcher.RECURSE_SAMPLE_NEW)
+        self.assertIn(glass.SCALAR_ALPHA_OLD, catcher.RECURSE_SAMPLE_NEW)
         self.assertIn('rs->mPathVertex.modoSeeThrough != 0', glass.CATCHER_DEPTH_NEW)
         self.assertIn('modoTakeAlpha(pbrTls, *rs, -reduceTransparency(pv.pathThroughput) * (1.f - modoCatcher))', glass.CATCHER_ALPHA_NEW)
         self.assertIn('modoSeenThrough() += reduceTransparency(pv.pathThroughput) * (1.f - strength * (1.f - part))',
-                      glass.SCALAR_SAMPLE_NEW)
+                      glass.SCALAR_ALPHA_NEW)
         for name in glass.CATCHER_EDITS:
             self.assertIn(name, glass.EDITS)
         integrator = text('xpu2/interactive/async_integrator.h')
@@ -68,6 +69,28 @@ class ShadowCatcherBackgroundTests(unittest.TestCase):
         self.assertIn('catcherAlpha = -catcher * catcherAlphaScale * part;', integrator)
         kernel = text('moonlightipr/src/device/kernel.cu')
         self.assertIn('if (!camera && matte && seeThrough && depth > 0) {', kernel)
+
+    def test_seen_in_reflections(self):
+        # A matte reached by any other ray past the camera: what that ray's kind sees of the lights past it, the alpha
+        # left as it is; in all three engines.
+        import port_shadow_catcher as catcher
+        self.assertIn('if (rayDepth > 0 && !modoMatte) {', catcher.CATCHER_BLOCK)
+        self.assertIn('transparency = rayDepth > 0 ? 0.f : 1.f - modoCatcher;', catcher.CATCHER_BLOCK)
+        self.assertIn('lobeTypeToRayMask(rs.mPathVertex.lobeType)', catcher.BACKGROUND_HELPER)
+        self.assertIn('ray.ext.depth == 0 ? pv.pathPixelWeight : 0.f', catcher.SHARE_CALL)
+        self.assertIn('lobeTypeToRayMask(pv.lobeType)', catcher.RECURSE_SAMPLE_NEW)
+        integrator = text('xpu2/interactive/async_integrator.h')
+        self.assertIn('lightsPastRadiance(c, root, backend, backend.lightSet(hit.geom), rayMask(pv.lobeType)', integrator)
+        kernel = text('moonlightipr/src/device/kernel.cu')
+        self.assertIn('catcherPastBackground(hit.p, direction, seen, sharp, glossyShare, cameFrom)', kernel)
+
+    def test_moonlightipr_means_start_afresh(self):
+        # The first sample of a running mean replaces what the buffer held (a NaN left by a former allocation stayed).
+        vec = text('moonlightipr/src/device/vec.h')
+        self.assertIn('return weight >= 1.0f ? value : lerp(held, value, weight);', vec)
+        kernel = text('moonlightipr/src/device/kernel.cu')
+        self.assertNotIn('const float3 b = lerp(', kernel)
+        self.assertIn('const float3 b = runningMean(', kernel)
 
     def test_patch_exported(self):
         patch = text('patches/native-windows/moonray.patch')

@@ -23,7 +23,10 @@ Unless MoonRay is started with MOONRAY_MODO_SHADOW_CATCHER=0 (the kit's Backplat
    visible to the camera the background is black: no colour, the shadows in alpha. In the light path outputs, the
    background shown goes through the camera's straight event at the catcher then the light's (C<Ts><L>, so
    Environment background holds it), the catcher's own lighting not at all (modoCatcherLpe; a matte's light samples
-   keep a data block for it, modoMatteCatcherAt).
+   keep a data block for it, modoMatteCatcherAt). A matte reached by any ray past the camera (a reflection, a bounce)
+   is seen the same way, not as its emission: the lights of the hit's light set that ray's kind sees past it, darkened
+   by its shadows, its alpha left as it is (tools/port_glass_alpha.py, which runs after this, has a path through
+   glass alone see the camera's lights and be see-through in alpha).
 4. Scalar (PathIntegrator.cc, computeRadianceRecurse): the same, its light samples' shadow rays traced as they are
    drawn (PathIntegratorMultiSampler.cc).
 
@@ -154,13 +157,93 @@ PRIMARY_NEW = '''    // Modo: a shadow catcher seen by the camera (tools/port_sh
 RECURSE_OLD = '''    shading::BsdfLobe::Type indirectFlags = shading::BsdfLobe::Type::NONE;
     if ((mBsdfSamples > 0) && (ray.getDepth() < mMaxDepth) && lobe) {
 '''
-RECURSE_NEW = '''    // Modo: a shadow catcher seen past the camera is what it wears (its emission), unlit (tools/port_shadow_catcher.py).
-    if (modoShadowCatcher() && material->getModoShadowCatcher()) {
+RECURSE_NEW = '''    // Modo: a shadow catcher seen past the camera is what it wears (its emission), unlit; a matte, what the ray sees of
+    // the lights past it, darkened by its shadows (below) (tools/port_shadow_catcher.py).
+    const bool modoPastMatte = modoShadowCatcher() && material->getModoShadowCatcher() && material->getModoShadowMatte();
+    if (modoShadowCatcher() && material->getModoShadowCatcher() && !modoPastMatte) {
         return radiance;
     }
 
     shading::BsdfLobe::Type indirectFlags = shading::BsdfLobe::Type::NONE;
     if ((mBsdfSamples > 0) && (ray.getDepth() < mMaxDepth) && lobe) {
+'''
+
+RECURSE_SAMPLE_OLD = '''    radiance += computeRadianceBsdfMultiSampler(pbrTls, sp, pv, ray, isect, *bsdf, slice,
+        doIndirect, indirectFlags, newPriorityList, newPriorityListCount, activeLightSet, normalPtr,
+        rayEpsilon, shadowRayEpsilon, ssAov, sequenceID, aovs, cryptomatteFlags,
+        parentLobeLightSets);
+
+    float minTransparency = reduceTransparency(vt.mTransmittanceMin);
+'''
+RECURSE_SAMPLE_NEW = '''    if (modoPastMatte) {
+        // Modo: a matte seen past the camera (a reflection, a refraction, a bounce), as computeRadianceRecurse0 sees one
+        // from the camera: what the ray sees of the lights past it, (1 - strength) of it outright and the rest as much
+        // as its light samples are not shadowed; nothing bounces off it, and its alpha is left as it is
+        // (tools/port_shadow_catcher.py). The lights: those of its active set the ray's kind sees, or, where
+        // modoCameraSees, those the camera sees.
+        const bool modoCameraSees = false;
+        ModoCatcherTally &tally = modoCatcherTally();
+        tally = ModoCatcherTally();
+        tally.on = true;
+        computeRadianceBsdfMultiSampler(pbrTls, sp, pv, ray, isect, *bsdf, slice,
+            false, shading::BsdfLobe::Type::NONE, newPriorityList, newPriorityListCount, activeLightSet, normalPtr,
+            rayEpsilon, shadowRayEpsilon, ssAov, sequenceID, nullptr, cryptomatteFlags,
+            parentLobeLightSets);
+        tally.on = false;
+        const float strength = scene_rdl2::math::clamp(material->getModoShadowStrength(), 0.f, 1.f);
+        const scene_rdl2::math::Color total(tally.total[0], tally.total[1], tally.total[2]);
+        const scene_rdl2::math::Color lit(tally.lit[0], tally.lit[1], tally.lit[2]);
+        const float whole = scene_rdl2::math::luminance(total);
+        const float part = whole > 0.f ? scene_rdl2::math::luminance(lit) / whole : 1.f;
+        const scene_rdl2::math::Color share(total.r > 0.f ? lit.r / total.r : part,
+                                            total.g > 0.f ? lit.g / total.g : part,
+                                            total.b > 0.f ? lit.b / total.b : part);
+        radiance -= selfEmission;
+        scene_rdl2::math::Color modoBackground(0.f);
+        int modoBgLpe = -1;
+        LightIntersection modoPastIsect;
+        int modoHits = 0;
+        SequenceIDIntegrator modoSid(0, sp.mPixel, sp.mSubpixelIndex, SequenceType::IndexSelection, sequenceID);
+        IntegratorSample1D modoChoice(modoSid);
+        const Light *modoLight = nullptr;
+        if (modoCameraSees) {
+            mcrt_common::Ray modoPast(isect.getP(), ray.getDirection(), 0.f, sInfiniteLightDistance, ray.getTime(),
+                                      ray.getDepth());
+            modoLight = scene->intersectVisibleLight(modoPast, sInfiniteLightDistance, modoChoice, modoPastIsect, modoHits);
+        } else {
+            const int modoIndex = activeLightSet.intersect(isect.getP(), nullptr, ray.getDirection(), ray.getTime(),
+                sInfiniteLightDistance, false, modoChoice, ray.getDepth(), lobeTypeToRayMask(pv.lobeType),
+                modoPastIsect, modoHits, nullptr, Rdl2LightSetList());
+            modoLight = modoIndex >= 0 ? activeLightSet.getLight(modoIndex) : nullptr;
+        }
+        if (modoLight) {
+            LightFilterRandomValues modoFilterR = {
+                scene_rdl2::math::Vec2f(0.f, 0.f), scene_rdl2::math::Vec3f(0.f, 0.f, 0.f)};
+            modoBackground = pv.pathThroughput * modoHits *
+                modoLight->eval(pbrTls->mTopLevelTls, ray.getDirection(), isect.getP(), modoFilterR, ray.getTime(),
+                                modoPastIsect, modoCameraSees, nullptr, nullptr, ray.getDirFootprint(), nullptr, nullptr);
+            if (aovs && pv.lpeStateId >= 0) {
+                const int straight = lightAovs.straightEventTransition(pbrTls, pv.lpeStateId);
+                if (straight >= 0) {
+                    modoBgLpe = lightAovs.lightEventTransition(pbrTls, straight, modoLight);
+                }
+            }
+        }
+        const scene_rdl2::math::Color modoSeen = modoBackground * ((1.f - strength) + strength * share);
+        radiance += modoSeen;
+        if (aovs && modoBgLpe >= 0 && !isBlack(modoSeen)) {
+            aovAccumLightAovs(pbrTls, aovSchema, lightAovs, modoSeen, nullptr, AovSchema::sLpePrefixNone,
+                              modoBgLpe, aovs);
+        }
+        return radiance;
+    }
+
+    radiance += computeRadianceBsdfMultiSampler(pbrTls, sp, pv, ray, isect, *bsdf, slice,
+        doIndirect, indirectFlags, newPriorityList, newPriorityListCount, activeLightSet, normalPtr,
+        rayEpsilon, shadowRayEpsilon, ssAov, sequenceID, aovs, cryptomatteFlags,
+        parentLobeLightSets);
+
+    float minTransparency = reduceTransparency(vt.mTransmittanceMin);
 '''
 
 TALLY_TOTAL_OLD = '''        scene_rdl2::math::Color lightT = lsmp[i].t;
@@ -208,14 +291,18 @@ CATCHER_BLOCK = '''        //---------------------------------------------------
         // emission) unlit, and the path ends. Seen by the camera, (1 - strength) of its emission is taken outright and
         // the rest comes back through its light samples' shadow rays, each its share (modoCatcherShare); as a matte,
         // the background in place of the emission (modoCatcherBackground) and an alpha of strength, which the
-        // unshadowed samples take back off.
+        // unshadowed samples take back off. A matte reached by any ray past the camera (a reflection, a bounce) is
+        // seen the same way, by what that ray sees of the lights past it, its alpha left as it is.
         varying float modoCatcher = -1.f;
         varying bool modoMatte = false;
         modoShadowCatcherOf(isect, modoCatcher, modoMatte);
         varying Color modoShown = sBlack;
         varying int modoBgLpe = -1;
+        // Whether the lights past the matte are those the camera sees (the camera's own ray), or those the ray's kind
+        // sees in the hit's light set (any other).
+        varying bool modoCameraSees = rayDepth == 0;
         if (modoCatcher >= 0.f) {
-            if (rayDepth > 0) {
+            if (rayDepth > 0 && !modoMatte) {
                 numRadiances += fillBundledRadiance(pbrTls,
                                                     radiances + i,
                                                     &radianceIndices[numRadiances],
@@ -230,9 +317,9 @@ CATCHER_BLOCK = '''        //---------------------------------------------------
             modoShown = selfEmission;
             if (modoMatte) {
                 radiance = radiance - selfEmission;
-                transparency = 1.f - modoCatcher;
-                modoShown = modoCatcherBackground(pbrTls, shadingTls, visibleLightSet, lightAovs, aovs, *rs, ray, isect,
-                                                  modoBgLpe);
+                transparency = rayDepth > 0 ? 0.f : 1.f - modoCatcher;
+                modoShown = modoCatcherBackground(pbrTls, shadingTls, visibleLightSet, lightSet, modoCameraSees, lightAovs,
+                                                  aovs, *rs, ray, isect, modoBgLpe);
                 const varying Color modoOutright = modoShown * (1.f - modoCatcher);
                 radiance = radiance + modoOutright;
                 if (aovs && modoBgLpe > 0 && !isBlack(modoOutright)) {
@@ -269,14 +356,18 @@ modoShadowCatcherOf(const varying Intersection &isect, varying float &strength, 
 }
 '''
 
-BACKGROUND_HELPER = '''// Modo: what the camera would see past a matte shadow catcher (tools/port_shadow_catcher.py): the lights it sees along
-// the ray beyond the hit, as a camera ray that hits nothing sees them (RayHandlers.cc), one chosen among those it meets,
-// times their number; black where it sees none. lpeStateId: the light path state of that, the camera's straight event
-// through the catcher then the light's (-1 for none), with which Environment background (C<Ts>*<L>) holds it.
+BACKGROUND_HELPER = '''// Modo: what a ray would see past a matte shadow catcher (tools/port_shadow_catcher.py): the lights it meets along its
+// way beyond the hit, one chosen among them, times their number; black where it meets none. cameraSees: those the camera
+// sees (visibleLightSet), as a camera ray that hits nothing sees them (RayHandlers.cc); otherwise those of the hit's
+// light set (lightSet) visible to the ray's kind (its lobe's ray mask), as its parent's BSDF sample would have met them
+// had the catcher not been in the way. lpeStateId: the light path state of that, the ray's straight event through the
+// catcher then the light's (-1 for none), with which Environment background (C<Ts>*<L>) holds what the camera sees.
 inline varying Color
 modoCatcherBackground(      uniform PbrTLState *     uniform pbrTls,
                             uniform ShadingTLState * uniform shadingTls,
                       const uniform LightSet *       uniform visibleLightSet,
+                      const uniform LightSet *       uniform lightSet,
+                      const varying bool                     cameraSees,
                       const uniform LightAovs &              lightAovs,
                       const uniform bool                     aovs,
                       const varying RayState &               rs,
@@ -295,17 +386,34 @@ modoCatcherBackground(      uniform PbrTLState *     uniform pbrTls,
     const varying Vec3f origin = getP(isect);
     varying LightIntersection hitLightIsect;
     varying int numHits = 0;
-    const varying int lightIdx = LightSet_intersect(pbrTls, visibleLightSet, origin, cullingNormal,
-                                                    Ray_getDirection(ray), Ray_getTime(ray), sInfiniteLightDistance,
-                                                    false, lightChoiceSamples, 0, -1, hitLightIsect, numHits, 0, 0);
     varying Color background = sBlack;
-    if (lightIdx >= 0) {
-        const uniform Light * varying hitLight = LightSet_getLight(visibleLightSet, lightIdx);
-        // light filters don't apply to camera rays
-        varying LightFilterRandomValues lightFilterR = { Vec2f_ctor(0.f, 0.f), Vec3f_ctor(0.f, 0.f, 0.f) };
-        background = rs.mPathVertex.pathThroughput * numHits *
-            Light_eval(hitLight, shadingTls, Ray_getDirection(ray), origin, lightFilterR, Ray_getTime(ray),
-                       hitLightIsect, true, nullptr, nullptr, Ray_getDirFootprint(ray), nullptr, nullptr);
+    const uniform Light * varying hitLight = nullptr;
+    // light filters don't apply to camera rays, nor here (what lies past the catcher is not lit by the light)
+    varying LightFilterRandomValues lightFilterR = { Vec2f_ctor(0.f, 0.f), Vec3f_ctor(0.f, 0.f, 0.f) };
+    if (cameraSees) {
+        const varying int lightIdx = LightSet_intersect(pbrTls, visibleLightSet, origin, cullingNormal,
+                                                        Ray_getDirection(ray), Ray_getTime(ray), sInfiniteLightDistance,
+                                                        false, lightChoiceSamples, 0, -1, hitLightIsect, numHits, 0, 0);
+        if (lightIdx >= 0) {
+            hitLight = LightSet_getLight(visibleLightSet, lightIdx);
+            background = rs.mPathVertex.pathThroughput * numHits *
+                Light_eval(hitLight, shadingTls, Ray_getDirection(ray), origin, lightFilterR, Ray_getTime(ray),
+                           hitLightIsect, true, nullptr, nullptr, Ray_getDirFootprint(ray), nullptr, nullptr);
+        }
+    } else {
+        const varying int lightIdx = LightSet_intersect(pbrTls, lightSet, origin, cullingNormal,
+                                                        Ray_getDirection(ray), Ray_getTime(ray), sInfiniteLightDistance,
+                                                        false, lightChoiceSamples, ray.ext.depth,
+                                                        lobeTypeToRayMask(rs.mPathVertex.lobeType), hitLightIsect,
+                                                        numHits, 0, 0);
+        if (lightIdx >= 0) {
+            hitLight = LightSet_getLight(lightSet, lightIdx);
+            background = rs.mPathVertex.pathThroughput * numHits *
+                Light_eval(hitLight, shadingTls, Ray_getDirection(ray), origin, lightFilterR, Ray_getTime(ray),
+                           hitLightIsect, false, nullptr, nullptr, Ray_getDirFootprint(ray), nullptr, nullptr);
+        }
+    }
+    if (hitLight != nullptr) {
         if (aovs && LightAovs_hasEntries(&lightAovs) && rs.mPathVertex.lpeStateId >= 0) {
             const varying int straight = LpeStateMachine_transition(&lightAovs.mLpeStateMachine,
                 rs.mPathVertex.lpeStateId, LPE_EVENT_TYPE_TRANSMISSION, LPE_EVENT_SCATTERING_TYPE_STRAIGHT, LPE_noLabel);
@@ -443,10 +551,12 @@ SHARE_CALL = '''    // Modo: a shadow catcher seen by the camera: its shadow ray
         modoCatcherTotal(occlRays, occlRayIndices, numOcclRaysFilled, lightSetSampleCount, modoTotal);
         modoCatcherTotal(presenceShadowsRays, presenceShadowsRayIndices, numPresenceShadowsRaysFilled,
                          lightSetSampleCount, modoTotal);
+        // The alpha a matte's unshadowed samples take back: by the pixel weight at the camera, none past it.
+        const varying float modoAlphaScale = ray.ext.depth == 0 ? pv.pathPixelWeight : 0.f;
         modoCatcherShare(pbrTls, occlRays, occlRayIndices, numOcclRaysFilled, lightSetSampleCount, modoCatcher,
-                         modoShown, modoTotal, modoMatte, pv.pathPixelWeight, modoBgLpe);
+                         modoShown, modoTotal, modoMatte, modoAlphaScale, modoBgLpe);
         modoCatcherShare(pbrTls, presenceShadowsRays, presenceShadowsRayIndices, numPresenceShadowsRaysFilled,
-                         lightSetSampleCount, modoCatcher, modoShown, modoTotal, modoMatte, pv.pathPixelWeight,
+                         lightSetSampleCount, modoCatcher, modoShown, modoTotal, modoMatte, modoAlphaScale,
                          modoBgLpe);
     }
 
@@ -574,6 +684,7 @@ namespace pbr {
 #include <moonray/rendering/pbr/core/ModoShadowCatcher.h>
 ''', 1),
         (RECURSE_OLD, RECURSE_NEW, 1),
+        (RECURSE_SAMPLE_OLD, RECURSE_SAMPLE_NEW, 1),
         (PRIMARY_OLD, PRIMARY_NEW, 1),
     ],
     RENDERING / 'pbr/integrator/PathIntegratorMultiSampler.cc': [
@@ -648,6 +759,7 @@ CPP_addRadianceQueueEntries(''', 1),
         ('''#include <moonray/rendering/pbr/core/Aov.isph>
 ''', '''#include <moonray/rendering/pbr/core/Aov.isph>
 #include <moonray/rendering/lpe/StateMachine.isph>   // Modo: tools/port_shadow_catcher.py
+#include "PathIntegratorUtil.isph"                    // Modo: lobeTypeToRayMask (tools/port_shadow_catcher.py)
 ''', 1),
         ('''void
 integrateBundled( const uniform PathIntegrator * uniform this,

@@ -23,6 +23,11 @@ ML_INLINE float3 cross(float3 a, float3 b) {
 ML_INLINE float length(float3 a) { return sqrtf(dot(a, a)); }
 ML_INLINE float3 normalize(float3 a) { return a * (1.0f / sqrtf(dot(a, a))); }
 ML_INLINE float3 lerp(float3 a, float3 b, float t) { return a + (b - a) * t; }
+// A running mean taking its next value: the first (weight 1) replaces whatever the buffer held, which, never cleared,
+// may be anything a former allocation left there, a NaN among it; lerp kept a NaN (NaN + (b - NaN) x 1), and pixels of a
+// picture stayed NaN for good, one channel or more (streaks in a glass scene, 2026-11-24).
+ML_INLINE float3 runningMean(float3 held, float3 value, float weight) { return weight >= 1.0f ? value : lerp(held, value, weight); }
+ML_INLINE float runningMean(float held, float value, float weight) { return weight >= 1.0f ? value : held + (value - held) * weight; }
 ML_INLINE float clamp(float v, float lo, float hi) { return fminf(fmaxf(v, lo), hi); }
 ML_INLINE float luminance(float3 c) { return 0.2126f * c.x + 0.7152f * c.y + 0.0722f * c.z; }
 ML_INLINE float maxComponent(float3 c) { return fmaxf(c.x, fmaxf(c.y, c.z)); }
