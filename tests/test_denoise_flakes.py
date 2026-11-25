@@ -147,3 +147,16 @@ class SceneText(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class StoppedPartWay(unittest.TestCase):
+    """A preview stopped part way, its buffers handed over from memory in takes: the flakes' light (and the fur matte)
+    are gathered with the guides and given to the denoiser, as from a finished render."""
+    def test_gathered_with_the_guides(self):
+        source = (pathlib.Path(__file__).resolve().parents[1] / 'kit/MoonRayForModo/python/moonray_modo/render.py').read_text(encoding='utf-8')
+        self.assertIn("['denoise_'+key for key in ('fine','flakes') if key in (self.denoise_guides or {})]+['beauty']", source)
+
+    def test_taken_from_the_kept_takes(self):
+        source = (pathlib.Path(__file__).resolve().parents[1] / 'kit/MoonRayForModo/python/moonray_modo/cached_denoise.py').read_text(encoding='utf-8')
+        self.assertIn("for key in ('beauty','denoise_albedo','denoise_normal')+tuple(extra):", source)
+        self.assertIn("for key in extra:guides[key[len('denoise_'):]]=str(root/(key+'.exr'))", source)

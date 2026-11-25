@@ -364,17 +364,20 @@ class Renderer(QtCore.QObject):
             # it written. Nothing is left dark or coarse, and what follows is what follows any finished render.
             self.pending=None;self.passes=[];self.draining=True
             return True
-        self.gather=gather={'want':['denoise_albedo']*5+['denoise_normal']*5+['beauty']*5,'got':{}}
+        # The guides, with the fur matte and the flakes' light where this render makes them (Keep Fine Detail, Keep
+        # Metallic Flakes), and the beauty last.
+        views=['denoise_albedo','denoise_normal']+['denoise_'+key for key in ('fine','flakes') if key in (self.denoise_guides or {})]+['beauty']
+        self.gather=gather={'want':[view for view in views for _ in range(5)],'got':{}}
         self.pending=None
         if holds(self.active['runtime']):
             # A MoonRay that can hand over several views at one asking hands each over once, with no waiting on the
             # host between them. Three rounds of them, for the middle to be taken, took twice as long and left the
             # denoised picture no cleaner.
-            gather['want']=['denoise_albedo','denoise_normal','beauty'];gather['held']=True
+            gather['want']=list(views);gather['held']=True
             if self.session.hold(gather['want']):
                 QtCore.QTimer.singleShot(12000,lambda:self._gathered(gather,False))
                 return True
-            gather['want']=['denoise_albedo']*5+['denoise_normal']*5+['beauty']*5;gather['held']=False
+            gather['want']=[view for view in views for _ in range(5)];gather['held']=False
         self.session.select_view(gather['want'][0])
         QtCore.QTimer.singleShot(12000,lambda:self._gathered(gather,False))
         return True
