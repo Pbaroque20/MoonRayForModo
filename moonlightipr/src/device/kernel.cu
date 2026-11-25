@@ -1526,6 +1526,50 @@ ML_INLINE float3 catcherBackground(float3 p, float3 direction, float3& light) {
     return sky;
 }
 
+// What a ray past the camera (a reflection, a refraction, a bounce) would see past a matte shadow catcher at p, as
+// MoonRay's (tools/port_shadow_catcher.py, modoCatcherBackground): what that ray finds of the lights when it hits
+// nothing, as the radiance program's miss has it for a ray of its kind (seen, sharp, glossyShare) from a surface of
+// light set fromSet, but with nothing taken off for the light samples that could not have found it either: they are
+// in the catcher's shadow there. Geometry past the catcher is not traced.
+ML_INLINE float3 catcherPastBackground(float3 p, float3 direction, unsigned seen, bool sharp, float3 glossyShare,
+                                       unsigned fromSet) {
+    const DeviceDistantLight* distantLights = reinterpret_cast<const DeviceDistantLight*>(params.distantLights);
+    const DeviceLight* lights = reinterpret_cast<const DeviceLight*>(params.lights);
+    float3 found = vec(0.0f);
+    for (unsigned i = 0; i < params.lightCount; ++i) {
+        if (!reaches(fromSet, 1 + params.distantLightCount + i) || lights[i].type == LIGHT_MESH) continue;
+        float pdf;
+        float3 emitted;
+        if (hitLight(lights[i], p, direction, 1e30f, pdf, emitted))
+            found += emitted * seenBy(hiddenOf(lights[i]), sharp, seen, glossyShare);
+    }
+    if (reaches(fromSet, 0) && !params.envPortal) {
+        float3 sky = envRadiance(direction);
+        if (params.envSplit) {
+            if (sharp && seen == SEEN_REFLECTED)
+                sky = envLookup(reinterpret_cast<const float4*>(params.envReflected), params.envReflectedRotation, direction);
+            else if (sharp && seen == SEEN_THROUGH)
+                sky = envLookup(reinterpret_cast<const float4*>(params.envThrough), params.envThroughRotation, direction);
+            else if (!sharp)
+                sky = (vec(1.0f) - glossyShare) * sky + glossyShare * envRadiance(direction, reflectedEnv());
+        }
+        found += sky;
+    }
+    for (unsigned i = 0; i < params.distantLightCount; ++i) {
+        if (!reaches(fromSet, 1 + i)) continue;
+        const DeviceDistantLight& light = distantLights[i];
+        const float3 open = seenBy(light.hidden, sharp, seen, glossyShare);
+        if (maxComponent(open) <= 0.0f) continue;
+        if (sharp && light.visible > 0.0f) {
+            if (dot(direction, vec(light.direction)) >= 1.0f - light.seenVersine)
+                found += vec(light.seen) * distantPicture(light, direction) * open;
+            continue;
+        }
+        if (dot(direction, vec(light.direction)) >= 1.0f - light.versine) found += distantRadiance(light, direction) * open;
+    }
+    return found;
+}
+
 // ---- Hair --------------------------------------------------------------------------------------
 // A fibre's four ways of scattering light, as MoonRay's HairMaterial has them: its formulas are those of d'Eon et
 // al. 2011 and Chiang et al. 2016, taken here from MoonRay's HairUtil, HairState and BsdfHairLobes.
@@ -2079,7 +2123,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
         const float line = !unseen && ((!unseenBeside && draftEdge(here, beside)) || (!unseenAbove && draftEdge(here, above))) ? 1.0f : 0.0f;
         const float weight = 1.0f / float(params.sample + 1);
         float4* beauty = reinterpret_cast<float4*>(params.beauty) + pixel;
-        const float kept = beauty->x + (line - beauty->x) * weight;
+        const float kept = runningMean(beauty->x, line, weight);
         *beauty = make_float4(kept, kept, kept, 1.0f);
         // The denoiser is shown the lines as they are, so that it leaves them alone.
         reinterpret_cast<float4*>(params.albedo)[pixel] = make_float4(kept, kept, kept, 1.0f);
@@ -2110,7 +2154,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
         float4* buffers[3] = {reinterpret_cast<float4*>(params.beauty) + pixel, reinterpret_cast<float4*>(params.albedo) + pixel,
                               reinterpret_cast<float4*>(params.normal) + pixel};
         for (int i = 0; i < 3; ++i) {
-            const float3 kept = lerp(make_float3(buffers[i]->x, buffers[i]->y, buffers[i]->z), vec(0.0f), weight);
+            const float3 kept = runningMean(make_float3(buffers[i]->x, buffers[i]->y, buffers[i]->z), vec(0.0f), weight);
             *buffers[i] = make_float4(kept.x, kept.y, kept.z, i < 2 ? 1.0f : 0.0f);
         }
         if (params.half) reinterpret_cast<float4*>(params.half)[pixel] = make_float4(0.0f, 0.0f, 0.0f, 1.0f);
@@ -2518,6 +2562,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
             }
         }
 
+        const unsigned cameFrom = fromSet;     // the light set of the surface the ray left (a matte catcher's, below)
         fromSet = reinterpret_cast<const DeviceInstance*>(params.instances)[hit.instance].lightSet;
         if ((hit.flags & MATERIAL_SHADOW_CATCHER) && !emerged) {
             // The kit's shadow catcher, as MoonRay's (tools/port_shadow_catcher.py): past the camera, what it wears (its
@@ -2540,6 +2585,18 @@ extern "C" __global__ void __raygen__moonlightipr() {
                 if (params.passes) passTo(pixel, passNow, radiance, passMark, passShare);
                 radiance += clampSample(carried * behind * (vec(1.0f - hit.catcher) + share * hit.catcher), clampFound);
                 if (params.passes) passTo(pixel, PASS_BACKGROUND, radiance, passMark, passShare);
+                break;
+            }
+            if (!camera && matte) {
+                // A matte reached by any other ray past the camera (a reflection, a bounce), as MoonRay's: what that ray
+                // would find of the lights past it, darkened by its shadows; the alpha is left as it is.
+                const float3 behind = catcherPastBackground(hit.p, direction, seen, sharp, glossyShare, cameFrom);
+                if (maxComponent(behind) > 0.0f) {
+                    float part;
+                    const float3 share = catcherShare(hit, direction, seed, fromSet, part);
+                    radiance += clampSample(throughput * lightWeight * behind * (vec(1.0f - hit.catcher) + share * hit.catcher),
+                                            clampFound);
+                }
                 break;
             }
             if (!camera) {
@@ -3119,16 +3176,16 @@ extern "C" __global__ void __raygen__moonlightipr() {
     float4* beauty = reinterpret_cast<float4*>(params.beauty) + pixel;
     float4* albedo = reinterpret_cast<float4*>(params.albedo) + pixel;
     float4* normal = reinterpret_cast<float4*>(params.normal) + pixel;
-    const float3 b = lerp(make_float3(beauty->x, beauty->y, beauty->z), radiance, weight);
-    const float3 a = lerp(make_float3(albedo->x, albedo->y, albedo->z), guideAlbedo, weight);
-    const float3 n = lerp(make_float3(normal->x, normal->y, normal->z), guideNormal, weight);
+    const float3 b = runningMean(make_float3(beauty->x, beauty->y, beauty->z), radiance, weight);
+    const float3 a = runningMean(make_float3(albedo->x, albedo->y, albedo->z), guideAlbedo, weight);
+    const float3 n = runningMean(make_float3(normal->x, normal->y, normal->z), guideNormal, weight);
     *beauty = make_float4(b.x, b.y, b.z, 1.0f);
     *albedo = make_float4(a.x, a.y, a.z, 1.0f);
     *normal = make_float4(n.x, n.y, n.z, 0.0f);
     if (params.half && !(params.sample & 1)) {
         // The mean of the even samples alone: how far it is from the mean of them all tells how noisy that still is.
         float4* half = reinterpret_cast<float4*>(params.half) + pixel;
-        const float3 h = lerp(make_float3(half->x, half->y, half->z), radiance, 1.0f / float(params.sample / 2 + 1));
+        const float3 h = runningMean(make_float3(half->x, half->y, half->z), radiance, 1.0f / float(params.sample / 2 + 1));
         *half = make_float4(h.x, h.y, h.z, 1.0f);
     }
 }

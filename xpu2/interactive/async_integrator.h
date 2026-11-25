@@ -449,6 +449,38 @@ X2_HD inline V3 visibleLightRadiance(const mixed::Config& c, const sample::Ident
         }
     return V3{0, 0, 0};
 }
+// What a ray past the camera sees of the lights past a matte shadow catcher (tools/port_shadow_catcher.py,
+// modoCatcherBackground): those of the hit's light set its kind sees (mask, its lobe's ray mask), as its parent's BSDF
+// sample would have met them, one chosen uniformly among those it meets, its radiance times their number.
+template <class Backend>
+X2_HD inline V3 lightsPastRadiance(const mixed::Config& c, const sample::Identity& root, Backend& backend, U32 lightSet, U32 mask,
+                                   V3 origin, V3 dir, float footprint, U32 segment, U32* hitLight = nullptr) {
+    U32 hits = 0;
+    for (U32 j = 0; j < c.lightCount; ++j) {
+        const lights::Light& L = backend.light(j);
+        lights::Hit lh;
+        if (backend.inSet(lightSet, j) && (mask & L.visibilityMask) && !L.rayTerminator &&
+            lights::intersect(L, origin, nullptr, dir, 3.4028234663852886e+38f, lh)) ++hits;
+    }
+    if (!hits) return V3{0, 0, 0};
+    sample::Identity id = root;
+    id.branch = childBranch(0x5649534c49474854ull, segment, 0);
+    Stream s(id, 0, 0);
+    const float choice = s.next();
+    const U32 chosen = U32(choice * float(hits)) < hits ? U32(choice * float(hits)) : hits - 1;
+    for (U32 j = 0, seen = 0; j < c.lightCount; ++j) {
+        const lights::Light& L = backend.light(j);
+        lights::Hit lh;
+        if (!backend.inSet(lightSet, j) || !(mask & L.visibilityMask) || L.rayTerminator ||
+            !lights::intersect(L, origin, nullptr, dir, 3.4028234663852886e+38f, lh)) continue;
+        if (seen++ != chosen) continue;
+        float pdf;
+        const V3 Li = lights::eval(L, origin, dir, lh, pdf, footprint);
+        if (hitLight) *hitLight = j;
+        return shade::finite3(Li) ? Li * float(hits) : V3{0, 0, 0};
+    }
+    return V3{0, 0, 0};
+}
 }  // namespace paths
 
 //----------------------------------------------------------------------------
@@ -2501,25 +2533,30 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
         // MOONRAY_MODO_GLASS_ALPHA's notion; tools/port_glass_alpha.py) is seen as from the camera: the background past
         // it darkened by its shadows, times the path's throughput; see-through in alpha as the sky through glass is
         // (switch on), but for its shadows: -throughput x (1 - strength) here, the unshadowed samples the rest.
+        // Any other ray past the camera (a reflection, a bounce) sees a matte the same way, by what it sees of the lights
+        // past it (lightsPastRadiance: the hit's light set, its kind's mask), its alpha left as it is.
         const bool catcherThrough = catcherMatte && pv.depth > 0 && pv.seeThrough;
-        const bool catcherHere = catcher >= 0.0f && (pv.depth == 0 || catcherThrough);
+        const bool catcherPast = catcherMatte && pv.depth > 0 && !catcherThrough;
+        const bool catcherHere = catcher >= 0.0f && (pv.depth == 0 || catcherMatte);
         const float catcherAlphaScale = pv.depth == 0 ? pv.pixelWeight
-                                      : (c.modoSwitches & 32u) ? (pv.T.x + pv.T.y + pv.T.z) / 3.0f : 0.0f;
+                                      : (catcherThrough && (c.modoSwitches & 32u)) ? (pv.T.x + pv.T.y + pv.T.z) / 3.0f : 0.0f;
         Color catcherShown = pv.T * bsdf.selfEmission;
         int catcherLpe = -1;
         if (catcher >= 0.0f) {
-            if (pv.depth > 0 && !catcherThrough) continue;
+            if (pv.depth > 0 && !catcherMatte) continue;
             radiance -= catcherMatte ? catcherShown : catcherShown * catcher;
             if (catcherThrough) alpha -= catcherAlphaScale * (1.0f - catcher);
             if (catcherMatte) {
                 catcherShown = Color{0, 0, 0};
-                if (c.visibleLights) {
-                    U32 seenLight = ~0u;
+                U32 seenLight = ~0u;
+                if (catcherPast)
+                    catcherShown = pv.T * lightsPastRadiance(c, root, backend, backend.lightSet(hit.geom), rayMask(pv.lobeType), hit.point,
+                                                             ray.direction, footprint, pv.presenceDepth, &seenLight);
+                else if (c.visibleLights)
                     catcherShown = pv.T * visibleLightRadiance(c, root, backend, hit.point, ray.direction, 3.4028234663852886e+38f,
                                                                false, footprint, pv.presenceDepth, &seenLight);
-                    if (lpeOn && seenLight != ~0u && pv.lpe >= 0)
-                        catcherLpe = aov::lpeNext(at, aov::lpeStraight(at, pv.lpe), aov::LpeLight, backend.light(seenLight).lpeLabel);
-                }
+                if (lpeOn && seenLight != ~0u && pv.lpe >= 0)
+                    catcherLpe = aov::lpeNext(at, aov::lpeStraight(at, pv.lpe), aov::LpeLight, backend.light(seenLight).lpeLabel);
                 const Color outright = catcherShown * (1.0f - catcher);
                 radiance += outright;
                 if (catcherLpe >= 0 && !shade::isBlack(outright)) aov::light(at, aovs, aovDepths, outright, nullptr, 0, catcherLpe);
