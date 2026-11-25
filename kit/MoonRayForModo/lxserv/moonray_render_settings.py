@@ -41,7 +41,7 @@ def register():
     # MoonRay's light sampling mode for adaptive light sampling (options.ENUMS['light_sampling_mode']).
     ADAPTIVE_LIGHTS=1
     # The settings that only mean something with a denoiser chosen.
-    NEEDS_DENOISER=('denoise_preview','denoise_final','denoise_detail','smart_render')
+    NEEDS_DENOISER=('denoise_preview','denoise_final','denoise_detail','denoise_flakes','smart_render')
     TYPES={'bool':lx.symbol.sTYPE_BOOLEAN,'member':lx.symbol.sTYPE_BOOLEAN,'int':lx.symbol.sTYPE_INTEGER,
            'choice':lx.symbol.sTYPE_INTEGER,'float':lx.symbol.sTYPE_FLOAT,'hex':lx.symbol.sTYPE_COLOR}
 
@@ -162,6 +162,133 @@ def register():
         if entry['kind'] in ('button','command'):continue
         lx.bless(command(entry),'moonray.render.'+entry['key'])
         if entry['kind']=='file':lx.bless(browse(entry),'moonray.render.browse_'+entry['key'])
+    channels()
+
+
+def channels():
+    """The render settings as channels of the Render item (moonray_modo/render_channels.py): the package that holds
+    them, the command that gives a scene's Render item the package with its tag's values, and the listeners that do it
+    as a scene is opened or made and that have the form look again as a channel changes."""
+    import lxu.package
+    from moonray_modo import properties,render_channels
+    plan=[(entry['key'],render_channels.channel(entry),render_channels.kind(entry),entry) for entry in render_channels.entries()]
+    marks=render_channels.defaults()
+    limits={name:(entry['low'] if entry['kind']!='float' else None if entry['low'] is None else entry['low']*entry['scale'],
+                  entry['high'] if entry['kind']!='float' else None if entry['high'] is None else entry['high']*entry['scale'],kind)
+            for key,name,kind,entry in plan if entry['kind'] in ('int','float')}
+    # A choice is its number in the Channels viewport (Modo took no popup from a Python package's ChannelUI there, and
+    # crashed on text hints given in pkg_SetupChannels: lxserv/moonray_entities.py); its tooltip lists the numbers.
+
+    class Package(lxu.package.BasicPackage,lxifc.ChannelUI):
+        def pkg_SetupChannels(self,addChan):
+            add=lx.object.AddChannel(addChan)
+            for key,name,kind,entry in plan:
+                default=marks.get(key)
+                if kind=='boolean':
+                    add.NewChannel(name,lx.symbol.sTYPE_BOOLEAN);add.SetDefault(0.0,int(bool(default)))
+                elif kind=='integer':
+                    add.NewChannel(name,lx.symbol.sTYPE_INTEGER);add.SetDefault(0.0,int(default or 0))
+                elif kind=='float':
+                    add.NewChannel(name,lx.symbol.sTYPE_FLOAT);add.SetDefault(float(default or 0.0),0)
+                elif kind=='color':
+                    add.NewChannel(name,lx.symbol.sTYPE_COLOR1);add.SetVector(lx.symbol.sCHANVEC_RGB)
+                    try:
+                        values=lx.object.storage('d',3);values.set(tuple(float(v) for v in default));add.SetDefaultVec(values)
+                    except Exception:pass
+                else:
+                    # Text starts empty, whatever the setting's default: empty reads as not set (render_channels.overlay).
+                    add.NewChannel(name,lx.symbol.sTYPE_STRING)
+        def pkg_TestInterface(self,guid):return guid==lx.symbol.u_PACKAGEINSTANCE
+        def cui_UIHints(self,channelName,hints):
+            held=limits.get(channelName)
+            if held:
+                low,high,kind=held;hints=lx.object.UIHints(hints)
+                try:
+                    if kind=='float':
+                        if low is not None:hints.MinFloat(float(low))
+                        if high is not None:hints.MaxFloat(float(high))
+                    else:
+                        if low is not None:hints.MinInt(int(low))
+                        if high is not None:hints.MaxInt(int(high))
+                except Exception:pass
+            return lx.result.OK
+    lx.bless(Package,render_channels.PACKAGE,{lx.symbol.sSRV_USERNAME:'MoonRay Render Settings'})
+
+    class ToChannels(lxu.command.BasicCommand):
+        """The Render item given the render settings channels, holding what its tag has set. Not undone, and so it
+        clears Modo's undo history: only for a scene just opened or made, which has none (opened, below)."""
+        def cmd_Flags(self):return lx.symbol.fCMD_MODEL
+        def basic_Enable(self,msg):return True
+        def basic_Execute(self,msg,flags):
+            import modo
+            render=modo.Scene().renderItem
+            if render is None:return
+            properties.write_render_channels(render,properties.read(render))
+    lx.bless(ToChannels,'moonray.render.toChannels')
+
+    def opened():
+        """A scene just opened or made: its Render item given the channels where it has none."""
+        try:
+            import modo
+            render=modo.Scene().renderItem
+            if render is not None and not properties.has_render_channels(render):lx.eval('!moonray.render.toChannels')
+        except Exception as exc:
+            try:lx.out('MoonRay: the render settings could not be made channels: %s'%exc)
+            except Exception:pass
+
+    state={'told':False,'type':None}
+    def tell():
+        state['told']=False
+        from moonray_modo import property_notifications
+        property_notifications.notify()
+
+    class Watcher(lxifc.SceneItemListener):
+        def sil_SceneDestroy(self,scene):properties.CHANGED[0]+=1
+        def sil_SceneCurrent(self,scene):properties.CHANGED[0]+=1
+        def sil_SceneCreate(self,scene):
+            properties.CHANGED[0]+=1
+            try:
+                from PySide2 import QtCore
+                QtCore.QTimer.singleShot(0,opened)
+            except Exception:pass
+        def sil_ChannelValue(self,action,item,index):
+            # A render settings channel changed (in the Channels viewport, by a key, an undo): the form looks again,
+            # once for all the changes of a moment.
+            try:
+                if state['type'] is None:state['type']=lx.service.Scene().ItemTypeLookup('polyRender')
+                held=lx.object.Item(item)
+                if held.Type()!=state['type']:return
+                if not held.ChannelName(index).startswith(render_channels.PREFIX):return
+                # The settings are read again from the channels (properties.scene_settings).
+                properties.CHANGED[0]+=1
+                if state['told']:return
+                state['told']=True
+                from PySide2 import QtCore
+                QtCore.QTimer.singleShot(0,tell)
+            except Exception:pass
+    def moved():
+        """The timeline moved: the form looks again where a keyed setting now has another value."""
+        state['timed']=False
+        try:
+            import modo
+            values=properties.read_render_channels(modo.Scene().renderItem)
+        except Exception:values=None
+        if values and state.get('last') is not None and values!=state['last']:tell()
+        state['last']=values
+
+    class Timeline(lxifc.SelectionListener):
+        def selevent_Time(self,time):
+            try:
+                if state.get('timed'):return
+                state['timed']=True
+                from PySide2 import QtCore
+                QtCore.QTimer.singleShot(0,moved)
+            except Exception:pass
+    channels.watcher=Watcher()
+    channels.timeline=Timeline()
+    from moonray_modo import quit_release
+    quit_release.listen(channels.watcher)
+    quit_release.listen(channels.timeline)
 
 
 # A fault here must not keep the rest of the kit from loading.

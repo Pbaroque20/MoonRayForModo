@@ -58,7 +58,12 @@ class CachedDenoise(QtCore.QObject):
             repair={'denoise_normal':['--dup','--median','5x5','--mulc','0.001','--add','--normalize:incenter=0:outcenter=0:scale=1'],
                     'denoise_albedo':['--median','3x3'],
                     'beauty':['--dup','--median','5x5','--mulc','4','--min','--dup','--median','5x5','--mulc','0.25','--max']}
-            for key in ('beauty','denoise_albedo','denoise_normal'):
+            # The fur matte and the flakes' light where the render made them (Keep Fine Detail, Keep Metallic Flakes): from
+            # a render stopped part way, handed over in takes as the guides are (Renderer.keep_progress).
+            try:keep=denoising.settings(frame.get('snapshot',{}).get('denoising',{}))['flakes']
+            except ValueError:keep=False
+            extra=[key for key in ('denoise_fine',)+(('denoise_flakes',) if keep else ()) if files.get(key) and Path(str(files[key])).is_file()]
+            for key in ('beauty','denoise_albedo','denoise_normal')+tuple(extra):
                 target=root/(key+'.exr')
                 if len(takes.get(key,()))==3:
                     # Kept from a pass in progress, in three takes: the middle value of each pixel is what stands,
@@ -73,10 +78,8 @@ class CachedDenoise(QtCore.QObject):
                 else:shutil.copyfile(str(files[key]),str(target))
             beauty=root/'beauty.exr'
             guides={key:str(root/('denoise_'+key+'.exr')) for key in ('albedo','normal')}
-            # The matte of fur, hair and curves, where the render made one.
-            fine=files.get('denoise_fine')
-            if fine and Path(str(fine)).suffix.lower()=='.exr' and Path(str(fine)).is_file():
-                shutil.copyfile(str(fine),str(root/'denoise_fine.exr'));guides['fine']=str(root/'denoise_fine.exr')
+            # The matte of fur, hair and curves, and the light of glitter's flakes, where the render made them.
+            for key in extra:guides[key[len('denoise_'):]]=str(root/(key+'.exr'))
             try:detail=denoising.settings(frame.get('snapshot',{}).get('denoising',{}))['detail']
             except ValueError:detail='some'
             self.jobs=before+denoising.jobs(frame['runtime'],beauty,root/'result',engine,guides,detail)

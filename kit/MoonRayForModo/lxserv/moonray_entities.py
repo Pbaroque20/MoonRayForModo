@@ -832,6 +832,45 @@ def register():
             if ocean_meshes.lacking():lx.eval('moonray.ocean.attachPoints')
         except Exception:pass
 
+    # ---- A Backplate's photo in the viewport (backplate_viewport) ----------------------------------------------------
+    class BackplateViewport(lxu.command.BasicCommand):
+        """Each Backplate's photo shown behind the scene in camera views by a Modo Backdrop under it, as its "backplate
+        in the viewport" and its photo say: made, changed or taken away."""
+        def cmd_Flags(self):return lx.symbol.fCMD_MODEL|lx.symbol.fCMD_UNDO
+        def basic_Execute(self,msg,flags):
+            from moonray_modo import backplate_viewport
+            try:backplate_viewport.sync()
+            except Exception:
+                import traceback
+                entities.DRAW_FAULTS['backplate_viewport']=traceback.format_exc()[-1500:]
+    lx.bless(BackplateViewport,'moonray.backplate.viewport')
+
+    def backplate_viewport_later():
+        """Soon after a change (several at once give one step): the Backdrops brought in line where they are not. A scene
+        in order is left as it is (no step is added to its undo)."""
+        try:
+            if getattr(register,'backplates',None) is None:
+                from PySide2 import QtCore
+                register.backplates=QtCore.QTimer();register.backplates.setSingleShot(True);register.backplates.setInterval(200)
+                def run():
+                    try:
+                        from moonray_modo import backplate_viewport
+                        if backplate_viewport.lacking():lx.eval('moonray.backplate.viewport')
+                    except Exception:pass
+                register.backplates.timeout.connect(run)
+            register.backplates.start()
+        except Exception:pass
+
+    # The Backplate settings its Backdrop follows, and the camera channels a card's size follows (backplate_viewport).
+    from moonray_modo import backplate_viewport as _viewport
+    backplate_channels={entities.CHANNEL_PREFIX+key for key in _viewport.PLATE_KEYS}
+    camera_channels=set(_viewport.CAMERA_CHANNELS)
+    def is_backplate(item):
+        """Whether an item is a Backplate; its type looked up the first time, once Modo knows it."""
+        if getattr(register,'backplate_type',None) is None:
+            register.backplate_type=lx.service.Scene().ItemTypeLookup(entities.item_type('BackplateEnvironment'))
+        return item.Type()==register.backplate_type
+
     class Watcher(lxifc.SceneItemListener):
         """Sees MoonRay cameras of the type from before come in, and has them made Modo cameras once Modo has finished:
         a scene may not be changed from inside the making of an item. A scene being opened tells of no items as they
@@ -841,10 +880,23 @@ def register():
                 from PySide2 import QtCore
                 QtCore.QTimer.singleShot(0,upgrade_all)
                 QtCore.QTimer.singleShot(0,attach_ocean_points)
+                QtCore.QTimer.singleShot(0,backplate_viewport_later)
+            except Exception:pass
+        def sil_ItemRemove(self,item):
+            try:
+                if is_backplate(lx.object.Item(item)):backplate_viewport_later()
+            except Exception:pass
+        def sil_ChannelValue(self,action,item,index):
+            try:
+                made=lx.object.Item(item)
+                name=made.ChannelName(index)
+                if name in backplate_channels and is_backplate(made):backplate_viewport_later()
+                elif name in camera_channels and lx.service.Scene().ItemTypeName(made.Type())=='camera':backplate_viewport_later()
             except Exception:pass
         def sil_ItemAdd(self,item):
             try:
                 made=lx.object.Item(item)
+                if is_backplate(made):backplate_viewport_later()
                 kind=lx.service.Scene().ItemTypeName(made.Type())
                 if kind.startswith(entities.TYPE_PREFIX) and kind[len(entities.TYPE_PREFIX):] in entities.VIEWED_CAMERAS:
                     from PySide2 import QtCore

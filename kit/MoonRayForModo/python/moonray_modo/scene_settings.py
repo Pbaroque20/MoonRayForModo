@@ -23,7 +23,7 @@ DEFAULTS = {
     'deep': {'enabled': False, 'format': 0, 'curvature': 45.0, 'z': 2.0, 'volume': 10},
     # How the final EXR is compressed, by MoonRay's numbers (options.EXR_COMPRESSIONS), and the level of its DWA ones.
     'exr': {'compression': 1, 'dwa_level': 85.0, 'multipart': False, 'cryptomatte_file': False},
-    'denoising': {'engine': 'off', 'preview': True, 'final': True, 'safe': False, 'smart': 'off', 'detail': 'some'},
+    'denoising': {'engine': 'off', 'preview': True, 'final': True, 'safe': False, 'smart': 'off', 'detail': 'some', 'flakes': False},
     # XPU2's sampling generations: 16 samples a pixel on average and a noise target of 10 by
     # default; the rest are what XPU2 does without them.
     'xpu2_generations': {'on': True, 'samples': 16, 'spend': 'time', 'noise': 10.0, 'seed': 4, 'most': 0, 'cpu': True, 'realtime': 30},
@@ -212,6 +212,7 @@ GROUPS = [
         field('denoise_preview', ('denoising', 'preview'), 'bool', 'Denoise Preview'),
         field('denoise_final', ('denoising', 'final'), 'bool', 'Save Denoised EXR', 'Written beside the original EXR, which is kept'),
         field('denoise_detail', ('denoising', 'detail'), 'choice', 'Keep Fine Detail', 'Fur, hair and curves are denoised with the rest, and where the render has them a share of their rendered detail goes back over them, so that their strands stay as sharp as they render: Some a quarter, More half, with more of their grain; Off is the denoiser alone', choices=DETAILS),
+        field('denoise_flakes', ('denoising', 'flakes'), 'bool', 'Keep Metallic Flakes', 'Metallic paint whose flakes are a pixel or smaller can come out of the denoiser smooth, like plastic. On, the light of the flakes is set aside while the picture is denoised and put back after, half of it as rendered, so the paint keeps its sparkle. For materials with Glitter; denoising takes a little longer. Flakes several pixels wide the denoiser keeps by itself: leave this off for those'),
         field('smart_render', ('denoising', 'smart'), 'choice', 'Smart Render', 'A MoonRay render in the preview window is stopped once its picture is clean enough for the denoiser, and denoised: no need to wait for every sample. Draft stops soonest and leaves the denoiser the most to do; Fine stops latest. With no denoiser chosen, OptiX is used, or Open Image Denoise where OptiX will not run. A picture full of fine texture may never read as clean, and renders to its end. Greyed while Safe Denoising is on: switch that off first', choices=SMART),
         field('denoise_safe', ('denoising', 'safe'), 'bool', 'Safe Denoising', 'Keep every buffer of a render stopped by hand, and let Continue take it up again: the picture so far is saved as it renders, every few seconds where that is quick and less often for a large picture with many buffers. Under XPU2 it saves between its sampling generations and, on Stop, where it stands, with or without the Denoiser. With this off, Stop still keeps the beauty and denoises it. Greyed while Smart Render is Draft, Medium or Fine: set that to Off first'),
     ]),

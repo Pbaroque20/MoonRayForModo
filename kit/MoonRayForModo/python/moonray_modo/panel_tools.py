@@ -416,7 +416,7 @@ class Tools:
         """The outputs a finished preview holds, as (key, what it is called), in the buffer list's order."""
         from . import options
         held = frame.get('files', {})
-        named = {'beauty': 'Beauty', 'denoised_beauty': 'Denoised Beauty', 'denoise_albedo': 'Denoiser albedo', 'denoise_normal': 'Denoiser normal', 'denoise_fine': 'Denoiser fur matte'}
+        named = {'beauty': 'Beauty', 'denoised_beauty': 'Denoised Beauty', 'denoise_albedo': 'Denoiser albedo', 'denoise_normal': 'Denoiser normal', 'denoise_fine': 'Denoiser fur matte', 'denoise_flakes': 'Denoiser flake light'}
         named.update({key: label for key, (label, _, _) in options.AOVS.items()})
         # A display filter by its item's name.
         try:
