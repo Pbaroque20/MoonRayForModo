@@ -33,9 +33,23 @@ EYE, TARGET = [0.0, 2.0, 8.0], [0.0, 1.2, 0.0]   # the horizon in the upper part
 SUN = [-0.5, -0.8, 0.4]
 SKY = {'kind': 'grad4', 'name': 'Sky', 'intensity': 1.0, 'zenith': [0.2, 0.4, 0.9], 'sky': [0.6, 0.75, 1.0],
        'ground': [0.3, 0.25, 0.2], 'nadir': [0.1, 0.1, 0.1], 'sky_exponent': 4, 'ground_exponent': 4}
-# name: (ground a catcher of this strength, or None for no ground; the camera sees the sky)
-CASES = {'reference': (None, True), 'sky': (1.0, True), 'sky_half': (0.5, True), 'hidden': (1.0, False),
-         'hidden_half': (0.5, False)}
+# name: (ground a catcher of this strength, or None for no ground; the camera sees the sky; the ball is glass)
+CASES = {'reference': (None, True, False), 'sky': (1.0, True, False), 'sky_half': (0.5, True, False),
+         'hidden': (1.0, False, False), 'hidden_half': (0.5, False, False)}
+# --glass: a clear glass ball in the red one's place, the red one behind it, its shadow seen through the glass.
+GLASS_CASES = {'glass_reference': (None, True, True), 'glass_sky': (1.0, True, True), 'glass_sky_half': (0.5, True, True),
+               'glass_hidden': (1.0, False, True)}
+CASES.update(GLASS_CASES)
+GLASS_CENTRE, GLASS_RADIUS = (0.0, 0.8, 0.0), 0.8
+
+
+def row(identity, color, roughness, **extra):
+    """A Shader Tree material row, as the kit reads one (DwaBaseMaterial)."""
+    return {**extra, 'name': identity, 'base_layer_id': identity, 'shader': 'DwaBaseMaterial', 'standard_material': True,
+            'color': color, 'raw_color': color, 'diffuse_amount': 1.0, 'roughness': roughness, 'metallic': 0.0,
+            'specular': [.04] * 3, 'raw_specular': [1, 1, 1], 'specular_amount': .04, 'emission': [0, 0, 0],
+            'raw_emission': [1, 1, 1], 'emission_amount': 0.0, 'ior': 1.5, 'layer_opacity': 1.0, 'layer_blend': 'normal',
+            'material_groups': [], 'layers': []}
 
 
 def look_at(eye, target):
@@ -61,16 +75,21 @@ def ball(segments=64, rings=32, radius=0.8, centre=(0.0, 0.8, 0.0)):
 
 def scene(case):
     from moonray_modo import backplate
-    strength, seen = CASES[case]
+    strength, seen, glass = CASES[case]
     vertices, faces = ball()
-    meshes = [{'name': 'Ball', 'identity': 'ball', 'vertices': vertices, 'faces': faces, 'material': 'red'}]
+    meshes = [{'name': 'Ball', 'identity': 'ball', 'vertices': vertices, 'faces': faces, 'material': 'glass' if glass else 'red'}]
+    if glass:
+        behind, behind_faces = ball(radius=0.5, centre=(0.6, 0.5, -2.5))
+        meshes.append({'name': 'Behind', 'identity': 'behind', 'vertices': behind, 'faces': behind_faces, 'material': 'red'})
     if strength is not None:
         meshes.insert(0, {'name': 'Ground', 'identity': 'ground', 'vertices': [[-20, 0, -20], [20, 0, -20], [20, 0, 20], [-20, 0, 20]],
                           'faces': [[0, 3, 2, 1]], 'material': 'grey',
                           'geometry_settings': {'shadow_catcher': True, 'shadow_strength': strength}})
     result = {
         'camera': {'matrix': look_at(EYE, TARGET), 'focal_mm': 50.0, 'film_mm': 36.0},
-        'materials': {'grey': {'color': [0.5, 0.5, 0.5], 'roughness': 1.0}, 'red': {'color': [0.8, 0.08, 0.06], 'roughness': 0.6}},
+        'materials': {'grey': {'color': [0.5, 0.5, 0.5], 'roughness': 1.0}, 'red': {'color': [0.8, 0.08, 0.06], 'roughness': 0.6},
+                      'glass': {'material_stack': [row('glass', [0.8, 0.8, 0.8], 0.0, transmission=1.0,
+                                                       transmission_color=[1.0, 1.0, 1.0], refraction_roughness=0.0)]}},
         'meshes': meshes,
         'lights': [{'kind': 'DistantLight', 'identity': 'sun', 'name': 'Sun', 'color': [1, 1, 1], 'intensity': 3.0, 'angle': 2.0,
                     'matrix': look_at([0, 0, 0], SUN)}],
@@ -125,10 +144,12 @@ def region(values, at, r=3):
     for y in range(cy - r, cy + r + 1):
         for x in range(cx - r, cx + r + 1):
             i = (y * W + x) * 3
+            if not all(math.isfinite(v) for v in values[i:i + 3]):
+                continue
             for c in range(3):
                 sums[c] += values[i + c]
             n += 1
-    return [s / n for s in sums]
+    return [s / n for s in sums] if n else [float('nan')] * 3
 
 
 def exr_channels(runtime, image, folder, name):
@@ -198,6 +219,8 @@ def render_moonlightipr(cases, args, folder):
     from moonray_modo import moonlightipr_aovs
     os.environ.setdefault('MOONLIGHTIPR_PACE', '0')
     cs.WIDTH, cs.HEIGHT, cs.SAMPLES = W, H, args.moonlightipr_samples
+    if args.moonlightipr_build:
+        cs.BUILD = args.moonlightipr_build.resolve()   # another build: its bin/ and shaders/
     sessions = folder / 'moonlightipr-session'
     sessions.mkdir(exist_ok=True)
     for stale in sessions.glob('*.mls'):
@@ -254,15 +277,66 @@ def measure(pictures, reference, shadow_at, open_at, sky_at):
     return entry
 
 
+def through_glass(pictures, reference, ball_mask, centre_at, hidden_sky=False):
+    """Seen through the glass ball: the catcher's background against the same scene's without the ground, pixel by
+    pixel. Through glass alone the alpha is 1 - T (1 - strength x shadow) with the ground, 1 - T without, so the
+    background past the glass is to be the reference's times (1 - alpha) / (1 - its alpha): 'consistency' is the mean
+    of |that difference| over the ball's pixels beside the reference's mean; 'unshadowed_ratio' the mean background /
+    reference's where the alphas agree (no shadow seen there)."""
+    bg = pictures.get('background') or pictures['beauty']
+    ref_bg = reference.get('background') or reference['beauty']
+    if hidden_sky:
+        # The sky hidden from the camera: nothing past the catcher, so nothing of it through the glass either.
+        ref_bg = [0.0] * len(ref_bg)
+        entry_bg = sum(bg[i * 3 + c] for i in ball_mask for c in range(3)) / (3 * len(ball_mask))
+    a, ra = pictures.get('alpha'), reference.get('alpha')
+    entry = {'centre': [round(v, 4) for v in region(pictures['beauty'], centre_at)],
+             'centre_reference': [round(v, 4) for v in region(reference['beauty'], centre_at)],
+             'centre_alpha': round(region(a, centre_at)[0], 4) if a else None,
+             'centre_reference_alpha': round(region(ra, centre_at)[0], 4) if ra else None}
+    if hidden_sky:
+        entry['background_mean'] = round(entry_bg, 5)
+    if not (a and ra):
+        return entry
+    off = base = 0.0
+    ratios = []
+    seen_shadow = 0
+    for i in ball_mask:
+        through, ref_through = 1.0 - a[i * 3], 1.0 - ra[i * 3]
+        if ref_through < 0.2:
+            continue
+        scale = max(through, 0.0) / ref_through
+        for c in range(3):
+            off += abs(bg[i * 3 + c] - ref_bg[i * 3 + c] * scale)
+            base += abs(ref_bg[i * 3 + c])
+        if abs(a[i * 3] - ra[i * 3]) < 0.01 and sum(ref_bg[i * 3:i * 3 + 3]) > 1e-3:
+            ratios.append(sum(bg[i * 3:i * 3 + 3]) / sum(ref_bg[i * 3:i * 3 + 3]))
+        elif a[i * 3] - ra[i * 3] > 0.1:
+            seen_shadow += 1
+    entry['consistency'] = round(off / base, 4) if base else None
+    entry['unshadowed_ratio'] = round(sum(ratios) / len(ratios), 4) if ratios else None
+    entry['unshadowed_pixels'] = len(ratios)
+    entry['shadow_pixels_through_glass'] = seen_shadow
+    entry['mean_alpha_ball'] = round(sum(a[i * 3] for i in ball_mask) / len(ball_mask), 4)
+    entry['mean_alpha_ball_reference'] = round(sum(ra[i * 3] for i in ball_mask) / len(ball_mask), 4)
+    return entry
+
+
 def difference(a, b, mask):
     """Mean of |a - b| over the pixels of mask, beside the mean of b there."""
-    total, base, n = 0.0, 0.0, 0
+    total, base, n, skipped = 0.0, 0.0, 0, 0
     for i in mask:
+        if not all(math.isfinite(v) for v in a[i * 3:i * 3 + 3] + b[i * 3:i * 3 + 3]):
+            skipped += 1     # a pixel that is not a number in either: left out, and counted
+            continue
         for c in range(3):
             total += abs(a[i * 3 + c] - b[i * 3 + c])
             base += abs(b[i * 3 + c])
         n += 3
-    return {'mean_abs': round(total / n, 5), 'relative': round(total / base, 4) if base else None}
+    result = {'mean_abs': round(total / n, 5), 'relative': round(total / base, 4) if base else None}
+    if skipped:
+        result['non_finite_pixels'] = skipped
+    return result
 
 
 def main():
@@ -273,9 +347,11 @@ def main():
     p.add_argument('--xpu2', type=pathlib.Path)
     p.add_argument('--xpu2-mode', default='2', help='XPU2_SESSION_MODE: 0 CPU, 1 GPU, 2 both')
     p.add_argument('--engines', default='moonray-vector,moonray-xpu,xpu2,moonlightipr')
-    p.add_argument('--cases', default=','.join(CASES))
+    p.add_argument('--cases', default=','.join(c for c in CASES if c not in GLASS_CASES))
+    p.add_argument('--glass', action='store_true', help='the glass ball cases (glass_*) in place of the default ones')
     p.add_argument('--samples', type=int, default=8)
     p.add_argument('--moonlightipr-samples', type=int, default=1024)
+    p.add_argument('--moonlightipr-build', type=pathlib.Path, help='a MoonLightIPR build other than build/moonlightipr')
     p.add_argument('--threads', type=int, default=8)
     args = p.parse_args()
     args.runtime = args.runtime.resolve()
@@ -285,9 +361,16 @@ def main():
     native.shadow_catcher_runtime = lambda *a, **k: True   # as a runtime with shadow catchers reads the scene
     out = args.out.resolve()
     out.mkdir(parents=True, exist_ok=True)
-    cases = [c for c in args.cases.split(',') if c]
-    if 'reference' not in cases:
-        cases.insert(0, 'reference')
+    cases = list(GLASS_CASES) if args.glass else [c for c in args.cases.split(',') if c]
+    for needed in ('glass_reference' if any(c in GLASS_CASES for c in cases) else None,
+                   'reference' if any(c not in GLASS_CASES for c in cases) else None):
+        if needed and needed not in cases:
+            cases.insert(0, needed)
+    # The glass ball's pixels: those within its outline as the camera sees it.
+    centre_at = project(list(GLASS_CENTRE))
+    distance = math.sqrt(sum((a - b) ** 2 for a, b in zip(EYE, GLASS_CENTRE)))
+    reach = GLASS_RADIUS / distance * (W / 2) / (18.0 / 50.0) - 2
+    ball_mask = [y * W + x for y in range(H) for x in range(W) if (x - centre_at[0]) ** 2 + (y - centre_at[1]) ** 2 < reach ** 2]
     engines = [e for e in args.engines.split(',') if e and (e != 'xpu2' or args.xpu2)]
     t = 0.8 / -SUN[1]
     shadow_at = project([SUN[0] * t, 0.0, SUN[2] * t])
@@ -315,16 +398,25 @@ def main():
     base = engines[0] if engines else None
     for engine in engines:
         r = report['engines'][engine] = {}
-        reference = found[engine].get('reference', {}).get('beauty')
         for case in cases:
+            glass = case in GLASS_CASES
+            ref_name = 'glass_reference' if glass else 'reference'
+            reference = found[engine].get(ref_name)
             pictures = found[engine][case]
-            e = r[case] = measure(pictures, reference if case != 'reference' else None, shadow_at, open_at, sky_at)
+            e = r[case] = measure(pictures, reference['beauty'] if reference and case != ref_name else None,
+                                  shadow_at, open_at, sky_at)
+            if glass and reference and case != ref_name:
+                e['through_glass'] = through_glass(pictures, reference, ball_mask, centre_at, hidden_sky=not CASES[case][1])
             if pictures.get('fallback'):
                 e['fallback'] = pictures['fallback']
             if engine != base and case in found[base]:
                 e['vs_' + base] = {'beauty': difference(pictures['beauty'], found[base][case]['beauty'], mask)}
                 if pictures.get('alpha') and found[base][case].get('alpha'):
                     e['vs_' + base]['alpha'] = difference(pictures['alpha'], found[base][case]['alpha'], mask)
+                if glass:
+                    e['vs_' + base]['ball_beauty'] = difference(pictures['beauty'], found[base][case]['beauty'], ball_mask)
+                    if pictures.get('alpha') and found[base][case].get('alpha'):
+                        e['vs_' + base]['ball_alpha'] = difference(pictures['alpha'], found[base][case]['alpha'], ball_mask)
             print(engine, case, json.dumps(e), flush=True)
     (out / 'report.json').write_text(json.dumps(report, indent=1), encoding='utf-8')
 

@@ -2526,11 +2526,26 @@ extern "C" __global__ void __raygen__moonlightipr() {
             // itself: in place of its emission, what the camera would see past it (catcherBackground), darkened alike,
             // in the Environment background pass; its shadows are in the alpha (__raygen__aovs).
             PASS_NOW(PASS_EMISSION);
+            const bool matte = (hit.flags & MATERIAL_CATCHER_MATTE) != 0;
+            if (!camera && matte && seeThrough && depth > 0) {
+                // A matte seen through glass alone, as MoonRay's (tools/port_glass_alpha.py): as from the camera, what
+                // lies past it darkened by its shadows, times what the glass lets through, in the Environment background
+                // pass as the sky through glass is; see-through in alpha as that sky is, but for its shadows.
+                float3 seenLight = vec(0.0f);
+                const float3 behind = catcherBackground(hit.p, direction, seenLight) + seenLight;
+                float part;
+                const float3 share = catcherShare(hit, direction, seed, fromSet, part);
+                const float3 carried = throughput * lightWeight;
+                glassSeen += (carried.x + carried.y + carried.z) * (1.0f / 3.0f) * (1.0f - hit.catcher * (1.0f - part));
+                if (params.passes) passTo(pixel, passNow, radiance, passMark, passShare);
+                radiance += clampSample(carried * behind * (vec(1.0f - hit.catcher) + share * hit.catcher), clampFound);
+                if (params.passes) passTo(pixel, PASS_BACKGROUND, radiance, passMark, passShare);
+                break;
+            }
             if (!camera) {
                 radiance += clampSample(throughput * lightWeight * hit.emission, clampFound);
                 break;
             }
-            const bool matte = (hit.flags & MATERIAL_CATCHER_MATTE) != 0;
             if (!matte && (!params.aovPass || params.aovPass == PASS_EMISSION)) {
                 float part;
                 const float3 share = catcherShare(hit, direction, seed, fromSet, part);

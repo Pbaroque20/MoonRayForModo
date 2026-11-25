@@ -2497,12 +2497,20 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
         // past it: the lights it sees along the ray beyond the hit, as a camera ray that hits nothing sees them,
         // modoCatcherBackground), and the shadows in alpha. Its light path state: the camera's straight event through
         // the catcher, then the light's (Environment background holds it); the catcher's own lighting in none.
-        const bool catcherHere = catcher >= 0.0f && pv.depth == 0;
+        // A matte seen through glass alone (a path past the camera that went only through glossy or mirror transmission,
+        // MOONRAY_MODO_GLASS_ALPHA's notion; tools/port_glass_alpha.py) is seen as from the camera: the background past
+        // it darkened by its shadows, times the path's throughput; see-through in alpha as the sky through glass is
+        // (switch on), but for its shadows: -throughput x (1 - strength) here, the unshadowed samples the rest.
+        const bool catcherThrough = catcherMatte && pv.depth > 0 && pv.seeThrough;
+        const bool catcherHere = catcher >= 0.0f && (pv.depth == 0 || catcherThrough);
+        const float catcherAlphaScale = pv.depth == 0 ? pv.pixelWeight
+                                      : (c.modoSwitches & 32u) ? (pv.T.x + pv.T.y + pv.T.z) / 3.0f : 0.0f;
         Color catcherShown = pv.T * bsdf.selfEmission;
         int catcherLpe = -1;
         if (catcher >= 0.0f) {
-            if (pv.depth > 0) continue;
+            if (pv.depth > 0 && !catcherThrough) continue;
             radiance -= catcherMatte ? catcherShown : catcherShown * catcher;
+            if (catcherThrough) alpha -= catcherAlphaScale * (1.0f - catcher);
             if (catcherMatte) {
                 catcherShown = Color{0, 0, 0};
                 if (c.visibleLights) {
@@ -2825,7 +2833,7 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
                                           catcherTotal.y > 0.0f ? t.y / catcherTotal.y : part,
                                           catcherTotal.z > 0.0f ? t.z / catcherTotal.z : part};
                         t = catcherShown * share * catcher;
-                        if (catcherMatte) catcherAlpha = -catcher * pv.pixelWeight * part;
+                        if (catcherMatte) catcherAlpha = -catcher * catcherAlphaScale * part;
                     } else {
                         t = Color{0, 0, 0};
                     }

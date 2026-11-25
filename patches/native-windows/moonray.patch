@@ -2123,7 +2123,7 @@ index 1cc70f8..0888812 100644
                      if (lpeStateId >= 0) {
                          // accumulate results. As this has to do with directly hitting a light, we don't have
 diff --git a/lib/rendering/pbr/integrator/PathIntegrator.cc b/lib/rendering/pbr/integrator/PathIntegrator.cc
-index 227c68e..c6f0b18 100644
+index 227c68e..ab3a134 100644
 --- a/lib/rendering/pbr/integrator/PathIntegrator.cc
 +++ b/lib/rendering/pbr/integrator/PathIntegrator.cc
 @@ -16,6 +16,10 @@
@@ -2246,19 +2246,86 @@ index 227c68e..c6f0b18 100644
          return radiance;
      }
  
-@@ -1037,6 +1109,11 @@ PathIntegrator::computeRadianceRecurse1(pbr::TLState *pbrTls, mcrt_common::RayDi
+@@ -1037,6 +1109,14 @@ PathIntegrator::computeRadianceRecurse1(pbr::TLState *pbrTls, mcrt_common::RayDi
      // determined by comparing the various depths to their max allowed values.
      // Note: hair lobes are also glossy lobes. So their max depth is max(mMaxGlossyDepth, mMaxHairDepth).
      // Also note we check there's a lobe, to limit indirect lighting on volumes to a single bounce
 +    // Modo: a shadow catcher seen past the camera is what it wears (its emission), unlit (tools/port_shadow_catcher.py).
-+    if (modoShadowCatcher() && material->getModoShadowCatcher()) {
++    // Modo: but a matte seen through glass alone is seen as from the camera, below (tools/port_glass_alpha.py).
++    const bool modoThroughGlass = modoShadowCatcher() && material->getModoShadowCatcher() &&
++                                  material->getModoShadowMatte() && pv.modoSeeThrough;
++    if (modoShadowCatcher() && material->getModoShadowCatcher() && !modoThroughGlass) {
 +        return radiance;
 +    }
 +
      shading::BsdfLobe::Type indirectFlags = shading::BsdfLobe::Type::NONE;
      if ((mBsdfSamples > 0) && (ray.getDepth() < mMaxDepth) && lobe) {
          if (pv.diffuseDepth < mMaxDiffuseDepth) setFlag(indirectFlags, shading::BsdfLobe::Type::ALL_DIFFUSE);
-@@ -1184,6 +1261,9 @@ PathIntegrator::initPrimaryRay(pbr::TLState *pbrTls,
+@@ -1102,6 +1182,63 @@ PathIntegrator::computeRadianceRecurse1(pbr::TLState *pbrTls, mcrt_common::RayDi
+ 
+     //---------------------------------------------------------------------
+     // Do bsdf sampling and light sampling
++    if (modoThroughGlass) {
++        // Modo: a matte seen through glass alone, as computeRadianceRecurse0 sees one from the camera: the background
++        // past it (the lights the camera sees there), (1 - strength) of it outright and the rest as much as its light
++        // samples are not shadowed; see-through in alpha as the sky through glass is, but for those shadows
++        // (tools/port_glass_alpha.py).
++        ModoCatcherTally &tally = modoCatcherTally();
++        tally = ModoCatcherTally();
++        tally.on = true;
++        computeRadianceBsdfMultiSampler(pbrTls, sp, pv, ray, isect, *bsdf, slice,
++            false, shading::BsdfLobe::Type::NONE, newPriorityList, newPriorityListCount, activeLightSet, normalPtr,
++            rayEpsilon, shadowRayEpsilon, ssAov, sequenceID, nullptr, cryptomatteFlags,
++            parentLobeLightSets);
++        tally.on = false;
++        const float strength = scene_rdl2::math::clamp(material->getModoShadowStrength(), 0.f, 1.f);
++        const scene_rdl2::math::Color total(tally.total[0], tally.total[1], tally.total[2]);
++        const scene_rdl2::math::Color lit(tally.lit[0], tally.lit[1], tally.lit[2]);
++        const float whole = scene_rdl2::math::luminance(total);
++        const float part = whole > 0.f ? scene_rdl2::math::luminance(lit) / whole : 1.f;
++        const scene_rdl2::math::Color share(total.r > 0.f ? lit.r / total.r : part,
++                                            total.g > 0.f ? lit.g / total.g : part,
++                                            total.b > 0.f ? lit.b / total.b : part);
++        radiance -= selfEmission;
++        scene_rdl2::math::Color modoBackground(0.f);
++        int modoBgLpe = -1;
++        mcrt_common::Ray modoPast(isect.getP(), ray.getDirection(), 0.f, sInfiniteLightDistance, ray.getTime(),
++                                  ray.getDepth());
++        LightIntersection modoPastIsect;
++        int modoHits = 0;
++        SequenceIDIntegrator modoSid(0, sp.mPixel, sp.mSubpixelIndex, SequenceType::IndexSelection, sequenceID);
++        IntegratorSample1D modoChoice(modoSid);
++        const Light *modoLight = scene->intersectVisibleLight(modoPast, sInfiniteLightDistance, modoChoice,
++                                                              modoPastIsect, modoHits);
++        if (modoLight) {
++            LightFilterRandomValues modoFilterR = {
++                scene_rdl2::math::Vec2f(0.f, 0.f), scene_rdl2::math::Vec3f(0.f, 0.f, 0.f)};
++            modoBackground = pv.pathThroughput * modoHits *
++                modoLight->eval(pbrTls->mTopLevelTls, ray.getDirection(), isect.getP(), modoFilterR, ray.getTime(),
++                                modoPastIsect, true, nullptr, nullptr, ray.getDirFootprint(), nullptr, nullptr);
++            if (aovs && pv.lpeStateId >= 0) {
++                const int straight = lightAovs.straightEventTransition(pbrTls, pv.lpeStateId);
++                if (straight >= 0) {
++                    modoBgLpe = lightAovs.lightEventTransition(pbrTls, straight, modoLight);
++                }
++            }
++        }
++        const scene_rdl2::math::Color modoSeen = modoBackground * ((1.f - strength) + strength * share);
++        radiance += modoSeen;
++        if (aovs && modoBgLpe >= 0 && !isBlack(modoSeen)) {
++            aovAccumLightAovs(pbrTls, aovSchema, lightAovs, modoSeen, nullptr, AovSchema::sLpePrefixNone,
++                              modoBgLpe, aovs);
++        }
++        if (modoGlassAlpha()) {
++            modoSeenThrough() += reduceTransparency(pv.pathThroughput) * (1.f - strength * (1.f - part));
++        }
++        return radiance;
++    }
++
+     radiance += computeRadianceBsdfMultiSampler(pbrTls, sp, pv, ray, isect, *bsdf, slice,
+         doIndirect, indirectFlags, newPriorityList, newPriorityListCount, activeLightSet, normalPtr,
+         rayEpsilon, shadowRayEpsilon, ssAov, sequenceID, aovs, cryptomatteFlags,
+@@ -1184,6 +1321,9 @@ PathIntegrator::initPrimaryRay(pbr::TLState *pbrTls,
      pv.hairDepth = 0;
      pv.volumeDepth = 0;
      pv.accumOpacity = 0;
@@ -2268,7 +2335,7 @@ index 227c68e..c6f0b18 100644
      pv.lpeStateId = 0;
      pv.lobeType = 0;
  
-@@ -1326,6 +1406,7 @@ PathIntegrator::computeRadiance(pbr::TLState *pbrTls, int pixelX, int pixelY,
+@@ -1326,6 +1466,7 @@ PathIntegrator::computeRadiance(pbr::TLState *pbrTls, int pixelX, int pixelY,
      VolumeTransmittance vt;
  
      sp.mCryptomatteBuffer = (void *)cryptomatteBuffer;
@@ -2276,7 +2343,7 @@ index 227c68e..c6f0b18 100644
      CryptomatteResults cryptomatteResultsArray[NUM_CRYPTOMATTE_TYPES];
      sp.mCryptomatteResultsArray = (void *)cryptomatteResultsArray;
  
-@@ -1437,6 +1518,7 @@ PathIntegrator::computeRadiance(pbr::TLState *pbrTls, int pixelX, int pixelY,
+@@ -1437,6 +1578,7 @@ PathIntegrator::computeRadiance(pbr::TLState *pbrTls, int pixelX, int pixelY,
  
          // not deep render
          float transparency;
@@ -2284,7 +2351,7 @@ index 227c68e..c6f0b18 100644
          radiance = computeRadianceRecurse0(pbrTls, ray, sp, pv, /* lobe = */ nullptr,
                                             transparency, vt,
                                             sequenceID, aovs, depth,
-@@ -1444,6 +1526,10 @@ PathIntegrator::computeRadiance(pbr::TLState *pbrTls, int pixelX, int pixelY,
+@@ -1444,6 +1586,10 @@ PathIntegrator::computeRadiance(pbr::TLState *pbrTls, int pixelX, int pixelY,
                                             Rdl2LightSetList());
  
          alpha = 1.f - transparency;
@@ -2295,7 +2362,7 @@ index 227c68e..c6f0b18 100644
          pathPixelWeight = pv.pathPixelWeight;
  
          if (checkForNanSimple(radiance, "Path integrator", sp)) {
-@@ -1559,7 +1645,10 @@ PathIntegrator::computeRadiancePresence(pbr::TLState *pbrTls, mcrt_common::RayDi
+@@ -1559,7 +1705,10 @@ PathIntegrator::computeRadiancePresence(pbr::TLState *pbrTls, mcrt_common::RayDi
      }
  
      vt.mTransmittanceE *= vtPresence.mTransmittanceE;
@@ -2308,10 +2375,10 @@ index 227c68e..c6f0b18 100644
  }
  
 diff --git a/lib/rendering/pbr/integrator/PathIntegrator.isph b/lib/rendering/pbr/integrator/PathIntegrator.isph
-index eab3669..3301381 100644
+index eab3669..1fce8fd 100644
 --- a/lib/rendering/pbr/integrator/PathIntegrator.isph
 +++ b/lib/rendering/pbr/integrator/PathIntegrator.isph
-@@ -49,7 +49,15 @@ void computeRadianceBsdfMultiSampler(const uniform PathIntegrator * uniform this
+@@ -49,7 +49,19 @@ void computeRadianceBsdfMultiSampler(const uniform PathIntegrator * uniform this
                                       varying float shadowRayEpsilon,
                                       const varying Color &ssAov,
                                       varying uint32_t &sequenceID,
@@ -2325,11 +2392,15 @@ index eab3669..3301381 100644
 +// Modo: shadow catchers (tools/port_shadow_catcher.py)
 +extern "C" void
 +CPP_modoShadowCatcher(uniform int64 material, uniform float * uniform strength, uniform int * uniform matte);
++
++// Modo: glass in alpha's switch (tools/port_glass_alpha.py)
++extern "C" uniform int
++CPP_modoGlassAlpha();
  
  extern "C" void
  CPP_addOcclusionQueueEntries(           uniform PbrTLState *     uniform pbrTls,
 diff --git a/lib/rendering/pbr/integrator/PathIntegratorBundled.ispc b/lib/rendering/pbr/integrator/PathIntegratorBundled.ispc
-index 05df5b0..d56339a 100644
+index 05df5b0..83f0edd 100644
 --- a/lib/rendering/pbr/integrator/PathIntegratorBundled.ispc
 +++ b/lib/rendering/pbr/integrator/PathIntegratorBundled.ispc
 @@ -53,6 +53,7 @@
@@ -2380,7 +2451,7 @@ index 05df5b0..d56339a 100644
  
      if (!isBlack(radiance) || !isEqual(pathPixelWeight, 0.f) || !isEqual(alpha, 0.f)) {
  
-@@ -157,6 +182,52 @@ fillBundledRadiance(       uniform PbrTLState *     uniform pbrTls,
+@@ -157,6 +182,76 @@ fillBundledRadiance(       uniform PbrTLState *     uniform pbrTls,
  
  //-----------------------------------------------------------------------------
  
@@ -2430,10 +2501,34 @@ index 05df5b0..d56339a 100644
 +    return background;
 +}
 +
++// Modo: alpha taken off a sample at a hit past the camera, as RayHandlers.cc's miss takes it for glass in alpha: an
++// entry of its own, with no colour and no pixel weight (tools/port_glass_alpha.py).
++inline void
++modoTakeAlpha(uniform PbrTLState * uniform pbrTls, const varying RayState &rs, const varying float alpha)
++{
++    varying BundledRadiance entry;
++    uniform uint32_t indices[programCount + 1];
++    entry.mRadiance = Vec4f_ctor(0.f, 0.f, 0.f, alpha);
++    entry.mPathPixelWeight = 0.f;
++    entry.mPixel = rs.mSubpixel.mPixel;
++    entry.mSubPixelIndex = rs.mSubpixel.mSubpixelIndex;
++    entry.mDeepDataHandle = rs.mDeepDataHandle;
++    entry.mCryptomatteDataHandle = rs.mCryptomatteDataHandle;
++    entry.mCryptoRefP = rs.mCryptoRefP;
++    entry.mCryptoP0 = rs.mCryptoP0;
++    entry.mCryptoRefN = rs.mCryptoRefN;
++    entry.mCryptoUV = rs.mCryptoUV;
++    PbrTLState_acquireDeepData(pbrTls, entry.mDeepDataHandle);
++    PbrTLState_acquireCryptomatteData(pbrTls, entry.mCryptomatteDataHandle);
++    entry.mTilePass = rs.mTilePass;
++    const uniform uint32_t count = packed_store_active2(indices, programIndex);
++    CPP_addRadianceQueueEntries(pbrTls, &entry, count, indices);
++}
++
  void
  integrateBundled( const uniform PathIntegrator * uniform this,
                          uniform PbrTLState *     uniform pbrTls,
-@@ -294,6 +365,10 @@ integrateBundled( const uniform PathIntegrator * uniform this,
+@@ -294,6 +389,10 @@ integrateBundled( const uniform PathIntegrator * uniform this,
          if ((1 << programIndex) & bsdf->mEarlyTerminationMask) {
              if (rayDepth == 0) {
                  transparency = reduceTransparency(rs->mVolTalpha);
@@ -2444,7 +2539,7 @@ index 05df5b0..d56339a 100644
              } else {
                  transparency = reduceTransparency(pv.pathThroughput);
              }
-@@ -357,6 +432,47 @@ integrateBundled( const uniform PathIntegrator * uniform this,
+@@ -357,6 +456,60 @@ integrateBundled( const uniform PathIntegrator * uniform this,
                                    sp.mPixel, rs->mDeepDataHandle);
              }
          }
@@ -2460,7 +2555,10 @@ index 05df5b0..d56339a 100644
 +        varying Color modoShown = sBlack;
 +        varying int modoBgLpe = -1;
 +        if (modoCatcher >= 0.f) {
-+            if (rayDepth > 0) {
++            // Modo: a matte seen through glass alone (a path past the camera that went only through glossy or mirror
++            // transmission) is seen as from the camera, below (tools/port_glass_alpha.py).
++            const varying bool modoThroughGlass = rayDepth > 0 && modoMatte && rs->mPathVertex.modoSeeThrough != 0;
++            if (rayDepth > 0 && !modoThroughGlass) {
 +                numRadiances += fillBundledRadiance(pbrTls,
 +                                                    radiances + i,
 +                                                    &radianceIndices[numRadiances],
@@ -2476,6 +2574,16 @@ index 05df5b0..d56339a 100644
 +            if (modoMatte) {
 +                radiance = radiance - selfEmission;
 +                transparency = 1.f - modoCatcher;
++                // Modo: seen through glass alone, see-through in alpha as the sky through glass is (-throughput), but
++                // for its shadows: -throughput x (1 - strength) here, the unshadowed samples taking the rest
++                // (modoCatcherShare); nothing taken with the switch off (tools/port_glass_alpha.py). A path past the
++                // camera carries no pixel weight, so this goes as a miss's does, an entry of its own (modoTakeAlpha).
++                if (modoThroughGlass) {
++                    transparency = 0.f;
++                    if (CPP_modoGlassAlpha()) {
++                        modoTakeAlpha(pbrTls, *rs, -reduceTransparency(pv.pathThroughput) * (1.f - modoCatcher));
++                    }
++                }
 +                modoShown = modoCatcherBackground(pbrTls, shadingTls, visibleLightSet, lightAovs, aovs, *rs, ray, isect,
 +                                                  modoBgLpe);
 +                const varying Color modoOutright = modoShown * (1.f - modoCatcher);
@@ -2492,7 +2600,7 @@ index 05df5b0..d56339a 100644
          //---------------------------------------------------------------------
          // Early out if we don't have any Bsdf lobes nor Bssrdf
          if (Bsdf_getLobeCount(bsdf) == 0  &&  Bsdf_hasSubsurface(bsdf) == false) {
-@@ -595,7 +711,7 @@ integrateBundled( const uniform PathIntegrator * uniform this,
+@@ -595,7 +748,7 @@ integrateBundled( const uniform PathIntegrator * uniform this,
                                          isect,
                                          *bsdf,
                                          slice,
@@ -2501,7 +2609,7 @@ index 05df5b0..d56339a 100644
                                          indirectFlags,
                                          activeLightSet,
                                          cullingNormal,
-@@ -603,7 +719,11 @@ integrateBundled( const uniform PathIntegrator * uniform this,
+@@ -603,7 +756,11 @@ integrateBundled( const uniform PathIntegrator * uniform this,
                                          shadowRayEpsilon,
                                          ssAov,
                                          sequenceID,
@@ -2611,7 +2719,7 @@ index 6c7d5e7..73da630 100644
              // LPE
              if (aovs) {
 diff --git a/lib/rendering/pbr/integrator/PathIntegratorMultiSampler.ispc b/lib/rendering/pbr/integrator/PathIntegratorMultiSampler.ispc
-index f9aed75..2cdb39e 100644
+index f9aed75..286d2bd 100644
 --- a/lib/rendering/pbr/integrator/PathIntegratorMultiSampler.ispc
 +++ b/lib/rendering/pbr/integrator/PathIntegratorMultiSampler.ispc
 @@ -94,6 +94,24 @@ fillOcclRay(       uniform PbrTLState *      uniform pbrTls,
@@ -2819,7 +2927,7 @@ index f9aed75..2cdb39e 100644
  {
      // We use a BsdfSampler object to keep track of sampling strategies and
      // sample budget per lobe.
-@@ -964,6 +1096,19 @@ computeRadianceBsdfMultiSampler(const uniform PathIntegrator * uniform this,
+@@ -964,6 +1096,23 @@ computeRadianceBsdfMultiSampler(const uniform PathIntegrator * uniform this,
                                                         isect);
      }
  
@@ -2829,10 +2937,14 @@ index f9aed75..2cdb39e 100644
 +        modoCatcherTotal(occlRays, occlRayIndices, numOcclRaysFilled, lightSetSampleCount, modoTotal);
 +        modoCatcherTotal(presenceShadowsRays, presenceShadowsRayIndices, numPresenceShadowsRaysFilled,
 +                         lightSetSampleCount, modoTotal);
++        // Modo: the alpha a matte's unshadowed samples take back: by the pixel weight at the camera; past it, seen
++        // through glass alone, by what the glass lets through, as the sky seen through it is (tools/port_glass_alpha.py).
++        const varying float modoAlphaScale = ray.ext.depth == 0 ? pv.pathPixelWeight :
++            (CPP_modoGlassAlpha() ? reduceTransparency(pv.pathThroughput) : 0.f);
 +        modoCatcherShare(pbrTls, occlRays, occlRayIndices, numOcclRaysFilled, lightSetSampleCount, modoCatcher,
-+                         modoShown, modoTotal, modoMatte, pv.pathPixelWeight, modoBgLpe);
++                         modoShown, modoTotal, modoMatte, modoAlphaScale, modoBgLpe);
 +        modoCatcherShare(pbrTls, presenceShadowsRays, presenceShadowsRayIndices, numPresenceShadowsRaysFilled,
-+                         lightSetSampleCount, modoCatcher, modoShown, modoTotal, modoMatte, pv.pathPixelWeight,
++                         lightSetSampleCount, modoCatcher, modoShown, modoTotal, modoMatte, modoAlphaScale,
 +                         modoBgLpe);
 +    }
 +
@@ -2860,20 +2972,21 @@ index 5a7870c..b302490 100644
      nextPv.pathPixelWeight = 0.0f;
      // Use previous path pixel weight for aovPathPixelWeight as there's existing logic
 diff --git a/lib/rendering/pbr/integrator/PathIntegratorUtil.cc b/lib/rendering/pbr/integrator/PathIntegratorUtil.cc
-index 642a901..0459c95 100644
+index 642a901..ffb9cff 100644
 --- a/lib/rendering/pbr/integrator/PathIntegratorUtil.cc
 +++ b/lib/rendering/pbr/integrator/PathIntegratorUtil.cc
-@@ -32,6 +32,9 @@
+@@ -32,6 +32,10 @@
  // using namespace scene_rdl2::math; // can't use this as it breaks openvdb in clang.
  using namespace moonray::shading;
  
 +#include <moonray/rendering/pbr/core/ModoShadowCatcher.h>
++#include <moonray/rendering/pbr/core/ModoGlassAlpha.h>
 +#include <scene_rdl2/scene/rdl2/Material.h>
 +
  namespace moonray {
  namespace pbr {
  
-@@ -1425,6 +1428,21 @@ CPP_applyVolumeTransmittance(const PathIntegrator *pathIntegrator,
+@@ -1425,6 +1429,28 @@ CPP_applyVolumeTransmittance(const PathIntegrator *pathIntegrator,
  
  // -----------------------------------------------------------------
  
@@ -2892,19 +3005,28 @@ index 642a901..0459c95 100644
 +    *matte = held->getModoShadowMatte() ? 1 : 0;
 +}
 +
++// Modo: glass in alpha's switch, 1 for on (tools/port_glass_alpha.py).
++int
++CPP_modoGlassAlpha()
++{
++    return modoGlassAlpha() ? 1 : 0;
++}
++
  } // namespace pbr
  } // namespace moonray
  
 diff --git a/lib/rendering/pbr/integrator/PathIntegratorUtil.h b/lib/rendering/pbr/integrator/PathIntegratorUtil.h
-index 0f4e294..9cfeb1f 100644
+index 0f4e294..c848b51 100644
 --- a/lib/rendering/pbr/integrator/PathIntegratorUtil.h
 +++ b/lib/rendering/pbr/integrator/PathIntegratorUtil.h
-@@ -346,6 +346,9 @@ extern "C"
+@@ -346,6 +346,11 @@ extern "C"
  
  bool CPP_isIntegratorAccumulatorRunning(pbr::TLState *pbrTls);
  
 +// Modo: shadow catchers (tools/port_shadow_catcher.py)
 +void CPP_modoShadowCatcher(int64_t material, float *strength, int *matte);
++// Modo: glass in alpha's switch, 1 for on (tools/port_glass_alpha.py)
++int CPP_modoGlassAlpha();
 +
  bool CPP_isIspcAccumulatorRunning(pbr::TLState *pbrTls);
  
