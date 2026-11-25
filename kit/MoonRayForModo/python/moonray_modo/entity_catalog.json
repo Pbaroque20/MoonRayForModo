@@ -8175,6 +8175,14 @@
         "comment": "The camera sees the backplate behind the scene.",
         "label": "backplate seen by the camera"
       },
+      "viewport_plate": {
+        "name": "viewport_plate",
+        "type": "Bool",
+        "default": true,
+        "group": "Backplate",
+        "comment": "Shows the backplate photo behind the scene in Modo's viewport when it looks through a camera, as a Modo Backdrop under this item (a reference image, never rendered).",
+        "label": "backplate in the viewport"
+      },
       "backdrop_distance": {
         "name": "backdrop_distance",
         "type": "Float",
