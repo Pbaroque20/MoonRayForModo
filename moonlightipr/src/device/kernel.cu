@@ -729,28 +729,40 @@ ML_INLINE float3 lightTint(const DeviceLight& light, float3 p, float3 wi, float 
         const float4 texel = lightPicture(light.texture, light.picture, 1.0f - s, 1.0f - t);
         tint = make_float3(texel.x, texel.y, texel.z);
     }
+    // MoonRay's Combine light filter (FILTER_GROUP): the filters after it, as many as it holds, each worked out and
+    // joined by its mode (multiplied, the least, the most, added or the first less the rest), and that applied. One
+    // call of filterFactor for a filter alone or in a group, which is inlined: two were twice its code in every place a
+    // light is tinted, which OptiX took the longer to compile.
     const DeviceFilter* filters = reinterpret_cast<const DeviceFilter*>(params.lightFilters) + light.filterStart;
+    bool grouped = false, first = false;
+    unsigned mode = 0, groupEnd = 0;
+    float3 joined = vec(0.0f);
     for (unsigned i = 0; i < light.filterCount; ++i) {
         const DeviceFilter& filter = filters[i];
-        if (filter.type != FILTER_GROUP) {
-            tint = tint * filterFactor(filter, i, light, p, wi, distance);
+        if (!grouped && filter.type == FILTER_GROUP) {
+            mode = filter.flags & 7u;
+            groupEnd = i + min(filter.flags >> 8, light.filterCount - i - 1);
+            joined = vec(mode == FILTER_JOIN_MULTIPLY ? 1.0f : 0.0f);
+            if (groupEnd == i) tint = tint * make_float3(fmaxf(joined.x, 0.0f), fmaxf(joined.y, 0.0f), fmaxf(joined.z, 0.0f));
+            else grouped = first = true;
             continue;
         }
-        // MoonRay's Combine light filter: the filters after it, as many as it holds, each worked out and joined by
-        // its mode (multiplied, the least, the most, added or the first less the rest), and that applied.
-        const unsigned mode = filter.flags & 7u, count = min(filter.flags >> 8, light.filterCount - i - 1);
-        float3 joined = vec(mode == FILTER_JOIN_MULTIPLY ? 1.0f : 0.0f);
-        for (unsigned j = 1; j <= count; ++j) {
-            const float3 value = filterFactor(filters[i + j], i + j, light, p, wi, distance);
-            if (j == 1 && mode != FILTER_JOIN_MULTIPLY) joined = value;
-            else if (mode == FILTER_JOIN_MULTIPLY) joined = joined * value;
-            else if (mode == FILTER_JOIN_MIN) joined = make_float3(fminf(joined.x, value.x), fminf(joined.y, value.y), fminf(joined.z, value.z));
-            else if (mode == FILTER_JOIN_MAX) joined = make_float3(fmaxf(joined.x, value.x), fmaxf(joined.y, value.y), fmaxf(joined.z, value.z));
-            else if (mode == FILTER_JOIN_ADD) joined = joined + value;
-            else joined = joined - value;
+        const float3 value = filterFactor(filter, i, light, p, wi, distance);
+        if (!grouped) {
+            tint = tint * value;
+            continue;
         }
-        tint = tint * make_float3(fmaxf(joined.x, 0.0f), fmaxf(joined.y, 0.0f), fmaxf(joined.z, 0.0f));
-        i += count;
+        if (first && mode != FILTER_JOIN_MULTIPLY) joined = value;
+        else if (mode == FILTER_JOIN_MULTIPLY) joined = joined * value;
+        else if (mode == FILTER_JOIN_MIN) joined = make_float3(fminf(joined.x, value.x), fminf(joined.y, value.y), fminf(joined.z, value.z));
+        else if (mode == FILTER_JOIN_MAX) joined = make_float3(fmaxf(joined.x, value.x), fmaxf(joined.y, value.y), fmaxf(joined.z, value.z));
+        else if (mode == FILTER_JOIN_ADD) joined = joined + value;
+        else joined = joined - value;
+        first = false;
+        if (i == groupEnd) {
+            tint = tint * make_float3(fmaxf(joined.x, 0.0f), fmaxf(joined.y, 0.0f), fmaxf(joined.z, 0.0f));
+            grouped = false;
+        }
     }
     return tint;
 }
@@ -1400,73 +1412,62 @@ ML_INLINE float3 directLight(const Surface& surface, const Lobes& lobes, float3 
     const DeviceDistantLight* distantLights = reinterpret_cast<const DeviceDistantLight*>(params.distantLights);
     const DeviceLight* lights = reinterpret_cast<const DeviceLight*>(params.lights);
     float3 radiance = vec(0.0f);
-    // With a portal in the scene the environment is sampled through it, as one of the lights.
-    // With the environments split by the rays that see them (params.envSplit), the diffuse lobes are lit by what diffuse
-    // light sees, and the glossy ones by what reflections see, each sampled by its own map.
-    for (unsigned part = 0; !params.envPortal && reaches(set, 0) && part < (params.envSplit ? 2u : 1u); ++part) {
-        const unsigned lobesHere = params.envSplit ? part + 1 : only;
-        if (params.envSplit && only && only != lobesHere) continue;
-        const EnvMap map = part ? reflectedEnv() : diffuseEnv();
-        float lightPdf;
-        const float3 toLight = sampleEnv(rnd(seed), rnd(seed), lightPdf, map);
-        if (lightPdf > 0.0f && (surface.passes || surface.smoothToon || dot(ng, toLight) > 0.0f)) {
-            const BsdfEval e = onlyLobes(evalBsdf(surface, lobes, wo, frame.toLocal(toLight)), lobesHere);
-            const float pdf = lobes.specular * e.specularPdf + (1.0f - lobes.specular) * e.diffusePdf;
-            const float3 found = litBy(e, pdf, lightPdf);
-            if (maxComponent(found) > 0.0f) {
-                const float3 open = weight * found * envRadiance(toLight, map);
-                const float3 passed = shadow(shadowFrom(surface, p, lift, ng, frame.n, toLight), toLight, seed);
-                const float3 c = clampSample(open * passed, lit);
-                if (tally) { tally[0] += open; tally[1] += open * passed; }
-                radiance += c;
-                if (shaded) { shaded->x += luminance(c); shaded->y += luminance(clampSample(open, lit)); }
-                if (diffuseShare) *diffuseShare += c * diffusePartOf(e, pdf, lightPdf, found);
-            }
+    // One loop over every sample of a light, in the order of the numbers drawn: the environment (with a portal in the
+    // scene it is sampled through it, as one of the lights; with the environments split by the rays that see them,
+    // params.envSplit, the diffuse lobes lit by what diffuse light sees and the glossy ones by what reflections see, each
+    // sampled by its own map), then each distant light, then the lights picked (all, or one). The BSDF, the shadow ray and
+    // what is added up are written once for all three: written for each, they were three copies of the most costly code
+    // in the kernel, inlined where directLight is, which OptiX took the longer to compile.
+    const unsigned envParts = !params.envPortal && reaches(set, 0) ? (params.envSplit ? 2u : 1u) : 0u;
+    const unsigned distantEnd = envParts + params.distantLightCount;
+    unsigned firstLight = 0, lampCount = 0;
+    for (unsigned k = 0;; ++k) {
+        if (k == distantEnd) {
+            firstLight = params.lightPick ? pickLight(lights, params.lightCount, rnd(seed)) : 0;
+            lampCount = params.lightPick ? 1u : params.lightCount;
         }
-    }
-    for (unsigned i = 0; i < params.distantLightCount; ++i) {
-        if (!reaches(set, 1 + i)) continue;
-        const DeviceDistantLight& light = distantLights[i];
-        const unsigned sunLobes = visibleLobes(only, light.hidden);
-        if (sunLobes == 3u) continue;
-        const float3 toSun = sampleDistant(light, rnd(seed), rnd(seed));
-        if (!surface.passes && !surface.smoothToon && dot(ng, toSun) <= 0.0f) continue;
-        const BsdfEval e = onlyLobes(evalBsdf(surface, lobes, wo, frame.toLocal(toSun)), sunLobes);
+        if (k >= distantEnd && k - distantEnd >= lampCount) break;
+        float3 toLight, emitted;
+        float lightPdf, reach = 1e16f;
+        unsigned lobesHere;
+        if (k < envParts) {
+            lobesHere = params.envSplit ? k + 1 : only;
+            if (params.envSplit && only && only != lobesHere) continue;
+            toLight = sampleEnv(rnd(seed), rnd(seed), lightPdf, k ? reflectedEnv() : diffuseEnv());
+            if (!(lightPdf > 0.0f && (surface.passes || surface.smoothToon || dot(ng, toLight) > 0.0f))) continue;
+        } else if (k < distantEnd) {
+            const unsigned i = k - envParts;
+            if (!reaches(set, 1 + i)) continue;
+            const DeviceDistantLight& light = distantLights[i];
+            lobesHere = visibleLobes(only, light.hidden);
+            if (lobesHere == 3u) continue;
+            toLight = sampleDistant(light, rnd(seed), rnd(seed));
+            if (!surface.passes && !surface.smoothToon && dot(ng, toLight) <= 0.0f) continue;
+            lightPdf = distantPdf(light, toLight);
+        } else {
+            const unsigned i = firstLight + (k - distantEnd);
+            if (!reaches(set, 1 + params.distantLightCount + i)) continue;
+            lobesHere = visibleLobes(only, hiddenOf(lights[i]));
+            if (lobesHere == 3u) continue;
+            float distance;
+            if (!sampleLight(lights[i], p, rnd(seed), rnd(seed), toLight, distance, lightPdf, emitted)) continue;
+            if (!surface.passes && !surface.smoothToon && dot(ng, toLight) <= 0.0f) continue;
+            if (params.lightPick) lightPdf *= lights[i].pick;
+            reach = distance * 0.999f;
+        }
+        const BsdfEval e = onlyLobes(evalBsdf(surface, lobes, wo, frame.toLocal(toLight)), lobesHere);
         const float pdf = lobes.specular * e.specularPdf + (1.0f - lobes.specular) * e.diffusePdf;
-        const float sunPdf = distantPdf(light, toSun);
-        const float3 found = litBy(e, pdf, sunPdf);
+        const float3 found = litBy(e, pdf, lightPdf);
         if (maxComponent(found) > 0.0f) {
-            const float3 open = weight * found * distantRadiance(light, toSun);
-            const float3 passed = shadow(shadowFrom(surface, p, lift, ng, frame.n, toSun), toSun, seed);
+            const float3 source = k < envParts ? envRadiance(toLight, k ? reflectedEnv() : diffuseEnv())
+                                : k < distantEnd ? distantRadiance(distantLights[k - envParts], toLight) : emitted;
+            const float3 open = weight * found * source;
+            const float3 passed = shadow(shadowFrom(surface, p, lift, ng, frame.n, toLight), toLight, seed, reach);
             const float3 c = clampSample(open * passed, lit);
             if (tally) { tally[0] += open; tally[1] += open * passed; }
             radiance += c;
             if (shaded) { shaded->x += luminance(c); shaded->y += luminance(clampSample(open, lit)); }
-            if (diffuseShare) *diffuseShare += c * diffusePartOf(e, pdf, sunPdf, found);
-        }
-    }
-    const unsigned firstLight = params.lightPick ? pickLight(lights, params.lightCount, rnd(seed)) : 0;
-    const unsigned lastLight = params.lightPick ? firstLight + 1 : params.lightCount;
-    for (unsigned i = firstLight; i < lastLight; ++i) {
-        if (!reaches(set, 1 + params.distantLightCount + i)) continue;
-        const unsigned lampLobes = visibleLobes(only, hiddenOf(lights[i]));
-        if (lampLobes == 3u) continue;
-        float3 toLamp, emitted;
-        float distance, lampPdf;
-        if (!sampleLight(lights[i], p, rnd(seed), rnd(seed), toLamp, distance, lampPdf, emitted)) continue;
-        if (!surface.passes && !surface.smoothToon && dot(ng, toLamp) <= 0.0f) continue;
-        if (params.lightPick) lampPdf *= lights[i].pick;
-        const BsdfEval e = onlyLobes(evalBsdf(surface, lobes, wo, frame.toLocal(toLamp)), lampLobes);
-        const float pdf = lobes.specular * e.specularPdf + (1.0f - lobes.specular) * e.diffusePdf;
-        const float3 found = litBy(e, pdf, lampPdf);
-        if (maxComponent(found) > 0.0f) {
-            const float3 open = weight * found * emitted;
-            const float3 passed = shadow(shadowFrom(surface, p, lift, ng, frame.n, toLamp), toLamp, seed, distance * 0.999f);
-            const float3 c = clampSample(open * passed, lit);
-            if (tally) { tally[0] += open; tally[1] += open * passed; }
-            radiance += c;
-            if (shaded) { shaded->x += luminance(c); shaded->y += luminance(clampSample(open, lit)); }
-            if (diffuseShare) *diffuseShare += c * diffusePartOf(e, pdf, lampPdf, found);
+            if (diffuseShare) *diffuseShare += c * diffusePartOf(e, pdf, lightPdf, found);
         }
     }
     return radiance;
@@ -2297,35 +2298,42 @@ extern "C" __global__ void __raygen__moonlightipr() {
                     seedPhase(seed, QMC_FOG_SCATTER, 0, 12);
                     // What the lamps send here goes on towards the viewer.
                     float3 here = origin + direction * at;
-                    if (bounces)
-                        if (fogCounts) radiance += fogLight(here, -direction, anisotropy, throughput * bounceWeight * albedo, roughDepth >= params.sampleClampDepth, seed);
                     // And, for as many times as the scene allows, so does what other fog sends here, as MoonRay works it
                     // out (after Wrenninge): from here the light is followed a step at a time through the fog, each step
                     // as long as the fog where it starts makes likely, and ended where a step lands outside the fog.
                     // Each time the light has scattered before, it counts for less, fog stops less of it on its way
-                    // from the lamps, and it is thrown more evenly.
-                    float3 carried = throughput * bounceWeight * albedo, way = samplePhase(direction, anisotropy, rnd(seed), rnd(seed));
-                    for (unsigned order = 1; bounces && order < params.maxVolumeDepth; ++order) {
-                        seedPhase(seed, QMC_FOG_SCATTER, int(order), 12);
-                        here = here + way * (-logf(fmaxf(1e-12f, 1.0f - rnd(seed))) / stops);
-                        float thick = 0.0f, turned = 0.0f;
-                        float3 kept = vec(0.0f);
-                        for (unsigned i = 0; i < params.volumeCount; ++i) {
-                            const DeviceVolume& fog = fogs[i];
-                            if (!fog.grid) continue;
-                            const float there = (fog.extinction[0] + fog.extinction[1] + fog.extinction[2]) * (1.0f / 3.0f) * fogDensity(fog, here);
-                            thick += there;
-                            kept += vec(fog.albedo) * there;
-                            turned += fog.anisotropy * there;
+                    // from the lamps, and it is thrown more evenly. Here itself is order 0, in the same loop, so that
+                    // fogLight is inlined once (as twice, it was the most of a fog kernel's compile).
+                    float3 carried = throughput * bounceWeight * albedo, way = direction;
+                    float less = 1.0f, sent = 1.0f, even = anisotropy;
+                    bool clamped = roughDepth >= params.sampleClampDepth;
+                    for (unsigned order = 0;; ++order) {
+                        if (order > 0) {
+                            if (!(bounces && order < params.maxVolumeDepth)) break;
+                            seedPhase(seed, QMC_FOG_SCATTER, int(order), 12);
+                            here = here + way * (-logf(fmaxf(1e-12f, 1.0f - rnd(seed))) / stops);
+                            float thick = 0.0f, turned = 0.0f;
+                            float3 kept = vec(0.0f);
+                            for (unsigned i = 0; i < params.volumeCount; ++i) {
+                                const DeviceVolume& fog = fogs[i];
+                                if (!fog.grid) continue;
+                                const float there = (fog.extinction[0] + fog.extinction[1] + fog.extinction[2]) * (1.0f / 3.0f) * fogDensity(fog, here);
+                                thick += there;
+                                kept += vec(fog.albedo) * there;
+                                turned += fog.anisotropy * there;
+                            }
+                            if (!(thick > 0.0f)) break;
+                            carried = carried * kept * (1.0f / thick);
+                            // The scene's volume factors (MoonRay's defaults 0.65, 0.65 and 0.5), raised to the bounce's number.
+                            less = powf(params.volumeAttenuation, float(order));
+                            sent = powf(params.volumeContribution, float(order));
+                            even = turned / thick * powf(params.volumePhaseAttenuation, float(order));
+                            clamped = true;
+                            stops = thick;
                         }
-                        if (!(thick > 0.0f)) break;
-                        carried = carried * kept * (1.0f / thick);
-                        // The scene's volume factors (MoonRay's defaults 0.65, 0.65 and 0.5), raised to the bounce's number.
-                        const float less = powf(params.volumeAttenuation, float(order)), sent = powf(params.volumeContribution, float(order));
-                        const float even = turned / thick * powf(params.volumePhaseAttenuation, float(order));
-                        if (fogCounts) radiance += fogLight(here, -way, even, carried * sent, true, seed, less);
+                        if (bounces)
+                            if (fogCounts) radiance += fogLight(here, -way, even, carried * sent, clamped, seed, less);
                         way = samplePhase(way, even, rnd(seed), rnd(seed));
-                        stops = thick;
                     }
                     break;
                 }
@@ -2351,24 +2359,31 @@ extern "C" __global__ void __raygen__moonlightipr() {
                 if (fogCounts) radiance += clampSample(throughput * lightWeight * vec(fog.emission) * left * (1.0f / density), clampFound);
                 const float3 on = throughput * bounceWeight * stops * vec(fog.albedo) * left * (1.0f / density);
                 float3 here = origin + direction * reached;
-                if (bounces) if (fogCounts) radiance += fogLight(here, -direction, fog.anisotropy, on, roughDepth >= params.sampleClampDepth, seed);
                 // And what other fog sends here, as MoonRay works it out: the light is followed a step at a time, each
                 // as long as the fog makes likely, and ended where a step leaves the fog or meets something in it.
                 // Each time the light has scattered before, it counts for less, fog stops less of it on its way from
-                // the lamps, and it is thrown more evenly.
+                // the lamps, and it is thrown more evenly. Here itself is order 0, in the same loop (fogLight once).
                 const float thickness = average(stops);
-                float3 carried = on, way = samplePhase(direction, fog.anisotropy, rnd(seed), rnd(seed));
-                for (unsigned order = 1; bounces && thickness > 0.0f && order < params.maxVolumeDepth; ++order) {
-                    seedPhase(seed, QMC_FOG_SCATTER, int(order), 12);
-                    const float step = -logf(fmaxf(1e-12f, 1.0f - rnd(seed))) / thickness;
-                    Hit met;
-                    traceRadiance(here, way, met, step, SEEN_DIFFUSE);
-                    if (met.valid) break;
-                    here = here + way * step;
-                    carried = carried * stops * vec(fog.albedo) * (1.0f / thickness);
-                    const float less = powf(params.volumeAttenuation, float(order)), sent = powf(params.volumeContribution, float(order));
-                    const float even = fog.anisotropy * powf(params.volumePhaseAttenuation, float(order));
-                    if (fogCounts) radiance += fogLight(here, -way, even, carried * sent, true, seed, less);
+                float3 carried = on, way = direction;
+                float less = 1.0f, sent = 1.0f, even = fog.anisotropy;
+                bool clamped = roughDepth >= params.sampleClampDepth;
+                for (unsigned order = 0;; ++order) {
+                    if (order > 0) {
+                        if (!(bounces && thickness > 0.0f && order < params.maxVolumeDepth)) break;
+                        seedPhase(seed, QMC_FOG_SCATTER, int(order), 12);
+                        const float step = -logf(fmaxf(1e-12f, 1.0f - rnd(seed))) / thickness;
+                        Hit met;
+                        traceRadiance(here, way, met, step, SEEN_DIFFUSE);
+                        if (met.valid) break;
+                        here = here + way * step;
+                        carried = carried * stops * vec(fog.albedo) * (1.0f / thickness);
+                        less = powf(params.volumeAttenuation, float(order));
+                        sent = powf(params.volumeContribution, float(order));
+                        even = fog.anisotropy * powf(params.volumePhaseAttenuation, float(order));
+                        clamped = true;
+                    }
+                    if (bounces)
+                        if (fogCounts) radiance += fogLight(here, -way, even, carried * sent, clamped, seed, less);
                     way = samplePhase(way, even, rnd(seed), rnd(seed));
                 }
                 break;
@@ -4066,26 +4081,33 @@ extern "C" __global__ void __closesthit__radiance() {
             const float3 encoded = channel[CHANNEL_NORMAL] * 2.0f - vec(1.0f);
             const float nz = fmaxf(0.001f, encoded.z);
             float sx = encoded.x / nz, sy = encoded.y / nz;
-            if (bumped) {
+            // The material's layers read again beside the point, for a bump (a step each way along u and v: 0 to 3) and
+            // for a displaced surface's slope at the vertices' spacing (4): one loop, not unrolled, so that evalLayers,
+            // inlined, is one copy here rather than five, which OptiX took the longer to compile.
+            float heights[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+            float3 coarse[CHANNEL_COUNT];
+            const float step = 0.001f;
+            const float2 alongStepU = stepAcross(frame, step, 0.0f), alongStepV = stepAcross(frame, 0.0f, step);
+            #pragma unroll 1
+            for (unsigned side = bumped ? 0u : 4u; side < (sloped ? 5u : 4u); ++side) {
+                if (side == 4) {
+                    evalLayers(material, mesh, primitive, uv, coarse, make_float2(0.0f, 0.0f), hit->p, vertexSpacing(mesh, primitive), hit);
+                    break;
+                }
                 // A step of the bump's coordinates, taken as a step across the triangle and of the point with it: every
                 // layer reads where the step takes it, an image by its own UV map, a projection by its corners and a
                 // Solid procedural by the point (which read only shifted coordinates, and drew no bump).
-                const float step = 0.001f;
-                const float2 alongStepU = stepAcross(frame, step, 0.0f), alongStepV = stepAcross(frame, 0.0f, step);
-                const float2 zero = make_float2(0.0f, 0.0f);
+                const float2 across = side < 2 ? alongStepU : alongStepV;
+                const float3 moved = (side < 2 ? alongU : alongV) * step;
+                const bool back = side & 1u;
                 float3 other[CHANNEL_COUNT];
-                evalLayers(material, mesh, primitive, make_float2(uv.x + alongStepU.x, uv.y + alongStepU.y), other, zero,
-                           hit->p + alongU * step, hit->footprint, hit);
-                const float right = average(other[CHANNEL_BUMP]);
-                evalLayers(material, mesh, primitive, make_float2(uv.x - alongStepU.x, uv.y - alongStepU.y), other, zero,
-                           hit->p - alongU * step, hit->footprint, hit);
-                const float left = average(other[CHANNEL_BUMP]);
-                evalLayers(material, mesh, primitive, make_float2(uv.x + alongStepV.x, uv.y + alongStepV.y), other, zero,
-                           hit->p + alongV * step, hit->footprint, hit);
-                const float up = average(other[CHANNEL_BUMP]);
-                evalLayers(material, mesh, primitive, make_float2(uv.x - alongStepV.x, uv.y - alongStepV.y), other, zero,
-                           hit->p - alongV * step, hit->footprint, hit);
-                const float down = average(other[CHANNEL_BUMP]);
+                evalLayers(material, mesh, primitive,
+                           back ? make_float2(uv.x - across.x, uv.y - across.y) : make_float2(uv.x + across.x, uv.y + across.y),
+                           other, make_float2(0.0f, 0.0f), back ? hit->p - moved : hit->p + moved, hit->footprint, hit);
+                heights[side] = average(other[CHANNEL_BUMP]);
+            }
+            if (bumped) {
+                const float right = heights[0], left = heights[1], up = heights[2], down = heights[3];
                 const float dx = (right - left) / (2.0f * step * lengthT), dy = (up - down) / (2.0f * step);
                 const float crossT = dot(alongV, t), crossB = dot(alongV, b);
                 sx -= material.bumpStrength * dx;
@@ -4094,8 +4116,6 @@ extern "C" __global__ void __closesthit__radiance() {
             if (sloped) {
                 // A displaced surface's slope as finely as the ray sees it, less the slope as the vertices follow it
                 // (the displacement pass reads its images at their spacing, as here), which the mesh already shows.
-                float3 coarse[CHANNEL_COUNT];
-                evalLayers(material, mesh, primitive, uv, coarse, make_float2(0.0f, 0.0f), hit->p, vertexSpacing(mesh, primitive), hit);
                 const float dx = (channel[CHANNEL_SLOPE].x - coarse[CHANNEL_SLOPE].x) / lengthT;
                 const float dy = channel[CHANNEL_SLOPE].y - coarse[CHANNEL_SLOPE].y;
                 const float crossT = dot(alongV, t), crossB = dot(alongV, b);

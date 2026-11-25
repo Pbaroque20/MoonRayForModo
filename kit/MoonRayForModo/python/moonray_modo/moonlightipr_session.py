@@ -49,6 +49,40 @@ def rejected(reason):
     return 'MoonLightIPR rejected the scene' + (': ' + reason if reason else '') + '. Open Render Log for details.'
 
 
+def used_kernels_list():
+    """Where MoonLightIPR writes down the kernels this machine's scenes have used, beside OptiX's cache of them."""
+    cache = os.environ.get('OPTIX_CACHE_PATH') or os.path.join(os.environ.get('LOCALAPPDATA', ''), 'MoonRayForModo', 'OptixCache')
+    return Path(cache) / 'MoonLightIPRKernels.txt'
+
+
+def warm_up(runtime=None):
+    """Compile, in the background, the MoonLightIPR kernels this machine's scenes have used into OptiX's cache, ahead
+    of the preview: after a kit install that changed them, or a driver update, the first preview of each kind of scene
+    waited a minute or more for its kernel. The session's --warm (half the processor's threads, at normal priority so that
+    a busy machine still lets it finish, one at a time, stopping under 6 GB of free memory) finds the cached ones at once, so it is cheap where nothing
+    changed. Only where MoonLightIPR has been used here (the list is there): a user of other engines is not charged
+    for it. The process, or None where it was not started."""
+    import subprocess
+    # MOONRAY_MODO_MOONLIGHTIPR_WARM=0: none (test runs of Modo).
+    if os.environ.get('MOONRAY_MODO_MOONLIGHTIPR_WARM') == '0' or not used_kernels_list().is_file():
+        return None
+    try:
+        folder = directory(runtime if runtime is not None else native.default_runtime())
+    except (OSError, ValueError, TypeError):
+        return None
+    if not supported(folder):
+        return None
+    env = dict(os.environ)
+    for key in ('PYTHONHOME', 'PYTHONPATH', 'QT_PLUGIN_PATH', 'QT_QPA_PLATFORM_PLUGIN_PATH'): env.pop(key, None)
+    env['PATH'] = str(folder) + os.pathsep + env.get('PATH', '')
+    try:
+        return subprocess.Popen([str(folder / EXECUTABLE), '--warm', str(folder / PROGRAM)], cwd=str(folder), env=env,
+                                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                creationflags=0x00000008 | 0x08000000)  # detached, no window
+    except OSError:
+        return None
+
+
 # What the preview says while a scene is made ready for longer than a second, where the Scene cache is not what it is
 # doing (cache_folder.CACHING and LOADING say when it is).
 PREPARING = 'Preparing the MoonLightIPR scene'

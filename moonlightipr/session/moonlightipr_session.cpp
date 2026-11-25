@@ -96,9 +96,51 @@ void samplesSent(const std::string& generation, uint32_t samples) {
 
 }
 
+// moonlightipr_session --warm <kernel.ptx> [features ...]: compiles kernels into OptiX's disk cache and exits, so that a
+// preview started later finds them there (the plugin runs it as Modo opens). Those named, or else the plain one and
+// every one this machine's scenes have used (Renderer::usedKernels); each is a moment where the cache already holds it.
+// In the background: on half the processor's threads, so that the other half stay free for Modo, one kernel at a time,
+// and one warm-up at once; it stops where free memory falls under 6 GB. At normal priority: below it, a render or
+// anything else that kept every processor busy left it nothing, and it was not done when the preview wanted it. Says
+// "@@MODO_SESSION WARMED <features> <seconds>" of each.
+int warm(int argc, char** argv) {
+    HANDLE alone = CreateMutexA(nullptr, FALSE, "Local\\MoonLightIPRWarm");
+    if (alone && GetLastError() == ERROR_ALREADY_EXISTS) {
+        std::cout << "MoonLightIPR warm-up already running" << std::endl;
+        return 0;
+    }
+    if (!std::getenv("MOONLIGHTIPR_COMPILE_THREADS")) {
+        const std::string threads = std::to_string(std::max(1u, std::thread::hardware_concurrency() / 2));
+        _putenv_s("MOONLIGHTIPR_COMPILE_THREADS", threads.c_str());
+    }
+    try {
+        moonlightipr::Renderer warming(argv[2]);
+        std::vector<uint32_t> wanted;
+        for (int i = 3; i < argc; ++i) wanted.push_back(uint32_t(std::strtoul(argv[i], nullptr, 10)));
+        if (wanted.empty()) wanted = warming.usedKernels();
+        for (const uint32_t features : wanted) {
+            MEMORYSTATUSEX memory = {};
+            memory.dwLength = sizeof(memory);
+            if (GlobalMemoryStatusEx(&memory) && memory.ullAvailPhys < (6ull << 30)) {
+                std::cout << "MoonLightIPR warm-up stopped: under 6 GB of memory free" << std::endl;
+                break;
+            }
+            const auto began = std::chrono::steady_clock::now();
+            warming.prepareKernel(features);
+            std::cout << "\n@@MODO_SESSION WARMED " << features << " "
+                      << std::chrono::duration<double>(std::chrono::steady_clock::now() - began).count() << std::endl;
+        }
+    } catch (const std::exception& error) {
+        std::cerr << "MoonLightIPR warm-up failed: " << error.what() << std::endl;
+        return 1;
+    }
+    return 0;
+}
+
 int main(int argc, char** argv) {
+    if (argc >= 3 && std::string(argv[1]) == "--warm") return warm(argc, argv);
     if (argc < 2) {
-        std::cerr << "Usage: moonlightipr_session <kernel.ptx>" << std::endl;
+        std::cerr << "Usage: moonlightipr_session <kernel.ptx>  |  moonlightipr_session --warm <kernel.ptx> [features ...]" << std::endl;
         return 2;
     }
     try {
