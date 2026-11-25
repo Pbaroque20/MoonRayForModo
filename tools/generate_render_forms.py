@@ -74,6 +74,17 @@ for group, collapsed, entries in scene_settings.GROUPS:
         if entry['kind'] == 'file':
             control(section, 'moonray.render.browse_' + entry['key'], 'Browse...', 'Choose a file for ' + entry['label'])
         count += 1
+# The render settings channels' names and tips in Modo's Channels viewport (moonray_modo/render_channels.py).
+from moonray_modo import render_channels  # noqa: E402
+helps = ET.SubElement(config, 'atom', type='CommandHelp')
+package = ET.SubElement(helps, 'hash', type='Item', key=render_channels.PACKAGE + '@en_US')
+atom(package, 'UserName', 'MoonRay Render Settings')
+tips = render_channels.tips()
+for name, label in render_channels.user_names().items():
+    held = ET.SubElement(package, 'hash', type='Channel', key=name)
+    atom(held, 'UserName', label)
+    if name in tips:
+        atom(held, 'Tooltip', tips[name])
 ET.indent(config)
 assert ET.tostring(config, encoding='unicode').isascii(), 'Modo draws anything outside ASCII as stray characters'
 target = Path(sys.argv[1]) if len(sys.argv) > 1 else kit / 'render_settings.cfg'

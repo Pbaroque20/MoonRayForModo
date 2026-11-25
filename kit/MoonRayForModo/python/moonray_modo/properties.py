@@ -215,10 +215,24 @@ def write(item, values):
     except Exception:
         pass
     encoded = json.dumps(values, sort_keys=True, separators=(',', ':'))
+    # The Render item's settings are its channels too (render_channels): those that differ are set, in this same step.
+    channels_set = False
+    if _is_render_item(item):
+        try:
+            channels_set = write_render_channels(item, values)
+        except Exception as exc:
+            try:
+                import lx
+                lx.out('MoonRay: the render settings channels were not set: %s' % exc)
+            except Exception:
+                pass
     # Settings written as they already are (a field entered at the value it shows, a form applied unchanged) are no
     # edit: nothing is written and nothing told, so realtime and MoonLightIPR do not start again for it.
     try:
         if item.readTag(TAG) == encoded:
+            if channels_set:
+                from .property_notifications import notify
+                notify()
             return
     except (LookupError, RuntimeError):
         pass
@@ -243,7 +257,160 @@ def selected_geometry():
 
 
 def scene_settings():
-    return read(modo.Scene().renderItem)
+    """The Render item's settings: its tag, with its render settings channels over it (render_channels), as they are
+    at the current time."""
+    render = modo.Scene().renderItem
+    stored = read(render)
+    try:
+        values, values_key = _recent_render_channels(render)
+    except Exception:
+        values = None
+    if not values:
+        return stored
+    from . import render_channels
+    try:
+        text = render.readTag(TAG)
+    except (LookupError, RuntimeError):
+        text = None
+    key = (text, values_key)
+    held = _OVERLAID.get(key)
+    if held is None:
+        held = json.dumps(render_channels.overlay(stored, values))
+        if len(_OVERLAID) > 64:
+            _OVERLAID.clear()
+        _OVERLAID[key] = held
+    return json.loads(held)
+
+
+# The render settings channels as last read: the Render item's form asks for the settings hundreds of times as it is
+# drawn. Read again at another time, on another Render item, once a channel of the Render item has changed or a scene
+# has been opened, closed or switched to (CHANGED, counted by lxserv/moonray_render_settings.py's listener: Render items
+# of two scenes may have one identity), and after a quarter of a second, for a channel linked to
+# another item's, whose change the listener does not see.
+_RECENT = {}
+CHANGED = [0]
+RECENT_SECONDS = 0.25
+
+
+def _recent_render_channels(render):
+    """(values, a key for them) of the Render item's channels at the current time, read again as _RECENT says."""
+    import time
+    import lx
+    from . import render_channels
+    if not has_render_channels(render):
+        return None, None
+    moment = lx.service.Selection().GetTime()
+    key = (render.id, moment, CHANGED[0])
+    now = time.monotonic()
+    if _RECENT.get('key') == key and now - _RECENT.get('at', 0.0) < RECENT_SECONDS:
+        return _RECENT['values'], _RECENT['values_key']
+    values = read_render_channels(render, moment)
+    values_key = render_channels.key_of(None, values)[1] if values else None
+    _RECENT.update(key=key, at=now, values=values, values_key=values_key)
+    return values, values_key
+
+
+# scene_settings()'s results, by the tag's text and the channels' values: each control of the Render item's form asks.
+_OVERLAID = {}
+# The render settings channels' indices on a Render item, by its identity and its number of channels.
+_INDICES = {}
+
+
+def _is_render_item(item):
+    try:
+        return item.type == 'polyRender'
+    except (AttributeError, LookupError, RuntimeError):
+        return False
+
+
+def has_render_channels(item):
+    from .render_channels import PACKAGE
+    try:
+        return bool(item.internalItem.PackageTest(PACKAGE))
+    except (AttributeError, LookupError, RuntimeError, TypeError):
+        return False
+
+
+def _render_indices(internal):
+    """{key: (kind, index or (r, g, b) indices)} of the render settings channels on a Render item."""
+    from . import render_channels
+    held_key = (internal.Ident(), internal.ChannelCount())
+    held = _INDICES.get(held_key)
+    if held is None:
+        held = {}
+        for entry in render_channels.entries():
+            name = render_channels.channel(entry)
+            kind = render_channels.kind(entry)
+            try:
+                if kind == 'color':
+                    held[entry['key']] = (kind, tuple(internal.ChannelLookup(name + '.' + part) for part in 'RGB'))
+                else:
+                    held[entry['key']] = (kind, internal.ChannelLookup(name))
+            except LookupError:
+                pass
+        if len(_INDICES) > 16:
+            _INDICES.clear()
+        _INDICES[held_key] = held
+    return held
+
+
+def read_render_channels(item, time=None):
+    """{key: value} of the Render item's render settings channels, evaluated at the time (the current time when None),
+    so keys and links count; None where it has no such channels."""
+    import lx
+    if not has_render_channels(item):
+        return None
+    internal = item.internalItem
+    if time is None:
+        time = lx.service.Selection().GetTime()
+    read = lx.object.ChannelRead(lx.object.Scene(internal.Context()).Channels(None, time))
+    values = {}
+    for key, (kind, index) in _render_indices(internal).items():
+        try:
+            if kind == 'color':
+                values[key] = [float(read.Double(internal, part)) for part in index]
+            elif kind == 'float':
+                values[key] = float(read.Double(internal, index))
+            elif kind == 'string':
+                values[key] = read.String(internal, index) or ''
+            elif kind == 'boolean':
+                values[key] = bool(read.Integer(internal, index))
+            else:
+                values[key] = int(read.Integer(internal, index))
+        except (LookupError, RuntimeError, TypeError, ValueError):
+            pass
+    return values
+
+
+def _argument(value):
+    if isinstance(value, bool):
+        return '1' if value else '0'
+    if isinstance(value, float):
+        return repr(value)
+    return '{%s}' % str(value).replace('{', '(').replace('}', ')')
+
+
+def write_render_channels(item, values):
+    """Set the Render item's render settings channels that differ from the settings values, as Modo's Channels
+    viewport would (item.channel: a keyed channel gets its key at the current time). The package is added first where
+    the item has none. Run inside a command, whose step they are. Whether any was set."""
+    import lx
+    from . import render_channels
+    if not has_render_channels(item):
+        item.internalItem.PackageAdd(render_channels.PACKAGE)
+    current = read_render_channels(item) or {}
+    changes = render_channels.changed_channels(current, values)
+    entries = {entry['key']: entry for entry in render_channels.entries()}
+    for key, value in changes.items():
+        name = render_channels.channel(entries[key])
+        if render_channels.kind(entries[key]) == 'color':
+            for part, number in zip('RGB', value):
+                lx.eval('item.channel {%s.%s} %s item:{%s}' % (name, part, repr(float(number)), item.id))
+        else:
+            lx.eval('item.channel {%s} %s item:{%s}' % (name, _argument(value), item.id))
+    if changes:
+        CHANGED[0] += 1
+    return bool(changes)
 
 
 def encode(values):
