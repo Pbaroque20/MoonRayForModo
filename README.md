@@ -26,7 +26,7 @@ The current release is [0.5.6](https://github.com/Pbaroque20/MoonRayForModo/rele
 - **MoonLightIPR shows up to 64 texture placements** (repeats, offsets, projections) in a scene, where it left out any texture past 8: a car's tyre sidewalls showed only once its chassis was hidden. A texture the graphics card has no room for is kept in the computer's memory instead.
 - **MoonLightIPR without stray streaks**: a preview could keep coloured or empty pixels in streaks for good (seen across the lower part of a glass scene shown after another); each preview now starts afresh.
 - **XPU2 says why it leaves a scene to MoonRay XPU**: the reason stays among the Notices and ends the Render Log. A mesh with normals that are not numbers (as before Modo's Mesh Cleanup) no longer sends it there.
-- **New defaults**: adaptive passes on the graphics card, realtime with the standard XPU on the graphics card, Automatic Presence Shadows on, and XPU2's realtime adaptive sampling cap 30.
+- **New defaults**: adaptive passes on the graphics card, realtime with the standard XPU on the graphics card, Automatic Presence Shadows on, XPU2's realtime adaptive sampling cap 30, and MoonLightIPR's Clamp From Bounce 1, as MoonRay's, so a sun seen in a mirror or glass is as bright as in MoonRay (a scene saved after any of MoonLightIPR's Render Settings was changed keeps the 0 it had).
 
 ## New in 0.5.6
 

@@ -1,4 +1,4 @@
-"""MoonLightIPR's own Clamp From Bounce: 0 unless the scene says otherwise, packed into its scene in place of MoonRay's
+"""MoonLightIPR's own Clamp From Bounce: 1, as MoonRay's, unless the scene says otherwise, packed into its scene in place of MoonRay's
 sample_clamping_depth, which MoonRay's own scene keeps; and shown in the MoonLightIPR group of Render Settings."""
 import pathlib
 import struct
@@ -24,9 +24,11 @@ def scene(**more):
 
 
 class ClampDepth(unittest.TestCase):
-    def test_default_is_zero(self):
-        self.assertEqual(scene_settings.DEFAULTS['moonlightipr']['clamp_depth'], 0)
-        self.assertEqual(packed_depth(scene()), (2.0, 0))
+    def test_default_is_one_as_moonray(self):
+        self.assertEqual(scene_settings.DEFAULTS['moonlightipr']['clamp_depth'], 1)
+        self.assertEqual(packed_depth(scene()), (2.0, 1))
+        # A scene saved with 0 keeps it.
+        self.assertEqual(scene_settings.complete({'moonlightipr': {'clamp_depth': 0}})['moonlightipr']['clamp_depth'], 0)
 
     def test_the_scene_choice_is_packed_and_moonray_keeps_its_own(self):
         values = scene_settings.complete({'moonlightipr': {'clamp_depth': 2}, 'render': {'sample_clamping_depth': 1}})
@@ -66,7 +68,7 @@ class OwnClamps(unittest.TestCase):
         held = scene(_moonlightipr_sample_clamp=4.0, _moonlightipr_roughness_clamp=0.5)
         payload, _, _ = moonlightipr_scene.pack(held, 64, 36, 0.0)
         clamp, depth, _, roughness = struct.unpack_from('<fIIf', payload, 36)
-        self.assertEqual((clamp, depth, roughness), (4.0, 0, 0.5))
+        self.assertEqual((clamp, depth, roughness), (4.0, 1, 0.5))
 
 
 if __name__ == '__main__':

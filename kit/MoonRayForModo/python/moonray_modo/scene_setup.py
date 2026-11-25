@@ -53,7 +53,7 @@ def configure(scene, values):
     scene['preview_buffer'] = values['preview_buffer']
     # MoonLightIPR's own firefly controls (moonlightipr_scene), apart from MoonRay's in render_settings.
     own = values.get('moonlightipr') or {}
-    scene['_moonlightipr_clamp_depth'] = int(own.get('clamp_depth', 0))
+    scene['_moonlightipr_clamp_depth'] = int(own.get('clamp_depth', 1))
     for key, name in (('sample_clamp', 'sample_clamping_value'), ('roughness_clamp', 'roughness_clamping_factor')):
         scene['_moonlightipr_' + key] = float(own.get(key, values['render'].get(name, 0.0)))
     scene['execution_mode'] = values['execution_mode']
