@@ -178,6 +178,11 @@ class Renderer(QtCore.QObject):
         self.moonlightipr.warnings.connect(self.notices.emit)
         self.moonlightipr.failed.connect(self.failed.emit)
         self.moonlightipr.status.connect(self.status.emit)
+        self.moonlightipr.compiling.connect(self._moonlightipr_compiling)
+        # While MoonLightIPR compiles a kernel for the first time: the status line says so, with how long it has taken.
+        self.moonlightipr_compile=None
+        self.moonlightipr_compile_tick=QtCore.QTimer(self);self.moonlightipr_compile_tick.setInterval(1000)
+        self.moonlightipr_compile_tick.timeout.connect(self._moonlightipr_compile_status)
         self.moonlightipr_serial=0
         self.using_moonlightipr=False
         self.moonlightipr_frame=None
@@ -629,6 +634,21 @@ class Renderer(QtCore.QObject):
             self.buffers.publish_memory(key,width,height,pixels,self.active['runtime'],self.active['snapshot'],self.backend_status)
             self.frames_shown=getattr(self,'frames_shown',0)+1
         except (ValueError,OSError) as exc:self.status.emit('Progressive display skipped: '+str(exc))
+
+    def _moonlightipr_compiling(self,compiling):
+        """MoonLightIPR's kernel for this kind of scene is not in OptiX's cache (the first preview of it after an install):
+        compiling it keeps the preview waiting, so the status line says so, and for how long, until it is done."""
+        if compiling:
+            self.moonlightipr_compile=time.monotonic();self.moonlightipr_compile_tick.start();self._moonlightipr_compile_status()
+            return
+        self.moonlightipr_compile=None;self.moonlightipr_compile_tick.stop()
+        if self.using_moonlightipr and not self.closed and not self.canceled:self.status.emit('Rendering · '+self.backend_status)
+
+    def _moonlightipr_compile_status(self):
+        if self.moonlightipr_compile is None:return
+        from .progress import duration
+        self.status.emit('MoonLightIPR is compiling its GPU program for this kind of scene (first time only, a minute or two), %s so far; the preview starts when it is done'
+                         %duration(time.monotonic()-self.moonlightipr_compile))
 
     def _moonlightipr_ready(self,serial):
         if self.closed or self.canceled or not self.using_moonlightipr or serial!=self.moonlightipr_serial:return

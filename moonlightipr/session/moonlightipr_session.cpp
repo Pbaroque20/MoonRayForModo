@@ -19,6 +19,9 @@
 // of them are gathered beside the beauty, from its own paths, from the start; choosing one is only another picture
 // sent, at once, in the middle of a render or after it. Each is sent under its name.
 //   @@MODO_SESSION FAILED <generation>     the scene was rejected; the reason is on standard error
+//   @@MODO_SESSION COMPILING <generation>  OptiX is compiling a kernel its cache does not hold, for that scene (0: the
+//                                        first, as the session starts); nothing comes until
+//   @@MODO_SESSION COMPILED <generation>   it is done
 #include "moonlightipr/moonlightipr.h"
 #include "scene_loader.h"
 #include "modo_shared_image.h"
@@ -84,6 +87,9 @@ void event(const char* kind, const std::string& generation) {
 }
 
 // How many samples a pixel the frame just sent holds, for the label under the picture.
+// The scene a kernel compiled now is for (setCompileNotice): "0" for the one the session begins with.
+std::string compilingFor = "0";
+
 void samplesSent(const std::string& generation, uint32_t samples) {
     std::cout << "\n@@MODO_SESSION SAMPLES " << generation << " " << samples << std::endl;
 }
@@ -96,6 +102,9 @@ int main(int argc, char** argv) {
         return 2;
     }
     try {
+        // A kernel compiled for the first time keeps the preview waiting for a minute or more: said, so that the host
+        // can say why nothing is shown.
+        moonlightipr::setCompileNotice([](bool compiling) { event(compiling ? "COMPILING" : "COMPILED", compilingFor); });
         moonlightipr::Renderer renderer(argv[1]);
         // Every AOV gathered beside the beauty from the first sample, so that choosing one, or exporting them, renders
         // nothing again.
@@ -243,6 +252,7 @@ int main(int argc, char** argv) {
                 continue;
             }
             try {
+                compilingFor = generation;
                 settings = loader.apply(path);
             } catch (const std::exception& error) {
                 std::cerr << "MoonLightIPR scene rejected: " << error.what() << std::endl;
