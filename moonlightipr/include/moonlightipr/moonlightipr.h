@@ -532,6 +532,13 @@ public:
     // How much of the graphics card's memory is free, in bytes.
     size_t freeMemory() const;
 
+    // The kernel for these heavy features (FEATURE_* in device/shared.h) made the one in use, compiled into OptiX's
+    // disk cache first where it is not there: ahead of a scene that will want it (moonlightipr_session --warm).
+    void prepareKernel(uint32_t features);
+    // The kernels this machine's scenes have used, as their features, the plain one (0) first: each one compiled is
+    // written down beside OptiX's cache, so that the next install's warm-up compiles them before they are asked for.
+    std::vector<uint32_t> usedKernels() const;
+
 private:
     struct Impl;
     std::unique_ptr<Impl> impl;

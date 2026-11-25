@@ -762,3 +762,14 @@ class ImportLibraryAsset(lxu.command.BasicCommand):
         values=properties.decode(self.dyna_String(0))
         asset_import.execute(values['path'],values.get('material_name'))
 lx.bless(ImportLibraryAsset,'moonray.library.importAsset')
+
+
+# MoonLightIPR's kernels compiled into OptiX's cache in the background as Modo opens, where they were compiled for this
+# machine before and the cache lost them (a kit install that changed them, a driver update): the first preview of each
+# kind of scene then starts in seconds rather than after a minute or more (moonlightipr_session.warm_up).
+if not lx.service.Platform().IsHeadless():
+    try:
+        from moonray_modo import moonlightipr_session as _moonlightipr_session
+        _moonlightipr_session.warm_up()
+    except Exception:
+        pass

@@ -361,6 +361,8 @@ struct Renderer::Impl {
     // The kernel loaded: the full one's file, and the features of the one in use (FEATURE_*). A scene whose materials
     // use fewer is rendered by a kernel made without the rest (specialize).
     std::string kernelPath;
+    // Where OptiX keeps compiled kernels, and the list of those this machine's scenes have used (usedKernels).
+    std::string cacheFolder;
     unsigned kernelFeatures = FEATURE_ALL;
 
     ~Impl() {
@@ -397,11 +399,37 @@ struct Renderer::Impl {
             if (std::ifstream(candidate).good()) path = candidate;
             else features = FEATURE_ALL;
         }
-        if (features == kernelFeatures) return;
+        if (pipeline && features == kernelFeatures) return;
         ML_CHECK(cudaDeviceSynchronize());  // a queued launch may still run the pipeline
         destroyPipeline();
         createPipeline(path);
         kernelFeatures = features;
+        remember(features);
+    }
+
+    std::string usedList() const {
+        return cacheFolder.empty() ? std::string() : cacheFolder + "\\MoonLightIPRKernels.txt";
+    }
+
+    std::vector<uint32_t> used() const {
+        std::vector<uint32_t> found{0};
+        std::ifstream list(usedList());
+        for (unsigned features; list >> features;)
+            if (features <= FEATURE_ALL && std::find(found.begin(), found.end(), features) == found.end()) found.push_back(features);
+        return found;
+    }
+
+    // A kernel compiled is written down, once, for the warm-up after the next install (usedKernels).
+    void remember(unsigned features) {
+        if (usedList().empty()) return;
+        const std::vector<uint32_t> known = used();
+        if (std::find(known.begin(), known.end(), features) != known.end()) return;
+        std::ofstream(usedList(), std::ios::app) << features << "\n";
+    }
+
+    // The kernel a launch runs: the plain one where no scene has chosen one yet.
+    void ready() {
+        if (!pipeline) specialize(0);
     }
 
     // Runs OptiX's compile tasks on a pool of threads until none is left: each task may give more to run.
@@ -411,7 +439,10 @@ struct Renderer::Impl {
         std::condition_variable changed;
         unsigned running = 0;
         OptixResult failed = OPTIX_SUCCESS;
-        const unsigned count = std::max(1u, std::thread::hardware_concurrency());
+        // MOONLIGHTIPR_COMPILE_THREADS: fewer, for a compile in the background while the machine is in use (--warm).
+        unsigned count = std::max(1u, std::thread::hardware_concurrency());
+        if (const char* threads = std::getenv("MOONLIGHTIPR_COMPILE_THREADS"); threads && std::atoi(threads) > 0)
+            count = unsigned(std::atoi(threads));
         std::vector<std::thread> workers;
         for (unsigned w = 0; w < count; ++w) {
             workers.emplace_back([&]() {
@@ -1055,20 +1086,18 @@ Renderer::Renderer(const std::string& ptxPath) : impl(new Impl) {
             const std::string folder = std::string(local) + "\\MoonRayForModo\\OptixCache";
             std::error_code ignored;
             std::filesystem::create_directories(folder, ignored);
-            if (optixDeviceContextSetCacheLocation(impl->context, folder.c_str()) == OPTIX_SUCCESS)
+            if (optixDeviceContextSetCacheLocation(impl->context, folder.c_str()) == OPTIX_SUCCESS) {
                 optixDeviceContextSetCacheDatabaseSizes(impl->context, size_t(3) << 30, size_t(4) << 30);
+                impl->cacheFolder = folder;
+            }
         }
+    } else {
+        impl->cacheFolder = std::getenv("OPTIX_CACHE_PATH");
     }
     impl->kernelPath = ptxPath;
-    // Begun on the kernel with none of the heavy features, the quickest to compile, until a scene asks for more
-    // (specialize): begun on the full one, every session waited on its compiling, a minute and a half the first time.
-    const std::string plain = impl->variantPath(0);
-    if (!std::getenv("MOONLIGHTIPR_FULL_KERNEL") && std::ifstream(plain).good()) {
-        impl->createPipeline(plain);
-        impl->kernelFeatures = 0;
-    } else {
-        impl->createPipeline(ptxPath);
-    }
+    // No kernel yet: the first scene's materials choose it (setMaterials, specialize), and only that one is compiled.
+    // Begun on the plain kernel, a scene with subsurface scattering, fog or the like waited for that one to compile
+    // (a minute the first time) and then for its own. A launch with no scene yet takes the plain one (ready).
     // MoonRay's defaults, including its sample_clamping_value.
     impl->params.maxDepth = 4;
     impl->params.maxDiffuseDepth = impl->params.maxGlossyDepth = 2;
@@ -2136,6 +2165,7 @@ void Renderer::setMaxDepth(uint32_t bounces, uint32_t diffuseBounces, uint32_t g
 
 void Renderer::render() {
     impl->validate();
+    impl->ready();
     if (impl->samples == 0) {
         // Stopping once clean, for a picture that is rendered (a draft's lines are as clean as they will be at once).
         const bool judged = impl->cleanBelow > 0.0f && impl->params.draft == 0;
@@ -2190,6 +2220,7 @@ void Renderer::setLightSets(const uint32_t* sets, uint32_t words, size_t count) 
 void Renderer::displacementValues(uint32_t mesh, uint32_t material, const uint32_t* primitives, const float* barycentrics,
                                   size_t count, float* values) {
     if (!count) return;
+    impl->ready();
     if (mesh >= impl->meshes.size() || !impl->meshes[mesh] || impl->meshes[mesh]->curves)
         throw std::runtime_error("MoonLightIPR displacement refers to a missing mesh");
     if (!impl->meshes[mesh]->ownsMaterials && material >= impl->materialCount)
@@ -2315,6 +2346,10 @@ void Renderer::readPass(uint32_t pass, float* rgb) {
 }
 
 void Renderer::synchronize() { ML_CHECK(cudaDeviceSynchronize()); }
+
+void Renderer::prepareKernel(uint32_t features) { impl->specialize(features & FEATURE_ALL); }
+
+std::vector<uint32_t> Renderer::usedKernels() const { return impl->used(); }
 
 size_t Renderer::freeMemory() const {
     size_t free = 0, total = 0;
