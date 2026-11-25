@@ -72,6 +72,8 @@ Work on the next version goes on in the [MoonLightIPR branch](https://github.com
 
   ![Paint, glass, thin glass, frosted glass, a half-present ball and a half-transmitting one, each laid over a checkerboard by its alpha: before (top), the glass as opaque as paint; now (bottom), see-through](docs/images/glass-alpha.png)
 - **Keep Metallic Flakes** (Render Settings > Denoising, off unless ticked): metallic paint whose flakes are a pixel or smaller no longer comes out of the denoiser smooth, like plastic. The light of the Glitter flakes is set aside while the picture is denoised and half of it put back as rendered, so the paint keeps its sparkle. MoonRay and XPU2 renders and previews, with OptiX or Open Image Denoise.
+
+  ![Blue and gold metallic paint at 4 samples: noisy, as denoised before (smooth, like plastic), with Keep Metallic Flakes, and a 144-sample reference](docs/images/keep-metallic-flakes.jpg)
 - **Stacked environments**: each kind of ray sees the topmost environment it is let see, as in Modo, so a gradient environment over an HDRI one hides it instead of adding to it (Preferences, Stacked environments; Add as before).
 - **Front projection** for Shader Tree textures, from the render camera.
 - **Spherical cameras**: a Modo camera set to Spherical Map or Spherical VR renders the whole sphere through MoonRay's spherical camera, the view in the middle of the picture, where the scene stopped with "Unsupported camera projection". Spherical VR renders one picture, not a pair of eyes.
@@ -82,6 +84,8 @@ Work on the next version goes on in the [MoonLightIPR branch](https://github.com
 - **XPU2 says why it leaves a scene to MoonRay XPU**: the reason stays among the Notices and ends the Render Log. A mesh with normals that are not numbers (as before Modo's Mesh Cleanup) no longer sends it there.
 - **New defaults**: adaptive passes on the graphics card, realtime with the standard XPU on the graphics card, Automatic Presence Shadows on, XPU2's realtime adaptive sampling cap 30, and MoonLightIPR's Clamp From Bounce 1, as MoonRay's, so a sun seen in a mirror or glass is as bright as in MoonRay (a scene saved after any of MoonLightIPR's Render Settings was changed keeps the 0 it had).
 - **Render Settings in the Channels viewport.** The MoonRay render settings are channels of the Render item: select it, and the Channels viewport lists them by group (Noise: Sample Clamp, MoonLightIPR: Sample Clamp, Bounces: Total...), its filter finds them (type "clamp"), and they can be keyed, linked and changed there or in the MoonRay form, each showing the other, with undo. A keyed setting changes over Render Animation. Scenes saved before are given the channels as they open, with their values; older kits still open the new scenes, with the settings as the MoonRay form last set them. The Light Path Expressions, per-object controls, Camera Sequence and the two camera choices stay in the form alone.
+
+  ![The Channels viewport searching "clamp": the Render item lists MoonLightIPR's and MoonRay's Sample Clamp, Clamp From Bounce and Roughness Clamp](docs/images/render-settings-channels.png)
 
 ## New in 0.5.6
 
