@@ -87,6 +87,9 @@ class Session(QtCore.QObject):
     warnings = QtCore.Signal(object)
     failed = QtCore.Signal(str)
     status = QtCore.Signal(str)
+    # True while OptiX compiles a kernel its cache does not hold (the first preview of a kind of scene after an install),
+    # nothing shown till it is done; False once it is.
+    compiling = QtCore.Signal(bool)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -265,6 +268,9 @@ class Session(QtCore.QObject):
             if len(parts) != 3: continue
             try: generation = int(parts[2])
             except ValueError: continue
+            if parts[1] in ('COMPILING', 'COMPILED'):
+                self.compiling.emit(parts[1] == 'COMPILING')
+                continue
             if self.stopping or self.closed: continue
             if parts[1] in ('APPLIED', 'FAILED') and self.sent and generation == self.sent['id']:
                 sent, self.sent = self.sent, None

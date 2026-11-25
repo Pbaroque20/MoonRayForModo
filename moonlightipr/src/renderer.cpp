@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -31,6 +32,16 @@
 #include <vector>
 
 namespace moonlightipr {
+
+namespace {
+std::function<void(bool)> compileNotice;
+void tellCompiling(bool compiling) {
+    if (compileNotice) compileNotice(compiling);
+}
+}
+
+void setCompileNotice(std::function<void(bool)> notice) { compileNotice = std::move(notice); }
+
 namespace {
 
 void check(cudaError_t result, const char* call) {
@@ -455,7 +466,26 @@ struct Renderer::Impl {
         OptixTask first = nullptr;
         OptixResult compiled = optixModuleCreateFromPTXWithTasks(context, &moduleOptions, &pipelineOptions,
             ptx.data(), ptx.size(), log, &logSize, &module, &first);
+        // A kernel OptiX's cache holds is ready in well under a second; one compiled now takes a minute or more, which is
+        // said (setCompileNotice) once it has gone on for a second and a half, until it is done. OptiX gives tasks to run
+        // either way, so the time is what tells them apart.
+        std::mutex noticeLock;
+        std::condition_variable noticeDone;
+        bool finished = false, told = false;
+        std::thread watcher([&]() {
+            std::unique_lock<std::mutex> held(noticeLock);
+            if (noticeDone.wait_for(held, std::chrono::milliseconds(1500), [&]() { return finished; })) return;
+            told = true;
+            tellCompiling(true);
+        });
         if (compiled == OPTIX_SUCCESS) compiled = runCompileTasks(first);
+        {
+            std::lock_guard<std::mutex> held(noticeLock);
+            finished = true;
+        }
+        noticeDone.notify_all();
+        watcher.join();
+        if (told) tellCompiling(false);
         if (compiled == OPTIX_SUCCESS) {
             OptixModuleCompileState state = OPTIX_MODULE_COMPILE_STATE_FAILED;
             optixModuleGetCompilationState(module, &state);

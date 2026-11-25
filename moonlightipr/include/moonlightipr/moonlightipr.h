@@ -6,6 +6,7 @@
 // fixed uber-shader. Final frames always come from MoonRay.
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -415,6 +416,12 @@ struct Camera {
     // direction plus these much of the picture's right and up. {0, 0} is square to the view.
     float focusTilt[2] = {0, 0};
 };
+
+// Called with true once OptiX has been compiling a kernel for a second and a half, one its cache does not hold (the
+// first preview of a kind of scene after an install: a minute or more), and with false once it is done; a kernel the
+// cache holds (ready in under a second) calls nothing.
+// For whoever shows that the preview is waiting on it. Set before a Renderer is made, to be told of its first kernel.
+void setCompileNotice(std::function<void(bool compiling)> notice);
 
 // Every setter restarts accumulation. Errors are reported as std::runtime_error.
 class Renderer {
