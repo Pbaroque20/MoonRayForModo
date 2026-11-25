@@ -68,7 +68,15 @@ class ShadowCatcherBackgroundTests(unittest.TestCase):
         self.assertIn('const bool catcherThrough = catcherMatte && pv.depth > 0 && pv.seeThrough;', integrator)
         self.assertIn('catcherAlpha = -catcher * catcherAlphaScale * part;', integrator)
         kernel = text('moonlightipr/src/device/kernel.cu')
-        self.assertIn('if (!camera && matte && seeThrough && depth > 0) {', kernel)
+        self.assertIn('const bool throughGlass = !camera && matte && seeThrough && depth > 0;', kernel)
+
+    def test_moonlightipr_catcher_share_is_called_once(self):
+        # catcherShare (a whole direct-light pass) and catcherBackground at one place each in the path loop: inlined
+        # into each case they doubled the kernel and made OptiX's first compile of it take minutes.
+        # Counted with their definitions; catcherShare once more for the alpha (__raygen__aovs).
+        kernel = text('moonlightipr/src/device/kernel.cu')
+        self.assertEqual(kernel.count('catcherShare('), 3)
+        self.assertEqual(kernel.count('catcherBackground('), 2)
 
     def test_seen_in_reflections(self):
         # A matte reached by any other ray past the camera: what that ray's kind sees of the lights past it, the alpha

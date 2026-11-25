@@ -2572,51 +2572,49 @@ extern "C" __global__ void __raygen__moonlightipr() {
             // in the Environment background pass; its shadows are in the alpha (__raygen__aovs).
             PASS_NOW(PASS_EMISSION);
             const bool matte = (hit.flags & MATERIAL_CATCHER_MATTE) != 0;
-            if (!camera && matte && seeThrough && depth > 0) {
-                // A matte seen through glass alone, as MoonRay's (tools/port_glass_alpha.py): as from the camera, what
-                // lies past it darkened by its shadows, times what the glass lets through, in the Environment background
-                // pass as the sky through glass is; see-through in alpha as that sky is, but for its shadows.
-                float3 seenLight = vec(0.0f);
-                const float3 behind = catcherBackground(hit.p, direction, seenLight) + seenLight;
-                float part;
-                const float3 share = catcherShare(hit, direction, seed, fromSet, part);
-                const float3 carried = throughput * lightWeight;
-                glassSeen += (carried.x + carried.y + carried.z) * (1.0f / 3.0f) * (1.0f - hit.catcher * (1.0f - part));
-                if (params.passes) passTo(pixel, passNow, radiance, passMark, passShare);
-                radiance += clampSample(carried * behind * (vec(1.0f - hit.catcher) + share * hit.catcher), clampFound);
-                if (params.passes) passTo(pixel, PASS_BACKGROUND, radiance, passMark, passShare);
-                break;
-            }
-            if (!camera && matte) {
-                // A matte reached by any other ray past the camera (a reflection, a bounce), as MoonRay's: what that ray
-                // would find of the lights past it, darkened by its shadows; the alpha is left as it is.
-                const float3 behind = catcherPastBackground(hit.p, direction, seen, sharp, glossyShare, cameFrom);
-                if (maxComponent(behind) > 0.0f) {
-                    float part;
-                    const float3 share = catcherShare(hit, direction, seed, fromSet, part);
-                    radiance += clampSample(throughput * lightWeight * behind * (vec(1.0f - hit.catcher) + share * hit.catcher),
-                                            clampFound);
-                }
-                break;
-            }
-            if (!camera) {
+            // Which of the cases below this is. catcherShare (a whole direct-light pass) and catcherBackground are called
+            // once, at one place, for whichever it is: inlined into each case, they doubled the kernel and its compile
+            // (a first preview waited minutes on OptiX, 2026-11-24).
+            const bool throughGlass = !camera && matte && seeThrough && depth > 0;  // a matte seen through glass alone
+            const bool pastCamera = !camera && matte && !throughGlass;              // a matte in a reflection, a bounce
+            if (!camera && !matte) {
                 radiance += clampSample(throughput * lightWeight * hit.emission, clampFound);
                 break;
             }
-            if (!matte && (!params.aovPass || params.aovPass == PASS_EMISSION)) {
-                float part;
-                const float3 share = catcherShare(hit, direction, seed, fromSet, part);
-                radiance += throughput * lightWeight * hit.emission * (vec(1.0f - hit.catcher) + share * hit.catcher);
-            }
+            const bool asked = !params.aovPass || params.aovPass == PASS_BACKGROUND;
+            float3 seenLight = vec(0.0f);
             float3 behind = vec(0.0f);
+            if (pastCamera) behind = catcherPastBackground(hit.p, direction, seen, sharp, glossyShare, cameFrom);
+            else if (matte) behind = catcherBackground(hit.p, direction, seenLight);
+            bool wanted;
+            if (throughGlass) wanted = true;
+            else if (pastCamera) wanted = maxComponent(behind) > 0.0f;
+            else if (!matte) wanted = !params.aovPass || params.aovPass == PASS_EMISSION;
+            else wanted = maxComponent(behind + seenLight) > 0.0f && (asked || params.aovPass == PASS_EMISSION);
+            float part = 1.0f;
+            float3 share = vec(1.0f);
+            if (wanted) share = catcherShare(hit, direction, seed, fromSet, part);
+            const float3 kept = vec(1.0f - hit.catcher) + share * hit.catcher;
+            if (throughGlass) {
+                // As MoonRay's (tools/port_glass_alpha.py): as from the camera, what lies past it darkened by its shadows,
+                // times what the glass lets through, in the Environment background pass as the sky through glass is;
+                // see-through in alpha as that sky is, but for its shadows.
+                const float3 carried = throughput * lightWeight;
+                glassSeen += (carried.x + carried.y + carried.z) * (1.0f / 3.0f) * (1.0f - hit.catcher * (1.0f - part));
+                if (params.passes) passTo(pixel, passNow, radiance, passMark, passShare);
+                radiance += clampSample(carried * (behind + seenLight) * kept, clampFound);
+                if (params.passes) passTo(pixel, PASS_BACKGROUND, radiance, passMark, passShare);
+                break;
+            }
+            if (pastCamera) {
+                // As MoonRay's: what that ray would find of the lights past it, darkened by its shadows; the alpha is left
+                // as it is.
+                if (wanted) radiance += clampSample(throughput * lightWeight * behind * kept, clampFound);
+                break;
+            }
+            if (!matte && wanted) radiance += throughput * lightWeight * hit.emission * kept;
             if (matte) {
-                float3 seenLight = vec(0.0f);
-                behind = catcherBackground(hit.p, direction, seenLight);
-                const bool asked = !params.aovPass || params.aovPass == PASS_BACKGROUND;
-                if (maxComponent(behind + seenLight) > 0.0f && (asked || params.aovPass == PASS_EMISSION)) {
-                    float part;
-                    const float3 share = catcherShare(hit, direction, seed, fromSet, part);
-                    const float3 kept = vec(1.0f - hit.catcher) + share * hit.catcher;
+                if (wanted) {
                     // A light seen past it is the light's (Emission), as a camera ray that hits nothing sees it.
                     if (maxComponent(seenLight) > 0.0f && (!params.aovPass || params.aovPass == PASS_EMISSION))
                         radiance += throughput * lightWeight * seenLight * kept;
