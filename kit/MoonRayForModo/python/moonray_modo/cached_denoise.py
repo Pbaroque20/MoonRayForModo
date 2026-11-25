@@ -77,6 +77,12 @@ class CachedDenoise(QtCore.QObject):
             fine=files.get('denoise_fine')
             if fine and Path(str(fine)).suffix.lower()=='.exr' and Path(str(fine)).is_file():
                 shutil.copyfile(str(fine),str(root/'denoise_fine.exr'));guides['fine']=str(root/'denoise_fine.exr')
+            # The light of glitter's flakes (Keep Metallic Flakes), where the render made it.
+            flakes=files.get('denoise_flakes')
+            try:keep=denoising.settings(frame.get('snapshot',{}).get('denoising',{}))['flakes']
+            except ValueError:keep=False
+            if keep and flakes and Path(str(flakes)).suffix.lower()=='.exr' and Path(str(flakes)).is_file():
+                shutil.copyfile(str(flakes),str(root/'denoise_flakes.exr'));guides['flakes']=str(root/'denoise_flakes.exr')
             try:detail=denoising.settings(frame.get('snapshot',{}).get('denoising',{}))['detail']
             except ValueError:detail='some'
             self.jobs=before+denoising.jobs(frame['runtime'],beauty,root/'result',engine,guides,detail)

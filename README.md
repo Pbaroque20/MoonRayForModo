@@ -15,6 +15,7 @@ The current release is [0.5.6](https://github.com/Pbaroque20/MoonRayForModo/rele
 - **Glass in alpha**: the sky seen through glass (clear, thin, frosted, water) is see-through in the alpha, as much as the glass lets through; what it reflects stays. MoonRay counted glass as opaque as paint. MoonRay, XPU2 and MoonLightIPR alike. Switch: MoonRay Source Overrides, Glass in alpha (on).
 
   ![Paint, glass, thin glass, frosted glass, a half-present ball and a half-transmitting one, each laid over a checkerboard by its alpha: before (top), the glass as opaque as paint; now (bottom), see-through](docs/images/glass-alpha.png)
+- **Keep Metallic Flakes** (Render Settings > Denoising, off unless ticked): metallic paint whose flakes are a pixel or smaller no longer comes out of the denoiser smooth, like plastic. The light of the Glitter flakes is set aside while the picture is denoised and half of it put back as rendered, so the paint keeps its sparkle. MoonRay and XPU2 renders and previews, with OptiX or Open Image Denoise.
 - **No halo past cut-outs**: in OpenEXRs read as Premultiplied, the sky past presence cut-outs and through glass is taken out of the colour too (the Environment background layer holds it).
 - **Stacked environments**: each kind of ray sees the topmost environment it is let see, as in Modo, so a gradient environment over an HDRI one hides it instead of adding to it (Preferences, Stacked environments; Add as before).
 - **Front projection** for Shader Tree textures, from the render camera.

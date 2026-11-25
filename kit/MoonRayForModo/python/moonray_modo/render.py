@@ -736,7 +736,10 @@ class Renderer(QtCore.QObject):
                 # With fur, hair or curves in the scene, a third: how much of each pixel is those, so that the
                 # denoised picture can keep them as they were rendered.
                 fine=any(entry.get('kind')=='curves' for entry in snapshot.get('extra_geometry',[]))
-                snapshot['_denoise_guides']={key:str(self.current_base.with_suffix('.denoise-'+key+'.exr')) for key in ('albedo','normal')+(('fine',) if fine else ())}
+                # Keep Metallic Flakes, with glitter in the scene: a fourth, the light its flakes reflect, which the
+                # denoiser is given apart (denoising.flake_steps).
+                flakes=denoising.keeps_flakes(snapshot)
+                snapshot['_denoise_guides']={key:str(self.current_base.with_suffix('.denoise-'+key+'.exr')) for key in ('albedo','normal')+(('fine',) if fine else ())+(('flakes',) if flakes else ())}
                 self.denoise_guides=snapshot['_denoise_guides']
             if use_denoise:
                 if request['output'] and denoising.sidecar(request['output']).exists(): raise ValueError('Denoised output already exists: '+str(denoising.sidecar(request['output'])))

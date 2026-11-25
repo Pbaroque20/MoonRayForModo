@@ -2350,6 +2350,10 @@ class Panel(Tools, QtWidgets.QWidget):
         render_scene={key:value for key,value in scene.items() if key not in dropped}
         stored=self._settings_values();get=self.preferences.get
         values = [render_scene, self._clay(), self.runtime_path(), get('preview_fraction'), stored['samples'], stored['environment'], stored['threads'], get('persistent_preview'), self._following, get('ipr/samples'), get('ipr/error'), get('moonlightipr/samples'), self._engine()]
+        # Keep Metallic Flakes asks the render for the flakes' light (a buffer of its own): switched with glitter in the
+        # scene, the preview is rendered again for it.
+        from . import denoising
+        if denoising.keeps_flakes(scene):values.append('flakes')
         # Geometry is hashed once per list; a streaming JSON pass over every vertex took seconds per update.
         from .scene_digest import digest
         return digest(*values)

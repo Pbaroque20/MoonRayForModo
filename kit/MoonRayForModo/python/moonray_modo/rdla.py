@@ -1194,10 +1194,13 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
             for attr,value in attributes.items():
                 lines.append('  [%s] = %s,'%(string(attr),(value if isinstance(value,outputs.Raw) else string(value)) if isinstance(value,str) else ('true' if value else 'false') if isinstance(value,bool) else number(value)))
             lines.append('}')
+    from .denoising import FLAKES_LPE
     for key,path in scene.get('_denoise_guides',{}).items():
         attributes=({'result':7,'material_aov':'albedo'} if key=='albedo'
                     # The matte of fur, hair and curves: a number those carry and nothing else does.
                     else {'result':4,'primitive_attribute':'modo_fine','primitive_attribute_type':0} if key=='fine'
+                    # Keep Metallic Flakes: the light glitter's flakes reflect to the camera (denoising.flake_steps).
+                    else {'result':8,'lpe':FLAKES_LPE} if key=='flakes'
                     else {'result':3,'state_variable':2})
         if recovery:
             from .recovery import attributes as recovery_attributes

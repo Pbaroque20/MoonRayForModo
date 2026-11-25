@@ -10,14 +10,25 @@ SMART=('off','draft','medium','fine')
 # itself. A quarter: 13.6, its strands as sharp as the reference's (the denoiser alone: 12.9, a little softer). Half:
 # 15.2, sharper than the reference, some grain.
 DETAIL={'off':0.0,'some':.25,'more':.5}
+# Keep Metallic Flakes: the light glitter's flakes reflect (their own buffer, the render's light path expression
+# FLAKES_LPE) is taken out of the picture before it is denoised, and put back after it, half of it as rendered and half
+# denoised on its own. Flakes a pixel or smaller (metallic paint seen from a car's length or more) sparkle at random from
+# sample to sample, and a denoiser smooths them to a milky sheen, the paint plastic. A painted ball whose flakes are
+# about a third of a pixel, at 4 samples against 144 (8-bit steps; spread: how far each 4x4 block's sparkle is from
+# the reference's): Open Image Denoise 15.6 -> 13.9, spread 8.5 -> 3.7, sparkle kept 0.58 -> 0.93 of the reference's;
+# OptiX 14.6 -> 13.5, spread 6.2 -> 3.6. All of it as rendered brought the noise back (19.5, as the render itself);
+# none of it, the plastic look (16.0). Off by default: flakes several pixels wide the denoiser keeps by itself, and the
+# split costs Open Image Denoise there (5.1 -> 6.1).
+FLAKES_KEPT=.5
+FLAKES_LPE="C<R.'glitter'>.*[<L.>O]"
 def settings(value):
     # safe: MoonRay saves its picture every few seconds as it renders, so that a render stopped by hand is kept and
     # denoised as a finished one is.
     # smart: a MoonRay render is stopped once its picture is clean enough for the denoiser (smart_render.py); 'off',
     # or how clean is clean enough.
     result={'engine':value.get('engine','off'),'preview':value.get('preview',True),'final':value.get('final',True),'safe':value.get('safe',False),
-            'smart':value.get('smart','off'),'detail':value.get('detail','some')}
-    if result['detail'] not in DETAIL:raise ValueError('Invalid denoising settings')
+            'smart':value.get('smart','off'),'detail':value.get('detail','some'),'flakes':value.get('flakes',False)}
+    if result['detail'] not in DETAIL or type(result['flakes']) is not bool:raise ValueError('Invalid denoising settings')
     if result['smart'] not in SMART:raise ValueError('Invalid denoising settings')
     # Smart Render stops a render for the denoiser to finish: with the Denoiser Off it is off too, its control greyed,
     # rather than stop a render early and leave it noisy.
@@ -49,6 +60,25 @@ def guides_required(snapshot,final=False,linear=False):
             if native.xpu2():return False
         except Exception:pass
     return enabled(snapshot,final,linear) or (not final and not linear)
+
+def glittering(materials):
+    """Whether any of these materials (a scene's, or its MoonRay material library) shows glitter: a material, a node of
+    its graph or a layer of its stack."""
+    from .reference_points import GLITTERING
+    def shows(material,depth=0):
+        if not isinstance(material,dict) or depth>16:return False
+        if material.get('native_shader') in GLITTERING and (material.get('native_parameters') or {}).get('show_glitter'):return True
+        graph=material.get('node_graph') or {}
+        if any(isinstance(node,dict) and node.get('type') in GLITTERING and (node.get('parameters') or {}).get('show_glitter')
+               for node in (graph.get('nodes') or {}).values()):return True
+        return any(shows(layer,depth+1) for layer in (material.get('material_stack') or [])+(material.get('native_dependencies') or []) if layer is not material)
+    return any(shows(material) for material in (materials or {}).values())
+
+def keeps_flakes(snapshot):
+    """Keep Metallic Flakes is on and the scene has glitter for it to keep."""
+    try:on=settings(snapshot.get('denoising',{}))['flakes']
+    except ValueError:return False
+    return on and (glittering(snapshot.get('materials')) or glittering(snapshot.get('native_materials')))
 
 # How often a safe render saves its picture, in minutes, and what a saved picture is called beside the file it is of.
 SAFE_MINUTES=.05
@@ -99,8 +129,10 @@ def denoised_steps(runtime,source,base,engine,guides,detail='some'):
     # go with its channels: a denoised picture that kept them (and its manifest) had Photoshop offer 1,530 mattes it
     # does not hold.
     steps=[(oiio,['--no-autopremult',str(source),'--ch','R,G,B,A=1','--eraseattrib','cryptomatte/.*',
-                  '--eraseattrib','MoonRayForModo/cryptomatteCategory','-d','float','-o',str(rgba)],rgba),
-        (denoiser,['-in',str(rgba),'-albedo',guides['albedo'],'-normals',guides['normal'],'-mode',engine,'-out',str(filtered)],filtered)]
+                  '--eraseattrib','MoonRayForModo/cryptomatteCategory','-d','float','-o',str(rgba)],rgba)]
+    def denoise(picture,result):
+        return (denoiser,['-in',str(picture),'-albedo',guides['albedo'],'-normals',guides['normal'],'-mode',engine,'-out',str(result)],result)
+    steps+=flake_steps(oiio,rgba,base,guides['flakes'],denoise,filtered) if guides.get('flakes') else [denoise(rgba,filtered)]
     gain=DETAIL.get(detail,0.0)
     # Only where the render made the matte of fur, hair and curves. The guides' own fine detail (each guide against
     # itself blurred) is not used: on a textured or bumpy surface they change at every pixel, and letting the render
@@ -117,3 +149,16 @@ def denoised_steps(runtime,source,base,engine,guides,detail='some'):
     steps.append((oiio,['--no-autopremult',str(rgba),'--ch','R,G,B',str(filtered),'--ch','R,G,B','--sub',str(mask),'--mul',
                        str(filtered),'--ch','R,G,B','--add','-d','float','-o',str(output)],output))
     return steps
+
+def flake_steps(oiio,rgba,base,flakes,denoise,filtered):
+    """Keep Metallic Flakes: the picture without its flakes' light (the flakes guide) denoised, that light denoised on
+    its own, and the two added up into filtered, FLAKES_KEPT of the light as rendered in place of as much of its
+    denoised copy. denoise(picture, result) is the denoiser's step."""
+    light=base.with_suffix('.denoise-flakes-light.exr');rest=base.with_suffix('.denoise-without-flakes.exr')
+    rest_done=base.with_suffix('.denoise-without-flakes-done.exr');light_done=base.with_suffix('.denoise-flakes-light-done.exr')
+    kept=FLAKES_KEPT
+    return [(oiio,['--no-autopremult',str(flakes),'--ch','0,1,2,A=1','--chnames','R,G,B,A','-d','float','-o',str(light)],light),
+            (oiio,['--no-autopremult',str(rgba),'--ch','R,G,B',str(light),'--ch','R,G,B','--sub','--ch','R,G,B,A=1','-d','float','-o',str(rest)],rest),
+            denoise(rest,rest_done),denoise(light,light_done),
+            (oiio,['--no-autopremult',str(rest_done),'--ch','R,G,B',str(light),'--ch','R,G,B','--mulc',str(kept),'--add',
+                   str(light_done),'--ch','R,G,B','--mulc',str(1-kept),'--add','--ch','R,G,B,A=1','-d','float','-o',str(filtered)],filtered)]

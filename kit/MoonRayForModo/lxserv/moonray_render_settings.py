@@ -41,7 +41,7 @@ def register():
     # MoonRay's light sampling mode for adaptive light sampling (options.ENUMS['light_sampling_mode']).
     ADAPTIVE_LIGHTS=1
     # The settings that only mean something with a denoiser chosen.
-    NEEDS_DENOISER=('denoise_preview','denoise_final','denoise_detail','smart_render')
+    NEEDS_DENOISER=('denoise_preview','denoise_final','denoise_detail','denoise_flakes','smart_render')
     TYPES={'bool':lx.symbol.sTYPE_BOOLEAN,'member':lx.symbol.sTYPE_BOOLEAN,'int':lx.symbol.sTYPE_INTEGER,
            'choice':lx.symbol.sTYPE_INTEGER,'float':lx.symbol.sTYPE_FLOAT,'hex':lx.symbol.sTYPE_COLOR}
 
