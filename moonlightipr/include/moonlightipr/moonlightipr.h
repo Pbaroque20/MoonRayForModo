@@ -130,6 +130,20 @@ struct Material {
     // much as its light samples are not shadowed. A matte shows no colour and holds the shadows in its alpha.
     float shadowCatcher = -1.0f;
     bool shadowMatte = false;
+    // MoonRay's glitter (DwaBaseMaterial's show_glitter, its metallic flakes), with MoonRay's attributes: the amount
+    // (glitter), the space (4 object, 5 reference: the mesh's own points as its rest), the seed, the flakes' orientation
+    // randomness, density, jitter and level-of-detail quality, whether a reference space's stretch is compensated, whether
+    // bounces see the flakes' average (always, here) and whether the camera's flakes add to what is beneath (layering
+    // mode 1), and styles A and B's frequency, size, roughness and colour (in the working space), and the colour variation.
+    bool glitter = false;
+    float glitterMask = 1.0f;
+    uint32_t glitterSpace = 5;
+    int32_t glitterSeed = 0;
+    bool glitterCompensate = true, glitterApproximate = true, glitterAdditive = false;
+    float glitterRandomness = 0.5f, glitterDensity = 1.0f, glitterJitter = 1.0f, glitterLodQuality = 0.5f;
+    float glitterFrequency[2] = {1.0f, 0.0f}, glitterSize[2] = {1.0f, 1.0f}, glitterRoughness[2] = {0.14f, 0.14f};
+    float glitterColor[6] = {1, 1, 1, 1, 1, 1};
+    float glitterVariation[3] = {0, 0, 0};
 };
 
 // A block of numbers on the GPU, x fastest, read between its cells.
@@ -233,6 +247,9 @@ struct MeshDesc {
     // Where the vertices are when the shutter closes, for a mesh that changes shape; null if it
     // does not. Shading normals stay as given.
     const float* closePositions = nullptr;
+    // Rest positions (MoonRay's ref_P), 3 floats per vertex, for glitter in reference space; null where the vertices
+    // are their own rest.
+    const float* restPositions = nullptr;
 };
 
 // Curves, as round segments: tubes whose middle follows a cubic B-spline, or runs straight from point to point,
@@ -270,6 +287,9 @@ struct Instance {
     uint32_t visibility = 255;
     // Its own number, 0 to 1, which a Variation Texture by Particle reads: one for each replica.
     float value = 0.0f;
+    // One of an instancer's placements (the kit's MoonRay RdlInstancerGeometry): MoonRay's object space for it is its
+    // reference mesh's, not the placement's (MoonRay's glitter in object space).
+    bool instanced = false;
     // Where the instance is when the shutter closes, if it moves.
     bool moves = false;
     float closeTransform[12] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0};
@@ -511,6 +531,11 @@ public:
     void readBeauty(float* rgb);
     // Same, after the OptiX denoiser guided by the albedo and normal buffers.
     void readDenoised(float* rgb);
+    // Keep Metallic Flakes (the kit's Render Settings > Denoising): the light MoonRay's glitter reflects to the camera is
+    // set aside from the picture the denoiser is given, denoised on its own, and put back half as rendered, half
+    // denoised, so that flakes of a pixel or less keep their sparkle. Only where a material has glitter; a render begins
+    // again when it changes.
+    void setKeepFlakes(bool on);
     // The geometry AOVs (AovSlot in the device's shared.h), gathered all at once beside the beauty while on, from the
     // next sample on: a render begins again when they are switched on or off. readAov copies one as readBeauty does.
     void setAovs(bool on);

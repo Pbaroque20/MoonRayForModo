@@ -10,7 +10,8 @@ typedef unsigned long long DevicePtr;
 // The heavy features a kernel can be made without (ML_FEATURES in kernel.cu): a scene that uses none of them is rendered
 // by a kernel without their code, a third faster or more. All of them is FEATURE_ALL, the kernel as it is built.
 // Procedural layers (Modo's patterns, modo_patterns.h) are one too: a kernel without them is a quarter quicker to compile.
-// So is MoonRay's iridescence, which every specular and coat reflection would otherwise look up.
+// So are MoonRay's special paint lobes, iridescence (which every specular and coat reflection would otherwise look up)
+// and glitter (metallic flakes): FEATURE_IRIDESCENCE is either or both, so that the kit keeps its 128 kernels.
 const unsigned FEATURE_FOG = 1, FEATURE_HAIR = 2, FEATURE_SUBSURFACE = 4, FEATURE_TOON = 8, FEATURE_FUZZ = 16, FEATURE_PROCEDURAL = 32,
                FEATURE_IRIDESCENCE = 64, FEATURE_ALL = 127;
 
@@ -71,7 +72,14 @@ const unsigned MATERIAL_THIN = 1, MATERIAL_COAT_DIMS = 2, MATERIAL_HAS_PRESENCE 
                // alone, unlit; seen by the camera, (1 - strength) of its emission and the rest as much as its light samples
                // are not shadowed (DeviceMaterial::catcher the strength). As a matte, no colour, and the shadows in alpha.
                MATERIAL_SHADOW_CATCHER = 1u << 18, MATERIAL_CATCHER_MATTE = 1u << 19,
-               MATERIAL_MATTE = 1u << 30;   // set by the kernel alone, where light leaves from beneath a surface
+               MATERIAL_MATTE = 1u << 30;
+// What MoonRay's glitter adds is known to FEATURE_IRIDESCENCE's kernels alone (and to the host): a constant here is a
+// global of every kernel's, and the others are left as they were.
+#if !defined(ML_FEATURES) || (ML_FEATURES & 64u)
+// MoonRay's glitter (DwaBaseMaterial's metallic flakes, DeviceGlitter): its record is the high half of
+// DeviceMaterial::iridescence, a slot of LaunchParams::iridescences.
+const unsigned MATERIAL_GLITTER = 1u << 20;
+#endif   // set by the kernel alone, where light leaves from beneath a surface
 const unsigned LAYER_IMAGE = 1, LAYER_INVERT = 2, LAYER_FLIP_RED = 4, LAYER_FLIP_GREEN = 8, LAYER_FLIP_BLUE = 16,
                LAYER_ALPHA_MASK = 32, LAYER_ALPHA_ONLY = 64, LAYER_COVERAGE_U = 128, LAYER_COVERAGE_V = 256,
                LAYER_PICK_SHIFT = 9,    // two bits: 0 keeps RGB, 1 to 3 spread red, green or blue
@@ -175,7 +183,8 @@ struct DeviceMaterial {
     float fuzzColor[3];
     float fuzzRoughness;        // 0.05 to 1
     float fuzzDims;             // how much it takes from the lobes beneath: fuzz, by its colour unless its fibres absorb
-    unsigned iridescence;       // with MATERIAL_IRIDESCENT, this material's entry in LaunchParams::iridescences
+    unsigned iridescence;       // with MATERIAL_IRIDESCENT, this material's entry in LaunchParams::iridescences (the low
+                                // 16 bits); with MATERIAL_GLITTER, the slot there of its DeviceGlitter (the high 16 bits)
     float catcher;              // with MATERIAL_SHADOW_CATCHER, its strength, 0 to 1
 };
 
@@ -235,6 +244,53 @@ struct DeviceIridescence {
     unsigned coat;              // tints the clear coat's reflection (MoonRay's outer specular), not the specular's
     float colors[IRIDESCENCE_STEPS * 3];
 };
+
+#if !defined(ML_FEATURES) || (ML_FEATURES & 64u)
+// MoonRay's glitter (moonshine Glitter, DwaBaseMaterial's show_glitter): flakes scattered through the material's object
+// or reference space by Worley noise, each a small tilted mirror of its own colour. Where the camera sees a few, each is
+// a lobe of its own (GlitterGGXCookTorrance); more, the rest are MoonRay's stochastic flakes lobe; many, or seen by a
+// bounce, a GGX lobe of their average colour. The lobes lie under the coat and over everything else, which keeps what
+// they leave. A record fills one slot of LaunchParams::iridescences (DeviceMaterial::iridescence's high half), so that
+// kernels without FEATURE_IRIDESCENCE do not know of it. Its tables (tables, GLITTER_TABLE_FLOATS floats) are Worley's
+// permutation (int bits) and feature points, the flakes' normals for its randomness, the colour random table (its seed
+// + 100) and Poisson's point-count bounds, as MoonRay's Glitter object makes them.
+const unsigned GLITTER_TABLE_SIZE = 16384, GLITTER_RANDOM_SIZE = 10000;
+const unsigned GLITTER_PERM = 0, GLITTER_POINTS_X = GLITTER_TABLE_SIZE, GLITTER_POINTS_Y = 2 * GLITTER_TABLE_SIZE,
+               GLITTER_POINTS_Z = 3 * GLITTER_TABLE_SIZE, GLITTER_NORMALS_X = 4 * GLITTER_TABLE_SIZE,
+               GLITTER_NORMALS_Y = 5 * GLITTER_TABLE_SIZE, GLITTER_NORMALS_Z = 6 * GLITTER_TABLE_SIZE,
+               GLITTER_RANDOM = 7 * GLITTER_TABLE_SIZE, GLITTER_PROB_LOW = 7 * GLITTER_TABLE_SIZE + GLITTER_RANDOM_SIZE,
+               GLITTER_PROB_HIGH = GLITTER_PROB_LOW + 10, GLITTER_TABLE_FLOATS = GLITTER_PROB_HIGH + 10;
+// The most flakes one footprint keeps (MoonRay's NOISE_WORLEY_MAX_SEARCH_POINTS).
+const unsigned GLITTER_MAX_FLAKES = 1500;
+const unsigned GLITTER_OBJECT_SPACE = 4, GLITTER_REFERENCE_SPACE = 5;
+struct DeviceGlitter {
+    DevicePtr tables;
+    // Keep Metallic Flakes: where the camera's paths add up the light the glitter at their first surface reflects, a
+    // float4 a pixel (summed over the samples; Renderer::setKeepFlakes), or 0.
+    DevicePtr flakes;
+    // A byte an instance (by OptiX's instance id), 1 where it is one of an instancer's placements (the kit's MoonRay
+    // RdlInstancerGeometry): MoonRay's object space there is its reference mesh's own (node_xform, the world's for the
+    // kit's meshes), not the placement's. 0 for none.
+    DevicePtr instancers;
+    // Rest positions (MoonRay's ref_P), for glitter in reference space: a DevicePtr a mesh (DeviceInstance::mesh), each
+    // float[3] a vertex as the mesh's positions are, or 0 where the mesh is its own rest; 0 for none at all.
+    DevicePtr rests;
+    float mask;                 // glitter, 0 to 1
+    unsigned space;             // GLITTER_OBJECT_SPACE or GLITTER_REFERENCE_SPACE (the mesh's own points as its rest)
+    unsigned compensate;        // glitter_compensate_reference_space_deformation
+    unsigned approximate;       // glitter_approximate_for_secondary_rays (always, here: a bounce has no footprint)
+    unsigned additive;          // glitter_layering_mode 1: the camera's flakes add to what is beneath, leaving it whole
+    int seed;                   // glitter_seed modulo GLITTER_TABLE_SIZE
+    float randomness;           // 0.6 x glitter_randomness: the flakes' tilt, and the average lobe's roughness
+    float density, jitter;
+    int blendStart, blendEnd;   // the features a footprint holds where the flakes start and finish blending to the average
+    float frequency[2], size[2], roughness[2];  // styles A and B
+    float color[6];             // A then B, in the working space
+    float variation[3];         // hue, saturation and value variation
+    float coverage;             // how much of a footprint the flakes cover on average (computeCoverageFactor)
+    float average[3];           // their average colour (computeAverageFlakeColor of computeAverageBaseColor)
+};
+#endif
 
 // A hair fibre, as MoonRay's HairMaterial: light reflected off it (R), passed through it (TT), reflected once
 // inside it (TRT), and everything after that (TRRT). The fibre's colour is the material's own.

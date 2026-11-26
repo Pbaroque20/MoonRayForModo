@@ -21,6 +21,11 @@ MoonLightIPR is a GPU preview renderer created by Raphael Tobar for MoonRay for 
   `VelvetAlbedoTable.isph`), Copyright 2023-2024 DreamWorks Animation LLC. They are under the Apache License 2.0,
   not the MIT License, and keep DreamWorks' copyright and licence notice in that file; the Apache License 2.0 is
   installed with MoonRay's runtime in `licenses/`. They are used so that the preview's velvet matches MoonRay's.
+- **MoonRay's glitter tables.** The two tables of glitter flakes' average saturation and value by hue and hue variation,
+  in `src/glitter_tables.h`, are taken unchanged from OpenMoonRay (`HueVariationTables.isph`), Copyright 2023-2024
+  DreamWorks Animation LLC, under the Apache License 2.0 as the velvet tables are. MoonLightIPR's glitter code
+  (`src/glitter_host.h` and the glitter part of `src/device/kernel.cu`) is written to follow OpenMoonRay's Glitter,
+  Worley noise and stochastic flakes lobe, so that the preview's metallic flakes fall where MoonRay's do.
 - **OpenQMC.** The samples a path draws come from OpenQMC's Owen-scrambled Sobol sampler, whose headers are kept
   unchanged in `third_party/openqmc` (version 0.7.1). Copyright Contributors to the OpenQMC Project, under the
   Apache License 2.0, with NVIDIA's covenant not to assert patents; both are installed beside MoonLightIPR in

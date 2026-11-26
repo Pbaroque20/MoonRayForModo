@@ -4,6 +4,7 @@
 #include "moonlightipr/moonlightipr.h"
 #include "device/shared.h"
 #include "transform_blend.h"
+#include "glitter_host.h"
 
 #include <cuda_runtime.h>
 #include <optix.h>
@@ -24,6 +25,7 @@
 #include <fstream>
 #include <iostream>
 #include <iterator>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -97,6 +99,8 @@ struct Mesh {
     Buffer positions, normals, indices, materialIds, uvs, accel, widths;
     // A mesh that changes shape: each vertex's move from the shutter's opening to its closing (DeviceMesh::motion).
     Buffer motion;
+    // Its rest positions (MeshDesc::restPositions), for glitter in reference space; empty where it is its own rest.
+    Buffer rest;
     bool curves = false;    // round curve segments: positions, widths and each segment's first point
     bool linear = false;    // those segments are straight, not cubic B-splines
     bool ribbon = false;    // and they are lit as flat ribbons facing the ray
@@ -321,10 +325,21 @@ struct Renderer::Impl {
     std::vector<Instance> instances;
     size_t materialCount = 0, layerCount = 0, lightCount = 0;
     Buffer meshTable, instanceTable, materialTable, layerTable, tileTable, hairTable, volumeTable, toonTable, iridescenceTable, albedoTables, instanceInput, instanceAccel, accelTemp;
+    // MoonRay's glitter: each material's tables (glitter::tables), kept by its seed and randomness while materials use them.
+    std::vector<std::pair<std::pair<int32_t, float>, std::unique_ptr<Buffer>>> glitterTables;
     Buffer envReflected, envThrough, envReflectedMarginal, envReflectedConditional;
     Buffer envPixels, envBackground, envMarginal, envConditional, distantLights, lights, lightTriangles, lightFilters;
     Buffer lightDistributions, distantDistributions;
     Buffer beauty, albedo, normal, denoised, lighting, paramsBuffer;
+    // Keep Metallic Flakes (Renderer::setKeepFlakes): asked for; the light of the glitter's flakes, summed over the samples
+    // (DeviceGlitter::flakes); the materials' paint slots as uploaded, and which hold glitter, whose flakes pointer is set
+    // as a render starts (flakeTarget).
+    bool keepFlakes = false;
+    Buffer flakes, instancers, rests;
+    DevicePtr instancersAt = 0, restsAt = 0;
+    std::vector<DeviceIridescence> paintSlots;
+    std::vector<size_t> glitterSlots;
+    DevicePtr flakesAt = 0;
     Buffer aov;     // the geometry AOVs, AOV_SLOTS float[4] per pixel (setAovs), while they are gathered
     Buffer passes;  // and the light passes and the shadow matte beside them, PASS_SLOTS float[4] per pixel (LaunchParams::passes)
     Buffer instanceMotion;  // each instance's transform as the shutter opens and closes, for the motion vectors
@@ -339,6 +354,7 @@ struct Renderer::Impl {
     float cleanBelow = 0.0f;
     uint32_t nextCheck = 0;
     std::vector<uint8_t> tileDone, tilePassed;
+    std::vector<uint32_t> tileSamples;     // the samples a tile had when it was judged clean (Keep Metallic Flakes' mean)
     bool clean = false;
     // The last sample sent to the graphics card: the next waits for it asleep, rather than in the copy of its
     // settings, which would spin a core of the processor at full power the while. Loading a scene still waits as it did:
@@ -938,6 +954,48 @@ struct Renderer::Impl {
         clean = false;
     }
 
+    // Keep Metallic Flakes, as a render starts: the glitter records point at the flakes' light, cleared (summed over the
+    // samples from here), or at nothing where it is off or no material has glitter.
+    void flakeTarget() {
+        // And which instances are an instancer's placements (Instance::instanced), for the glitter's object space.
+        DevicePtr placed = 0;
+        if (!glitterSlots.empty() && std::any_of(instances.begin(), instances.end(), [](const Instance& i) { return i.instanced; })) {
+            std::vector<unsigned char> bytes(instances.size());
+            for (size_t i = 0; i < instances.size(); ++i) bytes[i] = instances[i].instanced ? 1 : 0;
+            instancers.upload(bytes);
+            placed = instancers.ptr;
+        }
+        // And the meshes' rest positions, by mesh, for glitter in reference space.
+        DevicePtr rested = 0;
+        if (!glitterSlots.empty() && std::any_of(meshes.begin(), meshes.end(), [](const std::unique_ptr<Mesh>& m) { return m && m->rest.ptr; })) {
+            std::vector<DevicePtr> table(meshes.size(), 0);
+            for (size_t i = 0; i < meshes.size(); ++i) table[i] = meshes[i] ? meshes[i]->rest.ptr : 0;
+            rests.upload(table);
+            rested = rests.ptr;
+        }
+        const bool wanted = keepFlakes && !glitterSlots.empty();
+        const size_t bytes = size_t(params.width) * params.height * sizeof(float) * 4;
+        if (wanted) {
+            flakes.reserve(bytes);
+            ML_CHECK(cudaMemset(reinterpret_cast<void*>(flakes.ptr), 0, bytes));
+        }
+        const DevicePtr at = wanted ? flakes.ptr : 0;
+        if (at == flakesAt && placed == instancersAt && rested == restsAt) return;
+        for (size_t slot : glitterSlots) {
+            DeviceGlitter g;
+            std::memcpy(&g, &paintSlots[slot], sizeof(g));
+            g.flakes = at;
+            g.instancers = placed;
+            g.rests = rested;
+            std::memcpy(&paintSlots[slot], &g, sizeof(g));
+        }
+        iridescenceTable.upload(paintSlots);
+        params.iridescences = iridescenceTable.ptr;
+        flakesAt = at;
+        instancersAt = placed;
+        restsAt = rested;
+    }
+
     // How a difference shows on the screen: the light squeezed into 0 to 1, then encoded as sRGB is, so that noise
     // in the dark counts as much as the eye sees it there.
     static float shown(float value) {
@@ -970,7 +1028,10 @@ struct Renderer::Impl {
                         noise += apart;
                     }
                 const bool passes = noise < cleanBelow * float(pixels);
-                if (passes && tilePassed[tile]) tileDone[tile] = 1;
+                if (passes && tilePassed[tile]) {
+                    tileDone[tile] = 1;
+                    tileSamples[tile] = samples;
+                }
                 tilePassed[tile] = passes ? 1 : 0;
                 everywhere = everywhere && tileDone[tile];
             }
@@ -1014,11 +1075,12 @@ struct Renderer::Impl {
     }
 
     void denoise() {
+        const bool alone = lightAlone();   // read once: it asks the environment
         const size_t count = size_t(params.width) * params.height;
         // The surface colour is never quite nothing, so that dividing by it is safe; the same is multiplied back.
         const float floor = 0.05f;
         std::vector<float> colour, light;
-        if (lightAlone()) {
+        if (alone) {
             colour.resize(count * 4);
             light.resize(count * 4);
             ML_CHECK(cudaMemcpy(colour.data(), reinterpret_cast<void*>(albedo.ptr), colour.size() * sizeof(float), cudaMemcpyDeviceToHost));
@@ -1026,6 +1088,25 @@ struct Renderer::Impl {
             for (size_t i = 0; i < count; ++i)
                 for (int c = 0; c < 3; ++c) light[i * 4 + c] /= std::max(colour[i * 4 + c], 0.0f) + floor;
             lighting.upload(light.data(), light.size() * sizeof(float));
+        }
+        // Keep Metallic Flakes: the flakes' light (its sum over the samples, averaged) out of the picture before it is
+        // denoised, and the light itself denoised apart (the kit's denoising.flake_steps, FLAKES_KEPT of it as rendered).
+        std::vector<float> flakeLight;
+        if (flakesAt && samples) {
+            flakeLight.resize(count * 4);
+            ML_CHECK(cudaMemcpy(flakeLight.data(), reinterpret_cast<void*>(flakes.ptr), flakeLight.size() * sizeof(float), cudaMemcpyDeviceToHost));
+            std::vector<float> rest(count * 4);
+            ML_CHECK(cudaMemcpy(rest.data(), reinterpret_cast<void*>(beauty.ptr), rest.size() * sizeof(float), cudaMemcpyDeviceToHost));
+            for (size_t i = 0; i < count; ++i)
+                for (int c = 0; c < 3; ++c) {
+                    // Over the samples the pixel took: a tile judged clean took no more.
+                    const size_t tile = params.done ? (i / params.width / CLEAN_TILE) * params.doneColumns + (i % params.width) / CLEAN_TILE : 0;
+                    const uint32_t taken = params.done && tile < tileDone.size() && tileDone[tile] && tileSamples[tile] ? tileSamples[tile] : samples;
+                    flakeLight[i * 4 + c] /= float(taken);
+                    rest[i * 4 + c] -= flakeLight[i * 4 + c];
+                    if (alone) rest[i * 4 + c] /= std::max(colour[i * 4 + c], 0.0f) + floor;
+                }
+            (alone ? lighting : flakeRest).upload(rest.data(), rest.size() * sizeof(float));
         }
         if (!denoiser) {
             OptixDenoiserOptions options = {};
@@ -1043,24 +1124,56 @@ struct Renderer::Impl {
         OptixDenoiserGuideLayer guides = {};
         guides.albedo = image(albedo);
         guides.normal = image(normal);
-        OptixDenoiserLayer layer = {};
-        layer.input = image(lightAlone() ? lighting : beauty);
-        layer.output = image(denoised);
         OptixDenoiserParams denoiserParams = {};
         denoiserParams.denoiseAlpha = OPTIX_DENOISER_ALPHA_MODE_COPY;
         denoiserParams.hdrIntensity = denoiserIntensity.ptr;
         denoiserParams.blendFactor = keptShare();
-        ML_CHECK(optixDenoiserComputeIntensity(denoiser, nullptr, &layer.input, denoiserIntensity.ptr,
-            denoiserScratch.ptr, denoiserScratchBytes));
-        ML_CHECK(optixDenoiserInvoke(denoiser, nullptr, &denoiserParams, denoiserState.ptr, denoiserSizes.stateSizeInBytes,
-            &guides, &layer, 1, 0, 0, denoiserScratch.ptr, denoiserScratchBytes));
-        if (lightAlone()) {
+        auto run = [&](Buffer& input) {
+            OptixDenoiserLayer layer = {};
+            layer.input = image(input);
+            layer.output = image(denoised);
+            ML_CHECK(optixDenoiserComputeIntensity(denoiser, nullptr, &layer.input, denoiserIntensity.ptr,
+                denoiserScratch.ptr, denoiserScratchBytes));
+            ML_CHECK(optixDenoiserInvoke(denoiser, nullptr, &denoiserParams, denoiserState.ptr, denoiserSizes.stateSizeInBytes,
+                &guides, &layer, 1, 0, 0, denoiserScratch.ptr, denoiserScratchBytes));
+        };
+        std::vector<float> flakesDone;
+        if (!flakeLight.empty()) {
+            // The flakes' light on its own first, as the rest is (by the surface colour where the light alone is denoised).
+            std::vector<float> own = flakeLight;
+            if (alone)
+                for (size_t i = 0; i < count; ++i)
+                    for (int c = 0; c < 3; ++c) own[i * 4 + c] /= std::max(colour[i * 4 + c], 0.0f) + floor;
+            flakeRest.upload(own.data(), own.size() * sizeof(float));
+            run(flakeRest);
+            flakesDone.resize(count * 4);
+            ML_CHECK(cudaMemcpy(flakesDone.data(), reinterpret_cast<void*>(denoised.ptr), flakesDone.size() * sizeof(float), cudaMemcpyDeviceToHost));
+            // The picture without them, back where denoise reads it.
+            if (!alone) {
+                std::vector<float> rest(count * 4);
+                ML_CHECK(cudaMemcpy(rest.data(), reinterpret_cast<void*>(beauty.ptr), rest.size() * sizeof(float), cudaMemcpyDeviceToHost));
+                for (size_t i = 0; i < count; ++i)
+                    for (int c = 0; c < 3; ++c) rest[i * 4 + c] -= flakeLight[i * 4 + c];
+                flakeRest.upload(rest.data(), rest.size() * sizeof(float));
+            }
+        }
+        run(alone ? lighting : flakeLight.empty() ? beauty : flakeRest);
+        if (alone || !flakeLight.empty()) {
+            light.resize(count * 4);
             ML_CHECK(cudaMemcpy(light.data(), reinterpret_cast<void*>(denoised.ptr), light.size() * sizeof(float), cudaMemcpyDeviceToHost));
             for (size_t i = 0; i < count; ++i)
-                for (int c = 0; c < 3; ++c) light[i * 4 + c] *= std::max(colour[i * 4 + c], 0.0f) + floor;
+                for (int c = 0; c < 3; ++c) {
+                    const float by = alone ? std::max(colour[i * 4 + c], 0.0f) + floor : 1.0f;
+                    light[i * 4 + c] *= by;
+                    if (!flakeLight.empty())
+                        light[i * 4 + c] += FLAKES_KEPT * flakeLight[i * 4 + c] + (1.0f - FLAKES_KEPT) * flakesDone[i * 4 + c] * by;
+                }
             denoised.upload(light.data(), light.size() * sizeof(float));
         }
     }
+    // Keep Metallic Flakes: how much of the flakes' light is put back as rendered (the kit's denoising.FLAKES_KEPT).
+    static constexpr float FLAKES_KEPT = 0.5f;
+    Buffer flakeRest;
 };
 
 Renderer::Renderer(const std::string& ptxPath) : impl(new Impl) {
@@ -1135,6 +1248,7 @@ uint32_t Renderer::addMesh(const MeshDesc& desc) {
 
     auto mesh = std::make_unique<Mesh>();
     mesh->positions.upload(desc.positions, desc.vertexCount * 3 * sizeof(float));
+    if (desc.restPositions) mesh->rest.upload(desc.restPositions, desc.vertexCount * 3 * sizeof(float));
     mesh->indices.upload(desc.indices, desc.triangleCount * 3 * sizeof(uint32_t));
     if (desc.normals) mesh->normals.upload(desc.normals, desc.vertexCount * 3 * sizeof(float));
     if (desc.materialIds) {
@@ -1505,6 +1619,8 @@ void Renderer::setMaterials(const Material* materials, size_t count, const Layer
         if (m.toonDiffuse || m.toonSpecular) features |= FEATURE_TOON;
         if (m.fuzz > 0.0f) features |= FEATURE_FUZZ;
         if (m.iridescent && m.iridescenceStrength > 0.0f && !m.hair && !m.volume) features |= FEATURE_IRIDESCENCE;
+        // MoonRay's glitter shares iridescence's kernels (FEATURE_IRIDESCENCE, "special paint lobes").
+        if (m.glitter && m.glitterMask > 0.0f && !m.hair && !m.volume) features |= FEATURE_IRIDESCENCE;
     }
     for (size_t i = 0; i < layerCount; ++i) {
         if (layers[i].channel == CHANNEL_SUBSURFACE || layers[i].channel == CHANNEL_SUBSURFACE_COLOR) features |= FEATURE_SUBSURFACE;
@@ -1585,6 +1701,62 @@ void Renderer::setMaterials(const Material* materials, size_t count, const Layer
         table[i].iridescence = unsigned(iridescences.size());
         iridescences.push_back(d);
     }
+    // MoonRay's glitter: a record in a slot of the same table after the iridescences, the slot the high half of the
+    // material's number there (DeviceGlitter), and its tables, shared by the materials of one seed and randomness.
+    std::vector<std::pair<std::pair<int32_t, float>, std::unique_ptr<Buffer>>> glitterTables;
+    static_assert(sizeof(DeviceGlitter) <= sizeof(DeviceIridescence), "a glitter record fills one slot of the iridescences' table");
+    for (size_t i = 0; i < count; ++i) {
+        const Material& m = materials[i];
+        if (!m.glitter || m.hair || m.volume || !(m.glitterMask > 0.0f)) continue;
+        if (iridescences.size() >= 0xffffu || table[i].iridescence > 0xffffu) break;
+        DeviceGlitter g{};
+        g.mask = std::clamp(m.glitterMask, 0.0f, 1.0f);
+        g.space = m.glitterSpace == GLITTER_OBJECT_SPACE ? GLITTER_OBJECT_SPACE : GLITTER_REFERENCE_SPACE;
+        g.compensate = m.glitterCompensate ? 1u : 0u;
+        g.approximate = m.glitterApproximate ? 1u : 0u;
+        g.additive = m.glitterAdditive ? 1u : 0u;
+        g.seed = std::max(m.glitterSeed, 0) % int32_t(GLITTER_TABLE_SIZE);
+        g.randomness = 0.6f * std::clamp(m.glitterRandomness, 0.0f, 1.0f);
+        g.density = m.glitterDensity;
+        g.jitter = m.glitterJitter;
+        const float quality = std::clamp(m.glitterLodQuality, 0.0f, 1.0f);
+        g.blendStart = int(100 + quality * 800);
+        g.blendEnd = std::min(g.blendStart + int(3.0f * float(g.blendStart)), int(GLITTER_MAX_FLAKES));
+        for (int k = 0; k < 2; ++k) {
+            g.frequency[k] = m.glitterFrequency[k];
+            g.size[k] = m.glitterSize[k];
+            g.roughness[k] = m.glitterRoughness[k];
+        }
+        std::copy(m.glitterColor, m.glitterColor + 6, g.color);
+        std::copy(m.glitterVariation, m.glitterVariation + 3, g.variation);
+        g.coverage = glitter::coverage((g.size[0] * g.frequency[0] + g.size[1] * g.frequency[1]) * g.density);
+        glitter::average(g, g.average);
+        const std::pair<int32_t, float> key(int32_t(std::max(m.glitterSeed, 0)), g.randomness);
+        auto found = std::find_if(glitterTables.begin(), glitterTables.end(), [&](const auto& held) { return held.first == key; });
+        if (found == glitterTables.end()) {
+            auto kept = std::find_if(impl->glitterTables.begin(), impl->glitterTables.end(), [&](const auto& held) { return held.first == key && held.second; });
+            std::unique_ptr<Buffer> buffer;
+            if (kept != impl->glitterTables.end()) buffer = std::move(kept->second);
+            else {
+                buffer = std::make_unique<Buffer>();
+                buffer->upload(glitter::tables(key.first, g.randomness));
+            }
+            glitterTables.emplace_back(key, std::move(buffer));
+            found = glitterTables.end() - 1;
+        }
+        g.tables = found->second->ptr;
+        DeviceIridescence slot{};
+        std::memcpy(&slot, &g, sizeof(g));
+        table[i].flags |= MATERIAL_GLITTER;
+        table[i].iridescence = (table[i].flags & MATERIAL_IRIDESCENT ? table[i].iridescence & 0xffffu : 0u) | (unsigned(iridescences.size()) << 16);
+        iridescences.push_back(slot);
+    }
+    impl->glitterTables.swap(glitterTables);
+    impl->glitterSlots.clear();
+    for (size_t i = 0; i < count; ++i)
+        if (table[i].flags & MATERIAL_GLITTER) impl->glitterSlots.push_back(table[i].iridescence >> 16);
+    impl->paintSlots = iridescences;
+    impl->flakesAt = impl->instancersAt = impl->restsAt = 0;    // the records as packed have none; flakeTarget sets them as the render starts
     impl->iridescenceTable.upload(iridescences);
     impl->params.iridescences = impl->iridescenceTable.ptr;
     std::vector<DeviceVolume> volumes;
@@ -2176,6 +2348,7 @@ void Renderer::render() {
             const size_t tiles = size_t(impl->params.doneColumns) * ((impl->params.height + CLEAN_TILE - 1) / CLEAN_TILE);
             impl->tileDone.assign(tiles, 0);
             impl->tilePassed.assign(tiles, 0);
+            impl->tileSamples.assign(tiles, 0);
             impl->done.upload(impl->tileDone);
             impl->params.done = impl->done.ptr;
             impl->nextCheck = 16;
@@ -2191,6 +2364,7 @@ void Renderer::render() {
         for (int i = 0; i < 16; ++i, bits >>= 1) reversed = (reversed << 1) | (bits & 1);
         impl->setTime((reversed + 0.5f) / 65536.0f);
     }
+    if (impl->samples == 0) impl->flakeTarget();
     impl->params.sample = impl->samples;
     if (impl->launched) ML_CHECK(cudaEventSynchronize(impl->launched));
     else ML_CHECK(cudaEventCreateWithFlags(&impl->launched, cudaEventBlockingSync | cudaEventDisableTiming));
@@ -2281,6 +2455,12 @@ uint32_t Renderer::height() const { return impl->params.height; }
 void Renderer::readBeauty(float* rgb) {
     if (!impl->samples) throw std::runtime_error("MoonLightIPR has no samples to read");
     impl->download(impl->beauty, rgb);
+}
+
+void Renderer::setKeepFlakes(bool on) {
+    if (on == impl->keepFlakes) return;
+    impl->keepFlakes = on;
+    impl->restart();
 }
 
 void Renderer::readDenoised(float* rgb) {
