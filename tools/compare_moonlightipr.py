@@ -199,6 +199,39 @@ def textured(folder):
                                          iridescence_flip_hue_direction=True, iridescence_primary_color=[1.0, 0.0, .5],
                                          iridescence_secondary_color=[0.0, 1.0, .5], iridescence_at_0_incidence=.2),
                                   native('cube', 'DwaRefractiveMaterial', roughness=.05, iridescence=1.0, iridescence_thickness=3.0))
+    # MoonRay's glitter: a blue car paint (DwaBaseMaterial, clear coat, two flake colours) on the ball, a gold metal with
+    # white flakes on the cube; sparse flakes a few pixels wide, then dense ones under a pixel (the stochastic flakes
+    # lobe); then the paint with hue, saturation and value variation in reference space. Rendered by MoonRay in scalar
+    # mode, as its vector mode overflowed its stack on dense flakes.
+    def paint(**extra):
+        return native('ball', 'DwaBaseMaterial', **dict(dict(albedo=[.02, .05, .25], roughness=.4, show_clearcoat=True, clearcoat=1.0,
+                                                             show_glitter=True, glitter=1.0, glitter_space=4, glitter_size_A=.02, glitter_size_B=.02,
+                                                             glitter_roughness_A=.06, glitter_roughness_B=.06, glitter_density=20.0,
+                                                             glitter_style_B_frequency=1.0, glitter_color_A=[.8, .85, 1.0],
+                                                             glitter_color_B=[.6, .7, 1.0]), **extra))
+    def gold(**extra):
+        return native('cube', 'DwaMetalMaterial', **dict(dict(metallic_color=[.604, .357, .071], metallic_edge_color=[1.0, .698, .396],
+                                                              roughness=.3, show_clearcoat=True, show_glitter=True, glitter_space=4,
+                                                              glitter_size_A=.02, glitter_size_B=.02, glitter_density=20.0), **extra))
+    glitter_sparse = dict(lobes(paint(), gold()), _exec_mode='scalar')
+    glitter_dense = dict(lobes(paint(glitter_size_A=.006, glitter_size_B=.006, glitter_density=60.0),
+                               gold(glitter_size_A=.006, glitter_size_B=.006, glitter_density=60.0)), _exec_mode='scalar')
+    glitter_varied = dict(lobes(paint(glitter_space=5, glitter_color_hue_variation=.3, glitter_color_saturation_variation=.4,
+                                      glitter_color_value_variation=.3, glitter_seed=7),
+                                gold(glitter_space=5, glitter_randomness=.9, glitter_layering_mode=1)), _exec_mode='scalar')
+    # The paint in reference space on a ball bent out of shape, its rest positions the round ball's (MoonRay's ref_P, as
+    # the kit sends a deformed mesh's base points): its flakes stay on the same spots of the surface as it bends.
+    def bent(scene):
+        meshes = []
+        for mesh in scene['meshes']:
+            if mesh.get('identity') == 'ball':
+                rest = mesh['vertices']
+                mesh = {key: value for key, value in mesh.items() if key != 'normals'}
+                mesh.update(vertices=[[x + .35 * y * y, y * 1.15, z] for x, y, z in rest],
+                            point_attributes=dict(mesh.get('point_attributes') or {}, ref_P={'kind': 'vec3', 'values': rest}))
+            meshes.append(mesh)
+        return dict(scene, meshes=meshes)
+    glitter_deformed = bent(dict(lobes(paint(glitter_space=5), gold(glitter_space=5)), _exec_mode='scalar'))
     # Skin thin enough for light to come through: the ball lit mostly from behind lets it pass, with and without scattering.
     thin = lobes(native('ball', 'DwaSkinMaterial', albedo=[.8, .55, .45], roughness=.5, diffuse_transmission_color=[.9, .35, .25]),
                  native('cube', 'DwaSkinMaterial', albedo=[.8, .55, .45], roughness=.5, diffuse_transmission_color=[.6, .6, .6],
@@ -329,7 +362,7 @@ def textured(folder):
                       row('cube', [.1, .3, .7], .4, [layer('s2', 'stencil', 'stripes', False)]))
     return {'stenciled': stenciled, 'displaced': displaced, 'displaced_moving': moving, 'graph_displaced': graph_displaced,
             'displacement_nodes': displacement_nodes, 'displacement_object': displacement_object, 'rough_image_blinn': blinn, 'graph_baked': baked, 'graph_baked_uv': baked_uv, 'graph_maps': mapped, 'layer_maps': layered_maps, 'native_layer_maps': native_layer_maps, 'native_materials': natives, 'dwa_skin': skins, 'modo_models': models, 'dwa_skin_thin': thin, 'textures_simple': simple, 'dwa_plain': dict(stacked, materials=plain), 'dwa_layers': dict(stacked, materials=layered),
-            'dwa_glass_coat': glass, 'dwa_thin_presence': sheer, 'dwa_masks': masks, 'dwa_subsurface': skin, 'velvet': velvet, 'iridescence': iridescent, 'iridescence_dielectric': iridescent_dielectric, 'toon_diffuse': toon_flat, 'toon': toon, 'toon_broad': toon_broad, 'sss_far': far, 'sss_backlit': behind, 'sss_dipole': dipole, 'sss_random_walk': walk,
+            'dwa_glass_coat': glass, 'dwa_thin_presence': sheer, 'dwa_masks': masks, 'dwa_subsurface': skin, 'velvet': velvet, 'iridescence': iridescent, 'iridescence_dielectric': iridescent_dielectric, 'glitter': glitter_sparse, 'glitter_dense': glitter_dense, 'glitter_varied': glitter_varied, 'glitter_deformed': glitter_deformed, 'toon_diffuse': toon_flat, 'toon': toon, 'toon_broad': toon_broad, 'sss_far': far, 'sss_backlit': behind, 'sss_dipole': dipole, 'sss_random_walk': walk,
             'dwa_anisotropy': brushed, 'dwa_absorption': deep, 'dwa_dispersion': prism, 'dwa_patterns': patterns, 'udim': tiled}
 
 

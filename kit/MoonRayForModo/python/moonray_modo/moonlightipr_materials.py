@@ -59,6 +59,9 @@ MATERIAL_COAT_STRAIGHT = 1 << 17
 # The kit's shadow catcher (backplate.py, MoonRay's tools/port_shadow_catcher.py): the material's record is followed by its
 # strength (form 'Z'); a matte shows no colour, its shadows in the alpha.
 MATERIAL_SHADOW_CATCHER, MATERIAL_CATCHER_MATTE = 1 << 18, 1 << 19
+# MoonRay's glitter (DwaBaseMaterial's metallic flakes, glitter_surface): the material's record is followed by its
+# numbers (form 'c'). The session's kernels for it are iridescence's (FEATURE_IRIDESCENCE, "special paint lobes").
+MATERIAL_GLITTER = 1 << 20
 TOON_STEPS = 256
 
 
@@ -250,8 +253,51 @@ def color_space(source, authored, srgb):
     return space, (str(Path(config).resolve()), Path(config).stat().st_mtime_ns, policy.get('linear_space', 'Linear Rec.709 (sRGB)'))
 
 
-# What each native shader's switched-on extras are called, for the lobes the uber-shader lacks.
-NATIVE_EXTRAS = (('show_glitter', 'glitter'),)
+def glitter_surface(get, note, toon_highlight=False):
+    """A Dwa material's glitter (show_glitter, MoonRay's metallic flakes) as MoonLightIPR draws it, or None where it has
+    none: MoonRay's own attributes, read with its defaults. The flakes' colours are given to MoonRay in the working space
+    (shader_library.emit), as here; the GPU takes them as they are. What MoonLightIPR does not draw of it is noted."""
+    if not get('show_glitter', False):
+        return None
+    def number(key, default):
+        try:
+            found = float(get(key, default))
+        except (TypeError, ValueError):
+            note('glitter values a map makes, at their defaults')
+            return default
+        return found if math.isfinite(found) else default
+    mask = min(1.0, max(0.0, number('glitter', 1.0)))
+    if mask <= 0.0:
+        return None
+    if toon_highlight:
+        note('glitter on a toon highlight')
+        return None
+    if get('glitter_texture_A', '') or get('glitter_texture_B', ''):
+        note('glitter flake textures, drawn as flat flakes')
+    if int(number('glitter_debug_mode', 0)):
+        note("glitter's debug modes")
+    space = int(number('glitter_space', 5))
+    if space not in (4, 5):
+        note('glitter in a space other than object or reference, drawn in reference space')
+        space = 5
+    from .working_space import color as working_color
+    def colour(key):
+        value = get(key, [1.0, 1.0, 1.0])
+        try:
+            values = [float(v) for v in value][:3]
+        except (TypeError, ValueError):
+            note('glitter colours a map makes, at their defaults')
+            values = [1.0, 1.0, 1.0]
+        return [min(1.0, max(0.0, float(c))) if math.isfinite(c) else 1.0 for c in working_color(values)]
+    return {'mask': mask, 'space': space, 'seed': int(number('glitter_seed', 0)),
+            'compensate': bool(get('glitter_compensate_reference_space_deformation', True)),
+            'approximate': bool(get('glitter_approximate_for_secondary_rays', True)),
+            'additive': int(number('glitter_layering_mode', 0)) == 1,
+            'randomness': number('glitter_randomness', 0.5), 'density': number('glitter_density', 1.0),
+            'jitter': number('glitter_jitter', 1.0), 'lod_quality': number('glitter_LOD_quality', 0.5),
+            'styles': [[number('glitter_style_%s_frequency' % style, 1.0 if style == 'A' else 0.0), number('glitter_size_' + style, 1.0),
+                        number('glitter_roughness_' + style, 0.14), colour('glitter_color_' + style)] for style in 'AB'],
+            'variation': [number('glitter_color_%s_variation' % kind, 0.0) for kind in ('hue', 'saturation', 'value')]}
 
 
 # A displacement as the session works it out at each vertex (displaced meshes): a little program of these, each
@@ -444,10 +490,6 @@ def native_surface(shader, parameters, note):
     ior = float(get('refractive_index', 1.5))
     emission = get('emission', white) if get('show_emission', False) else black
     radius = float(get('scattering_radius', 0.0))
-    for switch, label in NATIVE_EXTRAS:
-        # Switched on but with none of it, a lobe is nothing to leave out.
-        if get(switch, False) and float(get(label, 1.0) or 0.0) > 0:
-            note(label)
     coat, coat_roughness = (float(get('clearcoat', 1.0)) if get('show_clearcoat', False) else 0.0), float(get('clearcoat_roughness', .1))
     if shader == 'DwaSkinMaterial':
         # Skin's moisture is a clear layer over it, which is what the coat is.
@@ -462,12 +504,14 @@ def native_surface(shader, parameters, note):
         note('iridescence on a toon highlight')
         has_specular = False
     shimmer = iridescence.surface(get, note, has_specular, coat > 0)
+    # MoonRay's glitter, its metallic flakes, under the coat and over the rest.
+    flakes = glitter_surface(get, note, bool(toon and toon['specular']))
     # Diffuse light that passes through to the far side, and what MoonRay then takes from the lit side: the same of
     # each colour, or as much of every colour as of the strongest.
     passed = [min(1.0, max(0.0, float(v))) * min(1.0, max(0.0, float(get('diffuse_transmission', 1.0)))) for v in get('diffuse_transmission_color', black)]
     kept = [1.0 - v for v in passed] if int(get('diffuse_transmission_blending_behavior', 1)) == 0 else [1.0 - max(passed)] * 3
     return {
-        '_toon': toon, '_iridescence': shimmer,
+        '_toon': toon, '_iridescence': shimmer, '_glitter': flakes,
         '_back': passed, '_front_keep': kept,
         'shader': 'DwaBaseMaterial', 'standard_material': False, 'color': color, 'raw_color': color, 'diffuse_amount': 1.0,
         'roughness': roughness, 'metallic': metallic, 'ior': ior,
@@ -1564,6 +1608,10 @@ class Compiler:
         catcher = material.get('shadow_catcher') if not source.get('_hair') and not fog else None
         if catcher:
             flags |= MATERIAL_SHADOW_CATCHER | (MATERIAL_CATCHER_MATTE if catcher.get('matte') else 0)
+        # MoonRay's glitter (glitter_surface): its record follows the others (form 'c').
+        flakes = source.get('_glitter') if not source.get('_hair') and not fog and not catcher else None
+        if flakes:
+            flags |= MATERIAL_GLITTER
         record = struct.pack('<46f4I', *values, flags | (MATERIAL_HAIR if source.get('_hair') else 0) | (MATERIAL_VOLUME if fog else 0), start, len(self.layers) - start,
                              UV_SLOTS if tangent_slot is None else tangent_slot)
         if toon:
@@ -1615,4 +1663,15 @@ class Compiler:
             except (TypeError, ValueError):
                 strength = 1.0
             record += struct.pack('<f', strength if math.isfinite(strength) else 1.0)
+        if flakes:
+            # Its seed, space and switches (1 compensate a reference space's stretch, 2 bounces see the average, 4 the
+            # camera's flakes add to what is beneath), then its amount, randomness, density, jitter and level-of-detail
+            # quality, styles A and B (frequency, size, roughness, colour) and the colour variation.
+            numbers = [float(flakes[key]) for key in ('mask', 'randomness', 'density', 'jitter', 'lod_quality')]
+            numbers += [float(v) for frequency, size, roughness, colour in flakes['styles'] for v in [frequency, size, roughness] + list(colour)]
+            numbers += [float(v) for v in flakes['variation']]
+            if len(numbers) != 20 or not all(math.isfinite(v) for v in numbers):
+                raise ValueError('Material %s has a glitter that cannot be read' % name)
+            switches = (1 if flakes['compensate'] else 0) | (2 if flakes['approximate'] else 0) | (4 if flakes['additive'] else 0)
+            record += struct.pack('<iII20f', max(0, min(int(flakes['seed']), 2 ** 31 - 1)), int(flakes['space']), switches, *numbers)
         return record

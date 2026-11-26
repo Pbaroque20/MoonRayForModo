@@ -26,6 +26,9 @@ IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
 MESH_HAS_DATA, MESH_HAS_NORMALS, MESH_HAS_MATERIAL_IDS, MESH_SMOOTH, MESH_HAS_UVS, MESH_MOVES, MESH_SUBDIVIDE, MESH_CURVES, MESH_LINEAR, MESH_RIBBON = 1, 2, 4, 8, 16, 32, 64, 128, 256, 512
 # A mesh its materials displace: split finer in the session, then moved along its normals by their height (displaced).
 MESH_DISPLACE = 1024
+# A mesh's rest positions follow its other data (form 'c', PACKED_FORM 4): MoonRay's ref_P (reference_points), sent where
+# a glitter material reads reference space and they differ from its points, so that its flakes stay put as it deforms.
+MESH_HAS_REST = 2048
 # The most triangles a displaced mesh is split into, to keep the preview quick.
 DISPLACED_TRIANGLES = 400000
 # Whether the last scene packed with coarse detail had a mesh cut coarser than at rest (moonlightipr_detail): the
@@ -34,6 +37,8 @@ LAST_REFINABLE = False
 # A subdivision surface is refined in the session, up to this many quads; MoonRay's own limit is finer.
 SUBDIVISION_QUADS = 3000000
 SCENE_DENOISE, SCENE_WORKING_SPACE, SCENE_MOTION, SCENE_PRESENCE_SHADOWS, SCENE_FLAT_OUT = 1, 2, 4, 8, 16
+# Keep Metallic Flakes (denoising.keeps_flakes): the session's denoiser sets the glitter's light apart (Renderer::setKeepFlakes).
+SCENE_KEEP_FLAKES = 32
 ENVIRONMENT_ROWS = 64
 # What diffuse light sees, what the camera sees, what reflections see, what refractions see: the order the session reads them.
 ENVIRONMENT_PARTS = ('lighting', 'background', 'reflected', 'through')
@@ -49,8 +54,9 @@ _packed = {}
 # A mesh of this many faces or more is kept by the Scene cache once packed (cache_folder); and the form of a packed mesh,
 # so that one kept in another form is not taken.
 LASTING_FACES = 20000
-# 2: its slot map 32 long (moonlightipr_materials.UV_SLOTS, form 'a'); 3: 64 long (form 'b').
-PACKED_FORM = 3
+# 2: its slot map 32 long (moonlightipr_materials.UV_SLOTS, form 'a'); 3: 64 long (form 'b'); 4: rest positions may follow
+# (MESH_HAS_REST, form 'c').
+PACKED_FORM = 4
 _emitters = {}
 
 
@@ -71,6 +77,8 @@ def unit(values):
 # An instance: its mesh, material, mesh light (or -1), which rays see it (with its light set above the first 8 bits), its
 # own number (Variation by Particle) and where it stands, a 3x4 matrix by rows.
 INSTANCE = '<2IiIf12f'
+# In an instance record's visibility (form 'c'): one of an instancer's placements, whose object space is its mesh's own.
+INSTANCE_FROM_INSTANCER = 1 << 31
 
 
 def transform(matrix):
@@ -899,7 +907,19 @@ def _singles(values):
     return values.data.tolist() if isinstance(values, Singles) else None
 
 
-def mesh_payload(mesh, material_index, slots, simplified=None):
+def rest_points(mesh):
+    """A mesh's rest positions (reference_points.NAME, MoonRay's ref_P), where they are not its points as they are; else
+    None, the session taking its points as their own rest."""
+    from .reference_points import NAME
+    held = (mesh.get('point_attributes') or {}).get(NAME) or {}
+    values = held.get('values') if isinstance(held, dict) else None
+    if values is None or values is mesh['vertices'] or len(values) != len(mesh['vertices']):
+        return None
+    from .scene_digest import content
+    return None if content(values) == content(mesh['vertices']) else values
+
+
+def mesh_payload(mesh, material_index, slots, simplified=None, rest=False):
     """Triangulate one mesh; return (key, flags, payload, slot map), cached by the content of its lists. simplified,
     where given (moonlightipr_detail), makes it lighter first: about its triangles, within its error (simplify.py).
 
@@ -917,6 +937,9 @@ def mesh_payload(mesh, material_index, slots, simplified=None):
     closing = mesh.get('vertices_close')
     if closing is not None and (closing is vertices or closing == vertices):
         closing = None
+    # Rest positions (MESH_HAS_REST), where a glitter material reads reference space: not for a mesh made lighter, whose
+    # points are no longer its own.
+    resting = rest_points(mesh) if rest and not simplified else None
     # '' names the primary UVs; other keys are coordinates the capture baked for one projection.
     available = dict(mesh.get('uv_sets') or {})
     if mesh.get('uvs'):
@@ -925,7 +948,7 @@ def mesh_payload(mesh, material_index, slots, simplified=None):
     sets = sorted((slot, available[key]) for key, slot in slots.items() if available.get(key))
     # Keyed by content, so a mesh recaptured into new lists is not triangulated again.
     signature = (content(vertices), content(faces), content(normals) if normals else '',
-                 content(face_materials) if face_materials is not None else '', smooth,
+                 content(face_materials) if face_materials is not None else '', smooth, content(resting) if resting is not None else '',
                  tuple(sorted(material_index.items())) if face_materials is not None else (),
                  tuple((slot, content(values)) for slot, values in sets), content(closing) if closing is not None else '',
                  (simplified['triangles'], round(simplified['error'], 6)) if simplified else None,
@@ -989,7 +1012,9 @@ def mesh_payload(mesh, material_index, slots, simplified=None):
             fan = array('I', [start + k for start, face in zip(accumulate([0] + sizes[:-1]), faces) for k in _corners(face, vertices)])
     if closing is not None and len(closing) != len(vertices):
         raise ValueError('Motion samples of %s must have equal vertex counts' % mesh['name'])
-    moved = array('f')
+    moved, rested = array('f'), array('f')
+    if resting is not None and len(resting) != len(vertices):
+        resting = None
     if normals:
         # With per-corner normals every corner is its own vertex.
         indices = fan
@@ -997,9 +1022,13 @@ def mesh_payload(mesh, material_index, slots, simplified=None):
         shading = _numbers(normals, 3)
         if closing is not None:
             moved = _by_corner(closing, corners)
+        if resting is not None:
+            rested = _by_corner(resting, corners)
     else:
         if closing is not None:
             moved = _numbers(closing, 3)
+        if resting is not None:
+            rested = _numbers(resting, 3)
         if triangles:
             indices = corners
         elif cut is not None and (picked := _gather(corners, 4, cut[0])) is not None:
@@ -1010,7 +1039,7 @@ def mesh_payload(mesh, material_index, slots, simplified=None):
             indices = array('I', [face[k] for face in faces for k in _corners(face, vertices)])
         positions, shading = _numbers(vertices, 3), array('f')
     # A sum is finite only if every term is.
-    if not all(_finite(values) for values in (positions, shading, moved)):
+    if not all(_finite(values) for values in (positions, shading, moved, rested)):
         raise ValueError('Mesh %s contains a non-finite number' % mesh['name'])
     material_ids = array('I')
     if face_materials is not None:
@@ -1043,11 +1072,11 @@ def mesh_payload(mesh, material_index, slots, simplified=None):
             if len(given):
                 shading, normals = given, True
     flags = ((MESH_HAS_NORMALS if normals else MESH_SMOOTH if smooth else 0) | (MESH_HAS_MATERIAL_IDS if face_materials is not None else 0)
-             | (MESH_HAS_UVS if uvs else 0) | (MESH_MOVES if moved else 0))
+             | (MESH_HAS_UVS if uvs else 0) | (MESH_MOVES if moved else 0) | (MESH_HAS_REST if rested else 0))
     payload = struct.pack('<2I', len(positions) // 3, len(indices) // 3) + positions.tobytes() + shading.tobytes() + indices.tobytes() + material_ids.tobytes()
     if uvs:
         payload += struct.pack('<I', len(uvs)) + b''.join(values.tobytes() for values in uvs)
-    payload += moved.tobytes()
+    payload += moved.tobytes() + rested.tobytes()
     key = hashlib.blake2b(struct.pack('<I', flags) + payload, digest_size=8).digest()
     _packed[signature] = (key, flags, payload, struct.pack('<%di' % UV_SLOTS, *slot_map))
     if lasting:
@@ -1265,14 +1294,17 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     # A tilt-shift camera's tilted lens (entities.camera_view, lens_focus_tilt): its plane of focus leans as MoonRay's
     # TiltShiftCamera leans it (tools/port_tilt_shift.py).
     focus_tilt = lens_focus_tilt(camera, scene_scale) if projection == 'persp' else [0.0, 0.0]
+    from .denoising import keeps_flakes
     # Form 'Z': a material may be a shadow catcher (moonlightipr_materials, MATERIAL_SHADOW_CATCHER). Form 'b': each
-    # mesh's slot map is 64 long (moonlightipr_materials.UV_SLOTS), where it was 8, then 32 (form 'a').
-    parts = [b'MLSb',struct.pack('<8I', width, height, *depths, samples, (SCENE_DENOISE if denoise else 0)
+    # mesh's slot map is 64 long (moonlightipr_materials.UV_SLOTS), where it was 8, then 32 (form 'a'). Form 'c': a material
+    # may have MoonRay's glitter (moonlightipr_materials, MATERIAL_GLITTER).
+    parts = [b'MLSc',struct.pack('<8I', width, height, *depths, samples, (SCENE_DENOISE if denoise else 0)
                                   | (SCENE_WORKING_SPACE if working else 0) | (SCENE_MOTION if motion else 0)
                                   # See-through surfaces cast whole shadows unless the scene asks for lighter ones, as in MoonRay.
                                   | (SCENE_PRESENCE_SHADOWS if settings.get('enable_presence_shadows') else 0)
                                   # A playblast's frame: every sample, as fast as the graphics card can.
-                                  | (SCENE_FLAT_OUT if scene.get('_flat_out') else 0)),
+                                  | (SCENE_FLAT_OUT if scene.get('_flat_out') else 0)
+                                  | (SCENE_KEEP_FLAKES if denoise and keeps_flakes(scene) else 0)),
              # The scene's sample clamp, and from which bounce it holds, the subsurface scatterings a path may have and the roughness
              # clamp (form 'Q'); then how each further bounce in fog counts for less (form 'G').
              # Its own Sample Clamp, Clamp From Bounce and Roughness Clamp (scene_setup): MoonRay's stay MoonRay's. A scene
@@ -1421,6 +1453,9 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
                 pass    # Said again, and stopped on, when the loop comes to it.
         with ThreadPoolExecutor(max_workers=min(len(dense), os.cpu_count() or 4)) as pool:
             list(pool.map(ahead, dense))
+    # Rest positions go with the meshes where a glitter material reads reference space (reference_points.wanted).
+    from . import reference_points
+    resting = reference_points.wanted(materials)
     for mesh in drawn:
         if not mesh['faces']:
             continue
@@ -1436,7 +1471,8 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
                 warnings.append('MoonLightIPR shows subdivision mesh %s without its change of shape during the shutter.' % mesh['name'])
             key, flags, payload, slot_map = cage_payload(mesh, material_index, compiler.slots, warnings)
         else:
-            key, flags, payload, slot_map = mesh_payload(mesh, material_index, compiler.slots, cut.get('simplify') if cut else None)
+            key, flags, payload, slot_map = mesh_payload(mesh, material_index, compiler.slots, cut.get('simplify') if cut else None,
+                                                         rest=resting)
         # A draft splits a sea (wears_ocean) by its distance from the camera its meshes are cut from, held through its
         # edits (_draft, moonlightipr_detail.held_dicing): split from the camera itself, each step of a camera drag gave
         # the sea a new key, and the session displaced it again (2.4 s a step on the dragon test scene). Realtime splits
@@ -1475,6 +1511,10 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
             framing = None
         # A fog's box is found by every ray, and so is a mesh light, which is the light itself.
         seen = 255 if light >= 0 or mesh.get('volume') else seen_by(mesh)
+        # An instancer's placements (MoonRay's RdlInstancerGeometry, rdla): its object space is the mesh's own node_xform's,
+        # not the placement's, which MoonRay's glitter in object space reads (the top bit, form 'c').
+        if 'instances' in mesh:
+            seen |= INSTANCE_FROM_INSTANCER
         # Each placement's own number, which a Variation Texture by Particle reads (occlusion.particles), else 0.
         variation = mesh.get('instance_variation') or []
         if len(variation) != len(opening):

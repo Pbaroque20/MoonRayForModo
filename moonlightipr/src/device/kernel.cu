@@ -21,6 +21,9 @@ extern "C" { __constant__ LaunchParams params; }
 #define ML_FEATURES 0xffffffffu
 #endif
 #define ML_HAS(feature) ((ML_FEATURES & (feature)) != 0u)
+// MoonRay's glitter shares FEATURE_IRIDESCENCE's kernels (64, as the preprocessor needs it): what it adds to the hit and
+// the surface, and its code, are in them alone, and the other kernels are as they were without it.
+#define ML_GLITTER_CODE ((ML_FEATURES & 64u) != 0u)
 
 struct Hit {
     float3 p, ng, ns;
@@ -57,6 +60,19 @@ struct Hit {
     // On a mesh that changes shape during the shutter: how far the point moves from its opening to its closing, in the
     // mesh's own space (DeviceMesh::motion), for the motion vectors; else 0.
     float3 vertexMotion = {0.0f, 0.0f, 0.0f};
+#if ML_GLITTER_CODE
+    // MoonRay's glitter where the material has it (MATERIAL_GLITTER): 0 none (a curve), 1 its average lobe alone, 2 the
+    // flakes about the point as well, for a camera ray, which has a footprint. Then (GlitterSample) the point and its
+    // normal in the glitter's space, the point times the density; the footprint's area there, times the density squared;
+    // and in reference space, how the surface is stretched from its rest (compensation along and across it, its shear)
+    // and the rest's axes.
+    unsigned glitterState = 0;
+    float3 glitterP, glitterN;
+    float glitterArea;
+    bool glitterCompensate;
+    float glitterStretch[3];
+    float3 glitterAxes[3];
+#endif
 };
 
 // ---- Images ------------------------------------------------------------------------------------
@@ -797,6 +813,34 @@ ML_INLINE unsigned pickLight(const DeviceLight* lights, unsigned count, float u)
 // enters the surface optionally refracted through it instead. The lobes and how they combine
 // follow MoonRay's UsdPreviewSurface and, for material stacks, DwaBaseMaterial.
 
+#if ML_GLITTER_CODE
+// A material's glitter record: a slot of the iridescences' table, the high half of its number (DeviceGlitter).
+ML_INLINE const DeviceGlitter& glitterOf(unsigned iridescence) {
+    return *reinterpret_cast<const DeviceGlitter*>(reinterpret_cast<const DeviceIridescence*>(params.iridescences) + (iridescence >> 16));
+}
+// MoonRay's glitter lobes at one point (Glitter.ispc createLobes), in the shading frame: up to four flakes, each a GGX
+// lobe about its own normal (GlitterGGXCookTorrance); a GGX lobe about the surface's normal of an average colour; and the
+// rest of the flakes found as one stochastic flakes lobe (StochasticFlakes), its flakes' numbers in ids. Each is weighted
+// as MoonRay weighs it; what they leave of the light (keep) goes on to the lobes beneath them. Samples are shared out by
+// each lobe's energy (cumulative in pick: the flakes, the average, the stochastic flakes).
+struct GlitterLobes {
+    unsigned flakes;
+    float3 flakeNormal[4], flakeColor[4];
+    float flakeAlpha[4], flakeWeight[4];
+    float3 averageColor;
+    float averageAlpha, averageWeight;
+    unsigned micro, macroCount;     // the stochastic flakes' count, and how many found flakes came before them
+    float microWeight, cosGamma, randomness, totalO;
+    float3 baseColors[4], variation;
+    const float* tables;
+    float turn[2];                  // the flakes' frame (the normal's own) to the shading frame: cos and sin about the normal
+    float pick[6];
+    float energy, keep, roughness;
+    bool physical;
+    unsigned short ids[GLITTER_MAX_FLAKES];
+};
+#endif
+
 struct Surface {
     float3 albedo;
     float3 transmissionColor;
@@ -833,6 +877,13 @@ struct Surface {
     bool smoothToon;        // a toon lit by its smooth normals, not its faces' (params.toonTerminator)
     // MoonRay's iridescence over the specular or the coat's reflection (iridescenceTint), or none.
     const DeviceIridescence* iridescence;
+#if ML_GLITTER_CODE
+    // MoonRay's glitter under the coat and over the rest (GlitterLobes), or none. glitterThrough: the direction evaluated is
+    // a glitter sample the coat turned back on its way out, passed through, glitterUnder as it was drawn beneath the coat.
+    const GlitterLobes* glitter;
+    bool glitterThrough;
+    float3 glitterUnder;
+#endif
 };
 
 ML_INLINE Surface surfaceFrom(const Hit& hit) {
@@ -887,7 +938,13 @@ ML_INLINE Surface surfaceFrom(const Hit& hit) {
     s.toonSpecular = toon && (hit.flags & MATERIAL_TOON_SPECULAR);
     s.toonAlong = make_float3(1.0f, 0.0f, 0.0f);
     s.iridescence = ML_HAS(FEATURE_IRIDESCENCE) && (hit.flags & MATERIAL_IRIDESCENT) && !(hit.flags & (MATERIAL_HAIR | MATERIAL_VOLUME))
+#if ML_GLITTER_CODE
+                    ? reinterpret_cast<const DeviceIridescence*>(params.iridescences) + (hit.iridescence & 0xffffu) : nullptr;
+    s.glitter = nullptr;    // set where the path tracer gathers the point's glitter lobes
+    s.glitterThrough = false;
+#else
                     ? reinterpret_cast<const DeviceIridescence*>(params.iridescences) + hit.iridescence : nullptr;
+#endif
     return s;
 }
 // Where along a toon ramp a value falls: past its end, the end.
@@ -1017,7 +1074,12 @@ ML_INLINE float3 fuzzLobe(const Surface& s, float3 wo, float3 wi) {
 // view direction and blends towards normal incidence as the lobe above gets rougher.
 ML_INLINE float entering(const Surface& s, float3 wo) {
     const float grazing = 1.0f - s.specular * dielectricFresnel(throughCoat(s, wo).z, s.ior), facing = 1.0f - s.specular * dielectricFresnel(1.0f, s.ior);
-    return (1.0f - s.metallic) * (grazing + (facing - grazing) * s.underBlend) * underCoat(s, wo) * underFuzz(s, wo);
+    return (1.0f - s.metallic) * (grazing + (facing - grazing) * s.underBlend) * underCoat(s, wo) * underFuzz(s, wo)
+#if ML_GLITTER_CODE
+           // What MoonRay's glitter, over the lobes beneath it, leaves of the light.
+           * (s.glitter ? s.glitter->keep : 1.0f)
+#endif
+        ;
 }
 // What a hair toon's highlight lets through to the layers under it: one less its glass-like reflection, blended towards
 // its value straight on as the highlight's roughness grows, as MoonRay's OneMinusRoughFresnel has it.
@@ -1096,6 +1158,456 @@ ML_INLINE float3 multipleScattering(const Surface& s, float3 wo, float3 wi) {
 // MoonRay gives that lobe a share of the specular samples once the surface is rough.
 ML_INLINE float broadShare(const Surface& s) { return fminf(fmaxf(0.0f, s.roughness - 0.5f), 0.5f); }
 
+#if ML_GLITTER_CODE
+ML_INLINE float3 sampleFacet(float alpha, float3 wo, float u1, float u2);
+ML_INLINE float3 reflectAbout(float3 wo, float3 h);
+// ---- MoonRay's glitter -------------------------------------------------------------------------
+// DwaBaseMaterial's metallic flakes as MoonRay shades them: the flakes found about the point by its Worley noise
+// (lib/common/noise Worley.ispc NOISE_worleySearchPoints over the glitter's tables), the lobes made of them
+// (moonshine lib/material/glitter Glitter.ispc createLobes) and those lobes (BsdfGlitterGGXCookTorrance,
+// BsdfStochasticFlakes). Written to follow OpenMoonRay (Apache License 2.0), DreamWorks Animation LLC.
+ML_INLINE int glitterPerm(const float* t, int i) { return __float_as_int(t[GLITTER_PERM + (i & int(GLITTER_TABLE_SIZE - 1))]); }
+ML_INLINE bool glitterZero(float x) { return fabsf(x) <= 1e-6f; }
+ML_INLINE bool glitterBlack(float3 c) { return glitterZero(c.x) && glitterZero(c.y) && glitterZero(c.z); }
+// MoonRay's rgbToHsv and hsvToRgb (scene_rdl2 ColorSpace).
+ML_INLINE float3 glitterHsv(float3 c) {
+    const int top = c.z > fmaxf(c.x, c.y) ? 2 : c.y > c.x ? 1 : 0;
+    const float least = fminf(c.x, fminf(c.y, c.z)), most = fmaxf(c.x, fmaxf(c.y, c.z)), chroma = most - least;
+    float h = 0.0f, s = 0.0f;
+    if (!glitterZero(most)) {
+        if (!glitterZero(chroma)) {
+            h = top == 0 ? (c.y - c.z) / chroma : top == 1 ? 2.0f + (c.z - c.x) / chroma : 4.0f + (c.x - c.y) / chroma;
+            h = fmodf(h * 60.0f, 360.0f);
+            if (h < 0.0f) h += 360.0f;
+            h /= 360.0f;
+        }
+        s = chroma / most;
+    }
+    return make_float3(h, s, most);
+}
+ML_INLINE float3 glitterRgb(float3 hsv) {
+    float h = hsv.x;
+    const float s = hsv.y, v = hsv.z;
+    if (glitterZero(s)) return vec(v);
+    h = fmodf(h, 1.0f);
+    if (h < 0.0f) h += 1.0f;
+    h *= 360.0f;
+    if (fabsf(h - 360.0f) <= fmaxf(fabsf(h), 1.0f) * 1e-6f) h = 0.0f;
+    h /= 60.0f;
+    const int sector = int(h);
+    const float f = h - float(sector), p = v * (1.0f - s), q = v * (1.0f - s * f), t = v * (1.0f - s * (1.0f - f));
+    switch (sector) {
+    case 0: return make_float3(v, t, p);
+    case 1: return make_float3(q, v, p);
+    case 2: return make_float3(p, v, t);
+    case 3: return make_float3(p, q, v);
+    case 4: return make_float3(t, p, v);
+    case 5: return make_float3(v, p, q);
+    default: return vec(p);
+    }
+}
+// A flake's colour (computeFlakeColor): the style's colour varied in HSV by three entries of the random table from its id.
+ML_INLINE float3 glitterFlakeColor(const float* t, int id, float3 base, float3 variation) {
+    if (glitterBlack(variation)) return base;
+    const int wrap = int(GLITTER_RANDOM_SIZE) - 1;
+    const float* r = t + GLITTER_RANDOM;
+    const float rx = r[(id + 0) % wrap] - 0.5f, ry = r[(id + 1) % wrap] * 2.0f - 1.0f, rz = r[(id + 2) % wrap] * 2.0f - 1.0f;
+    const float3 hsv = glitterHsv(base);
+    const float h = hsv.x + variation.x * rx;
+    return glitterRgb(make_float3(h - floorf(h), clamp(hsv.y + variation.y * ry, 0.0f, 1.0f), clamp(hsv.z + variation.z * rz, 0.0f, 1.0f)));
+}
+// A flake's normal in the shading frame: the table's (in the frame of the shading normal) turned about the normal.
+ML_INLINE float3 glitterNormal(const float* t, const float turn[2], int id) {
+    const float x = t[GLITTER_NORMALS_X + id], y = t[GLITTER_NORMALS_Y + id];
+    return make_float3(turn[0] * x - turn[1] * y, turn[1] * x + turn[0] * y, t[GLITTER_NORMALS_Z + id]);
+}
+// A conductor of this colour, its edge the same colour (complexIorFromColor), at a cosine (ConductorFresnel).
+ML_INLINE float glitterConductor(float colour, float cosine) {
+    const float r = clamp(colour, 0.0f, 0.999f), root = sqrtf(r);
+    const float n = fmaxf(0.0f, r * (1.0f - r) / (1.0f + r) + (1.0f - r) * (1.0f + root) / (1.0f - root));
+    const float k2 = fmaxf(0.0f, r * (n + 1.0f) * (n + 1.0f) - (n - 1.0f) * (n - 1.0f)) / (1.0f - r);
+    const float h2 = cosine * cosine, factor = n * n + k2, both = factor * h2, nh = n * cosine;
+    return 0.5f * ((both - 2.0f * nh + 1.0f) / (both + 2.0f * nh + 1.0f) + (factor - 2.0f * nh + h2) / (factor + 2.0f * nh + h2));
+}
+ML_INLINE float3 glitterFresnel(float3 colour, float cosine) {
+    return make_float3(glitterConductor(colour.x, cosine), glitterConductor(colour.y, cosine), glitterConductor(colour.z, cosine));
+}
+
+// The flakes whose spheres reach the camera's footprint about the point (NOISE_worleySearchPoints): cell by cell outward,
+// each cell's Poisson count of points, each point's style by the random table, its overlap of the footprint's disk
+// (NOISE_Worley_computeSphereDiskOverlap) over the stretch of the surface from its rest (calculateDeformationFactors).
+// Their ids sorted, in ids; the four least (the macro flakes) with their overlaps and styles.
+struct GlitterFound {
+    unsigned count, macroCount;
+    int macroId[4];
+    float macroWeight[4];
+    unsigned macroStyle[4];
+};
+ML_INLINE float glitterOverlap(const Hit& hit, float3 feature, float radius, float footprint, float area) {
+    const float3 diff = hit.glitterP - feature;
+    const float toPlane = dot(diff, hit.glitterN);
+    const float squared = radius * radius - toPlane * toPlane;
+    if (squared < 1e-6f) return 0.0f;
+    float projected = sqrtf(squared);
+    float3 disk = hit.glitterP - (feature + hit.glitterN * toPlane);
+    if (hit.glitterCompensate) {
+        const float s = hit.glitterStretch[0], t = hit.glitterStretch[1];
+        projected *= fminf(1.0f, fminf(s, t));
+        disk.x = disk.x - hit.glitterStretch[2] * disk.y;
+        disk = hit.glitterAxes[0] * (dot(disk, hit.glitterAxes[0]) * s) + hit.glitterAxes[1] * (dot(disk, hit.glitterAxes[1]) * t)
+             + hit.glitterAxes[2] * dot(disk, hit.glitterAxes[2]);
+    }
+    float overlap = projected + footprint - length(disk);
+    overlap = fminf(fmaxf(overlap, 0.0f), 2.0f * fminf(projected, footprint));
+    const float unit = dot(hit.glitterN, hit.glitterN);
+    if (!(unit > 0.998001f && unit < 1.002001f)) return 0.0f;
+    const float covered = overlap * overlap * ML_PI;
+    return covered > area ? 1.0f : covered / area;
+}
+ML_INLINE void glitterSearch(const DeviceGlitter& d, const float* t, const Hit& hit, unsigned short* ids, GlitterFound& found) {
+    found.count = found.macroCount = 0;
+    // computeStyleCDF, and findNearestFlakes' radii
+    float cdf[2] = {d.frequency[0], d.frequency[0] + d.frequency[1]};
+    const float styles = d.frequency[0] + d.frequency[1];
+    if (styles > 1.0f) { cdf[0] /= styles; cdf[1] /= styles; }
+    const float radii[2] = {d.size[0] * 0.5f * d.density, d.size[1] * 0.5f * d.density};
+    const float area = hit.glitterArea, footprint = sqrtf(area * (1.0f / ML_PI));
+    const float3 pos = hit.glitterP;
+    const float radius = fmaxf(radii[0], radii[1]) + footprint * 0.25f;
+    const int cx = int(floorf(pos.x)), cy = int(floorf(pos.y)), cz = int(floorf(pos.z));
+    // The point's own cell alone where the search reaches no other, else it and the shells of cells about it.
+    const bool alone = int(floorf(pos.x - radius)) == int(floorf(pos.x + radius)) && int(floorf(pos.y - radius)) == int(floorf(pos.y + radius))
+                    && int(floorf(pos.z - radius)) == int(floorf(pos.z + radius));
+    const int shells = alone ? 0 : int(floorf(radius)) + 1;
+    const float reach = 0.86603f + radius;
+    unsigned level = 0;
+    #pragma unroll 1
+    for (int k = 0; k <= shells; ++k) {
+        const int side = 2 * k + 1, cells = side * side * side;
+        #pragma unroll 1
+        for (int c = 0; c < cells; ++c) {
+            const int ix = cx - k + c / (side * side), iy = cy - k + (c / side) % side, iz = cz - k + c % side;
+            if (k > 0) {
+                if (ix > cx - k && ix < cx + k && iy > cy - k && iy < cy + k && iz > cz - k && iz < cz + k) continue;  // visited
+                const float3 corner = pos - make_float3(float(ix) + 0.5f, float(iy) + 0.5f, float(iz) + 0.5f);
+                if (!(dot(corner, corner) < reach * reach)) continue;
+            }
+            if (found.count == GLITTER_MAX_FLAKES) break;
+            int hash = glitterPerm(t, ix + glitterPerm(t, iy + glitterPerm(t, iz)));
+            hash = (hash + d.seed) % int(GLITTER_TABLE_SIZE);
+            // getPointCount: the cell's Poisson count, from a feature point's coordinate.
+            int low = 1, high = 9, count = 1;
+            const float chance = t[GLITTER_POINTS_X + glitterPerm(t, hash + 5)];
+            while (low <= high) {
+                count = (low + high) / 2;
+                if (chance < t[GLITTER_PROB_LOW + count]) high = count - 1;
+                else if (chance >= t[GLITTER_PROB_HIGH + count]) low = count + 1;
+                else break;
+            }
+            #pragma unroll 1
+            for (int i = 0; i < count; ++i) {
+                const float3 feature = make_float3(float(ix) + 0.5f + (t[GLITTER_POINTS_X + hash] - 0.5f) * d.jitter,
+                                                   float(iy) + 0.5f + (t[GLITTER_POINTS_Y + hash] - 0.5f) * d.jitter,
+                                                   float(iz) + 0.5f + (t[GLITTER_POINTS_Z + hash] - 0.5f) * d.jitter);
+                // NOISE_Worley_setFlakeStyleAndSize
+                const float r1 = t[GLITTER_RANDOM + ((7 * hash) & (int(GLITTER_RANDOM_SIZE) - 1))];
+                const unsigned style = r1 <= cdf[0] ? 0u : 1u;
+                const float size = r1 <= cdf[0] ? radii[0] : r1 <= cdf[1] ? radii[1] : 0.0f;
+                const float overlap = glitterOverlap(hit, feature, size, footprint, area);
+                if (overlap > 1e-6f) {
+                    if (level == GLITTER_MAX_FLAKES) break;
+                    ++level;
+                    if (overlap > 0.00001f && found.count < GLITTER_MAX_FLAKES) {
+                        ids[found.count++] = (unsigned short)hash;
+                        if (found.macroCount < 4 || hash < found.macroId[3]) {
+                            unsigned m = found.macroCount < 4 ? found.macroCount++ : 3u;
+                            for (; m > 0 && found.macroId[m - 1] > hash; --m) {
+                                found.macroId[m] = found.macroId[m - 1];
+                                found.macroWeight[m] = found.macroWeight[m - 1];
+                                found.macroStyle[m] = found.macroStyle[m - 1];
+                            }
+                            found.macroId[m] = hash;
+                            found.macroWeight[m] = overlap;
+                            found.macroStyle[m] = style;
+                        }
+                    }
+                }
+                hash = (hash + 1) & int(GLITTER_TABLE_SIZE - 1);
+            }
+        }
+        if (k > 0) level = 0;
+        if (found.count == GLITTER_MAX_FLAKES) break;
+    }
+    // finalizeFlakes: by id (a heap sort, in place).
+    const int n = int(found.count);
+    #pragma unroll 1
+    for (int pass = 0; pass < 2 * n; ++pass) {
+        // The heap built (passes 0 to n - 1, roots from n / 2 - 1 down), then taken apart (end from n - 1 down).
+        const bool building = pass < n;
+        int root, end;
+        if (building) {
+            root = n / 2 - 1 - pass;
+            end = n;
+            if (root < 0) continue;
+        } else {
+            end = n - 1 - (pass - n);
+            if (end <= 0) break;
+            const unsigned short x = ids[0];
+            ids[0] = ids[end];
+            ids[end] = x;
+            root = 0;
+        }
+        while (2 * root + 1 < end) {
+            int child = 2 * root + 1;
+            if (child + 1 < end && ids[child] < ids[child + 1]) ++child;
+            if (!(ids[root] < ids[child])) break;
+            const unsigned short x = ids[root];
+            ids[root] = ids[child];
+            ids[child] = x;
+            root = child;
+        }
+    }
+}
+
+// The glitter lobes at a point (createLobes), wo the view as the lobes see it (under a coat that bends, bent). hifi: the
+// camera's own ray, which has a footprint (MoonRay's primary and mirror paths; a mirror's is not followed here). Elsewhere
+// the flakes are their average lobe alone, as MoonRay draws them with glitter_approximate_for_secondary_rays, which a
+// bounce without a footprint takes whatever it is set to.
+ML_INLINE void glitterLobes(GlitterLobes& g, const DeviceGlitter& d, const Hit& hit, bool hifi, float turnC, float turnS, float3 wo) {
+    g.flakes = g.micro = g.macroCount = 0;
+    g.averageWeight = g.microWeight = g.energy = g.totalO = 0.0f;
+    g.keep = 1.0f;
+    g.physical = true;
+    g.tables = reinterpret_cast<const float*>(d.tables);
+    g.turn[0] = turnC;
+    g.turn[1] = turnS;
+    g.variation = vec(d.variation);
+    g.roughness = d.randomness;
+    g.averageAlpha = fmaxf(0.001f, d.randomness * d.randomness);
+    float3 microColour = vec(0.0f);
+    const float mask = d.mask, coverage = d.coverage;
+    if (!(mask > 0.0f) || !hit.glitterState) return;
+    const float blend = hit.glitterState == 2
+        ? clamp(float(int(3.0f * hit.glitterArea + 1.0f) - d.blendStart) / float(d.blendEnd - d.blendStart), 0.0f, 1.0f) : 1.0f;
+    if (!hifi || hit.glitterState != 2 || fabsf(1.0f - blend) <= 1e-6f) {
+        g.averageColor = vec(d.average);
+        g.averageWeight = coverage * mask;
+    } else {
+        g.physical = !d.additive;
+        GlitterFound found;
+        glitterSearch(d, g.tables, hit, g.ids, found);
+        if (!found.count) return;
+        const unsigned macroCount = found.macroCount, microCount = found.count - macroCount;
+        float roughness[4], macroVis = 0.0f;
+        for (unsigned i = 0; i < macroCount; ++i) {
+            const unsigned style = found.macroStyle[i];
+            g.baseColors[i] = make_float3(d.color[3 * style], d.color[3 * style + 1], d.color[3 * style + 2]);
+            roughness[i] = d.roughness[style];
+            macroVis += found.macroWeight[i];
+        }
+        g.macroCount = macroCount;
+        float3 macroAverage = vec(0.0f);
+        bool single = false;
+        // createMacroFlakes: the one flake that covers the whole footprint, else each found flake by its share.
+        if (macroVis > 0.1f) {
+            unsigned first = 0;
+            while (first != macroCount && !(found.macroWeight[first] >= 1.0f - 1e-6f)) ++first;
+            const unsigned chosen = macroCount == 1 ? 0u : first;
+            const float3 current = chosen < macroCount ? glitterFlakeColor(g.tables, found.macroId[chosen], g.baseColors[chosen], g.variation) : vec(0.0f);
+            const unsigned from = glitterBlack(current) ? 0u : chosen, to = glitterBlack(current) ? macroCount : chosen + 1;
+            single = !glitterBlack(current);
+            const float inverse = 1.0f / macroVis;
+            for (unsigned i = from; i < to; ++i) {
+                const float3 colour = single ? current : glitterFlakeColor(g.tables, found.macroId[i], g.baseColors[i], g.variation);
+                float scale = found.macroWeight[i];
+                if (!single) {
+                    scale *= found.count > macroCount ? coverage : 1.0f;
+                    if (macroVis >= 1.0f - 1e-6f) scale *= inverse;
+                }
+                if (glitterBlack(colour)) continue;
+                if (!single) macroAverage += colour;
+                if (!(scale * mask > 0.0f)) continue;
+                g.flakeNormal[g.flakes] = glitterNormal(g.tables, g.turn, found.macroId[i]);
+                g.flakeColor[g.flakes] = colour;
+                g.flakeAlpha[g.flakes] = fmaxf(0.001f, roughness[i] * roughness[i]);
+                g.flakeWeight[g.flakes] = scale * mask;
+                ++g.flakes;
+            }
+        }
+        if (!single && !(macroVis >= 1.0f - 1e-6f) && !(macroVis < 1.0f && microCount == 0)) {
+            const float microFlakeVis = clamp((1.0f - blend) * (1.0f - macroVis), 0.0f, 1.0f);
+            const float microFacetVis = clamp(blend * (1.0f - macroVis), 0.0f, 1.0f);
+            if (macroVis >= 0.9f) {
+                if (microCount > 0) {
+                    macroAverage = macroAverage * (1.0f / float(macroCount));
+                    if (macroVis < 0.99f && !glitterBlack(macroAverage)) {
+                        g.averageColor = macroAverage;
+                        g.averageWeight = (1.0f - macroVis) * coverage * mask;
+                    }
+                }
+            } else {
+                // createMicroFlake: the rest of the flakes as MoonRay's stochastic flakes lobe, and as much of their average
+                // colour's GGX lobe as the footprint holds features past the blend's start.
+                if (microFlakeVis > 0.0f) {
+                    #pragma unroll 1
+                    for (unsigned i = 0; i < microCount; ++i)
+                        microColour += glitterFlakeColor(g.tables, g.ids[macroCount + i], g.baseColors[i % macroCount], g.variation);
+                    g.micro = microCount;
+                    g.microWeight = microFlakeVis * coverage * mask;
+                    g.randomness = fmaxf(0.001f, d.randomness * d.randomness);
+                    g.cosGamma = fminf(0.999f, 1.0f - d.roughness[0] * d.roughness[0]);
+                    // The view's weights over them, which every evaluation and sample divides by.
+                    float total = 0.0f;
+                    #pragma unroll 1
+                    for (unsigned i = 0; i < microCount; ++i) total += fmaxf(0.0f, dot(glitterNormal(g.tables, g.turn, g.ids[macroCount + i]), wo));
+                    g.totalO = total;
+                }
+                microColour = microColour * (1.0f / float(microCount));
+                if (microFacetVis > 0.0f && !glitterBlack(microColour)) {
+                    g.averageColor = microColour;
+                    g.averageWeight = microFacetVis * coverage * mask;
+                }
+            }
+        }
+        g.roughness = macroCount ? roughness[0] : d.randomness;
+    }
+    // How the samples are shared: each lobe by its weight and the brightness of its colour.
+    float shares[6] = {0.0f, 0.0f, 0.0f, 0.0f, g.averageWeight * luminance(g.averageColor), g.totalO > 0.0f ? g.microWeight * fmaxf(luminance(microColour), 0.01f) : 0.0f};
+    float weights = g.averageWeight + g.microWeight;
+    for (unsigned i = 0; i < g.flakes; ++i) {
+        shares[i] = g.flakeWeight[i] * fmaxf(luminance(g.flakeColor[i]), 0.01f);
+        weights += g.flakeWeight[i];
+    }
+    float total = 0.0f;
+    for (int i = 0; i < 6; ++i) { total += shares[i]; g.pick[i] = total; }
+    g.energy = total;
+    for (int i = 0; i < 6; ++i) g.pick[i] = total > 0.0f ? g.pick[i] / total : 1.0f;
+    // The lobes beneath: what MoonRay's builder leaves them (its weights accumulated over the glitter's adjacent lobes).
+    g.keep = g.physical ? fmaxf(0.0f, 1.0f - weights) : 1.0f;
+}
+// bsdf * cosine of a GGX lobe of glitter about a normal (GlitterGGXCookTorrance, or Cook-Torrance about the surface's
+// normal for the average): a conductor of its colour, with the cosines to its own normal, the surface's where the flake
+// faces away from either direction. pdf: as glitterSampleGgx draws it.
+ML_INLINE float3 glitterGgx(float3 n, float3 colour, float alpha, float3 wo, float3 wi, float& pdf) {
+    pdf = 0.0f;
+    const bool facing = dot(n, wo) > 0.0f;
+    float3 z = n;
+    float co = dot(n, wo), ci = dot(n, wi);
+    if (co <= 0.0f || ci <= 0.0f) {
+        z = make_float3(0.0f, 0.0f, 1.0f);
+        co = wo.z;
+        ci = wi.z;
+    }
+    if (co <= 0.0f || ci <= 0.0f) return vec(0.0f);
+    float3 m = wo + wi;
+    const float lengthM = length(m);
+    if (!(lengthM > 0.001f)) return vec(0.0f);
+    m = m * (1.0f / lengthM);
+    const float cosMI = dot(m, wi), cosM = dot(m, z);
+    if (cosMI <= 0.0f || cosM <= 0.0f) return vec(0.0f);
+    const float3 drawn = facing ? n : make_float3(0.0f, 0.0f, 1.0f);
+    const float drawnO = dot(drawn, wo), drawnM = dot(drawn, m);
+    if (drawnO > 0.0f && drawnM > 0.0f) pdf = smithG1(alpha, drawnO) * ggxD(alpha, drawnM) / (4.0f * drawnO);
+    return glitterFresnel(colour, cosMI) * (smithG1(alpha, co) * smithG1(alpha, ci) * ggxD(alpha, cosM) / (4.0f * co));
+}
+// StochasticFlakesBsdfLobe_computeGeometryTerm
+ML_INLINE float glitterGeometry(float cosNO, float cosNI, float randomness) {
+    const float ao = 1.0f / (randomness * sqrtf((1.0f - cosNO * cosNO) / (cosNO * cosNO)));
+    const float ai = 1.0f / (randomness * sqrtf((1.0f - cosNI * cosNI) / (cosNI * cosNI)));
+    const float g1o = ao < 1.6f ? (3.535f * ao + 2.181f * ao * ao) / (1.0f + 2.276f * ao + 2.577f * ao * ao) : 1.0f;
+    const float g1i = ai < 1.6f ? (3.535f * ai + 2.181f * ai * ai) / (1.0f + 2.276f * ai + 2.577f * ai * ai) : 1.0f;
+    return g1o * g1i;
+}
+// bsdf * cosine of the stochastic flakes (StochasticFlakesBsdfLobe_computeBrdf): the flakes that mirror one direction into
+// a cone about the other, both ways round, as a discrete distribution over the cone, their weighted colour a conductor.
+ML_INLINE float3 glitterFlakeSet(const GlitterLobes& g, float3 wo, float3 wi, float& pdf) {
+    pdf = 0.0f;
+    if (!g.micro || !(g.totalO > 0.0f)) return vec(0.0f);
+    float kO = 0.0f, kI = 0.0f, totalI = 0.0f;
+    float3 cO = vec(0.0f), cI = vec(0.0f);
+    #pragma unroll 1
+    for (unsigned i = 0; i < g.micro; ++i) {
+        const int id = g.ids[g.macroCount + i];
+        const float3 n = glitterNormal(g.tables, g.turn, id);
+        const float dO = dot(n, wo), dI = dot(n, wi);
+        const bool towardI = dot(wi, n * (2.0f * dO) - wo) >= g.cosGamma, towardO = dot(wo, n * (2.0f * dI) - wi) >= g.cosGamma;
+        totalI += fmaxf(0.0f, dI);
+        if (towardI || towardO) {
+            const float3 colour = glitterFlakeColor(g.tables, id, g.baseColors[i % g.macroCount], g.variation);
+            if (towardI) { kO += fmaxf(0.0f, dO); cO += colour * fmaxf(0.0f, dO); }
+            if (towardO) { kI += fmaxf(0.0f, dI); cI += colour * fmaxf(0.0f, dI); }
+        }
+    }
+    if (!(totalI > 0.0f)) return vec(0.0f);
+    float3 m = wo + wi;
+    const float lengthM = length(m);
+    if (!(lengthM > 0.001f)) return vec(0.0f);
+    m = m * (1.0f / lengthM);
+    if (!glitterZero(kO)) cO = cO * (1.0f / kO);
+    if (!glitterZero(kI)) cI = cI * (1.0f / kI);
+    const float count = float(g.micro);
+    const float cosNI = fminf(wi.z, 1.0f - 1e-6f), cosNO = fminf(wo.z, 1.0f - 1e-6f), cosMI = dot(m, wi);
+    if (cosNI <= 1e-6f || cosNO <= 1e-6f || cosMI <= 1e-6f) return vec(0.0f);
+    const float cone = 2.0f * ML_PI * (1.0f - g.cosGamma);
+    pdf = kO / (cone * g.totalO);
+    const float3 colour = (cO + cI) * 0.5f;
+    const float3 clamped = make_float3(fminf(colour.x, 0.999f), fminf(colour.y, 0.999f), fminf(colour.z, 0.999f));
+    return glitterFresnel(clamped, cosMI) * (0.5f * (kO / count + kI / count) / cone * glitterGeometry(cosNO, cosNI, g.randomness) / cosNO);
+}
+// bsdf * cosine of all the glitter lobes, their weights in, and the density with which glitterSample draws wi.
+ML_INLINE float3 glitterEval(const GlitterLobes& g, float3 wo, float3 wi, float& pdf) {
+    float3 value = vec(0.0f);
+    pdf = 0.0f;
+    float lobePdf;
+    // The flakes' GGX lobes and the average's (slot 4) in one loop, not unrolled: one copy of the lobe where evalBsdf is
+    // inlined, which OptiX takes the longer to compile for each.
+    #pragma unroll 1
+    for (unsigned i = 0; i < 5; ++i) {
+        const bool average = i == 4;
+        if (average ? !(g.averageWeight > 0.0f) : i >= g.flakes) continue;
+        value += glitterGgx(average ? make_float3(0.0f, 0.0f, 1.0f) : g.flakeNormal[i], average ? g.averageColor : g.flakeColor[i],
+                            average ? g.averageAlpha : g.flakeAlpha[i], wo, wi, lobePdf) * (average ? g.averageWeight : g.flakeWeight[i]);
+        pdf += (g.pick[i] - (i ? g.pick[i - 1] : 0.0f)) * lobePdf;
+    }
+    if (g.micro) {
+        value += glitterFlakeSet(g, wo, wi, lobePdf) * g.microWeight;
+        pdf += (g.pick[5] - g.pick[4]) * lobePdf;
+    }
+    return value;
+}
+// A direction drawn from the glitter lobes, one chosen by its share: a GGX lobe's visible normals about its own normal (the
+// surface's where the flake faces away from the view), or a stochastic flake, chosen by how squarely it faces the view, and
+// a direction in the cone about its mirror direction (StochasticFlakesBsdfLobe_sample).
+ML_INLINE float3 glitterSample(const GlitterLobes& g, float3 wo, float u1, float u2, float choice) {
+    unsigned lobe = 0;
+    while (lobe < 5 && choice >= g.pick[lobe]) ++lobe;
+    if (lobe == 5) {
+        float cdf = 0.0f, previous = 0.0f;
+        float3 reflection = make_float3(0.0f, 0.0f, 1.0f);
+        const float inverse = 1.0f / g.totalO;
+        #pragma unroll 1
+        for (unsigned i = 0; i < g.micro; ++i) {
+            const float3 n = glitterNormal(g.tables, g.turn, g.ids[g.macroCount + i]);
+            const float d = dot(n, wo);
+            previous = cdf;
+            cdf += fmaxf(0.0f, d) * inverse;
+            reflection = n * (2.0f * d) - wo;
+            if (u1 < cdf) break;
+        }
+        const float remapped = cdf > previous ? clamp((u1 - previous) / (cdf - previous), 0.0f, 1.0f) : 0.5f;
+        // sampleLocalSphericalCapUniform about the mirror direction
+        const float cosTheta = fminf(1.0f - remapped * (1.0f - g.cosGamma), 1.0f), sinTheta = sqrtf(fmaxf(0.0f, 1.0f - cosTheta * cosTheta));
+        const float phi = 2.0f * ML_PI * u2;
+        return Frame(normalize(reflection)).toWorld(make_float3(sinTheta * cosf(phi), sinTheta * sinf(phi), cosTheta));
+    }
+    const bool average = lobe == 4;
+    const float3 n = average ? make_float3(0.0f, 0.0f, 1.0f) : g.flakeNormal[lobe];
+    const Frame drawn(dot(n, wo) > 0.0f ? n : make_float3(0.0f, 0.0f, 1.0f));
+    const float3 h = sampleFacet(average ? g.averageAlpha : g.flakeAlpha[lobe], drawn.toLocal(wo), u1, u2);
+    return reflectAbout(wo, drawn.toWorld(h));
+}
+#endif
+
 // How the reflective lobes share the samples: specular against diffuse, and the coat's part
 // of the specular samples.
 struct Lobes {
@@ -1103,11 +1615,22 @@ struct Lobes {
     float coat;
     float back;     // the share of the diffuse samples that go through to the far side
     float sheen;    // the share of the others that lean towards the side the view comes from, for the fuzz
+#if ML_GLITTER_CODE
+    float glitter;  // the share of the specular samples (those not the coat's) that MoonRay's glitter takes
+#endif
 };
 ML_INLINE Lobes lobeWeights(const Surface& s, float3 wo) {
     const float fuzz = underFuzz(s, wo);
     const float coat = s.coat * dielectricFresnel(wo.z, COAT_IOR) * fuzz;
-    const float specular = luminance(specularFresnel(s, throughCoat(s, wo).z)) * underCoat(s, wo) * fuzz;
+    float specular = luminance(specularFresnel(s, throughCoat(s, wo).z)) * underCoat(s, wo) * fuzz;
+#if ML_GLITTER_CODE
+    // MoonRay's glitter is sampled with the specular, over it: the share of those samples it takes (Lobes::glitter).
+    float glitter = 0.0f;
+    if (s.glitter) {
+        glitter = s.glitter->energy * (s.glitter->physical ? underCoat(s, wo) : 1.0f) * fuzz;
+        specular = specular * s.glitter->keep + glitter;
+    }
+#endif
     const float sheen = s.fuzz > 0.0f ? luminance(s.fuzzColor) * s.fuzz * velvetAlbedo(wo.z, s.fuzzRoughness) : 0.0f;
     const float front = luminance(diffuseColor(s, wo)) + sheen;
     const float behind = s.passes ? luminance(backColor(s, wo)) : 0.0f;
@@ -1122,6 +1645,9 @@ ML_INLINE Lobes lobeWeights(const Surface& s, float3 wo) {
         lobes.coat = coat > 0.0f ? 1.0f : 0.0f;
         lobes.specular = s.matte || coat <= 0.0f ? 0.0f : diffuse <= 0.0f ? 1.0f : clamp(coat / (coat + diffuse), 0.1f, 0.9f);
     }
+#if ML_GLITTER_CODE
+    lobes.glitter = specular > 0.0f ? glitter / specular : 0.0f;
+#endif
     return lobes;
 }
 
@@ -1135,6 +1661,9 @@ struct BsdfEval {
     // one nearly all.
     float3 toon;
     float toonPdf;
+#if ML_GLITTER_CODE
+    float3 flakes;  // the part of specular that MoonRay's glitter reflects (Keep Metallic Flakes sets its light apart)
+#endif
 };
 ML_INLINE float powerHeuristic(float a, float b);
 ML_INLINE float hairLongitudinal(float variance, float sinI, float cosI, float sinO, float cosO);
@@ -1148,6 +1677,13 @@ ML_INLINE float3 litBy(const BsdfEval& e, float surfacePdf, float lightPdf) {
     return found;
 }
 // The diffuse share of a light's sample (litBy): each colour's diffuse part over the whole.
+#if ML_GLITTER_CODE
+// The glitter's share of a light's sample (litBy), each colour's: what Keep Metallic Flakes sets apart.
+ML_INLINE float3 flakePartOf(const BsdfEval& e, float surfacePdf, float lightPdf, float3 found) {
+    const float3 f = e.flakes * (powerHeuristic(lightPdf, surfacePdf) / lightPdf);
+    return make_float3(found.x > 0.0f ? f.x / found.x : 0.0f, found.y > 0.0f ? f.y / found.y : 0.0f, found.z > 0.0f ? f.z / found.z : 0.0f);
+}
+#endif
 ML_INLINE float3 diffusePartOf(const BsdfEval& e, float surfacePdf, float lightPdf, float3 found) {
     const float3 d = e.diffuse * (powerHeuristic(lightPdf, surfacePdf) / lightPdf);
     return make_float3(found.x > 0.0f ? d.x / found.x : 0.0f, found.y > 0.0f ? d.y / found.y : 0.0f, found.z > 0.0f ? d.z / found.z : 0.0f);
@@ -1163,6 +1699,9 @@ ML_INLINE float sheenPdf(float3 wo, float3 wi) {
 ML_INLINE BsdfEval evalBsdf(const Surface& s, const Lobes& lobes, float3 wo, float3 wi) {
     BsdfEval e;
     e.diffuse = e.specular = e.toon = vec(0.0f);
+#if ML_GLITTER_CODE
+    e.flakes = vec(0.0f);
+#endif
     e.diffusePdf = e.specularPdf = e.toonPdf = 0.0f;
     if (wo.z <= 0.0f) return e;
     if (wi.z <= 0.0f) {
@@ -1257,6 +1796,34 @@ ML_INLINE BsdfEval evalBsdf(const Surface& s, const Lobes& lobes, float3 wo, flo
         if (under) e.specular += multipleScattering(s, uo, ui) * shine * (underCoat(s, wo) * squeeze);
         e.specularPdf = e.specularPdf * (1.0f - broad) + (1.0f - lobes.coat) * broad * wi.z / ML_PI;
     }
+#if ML_GLITTER_CODE
+    if (s.glitter) {
+        // MoonRay's glitter: its lobes under the coat, seen through it as the specular is (uo, ui), over the specular,
+        // which keeps what they leave, as the diffuse does (entering).
+        const GlitterLobes& g = *s.glitter;
+        e.specular = e.specular * g.keep;
+        e.specularPdf = e.specularPdf * (1.0f - lobes.glitter);
+        if (under || s.glitterThrough) {
+            // A sample the coat turned back is passed through as MoonRay's UnderClearcoatBsdfLobe::sample passes it (its
+            // total internal reflection, mPassThroughTIRWhenSampling): the glitter's value where it was drawn, beneath the
+            // coat, alone, and its density there by the coat's change of variables (its index squared, over). Flakes a
+            // grazing view sees tilted away went black without it, where MoonRay's catch the light. One call for both,
+            // so that the glitter is one copy of code here.
+            float glitterPdf;
+            e.flakes = glitterEval(g, uo, s.glitterThrough ? s.glitterUnder : ui, glitterPdf)
+                     * ((g.physical ? underCoat(s, wo) : 1.0f) * (s.glitterThrough ? underFuzz(s, wo) : squeeze));
+            if (s.glitterThrough) {
+                e.specular = e.flakes;
+                e.diffuse = e.toon = vec(0.0f);
+                e.specularPdf = (1.0f - lobes.coat) * lobes.glitter * glitterPdf / (COAT_IOR * COAT_IOR);
+                e.diffusePdf = e.toonPdf = 0.0f;
+                return e;
+            }
+            e.specular += e.flakes;
+            e.specularPdf += (1.0f - lobes.coat) * lobes.glitter * squeeze * glitterPdf;
+        }
+    }
+#endif
     if (s.coat > 0.0f) {
         // About the coat's own normal, which its maps may tilt less than the surface's.
         const float3 cn = s.coatNormal;
@@ -1287,6 +1854,9 @@ ML_INLINE BsdfEval evalBsdf(const Surface& s, const Lobes& lobes, float3 wo, flo
         const float kept = underFuzz(s, wo);
         e.specular = e.specular * kept;
         e.toon = e.toon * kept;
+#if ML_GLITTER_CODE
+        e.flakes = e.flakes * kept;
+#endif
         e.diffuse += fuzzLobe(s, wo, wi);
     }
     e.diffusePdf = (1.0f - lobes.back) * ((1.0f - lobes.sheen) * wi.z / ML_PI + lobes.sheen * sheenPdf(wo, wi));
@@ -1375,6 +1945,9 @@ ML_INLINE float3 shadowFrom(const Surface& surface, float3 p, float3 lift, float
 // The diffuse lobes alone (only 1) or the glossy ones (only 2), for a light pass; 0 all.
 ML_INLINE BsdfEval onlyLobes(BsdfEval e, unsigned only) {
     if (only == 1) { e.specular = make_float3(0.0f, 0.0f, 0.0f); e.toon = make_float3(0.0f, 0.0f, 0.0f); }
+#if ML_GLITTER_CODE
+    if (only == 1) e.flakes = make_float3(0.0f, 0.0f, 0.0f);
+#endif
     else if (only == 2) e.diffuse = make_float3(0.0f, 0.0f, 0.0f);
     return e;
 }
@@ -1408,7 +1981,11 @@ ML_INLINE float3 seenBy(unsigned hidden, bool sharp, unsigned seen, float3 gloss
 ML_INLINE float3 directLight(const Surface& surface, const Lobes& lobes, float3 wo, const Frame& frame,
                              float3 p, float3 ng, float3 weight, bool lit, Seed& seed, float3 lift = make_float3(0.0f, 0.0f, 0.0f),
                              unsigned set = 0, unsigned only = 0, float3* diffuseShare = nullptr, float2* shaded = nullptr,
-                             float3* tally = nullptr) {
+                             float3* tally = nullptr
+#if ML_GLITTER_CODE
+                             , float3* flakeShare = nullptr
+#endif
+                             ) {
     const DeviceDistantLight* distantLights = reinterpret_cast<const DeviceDistantLight*>(params.distantLights);
     const DeviceLight* lights = reinterpret_cast<const DeviceLight*>(params.lights);
     float3 radiance = vec(0.0f);
@@ -1468,6 +2045,9 @@ ML_INLINE float3 directLight(const Surface& surface, const Lobes& lobes, float3 
             radiance += c;
             if (shaded) { shaded->x += luminance(c); shaded->y += luminance(clampSample(open, lit)); }
             if (diffuseShare) *diffuseShare += c * diffusePartOf(e, pdf, lightPdf, found);
+#if ML_GLITTER_CODE
+            if (flakeShare) *flakeShare += c * flakePartOf(e, pdf, lightPdf, found);
+#endif
         }
     }
     return radiance;
@@ -2207,6 +2787,15 @@ extern "C" __global__ void __raygen__moonlightipr() {
 
     // The light set of the surface the ray last left, which the lights it comes upon are held to.
     unsigned fromSet = 0;
+#if ML_GLITTER_CODE
+    // The glitter lobes of the surface the path is at (Surface::glitter), the camera's flakes among them.
+    GlitterLobes glitterHere;
+    // Keep Metallic Flakes (DeviceGlitter::flakes): the pixel's sum of the light the glitter at the camera's first surface
+    // reflects (MoonRay's C<R.'glitter'>.*[<L.>O]): its lights' samples' share, and the share of the rest of the path
+    // (from flakeMark on) that the glitter's part of the bounce carries.
+    float4* flakeSum = nullptr;
+    float3 flakeLight = vec(0.0f), flakeShare = vec(0.0f), flakeMark = vec(0.0f);
+#endif
     for (unsigned depth = 0;; ++depth) {
         bounceSeed(seed, depth);
         Hit hit;
@@ -2743,6 +3332,18 @@ extern "C" __global__ void __raygen__moonlightipr() {
             const float3 along = hit.curve ? hit.curveTangent : hit.tangent - ns * dot(hit.tangent, ns);
             surface.toonAlong = dot(along, along) > 1e-12f ? frame.toLocal(normalize(along)) : make_float3(1.0f, 0.0f, 0.0f);
         }
+#if ML_GLITTER_CODE
+        if ((hit.flags & MATERIAL_GLITTER) && hit.glitterState && !surface.toonSpecular && !surface.matte) {
+            // MoonRay's glitter: its lobes here, in the shading frame (the flakes' frame is the shading normal's own, turned
+            // to a stretched lobe's tangent), as the lobes under the coat see the view.
+            const Frame own(ns);
+            glitterLobes(glitterHere, glitterOf(hit.iridescence), hit, hit.glitterState == 2, dot(own.t, frame.t), dot(own.t, frame.b),
+                         throughCoat(surface, wo));
+            if (glitterHere.energy > 0.0f || glitterHere.keep < 1.0f) surface.glitter = &glitterHere;
+            const DeviceGlitter& held = glitterOf(hit.iridescence);
+            if (camera && surface.glitter && held.flakes) flakeSum = reinterpret_cast<float4*>(held.flakes) + pixel;
+        }
+#endif
 
         if (camera) {
             guideAlbedo = lerp(surface.albedo, vec(1.0f), surface.transmission * (1.0f - surface.metallic));
@@ -2815,7 +3416,11 @@ extern "C" __global__ void __raygen__moonlightipr() {
         const bool splitLit = params.passes && camera;
         PASS_NOW(PASS_GLOSSY);
         radiance += directLight(surface, lobes, wo, frame, hit.p, ng, throughput, lit, seed, hit.lift, fromSet,
-                                camera ? params.aovPass : 0u, splitLit ? &litDiffuse : nullptr, splitLit ? &litShaded : nullptr);
+                                camera ? params.aovPass : 0u, splitLit ? &litDiffuse : nullptr, splitLit ? &litShaded : nullptr
+#if ML_GLITTER_CODE
+                                , nullptr, flakeSum && camera ? &flakeLight : nullptr
+#endif
+                                );
         if (splitLit) {
             passAdd(pixel, PASS_DIFFUSE, litDiffuse);
             passMark += litDiffuse;
@@ -3121,6 +3726,11 @@ extern "C" __global__ void __raygen__moonlightipr() {
 
         const bool glossy = rnd(seed) < lobes.specular;
         float3 wi;
+#if ML_GLITTER_CODE
+        // A glitter sample the coat turns back on its way out: passed through (glitterUnder, as drawn under the coat).
+        bool glitterThrough = false;
+        float3 glitterUnder = vec(0.0f);
+#endif
         if (!glossy) {
             if (lobes.back > 0.0f && rnd(seed) < lobes.back) {
                 wi = sampleDiffuse(u1, u2);
@@ -3133,6 +3743,18 @@ extern "C" __global__ void __raygen__moonlightipr() {
             wi = reflectAbout(wo, coatFrame.toWorld(sampleFacet(surface.coatAlpha, coatFrame.toLocal(wo), u1, u2)));
             lobeRough = hit.coatRoughness;
         }
+#if ML_GLITTER_CODE
+        else if (surface.glitter && rnd(seed) < lobes.glitter) {
+            // MoonRay's glitter, drawn as the lobes under the coat see the view, and bent out of the coat as the specular is.
+            wi = glitterUnder = glitterSample(*surface.glitter, throughCoat(surface, wo), u1, u2, rnd(seed));
+            if (coatBends(surface)) {
+                bool out;
+                wi = bendAbout(wi, surface.coatNormal, COAT_IOR, out);
+                glitterThrough = !out;
+            }
+            lobeRough = surface.glitter->roughness;
+        }
+#endif
         else if (rnd(seed) < broadShare(surface)) wi = sampleDiffuse(u1, u2);
         else {
             // Under a coat that bends, drawn from the highlight as seen through it, and bent out again; a direction that
@@ -3148,6 +3770,10 @@ extern "C" __global__ void __raygen__moonlightipr() {
         if (params.roughnessClamp > 0.0f)
             leastRough = clamp((glossy ? lobeRough : 1.0f) * params.roughnessClamp, leastRough, 1.0f);
         lobeRough = 1.0f;
+#if ML_GLITTER_CODE
+        surface.glitterThrough = glitterThrough;
+        surface.glitterUnder = glitterUnder;
+#endif
         const BsdfEval e = onlyLobes(evalBsdf(surface, lobes, wo, wi), camera ? params.aovPass : 0u);
         bsdfPdf = lobes.specular * e.specularPdf + (1.0f - lobes.specular) * e.diffusePdf;
         direction = frame.toWorld(wi);
@@ -3171,6 +3797,15 @@ extern "C" __global__ void __raygen__moonlightipr() {
                                     whole.z > 0.0f ? e.diffuse.z / whole.z : 0.0f);
         }
         bounceWeight = ((diffuseBounces ? e.diffuse : vec(0.0f)) + (glossyBounces ? e.specular : vec(0.0f))) * scale;
+#if ML_GLITTER_CODE
+        if (flakeSum && camera) {
+            // What comes back along the bounce from here on, the glitter's part of it (Keep Metallic Flakes).
+            const float3 whole = e.diffuse + e.specular, part = glossyBounces ? e.flakes : vec(0.0f);
+            flakeShare = make_float3(whole.x > 0.0f ? part.x / whole.x : 0.0f, whole.y > 0.0f ? part.y / whole.y : 0.0f,
+                                     whole.z > 0.0f ? part.z / whole.z : 0.0f);
+            flakeMark = radiance;
+        }
+#endif
         bounces = diffuseBounces || glossyBounces;
         sharp = false;
         clampFound = roughDepth >= params.sampleClampDepth;
@@ -3180,6 +3815,15 @@ extern "C" __global__ void __raygen__moonlightipr() {
         seen = glossy ? SEEN_REFLECTED : SEEN_DIFFUSE;
         origin = offsetOrigin(hit.p, ng, direction);
     }
+#if ML_GLITTER_CODE
+    if (flakeSum) {
+        // Summed, not averaged: a pixel's camera rays find glitter in some of its samples and not in others, and its
+        // light is the sum over them all over the samples (the host's Impl::flakeMean); cleared as the render starts.
+        float3 light = flakeLight + (radiance - flakeMark) * flakeShare;
+        if (!finite(radiance) || !finite(light)) light = vec(0.0f);
+        *flakeSum = make_float4(flakeSum->x + light.x, flakeSum->y + light.y, flakeSum->z + light.z, 1.0f);
+    }
+#endif
     if (!finite(radiance)) radiance = vec(0.0f);
     else if (params.passes) passTo(pixel, passNow, radiance, passMark, passShare);
     if (glassSeen > 0.0f && isfinite(glassSeen)) seenThroughGlass(pixel, glassSeen);
@@ -4052,6 +4696,51 @@ extern "C" __global__ void __closesthit__radiance() {
 
     const float3 e1 = optixTransformVectorFromObjectToWorldSpace(p1 - p0), e2 = optixTransformVectorFromObjectToWorldSpace(p2 - p0);
     float3 alongU, alongV;
+#if ML_GLITTER_CODE
+    // MoonRay's glitter (initializeNoiseSample): for a camera ray, the point in the glitter's space, its normal there, and
+    // the ray's footprint there, a pixel's width (as wide as MoonRay's ray differentials are, Hit::coneSpread) over the slant
+    // and taken into that space by the triangle's area in it to its area in the world. Object space is the mesh's own; so is
+    // reference space, the mesh's points being its rest positions (the kit's reference points), the normal then the rest
+    // triangle's. A bounce has no footprint, and takes the flakes' average lobe alone (glitterLobes).
+    if (material.flags & MATERIAL_GLITTER) {
+        hit->glitterState = 1;
+        hit->glitterCompensate = false;
+        if (hit->coneWidth > 0.0f || hit->coneSpread > 0.0f) {
+            const DeviceGlitter& glitter = glitterOf(material.iridescence);
+            const bool reference = glitter.space == GLITTER_REFERENCE_SPACE;
+            // An instancer's placement: MoonRay's object space is its reference mesh's, which is the world's here.
+            const bool placed = !reference && glitter.instancers && reinterpret_cast<const unsigned char*>(glitter.instancers)[optixGetInstanceId()];
+            // In reference space, the mesh's rest positions where it has its own (a deformed mesh's base points), else its points.
+            const DevicePtr restAt = reference && glitter.rests ? reinterpret_cast<const DevicePtr*>(glitter.rests)[instance.mesh] : 0;
+            const float3* restPoints = restAt ? reinterpret_cast<const float3*>(restAt) : positions;
+            const float3 q0 = restPoints[triangle.x], q1 = restPoints[triangle.y], q2 = restPoints[triangle.z];
+            const float3 r1 = placed ? e1 : q1 - q0, r2 = placed ? e2 : q2 - q0, rest = cross(r1, r2);
+            const float3 normal = reference || placed ? rest : ns;
+            const float unit = dot(normal, normal), world = length(cross(e1, e2)), own = length(rest);
+            if (unit > 0.0f && world > 0.0f && own > 0.0f) {
+                hit->glitterN = placed ? (mesh.normals ? hit->ns : hit->ng) : normal * rsqrtf(unit);
+                hit->glitterP = (placed ? hit->p : q0 * w + q1 * uv.x + q2 * uv.y) * glitter.density;
+                const float width = hit->coneWidth + hit->coneSpread * hit->t;
+                const float slant = fmaxf(fabsf(dot(optixGetWorldRayDirection(), hit->ng)), 0.01f);
+                hit->glitterArea = width * width / slant * (own / world) * glitter.density * glitter.density;
+                if (reference && glitter.compensate) {
+                    // calculateDeformationFactors: how far the surface is stretched along and across its first edge from
+                    // its rest, and sheared (the edges standing for MoonRay's dPds and dPdt).
+                    const float3 curZ = cross(e1, e2) * (1.0f / world), curX = normalize(e1), curY = normalize(cross(curZ, curX));
+                    const float3 refZ = rest * (1.0f / own), refX = normalize(r1), refY = normalize(cross(refZ, refX));
+                    hit->glitterStretch[0] = fabsf(dot(e1, curX) / dot(r1, refX));
+                    hit->glitterStretch[1] = fabsf(dot(e2, curY) / dot(r2, refY));
+                    hit->glitterStretch[2] = dot(normalize(r2), refX) - dot(normalize(e2), curX);
+                    hit->glitterAxes[0] = refX;
+                    hit->glitterAxes[1] = refY;
+                    hit->glitterAxes[2] = refZ;
+                    hit->glitterCompensate = true;
+                }
+                hit->glitterState = 2;
+            }
+        }
+    }
+#endif
 
     // Normal and bump maps tilt the shading normal in the frame the plugin's ModoTextureMap and
     // ModoNormalMap use: the direction texture u runs across the surface, the normal, and their

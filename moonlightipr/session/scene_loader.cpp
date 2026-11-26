@@ -25,8 +25,10 @@ const uint32_t MESH_HAS_DATA = 1, MESH_HAS_NORMALS = 2, MESH_HAS_MATERIAL_IDS = 
                MESH_CURVES = 128,       // the data is curves: control points, their radii and each segment's first point
                MESH_LINEAR = 256,       // those curves' segments are straight, from one point to the next
                MESH_RIBBON = 512,       // and they are lit as flat ribbons that face the ray
-               MESH_DISPLACE = 1024;    // its materials displace it: split finer here, then moved by their height
-const uint32_t SCENE_DENOISE = 1, SCENE_WORKING_SPACE = 2, SCENE_MOTION = 4, SCENE_PRESENCE_SHADOWS = 8, SCENE_FLAT_OUT = 16;
+               MESH_DISPLACE = 1024,    // its materials displace it: split finer here, then moved by their height
+               MESH_HAS_REST = 2048;    // its rest positions follow (form 'c'), for glitter in reference space
+const uint32_t SCENE_DENOISE = 1, SCENE_WORKING_SPACE = 2, SCENE_MOTION = 4, SCENE_PRESENCE_SHADOWS = 8, SCENE_FLAT_OUT = 16,
+               SCENE_KEEP_FLAKES = 32;     // Keep Metallic Flakes (Renderer::setKeepFlakes)
 const uint32_t LAYER_UDIM = 1 << 19;    // as in src/device/shared.h
 const uint32_t IRIDESCENCE_STEPS = 512; // likewise
 const uint32_t TEXTURE_FLOAT = 1, TEXTURE_SRGB = 2, TEXTURE_WRAP_U_SHIFT = 2, TEXTURE_WRAP_V_SHIFT = 4;
@@ -322,13 +324,13 @@ SceneSettings SceneLoader::apply(const std::string& path) {
     // "MLS" and a letter for the form of the scene, which changes whenever what is written in it does: "C" since
     // the scene's sample clamp is written in it, "D" since a toon material's ramps are, "E" since a hair toon's highlights are,
     // "F" since the lights' poses at the shutter's close are, "G" since the volume scattering factors are, "H" since the
-    // camera's film offset is, "I" since a material's fuzz is, "J" since the light sets are, "K" since a mesh may be displaced, "L" since by a program of displacement nodes, "M" since a material's clearcoat bump strength is, "N" since whether the camera sees each light is, "O" since the subsurface scatterings a path may have are, "P" since each instance's own number is, "Q" since the roughness clamp is, "R" since what reflections and refractions see of the environment is, "S" since the kinds of rays each light is hidden from are, "T" since a displaced mesh may be split by its distance from the camera, "U" since where each moving instance stands at the frame is, "W" since how each light's picture is repeated, turned and moved across it is, "X" since a material's iridescence is, "Y" since a tilted lens's plane of focus is, "Z" since a material's shadow catcher is, "a" since a mesh's slot map is 32 long, "b" since it is 64 long. A plugin and a session of different versions say so plainly, in
+    // camera's film offset is, "I" since a material's fuzz is, "J" since the light sets are, "K" since a mesh may be displaced, "L" since by a program of displacement nodes, "M" since a material's clearcoat bump strength is, "N" since whether the camera sees each light is, "O" since the subsurface scatterings a path may have are, "P" since each instance's own number is, "Q" since the roughness clamp is, "R" since what reflections and refractions see of the environment is, "S" since the kinds of rays each light is hidden from are, "T" since a displaced mesh may be split by its distance from the camera, "U" since where each moving instance stands at the frame is, "W" since how each light's picture is repeated, turned and moved across it is, "X" since a material's iridescence is, "Y" since a tilted lens's plane of focus is, "Z" since a material's shadow catcher is, "a" since a mesh's slot map is 32 long, "b" since it is 64 long, "c" since a material's glitter is. A plugin and a session of different versions say so plainly, in
     // place of reading each other's scenes wrongly.
     const uint32_t mark = in.value<uint32_t>();
     if ((mark & 0x00ffffff) != 0x00534c4d) throw std::runtime_error("Not a MoonLightIPR scene: " + path);
-    if (mark != 0x62534c4d)
+    if (mark != 0x63534c4d)
         throw std::runtime_error("This MoonLightIPR and the plugin are of different versions (the scene is form '" + std::string(1, char(mark >> 24))
-                                 + "', this MoonLightIPR reads 'b'). Install the kit and its runtime from the same release.");
+                                 + "', this MoonLightIPR reads 'c'). Install the kit and its runtime from the same release.");
     ++generation;
     SceneSettings settings;
     settings.width = in.value<uint32_t>();
@@ -341,6 +343,7 @@ SceneSettings SceneLoader::apply(const std::string& path) {
     // The render rests once the picture is clean: noise of about a step of an 8-bit screen's colour, or three where
     // the denoiser takes away what is left, rather than gathering every sample of a scene that needs few.
     settings.flatOut = (sceneFlags & SCENE_FLAT_OUT) != 0;
+    renderer.setKeepFlakes((sceneFlags & SCENE_KEEP_FLAKES) != 0);
     renderer.setConvergence(settings.flatOut ? 0.0f : settings.denoise ? 0.012f : 0.004f);
     const float sampleClamp = in.value<float>();
     const uint32_t sampleClampDepth = in.value<uint32_t>();
@@ -655,6 +658,33 @@ SceneSettings SceneLoader::apply(const std::string& path) {
             material.shadowCatcher = std::min(std::max(in.value<float>(), 0.0f), 1.0f);
             material.shadowMatte = (materialFlags & (1u << 19)) != 0;
         }
+        if (materialFlags & (1u << 20)) {
+            // MoonRay's glitter (form 'c'): its seed, space and switches (1 compensate a reference space's stretch, 2 bounces
+            // see the average, 4 the camera's flakes add), then its amount, randomness, density, jitter and level-of-detail
+            // quality, and styles A and B's frequency, size, roughness and colour, then the colour variation.
+            material.glitter = true;
+            material.glitterSeed = in.value<int32_t>();
+            material.glitterSpace = in.value<uint32_t>();
+            const uint32_t switches = in.value<uint32_t>();
+            material.glitterCompensate = (switches & 1) != 0;
+            material.glitterApproximate = (switches & 2) != 0;
+            material.glitterAdditive = (switches & 4) != 0;
+            material.glitterMask = in.value<float>();
+            material.glitterRandomness = in.value<float>();
+            material.glitterDensity = in.value<float>();
+            material.glitterJitter = in.value<float>();
+            material.glitterLodQuality = in.value<float>();
+            for (int style = 0; style < 2; ++style) {
+                material.glitterFrequency[style] = in.value<float>();
+                material.glitterSize[style] = in.value<float>();
+                material.glitterRoughness[style] = in.value<float>();
+                in.floats(material.glitterColor + 3 * style, 3);
+            }
+            in.floats(material.glitterVariation, 3);
+            const float numbers[] = {material.glitterMask, material.glitterRandomness, material.glitterDensity, material.glitterJitter};
+            for (float v : numbers)
+                if (!std::isfinite(v)) throw std::runtime_error("MoonLightIPR scene material has a glitter that cannot be read");
+        }
     }
     std::vector<Layer> layers(in.value<uint32_t>());
     for (Layer& layer : layers) {
@@ -844,7 +874,7 @@ SceneSettings SceneLoader::apply(const std::string& path) {
             }
         } else if (flags & MESH_HAS_DATA) {
             uint32_t vertexCount = 0, triangleCount = 0;
-            std::vector<float> positions, normals, closePositions;
+            std::vector<float> positions, normals, closePositions, restPositions;
             std::vector<uint32_t> indices, materialIds;
             std::vector<std::vector<float>> uvSets;
             if (flags & MESH_SUBDIVIDE) {
@@ -883,6 +913,8 @@ SceneSettings SceneLoader::apply(const std::string& path) {
                 if (uvSets.size() > UV_SLOT_COUNT) throw std::runtime_error("MoonLightIPR scene mesh has too many coordinate sets");
                 for (std::vector<float>& set : uvSets) set = in.array<float>(size_t(triangleCount) * 6);
                 closePositions = in.array<float>(flags & MESH_MOVES ? size_t(vertexCount) * 3 : 0);
+                // Its rest positions (form 'c'), for glitter in reference space.
+                restPositions = in.array<float>(flags & MESH_HAS_REST ? size_t(vertexCount) * 3 : 0);
             }
             // A displaced mesh: how often to split it, the material its instances give it, and each displacing
             // material's program (form 'L').
@@ -919,6 +951,8 @@ SceneSettings SceneLoader::apply(const std::string& path) {
                     }
                 }
             }
+            // A mesh the session splits takes its own points as its rest (they are not split with it).
+            if (flags & MESH_DISPLACE) restPositions.clear();
             if (cached == meshes.end() && (flags & MESH_DISPLACE)) {
                 // Split finer, so that the displacement has vertices to move; moved once the materials are set.
                 const std::vector<uint32_t> coarse = closePositions.empty() || byDistance ? std::vector<uint32_t>() : indices;
@@ -958,6 +992,7 @@ SceneSettings SceneLoader::apply(const std::string& path) {
                 desc.uvSets = uvPointers.data();
                 desc.uvSetCount = uvPointers.size();
                 desc.closePositions = closePositions.empty() ? nullptr : closePositions.data();
+                desc.restPositions = restPositions.size() == size_t(vertexCount) * 3 ? restPositions.data() : nullptr;
                 cached = meshes.emplace(key, CachedMesh{renderer.addMesh(desc), 0}).first;
                 if (flags & MESH_DISPLACE) {
                     Displacing held;
@@ -992,6 +1027,9 @@ SceneSettings SceneLoader::apply(const std::string& path) {
         instance.light = in.value<int32_t>();
         if (instance.light >= int32_t(localLights.size())) throw std::runtime_error("MoonLightIPR scene instance refers to a missing light");
         instance.visibility = in.value<uint32_t>();
+        // The top bit (form 'c'): one of an instancer's placements, whose object space is its reference mesh's.
+        instance.instanced = (instance.visibility & (1u << 31)) != 0;
+        instance.visibility &= ~(1u << 31);
         instance.value = in.value<float>();
         in.floats(instance.transform, 12);
         if (sceneFlags & SCENE_MOTION) {
