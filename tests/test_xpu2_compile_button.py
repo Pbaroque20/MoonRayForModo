@@ -73,6 +73,21 @@ class CompileButton(unittest.TestCase):
         self.module._pressed[0] = time.monotonic() - self.module.SHOWN_AT_LEAST - 1
         self.assertTrue(self.module.state().startswith('Out of date'))
 
+    def test_a_finished_compiles_number_taken_by_another_program_is_not_a_compile(self):
+        # The last compile's number given by Windows to a system task: no Compiling 0% (2026-11-26), and the file let go.
+        import os
+        pid = Path(self.folder.name) / 'xpu2-shaders.pid'
+        pid.write_text(str(os.getpid()))  # this Python: running, but not XPU2's executable
+        self.assertFalse(self.module._running(os.getpid()))
+        self.assertTrue(self.module.state().startswith('Out of date'))
+        self.assertFalse(pid.exists())
+
+    def test_the_compiler_is_known_by_its_executable(self):
+        self.assertTrue(self.module._is_compiler(r'C:\Kits\MoonRayForModo\runtime-xpu2\moonray_xpu2.exe'))
+        self.assertTrue(self.module._is_compiler(r'C:\Kits\MoonRayForModo\runtime-xpu2\MOONRAY_XPU2.EXE'))
+        self.assertFalse(self.module._is_compiler(r'C:\Windows\System32\taskhostw.exe'))
+        self.assertFalse(self.module._is_compiler(''))
+
 
 if __name__ == '__main__':
     unittest.main()
