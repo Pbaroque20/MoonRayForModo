@@ -8,14 +8,33 @@ import lxu.command
 from moonray_modo.property_notifications import Followed
 
 
+COMPILER = 'moonray_xpu2.exe'
+
+
 def _running(pid):
+    """Whether the compile started under pid still runs: a live process of that number that is XPU2's own executable. A
+    finished compile's number is soon another program's (Windows gives numbers again: a system task held the last
+    compile's, and the state said Compiling 0% for days, 2026-11-26)."""
     import ctypes
-    handle = ctypes.windll.kernel32.OpenProcess(0x1000, False, int(pid))
+    from ctypes import wintypes
+    kernel = ctypes.windll.kernel32
+    handle = kernel.OpenProcess(0x1000, False, int(pid))
     if not handle: return False
-    code = ctypes.c_ulong()
-    ctypes.windll.kernel32.GetExitCodeProcess(handle, ctypes.byref(code))
-    ctypes.windll.kernel32.CloseHandle(handle)
-    return code.value == 259
+    try:
+        code = ctypes.c_ulong()
+        kernel.GetExitCodeProcess(handle, ctypes.byref(code))
+        if code.value != 259: return False
+        name = ctypes.create_unicode_buffer(1024)
+        size = wintypes.DWORD(len(name))
+        if not kernel.QueryFullProcessImageNameW(handle, 0, name, ctypes.byref(size)): return False
+        return _is_compiler(name.value)
+    finally:
+        kernel.CloseHandle(handle)
+
+
+def _is_compiler(path):
+    """Whether a process's executable (its full path) is XPU2's, the one Compile XPU2 Shaders starts."""
+    return os.path.basename(path or '').lower() == COMPILER
 
 
 
@@ -104,6 +123,10 @@ def state():
     except OSError: lines = []
     try: compiling = _running(pid.read_text().strip())
     except (OSError, ValueError): compiling = False
+    # A finished compile's number let go of, so that no later program of that number is taken for it.
+    if not compiling:
+        try: pid.unlink()
+        except OSError: pass
     last = lines[-1] if lines else ''
     import time
     if compiling or (_pressed[0] is not None and time.monotonic() - _pressed[0] < SHOWN_AT_LEAST):

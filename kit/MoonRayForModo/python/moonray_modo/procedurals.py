@@ -149,6 +149,52 @@ def sample(data,u,v):
     alpha=min(high,max(low,data['alpha1']*t+data['alpha2']*(1-t)))
     return ([a*t+b*(1-t) for a,b in zip(data['color1'],data['color2'])], max(0,min(1,alpha)))
 
+_ROOT3=math.sqrt(3.0)
+# The centres of Modo's hexagons in a cell (Grid and Dots Hexagon): a unit across, rows sqrt(3)/2 apart.
+_HEX_CENTRES=((.5,0.0),(0.0,_ROOT3/2),(1.0,_ROOT3/2),(.5,_ROOT3),(-.5,_ROOT3/2),(1.5,_ROOT3/2))
+ENVIRONMENT_SHAPES={'grid':('line','square','triangle','hexagon'),'dots':('square','hexagon')}
+
+
+def _environment_distance(data,u,v):
+    """How far (u, v) is from a Grid's lines, or from a Dots' nearest dot, as Modo's renderer lays them in an
+    environment (read from Modo's renders of each type, tools/probe_cl_environment_projections.py proc_* and thin_*;
+    u, v the image coordinates environment_projections.coordinates gives). Square: lines half way across each unit of u
+    and v. Line: across u, at each whole v. Triangle: in each unit of u, folded about every whole v, the line at the
+    fold's foot and two at 60 degrees, sqrt(3)/2 of their run across apart, cut at the unit's edges. Hexagon: rows of
+    hexagons a unit across with their points up, the rows sqrt(3)/2 apart, started again at every whole v (Modo's own
+    break in the pattern). Dots: on the whole numbers (Square), or on Hexagon's centres."""
+    kind,pattern=data['kind'],data['pattern']
+    if kind=='grid' and pattern=='square':return min(abs(u-.5-round(u-.5)),abs(v-.5-round(v-.5)))
+    if kind=='grid' and pattern=='line':return abs(v-round(v))
+    if pattern=='triangle':
+        x=u-math.floor(u);y=(v-.5)-math.floor(v-.5);fold=min(y,1-y)
+        return min(fold,abs(x-fold/_ROOT3)*_ROOT3/2,abs(x+fold/_ROOT3-2/_ROOT3)*_ROOT3/2)
+    if kind=='dots' and pattern=='square':return math.hypot(u-round(u),v-round(v))
+    x,y=u-math.floor(u),v-math.floor(v)
+    if kind=='dots':return min(math.hypot(x-cx,y-cy) for cx,cy in _HEX_CENTRES)
+    return .5-min(max(abs(x-cx),.5*abs(x-cx)+_ROOT3/2*abs(y-cy)) for cx,cy in _HEX_CENTRES)
+
+
+def environment_sample(data,u,v):
+    """A Grid's or Dots' colour and alpha at the image coordinates (u, v) of an environment's projection, as Modo's
+    renderer lays it: Modo's own lines and dots (_environment_distance), each lineWidth (dotWidth) across, the colours
+    meeting over transWidth beyond that, eased, then the layer's bias and gain. Where sample (the surfaces' pattern)
+    centred its lines and transitions otherwise, an environment's Grid or Dots fell half a cell over from Modo's, and
+    its lines were narrower. Any other pattern as sample lays it."""
+    if data.get('kind') not in ENVIRONMENT_SHAPES or data.get('pattern') not in ENVIRONMENT_SHAPES[data['kind']]:
+        return sample(data,u,v)
+    distance=_environment_distance(data,u,v)
+    half=.5*max(0.0,min(1.0,data['width']));transition=max(0.0,data['transition'])
+    if transition<=1e-9:away=1.0 if distance>half else 0.0
+    else:
+        away=max(0.0,min(1.0,(distance-half)/transition));away=away*away*(3-2*away)
+    t=_bias(1-away,data['bias'])
+    g=data['gain'];t=.5*_bias(2*t,1-g) if t<.5 else 1-.5*_bias(2-2*t,1-g)
+    low,high=sorted((data['alpha1'],data['alpha2']))
+    alpha=min(high,max(low,data['alpha1']*t+data['alpha2']*(1-t)))
+    return ([a*t+b*(1-t) for a,b in zip(data['color1'],data['color2'])], max(0,min(1,alpha)))
+
+
 # The adapter's settings for a pattern (native-modo/procedural_bake.cpp, its Slot order), and its kinds and shapes.
 NATIVE_KINDS=('grid','dots','cellular','wood','weave','ripples')
 NATIVE_PATTERNS=('line','square','triangle','hexagon')

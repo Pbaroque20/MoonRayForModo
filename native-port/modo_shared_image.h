@@ -26,6 +26,9 @@ class ModoSharedImage {
 public:
     ~ModoSharedImage(){clear();}
     bool ready(){return !mapping || taken() || GetTickCount64()-publishedAt>=5000;}
+    // The last picture handed over (its mapping, rgb floats; null: none), until the next is written: what is on screen.
+    const float* picture() const { return static_cast<const float*>(pixels); }
+    size_t pictureBytes() const { return pixels ? mappedBytes : 0; }
     template<class Sample>
     bool publish(const std::string& generation,const std::string& key,unsigned width,unsigned height,Sample sample) {
         if(!width || !height || !ready())return false;

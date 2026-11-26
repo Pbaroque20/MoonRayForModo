@@ -15,7 +15,7 @@ off; `tools/port_switches_default_on.py` turns that reading into the new one in 
 
 ## Switches on the Source Overrides page that change no source
 
-Nine switches on Preferences > MoonRay Source Overrides are the plugin's own, with no patch behind them. Each is on
+Ten switches on Preferences > MoonRay Source Overrides are the plugin's own, with no patch behind them. Each is on
 by default; off does as MoonRay itself does.
 
 - **Low-latency rendering**: MoonRay runs below Modo's priority and leaves one processor thread free.
@@ -37,6 +37,19 @@ by default; off does as MoonRay itself does.
 - **VDB sequences when static is unticked**: a VDB shape with MoonRay's own `static` unticked (its geometry changes
   between frames) reads the numbered files beside the one chosen, the one for each frame, with a frame offset and the
   volume hidden or held outside its frames (`entities.vdb_sequenced`, `resolve_vdb`). Off, MoonRay reads the one file.
+- **Environment images in every projection** (`MOONRAY_MODO_ENVIRONMENT_PROJECTIONS` outside Modo): an environment
+  image or procedural laid by any of Modo's Texture Locator projections renders as Modo renders it. MoonRay's EnvLight
+  reads a latitude-longitude picture only, so the kit lays the layer into the environment's composed latitude-longitude
+  map (`environment_projections.py`; the geometry adapter's `MR_environment_projected` in
+  `native-modo/environment_blend.cpp`, the same arithmetic): Planar, Cylindrical, Cubic, Box, Light Probe (an angular
+  map), Triplanar (with its Blending Hardness), Spherical along X or Z or on an unevenly sized locator, Solid (laid as
+  Cubic for an image), and UV Map, Implicit UV and Front Projection, which in Modo's own renders show the image's one
+  colour at (0, 0) in an environment. Each was read from Modo's renders (`tools/probe_cl_environment_projections.py`,
+  an image whose colour is its own coordinates seen by a spherical camera) with the locator's turn, size, wraps, UV
+  rotation and repeat modes as Modo applies them to a direction, and compared with MoonRay's render in six perspective
+  views (`tools/check_environment_projections.py`). MoonRay, XPU2 and MoonLightIPR show the composed map, so all three
+  agree with no change of their own. Off, such a layer is left out with the notice it had before ("environment images
+  require Spherical projection"). The plain Spherical image along Y is unchanged either way.
 - **Imported Alembic meshes read from their files**: a mesh Modo's own Alembic import streams (an `AlembicMesh` item, or a
   mesh with an `ABCStreamingDeformer`, beside an `AlembicFile` item) is read again from the .abc by the kit's reader (`native-port/modo_abc_reader.cpp`,
   `extra_geometry.imported_alembic`), with the file's points, faces and velocities. Modo hands a render a mesh of fixed

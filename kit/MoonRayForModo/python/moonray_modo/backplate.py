@@ -147,13 +147,30 @@ class Projector:
 # ---- Pictures -----------------------------------------------------------------------------------------------------
 
 def latlong_direction(x, y, width, height):
-    """The direction of a latitude-longitude texel (x across, y down from the top) as Modo's spherical projection lays
-    an image, as the HDRI's own file is; environments.emit then turns both alike for MoonRay (the entry's matrix)."""
+    """The direction of a latitude-longitude texel (x across, y down from the top) as the engines show an environment
+    image placed at rest (environment_layout): u = 0.5 at -Z, growing toward +X; v = 1 at the zenith. That is Modo's
+    spherical projection mirrored front to back: an HDRI's own file is laid out so (environment_layout.image) before it
+    is laid under the photo (reflection_environment)."""
     phi = (x + 0.5) / width * 2 * math.pi
     theta = (y + 0.5) / height * math.pi
     s = math.sin(theta)
-    # Modo's spherical projection: u = 0.5 at -Z, growing toward +X; v = 1 at the zenith.
     return [math.sin(phi - math.pi) * s, math.cos(theta), -math.cos(phi - math.pi) * s]
+
+
+def hdri_matrix(rotation):
+    """The HDRI's placement for a Rotation of so many degrees: a turn about Y as Modo's (a Texture Locator's Rotation Y,
+    host.world_matrix): +X carried toward -Z by a positive angle."""
+    angle = math.radians(float(rotation))
+    c, s = math.cos(angle), math.sin(angle)
+    return [c, 0, -s, 0, 0, 1, 0, 0, s, 0, c, 0, 0, 0, 0, 1]
+
+
+def hdri_shift(rotation, width):
+    """How far (pixels, to the right) the HDRI's columns move in the engines' layout (latlong_direction) for the
+    Backplate's HDRI Rotation (degrees): first from Modo's layout (mirrored, half its width along: what Modo shows at
+    u is at 0.5 - u, environment_layout), then turned as Modo turns it about Y (a positive angle carries +X toward -Z,
+    which in that layout lies to the left)."""
+    return (width // 2 - int(round(float(rotation) / 360.0 * width))) % width
 
 
 def st_map(projector, width, height):
@@ -210,7 +227,7 @@ def reflection_environment(projector, plate, hdri, hdri_rotation, plate_intensit
     projection and kept in the cache folder. Where there is no HDRI, black under it."""
     width, height = ENVIRONMENT_WIDTH, ENVIRONMENT_WIDTH // 2
     stamp = (_stamp(plate), _stamp(hdri) if hdri else None, round(float(hdri_rotation), 6), float(plate_intensity),
-             float(hdri_intensity), width, key, 'v1')
+             float(hdri_intensity), width, key, 'v2')
     target = _cache('reflection', stamp, '.exr')
     if target.is_file() and target.stat().st_size:
         return target
@@ -226,11 +243,11 @@ def reflection_environment(projector, plate, hdri, hdri_rotation, plate_intensit
         warp = [st] + (['--resize:filter=triangle', '%dx%d' % (width, height)] if small > 1 else [])
         args = []
         if hdri:
-            # The HDRI under it, turned as its environment is: a turn of the item by a positive angle (about Y, as
-            # Modo turns) carries the image's middle toward -X, so its pixels move left.
-            shift = int(round(-float(hdri_rotation) / 360.0 * width)) % width
+            # The HDRI under it, laid out and turned as its environment is (hdri_shift; up to 0.5.6.2 it was not
+            # mirrored, and turned the other way, as the engines showed the HDRI then).
+            shift = hdri_shift(hdri_rotation, width)
             args += [hdri] + _linear(hdri) + ['--ch', 'R,G,B', '--resize', '%dx%d' % (width, height),
-                                               '--mulc', '%g,%g,%g' % ((hdri_intensity,) * 3)]
+                                               '--mulc', '%g,%g,%g' % ((hdri_intensity,) * 3), '--flop']
             if shift:
                 args += ['--cshift', '+%d+0' % shift]
             args += ['--ch', 'R,G,B,A=1.0']
@@ -440,15 +457,16 @@ def environment_entries(entity, value, plate, hdri, projector, warnings):
                            'size': stat.st_size, 'srgb': False, 'color_space': 'linear', 'effect': 'envColor', 'opacity': 1,
                            'blend': 'normal', 'invert': False, 'backplate': True}, **flags(kinds)))
     if hdri and (sky or value('hdri_camera')):
-        angle = math.radians(rotation)
-        c, s = math.cos(angle), math.sin(angle)
         stat = hdri.stat()
-        found.append(dict({'identity': entity.get('identity', '') + '/hdri', 'name': name + ' HDRI', 'kind': 'image',
-                           'intensity': float(value('hdri_intensity')), 'path': str(hdri.resolve()), 'mtime': stat.st_mtime_ns,
-                           'size': stat.st_size, 'srgb': hdri.suffix.lower() not in ('.exr', '.hdr', '.tx'), 'color_space': '(default)',
-                           'effect': 'envColor', 'opacity': 1, 'blend': 'normal', 'invert': False,
-                           'matrix': [c, 0, -s, 0, 0, 1, 0, 0, s, 0, c, 0, 0, 0, 0, 1], 'backplate': True},
-                          **flags(sky, camera=bool(value('hdri_camera')))))
+        # Turned about Y as Modo's Texture Locator turns an HDRI (Rotation Y), its file laid out as Modo shows it
+        # (environment_layout): up to 0.5.6.2 the engines showed it mirrored front to back, a turn going the wrong way.
+        from .environment_layout import laid_out
+        found.append(laid_out(dict({'identity': entity.get('identity', '') + '/hdri', 'name': name + ' HDRI', 'kind': 'image',
+                                    'intensity': float(value('hdri_intensity')), 'path': str(hdri.resolve()), 'mtime': stat.st_mtime_ns,
+                                    'size': stat.st_size, 'srgb': hdri.suffix.lower() not in ('.exr', '.hdr', '.tx'), 'color_space': '(default)',
+                                    'effect': 'envColor', 'opacity': 1, 'blend': 'normal', 'invert': False,
+                                    'matrix': hdri_matrix(rotation), 'backplate': True},
+                                   **flags(sky, camera=bool(value('hdri_camera'))))))
     return found
 
 

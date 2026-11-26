@@ -28,6 +28,7 @@
 #undef far
 #include <OpenImageDenoise/oidn.h>  // types only: the library is loaded at run time (CpuDenoiser)
 #include "async_render.h"
+#include "visibility_first.h"
 #include "outline_blocks.h"
 #include "../../native-port/modo_protocol_line.h"
 #include "../../native-port/modo_scene_memory.h"
@@ -1231,11 +1232,18 @@ struct Scene {
     // materials, textures and lights taken over (its coarse meshes never are), and its CPU scene. On a thread of its own,
     // from the canonical replica (replica, taken on this thread, the canonical copy's own), while the coarse plan renders
     // on this one, where the GPU lane's context is.
+    // fullDetail (visibility_first.h): a coarse plan of its own first, those geometries at full detail and the rest the
+    // coarse plan's stand-ins, the full plan after it from that one.
     static std::pair<cpu::PlanView, std::unique_ptr<async::CpuScene>> refine(const rdl::SceneContext& replica, CanonicalView frame,
-                                                                             cpu::PlanView coarsePlan) {
+                                                                             cpu::PlanView coarsePlan,
+                                                                             std::shared_ptr<const std::set<std::string>> fullDetail = nullptr) {
         cpu::Limits limits;
         limits.bytes = geometryBudget();
         limits.gpuBytes = gpuGeometryBudget();
+        if (fullDetail) {
+            limits.coarse = true;
+            limits.fullDetail = std::move(fullDetail);
+        }
         auto full = cpu::prepare(replica, frame, coarsePlan, limits, assetRoot(), cpu::Domain::SurfaceTextures, true, true);
         return {full, std::make_unique<async::CpuScene>(full)};
     }
@@ -2119,6 +2127,128 @@ bool envOn(const char* name, bool otherwise) {
     return v ? std::string(v) == "1" : otherwise;
 }
 
+// The shared picture with the screen's fade in (rhea/DESIGN.md 33): Rhea's phase one drawn from the radiance cache (or
+// any phase one that replaces another picture rather than following the camera) cross-fades from the picture on screen
+// over a short time, where it snapped in at once. Every picture published during the fade is the one the session made,
+// blended with the picture on screen when the fade began by smoothstep(elapsed / seconds); a ticker publishes the last
+// one again as the time goes (pictures come or not) and, at the end, as it is: the screen ends on the session's own
+// picture, bit for bit. The session's own state (the warp, shownCopy, the denoised picture kept) is its pictures as
+// made, so XPU2's completion fade under it goes on as before. A camera move ends it (end): drags as before. Calls under
+// the session's lock (the one given to begin).
+class FadingShared {
+public:
+    ModoSharedImage image;
+    ~FadingShared() {
+        stop = true;
+        if (ticker.joinable()) ticker.join();
+    }
+    bool ready() { return image.ready(); }
+    template <class Sample>
+    bool publish(const std::string& generation, const std::string& key, unsigned width, unsigned height, Sample sample) {
+        if (f.active && (key != f.key || width != f.w || height != f.h)) f.active = false;
+        const double s = f.active ? weight() : 1.0;
+        const bool ended = f.active && s >= 1.0;
+        if (ended) f.active = false;
+        bool ok;
+        if (!f.active) {
+            ok = image.publish(generation, key, width, height, sample);
+        } else {
+            // The session's picture kept (the ticker's to publish again), and shown blended with the one the fade began on.
+            const size_t n = size_t(width) * height;
+            f.target.resize(n * 3);
+            for (size_t i = 0; i < n; ++i) sample(i, &f.target[i * 3]);
+            f.generation = generation, f.haveTarget = true;
+            ok = blended(s);
+            if (ok) ++f.pictures;
+        }
+        if (ok) lastKey = key, lastW = width, lastH = height, lastAt = std::chrono::steady_clock::now();
+        if (ended) said("the session's next picture as it is");
+        return ok;
+    }
+    // The fade begun from the picture on screen (the last handed over, of this key and size), over seconds. False:
+    // nothing of that key and size on screen, or no fade (seconds 0).
+    bool begin(const std::string& key, unsigned width, unsigned height, double seconds, std::mutex& lock) {
+        const size_t n = size_t(width) * height;
+        if (!(seconds > 0) || lastKey != key || lastW != width || lastH != height || !image.picture() || image.pictureBytes() != n * 3 * sizeof(float))
+            return false;
+        f.from.assign(image.picture(), image.picture() + n * 3);
+        f.key = key, f.w = width, f.h = height, f.seconds = seconds, f.began = std::chrono::steady_clock::now();
+        f.haveTarget = false, f.pictures = 0, f.ticks = 0, f.active = true;
+        if (!running) {
+            if (ticker.joinable()) ticker.join();  // gone by itself (its last act, under the lock: running cleared)
+            running = true;
+            ticker = std::thread([this, &lock] { tick(lock); });
+        }
+        return true;
+    }
+    // Ended where it is: the next picture published as it is (a camera move, a drag's step).
+    void end() {
+        if (f.active) said("ended by a camera move");
+        f.active = false;
+    }
+    bool fading() const { return f.active; }
+
+private:
+    struct Fade {
+        bool active = false, haveTarget = false;
+        std::string key, generation;
+        unsigned w = 0, h = 0;
+        std::vector<float> from, target;
+        std::chrono::steady_clock::time_point began;
+        double seconds = 0;
+        unsigned pictures = 0, ticks = 0;
+    } f;
+    std::string lastKey;
+    unsigned lastW = 0, lastH = 0;
+    std::chrono::steady_clock::time_point lastAt;
+    std::thread ticker;
+    std::atomic<bool> stop{false};
+    bool running = false;  // under the lock
+    void said(const char* how) const {
+        std::printf("MoonRay XPU2: Rhea: faded in over %.3f s (%u pictures of the session's blended, %u again by the fade; %s)\n",
+                    std::chrono::duration<double>(std::chrono::steady_clock::now() - f.began).count(), f.pictures, f.ticks, how);
+        std::fflush(stdout);
+    }
+    double weight() const {
+        const double t = std::clamp(std::chrono::duration<double>(std::chrono::steady_clock::now() - f.began).count() / f.seconds, 0.0, 1.0);
+        return t * t * (3 - 2 * t);
+    }
+    bool blended(double s) {
+        const float a = float(s);
+        return image.publish(f.generation, f.key, f.w, f.h, [&](size_t i, float* px) {
+            for (int c = 0; c < 3; ++c) px[c] = f.from[i * 3 + c] + a * (f.target[i * 3 + c] - f.from[i * 3 + c]);
+        });
+    }
+    // About 60 times a second while the fade lasts: the last picture again, blended as the time has come, where none
+    // was published since; at the end the last picture as the session made it.
+    void tick(std::mutex& lock) {
+        for (;;) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(8));
+            std::lock_guard<std::mutex> hold(lock);
+            if (stop || !f.active) {
+                running = false;
+                return;
+            }
+            if (!f.haveTarget || !image.ready()) {
+                if (!f.haveTarget && weight() >= 1.0) f.active = false;
+                continue;
+            }
+            const double s = weight();
+            if (s >= 1.0) {
+                const bool ok = image.publish(f.generation, f.key, f.w, f.h, [&](size_t i, float* px) { std::copy_n(&f.target[i * 3], 3, px); });
+                if (!ok) continue;
+                lastAt = std::chrono::steady_clock::now();
+                said("the last picture as it is");
+                f.active = false;
+                running = false;
+                return;
+            }
+            if (std::chrono::steady_clock::now() - lastAt < std::chrono::milliseconds(16)) continue;
+            if (blended(s)) ++f.ticks, lastAt = std::chrono::steady_clock::now();
+        }
+    }
+};
+
 // Open Image Denoise on the processor, for a machine none of whose graphics cards runs OptiX's denoiser: its RT filter
 // at its fast quality, loaded from MoonRay's runtime beside XPU2's (libOpenImageDenoise-2.dll and its CPU device). The
 // guides as the GPU's denoiser takes them (XPU2_SESSION_RT_GUIDES; clean: the albedo denoised on its own first).
@@ -2523,12 +2653,13 @@ int session(const Args& args, const fs::path& directory) {
     double deviceRatio = 0;  // the lanes' measured rate ratio, from one scene's renderer to the next
     cpu::PlanView gpuPlan;
     bool gpuUsable = true;  // the GPU lane renders the scene (cpuOnly empty)
-    ModoSharedImage shared;
+    // Realtime's denoised pictures (RealtimeDenoiser), made once one is asked for. The shared picture is the session's
+    // and the denoiser's both, one at a time; the denoiser's goes out only while its frame is the one rendering. (The
+    // lock before the picture: its fade's ticker holds it till the picture is gone.)
+    std::mutex sharedMutex;
+    FadingShared shared;
     Outlines outlines(envOn("MOONRAY_MODO_BUCKETS", false));
     Checkpoints checkpoints;  // Safe Denoising's saves
-    // Realtime's denoised pictures (RealtimeDenoiser), made once one is asked for. The shared picture is the session's
-    // and the denoiser's both, one at a time; the denoiser's goes out only while its frame is the one rendering.
-    std::mutex sharedMutex;
     std::string liveId;
     const bool realtimeDenoise = envOn("XPU2_SESSION_RT_DENOISE", true);
     // Rhea's completion fade in Denoised Beauty (rhea/DESIGN.md 29): the last denoised picture published, where a fade
@@ -2568,6 +2699,15 @@ int session(const Args& args, const fs::path& directory) {
     double rheaFrameCost = 0;
     // Rhea's phase one shown ahead of the GPU this frame (rheaEarlyPhaseOne): rheaFrames does not make it again.
     bool rheaEarlyDone = false;
+    // Phase one's picture faded in over the one on screen (FadingShared, rhea/DESIGN.md 33; the user, 2026-11-26: "have
+    // the light cache in rhea fade in as well"): this command's phase one replaces another picture rather than following
+    // the camera (the store taken back from the radiance cache, realtime turned on, an edit or its undo), not a camera
+    // move nor a drag's step. XPU2_SESSION_RHEA_CACHE_FADE: its seconds (0.4; 0: shown at once, as before).
+    bool rheaFadeIn = false;
+    const double rheaCacheFade = [] {
+        const char* v = std::getenv("XPU2_SESSION_RHEA_CACHE_FADE");
+        return v ? std::clamp(std::atof(v), 0.0, 10.0) : 0.4;
+    }();
     // The GPU's launches out (a stopped frame's, abandoned: RenderOptions::abandonOnCancel) finished, every card's.
     auto drainGpu = [&] {
         if (!gpu) return;
@@ -2713,6 +2853,11 @@ int session(const Args& args, const fs::path& directory) {
                     rgb[i * 3 + c] = std::isfinite(v) ? v : 0.0f;
                 }
             std::lock_guard<std::mutex> lock(sharedMutex);
+            if (rheaFadeIn) {  // from the picture on screen, at phase one's first picture
+                rheaFadeIn = false;
+                if (shared.begin(key, w, h, rheaCacheFade, sharedMutex))
+                    std::printf("MoonRay XPU2: Rhea: phase one fades in over the picture on screen (%.2f s)\n", rheaCacheFade);
+            }
             shared.publish(id, key, w, h, [&](size_t i, float* px) {
                 px[0] = rgb[i * 3];
                 px[1] = rgb[i * 3 + 1];
@@ -2790,11 +2935,49 @@ int session(const Args& args, const fs::path& directory) {
         std::pair<cpu::PlanView, std::unique_ptr<async::CpuScene>> full;
         std::exception_ptr failed;
         Clock::time_point began = Clock::now();
+        // Visibility first (visibility_first.h): the geometries the camera sees (null: the full plan straight away), a
+        // plan with them at full detail and the rest stand-ins (stage, taken by takeStage while the full plan is made),
+        // and the stand-ins a moved camera came to see (promote, at full detail in the next such plan). Under lock.
+        std::mutex lock;
+        std::shared_ptr<const std::set<std::string>> fullDetail;
+        std::set<std::string> promote;
+        std::pair<cpu::PlanView, std::unique_ptr<async::CpuScene>> stage;
+        std::atomic<bool> stageReady{false}, fullBegun{false};
+        unsigned stages = 0;
+        size_t stageStandIns = 0;
+        double stageSeconds = 0;
         ~RefineJob() {
             if (thread.joinable()) thread.join();
         }
     };
     std::unique_ptr<RefineJob> refining;
+    // A visible-first plan taken in (still the coarse pass's: its samples pictures alone), the view as it now is where the
+    // camera moved since the coarse plan's frame (the full plan takes that move too: coarseCamera stays). The renderer
+    // holding the plan before's CPU scene is gone by now.
+    auto takeStage = [&]() -> bool {
+        std::pair<cpu::PlanView, std::unique_ptr<async::CpuScene>> st;
+        {
+            std::lock_guard<std::mutex> hold(refining->lock);
+            st = std::move(refining->stage);
+            refining->stageReady = false;
+        }
+        if (!st.first || !st.second) return false;
+        if (scene.coarseCamera) {
+            auto moved = std::make_shared<cpu::Plan>(*st.first);
+            std::string refused;
+            if (cpu::updateCamera(*moved, *scene.source, &refused)) {
+                moved->aovs = scene.plan->aovs;
+                st.second = std::make_unique<async::CpuScene>(moved, std::move(*st.second));
+                st.first = moved;
+            } else {
+                std::printf("MoonRay XPU2: the visible-first plan cannot take the camera moved meanwhile: %s\n", refused.c_str());
+            }
+        }
+        scene.plan = st.first;
+        scene.cpuScene = std::move(st.second);
+        scene.prepareDisplayFilters();
+        return true;
+    };
     // The full plan taken in, the view as it now is where the camera moved since its frame. The renderer holding the coarse
     // CPU scene is gone by now.
     auto takeRefined = [&] {
@@ -2824,6 +3007,70 @@ int session(const Args& args, const fs::path& directory) {
         scene.keepBase(scene.plan);
         scene.cpuScene = std::move(full.second);
         scene.prepareDisplayFilters();
+    };
+    // The full plan begun behind a coarse first pass (RefineJob), as soon as the coarse plan is on screen: its first
+    // frame, or a drag's step that holds XPU2 back (the drag used to keep it waiting till the release).
+    auto startRefining = [&] {
+        refining = std::make_unique<RefineJob>();
+        // Visibility first: what the camera sees on the coarse geometry, at full detail before the rest.
+        if (visibility::on() && scene.cpuScene && scene.cpuScene->plan) {
+            const visibility::Seen seen = visibility::seen(*scene.cpuScene->plan, *scene.cpuScene, &scene.plan->camera);
+            std::printf("MoonRay XPU2: visibility first: %zu of %zu stand-in geometries in view (%zu rays, %zu hits, %.1f ms)%s\n",
+                        seen.standInsSeen.size(), seen.standIns.size(), seen.rays, seen.hits, seen.seconds * 1e3,
+                        seen.worth() ? "; those at full detail first" : "; the full plan straight away");
+            std::fflush(stdout);
+            if (seen.worth()) refining->fullDetail = seen.geometries;
+        }
+        const rdl::SceneContext& replica = scene.canonical->replica();
+        refining->thread = std::thread([job = refining.get(), &replica, frame = scene.frameHeld, coarsePlan = scene.plan] {
+            try {
+                cpu::PlanView from = coarsePlan;
+                std::shared_ptr<const std::set<std::string>> detail;
+                {
+                    std::lock_guard<std::mutex> hold(job->lock);
+                    detail = job->fullDetail;
+                }
+                // The visible geometry's plans (one, and one more for each camera move that came to see more).
+                while (detail) {
+                    auto made = Scene::refine(replica, frame, from, detail);
+                    from = made.first;
+                    std::shared_ptr<std::set<std::string>> more;
+                    {
+                        std::lock_guard<std::mutex> hold(job->lock);
+                        job->stageStandIns = made.first->coarsened;
+                        job->stageSeconds = std::chrono::duration<double>(Clock::now() - job->began).count();
+                        ++job->stages;
+                        job->stage = std::move(made);
+                        job->stageReady = true;
+                        for (const auto& g : job->promote)
+                            if (!detail->count(g)) {
+                                if (!more) more = std::make_shared<std::set<std::string>>(*detail);
+                                more->insert(g);
+                            }
+                        job->promote.clear();
+                    }
+                    if (!job->stageStandIns) break;  // nothing left a stand-in: the full plan takes it all over
+                    detail = more;
+                }
+                job->fullBegun = true;
+                job->full = Scene::refine(replica, frame, from);
+            } catch (...) {
+                job->failed = std::current_exception();
+            }
+            job->ready = true;
+        });
+    };
+    // The camera moved since the visible-first plans were begun: the stand-ins it now sees go before the rest (promoted).
+    auto promoteSeen = [&] {
+        if (!refining || !refining->fullDetail || refining->fullBegun.load() || !scene.coarseCamera || !scene.cpuScene || !scene.cpuScene->plan) return;
+        // The camera moved: what it now sees of the stand-ins goes before the rest (promoted).
+        const visibility::Seen seen = visibility::seen(*scene.cpuScene->plan, *scene.cpuScene, &scene.plan->camera);
+        std::lock_guard<std::mutex> hold(refining->lock);
+        size_t added = 0;
+        for (const auto& g : seen.standInsSeen)
+            if (!refining->fullDetail->count(g) && refining->promote.insert(g).second) ++added;
+        if (added)
+            std::printf("MoonRay XPU2: visibility first: the moved camera sees %zu more stand-in geometries, next at full detail\n", added);
     };
     scene.beforeFullPreparation = [&] {
         if (refining) takeRefined();
@@ -2985,6 +3232,15 @@ int session(const Args& args, const fs::path& directory) {
                 // Rhea's phase one for a camera move ahead of the GPU (rheaEarlyPhaseOne), then the stopped frame's GPU
                 // launches finished before the GPU takes the new camera (XPU2_SESSION_RHEA_EARLY=0: phase one after them).
                 rheaEarlyDone = false;
+                // The screen's fade in (FadingShared): begun by this command's phase one where it replaces another picture
+                // (an edit, realtime turned on, the store taken back); a camera move or a drag's step ends one under way.
+                rheaFadeIn = false;
+                if (rheaDragStep || (fresh && (scene.cameraFrom || scene.cameraEdit))) {
+                    std::lock_guard<std::mutex> lock(sharedMutex);
+                    shared.end();
+                } else if (fresh && rheaWanted && rheaCacheFade > 0) {
+                    rheaFadeIn = true;
+                }
                 if (rheaWanted && scene.plan && scene.plan->realtime && envOn("XPU2_SESSION_RHEA_EARLY", true) &&
                     !envOn("XPU2_SESSION_RHEA_PROBES", false) && rheaView.movedSince(*scene.plan) && rhea::unsupported(*scene.plan).empty())
                     rheaEarlyDone = rheaEarlyPhaseOne();
@@ -3010,6 +3266,11 @@ int session(const Args& args, const fs::path& directory) {
                 if (rheaEarlyDone && rheaDragStep && rheaView.objectDrawn && rheaView.objectWarp.unknown > rheaFillUnknown) rheaFilling = true;
                 if (rheaEarlyDone) rheaStatus(rheaKnown, rheaFilling);
                 if (rheaEarlyDone && rheaDragStep && rheaDragAlone && !rheaFilling) {
+                    // The full geometry goes on being made behind the drag (visibility first: what the step sees first).
+                    if (scene.coarse) {
+                        if (!refining) startRefining();
+                        else promoteSeen();
+                    }
                     if (gpu && gpuUsable && gpuPlan != scene.plan && scene.cameraFrom && gpuPlan == scene.cameraFrom) {
                         gpu->updateCamera(scene.plan);
                         gpuPlan = scene.plan;
@@ -3401,44 +3662,68 @@ int session(const Args& args, const fs::path& directory) {
                     double reached = 0;
                     async::Watch first = watch;
                     const auto shown = watch.preview;
-                    first.preview = [&reached, &heldPicture, shown](const std::vector<float>& rgb, U32 w, U32 h, double fraction) {
+                    // A visible-first plan's pictures (visibility_first.h) are held back as the full frame's are, till they are as
+                    // far on as the pass before theirs (hideBelow, which shown reads too).
+                    first.preview = [&reached, &heldPicture, &hideBelow, shown](const std::vector<float>& rgb, U32 w, U32 h, double fraction) {
+                        if (fraction < hideBelow) return;
                         reached = std::max(reached, fraction);
                         heldPicture = rgb;
                         shown(rgb, w, h, fraction);
                     };
-                    if (!refining) {
-                        refining = std::make_unique<RefineJob>();
-                        const rdl::SceneContext& replica = scene.canonical->replica();
-                        refining->thread = std::thread([job = refining.get(), &replica, frame = scene.frameHeld, coarsePlan = scene.plan] {
-                            try {
-                                job->full = Scene::refine(replica, frame, coarsePlan);
-                            } catch (...) {
-                                job->failed = std::current_exception();
-                            }
-                            job->ready = true;
-                        });
-                    }
-                    first.stop = [&] { return refining->ready.load() || waiting(); };
+                    // The renderer made again for the plan now held (a visible-first plan's, or the full plan's): the old one,
+                    // holding the CPU scene let go, first, the outlines' watch on it before it.
+                    auto renderAnew = [&] {
+                        if (gpu) {
+                            const std::string why = async::GpuLane::cpuOnly(scene.plan);
+                            gpuUsable = why.empty();
+                            if (gpuUsable) gpu->prepare(scene.plan);
+                            gpuPlan = scene.plan;
+                        }
+                        renderer = std::make_unique<async::Renderer>(scene.plan, *scene.cpuScene, gpuUsable ? gpu.get() : nullptr);
+                        renderer->deviceRatio(deviceRatio);
+                        outlines.watch(renderer.get(), id, width, height);
+                        options.mode = gpu && gpuUsable ? mode : 0;
+                        loaded = true;
+                    };
+                    if (!refining) startRefining();
+                    else promoteSeen();
+                    first.stop = [&] { return refining->ready.load() || refining->stageReady.load() || waiting(); };
                     first.drain = watch.drain;
                     first.checkpoint = nullptr;
                     first.checkpointSeconds = 0;
                     async::RenderOptions firstOptions = options;
                     firstOptions.watch = &first;
+                    bool stopped = false;
                     async::RenderResult coarse;
-                    try {
-                        coarse = renderer->render(firstOptions);
-                    } catch (const std::exception& e) {
-                        // The coarse pass is only pictures: the full frame follows whatever became of it.
-                        std::printf("MoonRay XPU2: coarse first pass stopped: %s\n", e.what());
-                        coarse = {};
-                    }
-                    // The coarse frame done before the full geometry: its last picture stays meanwhile, unless an edit comes
-                    // or the preview is stopped.
-                    const bool whole = !coarse.rgba.empty() && !coarse.failed && !coarse.cancelled;
-                    bool stopped = whole && coarse.drained;
-                    while (!stopped && !refining->ready.load() && !waiting()) {
-                        if (whole && watch.drain && watch.drain()) stopped = true;
-                        else std::this_thread::sleep_for(std::chrono::milliseconds(5));
+                    for (;;) {
+                        try {
+                            coarse = renderer->render(firstOptions);
+                        } catch (const std::exception& e) {
+                            // The coarse pass is only pictures: the full frame follows whatever became of it.
+                            std::printf("MoonRay XPU2: coarse first pass stopped: %s\n", e.what());
+                            coarse = {};
+                        }
+                        // The coarse frame done before the full geometry: its last picture stays meanwhile, unless an edit comes
+                        // or the preview is stopped.
+                        const bool whole = !coarse.rgba.empty() && !coarse.failed && !coarse.cancelled;
+                        stopped = whole && coarse.drained;
+                        while (!stopped && !refining->ready.load() && !refining->stageReady.load() && !waiting()) {
+                            if (whole && watch.drain && watch.drain()) stopped = true;
+                            else std::this_thread::sleep_for(std::chrono::milliseconds(5));
+                        }
+                        // The visible geometry at full detail (visibility first) before the full plan: rendered as the coarse pass
+                        // is, its pictures from where that one came to.
+                        if (stopped || waiting() || refining->ready.load() || !refining->stageReady.load()) break;
+                        outlines.watch(nullptr, id, 0, 0);
+                        renderer.reset();
+                        loaded = false;
+                        if (!takeStage()) break;
+                        renderAnew();
+                        hideBelow = std::min(reached, 0.25);
+                        std::printf("MoonRay XPU2: visibility first: the camera's geometry at full detail in %.2f s (%zu stand-ins left), "
+                                    "the coarse pass rendered to %.0f%%\n",
+                                    refining->stageSeconds, refining->stageStandIns, reached * 100.0);
+                        std::fflush(stdout);
                     }
                     if (stopped) {
                         stoppedEarly = true;
@@ -3454,17 +3739,7 @@ int session(const Args& args, const fs::path& directory) {
                         renderer.reset();
                         loaded = false;  // nothing renders till the full plan is on the card: as a load, it may overflow
                         takeRefined();
-                        if (gpu) {
-                            const std::string why = async::GpuLane::cpuOnly(scene.plan);
-                            gpuUsable = why.empty();
-                            if (gpuUsable) gpu->prepare(scene.plan);
-                            gpuPlan = scene.plan;
-                        }
-                        renderer = std::make_unique<async::Renderer>(scene.plan, *scene.cpuScene, gpuUsable ? gpu.get() : nullptr);
-                        renderer->deviceRatio(deviceRatio);
-                        outlines.watch(renderer.get(), id, width, height);
-                        options.mode = gpu && gpuUsable ? mode : 0;
-                        loaded = true;
+                        renderAnew();
                         // The full frame's pictures from where the coarse pass came to, but no later than a quarter of the way: a
                         // coarse frame done before the full geometry was ready would otherwise stand for the whole render.
                         hideBelow = std::min(reached, 0.25);

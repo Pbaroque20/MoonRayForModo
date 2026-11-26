@@ -450,6 +450,45 @@ gives the same two frames as the build before.
 The car's "scene ready" went from 32 s to 19.2 s. What is left: the plan's meshes and materials (about 7.5 s), its
 objects (3 s) and texture pyramids (5 s).
 
+## 18. Visibility-first geometry (2026-11-26)
+
+The user asked for "a form of just in time rendering for geometry": what the camera sees at full detail first,
+everything else as stand-ins, the rest refined while he looks, the final picture XPU2's exactly. Built on the coarse
+first pass (`coarse_geometry.h`, ASYNC.md "First load"), in `visibility_first.h`, `cpu_scene.h` (`Limits::fullDetail`)
+and `xpu2_session.cc` (`RefineJob`, `startRefining`, `takeStage`, `promoteSeen`). Host code alone: no GPU program changed.
+
+1. **Visible.** Once the coarse plan is on screen, 32,400 camera rays (one every 4 pixels each way at 960x540,
+   `XPU2_SESSION_VISIBLE_STRIDE`) are traced on its CPU scene, 7 ms over six threads; the geometries their first hits
+   meet are the ones in the frame and not behind anything.
+2. **Stand-ins.** The refine job makes a plan of its own first: a coarse plan whose seen geometries are tessellated as
+   the full plan's (`Limits::fullDetail`; the coarse tessellation switch is set per geometry, the tessellation cache read
+   and written for them), the rest the coarse plan's stand-ins taken over as they are (a coarse mesh may be reused by a
+   coarse plan, and is not made lighter again). The frame takes it in as it takes the coarse plan (`takeStage`: the
+   renderer and the card's scene made again, the camera moved meanwhile applied), its pictures held until they are as
+   far on as the coarse pass's (`hideBelow`).
+3. **Refined.** The full plan is then made from that plan (its full-detail meshes kept), and the frame renders on it
+   from its start, as after the coarse pass: neither plan's samples reach the film. A camera moved before the full plan
+   is begun casts again on what renders then (`promoteSeen`); stand-ins it newly sees get another such plan first.
+   A drag's steps now start the job as well (it used to wait for the release).
+
+Skipped where it cannot pay: when no stand-in is seen or every one is (the full plan straight away), and in every scene
+the coarse pass skips (`Scene::heavyTessellation`: under about 2 M tessellated triangles, plain meshes). What is seen only
+through glass waits for the full plan. `XPU2_SESSION_VISIBLE_FIRST=0` turns it off.
+
+Found on the way: MoonRay hands each thread its update-phase state by the order it first asks (as many as its TBB
+threads, then four more, then its assertion ends the process), and oneTBB lets its workers go with the last thread that
+used them. The session tessellated from threads that come and go, so the shipped XPU2 ended (0xC0000409,
+`getFrameUpdateTLS overflowIdx < MAX_OVERFLOW_POOL_SIZE`) on a scene of four displaced subdivision surfaces at its first
+displacement edit, and at its coarse first pass's full plan. xpu2_geom.dll now tessellates on one thread of its own for
+the process's life (`onGeometryThread`; `XPU2_GEOM_THREAD=0` on the caller's, as before), which keeps TBB's workers too.
+
+Measured on a test scene (twelve subdivision spheres at resolution 48, 11.9 M triangles, four displaced; three in view,
+three behind a wall, three behind the camera, three off to the sides), XPU2 RT with Rhea at 960x540, from the scene's
+arrival: first picture 0.9-1.0 s either way; the camera's geometry at full detail 2.2-2.4 s (before: only with all of it,
+4.4 s); all of it 4.6-4.9 s (4.4 s before: one plan more, its CPU scene and card upload); the frame at rest 23.4-24.7 s
+both. The pictures at rest are the same to the bit as with it off, after a camera move during it, after a drag, and
+after displacement edits (against a fresh session). Test files: test-results/xpu2-visibility-first.
+
 ## Order
 
 As of 2026-10-30, where it could be checked against the code:

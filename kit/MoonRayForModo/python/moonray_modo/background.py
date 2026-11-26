@@ -35,4 +35,7 @@ def apply(scene, settings):
         c,s=math.cos(angle),math.sin(angle)
         entry.update(kind='image',path=str(path.resolve()),mtime=path.stat().st_mtime_ns,size=path.stat().st_size,
                      srgb=path.suffix.lower() not in ('.exr','.hdr','.tx'),matrix=[c,0,-s,0,0,1,0,0,s,0,c,0,0,0,0,1])
+        # Laid out as Modo shows an environment image, as the scene's own HDRIs are (environment_layout).
+        from .environment_layout import laid_out
+        entry=laid_out(entry)
     scene.setdefault('environments',[]).append(entry)

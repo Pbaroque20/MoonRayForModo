@@ -3,8 +3,9 @@
 // never in its film: MoonRay's tessellation at a quarter of a mesh's resolution or four times its screen error
 // (coarseTessellation, read where the tessellation is asked for), and a dense mesh simplified by meshoptimizer (MIT,
 // upstream/meshoptimizer, v0.22; xpu2_meshopt.cc) to about two pixels an edge on screen, its normals and texture
-// coordinates kept where they part and its open edges where they are. Coarse meshes say so (MeshData::coarse): no later
-// plan takes one over, and the tessellation cache keeps none.
+// coordinates kept where they part and its open edges where they are. Coarse meshes say so (MeshData::coarse): no full
+// plan takes one over (a visible-first plan keeps them as its stand-ins: visibility_first.h), and the tessellation cache
+// keeps none.
 #pragma once
 #include <meshoptimizer.h>
 #include <algorithm>

@@ -438,6 +438,15 @@ def bump_node():
     return _switch('bump_node', 'MOONRAY_MODO_BUMP_NODE')
 
 
+def environment_projections():
+    """Whether an environment image or procedural laid by any of Modo's Texture Locator projections (planar, cylindrical,
+    cubic, box, light probe, triplanar, a spherical one along X or Z, and the UV, implicit UV and front projections that
+    show one colour) renders as Modo renders it (environment_projections.py): the kit lays it into the environment's
+    latitude-longitude map, which MoonRay, XPU2 and MoonLightIPR then show. MoonRay's environment light reads a
+    latitude-longitude image alone; off, such a layer is left out with a notice, as before."""
+    return _switch('environment_projections', 'MOONRAY_MODO_ENVIRONMENT_PROJECTIONS')
+
+
 def ocean():
     """Whether the MoonShine graph's Ocean and Ocean Foam nodes make an ocean (ocean.py, nodes.expand_ocean): Tessendorf's
     FFT waves worked out by the kit for each frame and given to MoonRay as a VectorDisplacement and images. MoonRay has no

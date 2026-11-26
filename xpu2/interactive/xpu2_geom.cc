@@ -46,7 +46,12 @@
 #include <cstring>
 #include <exception>
 #include <memory>
+#include <condition_variable>
+#include <deque>
+#include <functional>
+#include <future>
 #include <mutex>
+#include <thread>
 #include <string>
 #include <vector>
 
@@ -276,6 +281,62 @@ void fail(char* error, unsigned size, const std::string& why) {
         error[size - 1] = 0;
     }
 }
+
+// MoonRay's tessellation on one thread of this library's, for the process's life (XPU2_GEOM_THREAD=0: on the caller's).
+// MoonRay hands each thread its update-phase state by the order it first asks (ThreadLocalState.cc getFrameUpdateTLS):
+// as many as its TBB threads, then four more at most (MAX_OVERFLOW_POOL_SIZE), and past them the assertion ends the
+// process. The session tessellated from threads of its own that come and go (a preparation's worker, the coarse first
+// pass's full plan), and oneTBB lets its workers go with the last thread that used them, so that each later
+// tessellation came with new threads: a scene of four displaced subdivision surfaces ended at its first displacement
+// edit, and at its coarse first pass's full plan (2026-11-26). One thread that stays keeps TBB's workers too.
+template <class Fn>
+int onGeometryThread(Fn&& fn) {
+    static const bool on = [] {
+        const char* v = std::getenv("XPU2_GEOM_THREAD");
+        return !(v && v[0] == '0');
+    }();
+    if (!on) return fn();
+    struct Queue {
+        std::mutex lock;
+        std::condition_variable wake;
+        std::deque<std::function<void()>> jobs;
+        std::thread::id id;
+    };
+    // Never destroyed: the process's end takes the thread with it (a joinable std::thread destroyed would terminate).
+    static Queue* queue = [] {
+        auto* q = new Queue;
+        std::thread worker([q] {
+            for (;;) {
+                std::function<void()> job;
+                {
+                    std::unique_lock<std::mutex> hold(q->lock);
+                    q->wake.wait(hold, [q] { return !q->jobs.empty(); });
+                    job = std::move(q->jobs.front());
+                    q->jobs.pop_front();
+                }
+                job();
+            }
+        });
+        q->id = worker.get_id();
+        worker.detach();
+        return q;
+    }();
+    if (std::this_thread::get_id() == queue->id) return fn();
+    std::promise<int> done;
+    std::future<int> result = done.get_future();
+    {
+        std::lock_guard<std::mutex> hold(queue->lock);
+        queue->jobs.emplace_back([&] {
+            try {
+                done.set_value(fn());
+            } catch (...) {
+                done.set_exception(std::current_exception());
+            }
+        });
+    }
+    queue->wake.notify_one();
+    return result.get();
+}
 }  // namespace
 
 // RenderContext's start: MoonRay's standard attribute keys and its thread local states, once.
@@ -294,7 +355,7 @@ void prepareMoonRay() {
     });
 }
 
-extern "C" __declspec(dllexport) int x2SubdTessellate(const X2SubdInput* in, X2SubdOutput* out, char* error, unsigned errorSize) {
+static int subdTessellateHere(const X2SubdInput* in, X2SubdOutput* out, char* error, unsigned errorSize) {
     const char* stage = "the standard attributes";
     try {
         prepareMoonRay();
@@ -1020,7 +1081,7 @@ void polyAttribute(const PolyCorners& pc, const std::vector<int>& baseOf, const 
     else polyTyped<float>(pc, baseOf, a, out);
 }
 
-extern "C" __declspec(dllexport) int x2PolyTessellate(const X2PolyInput* pin, X2PolyOutput* out, char* error, unsigned errorSize) {
+static int polyTessellateHere(const X2PolyInput* pin, X2PolyOutput* out, char* error, unsigned errorSize) {
     const char* stage = "the standard attributes";
     try {
         prepareMoonRay();
@@ -1247,6 +1308,15 @@ extern "C" __declspec(dllexport) int x2PolyTessellate(const X2PolyInput* pin, X2
         fail(error, errorSize, std::string("in ") + stage + ": an unknown exception");
     }
     return 0;
+}
+
+// Both tessellations on the library's own thread (onGeometryThread), the caller waiting.
+extern "C" __declspec(dllexport) int x2SubdTessellate(const X2SubdInput* in, X2SubdOutput* out, char* error, unsigned errorSize) {
+    return onGeometryThread([&] { return subdTessellateHere(in, out, error, errorSize); });
+}
+
+extern "C" __declspec(dllexport) int x2PolyTessellate(const X2PolyInput* pin, X2PolyOutput* out, char* error, unsigned errorSize) {
+    return onGeometryThread([&] { return polyTessellateHere(pin, out, error, errorSize); });
 }
 
 extern "C" __declspec(dllexport) void x2PolyFree(X2PolyOutput* out) {

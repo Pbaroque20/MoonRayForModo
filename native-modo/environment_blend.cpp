@@ -98,10 +98,189 @@ void physical_sky(const double* direction, const double* s, double* out) {
     }
 }
 
+// environment_projections.py's coordinates and tiled, for a layer laid by one of Modo's Texture Locator projections
+// (MR_environment_projected): p, its 22 numbers (environment_projections.numbers): kind (1 planar, 2 cylindrical,
+// 3 spherical, 4 cubic, 5 box, 6 light probe, 7 triplanar, 8 one colour), axis, the locator's turn (9, rows of unit
+// length), its size (3), the wraps (2), cos and sin of the UV rotation, the repeat modes (0 repeat, 1 reset, 2 mirror,
+// 3 edge), the blending hardness. Writes up to three (u, v, weight); returns how many.
+const int PROJECTION_SIZE = 22;
+
+void turned_about_middle(double u, double v, double c, double s, double* out) {
+    u -= .5; v -= .5;
+    out[0] = u * c - v * s + .5;
+    out[1] = u * s + v * c + .5;
+}
+
+int projected(const double* p, const double* d, double out[3][3]) {
+    const int kind = int(p[0]);
+    const int axis = std::max(0, std::min(2, int(p[1])));
+    const double* t = p + 2;
+    const double* s = p + 11;
+    const double c = p[16], sn = p[17];
+    static const int order[3][3] = {{2, 1, 0}, {0, 2, 1}, {0, 1, 2}};
+    const int* o = order[axis];
+    if (kind == 8) { out[0][0] = 0; out[0][1] = 0; out[0][2] = 1; return 1; }
+    double q[3];
+    for (int i = 0; i < 3; ++i) q[i] = d[0] * t[i * 3] + d[1] * t[i * 3 + 1] + d[2] * t[i * 3 + 2];
+    if (kind == 6) {
+        // environment_projections.probe_turn: the locator's columns (x, y, z), each made unit length and square to
+        // those before; the direction is read along each.
+        double g[3][3];
+        for (int col = 0; col < 3; ++col) {
+            double v[3] = {t[col] * s[0], t[3 + col] * s[1], t[6 + col] * s[2]};
+            for (int k = 0; k < col; ++k) {
+                const double dot = v[0] * g[k][0] + v[1] * g[k][1] + v[2] * g[k][2];
+                for (int i = 0; i < 3; ++i) v[i] -= dot * g[k][i];
+            }
+            double length = std::sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]); if (length == 0) length = 1e-12;
+            for (int i = 0; i < 3; ++i) g[col][i] = v[i] / length;
+        }
+        double f[3];
+        for (int i = 0; i < 3; ++i) f[i] = g[i][0] * d[0] + g[i][1] * d[1] + g[i][2] * d[2];
+        const double a = f[o[0]], b = f[o[1]], h = f[o[2]];
+        double length = std::sqrt(a * a + b * b + h * h); if (length == 0) length = 1e-12;
+        const double across = std::hypot(a, h);
+        out[0][2] = 1;
+        if (across < 1e-12) { out[0][0] = .5; out[0][1] = .5; return 1; }
+        const double r = std::acos(std::max(-1.0, std::min(1.0, -b / length))) / PI;
+        out[0][0] = .5 - .5 * a / across * r; out[0][1] = .5 + .5 * h / across * r;
+        return 1;
+    }
+    if (kind == 5) {
+        int face = 0;
+        for (int i = 1; i < 3; ++i) if (std::fabs(d[i]) > std::fabs(d[face])) face = i;
+        const double sign = d[face] >= 0 ? 1 : -1;
+        double u, v;
+        if (face == 0) { u = -sign * d[1]; v = d[2]; }
+        else if (face == 1) { u = sign * d[0]; v = d[2]; }
+        else { u = d[0]; v = -sign * d[1]; }
+        turned_about_middle(.5 + u / s[0], .5 + v / s[1], c, sn, out[0]); out[0][2] = 1;
+        return 1;
+    }
+    const double l[3] = {q[0] / s[0], q[1] / s[1], q[2] / s[2]};
+    if (kind == 1) { turned_about_middle(.5 + l[o[0]], .5 + l[o[1]], c, sn, out[0]); out[0][2] = 1; return 1; }
+    if (kind == 2 || kind == 3) {
+        const double w[3] = {q[0] / (s[0] * s[0]), q[1] / (s[1] * s[1]), q[2] / (s[2] * s[2])};
+        const double a = w[o[0]], b = w[o[1]], h = w[o[2]];
+        const double u = .5 + std::atan2(a, b) / (2 * PI);
+        double v;
+        if (kind == 2) v = (l[o[2]]) * p[15] + .5;   // (0.5 + h - 0.5) * wrap + 0.5
+        else {
+            double length = std::sqrt(a * a + b * b + h * h); if (length == 0) length = 1e-12;
+            v = (.5 + std::asin(std::max(-1.0, std::min(1.0, h / length))) / PI) * p[15];
+        }
+        turned_about_middle(u * p[14], v, c, sn, out[0]); out[0][2] = 1;
+        return 1;
+    }
+    if (kind == 4) {
+        int face = 0;
+        for (int i = 1; i < 3; ++i) if (std::fabs(q[i]) > std::fabs(q[face])) face = i;
+        const double sign = q[face] >= 0 ? 1 : -1;
+        double u, v;
+        if (face == 0) { u = sign * l[2]; v = l[1]; }
+        else if (face == 1) { u = l[0]; v = sign * l[2]; }
+        else { u = -sign * l[0]; v = l[1]; }
+        turned_about_middle(.5 + u, .5 + v, c, sn, out[0]); out[0][2] = 1;
+        return 1;
+    }
+    if (kind == 7) {
+        const double power = 1 + 25 * std::max(0.0, p[20]);
+        double weights[3], total = 0;
+        for (int i = 0; i < 3; ++i) { weights[i] = std::pow(std::max(std::fabs(q[i]) - .5, 0.0), power); total += weights[i]; }
+        if (total <= 0) {
+            int face = 0;
+            for (int i = 1; i < 3; ++i) if (std::fabs(q[i]) > std::fabs(q[face])) face = i;
+            for (int i = 0; i < 3; ++i) weights[i] = i == face ? 1 : 0;
+            total = 1;
+        }
+        const double planes[3][2] = {{l[2], l[1]}, {l[0], l[2]}, {l[0], l[1]}};
+        int n = 0;
+        for (int i = 0; i < 3; ++i) {
+            if (weights[i] <= 0) continue;
+            turned_about_middle(.5 + planes[i][0], .5 + planes[i][1], c, sn, out[n]);
+            out[n][2] = weights[i] / total;
+            ++n;
+        }
+        return n;
+    }
+    return 0;
+}
+
+// environment_projections.tiled: false where the coordinate is reset (outside the image).
+bool tiled(double& value, int mode) {
+    if (mode == 1) return value >= 0 && value <= 1;
+    if (mode == 3) { value = std::min(1.0, std::max(0.0, value)); return true; }
+    if (mode == 2) { value = std::fmod(value, 2.0); if (value < 0) value += 2.0; if (value > 1) value = 2.0 - value; return true; }
+    value = value - std::floor(value);
+    return true;
+}
+
+// environment_projections.texel.
+long long texel(long long index, long long count, int mode) {
+    if (mode == 0) { index %= count; return index < 0 ? index + count : index; }
+    if (mode == 2) {
+        index %= 2 * count; if (index < 0) index += 2 * count;
+        return index >= count ? 2 * count - 1 - index : index;
+    }
+    return std::min(count - 1, std::max(0LL, index));
+}
+
 }  // namespace
 
 // procedural_bake.cpp's pattern at one point.
 void modo_procedural_point(const double* settings, double u, double v, float* rgb, float* alpha);
+
+namespace {
+
+// procedurals._bias.
+double bias(double x, double b) {
+    b = std::max(.00001, std::min(.99999, b));
+    x = std::max(0.0, std::min(1.0, x));
+    return x / ((1 / b - 2) * (1 - x) + 1);
+}
+
+double nearest_whole(double x) { return std::fabs(x - std::nearbyint(x)); }
+
+// procedurals.environment_sample: a Grid (kind 0: line 0, square 1, triangle 2, hexagon 3) or Dots (kind 1: square 1,
+// hexagon 3) as Modo's renderer lays it in an environment, at the image coordinates (u, v); any other pattern as
+// procedural_bake lays it. s: MR_procedural_bake's settings (kind, pattern, width, transition, bias, gain, colour 1,
+// colour 2, alpha 1, alpha 2, ...).
+void environment_procedural_point(const double* s, double u, double v, float* rgb, float* alpha) {
+    const int kind = int(s[0]), pattern = int(s[1]);
+    const bool grid = kind == 0 && pattern >= 0 && pattern <= 3, dots = kind == 1 && (pattern == 1 || pattern == 3);
+    if (!grid && !dots) { modo_procedural_point(s, u, v, rgb, alpha); return; }
+    const double root3 = std::sqrt(3.0);
+    static const double centres[6][2] = {{.5, 0.0}, {0.0, .86602540378443865}, {1.0, .86602540378443865},
+                                         {.5, 1.7320508075688772}, {-.5, .86602540378443865}, {1.5, .86602540378443865}};
+    double distance;
+    if (grid && pattern == 1) distance = std::min(nearest_whole(u - .5), nearest_whole(v - .5));
+    else if (grid && pattern == 0) distance = nearest_whole(v);
+    else if (grid && pattern == 2) {
+        const double x = u - std::floor(u), y = (v - .5) - std::floor(v - .5), fold = std::min(y, 1 - y);
+        distance = std::min(fold, std::min(std::fabs(x - fold / root3) * root3 / 2, std::fabs(x + fold / root3 - 2 / root3) * root3 / 2));
+    } else if (dots && pattern == 1) distance = std::hypot(u - std::nearbyint(u), v - std::nearbyint(v));
+    else {
+        const double x = u - std::floor(u), y = v - std::floor(v);
+        double best = 1e300;
+        for (const auto& c : centres) {
+            const double dx = std::fabs(x - c[0]), dy = std::fabs(y - c[1]);
+            best = std::min(best, dots ? std::hypot(dx, dy) : std::max(dx, .5 * dx + root3 / 2 * dy));
+        }
+        distance = dots ? best : .5 - best;
+    }
+    const double half = .5 * std::max(0.0, std::min(1.0, s[2])), transition = std::max(0.0, s[3]);
+    double away;
+    if (transition <= 1e-9) away = distance > half ? 1.0 : 0.0;
+    else { away = std::max(0.0, std::min(1.0, (distance - half) / transition)); away = away * away * (3 - 2 * away); }
+    double t = bias(1 - away, s[4]);
+    const double g = s[5];
+    t = t < .5 ? .5 * bias(2 * t, 1 - g) : 1 - .5 * bias(2 - 2 * t, 1 - g);
+    const double low = std::min(s[12], s[13]), high = std::max(s[12], s[13]);
+    const double a = std::max(0.0, std::min(1.0, std::min(high, std::max(low, s[12] * t + s[13] * (1 - t)))));
+    for (int k = 0; k < 3; ++k) { rgb[k] = float(s[6 + k] * t + s[9 + k] * (1 - t)); alpha[k] = float(a); }
+}
+
+}  // namespace
 
 // width x height directions, rows bottom up (the first row looks straight down), as the PFM the Python writes. For each
 // of count layers, bottom first: kinds (0 image, 1 colour, 2 gradient), modes (above), opacities, inverts (1 to invert
@@ -112,7 +291,7 @@ void modo_procedural_point(const double* settings, double u, double v, float* rg
 static int blend_layers(int width,int height,int count,const int* kinds,const int* modes,
         const double* opacities,const int* inverts,const float* const* images,const float* const* alphas,const double* turns,
         const double* uv,const double* colours,const double* gradients,const double* const* skies,const double* const* patterns,
-        float* out,int threads) {
+        const double* projections,float* out,int threads) {
     if(threads<=0) threads=int(std::max(1u,std::thread::hardware_concurrency()));
     auto rows=[&](int begin,int end) {
         for(int y=begin;y<end;++y) {
@@ -131,6 +310,52 @@ static int blend_layers(int width,int height,int count,const int* kinds,const in
                         // As the renderers show it, its columns run the other way (environment_layers.texture).
                         const double mirrored[3]={-direction[0],direction[1],direction[2]};
                         physical_sky(mirrored,skies[l],foreground);
+                    } else if(projections&&projections[l*PROJECTION_SIZE]!=0) {
+                        // Laid by one of Modo's projections (environment_projections.sample and .procedural).
+                        const double* p=projections+l*PROJECTION_SIZE;
+                        const int tileU=int(p[18]),tileV=int(p[19]);
+                        double at[3][3];
+                        // The world's direction: the renderers show this map's columns the other way round
+                        // (as a physical sky's, above), and Modo lays its projections by the world's.
+                        const double world[3]={-direction[0],direction[1],direction[2]};
+                        const int n=projected(p,world,at);
+                        const float* pixels=images[l];
+                        const float* alpha=alphas[l];
+                        double total=0;
+                        coverage=0;
+                        for(int i=0;i<n;++i) {
+                            double u=at[i][0],v=at[i][1];
+                            const double weight=at[i][2];
+                            if(kinds[l]==4) {
+                                // environment_projections.procedural_coordinates: the repeat modes do nothing; UV
+                                // Map (one colour for an image, axis 3) at the world's x and z.
+                                if(int(p[0])==8) { u=int(p[1])==3?world[0]:0.0; v=int(p[1])==3?world[2]:0.0; }
+                                float rgb[3],grey[3];
+                                environment_procedural_point(patterns[l],u,v,rgb,grey);
+                                for(int k=0;k<3;++k) foreground[k]+=rgb[k]*weight;
+                                coverage+=grey[0]*weight;
+                                total+=weight;
+                                continue;
+                            }
+                            if(!tiled(u,tileU)||!tiled(v,tileV)) continue;
+                            u=u*width-.5; v=v*height-.5;
+                            const double fx=std::floor(u),fy=std::floor(v);
+                            const double ax=u-fx,ay=v-fy;
+                            const long long ix=(long long)fx,iy=(long long)fy;
+                            double found[3]={0,0,0},covered=alpha?0.0:1.0;
+                            const double weights[4][3]={{0,0,(1-ax)*(1-ay)},{1,0,ax*(1-ay)},{0,1,(1-ax)*ay},{1,1,ax*ay}};
+                            for(const auto& w:weights) {
+                                const long long index=texel(iy+(long long)w[1],height,tileV)*width+texel(ix+(long long)w[0],width,tileU);
+                                const double a=alpha?std::max(0.0,std::min(1.0,double(alpha[index]))):1.0;
+                                if(alpha) covered+=a*w[2];
+                                for(int k=0;k<3;++k) found[k]+=double(pixels[index*3+k])*w[2]*a;
+                            }
+                            if(alpha) for(int k=0;k<3;++k) found[k]/=std::max(1e-12,covered);
+                            for(int k=0;k<3;++k) foreground[k]+=found[k]*weight*covered;
+                            coverage+=covered*weight;
+                        }
+                        if(kinds[l]==4) { if(total>0) for(int k=0;k<3;++k) foreground[k]/=total; }
+                        else if(coverage>0) for(int k=0;k<3;++k) foreground[k]/=coverage;
                     } else {
                         const double* m=turns+l*9;
                         double d[3]={direction[0],direction[1],direction[2]};
@@ -193,7 +418,7 @@ extern "C" __declspec(dllexport) int MR_environment_blend(int width,int height,i
         const double* opacities,const int* inverts,const float* const* images,const float* const* alphas,const double* turns,
         const double* uv,const double* colours,const double* gradients,float* out,int threads) {
     for(int l=0;l<count;++l) if(kinds[l]<0||kinds[l]>2) return 1;
-    return blend_layers(width,height,count,kinds,modes,opacities,inverts,images,alphas,turns,uv,colours,gradients,nullptr,nullptr,out,threads);
+    return blend_layers(width,height,count,kinds,modes,opacities,inverts,images,alphas,turns,uv,colours,gradients,nullptr,nullptr,nullptr,out,threads);
 }
 
 // As MR_environment_blend, and two kinds more: 3 Modo's physical sky (skies[l]: daylight's numbers above, then its
@@ -209,5 +434,28 @@ extern "C" __declspec(dllexport) int MR_environment_layers(int width,int height,
         if(kinds[l]==4&&(!patterns||!patterns[l])) return 1;
         if(kinds[l]==0&&!images[l]) return 1;
     }
-    return blend_layers(width,height,count,kinds,modes,opacities,inverts,images,alphas,turns,uv,colours,gradients,skies,patterns,out,threads);
+    return blend_layers(width,height,count,kinds,modes,opacities,inverts,images,alphas,turns,uv,colours,gradients,skies,patterns,nullptr,out,threads);
+}
+
+// As MR_environment_layers, each image or procedural laid by one of Modo's Texture Locator projections where its
+// projections numbers (PROJECTION_SIZE a layer, environment_projections.numbers) say so: kind 0 is the plain
+// latitude-longitude layer above. MoonRay Source Override "Environment images in every projection"
+// (native.environment_projections); an environment image laid otherwise than by a spherical projection was refused.
+// Which of environment_projections' arithmetic MR_environment_projected lays (environment_layers.PROJECTIONS_VERSION):
+// 2 Modo's own Grid and Dots in an environment (environment_procedural_point) and its Light Probe turn.
+extern "C" __declspec(dllexport) int MR_environment_projections_version() { return 2; }
+
+extern "C" __declspec(dllexport) int MR_environment_projected(int width,int height,int count,const int* kinds,const int* modes,
+        const double* opacities,const int* inverts,const float* const* images,const float* const* alphas,const double* turns,
+        const double* uv,const double* colours,const double* gradients,const double* const* skies,const double* const* patterns,
+        const double* projections,float* out,int threads) {
+    for(int l=0;l<count;++l) {
+        if(kinds[l]<0||kinds[l]>4) return 1;
+        if(kinds[l]==3&&(!skies||!skies[l])) return 1;
+        if(kinds[l]==4&&(!patterns||!patterns[l])) return 1;
+        if(kinds[l]==0&&!images[l]) return 1;
+        const double kind=projections?projections[l*PROJECTION_SIZE]:0;
+        if(kind<0||kind>8||(kind!=0&&kinds[l]!=0&&kinds[l]!=4)) return 1;
+    }
+    return blend_layers(width,height,count,kinds,modes,opacities,inverts,images,alphas,turns,uv,colours,gradients,skies,patterns,projections,out,threads);
 }

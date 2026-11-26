@@ -128,6 +128,16 @@ maps, place and render space are the same.
 | Tessellation cached, coarse pass off | 5.7 s | 8.9 s |
 | Tessellation cached, coarse pass on | 2.6 s | 11.8 s |
 
+**Visibility first** (`visibility_first.h`, INDEXER.md section 18): after the coarse pass, the geometry the camera sees
+(camera rays on the coarse scene) is made at full detail before the rest, and rendered with the rest still stand-ins;
+then the full plan. Pictures only, as the coarse pass's; the film is the full plan's. `XPU2_SESSION_VISIBLE_FIRST=0`
+turns it off.
+
+| Twelve displaced subdivision spheres (11.9 M triangles, three in view), XPU2 RT with Rhea | First picture | In view at full detail | All at full detail | At rest |
+| --- | --- | --- | --- | --- |
+| Coarse pass, visibility first off | 0.9 s | 4.4 s | 4.4 s | 23.4 s |
+| Coarse pass, visibility first on | 1.0 s | 2.2-2.4 s | 4.6-4.9 s | 23.6-24.7 s |
+
 Each edit case gave the same image as the scene rendered whole by a fresh session. The car's numbers use its export with
 one substitute texture, through the session harness; a re-cut in Modo also costs the kit's own cut.
 
