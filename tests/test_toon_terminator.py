@@ -112,9 +112,9 @@ class ToonTerminator(unittest.TestCase):
                 self.assertAlmostEqual(made['refraction_roughness'], expected)
         # A session started with other switches is started again: the nine above and XPU2's three (renderer, adaptive
         # passes, devices), with the PATH look (dso_search), mirrored meshes facing outward (mirrored_meshes), VDB fire
-        # from single-value grids (scalar_emission), the tilt-shift camera (tilt_shift), shadow catchers (backplate) and glass in alpha (glass_alpha),
-        # and Rhea's radiance cache (xpu2_rhea_cache).
-        self.assertEqual(len(native.source_switches()), 20)
+        # from single-value grids (scalar_emission), the tilt-shift camera (tilt_shift), shadow catchers (backplate), glass in alpha (glass_alpha),
+        # dense glitter's flake caches (flake_caches) and Rhea's radiance cache (xpu2_rhea_cache).
+        self.assertEqual(len(native.source_switches()), 21)
 
     def test_on_the_preferences_page(self):
         page = (KIT / 'preferences.cfg').read_text(encoding='utf-8')

@@ -63,6 +63,11 @@ Work on the next version goes on in the [MoonLightIPR branch](https://github.com
 | ![The compositor](docs/images/compositor-editor.png) | ![Modern Hall, imported from MoonRay's scene files](docs/images/rdl-modern_hall.jpg) |
 | **The compositor**: the beauty graded, vignetted and sharpened | **An imported MoonRay scene**: its own render (left), after the trip through Modo (right). Modern Hall by NewSee2l035, CC BY |
 
+## In the next release (0.5.6.2)
+
+- **Fine or dense metallic glitter renders in MoonRay's Vector and XPU modes**: paint with many glitter flakes to a pixel (DwaBase and DwaMetal flakes, a car seen from afar) crashed them; it now renders as in Scalar. Switch: MoonRay Source Overrides, Dense glitter in Vector and XPU (on).
+- **XPU2 keeps scenes with Limit Geometry Resolution on** (Render Settings, Global Switches): it handed them to MoonRay XPU ("enable_max_geometry_resolution: nondefault setting unsupported").
+
 ## New in 0.5.6.1
 
 The **Backplate**: an HDRI and the photo shot with it, in one item, the photo seen behind the scene, in reflections and through glass, on a ground that catches the scene's shadows, and in Modo's viewport. **Shadow catchers** on any mesh, in every engine, seen through glass and in reflections too; glass and cut-outs see-through in the alpha. **Keep Metallic Flakes** keeps fine metallic paint sparkling through the denoiser. The Render Settings are channels of the Render item, found and keyed in the Channels viewport. Cryptomatte ticks for XPU and XPU2, Rhea remembering what it has learned, spherical cameras, a Shader's visibility, stacked environments and front projection. MoonLightIPR's first preview after an install waits about half a minute, not one to two minutes. Install the new runtime with it, and **Compile XPU2 Shaders once more**. More, with pictures, in [What's new in 0.5](docs/WHATS_NEW_05.md#new-in-0561).
