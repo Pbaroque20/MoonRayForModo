@@ -332,11 +332,18 @@ def plate_material(plate, emissive, catcher=False):
 
 # ---- The scene ----------------------------------------------------------------------------------------------------
 
-def marked(meshes):
+def marked(meshes, done=()):
     """The meshes made shadow catchers on their MoonRay Object tab (options.OBJECT shadow_catcher), not yet given their
-    catcher's material; not the Backplate's own, nor instanced ones (whose material their reference holds)."""
+    catcher's material in this reading (done: their identities, result[DONE]); not the Backplate's own, nor instanced
+    ones (whose material their reference holds). Kept by the reading, not on the mesh: a mesh kept from the reading
+    before (an edit in realtime that reads the materials again, host.snapshot refresh_materials) still wears the catcher's
+    material, which the new reading's materials must be given again, or it pointed at none and showed as a grey surface."""
     return [mesh for mesh in meshes if (mesh.get('geometry_settings') or {}).get('shadow_catcher') and not mesh.get('_backplate')
-            and not mesh.get('_catcher_done') and 'instances' not in mesh and mesh.get('faces')]
+            and mesh.get('identity') not in done and 'instances' not in mesh and mesh.get('faces')]
+
+
+# Where a reading keeps the identities of the catchers already given their material (apply, then catchers).
+DONE = '_catchers_done'
 
 
 def strength_of(mesh):
@@ -351,7 +358,7 @@ def catchers(result, warnings):
     of the picture, its alpha holding the shadows on it alone, to lay over a photo in compositing. Where MoonRay has no
     shadow catcher, or the Source Override is off, they render as they are, with a notice."""
     from . import native
-    meshes = marked(result.get('meshes') or [])
+    meshes = marked(result.get('meshes') or [], result.pop(DONE, ()))
     if not meshes:
         return result
     if not native.shadow_catcher_runtime():
@@ -370,7 +377,6 @@ def catchers(result, warnings):
                               'color': [0.5, 0.5, 0.5], 'roughness': 1.0, 'shadow_catcher': {'strength': strength, 'matte': True}}
         mesh['material'] = tag
         mesh.pop('face_materials', None)
-        mesh['_catcher_done'] = True
     return result
 
 def _path(text, warnings, name, what):
@@ -547,7 +553,8 @@ def apply(result, warnings, cameras=None):
                 mesh.pop('uv_sets', None)
                 grounds.append(mesh)
         # Objects made shadow catchers (MoonRay Object tab) wear the photo too, each with its own Shadow Strength.
-        for mesh in marked(meshes):
+        done = result.setdefault(DONE, set())
+        for mesh in marked(meshes, done):
             own = '%s|%s' % (tag, mesh.get('identity', ''))
             materials[own] = dict(materials[tag])
             if catching:
@@ -556,7 +563,7 @@ def apply(result, warnings, cameras=None):
             mesh['material'] = own
             mesh.pop('face_materials', None)
             mesh.pop('uv_sets', None)
-            mesh['_catcher_done'] = True
+            done.add(mesh.get('identity'))
             grounds.append(mesh)
         for mesh in grounds:
             mesh['uvs'] = corner_uvs(projector, mesh['vertices'], mesh['faces'], mesh.get('matrix') or IDENTITY)
