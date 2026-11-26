@@ -8086,6 +8086,14 @@
         "comment": "The HDRI turned about the vertical, in degrees, to line its sun up with the backplate.",
         "label": "HDRI rotation"
       },
+      "viewport_hdri": {
+        "name": "viewport_hdri",
+        "type": "Bool",
+        "default": true,
+        "group": "HDRI",
+        "comment": "Shows the HDRI, turned by HDRI Rotation, behind the scene in Modo's viewport, as a Modo environment of the kit's own at the top of the Shader Tree (never rendered by MoonRay, XPU2 or MoonLightIPR).",
+        "label": "HDRI in the viewport"
+      },
       "hdri_lighting": {
         "name": "hdri_lighting",
         "type": "Bool",

@@ -9,18 +9,26 @@ it. Modo draws it; it is never rendered (the kit leaves Backdrops out of its sce
 
 Kept as the Backplate's "backplate in the viewport", its photo and its Backdrop Distance say, and as the render camera's
 lens and film: made, changed or taken away by the command moonray.backplate.viewport, run when a scene opens, when a
-Backplate is added or deleted and when those settings change (lxserv/moonray_entities.py)."""
+Backplate is added or deleted and when those settings change (lxserv/moonray_entities.py).
+
+The HDRI likewise ("HDRI in the viewport"): a Modo environment of the kit's own at the top of the Shader Tree, an image
+layer of the HDRI on a spherical Texture Locator turned by HDRI Rotation about Y, as the renders turn it (backplate
+.hdri_matrix), so that Modo's viewport shows the HDRI behind the scene where it shows the environment, and follows its
+rotation. It is never rendered by the kit (environments.collect leaves out the environments that carry OWNER: the
+Backplate's HDRI is its own entry there)."""
 import json
 from pathlib import Path
 
 from . import entities
 
 CLASS = 'BackplateEnvironment'
-# The tags a Backdrop of the kit's carries: the Backplate it shows the photo of, and how it was set up (want()).
+# The tags a Backdrop (or environment) of the kit's carries: the Backplate it shows the photo (or HDRI) of, and how it
+# was set up (want(), want_hdri()).
 OWNER = 'MRBP'
 SHOWN = 'MRBF'
-# The Backplate settings and the camera channels its Backdrop follows (the listeners in lxserv/moonray_entities.py).
-PLATE_KEYS = ('plate', 'viewport_plate', 'backdrop_distance')
+# The Backplate settings and the camera channels its Backdrop and environment follow (the listeners in
+# lxserv/moonray_entities.py).
+PLATE_KEYS = ('plate', 'viewport_plate', 'backdrop_distance', 'hdri', 'hdri_rotation', 'viewport_hdri')
 CAMERA_CHANNELS = ('focalLen', 'apertureX', 'projType')
 _WIDTHS = {}
 
@@ -121,6 +129,27 @@ def plan(plates, backdrops):
     return remove, make, change
 
 
+def want_hdri(plate):
+    """How a Backplate's viewport environment is to be set up, as text (its SHOWN tag), or '' where it shows none
+    ("HDRI in the viewport" off, or no HDRI): the HDRI and its Rotation (degrees about Y)."""
+    if not _channel(plate, 'viewport_hdri', True):
+        return ''
+    hdri = str(_channel(plate, 'hdri', '') or '').strip()
+    if not hdri:
+        return ''
+    try:
+        rotation = float(_channel(plate, 'hdri_rotation', 0.0) or 0.0)
+    except (TypeError, ValueError):
+        rotation = 0.0
+    return json.dumps({'hdri': hdri.replace('\\', '/').lower(), 'path': hdri, 'rotation': round(rotation, 6)}, sort_keys=True)
+
+
+def viewport_only(item):
+    """Whether a Modo environment is one of the kit's, showing a Backplate's HDRI in the viewport alone: never read
+    into a render (environments.collect)."""
+    return bool(_tag(item, OWNER))
+
+
 def _state(scene):
     kind = entities.item_type(CLASS)
     items = list(scene.items())
@@ -130,12 +159,21 @@ def _state(scene):
     return plates, backdrops
 
 
+def _sky_state(scene):
+    """As _state, for the HDRI: each Backplate's want_hdri, and the kit's viewport environments."""
+    kind = entities.item_type(CLASS)
+    items = list(scene.items())
+    skies = {item.id: want_hdri(item) for item in items if item.type == kind}
+    shown = [(e.id, _tag(e, OWNER), _tag(e, SHOWN)) for e in items if e.type == 'environment' and _tag(e, OWNER)]
+    return skies, shown
+
+
 def lacking(scene=None):
-    """Whether any Backplate's Backdrop is missing, out of date or left over, so that a scene in order is not changed
-    (and its undo list not added to)."""
+    """Whether any Backplate's Backdrop or viewport environment is missing, out of date or left over, so that a scene
+    in order is not changed (and its undo list not added to)."""
     import modo
     scene = scene or modo.Scene()
-    return any(plan(*_state(scene)))
+    return any(plan(*_state(scene))) or any(plan(*_sky_state(scene)))
 
 
 def _clip(scene, photo):
@@ -188,25 +226,101 @@ def _set_up(scene, backdrop, owner, text):
     return True
 
 
+def _sky_layer(scene, environment):
+    """The image layer of a viewport environment, made where it has none, and its Texture Locator."""
+    import lx
+    layer = next((i for i in environment.children() if i.type == 'imageMap'), None)
+    if layer is None:
+        lx.eval('item.create imageMap')
+        layer = scene.selected[-1]
+        lx.eval('texture.parent {%s} %d item:{%s}' % (environment.id, len(environment.children()), layer.id))
+    locator = next((i for i in layer.itemGraph('shadeLoc').forward() if i.type == 'txtrLocator'), None)
+    return layer, locator
+
+
+def _set_up_sky(scene, environment, owner, text):
+    """A viewport environment showing its Backplate's HDRI turned by its Rotation, as the renders show it: an image
+    layer on a spherical Texture Locator along Y, turned about Y (degrees, as Modo's Rotation Y and the Backplate's)."""
+    import lx
+    setup = json.loads(text)
+    clip = _clip(scene, setup['path'])
+    if clip is None:
+        return False
+    layer, locator = _sky_layer(scene, environment)
+    if locator is None:
+        return False
+    lx.eval('select.item {%s} set' % layer.id)
+    lx.eval('texture.setIMap {%s}' % clip.id)
+    lx.eval('!item.channel imageMap$effect envColor')
+    lx.eval('select.item {%s} set' % locator.id)
+    lx.eval('!item.channel txtrLocator$projType spherical')
+    lx.eval('!item.channel txtrLocator$projAxis 1')
+    for axis in 'XZ':
+        lx.eval('!transform.channel rot.%s 0.0' % axis)
+    lx.eval('!transform.channel rot.Y %s' % setup['rotation'])
+    environment.setTag(SHOWN, text)
+    return True
+
+
+def _make_sky(scene, owner, setup):
+    """A new viewport environment for a Backplate (Modo puts a new environment at the top of the Shader Tree's
+    environments)."""
+    plate = scene.item(owner)
+    environment = scene.addItem('environment')
+    environment.setTag(OWNER, owner)
+    environment.name = '%s HDRI (viewport)' % plate.name
+    if not _set_up_sky(scene, environment, owner, setup):
+        _remove_sky(scene, environment.id)
+
+
+def _remove_sky(scene, ident):
+    """A viewport environment taken away with its image layer and that layer's Texture Locator."""
+    try:
+        environment = scene.item(ident)
+    except (LookupError, RuntimeError):
+        return
+    gone = []
+    for layer in environment.children():
+        try:
+            gone += [i for i in layer.itemGraph('shadeLoc').forward() if i.type == 'txtrLocator']
+        except (AttributeError, LookupError, RuntimeError):
+            pass
+    for item in gone + [environment]:
+        try:
+            scene.removeItems(item, children=item is environment)
+        except (LookupError, RuntimeError, TypeError):
+            pass
+
+
 def sync():
-    """Brings every Backplate's Backdrop in line with its settings. Run inside a command (moonray.backplate.viewport)."""
+    """Brings every Backplate's Backdrop and viewport environment in line with its settings. Run inside a command
+    (moonray.backplate.viewport)."""
     import lx
     import modo
     scene = modo.Scene()
     plates, backdrops = _state(scene)
     remove, make, change = plan(plates, backdrops)
-    if not (remove or make or change):
+    skies, shown = _sky_state(scene)
+    sky_remove, sky_make, sky_change = plan(skies, shown)
+    if not (remove or make or change or sky_remove or sky_make or sky_change):
         return
     selected = [item.id for item in scene.selected]
     owners = {ident: owner for ident, owner, _ in backdrops}
+    sky_owners = {ident: owner for ident, owner, _ in shown}
     try:
         for ident in remove:
             try:
                 scene.removeItems(scene.item(ident))
             except (LookupError, RuntimeError):
                 pass
+        for ident in sky_remove:
+            _remove_sky(scene, ident)
         for ident, setup in change:
             _set_up(scene, scene.item(ident), owners[ident], setup)
+        for ident, setup in sky_change:
+            _set_up_sky(scene, scene.item(ident), sky_owners[ident], setup)
+        for owner, setup in sky_make:
+            _make_sky(scene, owner, setup)
         for owner, setup in make:
             plate = scene.item(owner)
             lx.eval('item.create backdrop')

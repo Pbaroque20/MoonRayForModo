@@ -59,7 +59,27 @@ def environment_locator(item):
     except (RuntimeError,LookupError,AttributeError):return False
 
 
+def touches_particles(scene, identities, cache):
+    """Whether an edit moves or changes a Blob or Sprite, or what their particles come from or hang from
+    (particles.particle_items, kept in the reading): their mesh and fog are then made again from a full reading."""
+    held = set((cache or {}).get('particle_items') or ())
+    if not held:
+        return False
+    try:
+        for identity in identities:
+            if identity in held:
+                return True
+            item = scene.item(identity)
+            if item.type in ('translation', 'rotation', 'scale') and any(owner.id in held for owner in item.itemGraph('xfrmCore').forward()):
+                return True
+    except (RuntimeError, LookupError, AttributeError):
+        return True
+    return False
+
+
 def classify(scene, identities, cache):
+    if touches_particles(scene, identities, cache):
+        return False
     # A native material added from Add Layer has a type of its own; it is a material like the rest.
     types={'advancedMaterial' if kind.startswith('material.dw.') or kind=='material.mtlx' else kind for kind in (scene.item(identity).type for identity in identities)}
     if 'mesh' in types and types<=LIGHTS|{'mesh'}:
@@ -512,6 +532,7 @@ def move_only(scene,snapshot,identities,camera_moved=False,loose=(),camera_matri
         if targets&named_elsewhere(snapshot):return _refused('named elsewhere: '+','.join(sorted(targets&named_elsewhere(snapshot))[:4])+'')
         meshes=snapshot.get('meshes') or []
         if any(mesh.get('volumetric') and (mesh.get('source_item') or mesh['identity'].split('|')[0]) in targets for mesh in meshes):return _refused('a volume')
+        if targets&set(snapshot.get('particle_items') or ()):return _refused('particles')
         result=dict(snapshot)
         # camera_matrix: where a viewport navigated through the camera looks from, before Modo moves the camera itself.
         if camera_moved:

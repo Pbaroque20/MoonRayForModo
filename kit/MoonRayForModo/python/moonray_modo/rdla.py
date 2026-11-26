@@ -746,6 +746,15 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
     # (instanced_resolution); any other instancer as before, at its level's.
     from .ocean import ocean_tags, wears_ocean, OCEAN_TRIANGLES
     sea_tags = ocean_tags(scene.get('materials'))
+    # Displaced meshes cut by the screen at Modo's Displacement Rate (Follow Modo, or a fixed dicing camera), as Modo cuts
+    # them: as finely as their shared budget allows (displacement_budget.shared_resolution), never coarser than their
+    # level's; within Modo's Minimum Edge Length, the shortest edge it splits to. At the level's 8 alone a 10 m ground of
+    # one polygon came out flat where Modo's was rough (tools/probe_cl_displaced_plane.py). Uniform keeps the level's.
+    from . import displacement_budget
+    min_edge = float(scene.get('displacement_min_edge') or 0.0)
+    shared_resolution = displacement_budget.shared_resolution(
+        render_meshes, lambda held: bool(({held.get('material', '')} | set(held.get('face_materials') or [])) & displacement_tags),
+        lambda held: wears_ocean(held, scene.get('materials'), sea_tags)) if held_render['displacement_tessellation'] else None
     by_view = False  # a mesh diced by the screen (LAST_CUT_BY_VIEW)
     for index, mesh in enumerate(render_meshes):
         cut = cuts.get(id(mesh))
@@ -895,6 +904,21 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
             # the 64 XPU2 takes, and the whole scene went to MoonRay XPU.
             mesh = dict(mesh, mesh_resolution=instanced_resolution(mesh, scene, width, 2 ** level, detail,
                         held_render['displacement_adaptive_error'] or float(scene.get('displacement_rate', 1.0))))
+        if (subdivision or displaced) and not wears_ocean(mesh, scene.get('materials'), sea_tags):
+            # The most MoonRay may cut it to: cut by the screen, as finely as the shared budget allows (a moving realtime
+            # preview at most the coarse splits) and never finer than Modo's Minimum Edge Length lets its edges be
+            # split; any mesh it tessellates never past DISPLACED_TRIANGLES at the most it can make. Seas keep their
+            # own budget (ocean.py).
+            held = mesh.get('mesh_resolution', 2 ** level)
+            if displaced and mesh.get('adaptive_error') and 'instances' not in mesh and 'mesh_resolution' not in mesh:
+                shared = shared_resolution
+                if shared and detail == 'coarse':
+                    shared = min(shared, INSTANCED_COARSE_SPLITS)
+                fitted = displacement_budget.adaptive_resolution(mesh, held, shared, min_edge)
+            else:
+                fitted = displacement_budget.resolution(held, mesh)
+            if fitted != held:
+                mesh = dict(mesh, mesh_resolution=fitted)
         if (subdivision or displaced) and mesh.get('adaptive_error'):
             by_view = True
         lines += ['do', '  local geometry = RdlMeshGeometry("/modo/mesh/%s") {' % index,

@@ -205,6 +205,7 @@ lx.bless(choice('xpu2/devices',(('both','Processor and graphics cards'),('gpu','
 lx.bless(choice('xpu2/rt_cap',(('none','None'),('30','30'),('60','60'))),'moonray.pref.xpu2RealtimeCap')
 lx.bless(switch('ngon_ears'),'moonray.pref.ngonEars')
 lx.bless(switch('bump_node'),'moonray.pref.bumpNode')
+lx.bless(switch('environment_projections'),'moonray.pref.environmentProjections')
 lx.bless(switch('ocean'),'moonray.pref.ocean')
 lx.bless(switch('backplate'),'moonray.pref.backplate')
 lx.bless(switch('glass_alpha'),'moonray.pref.glassAlpha')

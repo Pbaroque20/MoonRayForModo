@@ -24,8 +24,9 @@ def collect(scene, warnings):
             lights = bool(channel(scene.renderItem, 'globEnable', 1))
     except Exception:
         lights = True
+    from .backplate_viewport import viewport_only  # a Backplate's HDRI shown in Modo's viewport alone
     for environment in scene.items('environment', superType=False):
-        if not render_visible(environment):
+        if not render_visible(environment) or viewport_only(environment):
             continue
         intensity = float(channel(environment, 'radiance', 1))
         if intensity <= 0:
@@ -106,14 +107,18 @@ def collect(scene, warnings):
                     from .procedurals import capture
                     entry.update(kind='procedural',procedural=capture(layer,channel,color,effect=='envColor'))
                     locator=next((i for i in layer.itemGraph('shadeLoc').forward() if i.type=='txtrLocator'),None)
-                    if not locator or channel(locator,'projType')!='spherical':raise ValueError('Environment procedurals require a spherical Texture Locator')
+                    projected=projection(locator,channel,world_matrix,True)
+                    if projected:entry['projection']=projected
+                    elif not locator or channel(locator,'projType')!='spherical':raise ValueError('Environment procedurals require a spherical Texture Locator')
                     entry.update(matrix=world_matrix(locator),scale=[float(channel(locator,'wrapU',1)),float(channel(locator,'wrapV',1))],rotation=float(channel(locator,'uvRotation',0)),
                         uv_matrix=[float(channel(locator,k,v)) for k,v in zip(('m00','m01','m02','m10','m11','m12'),(1,0,0,0,1,0))])
                 elif layer.type == 'imageMap':
                     connected = layer.itemGraph('shadeLoc').forward()
                     locator = next((i for i in connected if i.type=='txtrLocator'),None)
                     clip = next((i for i in connected if i.type=='videoStill'),None)
-                    if not locator or channel(locator,'projType') != 'spherical':
+                    projected=projection(locator,channel,world_matrix)
+                    if projected:entry['projection']=projected
+                    elif not locator or channel(locator,'projType') != 'spherical':
                         raise ValueError('environment images require Spherical projection (latitude/longitude)')
                     if not clip:
                         raise ValueError('environment images require a still image')
@@ -129,7 +134,7 @@ def collect(scene, warnings):
                         ('m00','m01','m02','m10','m11','m12'),(1,0,0,0,1,0))],
                         rotation=float(channel(locator,'uvRotation',0)),
                         scale=[float(channel(locator,'wrapU',1)),float(channel(locator,'wrapV',1))])
-                    entry['transformed']=entry['uv_matrix']!=[1,0,0,0,1,0] or entry['rotation']!=0 or entry['scale']!=[1,1]
+                    entry['transformed']=entry['uv_matrix']!=[1,0,0,0,1,0] or entry['rotation']!=0 or entry['scale']!=[1,1] or bool(projected)
                     path = Path(channel(clip,'filename',''))
                     if not path.is_absolute() and getattr(scene,'filename',None):
                         path = Path(scene.filename).parent/path
@@ -143,7 +148,7 @@ def collect(scene, warnings):
                     entry.update(kind='image',color_space=space,path=str(path.resolve()),mtime=path.stat().st_mtime_ns,
                         size=path.stat().st_size, matrix=world_matrix(locator),
                         srgb=space=='sRGB' or (space=='(default)' and path.suffix.lower() not in ('.exr','.hdr','.tx')))
-                    flips=flipped_across(entry)
+                    flips=None if projected else flipped_across(entry)
                     if flips:
                         # Horizontal or Vertical Wrap -1 (or both), nothing else changed: the image mirrored at its full
                         # size (mirrored_image), rather than baked small with the layered environments, which smeared an
@@ -163,7 +168,8 @@ def collect(scene, warnings):
             stack=stack[:1]
         if stack:
             if len(stack)==1 and not stack[0].get('groups') and stack[0].get('effect')=='envColor' and stack[0]['kind'] not in ('physical','color','procedural','gradient') and stack[0]['opacity']==1 and stack[0]['blend']=='normal' and not stack[0]['invert'] and not stack[0].get('transformed') and not stack[0].get('corrections') and not any(stack[0].get('flips') or []) and stack[0].get('image_channel','ignore') not in ('use','only'):
-                result.append(stack[0])
+                from .environment_layout import laid_out  # the image as Modo shows it (environment_layout)
+                result.append(laid_out(stack[0]))
             else:
                 result.append(dict(item,kind='stack',layers=stack))
     if getattr(scene,'renderItem',None) is not None:
@@ -174,6 +180,19 @@ def collect(scene, warnings):
             order=[]
         result.sort(key=lambda env:order.index(env['identity']) if env['identity'] in order else len(order))
     return occlude(result) if stacking()=='override' else result
+
+
+def projection(locator, channel, world_matrix, procedural=False):
+    """An environment layer's Texture Locator projection as environment_projections lays it, where the MoonRay Source
+    Override "Environment images in every projection" is on (native.environment_projections) and it is not the plain
+    spherical one along Y; None otherwise (the layer then needs a spherical projection, as before the override)."""
+    from . import environment_projections
+    if locator is None or not environment_projections.wanted(channel(locator,'projType','uv'),channel(locator,'projAxis',1),world_matrix(locator)):
+        return None
+    from .native import environment_projections as switched_on
+    if not switched_on():
+        return None
+    return environment_projections.capture(locator,channel,world_matrix(locator),procedural)
 
 
 def stacking():
@@ -247,6 +266,8 @@ def mirrored_image(path,across=True,down=False):
 def covers(layer):
     """Whether an environment layer hides all under it: an image seen whole, opaque, with no alpha of its own."""
     return (layer.get('kind')=='image' and layer.get('effect')=='envColor' and layer.get('opacity')==1 and layer.get('blend')=='normal'
+            # A projection whose image is reset outside it leaves the layers under it seen there.
+            and 'reset' not in (layer.get('projection') or {}).get('tiles',())
             and not layer.get('invert') and layer.get('image_channel','ignore') not in ('use','only') and not layer.get('groups'))
 
 

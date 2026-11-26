@@ -72,6 +72,8 @@ KEYS = {
     'ngon_ears': (True, bool),
     # The MoonShine graph's Bump node bumps (native.bump_node).
     'bump_node': (True, bool),
+    # Environment images and procedurals laid by every one of Modo's projections (native.environment_projections).
+    'environment_projections': (True, bool),
     # The MoonShine graph's Ocean nodes make waves (native.ocean).
     'ocean': (True, bool),
     # The Backplate item: an HDRI and a backplate photo in one, the ground a shadow catcher (native.backplate).
@@ -103,8 +105,9 @@ KEYS = {
     'moonlightipr/samples': (256, int),
     # How many samples a pixel a MoonLightIPR Render (realtime off) gathers before it stops.
     'moonlightipr/render_samples': (300, int),
-    # A MoonLightIPR Render (realtime off) is made at the active camera's resolution, not the realtime share (opt-in).
-    'moonlightipr/camera_resolution': (False, bool),
+    # A MoonLightIPR Render (realtime off) is made at the active camera's resolution, not the realtime share (on by
+    # default since 2026-11-26; a user who switched it off keeps it off).
+    'moonlightipr/camera_resolution': (True, bool),
     # MoonLightIPR follows a drag step by step, each step at its first sample, the picture still from the mouse pressed to
     # the release (opt-in); off, a drag is rendered once the mouse is let go.
     'moonlightipr/follow_drags': (False, bool),

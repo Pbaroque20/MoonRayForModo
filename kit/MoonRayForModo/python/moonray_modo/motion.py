@@ -209,7 +209,7 @@ def apply_motion(scene, start, end, endpoints, preview=False):
         if original.get('kind')=='vdb':
             # VDB deformation comes from its velocity grid; density uses frame time.
             extras.append(dict(original,matrix=a.get('matrix',IDENTITY),matrix_close=b.get('matrix',IDENTITY)))
-            if a.get('file')!=original.get('file') or b.get('file')!=original.get('file'):warnings.append('Animated VDB density uses the frame-time grid; shutter motion requires its velocity grid.')
+            if (a.get('file')!=original.get('file') or b.get('file')!=original.get('file')) and not original.get('velocity_grid'):warnings.append('Animated VDB density uses the frame-time grid; shutter motion requires its velocity grid.')
             continue
         policy=scene.get('motion_policies',{}).get(str(identity).split('|')[0],'auto')
         if policy=='velocity':

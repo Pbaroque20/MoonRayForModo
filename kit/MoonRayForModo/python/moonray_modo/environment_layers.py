@@ -164,6 +164,40 @@ GRADIENT_KINDS = {'constant': 0, 'overcast': 1, 'grad2': 2}
 NATIVE_SIZE, NATIVE_REALTIME_SIZE = (2048, 1024), (1024, 512)
 
 
+# The environment_projections arithmetic the adapter must lay (MR_environment_projections_version): 2 from Modo's own
+# Grid and Dots in an environment and its Light Probe turn (environment_projections.VERSION v2).
+PROJECTIONS_VERSION = 2
+
+
+def projections_laid(library):
+    """Whether the adapter lays environment_projections' present arithmetic (MR_environment_projected, of
+    PROJECTIONS_VERSION): an adapter built before it laid procedurals and Light Probes otherwise."""
+    if not hasattr(library, 'MR_environment_projected') or not hasattr(library, 'MR_environment_projections_version'):
+        return False
+    try:
+        return int(library.MR_environment_projections_version()) >= PROJECTIONS_VERSION
+    except Exception:
+        return False
+
+
+def with_projections(environment):
+    """The environment with each procedural laid without a projection (the plain spherical one along Y) given that
+    projection (environment_projections.plain), so that it is evaluated as Modo evaluates it, as any other projection's
+    is; the environment itself where there is none."""
+    layers = environment.get('layers') or []
+    if not any(layer.get('kind') == 'procedural' and not layer.get('projection') for layer in layers):
+        return environment
+    from .environment_projections import plain
+    made = []
+    for layer in layers:
+        if layer.get('kind') == 'procedural' and not layer.get('projection'):
+            projection = plain(layer)
+            if projection:
+                layer = dict(layer, projection=projection)
+        made.append(layer)
+    return dict(environment, layers=made)
+
+
 def native_layers(layers):
     """Whether the geometry adapter lays all of an environment's layers (native_blend): none in a group or a mask, none
     a texture gradient; a physical sky or a procedural only where it has MR_environment_layers. Asked before the
@@ -174,6 +208,11 @@ def native_layers(layers):
     if library is None or not hasattr(library, 'MR_environment_blend') or not layers:
         return False
     richer = hasattr(library, 'MR_environment_layers')
+    if any(layer.get('projection') or layer.get('kind') == 'procedural' for layer in layers) and not projections_laid(library):
+        # Laid by one of Modo's other projections (environment_projections), as every procedural now is (with_projections,
+        # asked here before it is given one, for the map's size): an older adapter has none of them, or lays them by
+        # older arithmetic.
+        return False
     for layer in layers:
         if layer.get('groups') or layer.get('effect', 'envColor') != 'envColor' or layer.get('blend', 'normal') not in BLENDS:
             return False
@@ -216,6 +255,7 @@ def native_blend(layers, width, height):
     if not native_layers([layer for layer, *_ in layers]):
         return None
     richer = hasattr(library, 'MR_environment_layers')
+    projected = any(layer.get('projection') for layer, *_ in layers)
     count = len(layers)
     kinds, modes, opacities, inverts = [], [], [], []
     images, alphas, turns, uvs, colours, gradients, held = [], [], [], [], [], [], []
@@ -278,7 +318,16 @@ def native_blend(layers, width, height):
     common = (width, height, count, numbers(ctypes.c_int, kinds), numbers(ctypes.c_int, modes), numbers(ctypes.c_double, opacities),
               numbers(ctypes.c_int, inverts), pointers(images), pointers(alphas), numbers(ctypes.c_double, turns),
               numbers(ctypes.c_double, uvs), numbers(ctypes.c_double, colours), numbers(ctypes.c_double, gradients))
-    if richer:
+    if projected:
+        # Each image and procedural laid by its own projection (environment_projections.numbers; 0 the plain one).
+        from .environment_projections import numbers as projection_numbers
+        laid = [v for layer, *_ in layers for v in projection_numbers(layer.get('projection'))]
+        function = library.MR_environment_projected
+        if function.argtypes is None:
+            function.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_int] + [ctypes.c_void_p] * 14 + [ctypes.c_int]
+            function.restype = ctypes.c_int
+        done = function(*common, doubles(skies), doubles(patterns), numbers(ctypes.c_double, laid), out.buffer_info()[0], 0)
+    elif richer:
         function = library.MR_environment_layers
         if function.argtypes is None:
             function.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_int] + [ctypes.c_void_p] * 13 + [ctypes.c_int]
@@ -306,6 +355,10 @@ def held_placement(environment):
     height, or layers placed apart). Turning such an HDRI then changes only the light's transform, which MoonRay takes
     as a small update, rather than baking the stack again (seconds for each value)."""
     layers = environment.get('layers') or []
+    if any(layer.get('projection') for layer in layers):
+        # Modo's other projections read the locator's size and turn their own ways (environment_projections): baked as
+        # placed, not turned whole.
+        return None
     placed = [layer for layer in layers if layer.get('kind') in PLACED_KINDS]
     if not placed or any(layer.get('kind') not in PLACED_KINDS + UNPLACED_KINDS for layer in layers):
         return None
@@ -329,10 +382,15 @@ def texture(environment, width=512, height=256, renderer=True):
     from .compositing import Groups
     from .procedurals import sample
     from .gradients import sample as gradient_sample
+    from .procedurals import environment_sample
+    environment = with_projections(environment)
     if any(layer['kind']=='physical' for layer in environment['layers']) and not native_layers(environment['layers']):
         # Laid in Python, pixel by pixel, a physical sky is held to this size for time; the adapter lays it at the size asked.
         width,height = 256,128
-    digest = hashlib.sha256(('stack-v10-daylight|%dx%d|'%(width,height)+json.dumps([environment,textures._policy.get()],sort_keys=True)).encode()).hexdigest()
+    # A stack with a layer laid by one of Modo's other projections is named by their arithmetic's version too.
+    from .environment_projections import VERSION
+    projected = VERSION + '|' if any(layer.get('projection') for layer in environment['layers']) else ''
+    digest = hashlib.sha256(('stack-v10-daylight|%s%dx%d|'%(projected,width,height)+json.dumps([environment,textures._policy.get()],sort_keys=True)).encode()).hexdigest()
     folder = cache_root() / 'Environments'
     folder.mkdir(parents=True,exist_ok=True)
     target = folder/(digest+'.pfm')
@@ -383,6 +441,16 @@ def texture(environment, width=512, height=256, renderer=True):
                                     coverage=gradient_sample(dict(layer['gradient'],colors=[[v]*3 for v in layer['gradient']['alpha']]),sum(values)/3)[0]
                             elif layer['kind']=='color':
                                 foreground=layer['color']
+                            elif layer.get('projection') and layer['kind']=='procedural':
+                                # Modo lays its projections by the world's direction, which the renderers show this
+                                # picture's columns the other way round from (as a physical sky's, below).
+                                world=(-direction[0],direction[1],direction[2])
+                                from .environment_projections import procedural as projected_procedural
+                                foreground,coverage=projected_procedural(layer['projection'],layer['procedural'],world,environment_sample)
+                            elif layer.get('projection') and pixels is not None:
+                                from .environment_projections import sample as projected_sample
+                                world=(-direction[0],direction[1],direction[2])
+                                foreground,coverage=projected_sample(layer['projection'],pixels,alpha,width,height,world)
                             elif layer['kind']=='procedural':
                                 d=direction if inv is None else [sum(direction[j]*inv[j*4+i] for j in range(3)) for i in range(3)]
                                 length=max(1e-12,math.sqrt(sum(v*v for v in d)))

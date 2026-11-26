@@ -84,7 +84,7 @@ class Wiring(unittest.TestCase):
         source = (KIT / 'lxserv/moonray_entities.py').read_text(encoding='utf-8')
         self.assertIn("lx.bless(BackplateViewport,'moonray.backplate.viewport')", source)
         self.assertIn('backplate_channels={entities.CHANNEL_PREFIX+key for key in _viewport.PLATE_KEYS}', source)
-        self.assertEqual(backplate_viewport.PLATE_KEYS, ('plate', 'viewport_plate', 'backdrop_distance'))
+        self.assertEqual(backplate_viewport.PLATE_KEYS, ('plate', 'viewport_plate', 'backdrop_distance', 'hdri', 'hdri_rotation', 'viewport_hdri'))
         for hook in ('def sil_ItemRemove', 'def sil_ChannelValue', 'QtCore.QTimer.singleShot(0,backplate_viewport_later)'):
             self.assertIn(hook, source)
         module = (KIT / 'python/moonray_modo/backplate_viewport.py').read_text(encoding='utf-8')

@@ -644,6 +644,65 @@ def by_engine(engine):
         _MODO_DISPLACES.reset(token)
 
 
+def displacing_layers(scene):
+    """The identities of the Shader Tree's enabled layers whose effect is Displacement."""
+    from .layers import ordered_items
+    found = set()
+    for item in ordered_items(scene.renderItem):
+        try:
+            if channel(item, 'effect', '') == 'displace' and channel(item, 'enable', 1):
+                found.add(item.id)
+        except (LookupError, RuntimeError, AttributeError, TypeError):
+            continue
+    return found
+
+
+def modo_cut_refused(scene, result):
+    """Modo's displaced cut of the reading about to be made (evaluated.capture, displaced), in triangles, where it is
+    past displacement_budget.MODO_DISPLACED_TRIANGLES; else None. Worked out from the surfaces read undisplaced and the
+    camera, once for each scene, Displacement settings, picture and camera place (to half a metre)."""
+    from . import displacement_budget, evaluated
+    layers = displacing_layers(scene)
+    if not layers:
+        return None
+    camera = result['camera']
+    rate = max(1e-3, float(result.get('displacement_rate', displacement_budget.RATE)))
+    ratio = max(1.0, float(result.get('displacement_ratio', displacement_budget.RATIO)))
+    min_edge = max(0.0, float(result.get('displacement_min_edge', displacement_budget.MIN_EDGE)))
+    matrix = camera.get('matrix') or ()
+    time = lx.service.Selection().GetTime()
+    key = (getattr(scene, 'filename', None) or scene.name, time, rate, ratio, min_edge, result['width'], result['height'],
+           tuple(round(v, 1) for v in matrix[:12]), tuple(round(v * 2) / 2 for v in matrix[12:15]),
+           camera.get('projection'), camera.get('focal_mm'), camera.get('film_mm'), camera.get('ortho_width'), frozenset(layers))
+
+    def estimate():
+        token = _MODO_DISPLACES.set(False)
+        try:
+            data = evaluated.capture(time, displaced=False)
+        finally:
+            _MODO_DISPLACES.reset(token)
+        return displacement_budget.modo_dicing(data, layers, camera, result['width'], result['height'], rate, ratio, min_edge)
+
+    try:
+        made = displacement_budget.verdict(key, estimate)
+    except Exception:
+        return None
+    return made if made > displacement_budget.MODO_DISPLACED_TRIANGLES else None
+
+
+def refused_cut(result, made):
+    """A reading made undisplaced in place of Modo's cut of made triangles (its displaced meshes then cut by MoonRay by
+    the screen, as any read as modeled: rdla, displacement_budget), with a notice of it."""
+    from . import displacement_budget
+    rate = float(result.get('displacement_rate', 1.0))
+    notice = ("Modo's displacement at a Displacement Rate of %g pixels would cut the displaced surfaces into about %.1f "
+              "million triangles, more than can be read for MoonRay: MoonRay displaces them itself, as finely as %.0f "
+              "million triangles allow. A Displacement Rate of %g pixels or more keeps Modo's own." %
+              (rate, made / 1e6, displacement_budget.FALLBACK_TRIANGLES / 1e6, displacement_budget.rate_for(made, rate)))
+    result['warnings'] = sorted(set(list(result.get('warnings') or []) + [notice]))
+    return result
+
+
 def snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=False,dirty_meshes=None,shading_kept=False):
     """The scene as MoonRay is to be given it. The Shader Tree's order and its layer masks are found once for the
     reading (layers.held_tree), not again for each material's stack."""
@@ -745,6 +804,10 @@ def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fal
         result['camera']['overscan'] = overscan
     # Modo's Displacement Rate (pixels), which displaced meshes are tessellated to where the scene follows Modo.
     result['displacement_rate'] = float(channel(render, 'dispRate', 1.0))
+    # Modo's Minimum Edge Length (metres), the shortest edge its displacement cuts to, and its Displacement Ratio, the
+    # rate's multiple off the picture (displacement_budget).
+    result['displacement_min_edge'] = float(channel(render, 'edgeMin', 0.0001))
+    result['displacement_ratio'] = float(channel(render, 'dispRatio', 4.0))
     # Another camera for MoonRay's adaptive tessellation: the one chosen; with a fixed dicing camera, it (or the render
     # camera) held at the Dicing Frame, so that a moving camera does not move the triangles.
     stored = properties.scene_settings()
@@ -848,6 +911,16 @@ def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fal
         shader_library.attach_dependencies(result['materials'],library)
         if evaluated_geometry:
             from . import evaluated
+            refused = modo_cut_refused(scene, result) if modo_displaces() else None
+            if refused:
+                # Modo's displaced cut would be past what can be held (displacement_budget): read undisplaced, the
+                # Displacement layers kept for MoonRay to displace by, cut by the screen within a budget (rdla).
+                token = _MODO_DISPLACES.set(False)
+                try:
+                    redone = _snapshot(evaluated_geometry, reuse_geometry, refresh_materials, dirty_meshes, shading_kept)
+                finally:
+                    _MODO_DISPLACES.reset(token)
+                return refused_cut(redone, refused)
             cached=reuse_geometry.get('_evaluated_data') if reuse_geometry else None
             # A reading kept from another engine's rule (displaced or not, by_engine) is not taken again.
             if cached and cached.get('_modo_displaced',True)!=modo_displaces():cached=None
@@ -1439,6 +1512,9 @@ def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fal
     # from an earlier one included, where the lights and the camera now stand.
     from .volumetrics import capture as capture_volumetrics
     capture_volumetrics(scene,result,warnings)
+    # Modo's Blob and Sprite items, made from their particles at this moment: a mesh and a VDB fog (particles).
+    from . import particles
+    particles.apply(scene,result,warnings)
     if smoothed_whole:
         warnings.append("Smoothed all over rather than within their material's smoothing angle, having more than %d polygons: %s. "
                         'Set a smoothing angle in the MoonRay material settings to hold it.'
