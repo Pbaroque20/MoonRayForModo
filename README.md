@@ -66,6 +66,8 @@ Work on the next version goes on in the [MoonLightIPR branch](https://github.com
 ## In the next release (0.5.6.2)
 
 - **Glitter in MoonLightIPR**: MoonRay's metallic flakes in the GPU preview, each flake where MoonRay puts it: sparse sparkles, dense paint and their far-off sheen, flake colours with their variation, staying put on deforming meshes. Keep Metallic Flakes keeps them sparkling through its denoiser.
+
+  ![Glitter paint on two balls and a gold cube: MoonRay (left) and MoonLightIPR (right), the same flakes in the same places](docs/images/moonlightipr-glitter.jpg)
 - **Fine or dense metallic glitter renders in MoonRay's Vector and XPU modes**: paint with many glitter flakes to a pixel (DwaBase and DwaMetal flakes, a car seen from afar) crashed them; it now renders as in Scalar. Switch: MoonRay Source Overrides, Dense glitter in Vector and XPU (on).
 - **XPU2 keeps scenes with Limit Geometry Resolution on** (Render Settings, Global Switches): it handed them to MoonRay XPU ("enable_max_geometry_resolution: nondefault setting unsupported").
 - **A shadow catcher stays one when its material is edited in realtime**: changing its colour with RT on made it show as a plain grey surface.
