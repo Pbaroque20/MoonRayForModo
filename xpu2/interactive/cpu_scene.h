@@ -3188,6 +3188,9 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
   // limit"; RenderContext only reloads the geometry when they change), and the kit applies the cap itself to the meshes'
   // resolutions it writes (rdla.py, resolution_cap), so XPU2 is handed the same capped meshes as MoonRay is.
   "enable_max_geometry_resolution",
+  // Volume indirect samples (MoonRay's integrateVolumeScatteringIndirect): read only where a ray marches a volume, so a
+  // scene without volumes renders the same whatever it says (checked once the volumes are known, below).
+  "volume_indirect_samples",
   // The windows (rezed: the resolution divisor), the pixels rendered and the texture blur (the path tracer's camera).
   "res","aperture_window","region_window","sub_viewport","debug_pixel","texture_blur",
   // What only deep outputs read (aov_plan.h reads them for deep output).
@@ -4315,6 +4318,9 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
    plan->meshFilterTable[mi]=it->second;}
  }
  need(plan->bytes<=limits.bytes,geometryBudgetText(plan->bytes,limits.bytes));
+ // Volume indirect samples with volumes in the scene: XPU2 does not take MoonRay's indirect volume samples.
+ need(plan->volumes.empty()||get<rdl::Int>(sv,"volume_indirect_samples")<=0,
+      "__SceneVariables__ / volume_indirect_samples: nondefault setting unsupported with volumes in the scene");
  if(paths)routeMeshes(*plan,limits.gpuBytes);
  // The coarse first pass: dense meshes simplified (coarse_geometry.h), and how many of its meshes are lighter than the full
  // plan's (the session renders a coarse pass only where some are).

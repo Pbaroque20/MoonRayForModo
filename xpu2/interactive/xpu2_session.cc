@@ -2127,6 +2127,128 @@ bool envOn(const char* name, bool otherwise) {
     return v ? std::string(v) == "1" : otherwise;
 }
 
+// The shared picture with the screen's fade in (rhea/DESIGN.md 33): Rhea's phase one drawn from the radiance cache (or
+// any phase one that replaces another picture rather than following the camera) cross-fades from the picture on screen
+// over a short time, where it snapped in at once. Every picture published during the fade is the one the session made,
+// blended with the picture on screen when the fade began by smoothstep(elapsed / seconds); a ticker publishes the last
+// one again as the time goes (pictures come or not) and, at the end, as it is: the screen ends on the session's own
+// picture, bit for bit. The session's own state (the warp, shownCopy, the denoised picture kept) is its pictures as
+// made, so XPU2's completion fade under it goes on as before. A camera move ends it (end): drags as before. Calls under
+// the session's lock (the one given to begin).
+class FadingShared {
+public:
+    ModoSharedImage image;
+    ~FadingShared() {
+        stop = true;
+        if (ticker.joinable()) ticker.join();
+    }
+    bool ready() { return image.ready(); }
+    template <class Sample>
+    bool publish(const std::string& generation, const std::string& key, unsigned width, unsigned height, Sample sample) {
+        if (f.active && (key != f.key || width != f.w || height != f.h)) f.active = false;
+        const double s = f.active ? weight() : 1.0;
+        const bool ended = f.active && s >= 1.0;
+        if (ended) f.active = false;
+        bool ok;
+        if (!f.active) {
+            ok = image.publish(generation, key, width, height, sample);
+        } else {
+            // The session's picture kept (the ticker's to publish again), and shown blended with the one the fade began on.
+            const size_t n = size_t(width) * height;
+            f.target.resize(n * 3);
+            for (size_t i = 0; i < n; ++i) sample(i, &f.target[i * 3]);
+            f.generation = generation, f.haveTarget = true;
+            ok = blended(s);
+            if (ok) ++f.pictures;
+        }
+        if (ok) lastKey = key, lastW = width, lastH = height, lastAt = std::chrono::steady_clock::now();
+        if (ended) said("the session's next picture as it is");
+        return ok;
+    }
+    // The fade begun from the picture on screen (the last handed over, of this key and size), over seconds. False:
+    // nothing of that key and size on screen, or no fade (seconds 0).
+    bool begin(const std::string& key, unsigned width, unsigned height, double seconds, std::mutex& lock) {
+        const size_t n = size_t(width) * height;
+        if (!(seconds > 0) || lastKey != key || lastW != width || lastH != height || !image.picture() || image.pictureBytes() != n * 3 * sizeof(float))
+            return false;
+        f.from.assign(image.picture(), image.picture() + n * 3);
+        f.key = key, f.w = width, f.h = height, f.seconds = seconds, f.began = std::chrono::steady_clock::now();
+        f.haveTarget = false, f.pictures = 0, f.ticks = 0, f.active = true;
+        if (!running) {
+            if (ticker.joinable()) ticker.join();  // gone by itself (its last act, under the lock: running cleared)
+            running = true;
+            ticker = std::thread([this, &lock] { tick(lock); });
+        }
+        return true;
+    }
+    // Ended where it is: the next picture published as it is (a camera move, a drag's step).
+    void end() {
+        if (f.active) said("ended by a camera move");
+        f.active = false;
+    }
+    bool fading() const { return f.active; }
+
+private:
+    struct Fade {
+        bool active = false, haveTarget = false;
+        std::string key, generation;
+        unsigned w = 0, h = 0;
+        std::vector<float> from, target;
+        std::chrono::steady_clock::time_point began;
+        double seconds = 0;
+        unsigned pictures = 0, ticks = 0;
+    } f;
+    std::string lastKey;
+    unsigned lastW = 0, lastH = 0;
+    std::chrono::steady_clock::time_point lastAt;
+    std::thread ticker;
+    std::atomic<bool> stop{false};
+    bool running = false;  // under the lock
+    void said(const char* how) const {
+        std::printf("MoonRay XPU2: Rhea: faded in over %.3f s (%u pictures of the session's blended, %u again by the fade; %s)\n",
+                    std::chrono::duration<double>(std::chrono::steady_clock::now() - f.began).count(), f.pictures, f.ticks, how);
+        std::fflush(stdout);
+    }
+    double weight() const {
+        const double t = std::clamp(std::chrono::duration<double>(std::chrono::steady_clock::now() - f.began).count() / f.seconds, 0.0, 1.0);
+        return t * t * (3 - 2 * t);
+    }
+    bool blended(double s) {
+        const float a = float(s);
+        return image.publish(f.generation, f.key, f.w, f.h, [&](size_t i, float* px) {
+            for (int c = 0; c < 3; ++c) px[c] = f.from[i * 3 + c] + a * (f.target[i * 3 + c] - f.from[i * 3 + c]);
+        });
+    }
+    // About 60 times a second while the fade lasts: the last picture again, blended as the time has come, where none
+    // was published since; at the end the last picture as the session made it.
+    void tick(std::mutex& lock) {
+        for (;;) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(8));
+            std::lock_guard<std::mutex> hold(lock);
+            if (stop || !f.active) {
+                running = false;
+                return;
+            }
+            if (!f.haveTarget || !image.ready()) {
+                if (!f.haveTarget && weight() >= 1.0) f.active = false;
+                continue;
+            }
+            const double s = weight();
+            if (s >= 1.0) {
+                const bool ok = image.publish(f.generation, f.key, f.w, f.h, [&](size_t i, float* px) { std::copy_n(&f.target[i * 3], 3, px); });
+                if (!ok) continue;
+                lastAt = std::chrono::steady_clock::now();
+                said("the last picture as it is");
+                f.active = false;
+                running = false;
+                return;
+            }
+            if (std::chrono::steady_clock::now() - lastAt < std::chrono::milliseconds(16)) continue;
+            if (blended(s)) ++f.ticks, lastAt = std::chrono::steady_clock::now();
+        }
+    }
+};
+
 // Open Image Denoise on the processor, for a machine none of whose graphics cards runs OptiX's denoiser: its RT filter
 // at its fast quality, loaded from MoonRay's runtime beside XPU2's (libOpenImageDenoise-2.dll and its CPU device). The
 // guides as the GPU's denoiser takes them (XPU2_SESSION_RT_GUIDES; clean: the albedo denoised on its own first).
@@ -2531,12 +2653,13 @@ int session(const Args& args, const fs::path& directory) {
     double deviceRatio = 0;  // the lanes' measured rate ratio, from one scene's renderer to the next
     cpu::PlanView gpuPlan;
     bool gpuUsable = true;  // the GPU lane renders the scene (cpuOnly empty)
-    ModoSharedImage shared;
+    // Realtime's denoised pictures (RealtimeDenoiser), made once one is asked for. The shared picture is the session's
+    // and the denoiser's both, one at a time; the denoiser's goes out only while its frame is the one rendering. (The
+    // lock before the picture: its fade's ticker holds it till the picture is gone.)
+    std::mutex sharedMutex;
+    FadingShared shared;
     Outlines outlines(envOn("MOONRAY_MODO_BUCKETS", false));
     Checkpoints checkpoints;  // Safe Denoising's saves
-    // Realtime's denoised pictures (RealtimeDenoiser), made once one is asked for. The shared picture is the session's
-    // and the denoiser's both, one at a time; the denoiser's goes out only while its frame is the one rendering.
-    std::mutex sharedMutex;
     std::string liveId;
     const bool realtimeDenoise = envOn("XPU2_SESSION_RT_DENOISE", true);
     // Rhea's completion fade in Denoised Beauty (rhea/DESIGN.md 29): the last denoised picture published, where a fade
@@ -2576,6 +2699,15 @@ int session(const Args& args, const fs::path& directory) {
     double rheaFrameCost = 0;
     // Rhea's phase one shown ahead of the GPU this frame (rheaEarlyPhaseOne): rheaFrames does not make it again.
     bool rheaEarlyDone = false;
+    // Phase one's picture faded in over the one on screen (FadingShared, rhea/DESIGN.md 33; the user, 2026-11-26: "have
+    // the light cache in rhea fade in as well"): this command's phase one replaces another picture rather than following
+    // the camera (the store taken back from the radiance cache, realtime turned on, an edit or its undo), not a camera
+    // move nor a drag's step. XPU2_SESSION_RHEA_CACHE_FADE: its seconds (0.4; 0: shown at once, as before).
+    bool rheaFadeIn = false;
+    const double rheaCacheFade = [] {
+        const char* v = std::getenv("XPU2_SESSION_RHEA_CACHE_FADE");
+        return v ? std::clamp(std::atof(v), 0.0, 10.0) : 0.4;
+    }();
     // The GPU's launches out (a stopped frame's, abandoned: RenderOptions::abandonOnCancel) finished, every card's.
     auto drainGpu = [&] {
         if (!gpu) return;
@@ -2721,6 +2853,11 @@ int session(const Args& args, const fs::path& directory) {
                     rgb[i * 3 + c] = std::isfinite(v) ? v : 0.0f;
                 }
             std::lock_guard<std::mutex> lock(sharedMutex);
+            if (rheaFadeIn) {  // from the picture on screen, at phase one's first picture
+                rheaFadeIn = false;
+                if (shared.begin(key, w, h, rheaCacheFade, sharedMutex))
+                    std::printf("MoonRay XPU2: Rhea: phase one fades in over the picture on screen (%.2f s)\n", rheaCacheFade);
+            }
             shared.publish(id, key, w, h, [&](size_t i, float* px) {
                 px[0] = rgb[i * 3];
                 px[1] = rgb[i * 3 + 1];
@@ -3095,6 +3232,15 @@ int session(const Args& args, const fs::path& directory) {
                 // Rhea's phase one for a camera move ahead of the GPU (rheaEarlyPhaseOne), then the stopped frame's GPU
                 // launches finished before the GPU takes the new camera (XPU2_SESSION_RHEA_EARLY=0: phase one after them).
                 rheaEarlyDone = false;
+                // The screen's fade in (FadingShared): begun by this command's phase one where it replaces another picture
+                // (an edit, realtime turned on, the store taken back); a camera move or a drag's step ends one under way.
+                rheaFadeIn = false;
+                if (rheaDragStep || (fresh && (scene.cameraFrom || scene.cameraEdit))) {
+                    std::lock_guard<std::mutex> lock(sharedMutex);
+                    shared.end();
+                } else if (fresh && rheaWanted && rheaCacheFade > 0) {
+                    rheaFadeIn = true;
+                }
                 if (rheaWanted && scene.plan && scene.plan->realtime && envOn("XPU2_SESSION_RHEA_EARLY", true) &&
                     !envOn("XPU2_SESSION_RHEA_PROBES", false) && rheaView.movedSince(*scene.plan) && rhea::unsupported(*scene.plan).empty())
                     rheaEarlyDone = rheaEarlyPhaseOne();

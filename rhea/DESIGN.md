@@ -1222,3 +1222,21 @@ during drags, XPU2 after the release), then "we need to make this drag-fast now 
   bilinear then two box blurs each way at the picture's size (5 -> 3.5 ms on the car); the adaptive pass's interpolation in
   parallel, each part owning its inside and its top and left sides. The car's drag: the first picture 11 ms after the step,
   phase one 27.5 to 30 ms by its own clock (33.5 ms the session's median), the pictures as build 72's (1e-5).
+
+## 33. The screen's fade in (2026-11-26)
+
+The user: "have the light cache in rhea fade in as well". Phase one drawn from the radiance cache (`rhea_cache.h`: the
+store taken back when realtime is turned on again, or an edit undone) snapped onto the screen, over the RT-off picture or
+the edit's. Now a command that is not a camera move (an edit, realtime turned on, the store taken back) and whose phase
+one is drawn ahead of the GPU cross-fades from the picture on screen to its pictures (`FadingShared` in
+`xpu2_session.cc`): every picture published during the fade is the session's own blended with the picture last handed
+over (read back from the shared mapping, same view and size) by smoothstep(elapsed / seconds), and a ticker publishes the
+last one again about 60 times a second as time goes, then as it is: the screen ends on the session's picture bit for
+bit. Host code only. The session's own state (the warp, `shownCopy`, the denoised picture kept) stays its pictures as
+made, so XPU2's completion fade (section 29) runs under it unchanged. A camera move or a drag's step ends a fade under
+way (drags as before); a different view or size ends it too.
+
+- `XPU2_SESSION_RHEA_CACHE_FADE`: the fade's seconds (0.4; 0 off, pictures shown at once as before).
+- The test scene, RT on, RT off, RT on again (527,524 cells taken back): the fade begun at phase one's first picture,
+  13 pictures handed over in 0.44 s (2 of the session's blended, 10 again by the ticker, the last as it is), the blend's
+  fitted weight 0, 0.02, 0.10, 0.17, 0.25, 0.38, 0.51, 0.63, 0.75, 0.83, 0.96, 1. Drag steps: no fade.
