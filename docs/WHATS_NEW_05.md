@@ -2,6 +2,20 @@
 
 0.5 is a **pre-production release**: the plugin is no longer experimental, and it brings a new GPU renderer, MoonRay XPU2.
 
+## New in 0.5.6.2 (coming)
+
+- **Glitter in MoonLightIPR**: MoonRay's metallic flakes in the GPU preview, each flake where MoonRay puts it: sparse sparkles, dense paint and their far-off sheen, flake colours with their variation, and the flakes under a clear coat. On a mesh that bends, the flakes stay on the same spots of the surface, as in MoonRay. Keep Metallic Flakes keeps them sparkling through MoonLightIPR's denoiser too.
+
+  ![Glitter paint on two balls and a gold cube: MoonRay (left) and MoonLightIPR (right), the same flakes in the same places](images/moonlightipr-glitter.jpg)
+
+  ![A close look at the blue paint: MoonRay (left) and MoonLightIPR (right), flake for flake](images/moonlightipr-glitter-closeup.jpg)
+
+  ![The same paint on bent balls: MoonRay (left) and MoonLightIPR (right), the flakes staying where they were on the surface](images/moonlightipr-glitter-deformed.jpg)
+
+- **Fine or dense metallic glitter renders in MoonRay's Vector and XPU modes**: paint with many glitter flakes to a pixel (a car seen from afar) crashed them; it now renders as in Scalar. Switch: MoonRay Source Overrides, Dense glitter in Vector and XPU (on).
+- **XPU2 keeps scenes with Limit Geometry Resolution on** (Render Settings, Global Switches), where it handed them to MoonRay XPU.
+- **A shadow catcher stays one when its material is edited in realtime**: changing its colour with RT on made it show as a plain grey surface.
+
 ## New in 0.5.6.1
 
 0.5.6.1 brings the **Backplate**, an HDRI and the photo shot with it in one item, and **shadow catchers** in every engine. XPU2's GPU programs changed: after installing, **Compile XPU2 Shaders once more**.
