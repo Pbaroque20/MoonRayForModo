@@ -78,6 +78,8 @@ KEYS = {
     'backplate': (True, bool),
     # Glass in alpha: the sky seen through glass alone is see-through in the alpha (native.glass_alpha).
     'glass_alpha': (True, bool),
+    # Dense glitter flakes in Vector and XPU without a stack overflow (native.flake_caches).
+    'flake_caches': (True, bool),
     # MoonRay given an ocean's shorter waves as a normal map (native.ocean_split).
     'ocean_split': (True, bool),
     # VDB fire coloured by its temperature (native.vdb_blackbody).

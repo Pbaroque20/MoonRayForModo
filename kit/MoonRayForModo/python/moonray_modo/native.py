@@ -65,6 +65,8 @@ def environment(directory):
     env['MOONRAY_MODO_SHADOW_CATCHER'] = '1' if backplate() else '0'
     # Glass in alpha: the sky seen through glass alone is see-through (glass_alpha).
     env['MOONRAY_MODO_GLASS_ALPHA'] = '1' if glass_alpha() else '0'
+    # Dense glitter flakes in Vector and XPU renders without a stack overflow (flake_caches).
+    env['MOONRAY_MODO_FLAKE_CACHES'] = '1' if flake_caches() else '0'
     # A tilt-shift camera's lens tilted, its plane of focus leaning (tilt_shift).
     env['MOONRAY_MODO_TILT_SHIFT'] = '1' if tilt_shift() else '0'
     # PATH entries that are not folders passed over as MoonRay looks for itself (dso_search).
@@ -497,7 +499,7 @@ def engine_name(mode):
 
 def source_switches():
     """The MoonRay Source Overrides MoonRay reads as it starts: a session started with others is started again."""
-    return (toon_terminator(), toon_albedo(), crypto_volumes(), fog_alpha(), crypto_once(), camera_light_lpe(), mirrored_meshes(), scalar_emission(), tilt_shift(), dso_search(), backplate(), glass_alpha()) + tuple(
+    return (toon_terminator(), toon_albedo(), crypto_volumes(), fog_alpha(), crypto_once(), camera_light_lpe(), mirrored_meshes(), scalar_emission(), tilt_shift(), dso_search(), backplate(), glass_alpha(), flake_caches()) + tuple(
         globals()[key]() for key in ('usd_specular', 'opaque_alpha', 'transmission_roughness', 'auto_xpu')) + (xpu2(), xpu2_chain(), __import__('moonray_modo.devices', fromlist=['state']).state(),
         # XPU2 started again with another Rhea radiance cache (Preferences), which it reads as it starts.
         xpu2_rhea_cache())
@@ -538,6 +540,14 @@ def glass_alpha():
     """Whether what the camera sees through glass alone to the sky is see-through in the alpha (tools/port_glass_alpha.py):
     a car's windows against the sky. MoonRay counts glass as opaque as paint; off, it does so again."""
     return _switch('glass_alpha', 'MOONRAY_MODO_GLASS_ALPHA')
+
+
+def flake_caches():
+    """Whether MoonRay's glitter, where many flakes fall in a pixel (fine or dense flakes, metallic paint from afar),
+    keeps its flake caches off the render threads' stack in Vector and XPU modes (tools/port_flake_caches.py). They made
+    a 2.8 MB stack frame, more than a Windows thread's 2 MB, and the render ended with a stack overflow; off, they are on
+    the stack again."""
+    return _switch('flake_caches', 'MOONRAY_MODO_FLAKE_CACHES')
 
 
 def shadow_catcher_runtime(directory=None):

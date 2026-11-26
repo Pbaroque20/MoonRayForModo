@@ -5157,6 +5157,61 @@ index 9af3ab0..5d0118d 100644
          }
          mIspc.mApplyGamma = applyGamma;
          mIspc.mIs8bit = mIs8bit;
+diff --git a/lib/rendering/shading/bsdf/Bsdf.cc b/lib/rendering/shading/bsdf/Bsdf.cc
+index cb843de..b50888b 100644
+--- a/lib/rendering/shading/bsdf/Bsdf.cc
++++ b/lib/rendering/shading/bsdf/Bsdf.cc
+@@ -9,6 +9,50 @@
+ #include "Bsdf.h"
+ #include <moonray/rendering/shading/bssrdf/Bssrdf.h>
+ #include "BsdfSlice.h"
++#include "ModoFlakeCaches.h"
++
++#include <cstdint>
++#include <cstdlib>
++#ifdef _WIN32
++#include <malloc.h>
++#endif
++
++// Modo: the stochastic flake lobe's two reflection caches, the calling thread's own, on the heap: as varying locals
++// they made a frame (about 2.8 MB) bigger than a Windows thread's stack. Allocated the first time (64-byte aligned),
++// grown if more is asked, kept for the thread's life; 0 with MOONRAY_MODO_FLAKE_CACHES=0, or where none could be had
++// (tools/port_flake_caches.py).
++extern "C" intptr_t
++CPP_modoFlakeCaches(int64_t bytes)
++{
++    struct Held {
++        void *block = nullptr;
++        int64_t size = 0;
++        static void release(void *block)
++        {
++#ifdef _WIN32
++            _aligned_free(block);
++#else
++            std::free(block);
++#endif
++        }
++        ~Held() { release(block); }
++    };
++    if (!moonray::shading::modoFlakeCaches() || bytes <= 0) {
++        return 0;
++    }
++    thread_local Held held;
++    if (held.size < bytes) {
++        Held::release(held.block);
++        const size_t size = (static_cast<size_t>(bytes) + 63) & ~static_cast<size_t>(63);
++#ifdef _WIN32
++        held.block = _aligned_malloc(size, 64);
++#else
++        held.block = std::aligned_alloc(64, size);
++#endif
++        held.size = held.block ? bytes : 0;
++    }
++    return reinterpret_cast<intptr_t>(held.block);
++}
+ 
+ namespace moonray {
+ namespace shading {
 diff --git a/lib/rendering/shading/bsdf/npr/BsdfToon.cc b/lib/rendering/shading/bsdf/npr/BsdfToon.cc
 index e5a2d65..b7447b8 100644
 --- a/lib/rendering/shading/bsdf/npr/BsdfToon.cc
@@ -5574,6 +5629,144 @@ index e9ae811..21829a5 100644
      uIntersection.mIdLo = extract(vState.mIdLo, lane);
      uIntersection.mIdHi = extract(vState.mIdHi, lane);
  
+diff --git a/lib/rendering/shading/ispc/bsdf/BsdfStochasticFlakes.ispc b/lib/rendering/shading/ispc/bsdf/BsdfStochasticFlakes.ispc
+index a67dd34..d4693fb 100644
+--- a/lib/rendering/shading/ispc/bsdf/BsdfStochasticFlakes.ispc
++++ b/lib/rendering/shading/ispc/bsdf/BsdfStochasticFlakes.ispc
+@@ -11,6 +11,11 @@
+ 
+ #define UNIFORM_SAMPLING 0
+ 
++// Modo: a block of the calling thread's own, on the heap, of at least the bytes asked for (64-byte aligned, kept for
++// the thread's life), or 0 with MOONRAY_MODO_FLAKE_CACHES=0 (bsdf/Bsdf.cc, tools/port_flake_caches.py).
++extern "C" uniform intptr_t
++CPP_modoFlakeCaches(uniform int64 bytes);
++
+ struct FlakeCaches {
+     Vec3f reflections[StochasticFlakes_sMaxFlakes];
+     float weights[StochasticFlakes_sMaxFlakes];
+@@ -286,11 +291,14 @@ StochasticFlakesBsdfLobe_selectIndexFromCdf(const varying float * uniform cdfs,
+ 
+ /// Implementation of the StochasticBsdfLobe API
+ 
+-varying Color
+-StochasticFlakesBsdfLobe_eval(const varying BsdfLobe * uniform lobe,
+-                              const varying BsdfSlice &slice,
+-                              const Vec3f &wi,
+-                              varying float * uniform pdf)
++// Modo: eval with its two reflection caches given (tools/port_flake_caches.py).
++static varying Color
++StochasticFlakesBsdfLobe_evalWith(const varying BsdfLobe * uniform lobe,
++                                  const varying BsdfSlice &slice,
++                                  const Vec3f &wi,
++                                  varying float * uniform pdf,
++                                  varying FlakeCaches &evalCachesWo,
++                                  varying FlakeCaches &evalCachesWi)
+ {
+     varying StochasticFlakesBsdfLobe * uniform sfLobe =
+             (varying StochasticFlakesBsdfLobe * uniform) lobe;
+@@ -298,7 +306,6 @@ StochasticFlakesBsdfLobe_eval(const varying BsdfLobe * uniform lobe,
+     // Using an additional reflection cache computed using Wi and
+     // averaging the D term in the bsdf is a cheat we use to make
+     // this bsdf reciprocal.
+-    varying FlakeCaches evalCachesWo, evalCachesWi;
+     varying bool validCache = StochasticFlakesBsdfLobe_computeReflectionCache(sfLobe, slice.mWo, evalCachesWo, false);
+     validCache &= StochasticFlakesBsdfLobe_computeReflectionCache(sfLobe, wi, evalCachesWi, false);
+ 
+@@ -310,16 +317,45 @@ StochasticFlakesBsdfLobe_eval(const varying BsdfLobe * uniform lobe,
+     return StochasticFlakesBsdfLobe_computeBrdf(sfLobe, slice, wi, evalCachesWo, evalCachesWi, pdf);
+ }
+ 
++// Modo: eval, its caches on the stack as MoonRay has them: a frame of its own (tools/port_flake_caches.py).
++static noinline varying Color
++StochasticFlakesBsdfLobe_evalOnStack(const varying BsdfLobe * uniform lobe,
++                                     const varying BsdfSlice &slice,
++                                     const Vec3f &wi,
++                                     varying float * uniform pdf)
++{
++    varying FlakeCaches evalCachesWo, evalCachesWi;
++    return StochasticFlakesBsdfLobe_evalWith(lobe, slice, wi, pdf, evalCachesWo, evalCachesWi);
++}
++
+ varying Color
+-StochasticFlakesBsdfLobe_sample(const varying BsdfLobe * uniform lobe,
+-                                const varying BsdfSlice &slice,
+-                                varying float r1, varying float r2,
+-                                varying Vec3f &wi, varying float &pdf)
++StochasticFlakesBsdfLobe_eval(const varying BsdfLobe * uniform lobe,
++                              const varying BsdfSlice &slice,
++                              const Vec3f &wi,
++                              varying float * uniform pdf)
++{
++    // Modo: the two caches (each one copy per lane, together more than a Windows thread's 2 MB stack) on the heap
++    // (tools/port_flake_caches.py).
++    const uniform intptr_t held = CPP_modoFlakeCaches(2 * sizeof(varying FlakeCaches));
++    if (held != 0) {
++        varying FlakeCaches * uniform caches = (varying FlakeCaches * uniform)held;
++        return StochasticFlakesBsdfLobe_evalWith(lobe, slice, wi, pdf, caches[0], caches[1]);
++    }
++    return StochasticFlakesBsdfLobe_evalOnStack(lobe, slice, wi, pdf);
++}
++
++// Modo: sample with its two reflection caches given (tools/port_flake_caches.py).
++static varying Color
++StochasticFlakesBsdfLobe_sampleWith(const varying BsdfLobe * uniform lobe,
++                                    const varying BsdfSlice &slice,
++                                    varying float r1, varying float r2,
++                                    varying Vec3f &wi, varying float &pdf,
++                                    varying FlakeCaches &sampleCachesWo,
++                                    varying FlakeCaches &sampleCachesWi)
+ {
+     varying StochasticFlakesBsdfLobe * uniform sfLobe =
+             (varying StochasticFlakesBsdfLobe * uniform) lobe;
+ 
+-    varying FlakeCaches sampleCachesWo;
+     // generate reflection cache and weights with weighted CDF
+     bool validCache = StochasticFlakesBsdfLobe_computeReflectionCache(sfLobe, slice.mWo, sampleCachesWo, true);
+ 
+@@ -353,8 +389,7 @@ StochasticFlakesBsdfLobe_sample(const varying BsdfLobe * uniform lobe,
+ #endif
+ 
+     // Same as in eval() - we use an additional reflection cache created
+-    // using Wi to enforce reciprocity in bsdf computation
+-    varying FlakeCaches sampleCachesWi;
++    // using Wi to enforce reciprocity in bsdf computation (Modo: sampleCachesWi given, tools/port_flake_caches.py)
+     validCache = StochasticFlakesBsdfLobe_computeReflectionCache(sfLobe, wi, sampleCachesWi, false);
+ 
+     if (!validCache) {
+@@ -365,6 +400,32 @@ StochasticFlakesBsdfLobe_sample(const varying BsdfLobe * uniform lobe,
+     return StochasticFlakesBsdfLobe_computeBrdf(sfLobe, slice, wi, sampleCachesWo, sampleCachesWi, &pdf);
+ }
+ 
++// Modo: sample, its caches on the stack as MoonRay has them: a frame of its own (tools/port_flake_caches.py).
++static noinline varying Color
++StochasticFlakesBsdfLobe_sampleOnStack(const varying BsdfLobe * uniform lobe,
++                                       const varying BsdfSlice &slice,
++                                       varying float r1, varying float r2,
++                                       varying Vec3f &wi, varying float &pdf)
++{
++    varying FlakeCaches sampleCachesWo, sampleCachesWi;
++    return StochasticFlakesBsdfLobe_sampleWith(lobe, slice, r1, r2, wi, pdf, sampleCachesWo, sampleCachesWi);
++}
++
++varying Color
++StochasticFlakesBsdfLobe_sample(const varying BsdfLobe * uniform lobe,
++                                const varying BsdfSlice &slice,
++                                varying float r1, varying float r2,
++                                varying Vec3f &wi, varying float &pdf)
++{
++    // Modo: the two caches on the heap, as eval's (tools/port_flake_caches.py).
++    const uniform intptr_t held = CPP_modoFlakeCaches(2 * sizeof(varying FlakeCaches));
++    if (held != 0) {
++        varying FlakeCaches * uniform caches = (varying FlakeCaches * uniform)held;
++        return StochasticFlakesBsdfLobe_sampleWith(lobe, slice, r1, r2, wi, pdf, caches[0], caches[1]);
++    }
++    return StochasticFlakesBsdfLobe_sampleOnStack(lobe, slice, r1, r2, wi, pdf);
++}
++
+ varying Color
+ StochasticFlakesBsdfLobe_albedo(const varying BsdfLobe * uniform lobe,
+                                 const varying BsdfSlice &slice)
 diff --git a/lib/rendering/shading/ispc/bsdf/npr/BsdfToon.ispc b/lib/rendering/shading/ispc/bsdf/npr/BsdfToon.ispc
 index a4a1a3f..00b68bd 100644
 --- a/lib/rendering/shading/ispc/bsdf/npr/BsdfToon.ispc
@@ -6762,6 +6955,31 @@ new file mode 100644
 +{
 +    static const bool on = [] {
 +        const char *value = std::getenv("MOONRAY_MODO_TOON_ALBEDO");
++        return !value || value[0] != '0';
++    }();
++    return on;
++}
++
++} // namespace shading
++} // namespace moonray
+diff --git a/lib/rendering/shading/bsdf/ModoFlakeCaches.h b/lib/rendering/shading/bsdf/ModoFlakeCaches.h
+new file mode 100644
+--- /dev/null
++++ b/lib/rendering/shading/bsdf/ModoFlakeCaches.h
+@@ -0,0 +1,20 @@
++// Modo: the stochastic flake lobe's reflection caches off the stack (tools/port_flake_caches.py).
++#pragma once
++
++#include <cstdlib>
++
++namespace moonray {
++namespace shading {
++
++/// True unless MoonRay was started with MOONRAY_MODO_FLAKE_CACHES=0. Read once.
++inline bool modoFlakeCaches()
++{
++    static const bool on = [] {
++        const char *value = std::getenv("MOONRAY_MODO_FLAKE_CACHES");
 +        return !value || value[0] != '0';
 +    }();
 +    return on;

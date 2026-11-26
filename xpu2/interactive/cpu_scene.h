@@ -3179,6 +3179,10 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
   "volume_opacity_threshold","volume_overlap_mode","volume_attenuation_factor","volume_contribution_factor","volume_phase_attenuation_factor",
   // What changes only MoonRay's scheduling or its texture cache's size, and motion blur's steps and frame rate.
   "progressive_tile_order","checkpoint_tile_order","batch_tile_order","texture_cache_size","fps","motion_steps","max_geometry_resolution",
+  // Its switch too: MoonRay's own geometry reads neither (SceneVariables: "Geometry procedurals should respect this
+  // limit"; RenderContext only reloads the geometry when they change), and the kit applies the cap itself to the meshes'
+  // resolutions it writes (rdla.py, resolution_cap), so XPU2 is handed the same capped meshes as MoonRay is.
+  "enable_max_geometry_resolution",
   // The windows (rezed: the resolution divisor), the pixels rendered and the texture blur (the path tracer's camera).
   "res","aperture_window","region_window","sub_viewport","debug_pixel","texture_blur",
   // What only deep outputs read (aov_plan.h reads them for deep output).

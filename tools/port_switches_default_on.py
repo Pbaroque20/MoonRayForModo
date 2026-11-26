@@ -21,7 +21,7 @@ PATCHES = ROOT / 'patches/native-windows'
 
 SWITCHES = ('TOON_TERMINATOR', 'TOON_ALBEDO', 'DENOISE_CLEAN_GUIDES', 'CRYPTO_VOLUMES', 'CRYPTO_ONCE', 'FOG_ALPHA',
             'CAMERA_LIGHT_LPE', 'MIRRORED_MESHES', 'SCALAR_EMISSION', 'DSO_SEARCH', 'USD_SPECULAR', 'OPAQUE_ALPHA',
-            'TRANSMISSION_ROUGHNESS', 'AUTO_XPU', 'TILT_SHIFT', 'SHADOW_CATCHER', 'GLASS_ALPHA')
+            'TRANSMISSION_ROUGHNESS', 'AUTO_XPU', 'TILT_SHIFT', 'SHADOW_CATCHER', 'GLASS_ALPHA', 'FLAKE_CACHES')
 VARIABLE = '(MOONRAY_MODO_(?:%s))' % '|'.join(SWITCHES)
 
 # Where MoonRay reads each switch, and how many times.
@@ -37,6 +37,8 @@ READS = {
     'moonray/lib/rendering/pbr/core/ModoShadowCatcher.h': 1,
     # Glass in alpha (tools/port_glass_alpha.py), likewise.
     'moonray/lib/rendering/pbr/core/ModoGlassAlpha.h': 1,
+    # Dense glitter's flake caches off the stack (tools/port_flake_caches.py), likewise.
+    'moonray/lib/rendering/shading/bsdf/ModoFlakeCaches.h': 1,
     # The kit's tilt-shift camera (tools/port_tilt_shift.py), written with the new reading from the start.
     'moonray/lib/rendering/pbr/camera/TiltShiftCamera.cc': 1,
     'moonray/lib/rendering/pbr/handlers/RayHandlers.cc': 1,
