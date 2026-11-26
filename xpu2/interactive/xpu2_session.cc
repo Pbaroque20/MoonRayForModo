@@ -28,6 +28,7 @@
 #undef far
 #include <OpenImageDenoise/oidn.h>  // types only: the library is loaded at run time (CpuDenoiser)
 #include "async_render.h"
+#include "visibility_first.h"
 #include "outline_blocks.h"
 #include "../../native-port/modo_protocol_line.h"
 #include "../../native-port/modo_scene_memory.h"
@@ -1231,11 +1232,18 @@ struct Scene {
     // materials, textures and lights taken over (its coarse meshes never are), and its CPU scene. On a thread of its own,
     // from the canonical replica (replica, taken on this thread, the canonical copy's own), while the coarse plan renders
     // on this one, where the GPU lane's context is.
+    // fullDetail (visibility_first.h): a coarse plan of its own first, those geometries at full detail and the rest the
+    // coarse plan's stand-ins, the full plan after it from that one.
     static std::pair<cpu::PlanView, std::unique_ptr<async::CpuScene>> refine(const rdl::SceneContext& replica, CanonicalView frame,
-                                                                             cpu::PlanView coarsePlan) {
+                                                                             cpu::PlanView coarsePlan,
+                                                                             std::shared_ptr<const std::set<std::string>> fullDetail = nullptr) {
         cpu::Limits limits;
         limits.bytes = geometryBudget();
         limits.gpuBytes = gpuGeometryBudget();
+        if (fullDetail) {
+            limits.coarse = true;
+            limits.fullDetail = std::move(fullDetail);
+        }
         auto full = cpu::prepare(replica, frame, coarsePlan, limits, assetRoot(), cpu::Domain::SurfaceTextures, true, true);
         return {full, std::make_unique<async::CpuScene>(full)};
     }
@@ -2790,11 +2798,49 @@ int session(const Args& args, const fs::path& directory) {
         std::pair<cpu::PlanView, std::unique_ptr<async::CpuScene>> full;
         std::exception_ptr failed;
         Clock::time_point began = Clock::now();
+        // Visibility first (visibility_first.h): the geometries the camera sees (null: the full plan straight away), a
+        // plan with them at full detail and the rest stand-ins (stage, taken by takeStage while the full plan is made),
+        // and the stand-ins a moved camera came to see (promote, at full detail in the next such plan). Under lock.
+        std::mutex lock;
+        std::shared_ptr<const std::set<std::string>> fullDetail;
+        std::set<std::string> promote;
+        std::pair<cpu::PlanView, std::unique_ptr<async::CpuScene>> stage;
+        std::atomic<bool> stageReady{false}, fullBegun{false};
+        unsigned stages = 0;
+        size_t stageStandIns = 0;
+        double stageSeconds = 0;
         ~RefineJob() {
             if (thread.joinable()) thread.join();
         }
     };
     std::unique_ptr<RefineJob> refining;
+    // A visible-first plan taken in (still the coarse pass's: its samples pictures alone), the view as it now is where the
+    // camera moved since the coarse plan's frame (the full plan takes that move too: coarseCamera stays). The renderer
+    // holding the plan before's CPU scene is gone by now.
+    auto takeStage = [&]() -> bool {
+        std::pair<cpu::PlanView, std::unique_ptr<async::CpuScene>> st;
+        {
+            std::lock_guard<std::mutex> hold(refining->lock);
+            st = std::move(refining->stage);
+            refining->stageReady = false;
+        }
+        if (!st.first || !st.second) return false;
+        if (scene.coarseCamera) {
+            auto moved = std::make_shared<cpu::Plan>(*st.first);
+            std::string refused;
+            if (cpu::updateCamera(*moved, *scene.source, &refused)) {
+                moved->aovs = scene.plan->aovs;
+                st.second = std::make_unique<async::CpuScene>(moved, std::move(*st.second));
+                st.first = moved;
+            } else {
+                std::printf("MoonRay XPU2: the visible-first plan cannot take the camera moved meanwhile: %s\n", refused.c_str());
+            }
+        }
+        scene.plan = st.first;
+        scene.cpuScene = std::move(st.second);
+        scene.prepareDisplayFilters();
+        return true;
+    };
     // The full plan taken in, the view as it now is where the camera moved since its frame. The renderer holding the coarse
     // CPU scene is gone by now.
     auto takeRefined = [&] {
@@ -2824,6 +2870,70 @@ int session(const Args& args, const fs::path& directory) {
         scene.keepBase(scene.plan);
         scene.cpuScene = std::move(full.second);
         scene.prepareDisplayFilters();
+    };
+    // The full plan begun behind a coarse first pass (RefineJob), as soon as the coarse plan is on screen: its first
+    // frame, or a drag's step that holds XPU2 back (the drag used to keep it waiting till the release).
+    auto startRefining = [&] {
+        refining = std::make_unique<RefineJob>();
+        // Visibility first: what the camera sees on the coarse geometry, at full detail before the rest.
+        if (visibility::on() && scene.cpuScene && scene.cpuScene->plan) {
+            const visibility::Seen seen = visibility::seen(*scene.cpuScene->plan, *scene.cpuScene, &scene.plan->camera);
+            std::printf("MoonRay XPU2: visibility first: %zu of %zu stand-in geometries in view (%zu rays, %zu hits, %.1f ms)%s\n",
+                        seen.standInsSeen.size(), seen.standIns.size(), seen.rays, seen.hits, seen.seconds * 1e3,
+                        seen.worth() ? "; those at full detail first" : "; the full plan straight away");
+            std::fflush(stdout);
+            if (seen.worth()) refining->fullDetail = seen.geometries;
+        }
+        const rdl::SceneContext& replica = scene.canonical->replica();
+        refining->thread = std::thread([job = refining.get(), &replica, frame = scene.frameHeld, coarsePlan = scene.plan] {
+            try {
+                cpu::PlanView from = coarsePlan;
+                std::shared_ptr<const std::set<std::string>> detail;
+                {
+                    std::lock_guard<std::mutex> hold(job->lock);
+                    detail = job->fullDetail;
+                }
+                // The visible geometry's plans (one, and one more for each camera move that came to see more).
+                while (detail) {
+                    auto made = Scene::refine(replica, frame, from, detail);
+                    from = made.first;
+                    std::shared_ptr<std::set<std::string>> more;
+                    {
+                        std::lock_guard<std::mutex> hold(job->lock);
+                        job->stageStandIns = made.first->coarsened;
+                        job->stageSeconds = std::chrono::duration<double>(Clock::now() - job->began).count();
+                        ++job->stages;
+                        job->stage = std::move(made);
+                        job->stageReady = true;
+                        for (const auto& g : job->promote)
+                            if (!detail->count(g)) {
+                                if (!more) more = std::make_shared<std::set<std::string>>(*detail);
+                                more->insert(g);
+                            }
+                        job->promote.clear();
+                    }
+                    if (!job->stageStandIns) break;  // nothing left a stand-in: the full plan takes it all over
+                    detail = more;
+                }
+                job->fullBegun = true;
+                job->full = Scene::refine(replica, frame, from);
+            } catch (...) {
+                job->failed = std::current_exception();
+            }
+            job->ready = true;
+        });
+    };
+    // The camera moved since the visible-first plans were begun: the stand-ins it now sees go before the rest (promoted).
+    auto promoteSeen = [&] {
+        if (!refining || !refining->fullDetail || refining->fullBegun.load() || !scene.coarseCamera || !scene.cpuScene || !scene.cpuScene->plan) return;
+        // The camera moved: what it now sees of the stand-ins goes before the rest (promoted).
+        const visibility::Seen seen = visibility::seen(*scene.cpuScene->plan, *scene.cpuScene, &scene.plan->camera);
+        std::lock_guard<std::mutex> hold(refining->lock);
+        size_t added = 0;
+        for (const auto& g : seen.standInsSeen)
+            if (!refining->fullDetail->count(g) && refining->promote.insert(g).second) ++added;
+        if (added)
+            std::printf("MoonRay XPU2: visibility first: the moved camera sees %zu more stand-in geometries, next at full detail\n", added);
     };
     scene.beforeFullPreparation = [&] {
         if (refining) takeRefined();
@@ -3010,6 +3120,11 @@ int session(const Args& args, const fs::path& directory) {
                 if (rheaEarlyDone && rheaDragStep && rheaView.objectDrawn && rheaView.objectWarp.unknown > rheaFillUnknown) rheaFilling = true;
                 if (rheaEarlyDone) rheaStatus(rheaKnown, rheaFilling);
                 if (rheaEarlyDone && rheaDragStep && rheaDragAlone && !rheaFilling) {
+                    // The full geometry goes on being made behind the drag (visibility first: what the step sees first).
+                    if (scene.coarse) {
+                        if (!refining) startRefining();
+                        else promoteSeen();
+                    }
                     if (gpu && gpuUsable && gpuPlan != scene.plan && scene.cameraFrom && gpuPlan == scene.cameraFrom) {
                         gpu->updateCamera(scene.plan);
                         gpuPlan = scene.plan;
@@ -3401,44 +3516,68 @@ int session(const Args& args, const fs::path& directory) {
                     double reached = 0;
                     async::Watch first = watch;
                     const auto shown = watch.preview;
-                    first.preview = [&reached, &heldPicture, shown](const std::vector<float>& rgb, U32 w, U32 h, double fraction) {
+                    // A visible-first plan's pictures (visibility_first.h) are held back as the full frame's are, till they are as
+                    // far on as the pass before theirs (hideBelow, which shown reads too).
+                    first.preview = [&reached, &heldPicture, &hideBelow, shown](const std::vector<float>& rgb, U32 w, U32 h, double fraction) {
+                        if (fraction < hideBelow) return;
                         reached = std::max(reached, fraction);
                         heldPicture = rgb;
                         shown(rgb, w, h, fraction);
                     };
-                    if (!refining) {
-                        refining = std::make_unique<RefineJob>();
-                        const rdl::SceneContext& replica = scene.canonical->replica();
-                        refining->thread = std::thread([job = refining.get(), &replica, frame = scene.frameHeld, coarsePlan = scene.plan] {
-                            try {
-                                job->full = Scene::refine(replica, frame, coarsePlan);
-                            } catch (...) {
-                                job->failed = std::current_exception();
-                            }
-                            job->ready = true;
-                        });
-                    }
-                    first.stop = [&] { return refining->ready.load() || waiting(); };
+                    // The renderer made again for the plan now held (a visible-first plan's, or the full plan's): the old one,
+                    // holding the CPU scene let go, first, the outlines' watch on it before it.
+                    auto renderAnew = [&] {
+                        if (gpu) {
+                            const std::string why = async::GpuLane::cpuOnly(scene.plan);
+                            gpuUsable = why.empty();
+                            if (gpuUsable) gpu->prepare(scene.plan);
+                            gpuPlan = scene.plan;
+                        }
+                        renderer = std::make_unique<async::Renderer>(scene.plan, *scene.cpuScene, gpuUsable ? gpu.get() : nullptr);
+                        renderer->deviceRatio(deviceRatio);
+                        outlines.watch(renderer.get(), id, width, height);
+                        options.mode = gpu && gpuUsable ? mode : 0;
+                        loaded = true;
+                    };
+                    if (!refining) startRefining();
+                    else promoteSeen();
+                    first.stop = [&] { return refining->ready.load() || refining->stageReady.load() || waiting(); };
                     first.drain = watch.drain;
                     first.checkpoint = nullptr;
                     first.checkpointSeconds = 0;
                     async::RenderOptions firstOptions = options;
                     firstOptions.watch = &first;
+                    bool stopped = false;
                     async::RenderResult coarse;
-                    try {
-                        coarse = renderer->render(firstOptions);
-                    } catch (const std::exception& e) {
-                        // The coarse pass is only pictures: the full frame follows whatever became of it.
-                        std::printf("MoonRay XPU2: coarse first pass stopped: %s\n", e.what());
-                        coarse = {};
-                    }
-                    // The coarse frame done before the full geometry: its last picture stays meanwhile, unless an edit comes
-                    // or the preview is stopped.
-                    const bool whole = !coarse.rgba.empty() && !coarse.failed && !coarse.cancelled;
-                    bool stopped = whole && coarse.drained;
-                    while (!stopped && !refining->ready.load() && !waiting()) {
-                        if (whole && watch.drain && watch.drain()) stopped = true;
-                        else std::this_thread::sleep_for(std::chrono::milliseconds(5));
+                    for (;;) {
+                        try {
+                            coarse = renderer->render(firstOptions);
+                        } catch (const std::exception& e) {
+                            // The coarse pass is only pictures: the full frame follows whatever became of it.
+                            std::printf("MoonRay XPU2: coarse first pass stopped: %s\n", e.what());
+                            coarse = {};
+                        }
+                        // The coarse frame done before the full geometry: its last picture stays meanwhile, unless an edit comes
+                        // or the preview is stopped.
+                        const bool whole = !coarse.rgba.empty() && !coarse.failed && !coarse.cancelled;
+                        stopped = whole && coarse.drained;
+                        while (!stopped && !refining->ready.load() && !refining->stageReady.load() && !waiting()) {
+                            if (whole && watch.drain && watch.drain()) stopped = true;
+                            else std::this_thread::sleep_for(std::chrono::milliseconds(5));
+                        }
+                        // The visible geometry at full detail (visibility first) before the full plan: rendered as the coarse pass
+                        // is, its pictures from where that one came to.
+                        if (stopped || waiting() || refining->ready.load() || !refining->stageReady.load()) break;
+                        outlines.watch(nullptr, id, 0, 0);
+                        renderer.reset();
+                        loaded = false;
+                        if (!takeStage()) break;
+                        renderAnew();
+                        hideBelow = std::min(reached, 0.25);
+                        std::printf("MoonRay XPU2: visibility first: the camera's geometry at full detail in %.2f s (%zu stand-ins left), "
+                                    "the coarse pass rendered to %.0f%%\n",
+                                    refining->stageSeconds, refining->stageStandIns, reached * 100.0);
+                        std::fflush(stdout);
                     }
                     if (stopped) {
                         stoppedEarly = true;
@@ -3454,17 +3593,7 @@ int session(const Args& args, const fs::path& directory) {
                         renderer.reset();
                         loaded = false;  // nothing renders till the full plan is on the card: as a load, it may overflow
                         takeRefined();
-                        if (gpu) {
-                            const std::string why = async::GpuLane::cpuOnly(scene.plan);
-                            gpuUsable = why.empty();
-                            if (gpuUsable) gpu->prepare(scene.plan);
-                            gpuPlan = scene.plan;
-                        }
-                        renderer = std::make_unique<async::Renderer>(scene.plan, *scene.cpuScene, gpuUsable ? gpu.get() : nullptr);
-                        renderer->deviceRatio(deviceRatio);
-                        outlines.watch(renderer.get(), id, width, height);
-                        options.mode = gpu && gpuUsable ? mode : 0;
-                        loaded = true;
+                        renderAnew();
                         // The full frame's pictures from where the coarse pass came to, but no later than a quarter of the way: a
                         // coarse frame done before the full geometry was ready would otherwise stand for the whole render.
                         hideBelow = std::min(reached, 0.25);
