@@ -219,6 +219,20 @@ class MarkedCatchers(unittest.TestCase):
         self.assertEqual(car['material'], 'paint')
         self.assertEqual(scene['materials'][floor['material']]['shadow_catcher'], {'strength': 0.5, 'matte': True})
 
+    def test_still_a_matte_after_a_material_edit_in_realtime(self):
+        # Realtime reads the materials again and keeps the meshes (host.snapshot refresh_materials): the kept mesh still
+        # wears the catcher's material, which the new reading's materials must have again. It pointed at none, and the
+        # catcher showed as a grey surface after its colour was edited.
+        first = {'meshes': [self.mesh('floor')], 'materials': {'paint': {}}}
+        with mock.patch('moonray_modo.native.shadow_catcher_runtime', return_value=True):
+            backplate.catchers(first, [])
+            again = {'meshes': [dict(m) for m in first['meshes']], 'materials': {'paint': {'color': [1, 0, 0]}}}
+            backplate.catchers(again, [])
+        floor = again['meshes'][0]
+        self.assertIn(floor['material'], again['materials'])
+        self.assertEqual(again['materials'][floor['material']]['shadow_catcher'], {'strength': 0.5, 'matte': True})
+        self.assertNotIn(backplate.DONE, again)
+
     def test_plain_where_moonray_has_none(self):
         scene = {'meshes': [self.mesh('floor')], 'materials': {'paint': {}}}
         warnings = []
