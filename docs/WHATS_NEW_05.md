@@ -2,7 +2,7 @@
 
 0.5 is a **pre-production release**: the plugin is no longer experimental, and it brings a new GPU renderer, MoonRay XPU2.
 
-## New in 0.5.6.2 (coming)
+## New in 0.5.6.2
 
 - **Glitter in MoonLightIPR**: MoonRay's metallic flakes in the GPU preview, each flake where MoonRay puts it: sparse sparkles, dense paint and their far-off sheen, flake colours with their variation, and the flakes under a clear coat. On a mesh that bends, the flakes stay on the same spots of the surface, as in MoonRay. Keep Metallic Flakes keeps them sparkling through MoonLightIPR's denoiser too.
 

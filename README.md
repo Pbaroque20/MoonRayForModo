@@ -9,9 +9,9 @@ The plugin includes CPU, XPU and XPU2 rendering, a dockable live preview with a 
 
 **Built on MoonRay [2026.29.1](https://github.com/dreamworksanimation/openmoonray/releases/tag/v2026.29.1)** (OpenMoonRay's latest release; MoonRay 18.4), with the plugin's own patches for Windows and the preview.
 
-**Current version: 0.5.6.1 — pre-production release.** 0.5.6.1 brings the **Backplate**, an HDRI and the photo shot with it in one item, with **shadow catchers** in every engine. 0.5.6 brought **XPU2 Rhea**, the realtime part of MoonRay XPU2, which keeps XPU2 smooth in dense scenes, from a biased first picture to its unbiased render. The plugin is no longer experimental. 0.5 brought **MoonRay XPU2**, a new GPU renderer for previews in which the processor and the graphics card work on the same picture at once, now the default; realtime that keeps up with heavy scenes and a Scene cache; Modo's procedural textures worked out through the object, 145 of Modo's Enhance textures among them; Modo's light volumetrics and fog; and MoonLightIPR starting in seconds. Install the new runtime with it.
+**Current version: 0.5.6.2 — pre-production release.** 0.5.6.2 brings **glitter to MoonLightIPR**, each flake where MoonRay puts it, and fixes dense glitter in MoonRay's Vector and XPU modes. 0.5.6.1 brought the **Backplate**, an HDRI and the photo shot with it in one item, with **shadow catchers** in every engine. 0.5.6 brought **XPU2 Rhea**, the realtime part of MoonRay XPU2, which keeps XPU2 smooth in dense scenes, from a biased first picture to its unbiased render. The plugin is no longer experimental. 0.5 brought **MoonRay XPU2**, a new GPU renderer for previews in which the processor and the graphics card work on the same picture at once, now the default; realtime that keeps up with heavy scenes and a Scene cache; Modo's procedural textures worked out through the object, 145 of Modo's Enhance textures among them; Modo's light volumetrics and fog; and MoonLightIPR starting in seconds. Install the new runtime with it.
 
-· [Download 0.5.6.1: the kit, the Windows runtime and the MoonRay content](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.5.6.1)
+· [Download 0.5.6.2: the kit, the Windows runtime and the MoonRay content](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.5.6.2)
 
 · [Installation instructions](docs/INSTALLATION.md) 
 
@@ -63,14 +63,11 @@ Work on the next version goes on in the [MoonLightIPR branch](https://github.com
 | ![The compositor](docs/images/compositor-editor.png) | ![Modern Hall, imported from MoonRay's scene files](docs/images/rdl-modern_hall.jpg) |
 | **The compositor**: the beauty graded, vignetted and sharpened | **An imported MoonRay scene**: its own render (left), after the trip through Modo (right). Modern Hall by NewSee2l035, CC BY |
 
-## In the next release (0.5.6.2)
+## New in 0.5.6.2
 
-- **Glitter in MoonLightIPR**: MoonRay's metallic flakes in the GPU preview, each flake where MoonRay puts it: sparse sparkles, dense paint and their far-off sheen, flake colours with their variation, staying put on deforming meshes. Keep Metallic Flakes keeps them sparkling through its denoiser.
+**Glitter in MoonLightIPR**: MoonRay's metallic flakes in the GPU preview, each flake where MoonRay puts it, staying put on meshes that bend, and kept sparkling by Keep Metallic Flakes. Fine or dense glitter no longer crashes MoonRay's Vector and XPU renders; XPU2 keeps scenes with Limit Geometry Resolution on; a shadow catcher stays one when its material is edited in realtime. Install the new kit and runtime; coming from 0.5.6.1 there is no need to compile XPU2 Shaders again. More, with pictures, in [What's new in 0.5](docs/WHATS_NEW_05.md#new-in-0562).
 
   ![Glitter paint on two balls and a gold cube: MoonRay (left) and MoonLightIPR (right), the same flakes in the same places](docs/images/moonlightipr-glitter.jpg)
-- **Fine or dense metallic glitter renders in MoonRay's Vector and XPU modes**: paint with many glitter flakes to a pixel (DwaBase and DwaMetal flakes, a car seen from afar) crashed them; it now renders as in Scalar. Switch: MoonRay Source Overrides, Dense glitter in Vector and XPU (on).
-- **XPU2 keeps scenes with Limit Geometry Resolution on** (Render Settings, Global Switches): it handed them to MoonRay XPU ("enable_max_geometry_resolution: nondefault setting unsupported").
-- **A shadow catcher stays one when its material is edited in realtime**: changing its colour with RT on made it show as a plain grey surface.
 
 ## New in 0.5.6.1
 
@@ -524,7 +521,7 @@ In each pair, MoonRay's render of the scene from its own files is on the left; o
 - Render outputs: configurable AOVs, Cryptomatte surface categories, buffer switching, deep EXR, texture baking, a compositor over the finished buffers, and denoising (OptiX or Open Image Denoise) that survives a stopped render.
 - Workflow tools: ACES/sRGB/OCIO view transforms and LUTs, animation output and recovery controls, an asset library with MoonRay's example scenes, and RDL scene import.
 
-## Known issues in 0.5.6.1
+## Known issues in 0.5.6.2
 
 The ones you are most likely to meet:
 
@@ -537,8 +534,8 @@ The ones you are most likely to meet:
 - Modo can crash as it quits with Scene Proxies in the scene (its own Convert to Proxy does the same); your work and settings are saved first.
 - Smart Render and Important Parts First work on MoonRay renders in the preview window, not on Render EXR or animations.
 - XPU2 renders previews only after its shaders are compiled once (Preferences > MoonRay > XPU2 > Compile XPU2 Shaders); until then the preview says so. A scene XPU2 cannot render yet goes to MoonRay XPU.
-- Very fine, dense metallic paint (Glitter with many flakes to a pixel) can crash MoonRay in Vector mode; Scalar mode and XPU2 render it.
-- MoonLightIPR's first preview of a kind of scene not previewed before waits about half a minute after installing while its GPU programs compile; the status line says so.
+- MoonLightIPR's first preview of a kind of scene not previewed before waits about half a minute after installing while its GPU programs compile (a little longer with glitter or iridescence); the status line says so.
+- In MoonLightIPR a few glitter flakes seen at a grazing angle come out darker than MoonRay's, and glitter flake textures are drawn as plain flakes.
 - Now and then, a preview with glitter in the GPU (XPU) mode fails on the graphics card; it is rendered on the CPU instead, with a notice.
 
 Every open issue is in the [issue tracker](https://github.com/Pbaroque20/MoonRayForModo/issues). Found something else? Please report it there.
@@ -576,7 +573,7 @@ Comparison audit between MoonRay 2026.29.1's source and the current plugin.
 | VDB volumes, base and cutout volumes | ![yes](docs/images/feature-yes.svg) | A VDB renders on XPU2's graphics card, glowing ones too, about five times faster; fire from a temperature or flames grid glows, in its blackbody colours where asked; numbered VDB files play as a sequence (static unticked); a dwVdbVolume asks for its VDB file |
 | Motion blur | ![yes](docs/images/feature-yes.svg) | Final renders and previews, with moving lights blurred too. New in 0.5.5: every engine, realtime included, blurs whenever the Motion Blur of the camera rendered through (the Camera Sequence's for the frame, a MoonRay camera chosen, else the render camera) or of the render settings is on, and the Preview Preferences' switches are gone; MoonLightIPR shows fast-turning parts where they stand at the frame, blurred along their turn. XPU2 traces moving objects on the GPU, subdivision surfaces that move or change shape among them. MoonLightIPR playblasts show it when it is active. |
 | Depth of field | ![yes](docs/images/feature-yes.svg) | A polygon or disc bokeh, by sides and angle, or an image. MoonRay's two bokeh weight settings, which it does not use, are marked as having no effect. With the Modo camera's lens, a bokeh image turns bokeh on. New in 0.5.5.1: MoonLightIPR's alpha and its other AOVs are blurred by depth of field as its picture is. |
-| DWA materials (base, metal, fabric, skin, layer, mix and the rest) | ![yes](docs/images/feature-yes.svg) | Two Sided and Color Correct take the other DWA materials as their inputs, and a layer or two-sided material missing an input no longer crashes MoonRay. Coming in 0.5.6.2: their glitter (metallic flakes) in MoonLightIPR, each flake where MoonRay puts it, and dense glitter no longer crashing MoonRay's Vector and XPU modes. |
+| DWA materials (base, metal, fabric, skin, layer, mix and the rest) | ![yes](docs/images/feature-yes.svg) | Two Sided and Color Correct take the other DWA materials as their inputs, and a layer or two-sided material missing an input no longer crashes MoonRay. New in 0.5.6.2: their glitter (metallic flakes) in MoonLightIPR, each flake where MoonRay puts it, and dense glitter no longer crashing MoonRay's Vector and XPU modes. |
 | Hair, toon and USD Preview Surface materials | ![yes](docs/images/feature-yes.svg) | Toon edges smooth on coarse meshes, and toon renders that denoise cleanly, each a preference; a new toon material is brightest facing the light |
 | Switch and Ray Switch materials | ![yes](docs/images/feature-yes.svg) | In the node editor |
 | Maps, normal maps and displacement nodes | ![yes](docs/images/feature-yes.svg) | In the node editor, with a Bump node turning a height image into the normal (a Source Override, on by default), and the Shader Tree's Displacement and Stencil layers. Since 0.5.4.3: Ocean and Ocean Foam nodes, wind-driven waves and their foam for a Vector Displacement, fitted to the mesh by Tiles Across (a Source Override, on by default). New in 0.5.5: MoonLightIPR splits a displaced mesh finely near the camera and coarsely far from it, within the same number of triangles |
@@ -665,13 +662,13 @@ Comparison audit between Modo 16.1v9 and the current plugin: what of a Modo scen
 ### Where the plugin changes MoonRay
 
 Besides the patches that build MoonRay on Windows, the plugin changes MoonRay where it renders something wrongly or
-slowly for an artist: twenty-six MoonRay Source Overrides (one of them coming in 0.5.6.2), each a checkbox in Preferences (MoonRay, MoonRay Source Overrides;
+slowly for an artist: twenty-six MoonRay Source Overrides (one of them new in 0.5.6.2), each a checkbox in Preferences (MoonRay, MoonRay Source Overrides;
 Auto's is under XPU), on by default; off renders as MoonRay's source does. Low-latency rendering, geometry loaded as binary,
 smooth toon edges on coarse meshes, toon materials that denoise cleanly, the denoiser's guides cleaned first, toon lines
 without gaps and apart from the shading, display filters given the inputs they need, n-gons triangulated cleanly,
 blurred moving lights, fog in Cryptomatte, fog in front of see-through surfaces in alpha, lights seen by the camera in light outputs, each Cryptomatte sample
 counted once, a stopped render finishing the tiles in hand, UsdPreviewSurface's specular colour, images without alpha
-read as opaque, rough glass under a smooth surface, Auto rendering on the graphics card first, ocean waves, and, new in 0.5.6, a tilt-shift camera and premultiplied OpenEXR alpha; new in 0.5.6.1, shadow catchers and glass in alpha; coming in 0.5.6.2, dense glitter in Vector and XPU. A few additions have no
+read as opaque, rough glass under a smooth surface, Auto rendering on the graphics card first, ocean waves, and, new in 0.5.6, a tilt-shift camera and premultiplied OpenEXR alpha; new in 0.5.6.1, shadow catchers and glass in alpha; new in 0.5.6.2, dense glitter in Vector and XPU. A few additions have no
 switch, such as three more pixel filters. Those that change MoonRay's own code are described in the [engineers' notes](patches/native-windows/README.md).
 New in 0.5.5.1, the overrides are on in `moonray.exe` and XPU2 started by hand too, on a farm or a Rhizome node; set a variable to `0` to turn one off.
 
