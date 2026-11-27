@@ -1236,15 +1236,18 @@ struct Scene {
     // coarse plan's stand-ins, the full plan after it from that one.
     static std::pair<cpu::PlanView, std::unique_ptr<async::CpuScene>> refine(const rdl::SceneContext& replica, CanonicalView frame,
                                                                              cpu::PlanView coarsePlan,
-                                                                             std::shared_ptr<const std::set<std::string>> fullDetail = nullptr) {
+                                                                             std::shared_ptr<const std::set<std::string>> fullDetail = nullptr,
+                                                                             std::shared_ptr<const std::atomic<bool>> cancel = nullptr) {
         cpu::Limits limits;
         limits.bytes = geometryBudget();
         limits.gpuBytes = gpuGeometryBudget();
+        limits.cancel = cancel;
         if (fullDetail) {
             limits.coarse = true;
             limits.fullDetail = std::move(fullDetail);
         }
         auto full = cpu::prepare(replica, frame, coarsePlan, limits, assetRoot(), cpu::Domain::SurfaceTextures, true, true);
+        if (cancel && cancel->load()) throw cpu::Cancelled{};  // its CPU scene not built for nothing
         return {full, std::make_unique<async::CpuScene>(full)};
     }
     // The classification's summary for the log: objects by class, the GPU families the scene's objects need on
@@ -2135,6 +2138,10 @@ bool envOn(const char* name, bool otherwise) {
 // picture, bit for bit. The session's own state (the warp, shownCopy, the denoised picture kept) is its pictures as
 // made, so XPU2's completion fade under it goes on as before. A camera move ends it (end): drags as before. Calls under
 // the session's lock (the one given to begin).
+// A frame's end waits for a fade under way (settle) before it reports DONE: the ticker published up to the fade's length
+// after it, and the kit takes a frame's DONE as its end (render.py _persistent_ready). XPU2_SESSION_SAY_PICTURE_HASH=1:
+// the frame's end says the last picture handed over and the session's own last one (hashes; equal when the screen ends
+// on the session's picture).
 class FadingShared {
 public:
     ModoSharedImage image;
@@ -2151,13 +2158,23 @@ public:
         if (ended) f.active = false;
         bool ok;
         if (!f.active) {
-            ok = image.publish(generation, key, width, height, sample);
+            uint64_t h = 0;
+            ok = image.publish(generation, key, width, height, [&](size_t i, float* px) {
+                sample(i, px);
+                if (sayHash()) h += pixelHash(i, px);
+            });
+            if (ok && sayHash()) ownHash = lastHash = h;
         } else {
             // The session's picture kept (the ticker's to publish again), and shown blended with the one the fade began on.
             const size_t n = size_t(width) * height;
             f.target.resize(n * 3);
             for (size_t i = 0; i < n; ++i) sample(i, &f.target[i * 3]);
             f.generation = generation, f.haveTarget = true;
+            if (sayHash()) {
+                uint64_t h = 0;
+                for (size_t i = 0; i < n; ++i) h += pixelHash(i, &f.target[i * 3]);
+                ownHash = h;
+            }
             ok = blended(s);
             if (ok) ++f.pictures;
         }
@@ -2187,8 +2204,66 @@ public:
         f.active = false;
     }
     bool fading() const { return f.active; }
+    // A frame's end (before its DONE): a fade under way finished first. It ends by itself within its length (the ticker's
+    // last act publishes the session's picture as it is); a command come meanwhile (interrupted) ends it at once on that
+    // picture, where the kit has taken the one before (image.ready), else where it is. Returns the seconds waited (-1: no
+    // fade under way).
+    template <class Interrupted>
+    double settle(std::mutex& lock, Interrupted interrupted) {
+        const auto from = std::chrono::steady_clock::now();
+        bool any = false;
+        for (;;) {
+            {
+                std::lock_guard<std::mutex> hold(lock);
+                if (!f.active) break;
+                any = true;
+                const bool late = std::chrono::steady_clock::now() - from > std::chrono::duration<double>(f.seconds + 2.0);
+                if (interrupted() || late) {
+                    if (f.haveTarget && image.ready() &&
+                        image.publish(f.generation, f.key, f.w, f.h, [&](size_t i, float* px) { std::copy_n(&f.target[i * 3], 3, px); })) {
+                        lastHash = ownHash;
+                        lastAt = std::chrono::steady_clock::now();
+                        said(late ? "the session's picture as it is at the frame's end, late" : "the session's picture as it is, a command come");
+                    } else {
+                        said("ended where it was, a command come");
+                    }
+                    f.active = false;
+                    break;
+                }
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(4));
+        }
+        return any ? std::chrono::duration<double>(std::chrono::steady_clock::now() - from).count() : -1.0;
+    }
+    // XPU2_SESSION_SAY_PICTURE_HASH=1: the frame's end says both hashes.
+    static bool sayHash() {
+        static const bool on = [] {
+            const char* v = std::getenv("XPU2_SESSION_SAY_PICTURE_HASH");
+            return v && v[0] == '1';
+        }();
+        return on;
+    }
+    void sayHashes(const std::string& id) const {
+        if (!sayHash()) return;
+        std::printf("MoonRay XPU2: frame %s ends on the picture %016llx; the session's own last picture %016llx (%s)\n", id.c_str(),
+                    (unsigned long long)lastHash, (unsigned long long)ownHash, lastHash == ownHash ? "the same" : "different");
+        std::fflush(stdout);
+    }
 
 private:
+    uint64_t lastHash = 0, ownHash = 0;  // sayHash: the last picture handed over, and the session's own last one
+    // Order-free (summed over pixels): each pixel's bits and place mixed.
+    static uint64_t pixelHash(size_t i, const float* px) {
+        uint32_t b[3];
+        std::memcpy(b, px, sizeof b);
+        uint64_t h = (uint64_t(i) + 1) * 0x9E3779B97F4A7C15ull;
+        for (uint32_t v : b) {
+            h ^= v;
+            h *= 0x100000001B3ull;
+            h ^= h >> 29;
+        }
+        return h;
+    }
     struct Fade {
         bool active = false, haveTarget = false;
         std::string key, generation;
@@ -2215,9 +2290,13 @@ private:
     }
     bool blended(double s) {
         const float a = float(s);
-        return image.publish(f.generation, f.key, f.w, f.h, [&](size_t i, float* px) {
+        uint64_t h = 0;
+        const bool ok = image.publish(f.generation, f.key, f.w, f.h, [&](size_t i, float* px) {
             for (int c = 0; c < 3; ++c) px[c] = f.from[i * 3 + c] + a * (f.target[i * 3 + c] - f.from[i * 3 + c]);
+            if (sayHash()) h += pixelHash(i, px);
         });
+        if (ok) lastHash = h;
+        return ok;
     }
     // About 60 times a second while the fade lasts: the last picture again, blended as the time has come, where none
     // was published since; at the end the last picture as the session made it.
@@ -2237,6 +2316,7 @@ private:
             if (s >= 1.0) {
                 const bool ok = image.publish(f.generation, f.key, f.w, f.h, [&](size_t i, float* px) { std::copy_n(&f.target[i * 3], 3, px); });
                 if (!ok) continue;
+                lastHash = ownHash;
                 lastAt = std::chrono::steady_clock::now();
                 said("the last picture as it is");
                 f.active = false;
@@ -2946,8 +3026,22 @@ int session(const Args& args, const fs::path& directory) {
         unsigned stages = 0;
         size_t stageStandIns = 0;
         double stageSeconds = 0;
+        // Abandoned (the session's quit, a scene loaded anew, a texture overflow's new start): the preparation ends before
+        // its next geometry (cpu::Limits::cancel), a tessellation under way on xpu2_geom's thread let finish, so that no
+        // MoonRay call is left in the middle; quitting used to wait for the whole full plan (seconds on a heavy scene).
+        // takeRefined joins it without this: the full plan is wanted there.
+        std::shared_ptr<std::atomic<bool>> cancel = std::make_shared<std::atomic<bool>>(false);
         ~RefineJob() {
-            if (thread.joinable()) thread.join();
+            if (thread.joinable()) {
+                const auto from = Clock::now();
+                const bool unfinished = !ready.load();
+                cancel->store(true);
+                thread.join();
+                if (unfinished)
+                    std::printf("MoonRay XPU2: the full geometry behind the coarse first pass abandoned (%.0f ms to stop)\n",
+                                std::chrono::duration<double>(Clock::now() - from).count() * 1e3);
+                std::fflush(stdout);
+            }
         }
     };
     std::unique_ptr<RefineJob> refining;
@@ -3015,8 +3109,8 @@ int session(const Args& args, const fs::path& directory) {
         // Visibility first: what the camera sees on the coarse geometry, at full detail before the rest.
         if (visibility::on() && scene.cpuScene && scene.cpuScene->plan) {
             const visibility::Seen seen = visibility::seen(*scene.cpuScene->plan, *scene.cpuScene, &scene.plan->camera);
-            std::printf("MoonRay XPU2: visibility first: %zu of %zu stand-in geometries in view (%zu rays, %zu hits, %.1f ms)%s\n",
-                        seen.standInsSeen.size(), seen.standIns.size(), seen.rays, seen.hits, seen.seconds * 1e3,
+            std::printf("MoonRay XPU2: visibility first: %zu of %zu stand-in geometries in view (%zu rays, %zu hits, %zu behind see-through surfaces, %.1f ms)%s\n",
+                        seen.standInsSeen.size(), seen.standIns.size(), seen.rays, seen.hits, seen.behind, seen.seconds * 1e3,
                         seen.worth() ? "; those at full detail first" : "; the full plan straight away");
             std::fflush(stdout);
             if (seen.worth()) refining->fullDetail = seen.geometries;
@@ -3032,7 +3126,7 @@ int session(const Args& args, const fs::path& directory) {
                 }
                 // The visible geometry's plans (one, and one more for each camera move that came to see more).
                 while (detail) {
-                    auto made = Scene::refine(replica, frame, from, detail);
+                    auto made = Scene::refine(replica, frame, from, detail, job->cancel);
                     from = made.first;
                     std::shared_ptr<std::set<std::string>> more;
                     {
@@ -3053,7 +3147,7 @@ int session(const Args& args, const fs::path& directory) {
                     detail = more;
                 }
                 job->fullBegun = true;
-                job->full = Scene::refine(replica, frame, from);
+                job->full = Scene::refine(replica, frame, from, nullptr, job->cancel);
             } catch (...) {
                 job->failed = std::current_exception();
             }
@@ -4843,6 +4937,16 @@ int session(const Args& args, const fs::path& directory) {
             }
         }
     frameEnd:
+        // Rhea's fade in (FadingShared) finished before the frame says it is done: the kit ends the frame on DONE, and the
+        // fade's ticker published up to its length after it. A command come meanwhile ends the fade at once.
+        if (complete) {
+            const double waited = shared.settle(sharedMutex, [&] { return waiting(); });
+            if (waited >= 0) {
+                std::printf("MoonRay XPU2: Rhea: the frame's end waited %.0f ms for the fade in to end\n", waited * 1e3);
+                std::fflush(stdout);
+            }
+        }
+        shared.sayHashes(id);
         event(complete ? "DONE" : "CANCELED", id);
         // Rhea's radiance cache on disk: the store written as a realtime frame ends, at most every 30 s while it learns.
         if (complete && rheaWanted) rheaCache.saveLive(rheaView.store, 30.0);

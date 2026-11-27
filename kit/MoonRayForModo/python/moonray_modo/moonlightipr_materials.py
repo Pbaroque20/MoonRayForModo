@@ -1647,8 +1647,9 @@ class Compiler:
             glow = [float(v) for v in fog.get('glow_rows') or [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0]]
             if len(glow) != 12 or not all(math.isfinite(v) for v in glow):
                 raise ValueError('Material %s has an invalid volume transform' % name)
-            record += struct.pack('<10fi12fi12f', *numbers, self.grid(fog['grid']) if fog.get('grid') else -1, *rows,
-                                  self.grid(fog['glow']) if fog.get('glow') and fog.get('grid') else -1, *glow)
+            # And how it is lit (form 'd', moonlightipr_volumes.switches): without shadows, without the environment.
+            record += struct.pack('<10fi12fi12fI', *numbers, self.grid(fog['grid']) if fog.get('grid') else -1, *rows,
+                                  self.grid(fog['glow']) if fog.get('glow') and fog.get('grid') else -1, *glow, int(fog.get('switches', 0)) & 3)
         if shimmer:
             # The lobe it tints (0 the specular, 1 the coat), its strength, exponent, thickness and its strength at 0 and
             # 90 degrees, then its colours from index 0 to 1.

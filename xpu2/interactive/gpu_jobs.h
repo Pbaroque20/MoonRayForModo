@@ -17,6 +17,8 @@ struct Config {path::Epoch epoch;surface::Camera camera;surface::V3 sky;U32 widt
     float worldToRender[12]={1,0,0,0,0,1,0,0,0,0,1,0};
     // Volumes (volume_core.h; PathIntegrator::update's volume settings): how many, and MoonRay's volume scene variables.
     U32 volumeCount=0,maxVolumeDepth=1,volumeIlluminationSamples=4,volumeOverlapMode=0;
+    // volume_indirect_samples (integrateVolumeScatteringIndirect): the paths a volume's scattering starts, 0: none.
+    U32 volumeIndirectSamples=0;
     // How many lights the camera sees (their visible_in_camera), which camera rays meet.
     U32 visibleLights=0;
     // Adaptive light sampling (light_sampling_mode 1): whether the lights' trees pick the lights sampled, and the

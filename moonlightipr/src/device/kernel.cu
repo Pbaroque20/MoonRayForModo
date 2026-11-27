@@ -136,7 +136,7 @@ ML_INLINE float3 gridShadow(float3 origin, float3 direction, float distance, See
     const DeviceVolume* fogs = reinterpret_cast<const DeviceVolume*>(params.volumes);
     for (unsigned i = 0; i < params.volumeCount; ++i) {
         const DeviceVolume& fog = fogs[i];
-        if (!fog.grid) continue;
+        if (!fog.grid || (fog.switches & FOG_NO_SHADOW)) continue;
         float from = 0.0f, to = fminf(distance, 1e12f);
         for (int axis = 0; axis < 3 && to > from; ++axis) {
             const float* row = fog.rows + axis * 4;
@@ -2449,15 +2449,16 @@ ML_INLINE float3 samplePhase(float3 forward, float g, float u1, float u2) {
     return normalize(Frame(forward).toWorld(make_float3(sine * cosf(phi), sine * sinf(phi), cosine)));
 }
 // The light every lamp sends to a point in fog and on along wo, the way back to the viewer.
-ML_INLINE float3 fogLight(float3 p, float3 wo, float g, float3 weight, bool lit, Seed& seed, float thin = 1.0f) {
+// sky: how much of the fog here the environment lights (FOG_NO_ENVIRONMENT), 0 to 1.
+ML_INLINE float3 fogLight(float3 p, float3 wo, float g, float3 weight, bool lit, Seed& seed, float thin = 1.0f, float sky = 1.0f) {
     const DeviceDistantLight* distantLights = reinterpret_cast<const DeviceDistantLight*>(params.distantLights);
     const DeviceLight* lights = reinterpret_cast<const DeviceLight*>(params.lights);
     float3 radiance = vec(0.0f);
-    if (!params.envPortal) {
+    if (!params.envPortal && sky > 0.0f) {
         float lightPdf;
         const float3 toLight = sampleEnv(rnd(seed), rnd(seed), lightPdf);
         if (lightPdf > 0.0f)
-            radiance += clampSample(weight * envRadiance(toLight) * shadow(p, toLight, seed, 1e16f, thin) * (phase(-dot(wo, toLight), g) / lightPdf), lit);
+            radiance += clampSample(weight * sky * envRadiance(toLight) * shadow(p, toLight, seed, 1e16f, thin) * (phase(-dot(wo, toLight), g) / lightPdf), lit);
     }
     for (unsigned i = 0; i < params.distantLightCount; ++i) {
         const DeviceDistantLight& light = distantLights[i];
@@ -2848,7 +2849,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
             }
             if (most > 0.0f && to > from) {
                 bool stopped = false;
-                float at = from, anisotropy = 0.0f, stops = 0.0f;
+                float at = from, anisotropy = 0.0f, stops = 0.0f, sky = 0.0f;
                 float3 albedo = vec(0.0f);
                 for (int k = 0; k < 1024; ++k) {
                     seedPhase(seed, QMC_FOG_STEP, k, 4);
@@ -2859,6 +2860,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
                     float3 given = vec(0.0f);
                     albedo = vec(0.0f);
                     anisotropy = 0.0f;
+                    sky = 0.0f;
                     for (unsigned i = 0; i < params.volumeCount; ++i) {
                         const DeviceVolume& fog = fogs[i];
                         if (!fog.grid) continue;
@@ -2866,6 +2868,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
                         thick += here;
                         albedo += vec(fog.albedo) * here;
                         anisotropy += fog.anisotropy * here;
+                        if (!(fog.switches & FOG_NO_ENVIRONMENT)) sky += here;
                         if (fog.glow) {
                             const float4 lit = tex3D<float4>(fog.glow, dot(vec(fog.glowRows), p) + fog.glowRows[3], dot(vec(fog.glowRows + 4), p) + fog.glowRows[7],
                                                              dot(vec(fog.glowRows + 8), p) + fog.glowRows[11]);
@@ -2880,6 +2883,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
                         stops = thick;
                         albedo = albedo * (1.0f / thick);
                         anisotropy /= thick;
+                        sky /= thick;
                         break;
                     }
                 }
@@ -2921,7 +2925,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
                             stops = thick;
                         }
                         if (bounces)
-                            if (fogCounts) radiance += fogLight(here, -way, even, carried * sent, clamped, seed, less);
+                            if (fogCounts) radiance += fogLight(here, -way, even, carried * sent, clamped, seed, less, sky);
                         way = samplePhase(way, even, rnd(seed), rnd(seed));
                     }
                     break;
@@ -2955,6 +2959,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
                 const float thickness = average(stops);
                 float3 carried = on, way = direction;
                 float less = 1.0f, sent = 1.0f, even = fog.anisotropy;
+                const float sky = (fog.switches & FOG_NO_ENVIRONMENT) ? 0.0f : 1.0f;
                 bool clamped = roughDepth >= params.sampleClampDepth;
                 for (unsigned order = 0;; ++order) {
                     if (order > 0) {
@@ -2972,7 +2977,7 @@ extern "C" __global__ void __raygen__moonlightipr() {
                         clamped = true;
                     }
                     if (bounces)
-                        if (fogCounts) radiance += fogLight(here, -way, even, carried * sent, clamped, seed, less);
+                        if (fogCounts) radiance += fogLight(here, -way, even, carried * sent, clamped, seed, less, sky);
                     way = samplePhase(way, even, rnd(seed), rnd(seed));
                 }
                 break;
@@ -4457,6 +4462,10 @@ extern "C" __global__ void __anyhit__presence() {
             return;
         }
         const DeviceVolume& fog = reinterpret_cast<const DeviceVolume*>(params.volumes)[material.hair];
+        if (fog.switches & FOG_NO_SHADOW) {
+            optixIgnoreIntersection();
+            return;
+        }
         const float sign = optixIsBackFaceHit() ? 1.0f : -1.0f, crossed = sign * optixGetRayTmax();
         optixSetPayload_2(__float_as_uint(__uint_as_float(optixGetPayload_2()) + crossed * fog.extinction[0]));
         optixSetPayload_3(__float_as_uint(__uint_as_float(optixGetPayload_3()) + crossed * fog.extinction[1]));

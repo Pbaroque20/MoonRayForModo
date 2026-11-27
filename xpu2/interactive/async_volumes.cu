@@ -7,8 +7,9 @@ extern "C" __device__ void __continuation_callable__volumeRadiance(const mixed::
                                                                    paths::Pending* pv, surface::V3 org, surface::V3 dir, float tnear, float tfar,
                                                                    surface::V3* alphaTransmittance, surface::V3* minTransmittance,
                                                                    VolumeCryptoShares* cryptoShares, const VolumeLpe* lpe, float* surfaceT,
-                                                                   surface::V3* out) {
-    *out = volumeRadiance(*c, *root, *backend, *pv, org, dir, tnear, tfar, alphaTransmittance, minTransmittance, cryptoShares, lpe, surfaceT);
+                                                                   paths::Pending* stack, U32* top, surface::V3* out) {
+    *out = volumeRadiance(*c, *root, *backend, *pv, org, dir, tnear, tfar, alphaTransmittance, minTransmittance, cryptoShares, lpe, surfaceT,
+                          stack, top);
 }
 
 extern "C" __device__ void __continuation_callable__subsurfaceRadiance(const mixed::Config* c, const sample::Identity* root, GpuBackend* backend,

@@ -198,9 +198,12 @@ def environment_section(scene, environment, warnings, runtime):
                     held = held_placement(item)
                     if held:
                         baked, matrix = held[0], finite(held[1])
-                if item['kind'] == 'image':
-                    # Half a turn about the vertical in its own space, as Modo shows a plain image and as MoonRay is given
-                    # it (environments.emit): Dose's HDRI faced the other way, the can lit by the room's bright side.
+                if item['kind'] == 'image' and not item.get('moonray_light'):
+                    # A Modo environment image: half a turn about the vertical in its own space, as MoonRay is given it
+                    # (environments.emit), its file laid out as Modo shows it (environment_layout): so turned, Modo's
+                    # picture (without it, an HDRI faced the other way: a can lit by the room's bright side). A
+                    # MoonRay EnvLight item (entities.preview, moonray_light) is placed by its own matrix alone, as
+                    # MoonRay places it: given the half turn too, it showed MoonRay's picture half a turn round.
                     matrix = [-v for v in matrix[0:4]] + matrix[4:8] + [-v for v in matrix[8:12]] + matrix[12:16]
                 # The image's own axes in world space, which the session turns directions into.
                 record = (environment_image(baked, runtime, bool(scene.get('_full_textures'))), intensity, unit(matrix[0:3]) + unit(matrix[4:7]) + unit(matrix[8:11]))
@@ -763,6 +766,16 @@ def distance_split(mesh, camera, width):
 # The triangles the displaced meshes split evenly (distance_spread) may come to together, each at least
 # DISPLACED_TRIANGLES: a head close up split evenly within 400,000 alone kept a third of MoonRay's relief.
 EVEN_TRIANGLES = 2400000
+# The triangles all displaced meshes (not seas) may come to together: each keeps DISPLACED_TRIANGLES while there are at most
+# 15 of them (hero heads as before); with more, they share this. At DISPLACED_TRIANGLES each, a field of 40 displaced
+# rocks came to 16 M.
+TOTAL_DISPLACED_TRIANGLES = 6000000
+
+
+def displaced_cap(count):
+    """Each displaced mesh's own budget (split by distance, or the least split evenly) where count displaced meshes
+    that are not seas share TOTAL_DISPLACED_TRIANGLES."""
+    return min(DISPLACED_TRIANGLES, TOTAL_DISPLACED_TRIANGLES // max(1, int(count)))
 # A displaced mesh (not a sea) whose farthest part is less than this many times as far from the camera as its nearest is
 # split evenly (distance_spread): split by distance, a skin head close up had a level's step across its cheek.
 DISTANCE_SPREAD = 4.0
@@ -798,7 +811,7 @@ def distance_spread(mesh, camera):
         return None
 
 
-def smoother_cage(mesh, camera, even_budget):
+def smoother_cage(mesh, camera, even_budget, cap=None):
     """A displaced subdivision surface subdivided as many more times as its resolution asks and its budget allows
     (SUBDIVISION_QUADS; its even budget where it is split evenly, else DISPLACED_TRIANGLES), before the session splits
     it further: the session's splits are flat, and displaced over them a skin head showed its level-2 cage's facets as
@@ -810,10 +823,24 @@ def smoother_cage(mesh, camera, even_budget):
     except (TypeError, ValueError):
         return mesh
     spread = distance_spread(mesh, camera)
-    budget = max(DISPLACED_TRIANGLES, int(even_budget or 0)) if spread is not None and spread < DISTANCE_SPREAD else DISPLACED_TRIANGLES
+    cap = DISPLACED_TRIANGLES if cap is None else int(cap)
+    budget = max(cap, int(even_budget or 0)) if spread is not None and spread < DISTANCE_SPREAD else cap
     while wanted > level and (corners * 4 ** (wanted - 1) > SUBDIVISION_QUADS or 2 * corners * 4 ** (wanted - 1) > budget):
         wanted -= 1
     return dict(mesh, subdivision_level=wanted) if wanted > level else mesh
+
+
+def welded(mesh):
+    """A displaced polygon mesh without its corners' normals, so that the session keeps each point once and displaces
+    it once along its points' smooth normal: with corner normals every corner is a vertex of its own (mesh_payload),
+    each face's copy of an edge was displaced apart from the next one's, and a displaced ball showed black cracks along
+    every polygon edge, a hard-edged box wide open ones. As MoonRay does it (PolyMesh::tessellate: a displaced mesh's
+    own normals are dropped, each point displaced once along the smooth normal of its faces, the shading normals made
+    smooth again from the displaced shape), and XPU2 with it: the session smooths its normals from the shape too."""
+    normals = mesh.get('normals')
+    if not normals or mesh.get('subdivision'):
+        return mesh
+    return dict(mesh, normals=None)
 
 
 def displacement_inputs(material):
@@ -843,7 +870,7 @@ def displacement_inputs(material):
 
 
 def displaced(mesh, key, flags, payload, materials, material_index, warnings, limit=None, camera=None, width=0, moonray_cap=True,
-              even_budget=None):
+              even_budget=None, cap=None):
     """A mesh as the session displaces it, where one of its materials displaces it (form 'L'): after its data, how many
     times to split each triangle into four, the material its instances give it, and each displacing material's
     program (moonlightipr_materials.displacement_tree), as its count and its operations. The key then names the
@@ -883,7 +910,9 @@ def displaced(mesh, key, flags, payload, materials, material_index, warnings, li
         allowed = max(0, int(round(math.log2(max(1.0, resolution)))) - (level if mesh.get('subdivision') else 0))
         limit = allowed if limit is None else min(limit, allowed)
     near = distance_split(mesh, camera, width)
-    budget = DISPLACED_TRIANGLES
+    # Its own budget (displaced_cap: DISPLACED_TRIANGLES unless many displaced meshes share TOTAL_DISPLACED_TRIANGLES).
+    cap = DISPLACED_TRIANGLES if cap is None else max(1, int(cap))
+    budget = cap
     if near is not None and moonray_cap:
         # Near and far alike (a head close up): split evenly, as far as its own budget allows (even_budget, the
         # scene's EVEN_TRIANGLES shared by such meshes; at least DISPLACED_TRIANGLES). Split by distance, the budget
@@ -892,14 +921,14 @@ def displaced(mesh, key, flags, payload, materials, material_index, warnings, li
         spread = distance_spread(mesh, camera)
         if spread is not None and spread < DISTANCE_SPREAD:
             near = None
-            budget = max(DISPLACED_TRIANGLES, int(even_budget or DISPLACED_TRIANGLES))
+            budget = max(cap, int(even_budget or cap))
     levels = 0
     # As many times as its budget allows, and no more than its size on screen needs (limit, moonlightipr_detail).
     while levels < 8 and triangles * 4 ** (levels + 1) <= budget and (limit is None or levels < limit):
         levels += 1
     if near is not None:
         # Split by distance (form 'T'): as many levels as the budget allows the nearest of it, the farthest fewer.
-        trailer = struct.pack('<I', 0x80000000 | (min(8, limit) if limit is not None else 8)) + struct.pack('<4fI', *near[0], near[1], DISPLACED_TRIANGLES) \
+        trailer = struct.pack('<I', 0x80000000 | (min(8, limit) if limit is not None else 8)) + struct.pack('<4fI', *near[0], near[1], cap) \
             + struct.pack('<2I', material_index.get(mesh.get('material', ''), material_index['']), len(distances))
     else:
         trailer = struct.pack('<3I', levels, material_index.get(mesh.get('material', ''), material_index['']), len(distances))
@@ -1364,8 +1393,9 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     from .denoising import keeps_flakes
     # Form 'Z': a material may be a shadow catcher (moonlightipr_materials, MATERIAL_SHADOW_CATCHER). Form 'b': each
     # mesh's slot map is 64 long (moonlightipr_materials.UV_SLOTS), where it was 8, then 32 (form 'a'). Form 'c': a material
-    # may have MoonRay's glitter (moonlightipr_materials, MATERIAL_GLITTER).
-    parts = [b'MLSc',struct.pack('<8I', width, height, *depths, samples, (SCENE_DENOISE if denoise else 0)
+    # may have MoonRay's glitter (moonlightipr_materials, MATERIAL_GLITTER). Form 'd': a fog says how it is lit
+    # (moonlightipr_volumes.switches).
+    parts = [b'MLSd',struct.pack('<8I', width, height, *depths, samples, (SCENE_DENOISE if denoise else 0)
                                   | (SCENE_WORKING_SPACE if working else 0) | (SCENE_MOTION if motion else 0)
                                   # See-through surfaces cast whole shadows unless the scene asks for lighter ones, as in MoonRay.
                                   | (SCENE_PRESENCE_SHADOWS if settings.get('enable_presence_shadows') else 0)
@@ -1534,6 +1564,8 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     # that are not seas (which of them are split evenly is told mesh by mesh).
     displaced_count = sum(1 for mesh in drawn if mesh.get('faces') and not sea_worn(mesh) and displaces(mesh))
     even_budget = EVEN_TRIANGLES // max(1, displaced_count)
+    # And each one's own, the total over them all bounded (displaced_cap).
+    cap = displaced_cap(displaced_count)
     for mesh in drawn:
         if not mesh['faces']:
             continue
@@ -1544,7 +1576,19 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
             mesh = dict(mesh, mesh_resolution=displacement_budget.adaptive_resolution(
                 mesh, 2 ** int(mesh.get('subdivision_level', 3)), screen_shared, min_edge))
             if mesh.get('subdivision') and (cut is None or cut['subdivision'] >= int(mesh.get('subdivision_level', 3))):
-                mesh = smoother_cage(mesh, scene.get('camera'), even_budget)
+                mesh = smoother_cage(mesh, scene.get('camera'), even_budget, cap)
+        if not mesh.get('subdivision') and mesh['faces'] and displaces(mesh) and not sea_worn(mesh) \
+                and scene.get('displacement_smooth', True) and mesh.get('smooth', True):
+            # Modo's Smooth Positions, as MoonRay is handed it (rdla, smooth_positions): the cage split onto Modo's
+            # smooth surface, then split by the session as many times less finely. Split from its flat faces, a coarse
+            # cage's facets showed through its relief.
+            from . import smooth_positions
+            held_cut = mesh.get('mesh_resolution') or 2 ** int(mesh.get('subdivision_level', 3))
+            split = smooth_positions.splits(mesh, held_cut)
+            if split > 1:
+                mesh = dict(smooth_positions.refine(mesh, split), mesh_resolution=smooth_positions.resolution(held_cut, split))
+                if cut is not None:
+                    cut = dict(cut, splits=max(0, cut['splits'] - int(round(math.log2(split)))))
         if face_tags.worn(mesh) <= alone:
             # A fog that is not even all through (a VDB's, or one with ramps), which MoonLightIPR draws in VDB items only.
             warnings.append('MoonLightIPR leaves out %s, whose fog is not even all through; MoonRay renders it.' % mesh['name'])
@@ -1554,6 +1598,8 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
                 warnings.append('MoonLightIPR shows subdivision mesh %s without its change of shape during the shutter.' % mesh['name'])
             key, flags, payload, slot_map = cage_payload(mesh, material_index, compiler.slots, warnings)
         else:
+            if mesh.get('normals') and displaces(mesh):
+                mesh = welded(mesh)
             key, flags, payload, slot_map = mesh_payload(mesh, material_index, compiler.slots, cut.get('simplify') if cut else None,
                                                          rest=resting)
         # A draft splits a sea (wears_ocean) by its distance from the camera its meshes are cut from, held through its
@@ -1564,7 +1610,8 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
         key, flags, payload = displaced(mesh, key, flags, payload, materials, material_index, warnings, cut['splits'] if cut else None,
                                         cutting if scene.get('_draft') and wears_ocean(mesh, materials, seas)
                                         else sea_camera if sea_camera is not None else scene.get('camera'), width,
-                                        not wears_ocean(mesh, materials, seas), even_budget)
+                                        not wears_ocean(mesh, materials, seas), even_budget,
+                                        None if wears_ocean(mesh, materials, seas) else cap)
         if key not in order:
             order[key] = len(meshes)
             # Send the data once per session; later scenes refer to it by key.

@@ -148,7 +148,7 @@ class InTheRenderers(unittest.TestCase):
     def test_moonlightipr_follows(self):
         self.assertIn('in.floats(camera.focusTilt, 2);', text('moonlightipr/session/scene_loader.cpp'))
         self.assertIn('params.focusTilt', text('moonlightipr/src/device/kernel.cu'))
-        self.assertIn("b'MLSc'", text('kit/MoonRayForModo/python/moonray_modo/moonlightipr_scene.py'))
+        self.assertIn("b'MLSd'", text('kit/MoonRayForModo/python/moonray_modo/moonlightipr_scene.py'))
 
 
 if __name__ == '__main__':

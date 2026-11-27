@@ -1744,6 +1744,10 @@ def camera_view(camera, entity, matrix, note):
     view = dict(camera, matrix=matrix, dof=False, film_offset=[0.0, 0.0], pixel_aspect=1.0, projection_values=[0.0, 0.0, 0.0, 0.0])
     view.pop('matrix_close', None)
     view.pop('focal_mm_close', None)
+    if entity.get('matrix_close'):
+        # Moving while the shutter is open (motion.apply_motion), where the item stands as it closes, as MoonRay blurs
+        # it (block's node_xform): the spherical camera made for a Modo Spherical Map or VR camera did not blur here.
+        view['matrix_close'] = list(entity['matrix_close'])
     if name in PERSPECTIVE_CAMERAS + ('OrthographicCamera',):
         film = float(value(entity, 'film_width_aperture'))
         offset = [float(value(entity, 'horizontal_film_offset')), float(value(entity, 'vertical_film_offset'))]
@@ -1930,8 +1934,10 @@ def preview(scene, warnings):
                 if texture:
                     if color != [1.0, 1.0, 1.0]:
                         warnings.append('MoonLightIPR shows the image of %s without its colour tint.' % label)
+                    # Placed as MoonRay places it (moonray_light): its own matrix, without the half turn a Modo
+                    # environment image is given (moonlightipr_scene.environment_section).
                     environments.append(dict(shown, kind='image', name=label, identity=entity['identity'], path=texture, matrix=matrix,
-                                             intensity=intensity * sum(color) / 3,
+                                             intensity=intensity * sum(color) / 3, moonray_light=True,
                                              srgb=Path(texture).suffix.lower() not in ('.exr', '.hdr', '.tx')))
                 else:
                     environments.append(dict(shown, kind='constant', name=label, identity=entity['identity'], zenith=color, nadir=color,

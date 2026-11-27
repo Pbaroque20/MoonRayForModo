@@ -133,7 +133,27 @@ struct Mesh {std::shared_ptr<const MeshData> data;unsigned material;int volume=-
  std::string owner;bool ownerInstancer=false;int ownerIndex=-1;  // ownerIndex: an instancer's instance, its place
  // The geometry it was prepared from (an instancer's instance: its reference), the one a coarse plan's full detail names.
  std::string geometry;
+ // Its material may let the camera see through it (seeThroughMaterial): the visibility cast goes on behind it
+ // (visibility_first.h). Host only.
+ bool seeThrough=false;
 };
+// Whether a material may let a camera ray through (glass, transmission, presence or opacity below one, or a map on
+// them), through its layered and switched inputs: what the visibility-first cast looks behind. Erring towards yes costs
+// only a ray more where it hits.
+inline bool seeThroughMaterial(const rdl::SceneObject& m,int depth=0){
+ const std::string& cls=m.getSceneClass().getName();
+ if(cls.find("Glass")!=std::string::npos||cls.find("Refractive")!=std::string::npos||cls.find("Dielectric")!=std::string::npos)return true;
+ if(depth>8)return false;
+ for(auto i=m.getSceneClass().beginAttributes();i!=m.getSceneClass().endAttributes();++i){const rdl::Attribute& a=**i;
+  const std::string& n=a.getName();
+  if(a.getType()==rdl::TYPE_FLOAT&&(n=="transmission"||n=="presence"||n=="opacity")){
+   const float v=m.get(rdl::AttributeKey<rdl::Float>(a));
+   if((n=="transmission"?v>0.0f:v<1.0f)||(a.isBindable()&&m.getBinding(a)))return true;}
+  else if(a.getType()==rdl::TYPE_SCENE_OBJECT){const rdl::SceneObject* c=m.get(rdl::AttributeKey<rdl::SceneObject*>(a));
+   if(c&&c->isA<rdl::Material>()&&seeThroughMaterial(*c,depth+1))return true;}
+  else if(a.getType()==rdl::TYPE_SCENE_OBJECT_VECTOR){for(const rdl::SceneObject* c:m.get(rdl::AttributeKey<rdl::SceneObjectVector>(a)))
+   if(c&&c->isA<rdl::Material>()&&seeThroughMaterial(*c,depth+1))return true;}}
+ return false;}
 // A plan mesh's curve set (curve_core.h) over its own arrays (host memory).
 inline curves::Set curveSet(const MeshData& m){curves::Set c;if(!m.curveBasis)return c;
  c.points=m.curvePoints.data();c.spans=m.curveSpans.data();c.curveSpans=m.curveSpanCounts.data();c.spanCount=unsigned(m.curveSpans.size()/3);
@@ -195,6 +215,8 @@ struct Plan {
     float worldToRender[12]={1,0,0,0,0,1,0,0,0,0,1,0};
     // The volumes bound to meshes (volume_core.h), and MoonRay's volume scene variables.
     std::vector<volume::Shader> volumes;unsigned maxVolumeDepth=1,volumeIlluminationSamples=4,volumeOverlapMode=0;
+    // volume_indirect_samples (async_integrator.h volumeScatterIndirect).
+    unsigned volumeIndirectSamples=0;
     // VDB grids (volume_grid.h): each read once (shared with the next plan while its file is unchanged), and the
     // integrator's view of them; volume_quality and volume_shadow_quality.
     std::vector<std::shared_ptr<struct VdbGridData>> volumeGrids;std::vector<volume::Grid> volumeGridViews;
@@ -279,11 +301,19 @@ using PlanView=std::shared_ptr<const Plan>;
 // coarse: the coarse first pass's plan (coarse_geometry.h): lighter tessellation and dense meshes simplified.
 // fullDetail: in a coarse plan, the geometries (by name) prepared at full detail all the same, the rest stand-ins: the
 // camera's visible geometry first (visibility_first.h); a stand-in of the plan before is taken over as it is.
+// cancel: set, the preparation ends (Cancelled) before its next geometry, never inside a tessellation: the session's
+// quit, or a scene loaded anew, abandons the full plan behind a coarse first pass without waiting for it.
 struct Limits {size_t vertices=16000000,triangles=16000000,bytes=1ull<<30,objects=1000000,pixels=8388608,gpuBytes=~size_t(0);bool coarse=false;
- std::shared_ptr<const std::set<std::string>> fullDetail;};
+ std::shared_ptr<const std::set<std::string>> fullDetail;std::shared_ptr<const std::atomic<bool>> cancel;};
+// A preparation abandoned (Limits::cancel).
+struct Cancelled:std::exception{const char* what()const noexcept override{return "preparation abandoned";}};
 // Whether the plan being prepared is the coarse first pass's (cpu::prepare sets it about the preparation; coarse_geometry.h).
 inline std::atomic<bool>& coarseTessellation(){static std::atomic<bool> on{false};return on;}
 // MoonRay's tessellation for the coarse pass: a quarter of the resolution, four times the screen error.
+// The coarse first pass gated on the tessellation cache (XPU2_SESSION_COARSE_CACHE_GATE=0: as before, the cache left
+// out of a coarse plan): a coarse plan reads the full plan's tessellation from the cache where it is there, keeps it at
+// full detail, and is the full plan itself where the cache held every mesh it would have made coarse.
+inline bool coarseCacheGate(){static const bool on=[]{const char* v=std::getenv("XPU2_SESSION_COARSE_CACHE_GATE");return !(v&&v[0]=='0');}();return on;}
 inline int coarseResolution(int resolution){return coarseTessellation()?std::max(1,resolution/4):resolution;}
 inline float coarseError(float error){return coarseTessellation()&&error>0.0f?error*4.0f:error;}
 // The most prepared geometry (positions and triangles) a session may ask for: its own budget is the machine's
@@ -3261,6 +3291,8 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
   need(maxVolumeDepth>=0&&maxVolumeDepth<=16&&illumination>=0&&illumination<=64&&overlap>=0&&overlap<=2,"Volume settings budget");
   auto unit=[](float f){return std::isfinite(f)?std::min(std::max(f,0.0f),1.0f):0.0f;};
   plan->maxVolumeDepth=unsigned(maxVolumeDepth);plan->volumeIlluminationSamples=unsigned(illumination);plan->volumeOverlapMode=unsigned(overlap);
+  // volume_indirect_samples: each scattering in a volume starts that many paths (MoonRay's integrateVolumeScatteringIndirect).
+  {const int indirect=get<rdl::Int>(sv,"volume_indirect_samples");need(indirect<=64,"Volume settings budget");plan->volumeIndirectSamples=unsigned(std::max(indirect,0));}
   plan->volumeTransmittanceThreshold=unit(1.0f-get<rdl::Float>(sv,"volume_opacity_threshold"));
   plan->volumeAttenuationFactor=unit(get<rdl::Float>(sv,"volume_attenuation_factor"));
   plan->volumeContributionFactor=unit(get<rdl::Float>(sv,"volume_contribution_factor"));
@@ -3613,7 +3645,12 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
   if(g.getSceneClass().getName()=="RdlInstancerGeometry")instancerItems(g,sv,plan->motion,items);else items.push_back(RenderItem{&g});}
  // Meshes kept from the plan before (reused) that were stand-ins there: not made lighter again (below).
  std::set<const MeshData*> keptStandIns;
+ // The coarse first pass gated on the tessellation cache (coarseCacheGate): a coarse plan's meshes whose full plan's
+ // tessellation came from the cache (kept at full detail, not made lighter), and how many it tessellated coarse.
+ std::set<const MeshData*> fullFromCache;unsigned coarseMade=0;
+ std::map<const rdl::SceneObject*,bool> seeThroughCache;  // seeThroughMaterial by material
  for(const RenderItem& item:items){auto& o=*item.geom;
+  if(limits.cancel&&limits.cancel->load())throw Cancelled{};
   // A coarse plan's geometry named for full detail (Limits::fullDetail): tessellated as the full plan's, the rest coarse.
   if(limits.coarse)coarseTessellation()=!(limits.fullDetail&&limits.fullDetail->count(o.getName()));
   auto* geom=o.asA<rdl::Geometry>();
@@ -3808,7 +3845,7 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
                             o.getName().c_str(),piece.suffix.c_str(),int(objectDisplaced),int(subdGeometry),int(polyGeometry),int(bool(paths)),int(coarseTessellation()),
                             int(item.instancer!=nullptr),int(shareInstance),int(bool(item.moves)),int(meshHasMotion(o)),int(volumeIndex>=0),
                             int(get<rdl::SceneObject*>(sv,"dicing_camera")||get<rdl::SceneObject*>(o,"dicing_camera")),double(get<rdl::Float>(o,"adaptive_error")),char(10));}
-  if(!data&&paths&&geometryCacheOn()&&!coarseTessellation()&&((objectDisplaced&&(subdGeometry||polyGeometry))||subdivisionOnly)&&
+  if(!data&&paths&&geometryCacheOn()&&(!coarseTessellation()||coarseCacheGate())&&((objectDisplaced&&(subdGeometry||polyGeometry))||subdivisionOnly)&&
      o.getSceneClass().getName()=="RdlMeshGeometry"&&
      (!item.instancer||shareInstance)&&!item.moves&&!meshHasMotion(o)&&&o!=bakeGeometry&&volumeIndex<0&&
      // A dicing camera too: it shapes only adaptive tessellation, and an adaptive mesh's key holds its frustums
@@ -3817,12 +3854,16 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
      true){
    cacheKey=geometryKey(o,sig,subdivisionOnly?"subdivision|"+piece.suffix:displacementKey,*plan,shareInstance,sv);
    if(auto m=loadGeometry(cacheKey)){m->name=meshName;m->signature=sig;m->displacementKey=displacementKey;if(shareInstance)m->instanced=true;
-    data=std::move(m);cacheHit=true;++plan->preparedMeshes;}}
+    data=std::move(m);cacheHit=true;++plan->preparedMeshes;
+    // A coarse plan's mesh the cache holds at full detail: read as the full plan reads it, sooner than a coarse one is made.
+    if(coarseTessellation())fullFromCache.insert(data.get());}
+   // Not there: a coarse plan tessellates it coarse, which is not the full plan's to keep.
+   else if(coarseTessellation())cacheKey.clear();}
   // A plain mesh (its own, or a shared instance's reference; still, not displaced, not a subdivision surface) kept too,
   // by the same key with its part: made, a tester's car's 334 took 3 s of every session's start (its positions are its
   // own placed into world space, nothing of the camera's); taken from the cache, as long as reading them. Placed as
   // making it places it (MeshData::placeable), for a later move to place it anew.
-  else if(!data&&paths&&spatial&&geometryCacheOn()&&!coarseTessellation()&&!objectDisplaced&&!subdGeometry&&!polyGeometry&&
+  else if(!data&&paths&&spatial&&geometryCacheOn()&&(!coarseTessellation()||coarseCacheGate())&&!objectDisplaced&&!subdGeometry&&!polyGeometry&&
           o.getSceneClass().getName()=="RdlMeshGeometry"&&!get<rdl::Bool>(o,"is_subd")&&(!item.instancer||shareInstance)&&!item.moves&&
           !meshHasMotion(o)&&&o!=bakeGeometry&&volumeIndex<0&&!volumeShader){
    cacheKey=geometryKey(o,sig,"plain|"+piece.suffix,*plan,shareInstance,sv);
@@ -4178,13 +4219,15 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
   if(!sharedHit)plan->bytes+=data->positions.size()*sizeof(V3)+data->triangles.size()*sizeof(Tri)+data->curvePoints.size()*sizeof(float)+data->curveSpans.size()*sizeof(unsigned);
   // Over the budget already: said now, not after the rest of the scene is prepared.
   // Tessellated for the coarse first pass: marked, so that no later plan takes it over.
-  if(coarseTessellation()&&data&&!reusedData&&(subdGeometry||polyGeometry))const_cast<MeshData&>(*data).coarse=true;
+  if(coarseTessellation()&&data&&!reusedData&&!cacheHit&&(subdGeometry||polyGeometry)){const_cast<MeshData&>(*data).coarse=true;++coarseMade;}
   need(plan->bytes<=limits.bytes,geometryBudgetText(plan->bytes,limits.bytes));plan->meshes.push_back({data,mat?materialIds.at(mat->getName()):~0u,volumeIndex,
    paths?(geometryVisibility(o)&(item.instancer?geometryVisibility(*item.instancer):0xffu)):0xffu,
    paths&&volumeIndex<0&&get<rdl::Int>(o,"side_type")==1,
    plan->aovs?plan->aovs->geomLabel(aov::attribute<rdl::String>(o,"label","")):-1});
   plan->meshes.back().families=indexedFamilies(o,frame,familyCache)|(mat?indexedFamilies(*mat,frame,familyCache):0);
   plan->meshes.back().geometry=o.getName();if(reusedData&&data->coarse)keptStandIns.insert(data.get());
+  if(paths&&mat){auto known=seeThroughCache.find(mat);if(known==seeThroughCache.end())known=seeThroughCache.emplace(mat,seeThroughMaterial(*mat)).first;
+   plan->meshes.back().seeThrough=known->second;}
   if(!item.instancer)plan->meshes.back().owner=o.getName();
   else if(shareInstance){plan->meshes.back().owner=item.instancer->getName();plan->meshes.back().ownerInstancer=true;
    plan->meshes.back().ownerIndex=item.instance;}
@@ -4318,16 +4361,23 @@ X2_SPLIT_INLINE PlanView prepare(const rdl::SceneContext& context,const Canonica
    plan->meshFilterTable[mi]=it->second;}
  }
  need(plan->bytes<=limits.bytes,geometryBudgetText(plan->bytes,limits.bytes));
- // Volume indirect samples with volumes in the scene: XPU2 does not take MoonRay's indirect volume samples.
- need(plan->volumes.empty()||get<rdl::Int>(sv,"volume_indirect_samples")<=0,
-      "__SceneVariables__ / volume_indirect_samples: nondefault setting unsupported with volumes in the scene");
+ // Volume indirect samples with volumes in the scene: MoonRay's integrateVolumeScatteringIndirect (async_integrator.h
+ // volumeScatterIndirect), on the CPU lane and on the GPU. XPU2_SESSION_VOLUME_INDIRECT=0: refused, as before.
+ {static const bool indirectOn=[]{const char* v=std::getenv("XPU2_SESSION_VOLUME_INDIRECT");return !(v&&v[0]=='0');}();
+  need(indirectOn||plan->volumes.empty()||get<rdl::Int>(sv,"volume_indirect_samples")<=0,
+       "__SceneVariables__ / volume_indirect_samples: nondefault setting unsupported with volumes in the scene");}
  if(paths)routeMeshes(*plan,limits.gpuBytes);
  // The coarse first pass: dense meshes simplified (coarse_geometry.h), and how many of its meshes are lighter than the full
  // plan's (the session renders a coarse pass only where some are).
- if(limits.coarse){const float angle=pixelAngle(plan->camera,plan->width,plan->height);
+ // Every mesh the coarse pass would have tessellated coarse came from the cache at full detail (none made coarse): the
+ // plan is the full plan, nothing made lighter, and the session renders no coarse pass (coarsened 0). With a warm cache
+ // the coarse pass made "everything at full detail" later than the full plan alone did.
+ const bool cachedWhole=limits.coarse&&!limits.fullDetail&&coarseCacheGate()&&coarseMade==0&&!fullFromCache.empty();
+ if(cachedWhole)std::printf("MoonRay XPU2: coarse first pass left out: the tessellation cache holds its %zu meshes at full detail\n",fullFromCache.size());
+ if(limits.coarse&&!cachedWhole){const float angle=pixelAngle(plan->camera,plan->width,plan->height);
   const V3 eye=surface::transformPoint(plan->camera.cameraToRender,plan->camera.focalPoint);
   std::map<const MeshData*,std::shared_ptr<const MeshData>> lighter;
-  for(auto& mesh:plan->meshes){if(!mesh.data||keptStandIns.count(mesh.data.get())||(limits.fullDetail&&limits.fullDetail->count(mesh.geometry)))continue;
+  for(auto& mesh:plan->meshes){if(!mesh.data||keptStandIns.count(mesh.data.get())||fullFromCache.count(mesh.data.get())||(limits.fullDetail&&limits.fullDetail->count(mesh.geometry)))continue;
    auto it=lighter.find(mesh.data.get());
    if(it==lighter.end())it=lighter.emplace(mesh.data.get(),coarseMesh(*mesh.data,eye,angle)).first;
    if(it->second)mesh.data=it->second;}

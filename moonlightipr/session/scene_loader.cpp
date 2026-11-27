@@ -324,13 +324,13 @@ SceneSettings SceneLoader::apply(const std::string& path) {
     // "MLS" and a letter for the form of the scene, which changes whenever what is written in it does: "C" since
     // the scene's sample clamp is written in it, "D" since a toon material's ramps are, "E" since a hair toon's highlights are,
     // "F" since the lights' poses at the shutter's close are, "G" since the volume scattering factors are, "H" since the
-    // camera's film offset is, "I" since a material's fuzz is, "J" since the light sets are, "K" since a mesh may be displaced, "L" since by a program of displacement nodes, "M" since a material's clearcoat bump strength is, "N" since whether the camera sees each light is, "O" since the subsurface scatterings a path may have are, "P" since each instance's own number is, "Q" since the roughness clamp is, "R" since what reflections and refractions see of the environment is, "S" since the kinds of rays each light is hidden from are, "T" since a displaced mesh may be split by its distance from the camera, "U" since where each moving instance stands at the frame is, "W" since how each light's picture is repeated, turned and moved across it is, "X" since a material's iridescence is, "Y" since a tilted lens's plane of focus is, "Z" since a material's shadow catcher is, "a" since a mesh's slot map is 32 long, "b" since it is 64 long, "c" since a material's glitter is. A plugin and a session of different versions say so plainly, in
+    // camera's film offset is, "I" since a material's fuzz is, "J" since the light sets are, "K" since a mesh may be displaced, "L" since by a program of displacement nodes, "M" since a material's clearcoat bump strength is, "N" since whether the camera sees each light is, "O" since the subsurface scatterings a path may have are, "P" since each instance's own number is, "Q" since the roughness clamp is, "R" since what reflections and refractions see of the environment is, "S" since the kinds of rays each light is hidden from are, "T" since a displaced mesh may be split by its distance from the camera, "U" since where each moving instance stands at the frame is, "W" since how each light's picture is repeated, turned and moved across it is, "X" since a material's iridescence is, "Y" since a tilted lens's plane of focus is, "Z" since a material's shadow catcher is, "a" since a mesh's slot map is 32 long, "b" since it is 64 long, "c" since a material's glitter is, "d" since how a fog is lit is. A plugin and a session of different versions say so plainly, in
     // place of reading each other's scenes wrongly.
     const uint32_t mark = in.value<uint32_t>();
     if ((mark & 0x00ffffff) != 0x00534c4d) throw std::runtime_error("Not a MoonLightIPR scene: " + path);
-    if (mark != 0x63534c4d)
+    if (mark != 0x64534c4d)
         throw std::runtime_error("This MoonLightIPR and the plugin are of different versions (the scene is form '" + std::string(1, char(mark >> 24))
-                                 + "', this MoonLightIPR reads 'c'). Install the kit and its runtime from the same release.");
+                                 + "', this MoonLightIPR reads 'd'). Install the kit and its runtime from the same release.");
     ++generation;
     SceneSettings settings;
     settings.width = in.value<uint32_t>();
@@ -640,6 +640,8 @@ SceneSettings SceneLoader::apply(const std::string& path) {
             if (glow >= int32_t(gridIndices.size())) throw std::runtime_error("MoonLightIPR scene volume refers to a missing grid");
             material.volumeGlowGrid = glow < 0 ? -1 : int32_t(gridIndices[glow]);
             in.floats(material.volumeGlowRows, 12);
+            // How it is lit (form 'd'): FOG_NO_SHADOW, FOG_NO_ENVIRONMENT.
+            material.volumeSwitches = in.value<uint32_t>();
         }
         if (materialFlags & (1u << 16)) {
             // MoonRay's iridescence: the lobe it tints, its numbers, then its colours from index 0 to 1.

@@ -171,6 +171,22 @@ CASES = [
     ('proc_implicit', 'implicitUV', 1, (0, 0, 0), (.25, .25, .25), {'layer': {'type': 'square', 'lineWidth': .2, 'transWidth': .3}}, 'grid'),
     ('proc_triplanar_hard', 'triplanar', 1, (0, 0, 0), (.25, .25, .25), {'triplanarBlending': 1.0, 'layer': {'type': 'square', 'lineWidth': .1, 'transWidth': 0.0}}, 'grid'),
     ('proc_triplanar_soft', 'triplanar', 1, (0, 0, 0), (.5, .5, .5), {'triplanarBlending': 0.0, 'layer': {'type': 'line', 'lineWidth': .1, 'transWidth': .1}}, 'grid'),
+    # Triplanar procedurals, to read Modo's rule for them: the shapes that are not symmetric (Triangle, Hexagon, Dots),
+    # hardness, uneven sizes, a turn, the axis, UV Rotation and the Wraps one by one.
+    ('tri_dots_square', 'triplanar', 1, (0, 0, 0), (.25, .25, .25), {'triplanarBlending': .5, 'layer': {'type': 'square', 'dotWidth': .4, 'transWidth': .2}}, 'dots'),
+    ('tri_dots_hexagon', 'triplanar', 1, (0, 0, 0), (.25, .25, .25), {'triplanarBlending': .5, 'layer': {'type': 'hexagon', 'dotWidth': .4, 'transWidth': .2}}, 'dots'),
+    ('tri_grid_triangle', 'triplanar', 1, (0, 0, 0), (.25, .25, .25), {'triplanarBlending': .5, 'layer': {'type': 'triangle', 'lineWidth': .1, 'transWidth': .1}}, 'grid'),
+    ('tri_grid_hexagon', 'triplanar', 1, (0, 0, 0), (.25, .25, .25), {'triplanarBlending': .5, 'layer': {'type': 'hexagon', 'lineWidth': .1, 'transWidth': .1}}, 'grid'),
+    ('tri_hard_h1', 'triplanar', 1, (0, 0, 0), (.25, .25, .25), {'triplanarBlending': .1, 'layer': {'type': 'square', 'lineWidth': .2, 'transWidth': .3}}, 'grid'),
+    ('tri_hard_h6', 'triplanar', 1, (0, 0, 0), (.25, .25, .25), {'triplanarBlending': .6, 'layer': {'type': 'square', 'lineWidth': .2, 'transWidth': .3}}, 'grid'),
+    ('tri_size', 'triplanar', 1, (0, 0, 0), (.2, .35, .5), {'triplanarBlending': .5, 'layer': {'type': 'square', 'lineWidth': .2, 'transWidth': .3}}, 'grid'),
+    ('tri_rot', 'triplanar', 1, (20, 35, 10), (.25, .25, .25), {'triplanarBlending': .5, 'layer': {'type': 'square', 'lineWidth': .2, 'transWidth': .3}}, 'grid'),
+    ('tri_rotsize', 'triplanar', 1, (20, 35, 10), (.2, .35, .5), {'triplanarBlending': .5, 'layer': {'type': 'triangle', 'lineWidth': .1, 'transWidth': .1}}, 'grid'),
+    ('tri_axis_x', 'triplanar', 0, (0, 0, 0), (.25, .25, .25), {'triplanarBlending': .5, 'layer': {'type': 'triangle', 'lineWidth': .1, 'transWidth': .1}}, 'grid'),
+    ('tri_axis_z', 'triplanar', 2, (0, 0, 0), (.25, .25, .25), {'triplanarBlending': .5, 'layer': {'type': 'triangle', 'lineWidth': .1, 'transWidth': .1}}, 'grid'),
+    ('tri_uvrot', 'triplanar', 1, (0, 0, 0), (.25, .25, .25), {'triplanarBlending': .5, 'uvRotation': 30.0, 'layer': {'type': 'square', 'lineWidth': .2, 'transWidth': .3}}, 'grid'),
+    ('tri_wrap', 'triplanar', 1, (0, 0, 0), (.25, .25, .25), {'triplanarBlending': .5, 'wrapU': 2.0, 'wrapV': 3.0, 'layer': {'type': 'square', 'lineWidth': .2, 'transWidth': .3}}, 'grid'),
+    ('tri_line', 'triplanar', 1, (0, 0, 0), (.25, .25, .25), {'triplanarBlending': .5, 'uvRotation': 90.0, 'layer': {'type': 'line', 'lineWidth': .1, 'transWidth': .1}}, 'grid'),
     # Thin hard lines and dots, half a unit across, to read the shapes of the lattices (PROBE_RES=1440x720).
     ('thin_grid_triangle', 'planar', 1, (0, 0, 0), (.5, .5, .5), {'layer': {'type': 'triangle', 'lineWidth': .04, 'transWidth': 0.0}}, 'grid'),
     ('thin_grid_hexagon', 'planar', 1, (0, 0, 0), (.5, .5, .5), {'layer': {'type': 'hexagon', 'lineWidth': .04, 'transWidth': 0.0}}, 'grid'),
@@ -293,9 +309,9 @@ try:
                 snapshot = host.snapshot()
                 (out / ('%s%s.rdla' % (label, TAG))).write_text(
                     rdla.scene_text(snapshot, SIZE[0], SIZE[1], 4, 0.0, str(out / ('moonray_%s%s.exr' % (label, TAG)))), encoding='utf-8')
-                if not CUBE:
-                    kept = {k: v for k, v in snapshot.items() if not k.startswith('_')}
-                    (out / ('%s%s.json' % (label, TAG))).write_text(json.dumps(kept, default=str), encoding='utf-8')
+                # The scene as the plugin reads it (for MoonLightIPR, tools/check_moonlightipr_session.py).
+                kept = {k: v for k, v in snapshot.items() if not k.startswith('_')}
+                (out / ('%s%s.json' % (label, TAG))).write_text(json.dumps(kept, default=str), encoding='utf-8')
             if CUBE:
                 entry['views'] = len(VIEWS)
             environments = snapshot.get('environments') or []

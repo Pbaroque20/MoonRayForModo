@@ -1766,10 +1766,13 @@ void Renderer::setMaterials(const Material* materials, size_t count, const Layer
         DeviceVolume fog{};
         for (int c = 0; c < 3; ++c) {
             fog.extinction[c] = std::max(materials[i].volumeExtinction[c], 0.0f);
-            fog.albedo[c] = std::clamp(materials[i].volumeAlbedo[c], 0.0f, 1.0f);
+            // Not held to 1: a fog may scatter more than it stops, as MoonRay's color_mult allows (a Modo Sprite's
+            // brightness, particles.SPRITE_BRIGHTNESS).
+            fog.albedo[c] = std::max(materials[i].volumeAlbedo[c], 0.0f);
             fog.emission[c] = std::max(materials[i].volumeEmission[c], 0.0f);
         }
         fog.anisotropy = std::clamp(materials[i].volumeAnisotropy, -0.99f, 0.99f);
+        fog.switches = materials[i].volumeSwitches;
         if (materials[i].volumeGrid >= 0) {
             const int32_t grid = materials[i].volumeGrid;
             if (size_t(grid) >= impl->grids.size() || !impl->grids[grid] || impl->gridPeaks[grid] < 0.0f) throw std::runtime_error("MoonLightIPR volume refers to a missing grid");

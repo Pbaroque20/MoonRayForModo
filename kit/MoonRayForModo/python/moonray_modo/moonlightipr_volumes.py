@@ -69,6 +69,18 @@ def product(a, b):
     return [sum(a[row * 4 + k] * b[k * 4 + column] for k in range(4)) for row in range(4) for column in range(4)]
 
 
+# How a fog is lit (the session's FOG_NO_SHADOW, FOG_NO_ENVIRONMENT, form 'd').
+FOG_NO_SHADOW, FOG_NO_ENVIRONMENT = 1, 2
+
+
+def switches(entry):
+    """A VDB volume's lighting switches, as MoonRay is given them: no shadow where it is hidden from shadow rays
+    (visible_shadow), no environment light where it is lit by every light but the environments (a Modo Sprite's fog)."""
+    visibility = entry.get('visibility')
+    return ((FOG_NO_SHADOW if visibility is not None and not visibility[5] else 0)
+            | (FOG_NO_ENVIRONMENT if entry.get('lit_by_environment') is False else 0))
+
+
 def fogs(scene, runtime, warnings):
     """The VDB volumes of a scene as MoonLightIPR draws them: [(mesh, material tag, material)]. Each mesh is the unit
     cube placed over the grid; its material says what the fog stops, scatters and which way."""
@@ -99,7 +111,7 @@ def fogs(scene, runtime, warnings):
         material = {'color': [0.0, 0.0, 0.0], 'roughness': 1.0, 'metallic': 0, '_volume': {
             'extinction': [gain] * 3, 'albedo': working_color([float(v) for v in entry.get('volume_color', [1, 1, 1])]), 'emission': [max(0.0, float(v)) if glow else 0.0 for v in entry.get('emission_color') or [given] * 3],
             'anisotropy': float(entry.get('anisotropy', 0)), 'grid': file, 'rows': [v for row in inverse_rows(world) for v in row],
-            'glow': glow, 'glow_rows': glow_rows}}
+            'glow': glow, 'glow_rows': glow_rows, 'switches': switches(entry)}}
         mesh = {'name': name, 'identity': tag, 'vertices': UNIT_CUBE[0], 'faces': UNIT_CUBE[1], 'matrix': world, 'material': tag, 'smooth': False}
         made.append((mesh, tag, material))
     return made

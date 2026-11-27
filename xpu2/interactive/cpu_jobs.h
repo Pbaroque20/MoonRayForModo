@@ -15,7 +15,7 @@ inline Config config(const cpu::PlanView& p){auto e=p->source->routing->epoch;Co
   c.shadowTerminatorFix=p->shadowTerminatorFix;c.roughnessClamping=p->roughnessClamping;c.transparencyThreshold=p->transparencyThreshold;
   c.bssrdfSamples=p->bssrdfSamples;c.maxSubsurfacePerPath=p->maxSubsurfacePerPath;c.enableSss=p->enableSss;
   for(int i=0;i<12;++i)c.worldToRender[i]=p->worldToRender[i];
-  c.volumeCount=U32(p->volumes.size());c.maxVolumeDepth=p->maxVolumeDepth;c.volumeIlluminationSamples=p->volumeIlluminationSamples;
+  c.volumeCount=U32(p->volumes.size());c.maxVolumeDepth=p->maxVolumeDepth;c.volumeIlluminationSamples=p->volumeIlluminationSamples;c.volumeIndirectSamples=p->volumeIndirectSamples;
   c.volumeOverlapMode=p->volumeOverlapMode;c.volumeTransmittanceThreshold=p->volumeTransmittanceThreshold;
   c.volumeAttenuationFactor=p->volumeAttenuationFactor;c.volumeContributionFactor=p->volumeContributionFactor;
   c.volumePhaseAttenuationFactor=p->volumePhaseAttenuationFactor;

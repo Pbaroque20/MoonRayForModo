@@ -29,3 +29,20 @@ def offsets(x, y, projection, aperture_x, ortho_width, pixel_aspect=1):
     scale=ortho_width/aperture_x if projection=='ortho' else 1000
     # Native projection divides the complete Y window, including its offset.
     return [x*scale,y*scale*pixel_aspect]
+
+
+# The identity of the MoonRay spherical camera made for a Modo camera (host.spherical_camera): the Modo camera's own and this.
+SPHERICAL = '|spherical'
+
+
+def spherical_place(matrix, vr):
+    """Where MoonRay's spherical camera made for a Modo camera stands (host.spherical_camera), the Modo camera standing at
+    matrix: Spherical Map at the camera's own place; Spherical VR turned a quarter about the camera's up axis, as
+    MoonRay's whole sphere has the view's direction three quarters across the picture (SphericalCamera's longitude from
+    -270 to 90 degrees) and Spherical VR, seen from inside the sphere, has it in the middle, the camera's -X a quarter
+    to the left. Also where a drag that moves the camera puts it (incremental.move_only)."""
+    m = list(matrix)
+    if not vr:
+        return m
+    x, y, z = m[0:3], m[4:7], m[8:11]
+    return list(z) + [m[3]] + list(y) + [m[7]] + [-v for v in x] + [m[11]] + m[12:16]

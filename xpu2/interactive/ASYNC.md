@@ -137,6 +137,12 @@ turns it off.
 | --- | --- | --- | --- | --- |
 | Coarse pass, visibility first off | 0.9 s | 4.4 s | 4.4 s | 23.4 s |
 | Coarse pass, visibility first on | 1.0 s | 2.2-2.4 s | 4.6-4.9 s | 23.6-24.7 s |
+| Tessellation cached, coarse pass gated off by the cache (2026-11-26) | 2.0 s | 2.0 s | 2.0 s | 15.1 s |
+| Tessellation cached, gate off (`XPU2_SESSION_COARSE_CACHE_GATE=0`), same run series | 1.5 s | 3.5 s | 6.5 s | 18.0 s |
+
+A coarse plan reads the tessellation cache as the full plan does; where the cache holds every mesh it would make coarse,
+it is the full plan and no coarse pass is rendered (INDEXER.md section 18, follow-ups). Through glass: the visibility
+cast goes on behind see-through surfaces. Quitting abandons the full plan behind the coarse pass between meshes.
 
 Each edit case gave the same image as the scene rendered whole by a fresh session. The car's numbers use its export with
 one substitute texture, through the session harness; a re-cut in Modo also costs the kit's own cut.

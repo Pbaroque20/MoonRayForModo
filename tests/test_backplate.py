@@ -45,12 +45,38 @@ class Projections(unittest.TestCase):
         self.assertEqual(p.point([5, 0, -5]), (1.0, 1.0))
 
     def test_spherical_and_the_latlong_agree(self):
+        # The engines' texel x shows what Modo shows at u = 0.5 - (x + .5) / width (environment_layout), and the photo is
+        # laid as Modo lays an image: its u there.
         p = backplate.Projector('spherical', place=backplate.IDENTITY, size=2.0)
         width, height = 64, 32
         for x, y in ((0, 5), (17, 16), (40, 30), (63, 1)):
             u, v = p.direction(backplate.latlong_direction(x, y, width, height))
-            self.assertAlmostEqual(u % 1.0, (x + .5) / width, places=6)
+            apart = (u - (0.5 - (x + .5) / width)) % 1.0
+            self.assertAlmostEqual(min(apart, 1 - apart), 0.0, places=6)
             self.assertAlmostEqual(v, 1 - (y + .5) / height, places=6)
+
+    def test_modos_layout_middle_at_plus_z(self):
+        # As Modo's spherical projection along Y (coordinates.py) and the Backplate's HDRI: u 0.5 at +Z, 0.75 at +X.
+        for kind in ('spherical', 'cylindrical'):
+            p = backplate.Projector(kind, place=backplate.IDENTITY, size=2.0)
+            self.assertAlmostEqual(p.point([0, 0, 1])[0], 0.5, places=6)
+            self.assertAlmostEqual(p.point([1, 0, 0])[0], 0.75, places=6)
+            self.assertAlmostEqual(p.point([-1, 0, 0])[0], 0.25, places=6)
+
+    def test_a_photo_and_an_hdri_from_one_panorama_line_up(self):
+        """The reflection environment's st map (the photo, spherical) and its HDRI under it (flopped, then moved
+        hdri_shift columns) read the same column of the same panorama at every texel, the item turned as the HDRI is."""
+        width, height = 64, 32
+        for turn in (0, 90, 30, -135):
+            p = backplate.Projector('spherical', place=backplate.hdri_matrix(turn), size=2.0)
+            shift = backplate.hdri_shift(turn, width)
+            for x in range(0, width, 5):
+                for y in (3, 16, 27):
+                    u, _ = p.direction(backplate.latlong_direction(x, y, width, height))
+                    hdri_column = (width - 1) - ((x - shift) % width)
+                    # Within the HDRI's whole-column turn (a column at most).
+                    apart = (u * width - .5 - hdri_column) % width
+                    self.assertLessEqual(min(apart, width - apart), 1.0, (turn, x, y))
 
     def test_box_takes_the_side_it_lies_toward(self):
         p = backplate.Projector('box', place=backplate.IDENTITY, size=2.0)

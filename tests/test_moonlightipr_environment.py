@@ -30,6 +30,18 @@ class EnvironmentTurn(unittest.TestCase):
         quarter = [0, 0, -1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1]
         self.assertEqual(axes({'kind': 'image', 'intensity': 1.0, 'path': 'a.exr', 'matrix': quarter}), [0, 0, 1, 0, 1, 0, -1, 0, 0])
 
+    def test_a_moonray_envlight_item_is_placed_as_moonray_places_it(self):
+        """A MoonRay EnvLight item's image is placed by its own matrix in MoonRay's render (no half turn): MoonLightIPR's
+        preview of it showed MoonRay's picture half a turn round."""
+        from moonray_modo import entities
+        quarter = [0, 0, -1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1]
+        scene = {'camera': {'matrix': IDENTITY}, 'environments': [], 'lights': [], 'meshes': [], 'materials': {},
+                 'entities': [{'identity': 'env', 'name': 'Env', 'class': 'EnvLight', 'matrix': quarter,
+                               'parameters': {'texture': 'a.exr'}, 'attributes': {}}]}
+        (item,) = entities.preview(scene, [])['environments']
+        self.assertTrue(item['moonray_light'])
+        self.assertEqual(axes(item), [0, 0, -1, 0, 1, 0, 1, 0, 0])
+
     def test_a_baked_stack_is_not_turned(self):
         stack = {'kind': 'stack', 'intensity': 1.0, 'matrix': IDENTITY, 'layers': []}
         self.assertEqual(axes(stack), [1, 0, 0, 0, 1, 0, 0, 0, 1])

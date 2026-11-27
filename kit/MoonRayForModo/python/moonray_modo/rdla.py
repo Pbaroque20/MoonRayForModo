@@ -89,9 +89,16 @@ def camera_delta(scene):
     user, 2026-11-22: "it's not drag fast in modo"; a car's steps wrote its whole text, its meshes' fingerprints, each
     time). None where a MoonRay camera item renders in the Modo camera's place (entities.render_camera)."""
     from . import entities
-    try:
-        if entities.render_camera(scene):return None
+    from .camera import SPHERICAL
+    try:chosen=entities.render_camera(scene)
     except Exception:return None
+    if chosen:
+        # The spherical camera made for a Modo camera of Spherical Map or Spherical VR (host.spherical_camera), put
+        # where the drag moved the camera (incremental.move_only): its place alone, as a perspective one's.
+        camera=scene.get('camera') or {}
+        if chosen.get('identity')==str(camera.get('identity'))+SPHERICAL and chosen.get('class')=='SphericalCamera' and 'matrix' in chosen:
+            return 'SphericalCamera("/modo/camera") {\n  ["node_xform"] = %s,\n}\n'%node_matrix(chosen)
+        return None
     camera=scene.get('camera') or {}
     if 'matrix' not in camera:return None
     orthographic=camera.get('projection','persp')=='ortho'
@@ -848,6 +855,45 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
                 # where it stops at that resolution. Renders dice it by the screen as before. A polygon mesh with triangles
                 # among its quads stays diced by the screen (quads_alone).
                 mesh = dict(mesh, adaptive_error=0.0)
+        if displaced and mesh.get('instances') and not mesh.get('adaptive_error') and 'mesh_resolution' not in mesh \
+                and wears_ocean(mesh, scene.get('materials'), sea_tags):
+            # An instanced sea's reference is diced once, evenly, for all its placements (no screen error): as finely as
+            # its nearest placement needs at the scene's displacement rate, within a budget of triangles. At the
+            # level's 8 a tester's sea of sixteen instanced 27 m planes was split 0.2 m apart and its waves flattened.
+            # Only a sea: given to every displaced instancer, a tester's floor of 17 placed tiles came out at 256, past
+            # the 64 XPU2 takes, and the whole scene went to MoonRay XPU.
+            mesh = dict(mesh, mesh_resolution=instanced_resolution(mesh, scene, width, 2 ** level, detail,
+                        held_render['displacement_adaptive_error'] or float(scene.get('displacement_rate', 1.0))))
+        if (subdivision or displaced) and not wears_ocean(mesh, scene.get('materials'), sea_tags):
+            # The most MoonRay may cut it to: cut by the screen, as finely as the shared budget allows (a moving realtime
+            # preview at most the coarse splits) and never finer than Modo's Minimum Edge Length lets its edges be
+            # split; any mesh it tessellates never past DISPLACED_TRIANGLES at the most it can make. Seas keep their
+            # own budget (ocean.py).
+            held = mesh.get('mesh_resolution', 2 ** level)
+            if displaced and mesh.get('adaptive_error') and 'instances' not in mesh and 'mesh_resolution' not in mesh:
+                shared = shared_resolution
+                if shared and detail == 'coarse':
+                    shared = min(shared, INSTANCED_COARSE_SPLITS)
+                fitted = displacement_budget.adaptive_resolution(mesh, held, shared, min_edge)
+            else:
+                fitted = displacement_budget.resolution(held, mesh)
+            if fitted != held:
+                mesh = dict(mesh, mesh_resolution=fitted)
+        if displaced and not subdivision and scene.get('displacement_smooth', True) and mesh.get('smooth', True) \
+                and not wears_ocean(mesh, scene.get('materials'), sea_tags):
+            # Modo's Smooth Positions (on by default): a displaced polygon cage cut onto a smooth surface, not its flat
+            # faces. MoonRay has no such setting: it is handed the cage split onto that surface, and cuts it as many
+            # times less finely (smooth_positions). Cut from its flat faces, a 16-sided column came out faceted, with dark
+            # ticks along its edges, where Modo's is round.
+            from . import smooth_positions
+            held = mesh.get('mesh_resolution', 2 ** level)
+            split = smooth_positions.splits(mesh, min(held, resolution_cap or held))
+            if split > 1:
+                mesh = dict(smooth_positions.refine(mesh, split), mesh_resolution=smooth_positions.resolution(held, split))
+                vertices, faces = mesh['vertices'], mesh['faces']
+                face_materials = mesh.get('face_materials')
+                if face_materials is not None:
+                    parts = _parts_of(face_materials, materials)
         user_data = cryptomatte.userdata_set(mesh,lines,scene) if crypto else []
         named_uvs=dict(mesh.get('uv_sets',{}))
         if named_uvs:
@@ -895,30 +941,6 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
             instance_values = primitive_attributes.emit('/modo/instances/%s/attribute' % index, mesh['instance_attributes'], lines)
         elif mesh.get('attributes') and 'instances' not in mesh:
             user_data += primitive_attributes.emit('/modo/mesh/%s/attribute' % index, [mesh['attributes']], lines)
-        if displaced and mesh.get('instances') and not mesh.get('adaptive_error') and 'mesh_resolution' not in mesh \
-                and wears_ocean(mesh, scene.get('materials'), sea_tags):
-            # An instanced sea's reference is diced once, evenly, for all its placements (no screen error): as finely as
-            # its nearest placement needs at the scene's displacement rate, within a budget of triangles. At the
-            # level's 8 a tester's sea of sixteen instanced 27 m planes was split 0.2 m apart and its waves flattened.
-            # Only a sea: given to every displaced instancer, a tester's floor of 17 placed tiles came out at 256, past
-            # the 64 XPU2 takes, and the whole scene went to MoonRay XPU.
-            mesh = dict(mesh, mesh_resolution=instanced_resolution(mesh, scene, width, 2 ** level, detail,
-                        held_render['displacement_adaptive_error'] or float(scene.get('displacement_rate', 1.0))))
-        if (subdivision or displaced) and not wears_ocean(mesh, scene.get('materials'), sea_tags):
-            # The most MoonRay may cut it to: cut by the screen, as finely as the shared budget allows (a moving realtime
-            # preview at most the coarse splits) and never finer than Modo's Minimum Edge Length lets its edges be
-            # split; any mesh it tessellates never past DISPLACED_TRIANGLES at the most it can make. Seas keep their
-            # own budget (ocean.py).
-            held = mesh.get('mesh_resolution', 2 ** level)
-            if displaced and mesh.get('adaptive_error') and 'instances' not in mesh and 'mesh_resolution' not in mesh:
-                shared = shared_resolution
-                if shared and detail == 'coarse':
-                    shared = min(shared, INSTANCED_COARSE_SPLITS)
-                fitted = displacement_budget.adaptive_resolution(mesh, held, shared, min_edge)
-            else:
-                fitted = displacement_budget.resolution(held, mesh)
-            if fitted != held:
-                mesh = dict(mesh, mesh_resolution=fitted)
         if (subdivision or displaced) and mesh.get('adaptive_error'):
             by_view = True
         lines += ['do', '  local geometry = RdlMeshGeometry("/modo/mesh/%s") {' % index,

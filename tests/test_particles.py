@@ -172,6 +172,98 @@ class Reading(unittest.TestCase):
         self.assertFalse([w for w in scene['warnings'] if 'Animated VDB' in w])
 
 
+IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+
+
+def sprite_reading():
+    """A reading with a sun, an environment and a Sprite's fog as particles.sprite_volume makes it."""
+    item = mock.Mock(id='sprite1')
+    item.name = 'Cloud'
+    held = {'positions': array('f', [0, 1, 0]), 'ids': array('f', [0.5]), 'sizes': None, 'velocities': None}
+    values = {'radius': 0.5, 'sizeRand': 0.0, 'density': 1.0, 'falloff': 0.5, 'scattering': 0.5, 'phaseFwd': 0.5, 'material': ''}
+    with mock.patch.object(particles, 'sprite_made', return_value='C:/cache/sprite.vdb'):
+        fog = particles.sprite_volume(item, held, values, None)
+    sun = {'kind': 'DistantLight', 'identity': 'sun1', 'name': 'Sun', 'color': [1, 1, 1], 'intensity': 1.0, 'matrix': IDENTITY, 'angle': 0.5}
+    return fog, {'camera': {'matrix': [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 5, 1], 'focal_mm': 50.0, 'film_mm': 36.0},
+                 'materials': {'': {'color': [.5, .5, .5]}}, 'meshes': [], 'lights': [sun], 'environments': [], 'extra_geometry': [fog]}
+
+
+class SpriteLighting(unittest.TestCase):
+    """Modo lights a Sprite's fog by its lights alone, the fog shading neither itself nor anything else, and Luminous
+    Density gives off nothing (tools/probe_cl_sprite_light.py, probe_cl_blob_shading.py)."""
+
+    def test_sprite_fog_casts_no_shadow_and_ignores_the_environment(self):
+        fog, _ = sprite_reading()
+        self.assertFalse(fog['visibility'][5])
+        self.assertTrue(all(fog['visibility'][:5]))
+        self.assertIs(fog['lit_by_environment'], False)
+        self.assertEqual(fog['emission'], 0.0)
+        self.assertEqual(fog['emission_grid'], '')
+        self.assertEqual(fog['volume_color'], [0.5 * particles.SPRITE_BRIGHTNESS] * 3)
+
+    def test_moonray_scene_gives_the_fog_every_light_but_the_environments(self):
+        from moonray_modo import rdla
+        _, reading = sprite_reading()
+        text = rdla.scene_text(reading, 64, 36, 1, 0.15)
+        direct = next(line for line in text.splitlines() if line.startswith('local directLightSet'))
+        self.assertIn('DistantLight("/modo/light/sun1")', direct)
+        self.assertNotIn('EnvLight', direct)
+        self.assertIn('or directLightSet or lightSet}', text)
+        self.assertIn('["visible_shadow"] = false', text)
+        # A scene without such fog is written as before.
+        reading['extra_geometry'] = []
+        self.assertNotIn('directLightSet', rdla.scene_text(reading, 64, 36, 1, 0.15))
+
+    def test_moonlightipr_fog_switches(self):
+        from moonray_modo import moonlightipr_volumes
+        fog, _ = sprite_reading()
+        self.assertEqual(moonlightipr_volumes.switches(fog), moonlightipr_volumes.FOG_NO_SHADOW | moonlightipr_volumes.FOG_NO_ENVIRONMENT)
+        self.assertEqual(moonlightipr_volumes.switches({'kind': 'vdb'}), 0)
+        self.assertEqual(moonlightipr_volumes.switches({'kind': 'vdb', 'visibility': [1, 1, 1, 1, 1, 1]}), 0)
+
+    def test_moonlightipr_reads_fog_switches_and_albedo_past_one(self):
+        loader = (ROOT / 'moonlightipr/session/scene_loader.cpp').read_text(encoding='utf-8')
+        self.assertIn('material.volumeSwitches = in.value<uint32_t>();', loader)
+        renderer = (ROOT / 'moonlightipr/src/renderer.cpp').read_text(encoding='utf-8')
+        self.assertIn('fog.albedo[c] = std::max(materials[i].volumeAlbedo[c], 0.0f);', renderer)
+        self.assertIn('fog.switches = materials[i].volumeSwitches;', renderer)
+        kernel = (ROOT / 'moonlightipr/src/device/kernel.cu').read_text(encoding='utf-8')
+        self.assertIn('if (!fog.grid || (fog.switches & FOG_NO_SHADOW)) continue;', kernel)
+        self.assertIn('if (!(fog.switches & FOG_NO_ENVIRONMENT)) sky += here;', kernel)
+        packer = (KIT / 'python/moonray_modo/moonlightipr_materials.py').read_text(encoding='utf-8')
+        self.assertIn("'<10fi12fi12fI'", packer)
+
+
+class Simulations(unittest.TestCase):
+    """A Blob or Sprite on a Particle Simulation (tools/probe_cl_particle_sim.py): until Modo has run the simulation to
+    the frame it gives positions alone and no particles, which is said; run, it gives ids, velocities and ages."""
+
+    def reading(self, held):
+        class Item:
+            def __init__(self, identity, kind):
+                self.id, self.type, self.name, self.parent = identity, kind, identity, None
+
+            def itemGraph(self, name):
+                return mock.Mock(reverse=lambda: [SIM] if self.type == 'blob' else [])
+        SIM = Item('sim1', 'particleSim')
+        blob = Item('blob1', 'blob')
+        scene = mock.Mock(items=lambda kind, superType=False: [blob] if kind == 'blob' else [])
+        result = {'meshes': [], 'extra_geometry': [], 'time': 1.0, 'fps': 24.0}
+        host = mock.Mock(render_visible=lambda item: True)
+        warnings = []
+        with mock.patch.dict(sys.modules, {'moonray_modo.host': host, 'lx': mock.Mock()}), mock.patch.object(particles, 'read', return_value=held):
+            particles.apply(scene, result, warnings)
+        return warnings
+
+    def test_a_simulation_not_run_to_the_frame_is_said(self):
+        empty = {'positions': array('f'), 'ids': array('f'), 'sizes': None, 'velocities': None, 'features': ['pos']}
+        self.assertTrue(any('Particle Simulation has no particles at this frame' in w for w in self.reading(empty)))
+
+    def test_a_run_simulation_with_none_born_yet_is_not(self):
+        empty = {'positions': array('f'), 'ids': array('f'), 'sizes': None, 'velocities': None, 'features': ['pos', 'id', 'vel', 'age']}
+        self.assertEqual(self.reading(empty), [])
+
+
 @unittest.skipUnless(TOOL.is_file() and RUNTIME is not None, 'modo_particles.exe not built (tools/build_particles_tool.py) or no runtime')
 class Native(unittest.TestCase):
     def setUp(self):

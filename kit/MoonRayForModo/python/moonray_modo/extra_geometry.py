@@ -990,6 +990,8 @@ def emit(scene,materials,lines,crypto=False):
         else:
             lines += ['do','  local g = %s(%s) { %s }'%(constructor,string(path),', '.join('[%s] = %s'%(string(k),v) for k,v in attrs.items())),'  table.insert(geometries, g)']
         if kind=='vdb':
-            lines += ['  local a = {g, "", %s, objectLightSets[%s] or (nativeLightSets[%s] and nativeLightSets[%s][%s]) or lightSet}'%(shader,string(owner(entry)),string(owner(entry)),string(owner(entry)),string(tag)),'  if objectShadowSets[%s] then table.insert(a, objectShadowSets[%s]) end'%(string(owner(entry)),string(owner(entry))),'  table.insert(assignments,a)']
+            # Fog Modo lights by its lights alone (a Sprite's) is lit by every light but the environments (lighting.emit).
+            fallback='directLightSet or lightSet' if entry.get('lit_by_environment') is False else 'lightSet'
+            lines += ['  local a = {g, "", %s, objectLightSets[%s] or (nativeLightSets[%s] and nativeLightSets[%s][%s]) or %s}'%(shader,string(owner(entry)),string(owner(entry)),string(owner(entry)),string(tag),fallback),'  if objectShadowSets[%s] then table.insert(a, objectShadowSets[%s]) end'%(string(owner(entry)),string(owner(entry))),'  table.insert(assignments,a)']
         else:lines.append('  assign(g, "", %s, %s)'%(string(tag),string(owner(entry))))
         lines.append('end')

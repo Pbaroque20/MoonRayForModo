@@ -345,8 +345,13 @@ def emit(environments, lines):
         if 'matrix' in environment:
             placed=environment['matrix']
             if environment['kind']=='image':
-                # MoonRay's environment light shows a latitude-longitude image half a turn about the vertical from
-                # where Modo's spherical projection puts it (tools/probe_hdri_turn.py): turned so in its own space first.
+                # A plain image's file was laid out as Modo shows it (environment_layout.laid_out: its column u holds
+                # what Modo shows at 0.5 - u; the Backplate's photo environments are made in that layout too,
+                # backplate.latlong_direction). Turned half a turn about the vertical in its own space, as here, MoonRay's
+                # EnvLight shows a latitude-longitude image's middle at -Z, u growing toward +X, which shows that file
+                # as Modo shows the original; then placed and turned as Modo's Texture Locator is. A turn cannot mirror:
+                # the mirror between MoonRay's layout and Modo's is undone in the file (up to 0.5.6.2, without it, the
+                # picture was Modo's mirrored front to back).
                 placed=[-v for v in placed[0:4]]+list(placed[4:8])+[-v for v in placed[8:12]]+list(placed[12:16])
             attributes['node_xform']=matrix(placed)
         lines.append('table.insert(lights, EnvLight("/modo/environment/scene/%d") {' % index)

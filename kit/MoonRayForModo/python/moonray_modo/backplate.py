@@ -119,11 +119,15 @@ class Projector:
         if self.projection == 'planar':
             # Seen from above, as a ground is: X across, -Z up the photo.
             return (x + 0.5, -z + 0.5)
+        # Spherical and cylindrical as Modo's projections lay an image (coordinates.py) and as the Backplate's HDRI is
+        # laid out (environment_layout): the photo's middle (u 0.5) at the item's +Z, u growing toward +X, so that a
+        # photo and an HDRI made from the same panorama line up. Up to 0.5.6.2 its middle was at -Z, which agreed with
+        # the HDRI as the engines showed it then (mirrored front to back against Modo).
         if self.projection == 'spherical':
             d = unit([x, y, z])
-            return (0.5 + math.atan2(d[0], -d[2]) / (2 * math.pi), 0.5 + math.asin(max(-1.0, min(1.0, d[1]))) / math.pi)
+            return (0.5 + math.atan2(d[0], d[2]) / (2 * math.pi), 0.5 + math.asin(max(-1.0, min(1.0, d[1]))) / math.pi)
         if self.projection == 'cylindrical':
-            return (0.5 + math.atan2(x, -z) / (2 * math.pi), y + 0.5)
+            return (0.5 + math.atan2(x, z) / (2 * math.pi), y + 0.5)
         # Box: the photo whole on each of the box's six sides, the side the point lies farthest toward.
         ax, ay, az = abs(x), abs(y), abs(z)
         if ay >= ax and ay >= az:
@@ -227,7 +231,7 @@ def reflection_environment(projector, plate, hdri, hdri_rotation, plate_intensit
     projection and kept in the cache folder. Where there is no HDRI, black under it."""
     width, height = ENVIRONMENT_WIDTH, ENVIRONMENT_WIDTH // 2
     stamp = (_stamp(plate), _stamp(hdri) if hdri else None, round(float(hdri_rotation), 6), float(plate_intensity),
-             float(hdri_intensity), width, key, 'v2')
+             float(hdri_intensity), width, key, 'v3')
     target = _cache('reflection', stamp, '.exr')
     if target.is_file() and target.stat().st_size:
         return target

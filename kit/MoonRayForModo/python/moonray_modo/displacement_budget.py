@@ -33,6 +33,12 @@ RATE, RATIO, MIN_EDGE = 1.0, 4.0, 0.0001
 
 # The verdicts given, by what they were given for (verdict).
 _VERDICTS = {}
+_TOKENS = __import__('itertools').count(1)
+
+
+def next_token():
+    """A number naming one sample (sample) in the verdicts' keys."""
+    return next(_TOKENS)
 
 
 def triangles(faces):
@@ -106,41 +112,85 @@ def _place(point, matrix):
     return tuple(point[0] * matrix[c] + point[1] * matrix[4 + c] + point[2] * matrix[8 + c] + matrix[12 + c] for c in range(3))
 
 
-def mesh_dicing(vertices, faces, matrix, view, rate=RATE, ratio=RATIO, min_edge=MIN_EDGE):
-    """Modo's cut of one placed mesh (its polygons fanned into triangles), from up to SAMPLED of them spread over it."""
+def sampled(vertices, faces):
+    """Up to SAMPLED of a mesh's polygons spread over it, fanned into triangles (in its own space), and how many
+    polygons each stands for: (triangles, factor)."""
     count = len(faces)
     if not count:
-        return 0.0
+        return [], 0.0
     step = max(1, count // SAMPLED)
-    total, looked, made = 0.0, 0, 0
+    found, looked = [], 0
     for index in range(0, count, step):
         face = list(faces[index])
         if len(face) < 3:
             continue
         looked += 1
-        corners = [_place(vertices[k], matrix) for k in face]
+        corners = [(float(vertices[k][0]), float(vertices[k][1]), float(vertices[k][2])) for k in face]
         for k in range(1, len(corners) - 1):
-            total += _triangle(corners[0], corners[k], corners[k + 1], view, rate, ratio, min_edge)
-            made += 1
-    if not looked:
-        return 0.0
-    return total * float(count) / looked
+            found.append((corners[0], corners[k], corners[k + 1]))
+    return found, (float(count) / looked if looked else 0.0)
+
+
+def diced(triangles, factor, matrix, view, rate=RATE, ratio=RATIO, min_edge=MIN_EDGE):
+    """Modo's cut of sampled triangles (sampled) placed by matrix."""
+    total = 0.0
+    for a, b, c in triangles:
+        total += _triangle(_place(a, matrix), _place(b, matrix), _place(c, matrix), view, rate, ratio, min_edge)
+    return total * factor
+
+
+def mesh_dicing(vertices, faces, matrix, view, rate=RATE, ratio=RATIO, min_edge=MIN_EDGE):
+    """Modo's cut of one placed mesh (its polygons fanned into triangles), from up to SAMPLED of them spread over it."""
+    triangles, factor = sampled(vertices, faces)
+    return diced(triangles, factor, matrix, view, rate, ratio, min_edge)
+
+
+# A prototype placed more times than this (a replicator's) is estimated from its placements nearest the camera alone.
+NEAREST_PLACES = 8
+
+
+def sample(data, surfaces=None):
+    """What an estimate keeps of an undisplaced reading (evaluated.capture) for its displaced surfaces (surfaces: those
+    of data['surfaces'] to count; all where None): for each prototype, its triangles sampled (sampled) and every place
+    it stands. Modo's displaced reading holds a prototype once, however many surfaces place it (a replicator's copies,
+    instances), so its cut is counted once: at the place where it is cut finest (modo_cut). A camera move is estimated
+    from it again with nothing read."""
+    prototypes = data.get('prototypes') or {}
+    kept = {}
+    for surface in (data.get('surfaces') or ()) if surfaces is None else surfaces:
+        key = str(surface.get('source_id'))
+        if key not in kept:
+            prototype = prototypes.get(key) or {}
+            parts = [sampled(segment['vertices'], segment['faces']) for segment in prototype.get('segments') or ()
+                     if segment.get('faces') and segment.get('vertices')]
+            points = [p for triangles, _ in parts for t in triangles for p in t]
+            centre = tuple(sum(p[k] for p in points) / len(points) for k in range(3)) if points else (0.0, 0.0, 0.0)
+            kept[key] = {'parts': parts, 'centre': centre, 'places': []}
+        kept[key]['places'].append(tuple(surface.get('matrix') or ()) or None)
+    return kept
+
+
+def modo_cut(kept, view, rate=RATE, ratio=RATIO, min_edge=MIN_EDGE):
+    """Modo's cut of what sample kept, seen by view: each prototype at the place it is cut finest (of its
+    NEAREST_PLACES nearest the camera, where it stands at more)."""
+    total = 0.0
+    for held in kept.values():
+        places = held['places']
+        if len(places) > NEAREST_PLACES:
+            eye = view.eye
+            places = sorted(places, key=lambda m: sum((c - e) ** 2 for c, e in zip(_place(held['centre'], m), eye)))[:NEAREST_PLACES]
+        total += max(sum(diced(triangles, factor, matrix, view, rate, ratio, min_edge) for triangles, factor in held['parts'])
+                     for matrix in places) if places else 0.0
+    return total
 
 
 def modo_dicing(data, displaced_layers, camera, width, height, rate=RATE, ratio=RATIO, min_edge=MIN_EDGE):
     """Modo's cut of the surfaces of an undisplaced reading (evaluated.capture) that a Displacement layer applies to
-    (displaced_layers: their item identities): about how many triangles Modo's displaced reading would hold."""
-    view = View(camera, width, height)
-    prototypes = data.get('prototypes') or {}
-    total = 0.0
-    for surface in data.get('surfaces') or ():
-        if not set(surface.get('layers') or ()) & displaced_layers:
-            continue
-        prototype = prototypes.get(str(surface.get('source_id'))) or {}
-        for segment in prototype.get('segments') or ():
-            if segment.get('faces') and segment.get('vertices'):
-                total += mesh_dicing(segment['vertices'], segment['faces'], surface.get('matrix'), view, rate, ratio, min_edge)
-    return total
+    (displaced_layers: their item identities, matched against each surface's layers; every surface where None): about
+    how many triangles Modo's displaced reading would hold."""
+    surfaces = [surface for surface in data.get('surfaces') or ()
+                if displaced_layers is None or set(surface.get('layers') or ()) & displaced_layers]
+    return modo_cut(sample(data, surfaces), View(camera, width, height), rate, ratio, min_edge)
 
 
 def verdict(key, estimate):
