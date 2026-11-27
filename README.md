@@ -15,6 +15,8 @@ The plugin includes CPU, XPU and XPU2 rendering, a dockable live preview with a 
 
 · [Installation instructions](docs/INSTALLATION.md) 
 
+· [How it works: MoonRay on Windows, and the C++ adapter](docs/HOW_IT_WORKS.md) (for developers)
+
 · [What's new in 0.5](docs/WHATS_NEW_05.md) 
 
 · [What's new in 0.4 to 0.4.3.1](docs/WHATS_NEW_04.md) 

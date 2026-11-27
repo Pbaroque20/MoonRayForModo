@@ -40,7 +40,7 @@ of the scene and film. Every lane is made and used on the one feeder thread, eac
   cards, and each pixel's error is worked out from the sums as one card works out its own (`GpuLane::poolErrors`), so
   it is the error one card with every sample would have found. The renderer then pools the CPU's as before. Errors are
   asked for only once no card holds parked samples and each has a launch slot free. (Pooling each card's own error by
-  its count, the first way, was noisier: the full suite's three cards on Hydra came out past the noise.)
+  its count, the first way, was noisier: the full suite's three cards on a test scene came out past the noise.)
 - **One card's alone.** The pass chain and partial shading stay with a single card: with followers, a frame takes the
   host's passes and parks samples on a missing tile, paths XPU2 already had.
 - **Shaders.** Compile XPU2 Shaders compiles for each card used, since OptiX's cache holds the programs for each kind of
@@ -111,8 +111,8 @@ one-card renders, within their noise, with the Terminal lines each machine shoul
 A simulated card shares the real card's memory and speed, so the timings say nothing about real cards. What it shows is
 that the lanes claim, launch, merge and audit correctly: the picture should match a one-card render's within noise.
 
-First runs (2026-11-03, RTX 3090, i7-4930K, session md1): 9 Spheres and Hydra on one card, then with 2 and 3 simulated
+First runs (2026-11-03, RTX 3090, i7-4930K, session md1): 9 Spheres and a Modo scene exported to MoonRay on one card, then with 2 and 3 simulated
 cards, 3 simulated processor groups, and 2 of each. None fell back. Against the one-card picture the mean ratio was
-1.0000 on 9 Spheres (RMS difference 0.0001 to 0.0002 of a mean of 0.30) and 0.9998 to 0.9999 on Hydra (adaptive, RMS
-0.0020 to 0.0026 of 0.038). Three lanes on one card took Hydra 2.7 times as long: the card time-slices between their
+1.0000 on 9 Spheres (RMS difference 0.0001 to 0.0002 of a mean of 0.30) and 0.9998 to 0.9999 on that scene (adaptive, RMS
+0.0020 to 0.0026 of 0.038). Three lanes on one card took that scene 2.7 times as long: the card time-slices between their
 contexts, which separate cards do not. The denoiser's hand-off has not run yet.
