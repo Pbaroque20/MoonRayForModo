@@ -655,12 +655,31 @@ class Editor(QtWidgets.QDialog):
             path,_=chooser(self,'Choose '+key,start,filters)
             if not path:return
             self.last_asset_directory=os.path.dirname(path[0] if multiple else path)
+        if not multiple and node['type']!='OpenVdbMap':path=self.udim_choice(path)
         before=copy.deepcopy(self.graph)
         try:
             target=self.target(identity);target.setdefault('parameters',{})[key]=path
             target.setdefault('inputs',{}).pop(key,None)
             self.validate_draft();self.remember(before);self.rebuild()
         except (ValueError,TypeError) as exc:self.graph=before;self.error(exc)
+    def udim_choice(self,path):
+        """A file chosen that is one tile of a UDIM set (textures.udim_set: body.1001.exr with body.1002.exr beside it) is
+        the whole set, as a path with <UDIM> in place of the number, by itself (asked 2026-11-27: no question); said in
+        the Event Log and beside the pointer. One tile alone is had by typing its name in the field. Windows allows no
+        <UDIM> in a file's name; the kit finds the tiles by the pattern at render time."""
+        from .textures import udim_set
+        try:found=udim_set(path)
+        except OSError:found=None
+        if not found:return path
+        pattern,tiles=found
+        said='%s is one of %d UDIM tiles (%d to %d): using %s'%(os.path.basename(path),len(tiles),tiles[0],tiles[-1],os.path.basename(pattern))
+        try:
+            import lx
+            lx.out('MoonRay: '+said)
+        except Exception:
+            pass
+        QtWidgets.QToolTip.showText(QtGui.QCursor.pos(),said,self)
+        return pattern
     def commit_inputs(self):
         from shiboken2 import isValid
         for field in list(self.numeric_fields):

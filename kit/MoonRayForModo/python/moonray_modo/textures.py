@@ -99,6 +99,28 @@ def source_tiles(source):
             if path.is_file() for match in [pattern.match(path.name)] if match}
 
 
+def udim_set(path):
+    """The UDIM set a chosen file is one tile of: its path with <UDIM> in place of the tile's number, and the tile numbers
+    found beside it (sorted), or None. The number is a stand-alone run of four digits from 1001 to 1999 in the file's name
+    (body.1001.exr, body_1012.tx; never one inside a longer number); where the name has more than one such run, the one
+    with the most tiles beside it. A set is two tiles or more: a file alone stays a file. Windows has no file named
+    with <UDIM>: the pattern is the kit's (source_tiles), which finds the tiles by it."""
+    path = Path(path)
+    if '<UDIM>' in path.name or not path.parent.is_dir():
+        return None
+    best = None
+    for match in re.finditer(r'(?<![0-9])(1[0-9]{3})(?![0-9])', path.name):
+        if not 1001 <= int(match.group(1)) <= 1999:
+            continue
+        pattern = path.parent / (path.name[:match.start()] + '<UDIM>' + path.name[match.end():])
+        tiles = sorted(source_tiles(pattern))
+        if len(tiles) >= 2 and int(match.group(1)) in tiles and (best is None or len(tiles) > len(best[1])):
+            best = (pattern, tiles)
+    if best is None:
+        return None
+    return str(best[0]).replace('\\', '/'), best[1]
+
+
 def folder_tiles(clips, scene_filename=None):
     """Modo's own UDIM set: an Image Folder whose images each carry their tile's number (udim), laid on by a layer
     whose Texture Locator has Use UDIM on (as an FBX import makes them). clips: (number, filename) for each image.
