@@ -42,6 +42,35 @@ build: exact shared triangle arithmetic, fixed ownership and byte-repeatable ima
   operation. A started sample is never dropped (ACC-03). At quiescence the two films merge and every pixel's sample
   count is audited (ACC-07).
 
+## The lanes' arithmetic (26 November 2026)
+
+A sample must come out the same whichever lane renders it, or a picture both lanes render changes with the work split,
+which changes from run to run. Two things kept them apart, on every scene, not only volumes:
+
+- **Contraction.** The GPU programs were compiled with `--fmad=true`, so the card fused products and sums the host
+  rounds apart. They are compiled with `--fmad=false` now (`build_async.py`), as the host is built
+  (`-ffp-contract=off`); the GPU's frame took no measurable longer (fog 2.22 against 2.21 s, the spheres 1.05 against 1.03 s).
+- **Elementary functions.** `expf`, `logf`, `powf`, `sinf`, `cosf`, `sincosf`, `tanf`, `atanf`, `atan2f`, `asinf`, `acosf`,
+  `erff`, `cbrtf`, `rsqrtf`, double `pow` and `hypot` were the C runtime's on the host and libdevice's on the card, different
+  approximations. One set now serves both, in `sample_stream.h`: declared in namespace `xpu2`, an unqualified call anywhere
+  inside it finds them before the global ones (Cephes's single precision kernels, within 1 to 3 ulps; `powf`, `erff`,
+  `cbrtf` in double, within half an ulp). Calls written `::expf` or `std::exp`, host-only code outside the namespace, and
+  `modo_patterns.h` (shared with MoonRay and MoonLightIPR, its own macros) are not covered.
+- A volume's crossings on the CPU lane are worked out again from the triangle Embree names (`resume::geometryHit`), as
+  surface hits and the GPU's crossings are, not taken from Embree's own distance and normal (`CpuBackend::volumeCrossings`).
+
+| 160x120 fog (`make_material_scenes.py` volume-fog), GPU alone against CPU alone | Values that differ | Largest |
+| --- | --- | --- |
+| Before | 12,876 of 57,600 | 0.00087 |
+| Contraction off | 3,994 | 0.00087 |
+| And the shared functions | 24 | 0.00087 |
+
+The displaced spheres (320x180, 36 samples) went from 57,517 values apart to 14. Both lanes at 1 CPU thread, three runs, and at
+12 threads, three runs: one picture, the same as the GPU's alone (before: 2,664 values apart between two 1-thread runs, 6,370
+between two 12-thread runs). What is left (a few pixels a picture) is where the lanes' traversals, OptiX's and Embree's, take a
+different triangle at an edge: the shared arithmetic works a hit out again, but which triangle is hit stays each traversal's.
+The GPU's AOV accumulators are float atomics, so their sums also depend on the order samples land.
+
 ## Adaptive sampling
 
 The kit's frames sample by cellular generations, on the host, with the CPU taking part (`INDEXER.md`,

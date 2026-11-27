@@ -26,7 +26,10 @@ def configure(scene, values):
     # The compositor's graph goes with the scene so that a render to a file can write its composite beside it.
     scene['compositor'] = values['compositor']
     scene['aovs'] = values['aovs']
-    scene['production']=values['production']
+    # A Blob set to render as Modo does (Light Links, Emitters and Volumes > Blob lighting) is lit by no light but the
+    # environment, its light links set so for every engine (particles.blob_lighting).
+    from .particles import blob_lighting
+    scene['production']=blob_lighting(scene.get('meshes',[]),values['production'])
     scene['asset_settings']=values['asset_settings']
     from .extra_geometry import attach as attach_geometry
     attach_geometry(scene,values['production'])

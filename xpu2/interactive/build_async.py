@@ -2,8 +2,13 @@
 
 build_async.py --source <MoonRayForModo development tree> --runtime <pinned reference> --output <new folder>
 
-The OptiX program is compiled for speed (contraction allowed); the parity
-pipeline's program keeps its exact flags (gpu_build.PARITY_FLAGS). Never installs
+The OptiX program is compiled without contraction (--fmad=false), as the host is
+(-ffp-contract=off): a fused multiply-add rounds once where the host rounds twice,
+so with contraction the lanes worked the same sample out differently (the fog's
+lanes 12,876 values apart, up to 0.00087; the spheres' 57,517) and a picture both
+rendered changed with the work split, from run to run. It cost no measurable
+speed (fog 2.22 against 2.21 s, spheres 1.05 against 1.03 s). The parity
+pipeline's program keeps its own flags (gpu_build.PARITY_FLAGS). Never installs
 or publishes anything."""
 import argparse
 import json
@@ -21,7 +26,7 @@ HEADERS = ('../../native-port/maps/ModoProcedural/modo_patterns.h', 'async_gpu_a
            'shade_colorcorrect.h', 'shade_dwabase.h', 'shade_dwalayer.h', 'shade_maps.h', 'shade_noise.h', 'shade_bssrdf.h', 'shade_mapnodes.h', 'shade_mapnodes_more.h', 'curve_core.h', 'curve_embree.h', 'volume_core.h', 'shade_material.h',
            'dwa_admission.h', 'map_admission.h', 'aov_core.h', 'aov_material.h', 'aov_state.h', 'aov_crypto.h', 'aov_deep.h', 'camera_core.h', 'light_filter_core.h', 'volume_grid.h', 'volume_emission.h',
            'async_gpu_device.h', 'bc6h_core.h', 'nvrtc_limits.h')
-FAST_FLAGS = ['--std=c++17', '--gpu-architecture=compute_75', '--fmad=true', '--prec-div=true',
+FAST_FLAGS = ['--std=c++17', '--gpu-architecture=compute_75', '--fmad=false', '--prec-div=true',
               '--prec-sqrt=true', '--ftz=false', '-DXPU2_PATHS_ONLY',
               # NanoVDB (VDB volumes on the GPU, volume_grid.h) leaves some of its small functions unannotated: device ones.
               '-default-device']

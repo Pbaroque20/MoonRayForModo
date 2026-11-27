@@ -29,6 +29,9 @@ MESH_DISPLACE = 1024
 # A mesh's rest positions follow its other data (form 'c', PACKED_FORM 4): MoonRay's ref_P (reference_points), sent where
 # a glitter material reads reference space and they differ from its points, so that its flakes stay put as it deforms.
 MESH_HAS_REST = 2048
+# Its corners' normals as given follow (form 'e'): a displaced mesh's hard edges, which the session keeps sharp once
+# displaced (welded; the MoonRay Source Override native.displaced_hard_edges).
+MESH_HARD_EDGES = 4096
 # The most triangles a displaced mesh is split into, to keep the preview quick.
 DISPLACED_TRIANGLES = 400000
 # Whether the last scene packed with coarse detail had a mesh cut coarser than at rest (moonlightipr_detail): the
@@ -836,11 +839,31 @@ def welded(mesh):
     each face's copy of an edge was displaced apart from the next one's, and a displaced ball showed black cracks along
     every polygon edge, a hard-edged box wide open ones. As MoonRay does it (PolyMesh::tessellate: a displaced mesh's
     own normals are dropped, each point displaced once along the smooth normal of its faces, the shading normals made
-    smooth again from the displaced shape), and XPU2 with it: the session smooths its normals from the shape too."""
+    smooth again from the displaced shape), and XPU2 with it: the session smooths its normals from the shape too.
+
+    With the Source Override "Displaced hard edges stay sharp" (native.displaced_hard_edges) the corners' normals go
+    along as hard_keys (MESH_HARD_EDGES), a flat-shaded mesh's each polygon's own: the session, having displaced each
+    point once, splits the points where their corners disagree and shades each side of a hard edge on its own, as
+    MoonRay and XPU2 then do (native-port/modo_hard_edges.h)."""
+    if mesh.get('subdivision'):
+        return mesh
     normals = mesh.get('normals')
-    if not normals or mesh.get('subdivision'):
+    smooth = mesh.get('smooth', True)
+    if _hard_edges():
+        if normals and smooth:
+            return dict(mesh, normals=None, hard_keys=normals)
+        if not smooth:
+            from .rdla import polygon_normals
+            return dict(mesh, normals=None, smooth=True, hard_keys=polygon_normals(mesh['vertices'], mesh['faces']))
+    if not normals:
         return mesh
     return dict(mesh, normals=None)
+
+
+def _hard_edges():
+    """Whether displaced polygon meshes keep their hard edges (native.displaced_hard_edges, a MoonRay Source Override)."""
+    from .native import displaced_hard_edges
+    return displaced_hard_edges()
 
 
 def displacement_inputs(material):
@@ -1028,6 +1051,8 @@ def mesh_payload(mesh, material_index, slots, simplified=None, rest=False):
     smooth = bool(mesh.get('smooth', True))
     # As in the RDLA path, authored normals apply only to smooth, unsubdivided meshes.
     normals = mesh.get('normals') if smooth and not mesh.get('subdivision') else None
+    # A displaced mesh's corners' normals as given (welded): its hard edges, once the session has displaced it.
+    hard = mesh.get('hard_keys') if smooth and not normals and not mesh.get('subdivision') and not simplified else None
     face_materials = mesh.get('face_materials')
     # With motion blur, where the vertices are when the shutter closes, if they move at all.
     closing = mesh.get('vertices_close')
@@ -1050,6 +1075,8 @@ def mesh_payload(mesh, material_index, slots, simplified=None, rest=False):
                  (simplified['triangles'], round(simplified['error'], 6)) if simplified else None,
                  # How its n-gons are cut (polygons.rules, the MoonRay Source Override "N-gons triangulated cleanly").
                  _polygon_rules())
+    if hard:
+        signature += (('hard_keys', content(hard)),)
     cached = _packed.get(signature)
     if cached:
         return cached
@@ -1086,6 +1113,8 @@ def mesh_payload(mesh, material_index, slots, simplified=None, rest=False):
     triangles = widest == 3
     if normals and len(normals) != len(corners):
         raise ValueError('Face-varying normals must match the corner count')
+    if hard and len(hard) != len(corners):
+        hard = None
     quads = not triangles and least == widest == 4
     # Faces not all triangles cut by the geometry adapter in one call (polygons.triangulate): each triangle corner's
     # polygon corner, and each triangle's face. Cut here a face or a corner at a time where it cannot.
@@ -1096,7 +1125,7 @@ def mesh_payload(mesh, material_index, slots, simplified=None, rest=False):
     fan = None      # each triangle corner as an index into the polygon corners
     if cut is not None:
         fan = cut[0]
-    elif normals or sets:
+    elif normals or sets or hard:
         if triangles:
             fan = iota(len(corners))
         elif quads:
@@ -1167,12 +1196,20 @@ def mesh_payload(mesh, material_index, slots, simplified=None, rest=False):
             positions, given, moved, indices, uvs, material_ids, _ = made
             if len(given):
                 shading, normals = given, True
+    # The corners' normals as given at each triangle corner (MESH_HARD_EDGES), as the texture coordinates are laid.
+    keys = array('f')
+    if hard and not simplified:
+        laid = None if triangles or cut is None else _gather(_numbers(hard, 3), 12, fan)
+        keys = _numbers(hard, 3) if triangles else laid if laid is not None else array('f', chain.from_iterable(map(hard.__getitem__, fan)))
+        if len(keys) != len(indices) * 3 or not _finite(keys):
+            keys = array('f')
     flags = ((MESH_HAS_NORMALS if normals else MESH_SMOOTH if smooth else 0) | (MESH_HAS_MATERIAL_IDS if face_materials is not None else 0)
-             | (MESH_HAS_UVS if uvs else 0) | (MESH_MOVES if moved else 0) | (MESH_HAS_REST if rested else 0))
+             | (MESH_HAS_UVS if uvs else 0) | (MESH_MOVES if moved else 0) | (MESH_HAS_REST if rested else 0)
+             | (MESH_HARD_EDGES if keys else 0))
     payload = struct.pack('<2I', len(positions) // 3, len(indices) // 3) + positions.tobytes() + shading.tobytes() + indices.tobytes() + material_ids.tobytes()
     if uvs:
         payload += struct.pack('<I', len(uvs)) + b''.join(values.tobytes() for values in uvs)
-    payload += moved.tobytes() + rested.tobytes()
+    payload += moved.tobytes() + rested.tobytes() + keys.tobytes()
     key = hashlib.blake2b(struct.pack('<I', flags) + payload, digest_size=8).digest()
     _packed[signature] = (key, flags, payload, struct.pack('<%di' % UV_SLOTS, *slot_map))
     if lasting:
@@ -1395,7 +1432,7 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
     # mesh's slot map is 64 long (moonlightipr_materials.UV_SLOTS), where it was 8, then 32 (form 'a'). Form 'c': a material
     # may have MoonRay's glitter (moonlightipr_materials, MATERIAL_GLITTER). Form 'd': a fog says how it is lit
     # (moonlightipr_volumes.switches).
-    parts = [b'MLSd',struct.pack('<8I', width, height, *depths, samples, (SCENE_DENOISE if denoise else 0)
+    parts = [b'MLSe',struct.pack('<8I', width, height, *depths, samples, (SCENE_DENOISE if denoise else 0)
                                   | (SCENE_WORKING_SPACE if working else 0) | (SCENE_MOTION if motion else 0)
                                   # See-through surfaces cast whole shadows unless the scene asks for lighter ones, as in MoonRay.
                                   | (SCENE_PRESENCE_SHADOWS if settings.get('enable_presence_shadows') else 0)
@@ -1598,7 +1635,7 @@ def _pack(scene, width, height, environment, known, samples, denoise, runtime):
                 warnings.append('MoonLightIPR shows subdivision mesh %s without its change of shape during the shutter.' % mesh['name'])
             key, flags, payload, slot_map = cage_payload(mesh, material_index, compiler.slots, warnings)
         else:
-            if mesh.get('normals') and displaces(mesh):
+            if (mesh.get('normals') or not mesh.get('smooth', True)) and displaces(mesh):
                 mesh = welded(mesh)
             key, flags, payload, slot_map = mesh_payload(mesh, material_index, compiler.slots, cut.get('simplify') if cut else None,
                                                          rest=resting)

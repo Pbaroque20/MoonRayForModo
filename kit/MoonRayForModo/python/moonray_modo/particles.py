@@ -15,8 +15,9 @@ the world: every engine draws it as it draws a mesh. Its points carry the partic
 blob, rebuilt in each sample, is blurred (motion.apply_motion): the particles' own (a simulation's) or, where they have
 none, their move over half a frame. Modo 16.1's renderer gives a Blob no direct light at all (any light, from any side,
 its shadows on or off; tools/probe_cl_blob_shading.py), only ambient and indirect light, while a mesh of the same
-material beside it is lit and the Blob still casts shadows: taken for a fault of Modo's, not followed (the Blob is lit
-as a mesh is).
+material beside it is lit and the Blob still casts shadows. A Blob is lit as a mesh is unless its Blob lighting (Light
+Links, Emitters and Volumes) asks for Modo's look: then no light but the environment reaches it, the light from other
+surfaces still does, and it still casts shadows (blob_lighting).
 
 A Sprite is fog in puffs: each particle a ball of fog of its radius, thickest in the middle as Falloff shapes it and as
 dense as Density says, the density in each ball taken from Modo's renders of one puff at each Falloff (SPRITE_TABLES,
@@ -589,6 +590,22 @@ def sprite_volume(item, held, values, velocities):
             # nor casts a shadow (measured: tools/probe_cl_sprite_light.py, tools/probe_cl_blob_shading.py).
             'visibility': [True, True, True, True, True, False], 'lit_by_environment': False,
             '_particles': 'sprite'}
+
+
+def blob_lighting(meshes, production):
+    """The production settings (Light Links, Emitters and Volumes) with each Blob set to Modo's lighting ('modo') lit by
+    the environments alone: its light links on, every environment checked. A Blob whose own Light Links are on keeps
+    them. The settings given are not changed; where nothing is to change they are returned as they are."""
+    objects = (production or {}).get('objects', {})
+    unlit = {mesh.get('source_item') for mesh in meshes if mesh.get('_particles') == 'blob'
+             and (objects.get(mesh.get('source_item')) or {}).get('blob_lighting') == 'modo'
+             and not objects[mesh.get('source_item')].get('link_enabled')}
+    if not unlit:
+        return production
+    held = dict(objects)
+    for identity in unlit:
+        held[identity] = dict(held[identity], link_enabled=True, lights=['__environment__'])
+    return dict(production, objects=held)
 
 
 def tag_materials(scene, result, tags, warnings):

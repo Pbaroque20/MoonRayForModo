@@ -78,6 +78,29 @@ def matrix(values):
     return 'Mat4(%s)' % ', '.join(number(v) for v in values)
 
 
+def _hard_edges():
+    """Whether displaced polygon meshes keep their hard edges (native.displaced_hard_edges, a MoonRay Source Override)."""
+    from .native import displaced_hard_edges
+    return displaced_hard_edges()
+
+
+def polygon_normals(vertices, faces):
+    """Each polygon's normal (Newell's, of unit length; up where it has no area) at each of its corners, in order."""
+    found = []
+    for face in faces:
+        x = y = z = 0.0
+        count = len(face)
+        for k in range(count):
+            a, b = vertices[face[k]], vertices[face[(k + 1) % count]]
+            x += (a[1] - b[1]) * (a[2] + b[2])
+            y += (a[2] - b[2]) * (a[0] + b[0])
+            z += (a[0] - b[0]) * (a[1] + b[1])
+        length = math.sqrt(x * x + y * y + z * z)
+        normal = [x / length, y / length, z / length] if length > 0 else [0.0, 1.0, 0.0]
+        found.extend([normal] * count)
+    return found
+
+
 def node_matrix(node):
     first = matrix(node.get('matrix',IDENTITY))
     return 'blur(%s, %s)' % (first,matrix(node['matrix_close'])) if 'matrix_close' in node else first
@@ -998,7 +1021,12 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
         for source, attribute, kind in [('uvs', 'uv_list', 'Vec2'), ('normals', 'normal_list', 'Vec3')]:
             values = mesh.get(source, [])
             if source == 'normals' and (subdivision or not mesh.get('smooth', True)):
-                continue
+                # A displaced flat-shaded polygon mesh: each polygon's own normal at its corners, so that every edge of
+                # it stays hard once displaced (the Source Override native.displaced_hard_edges; MoonRay drops a
+                # displaced mesh's normals for its shading either way, so nothing else changes).
+                if subdivision or not displaced or not _hard_edges():
+                    continue
+                values = polygon_normals(vertices, faces)
             if values:
                 if len(values) != rows.corner_count(faces):
                     raise ValueError('Face-varying %s must match the corner count' % source)

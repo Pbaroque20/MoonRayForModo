@@ -188,6 +188,61 @@ def sprite_reading():
                  'materials': {'': {'color': [.5, .5, .5]}}, 'meshes': [], 'lights': [sun], 'environments': [], 'extra_geometry': [fog]}
 
 
+def blob_reading(choice):
+    """A reading with a sun, an environment and a Blob (one triangle), its Blob lighting set to choice."""
+    blob = {'name': 'Goo', 'identity': particles.PREFIX + 'blob|blob1', 'source_item': 'blob1', '_particles': 'blob',
+            'vertices': [[0, 0, 0], [1, 0, 0], [0, 1, 0]], 'faces': [[0, 1, 2]], 'matrix': IDENTITY, 'material': '',
+            'face_materials': [''], 'uvs': [], 'normals': [], 'uv_sets': {}, 'smooth': False, 'subdivision': False,
+            'subdivision_level': 1, 'object_override': False, 'geometry_settings': {}}
+    sun = {'kind': 'DistantLight', 'identity': 'sun1', 'name': 'Sun', 'color': [1, 1, 1], 'intensity': 1.0, 'matrix': IDENTITY, 'angle': 0.5}
+    sky = {'identity': 'env1', 'name': 'Sky', 'kind': 'constant', 'zenith': [1, 1, 1], 'intensity': 1.0, 'matrix': IDENTITY}
+    production = {'objects': {'blob1': {'blob_lighting': choice}}}
+    reading = {'camera': {'matrix': [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 5, 1], 'focal_mm': 50.0, 'film_mm': 36.0},
+               'materials': {'': {'color': [.5, .5, .5]}}, 'meshes': [blob], 'lights': [sun], 'environments': [sky], 'extra_geometry': []}
+    reading['production'] = particles.blob_lighting(reading['meshes'], production)
+    return reading, production
+
+
+class BlobLighting(unittest.TestCase):
+    """A Blob lit as a mesh, or, set to Modo's look, by the environment alone (Modo 16.1 gives a Blob no direct light:
+    tools/probe_cl_blob_shading.py)."""
+
+    def test_lit_like_a_mesh_is_left_as_it_is(self):
+        reading, production = blob_reading('mesh')
+        self.assertIs(reading['production'], production)
+        self.assertIs(particles.blob_lighting([], None), None)
+
+    def test_unlit_links_the_environments_alone(self):
+        reading, production = blob_reading('modo')
+        self.assertEqual(reading['production']['objects']['blob1'], {'blob_lighting': 'modo', 'link_enabled': True, 'lights': ['__environment__']})
+        self.assertEqual(production['objects']['blob1'], {'blob_lighting': 'modo'})
+
+    def test_own_light_links_come_first(self):
+        production = {'objects': {'blob1': {'blob_lighting': 'modo', 'link_enabled': True, 'lights': ['sun1']}}}
+        reading, _ = blob_reading('modo')
+        self.assertIs(particles.blob_lighting(reading['meshes'], production), production)
+
+    def test_only_blobs_are_changed(self):
+        mesh = {'source_item': 'blob1'}
+        production = {'objects': {'blob1': {'blob_lighting': 'modo'}}}
+        self.assertIs(particles.blob_lighting([mesh], production), production)
+
+    def test_moonray_scene_lights_the_unlit_blob_by_the_environment(self):
+        from moonray_modo import rdla
+        reading, _ = blob_reading('modo')
+        text = rdla.scene_text(reading, 64, 36, 1, 0.15)
+        line = next(line for line in text.splitlines() if line.startswith('objectLightSets["blob1"]'))
+        self.assertIn('EnvLight', line)
+        self.assertNotIn('sun1', line)
+
+    def test_moonlightipr_lights_the_unlit_blob_by_the_environment(self):
+        from moonray_modo import moonlightipr_scene
+        reading, _ = blob_reading('modo')
+        self.assertEqual(moonlightipr_scene.linked_lights(reading, 'blob1', '', {'sun1'}), {'__environment__'})
+        reading, _ = blob_reading('mesh')
+        self.assertIsNone(moonlightipr_scene.linked_lights(reading, 'blob1', '', {'sun1'}))
+
+
 class SpriteLighting(unittest.TestCase):
     """Modo lights a Sprite's fog by its lights alone, the fog shading neither itself nor anything else, and Luminous
     Density gives off nothing (tools/probe_cl_sprite_light.py, probe_cl_blob_shading.py)."""

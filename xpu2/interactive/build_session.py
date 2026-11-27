@@ -83,7 +83,8 @@ def build_session(source, runtime, async_build, out, cpu_test=False):
         # beside the session's units, or taken from the cache when its sources and build script are unchanged.
         import threading
         from build_geom import build_geom
-        key = sha_text('|'.join(sha(HERE / n) for n in ('xpu2_geom.cc', 'xpu2_geom.h', 'build_geom.py')) + '|' + str(source))
+        # And the displaced hard edges' rule it includes (native-port/modo_hard_edges.h).
+        key = sha_text('|'.join(sha(HERE / n) for n in ('xpu2_geom.cc', 'xpu2_geom.h', 'build_geom.py', '../../native-port/modo_hard_edges.h')) + '|' + str(source))
         cached = out.parent / 'geom-cache' / key
         geom_result = {}
 

@@ -22,6 +22,7 @@
 #include <chrono>
 #include "gpu_lane.h"
 #include "multi_device.h"
+#include <psapi.h>
 #include <condition_variable>
 #include <cstdio>
 #include <cstdlib>
@@ -2280,6 +2281,11 @@ private:
     // Whether the machine has room for another compile task: free RAM above a reserve, an eighth of the machine's and
     // at least 4 GB (XPU2_COMPILE_RESERVE_GB: another). A task of the largest modules takes GBs of its own; several at
     // once took a 64 GB machine past 25 GB.
+    // Whether to compile one module at a time (XPU2_COMPILE_LOW_MEMORY=1; the kit sets it from Preferences).
+    static bool compileLowMemory() {
+        const char* low = std::getenv("XPU2_COMPILE_LOW_MEMORY");
+        return low && low[0] == '1';
+    }
     static bool compileMemoryRoom() {
         MEMORYSTATUSEX status{};
         status.dwLength = sizeof status;
@@ -2320,25 +2326,10 @@ private:
             }
         }
         const OptixPipelineCompileOptions po = pipelineOptions();
-        std::mutex mutex;
-        std::condition_variable wake;
-        std::deque<OptixTask> tasks;
         // The tasks write their feedback here until the modules complete or fail.
         static thread_local char logs[ModuleCount][8192];
         size_t lengths[ModuleCount];
         for (int i = 0; i < ModuleCount; ++i) lengths[i] = sizeof(logs[i]);
-        for (int i = 0; i < ModuleCount; ++i) {
-            if (sources[i]->empty()) continue;
-            OptixTask first = nullptr;
-            if (optixModuleCreateFromPTXWithTasks(optix_, &moduleOptions[i], &po, sources[i]->data(), sources[i]->size(), logs[i], &lengths[i],
-                                                  &modules[i], &first) != OPTIX_SUCCESS)
-                throw std::runtime_error("OptiX module: " + std::string(logs[i], std::min(lengths[i], sizeof(logs[i]))));
-            if (first) tasks.push_back(first);
-        }
-        unsigned finished = 0;
-        unsigned active = 0;
-        bool done = tasks.empty(), heldNoted = false;
-        OptixResult error = OPTIX_SUCCESS;
         // When each module completed (seconds from the start; negative: not yet).
         const auto began = std::chrono::steady_clock::now();
         double completedAt[ModuleCount];
@@ -2354,63 +2345,123 @@ private:
                 }
             }
         };
-        auto work = [&] {
-            for (;;) {
-                OptixTask task;
-                {
-                    std::unique_lock<std::mutex> lock(mutex);
-                    // A task more only while the machine has room for it (compileMemoryRoom): one task at least runs,
-                    // so the compile always moves; the others wait for memory as for work (each task can take GBs).
-                    for (;;) {
-                        wake.wait_for(lock, std::chrono::milliseconds(500), [&] { return done || !tasks.empty(); });
-                        if (done) return;
-                        if (tasks.empty()) continue;
-                        if (active == 0 || compileMemoryRoom()) break;
-                        if (!heldNoted) {
-                            heldNoted = true;
-                            std::printf("MoonRay XPU2 shaders: memory is short: compile tasks run fewer at a time\n");
-                            std::fflush(stdout);
-                        }
-                    }
-                    task = tasks.front();
-                    tasks.pop_front();
-                    ++active;
-                }
-                OptixTask additional[16]{};
-                unsigned count = 0;
-                const OptixResult status = optixTaskExecute(task, additional, 16, &count);
-                std::lock_guard<std::mutex> lock(mutex);
-                --active;
-                if (status != OPTIX_SUCCESS && error == OPTIX_SUCCESS) error = status;
-                if (error == OPTIX_SUCCESS)
-                    for (unsigned i = 0; i < count; ++i) tasks.push_back(additional[i]);
-                else
-                    tasks.clear();
-                ++finished;
-                noteCompleted();
-                if (options_.compileProgress) options_.compileProgress(finished, unsigned(tasks.size()) + active);
-                if (tasks.empty() && active == 0) done = true;
-                wake.notify_all();
+        // Low memory (XPU2_COMPILE_LOW_MEMORY=1, from the kit's Preferences): one module at a time, on two threads at
+        // most, so the compile's memory is about the largest module's alone rather than every module's at once. OptiX's
+        // disk cache keeps each module as it completes, so a compile stopped on the way goes on from there. Progress is
+        // then told in thousandths of the whole, each module an equal share (the kit's percent reads it as it reads
+        // tasks).
+        const bool lowMemory = compileLowMemory();
+        int toCompile = 0;
+        for (int i = 0; i < ModuleCount; ++i) toCompile += sources[i]->empty() ? 0 : 1;
+        int modulesDone = 0;
+        OptixResult error = OPTIX_SUCCESS;
+        // The modules in only (every one with a source, where only is -1) compiled together on a pool of threads
+        // through OptiX's compile tasks.
+        auto compileSet = [&](int only) {
+            std::mutex mutex;
+            std::condition_variable wake;
+            std::deque<OptixTask> tasks;
+            for (int i = 0; i < ModuleCount; ++i) {
+                if (sources[i]->empty() || (only >= 0 && i != only)) continue;
+                OptixTask first = nullptr;
+                if (optixModuleCreateFromPTXWithTasks(optix_, &moduleOptions[i], &po, sources[i]->data(), sources[i]->size(), logs[i], &lengths[i],
+                                                      &modules[i], &first) != OPTIX_SUCCESS)
+                    throw std::runtime_error("OptiX module: " + std::string(logs[i], std::min(lengths[i], sizeof(logs[i]))));
+                if (first) tasks.push_back(first);
             }
-        };
-        unsigned threads = std::max(1u, std::min(16u, std::thread::hardware_concurrency()));
-        // XPU2_COMPILE_THREADS: that many tasks at once (1: one at a time, each task's memory its own, to measure).
-        if (const char* n = std::getenv("XPU2_COMPILE_THREADS")) threads = std::max(1, std::min(64, std::atoi(n)));
-        std::vector<std::thread> workers;
-        try {
-            for (unsigned i = 1; i < threads; ++i) workers.emplace_back(work);
-            work();
-        } catch (...) {
-            {
-                std::lock_guard<std::mutex> lock(mutex);
-                done = true;
-                wake.notify_all();
+            unsigned finished = 0;
+            unsigned active = 0;
+            bool done = tasks.empty(), heldNoted = false;
+            auto tell = [&] {
+                if (!options_.compileProgress) return;
+                const unsigned waiting = unsigned(tasks.size()) + active;
+                if (!lowMemory) {
+                    options_.compileProgress(finished, waiting);
+                    return;
+                }
+                const double share = finished + waiting ? double(finished) / double(finished + waiting) : 0.0;
+                const unsigned whole = 1000u * unsigned(std::max(1, toCompile));
+                const unsigned at = std::min(whole, unsigned(1000.0 * (double(modulesDone) + share)));
+                options_.compileProgress(at, whole - at);
+            };
+            auto work = [&] {
+                for (;;) {
+                    OptixTask task;
+                    {
+                        std::unique_lock<std::mutex> lock(mutex);
+                        // A task more only while the machine has room for it (compileMemoryRoom): one task at least
+                        // runs, so the compile always moves; the others wait for memory as for work (each task can
+                        // take GBs).
+                        for (;;) {
+                            wake.wait_for(lock, std::chrono::milliseconds(500), [&] { return done || !tasks.empty(); });
+                            if (done) return;
+                            if (tasks.empty()) continue;
+                            if (active == 0 || compileMemoryRoom()) break;
+                            if (!heldNoted) {
+                                heldNoted = true;
+                                std::printf("MoonRay XPU2 shaders: memory is short: compile tasks run fewer at a time\n");
+                                std::fflush(stdout);
+                            }
+                        }
+                        task = tasks.front();
+                        tasks.pop_front();
+                        ++active;
+                    }
+                    OptixTask additional[16]{};
+                    unsigned count = 0;
+                    const OptixResult status = optixTaskExecute(task, additional, 16, &count);
+                    std::lock_guard<std::mutex> lock(mutex);
+                    --active;
+                    if (status != OPTIX_SUCCESS && error == OPTIX_SUCCESS) error = status;
+                    if (error == OPTIX_SUCCESS)
+                        for (unsigned i = 0; i < count; ++i) tasks.push_back(additional[i]);
+                    else
+                        tasks.clear();
+                    ++finished;
+                    noteCompleted();
+                    tell();
+                    if (tasks.empty() && active == 0) done = true;
+                    wake.notify_all();
+                }
+            };
+            unsigned threads = std::max(1u, std::min(lowMemory ? 2u : 16u, std::thread::hardware_concurrency()));
+            // XPU2_COMPILE_THREADS: that many tasks at once (1: one at a time, each task's memory its own, to measure).
+            if (const char* n = std::getenv("XPU2_COMPILE_THREADS")) threads = std::max(1, std::min(64, std::atoi(n)));
+            std::vector<std::thread> workers;
+            try {
+                for (unsigned i = 1; i < threads; ++i) workers.emplace_back(work);
+                work();
+            } catch (...) {
+                {
+                    std::lock_guard<std::mutex> lock(mutex);
+                    done = true;
+                    wake.notify_all();
+                }
+                for (auto& w : workers) w.join();
+                throw;
             }
             for (auto& w : workers) w.join();
-            throw;
+            noteCompleted();
+        };
+        if (!lowMemory) {
+            compileSet(-1);
+        } else {
+            std::printf("MoonRay XPU2 shaders: low memory: %d modules, one at a time\n", toCompile);
+            std::fflush(stdout);
+            for (int i = 0; i < ModuleCount && error == OPTIX_SUCCESS; ++i) {
+                if (sources[i]->empty()) continue;
+                compileSet(i);
+                ++modulesDone;
+                // The memory so far: the process's peak is about the largest module's.
+                PROCESS_MEMORY_COUNTERS m{};
+                m.cb = sizeof m;
+                const bool known = K32GetProcessMemoryInfo(GetCurrentProcess(), &m, sizeof m);
+                std::printf("MoonRay XPU2 shaders: module %d (%d of %d) compiled (memory %.1f GB, at most %.1f GB)\n", i, modulesDone, toCompile,
+                            known ? double(m.PagefileUsage) / double(1ull << 30) : 0.0,
+                            known ? double(m.PeakPagefileUsage) / double(1ull << 30) : 0.0);
+                std::fflush(stdout);
+            }
         }
-        for (auto& w : workers) w.join();
-        noteCompleted();
         for (int i = 0; i < ModuleCount; ++i)
             if (modules[i] && completedAt[i] >= 0) std::fprintf(stderr, "OptiX module %d: %.1f s\n", i, completedAt[i]);
         // A module the tasks did not complete is compiled again on one thread, for OptiX's log.

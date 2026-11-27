@@ -385,6 +385,9 @@ std::vector<std::pair<int, std::string>> uncompiledCards(const fs::path& mark, b
 // from there. (Its tasks also wait while RAM is short: GpuLane::compileMemoryRoom.)
 // Twice the measured peak, for drivers and cards that compile larger.
 constexpr double CompileNeedGB = 8.0;
+// Low memory (XPU2_COMPILE_LOW_MEMORY=1: one module at a time, async_gpu.h): what the largest module alone takes, with
+// the same margin.
+constexpr double CompileNeedLowGB = 3.0;
 class CompileGuard {
 public:
     CompileGuard() = default;
@@ -396,7 +399,8 @@ public:
     bool room() {
         MEMORYSTATUSEX m = status();
         const double freeGB = gb(m.ullAvailPhys), totalGB = gb(m.ullTotalPhys);
-        double need = CompileNeedGB;
+        const char* low = std::getenv("XPU2_COMPILE_LOW_MEMORY");
+        double need = low && low[0] == '1' ? CompileNeedLowGB : CompileNeedGB;
         if (const char* n = std::getenv("XPU2_COMPILE_NEED_GB")) need = std::max(1.0, std::atof(n));
         const bool anyway = std::getenv("XPU2_COMPILE_ANYWAY") && std::getenv("XPU2_COMPILE_ANYWAY")[0] == '1';
         floor_ = std::max(2.0, totalGB / 20.0);

@@ -26,7 +26,8 @@ const uint32_t MESH_HAS_DATA = 1, MESH_HAS_NORMALS = 2, MESH_HAS_MATERIAL_IDS = 
                MESH_LINEAR = 256,       // those curves' segments are straight, from one point to the next
                MESH_RIBBON = 512,       // and they are lit as flat ribbons that face the ray
                MESH_DISPLACE = 1024,    // its materials displace it: split finer here, then moved by their height
-               MESH_HAS_REST = 2048;    // its rest positions follow (form 'c'), for glitter in reference space
+               MESH_HAS_REST = 2048,    // its rest positions follow (form 'c'), for glitter in reference space
+               MESH_HARD_EDGES = 4096;  // its corners' normals as given follow (form 'e'): a displaced mesh's hard edges
 const uint32_t SCENE_DENOISE = 1, SCENE_WORKING_SPACE = 2, SCENE_MOTION = 4, SCENE_PRESENCE_SHADOWS = 8, SCENE_FLAT_OUT = 16,
                SCENE_KEEP_FLAKES = 32;     // Keep Metallic Flakes (Renderer::setKeepFlakes)
 const uint32_t LAYER_UDIM = 1 << 19;    // as in src/device/shared.h
@@ -214,7 +215,72 @@ struct Displacing {
     uint32_t material = 0;
     std::vector<std::pair<uint32_t, std::vector<DisplacementStep>>> programs;
     bool smooth = false;
+    // Its hard edges (MESH_HARD_EDGES): the drawn mesh's vertices, each a point of the displaced one (pointOf), the
+    // points split where their corners' normals as given disagree, and its triangles by them (drawn). Empty: one each.
+    std::vector<uint32_t> pointOf, drawn;
 };
+
+// A displaced mesh's hard edges (native-port/modo_hard_edges.h's rule): its points split where the corners about one
+// disagree as given (normals under a degree apart agree), so that each side of a hard edge has a vertex of its own
+// that its shading normals are made over; the displacement still moves each point once. keys: each triangle corner's
+// normal as given. pointOf: each drawn vertex's point (the points first, as they are; then the split-off ones), drawn:
+// the triangles by the drawn vertices. Nothing where no point needs splitting.
+void hardEdgeVertices(const std::vector<uint32_t>& indices, const std::vector<float>& keys, size_t pointCount,
+                      std::vector<uint32_t>& pointOf, std::vector<uint32_t>& drawn) {
+    pointOf.clear();
+    drawn.clear();
+    if (keys.size() != indices.size() * 3) return;
+    std::vector<float> unit(keys.size(), 0.0f);
+    for (size_t i = 0; i < indices.size(); ++i) {
+        const float* k = &keys[i * 3];
+        const float l = std::sqrt(k[0] * k[0] + k[1] * k[1] + k[2] * k[2]);
+        if (l > 0.0f && std::isfinite(l))
+            for (int axis = 0; axis < 3; ++axis) unit[i * 3 + axis] = k[axis] / l;
+    }
+    std::vector<uint32_t> first(pointCount + 1, 0);
+    for (uint32_t v : indices)
+        if (v < pointCount) ++first[v + 1];
+    for (size_t v = 0; v < pointCount; ++v) first[v + 1] += first[v];
+    std::vector<uint32_t> at(first.begin(), first.end() - 1), corners(first[pointCount]);
+    for (size_t i = 0; i < indices.size(); ++i)
+        if (indices[i] < pointCount) corners[at[indices[i]]++] = uint32_t(i);
+    std::vector<uint32_t> made(indices.begin(), indices.end()), vertexOf, extra;
+    for (size_t v = 0; v < pointCount; ++v) {
+        const uint32_t begin = first[v], end = first[v + 1];
+        vertexOf.assign(end - begin, 0);
+        for (uint32_t j = begin; j < end; ++j) {
+            const float* b = &unit[size_t(corners[j]) * 3];
+            uint32_t found = ~0u;
+            for (uint32_t i = begin; i < j && found == ~0u; ++i) {
+                const float* a = &unit[size_t(corners[i]) * 3];
+                if (a[0] * b[0] + a[1] * b[1] + a[2] * b[2] >= 0.9999f) found = vertexOf[i - begin];
+            }
+            if (found == ~0u) {
+                if (j == begin) {
+                    found = uint32_t(v);
+                } else {
+                    found = uint32_t(pointCount + extra.size());
+                    extra.push_back(uint32_t(v));
+                }
+            }
+            vertexOf[j - begin] = found;
+            made[corners[j]] = found;
+        }
+    }
+    if (extra.empty()) return;
+    pointOf.resize(pointCount + extra.size());
+    for (size_t v = 0; v < pointCount; ++v) pointOf[v] = uint32_t(v);
+    std::copy(extra.begin(), extra.end(), pointOf.begin() + std::ptrdiff_t(pointCount));
+    drawn = std::move(made);
+}
+
+// Points (three numbers each) at the drawn vertices.
+std::vector<float> atVertices(const std::vector<float>& points, const std::vector<uint32_t>& pointOf) {
+    std::vector<float> out(pointOf.size() * 3);
+    for (size_t i = 0; i < pointOf.size(); ++i)
+        for (int axis = 0; axis < 3; ++axis) out[i * 3 + axis] = points[size_t(pointOf[i]) * 3 + axis];
+    return out;
+}
 
 // Each vertex's tangent: which way texture u runs on the surface (MoonRay's dPds), from the triangles about it.
 std::vector<float> tangentsOf(const std::vector<float>& positions, const std::vector<uint32_t>& indices, const std::vector<float>& uvs) {
@@ -324,13 +390,13 @@ SceneSettings SceneLoader::apply(const std::string& path) {
     // "MLS" and a letter for the form of the scene, which changes whenever what is written in it does: "C" since
     // the scene's sample clamp is written in it, "D" since a toon material's ramps are, "E" since a hair toon's highlights are,
     // "F" since the lights' poses at the shutter's close are, "G" since the volume scattering factors are, "H" since the
-    // camera's film offset is, "I" since a material's fuzz is, "J" since the light sets are, "K" since a mesh may be displaced, "L" since by a program of displacement nodes, "M" since a material's clearcoat bump strength is, "N" since whether the camera sees each light is, "O" since the subsurface scatterings a path may have are, "P" since each instance's own number is, "Q" since the roughness clamp is, "R" since what reflections and refractions see of the environment is, "S" since the kinds of rays each light is hidden from are, "T" since a displaced mesh may be split by its distance from the camera, "U" since where each moving instance stands at the frame is, "W" since how each light's picture is repeated, turned and moved across it is, "X" since a material's iridescence is, "Y" since a tilted lens's plane of focus is, "Z" since a material's shadow catcher is, "a" since a mesh's slot map is 32 long, "b" since it is 64 long, "c" since a material's glitter is, "d" since how a fog is lit is. A plugin and a session of different versions say so plainly, in
+    // camera's film offset is, "I" since a material's fuzz is, "J" since the light sets are, "K" since a mesh may be displaced, "L" since by a program of displacement nodes, "M" since a material's clearcoat bump strength is, "N" since whether the camera sees each light is, "O" since the subsurface scatterings a path may have are, "P" since each instance's own number is, "Q" since the roughness clamp is, "R" since what reflections and refractions see of the environment is, "S" since the kinds of rays each light is hidden from are, "T" since a displaced mesh may be split by its distance from the camera, "U" since where each moving instance stands at the frame is, "W" since how each light's picture is repeated, turned and moved across it is, "X" since a material's iridescence is, "Y" since a tilted lens's plane of focus is, "Z" since a material's shadow catcher is, "a" since a mesh's slot map is 32 long, "b" since it is 64 long, "c" since a material's glitter is, "d" since how a fog is lit is, "e" since a displaced mesh's corners' normals as given may be. A plugin and a session of different versions say so plainly, in
     // place of reading each other's scenes wrongly.
     const uint32_t mark = in.value<uint32_t>();
     if ((mark & 0x00ffffff) != 0x00534c4d) throw std::runtime_error("Not a MoonLightIPR scene: " + path);
-    if (mark != 0x64534c4d)
+    if (mark != 0x65534c4d)
         throw std::runtime_error("This MoonLightIPR and the plugin are of different versions (the scene is form '" + std::string(1, char(mark >> 24))
-                                 + "', this MoonLightIPR reads 'd'). Install the kit and its runtime from the same release.");
+                                 + "', this MoonLightIPR reads 'e'). Install the kit and its runtime from the same release.");
     ++generation;
     SceneSettings settings;
     settings.width = in.value<uint32_t>();
@@ -876,7 +942,7 @@ SceneSettings SceneLoader::apply(const std::string& path) {
             }
         } else if (flags & MESH_HAS_DATA) {
             uint32_t vertexCount = 0, triangleCount = 0;
-            std::vector<float> positions, normals, closePositions, restPositions;
+            std::vector<float> positions, normals, closePositions, restPositions, cornerKeys;
             std::vector<uint32_t> indices, materialIds;
             std::vector<std::vector<float>> uvSets;
             if (flags & MESH_SUBDIVIDE) {
@@ -917,6 +983,8 @@ SceneSettings SceneLoader::apply(const std::string& path) {
                 closePositions = in.array<float>(flags & MESH_MOVES ? size_t(vertexCount) * 3 : 0);
                 // Its rest positions (form 'c'), for glitter in reference space.
                 restPositions = in.array<float>(flags & MESH_HAS_REST ? size_t(vertexCount) * 3 : 0);
+                // Its corners' normals as given (form 'e'): a displaced mesh's hard edges (hardEdgeVertices).
+                cornerKeys = in.array<float>(flags & MESH_HARD_EDGES ? size_t(triangleCount) * 9 : 0);
             }
             // A displaced mesh: how often to split it, the material its instances give it, and each displacing
             // material's program (form 'L').
@@ -958,6 +1026,18 @@ SceneSettings SceneLoader::apply(const std::string& path) {
             if (cached == meshes.end() && (flags & MESH_DISPLACE)) {
                 // Split finer, so that the displacement has vertices to move; moved once the materials are set.
                 const std::vector<uint32_t> coarse = closePositions.empty() || byDistance ? std::vector<uint32_t>() : indices;
+                // The corners' normals as given split with the triangles, as two more coordinate sets (x y, then z).
+                const size_t ownSets = uvSets.size();
+                if (!cornerKeys.empty()) {
+                    std::vector<float> xy(size_t(triangleCount) * 6), z(size_t(triangleCount) * 6, 0.0f);
+                    for (size_t corner = 0; corner < size_t(triangleCount) * 3; ++corner) {
+                        xy[corner * 2] = cornerKeys[corner * 3];
+                        xy[corner * 2 + 1] = cornerKeys[corner * 3 + 1];
+                        z[corner * 2] = cornerKeys[corner * 3 + 2];
+                    }
+                    uvSets.push_back(std::move(xy));
+                    uvSets.push_back(std::move(z));
+                }
                 Triangles fine = byDistance
                     ? splitByDistance(Triangles{std::move(positions), std::move(indices), std::move(materialIds), std::move(uvSets)}, closePositions,
                                       camera, angle, splits, budget)
@@ -968,6 +1048,19 @@ SceneSettings SceneLoader::apply(const std::string& path) {
                 uvSets = std::move(fine.uvSets);
                 vertexCount = uint32_t(positions.size() / 3);
                 triangleCount = uint32_t(indices.size() / 3);
+                if (!cornerKeys.empty() && uvSets.size() == ownSets + 2) {
+                    const std::vector<float>& xy = uvSets[ownSets];
+                    const std::vector<float>& z = uvSets[ownSets + 1];
+                    cornerKeys.assign(size_t(triangleCount) * 9, 0.0f);
+                    for (size_t corner = 0; corner < size_t(triangleCount) * 3; ++corner) {
+                        cornerKeys[corner * 3] = xy[corner * 2];
+                        cornerKeys[corner * 3 + 1] = xy[corner * 2 + 1];
+                        cornerKeys[corner * 3 + 2] = z[corner * 2];
+                    }
+                    uvSets.resize(ownSets);
+                } else {
+                    cornerKeys.clear();
+                }
                 for (uint32_t index : indices)
                     if (index >= vertexCount) throw std::runtime_error("MoonLightIPR scene mesh index is out of range");
                 normals = smoothNormals(positions, indices);
@@ -984,17 +1077,28 @@ SceneSettings SceneLoader::apply(const std::string& path) {
                 for (uint32_t index : indices)
                     if (index >= vertexCount) throw std::runtime_error("MoonLightIPR scene mesh index is out of range");
                 if (normals.empty() && (flags & MESH_SMOOTH)) normals = smoothNormals(positions, indices);
+                // A displaced mesh's hard edges: drawn with its points split where its corners disagree as given, its
+                // shading normals made over each side (hardEdgeVertices); displaced by its points, one each.
+                std::vector<uint32_t> pointOf, drawn;
+                if ((flags & MESH_DISPLACE) && (flags & MESH_SMOOTH)) hardEdgeVertices(indices, cornerKeys, vertexCount, pointOf, drawn);
+                std::vector<float> drawnPositions, drawnNormals, drawnClosing;
+                const bool split = !pointOf.empty();
+                if (split) {
+                    drawnPositions = atVertices(positions, pointOf);
+                    drawnNormals = smoothNormals(drawnPositions, drawn);
+                    if (!closePositions.empty()) drawnClosing = atVertices(closePositions, pointOf);
+                }
                 MeshDesc desc;
-                desc.positions = positions.data();
-                desc.normals = normals.empty() ? nullptr : normals.data();
-                desc.vertexCount = vertexCount;
-                desc.indices = indices.data();
+                desc.positions = split ? drawnPositions.data() : positions.data();
+                desc.normals = split ? drawnNormals.data() : normals.empty() ? nullptr : normals.data();
+                desc.vertexCount = split ? uint32_t(pointOf.size()) : vertexCount;
+                desc.indices = split ? drawn.data() : indices.data();
                 desc.materialIds = materialIds.empty() ? nullptr : materialIds.data();
                 desc.triangleCount = triangleCount;
                 desc.uvSets = uvPointers.data();
                 desc.uvSetCount = uvPointers.size();
-                desc.closePositions = closePositions.empty() ? nullptr : closePositions.data();
-                desc.restPositions = restPositions.size() == size_t(vertexCount) * 3 ? restPositions.data() : nullptr;
+                desc.closePositions = closePositions.empty() ? nullptr : split ? drawnClosing.data() : closePositions.data();
+                desc.restPositions = !split && restPositions.size() == size_t(vertexCount) * 3 ? restPositions.data() : nullptr;
                 cached = meshes.emplace(key, CachedMesh{renderer.addMesh(desc), 0}).first;
                 if (flags & MESH_DISPLACE) {
                     Displacing held;
@@ -1011,6 +1115,8 @@ SceneSettings SceneLoader::apply(const std::string& path) {
                     held.programs = std::move(programs);
                     if (!uvSets.empty()) held.uvs = uvSets[0];
                     held.smooth = (flags & MESH_SMOOTH) != 0;
+                    held.pointOf = std::move(pointOf);
+                    held.drawn = std::move(drawn);
                     displacing.push_back(std::move(held));
                 }
             }
@@ -1134,6 +1240,14 @@ SceneSettings SceneLoader::apply(const std::string& path) {
                 std::fwrite(values.data(), sizeof(float), values.size(), out);
                 std::fclose(out);
             }
+        }
+        if (!held.pointOf.empty()) {
+            // Split at its hard edges: each side's shading normals over its own triangles (hardEdgeVertices).
+            const std::vector<float> drawnPositions = atVertices(held.positions, held.pointOf);
+            const std::vector<float> drawnShading = smoothNormals(drawnPositions, held.drawn);
+            const std::vector<float> drawnClosing = held.closing.empty() ? std::vector<float>() : atVertices(held.closing, held.pointOf);
+            renderer.reshapeMesh(held.mesh, drawnPositions.data(), drawnShading.data(), drawnClosing.empty() ? nullptr : drawnClosing.data());
+            continue;
         }
         const std::vector<float> shading = held.smooth ? smoothNormals(held.positions, held.indices) : std::vector<float>();
         renderer.reshapeMesh(held.mesh, held.positions.data(), shading.empty() ? nullptr : shading.data(),

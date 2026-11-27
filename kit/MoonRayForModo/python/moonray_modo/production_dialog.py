@@ -13,8 +13,10 @@ class Controls(QtWidgets.QDialog):
         from . import entities
         lights+=[i for i in objects if i.type.startswith(entities.TYPE_PREFIX) and i.type!=entities.item_type('MeshLight')
                  and entities.catalog().get(i.type[len(entities.TYPE_PREFIX):],{}).get('category')=='light']
-        for kind in ('mesh','meshInst','replicator','volume'):
-            for item in scene.items(kind,superType=False):
+        for kind in ('mesh','meshInst','replicator','volume','blob'):
+            try:found=list(scene.items(kind,superType=False))
+            except (LookupError,RuntimeError,TypeError):found=[]
+            for item in found:
                 if item.id not in known:objects.append(item);known.add(item.id)
         for category,title,items in [('objects','Objects / geometry',objects),('lights','Lights / filters',lights)]:
             page=QtWidgets.QWidget();form=QtWidgets.QFormLayout(page);scroll=QtWidgets.QScrollArea();scroll.setWidgetResizable(True);scroll.setWidget(page);tabs.addTab(scroll,title)
@@ -55,6 +57,8 @@ class Controls(QtWidgets.QDialog):
                     "How far from this object's surface a shadow ray starts, in scene units. Raise it a little where the object shadows itself in specks or stripes (shadow acne). 0 leaves MoonRay's own.")
                 field('ray_epsilon','Secondary ray offset (0: automatic)','number',0,0,1000).setToolTip(
                     "The same for reflection, refraction and bounce rays leaving this object. 0 leaves MoonRay's own.")
+                field('blob_lighting','Blob lighting','choice','mesh',choices=[('Lit like a mesh','mesh'),("Unlit, as Modo renders a Blob",'modo')]).setToolTip(
+                    "For a Blob item. Lit like a mesh: lights light it as they light any surface. Unlit: as Modo's renderer draws a Blob, no light reaches it but the environment and the light bouncing off other surfaces; it still casts shadows. Its own Light Links, when on, come first.")
                 field('motion_topology','Changing topology during shutter','choice','auto',choices=[('Blur by velocities where it has them, else frame-time','auto'),('Require stable topology','strict'),('Frame-time geometry; no deformation blur','freeze'),('Frame-time points / strands with velocities','velocity')])
                 field('point_id_map','Persistent point ID weight map','text','')
                 field('strand_id_tag','Persistent strand ID tag (4 characters)','text','')

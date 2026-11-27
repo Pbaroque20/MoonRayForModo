@@ -18,10 +18,10 @@ class CompileMemory(unittest.TestCase):
         self.assertTrue(text.startswith('40.0 GB free of 64 GB: enough'), text)
 
     def test_tight_between_need_and_peak(self):
-        # 64 GB machine: floor 3.2 GB, so under 11 + 3.2 free is tight, from 8 free on.
+        # 64 GB machine: floor 3.2 GB, so under 17 + 3.2 free is tight, from 8 free on.
         self.assertEqual(self.reading(64, 9)[0], 1)
-        self.assertEqual(self.reading(64, 14)[0], 1)
-        self.assertEqual(self.reading(64, 14.5)[0], 0)
+        self.assertEqual(self.reading(64, 20)[0], 1)
+        self.assertEqual(self.reading(64, 20.5)[0], 0)
 
     def test_not_enough_under_need(self):
         level, text = self.reading(64, 7.9)
@@ -37,6 +37,46 @@ class CompileMemory(unittest.TestCase):
         lines = ['MoonRay XPU2 shaders: compiled in 480 s (memory at most 4.2 GB, the machine\'s least free 30.1 GB)']
         self.assertAlmostEqual(self.module._measured_peak(lines), 4.2)
         self.assertIsNone(self.module._measured_peak(['nothing']))
+
+    def test_low_memory_by_itself(self):
+        low = lambda total, free, peak=None: self.module.compile_low_memory(total * GB, free * GB, peak)
+        # The last whole compile's own peak, where it was larger.
+        self.assertTrue(low(64, 22, 21.0))
+        # Automatic: free RAM short of the whole compile's peak above the floor (17 GB + 2 or more) goes one module at a time...
+        self.assertTrue(low(8, 6))
+        self.assertTrue(low(12, 10))
+        # ...as does one with too little free now (under 8 GB), and a large machine with room does not.
+        self.assertTrue(low(32, 6))
+        self.assertTrue(low(16, 12))
+        self.assertFalse(low(32, 25))
+        self.assertFalse(low(64, 40))
+
+    def test_automatic_goes_again_one_module_at_a_time(self):
+        retry = self.module.retry_low
+        whole = ['MoonRay XPU2 shaders: compiling', 'MoonRay XPU2 shaders: graphics card 0 (RTX)']
+        self.assertTrue(retry(whole + ['MoonRay XPU2 shaders: stopped: memory ran low (1.9 GB free); the modules compiled so far are kept']))
+        self.assertTrue(retry(['MoonRay XPU2 shaders: not compiled: not enough free memory (5.0 GB free of 8.0 GB)']))
+        # Not a second time, and not after a compile that ended well.
+        self.assertFalse(retry(whole + ['MoonRay XPU2 shaders: low memory: 10 modules, one at a time',
+                                        'MoonRay XPU2 shaders: stopped: memory ran low (1.9 GB free)']))
+        self.assertFalse(retry(whole + ['MoonRay XPU2 shaders: compiled in 900 s (memory at most 7.0 GB)']))
+
+    def test_low_memory_reading_on_a_small_machine(self):
+        m = self.module
+        # 8 GB with 5 free: no whole compile at once, but enough one module at a time.
+        level, text = self.reading(8, 5, need=m.LOW_NEED_GB, peak=m.LOW_PEAK_GB, low=True)
+        self.assertLess(level, 2)
+        self.assertIn('low memory', text)
+        self.assertEqual(self.reading(8, 2.5, need=m.LOW_NEED_GB, peak=m.LOW_PEAK_GB, low=True)[0], 2)
+
+    def test_measured_peak_of_the_same_kind(self):
+        low_log = ['MoonRay XPU2 shaders: low memory: 10 modules, one at a time',
+                   'MoonRay XPU2 shaders: compiled in 900 s (memory at most 2.4 GB, the machine\'s least free 30.1 GB)']
+        self.assertAlmostEqual(self.module._measured_peak(low_log, True), 2.4)
+        self.assertIsNone(self.module._measured_peak(low_log, False))
+        full_log = low_log[1:]
+        self.assertIsNone(self.module._measured_peak(full_log, True))
+        self.assertAlmostEqual(self.module._measured_peak(full_log, False), 2.4)
 
     def test_reads_this_machine(self):
         text = self.module.memory_state()

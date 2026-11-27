@@ -75,8 +75,8 @@ class GlitterEngineTests(unittest.TestCase):
         self.assertIn('const unsigned MATERIAL_GLITTER = 1u << 20;', shared)
         loader = text('moonlightipr/session/scene_loader.cpp')
         self.assertIn('materialFlags & (1u << 20)', loader)
-        self.assertIn('0x64534c4d', loader)
-        self.assertIn("b'MLSd'", text('kit/MoonRayForModo/python/moonray_modo/moonlightipr_scene.py'))
+        self.assertIn('0x65534c4d', loader)
+        self.assertIn("b'MLSe'", text('kit/MoonRayForModo/python/moonray_modo/moonlightipr_scene.py'))
 
     def test_glitter_shares_the_iridescence_kernels(self):
         shared = text('moonlightipr/src/device/shared.h')

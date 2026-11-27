@@ -957,7 +957,9 @@ inline std::shared_ptr<const PolySurface> tessellatePolygons(const rdl::SceneObj
    if(out.normalKind==3){s->normals.resize(n);parallelRange(n,[&](size_t a,size_t b){for(size_t i=a;i<b;++i)s->normals[i]=vec(out.normals+3*i);});
     if(out.normalSteps>1){s->normals1.resize(n);parallelRange(n,[&](size_t a,size_t b){for(size_t i=a;i<b;++i)s->normals1[i]=vec(out.normals+3*(n+i));});}}
    else if(out.normalKind==4){const size_t c=size_t(out.faceCount)*4;s->normals.resize(c);
-    parallelRange(c,[&](size_t a,size_t b){for(size_t i=a;i<b;++i)s->normals[i]=vec(out.normals+3*i);});}
+    parallelRange(c,[&](size_t a,size_t b){for(size_t i=a;i<b;++i)s->normals[i]=vec(out.normals+3*i);});
+    // A moving displaced mesh's corners at their second time step (its hard edges' normals: modo_hard_edges.h).
+    if(out.normalSteps>1){s->normals1.resize(c);parallelRange(c,[&](size_t a,size_t b){for(size_t i=a;i<b;++i)s->normals1[i]=vec(out.normals+3*(c+i));});}}
    s->faces.assign(out.indices,out.indices+4*size_t(out.faceCount));s->controlFace.assign(out.controlFace,out.controlFace+out.faceCount);
    s->st.assign(out.st,out.st+8*size_t(out.faceCount));s->fourCorners=out.tessellated||out.quadBase;
    for(unsigned k=0;k<out.attributeCount;++k){const auto& a=control.prims[k];const auto& r=out.attributes[k];
@@ -996,13 +998,14 @@ inline std::shared_ptr<MeshData> polygonMesh(const PolySurface& s,const std::vec
  std::vector<size_t> first(faceCount+1,0);
  for(size_t f=0;f<faceCount;++f)first[f+1]=first[f]+(halves[f]&1u)+(halves[f]>>1&1u);
  const size_t count=first[faceCount];
- m->triangles.resize(count);made.resize(count);m->uvs.resize(6*count);if(s.normalKind==4)m->normals.resize(3*count);if(polyVertices)m->polyVertices.resize(4*count);
+ m->triangles.resize(count);made.resize(count);m->uvs.resize(6*count);if(s.normalKind==4)m->normals.resize(3*count);if(s.normalKind==4&&!s.normals1.empty())m->normals1.resize(3*count);if(polyVertices)m->polyVertices.resize(4*count);
  parallelRange(faceCount,[&](size_t from,size_t to){for(size_t f=from;f<to;++f){size_t k=first[f];const unsigned* c=s.faces.data()+4*f;
   for(unsigned half=0;half<2;++half){if(!(halves[f]>>half&1u))continue;
    m->triangles[k]={c[corners[half][0]],c[corners[half][1]],c[corners[half][2]]};made[k]={f,half};
    if(polyVertices){unsigned* p=m->polyVertices.data()+4*k;p[0]=c[0];p[1]=c[1];p[2]=c[2];p[3]=s.fourCorners?c[3]:~0u;}
    for(unsigned j=0;j<3;++j){const unsigned corner=corners[half][j];m->uvs[6*k+2*j]=s.st[8*f+2*corner];m->uvs[6*k+2*j+1]=s.st[8*f+2*corner+1];
-    if(s.normalKind==4)m->normals[3*k+j]=s.normals[4*f+corner];}
+    if(s.normalKind==4)m->normals[3*k+j]=s.normals[4*f+corner];
+    if(s.normalKind==4&&!s.normals1.empty())m->normals1[3*k+j]=s.normals1[4*f+corner];}
    ++k;}}});
  need(!m->triangles.empty(),name+": no triangle of any area");
  m->uvRate=shade::RateFaceVarying;if(s.normalKind==4)m->normalRate=shade::RateFaceVarying;

@@ -148,7 +148,8 @@ bound to closed meshes, with or without a surface material (a mesh with no mater
 - A ray's crossings of the volume meshes along its whole length (`collectVolumeIntervals`: entry or exit by the
   triangle's geometric normal, the outermost entry and exit of each volume kept counting back from the far end), so
   the regions it starts in are known without tracking them along the path. The GPU keeps volume meshes in the same
-  instance tree under visibility 2 (surfaces 1); the CPU keeps them in an Embree scene of their own.
+  instance tree under visibility 2 (surfaces 1); the CPU keeps them in an Embree scene of their own. Each crossing's
+  distance and side are worked out again from its triangle on both lanes (`resume::geometryHit`), as a surface hit's.
 - Homogeneous volumes (no attribute bound), as this section was first written: one step a stretch of the ray
   (`decoupledRayMarching`), with BaseVolume's ramps over the stretch's length; overlapping volumes summed, the thickest
   taken, or one picked by its extinction (`volume_overlap_mode`).
