@@ -1,7 +1,6 @@
 # How it works: MoonRay on Windows, and the C++ adapter
 
-*For developers. Written November 27, 2026, for 0.5.6.3. Artists need none of this: the kit and its runtime install as
-they are.*
+*For developers. Written November 27, 2026.*
 
 ![The first stable prototype of MoonRay for Modo, September 30, 2026](images/first-prototype-2026-09-30.png)
 
