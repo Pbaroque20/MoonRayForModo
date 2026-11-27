@@ -2,6 +2,25 @@
 
 0.5 is a **pre-production release**: the plugin is no longer experimental, and it brings a new GPU renderer, MoonRay XPU2.
 
+## New in 0.5.6.3
+
+- **Shader Tree to MoonShine** (MoonRay menu, Shader Tree to MoonShine...): moves the images of a scene's Shader Tree into each material's MoonShine graph, which keeps only their file paths, so the images no longer sit in Modo's memory. The layers are switched off and their image clips unloaded, in one undo. Choose Convert the Current Scene, or Open a Scene and Convert, which reads the scene's Shader Tree from its file so its textures never load into Modo. Run it again after changing the Shader Tree, and the graphs follow. It brings new graph nodes: Modo Blend (all of Modo's blend modes), Modo Procedural, projections (planar, cubic, spherical, cylindrical, front), Vertex Map, Modo Mask, Modo Falloff, Driver A to D, Occlusion, Curvature, Gradient inputs, Variation and Tension, image sequences, and environment graphs. Displacement layers stay in the Shader Tree, and so does a material one of whose layers cannot move; the summary names each and says why.
+- **A UDIM set from one tile**: picking one tile of a UDIM set in an Image node uses the whole set: choose `hero_color.1002.exr` and, with `hero_color.1001.exr` and `hero_color.1011.exr` beside it, the node reads all three, as `hero_color.<UDIM>.exr`.
+- **Displacement**: Modo's default displacement settings no longer blow up a large displaced plane; "As modeled" adapts to what the camera sees; Smooth Positions is followed in every engine; displaced hard edges stay sharp, as Modo shades them (a Source Override, on by default); no cracks in MoonLightIPR.
+- **Environments**: an HDRI faces the way Modo shows it (it was mirrored front to back: check HDRI Rotation in older scenes); environment images in any projection, not only Spherical (a Source Override, on by default); environment Grid, Dots and triplanar procedurals, the Light Probe, and surface Grid and Dots as Modo draws them.
+- **Cameras and Backplate**: Spherical Map and Spherical VR cameras no longer mirrored; the Backplate's HDRI turned in Modo's viewport by its rotation; a spherical or cylindrical Backplate photo lines up with its HDRI.
+
+  | Before | Now |
+  |---|---|
+  | ![A Spherical camera before: Modo's render (top) and MoonRay's (bottom), MoonRay's the mirror image](images/spherical-camera-before.png) | ![A Spherical camera now: Modo's render (top) and MoonRay's (bottom), the same](images/spherical-camera-after.png) |
+
+- **Blobs and Sprites**: Modo's Blob and Sprite items render in every engine, with motion blur; a Blob can be lit like a mesh or unlit as Modo renders it (Light Links, Emitters and Volumes).
+- **XPU2**: its shaders compile in half the memory and half the time (about 9 GB and 13 minutes on an RTX 3090), and its GPU renders are up to about 15% faster, with the same pictures; the processor and the graphics card give the same picture, and the same from one render to the next; a quicker first picture in realtime; a scene with Volume Indirect Samples set but no volumes no longer falls back to MoonRay XPU, and in scenes with volumes XPU2 renders it too; no crash on displaced subdivision surfaces.
+- **XPU2 Rhea**: drags look up what it has learned on the graphics card, and keep each object's light to itself, for cleaner edges; its learned light fades in.
+- **Compile XPU2 Shaders** no longer sticks at "Compiling 0%"; when free memory is short it compiles one part at a time by itself; and **Compile XPU2 Shaders.cmd**, in the kit folder, compiles them with Modo closed. 32 GB of RAM recommended for XPU2.
+
+Install the new kit and runtime, and **Compile XPU2 Shaders once more**.
+
 ## New in 0.5.6.2
 
 - **Glitter in MoonLightIPR**: MoonRay's metallic flakes in the GPU preview, each flake where MoonRay puts it: sparse sparkles, dense paint and their far-off sheen, flake colours with their variation, and the flakes under a clear coat. On a mesh that bends, the flakes stay on the same spots of the surface, as in MoonRay. Keep Metallic Flakes keeps them sparkling through MoonLightIPR's denoiser too.

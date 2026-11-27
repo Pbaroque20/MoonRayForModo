@@ -322,6 +322,66 @@ class AddOverrideAbove(OpenNodes):
 lx.bless(AddOverrideAbove,'moonray.material.addOverrideAbove')
 
 
+class MoveShaderTreeTextures(lxu.command.BasicCommand):
+    """MoonRay > Move Shader Tree Textures to MoonShine Graphs (shader_tree_scene): one undoable step. What it did is
+    written to the Event Log; the last run's lines are kept in LAST_REPORT for probes."""
+    LAST_REPORT=[]
+    def cmd_Flags(self):return lx.symbol.fCMD_MODEL|lx.symbol.fCMD_UNDO
+    def basic_Enable(self,msg):return True
+    def basic_Execute(self,msg,flags):
+        from moonray_modo import shader_tree_scene,shader_tree_dialog
+        try:report=shader_tree_scene.run()
+        except shader_tree_dialog.Cancelled:
+            # Stopped while the scene was being read: nothing was changed.
+            shader_tree_scene.LAST_REPORT[:]=['Cancelled: the scene is as it was.']
+            lx.out('MoonRay: Move Shader Tree Textures to MoonShine Graphs cancelled; the scene is as it was.')
+            return
+        except Exception:
+            import traceback
+            shader_tree_scene.LAST_REPORT[:]=['Failed: '+traceback.format_exc()]
+            lx.out('MoonRay: Move Shader Tree Textures to MoonShine Graphs failed: '+traceback.format_exc())
+            raise
+        lines=report.lines()
+        MoveShaderTreeTextures.LAST_REPORT[:]=lines
+        for line in lines:lx.out('MoonRay: '+line)
+        shader_tree_scene.LAST_REPORT[:]=lines
+
+lx.bless(MoveShaderTreeTextures,'moonray.material.moveShaderTreeTextures')
+
+
+class OpenSceneAsMoonShine(lxu.command.BasicCommand):
+    """MoonRay > Open Scene as MoonShine... (moonshine_open): a scene opened with its Shader Tree images in MoonShine
+    graphs, never loaded by Modo. filename: the scene, else one is asked for."""
+    def __init__(self):
+        super().__init__()
+        self.dyna_Add('filename',lx.symbol.sTYPE_STRING)
+        self.basic_SetFlags(0,lx.symbol.fCMDARG_OPTIONAL)
+    def cmd_Flags(self):return lx.symbol.fCMD_UI
+    def basic_Enable(self,msg):return True
+    def basic_Execute(self,msg,flags):
+        import modo
+        from moonray_modo import moonshine_open
+        path=self.dyna_String(0) if self.dyna_IsSet(0) else ''
+        if not path:
+            path=modo.dialogs.customFile('fileOpen','Open Scene as MoonShine',('lxo',),('Modo Scene',),('*.lxo',))
+        if not path:return
+        moonshine_open.open_scene(path)
+
+lx.bless(OpenSceneAsMoonShine,'moonray.material.openSceneAsMoonShine')
+
+
+class ShaderTreeToMoonShine(lxu.command.BasicCommand):
+    """MoonRay > Shader Tree -> MoonShine... (shader_tree_dialog): asks whether to convert the open scene or to open one
+    and convert it, with a progress bar, and shows the summary."""
+    def cmd_Flags(self):return lx.symbol.fCMD_UI
+    def basic_Enable(self,msg):return True
+    def basic_Execute(self,msg,flags):
+        from moonray_modo import shader_tree_dialog
+        shader_tree_dialog.run()
+
+lx.bless(ShaderTreeToMoonShine,'moonray.material.shaderTreeToMoonShine')
+
+
 # A diffuse edited in Modo: a linked material has it already (material_diffuse), and what shows it is told. One of a scene
 # saved before the link takes it as its colour once the edit has stopped, which links it: a scene may not be changed from
 # inside a listener, and a colour picker's drag sends many values.

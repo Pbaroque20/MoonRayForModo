@@ -18,6 +18,7 @@
 #pragma once
 #include "async_adaptive.h"
 #include "async_gpu_abi.h"
+#include "rhea_store_core.h"
 #include "aov_deep.h"
 #include <chrono>
 #include "gpu_lane.h"
@@ -1872,13 +1873,58 @@ public:
     // path tracer's own (GpuBackend::trace, launch mode 5), the card's traversal flat in the scene's size where the CPU's
     // grows with it. Only with nothing of a frame's out (inFlight() 0: a drag's steps, XPU2 held to the release) and a frame
     // begun on this scene before (its buffers made); false otherwise, the caller's CPU tracing them.
-    bool firstHits(const surface::Ray* rays, size_t count, resume::Hit* out) {
+    // looks: each hit's lookup in Rhea's store on the card (rheaStoreSync, rheaStoreView; rhea/DESIGN.md 37), or none.
+    bool firstHits(const surface::Ray* rays, size_t count, resume::Hit* out, rheastore::Look* looks = nullptr) {
         if (!count) return true;
-        return firstHitsBegin(rays, count) && firstHitsEnd(out);
+        return firstHitsBegin(rays, count, looks != nullptr) && firstHitsEnd(out, looks);
+    }
+    // Rhea's store on the card (rhea_store_core.h; rhea/DESIGN.md 37): its table's slots sent whole (whole, or another size
+    // than the copy's), else only the ranges of slots given (those written since the last sending). The bytes sent.
+    // extras: each slot's view-dependent sums (rheastore::Extra), or none. (Pageable host memory: each copy is staged
+    // before it returns, so the store may change after.)
+    size_t rheaStoreSync(const rheastore::Entry* slots, const rheastore::Extra* extras, size_t count, bool whole,
+                         const std::vector<std::pair<size_t, size_t>>& ranges) {
+        if (!count) {
+            rheaStoreSlots_ = 0, rheaViewReady_ = false;
+            return 0;
+        }
+        size_t sent = 0;
+        const bool all = whole || !rheaStoreDevice_ || rheaStoreSlots_ != count || (extras != nullptr) != rheaStoreExtras_;
+        auto send = [&](B& buffer, const void* host, size_t size) {
+            const size_t bytes = count * size;
+            if (all) {
+                if (!buffer || buffer->bytes < bytes) buffer = device(bytes);
+                copyIn(buffer, host, bytes);
+                sent += bytes;
+                return;
+            }
+            for (const auto& [from, to] : ranges) {
+                const size_t b = (to - from) * size;
+                gpu::Driver::check(driver.cuMemcpyHtoDAsync_v2_p(buffer->pointer + from * size, static_cast<const char*>(host) + from * size, b, stream_));
+                sent += b;
+            }
+        };
+        send(rheaStoreDevice_, slots, sizeof(rheastore::Entry));
+        if (extras) send(rheaExtrasDevice_, extras, sizeof(rheastore::Extra));
+        rheaStoreSlots_ = count, rheaStoreExtras_ = extras != nullptr;
+        return sent;
+    }
+    // A view's lookup settings (the slots and mask filled in here); false where no store is on the card.
+    bool rheaStoreView(const rheastore::View& v) {
+        rheaViewReady_ = false;
+        if (!rheaStoreDevice_ || !rheaStoreSlots_ || (rheaStoreSlots_ & (rheaStoreSlots_ - 1))) return false;
+        rheaViewHost_ = v;
+        rheaViewHost_.slots = reinterpret_cast<const rheastore::Entry*>(rheaStoreDevice_->pointer);
+        rheaViewHost_.mask = rheaStoreSlots_ - 1;
+        rheaViewHost_.extras = rheaStoreExtras_ ? reinterpret_cast<const rheastore::Extra*>(rheaExtrasDevice_->pointer) : nullptr;
+        if (!rheaViewDevice_) rheaViewDevice_ = device(sizeof(rheastore::View));
+        copyIn(rheaViewDevice_, &rheaViewHost_, sizeof(rheastore::View));
+        rheaViewReady_ = true;
+        return true;
     }
     // firstHits in two: the launch queued (false: not taken, as firstHits), then its hits waited for and copied out (false:
     // none queued). Between them the caller works on (Rhea's coarse picture while the card traces the fine grid).
-    bool firstHitsBegin(const surface::Ray* rays, size_t count) {
+    bool firstHitsBegin(const surface::Ray* rays, size_t count, bool looks = false) {
         if (!count || firstPending_) return false;
         if (!inFlight_.empty() || !paramsFree() || !program_ || !plan_ || !scene_.config || !scene_.materials || !scene_.aovTables || !scene_.geometry ||
             !ring_ || !state_ || !parked_ || !lowFlags_ || !refines_ || !scene_.provSums || !scene_.provCounts || !scene_.sums ||
@@ -1899,18 +1945,36 @@ public:
         p.firstHitRays = reinterpret_cast<const surface::Ray*>(firstRaysDevice_->pointer);
         p.firstHits = reinterpret_cast<resume::Hit*>(firstHitsDevice_->pointer);
         p.firstHitCount = U32(count);
+        firstLooking_ = looks && rheaViewReady_;
+        const size_t lookBytes = count * sizeof(rheastore::Look);
+        if (firstLooking_) {
+            ensure(firstLooksHost_, lookBytes);
+            if (!firstLooksDevice_ || firstLooksDevice_->bytes < lookBytes) firstLooksDevice_ = device(lookBytes);
+            p.rheaStore = reinterpret_cast<const void*>(rheaViewDevice_->pointer);
+            p.firstLooks = reinterpret_cast<void*>(firstLooksDevice_->pointer);
+        }
         auto& slot = takeParams(p);
         ox(optixLaunch(program_->pipeline, stream_, slot.device->pointer, sizeof(LaunchParams), &program_->sbt, unsigned(count), 1, 1));
         copyOut(firstHitsHost_, firstHitsDevice_, hitBytes);
+        if (firstLooking_) copyOut(firstLooksHost_, firstLooksDevice_, lookBytes);
         gpu::Driver::check(driver.cuEventRecord_p(firstHitsDone_->value, stream_));
         slot.done = firstHitsDone_;
         firstPending_ = count;
         return true;
     }
-    bool firstHitsEnd(resume::Hit* out) {
+    // looks: the hits' lookups, where they were asked for (firstHitsBegin's looks) and the card had the store; false where
+    // asked for and not had (the caller then looks up on the CPU: it calls with none).
+    bool firstHitsEnd(resume::Hit* out, rheastore::Look* looks = nullptr) {
         if (!firstPending_) return false;
         while (!firstHitsDone_->ready()) std::this_thread::yield();
         std::memcpy(out, firstHitsHost_->host(), firstPending_ * sizeof(resume::Hit));
+        if (looks) {
+            if (!firstLooking_) {
+                firstPending_ = 0;
+                return false;
+            }
+            std::memcpy(looks, firstLooksHost_->host(), firstPending_ * sizeof(rheastore::Look));
+        }
         firstPending_ = 0;
         return true;
     }
@@ -3685,6 +3749,12 @@ private:
     B firstRaysHost_, firstRaysDevice_, firstHitsHost_, firstHitsDevice_;
     std::shared_ptr<gpu::Event> firstHitsDone_;
     size_t firstPending_ = 0;  // the rays of a firstHitsBegin not yet ended
+    // Rhea's store on the card (rheaStoreSync, rheaStoreView) and its lookups each way (firstHits' looks).
+    B rheaStoreDevice_, rheaExtrasDevice_, rheaViewDevice_, firstLooksHost_, firstLooksDevice_;
+    size_t rheaStoreSlots_ = 0;
+    bool rheaStoreExtras_ = false;
+    rheastore::View rheaViewHost_{};
+    bool rheaViewReady_ = false, firstLooking_ = false;
     U32 refineCapacity_ = 1u << 22;
     U64 refineHead_ = 0;
     std::vector<Refine> refinesOut_;

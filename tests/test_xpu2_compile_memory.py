@@ -18,10 +18,10 @@ class CompileMemory(unittest.TestCase):
         self.assertTrue(text.startswith('40.0 GB free of 64 GB: enough'), text)
 
     def test_tight_between_need_and_peak(self):
-        # 64 GB machine: floor 3.2 GB, so under 17 + 3.2 free is tight, from 8 free on.
+        # 64 GB machine: floor 3.2 GB, so under 9 + 3.2 free is tight, from 8 free on.
         self.assertEqual(self.reading(64, 9)[0], 1)
-        self.assertEqual(self.reading(64, 20)[0], 1)
-        self.assertEqual(self.reading(64, 20.5)[0], 0)
+        self.assertEqual(self.reading(64, 12)[0], 1)
+        self.assertEqual(self.reading(64, 12.5)[0], 0)
 
     def test_not_enough_under_need(self):
         level, text = self.reading(64, 7.9)
@@ -42,12 +42,12 @@ class CompileMemory(unittest.TestCase):
         low = lambda total, free, peak=None: self.module.compile_low_memory(total * GB, free * GB, peak)
         # The last whole compile's own peak, where it was larger.
         self.assertTrue(low(64, 22, 21.0))
-        # Automatic: free RAM short of the whole compile's peak above the floor (17 GB + 2 or more) goes one module at a time...
+        # Automatic: free RAM short of the whole compile's peak above the floor (9 GB + 2 or more) goes one module at a time...
         self.assertTrue(low(8, 6))
-        self.assertTrue(low(12, 10))
-        # ...as does one with too little free now (under 8 GB), and a large machine with room does not.
+        self.assertTrue(low(16, 10))
+        # ...and a machine with room does not.
         self.assertTrue(low(32, 6))
-        self.assertTrue(low(16, 12))
+        self.assertFalse(low(16, 12))
         self.assertFalse(low(32, 25))
         self.assertFalse(low(64, 40))
 
@@ -63,11 +63,11 @@ class CompileMemory(unittest.TestCase):
 
     def test_low_memory_reading_on_a_small_machine(self):
         m = self.module
-        # 8 GB with 5 free: no whole compile at once, but enough one module at a time.
-        level, text = self.reading(8, 5, need=m.LOW_NEED_GB, peak=m.LOW_PEAK_GB, low=True)
+        # 16 GB with 7 free: no whole compile at once, but enough one module at a time.
+        level, text = self.reading(16, 7, need=m.LOW_NEED_GB, peak=m.LOW_PEAK_GB, low=True)
         self.assertLess(level, 2)
         self.assertIn('low memory', text)
-        self.assertEqual(self.reading(8, 2.5, need=m.LOW_NEED_GB, peak=m.LOW_PEAK_GB, low=True)[0], 2)
+        self.assertEqual(self.reading(16, 5, need=m.LOW_NEED_GB, peak=m.LOW_PEAK_GB, low=True)[0], 2)
 
     def test_measured_peak_of_the_same_kind(self):
         low_log = ['MoonRay XPU2 shaders: low memory: 10 modules, one at a time',

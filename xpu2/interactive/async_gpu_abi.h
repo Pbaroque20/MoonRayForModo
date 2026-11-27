@@ -256,6 +256,10 @@ struct LaunchParams {
     const surface::Ray* firstHitRays;
     resume::Hit* firstHits;
     U32 firstHitCount, pad4;
+    // And with a copy of Rhea's store on the card (rhea/DESIGN.md 37): each hit's lookup in it (rheaStore: a
+    // rheastore::View, rhea_store_core.h) into firstLooks (rheastore::Look a ray). Null: hits alone.
+    const void* rheaStore;
+    void* firstLooks;
 };
 
 }  // namespace xpu2::interactive::async

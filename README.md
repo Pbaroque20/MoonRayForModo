@@ -9,9 +9,9 @@ The plugin includes CPU, XPU and XPU2 rendering, a dockable live preview with a 
 
 **Built on MoonRay [2026.29.1](https://github.com/dreamworksanimation/openmoonray/releases/tag/v2026.29.1)** (OpenMoonRay's latest release; MoonRay 18.4), with the plugin's own patches for Windows and the preview.
 
-**Current version: 0.5.6.2 — pre-production release.** 0.5.6.2 brings **glitter to MoonLightIPR**, each flake where MoonRay puts it, and fixes dense glitter in MoonRay's Vector and XPU modes. 0.5.6.1 brought the **Backplate**, an HDRI and the photo shot with it in one item, with **shadow catchers** in every engine. 0.5.6 brought **XPU2 Rhea**, the realtime part of MoonRay XPU2, which keeps XPU2 smooth in dense scenes, from a biased first picture to its unbiased render. The plugin is no longer experimental. 0.5 brought **MoonRay XPU2**, a new GPU renderer for previews in which the processor and the graphics card work on the same picture at once, now the default; realtime that keeps up with heavy scenes and a Scene cache; Modo's procedural textures worked out through the object, 145 of Modo's Enhance textures among them; Modo's light volumetrics and fog; and MoonLightIPR starting in seconds. Install the new runtime with it.
+**Current version: 0.5.6.3 — pre-production release.** 0.5.6.3 brings **Shader Tree to MoonShine**, which moves a scene's Shader Tree textures into MoonShine graphs so Modo no longer holds the images, HDRIs and spherical cameras that face as in Modo, adaptive displacement with sharp hard edges, Blobs and Sprites, and XPU2 shaders that compile in half the memory and render faster. 0.5.6.2 brought **glitter to MoonLightIPR**. 0.5.6.1 brought the **Backplate**, an HDRI and the photo shot with it in one item, with **shadow catchers** in every engine. 0.5.6 brought **XPU2 Rhea**, the realtime part of MoonRay XPU2, which keeps XPU2 smooth in dense scenes, from a biased first picture to its unbiased render. The plugin is no longer experimental. 0.5 brought **MoonRay XPU2**, a new GPU renderer for previews in which the processor and the graphics card work on the same picture at once, now the default; realtime that keeps up with heavy scenes and a Scene cache; Modo's procedural textures worked out through the object, 145 of Modo's Enhance textures among them; Modo's light volumetrics and fog; and MoonLightIPR starting in seconds. Install the new runtime with it.
 
-· [Download 0.5.6.2: the kit, the Windows runtime and the MoonRay content](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.5.6.2)
+· [Download 0.5.6.3: the kit, the Windows runtime and the MoonRay content](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.5.6.3)
 
 · [Installation instructions](docs/INSTALLATION.md) 
 
@@ -65,14 +65,17 @@ Work on the next version goes on in the [MoonLightIPR branch](https://github.com
 | ![The compositor](docs/images/compositor-editor.png) | ![Modern Hall, imported from MoonRay's scene files](docs/images/rdl-modern_hall.jpg) |
 | **The compositor**: the beauty graded, vignetted and sharpened | **An imported MoonRay scene**: its own render (left), after the trip through Modo (right). Modern Hall by NewSee2l035, CC BY |
 
-## Coming in 0.5.6.3
+## New in 0.5.6.3
 
+- **Shader Tree to MoonShine** (MoonRay menu): moves the images of a scene's Shader Tree into each material's MoonShine graph, which keeps only their file paths, so the images no longer sit in Modo's memory; the layers are switched off and their clips unloaded, in one undo. Or open a scene that way, so its textures never load into Modo. Run it again after changing the Shader Tree and the graphs follow. New graph nodes come with it: Modo Blend, Modo Procedural, projections, Vertex Map, Modo Mask, Modo Falloff, Drivers, Occlusion, Curvature, Variation and more.
+- **XPU2 Rhea** drags look up what it has learned on the graphics card, and keep each object's light to itself, for cleaner edges.
 - **Displacement**: Modo's default displacement settings no longer blow up a large displaced plane; "As modeled" adapts to what the camera sees; Smooth Positions is followed in every engine; displaced hard edges stay sharp, as Modo shades them (a Source Override, on by default); no cracks in MoonLightIPR.
 - **Environments**: an HDRI faces the way Modo shows it (it was mirrored front to back: check HDRI Rotation in older scenes); environment images in any projection, not only Spherical (a Source Override, on by default); environment Grid, Dots and triplanar procedurals, the Light Probe, and surface Grid and Dots as Modo draws them.
 - **Cameras and Backplate**: Spherical Map and Spherical VR cameras no longer mirrored; the Backplate's HDRI turned in Modo's viewport by its rotation; a spherical or cylindrical Backplate photo lines up with its HDRI.
 - **Blobs and Sprites**: Modo's Blob and Sprite items render in every engine, with motion blur; a Blob can be lit like a mesh or unlit as Modo renders it (Light Links, Emitters and Volumes).
 - **XPU2**: the processor and the graphics card give the same picture, and the same from one render to the next; a quicker first picture in realtime; a scene with Volume Indirect Samples set but no volumes (the Cobra) no longer falls back to MoonRay XPU, and in scenes with volumes XPU2 renders it too; Rhea's learned light fades in; no crash on displaced subdivision surfaces.
-- **Compile XPU2 Shaders** no longer sticks at "Compiling 0%", and on a machine short of memory it compiles one part at a time by itself.
+- **XPU2 shaders compile in half the memory and half the time** (about 9 GB and 13 minutes on an RTX 3090), and XPU2's GPU renders are up to about 15% faster, with the same pictures.
+- **Compile XPU2 Shaders** no longer sticks at "Compiling 0%", and when free memory is short it compiles one part at a time by itself, about twice as long; and it can compile with Modo closed: double-click **Compile XPU2 Shaders.cmd** in the kit folder. 32 GB of RAM recommended for XPU2.
 - **MoonShine graphs**: picking one tile of a UDIM set uses the whole set: choose `hero_color.1002.exr` in an Image node and, with `hero_color.1001.exr` and `hero_color.1011.exr` beside it, the node reads all three, as `hero_color.<UDIM>.exr`. A file with no tiles beside it stays as picked.
 
 Install the new kit and runtime, and **Compile XPU2 Shaders once more**.
@@ -542,7 +545,7 @@ In each pair, MoonRay's render of the scene from its own files is on the left; o
 - Render outputs: configurable AOVs, Cryptomatte surface categories, buffer switching, deep EXR, texture baking, a compositor over the finished buffers, and denoising (OptiX or Open Image Denoise) that survives a stopped render.
 - Workflow tools: ACES/sRGB/OCIO view transforms and LUTs, animation output and recovery controls, an asset library with MoonRay's example scenes, and RDL scene import.
 
-## Known issues in 0.5.6.2
+## Known issues in 0.5.6.3
 
 The ones you are most likely to meet:
 
@@ -554,16 +557,19 @@ The ones you are most likely to meet:
 - A MoonRay EnvLight item the camera sees is not in an EXR's Environment background layer, so the soft edges in front of one still hold its light, and a plain "over" can look washed out there.
 - Modo can crash as it quits with Scene Proxies in the scene (its own Convert to Proxy does the same); your work and settings are saved first.
 - Smart Render and Important Parts First work on MoonRay renders in the preview window, not on Render EXR or animations.
-- XPU2 renders previews only after its shaders are compiled once (Preferences > MoonRay > XPU2 > Compile XPU2 Shaders); until then the preview says so. A scene XPU2 cannot render yet goes to MoonRay XPU.
+- XPU2 renders previews only after its shaders are compiled once (Preferences > MoonRay > XPU2 > Compile XPU2 Shaders, or Compile XPU2 Shaders.cmd in the kit folder with Modo closed); until then the preview says so. A scene XPU2 cannot render yet goes to MoonRay XPU.
 - MoonLightIPR's first preview of a kind of scene not previewed before waits about half a minute after installing while its GPU programs compile (a little longer with glitter or iridescence); the status line says so.
 - In MoonLightIPR a few glitter flakes seen at a grazing angle come out darker than MoonRay's, and glitter flake textures are drawn as plain flakes.
 - Now and then, a preview with glitter in the GPU (XPU) mode fails on the graphics card; it is rendered on the CPU instead, with a notice.
+
+- Shader Tree to MoonShine leaves displacement layers in the Shader Tree, and leaves a material whole where one of its layers cannot move; the summary names each and says why.
+- Blob and Sprite settings Stretch, Size and Colour by a gradient, Dissolve, Position Offset and Texture Displacement are not followed yet; a notice names them.
 
 Every open issue is in the [issue tracker](https://github.com/Pbaroque20/MoonRayForModo/issues). Found something else? Please report it there.
 
 ## This Version's Current Limitations
 
-- **Windows and Modo 16.1v9 only.** XPU and MoonLightIPR need an NVIDIA GPU, and so does XPU2 except with its Devices preference set to the processor only. They have been tested on an RTX 3090 and by testers on other NVIDIA cards; XPU2 renders on the processor where the card is older than an RTX 20 series.
+- **Windows and Modo 16.1v9 only.** XPU and MoonLightIPR need an NVIDIA GPU, and so does XPU2 except with its Devices preference set to the processor only. They have been tested on an RTX 3090 and by testers on other NVIDIA cards; XPU2 renders on the processor where the card is older than an RTX 20 series. 32 GB of RAM recommended for XPU2: compiling its shaders takes up to about 9 GB on its own; they can be compiled with Modo closed ([Installation](docs/INSTALLATION.md#compiling-xpu2-shaders-without-opening-modo)).
 - **MoonLightIPR is an approximation.** It matches MoonRay closely on many scenes but not all; [moonlightipr/README.md](moonlightipr/README.md) says how closely, scene by scene, and what it leaves out.
 - **Modo parity is partial.** Only Modo's own lights and standard/Principled materials are matched. Blinn and Ashikhmin highlights are matched to Modo's by measurement (the lobe, roughness and strength that came closest to Modo's own renders), closely once the roughness is 0.2 or more and loosely below that; a roughness driven by an image is matched the same way. A Modo material's smoothing angle is followed, except on a mesh of more than 300,000 faces, which is smoothed all over and named in a notice. Under Principled, Modo's diffuse brightens with roughness and MoonRay's does not. Anisotropy runs along the material's UV map, with its strength fitted to Modo's renders. Rough environment reflections come out dimmer in MoonRay. Specular Tint, Flatness and a reflection amount apart from specular have nothing like them in MoonRay's material and are named in a notice. Modo's cylinder, dome and photometric lights are left out, with a notice; MoonRay's own lights and volume items stand in. Modo's own group light linking is translated but experimental; check it against Modo.
 - **MaterialX is a supported subset**: Standard Surface, OpenPBR and glTF surfaces made of images, maths, mixes, remaps, UV transforms and MoonRay's own maps. Nodes outside that subset are not read.

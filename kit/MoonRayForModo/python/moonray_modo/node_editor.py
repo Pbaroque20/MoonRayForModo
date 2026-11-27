@@ -572,7 +572,8 @@ class Editor(QtWidgets.QDialog):
         groups={}
         for kind in nodes.kinds():
             category=nodes.category(kind);name=kind.casefold()
-            if category=='material':group='Hair materials' if 'hair' in name else 'Materials'
+            if kind in nodes.MODO_NODES:group='Modo Shader Tree'
+            elif category=='material':group='Hair materials' if 'hair' in name else 'Materials'
             elif category=='normal':group='Normals and bump'
             elif category=='displacement':group='Displacement'
             elif any(v in name for v in ('image','udim','uvtexture')):group='Image textures'
@@ -1597,6 +1598,11 @@ class Editor(QtWidgets.QDialog):
                 elif spec['type']=='String' and key=='uv_map':
                     # The UV maps of the meshes this material is on, rather than a name to type.
                     field=NameField(identity,key,layer,spec,value,uv_choices(self.item),self.table,kind=node['type'],connected=connected)
+                    field.changed.connect(self.object_changed);self.place_field(row,cell,field)
+                elif spec['type']=='String' and key=='vertex_map' and node['type'] in nodes.MODO_NODES:
+                    # The weight and colour maps of the meshes, by name (shader_tree_masks.map_choices).
+                    from .shader_tree_masks import map_choices
+                    field=NameField(identity,key,layer,spec,value,map_choices(self.item),self.table,kind=node['type'],connected=connected)
                     field.changed.connect(self.object_changed);self.place_field(row,cell,field)
                 elif spec['type']=='String':
                     field=TextField(identity,key,layer,spec,value,hint(key,spec),self.table,kind=node['type'],connected=connected)

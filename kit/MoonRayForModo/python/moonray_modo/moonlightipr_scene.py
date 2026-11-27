@@ -1010,6 +1010,16 @@ def with_weights(mesh, available, slots):
         name = key[len('@vmap:'):]
         corners = (mesh.get('corner_attributes') or {}).get(name)
         points = (mesh.get('point_attributes') or {}).get(name)
+        from .shader_tree_masks import RGB_SUFFIX
+        base, _, part = name.rpartition(RGB_SUFFIX)
+        if not corners and not points and base and part in ('0', '1', '2'):
+            # One channel of a colour map (a graph's RGB Vertex Map node: shader_tree_masks.ipr_rows), as a weight.
+            for source in ('corner_attributes', 'point_attributes'):
+                held = (mesh.get(source) or {}).get(base)
+                if held and held.get('kind') == 'color':
+                    taken = {'kind': 'float', 'values': [[float(value[int(part)])] for value in held['values']]}
+                    corners, points = (taken, None) if source == 'corner_attributes' else (None, taken)
+                    break
         if corners and corners.get('kind') == 'float':
             values = _singles(corners['values'])
             available[key] = [(float(value[0]), 0.0) for value in corners['values']] if values is None else [(value, 0.0) for value in values]

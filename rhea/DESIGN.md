@@ -1245,3 +1245,240 @@ way (drags as before); a different view or size ends it too.
   shows a later picture of the same frame, but the render job has ended by then). A command come meanwhile ends the fade
   at once on the session's picture (where the kit has taken the one before). `XPU2_SESSION_SAY_PICTURE_HASH=1`: each
   frame's end says the hash of the last picture handed over and of the session's own last one.
+
+## 35. Drag pictures measured; view-dependent light (2026-11-27)
+
+The user, after the point store (section 34, a prototype on another branch, not kept): four improvements, in order, each
+measured against fixed baselines and kept behind a switch of its own, on by default only where it measured better.
+
+**The measure** (`test-results/rhea-improve`, git-ignored: `rhea_compare.py`, from the point store's `points_compare.py`).
+The two test scenes of sections 31 and 32 had lost their textures to the kit's texture cache (magenta in every picture).
+They were exported again with headless Modo (modo_cl, a private profile and a private cache folder: `export_scenes.py`),
+and the original scenes' texture paths pointed at the new textures (`relink.py`; the car's tyre mask made again as sRGB,
+its environment the kit's current stack of its three HDRs): the same cameras, meshes and drags as before. A run is the
+harness's drag from a picture at rest (XPU2's realtime frame at 32 samples to its end, then 30 steps 50 ms apart, each
+phase one alone, `--drag`), 640 x 360, each phase one dumped (`XPU2_SESSION_RHEA_PHASE1_DUMP`); the reference is XPU2's
+own realtime frame of steps 10, 20 and 30 at 64 samples, the lens's blur off. Error: relMSE, over all pixels and over the
+pixels split by phase one's depths into silhouettes and creases (and their neighbours), grazing surfaces, and the rest
+(plain). Cases: the car (`drag30`), behind the car (`behind`: the view turns to what the picture at rest never showed),
+and the dragon over the sea (`orbit`). Timing: a step's picture ahead of the GPU, phase one's own clock, its lookups
+(shading), and the store's size.
+
+The baselines (build of b7ddd9ed with the dump alone):
+
+| | car | behind the car | dragon |
+|---|---|---|---|
+| relMSE, all | 0.276 | 2.148 | 0.233 |
+| plain | 0.317 | 2.118 | 0.403 |
+| silhouettes and creases | 0.922 | 8.563 | 0.230 |
+| grazing | 0.107 | 1.023 | 0.301 |
+| view known | 91.1% | 55.0% | 63.4% |
+| pixels filled | 12.2% | 55.9% | 21.7% |
+| a step, ahead of the GPU | 35.4 ms | 36.2 ms | 37.5 ms |
+| phase one | 28.5 ms | 29.9 ms | 31.0 ms |
+| its lookups | 5.4 ms | 4.9 ms | 6.0 ms |
+| store | 36.5 MB | 36.5 MB | 10.0 MB |
+
+(With the textures back the numbers are lower than section 34's magenta ones: car 0.381, dragon 0.268.) Runs of one build
+differ by about 0.001 (the store learns at the frame's pass ends, whose timing varies).
+
+**View-dependent light** (the user: "today the store keeps one colour per patch and facing bin, so a reflection learned
+from one view is shown unchanged from another"). `XPU2_SESSION_RHEA_SPECULAR` (off), with the output `/rhea_diffuse`
+(LPE `CD[DSG]*[<L.>O]`: the light reflected diffusely at the first hit, every bounce after; XPU2 takes MoonRay's LPEs as
+they are). Not in the kit's realtime outputs yet (rdla.py): the harness adds it (`extra-diffuse.rdla`).
+
+- **What the store keeps:** beside each cell (a parallel table, `ObjectStore::Table::extras`, made only once a picture
+  with the diffuse output is learned, so that a store without it keeps its old size and speed) the diffuse light, and
+  from the pixels whose reflected light was known their specular light (the pixel's colour less its emission and diffuse
+  light) and that reflected light.
+- **The reflected light** (`ObjectStore::reflectedAt`, the same at learning and at a lookup): the hit's shading normal
+  (CpuBackend::surfaceState), the mirror direction, then either the reflected ray traced (`XPU2_SESSION_RHEA_SPEC_TRACE`
+  -> `specTrace`: the store's colour where it meets a surface, cells twice the hit's footprint or as wide as the blur at
+  its distance) or not (the default: the environment lights' radiance in that direction, whatever stands in the way), the
+  environment filtered over `XPU2_SESSION_RHEA_SPEC_BLUR` radians (0.15; its texture's mip). Learning traces each learned
+  pixel's own first hit (Realtime::learn, the CPU lane's scene) for its normal.
+- **A new view's colour:** where at least `XPU2_SESSION_RHEA_SPEC_SHARE` (0.3) of a cell's weight knew its reflection,
+  its specular light is made again: colour - specular + (specular / reflected then) x (reflected now), each channel, the
+  ratio (the reflectance as that view saw it, Fresnel and the lobe's albedo in it) at most `XPU2_SESSION_RHEA_SPEC_MAX`
+  (1.5; more is no mirror's: light through glass, a lobe far rougher than the blur), else the colour as it was.
+
+## 36. Learning ahead of the camera (2026-11-27)
+
+The user: "behind the car, 55% of the view had never been seen. Rhea only learns what it has shown." While the camera is
+still, a share of the card's time goes to cheap frames from nearby views, the store learning from them as from XPU2's
+own frames. `XPU2_SESSION_RHEA_LEARN_AHEAD` (`rheaLearnAhead`, the session).
+
+- **When:** once XPU2's frame at rest has ended (DONE) and no command waits: never during XPU2's own frame. At most
+  `XPU2_SESSION_RHEA_AHEAD_VIEWS` (6) frames a rest, once a rest.
+- **Which views:** turned about the vertical through the point the camera looks at (the middle ray's first hit), by
+  25, 50, 80, 115, 150 and 180 degrees each way; each scored by the share of a 32 x 18 grid of first hits (CPU) the store
+  does not know, times 1.5 toward the way the camera last turned (0.75 away), over 1 + the turn / 180 degrees (nearer
+  first). Views the store knows to 95% are skipped.
+- **The frames:** the plan copied with the camera moved (`rheaPlaceCamera`: render space the camera's, as
+  cpu::updateCamera makes it for a still camera; geometry tessellated for the camera kept, as a drag keeps it), the CPU
+  scene taken over for it and back, the card's camera with it; `XPU2_SESSION_RHEA_AHEAD_SPP` samples a pixel (1), both
+  devices; learned (Realtime::learn) as a frame of XPU2's is, but each pixel held to twice the median luminance of its
+  eight neighbours and to twice the frame's 99th percentile (`XPU2_SESSION_RHEA_AHEAD_DESPECKLE`, 2: a sample's
+  fireflies on the glossy car reached 34 where the reference's brightest pixel was 4.8, and a cell kept them), and into
+  cells `XPU2_SESSION_RHEA_AHEAD_COARSER` (2) sizes coarser than its pixels' (four times as wide: a sample's noise
+  averaged over sixteen times the pixels). The session's renderer is made again for its next frame; a mapped volume's
+  settings are made again at the ahead camera, as cpu::updateCamera makes them.
+- **Never delaying a step:** a command stops an ahead frame at once (its GPU launches left to finish behind it, as a
+  stopped frame's, `abandonOnCancel`): the step's phase one is drawn first (on the CPU's hits while the launches are out),
+  then the launches drained, their samples harvested into the store (`rheaHarvest`), and the card's camera put back.
+
+Measured: the harness's drag after 15 s at rest (`--rest 15`, a harness option added for this), the frame at rest and
+its controls the same build without the switch, all with the defaults of sections 37 and 38. On the car the six frames
+took 9.7 to 10 s (1.6 s each), the views chosen in 20 ms; behind the car they turned 50, 80, 180, -25, -150 and -50
+degrees (53 to 79% of each unknown), and 1.38 million pixels went into the store:
+
+| | car | behind the car | dragon |
+|---|---|---|---|
+| relMSE all, at rest alone | 0.219 | 2.063 | 0.230 |
+| relMSE all, learned ahead | 0.155 | 0.942 | 0.323 |
+| plain | 0.242 -> 0.202 | 2.109 -> 1.085 | 0.412 -> 0.580 |
+| silhouettes and creases | 0.858 -> 0.331 | 3.882 -> 1.260 | 0.224 -> 0.288 |
+| grazing | 0.084 -> 0.037 | 1.420 -> 0.263 | 0.285 -> 0.404 |
+| view known | 89.2% -> 95.2% | 53.4% -> 83.4% | 67.1% -> 80.0% |
+| a step (median) | 35 -> 54 ms | 48 -> 57 ms | 39 -> 53 ms |
+| store | 36.5 -> 37.0 MB | 36.5 -> 37.0 MB | 10 -> 37 MB |
+
+- Before the luminance ceiling (only the neighbours' median), a few fireflies a frame made behind the car 6.99 (plain
+  8.95) and the car 0.396; with no despeckling and the pixels' own cell sizes, 194. Four samples a pixel and three
+  views (about the same time, before the ceiling): 24.2.
+  Cells three sizes coarser (`_AHEAD_COARSER=3`): behind the car 1.116 (two: 0.942).
+- **Off by default.** Behind the car and on the car's own drag it is the largest gain of the four (-54%, -29%: the door
+  gap, the wheel arch, the tyre and the floor beside it are drawn from what XPU2 saw from there, where the fill had
+  guessed), but the dragon is 40% worse (its glass and the sea seen through and in it, at a sample a pixel, stay noisy
+  even four times as wide), the backdrop behind the car is blotchy where XPU2's one sample of its indirect light lands
+  (visible in `png/car-behind-step20-s6-rest-behind-s7-ahead-behind.png`), and a step costs 10 to 20 ms more (the card's
+  lookups climb through the larger store's coarser cells: its hits and lookups 5.3 -> 21 ms on the car). What it needs
+  before it is on: more samples where a view's first look is noisy (glass, indirect-lit walls), or its colours held to
+  the coarser sizes only where they are noisy; the step cost looked into.
+- Timing in this machine's runs varied with other work on it (some runs' steps took 400 to 900 ms throughout, the card
+  included): the medians above are from runs whose steps were steady, and the harness's 15 s at rest let the card's
+  clocks fall (a drag after it began slower in the controls too).
+
+## 37. The store on the graphics card (2026-11-27)
+
+The user: "the first-hit rays run on the GPU (launch mode 5) but the store lookups run on the CPU, about 6 ms a step,
+plus the picture handover. Keep a GPU copy of the store, updated incrementally as it learns, and do the lookups beside
+the first hits on the card." `XPU2_SESSION_RHEA_GPU_STORE`.
+
+- **One layout, one arithmetic** (`xpu2/interactive/rhea_store_core.h`, compiled by both the session and NVRTC): the
+  store's cell (`rheastore::Entry`: its place, size, side, object and the ten sums; 72 bytes as before), the view-dependent
+  sums beside it (`rheastore::Extra`, section 35), the hash that places a cell, and a ray's lookup at its first hit
+  (`lookupHit`: the normal turned toward the camera as rhea::View::toward turns it, the footprint from the hit's depth,
+  the sizes climbed and the trilinear means as ObjectStore::means takes them, in doubles). ObjectStore's table is now
+  made of these cells, so the card's copy is its slots as they lie in memory.
+- **Kept up to date:** the table marks each page of 4,096 slots it writes (learning, harvests, ahead frames); before a
+  phase one that uses the card the session sends the marked pages, or the whole table where it grew or was replaced
+  (`ObjectStore::cardChanges`, `GpuLane::rheaStoreSync`), then the view's lookup settings (`GpuLane::rheaStoreView`: the
+  camera's matrix and focal point, the pixel angle, the store's options).
+- **Beside the first hits:** launch mode 5 (`async_gpu.cu` `firstHit`) looks each hit up after tracing it
+  (`LaunchParams::rheaStore`, `firstLooks`), and its lookups come back with its hits (`GpuLane::firstHits`, `firstHitsBegin`,
+  `firstHitsEnd`). ObjectWarp takes them in place of its own lookups (`cardStore`, a node's `look`); the CPU still makes
+  what the card does not: the environment's colour, the first look, the albedo composite's finer table (not on the card:
+  with `XPU2_SESSION_RHEA_STORE_ALBEDO` the CPU looks up), the specular light made again. Where the card does not take
+  the rays (a frame's launches out, a scene not all on it), the CPU traces and looks up as before.
+- **GPU programs changed:** `async_gpu_abi.h` (two pointers at the end of LaunchParams), `async_gpu.cu` (mode 5) and the
+  new header in `build_async.py`'s list. XPU2's own launches never read the new fields (null), and its path tracing is
+  unchanged; the shaders must be compiled again (1,431 s here, at most 19.4 GB).
+
+Measured (relMSE, all pixels; the rest of each run's numbers in `test-results/rhea-improve/score-*.json`):
+
+| | car | behind the car | dragon | lookups a step (car, dragon) |
+|---|---|---|---|---|
+| baseline | 0.276 | 2.148 | 0.233 | 5.3, 5.9 ms |
+| reflected ray traced (`SPEC_TRACE=1`) | 0.468 | 1.271 | 0.337 | 41, 158 ms |
+| the environment alone, blur 0.15 (default once on) | 0.608 | 1.458 | 0.181 | 39, 212 ms |
+| the environment alone, blur 0.4 | 0.608 | - | - | 36 ms |
+
+**Off by default.** It helps where the view is far from those the store learned from (behind the car, -41% and -32%;
+the glass dragon and the sea, whose light is all reflection and refraction of the sky: -22% with the environment alone)
+and harms the car's own drag (+70%, +120%), whose views are near the one it learned from: there the colour as seen is
+already right, and making its reflection again brings in what the reflected light leaves out (the studio's walls in the
+way of the environment, the paint's lobe far blurrier than a mirror's), the silhouettes worst (0.92 -> 2.59). And it is
+slow on the CPU: the shading normal and the environment's filtered texture at every specular node (tens of thousands a
+step), 7 to 35 times the lookups' time. What would make it pay: the view-dependent part weighed by how far the view has
+turned from the views a cell learned from (a mean learned direction a cell, not kept yet), and the environment
+prefiltered once into a small map (the sky map's way) instead of filtered at every node; on the card beside the first
+hits (section 37) it would cost little.
+
+The extra output adds nothing to the pictures with the switch off (the car: the same error to the last digit). The
+parallel table (extras) keeps the store at its old size and speed when the switch is off (the first version, one cell
+of 20 sums, made the car's store 36.5 -> 56.5 MB and its lookups 5.4 -> 7.0 ms with the switch off).
+
+Measured (medians over each drag's steps after its first; back to back, the same build):
+
+| | car, CPU lookups | car, card | dragon, CPU lookups | dragon, card |
+|---|---|---|---|---|
+| lookups (the CPU's shading of the hits) | 6.1 ms | 1.4 ms | 6.3 ms | 1.8 ms |
+| phase one | 27.9 ms | 26.7 ms | 29.9 ms | 27.5 ms |
+| a step, ahead of the GPU | 34 ms | 34 ms | 36 ms | 34 ms |
+| relMSE, all | 0.276 | 0.276 | 0.233 | 0.214 |
+
+The pictures are the same: phase one's dumps of steps 1 to 20 agree to the fourth decimal with the CPU's lookups (the
+dragon's step 30 differs by the drag's own run-to-run variance: which steps a fill frame of XPU2's taught, section 32;
+another run with the card's lookups gave 0.233). The lookups' 4.5 ms mostly move into the card's launch, which traces
+and looks up together; the step gains 1 to 2 ms. Sending the store: the whole table at a drag's first step (36 MB on the
+car, 10.9 ms with the view's settings), then only what learning changed (nothing during a drag). **On by default**
+(`XPU2_SESSION_RHEA_GPU_STORE=0`: the CPU's lookups). XPU2 with Rhea off is unchanged: its realtime frame of the dragon
+(8 samples) is the same to the bit with the earlier GPU programs and with these, the GPU lane alone and the CPU lane alone
+each (the two lanes differ from each other in 13% of the values, by at most 0.031, with the earlier programs as with
+these).
+## 38. Edges by object and crease (2026-11-27)
+
+The user: "the first-hit pass knows which object and triangle each ray hit. Use that in the interpolation, adaptive pass
+and fills so colour does not blend across object boundaries. Silhouette and crease error is the highest."
+
+- **Cells of one object each** (`XPU2_SESSION_RHEA_STORE_OBJECTS` -> ObjectStore::Options::byObject): a cell's key holds
+  its object (the hit's geometry plus one), so that a tyre's colour and the floor's under it, a panel's and the one beside
+  it, never share a cell or a trilinear blend. Learning traces each learned pixel's chief ray for its object (the CPU
+  lane's scene; a pixel whose hit is not at its depth output's depth adds nothing of an object: 0), and a lookup asks for
+  its hit's object's cells alone.
+- **Grid corners on one surface** (`XPU2_SESSION_RHEA_OBJECT_EDGES` -> ObjectWarp::Options::objectEdges): a cell of the
+  fine grid is interpolated only where its four corners are of one object and their normals within
+  `XPU2_SESSION_RHEA_CREASE_COS` (0.8) of each other (else a ray a pixel), in the drawing and in the adaptive pass; an
+  edge pixel the store has nothing for takes its own object's nearest corner; and the fills take a node's colour from its
+  own object's nodes first (pullPushDepth's ids: each coarser texel carrying the object most of its colour came from,
+  others weighing a fiftieth).
+
+Measured (relMSE; times medians):
+
+| | car | behind the car | dragon |
+|---|---|---|---|
+| baseline: all / plain / silhouettes / grazing | 0.276 / 0.317 / 0.922 / 0.107 | 2.148 / 2.118 / 8.563 / 1.023 | 0.233 / 0.403 / 0.230 / 0.301 |
+| cells by object | 0.219 / 0.242 / 0.858 / 0.084 | 2.063 / 2.109 / 3.882 / 1.420 | 0.247 / 0.447 / 0.230 / 0.301 |
+| corners, adaptive pass and fills by object and crease, alone | 0.329 / 0.415 / 0.891 / 0.076 | - | - |
+| both | 0.207 / 0.246 / 0.776 / 0.040 | 2.133 / 2.167 / 3.880 / 1.443 | 0.253 / 0.472 / 0.230 / 0.299 |
+| a step / lookups, baseline | 34 / 5.3 ms | 35 / 4.7 ms | 37 / 5.9 ms |
+| a step / lookups, cells by object | 34 / 6.2 ms | 37 / 6.1 ms | 37 / 6.6 ms |
+| a step / lookups, both | 40 / 8.9 ms | 40 / 7.9 ms | 41 / 8.6 ms |
+
+- **Cells by object: on by default.** The car's error falls by a fifth, its silhouettes and creases by 7%, behind the
+  car its silhouettes by 55% (the floor's colour no longer runs up the body's lower edge from cells they shared); the
+  dragon's plain surfaces are 11% worse (0.403 -> 0.447, the same in two builds; its silhouettes and grazing sea
+  unchanged; why is not looked into yet). Learning's traces cost 108 ms over the
+  car's whole frame at rest (each learned pixel's chief ray; 8,357 of them met another depth than their samples, kept
+  with their object). A store kept under the other setting is not read back (rhea_cache.h: the store's shape holds it).
+- **Corners, adaptive pass and fills by object and crease: off by default.** With the cells by object it takes the
+  car's silhouettes down a further 10% and its grazing floor by half (0.084 -> 0.040), but alone it is worse (0.329),
+  behind the car its grazing
+  is 40% worse, the dragon's plain surfaces 17%, and a step costs 6 ms more (more rays a pixel at every object's
+  outline and crease). The triangle (the hit's primitive) is not used: neighbouring nodes on one smooth mesh are on
+  different triangles everywhere, so it says nothing of a crease that the normals do not say better.
+
+**The defaults now** (sections 35 to 38): the store on the card and cells by object on; view-dependent light, learning
+ahead, and corners by object and crease off, each behind its switch. With them (the same harness, no rest):
+
+| | car | behind the car | dragon |
+|---|---|---|---|
+| relMSE all, baseline -> now | 0.276 -> 0.219 | 2.148 -> 2.065 | 0.233 -> 0.247 |
+| silhouettes and creases | 0.922 -> 0.858 | 8.563 -> 3.886 | 0.230 -> 0.229 |
+| a step (median) | 34 -> 31 ms | 35 -> 33 ms | 37 -> 34 ms |
+| lookups | 5.3 -> 1.2 ms | 4.7 -> 1.3 ms | 5.9 -> 2.0 ms |
+| store | 36.5 MB | 36.5 MB | 10 MB |
+
+Reproduce: `test-results/rhea-improve/rhea_compare.py` (drag, reference, score), `table.py`, `triptych.py`;
+`export_scenes.py` and `relink.py` for the scenes' textures; `check_exact.py` for XPU2's own frames with Rhea off.

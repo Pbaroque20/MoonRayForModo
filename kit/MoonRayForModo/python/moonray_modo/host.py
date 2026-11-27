@@ -5,6 +5,7 @@ import lxu.utils
 import lxifc
 import modo
 from . import properties, options, coordinates, face_tags
+from . import shader_tree_masks
 
 
 # The channels read during one reading of the scene (held_channels, snapshot): each item's channel asked once. Walking
@@ -56,7 +57,11 @@ def color(item, prefix, default=(1, 1, 1)):
 
 def world_matrix(item, time=None):
     """The item's world matrix now, or at time (seconds) where given."""
-    rows = lx.object.Matrix(item.channel('worldMatrix').get() if time is None else item.channel('worldMatrix').get(time)).Get4()
+    held = getattr(item, '__dict__', {}).get('held_matrix')
+    if held is not None:
+        # A Texture Locator an environment graph's node stands in for (shader_tree_environment.Stand).
+        return list(held)
+    rows =lx.object.Matrix(item.channel('worldMatrix').get() if time is None else item.channel('worldMatrix').get(time)).Get4()
     return [float(value) for row in rows for value in row]
 
 
@@ -355,6 +360,11 @@ def _image_folders(scene):
     return _FOLDERS[key]
 
 
+def _framed_graph(graph):
+    from .shader_tree_clips import framed_graph
+    return framed_graph(graph)
+
+
 def material_values(material, warnings=None):
     from .material_settings import values as material_settings
     settings = properties.read(material)
@@ -378,7 +388,8 @@ def material_values(material, warnings=None):
     value = {'name':material.name,'item':material.id,'crypto_name':str(settings.get('crypto_name') or '').strip(),
              'crypto_id':int(settings.get('crypto_id') or 0),'color': [c * diffuse_amount for c in diffuse],
                                 **controls,
-                                'node_graph': arranged(relinked_graph(settings.get('node_graph'), warnings)),
+                                # An image sequence's Image node names the frame's file (shader_tree_clips).
+                                'node_graph': arranged(relinked_graph(_framed_graph(settings.get('node_graph')), warnings)),
                                 'node_override': settings.get('node_override',False) or material.type in ('material.moonrayMaterialX','material.moonrayMoonShine'),
                                 'native_shader': settings.get('native_shader',''),
                                 'native_parameters': settings.get('native_parameters',{}),
@@ -1053,7 +1064,9 @@ def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fal
                     or reference_points.wanted(result['materials']) != reference_points.wanted(reuse_geometry['materials'])
                     or tension_maps(result['materials']) != tension_maps(reuse_geometry['materials'])
                     # A material that now reads a weight or colour map its mesh was read without (painted_wanted).
-                    or maps_newly_wanted(painted_wanted(result), reuse_geometry['meshes'])):
+                    or maps_newly_wanted(painted_wanted(result), reuse_geometry['meshes'])
+                    # A Modo Mask node that now goes by Parts or Selection Sets the meshes were read without.
+                    or shader_tree_masks.tags_newly_wanted(result['materials'], reuse_geometry['meshes'])):
                 return snapshot(evaluated_geometry=False)
             result['meshes']=[dict(mesh) for mesh in reuse_geometry['meshes'] if not dirty_meshes or mesh['identity'].split('|')[0] not in dirty_meshes]
         # Resolve each visible instance to one mesh prototype, including hidden sources.
@@ -1090,6 +1103,8 @@ def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fal
         from . import occlusion as point_numbers
         from .procedurals import VARIATION_PART_MAP
         parts_wanted = point_numbers.reads(result['materials'], VARIATION_PART_MAP)
+        # Each polygon's Part and Selection Sets too where a graph's Modo Mask goes by them (shader_tree_masks).
+        mask_tags_wanted = shader_tree_masks.tags_wanted(result['materials'])
         # The weight and colour maps the scene reads (painted_wanted): only those read from each mesh. A tester's rigged
         # model's dozens of weight maps, read by nothing, went to MoonRay as values at every point and slowed it, its
         # realtime and the machine to a crawl.
@@ -1115,6 +1130,7 @@ def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fal
             painted = vertex_maps.read(mesh, wanted_maps)
             map_names = vertex_maps.names_of(mesh)
             parts = vertex_maps.part_tags(mesh) if parts_wanted else None
+            mask_polygons = shader_tree_masks.polygon_tags(mesh) if mask_tags_wanted else None
             # Colour maps that hold vectors, as a MoonRay scene brought in had them: given back as vectors.
             kept = properties.read(item)
             vertex_maps.as_vectors(painted, kept.get('vertex_map_kinds') or {})
@@ -1423,6 +1439,8 @@ def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fal
                     shaped = result['meshes'][-1]
                     shaped.setdefault('corner_attributes', {})[VARIATION_PART_MAP] = {
                         'kind': 'float', 'values': point_numbers.part_numbers(item.id, parts, list(ordinals.get((subdivision, uv_name), [])), shaped['faces'])}
+                if mask_polygons is not None:
+                    result['meshes'][-1]['_mask_tags'] = shader_tree_masks.face_tags(mask_polygons, list(ordinals.get((subdivision, uv_name), [])))
                 own_attributes = primitive_attributes.read(item)
                 if own_attributes:
                     result['meshes'][-1]['attributes'] = own_attributes
@@ -1632,6 +1650,9 @@ def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fal
     # Gradients on Texture U or V: the UV map at each corner, as a weight.
     from . import texture_uv
     texture_uv.apply(result, warnings)
+    # Graphs' Modo Mask nodes: on each mesh, 1 where it is in the mask, 0 where not.
+    if shader_tree_masks.wanted(result.get('materials')):
+        shader_tree_masks.apply(result, warnings, shader_tree_masks.coverage(scene, result['materials']))
     result['warnings'] = sorted(set(warnings))
     return result
 

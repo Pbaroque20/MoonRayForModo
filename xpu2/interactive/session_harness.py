@@ -91,6 +91,7 @@ def main():
     p.add_argument('--stop-after', type=float, default=0, help='send the next delta this many seconds into a frame')
     p.add_argument('--first-done', action='store_true',
                    help="with --stop-after: let the scene's first frame end before the first delta (a drag begun from a picture at rest)")
+    p.add_argument('--rest-after', type=float, default=0, help='with --first-done: wait this many seconds after the first frame ends')
     p.add_argument('--drain-after', type=float, default=0, help='ask the last frame to finish with what it has after this many seconds')
     p.add_argument('--keep-pictures', action='store_true', help='save every progressive picture, as frame-<id>-<seconds>.pfm')
     p.add_argument('--memory-binary', action='store_true', help="hand a .rdlb scene over in shared memory, as the kit does for XPU2 "
@@ -198,6 +199,8 @@ def main():
                 time.sleep(a.stop_after)
             else:
                 wait(lambda: state['done'] and state['done'][1] == identity, a.timeout)
+                if identity == 1 and a.rest_after:
+                    time.sleep(a.rest_after)  # the camera at rest a while after the first frame's end
             identity += 1
             with lock:
                 state['done'] = None

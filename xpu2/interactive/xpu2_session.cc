@@ -387,7 +387,10 @@ std::vector<std::pair<int, std::string>> uncompiledCards(const fs::path& mark, b
 constexpr double CompileNeedGB = 8.0;
 // Low memory (XPU2_COMPILE_LOW_MEMORY=1: one module at a time, async_gpu.h): what the largest module alone takes, with
 // the same margin.
-constexpr double CompileNeedLowGB = 3.0;
+constexpr double CompileNeedLowGB = 6.0;
+// A whole compile's peak (8.5 GB, 2026-11-27, RTX 3090): below it and the floor, a compile run on its own goes one module
+// at a time (compileShaders).
+constexpr double CompilePeakGB = 9.0;
 class CompileGuard {
 public:
     CompileGuard() = default;
@@ -492,6 +495,20 @@ int compileShaders(const fs::path& folder) {
         if (missing.empty() && fs::exists(mark)) {
             std::printf("MoonRay XPU2 shaders: up to date for every graphics card\n");
             return 0;
+        }
+        // Run on its own (Compile XPU2 Shaders.cmd, or by hand: the kit says which itself): one module at a time where free
+        // RAM is short of a whole compile's peak above the guard's floor, as the kit chooses (moonray_xpu2.py).
+        if (!std::getenv("XPU2_COMPILE_LOW_MEMORY")) {
+            MEMORYSTATUSEX m{};
+            m.dwLength = sizeof m;
+            if (GlobalMemoryStatusEx(&m)) {
+                const double freeGB = double(m.ullAvailPhys) / double(1ull << 30), totalGB = double(m.ullTotalPhys) / double(1ull << 30);
+                const bool low = freeGB < CompilePeakGB + std::max(2.0, totalGB / 20.0);
+                _putenv_s("XPU2_COMPILE_LOW_MEMORY", low ? "1" : "0");
+                std::printf("MoonRay XPU2 shaders: %.1f GB free of %.0f GB: %s\n", freeGB, totalGB,
+                            low ? "one module at a time (low memory)" : "every module at once");
+                std::fflush(stdout);
+            }
         }
         // Memory (CompileGuard): not begun without the RAM it needs, stopped before the machine runs short.
         CompileGuard guard;
@@ -2875,7 +2892,7 @@ int session(const Args& args, const fs::path& directory) {
         }
         if (!any) return 0;
         rheaView.learnBegin();
-        const size_t learned = rheaView.learn(*hp, h);
+        const size_t learned = rheaView.learn(*hp, h, scene.cpuScene.get());
         rheaHarvested += learned;
         return learned;
     };
@@ -2895,22 +2912,260 @@ int session(const Args& args, const fs::path& directory) {
     // scene is the CPU's (the same meshes: a camera move), it renders all of it (nothing left to the CPU alone), and it has
     // nothing of a frame's out; else the CPU traces them. XPU2_SESSION_RHEA_GPU_HITS=0: the CPU always.
     const bool rheaCardHits = envOn("XPU2_SESSION_RHEA_GPU_HITS", true);
+    // The store on the card too, its lookups beside the first hits (rhea/DESIGN.md 37). XPU2_SESSION_RHEA_GPU_STORE=0: the
+    // CPU's lookups (the fallback, and where the card is not used).
+    const bool rheaCardStore = envOn("XPU2_SESSION_RHEA_GPU_STORE", true);
+    std::vector<std::pair<size_t, size_t>> rheaCardPages;
+    size_t rheaCardSent = 0;          // the bytes of the store last sent to the card
+    double rheaCardSyncSeconds = 0;   // and the time that took, with the view's settings
     // Phase one given the card (on, where it may), or not (its view done): its three ways in (rhea::ObjectWarp).
     auto rheaUseCard = [&](bool on) {
         rhea::ObjectWarp& ow = rheaView.objectWarp;
-        ow.cardTrace = nullptr, ow.cardBegin = nullptr, ow.cardEnd = nullptr;
+        ow.cardTrace = nullptr, ow.cardBegin = nullptr, ow.cardEnd = nullptr, ow.cardStore = nullptr;
         if (!on || !rheaCardHits || !gpu || !gpuUsable || !gpuPlan || !scene.plan || !scene.cpuScene || scene.plan->cpuOnlyMeshes != 0 ||
             sceneHasCpuAloneObjects || !async::CpuScene::sameGeometry(*gpuPlan, *scene.plan))
             return;
-        ow.cardTrace = [&](const surface::Ray* rays, size_t count, resume::Hit* hits) {
+        ow.cardTrace = [&](const surface::Ray* rays, size_t count, resume::Hit* hits, rheastore::Look* looks) {
             gpu->use();
-            return gpu->firstHits(rays, count, hits);
+            return gpu->firstHits(rays, count, hits, looks);
         };
-        ow.cardBegin = [&](const surface::Ray* rays, size_t count) {
+        ow.cardBegin = [&](const surface::Ray* rays, size_t count, bool looks) {
             gpu->use();
-            return gpu->firstHitsBegin(rays, count);
+            return gpu->firstHitsBegin(rays, count, looks);
         };
-        ow.cardEnd = [&](resume::Hit* hits) { return gpu->firstHitsEnd(hits); };
+        ow.cardEnd = [&](resume::Hit* hits, rheastore::Look* looks) { return gpu->firstHitsEnd(hits, looks); };
+        // The store's lookups on the card beside its first hits (rhea/DESIGN.md 37): its copy brought up to date (the
+        // pages of cells written since the last sending, or the whole after it grew), then this view's settings.
+        if (rheaCardStore)
+            ow.cardStore = [&](const rheastore::View& v) {
+                const auto began = Clock::now();
+                gpu->use();
+                const auto& slots = rheaView.store.cardSlots();
+                const auto& extras = rheaView.store.cardExtras();
+                const bool whole = rheaView.store.cardChanges(rheaCardPages);
+                rheaCardSent = gpu->rheaStoreSync(slots.data(), extras.size() == slots.size() ? extras.data() : nullptr, slots.size(), whole, rheaCardPages);
+                const bool ok = gpu->rheaStoreView(v);
+                rheaCardSyncSeconds = std::chrono::duration<double>(Clock::now() - began).count();
+                return ok;
+            };
+    };
+    // Learning ahead of the camera (rhea/DESIGN.md 36; the user, 2026-11-27: "Rhea only learns what it has shown"; behind
+    // the car 55% of a drag's view had never been seen). Once XPU2's frame at rest has ended and no command waits, a few
+    // cheap frames of XPU2's (rheaAheadSpp samples a pixel) from views turned about the point the camera looks at, the
+    // views the store knows least first (a coarse grid of first hits looked up in it), toward the way the camera last
+    // turned, nearer turns before farther; each frame's samples go into the store by Realtime::learn. A command stops one
+    // at once (its GPU launches left to finish behind it, as a stopped frame's: drained after the next phase one, their
+    // samples harvested); the card's camera is put back before it renders anything else. Once a rest, at most
+    // rheaAheadViews frames. XPU2_SESSION_RHEA_LEARN_AHEAD (off), _AHEAD_VIEWS (6), _AHEAD_SPP (1).
+    const bool rheaAhead = envOn("XPU2_SESSION_RHEA_LEARN_AHEAD", false);
+    const unsigned rheaAheadViews = [] {
+        const char* v = std::getenv("XPU2_SESSION_RHEA_AHEAD_VIEWS");
+        return v ? unsigned(std::clamp(std::atoi(v), 0, 32)) : 6u;
+    }();
+    const unsigned rheaAheadSpp = [] {
+        const char* v = std::getenv("XPU2_SESSION_RHEA_AHEAD_SPP");
+        return v ? unsigned(std::clamp(std::atoi(v), 1, 64)) : 1u;
+    }();
+    // Its frames' fireflies held to this many times the median luminance about them (Realtime::learn's despeckle;
+    // XPU2_SESSION_RHEA_AHEAD_DESPECKLE, 0 none): one sample's on a glossy car made the store's cells thousands of times
+    // too bright.
+    const double rheaAheadDespeckle = [] {
+        const char* v = std::getenv("XPU2_SESSION_RHEA_AHEAD_DESPECKLE");
+        return v ? std::max(0.0, std::atof(v)) : 2.0;
+    }();
+    // And into cells this many sizes coarser than their pixels' (XPU2_SESSION_RHEA_AHEAD_COARSER, 2: four times as wide):
+    // a sample a pixel, its noise averaged over sixteen times the pixels a cell.
+    const int rheaAheadCoarser = [] {
+        const char* v = std::getenv("XPU2_SESSION_RHEA_AHEAD_COARSER");
+        return v ? std::clamp(std::atoi(v), 0, 6) : 2;
+    }();
+    const void* rheaAheadFor = nullptr;   // the plan whose rest was learned ahead of (once a rest)
+    bool rheaAheadCard = false;           // the card's camera an ahead frame's: put back (gpuPlan's) once its launches are in
+    std::unique_ptr<async::Renderer> rheaAheadRenderer;  // a stopped ahead frame's, kept until its launches are drained
+    // The camera's last move (its origins before and after), for the way it turned.
+    surface::V3 rheaMoveFrom{}, rheaMoveTo{};
+    bool rheaMoved = false;
+    // A plan's camera moved to camera-to-world cm (rows, MoonRay's row vectors), as cpu::updateCamera makes it for a still
+    // camera (no motion blur): render space the camera's.
+    auto rheaCameraAt = [](surface::Camera& camera, const double cm[4][4]) {
+        for (int i = 0; i < 4; ++i)
+            for (int j = 0; j < 4; ++j) {
+                camera.cameraToRender.m[i][j] = float(cm[i][j]);
+                camera.render2World.m[i][j] = float(cm[i][j]);
+                camera.camera2Render.m[i][j] = camera.render2Camera.m[i][j] = i == j ? 1.0f : 0.0f;
+            }
+    };
+    auto rheaPlaceCamera = [&](cpu::Plan& p, const double cm[4][4]) {
+        // The rigid inverse: the rotation's transpose, the translation taken back through it.
+        double w[4][4] = {};
+        for (int i = 0; i < 3; ++i)
+            for (int j = 0; j < 3; ++j) w[i][j] = cm[j][i];
+        for (int j = 0; j < 3; ++j) w[3][j] = -(cm[3][0] * w[0][j] + cm[3][1] * w[1][j] + cm[3][2] * w[2][j]);
+        w[3][3] = 1;
+        const double rows[12] = {w[0][0], w[1][0], w[2][0], w[3][0], w[0][1], w[1][1], w[2][1], w[3][1], w[0][2], w[1][2], w[2][2], w[3][2]};
+        for (int i = 0; i < 12; ++i) p.worldToRender[i] = float(rows[i]);
+        for (int i = 0; i < 4; ++i)
+            for (int j = 0; j < 4; ++j) p.world2render[4 * i + j] = w[i][j];
+        rheaCameraAt(p.camera, cm);
+        p.renderOrigin = surface::V3{float(cm[3][0]), float(cm[3][1]), float(cm[3][2])};
+        // A volume whose settings are mapped holds them as at the render origin (cpu::updateCamera): made again there.
+        for (auto& v : p.volumes)
+            if (v.mapped) {
+                const volume::Mapped m = cpu::mappedAt(p, v, p.renderOrigin);
+                v.originAttenuation = (v.flags & volume::MatchAlbedo) ? m.albedoColor : m.attenuationColor;
+                v.originIntensity = m.attenuationIntensity, v.originFactor = m.attenuationFactor;
+            }
+    };
+    auto rheaLearnAhead = [&]() {
+        if (!rheaAhead || !rheaWanted || !scene.plan || !scene.plan->realtime || !scene.cpuScene || rheaAheadFor == scene.plan.get() ||
+            !rheaAheadViews || rheaView.store.empty())
+            return;
+        rheaAheadFor = scene.plan.get();
+        const cpu::Plan& base = *scene.plan;
+        // (Geometry tessellated for the camera is kept as it is, as a drag's steps keep it.)
+        const char* refused = !rhea::unsupported(base).empty()                 ? "a camera or plan Rhea does not follow"
+                              : base.camera.type != surface::CameraPerspective ? "not a perspective camera"
+                              : base.motion.on                                 ? "motion blur"
+                                                                               : nullptr;
+        if (refused) {
+            std::printf("MoonRay XPU2: Rhea: no learning ahead of the camera: %s\n", refused);
+            std::fflush(stdout);
+            return;
+        }
+        const auto began = Clock::now();
+        rhea::View view;
+        if (!view.init(base.camera, base.width, base.height) || view.needsDepthScale()) return;
+        // The point the camera looks at: the middle ray's first hit (else the nearest of a few about it).
+        async::CpuBackend backend{*scene.cpuScene};
+        surface::V3 pivot{};
+        bool havePivot = false;
+        double nearest = 1e300;
+        for (int k = 0; k < 9; ++k) {
+            surface::Ray ray;
+            const double fx = 0.5 + 0.2 * ((k % 3) - 1), fy = 0.5 + 0.2 * ((k / 3) - 1);
+            if (!view.ray(fx * base.width, fy * base.height, ray)) continue;
+            ray.mask = 1u;
+            const resume::Hit h = backend.trace(ray);
+            if (h.geom == ~0u) continue;
+            const double d = view.depthOf(view.camera(h.point));
+            if (k == 4 || d < nearest) pivot = h.point, havePivot = true, nearest = k == 4 ? -1.0 : d;
+            if (k == 4) break;
+        }
+        if (!havePivot) return;
+        double cm[4][4];
+        for (int i = 0; i < 4; ++i)
+            for (int j = 0; j < 4; ++j) cm[i][j] = base.camera.cameraToRender.m[i][j];
+        // The way the camera last turned about the pivot (the sign of the turn about the vertical), 0 unknown.
+        double turned = 0;
+        if (rheaMoved) {
+            const double ax = rheaMoveFrom.x - pivot.x, az = rheaMoveFrom.z - pivot.z, bx = rheaMoveTo.x - pivot.x, bz = rheaMoveTo.z - pivot.z;
+            const double c = az * bx - ax * bz;
+            turned = c > 0 ? 1.0 : c < 0 ? -1.0 : 0.0;
+        }
+        // A view turned by a about the vertical through the pivot: cm * T(-pivot) * Ry(a) * T(pivot) (row vectors).
+        auto turnedBy = [&](double a, double out[4][4]) {
+            const double c = std::cos(a), s = std::sin(a);
+            const double R[3][3] = {{c, 0, -s}, {0, 1, 0}, {s, 0, c}};
+            for (int i = 0; i < 4; ++i) {
+                double v[3] = {cm[i][0], cm[i][1], cm[i][2]};
+                if (i == 3) v[0] -= pivot.x, v[1] -= pivot.y, v[2] -= pivot.z;
+                double r[3];
+                for (int j = 0; j < 3; ++j) r[j] = v[0] * R[0][j] + v[1] * R[1][j] + v[2] * R[2][j];
+                if (i == 3) r[0] += pivot.x, r[1] += pivot.y, r[2] += pivot.z;
+                for (int j = 0; j < 3; ++j) out[i][j] = r[j];
+                out[i][3] = cm[i][3];
+            }
+        };
+        // Each turn's share of a coarse grid the store does not know (environment rays known), its score.
+        struct Candidate {
+            double angle, unknown, score;
+        };
+        std::vector<Candidate> candidates;
+        const double pi = 3.14159265358979323846;
+        const rhea::ObjectStore& store = rheaView.store;
+        for (const double deg : {25.0, -25.0, 50.0, -50.0, 80.0, -80.0, 115.0, -115.0, 150.0, -150.0, 180.0}) {
+            const double a = deg * pi / 180.0;
+            double m[4][4];
+            turnedBy(a, m);
+            surface::Camera probe = base.camera;
+            rheaCameraAt(probe, m);
+            rhea::View pv;
+            if (!pv.init(probe, base.width, base.height)) continue;
+            const double angle = rhea::ObjectStore::pixelAngle(pv);
+            size_t rays = 0, unknown = 0;
+            for (unsigned j = 0; j < 18; ++j)
+                for (unsigned i = 0; i < 32; ++i) {
+                    surface::Ray ray;
+                    if (!pv.ray((i + 0.5) * base.width / 32.0, (j + 0.5) * base.height / 18.0, ray)) continue;
+                    ray.mask = 1u;
+                    const resume::Hit h = backend.trace(ray);
+                    ++rays;
+                    if (h.geom == ~0u) continue;
+                    const double d = pv.depthOf(pv.camera(h.point));
+                    const rhea::D3 nn = pv.toward(rhea::D3{h.normal.x, h.normal.y, h.normal.z}, h.point);
+                    float rgb[3], conf = 0;
+                    int up = 0;
+                    const bool found = store.lookup(h.point, nn, rhea::D3{ray.direction.x, ray.direction.y, ray.direction.z},
+                                                    rhea::ObjectStore::footprint(pv, angle, d), rgb, conf, &up, 5, h.geom + 1);
+                    if (!(found && (up <= 1 || (up <= 3 && conf >= 0.15)))) ++unknown;
+                }
+            if (!rays) continue;
+            const double u = double(unknown) / double(rays);
+            const double toward = turned != 0 && (a > 0) == (turned > 0) ? 1.5 : turned != 0 ? 0.75 : 1.0;
+            candidates.push_back({a, u, u * toward / (1.0 + std::fabs(a) / pi)});
+        }
+        std::sort(candidates.begin(), candidates.end(), [](const Candidate& x, const Candidate& y) { return x.score > y.score; });
+        const double chosen = std::chrono::duration<double>(Clock::now() - began).count();
+        unsigned frames = 0;
+        size_t learnedHere = 0;
+        double rendered = 0;
+        for (const Candidate& c : candidates) {
+            if (frames >= rheaAheadViews || c.unknown < 0.05 || waiting()) break;
+            double m[4][4];
+            turnedBy(c.angle, m);
+            auto p = std::make_shared<cpu::Plan>(base);
+            rheaPlaceCamera(*p, m);
+            p->spp = rheaAheadSpp, p->adaptive = false, p->sampleBudget = 0;
+            renderer.reset();  // the session's renderer is made again for its next frame
+            auto aheadScene = std::make_unique<async::CpuScene>(p, std::move(*scene.cpuScene));
+            const bool card = gpu && gpuUsable && gpuPlan;
+            if (card) gpu->updateCamera(p), rheaAheadCard = true;
+            async::RenderResult x;
+            {
+                auto r = std::make_unique<async::Renderer>(p, *aheadScene, card ? gpu.get() : nullptr);
+                async::RenderOptions o;
+                o.threads = args.threads ? args.threads : multi::logicalProcessors();
+                o.mode = card ? mode : 0;
+                o.deviceChain = deviceChain, o.cellular = cellular, o.generationsCpu = generationsCpu, o.partial = partial;
+                o.abandonOnCancel = true;
+                async::Watch w;
+                w.stop = waiting;
+                w.previewSeconds = 1e9;
+                o.watch = &w;
+                const auto t = Clock::now();
+                x = r->render(o);
+                rendered += std::chrono::duration<double>(Clock::now() - t).count();
+                if (x.cancelled && card) {
+                    rheaAheadRenderer = std::move(r);    // its launches finish behind it (drained after the next phase one)
+                    rheaHarvestPlan = p;                 // and their samples harvested
+                }
+            }
+            // A frame of its own: its samples all new (learn counts what it learned of each pixel since learnBegin).
+            if (!x.failed) {
+                rheaView.learnBegin();
+                learnedHere += rheaView.learn(*p, x, aheadScene.get(), rheaAheadDespeckle, rheaAheadCoarser);
+            }
+            scene.cpuScene = std::make_unique<async::CpuScene>(scene.plan, std::move(*aheadScene));
+            if (card && !x.cancelled) gpu->updateCamera(gpuPlan), rheaAheadCard = false;
+            ++frames;
+            std::printf("MoonRay XPU2: Rhea: learned ahead of the camera: turned %.0f degrees (%.0f%% of it unknown), %u samples a pixel%s\n",
+                        c.angle * 180.0 / pi, c.unknown * 100.0, rheaAheadSpp, x.cancelled ? ", stopped by a command" : "");
+            if (x.cancelled) break;
+        }
+        if (frames)
+            std::printf("MoonRay XPU2: Rhea: learned ahead: %u frames, %zu pixels, rendered in %.2f s, views chosen in %.1f ms (%zu cells now)\n",
+                        frames, learnedHere, rendered, chosen * 1e3, rheaView.store.cells());
+        std::fflush(stdout);
     };
     // Rhea's phase one for a camera move before any of the GPU's work (the user's car, 2026-11-22: "a camera move in that
     // car scene takes about 2-3 seconds to update": the stopped frame's GPU launches, 0.25 to 1.3 s there, had come first,
@@ -3007,6 +3262,9 @@ int session(const Args& args, const fs::path& directory) {
                     "shaded %.1f ms, fills %.1f ms, finished picture %.1f ms, FXAA %.1f ms, shown %.1f ms\n",
                     ow.seconds * 1e3, ow.coarsePictureSeconds * 1e3, ow.rays, ow.interpolated, ow.adaptSeconds * 1e3, ow.shadeSeconds * 1e3,
                     ow.fillSeconds * 1e3, ow.ringPictureSeconds * 1e3, ow.fxaaSeconds * 1e3, ow.stageSeconds * 1e3);
+        if (rheaCardStore)
+            std::printf("MoonRay XPU2: Rhea: phase one's lookups on the card: %zu of %zu rays (store sent %.2f MB, %.1f ms with the view)\n",
+                        ow.cardLooked, ow.rays, rheaCardSent / 1048576.0, rheaCardSyncSeconds * 1e3);
         std::fflush(stdout);
         return true;
     };
@@ -3353,6 +3611,15 @@ int session(const Args& args, const fs::path& directory) {
                                     "(%zu since the session began)\n",
                                     harvested, std::chrono::duration<double>(Clock::now() - harvestBegan).count() * 1000.0, rheaHarvested);
                 }
+                // A stopped ahead frame (rheaLearnAhead): its renderer let go, the card's camera put back.
+                rheaAheadRenderer.reset();
+                if (rheaAheadCard) {
+                    if (gpu && gpuUsable && gpuPlan) gpu->updateCamera(gpuPlan);
+                    rheaAheadCard = false;
+                }
+                // The camera's last move, for the way it turned (rheaLearnAhead).
+                if (scene.plan && scene.cameraFrom && scene.cameraFrom != scene.plan)
+                    rheaMoveFrom = scene.cameraFrom->renderOrigin, rheaMoveTo = scene.plan->renderOrigin, rheaMoved = true;
                 // A drag's step (rheaDragStep) with its phase one on screen: nothing of XPU2's made for it. XPU2's renderer,
                 // made after phase one and dropped by the next step, took about 20 ms to drop before every step's phase one
                 // on the user's car, and more to make after it. The card's camera alone follows (cheap), and the step is
@@ -3985,6 +4252,20 @@ int session(const Args& args, const fs::path& directory) {
                     if (const char* v = std::getenv("XPU2_SESSION_RHEA_GRAZING")) rheaView.op.storeGrazing = std::max(1.0, std::atof(v));
                     // The user's composite (2026-11-22): light and albedo apart in the store, the albedo finer.
                     rheaView.op.storeAlbedo = envOn("XPU2_SESSION_RHEA_STORE_ALBEDO", false);
+                    // An investigation: each phase one's colour, depth and state written into this folder (phase1-<n>.bin).
+                    if (const char* v = std::getenv("XPU2_SESSION_RHEA_PHASE1_DUMP")) rheaView.op.phaseOneDump = v;
+                    // View-dependent light (rhea/DESIGN.md 35): a surface's specular light made again for each view from the
+                    // light reflected toward it (needs the /rhea_diffuse output). Its reflectance's most and the share of a
+                    // cell's samples that must know their reflection.
+                    rheaView.op.specular = envOn("XPU2_SESSION_RHEA_SPECULAR", false);
+                    if (const char* v = std::getenv("XPU2_SESSION_RHEA_SPEC_MAX")) rheaView.op.specMax = std::max(0.0, std::atof(v));
+                    if (const char* v = std::getenv("XPU2_SESSION_RHEA_SPEC_SHARE")) rheaView.op.specShare = std::clamp(std::atof(v), 0.0, 1.0);
+                    if (const char* v = std::getenv("XPU2_SESSION_RHEA_SPEC_BLUR")) rheaView.op.specBlur = std::clamp(std::atof(v), 0.0, 3.0);
+                    rheaView.op.specTrace = envOn("XPU2_SESSION_RHEA_SPEC_TRACE", false);
+                    // Edges by object and crease (rhea/DESIGN.md 38), and cells of one object each.
+                    rheaView.op.objectEdges = envOn("XPU2_SESSION_RHEA_OBJECT_EDGES", false);
+                    rheaView.op.storeObjects = envOn("XPU2_SESSION_RHEA_STORE_OBJECTS", true);
+                    if (const char* v = std::getenv("XPU2_SESSION_RHEA_CREASE_COS")) rheaView.op.creaseCos = std::clamp(std::atof(v), -1.0, 1.0);
                     // Phase one's finished picture through screen-space anti-aliasing (FXAA; the user, 2026-11-22).
                     rheaView.op.objectAntialias = envOn("XPU2_SESSION_RHEA_AA", true);
                     // Its rays four at a time where the scene is triangles alone (Embree's packets).
@@ -4539,7 +4820,7 @@ int session(const Args& args, const fs::path& directory) {
                             const U32 retired = renderer->retiredPasses();
                             if (retired > learnedPasses || std::chrono::duration<double>(Clock::now() - lastLearn).count() > 0.5) {
                                 learnedPasses = retired, lastLearn = Clock::now();
-                                learnedPixels += rheaView.learn(*scene.plan, sofar);
+                                learnedPixels += rheaView.learn(*scene.plan, sofar, scene.cpuScene.get());
                             }
                         }
                         if (passMode) {
@@ -4593,7 +4874,7 @@ int session(const Args& args, const fs::path& directory) {
                     const async::RenderResult x = renderer->render(o);
                     const size_t pixels = size_t(width) * height;
                     // What XPU2 rendered, to its end or its stop (a drag's next step: whatever its samples reached).
-                    if (rheaView.op.learnRaw && !x.failed) learnedPixels += rheaView.learn(*scene.plan, x);
+                    if (rheaView.op.learnRaw && !x.failed) learnedPixels += rheaView.learn(*scene.plan, x, scene.cpuScene.get());
                     // Stopped with its GPU launches left out: their samples harvested by the next command (rheaHarvest).
                     if (x.cancelled && o.abandonOnCancel && lane && envOn("XPU2_SESSION_RHEA_HARVEST", true)) rheaHarvestPlan = scene.plan;
                     if (!x.cancelled && !x.failed) {
@@ -4954,6 +5235,8 @@ int session(const Args& args, const fs::path& directory) {
         event(complete ? "DONE" : "CANCELED", id);
         // Rhea's radiance cache on disk: the store written as a realtime frame ends, at most every 30 s while it learns.
         if (complete && rheaWanted) rheaCache.saveLive(rheaView.store, 30.0);
+        // The camera at rest, the frame ended: views about it learned ahead (rheaLearnAhead) while no command waits.
+        if (complete && rheaWanted && !standalone().on) rheaLearnAhead();
         // A render on its own ends with its frame.
         if (standalone().on) return complete ? 0 : 1;
         while (!waiting()) std::this_thread::sleep_for(std::chrono::milliseconds(20));

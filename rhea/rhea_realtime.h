@@ -94,6 +94,19 @@ struct RealtimeOptions {
     // The store's light and albedo apart (ObjectStore::Options::albedo): the albedo in cells half as wide, multiplied by
     // the cells' light (the user's composite from the outputs the pictures carry). Off: the colours as they are.
     bool storeAlbedo = false;
+    // An investigation of phase one: each picture drawn from the store (its colour, depth, state) written into this folder
+    // as phase1-<n>.bin (objectInto; XPU2_SESSION_RHEA_PHASE1_DUMP). Empty: none.
+    std::string phaseOneDump;
+    // View-dependent light (DESIGN.md 35; ObjectWarp::Options::specular): the store keeps each surface's specular light
+    // beside the light reflected toward the view that saw it (learning traces each pixel's first hit and its mirror ray),
+    // and a new view's specular light is made again from what is reflected toward it. Needs the /rhea_diffuse output.
+    bool specular = false;
+    double specMax = 1.5, specShare = 0.3, specBlur = 0.15;
+    bool specTrace = false;
+    // Edges by object and crease (DESIGN.md 38): ObjectWarp::Options::objectEdges, and cells of one object each
+    // (ObjectStore::Options::byObject; learning traces each pixel's first hit for its object).
+    bool objectEdges = false, storeObjects = false;
+    double creaseCos = 0.8;
     // After a move's warp, the next move looked for this long before any of the GPU's work (seconds; the kit sends a
     // drag's steps about 60 ms apart): a drag then goes at the warp's pace, not the GPU frame's stop (0.2 s at 720p).
     // 0.15 s: in Modo the kit makes a step at each of its 60 ms ticks, with its own 18 ms or so, and sends it once the
@@ -131,6 +144,7 @@ struct RealtimeOptions {
 // Where Rhea's outputs lie in a pixel's AOV values (-1: missing).
 struct RealtimeOutputs {
     int emission = -1, direct = -1, albedo = -1, depthMin = -1, depthMax = -1;
+    int diffuse = -1;  // the light reflected diffusely at the first hit (LPE CD[DSG]*[<L.>O]; optional, DESIGN.md 35)
     bool complete() const { return emission >= 0 && direct >= 0 && albedo >= 0 && depthMin >= 0 && depthMax >= 0; }
 };
 
@@ -147,6 +161,7 @@ inline RealtimeOutputs outputsOf(const cpu::Plan& plan) {
     o.emission = outputOffset(plan, "/rhea_emission"), o.direct = outputOffset(plan, "/rhea_direct");
     o.albedo = outputOffset(plan, "/rhea_albedo");
     o.depthMin = outputOffset(plan, "/rhea_depth_min"), o.depthMax = outputOffset(plan, "/rhea_depth_max");
+    o.diffuse = outputOffset(plan, "/rhea_diffuse");
     return o;
 }
 
@@ -748,6 +763,25 @@ public:
         warpShare = n ? double(landed) / double(n) : 0;
         return true;
     }
+    // phaseOneDump's file: "RHEAP1" w h, then the colour (3 floats a pixel), the depth (a float), the state (a byte: 1 drawn,
+    // 2 filled), in the film's row order; and a line on stdout naming it with the store's size.
+    size_t phaseOneDumps = 0;
+    void dumpPhaseOne(unsigned w, unsigned h) {
+        const size_t n = size_t(w) * h;
+        if (warped.color.size() != n * 3 || warped.depth.size() != n || warped.state.size() != n) return;
+        const std::string path = op.phaseOneDump + "/phase1-" + std::to_string(++phaseOneDumps) + ".bin";
+        std::FILE* f = std::fopen(path.c_str(), "wb");
+        if (!f) return;
+        const std::uint32_t size[2] = {w, h};
+        std::fwrite("RHEAP1", 1, 6, f), std::fwrite(size, 4, 2, f);
+        std::fwrite(warped.color.data(), sizeof(float), n * 3, f), std::fwrite(warped.depth.data(), sizeof(float), n, f);
+        std::fwrite(warped.state.data(), 1, n, f);
+        std::fclose(f);
+        std::printf("MoonRay XPU2: Rhea: phase one dumped %s (cube store: %zu cells, %.1f MB, last add %.1f ms; specular made again at %zu nodes; "
+                    "learning traced %.1f ms in all, %zu reflections, %zu off their depth)\n", path.c_str(),
+                    store.cells(), store.bytes() / 1048576.0, store.addSeconds * 1e3, objectWarp.specularRebuilt, learnTraceSeconds * 1e3, learnReflections, learnMisses);
+        std::fflush(stdout);
+    }
     // A move's picture from the colours on the surfaces (objectSpace, object_warp.h): the CPU scene's first hits through
     // the new camera, coloured from the store, streamed to onStage (the coarse grid's picture, then each ring's). Its
     // outputs: none but its depths (the warp's), its alpha whole where a surface is.
@@ -761,6 +795,8 @@ public:
         wo.rings = op.objectRings, wo.antialias = op.objectAntialias, wo.packets = op.objectPackets, wo.firstLook = op.objectFirstLook;
         wo.lookupUp = op.objectLookupUp, wo.fillDepth = op.objectFillDepth;
         wo.adaptive = op.objectAdaptive, wo.adaptColour = op.objectAdaptColour;
+        wo.specular = op.specular && o.diffuse >= 0, wo.specMax = op.specMax, wo.specShare = op.specShare, wo.specBlur = op.specBlur, wo.specTrace = op.specTrace;
+        wo.objectEdges = op.objectEdges, wo.creaseCos = op.creaseCos;
         wo.threads = std::max(threads, std::thread::hardware_concurrency());
         out.cancelled = out.drained = out.failed = false;
         // Its outputs are none but the depths (written below each time): zeroed only where something else wrote them since
@@ -791,6 +827,7 @@ public:
         };
         if (!objectWarp.draw(nv, *traceScene, store, w, h, warped.color, warped.w, warped.depth, warped.state, warped.doubt, stage)) return false;
         objectDrawn = true;
+        if (!op.phaseOneDump.empty()) dumpPhaseOne(w, h);
         fill(true);
         objectLaid = &out == &warpPicture;
         size_t landed = 0;
@@ -1007,8 +1044,16 @@ public:
     void storeOptions() {
         store.op.scale = op.storeScale, store.op.jump = op.warpJump, store.op.threads = std::max(1u, op.threads);
         store.op.grazing = op.storeGrazing, store.op.albedo = op.storeAlbedo;
+        store.op.byObject = op.storeObjects;
     }
-    size_t learn(const cpu::Plan& b, const async::RenderResult& film) {
+    // scene: the CPU lane's scene, for each learned pixel's own first hit (its object, the light reflected toward it:
+    // op.storeObjects, op.specular); none: neither.
+    // despeckle (a frame of a sample or two a pixel, rheaLearnAhead's): each pixel's colour held to despeckle times the
+    // brightest of its eight neighbours' median luminance (one sample's fireflies on a glossy car were thousands of times
+    // the surface's light, and a cell kept them).
+    // coarser: into cells so many sizes coarser than the pixels' (ObjectStore::Outputs::coarser).
+    size_t learn(const cpu::Plan& b, const async::RenderResult& film, const async::CpuScene* scene = nullptr, double despeckle = 0,
+                 int coarser = 0) {
         const size_t n = size_t(b.width) * b.height;
         if (!op.objectSpace || !op.warp || film.rgba.size() != n * 4 || film.counts.size() != n) return 0;
         const RealtimeOutputs o = outputsOf(b);
@@ -1036,12 +1081,104 @@ public:
         if (!fresh.load()) return 0;
         storeOptions();
         ObjectStore::Outputs outs;
-        outs.aov = &film.aov, outs.stride = stride, outs.albedo = o.albedo, outs.emission = o.emission;
-        store.add(v, b.width, b.height, film.rgba, learnCounts, learnDepth, learnFar, &outs);
+        outs.aov = &film.aov, outs.stride = stride, outs.albedo = o.albedo, outs.emission = o.emission, outs.diffuse = o.diffuse;
+        outs.coarser = coarser;
+        // Each learned pixel's own first hit (the chief ray's): its object, and the light reflected toward it now.
+        const bool wantSpecular = op.specular && o.diffuse >= 0 && o.albedo >= 0;
+        if (scene && scene->plan && (wantSpecular || op.storeObjects)) {
+            const auto traced = std::chrono::steady_clock::now();
+            learnExtra.assign(n, ObjectStore::PixelExtra{});
+            const double angle = ObjectStore::pixelAngle(v);
+            std::atomic<size_t> reflections{0}, missed{0};
+            parallel(std::max(1u, op.threads), b.height, [&](size_t y) {
+                async::CpuBackend backend{*scene};
+                size_t here = 0, misses = 0;
+                for (unsigned x = 0; x < b.width; ++x) {
+                    const size_t i = y * b.width + x;
+                    if (!learnCounts[i] || !(learnDepth[i] > 0)) continue;
+                    surface::Ray ray;
+                    if (!v.ray(x + 0.5, y + 0.5, ray)) continue;
+                    ray.mask = 1u;
+                    const resume::Hit hit = backend.trace(ray);
+                    if (hit.geom == ~0u) continue;
+                    const double d = v.depthOf(v.camera(hit.point));
+                    ObjectStore::PixelExtra& e = learnExtra[i];
+                    e.obj = hit.geom + 1;
+                    // The chief ray's hit not at the samples' depth (they are the pixel's spread, a lens's): its object
+                    // all the same (else its colour went to cells no lookup asks for), but not its reflection.
+                    if (!(std::fabs(d - learnDepth[i]) <= op.warpJump * learnDepth[i])) {
+                        ++misses;
+                        continue;
+                    }
+                    if (!wantSpecular) continue;
+                    const float* c = &film.rgba[i * 4];
+                    const float* av = &film.aov[i * stride];
+                    double spec = 0, all = 0;
+                    for (int k = 0; k < 3; ++k) {
+                        spec += std::max(0.0f, c[k] - av[o.diffuse + k] - (o.emission >= 0 ? av[o.emission + k] : 0.0f));
+                        all += std::max(0.0f, c[k]);
+                    }
+                    if (!(spec > 0.02 * all + 1e-4)) continue;
+                    e.reflectedKnown = store.reflectedAt(backend, *scene->plan, ray, hit, ObjectStore::footprint(v, angle, d), op.specBlur, op.specTrace, e.reflected);
+                    here += e.reflectedKnown;
+                }
+                reflections.fetch_add(here, std::memory_order_relaxed), missed.fetch_add(misses, std::memory_order_relaxed);
+            });
+            outs.extra = &learnExtra;
+            learnTraceSeconds += std::chrono::duration<double>(std::chrono::steady_clock::now() - traced).count();
+            learnReflections += reflections.load(), learnMisses += missed.load();
+        }
+        const std::vector<float>* colours = &film.rgba;
+        if (despeckle > 0) {
+            learnRgba = film.rgba;
+            const unsigned w = b.width, h = b.height;
+            auto lum = [&](size_t i) {
+                const float* c = &film.rgba[i * 4];
+                return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+            };
+            // And never past twice the picture's 99th percentile of luminance: a sample's fireflies come in clusters
+            // (34 where the reference's brightest was 4.8, behind the car), which their neighbours' median lets through.
+            double ceiling = 1e30;
+            {
+                std::vector<double> all;
+                all.reserve(size_t(w) * h);
+                for (size_t i = 0; i < size_t(w) * h; ++i)
+                    if (film.counts[i] && std::isfinite(lum(i))) all.push_back(lum(i));
+                if (!all.empty()) {
+                    const size_t at = std::min(all.size() - 1, size_t(0.99 * double(all.size())));
+                    std::nth_element(all.begin(), all.begin() + std::ptrdiff_t(at), all.end());
+                    ceiling = 2.0 * std::max(all[at], 0.01);
+                }
+            }
+            parallel(std::max(1u, op.threads), h, [&](size_t y) {
+                for (unsigned x = 0; x < w; ++x) {
+                    const size_t i = y * w + x;
+                    double around[8];
+                    int k = 0;
+                    for (int dy = -1; dy <= 1; ++dy)
+                        for (int dx = -1; dx <= 1; ++dx) {
+                            const int xx = int(x) + dx, yy = int(y) + dy;
+                            if ((dx || dy) && xx >= 0 && yy >= 0 && xx < int(w) && yy < int(h)) around[k++] = lum(size_t(yy) * w + size_t(xx));
+                        }
+                    if (!k) continue;
+                    std::nth_element(around, around + k / 2, around + k);
+                    const double most = std::min(ceiling, despeckle * std::max(around[k / 2], 0.01)), l = lum(i);
+                    if (l > most && l > 0)
+                        for (int c = 0; c < 3; ++c) learnRgba[i * 4 + c] = float(film.rgba[i * 4 + c] * most / l);
+                }
+            });
+            colours = &learnRgba;
+        }
+        store.add(v, b.width, b.height, *colours, learnCounts, learnDepth, learnFar, &outs);
         learnSeconds += std::chrono::duration<double>(std::chrono::steady_clock::now() - began).count();
         ++learnings;
         return fresh.load();
     }
+    std::vector<ObjectStore::PixelExtra> learnExtra;
+    std::vector<float> learnRgba;  // a despeckled picture's colours (learn's despeckle)
+    double learnTraceSeconds = 0;  // of learnSeconds: tracing the learned pixels' first hits and reflections
+    size_t learnReflections = 0;   // learned pixels whose reflected light was known
+    size_t learnMisses = 0;        // learned pixels whose chief ray met another depth than their samples
     double learnSeconds = 0;  // the time learning took, and how many times it did, since the session began
     size_t learnings = 0;
     // The pictures the session publishes, the last kept for the next move's warp (keepLast): the warp's own (it is

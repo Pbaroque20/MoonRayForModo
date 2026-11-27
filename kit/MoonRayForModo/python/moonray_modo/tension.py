@@ -13,6 +13,8 @@ of points (a deformer that adds or takes away points) has no rest points to comp
 """
 import math
 
+from .gradients import in_graph
+
 PREFIX = '__modo_tension'
 REST = '_tension_rest'
 
@@ -35,6 +37,8 @@ def wanted(materials):
                 holders.setdefault(value['vmap'], set()).add(tag)
             for inner in value.values():
                 walk(inner, tag)
+            # A gradient layer moved into a MoonShine graph (gradients.in_graph).
+            walk(in_graph(value), tag)
         elif isinstance(value, (list, tuple)):
             for inner in value:
                 walk(inner, tag)
