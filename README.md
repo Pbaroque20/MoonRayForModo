@@ -65,6 +65,18 @@ Work on the next version goes on in the [MoonLightIPR branch](https://github.com
 | ![The compositor](docs/images/compositor-editor.png) | ![Modern Hall, imported from MoonRay's scene files](docs/images/rdl-modern_hall.jpg) |
 | **The compositor**: the beauty graded, vignetted and sharpened | **An imported MoonRay scene**: its own render (left), after the trip through Modo (right). Modern Hall by NewSee2l035, CC BY |
 
+## Coming in 0.5.6.3
+
+- **Displacement**: Modo's default displacement settings no longer blow up a large displaced plane; "As modeled" adapts to what the camera sees; Smooth Positions is followed in every engine; displaced hard edges stay sharp, as Modo shades them (a Source Override, on by default); no cracks in MoonLightIPR.
+- **Environments**: an HDRI faces the way Modo shows it (it was mirrored front to back: check HDRI Rotation in older scenes); environment images in any projection, not only Spherical (a Source Override, on by default); environment Grid, Dots and triplanar procedurals, the Light Probe, and surface Grid and Dots as Modo draws them.
+- **Cameras and Backplate**: Spherical Map and Spherical VR cameras no longer mirrored; the Backplate's HDRI turned in Modo's viewport by its rotation; a spherical or cylindrical Backplate photo lines up with its HDRI.
+- **Blobs and Sprites**: Modo's Blob and Sprite items render in every engine, with motion blur; a Blob can be lit like a mesh or unlit as Modo renders it (Light Links, Emitters and Volumes).
+- **XPU2**: the processor and the graphics card give the same picture, and the same from one render to the next; a quicker first picture in realtime; a scene with Volume Indirect Samples set but no volumes (the Cobra) no longer falls back to MoonRay XPU, and in scenes with volumes XPU2 renders it too; Rhea's learned light fades in; no crash on displaced subdivision surfaces.
+- **Compile XPU2 Shaders** no longer sticks at "Compiling 0%", and on a machine short of memory it compiles one part at a time by itself.
+- **MoonShine graphs**: picking one tile of a UDIM set uses the whole set: choose `hero_color.1002.exr` in an Image node and, with `hero_color.1001.exr` and `hero_color.1011.exr` beside it, the node reads all three, as `hero_color.<UDIM>.exr`. A file with no tiles beside it stays as picked.
+
+Install the new kit and runtime, and **Compile XPU2 Shaders once more**.
+
 ## New in 0.5.6.2
 
 **Glitter in MoonLightIPR**: MoonRay's metallic flakes in the GPU preview, each flake where MoonRay puts it, staying put on meshes that bend, and kept sparkling by Keep Metallic Flakes. Fine or dense glitter no longer crashes MoonRay's Vector and XPU renders; XPU2 keeps scenes with Limit Geometry Resolution on; a shadow catcher stays one when its material is edited in realtime. Install the new kit and runtime; coming from 0.5.6.1 there is no need to compile XPU2 Shaders again. More, with pictures, in [What's new in 0.5](docs/WHATS_NEW_05.md#new-in-0562).
