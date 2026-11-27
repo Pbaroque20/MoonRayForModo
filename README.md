@@ -77,6 +77,13 @@ Work on the next version goes on in the [MoonLightIPR branch](https://github.com
 
 Install the new kit and runtime, and **Compile XPU2 Shaders once more**.
 
+| Before | Now |
+|---|---|
+| ![A Spherical camera before: Modo's render (top) and MoonRay's (bottom), MoonRay's the mirror image](docs/images/spherical-camera-before.png) | ![A Spherical camera now: Modo's render (top) and MoonRay's (bottom), the same](docs/images/spherical-camera-after.png) |
+
+*A Spherical camera in a room of coloured boxes: Modo's own render on top, MoonRay's beneath. Before, MoonRay's view was
+mirrored; now it is Modo's.*
+
 ## New in 0.5.6.2
 
 **Glitter in MoonLightIPR**: MoonRay's metallic flakes in the GPU preview, each flake where MoonRay puts it, staying put on meshes that bend, and kept sparkling by Keep Metallic Flakes. Fine or dense glitter no longer crashes MoonRay's Vector and XPU renders; XPU2 keeps scenes with Limit Geometry Resolution on; a shadow catcher stays one when its material is edited in realtime. Install the new kit and runtime; coming from 0.5.6.1 there is no need to compile XPU2 Shaders again. More, with pictures, in [What's new in 0.5](docs/WHATS_NEW_05.md#new-in-0562).
