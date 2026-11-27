@@ -472,8 +472,8 @@ and `xpu2_session.cc` (`RefineJob`, `startRefining`, `takeStage`, `promoteSeen`)
    A drag's steps now start the job as well (it used to wait for the release).
 
 Skipped where it cannot pay: when no stand-in is seen or every one is (the full plan straight away), and in every scene
-the coarse pass skips (`Scene::heavyTessellation`: under about 2 M tessellated triangles, plain meshes). What is seen only
-through glass waits for the full plan. `XPU2_SESSION_VISIBLE_FIRST=0` turns it off.
+the coarse pass skips (`Scene::heavyTessellation`: under about 2 M tessellated triangles, plain meshes).
+`XPU2_SESSION_VISIBLE_FIRST=0` turns it off.
 
 Found on the way: MoonRay hands each thread its update-phase state by the order it first asks (as many as its TBB
 threads, then four more, then its assertion ends the process), and oneTBB lets its workers go with the last thread that
@@ -488,6 +488,29 @@ arrival: first picture 0.9-1.0 s either way; the camera's geometry at full detai
 4.4 s); all of it 4.6-4.9 s (4.4 s before: one plan more, its CPU scene and card upload); the frame at rest 23.4-24.7 s
 both. The pictures at rest are the same to the bit as with it off, after a camera move during it, after a drag, and
 after displacement edits (against a fresh session). Test files: test-results/xpu2-visibility-first.
+
+Follow-ups (2026-11-26, test files test-results/xpu2-followups):
+
+- **Gated on the tessellation cache.** With a warm cache the coarse pass made everything at full detail later than the
+  full plan alone (the plan coarse, then a visible-first plan, then the full plan, each with its CPU scene and upload). A
+  coarse plan now reads the cache as the full plan does (`coarseCacheGate`, cpu_scene.h): a mesh found there at full
+  detail is kept so (not made lighter), and where it held every mesh the plan would have made coarse, the plan is the
+  full plan and no coarse pass is rendered ("coarse first pass left out"). A cache miss is tessellated coarse as before,
+  and not written. Plain meshes are read from the cache in a coarse plan too (the same data; made lighter after).
+  `XPU2_SESSION_COARSE_CACHE_GATE=0`: as before. The test scene, warm cache, XPU2 RT with Rhea: everything at full
+  detail at its first picture, 2.0 s from the start (6.5 s with the coarse pass, visibility first included); the frame
+  at rest 15.1 s instead of 18.0 s. GPU-only final pictures (XPU2_SESSION_MODE=1) the same to the bit as the staged
+  runtime's, with the gate off, and cold.
+- **Abandoned on quit.** The refine job's preparation ends before its next geometry once the job is let go
+  (`cpu::Limits::cancel`, `cpu::Cancelled`; set by `~RefineJob`: the session's quit, a scene loaded anew, a texture
+  overflow's new start), never inside a tessellation, so xpu2_geom's thread is never left in a MoonRay call. Quitting a
+  cold-cache session stopped in its coarse pass: 57 ms to stop the job, out 0.5 s after DONE (3.1 s before, the whole
+  full plan made first). `takeRefined` still waits for it whole.
+- **Through glass.** The cast goes on straight behind a surface whose material may be seen through
+  (`cpu::seeThroughMaterial`: glass, refractive or dielectric classes, transmission above 0, presence or opacity below 1,
+  a map on them; through layered and switched inputs), up to four surfaces (`XPU2_SESSION_VISIBLE_THROUGH`, 1: first
+  hits alone). The test scene with its wall as glass: 6 of 12 stand-ins in view (3 behind the glass) instead of 3, for
+  under 10 ms of rays; the final picture the same to the bit either way.
 
 ## Order
 

@@ -31,8 +31,10 @@ Procedurals (Grid, Dots) are evaluated at the same coordinates, by Modo's own li
 environment_sample: a Grid's square lines half way across each unit, a Dots' dots on the whole numbers), the repeat
 modes doing nothing; UV Map at the direction's world x and z, Implicit UV and Front Projection at (0, 0)
 (procedural_coordinates). Solid has no coordinates for them, and is refused. A procedural on the plain spherical
-projection along Y is evaluated by these too (plain). Triplanar procedurals are not yet Modo's (open: Modo's renders show
-neither the three planes' blend an image has nor any one plane)."""
+projection along Y is evaluated by these too (plain). Triplanar lays a procedural otherwise than an image (procedural_
+triplanar): each plane's two coordinates turned by the UV Rotation, then the X plane keeps only its second (the first
+0), the Y plane only its first (the second 0; a Grid of Lines takes it as its second), the Z plane both; weighted as an
+image's planes."""
 import math
 
 # The projections an environment layer can be laid by, as the native blend numbers them (0 the plain spherical image).
@@ -46,7 +48,7 @@ MODO = {'planar': 'planar', 'cylindrical': 'cylindrical', 'spherical': 'spherica
 PERMUTATION = {0: (2, 1, 0), 1: (0, 2, 1), 2: (0, 1, 2)}
 SIZE = 22
 # Changed whenever the arithmetic below (or its native copy) changes: composed environments are cached by it.
-VERSION = 'environment-projections-v2'
+VERSION = 'environment-projections-v3'
 
 
 def axis_number(value):
@@ -260,21 +262,54 @@ def sample(projection, pixels, alpha, width, height, d):
     return colour, coverage
 
 
-def procedural_coordinates(projection, d):
+def procedural_triplanar(projection, d, line=False):
+    """Where Modo evaluates a procedural laid by Triplanar for the world direction d: (u, v, weight) for each of the
+    three planes an image has (coordinates; X (z, y), Y (x, z), Z (x, y) of q / s, about the image's middle, weighted
+    alike), each plane's pair turned by the UV Rotation; then the X plane keeps only its v (its u 0) and the Y plane
+    only its u (its v 0), the Z plane both. A Grid of Lines (line), whose lines run along u, takes the Y plane's u as its
+    v. Read from Modo's renders (tools/probe_cl_environment_projections.py proc_triplanar* and tri_*: Grids of each
+    type, Dots, hardness, uneven sizes, a turn, each axis, UV Rotation, the Wraps; the axis and the Wraps do nothing):
+    lines only of y where the X plane is laid, only of x where the Y plane is, the three planes' blend of images
+    elsewhere."""
+    t = projection['turn']
+    s = projection['size']
+    q = [d[0] * t[i * 3] + d[1] * t[i * 3 + 1] + d[2] * t[i * 3 + 2] for i in range(3)]
+    rotation = float(projection.get('uv_rotation', 0))
+    cosine, sine = math.cos(rotation), math.sin(rotation)
+    power = 1 + 25 * max(0.0, float(projection.get('hardness', 0)))
+    weights = [max(abs(v) - .5, 0.0) ** power for v in q]
+    total = sum(weights)
+    if total <= 0:
+        weights, total = [1.0 if i == max(range(3), key=lambda k: abs(q[k])) else 0.0 for i in range(3)], 1.0
+    x, y, z = (q[i] / s[i] for i in range(3))
+    xu, xv = _turned_about_middle(.5 + z, .5 + y, cosine, sine)
+    yu, yv = _turned_about_middle(.5 + x, .5 + z, cosine, sine)
+    planes = ((0.0, xv), (0.0, yu) if line else (yu, 0.0), _turned_about_middle(.5 + x, .5 + y, cosine, sine))
+    return [(u, v, w / total) for (u, v), w in zip(planes, weights) if w > 0]
+
+
+def procedural_coordinates(projection, d, line=False):
     """Where Modo evaluates a procedural (Grid, Dots) for the world direction d: the image's coordinates (coordinates),
-    the repeat modes doing nothing (Modo's renders: a Reset locator's Grid carries on past the image). UV Map, which
-    gives an image one colour, evaluates it at the direction's world x and z, the locator doing nothing; Implicit UV
-    and Front Projection at (0, 0), one colour."""
+    the repeat modes doing nothing (Modo's renders: a Reset locator's Grid carries on past the image); Triplanar's its
+    own (procedural_triplanar; line: a Grid of Lines). UV Map, which gives an image one colour, evaluates it at the
+    direction's world x and z, the locator doing nothing; Implicit UV and Front Projection at (0, 0), one colour."""
     if projection['projection'] == 'constant':
         return [(d[0], d[2], 1.0) if projection.get('modo_projection') == 'uv' else (0.0, 0.0, 1.0)]
+    if projection['projection'] == 'triplanar':
+        return procedural_triplanar(projection, d, line)
     return coordinates(projection, d)
+
+
+def is_line(pattern):
+    """Whether a procedural's settings are a Grid of Lines (procedural_triplanar lays its Y plane otherwise)."""
+    return pattern.get('kind') == 'grid' and pattern.get('pattern') == 'line'
 
 
 def procedural(projection, pattern, d, evaluate):
     """A procedural's colour and alpha in direction d: evaluate(pattern, u, v) (procedurals.environment_sample) at each
     of Modo's coordinates (procedural_coordinates), weighted."""
     colour, coverage, total = [0.0, 0.0, 0.0], 0.0, 0.0
-    for u, v, weight in procedural_coordinates(projection, d):
+    for u, v, weight in procedural_coordinates(projection, d, is_line(pattern)):
         found, alpha = evaluate(pattern, u, v)
         for k in range(3):
             colour[k] += found[k] * weight

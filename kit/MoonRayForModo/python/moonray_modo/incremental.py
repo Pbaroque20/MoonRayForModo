@@ -539,6 +539,15 @@ def move_only(scene,snapshot,identities,camera_moved=False,loose=(),camera_matri
             result['camera']=dict(camera,matrix=list(camera_matrix) if camera_matrix else world_matrix(scene.item(identity)))
             # Read with motion blur, it stands there at the shutter's close too: the step is shown sharp (refresh_transforms).
             if 'matrix_close' in camera:result['camera']['matrix_close']=list(result['camera']['matrix'])
+            # A Modo camera of Spherical Map or Spherical VR renders through the spherical camera made for it
+            # (host.spherical_camera): it goes where the camera now stands, or every engine kept showing where it was.
+            # Read with motion blur, it stands there at the shutter's close too, as the camera does (a step shown sharp).
+            from .camera import SPHERICAL,spherical_place
+            def placed(entity):
+                place=spherical_place(result['camera']['matrix'],entity.get('spherical_vr','min_longitude' not in entity.get('parameters',{})))
+                return dict(entity,matrix=place,**({'matrix_close':list(place)} if 'matrix_close' in entity else {}))
+            if any(entity.get('identity')==identity+SPHERICAL for entity in snapshot.get('entities') or ()):
+                result['entities']=[placed(entity) if entity.get('identity')==identity+SPHERICAL else entity for entity in snapshot['entities']]
         if targets:
             result['meshes']=[dict(mesh) for mesh in meshes]
             refresh_transforms(scene,result,identities,loose=loose)

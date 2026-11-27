@@ -229,6 +229,69 @@ def proxies(data, scene, time, warnings, displaced=True):
             surface.pop('shading_scene')
 
 
+def _source_ids(surface, scene):
+    """A surface's item and, for an instance, the items it is an instance of (as far as one source leads)."""
+    source_ids={surface['source_item'],_as_in_own_scene(surface,scene)['source_item']}
+    source=source_of(surface,scene)
+    while source is not None and source.type=='meshInst':
+        links=source.itemGraph('source').forward()
+        if len(links)!=1 or links[0].id in source_ids: break
+        source=links[0];source_ids.add(source.id)
+    return source_ids
+
+
+def _applies(item, surface, scene, source_ids, coverage):
+    """Python's rule for whether a layer the render cache lists for a surface (surface['material'] its own material
+    tag) applies to it: every mask above it on, and for this surface's tag, part and items (assign_materials)."""
+    from .host import channel
+    from .mask_types import tag_kind, mask_items, covered
+    parent=item if item.type=='mask' else item.parent
+    while parent and parent.type!='polyRender':
+        if not channel(parent,'enable',1) or not channel(parent,'render',1): return False
+        if parent.type=='mask':
+            kind,value=tag_kind(channel(parent,'ptyp','')),channel(parent,'ptag','')
+            if kind=='material' and value and value!=surface['material']:
+                return False
+            if kind=='part' and value and value != surface.get('part',''):
+                return False
+            # Other tag/selection mask types are resolved by the native
+            # Render Cache. Only candidates in this surface's host stack
+            # reach this function; never widen membership to all layers.
+            # A mask for items: one of them is this surface's, or holds it (mask_types.covered).
+            targets=mask_items(parent)
+            applicable_ids=source_ids if channel(parent,'instApply',False) else {surface['source_item'],_as_in_own_scene(surface,scene)['source_item']}
+            if targets and not any(applicable_ids & covered(i,coverage) for i in targets): return False
+        parent=parent.parent
+    return True
+
+
+def applying_stacks(data, scene):
+    """The layers that apply to each surface of a reading (the identities in its own Shader Tree, as assign_materials
+    finds them: the adapter's MR_shader_stacks for each Shader Tree's surfaces, else Python's rule), without making
+    any material; data is not changed. Read after proxies, so that a Scene Proxy's surfaces go by its own scene."""
+    from .layers import ordered_items
+    surfaces=[dict(surface,source_material=surface.get('source_material',surface['material']),
+                   source_layers=list(surface.get('source_layers',surface['layers']))) for surface in data['surfaces']]
+    shaded={}
+    for index,surface in enumerate(surfaces):
+        shaded.setdefault(_shading_key(surface),[]).append(index)
+    found=[None]*len(surfaces)
+    coverage={}
+    for indices in shaded.values():
+        where=shading_scene(surfaces[indices[0]],scene)
+        asked=native_stacks(where,[_as_in_own_scene(surfaces[i],scene) for i in indices])
+        if asked is not None:
+            for i,layers in zip(indices,asked):
+                found[i]=list(layers)
+            continue
+        by_id={item.id:item for item in ordered_items(where.renderItem)}
+        for i in indices:
+            surface=dict(surfaces[i],material=surfaces[i]['source_material'])
+            ids=_source_ids(surface,scene)
+            found[i]=[identity for identity in surface['source_layers'] if identity in by_id and _applies(by_id[identity],surface,scene,ids,coverage)]
+    return found
+
+
 def assign_materials(data, scene, warnings, shading_kept=False):
     """Use host-resolved Shader Tree membership for each evaluated surface. shading_kept: the Shader Tree is as it was at
     the last reading (an edit of meshes alone), and each stack's material as it was made then is taken again."""
@@ -290,31 +353,8 @@ def assign_materials(data, scene, warnings, shading_kept=False):
             if stack in tags:
                 surface['material']=tags[stack]
                 continue
-        source_ids={surface['source_item'],_as_in_own_scene(surface,scene)['source_item']}
-        source=source_of(surface,scene)
-        while source is not None and source.type=='meshInst':
-            links=source.itemGraph('source').forward()
-            if len(links)!=1 or links[0].id in source_ids: break
-            source=links[0];source_ids.add(source.id)
-        def matches(item):
-            parent=item if item.type=='mask' else item.parent
-            while parent and parent.type!='polyRender':
-                if not channel(parent,'enable',1) or not channel(parent,'render',1): return False
-                if parent.type=='mask':
-                    kind,value=tag_kind(channel(parent,'ptyp','')),channel(parent,'ptag','')
-                    if kind=='material' and value and value!=surface['material']:
-                        return False
-                    if kind=='part' and value and value != surface.get('part',''):
-                        return False
-                    # Other tag/selection mask types are resolved by the native
-                    # Render Cache. Only candidates in this surface's host stack
-                    # reach this function; never widen membership to all layers.
-                    # A mask for items: one of them is this surface's, or holds it (mask_types.covered).
-                    targets=mask_items(parent)
-                    applicable_ids=source_ids if channel(parent,'instApply',False) else {surface['source_item'],_as_in_own_scene(surface,scene)['source_item']}
-                    if targets and not any(applicable_ids & covered(i,coverage) for i in targets): return False
-                parent=parent.parent
-            return True
+        source_ids=_source_ids(surface,scene)
+        matches=lambda item:_applies(item,surface,scene,source_ids,coverage)
         # In 16.1 the returned stack may include item masks that still need to
         # be evaluated against the particular instance (not just its prototype).
         if applying is None:
@@ -597,7 +637,7 @@ def _capture_kept(time, path, displaced):
     # Nothing told of by Modo since the last reading of this open scene, at the same moment and for the same engine's
     # rule: that reading as it is, with nothing asked of the scene (geometry_cache._Heard.quiet).
     try:
-        memory = geometry_cache.session()
+        memory = geometry_cache.session(bool(displaced))
     except Exception:
         memory = None
     if memory and memory.get('held') is not None and memory.get('time') == float(time) and \
@@ -610,7 +650,7 @@ def _capture_kept(time, path, displaced):
         held_key = geometry_cache.key(time, displaced)
         # What is held in memory for the open scene (geometry_cache.session): its meshes' trackers, and its last
         # reading where it was made under the same key, taken in place of the one on disk.
-        memory = geometry_cache.session() if held_key is not None else None
+        memory = geometry_cache.session(bool(displaced)) if held_key is not None else None
         prints = geometry_cache.fingerprints(time, watched=memory) if held_key is not None else None
         report['fingerprint_seconds'] = round(clock.perf_counter() - began, 3)
         report['fingerprints'] = None if prints is None else len(prints)

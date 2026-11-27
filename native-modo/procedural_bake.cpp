@@ -153,7 +153,7 @@ void cells(double u, double v, int64_t count, bool round_, int64_t seed, double&
 // The settings, by their place in the array procedurals.native_bake hands over.
 enum Slot {Kind, Pattern, Width, Transition, Bias, Gain, C1R, C1G, C1B, C2R, C2G, C2B, Alpha1, Alpha2, Round, CellWidth,
            TransWidth, Freqs, FreqRatio, AmpRatio, Variation, RingScale, Wave, WaveScale, Grain, GrainScale, YarnWidth,
-           Roundness, Sources, Wavelength, Phase, SlotCount};
+           Roundness, Sources, Wavelength, Phase, OffsetU, OffsetV, SlotCount};
 enum Kinds {Grid, Dots, Cellular, Wood, Weave, Ripples};
 enum Patterns {Line, Square, Triangle, Hexagon};
 
@@ -231,8 +231,51 @@ void finish(const double* d, double t, float* rgb, float* alpha) {
     alpha[0] = alpha[1] = alpha[2] = float(std::max(0.0, std::min(1.0, a)));
 }
 
+double nearest_whole(double x) { return std::fabs(x - std::nearbyint(x)); }
+
+// procedurals._environment_distance: how far (u, v) is from a Grid's lines (kind 0: line 0, square 1, triangle 2,
+// hexagon 3), or from a Dots' nearest dot (kind 1: square 1, hexagon 3), as Modo's renderer lays them.
+double modo_distance(int kind, int pattern, double u, double v) {
+    const double root3 = std::sqrt(3.0);
+    static const double centres[6][2] = {{.5, 0.0}, {0.0, .86602540378443865}, {1.0, .86602540378443865},
+                                         {.5, 1.7320508075688772}, {-.5, .86602540378443865}, {1.5, .86602540378443865}};
+    const bool dots = kind == Dots;
+    if (!dots && pattern == Square) return std::min(nearest_whole(u - .5), nearest_whole(v - .5));
+    if (!dots && pattern == Line) return nearest_whole(v);
+    if (pattern == Triangle) {
+        const double x = u - std::floor(u), y = (v - .5) - std::floor(v - .5), fold = std::min(y, 1 - y);
+        return std::min(fold, std::min(std::fabs(x - fold / root3) * root3 / 2, std::fabs(x + fold / root3 - 2 / root3) * root3 / 2));
+    }
+    if (dots && pattern == Square) return std::hypot(u - std::nearbyint(u), v - std::nearbyint(v));
+    const double x = u - std::floor(u), y = v - std::floor(v);
+    double best = 1e300;
+    for (const auto& c : centres) {
+        const double dx = std::fabs(x - c[0]), dy = std::fabs(y - c[1]);
+        best = std::min(best, dots ? std::hypot(dx, dy) : std::max(dx, .5 * dx + root3 / 2 * dy));
+    }
+    return dots ? best : .5 - best;
+}
+
 void sample(const double* d, double u, double v, float* rgb, float* alpha) {
     const int kind = int(d[Kind]);
+    // procedurals.sample: the layer's offset first (procedurals.uv_offset), then a Grid or Dots as Modo lays it
+    // (procedurals._modo_shape), any other pattern as before.
+    u += d[OffsetU]; v += d[OffsetV];
+    {
+        const int pattern = int(d[Pattern]);
+        const bool grid = kind == Grid && pattern >= Line && pattern <= Hexagon, dots = kind == Dots && (pattern == Square || pattern == Hexagon);
+        if (grid || dots) {
+            const double distance = modo_distance(kind, pattern, u, v);
+            const double half = .5 * std::max(0.0, std::min(1.0, d[Width])), transition = std::max(0.0, d[Transition]);
+            double away;
+            if (transition <= 1e-9) away = distance > half ? 1.0 : 0.0;
+            else { away = std::max(0.0, std::min(1.0, (distance - half) / transition)); away = away * away * (3 - 2 * away); }
+            double t = bias(1 - away, d[Bias]);
+            t = gained(t, d[Gain]);
+            finish(d, t, rgb, alpha);
+            return;
+        }
+    }
     if (kind >= Cellular) {
         double t = bias(late(d, u, v), d[Bias]);
         t = gained(t, d[Gain]);
@@ -267,7 +310,7 @@ void sample(const double* d, double u, double v, float* rgb, float* alpha) {
 }  // namespace
 
 // One point of a pattern, at (u, v), for the environment blend (environment_blend.cpp): its colour, and its alpha as
-// grey. settings as MR_procedural_bake takes them.
+// grey. settings as MR_procedural_bake takes them (SlotCount numbers).
 void modo_procedural_point(const double* settings, double u, double v, float* rgb, float* alpha) {
     sample(settings, u, v, rgb, alpha);
 }

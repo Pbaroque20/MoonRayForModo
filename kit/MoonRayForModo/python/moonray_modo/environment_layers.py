@@ -165,8 +165,9 @@ NATIVE_SIZE, NATIVE_REALTIME_SIZE = (2048, 1024), (1024, 512)
 
 
 # The environment_projections arithmetic the adapter must lay (MR_environment_projections_version): 2 from Modo's own
-# Grid and Dots in an environment and its Light Probe turn (environment_projections.VERSION v2).
-PROJECTIONS_VERSION = 2
+# Grid and Dots in an environment and its Light Probe turn (environment_projections.VERSION v2), 3 from Modo's own
+# Triplanar procedurals (environment_projections.procedural_triplanar, v3).
+PROJECTIONS_VERSION = 3
 
 
 def projections_laid(library):

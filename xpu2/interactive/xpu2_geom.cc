@@ -77,6 +77,11 @@
 #undef private
 #undef protected
 
+// Displaced hard edges (MOONRAY_MODO_DISPLACED_HARD_EDGES): the same corner normals MoonRay's PolyMesh makes
+// (tools/port_displaced_hard_edges.py), from the same rule. XPU2's runtime loads the pinned reference MoonRay's geometry
+// library, which has not the patch: the corners are made here, after its tessellation.
+#include "../../native-port/modo_hard_edges.h"
+
 namespace {
 using namespace moonray;
 using scene_rdl2::math::Vec2f;
@@ -1117,10 +1122,17 @@ static int polyTessellateHere(const X2PolyInput* pin, X2PolyOutput* out, char* e
             for (unsigned i = 0; i < in->uvCount; ++i) uv[i] = Vec2f(in->uvs[2 * i], in->uvs[2 * i + 1]);
             table.addAttribute(shading::StandardAttributes::sSt, rate, std::move(uv));
         }
+        // The corner normals as given, for a displaced mesh's hard edges (modo_hard_edges.h): carried through MoonRay's
+        // own splitting of n-gons and its tessellation as an attribute of their own, where PolyMesh drops the normals.
+        static const shading::TypedAttributeKey<Vec3f> givenKey("modo_hard_edges_given");
+        bool hardEdges = false;
         if (in->normalCount) {
             const shading::AttributeRate rate(geom::pickRate(rdlGeometry, "normal_list", in->normalCount, rates));
             std::vector<Vec3f> n(in->normalCount);
             for (unsigned i = 0; i < in->normalCount; ++i) n[i] = Vec3f(in->normals[3 * i], in->normals[3 * i + 1], in->normals[3 * i + 2]);
+            hardEdges = in->enableDisplacement != 0 && (in->displace != nullptr || in->displaceWith != nullptr) && modo_hard_edges::on() &&
+                        (rate == shading::RATE_FACE_VARYING || rate == shading::RATE_UNIFORM);
+            if (hardEdges) table.addAttribute(givenKey, rate, std::vector<Vec3f>(n));
             table.addAttribute(shading::StandardAttributes::sNormal, rate, std::move(n));
         }
         for (unsigned k = 0; k < in->attributeCount; ++k) addAttribute(table, in->attributes[k]);
@@ -1271,7 +1283,54 @@ static int polyTessellateHere(const X2PolyInput* pin, X2PolyOutput* out, char* e
         });
         // The shading normals: a vertex's (displacement's smooth normals, at up to two time steps), else a corner's.
         const auto& normalKey = shading::StandardAttributes::sNormal;
-        if (attributes->isSupported(normalKey)) {
+        // A displaced mesh's hard edges (modo_hard_edges.h): each corner's own normal where a point's faces disagreed as
+        // given, made as PolyMesh makes them before it turns a reversed mesh's faces over (on the faces' first order,
+        // from the points' normals as they were; then turned over and negated with the rest).
+        std::vector<Vec3f> hardCorners;
+        size_t hardSteps = 0;
+        if (hardEdges && attributes->isSupported(givenKey) && attributes->isSupported(normalKey) &&
+            attributes->getRate(normalKey) == shading::RATE_VERTEX) {
+            const shading::AttributeRate givenRate = attributes->getRate(givenKey);
+            const bool reversed = impl->getIsNormalReversed();
+            std::vector<uint32_t> first(impl->mIndices.begin(), impl->mIndices.end());
+            if (reversed)
+                for (size_t f = 0; f < faces; ++f) std::reverse(first.begin() + std::ptrdiff_t(f * nt), first.begin() + std::ptrdiff_t((f + 1) * nt));
+            std::vector<Vec3f> baseCorners(baseFaces * nb);
+            for (size_t b = 0; b < baseFaces; ++b)
+                for (size_t k = 0; k < nb; ++k)
+                    baseCorners[b * nb + k] = givenRate == shading::RATE_UNIFORM ? attributes->getUniform(givenKey, b)
+                                                                                  : attributes->getFaceVarying(givenKey, b, reversed ? nb - 1 - k : k);
+            const std::vector<Vec3f> keys = modo_hard_edges::givenAtCorners(faces, nt, tessellated, quadBase, impl->mTessellatedToBaseFace.data(),
+                                                                            impl->mFaceVaryingUv.data(), baseCorners.data(), nb);
+            hardSteps = attributes->getTimeSampleCount(normalKey);
+            hardCorners = modo_hard_edges::cornerNormals(
+                faces, nt, first.data(), vertexCount, hardSteps, keys,
+                [&](uint32_t v, size_t t) {
+                    const float* q = (const float*)&impl->mVertices(v, t);
+                    return Vec3f(q[0], q[1], q[2]);
+                },
+                [&](uint32_t v, size_t t) {
+                    const Vec3f n = attributes->getVertex(normalKey, v, int(t));
+                    return reversed ? -n : n;
+                });
+            if (reversed) {
+                modo_hard_edges::reverseCorners(hardCorners, nt, hardSteps);
+                for (Vec3f& n : hardCorners) n = -n;
+            }
+        }
+        if (!hardCorners.empty()) {
+            out->normalKind = 4;
+            out->normalSteps = unsigned(hardSteps);
+            out->normals = new float[12 * faces * hardSteps];
+            for (size_t t = 0; t < hardSteps; ++t)
+                forEach(faces, [&](size_t f) {
+                    for (size_t c = 0; c < 4; ++c) {
+                        const Vec3f n = hardCorners[(f * nt + (c < nt ? c : nt - 1)) * hardSteps + t];
+                        float* o = out->normals + 3 * (t * faces * 4 + 4 * f + c);
+                        o[0] = n.x, o[1] = n.y, o[2] = n.z;
+                    }
+                });
+        } else if (attributes->isSupported(normalKey)) {
             if (attributes->getRate(normalKey) == shading::RATE_VERTEX) {
                 out->normalKind = 3;
                 out->normalSteps = unsigned(std::max<size_t>(1, std::min<size_t>(attributes->getTimeSampleCount(normalKey), 2)));

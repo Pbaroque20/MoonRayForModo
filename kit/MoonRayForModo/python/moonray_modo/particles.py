@@ -13,13 +13,22 @@ particle's Size scales it too. The runtime's modo_particles cuts the field into 
 and the result is a mesh like any other, wearing the Blob's material (its Material channel names the tag), placed in
 the world: every engine draws it as it draws a mesh. Its points carry the particles' velocities, by which a moving
 blob, rebuilt in each sample, is blurred (motion.apply_motion): the particles' own (a simulation's) or, where they have
-none, their move over half a frame.
+none, their move over half a frame. Modo 16.1's renderer gives a Blob no direct light at all (any light, from any side,
+its shadows on or off; tools/probe_cl_blob_shading.py), only ambient and indirect light, while a mesh of the same
+material beside it is lit and the Blob still casts shadows. A Blob is lit as a mesh is unless its Blob lighting (Light
+Links, Emitters and Volumes) asks for Modo's look: then no light but the environment reaches it, the light from other
+surfaces still does, and it still casts shadows (blob_lighting).
 
 A Sprite is fog in puffs: each particle a ball of fog of its radius, thickest in the middle as Falloff shapes it and as
 dense as Density says, the density in each ball taken from Modo's renders of one puff at each Falloff (SPRITE_TABLES,
 tools/fit_sprite_profile.py). The runtime's modo_particles lays the puffs into a VDB file (in the Cache folder) which
 MoonRay renders as a VdbVolume, its Scattering the fog's albedo, its Forward Scattering its anisotropy. Slices are how
-Modo draws a puff (as so many sheets); they change nothing in its look (measured) and are not used.
+Modo draws a puff (as so many sheets); they change nothing in its look (measured) and are not used. Modo lights the fog
+by its lights alone, never by the environment or Global Illumination, and the fog neither shades the light reaching it
+nor casts a shadow: so it is given to MoonRay (sprite_volume, SPRITE_BRIGHTNESS).
+
+A Blob or Sprite on a Particle Simulation has particles once Modo has run the simulation to the frame (played or cached);
+until then the reading says so.
 
 What is not followed is said once a reading, in the notices (UNREAD)."""
 import hashlib
@@ -70,11 +79,14 @@ SPRITE_TABLES = {
           0.0647, 0.0557, 0.0475, 0.0403, 0.0338, 0.028, 0.0228, 0.0181, 0.014, 0.0104, 0.0071, 0.0043, 0.0016, 0.0, 0.0, 0.0],
     1.0: [0.0] * 33,
 }
-# How much brighter Modo draws a Sprite's fog than MoonRay's single scattering of the same albedo: Modo's puffs, lit by
-# the same sun and sky, came out 2.7 times as bright in a packed block of 27 puffs (the reference scene) and 6 to 8 times
-# for a lone puff (test-results/blob-field, sprites), and brighter still in a slab of 1,500 (Modo seems not to shade
-# its fog by the fog between it and the light). The fog's albedo is its Scattering times this, between them.
-SPRITE_BRIGHTNESS = 3.0
+# How much brighter Modo draws a Sprite's fog than MoonRay's single scattering of the same albedo, the fog lit as Modo
+# lights it (its lights alone, no shadow through the fog: sprite_volume). Measured lit by a sun alone
+# (tools/probe_cl_sprite_light.py): Modo's scattered light goes as Scattering x (1 - e^(-depth / 2)) while its alpha is
+# 1 - e^(-depth), which MoonRay's fog cannot follow. Over the whole of each, the same albedo needs 6.4 for a lone puff
+# (8.0 through its middle), 5.6 for the reference scene's block of 27 and 9 to 10 inside a slab of 1,500: 6 keeps the
+# reference scene as it was (where 3 with the fog's shadows matched it) and brings the puff and the slab much nearer
+# (they were 4 and 3 times too dark). The fog's albedo is its Scattering times this.
+SPRITE_BRIGHTNESS = 6.0
 # Answers made this session, by request digest: a blob's mesh lists, a sprite's file.
 _MADE = {}
 _MADE_MOST = 24
@@ -457,14 +469,15 @@ def read(item, seconds):
                 velocities = turned(velocities, matrix)
         except (LookupError, RuntimeError, AttributeError, TypeError):
             pass
-    return {'positions': positions, 'ids': ids, 'sizes': sizes, 'velocities': velocities}
+    # features: what Modo hands over for them (a simulation not yet run to this frame gives positions alone, none).
+    return {'positions': positions, 'ids': ids, 'sizes': sizes, 'velocities': velocities, 'features': have}
 
 
 def settings(item, kind):
     """A Blob's or Sprite's channels, by name, with Modo's defaults where one cannot be read."""
     from .host import channel
     defaults = {'radius': 0.1, 'level': 0.5, 'sizeRand': 0.0, 'renderQuality': 'high', 'material': '', 'falloff': 0.5, 'density': 1.0,
-                'scattering': 1.0, 'phaseFwd': 0.5, 'lumDens': 0, 'dissolve': 0.0}
+                'scattering': 1.0, 'phaseFwd': 0.5, 'dissolve': 0.0}
     held = {}
     for key, default in defaults.items():
         try:
@@ -566,15 +579,77 @@ def sprite_volume(item, held, values, velocities):
     asked = request(2, held['positions'], found_radii, array('f', [density]) * count, cell, table=table, velocities=velocities)
     path = sprite_made(asked)
     scattering = max(0.0, float(values['scattering']))
-    luminous = bool(values.get('lumDens'))
+    # Luminous Density changes nothing in Modo's render of a puff: it gives off no light in the dark and looks the same
+    # lit (measured, tools/probe_cl_sprite_light.py lum, lum2): the fog gives off no light of its own.
     return {'kind': 'vdb', 'identity': PREFIX + 'sprite|' + item.id, 'source_item': item.id, 'name': item.name, 'file': path,
-            'density_grid': 'density', 'emission_grid': 'density' if luminous else '', 'velocity_grid': 'v' if velocities is not None else '',
-            'velocity_scale': 1.0, 'density': 1.0,
-            # Luminous Density: the fog glows by its density, as it scatters (an approximation; said in the notices).
-            'emission': scattering * SPRITE_BRIGHTNESS if luminous else 0.0,
+            'density_grid': 'density', 'emission_grid': '', 'velocity_grid': 'v' if velocities is not None else '',
+            'velocity_scale': 1.0, 'density': 1.0, 'emission': 0.0,
             'anisotropy': min(0.95, max(-0.95, 2.0 * float(values['phaseFwd']) - 1.0)),
             'volume_color': [scattering * SPRITE_BRIGHTNESS] * 3, 'material': str(values.get('material') or ''), 'matrix': list(IDENTITY),
+            # Modo's fog is lit by its lights alone, never by the environment, and neither shades the light reaching it
+            # nor casts a shadow (measured: tools/probe_cl_sprite_light.py, tools/probe_cl_blob_shading.py).
+            'visibility': [True, True, True, True, True, False], 'lit_by_environment': False,
             '_particles': 'sprite'}
+
+
+def blob_lighting(meshes, production):
+    """The production settings (Light Links, Emitters and Volumes) with each Blob set to Modo's lighting ('modo') lit by
+    the environments alone: its light links on, every environment checked. A Blob whose own Light Links are on keeps
+    them. The settings given are not changed; where nothing is to change they are returned as they are."""
+    objects = (production or {}).get('objects', {})
+    unlit = {mesh.get('source_item') for mesh in meshes if mesh.get('_particles') == 'blob'
+             and (objects.get(mesh.get('source_item')) or {}).get('blob_lighting') == 'modo'
+             and not objects[mesh.get('source_item')].get('link_enabled')}
+    if not unlit:
+        return production
+    held = dict(objects)
+    for identity in unlit:
+        held[identity] = dict(held[identity], link_enabled=True, lights=['__environment__'])
+    return dict(production, objects=held)
+
+
+def tag_materials(scene, result, tags, warnings):
+    """The materials of material tags a reading has none for, made as a reading of the scene's own meshes makes them
+    (host._snapshot): the Shader Tree's materials for the tag, the base material's beneath. Read as Modo's evaluated
+    geometry, a scene's materials are its render cache's stacks (evaluated.assign_materials), named for them, and the
+    cache has no Blob surfaces (measured, tools/probe_cl_blob_evaluated.py): a Blob's tag was none of them, so it wore
+    whatever the renderer gives a surface of no material."""
+    from .host import material_values, image_layers, channel
+    from .layers import ordered, material_stack, material_tag
+    from .materials import active
+    from . import properties
+    missing = [tag for tag in dict.fromkeys(tags) if tag not in result.setdefault('materials', {})]
+    if not missing:
+        return
+    found = {}
+    for material in reversed(ordered(scene.renderItem)):
+        if not properties.is_material(material) or not active(material) or not channel(material, 'enable', 1):
+            continue
+        try:
+            tag = material_tag(material)
+        except ValueError:
+            continue
+        if tag is not None:
+            found.setdefault(tag, []).append(material)
+    made = {}
+    for tag in missing:
+        # A tag no group takes wears the base material, as Modo renders it.
+        chosen = found.get(tag) or found.get('')
+        if not chosen:
+            continue
+        made[tag] = material_values(chosen[-1], warnings)
+        held = made[tag]
+        if channel(chosen[-1], 'subsAmt', 0) or held.get('anisotropy', 0) or held.get('sheen', 0) or \
+                (channel(chosen[-1], 'tranAmt', 0) and (channel(chosen[-1], 'metallic', 0) or channel(chosen[-1], 'coatAmt', 0))):
+            held['shader'] = 'DwaBaseMaterial'
+    if not made:
+        return
+    image_layers(scene, made, warnings)
+    for tag, held in made.items():
+        chosen = found.get(tag) or found.get('')
+        inherited = [m for m in found.get('', []) if m not in chosen] if tag else []
+        held['material_stack'] = material_stack(scene, chosen + inherited, warnings, tag)
+    result['materials'].update(made)
 
 
 def apply(scene, result, warnings):
@@ -616,8 +691,15 @@ def apply(scene, result, warnings):
             warnings.append('%s %s: its particles could not be read (%s).' % (label, item.name, exc))
             continue
         if held is None or not len(held['ids']):
-            if not sources(item):
+            owners = sources(item)
+            if not owners:
                 warnings.append('%s %s has no Particle Source and renders nothing.' % (label, item.name))
+            elif any(owner.type == 'particleSim' for owner in owners) and set((held or {}).get('features') or ['pos']) <= {'pos'}:
+                # Modo's simulation gives its particles once it has run up to the frame (its cache): a scene opened and
+                # read at a frame without playing or caching it has none, and only positions to give (measured,
+                # tools/probe_cl_particle_sim.py); run, it gives ids, velocities and ages too, even before any is born.
+                warnings.append('%s %s: its Particle Simulation has no particles at this frame. Play the timeline up to it '
+                                'or cache the simulation (Dynamics > Cache Simulation).' % (label, item.name))
             continue
         values = settings(item, kind)
         skipped = unread(item, kind)
@@ -634,11 +716,15 @@ def apply(scene, result, warnings):
             else:
                 volume = sprite_volume(item, held, values, velocities)
                 if volume is not None:
-                    if volume['emission']:
-                        warnings.append('Sprite %s: Luminous Density glows as much as the fog scatters, an approximation of Modo\'s.' % item.name)
                     result['extra_geometry'].append(volume)
             # How long it took (for tests and timings): reading the particles (with their velocities), making the shape.
             took['made'] = round(time.perf_counter() - started, 3)
             result.setdefault('_particle_seconds', {})[item.name] = took
         except (OSError, ValueError, subprocess.SubprocessError) as exc:
             warnings.append('%s %s is not rendered: %s' % (label, item.name, exc))
+    if result.get('_evaluated_data') is not None:
+        # Read as Modo's evaluated geometry, the materials are the render cache's: a Blob's tag is made here.
+        try:
+            tag_materials(scene, result, [mesh.get('material', '') for mesh in result['meshes'] if mesh.get('_particles')], warnings)
+        except (LookupError, RuntimeError, AttributeError, TypeError, ValueError) as exc:
+            warnings.append('The material of a Blob could not be read (%s): it renders with the base material.' % exc)

@@ -1240,3 +1240,8 @@ way (drags as before); a different view or size ends it too.
 - The test scene, RT on, RT off, RT on again (527,524 cells taken back): the fade begun at phase one's first picture,
   13 pictures handed over in 0.44 s (2 of the session's blended, 10 again by the ticker, the last as it is), the blend's
   fitted weight 0, 0.02, 0.10, 0.17, 0.25, 0.38, 0.51, 0.63, 0.75, 0.83, 0.96, 1. Drag steps: no fade.
+- A frame's DONE waits for a fade under way (`FadingShared::settle`): the ticker published up to the fade's length after
+  a short frame's DONE, and the kit takes DONE as the frame's end (render.py `_persistent_ready`; persistent.py still
+  shows a later picture of the same frame, but the render job has ended by then). A command come meanwhile ends the fade
+  at once on the session's picture (where the kit has taken the one before). `XPU2_SESSION_SAY_PICTURE_HASH=1`: each
+  frame's end says the hash of the last picture handed over and of the session's own last one.

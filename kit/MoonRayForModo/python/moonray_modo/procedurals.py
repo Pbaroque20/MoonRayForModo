@@ -41,6 +41,16 @@ def capture(layer, channel, color, is_color=True):
     if not all(math.isfinite(v) for k,v in data.items() if isinstance(v,(int,float))):raise ValueError('Nonfinite procedural parameter')
     return data
 
+def uv_offset(rotation,scale):
+    """How far a procedural's pattern is moved in its UVs (its data's offset) for the plugin's UV transform (coordinates.
+    transform_uv: turned about 0, then scaled by the Wraps) to lay it where Modo does: Modo turns a procedural's UVs
+    about their middle and wraps them about it too (UV projection; read from Modo's renders, tools/probe_cl_surface_
+    procedurals.py uv_grid_uvrot, uv_grid_square_bias). None where there is nothing to move."""
+    cosine,sine=math.cos(rotation),math.sin(rotation)
+    offset=[.5-scale[0]*(.5*cosine-.5*sine),.5-scale[1]*(.5*sine+.5*cosine)]
+    offset=[v-math.floor(v) for v in offset]
+    return None if all(min(v,1-v)<1e-12 for v in offset) else offset
+
 def _bias(x,b):
     b=max(.00001,min(.99999,b));x=max(0,min(1,x))
     return x/((1/b-2)*(1-x)+1)
@@ -123,6 +133,15 @@ def _late(data,u,v):
     return max(0.0,min(1.0,.5+.5*total/math.sqrt(sources)))
 
 def sample(data,u,v):
+    """A pattern's colour and alpha at (u, v) of its UVs, as the plugin bakes it for surfaces (bake): Grid and Dots
+    as Modo's renderer lays them (_modo_shape, the same as an environment's: read from Modo's renders of a plane,
+    tools/probe_cl_surface_procedurals.py, UV and Planar), at (u, v) moved by the layer's offset (uv_offset: Modo turns
+    and wraps a procedural's UVs about their middle, the plugin's UV transform about 0); the other patterns after
+    Modo's."""
+    offset=data.get('offset')
+    if offset:u,v=u+offset[0],v+offset[1]
+    if data.get('kind') in ENVIRONMENT_SHAPES and data.get('pattern') in ENVIRONMENT_SHAPES[data['kind']]:
+        return _modo_shape(data,u,v)
     if data['kind'] in EXTRA:
         t=_bias(_late(data,u,v),data['bias'])
         g=data['gain'];t=.5*_bias(2*t,1-g) if t<.5 else 1-.5*_bias(2-2*t,1-g)
@@ -177,12 +196,16 @@ def _environment_distance(data,u,v):
 
 def environment_sample(data,u,v):
     """A Grid's or Dots' colour and alpha at the image coordinates (u, v) of an environment's projection, as Modo's
-    renderer lays it: Modo's own lines and dots (_environment_distance), each lineWidth (dotWidth) across, the colours
-    meeting over transWidth beyond that, eased, then the layer's bias and gain. Where sample (the surfaces' pattern)
-    centred its lines and transitions otherwise, an environment's Grid or Dots fell half a cell over from Modo's, and
-    its lines were narrower. Any other pattern as sample lays it."""
-    if data.get('kind') not in ENVIRONMENT_SHAPES or data.get('pattern') not in ENVIRONMENT_SHAPES[data['kind']]:
-        return sample(data,u,v)
+    renderer lays it (_modo_shape); any other pattern as sample lays it. The same as sample: a surface's Grid and Dots
+    are Modo's own too."""
+    return sample(data,u,v)
+
+
+def _modo_shape(data,u,v):
+    """A Grid's or Dots' colour and alpha at (u, v), as Modo's renderer lays it on a surface and in an environment:
+    Modo's own lines and dots (_environment_distance), each lineWidth (dotWidth) across, the colours meeting over
+    transWidth beyond that, eased, then the layer's bias and gain. Where the plugin centred its lines and transitions
+    otherwise (before 0.5.6.3), a Grid or Dots fell half a cell over from Modo's, and its lines were narrower."""
     distance=_environment_distance(data,u,v)
     half=.5*max(0.0,min(1.0,data['width']));transition=max(0.0,data['transition'])
     if transition<=1e-9:away=1.0 if distance>half else 0.0
@@ -202,14 +225,16 @@ NATIVE_SLOTS=('width','transition','bias','gain')
 
 
 def native_settings(data):
-    """A pattern's settings as the adapter's MR_procedural_bake takes them: 31 numbers, a missing one as 0."""
+    """A pattern's settings as the adapter's MR_procedural_bake takes them: 33 numbers (the last two its offset), a
+    missing one as 0. An adapter built before the offset (31 numbers) refuses them, and the pattern is baked here."""
     get=lambda key:float(data.get(key,0) or 0)
     pattern=data.get('pattern') or ''
     return ([float(NATIVE_KINDS.index(data['kind'])),float(NATIVE_PATTERNS.index(pattern)) if pattern in NATIVE_PATTERNS else 0.0]
             +[get(k) for k in NATIVE_SLOTS]+[float(v) for v in data['color1'][:3]]+[float(v) for v in data['color2'][:3]]
             +[get('alpha1'),get('alpha2'),1.0 if data.get('type')=='round' else 0.0]
             +[get(k) for k in ('cellWidth','transWidth','freqs','freqRatio','ampRatio','variation','ringScale','wave','waveScale',
-                               'grain','grainScale','yarnWidth','roundness','sources','wavelength','phase')])
+                               'grain','grainScale','yarnWidth','roundness','sources','wavelength','phase')]
+            +[float(v) for v in (data.get('offset') or (0.0,0.0))[:2]])
 
 
 def native_bake(data,resolution):
@@ -239,7 +264,8 @@ def bake(data,resolution=512):
     if native and _FINAL.get():resolution=max(resolution,2048)
     # In Python the later patterns take longer to work out and are sampled a little coarser.
     if not native and data.get('kind') in EXTRA:resolution=min(resolution,256)
-    key=hashlib.sha256(json.dumps(['procedural-v1',resolution,data],sort_keys=True).encode()).hexdigest()
+    # v2: Grid and Dots as Modo lays them (_modo_shape), moved by the layer's offset.
+    key=hashlib.sha256(json.dumps(['procedural-v2',resolution,data],sort_keys=True).encode()).hexdigest()
     root=cache_root() / 'Procedurals';root.mkdir(parents=True,exist_ok=True)
     paths=[root/(key+suffix+'.pfm') for suffix in ('','-alpha')]
     if not all(p.is_file() for p in paths):

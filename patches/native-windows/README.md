@@ -621,6 +621,40 @@ MoonRay as its source has it. The tilt shows only with depth of field on. XPU2 t
 it), and MoonLightIPR too (`moonlightipr_scene.lens_focus_tilt`, the kernel's `lensRay`). Its runtime holds
 `TiltShiftCamera.dll` and `TiltShiftCamera.so.proxy`, and the rebuilt `librendering_rndr.dll`.
 
+## `moonray.patch`: displaced hard edges stay sharp (`MOONRAY_MODO_DISPLACED_HARD_EDGES`)
+
+Applied by `tools/port_displaced_hard_edges.py` (after `tools/port_mirrored_meshes.py`), behind a switch of its own (the
+plugin's preference, on by default).
+
+### What MoonRay does
+
+`PolyMesh::initAttributesAndDisplace` drops a displaced polygon mesh's own normals. It makes smooth normals for its points,
+displaces each point once along its own (so the surface stays closed), then smooths the shading normals again over the
+displaced shape. An edge the mesh had hard (Modo's smoothing angle: its corner normals differ there) shades round: a displaced
+box's edges look like a pillow's, where Modo keeps them sharp.
+
+### The fix
+
+The displacement is unchanged. Afterwards each tessellated face corner gets a shading normal of its own where the faces about
+its point disagreed as given (their input corner normals more than about a degree apart): the normalized sum of the displaced
+faces' normals (`PolyMeshCalcNv`'s own, in its order) over the faces that agreed with that corner's. Every other corner keeps
+its point's normal bit for bit, and a mesh with no hard edge renders as before. `QuadMesh` and `TriMesh` read the corners'
+normals at a hit, weighed as MoonRay weighs its points' normals (`Interpolator::interpolateVertices`), and for the toon
+terminator and curvature (`get*Attributes`). Reversed and mirrored meshes turn their corners over with their faces. The
+corners live last in `PolyMesh`, after every member MoonRay has. The rule is written once, in `native-port/modo_hard_edges.h`
+(copied into the tree as `geom/prim/ModoHardEdges.h`). The kit writes each polygon's own normal at its corners for a displaced
+flat-shaded polygon mesh, so every edge of it stays hard. Subdivision surfaces are not changed.
+
+XPU2 makes the same corners from the same faces in `xpu2_geom.dll` (it includes `native-port/modo_hard_edges.h`: its runtime
+loads the pinned reference MoonRay's geometry library, which this patch does not reach) and hands them over as face corner
+normals. MoonLightIPR displaces each point once as before, then splits the drawn points where their corners disagree and
+shades each side on its own (`hardEdgeVertices`, scene form `e`).
+
+A box of 2.4 m sides, displaced 5 cm by an image, Modo's 40 degree smoothing (`tools/probe_cl_hard_edges.py` and
+`tools/probe_cl_smooth_render.py`, `PROBE_SHAPES=box`): with the switch, the pixels that change lie along the box's edges
+alone, in all three engines (2.4% of MoonRay's picture), the faces bit for bit as before, and no edge opens. MoonRay and XPU2
+differ by the same amount with the switch on as off (their sampling alone). Off, MoonRay is as its source has it.
+
 ## `moonshine.patch`: toon lines without gaps (`close_line_gaps`)
 
 A new attribute of `ToonDisplayFilter`, behind the preference "Toon lines without gaps", on by default; with it off the

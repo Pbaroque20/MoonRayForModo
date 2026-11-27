@@ -191,19 +191,37 @@ class _Heard:
 _EDITS = _Heard()
 
 
-def session():
+def session(displaced=True):
     """What is held in memory for the open scene: {'key', 'held' (fingerprints, reading, standing) or None, 'prints',
-    'time', 'edited', 'everything'}; made the first time, and let go when the scene closes."""
+    'time', 'edited', 'everything'}; made the first time, and let go when the scene closes. A reading displaced by Modo
+    and one undisplaced each have their own: the estimate of Modo's displaced cut (host.modo_cut_refused) reads the scene
+    undisplaced before every displaced reading of a new frame, and held in one place the two took turns, so that each
+    frame's displaced reading came from disk, made anew (2.7 s a frame of a plane's 1.3 M triangles, for 0.03 s)."""
+    return _slot(None if displaced else 'undisplaced')
+
+
+def estimate_session():
+    """What the estimate of Modo's displaced cut keeps for the open scene (host.modo_cut_refused): as session(), with
+    the items edited since it last looked (_EDITS.heard), and its 'sample'."""
+    return _slot('estimate')
+
+
+# The slots held for each open scene beside its displaced reading's (session).
+_SLOTS = ('undisplaced', 'estimate')
+
+
+def _slot(name):
     import modo
     from . import scene_watch
     scene_key = scene_watch.key(modo.Scene())
     if scene_key is None:
         return None
-    if scene_key not in _SESSION:
+    slot = scene_key if name is None else (name, scene_key)
+    if slot not in _SESSION:
         scene_watch.watch(_closed)
-        _SESSION[scene_key] = {'key': None, 'held': None, 'prints': None, 'time': None, 'edited': set(), 'everything': True}
+        _SESSION[slot] = {'key': None, 'held': None, 'prints': None, 'time': None, 'edited': set(), 'everything': True}
         _EDITS.start()
-    return _SESSION[scene_key]
+    return _SESSION[slot]
 
 
 def _closed(scene_key):
@@ -212,6 +230,8 @@ def _closed(scene_key):
         _SESSION.clear()
     else:
         _SESSION.pop(scene_key, None)
+        for name in _SLOTS:
+            _SESSION.pop((name, scene_key), None)
 
 
 def _settings(time, displaced):

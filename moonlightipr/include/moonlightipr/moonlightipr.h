@@ -116,6 +116,9 @@ struct Material {
     // into its own unit cube: the grid of a fire need not cover what the grid of its smoke does. -1 for none.
     int32_t volumeGlowGrid = -1;
     float volumeGlowRows[12] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0};
+    // How such a fog is lit (FOG_NO_SHADOW, FOG_NO_ENVIRONMENT in device/shared.h): a Modo Sprite's casts no shadow,
+    // not even on itself, and the environment does not light it.
+    uint32_t volumeSwitches = 0;
     // MoonRay's iridescence (DwaBaseMaterial's): the specular reflection, or with iridescenceCoat the clear coat's,
     // multiplied by a colour that depends on the angle. Its index, |1 - cos|^exponent * thickness wrapped into 0 to 1,
     // picks the colour from iridescenceColors (IRIDESCENCE_STEPS colours from index 0 to 1, three numbers each), which

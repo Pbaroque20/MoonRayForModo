@@ -1110,20 +1110,25 @@ struct CpuBackend {
             rtcInitIntersectArguments(&args);
             rtcIntersect1(s.volumes, &h, &args);
             if (h.hit.geomID == RTC_INVALID_GEOMETRY_ID) break;
-            const float th = h.ray.tfar;
-            // A placed mesh's bounds (an instance, addVolumeInstance): its index the instance's, its normal through the
-            // instance's normal transform, and its gate met by the ray in its data's space.
+            // A placed mesh's bounds (an instance, addVolumeInstance): its index the instance's, and its gate met by the
+            // ray in its data's space.
             const U32 geom = h.hit.instID[0] != RTC_INVALID_GEOMETRY_ID ? h.hit.instID[0] : h.hit.geomID;
             const cpu::Mesh& entry = s.plan->meshes[geom];
             const bool placed = h.hit.instID[0] != RTC_INVALID_GEOMETRY_ID && entry.instance;
-            if (placed) {
-                const float* n = entry.normalToWorld;
-                const float nx = h.hit.Ng_x, ny = h.hit.Ng_y, nz = h.hit.Ng_z;
-                h.hit.Ng_x = nx * n[0] + ny * n[3] + nz * n[6];
-                h.hit.Ng_y = nx * n[1] + ny * n[4] + nz * n[7];
-                h.hit.Ng_z = nx * n[2] + ny * n[5] + nz * n[8];
-            }
             const cpu::MeshData& md = *entry.data;
+            // The crossing worked out again from the triangle Embree names, as a surface hit is (resume::geometryHit) and
+            // as the GPU lane works its crossings out (GpuBackend::volumeCrossings): its distance and its side from the
+            // placed triangle, not Embree's own distance and normal. The lanes' traversals round a distance differently,
+            // and a march's stretches, transmittances and distance samples all start from these distances (the fog's
+            // lanes differed in 12,876 values, up to 0.00087).
+            if (h.hit.primID >= md.triangles.size()) break;
+            const auto& tri = md.triangles[h.hit.primID];
+            const surface::V3 a = vertexOf(geom, md, tri.a), b = vertexOf(geom, md, tri.b), c = vertexOf(geom, md, tri.c);
+            const surface::Ray ray{o, d, {}, {}, t, INFINITY};
+            resume::Hit hit;
+            if (!resume::geometryHit(hit, ray, a, b, c)) break;
+            const float th = hit.t;
+            const surface::V3 ng = surface::cross(surface::add(b, surface::mul(a, -1.0f)), surface::add(c, surface::mul(a, -1.0f)));
             if (md.gate) {
                 U32 g = 0;
                 while (g < gateCount && gateGeom[g] != geom) ++g;
@@ -1153,7 +1158,7 @@ struct CpuBackend {
                 }
             }
             const U32 v = U32(entry.volume);
-            const U32 flags = d.x * h.hit.Ng_x + d.y * h.hit.Ng_y + d.z * h.hit.Ng_z < 0.0f ? volume::Entry : volume::Exit;
+            const U32 flags = surface::dot(d, ng) < 0.0f ? volume::Entry : volume::Exit;
             if (!(n > 0 && x[n - 1].t == th && x[n - 1].volume == v && x[n - 1].flags == flags)) x[n++] = volume::Crossing{th, v, flags};
             t = th + fmaxf(1e-6f, th * 1e-6f);
         }

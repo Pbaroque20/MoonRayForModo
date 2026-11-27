@@ -22,6 +22,374 @@
 #define X2_CALL inline
 #endif
 #endif
+// One set of elementary functions for both lanes. The CUDA lane's expf, logf, powf, sinf, cosf, tanf, atan2f, asinf,
+// acosf, erff and cbrtf (libdevice's) and the host's (the C runtime's) are different approximations: the same argument
+// gave the lanes results an ulp or more apart, and as either lane may render a sample (the work split changes from run
+// to run) a picture rendered by both lanes differed from run to run. These take their place in every XPU2 namespace
+// (an unqualified call inside namespace xpu2 finds them before the global ones), each a fixed sequence of IEEE single and
+// double operations, rounded alike on the host (built without contraction) and on the card (built with --fmad=false).
+// The single precision kernels are Cephes's (Stephen L. Moshier, Cephes Math Library 2.2, sinf.c, tanf.c, atanf.c,
+// asinf.c, expf.c, logf.c: free to use, see THIRD_PARTY_NOTICES.md); powf, erff and cbrtf are worked out in double.
+#if !defined(__CUDACC_RTC__)
+#include <math.h>
+#endif
+namespace xpu2 {
+namespace x2math {
+X2_HD inline unsigned bitsOf(float f) {
+#if defined(__CUDACC__)
+    return __float_as_uint(f);
+#else
+    unsigned u;
+    __builtin_memcpy(&u, &f, 4);
+    return u;
+#endif
+}
+X2_HD inline float fromBits(unsigned u) {
+#if defined(__CUDACC__)
+    return __uint_as_float(u);
+#else
+    float f;
+    __builtin_memcpy(&f, &u, 4);
+    return f;
+#endif
+}
+X2_HD inline unsigned long long bitsOf(double f) {
+#if defined(__CUDACC__)
+    return (unsigned long long)__double_as_longlong(f);
+#else
+    unsigned long long u;
+    __builtin_memcpy(&u, &f, 8);
+    return u;
+#endif
+}
+X2_HD inline double fromBits(unsigned long long u) {
+#if defined(__CUDACC__)
+    return __longlong_as_double((long long)u);
+#else
+    double f;
+    __builtin_memcpy(&f, &u, 8);
+    return f;
+#endif
+}
+X2_HD inline float nanf_() { return fromBits(0x7fc00000u); }
+X2_HD inline float inff_() { return fromBits(0x7f800000u); }
+X2_HD inline bool isnan_(float x) { return !(x == x); }
+// 2^n, n in [-126, 127].
+X2_HD inline float pow2(int n) { return fromBits(unsigned(n + 127) << 23); }
+// p 2^n for p near one, n in [-150, 128]: in steps that stay in range.
+X2_HD inline float scaled(float p, int n) {
+    if (n > 127) return p * pow2(127) * pow2(n - 127);
+    if (n < -126) return p * pow2(n + 100) * pow2(-100);
+    return p * pow2(n);
+}
+// The double helpers: log of a positive finite double, and 2^t.
+X2_HD inline double logPositive(double x) {
+    unsigned long long u = bitsOf(x);
+    int e = int((u >> 52) & 0x7ff);
+    if (e == 0) {  // subnormal
+        x *= 18014398509481984.0;  // 2^54
+        u = bitsOf(x);
+        e = int((u >> 52) & 0x7ff) - 54;
+    }
+    e -= 1023;
+    double m = fromBits((u & 0x000fffffffffffffull) | 0x3ff0000000000000ull);  // [1, 2)
+    if (m > 1.4142135623730951) {
+        m *= 0.5;
+        ++e;
+    }
+    // log m = 2 atanh(s), s = (m - 1) / (m + 1), |s| < 0.1716.
+    const double s = (m - 1.0) / (m + 1.0), s2 = s * s;
+    double sum = 1.0 / 25.0;
+    for (int k = 11; k >= 0; --k) sum = sum * s2 + 1.0 / double(2 * k + 1);
+    return 2.0 * s * sum + double(e) * 0.69314718055994530942;
+}
+X2_HD inline double exp2Of(double t) {
+    if (!(t == t)) return t;
+    if (t > 1100.0) return fromBits(0x7ff0000000000000ull);
+    if (t < -1100.0) return 0.0;
+    const double n = floor(t + 0.5);
+    const double f = (t - n) * 0.69314718055994530942;  // |f| <= 0.3466: e^f by its series to the 13th power
+    double r = 1.0 / 6227020800.0;
+    r = r * f + 1.0 / 479001600.0;
+    r = r * f + 1.0 / 39916800.0;
+    r = r * f + 1.0 / 3628800.0;
+    r = r * f + 1.0 / 362880.0;
+    r = r * f + 1.0 / 40320.0;
+    r = r * f + 1.0 / 5040.0;
+    r = r * f + 1.0 / 720.0;
+    r = r * f + 1.0 / 120.0;
+    r = r * f + 1.0 / 24.0;
+    r = r * f + 1.0 / 6.0;
+    r = r * f + 0.5;
+    r = r * f + 1.0;
+    r = r * f + 1.0;
+    int ni = int(n);
+    // r 2^n, in steps that stay in range.
+    while (ni > 1000) {
+        r *= fromBits(0x7e70000000000000ull);  // 2^1000
+        ni -= 1000;
+    }
+    while (ni < -1000) {
+        r *= fromBits(0x0170000000000000ull);  // 2^-1000
+        ni += 1000;
+    }
+    return r * fromBits((unsigned long long)(ni + 1023) << 52);
+}
+}  // namespace x2math
+
+X2_HD inline float expf(float x) {
+    using namespace x2math;
+    if (isnan_(x)) return x + x;
+    if (x > 88.72283172607421875f) return inff_();
+    if (x < -103.97208404541015625f) return 0.0f;
+    const float fn = floorf(x * 1.44269504088896341f + 0.5f);
+    float r = x - fn * 0.693359375f;
+    r = r - fn * -2.12194440e-4f;
+    const float z = r * r;
+    const float p = (((((1.9875691500E-4f * r + 1.3981999507E-3f) * r + 8.3334519073E-3f) * r + 4.1665795894E-2f) * r + 1.6666665459E-1f) * r +
+                     5.0000001201E-1f) * z + r + 1.0f;
+    return scaled(p, int(fn));
+}
+X2_HD inline float logf(float x) {
+    using namespace x2math;
+    if (isnan_(x)) return x + x;
+    if (x < 0.0f) return nanf_();
+    if (x == 0.0f) return -inff_();
+    if (x == inff_()) return x;
+    int e = 0;
+    if (x < 1.17549435e-38f) {
+        x *= 8388608.0f;
+        e = -23;
+    }
+    const unsigned u = bitsOf(x);
+    e += int((u >> 23) & 0xff) - 126;
+    x = fromBits((u & 0x807fffffu) | 0x3f000000u);  // [0.5, 1)
+    if (x < 0.707106781186547524f) {
+        e -= 1;
+        x = x + x - 1.0f;
+    } else {
+        x = x - 1.0f;
+    }
+    float z = x * x;
+    float y = ((((((((7.0376836292E-2f * x - 1.1514610310E-1f) * x + 1.1676998740E-1f) * x - 1.2420140846E-1f) * x + 1.4249322787E-1f) * x -
+                   1.6668057665E-1f) * x + 2.0000714765E-1f) * x - 2.4999993993E-1f) * x + 3.3333331174E-1f) * x * z;
+    const float fe = float(e);
+    y += -2.12194440e-4f * fe;
+    y += -0.5f * z;
+    z = x + y;
+    z += 0.693359375f * fe;
+    return z;
+}
+namespace x2math {
+// Cephes's octant reduction for sinf, cosf and tanf: x >= 0, finite; the octant j (even) and the reduced argument.
+X2_HD inline float octant(float x, int& j) {
+    if (x > 8192.0f) x = float(fmod(double(x), 6.283185307179586476925));  // beyond Cephes's range: a whole turn off, exactly
+    j = int(x * 1.27323954473516f);
+    float y = float(j);
+    if (j & 1) {
+        j += 1;
+        y += 1.0f;
+    }
+    return ((x - y * 0.78515625f) - y * 2.4187564849853515625e-4f) - y * 3.77489497744594108e-8f;
+}
+X2_HD inline float sinPoly(float x, float z) { return ((-1.9515295891E-4f * z + 8.3321608736E-3f) * z - 1.6666654611E-1f) * z * x + x; }
+X2_HD inline float cosPoly(float z) {
+    float y = ((2.443315711809948E-005f * z - 1.388731625493765E-003f) * z + 4.166664568298827E-002f) * z * z;
+    y -= 0.5f * z;
+    return y + 1.0f;
+}
+}  // namespace x2math
+X2_HD inline float sinf(float xx) {
+    using namespace x2math;
+    if (!(xx - xx == 0.0f)) return xx - xx;  // NaN, infinity
+    bool negative = xx < 0.0f;
+    int j;
+    const float x = octant(negative ? -xx : xx, j);
+    j &= 7;
+    if (j > 3) {
+        negative = !negative;
+        j -= 4;
+    }
+    const float z = x * x;
+    const float y = (j == 1 || j == 2) ? cosPoly(z) : sinPoly(x, z);
+    return negative ? -y : y;
+}
+X2_HD inline float cosf(float xx) {
+    using namespace x2math;
+    if (!(xx - xx == 0.0f)) return xx - xx;
+    bool negative = false;
+    int j;
+    const float x = octant(xx < 0.0f ? -xx : xx, j);
+    j &= 7;
+    if (j > 3) {
+        j -= 4;
+        negative = !negative;
+    }
+    if (j > 1) negative = !negative;
+    const float z = x * x;
+    const float y = (j == 1 || j == 2) ? sinPoly(x, z) : cosPoly(z);
+    return negative ? -y : y;
+}
+X2_HD inline void sincosf(float x, float* s, float* c) {
+    *s = sinf(x);
+    *c = cosf(x);
+}
+X2_HD inline float tanf(float xx) {
+    using namespace x2math;
+    if (!(xx - xx == 0.0f)) return xx - xx;
+    const bool negative = xx < 0.0f;
+    const float x = negative ? -xx : xx;
+    int j;
+    const float z = octant(x, j);
+    const float zz = z * z;
+    float y = x > 1.0e-4f ? ((((((9.38540185543E-3f * zz + 3.11992232697E-3f) * zz + 2.44301354525E-2f) * zz + 5.34112807005E-2f) * zz +
+                               1.33387994085E-1f) * zz + 3.33331568548E-1f) * zz * z + z)
+                          : z;
+    if (j & 2) y = -1.0f / y;
+    return negative ? -y : y;
+}
+X2_HD inline float atanf(float xx) {
+    if (!(xx == xx)) return xx + xx;
+    const bool negative = xx < 0.0f;
+    float x = negative ? -xx : xx, y;
+    if (x > 2.414213562373095f) {
+        y = 1.5707963267948966192f;
+        x = -(1.0f / x);
+    } else if (x > 0.4142135623730950f) {
+        y = 0.7853981633974483096f;
+        x = (x - 1.0f) / (x + 1.0f);
+    } else {
+        y = 0.0f;
+    }
+    const float z = x * x;
+    y += (((8.05374449538e-2f * z - 1.38776856032E-1f) * z + 1.99777106478E-1f) * z - 3.33329491539E-1f) * z * x + x;
+    return negative ? -y : y;
+}
+X2_HD inline float atan2f(float y, float x) {
+    using namespace x2math;
+    if (isnan_(x) || isnan_(y)) return x + y;
+    const float pi = 3.14159265358979323846f, halfPi = 1.5707963267948966192f;
+    const bool yNegative = (bitsOf(y) >> 31) != 0, xNegative = (bitsOf(x) >> 31) != 0;
+    if (y == 0.0f) return xNegative ? (yNegative ? -pi : pi) : y;  // the sign of zero as C's atan2 keeps it
+    if (x == 0.0f) return yNegative ? -halfPi : halfPi;
+    const bool xInf = x == inff_() || x == -inff_(), yInf = y == inff_() || y == -inff_();
+    if (xInf && yInf) {
+        const float q = xNegative ? 2.35619449019234492885f : 0.78539816339744830962f;
+        return yNegative ? -q : q;
+    }
+    if (xInf) return xNegative ? (yNegative ? -pi : pi) : (yNegative ? -0.0f : 0.0f);
+    if (yInf) return yNegative ? -halfPi : halfPi;
+    const float w = x < 0.0f ? (yNegative ? -pi : pi) : 0.0f;
+    return w + atanf(y / x);
+}
+X2_HD inline float asinf(float xx) {
+    using namespace x2math;
+    if (isnan_(xx)) return xx + xx;
+    const bool negative = xx < 0.0f;
+    const float a = negative ? -xx : xx;
+    if (a > 1.0f) return nanf_();
+    float z;
+    if (a < 1.0e-4f) {
+        z = a;
+    } else {
+        float x;
+        bool flag;
+        if (a > 0.5f) {
+            z = 0.5f * (1.0f - a);
+            x = sqrtf(z);
+            flag = true;
+        } else {
+            x = a;
+            z = x * x;
+            flag = false;
+        }
+        z = ((((4.2163199048E-2f * z + 2.4181311049E-2f) * z + 4.5470025998E-2f) * z + 7.4953002686E-2f) * z + 1.6666752422E-1f) * z * x + x;
+        if (flag) {
+            z = z + z;
+            z = 1.5707963267948966192f - z;
+        }
+    }
+    return negative ? -z : z;
+}
+X2_HD inline float acosf(float x) {
+    using namespace x2math;
+    if (isnan_(x)) return x + x;
+    if (x < -1.0f || x > 1.0f) return nanf_();
+    if (x < -0.5f) return 3.14159265358979323846f - 2.0f * asinf(sqrtf(0.5f * (1.0f + x)));
+    if (x > 0.5f) return 2.0f * asinf(sqrtf(0.5f * (1.0f - x)));
+    return 1.5707963267948966192f - asinf(x);
+}
+X2_HD inline float powf(float x, float y) {
+    using namespace x2math;
+    if (y == 0.0f || x == 1.0f) return 1.0f;
+    if (isnan_(x) || isnan_(y)) return x + y;
+    const float ay = y < 0.0f ? -y : y;
+    const bool yInteger = ay >= 16777216.0f || floorf(ay) == ay, yOdd = yInteger && ay < 16777216.0f && fmodf(ay, 2.0f) == 1.0f;
+    const bool xNegative = (bitsOf(x) >> 31) != 0;
+    const float ax = xNegative ? -x : x;
+    if (ay == inff_()) {
+        if (ax == 1.0f) return 1.0f;
+        return (ax < 1.0f) == (y > 0.0f) ? 0.0f : inff_();
+    }
+    if (ax == 0.0f || ax == inff_()) {
+        const bool big = (ax == 0.0f) == (y < 0.0f);  // 0^-y and inf^y are infinite
+        const float r = big ? inff_() : 0.0f;
+        return xNegative && yOdd ? -r : r;
+    }
+    if (xNegative && !yInteger) return nanf_();
+    const float r = float(exp2Of(double(y) * (logPositive(double(ax)) * 1.44269504088896340736)));
+    return xNegative && yOdd ? -r : r;
+}
+X2_HD inline double pow(double x, double y) {  // a positive finite x (MoonRay's cube roots, shade_mapnodes_more.h)
+    using namespace x2math;
+    if (y == 0.0 || x == 1.0) return 1.0;
+    if (!(x > 0.0) || !(x - x == 0.0) || !(y - y == 0.0)) return fromBits(0x7ff8000000000000ull);
+    return exp2Of(y * (logPositive(x) * 1.44269504088896340736));
+}
+// The texture filter's ellipse (texture_core.h): sqrt(x^2 + y^2) without overflow, alike on both lanes.
+X2_HD inline double hypot(double x, double y) {
+    double a = x < 0.0 ? -x : x, b = y < 0.0 ? -y : y;
+    const double inf = x2math::fromBits(0x7ff0000000000000ull);
+    if (a == inf || b == inf) return inf;
+    if (!(a == a) || !(b == b)) return a + b;
+    if (a < b) {
+        const double t = a;
+        a = b;
+        b = t;
+    }
+    if (a == 0.0) return 0.0;
+    const double r = b / a;
+    return a * sqrt(1.0 + r * r);
+}
+// The curves' (curve_embree.h): the card's own rsqrtf is an approximation; the host's is 1 / sqrtf.
+X2_HD inline float rsqrtf(float x) { return 1.0f / sqrtf(x); }
+X2_HD inline float erff(float x) {
+    if (!(x == x)) return x + x;
+    const double a = x < 0.0f ? -double(x) : double(x);
+    if (a >= 4.0) return x < 0.0f ? -1.0f : 1.0f;
+    // 2/sqrt(pi) sum (-1)^n a^(2n+1) / (n! (2n + 1)), until the terms no longer count.
+    const double a2 = a * a;
+    double term = a, sum = a;
+    for (int n = 1; n < 80; ++n) {
+        term *= -a2 / double(n);
+        const double add = term / double(2 * n + 1);
+        sum += add;
+        if ((add < 0.0 ? -add : add) < 1e-17 * sum) break;
+    }
+    const float r = float(sum * 1.12837916709551257390);
+    return x < 0.0f ? -r : r;
+}
+X2_HD inline float cbrtf(float x) {
+    using namespace x2math;
+    if (!(x - x == 0.0f) || x == 0.0f) return x + x == x ? x : x + x;  // zero and infinity themselves, NaN
+    const double a = x < 0.0f ? -double(x) : double(x);
+    // A first guess from the exponent, then Newton's steps in double.
+    double y = fromBits((bitsOf(a) / 3ull) + 0x2a9f7893782da1ceull);
+    for (int k = 0; k < 6; ++k) y = y - (y * y * y - a) / (3.0 * y * y);
+    const float r = float(y);
+    return x < 0.0f ? -r : r;
+}
+}  // namespace xpu2
 namespace xpu2 { namespace interactive { namespace sample {
 using U32=unsigned int;
 using U64=unsigned long long;

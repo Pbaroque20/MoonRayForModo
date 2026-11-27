@@ -148,7 +148,8 @@ bound to closed meshes, with or without a surface material (a mesh with no mater
 - A ray's crossings of the volume meshes along its whole length (`collectVolumeIntervals`: entry or exit by the
   triangle's geometric normal, the outermost entry and exit of each volume kept counting back from the far end), so
   the regions it starts in are known without tracking them along the path. The GPU keeps volume meshes in the same
-  instance tree under visibility 2 (surfaces 1); the CPU keeps them in an Embree scene of their own.
+  instance tree under visibility 2 (surfaces 1); the CPU keeps them in an Embree scene of their own. Each crossing's
+  distance and side are worked out again from its triangle on both lanes (`resume::geometryHit`), as a surface hit's.
 - Homogeneous volumes (no attribute bound), as this section was first written: one step a stretch of the ray
   (`decoupledRayMarching`), with BaseVolume's ramps over the stretch's length; overlapping volumes summed, the thickest
   taken, or one picked by its extinction (`volume_overlap_mode`).
@@ -159,8 +160,13 @@ bound to closed meshes, with or without a surface material (a mesh with no mater
 - The volume depth goes up by one at every BSDF bounce as well as after a ray's own scattering (MoonRay's
   multi-sampler sets a child's to its parent's plus one), so with the default `max_volume_depth` of one only camera
   rays gather in-scattered light; later rays only take the transmittance.
-- Refused: volume shaders other than BaseVolume, VdbVolume and CutoutVolume, `volume_indirect_samples` above zero,
-  more than 32 volumes. Heterogeneous and emissive volumes, VDB and cutouts, refused when this was written, have been
+- `volume_indirect_samples` (`integrateVolumeScatteringIndirect`, `volumeScatterIndirect`): at each scattering event
+  on a ray (volume depth below `max_volume_depth`), that many distance samples by the steps' scattering, a direction over
+  the sphere and from there a path of its own (computeRadianceRecurse1 with no lobe: lobe type 0, no pixel weight, a
+  diffuse, non-mirror and volume depth on), its rays marching no volume and its hits taking direct light alone, no
+  bounce (MoonRay: "to limit indirect lighting on volumes to a single bounce"). Pushed on the path stack, thinned past
+  its reserve as a bounce is. `XPU2_SESSION_VOLUME_INDIRECT=0` refuses the setting with volumes, as before.
+- Refused: volume shaders other than BaseVolume, VdbVolume and CutoutVolume, more than 32 volumes. Heterogeneous and emissive volumes, VDB and cutouts, refused when this was written, have been
   ported since (`volume_grid.h`, `volume_emission.h`; state and checks in `FEATURE_PROGRESS.md`).
 
 ## Displacement

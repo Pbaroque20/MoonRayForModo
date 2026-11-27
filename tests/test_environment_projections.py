@@ -185,6 +185,30 @@ class ModoProcedurals(unittest.TestCase):
         self.assertEqual(ep.numbers(captured('uv'))[1], 3.0)
         self.assertEqual(ep.numbers(captured('front'))[1], 0.0)
 
+    def test_triplanar_procedurals_keep_one_coordinate_on_two_planes(self):
+        # Modo's rule (tools/probe_cl_environment_projections.py tri_*): each plane's pair turned by the UV Rotation,
+        # then the X plane keeps its v only, the Y plane its u only (a Grid of Lines takes it as its v), Z both.
+        sized = [.25, 0, 0, 0, 0, .5, 0, 0, 0, 0, .4, 0, 0, 0, 0, 1]
+        hard = captured('triplanar', matrix=sized, triplanarBlending=1.0)
+        x, y, z = .95, .2, -.24
+        self.assertEqual(ep.procedural_coordinates(hard, (x, y, z)), [(0.0, .5 + y / .5, 1.0)])
+        self.assertEqual(ep.procedural_coordinates(hard, (y, x, z)), [(.5 + y / .25, 0.0, 1.0)])
+        self.assertEqual(ep.procedural_coordinates(hard, (y, x, z), line=True), [(0.0, .5 + y / .25, 1.0)])
+        self.assertEqual(ep.procedural_coordinates(hard, (y, z, x)), [(.5 + y / .25, .5 + z / .5, 1.0)])
+        turned = captured('triplanar', matrix=sized, triplanarBlending=1.0, uvRotation=math.pi / 6)
+        (u, v, _), = ep.procedural_coordinates(turned, (x, y, z))
+        self.assertEqual(u, 0.0)
+        self.assertAlmostEqual(v, .5 + math.sin(math.pi / 6) * z / .4 + math.cos(math.pi / 6) * y / .5)
+        (u, v, _), = ep.procedural_coordinates(turned, (y, x, z))
+        self.assertAlmostEqual(u, .5 + math.cos(math.pi / 6) * y / .25 - math.sin(math.pi / 6) * z / .4)
+        self.assertEqual(v, 0.0)
+        # Between the planes, weighted as an image's are; the image's own coordinates are unchanged.
+        soft = captured('triplanar', matrix=sized, triplanarBlending=.3)
+        found = ep.procedural_coordinates(soft, (.6, .0, .8))
+        self.assertAlmostEqual(sum(w for *_, w in found), 1.0)
+        self.assertEqual([w for *_, w in found], [w for *_, w in ep.coordinates(soft, (.6, .0, .8))])
+        self.assertNotEqual(ep.coordinates(hard, (x, y, z))[0][0], 0.0)
+
     def test_a_plain_spherical_procedural_is_evaluated_as_modo_does(self):
         layer = {'kind': 'procedural', 'effect': 'envColor', 'opacity': 1.0, 'blend': 'normal', 'invert': False, 'groups': [],
                  'procedural': pattern('grid', {'type': 'square', 'lineWidth': .1, 'transWidth': .1, 'bias': .5, 'gain': .5}),
@@ -323,14 +347,16 @@ class NativeBake(unittest.TestCase):
     def test_the_adapter_lays_modo_procedurals_as_python_does(self):
         held = adapter()
         if held is None or not environment_layers.projections_laid(held):
-            self.skipTest('geometry adapter with MR_environment_projections_version 2 not built (tools/build_modo_bridge.py)')
+            self.skipTest('geometry adapter with MR_environment_projections_version 3 not built (tools/build_modo_bridge.py)')
         turned = [0.841, 0.163, -0.516, 0, 0.051, 0.925, 0.376, 0, 0.539, -0.342, 0.77, 0, 0, 0, 0, 1]
         sized = [.5 * v if i < 4 else .25 * v if i < 8 else .4 * v if i < 12 else v for i, v in enumerate(turned)]
         grids = [('grid', shape, .2, .3) for shape in ('line', 'square', 'triangle', 'hexagon')] + \
                 [('dots', shape, .6, .3) for shape in ('square', 'hexagon')] + [('grid', 'square', .3, 0.0), ('dots', 'triangle', .6, .2)]
         projections = [('planar', 1, sized, {'uvRotation': .5}), ('cylindrical', 0, sized, {'wrapU': 2.0}), ('spherical', 2, turned, {}),
                        ('cubic', 1, sized, {}), ('box', 1, sized, {}), ('lightprobe', 1, sized, {}), ('uv', 1, turned, {}),
-                       ('front', 1, IDENTITY, {}), ('planar', 1, sized, {'tileU': 'reset'}), (None, 1, turned, {})]
+                       ('front', 1, IDENTITY, {}), ('planar', 1, sized, {'tileU': 'reset'}), (None, 1, turned, {}),
+                       ('triplanar', 1, sized, {'triplanarBlending': .3, 'uvRotation': .5}), ('triplanar', 0, turned, {'triplanarBlending': 0.0}),
+                       ('triplanar', 2, sized, {'triplanarBlending': .5})]
         for index, (laid, axis, matrix, extra) in enumerate(projections * 2):
             kind, shape, width, soft = grids[index % len(grids)]
             data = {'kind': kind, 'pattern': shape, 'width': width, 'transition': soft, 'bias': .4, 'gain': .6,

@@ -12,6 +12,8 @@ to reading a polygon at a time where the adapter is missing or older. Build it w
 `MoonRayGeometry.lx` with source-version and binary hashes into `build/modo-bridge`, or the
 folder given with `--output-dir` (the 0.3.50.1 release used `build/modo-geometry-fast`).
 `tools/probe_mesh_reader.py` checks in Modo that the two ways of reading give the same mesh.
+`smooth_split.cpp` (`MR_smooth_split`, added for 0.5.6.3) splits a displaced polygon cage onto Modo's Smooth Positions
+surface for every engine, as `moonray_modo/smooth_positions.py` does in Python where the adapter is older.
 
 `render_cache.cpp` hands evaluated geometry over in two files (`MR_geometry_snapshot_binary`): a small
 JSON text that names the surfaces and their segments, and the segments' long rows of numbers as they

@@ -145,6 +145,8 @@ def state():
     if held == 'stale': return 'Out of date' + (' (%s)' % why if why else '')
     # Memory (the compile's guard, asked 2026-11-07): not begun for want of free memory, or stopped as it ran low.
     tail = ' '.join(lines[-3:])
+    # A whole compile at once that could not run starts again one module at a time by itself (_tick): these are what is
+    # left when even that could not.
     if 'not enough free memory' in tail: return 'Not compiled (needs more free memory: close other programs)'
     if 'memory ran low' in tail: return 'Stopped (memory ran low: close other programs, compile again)'
     # Just that (asked 2026-10-30); why a compile failed is in its log and the Render Log.
@@ -188,6 +190,14 @@ def _tick():
         del _ticking[:]
         from moonray_modo import native
         native._shaders_asked[1] = None    # whether they are compiled, asked again at once
+        if _automatic[0]:
+            _automatic[0] = False
+            try: lines = [l for l in native.xpu2_shaders_log().read_text(encoding='utf-8', errors='replace').splitlines() if l.strip()]
+            except OSError: lines = []
+            if retry_low(lines):
+                lx.out('MoonRay XPU2: not enough memory to compile every module at once; compiling again one module at a time')
+                start_compile(True)
+                return
     _notify()
 
 
@@ -205,6 +215,44 @@ def _watch():
     _ticking.append(timer)
 
 
+# Automatic low memory (asked 2026-11-26: "an automatic low-memory mode to handle these high RAM usages"): a whole
+# compile at once that could not begin, or stopped as memory ran low, is started again at once one module at a time;
+# OptiX's cache keeps the modules it finished. Once a press: _automatic[0] while that press may still go on so.
+_automatic = [False]
+
+
+def start_compile(low):
+    """The compile started in the background, all modules at once or (low) one at a time."""
+    import subprocess
+    import time
+    from moonray_modo import native
+    exe = native.xpu2_runtime() / 'moonray_xpu2.exe'
+    log = native.xpu2_shaders_log(); log.parent.mkdir(parents=True, exist_ok=True)
+    _pressed[0] = time.monotonic()
+    env = dict(os.environ)
+    env.update(native.xpu2_environment(native.default_runtime()))
+    for key in ('PYTHONHOME', 'PYTHONPATH', 'QT_PLUGIN_PATH', 'QT_QPA_PLATFORM_PLUGIN_PATH'): env.pop(key, None)
+    env['XPU2_COMPILE_LOW_MEMORY'] = '1' if low else '0'
+    with open(log, 'w', encoding='utf-8') as out:
+        process = subprocess.Popen([str(exe), '--compile-shaders'], cwd=str(exe.parent), env=env, stdout=out,
+                                   stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+                                   creationflags=0x00000008 | 0x08000000 | 0x00004000)  # detached, no window, below normal
+    log.with_suffix('.pid').write_text(str(process.pid))
+    native._shaders_asked[1] = None
+    _watch()
+    _notify()
+    lx.out('MoonRay XPU2: compiling the shaders in the background%s (%s); see %s'
+           % (', one module at a time (low memory)' if low else '', how_long(), log))
+
+
+def retry_low(lines):
+    """Whether a finished compile's log asks for Automatic's second go: a whole compile at once that would not begin for
+    want of free memory, or stopped as memory ran low."""
+    if any('low memory:' in line for line in lines): return False
+    tail = ' '.join(lines[-3:])
+    return 'not enough free memory' in tail or 'memory ran low' in tail
+
+
 class CompileShaders(Followed, lxu.command.BasicCommand):
     """Compile XPU2's GPU programs into OptiX's disk cache in the background, once (the state says how long it has left),
     after which every XPU2 preview starts in seconds. Modo stays usable meanwhile."""
@@ -214,28 +262,15 @@ class CompileShaders(Followed, lxu.command.BasicCommand):
     def basic_Enable(self, msg): return not state().startswith('Compiling')
     def basic_ButtonName(self): return button_name(state())
     def basic_Execute(self, msg, flags):
-        import subprocess
         from moonray_modo import native
-        exe = native.xpu2_runtime() / 'moonray_xpu2.exe'
-        if not exe.is_file():
+        if not (native.xpu2_runtime() / 'moonray_xpu2.exe').is_file():
             lx.out('MoonRay XPU2: no runtime-xpu2 in this kit'); return
         if state().startswith('Compiling'):
             lx.out('MoonRay XPU2: the shaders are compiling already'); return
-        log = native.xpu2_shaders_log(); log.parent.mkdir(parents=True, exist_ok=True)
-        import time
-        _pressed[0] = time.monotonic()
-        env = dict(os.environ)
-        env.update(native.xpu2_environment(native.default_runtime()))
-        for key in ('PYTHONHOME', 'PYTHONPATH', 'QT_PLUGIN_PATH', 'QT_QPA_PLATFORM_PLUGIN_PATH'): env.pop(key, None)
-        with open(log, 'w', encoding='utf-8') as out:
-            process = subprocess.Popen([str(exe), '--compile-shaders'], cwd=str(exe.parent), env=env, stdout=out,
-                                       stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
-                                       creationflags=0x00000008 | 0x08000000 | 0x00004000)  # detached, no window, below normal
-        log.with_suffix('.pid').write_text(str(process.pid))
-        native._shaders_asked[1] = None
-        _watch()
-        _notify()
-        lx.out('MoonRay XPU2: compiling the shaders in the background (%s); see %s' % (how_long(), log))
+        # One module at a time where free RAM is short of a whole compile at once; a whole compile that cannot begin or
+        # runs short starts again one module at a time (_tick).
+        _automatic[0] = True
+        start_compile(low_memory_now())
 
 
 class ShaderState(Followed, lxu.command.BasicCommand):
@@ -260,17 +295,76 @@ class ShaderState(Followed, lxu.command.BasicCommand):
 # under NEED_GB free, and stops itself when free memory falls under a twentieth of the machine's (2 GB at least).
 # PEAK_GB is the most a whole compile has taken (d53fc99f); a compile finished here says its own peak in the log.
 NEED_GB = 8.0
-PEAK_GB = 11.0
+# 16.6 GB for the programs with the lanes' shared arithmetic (2026-11-26, RTX 3090, a whole compile at once).
+PEAK_GB = 17.0
 GB = 1024.0 ** 3
 
 
-def _need():
+# Low memory (asked 2026-11-26: a machine with less than 8 GB could not compile): the compile takes one module at a
+# time (XPU2_COMPILE_LOW_MEMORY=1, async_gpu.h), so it needs about the largest module's memory alone. LOW_NEED_GB is the
+# guard's own (xpu2_session.cc, CompileNeedLowGB); LOW_PEAK_GB the most a low-memory compile has taken.
+LOW_NEED_GB = 3.0
+LOW_PEAK_GB = 4.5
+# Chosen by itself, never by a preference (asked 2026-11-26: "no one should have a preference to choose how to
+# compile"): compile_low_memory.
+
+
+def _need(low=False):
+    if low: return LOW_NEED_GB
     try: return max(1.0, float(os.environ.get('XPU2_COMPILE_NEED_GB', NEED_GB)))
     except ValueError: return NEED_GB
 
 
-def _measured_peak(lines):
-    """The last finished compile's peak ("memory at most X GB") from its log, or None."""
+def compile_low_memory(total, free, peak=None):
+    """Whether a compile goes one module at a time, from the machine's RAM in bytes: where free RAM now is short of what
+    the whole compile at once takes (peak: the last such compile's here, else PEAK_GB) above the guard's floor."""
+    if peak is None: peak = PEAK_GB
+    total_gb, free_gb = total / GB, free / GB
+    # All at once only with room for its whole peak now, above the guard's floor: a compile that runs short stops and
+    # starts again one module at a time (start_compile), which costs the time it had spent.
+    return free_gb < max(_need(), peak) + max(2.0, total_gb / 20.0)
+
+
+def _ram():
+    """(total, free) RAM in bytes, or None where Windows does not say."""
+    try:
+        import ctypes
+        import ctypes.wintypes as w
+
+        class Status(ctypes.Structure):
+            _fields_ = [('dwLength', w.DWORD), ('dwMemoryLoad', w.DWORD)] + [(n, ctypes.c_ulonglong) for n in (
+                'ullTotalPhys', 'ullAvailPhys', 'ullTotalPageFile', 'ullAvailPageFile', 'ullTotalVirtual',
+                'ullAvailVirtual', 'ullAvailExtendedVirtual')]
+        status = Status()
+        status.dwLength = ctypes.sizeof(status)
+        if not ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)): return None
+    except (AttributeError, OSError):
+        return None
+    return status.ullTotalPhys, status.ullAvailPhys
+
+
+def low_memory_now():
+    """Whether a compile started now goes one module at a time (the machine's RAM free now)."""
+    ram = _ram()
+    if ram is None: return False
+    return compile_low_memory(ram[0], ram[1], _full_peak())
+
+
+def _full_peak():
+    """What a whole compile at once takes here: the last one's own peak (its log), else PEAK_GB."""
+    try:
+        from moonray_modo import native
+        lines = native.xpu2_shaders_log().read_text(encoding='utf-8', errors='replace').splitlines()
+    except Exception:
+        return PEAK_GB
+    return max(PEAK_GB, _measured_peak(lines, False) or 0.0)
+
+
+def _measured_peak(lines, low=None):
+    """The last finished compile's peak ("memory at most X GB") from its log, or None; with low given, only a compile
+    of that kind's (a low-memory compile's log says "low memory:")."""
+    if low is not None and any('low memory:' in line for line in lines) != low:
+        return None
     for line in reversed(lines):
         if 'memory at most' in line:
             try: return float(line.split('memory at most', 1)[1].split()[0])
@@ -278,12 +372,13 @@ def _measured_peak(lines):
     return None
 
 
-def memory_reading(total, free, need=NEED_GB, peak=PEAK_GB):
+def memory_reading(total, free, need=NEED_GB, peak=PEAK_GB, low=False):
     """The meter in words, from the machine's RAM in bytes: free of total, and whether that is enough to compile.
-    (level, text), level 0 enough, 1 tight (it begins, but may stop as other programs take memory), 2 not enough."""
+    (level, text), level 0 enough, 1 tight (it begins, but may stop as other programs take memory), 2 not enough.
+    low: the compile goes one module at a time (said, and its own thresholds given as need and peak)."""
     free_gb, total_gb = free / GB, total / GB
     floor = max(2.0, total_gb / 20.0)
-    head = '%.1f GB free of %.0f GB' % (free_gb, total_gb)
+    head = '%.1f GB free of %.0f GB%s' % (free_gb, total_gb, ', low memory' if low else '')
     if total_gb < need + floor:
         return 2, '%s: this machine has too little RAM to compile (needs about %.0f GB free)' % (head, need)
     if free_gb < need:
@@ -295,29 +390,19 @@ def memory_reading(total, free, need=NEED_GB, peak=PEAK_GB):
 
 def memory_state():
     """The meter's words now, or '' where Windows does not say."""
-    try:
-        import ctypes
-        import ctypes.wintypes as w
-
-        class Status(ctypes.Structure):
-            _fields_ = [('dwLength', w.DWORD), ('dwMemoryLoad', w.DWORD)] + [(n, ctypes.c_ulonglong) for n in (
-                'ullTotalPhys', 'ullAvailPhys', 'ullTotalPageFile', 'ullAvailPageFile', 'ullTotalVirtual',
-                'ullAvailVirtual', 'ullAvailExtendedVirtual')]
-        status = Status()
-        status.dwLength = ctypes.sizeof(status)
-        if not ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)): return ''
-    except (AttributeError, OSError):
-        return ''
-    peak = PEAK_GB
+    ram = _ram()
+    if ram is None: return ''
+    low = compile_low_memory(ram[0], ram[1], _full_peak())
+    peak = LOW_PEAK_GB if low else PEAK_GB
     try:
         from moonray_modo import native
         lines = native.xpu2_shaders_log().read_text(encoding='utf-8', errors='replace').splitlines()
-        measured = _measured_peak(lines)
+        measured = _measured_peak(lines, low)
         # What it took here, with room for a driver that compiles larger; never under the need to begin.
-        if measured: peak = max(_need(), measured * 1.5)
+        if measured: peak = max(_need(low), measured * 1.5)
     except Exception:
         pass
-    return memory_reading(status.ullTotalPhys, status.ullAvailPhys, _need(), peak)[1]
+    return memory_reading(ram[0], ram[1], _need(low), peak, low)[1]
 
 
 MEMORY_NOTIFIER = 'moonray.xpu2.compileMemory'

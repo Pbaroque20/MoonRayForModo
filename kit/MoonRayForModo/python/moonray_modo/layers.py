@@ -418,7 +418,20 @@ def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, mat
                         # A pattern only the 3D map draws (Grid's and Dots' Cube): MoonLightIPR has none of it.
                         if not solid_map:raise
                         node['procedural']=None
-                    warnings.append('Procedural '+layer.name+': '+('drawn through the object' if solid_map else 'sampled 2D '+layer.type+' translation')+'; Modo pattern equivalence is unverified.')
+                    if node['procedural'] and node['procedural']['kind'] in ('grid','dots') and node.get('projection') in ('uv','planar'):
+                        # Modo turns and wraps a Grid's or Dots' UVs about their middle, and a Planar one's Wraps do
+                        # nothing (tools/probe_cl_surface_procedurals.py); the plugin's UV transform turns and scales
+                        # about 0: the baked pattern is moved to make up for it (procedurals.uv_offset).
+                        from .procedurals import uv_offset
+                        if node['projection']=='planar':node['scale']=[1.0,1.0]
+                        offset=uv_offset(node.get('rotation',0),node.get('scale',[1,1]))
+                        if offset:node['procedural']['offset']=offset
+                    # Grid and Dots under UV or Planar are checked against Modo's renders (tests/test_surface_procedurals.py):
+                    # no notice for them.
+                    checked=(not solid_map and node.get('procedural') and node['procedural'].get('kind') in ('grid','dots')
+                             and node.get('projection') in ('uv','planar'))
+                    if not checked:
+                        warnings.append('Procedural '+layer.name+': '+('drawn through the object' if solid_map else 'sampled 2D '+layer.type+' translation')+'; Modo pattern equivalence is unverified.')
                 else:
                     node.update(color1=color(layer,'color1',(0,0,0)) if is_color else [float(channel(layer,'value1',0))]*3,
                                 color2=color(layer,'color2') if is_color else [float(channel(layer,'value2',1))]*3)

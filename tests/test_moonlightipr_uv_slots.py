@@ -22,9 +22,9 @@ class UvSlotTests(unittest.TestCase):
         header = text('moonlightipr/include/moonlightipr/moonlightipr.h')
         self.assertIn('const uint32_t UV_SLOT_COUNT = 64;', header)
         self.assertIn('uint32_t tangentSlot = 64;', header)
-        self.assertIn('0x63534c4d', text('moonlightipr/session/scene_loader.cpp'))
+        self.assertIn('0x65534c4d', text('moonlightipr/session/scene_loader.cpp'))
         scene = text('kit/MoonRayForModo/python/moonray_modo/moonlightipr_scene.py')
-        self.assertIn("b'MLSc'", scene)
+        self.assertIn("b'MLSe'", scene)
         self.assertIn('PACKED_FORM = 4', scene)
 
     def test_sixty_four_coordinate_sets_get_slots(self):

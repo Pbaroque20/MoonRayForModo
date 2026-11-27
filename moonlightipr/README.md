@@ -1,6 +1,6 @@
 # MoonLightIPR
 
-*Updated November 1, 2026. Every release since 0.3.50.1 ships MoonLightIPR, 0.5.2 the latest; what is added after a release is on the `MoonLightIPR` branch first. Sections that record a check keep the date it was made.*
+*Updated November 27, 2026. Every release since 0.3.50.1 ships MoonLightIPR, 0.5.6.2 the latest; what is added after a release is on the `MoonLightIPR` branch first (now for 0.5.6.3). Sections that record a check keep the date it was made.*
 
 Created by Raphael Tobar. Released under the [MIT License](LICENSE). MoonLightIPR is not a DreamWorks
 Animation product and is not affiliated with, sponsored by or endorsed by DreamWorks Animation;
@@ -32,14 +32,21 @@ build to an installed kit during development.
   the camera or of items as it happens, each step at one sample a pixel, and samples to the end
   once the mouse is let go. Press the button again to switch realtime off.
 - The buffer list offers Beauty, which is the default, and Denoised Beauty; it holds both, so
-  changing between them renders nothing again.
-- It draws Modo's standard and Principled materials, MoonRay's Dwa surface materials,
+  changing between them renders nothing again. The AOVs below are turned on in Render Settings'
+  own MoonLightIPR AOV section and shown in the same list.
+- Render and Render Animation can use it too (the Engine choice): each frame at the render's resolution, to the Render
+  samples, with full-size textures, written as EXRs.
+- It draws Modo's standard and Principled materials, MoonRay's Dwa surface materials (glitter included),
   material stacks from the Shader Tree, imported MaterialX graphs, MoonRay's own light
-  items, curves and hair, subdivision surfaces, depth of field and motion blur.
+  items, curves and hair, subdivision surfaces, displacement, oceans, Blobs and Sprites, a Backplate and
+  shadow catchers, depth of field and motion blur.
 - It shades hair as MoonRay's hair material does, reads MoonRay's skin material, draws curves as
   curves, and draws fog: even fog in a MoonRay box or sphere, and VDB volumes from their files.
 - Besides the beauty it makes Diffuse, Glossy, Emission, Environment background, Alpha, Camera depth,
   Shading normal, World position, Albedo, Motion vectors and a Shadow matte; Cryptomatte and the other buffers need MoonRay.
+- The first time a kind of scene is drawn (plain, subsurface, fog...) its program is compiled for the card: about 26 to
+  50 s on an RTX 3090, said in the status line, and kept by the driver after that. The session starts compiling the
+  plain one in the background as soon as it starts.
 - Agreement with MoonRay is measured, scene by scene, further down. It is close on
   lights and plain materials and looser on layered materials and glass.
 
@@ -332,8 +339,8 @@ runtime, and falls back to the copy in the kit's own runtime:
 
 For development, the `MOONRAY_MODO_MOONLIGHTIPR` environment variable names a staged
 folder instead. Then choose **MoonLightIPR** in the preview window's engine popup and press
-RT Off; it follows the scene until the button is pressed again. Motion blur in
-MoonLightIPR renders is a preference (Options > Preview Preferences).
+RT Off; it follows the scene until the button is pressed again. Motion blur follows the
+render camera's Motion Blur (or the render settings'), as MoonRay's does; since 0.5.5 it has no preference of its own.
 
 Edits cost what the design intends: a camera or material change only restarts
 accumulation, a transform change rebuilds the instance layer, and only a new mesh
@@ -359,12 +366,12 @@ running session leaves out the data of meshes it already holds.
 | UDIM image sets | One texture per tile, looked up by the unit square the coordinates fall in |
 | OCIO texture and environment colour spaces, input colour rules, the ACEScg working space | Images go through the configured OCIO config to linear, as the plugin's `maketx` step does; material colours are computed in Rec.709 and taken to the working space on the GPU, environment images by `oiiotool`. Not tested: no OCIO config was at hand |
 | Bump layers and `bump_strength` | The height's slope tilts the shading normal, with the plugin's own formula and step; normal and bump maps combine |
-| Image files | Converted once by the runtime's `oiiotool` to an uncompressed Targa (or a PFM for `.exr`, `.hdr`, `.tx`), cached under `%LOCALAPPDATA%/MoonRayForModo/MoonLightIPR`, capped at 1024 pixels a side, and read by the session; sRGB images are decoded on the GPU |
-| Native MoonRay materials (`native_shader`, `native_parameters`), from Assign MoonShine Material or a material graph's output node | `DwaBaseMaterial`, `DwaMetalMaterial`, `DwaSolidDielectricMaterial`, `DwaRefractiveMaterial` and `DwaEmissiveMaterial` are read from their own attributes, with MoonRay's defaults where unset: albedo, metallic and its colour, roughness, index, the specular, transmission, clearcoat and emission switches and values, presence, anisotropy, scattering radius and colour, dispersion, and the Beckmann or GGX choice. Fuzz is drawn, and so is iridescence: the specular or clear coat reflection tinted by angle, from the hue wheel between its two colours or from its ramp, as MoonRay's IridescenceBsdfLobe tints it (iridescence.py works the colours out as a table, the kernel reads it by the half vector's angle; a kernel without it is made for scenes that have none). Glitter is named in the notices, as are maps wired into a graph (their constant values are shown). Other native shaders are shown with the Modo material's values. A green `DwaBaseMaterial`, a copper `DwaMetalMaterial` and a clearcoated, glowing one compare at 0.996 with 94% of tiles within 10% |
+| Image files | Converted once by the runtime's `oiiotool` to a Targa (or a float PFM for `.exr`, `.hdr`, `.tx`), cached in the kit's Cache folder (`MoonLightIPR`), 1024 pixels a side for realtime and full size for a Render, and read by the session, which compresses them for the card (BC7 or BC6H, with mips: see Textures above); sRGB images are decoded on the GPU |
+| Native MoonRay materials (`native_shader`, `native_parameters`), from Assign MoonShine Material or a material graph's output node | `DwaBaseMaterial`, `DwaMetalMaterial`, `DwaSolidDielectricMaterial`, `DwaRefractiveMaterial` and `DwaEmissiveMaterial` are read from their own attributes, with MoonRay's defaults where unset: albedo, metallic and its colour, roughness, index, the specular, transmission, clearcoat and emission switches and values, presence, anisotropy, scattering radius and colour, dispersion, and the Beckmann or GGX choice. Fuzz is drawn, and so is iridescence: the specular or clear coat reflection tinted by angle, from the hue wheel between its two colours or from its ramp, as MoonRay's IridescenceBsdfLobe tints it (iridescence.py works the colours out as a table, the kernel reads it by the half vector's angle; a kernel without it is made for scenes that have none). Glitter (metallic flakes) is drawn as MoonRay's Glitter draws it: its Worley flake search, up to four macro flakes as lobes about their own normals and the rest as its stochastic flakes lobe, colours, density, size, randomness, mask and layering, under the coat too; flakes stay put on a bending mesh by its rest positions, and Keep Metallic Flakes keeps their sparkle through the denoiser (2026-11-25). Maps wired into a graph are named in the notices (their constant values are shown). Other native shaders are shown with the Modo material's values. A green `DwaBaseMaterial`, a copper `DwaMetalMaterial` and a clearcoated, glowing one compare at 0.996 with 94% of tiles within 10% |
 | Subdivision surfaces, their level and creases | The control cage goes to the session, which runs that many rounds of Catmull-Clark: open edges and the corners of open meshes stay sharp, as MoonRay's default boundary rule has them, and a crease stays sharp for as many rounds as its sharpness. Texture coordinates are smoothed with the surface, a seam kept as an open edge, as MoonRay's default. Capped at 3,000,000 quads. A rounded cube and a creased open one compare at 1.004 with 95% of tiles within 10% |
 | Texture coordinates | Up to 8 coordinate sets per scene, taken from the per-projection sets the capture already bakes, stored per triangle corner |
-| An environment image (latitude-longitude, untransformed UVs) | Converted once to a 1024 x 512 linear float image and importance sampled, with MoonRay's `EnvLight` orientation and the locator's rotation; one image for lighting and one behind the scene |
-| Layered environments and physical skies | Composed by the plugin's own `environment_layers.texture`, at 256 x 128, then treated as an image |
+| An environment image | Converted once to a 1024 x 512 linear float image and importance sampled, facing as Modo shows it (from 0.5.6.3; it was mirrored front to back before) and turned by the locator; one image for lighting and one behind the scene. An image in another projection than latitude-longitude (cubic, light probe, planar and the rest) is laid out as latitude-longitude by the plugin first, as for MoonRay (a Source Override) |
+| Layered environments, physical skies and environment procedurals | Composed by the geometry adapter (`MR_environment_projections_version`), Grid, Dots and triplanar procedurals as Modo draws them, then treated as an image; a MoonRay Environment Light item is placed by its own matrix, as MoonRay places it |
 | Preview environment intensity; constant and gradient environments | One summed lighting map, and a separate camera background that honours each environment's camera and lighting visibility (MoonRay hides the preview environment light from the camera) |
 | Distant lights | Uniform disc with MoonRay's normalization (`1 / sin^2` of the angular radius) and its direction convention, both read from `DistantLight.cc` |
 | Sphere, rect, disk and spot lights | The same shapes, one-sided where MoonRay's are, with its default normalization (`color * intensity / (pi * area)`) and the spot's focal-plane falloff with the ease-in-out curve. They light the scene and show in reflections, and to the camera where Visible in Camera is on |
@@ -373,7 +380,7 @@ running session leaves out the data of meshes it already holds.
 | Mesh lights (Object controls) | The object's triangles emit from both faces, chosen by area, normalized by the total area; the object is seen shining, as MoonRay shows a light that is visible to the camera, unless that is switched off. Up to 50,000 triangles, not instanced |
 | A surface's visibility to the camera, indirect light, reflections, refractions and shadows | Each instance carries a mask and each ray asks for its kind. Light a scattered ray comes upon is stopped by what casts shadows, as in MoonRay, whatever the ray itself goes on to meet. Checked on four scenes (hidden from the camera; no shadow; camera only; shadow only): 96 to 100% of the picture within 10% of MoonRay. Visibility to subsurface light is not told apart. |
 | Depth of field, f-stop, focus distance, iris blades and rotation | MoonRay's lens: radius from the focal length and f-stop, a disc or a polygon |
-| A snapshot captured with motion blur (`motion_steps`, `matrix_close`, `instances_close`, `vertices_close`) | Each sample renders the whole scene at one moment of the shutter, spread evenly over it: the camera and instance transforms are blended, and meshes that change shape are blended and refitted. Lights move too: each light's pose when the shutter closes is blended in (mesh lights stay still). The panel captures such a snapshot when **Motion blur in MoonLightIPR renders** is on (Options > Preview Preferences; off by default): for Render Preview, and while the scene is followed, once an edit is let go |
+| A snapshot captured with motion blur (`motion_steps`, `matrix_close`, `instances_close`, `vertices_close`) | Each sample renders the whole scene at one moment of the shutter, spread evenly over it: the camera and instance transforms are blended, and meshes that change shape are blended and refitted. Lights move too: each light's pose when the shutter closes is blended in (mesh lights stay still). The panel captures such a snapshot whenever the render camera's Motion Blur, or the render settings', is on: for Render Preview, and while the scene is followed, once an edit is let go |
 | Working colour space | The same conversion `rdla.py` applies to colours |
 | MoonRay items (`entities`, from **MoonRay > Add MoonRay Item**) | `dwEnvLight` becomes a constant or image environment, and can replace Modo's own; distant, sphere, rect, disk, spot, cylinder and portal lights become the lights above; a rect light's texture is shown across it; `dwBoxGeometry` and `dwSphereGeometry` become meshes; a `dwMeshLight` makes the Modo mesh it names emit. Intensity, decay, colour ramp, rod, barn door, cookie and VDB light filters are applied (also those set in Lighting controls), and textures on every kind of light. Combine filters are drawn, but for one inside another that does not multiply; that and what else has no counterpart are named in the notices. Compared with MoonRay: an environment, a sphere light, a box and a ball 1.014 (96% of tiles within 10%); decay, tint and ramp filters 1.009 (97%); a textured rect light 1.014 (93%); a mesh light item 1.014 (85%) |
 
@@ -538,6 +545,19 @@ Added to what is translated since the table was written:
   the geometry did not foresee, is kept whole in the computer's memory with a line said for it, where the scene used to
   be refused (`MOONLIGHTIPR_TEXTURES_REFUSED=1` simulates it for tests). Scenes otherwise render byte for byte as before.
 
+Since the 0.5.6.2 release (2026-11-26, for 0.5.6.3):
+
+- **Adaptive displacement**: "As modeled" displacement is cut to what the camera sees (the kit's `displacement_budget.py`),
+  so Modo's default Min Edge Length and Displacement Rate no longer blow up a large displaced plane. A displaced
+  polygon mesh is welded, each point displaced once, so no cracks open along its edges; all displaced meshes together
+  keep within a total (each keeps `DISPLACED_TRIANGLES`, 400,000, while there are at most 15; more share it). Smooth
+  Positions is followed: the cage is split and smoothed as Modo smooths it before displacement.
+- **Displaced hard edges stay sharp** (a Source Override, scene form `e`): each point is still displaced once, then the
+  points are split at the mesh's hard edges so each side shades over its own faces, as Modo shows them.
+- **Blobs and Sprites**: a Blob is a mesh made from its particles and drawn as any mesh; a Sprite is fog in puffs, lit by
+  the lights alone (not the environment), casting no shadow, as Modo draws it (scene form `d`).
+- **Cameras**: Modo's Spherical Map and Spherical VR cameras face as in Modo (they were mirrored), during drags too.
+
 ## Build
 
 MoonLightIPR uses the pinned CUDA 12.8 and OptiX 7.6 components that `tools/setup_xpu.py`
@@ -616,12 +636,12 @@ mouse button is let go.
 
 ## Known gaps in the hookup
 
-- MoonLightIPR produces Beauty and Denoised Beauty only; the other buffers need MoonRay.
-  Choosing a Cryptomatte buffer says that it needs the MoonRay engine.
+- MoonLightIPR makes the beauty, Denoised Beauty and the AOVs listed above; Cryptomatte and the other
+  buffers need MoonRay, and choosing one says so.
 - With the ACES or an OCIO view transform the picture goes through a slower display path
   than plain sRGB; its cost during fast IPR updates has not been measured.
-- Viewport navigation reaches MoonLightIPR only when the mouse button comes up, because Modo
-  reports it only then.
+- Viewport navigation reaches MoonLightIPR when the mouse button comes up, unless Follow drags is
+  on in the Preview Preferences (off by default), which follows each step of a drag.
 
 ![A moving cube and a moving spot light, MoonRay left and MoonLightIPR right](../docs/images/moonlightipr-motion.png)
 

@@ -192,11 +192,14 @@ struct DeviceMaterial {
 // absorbed, what it gives off, and which way it scatters. It is even all through, as MoonRay's BaseVolume with
 // constant values, or as thick at each place as a grid of densities says, as a VDB volume: the grid fills the
 // unit cube that rows takes a point of the scene into, and what the fog stops is multiplied by its value there.
+// How a fog is lit (DeviceVolume::switches): one that casts no shadow, on itself or anything else (light reaches into
+// it as though it were not there), and one the environment does not light. A Modo Sprite's fog is both (particles.py).
+const unsigned FOG_NO_SHADOW = 1, FOG_NO_ENVIRONMENT = 2;
 struct DeviceVolume {
     float extinction[3];
     float anisotropy;           // -1 back the way the light came, 0 evenly, 1 straight on
     float albedo[3];
-    float pad0;
+    unsigned switches;          // FOG_NO_SHADOW, FOG_NO_ENVIRONMENT
     float emission[3];
     float peak;                 // the grid's largest value
     unsigned long long grid;    // a 3D texture of densities, or 0 for an even fog

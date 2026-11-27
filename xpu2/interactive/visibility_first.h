@@ -3,7 +3,9 @@
 // still, then by the full plan, each made behind the pictures on the refine job's thread (xpu2_session.cc RefineJob).
 //
 // 1. What the camera sees: a grid of camera rays (every stride pixels each way) traced on the coarse plan's CPU scene,
-//    their first hits (in the frame and not behind anything; what is seen only through glass is left to the full plan).
+//    their first hits (in the frame and not behind anything), and behind a hit whose material may be seen through
+//    (cpu::Mesh::seeThrough: glass, transmission, presence) the next ones, straight on, up to four surfaces deep: what
+//    is seen through a window or a windscreen comes first too (XPU2_SESSION_VISIBLE_THROUGH=0: first hits alone).
 // 2. Everything else stays a stand-in: the coarse pass's own meshes, taken over as they are (cpu::Limits::fullDetail).
 // 3. The full plan then takes the visible meshes over and makes the rest. Neither the coarse plan nor the visible one is
 //    the scene complete: their samples are pictures alone, as the coarse pass's are, and the frame renders from its
@@ -31,6 +33,15 @@ inline bool on() {
     return v;
 }
 // One camera ray every stride pixels each way (XPU2_SESSION_VISIBLE_STRIDE, 4 by default: 32,400 rays at 960x540).
+// The surfaces a ray goes through, see-through ones (XPU2_SESSION_VISIBLE_THROUGH, 4 by default; 0 or 1: first hits).
+inline unsigned through() {
+    static const unsigned v = [] {
+        const char* e = std::getenv("XPU2_SESSION_VISIBLE_THROUGH");
+        const long n = e ? std::atol(e) : 4;
+        return unsigned(std::max(1L, std::min(n, 16L)));
+    }();
+    return v;
+}
 inline unsigned stride() {
     static const unsigned v = [] {
         const char* e = std::getenv("XPU2_SESSION_VISIBLE_STRIDE");
@@ -44,7 +55,7 @@ struct Seen {
     std::shared_ptr<std::set<std::string>> geometries = std::make_shared<std::set<std::string>>();  // every geometry seen
     std::set<std::string> standIns;     // the plan's stand-in geometries (a coarse mesh of theirs)
     std::set<std::string> standInsSeen; // of them, the ones seen
-    size_t rays = 0, hits = 0;
+    size_t rays = 0, hits = 0, behind = 0;  // behind: hits past a see-through surface
     double seconds = 0;
     // Worth a plan of its own: some stand-ins seen, and some not (all seen: the full plan is that plan).
     bool worth() const { return !standInsSeen.empty() && standInsSeen.size() < standIns.size(); }
@@ -62,7 +73,8 @@ inline Seen seen(const cpu::Plan& plan, const async::CpuScene& scene, const surf
     const unsigned rows = (h + s - 1) / s, cols = (w + s - 1) / s;
     const unsigned threads = std::max(1u, std::min(8u, std::thread::hardware_concurrency() / 2));
     std::vector<std::vector<unsigned char>> hit(threads, std::vector<unsigned char>(plan.meshes.size(), 0));
-    std::vector<size_t> rays(threads, 0), hits(threads, 0);
+    std::vector<size_t> rays(threads, 0), hits(threads, 0), behind(threads, 0);
+    const unsigned deepest = through();
     std::vector<std::thread> pool;
     for (unsigned t = 0; t < threads; ++t)
         pool.emplace_back([&, t] {
@@ -73,16 +85,24 @@ inline Seen seen(const cpu::Plan& plan, const async::CpuScene& scene, const surf
                     if (!surface::cameraRay(cam, float(c * s) + 0.5f * float(s), float(r * s) + 0.5f * float(s), ray)) continue;
                     ray.mask = 1u;  // a camera ray
                     ++rays[t];
-                    const resume::Hit found = backend.trace(ray);
-                    if (found.geom == ~0u || found.geom >= hit[t].size()) continue;
-                    ++hits[t];
-                    hit[t][found.geom] = 1;
+                    for (unsigned layer = 0; layer < deepest; ++layer) {
+                        const resume::Hit found = backend.trace(ray);
+                        if (found.geom == ~0u || found.geom >= hit[t].size()) break;
+                        ++(layer ? behind[t] : hits[t]);
+                        hit[t][found.geom] = 1;
+                        // On behind a see-through surface, straight on from its far side (refraction left out: a
+                        // window's or a windscreen's own bend is slight, and this only orders the work).
+                        if (!plan.meshes[found.geom].seeThrough) break;
+                        ray.origin = found.below;
+                        ray.nearT = 0.0f;
+                    }
                 }
         });
     for (auto& p : pool) p.join();
     for (unsigned t = 0; t < threads; ++t) {
         out.rays += rays[t];
         out.hits += hits[t];
+        out.behind += behind[t];
         for (size_t i = 0; i < plan.meshes.size(); ++i)
             if (hit[t][i] && !plan.meshes[i].geometry.empty()) out.geometries->insert(plan.meshes[i].geometry);
     }

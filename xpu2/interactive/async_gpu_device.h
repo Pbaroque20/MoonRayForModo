@@ -652,11 +652,12 @@ struct GpuBackend {
 __device__ inline surface::V3 volumeRadianceCall(const mixed::Config& c, const sample::Identity& root, GpuBackend& backend, paths::Pending& pv,
                                                  surface::V3 org, surface::V3 dir, float tnear, float tfar, surface::V3* alphaTransmittance,
                                                  surface::V3* minTransmittance, VolumeCryptoShares* cryptoShares, const VolumeLpe* lpe,
-                                                 float* surfaceT) {
+                                                 float* surfaceT, paths::Pending* stack, U32* top) {
     surface::V3 out{0, 0, 0};
     optixContinuationCall<void, const mixed::Config*, const sample::Identity*, GpuBackend*, paths::Pending*, surface::V3, surface::V3, float,
-                          float, surface::V3*, surface::V3*, VolumeCryptoShares*, const VolumeLpe*, float*, surface::V3*>(
-        CallVolumeRadiance, &c, &root, &backend, &pv, org, dir, tnear, tfar, alphaTransmittance, minTransmittance, cryptoShares, lpe, surfaceT, &out);
+                          float, surface::V3*, surface::V3*, VolumeCryptoShares*, const VolumeLpe*, float*, paths::Pending*, U32*, surface::V3*>(
+        CallVolumeRadiance, &c, &root, &backend, &pv, org, dir, tnear, tfar, alphaTransmittance, minTransmittance, cryptoShares, lpe, surfaceT,
+        stack, top, &out);
     return out;
 }
 __device__ inline surface::V3 subsurfaceRadianceCall(const mixed::Config& c, const sample::Identity& root, GpuBackend& backend, U32 lightSet,

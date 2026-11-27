@@ -61,40 +61,179 @@ class ModoCut(unittest.TestCase):
         made = displacement_budget.modo_dicing(reading(), {'displacer'}, CAMERA, 1920, 1080, 1.0, 4.0, 0.1)
         self.assertLessEqual(made, 2 * 100 / 0.01 * 1.01)
 
+    def test_larger_pictures(self):
+        # Modo's cut goes with the picture's pixels: at 2560 x 1440 and 3840 x 2160, (2560/1920)^2 and 4 times as many
+        # triangles. At 3 pixels the ground is kept at 1920 x 1080 and 2560 x 1440 (1.3 M, 2.3 M) and refused at 4K
+        # (5.1 M); at 1 pixel 4K comes to about 46 M, which the guard refuses before anything is read displaced.
+        made = {width: displacement_budget.modo_dicing(reading(), {'displacer'}, CAMERA, width, width * 9 // 16, 3.0, 4.0, 0.0001)
+                for width in (1920, 2560, 3840)}
+        self.assertLess(abs(made[2560] / made[1920] / (2560 / 1920) ** 2 - 1), 0.1)
+        self.assertLess(abs(made[3840] / made[1920] / 4 - 1), 0.1)
+        self.assertLess(made[2560], displacement_budget.MODO_DISPLACED_TRIANGLES)
+        self.assertGreater(made[3840], displacement_budget.MODO_DISPLACED_TRIANGLES)
+        at_one = displacement_budget.modo_dicing(reading(), {'displacer'}, CAMERA, 3840, 2160, 1.0, 4.0, 0.0001)
+        self.assertGreater(at_one, 30e6)
+
+    def test_prototype_counted_once(self):
+        # Modo's displaced reading holds a prototype once, however many surfaces place it: counted where it is cut
+        # finest, not once for each place (a replicator's thousand copies are not a thousand grounds).
+        data = reading()
+        one = displacement_budget.modo_dicing(data, None, CAMERA, 1920, 1080)
+        far = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, -100, 1]
+        data['surfaces'] += [dict(data['surfaces'][0], matrix=far) for _ in range(40)]
+        self.assertAlmostEqual(displacement_budget.modo_dicing(data, None, CAMERA, 1920, 1080), one, delta=one * 1e-9)
+
     def test_rate_that_keeps_modo_cut(self):
         self.assertEqual(displacement_budget.rate_for(12.8e6, 1.0), 1.8)
         self.assertLessEqual(12.8e6 / 1.8 ** 2, displacement_budget.MODO_DISPLACED_TRIANGLES)
 
 
+class Scene(types.SimpleNamespace):
+    """A scene as the guard asks it: its Displacement layers (host.displacing_layers), its Scene Proxies, its items."""
+    def item(self, identity):
+        return types.SimpleNamespace(type=self.kinds.get(identity, 'mesh'))
+
+
+def proxy_reading():
+    """A reading of a scene with one Scene Proxy: its ground shaded by the proxy's own scene (the adapter's
+    'shading_scene'), whose Displacement layer is not one of the scene's."""
+    data = reading(('proxy_displacer',))
+    data['surfaces'][0].update(source_item='proxy', shading_scene=0)
+    return data
+
+
 class RefusedInHost(unittest.TestCase):
-    def refused(self, rate, layers=frozenset({'displacer'})):
+    def setUp(self):
         displacement_budget._VERDICTS.clear()
-        result = {'camera': dict(CAMERA), 'width': 1920, 'height': 1080, 'displacement_rate': rate,
+        self.slot = {'everything': False, 'edited': set()}
+        self.signature = ['first']
+        self.stacks = None
+        self.captured = []
+        self.data = reading
+        self.scene = Scene(filename='ground.lxo', name='ground', layers={'displacer'}, proxies=set(), kinds={})
+
+    def refused(self, rate, time=0.0, camera=CAMERA, width=1920, height=1080):
+        result = {'camera': dict(camera), 'width': width, 'height': height, 'displacement_rate': rate,
                   'displacement_ratio': 4.0, 'displacement_min_edge': 0.0001}
-        lx = types.SimpleNamespace(service=types.SimpleNamespace(Selection=lambda: types.SimpleNamespace(GetTime=lambda: 0.0)))
-        captured = []
+        lx = types.SimpleNamespace(service=types.SimpleNamespace(Selection=lambda: types.SimpleNamespace(GetTime=lambda: time)))
 
         def capture(time, displaced=True, **kwargs):
-            captured.append((displaced, host.modo_displaces()))
-            return reading()
-        from moonray_modo import evaluated
-        with mock.patch.object(host, 'lx', lx, create=True), mock.patch.object(host, 'displacing_layers', lambda scene: set(layers)), \
-                mock.patch.object(evaluated, 'capture', capture):
-            made = host.modo_cut_refused(types.SimpleNamespace(filename='ground.lxo', name='ground'), result)
-        return made, captured
+            self.captured.append((displaced, host.modo_displaces()))
+            return self.data()
+        # The layers applying to each surface (evaluated.applying_stacks): the render cache's list unless told.
+        stacks = lambda data, scene: self.stacks if self.stacks is not None else [list(s['layers']) for s in data['surfaces']]
+        from moonray_modo import evaluated, geometry_cache
+        def heard(held):
+            # As geometry_cache._Heard.heard: the items edited since it last looked, cleared; None for anything.
+            found = None if held.get('everything') else set(held.get('edited') or ())
+            held.update(everything=False, edited=set())
+            return found
+        edits = types.SimpleNamespace(heard=heard)
+        with mock.patch.object(host, 'lx', lx, create=True), mock.patch.object(host, 'displacing_layers', lambda scene: set(scene.layers)), \
+                mock.patch.object(evaluated, 'capture', capture), mock.patch.object(evaluated, 'applying_stacks', stacks), \
+                mock.patch.object(evaluated, '_proxied', lambda scene: scene.proxies), \
+                mock.patch.object(evaluated, 'proxies', lambda *args, **kwargs: None), \
+                mock.patch.object(evaluated, '_FOREIGN', [types.SimpleNamespace(
+                    layers={'proxy_displacer'}, scene=types.SimpleNamespace(Filename=lambda: 'proxied.lxo'))]), \
+                mock.patch.object(geometry_cache, 'estimate_session', lambda: self.slot), mock.patch.object(geometry_cache, '_EDITS', edits), \
+                mock.patch.object(host, '_sample_signature', lambda scene, owners, time: self.signature[0]):
+            return host.modo_cut_refused(self.scene, result)
 
     def test_default_rate_is_refused_from_an_undisplaced_reading(self):
-        made, captured = self.refused(1.0)
+        made = self.refused(1.0)
         self.assertGreater(made, displacement_budget.MODO_DISPLACED_TRIANGLES)
-        self.assertEqual(captured, [(False, False)])
+        self.assertEqual(self.captured, [(False, False)])
 
     def test_three_pixels_keeps_modo_cut(self):
-        self.assertIsNone(self.refused(3.0)[0])
+        self.assertIsNone(self.refused(3.0))
 
     def test_nothing_displaced_reads_nothing(self):
-        made, captured = self.refused(1.0, layers=frozenset())
-        self.assertIsNone(made)
-        self.assertEqual(captured, [])
+        self.scene.layers = set()
+        self.assertIsNone(self.refused(1.0))
+        self.assertEqual(self.captured, [])
+
+    def test_frames_and_camera_moves_read_once(self):
+        # The next frames of an animation, and the camera moving, are estimated from the sample kept: one reading.
+        at_one = self.refused(1.0)
+        nearer = dict(CAMERA, matrix=look((0.0, 0.8, 4.5), 12.0))
+        for frame in range(1, 6):
+            self.refused(1.0, time=frame / 24.0)
+        closer = self.refused(1.0, time=0.25, camera=nearer)
+        self.assertEqual(len(self.captured), 1)
+        self.assertGreater(closer, at_one)
+
+    def test_sample_read_again_when_the_scene_changes(self):
+        self.refused(1.0)
+        # Where a displaced surface now stands, its mesh, the Shader Tree: its signature (host._sample_signature).
+        self.signature[0] = 'moved'
+        self.refused(1.0)
+        self.assertEqual(len(self.captured), 2)
+        # An edit of anything but a camera, a render item, a place or a light.
+        self.slot['edited'] = {'camera'}
+        self.scene.kinds = {'camera': 'camera', 'shape': 'mesh'}
+        self.refused(1.0)
+        self.assertEqual(len(self.captured), 2)
+        self.slot['edited'] = {'shape'}
+        self.refused(1.0)
+        self.assertEqual(len(self.captured), 3)
+        # Anything at all, or nowhere to keep it.
+        self.slot['everything'] = True
+        self.refused(1.0)
+        self.assertEqual(len(self.captured), 4)
+        self.slot = None
+        self.refused(1.0)
+        self.refused(1.0)
+        self.assertEqual(len(self.captured), 6)
+
+    def test_signature(self):
+        # A plain mesh's sample holds from one moment to the next while its place and fingerprint do; a replicator's or
+        # a proxy's surface is read again at each new moment.
+        from moonray_modo import geometry_cache
+        scene = Scene(layers={'displacer'}, kinds={'ground': 'mesh', 'copies': 'replicator'})
+        scene.items = lambda kind, superType=False: [types.SimpleNamespace(id='ground')] if kind == 'mesh' else []
+        place = [list(rdla.IDENTITY)]
+        with mock.patch.object(host, 'displacing_layers', lambda s: set(s.layers)), \
+                mock.patch.object(host, 'world_matrix', lambda item, time: place[0]), \
+                mock.patch.object(geometry_cache, 'fingerprints', lambda time, identities=None: {k: 'same' for k in identities}):
+            plain = [('ground', 'ground', False)]
+            first = host._sample_signature(scene, plain, 0.0)
+            self.assertEqual(first, host._sample_signature(scene, plain, 1.0))
+            place[0] = list(rdla.IDENTITY[:12]) + [0, 1, 0, 1]
+            self.assertNotEqual(first, host._sample_signature(scene, plain, 1.0))
+            copies = [('copies', 'ground', False)]
+            self.assertNotEqual(host._sample_signature(scene, copies, 0.0), host._sample_signature(scene, copies, 1.0))
+            proxied = [('ground', 'ground', True)]
+            self.assertNotEqual(host._sample_signature(scene, proxied, 0.0), host._sample_signature(scene, proxied, 1.0))
+
+    def test_masks_heeded(self):
+        # The render cache lists the Displacement layer for the ground, but its item mask is for another item: the
+        # layer does not apply (evaluated.applying_stacks), and nothing is displaced.
+        self.stacks = [[]]
+        self.assertIsNone(self.refused(1.0))
+        self.assertEqual(len(self.captured), 1)
+
+    def test_scene_proxy_surfaces_counted(self):
+        # No Displacement layer in the scene, but its Scene Proxy's own scene displaces the ground: counted by the
+        # proxy's Shader Tree.
+        self.scene.layers = set()
+        self.scene.proxies = {'proxy'}
+        self.data = proxy_reading
+        self.assertGreater(self.refused(1.0), displacement_budget.MODO_DISPLACED_TRIANGLES)
+
+    def test_displaced_surfaces_by_their_own_tree(self):
+        from moonray_modo import evaluated
+        data = proxy_reading()
+        data['surfaces'].append(dict(reading()['surfaces'][0], source_item='own'))
+        foreign = types.SimpleNamespace(layers={'proxy_displacer'}, scene=types.SimpleNamespace(Filename=lambda: 'proxied.lxo'))
+        scene = Scene(layers={'displacer'}, proxies={'proxy'}, kinds={})
+        with mock.patch.object(evaluated, '_FOREIGN', [foreign]), mock.patch.object(host, 'displacing_layers', lambda s: set(s.layers)), \
+                mock.patch.object(evaluated, 'applying_stacks', lambda data, scene: [list(s['layers']) for s in data['surfaces']]):
+            found = host.displaced_surfaces(data, scene)
+            self.assertEqual([s['source_item'] for s in found], ['proxy', 'own'])
+            # The scene's own layer does not displace the proxy's surface, nor the proxy's the scene's.
+            data['surfaces'][0]['layers'] = ['displacer']
+            data['surfaces'][1]['layers'] = ['proxy_displacer']
+            self.assertEqual(host.displaced_surfaces(data, scene), [])
 
     def test_estimate_made_once(self):
         displacement_budget._VERDICTS.clear()

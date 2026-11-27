@@ -134,6 +134,10 @@ def emit(scene,meshes,environment,lines):
     items={}
     emit_lights(scene,lines,items)
     lines += ['local lightSet = LightSet("/modo/lightSet")(lights)','local objectLightSets = {}','local objectShadowSets = {}','local objectLightFilterSets = {}']
+    if any(entry.get('lit_by_environment') is False for entry in scene.get('extra_geometry',[])):
+        # Every light but the environments, for what Modo lights by its lights alone (a Sprite's fog: particles).
+        direct=[ref for key,values in list(refs.items())+list(items.items()) if key!='__environment__' for ref in values if not ref.startswith('EnvLight(')]
+        lines.append('local directLightSet = LightSet("/modo/lightSet/direct")(%s)'%array(dict.fromkeys(direct)))
     from . import entities
     known_entities = entities.checked(scene)
     known = dict(items, **refs)

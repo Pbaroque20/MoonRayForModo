@@ -69,6 +69,8 @@ def environment(directory):
     env['MOONRAY_MODO_FLAKE_CACHES'] = '1' if flake_caches() else '0'
     # A tilt-shift camera's lens tilted, its plane of focus leaning (tilt_shift).
     env['MOONRAY_MODO_TILT_SHIFT'] = '1' if tilt_shift() else '0'
+    # A displaced polygon mesh's hard edges shaded sharp, as in Modo (displaced_hard_edges).
+    env['MOONRAY_MODO_DISPLACED_HARD_EDGES'] = '1' if displaced_hard_edges() else '0'
     # PATH entries that are not folders passed over as MoonRay looks for itself (dso_search).
     env['MOONRAY_MODO_DSO_SEARCH'] = '1' if dso_search() else '0'
     # The four overrides of tools/port_source_switches.py, each read by MoonRay as it starts.
@@ -386,6 +388,14 @@ def tilt_shift():
     return _switch('tilt_shift', 'MOONRAY_MODO_TILT_SHIFT')
 
 
+def displaced_hard_edges():
+    """Whether a displaced polygon mesh keeps its hard edges sharp, as Modo shades them (tools/port_displaced_hard_edges.py).
+    MoonRay drops a displaced mesh's own normals and shades it smooth all over from the displaced shape, so a box's
+    edges come out round. With it each edge Modo's smoothing angle makes hard is shaded hard after the displacement,
+    which is unchanged (the surface stays closed). XPU2 and MoonLightIPR follow it."""
+    return _switch('displaced_hard_edges', 'MOONRAY_MODO_DISPLACED_HARD_EDGES')
+
+
 def dso_search():
     """Whether MoonRay, looking along PATH for moonray.exe as it starts (tools/port_dso_search.py), passes over entries
     that are files or cannot be read, and stops at the first folder holding it. MoonRay's own goes through all of PATH,
@@ -508,7 +518,7 @@ def engine_name(mode):
 
 def source_switches():
     """The MoonRay Source Overrides MoonRay reads as it starts: a session started with others is started again."""
-    return (toon_terminator(), toon_albedo(), crypto_volumes(), fog_alpha(), crypto_once(), camera_light_lpe(), mirrored_meshes(), scalar_emission(), tilt_shift(), dso_search(), backplate(), glass_alpha(), flake_caches()) + tuple(
+    return (toon_terminator(), toon_albedo(), crypto_volumes(), fog_alpha(), crypto_once(), camera_light_lpe(), mirrored_meshes(), scalar_emission(), tilt_shift(), dso_search(), backplate(), glass_alpha(), flake_caches()) + (displaced_hard_edges(),) + tuple(
         globals()[key]() for key in ('usd_specular', 'opaque_alpha', 'transmission_roughness', 'auto_xpu')) + (xpu2(), xpu2_chain(), __import__('moonray_modo.devices', fromlist=['state']).state(),
         # XPU2 started again with another Rhea radiance cache (Preferences), which it reads as it starts.
         xpu2_rhea_cache())

@@ -657,13 +657,112 @@ def displacing_layers(scene):
     return found
 
 
+def displaced_surfaces(data, scene):
+    """The surfaces of a reading (after evaluated.proxies) that a Displacement layer applies to: by the layers that
+    apply to each (evaluated.applying_stacks: its masks for items, groups, tags and parts heeded, where the render
+    cache lists every layer a surface may wear), in its own Shader Tree (a Scene Proxy's, its own scene's)."""
+    from . import evaluated
+    stacks = evaluated.applying_stacks(data, scene)
+    layers, found = {}, []
+    for surface, stack in zip(data['surfaces'], stacks):
+        key = evaluated._shading_key(surface)
+        if key not in layers:
+            layers[key] = displacing_layers(evaluated.shading_scene(surface, scene))
+        if set(stack or ()) & layers[key]:
+            found.append(surface)
+    return found
+
+
+# Kinds of item whose edits leave the estimate's sample as it was (estimate_sample): where its displaced surfaces stand
+# is in its signature, and the picture, camera and Displacement settings are in the verdict's key; a material's
+# channels or a texture's placement do not change which surfaces a Displacement layer applies to. Modo told of the
+# edits that made a scene only at its first change of frame, and the sample was read again for the second frame.
+_SAMPLE_KEEPS = ('camera', 'translation', 'rotation', 'scale', 'transform', 'polyRender', 'advancedMaterial', 'txtrLocator')
+# Kinds of item that make surfaces, any of which added or taken away changes what may be displaced.
+_SURFACE_KINDS = ('mesh', 'meshInst', 'replicator', 'proxy')
+
+
+def _sample_signature(scene, owners, time):
+    """What the estimate's sample stands for (estimate_sample): the Displacement layers that are on, the items that
+    make surfaces, and each displaced surface's item's place and its mesh's fingerprint, at time; with the moment where
+    a displaced surface is not a plain mesh's or a mesh instance's (a replicator's copy, a proxy's, one deformed), as
+    that changes from one moment to the next. An edit of the Shader Tree is heard (estimate_sample); the whole Shader
+    Tree's channels are not read again at each reading."""
+    from . import geometry_cache
+    made_by = [tuple(sorted(displacing_layers(scene)))]
+    for kind in _SURFACE_KINDS:
+        try:
+            made_by.append((kind, tuple(sorted(item.id for item in scene.items(kind, superType=False)))))
+        except (LookupError, RuntimeError, TypeError, ValueError):
+            made_by.append((kind, None))
+    plain, places, meshes = True, set(), set()
+    for placed, made, foreign in owners:
+        try:
+            item = scene.item(placed)
+        except (LookupError, RuntimeError, TypeError, ValueError):
+            item = None
+        if foreign or item is None or item.type not in ('mesh', 'meshInst') or not made:
+            plain = False
+            continue
+        places.add((placed, tuple(round(v, 6) for v in world_matrix(item, time))))
+        meshes.add(made)
+    prints = geometry_cache.fingerprints(time, identities=meshes) if meshes else {}
+    if prints is None or set(prints) != meshes:
+        plain = False
+    return (None if plain else float(time), tuple(made_by), tuple(sorted(places)), tuple(sorted((prints or {}).items())))
+
+
+def estimate_sample(scene, time):
+    """The estimate's sample of the open scene's displaced surfaces (displacement_budget.sample) at time, from Modo's
+    undisplaced reading, kept for the scene (geometry_cache.estimate_session) and taken again while nothing it stands
+    for changed (_sample_signature) and no edit of anything but a camera, a render item or an item's place was heard
+    since: so that neither a camera move nor the next frame of an animation reads the scene again, where it is made of
+    meshes and their instances; one deforming or a replicator's is read at each new moment, as before. {'sample',
+    'token'}."""
+    from . import displacement_budget, evaluated, geometry_cache
+    try:
+        held = geometry_cache.estimate_session()
+    except Exception:
+        held = None
+    heard = geometry_cache._EDITS.heard(held) if held is not None else None
+    kept = (held or {}).get('sample')
+    if kept is not None and heard is not None:
+        try:
+            quiet = all(scene.item(identity).type in _SAMPLE_KEEPS or scene.item(identity).type.endswith('Light')
+                        for identity in heard)
+        except (LookupError, RuntimeError, TypeError, ValueError):
+            quiet = False
+        if quiet and _sample_signature(scene, kept['owners'], time) == kept['signature']:
+            return kept
+    token = _MODO_DISPLACES.set(False)
+    try:
+        data = evaluated.capture(time, displaced=False)
+    finally:
+        _MODO_DISPLACES.reset(token)
+    # A copy: the reading may be the one held in memory, and proxies sets its surfaces once each.
+    data = dict(data, surfaces=[dict(surface) for surface in data.get('surfaces') or ()])
+    evaluated.proxies(data, scene, time, [], displaced=False)
+    surfaces = displaced_surfaces(data, scene)
+    prototypes = data.get('prototypes') or {}
+    owners = sorted({(surface.get('source_item'), (prototypes.get(str(surface.get('source_id'))) or {}).get('item'),
+                      surface.get('shading_scene') is not None) for surface in surfaces}, key=repr)
+    made = {'sample': displacement_budget.sample(data, surfaces), 'owners': owners,
+            'token': displacement_budget.next_token(), 'surfaces': len(surfaces)}
+    made['signature'] = _sample_signature(scene, owners, time)
+    if held is not None:
+        # Edits heard while it was made are its own: heard from now on.
+        geometry_cache._EDITS.heard(held)
+        held['sample'] = made
+    return made
+
+
 def modo_cut_refused(scene, result):
     """Modo's displaced cut of the reading about to be made (evaluated.capture, displaced), in triangles, where it is
-    past displacement_budget.MODO_DISPLACED_TRIANGLES; else None. Worked out from the surfaces read undisplaced and the
-    camera, once for each scene, Displacement settings, picture and camera place (to half a metre)."""
+    past displacement_budget.MODO_DISPLACED_TRIANGLES; else None. Worked out from the surfaces read undisplaced
+    (estimate_sample, kept while the scene does not change) and the camera, once for each Displacement setting, picture
+    and camera place (to 5 cm)."""
     from . import displacement_budget, evaluated
-    layers = displacing_layers(scene)
-    if not layers:
+    if not displacing_layers(scene) and not evaluated._proxied(scene):
         return None
     camera = result['camera']
     rate = max(1e-3, float(result.get('displacement_rate', displacement_budget.RATE)))
@@ -671,20 +770,13 @@ def modo_cut_refused(scene, result):
     min_edge = max(0.0, float(result.get('displacement_min_edge', displacement_budget.MIN_EDGE)))
     matrix = camera.get('matrix') or ()
     time = lx.service.Selection().GetTime()
-    key = (getattr(scene, 'filename', None) or scene.name, time, rate, ratio, min_edge, result['width'], result['height'],
-           tuple(round(v, 1) for v in matrix[:12]), tuple(round(v * 2) / 2 for v in matrix[12:15]),
-           camera.get('projection'), camera.get('focal_mm'), camera.get('film_mm'), camera.get('ortho_width'), frozenset(layers))
-
-    def estimate():
-        token = _MODO_DISPLACES.set(False)
-        try:
-            data = evaluated.capture(time, displaced=False)
-        finally:
-            _MODO_DISPLACES.reset(token)
-        return displacement_budget.modo_dicing(data, layers, camera, result['width'], result['height'], rate, ratio, min_edge)
-
     try:
-        made = displacement_budget.verdict(key, estimate)
+        kept = estimate_sample(scene, time)
+        key = (kept['token'], rate, ratio, min_edge, result['width'], result['height'],
+               tuple(round(v, 2) for v in matrix[:12]), tuple(round(v * 20) / 20 for v in matrix[12:15]),
+               camera.get('projection'), camera.get('focal_mm'), camera.get('film_mm'), camera.get('ortho_width'))
+        made = displacement_budget.verdict(key, lambda: displacement_budget.modo_cut(
+            kept['sample'], displacement_budget.View(camera, result['width'], result['height']), rate, ratio, min_edge))
     except Exception:
         return None
     return made if made > displacement_budget.MODO_DISPLACED_TRIANGLES else None
@@ -808,6 +900,8 @@ def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fal
     # rate's multiple off the picture (displacement_budget).
     result['displacement_min_edge'] = float(channel(render, 'edgeMin', 0.0001))
     result['displacement_ratio'] = float(channel(render, 'dispRatio', 4.0))
+    # Modo's Smooth Positions: a displaced polygon cage cut onto a smooth surface (smooth_positions).
+    result['displacement_smooth'] = bool(channel(render, 'dispSmooth', 1))
     # Another camera for MoonRay's adaptive tessellation: the one chosen; with a fixed dicing camera, it (or the render
     # camera) held at the Dicing Frame, so that a moving camera does not move the triangles.
     stored = properties.scene_settings()
@@ -1544,21 +1638,25 @@ def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fal
 
 def spherical_camera(result, camera, vr, warnings):
     """A Modo camera of Spherical Map or Spherical VR projection rendered through MoonRay's spherical camera, the whole
-    sphere about its place (latitude-longitude, the view's direction in the middle of the picture), in every engine,
+    sphere about its place (latitude-longitude, laid out as Modo lays it), in every engine,
     where no MoonRay camera item is chosen to render through already. Spherical VR renders one picture, from the camera's
     place, with a notice. The scene stopped with "Unsupported camera projection" before."""
     from .entities import catalog as entity_catalog, CAMERA_NEAR
+    from .camera import SPHERICAL, spherical_place
     cameras = [entity for entity in result.get('entities') or [] if entity_catalog().get(entity.get('class'), {}).get('category') == 'camera']
     if any(entity.get('parameters', {}).get('modo_render_camera') for entity in cameras):
         return
-    # MoonRay's whole sphere has the view's direction three quarters across the picture (SphericalCamera's longitude
-    # from -270 to 90 degrees); Modo's in the middle: its camera turned a quarter about its own up axis for it.
-    m = world_matrix(camera)
-    x, y, z = m[0:3], m[4:7], m[8:11]
-    turned = list(z) + [m[3]] + list(y) + [m[7]] + [-v for v in x] + [m[11]] + list(m[12:16])
+    parameters = {'modo_render_camera': True, 'near': CAMERA_NEAR}
+    if not vr:
+        # Spherical Map is the sphere seen from outside: the camera's +Z (behind its view) in the middle of the picture,
+        # its +X a quarter to the right, its -X a quarter to the left. The direction at longitude L (-180 degrees at the
+        # left edge) and latitude f is (sin L cos f, sin f, cos L cos f) in the camera's own axes. MoonRay's longitude phi
+        # looks along (sin phi, ., -cos phi): phi = 180 - L, its longitudes from 360 degrees at the left edge down to 0
+        # at the right, about the camera as it stands (a turn cannot mirror the picture).
+        parameters.update(min_longitude=360.0, max_longitude=0.0)
     result.setdefault('entities', []).append({
-        'identity': camera.id + '|spherical', 'name': camera.name, 'class': 'SphericalCamera', 'matrix': turned,
-        'parameters': {'modo_render_camera': True, 'near': CAMERA_NEAR}, 'attributes': {}})
+        'identity': camera.id + SPHERICAL, 'name': camera.name, 'class': 'SphericalCamera', 'matrix': spherical_place(world_matrix(camera), vr),
+        'spherical_vr': bool(vr), 'parameters': parameters, 'attributes': {}})
     if vr:
         warnings.append('Camera %s: Spherical VR renders as one spherical picture from the camera, not a pair of eyes.' % camera.name)
 

@@ -49,7 +49,7 @@ class CaptureKept(unittest.TestCase):
                    mock.patch.object(geometry_cache, 'key', return_value=('k',)),
                    mock.patch.object(geometry_cache.threading, 'Thread', Inline),
                    mock.patch.object(geometry_cache, 'standing', side_effect=lambda data, time: self.stood),
-                   mock.patch.object(geometry_cache, 'session', side_effect=lambda: self.memory)]
+                   mock.patch.object(geometry_cache, 'session', side_effect=lambda *displaced: self.memory)]
         self.memory = None
         self.stood = {'places': {'a': 'here'}, 'shading': 's'}
         for each in patches:

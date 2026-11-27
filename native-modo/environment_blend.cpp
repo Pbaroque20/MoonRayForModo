@@ -206,6 +206,41 @@ int projected(const double* p, const double* d, double out[3][3]) {
     return 0;
 }
 
+// environment_projections.procedural_triplanar: a procedural laid by Triplanar, its three planes' (u, v, weight) as an
+// image's (projected, kind 7), each pair turned by the UV Rotation; then the X plane keeps only its v (its u 0), the Y
+// plane only its u (its v 0; a Grid of Lines, line, takes it as its v), the Z plane both.
+int procedural_triplanar(const double* p, const double* d, bool line, double out[3][3]) {
+    const double* t = p + 2;
+    const double* s = p + 11;
+    const double c = p[16], sn = p[17];
+    double q[3];
+    for (int i = 0; i < 3; ++i) q[i] = d[0] * t[i * 3] + d[1] * t[i * 3 + 1] + d[2] * t[i * 3 + 2];
+    const double power = 1 + 25 * std::max(0.0, p[20]);
+    double weights[3], total = 0;
+    for (int i = 0; i < 3; ++i) { weights[i] = std::pow(std::max(std::fabs(q[i]) - .5, 0.0), power); total += weights[i]; }
+    if (total <= 0) {
+        int face = 0;
+        for (int i = 1; i < 3; ++i) if (std::fabs(q[i]) > std::fabs(q[face])) face = i;
+        for (int i = 0; i < 3; ++i) weights[i] = i == face ? 1 : 0;
+        total = 1;
+    }
+    const double l[3] = {q[0] / s[0], q[1] / s[1], q[2] / s[2]};
+    double planes[3][2];
+    turned_about_middle(.5 + l[2], .5 + l[1], c, sn, planes[0]);
+    turned_about_middle(.5 + l[0], .5 + l[2], c, sn, planes[1]);
+    turned_about_middle(.5 + l[0], .5 + l[1], c, sn, planes[2]);
+    planes[0][0] = 0;
+    if (line) { planes[1][1] = planes[1][0]; planes[1][0] = 0; }
+    else planes[1][1] = 0;
+    int n = 0;
+    for (int i = 0; i < 3; ++i) {
+        if (weights[i] <= 0) continue;
+        out[n][0] = planes[i][0]; out[n][1] = planes[i][1]; out[n][2] = weights[i] / total;
+        ++n;
+    }
+    return n;
+}
+
 // environment_projections.tiled: false where the coordinate is reset (outside the image).
 bool tiled(double& value, int mode) {
     if (mode == 1) return value >= 0 && value <= 1;
@@ -232,52 +267,11 @@ void modo_procedural_point(const double* settings, double u, double v, float* rg
 
 namespace {
 
-// procedurals._bias.
-double bias(double x, double b) {
-    b = std::max(.00001, std::min(.99999, b));
-    x = std::max(0.0, std::min(1.0, x));
-    return x / ((1 / b - 2) * (1 - x) + 1);
-}
-
-double nearest_whole(double x) { return std::fabs(x - std::nearbyint(x)); }
-
-// procedurals.environment_sample: a Grid (kind 0: line 0, square 1, triangle 2, hexagon 3) or Dots (kind 1: square 1,
-// hexagon 3) as Modo's renderer lays it in an environment, at the image coordinates (u, v); any other pattern as
-// procedural_bake lays it. s: MR_procedural_bake's settings (kind, pattern, width, transition, bias, gain, colour 1,
-// colour 2, alpha 1, alpha 2, ...).
+// procedurals.environment_sample: a Grid or Dots as Modo's renderer lays it in an environment, as on a surface
+// (procedural_bake.cpp's sample, procedurals._modo_shape), any other pattern as procedural_bake lays it. s:
+// MR_procedural_bake's settings (kind, pattern, width, transition, bias, gain, colour 1, colour 2, alpha 1, alpha 2, ...).
 void environment_procedural_point(const double* s, double u, double v, float* rgb, float* alpha) {
-    const int kind = int(s[0]), pattern = int(s[1]);
-    const bool grid = kind == 0 && pattern >= 0 && pattern <= 3, dots = kind == 1 && (pattern == 1 || pattern == 3);
-    if (!grid && !dots) { modo_procedural_point(s, u, v, rgb, alpha); return; }
-    const double root3 = std::sqrt(3.0);
-    static const double centres[6][2] = {{.5, 0.0}, {0.0, .86602540378443865}, {1.0, .86602540378443865},
-                                         {.5, 1.7320508075688772}, {-.5, .86602540378443865}, {1.5, .86602540378443865}};
-    double distance;
-    if (grid && pattern == 1) distance = std::min(nearest_whole(u - .5), nearest_whole(v - .5));
-    else if (grid && pattern == 0) distance = nearest_whole(v);
-    else if (grid && pattern == 2) {
-        const double x = u - std::floor(u), y = (v - .5) - std::floor(v - .5), fold = std::min(y, 1 - y);
-        distance = std::min(fold, std::min(std::fabs(x - fold / root3) * root3 / 2, std::fabs(x + fold / root3 - 2 / root3) * root3 / 2));
-    } else if (dots && pattern == 1) distance = std::hypot(u - std::nearbyint(u), v - std::nearbyint(v));
-    else {
-        const double x = u - std::floor(u), y = v - std::floor(v);
-        double best = 1e300;
-        for (const auto& c : centres) {
-            const double dx = std::fabs(x - c[0]), dy = std::fabs(y - c[1]);
-            best = std::min(best, dots ? std::hypot(dx, dy) : std::max(dx, .5 * dx + root3 / 2 * dy));
-        }
-        distance = dots ? best : .5 - best;
-    }
-    const double half = .5 * std::max(0.0, std::min(1.0, s[2])), transition = std::max(0.0, s[3]);
-    double away;
-    if (transition <= 1e-9) away = distance > half ? 1.0 : 0.0;
-    else { away = std::max(0.0, std::min(1.0, (distance - half) / transition)); away = away * away * (3 - 2 * away); }
-    double t = bias(1 - away, s[4]);
-    const double g = s[5];
-    t = t < .5 ? .5 * bias(2 * t, 1 - g) : 1 - .5 * bias(2 - 2 * t, 1 - g);
-    const double low = std::min(s[12], s[13]), high = std::max(s[12], s[13]);
-    const double a = std::max(0.0, std::min(1.0, std::min(high, std::max(low, s[12] * t + s[13] * (1 - t)))));
-    for (int k = 0; k < 3; ++k) { rgb[k] = float(s[6 + k] * t + s[9 + k] * (1 - t)); alpha[k] = float(a); }
+    modo_procedural_point(s, u, v, rgb, alpha);
 }
 
 }  // namespace
@@ -318,7 +312,11 @@ static int blend_layers(int width,int height,int count,const int* kinds,const in
                         // The world's direction: the renderers show this map's columns the other way round
                         // (as a physical sky's, above), and Modo lays its projections by the world's.
                         const double world[3]={-direction[0],direction[1],direction[2]};
-                        const int n=projected(p,world,at);
+                        // A procedural laid by Triplanar is laid by its own planes (procedural_triplanar; a Grid,
+                        // kind 0, of Lines, pattern 0, its own way).
+                        const int n=kinds[l]==4&&int(p[0])==7
+                            ?procedural_triplanar(p,world,int(patterns[l][0])==0&&int(patterns[l][1])==0,at)
+                            :projected(p,world,at);
                         const float* pixels=images[l];
                         const float* alpha=alphas[l];
                         double total=0;
@@ -442,8 +440,9 @@ extern "C" __declspec(dllexport) int MR_environment_layers(int width,int height,
 // latitude-longitude layer above. MoonRay Source Override "Environment images in every projection"
 // (native.environment_projections); an environment image laid otherwise than by a spherical projection was refused.
 // Which of environment_projections' arithmetic MR_environment_projected lays (environment_layers.PROJECTIONS_VERSION):
-// 2 Modo's own Grid and Dots in an environment (environment_procedural_point) and its Light Probe turn.
-extern "C" __declspec(dllexport) int MR_environment_projections_version() { return 2; }
+// 2 Modo's own Grid and Dots in an environment (environment_procedural_point) and its Light Probe turn; 3 its own
+// Triplanar procedurals (procedural_triplanar).
+extern "C" __declspec(dllexport) int MR_environment_projections_version() { return 3; }
 
 extern "C" __declspec(dllexport) int MR_environment_projected(int width,int height,int count,const int* kinds,const int* modes,
         const double* opacities,const int* inverts,const float* const* images,const float* const* alphas,const double* turns,

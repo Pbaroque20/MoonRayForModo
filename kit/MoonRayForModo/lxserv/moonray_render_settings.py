@@ -57,10 +57,11 @@ def register():
             def basic_Enable(self,msg):
                 # XPU2 renders the preview: its sampling generations are on, their switch is
                 # greyed, and so are MoonRay's own sampling settings, which show what XPU2 takes (xpu2_sampling), and
-                # what XPU2 does not read at all (cpu_scene.h): MoonRay's buckets and their order, and two sampling
-                # switches of MoonRay's own. Final renders, MoonRay's, still use them all.
+                # what XPU2 does not read at all (cpu_scene.h): MoonRay's buckets and their order, and a sampling
+                # switch of MoonRay's own. Final renders, MoonRay's, still use them all. (Volume indirect samples is
+                # XPU2's too since 0.5.6.3: not greyed.)
                 if entry['key'] in ('xpu2_generations','sampling_mode','samples','min_adaptive_samples','max_adaptive_samples','target_adaptive_error',
-                                    'bucket_size','batch_tile_order','important_first','volume_indirect_samples','disable_optimized_hair_sampling'):
+                                    'bucket_size','batch_tile_order','important_first','disable_optimized_hair_sampling'):
                     from moonray_modo import xpu2_sampling
                     if xpu2_sampling.active():return False
                 # Automatic Presence Shadows (Preferences) decides this one, by whether a material is cut out by a map.

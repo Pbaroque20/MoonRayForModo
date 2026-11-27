@@ -237,6 +237,10 @@ struct Pending {
     U32 heldLight = ~0u;
     float heldFar = 0.0f;
     V3 held{0, 0, 0};
+    // A path a volume's scattering started (volumeScatterIndirect), computeRadianceRecurse1 with no lobe: its ray and
+    // its presence continuations march no volume, and its hits take direct light alone, no bounce ("we check there's a
+    // lobe, to limit indirect lighting on volumes to a single bounce").
+    U32 noLobe = 0;
 };
 // The rays the GPU profile counts by kind (XPU2_PROFILE): light samples' shadow rays, BSDF samples' shadow rays, and
 // those a bounce stood for (bounce-ray reuse).
@@ -1128,6 +1132,68 @@ X2_CALL void volumeScatterRegions(Backend& backend, const VolumeSpan<Lookup>& s,
         }
     }
 }
+// integrateVolumeScatteringIndirect (volume_indirect_samples above zero): each sample a distance on the ray by the steps'
+// scattering, a direction over the sphere, and from there a path of its own (computeRadianceRecurse1 with no lobe):
+// pushed on the stack with the throughput sigmaS tr ph / (n pdfDir pdfTd), no pixel weight, a diffuse and a volume
+// depth on, its rays marching no volume and its hits bouncing no further (Pending::noLobe). pv's volume depth not yet
+// one on.
+template <class Backend, class Lookup>
+X2_CALL void volumeScatterIndirect(Backend& backend, const VolumeSpan<Lookup>& s, paths::Pending* stack, U32& top) {
+    using namespace paths;
+    (void)backend;
+    const mixed::Config& c = s.c;
+    const paths::Pending& pv = s.pv;
+    const U32 n = c.volumeIndirectSamples;
+    for (U32 ts = 0; ts < n; ++ts) {
+        sample::Identity sid = s.root;
+        sid.branch = childBranch(s.volumeBranch, 0xfc00u, ts);
+        Stream ss(sid, pv.depth, 0);
+        const float ud = ss.next(), u1 = ss.next(), u2 = ss.next();
+        float pdfDensity, udRemapped;
+        const volume::Step vp = s.lookup.pick(ud, pdfDensity, udRemapped);
+        if (pdfDensity == 0.0f || volume::black(vp.sigmaS)) continue;
+        const float sigmaT = volume::lum(vp.sigmaT), t0 = vp.tStart, t1 = vp.tStart + vp.delta;
+        const float td = volume::sampleDistanceExponential(udRemapped, sigmaT, t0, t1);
+        const float pdfTd = pdfDensity * volume::pdfDistanceExponential(td, sigmaT, t0, t1);
+        if (pdfTd == 0.0f || !volume::finitef(pdfTd)) continue;
+        const V3 wi = shade::sampleSphereUniform(u1, u2);
+        const V3 trScatter = volume::times(volume::times(vp.tr, vp.trH), volume::expNeg(volume::plus(vp.sigmaT, vp.sigmaTh), td - t0));
+        const float ph = volume::phaseEval(vp.g, V3{-s.dir.x, -s.dir.y, -s.dir.z}, wi);
+        const float pdfDir = 0.0795774715459476679f;  // sOneOverFourPi
+        V3 T = volume::times(pv.T, volume::scaled(volume::times(vp.sigmaS, trScatter), ph / (float(n) * pdfDir * pdfTd)));
+        if (volume::black(T) || !volume::finitef(T.x + T.y + T.z)) continue;
+        if (top + PendingReserve >= MaxPending) {
+            sample::Identity kid = s.root;
+            kid.branch = childBranch(s.volumeBranch, 0xfc02u, ts);
+            Stream chance(kid, pv.depth, 0);
+            float keptShare = 1.0f;
+            if (!roomForChild(top, chance.next(), keptShare)) continue;
+            T = volume::scaled(T, keptShare);
+        }
+        Pending child = pv;
+        child.origin = surface::add(s.org, surface::mul(s.dir, td));
+        child.dir = wi;
+        child.T = T;
+        child.branch = childBranch(s.volumeBranch, 0xfc01u, ts);
+        child.depth = pv.depth + 1;
+        child.diffuseDepth = pv.diffuseDepth + 1;
+        child.nonMirrorDepth = pv.nonMirrorDepth + 1;
+        child.volumeDepth = pv.volumeDepth + 1;
+        child.lobeType = 0;  // no lobe: computeRadianceRecurse1's intersectRay with lobe type 0
+        child.pixelWeight = 0.0f;
+        child.lpe = s.volumeState;
+        child.lpeLight = -1;
+        child.crypto = aov::CryptoNone;  // cryptomatteFlags 0
+        child.seeThrough = 0;            // scattered in a volume (newPv.modoSeeThrough = 0)
+        child.parentSetCount = 0;        // Rdl2LightSetList()
+        child.heldLight = ~0u;
+        child.nearT = 0.0f;
+        child.farT = 3.402823466e+38f;
+        child.diff = shade::RayDiff{};  // clearDifferentials
+        child.noLobe = 1;
+        stack[top++] = child;
+    }
+}
 // approximateVolumeMultipleScattering (pv's volume depth already one on).
 template <class Backend, class Lookup>
 X2_CALL void volumeMultipleScatter(Backend& backend, const VolumeSpan<Lookup>& s, V3& radiance) {
@@ -1224,7 +1290,8 @@ X2_CALL void volumeMultipleScatter(Backend& backend, const VolumeSpan<Lookup>& s
 template <class Backend>
 X2_CALL V3 volumeRadiance(const mixed::Config& c, const sample::Identity& root, Backend& backend, paths::Pending& pv, V3 org, V3 dir,
                           float tnear, float tfar, V3* alphaTransmittance = nullptr, V3* minTransmittance = nullptr,
-                          VolumeCryptoShares* cryptoShares = nullptr, const VolumeLpe* lpe = nullptr, float* surfaceT = nullptr) {
+                          VolumeCryptoShares* cryptoShares = nullptr, const VolumeLpe* lpe = nullptr, float* surfaceT = nullptr,
+                          paths::Pending* stack = nullptr, U32* top = nullptr) {
     using namespace paths;
     V3 radiance{0, 0, 0};
     auto lpeAdd = [&](V3 contribution, int state) {
@@ -1356,6 +1423,7 @@ X2_CALL V3 volumeRadiance(const mixed::Config& c, const sample::Identity& root, 
                                                 volumeState, lpe};
         volumeScatterDirect(backend, span, radiance);
         volumeScatterRegions(backend, span, radiance);
+        if (c.volumeIndirectSamples && stack && top) volumeScatterIndirect(backend, span, stack, *top);
         ++pv.volumeDepth;
         volumeMultipleScatter(backend, span, radiance);
     }
@@ -2035,8 +2103,8 @@ X2_HD inline bool filterAllows(const Backend& backend, U32 geom, U32 light, cons
 template <class Backend>
 X2_HD inline V3 volumeRadianceCall(const mixed::Config& c, const sample::Identity& root, Backend& backend, paths::Pending& pv, V3 org, V3 dir,
                                    float tnear, float tfar, V3* alphaTransmittance, V3* minTransmittance, VolumeCryptoShares* cryptoShares,
-                                   const VolumeLpe* lpe, float* surfaceT) {
-    return volumeRadiance(c, root, backend, pv, org, dir, tnear, tfar, alphaTransmittance, minTransmittance, cryptoShares, lpe, surfaceT);
+                                   const VolumeLpe* lpe, float* surfaceT, paths::Pending* stack, U32* top) {
+    return volumeRadiance(c, root, backend, pv, org, dir, tnear, tfar, alphaTransmittance, minTransmittance, cryptoShares, lpe, surfaceT, stack, top);
 }
 template <class Backend>
 X2_HD inline V3 subsurfaceRadianceCall(const mixed::Config& c, const sample::Identity& root, Backend& backend, U32 lightSet,
@@ -2189,11 +2257,11 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
         VolumeCryptoShares volumeShares;
         V3 volumeLight{0, 0, 0};
         float volumeSurfaceT = 3.402823466e38f;
-        if (c.volumeCount) {
+        if (c.volumeCount && !pv.noLobe) {
             const VolumeLpe volumeLpe{&at, aovs, aovDepths};
             volumeLight = volumeRadianceCall(c, root, backend, pv, ray.origin, ray.direction, ray.nearT, hit.geom == ~0u ? ray.farT : hit.t, &volumeAlphaT,
                                          &volumeMinT, cryptoVolumes ? &volumeShares : nullptr, lpeOn && pv.lpe >= 0 ? &volumeLpe : nullptr,
-                                         pv.depth == 0 ? &volumeSurfaceT : nullptr);
+                                         pv.depth == 0 ? &volumeSurfaceT : nullptr, stack, &top);
             if (backend.deferred()) return SampleStatus::Defer;
             radiance += volumeLight;
         }
@@ -2573,7 +2641,7 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
 
         // indirectFlags: the lobe types whose depth limits still allow a bounce.
         U32 indirectFlags = 0;
-        if (c.bsdfSamples > 0 && maxDepth > 0 && pv.depth < maxDepth) {
+        if (c.bsdfSamples > 0 && maxDepth > 0 && pv.depth < maxDepth && !pv.noLobe) {
             if (pv.diffuseDepth < c.maxDiffuseDepth) indirectFlags |= shade::AllDiffuse;
             if (pv.glossyDepth < c.maxGlossyDepth) indirectFlags |= shade::AllGlossy;
             if (pv.mirrorDepth < c.maxMirrorDepth) indirectFlags |= shade::AllMirror;
@@ -2990,7 +3058,7 @@ X2_HD inline SampleStatus integratePaths(const mixed::Config& c, U32 pixel, U32 
             const U32 nk = lobeSamples[k];
             const bool mirror = (lobe.type & shade::Mirror) != 0, hair = (lobe.flags & shade::FlagHair) != 0;
             const U32 lobeMask = lights::lobeRayMask(lobe.type);
-            const bool lobeIndirect = shade::matchesFlags(lobe.type, indirectFlags) || (hair && pv.hairDepth < c.maxHairDepth);
+            const bool lobeIndirect = shade::matchesFlags(lobe.type, indirectFlags) || (hair && pv.hairDepth < c.maxHairDepth && !pv.noLobe);
             const U64 lobeBranch = childBranch(pv.branch, k, 0xffff);
             // MOONRAY_MODO_TOON_ALBEDO (Aov.cc): a toon diffuse lobe's own albedo, not its samples' f / pdf.
             const bool toonAlbedo = (c.modoSwitches & 1u) && lobe.kind == shade::KindToon;
