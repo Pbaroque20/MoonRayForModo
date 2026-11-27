@@ -27,7 +27,9 @@ def asked_vertex_maps(value):
     """The vertex maps that materials ask for, by name: each Weight Map Texture layer's (procedurals.vertex_map), however deep."""
     if isinstance(value, dict):
         named = {str(value['vmap'])} if value.get('vmap') else set()
-        return named.union(*[asked_vertex_maps(held) for held in value.values()])
+        # A gradient layer moved into a MoonShine graph asks as the layer did (gradients.in_graph).
+        from .gradients import in_graph
+        return named.union(*[asked_vertex_maps(held) for held in value.values()], asked_vertex_maps(in_graph(value)))
     if isinstance(value, (list, tuple)):
         return set().union(*[asked_vertex_maps(held) for held in value])
     return set()

@@ -33,6 +33,8 @@ MENU = (
     None,
     # Making things.
     ('cmd moonray.material.assign', 'Assign MoonShine Material to Mesh', 'assign'),
+    # Shader Tree images into MoonShine graphs: the open scene, or a scene opened for it (shader_tree_dialog).
+    ('cmd moonray.material.shaderTreeToMoonShine', 'Shader Tree -&gt; MoonShine...', 'shader_tree_moonshine'),
     ('sub MoonRayEntityMenu:sheet', 'Add MoonRay Item', None),
     ('cmd moonray.camera.convert', 'Convert Camera to MoonRay Camera...', 'convert_camera'),
     ('cmd moonray.library', 'Asset Library...', 'library'),

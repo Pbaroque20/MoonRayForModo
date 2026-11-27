@@ -9,6 +9,7 @@
 // Traversal and triangle intersection use the hardware; the shared integrator
 // reconstructs each hit with the same arithmetic as the CPU lane.
 #include "async_gpu_device.h"
+#include "rhea_store_core.h"  // Rhea's store, looked up beside its first hits (mode 5)
 // One program renders uniform and adaptive frames: the launch's adaptive flag turns on the adaptive film (its odd
 // samples, the passes' counts), the error pass and the pass chain. The path tracer is out of line (X2_CALL), so
 // the adaptive parts cost a uniform frame no registers, and OptiX compiles one module instead of two of nearly the
@@ -487,7 +488,16 @@ static __device__ __noinline__ void firstHit() {
     const U32 i = optixGetLaunchIndex().x;
     if (i >= params.firstHitCount) return;
     GpuBackend backend;
-    params.firstHits[i] = backend.trace(params.firstHitRays[i]);
+    const surface::Ray ray = params.firstHitRays[i];
+    const resume::Hit hit = backend.trace(ray);
+    params.firstHits[i] = hit;
+    // Its colour from Rhea's store on the card (rhea_store_core.h), where the host sent one (rhea/DESIGN.md 37).
+    if (params.rheaStore && params.firstLooks) {
+        const float dir[3] = {ray.direction.x, ray.direction.y, ray.direction.z}, p[3] = {hit.point.x, hit.point.y, hit.point.z},
+                    n[3] = {hit.normal.x, hit.normal.y, hit.normal.z};
+        rheastore::lookupHit(*static_cast<const rheastore::View*>(params.rheaStore), dir, p, n, hit.geom,
+                             static_cast<rheastore::Look*>(params.firstLooks)[i]);
+    }
 }
 
 extern "C" __global__ void __raygen__async() {

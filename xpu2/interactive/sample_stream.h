@@ -14,14 +14,6 @@
 #define X2_CALL inline
 #endif
 #endif
-// A helper too big to copy into each of its callers: on the GPU one call (shade_math.h says why).
-#ifndef X2_CALL
-#if defined(__CUDACC__)
-#define X2_CALL __host__ __device__ __noinline__ inline
-#else
-#define X2_CALL inline
-#endif
-#endif
 // One set of elementary functions for both lanes. The CUDA lane's expf, logf, powf, sinf, cosf, tanf, atan2f, asinf,
 // acosf, erff and cbrtf (libdevice's) and the host's (the C runtime's) are different approximations: the same argument
 // gave the lanes results an ulp or more apart, and as either lane may render a sample (the work split changes from run
@@ -29,7 +21,10 @@
 // (an unqualified call inside namespace xpu2 finds them before the global ones), each a fixed sequence of IEEE single and
 // double operations, rounded alike on the host (built without contraction) and on the card (built with --fmad=false).
 // The single precision kernels are Cephes's (Stephen L. Moshier, Cephes Math Library 2.2, sinf.c, tanf.c, atanf.c,
-// asinf.c, expf.c, logf.c: free to use, see THIRD_PARTY_NOTICES.md); powf, erff and cbrtf are worked out in double.
+// asinf.c, expf.c, logf.c: free to use, see THIRD_PARTY_NOTICES.md); powf and cbrtf are worked out in float-float
+// (pairs of floats, below), erff in double.
+// Each is X2_CALL: one copy in each GPU module, not one at every call site (about 230 of them, many in inline helpers,
+// made the path tracer's module 60% larger, and the whole compile take twice the memory).
 #if !defined(__CUDACC_RTC__)
 #include <math.h>
 #endif
@@ -135,9 +130,107 @@ X2_HD inline double exp2Of(double t) {
     }
     return r * fromBits((unsigned long long)(ni + 1023) << 52);
 }
+// Float-float: a value as the unevaluated sum hi + lo of two floats, |lo| <= ulp(hi) / 2, from error-free transformations
+// (T. J. Dekker, "A floating-point technique for extending the available precision", 1971): only IEEE single additions,
+// subtractions and products, each rounded once (no fused multiply-add on either lane), so both lanes get the same bits.
+// About 44 bits of precision, without the card's slow double instructions.
+struct FF {
+    float hi, lo;
+};
+X2_HD inline FF twoSum(float a, float b) {  // a + b exactly
+    const float s = a + b, bb = s - a;
+    return {s, (a - (s - bb)) + (b - bb)};
+}
+X2_HD inline FF fastTwoSum(float a, float b) {  // a + b exactly, |a| >= |b| (or a zero)
+    const float s = a + b;
+    return {s, b - (s - a)};
+}
+X2_HD inline FF twoProduct(float a, float b) {  // a b exactly, |a|, |b| < 2^115
+    const float p = a * b, ca = 4097.0f * a, cb = 4097.0f * b;  // Veltkamp's split into 12-bit halves
+    const float ah = ca - (ca - a), al = a - ah, bh = cb - (cb - b), bl = b - bh;
+    return {p, (((ah * bh - p) + ah * bl) + al * bh) + al * bl};
+}
+X2_HD inline FF ffMul(FF a, FF b) {
+    FF p = twoProduct(a.hi, b.hi);
+    p.lo += a.hi * b.lo + a.lo * b.hi;
+    return fastTwoSum(p.hi, p.lo);
+}
+X2_HD inline FF ffMul(FF a, float b) {
+    FF p = twoProduct(a.hi, b);
+    p.lo += a.lo * b;
+    return fastTwoSum(p.hi, p.lo);
+}
+X2_HD inline FF ffAdd(FF a, FF b) {  // a and b of one sign, or one at most half the other: no cancellation to speak of
+    FF s = twoSum(a.hi, b.hi);
+    s.lo += a.lo + b.lo;
+    return fastTwoSum(s.hi, s.lo);
+}
+// log2 of a positive finite float, in float-float (relative error below 2^-43).
+X2_HD inline FF log2Of(float x) {
+    int e = 0;
+    if (x < 1.17549435e-38f) {  // subnormal
+        x *= 8388608.0f;
+        e = -23;
+    }
+    const unsigned u = bitsOf(x);
+    e += int((u >> 23) & 0xff) - 127;
+    float m = fromBits((u & 0x007fffffu) | 0x3f800000u);  // [1, 2)
+    if (m > 1.41421356f) {
+        m *= 0.5f;
+        ++e;
+    }
+    // log2 m = 2 / ln2 atanh(s) = s (d0 + d1 s^2 + d2 s^4 + ...), s = (m - 1) / (m + 1), |s| < 0.1716, d_k = 2 / ((2k + 1) ln2).
+    const float a = m - 1.0f;  // exact
+    const FF b = twoSum(m, 1.0f);
+    const float sh = a / b.hi;
+    const FF q = twoProduct(sh, b.hi);
+    const FF s = fastTwoSum(sh, (((a - q.hi) - q.lo) - sh * b.lo) / b.hi);  // a - q.hi is exact
+    const FF s2 = ffMul(s, s);
+    // d3 s^6 on is below 2^-18 of the sum: single precision does for it.
+    const float z = s2.hi;
+    float t = 0x1.3703c2p-3f;
+    t = t * z + 0x1.5b9acap-3f;
+    t = t * z + 0x1.89f3b2p-3f;
+    t = t * z + 0x1.c68f56p-3f;
+    t = t * z + 0x1.0c9a84p-2f;
+    t = t * z + 0x1.484b14p-2f;
+    t = t * z + 0x1.a61762p-2f;
+    FF r = ffAdd(FF{0x1.2776c6p-1f, -0x1.e20c8p-26f}, ffMul(s2, t));
+    r = ffAdd(FF{0x1.ec709ep-1f, -0x1.e2fe02p-28f}, ffMul(s2, r));
+    r = ffAdd(FF{0x1.715476p+1f, 0x1.4ae0cp-25f}, ffMul(s2, r));
+    r = ffMul(s, r);
+    // e + log2 m: twoSum exact, then the low part.
+    FF l = twoSum(float(e), r.hi);
+    l.lo += r.lo;
+    return fastTwoSum(l.hi, l.lo);
+}
+// v + d rounded to odd (Boldo and Melquiond): v, d from twoSum. A sum rounded to odd, then to nearest with two bits or
+// more fewer, rounds as the exact sum would: a tie of the rounded parts (1 - 2^-25 of 1 - 2^-25 - 2^-51, (1 - 2^-24)^0.5)
+// is no tie of the whole.
+X2_HD inline float toOdd(float v, float d) {
+    if (d == 0.0f || v == 0.0f || (bitsOf(v) & 1u)) return v;
+    return fromBits((d > 0.0f) == (v > 0.0f) ? bitsOf(v) + 1u : bitsOf(v) - 1u);
+}
+// 2^f - 1 for a float-float |f| <= 0.5 (a little more is fine), in float-float (relative error below 2^-42 of 2^f).
+X2_HD inline FF exp2Minus1(FF f) {
+    // sum c_k f^k, c_k = ln2^k / k!: c6 f^6 on is below 2^-18 of the sum, in single precision.
+    const float z = f.hi;
+    float t = 0x1.e8cac8p-32f;
+    t = t * z + 0x1.e4cf52p-28f;
+    t = t * z + 0x1.b5253ep-24f;
+    t = t * z + 0x1.62c022p-20f;
+    t = t * z + 0x1.ffcbfcp-17f;
+    t = t * z + 0x1.430912p-13f;
+    FF r = ffAdd(FF{0x1.5d87fep-10f, 0x1.e299ccp-36f}, ffMul(f, t));
+    r = ffAdd(FF{0x1.3b2ab6p-7f, 0x1.f749cep-32f}, ffMul(f, r));
+    r = ffAdd(FF{0x1.c6b08ep-5f, -0x1.1f6be8p-30f}, ffMul(f, r));
+    r = ffAdd(FF{0x1.ebfbe0p-3f, -0x1.f4e9c6p-33f}, ffMul(f, r));
+    r = ffAdd(FF{0x1.62e430p-1f, -0x1.05c61p-29f}, ffMul(f, r));
+    return ffMul(f, r);
+}
 }  // namespace x2math
 
-X2_HD inline float expf(float x) {
+X2_CALL float expf(float x) {
     using namespace x2math;
     if (isnan_(x)) return x + x;
     if (x > 88.72283172607421875f) return inff_();
@@ -150,7 +243,7 @@ X2_HD inline float expf(float x) {
                      5.0000001201E-1f) * z + r + 1.0f;
     return scaled(p, int(fn));
 }
-X2_HD inline float logf(float x) {
+X2_CALL float logf(float x) {
     using namespace x2math;
     if (isnan_(x)) return x + x;
     if (x < 0.0f) return nanf_();
@@ -199,7 +292,7 @@ X2_HD inline float cosPoly(float z) {
     return y + 1.0f;
 }
 }  // namespace x2math
-X2_HD inline float sinf(float xx) {
+X2_CALL float sinf(float xx) {
     using namespace x2math;
     if (!(xx - xx == 0.0f)) return xx - xx;  // NaN, infinity
     bool negative = xx < 0.0f;
@@ -214,7 +307,7 @@ X2_HD inline float sinf(float xx) {
     const float y = (j == 1 || j == 2) ? cosPoly(z) : sinPoly(x, z);
     return negative ? -y : y;
 }
-X2_HD inline float cosf(float xx) {
+X2_CALL float cosf(float xx) {
     using namespace x2math;
     if (!(xx - xx == 0.0f)) return xx - xx;
     bool negative = false;
@@ -234,7 +327,7 @@ X2_HD inline void sincosf(float x, float* s, float* c) {
     *s = sinf(x);
     *c = cosf(x);
 }
-X2_HD inline float tanf(float xx) {
+X2_CALL float tanf(float xx) {
     using namespace x2math;
     if (!(xx - xx == 0.0f)) return xx - xx;
     const bool negative = xx < 0.0f;
@@ -248,7 +341,7 @@ X2_HD inline float tanf(float xx) {
     if (j & 2) y = -1.0f / y;
     return negative ? -y : y;
 }
-X2_HD inline float atanf(float xx) {
+X2_CALL float atanf(float xx) {
     if (!(xx == xx)) return xx + xx;
     const bool negative = xx < 0.0f;
     float x = negative ? -xx : xx, y;
@@ -265,7 +358,7 @@ X2_HD inline float atanf(float xx) {
     y += (((8.05374449538e-2f * z - 1.38776856032E-1f) * z + 1.99777106478E-1f) * z - 3.33329491539E-1f) * z * x + x;
     return negative ? -y : y;
 }
-X2_HD inline float atan2f(float y, float x) {
+X2_CALL float atan2f(float y, float x) {
     using namespace x2math;
     if (isnan_(x) || isnan_(y)) return x + y;
     const float pi = 3.14159265358979323846f, halfPi = 1.5707963267948966192f;
@@ -282,7 +375,7 @@ X2_HD inline float atan2f(float y, float x) {
     const float w = x < 0.0f ? (yNegative ? -pi : pi) : 0.0f;
     return w + atanf(y / x);
 }
-X2_HD inline float asinf(float xx) {
+X2_CALL float asinf(float xx) {
     using namespace x2math;
     if (isnan_(xx)) return xx + xx;
     const bool negative = xx < 0.0f;
@@ -311,7 +404,7 @@ X2_HD inline float asinf(float xx) {
     }
     return negative ? -z : z;
 }
-X2_HD inline float acosf(float x) {
+X2_CALL float acosf(float x) {
     using namespace x2math;
     if (isnan_(x)) return x + x;
     if (x < -1.0f || x > 1.0f) return nanf_();
@@ -319,7 +412,7 @@ X2_HD inline float acosf(float x) {
     if (x > 0.5f) return 2.0f * asinf(sqrtf(0.5f * (1.0f - x)));
     return 1.5707963267948966192f - asinf(x);
 }
-X2_HD inline float powf(float x, float y) {
+X2_CALL float powf(float x, float y) {
     using namespace x2math;
     if (y == 0.0f || x == 1.0f) return 1.0f;
     if (isnan_(x) || isnan_(y)) return x + y;
@@ -337,17 +430,45 @@ X2_HD inline float powf(float x, float y) {
         return xNegative && yOdd ? -r : r;
     }
     if (xNegative && !yInteger) return nanf_();
-    const float r = float(exp2Of(double(y) * (logPositive(double(ax)) * 1.44269504088896340736)));
+    // 2^(y log2 x), in float-float: within about 2^-38 of x^y, rounded once from the exact sum of its parts, so the
+    // correctly rounded result but in about one case in a million (the double version's, before, likewise).
+    const FF l = log2Of(ax);
+    const float rough = y * l.hi;
+    float r;
+    if (l.hi == 0.0f) {  // x = -1 (and |y| even, or as large as 2^24)
+        r = 1.0f;
+    } else if (rough > 160.0f) {
+        r = inff_();
+    } else if (rough < -160.0f) {
+        r = 0.0f;
+    } else {
+        const FF t = ffMul(l, y);  // |y| < 2^31 here: |l| >= 2^-24 for any x but +-1
+        const float n = floorf(t.hi + 0.5f);
+        const FF q = exp2Minus1(twoSum(t.hi - n, t.lo));  // t.hi - n is exact
+        // 1 + q = s.hi + w.hi + w.lo exactly; w rounded to odd, then the sum to nearest: correct rounding of 1 + q.
+        const FF s = twoSum(1.0f, q.hi), w = twoSum(s.lo, q.lo);
+        const FF p = twoSum(s.hi, toOdd(w.hi, w.lo));
+        // Scaled by 2^n: exact for a normal result (an overflow is infinity). A subnormal one: p.hi + p.lo rounded once
+        // to the subnormals' grid (2^-149), in units of it (a, b exactly), half to even, not p.hi rounded again.
+        const int ni = int(n);
+        if (ni < -126 || (ni == -126 && p.hi < 1.0f)) {
+            const float a = scaled(p.hi, ni + 149), b = scaled(p.lo, ni + 149), whole = floorf(a), part = a - whole;
+            const bool up = part > 0.5f || (part == 0.5f && (b > 0.0f || (b == 0.0f && fmodf(whole, 2.0f) == 1.0f)));
+            r = scaled(up ? whole + 1.0f : whole, -149);
+        } else {
+            r = scaled(p.hi, ni);
+        }
+    }
     return xNegative && yOdd ? -r : r;
 }
-X2_HD inline double pow(double x, double y) {  // a positive finite x (MoonRay's cube roots, shade_mapnodes_more.h)
+X2_CALL double pow(double x, double y) {  // a positive finite x (MoonRay's cube roots before: shade_mapnodes_more.h has cbrtf)
     using namespace x2math;
     if (y == 0.0 || x == 1.0) return 1.0;
     if (!(x > 0.0) || !(x - x == 0.0) || !(y - y == 0.0)) return fromBits(0x7ff8000000000000ull);
     return exp2Of(y * (logPositive(x) * 1.44269504088896340736));
 }
 // The texture filter's ellipse (texture_core.h): sqrt(x^2 + y^2) without overflow, alike on both lanes.
-X2_HD inline double hypot(double x, double y) {
+X2_CALL double hypot(double x, double y) {
     double a = x < 0.0 ? -x : x, b = y < 0.0 ? -y : y;
     const double inf = x2math::fromBits(0x7ff0000000000000ull);
     if (a == inf || b == inf) return inf;
@@ -363,7 +484,7 @@ X2_HD inline double hypot(double x, double y) {
 }
 // The curves' (curve_embree.h): the card's own rsqrtf is an approximation; the host's is 1 / sqrtf.
 X2_HD inline float rsqrtf(float x) { return 1.0f / sqrtf(x); }
-X2_HD inline float erff(float x) {
+X2_CALL float erff(float x) {
     if (!(x == x)) return x + x;
     const double a = x < 0.0f ? -double(x) : double(x);
     if (a >= 4.0) return x < 0.0f ? -1.0f : 1.0f;
@@ -379,14 +500,26 @@ X2_HD inline float erff(float x) {
     const float r = float(sum * 1.12837916709551257390);
     return x < 0.0f ? -r : r;
 }
-X2_HD inline float cbrtf(float x) {
+X2_CALL float cbrtf(float x) {
     using namespace x2math;
     if (!(x - x == 0.0f) || x == 0.0f) return x + x == x ? x : x + x;  // zero and infinity themselves, NaN
-    const double a = x < 0.0f ? -double(x) : double(x);
-    // A first guess from the exponent, then Newton's steps in double.
-    double y = fromBits((bitsOf(a) / 3ull) + 0x2a9f7893782da1ceull);
-    for (int k = 0; k < 6; ++k) y = y - (y * y * y - a) / (3.0 * y * y);
-    const float r = float(y);
+    float a = x < 0.0f ? -x : x;
+    int k = 0;
+    if (a < 1.17549435e-38f) {  // subnormal: a 2^24, its root 2^8
+        a *= 16777216.0f;
+        k = -8;
+    }
+    // a = b 2^(3q), b in [1, 8): the root of b, times 2^q.
+    const unsigned u = bitsOf(a);
+    const int e = int(u >> 23) - 127, q = (e >= 0 ? e : e - 2) / 3;
+    const float b = fromBits((u & 0x007fffffu) | (unsigned(e - 3 * q + 127) << 23));
+    // A first guess from the exponent (within 4%), Newton's steps in single precision (to an ulp or two), then one in
+    // float-float: b - y^3 worked out to about 2^-46 (y^2 exactly, y^3 nearly), so y + its correction rounds as the root.
+    float y = fromBits(bitsOf(b) / 3u + 0x2a5137a0u);
+    for (int i = 0; i < 3; ++i) y = y - (y * y * y - b) / (3.0f * y * y);
+    const FF y3 = ffMul(twoProduct(y, y), y);
+    const float residue = (b - y3.hi) - y3.lo;  // b - y3.hi is exact
+    const float r = (y + residue / (3.0f * y * y)) * pow2(q + k);  // q + k in [-50, 42]: exact
     return x < 0.0f ? -r : r;
 }
 }  // namespace xpu2

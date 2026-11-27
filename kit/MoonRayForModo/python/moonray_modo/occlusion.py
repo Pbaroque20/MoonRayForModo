@@ -13,6 +13,8 @@ import struct
 import subprocess
 from pathlib import Path
 
+from .gradients import in_graph
+
 PREFIX = '__modo_occlusion'
 
 
@@ -34,6 +36,8 @@ def wanted(materials):
                 holders.setdefault(value['vmap'], set()).add(tag)
             for inner in value.values():
                 walk(inner, tag)
+            # A gradient layer moved into a MoonShine graph (gradients.in_graph).
+            walk(in_graph(value), tag)
         elif isinstance(value, (list, tuple)):
             for inner in value:
                 walk(inner, tag)
@@ -91,7 +95,7 @@ def reads(materials, name):
     """Whether any material reads the weight map of this name."""
     def walk(value):
         if isinstance(value, dict):
-            return value.get('vmap') == name or any(walk(inner) for inner in value.values())
+            return value.get('vmap') == name or any(walk(inner) for inner in value.values()) or walk(in_graph(value))
         if isinstance(value, (list, tuple)):
             return any(walk(inner) for inner in value)
         return False
@@ -122,6 +126,7 @@ def variation(snapshot, warnings):
                 found.append(True)
             for inner in value.values():
                 walk(inner)
+            walk(in_graph(value))
         elif isinstance(value, (list, tuple)):
             for inner in value:
                 walk(inner)

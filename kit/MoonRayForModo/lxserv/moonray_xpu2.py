@@ -295,16 +295,16 @@ class ShaderState(Followed, lxu.command.BasicCommand):
 # under NEED_GB free, and stops itself when free memory falls under a twentieth of the machine's (2 GB at least).
 # PEAK_GB is the most a whole compile has taken (d53fc99f); a compile finished here says its own peak in the log.
 NEED_GB = 8.0
-# 16.6 GB for the programs with the lanes' shared arithmetic (2026-11-26, RTX 3090, a whole compile at once).
-PEAK_GB = 17.0
+# 8.5 GB with the shared arithmetic out of line and powf without doubles (2026-11-27, RTX 3090, a whole compile at once).
+PEAK_GB = 9.0
 GB = 1024.0 ** 3
 
 
 # Low memory (asked 2026-11-26: a machine with less than 8 GB could not compile): the compile takes one module at a
 # time (XPU2_COMPILE_LOW_MEMORY=1, async_gpu.h), so it needs about the largest module's memory alone. LOW_NEED_GB is the
 # guard's own (xpu2_session.cc, CompileNeedLowGB); LOW_PEAK_GB the most a low-memory compile has taken.
-LOW_NEED_GB = 3.0
-LOW_PEAK_GB = 4.5
+LOW_NEED_GB = 6.0
+LOW_PEAK_GB = 6.0
 # Chosen by itself, never by a preference (asked 2026-11-26: "no one should have a preference to choose how to
 # compile"): compile_low_memory.
 

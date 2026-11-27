@@ -27,6 +27,8 @@ public:
     Kind kind = Perspective;
     double toCamera[4][4] = {}, toTrace[4][4] = {};  // trace space to camera space, and back (row vectors)
     unsigned width = 0, height = 0;
+    // The perspective camera's focal point (camera space): toward's, for the graphics card's lookups (rhea_store_core.h).
+    D3 focal() const { return fp; }
 
     // False for a camera Rhea's probes cannot follow (bake), or a degenerate one.
     bool init(const surface::Camera& c, unsigned w, unsigned h) {

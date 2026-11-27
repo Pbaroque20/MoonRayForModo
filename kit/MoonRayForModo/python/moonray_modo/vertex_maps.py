@@ -74,6 +74,11 @@ def named_in(*values):
         elif isinstance(value, dict):
             todo.extend(value.keys())
             todo.extend(value.values())
+            # A gradient layer moved into a MoonShine graph names its map inside its JSON (gradients.in_graph).
+            from .gradients import in_graph
+            held = in_graph(value)
+            if held is not None:
+                todo.append(held)
         elif isinstance(value, (list, tuple, set)):
             todo.extend(value)
     return found

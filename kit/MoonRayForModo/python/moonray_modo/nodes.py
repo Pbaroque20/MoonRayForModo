@@ -9,7 +9,9 @@ MAPS={
  'swizzle':{'in':('Rgb',[0,0,0]),'channels':('String','rgb'),'index':('Int',0)},
  'combine':{'in1':('Float',0),'in2':('Float',0),'in3':('Float',0)},
  'clamp':{'in':('Rgb',[0,0,0]),'low':('Rgb',[0,0,0]),'high':('Rgb',[1,1,1])},
- 'image':{'file':('String',''),'srgb':('Bool',True),'color_space':('String',''),'uv_map':('String',''),'scale':('Vec2f',[1,1]),'channel':('Int',0),'texcoord':('Vec3f',[0,0,0]),'uaddressmode':('String','periodic'),'vaddressmode':('String','periodic'),'default':('Rgb',[0,0,0]),'filtertype':('String','linear'),'invert':('Bool',False)},
+ 'image':{'file':('String',''),'srgb':('Bool',True),'color_space':('String',''),'uv_map':('String',''),'scale':('Vec2f',[1,1]),'channel':('Int',0),'texcoord':('Vec3f',[0,0,0]),'uaddressmode':('String','periodic'),'vaddressmode':('String','periodic'),'default':('Rgb',[0,0,0]),'filtertype':('String','linear'),'invert':('Bool',False),
+           # An image sequence (shader_tree_clips): file is its pattern (seq.[####].png), the frame's file found as the scene is read.
+           'sequence':('Bool',False),'first_frame':('Int',1),'last_frame':('Int',1),'start_frame':('Int',0),'end_behavior':('String','hold')},
  'multiply':{'in1':('Rgb',[1,1,1]),'in2':('Rgb',[1,1,1])},
  'add':{'in1':('Rgb',[0,0,0]),'in2':('Rgb',[0,0,0])},
  'subtract':{'in1':('Rgb',[0,0,0]),'in2':('Rgb',[0,0,0])},
@@ -19,8 +21,57 @@ MAPS={
  'normalmap':{'in':('Rgb',[.5,.5,1]),'scale':('Float',1),'basis_mode':('Int',0),'uv_map':('String',''),'basis_scale':('Vec2f',[1,1]),'basis_rotation':('Float',0),'basis_offset':('Vec2f',[0,0])},
  # A bump map: a height (an image, mostly) turned into a shading normal, as a Shader Tree Bump layer with the
  # material's Bump Amplitude; step, where it is not 0, is how far apart in UV the height is read.
- 'bump':{'height':('Float',0),'amplitude':('Float',.005),'step':('Float',0)},
+ 'bump':{'height':('Float',0),'amplitude':('Float',.005),'step':('Float',0),'normal':('Rgb',[.5,.5,1])},
+ # The kit's helper nodes for what a Shader Tree layer does (shader_tree_transfer makes them; they are in the node list
+ # under Modo Shader Tree). Modo Blend: one layer laid over what is beneath it, by Modo's blend modes, its opacity and
+ # a mask, as the kit's ModoTextureMap lays Shader Tree layers (graph.bindings).
+ 'modo_blend':{'bg':('Rgb',[0,0,0]),'fg':('Rgb',[1,1,1]),'blend':('Int',0),'opacity':('Float',1),'mask':('Float',1)},
+ # Modo Procedural: a Modo procedural texture through the object (Modo's Solid projection), as the kit's
+ # ModoProceduralMap draws a Shader Tree procedural layer; or, with a gradient, a Modo Gradient layer as the kit's ramp
+ # draws it (gradients.emit), its Input wired to what it reads where that is a channel beneath it.
+ 'modo_procedural':{'pattern':('Int',0),'type':('Int',0),'settings':('FloatVector',[0.0]*22+[.5,.5]),'color1':('Rgb',[0,0,0]),
+                    'color2':('Rgb',[1,1,1]),'alpha1':('Float',1),'alpha2':('Float',1),
+                    'rows':('FloatVector',[1.0,0,0,0, 0,1.0,0,0, 0,0,1.0,0]),'output':('Int',0),'process':('Bool',False),
+                    'input':('Rgb',[0,0,0]),'gradient':('String','')},
+ # Modo Projection: texture coordinates laid on as a Shader Tree layer's Texture Locator lays them (UV with its repeats,
+ # offset and turn, Planar, Cubic, Spherical, Cylindrical or Front), worked out on the meshes as the kit works them out
+ # for Shader Tree layers (coordinates), and read back by the image wired to it.
+ 'modo_projection':{'projection':('String','uv'),'uv_map':('String',''),'axis':('Int',2),
+                    'locator_matrix':('FloatVector',[1.0,0,0,0, 0,1.0,0,0, 0,0,1.0,0, 0,0,0,1.0]),
+                    'uv_matrix':('FloatVector',[1.0,0,0,0,1.0,0]),'rotation':('Float',0),'scale':('Vec2f',[1,1])},
+ # An Environment's graph (shader_tree_environment): its output, and what its Shader Tree layers become, laid over one
+ # another by Modo Blend nodes. The kit composes them into the environment's picture as it composes the layers
+ # (environment_layers), for MoonRay, XPU2 and MoonLightIPR alike; they draw nothing on a surface.
+ 'modo_environment':{'color':('Rgb',[0,0,0])},
+ 'modo_environment_image':dict({'file':('String',''),'color_space':('String','(default)'),'alpha':('String','use'),'swizzling':('Bool',False),
+                                'rgba':('String','use'),'gamma':('Float',1),'brightness':('Float',1),'contrast':('Float',1),'low':('Float',0),
+                                'high':('Float',1),'flip_red':('Bool',False),'flip_green':('Bool',False),'flip_blue':('Bool',False),
+                                'invert':('Bool',False)},**{
+     'locator':('String',''),'projection':('String','spherical'),'axis':('Int',1),
+     'locator_matrix':('FloatVector',[1.0,0,0,0, 0,1.0,0,0, 0,0,1.0,0, 0,0,0,1.0]),'wrap':('Vec2f',[1,1]),'uv_rotation':('Float',0),
+     'uv_matrix':('FloatVector',[1.0,0,0,0,1.0,0]),'tile_u':('String','repeat'),'tile_v':('String','repeat'),'hardness':('Float',0),
+     'random_offset':('String','none')}),
+ 'modo_environment_sky':{'type':('String','grad4'),'zenith':('Rgb',[.12,.29,.66]),'sky':('Rgb',[.75,.84,1]),'ground':('Rgb',[.33,.3,.27]),
+                         'nadir':('Rgb',[.12,.1,.08]),'sky_exponent':('Float',4),'ground_exponent':('Float',4),'sun':('String',''),
+                         'normalize':('Bool',False),'gamma':('Float',1),'albedo':('Rgb',[.2,.2,.2]),'disc':('Float',1),
+                         'inscatter':('Float',0),'invert':('Bool',False)},
+ 'modo_environment_procedural':{'kind':('String','grid'),'pattern':('String','square'),'width':('Float',.1),'transition':('Float',0),
+                                'bias':('Float',.5),'gain':('Float',.5),'color1':('Rgb',[0,0,0]),'color2':('Rgb',[1,1,1]),
+                                'alpha1':('Float',1),'alpha2':('Float',1),'invert':('Bool',False),
+     'locator':('String',''),'projection':('String','spherical'),'axis':('Int',1),
+     'locator_matrix':('FloatVector',[1.0,0,0,0, 0,1.0,0,0, 0,0,1.0,0, 0,0,0,1.0]),'wrap':('Vec2f',[1,1]),'uv_rotation':('Float',0),
+     'uv_matrix':('FloatVector',[1.0,0,0,0,1.0,0]),'tile_u':('String','repeat'),'tile_v':('String','repeat'),'hardness':('Float',0),
+     'random_offset':('String','none')},
 }
+ENVIRONMENT_NODES=('modo_environment','modo_environment_image','modo_environment_sky','modo_environment_procedural')
+MODO_BLENDS=('Normal','Multiply','Add','Subtract','Screen','Divide','Difference','Darken','Lighten','Overlay','Hard Light','Exclusion',
+             'Soft Light','Color Dodge','Color Burn')
+MODO_PROJECTIONS=('uv','planar','cubic','spherical','cylindrical','front')
+MODO_NODES=('modo_blend','modo_procedural','modo_projection')+ENVIRONMENT_NODES
+# Masks, vertex maps, falloffs and drivers as nodes (shader_tree_masks).
+from . import shader_tree_masks as _masks
+MAPS.update(_masks.SCHEMAS)
+MODO_NODES=MODO_NODES+_masks.NODES
 NORMAL_NODES=('normalmap','bump')
 # The ocean (ocean.py): a vector texture of the waves, wired into a Vector Displacement node's Vector, and its foam as a
 # map, both made from the same settings. Neither reaches an engine as itself: expand_ocean() makes them images of the
@@ -66,11 +117,39 @@ def specs(kind):
     if kind in map_library.catalog():return map_library.catalog()[kind]['attributes']
     if kind not in MAPS: raise ValueError('Unsupported node type: '+str(kind))
     result={key:{'name':key,'type':value[0],'default_value':value[1],
-                  'flags':'FLAGS_BINDABLE' if key not in ('file','srgb','color_space','uv_map','scale','channel','channels','index','doclamp','uaddressmode','vaddressmode','default','filtertype','basis_mode','basis_scale','basis_rotation','basis_offset','amplitude','step') else ''} for key,value in MAPS[kind].items()}
+                  'flags':'FLAGS_BINDABLE' if key not in ('file','srgb','color_space','uv_map','scale','channel','channels','index','doclamp','uaddressmode','vaddressmode','default','filtertype','basis_mode','basis_scale','basis_rotation','basis_offset','amplitude','step','sequence','first_frame','last_frame','start_frame','end_behavior') and not (kind in MODO_NODES and key not in ('bg','fg','opacity','mask','input')+_masks.BINDABLE.get(kind,()) and (kind,key)!=('modo_environment','color')) and not (kind=='modo_mask') else ''} for key,value in MAPS[kind].items()}
     if kind=='normalmap':
         result['basis_mode']['enum']={'Connected image UVs':0,'Explicit UV basis':1,'Primary shading basis':2}
         result['basis_rotation']['comment']='UV basis rotation in degrees; used only with Explicit UV basis.'
+    if kind=='image':
+        result['sequence']['comment']="File is an image sequence's pattern, its frame number as a run of # in brackets (seq.[####].png): each frame reads its own file, as Modo's image sequence clip does."
+        result['start_frame']['comment']='The scene frame at which the sequence shows its First Frame.'
+        result['end_behavior']['comment']="Before and after its frames: hold (the first and last), repeat or pingpong, as Modo's End Behavior."
+    if kind=='modo_blend':
+        result['blend']['enum']={name:i for i,name in enumerate(MODO_BLENDS)}
+        result['bg']['comment']='What is beneath: the channel as the layers under this one leave it.'
+        result['fg']['comment']='The layer: an image, a procedural, a colour.'
+        result['opacity']['comment']="The layer's opacity, 0 to 1, as a Shader Tree layer's."
+        result['mask']['comment']="Where the layer is laid on: its image's alpha, a Layer Mask. Times the opacity."
+    if kind=='modo_procedural':
+        from . import procedurals
+        result['pattern']['enum']=dict(procedurals.PATTERNS)
+        result['output']['enum']={'Colour':0,'Alpha':1}
+        result['settings']['comment']="The pattern's own settings, as the kit reads them from a Shader Tree layer (procedurals.MAP_SETTINGS); the last two are its bias and gain."
+        result['rows']['comment']="The texture's place: three rows that take a point of the world into the texture's space (its Texture Locator's)."
+        result['input']['comment']='For a process or a gradient on a channel: the channel beneath, which it reads.'
+        result['gradient']['comment']='A Modo Gradient layer, as the kit reads one (gradients.capture), in place of a pattern.'
+    if kind=='modo_projection':
+        result['projection']['enum']={name.title():name for name in MODO_PROJECTIONS}
+        result['axis']['enum']={'X':0,'Y':1,'Z':2}
+        result['locator_matrix']['comment']="The Texture Locator's world matrix (Planar, Cubic, Spherical, Cylindrical)."
+        result['uv_matrix']['comment']="The locator's UV transform (a b c d e f: u' = a u + b v + c, v' = d u + e v + f), then Rotation (radians) and Scale."
+    if kind in _masks.NODES:_masks.annotate(kind,result)
+    if kind in ENVIRONMENT_NODES:
+        from .shader_tree_environment import describe
+        describe(kind,result)
     if kind=='bump':
+        result['normal']['comment']='A normal map beneath the bump (an image read as a normal map), as a Shader Tree Normal layer under a Bump layer.'
         result['height']['comment']='The height: wire a greyscale image (or any texture) here; white is raised, black is sunk.'
         result['amplitude']['comment']="How high white stands above black, in scene units, as Modo's Bump Amplitude (5 mm by default)."
         result['step']['comment']='How far apart in UV the height is read; 0 reads it a thousandth of the UVs apart.'
@@ -418,6 +497,22 @@ def kinds():
     return list(MAPS)+sorted(map_library.catalog())+sorted(shader_library.catalog())
 
 
+def projection_descriptor(node):
+    """The coordinates a Modo Projection node lays on the meshes, as a Shader Tree layer's (layers.collect): a layer for
+    coordinates.descriptors, with its coordinate key."""
+    values=node.get('parameters',{})
+    projection=str(values.get('projection','uv'))
+    if projection not in MODO_PROJECTIONS:raise ValueError('Unknown Modo projection: '+projection)
+    layer={'projection':projection,'uv_map':values.get('uv_map','') if projection=='uv' else '',
+           'uv_matrix':[float(v) for v in values.get('uv_matrix',[1,0,0,0,1,0])],'rotation':float(values.get('rotation',0)),
+           'scale':[float(v) for v in values.get('scale',[1,1])]}
+    if projection!='uv':
+        layer['locator_matrix']=[float(v) for v in values.get('locator_matrix',MAPS['modo_projection']['locator_matrix'][1])]
+        layer['axis']=int(values.get('axis',2))
+    layer['coordinate_key']=coordinates.key(layer)
+    return layer
+
+
 def new(shader='DwaBaseMaterial',parameters=None):
     return {'version':1,'root':'surface','nodes':{'surface':{'type':shader,'parameters':parameters or {},'inputs':{},'position':[300,50]}},'overrides':[]}
 
@@ -570,6 +665,7 @@ def _descriptors(graph):
     g=validate(graph)
     result=[image_descriptor(node) for node in g['nodes'].values() if node['type'] in ('image','texcoord') and 'texcoord' not in node.get('inputs',{})]
     result+=[layer for layer in (space_descriptor(node) for node in g['nodes'].values()) if layer]
+    result+=[projection_descriptor(node) for node in g['nodes'].values() if node['type']=='modo_projection']
     # Images whose UVs are moved, turned or scaled by other nodes: MoonLightIPR reads them from the meshes.
     result+=[layer for layer in (wired_descriptor(g,node) for node in g['nodes'].values() if node['type']=='image' and 'texcoord' in node.get('inputs',{})) if layer]
     for node in g['nodes'].values():
@@ -592,14 +688,30 @@ def normal_descriptor(node,graph):
                'uv_matrix':[1,0,offset[0],0,1,offset[1]]}
         layer['coordinate_key']=coordinates.key(layer)
         return layer
-    source=graph['nodes'].get(node.get('inputs',{}).get('in'),{})
+    source=normal_image(graph,node.get('inputs',{}).get('in'))
     if source.get('type')!='image':return None
     coord=source.get('inputs',{}).get('texcoord')
     if coord:
+        if graph['nodes'].get(coord,{}).get('type')=='modo_projection':
+            return projection_descriptor(graph['nodes'][coord])
         from .graph_coordinates import descriptor
         return descriptor(coord,graph)
     if authored_texcoord(source.get('parameters',{})):return None
     return image_descriptor(source)
+
+
+# Nodes that change a normal map's colour point by point (its channels flipped, corrected), through which the image it
+# reads is still the one whose UVs say which way it faces.
+POINTWISE_NORMAL=('multiply','add','subtract','ColorCorrectGammaMap','ColorCorrectGainOffsetMap','ColorCorrectMap')
+FIRST_INPUT={'multiply':'in1','add':'in1','subtract':'in1','ColorCorrectGammaMap':'input','ColorCorrectGainOffsetMap':'input','ColorCorrectMap':'input'}
+
+
+def normal_image(graph,identity,depth=0):
+    """The image node a normal map's colour comes from, through point-by-point nodes ({} where there is none)."""
+    node=graph['nodes'].get(identity) or {}
+    if node.get('type') in POINTWISE_NORMAL and depth<8:
+        return normal_image(graph,(node.get('inputs') or {}).get(FIRST_INPUT[node['type']]),depth+1)
+    return node
 
 
 def authored_texcoord(params):
@@ -617,6 +729,9 @@ def reads_missing(graph,identity,seen=None):
     seen.add(identity)
     name={'image':'file','ImageMap':'texture'}.get(node.get('type'))
     held=(node.get('parameters') or {}).get(name) if name else None
+    if held and name=='file' and (node.get('parameters') or {}).get('sequence'):
+        from .shader_tree_clips import file_of
+        held=file_of(node['parameters'])
     if held:
         from .textures import missing
         if missing(held):return True
@@ -648,6 +763,7 @@ def emit(material,name,index,lines,library,output="root",validated=True):
         lines.append('}')
         return '%s(%s)'%(kind,string(path))
     def literal(value,kind):
+        if kind.endswith('Vector'): return '{'+', '.join(number(v) for v in value)+'}'
         if kind=='Bool': return 'true' if value else 'false'
         if kind=='String': return string(value)
         if isinstance(value,list): return vector(value,{'Rgb':'Rgb','Vec2f':'Vec2','Vec3f':'Vec3'}.get(kind,'Rgb'))
@@ -690,6 +806,10 @@ def emit(material,name,index,lines,library,output="root",validated=True):
                 if u not in address or v not in address:raise ValueError('Unknown image address mode')
                 if params.get('filtertype','linear')!='linear':raise ValueError('This image node supports linear filtering; choose a native ImageMap for other texture controls')
                 filename=params.get('file','')
+                # An image sequence: the frame's file (a scene read for a render has named it already, shader_tree_clips.framed_graph).
+                if params.get('sequence'):
+                    from .shader_tree_clips import file_of
+                    filename=file_of(params)
                 # A texture not on this machine is as no texture: the node's own default value, and a notice.
                 if filename and missing(filename):
                     note_missing(filename);filename=''
@@ -714,6 +834,27 @@ def emit(material,name,index,lines,library,output="root",validated=True):
                 # Invert, as a Shader Tree image layer's: one less the image's value.
                 if params.get('invert'):ref=definition('ModoTextureMap',path+'/invert',{'background':'Rgb(1,1,1)','foreground':binding(ref,'Rgb'),'blend':'3'})
                 if coverage:ref=definition('ModoTextureMap',path+'/default',{'background':values['default'],'foreground':binding(ref,'Rgb'),'mask':binding(coverage,'Float')})
+            elif kind in ENVIRONMENT_NODES:
+                raise ValueError('%s: an Environment graph node; it draws an environment, not a surface'%kind)
+            elif kind=='modo_blend':
+                blend=int(params.get('blend',0))
+                if not 0<=blend<len(MODO_BLENDS):raise ValueError('Modo Blend: unknown blend mode %d'%blend)
+                ref=definition('ModoTextureMap',path,{'background':values['bg'],'foreground':values['fg'],'blend':str(blend),
+                                                      'opacity':values['opacity'],'mask':values['mask']})
+            elif kind=='modo_procedural':
+                ref=modo_procedural(params,values,refs,path,definition,binding)
+            elif kind in _masks.NODES:
+                ref=_masks.emit_node(kind,params,refs,path,definition,binding)
+            elif kind=='modo_projection':
+                descriptor=projection_descriptor(item)
+                attribute_name=string(coordinates.attribute(descriptor['coordinate_key']))
+                if identity in bumped:
+                    # Read to either side of each point by a Bump node: the coordinates as the surface's own move.
+                    extra={'uv_affine':vector(coordinates.affine(descriptor)[0],'Vec4')} if descriptor['projection']=='uv' else {}
+                    ref=definition('ModoTextureMap',path,{'mode':'12','uv_name':attribute_name,**extra})
+                else:
+                    ref=definition('AttributeMap',path,{'primitive_attribute_name':attribute_name,'primitive_attribute_type':'1','warn_when_unavailable':'true',
+                                                        'default_value':'Rgb(0,0,0)'})
             elif kind=='texcoord':
                 ref=definition('AttributeMap',path,{'primitive_attribute_name':string(coordinates.attribute(image_descriptor(item)['coordinate_key'])),'primitive_attribute_type':'1','warn_when_unavailable':'true'})
             elif kind=='swizzle':
@@ -746,7 +887,7 @@ def emit(material,name,index,lines,library,output="root",validated=True):
             elif kind=='checker': ref=definition('ModoTextureMap',path,{'mode':'2','background':values['color1'],'foreground':values['color2'],'scale':values['scale']})
             elif kind=='normalmap':
                 normal=values['in']
-                source=g['nodes'].get(item.get('inputs',{}).get('in'),{})
+                source=normal_image(g,item.get('inputs',{}).get('in'))
                 # A texture not on this machine gives its node's default, black as a rule: as a normal that is a tilt, not
                 # no normal, and it ruins the surface's reflections. The map is flat in its place (the notice is the image's).
                 flat=reads_missing(g,item.get('inputs',{}).get('in'))
@@ -768,13 +909,62 @@ def emit(material,name,index,lines,library,output="root",validated=True):
                 from .native import bump_node
                 flat='height' not in refs or reads_missing(g,inputs['height']) or not bump_node()
                 step=float(params.get('step',0) or 0)
-                mapped=definition('ModoTextureMap',path+'/tangent',{'mode':'1','normal':'Rgb(0.5,0.5,1)',
+                beneath='Rgb(0.5,0.5,1)'
+                if 'normal' in refs and not reads_missing(g,inputs['normal']):
+                    # A normal map beneath the bump: turned into the surface's own directions as a Normal Map node turns it.
+                    beneath=values['normal']
+                    descriptor=normal_descriptor({'type':'normalmap','parameters':{},'inputs':{'in':inputs['normal']}},g)
+                    if descriptor:
+                        p=normal_image(g,inputs['normal']).get('parameters',{});address={'periodic':0,'clamp':1,'mirror':2,'constant':3}
+                        beneath=binding(definition('ModoTextureMap',path+'/uv_basis',{'mode':'13','foreground':beneath,'uv_name':string(coordinates.attribute(descriptor['coordinate_key'])),
+                            'tile_u':str(address[p.get('uaddressmode','periodic')]),'tile_v':str(address[p.get('vaddressmode','periodic')])}),'Rgb')
+                mapped=definition('ModoTextureMap',path+'/tangent',{'mode':'1','normal':beneath,
                     'height':values['height'],'bump_strength':number(0.0 if flat else amplitude),
                     **({'bump_step':number(step)} if step>0 and shader_tree.BUMP_STEP else {})})
                 ref=definition('ModoNormalMap',path,{'input':binding(mapped,'Vec3f')})
         cache[identity]=ref
         return ref
     return node(g[output])
+
+
+def modo_procedural(params,values,refs,path,definition,binding):
+    """A Modo Procedural node as the Shader Tree's layer draws (graph.bindings): ModoProceduralMap through the object, or
+    for a gradient the kit's ramp of what it reads."""
+    from .rdla import number,vector
+    gradient=params.get('gradient') or ''
+    output=int(params.get('output',0))
+    if gradient:
+        import json
+        from .gradients import emit as emit_gradient
+        data=json.loads(gradient)
+        if output==1:
+            if 'alpha' not in data:return definition('ConstantColorMap',path,{'color_value':'Rgb(1, 1, 1)'})
+            data=dict(data,colors=[[a]*3 for a in data['alpha']])
+        count=[0]
+        def node(kind,attributes):
+            name=path+'/%d'%count[0];count[0]+=1
+            held={}
+            for key,value in attributes.items():
+                if value.startswith('bind('):
+                    unit='1' if key in ('height','opacity','mask') or (kind=='RampMap' and key=='input') else 'Rgb(1, 1, 1)'
+                    value=value[:-1]+', '+unit+')'
+                held[key]=value
+            return 'bind(%s)'%definition(kind,name,held)
+        rgb=lambda value:vector(value if isinstance(value,(list,tuple)) else [value]*3,'Rgb')
+        current={data.get('input'):refs['input'] and 'bind(%s)'%refs['input']} if 'input' in refs and not str(data.get('input','')).startswith('@') else {}
+        if not current and not str(data.get('input','')).startswith('@'):
+            # The channel beneath is one value (no node wired): the gradient reads that.
+            current={data.get('input'):values['input']}
+        made=emit_gradient(data,current,node,rgb)
+        return made[len('bind('):-1]
+    settings=[float(v) for v in params.get('settings',MAPS['modo_procedural']['settings'][1])]
+    rows=[float(v) for v in params.get('rows',MAPS['modo_procedural']['rows'][1])]
+    if len(rows)%4:raise ValueError('Modo Procedural: its rows are four numbers each')
+    held={'pattern':str(int(params.get('pattern',0))),'type':str(int(params.get('type',0))),'settings':'{'+', '.join(number(v) for v in settings)+'}',
+          'color1':values['color1'],'color2':values['color2'],'alpha1':values['alpha1'],'alpha2':values['alpha2'],'output':str(output),
+          **{'row%d'%i:vector(rows[4*i:4*i+4],'Vec4') for i in range(len(rows)//4)}}
+    if params.get('process') and 'input' in refs:held['input']=values['input']
+    return definition('ModoProceduralMap',path,held)
 
 
 def from_material(item):

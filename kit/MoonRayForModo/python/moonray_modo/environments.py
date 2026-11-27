@@ -12,7 +12,10 @@ from . import textures
 from .channel_values import rgb
 
 
-def collect(scene, warnings):
+def collect(scene, warnings, read=None):
+    """The scene's environments as the renderers are given them. read (Move Shader Tree Textures to MoonShine Graphs,
+    shader_tree_environment): environment item -> the layers to read for it, each environment's layers then returned
+    as read (a stack each), none left out for what covers it and none occluded."""
     from .host import channel, color, world_matrix, render_visible
     result = []
     # Where the preferences say to follow Modo, the environment lights the scene only with Global Illumination on
@@ -39,8 +42,12 @@ def collect(scene, warnings):
                 # Whether it is Visible to Indirect at all, Global Illumination on or off: it still hides the ones under it.
                 'indirect_seen':bool(channel(environment,'visInd',1))}
         from .layers import ordered_items,texture_groups
-        children = [i for i in ordered_items(environment) if i.type!='mask'
-                    and channel(i,'enable',1) and channel(i,'render',1) and channel(i,'opacity',1)>0]
+        # An environment whose layers were moved into its MoonShine graph is drawn from the graph (shader_tree_environment).
+        from .shader_tree_environment import drawn_layers
+        children = read(environment) if read is not None else drawn_layers(scene, environment, warnings)
+        if children is None:
+            children = [i for i in ordered_items(environment) if i.type!='mask'
+                        and channel(i,'enable',1) and channel(i,'render',1) and channel(i,'opacity',1)>0]
         stack = []
         for index, layer in enumerate(children):
             try:
@@ -162,6 +169,9 @@ def collect(scene, warnings):
                 # Keep lower rows: nested groups and Layer Masks can expose them.
             except (ValueError, LookupError, OSError) as exc:
                 warnings.append('Environment %s: %s.' % (layer.name,exc))
+        if read is not None:
+            result.append(dict(item,kind='stack',layers=stack))
+            continue
         if len(stack)>1 and covers(stack[0]) and not any(layer.get('groups') or layer.get('effect')!='envColor' for layer in stack):
             # An opaque image on top hides every layer under it (as an HDRI over Modo's own environment material):
             # it is the environment alone, sent whole rather than baked with what cannot be seen.
@@ -179,7 +189,7 @@ def collect(scene, warnings):
         except Exception:
             order=[]
         result.sort(key=lambda env:order.index(env['identity']) if env['identity'] in order else len(order))
-    return occlude(result) if stacking()=='override' else result
+    return occlude(result) if stacking()=='override' and read is None else result
 
 
 def projection(locator, channel, world_matrix, procedural=False):

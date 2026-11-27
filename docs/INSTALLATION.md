@@ -1,24 +1,44 @@
 # Installing MoonRay for Modo
 
-These instructions are for **0.5.6.2**, **Modo 16.1v9**, and **Windows x64**. The runtime is MoonRay [2026.29.1](https://github.com/dreamworksanimation/openmoonray/releases/tag/v2026.29.1) (MoonRay 18.4), built for Windows with the plugin's own patches. This is a pre-production release, not a production-certified build.
+These instructions are for **0.5.6.3**, **Modo 16.1v9**, and **Windows x64**. The runtime is MoonRay [2026.29.1](https://github.com/dreamworksanimation/openmoonray/releases/tag/v2026.29.1) (MoonRay 18.4), built for Windows with the plugin's own patches. This is a pre-production release, not a production-certified build.
 
 ## Requirements
 
 - An installed copy of Modo 16.1v9. The supported executable is `C:\Program Files\Modo16.1v9\modo\modo.exe`.
 - An AVX-capable x64 CPU for the bundled CPU runtime.
 - Optional: a compatible NVIDIA GPU and installed NVIDIA driver for XPU, XPU2 and OptiX. The runtime includes CUDA runtime libraries; a CUDA development toolkit is not required. XPU has been exercised on an RTX 3090; compatibility with every GPU/driver combination is not established.
+- For XPU2: 32 GB of RAM recommended. Compiling its shaders, once after each install that changes them, takes up to about 9 GB on its own (about 6 GB when memory is short and it compiles one part at a time).
 
 ## Download and install
 
-1. Open the [0.5.6.2 release](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.5.6). Download **MoonRayForModo-0.5.6.2-kit.zip** and **MoonRayForModo-0.5.6.2-windows-runtime.zip** from Assets, and, if you want MoonRay's ten example scenes in the asset library, **MoonRayForModo-0.5.6.2-content.zip** (about 300 MB). GitHub's automatic Source code ZIP does not include the runtime.
+1. Open the [0.5.6.3 release](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.5.6.3). Download **MoonRayForModo-0.5.6.3-kit.zip** and **MoonRayForModo-0.5.6.3-windows-runtime.zip** from Assets, and, if you want MoonRay's ten example scenes in the asset library, **MoonRayForModo-0.5.6.3-content.zip** (about 300 MB). GitHub's automatic Source code ZIP does not include the runtime.
 2. Save your scene and close all Modo instances.
 3. Extract the ZIPs into the **same temporary folder**. Merge their `MoonRayForModo` folders (the content ZIP adds to `assets/library`). The resulting folder must contain `index.cfg`, `bin/MoonRayGeometry.lx`, `runtime/moonray.exe` and `runtime-xpu2`.
 4. In Windows Explorer, enter `%APPDATA%\Luxology\Kits`. Create the `Kits` folder if needed. If a `MoonRayForModo` folder already exists, move it to a backup location **outside Kits**; do not merge a new release into the old installation.
 5. Copy the combined `MoonRayForModo` folder into `Kits`. Avoid an extra nested folder: `index.cfg` should be directly inside `Kits\MoonRayForModo`.
-6. Start **Modo 16.1v9**. Open **MoonRay > Open Preview** (or enter `moonray.open`). The plugin discovers its bundled `runtime` folder automatically. For XPU2, the default GPU renderer for previews, choose **Compile XPU2 Shaders** once in System > Preferences > MoonRay > XPU2; until then the preview says so instead of rendering, or choose MoonRay XPU on that page. Coming from an earlier release, compile them once more: XPU2's GPU programs changed for XPU2 Rhea.
+6. Start **Modo 16.1v9**. Open **MoonRay > Open Preview** (or enter `moonray.open`). The plugin discovers its bundled `runtime` folder automatically. For XPU2, the default GPU renderer for previews, choose **Compile XPU2 Shaders** once in System > Preferences > MoonRay > XPU2, or compile them without opening Modo ([below](#compiling-xpu2-shaders-without-opening-modo)); until then the preview says so instead of rendering, or choose MoonRay XPU on that page. Coming from an earlier release, compile them once more: XPU2's GPU programs changed for XPU2 Rhea.
 7. If upgrading from a development installation, check the runtime path in MoonRay settings. If it still points to an older folder, select `%APPDATA%\Luxology\Kits\MoonRayForModo\runtime`. Use Auto execution for XPU → Vector → Scalar fallback, or choose a CPU mode explicitly.
 
 Do not install the runtime ZIP alone: the kit ZIP contains the Modo integration and geometry adapter. Keep the runtime files, shaders, and licenses together. Do not install or copy the Modo SDK.
+
+## Compiling XPU2 shaders without opening Modo
+
+XPU2's shaders can be compiled with Modo closed, which leaves the compile the most memory. They go into the same shader
+cache as when Modo compiles them, so Modo finds them compiled the next time it starts.
+
+1. Close Modo (recommended: it frees the memory Modo holds).
+2. Open `%APPDATA%\Luxology\Kits\MoonRayForModo` in Windows Explorer and double-click **Compile XPU2 Shaders.cmd**.
+3. Leave the window open. It takes about 15 minutes, or about 30 when memory is short and it compiles one part at a
+   time (it chooses by itself). It says **Done** when the shaders are compiled, then waits for a key.
+
+The same from PowerShell:
+
+```powershell
+& "$env:APPDATA\Luxology\Kits\MoonRayForModo\runtime-xpu2\moonray_xpu2.exe" --compile-shaders
+```
+
+If it says **not enough free memory** or **memory ran low**, close other programs and run it again: the parts already
+compiled are kept. After installing a release that changes XPU2's shaders, compile them once more the same way.
 
 ## Using the plugin
 
@@ -108,8 +128,8 @@ the scene names them, and `-out` also writes the beauty with its alpha:
 `-threads <n>` sets the processor threads. A scene XPU2 cannot render (deep outputs, for one) is rendered by MoonRay
 instead, from the same command line, as a preview falls back. The exit code is 0 when the picture is written and 1
 otherwise. Keep `runtime-xpu2` beside `runtime`, as the kit installs them: XPU2 takes MoonRay from there. Its shaders
-must have been compiled once on the machine (Preferences > MoonRay > XPU2 > Compile XPU2 Shaders, or
-`moonray_xpu2.exe --compile-shaders`); until then it renders on the processor. `moonray_xpu2.exe render --help` lists
+must have been compiled once on the machine (Preferences > MoonRay > XPU2 > Compile XPU2 Shaders, or without Modo as in
+[Compiling XPU2 shaders without opening Modo](#compiling-xpu2-shaders-without-opening-modo)); until then it renders on the processor. `moonray_xpu2.exe render --help` lists
 the options.
 
 For a sequence, render each frame's scene the same way.

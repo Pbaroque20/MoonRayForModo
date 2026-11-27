@@ -121,7 +121,7 @@ X2_HD inline Color sampleRgbToLab(Color c) {
     const float x = 0.4124564f * c.x + 0.3575761f * c.y + 0.1804375f * c.z, y = 0.2126729f * c.x + 0.7151522f * c.y + 0.0721750f * c.z,
                 z = 0.0193339f * c.x + 0.1191920f * c.y + 0.9503041f * c.z;
     const float kE = .008856f, kK = 903.3f;
-    auto f = [&](float v) { return v > kE ? float(pow(double(v), 1.0 / 3)) : (kK * v + 16) / 116; };
+    auto f = [&](float v) { return v > kE ? cbrtf(v) : (kK * v + 16) / 116; };
     const float fx = f(x / 0.950456f), fy = f(y / 1.0f), fz = f(z / 1.089058f);
     return Color{116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)};
 }

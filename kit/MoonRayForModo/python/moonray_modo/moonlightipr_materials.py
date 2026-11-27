@@ -606,6 +606,10 @@ def graph_image(node, graph=None):
     """An image node of a material graph as a texture layer, or a word for why it cannot be one."""
     from . import nodes
     values = node.get('parameters', {})
+    if node['type'] == 'image' and values.get('sequence'):
+        # An image sequence: the frame's file (a scene read for a render has named it already).
+        from .shader_tree_clips import framed_parameters
+        values = framed_parameters(values)
     if node['type'] == 'image':
         if not values.get('file'):
             return 'an image node with no file chosen'
@@ -617,6 +621,9 @@ def graph_image(node, graph=None):
         if 'texcoord' not in node.get('inputs', {}):
             # Its UV map and scale are baked onto the meshes under this name.
             layer['coordinate_key'] = nodes.image_descriptor(node)['coordinate_key']
+        elif graph is not None and graph['nodes'].get(node['inputs']['texcoord'], {}).get('type') == 'modo_projection':
+            # A Modo Projection: its coordinates are on the meshes as a Shader Tree layer's (nodes.projection_descriptor).
+            layer['coordinate_key'] = nodes.projection_descriptor(graph['nodes'][node['inputs']['texcoord']])['coordinate_key']
         else:
             # UVs that other nodes move, turn or scale are on the meshes too; anything else they do is not followed.
             placed = nodes.wired_descriptor(graph, node) if graph is not None else None
@@ -643,6 +650,27 @@ def graph_image(node, graph=None):
     return '%s nodes' % node['type']
 
 
+def solid_layer(node):
+    """A Modo Procedural node's pattern through the object as the Shader Tree layer it was (its solid_map), with whether
+    it gives the pattern's alpha; None for a gradient or anything else."""
+    from . import nodes, procedurals
+    if node.get('type') != 'modo_procedural' or (node.get('parameters') or {}).get('gradient'):
+        return None
+    values = dict((key, spec[1]) for key, spec in nodes.MAPS['modo_procedural'].items())
+    values.update(node.get('parameters') or {})
+    rows = [float(v) for v in values['rows']]
+    names = {number: name for name, number in procedurals.PATTERNS.items()}
+    solid = {'pattern': int(values['pattern']), 'type': int(values['type']), 'settings': [float(v) for v in values['settings']],
+             'color1': [float(v) for v in values['color1']], 'color2': [float(v) for v in values['color2']],
+             'alpha1': float(values['alpha1']), 'alpha2': float(values['alpha2']), 'rows': [rows[i:i + 4] for i in range(0, len(rows), 4)]}
+    if values.get('process'):
+        solid['process'] = True
+    alpha = int(values.get('output', 0)) == 1
+    if alpha:
+        solid.update(color1=[solid['alpha1']] * 3, color2=[solid['alpha2']] * 3, alpha1=1.0, alpha2=1.0)
+    return {'kind': names.get(solid['pattern'], 'noise'), 'solid_map': solid, 'procedural': None}, alpha
+
+
 def graph_expression(graph, identity, effect):
     """What simple arithmetic between images comes to as a stack of texture layers, or None if it is more than that.
 
@@ -653,8 +681,11 @@ def graph_expression(graph, identity, effect):
     way through are not kept: only where the value is used.
     """
     from . import nodes
+    from . import shader_tree_masks as masks
     members = graph['nodes']
     counter = [0]
+    # Rows a Gradient on a Driver node needs before it: the driver's chain (shader_tree_masks.ipr_gradient), once each.
+    prelude, preluded = [], set()
 
     def fresh():
         counter[0] += 1
@@ -692,6 +723,21 @@ def graph_expression(graph, identity, effect):
         if kind in ('image', 'ImageMap'):
             layer = graph_image(node, graph)
             return None if isinstance(layer, str) else (layer, 1.0, 0.0)
+        if kind == 'modo_procedural':
+            # A gradient on a Vertex Map or a Driver node: the driver's rows first (shader_tree_masks).
+            held = masks.ipr_gradient(graph, node, graph_expression)
+            if held is not None:
+                for row in held[0]:
+                    if row.get('identity') not in preluded:
+                        preluded.add(row.get('identity'))
+                        prelude.append(row)
+                return (held[1], 1.0, 0.0)
+            # A Shader Tree gradient moved into the graph (shader_tree_processing): the layer it was.
+            from .shader_tree_processing import layer_of
+            found = layer_of(node)
+            if found is None:
+                found = solid_layer(node)
+            return None if found is None else (found[0], 1.0, 0.0)
         if kind in ('clamp', 'convert') and 'in' in node.get('inputs', {}):
             return leaf(node['inputs']['in'])
         if kind == 'swizzle' and 'in' in node.get('inputs', {}):
@@ -723,6 +769,16 @@ def graph_expression(graph, identity, effect):
                 return None
             layer, gain, offset = inner
             return (layer, gain * (high[0] - low[0]), low[0] + offset * (high[0] - low[0]))
+        if kind in masks.NODES:
+            # A Vertex Map, a Modo Mask, a Falloff or a Driver as one row (shader_tree_masks).
+            return masks.ipr_leaf(graph, node, leaf)
+        held = masks.ipr_gradient(graph, node, graph_expression)
+        if held is not None:
+            for row in held[0]:
+                if row.get('identity') not in preluded:
+                    preluded.add(row.get('identity'))
+                    prelude.append(row)
+            return (held[1], 1.0, 0.0)
         return None
 
     def placed(found, blend='normal', opacity=1.0, as_effect=None):
@@ -732,7 +788,10 @@ def graph_expression(graph, identity, effect):
         else:
             layer, gain, offset = found
             layer = dict(layer)
-            if (gain, offset) != (1.0, 0.0):
+            if (gain, offset) != (1.0, 0.0) and layer.get('kind') == 'gradient':
+                # A gradient's own colours scaled and shifted.
+                layer['gradient'] = dict(layer['gradient'], colors=[[c * gain + offset for c in colour] for colour in layer['gradient']['colors']])
+            elif (gain, offset) != (1.0, 0.0):
                 # The layer's contrast and brightness are a gain and an offset in other words.
                 brightness = gain + 2 * offset
                 if abs(brightness) < 1e-9:
@@ -764,6 +823,44 @@ def graph_expression(graph, identity, effect):
         kind, inputs = node['type'], node.get('inputs', {})
         if kind in ('clamp', 'convert') and 'in' in inputs:
             return chain(inputs['in'], depth + 1)
+        if kind == 'modo_driver' and 'value' in inputs:
+            return chain(inputs['value'], depth + 1)
+        rows = masks.ipr_rows(node)
+        if rows:
+            # An RGB vertex map: each of its channels a row, added.
+            rows = [placed((row, 1.0, 0.0), blend) for row, blend in rows]
+            return None if any(row is None for row in rows) else rows
+        if kind == 'modo_blend':
+            # A Modo Blend: the layer over what is beneath it by its blend mode, at its opacity, its mask a Layer Mask.
+            from .layers import BLENDS
+            mode = nodes.MODO_BLENDS[int(node.get('parameters', {}).get('blend', 0))].lower().replace(' ', '')
+            share = constant(node, 'opacity', 1.0)
+            over = leaf(inputs['fg']) if 'fg' in inputs else (None, constant(node, 'fg', 1.0) or [1.0, 1.0, 1.0])
+            below = chain(inputs['bg'], depth + 1) if 'bg' in inputs else [placed((None, constant(node, 'bg', 0.0) or [0.0] * 3))]
+            if mode not in BLENDS or share is None or len(set(share)) != 1 or over is None or below is None or None in below:
+                return None
+            top = placed(over, mode, min(1.0, max(0.0, share[0])))
+            if top is None:
+                return None
+            wired = inputs.get('mask')
+            if wired is not None and 'fg' in inputs:
+                # A gradient laid on by its own alpha (shader_tree_processing): the one layer with its alpha, as it was.
+                from .shader_tree_processing import alpha_of_node, layer_of
+                if alpha_of_node(graph, inputs['fg'], wired):
+                    whole = layer_of(members[inputs['fg']], with_alpha=True)
+                    if whole is not None:
+                        top = placed((whole[0], 1.0, 0.0), mode, min(1.0, max(0.0, share[0])))
+                        return None if top is None else below + [top]
+            if wired is None or number(wired) is not None:
+                amount = number(wired)[0] if wired is not None else float(node.get('parameters', {}).get('mask', 1.0))
+                top['opacity'] = top['opacity'] * min(1.0, max(0.0, amount))
+                return below + [top]
+            mask = leaf(wired)
+            cover = placed(mask, as_effect='layerMask') if mask is not None and mask[0] is not None else None
+            if cover is None:
+                return None
+            cover['mask_target'] = top['identity']
+            return below + [cover, top]
         if kind in ('add', 'subtract', 'multiply') and {'in1', 'in2'} <= set(inputs):
             orders = [('in1', 'in2')] + ([('in2', 'in1')] if kind != 'subtract' else [])
             for under, over in orders:
@@ -790,6 +887,18 @@ def graph_expression(graph, identity, effect):
                 share = amount if wired is None else number(wired)
                 top = placed(over, opacity=min(1.0, max(0.0, share[0])))
                 return None if top is None else below + [top]
+            # A moved gradient laid by its own alpha (and opacity): the layer with its alpha, as it was.
+            from .shader_tree_processing import alpha_of_node
+            alone, share = wired, [1.0]
+            if members.get(wired, {}).get('type') == 'multiply':
+                for first, second in (('in1', 'in2'), ('in2', 'in1')):
+                    if first in members[wired].get('inputs', {}) and constant(members[wired], second, 1.0) is not None:
+                        alone, share = members[wired]['inputs'][first], constant(members[wired], second, 1.0)
+                        break
+            if 'fg' in inputs and len(set(share)) == 1 and alpha_of_node(graph, inputs['fg'], alone):
+                from .shader_tree_processing import layer_of
+                top = placed((layer_of(members[inputs['fg']], with_alpha=True)[0], 1.0, 0.0), opacity=min(1.0, max(0.0, share[0])))
+                return None if top is None else below + [top]
             mask = leaf(wired)
             top = placed(over)
             if mask is None or mask[0] is None or top is None:
@@ -802,7 +911,8 @@ def graph_expression(graph, identity, effect):
             return below + [cover, top]
         return None
 
-    return chain(identity)
+    found = chain(identity)
+    return prelude + found if found and prelude else found
 
 
 # What leaves a value alone, for the arithmetic nodes: the other input of an add is 0, of a multiply 1.
@@ -826,6 +936,14 @@ def graph_layers(source, note, runtime=None, displacement=None, wanted='height',
         node = graph['nodes'].get(identity)
         if node is None:
             continue
+        if node.get('type') == 'RampMap' and int((node.get('parameters') or {}).get('ramp_type', 0)) == 8 and 'input' in node.get('inputs', {}) \
+                and key in ('roughness', 'independent_transmission_roughness', 'anisotropy'):
+            # A Modo material's curve after its layers (shader_tree_transfer copies the kit's): its layers, drawn
+            # with the roughness as it comes, which the curve moves little.
+            identity = node['inputs']['input']
+            node = graph['nodes'].get(identity)
+            if node is None:
+                continue
         if displacement and key != wanted:
             continue
         effect = as_effect if displacement else GRAPH_INPUTS.get(key)

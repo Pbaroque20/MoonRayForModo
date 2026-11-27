@@ -1052,6 +1052,8 @@ def meshes(data, materials, warnings, scene=None):
                         uvs=_gather(uv_sets[uv_index], segment['faces'], indices, segment.get('face_varying')) if uv_index < len(uv_sets) else [],
                         subdivision=False, subdivision_level=1, smooth=True,
                         object_override=True, evaluated_geometry=True, geometry_settings=dict(settings), visibility=list(visibility))
+            # Its Part and its own material's tag, for a graph's Modo Mask by Part or Material Tag (shader_tree_masks).
+            mesh.update(_part=surfaces[0].get('part') or '', _source_material=surfaces[0].get('source_material', surfaces[0].get('material')))
             if 'displace' in (material.get('baked_effects') or ()):
                 # Displaced by Modo (host.by_engine): Modo's render cache gives the normals of the surface before it was
                 # displaced, which lit its bumps flat (they showed only in its outline). Worked out from the displaced

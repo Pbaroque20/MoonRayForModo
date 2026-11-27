@@ -3,6 +3,8 @@ MoonLightIPR as a weight (scaled from the span the gradient's keys change over t
 Weight Map Texture does (gradients.capture). Followed with a UV map projection; the UV map is the one the mesh's
 material reads (the layer names it, as an image's does), else a notice.
 """
+from .gradients import in_graph
+
 PREFIX = '__modo_texture_uv'
 
 
@@ -23,6 +25,8 @@ def wanted(materials):
                 holders.setdefault(value['vmap'], set()).add(tag)
             for inner in value.values():
                 walk(inner, tag)
+            # A gradient layer moved into a MoonShine graph (gradients.in_graph).
+            walk(in_graph(value), tag)
         elif isinstance(value, (list, tuple)):
             for inner in value:
                 walk(inner, tag)

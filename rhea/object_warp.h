@@ -29,6 +29,7 @@
 #include "view.h"
 #include "virtual_surface.h"
 #include "async_cpu.h"
+#include "rhea_store_core.h"
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -56,26 +57,40 @@ namespace async = xpu2::interactive::async;
 // object before it. Where none near in depth holds colour, the plain weights (pullPush's), so nothing is left unfilled.
 // Each coarser texel carries the depth of the colour it holds (its known texels', averaged by their weight) and the
 // depth of its region's surface (every texel's with a depth, for one that held no colour and was filled).
-inline void pullPushDepth(std::vector<float>& c, const std::vector<float>& z, unsigned w, unsigned h, double sigma) {
+// ids (DESIGN.md 38): each texel's object (0 none); a texel short of colour then takes it from texels of its own object
+// first (each coarser texel carrying the object most of its colour's weight came from), others weighing a fiftieth.
+inline void pullPushDepth(std::vector<float>& c, const std::vector<float>& z, unsigned w, unsigned h, double sigma,
+                          const std::vector<std::uint32_t>* ids = nullptr) {
     struct Level {
         unsigned w, h;
         std::vector<float> m;      // rgb, weight
         std::vector<float> zc, zg;  // the colour's depth, the surface's depth (0: none)
+        std::vector<std::uint32_t> ic, ig;  // the colour's object, the surface's (ids)
     };
+    const bool objects = ids && ids->size() == size_t(w) * h;
     std::vector<Level> lv;
-    lv.push_back({w, h, c, z, z});
+    lv.push_back({w, h, c, z, z, {}, {}});
+    if (objects) {
+        lv[0].ig = *ids;
+        lv[0].ic.assign(ids->size(), 0u);
+        for (size_t i = 0; i < ids->size(); ++i)
+            if (c[i * 4 + 3] > 0) lv[0].ic[i] = (*ids)[i];
+    }
     while (lv.back().w > 1 || lv.back().h > 1) {
         const Level& f = lv.back();
-        Level q{std::max(1u, (f.w + 1) / 2), std::max(1u, (f.h + 1) / 2), {}, {}, {}};
+        Level q{std::max(1u, (f.w + 1) / 2), std::max(1u, (f.h + 1) / 2), {}, {}, {}, {}, {}};
         const size_t qn = size_t(q.w) * q.h;
         q.m.assign(qn * 4, 0.0f), q.zc.assign(qn, 0.0f), q.zg.assign(qn, 0.0f);
-        std::vector<float> zcw(qn, 0.0f), zgn(qn, 0.0f);
+        std::vector<float> zcw(qn, 0.0f), zgn(qn, 0.0f), icw(objects ? qn : 0, 0.0f);
+        if (objects) q.ic.assign(qn, 0u), q.ig.assign(qn, 0u);
         for (unsigned y = 0; y < f.h; ++y)
             for (unsigned x = 0; x < f.w; ++x) {
                 const size_t fi = size_t(y) * f.w + x, qi = size_t(y / 2) * q.w + x / 2;
                 if (f.zg[fi] > 0) q.zg[qi] += f.zg[fi], zgn[qi] += 1.0f;
+                if (objects && !q.ig[qi]) q.ig[qi] = f.ig[fi];
                 const float* s = &f.m[fi * 4];
                 if (!(s[3] > 0)) continue;
+                if (objects && f.ic[fi] && s[3] > icw[qi]) q.ic[qi] = f.ic[fi], icw[qi] = s[3];
                 float* d = &q.m[qi * 4];
                 for (int k = 0; k < 3; ++k) d[k] += s[k] * s[3];
                 d[3] += s[3];
@@ -112,12 +127,13 @@ inline void pullPushDepth(std::vector<float>& c, const std::vector<float>& z, un
                 const double wt[4] = {(1 - tx) * (1 - ty), tx * (1 - ty), (1 - tx) * ty, tx * ty};
                 const size_t at[4] = {size_t(y0) * q.w + x0, size_t(y0) * q.w + x1, size_t(y1) * q.w + x0, size_t(y1) * q.w + x1};
                 const float own = f.zg[fi];
+                const std::uint32_t ownObj = objects ? f.ig[fi] : 0u;
                 double up[3] = {0, 0, 0}, sw = 0, plain[3] = {0, 0, 0}, pw = 0;
                 for (int j = 0; j < 4; ++j) {
                     const float* s = &q.m[at[j] * 4];
                     const double a = wt[j] * s[3];
                     if (!(a > 0)) continue;
-                    const double b = a * near(own, q.zc[at[j]]);
+                    const double b = a * near(own, q.zc[at[j]]) * (ownObj && q.ic[at[j]] && q.ic[at[j]] != ownObj ? 0.02 : 1.0);
                     for (int ch = 0; ch < 3; ++ch) plain[ch] += a * s[ch], up[ch] += b * s[ch];
                     pw += a, sw += b;
                 }
@@ -129,6 +145,7 @@ inline void pullPushDepth(std::vector<float>& c, const std::vector<float>& z, un
                 d[3] = 1.0f;
                 // Its colour is now its own surface's.
                 if (!(f.zc[fi] > 0)) f.zc[fi] = own;
+                if (objects && ownObj) f.ic[fi] = ownObj;
             }
     }
     c.swap(lv.front().m);
@@ -217,13 +234,34 @@ public:
         bool albedo = false;
         size_t maxCells = size_t(1) << 22;  // past this the store starts again from the next picture
         unsigned threads = 8;
+        // Cells of one object each (DESIGN.md 38; XPU2_SESSION_RHEA_STORE_OBJECTS): a pixel's object from its first hit, so
+        // that a tyre's colour and the floor's under it never share a cell. Needs Outputs::extra.
+        bool byObject = false;
     };
-    // A picture's outputs for the composite: its AOV values, a pixel's count of them, and where the first hit's albedo
-    // and the light emitted at it are among them (-1: none).
+    // What a learning picture's pixel adds besides its outputs (Realtime::learn, from its own first hit): its object, and
+    // the light reflected toward it along the mirror direction (where known: the store's colour where the reflected ray
+    // met a surface, the environment's where it left the scene).
+    struct PixelExtra {
+        float reflected[3] = {0, 0, 0};
+        std::uint32_t obj = 0;
+        bool reflectedKnown = false;
+    };
+    // A picture's outputs for the composite: its AOV values, a pixel's count of them, and where the first hit's albedo,
+    // the light emitted at it and the light reflected diffusely there are among them (-1: none).
     struct Outputs {
         const std::vector<float>* aov = nullptr;
         size_t stride = 0;
-        int albedo = -1, emission = -1;
+        int albedo = -1, emission = -1, diffuse = -1;
+        const std::vector<PixelExtra>* extra = nullptr;  // a pixel each, or none
+        // Into cells this many sizes coarser than its pixels' (a picture of a sample or two a pixel: rheaLearnAhead's;
+        // its noise averaged over more of them).
+        int coarser = 0;
+    };
+    // A lookup's parts (lookup's parts): the diffuse light, the emission, and where the cells hold it, the specular light
+    // and the light reflected toward the camera that saw it, with the share of the cells' weight that had it.
+    struct Parts {
+        float colour[3] = {0, 0, 0}, diffuse[3] = {0, 0, 0}, emission[3] = {0, 0, 0}, specular[3] = {0, 0, 0}, reflected[3] = {0, 0, 0};
+        float share = 0;  // of the weight with a known reflection (and a diffuse output)
     };
     Options op;
     double addSeconds = 0;
@@ -238,7 +276,8 @@ public:
     size_t cells() const { return light.used + fine.used; }
     // What the store holds in memory, in bytes (its tables' slots and the environment's).
     size_t bytes() const {
-        return (light.slots.size() + fine.slots.size()) * sizeof(Table::Entry) + (sky.size() + skyFilled.size()) * sizeof(float);
+        return (light.slots.size() + fine.slots.size()) * sizeof(Table::Entry) + light.extras.size() * sizeof(Table::Extra) +
+               (sky.size() + skyFilled.size()) * sizeof(float);
     }
     // A store taken in from elsewhere (rhea_cache.h: kept between realtime's runs, or read from a file): the lookups'
     // memo, keyed by the store's place and generation, must not take it for the one that stood there before.
@@ -246,12 +285,13 @@ public:
 
     // The store written out and read back (rhea_cache.h, the radiance cache on disk): its options that shape the cells
     // (a store made under others is not read), each table's cells, and the environment. False where it cannot be.
-    static constexpr std::uint32_t FileForm = 1;
+    // 2: cells with their object and the diffuse, specular and reflected light (DESIGN.md 35, 38).
+    static constexpr std::uint32_t FileForm = 2;
     bool save(std::FILE* f) const {
         auto put = [&](const void* p, size_t n) { return n == 0 || std::fwrite(p, 1, n, f) == n; };
         const std::uint32_t form = FileForm, entry = sizeof(Table::Entry);
         const double shape[3] = {op.scale, op.grazing, op.jump};
-        const std::int32_t levels = op.levels, albedo = op.albedo ? 1 : 0;
+        const std::int32_t levels = op.levels, albedo = (op.albedo ? 1 : 0) | (op.byObject ? 2 : 0);
         bool ok = put("RHEASTOR", 8) && put(&form, 4) && put(&entry, 4) && put(shape, sizeof shape) && put(&levels, 4) && put(&albedo, 4);
         for (const Table* t : {&light, &fine}) {
             const std::uint64_t used = t->used;
@@ -274,7 +314,7 @@ public:
         if (!get(magic, 8) || std::memcmp(magic, "RHEASTOR", 8) != 0 || !get(&form, 4) || form != FileForm || !get(&entry, 4) ||
             entry != sizeof(Table::Entry) || !get(shape, sizeof shape) || !get(&levels, 4) || !get(&albedo, 4))
             return false;
-        if (shape[0] != op.scale || shape[1] != op.grazing || shape[2] != op.jump || levels != op.levels || (albedo != 0) != op.albedo) return false;
+        if (shape[0] != op.scale || shape[1] != op.grazing || shape[2] != op.jump || levels != op.levels || albedo != ((op.albedo ? 1 : 0) | (op.byObject ? 2 : 0))) return false;
         Table tables[2];
         for (Table& t : tables) {
             std::uint64_t used = 0;
@@ -286,7 +326,7 @@ public:
             for (std::uint64_t k = 0; k < used; ++k) {
                 Table::Entry e;
                 if (!get(&e, sizeof e) || !e.full) return false;
-                size_t i = Table::hashOf(e.x, e.y, e.z, e.level, e.bin) & mask;
+                size_t i = Table::hashOf(e.x, e.y, e.z, e.level, e.bin, e.obj) & mask;
                 while (t.slots[i].full) i = (i + 1) & mask;
                 t.slots[i] = e;
             }
@@ -300,6 +340,7 @@ public:
             if (!get(v.data(), v.size() * sizeof(float))) return false;
         }
         light = std::move(tables[0]), fine = std::move(tables[1]);
+        light.regrown = fine.regrown = true;
         sky = std::move(held[0]), skyFilled = std::move(held[1]);
         renewed();
         return true;
@@ -339,13 +380,16 @@ public:
         if (!(angle > 0)) return;
         const bool parts = outs.aov && outs.stride && outs.aov->size() == n * outs.stride && outs.albedo >= 0 &&
                            size_t(outs.albedo) + 3 <= outs.stride && (outs.emission < 0 || size_t(outs.emission) + 3 <= outs.stride);
+        const bool diffuse = parts && outs.diffuse >= 0 && size_t(outs.diffuse) + 3 <= outs.stride;
+        const std::vector<PixelExtra>* extra = outs.extra && outs.extra->size() == n ? outs.extra : nullptr;
         // Every pixel at a large picture would cost more than it adds: a stride keeps it under a third of a million.
         const unsigned stride = unsigned(std::max(1.0, std::floor(std::sqrt(double(n) / 330000.0))));
         struct Add {
             surface::V3 p;
             int level;
             std::uint8_t bins[2];
-            float v[9], weight;  // colour, albedo, emission
+            std::uint32_t obj;
+            float v[NV], weight;  // as a cell's sums (Table::Entry::v), v[VW] unused
         };
         const unsigned rows = (h + stride - 1) / stride;
         std::vector<std::vector<Add>> perRow(rows);
@@ -390,15 +434,29 @@ public:
                 Add e;
                 e.p = p;
                 const double along = stretch(nn, D3{ray.direction.x, ray.direction.y, ray.direction.z}, op.grazing);
-                e.level = levelOf(footprint(view, angle, d) * along * op.scale * stride);
+                e.level = levelOf(footprint(view, angle, d) * along * op.scale * stride) + std::max(0, outs.coarser);
                 binsOf(nn, e.bins);
-                for (int k = 0; k < 9; ++k) e.v[k] = 0;
+                for (int k = 0; k < NV; ++k) e.v[k] = 0;
                 for (int k = 0; k < 3; ++k) e.v[k] = c[k];
+                e.obj = op.byObject && extra ? (*extra)[i].obj : 0u;
                 if (parts) {
                     const float* o = &(*outs.aov)[i * outs.stride];
                     for (int k = 0; k < 3; ++k) {
                         e.v[3 + k] = std::isfinite(o[outs.albedo + k]) ? std::max(0.0f, o[outs.albedo + k]) : 0.0f;
                         e.v[6 + k] = outs.emission >= 0 && std::isfinite(o[outs.emission + k]) ? std::max(0.0f, o[outs.emission + k]) : 0.0f;
+                    }
+                    if (diffuse) {
+                        for (int k = 0; k < 3; ++k) e.v[VD + k] = std::isfinite(o[outs.diffuse + k]) ? std::max(0.0f, o[outs.diffuse + k]) : 0.0f;
+                        // The specular light (all the pixel's light but its emission and its diffuse light) beside the light
+                        // reflected toward the camera along the mirror direction: their ratio is the surface's specular
+                        // reflectance as that view saw it (Realtime::learn; lookup's parts).
+                        if (extra && (*extra)[i].reflectedKnown) {
+                            for (int k = 0; k < 3; ++k) {
+                                e.v[VS + k] = std::max(0.0f, c[k] - e.v[VD + k] - e.v[6 + k]);
+                                e.v[VR + k] = std::max(0.0f, (*extra)[i].reflected[k]);
+                            }
+                            e.v[VWS] = 1.0f;
+                        }
                     }
                 }
                 e.weight = weight;
@@ -410,14 +468,19 @@ public:
                 for (int b = 0; b < 2; ++b) {
                     if (e.bins[b] == NoBin) continue;
                     for (int k = 0; k < op.levels; ++k) {
-                        Table::Entry& t = light.slot(e.p, e.level + k, e.bins[b]);
-                        for (int q = 0; q < 9; ++q) t.v[q] += e.v[q] * e.weight;
-                        t.v[9] += e.weight;
+                        Table::Entry& t = light.slot(e.p, e.level + k, e.bins[b], e.obj);
+                        for (int q = 0; q < NB; ++q) t.v[q] += e.v[q] * e.weight;
+                        t.v[VW] += e.weight;
+                        // The view-dependent sums beside it, where this store learns them (a diffuse output).
+                        if (diffuse) {
+                            Table::Extra& x = light.more(light.last);
+                            for (int q = NB; q < NV; ++q) x.v[q - NB] += e.v[q] * e.weight;
+                        }
                     }
                     // The albedo alone, in cells half as wide.
                     if (op.albedo && parts)
                         for (int k = 0; k < op.levels + 1; ++k) {
-                            Table::Entry& t = fine.slot(e.p, e.level - 1 + k, e.bins[b]);
+                            Table::Entry& t = fine.slot(e.p, e.level - 1 + k, e.bins[b], e.obj);
                             for (int q = 0; q < 3; ++q) t.v[q] += e.v[3 + q] * e.weight;
                             t.v[9] += e.weight;
                         }
@@ -443,28 +506,115 @@ public:
     // up: how many sizes coarser than the point's own its colour came from.
     // maxUp: the most sizes up from the point's own the lookup climbs (-1: up to op.levels + 6). A point no picture has
     // shown climbed every size, up to 16 hash probes each, the most of a drag step's lookups on the user's car.
+    // obj: the hit's object (op.byObject: its cells alone). parts: the colour's parts, where wanted.
     bool lookup(const surface::V3& p, const D3& n, const D3& dir, double foot, float rgb[3], float& confidence, int* up = nullptr,
-                int maxUp = -1) const {
+                int maxUp = -1, std::uint32_t obj = 0, Parts* parts = nullptr) const {
         confidence = 0;
         if (up) *up = 0;
         if (!light.used) return false;
+        if (!op.byObject) obj = 0;
         std::uint8_t bins[2];
         binsOf(n, bins);
         const int first = levelOf(foot * stretch(n, dir, op.grazing) * op.scale);
-        double m[9];
+        double m[NV];
         int sizesUp = 0;
         const int levels = maxUp >= 0 ? std::min(op.levels + 6, maxUp + 1) : op.levels + 6;
-        if (!means(light, p, bins, first, levels, m, confidence, &sizesUp)) return false;
+        const bool more = parts && !light.extras.empty();
+        if (!means(light, p, bins, obj, first, levels, m, confidence, &sizesUp, more ? NV : NB)) return false;
         if (up) *up = sizesUp;
         for (int ch = 0; ch < 3; ++ch) rgb[ch] = float(std::max(0.0, m[ch]));
+        if (parts && !more) *parts = Parts{}, parts->colour[0] = rgb[0], parts->colour[1] = rgb[1], parts->colour[2] = rgb[2];
+        if (more) {
+            for (int ch = 0; ch < 3; ++ch) {
+                parts->colour[ch] = rgb[ch];
+                parts->emission[ch] = float(std::max(0.0, m[6 + ch]));
+                parts->diffuse[ch] = float(std::max(0.0, m[VD + ch]));
+                parts->specular[ch] = m[VWS] > 0 ? float(std::max(0.0, m[VS + ch] / m[VWS])) : 0.0f;
+                parts->reflected[ch] = m[VWS] > 0 ? float(std::max(0.0, m[VR + ch] / m[VWS])) : 0.0f;
+            }
+            parts->share = float(std::clamp(m[VWS], 0.0, 1.0));
+        }
         if (op.albedo && fine.used) {
-            double a[9];
+            double a[NV];
             float fineConfidence;
-            if (means(fine, p, bins, first - 1, op.levels + 7, a, fineConfidence, nullptr))
+            if (means(fine, p, bins, obj, first - 1, op.levels + 7, a, fineConfidence, nullptr))
                 for (int ch = 0; ch < 3; ++ch)
                     if (m[3 + ch] > 0.02) rgb[ch] = float(std::max(0.0, a[ch] * (m[ch] - m[6 + ch]) / m[3 + ch] + m[6 + ch]));
         }
         return true;
+    }
+    // The scene's environment lights' radiance in a direction (trace space), as a ray leaving the scene there meets them.
+    static bool environment(const cpu::Plan& plan, const surface::V3& p, const surface::V3& dir, float rgb[3], double blur = 0) {
+        namespace L = xpu2::interactive::lights;
+        rgb[0] = rgb[1] = rgb[2] = 0.0f;
+        bool any = false;
+        for (const L::Light& l : plan.lights) {
+            if (l.type != L::Env) continue;
+            L::Hit h{};
+            if (!L::intersectShapeHere(l, p, nullptr, dir, 3.4e38f, h)) continue;
+            float pdf = 0;
+            const surface::V3 c = L::evalShapeHere(l, p, dir, h, pdf, blur > 0 ? float(std::log2(blur)) : L::NoFootprint);
+            if (!(std::isfinite(c.x) && std::isfinite(c.y) && std::isfinite(c.z))) continue;
+            rgb[0] += c.x, rgb[1] += c.y, rgb[2] += c.z;
+            any = true;
+        }
+        return any;
+    }
+    // The light reflected toward a ray's first hit along its mirror direction (the shading normal's): the store's colour
+    // where the reflected ray meets a surface (at cells a few times the hit's footprint), the environment lights' where it
+    // leaves the scene. False where neither is known. The same at learning (Realtime::learn) and at a view's lookups
+    // (ObjectWarp), so that the specular light divided by it at one and multiplied by it at the other agree.
+    bool reflectedAt(const async::CpuBackend& backend, const cpu::Plan& plan, const surface::Ray& ray, const resume::Hit& hit, double foot, double blur, bool traced,
+                     float out[3]) const {
+        out[0] = out[1] = out[2] = 0.0f;
+        if (hit.geom == ~0u) return false;
+        const double dl = std::sqrt(double(ray.direction.x) * ray.direction.x + double(ray.direction.y) * ray.direction.y +
+                                    double(ray.direction.z) * ray.direction.z);
+        if (!(dl > 0)) return false;
+        const D3 d{ray.direction.x / dl, ray.direction.y / dl, ray.direction.z / dl};
+        D3 nn{hit.normal.x, hit.normal.y, hit.normal.z};
+        xpu2::interactive::shade::State st{};
+        if (backend.surfaceState(hit, ray, st)) nn = D3{st.N.x, st.N.y, st.N.z};
+        const double nl = std::sqrt(nn.x * nn.x + nn.y * nn.y + nn.z * nn.z);
+        if (!(nl > 0)) return false;
+        nn = D3{nn.x / nl, nn.y / nl, nn.z / nl};
+        double dn = d.x * nn.x + d.y * nn.y + d.z * nn.z;
+        if (dn > 0) nn = D3{-nn.x, -nn.y, -nn.z}, dn = -dn;  // facing the viewer
+        const surface::V3 r{float(d.x - 2 * dn * nn.x), float(d.y - 2 * dn * nn.y), float(d.z - 2 * dn * nn.z)};
+        // Untraced (traced false): the environment's light in the mirror direction, whatever stands in the way (no ray).
+        if (!traced) return environment(plan, hit.point, r, out, blur);
+        surface::Ray rr = ray;
+        rr.origin = hit.origin, rr.direction = r, rr.nearT = 0.0f, rr.farT = 3.4e38f;
+        const resume::Hit h2 = backend.trace(rr);
+        if (h2.geom == ~0u) return environment(plan, hit.point, r, out, blur);
+        float conf = 0;
+        int up = 0;
+        const D3 n2{h2.normal.x, h2.normal.y, h2.normal.z};
+        return lookup(h2.point, n2, D3{r.x, r.y, r.z}, std::max(foot * 2.0, blur * double(h2.t)), out, conf, &up, 5, h2.geom + 1);
+    }
+    // The colour table for the graphics card's copy (rhea_store_core.h, DESIGN.md 37): its slots, and what changed since
+    // the last sending (cardChanges: whole, or the dirty pages of PageSlots slots each; then forgotten).
+    const std::vector<xpu2::interactive::rheastore::Entry>& cardSlots() const { return light.slots; }
+    const std::vector<xpu2::interactive::rheastore::Extra>& cardExtras() const { return light.extras; }
+    bool cardChanges(std::vector<std::pair<size_t, size_t>>& pages) {
+        pages.clear();
+        const bool whole = light.regrown;
+        if (!whole)
+            for (size_t k = 0; k < light.dirty.size(); ++k)
+                if (light.dirty[k]) {
+                    const size_t from = k * Table::PageSlots, to = std::min(light.slots.size(), from + Table::PageSlots);
+                    if (from < to) {
+                        if (!pages.empty() && pages.back().second == from) pages.back().second = to;
+                        else pages.emplace_back(from, to);
+                    }
+                }
+        light.regrown = false;
+        std::fill(light.dirty.begin(), light.dirty.end(), std::uint8_t(0));
+        return whole;
+    }
+    // The lookups' view for the card (its options' part).
+    void cardView(xpu2::interactive::rheastore::View& v) const {
+        v.levels = op.levels, v.byObject = op.byObject ? 1 : 0, v.scale = op.scale, v.grazing = op.grazing;
     }
     // The environment's colour in a direction (trace space): false where no picture has shown it.
     bool skyAt(const D3& d, float rgb[3]) const {
@@ -490,62 +640,90 @@ public:
 
 private:
     static constexpr std::uint8_t NoBin = 255;
+    // A cell's sums (Table::Entry::v): the weight's place among them, the diffuse light's, the specular light's, the
+    // reflected light's and their weight's.
+    static constexpr int NB = xpu2::interactive::rheastore::NB, NV = xpu2::interactive::rheastore::NV, VW = xpu2::interactive::rheastore::VW,
+                         VD = xpu2::interactive::rheastore::VD,
+                         VS = xpu2::interactive::rheastore::VS, VR = xpu2::interactive::rheastore::VR, VWS = xpu2::interactive::rheastore::VWS;
     static constexpr size_t SkyW = 256, SkyH = 128;
     // A sparse hash of cubes: by their place at their size (2^level a side) and the side their surface faces; each the
     // weighted sums of what was added to it (colour, albedo, emission) and the weights.
     struct Table {
-        struct Entry {
-            long long x = 0, y = 0, z = 0;
-            std::int16_t level = 0;
-            std::uint8_t bin = 0, full = 0;
-            float v[10] = {};
-        };
+        // v: the sums of colour (0-2), albedo (3-5), emission (6-8), the weight (9), the diffuse light (10-12), and, from the
+        // pixels whose reflected light was known (op.specular), their specular light (13-15), that reflected light (16-18)
+        // and their weight (19). obj: the object the cell is of (op.byObject; 0 otherwise).
+        // (Its layout and hash shared with the graphics card's copy: rhea_store_core.h.)
+        using Entry = xpu2::interactive::rheastore::Entry;
+        using Extra = xpu2::interactive::rheastore::Extra;
         std::vector<Entry> slots;
+        std::vector<Extra> extras;  // a slot's view-dependent sums each (more()), or none
         size_t used = 0;
-        void clear() { slots.clear(), used = 0; }
-        static std::uint64_t hashOf(long long x, long long y, long long z, int level, int bin) {
-            std::uint64_t h = std::uint64_t(x) * 0x9E3779B97F4A7C15ull;
-            h ^= std::uint64_t(y) * 0xC2B2AE3D27D4EB4Full + (h << 6) + (h >> 2);
-            h ^= std::uint64_t(z) * 0x165667B19E3779F9ull + (h << 6) + (h >> 2);
-            h ^= (std::uint64_t(std::uint16_t(level)) << 8 | std::uint64_t(bin)) * 0x27D4EB2F165667C5ull;
-            h ^= h >> 31, h *= 0xBF58476D1CE4E5B9ull, h ^= h >> 29;
-            return h;
+        size_t last = 0;  // the slot slot() last gave
+        // The view-dependent sums, made for every slot where first asked for.
+        Extra& more(size_t i) {
+            if (extras.size() != slots.size()) extras.assign(slots.size(), Extra{}), regrown = true;
+            return extras[i];
         }
-        const Entry* find(long long x, long long y, long long z, int level, int bin) const {
+        // The card's copy (rheaStore): pages of slots written since it was last sent, or the whole (regrown).
+        static constexpr size_t PageSlots = 4096;
+        std::vector<std::uint8_t> dirty;
+        bool regrown = true;
+        void touch(size_t i) {
+            const size_t page = i / PageSlots;
+            if (page >= dirty.size()) dirty.resize(slots.size() / PageSlots + 1, 0);
+            dirty[page] = 1;
+        }
+        void clear() { slots.clear(), extras.clear(), used = 0, dirty.clear(), regrown = true; }
+        static std::uint64_t hashOf(long long x, long long y, long long z, int level, int bin, std::uint32_t obj) {
+            return xpu2::interactive::rheastore::hashOf(x, y, z, level, bin, obj);
+        }
+        const Entry* find(long long x, long long y, long long z, int level, int bin, std::uint32_t obj) const {
             if (slots.empty()) return nullptr;
             const size_t mask = slots.size() - 1;
-            for (size_t i = hashOf(x, y, z, level, bin) & mask;; i = (i + 1) & mask) {
+            for (size_t i = hashOf(x, y, z, level, bin, obj) & mask;; i = (i + 1) & mask) {
                 const Entry& e = slots[i];
                 if (!e.full) return nullptr;
-                if (e.x == x && e.y == y && e.z == z && e.level == level && e.bin == bin) return &e;
+                if (e.x == x && e.y == y && e.z == z && e.level == level && e.bin == bin && e.obj == obj) return &e;
             }
         }
-        Entry& slot(const surface::V3& p, int level, int bin) {
+        Entry& slot(const surface::V3& p, int level, int bin, std::uint32_t obj) {
             const double size = std::ldexp(1.0, level);
             const long long x = (long long)std::floor(p.x / size), y = (long long)std::floor(p.y / size), z = (long long)std::floor(p.z / size);
             if ((used + 1) * 2 > slots.size()) grow(std::max<size_t>(slots.size() * 2, size_t(1) << 16));
             const size_t mask = slots.size() - 1;
-            for (size_t i = hashOf(x, y, z, level, bin) & mask;; i = (i + 1) & mask) {
+            for (size_t i = hashOf(x, y, z, level, bin, obj) & mask;; i = (i + 1) & mask) {
                 Entry& e = slots[i];
                 if (!e.full) {
                     e = Entry{};
-                    e.x = x, e.y = y, e.z = z, e.level = std::int16_t(level), e.bin = std::uint8_t(bin), e.full = 1;
+                    e.x = x, e.y = y, e.z = z, e.level = std::int16_t(level), e.bin = std::uint8_t(bin), e.full = 1, e.obj = obj;
                     ++used;
+                    touch(i);
+                    if (!extras.empty()) extras[i] = Extra{};
+                    last = i;
                     return e;
                 }
-                if (e.x == x && e.y == y && e.z == z && e.level == level && e.bin == bin) return e;
+                if (e.x == x && e.y == y && e.z == z && e.level == level && e.bin == bin && e.obj == obj) {
+                    touch(i);
+                    last = i;
+                    return e;
+                }
             }
         }
         void grow(size_t size) {
             std::vector<Entry> old;
-            old.swap(slots);
+            std::vector<Extra> oldMore;
+            old.swap(slots), oldMore.swap(extras);
             slots.assign(size, Entry{});
+            if (!oldMore.empty()) extras.assign(size, Extra{});
+            regrown = true, dirty.assign(size / PageSlots + 1, 0);
             const size_t mask = slots.size() - 1;
-            for (const Entry& e : old) {
+            for (size_t k = 0; k < old.size(); ++k) {
+                const Entry& e = old[k];
                 if (!e.full) continue;
-                size_t i = hashOf(e.x, e.y, e.z, e.level, e.bin) & mask;
+                size_t i = hashOf(e.x, e.y, e.z, e.level, e.bin, e.obj) & mask;
                 while (slots[i].full) i = (i + 1) & mask;
                 slots[i] = e;
+                if (!oldMore.empty()) extras[i] = oldMore[k];
             }
         }
     };
@@ -567,6 +745,7 @@ private:
         std::uint64_t generation = ~0ull;
         int level = 0;
         std::uint8_t bins[2] = {0, 0};
+        std::uint32_t obj = 0;
         long long x0 = 0, y0 = 0, z0 = 0;
         const Table::Entry* e[8] = {};
     };
@@ -585,9 +764,9 @@ private:
     }
     // Table t's means (v[0..8] over its weight) at p: trilinear between the cells about it at the first size that has
     // any, the coarser sizes filling what the finer leave (a size's share by the cells it has).
-    bool means(const Table& t, const surface::V3& p, const std::uint8_t bins[2], int first, int levels, double out[9], float& confidence,
-               int* up) const {
-        double acc[9] = {}, have = 0;
+    bool means(const Table& t, const surface::V3& p, const std::uint8_t bins[2], std::uint32_t obj, int first, int levels, double out[NV],
+               float& confidence, int* up, int nv = VW + 1) const {
+        double acc[NV] = {}, have = 0;
         confidence = 0;
         for (int k = 0; k < levels; ++k) {
             const int level = first + k;
@@ -600,30 +779,34 @@ private:
             static thread_local Memo memo[8];
             Memo& m = memo[unsigned(level) & 7u];
             if (m.store != this || m.table != &t || m.generation != generation || m.level != level || m.bins[0] != bins[0] ||
-                m.bins[1] != bins[1] || m.x0 != x0 || m.y0 != y0 || m.z0 != z0) {
+                m.bins[1] != bins[1] || m.obj != obj || m.x0 != x0 || m.y0 != y0 || m.z0 != z0) {
                 for (int corner = 0; corner < 8; ++corner) {
                     const int dx = corner & 1, dy = corner >> 1 & 1, dz = corner >> 2 & 1;
-                    const Table::Entry* e = t.find(x0 + dx, y0 + dy, z0 + dz, level, bins[0]);
-                    if (!e && bins[1] != NoBin) e = t.find(x0 + dx, y0 + dy, z0 + dz, level, bins[1]);
-                    m.e[corner] = e && e->v[9] > 0 ? e : nullptr;
+                    const Table::Entry* e = t.find(x0 + dx, y0 + dy, z0 + dz, level, bins[0], obj);
+                    if (!e && bins[1] != NoBin) e = t.find(x0 + dx, y0 + dy, z0 + dz, level, bins[1], obj);
+                    m.e[corner] = e && e->v[VW] > 0 ? e : nullptr;
                 }
-                m.store = this, m.table = &t, m.generation = generation, m.level = level, m.bins[0] = bins[0], m.bins[1] = bins[1];
+                m.store = this, m.table = &t, m.generation = generation, m.level = level, m.bins[0] = bins[0], m.bins[1] = bins[1], m.obj = obj;
                 m.x0 = x0, m.y0 = y0, m.z0 = z0;
             }
-            double c[9] = {}, wsum = 0;
+            double c[NV] = {}, wsum = 0;
             for (int corner = 0; corner < 8; ++corner) {
                 const Table::Entry* e = m.e[corner];
                 if (!e) continue;
                 const int dx = corner & 1, dy = corner >> 1 & 1, dz = corner >> 2 & 1;
                 const double tri = (dx ? tx : 1 - tx) * (dy ? ty : 1 - ty) * (dz ? tz : 1 - tz);
                 if (tri <= 0) continue;
-                const double k = tri / e->v[9];
-                for (int q = 0; q < 9; ++q) c[q] += k * e->v[q];
+                const double k = tri / e->v[VW];
+                for (int q = 0; q < std::min(nv, NB); ++q) c[q] += k * e->v[q];
+                if (nv > NB && !t.extras.empty()) {
+                    const Table::Extra& x = t.extras[size_t(e - t.slots.data())];
+                    for (int q = NB; q < nv; ++q) c[q] += k * x.v[q - NB];
+                }
                 wsum += tri;
             }
             if (wsum <= 0) continue;
             const double take = (1.0 - have) * std::min(1.0, wsum / 0.5);
-            for (int q = 0; q < 9; ++q) acc[q] += take * c[q] / wsum;
+            for (int q = 0; q < nv; ++q) acc[q] += take * c[q] / wsum;
             if (have == 0) {
                 confidence = float(std::min(1.0, wsum));
                 if (up) *up = k;
@@ -632,7 +815,7 @@ private:
             if (have > 0.999) break;
         }
         if (have <= 0) return false;
-        for (int q = 0; q < 9; ++q) out[q] = acc[q] / have;
+        for (int q = 0; q < nv; ++q) out[q] = acc[q] / have;
         return true;
     }
     static bool skyUV(const D3& d, double& u, double& v) {
@@ -798,9 +981,24 @@ public:
         // With nothing in the store (the first frame of realtime): each hit's material colour (the CPU's), lit from the
         // camera, so that phase one has a first look before XPU2's first pictures fade in.
         bool firstLook = true;
+        // View-dependent light (DESIGN.md 35; XPU2_SESSION_RHEA_SPECULAR): where the store's cells hold a surface's specular
+        // light beside the light that was reflected toward the view that saw it, the specular light is made again for this
+        // view: the reflectance they give times the light reflected toward this ray (ObjectStore::reflectedAt). specMax: the
+        // most that reflectance may be (more is no mirror: transmission, a rough lobe), specShare: the least share of the
+        // cells' weight that knew its reflection.
+        bool specular = false;
+        double specMax = 1.5, specShare = 0.3;
+        bool specTrace = false;  // the reflected ray traced (a surface in the way: its colour), else the environment alone
+        double specBlur = 0.15;  // the reflection's blur (radians): the environment's filtered over it, a surface's cells as wide
+        // Edges by object and crease (DESIGN.md 38; XPU2_SESSION_RHEA_OBJECT_EDGES): grid corners of different objects, or
+        // whose normals part by more than creaseCos, are no smooth surface (their pixels traced each); the fills take a
+        // node's colour from its own object; a ray's lookups from its object's cells (ObjectStore::Options::byObject).
+        bool objectEdges = false;
+        double creaseCos = 0.8;
         unsigned threads = 8;
     };
     Options op;
+    size_t specularRebuilt = 0;  // the last view's nodes whose specular light was made again (op.specular)
     size_t rays = 0, edgeRays = 0;
     unsigned stride = 0, stages = 0;
     double seconds = 0, firstSeconds = 0, unknown = 0;  // the view's time, its first picture's, the rays the store had nothing for
@@ -815,12 +1013,19 @@ public:
     // tracer's own; false where the card does not take them now (a frame's launches out), the CPU tracing them. A stage's
     // rays go to it together (the coarse grid, a ring, a ring's edges), the store's lookups staying on the CPU's threads
     // (the user, 2026-11-22: "have Rhea phase 1 use both gpu/cpu"). Empty: the CPU alone.
-    std::function<bool(const surface::Ray*, size_t, resume::Hit*)> cardTrace;
+    // looks: each ray's lookup in the store's copy on the card (cardStore), where wanted (null: hits alone).
+    std::function<bool(const surface::Ray*, size_t, resume::Hit*, xpu2::interactive::rheastore::Look*)> cardTrace;
     // cardTrace in two (the card's launch queued, then its hits waited for): the fine grid's rays, every ring's, sent once
     // the coarse grid is traced and traced while the coarse picture is made and shown. Either empty: the rings' rays as
     // they come.
-    std::function<bool(const surface::Ray*, size_t)> cardBegin;
-    std::function<bool(resume::Hit*)> cardEnd;
+    std::function<bool(const surface::Ray*, size_t, bool)> cardBegin;
+    std::function<bool(resume::Hit*, xpu2::interactive::rheastore::Look*)> cardEnd;
+    // The store's lookups on the card beside its first hits (DESIGN.md 37; XPU2_SESSION_RHEA_GPU_STORE): the session's
+    // copy of the store brought up to date and this view's lookup settings sent; true where the card answers this view's
+    // lookups (its hits' looks then used in place of the CPU's, the environment's and the specular light's own work
+    // left to the CPU). Empty: the CPU's lookups.
+    std::function<bool(const xpu2::interactive::rheastore::View&)> cardStore;
+    size_t cardLooked = 0;  // the last view's hits whose colour the card looked up
     // The last view's rays the card traced, and the time its calls took (rays out, launch, hits back; a begun launch's from
     // its end's wait alone).
     size_t cardRays = 0;
@@ -856,12 +1061,27 @@ public:
         color.assign(n * 3, 0.0f), outW.assign(n, -1.0), outDepth.assign(n, 0.0f), state.assign(n, 2), doubt.assign(n, 1.0f);
         // Packets where every mesh is triangles: the curves' and points' own intersectors take one ray at a time.
         packetsUsed = op.packets && trianglesAlone(scene);
-        std::atomic<size_t> traced{0}, empty{0}, edge{0}, looked{0};
+        std::atomic<size_t> traced{0}, empty{0}, edge{0}, looked{0}, specularMade{0};
         // A hit's colour from the store (or the environment's), into a node: trusted where the store's cells about it hold
         // it (op.trust, op.trustUp), else weighed little in the interpolation. The store empty (realtime's first frame):
         // the first look, the hit's material colour lit from the camera.
         const bool firstLook = op.firstLook && store.empty();
-        auto shade = [&](const async::CpuBackend& backend, const surface::Ray& ray, const resume::Hit& hit, Node& o) {
+        // The card's copy of the store, where it answers this view's lookups (not the albedo composite's finer table).
+        bool cardLooks = false;
+        cardLooked = 0;
+        if (cardStore && cardTrace && !store.op.albedo && !store.empty()) {
+            xpu2::interactive::rheastore::View sv;
+            store.cardView(sv);
+            sv.lookupUp = op.lookupUp, sv.angle = angle, sv.kind = int(nv.kind), sv.parts = op.specular ? 1 : 0;
+            for (int i = 0; i < 4; ++i)
+                for (int j = 0; j < 4; ++j) sv.toCamera[i][j] = nv.toCamera[i][j];
+            const D3 f = nv.focal();
+            sv.fp[0] = f.x, sv.fp[1] = f.y, sv.fp[2] = f.z;
+            cardLooks = cardStore(sv);
+        }
+        std::atomic<size_t> lookedOnCard{0};
+        using Look = xpu2::interactive::rheastore::Look;
+        auto shade = [&](const async::CpuBackend& backend, const surface::Ray& ray, const resume::Hit& hit, Node& o, const Look* look = nullptr) {
             if (hit.geom == ~0u) {
                 o.kind = 2;
                 o.known = store.skyAt(D3{ray.direction.x, ray.direction.y, ray.direction.z}, o.rgb);
@@ -870,13 +1090,43 @@ public:
                 return;
             }
             o.kind = 1;
+            o.obj = hit.geom + 1;
             const double d = nv.depthOf(nv.camera(hit.point));
             o.depth = float(d), o.w = nv.wOf(d);
             const D3 nn = nv.toward(D3{hit.normal.x, hit.normal.y, hit.normal.z}, hit.point);
+            o.n[0] = float(nn.x), o.n[1] = float(nn.y), o.n[2] = float(nn.z);
             int up = 0;
-            const bool found = store.lookup(hit.point, nn, D3{ray.direction.x, ray.direction.y, ray.direction.z},
-                                            ObjectStore::footprint(nv, angle, d), o.rgb, o.conf, &up, op.lookupUp);
+            ObjectStore::Parts parts;
+            const double foot = ObjectStore::footprint(nv, angle, d);
+            bool found;
+            if (look) {  // the card's lookup (rhea_store_core.h: ObjectStore::lookup's arithmetic)
+                found = look->found != 0;
+                for (int ch = 0; ch < 3; ++ch) {
+                    o.rgb[ch] = look->rgb[ch];
+                    parts.colour[ch] = look->rgb[ch], parts.diffuse[ch] = look->diffuse[ch], parts.emission[ch] = look->emission[ch];
+                    parts.specular[ch] = look->specular[ch], parts.reflected[ch] = look->reflected[ch];
+                }
+                o.conf = look->conf, up = look->up, parts.share = look->share;
+                lookedOnCard.fetch_add(1, std::memory_order_relaxed);
+            } else
+                found = store.lookup(hit.point, nn, D3{ray.direction.x, ray.direction.y, ray.direction.z}, foot, o.rgb, o.conf, &up, op.lookupUp,
+                                     o.obj, op.specular ? &parts : nullptr);
             o.known = found && (up <= 1 || (up <= op.trustUp && o.conf >= op.trust));
+            // The specular light made again for this view: the reflectance the cells saw times the light reflected now.
+            if (found && op.specular && parts.share >= op.specShare && scene.plan) {
+                const double spec = parts.specular[0] + parts.specular[1] + parts.specular[2];
+                const double all = parts.colour[0] + parts.colour[1] + parts.colour[2];
+                float now[3];
+                if (spec > 0.02 * all + 1e-4 && store.reflectedAt(backend, *scene.plan, ray, hit, foot, op.specBlur, op.specTrace, now)) {
+                    for (int ch = 0; ch < 3; ++ch) {
+                        // A reflectance past specMax is no mirror's (light through glass, a rough lobe): kept as seen.
+                        const double was = parts.reflected[ch], k = was > 1e-4 ? parts.specular[ch] / was : -1.0;
+                        const double rest = std::max(0.0, double(parts.colour[ch]) - parts.specular[ch]);
+                        o.rgb[ch] = float(k >= 0 && k <= op.specMax ? rest + k * now[ch] : parts.colour[ch]);
+                    }
+                    specularMade.fetch_add(1, std::memory_order_relaxed);
+                }
+            }
             o.weight = o.known ? 1.0f : found ? float(0.25 * std::max(0.0f, o.conf) / (1.0 + std::max(0, up - op.trustUp))) : 0.0f;
             if (!found && firstLook) {
                 surface::Lambert l{};
@@ -972,14 +1222,14 @@ public:
         };
         // Each row's nodes shaded from their hits (a row a CPU thread): the store's lookups.
         auto shadeHits = [&](std::vector<Batch>& rowsOf, const std::vector<surface::Ray>& rays, const std::vector<resume::Hit>& hits,
-                             const std::vector<size_t>& at) {
+                             const std::vector<size_t>& at, const std::vector<Look>* looks = nullptr) {
             const auto t = Clock::now();
             parallel(threads, rowsOf.size(), [&](size_t r) {
                 async::CpuBackend backend{scene};
                 size_t unknownHere = 0;
                 for (size_t k = at[r]; k < at[r + 1]; ++k) {
                     Node& o = *rowsOf[r].rto[k - at[r]];
-                    shade(backend, rays[k], hits[k], o);
+                    shade(backend, rays[k], hits[k], o, looks ? &(*looks)[k] : nullptr);
                     if (!o.known) ++unknownHere;
                 }
                 traced.fetch_add(at[r + 1] - at[r], std::memory_order_relaxed);
@@ -992,11 +1242,12 @@ public:
             const size_t count = makeRays(rowsOf, cardRays_, rowAt_);
             if (!count) return true;
             cardHits_.resize(count);
+            if (cardLooks) cardLooks_.resize(count);
             const auto sent = Clock::now();
-            if (!cardTrace(cardRays_.data(), count, cardHits_.data())) return false;
+            if (!cardTrace(cardRays_.data(), count, cardHits_.data(), cardLooks ? cardLooks_.data() : nullptr)) return false;
             cardSeconds += since(sent);
             cardRays += count;
-            shadeHits(rowsOf, cardRays_, cardHits_, rowAt_);
+            shadeHits(rowsOf, cardRays_, cardHits_, rowAt_, cardLooks ? &cardLooks_ : nullptr);
             return true;
         };
         // Each row's rays traced and shaded: on the card where it takes them, else on the CPU a row a thread.
@@ -1031,7 +1282,7 @@ public:
             if (fineWaiting) {
                 const auto t = Clock::now();
                 fineWaiting = false;
-                if (!cardEnd(fineHits_.data())) fineAhead = false;
+                if (!cardEnd(fineHits_.data(), cardLooks ? fineLooks_.data() : nullptr)) fineAhead = false;
                 cardSeconds += since(t);
             }
             return fineAhead;
@@ -1048,8 +1299,9 @@ public:
             const size_t count = makeRays(fineRows_, fineRays_, fineRowAt_);
             if (!count) return;
             fineHits_.resize(count);
+            if (cardLooks) fineLooks_.resize(count);
             const auto sent = Clock::now();
-            if (!cardBegin(fineRays_.data(), count)) return;
+            if (!cardBegin(fineRays_.data(), count, cardLooks)) return;
             cardSeconds += since(sent);
             cardRays += count;
             fineAt_.assign(fine.nodes.size(), -1);
@@ -1071,7 +1323,7 @@ public:
                     for (Node* o : rows_[r].to) {
                         const std::int64_t k = fineAt_[size_t(o - fine.nodes.data())];
                         if (k < 0) continue;  // no ray there (its kind 3)
-                        shade(backend, fineRays_[size_t(k)], fineHits_[size_t(k)], *o);
+                        shade(backend, fineRays_[size_t(k)], fineHits_[size_t(k)], *o, cardLooks ? &fineLooks_[size_t(k)] : nullptr);
                         ++made;
                         if (!o->known) ++unknownHere;
                     }
@@ -1082,8 +1334,17 @@ public:
             } else
                 shadeRows(rows_);
             const auto t = Clock::now();
-            fillNodes(g, op.fillDepth);
+            fillNodes(g, op.fillDepth, op.objectEdges);
             fillSeconds += since(t);
+        };
+        // Two surface nodes on one object and no crease between them (op.objectEdges; else always).
+        auto oneSurface = [&](const Node* a, const Node* b) {
+            if (!op.objectEdges || a->kind != 1 || b->kind != 1) return true;
+            if (a->obj != b->obj) return false;
+            const double c = double(a->n[0]) * b->n[0] + double(a->n[1]) * b->n[1] + double(a->n[2]) * b->n[2];
+            const double la = std::sqrt(double(a->n[0]) * a->n[0] + double(a->n[1]) * a->n[1] + double(a->n[2]) * a->n[2]);
+            const double lb = std::sqrt(double(b->n[0]) * b->n[0] + double(b->n[1]) * b->n[1] + double(b->n[2]) * b->n[2]);
+            return !(la > 0 && lb > 0) || c >= op.creaseCos * la * lb;
         };
         // Each pixel's colour from a grid: bilinear between its cell's corners; smooth: they are one smooth surface.
         auto sample = [&](const Grid& g, unsigned x, unsigned y, Pixel& p, bool* smoothOut) {
@@ -1115,6 +1376,7 @@ public:
                     double lo = c[0]->w, hi = c[0]->w;
                     for (int k = 1; k < 4; ++k) lo = std::min(lo, c[k]->w), hi = std::max(hi, c[k]->w);
                     ok = lo > 0 && (hi - lo) <= op.jump * hi;
+                    for (int k = 1; k < 4 && ok; ++k) ok = oneSurface(c[0], c[k]);
                 }
                 *smoothOut = ok;
             }
@@ -1188,6 +1450,8 @@ public:
             rays = traced.load();
             unknown = rays ? double(empty.load()) / double(rays) : 0.0;
             firstLooks = rays ? double(looked.load()) / double(rays) : 0.0;
+            specularRebuilt = specularMade.load();
+            cardLooked = lookedOnCard.load();
             seconds = since(began);
         };
         if (!showStage()) {
@@ -1227,6 +1491,8 @@ public:
                     mean += 0.25 * (0.2126 * o->rgb[0] + 0.7152 * o->rgb[1] + 0.0722 * o->rgb[2]);
                 }
                 if (kind == 1 && !(lo > 0 && (hi - lo) <= op.jump * hi)) return false;
+                for (int k = 1; k < 4; ++k)
+                    if (!oneSurface(c[0], c[k])) return false;
                 const double tolerance = op.adaptColour * std::max(0.02, mean);
                 for (int ch = 0; ch < 3; ++ch) {
                     float a = c[0]->rgb[ch], b = a;
@@ -1257,7 +1523,8 @@ public:
                         }
                         for (int ch = 0; ch < 3; ++ch) o.rgb[ch] = float(rgb[ch]);
                         o.w = w, o.depth = float(depth), o.conf = float(conf), o.weight = float(weight);
-                        o.kind = c[0]->kind, o.known = known;
+                        o.kind = c[0]->kind, o.known = known, o.obj = c[0]->obj;
+                        for (int ch = 0; ch < 3; ++ch) o.n[ch] = c[0]->n[ch];
                         node(i, j) = o;
                         setAt(i, j) = 2;
                         ++made;
@@ -1327,7 +1594,7 @@ public:
                     if (!setAt(i, j)) asked.emplace_back(i, j);
             traceAsked(asked);
             const auto t = Clock::now();
-            fillNodes(fine, op.fillDepth);
+            fillNodes(fine, op.fillDepth, op.objectEdges);
             fillSeconds += since(t);
         };
         // The fine grid ring by ring, rings of equal area out to the picture's corners: each ring's pixels from the fine
@@ -1397,6 +1664,13 @@ public:
                             const Node* best = nullptr;
                             for (const Node* c : corners(fine, x, y))
                                 if (c->kind == o.kind && (!best || (o.kind == 1 && std::fabs(c->w - o.w) < std::fabs(best->w - o.w)))) best = c;
+                            // Its own object's nearest, where a corner is of it (op.objectEdges).
+                            if (op.objectEdges && o.kind == 1) {
+                                const Node* own = nullptr;
+                                for (const Node* c : corners(fine, x, y))
+                                    if (c->kind == 1 && c->obj == o.obj && (!own || std::fabs(c->w - o.w) < std::fabs(own->w - o.w))) own = c;
+                                if (own) best = own;
+                            }
                             if (best)
                                 for (int ch = 0; ch < 3; ++ch) p.rgb[ch] = best->rgb[ch];
                             p.conf = 0;
@@ -1444,6 +1718,8 @@ private:
         std::uint8_t kind = 0;  // 0 not traced, 1 a surface, 2 the environment, 3 nothing (no ray there)
         bool known = false;     // its colour trusted
         float weight = 0;       // its colour's weight in the interpolation (fillNodes): 1 trusted, less from coarse cells, 0 none
+        std::uint32_t obj = 0;  // its hit's object plus one (0: none)
+        float n[3] = {0, 0, 0};  // its hit's geometric normal (facing the ray)
     };
     struct Pixel {
         float rgb[3] = {0, 0, 0};
@@ -1473,6 +1749,7 @@ private:
     std::vector<size_t> rowAt_;                       // each row's first ray on the card's way
     std::vector<surface::Ray> cardRays_;
     std::vector<resume::Hit> cardHits_;
+    std::vector<xpu2::interactive::rheastore::Look> cardLooks_, fineLooks_;  // the card's lookups (cardStore)
     std::vector<Batch> fineRows_;                     // the fine grid's rows, traced ahead on the card
     std::vector<size_t> fineRowAt_;
     std::vector<surface::Ray> fineRays_;
@@ -1569,12 +1846,18 @@ private:
     // 2026-11-22: "in coarse areas where the shading is unpredictable, that should just be handed over to an auto-color
     // interpolation"; "it should be first a color interpolation then generate the coarse-smooth area").
     // The surfaces' by depth (pullPushDepth, depth > 0: its tolerance), the environment's plainly.
-    static void fillNodes(Grid& g, double depth) {
+    static void fillNodes(Grid& g, double depth, bool byObject = false) {
         for (std::uint8_t kind = 1; kind <= 2; ++kind) {
             std::vector<float> c(size_t(g.gw) * g.gh * 4, 0.0f);
             std::vector<float> z;
+            std::vector<std::uint32_t> ids;
             const bool byDepth = kind == 1 && depth > 0;
             if (byDepth) z.assign(size_t(g.gw) * g.gh, 0.0f);
+            if (byDepth && byObject) {
+                ids.assign(size_t(g.gw) * g.gh, 0u);
+                for (size_t k = 0; k < g.nodes.size(); ++k)
+                    if (g.nodes[k].kind == 1) ids[k] = g.nodes[k].obj;
+            }
             bool any = false, needed = false;
             for (size_t k = 0; k < g.nodes.size(); ++k) {
                 const Node& o = g.nodes[k];
@@ -1587,7 +1870,7 @@ private:
                 if (o.weight < 1) needed = true;
             }
             if (!any || !needed) continue;
-            if (byDepth) pullPushDepth(c, z, g.gw, g.gh, depth);
+            if (byDepth) pullPushDepth(c, z, g.gw, g.gh, depth, ids.empty() ? nullptr : &ids);
             else pullPush(c, g.gw, g.gh);
             for (size_t k = 0; k < g.nodes.size(); ++k) {
                 Node& o = g.nodes[k];

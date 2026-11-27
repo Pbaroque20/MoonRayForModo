@@ -353,6 +353,11 @@ def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, mat
                 node['coordinate_key'] = key(node)
                 if layer.type == 'imageMap':
                     clip = next((i for i in connected if i.type=='videoStill'),None)
+                    sequence = None
+                    if clip is None:
+                        # An image sequence: the still of the scene's frame (shader_tree_clips).
+                        from .shader_tree_clips import sequence_clip
+                        clip,sequence = sequence_clip(connected,channel)
                     folder = None if clip else next((i for i in connected if i.type=='imageFolder'),None)
                     tile_set = None
                     if folder is not None:
@@ -373,6 +378,9 @@ def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, mat
                     source_channel = channel(layer,'rgba','use') if channel(layer,'swizzling',0) else channel(layer,'alpha','use')
                     if source_channel not in ('use','ignore','only','red','green','blue'):
                         raise ValueError('unsupported image channel '+str(source_channel))
+                    # The clip's own Alpha off: its alpha is not used (shader_tree_clips).
+                    from .shader_tree_clips import layer_channel
+                    source_channel = layer_channel(clip,channel,source_channel)
                     node['image_channel'] = source_channel
                     node['flip_blue'] = bool(channel(layer,'blueInv',0))
                     node['flip_red'] = bool(channel(layer,'redInv',0))
@@ -403,6 +411,8 @@ def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, mat
                         srgb=effect not in ('normal','normalCoat','bump','coatBump') and (space=='sRGB' or
                             (space=='(default)' and effect in textures.COLOR_EFFECTS and path.suffix.lower() not in ('.exr','.hdr','.tx'))),
                         use_alpha=source_channel=='use')
+                    from .shader_tree_clips import note
+                    note(node,clip,channel,layer,sequence,node['path'])
                 elif layer.type in ENHANCE or layer.type in SOLID_ONLY:
                     # Enhance: Modo's patterns, and Modo's Gabor and Poisson noise, are drawn through the object by
                     # MoonRay and MoonLightIPR alike.
