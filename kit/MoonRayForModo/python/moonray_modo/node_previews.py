@@ -125,39 +125,101 @@ IMAGE_NODES = {'image': 'file', 'ImageMap': 'texture'}
 QT_READS = {'.png', '.jpg', '.jpeg', '.bmp', '.tif', '.tiff'}
 
 
+# A UDIM set with no tile found: the colour MoonRay renders a missing image with, and the words drawn on it.
+MISSING_COLOUR = '#ff00ff'
+NO_TILES = 'No UDIM tiles found'
+
+
+def udim_badge(tiles):
+    """The words drawn over a UDIM set's picture: that it is a set, and of how many tiles."""
+    return 'UDIM SET · %d' % len(tiles)
+
+
+def image_file(graph, identity):
+    """The file of a node that is an image and nothing more, as written (a UDIM set with <UDIM> in it); else None."""
+    node = graph['nodes'].get(identity) or {}
+    key = IMAGE_NODES.get(node.get('type'))
+    if key is None:
+        return None
+    return str((node.get('parameters') or {}).get(key) or '') or None
+
+
+def missing_set(graph, identity):
+    """Whether a node's image is a UDIM set none of whose tiles are found: shown in the missing colour, said so."""
+    from .graph_images import udim_tiles
+    return udim_tiles(image_file(graph, identity)) == []
+
+
 def image_source(graph, identity):
-    """(file, linear, invert) for a node that is an image and nothing more, its file on this machine; else None.
-    linear: the file holds linear values (a float image, or a .tx not marked sRGB), brought to the screen's sRGB."""
+    """(file, linear, invert, badge) for a node that is an image and nothing more, its file on this machine; else None.
+    linear: the file holds linear values (a float image, or a .tx not marked sRGB), brought to the screen's sRGB.
+    A UDIM set is shown as its first tile that is there (the lowest number found, as the kit finds them at render
+    time), with badge, the words drawn over it saying it is a set; a single image has none. Its 1001 was taken before,
+    and a set without one, or not there, was drawn in MoonRay's missing-image magenta though it rendered."""
     node = graph['nodes'].get(identity) or {}
     key = IMAGE_NODES.get(node.get('type'))
     if key is None:
         return None
     parameters = node.get('parameters', {})
-    name = str(parameters.get(key) or '').replace('<UDIM>', '1001')
+    name = str(parameters.get(key) or '')
+    badge = None
+    if '<UDIM>' in name:
+        from .textures import source_tiles
+        try:
+            tiles = source_tiles(name)
+        except (OSError, ValueError):
+            tiles = {}
+        if not tiles:
+            return None
+        first = min(tiles)
+        name, badge = str(tiles[first]), udim_badge(sorted(tiles))
     if not name or not Path(name).is_file():
         return None
     suffix = Path(name).suffix.lower()
     srgb = bool(parameters.get('srgb', True)) and str(parameters.get('color_space', '')).lower() not in ('linear', 'raw', 'data')
     linear = suffix in ('.exr', '.hdr', '.pfm') or (suffix == '.tx' and not srgb)
-    return Path(name), linear, bool(parameters.get('invert', False))
+    return Path(name), linear, bool(parameters.get('invert', False)), badge
 
 
-def thumbnail_path(source, linear, invert):
+def thumbnail_path(source, linear, invert, badge=None):
     """Where the picture of an image file is kept: named by the file as it stands, so a changed file is drawn again."""
     import hashlib
     held = source.stat()
-    digest = hashlib.sha256(repr((str(source.resolve()), held.st_mtime_ns, held.st_size, linear, invert, SIZE)).encode()).hexdigest()[:24]
+    named = (str(source.resolve()), held.st_mtime_ns, held.st_size, linear, invert, SIZE)
+    if badge:
+        # A set's tile carries its words: another picture than the tile alone.
+        named += (badge,)
+    digest = hashlib.sha256(repr(named).encode()).hexdigest()[:24]
     folder = graph_bake.folder() / 'Thumbnails'
     folder.mkdir(parents=True, exist_ok=True)
     return folder / (digest + '.png')
 
 
+def draw_badge(image, words):
+    """Words over the foot of a picture, light on a dark translucent band, legible over light or dark textures."""
+    painter = QtGui.QPainter(image)
+    try:
+        painter.setRenderHint(QtGui.QPainter.TextAntialiasing, True)
+        font = QtGui.QFont()
+        font.setPixelSize(max(9, image.height() // 9))
+        font.setBold(True)
+        painter.setFont(font)
+        band = QtGui.QFontMetrics(font).height() + 4
+        painter.fillRect(QtCore.QRect(0, image.height() - band, image.width(), band), QtGui.QColor(0, 0, 0, 170))
+        painter.setPen(QtGui.QColor(255, 255, 255))
+        painter.drawText(QtCore.QRect(4, image.height() - band, image.width() - 8, band), QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter, words)
+    finally:
+        painter.end()
+    return image
+
+
 class Thumbnail(QtCore.QRunnable):
-    """An image node's picture: its file made small, by Qt where it reads the file and else by oiiotool."""
-    def __init__(self, key, source, linear, invert, png, runtime, signals):
+    """An image node's picture: its file made small, by Qt where it reads the file and else by oiiotool; a UDIM set's
+    with its badge drawn over it."""
+    def __init__(self, key, source, linear, invert, png, runtime, signals, badge=None):
         super().__init__()
         self.key, self.source, self.linear, self.invert, self.png = key, source, linear, invert, png
-        self.runtime, self.signals = runtime, signals
+        self.runtime, self.signals, self.badge = runtime, signals, badge
 
     def run(self):
         try:
@@ -188,6 +250,10 @@ class Thumbnail(QtCore.QRunnable):
                         break
                 else:
                     raise ValueError(done.stdout.decode(errors='replace')[-300:])
+            if self.badge:
+                image = QtGui.QImage(str(staged)).convertToFormat(QtGui.QImage.Format_RGB888)
+                if image.isNull() or not draw_badge(image, self.badge).save(str(staged), 'PNG'):
+                    raise ValueError('Cannot mark the picture as a UDIM set')
             staged.replace(self.png)
             self.signals.ready.emit(self.key, str(self.png))
         except Exception:
@@ -253,6 +319,10 @@ class Previews(QtCore.QObject):
                 image = image_source(graph, identity)
             except Exception:
                 image = None
+            if image is None and missing_set(graph, identity):
+                # A UDIM set none of whose tiles are found: the missing colour, and why, not a render of nothing.
+                item.show_preview(None, missing=NO_TILES)
+                continue
             if image is not None:
                 png = thumbnail_path(*image)
                 if png.is_file():
@@ -262,7 +332,7 @@ class Previews(QtCore.QObject):
                 self.waiting.setdefault(key, set()).add(identity)
                 if key not in self.pending:
                     self.pending.add(key)
-                    self.pool.start(Thumbnail(key, image[0], image[1], image[2], png, runtime, self.signals))
+                    self.pool.start(Thumbnail(key, image[0], image[1], image[2], png, runtime, self.signals, badge=image[3]))
                 continue
             try:
                 exr, text = graph_bake.written(graph, identity, size=SIZE)

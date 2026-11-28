@@ -58,13 +58,42 @@ def image(settings, key):
     return ('node', node['type'])
 
 
+def udim_tiles(path):
+    """The tile numbers of a UDIM set (a file named with <UDIM>), sorted, as the kit finds them at render time
+    (textures.source_tiles); [] where none are found; None for a file that is not a set."""
+    path = str(path or '')
+    if '<UDIM>' not in path:
+        return None
+    from .textures import source_tiles
+    try:
+        return sorted(source_tiles(os.path.expandvars(os.path.expanduser(path))))
+    except (OSError, ValueError):
+        return []
+
+
+def udim_words(path):
+    """A few words on a UDIM set: 'UDIM, 12 tiles (1001-1034)', 'UDIM, no tiles found'; None for a file that is not
+    a set. A set of images reads as one file name, which said nothing of whether its tiles were there."""
+    tiles = udim_tiles(path)
+    if tiles is None:
+        return None
+    if not tiles:
+        return 'UDIM, no tiles found'
+    if len(tiles) == 1:
+        return 'UDIM, 1 tile (%d)' % tiles[0]
+    return 'UDIM, %d tiles (%d-%d)' % (len(tiles), tiles[0], tiles[-1])
+
+
 def label(found):
-    """A few words for the form about what an input reads."""
+    """A few words for the form about what an input reads; a UDIM set says so, with its tiles."""
     if found is None:
         return '(none)'
     kind, value = found
     if kind == 'image':
-        return os.path.basename(str(value).replace('\\', '/')) or '(image with no file)'
+        name = os.path.basename(str(value).replace('\\', '/')) or '(image with no file)'
+        words = udim_words(value)
+        # Plain ASCII between them: the words go to a Modo form's choice list.
+        return name + ' - ' + words if words else name
     return 'Graph: ' + value
 
 

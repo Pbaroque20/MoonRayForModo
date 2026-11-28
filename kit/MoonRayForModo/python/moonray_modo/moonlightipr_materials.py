@@ -932,6 +932,8 @@ def graph_layers(source, note, runtime=None, displacement=None, wanted='height',
         return []
     switches = source.get('native_parameters') or {}
     layers = []
+    # A metal colour's layers, with how much the surface is metal: laid on after the rest (metallic_tint).
+    tints = []
     for key, identity in root.get('inputs', {}).items():
         node = graph['nodes'].get(identity)
         if node is None:
@@ -947,16 +949,31 @@ def graph_layers(source, note, runtime=None, displacement=None, wanted='height',
         if displacement and key != wanted:
             continue
         effect = as_effect if displacement else GRAPH_INPUTS.get(key)
+        metal = None
         if effect is None:
             from . import graph_bake
             # A metal is tinted by its base colour here; a metal colour that is the base colour, or what it is
             # made from, is therefore already shown.
             shared = key == 'metallic_color' and 'albedo' in root.get('inputs', {}) and identity in graph_bake.feeding(graph, root['inputs']['albedo'])
-            if not shared:
+            if shared:
+                continue
+            if key == 'metallic_color':
+                # A map on the metal's colour: laid on the one colour over the albedo, as much as the surface is metal
+                # (metallic_tint). It was left out, and a metal showed its plain colour over the texture.
+                metal = metallic_weight(root, switches)
+                if metal[0] is not None and metal[0] <= 0:
+                    continue        # no metal: its colour shows nowhere, in MoonRay too
+                effect = 'diffCol'
+            else:
                 note('a map wired to %s' % key.replace('_', ' '))
-            continue
+                continue
         if key in GRAPH_SWITCHES and not switches.get(GRAPH_SWITCHES[key], False):
             continue
+        # The layers of this input go here; a metal colour's are laid on after the rest (metallic_tint).
+        out = layers
+        if metal is not None:
+            out = []
+            tints.append((out, metal))
         amplitude = None
         if effect == 'normal' and node['type'] == 'bump':
             # A bump node: its height is a Shader Tree Bump layer, at the node's amplitude (the material's
@@ -986,7 +1003,7 @@ def graph_layers(source, note, runtime=None, displacement=None, wanted='height',
                 if amplitude is not None:
                     for held in stack:
                         held['bump_amplitude'] = amplitude
-                layers += stack
+                out += stack
                 continue
             # Not an image: have MoonRay make one of it.
             from . import graph_bake
@@ -1036,8 +1053,74 @@ def graph_layers(source, note, runtime=None, displacement=None, wanted='height',
             layer['invert'] = True
         if amplitude is not None:
             layer['bump_amplitude'] = amplitude
-        layers.append(layer)
+        out.append(layer)
+    for out, metal in tints:
+        layers += metallic_tint(graph, root, switches, out, metal, note)
     return layers
+
+
+# The Dwa materials with no metal of their own, whose metal colour shows nowhere.
+NOT_METAL = ('DwaSolidDielectricMaterial', 'DwaRefractiveMaterial', 'DwaVelvetMaterial_v2', 'DwaEmissiveMaterial')
+
+
+def _surface_value(root, switches, key, missing):
+    """A material's own value for one of its attributes, as native_surface reads it: the one set, else MoonRay's
+    default."""
+    from . import node_defaults, shader_library
+    parameters = node_defaults.started(root['type'], switches)
+    if key in parameters:
+        return parameters[key]
+    try:
+        return node_defaults.value(shader_library.catalog()[root['type']]['attributes'][key])
+    except (KeyError, ValueError):
+        return missing
+
+
+def metallic_weight(root, switches):
+    """How much a material is metal: (its metallic, None), or (None, the node wired to its metallic)."""
+    kind = root['type']
+    if kind == 'DwaMetalMaterial':
+        return 1.0, None
+    if kind in NOT_METAL:
+        return 0.0, None
+    wired = root.get('inputs', {}).get('metallic')
+    if wired is not None:
+        return None, wired
+    return min(1.0, max(0.0, float(_surface_value(root, switches, 'metallic', 0.0)))), None
+
+
+def metallic_tint(graph, root, switches, made, metal, note):
+    """The layers of a map on a material's metallic colour, laid on its one colour (the uber-shader's, for the diffuse
+    lobe and the metal's reflection) as the constant case is (native_surface): albedo + (metallic colour - albedo) *
+    metallic. Over the albedo (its map, else its value: the material's colour starts from the lerp of the constants),
+    at the metallic as opacity, or masked by the metallic's image where one is wired."""
+    weight, wired = metal
+    if not made:
+        return []
+    rows = []
+    whole = weight is not None and weight >= 1.0
+    if not whole and 'albedo' not in root.get('inputs', {}):
+        # The colour beneath is the albedo alone, not the constants' lerp, which has the metal colour in it already.
+        white, black = [1.0, 1.0, 1.0], [0.0, 0.0, 0.0]
+        albedo = _surface_value(root, switches, 'albedo', white) if _surface_value(root, switches, 'show_diffuse', True) else black
+        rows.append({'kind': 'constant', 'value': [float(v) for v in albedo], 'effect': 'diffCol', 'blend': 'normal', 'opacity': 1.0,
+                     'identity': 'metallic_color:albedo'})
+    if whole:
+        return rows + made
+    if len(made) > 1:
+        note('a metallic color made of several maps, on a surface not wholly metal')
+        return []
+    layer = dict(made[0], identity=str(made[0].get('identity')) + ':metallic_color')
+    if wired is None:
+        layer['opacity'] = float(layer.get('opacity', 1.0)) * weight
+        return rows + [layer]
+    node = graph['nodes'].get(wired)
+    mask = graph_image(node, graph) if node is not None else 'nothing'
+    if isinstance(mask, str):
+        note('a metallic color map under a metallic map that is not an image')
+        return []
+    mask = dict(mask, effect='layerMask', blend='normal', opacity=1.0, identity=str(wired) + ':metallic_mask', mask_target=layer['identity'])
+    return rows + [mask, layer]
 
 
 class Compiler:

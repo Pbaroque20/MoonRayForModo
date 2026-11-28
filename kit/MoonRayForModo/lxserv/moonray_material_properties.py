@@ -153,9 +153,10 @@ class OpenNodes(Observed):
         items=selected()
         return len(items)==1 and (items[0].type in ('advancedMaterial','material.moonrayMoonShine',properties.MATERIALX_TYPE) or properties.layer_shader(items[0])) and material_override.enabled(properties.read(items[0]))
     def basic_Execute(self,msg,flags):
-        from moonray_modo.node_editor import open_editor
+        from moonray_modo.node_editor import open_editor,OpenFailed
         if not self.basic_Enable(msg):raise ValueError('Enable MoonShine Material Override to open its node editor')
-        open_editor(selected()[0])
+        try:open_editor(selected()[0])
+        except OpenFailed:pass    # said already, in a message box and the Event Log (node_editor.open_failed)
 
 
 class NodeOverride(OpenNodes):
