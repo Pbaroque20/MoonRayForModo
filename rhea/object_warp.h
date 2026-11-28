@@ -381,14 +381,14 @@ public:
     // A cell's colour at d (its place in the cell, cell units from its middle; op.sparse): its mean plus its least-squares
     // slope times the way from its pixels' centroid. The slope regularised (a cell's pixels lie on a surface, so its
     // spread across the surface is none), its change held to the mean either way (no negative light, no runaway).
-    static void cellColour(const Table::Entry& e, const Table::Grad& g, const double d[3], double out[3]) {
+    static void cellColour(const xpu2::interactive::rheastore::Entry& e, const float* gs, const double d[3], double out[3]) {
         const double W = e.v[VW];
         double pc[3], C[3][3];
-        for (int i = 0; i < 3; ++i) pc[i] = g.s[i] / W;
+        for (int i = 0; i < 3; ++i) pc[i] = gs[i] / W;
         static const int ij[6][2] = {{0, 0}, {1, 1}, {2, 2}, {0, 1}, {0, 2}, {1, 2}};
         for (int k = 0; k < 6; ++k) {
             const int a = ij[k][0], b = ij[k][1];
-            C[a][b] = C[b][a] = g.s[3 + k] / W - pc[a] * pc[b];
+            C[a][b] = C[b][a] = gs[3 + k] / W - pc[a] * pc[b];
         }
         for (int i = 0; i < 3; ++i) C[i][i] += 0.01;
         const double det = C[0][0] * (C[1][1] * C[2][2] - C[1][2] * C[2][1]) - C[0][1] * (C[1][0] * C[2][2] - C[1][2] * C[2][0]) +
@@ -404,7 +404,7 @@ public:
         for (int c = 0; c < 3; ++c) {
             const double mean = out[c];
             double b[3];
-            for (int i = 0; i < 3; ++i) b[i] = g.s[9 + c * 3 + i] / W - pc[i] * mean;
+            for (int i = 0; i < 3; ++i) b[i] = gs[9 + c * 3 + i] / W - pc[i] * mean;
             double change = 0;
             for (int i = 0; i < 3; ++i) {
                 double slope = 0;
@@ -560,7 +560,7 @@ public:
                                 if (k > 0 && t.v[VW] >= op.sparseMinWeight) {
                                     double d[3], seen[3];
                                     inCell(e.p, level, d);
-                                    cellColour(t, light.slope(idx), d, seen);
+                                    cellColour(t, light.slope(idx).s, d, seen);
                                     const double scale = std::max(0.2126 * seen[0] + 0.7152 * seen[1] + 0.0722 * seen[2],
                                                                   0.2126 * e.v[0] + 0.7152 * e.v[1] + 0.0722 * e.v[2]) + 0.02;
                                     double off = 0;
@@ -927,7 +927,7 @@ private:
                     // Its colour at the point by its slope (cellColour), the rest by its means.
                     const double d[3] = {p.x / size - (double(x0 + dx) + 0.5), p.y / size - (double(y0 + dy) + 0.5), p.z / size - (double(z0 + dz) + 0.5)};
                     double col[3];
-                    cellColour(*e, t.grads[at], d, col);
+                    cellColour(*e, t.grads[at].s, d, col);
                     for (int q = 0; q < 3; ++q) c[q] += tri * col[q];
                     for (int q = 3; q < std::min(nv, NB); ++q) c[q] += k * e->v[q];
                 } else
