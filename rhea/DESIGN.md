@@ -1482,3 +1482,118 @@ ahead, and corners by object and crease off, each behind its switch. With them (
 
 Reproduce: `test-results/rhea-improve/rhea_compare.py` (drag, reference, score), `table.py`, `triptych.py`;
 `export_scenes.py` and `relink.py` for the scenes' textures; `check_exact.py` for XPU2's own frames with Rhea off.
+
+## 39. Smooth light, sharp texture: phase one's light smoothed over its surfaces (2026-11-27)
+
+The user: Rhea's radiance-cache colours should look "as close to a vector representation as possible": smooth colour
+gradients, like mesh gradients, with no blotches or grid creases. `XPU2_SESSION_RHEA_SMOOTH`.
+
+- **The light, not the texture:** the fine grid's nodes (a drag's step: the adaptive pass, one ring) each carry the
+  cells' albedo at their hit (the store's albedo sums, section 16's demodulation; the card's lookup returns it with the
+  colour: `rheastore::Look::albedo`). A node's light is its colour over that albedo (each channel, the albedo held to at
+  least 0.02) where the albedo's luminance is at least 0.02; a darker surface (black paint, glass, metal) is smoothed as
+  its colour. After smoothing the light is multiplied by the node's albedo again, so texture at the nodes stays as it was.
+- **The filter** (`rheastore::smoothNode`, `rhea_store_core.h`): an a-trous pass (Dammertz and others, 2010) over the
+  grid with the B3 spline's 5 x 5 weights at steps 1, 2, 4 (`XPU2_SESSION_RHEA_SMOOTH_PASSES`, 3), each neighbour also
+  weighed by its object (another: none), its demodulation (the same kind only), its lifted depth
+  (exp(-(dw / (`_SMOOTH_DEPTH` 0.02 x w))^2)), its normal (cosine to the power `_SMOOTH_NORMAL`, 32; facing away: none),
+  and its light (exp(-(dl / (`_SMOOTH_LIGHT` 0.25 x mean luminance))^2): a shadow's edge is a large step in light and
+  stays). Silhouette and crease pixels are traced a ray each as before and not smoothed.
+- **On the card:** launch mode 6 (`async_gpu.cu` `smoothPass`, `GpuLane::rheaSmooth`): the nodes and their light up,
+  one launch a pass (a thread a node), the light back; the CPU runs the same function on its threads where the card does
+  not take it (`XPU2_SESSION_RHEA_SMOOTH_CARD=0`: always the CPU).
+
+Measured (`test-results/rhea-improve`, the harness of section 35 with two smoothness measures on plain surfaces:
+blotch, the error's mid frequencies (a 4-pixel blur of it less a 16-pixel one, over the reference's local light
+squared: blotches and grid creases, not the reference's own noise or broad offsets); grad, the gradient energy of the
+picture blurred over 2 pixels against the reference's (below 1: smoother than XPU2's picture). The current defaults
+(store on the card, cells by object) against each switch; times medians):
+
+| | car | behind the car | dragon |
+|---|---|---|---|
+| relMSE all, default / smoothed | 0.182 / 0.181 | 2.129 / 2.101 | 0.278 / 0.283 |
+| silhouettes and creases | 0.406 / 0.414 | 3.645 / 3.612 | 0.232 / 0.266 |
+| blotch | 0.0215 / 0.0203 | 0.0828 / 0.0761 | 0.0728 / 0.0768 |
+| grad | 0.67 / 0.62 | 0.13 / 0.11 | 0.50 / 0.55 |
+| the smoothing (card) | 2.7 ms | 2.5 ms | 2.4 ms |
+| the smoothing (CPU, `_SMOOTH_CARD=0`) | 60 ms | | |
+
+**Off by default.** It does what it is for where the light is the blotch (the car's body and floor, behind the car:
+blotch 6 to 8% less, the gradients smoother), but the error hardly moves, and on the dragon (its scales a crease every
+few pixels, its glass light of all directions) the silhouettes are 15% worse and the blotch 5%. It costs 2.4 to 2.7 ms on
+the card (three passes over about 58,000 nodes, their copies each way included), over the 1 to 2 ms aimed at; on the
+CPU 60 ms. Rhea Draft (section 42) uses it, its lines the guide.
+
+## 40. XPU2's samples filtered before they are stored (2026-11-27)
+
+`XPU2_SESSION_RHEA_SAMPLE_FILTER` (Realtime::filterSamples, in learn before the store's add).
+
+- **Each pixel's noise:** from the film's odd samples' sums (`RenderResult::odd`, the adaptive sampling's own error
+  estimate): half the difference between the odd and even samples' mean luminance is about the standard deviation of
+  the pixel's mean; where the film has none, its light over the square root of its count.
+- **Merged by variance:** each learned pixel's colour becomes the inverse-variance weighted mean of the pixels within
+  `XPU2_SESSION_RHEA_FILTER_RADIUS` (2) on its surface (depth within the jump, its object where learning traced it),
+  each also by a Gaussian of distance and of their luminance difference over `_FILTER_RANGE` (2) times their joint noise:
+  a difference larger than the noise explains (a texture, a shadow's edge) is kept.
+- **Weighed by noise:** its weight in the store scaled by 1 / (1 + (noise / (`_FILTER_NOISE` 0.1 x its light))^2).
+
+Measured (as section 39):
+
+| | car | behind the car | dragon |
+|---|---|---|---|
+| relMSE all, default / filtered | 0.182 / 0.086 | 2.129 / 1.156 | 0.278 / 0.195 |
+| plain | 0.239 / 0.103 | 2.036 / 1.343 | 0.552 / 0.301 |
+| silhouettes and creases | 0.406 / 0.203 | 3.645 / 0.948 | 0.232 / 0.224 |
+| grazing | 0.039 / 0.035 | 2.381 / 0.383 | 0.302 / 0.265 |
+| blotch | 0.0215 / 0.0232 | 0.0828 / 0.0646 | 0.0728 / 0.0562 |
+| a step (median) | 37 / 39 ms | 38 / 39 ms | 48 / 44 ms |
+| filtering, a frame at rest's learning | | | 0.42 s in all (dragon) |
+| both switches | 0.084 | 1.140 | 0.195 |
+
+**On by default.** The largest gain of these rounds: the error falls by a third to a half on every case, silhouettes
+included (a lone noisy pixel at an edge no longer stands for its cell), the store's size unchanged, a drag's step as
+before (the filtering is in learning, beside XPU2's frame, not in the step). The car's blotch is 8% higher (cells
+smoother but their light a little flatter across a panel); the dragon's and behind the car's lower.
+
+Pictures of both switches: `test-results/rhea-smooth/<case>-step<10|20|30>.png`, each the current default | smoothed |
+filtered | both | XPU2's reference.
+
+## 41. XPU2's light as it comes: progressive by default (2026-11-27)
+
+The user: "Rhea takes too long to show all of its light samples, the older progressive/incremental way was better".
+`XPU2_SESSION_RHEA_PROGRESSIVE` (on; 0: the completion fade of section 29, region by region).
+
+- **Each pixel XPU2's samples so far over phase one** (`Realtime::progressive`): phase one's colour counts as m prior
+  samples, m = `_PROGRESSIVE_PRIOR` (8) x its confidence (1 - doubt, at least 0.25) x max(`_PROGRESSIVE_KEEP` 0.25,
+  exp(-(part / allowed)^2)), where part is the relative difference of the two pictures' 3 x 3 luminance and allowed
+  `_PROGRESSIVE_PART` (3) / sqrt(samples there): where they part by more than XPU2's noise explains (a highlight the
+  store holds as seen from elsewhere, a shadow moved) phase one lets go fast; elsewhere it fades as the count grows.
+- **A pixel of few samples** shows its sampled 3 x 3 neighbours' mean as much as its own (`_PROGRESSIVE_SPREAD`, 4
+  samples' worth): the first generations' noise spread, not shown as specks. A pixel XPU2 has not reached shows phase
+  one's colour. No region waits for its seed.
+- **The frame ends on XPU2's own picture**, bit for bit (the last picture, and the one kept, is the film itself).
+- The session says "XPU2's light on X% of the view" (the share where XPU2's samples outweigh phase one).
+
+Measured (`test-results/rhea-improve/progressive_compare.py`: a drag of 30 steps, the mouse's release, every picture of
+XPU2's frame after it kept; relMSE against XPU2's 64-sample reference of the last step; two runs each, means):
+
+| | car, progressive | car, regions | dragon, progressive | dragon, regions |
+|---|---|---|---|---|
+| error 1 s after the release | 0.31 | 0.40 | 0.24 | 0.32 |
+| 2 s | 0.16 | 0.38 | 0.15 | 0.27 |
+| 5 s | 0.12 | 0.37 | 0.016 | 0.18 |
+| 10 s | 0.037 | 0.37 | 0.0035 | 0.030 |
+| XPU2's light on 50% / 90% of the view | 10.1 / 18.1 s | 12.2 / 26.2 s | | 6.6 / 9.1 s |
+| flicker (mean change between pictures, first 2 s) | 0.029 | 0.014 | 0.37 | 0.004 |
+| the frame's last picture | XPU2's own, identical across runs and modes | | | |
+
+Pictures: `test-results/rhea-progressive/car-strip.png`, `dragon-strip.png`.
+
+**On by default.** The error 2 to 10 s after a release falls by half to ten times; on the car the regions' fade had
+barely begun at 10 s.
+
+**Open: the dragon's release flickers** (0.37 against 0.004). Its release makes the scene again (geometry tessellated
+for the camera), which drops the warp; the picture on screen is then taken as the warp (`screenWarp`). The last drag
+steps whose XPU2 frame stopped before its film had a picture left the kept screen at an older camera, so the release
+showed XPU2's first pictures raw. The session now keeps the published picture for those steps (and for a step held then
+stopped), so the kept screen is the release's camera; not yet measured (the user, 2026-11-27: flicker skipped for now).

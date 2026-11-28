@@ -39,6 +39,7 @@
 #include <cstdio>
 #include <cstring>
 #include <functional>
+#include <unordered_map>
 #include <vector>
 
 namespace rhea {
@@ -256,12 +257,15 @@ public:
         // Into cells this many sizes coarser than its pixels' (a picture of a sample or two a pixel: rheaLearnAhead's;
         // its noise averaged over more of them).
         int coarser = 0;
+        // Each pixel's weight scaled by this (a pixel each; none: 1): the sample filter's (DESIGN.md 40), less for noisier pixels.
+        const std::vector<float>* scale = nullptr;
     };
     // A lookup's parts (lookup's parts): the diffuse light, the emission, and where the cells hold it, the specular light
     // and the light reflected toward the camera that saw it, with the share of the cells' weight that had it.
     struct Parts {
         float colour[3] = {0, 0, 0}, diffuse[3] = {0, 0, 0}, emission[3] = {0, 0, 0}, specular[3] = {0, 0, 0}, reflected[3] = {0, 0, 0};
         float share = 0;  // of the weight with a known reflection (and a diffuse output)
+        float albedo[3] = {0, 0, 0};  // the cells' albedo (the smoothing's demodulation)
     };
     Options op;
     double addSeconds = 0;
@@ -459,7 +463,7 @@ public:
                         }
                     }
                 }
-                e.weight = weight;
+                e.weight = outs.scale && outs.scale->size() == n ? weight * (*outs.scale)[i] : weight;
                 perRow[r].push_back(e);
             }
         });
@@ -524,6 +528,8 @@ public:
         if (up) *up = sizesUp;
         for (int ch = 0; ch < 3; ++ch) rgb[ch] = float(std::max(0.0, m[ch]));
         if (parts && !more) *parts = Parts{}, parts->colour[0] = rgb[0], parts->colour[1] = rgb[1], parts->colour[2] = rgb[2];
+        if (parts)
+            for (int ch = 0; ch < 3; ++ch) parts->albedo[ch] = float(std::max(0.0, m[3 + ch]));
         if (more) {
             for (int ch = 0; ch < 3; ++ch) {
                 parts->colour[ch] = rgb[ch];
@@ -995,6 +1001,24 @@ public:
         // node's colour from its own object; a ray's lookups from its object's cells (ObjectStore::Options::byObject).
         bool objectEdges = false;
         double creaseCos = 0.8;
+        // The light smoothed over its surfaces (DESIGN.md 39; XPU2_SESSION_RHEA_SMOOTH): the fine grid's light, the cells'
+        // albedo divided out where it is at least smoothFloor (else the colour itself), through smoothPasses a-trous passes
+        // (rheastore::smoothNode) kept to a node's object, plane (smoothDepth, lifted depth's share), facing (normals' cosine
+        // to smoothNormal) and light (smoothLight, luminance's share), then multiplied back. Where the fine grid is drawn as
+        // one ring (a drag's step, the adaptive pass), on the card where it takes them (cardSmooth), else on the CPU.
+        bool smooth = false;
+        // Rhea Draft (DESIGN.md 42): black lines where MoonLightIPR's Draft draws them (rheastore::draftEdge: silhouettes,
+        // objects' boundaries, creases), over the smoothed light (smooth, kept from crossing a line) times the surface's
+        // colour; what the store does not know a flat fill (the first look's colour under a soft light), not the fill from
+        // around. lineSamples: a pixel's fixed places, lineSamples x lineSamples; lineApart: the rays' spacing, which is the
+        // line's width (pixels; 0: one pixel a 1100 of width, one at least; it was MoonLightIPR's two, and the user found
+        // the lines too thick, 2026-11-28); lineColour: the ink (black).
+        bool draft = false;
+        int lineSamples = 1;
+        double lineApart = 0, lineCrease = 0.82, linePlane = 0.03;
+        float lineColour[3] = {0, 0, 0};
+        int smoothPasses = 3;
+        double smoothDepth = 0.02, smoothNormal = 32, smoothLight = 0.25, smoothFloor = 0.02;
         unsigned threads = 8;
     };
     Options op;
@@ -1026,6 +1050,17 @@ public:
     // left to the CPU). Empty: the CPU's lookups.
     std::function<bool(const xpu2::interactive::rheastore::View&)> cardStore;
     size_t cardLooked = 0;  // the last view's hits whose colour the card looked up
+    // The smoothing on the card (launch mode 6): nodes, light in and out, settings, passes; false where it does not take it.
+    std::function<bool(const xpu2::interactive::rheastore::SmoothNode*, float*, const xpu2::interactive::rheastore::SmoothParams&, int)>
+        cardSmooth;
+    // Rhea Draft's lines on the card (launch mode 7): the chief rays' camera, the settings, a float a pixel out; false where
+    // it does not take them (the CPU finds them).
+    std::function<bool(const surface::Camera&, const xpu2::interactive::rheastore::LineSettings&, float*)> cardLines;
+    double lineSeconds = 0;  // the last view's lines, and whether the card found them
+    bool linesOnCard = false;
+    std::vector<float> lines;  // the last view's line coverage, a pixel each (op.draft)
+    double smoothSeconds = 0;  // the last view's smoothing, and whether the card did it
+    bool smoothedOnCard = false;
     // The last view's rays the card traced, and the time its calls took (rays out, launch, hits back; a begun launch's from
     // its end's wait alone).
     size_t cardRays = 0;
@@ -1066,6 +1101,8 @@ public:
         // it (op.trust, op.trustUp), else weighed little in the interpolation. The store empty (realtime's first frame):
         // the first look, the hit's material colour lit from the camera.
         const bool firstLook = op.firstLook && store.empty();
+        if (op.draft) findLines(nv, scene, w, h, threads);
+        else lines.clear();
         // The card's copy of the store, where it answers this view's lookups (not the albedo composite's finer table).
         bool cardLooks = false;
         cardLooked = 0;
@@ -1107,11 +1144,14 @@ public:
                     parts.specular[ch] = look->specular[ch], parts.reflected[ch] = look->reflected[ch];
                 }
                 o.conf = look->conf, up = look->up, parts.share = look->share;
+                for (int ch = 0; ch < 3; ++ch) parts.albedo[ch] = look->albedo[ch];
                 lookedOnCard.fetch_add(1, std::memory_order_relaxed);
             } else
                 found = store.lookup(hit.point, nn, D3{ray.direction.x, ray.direction.y, ray.direction.z}, foot, o.rgb, o.conf, &up, op.lookupUp,
-                                     o.obj, op.specular ? &parts : nullptr);
+                                     o.obj, op.specular || op.smooth ? &parts : nullptr);
             o.known = found && (up <= 1 || (up <= op.trustUp && o.conf >= op.trust));
+            if (found)
+                for (int ch = 0; ch < 3; ++ch) o.a[ch] = parts.albedo[ch];
             // The specular light made again for this view: the reflectance the cells saw times the light reflected now.
             if (found && op.specular && parts.share >= op.specShare && scene.plan) {
                 const double spec = parts.specular[0] + parts.specular[1] + parts.specular[2];
@@ -1128,9 +1168,10 @@ public:
                 }
             }
             o.weight = o.known ? 1.0f : found ? float(0.25 * std::max(0.0f, o.conf) / (1.0 + std::max(0, up - op.trustUp))) : 0.0f;
-            if (!found && firstLook) {
+            if ((!found && firstLook) || (op.draft && !o.known)) {
                 surface::Lambert l{};
                 backend.material(hit, ray, l);
+                o.a[0] = l.albedo.x, o.a[1] = l.albedo.y, o.a[2] = l.albedo.z;
                 const double dl = std::sqrt(double(ray.direction.x) * ray.direction.x + double(ray.direction.y) * ray.direction.y +
                                             double(ray.direction.z) * ray.direction.z);
                 const double nl = std::sqrt(nn.x * nn.x + nn.y * nn.y + nn.z * nn.z);
@@ -1157,7 +1198,14 @@ public:
                 }
                 o.rgb[0] = float(base[0] * lit + sheen[0] + l.emission.x), o.rgb[1] = float(base[1] * lit + sheen[1] + l.emission.y),
                 o.rgb[2] = float(base[2] * lit + sheen[2] + l.emission.z);
-                o.known = true, o.weight = 1.0f, o.conf = 0.0f;
+                o.known = true, o.weight = 1.0f, o.conf = 0.0f, o.fill = true;
+                // Rhea Draft: lit as the view is (lightFills), here where every fill is made, a grid node's and a pixel's
+                // own ray's alike (the pixels between nodes stayed dark when only the nodes were, 2026-11-28).
+                if (op.draft && draftLightSet_) {
+                    const float* lightHere = fillLight(o.obj);
+                    for (int ch = 0; ch < 3; ++ch) o.rgb[ch] *= lightHere[ch];
+                    o.fillLit = true;
+                }
                 looked.fetch_add(1, std::memory_order_relaxed);
             }
         };
@@ -1516,12 +1564,12 @@ public:
                         const double tx = i1 > i0 ? double(i - i0) / (i1 - i0) : 0.0, ty = j1 > j0 ? double(j - j0) / (j1 - j0) : 0.0;
                         const double wt[4] = {(1 - tx) * (1 - ty), tx * (1 - ty), (1 - tx) * ty, tx * ty};
                         Node o;
-                        double w = 0, depth = 0, conf = 0, weight = 0, rgb[3] = {0, 0, 0};
+                        double w = 0, depth = 0, conf = 0, weight = 0, rgb[3] = {0, 0, 0}, alb[3] = {0, 0, 0};
                         for (int q = 0; q < 4; ++q) {
-                            for (int ch = 0; ch < 3; ++ch) rgb[ch] += wt[q] * c[q]->rgb[ch];
+                            for (int ch = 0; ch < 3; ++ch) rgb[ch] += wt[q] * c[q]->rgb[ch], alb[ch] += wt[q] * c[q]->a[ch];
                             w += wt[q] * c[q]->w, depth += wt[q] * c[q]->depth, conf += wt[q] * c[q]->conf, weight += wt[q] * c[q]->weight;
                         }
-                        for (int ch = 0; ch < 3; ++ch) o.rgb[ch] = float(rgb[ch]);
+                        for (int ch = 0; ch < 3; ++ch) o.rgb[ch] = float(rgb[ch]), o.a[ch] = float(alb[ch]);
                         o.w = w, o.depth = float(depth), o.conf = float(conf), o.weight = float(weight);
                         o.kind = c[0]->kind, o.known = known, o.obj = c[0]->obj;
                         for (int ch = 0; ch < 3; ++ch) o.n[ch] = c[0]->n[ch];
@@ -1596,6 +1644,8 @@ public:
             const auto t = Clock::now();
             fillNodes(fine, op.fillDepth, op.objectEdges);
             fillSeconds += since(t);
+            if (op.draft) lightFills(fine);
+            if (op.smooth || op.draft) smoothGrid(fine, threads);
         };
         // The fine grid ring by ring, rings of equal area out to the picture's corners: each ring's pixels from the fine
         // grid (a ray a pixel in a cell its corners are not one smooth surface of, those rays a row's together), its outer
@@ -1699,6 +1749,14 @@ public:
             validTo = valid;
             ++stages;
             // The finished picture's silhouettes smoothed (the rings before it are on screen for a moment only).
+            if (last && op.draft && lines.size() == n)
+                parallel(threads, h, [&](size_t y) {
+                    for (size_t i = y * w; i < (y + 1) * w; ++i) {
+                        const float a = lines[i];
+                        if (a > 0)
+                            for (int ch = 0; ch < 3; ++ch) color[i * 3 + ch] += a * (op.lineColour[ch] - color[i * 3 + ch]);
+                    }
+                });
             if (last && op.antialias) {
                 t0 = Clock::now();
                 Fxaa{}.apply(color, w, h, threads);
@@ -1720,6 +1778,9 @@ private:
         float weight = 0;       // its colour's weight in the interpolation (fillNodes): 1 trusted, less from coarse cells, 0 none
         std::uint32_t obj = 0;  // its hit's object plus one (0: none)
         float n[3] = {0, 0, 0};  // its hit's geometric normal (facing the ray)
+        float a[3] = {0, 0, 0};  // the cells' albedo at it (the smoothing's demodulation; 0: none)
+        bool fill = false;       // its colour the first look's (the store had none): Rhea Draft lights it as the view's light
+        bool fillLit = false;    // that light laid on it already (where it was made)
     };
     struct Pixel {
         float rgb[3] = {0, 0, 0};
@@ -1834,6 +1895,164 @@ private:
             pass(tmp, px, false);
         }
     }
+    // The grid's light smoothed over its surfaces (Options::smooth, rheastore::smoothNode): on the card where cardSmooth
+    // takes it, else on the CPU's threads, the same arithmetic.
+    void smoothGrid(Grid& g, unsigned threads) {
+        namespace R = xpu2::interactive::rheastore;
+        const auto began = std::chrono::steady_clock::now();
+        smoothedOnCard = false;
+        const size_t count = g.nodes.size();
+        smoothNodes_.assign(count, R::SmoothNode{});
+        smoothLight_.assign(count * 3, 0.0f);
+        const float floorA = float(op.smoothFloor);
+        parallel(threads, g.gh, [&](size_t j) {
+            for (size_t k = j * g.gw; k < (j + 1) * g.gw; ++k) {
+                const Node& o = g.nodes[k];
+                for (int ch = 0; ch < 3; ++ch) smoothLight_[k * 3 + ch] = o.rgb[ch];
+                if (o.kind != 1 || !(o.w > 0)) continue;
+                R::SmoothNode& sn = smoothNodes_[k];
+                sn.w = float(o.w), sn.obj = o.obj;
+                // On a line (Rhea Draft): left as it is, and no neighbour's (gradients stop at the lines).
+                if (!lines.empty()) {
+                    const size_t px = std::min<size_t>(size_t(k % g.gw) * g.step, lineW_ - 1), py = std::min<size_t>(size_t(k / g.gw) * g.step, lineH_ - 1);
+                    if (lines[py * lineW_ + px] > 0.25f) sn.flags |= 2u;
+                }
+                const float l = std::sqrt(o.n[0] * o.n[0] + o.n[1] * o.n[1] + o.n[2] * o.n[2]);
+                if (l > 0) sn.n[0] = o.n[0] / l, sn.n[1] = o.n[1] / l, sn.n[2] = o.n[2] / l;
+                const float lumA = 0.2126f * o.a[0] + 0.7152f * o.a[1] + 0.0722f * o.a[2];
+                if (lumA >= floorA) {
+                    sn.flags |= 1u;  // (|=: kept the line's mark above, which = cleared, so the smoothing crossed lines)
+                    for (int ch = 0; ch < 3; ++ch) smoothLight_[k * 3 + ch] = o.rgb[ch] / std::max(o.a[ch], floorA);
+                }
+            }
+        });
+        R::SmoothParams sp;
+        sp.gw = int(g.gw), sp.gh = int(g.gh), sp.depth = float(op.smoothDepth), sp.normal = float(op.smoothNormal), sp.light = float(op.smoothLight);
+        const int passes = std::clamp(op.smoothPasses, 0, 6);
+        if (cardSmooth && cardSmooth(smoothNodes_.data(), smoothLight_.data(), sp, passes)) smoothedOnCard = true;
+        else {
+            smoothOut_.resize(count * 3);
+            for (int k = 0; k < passes; ++k) {
+                sp.step = 1 << k;
+                parallel(threads, g.gh, [&](size_t j) {
+                    for (unsigned i = 0; i < g.gw; ++i) R::smoothNode(sp, smoothNodes_.data(), smoothLight_.data(), int(i), int(j), &smoothOut_[(j * g.gw + i) * 3]);
+                });
+                smoothLight_.swap(smoothOut_);
+            }
+        }
+        parallel(threads, g.gh, [&](size_t j) {
+            for (size_t k = j * g.gw; k < (j + 1) * g.gw; ++k) {
+                Node& o = g.nodes[k];
+                if (o.kind != 1 || !(o.w > 0)) continue;
+                const bool demod = smoothNodes_[k].flags & 1u;
+                for (int ch = 0; ch < 3; ++ch)
+                    o.rgb[ch] = std::max(0.0f, smoothLight_[k * 3 + ch] * (demod ? std::max(o.a[ch], floorA) : 1.0f));
+            }
+        });
+        smoothSeconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - began).count();
+    }
+    // Rhea Draft's flat fill lit as the view is (DESIGN.md 42): a surface the store has nothing for was its albedo under a
+    // light of one, so a bright room's unknown wall came out near black beside the same wall known (the interior's left
+    // wall, the block behind the car). Its colour is now times its object's light: the mean of that object's known
+    // surfaces' light over their albedo (a floor lit as the floor is, a wall as the wall), else, for an object the store
+    // knows nothing of yet, the view's median light (the mean let a white sofa light a dark wooden floor white). Both
+    // eased from view to view (half each) so a fill does not pulse as the known share changes.
+    float draftLight_[3] = {1, 1, 1};
+    bool draftLightSet_ = false;
+    std::unordered_map<std::uint32_t, std::array<float, 3>> objLight_;
+    const float* fillLight(std::uint32_t obj) const {
+        const auto it = objLight_.find(obj);
+        return it != objLight_.end() ? it->second.data() : draftLight_;
+    }
+    void lightFills(Grid& g) {
+        struct Sum { double l[3] = {0, 0, 0}; size_t n = 0; };
+        std::unordered_map<std::uint32_t, Sum> sums;
+        std::vector<float> all[3];
+        for (const Node& o : g.nodes) {
+            if (o.kind != 1 || !o.known || o.fill) continue;
+            const double lum = 0.2126 * o.a[0] + 0.7152 * o.a[1] + 0.0722 * o.a[2];
+            if (lum < 0.05) continue;
+            Sum& s = sums[o.obj];
+            for (int ch = 0; ch < 3; ++ch) {
+                const float light = o.rgb[ch] / std::max(0.02f, o.a[ch]);
+                s.l[ch] += light;
+                all[ch].push_back(light);
+            }
+            ++s.n;
+        }
+        if (all[0].size() >= 64) {
+            for (int ch = 0; ch < 3; ++ch) {
+                auto mid = all[ch].begin() + all[ch].size() / 2;
+                std::nth_element(all[ch].begin(), mid, all[ch].end());
+                const float now = std::clamp(*mid, 0.05f, 50.0f);
+                draftLight_[ch] = draftLightSet_ ? 0.5f * (draftLight_[ch] + now) : now;
+            }
+            draftLightSet_ = true;
+        }
+        for (const auto& [obj, s] : sums) {
+            if (s.n < 8) continue;
+            auto found = objLight_.find(obj);
+            std::array<float, 3> now;
+            for (int ch = 0; ch < 3; ++ch) now[ch] = float(std::clamp(s.l[ch] / double(s.n), 0.05, 50.0));
+            if (found == objLight_.end()) objLight_.emplace(obj, now);
+            else for (int ch = 0; ch < 3; ++ch) found->second[ch] = 0.5f * (found->second[ch] + now[ch]);
+        }
+        if (!draftLightSet_) return;
+        // Those made before the view's light was known (the first view's): lit now.
+        for (Node& o : g.nodes)
+            if (o.fill && !o.fillLit) {
+                const float* lightHere = fillLight(o.obj);
+                for (int ch = 0; ch < 3; ++ch) o.rgb[ch] *= lightHere[ch];
+                o.fillLit = true;
+            }
+    }
+    // Rhea Draft's lines for this view (op.draft): on the card where it takes them, else the CPU's rays, the same test.
+    size_t lineW_ = 0, lineH_ = 0;
+    void findLines(const View& nv, const async::CpuScene& scene, unsigned w, unsigned h, unsigned threads) {
+        namespace R = xpu2::interactive::rheastore;
+        const auto began = std::chrono::steady_clock::now();
+        R::LineSettings ls;
+        ls.width = int(w), ls.height = int(h), ls.samples = std::clamp(op.lineSamples, 1, 4);
+        ls.apart = float(op.lineApart > 0 ? op.lineApart : std::max(1.0, double(w) / 1100.0));
+        ls.crease = float(op.lineCrease), ls.plane = float(op.linePlane);
+        lines.assign(size_t(w) * h, 0.0f), lineW_ = w, lineH_ = h;
+        linesOnCard = cardLines && cardLines(nv.chief(), ls, lines.data());
+        if (!linesOnCard)
+            parallel(threads, h, [&](size_t y) {
+                async::CpuBackend backend{scene};
+                const int S = ls.samples;
+                for (unsigned x = 0; x < w; ++x) {
+                    float cover = 0;
+                    for (int sy = 0; sy < S; ++sy)
+                        for (int sx = 0; sx < S; ++sx) {
+                            const double px = x + (sx + 0.5) / S, py = y + (sy + 0.5) / S;
+                            const double at[3][2] = {{px, py}, {px + ls.apart, py}, {px, py + ls.apart}};
+                            unsigned g[3];
+                            float n3[3][3], p3[3][3], t[3];
+                            bool made[3];
+                            for (int k = 0; k < 3; ++k) {
+                                surface::Ray r;
+                                made[k] = nv.ray(at[k][0], at[k][1], r);
+                                g[k] = ~0u, t[k] = 0;
+                                if (!made[k]) continue;
+                                r.mask = 1u;
+                                const resume::Hit hh = backend.trace(r);
+                                g[k] = hh.geom, t[k] = hh.t;
+                                n3[k][0] = hh.normal.x, n3[k][1] = hh.normal.y, n3[k][2] = hh.normal.z;
+                                p3[k][0] = hh.point.x, p3[k][1] = hh.point.y, p3[k][2] = hh.point.z;
+                            }
+                            if (!made[0]) continue;
+                            const bool edge = (made[1] && R::draftEdge(g[0], n3[0], p3[0], t[0], g[1], n3[1], p3[1], t[1], ls.crease, ls.plane)) ||
+                                              (made[2] && R::draftEdge(g[0], n3[0], p3[0], t[0], g[2], n3[2], p3[2], t[2], ls.crease, ls.plane));
+                            cover += edge ? 1.0f : 0.0f;
+                        }
+                    lines[size_t(y) * w + x] = cover / float(S * S);
+                }
+            });
+        lineSeconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - began).count();
+    }
+    std::vector<xpu2::interactive::rheastore::SmoothNode> smoothNodes_;
+    std::vector<float> smoothLight_, smoothOut_;
     // Nodes at multiples of the step, the last row and column at the picture's edge (the vectors kept, cleared).
     static void layGrid(Grid& g, unsigned step, unsigned w, unsigned h) {
         g.step = step, g.gw = (w - 1) / step + 2, g.gh = (h - 1) / step + 2;

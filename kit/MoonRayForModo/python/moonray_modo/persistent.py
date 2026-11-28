@@ -133,7 +133,7 @@ class Session(QtCore.QObject):
         self.root=Path(self.workspace.name)
         self.latest=None;self.sent=None;self.applied=None;self.signature=None
         self.scene_memory=False;self.mappings={};self.command_channel=None
-        self.partial='';self.stopping=False;self.closed=False;self.view='beauty'
+        self.partial='';self.stopping=False;self.closed=False;self.view='beauty';self.draft=(False,None)
         from .idle_release import IdleRelease
         self.idle=IdleRelease(self,self._release_idle,lambda:self.running() and not self.stopping and self.sent is None)
 
@@ -148,6 +148,16 @@ class Session(QtCore.QObject):
         # XPU2's realtime denoises its pictures where Denoised Beauty is chosen; MoonRay kept loaded hands over its beauty.
         if key=='denoised_beauty' and not getattr(self,'xpu2_active',False):key='beauty'
         staged=self.root/'view.tmp';staged.write_text(key,encoding='ascii');staged.replace(self.root/'view.txt')
+
+    def select_draft(self,on,region=None):
+        """Rhea Draft (XPU2 RT's, rhea/DESIGN.md 42): its lines over Rhea's smooth light in place of the picture, told to
+        the session in draft.txt: 'on' with the region's left, top, right and bottom as fractions where one is drawn (XPU2
+        renders inside it), or 'off'. Kept, and told again to a session started anew."""
+        self.draft=(bool(on),tuple(region) if on and region else None)
+        text=('on'+(' %.4f %.4f %.4f %.4f'%self.draft[1] if self.draft[1] else '')) if self.draft[0] else 'off'
+        try:
+            staged=self.root/'draft.tmp';staged.write_text(text,encoding='ascii');staged.replace(self.root/'draft.txt')
+        except OSError:pass
 
     def drain(self):
         """Have the render now going finish with what it has in hand and end as a finished one."""
@@ -303,6 +313,7 @@ class Session(QtCore.QObject):
             self.sent=None;self.failed.emit(native.xpu2_shaders_unavailable());return
         # The view again, now that it is known whose: Denoised Beauty is XPU2's own (realtime), the beauty MoonRay's.
         self.select_view(self.view)
+        self.select_draft(*self.draft)
         if self.xpu2_active:
             program=native.xpu2_runtime()/'moonray_xpu2.exe'
             for key,value in native.xpu2_environment(request['runtime']).items():env.insert(key,value)

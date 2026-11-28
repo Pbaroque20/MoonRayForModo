@@ -500,9 +500,63 @@ static __device__ __noinline__ void firstHit() {
     }
 }
 
+// mode 6, Rhea's light smoothed (rhea_store_core.h smoothNode): a node a thread, one a-trous pass.
+static __device__ __noinline__ void smoothPass() {
+    const rheastore::SmoothParams& p = *static_cast<const rheastore::SmoothParams*>(params.smoothParams);
+    const int x = int(optixGetLaunchIndex().x), y = int(optixGetLaunchIndex().y);
+    if (x >= p.gw || y >= p.gh) return;
+    float out[3];
+    rheastore::smoothNode(p, static_cast<const rheastore::SmoothNode*>(params.smoothNodes), params.smoothIn, x, y, out);
+    const int i = y * p.gw + x;
+    params.smoothOut[i * 3] = out[0], params.smoothOut[i * 3 + 1] = out[1], params.smoothOut[i * 3 + 2] = out[2];
+}
+
+// mode 7, Rhea Draft's lines (rhea_store_core.h draftEdge): a pixel a thread, its fixed places each traced with the two
+// a little to the right and up, a line where what they meet parts.
+static __device__ __noinline__ void linePass() {
+    const rheastore::LineSettings& L = *static_cast<const rheastore::LineSettings*>(params.lineSettings);
+    const surface::Camera& cam = *static_cast<const surface::Camera*>(params.lineCamera);
+    const int x = int(optixGetLaunchIndex().x), y = int(optixGetLaunchIndex().y);
+    if (x >= L.width || y >= L.height) return;
+    GpuBackend backend;
+    const int S = L.samples > 0 ? L.samples : 1;
+    float cover = 0;
+    for (int sy = 0; sy < S; ++sy)
+        for (int sx = 0; sx < S; ++sx) {
+            const float px = float(x) + (float(sx) + 0.5f) / float(S), py = float(y) + (float(sy) + 0.5f) / float(S);
+            const float at[3][2] = {{px, py}, {px + L.apart, py}, {px, py + L.apart}};
+            unsigned g[3];
+            float n[3][3], p[3][3], t[3];
+            bool made[3];
+            for (int k = 0; k < 3; ++k) {
+                surface::Ray r;
+                made[k] = surface::cameraSampleAt(cam, at[k][0], at[k][1], 0.0f, 0.0f, r) == surface::CameraResult::Made;
+                g[k] = ~0u, t[k] = 0;
+                if (!made[k]) continue;
+                r.mask = 1u;
+                const resume::Hit h = backend.trace(r);
+                g[k] = h.geom, t[k] = h.t;
+                n[k][0] = h.normal.x, n[k][1] = h.normal.y, n[k][2] = h.normal.z, p[k][0] = h.point.x, p[k][1] = h.point.y, p[k][2] = h.point.z;
+            }
+            if (!made[0]) continue;
+            const bool edge = (made[1] && rheastore::draftEdge(g[0], n[0], p[0], t[0], g[1], n[1], p[1], t[1], L.crease, L.plane)) ||
+                              (made[2] && rheastore::draftEdge(g[0], n[0], p[0], t[0], g[2], n[2], p[2], t[2], L.crease, L.plane));
+            cover += edge ? 1.0f : 0.0f;
+        }
+    params.lineOut[y * L.width + x] = cover / float(S * S);
+}
+
 extern "C" __global__ void __raygen__async() {
     if (params.mode == 5) {
         firstHit();
+        return;
+    }
+    if (params.mode == 6) {
+        smoothPass();
+        return;
+    }
+    if (params.mode == 7) {
+        linePass();
         return;
     }
     if (params.mode == 1) {

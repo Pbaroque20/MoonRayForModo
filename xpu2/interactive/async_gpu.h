@@ -1964,6 +1964,80 @@ public:
     }
     // looks: the hits' lookups, where they were asked for (firstHitsBegin's looks) and the card had the store; false where
     // asked for and not had (the caller then looks up on the CPU: it calls with none).
+    // Rhea's light smoothed on the card (launch mode 6, rhea/DESIGN.md 39): passes a-trous passes over gw x gh nodes, the
+    // k-th at step 2^k; light (three floats a node) in and out. Only with nothing of a frame's out, as firstHits; false
+    // otherwise (the caller smooths on the CPU).
+    bool rheaSmooth(const rheastore::SmoothNode* nodes, float* light, const rheastore::SmoothParams& settings, int passes) {
+        const size_t count = size_t(settings.gw) * size_t(settings.gh);
+        if (!count || passes <= 0 || firstPending_ || !inFlight_.empty() || !paramsFree() || !program_ || !plan_ || !scene_.config) return false;
+        const size_t nodeBytes = count * sizeof(rheastore::SmoothNode), lightBytes = count * 3 * sizeof(float);
+        if (!smoothNodes_ || smoothNodes_->bytes < nodeBytes) smoothNodes_ = device(nodeBytes);
+        for (B* b : {&smoothA_, &smoothB_})
+            if (!*b || (*b)->bytes < lightBytes) *b = device(lightBytes);
+        ensure(smoothHost_, lightBytes);
+        if (smoothSettings_.size() < size_t(passes)) smoothSettings_.resize(size_t(passes));
+        copyIn(smoothNodes_, nodes, nodeBytes);
+        std::memcpy(smoothHost_->host(), light, lightBytes);
+        copyIn(smoothA_, smoothHost_->host(), lightBytes);
+        for (int k = 0; k < passes; ++k) {
+            rheastore::SmoothParams sp = settings;
+            sp.step = 1 << k;
+            if (!smoothSettings_[size_t(k)]) smoothSettings_[size_t(k)] = device(sizeof(rheastore::SmoothParams));
+            smoothSettingsHost_[k % 8] = sp;
+            copyIn(smoothSettings_[size_t(k)], &smoothSettingsHost_[k % 8], sizeof sp);
+            LaunchParams p = baseParams();
+            p.mode = 6;
+            p.smoothNodes = reinterpret_cast<const void*>(smoothNodes_->pointer);
+            const B& from = k % 2 ? smoothB_ : smoothA_;
+            const B& to = k % 2 ? smoothA_ : smoothB_;
+            p.smoothIn = reinterpret_cast<const float*>(from->pointer);
+            p.smoothOut = reinterpret_cast<float*>(to->pointer);
+            p.smoothParams = reinterpret_cast<const void*>(smoothSettings_[size_t(k)]->pointer);
+            auto& slot = takeParams(p);
+            ox(optixLaunch(program_->pipeline, stream_, slot.device->pointer, sizeof(LaunchParams), &program_->sbt, unsigned(settings.gw),
+                           unsigned(settings.gh), 1));
+            // Each pass's slot held until its launch is done (its pinned copy of the parameters is read by the stream).
+            if (smoothEvents_.size() < size_t(passes)) smoothEvents_.resize(size_t(passes));
+            if (!smoothEvents_[size_t(k)]) smoothEvents_[size_t(k)] = std::make_shared<gpu::Event>(driver);
+            if (k + 1 == passes) copyOut(smoothHost_, to, lightBytes);
+            gpu::Driver::check(driver.cuEventRecord_p(smoothEvents_[size_t(k)]->value, stream_));
+            slot.done = smoothEvents_[size_t(k)];
+        }
+        while (!smoothEvents_[size_t(passes - 1)]->ready()) std::this_thread::yield();
+        std::memcpy(light, smoothHost_->host(), lightBytes);
+        return true;
+    }
+    // Rhea Draft's lines on the card (launch mode 7, rhea/DESIGN.md 42): each pixel's coverage into out (width x height
+    // floats). Only with nothing of a frame's out, as firstHits; false otherwise (the caller finds them on the CPU).
+    bool rheaLines(const surface::Camera& camera, const rheastore::LineSettings& settings, float* out) {
+        const size_t count = size_t(settings.width) * size_t(settings.height);
+        if (!count || firstPending_ || !inFlight_.empty() || !paramsFree() || !program_ || !plan_ || !scene_.config) return false;
+        const size_t bytes = count * sizeof(float);
+        if (!lineCamera_) lineCamera_ = device(sizeof(surface::Camera));
+        if (!lineSettings_) lineSettings_ = device(sizeof(rheastore::LineSettings));
+        if (!lineOut_ || lineOut_->bytes < bytes) lineOut_ = device(bytes);
+        ensure(lineHost_, bytes);
+        if (!lineDone_) lineDone_ = std::make_shared<gpu::Event>(driver);
+        lineCameraHost_ = camera;
+        lineCameraHost_.bokehImage = nullptr, lineCameraHost_.map = nullptr, lineCameraHost_.dof = 0;
+        lineSettingsHost_ = settings;
+        copyIn(lineCamera_, &lineCameraHost_, sizeof(surface::Camera));
+        copyIn(lineSettings_, &lineSettingsHost_, sizeof(rheastore::LineSettings));
+        LaunchParams p = baseParams();
+        p.mode = 7;
+        p.lineCamera = reinterpret_cast<const void*>(lineCamera_->pointer);
+        p.lineSettings = reinterpret_cast<const void*>(lineSettings_->pointer);
+        p.lineOut = reinterpret_cast<float*>(lineOut_->pointer);
+        auto& slot = takeParams(p);
+        ox(optixLaunch(program_->pipeline, stream_, slot.device->pointer, sizeof(LaunchParams), &program_->sbt, unsigned(settings.width),
+                       unsigned(settings.height), 1));
+        copyOut(lineHost_, lineOut_, bytes);
+        gpu::Driver::check(driver.cuEventRecord_p(lineDone_->value, stream_));
+        slot.done = lineDone_;
+        while (!lineDone_->ready()) std::this_thread::yield();
+        std::memcpy(out, lineHost_->host(), bytes);
+        return true;
+    }
     bool firstHitsEnd(resume::Hit* out, rheastore::Look* looks = nullptr) {
         if (!firstPending_) return false;
         while (!firstHitsDone_->ready()) std::this_thread::yield();
@@ -3753,6 +3827,16 @@ private:
     B rheaStoreDevice_, rheaExtrasDevice_, rheaViewDevice_, firstLooksHost_, firstLooksDevice_;
     size_t rheaStoreSlots_ = 0;
     bool rheaStoreExtras_ = false;
+    // Rhea's smoothing on the card (rheaSmooth): the nodes, the light each way, each pass's settings.
+    B smoothNodes_, smoothA_, smoothB_, smoothHost_;
+    std::vector<B> smoothSettings_;
+    rheastore::SmoothParams smoothSettingsHost_[8];
+    std::vector<std::shared_ptr<gpu::Event>> smoothEvents_;
+    // Rhea Draft's lines on the card (rheaLines).
+    B lineCamera_, lineSettings_, lineOut_, lineHost_;
+    surface::Camera lineCameraHost_{};
+    rheastore::LineSettings lineSettingsHost_{};
+    std::shared_ptr<gpu::Event> lineDone_;
     rheastore::View rheaViewHost_{};
     bool rheaViewReady_ = false, firstLooking_ = false;
     U32 refineCapacity_ = 1u << 22;

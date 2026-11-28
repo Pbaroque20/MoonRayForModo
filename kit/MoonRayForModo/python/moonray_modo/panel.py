@@ -877,16 +877,43 @@ class Panel(Tools, QtWidgets.QWidget):
         region=[round(min(1.0,max(0.0,v)),4) for v in (left,top,right,bottom)]
         if region[2]-region[0]<.005 or region[3]-region[1]<.005:return
         # Marking a region renders nothing: with realtime on it is switched off first, so that the region is not
-        # rendered until it is asked for.
-        if self._following:self._follow(False)
+        # rendered until it is asked for. (Not under Rhea Draft: XPU2 renders the region as realtime goes on.)
+        if self._following and not getattr(self,'_rhea_draft',False):self._follow(False)
         self._store(region=region,region_enabled=True)
+        # Rhea Draft: XPU2 renders inside the region, the drawing outside, as realtime goes on.
+        if getattr(self,'_rhea_draft',False) and self.draft.isChecked():self.renderer.select_draft(True,self._draft_region())
         self.preview.set_region(region,True)
         self.status.setText('Region set: %d%% to %d%% across, %d%% to %d%% down.'%(region[0]*100,region[2]*100,region[1]*100,region[3]*100))
         # It is only marked, its outline moving round it: Render, or RT, is what renders it.
         self.status.setText('Region marked. Press %s to render it.'%'Render')
 
+    def _rhea_draft_wanted(self):
+        """Whether Draft is XPU2 RT's Rhea Draft (rhea/DESIGN.md 42): MoonRay chosen with XPU2 rendering its realtime and
+        Rhea its engine (Preferences). Then Draft is realtime with Rhea's black lines over its smooth light, not
+        MoonLightIPR's lines; its Region rendered by XPU2 inside, the drawing outside."""
+        try:
+            from . import native
+            return (self.preview_engine.currentData()=='moonray' and self._engine()=='moonray' and bool(native.xpu2())
+                    and native.xpu2_rt_engine()=='rhea' and self._rt_capable())
+        except Exception:return False
+
+    def _rhea_draft_toggled(self,enabled):
+        """Draft switched under XPU2 RT (Rhea): realtime on with Rhea Draft told to its session, or Rhea Draft off (the
+        realtime left on). True where it was handled so."""
+        if enabled and not self._rhea_draft_wanted():return False
+        if not enabled and not getattr(self,'_rhea_draft',False):return False
+        self._rhea_draft=bool(enabled)
+        self.renderer.select_draft(bool(enabled),self._draft_region() if enabled else None)
+        if enabled:
+            self.draft_timer.stop()
+            if not self._following:self._rt_toggled(True)
+            self.status.setText('Draft: Rhea\'s lines over its light. A region drawn is rendered by XPU2 inside it.')
+        else:self.status.setText('Draft off.')
+        return True
+
     def _draft_toggled(self,enabled):
         """Draft on: lines in place of a render, and the whole frame kept in view. Off: the render again."""
+        if self._rhea_draft_toggled(enabled):return
         from . import draft
         self.preview.whole=bool(enabled)
         self.preview.paper=draft.PAPER if enabled else None
@@ -1059,7 +1086,7 @@ class Panel(Tools, QtWidgets.QWidget):
         # Switched off, the region is forgotten, so that the next one is drawn from nothing.
         self._region_armed=bool(enabled)
         # The Region tool takes realtime off: a region is marked and then rendered when asked, not as it is drawn.
-        if enabled and self._following:
+        if enabled and self._following and not getattr(self,'_rhea_draft',False):
             self._follow(False)
             self.status.setText('Realtime is off while a region is marked. Press RT Off to render it.')
         self.preview.set_region(None,enabled)
@@ -1429,7 +1456,7 @@ class Panel(Tools, QtWidgets.QWidget):
         """The RT switch: realtime on, the preview follows the scene from now; off, realtime ends, its picture kept, and
         the Render button is free again. Not while a render runs or stops: Stop it first."""
         if getattr(self,'_rt_syncing',False):return
-        if on and self.draft.isChecked():
+        if on and self.draft.isChecked() and not getattr(self,'_rhea_draft',False):
             # Realtime switched on takes Draft off (as Draft switched on takes realtime off, _draft_toggled). Where the
             # draft's render is under way it is stopped first, and realtime comes on once it has (_set_rendering): a
             # stop may take a moment to keep what it rendered, and realtime does not start over a render.
