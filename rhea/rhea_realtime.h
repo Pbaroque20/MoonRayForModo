@@ -107,7 +107,7 @@ struct RealtimeOptions {
     // (ObjectStore::Options::byObject; learning traces each pixel's first hit for its object).
     bool objectEdges = false, storeObjects = false;
     // The sparse radiance cache (DESIGN.md 43): cells with their light's slope, fine ones only where the light changes.
-    bool storeSparse = false;
+    bool storeSparse = true;
     double storeSparseTolerance = 0.08, storeSparseMinWeight = 2.0;
     double creaseCos = 0.8;
     // The light smoothed over its surfaces (ObjectWarp::Options::smooth, DESIGN.md 39) and its settings.

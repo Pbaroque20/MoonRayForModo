@@ -1597,3 +1597,61 @@ for the camera), which drops the warp; the picture on screen is then taken as th
 steps whose XPU2 frame stopped before its film had a picture left the kept screen at an older camera, so the release
 showed XPU2's first pictures raw. The session now keeps the published picture for those steps (and for a step held then
 stopped), so the kept screen is the release's camera; not yet measured (the user, 2026-11-27: flicker skipped for now).
+
+## 42. Rhea's outlines (2026-11-27 to 28)
+
+The user: "draft mode gives the edge work, and the interpolated shading would give it its colors"; "rhea's draft could be
+black lines". First built as the kit's Draft turned into Rhea's under XPU2 RT; the user, 2026-11-28: "Draft is supposed to
+be the same as before unconnected to Rhea ... Rhea is supposed to have its own outlines". So Draft is MoonLightIPR's as it
+was, and the outlines are Rhea's own: **Preferences > MoonRay > XPU2 > Rhea outlines**, on by default (the kit passes
+`XPU2_SESSION_RHEA_DRAFT=1` and `XPU2_SESSION_RHEA_DRAFT_XPU2=1`).
+
+- **The lines** (`rheastore::draftEdge`, `ObjectWarp::findLines`; on the card, launch mode 7): rays a little apart meet
+  nothing and something, two objects, a crease (normals' cosine under `lineCrease`, 0.82), or a surface and another part in
+  front of it. A pixel's coverage from 2 x 2 fixed places (`XPU2_SESSION_RHEA_DRAFT_SAMPLES`), the rays one pixel apart at
+  1100 wide (`_DRAFT_WIDTH`; MoonLightIPR's two were too thick for the user), the ink black (`_DRAFT_LINE`).
+- **The colours**: the smoothing of section 39 always on under the outlines, stopped at the lines (a node on a line keeps
+  its light: its mark was cleared by the demodulation's flag until 2026-11-28, so light was smoothed across lines).
+- **What the store does not know**: a flat fill, its albedo under a soft light times its object's light (the mean of that
+  object's known nodes' light over albedo; the view's median where the object is unknown yet), eased from view to view;
+  a pixel's own ray filled the same way (`fillLight`). Lit by one, a bright room's unknown wall was near black; lit by the
+  view's mean, a white sofa lit a dark wooden floor white.
+- **XPU2 over it**: the lines are on Rhea's picture only, so they fade out as XPU2's picture comes in (section 41, 44).
+
+Measured before the fills' fix (`test-results/rhea-improve/draft_compare.py`; lines' share of the picture, and the share
+of one step's line pixels with a line within 2 pixels at the next): car 8.4%, 97.6%; dragon 5.0%, 98.0%; interior 11.8%,
+84% (its slatted wall a line every few pixels). Pictures `test-results/rhea-draft/<case>-step<10|20|30>.png`.
+
+## 43. The sparse radiance cache (2026-11-28)
+
+The user (2026-11-27): smooth the cache's colours "as close to a vector representation" as can be, sparse where the light is
+smooth. `XPU2_SESSION_RHEA_SPARSE`, **on by default** since the user found it worked and Rhea faster (2026-11-28; 0: the
+dense store of section 37).
+
+- **Slopes (Hermite records, first order).** Beside each cell (`rheastore::Grad`, 18 floats) the weighted sums of its
+  pixels' places in it (d, cell units from its middle), d d' and d times their colour. A lookup reads each of the eight
+  cells about a point as its mean plus its least-squares slope times the way from its pixels' centroid
+  (`rheastore::cellColour`: the 3 x 3 spread regularised by 0.01, a surface's pixels having none across it; the change held
+  to the mean either way), then trilinear as before: a few cells give a gradient, not steps.
+- **Density where the light changes.** A pixel is added from the coarsest of the four sizes down; a finer cell is made
+  only where the coarser one, of `_SPARSE_MIN` (2) weight at least, does not foresee its colour within `_SPARSE_TOLERANCE`
+  (8%, relative to the brighter of the two; three times that for a pixel of few samples). Cells already made keep learning.
+  Lookups climbed to coarser sizes where the finer had none already (section 37), so nothing else changed for them.
+- **Both devices.** `cellColour` is one function in `rhea_store_core.h`; the slopes go to the card with the cells
+  (`rheaStoreSync`, the pages written since the last sending) and its lookups (launch mode 5) use them.
+- **The disk cache** (file form 3) keeps each table's records beside its cells: the slopes, and the view-dependent light
+  that form 2 had left out (a store read back had no specular parts). Form 2 is still read.
+  `rhea/tools/store_cache_test.cc` writes a sparse store and reads it back cell by cell.
+
+Not measured against the dense store by the harness: the user tested it in Modo (2026-11-28, "the sparse points works and
+rhea is faster").
+
+## 44. XPU2's cells fade in by coverage (2026-11-28)
+
+The user: "the GPU grid doesn't seem to fade in like before". Section 41's blend is each pixel's own: a pixel XPU2 has
+sampled went over to XPU2's colour while its neighbours were still phase one's, and phase one's prior could be as little as
+half a sample (8 x a quarter confidence x a quarter kept), so XPU2's cells showed as a grid. Now phase one's prior is held
+up to 1 + `progressiveCoverHold` (8) times where XPU2 has sampled little of the pixel's neighbourhood (a square
+`progressiveCover` (8) pixels from it each way at 1280 wide, scaled with the picture; a summed-area table), as
+(1 - its share)^2: XPU2 fades in across an area, and once the area is covered the blend is section 41's.
+`XPU2_SESSION_RHEA_PROGRESSIVE_COVER` (0: off) and `_COVER_HOLD`. Not measured by the harness (the user tested it).

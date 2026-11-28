@@ -4320,7 +4320,7 @@ int session(const Args& args, const fs::path& directory) {
                     // Edges by object and crease (rhea/DESIGN.md 38), and cells of one object each.
                     rheaView.op.objectEdges = envOn("XPU2_SESSION_RHEA_OBJECT_EDGES", false);
                     rheaView.op.storeObjects = envOn("XPU2_SESSION_RHEA_STORE_OBJECTS", true);
-                    rheaView.op.storeSparse = envOn("XPU2_SESSION_RHEA_SPARSE", false);
+                    rheaView.op.storeSparse = envOn("XPU2_SESSION_RHEA_SPARSE", true);  // on by default (the user, 2026-11-28: it works, Rhea faster)
                     if (const char* v = std::getenv("XPU2_SESSION_RHEA_SPARSE_TOLERANCE")) rheaView.op.storeSparseTolerance = std::clamp(std::atof(v), 0.0, 10.0);
                     if (const char* v = std::getenv("XPU2_SESSION_RHEA_SPARSE_MIN")) rheaView.op.storeSparseMinWeight = std::clamp(std::atof(v), 0.0, 1000.0);
                     // Phase one's light smoothed over its surfaces (rhea/DESIGN.md 39), and its settings.
