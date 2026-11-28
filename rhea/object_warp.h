@@ -297,8 +297,10 @@ public:
 
     // The store written out and read back (rhea_cache.h, the radiance cache on disk): its options that shape the cells
     // (a store made under others is not read), each table's cells, and the environment. False where it cannot be.
-    // 2: cells with their object and the diffuse, specular and reflected light (DESIGN.md 35, 38).
-    static constexpr std::uint32_t FileForm = 2;
+    // 2: cells with their object (DESIGN.md 38). 3: each table's cells with the records beside them that it keeps: the
+    // view-dependent light (diffuse, specular, reflected: DESIGN.md 35; form 2 left them out, so a store read back had no
+    // specular parts) and the sparse cache's slopes (DESIGN.md 43). Form 2 is still read.
+    static constexpr std::uint32_t FileForm = 3;
     bool save(std::FILE* f) const {
         auto put = [&](const void* p, size_t n) { return n == 0 || std::fwrite(p, 1, n, f) == n; };
         const std::uint32_t form = FileForm, entry = sizeof(Table::Entry);
@@ -307,9 +309,16 @@ public:
         bool ok = put("RHEASTOR", 8) && put(&form, 4) && put(&entry, 4) && put(shape, sizeof shape) && put(&levels, 4) && put(&albedo, 4);
         for (const Table* t : {&light, &fine}) {
             const std::uint64_t used = t->used;
-            ok = ok && put(&used, 8);
-            for (const Table::Entry& e : t->slots)
-                if (e.full) ok = ok && put(&e, sizeof e);
+            const bool more = t->extras.size() == t->slots.size() && !t->extras.empty(), slopes = t->grads.size() == t->slots.size() && !t->grads.empty();
+            const std::uint32_t beside = (more ? 1u : 0u) | (slopes ? 2u : 0u), extra = sizeof(Table::Extra), grad = sizeof(Table::Grad);
+            ok = ok && put(&used, 8) && put(&beside, 4) && put(&extra, 4) && put(&grad, 4);
+            for (size_t i = 0; i < t->slots.size(); ++i) {
+                const Table::Entry& e = t->slots[i];
+                if (!e.full) continue;
+                ok = ok && put(&e, sizeof e);
+                if (more) ok = ok && put(&t->extras[i], sizeof(Table::Extra));
+                if (slopes) ok = ok && put(&t->grads[i], sizeof(Table::Grad));
+            }
         }
         for (const std::vector<float>* v : {&sky, &skyFilled}) {
             const std::uint64_t n = v->size();
@@ -323,24 +332,35 @@ public:
         std::uint32_t form = 0, entry = 0;
         double shape[3];
         std::int32_t levels = 0, albedo = 0;
-        if (!get(magic, 8) || std::memcmp(magic, "RHEASTOR", 8) != 0 || !get(&form, 4) || form != FileForm || !get(&entry, 4) ||
+        if (!get(magic, 8) || std::memcmp(magic, "RHEASTOR", 8) != 0 || !get(&form, 4) || (form != FileForm && form != 2) || !get(&entry, 4) ||
             entry != sizeof(Table::Entry) || !get(shape, sizeof shape) || !get(&levels, 4) || !get(&albedo, 4))
             return false;
         if (shape[0] != op.scale || shape[1] != op.grazing || shape[2] != op.jump || levels != op.levels || albedo != ((op.albedo ? 1 : 0) | (op.byObject ? 2 : 0))) return false;
         Table tables[2];
         for (Table& t : tables) {
             std::uint64_t used = 0;
+            std::uint32_t beside = 0, extra = sizeof(Table::Extra), grad = sizeof(Table::Grad);
             if (!get(&used, 8) || used > op.maxCells * 4) return false;
+            if (form >= 3 && (!get(&beside, 4) || !get(&extra, 4) || !get(&grad, 4) || extra != sizeof(Table::Extra) || grad != sizeof(Table::Grad)))
+                return false;
             size_t size = size_t(1) << 16;
             while ((used + 1) * 2 > size) size *= 2;
             t.slots.assign(used ? size : 0, Table::Entry{});
+            if (used && (beside & 1u)) t.extras.assign(t.slots.size(), Table::Extra{});
+            if (used && (beside & 2u)) t.grads.assign(t.slots.size(), Table::Grad{});
             const size_t mask = t.slots.size() - 1;
             for (std::uint64_t k = 0; k < used; ++k) {
                 Table::Entry e;
+                Table::Extra x;
+                Table::Grad g;
                 if (!get(&e, sizeof e) || !e.full) return false;
+                if ((beside & 1u) && !get(&x, sizeof x)) return false;
+                if ((beside & 2u) && !get(&g, sizeof g)) return false;
                 size_t i = Table::hashOf(e.x, e.y, e.z, e.level, e.bin, e.obj) & mask;
                 while (t.slots[i].full) i = (i + 1) & mask;
                 t.slots[i] = e;
+                if (beside & 1u) t.extras[i] = x;
+                if (beside & 2u) t.grads[i] = g;
             }
             t.used = size_t(used);
         }
@@ -712,6 +732,9 @@ public:
         for (int ch = 0; ch < 3; ++ch) rgb[ch] = float(c[ch] / wsum);
         return true;
     }
+
+    // rhea/tools/store_cache_test.cc: the store written and read back, cell by cell.
+    friend struct StoreTest;
 
 private:
     static constexpr std::uint8_t NoBin = 255;
