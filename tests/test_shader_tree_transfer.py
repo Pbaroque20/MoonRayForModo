@@ -55,174 +55,206 @@ MATERIAL = {'name': 'M', 'item': 'm1', 'color': [0.6, 0.5, 0.4], 'raw_color': [0
             'sheen': 0, 'sheen_tint': 0}
 
 
-def modo_graph(layers):
+def modo_graph(layers, material=None):
     """A Modo material's plan wired as its own MoonRay text has it (transfer.marked_text, connect), as shader_tree_scene does."""
     from moonray_modo.graph import defaults_for
-    made = transfer.plan('m1', layers, defaults_for(MATERIAL), 'modo', {'bump_strength': .005}, NO_ALPHA)
+    material = material or MATERIAL
+    made = transfer.plan('m1', layers, defaults_for(material), 'modo', {'bump_strength': .005, 'displacement_distance': .05}, NO_ALPHA)
     with mock.patch.object(textures, '_prepare', lambda source, *rest, **named: str(source)), \
             mock.patch.object(textures, 'missing', lambda source: False):
-        lines = transfer.marked_text([dict(MATERIAL, layers=[layer for layer in layers if layer['identity'] in made.moved])], made.keys)
+        lines = transfer.marked_text([dict(material, layers=[layer for layer in layers if layer['identity'] in made.moved])], made.keys)
     values = transfer.connect(made, 'm1', lines, '/modo/material/0')
-    return made, transfer.merged(nodes.new('DwaBaseMaterial', {}), made, {'profile': 'modo'}, created=True), values, lines
+    graph = nodes.new(made.shader, values if made.shader != 'DwaBaseMaterial' else {})
+    return made, transfer.merged(graph, made, {'profile': 'modo'}, created=True), values, lines
+
+
+def constant(identity, effect='diffCol', value=(1, 0, 0), **extra):
+    layer = {'identity': identity, 'name': identity, 'kind': 'constant', 'effect': effect, 'value': list(value), 'opacity': 1.0,
+             'blend': 'normal', 'invert': False, 'groups': [], 'texture_value': 1.0}
+    layer.update(extra)
+    return layer
+
+
+def chain_value(lines, top):
+    """The colour a chain of constant layers comes to, from the MoonRay text written for it."""
+    found = transfer.objects(lines)
+    return transfer.evaluate(found, ('bind', top, 1.0))
+
+
+def graph_value(graph, key):
+    lines = []
+    with mock.patch.object(textures, '_prepare', lambda source, *rest, **named: str(source)), \
+            mock.patch.object(textures, 'missing', lambda source: False):
+        nodes.emit({'node_graph': graph, 'color': [.5] * 3}, '/test', [0], lines, {})
+    source = graph['nodes']['surface']['inputs'][key]
+    name = next(n for n in transfer.objects(lines) if n.endswith('_' + source))
+    return chain_value(lines, name)
+
+
+def tree_value(layers, effect='diffCol', base=(.5, .5, .5)):
+    """The same layers as the Shader Tree's own drawing gives them (graph.bindings)."""
+    from moonray_modo import graph
+    lines = []
+    material = {'color': list(base), 'raw_color': list(base), 'layers': layers, 'diffuse_amount': 1.0}
+    found = graph.bindings(material, 0, lines)
+    top = found[textures.EFFECTS[effect]]
+    name = top.split('"')[1]
+    return chain_value(lines, name)
 
 
 class LayerToNodes(unittest.TestCase):
-    def test_a_colour_image_drives_the_colour_and_the_metal_colour(self):
-        made, graph, values, _ = modo_graph([image('a')])
+    def test_a_layer_is_one_modo_texture_node_with_its_settings(self):
+        made, graph, values, _ = modo_graph([image('a', opacity=.6, blend='overlay', bias=.3, gain=.7)])
         self.assertEqual(made.moved, ['a'])
-        self.assertEqual(made.keys, {'diffuseColor': 'st_a_image'})
-        self.assertEqual(made.inputs['albedo'], 'st_a_image')
-        self.assertEqual(made.inputs['metallic_color'], 'st_a_image')
-        node = made.builder.nodes['st_a_image']
-        self.assertEqual(node['parameters']['file'], 'C:/images/a.png')
-        self.assertEqual(node[transfer.NODE_KEY]['layer'], 'a')
-        self.assertTrue(values['show_specular'])
-        nodes.validate(graph)
-        self.assertIn('ImageMap(', emitted(graph))
+        node = made.builder.nodes['st_a_texture']
+        self.assertEqual(node['type'], 'modo_texture')
+        p = node['parameters']
+        self.assertEqual((p['file'], p['effect'], p['blend'], p['opacity'], p['bias'], p['gain'], p['uv_map']),
+                         ('C:/images/a.png', 'diffCol', 'overlay', .6, .3, .7, 'Texture'))
+        self.assertEqual(node[transfer.NODE_KEY]['source']['filename'], 'C:/images/a.png')
+        self.assertEqual(made.inputs['albedo'], 'st_a_texture')
+        self.assertEqual(made.inputs['metallic_color'], 'st_a_texture')
+        text = emitted(graph)
+        self.assertIn('RemapMap(', text)
+        self.assertIn('"mode"] = 8', text)
+
+    def test_a_stack_is_a_chain_and_draws_as_the_shader_tree(self):
+        layers = [constant('a', value=(1, 0, 0)), constant('b', value=(0, 1, 0), opacity=.5, blend='overlay'),
+                  constant('c', value=(.2, .4, .9), opacity=.7, blend='colorburn'), constant('d', value=(.3, .3, .3), blend='softlight', invert=True)]
+        made = transfer.plan('mat', layers, BASES, 'native', POST, NO_ALPHA)
+        self.assertEqual(made.builder.nodes['st_d_texture']['inputs']['bg'], 'st_c_texture')
+        got = graph_value(graph_of(made), 'albedo')
+        want = tree_value(layers)
+        for a, b in zip(got, want):
+            self.assertAlmostEqual(a, b, places=9)
+
+    def test_layer_masks_and_groups_draw_as_the_shader_tree(self):
+        group = {'id': 'g', 'opacity': .5, 'blend': 'multiply', 'invert': True}
+        layers = [constant('a', value=(.9, .2, .1)), constant('m', effect='layerMask', value=(.25, .25, .25), mask_target='b'),
+                  constant('b', value=(.1, .8, .3), groups=[group]), constant('c', value=(.5, .5, .9), groups=[group], blend='screen')]
+        made = transfer.plan('mat', layers, BASES, 'native', POST, NO_ALPHA)
+        self.assertEqual(made.builder.nodes['st_b_texture']['inputs']['mask'], 'st_m_texture')
+        got = graph_value(graph_of(made), 'albedo')
+        want = tree_value([dict(layer, groups=layer['groups']) for layer in layers])
+        for a, b in zip(got, want):
+            self.assertAlmostEqual(a, b, places=9)
+
+    def test_a_nested_masks_layers_are_laid_on_where_it_reaches_alone(self):
+        outer = {'id': 'outer', 'opacity': 1, 'blend': 'normal'}
+        inner = {'id': 'inner', 'opacity': 1, 'blend': 'normal'}
+        layers = [constant('a', value=(.9, .2, .1)), constant('b', value=(.1, .8, .3), groups=[outer]),
+                  constant('c', value=(.5, .5, .9), groups=[outer, inner])]
+        scopes = {'outer': {'identity': 'outer', 'name': 'Part A', 'tag_type': 'part', 'tag': 'A', 'items': [], 'instances': False},
+                  'inner': {'identity': 'inner', 'name': 'Both', 'tag_type': 'selection set', 'tag': 'S', 'items': ['mesh1'], 'instances': True}}
+        made = transfer.plan('mat', layers, BASES, 'native', POST, NO_ALPHA, scopes=scopes)
+        found = made.builder.nodes
+        self.assertEqual(made.moved, ['a', 'b', 'c'])
+        tag = found[transfer.node_id('outer', 'mask_tag')]
+        self.assertEqual((tag['type'], tag['parameters']['tag']), ('modo_mask', 'A'))
+        # Both a polygon tag and items: the two masks multiplied, as Modo takes both.
+        self.assertIn(transfer.node_id('inner', 'mask_items'), found)
+        self.assertIn(transfer.node_id('inner', 'mask_both'), found)
+        # Each group is laid over what is beneath it with its mask, so overlapping ones each reach where they do.
+        text = emitted(graph_of(made))
+        for role in ('mask_tag', 'mask_both'):
+            self.assertIn(transfer.node_id('outer' if role == 'mask_tag' else 'inner', role), text)
+        # Without scopes: the same chain, no masks.
+        plain = transfer.plan('mat', layers, BASES, 'native', POST, NO_ALPHA)
+        self.assertFalse([n for n in plain.builder.nodes.values() if n['type'] == 'modo_mask'])
 
     def test_a_native_material_colour_goes_to_its_albedo(self):
         made = transfer.plan('mat', [image('a')], BASES, 'native', POST, NO_ALPHA)
-        self.assertEqual(made.inputs, {'albedo': 'st_a_image'})
+        self.assertEqual(made.inputs, {'albedo': 'st_a_texture'})
 
-    def test_repeats_alone_are_the_image_scale(self):
-        made = transfer.plan('mat', [image('a', scale=[3.0, 2.0])], BASES, 'native', POST, NO_ALPHA)
-        self.assertEqual(made.builder.nodes['st_a_image']['parameters']['scale'], [3.0, 2.0])
-        self.assertNotIn('texcoord', made.builder.nodes['st_a_image']['inputs'])
-
-    def test_a_moved_and_turned_image_reads_the_coordinates_the_layer_lays_on(self):
-        layer = image('a', uv_matrix=[1, 0, .25, 0, 1, .1], rotation=.3, scale=[3.0, 2.0])
-        graph = graph_of(transfer.plan('mat', [layer], BASES, 'native', POST, NO_ALPHA))
-        source = graph['nodes'][graph['nodes']['st_a_image']['inputs']['texcoord']]
-        self.assertEqual(source['type'], 'modo_projection')
-        descriptor = nodes.projection_descriptor(source)
-        for key in ('uv_matrix', 'rotation', 'scale', 'uv_map'):
-            self.assertEqual(descriptor[key], layer[key])
-        self.assertIn(descriptor['coordinate_key'], [d['coordinate_key'] for d in nodes.descriptors(graph)])
-
-    def test_every_projection_is_a_modo_projection_with_the_layers_placement(self):
-        matrix = [2.0, 0, 0, 0, 0, 2.0, 0, 0, 0, 0, 2.0, 0, 1, 2, 3, 1]
-        for kind in ('planar', 'cubic', 'spherical', 'cylindrical', 'front'):
-            layer = image('a', projection=kind, uv_map='', locator_matrix=matrix, axis=1)
+    def test_every_projection_keeps_the_layers_coordinates(self):
+        from moonray_modo import modo_texture
+        matrix = [2.0, 0.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 0.0, 2.0, 0.0, 1.0, 2.0, 3.0, 1.0]
+        for kind in ('uv', 'planar', 'cubic', 'spherical', 'cylindrical', 'front'):
+            extra = {} if kind == 'uv' else {'uv_map': '', 'locator_matrix': matrix, 'axis': 1}
+            layer = image('a', projection=kind, uv_matrix=[1.0, 0.0, .25, 0.0, 1.0, .1], rotation=.3, scale=[3.0, 2.0], **extra)
             graph = graph_of(transfer.plan('mat', [layer], BASES, 'native', POST, NO_ALPHA))
-            descriptor = nodes.projection_descriptor(graph['nodes']['st_a_uv'])
-            self.assertEqual(descriptor['projection'], kind)
-            self.assertEqual(descriptor['locator_matrix'], matrix)
-            self.assertEqual(descriptor['axis'], 1)
-            nodes.validate(graph)
-
-    def test_opacity_and_blend_are_one_modo_blend(self):
-        made = transfer.plan('mat', [image('a'), image('b', opacity=.5, blend='overlay')], BASES, 'native', POST, NO_ALPHA)
-        top = made.builder.nodes[made.inputs['albedo']]
-        self.assertEqual(top['type'], 'modo_blend')
-        self.assertEqual(top['parameters'], {'blend': 9, 'opacity': .5})
-        self.assertEqual((top['inputs']['bg'], top['inputs']['fg']), ('st_a_image', 'st_b_image'))
-        nodes.validate(graph_of(made))
-
-    def test_every_blend_has_its_number(self):
-        from moonray_modo.layers import BLENDS
-        for blend, number in BLENDS.items():
-            made = transfer.plan('mat', [image('a'), image('b', blend=blend, opacity=.7)], BASES, 'native', POST, NO_ALPHA)
-            self.assertEqual(made.builder.nodes[made.inputs['albedo']]['parameters']['blend'], number)
-            self.assertEqual(nodes.MODO_BLENDS[number].lower().replace(' ', ''), blend)
-
-    def test_an_image_with_alpha_is_laid_on_by_it(self):
-        made = transfer.plan('mat', [image('a')], BASES, 'native', POST, lambda path: True)
-        top = made.builder.nodes[made.inputs['albedo']]
-        self.assertEqual(top['type'], 'modo_blend')
-        self.assertEqual(top['inputs']['mask'], 'st_a_alpha')
-        self.assertEqual(top['parameters']['bg'], [.5, .5, .5])
-        self.assertEqual(made.builder.nodes['st_a_alpha']['parameters']['channel'], 4)
-
-    def test_an_input_someone_wired_keeps_its_layers(self):
-        made = transfer.plan('mat', [image('a'), image('r', effect='rough')], BASES, 'native', POST, NO_ALPHA, wired={'albedo'})
-        self.assertEqual(made.moved, ['r'])
-        self.assertIn('wires albedo', dict(made.left)['a'])
-
-    def test_a_layer_the_graph_cannot_draw_keeps_its_effect_on_a_native_material(self):
-        made = transfer.plan('mat', [image('a'), image('b', kind='wireframe'), image('r', effect='rough')], BASES, 'native', POST, NO_ALPHA)
-        self.assertEqual(made.moved, ['r'])
-        self.assertEqual(sorted(identity for identity, _ in made.left), ['a', 'b'])
+            drawn = modo_texture.layer_of(graph['nodes']['st_a_texture']['parameters'])
+            want = dict(layer, coordinate_key=None)
+            want['coordinate_key'] = coordinates.key(want)
+            self.assertEqual(drawn['coordinate_key'], want['coordinate_key'])
+            self.assertIn(drawn['coordinate_key'], [d['coordinate_key'] for d in nodes.descriptors(graph)])
 
     def test_roughness_goes_through_the_materials_curve_and_the_highlight_follows(self):
         made, graph, values, _ = modo_graph([image('r', effect='rough')])
         curve = graph['nodes'][made.inputs['roughness']]
         self.assertEqual(curve['type'], 'RampMap')
-        self.assertEqual(curve['inputs']['input'], 'st_r_image')
-        self.assertEqual(curve['parameters']['positions'][1], .1)
+        self.assertEqual(curve['inputs']['input'], 'st_r_texture')
         self.assertEqual(curve['parameters']['colors'][1], [.16, .16, .16])
-        specular = graph['nodes'][made.inputs['specular']]
-        self.assertEqual(specular['type'], 'modo_blend')
-        self.assertEqual(specular['parameters']['blend'], 5)
+        self.assertEqual(graph['nodes'][made.inputs['specular']]['type'], 'modo_blend')
         nodes.validate(graph)
         self.assertIn('RampMap(', emitted(graph))
 
-    def test_specular_layers_go_through_the_materials_fresnel_weight(self):
-        made, graph, values, lines = modo_graph([image('s', effect='specCol', srgb=False)])
+    def test_specular_and_index_of_refraction_layers_move(self):
+        made, graph, values, _ = modo_graph([image('s', effect='specCol', srgb=False), image('i', effect='ior', srgb=False)])
+        self.assertEqual(sorted(made.moved), ['i', 's'])
         self.assertIn('specular', made.inputs)
-        self.assertNotIn('metallic_color', made.inputs)
         nodes.validate(graph)
 
-    def test_a_normal_map_is_a_normal_map_node_on_its_image(self):
-        made, graph, _, _ = modo_graph([image('n', effect='normal', srgb=False, image_channel='ignore')])
-        normal = graph['nodes'][made.inputs['input_normal']]
-        self.assertEqual(normal['type'], 'normalmap')
-        self.assertEqual(normal['inputs']['in'], 'st_n_image')
-        self.assertIsNotNone(nodes.normal_descriptor(normal, nodes.validate(graph)))
-
-    def test_a_flipped_normal_map_is_turned_by_its_image(self):
-        made, graph, _, _ = modo_graph([image('n', effect='normal', srgb=False, image_channel='ignore', flip_green=True)])
-        normal = graph['nodes'][made.inputs['input_normal']]
-        self.assertEqual(normal['inputs']['in'], 'st_n_flip_offset')
-        self.assertIsNotNone(nodes.normal_descriptor(normal, nodes.validate(graph)))
-        self.assertIn('"mode"] = 13', emitted(graph))
-
-    def test_normal_and_bump_are_one_bump_node_over_the_normal_map(self):
-        layers = [image('n', effect='normal', srgb=False, image_channel='ignore'),
+    def test_normals_and_bumps_of_any_number_are_one_bump_node(self):
+        layers = [image('n1', effect='normal', srgb=False, image_channel='ignore'),
+                  image('n2', effect='normal', srgb=False, image_channel='ignore', opacity=.5, blend='normalblend'),
                   image('b', effect='bump', srgb=False, image_channel='ignore', opacity=.5, scale=[2.0, 2.0])]
         made, graph, _, _ = modo_graph(layers)
         bump = graph['nodes'][made.inputs['input_normal']]
         self.assertEqual(bump['type'], 'bump')
-        self.assertEqual(bump['inputs']['normal'], 'st_n_image')
+        self.assertEqual(bump['inputs']['normal'], 'st_n2_texture')
+        self.assertEqual(bump['inputs']['height'], 'st_b_texture')
         self.assertAlmostEqual(bump['parameters']['step'], .0005)
-        height = graph['nodes'][bump['inputs']['height']]
-        self.assertEqual(height['type'], 'modo_blend')
         text = emitted(graph)
         self.assertIn('"mode"] = 13', text)
         self.assertIn('"mode"] = 12', text)
 
-    def test_a_solid_procedural_is_a_modo_procedural(self):
-        solid = {'pattern': 0, 'type': 1, 'settings': [4.0, 2.0, .5] + [0.0] * 19 + [.5, .5], 'color1': [0, 0, 0], 'color2': [1, 1, 1],
-                 'alpha1': 1.0, 'alpha2': .5, 'rows': [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0]]}
-        layer = image('p', kind='noise', solid_map=solid, procedural=None, path=None)
-        made = transfer.plan('mat', [layer], BASES, 'native', POST, NO_ALPHA)
-        top = made.builder.nodes[made.inputs['albedo']]
-        self.assertEqual(made.builder.nodes[top['inputs']['fg']]['type'], 'modo_procedural')
-        self.assertEqual(made.builder.nodes[top['inputs']['mask']]['parameters']['output'], 1)
-        text = emitted(graph_of(made))
-        self.assertIn('ModoProceduralMap(', text)
+    def test_coat_normals_drive_the_coats_own_normal(self):
+        made, graph, values, _ = modo_graph([image('c', effect='normalCoat', srgb=False, image_channel='ignore')])
+        self.assertEqual(graph['nodes'][made.inputs['independent_clearcoat_normal']]['type'], 'bump')
+        self.assertTrue(values.get('use_independent_clearcoat_normal'))
 
-    def test_a_procedural_laid_on_through_uvs_stays(self):
+    def test_a_displacement_is_the_graphs_displacement(self):
+        made, graph, _, _ = modo_graph([image('a'), image('d', effect='displace', srgb=False)])
+        self.assertEqual(sorted(made.moved), ['a', 'd'])
+        node = graph['nodes'][graph['displacement']]
+        self.assertEqual(node['type'], 'NormalDisplacement')
+        self.assertEqual(node['inputs']['height'], 'st_d_texture')
+        nodes.validate(graph)
+
+    def test_a_subsurface_amount_mixes_the_material_with_itself(self):
+        material = dict(MATERIAL, subsurface_amount=.5, subsurface_distance=.2)
+        made, graph, values, _ = modo_graph([image('s', effect='subsAmt', srgb=False)], material)
+        self.assertEqual(made.shader, 'DwaLayerMaterial')
+        self.assertEqual(graph['nodes'][made.inputs['material_A']]['type'], 'DwaBaseMaterial')
+        self.assertIn('mask', made.inputs)
+
+    def test_a_constant_subsurface_amount_is_the_mix_by_its_value(self):
+        # A plain Modo material at 60% subsurface (the plain-materials scene's Skin) was left in the Shader Tree.
+        material = dict(MATERIAL, subsurface_amount=.6, subsurface_distance=.2)
+        made, graph, values, _ = modo_graph([], material)
+        self.assertEqual(made.shader, 'DwaLayerMaterial')
+        self.assertAlmostEqual(values['mask'], .6)
+        self.assertNotIn('mask', made.inputs)
+        a, b = (graph['nodes'][made.inputs[part]] for part in ('material_A', 'material_B'))
+        self.assertEqual((a['type'], b['type']), ('DwaBaseMaterial', 'DwaBaseMaterial'))
+        self.assertGreater(a['parameters']['scattering_radius'], 0)
+        self.assertEqual(b['parameters']['scattering_radius'], 0)
+        nodes.validate(graph)
+
+    def test_procedurals_through_uvs_are_baked_as_the_shader_tree_bakes_them(self):
+        from moonray_modo import procedurals
         layer = image('p', kind='grid', solid_map=None, procedural={'kind': 'grid'}, path=None)
         made = transfer.plan('mat', [layer], BASES, 'native', POST, NO_ALPHA)
-        self.assertIn('bakes', dict(made.left)['p'])
+        self.assertEqual(made.moved, ['p'])
+        with mock.patch.object(procedurals, 'bake', lambda data: ('C:/cache/p.exr', 'C:/cache/p_alpha.exr')):
+            text = emitted(graph_of(made))
+        self.assertIn('C:/cache/p.exr', text)
 
-    def test_a_displacement_layer_stays_and_holds_nothing_back(self):
-        made, graph, _, _ = modo_graph([image('a'), image('d', effect='displace')])
-        self.assertEqual(made.moved, ['a'])
-        self.assertIn('displaces the mesh', dict(made.left)['d'])
-
-    def test_layer_mask_and_group_are_drawn_as_the_shader_tree_does(self):
-        group = {'id': 'g', 'opacity': .5, 'blend': 'normal', 'invert': True}
-        mask = image('m', effect='layerMask', mask_target='b')
-        made = transfer.plan('mat', [image('a'), mask, image('b', groups=[group])], BASES, 'native', POST, NO_ALPHA)
-        self.assertEqual(sorted(made.moved), ['a', 'b', 'm'])
-        top = made.builder.nodes[made.inputs['albedo']]
-        self.assertEqual(top['parameters'], {'blend': 0, 'opacity': .5})
-        inverted = made.builder.nodes[top['inputs']['fg']]
-        self.assertEqual(inverted['parameters']['blend'], 3)
-        inner = made.builder.nodes[inverted['inputs']['fg']]
-        self.assertEqual(inner['inputs']['mask'], 'st_m_image')
-        nodes.validate(graph_of(made))
+    def test_a_wireframe_is_drawn_as_the_shader_tree_draws_it(self):
+        layer = constant('w', kind='wireframe', wireframe={'width': .01, 'color1': [1, 1, 1], 'color2': [0, 0, 0], 'alpha1': 1, 'alpha2': 1})
+        made = transfer.plan('mat', [layer], BASES, 'native', POST, NO_ALPHA)
+        self.assertIn('WireframeMap(', emitted(graph_of(made)))
 
 
 class UpdateInPlace(unittest.TestCase):
@@ -240,68 +272,63 @@ class UpdateInPlace(unittest.TestCase):
         first = graph_of(transfer.plan('mat', [image('a'), image('b', opacity=.5)], BASES, 'native', POST, NO_ALPHA))
         first['nodes']['mine'] = {'type': 'constant', 'parameters': {'value': [1, 0, 0]}, 'inputs': {}, 'position': [5, 5]}
         first['nodes']['surface']['inputs']['emission'] = 'mine'
-        first['nodes']['st_a_image']['position'] = [-999, 7]
+        first['nodes']['st_a_texture']['position'] = [-999, 7]
         later = transfer.merged(first, transfer.plan('mat', [image('a')], BASES, 'native', POST, NO_ALPHA), {'profile': 'modo'})
-        self.assertNotIn('st_b_image', later['nodes'])
-        self.assertIn('mine', later['nodes'])
+        self.assertNotIn('st_b_texture', later['nodes'])
         self.assertEqual(later['nodes']['surface']['inputs']['emission'], 'mine')
-        self.assertEqual(later['nodes']['surface']['inputs']['albedo'], 'st_a_image')
-        self.assertEqual(later['nodes']['st_a_image']['position'], [-999, 7])
+        self.assertEqual(later['nodes']['surface']['inputs']['albedo'], 'st_a_texture')
+        self.assertEqual(later['nodes']['st_a_texture']['position'], [-999, 7])
 
     def test_an_input_no_layer_drives_any_more_is_let_go(self):
         first = graph_of(transfer.plan('mat', [image('a'), image('r', effect='rough')], BASES, 'native', POST, NO_ALPHA))
         later = transfer.merged(first, transfer.plan('mat', [image('r', effect='metallic')], BASES, 'native', POST, NO_ALPHA), {'profile': 'modo'})
         inputs = later['nodes']['surface']['inputs']
         self.assertNotIn('albedo', inputs)
-        self.assertNotIn('roughness', inputs)
-        self.assertEqual(inputs['metallic'], 'st_r_image')
-        self.assertEqual(later[transfer.META_KEY]['inputs'], ['metallic'])
+        self.assertEqual(inputs['metallic'], 'st_r_texture')
 
     def test_a_copied_node_is_not_taken_for_this_commands_own(self):
         graph = graph_of(transfer.plan('mat', [image('a')], BASES, 'native', POST, NO_ALPHA))
-        graph['nodes']['node_1234'] = dict(graph['nodes']['st_a_image'])
+        graph['nodes']['node_1234'] = dict(graph['nodes']['st_a_texture'])
         later = transfer.merged(graph, transfer.Plan(), {'profile': 'modo'})
         self.assertIn('node_1234', later['nodes'])
-        self.assertNotIn('st_a_image', later['nodes'])
+        self.assertNotIn('st_a_texture', later['nodes'])
 
     def test_the_layers_records_are_found_again(self):
-        graph = graph_of(transfer.plan('mat', [image('a')], BASES, 'native', POST, NO_ALPHA))
-        self.assertEqual(transfer.our_layers(graph)['a']['source']['clip'], 'a')
-
+        graph = graph_of(transfer.plan('mat', [image('a'), constant('c')], BASES, 'native', POST, NO_ALPHA))
+        found = transfer.our_layers(graph)
+        self.assertEqual(found['a']['source']['clip'], 'a')
+        self.assertIn('c', found)
 
 
 class MoonLightIPRReading(unittest.TestCase):
-    """MoonLightIPR turns the helper nodes back into the Shader Tree layers its compiler draws (graph_layers)."""
+    """MoonLightIPR turns Modo Texture chains back into the Shader Tree layers its compiler draws (graph_layers)."""
 
     def layers(self, made):
         from moonray_modo import moonlightipr_materials
-        graph = graph_of(made)
         notes = []
-        found = moonlightipr_materials.graph_layers({'node_graph': graph, 'native_shader': 'DwaBaseMaterial', 'native_parameters': {}},
+        found = moonlightipr_materials.graph_layers({'node_graph': graph_of(made), 'native_shader': 'DwaBaseMaterial', 'native_parameters': {}},
                                                     notes.append)
         return found, notes
 
-    def test_a_blend_chain_is_layers_with_their_modes(self):
-        made = transfer.plan('mat', [image('a'), image('b', opacity=.5, blend='softlight')], BASES, 'native', POST, NO_ALPHA)
+    def test_a_chain_is_its_layers_again(self):
+        layers = [image('a'), image('b', opacity=.5, blend='softlight', bias=.3), constant('m', effect='layerMask', mask_target='c'),
+                  image('c', projection='cubic', uv_map='', locator_matrix=[1.0, 0, 0, 0, 0, 1.0, 0, 0, 0, 0, 1.0, 0, 0, 0, 0, 1], axis=2)]
+        made = transfer.plan('mat', layers, BASES, 'native', POST, NO_ALPHA)
         found, notes = self.layers(made)
         self.assertEqual(notes, [])
-        self.assertEqual([(layer['blend'], layer['opacity']) for layer in found], [('normal', 1.0), ('softlight', .5)])
+        rows = [row for row in found if row.get('kind') != 'constant' or row.get('effect') == 'layerMask']
+        self.assertEqual([(row['effect'], row.get('blend'), row.get('opacity')) for row in rows],
+                         [('diffCol', 'normal', 1.0), ('diffCol', 'softlight', .5), ('layerMask', 'normal', 1.0), ('diffCol', 'normal', 1.0)])
+        self.assertEqual(rows[1]['bias'], .3)
+        self.assertEqual(rows[2]['mask_target'], rows[3]['identity'])
+        self.assertEqual(rows[3]['projection'], 'cubic')
 
-    def test_a_projected_image_reads_the_layers_coordinates(self):
-        layer = image('a', projection='cubic', uv_map='', locator_matrix=[1.0, 0, 0, 0, 0, 1.0, 0, 0, 0, 0, 1.0, 0, 0, 0, 0, 1], axis=2)
-        made = transfer.plan('mat', [layer], BASES, 'native', POST, NO_ALPHA)
+    def test_normals_beneath_a_bump_are_read_too(self):
+        layers = [image('n', effect='normal', srgb=False, image_channel='ignore'), image('b', effect='bump', srgb=False, image_channel='ignore')]
+        made = transfer.plan('mat', layers, BASES, 'native', POST, NO_ALPHA)
         found, notes = self.layers(made)
-        self.assertEqual(notes, [])
-        self.assertEqual(found[0]['coordinate_key'], nodes.projection_descriptor(made.builder.nodes['st_a_uv'])['coordinate_key'])
+        self.assertEqual(sorted(row['effect'] for row in found if row.get('kind') == 'imageMap'), ['bump', 'normal'])
 
-    def test_a_solid_procedural_is_its_pattern_again(self):
-        solid = {'pattern': 1, 'type': 0, 'settings': [1.0] * 22 + [.5, .5], 'color1': [1, 0, 0], 'color2': [0, 0, 1],
-                 'alpha1': 1.0, 'alpha2': 1.0, 'rows': [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0]]}
-        made = transfer.plan('mat', [image('p', kind='cellular', solid_map=solid, procedural=None, path=None)], BASES, 'native', POST, NO_ALPHA)
-        found, notes = self.layers(made)
-        self.assertEqual(notes, [])
-        self.assertEqual(found[0]['solid_map']['pattern'], 1)
-        self.assertEqual(found[0]['solid_map']['rows'], solid['rows'])
 
 class ConstantValues(unittest.TestCase):
     def test_a_modo_material_is_read_back_from_its_moonray_text(self):

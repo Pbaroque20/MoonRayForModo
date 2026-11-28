@@ -166,3 +166,33 @@ def run(choice=None, path=None, show=True):
     if show:
         summary(lines)
     return lines
+
+
+def revert(show=True, ask=True):
+    """MoonShine -> Shader Tree (Revert): asked first in a window (where there is one), then the open scene's converted
+    graphs made Modo materials and texture layers again (shader_tree_revert), in one undoable step. The summary lines."""
+    import lx
+    if ask:
+        try:
+            from PySide2 import QtWidgets
+            if QtWidgets.QApplication.instance() is not None:
+                box = QtWidgets.QMessageBox(QtWidgets.QMessageBox.Question, 'MoonShine -> Shader Tree',
+                                            'Put the Shader Tree back as it was before Shader Tree -> MoonShine: Modo materials and '
+                                            'texture layers again, their images loaded.', QtWidgets.QMessageBox.NoButton, None)
+                box.setInformativeText('Changes made in the graphs to the converted texture nodes go back onto their layers; '
+                                       'other nodes the Shader Tree cannot hold are left out and listed. Ctrl+Z undoes it.')
+                go = box.addButton('Revert to Shader Tree', QtWidgets.QMessageBox.AcceptRole)
+                box.addButton(QtWidgets.QMessageBox.Cancel)
+                box.exec_()
+                clicked = box.clickedButton()
+                box.deleteLater()
+                if clicked is not go:
+                    return []
+        except ImportError:
+            pass
+    from . import shader_tree_revert
+    lx.eval('moonray.material.revertShaderTreeTextures')
+    lines = list(shader_tree_revert.LAST_REPORT)
+    if show:
+        summary(lines, 'MoonShine -> Shader Tree')
+    return lines

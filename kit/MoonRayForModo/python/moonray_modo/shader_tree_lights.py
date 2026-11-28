@@ -1,28 +1,29 @@
 """A light's own Shader Tree images, for Move Shader Tree Textures to MoonShine Graphs: the Image Map layers under a
 Modo light (beside its Light Material, as Modo puts them: a picture or a colour on the light), and its IES profile.
 
-What the kit renders of them today, in MoonRay, XPU2 and MoonLightIPR alike (host.snapshot's lights, lighting.emit):
-  - a light's colour is its Light Material's Light Color;
-  - a Modo light's Image Map layers are not drawn (the Shader Tree under a light is not read at all), nor are its
-    constant, gradient or procedural layers;
-  - a Photometric light (its IES profile) is skipped, with a notice: MoonRay's lights have no IES profile;
+What the kit draws of them, in MoonRay, XPU2 and MoonLightIPR alike (host.snapshot's lights):
+  - a layer of effect Light Color, as Modo's own renderer draws it (light_images): a light with no size is the image's
+    one colour where it shines from, an area light the image laid across it; other effects, and constant, gradient or
+    procedural layers on a light, are not drawn (as before);
+  - a Photometric light by its IES profile (ies_lights), the file its filename channel names: no clip is loaded for it;
   - a MoonRay light item's picture (its texture, a cookie light filter's) is a file it names: no clip is loaded for it.
 So an Image Map layer of a light moves as a record that names its image (path only, as an Image node does: the light's
 entry in the scene's light settings, production > lights > <light> > shader_tree_images), its layer switched off and its
-clip taken out, and the light renders in the kit as before. Run again, a record whose layer is gone is dropped, and a
-moved layer switched on again by hand is read anew. restore() puts the layers back. A layer that is not an image, a
-light switched off, and IES profiles stay, each said with why. All in the one undoable step of the command that calls
-run(); the writes are lx.eval and properties.write.
+clip taken out; light_images reads the switched-off layer with its record's image, and the light renders as before.
+Run again, a record whose layer is gone is dropped, and a moved layer switched on again by hand is read anew. restore()
+puts the layers back. A layer that is not an image, a light switched off, and IES profiles (nothing of Modo's to take
+out) stay, each said with why. All in the one undoable step of the command that calls run(); the writes are lx.eval and
+properties.write.
 
 Nothing of Modo here but run(), restore() and what they call: plan() decides from plain dicts, for tests."""
 import copy
 
 RECORD_KEY = 'shader_tree_images'
 NOT_LAYERS = ('lightMaterial', 'mask', 'txtrLocator')
-LIGHT_IMAGE_NOTE = ("a light's Shader Tree images are not drawn by the kit (MoonRay, XPU2 and MoonLightIPR light it by its "
-                    "Light Color alone); moved, the light renders as before")
-IES_NOTE = ('an IES profile is a file the light names, with no clip to take out; MoonRay has no IES light yet, and the '
-            'kit skips Photometric lights')
+LIGHT_IMAGE_NOTE = ("a light's Shader Tree image is drawn by the kit from its record, its image read from the file the "
+                    "record names (MoonRay, XPU2 and MoonLightIPR alike); moved, the light renders as before")
+IES_NOTE = ('an IES profile is a file the Photometric light names, with no clip to take out; the kit draws the light by '
+            'its profile from that file')
 
 
 class Report:

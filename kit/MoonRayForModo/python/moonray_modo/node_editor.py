@@ -380,15 +380,17 @@ def open_failed(item,exc,parent=None):
 def _modo_window():
     """The window a graph editor belongs to: Modo's own, from the active window, never another graph editor, a popup
     or a window on its way out (it would take the editor with it as its child). Where none is active (Modo in the
-    background), Modo's main window."""
+    background), None: the editor is a window of its own, as before 0.5.6.3's follow-ups.
+
+    Modo's other windows are never looked for (QApplication.topLevelWidgets): that wraps each of them, and Modo crashed
+    on quitting once a graph editor had opened with Modo in the background (quit_release; probe_gui_quit_after_editor.py,
+    exit 0xC0000005 with the scan, a clean exit without)."""
     window=QtWidgets.QApplication.activeWindow()
     while isinstance(window,Editor):window=window.parentWidget()
-    def usable(widget):
-        return widget is not None and widget.isVisible() and not (widget.windowFlags() & QtCore.Qt.Popup)==QtCore.Qt.Popup \
-            and not widget.testAttribute(QtCore.Qt.WA_DeleteOnClose)
-    if usable(window):return window
-    mains=[widget for widget in QtWidgets.QApplication.topLevelWidgets() if isinstance(widget,QtWidgets.QMainWindow) and widget.isVisible()]
-    return max(mains,key=lambda widget:widget.width()*widget.height()) if mains else None
+    if window is None:return None
+    if not window.isVisible() or (window.windowFlags() & QtCore.Qt.Popup)==QtCore.Qt.Popup or window.testAttribute(QtCore.Qt.WA_DeleteOnClose):
+        return None
+    return window
 
 
 def bring_forward(editor):
@@ -585,6 +587,10 @@ class Editor(QtWidgets.QDialog):
         self.scene_key=scene_watch.key_of_item(self.item);self.scene_gone=False
         scene_watch.watch(self.scene_closed)
         self.finished.connect(lambda *_:scene_watch.unwatch(self.scene_closed))
+        # The material deleted (or its group): let go of it the same way (item_removed).
+        self.item_ident=self.item.id
+        scene_watch.watch_items(self.item_removed)
+        self.finished.connect(lambda *_:scene_watch.unwatch_items(self.item_removed))
         footer=QtWidgets.QHBoxLayout();layout.addLayout(footer)
         self.info=QtWidgets.QLabel('Tab or double-click adds a node. Drag between sockets to connect.')
         # A long message is cut short rather than widening the window.
@@ -885,6 +891,29 @@ class Editor(QtWidgets.QDialog):
         """A scene was destroyed: where it was this editor's (or which it was cannot be told), nothing more is written and
         the editor goes (docked, the dock shows the material selected next)."""
         if self.scene_gone or (key is not None and self.scene_key is not None and key!=self.scene_key):return
+        self.let_go()
+    def item_removed(self,ident,key):
+        """An item is about to be deleted: where it is this editor's material, or a group holding it, the editor lets go
+        as when its scene closes. Told while the item still stands, so nothing of it is read after it has gone (a graph
+        open on a deleted material crashed Modo)."""
+        if self.scene_gone or (key is not None and self.scene_key is not None and key!=self.scene_key):return
+        mine=ident==self.item_ident
+        if not mine:
+            try:
+                parent=self.item.parent
+                while parent is not None and not mine:
+                    mine=parent.id==ident;parent=parent.parent
+            except Exception:
+                return
+        if not mine:return
+        try:
+            import lx
+            lx.out('MoonShine graph: %s was deleted, so its graph editor closed.'%self.item.name)
+        except Exception:pass
+        self.let_go()
+    def let_go(self):
+        """Nothing more is read or written: the preview stopped, the editor goes (docked, the dock shows the material
+        selected next)."""
         self.scene_gone=True;self.live=False
         timer=getattr(self,'_publish_timer',None)
         if timer is not None:timer.stop()
@@ -1803,6 +1832,7 @@ class Editor(QtWidgets.QDialog):
             try: materialx.write(self.graph,path if path.lower().endswith('.mtlx') else path+'.mtlx')
             except (ValueError,OSError) as exc: self.error(exc)
     def save(self,close=True):
+        if getattr(self,'scene_gone',False):return
         self.commit_inputs()
         try:
             graph=nodes.validate(self.graph);root=graph['nodes'][graph['root']]

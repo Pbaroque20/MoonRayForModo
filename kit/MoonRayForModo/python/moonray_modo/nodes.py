@@ -67,7 +67,10 @@ ENVIRONMENT_NODES=('modo_environment','modo_environment_image','modo_environment
 MODO_BLENDS=('Normal','Multiply','Add','Subtract','Screen','Divide','Difference','Darken','Lighten','Overlay','Hard Light','Exclusion',
              'Soft Light','Color Dodge','Color Burn')
 MODO_PROJECTIONS=('uv','planar','cubic','spherical','cylindrical','front')
-MODO_NODES=('modo_blend','modo_procedural','modo_projection')+ENVIRONMENT_NODES
+# The Modo Texture node: one Shader Tree layer, as Modo shows it (modo_texture).
+from . import modo_texture as _texture
+MAPS[_texture.KIND]=_texture.schema()
+MODO_NODES=(_texture.KIND,'modo_blend','modo_procedural','modo_projection')+ENVIRONMENT_NODES
 # Masks, vertex maps, falloffs and drivers as nodes (shader_tree_masks).
 from . import shader_tree_masks as _masks
 MAPS.update(_masks.SCHEMAS)
@@ -117,7 +120,7 @@ def specs(kind):
     if kind in map_library.catalog():return map_library.catalog()[kind]['attributes']
     if kind not in MAPS: raise ValueError('Unsupported node type: '+str(kind))
     result={key:{'name':key,'type':value[0],'default_value':value[1],
-                  'flags':'FLAGS_BINDABLE' if key not in ('file','srgb','color_space','uv_map','scale','channel','channels','index','doclamp','uaddressmode','vaddressmode','default','filtertype','basis_mode','basis_scale','basis_rotation','basis_offset','amplitude','step','sequence','first_frame','last_frame','start_frame','end_behavior') and not (kind in MODO_NODES and key not in ('bg','fg','opacity','mask','input')+_masks.BINDABLE.get(kind,()) and (kind,key)!=('modo_environment','color')) and not (kind=='modo_mask') else ''} for key,value in MAPS[kind].items()}
+                  'flags':'FLAGS_BINDABLE' if key not in ('file','srgb','color_space','uv_map','scale','channel','channels','index','doclamp','uaddressmode','vaddressmode','default','filtertype','basis_mode','basis_scale','basis_rotation','basis_offset','amplitude','step','sequence','first_frame','last_frame','start_frame','end_behavior') and not (kind in MODO_NODES and key not in ('bg','fg','opacity','mask','input')+_masks.BINDABLE.get(kind,())+((('bg','mask','input')) if kind==_texture.KIND else ()) and (kind,key)!=('modo_environment','color')) and not (kind=='modo_mask') else ''} for key,value in MAPS[kind].items()}
     if kind=='normalmap':
         result['basis_mode']['enum']={'Connected image UVs':0,'Explicit UV basis':1,'Primary shading basis':2}
         result['basis_rotation']['comment']='UV basis rotation in degrees; used only with Explicit UV basis.'
@@ -145,6 +148,9 @@ def specs(kind):
         result['locator_matrix']['comment']="The Texture Locator's world matrix (Planar, Cubic, Spherical, Cylindrical)."
         result['uv_matrix']['comment']="The locator's UV transform (a b c d e f: u' = a u + b v + c, v' = d u + e v + f), then Rotation (radians) and Scale."
     if kind in _masks.NODES:_masks.annotate(kind,result)
+    if kind==_texture.KIND:
+        _texture.annotate(result)
+        for key in ('opacity',):result[key]['flags']=''
     if kind in ENVIRONMENT_NODES:
         from .shader_tree_environment import describe
         describe(kind,result)
@@ -666,6 +672,7 @@ def _descriptors(graph):
     result=[image_descriptor(node) for node in g['nodes'].values() if node['type'] in ('image','texcoord') and 'texcoord' not in node.get('inputs',{})]
     result+=[layer for layer in (space_descriptor(node) for node in g['nodes'].values()) if layer]
     result+=[projection_descriptor(node) for node in g['nodes'].values() if node['type']=='modo_projection']
+    result+=[layer for layer in (_texture.descriptor(node.get('parameters')) for node in g['nodes'].values() if node['type']==_texture.KIND) if layer]
     # Images whose UVs are moved, turned or scaled by other nodes: MoonLightIPR reads them from the meshes.
     result+=[layer for layer in (wired_descriptor(g,node) for node in g['nodes'].values() if node['type']=='image' and 'texcoord' in node.get('inputs',{})) if layer]
     for node in g['nodes'].values():
@@ -843,6 +850,8 @@ def emit(material,name,index,lines,library,output="root",validated=True):
                                                       'opacity':values['opacity'],'mask':values['mask']})
             elif kind=='modo_procedural':
                 ref=modo_procedural(params,values,refs,path,definition,binding)
+            elif kind==_texture.KIND:
+                ref=_texture.draw(params,refs,path,definition,binding)
             elif kind in _masks.NODES:
                 ref=_masks.emit_node(kind,params,refs,path,definition,binding)
             elif kind=='modo_projection':

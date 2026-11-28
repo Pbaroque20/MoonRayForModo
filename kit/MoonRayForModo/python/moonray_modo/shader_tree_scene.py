@@ -9,7 +9,8 @@ The layers are read as the kit reads them for a render (layers.collect); what ea
 Which layers belong to which material is read from the Shader Tree's shape: a layer above a material in the material's
 own group (or in a group of layers there) shades the surfaces the material does, whatever the group is for (a material
 tag, a part, a selection set, items). A layer inside a group of its own for some of those surfaces (a nested mask) is
-moved into a MoonShine Material Override made in that group, whose graph is the material's with that group's layers.
+moved into the material's own graph, laid on there alone by a Modo Mask node of that group (overlapping groups each
+where they reach); MoonShine Material Overrides an earlier version made in such groups are taken out.
 """
 import copy
 import json
@@ -23,6 +24,8 @@ from .host import channel
 from .mask_types import tag_kind, mask_items
 
 OVERRIDE_TYPE = 'material.moonrayMoonShine'
+# For a run: {layer above a material's groups: the materials it reaches}.
+REACHED = {}
 # The last run's report lines (for probes and the Event Log).
 LAST_REPORT = []
 NOT_LAYERS = ('defaultShader', 'renderOutput', 'envMaterial', 'furMaterial', 'polyRender', 'environment', 'mask')
@@ -447,14 +450,19 @@ def read_layers(scene, material, key, row_ids, sources, warnings):
     real = layers.ordered_items(render)
     items = []
     for item in real:
-        if item.id not in row_ids or item.type != 'imageMap':
+        if item.id not in row_ids:
             items.append(item)
+            continue
+        if item.type != 'imageMap':
+            # A layer with no image moved before (a procedural, a gradient, a constant): read on.
+            items.append(_Layer(item, None) if item.id in sources else item)
             continue
         clip, folder = image_of(item)
         held = placeholder_source(clip, folder)
         if item.id in sources:
             # Moved before (and so off): read on, with its image as its node has it where its clip is gone.
-            items.append(_Layer(item, sources[item.id] if (clip, folder) == (None, None) or held else None))
+            source = sources[item.id]
+            items.append(_Layer(item, source if source and ((clip, folder) == (None, None) or held) else None))
         elif held:
             # Opened by Open Scene as MoonShine: its clip a stand-in for the image the scene names.
             items.append(_Layer(item, held, force_on=False))
@@ -563,9 +571,73 @@ def wire_modo(made, material, rows, found):
     output's values."""
     moving = set(made.moved)
     rows = [dict(row) for row in rows]
-    rows[-1] = dict(rows[-1], layers=[layer for layer in found if layer['identity'] in moving], textures={})
+    at = next((i for i, row in enumerate(rows) if row.get('base_layer_id') == material.id), len(rows) - 1)
+    if not any(row.get('layers') for i, row in enumerate(rows) if i != at):
+        rows[at] = dict(rows[at], layers=[layer for layer in found if layer['identity'] in moving], textures={})
+    else:
+        rows[at] = dict(rows[at], layers=[layer for layer in found], textures={})
     lines = transfer.marked_text(rows, made.keys)
     return transfer.connect(made, material.id, lines, '/modo/material/0')
+
+
+def stack_reasons(material, value, row):
+    """What makes a Modo material's row more than its own layers over an opaque material: drawn as it is by a graph of
+    its whole stack (shader_tree_transfer, layers.whole_stacks). [] for a plain row."""
+    found = []
+    if float(value.get('layer_opacity', 1)) != 1 or value.get('layer_blend', 'normal') != 'normal' or value.get('layer_invert'):
+        found.append('the material is laid on at another opacity or blend than 100% Normal')
+    groups = layers.texture_groups(material, channel) or []
+    if any(g['opacity'] != 1 or g['blend'] != 'normal' or g['invert'] for g in groups):
+        found.append('a group it is in is at another opacity or blend than 100% Normal, or inverted')
+    if row.row_masks:
+        found.append('its group is masked')
+    if row.foreign:
+        found.append('layers above its group shade it too')
+    if row.shared:
+        found.append('layers above a group with a material of its own shade both')
+    if row.over:
+        found.append('a material over it does not cover it whole')
+    return found
+
+
+# What of a stack's rows its graph's record keeps (transfer.META_KEY 'stack') for a whole stack: their layers too.
+WHOLE_STRIPPED = ('textures', 'material_stack', 'node_graph', 'native_dependencies', 'baked_effects')
+
+
+def whole_rows(scene, material, row, tree):
+    """(the rows of a material's whole stack on its surfaces, as a render reads them: the materials beneath it, it, the
+    materials over it, each with its layers; the identities of the other materials, which its graph then stands for)."""
+    candidates = [material] + beneath(material, tree) + list(row.over)
+    members = {item.id for item in candidates}
+    for item in candidates:
+        if item.id != material.id:
+            members |= {layer.id for layer in Row(item, scene.renderItem).layers}
+    members |= {item.id for item in row.layers + row.foreign + row.shared + row.row_masks}
+    rows = layers.material_stack(scene, candidates, [], 'shader_tree_transfer', members)
+    kept = []
+    for held in rows:
+        held = {key: value for key, value in held.items() if key not in WHOLE_STRIPPED}
+        held['layers'] = [{k: v for k, v in layer.items() if k != 'material'} for layer in held.get('layers') or []]
+        kept.append(held)
+    return kept, sorted(item.id for item in candidates if item.id != material.id)
+
+
+def whole_refusal(material, row, tree):
+    """Why a material's whole stack cannot be one graph, or None: what reaches its surfaces must reach all of them (a
+    layer or material over only some of them would need a mask the graph does not have yet), and the materials of the
+    stack must still be the Shader Tree's."""
+    own = scope_tags(material, False)
+    if own is None:
+        return 'the surfaces it is on cannot be told (a mask for items, or a mesh too heavy to read)'
+    for item in row.foreign + row.shared + row.over:
+        reach = scope_tags(item, item.type == 'mask') if item.type == 'mask' else scope_tags(item, False)
+        if reach is None or not own <= reach:
+            return '%s reaches only some of its surfaces' % item.name
+    for item in row.over + beneath(material, tree):
+        settings = properties.peek(item)
+        if material_override.enabled(settings) and settings.get('node_graph'):
+            return 'the material %s of its stack renders a MoonShine graph already' % item.name
+    return None
 
 
 def refusal(material, value, row):
@@ -573,21 +645,6 @@ def refusal(material, value, row):
     under it as one shader, not channel by channel, and the Shader Tree layers left on it would be drawn as a native
     material's are: so it moves whole, or not at all, and only where nothing but its own layers reaches its surfaces."""
     from . import absorption
-    if float(value.get('layer_opacity', 1)) != 1 or value.get('layer_blend', 'normal') != 'normal' or value.get('layer_invert'):
-        return 'the material is laid on at another opacity or blend than 100% Normal'
-    groups = layers.texture_groups(material, channel) or []
-    if any(g['opacity'] != 1 or g['blend'] != 'normal' or g['invert'] for g in groups):
-        return 'a group it is in is at another opacity or blend than 100% Normal, or inverted'
-    if row.row_masks:
-        return 'its group is masked (%s)' % ', '.join(item.name for item in row.row_masks[:3])
-    if row.foreign:
-        return 'layers above its group shade it too (%s)' % ', '.join(item.name for item in row.foreign[:3])
-    if row.shared:
-        return 'layers above a group with a material of its own shade both (%s)' % ', '.join(item.name for item in row.shared[:3])
-    if row.over:
-        return 'a material over it that does not cover it whole (%s)' % ', '.join(item.name for item in row.over[:3])
-    if len({mask.id for mask in row.nested.values()}) > 1:
-        return 'its layers are in more than one nested mask, which may share surfaces'
     if absorption.enabled(value):
         return 'its glass absorbs light through its volume, which a graph material does not'
     if float(value.get('displacement_value', 0)):
@@ -598,6 +655,7 @@ def refusal(material, value, row):
 class Job:
     def __init__(self, material):
         self.material = material
+        self.shared = []          # layers above its group its whole stack holds: switched off where all they reach moved
         self.graph = None
         self.created = False
         self.settings = None
@@ -629,6 +687,7 @@ def run(progress=None):
     report = Report()
     render = scene.renderItem
     _SCOPES.clear()
+    REACHED.clear()
     progress.step('Reading the scene...', 0.0, 1.0)
     with host.held_channels(), layers.held_tree():
         tree = list(layers.ordered_items(render))
@@ -643,8 +702,9 @@ def run(progress=None):
             if not graph:
                 continue
             for identity, record in transfer.our_layers(graph).items():
-                if record.get('source'):
-                    sources.setdefault(identity, record['source'])
+                # Every layer this command moved (and switched off): its image where it had one, {} where not.
+                if record.get('source') or identity not in sources:
+                    sources[identity] = record.get('source') or {}
             meta = graph.get(transfer.META_KEY) or {}
             if item.type == OVERRIDE_TYPE and meta.get('override_of'):
                 overrides[item.id] = meta
@@ -658,6 +718,9 @@ def run(progress=None):
                 top = top.parent
             if top.id in above or layers.texture_groups(material, channel) is None:
                 continue
+            # The layers above its groups that reach it: switched off only where every material they reach holds them.
+            for item in (lambda held: held.foreign + held.shared)(Row(material, render)):
+                REACHED.setdefault(item.id, set()).add(material.id)
             job = read_job(scene, material, render, sources, report)
             if job is not None:
                 jobs.append(job)
@@ -684,12 +747,13 @@ def read_job(scene, material, render, sources, report):
     warnings = []
     ids = [item.id for item in row.layers]
     moving_before = [identity for identity in transfer.our_layers(graph)] if graph else []
-    if not ids and not moving_before:
+    native = material_override.enabled(settings) and settings.get('native_shader')
+    if not ids and not moving_before and (graph or native):
         return None
     meta = dict((graph or {}).get(transfer.META_KEY) or {})
     if graph:
         root = graph['nodes'].get(graph.get('root'), {})
-        if root.get('type') != 'DwaBaseMaterial':
+        if root.get('type') != 'DwaBaseMaterial' and not (meta.get('profile') == 'modo' and root.get('type') == 'DwaLayerMaterial'):
             if ids:
                 report.left.append((material.name, 'its graph is a %s, not a DwaBaseMaterial; its layers stay' % root.get('type')))
             return None
@@ -710,21 +774,33 @@ def read_job(scene, material, render, sources, report):
     for item in row.layers:
         if item.id in read_ids:
             continue
-        live = on(item) or (item.id in sources and item.type == 'imageMap')
+        live = on(item) or item.id in sources
         if not live:
             continue
         why = next((w.split(': ', 1)[1] for w in warnings if w.startswith('Layer %s:' % item.name)), None) or 'the kit does not read it'
         unread[item.id] = (effect_of(item), why)
     first = profile == 'modo' and not graph
     job = Job(material)
+    whole = bool(meta.get('whole'))
+    tree = list(layers.ordered_items(render))
+    if first and stack_reasons(material, value, row):
+        why = whole_refusal(material, row, tree)
+        if why is not None:
+            report.left.append((material.name, '%s, and %s' % (stack_reasons(material, value, row)[0], why)))
+            return None
+        whole = True
+    if whole:
+        # Its own layers, the masks of its groups and the layers above its groups, read with it (moved ones read back on).
+        extra = [item.id for item in row.foreign + row.shared + row.row_masks]
+        if extra:
+            value, found = read_layers(scene, material, key, ids + extra, sources, warnings)
     if first:
         why = refusal(material, value, row)
         if why is None and unread:
             identity, (effect, reason) = next(iter(unread.items()))
             why = '%s: %s' % (names.get(identity, identity), reason)
         if why is not None:
-            if any(layer.get('kind') != 'constant' for layer in found):
-                report.left.append((material.name, why))
+            report.left.append((material.name, why))
             return None
         from .graph import defaults_for
         try:
@@ -733,7 +809,18 @@ def read_job(scene, material, render, sources, report):
             report.left.append((material.name, 'its stack could not be read (%s)' % exc))
             return None
         meta = {'profile': 'modo', 'material': material.id, 'bases': defaults_for(value),
-                'post': {'bump_strength': value.get('bump_strength', .005)}, 'stack': rows}
+                'post': {'bump_strength': value.get('bump_strength', .005), 'displacement_distance': value.get('displacement_distance', .02)},
+                'stack': rows,
+                # Its MoonShine settings before the graph, for MoonShine -> Shader Tree (shader_tree_revert) to put back.
+                'before': {key: copy.deepcopy(settings.get(key)) for key in ('moonshine_override', 'native_shader', 'native_parameters')}}
+        if whole:
+            try:
+                rows, covers = whole_rows(scene, material, row, tree)
+            except (ValueError, KeyError) as exc:
+                report.left.append((material.name, 'its stack could not be read (%s)' % exc))
+                return None
+            meta.update(whole=True, covers=covers, stack=rows)
+            meta['post']['whole'] = True
         graph = nodes.new('DwaBaseMaterial', {})
         job.created = True
     else:
@@ -746,25 +833,44 @@ def read_job(scene, material, render, sources, report):
                         post={'diffuse_amount': value.get('diffuse_amount', 1.0), 'emission_amount': value.get('emission_amount', 1.0),
                               'bump_strength': value.get('bump_strength', .005)})
     bases, post = meta['bases'], meta['post']
-    if not any(layer.get('kind') != 'constant' for layer in found) and not moving_before:
+    if whole:
+        # The stack's rows as the kit flattens them: each material's values a row, their layers over them (material_groups).
+        from .material_groups import flatten, merged as merged_stack
+        from .graph import defaults_for, glows_whole, glow_whole
+        stacked = [dict(r) for r in meta['stack']]
+        at = next((i for i, r in enumerate(stacked) if r.get('base_layer_id') == material.id), len(stacked) - 1)
+        # Its own row: its layers (and those the other rows do not hold already, as the render's reading places them).
+        elsewhere = {layer.get('identity') for i, r in enumerate(stacked) if i != at for layer in r.get('layers') or []}
+        found = [layer for layer in found if layer['identity'] not in elsewhere]
+        stacked[at] = dict(stacked[at], layers=found)
+        own_found = found
+        found = flatten(stacked)
+        bases = defaults_for(merged_stack(stacked))
+        if glows_whole(found):
+            glow_whole(bases)
+        names.update({layer['identity']: layer.get('name') or layer['identity'] for layer in found})
+    if not first and not any(layer.get('kind') != 'constant' for layer in found) and not moving_before:
         return None
     blocked = {effect: '%s: %s' % (names.get(identity, identity), why) for identity, (effect, why) in unread.items()}
-    for item in row.foreign + row.shared:
+    for item in ([] if whole else row.foreign + row.shared):
         blocked.setdefault(effect_of(item), 'the layer %s above its group shades it too' % item.name)
     root = graph['nodes'][graph['root']]
     wired = {name for name, source in (root.get('inputs') or {}).items()
              if source in graph['nodes'] and not transfer.ours(source, graph['nodes'][source])}
-    nested = {identity: mask for identity, mask in row.nested.items()}
-    masks = {mask.id: mask for mask in nested.values()}
-    if len(masks) > 1:
-        for identity in nested:
-            effect = next((layer['effect'] for layer in found if layer['identity'] == identity), None)
-            if effect:
-                blocked.setdefault(effect, 'its layers are in more than one nested mask, which may share surfaces')
-    own = [layer for layer in found if layer['identity'] not in nested]
+    # Nested masks for some of its surfaces: their layers laid on there alone, by Modo Mask nodes of them, in its own graph
+    # (overlapping ones too, each where it reaches).
+    scopes = {}
+    for item in row.layers:
+        up = item.parent
+        while up is not None and up.id != material.parent.id:
+            if up.type == 'mask' and tagged(up) and up.id not in scopes:
+                scopes[up.id] = {'identity': up.id, 'name': up.name, 'tag_type': tag_kind(channel(up, 'ptyp', '')),
+                                 'tag': channel(up, 'ptag', ''), 'items': [held.id for held in mask_items(up)],
+                                 'instances': bool(channel(up, 'instApply', False))}
+            up = up.parent
     try:
-        made = transfer.plan(material.id, own if len(masks) <= 1 else found, bases, 'modo' if meta['profile'] == 'modo' else 'native',
-                             post, alpha_of, blocked, wired, strict=first)
+        made = transfer.plan(material.id, found, bases, 'modo' if meta['profile'] == 'modo' else 'native',
+                             post, alpha_of, blocked, wired, strict=first, scopes=scopes)
         holding = [(i, w) for i, w in made.left if staying(found, i) is None]
         if first and holding:
             raise transfer.Refused('; '.join('%s: %s' % (names.get(i, i), w) for i, w in holding))
@@ -774,11 +880,11 @@ def read_job(scene, material, render, sources, report):
             return None
         raise
     modo = meta['profile'] == 'modo' and meta.get('stack')
-    if modo and made.keys:
+    if modo and (made.keys or first):
         try:
-            values = wire_modo(made, material, meta['stack'], found)
+            values = wire_modo(made, material, meta['stack'], own_found if whole else found)
         except (transfer.NotConstant, ValueError, KeyError) as exc:
-            report.left.append((material.name, 'its MoonRay material could not be followed into a graph (%s); its layers stay' % exc))
+            report.left.append((material.name, 'its MoonRay material could not be followed into a graph (%s); it stays a Modo material' % exc))
             return None
         if first:
             # The colour as Modo holds it, not as the text rounds it: Modo's diffuse follows it (material_diffuse), and a
@@ -787,47 +893,17 @@ def read_job(scene, material, render, sources, report):
                 held = values.get(key)
                 if isinstance(held, list) and all(abs(a - b) < 1e-9 for a, b in zip(held, value.get('color', []))):
                     values[key] = [float(v) for v in value['color']]
-            graph = nodes.new('DwaBaseMaterial', output_values(values))
+            graph = nodes.new(made.shader, output_values(values) if made.shader == 'DwaBaseMaterial' else values)
     job.moved = list(made.moved)
+    if whole:
+        # Moved (and switched off): its own layers and its groups' masks; the layers above its group where every material
+        # they reach moved its stack too (write); the other materials' layers are copies.
+        own_ids = set(ids) | {item.id for item in row.row_masks}
+        job.shared = [item.id for item in row.foreign + row.shared]
+        job.moved = [i for i in job.moved if i in own_ids]
     job.left = [(names.get(i, i), w) for i, w in made.left]
     job.graph = transfer.merged(graph, made, meta, created=job.created)
     job.settings = settings
-    if len(masks) == 1:
-        mask = next(iter(masks.values()))
-        try:
-            whole = transfer.plan(material.id, found, bases, 'modo' if meta['profile'] == 'modo' else 'native', post, alpha_of, blocked, wired,
-                                  strict=first)
-        except transfer.Refused as exc:
-            whole = None
-            if first:
-                report.left.append((material.name, str(exc)))
-                return None
-        if whole is not None and modo and whole.keys:
-            try:
-                wire_modo(whole, material, meta['stack'], found)
-            except (transfer.NotConstant, ValueError, KeyError) as exc:
-                report.left.append((material.name, 'its nested mask could not be followed into a graph (%s)' % exc))
-                return None
-        if whole is not None:
-            moved = set(whole.moved)
-            holding = [(i, w) for i, w in whole.left if staying(found, i) is None]
-            if first and holding:
-                report.left.append((material.name, '; '.join('%s: %s' % (names.get(i, i), w) for i, w in holding)))
-                return None
-            base = transfer.merged(job.graph, transfer.Plan(), {})
-            base.pop(transfer.META_KEY, None)
-            override_meta = {'profile': meta['profile'], 'override_of': material.id, 'group': mask.id, 'bases': bases, 'post': post}
-            existing = next((child for child in mask.children() if our_override(child)), None)
-            previous = properties.read(existing).get('node_graph') if existing is not None else None
-            if previous:
-                # Where this command's nodes stood in the override's graph, they stay.
-                for identity, node in previous['nodes'].items():
-                    if transfer.ours(identity, node) and 'position' in node:
-                        base['nodes'].setdefault(identity, dict(node))
-            made_override = transfer.merged(base, whole, override_meta, created=previous is None)
-            job.override = (mask, made_override)
-            job.moved = sorted(set(job.moved) | {i for i in moved if i in nested})
-            job.left += [(names.get(i, i), w) for i, w in whole.left if i in nested]
     return job
 
 
@@ -875,11 +951,33 @@ def write(scene, jobs, sources, overrides, by_id, report, progress=None, environ
                 report.moved.append((layer.name, material.name))
         for name, why in job.left:
             report.left.append((name, why))
+    holding = {}
+    for job in jobs:
+        for identity in job.shared:
+            holding.setdefault(identity, set()).add(job.material.id)
+    for identity, held in holding.items():
+        layer = by_id.get(identity)
+        if layer is None:
+            continue
+        if REACHED.get(identity, set()) <= held:
+            # Every material this layer reaches holds it in its graph now.
+            moved_now.add(identity)
+            if channel(layer, 'enable', 1):
+                lx.eval('item.channel textureLayer$enable false item:{%s}' % layer.id)
+                report.moved.append((layer.name, ', '.join(sorted(by_id[i].name for i in held if i in by_id))))
+        else:
+            report.left.append((layer.name, 'it also reaches materials that stay in the Shader Tree; the graphs that hold it draw it, and it stays on for the rest'))
     # Layers whose image this command took out, moved nowhere now: put back as they were.
     for identity, source in sources.items():
         if identity in moved_now or identity not in by_id:
             continue
         layer = by_id[identity]
+        if not source:
+            # A layer with no image this command moved, moved nowhere now: switched on again.
+            if not channel(layer, 'enable', 1):
+                lx.eval('item.channel textureLayer$enable true item:{%s}' % layer.id)
+                report.restored.append(layer.name)
+            continue
         if image_of(layer) != (None, None):
             continue
         if restore(scene, layer, source):

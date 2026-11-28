@@ -38,6 +38,9 @@ def scalar_only(snapshot):
     lights=(snapshot.get('production') or {}).get('lights',{})
     if any(isinstance(held,dict) and held.get('cookie_file') for held in lights.values())             or any(str(entity.get('class','')).startswith('CookieLightFilter') for entity in snapshot.get('entities',[])):
         return COOKIE
+    # A Photometric light's IES profile is drawn by cookie filters (ies_lights).
+    if any(isinstance(light,dict) and light.get('ies') for light in snapshot.get('lights',[])):
+        return COOKIE
     return None
 
 
