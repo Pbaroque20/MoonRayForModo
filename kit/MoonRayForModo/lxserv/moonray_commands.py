@@ -573,6 +573,20 @@ if not lx.service.Platform().IsHeadless():
 lx.bless(DockGraph, 'moonray.graph.dock')
 
 
+class OpenGraphWindow(lxu.command.BasicCommand):
+    """MoonRay > Open MoonShine Graph Editor: the graph editor in a window of its own, no graph in it yet
+    (graph_dock.GraphWindow): the material selected in Modo, or one chosen from its list."""
+    def cmd_Flags(self):
+        return lx.symbol.fCMD_UI
+
+    def basic_Execute(self, msg, flags):
+        from moonray_modo.graph_dock import open_window
+        open_window()
+
+
+lx.bless(OpenGraphWindow, 'moonray.graph.open')
+
+
 # Compatibility aliases for saved menus/macros. They once belonged to an external-render
 # PView route, which is gone: Modo cannot host an external renderer in its native PView.
 class NativePreviewStartup(lxu.command.BasicCommand):

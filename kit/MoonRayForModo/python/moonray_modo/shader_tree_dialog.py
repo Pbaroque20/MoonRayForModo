@@ -150,6 +150,7 @@ def run(choice=None, path=None, show=True):
         if show:
             summary(lines)
         return lines
+    stopped = realtime_off('Realtime off: Shader Tree -> MoonShine is changing the scene.')
     CURRENT = Progress('Reading the scene...')
     lines = []
     try:
@@ -163,6 +164,8 @@ def run(choice=None, path=None, show=True):
     finally:
         CURRENT.close()
         CURRENT = None
+    if stopped:
+        lines = list(lines) + ['Realtime was switched off while the scene was converted; press RT to switch it on again.']
     if show:
         summary(lines)
     return lines
@@ -191,8 +194,21 @@ def revert(show=True, ask=True):
         except ImportError:
             pass
     from . import shader_tree_revert
+    stopped = realtime_off('Realtime off: MoonShine -> Shader Tree is changing the scene.')
     lx.eval('moonray.material.revertShaderTreeTextures')
     lines = list(shader_tree_revert.LAST_REPORT)
+    if stopped:
+        lines.append('Realtime was switched off while the scene was put back; press RT to switch it on again.')
     if show:
         summary(lines, 'MoonShine -> Shader Tree')
     return lines
+
+
+def realtime_off(why):
+    """Realtime switched off in the open previews before the scene is changed in one step (panel.realtime_off); how many
+    it was on in. Nothing where there is no window (Modo's command line)."""
+    try:
+        from .panel import realtime_off as off
+        return off(why)
+    except Exception:
+        return 0

@@ -1027,6 +1027,10 @@ def _scene_text(scene, width=640, height=360, samples=2, environment=0.15, outpu
                 if subdivision or not displaced or not _hard_edges():
                     continue
                 values = polygon_normals(vertices, faces)
+            if values and source == 'normals':
+                # No normal of no length, and none not a number, whichever way the mesh's normals were made (rows).
+                from .rows import repaired_normals
+                values = repaired_normals(values, faces, vertices)
             if values:
                 if len(values) != rows.corner_count(faces):
                     raise ValueError('Face-varying %s must match the corner count' % source)

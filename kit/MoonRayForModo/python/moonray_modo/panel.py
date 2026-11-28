@@ -3495,3 +3495,24 @@ class Panel(Tools, QtWidgets.QWidget):
     def closeEvent(self, event):
         self.dispose()
         super().closeEvent(event)
+
+
+def realtime_off(why=''):
+    """Realtime (RT) switched off in every open preview, as its RT button does: for a command that changes much of the
+    scene in one step (Shader Tree -> MoonShine and back), which a preview following the scene would render edit by edit.
+    The number of previews it was on in; why, where given, in their status line."""
+    count = 0
+    for panel in live_panels():
+        try:
+            if not (panel.ipr_mode.isChecked() or getattr(panel, '_following', False)):
+                continue
+            if panel.rt.isChecked():
+                panel.rt.setChecked(False)      # _rt_toggled(False), as a click
+            else:
+                panel._rt_toggled(False)
+            if why:
+                panel.status.setText(why)
+            count += 1
+        except Exception:
+            pass
+    return count

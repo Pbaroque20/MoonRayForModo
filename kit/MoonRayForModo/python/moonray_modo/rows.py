@@ -443,3 +443,72 @@ def mask_corners(values, width, counts, keep):
     if function(_address(held), width, _address(sizes), len(sizes), keep, _address(out), len(held) // width):
         return None
     return Rows(out, width, 'masked:' + blake2b(memoryview(out), digest_size=16).hexdigest())
+
+
+def repaired_normals(values, faces, vertices):
+    """A mesh's corner normals with none of no length and none not a number: each such corner's normal taken from a
+    good corner of its own polygon, else the polygon's own normal, else straight up (a polygon of no area, which is never
+    seen). Smoothing a mesh with polygons of no area made normals of no length at them (a tester's Enterprise, 24 of
+    its 14 million corners); XPU2 refused the mesh ("invalid normal") or its programs failed on the graphics card
+    (CUDA error 719), and the scene went to MoonRay XPU. The normals as given where all are good (the usual case,
+    found by a search of the bytes and the adapter's finite check, no loop); else new Rows."""
+    flat = numbers(values, 3)
+    if flat is None:
+        if not values:
+            return values
+        flat = array('f', [float(v) for n in values for v in n[:3]])
+    held = flat.tobytes()
+    empty = bytes(12)
+    bad = set()
+    at = held.find(empty)
+    while at >= 0:
+        if at % 12 == 0:
+            bad.add(at // 12)
+            at = held.find(empty, at + 12)
+        else:
+            at = held.find(empty, at + 1)
+    ok = finite(flat)
+    if ok is not True:
+        import math
+        for k in range(len(flat) // 3):
+            x, y, z = flat[3 * k], flat[3 * k + 1], flat[3 * k + 2]
+            if not (math.isfinite(x) and math.isfinite(y) and math.isfinite(z)) or (x == 0 and y == 0 and z == 0):
+                bad.add(k)
+    if not bad:
+        return values
+    fixed = array('f', flat)
+    sizes = counts(faces)
+    if sizes is None:
+        sizes = array('i', [len(face) for face in faces])
+    starts, total = [], 0
+    for size in sizes:
+        starts.append(total)
+        total += size
+    from bisect import bisect_right
+    point = numbers(vertices, 3)
+    corner = corners(faces)
+    if corner is None:
+        corner = array('i', [int(v) for face in faces for v in face])
+
+    def position(index):
+        if point is not None:
+            return point[3 * index], point[3 * index + 1], point[3 * index + 2]
+        return tuple(float(v) for v in vertices[index][:3])
+
+    for k in sorted(bad):
+        face = bisect_right(starts, k) - 1
+        first, size = starts[face], sizes[face]
+        normal = next(((fixed[3 * c], fixed[3 * c + 1], fixed[3 * c + 2]) for c in range(first, first + size) if c not in bad), None)
+        if normal is None:
+            # Newell's normal of the polygon.
+            nx = ny = nz = 0.0
+            for j in range(size):
+                ax, ay, az = position(corner[first + j])
+                bx, by, bz = position(corner[first + (j + 1) % size])
+                nx += (ay - by) * (az + bz)
+                ny += (az - bz) * (ax + bx)
+                nz += (ax - bx) * (ay + by)
+            length = (nx * nx + ny * ny + nz * nz) ** 0.5
+            normal = (nx / length, ny / length, nz / length) if length > 0 and length == length else (0.0, 1.0, 0.0)
+        fixed[3 * k], fixed[3 * k + 1], fixed[3 * k + 2] = normal
+    return Rows(fixed, 3, 'repaired:' + blake2b(memoryview(fixed), digest_size=16).hexdigest())
