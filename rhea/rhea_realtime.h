@@ -106,6 +106,9 @@ struct RealtimeOptions {
     // Edges by object and crease (DESIGN.md 38): ObjectWarp::Options::objectEdges, and cells of one object each
     // (ObjectStore::Options::byObject; learning traces each pixel's first hit for its object).
     bool objectEdges = false, storeObjects = false;
+    // The sparse radiance cache (DESIGN.md 43): cells with their light's slope, fine ones only where the light changes.
+    bool storeSparse = false;
+    double storeSparseTolerance = 0.08, storeSparseMinWeight = 2.0;
     double creaseCos = 0.8;
     // The light smoothed over its surfaces (ObjectWarp::Options::smooth, DESIGN.md 39) and its settings.
     bool smooth = false;
@@ -1157,6 +1160,7 @@ public:
         store.op.scale = op.storeScale, store.op.jump = op.warpJump, store.op.threads = std::max(1u, op.threads);
         store.op.grazing = op.storeGrazing, store.op.albedo = op.storeAlbedo;
         store.op.byObject = op.storeObjects;
+        store.op.sparse = op.storeSparse, store.op.sparseTolerance = op.storeSparseTolerance, store.op.sparseMinWeight = op.storeSparseMinWeight;
     }
     // scene: the CPU lane's scene, for each learned pixel's own first hit (its object, the light reflected toward it:
     // op.storeObjects, op.specular); none: neither.

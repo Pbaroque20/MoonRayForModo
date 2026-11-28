@@ -238,6 +238,14 @@ public:
         // Cells of one object each (DESIGN.md 38; XPU2_SESSION_RHEA_STORE_OBJECTS): a pixel's object from its first hit, so
         // that a tyre's colour and the floor's under it never share a cell. Needs Outputs::extra.
         bool byObject = false;
+        // The sparse radiance cache (DESIGN.md 43; XPU2_SESSION_RHEA_SPARSE): each cell keeps, beside its means, how its
+        // light changes across it (a least-squares slope from its pixels' places: Hermite, first-order records), and a
+        // lookup reads a cell as its mean plus that slope times the way to the point, so a few cells interpolate as a
+        // gradient; and a pixel is added from the coarsest size down, a finer cell made for it only where the coarser one
+        // (of sparseMinWeight at least) does not foresee its light within sparseTolerance (relative): fine cells where the
+        // light changes (shadows' edges, highlights), coarse ones where it is smooth. Cells there already keep learning.
+        bool sparse = false;
+        double sparseTolerance = 0.08, sparseMinWeight = 2.0;
     };
     // What a learning picture's pixel adds besides its outputs (Realtime::learn, from its own first hit): its object, and
     // the light reflected toward it along the mirror direction (where known: the store's colour where the reflected ray
@@ -280,7 +288,7 @@ public:
     size_t cells() const { return light.used + fine.used; }
     // What the store holds in memory, in bytes (its tables' slots and the environment's).
     size_t bytes() const {
-        return (light.slots.size() + fine.slots.size()) * sizeof(Table::Entry) + light.extras.size() * sizeof(Table::Extra) +
+        return (light.slots.size() + fine.slots.size()) * sizeof(Table::Entry) + light.extras.size() * sizeof(Table::Extra) + light.grads.size() * sizeof(Table::Grad) +
                (sky.size() + skyFilled.size()) * sizeof(float);
     }
     // A store taken in from elsewhere (rhea_cache.h: kept between realtime's runs, or read from a file): the lookups'
@@ -370,6 +378,48 @@ public:
 
     // A picture's colours onto the surfaces it shows: depth its nearest first-hit depth (0 none), depthFar its farthest
     // (empty: none); outs its albedo and emission, for the composite.
+    // A cell's colour at d (its place in the cell, cell units from its middle; op.sparse): its mean plus its least-squares
+    // slope times the way from its pixels' centroid. The slope regularised (a cell's pixels lie on a surface, so its
+    // spread across the surface is none), its change held to the mean either way (no negative light, no runaway).
+    static void cellColour(const Table::Entry& e, const Table::Grad& g, const double d[3], double out[3]) {
+        const double W = e.v[VW];
+        double pc[3], C[3][3];
+        for (int i = 0; i < 3; ++i) pc[i] = g.s[i] / W;
+        static const int ij[6][2] = {{0, 0}, {1, 1}, {2, 2}, {0, 1}, {0, 2}, {1, 2}};
+        for (int k = 0; k < 6; ++k) {
+            const int a = ij[k][0], b = ij[k][1];
+            C[a][b] = C[b][a] = g.s[3 + k] / W - pc[a] * pc[b];
+        }
+        for (int i = 0; i < 3; ++i) C[i][i] += 0.01;
+        const double det = C[0][0] * (C[1][1] * C[2][2] - C[1][2] * C[2][1]) - C[0][1] * (C[1][0] * C[2][2] - C[1][2] * C[2][0]) +
+                           C[0][2] * (C[1][0] * C[2][1] - C[1][1] * C[2][0]);
+        for (int c = 0; c < 3; ++c) out[c] = e.v[c] / W;
+        if (!(std::fabs(det) > 1e-12)) return;
+        double inv[3][3];
+        inv[0][0] = (C[1][1] * C[2][2] - C[1][2] * C[2][1]) / det, inv[0][1] = (C[0][2] * C[2][1] - C[0][1] * C[2][2]) / det;
+        inv[0][2] = (C[0][1] * C[1][2] - C[0][2] * C[1][1]) / det, inv[1][0] = (C[1][2] * C[2][0] - C[1][0] * C[2][2]) / det;
+        inv[1][1] = (C[0][0] * C[2][2] - C[0][2] * C[2][0]) / det, inv[1][2] = (C[0][2] * C[1][0] - C[0][0] * C[1][2]) / det;
+        inv[2][0] = (C[1][0] * C[2][1] - C[1][1] * C[2][0]) / det, inv[2][1] = (C[0][1] * C[2][0] - C[0][0] * C[2][1]) / det;
+        inv[2][2] = (C[0][0] * C[1][1] - C[0][1] * C[1][0]) / det;
+        for (int c = 0; c < 3; ++c) {
+            const double mean = out[c];
+            double b[3];
+            for (int i = 0; i < 3; ++i) b[i] = g.s[9 + c * 3 + i] / W - pc[i] * mean;
+            double change = 0;
+            for (int i = 0; i < 3; ++i) {
+                double slope = 0;
+                for (int j = 0; j < 3; ++j) slope += inv[i][j] * b[j];
+                change += slope * (d[i] - pc[i]);
+            }
+            out[c] = mean + std::clamp(change, -mean, mean);
+        }
+    }
+    // A pixel's place in a cell of a size (cell units from its middle; the cell floor(p / size)).
+    static void inCell(const surface::V3& p, int level, double d[3]) {
+        const double size = std::ldexp(1.0, level);
+        const double q[3] = {p.x / size, p.y / size, p.z / size};
+        for (int i = 0; i < 3; ++i) d[i] = q[i] - (std::floor(q[i]) + 0.5);
+    }
     void add(const View& view, unsigned w, unsigned h, const std::vector<float>& rgba, const std::vector<std::uint32_t>& counts,
              const std::vector<float>& depth, const std::vector<float>& depthFar, const Outputs* outputs = nullptr) {
         const Outputs outs = outputs ? *outputs : Outputs{};
@@ -471,14 +521,63 @@ public:
             for (const Add& e : row) {
                 for (int b = 0; b < 2; ++b) {
                     if (e.bins[b] == NoBin) continue;
-                    for (int k = 0; k < op.levels; ++k) {
-                        Table::Entry& t = light.slot(e.p, e.level + k, e.bins[b], e.obj);
+                    auto into = [&](Table::Entry& t, size_t idx, int level) {
                         for (int q = 0; q < NB; ++q) t.v[q] += e.v[q] * e.weight;
                         t.v[VW] += e.weight;
                         // The view-dependent sums beside it, where this store learns them (a diffuse output).
                         if (diffuse) {
-                            Table::Extra& x = light.more(light.last);
+                            Table::Extra& x = light.more(idx);
                             for (int q = NB; q < NV; ++q) x.v[q - NB] += e.v[q] * e.weight;
+                        }
+                        if (op.sparse) {
+                            // Its slope's sums (cellColour).
+                            Table::Grad& g = light.slope(idx);
+                            double d[3];
+                            inCell(e.p, level, d);
+                            const float wgt = e.weight;
+                            for (int i = 0; i < 3; ++i) g.s[i] += float(wgt * d[i]);
+                            g.s[3] += float(wgt * d[0] * d[0]), g.s[4] += float(wgt * d[1] * d[1]), g.s[5] += float(wgt * d[2] * d[2]);
+                            g.s[6] += float(wgt * d[0] * d[1]), g.s[7] += float(wgt * d[0] * d[2]), g.s[8] += float(wgt * d[1] * d[2]);
+                            for (int c = 0; c < 3; ++c)
+                                for (int i = 0; i < 3; ++i) g.s[9 + c * 3 + i] += float(wgt * d[i] * e.v[c]);
+                        }
+                    };
+                    if (!op.sparse) {
+                        for (int k = 0; k < op.levels; ++k) {
+                            Table::Entry& t = light.slot(e.p, e.level + k, e.bins[b], e.obj);
+                            into(t, light.last, e.level + k);
+                        }
+                    } else {
+                        // Coarsest first; a finer cell made only where this one does not foresee the pixel (op.sparse). A
+                        // pixel of few samples is noisier: its tolerance wider.
+                        const double tolerance = op.sparseTolerance * (1.0 + 2.0 * (1.0 - std::clamp(double(e.weight), 0.0, 1.0)));
+                        bool finer = true;
+                        for (int k = op.levels - 1; k >= 0; --k) {
+                            const int level = e.level + k;
+                            if (finer) {
+                                Table::Entry& t = light.slot(e.p, level, e.bins[b], e.obj);
+                                const size_t idx = light.last;
+                                if (k > 0 && t.v[VW] >= op.sparseMinWeight) {
+                                    double d[3], seen[3];
+                                    inCell(e.p, level, d);
+                                    cellColour(t, light.slope(idx), d, seen);
+                                    const double scale = std::max(0.2126 * seen[0] + 0.7152 * seen[1] + 0.0722 * seen[2],
+                                                                  0.2126 * e.v[0] + 0.7152 * e.v[1] + 0.0722 * e.v[2]) + 0.02;
+                                    double off = 0;
+                                    for (int c = 0; c < 3; ++c) off = std::max(off, std::fabs(seen[c] - double(e.v[c])));
+                                    if (off <= tolerance * scale) finer = false;
+                                }
+                                into(t, idx, level);
+                            } else {
+                                // Finer cells made before keep learning; none made for this pixel.
+                                const double size = std::ldexp(1.0, level);
+                                const long long i = light.index((long long)std::floor(e.p.x / size), (long long)std::floor(e.p.y / size),
+                                                                (long long)std::floor(e.p.z / size), level, e.bins[b], e.obj);
+                                if (i >= 0) {
+                                    light.touch(size_t(i));
+                                    into(light.slots[size_t(i)], size_t(i), level);
+                                }
+                            }
                         }
                     }
                     // The albedo alone, in cells half as wide.
@@ -661,14 +760,30 @@ private:
         // (Its layout and hash shared with the graphics card's copy: rhea_store_core.h.)
         using Entry = xpu2::interactive::rheastore::Entry;
         using Extra = xpu2::interactive::rheastore::Extra;
+        // A slot's sums for its light's slope (op.sparse), d its pixels' places in the cell (cell units, -0.5 to 0.5 from
+        // its middle), L their colour, all weighted as its means: d (0-2), d d' (3-8: xx yy zz xy xz yz), d L (9-17: a colour
+        // channel's three).
+        struct Grad {
+            float s[18] = {};
+        };
         std::vector<Entry> slots;
         std::vector<Extra> extras;  // a slot's view-dependent sums each (more()), or none
+        std::vector<Grad> grads;    // a slot's slope sums each (slope()), or none
         size_t used = 0;
         size_t last = 0;  // the slot slot() last gave
         // The view-dependent sums, made for every slot where first asked for.
         Extra& more(size_t i) {
             if (extras.size() != slots.size()) extras.assign(slots.size(), Extra{}), regrown = true;
             return extras[i];
+        }
+        Grad& slope(size_t i) {
+            if (grads.size() != slots.size()) grads.assign(slots.size(), Grad{});
+            return grads[i];
+        }
+        // A slot's index (find's, for a table that may be added to), or -1.
+        long long index(long long x, long long y, long long z, int level, int bin, std::uint32_t obj) const {
+            const Entry* e = find(x, y, z, level, bin, obj);
+            return e ? (long long)(e - slots.data()) : -1;
         }
         // The card's copy (rheaStore): pages of slots written since it was last sent, or the whole (regrown).
         static constexpr size_t PageSlots = 4096;
@@ -679,7 +794,7 @@ private:
             if (page >= dirty.size()) dirty.resize(slots.size() / PageSlots + 1, 0);
             dirty[page] = 1;
         }
-        void clear() { slots.clear(), extras.clear(), used = 0, dirty.clear(), regrown = true; }
+        void clear() { slots.clear(), extras.clear(), grads.clear(), used = 0, dirty.clear(), regrown = true; }
         static std::uint64_t hashOf(long long x, long long y, long long z, int level, int bin, std::uint32_t obj) {
             return xpu2::interactive::rheastore::hashOf(x, y, z, level, bin, obj);
         }
@@ -705,6 +820,7 @@ private:
                     ++used;
                     touch(i);
                     if (!extras.empty()) extras[i] = Extra{};
+                    if (!grads.empty()) grads[i] = Grad{};
                     last = i;
                     return e;
                 }
@@ -718,9 +834,11 @@ private:
         void grow(size_t size) {
             std::vector<Entry> old;
             std::vector<Extra> oldMore;
-            old.swap(slots), oldMore.swap(extras);
+            std::vector<Grad> oldGrads;
+            old.swap(slots), oldMore.swap(extras), oldGrads.swap(grads);
             slots.assign(size, Entry{});
             if (!oldMore.empty()) extras.assign(size, Extra{});
+            if (!oldGrads.empty()) grads.assign(size, Grad{});
             regrown = true, dirty.assign(size / PageSlots + 1, 0);
             const size_t mask = slots.size() - 1;
             for (size_t k = 0; k < old.size(); ++k) {
@@ -730,6 +848,7 @@ private:
                 while (slots[i].full) i = (i + 1) & mask;
                 slots[i] = e;
                 if (!oldMore.empty()) extras[i] = oldMore[k];
+                if (!oldGrads.empty()) grads[i] = oldGrads[k];
             }
         }
     };
@@ -803,9 +922,18 @@ private:
                 const double tri = (dx ? tx : 1 - tx) * (dy ? ty : 1 - ty) * (dz ? tz : 1 - tz);
                 if (tri <= 0) continue;
                 const double k = tri / e->v[VW];
-                for (int q = 0; q < std::min(nv, NB); ++q) c[q] += k * e->v[q];
+                const size_t at = size_t(e - t.slots.data());
+                if (op.sparse && &t == &light && t.grads.size() == t.slots.size()) {
+                    // Its colour at the point by its slope (cellColour), the rest by its means.
+                    const double d[3] = {p.x / size - (double(x0 + dx) + 0.5), p.y / size - (double(y0 + dy) + 0.5), p.z / size - (double(z0 + dz) + 0.5)};
+                    double col[3];
+                    cellColour(*e, t.grads[at], d, col);
+                    for (int q = 0; q < 3; ++q) c[q] += tri * col[q];
+                    for (int q = 3; q < std::min(nv, NB); ++q) c[q] += k * e->v[q];
+                } else
+                    for (int q = 0; q < std::min(nv, NB); ++q) c[q] += k * e->v[q];
                 if (nv > NB && !t.extras.empty()) {
-                    const Table::Extra& x = t.extras[size_t(e - t.slots.data())];
+                    const Table::Extra& x = t.extras[at];
                     for (int q = NB; q < nv; ++q) c[q] += k * x.v[q - NB];
                 }
                 wsum += tri;
@@ -1106,7 +1234,8 @@ public:
         // The card's copy of the store, where it answers this view's lookups (not the albedo composite's finer table).
         bool cardLooks = false;
         cardLooked = 0;
-        if (cardStore && cardTrace && !store.op.albedo && !store.empty()) {
+        // (Not while the store is sparse: the card's lookups know no slopes yet, DESIGN.md 43.)
+        if (cardStore && cardTrace && !store.op.albedo && !store.op.sparse && !store.empty()) {
             xpu2::interactive::rheastore::View sv;
             store.cardView(sv);
             sv.lookupUp = op.lookupUp, sv.angle = angle, sv.kind = int(nv.kind), sv.parts = op.specular ? 1 : 0;
