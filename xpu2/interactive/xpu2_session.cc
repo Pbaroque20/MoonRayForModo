@@ -2987,8 +2987,10 @@ int session(const Args& args, const fs::path& directory) {
                 gpu->use();
                 const auto& slots = rheaView.store.cardSlots();
                 const auto& extras = rheaView.store.cardExtras();
+                const auto& grads = rheaView.store.cardGrads();
                 const bool whole = rheaView.store.cardChanges(rheaCardPages);
-                rheaCardSent = gpu->rheaStoreSync(slots.data(), extras.size() == slots.size() ? extras.data() : nullptr, slots.size(), whole, rheaCardPages);
+                rheaCardSent = gpu->rheaStoreSync(slots.data(), extras.size() == slots.size() ? extras.data() : nullptr, slots.size(), whole, rheaCardPages,
+                                                  rheaView.store.op.sparse && grads.size() == slots.size() ? grads.data() : nullptr);
                 const bool ok = gpu->rheaStoreView(v);
                 rheaCardSyncSeconds = std::chrono::duration<double>(Clock::now() - began).count();
                 return ok;

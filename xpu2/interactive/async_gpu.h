@@ -1882,14 +1882,16 @@ public:
     // than the copy's), else only the ranges of slots given (those written since the last sending). The bytes sent.
     // extras: each slot's view-dependent sums (rheastore::Extra), or none. (Pageable host memory: each copy is staged
     // before it returns, so the store may change after.)
+    // grads: each slot's slope sums (rheastore::Grad: the sparse cache, rhea/DESIGN.md 43), or none.
     size_t rheaStoreSync(const rheastore::Entry* slots, const rheastore::Extra* extras, size_t count, bool whole,
-                         const std::vector<std::pair<size_t, size_t>>& ranges) {
+                         const std::vector<std::pair<size_t, size_t>>& ranges, const rheastore::Grad* grads = nullptr) {
         if (!count) {
             rheaStoreSlots_ = 0, rheaViewReady_ = false;
             return 0;
         }
         size_t sent = 0;
-        const bool all = whole || !rheaStoreDevice_ || rheaStoreSlots_ != count || (extras != nullptr) != rheaStoreExtras_;
+        const bool all = whole || !rheaStoreDevice_ || rheaStoreSlots_ != count || (extras != nullptr) != rheaStoreExtras_ ||
+                         (grads != nullptr) != rheaStoreGrads_;
         auto send = [&](B& buffer, const void* host, size_t size) {
             const size_t bytes = count * size;
             if (all) {
@@ -1906,7 +1908,8 @@ public:
         };
         send(rheaStoreDevice_, slots, sizeof(rheastore::Entry));
         if (extras) send(rheaExtrasDevice_, extras, sizeof(rheastore::Extra));
-        rheaStoreSlots_ = count, rheaStoreExtras_ = extras != nullptr;
+        if (grads) send(rheaGradsDevice_, grads, sizeof(rheastore::Grad));
+        rheaStoreSlots_ = count, rheaStoreExtras_ = extras != nullptr, rheaStoreGrads_ = grads != nullptr;
         return sent;
     }
     // A view's lookup settings (the slots and mask filled in here); false where no store is on the card.
@@ -1917,6 +1920,7 @@ public:
         rheaViewHost_.slots = reinterpret_cast<const rheastore::Entry*>(rheaStoreDevice_->pointer);
         rheaViewHost_.mask = rheaStoreSlots_ - 1;
         rheaViewHost_.extras = rheaStoreExtras_ ? reinterpret_cast<const rheastore::Extra*>(rheaExtrasDevice_->pointer) : nullptr;
+        rheaViewHost_.grads = rheaStoreGrads_ ? reinterpret_cast<const rheastore::Grad*>(rheaGradsDevice_->pointer) : nullptr;
         if (!rheaViewDevice_) rheaViewDevice_ = device(sizeof(rheastore::View));
         copyIn(rheaViewDevice_, &rheaViewHost_, sizeof(rheastore::View));
         rheaViewReady_ = true;
@@ -3824,9 +3828,9 @@ private:
     std::shared_ptr<gpu::Event> firstHitsDone_;
     size_t firstPending_ = 0;  // the rays of a firstHitsBegin not yet ended
     // Rhea's store on the card (rheaStoreSync, rheaStoreView) and its lookups each way (firstHits' looks).
-    B rheaStoreDevice_, rheaExtrasDevice_, rheaViewDevice_, firstLooksHost_, firstLooksDevice_;
+    B rheaStoreDevice_, rheaExtrasDevice_, rheaGradsDevice_, rheaViewDevice_, firstLooksHost_, firstLooksDevice_;
     size_t rheaStoreSlots_ = 0;
-    bool rheaStoreExtras_ = false;
+    bool rheaStoreExtras_ = false, rheaStoreGrads_ = false;
     // Rhea's smoothing on the card (rheaSmooth): the nodes, the light each way, each pass's settings.
     B smoothNodes_, smoothA_, smoothB_, smoothHost_;
     std::vector<B> smoothSettings_;

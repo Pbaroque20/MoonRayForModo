@@ -378,41 +378,9 @@ public:
 
     // A picture's colours onto the surfaces it shows: depth its nearest first-hit depth (0 none), depthFar its farthest
     // (empty: none); outs its albedo and emission, for the composite.
-    // A cell's colour at d (its place in the cell, cell units from its middle; op.sparse): its mean plus its least-squares
-    // slope times the way from its pixels' centroid. The slope regularised (a cell's pixels lie on a surface, so its
-    // spread across the surface is none), its change held to the mean either way (no negative light, no runaway).
+    // A cell's colour at d (its place in the cell, cell units from its middle; op.sparse): rhea_store_core.h's, the card's.
     static void cellColour(const xpu2::interactive::rheastore::Entry& e, const float* gs, const double d[3], double out[3]) {
-        const double W = e.v[VW];
-        double pc[3], C[3][3];
-        for (int i = 0; i < 3; ++i) pc[i] = gs[i] / W;
-        static const int ij[6][2] = {{0, 0}, {1, 1}, {2, 2}, {0, 1}, {0, 2}, {1, 2}};
-        for (int k = 0; k < 6; ++k) {
-            const int a = ij[k][0], b = ij[k][1];
-            C[a][b] = C[b][a] = gs[3 + k] / W - pc[a] * pc[b];
-        }
-        for (int i = 0; i < 3; ++i) C[i][i] += 0.01;
-        const double det = C[0][0] * (C[1][1] * C[2][2] - C[1][2] * C[2][1]) - C[0][1] * (C[1][0] * C[2][2] - C[1][2] * C[2][0]) +
-                           C[0][2] * (C[1][0] * C[2][1] - C[1][1] * C[2][0]);
-        for (int c = 0; c < 3; ++c) out[c] = e.v[c] / W;
-        if (!(std::fabs(det) > 1e-12)) return;
-        double inv[3][3];
-        inv[0][0] = (C[1][1] * C[2][2] - C[1][2] * C[2][1]) / det, inv[0][1] = (C[0][2] * C[2][1] - C[0][1] * C[2][2]) / det;
-        inv[0][2] = (C[0][1] * C[1][2] - C[0][2] * C[1][1]) / det, inv[1][0] = (C[1][2] * C[2][0] - C[1][0] * C[2][2]) / det;
-        inv[1][1] = (C[0][0] * C[2][2] - C[0][2] * C[2][0]) / det, inv[1][2] = (C[0][2] * C[1][0] - C[0][0] * C[1][2]) / det;
-        inv[2][0] = (C[1][0] * C[2][1] - C[1][1] * C[2][0]) / det, inv[2][1] = (C[0][1] * C[2][0] - C[0][0] * C[2][1]) / det;
-        inv[2][2] = (C[0][0] * C[1][1] - C[0][1] * C[1][0]) / det;
-        for (int c = 0; c < 3; ++c) {
-            const double mean = out[c];
-            double b[3];
-            for (int i = 0; i < 3; ++i) b[i] = gs[9 + c * 3 + i] / W - pc[i] * mean;
-            double change = 0;
-            for (int i = 0; i < 3; ++i) {
-                double slope = 0;
-                for (int j = 0; j < 3; ++j) slope += inv[i][j] * b[j];
-                change += slope * (d[i] - pc[i]);
-            }
-            out[c] = mean + std::clamp(change, -mean, mean);
-        }
+        xpu2::interactive::rheastore::cellColour(e, gs, d, out);
     }
     // A pixel's place in a cell of a size (cell units from its middle; the cell floor(p / size)).
     static void inCell(const surface::V3& p, int level, double d[3]) {
@@ -701,6 +669,8 @@ public:
     // the last sending (cardChanges: whole, or the dirty pages of PageSlots slots each; then forgotten).
     const std::vector<xpu2::interactive::rheastore::Entry>& cardSlots() const { return light.slots; }
     const std::vector<xpu2::interactive::rheastore::Extra>& cardExtras() const { return light.extras; }
+    // The slope sums the card's lookups read (op.sparse; none otherwise).
+    const std::vector<xpu2::interactive::rheastore::Grad>& cardGrads() const { return light.grads; }
     bool cardChanges(std::vector<std::pair<size_t, size_t>>& pages) {
         pages.clear();
         const bool whole = light.regrown;
@@ -763,9 +733,7 @@ private:
         // A slot's sums for its light's slope (op.sparse), d its pixels' places in the cell (cell units, -0.5 to 0.5 from
         // its middle), L their colour, all weighted as its means: d (0-2), d d' (3-8: xx yy zz xy xz yz), d L (9-17: a colour
         // channel's three).
-        struct Grad {
-            float s[18] = {};
-        };
+        using Grad = xpu2::interactive::rheastore::Grad;
         std::vector<Entry> slots;
         std::vector<Extra> extras;  // a slot's view-dependent sums each (more()), or none
         std::vector<Grad> grads;    // a slot's slope sums each (slope()), or none
@@ -1234,8 +1202,7 @@ public:
         // The card's copy of the store, where it answers this view's lookups (not the albedo composite's finer table).
         bool cardLooks = false;
         cardLooked = 0;
-        // (Not while the store is sparse: the card's lookups know no slopes yet, DESIGN.md 43.)
-        if (cardStore && cardTrace && !store.op.albedo && !store.op.sparse && !store.empty()) {
+        if (cardStore && cardTrace && !store.op.albedo && !store.empty()) {
             xpu2::interactive::rheastore::View sv;
             store.cardView(sv);
             sv.lookupUp = op.lookupUp, sv.angle = angle, sv.kind = int(nv.kind), sv.parts = op.specular ? 1 : 0;
