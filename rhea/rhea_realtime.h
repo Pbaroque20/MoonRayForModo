@@ -136,6 +136,11 @@ struct RealtimeOptions {
     // The least share of the prior kept where the two part (0.25), and the samples' worth of the sampled neighbours' mean a
     // pixel of few samples shows (4).
     double progressiveKeep = 0.25, progressiveSpread = 4.0;
+    // The fade by coverage (the user, 2026-11-28: "the GPU grid doesn't seem to fade in like before"): phase one's samples
+    // held up to 1 + progressiveCoverHold times where XPU2 has sampled little of the pixel's neighbourhood (a square
+    // progressiveCover pixels from it each way at 1280 wide, scaled with the picture; 0: off), as (1 - its share)^2, so
+    // that XPU2's cells fade in across an area instead of each cell's pixels at once; the area covered, as before.
+    double progressiveCover = 8.0, progressiveCoverHold = 8.0;
     // The probes' screen cells grow with the picture (cell times the square root of its pixels over 320 x 240's): as many
     // probes at 1280 x 720 as at 320 x 240, where 22,000 had taken 0.12 s to place and 0.7 s of the GPU's (DESIGN.md 26).
     bool cellsByPicture = true;
@@ -1048,6 +1053,29 @@ public:
             });
         };
         box(lx, sx), box(lr, sr), box(sampled, ss);
+        // The share of each pixel's neighbourhood XPU2 has sampled (op.progressiveCover; a summed-area table).
+        std::vector<float> cover;
+        const int reach = op.progressiveCover > 0 ? std::max(1, int(std::lround(op.progressiveCover * double(W) / 1280.0))) : 0;
+        if (reach > 0) {
+            std::vector<double> sum(size_t(W + 1) * (H + 1), 0.0);
+            for (unsigned y = 0; y < H; ++y) {
+                double row = 0;
+                for (unsigned px = 0; px < W; ++px) {
+                    row += sampled[size_t(y) * W + px];
+                    sum[size_t(y + 1) * (W + 1) + px + 1] = sum[size_t(y) * (W + 1) + px + 1] + row;
+                }
+            }
+            cover.resize(n);
+            parallel(threads, H, [&](size_t y) {
+                const int y0 = std::max(0, int(y) - reach), y1 = std::min(int(H), int(y) + reach + 1);
+                for (unsigned px = 0; px < W; ++px) {
+                    const int x0 = std::max(0, int(px) - reach), x1 = std::min(int(W), int(px) + reach + 1);
+                    const double s = sum[size_t(y1) * (W + 1) + x1] - sum[size_t(y0) * (W + 1) + x1] - sum[size_t(y1) * (W + 1) + x0] +
+                                     sum[size_t(y0) * (W + 1) + x0];
+                    cover[y * W + px] = float(s / double((y1 - y0) * (x1 - x0)));
+                }
+            });
+        }
         // XPU2's colour summed over each pixel's sampled 3 x 3, each channel.
         std::vector<float> cs(n * 3), chan(n), cbox(n);
         for (int ch = 0; ch < 3; ++ch) {
@@ -1079,8 +1107,12 @@ public:
                 const double allowed = op.progressivePart / std::sqrt(double(c) * std::max(1.0, double(ss[i])));
                 // Let go faster where the two part, but never all at once: a sample or two that disagree were the
                 // first pictures' speckles (progressiveKeep of the prior stays).
-                const double m = prior * std::max(0.25, confidence) *
-                                 std::max(op.progressiveKeep, std::exp(-(part / allowed) * (part / allowed)));
+                double m = prior * std::max(0.25, confidence) *
+                           std::max(op.progressiveKeep, std::exp(-(part / allowed) * (part / allowed)));
+                if (!cover.empty()) {
+                    const double open = 1.0 - double(cover[i]);
+                    m *= 1.0 + op.progressiveCoverHold * open * open;
+                }
                 if (m <= double(c)) ++xpu2[y];
                 // A pixel of few samples shows its sampled neighbours' mean as much as its own (progressiveSpread samples'
                 // worth): the first samples' noise spread, not shown as specks; whole once its count is well past it.

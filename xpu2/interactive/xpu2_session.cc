@@ -4618,6 +4618,9 @@ int session(const Args& args, const fs::path& directory) {
                     if (const char* v = std::getenv("XPU2_SESSION_RHEA_PROGRESSIVE_PART")) rheaView.op.progressivePart = std::max(0.1, std::atof(v));
                     if (const char* v = std::getenv("XPU2_SESSION_RHEA_PROGRESSIVE_KEEP")) rheaView.op.progressiveKeep = std::clamp(std::atof(v), 0.0, 1.0);
                     if (const char* v = std::getenv("XPU2_SESSION_RHEA_PROGRESSIVE_SPREAD")) rheaView.op.progressiveSpread = std::max(0.0, std::atof(v));
+                    // The fade by coverage (rhea_realtime.h progressiveCover): its reach in pixels at 1280 wide (0: off) and hold.
+                    if (const char* v = std::getenv("XPU2_SESSION_RHEA_PROGRESSIVE_COVER")) rheaView.op.progressiveCover = std::clamp(std::atof(v), 0.0, 128.0);
+                    if (const char* v = std::getenv("XPU2_SESSION_RHEA_PROGRESSIVE_COVER_HOLD")) rheaView.op.progressiveCoverHold = std::clamp(std::atof(v), 0.0, 1000.0);
                     const bool completion = warpOnly && !progressive && envOn("XPU2_SESSION_RHEA_COMPLETION", true);
                     const auto lightBegan = Clock::now();
                     double lastLightSaid = -1;
