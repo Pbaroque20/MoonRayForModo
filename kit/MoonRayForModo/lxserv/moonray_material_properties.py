@@ -331,6 +331,8 @@ class MoveShaderTreeTextures(lxu.command.BasicCommand):
     def basic_Enable(self,msg):return True
     def basic_Execute(self,msg,flags):
         from moonray_modo import shader_tree_scene,shader_tree_dialog
+        # Realtime off first (as from the menu): it would render the scene edit by edit as it changes.
+        shader_tree_dialog.realtime_off('Realtime off: Shader Tree -> MoonShine is changing the scene.')
         try:report=shader_tree_scene.run()
         except shader_tree_dialog.Cancelled:
             # Stopped while the scene was being read: nothing was changed.
@@ -389,7 +391,8 @@ class RevertShaderTreeTextures(lxu.command.BasicCommand):
     def cmd_Flags(self):return lx.symbol.fCMD_MODEL|lx.symbol.fCMD_UNDO
     def basic_Enable(self,msg):return True
     def basic_Execute(self,msg,flags):
-        from moonray_modo import shader_tree_revert
+        from moonray_modo import shader_tree_revert,shader_tree_dialog
+        shader_tree_dialog.realtime_off('Realtime off: MoonShine -> Shader Tree is changing the scene.')
         try:report=shader_tree_revert.run()
         except Exception:
             import traceback
