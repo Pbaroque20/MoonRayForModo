@@ -2074,8 +2074,10 @@ class Panel(Tools, QtWidgets.QWidget):
         """What the Render button does: one render, or with IPR on, a render that keeps following."""
         if self._output_busy():
             self.status.setText('Output render is running. Press Stop before starting a preview.');return
-        # Render, or realtime switched on, is asking for the picture itself: Draft, where it is on, goes off first.
-        if self.draft.isChecked():self.draft.setChecked(False)
+        # Render, or realtime switched on, is asking for the picture itself: Draft, where it is on, goes off first. Not
+        # Rhea Draft's: it is realtime (_rhea_draft_toggled switches realtime on, which starts here), and taking Draft off
+        # here told the session Draft was off as it began, so its lines never showed (2026-11-28).
+        if self.draft.isChecked() and not getattr(self,'_rhea_draft',False):self.draft.setChecked(False)
         # A render started by hand gives XPU2 another try where it left the session to MoonRay XPU.
         session=getattr(self.renderer,'session',None)
         if session is not None and hasattr(session,'retry_xpu2'):session.retry_xpu2()
