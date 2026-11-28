@@ -23,6 +23,13 @@ def save():
 
 
 began = time.perf_counter()
+if os.environ.get('PROBE_NO_CRYPTO'):
+    # The scene's Cryptomatte outputs left out (for a scene whose categories need a category-enabled runtime, where
+    # the export is wanted for something else: a crash report's scene).
+    import moonray_modo.cryptomatte as _crypto
+    _crypto.enabled = lambda scene: False
+    _crypto.multiple = lambda scene: False
+    result['cryptomatte'] = 'left out'
 try:
     lx.eval('@{kit_MoonRayForModo:scripts/export_moonray.py} "%s" "%s" format=%s "report=%s"' % (os.environ['PROBE_SCENE'], target, kind, said))
 except Exception:
