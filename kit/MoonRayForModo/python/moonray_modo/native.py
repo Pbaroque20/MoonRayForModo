@@ -697,6 +697,11 @@ def xpu2_rhea_cache():
     return value if value in ('memory', 'disk') else 'memory'
 
 
+def xpu2_rhea_outlines():
+    """Whether Rhea draws its own outlines over its picture (Preferences: Rhea outlines; on by default)."""
+    return str(_setting('xpu2/rhea_outlines', 'true')).lower() in ('true', '1')
+
+
 def xpu2_follow_drags():
     """Whether XPU2 RT follows a drag of the viewport's camera step by step (Preferences: XPU2 RT follows drags)."""
     return str(_setting('xpu2/follow_drags', 'false')).lower() in ('true', '1')
@@ -711,6 +716,8 @@ def xpu2_environment(runtime):
             'XPU2_SESSION_CHAIN': '1' if xpu2_chain() else '0',
             # XPU2 RT's engine: Rhea's frames where the scene lets them (rhea/rhea_realtime.h), else XPU2's.
             'XPU2_SESSION_RT_ENGINE': xpu2_rt_engine(),
+            # Rhea's own outlines (Preferences: Rhea outlines): its lines over its picture, XPU2's picture fading in over both.
+            'XPU2_SESSION_RHEA_DRAFT': '1' if xpu2_rhea_outlines() else '0', 'XPU2_SESSION_RHEA_DRAFT_XPU2': '1',
             # Rhea's radiance cache (rhea/rhea_cache.h): in memory or on disk, in the Cache folder's Rhea folder.
             'XPU2_SESSION_RHEA_CACHE': xpu2_rhea_cache(),
             'XPU2_SESSION_RHEA_CACHE_FOLDER': str(__import__('moonray_modo.cache_folder', fromlist=['rhea_folder']).rhea_folder()),

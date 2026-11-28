@@ -1482,3 +1482,176 @@ ahead, and corners by object and crease off, each behind its switch. With them (
 
 Reproduce: `test-results/rhea-improve/rhea_compare.py` (drag, reference, score), `table.py`, `triptych.py`;
 `export_scenes.py` and `relink.py` for the scenes' textures; `check_exact.py` for XPU2's own frames with Rhea off.
+
+## 39. Smooth light, sharp texture: phase one's light smoothed over its surfaces (2026-11-27)
+
+The user: Rhea's radiance-cache colours should look "as close to a vector representation as possible": smooth colour
+gradients, like mesh gradients, with no blotches or grid creases. `XPU2_SESSION_RHEA_SMOOTH`.
+
+- **The light, not the texture:** the fine grid's nodes (a drag's step: the adaptive pass, one ring) each carry the
+  cells' albedo at their hit (the store's albedo sums, section 16's demodulation; the card's lookup returns it with the
+  colour: `rheastore::Look::albedo`). A node's light is its colour over that albedo (each channel, the albedo held to at
+  least 0.02) where the albedo's luminance is at least 0.02; a darker surface (black paint, glass, metal) is smoothed as
+  its colour. After smoothing the light is multiplied by the node's albedo again, so texture at the nodes stays as it was.
+- **The filter** (`rheastore::smoothNode`, `rhea_store_core.h`): an a-trous pass (Dammertz and others, 2010) over the
+  grid with the B3 spline's 5 x 5 weights at steps 1, 2, 4 (`XPU2_SESSION_RHEA_SMOOTH_PASSES`, 3), each neighbour also
+  weighed by its object (another: none), its demodulation (the same kind only), its lifted depth
+  (exp(-(dw / (`_SMOOTH_DEPTH` 0.02 x w))^2)), its normal (cosine to the power `_SMOOTH_NORMAL`, 32; facing away: none),
+  and its light (exp(-(dl / (`_SMOOTH_LIGHT` 0.25 x mean luminance))^2): a shadow's edge is a large step in light and
+  stays). Silhouette and crease pixels are traced a ray each as before and not smoothed.
+- **On the card:** launch mode 6 (`async_gpu.cu` `smoothPass`, `GpuLane::rheaSmooth`): the nodes and their light up,
+  one launch a pass (a thread a node), the light back; the CPU runs the same function on its threads where the card does
+  not take it (`XPU2_SESSION_RHEA_SMOOTH_CARD=0`: always the CPU).
+
+Measured (`test-results/rhea-improve`, the harness of section 35 with two smoothness measures on plain surfaces:
+blotch, the error's mid frequencies (a 4-pixel blur of it less a 16-pixel one, over the reference's local light
+squared: blotches and grid creases, not the reference's own noise or broad offsets); grad, the gradient energy of the
+picture blurred over 2 pixels against the reference's (below 1: smoother than XPU2's picture). The current defaults
+(store on the card, cells by object) against each switch; times medians):
+
+| | car | behind the car | dragon |
+|---|---|---|---|
+| relMSE all, default / smoothed | 0.182 / 0.181 | 2.129 / 2.101 | 0.278 / 0.283 |
+| silhouettes and creases | 0.406 / 0.414 | 3.645 / 3.612 | 0.232 / 0.266 |
+| blotch | 0.0215 / 0.0203 | 0.0828 / 0.0761 | 0.0728 / 0.0768 |
+| grad | 0.67 / 0.62 | 0.13 / 0.11 | 0.50 / 0.55 |
+| the smoothing (card) | 2.7 ms | 2.5 ms | 2.4 ms |
+| the smoothing (CPU, `_SMOOTH_CARD=0`) | 60 ms | | |
+
+**Off by default.** It does what it is for where the light is the blotch (the car's body and floor, behind the car:
+blotch 6 to 8% less, the gradients smoother), but the error hardly moves, and on the dragon (its scales a crease every
+few pixels, its glass light of all directions) the silhouettes are 15% worse and the blotch 5%. It costs 2.4 to 2.7 ms on
+the card (three passes over about 58,000 nodes, their copies each way included), over the 1 to 2 ms aimed at; on the
+CPU 60 ms. Rhea Draft (section 42) uses it, its lines the guide.
+
+## 40. XPU2's samples filtered before they are stored (2026-11-27)
+
+`XPU2_SESSION_RHEA_SAMPLE_FILTER` (Realtime::filterSamples, in learn before the store's add).
+
+- **Each pixel's noise:** from the film's odd samples' sums (`RenderResult::odd`, the adaptive sampling's own error
+  estimate): half the difference between the odd and even samples' mean luminance is about the standard deviation of
+  the pixel's mean; where the film has none, its light over the square root of its count.
+- **Merged by variance:** each learned pixel's colour becomes the inverse-variance weighted mean of the pixels within
+  `XPU2_SESSION_RHEA_FILTER_RADIUS` (2) on its surface (depth within the jump, its object where learning traced it),
+  each also by a Gaussian of distance and of their luminance difference over `_FILTER_RANGE` (2) times their joint noise:
+  a difference larger than the noise explains (a texture, a shadow's edge) is kept.
+- **Weighed by noise:** its weight in the store scaled by 1 / (1 + (noise / (`_FILTER_NOISE` 0.1 x its light))^2).
+
+Measured (as section 39):
+
+| | car | behind the car | dragon |
+|---|---|---|---|
+| relMSE all, default / filtered | 0.182 / 0.086 | 2.129 / 1.156 | 0.278 / 0.195 |
+| plain | 0.239 / 0.103 | 2.036 / 1.343 | 0.552 / 0.301 |
+| silhouettes and creases | 0.406 / 0.203 | 3.645 / 0.948 | 0.232 / 0.224 |
+| grazing | 0.039 / 0.035 | 2.381 / 0.383 | 0.302 / 0.265 |
+| blotch | 0.0215 / 0.0232 | 0.0828 / 0.0646 | 0.0728 / 0.0562 |
+| a step (median) | 37 / 39 ms | 38 / 39 ms | 48 / 44 ms |
+| filtering, a frame at rest's learning | | | 0.42 s in all (dragon) |
+| both switches | 0.084 | 1.140 | 0.195 |
+
+**On by default.** The largest gain of these rounds: the error falls by a third to a half on every case, silhouettes
+included (a lone noisy pixel at an edge no longer stands for its cell), the store's size unchanged, a drag's step as
+before (the filtering is in learning, beside XPU2's frame, not in the step). The car's blotch is 8% higher (cells
+smoother but their light a little flatter across a panel); the dragon's and behind the car's lower.
+
+Pictures of both switches: `test-results/rhea-smooth/<case>-step<10|20|30>.png`, each the current default | smoothed |
+filtered | both | XPU2's reference.
+
+## 41. XPU2's light as it comes: progressive by default (2026-11-27)
+
+The user: "Rhea takes too long to show all of its light samples, the older progressive/incremental way was better".
+`XPU2_SESSION_RHEA_PROGRESSIVE` (on; 0: the completion fade of section 29, region by region).
+
+- **Each pixel XPU2's samples so far over phase one** (`Realtime::progressive`): phase one's colour counts as m prior
+  samples, m = `_PROGRESSIVE_PRIOR` (8) x its confidence (1 - doubt, at least 0.25) x max(`_PROGRESSIVE_KEEP` 0.25,
+  exp(-(part / allowed)^2)), where part is the relative difference of the two pictures' 3 x 3 luminance and allowed
+  `_PROGRESSIVE_PART` (3) / sqrt(samples there): where they part by more than XPU2's noise explains (a highlight the
+  store holds as seen from elsewhere, a shadow moved) phase one lets go fast; elsewhere it fades as the count grows.
+- **A pixel of few samples** shows its sampled 3 x 3 neighbours' mean as much as its own (`_PROGRESSIVE_SPREAD`, 4
+  samples' worth): the first generations' noise spread, not shown as specks. A pixel XPU2 has not reached shows phase
+  one's colour. No region waits for its seed.
+- **The frame ends on XPU2's own picture**, bit for bit (the last picture, and the one kept, is the film itself).
+- The session says "XPU2's light on X% of the view" (the share where XPU2's samples outweigh phase one).
+
+Measured (`test-results/rhea-improve/progressive_compare.py`: a drag of 30 steps, the mouse's release, every picture of
+XPU2's frame after it kept; relMSE against XPU2's 64-sample reference of the last step; two runs each, means):
+
+| | car, progressive | car, regions | dragon, progressive | dragon, regions |
+|---|---|---|---|---|
+| error 1 s after the release | 0.31 | 0.40 | 0.24 | 0.32 |
+| 2 s | 0.16 | 0.38 | 0.15 | 0.27 |
+| 5 s | 0.12 | 0.37 | 0.016 | 0.18 |
+| 10 s | 0.037 | 0.37 | 0.0035 | 0.030 |
+| XPU2's light on 50% / 90% of the view | 10.1 / 18.1 s | 12.2 / 26.2 s | | 6.6 / 9.1 s |
+| flicker (mean change between pictures, first 2 s) | 0.029 | 0.014 | 0.37 | 0.004 |
+| the frame's last picture | XPU2's own, identical across runs and modes | | | |
+
+Pictures: `test-results/rhea-progressive/car-strip.png`, `dragon-strip.png`.
+
+**On by default.** The error 2 to 10 s after a release falls by half to ten times; on the car the regions' fade had
+barely begun at 10 s.
+
+**Open: the dragon's release flickers** (0.37 against 0.004). Its release makes the scene again (geometry tessellated
+for the camera), which drops the warp; the picture on screen is then taken as the warp (`screenWarp`). The last drag
+steps whose XPU2 frame stopped before its film had a picture left the kept screen at an older camera, so the release
+showed XPU2's first pictures raw. The session now keeps the published picture for those steps (and for a step held then
+stopped), so the kept screen is the release's camera; not yet measured (the user, 2026-11-27: flicker skipped for now).
+
+## 42. Rhea's outlines (2026-11-27 to 28)
+
+The user: "draft mode gives the edge work, and the interpolated shading would give it its colors"; "rhea's draft could be
+black lines". First built as the kit's Draft turned into Rhea's under XPU2 RT; the user, 2026-11-28: "Draft is supposed to
+be the same as before unconnected to Rhea ... Rhea is supposed to have its own outlines". So Draft is MoonLightIPR's as it
+was, and the outlines are Rhea's own: **Preferences > MoonRay > XPU2 > Rhea outlines**, on by default (the kit passes
+`XPU2_SESSION_RHEA_DRAFT=1` and `XPU2_SESSION_RHEA_DRAFT_XPU2=1`).
+
+- **The lines** (`rheastore::draftEdge`, `ObjectWarp::findLines`; on the card, launch mode 7): rays a little apart meet
+  nothing and something, two objects, a crease (normals' cosine under `lineCrease`, 0.82), or a surface and another part in
+  front of it. A pixel's coverage from 2 x 2 fixed places (`XPU2_SESSION_RHEA_DRAFT_SAMPLES`), the rays one pixel apart at
+  1100 wide (`_DRAFT_WIDTH`; MoonLightIPR's two were too thick for the user), the ink black (`_DRAFT_LINE`).
+- **The colours**: the smoothing of section 39 always on under the outlines, stopped at the lines (a node on a line keeps
+  its light: its mark was cleared by the demodulation's flag until 2026-11-28, so light was smoothed across lines).
+- **What the store does not know**: a flat fill, its albedo under a soft light times its object's light (the mean of that
+  object's known nodes' light over albedo; the view's median where the object is unknown yet), eased from view to view;
+  a pixel's own ray filled the same way (`fillLight`). Lit by one, a bright room's unknown wall was near black; lit by the
+  view's mean, a white sofa lit a dark wooden floor white.
+- **XPU2 over it**: the lines are on Rhea's picture only, so they fade out as XPU2's picture comes in (section 41, 44).
+
+Measured before the fills' fix (`test-results/rhea-improve/draft_compare.py`; lines' share of the picture, and the share
+of one step's line pixels with a line within 2 pixels at the next): car 8.4%, 97.6%; dragon 5.0%, 98.0%; interior 11.8%,
+84% (its slatted wall a line every few pixels). Pictures `test-results/rhea-draft/<case>-step<10|20|30>.png`.
+
+## 43. The sparse radiance cache (2026-11-28)
+
+The user (2026-11-27): smooth the cache's colours "as close to a vector representation" as can be, sparse where the light is
+smooth. `XPU2_SESSION_RHEA_SPARSE`, **on by default** since the user found it worked and Rhea faster (2026-11-28; 0: the
+dense store of section 37).
+
+- **Slopes (Hermite records, first order).** Beside each cell (`rheastore::Grad`, 18 floats) the weighted sums of its
+  pixels' places in it (d, cell units from its middle), d d' and d times their colour. A lookup reads each of the eight
+  cells about a point as its mean plus its least-squares slope times the way from its pixels' centroid
+  (`rheastore::cellColour`: the 3 x 3 spread regularised by 0.01, a surface's pixels having none across it; the change held
+  to the mean either way), then trilinear as before: a few cells give a gradient, not steps.
+- **Density where the light changes.** A pixel is added from the coarsest of the four sizes down; a finer cell is made
+  only where the coarser one, of `_SPARSE_MIN` (2) weight at least, does not foresee its colour within `_SPARSE_TOLERANCE`
+  (8%, relative to the brighter of the two; three times that for a pixel of few samples). Cells already made keep learning.
+  Lookups climbed to coarser sizes where the finer had none already (section 37), so nothing else changed for them.
+- **Both devices.** `cellColour` is one function in `rhea_store_core.h`; the slopes go to the card with the cells
+  (`rheaStoreSync`, the pages written since the last sending) and its lookups (launch mode 5) use them.
+- **The disk cache** (file form 3) keeps each table's records beside its cells: the slopes, and the view-dependent light
+  that form 2 had left out (a store read back had no specular parts). Form 2 is still read.
+  `rhea/tools/store_cache_test.cc` writes a sparse store and reads it back cell by cell.
+
+Not measured against the dense store by the harness: the user tested it in Modo (2026-11-28, "the sparse points works and
+rhea is faster").
+
+## 44. XPU2's cells fade in by coverage (2026-11-28)
+
+The user: "the GPU grid doesn't seem to fade in like before". Section 41's blend is each pixel's own: a pixel XPU2 has
+sampled went over to XPU2's colour while its neighbours were still phase one's, and phase one's prior could be as little as
+half a sample (8 x a quarter confidence x a quarter kept), so XPU2's cells showed as a grid. Now phase one's prior is held
+up to 1 + `progressiveCoverHold` (8) times where XPU2 has sampled little of the pixel's neighbourhood (a square
+`progressiveCover` (8) pixels from it each way at 1280 wide, scaled with the picture; a summed-area table), as
+(1 - its share)^2: XPU2 fades in across an area, and once the area is covered the blend is section 41's.
+`XPU2_SESSION_RHEA_PROGRESSIVE_COVER` (0: off) and `_COVER_HOLD`. Not measured by the harness (the user tested it).

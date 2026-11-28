@@ -73,6 +73,8 @@ Work on the next version goes on in the [MoonLightIPR branch](https://github.com
 - MoonLightIPR follows **Metallic Color** maps.
 - A **UDIM set** shows as a set in the graph editor and the material form, its first tile on the node.
 - The graph editor says why when it cannot open, and closes when its material is deleted (Modo crashed).
+- **XPU2 Rhea** is faster and smoother: it keeps its light sparsely, finely only where the light changes, as smooth gradients in between, also in its cache on disk. XPU2's light shows as it comes, fading in over Rhea's picture area by area.
+- **Rhea outlines** (Preferences > MoonRay > XPU2, on by default): Rhea draws black outlines over its smooth colours, fading out as XPU2's picture comes in. Draft is unchanged.
 
 ## New in 0.5.6.3
 

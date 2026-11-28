@@ -2918,10 +2918,44 @@ int session(const Args& args, const fs::path& directory) {
     std::vector<std::pair<size_t, size_t>> rheaCardPages;
     size_t rheaCardSent = 0;          // the bytes of the store last sent to the card
     double rheaCardSyncSeconds = 0;   // and the time that took, with the view's settings
+    // Rhea Draft (rhea/DESIGN.md 42): on by the environment or by the kit's Draft (draft.txt in the session's folder: "on",
+    // and a region's left, top, right and bottom as fractions where one is drawn, or "off"); its line colour, samples a
+    // pixel, crease; whether XPU2's picture fades in.
+    bool rheaDraftEnv = false, rheaDraftXpu2 = false, rheaDraftOn = false;
+    float rheaDraftLine[3] = {0, 0, 0};
+    int rheaDraftSamples = 2;  // 2 x 2: thin lines (one pixel) drawn smooth, not stepped
+    double rheaDraftCrease = 0.82;
+    double rheaDraftRegion[4] = {0, 0, 1, 1};
+    bool rheaDraftRegionOn = false;
+    std::string rheaDraftText;
+    // draft.txt read again; true where it changed.
+    auto rheaReadDraft = [&]() -> bool {
+        std::string text;
+        {
+            std::ifstream f(directory / "draft.txt");
+            std::getline(f, text);
+        }
+        const bool changed = text != rheaDraftText;
+        rheaDraftText = text;
+        std::istringstream in(text);
+        std::string word;
+        in >> word;
+        rheaDraftOn = rheaDraftEnv || word == "on";
+        double r[4];
+        rheaDraftRegionOn = rheaDraftOn && word == "on" && (in >> r[0] >> r[1] >> r[2] >> r[3]) && r[2] > r[0] && r[3] > r[1] &&
+                            !(r[0] <= 0 && r[1] <= 0 && r[2] >= 1 && r[3] >= 1);
+        if (rheaDraftRegionOn)
+            for (int k = 0; k < 4; ++k) rheaDraftRegion[k] = std::clamp(r[k], 0.0, 1.0);
+        rhea::ObjectWarp::Options& wo = rheaView.objectWarp.op;
+        wo.draft = rheaDraftOn, wo.lineSamples = rheaDraftSamples, wo.lineCrease = rheaDraftCrease;
+        for (int k = 0; k < 3; ++k) wo.lineColour[k] = rheaDraftLine[k];
+        rheaView.op.draft = rheaDraftOn;
+        return changed;
+    };
     // Phase one given the card (on, where it may), or not (its view done): its three ways in (rhea::ObjectWarp).
     auto rheaUseCard = [&](bool on) {
         rhea::ObjectWarp& ow = rheaView.objectWarp;
-        ow.cardTrace = nullptr, ow.cardBegin = nullptr, ow.cardEnd = nullptr, ow.cardStore = nullptr;
+        ow.cardTrace = nullptr, ow.cardBegin = nullptr, ow.cardEnd = nullptr, ow.cardStore = nullptr, ow.cardSmooth = nullptr, ow.cardLines = nullptr;
         if (!on || !rheaCardHits || !gpu || !gpuUsable || !gpuPlan || !scene.plan || !scene.cpuScene || scene.plan->cpuOnlyMeshes != 0 ||
             sceneHasCpuAloneObjects || !async::CpuScene::sameGeometry(*gpuPlan, *scene.plan))
             return;
@@ -2936,14 +2970,27 @@ int session(const Args& args, const fs::path& directory) {
         ow.cardEnd = [&](resume::Hit* hits, rheastore::Look* looks) { return gpu->firstHitsEnd(hits, looks); };
         // The store's lookups on the card beside its first hits (rhea/DESIGN.md 37): its copy brought up to date (the
         // pages of cells written since the last sending, or the whole after it grew), then this view's settings.
+        // Rhea Draft's lines on the card (launch mode 7), where it takes them.
+        ow.cardLines = [&](const surface::Camera& camera, const rheastore::LineSettings& ls, float* out) {
+            gpu->use();
+            return gpu->rheaLines(camera, ls, out);
+        };
+        // The smoothing on the card too (launch mode 6), where it takes it. XPU2_SESSION_RHEA_SMOOTH_CARD=0: the CPU's.
+        if (envOn("XPU2_SESSION_RHEA_SMOOTH_CARD", true))
+            ow.cardSmooth = [&](const rheastore::SmoothNode* nodes, float* light, const rheastore::SmoothParams& sp, int passes) {
+                gpu->use();
+                return gpu->rheaSmooth(nodes, light, sp, passes);
+            };
         if (rheaCardStore)
             ow.cardStore = [&](const rheastore::View& v) {
                 const auto began = Clock::now();
                 gpu->use();
                 const auto& slots = rheaView.store.cardSlots();
                 const auto& extras = rheaView.store.cardExtras();
+                const auto& grads = rheaView.store.cardGrads();
                 const bool whole = rheaView.store.cardChanges(rheaCardPages);
-                rheaCardSent = gpu->rheaStoreSync(slots.data(), extras.size() == slots.size() ? extras.data() : nullptr, slots.size(), whole, rheaCardPages);
+                rheaCardSent = gpu->rheaStoreSync(slots.data(), extras.size() == slots.size() ? extras.data() : nullptr, slots.size(), whole, rheaCardPages,
+                                                  rheaView.store.op.sparse && grads.size() == slots.size() ? grads.data() : nullptr);
                 const bool ok = gpu->rheaStoreView(v);
                 rheaCardSyncSeconds = std::chrono::duration<double>(Clock::now() - began).count();
                 return ok;
@@ -3174,6 +3221,7 @@ int session(const Args& args, const fs::path& directory) {
     // the denoiser is the GPU's), and in the denoised view the picture later fades start from. False: not shown here.
     auto rheaEarlyPhaseOne = [&]() -> bool {
         if (!useShared || !scene.plan || !scene.cpuScene) return false;
+        rheaReadDraft();
         std::string key = "beauty", selected;
         {
             std::ifstream view(directory / "view.txt");
@@ -3265,6 +3313,9 @@ int session(const Args& args, const fs::path& directory) {
         if (rheaCardStore)
             std::printf("MoonRay XPU2: Rhea: phase one's lookups on the card: %zu of %zu rays (store sent %.2f MB, %.1f ms with the view)\n",
                         ow.cardLooked, ow.rays, rheaCardSent / 1048576.0, rheaCardSyncSeconds * 1e3);
+        if (ow.op.smooth)
+            std::printf("MoonRay XPU2: Rhea: phase one's light smoothed in %.2f ms (%s); samples filtered in %.1f ms since the session began\n",
+                        ow.smoothSeconds * 1e3, ow.smoothedOnCard ? "on the graphics card" : "on the CPU", rheaView.filterSeconds * 1e3);
         std::fflush(stdout);
         return true;
     };
@@ -3645,6 +3696,10 @@ int session(const Args& args, const fs::path& directory) {
                         while (!waiting() && std::chrono::duration<double>(Clock::now() - held).count() < rheaDragWait)
                             std::this_thread::sleep_for(std::chrono::milliseconds(2));
                         if (waiting()) {
+                            // What is on screen kept too (before keepLast takes its vectors): a release whose scene is made
+                            // again (the dragon's sea, tessellated for the camera) fades in over it, not over the picture at
+                            // rest before the drag (another camera: no warp, XPU2's first pictures raw).
+                            rheaView.keepScreenPublished(*scene.plan);
                             rheaView.keepLast(*scene.plan);
                             rheaUnfinished = true;  // the drag's picture on screen: the release fades XPU2's frame in over it
                             goto frameEnd;
@@ -4265,6 +4320,34 @@ int session(const Args& args, const fs::path& directory) {
                     // Edges by object and crease (rhea/DESIGN.md 38), and cells of one object each.
                     rheaView.op.objectEdges = envOn("XPU2_SESSION_RHEA_OBJECT_EDGES", false);
                     rheaView.op.storeObjects = envOn("XPU2_SESSION_RHEA_STORE_OBJECTS", true);
+                    rheaView.op.storeSparse = envOn("XPU2_SESSION_RHEA_SPARSE", true);  // on by default (the user, 2026-11-28: it works, Rhea faster)
+                    if (const char* v = std::getenv("XPU2_SESSION_RHEA_SPARSE_TOLERANCE")) rheaView.op.storeSparseTolerance = std::clamp(std::atof(v), 0.0, 10.0);
+                    if (const char* v = std::getenv("XPU2_SESSION_RHEA_SPARSE_MIN")) rheaView.op.storeSparseMinWeight = std::clamp(std::atof(v), 0.0, 1000.0);
+                    // Phase one's light smoothed over its surfaces (rhea/DESIGN.md 39), and its settings.
+                    rheaView.op.smooth = envOn("XPU2_SESSION_RHEA_SMOOTH", false);
+                    // Rhea Draft (rhea/DESIGN.md 42): black lines over smooth light; on by the kit's Draft (draft.txt) or here.
+                    rheaDraftEnv = envOn("XPU2_SESSION_RHEA_DRAFT", false);
+                    if (const char* v = std::getenv("XPU2_SESSION_RHEA_DRAFT_LINE")) {
+                        float c[3] = {0, 0, 0};
+                        if (std::sscanf(v, "%f,%f,%f", &c[0], &c[1], &c[2]) == 3)
+                            for (int k = 0; k < 3; ++k) rheaView.objectWarp.op.lineColour[k] = rheaDraftLine[k] = c[k];
+                    }
+                    if (const char* v = std::getenv("XPU2_SESSION_RHEA_DRAFT_SAMPLES")) rheaDraftSamples = std::clamp(std::atoi(v), 1, 4);
+                    if (const char* v = std::getenv("XPU2_SESSION_RHEA_DRAFT_CREASE")) rheaDraftCrease = std::clamp(std::atof(v), 0.0, 1.0);
+                    // The lines' width in pixels (0: one a 1100 pixels of the view's width).
+                    if (const char* v = std::getenv("XPU2_SESSION_RHEA_DRAFT_WIDTH")) rheaView.objectWarp.op.lineApart = std::clamp(std::atof(v), 0.0, 8.0);
+                    // XPU2's samples in Rhea Draft: 0 the picture stays drawn (they teach the store, its colours redrawn),
+                    // 1 XPU2's picture fades in as it converges (progressive).
+                    rheaDraftXpu2 = envOn("XPU2_SESSION_RHEA_DRAFT_XPU2", false);
+                    if (const char* v = std::getenv("XPU2_SESSION_RHEA_SMOOTH_PASSES")) rheaView.op.smoothPasses = std::clamp(std::atoi(v), 0, 6);
+                    if (const char* v = std::getenv("XPU2_SESSION_RHEA_SMOOTH_DEPTH")) rheaView.op.smoothDepth = std::max(1e-4, std::atof(v));
+                    if (const char* v = std::getenv("XPU2_SESSION_RHEA_SMOOTH_NORMAL")) rheaView.op.smoothNormal = std::max(0.0, std::atof(v));
+                    if (const char* v = std::getenv("XPU2_SESSION_RHEA_SMOOTH_LIGHT")) rheaView.op.smoothLight = std::max(1e-3, std::atof(v));
+                    // XPU2's samples filtered before they are stored (rhea/DESIGN.md 40), and its settings.
+                    rheaView.op.sampleFilter = envOn("XPU2_SESSION_RHEA_SAMPLE_FILTER", true);
+                    if (const char* v = std::getenv("XPU2_SESSION_RHEA_FILTER_RADIUS")) rheaView.op.filterRadius = std::clamp(std::atoi(v), 0, 4);
+                    if (const char* v = std::getenv("XPU2_SESSION_RHEA_FILTER_RANGE")) rheaView.op.filterRange = std::max(0.1, std::atof(v));
+                    if (const char* v = std::getenv("XPU2_SESSION_RHEA_FILTER_NOISE")) rheaView.op.filterNoise = std::max(1e-3, std::atof(v));
                     if (const char* v = std::getenv("XPU2_SESSION_RHEA_CREASE_COS")) rheaView.op.creaseCos = std::clamp(std::atof(v), -1.0, 1.0);
                     // Phase one's finished picture through screen-space anti-aliasing (FXAA; the user, 2026-11-22).
                     rheaView.op.objectAntialias = envOn("XPU2_SESSION_RHEA_AA", true);
@@ -4419,6 +4502,7 @@ int session(const Args& args, const fs::path& directory) {
                             const auto held = Clock::now();
                             while (std::chrono::duration<double>(Clock::now() - held).count() < holdFor) {
                                 if (watch.stop && watch.stop()) {
+                                    rheaView.keepScreenPublished(*scene.plan);
                                     rheaView.keepLast(*scene.plan);
                                     rheaUnfinished = true;  // the warp on screen
                                     shown.cancelled = true;
@@ -4506,7 +4590,48 @@ int session(const Args& args, const fs::path& directory) {
                     // its seed in), fading in over fadeSeconds, feathered inward from its edges; XPU2's samples short of
                     // that never show (no squares of the devices' progress). The frame ends as XPU2's own picture.
                     // XPU2_SESSION_RHEA_COMPLETION=0: XPU2's samples blended into the warp as they come (mergeWarp).
-                    const bool completion = warpOnly && envOn("XPU2_SESSION_RHEA_COMPLETION", true);
+                    // XPU2's light as it comes (rhea/DESIGN.md 41; the user, 2026-11-27: "Rhea takes too long to show all of
+                    // its light samples, the older progressive/incremental way was better"): every picture each pixel's
+                    // samples so far over phase one counted as prior samples (Realtime::progressive), no region waiting for
+                    // its seed; the frame ends on XPU2's own picture. XPU2_SESSION_RHEA_PROGRESSIVE=0: the regions' fade
+                    // below. XPU2_SESSION_RHEA_PROGRESSIVE_PRIOR: phase one's samples (8).
+                    rheaReadDraft();
+                    // Rhea Draft with no region, XPU2's picture not wanted: the drawing stays, redrawn from the store as XPU2
+                    // teaches it (twice a second, and at the frame's end); with a region, XPU2 renders inside it alone
+                    // (RenderOptions::share), the drawing outside (Realtime::progressive shows phase one where XPU2 has no
+                    // samples).
+                    const bool draftDrawn = rheaDraftOn && warpOnly && !rheaDraftRegionOn && !rheaDraftXpu2;
+                    const bool draftRegion = rheaDraftOn && warpOnly && rheaDraftRegionOn;
+                    auto lastDraftDrawn = Clock::now();
+                    std::function<void(async::RenderResult&, double)> showDraft;  // showPicture, once it is made
+                    auto redrawDraft = [&](double fraction) {
+                        async::RenderResult d;
+                        rheaView.traceScene = scene.cpuScene.get();
+                        const bool made = rheaView.warpInto(*scene.plan, d);
+                        rheaView.traceScene = nullptr;
+                        if (made && showDraft) showDraft(d, fraction);
+                        lastDraftDrawn = Clock::now();
+                    };
+                    const bool progressive = warpOnly && envOn("XPU2_SESSION_RHEA_PROGRESSIVE", true);
+                    double progressivePrior = 8.0;
+                    if (const char* v = std::getenv("XPU2_SESSION_RHEA_PROGRESSIVE_PRIOR")) progressivePrior = std::max(0.0, std::atof(v));
+                    if (const char* v = std::getenv("XPU2_SESSION_RHEA_PROGRESSIVE_PART")) rheaView.op.progressivePart = std::max(0.1, std::atof(v));
+                    if (const char* v = std::getenv("XPU2_SESSION_RHEA_PROGRESSIVE_KEEP")) rheaView.op.progressiveKeep = std::clamp(std::atof(v), 0.0, 1.0);
+                    if (const char* v = std::getenv("XPU2_SESSION_RHEA_PROGRESSIVE_SPREAD")) rheaView.op.progressiveSpread = std::max(0.0, std::atof(v));
+                    // The fade by coverage (rhea_realtime.h progressiveCover): its reach in pixels at 1280 wide (0: off) and hold.
+                    if (const char* v = std::getenv("XPU2_SESSION_RHEA_PROGRESSIVE_COVER")) rheaView.op.progressiveCover = std::clamp(std::atof(v), 0.0, 128.0);
+                    if (const char* v = std::getenv("XPU2_SESSION_RHEA_PROGRESSIVE_COVER_HOLD")) rheaView.op.progressiveCoverHold = std::clamp(std::atof(v), 0.0, 1000.0);
+                    const bool completion = warpOnly && !progressive && envOn("XPU2_SESSION_RHEA_COMPLETION", true);
+                    const auto lightBegan = Clock::now();
+                    double lastLightSaid = -1;
+                    // How much of the view shows XPU2's light (a line every 0.25 s; measured, rhea/DESIGN.md 41).
+                    auto sayLight = [&](double share) {
+                        const double t = std::chrono::duration<double>(Clock::now() - lightBegan).count();
+                        if (lastLightSaid >= 0 && t - lastLightSaid < 0.25 && share < 1.0) return;
+                        lastLightSaid = t;
+                        std::printf("MoonRay XPU2: Rhea: XPU2's light on %.1f%% of the view at %.2f s\n", share * 100.0, t);
+                        std::fflush(stdout);
+                    };
                     double fadeSeconds = 0.2;
                     if (const char* v = std::getenv("XPU2_SESSION_RHEA_FADE_SECONDS")) fadeSeconds = std::max(0.0, std::atof(v));
                     // Each region as it finishes, feathered, blended with phase one by the head start (Realtime::headStart):
@@ -4638,6 +4763,7 @@ int session(const Args& args, const fs::path& directory) {
                             watch.preview(rgb, width, height, fraction);
                         }
                     };
+                    showDraft = showPicture;
                     // Pictures of whole passes alone (async::RenderOptions::passPictures; the user, 2026-11-22: "there
                     // shouldn't be black grid XPU2 iterations, that should be hidden until they're done and there's another
                     // fade"): XPU2 hands over a picture only once every pass sent out has completed (the seed's regions, then
@@ -4832,6 +4958,10 @@ int session(const Args& args, const fs::path& directory) {
                             handToFades(withHeadStart(sofar, false));
                             return;
                         }
+                        if (draftDrawn) {
+                            if (fraction >= 1.0 || std::chrono::duration<double>(Clock::now() - lastDraftDrawn).count() > 0.5) redrawDraft(fraction);
+                            return;
+                        }
                         async::RenderResult merged, source;
                         bool started = false;   // merged has the head start; source is the same picture without it
                         double coverage = 1.0;  // the share of pixels XPU2's samples reached (a picture mostly a warp is no source)
@@ -4846,6 +4976,16 @@ int session(const Args& args, const fs::path& directory) {
                                 coverage = rheaView.completeWarp(sofar, fade.alpha, source);
                             } else
                                 coverage = rheaView.completeWarp(sofar, fade.alpha, merged);  // the share wholly XPU2's
+                            size_t lit = 0;
+                            for (float a : fade.alpha) lit += a >= 0.5f;
+                            sayLight(fade.alpha.empty() ? 0.0 : double(lit) / double(fade.alpha.size()));
+                        } else if (progressive && fraction >= 1.0) {
+                            merged = sofar;  // the frame's last picture: XPU2's own, bit for bit
+                            sayLight(1.0);
+                        } else if (progressive && rheaView.progressive(sofar, merged, progressivePrior)) {
+                            // The next move's warp source only once XPU2's samples outweigh phase one almost everywhere.
+                            coverage = rheaView.lastShown;
+                            sayLight(rheaView.lastShown);
                         } else if (warpOnly) coverage = rheaView.mergeWarp(sofar, fraction, merged);
                         else rheaView.merge(sofar, fraction, merged);
                         struct Kept {
@@ -4867,6 +5007,11 @@ int session(const Args& args, const fs::path& directory) {
                     if (gpuDrag) o.mode = 1;
                     if (completion && fade.regions) o.regionalBatch = fade.tileBatch, o.regionalCount = fade.regions;
                     o.passPictures = passMode;
+                    if (draftRegion) {
+                        o.share = true;
+                        o.region[0] = int(std::floor(rheaDraftRegion[0] * width)), o.region[1] = int(std::floor(rheaDraftRegion[1] * height));
+                        o.region[2] = int(std::ceil(rheaDraftRegion[2] * width)), o.region[3] = int(std::ceil(rheaDraftRegion[3] * height));
+                    }
                     // A stop leaves the GPU's launches out behind it: the next move's phase one comes first (drainGpu after).
                     o.abandonOnCancel = envOn("XPU2_SESSION_RHEA_EARLY", true);
                     const auto restBegan = Clock::now();
@@ -4969,6 +5114,14 @@ int session(const Args& args, const fs::path& directory) {
                                     fade.regions, when.c_str(), headStarted);
                         std::fflush(stdout);
                     } else if (completion && fade.regions) coverage = rheaView.completeWarp(x, fade.alpha, shown);
+                    else if (draftDrawn && !x.cancelled && !x.drained) {
+                        redrawDraft(1.0);
+                        shown = x, coverage = 0.0;
+                    } else if (draftRegion && rheaView.progressive(x, shown, 0.0)) coverage = 0.0;  // XPU2's own inside, the drawing outside
+                    else if (progressive && !x.cancelled && !x.drained) {
+                        shown = x, coverage = 1.0;  // the frame's end: XPU2's own picture
+                        sayLight(1.0);
+                    } else if (progressive && rheaView.progressive(x, shown, progressivePrior)) coverage = rheaView.lastShown;
                     else if (warpOnly) coverage = rheaView.mergeWarp(x, x.cancelled || x.drained ? lastFraction : 1.0, shown);
                     else rheaView.merge(x, x.cancelled || x.drained ? lastFraction : 1.0, shown);
                     shown.cancelled = x.cancelled, shown.drained = x.drained;
@@ -4977,6 +5130,8 @@ int session(const Args& args, const fs::path& directory) {
                     // What is on screen, kept through an edit's reset (Realtime::screenWarp).
                     if (cut) rheaView.keepScreenPublished(*scene.plan);
                     else if (shown.rgba.size() == size_t(width) * height * 4) rheaView.keepScreen(*scene.plan, shown);
+                    // A frame stopped before its film had a picture (a drag's step: phase one on screen): what was published.
+                    else rheaView.keepScreenPublished(*scene.plan);
                     if (passMode && cut) rheaView.keepLast(*scene.plan);
                     else if (shown.rgba.size() == size_t(width) * height * 4) rheaView.keepShown(*scene.plan, shown, coverage);
                     else rheaView.keepLast(*scene.plan);
@@ -5239,7 +5394,15 @@ int session(const Args& args, const fs::path& directory) {
         if (complete && rheaWanted && !standalone().on) rheaLearnAhead();
         // A render on its own ends with its frame.
         if (standalone().on) return complete ? 0 : 1;
-        while (!waiting()) std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        for (int tick = 0; !waiting(); ++tick) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            // The kit's Draft switched (draft.txt) with nothing else changed: phase one drawn again, with or without its
+            // lines (XPU2's picture comes again with the next command).
+            if (rheaWanted && tick % 5 == 0 && scene.plan && scene.plan->realtime && rheaReadDraft()) {
+                rheaFadeIn = false;
+                rheaEarlyPhaseOne();
+            }
+        }
         std::string mode_, delta, full;
         {
             std::ifstream file;
