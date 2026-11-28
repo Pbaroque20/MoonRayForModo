@@ -471,6 +471,28 @@ def collect(scene, materials, warnings, baked_effects=(), layer_filter=None, mat
             warnings.append('Layer %s: %s.' % (layer.name,exc))
 
 
+def whole_stacks(candidates, held=None):
+    """{material id: False for a material whose graph holds its whole stack, True for each material such a graph covers}.
+    held, a dict: filled with {such a material's id: the identities of the layers its graph's nodes stand for}."""
+    from . import properties, material_override
+    found = {}
+    for item in candidates:
+        try:
+            settings = properties.peek(item)
+        except Exception:
+            continue
+        graph = settings.get('node_graph') if material_override.enabled(settings) else None
+        meta = (graph or {}).get('shader_tree_transfer') or {}
+        if meta.get('whole'):
+            found[item.id] = False
+            if held is not None:
+                held[item.id] = {str((node.get('shader_tree') or {}).get('layer')) for node in (graph.get('nodes') or {}).values()
+                                 if isinstance(node, dict) and node.get('shader_tree')}
+            for identity in meta.get('covers') or ():
+                found.setdefault(identity, True)
+    return found
+
+
 def material_stack(scene, candidates, warnings, tag, membership=None, baked_effects=()):
     """Partition channel layers at material boundaries, then emit bottom to top. baked_effects: layers whose effect is
     already in the geometry (Modo's displacement, in meshes Modo displaced), left out as collect leaves them."""
@@ -480,10 +502,20 @@ def material_stack(scene, candidates, warnings, tag, membership=None, baked_effe
     candidates = sorted(candidates, key=lambda item:positions[item.id])
     result = []
     captured_group_masks=set()
+    # A MoonShine graph Move Shader Tree Textures made of a material's whole stack on its surfaces (its own row, the
+    # materials beneath and over it, their layers, its masks: shader_tree_scene): it stands for those rows, whole.
+    in_graphs={}
+    covered=whole_stacks(candidates, in_graphs)
     for index, base in reversed(list(enumerate(candidates))):
+        if covered.get(base.id):
+            continue
         value = material_values(base, warnings)
         value['shader'] = 'DwaBaseMaterial'
         value['material_groups'] = texture_groups(base, channel) or []
+        if covered.get(base.id) is False:
+            # The stack is in its graph: what is beneath it is covered, its own opacity and groups are in the graph.
+            result = []
+            value.update(material_groups=[], layer_opacity=1.0, layer_blend='normal', layer_invert=False)
         allowed = set()
         upper = positions[candidates[index-1].id] if index else -1
         for layer in tree[upper+1:positions[base.id]]:
@@ -502,6 +534,8 @@ def material_stack(scene, candidates, warnings, tag, membership=None, baked_effe
             elif target in scope_ids and layer.id not in captured_group_masks:
                 allowed.add(layer.id);captured_group_masks.add(layer.id)
             elif layer.id in captured_group_masks:allowed.discard(layer.id)
+        # Layers its whole-stack graph draws (a layer above its groups left on for other materials, say) are not laid on again.
+        allowed-=in_graphs.get(base.id,set())
         collect(scene, {tag:value}, warnings, baked_effects=baked_effects, layer_filter=allowed, material_key=tag)
         graph_material=value.get("node_override") and (value.get("node_graph") or value.get("native_shader"))
         if not graph_material and result and value.get('layer_opacity',1)==1 and value.get('layer_blend','normal')=='normal' \

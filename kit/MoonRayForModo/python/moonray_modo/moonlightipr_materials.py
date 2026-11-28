@@ -830,6 +830,32 @@ def graph_expression(graph, identity, effect):
             # An RGB vertex map: each of its channels a row, added.
             rows = [placed((row, 1.0, 0.0), blend) for row, blend in rows]
             return None if any(row is None for row in rows) else rows
+        if kind == 'modo_texture':
+            # A Modo Texture: the Shader Tree layer it is, over the layers beneath it (its Background), its Mask a
+            # Layer Mask on it: as the Shader Tree's stack, which the compiler draws.
+            from .modo_texture import as_layer
+            layer = as_layer(node)
+            if layer is None:
+                return None
+            below = chain(inputs['bg'], depth + 1) if 'bg' in inputs else [placed((None, constant(node, 'bg', 0.0) or [0.0] * 3))]
+            if below is None or None in below:
+                return None
+            top = dict(layer, identity=fresh())
+            if top.get('effect') not in ('normal', 'normalCoat', 'bump', 'coatBump', 'layerMask', 'groupMask'):
+                top['effect'] = effect
+            rows = below + [top]
+            wired = inputs.get('mask')
+            if wired is not None:
+                held = members.get(wired) or {}
+                fixed = number(wired)
+                if fixed is not None:
+                    top['opacity'] = float(top.get('opacity', 1)) * min(1.0, max(0.0, fixed[0]))
+                elif held.get('type') == 'modo_texture' and as_layer(held) is not None and 'bg' not in (held.get('inputs') or {}):
+                    cover = dict(as_layer(held), effect='layerMask', mask_target=top['identity'], identity=fresh())
+                    rows = below + [cover, top]
+                else:
+                    return None
+            return rows
         if kind == 'modo_blend':
             # A Modo Blend: the layer over what is beneath it by its blend mode, at its opacity, its mask a Layer Mask.
             from .layers import BLENDS
@@ -975,6 +1001,15 @@ def graph_layers(source, note, runtime=None, displacement=None, wanted='height',
             out = []
             tints.append((out, metal))
         amplitude = None
+        if effect == 'normal' and node['type'] == 'bump' and 'normal' in node.get('inputs', {}):
+            # A normal map beneath the bump (Modo Texture Normal layers, shader_tree_transfer): its layers too.
+            beneath = graph_expression(graph, node['inputs']['normal'], 'normal')
+            if beneath:
+                layers += beneath
+            else:
+                note('a normal map beneath a Bump node that is not Shader Tree layers')
+            if 'height' not in node.get('inputs', {}):
+                continue
         if effect == 'normal' and node['type'] == 'bump':
             # A bump node: its height is a Shader Tree Bump layer, at the node's amplitude (the material's
             # bump_strength, which Compiler takes from the layer). Flat with its MoonRay Source Override off.

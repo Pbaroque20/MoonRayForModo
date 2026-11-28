@@ -65,6 +65,15 @@ Work on the next version goes on in the [MoonLightIPR branch](https://github.com
 | ![The compositor](docs/images/compositor-editor.png) | ![Modern Hall, imported from MoonRay's scene files](docs/images/rdl-modern_hall.jpg) |
 | **The compositor**: the beauty graded, vignetted and sharpened | **An imported MoonRay scene**: its own render (left), after the trip through Modo (right). Modern Hall by NewSee2l035, CC BY |
 
+## Coming in 0.5.7
+
+- **Shader Tree to MoonShine** moves every texture layer into the graph, each as a **Modo Texture** node with the layer's own settings (blend modes, adjustments, Texture Locator), and makes plain Modo materials MoonShine materials too, so the graph editor opens on all of them.
+- **MoonShine to Shader Tree** (MoonRay menu) puts it all back as Modo materials and texture layers, with their images; changes made to those texture nodes in the graph go back onto their layers.
+- **Photometric (IES) lights** shine with their profiles, and a light's own Shader Tree image colours its light, in every engine.
+- MoonLightIPR follows **Metallic Color** maps.
+- A **UDIM set** shows as a set in the graph editor and the material form, its first tile on the node.
+- The graph editor says why when it cannot open, and closes when its material is deleted (Modo crashed).
+
 ## New in 0.5.6.3
 
 **Shader Tree to MoonShine** (MoonRay menu) moves a scene's Shader Tree images into its materials' MoonShine graphs, which keep only their file paths, so Modo no longer holds the images; or opens a scene that way, so its textures never load into Modo. New graph nodes come with it: Modo Blend, Modo Procedural, projections, Vertex Map, Modo Mask, Drivers, Occlusion, Curvature and more. An HDRI faces the way Modo shows it (check HDRI Rotation in older scenes), environment images work in any projection, and spherical cameras are no longer mirrored. Displacement adapts to the camera, follows Smooth Positions and keeps hard edges sharp. Modo's Blobs and Sprites render. XPU2's shaders compile in half the memory and half the time, and its GPU renders are up to about 15% faster; Compile XPU2 Shaders.cmd compiles them with Modo closed. Install the new kit and runtime, and **Compile XPU2 Shaders once more**. More in [What's new in 0.5](docs/WHATS_NEW_05.md#new-in-0563).

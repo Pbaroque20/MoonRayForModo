@@ -288,6 +288,18 @@ def control_filters(settings, light, scene, warnings):
     return records
 
 
+def ies_records(light, warnings):
+    """A Photometric light's IES profile as the cookie filters MoonRay is given for it (ies_lights.records)."""
+    if not light.get('ies'):
+        return []
+    from .ies_lights import records
+    try:
+        return records(light)
+    except (OSError, ValueError) as exc:
+        warnings.append('MoonLightIPR shows %s without its IES profile (%s).' % (light.get('name', ''), exc))
+        return []
+
+
 def scalar_ramp(compiler, lists):
     """A ramp of numbers as an image the session reads, 257 across its own stops' span: (image, low, high)."""
     from .entities import ramp_eval
@@ -469,7 +481,7 @@ def lights(scene, warnings, environment=0.0, compiler=None, closing=None, named=
         ending = round_light(kind, finite(light.get('matrix_close') or matrix)) if light_motion() else matrix
         color = [c * float(light['intensity']) for c in working_color(finite(light['color']))]
         # Filters from Lighting controls, and those a MoonRay light item names.
-        filters = multiplied(control_filters(settings, light, scene, warnings) + list(light.get('filters', [])))
+        filters = multiplied(control_filters(settings, light, scene, warnings) + list(light.get('filters', [])) + ies_records(light, warnings))
         for record in [r for r in filters if r['kind'] == 'intensity']:
             color = [c * s for c, s in zip(color, record['scale'])]
         filters = [r for r in filters if r['kind'] != 'intensity']

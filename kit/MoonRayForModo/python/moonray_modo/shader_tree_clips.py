@@ -202,13 +202,27 @@ def framed_graph(graph, frame=None):
         return graph
     found = [key for key, node in graph['nodes'].items()
              if isinstance(node, dict) and node.get('type') == 'image' and (node.get('parameters') or {}).get('sequence')]
-    if not found:
+    textures = [key for key, node in graph['nodes'].items() if isinstance(node, dict) and node.get('type') == 'modo_texture'
+                and '"sequence"' in str((node.get('parameters') or {}).get('layer') or '')]
+    if not found and not textures:
         return graph
     frame = scene_frame() if frame is None else frame
     graph = dict(graph, nodes=dict(graph['nodes']))
     for key in found:
         node = graph['nodes'][key] = dict(graph['nodes'][key])
         node['parameters'] = framed_parameters(node['parameters'], frame)
+    for key in textures:
+        # A Modo Texture node of an image sequence: its file the frame's ('' where Modo shows no image then).
+        import json
+        node = graph['nodes'][key] = dict(graph['nodes'][key])
+        parameters = dict(node['parameters'])
+        record = json.loads(parameters['layer'])
+        sequence = record.pop('sequence', None)
+        if sequence:
+            parameters['file'] = frame_file(dict(sequence, pattern=parameters.get('file') or sequence.get('pattern')), frame)
+            record['sequence_shown'] = dict(sequence, frame=frame)
+            parameters['layer'] = json.dumps(record, sort_keys=True)
+        node['parameters'] = parameters
     return graph
 
 

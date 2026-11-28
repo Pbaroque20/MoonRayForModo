@@ -1477,7 +1477,9 @@ def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fal
             continue
         types = {'sunLight': 'DistantLight', 'pointLight': 'SphereLight', 'areaLight': 'RectLight', 'spotLight': 'SpotLight',
                  # A Mesh Light shines from its Prototype mesh's shape (mesh_light_shape), as MoonRay's MeshLight.
-                 'meshLight': 'MeshLight'}
+                 'meshLight': 'MeshLight',
+                 # A Photometric light: a point shining by its IES profile (ies_lights).
+                 'photometryLight': 'SphereLight'}
         if item.type not in types:
             warnings.append('Skipped unsupported light: ' + item.name)
             continue
@@ -1513,9 +1515,27 @@ def _snapshot(evaluated_geometry=False,reuse_geometry=None,refresh_materials=Fal
             light['matrix']=sun_matrix(item)
             # Modo works out this sun's colour and strength from its height and the haze.
             light['color'],light['intensity']=physical_sun(item)
+        if item.type == 'photometryLight':
+            # A point (no radius of its own), its Radiance per steradian as a Point light's, times its IES profile. Its
+            # Width and Height (0, a luminaire's size) are not a sphere's: left at a point's.
+            light.update(radius=.001, width=1.0, height=1.0)
+            profile = str(channel(item, 'filename', '') or '')
+            import os.path
+            if profile and os.path.isfile(profile):
+                light['ies'] = profile
+            else:
+                warnings.append('Photometric light %s has no IES file%s: it shines alike all round.' % (item.name, ' (%s is missing)' % profile if profile else ''))
+        # The light's Shader Tree images (light_images): its colour, or a picture across it.
+        from . import light_images
+        try:
+            drawn, left_out = light_images.read(item, ((properties.scene_settings().get('production') or {}).get('lights') or {}).get(item.id, {}).get('shader_tree_images'))
+            light_images.apply(light, drawn, warnings)
+            warnings.extend('The image %s on light %s is not drawn: %s.' % (name, item.name, why) for name, why in left_out)
+        except (LookupError, RuntimeError, ValueError, OSError, TypeError, AttributeError) as exc:
+            warnings.append('The images on light %s are not drawn: %s.' % (item.name, exc))
         # Modo's radiance and MoonRay's intensity are different measures for every kind of light.
         from .light_units import intensity as moonray_intensity
-        light['intensity']=moonray_intensity(item.type,light['intensity'],light,str(channel(item,'shape','rectangle')))
+        light['intensity']=moonray_intensity('pointLight' if item.type == 'photometryLight' else item.type,light['intensity'],light,str(channel(item,'shape','rectangle')))
         result['lights'].append(light)
     for kind in (('textureLayer',) if evaluated_geometry else ('replicator', 'textureLayer')):
         if scene.items(kind, superType=False):
