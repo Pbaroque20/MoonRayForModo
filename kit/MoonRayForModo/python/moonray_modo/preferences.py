@@ -120,6 +120,9 @@ KEYS = {
     # XPU2 RT follows a camera drag in the viewport step by step (opt-in, as MoonLightIPR's Follow drags); off, a drag of
     # the viewport's camera is rendered once the mouse is let go.
     'xpu2/follow_drags': (False, bool),
+    # Rhea's own outlines (rhea/DESIGN.md 42): black lines over its smooth light on the pictures Rhea draws, fading out with
+    # them as XPU2's picture comes in; on by default (the user, 2026-11-28). Not Draft, which is MoonLightIPR's as before.
+    'xpu2/rhea_outlines': (True, bool),
 }
 # Realtime with the standard XPU: off, on the processor (MoonRay's vector mode), or on the graphics card (XPU).
 XPU_REALTIME_MODES = ('off', 'vector', 'xpu')
@@ -311,6 +314,11 @@ class Dialog(QtWidgets.QDialog):
         at = form.getWidgetPosition(self.realtime_share)[0] + 1
         form.insertRow(at, 'XPU2 RT engine', rt_engine)
         form.insertRow(at + 1, rt_drags)
+        rhea_outlines = check('xpu2/rhea_outlines', 'Rhea outlines',
+                              'MoonRay XPU2 RT (Rhea) only. Rhea draws black outlines (silhouettes, edges between objects, creases) over '
+                              "its smooth colours, fading out with its picture as XPU2's comes in. Off, Rhea's picture has no lines. "
+                              'Draft is not affected')
+        form.insertRow(at + 2, rhea_outlines)
         # Rhea's radiance cache (rhea/rhea_cache.h): in memory or on disk, and its button beside it, Flush (in memory) or
         # Clear (on disk) Radiance Cache.
         rhea_cache = combo('xpu2/rhea_cache', RHEA_CACHE_CHOICES,
@@ -325,7 +333,7 @@ class Dialog(QtWidgets.QDialog):
         rhea_row = QtWidgets.QHBoxLayout()
         rhea_row.addWidget(rhea_cache, 1)
         rhea_row.addWidget(self.rhea_button)
-        form.insertRow(at + 2, 'Rhea radiance cache', rhea_row)
+        form.insertRow(at + 3, 'Rhea radiance cache', rhea_row)
 
         def rhea_cache_chosen(_=None):
             on_disk = rhea_cache.currentData() == 'disk'

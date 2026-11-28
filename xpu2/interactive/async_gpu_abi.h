@@ -260,6 +260,18 @@ struct LaunchParams {
     // rheastore::View, rhea_store_core.h) into firstLooks (rheastore::Look a ray). Null: hits alone.
     const void* rheaStore;
     void* firstLooks;
+    // mode 6, Rhea's light smoothed (rhea/DESIGN.md 39): one a-trous pass over a grid of smoothNodes (rheastore::SmoothNode,
+    // rhea_store_core.h), smoothIn's light into smoothOut's (three floats a node), its settings in smoothParams
+    // (rheastore::SmoothParams); a thread a node.
+    const void* smoothNodes;
+    const float* smoothIn;
+    float* smoothOut;
+    const void* smoothParams;
+    // mode 7, Rhea Draft's lines (rhea/DESIGN.md 42): each pixel's line coverage (0 to 1, lineOut) from rays through the
+    // chief-ray camera lineCamera (a surface::Camera), by lineSettings (rheastore::LineSettings); a thread a pixel.
+    const void* lineCamera;
+    const void* lineSettings;
+    float* lineOut;
 };
 
 }  // namespace xpu2::interactive::async

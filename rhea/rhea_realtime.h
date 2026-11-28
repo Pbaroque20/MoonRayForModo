@@ -106,7 +106,23 @@ struct RealtimeOptions {
     // Edges by object and crease (DESIGN.md 38): ObjectWarp::Options::objectEdges, and cells of one object each
     // (ObjectStore::Options::byObject; learning traces each pixel's first hit for its object).
     bool objectEdges = false, storeObjects = false;
+    // The sparse radiance cache (DESIGN.md 43): cells with their light's slope, fine ones only where the light changes.
+    bool storeSparse = true;
+    double storeSparseTolerance = 0.08, storeSparseMinWeight = 2.0;
     double creaseCos = 0.8;
+    // The light smoothed over its surfaces (ObjectWarp::Options::smooth, DESIGN.md 39) and its settings.
+    bool smooth = false;
+    bool draft = false;  // Rhea Draft (ObjectWarp::Options::draft, DESIGN.md 42; the session sets the warp's options)
+    int smoothPasses = 3;
+    double smoothDepth = 0.02, smoothNormal = 32, smoothLight = 0.25;
+    // XPU2's samples filtered before they are stored (Realtime::learn, DESIGN.md 40): each pixel's noise from its odd and
+    // even samples' means (the film's odd sums; else its count), its colour merged with its surface's neighbours' within
+    // filterRadius pixels by inverse variance (a neighbour whose colour differs by more than filterRange of their noise
+    // weighing little: an edge or a texture is kept), and its weight in the store scaled by 1 / (1 + (noise / (filterNoise
+    // x its light))^2).
+    bool sampleFilter = false;
+    int filterRadius = 2;
+    double filterRange = 2.0, filterNoise = 0.1;
     // After a move's warp, the next move looked for this long before any of the GPU's work (seconds; the kit sends a
     // drag's steps about 60 ms apart): a drag then goes at the warp's pace, not the GPU frame's stop (0.2 s at 720p).
     // 0.15 s: in Modo the kit makes a step at each of its 60 ms ticks, with its own 18 ms or so, and sends it once the
@@ -115,6 +131,16 @@ struct RealtimeOptions {
     // The head start (Realtime::headStart): phase one's colour counted as this many of XPU2's samples where it is sure of
     // it (0: none), and how far apart, relative and over XPU2's noise (1 / sqrt(samples)), the two may be for it to count.
     double headStart = 8.0, headStartPart = 3.0;
+    // Realtime::progressive: how far apart, relative and over XPU2's noise, the two may be before phase one is let go.
+    double progressivePart = 3.0;
+    // The least share of the prior kept where the two part (0.25), and the samples' worth of the sampled neighbours' mean a
+    // pixel of few samples shows (4).
+    double progressiveKeep = 0.25, progressiveSpread = 4.0;
+    // The fade by coverage (the user, 2026-11-28: "the GPU grid doesn't seem to fade in like before"): phase one's samples
+    // held up to 1 + progressiveCoverHold times where XPU2 has sampled little of the pixel's neighbourhood (a square
+    // progressiveCover pixels from it each way at 1280 wide, scaled with the picture; 0: off), as (1 - its share)^2, so
+    // that XPU2's cells fade in across an area instead of each cell's pixels at once; the area covered, as before.
+    double progressiveCover = 8.0, progressiveCoverHold = 8.0;
     // The probes' screen cells grow with the picture (cell times the square root of its pixels over 320 x 240's): as many
     // probes at 1280 x 720 as at 320 x 240, where 22,000 had taken 0.12 s to place and 0.7 s of the GPU's (DESIGN.md 26).
     bool cellsByPicture = true;
@@ -797,6 +823,8 @@ public:
         wo.adaptive = op.objectAdaptive, wo.adaptColour = op.objectAdaptColour;
         wo.specular = op.specular && o.diffuse >= 0, wo.specMax = op.specMax, wo.specShare = op.specShare, wo.specBlur = op.specBlur, wo.specTrace = op.specTrace;
         wo.objectEdges = op.objectEdges, wo.creaseCos = op.creaseCos;
+        wo.smooth = op.smooth, wo.smoothPasses = op.smoothPasses, wo.smoothDepth = op.smoothDepth, wo.smoothNormal = op.smoothNormal,
+        wo.smoothLight = op.smoothLight;
         wo.threads = std::max(threads, std::thread::hardware_concurrency());
         out.cancelled = out.drained = out.failed = false;
         // Its outputs are none but the depths (written below each time): zeroed only where something else wrote them since
@@ -984,6 +1012,125 @@ public:
     // phase one part by more than XPU2's noise allows (op.headStartPart / sqrt(n), relative, over 3 x 3 pixels): a
     // reflection or highlight the store holds as seen from elsewhere. As n grows phase one's share falls; the frame's last
     // picture is XPU2's own (the session's). False: no warp to start from (out untouched).
+    // XPU2's light as it comes, over phase one (DESIGN.md 41; the user, 2026-11-27: "Rhea takes too long to show all of
+    // its light samples, the older progressive/incremental way was better"): each pixel XPU2's samples so far with phase
+    // one counted as prior samples of its own, prior x its confidence (1 - doubt), let go fast where the two part by more
+    // than XPU2's noise allows (its 3 x 3 luminance against phase one's, relative, over progressivePart / sqrt(samples):
+    // exp(-(part / allowed)^2)); a pixel XPU2 has not reached yet phase one's. No region waits for its seed. The frame's
+    // end is XPU2's own picture (the session's). shown: the share of pixels where XPU2's samples weigh at least as much
+    // as phase one's (lastShown). False: no warp (out untouched).
+    double lastShown = 0;
+    bool progressive(const async::RenderResult& x, async::RenderResult& out, double prior) {
+        const size_t n = size_t(W) * H;
+        if (!warped.valid || x.rgba.size() != n * 4 || warped.color.size() != n * 3) return false;
+        const unsigned threads = std::max(1u, op.threads);
+        const bool doubts = warped.doubt.size() == n;
+        // Where there is no state (what was on screen taken as the warp across a scene made again: the release on the
+        // dragon's sea, tessellated for the camera), every pixel the warp's.
+        const bool states = warped.state.size() == n;
+        auto stateOf = [&](size_t i) -> std::uint8_t { return states ? warped.state[i] : std::uint8_t(1); };
+        auto lum = [](const float* c) { return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; };
+        std::vector<float> lx(n), lr(n), sampled(n), sx(n), sr(n), ss(n);
+        parallel(threads, H, [&](size_t y) {
+            for (size_t i = y * W; i < (y + 1) * W; ++i) {
+                const bool s = i < x.counts.size() && x.counts[i] > 0;
+                lx[i] = s ? float(lum(&x.rgba[i * 4])) : 0.0f, lr[i] = float(lum(&warped.color[i * 3])), sampled[i] = s ? 1.0f : 0.0f;
+            }
+        });
+        auto box = [&](const std::vector<float>& from, std::vector<float>& to) {
+            std::vector<float> across(n);
+            parallel(threads, H, [&](size_t y) {
+                for (unsigned px = 0; px < W; ++px) {
+                    const size_t i = y * W + px;
+                    across[i] = from[i] + (px > 0 ? from[i - 1] : 0.0f) + (px + 1 < W ? from[i + 1] : 0.0f);
+                }
+            });
+            parallel(threads, H, [&](size_t y) {
+                for (unsigned px = 0; px < W; ++px) {
+                    const size_t i = y * W + px;
+                    to[i] = across[i] + (y > 0 ? across[i - W] : 0.0f) + (y + 1 < H ? across[i + W] : 0.0f);
+                }
+            });
+        };
+        box(lx, sx), box(lr, sr), box(sampled, ss);
+        // The share of each pixel's neighbourhood XPU2 has sampled (op.progressiveCover; a summed-area table).
+        std::vector<float> cover;
+        const int reach = op.progressiveCover > 0 ? std::max(1, int(std::lround(op.progressiveCover * double(W) / 1280.0))) : 0;
+        if (reach > 0) {
+            std::vector<double> sum(size_t(W + 1) * (H + 1), 0.0);
+            for (unsigned y = 0; y < H; ++y) {
+                double row = 0;
+                for (unsigned px = 0; px < W; ++px) {
+                    row += sampled[size_t(y) * W + px];
+                    sum[size_t(y + 1) * (W + 1) + px + 1] = sum[size_t(y) * (W + 1) + px + 1] + row;
+                }
+            }
+            cover.resize(n);
+            parallel(threads, H, [&](size_t y) {
+                const int y0 = std::max(0, int(y) - reach), y1 = std::min(int(H), int(y) + reach + 1);
+                for (unsigned px = 0; px < W; ++px) {
+                    const int x0 = std::max(0, int(px) - reach), x1 = std::min(int(W), int(px) + reach + 1);
+                    const double s = sum[size_t(y1) * (W + 1) + x1] - sum[size_t(y0) * (W + 1) + x1] - sum[size_t(y1) * (W + 1) + x0] +
+                                     sum[size_t(y0) * (W + 1) + x0];
+                    cover[y * W + px] = float(s / double((y1 - y0) * (x1 - x0)));
+                }
+            });
+        }
+        // XPU2's colour summed over each pixel's sampled 3 x 3, each channel.
+        std::vector<float> cs(n * 3), chan(n), cbox(n);
+        for (int ch = 0; ch < 3; ++ch) {
+            parallel(threads, H, [&](size_t y) {
+                for (size_t i = y * W; i < (y + 1) * W; ++i) chan[i] = sampled[i] > 0 ? x.rgba[i * 4 + ch] : 0.0f;
+            });
+            box(chan, cbox);
+            for (size_t i = 0; i < n; ++i) cs[i * 3 + ch] = cbox[i];
+        }
+        out = x;
+        std::vector<size_t> xpu2(H, 0);
+        parallel(threads, H, [&](size_t y) {
+            for (size_t i = y * W; i < (y + 1) * W; ++i) {
+                const std::uint32_t c = i < x.counts.size() ? x.counts[i] : 0u;
+                if (!stateOf(i)) {
+                    if (c) ++xpu2[y];
+                    continue;
+                }
+                if (!c) {  // not reached yet: phase one's (no gap for the denoiser)
+                    std::copy_n(&warped.color[i * 3], 3, &out.rgba[i * 4]);
+                    out.rgba[i * 4 + 3] = warped.screen.rgba.size() == n * 4 ? warped.screen.rgba[i * 4 + 3]
+                                          : i < warped.depth.size() && warped.depth[i] > 0 ? 1.0f : 0.0f;
+                    if (i < out.counts.size()) out.counts[i] = 1;
+                    continue;
+                }
+                const double confidence = doubts ? std::clamp(1.0 - double(warped.doubt[i]), 0.0, 1.0) : (stateOf(i) == 1 ? 1.0 : 0.5);
+                const double meanX = ss[i] > 0 ? sx[i] / ss[i] : lx[i], meanR = sr[i] / 9.0;
+                const double part = std::fabs(meanX - meanR) / std::max(0.02, 0.5 * (meanX + meanR));
+                const double allowed = op.progressivePart / std::sqrt(double(c) * std::max(1.0, double(ss[i])));
+                // Let go faster where the two part, but never all at once: a sample or two that disagree were the
+                // first pictures' speckles (progressiveKeep of the prior stays).
+                double m = prior * std::max(0.25, confidence) *
+                           std::max(op.progressiveKeep, std::exp(-(part / allowed) * (part / allowed)));
+                if (!cover.empty()) {
+                    const double open = 1.0 - double(cover[i]);
+                    m *= 1.0 + op.progressiveCoverHold * open * open;
+                }
+                if (m <= double(c)) ++xpu2[y];
+                // A pixel of few samples shows its sampled neighbours' mean as much as its own (progressiveSpread samples'
+                // worth): the first samples' noise spread, not shown as specks; whole once its count is well past it.
+                const double own = prior > 0 ? double(c) / (double(c) + op.progressiveSpread) : 1.0;  // prior 0: XPU2's own
+                double xs[3];
+                for (int ch = 0; ch < 3; ++ch) {
+                    const double local = cs[i * 3 + ch] > 0 || ss[i] > 0 ? cs[i * 3 + ch] / std::max(1.0f, ss[i]) : x.rgba[i * 4 + ch];
+                    xs[ch] = local + own * (double(x.rgba[i * 4 + ch]) - local);
+                }
+                const double k = m / (m + double(c));
+                for (int ch = 0; ch < 3; ++ch) out.rgba[i * 4 + ch] = float(xs[ch] + k * (double(warped.color[i * 3 + ch]) - xs[ch]));
+            }
+        });
+        size_t all = 0;
+        for (size_t r : xpu2) all += r;
+        lastShown = n ? double(all) / double(n) : 0.0;
+        return true;
+    }
     bool headStart(const async::RenderResult& x, async::RenderResult& out) const {
         const size_t n = size_t(W) * H;
         if (!(op.headStart > 0) || !warped.valid || x.rgba.size() != n * 4 || warped.color.size() != n * 3 || warped.state.size() != n)
@@ -1045,6 +1192,7 @@ public:
         store.op.scale = op.storeScale, store.op.jump = op.warpJump, store.op.threads = std::max(1u, op.threads);
         store.op.grazing = op.storeGrazing, store.op.albedo = op.storeAlbedo;
         store.op.byObject = op.storeObjects;
+        store.op.sparse = op.storeSparse, store.op.sparseTolerance = op.storeSparseTolerance, store.op.sparseMinWeight = op.storeSparseMinWeight;
     }
     // scene: the CPU lane's scene, for each learned pixel's own first hit (its object, the light reflected toward it:
     // op.storeObjects, op.specular); none: neither.
@@ -1169,6 +1317,10 @@ public:
             });
             colours = &learnRgba;
         }
+        if (op.sampleFilter) {
+            filterSamples(b, film, *colours, outs.extra);
+            colours = &filterRgba, outs.scale = &filterScale;
+        }
         store.add(v, b.width, b.height, *colours, learnCounts, learnDepth, learnFar, &outs);
         learnSeconds += std::chrono::duration<double>(std::chrono::steady_clock::now() - began).count();
         ++learnings;
@@ -1176,6 +1328,72 @@ public:
     }
     std::vector<ObjectStore::PixelExtra> learnExtra;
     std::vector<float> learnRgba;  // a despeckled picture's colours (learn's despeckle)
+    // The sample filter (op.sampleFilter, DESIGN.md 40): the learned picture's colours merged by inverse variance over each
+    // pixel's surface (filterRgba), and each pixel's weight scale (filterScale).
+    std::vector<float> filterRgba, filterScale, filterVar;
+    double filterSeconds = 0;
+    void filterSamples(const cpu::Plan& b, const async::RenderResult& film, const std::vector<float>& colours,
+                       const std::vector<ObjectStore::PixelExtra>* extra) {
+        const auto began = std::chrono::steady_clock::now();
+        const unsigned w = b.width, h = b.height;
+        const size_t n = size_t(w) * h;
+        filterRgba = colours, filterScale.assign(n, 1.0f), filterVar.assign(n, 0.0f);
+        const bool odd = film.odd.size() == n * 4;
+        auto lum = [&](const float* c) { return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; };
+        const double noise = std::max(1e-3, op.filterNoise);
+        // Each pixel's variance of its mean: from its odd and even samples' means (half their difference is about the
+        // mean's standard deviation), else a sample's spread taken as its light over its count.
+        parallel(std::max(1u, op.threads), h, [&](size_t y) {
+            for (size_t i = y * w; i < (y + 1) * w; ++i) {
+                const double c = film.counts[i];
+                const double l = std::max(0.0, lum(&colours[i * 4]));
+                double sd = l / std::sqrt(std::max(1.0, c));
+                if (odd && c >= 2) {
+                    const double nOdd = std::floor(c / 2), nEven = c - nOdd;
+                    double om[3], em[3];
+                    for (int k = 0; k < 3; ++k) {
+                        om[k] = film.odd[i * 4 + k] * c / nOdd;
+                        em[k] = (film.rgba[i * 4 + k] * c - film.odd[i * 4 + k] * c) / nEven;
+                    }
+                    sd = 0.5 * std::fabs(0.2126 * (om[0] - em[0]) + 0.7152 * (om[1] - em[1]) + 0.0722 * (om[2] - em[2]));
+                }
+                if (!std::isfinite(sd)) sd = l;
+                filterVar[i] = float(sd * sd + 1e-8);
+                const double rel = sd / (noise * std::max(l, 0.01));
+                filterScale[i] = float(1.0 / (1.0 + rel * rel));
+            }
+        });
+        // Merged with the neighbours on its surface (its depth's plane within the jump; its object, where known).
+        const int R = std::clamp(op.filterRadius, 0, 4);
+        const double range = std::max(0.1, op.filterRange);
+        const bool objects = extra && extra->size() == n;
+        if (R > 0)
+            parallel(std::max(1u, op.threads), h, [&](size_t y) {
+                for (unsigned x = 0; x < w; ++x) {
+                    const size_t i = size_t(y) * w + x;
+                    const float d = learnDepth[i];
+                    if (!film.counts[i] || !(d > 0)) continue;
+                    const double li = lum(&colours[i * 4]);
+                    double sum[3] = {0, 0, 0}, ws = 0;
+                    for (int dy = -R; dy <= R; ++dy)
+                        for (int dx = -R; dx <= R; ++dx) {
+                            const int xx = int(x) + dx, yy = int(y) + dy;
+                            if (xx < 0 || yy < 0 || xx >= int(w) || yy >= int(h)) continue;
+                            const size_t j = size_t(yy) * w + size_t(xx);
+                            const float dj = learnDepth[j];
+                            if (!film.counts[j] || !(dj > 0) || std::fabs(dj - d) > op.warpJump * d) continue;
+                            if (objects && (*extra)[j].obj != (*extra)[i].obj) continue;
+                            const double dl = lum(&colours[j * 4]) - li, v = double(filterVar[i]) + filterVar[j];
+                            const double wt = std::exp(-0.5 * dl * dl / (range * range * v) - 0.5 * (dx * dx + dy * dy) / double(R * R)) / filterVar[j];
+                            for (int k = 0; k < 3; ++k) sum[k] += wt * colours[j * 4 + k];
+                            ws += wt;
+                        }
+                    if (ws > 0)
+                        for (int k = 0; k < 3; ++k) filterRgba[i * 4 + k] = float(sum[k] / ws);
+                }
+            });
+        filterSeconds += std::chrono::duration<double>(std::chrono::steady_clock::now() - began).count();
+    }
     double learnTraceSeconds = 0;  // of learnSeconds: tracing the learned pixels' first hits and reflections
     size_t learnReflections = 0;   // learned pixels whose reflected light was known
     size_t learnMisses = 0;        // learned pixels whose chief ray met another depth than their samples

@@ -29,6 +29,8 @@ public:
     unsigned width = 0, height = 0;
     // The perspective camera's focal point (camera space): toward's, for the graphics card's lookups (rhea_store_core.h).
     D3 focal() const { return fp; }
+    // The chief rays' camera (the lens' centre): Rhea Draft's lines on the card (rhea_store_core.h LineSettings).
+    const surface::Camera& chief() const { return cam; }
 
     // False for a camera Rhea's probes cannot follow (bake), or a degenerate one.
     bool init(const surface::Camera& c, unsigned w, unsigned h) {
