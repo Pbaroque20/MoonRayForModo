@@ -360,7 +360,25 @@ def textured(folder):
     # Shader Tree stencils: the surface taken away where the image is white, the ball by sharp stripes, the cube by soft ones.
     stenciled = lobes(row('ball', [.8, .25, .1], .4, [layer('s1', 'stencil', 'roughness', False)]),
                       row('cube', [.1, .3, .7], .4, [layer('s2', 'stencil', 'stripes', False)]))
-    return {'stenciled': stenciled, 'displaced': displaced, 'displaced_moving': moving, 'graph_displaced': graph_displaced,
+    # A map on a metal's colour (metallic_color), which MoonLightIPR left out (a tester's red metal stayed red under its
+    # texture): on the ball a red DwaBaseMaterial wholly metal, on the cube the same half metal; then the same over an
+    # albedo map, and a DwaMetalMaterial; then a metallic that is a map of its own.
+    def metal(identity, shader, params, **images_by_input):
+        graph = graph_nodes.new(shader, dict(params))
+        for index, (key, (name, srgb)) in enumerate(images_by_input.items()):
+            graph['nodes']['image%d' % index] = {'type': 'image', 'parameters': {'file': images[name], 'srgb': srgb}, 'inputs': {}}
+            graph['nodes']['surface']['inputs'][key] = 'image%d' % index
+        return dict(native(identity, shader, **params), node_graph=graph, node_override=True)
+    red = dict(albedo=[.8, .1, .1], metallic_color=[.8, .1, .1], roughness=.3)
+    metal_maps = with_uvs(lobes(metal('ball', 'DwaBaseMaterial', dict(red, metallic=1.0), metallic_color=('colour', True)),
+                                metal('cube', 'DwaBaseMaterial', dict(red, metallic=.5), metallic_color=('colour', True))))
+    metal_albedo_maps = with_uvs(lobes(metal('ball', 'DwaBaseMaterial', dict(red, metallic=.5), albedo=('stripes', True), metallic_color=('colour', True)),
+                                       metal('cube', 'DwaMetalMaterial', dict(metallic_color=[.8, .1, .1], roughness=.3), metallic_color=('colour', True))))
+    metal_metallic_maps = with_uvs(lobes(metal('ball', 'DwaBaseMaterial', dict(red), metallic=('roughness', False), metallic_color=('colour', True)),
+                                         metal('cube', 'DwaBaseMaterial', dict(red), albedo=('stripes', True), metallic=('roughness', False),
+                                               metallic_color=('colour', True))))
+    return {'metal_color_maps': metal_maps, 'metal_color_albedo_maps': metal_albedo_maps, 'metal_color_metallic_maps': metal_metallic_maps,
+            'stenciled': stenciled, 'displaced': displaced, 'displaced_moving': moving, 'graph_displaced': graph_displaced,
             'displacement_nodes': displacement_nodes, 'displacement_object': displacement_object, 'rough_image_blinn': blinn, 'graph_baked': baked, 'graph_baked_uv': baked_uv, 'graph_maps': mapped, 'layer_maps': layered_maps, 'native_layer_maps': native_layer_maps, 'native_materials': natives, 'dwa_skin': skins, 'modo_models': models, 'dwa_skin_thin': thin, 'textures_simple': simple, 'dwa_plain': dict(stacked, materials=plain), 'dwa_layers': dict(stacked, materials=layered),
             'dwa_glass_coat': glass, 'dwa_thin_presence': sheer, 'dwa_masks': masks, 'dwa_subsurface': skin, 'velvet': velvet, 'iridescence': iridescent, 'iridescence_dielectric': iridescent_dielectric, 'glitter': glitter_sparse, 'glitter_dense': glitter_dense, 'glitter_varied': glitter_varied, 'glitter_deformed': glitter_deformed, 'toon_diffuse': toon_flat, 'toon': toon, 'toon_broad': toon_broad, 'sss_far': far, 'sss_backlit': behind, 'sss_dipole': dipole, 'sss_random_walk': walk,
             'dwa_anisotropy': brushed, 'dwa_absorption': deep, 'dwa_dispersion': prism, 'dwa_patterns': patterns, 'udim': tiled}

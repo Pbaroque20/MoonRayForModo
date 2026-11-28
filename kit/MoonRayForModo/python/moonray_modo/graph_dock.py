@@ -4,6 +4,8 @@ the material selected in Modo, and follows the selection to another; it is the s
 (node_editor.Editor), embedded."""
 from PySide2 import QtCore, QtWidgets
 
+PLACEHOLDER = 'Select a MoonRay material with its MoonShine override on to edit its graph here.'
+
 
 def editable(item):
     """Whether the graph editor edits this item: a MoonRay material whose MoonShine override is on, as Edit Node Graph
@@ -43,7 +45,7 @@ class GraphDock(QtWidgets.QWidget):
         self.editor = None
         self.layout_ = QtWidgets.QVBoxLayout(self)
         self.layout_.setContentsMargins(0, 0, 0, 0)
-        self.placeholder = QtWidgets.QLabel('Select a MoonRay material with its MoonShine override on to edit its graph here.')
+        self.placeholder = QtWidgets.QLabel(PLACEHOLDER)
         self.placeholder.setAlignment(QtCore.Qt.AlignCenter)
         self.placeholder.setWordWrap(True)
         self.layout_.addWidget(self.placeholder)
@@ -68,10 +70,20 @@ class GraphDock(QtWidgets.QWidget):
             self.show_material(item)
 
     def show_material(self, item):
-        from .node_editor import Editor
+        from .node_editor import Editor, open_failed
         self.close_editor()
+        try:
+            editor = Editor(item, host=self)
+        except Exception as exc:
+            # Said once, not left blank (node_editor.open_failed); the dock waits for another material to be selected.
+            self.followed = item.id
+            self.placeholder.setText('The graph of %s could not be shown here; the reason is in the Event Log.' % item.name)
+            self.placeholder.show()
+            open_failed(item, exc, self)
+            return
+        self.placeholder.setText(PLACEHOLDER)
         self.placeholder.hide()
-        self.editor = Editor(item, host=self)
+        self.editor = editor
         self.editor.finished.connect(self.closed)
         self.layout_.addWidget(self.editor)
         self.editor.show()

@@ -311,6 +311,15 @@ def register():
                                                      ('*.exr;*.hdr;*.tx;*.tif;*.tiff;*.png;*.jpg;*.jpeg;*.tga','*.*'))
                     except RuntimeError:return
                     if not path:return
+                    # One tile of a UDIM set (body.1002.exr with its siblings) is the whole set, as in the graph editor
+                    # (textures.udim_set): the form is the kit's own, so it can read a set where Modo's picker reads one file.
+                    from moonray_modo.textures import udim_set
+                    try:found=udim_set(path)
+                    except OSError:found=None
+                    if found:
+                        import os
+                        lx.out('MoonRay: %s is one of %d UDIM tiles (%d to %d): using %s'%(os.path.basename(path),len(found[1]),found[1][0],found[1][-1],os.path.basename(found[0])))
+                        path=found[0]
                 updates=[]
                 for item in items:
                     settings=properties.read(item)

@@ -206,16 +206,32 @@ class Node(QtWidgets.QGraphicsRectItem):
         self.preview=None
         if self.previewed:self.show_preview(None,waiting=True)
         self.setPos(*value.get('position',[0,0]))
-    def show_preview(self,path,waiting=False):
-        """The node's picture, or words for why there is none yet."""
-        from .node_previews import SIZE
+    def show_preview(self,path,waiting=False,missing=None):
+        """The node's picture, or words for why there is none yet. missing: words for an image that is not there (a
+        UDIM set with no tile found), drawn on MoonRay's missing-image colour."""
+        from .node_previews import SIZE,MISSING_COLOUR
         if self.preview is not None and self.preview.scene():self.preview.scene().removeItem(self.preview)
         left=(WIDTH-SIZE)/2
+        # A UDIM set says so, with its tiles, under the pointer (its picture is its first tile, marked as a set).
+        try:
+            from .graph_images import udim_words
+            from .node_previews import image_file
+            said=udim_words(image_file(self.editor.graph,self.identity))
+        except Exception:said=None
+        if missing:
+            self.preview=QtWidgets.QGraphicsRectItem(0,0,SIZE,SIZE,self);self.preview.setPos(left,self.preview_top)
+            self.preview.setBrush(QtGui.QColor(MISSING_COLOUR));self.preview.setPen(QtGui.QPen(QtCore.Qt.NoPen))
+            # In two lines, to be read whole in the square.
+            half=missing.split(' ');half=[' '.join(half[:len(half)//2]),' '.join(half[len(half)//2:])]
+            for index,line in enumerate(half):text(self.preview,line,'#000000',4,int(SIZE/2-16+index*16),SIZE-8,size=-1)
+            self.preview.setToolTip(missing+(' ('+said+')' if said else ''))
+            return
         if path:
             pixmap=QtGui.QPixmap(path)
             if not pixmap.isNull():
                 self.preview=QtWidgets.QGraphicsPixmapItem(pixmap.scaled(SIZE,SIZE,QtCore.Qt.IgnoreAspectRatio,QtCore.Qt.SmoothTransformation),self)
-                self.preview.setPos(left,self.preview_top);self.preview.setToolTip('What this node makes, over one unit of UV')
+                self.preview.setPos(left,self.preview_top)
+                self.preview.setToolTip('A UDIM set: %s. Shown is its first tile.'%said if said else 'What this node makes, over one unit of UV')
                 return
         self.preview=text(self,'Rendering...' if waiting else 'No preview',TEXT_DIM,int(left)+8,int(self.preview_top+SIZE/2-8),SIZE-8,size=-1)
     def itemChange(self,change,value):
@@ -334,17 +350,75 @@ def _close_on_quit():
     _quit_hooked[0]=True
 
 
+class OpenFailed(RuntimeError):
+    """The graph editor could not be made; already said to the user (open_failed)."""
+
+
+def open_failed(item,exc,parent=None):
+    """Say why a graph editor could not open: in a message box, in Modo's Event Log and in the diagnostics, with the
+    traceback. It failed in silence before: Open Graph Editor did nothing, and another material chosen in the editor's
+    list closed the window (a tester's, on a material with UDIM images)."""
+    import traceback
+    try:name=item.name
+    except Exception:name=str(getattr(item,'id',item))
+    said='The MoonShine graph editor could not open for %s: %s'%(name,exc or type(exc).__name__)
+    trace=''.join(traceback.format_exception(type(exc),exc,exc.__traceback__))
+    try:
+        from .preview_diagnostics import record
+        record(said+'\n'+trace)
+    except Exception:pass
+    try:
+        for line in [said]+trace.rstrip().splitlines():lx.out('MoonRay: '+line)
+    except Exception:pass
+    try:
+        box=QtWidgets.QMessageBox(QtWidgets.QMessageBox.Warning,'MoonShine Graph',said,QtWidgets.QMessageBox.Ok,parent or _modo_window())
+        box.setInformativeText('The details are in the Event Log.');box.setDetailedText(trace);box.exec_()
+    except Exception:pass
+    return said
+
+
+def _modo_window():
+    """The window a graph editor belongs to: Modo's own, from the active window, never another graph editor, a popup
+    or a window on its way out (it would take the editor with it as its child). Where none is active (Modo in the
+    background), Modo's main window."""
+    window=QtWidgets.QApplication.activeWindow()
+    while isinstance(window,Editor):window=window.parentWidget()
+    def usable(widget):
+        return widget is not None and widget.isVisible() and not (widget.windowFlags() & QtCore.Qt.Popup)==QtCore.Qt.Popup \
+            and not widget.testAttribute(QtCore.Qt.WA_DeleteOnClose)
+    if usable(window):return window
+    mains=[widget for widget in QtWidgets.QApplication.topLevelWidgets() if isinstance(widget,QtWidgets.QMainWindow) and widget.isVisible()]
+    return max(mains,key=lambda widget:widget.width()*widget.height()) if mains else None
+
+
+def bring_forward(editor):
+    """An editor shown in front: out of the taskbar if it was minimised, raised and made the active window. Asked again
+    once Modo is done with the click that opened it, which can take the activation back to its own window, leaving the
+    editor behind it as if nothing had opened."""
+    from shiboken2 import isValid
+    def forward():
+        if not isValid(editor) or not editor.isVisible():return
+        if editor.isMinimized():editor.setWindowState(editor.windowState()&~QtCore.Qt.WindowMinimized|QtCore.Qt.WindowActive)
+        editor.raise_();editor.activateWindow()
+    forward();QtCore.QTimer.singleShot(0,forward)
+
+
 def open_editor(item,materialx_override=False):
-    """Show the graph editor for a material without blocking Modo."""
+    """Show the graph editor for a material without blocking Modo. Where it cannot be made, the reason is shown
+    (open_failed) and OpenFailed raised."""
     from shiboken2 import isValid
     key=(item.id,bool(materialx_override))
     editor=_open.get(key)
-    if editor is not None and isValid(editor) and editor.isVisible():
-        editor.raise_();editor.activateWindow();return editor
-    editor=_open[key]=Editor(item,materialx_override)
-    editor.finished.connect(lambda *_,key=key:_open.pop(key,None))
+    if editor is not None and isValid(editor) and editor.isVisible() and not getattr(editor,'scene_gone',False):
+        bring_forward(editor);return editor
+    _open.pop(key,None)
+    try:editor=Editor(item,materialx_override)
+    except Exception as exc:
+        raise OpenFailed(open_failed(item,exc)) from exc
+    _open[key]=editor
+    editor.finished.connect(lambda *_,key=key,editor=editor:_open.pop(key,None) if _open.get(key) is editor else None)
     _close_on_quit()
-    editor.show();editor.raise_();editor.activateWindow()
+    editor.show();bring_forward(editor)
     return editor
 
 
@@ -367,12 +441,19 @@ class Editor(QtWidgets.QDialog):
             self.setModal(False)
             self.setMinimumSize(320,240)
         else:
-            parent=QtWidgets.QApplication.activeWindow()
-            while isinstance(parent,Editor):parent=parent.parentWidget()
-            super().__init__(parent)
+            super().__init__(_modo_window())
             self.setWindowFlags(QtCore.Qt.Window|QtCore.Qt.WindowTitleHint|QtCore.Qt.WindowSystemMenuHint|QtCore.Qt.WindowMinMaxButtonsHint|QtCore.Qt.WindowCloseButtonHint)
             self.setModal(False);self.setAttribute(QtCore.Qt.WA_DeleteOnClose)
             self.setMinimumSize(900,560)
+        # Made in build. Where that fails part way, what it had hooked up (its watchers, its MoonRay Widget's session, its
+        # previews) is let go as a closing editor's is, and the window is not left standing unseen.
+        try:self.build(item,materialx_override)
+        except Exception:
+            try:self.done(0)
+            except Exception:pass
+            self.deleteLater()
+            raise
+    def build(self,item,materialx_override):
         from .preview_diagnostics import record
         record('Graph editor opened')
         self.numeric_fields=[]
@@ -555,10 +636,19 @@ class Editor(QtWidgets.QDialog):
             # Docked: the dock shows the other material in its place.
             QtCore.QTimer.singleShot(0,lambda:self.host.show_material(item));return
         geometry=self.geometry()
-        editor=open_editor(item)
+        try:editor=open_editor(item)
+        except OpenFailed as exc:
+            # Said already (open_failed); this window stays, on its own material.
+            self.fill_materials();self.info.setText(str(exc));return
         editor.setGeometry(geometry)
-        # This window goes once the click that chose the material has been dealt with.
-        QtCore.QTimer.singleShot(0,self.reject)
+        # This window goes once the click that chose the material has been dealt with, and only once the other stands:
+        # then the other is brought to the front again, or it was left behind Modo as this one went.
+        from shiboken2 import isValid
+        def hand_over():
+            if not (isValid(editor) and editor.isVisible()):
+                self.fill_materials();self.info.setText('The editor for that material did not stay open; see the Event Log.');return
+            self.reject();bring_forward(editor)
+        QtCore.QTimer.singleShot(0,hand_over)
     def keyPressEvent(self,event):
         if event.key() in (QtCore.Qt.Key_Return,QtCore.Qt.Key_Enter):
             self.commit_inputs()
@@ -1554,7 +1644,12 @@ class Editor(QtWidgets.QDialog):
                 limits=[str(spec[k]) for k in ('min','max') if k in spec]
                 if limits:
                     cell.setToolTip(cell.toolTip()+' Allowed range: '+str(spec.get('min','unbounded'))+' to '+str(spec.get('max','unbounded')))
-                if file_parameter(spec):cell.setToolTip(cell.toolTip()+' Click to browse for a file. Press F2 to type or paste a path, including <UDIM> patterns.')
+                if file_parameter(spec):
+                    cell.setToolTip(cell.toolTip()+' Click to browse for a file. Press F2 to type or paste a path, including <UDIM> patterns.')
+                    # A UDIM set says so beside its name, with its tiles (or that none are found).
+                    from .graph_images import udim_words
+                    said=udim_words(value) if isinstance(value,str) else None
+                    if said:label.setText(label.text()+' · '+said);label.setToolTip(said);cell.setToolTip(said+'. '+cell.toolTip())
                 self.table.setItem(row,0,label);self.table.setItem(row,1,cell)
                 self.table.itemDelegateForColumn(1).decorate(cell,spec,value)
                 layer=self.layers.currentData() if self.layers.currentData() is not None else -1
