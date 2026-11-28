@@ -9,9 +9,9 @@ The plugin includes CPU, XPU and XPU2 rendering, a dockable live preview with a 
 
 **Built on MoonRay [2026.29.1](https://github.com/dreamworksanimation/openmoonray/releases/tag/v2026.29.1)** (OpenMoonRay's latest release; MoonRay 18.4), with the plugin's own patches for Windows and the preview.
 
-**Current version: 0.5.6.3 — pre-production release.** 0.5.6.3 brings **Shader Tree to MoonShine**, which moves a scene's Shader Tree textures into MoonShine graphs so Modo no longer holds the images, HDRIs and spherical cameras that face as in Modo, adaptive displacement with sharp hard edges, Blobs and Sprites, and XPU2 shaders that compile in half the memory and render faster. 0.5.6.2 brought **glitter to MoonLightIPR**. 0.5.6.1 brought the **Backplate**, an HDRI and the photo shot with it in one item, with **shadow catchers** in every engine. 0.5.6 brought **XPU2 Rhea**, the realtime part of MoonRay XPU2, which keeps XPU2 smooth in dense scenes, from a biased first picture to its unbiased render. The plugin is no longer experimental. 0.5 brought **MoonRay XPU2**, a new GPU renderer for previews in which the processor and the graphics card work on the same picture at once, now the default; realtime that keeps up with heavy scenes and a Scene cache; Modo's procedural textures worked out through the object, 145 of Modo's Enhance textures among them; Modo's light volumetrics and fog; and MoonLightIPR starting in seconds. Install the new runtime with it.
+**Current version: 0.5.7 — pre-production release.** 0.5.7 brings every Shader Tree texture into MoonShine, plain Modo materials as MoonShine materials and **MoonShine to Shader Tree** to go back; photometric (IES) lights; and a faster, smoother **XPU2 Rhea** with its own outlines. 0.5.6.3 brought **Shader Tree to MoonShine**, which moves a scene's Shader Tree textures into MoonShine graphs so Modo no longer holds the images, HDRIs and spherical cameras that face as in Modo, adaptive displacement with sharp hard edges, Blobs and Sprites, and XPU2 shaders that compile in half the memory and render faster. 0.5.6.2 brought **glitter to MoonLightIPR**. 0.5.6.1 brought the **Backplate**, an HDRI and the photo shot with it in one item, with **shadow catchers** in every engine. 0.5.6 brought **XPU2 Rhea**, the realtime part of MoonRay XPU2, which keeps XPU2 smooth in dense scenes, from a biased first picture to its unbiased render. The plugin is no longer experimental. 0.5 brought **MoonRay XPU2**, a new GPU renderer for previews in which the processor and the graphics card work on the same picture at once, now the default; realtime that keeps up with heavy scenes and a Scene cache; Modo's procedural textures worked out through the object, 145 of Modo's Enhance textures among them; Modo's light volumetrics and fog; and MoonLightIPR starting in seconds. Install the new runtime with it.
 
-· [Download 0.5.6.3: the kit, the Windows runtime and the MoonRay content](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.5.6.3)
+· [Download 0.5.7: the kit, the Windows runtime and the MoonRay content](https://github.com/Pbaroque20/MoonRayForModo/releases/tag/v0.5.7)
 
 · [Installation instructions](docs/INSTALLATION.md) 
 
@@ -65,7 +65,7 @@ Work on the next version goes on in the [MoonLightIPR branch](https://github.com
 | ![The compositor](docs/images/compositor-editor.png) | ![Modern Hall, imported from MoonRay's scene files](docs/images/rdl-modern_hall.jpg) |
 | **The compositor**: the beauty graded, vignetted and sharpened | **An imported MoonRay scene**: its own render (left), after the trip through Modo (right). Modern Hall by NewSee2l035, CC BY |
 
-## Coming in 0.5.7
+## New in 0.5.7
 
 - **Shader Tree to MoonShine** moves every texture layer into the graph, each as a **Modo Texture** node with the layer's own settings (blend modes, adjustments, Texture Locator), and makes plain Modo materials MoonShine materials too, so the graph editor opens on all of them.
 - **MoonShine to Shader Tree** (MoonRay menu) puts it all back as Modo materials and texture layers, with their images; changes made to those texture nodes in the graph go back onto their layers.
@@ -75,6 +75,11 @@ Work on the next version goes on in the [MoonLightIPR branch](https://github.com
 - The graph editor says why when it cannot open, and closes when its material is deleted (Modo crashed).
 - **XPU2 Rhea** is faster and smoother: it keeps its light sparsely, finely only where the light changes, as smooth gradients in between, also in its cache on disk. XPU2's light shows as it comes, fading in over Rhea's picture area by area.
 - **Rhea outlines** (Preferences > MoonRay > XPU2, on by default): Rhea draws black outlines over its smooth colours, fading out as XPU2's picture comes in. Draft is unchanged.
+- **Open MoonShine Graph Editor** (MoonRay menu): the graph editor in a window of its own, for the material selected in Modo or one chosen from its list.
+- Shader Tree to MoonShine and back switch realtime off while they change the scene.
+- A mesh with polygons of no area no longer sends XPU2 to MoonRay XPU ("invalid normal", or CUDA error 719 on the graphics card).
+
+Install the new kit and runtime, and **Compile XPU2 Shaders once more**.
 
 ## New in 0.5.6.3
 
@@ -542,7 +547,7 @@ In each pair, MoonRay's render of the scene from its own files is on the left; o
 - Render outputs: configurable AOVs, Cryptomatte surface categories, buffer switching, deep EXR, texture baking, a compositor over the finished buffers, and denoising (OptiX or Open Image Denoise) that survives a stopped render.
 - Workflow tools: ACES/sRGB/OCIO view transforms and LUTs, animation output and recovery controls, an asset library with MoonRay's example scenes, and RDL scene import.
 
-## Known issues in 0.5.6.3
+## Known issues in 0.5.7
 
 The ones you are most likely to meet:
 

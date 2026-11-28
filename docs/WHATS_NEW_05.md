@@ -2,6 +2,23 @@
 
 0.5 is a **pre-production release**: the plugin is no longer experimental, and it brings a new GPU renderer, MoonRay XPU2.
 
+## New in 0.5.7
+
+- **Every Shader Tree texture into MoonShine**: Shader Tree to MoonShine moves each texture layer into the material's graph as a **Modo Texture** node, which carries the layer's own settings (its source, effect, blend mode, opacity, adjustments with bias and gain, Texture Locator, masks), drawn as Modo draws the layer in every engine. Layer stacks, nested masks, group masks and layers above a material's group convert through it.
+- **Plain Modo materials** (with no texture layers) become MoonShine materials too, so Open Graph Editor works on every converted material; a Subsurface Amount between none and all is kept as a mix of the two.
+- **MoonShine to Shader Tree (Revert)** (MoonRay menu): puts the scene back as Modo materials and texture layers, their images loaded again, in one undo. Changes made in the graph to the converted texture nodes go back onto their layers (image, blend, opacity, projection...); an image node added in a graph becomes a new layer; a node the Shader Tree cannot hold is named in the summary. Renamed materials and layers keep their names.
+- Converting and reverting switch realtime off while they change the scene.
+- **Photometric (IES) lights** shine with their profiles, and a light's own Shader Tree image colours its light, in MoonRay, XPU2 and MoonLightIPR.
+- **Open MoonShine Graph Editor** (MoonRay menu): the graph editor in a window of its own, for the material selected in Modo or one chosen from its list.
+- **MoonLightIPR** follows Metallic Color maps.
+- **UDIM sets** show as sets in the graph editor and the material form, the node's picture the set's first tile; the material form's Load Image takes a picked tile's whole set.
+- The graph editor says why when it cannot open, and closes when its material is deleted (Modo crashed).
+- **XPU2 Rhea** keeps its light sparsely: finely only where the light changes, as smooth gradients in between, on the graphics card, and in its cache on disk too. It is faster and smoother. XPU2's light shows as it comes, fading in over Rhea's picture area by area.
+- **Rhea outlines** (Preferences > MoonRay > XPU2, on by default): Rhea draws black outlines over its smooth colours, fading out as XPU2's picture comes in. Draft is unchanged.
+- A mesh with polygons of no area no longer sends XPU2 to MoonRay XPU ("invalid normal", or CUDA error 719 on the graphics card).
+
+Install the new kit and runtime, and **Compile XPU2 Shaders once more**.
+
 ## New in 0.5.6.3
 
 - **Shader Tree to MoonShine** (MoonRay menu, Shader Tree to MoonShine...): moves the images of a scene's Shader Tree into each material's MoonShine graph, which keeps only their file paths, so the images no longer sit in Modo's memory. The layers are switched off and their image clips unloaded, in one undo. Choose Convert the Current Scene, or Open a Scene and Convert, which reads the scene's Shader Tree from its file so its textures never load into Modo. Run it again after changing the Shader Tree, and the graphs follow. It brings new graph nodes: Modo Blend (all of Modo's blend modes), Modo Procedural, projections (planar, cubic, spherical, cylindrical, front), Vertex Map, Modo Mask, Modo Falloff, Driver A to D, Occlusion, Curvature, Gradient inputs, Variation and Tension, image sequences, and environment graphs. Displacement layers stay in the Shader Tree, and so does a material one of whose layers cannot move; the summary names each and says why.
