@@ -1,6 +1,7 @@
 """Image sequences and clip choices (shader_tree_clips): which file Modo shows at a frame, the Image node's sequence
 parameters and their frame's file as a scene is read, a sequence layer's nodes in Move Shader Tree Textures to MoonShine
 Graphs, and layers.collect reading a sequence clip and a clip whose alpha is off. No Modo or renderer launch."""
+import json
 import sys
 import tempfile
 import types
@@ -113,42 +114,32 @@ class ImageNode(unittest.TestCase):
 
 
 class Transfer(unittest.TestCase):
-    def test_a_sequence_layer_is_an_image_node_of_its_pattern(self):
+    def test_a_sequence_layer_is_a_modo_texture_of_its_pattern(self):
         made = transfer.plan('mat', [layer(sequence=dict(SEQUENCE))], BASES, 'native', POST, NO_ALPHA, strict=True)
         self.assertEqual(made.moved, ['a'])
-        node = made.builder.nodes['st_a_image']
-        self.assertEqual(node['parameters']['file'], SEQUENCE['pattern'])
-        self.assertTrue(node['parameters']['sequence'])
-        self.assertEqual((node['parameters']['first_frame'], node['parameters']['last_frame']), (1, 5))
+        node = made.builder.nodes['st_a_texture']
+        record = json.loads(node['parameters']['layer'])
+        self.assertEqual((record['sequence']['first_frame'], record['sequence']['last_frame']), (1, 5))
         graph = transfer.merged(nodes.new('DwaBaseMaterial', {}), made, {'profile': 'modo'}, created=True)
         nodes.validate(graph)
-        self.assertEqual(transfer.our_layers(graph)['a']['file'], SEQUENCE['pattern'])
         self.assertIn('seq.0004.png', emitted(clips.framed_graph(graph, 3)))
 
-    def test_an_alpha_image_sequence_masks_with_the_frames_alpha(self):
-        made = transfer.plan('mat', [layer(sequence=dict(SEQUENCE))], BASES, 'native', POST, lambda path: True)
-        self.assertTrue(made.builder.nodes['st_a_alpha']['parameters']['sequence'])
-        self.assertEqual(made.builder.nodes['st_a_alpha']['parameters']['channel'], 4)
-
-    def test_a_pingpong_sequence_is_masked_where_it_shows_nothing(self):
+    def test_a_pingpong_sequence_lays_nothing_where_it_shows_nothing(self):
         made = transfer.plan('mat', [layer(sequence=dict(SEQUENCE, end_behavior='pingpong'))], BASES, 'native', POST, NO_ALPHA)
-        self.assertIn('st_a_alpha', made.builder.nodes)
         graph = transfer.merged(nodes.new('DwaBaseMaterial', {}), made, {'profile': 'modo'}, created=True)
         nodes.validate(graph)
-        self.assertIn('ConstantColorMap', emitted(clips.framed_graph(graph, -1)))
+        self.assertNotIn('ImageMap(', emitted(clips.framed_graph(graph, -1)))
 
-    def test_a_normal_map_sequence_stays(self):
-        with self.assertRaises(transfer.Refused):
-            transfer.plan('mat', [layer(effect='normal', image_channel='ignore', sequence=dict(SEQUENCE))], BASES, 'native', POST, NO_ALPHA, strict=True)
+    def test_a_normal_map_sequence_moves_too(self):
+        made = transfer.plan('mat', [layer(effect='normal', image_channel='ignore', sequence=dict(SEQUENCE))], BASES, 'native', POST, NO_ALPHA, strict=True)
+        self.assertEqual(made.moved, ['a'])
 
     def test_a_still_with_clip_choices_moves_with_them_recorded(self):
         made = transfer.plan('mat', [layer(sequence=None, path='C:/images/a.png', image_channel='ignore', clip_alpha='ignore',
                                            pixel_blend='nearest')], BASES, 'native', POST, lambda path: True)
-        node = made.builder.nodes['st_a_image']
-        self.assertEqual(node[transfer.NODE_KEY]['clip_alpha'], 'ignore')
-        self.assertEqual(node[transfer.NODE_KEY]['pixel_blend'], 'nearest')
-        self.assertNotIn('st_a_alpha', made.builder.nodes)
-        self.assertNotIn('sequence', node['parameters'])
+        record = json.loads(made.builder.nodes['st_a_texture']['parameters']['layer'])
+        self.assertEqual(record['clip_alpha'], 'ignore')
+        self.assertEqual(record['pixel_blend'], 'nearest')
 
 
 class Item:

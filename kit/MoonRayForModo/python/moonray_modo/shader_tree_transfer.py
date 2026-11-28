@@ -194,6 +194,8 @@ class Plan:
     def __init__(self):
         self.builder = Builder()
         self.keys = {}
+        self.displacement = None
+        self.shader = 'DwaBaseMaterial'
         self.inputs = {}
         self.moved = []
         self.left = []
@@ -204,6 +206,7 @@ AMOUNTS = {'diffCol': 'diffAmt', 'specCol': 'specAmt', 'lumiCol': 'lumiAmt'}
 KEYS = {'diffCol': ('diffuseColor',), 'diffAmt': ('diffuseColor',), 'specCol': ('specularColor',),
         'specAmt': ('specularColor', 'specularAmount'), 'lumiCol': ('emissiveColor',), 'lumiAmt': ('emissiveColor',),
         'dissolve': ('presence',), 'stencil': ('presence',), 'normal': ('normal',), 'bump': ('normal',),
+        'normalCoat': ('coatNormal',), 'coatBump': ('coatNormal',), 'subsAmt': ('subsurfaceAmount',), 'ior': ('ior',),
         'rough': ('roughness',), 'metallic': ('metallic',), 'coatAmt': ('clearcoat',), 'coatRough': ('clearcoatRoughness',),
         'tranAmt': ('transmission',), 'tranCol': ('transmissionColor',), 'tranRough': ('refractionRoughness',),
         'subsCol': ('subsurfaceColor',), 'aniso': ('anisotropy',), 'diffRough': ('diffuseRoughness',)}
@@ -215,14 +218,13 @@ NATIVE_NAMES = {'diffuseColor': ('albedo',), 'emissiveColor': ('emission',), 'tr
                 'normal': ('input_normal',), 'diffuseRoughness': ('diffuse_roughness',)}
 # Effects whose layers stay where they are and hold nothing else back: Modo moves the mesh by a Displacement layer itself for
 # MoonRay and XPU2 (host.modo_displaces), which a graph's displacement would do otherwise.
-STAYING = {'displace': "Modo displaces the mesh by it for MoonRay and XPU2 renders; in a graph MoonRay would displace it instead, "
-                       "otherwise. It stays in the Shader Tree, and the rest of the material moves"}
+STAYING = {}
 BLEND_NUMBERS = {'normal': 0, 'normalblend': 0, 'multiply': 1, 'add': 2, 'subtract': 3, 'screen': 4, 'divide': 5, 'difference': 6,
                  'darken': 7, 'lighten': 8, 'overlay': 9, 'hardlight': 10, 'exclusion': 11, 'softlight': 12, 'colordodge': 13,
                  'colorburn': 14}
 
 
-def plan(material, layers, bases, profile='modo', post=None, alpha_of=None, blocked=None, wired=None, strict=None):
+def plan(material, layers, bases, profile='modo', post=None, alpha_of=None, blocked=None, wired=None, strict=None, scopes=None):
     """The nodes for a material's layers (layers.collect's dicts, in the order Modo applies them, bottom first).
 
     material: the material's identity (base nodes are tagged with it). bases: each effect's value beneath every layer
@@ -313,7 +315,7 @@ def plan(material, layers, bases, profile='modo', post=None, alpha_of=None, bloc
     moving = [layer for layer in layers if layer['identity'] not in gone]
     if not moving:
         return result
-    build(result, material, moving, bases, profile, post, alpha_of)
+    build(result, material, moving, bases, profile, post, alpha_of, scopes)
     result.moved = [layer['identity'] for layer in moving]
     if profile == 'native':
         for key, value in result.keys.items():
@@ -343,76 +345,26 @@ def hooks(layer):
     return None, None
 
 
-MOVING_EFFECTS = set(KEYS) | set(DRIVERS) | {'layerMask', 'groupMask'}
+MOVING_EFFECTS = set(KEYS) | set(DRIVERS) | {'layerMask', 'groupMask', 'displace'}
 PROJECTIONS = ('uv', 'planar', 'cubic', 'spherical', 'cylindrical', 'front')
 
 
 def check(layer, effect, alpha_of, by_effect, masked=()):
-    """Refused where the graph cannot draw this layer as the Shader Tree does."""
-    if effect == 'groupMask':
-        if not layer.get('groups'):
-            raise Refused("a Group Mask of the material's own group masks the material itself, which the graph cannot")
-    elif effect not in MOVING_EFFECTS:
+    """Refused where the graph cannot draw this layer as the Shader Tree does. A layer the kit reads (layers.collect) is
+    drawn by the Modo Texture node by the Shader Tree's own code (graph.layer_over): only an effect the material is handed
+    nothing for, and a kind the drawing does not know, are refused."""
+    if effect not in MOVING_EFFECTS and layer.get('kind') != 'materialBase':
         raise Refused('its effect %s has no input on the graph yet' % effect_name(effect))
-    kind = layer.get('kind')
-    blend = layer.get('blend', 'normal')
-    from .shader_tree_clips import hooks as clip_hooks
-    for clip_check in clip_hooks(layer)[0]:
-        clip_check(layer, effect)
+    kind = layer.get('kind', 'imageMap')
+    if kind == 'materialBase':
+        return
+    if kind == 'imageMap' and not layer.get('path'):
+        raise Refused('it has no image')
+    if layer.get('blend', 'normal') not in BLEND_NUMBERS:
+        raise Refused('its blend mode %s is not one the kit draws' % layer.get('blend'))
     for group in layer.get('groups', []):
         if group.get('blend', 'normal') not in BLEND_NUMBERS:
-            raise Refused('its group blends by %s, which has no node' % group.get('blend'))
-    if blend not in BLEND_NUMBERS:
-        raise Refused('its blend mode %s has no node' % blend)
-    if effect in ('normal', 'bump'):
-        if effect == 'normal' and len(by_effect.get(effect, [])) > 1:
-            raise Refused('more than one Normal layer: each is turned to the surface on its own before they are mixed, which the graph cannot')
-        if kind != 'imageMap':
-            raise Refused('a %s layer that is not an image' % effect_name(effect))
-        if effect == 'normal':
-            if float(layer.get('opacity', 1)) != 1 or blend not in ('normal', 'normalblend'):
-                raise Refused('a Normal layer at another opacity or blend than 100% Normal: it is turned to the surface before it is mixed')
-            if any(float(g.get('opacity', 1)) != 1 or g.get('blend', 'normal') != 'normal' or g.get('invert') or g['id'] in masked
-                   for g in layer.get('groups', [])):
-                raise Refused('a Normal layer in a masked group, or one at another opacity or blend than 100% Normal')
-            if layer.get('invert'):
-                raise Refused('an inverted Normal image')
-            if layer.get('image_channel', 'use') not in ('use', 'ignore'):
-                raise Refused('a Normal image read from one channel')
-    check_hook, foreground_hook = hooks(layer)
-    if foreground_hook is not None:
-        if check_hook is not None:
-            check_hook(layer, effect)
-        return
-    if kind == 'constant':
-        return
-    if kind != 'imageMap':
-        solid = layer.get('solid_map')
-        if not solid:
-            if layer.get('procedural') or kind in ('checker', 'noise', 'grid', 'dots', 'cellular', 'wood', 'weave', 'ripples'):
-                raise Refused('a %s laid on through UVs or a projection, which the kit bakes: Modo Procedural draws it through the object (Solid)' % kind)
-            raise Refused('a %s layer, which has no node yet' % kind)
-        if float(layer.get('bias', .5)) != .5 or float(layer.get('gain', .5)) != .5:
-            raise Refused('its Bias or Gain, which the graph has no node for')
-        return
-    if layer.get('projection', 'uv') not in PROJECTIONS:
-        raise Refused('its %s projection has no node' % layer.get('projection'))
-    if not layer.get('path'):
-        raise Refused('it has no image')
-    if layer.get('projection', 'uv') == 'uv' and not layer.get('uv_map'):
-        raise Refused('it names no UV map')
-    if float(layer.get('bias', .5)) != .5 or float(layer.get('gain', .5)) != .5:
-        raise Refused('its Bias or Gain, which the graph has no node for')
-    channel = layer.get('image_channel', 'use')
-    alpha = alpha_of(layer['path']) if channel in ('use', 'ignore') else None
-    tiles = (layer.get('tile_u', 'repeat'), layer.get('tile_v', 'repeat'))
-    if 'reset' in tiles and channel == 'ignore' and alpha is not False:
-        raise Refused('Reset repeat with the alpha channel ignored, on an image that may have one')
-    if effect == 'normal' and channel == 'use' and alpha is not False:
-        raise Refused('a Normal image whose alpha channel would mask it')
-    flips = [bool(layer.get('flip_' + c)) for c in ('red', 'green', 'blue')]
-    if any(flips) and channel in ('red', 'green', 'blue', 'only'):
-        raise Refused('its channels are flipped and one of them read')
+            raise Refused('its group blends by %s, which the kit does not draw' % group.get('blend'))
 
 
 def projection(builder, layer):
@@ -549,24 +501,48 @@ def laid(builder, owner, role, below, above, blend, opacity, masks):
     return node
 
 
-def build(result, material, layers, bases, profile, post, alpha_of):
+def texture(builder, layer, below, mask=None, read=None):
+    """A layer as one Modo Texture node over what lies beneath it (below), further masked by mask (a Layer Mask's node),
+    reading read where it is a gradient or a process on another channel."""
+    from . import modo_texture
+    parameters = modo_texture.parameters_of(layer)
+    inputs = {'bg': below}
+    if mask is not None:
+        inputs['mask'] = mask
+    if read is not None:
+        inputs['input'] = read
+    label = layer.get('name') or layer['identity']
+    return builder.add(layer['identity'], 'texture', modo_texture.KIND, parameters, inputs, label=label,
+                       data={'source': layer.get('_source'), 'effect': layer.get('effect')})
+
+
+def build(result, material, layers, bases, profile, post, alpha_of, scopes=None):
+    """scopes: {nested mask's identity: what shader_tree_masks.mask_value reads of it}: the layers inside a mask for some
+    of the material's surfaces laid on there alone, by a Modo Mask of it."""
     builder = result.builder
+    scopes = scopes or {}
     current = {}
     stack = []           # (group, values before it, effects used before it)
     used = set()
     pending = {}         # layer masks by what they mask
 
     def base(effect):
-        return current.get(effect, ('c', rgb(bases.get(effect, 1.0 if effect == 'groupMask' else 0.0))))
+        held = bases.get(effect, 1.0 if effect in ('groupMask', 'layerMask') else ([.5, .5, 1.0] if effect in ('normal', 'normalCoat') else 0.0))
+        return current.get(effect, ('c', rgb(held)))
 
     def close():
         nonlocal used
         group, before, used_before = stack.pop()
         mask = current.get('groupMask') if 'groupMask' in used else None
         external = pending.pop(group['id'], None)
+        if group['id'] in scopes:
+            from .shader_tree_masks import mask_value
+            held = mask_value(builder, scopes[group['id']])
+            if held[0] == 'n':
+                external = builder.add(group['id'], 'scope_mask', 'modo_blend', {'blend': 1}, {'bg': external, 'fg': held}) if external else held
         for effect in sorted(used - {'groupMask'}):
             inner = current[effect]
-            below = before.get(effect, ('c', rgb(bases.get(effect, 0.0))))
+            below = before.get(effect, base_of(effect, before))
             if group.get('invert') and effect in ('diffCol', 'specCol', 'lumiCol', 'tranCol', 'subsCol'):
                 inner = builder.add(group['id'], 'group_invert_' + effect, 'modo_blend', {'blend': 3}, {'bg': ('c', [1.0] * 3), 'fg': inner})
             current[effect] = laid(builder, group['id'], 'group_' + effect, below, inner, group.get('blend', 'normal'),
@@ -576,6 +552,10 @@ def build(result, material, layers, bases, profile, post, alpha_of):
         else:
             current.pop('groupMask', None)
         used = used_before | (used - {'groupMask'})
+
+    def base_of(effect, held):
+        value = bases.get(effect, [.5, .5, 1.0] if effect in ('normal', 'normalCoat') else 0.0)
+        return held.get(effect, ('c', rgb(value)))
 
     def select(path):
         nonlocal used
@@ -589,39 +569,61 @@ def build(result, material, layers, bases, profile, post, alpha_of):
             used = set()
             current.pop('groupMask', None)
 
-    normal_image = None
-    tiled = 1.0
+    tiled = {'bump': 1.0, 'coatBump': 1.0}
+    from . import graph as shader_tree, textures as kinds
+    whole_glow = shader_tree.glows_whole(layers)
     for layer in layers:
         select(layer.get('groups', []))
         effect = layer['effect']
         identity = layer['identity']
-        if effect == 'normal':
-            normal_image, _ = foreground(builder, layer, effect, alpha_of, base, current)
-            used.add('normal')
+        if layer.get('kind') == 'materialBase':
+            row_mask = pending.pop(identity, None)
+            values = shader_tree.defaults_for(layer['material'])
+            if whole_glow:
+                shader_tree.glow_whole(values)
+            blend = layer.get('blend', 'normal')
+            for target, value in values.items():
+                if target in {'groupMask', 'layerMask'} | kinds.INTERNAL_EFFECTS:
+                    continue
+                if target == 'displace' and target not in used and not any(value if isinstance(value, (list, tuple)) else [value]):
+                    continue
+                if layer.get('invert') and target in kinds.COLOR_EFFECTS:
+                    value = [1 - v for v in value] if isinstance(value, list) else 1 - value
+                below = base(target)
+                opacity = float(layer.get('opacity', 1))
+                if below[0] == 'c' and row_mask is None:
+                    # Numbers over numbers: the number they come to (ModoTextureMap's arithmetic).
+                    mixed = _blend(BLEND_NUMBERS[blend], rgb(below[1]), rgb(value))
+                    alpha = max(0.0, min(1.0, opacity))
+                    current[target] = ('c', [x * (1 - alpha) + y * alpha for x, y in zip(rgb(below[1]), mixed)])
+                else:
+                    current[target] = laid(builder, identity, 'row_' + target, below, ('c', rgb(value)), blend, opacity, [row_mask])
+                used.add(target)
             continue
-        if effect == 'bump':
-            layer = dict(layer, _bumped=True)
-            if layer.get('projection', 'uv') == 'uv':
-                from .coordinates import affine
+        if effect in tiled and layer.get('projection', 'uv') == 'uv':
+            from .coordinates import affine
+            try:
                 a = affine(layer)[0]
-                tiled = max(tiled, (a[0] * a[0] + a[2] * a[2]) ** .5, (a[1] * a[1] + a[3] * a[3]) ** .5)
-        value, alpha = foreground(builder, layer, effect, alpha_of, base, current)
-        masks = [alpha, pending.pop(identity, None)]
+                tiled[effect] = max(tiled[effect], (a[0] * a[0] + a[2] * a[2]) ** .5, (a[1] * a[1] + a[3] * a[3]) ** .5)
+            except (ValueError, TypeError, KeyError):
+                pass
+        source = (layer.get('gradient') or {}).get('input') if layer.get('kind') == 'gradient' else None
+        read = base(source) if source and not str(source).startswith('@') and source != effect else None
+        mask = pending.pop(identity, None)
         if effect == 'layerMask':
-            pending[layer.get('mask_target', '')] = laid(builder, identity, 'mask', ('c', [1.0] * 3), value, layer.get('blend', 'normal'),
-                                                         layer.get('opacity', 1), masks)
+            pending[layer.get('mask_target', '')] = texture(builder, layer, ('c', [1.0] * 3), mask, read)
             continue
-        current[effect] = laid(builder, identity, 'over', base(effect), value, layer.get('blend', 'normal'), layer.get('opacity', 1), masks)
+        current[effect] = texture(builder, layer, base(effect), mask, read)
         used.add(effect)
     select([])
-    if normal_image is not None:
-        current['normal'] = normal_image
     outputs(result, material, current, used, bases, profile, post, tiled)
 
 
-def outputs(result, material, current, used, bases, profile, post, tiled=1.0):
-    """Each value the material is handed (graph.bindings' names) as a node: Plan.keys."""
+def outputs(result, material, current, used, bases, profile, post, tiled=None):
+    """Each value the material is handed (graph.bindings' names) as a node: Plan.keys; and a displacement's height
+    (Plan.displacement), which the graph's displacement output takes."""
     builder = result.builder
+    tiled = tiled or {}
 
     def value(effect):
         return current.get(effect, ('c', rgb(bases.get(effect, 0.0))))
@@ -653,21 +655,30 @@ def outputs(result, material, current, used, bases, profile, post, tiled=1.0):
             kept = builder.add(material, 'presence_stencil', 'modo_blend', {'blend': 3}, {'bg': ('c', [1.0] * 3), 'fg': value('stencil')})
             held = builder.add(material, 'presence', 'modo_blend', {'blend': 1}, {'bg': held, 'fg': kept}) if held else kept
         keys['presence'] = held
-    if 'bump' in used:
-        bump = builder.add(material, 'bump', 'bump', {'amplitude': float(post.get('bump_strength', .005)),
-                                                      'step': .001 / tiled if tiled > 1 else 0.0}, {})
-        wire(builder.nodes[bump[1]], 'height', value('bump'), scalar=True)
-        if 'normal' in current:
-            wire(builder.nodes[bump[1]], 'normal', current['normal'])
-        keys['normal'] = bump
-    elif 'normal' in current:
-        keys['normal'] = builder.add(material, 'normal', 'normalmap', {'scale': 1.0}, {'in': current['normal']})
+    for normal, bump, key, role in (('normal', 'bump', 'normal', 'normal'), ('normalCoat', 'coatBump', 'coatNormal', 'coat_normal')):
+        if not ({normal, bump} & used):
+            continue
+        # As graph.bindings: the normal beneath (its layers turned to the surface each), the height read to either side.
+        steps = tiled.get(bump, 1.0)
+        held = builder.add(material, role, 'bump', {'amplitude': float(post.get('bump_strength', .005)) if bump in used else 0.0,
+                                                    'step': .001 / steps if bump in used and steps > 1 else 0.0}, {})
+        if bump in used:
+            wire(builder.nodes[held[1]], 'height', value(bump), scalar=True)
+        if normal in used:
+            wire(builder.nodes[held[1]], 'normal', value(normal))
+        keys[key] = held
+    if 'displace' in used:
+        # As the kit writes the Shader Tree's displacement (rdla): the surface moved along its normal by the height times
+        # the material's Displacement Distance.
+        held = builder.add(material, 'displacement', 'NormalDisplacement', {'height_multiplier': float(post.get('displacement_distance', .02))}, {})
+        wire(builder.nodes[held[1]], 'height', value('displace'), scalar=True)
+        result.displacement = held[1]
     for effect in sorted(used):
-        if effect in AMOUNTS or effect in AMOUNTS.values() or effect in ('dissolve', 'stencil', 'normal', 'bump', 'groupMask', 'layerMask') \
-                or effect in DRIVERS:
+        if effect in AMOUNTS or effect in AMOUNTS.values() or effect in ('dissolve', 'stencil', 'normal', 'bump', 'normalCoat', 'coatBump',
+                                                                        'groupMask', 'layerMask', 'displace') or effect in DRIVERS:
             continue
         keys[KEYS[effect][0]] = value(effect)
-    result.keys = {key: node(held, 'value_' + key)[1] for key, held in keys.items()}
+    result.keys = {key: node(held, 'value_' + key)[1] for key, held in keys.items() if held[0] == 'n' or not post.get('whole')}
 
 
 SENTINEL = '@shader_tree/'
@@ -711,12 +722,22 @@ def connect(result, material, lines, path, shader='DwaBaseMaterial'):
     from . import shader_library, map_library
     found = objects(lines)
     mixed = found.get(path + '/sss_mix')
+    layered = False
+    share = None
     if mixed is not None:
-        share = sum(evaluate(found, literal(mixed[1].get('mask', '1')))) / 3
-        if share <= 1e-6:
+        try:
+            share = sum(evaluate(found, literal(mixed[1].get('mask', '1')))) / 3
+        except NotConstant:
+            # Subsurface Amount from layers: the material mixed with itself without its scattering by their value, as the
+            # kit writes it (moonshine.emit): a DwaLayerMaterial output of the two.
+            share = None
+            layered = True
+        if share is not None and share <= 1e-6:
             path = path + '/surface'
-        elif share < 1 - 1e-6:
-            raise NotConstant('the material is mixed with itself by its subsurface amount')
+        elif share is not None and share < 1 - 1e-6:
+            # A Subsurface Amount between none and all (a plain Modo material's, Skin at 60%): the same two materials,
+            # mixed by that amount as the output's mask.
+            layered = True
     if path not in found or found[path][0] != shader:
         raise NotConstant('the material is written as more than one %s' % shader)
     schema = shader_library.catalog()[shader]['attributes']
@@ -787,29 +808,48 @@ def connect(result, material, lines, path, shader='DwaBaseMaterial'):
         made[name] = builder.add(material, role, node_kind, parameters, inputs)
         return made[name]
 
-    values = {}
-    for key, text in found[path][1].items():
-        spec = schema.get(key)
-        if spec is None:
-            continue
-        value = literal(text)
-        if reaches(value):
-            result.inputs[key] = copy_of(value[1])[1]
-            continue
-        if spec['type'] in ('SceneObject*', 'String') or spec['type'].endswith('Vector') or (isinstance(value, tuple) and value[0] == 'ref'):
-            continue
-        kind = spec['type']
-        if kind == 'Bool':
-            values[key] = bool(value) if isinstance(value, bool) else bool(evaluate(found, value)[0])
-        elif kind == 'Int':
-            values[key] = int(round(evaluate(found, value)[0]))
-        elif kind == 'Float':
-            values[key] = sum(evaluate(found, value)) / 3.0
-        elif kind == 'Rgb':
-            values[key] = evaluate(found, value)
-        elif kind in ('Vec2f', 'Vec3f', 'Vec4f') and isinstance(value, list):
-            values[key] = [float(v) for v in value]
-    return values
+    def transcribed(name, inputs):
+        values = {}
+        for key, text in found[name][1].items():
+            spec = schema.get(key)
+            if spec is None:
+                continue
+            value = literal(text)
+            if reaches(value):
+                inputs[key] = copy_of(value[1])[1]
+                continue
+            if spec['type'] in ('SceneObject*', 'String') or spec['type'].endswith('Vector') or (isinstance(value, tuple) and value[0] == 'ref'):
+                continue
+            kind = spec['type']
+            if kind == 'Bool':
+                values[key] = bool(value) if isinstance(value, bool) else bool(evaluate(found, value)[0])
+            elif kind == 'Int':
+                values[key] = int(round(evaluate(found, value)[0]))
+            elif kind == 'Float':
+                values[key] = sum(evaluate(found, value)) / 3.0
+            elif kind == 'Rgb':
+                values[key] = evaluate(found, value)
+            elif kind in ('Vec2f', 'Vec3f', 'Vec4f') and isinstance(value, list):
+                values[key] = [float(v) for v in value]
+        return values
+
+    if not layered:
+        result.shader = shader
+        return transcribed(path, result.inputs)
+    # The two materials as nodes of the graph, its output the mix of them.
+    result.shader = 'DwaLayerMaterial'
+    for part, name in (('material_A', path), ('material_B', path + '/surface')):
+        inputs = {}
+        values = transcribed(name, inputs)
+        held = builder.add(material, 'surface_' + part[-1], shader, values, {key: ('n', value) for key, value in inputs.items()})
+        result.inputs[part] = held[1]
+    if share is not None:
+        return {'mask': float(share)}
+    weight = literal(mixed[1]['mask'])
+    if not reaches(weight):
+        raise NotConstant('a subsurface mix the moved layers do not make')
+    result.inputs['mask'] = copy_of(weight[1])[1]
+    return {}
 
 
 # Bringing a graph up to date.
@@ -835,12 +875,18 @@ def merged(graph, result, meta, created=False):
             node['position'] = list(before[identity]['position'])
         members[identity] = node
     root_inputs.update(result.inputs)
+    if getattr(result, 'displacement', None):
+        graph['displacement'] = result.displacement
+    elif graph.get('displacement') in before:
+        graph.pop('displacement', None)
     held.update(meta)
     held['version'] = VERSION
     held['inputs'] = sorted(result.inputs)
-    if result.inputs or result.builder.nodes:
+    # A graph this command made always keeps its record, a plain Modo material's (no layers, no nodes of its own) too:
+    # MoonShine -> Shader Tree (shader_tree_revert) reads from it that the material was a Modo material.
+    if result.inputs or result.builder.nodes or created:
         graph[META_KEY] = held
-    elif META_KEY in graph and not created:
+    elif META_KEY in graph:
         graph[META_KEY] = held
     place(graph, created)
     return graph
@@ -875,10 +921,11 @@ def place(graph, created):
 
 
 def our_layers(graph):
-    """{layer identity: its image node's record (what the layer's image was)} of this command's image nodes."""
+    """{layer identity: its node's record (what the layer's image was)} of this command's layer nodes: its Modo Texture
+    nodes (and the Image nodes of graphs made before them)."""
     found = {}
     for identity, node in ((graph or {}).get('nodes') or {}).items():
-        if ours(identity, node) and node[NODE_KEY].get('role') == 'image':
+        if ours(identity, node) and node[NODE_KEY].get('role') in ('image', 'texture'):
             found[node[NODE_KEY]['layer']] = dict(node[NODE_KEY], file=(node.get('parameters') or {}).get('file'))
     return found
 
@@ -1061,7 +1108,11 @@ def _blend(mode, a, b):
              5: lambda x, y: x / max(1e-6, y), 6: lambda x, y: abs(x - y), 7: min, 8: max,
              9: lambda x, y: 2 * x * y if x < .5 else 1 - 2 * (1 - x) * (1 - y),
              10: lambda x, y: 2 * x * y if y < .5 else 1 - 2 * (1 - x) * (1 - y),
-             11: lambda x, y: x + y - 2 * x * y}
+             11: lambda x, y: x + y - 2 * x * y,
+             12: lambda x, y: x - (1 - 2 * y) * x * (1 - x) if y <= .5 else
+                 x + (2 * y - 1) * ((((16 * x - 12) * x + 4) * x if x <= .25 else math.sqrt(max(0.0, x))) - x),
+             13: lambda x, y: 1.0 if y >= 1 else min(1.0, x / max(1e-6, 1 - y)),
+             14: lambda x, y: 0.0 if y <= 0 else 1 - min(1.0, (1 - x) / max(1e-6, y))}
     if mode not in table:
         raise NotConstant('blend %d' % mode)
     return one(table[mode])

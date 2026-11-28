@@ -93,8 +93,16 @@ def emit(scene,meshes,environment,lines):
             attrs['light']=selected[0]
         if kind=='SpotLight':
             cone=light.get('cone',45);attrs.update(outer_cone_angle=number(cone),inner_cone_angle=number(max(0,cone-2*light.get('soft_edge',0))),lens_radius=number(light.get('radius',.001)))
+        # A Modo light's Shader Tree image laid across it (light_images): its picture, as MoonRay lays a light's texture.
+        if light.get('texture') and kind!='MeshLight':
+            from .textures import register
+            attrs['texture']=string(register(light['texture']).replace('\\','/'))
         from .light_filters import emit as emit_filters
         filters=emit_filters(settings,light,scene,name,lines)
+        if light.get('ies'):
+            # A Photometric light's IES profile, as cookie projectors about it (ies_lights).
+            from .ies_lights import emit as emit_ies
+            filters+=emit_ies(light,name,lines)
         if settings.get('filter_enabled'):
             f='IntensityLightFilter(%s)'%string(name+'/intensity')
             lines.append('%s { ["intensity"] = %s, ["exposure"] = %s, ["color"] = %s }'%(f,number(settings.get('filter_intensity',1)),number(settings.get('filter_exposure',0)),vector(working_color(settings.get('filter_color',[1,1,1])),'Rgb')));filters.append(f)

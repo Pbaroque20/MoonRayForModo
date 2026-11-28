@@ -49,15 +49,10 @@ def bindings(material, index, lines, glass=False, absorption=False, separate_mas
         layers = [dict(value,effect=key,kind=value.get('kind','imageMap')) for key,value in material.get('textures',{}).items()]
     for layer in layers:
         layer=dict(layer)
-        from .procedurals import map_available
-        solid = layer.get('solid_map') if layer.get('solid_map') and map_available() else None
-        if solid is None and str(layer.get('kind','')).startswith('val.'):
-            # An Enhance: Modo pattern has nothing to fall back on in a runtime without ModoProceduralMap.
+        prepared=prepared_layer(layer)
+        if prepared is None:
             continue
-        if layer.get('procedural') and solid is None:
-            from .procedurals import bake
-            path,alpha_path=bake(layer['procedural'])
-            layer.update(kind='imageMap',path=str(path),procedural_alpha=str(alpha_path),image_channel='ignore',srgb=False,color_space='raw',bias=.5,gain=.5)
+        layer,solid=prepared
         groups.select(layer.get('groups', []))
         current, used = groups.current, groups.used
         effect = textures.EFFECT_ALIASES.get(layer['effect'], layer['effect'])
@@ -79,150 +74,10 @@ def bindings(material, index, lines, glass=False, absorption=False, separate_mas
                 current[target]=node('ModoTextureMap',{'background':current[target],'foreground':rgb(foreground),'blend':str(BLENDS[layer.get('blend','normal')]),'opacity':number(layer.get('opacity',1)),**({'mask':row_mask} if row_mask else {})})
                 used.add(target)
             continue
-        if absorption and effect=='tranCol' and layer.get('absorption_distance',material.get('absorption_distance',0))<=0:continue
-        if effect not in textures.EFFECTS:
-            raise ValueError('Unsupported image effect: '+effect)
-        if glass and effect in ('specCol','specAmt','coatAmt','coatRough','metallic'):
+        drawn=layer_over(layer,effect,solid,current,node,rgb,material,glass,absorption)
+        if drawn is None:
             continue
-        kind = layer.get('kind','imageMap')
-        mask = None
-        coordinates = None
-        if layer.get('coordinate_key') and effect not in ('normal','normalCoat','bump','coatBump'):
-            coordinates = node('AttributeMap', {'primitive_attribute_name':string(coordinate_attribute(layer['coordinate_key'])),
-                'primitive_attribute_type':'1', 'warn_when_unavailable':'true', 'default_value':'Rgb(0,0,0)'})
-        normal_basis=None
-        named_basis=layer.get('coordinate_key') if effect in ('normal','normalCoat','bump','coatBump') else None
-        if named_basis:
-            # With the layer's own placement of the UVs (its tiling and turn): on a subdivision surface MoonRay
-            # does not say how a named map changes across the surface, and this is what it changes by.
-            from .coordinates import affine as placed
-            coordinates=node('ModoTextureMap',{'mode':'12','uv_name':string(coordinate_attribute(named_basis)),
-                                               **({'uv_affine':vector(placed(layer)[0],'Vec4')} if layer.get('projection','uv')=='uv' else {})})
-        if effect in ('normal','normalCoat','bump','coatBump') and kind!='constant' and not coordinates:
-            from .coordinates import affine
-            matrix,offset=affine(layer)
-            normal_basis=matrix
-            coordinates=node('ModoTextureMap',{'mode':'12','uv_affine':vector(matrix,'Vec4'),'uv_offset':vector(offset,'Vec2')})
-        if solid is not None:
-            # Worked out through the object at each point, as Modo's Solid projection has it (ModoProceduralMap).
-            held={'pattern':str(solid['pattern']),'type':str(solid['type']),'settings':'{'+', '.join(number(v) for v in solid['settings'])+'}',
-                  'color1':rgb(solid['color1']),'color2':rgb(solid['color2']),'alpha1':number(solid['alpha1']),'alpha2':number(solid['alpha2']),
-                  **{'row%d'%index:vector(row,'Vec4') for index,row in enumerate(solid['rows'])}}
-            if solid.get('process'):
-                # A process (Enhance: Modo's RegionalHSV) makes its colour from what is beneath it.
-                held['input']=current[effect]
-            foreground=node('ModoProceduralMap',dict(held,output='0'))
-            if solid['alpha1']!=1 or solid['alpha2']!=1:
-                mask=node('ModoProceduralMap',dict(held,output='1'))
-        elif kind=='gradient':
-            from .gradients import emit as emit_gradient
-            foreground=emit_gradient(layer['gradient'],current,node,rgb)
-            if 'alpha' in layer['gradient']:
-                mask=emit_gradient(dict(layer['gradient'],colors=[[v]*3 for v in layer['gradient']['alpha']]),current,node,rgb)
-        elif kind=='constant':
-            foreground = rgb(layer['value'])
-        elif kind=='wireframe':
-            # Modo's Wireframe: MoonRay's WireframeMap, its lines as wide as Modo's in the scene's units.
-            wire=layer['wireframe']
-            lines={'raster':'false','line_width':number(wire['width'])}
-            foreground=node('WireframeMap',dict(lines,line_color=rgb(wire['color1']),fill_color=rgb(wire['color2'])))
-            if wire['alpha1']!=1 or wire['alpha2']!=1:
-                mask=node('WireframeMap',dict(lines,line_color=rgb(wire['alpha1']),fill_color=rgb(wire['alpha2'])))
-        elif kind in ('checker','noise'):
-            foreground = node('ModoTextureMap', {'mode':str(2 if kind=='checker' else 3),
-                'background':rgb(0), 'foreground':rgb(1),
-                'scale':vector([1,1] if coordinates else layer.get('scale',[1,1]),'Vec2'),
-                **({'coordinates':coordinates,'use_coordinates':'true'} if coordinates else {}),
-                'octaves':str(layer.get('octaves',4)),'lacunarity':number(layer.get('lacunarity',2)),
-                'persistence':number(layer.get('persistence',.5))})
-            if layer.get('bias',.5)!=.5:
-                foreground=node('RemapMap',{'input':foreground,'midpoint_bias':number(layer['bias'])})
-            if layer.get('gain',.5)!=.5:
-                foreground=node('ModoTextureMap',{'mode':'8','foreground':foreground,'distance':number(layer['gain'])})
-            if layer.get('alpha1',1)!=1 or layer.get('alpha2',1)!=1:
-                mask=node('ModoTextureMap',{'background':rgb(layer.get('alpha1',1)),'foreground':rgb(layer.get('alpha2',1)),'opacity':foreground})
-            foreground=node('ModoTextureMap',{'background':rgb(layer['color1']),'foreground':rgb(layer['color2']),'opacity':foreground})
-        else:
-            prepared = textures.prepare(layer['path'],layer.get('srgb',False),color_space=layer.get('color_space',''))
-            tile_modes = {'repeat':0, 'edge':1, 'mirror':2, 'reset':3}
-            tile_u = layer.get('tile_u', 'repeat' if layer.get('repeat',True) else 'edge')
-            tile_v = layer.get('tile_v', tile_u)
-            if tile_u not in tile_modes or tile_v not in tile_modes:
-                raise ValueError('Unsupported texture repeat mode')
-            coverage = None
-            wrapped = tile_u != 'repeat' or tile_v != 'repeat'
-            if wrapped:
-                if '<UDIM>' in layer['path']:
-                    raise ValueError('UDIM tile addressing requires Repeat on both axes')
-                wrapping = {'scale':vector([1,1] if coordinates else layer.get('scale',[1,1]),'Vec2'),
-                            'tile_u':str(tile_modes[tile_u]), 'tile_v':str(tile_modes[tile_v])}
-                if coordinates:
-                    wrapping.update(coordinates=coordinates,use_coordinates='true')
-                if 'reset' in (tile_u,tile_v):
-                    coverage = node('ModoTextureMap',dict(wrapping,mode='6'))
-                coordinates = node('ModoTextureMap',dict(wrapping,mode='5'))
-            attributes = {'texture':string(prepared),'gamma':'0',
-                'wrap_around':'false' if wrapped else 'true',
-                'scale':vector([1,1] if coordinates else layer.get('scale',[1,1]),'Vec2')}
-            if coordinates:
-                attributes.update(texture_coordinates='2', input_texture_coordinates=coordinates)
-            alpha = node('ImageMap',dict(attributes,alpha_only='true'))
-            if layer.get('procedural_alpha'):
-                mask=node('ImageMap',dict(attributes,texture=string(textures.prepare(layer['procedural_alpha'],False,color_space='raw'))))
-            source_channel = layer.get('image_channel','use' if layer.get('use_alpha') else 'ignore')
-            if source_channel not in ('use','ignore','only','red','green','blue'):
-                raise ValueError('Unsupported image channel: '+str(source_channel))
-            if source_channel == 'use':
-                mask = alpha
-            if coverage:
-                mask = node('ModoTextureMap',{'background':mask,'foreground':coverage,'blend':'1'}) if mask else coverage
-            if source_channel == 'only':
-                foreground = alpha
-            else:
-                foreground = node('ImageMap',attributes)
-                # The sampled RGB is associated. Recover RGB before channel
-                # extraction/inversion, then apply alpha once in layer blending.
-                foreground = node('ModoTextureMap',{'background':foreground,'foreground':alpha,'blend':'5'})
-                flips = [bool(layer.get('flip_'+c)) for c in ('red','green','blue')]
-                if any(flips):
-                    foreground = node('ModoTextureMap',{'background':foreground,
-                        'foreground':rgb([-1 if flip else 1 for flip in flips]),'blend':'1'})
-                    foreground = node('ModoTextureMap',{'background':foreground,
-                        'foreground':rgb([1 if flip else 0 for flip in flips]),'blend':'2'})
-                if source_channel in ('red','green','blue'):
-                    foreground = node('ModoTextureMap',{'mode':'7','foreground':foreground,
-                        'component':str(('red','green','blue').index(source_channel))})
-        if layer.get('corrections'):
-            from .texture_controls import emit as correct
-            foreground=correct(foreground,layer['corrections'],node,number)
-        # Bias and gain only where they are set: both clamp to 0 to 1 (RemapMap's clamp, ModoTextureMap's layerGain),
-        # so written at a half they would cut an HDR image's brights, unlike the corrections (texture_controls.emit).
-        if kind not in ('checker','noise') and layer.get('bias',.5)!=.5:
-            foreground=node('RemapMap',{'input':foreground,'midpoint_bias':number(layer['bias'])})
-        if kind not in ('checker','noise') and layer.get('gain',.5)!=.5:
-            foreground=node('ModoTextureMap',{'mode':'8','foreground':foreground,'distance':number(layer['gain'])})
-        if layer.get('invert'):
-            foreground = node('ModoTextureMap',{'background':rgb(1),'foreground':foreground,'blend':'3'})
-        if effect in ('normal','normalCoat') and named_basis:
-            foreground=node('ModoTextureMap',{'mode':'13','foreground':foreground,'uv_name':string(coordinate_attribute(named_basis)),'tile_u':str({'repeat':0,'edge':1,'mirror':2,'reset':3}.get(layer.get('tile_u'),0)),'tile_v':str({'repeat':0,'edge':1,'mirror':2,'reset':3}.get(layer.get('tile_v'),0))})
-        elif effect in ('normal','normalCoat') and normal_basis is not None:
-            foreground=node('ModoTextureMap',{'mode':'13','foreground':foreground,'uv_affine':vector(normal_basis,'Vec4'),'uv_offset':vector(offset,'Vec2'),'tile_u':str({'repeat':0,'edge':1,'mirror':2,'reset':3}.get(layer.get('tile_u'),0)),'tile_v':str({'repeat':0,'edge':1,'mirror':2,'reset':3}.get(layer.get('tile_v'),0))})
-        blend = layer.get('blend','normal')
-        if blend=='normalblend' and effect in ('normal','normalCoat'):
-            # Reoriented normal mapping: preserve both tangent-space directions.
-            t=node('OpMap',{'operation':'0','op1':current[effect],'op1_factor':'2','op2':rgb([-1,-1,0])})
-            u=node('OpMap',{'operation':'2','op1':foreground,'op2':rgb([-2,-2,2])})
-            u=node('OpMap',{'operation':'0','op1':u,'op2':rgb([1,1,-1])})
-            dot=node('OpMap',{'operation':'8','op1':t,'op2':u})
-            z=node('ModoTextureMap',{'mode':'7','foreground':t,'component':'2'})
-            factor=node('ModoTextureMap',{'background':dot,'foreground':z,'blend':'5'})
-            n=node('OpMap',{'operation':'2','op1':t,'op2':factor})
-            n=node('OpMap',{'operation':'1','op1':n,'op2':u})
-            n=node('OpMap',{'operation':'10','op1':n})
-            foreground=node('OpMap',{'operation':'0','op1':n,'op1_factor':'.5','op2':rgb(.5)})
-            blend='normal'
-        if blend not in BLENDS:
-            raise ValueError('Unsupported blend: '+blend)
+        foreground,mask,blend=drawn
         single_mask=pending_masks.pop(layer.get('identity'),None)
         if single_mask:
             mask=node('ModoTextureMap',{'background':mask,'foreground':single_mask,'blend':'1'}) if mask else single_mask
@@ -298,6 +153,175 @@ def bindings(material, index, lines, glass=False, absorption=False, separate_mas
                 'bump_strength':number(material.get('bump_strength',.005) if bump_effect in used else 0)})
     return result
 
+
+def prepared_layer(layer):
+    """(the layer as drawn, its pattern through the object or None) of a Shader Tree layer read by layers.collect:
+    a procedural with no 3D map baked to an image first; None for one the runtime cannot draw (graph.bindings, and
+    the Modo Texture node, draw the rest by layer_over)."""
+    layer=dict(layer)
+    from .procedurals import map_available
+    solid = layer.get('solid_map') if layer.get('solid_map') and map_available() else None
+    if solid is None and str(layer.get('kind','')).startswith('val.'):
+        # An Enhance: Modo pattern has nothing to fall back on in a runtime without ModoProceduralMap.
+        return None
+    if layer.get('procedural') and solid is None:
+        from .procedurals import bake
+        path,alpha_path=bake(layer['procedural'])
+        layer.update(kind='imageMap',path=str(path),procedural_alpha=str(alpha_path),image_channel='ignore',srgb=False,color_space='raw',bias=.5,gain=.5)
+    return layer,solid
+
+
+def layer_over(layer,effect,solid,current,node,rgb,material=None,glass=False,absorption=False):
+    """A Shader Tree layer drawn as graph.bindings draws it, before it is laid over what is beneath it: (its
+    foreground, its mask or None, its blend mode), or None for a layer left out. current: each channel's value
+    beneath it (bindings' own, or what a Modo Texture node is wired to); node, rgb: bindings' writers."""
+    from .rdla import string, number, vector
+    material=material or {}
+    if absorption and effect=='tranCol' and layer.get('absorption_distance',material.get('absorption_distance',0))<=0:return None
+    if effect not in textures.EFFECTS:
+        raise ValueError('Unsupported image effect: '+effect)
+    if glass and effect in ('specCol','specAmt','coatAmt','coatRough','metallic'):
+        return None
+    kind = layer.get('kind','imageMap')
+    mask = None
+    coordinates = None
+    if layer.get('coordinate_key') and effect not in ('normal','normalCoat','bump','coatBump'):
+        coordinates = node('AttributeMap', {'primitive_attribute_name':string(coordinate_attribute(layer['coordinate_key'])),
+            'primitive_attribute_type':'1', 'warn_when_unavailable':'true', 'default_value':'Rgb(0,0,0)'})
+    normal_basis=None
+    named_basis=layer.get('coordinate_key') if effect in ('normal','normalCoat','bump','coatBump') else None
+    if named_basis:
+        # With the layer's own placement of the UVs (its tiling and turn): on a subdivision surface MoonRay
+        # does not say how a named map changes across the surface, and this is what it changes by.
+        from .coordinates import affine as placed
+        coordinates=node('ModoTextureMap',{'mode':'12','uv_name':string(coordinate_attribute(named_basis)),
+                                           **({'uv_affine':vector(placed(layer)[0],'Vec4')} if layer.get('projection','uv')=='uv' else {})})
+    if effect in ('normal','normalCoat','bump','coatBump') and kind!='constant' and not coordinates:
+        from .coordinates import affine
+        matrix,offset=affine(layer)
+        normal_basis=matrix
+        coordinates=node('ModoTextureMap',{'mode':'12','uv_affine':vector(matrix,'Vec4'),'uv_offset':vector(offset,'Vec2')})
+    if solid is not None:
+        # Worked out through the object at each point, as Modo's Solid projection has it (ModoProceduralMap).
+        held={'pattern':str(solid['pattern']),'type':str(solid['type']),'settings':'{'+', '.join(number(v) for v in solid['settings'])+'}',
+              'color1':rgb(solid['color1']),'color2':rgb(solid['color2']),'alpha1':number(solid['alpha1']),'alpha2':number(solid['alpha2']),
+              **{'row%d'%index:vector(row,'Vec4') for index,row in enumerate(solid['rows'])}}
+        if solid.get('process'):
+            # A process (Enhance: Modo's RegionalHSV) makes its colour from what is beneath it.
+            held['input']=current[effect]
+        foreground=node('ModoProceduralMap',dict(held,output='0'))
+        if solid['alpha1']!=1 or solid['alpha2']!=1:
+            mask=node('ModoProceduralMap',dict(held,output='1'))
+    elif kind=='gradient':
+        from .gradients import emit as emit_gradient
+        foreground=emit_gradient(layer['gradient'],current,node,rgb)
+        if 'alpha' in layer['gradient']:
+            mask=emit_gradient(dict(layer['gradient'],colors=[[v]*3 for v in layer['gradient']['alpha']]),current,node,rgb)
+    elif kind=='constant':
+        foreground = rgb(layer['value'])
+    elif kind=='wireframe':
+        # Modo's Wireframe: MoonRay's WireframeMap, its lines as wide as Modo's in the scene's units.
+        wire=layer['wireframe']
+        lines={'raster':'false','line_width':number(wire['width'])}
+        foreground=node('WireframeMap',dict(lines,line_color=rgb(wire['color1']),fill_color=rgb(wire['color2'])))
+        if wire['alpha1']!=1 or wire['alpha2']!=1:
+            mask=node('WireframeMap',dict(lines,line_color=rgb(wire['alpha1']),fill_color=rgb(wire['alpha2'])))
+    elif kind in ('checker','noise'):
+        foreground = node('ModoTextureMap', {'mode':str(2 if kind=='checker' else 3),
+            'background':rgb(0), 'foreground':rgb(1),
+            'scale':vector([1,1] if coordinates else layer.get('scale',[1,1]),'Vec2'),
+            **({'coordinates':coordinates,'use_coordinates':'true'} if coordinates else {}),
+            'octaves':str(layer.get('octaves',4)),'lacunarity':number(layer.get('lacunarity',2)),
+            'persistence':number(layer.get('persistence',.5))})
+        if layer.get('bias',.5)!=.5:
+            foreground=node('RemapMap',{'input':foreground,'midpoint_bias':number(layer['bias'])})
+        if layer.get('gain',.5)!=.5:
+            foreground=node('ModoTextureMap',{'mode':'8','foreground':foreground,'distance':number(layer['gain'])})
+        if layer.get('alpha1',1)!=1 or layer.get('alpha2',1)!=1:
+            mask=node('ModoTextureMap',{'background':rgb(layer.get('alpha1',1)),'foreground':rgb(layer.get('alpha2',1)),'opacity':foreground})
+        foreground=node('ModoTextureMap',{'background':rgb(layer['color1']),'foreground':rgb(layer['color2']),'opacity':foreground})
+    else:
+        prepared = textures.prepare(layer['path'],layer.get('srgb',False),color_space=layer.get('color_space',''))
+        tile_modes = {'repeat':0, 'edge':1, 'mirror':2, 'reset':3}
+        tile_u = layer.get('tile_u', 'repeat' if layer.get('repeat',True) else 'edge')
+        tile_v = layer.get('tile_v', tile_u)
+        if tile_u not in tile_modes or tile_v not in tile_modes:
+            raise ValueError('Unsupported texture repeat mode')
+        coverage = None
+        wrapped = tile_u != 'repeat' or tile_v != 'repeat'
+        if wrapped:
+            if '<UDIM>' in layer['path']:
+                raise ValueError('UDIM tile addressing requires Repeat on both axes')
+            wrapping = {'scale':vector([1,1] if coordinates else layer.get('scale',[1,1]),'Vec2'),
+                        'tile_u':str(tile_modes[tile_u]), 'tile_v':str(tile_modes[tile_v])}
+            if coordinates:
+                wrapping.update(coordinates=coordinates,use_coordinates='true')
+            if 'reset' in (tile_u,tile_v):
+                coverage = node('ModoTextureMap',dict(wrapping,mode='6'))
+            coordinates = node('ModoTextureMap',dict(wrapping,mode='5'))
+        attributes = {'texture':string(prepared),'gamma':'0',
+            'wrap_around':'false' if wrapped else 'true',
+            'scale':vector([1,1] if coordinates else layer.get('scale',[1,1]),'Vec2')}
+        if coordinates:
+            attributes.update(texture_coordinates='2', input_texture_coordinates=coordinates)
+        alpha = node('ImageMap',dict(attributes,alpha_only='true'))
+        if layer.get('procedural_alpha'):
+            mask=node('ImageMap',dict(attributes,texture=string(textures.prepare(layer['procedural_alpha'],False,color_space='raw'))))
+        source_channel = layer.get('image_channel','use' if layer.get('use_alpha') else 'ignore')
+        if source_channel not in ('use','ignore','only','red','green','blue'):
+            raise ValueError('Unsupported image channel: '+str(source_channel))
+        if source_channel == 'use':
+            mask = alpha
+        if coverage:
+            mask = node('ModoTextureMap',{'background':mask,'foreground':coverage,'blend':'1'}) if mask else coverage
+        if source_channel == 'only':
+            foreground = alpha
+        else:
+            foreground = node('ImageMap',attributes)
+            # The sampled RGB is associated. Recover RGB before channel
+            # extraction/inversion, then apply alpha once in layer blending.
+            foreground = node('ModoTextureMap',{'background':foreground,'foreground':alpha,'blend':'5'})
+            flips = [bool(layer.get('flip_'+c)) for c in ('red','green','blue')]
+            if any(flips):
+                foreground = node('ModoTextureMap',{'background':foreground,
+                    'foreground':rgb([-1 if flip else 1 for flip in flips]),'blend':'1'})
+                foreground = node('ModoTextureMap',{'background':foreground,
+                    'foreground':rgb([1 if flip else 0 for flip in flips]),'blend':'2'})
+            if source_channel in ('red','green','blue'):
+                foreground = node('ModoTextureMap',{'mode':'7','foreground':foreground,
+                    'component':str(('red','green','blue').index(source_channel))})
+    if layer.get('corrections'):
+        from .texture_controls import emit as correct
+        foreground=correct(foreground,layer['corrections'],node,number)
+    # Bias and gain only where they are set: both clamp to 0 to 1 (RemapMap's clamp, ModoTextureMap's layerGain),
+    # so written at a half they would cut an HDR image's brights, unlike the corrections (texture_controls.emit).
+    if kind not in ('checker','noise') and layer.get('bias',.5)!=.5:
+        foreground=node('RemapMap',{'input':foreground,'midpoint_bias':number(layer['bias'])})
+    if kind not in ('checker','noise') and layer.get('gain',.5)!=.5:
+        foreground=node('ModoTextureMap',{'mode':'8','foreground':foreground,'distance':number(layer['gain'])})
+    if layer.get('invert'):
+        foreground = node('ModoTextureMap',{'background':rgb(1),'foreground':foreground,'blend':'3'})
+    if effect in ('normal','normalCoat') and named_basis:
+        foreground=node('ModoTextureMap',{'mode':'13','foreground':foreground,'uv_name':string(coordinate_attribute(named_basis)),'tile_u':str({'repeat':0,'edge':1,'mirror':2,'reset':3}.get(layer.get('tile_u'),0)),'tile_v':str({'repeat':0,'edge':1,'mirror':2,'reset':3}.get(layer.get('tile_v'),0))})
+    elif effect in ('normal','normalCoat') and normal_basis is not None:
+        foreground=node('ModoTextureMap',{'mode':'13','foreground':foreground,'uv_affine':vector(normal_basis,'Vec4'),'uv_offset':vector(offset,'Vec2'),'tile_u':str({'repeat':0,'edge':1,'mirror':2,'reset':3}.get(layer.get('tile_u'),0)),'tile_v':str({'repeat':0,'edge':1,'mirror':2,'reset':3}.get(layer.get('tile_v'),0))})
+    blend = layer.get('blend','normal')
+    if blend=='normalblend' and effect in ('normal','normalCoat'):
+        # Reoriented normal mapping: preserve both tangent-space directions.
+        t=node('OpMap',{'operation':'0','op1':current[effect],'op1_factor':'2','op2':rgb([-1,-1,0])})
+        u=node('OpMap',{'operation':'2','op1':foreground,'op2':rgb([-2,-2,2])})
+        u=node('OpMap',{'operation':'0','op1':u,'op2':rgb([1,1,-1])})
+        dot=node('OpMap',{'operation':'8','op1':t,'op2':u})
+        z=node('ModoTextureMap',{'mode':'7','foreground':t,'component':'2'})
+        factor=node('ModoTextureMap',{'background':dot,'foreground':z,'blend':'5'})
+        n=node('OpMap',{'operation':'2','op1':t,'op2':factor})
+        n=node('OpMap',{'operation':'1','op1':n,'op2':u})
+        n=node('OpMap',{'operation':'10','op1':n})
+        foreground=node('OpMap',{'operation':'0','op1':n,'op1_factor':'.5','op2':rgb(.5)})
+        blend='normal'
+    if blend not in BLENDS:
+        raise ValueError('Unsupported blend: '+blend)
+    return foreground,mask,blend
 
 # Whether the runtime being written for knows bump_step: set by rdla.scene_text from the scene it is given, and off
 # for any that does not say so, since a MoonRay that does not know an attribute refuses the scene.

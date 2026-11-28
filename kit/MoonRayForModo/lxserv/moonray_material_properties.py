@@ -382,6 +382,37 @@ class ShaderTreeToMoonShine(lxu.command.BasicCommand):
 lx.bless(ShaderTreeToMoonShine,'moonray.material.shaderTreeToMoonShine')
 
 
+class RevertShaderTreeTextures(lxu.command.BasicCommand):
+    """The revert itself (shader_tree_revert): Modo materials and texture layers again, one undoable step; its lines in
+    the Event Log and shader_tree_revert.LAST_REPORT."""
+    def cmd_Flags(self):return lx.symbol.fCMD_MODEL|lx.symbol.fCMD_UNDO
+    def basic_Enable(self,msg):return True
+    def basic_Execute(self,msg,flags):
+        from moonray_modo import shader_tree_revert
+        try:report=shader_tree_revert.run()
+        except Exception:
+            import traceback
+            shader_tree_revert.LAST_REPORT[:]=['Failed: '+traceback.format_exc()]
+            lx.out('MoonRay: MoonShine -> Shader Tree failed: '+traceback.format_exc())
+            raise
+        lines=report.lines()
+        shader_tree_revert.LAST_REPORT[:]=lines
+        for line in lines:lx.out('MoonRay: '+line)
+
+lx.bless(RevertShaderTreeTextures,'moonray.material.revertShaderTreeTextures')
+
+
+class MoonShineToShaderTree(lxu.command.BasicCommand):
+    """MoonRay > MoonShine -> Shader Tree (Revert)...: asks first, reverts (RevertShaderTreeTextures), shows the summary."""
+    def cmd_Flags(self):return lx.symbol.fCMD_UI
+    def basic_Enable(self,msg):return True
+    def basic_Execute(self,msg,flags):
+        from moonray_modo import shader_tree_dialog
+        shader_tree_dialog.revert()
+
+lx.bless(MoonShineToShaderTree,'moonray.material.moonShineToShaderTree')
+
+
 # A diffuse edited in Modo: a linked material has it already (material_diffuse), and what shows it is told. One of a scene
 # saved before the link takes it as its colour once the edit has stopped, which links it: a scene may not be changed from
 # inside a listener, and a colour picker's drag sends many values.

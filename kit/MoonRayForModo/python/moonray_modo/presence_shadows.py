@@ -19,6 +19,15 @@ def cuts_out(material):
     if any(layer.get('effect') == 'stencil' for layer in layers):
         return True
     graph = material.get('node_graph') or {}
+    if graph.get('shader_tree_transfer'):
+        # A graph Move Shader Tree Textures made: its presence is wired as the Modo material's always is (its Dissolve),
+        # so it cuts out where the Shader Tree's did, a Stencil layer, or where a node of someone else's drives it.
+        from .shader_tree_transfer import ours
+        found = graph.get('nodes', {})
+        if any(node.get('type') == 'modo_texture' and (node.get('parameters') or {}).get('effect') == 'stencil' for node in found.values()):
+            return True
+        return any(not ours(source, found.get(source)) for node in found.values()
+                   for key, source in (node.get('inputs') or {}).items() if key == 'presence' and isinstance(source, str))
     rows = list(graph.get('nodes', {}).values()) + list(graph.get('overrides') or [])
     return any('presence' in (row.get('inputs') or {}) for row in rows)
 

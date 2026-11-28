@@ -38,6 +38,11 @@ def in_graph(value):
     """The gradient a MoonShine graph's Modo Procedural node holds (its 'gradient' parameter, as JSON: a Shader Tree
     gradient layer moved into the graph, shader_tree_processing) as a dict; None for anything else. The scans of the
     materials for what their gradients read (occlusion, tension, the weight maps asked for) look into it as into a layer."""
+    if isinstance(value,dict) and value.get('type')=='modo_texture':
+        # A Modo Texture node holding a Gradient layer: the gradient of its layer.
+        from .modo_texture import as_layer
+        layer=as_layer(value)
+        return layer.get('gradient') if layer and layer.get('kind')=='gradient' and isinstance(layer.get('gradient'),dict) else None
     if not isinstance(value,dict) or value.get('type')!='modo_procedural':return None
     text=(value.get('parameters') or {}).get('gradient')
     if not isinstance(text,str) or not text:return None
