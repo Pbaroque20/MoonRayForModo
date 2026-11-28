@@ -1026,11 +1026,6 @@ class Renderer(QtCore.QObject):
             return # Cryptomatte requires every ID/coverage channel, not a 3-float snapshot.
         self.session.select_view(key)
 
-    def select_draft(self,on,region=None):
-        """Rhea Draft on or off in XPU2 RT's session (persistent.select_draft)."""
-        session=getattr(self,'session',None)
-        if session is not None:session.select_draft(on,region)
-
     def _picture_seen(self,render,width,height):
         """A picture of a render arrived: what pictures this size take in memory said in the Terminal when the size is
         new, and among the notices while they are large (picture_memory)."""
